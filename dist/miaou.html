@@ -1,0 +1,3563 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nouvelle conversation — MIAOU</title>
+<link rel="icon" id="favicon">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+<script>(function(){try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');var t=s.theme;if(t==='light')document.documentElement.setAttribute('data-theme','light');else if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #0b0c0e;
+  --surface:    #111316;
+  --surface-2:  #16181c;
+  --surface-3:  #1c1f24;
+  --border:     #232730;
+  --border-2:   #2c313b;
+  --text:       #e7e8ea;
+  --text-2:     #9a9ea8;
+  --text-3:     #5e636e;
+  --accent:     #ff7a45;
+  --accent-2:   #ff6a2e;
+  --accent-ink: #1a0c05;
+  --accent-dim: rgba(255,122,69,.12);
+  --accent-bd:  rgba(255,122,69,.28);
+  --ok:         #4ec98a;
+  --err:        #ff5d5d;
+  --r:          7px;
+  --r-sm:       5px;
+  --ease:       cubic-bezier(.4, 0, .2, 1);
+  --sans: 'Hanken Grotesk', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --col: 720px;
+  --sidebar-w: 264px;   /* largeur ouverte, redimensionnable (264 → 528) et persistée */
+  /* valeurs dérivées, surchargées par le thème clair */
+  --topbar-bg:             rgba(17,19,22,.6);
+  --scrollbar-thumb-hover: #3a4049;
+  --table-stripe:          rgba(255,255,255,.012);
+  --code-bg:               #0e1013;
+  --code-head-bg:          var(--surface);
+  --code-inline-color:     #ffb894;
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection { background: var(--accent-dim); }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ═══ App shell ═══ */
+.app { display: flex; height: 100vh; }
+
+/* ═══ Sidebar ═══ */
+.sidebar {
+  position: relative;
+  width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transition: width 190ms var(--ease);
+}
+.app.sidebar-open .sidebar { width: var(--sidebar-w); }
+/* pendant le drag : pas de transition, sinon la largeur « traîne » derrière le curseur */
+.sidebar.resizing { transition: none; }
+
+.sidebar-inner {
+  width: var(--sidebar-w);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* poignée de redimensionnement (bord droit, visible seulement sidebar ouverte) */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 6;
+  transition: background 140ms var(--ease);
+}
+.sidebar-resizer:hover,
+.sidebar.resizing .sidebar-resizer { background: var(--accent-bd); }
+
+.sidebar-head {
+  padding: 14px 14px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar-brand {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+}
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand-logo { width: 20px; height: 20px; border-radius: 5px; display: block; flex-shrink: 0; }
+.new-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 11px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.new-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
+.new-btn svg { width: 13px; height: 13px; }
+
+/* recherche dans l'historique */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 14px 4px;
+  padding: 6px 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  transition: border-color 140ms var(--ease);
+}
+.sidebar-search:focus-within { border-color: var(--accent-bd); }
+.search-icon { width: 14px; height: 14px; color: var(--text-3); flex-shrink: 0; }
+.sidebar-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.sidebar-search input::placeholder { color: var(--text-3); }
+.search-clear {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  display: none;
+  flex-shrink: 0;
+}
+.search-clear.show { display: block; }
+.search-clear:hover { color: var(--text); }
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.conv-section {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 12px 8px 5px;
+}
+.conv {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms var(--ease);
+}
+.conv:hover { background: var(--surface-2); }
+.conv.active { background: var(--surface-3); }
+.conv.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 2px; height: 16px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.conv-body { flex: 1; min-width: 0; }
+.conv-title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.conv-del {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
+}
+.conv:hover .conv-del { opacity: 1; }
+.conv-del:hover { color: var(--err); background: rgba(255,93,93,.1); }
+.conv-del svg { width: 13px; height: 13px; display: block; }
+.conv-pin {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
+}
+.conv:hover .conv-pin { opacity: 1; }
+.conv-pin:hover { color: var(--accent); background: var(--surface-3); }
+.conv-pin svg { width: 13px; height: 13px; display: block; }
+/* Épinglée : pastille visible en permanence, remplie, teintée accent. */
+.conv.pinned .conv-pin { opacity: 1; color: var(--accent); }
+.conv.pinned .conv-pin svg { fill: var(--accent); }
+
+/* ═══ Main ═══ */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* top bar */
+.topbar {
+  height: 52px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--topbar-bg);
+  backdrop-filter: blur(8px);
+}
+.topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
+.topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; }
+.topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 130ms var(--ease), color 130ms var(--ease);
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn svg { width: 17px; height: 17px; }
+
+.conv-title-edit {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 4px 10px;
+  outline: none;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  transition: background 130ms var(--ease), border-color 130ms var(--ease);
+}
+.conv-title-edit:hover { background: var(--surface-2); }
+.conv-title-edit:focus { background: var(--surface-2); border-color: var(--border-2); }
+.conv-title-edit:empty::before {
+  content: 'Nouvelle conversation';
+  color: var(--text-3);
+}
+
+.model-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 3px 10px;
+  border-radius: 100px;
+  max-width: 210px;
+}
+#model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+  transition: background 300ms var(--ease), box-shadow 300ms var(--ease);
+}
+.dot.ok  { background: var(--ok);  box-shadow: 0 0 7px rgba(78,201,138,.5); }
+.dot.err { background: var(--err); box-shadow: 0 0 7px rgba(255,93,93,.5); }
+
+/* activité en arrière-plan (titrage, résumés, lecture mémoire) */
+.bg-activity {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 3px 10px;
+  border-radius: 100px;
+  max-width: 200px;
+}
+.bg-activity.active { display: flex; }
+.bg-activity #bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ═══ Messages ═══ */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 24px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.thread {
+  max-width: var(--col);
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.msg { display: flex; flex-direction: column; animation: rise 260ms var(--ease) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* user: compact, right */
+.msg.user {
+  align-items: flex-end;
+  margin: 14px 0 4px;
+}
+.msg.user .bubble {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 8px 13px;
+  max-width: 80%;
+  word-break: break-word;
+  text-align: left;
+}
+.msg.user .bubble { position: relative; }
+.msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
+.msg.user .bubble .body p { margin-bottom: 7px; }
+/* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
+   plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
+.msg.user .bubble .body p:last-child { margin-bottom: 0; }
+
+/* action « éditer » au survol d'une bulle utilisateur */
+.msg-edit {
+  position: absolute;
+  top: 2px; left: -30px;
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 120ms var(--ease), color 120ms var(--ease);
+}
+.msg.user:hover .msg-edit { opacity: 1; }
+.msg-edit:hover { color: var(--accent); }
+.msg-edit svg { width: 14px; height: 14px; display: block; }
+
+/* mode édition : la bulle prend toute la largeur de la colonne */
+.msg.user.editing { width: 100%; }
+.msg.user.editing .bubble { width: 100%; max-width: 100%; }
+.msg.user.editing .msg-edit { display: none; }
+.msg-edit-area {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  resize: none;
+  outline: none;
+  max-height: 240px;
+}
+.msg-edit-area:focus { border-color: var(--accent-bd); }
+.msg-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* assistant: full width of column, centered block, no bubble chrome */
+.msg.assistant { align-items: stretch; margin: 4px 0 14px; }
+.msg.assistant .meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 7px;
+}
+.msg.assistant .meta .glyph {
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  display: block;
+}
+.msg.assistant .body {
+  font-size: 14px;
+  line-height: 1.68;
+  color: var(--text);
+}
+
+/* markdown body */
+.body > *:first-child { margin-top: 0; }
+.body > *:last-child { margin-bottom: 0; }
+.body p { margin: 0 0 11px; }
+.body h1, .body h2, .body h3 { font-weight: 600; line-height: 1.3; margin: 18px 0 8px; }
+.body h1 { font-size: 18px; } .body h2 { font-size: 16px; } .body h3 { font-size: 14.5px; }
+.body ul, .body ol { margin: 8px 0 12px; padding-left: 22px; }
+.body li { margin-bottom: 4px; }
+.body li::marker { color: var(--text-3); }
+.body a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-bd); }
+.body a:hover { border-bottom-color: var(--accent); }
+.body strong { font-weight: 600; color: var(--text); }
+.body em { color: var(--text-2); }
+.body blockquote {
+  border-left: 2px solid var(--border-2);
+  padding: 2px 0 2px 14px;
+  margin: 10px 0;
+  color: var(--text-2);
+}
+.body code:not([class*="language-"]) {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--code-inline-color);
+}
+.body pre {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--code-bg) !important;
+}
+/* Prism recopie la classe language-* du <code> vers le <pre> parent au
+   highlight ; prism-tomorrow injecte alors padding/margin/radius sur le <pre>.
+   On neutralise pour garder exactement la même compacité que Prism inactif. */
+.body pre[class*="language-"] {
+  padding: 0;
+  margin: 12px 0;
+  border-radius: var(--r);
+  background: var(--code-bg) !important;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--code-head-bg);
+  border-bottom: 1px solid var(--border);
+}
+.code-lang { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-transform: lowercase; }
+.code-copy {
+  background: none; border: none;
+  color: var(--text-3);
+  font-family: var(--sans); font-size: 11px;
+  cursor: pointer; padding: 0;
+  transition: color 130ms var(--ease);
+}
+.code-copy:hover { color: var(--text); }
+.body pre code {
+  display: block;
+  padding: 13px 14px !important;
+  font-family: var(--mono) !important;
+  font-size: 11.5px !important;
+  line-height: 1.6 !important;
+  overflow-x: auto;
+  background: transparent !important;
+  text-shadow: none !important;
+}
+/* tables */
+.body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.body th, .body td {
+  border: 1px solid var(--border);
+  padding: 6px 11px;
+  text-align: left;
+}
+.body th { background: var(--surface); font-weight: 600; color: var(--text); }
+.body td { color: var(--text-2); }
+.body tr:nth-child(even) td { background: var(--table-stripe); }
+
+/* ═══ Composer ═══ */
+.composer {
+  flex-shrink: 0;
+  padding: 8px 24px 18px;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+}
+.composer-inner { max-width: var(--col); margin: 0 auto; }
+.input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  padding: 8px 8px 8px 14px;
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+.input-wrap:focus-within { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.input-wrap.disabled { border-color: rgba(255,93,93,.3); background: rgba(255,93,93,.04); }
+.input-wrap.disabled:focus-within { box-shadow: none; }
+
+#composer-text {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  max-height: 168px;
+  padding: 5px 0;
+}
+#composer-text::placeholder { color: var(--text-3); }
+.input-wrap.disabled #composer-text::placeholder { color: var(--err); opacity: .85; }
+
+.send-btn {
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 140ms var(--ease), opacity 140ms var(--ease), transform 100ms var(--ease);
+}
+.send-btn:hover { background: var(--accent-2); }
+.send-btn:active { transform: scale(.94); }
+.send-btn:disabled { background: var(--surface-3); color: var(--text-3); cursor: not-allowed; }
+.send-btn svg { width: 16px; height: 16px; }
+
+/* état « stop » pendant le streaming : carré sobre, accent en avant */
+.send-btn .ic-stop { display: none; }
+.send-btn.streaming { background: var(--surface-3); }
+.send-btn.streaming:hover { background: var(--border); }
+.send-btn.streaming .ic-send { display: none; }
+.send-btn.streaming .ic-stop { display: block; color: var(--accent); }
+
+.composer-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 8px;
+}
+.composer-hint kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* sélecteur de modèle du composer (optionnel) */
+.composer-model { position: relative; margin-bottom: 8px; }
+.composer-model[hidden] { display: none; }
+.composer-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 4px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  max-width: 100%;
+  transition: background 140ms var(--ease);
+}
+.composer-model-btn:hover { background: var(--accent-bd); }
+.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
+.composer-model-btn #composer-model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#composer-model-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  min-width: 220px;
+  max-width: 360px;
+  transform: translateY(4px);
+}
+#composer-model-menu.show { transform: none; }
+
+/* bannière mémoire (mode « proposer ») */
+.memory-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 9px 12px;
+  margin-bottom: 9px;
+  animation: rise 220ms var(--ease) both;
+}
+.memory-banner.show { display: flex; }
+.memory-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
+.memory-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+.memory-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.mb-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
+}
+.mb-btn:hover { background: var(--surface-3); color: var(--text); }
+.mb-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.mb-btn.primary:hover { background: var(--accent-2); }
+
+/* ═══ Settings drawer ═══ */
+.backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 190ms var(--ease), visibility 190ms var(--ease);
+  z-index: 40;
+}
+.backdrop.show { opacity: 1; visibility: visible; }
+
+.drawer {
+  position: fixed;
+  top: 0; right: 0;
+  height: 100%;
+  width: 380px;
+  max-width: 92vw;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 220ms var(--ease);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+.drawer.show { transform: none; }
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-head h2 { font-size: 14px; font-weight: 600; letter-spacing: 0.01em; }
+.drawer-body { padding: 18px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+
+.field { display: flex; flex-direction: column; gap: 6px; position: relative; }
+.field label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.field input {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.field input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.field input::placeholder { color: var(--text-3); }
+.field .hint { font-size: 11px; color: var(--text-3); }
+.field .hint code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--text-2);
+}
+
+.field textarea {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 76px;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.field textarea::placeholder { color: var(--text-3); }
+
+.check-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.check-row .label-col { display: flex; flex-direction: column; gap: 3px; }
+
+.toggle { position: relative; width: 38px; height: 22px; flex-shrink: 0; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle .track {
+  position: absolute; inset: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  border-radius: 100px;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+}
+.toggle .thumb {
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 14px; height: 14px;
+  background: var(--text-2);
+  border-radius: 50%;
+  transition: transform 150ms var(--ease), background 150ms var(--ease);
+}
+.toggle input:checked ~ .track { background: var(--accent-dim); border-color: var(--accent-bd); }
+.toggle input:checked ~ .thumb { transform: translateX(16px); background: var(--accent); }
+
+/* segmented control (mode mémoire) */
+.seg-group {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  padding: 3px;
+  gap: 3px;
+}
+.seg {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 130ms var(--ease), color 130ms var(--ease);
+}
+.seg:hover { color: var(--text); }
+.seg.active { background: var(--accent-dim); color: var(--accent); }
+
+/* model dropdown — ancré sur le champ (et non sur tout le .field, ce qui
+   laissait apparaître la légende entre le champ et la liste). */
+.select-anchor { position: relative; display: flex; flex-direction: column; }
+.model-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0; right: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 28px rgba(0,0,0,.5);
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  transition: opacity 140ms var(--ease), transform 140ms var(--ease), visibility 140ms var(--ease);
+}
+.model-menu.show { opacity: 1; transform: none; visibility: visible; }
+.model-opt {
+  padding: 8px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 110ms var(--ease);
+}
+.model-opt:hover { background: var(--surface-3); }
+.model-opt .check { color: var(--accent); opacity: 0; }
+.model-opt.selected .check { opacity: 1; }
+.model-loading, .model-error {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.model-error { color: var(--err); }
+.spin {
+  width: 12px; height: 12px;
+  border: 2px solid var(--border-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  margin-top: 4px;
+  transition: background 140ms var(--ease);
+}
+.btn-primary:hover { background: var(--accent-2); }
+
+.btn-ghost {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.btn-ghost:hover { background: var(--surface-3); border-color: var(--border-2); }
+
+/* gestion des souvenirs */
+.mem-list { display: flex; flex-direction: column; gap: 8px; }
+.mem-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 2px; }
+.mem-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}
+.mem-item.suppressed { opacity: 0.55; }
+.mem-body { min-width: 0; }
+.mem-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mem-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.mem-excerpt { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-btn {
+  flex-shrink: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
+}
+.mem-btn:hover { background: #262b33; color: var(--text); }
+.mem-btn.danger:hover { color: var(--err); border-color: rgba(255,93,93,.4); }
+.mem-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
+.mem-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
+.mem-btn .spin { width: 11px; height: 11px; }
+
+/* ═══ Écran d'accueil (nouvelle conversation) ═══ */
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  user-select: none;
+  pointer-events: none;
+}
+.welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
+.welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
+.welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
+
+/* panneau des outils exposés */
+.tool-list { display: flex; flex-direction: column; gap: 10px; }
+.tool-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+}
+.tool-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.tool-desc { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+.tool-params {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tool-param { display: flex; gap: 8px; align-items: baseline; }
+.tool-param-name { font-family: var(--mono); font-size: 11px; color: var(--text); flex-shrink: 0; }
+.tool-param-type { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); flex-shrink: 0; }
+.tool-param-desc { font-size: 11px; color: var(--text-3); }
+
+.cursor-blink {
+  display: inline-block;
+  width: 7px; height: 14px;
+  background: var(--accent);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* patienteur animé : attente (WAITING) et reprise après un tour tool_calls.
+   Sobre — couleur texte secondaire, mot court qui change par fondu. */
+.waiter {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+  letter-spacing: .2px;
+}
+.waiter-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 7px;
+  flex-shrink: 0;
+  animation: waiter-pulse 1s ease-in-out infinite;
+}
+@keyframes waiter-pulse {
+  0%, 100% { transform: scale(.55); opacity: .45; }
+  50%      { transform: scale(1);   opacity: 1; }
+}
+/* le mot et ses « … » fondent ensemble ; seul le point reste */
+.waiter-word { transition: opacity .28s ease; }
+.waiter-word::after { content: '…'; font-style: normal; }
+.waiter-word.fade { opacity: 0; }
+
+/* bloc de raisonnement (thinking) : icône discrète dans la barre méta +
+   panneau collapsible (police mono, atténué) au-dessus du corps du message. */
+.reasoning-toggle {
+  margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
+.reasoning-toggle.open { color: var(--accent); }
+.reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
+
+.reasoning {
+  margin: 0 0 8px;
+  padding: 8px 11px;
+  border-left: 2px solid var(--border-2);
+  background: var(--surface-2);
+  border-radius: 0 6px 6px 0;
+}
+.reasoning-content {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-2);
+  opacity: .85;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .app.sidebar-open .sidebar { width: 240px; }
+}
+
+/* ═══ Thème clair ═══ */
+/* Variables communes au thème clair (explicite et système). */
+html[data-theme="light"] {
+  --bg:                    #f4efe5;
+  --surface:               #ede8de;
+  --surface-2:             #e5dfd4;
+  --surface-3:             #dbd4c7;
+  --border:                #cdc7b8;
+  --border-2:              #c1baa8;
+  --text:                  #1e1b18;
+  --text-2:                #5a5248;
+  --text-3:                #968a7a;
+  --accent:                #e05f1c;
+  --accent-2:              #cc5016;
+  --accent-ink:            #1a0c05;
+  --accent-dim:            rgba(224,95,28,.10);
+  --accent-bd:             rgba(224,95,28,.28);
+  --ok:                    #267a4e;
+  --err:                   #c42828;
+  --topbar-bg:             rgba(244,239,229,.88);
+  --scrollbar-thumb-hover: rgba(0,0,0,.30);
+  --table-stripe:          rgba(0,0,0,.04);
+  --code-bg:               #eee8d8;
+  --code-head-bg:          #e6dfc9;
+  --code-inline-color:     #c45010;
+}
+html[data-theme="light"] .mem-btn:hover { background: var(--surface-3); }
+html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+
+/* Prism token overrides — thème clair */
+html[data-theme="light"] code[class*="language-"],
+html[data-theme="light"] pre[class*="language-"]          { color: #2c2720; }
+html[data-theme="light"] .token.comment,
+html[data-theme="light"] .token.prolog,
+html[data-theme="light"] .token.doctype,
+html[data-theme="light"] .token.cdata                     { color: #8a8272; font-style: italic; }
+html[data-theme="light"] .token.punctuation               { color: #5a5248; }
+html[data-theme="light"] .token.namespace                 { opacity: .75; }
+html[data-theme="light"] .token.property,
+html[data-theme="light"] .token.constant,
+html[data-theme="light"] .token.symbol                    { color: #8a6800; }
+html[data-theme="light"] .token.boolean,
+html[data-theme="light"] .token.number                    { color: #b5440e; }
+html[data-theme="light"] .token.string,
+html[data-theme="light"] .token.char,
+html[data-theme="light"] .token.attr-value,
+html[data-theme="light"] .token.builtin,
+html[data-theme="light"] .token.inserted                  { color: #276e38; }
+html[data-theme="light"] .token.selector,
+html[data-theme="light"] .token.attr-name                 { color: #b53030; }
+html[data-theme="light"] .token.operator,
+html[data-theme="light"] .token.entity,
+html[data-theme="light"] .token.url                       { color: #1a6b6b; }
+html[data-theme="light"] .token.atrule,
+html[data-theme="light"] .token.keyword                   { color: #7c3c99; }
+html[data-theme="light"] .token.function,
+html[data-theme="light"] .token.class-name                { color: #1a5fb8; }
+html[data-theme="light"] .token.regex,
+html[data-theme="light"] .token.important,
+html[data-theme="light"] .token.variable                  { color: #b5440e; }
+html[data-theme="light"] .token.tag,
+html[data-theme="light"] .token.deleted                   { color: #b53030; }
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) {
+    --bg:                    #f4efe5;
+    --surface:               #ede8de;
+    --surface-2:             #e5dfd4;
+    --surface-3:             #dbd4c7;
+    --border:                #cdc7b8;
+    --border-2:              #c1baa8;
+    --text:                  #1e1b18;
+    --text-2:                #5a5248;
+    --text-3:                #968a7a;
+    --accent:                #e05f1c;
+    --accent-2:              #cc5016;
+    --accent-ink:            #1a0c05;
+    --accent-dim:            rgba(224,95,28,.10);
+    --accent-bd:             rgba(224,95,28,.28);
+    --ok:                    #267a4e;
+    --err:                   #c42828;
+    --topbar-bg:             rgba(244,239,229,.88);
+    --scrollbar-thumb-hover: rgba(0,0,0,.30);
+    --table-stripe:          rgba(0,0,0,.04);
+    --code-bg:               #eee8d8;
+    --code-head-bg:          #e6dfc9;
+    --code-inline-color:     #c45010;
+  }
+  html:not([data-theme="dark"]) .mem-btn:hover { background: var(--surface-3); }
+  html:not([data-theme="dark"]) .model-menu    { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+
+  html:not([data-theme="dark"]) code[class*="language-"],
+  html:not([data-theme="dark"]) pre[class*="language-"]          { color: #2c2720; }
+  html:not([data-theme="dark"]) .token.comment,
+  html:not([data-theme="dark"]) .token.prolog,
+  html:not([data-theme="dark"]) .token.doctype,
+  html:not([data-theme="dark"]) .token.cdata                     { color: #8a8272; font-style: italic; }
+  html:not([data-theme="dark"]) .token.punctuation               { color: #5a5248; }
+  html:not([data-theme="dark"]) .token.namespace                 { opacity: .75; }
+  html:not([data-theme="dark"]) .token.property,
+  html:not([data-theme="dark"]) .token.constant,
+  html:not([data-theme="dark"]) .token.symbol                    { color: #8a6800; }
+  html:not([data-theme="dark"]) .token.boolean,
+  html:not([data-theme="dark"]) .token.number                    { color: #b5440e; }
+  html:not([data-theme="dark"]) .token.string,
+  html:not([data-theme="dark"]) .token.char,
+  html:not([data-theme="dark"]) .token.attr-value,
+  html:not([data-theme="dark"]) .token.builtin,
+  html:not([data-theme="dark"]) .token.inserted                  { color: #276e38; }
+  html:not([data-theme="dark"]) .token.selector,
+  html:not([data-theme="dark"]) .token.attr-name                 { color: #b53030; }
+  html:not([data-theme="dark"]) .token.operator,
+  html:not([data-theme="dark"]) .token.entity,
+  html:not([data-theme="dark"]) .token.url                       { color: #1a6b6b; }
+  html:not([data-theme="dark"]) .token.atrule,
+  html:not([data-theme="dark"]) .token.keyword                   { color: #7c3c99; }
+  html:not([data-theme="dark"]) .token.function,
+  html:not([data-theme="dark"]) .token.class-name                { color: #1a5fb8; }
+  html:not([data-theme="dark"]) .token.regex,
+  html:not([data-theme="dark"]) .token.important,
+  html:not([data-theme="dark"]) .token.variable                  { color: #b5440e; }
+  html:not([data-theme="dark"]) .token.tag,
+  html:not([data-theme="dark"]) .token.deleted                   { color: #b53030; }
+}
+
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+      <div class="sidebar-head">
+        <div class="brand">
+          <img class="brand-logo" id="brand-logo" alt="">
+          <span class="sidebar-brand">MIAOU</span>
+        </div>
+        <button class="new-btn" onclick="newConversation()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nouvelle
+        </button>
+      </div>
+      <div class="sidebar-search">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()">
+        <button class="search-clear" id="search-clear" title="Effacer" onclick="clearConvSearch()">×</button>
+      </div>
+      <div class="conv-list" id="conv-list"></div>
+    </div>
+    <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
+  </aside>
+
+  <!-- ═══ Main ═══ -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn" onclick="toggleSidebar()" title="Historique">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+      <div class="topbar-mid">
+        <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
+      </div>
+      <div class="topbar-right">
+        <span class="bg-activity" id="bg-activity"><span class="spin"></span><span id="bg-label"></span></span>
+        <span class="model-pill"><span class="dot" id="conn-dot"></span><span id="model-label">modèle</span></span>
+        <button class="icon-btn" onclick="openSettings()" title="Paramètres">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="thread" id="thread"></div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-inner">
+
+        <!-- Bannière mémoire (mode « proposer ») -->
+        <div class="memory-banner" id="memory-banner">
+          <div class="memory-banner-body">
+            <svg class="memory-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span id="memory-banner-text">Des conversations passées semblent liées.</span>
+          </div>
+          <div class="memory-banner-actions">
+            <button class="mb-btn primary" onclick="memoryBanner('inject')">Injecter</button>
+            <button class="mb-btn" onclick="memoryBanner('ignore')">Ignorer</button>
+            <button class="mb-btn" onclick="memoryBanner('always')">Toujours</button>
+            <button class="mb-btn" onclick="memoryBanner('never')">Jamais</button>
+          </div>
+        </div>
+
+        <!-- Sélecteur de modèle (optionnel, réglable) -->
+        <div class="composer-model" id="composer-model" hidden>
+          <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+            <span id="composer-model-label">modèle</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="model-menu" id="composer-model-menu"></div>
+        </div>
+
+        <div class="input-wrap" id="input-wrap">
+          <textarea id="composer-text" rows="1" placeholder="Message…"
+            onkeydown="onComposerKey(event)" oninput="autoGrow(this)"></textarea>
+          <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
+            <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+          </button>
+        </div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Settings drawer ═══ -->
+  <div class="backdrop" id="backdrop" onclick="closeSettings()"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <h2>Paramètres</h2>
+      <button class="icon-btn" onclick="closeSettings()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div class="field">
+        <label>URL de l'API</label>
+        <input id="set-url" type="text" placeholder="http://host-interne/v1" spellcheck="false" oninput="syncConfigured()">
+        <span class="hint">Endpoint compatible OpenAI, terminant par <code>/v1</code>.</span>
+      </div>
+      <div class="field">
+        <label>Clef API</label>
+        <input id="set-key" type="password" oninput="syncConfigured()">
+        <span class="hint" id="set-key-hint"></span>
+      </div>
+      <div class="field">
+        <label>Modèle</label>
+        <div class="select-anchor">
+          <input id="set-model" type="text" placeholder="devstral" spellcheck="false"
+            onfocus="openModelMenu()" oninput="onModelInput()">
+          <div class="model-menu" id="model-menu"></div>
+        </div>
+        <span class="hint">Choisissez parmi les modèles exposés par l'API.</span>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Sélecteur de modèle dans le composer</label>
+            <span class="hint">Permet de changer de modèle par conversation. Masqué par défaut.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-modelselector">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Prompt système</label>
+        <textarea id="set-system" rows="4" spellcheck="false" placeholder="Optionnel"></textarea>
+        <span class="hint">Toujours préservé tel quel, en tête de chaque conversation.</span>
+      </div>
+      <div class="field">
+        <label>Thème</label>
+        <div class="seg-group" id="theme-mode">
+          <button type="button" class="seg" data-mode="light"  onclick="selectTheme('light')">Clair</button>
+          <button type="button" class="seg" data-mode="dark"   onclick="selectTheme('dark')">Sombre</button>
+          <button type="button" class="seg" data-mode="system" onclick="selectTheme('system')">Système</button>
+        </div>
+        <span class="hint" id="theme-hint"></span>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Coloration syntaxique</label>
+            <span class="hint">Colore les blocs de code via Prism.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-highlight" checked onchange="onToggleHighlight()">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Mémoire</label>
+        <div class="seg-group" id="memory-mode">
+          <button type="button" class="seg" data-mode="auto"    onclick="selectMemoryMode('auto')">Auto</button>
+          <button type="button" class="seg" data-mode="propose" onclick="selectMemoryMode('propose')">Proposer</button>
+          <button type="button" class="seg" data-mode="never"   onclick="selectMemoryMode('never')">Jamais</button>
+        </div>
+        <span class="hint" id="memory-hint"></span>
+      </div>
+      <button class="btn-ghost" onclick="openMemory()">Gérer les souvenirs</button>
+      <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
+      <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
+    </div>
+  </div>
+
+  <!-- ═══ Tools drawer ═══ -->
+  <div class="backdrop" id="tools-backdrop" onclick="closeTools()"></div>
+  <div class="drawer" id="tools-drawer">
+    <div class="drawer-head">
+      <h2>Outils exposés</h2>
+      <button class="icon-btn" onclick="closeTools()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Outils déclarés au modèle à chaque conversation. Le modèle peut les appeler librement.</span>
+      <div class="tool-list" id="tools-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Memory manager drawer ═══ -->
+  <div class="backdrop" id="memory-backdrop" onclick="closeMemory()"></div>
+  <div class="drawer" id="memory-drawer">
+    <div class="drawer-head">
+      <h2>Souvenirs</h2>
+      <button class="icon-btn" onclick="closeMemory()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Supprimer un souvenir ne touche jamais à la conversation elle-même. La suppression est réversible.</span>
+      <div class="mem-list" id="memory-list"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script>
+/* miaou — built: 2026-06-20 21:03 UTC */
+
+
+/* ── utils.js ── */
+
+'use strict';
+
+/* ── utils.js ──────────────────────────────────────────────────────────────
+   Fonctions pures (ou quasi pures) : échappement, helpers DOM élémentaires,
+   tokenisation, scoring, parsing défensif. Aucune logique réseau/persistance.
+   Tout est en déclarations `function` ou `const` de portée script : le build
+   concatène ces fichiers dans un seul <script>, l'ordre des dépendances est
+   garanti par build.py.
+   ────────────────────────────────────────────────────────────────────────── */
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Place le caret en fin de contenu d'un élément contenteditable.
+function placeCaretEnd(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+// Auto-grandissement d'un <textarea> jusqu'à une hauteur max.
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 168) + 'px';
+}
+
+// ── Tokenisation / scoring (recherche mémoire) ──────────────────────────────
+
+const STOPWORDS = new Set([
+  // français
+  'le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'et', 'ou', 'à', 'en',
+  'dans', 'pour', 'sur', 'avec', 'que', 'qui', 'quoi', 'dont', 'où', 'ce',
+  'cet', 'cette', 'ces', 'je', 'tu', 'il', 'elle', 'on', 'nous', 'vous',
+  'ils', 'elles', 'se', 'sa', 'son', 'ses', 'mon', 'ma', 'mes', 'ton', 'ta',
+  'tes', 'au', 'aux', 'par', 'pas', 'ne', 'plus', 'est', 'sont', 'être',
+  'avoir', 'fait', 'comme', 'mais', 'donc', 'car', 'si', 'leur', 'leurs',
+  'tout', 'tous', 'toute', 'toutes', 'cela', 'ceci',
+  // anglais courant (les modèles répondent parfois en anglais)
+  'the', 'and', 'or', 'for', 'with', 'that', 'this', 'are', 'was', 'you',
+  'your', 'from', 'have', 'has', 'not', 'but', 'can', 'will', 'into',
+]);
+
+function tokenize(text) {
+  return (String(text).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+    .filter(t => t.length > 2 && !STOPWORDS.has(t));
+}
+
+// Recouvrement pondéré : un keyword vaut 2, un mot du texte/titre vaut 1.
+function scoreSummary(queryTokens, summary) {
+  const kw  = new Set((summary.keywords || []).map(k => String(k).toLowerCase()));
+  const txt = new Set(tokenize((summary.summary || '') + ' ' + (summary.title || '')));
+  let score = 0;
+  for (const t of queryTokens) {
+    if (kw.has(t)) score += 2;
+    else if (txt.has(t)) score += 1;
+  }
+  return score;
+}
+
+// ── Parsing défensif du JSON de résumé ──────────────────────────────────────
+// Le modèle enrobe parfois sa réponse de fences ```json … ```. On nettoie,
+// puis on tente JSON.parse ; en cas d'échec on renvoie null sans planter.
+function parseSummaryJSON(raw) {
+  if (!raw) return null;
+  let s = String(raw).trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fence) s = fence[1].trim();
+
+  const tryParse = (str) => {
+    try { const o = JSON.parse(str); return (o && typeof o === 'object') ? o : null; }
+    catch (e) { return null; }
+  };
+
+  let obj = tryParse(s);
+  if (obj) return obj;
+
+  // Repli : extraire le premier objet {…} noyé dans de la prose ou suivi de texte.
+  const first = s.indexOf('{');
+  const last = s.lastIndexOf('}');
+  if (first >= 0 && last > first) obj = tryParse(s.slice(first, last + 1));
+  return obj;
+}
+
+
+/* ── storage.js ── */
+
+/* ── storage.js ────────────────────────────────────────────────────────────
+   Persistance localStorage : réglages, historique des conversations, index
+   des résumés (avec tombstones réversibles). Trois clés distinctes.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const SETTINGS_KEY  = 'miaou-settings';
+const CONV_KEY      = 'miaou-conversations';
+const SUMMARIES_KEY = 'miaou-summaries';
+
+// Config injectée au build : un seul marqueur (le jeton en position de valeur
+// ligne suivante), l'objet config.json entier (build.py le sérialise en JSON,
+// qui est un littéral objet JS valide). Forme tolérante via try : si le marqueur
+// n'a pas été remplacé (sources non buildées, ex. tests QuickJS), c'est un
+// identifiant nu → ReferenceError attrapée → {} → les défauts ci-dessous.
+// Marqueur à occurrence unique, en position de valeur, pour ne pas être
+// substitué deux fois (ne jamais réécrire son nom littéral en commentaire : le
+// .replace de build.py est global). Toutes les valeurs
+// dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
+// frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
+// corps de fonction. cf. CLAUDE.md « Pipeline de build ».
+const BUILD_CONFIG = (function () { try { return {}; } catch (e) { return {}; } })();
+
+const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
+const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
+const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
+const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
+
+const DEFAULT_SETTINGS = {
+  url: '',
+  key: '',
+  model: '',
+  systemPrompt: '',
+  highlight: true,
+  memoryMode: 'propose',   // 'auto' | 'propose' | 'never'
+  theme: 'system',         // 'light' | 'dark' | 'system'
+  showModelSelector: false, // sélecteur de modèle dans le composer
+  sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
+};
+
+// ── Réglages ────────────────────────────────────────────────────────────────
+
+function loadSettingsRaw() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function loadSettings() {
+  const s = Object.assign({}, DEFAULT_SETTINGS, loadSettingsRaw());
+  // Défauts de build seulement si l'utilisateur n'a rien saisi.
+  if (!s.url   && BUILD_API_URL)   s.url   = BUILD_API_URL;
+  if (!s.model && BUILD_API_MODEL) s.model = BUILD_API_MODEL;
+  return s;
+}
+
+function saveSettings(obj) {
+  const next = Object.assign({}, loadSettingsRaw(), obj || {});
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  return next;
+}
+
+// ── Conversations ───────────────────────────────────────────────────────────
+// Stockage simple : un tableau d'objets { id, title, timestamp, messages }.
+
+function loadConversations() {
+  try { return JSON.parse(localStorage.getItem(CONV_KEY)) || []; }
+  catch (e) { return []; }
+}
+
+function persistConversations(arr) {
+  localStorage.setItem(CONV_KEY, JSON.stringify(arr));
+}
+
+function listAllConversations() {
+  return loadConversations()
+    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, pinned: !!c.pinned }))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+}
+
+function loadConversation(id) {
+  return loadConversations().find(c => c.id === id) || null;
+}
+
+function saveConversation(conv) {
+  const arr = loadConversations();
+  const i = arr.findIndex(c => c.id === conv.id);
+  if (i >= 0) arr[i] = conv; else arr.push(conv);
+  persistConversations(arr);
+  return conv;
+}
+
+function deleteConversation(id) {
+  persistConversations(loadConversations().filter(c => c.id !== id));
+}
+
+// Épingle/désépingle une conversation. Retourne le nouvel état (bool) ou null
+// si la conversation n'existe pas (création à la volée pas encore matérialisée).
+function toggleConversationPin(id) {
+  const arr = loadConversations();
+  const c = arr.find(x => x.id === id);
+  if (!c) return null;
+  c.pinned = !c.pinned;
+  persistConversations(arr);
+  return c.pinned;
+}
+
+// Substance réelle : au moins un échange complet (≥1 user ET ≥1 assistant) au
+// contenu non trivial. Le but est d'écarter une conversation à peine née ou
+// avortée (pas de vraie réponse), pas d'exiger plusieurs allers-retours — sans
+// quoi les conversations courantes en 1 Q/R ne seraient jamais résumées.
+function hasSubstance(messages) {
+  if (!Array.isArray(messages)) return false;
+  let u = 0, a = 0;
+  for (const m of messages) {
+    const len = (m && typeof m.content === 'string') ? m.content.trim().length : 0;
+    if (len < 8) continue;
+    if (m.role === 'user') u++;
+    else if (m.role === 'assistant') a++;
+  }
+  return u >= 1 && a >= 1;
+}
+
+// ── Index des résumés (miaou-summaries) ─────────────────────────────────────
+// Entrée présente : { id, title, timestamp, summary, keywords, messageCount }
+// Tombstone        : { id, suppressed: true }   ← compte comme « présente »
+// Absente          : candidate au backfill / à la génération en sortie.
+
+function loadSummaries() {
+  try { return JSON.parse(localStorage.getItem(SUMMARIES_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function persistSummaries(obj) {
+  localStorage.setItem(SUMMARIES_KEY, JSON.stringify(obj));
+}
+
+function getSummaryEntry(id) {
+  const all = loadSummaries();
+  return Object.prototype.hasOwnProperty.call(all, id) ? all[id] : null;
+}
+
+// Toutes les entrées de l'index NON tombstonées, sous forme de tableau.
+function listSummaryEntries() {
+  return Object.values(loadSummaries()).filter(e => e && !e.suppressed);
+}
+
+function saveSummary(id, data) {
+  const all = loadSummaries();
+  all[id] = Object.assign({ id }, data);
+  persistSummaries(all);
+}
+
+// Suppression volontaire : pose une tombstone (réversible). On CONSERVE les
+// données du résumé (titre, texte, mots-clés, messageCount) sous le flag, pour
+// une ré-autorisation instantanée sans régénérer. Le flag suspend l'usage :
+// recherche et outils ignorent les entrées `suppressed`.
+function suppressSummary(id) {
+  const all = loadSummaries();
+  const prev = all[id] || { id };
+  all[id] = Object.assign({}, prev, { id, suppressed: true });
+  persistSummaries(all);
+}
+
+// Ré-autorisation : si le résumé a été conservé sous la tombstone, on retire
+// simplement le flag (retour instantané à l'état d'avant). Sinon (tombstone
+// sans données), on retire l'entrée → la conversation redevient candidate.
+function restoreSummary(id) {
+  const all = loadSummaries();
+  const e = all[id];
+  if (!e) return;
+  if (e.summary) { delete e.suppressed; all[id] = e; }
+  else { delete all[id]; }
+  persistSummaries(all);
+}
+
+// Effacement dur (utilisé quand la conversation elle-même disparaît).
+function deleteSummaryEntry(id) {
+  const all = loadSummaries();
+  delete all[id];
+  persistSummaries(all);
+}
+
+// Candidate = absente de l'index (ni résumé, ni tombstone).
+function isSummaryCandidate(id) {
+  return getSummaryEntry(id) === null;
+}
+
+// Conversations à résumer au démarrage : absentes de l'index et substantielles.
+function backfillCandidates() {
+  return loadConversations().filter(c =>
+    isSummaryCandidate(c.id) && hasSubstance(c.messages));
+}
+
+
+/* ── tools.js ── */
+
+/* ── tools.js ──────────────────────────────────────────────────────────────
+   Registre additif d'outils exposés au LLM. Un nouvel outil s'ajoute au
+   tableau TOOLS sans toucher à la boucle d'appel (api.js). La description en
+   langage naturel injectée dans le prompt système est DÉRIVÉE du registre,
+   jamais écrite en dur.
+   ────────────────────────────────────────────────────────────────────────── */
+
+// Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
+function summaryLight(e) {
+  return { id: e.id, title: e.title, timestamp: e.timestamp,
+           summary: e.summary, keywords: e.keywords };
+}
+
+const TOOLS = [
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_conversation',
+        description:
+          "Récupère une conversation passée par son identifiant. Par défaut " +
+          "(with_contents=false), retourne seulement son résumé et ses mots-clés ; " +
+          "passer with_contents=true pour obtenir le contenu complet des messages.",
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Identifiant de la conversation' },
+            with_contents: { type: 'boolean', description: 'Inclure le contenu complet (défaut false)' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    handler: (args) => {
+      const entry = getSummaryEntry(args.id);   // storage.js
+      if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
+      const light = summaryLight(entry);
+      if (!args.with_contents) return JSON.stringify(light);
+      const conv = loadConversation(args.id);   // storage.js
+      if (!conv) return JSON.stringify(light);   // résumé présent mais conversation absente : cas limite
+      return JSON.stringify(Object.assign({}, light, { messages: conv.messages ?? conv }));
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'list_conversations',
+        description:
+          "Liste les conversations passées (résumé + mots-clés par défaut). " +
+          "Le paramètre since est OPTIONNEL : l'omettre liste TOUTES les " +
+          "conversations — appelle l'outil sans hésiter même sans date en tête ; " +
+          "le préciser (date ISO 8601) limite aux conversations actives depuis " +
+          "cette date. Passer with_contents=true pour inclure aussi le contenu " +
+          "complet de chacune (potentiellement volumineux).",
+        parameters: {
+          type: 'object',
+          properties: {
+            since: { type: 'string', description: 'Optionnel — date ISO 8601. Omettre pour tout lister.' },
+            with_contents: { type: 'boolean', description: 'Inclure le contenu complet (défaut false)' },
+          },
+        },
+      },
+    },
+    handler: (args) => {
+      let entries = listSummaryEntries();        // storage.js — entrées non-tombstone
+      if (args.since != null && args.since !== '') {
+        const sinceMs = Date.parse(args.since);
+        if (Number.isNaN(sinceMs)) return 'Date "since" invalide (attendu ISO 8601).';
+        entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
+      }
+      const light = entries.map(summaryLight);
+      if (!args.with_contents) return JSON.stringify(light);
+      return JSON.stringify(light.map(e => {
+        const conv = loadConversation(e.id);
+        return conv ? Object.assign({}, e, { messages: conv.messages ?? conv }) : e;
+      }));
+    },
+  },
+];
+
+function toolDefinitions() { return TOOLS.map(t => t.definition); }
+
+function runTool(name, args) {
+  const tool = TOOLS.find(t => t.definition.function.name === name);
+  if (!tool) return 'Outil inconnu : ' + name;
+  try { return tool.handler(args || {}); }
+  catch (e) { return 'Erreur outil ' + name + ' : ' + e.message; }
+}
+
+// Description en langage naturel, dérivée du registre.
+function toolsSystemPrompt() {
+  if (!TOOLS.length) return '';
+  const lines = TOOLS.map(t => `- ${t.definition.function.name} : ${t.definition.function.description}`);
+  return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
+         "sinon réponds directement.\n" + lines.join('\n');
+}
+
+
+/* ── api.js ── */
+
+/* ── api.js ────────────────────────────────────────────────────────────────
+   Couche réseau : endpoint OpenAI-compatible. Streaming SSE, appel « en
+   cachette » (silentCompletion) pour titrage et résumés, boucle de tool_calls,
+   recherche/scoring des résumés.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const MAX_TOURS = 4;   // borne sur les tours de la boucle tool_calls
+
+// Controller du stream courant (un seul à la fois). Permet à l'UI d'interrompre
+// la génération en cours via abortStream(). Réinitialisé à chaque streamCompletion.
+let _currentAbort = null;
+
+const TITLE_PROMPT =
+  "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
+  "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
+  "Réponds uniquement par le titre.";
+
+const SUMMARY_PROMPT =
+`Tu es un module de résumé. On te fournit une conversation entre un utilisateur
+et un assistant. Produis un résumé compact, exploitable pour retrouver cette
+conversation plus tard.
+
+Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, sans balises
+Markdown, sans commentaire :
+{
+  "summary": "5 à 10 lignes : sujet, décisions, conclusions",
+  "keywords": ["terme1", "terme2"]
+}
+
+keywords : 5 à 12 termes saillants (sujets techniques, noms propres,
+technologies, concepts), en minuscules, sans doublons.`;
+
+// ── Appel non streamé, résultat exploité en interne (jamais affiché) ────────
+async function silentCompletion(messages, opts) {
+  const o = opts || {};
+  const temperature = o.temperature == null ? 0.3 : o.temperature;
+  const cfg = loadSettings();
+  const res = await fetch(cfg.url + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
+    },
+    body: JSON.stringify({ model: cfg.model, messages, stream: false, temperature }),
+  });
+  if (!res.ok) throw new Error('silentCompletion ' + res.status);
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content ?? '').trim();
+}
+
+// ── Parsing SSE ─────────────────────────────────────────────────────────────
+// sseDataObject : ligne -> objet chunk parsé (ou null pour vide / [DONE] / KO).
+function sseDataObject(line) {
+  if (!line) return null;
+  const s = line.trim();
+  if (!s.startsWith('data:')) return null;
+  const payload = s.slice(5).trim();
+  if (!payload || payload === '[DONE]') return null;
+  try { return JSON.parse(payload); }
+  catch (e) { return null; }
+}
+
+// parseSSELine : extrait le delta de contenu d'une ligne (ou null). Utilisé
+// par les tests ; la boucle de streaming réelle passe par sseDataObject pour
+// accéder aussi aux tool_calls et au finish_reason.
+function parseSSELine(line) {
+  const data = sseDataObject(line);
+  return data?.choices?.[0]?.delta?.content ?? null;
+}
+
+// reasoningDelta : extrait le fragment de raisonnement d'un delta, ou null si le
+// champ est totalement absent. Plusieurs couches OpenAI-compatibles le nomment
+// différemment — `reasoning` (le plus répandu), `reasoning_content` (style
+// DeepSeek/vLLM), `thinking` (relais de l'API native Ollama). Une chaîne VIDE
+// est une *présence* (le modèle est thinking-capable) : on la renvoie telle
+// quelle ; seul un champ entièrement absent donne null. Détection par
+// observation directe, jamais via `reasoning_effort` (comportement erratique).
+function reasoningDelta(delta) {
+  if (!delta) return null;
+  const v = delta.reasoning ?? delta.reasoning_content ?? delta.thinking;
+  return typeof v === 'string' ? v : null;
+}
+
+// Concatène deux segments de raisonnement (entre tours d'un même échange) en
+// préservant une séparation lisible, sans introduire de blancs parasites.
+function joinReasoning(a, b) {
+  if (!a) return b || '';
+  if (!b) return a;
+  return a + '\n\n' + b;
+}
+
+// ── Streaming d'une complétion (un tour) ────────────────────────────────────
+// Agrège le content et les tool_calls (strictement par index). Ne renvoie
+// qu'à la fin du stream : { content, toolCalls, finishReason }.
+async function streamCompletion(messages, opts) {
+  const o = opts || {};
+  const cfg = loadSettings();
+  const body = {
+    // Override par conversation (o.model) sinon modèle par défaut des réglages.
+    model: o.model || cfg.model,
+    messages,
+    stream: true,
+    temperature: o.temperature == null ? 0.7 : o.temperature,
+  };
+  if (o.tools && o.tools.length) {
+    body.tools = o.tools;
+    body.tool_choice = 'auto';
+  }
+
+  _currentAbort = new AbortController();
+  let contentBuffer = '';
+  let reasoningBuffer = '';
+  let finishReason = null;
+  const toolCalls = [];
+  let aborted = false;
+
+  try {
+    const res = await fetch(cfg.url + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
+      },
+      body: JSON.stringify(body),
+      signal: _currentAbort.signal,
+    });
+    if (!res.ok || !res.body) throw new Error('streamCompletion ' + res.status);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+
+        const chunk = sseDataObject(line);
+        if (!chunk) continue;
+        const choice = chunk.choices?.[0];
+        if (!choice) continue;
+        const delta = choice.delta || {};
+
+        // Le raisonnement précède le contenu (et peut précéder un tool_call) :
+        // on l'agrège à part et on le signale en live, sans jamais l'afficher
+        // comme du contenu de réponse.
+        const rd = reasoningDelta(delta);
+        if (rd !== null) {
+          reasoningBuffer += rd;
+          if (o.onReasoning) o.onReasoning(reasoningBuffer);
+        }
+
+        if (delta.content) {
+          contentBuffer += delta.content;
+          if (o.onDelta) o.onDelta(contentBuffer);
+        }
+
+        if (delta.tool_calls) {
+          for (const tcDelta of delta.tool_calls) {
+            const i = tcDelta.index;
+            toolCalls[i] = toolCalls[i] || { id: '', type: 'function', function: { name: '', arguments: '' } };
+            if (tcDelta.id)                  toolCalls[i].id = tcDelta.id;
+            if (tcDelta.function?.name)      toolCalls[i].function.name = tcDelta.function.name;
+            if (tcDelta.function?.arguments) toolCalls[i].function.arguments += tcDelta.function.arguments;
+          }
+        }
+
+        if (choice.finish_reason) finishReason = choice.finish_reason;
+      }
+    }
+  } catch (e) {
+    // AbortError : interruption volontaire (abortStream). On garde le contenu
+    // déjà reçu et on le signale via `aborted` ; pas une erreur réseau.
+    if (e && e.name === 'AbortError') aborted = true;
+    else throw e;
+  } finally {
+    _currentAbort = null;
+  }
+
+  return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted };
+}
+
+// Interrompt le stream en cours (s'il y en a un). Le contenu déjà reçu est
+// conservé ; aucune relance de tour côté boucle d'outils.
+function abortStream() {
+  if (_currentAbort) _currentAbort.abort();
+}
+
+// ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
+// Hooks : onDelta(full), onReasoning(full), onToolTour(), onFinal(content, reasoning), onError(msg).
+// h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
+// Le résultat d'un outil n'est JAMAIS affiché : il repart au modèle, on va
+// toujours jusqu'à la réponse finale (finish_reason === 'stop').
+async function runConversation(messages, hooks) {
+  const h = hooks || {};
+  // anti-redemande, par échange : clé 'nom:id' ou 'nom:since'
+  const servedKeys = new Set();
+  // raisonnement accumulé sur tout l'échange (les tours tool_calls peuvent en
+  // produire avant l'appel d'outil) ; relayé en live avec ce préfixe.
+  let reasoningAcc = '';
+
+  for (let tour = 1; tour <= MAX_TOURS; tour++) {
+    const result = await streamCompletion(messages, {
+      model: h.model,
+      tools: toolDefinitions(),
+      onDelta: h.onDelta,
+      onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
+    });
+
+    // Interruption volontaire : on fige le contenu déjà reçu (pas de rollback)
+    // et on NE relance PAS de tour, même au milieu d'une boucle d'outils.
+    if (result.aborted) {
+      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
+      return result.content;
+    }
+
+    if (result.finishReason === 'tool_calls') {
+      // Flush complet du raisonnement de ce tour AVANT d'exécuter l'outil
+      // (pas de traitement en parallèle) ; il reste affiché pendant l'appel.
+      reasoningAcc = joinReasoning(reasoningAcc, result.reasoning);
+      // Ce tour ne « parle » pas : effacer tout content live déjà affiché.
+      if (h.onToolTour) h.onToolTour();
+
+      messages.push({
+        role: 'assistant',
+        content: result.content || null,
+        tool_calls: result.toolCalls,
+      });
+
+      for (const tc of result.toolCalls) {
+        let args = {};
+        try { args = JSON.parse(tc.function.arguments || '{}'); }
+        catch (e) { args = {}; }
+
+        let out;
+        const key = tc.function.name + ':' + (args.id ?? args.since);
+        if (servedKeys.has(key)) {
+          out = '(déjà fourni plus haut dans cet échange)';
+        } else {
+          bgActivityStart('lecture mémoire…');
+          try {
+            out = runTool(tc.function.name, args);
+            servedKeys.add(key);
+          } finally {
+            bgActivityEnd();
+          }
+        }
+
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
+      }
+
+      continue;   // on relance toujours un appel
+    }
+
+    // finish_reason === 'stop' (ou terminal) : la vraie réponse.
+    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
+    return result.content;
+  }
+
+  if (h.onError) h.onError("Le modèle n'a pas convergé (trop d'appels d'outils).");
+  return '';
+}
+
+// ── Titrage automatique ─────────────────────────────────────────────────────
+async function generateTitle(thread) {
+  const convo = thread
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => m.role + ': ' + m.content)
+    .join('\n\n');
+  const out = await silentCompletion([
+    { role: 'system', content: TITLE_PROMPT },
+    { role: 'user', content: convo },
+  ], { temperature: 0.2 });
+  return out.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim().slice(0, 60);
+}
+
+// ── Génération d'un résumé ──────────────────────────────────────────────────
+async function generateSummary(thread) {
+  const convo = thread
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => m.role + ': ' + m.content)
+    .join('\n\n');
+  const out = await silentCompletion([
+    { role: 'system', content: SUMMARY_PROMPT },
+    { role: 'user', content: convo },
+  ], { temperature: 0.3 });
+
+  const parsed = parseSummaryJSON(out);
+  if (!parsed || typeof parsed.summary !== 'string') {
+    if (typeof console !== 'undefined') console.warn('[miaou] résumé non parsable :', (out || '').slice(0, 200));
+    return null;   // abandon silencieux côté UI
+  }
+  const keywords = Array.isArray(parsed.keywords)
+    ? parsed.keywords.map(k => String(k).toLowerCase()).filter(Boolean)
+    : [];
+  return { summary: parsed.summary, keywords };
+}
+
+// ── Recherche / sélection des résumés pertinents ────────────────────────────
+function searchSummaries(queryText) {
+  const tokens = tokenize(queryText);
+  if (!tokens.length) return [];
+  const all = loadSummaries();
+  const matches = [];
+  for (const id in all) {
+    const e = all[id];
+    if (!e || e.suppressed || !e.summary) continue;
+    const score = scoreSummary(tokens, e);
+    if (score >= 2) matches.push(Object.assign({ score }, e));
+  }
+  matches.sort((a, b) => b.score - a.score);
+  return matches.slice(0, MAX_SUMMARIES);
+}
+
+// ── Liste des modèles exposés par l'API ─────────────────────────────────────
+async function fetchModels(override) {
+  const cfg = Object.assign({}, loadSettings(), override || {});
+  const res = await fetch(cfg.url + '/models', {
+    headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
+  });
+  if (!res.ok) throw new Error('models ' + res.status);
+  const data = await res.json();
+  const list = data.data || data.models || [];
+  return list
+    .map(m => (typeof m === 'string' ? m : m.id))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+
+/* ── ui.js ── */
+
+/* ── ui.js ─────────────────────────────────────────────────────────────────
+   Couche DOM : rendu des messages, sidebar, drawers, dropdown modèle, bannière
+   mémoire, indicateur d'activité, gestion des souvenirs. Aucune logique
+   d'orchestration (qui vit dans main.js) ni réseau (api.js).
+   ────────────────────────────────────────────────────────────────────────── */
+
+let highlightEnabled = true;
+let configured = false;
+let sending = false;
+
+function $(id) { return document.getElementById(id); }
+
+// ── Écran d'accueil (nouvelle conversation) ─────────────────────────────────
+const WELCOME_SCREENS = [
+  { emoji: '🌙', title: 'À tes ordres.',          sub: 'Qu\'est-ce qu\'on démonte aujourd\'hui ?' },
+  { emoji: '⚡', title: 'Prêt.',                  sub: 'Pose la question que tu n\'osais pas chercher sur Google.' },
+  { emoji: '🧠', title: 'Connexion établie.',     sub: 'Ta prochaine bonne idée est à une question d\'ici.' },
+  { emoji: '🎯', title: 'En ligne.',              sub: 'Allons droit au but.' },
+  { emoji: '🔭', title: 'Je t\'écoute.',          sub: 'L\'inconnu n\'est qu\'un contexte manquant.' },
+  { emoji: '🌊', title: 'Dans le flux.',          sub: 'Décris le problème, on trouvera la sortie.' },
+  { emoji: '☕', title: 'Fraîchement infusé.',    sub: 'Le moment idéal pour poser cette question qui traîne.' },
+  { emoji: '🏗️', title: 'Chantier ouvert.',      sub: 'Amène tes plans, tes blocs, ou juste l\'intention.' },
+  { emoji: '🌿', title: 'Calme et disponible.',   sub: 'Prends ton temps.' },
+  { emoji: '🗺️', title: 'Carte blanche.',        sub: 'Par où commence-t-on ?' },
+  { emoji: '🔬', title: 'Sous la loupe.',         sub: 'Tout mérite d\'être examiné de plus près.' },
+  { emoji: '🚀', title: 'Compte à rebours.',      sub: 'Dix secondes pour formuler, le reste suit.' },
+  { emoji: '🎸', title: 'Accordé.',               sub: 'À toi de jouer.' },
+  { emoji: '🎲', title: 'Prêt à tout.',           sub: 'Une question, une idée, un bug — on y va.' },
+  { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.' },
+];
+
+function showWelcome() {
+  const w = WELCOME_SCREENS[Math.floor(Math.random() * WELCOME_SCREENS.length)];
+  const el = document.createElement('div');
+  el.className = 'welcome-screen';
+  el.innerHTML =
+    '<div class="welcome-emoji">' + w.emoji + '</div>' +
+    '<div class="welcome-title">' + escHtml(w.title) + '</div>' +
+    '<div class="welcome-sub">'   + escHtml(w.sub)   + '</div>';
+  $('thread').appendChild(el);
+}
+
+// Path des composants Prism pour l'autoloader (langages chargés à la volée).
+if (window.Prism && Prism.plugins && Prism.plugins.autoloader) {
+  Prism.plugins.autoloader.languages_path =
+    'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
+}
+
+// ── Rendu markdown / coloration ─────────────────────────────────────────────
+function renderMd(text) {
+  if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
+  return marked.parse(text, { breaks: true });
+}
+function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
+function scrollBottom() { const m = $('messages'); if (m) m.scrollTop = m.scrollHeight; }
+
+function modelName() {
+  const s = loadSettings();
+  return s.model || 'modèle';
+}
+
+// ── Construction d'un message ───────────────────────────────────────────────
+// En-tête d'un message assistant : la barre méta (modèle + icône raisonnement,
+// masquée tant qu'aucun raisonnement) et le bloc collapsible du raisonnement
+// (replié par défaut, donc `hidden`). Sert au rendu live ET au reload depuis le
+// stockage — un seul mécanisme de pliage/dépliage, persistant sans recalcul.
+function assistantHead(model, reasoning) {
+  const has = reasoning && String(reasoning).trim();
+  return (
+    `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt=""><span>${escHtml(model || modelName())}</span>` +
+      `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
+        `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 2.5l1.5 3.8 3.8 1.5-3.8 1.5L11 13.1 9.5 9.3 5.7 7.8l3.8-1.5z"/><path d="M17.5 13l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/></svg>` +
+      `</button>` +
+    `</div>` +
+    `<div class="reasoning" hidden><div class="reasoning-content">${has ? escHtml(String(reasoning)) : ''}</div></div>`
+  );
+}
+
+function buildMsg(role, content, model, reasoning) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  if (role === 'user') {
+    wrap.innerHTML =
+      `<div class="bubble">` +
+      `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
+      `</button>` +
+      `<div class="body">${renderMd(content)}</div></div>`;
+  } else {
+    wrap.innerHTML =
+      assistantHead(model, reasoning) +
+      `<div class="body">${renderMd(content)}</div>`;
+  }
+  decoratePre(wrap);
+  return wrap;
+}
+
+// ── Bloc de raisonnement (thinking) ─────────────────────────────────────────
+// Alimenté en live par les deltas accumulés. Texte brut en police mono (pas de
+// markdown). Révèle l'icône à la première substance reçue ; un raisonnement
+// vide ('') ne révèle rien (cf. distinction absence / chaîne vide du brief).
+function setReasoning(wrap, text) {
+  if (!text) return;
+  const toggle = wrap.querySelector('.reasoning-toggle');
+  const panel = wrap.querySelector('.reasoning');
+  const content = wrap.querySelector('.reasoning-content');
+  if (!toggle || !panel || !content) return;
+  toggle.removeAttribute('hidden');          // capacité détectée → icône visible
+  content.textContent = text;
+  if (!panel.hasAttribute('hidden')) content.scrollTop = content.scrollHeight;  // suivre si déplié
+}
+
+// Toggle global (référencé en onclick= inline). Déplie/replie le bloc.
+function toggleReasoning(btn) {
+  const wrap = btn.closest('.msg');
+  const panel = wrap && wrap.querySelector('.reasoning');
+  if (!panel) return;
+  const opening = panel.hasAttribute('hidden');
+  if (opening) {
+    panel.removeAttribute('hidden');
+    btn.classList.add('open');
+    const content = panel.querySelector('.reasoning-content');
+    if (content) content.scrollTop = content.scrollHeight;
+  } else {
+    panel.setAttribute('hidden', '');
+    btn.classList.remove('open');
+  }
+  scrollBottom();
+}
+
+// En-tête (langage + bouton copier) sur chaque <pre>.
+function decoratePre(scope) {
+  scope.querySelectorAll('pre').forEach(pre => {
+    if (pre.querySelector('.code-head')) return;
+    const code = pre.querySelector('code');
+    let lang = 'text';
+    if (code) {
+      const m = (code.className || '').match(/language-([\w-]+)/);
+      if (m) lang = m[1];
+    }
+    const head = document.createElement('div');
+    head.className = 'code-head';
+    head.innerHTML = `<span class="code-lang">${escHtml(lang)}</span><button class="code-copy">copier</button>`;
+    head.querySelector('.code-copy').onclick = () => {
+      navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
+        const btn = head.querySelector('.code-copy');
+        btn.textContent = 'copié'; setTimeout(() => btn.textContent = 'copier', 1400);
+      });
+    };
+    pre.insertBefore(head, pre.firstChild);
+  });
+}
+
+function renderThread(msgs) {
+  const thread = $('thread');
+  thread.innerHTML = '';
+  for (const m of (msgs || [])) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  if (highlightEnabled && window.Prism) Prism.highlightAll();
+  scrollBottom();
+}
+
+// ── Streaming d'une réponse assistant ───────────────────────────────────────
+function appendUserMessage(text) {
+  const welcome = $('thread').querySelector('.welcome-screen');
+  if (welcome) welcome.remove();
+  const el = buildMsg('user', text);
+  $('thread').appendChild(el);
+  highlightUnder(el);
+  scrollBottom();
+  return el;
+}
+
+function startAssistantMessage(model) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg assistant';
+  wrap.innerHTML = assistantHead(model, '') + `<div class="body"></div>`;
+  $('thread').appendChild(wrap);
+  startWaiter(wrap.querySelector('.body'));     // état WAITING
+  scrollBottom();
+  return wrap;
+}
+
+// ── Patienteur animé ────────────────────────────────────────────────────────
+// Remplace le caret pendant l'attente (WAITING) et la reprise après un tour
+// tool_calls : un mot court qui change par fondu CSS toutes les ~1.8 s, tiré
+// au hasard (pas de cycle fixe). Discret, couleur texte secondaire. Jamais
+// affiché en même temps que du contenu en streaming (streamInto coupe avant
+// de peindre). Deux timers à nettoyer : la rotation et le fondu intermédiaire.
+const WAITER_WORDS = [
+  'Cogite', 'Médite', 'Triture', 'Décortique', 'Mijote', 'Tisse', 'Rumine',
+  'Ausculte', 'Démêle', 'Échafaude', 'Macère', 'Ourdit', 'Tergiverse',
+  'Élucubre', 'Pondère', 'Fomente',
+];
+let _waiterRotate = null;   // setInterval : changement de mot
+let _waiterFade = null;     // setTimeout : bascule du texte à mi-fondu
+
+function pickWaiterWord(prev) {
+  let w;
+  do { w = WAITER_WORDS[Math.floor(Math.random() * WAITER_WORDS.length)]; }
+  while (WAITER_WORDS.length > 1 && w === prev);
+  return w;
+}
+
+function startWaiter(body) {
+  stopWaiter();
+  body.innerHTML = `<span class="waiter"><span class="waiter-dot"></span><span class="waiter-word">${pickWaiterWord()}</span></span>`;
+  const word = body.querySelector('.waiter-word');   // le point animé, lui, demeure
+  _waiterRotate = setInterval(() => {
+    word.classList.add('fade');                 // opacity → 0 (mot + « … » via transition CSS)
+    _waiterFade = setTimeout(() => {
+      word.textContent = pickWaiterWord(word.textContent);
+      word.classList.remove('fade');            // opacity → 1
+    }, 280);                                     // doit matcher .waiter-word transition
+  }, 5400);
+}
+
+function stopWaiter() {
+  if (_waiterRotate) { clearInterval(_waiterRotate); _waiterRotate = null; }
+  if (_waiterFade) { clearTimeout(_waiterFade); _waiterFade = null; }
+}
+
+// Rendu en cours de streaming, throttlé : on n'applique le markdown + la
+// coloration que par fenêtres de ~90 ms. Chaque frame peinte est complète
+// (parsée, décorée, colorée) — jamais d'état intermédiaire non coloré, donc
+// pas de scintillement. La dernière mise à jour en attente est écrasée.
+let _streamTimer = null;
+let _streamPending = null;
+
+function streamInto(wrap, full) {
+  stopWaiter();                 // transition WAITING/REASONING → STREAMING
+  _streamPending = { wrap, full };
+  if (_streamTimer) return;
+  _streamTimer = setTimeout(() => {
+    _streamTimer = null;
+    const p = _streamPending;
+    _streamPending = null;
+    if (!p) return;
+    const body = p.wrap.querySelector('.body');
+    body.innerHTML = renderMd(p.full) + '<span class="cursor-blink"></span>';
+    decoratePre(p.wrap);
+    highlightUnder(p.wrap);   // coloration pendant le streaming
+    scrollBottom();
+  }, 90);
+}
+
+// Annule un rendu de streaming en attente (avant un finalize/reset, pour qu'un
+// timer en vol ne réécrive pas un contenu périmé avec le caret par-dessus).
+function cancelStreamRender() {
+  if (_streamTimer) { clearTimeout(_streamTimer); _streamTimer = null; }
+  _streamPending = null;
+}
+
+function resetAssistant(wrap) {
+  cancelStreamRender();
+  startWaiter(wrap.querySelector('.body'));     // reprise d'attente après un tour tool_calls
+}
+
+function finalizeAssistant(wrap, full) {
+  cancelStreamRender();
+  stopWaiter();
+  const body = wrap.querySelector('.body');
+  body.innerHTML = renderMd(full);
+  decoratePre(wrap);
+  highlightUnder(wrap);
+  scrollBottom();
+}
+
+// ── Édition d'un message utilisateur ────────────────────────────────────────
+// Index recalculé au moment du clic (jamais figé au rendu) : position du .msg
+// parmi tous les .msg du thread, qui correspond 1:1 à currentThread.
+function msgIndex(wrap) {
+  return Array.prototype.indexOf.call($('thread').querySelectorAll('.msg'), wrap);
+}
+
+function onEditMsg(btn) {
+  if (sending) return;                          // pas d'édition pendant un stream
+  const wrap = btn.closest('.msg');
+  if (wrap) enterEditMode(wrap);
+}
+
+function enterEditMode(wrap) {
+  if (sending) return;
+  const index = msgIndex(wrap);
+  if (index < 0) return;
+  const original = currentThread[index] ? currentThread[index].content : '';
+
+  wrap.classList.add('editing');
+  const bubble = wrap.querySelector('.bubble');
+  bubble.innerHTML =
+    `<textarea class="msg-edit-area" spellcheck="false"></textarea>` +
+    `<div class="msg-edit-actions">` +
+    `<button class="mb-btn" data-act="cancel">Annuler</button>` +
+    `<button class="mb-btn primary" data-act="save">Valider</button>` +
+    `</div>`;
+
+  const ta = bubble.querySelector('.msg-edit-area');
+  ta.value = original;
+  autoGrow(ta);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  ta.addEventListener('input', () => autoGrow(ta));
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(wrap, original); }
+    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(wrap, ta.value); }
+  });
+  bubble.querySelector('[data-act="cancel"]').onclick = () => cancelEdit(wrap, original);
+  bubble.querySelector('[data-act="save"]').onclick = () => commitEdit(wrap, ta.value);
+}
+
+// Annulation : restaure la bulle à son contenu d'origine, sans rien changer.
+function cancelEdit(wrap, original) {
+  wrap.classList.remove('editing');
+  const bubble = wrap.querySelector('.bubble');
+  bubble.innerHTML =
+    `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
+    `</button>` +
+    `<div class="body">${renderMd(original)}</div>`;
+  decoratePre(wrap);
+  highlightUnder(wrap);
+}
+
+// Validation : recalcule l'index (le thread n'a pas bougé, mais on ne fige rien)
+// puis délègue la troncature + relance à editUserMessage (main.js).
+function commitEdit(wrap, value) {
+  const t = (value || '').trim();
+  if (!t) return;
+  const index = msgIndex(wrap);
+  if (index < 0) return;
+  editUserMessage(index, t);
+}
+
+// ── Indicateur d'activité en arrière-plan ───────────────────────────────────
+// Point d'entrée unique avec compteur, pour gérer les chevauchements.
+let _bgCount = 0;
+function bgActivityStart(label) {
+  _bgCount++;
+  $('bg-label').textContent = label;
+  $('bg-activity').classList.add('active');
+}
+function bgActivityEnd() {
+  _bgCount = Math.max(0, _bgCount - 1);
+  if (_bgCount === 0) $('bg-activity').classList.remove('active');
+}
+function bgActivityLabel(label) {
+  $('bg-label').textContent = label;
+}
+
+// ── Sidebar / sections temporelles ──────────────────────────────────────────
+function sectionFor(ts) {
+  if (!ts) return 'Plus ancien';
+  const now = new Date();
+  const d = new Date(ts);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 86400000;
+  if (d.getTime() >= startOfToday) return "Aujourd'hui";
+  if (d.getTime() >= startOfToday - day) return 'Hier';
+  if (d.getTime() >= startOfToday - 7 * day) return '7 derniers jours';
+  if (d.getTime() >= startOfToday - 30 * day) return '30 derniers jours';
+  return 'Plus ancien';
+}
+
+function fullDateTime(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function relativeWhen(ts) {
+  if (!ts) return '';
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  // Le jour même : afficher l'heure (HH:MM) plutôt que « aujourd'hui »,
+  // redondant avec l'en-tête de section « Aujourd'hui ». Calé sur le même
+  // découpage calendaire que sectionFor (pas une fenêtre glissante de 24 h).
+  if (ts >= startOfToday) return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const day = 86400000;
+  const days = Math.floor((Date.now() - ts) / day);
+  if (days === 1) return 'hier';
+  if (days < 7) return 'il y a ' + days + ' j';
+  if (days < 30) return 'il y a ' + Math.floor(days / 7) + ' sem';
+  return new Date(ts).toLocaleDateString('fr-FR', { month: 'long' });
+}
+
+// Filtre de recherche courant (prédicat sur une conversation), ou null pour
+// « tout afficher ». Persistant : conservé à travers les re-rendus (maj en
+// arrière-plan, sélection, etc.) tant que le champ de recherche n'est pas vidé.
+let convSearchFilter = null;
+
+// Prédicat de recherche : match direct (sous-chaîne) sur le titre, ou
+// recouvrement de mots-clés sur le résumé via le scoring existant (seuil bas,
+// plus permissif que l'injection automatique). null si requête vide.
+function searchConversations(query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return null;
+  const qTokens = tokenize(q);
+  return c => {
+    if ((c.title || '').toLowerCase().includes(q)) return true;
+    const entry = getSummaryEntry(c.id);
+    if (entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1) return true;
+    return false;
+  };
+}
+
+function onConvSearch() {
+  const input = $('conv-search');
+  $('search-clear').classList.toggle('show', !!input.value);
+  convSearchFilter = searchConversations(input.value);
+  renderConvList();
+}
+
+function clearConvSearch() {
+  const input = $('conv-search');
+  input.value = '';
+  $('search-clear').classList.remove('show');
+  convSearchFilter = null;
+  renderConvList();
+  // La sélection courante (potentiellement très ancienne) peut être hors écran
+  // une fois la liste complète restaurée : on la ramène dans le champ visible.
+  const active = $('conv-list').querySelector('.conv.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+  input.focus();
+}
+
+// Icônes d'épingle (pleine = épinglé, contour = à épingler).
+const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .59 1.42L18 14.5H6l2.41-2.32A2 2 0 0 0 9 10.76z"/></svg>';
+
+function convItemEl(c) {
+  const el = document.createElement('div');
+  el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
+  el.onclick = () => selectConv(c.id);
+  el.innerHTML =
+    `<div class="conv-body">
+       <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
+       <div class="conv-date" title="${escHtml(fullDateTime(c.timestamp))}">${escHtml(relativeWhen(c.timestamp))}</div>
+     </div>
+     <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
+     <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();deleteConv('${c.id}')">
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+     </button>`;
+  return el;
+}
+
+function sectionEl(label) {
+  const s = document.createElement('div');
+  s.className = 'conv-section';
+  s.textContent = label;
+  return s;
+}
+
+function renderConvList() {
+  const list = $('conv-list');
+  list.innerHTML = '';
+  let convs = listAllConversations();
+  if (convSearchFilter) convs = convs.filter(convSearchFilter);
+
+  // Section « Épinglé » en tête (au singulier, choix assumé), si au moins une.
+  const pinned = convs.filter(c => c.pinned);
+  if (pinned.length) {
+    list.appendChild(sectionEl('Épinglé'));
+    for (const c of pinned) list.appendChild(convItemEl(c));
+  }
+
+  // Le reste, regroupé par tranches temporelles.
+  let lastSection = null;
+  for (const c of convs) {
+    if (c.pinned) continue;
+    const section = sectionFor(c.timestamp);
+    if (section !== lastSection) {
+      list.appendChild(sectionEl(section));
+      lastSection = section;
+    }
+    list.appendChild(convItemEl(c));
+  }
+}
+
+function toggleSidebar() { $('app').classList.toggle('sidebar-open'); }
+
+// ── Redimensionnement de la sidebar (drag du bord droit) ────────────────────
+// Largeur bornée [min = largeur d'origine, max = ×2], persistée dans les
+// réglages. On pilote la variable CSS --sidebar-w ; pendant le drag la classe
+// .resizing coupe la transition pour un suivi 1:1 du curseur.
+const SIDEBAR_MIN = 264;
+const SIDEBAR_MAX = SIDEBAR_MIN * 2;
+let _sidebarW = SIDEBAR_MIN;
+
+function applySidebarWidth(w) {
+  _sidebarW = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(w)));
+  $('app').style.setProperty('--sidebar-w', _sidebarW + 'px');
+  return _sidebarW;
+}
+
+function initSidebarResize() {
+  applySidebarWidth(loadSettings().sidebarWidth || SIDEBAR_MIN);
+
+  const handle = $('sidebar-resizer');
+  const sidebar = document.querySelector('.sidebar');
+  if (!handle || !sidebar) return;
+
+  let dragging = false, startX = 0, startW = 0;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    applySidebarWidth(startW + (e.clientX - startX));
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    sidebar.classList.remove('resizing');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    saveSettings({ sidebarWidth: _sidebarW });   // persiste la largeur finale
+  };
+
+  handle.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startW = _sidebarW;
+    sidebar.classList.add('resizing');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function setTitle(t) {
+  $('conv-title').textContent = t || '';
+  document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
+}
+
+// Légende + placeholder du champ clef, selon REQUIRE_API_KEY (figé au build).
+// Posé une fois à l'init — la constante ne change pas au runtime.
+function syncKeyFieldHint() {
+  const input = $('set-key');
+  const hint = $('set-key-hint');
+  if (REQUIRE_API_KEY) {
+    if (input) input.placeholder = 'Clef API';
+    if (hint) hint.textContent = "Authentification requise.";
+  } else {
+    if (input) input.placeholder = '(vide si non requise)';
+    if (hint) hint.textContent = "Laissez vide si l'endpoint n'exige pas d'authentification.";
+  }
+}
+
+// ── État configuré / non configuré ──────────────────────────────────────────
+function syncConfigured() {
+  const url = $('set-url').value.trim();
+  const key = $('set-key').value.trim();
+  configured = !!(url && (key || !REQUIRE_API_KEY));
+
+  const wrap = $('input-wrap');
+  const ta = $('composer-text');
+  const send = $('send-btn');
+  const dot = $('conn-dot');
+
+  if (configured) {
+    wrap.classList.remove('disabled');
+    ta.placeholder = 'Message…';
+    ta.disabled = false;
+    send.disabled = false;   // pendant un stream le bouton sert de « stop » : jamais désactivé
+    dot.className = 'dot ok';
+  } else {
+    wrap.classList.add('disabled');
+    ta.placeholder = 'API non configurée — ouvrez les paramètres';
+    ta.disabled = true;
+    send.disabled = true;
+    dot.className = 'dot err';
+  }
+}
+
+function setSending(on) {
+  sending = on;
+  setComposerStreaming(on);
+  const send = $('send-btn');
+  // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend
+  // de l'état configuré.
+  if (send) send.disabled = on ? false : !configured;
+}
+
+// Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
+function setComposerStreaming(on) {
+  const send = $('send-btn');
+  if (!send) return;
+  send.classList.toggle('streaming', on);
+  send.title = on ? 'Arrêter' : 'Envoyer';
+}
+function setConnDot(state) {
+  const dot = $('conn-dot');
+  if (dot) dot.className = 'dot ' + (state || '');
+}
+
+// ── Composer ────────────────────────────────────────────────────────────────
+function onComposerKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
+}
+
+// ── Dropdown modèle (liste via l'API) ───────────────────────────────────────
+let _models = [];
+
+async function openModelMenu() {
+  const menu = $('model-menu');
+  menu.classList.add('show');
+  menu.innerHTML = `<div class="model-loading"><span class="spin"></span>Interrogation de l'API…</div>`;
+  const url = $('set-url').value.trim();
+  const key = $('set-key').value.trim();
+  if (!url) {
+    menu.innerHTML = `<div class="model-error">URL non renseignée — saisie manuelle</div>`;
+    return;
+  }
+  try {
+    const models = await fetchModels({ url, key });
+    _models = models;
+    if (!models.length) {
+      menu.innerHTML = `<div class="model-error">Aucun modèle exposé — saisie manuelle</div>`;
+      return;
+    }
+    renderModelOptions(models, true);
+  } catch (e) {
+    menu.innerHTML = `<div class="model-error">API injoignable — saisie manuelle</div>`;
+  }
+}
+
+function renderModelOptions(models, scrollToSelected) {
+  const menu = $('model-menu');
+  const cur = $('set-model').value.trim();
+  menu.innerHTML = '';
+  models.forEach(m => {
+    const o = document.createElement('div');
+    o.className = 'model-opt' + (m === cur ? ' selected' : '');
+    o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
+    o.onmousedown = (ev) => { ev.preventDefault(); pickModel(m); };
+    menu.appendChild(o);
+  });
+  if (scrollToSelected) {
+    const sel = menu.querySelector('.selected');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function onModelInput() {
+  const q = $('set-model').value.trim().toLowerCase();
+  renderModelOptions(_models.filter(m => m.toLowerCase().includes(q)));
+}
+
+function pickModel(m) {
+  $('set-model').value = m;
+  $('model-label').textContent = m;
+  $('model-menu').classList.remove('show');
+}
+
+// Ferme le menu modèle au clic ailleurs.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#set-model') && !e.target.closest('#model-menu')) {
+    const menu = $('model-menu');
+    if (menu) menu.classList.remove('show');
+  }
+  if (!e.target.closest('#composer-model')) {
+    const cm = $('composer-model-menu');
+    if (cm) cm.classList.remove('show');
+  }
+});
+
+// ── Sélecteur de modèle du composer ─────────────────────────────────────────
+// Liste mise en cache pour la session (pas de persistance), invalidée si l'URL
+// du backend change. Un seul fetch /models par session/backend.
+let _modelsCache = null;
+let _modelsCacheUrl = '';
+
+async function loadModelsCached() {
+  const cfg = loadSettings();
+  const url = (cfg.url || '').trim();
+  if (!url) return [];
+  if (_modelsCache && _modelsCacheUrl === url) return _modelsCache;
+  const models = await fetchModels({ url, key: cfg.key });
+  _modelsCache = models;
+  _modelsCacheUrl = url;
+  return models;
+}
+
+// Met à jour les libellés de modèle (pastille topbar + bouton composer) sur le
+// modèle effectif, et la visibilité du sélecteur composer (réglage activé ET
+// liste disponible — sinon fallback silencieux, le sélecteur n'apparaît pas).
+function syncModelUI() {
+  const m = activeModel() || 'modèle';
+  const top = $('model-label');           if (top) top.textContent = m;
+  const compLabel = $('composer-model-label'); if (compLabel) compLabel.textContent = m;
+  const box = $('composer-model');
+  if (box) {
+    const show = !!(loadSettings().showModelSelector && _modelsCache && _modelsCache.length);
+    box.hidden = !show;
+  }
+}
+
+function toggleComposerModelMenu() {
+  const menu = $('composer-model-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderComposerModelOptions();
+  menu.classList.add('show');
+  const sel = menu.querySelector('.selected');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function renderComposerModelOptions() {
+  const menu = $('composer-model-menu');
+  const cur = activeModel();
+  menu.innerHTML = '';
+  (_modelsCache || []).forEach(m => {
+    const o = document.createElement('div');
+    o.className = 'model-opt' + (m === cur ? ' selected' : '');
+    o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
+    o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m); };
+    menu.appendChild(o);
+  });
+}
+
+function pickComposerModel(m) {
+  setConvModel(m);   // override conv + persistance + syncModelUI
+  $('composer-model-menu').classList.remove('show');
+}
+
+// ── Settings drawer ─────────────────────────────────────────────────────────
+function openSettings() {
+  const s = loadSettings();
+  setMemoryModeUI(s.memoryMode);   // valeur courante (peut changer via la bannière)
+  setThemeUI(s.theme || 'system');
+  $('drawer').classList.add('show');
+  $('backdrop').classList.add('show');
+}
+function closeSettings() {
+  $('drawer').classList.remove('show');
+  $('backdrop').classList.remove('show');
+  $('model-menu').classList.remove('show');
+}
+
+// Légende décrivant le comportement induit par l'option sélectionnée (une seule
+// à la fois), plutôt que l'énumération des trois modes.
+const MEMORY_HINTS = {
+  auto:    "Recherche les conversations passées liées et les injecte dans le contexte, sans rien demander.",
+  propose: "Détecte les conversations passées liées et propose de les injecter via une bannière, avant l'envoi.",
+  never:   "Aucune recherche ni injection automatique des conversations passées.",
+};
+
+let pendingMemoryMode = 'propose';
+function setMemoryModeUI(mode) {
+  pendingMemoryMode = mode || 'propose';
+  document.querySelectorAll('#memory-mode .seg').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-mode') === pendingMemoryMode);
+  });
+  const hint = $('memory-hint');
+  if (hint) hint.textContent = MEMORY_HINTS[pendingMemoryMode] || '';
+}
+function selectMemoryMode(mode) { setMemoryModeUI(mode); }
+
+// ── Thème ────────────────────────────────────────────────────────────────────
+const THEME_HINTS = {
+  light:  "Interface toujours en clair, indépendamment du système.",
+  dark:   "Interface toujours en sombre, indépendamment du système.",
+  system: "Suit la préférence clair/sombre du système d'exploitation.",
+};
+
+let pendingTheme = 'system';
+function applyTheme(theme) {
+  const html = document.documentElement;
+  if (theme === 'light')  html.setAttribute('data-theme', 'light');
+  else if (theme === 'dark') html.setAttribute('data-theme', 'dark');
+  else html.removeAttribute('data-theme');   // 'system' : laisse le media query décider
+}
+function setThemeUI(theme) {
+  pendingTheme = theme || 'system';
+  document.querySelectorAll('#theme-mode .seg').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-mode') === pendingTheme);
+  });
+  const hint = $('theme-hint');
+  if (hint) hint.textContent = THEME_HINTS[pendingTheme] || '';
+}
+function selectTheme(theme) {
+  setThemeUI(theme);
+  applyTheme(theme);
+  saveSettings({ theme });   // persisté immédiatement : préférence visuelle à effet direct
+}
+
+function onToggleHighlight() {
+  highlightEnabled = $('set-highlight').checked;
+  renderThread(currentThread);
+}
+
+// ── Bannière mémoire (mode « proposer ») ────────────────────────────────────
+let _bannerHandlers = null;
+function showMemoryBanner(matches, handlers) {
+  _bannerHandlers = handlers;
+  const n = matches.length;
+  $('memory-banner-text').textContent = n > 1
+    ? n + ' conversations passées semblent liées.'
+    : 'Une conversation passée semble liée.';
+  $('memory-banner').classList.add('show');
+}
+function hideMemoryBanner() {
+  const b = $('memory-banner');
+  if (b) b.classList.remove('show');
+  _bannerHandlers = null;
+}
+function memoryBanner(action) {
+  const h = _bannerHandlers;
+  hideMemoryBanner();
+  if (h && h[action]) h[action]();
+}
+
+// ── Gestion des souvenirs ───────────────────────────────────────────────────
+function openMemory() {
+  renderMemoryList();
+  $('memory-drawer').classList.add('show');
+  $('memory-backdrop').classList.add('show');
+}
+function closeMemory() {
+  $('memory-drawer').classList.remove('show');
+  $('memory-backdrop').classList.remove('show');
+}
+
+function renderMemoryList() {
+  const wrap = $('memory-list');
+  wrap.innerHTML = '';
+  const all = loadSummaries();
+  const ids = Object.keys(all);
+  if (!ids.length) {
+    wrap.innerHTML = '<div class="mem-empty">Aucun souvenir pour l\'instant.</div>';
+    return;
+  }
+  ids.sort((a, b) => (all[b].timestamp || 0) - (all[a].timestamp || 0));
+  for (const id of ids) {
+    const e = all[id];
+    const item = document.createElement('div');
+    item.dataset.id = id;
+    const date = e.timestamp ? new Date(e.timestamp).toLocaleDateString('fr-FR') : '';
+    if (e.suppressed) {
+      item.className = 'mem-item suppressed';
+      item.innerHTML =
+        `<div class="mem-body"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
+        `<div class="mem-sub">supprimé${date ? ' · ' + escHtml(date) : ''}</div></div>` +
+        `<button class="mem-btn" onclick="restoreMemory('${id}')">Ré-autoriser</button>`;
+    } else {
+      const full = e.summary || '';
+      const extrait = full.slice(0, 150);
+      item.className = 'mem-item';
+      item.innerHTML =
+        `<div class="mem-body">` +
+        `<div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
+        `<div class="mem-sub">${escHtml(date)}</div>` +
+        `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
+        `</div>` +
+        `<button class="mem-btn danger" onclick="deleteMemory('${id}')">Supprimer</button>`;
+    }
+    wrap.appendChild(item);
+  }
+}
+
+function deleteMemory(id) { suppressSummary(id); renderMemoryList(); }
+
+// Ré-autorisation. Si le résumé est conservé sous la tombstone → retour
+// instantané. Sinon, régénération avec loader inline sur l'item concerné.
+async function restoreMemory(id) {
+  const entry = getSummaryEntry(id);
+  if (entry && entry.summary) {        // état d'avant préservé : instantané
+    restoreSummary(id);
+    renderMemoryList();
+    return;
+  }
+
+  const conv = loadConversation(id);
+  if (!conv || !hasSubstance(conv.messages)) {   // rien à régénérer
+    restoreSummary(id);
+    renderMemoryList();
+    return;
+  }
+
+  const item = $('memory-list').querySelector('.mem-item[data-id="' + id + '"]');
+  if (item) setMemItemLoading(item, 'régénération…');
+
+  const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
+  if (s) {
+    saveSummary(id, {
+      title: conv.title, timestamp: conv.timestamp,
+      summary: s.summary, keywords: s.keywords, messageCount: conv.messages.length,
+    });
+  } else {
+    restoreSummary(id);   // échec : on lève la tombstone (candidate au backfill)
+  }
+  renderMemoryList();
+}
+
+// ── Panneau des outils ──────────────────────────────────────────────────────
+function openTools() {
+  renderToolsList();
+  $('tools-drawer').classList.add('show');
+  $('tools-backdrop').classList.add('show');
+}
+function closeTools() {
+  $('tools-drawer').classList.remove('show');
+  $('tools-backdrop').classList.remove('show');
+}
+
+function renderToolsList() {
+  const wrap = $('tools-list');
+  const defs = toolDefinitions();
+  if (!defs.length) {
+    wrap.innerHTML = '<div class="mem-empty">Aucun outil enregistré.</div>';
+    return;
+  }
+  wrap.innerHTML = '';
+  for (const d of defs) {
+    const fn = d.function;
+    const props = (fn.parameters && fn.parameters.properties) || {};
+    const req = (fn.parameters && fn.parameters.required) || [];
+    const paramNames = Object.keys(props);
+
+    const item = document.createElement('div');
+    item.className = 'tool-item';
+
+    let paramsHtml = '';
+    if (paramNames.length) {
+      paramsHtml = '<div class="tool-params">' +
+        paramNames.map(p => {
+          const prop = props[p];
+          const optional = !req.includes(p);
+          return '<div class="tool-param">' +
+            '<span class="tool-param-name">' + escHtml(p) + '</span>' +
+            '<span class="tool-param-type">' + escHtml((prop.type || '') + (optional ? '?' : '')) + '</span>' +
+            (prop.description ? '<span class="tool-param-desc">— ' + escHtml(prop.description) + '</span>' : '') +
+            '</div>';
+        }).join('') +
+        '</div>';
+    }
+
+    item.innerHTML =
+      '<div class="tool-name">' + escHtml(fn.name) + '</div>' +
+      '<div class="tool-desc">' + escHtml(fn.description) + '</div>' +
+      paramsHtml;
+    wrap.appendChild(item);
+  }
+}
+
+function setMemItemLoading(item, label) {
+  const btn = item.querySelector('.mem-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.innerHTML = '<span class="spin"></span>' + escHtml(label);
+}
+
+
+/* ── main.js ── */
+
+/* ── main.js ───────────────────────────────────────────────────────────────
+   Orchestration : init, câblage des événements, construction du contexte
+   d'appel (message système unique), flux d'envoi, titrage, résumé en sortie,
+   backfill au démarrage. Charge en dernier dans le build.
+   ────────────────────────────────────────────────────────────────────────── */
+
+// MAX_SUMMARIES (plafond de résumés injectés) est déclaré dans storage.js,
+// dérivé de BUILD_CONFIG — n'est référencé ici/ailleurs qu'en corps de fonction.
+
+// ── Logo : source unique (favicon + sidebar) ────────────────────────────────
+// Logo MIAOU (chat), encodé en base64 et inliné ici : le SVG d'origine n'est pas
+// versionné, le build n'en dépend donc pas. Factorisée via applyLogo().
+const LOGO_SRC =
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMC' +
+  'A2NCA2NCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnQiIgeDE9IjMyIiB5MT0iMiIgeDI9IjMyIiB5Mj0iNjIiIGdyYW' +
+  'RpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNGRkM5M0MiLz48c3RvcC' +
+  'BvZmZzZXQ9Ii41NSIgc3RvcC1jb2xvcj0iI0ZGN0ExQSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI0YyNDMxQS' +
+  'IvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxzdHlsZT4uZXlle3RyYW5zZm9ybS1ib3g6ZmlsbC1ib3g7dHJhbnNmb3JtLW' +
+  '9yaWdpbjpjZW50ZXI7YW5pbWF0aW9uOm1pYW91LWJsaW5rIDZzIGVhc2UtaW4tb3V0IGluZmluaXRlfUBrZXlmcmFtZXMgbW' +
+  'lhb3UtYmxpbmt7MCUsODYlLDEwMCV7dHJhbnNmb3JtOnNjYWxlWSgxKX04OCUsODkle3RyYW5zZm9ybTpzY2FsZVkoLjA4KX' +
+  '05MSV7dHJhbnNmb3JtOnNjYWxlWSgxKX05MyUsOTQle3RyYW5zZm9ybTpzY2FsZVkoLjA4KX05NiV7dHJhbnNmb3JtOnNjYW' +
+  'xlWSgxKX19QG1lZGlhKHByZWZlcnMtcmVkdWNlZC1tb3Rpb246cmVkdWNlKXsuZXlle2FuaW1hdGlvbjpub25lfX08L3N0eW' +
+  'xlPjxnIGZpbGw9InVybCgjZ0IpIj48cGF0aCBkPSJNMTQgMTggTDE4IDUgTDI4IDE4IFoiLz48cGF0aCBkPSJNNTAgMTggTD' +
+  'Q2IDUgTDM2IDE4IFoiLz48cmVjdCB4PSI2IiB5PSIxNiIgd2lkdGg9IjUyIiBoZWlnaHQ9IjMwIiByeD0iMTEiLz48cGF0aC' +
+  'BkPSJNMTYgNDMgTDE1IDU3IEwyOSA0NCBaIi8+PC9nPjxjaXJjbGUgY2xhc3M9ImV5ZSIgY3g9IjI2IiBjeT0iMzAiIHI9Ij' +
+  'MuMyIgZmlsbD0iIzE2MGQwNyIvPjxjaXJjbGUgY2xhc3M9ImV5ZSIgY3g9IjM4IiBjeT0iMzAiIHI9IjMuMyIgZmlsbD0iIz' +
+  'E2MGQwNyIvPjxwYXRoIGQ9Ik0yOSAzNyBRMzIgNDAgMzUgMzciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE2MGQwNyIgc3Ryb2' +
+  'tlLXdpZHRoPSIyLjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==';
+
+function applyLogo() {
+  $('favicon').href = LOGO_SRC;
+  $('brand-logo').src = LOGO_SRC;
+}
+
+// ── État de session ─────────────────────────────────────────────────────────
+let currentConvId = null;
+let currentThread = [];   // [{ role, content }] — fil visible courant
+let needTitle = false;    // titrage auto en attente (conversation neuve)
+let titleBefore = '';
+let currentConvModel = '';  // override de modèle de la conversation courante ('' = modèle par défaut)
+
+// Modèle effectif pour l'échange courant : override de conversation s'il existe,
+// sinon le modèle par défaut des réglages. Ne JAMAIS mélanger les deux dans une
+// même variable d'état (override conv vs défaut global).
+function activeModel() {
+  return (currentConvModel && currentConvModel.trim()) || (loadSettings().model || '');
+}
+
+// Fixe l'override de modèle de la conversation courante (choix dans le composer).
+// Persiste sur l'objet conversation si elle existe déjà ; n'efface ni ne tronque
+// jamais l'historique.
+function setConvModel(m) {
+  currentConvModel = m || '';
+  if (currentConvId) {
+    const conv = loadConversation(currentConvId);
+    if (conv) {
+      if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
+      saveConversation(conv);
+    }
+  }
+  syncModelUI();
+}
+
+// ── Construction du message système (un seul, concaténé) ────────────────────
+function buildMemoryBlock(matches) {
+  if (!matches.length) return '';
+  const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
+  return "Conversations passées potentiellement pertinentes (résumés). " +
+         "Si l'une mérite un examen détaillé, appelle get_conversation avec son id " +
+         "et with_contents=true. Tu peux aussi appeler list_conversations pour " +
+         "parcourir l'historique — sans date pour tout lister, ou avec une date " +
+         "pour te limiter à une période.\n" +
+         lines.join('\n');
+}
+
+function buildContextBlock() {
+  const now = new Date();
+  const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
+  const model = (loadSettings().model || '').trim();
+  const lines = ['Date et heure actuelles : ' + dateStr];
+  if (model) lines.push('Modèle : ' + model + ' (c\'est toi)');
+  return lines.join('\n');
+}
+
+function buildSystemMessage(matches) {
+  const parts = [];
+  parts.push(buildContextBlock());
+  if (TOOLS.length) parts.push(toolsSystemPrompt());
+  const sysUser = (loadSettings().systemPrompt || '').trim();
+  if (sysUser) parts.push(sysUser);
+  const mem = buildMemoryBlock(matches || []);
+  if (mem) parts.push(mem);
+  return { role: 'system', content: parts.join('\n\n---\n\n') };
+}
+
+// ── Navigation entre conversations ──────────────────────────────────────────
+function openConversation(id) {
+  const conv = loadConversation(id);
+  if (!conv) return;
+  currentConvId = id;
+  currentThread = (conv.messages || []).map(m => ({ role: m.role, content: m.content, model: m.model }));
+  currentConvModel = conv.model || '';
+  needTitle = false;
+  setTitle(conv.title || '');
+  renderThread(currentThread);
+  renderConvList();
+  syncModelUI();
+}
+
+function resetToEmpty() {
+  currentConvId = null;
+  currentThread = [];
+  currentConvModel = '';   // nouvelle conversation → modèle par défaut
+  needTitle = false;
+  $('thread').innerHTML = '';
+  showWelcome();
+  setTitle('');
+  renderConvList();
+  syncModelUI();
+}
+
+function selectConv(id) {
+  if (id === currentConvId) return;
+  const leaving = currentConvId;
+  openConversation(id);
+  summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+}
+
+function newConversation() {
+  const leaving = currentConvId;
+  resetToEmpty();
+  const ta = $('composer-text');
+  if (ta && !ta.disabled) ta.focus();
+  summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+}
+
+function togglePin(id) {
+  toggleConversationPin(id);
+  renderConvList();
+}
+
+function deleteConv(id) {
+  deleteConversation(id);
+  deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
+  if (id === currentConvId) resetToEmpty();
+  else renderConvList();
+}
+
+// Crée la conversation à la volée au premier envoi (pas avant).
+function ensureConversation() {
+  if (currentConvId) return;
+  const id = 'c' + Date.now().toString(36);
+  const manualTitle = $('conv-title').textContent.trim();
+  saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [] });
+  currentConvId = id;
+  currentThread = [];
+  needTitle = !manualTitle;   // titre déjà saisi → pas d'auto-titrage
+  renderConvList();
+}
+
+function persistCurrent() {
+  if (!currentConvId) return;
+  const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
+  conv.messages = currentThread.map(m => {
+    const o = { role: m.role, content: m.content };
+    if (m.model) o.model = m.model;
+    return o;
+  });
+  if (!conv.timestamp) conv.timestamp = Date.now();
+  if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
+  // Pas de titre provisoire : « Nouvelle conversation » (placeholder topbar +
+  // fallback liste) jusqu'au titrage en arrière-plan.
+  saveConversation(conv);
+}
+
+// ── Titre éditable ──────────────────────────────────────────────────────────
+function wireTitleEditing() {
+  const titleEl = $('conv-title');
+  titleEl.addEventListener('focus', () => {
+    titleBefore = titleEl.textContent;
+    requestAnimationFrame(() => placeCaretEnd(titleEl));
+  });
+  titleEl.addEventListener('keydown', onTitleKey);
+  titleEl.addEventListener('blur', onTitleBlur);
+}
+function onTitleKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.target.textContent = titleBefore; e.target.blur(); }
+}
+function onTitleBlur(e) {
+  const t = e.target.textContent.trim();
+  document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
+  if (currentConvId && t) {
+    needTitle = false;   // titre fixé manuellement : on ne le régénère plus
+    const conv = loadConversation(currentConvId);
+    if (conv) { conv.title = t; saveConversation(conv); renderConvList(); }
+  }
+}
+
+// ── Réglages ────────────────────────────────────────────────────────────────
+function onSaveSettings() {
+  const obj = {
+    url: $('set-url').value.trim(),
+    key: $('set-key').value.trim(),
+    model: $('set-model').value.trim(),
+    systemPrompt: $('set-system').value,
+    highlight: $('set-highlight').checked,
+    memoryMode: pendingMemoryMode,
+    theme: pendingTheme,
+    showModelSelector: $('set-modelselector').checked,
+  };
+  saveSettings(obj);
+  highlightEnabled = obj.highlight;
+  syncConfigured();
+  syncModelUI();        // labels + visibilité du sélecteur (selon cache déjà chargé)
+  prefetchModels();     // (re)charge la liste si besoin, puis re-sync
+  renderThread(currentThread);   // ré-applique/retire la coloration
+  closeSettings();
+}
+
+// Charge la liste des modèles (cache de session) puis met à jour l'UI. Échec
+// silencieux : le sélecteur reste masqué, le modèle par défaut reste utilisé.
+async function prefetchModels() {
+  try { await loadModelsCached(); } catch (e) { /* sélecteur masqué */ }
+  syncModelUI();
+}
+
+// ── Flux d'envoi ────────────────────────────────────────────────────────────
+// Bouton unique du composer : envoie, ou interrompt si un stream est en cours.
+function onSendBtn() {
+  if (sending) abortStream();
+  else sendMessage();
+}
+
+function sendMessage() {
+  if (!configured || sending) return;
+  const ta = $('composer-text');
+  const text = ta.value.trim();
+  if (!text) return;
+  ta.value = ''; ta.style.height = 'auto';
+
+  ensureConversation();
+  appendUserMessage(text);
+  currentThread.push({ role: 'user', content: text });
+  persistCurrent();
+
+  runGenerationFromCurrentThread();
+}
+
+// Cœur de l'envoi : recherche mémoire (sur le dernier message utilisateur),
+// bannière éventuelle, puis dispatch. Partagé par l'envoi normal et la relance
+// après édition d'un message — pour ne pas dupliquer la logique mémoire+outils.
+// Pré-requis : le dernier message utilisateur est déjà dans currentThread.
+function runGenerationFromCurrentThread() {
+  const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
+  const text = lastUser ? lastUser.content : '';
+
+  const settings = loadSettings();
+  let matches = [];
+  if (settings.memoryMode !== 'never') matches = searchSummaries(text);
+
+  if (settings.memoryMode === 'propose' && matches.length) {
+    showMemoryBanner(matches, {
+      inject: () => dispatchSend(matches),
+      ignore: () => dispatchSend([]),
+      always: () => { saveSettings({ memoryMode: 'auto' });  setMemoryModeUI('auto');  dispatchSend(matches); },
+      never:  () => { saveSettings({ memoryMode: 'never' }); setMemoryModeUI('never'); dispatchSend([]); },
+    });
+    return;
+  }
+
+  dispatchSend(settings.memoryMode === 'auto' ? matches : []);
+}
+
+// Édition d'un message utilisateur passé (par index dans currentThread) :
+// tronque tout ce qui suit, remplace le contenu, persiste, puis relance la
+// génération par le même chemin que l'envoi normal.
+function editUserMessage(index, newText) {
+  if (sending) return;                          // pas d'édition pendant un stream
+  const t = (newText || '').trim();
+  if (!t) return;
+  if (index < 0 || index >= currentThread.length) return;
+  if (currentThread[index].role !== 'user') return;
+
+  currentThread = currentThread.slice(0, index + 1);
+  currentThread[index] = { role: 'user', content: t };
+  persistCurrent();                             // troncature écrite avant relance
+  renderThread(currentThread);
+  runGenerationFromCurrentThread();
+}
+
+async function dispatchSend(matches) {
+  hideMemoryBanner();
+  const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
+  const sys = buildSystemMessage(matches);
+  const apiMessages = [sys]
+    .concat(currentThread.map(m => ({ role: m.role, content: m.content })))
+    .filter(Boolean);
+
+  const wrap = startAssistantMessage(model);
+  setSending(true);
+  try {
+    await runConversation(apiMessages, {
+      model,
+      onDelta: (full) => streamInto(wrap, full),
+      onReasoning: (full) => setReasoning(wrap, full),
+      onToolTour: () => resetAssistant(wrap),
+      onFinal: (content, reasoning) => {
+        finalizeAssistant(wrap, content);
+        const msg = { role: 'assistant', content, model };
+        if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
+        currentThread.push(msg);
+        persistCurrent();
+        setConnDot('ok');
+        maybeTitle();
+      },
+      onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
+    });
+  } catch (e) {
+    finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
+    setConnDot('err');
+  } finally {
+    setSending(false);
+  }
+}
+
+// ── Mécanique réutilisable : tâche LLM « en arrière-plan » ───────────────────
+// Encadre une tâche asynchrone (appel LLM silencieux) par l'indicateur
+// d'activité, avec garde try/finally et échec silencieux (retourne null).
+// Sert au titrage comme à la génération de résumés.
+async function runBackgroundTask(label, taskFn) {
+  bgActivityStart(label);
+  try {
+    return await taskFn();
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] tâche « ' + label + ' » échouée :', (e && e.message) || e);
+    return null;   // abandon silencieux côté UI
+  } finally {
+    bgActivityEnd();
+  }
+}
+
+// ── Titrage automatique (après la première réponse) ─────────────────────────
+function applyGeneratedTitle(convId, title) {
+  const conv = loadConversation(convId);
+  if (conv) { conv.title = title; saveConversation(conv); }
+  if (convId === currentConvId) setTitle(title);   // barre du haut + <title> de la page
+  renderConvList();                                 // liste de gauche
+}
+
+async function maybeTitle() {
+  if (!needTitle || !currentConvId) return;
+  if (!currentThread.some(m => m.role === 'assistant')) return;
+  needTitle = false;
+  const convId = currentConvId;                     // figé : l'utilisateur peut naviguer
+  const thread = currentThread.slice();
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  if (title) applyGeneratedTitle(convId, title);    // sinon on garde le titre provisoire
+}
+
+// ── Résumé / mots-clés à la sortie d'une conversation ───────────────────────
+async function summarizeIfNeeded(id) {
+  if (!id) return;
+  const conv = loadConversation(id);
+  if (!conv || !hasSubstance(conv.messages)) return;     // pas de conversation fraîche
+  const entry = getSummaryEntry(id);
+  if (entry && entry.suppressed) return;                  // tombstone : exclu
+  if (entry && entry.messageCount === conv.messages.length) return;  // inchangé
+
+  const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
+  if (s) saveSummary(id, {
+    title: conv.title,
+    timestamp: conv.timestamp,
+    summary: s.summary,
+    keywords: s.keywords,
+    messageCount: conv.messages.length,
+  });
+}
+
+// ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
+function backfillMessageModels() {
+  const model = loadSettings().model;
+  if (!model) return;
+  for (const c of listAllConversations()) {
+    const conv = loadConversation(c.id);
+    if (!conv || !conv.messages) continue;
+    let dirty = false;
+    for (const m of conv.messages) {
+      if (m.role === 'assistant' && !m.model) { m.model = model; dirty = true; }
+    }
+    if (dirty) saveConversation(conv);
+  }
+}
+
+// ── Backfill au démarrage (séquentiel, indicateur continu) ──────────────────
+async function runBackfill() {
+  // Le résumé n'a besoin que de l'URL (clef optionnelle) : ne pas dépendre de
+  // `configured`, qui exige aussi une clef (utile pour un endpoint sans auth).
+  if (!loadSettings().url) return;
+  const cands = backfillCandidates();
+  if (!cands.length) return;
+  const N = cands.length;
+  await runBackgroundTask('résumés 0/' + N, async () => {
+    let n = 0;
+    for (const c of cands) {
+      n++;
+      bgActivityLabel('résumés ' + n + '/' + N);     // maj du libellé sans toucher au compteur
+      if (!isSummaryCandidate(c.id)) continue;        // re-vérif (suppression entre-temps)
+      try {
+        const s = await generateSummary(c.messages);
+        if (s) saveSummary(c.id, {
+          title: c.title,
+          timestamp: c.timestamp,
+          summary: s.summary,
+          keywords: s.keywords,
+          messageCount: c.messages.length,
+        });
+      } catch (e) { /* on saute cette conversation */ }
+    }
+  });
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+function init() {
+  applyLogo();
+
+  const s = loadSettings();
+  $('set-url').value = s.url || '';
+  $('set-key').value = s.key || '';
+  $('set-model').value = s.model || '';
+  $('set-system').value = s.systemPrompt || '';
+  $('set-highlight').checked = s.highlight !== false;
+  highlightEnabled = s.highlight !== false;
+  $('set-modelselector').checked = !!s.showModelSelector;
+  setMemoryModeUI(s.memoryMode);
+  setThemeUI(s.theme || 'system');
+  applyTheme(s.theme || 'system');
+  syncKeyFieldHint();
+  syncModelUI();
+
+  backfillMessageModels();
+  renderConvList();
+  resetToEmpty();
+  syncConfigured();
+  const ta = $('composer-text');
+  if (ta && !ta.disabled) ta.focus();
+  $('app').classList.add('sidebar-open');
+  initSidebarResize();
+  wireTitleEditing();
+
+  prefetchModels();   // liste des modèles (cache session) → sélecteur composer
+  runBackfill();      // auto-gardé sur la présence d'URL
+}
+
+if (typeof __TEST_ENV__ === 'undefined') {
+  document.addEventListener('DOMContentLoaded', init);
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "api_url":        "http://host-interne/v1",
+  "api_model":      "devstral-medium-2507",
+  "max_summaries":  3,
+  "require_api_key": true
+}
