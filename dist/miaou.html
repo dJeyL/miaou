@@ -110,13 +110,13 @@ body {
   justify-content: space-between;
 }
 .sidebar-brand {
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.18em;
   color: var(--accent);
 }
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.brand-logo { width: 20px; height: 20px; border-radius: 5px; display: block; flex-shrink: 0; }
+.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.brand-logo { width: 36px; height: 36px; border-radius: 8px; display: block; flex-shrink: 0; }
 .new-btn {
   display: flex;
   align-items: center;
@@ -454,8 +454,8 @@ body {
   margin-bottom: 7px;
 }
 .msg.assistant .meta .glyph {
-  width: 16px; height: 16px;
-  border-radius: 3px;
+  width: 20px; height: 20px;
+  border-radius: 4px;
   display: block;
 }
 .msg.assistant .body {
@@ -1414,7 +1414,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-20 21:03 UTC */
+/* miaou — built: 2026-06-20 22:15 UTC */
 
 
 /* ── utils.js ── */
@@ -2523,8 +2523,8 @@ function relativeWhen(ts) {
   // découpage calendaire que sectionFor (pas une fenêtre glissante de 24 h).
   if (ts >= startOfToday) return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const day = 86400000;
-  const days = Math.floor((Date.now() - ts) / day);
-  if (days === 1) return 'hier';
+  if (ts >= startOfToday - day) return 'hier à ' + new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const days = Math.floor((startOfToday - ts) / day) + 1;
   if (days < 7) return 'il y a ' + days + ' j';
   if (days < 30) return 'il y a ' + Math.floor(days / 7) + ' sem';
   return new Date(ts).toLocaleDateString('fr-FR', { month: 'long' });

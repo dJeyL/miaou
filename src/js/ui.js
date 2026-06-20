@@ -375,8 +375,8 @@ function relativeWhen(ts) {
   // découpage calendaire que sectionFor (pas une fenêtre glissante de 24 h).
   if (ts >= startOfToday) return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const day = 86400000;
-  const days = Math.floor((Date.now() - ts) / day);
-  if (days === 1) return 'hier';
+  if (ts >= startOfToday - day) return 'hier à ' + new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const days = Math.floor((startOfToday - ts) / day) + 1;
   if (days < 7) return 'il y a ' + days + ' j';
   if (days < 30) return 'il y a ' + Math.floor(days / 7) + ' sem';
   return new Date(ts).toLocaleDateString('fr-FR', { month: 'long' });

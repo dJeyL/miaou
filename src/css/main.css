@@ -99,13 +99,13 @@ body {
   justify-content: space-between;
 }
 .sidebar-brand {
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.18em;
   color: var(--accent);
 }
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.brand-logo { width: 20px; height: 20px; border-radius: 5px; display: block; flex-shrink: 0; }
+.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.brand-logo { width: 36px; height: 36px; border-radius: 8px; display: block; flex-shrink: 0; }
 .new-btn {
   display: flex;
   align-items: center;
@@ -443,8 +443,8 @@ body {
   margin-bottom: 7px;
 }
 .msg.assistant .meta .glyph {
-  width: 16px; height: 16px;
-  border-radius: 3px;
+  width: 20px; height: 20px;
+  border-radius: 4px;
   display: block;
 }
 .msg.assistant .body {
