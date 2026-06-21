@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>MIAOU — seed fixtures</title>
+<style>
+  body { font-family: monospace; background: #0b0c0e; color: #9a9ea8; padding: 32px; }
+  h1   { color: #e7e8ea; font-size: 16px; margin-bottom: 24px; }
+  .ok  { color: #4ec98a; }
+  .ski { color: #5e636e; }
+  .err { color: #ff5d5d; }
+  pre  { font-size: 12px; margin: 4px 0 4px 16px; }
+</style>
+</head>
+<body>
+<h1>MIAOU — seed fixtures</h1>
+<div id="log"></div>
+<script>
+const MODEL = 'devstral-small-2505';
+const CONV_KEY = 'miaou-conversations';
+const SUMM_KEY = 'miaou-summaries';
+
+// IDs fixes → idempotent (re-run ne duplique pas)
+const SEEDS = [
+  {
+    id: 'seed-01',
+    title: "Reverse proxy Caddy et Let's Encrypt",
+    messages: [
+      { role: 'user',      content: "J'essaie de configurer Caddy comme reverse proxy devant mon app Node. Mon Caddyfile : `myapp.example.com { reverse_proxy localhost:3000 }`. Ça marche mais le HTTPS ne se renouvelle pas automatiquement." },
+      { role: 'assistant', content: "Le renouvellement auto est géré par le module ACME intégré de Caddy. Deux choses peuvent le bloquer : le port 80 doit être accessible depuis l'extérieur (validation HTTP-01), et Caddy doit avoir les droits d'écriture sur son répertoire de données. Vérifie `journalctl -u caddy -f`. Si tu es derrière un NAT, il faut soit forwarder le 80, soit passer en DNS-01. Quel est ton contexte réseau ?" },
+      { role: 'user',      content: "Je suis derrière un NAT. Le routeur forward le 443 mais pas le 80." },
+      { role: 'assistant', content: "C'est ça le problème — HTTP-01 exige le port 80. Solutions : forwarder le 80 aussi (juste pour la validation ACME), ou DNS-01 si ton registrar a une API. Caddy a des plugins DNS-01 pour Cloudflare, OVH, Namecheap… Lequel utilises-tu ?" },
+    ],
+    summary: "Configuration de Caddy comme reverse proxy avec renouvellement automatique Let's Encrypt. Problème de port 80 inaccessible derrière NAT. Solutions : forwarding port 80 ou challenge DNS-01 via plugin Caddy.",
+    keywords: ['caddy', 'reverse-proxy', 'lets-encrypt', 'acme', 'nat', 'port-80', 'dns-01', 'certificat', 'https', 'tls'],
+  },
+  {
+    id: 'seed-02',
+    title: 'Asyncio — event loop bloqué dans FastAPI',
+    messages: [
+      { role: 'user',      content: "Mon API FastAPI rame sur certaines requêtes. J'ai une fonction async qui appelle une librairie externe et ça bloque tout l'event loop." },
+      { role: 'assistant', content: "Si la lib n'est pas async-native, ses appels sont bloquants et gèlent l'event loop entier. Solution : `await asyncio.to_thread(ma_fonction, args)` (Python 3.9+). Pour des tâches CPU-bound, un ProcessPoolExecutor contourne le GIL. `run_in_executor(None, ...)` fonctionne aussi si tu es en 3.8." },
+      { role: 'user',      content: "J'utilise Python 3.11, donc `to_thread` c'est bon. Comment confirmer que c'est bien ça qui bloque ?" },
+      { role: 'assistant', content: "Installe `py-spy` et profile avec `py-spy top --pid <pid>`. Autre approche : baisser `asyncio.get_event_loop().slow_callback_duration` (défaut 0.1s) pour faire logger automatiquement les callbacks lents. Un middleware FastAPI qui log le temps de chaque requête aide aussi à isoler les endpoints coupables." },
+    ],
+    summary: "Diagnostic et résolution d'un blocage d'event loop asyncio dans FastAPI causé par une librairie synchrone. Utilisation d'asyncio.to_thread() pour déléguer au ThreadPoolExecutor. Outils de debug : py-spy, slow_callback_duration.",
+    keywords: ['python', 'asyncio', 'fastapi', 'event-loop', 'to-thread', 'run-in-executor', 'blocage', 'py-spy', 'performance', 'threadpool'],
+  },
+  {
+    id: 'seed-03',
+    title: 'Git rebase interactif avant PR',
+    messages: [
+      { role: 'user',      content: "J'ai 12 commits sur ma branche dont 8 sont des « fix typo » ou « wip ». Je veux squasher tout ça avant d'ouvrir la PR." },
+      { role: 'assistant', content: "`git rebase -i main`. Dans l'éditeur, laisse le premier commit en `pick` et remplace les suivants par `f` (fixup) pour les WIP — ça jette les messages automatiquement, contrairement à `s` (squash) qui les concatène. Si la branche est déjà poussée : `git push --force-with-lease` ensuite (plus sûr que `--force`)." },
+      { role: 'user',      content: "Et si je veux garder 3 commits logiques au lieu d'un seul ?" },
+      { role: 'assistant', content: "Même commande, tu organises librement : regroupe avec `s`/`f` après les bons `pick`, réordonne en bougeant les lignes, renomme avec `reword`. Conseil : `git branch backup-avant-rebase` avant — ça coûte rien et sauve parfois." },
+    ],
+    summary: "Utilisation de git rebase interactif pour nettoyer une branche avant PR. Commandes squash/fixup/reword, push avec --force-with-lease, stratégie de sauvegarde de branche préalable.",
+    keywords: ['git', 'rebase', 'squash', 'fixup', 'interactive', 'pr', 'force-with-lease', 'branche', 'historique', 'commit'],
+  },
+  {
+    id: 'seed-04',
+    title: 'Optimisation requête PostgreSQL lente',
+    messages: [
+      { role: 'user',      content: "J'ai une requête qui prend 4 secondes sur une table de 2 M de lignes. J'ai un index sur `user_id` mais il ne semble pas utilisé." },
+      { role: 'assistant', content: "Lance `EXPLAIN (ANALYZE, BUFFERS) ta_requête;`. Si tu vois `Seq Scan` là où tu attends `Index Scan`, PostgreSQL a peut-être des stats obsolètes (`ANALYZE ta_table`), ou la sélectivité estimée est mauvaise. Vérifie aussi les types : un cast implicite entre le paramètre et la colonne empêche l'utilisation de l'index." },
+      { role: 'user',      content: "J'ai un Seq Scan. EXPLAIN dit « rows=1800000 » alors que la requête n'en ramène que 50." },
+      { role: 'assistant', content: "L'estimation à 1,8 M sur 2 M signifie que PostgreSQL pense que ta condition filtre presque rien — il préfère le seq scan. Lance `ANALYZE ta_table` puis relance EXPLAIN. Si ça ne change pas, la distribution est très non-uniforme (quelques user_id représentent 90 % des lignes) : envisage un index partiel ou `CREATE STATISTICS`." },
+    ],
+    summary: "Diagnostic d'une requête PostgreSQL lente (4s / 2M lignes) malgré un index sur user_id. EXPLAIN ANALYZE révèle un Seq Scan causé par des statistiques obsolètes ou une sélectivité mal estimée. Pistes : ANALYZE, index partiel, statistiques étendues.",
+    keywords: ['postgresql', 'sql', 'index', 'explain-analyze', 'seq-scan', 'optimisation', 'statistiques', 'sélectivité', 'performance', 'requête'],
+  },
+  {
+    id: 'seed-05',
+    title: 'Docker Compose — communication inter-services',
+    messages: [
+      { role: 'user',      content: "J'ai deux services dans mon docker-compose.yml : une app Node et une DB Postgres. L'app ne réussit pas à joindre la DB sur localhost." },
+      { role: 'assistant', content: "Les conteneurs ne partagent pas le même localhost. Utilise le nom du service comme hostname : si ton service Postgres s'appelle `db`, la connection string sera `postgresql://user:pass@db:5432/mydb`. Docker Compose crée un réseau bridge par défaut et enregistre chaque service par son nom." },
+      { role: 'user',      content: "Ça marche ! Maintenant je veux que seule l'app soit accessible depuis l'extérieur, pas la DB." },
+      { role: 'assistant', content: "Par défaut Postgres n'est pas exposé si tu ne déclares pas de `ports` pour lui. Mets `ports: [\"3000:3000\"]` uniquement sur ton service Node. La DB reste joignable en interne depuis l'app mais pas depuis l'hôte. Tu peux ajouter `ports: [\"5432:5432\"]` temporairement pour du debug et le retirer en prod." },
+    ],
+    summary: "Problème de communication entre services Docker Compose : l'app Node ne peut pas joindre Postgres via localhost. Solution : utiliser le nom du service comme hostname. Exposition sélective des ports vers l'extérieur.",
+    keywords: ['docker', 'docker-compose', 'networking', 'postgres', 'bridge', 'ports', 'hostname', 'conteneur', 'réseau', 'isolation'],
+  },
+  {
+    id: 'seed-06',
+    title: 'SSH port forwarding via bastion',
+    messages: [
+      { role: 'user',      content: "Je dois accéder à une interface web sur le port 8080 d'un serveur interne, accessible seulement depuis un bastion SSH. Comment faire ?" },
+      { role: 'assistant', content: "Forwarding local : `ssh -L 8080:serveur-interne:8080 user@bastion`. Ensuite `localhost:8080` dans ton navigateur passe par le bastion. Pour un tunnel persistant en arrière-plan : `ssh -fNL 8080:serveur-interne:8080 user@bastion` (`-N` = pas de shell, `-f` = background)." },
+      { role: 'user',      content: "Et si je veux que des collègues sur mon réseau local puissent aussi utiliser ce tunnel ?" },
+      { role: 'assistant', content: "Par défaut `-L` écoute seulement sur localhost. Ajoute le bind address : `ssh -L 0.0.0.0:8080:serveur-interne:8080 user@bastion`. Ton port 8080 devient accessible depuis tout ton réseau. Assure-toi que le firewall de ta machine laisse passer ce port — et réserve ça à un réseau de confiance." },
+    ],
+    summary: "SSH port forwarding local pour accéder à un service interne via bastion. Options -fN pour tunnel persistant en arrière-plan. Extension du bind address (0.0.0.0) pour partager le tunnel avec le réseau local.",
+    keywords: ['ssh', 'tunnel', 'port-forwarding', 'bastion', 'local-forward', 'réseau-interne', 'bind-address', '-fN', 'sécurité', 'accès-distant'],
+  },
+  {
+    id: 'seed-07',
+    title: 'TypeScript — génériques et contraintes',
+    messages: [
+      { role: 'user',      content: "J'ai du mal avec les contraintes de génériques TypeScript. Quand utiliser `extends` dans un type générique ?" },
+      { role: 'assistant', content: "`extends` dans un générique contraint les valeurs acceptées. `function foo<T extends string>(x: T)` signifie que T doit être assignable à string. Cas courants : `<T extends object>` pour exclure les primitifs, `<T extends { id: string }>` pour garantir une propriété. Sans contrainte, TypeScript sait seulement que T est « quelque chose » et n'autorise aucune opération dessus." },
+      { role: 'user',      content: "Et `infer`, c'est quoi ?" },
+      { role: 'assistant', content: "`infer` extrait un type depuis une structure conditionnelle. Exemple : `type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never` — si T est une fonction, R est inféré comme son type de retour. `infer` ne fonctionne que dans les types conditionnels, dans la partie pattern (`extends X`). C'est la base de tous les utilitaires avancés : `Parameters<T>`, `InstanceType<T>`, etc." },
+    ],
+    summary: "Explication des génériques TypeScript avec contraintes (extends) et inférence de types (infer). Cas d'usage : contraindre des paramètres génériques, extraire des types de retour depuis des signatures de fonctions.",
+    keywords: ['typescript', 'generics', 'extends', 'infer', 'contrainte', 'type-conditionnel', 'returntype', 'parameters', 'utilitaires', 'typage'],
+  },
+  {
+    id: 'seed-08',
+    title: 'Cron — syntaxe et debugging',
+    messages: [
+      { role: 'user',      content: "Mon cron job ne s'exécute pas. Ma ligne : `* 8 * * * /home/julien/scripts/backup.sh`. Elle devrait tourner à 8h." },
+      { role: 'assistant', content: "`* 8 * * *` tourne toutes les minutes entre 8h00 et 8h59. Pour exactement 8h00 : `0 8 * * *`. Vérifie aussi que le script est exécutable (`chmod +x`) et que son shebang est correct. Les crons tournent avec un PATH minimal — si ton script appelle des binaires en chemin relatif, ça échoue silencieusement." },
+      { role: 'user',      content: "Ah oui, `0 8` c'était ça. Comment voir les logs pour confirmer que ça tourne ?" },
+      { role: 'assistant', content: "`journalctl -u cron` ou `grep CRON /var/log/syslog`. Pour capturer la sortie du script : `0 8 * * * /home/julien/scripts/backup.sh >> /tmp/backup.log 2>&1`. Le `2>&1` capture aussi stderr. Pour simuler l'environnement cron : `env -i HOME=/home/julien PATH=/usr/bin:/bin bash /home/julien/scripts/backup.sh`." },
+    ],
+    summary: "Correction d'une syntaxe crontab (0 8 au lieu de * 8 pour 8h00 pile). Debug via journalctl/syslog, redirection stdout+stderr en fichier, simulation de l'environnement cron minimal avec env -i.",
+    keywords: ['cron', 'crontab', 'linux', 'scheduling', 'bash', 'logs', 'journalctl', 'syslog', 'debug', 'environnement'],
+  },
+  {
+    id: 'seed-09',
+    title: 'Pagination API REST : cursor vs offset',
+    messages: [
+      { role: 'user',      content: "Je dois implémenter la pagination sur mon API. Offset/limit ou cursor-based ?" },
+      { role: 'assistant', content: "Offset/limit est simple mais a deux problèmes sur les grandes tables : perf (PostgreSQL doit compter N lignes avant de retourner) et instabilité (insertions/suppressions entre deux pages causent des doublons ou des sauts). Cursor-based (`WHERE id > cursor LIMIT 20`) résout les deux grâce à l'index. Inconvénient : pas de saut direct à la page 42." },
+      { role: 'user',      content: "C'est un feed d'événements en temps réel, trié par date desc. Cursor semble mieux ?" },
+      { role: 'assistant', content: "Oui, clairement cursor. Utilise un tuple (timestamp, id) comme cursor si les timestamps ne sont pas uniques : `WHERE (created_at, id) < (cursor_ts, cursor_id)`. Encode le cursor en base64 pour l'opacifier. Un index composite sur `(created_at DESC, id DESC)` couvrira la requête efficacement." },
+    ],
+    summary: "Comparaison offset/limit vs cursor-based pagination pour une API REST. Choix du cursor pour un feed temps réel trié par date. Implémentation avec tuple (timestamp, id) pour l'unicité, encodage base64, index composite PostgreSQL.",
+    keywords: ['api', 'rest', 'pagination', 'cursor', 'offset', 'postgresql', 'index', 'feed', 'temps-réel', 'performance'],
+  },
+  {
+    id: 'seed-10',
+    title: 'Validation email par regex',
+    messages: [
+      { role: 'user',      content: "Quelle regex utiliser pour valider une adresse email ?" },
+      { role: 'assistant', content: "La vraie réponse : ne pas valider les emails par regex en production. La RFC 5322 est si complexe qu'une regex complète est illisible et toujours incomplète. En pratique : validation minimale pour détecter les erreurs grossières + confirmation par envoi d'email. Les librairies comme `validator.js` offrent un middle-ground raisonnable." },
+      { role: 'user',      content: "D'accord, mais pour un formulaire front-end juste pour guider l'utilisateur ?" },
+      { role: 'assistant', content: "Pour du feedback UX en temps réel, `/^[^\\s@]+@[^\\s@]+\\.[a-z]{2,}$/i` est suffisant. Déclenche la validation sur `blur` plutôt que sur chaque keystroke pour ne pas stresser l'utilisateur. Et ne bloque jamais la soumission sur la seule base de la regex — laisse le serveur valider aussi." },
+    ],
+    summary: "Discussion sur la validation d'emails par regex. Recommandation de ne pas sur-valider côté client (RFC 5322 trop complexe). Regex minimale pour feedback UX front-end, déclenchement sur blur, validation serveur indispensable.",
+    keywords: ['regex', 'email', 'validation', 'rfc5322', 'front-end', 'ux', 'formulaire', 'tld', 'validator', 'javascript'],
+  },
+];
+
+function log(cls, text) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.textContent = text;
+  document.getElementById('log').appendChild(el);
+}
+
+function seed() {
+  const now = Date.now();
+  const day = 86400000;
+
+  // Timestamps aléatoires distincts dans les 15 derniers jours
+  const slots = SEEDS.map(() => now - Math.random() * 15 * day)
+    .sort((a, b) => b - a);   // tri desc (plus récent en premier, comme miaou-conversations)
+
+  // ── Conversations ────────────────────────────────────────────────────────
+  let convs = [];
+  try { convs = JSON.parse(localStorage.getItem(CONV_KEY) || '[]'); } catch {}
+  const existingIds = new Set(convs.map(c => c.id));
+
+  let addedConvs = 0;
+  for (let i = 0; i < SEEDS.length; i++) {
+    const s = SEEDS[i];
+    if (existingIds.has(s.id)) { log('ski', `⊘ ${s.id} — déjà présent, ignoré`); continue; }
+    const ts = slots[i];
+    const messages = s.messages.map(m =>
+      m.role === 'assistant' ? { ...m, model: MODEL } : { ...m }
+    );
+    convs.push({ id: s.id, title: s.title, timestamp: ts, messages });
+    addedConvs++;
+  }
+  // Tri desc par timestamp (attendu par listAllConversations)
+  convs.sort((a, b) => b.timestamp - a.timestamp);
+  localStorage.setItem(CONV_KEY, JSON.stringify(convs));
+
+  // ── Résumés ──────────────────────────────────────────────────────────────
+  let summs = {};
+  try { summs = JSON.parse(localStorage.getItem(SUMM_KEY) || '{}'); } catch {}
+
+  let addedSumms = 0;
+  for (let i = 0; i < SEEDS.length; i++) {
+    const s = SEEDS[i];
+    if (summs[s.id] && !summs[s.id].suppressed) { continue; }
+    const ts = slots[i];
+    summs[s.id] = {
+      id: s.id,
+      title: s.title,
+      timestamp: ts,
+      summary: s.summary,
+      keywords: s.keywords,
+      messageCount: s.messages.length,
+    };
+    addedSumms++;
+  }
+  localStorage.setItem(SUMM_KEY, JSON.stringify(summs));
+
+  if (addedConvs) log('ok', `✓ ${addedConvs} conversation(s) ajoutée(s)`);
+  if (addedSumms) log('ok', `✓ ${addedSumms} résumé(s) ajouté(s)`);
+  if (!addedConvs && !addedSumms) log('ski', '⊘ Tout était déjà présent, rien à faire.');
+  log('', '');
+  log('', 'Recharge MIAOU pour voir les conversations dans la sidebar.');
+}
+
+seed();
+</script>
+</body>
+</html>
