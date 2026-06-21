@@ -55,7 +55,7 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 /* ═══ App shell ═══ */
-.app { display: flex; height: 100vh; }
+.app { display: flex; height: var(--vvh, 100dvh); }
 
 /* ═══ Sidebar ═══ */
 .sidebar {
@@ -210,6 +210,12 @@ body {
   color: var(--text);
 }
 .conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.conv-actions {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 1px;
+}
 .conv-del {
   opacity: 0;
   background: none;
@@ -218,7 +224,6 @@ body {
   cursor: pointer;
   padding: 3px;
   border-radius: 4px;
-  flex-shrink: 0;
   transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
 }
 .conv:hover .conv-del { opacity: 1; }
@@ -232,7 +237,6 @@ body {
   cursor: pointer;
   padding: 3px;
   border-radius: 4px;
-  flex-shrink: 0;
   transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
 }
 .conv:hover .conv-pin { opacity: 1; }
@@ -1061,8 +1065,70 @@ body {
   overflow-y: auto;
 }
 
-@media (max-width: 640px) {
-  .app.sidebar-open .sidebar { width: 240px; }
+/* ═══ Responsive ═══ */
+
+/* anti-piège flexbox scroll */
+.messages { min-height: 0; }
+
+/* blocs code : ne pas élargir la page horizontalement */
+.body pre { overflow-x: auto; max-width: 100%; }
+
+/* input bar : espace pour l'indicateur home iOS */
+.composer { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+
+/* backdrop sidebar (mobile overlay) */
+.sidebar-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 190ms var(--ease), visibility 190ms var(--ease);
+  z-index: 34;
+}
+.sidebar-backdrop.show { opacity: 1; visibility: visible; pointer-events: auto; }
+
+/* cibles tactiles ≥44px sur écrans touch */
+@media (pointer: coarse) {
+  .icon-btn { width: 44px; height: 44px; }
+  .send-btn  { width: 44px; height: 44px; }
+  .new-btn   { padding: 10px 14px; }
+  /* pas de hover sur touch → ces boutons ne s'afficheraient jamais,
+     inutile qu'ils occupent de la place et tronquent le titre */
+  .conv-del, .conv-pin { display: none; }
+}
+
+/* ══ Mobile : sidebar overlay (< 768px) ══ */
+@media (max-width: 767px) {
+  /* sidebar en overlay fixe, hors flux */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: min(80vw, 320px);
+    height: 100%;
+    transform: translateX(-100%);
+    transition: transform 190ms var(--ease);
+    z-index: 35;
+    /* neutralise le mécanisme push (width: 0) du desktop */
+    overflow: hidden;
+  }
+  .sidebar-inner { width: 100%; }
+  .app.sidebar-open .sidebar {
+    width: min(80vw, 320px);
+    transform: translateX(0);
+  }
+  /* poignée de redimensionnement inutile sur mobile */
+  .sidebar-resizer { display: none; }
+
+  /* drawer paramètres plein écran */
+  .drawer { width: 100%; max-width: 100%; }
+
+  /* inputs ≥16px pour éviter le zoom auto de Safari */
+  #composer-text      { font-size: 16px; }
+  .field input,
+  .field textarea     { font-size: 16px; }
+  .msg-edit-area      { font-size: 16px; }
+  .sidebar-search input { font-size: 16px; }
 }
 
 /* ═══ Thème clair ═══ */

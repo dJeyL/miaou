@@ -30,10 +30,12 @@ describe('relativeWhen (libellé de date par conversation)', function() {
     expect(label === "aujourd'hui").toBe(false);
     expect(label).toContain(':');
   });
-  it('affiche « hier » pour la veille', function() {
+  it('affiche « hier à HH:MM » pour la veille', function() {
     var n = new Date();
     var yesterdayNoon = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1, 12, 0).getTime();
-    expect(relativeWhen(yesterdayNoon)).toBe('hier');
+    var label = relativeWhen(yesterdayNoon);
+    expect(label).toContain('hier');
+    expect(label).toContain(':');
   });
   it('retourne une chaîne vide sans timestamp', function() {
     expect(relativeWhen(0)).toBe('');

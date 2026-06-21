@@ -434,10 +434,12 @@ function convItemEl(c) {
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
        <div class="conv-date" title="${escHtml(fullDateTime(c.timestamp))}">${escHtml(relativeWhen(c.timestamp))}</div>
      </div>
-     <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
-     <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();deleteConv('${c.id}')">
-       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-     </button>`;
+     <div class="conv-actions">
+       <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
+       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();deleteConv('${c.id}')">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+       </button>
+     </div>`;
   return el;
 }
 
@@ -474,7 +476,36 @@ function renderConvList() {
   }
 }
 
-function toggleSidebar() { $('app').classList.toggle('sidebar-open'); }
+function isMobileLayout() { return window.innerWidth < 768; }
+
+function closeSidebarMobile() {
+  $('app').classList.remove('sidebar-open');
+  $('sidebar-backdrop').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+function toggleSidebar() {
+  const app = $('app');
+  if (isMobileLayout()) {
+    const opening = !app.classList.contains('sidebar-open');
+    app.classList.toggle('sidebar-open');
+    $('sidebar-backdrop').classList.toggle('show', opening);
+    document.body.style.overflow = opening ? 'hidden' : '';
+  } else {
+    app.classList.toggle('sidebar-open');
+  }
+}
+
+function initVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const update = () => {
+    document.documentElement.style.setProperty('--vvh', vv.height + 'px');
+  };
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  update();
+}
 
 // ── Redimensionnement de la sidebar (drag du bord droit) ────────────────────
 // Largeur bornée [min = largeur d'origine, max = ×2], persistée dans les

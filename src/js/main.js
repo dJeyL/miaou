@@ -124,6 +124,7 @@ function selectConv(id) {
   const leaving = currentConvId;
   openConversation(id);
   summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+  if (isMobileLayout()) closeSidebarMobile();
 }
 
 function newConversation() {
@@ -444,9 +445,16 @@ function init() {
   syncConfigured();
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
-  $('app').classList.add('sidebar-open');
+  if (!isMobileLayout()) $('app').classList.add('sidebar-open');
   initSidebarResize();
+  initVisualViewport();
   wireTitleEditing();
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('app').classList.contains('sidebar-open') && isMobileLayout()) {
+      closeSidebarMobile();
+    }
+  });
 
   prefetchModels();   // liste des modèles (cache session) → sélecteur composer
   runBackfill();      // auto-gardé sur la présence d'URL
