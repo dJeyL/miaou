@@ -1023,6 +1023,7 @@ body {
 .waiter {
   display: inline-flex;
   align-items: center;
+  gap: 7px;
   font-size: 13px;
   color: var(--text-2);
   font-style: italic;
@@ -1032,7 +1033,8 @@ body {
   width: 5px; height: 5px;
   border-radius: 50%;
   background: var(--accent);
-  margin-right: 7px;
+  /* centre le point dans un slot de 20px, aligné avec .meta .glyph */
+  margin-left: 7.5px; margin-right: 7.5px;
   flex-shrink: 0;
   animation: waiter-pulse 1s ease-in-out infinite;
 }
@@ -1040,10 +1042,17 @@ body {
   0%, 100% { transform: scale(.55); opacity: .45; }
   50%      { transform: scale(1);   opacity: 1; }
 }
-/* le mot et ses « … » fondent ensemble ; seul le point reste */
+/* le mot et ses points fondent ensemble ; seul le point animé reste */
 .waiter-word { transition: opacity .28s ease; }
-.waiter-word::after { content: '…'; font-style: normal; }
+.waiter-word::after { content: ''; font-style: normal; animation: waiter-dots 1.2s step-end infinite; }
+.waiter-word.dots-reset::after { animation: none; }
 .waiter-word.fade { opacity: 0; }
+@keyframes waiter-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
 
 /* bloc de raisonnement (thinking) : icône discrète dans la barre méta +
    panneau collapsible (police mono, atténué) au-dessus du corps du message. */
@@ -1484,7 +1493,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-21 08:13 UTC */
+/* miaou — built: 2026-06-21 18:00 UTC */
 
 
 /* ── utils.js ── */
@@ -2430,6 +2439,9 @@ function startWaiter(body) {
     word.classList.add('fade');                 // opacity → 0 (mot + « … » via transition CSS)
     _waiterFade = setTimeout(() => {
       word.textContent = pickWaiterWord(word.textContent);
+      word.classList.add('dots-reset');
+      void word.offsetWidth;                    // force reflow → reset animation ::after
+      word.classList.remove('dots-reset');
       word.classList.remove('fade');            // opacity → 1
     }, 280);                                     // doit matcher .waiter-word transition
   }, 5400);

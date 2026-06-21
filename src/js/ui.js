@@ -209,6 +209,9 @@ function startWaiter(body) {
     word.classList.add('fade');                 // opacity → 0 (mot + « … » via transition CSS)
     _waiterFade = setTimeout(() => {
       word.textContent = pickWaiterWord(word.textContent);
+      word.classList.add('dots-reset');
+      void word.offsetWidth;                    // force reflow → reset animation ::after
+      word.classList.remove('dots-reset');
       word.classList.remove('fade');            // opacity → 1
     }, 280);                                     // doit matcher .waiter-word transition
   }, 5400);
