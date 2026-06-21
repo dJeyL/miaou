@@ -73,23 +73,28 @@ function buildMemoryBlock(matches) {
          lines.join('\n');
 }
 
-function buildContextBlock() {
+// Contenu dynamique par tour : date/heure, modèle actif, bloc mémoire.
+// Injecté en préfixe du dernier message utilisateur, pas dans le system message,
+// pour préserver le préfixe stable et permettre le KV cache prefix matching.
+function buildContextBlock(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
   const model = (loadSettings().model || '').trim();
   const lines = ['Date et heure actuelles : ' + dateStr];
   if (model) lines.push('Modèle : ' + model + ' (c\'est toi)');
-  return lines.join('\n');
-}
-
-function buildSystemMessage(matches) {
-  const parts = [];
-  parts.push(buildContextBlock());
-  if (TOOLS.length) parts.push(toolsSystemPrompt());
-  const sysUser = (loadSettings().systemPrompt || '').trim();
-  if (sysUser) parts.push(sysUser);
+  const parts = [lines.join('\n')];
   const mem = buildMemoryBlock(matches || []);
   if (mem) parts.push(mem);
+  return parts.join('\n\n---\n\n');
+}
+
+// Contenu statique uniquement : identique d'un tour à l'autre tant que tools
+// et systemPrompt configuré ne changent pas — permet le KV cache prefix matching.
+function buildSystemMessage() {
+  const parts = [];
+  const sysUser = (loadSettings().systemPrompt || '').trim();
+  if (sysUser) parts.push(sysUser);
+  if (TOOLS.length) parts.push(toolsSystemPrompt());
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -195,6 +200,8 @@ function onTitleBlur(e) {
     needTitle = false;   // titre fixé manuellement : on ne le régénère plus
     const conv = loadConversation(currentConvId);
     if (conv) { conv.title = t; saveConversation(conv); renderConvList(); }
+    const entry = getSummaryEntry(currentConvId);
+    if (entry) { entry.title = t; saveSummary(currentConvId, entry); }
   }
 }
 
@@ -293,10 +300,22 @@ function editUserMessage(index, newText) {
 async function dispatchSend(matches) {
   hideMemoryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
-  const sys = buildSystemMessage(matches);
-  const apiMessages = [sys]
-    .concat(currentThread.map(m => ({ role: m.role, content: m.content })))
-    .filter(Boolean);
+  const sys = buildSystemMessage();
+  const threadMsgs = currentThread.map(m => ({ role: m.role, content: m.content }));
+
+  // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
+  // préfixe du dernier message utilisateur, pour préserver le préfixe stable
+  // (system + historique[0..N-1]) et permettre le KV cache prefix matching.
+  const lastUserIdx = threadMsgs.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
+  if (lastUserIdx >= 0) {
+    const ctx = buildContextBlock(matches);
+    threadMsgs[lastUserIdx] = {
+      role: 'user',
+      content: ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
+    };
+  }
+
+  const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
   const wrap = startAssistantMessage(model);
   setSending(true);

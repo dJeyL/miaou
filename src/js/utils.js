@@ -29,7 +29,10 @@ function placeCaretEnd(el) {
 // Auto-grandissement d'un <textarea> jusqu'à une hauteur max.
 function autoGrow(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 168) + 'px';
+  el.style.overflowY = 'hidden';
+  const h = Math.min(el.scrollHeight, 168);
+  el.style.height = h + 'px';
+  el.style.overflowY = h >= 168 ? 'auto' : 'hidden';
 }
 
 // ── Tokenisation / scoring (recherche mémoire) ──────────────────────────────

@@ -576,6 +576,7 @@ body {
   font-size: 14px;
   line-height: 1.55;
   max-height: 168px;
+  overflow-y: hidden;
   padding: 5px 0;
 }
 #composer-text::placeholder { color: var(--text-3); }

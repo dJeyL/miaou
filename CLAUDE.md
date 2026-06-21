@@ -16,6 +16,9 @@ python3 build.py                          # src/ → dist/miaou.html
 uv run --with quickjs python tests/runner.py   # tests des fonctions pures
 ```
 
+**Avant chaque commit :** build si du code a changé, puis tests. Ne jamais
+commit ni push sans avoir demandé l'accord explicite de l'utilisateur au préalable.
+
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
@@ -226,6 +229,22 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
     ialise pas** les overrides déjà posés (`syncModelUI` masque, l'override
     persiste et reste actif). La pastille topbar reflète aussi `activeModel()`
     (identique au défaut quand pas d'override).
+
+16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` ne contient
+    que du contenu **statique** : prompt système configuré par l'utilisateur +
+    `toolsSystemPrompt()`. Aucune dépendance à `Date.now()` ni aux résumés
+    mémoire. Le contenu dynamique (date/heure, nom du modèle, bloc mémoire) est
+    regroupé dans `buildContextBlock(matches)` et injecté **éphémèrement en
+    préfixe du dernier message `role: 'user'`** dans `dispatchSend`, au moment
+    de la construction du payload API — sans modifier `currentThread` ni
+    localStorage. Cela préserve le préfixe `system message + historique[0..N-1]`
+    byte-identique d'un tour à l'autre, ce qui permet au KV cache d'Ollama de
+    réutiliser tout ce préfixe au lieu de le recalculer. Le dernier message user
+    change de toute façon à chaque tour (nouvelle saisie), donc y attacher le
+    contexte dynamique n'ajoute aucun coût de cache supplémentaire. Ne pas
+    réintroduire `buildContextBlock()` dans `buildSystemMessage()` : le point de
+    divergence serait avant tout l'historique, le cache ne profiterait plus à
+    partir du 2ᵉ tour.
 
 ## Stockage (localStorage)
 
