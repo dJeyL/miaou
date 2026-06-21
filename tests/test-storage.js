@@ -74,6 +74,31 @@ describe('toggleConversationPin (épinglage)', function() {
   });
 });
 
+describe('listAllConversations — tri par updatedAt', function() {
+  it('expose updatedAt si présent', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, updatedAt: 99, messages: [] });
+    var c = listAllConversations().find(function(x) { return x.id === 'c1'; });
+    expect(c.updatedAt).toBe(99);
+  });
+  it('trie par updatedAt quand présent, indépendamment de timestamp', function() {
+    localStorage.clear();
+    saveConversation({ id: 'old', title: 'a', timestamp: 10, updatedAt: 200, messages: [] });
+    saveConversation({ id: 'new', title: 'b', timestamp: 100, updatedAt: 50, messages: [] });
+    var ids = listAllConversations().map(function(c) { return c.id; });
+    expect(ids[0]).toBe('old');   // updatedAt 200 > 50
+    expect(ids[1]).toBe('new');
+  });
+  it('tombe sur timestamp si updatedAt absent', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 'a', timestamp: 10, messages: [] });
+    saveConversation({ id: 'c2', title: 'b', timestamp: 20, messages: [] });
+    var ids = listAllConversations().map(function(c) { return c.id; });
+    expect(ids[0]).toBe('c2');
+    expect(ids[1]).toBe('c1');
+  });
+});
+
 describe('miaou-summaries — tombstone réversible', function() {
   it('une conversation sans entrée est candidate au backfill', function() {
     localStorage.clear();

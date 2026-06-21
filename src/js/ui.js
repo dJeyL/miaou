@@ -435,7 +435,7 @@ function convItemEl(c) {
   el.innerHTML =
     `<div class="conv-body">
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
-       <div class="conv-date" title="${escHtml(fullDateTime(c.timestamp))}">${escHtml(relativeWhen(c.timestamp))}</div>
+       <div class="conv-date" title="${escHtml(fullDateTime(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
      <div class="conv-actions">
        <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
@@ -470,7 +470,7 @@ function renderConvList() {
   let lastSection = null;
   for (const c of convs) {
     if (c.pinned) continue;
-    const section = sectionFor(c.timestamp);
+    const section = sectionFor(c.updatedAt || c.timestamp);
     if (section !== lastSection) {
       list.appendChild(sectionEl(section));
       lastSection = section;
@@ -871,26 +871,40 @@ function renderMemoryList() {
     if (e.suppressed) {
       item.className = 'mem-item suppressed';
       item.innerHTML =
-        `<div class="mem-body"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
         `<div class="mem-sub">supprimé${date ? ' · ' + escHtml(date) : ''}</div></div>` +
-        `<button class="mem-btn" onclick="restoreMemory('${id}')">Ré-autoriser</button>`;
+        `<button class="mem-btn" onclick="restoreMemory('${id}')">Ré-autoriser</button></div>`;
     } else {
       const full = e.summary || '';
       const extrait = full.slice(0, 150);
+      const kws = Array.isArray(e.keywords) && e.keywords.length
+        ? `<div class="mem-keywords"><strong>Mots-clefs</strong> — ${escHtml(e.keywords.join(', '))}</div>`
+        : '';
       item.className = 'mem-item';
+      item.onclick = () => toggleMemoryExpand(id);
       item.innerHTML =
-        `<div class="mem-body">` +
-        `<div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
-        `<div class="mem-sub">${escHtml(date)}</div>` +
-        `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
+        `<div class="mem-header">` +
+        `<div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
+        `<div class="mem-sub">${escHtml(date)}</div></div>` +
+        `<button class="mem-btn danger" onclick="event.stopPropagation();deleteMemory('${id}')">Supprimer</button>` +
         `</div>` +
-        `<button class="mem-btn danger" onclick="deleteMemory('${id}')">Supprimer</button>`;
+        `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
+        `<div class="mem-full">${escHtml(full)}${kws}</div>`;
     }
     wrap.appendChild(item);
   }
 }
 
 function deleteMemory(id) { suppressSummary(id); renderMemoryList(); }
+
+function toggleMemoryExpand(id) {
+  const list = $('memory-list');
+  const clicked = list.querySelector('.mem-item[data-id="' + id + '"]');
+  if (!clicked) return;
+  const wasExpanded = clicked.classList.contains('expanded');
+  list.querySelectorAll('.mem-item.expanded').forEach(el => el.classList.remove('expanded'));
+  if (!wasExpanded) clicked.classList.add('expanded');
+}
 
 // Ré-autorisation. Si le résumé est conservé sous la tombstone → retour
 // instantané. Sinon, régénération avec loader inline sur l'item concerné.

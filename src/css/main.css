@@ -914,16 +914,16 @@ body {
 .mem-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 2px; }
 .mem-item {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 10px 12px;
 }
 .mem-item.suppressed { opacity: 0.55; }
-.mem-body { min-width: 0; }
+.mem-item:not(.suppressed) { cursor: pointer; }
+.mem-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.mem-meta { min-width: 0; flex: 1; }
 .mem-title {
   font-size: 13px;
   font-weight: 600;
@@ -932,8 +932,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.mem-item.expanded .mem-title { white-space: normal; overflow: visible; text-overflow: clip; }
 .mem-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
 .mem-excerpt { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-full { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-keywords { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+.mem-keywords strong { color: var(--text-2); font-weight: 600; }
+.mem-item:not(.expanded) .mem-full { display: none; }
+.mem-item.expanded .mem-excerpt { display: none; }
 .mem-btn {
   flex-shrink: 0;
   background: var(--surface-3);

@@ -925,16 +925,16 @@ body {
 .mem-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 2px; }
 .mem-item {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 10px 12px;
 }
 .mem-item.suppressed { opacity: 0.55; }
-.mem-body { min-width: 0; }
+.mem-item:not(.suppressed) { cursor: pointer; }
+.mem-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.mem-meta { min-width: 0; flex: 1; }
 .mem-title {
   font-size: 13px;
   font-weight: 600;
@@ -943,8 +943,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.mem-item.expanded .mem-title { white-space: normal; overflow: visible; text-overflow: clip; }
 .mem-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
 .mem-excerpt { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-full { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-keywords { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+.mem-keywords strong { color: var(--text-2); font-weight: 600; }
+.mem-item:not(.expanded) .mem-full { display: none; }
+.mem-item.expanded .mem-excerpt { display: none; }
 .mem-btn {
   flex-shrink: 0;
   background: var(--surface-3);
@@ -1493,7 +1499,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-21 18:00 UTC */
+/* miaou — built: 2026-06-21 21:40 UTC */
 
 
 /* ── utils.js ── */
@@ -1669,8 +1675,8 @@ function persistConversations(arr) {
 
 function listAllConversations() {
   return loadConversations()
-    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, pinned: !!c.pinned }))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned }))
+    .sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }
 
 function loadConversation(id) {
@@ -2665,7 +2671,7 @@ function convItemEl(c) {
   el.innerHTML =
     `<div class="conv-body">
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
-       <div class="conv-date" title="${escHtml(fullDateTime(c.timestamp))}">${escHtml(relativeWhen(c.timestamp))}</div>
+       <div class="conv-date" title="${escHtml(fullDateTime(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
      <div class="conv-actions">
        <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
@@ -2700,7 +2706,7 @@ function renderConvList() {
   let lastSection = null;
   for (const c of convs) {
     if (c.pinned) continue;
-    const section = sectionFor(c.timestamp);
+    const section = sectionFor(c.updatedAt || c.timestamp);
     if (section !== lastSection) {
       list.appendChild(sectionEl(section));
       lastSection = section;
@@ -3101,26 +3107,40 @@ function renderMemoryList() {
     if (e.suppressed) {
       item.className = 'mem-item suppressed';
       item.innerHTML =
-        `<div class="mem-body"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
         `<div class="mem-sub">supprimé${date ? ' · ' + escHtml(date) : ''}</div></div>` +
-        `<button class="mem-btn" onclick="restoreMemory('${id}')">Ré-autoriser</button>`;
+        `<button class="mem-btn" onclick="restoreMemory('${id}')">Ré-autoriser</button></div>`;
     } else {
       const full = e.summary || '';
       const extrait = full.slice(0, 150);
+      const kws = Array.isArray(e.keywords) && e.keywords.length
+        ? `<div class="mem-keywords"><strong>Mots-clefs</strong> — ${escHtml(e.keywords.join(', '))}</div>`
+        : '';
       item.className = 'mem-item';
+      item.onclick = () => toggleMemoryExpand(id);
       item.innerHTML =
-        `<div class="mem-body">` +
-        `<div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
-        `<div class="mem-sub">${escHtml(date)}</div>` +
-        `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
+        `<div class="mem-header">` +
+        `<div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
+        `<div class="mem-sub">${escHtml(date)}</div></div>` +
+        `<button class="mem-btn danger" onclick="event.stopPropagation();deleteMemory('${id}')">Supprimer</button>` +
         `</div>` +
-        `<button class="mem-btn danger" onclick="deleteMemory('${id}')">Supprimer</button>`;
+        `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
+        `<div class="mem-full">${escHtml(full)}${kws}</div>`;
     }
     wrap.appendChild(item);
   }
 }
 
 function deleteMemory(id) { suppressSummary(id); renderMemoryList(); }
+
+function toggleMemoryExpand(id) {
+  const list = $('memory-list');
+  const clicked = list.querySelector('.mem-item[data-id="' + id + '"]');
+  if (!clicked) return;
+  const wasExpanded = clicked.classList.contains('expanded');
+  list.querySelectorAll('.mem-item.expanded').forEach(el => el.classList.remove('expanded'));
+  if (!wasExpanded) clicked.classList.add('expanded');
+}
 
 // Ré-autorisation. Si le résumé est conservé sous la tombstone → retour
 // instantané. Sinon, régénération avec loader inline sur l'item concerné.
@@ -3391,10 +3411,12 @@ function persistCurrent() {
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
+  conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
   // Pas de titre provisoire : « Nouvelle conversation » (placeholder topbar +
   // fallback liste) jusqu'au titrage en arrière-plan.
   saveConversation(conv);
+  renderConvList();
 }
 
 // ── Titre éditable ──────────────────────────────────────────────────────────
@@ -3608,7 +3630,7 @@ async function summarizeIfNeeded(id) {
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
   if (s) saveSummary(id, {
     title: conv.title,
-    timestamp: conv.timestamp,
+    timestamp: conv.updatedAt || conv.timestamp,
     summary: s.summary,
     keywords: s.keywords,
     messageCount: conv.messages.length,
@@ -3648,7 +3670,7 @@ async function runBackfill() {
         const s = await generateSummary(c.messages);
         if (s) saveSummary(c.id, {
           title: c.title,
-          timestamp: c.timestamp,
+          timestamp: c.updatedAt || c.timestamp,
           summary: s.summary,
           keywords: s.keywords,
           messageCount: c.messages.length,

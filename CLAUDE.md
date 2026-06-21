@@ -257,8 +257,10 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   via la variable CSS `--sidebar-w` (cf. `initSidebarResize`, ui.js) ; pendant le
   drag, la classe `.resizing` coupe la transition de largeur, et la valeur finale
   est persistée au `mouseup`.
-- `miaou-conversations` : tableau `[{ id, title, timestamp, messages, model?,
-  pinned? }]`. `model` (optionnel) est l'**override de modèle de la conversation**
+- `miaou-conversations` : tableau `[{ id, title, timestamp, updatedAt?, messages, model?,
+  pinned? }]`. `updatedAt` (optionnel) est le timestamp du dernier `persistCurrent` ;
+  absent sur les anciennes conversations (tri/affichage tombent alors sur `timestamp`).
+  `model` (optionnel) est l'**override de modèle de la conversation**
   — à ne **jamais** confondre avec le champ `model` de chaque message assistant
   (quel modèle a produit *cette* réponse, cf. backfill modèle). `pinned`
   (optionnel, bool) épingle la conversation : `renderConvList()` regroupe les

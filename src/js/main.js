@@ -173,10 +173,12 @@ function persistCurrent() {
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
+  conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
   // Pas de titre provisoire : « Nouvelle conversation » (placeholder topbar +
   // fallback liste) jusqu'au titrage en arrière-plan.
   saveConversation(conv);
+  renderConvList();
 }
 
 // ── Titre éditable ──────────────────────────────────────────────────────────
@@ -390,7 +392,7 @@ async function summarizeIfNeeded(id) {
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
   if (s) saveSummary(id, {
     title: conv.title,
-    timestamp: conv.timestamp,
+    timestamp: conv.updatedAt || conv.timestamp,
     summary: s.summary,
     keywords: s.keywords,
     messageCount: conv.messages.length,
@@ -430,7 +432,7 @@ async function runBackfill() {
         const s = await generateSummary(c.messages);
         if (s) saveSummary(c.id, {
           title: c.title,
-          timestamp: c.timestamp,
+          timestamp: c.updatedAt || c.timestamp,
           summary: s.summary,
           keywords: s.keywords,
           messageCount: c.messages.length,

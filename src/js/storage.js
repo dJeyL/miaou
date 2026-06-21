@@ -72,8 +72,8 @@ function persistConversations(arr) {
 
 function listAllConversations() {
   return loadConversations()
-    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, pinned: !!c.pinned }))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned }))
+    .sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }
 
 function loadConversation(id) {
