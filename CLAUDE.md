@@ -318,7 +318,8 @@ navigateur + framework maison). Seules les **fonctions pures** sont couvertes
 de résumés, le registre d'outils, parsing SSE/résumés. Adapter un squelette est
 permis si le comportement testé est respecté (un cas l'a été : `indexOf` vaut 0
 pour le premier élément, donc tester la présence avec `>= 0`, pas `toBeTruthy`).
-La boucle `tool_calls` et `silentCompletion` se vérifient à la main (cf. README).
+La boucle `tool_calls` et `silentCompletion` se vérifient à la main (checklist
+dans `tests/MANUAL.md`).
 
 ## Règle d'or
 

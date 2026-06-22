@@ -35,17 +35,29 @@ async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
   const cfg = loadSettings();
-  const res = await fetch(cfg.url + '/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
-    },
-    body: JSON.stringify({ model: cfg.model, messages, stream: false, temperature }),
-  });
-  if (!res.ok) throw new Error('silentCompletion ' + res.status);
-  const data = await res.json();
-  return (data.choices?.[0]?.message?.content ?? '').trim();
+  // Garde-fou : un endpoint qui accepte la connexion puis se tait laisserait le
+  // fetch pendre indéfiniment, et avec lui l'indicateur d'activité (le finally de
+  // runBackgroundTask ne passerait jamais). Contrôleur LOCAL, indépendant de
+  // _currentAbort (le stream foreground) : abortStream() n'y touche pas, et
+  // inversement. L'AbortError remonte → runBackgroundTask le capte → null.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), o.timeout || 30000);
+  try {
+    const res = await fetch(cfg.url + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
+      },
+      body: JSON.stringify({ model: cfg.model, messages, stream: false, temperature }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error('silentCompletion ' + res.status);
+    const data = await res.json();
+    return (data.choices?.[0]?.message?.content ?? '').trim();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Parsing SSE ─────────────────────────────────────────────────────────────
@@ -239,7 +251,12 @@ async function runConversation(messages, hooks) {
         catch (e) { args = {}; }
 
         let out;
-        const key = tc.function.name + ':' + (args.id ?? args.since);
+        // Clé d'anti-redemande sur les arguments BRUTS du tool_call, pas sur
+        // id/since seuls : deux appels distincts du même outil (ex. deux
+        // propose_memory, ou get_conversation résumé puis with_contents) ont des
+        // arguments distincts et doivent tous être servis. Seul un appel
+        // rigoureusement identique (modèle qui boucle) est court-circuité.
+        const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
         } else {

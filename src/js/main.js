@@ -134,6 +134,7 @@ function resetToEmpty() {
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
   needTitle = false;
   $('thread').innerHTML = '';
+  clearMemoryProposals();   // cartes de proposition détruites avec le thread
   showWelcome();
   setTitle('');
   renderConvList();
@@ -357,7 +358,10 @@ async function dispatchSend(matches) {
       onFinal: (content, reasoning) => {
         finalizeAssistant(wrap, content);
         const msg = { role: 'assistant', content, model };
-        if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
+        if (reasoning && reasoning.trim()) {
+          flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
+          msg.reasoning = reasoning;          // champ séparé, persisté
+        }
         currentThread.push(msg);
         persistCurrent();
         setConnDot('ok');

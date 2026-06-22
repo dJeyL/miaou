@@ -96,10 +96,15 @@ function buildMsg(role, content, model, reasoning) {
 }
 
 // ── Bloc de raisonnement (thinking) ─────────────────────────────────────────
-// Alimenté en live par les deltas accumulés. Texte brut en police mono (pas de
-// markdown). Révèle l'icône à la première substance reçue ; un raisonnement
-// vide ('') ne révèle rien (cf. distinction absence / chaîne vide du brief).
-function setReasoning(wrap, text) {
+// Texte brut en police mono (pas de markdown). Révèle l'icône à la première
+// substance reçue ; un raisonnement vide ('') ne révèle rien (cf. distinction
+// absence / chaîne vide du brief).
+let _reasonTimer = null;
+let _reasonPending = null;
+
+// Écriture effective dans le DOM (O(n) : tout le nœud est réécrit). À ne PAS
+// appeler par delta sans throttle — d'où setReasoning ci-dessous.
+function renderReasoningNow(wrap, text) {
   if (!text) return;
   const toggle = wrap.querySelector('.reasoning-toggle');
   const panel = wrap.querySelector('.reasoning');
@@ -108,6 +113,38 @@ function setReasoning(wrap, text) {
   toggle.removeAttribute('hidden');          // capacité détectée → icône visible
   content.textContent = text;
   if (!panel.hasAttribute('hidden')) content.scrollTop = content.scrollHeight;  // suivre si déplié
+}
+
+// Alimenté en live par les deltas accumulés, throttlé par fenêtres de ~90 ms
+// (même motif que streamInto pour le contenu) : un textContent complet par delta
+// serait O(n²) en écritures DOM sur un long raisonnement. La dernière mise à
+// jour en attente est écrasée ; le flush final passe par flushReasoning.
+function setReasoning(wrap, text) {
+  if (!text) return;
+  _reasonPending = { wrap, text };
+  if (_reasonTimer) return;
+  _reasonTimer = setTimeout(() => {
+    _reasonTimer = null;
+    const p = _reasonPending;
+    _reasonPending = null;
+    if (p) renderReasoningNow(p.wrap, p.text);
+  }, 90);
+}
+
+// Annule un rendu de raisonnement en attente (avant un finalize/reset, pour
+// qu'un timer en vol ne réécrive pas un état périmé). Symétrique de
+// cancelStreamRender pour le contenu.
+function cancelReasoningRender() {
+  if (_reasonTimer) { clearTimeout(_reasonTimer); _reasonTimer = null; }
+  _reasonPending = null;
+}
+
+// Flush synchrone du raisonnement définitif : annule le throttle en vol et écrit
+// la valeur finale d'un coup. Sans lui, les derniers tokens manqueraient au live
+// (la valeur persistée, issue de onFinal, reste complète quoi qu'il arrive).
+function flushReasoning(wrap, text) {
+  cancelReasoningRender();
+  renderReasoningNow(wrap, text);
 }
 
 // Toggle global (référencé en onclick= inline). Déplie/replie le bloc.
@@ -154,6 +191,7 @@ function decoratePre(scope) {
 function renderThread(msgs) {
   const thread = $('thread');
   thread.innerHTML = '';
+  clearMemoryProposals();   // les cartes de proposition viennent d'être détruites
   if (!msgs || msgs.length === 0) { showWelcome(); return; }
   for (const m of msgs) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
@@ -256,11 +294,13 @@ function cancelStreamRender() {
 
 function resetAssistant(wrap) {
   cancelStreamRender();
+  cancelReasoningRender();
   startWaiter(wrap.querySelector('.body'));     // reprise d'attente après un tour tool_calls
 }
 
 function finalizeAssistant(wrap, full) {
   cancelStreamRender();
+  cancelReasoningRender();
   stopWaiter();
   const body = wrap.querySelector('.body');
   body.innerHTML = renderMd(full);
@@ -398,11 +438,14 @@ function searchConversations(query) {
   const q = (query || '').trim().toLowerCase();
   if (!q) return null;
   const qTokens = tokenize(q);
+  // Un seul parse des résumés, capturé par la closure : le prédicat est appelé
+  // une fois par conversation, sans re-désérialiser tout le blob à chaque appel.
+  // Instantané pris à la frappe (rafraîchi à la frappe suivante) — cf. perf.
+  const summaries = loadSummaries();
   return c => {
     if ((c.title || '').toLowerCase().includes(q)) return true;
-    const entry = getSummaryEntry(c.id);
-    if (entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1) return true;
-    return false;
+    const entry = summaries[c.id];
+    return !!(entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1);
   };
 }
 
@@ -1112,6 +1155,13 @@ function saveMemoryEntryEdit(id) {
 // ── Propositions de souvenirs (cartes de confirmation dans le thread) ─────────
 
 const _proposalMap = {};
+
+// Purge la table des propositions en attente. Appelée quand le DOM du thread est
+// rasé (changement/réinitialisation de conversation) : les cartes disparaissent,
+// leurs entrées n'ont plus de raison de subsister. const → on vide en place.
+function clearMemoryProposals() {
+  for (const k in _proposalMap) delete _proposalMap[k];
+}
 
 function renderMemoryProposals(proposals) {
   const thread = $('thread');

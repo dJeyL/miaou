@@ -4,86 +4,56 @@
 
 Client de chat web minimaliste pour dialoguer avec un LLM via une API
 compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
-unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de build runtime,
+unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts). On l'ouvre dans un
-navigateur, ou on le sert via un reverse proxy si on veut.
+navigateur, ou on le sert via n'importe quel serveur web statique.
 
-Dark theme, palette ambre/corail (clin d'œil à Mistral), Hanken Grotesk pour
+Thème sombre, palette ambre/corail (clin d'œil à Mistral), Hanken Grotesk pour
 l'interface, JetBrains Mono pour le code.
 
 ## Fonctionnalités
 
-- Chat streamé (SSE) contre un endpoint OpenAI-compatible. Le bouton d'envoi
-  devient un **stop** pendant la génération : un clic interrompt le flux, le
-  texte déjà reçu est conservé.
-- **Patienteur animé** pendant l'attente : un point qui pulse suivi d'un mot
-  court tiré au hasard (fondu CSS), qui s'efface net au premier fragment de
-  réponse. Reste actif entre un appel d'outil et la reprise du streaming.
-- **Affichage du raisonnement** (modèles thinking-capable) : si le backend
-  expose un champ `reasoning`/`thinking` dans le flux, une icône discrète
-  apparaît dans l'en-tête du message ; un clic déplie un bloc collapsible (mono,
-  atténué) alimenté en live. Le raisonnement est persisté à part du contenu et
-  reste dépliable après rechargement. Détection par simple observation du flux
-  (aucune configuration par modèle, aucun recours à `reasoning_effort`).
+**Chat**
+
+- Streaming SSE contre un endpoint OpenAI-compatible ; le bouton d'envoi devient
+  un **stop** pendant la génération (le texte déjà reçu est conservé).
+- Patienteur animé pendant l'attente, effacé net au premier fragment de réponse.
+- Affichage du raisonnement des modèles thinking-capable : icône dans l'en-tête,
+  bloc dépliable alimenté en live, persisté à part du contenu.
 - Rendu Markdown + coloration syntaxique (toggle), tables, blocs de code avec
   bouton « copier ».
-- Historique des conversations persistant (`localStorage`), sidebar animée avec
-  sections temporelles (le libellé de chaque conversation du jour affiche son
-  heure `HH:MM` plutôt que « aujourd'hui », redondant avec l'en-tête de section),
-  titres auto-générés et éditables (Échap annule). Si
-  l'utilisateur personnalise le titre avant le premier message, il est conservé
-  tel quel — l'auto-titre ne l'écrase pas. Tant que le titrage en arrière-plan
-  n'a pas abouti, la conversation s'affiche « Nouvelle conversation » partout.
-- **Recherche dans l'historique** : barre en tête de sidebar, filtrage en temps
-  réel par titre (sous-chaîne) ou par résumé/mots-clés ; les sections vides se
-  masquent.
-- **Sidebar redimensionnable** : glisser le bord droit ajuste la largeur (entre
-  la largeur d'origine et le double) ; la valeur est persistée (`localStorage`).
-- **Édition d'un message utilisateur** : au survol d'une bulle, action « éditer »
-  ; valider tronque la suite du fil et relance la génération à partir de ce
-  point (même chemin que l'envoi normal : mémoire + outils).
-- Paramètres : URL, clef, modèle (liste via l'API, scroll vers le modèle actif à
-  l'ouverture), prompt système, coloration, mode mémoire, gestion des souvenirs,
-  panneau descriptif des outils exposés au modèle.
-- **Sélecteur de modèle par conversation** (optionnel, masqué par défaut, activé
-  dans les paramètres) : un dropdown dans le composer, peuplé depuis `/models`,
-  permet de changer de modèle pour la conversation courante sans toucher au
-  modèle par défaut ni à l'historique. Le choix vaut pour tous les messages
-  suivants de cette conversation ; une nouvelle conversation retombe sur le
-  modèle par défaut. Liste mise en cache pour la session ; si `/models` échoue,
-  le sélecteur n'apparaît pas (fallback silencieux sur le modèle par défaut).
-- Démarrage en état « Nouvelle conversation » avec focus sur le composer.
-- Écran d'accueil à chaque nouvelle conversation : emoji + accroche + sous-titre
-  tirés aléatoirement, disparaissent dès le premier message.
-- Date/heure courantes et nom du modèle injectés automatiquement dans le premier
-  bloc du message système (le modèle sait qui il est et quand il est).
-- État configuré / non configuré explicite (le composer se verrouille tant que
-  l'API n'est pas renseignée).
-- Backfill de modèle au démarrage : les messages assistant sans attribut `model`
-  reçoivent rétroactivement le modèle actuellement configuré.
-- **Mémoire conversationnelle** : résumés générés automatiquement en
-  arrière-plan, recherche par mots-clés, injection contextuelle dans le prompt,
-  et deux outils exposés au modèle pour qu'il aille chercher lui-même ce dont il
-  a besoin :
-  - `get_conversation(id, with_contents=false)` — une conversation précise
-    (résumé+mots-clés par défaut, messages complets si `with_contents=true`) ;
-  - `list_conversations(since?, with_contents=false)` — toutes les conversations
-    actives, ou filtrées depuis une date ISO 8601 si `since` est fourni.
-- **Souvenirs persistants** : le modèle peut proposer la création, la mise à
-  jour ou la suppression d'entrées mémoire via des appels d'outils ; chaque
-  proposition s'affiche sous forme de carte Accepter/Rejeter dans le fil.
-  L'utilisateur peut également gérer ses souvenirs directement depuis le drawer
-  (ajout, édition, suppression réversible, suppression définitive). Les souvenirs
-  actifs sont injectés automatiquement dans le contexte à chaque envoi. Trois
-  outils dédiés : `propose_memory`, `propose_memory_update`,
-  `propose_memory_delete`.
-- Contenu textuel d'un tour `tool_calls` : si le modèle renvoie du texte **et**
-  des appels d'outils dans le même tour, le texte s'affiche dans sa propre bulle
-  avant les éventuels tours suivants.
+- Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
+  ce point.
+- Écran d'accueil aléatoire (emoji + accroche) à chaque nouvelle conversation.
+
+**Historique & mémoire**
+
+- Conversations persistantes (`localStorage`), sidebar à sections temporelles et
+  redimensionnable, titres auto-générés et éditables.
+- Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
+- Mémoire conversationnelle : résumés générés en arrière-plan, injection
+  contextuelle, et deux outils pour que le modèle aille chercher lui-même —
+  `get_conversation(id, with_contents=false)` et
+  `list_conversations(since?, with_contents=false)`.
+- Souvenirs persistants : le modèle propose création / mise à jour / suppression
+  (`propose_memory`, `propose_memory_update`, `propose_memory_delete`) via des
+  cartes Accepter/Rejeter ; gestion directe possible dans le drawer ; les
+  souvenirs actifs sont réinjectés dans le contexte à chaque envoi.
+
+**Réglages**
+
+- URL, clef, modèle (liste via l'API), prompt système, thème, coloration, mode
+  d'injection des résumés, panneau descriptif des outils exposés au modèle.
+- Sélecteur de modèle par conversation (optionnel, masqué par défaut) : change le
+  modèle de la conversation courante sans toucher au défaut ni à l'historique.
+- État configuré / non configuré explicite : le composer se verrouille tant que
+  l'API n'est pas renseignée (voir `require_api_key` pour les endpoints sans
+  authentification).
+- Date/heure et nom du modèle injectés automatiquement dans le contexte.
 
 ## Build
 
-Le projet n'a pas de runtime : `build.py` (stdlib pure, aucune dépendance) assemble `src/` en un seul HTML.
+`build.py` (stdlib pure, aucune dépendance) assemble `src/` en un seul HTML.
 
 ```bash
 cp config.sample.json config.json   # première fois, puis éditer
@@ -112,13 +82,15 @@ build.
   elle se saisit dans le drawer Paramètres.
 - `max_summaries` : nombre maximum de résumés injectés simultanément dans le
   contexte (défaut 3).
-- `require_api_key` : si `false`, le composer se déverrouille dès que l'URL est
-  renseignée, sans exiger de clef. Défaut `true`.
+- `require_api_key` : gouverne l'état « configuré ». Par défaut (`true`), le
+  composer exige URL **et** clef. À `false`, l'URL seule suffit — pour un
+  endpoint sans authentification.
 
 ## Tests
 
 Fonctions pures testées via QuickJS (pas de `fetch` réel : le réseau se vérifie
-à la main, cf. ci-dessous). La seule dépendance de développement est `quickjs`.
+à la main, cf. [tests/MANUAL.md](tests/MANUAL.md)). La seule dépendance de
+développement est `quickjs`.
 
 Avec `uv` (recommandé) :
 
@@ -132,46 +104,6 @@ Sans `uv` :
 pip install -r requirements-dev.txt
 python tests/runner.py
 ```
-
-## Vérification manuelle (réseau)
-
-Avec une vraie configuration, ouvrir `dist/miaou.html` et vérifier :
-
-1. **Backfill** : avec des conversations dans l'historique, l'indicateur
-   d'activité affiche `résumés n/N` et `miaou-summaries` se remplit.
-2. **Mode proposer** : poser une question liée à une conversation passée → la
-   bannière mémoire apparaît, « Injecter » fait que la réponse en tient compte.
-3. **Message système unique** : inspecter le payload réseau — un seul message
-   `role: 'system'`, blocs concaténés (outils / prompt système / résumés).
-4. **Outil** : question dont le résumé ne suffit pas → le modèle appelle
-   `get_conversation` (ou `list_conversations`), et on va **jusqu'à la réponse
-   finale**, pas seulement jusqu'au résultat de l'outil.
-5. **Plusieurs tool_calls par tour** : tous exécutés dans le même tour.
-6. **Anti-redemande** : redemander un id déjà fourni dans le même échange ne
-   redéclenche pas le handler.
-7. **Suppression réversible** : supprimer un souvenir → plus jamais re-résumé,
-   même après redémarrage ; « Ré-autoriser » → régénéré au passage suivant.
-8. **Souvenirs** : envoyer un message mentionnant un fait personnel → le modèle
-   propose `propose_memory` ; accepter l'entrée → elle s'affiche dans le drawer
-   Souvenirs et est réinjectée dans les tours suivants. Modifier ou supprimer
-   depuis le drawer (suppression → tombstone réversible ; oublier → définitif).
-   `propose_memory_update` et `propose_memory_delete` : vérifier les cartes
-   Accepter/Rejeter et la cohérence de la liste après chaque action.
-9. **Pas de résumé sur conversation fraîche** : créer une conversation, envoyer
-   un message, la quitter sans contenu substantiel → aucun résumé généré.
-10. **Arrêt du streaming** : lancer une génération longue, cliquer le bouton stop
-    → le texte s'arrête et reste affiché, le composer redevient normal, aucune
-    erreur loggée (l'`AbortError` est avalé). Stop pendant un appel d'outil
-    interrompt sans relancer de tour.
-11. **Édition de message** : éditer un message en milieu de fil → tout ce qui
-    suit disparaît, la réponse est régénérée (injection mémoire + tool_calls
-    actifs). Échap annule. Recharger après édition → thread tronqué persisté.
-12. **Sélecteur de modèle** : activer le réglage → le dropdown apparaît dans le
-    composer (si `/models` répond). Changer de modèle en cours de conversation
-    n'efface pas l'historique ; le choix persiste au rechargement ; une nouvelle
-    conversation repart sur le modèle par défaut. Réglage masqué de nouveau → les
-    conversations gardent leur override. Modèle non fonctionnel sélectionné →
-    l'erreur s'affiche dans la bulle, pas de retry silencieux.
 
 ## Architecture
 
@@ -190,13 +122,7 @@ src/
 
 Pas de modules ES : `build.py` concatène les fichiers dans l'ordre des
 dépendances en un seul `<script>` (toutes les fonctions sont globales). Détails
-de conception et pièges connus dans [CLAUDE.md](CLAUDE.md).
-
-## Note sur l'état « configuré »
-
-Le composer se déverrouille quand URL et clef sont toutes deux présentes.
-Pour un endpoint sans authentification, passer `"require_api_key": false` dans
-`config.json` : seule l'URL sera alors requise.
+de conception, pièges connus et vocabulaire dans [CLAUDE.md](CLAUDE.md).
 
 ## Genèse
 
