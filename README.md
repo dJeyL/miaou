@@ -69,6 +69,17 @@ l'interface, JetBrains Mono pour le code.
     (résumé+mots-clés par défaut, messages complets si `with_contents=true`) ;
   - `list_conversations(since?, with_contents=false)` — toutes les conversations
     actives, ou filtrées depuis une date ISO 8601 si `since` est fourni.
+- **Souvenirs persistants** : le modèle peut proposer la création, la mise à
+  jour ou la suppression d'entrées mémoire via des appels d'outils ; chaque
+  proposition s'affiche sous forme de carte Accepter/Rejeter dans le fil.
+  L'utilisateur peut également gérer ses souvenirs directement depuis le drawer
+  (ajout, édition, suppression réversible, suppression définitive). Les souvenirs
+  actifs sont injectés automatiquement dans le contexte à chaque envoi. Trois
+  outils dédiés : `propose_memory`, `propose_memory_update`,
+  `propose_memory_delete`.
+- Contenu textuel d'un tour `tool_calls` : si le modèle renvoie du texte **et**
+  des appels d'outils dans le même tour, le texte s'affiche dans sa propre bulle
+  avant les éventuels tours suivants.
 
 ## Build
 
@@ -140,16 +151,22 @@ Avec une vraie configuration, ouvrir `dist/miaou.html` et vérifier :
    redéclenche pas le handler.
 7. **Suppression réversible** : supprimer un souvenir → plus jamais re-résumé,
    même après redémarrage ; « Ré-autoriser » → régénéré au passage suivant.
-8. **Pas de résumé sur conversation fraîche** : créer une conversation, envoyer
+8. **Souvenirs** : envoyer un message mentionnant un fait personnel → le modèle
+   propose `propose_memory` ; accepter l'entrée → elle s'affiche dans le drawer
+   Souvenirs et est réinjectée dans les tours suivants. Modifier ou supprimer
+   depuis le drawer (suppression → tombstone réversible ; oublier → définitif).
+   `propose_memory_update` et `propose_memory_delete` : vérifier les cartes
+   Accepter/Rejeter et la cohérence de la liste après chaque action.
+9. **Pas de résumé sur conversation fraîche** : créer une conversation, envoyer
    un message, la quitter sans contenu substantiel → aucun résumé généré.
-9. **Arrêt du streaming** : lancer une génération longue, cliquer le bouton stop
-   → le texte s'arrête et reste affiché, le composer redevient normal, aucune
-   erreur loggée (l'`AbortError` est avalé). Stop pendant un appel d'outil
-   interrompt sans relancer de tour.
-10. **Édition de message** : éditer un message en milieu de fil → tout ce qui
+10. **Arrêt du streaming** : lancer une génération longue, cliquer le bouton stop
+    → le texte s'arrête et reste affiché, le composer redevient normal, aucune
+    erreur loggée (l'`AbortError` est avalé). Stop pendant un appel d'outil
+    interrompt sans relancer de tour.
+11. **Édition de message** : éditer un message en milieu de fil → tout ce qui
     suit disparaît, la réponse est régénérée (injection mémoire + tool_calls
     actifs). Échap annule. Recharger après édition → thread tronqué persisté.
-11. **Sélecteur de modèle** : activer le réglage → le dropdown apparaît dans le
+12. **Sélecteur de modèle** : activer le réglage → le dropdown apparaît dans le
     composer (si `/models` répond). Changer de modèle en cours de conversation
     n'efface pas l'historique ; le choix persiste au rechargement ; une nouvelle
     conversation repart sur le modèle par défaut. Réglage masqué de nouveau → les
@@ -164,7 +181,7 @@ src/
 ├── css/main.css       thème complet
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
-    ├── storage.js     localStorage : settings, conversations, index de résumés (tombstones)
+    ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
     ├── tools.js       registre additif d'outils exposés au LLM
     ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
     ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs
