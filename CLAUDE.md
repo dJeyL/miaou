@@ -76,8 +76,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 - Les handlers référencés en `onclick=`/`oninput=` inline dans `index.html`
   doivent rester des fonctions globales portant exactement ces noms
   (`sendMessage`, `onSendBtn`, `newConversation`, `openSettings`,
-  `onSaveSettings`, `selectMemoryMode`, `memoryBanner`, `deleteConv`,
-  `onConvSearch`, `clearConvSearch`, `onEditMsg`, …). Le bouton « Enregistrer »
+  `onSaveSettings`, `selectSummaryInjectionMode`, `summaryBanner`, `deleteConv`,
+  `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
+  `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
+  `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
+  `forgetMemoryEntry`, `acceptProposal`, `rejectProposal`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Le bouton du composer appelle
   `onSendBtn()` (envoi **ou** stop selon `sending`), jamais `sendMessage()`
@@ -103,9 +106,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 4. **Agrégation SSE par `index`.** Les `tool_calls` arrivent fragmentés :
    agréger strictement par `tcDelta.index`, ne jamais parser
    `function.arguments` avant la fin du stream, reprendre le `tool_call_id` exact.
-   Ne rien afficher tant que `finish_reason` n'est pas connu et `'stop'` (le
-   content d'un tour `tool_calls` est partiel/vide). Le rendu live (`onDelta`)
-   est révoqué via `onToolTour()` si le tour s'avère être un `tool_calls`.
+   `onToolTour(content)` reçoit le contenu textuel du tour. S'il est non vide,
+   l'UI le finalise dans sa propre bulle (persistée dans `currentThread`) et
+   ouvre une nouvelle bulle pour le tour suivant ; s'il est vide, elle efface
+   le live et repose le patienteur (`resetAssistant`). `wrap` est déclaré
+   `let` dans `dispatchSend` pour permettre cette réaffectation.
 5. **Pas de résumé sur conversation fraîche/avortée.** Ne résumer (en sortie ou
    au backfill) que si `hasSubstance()` : **≥1 message user ET ≥1 assistant** au
    contenu non trivial (≥8 car.). Le but est d'écarter une conversation à peine
@@ -122,7 +127,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
    entrées `suppressed`. « Ré-autoriser » retire le flag → **retour instantané à
    l'état d'avant** si les données sont conservées ; sinon (tombstone legacy sans
    données, ou résumé jamais généré) l'UI régénère avec un loader inline sur
-   l'item (`restoreMemory`, ui.js) et ne retombe sur la suppression de l'entrée
+   l'item (`restoreSummaryItem`, ui.js) et ne retombe sur la suppression de l'entrée
    (→ candidate au backfill) qu'en cas d'échec.
 7. **Parsing défensif des résumés.** Le modèle enrobe parfois son JSON de fences
    ```` ```json ````. `parseSummaryJSON` nettoie puis `JSON.parse` ; en cas
@@ -237,7 +242,9 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
     regroupé dans `buildContextBlock(matches)` et injecté **éphémèrement en
     préfixe du dernier message `role: 'user'`** dans `dispatchSend`, au moment
     de la construction du payload API — sans modifier `currentThread` ni
-    localStorage. Cela préserve le préfixe `system message + historique[0..N-1]`
+    localStorage. Le bloc est enveloppé dans `<miaou_context>…</miaou_context>`
+    avec une instruction explicite demandant au modèle de ne pas acquitter ni
+    mentionner spontanément ces informations. Cela préserve le préfixe `system message + historique[0..N-1]`
     byte-identique d'un tour à l'autre, ce qui permet au KV cache d'Ollama de
     réutiliser tout ce préfixe au lieu de le recalculer. Le dernier message user
     change de toute façon à chaque tour (nouvelle saisie), donc y attacher le
@@ -248,8 +255,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 
 ## Stockage (localStorage)
 
-- `miaou-settings` : `{ url, key, model, systemPrompt, highlight, memoryMode,
-  theme, showModelSelector, sidebarWidth }`. `memoryMode` ∈ `auto | propose |
+- `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
+  theme, showModelSelector, sidebarWidth }`. `summaryInjectionMode` ∈ `auto | propose |
   never`, défaut `propose`. `model` est le **modèle par défaut** (global).
   `showModelSelector` (défaut `false`) n'affecte que la visibilité du sélecteur
   dans le composer. `sidebarWidth` (défaut `264`) est la largeur redimensionnable
@@ -269,24 +276,39 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   (storage) exposé par le handler global `togglePin(id)` (main.js).
 - `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
+- `miaou-memories` : tableau `[{ id, content, created_at, updated_at, supersedes,
+  suppressed }]`. `supersedes` (optionnel) est l'id de l'entrée remplacée par un
+  amendement modèle accepté (`amendMemory`) — à fins de provenance uniquement,
+  l'ancienne entrée est simultanément tombstonée. **Deux chemins d'écriture
+  distincts** : édition directe utilisateur → `editMemory(id, newContent)`
+  (in-place, pas de chaîne `supersedes`) ; amendement modèle accepté →
+  `amendMemory(oldId, newContent)` (nouvelle entrée + tombstone de l'ancienne).
+  `listMemoryEntries()` renvoie uniquement les non-supprimées. `forgetMemory(id)`
+  supprime définitivement l'entrée du tableau (les `supersedes` qui pointaient
+  vers elle deviennent orphelins mais ne cassent rien — champ de provenance seul).
 
-## Outils mémoire (`tools.js`)
+## Outils (`tools.js`)
 
-Deux outils, additifs (un 3ᵉ s'ajoute au tableau `TOOLS`, `toolsSystemPrompt()`
-le liste tout seul) :
-
-- `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
-  (`getSummaryEntry`), pas la conversation brute : retourne résumé+mots-clés par
-  défaut, plus les messages complets si `with_contents=true`. Introuvable si pas
-  d'entrée ou tombstone.
-- `list_conversations(since, with_contents=false)` — entrées non-tombstone
-  (`listSummaryEntries`) dont `timestamp >= Date.parse(since)`. Date ISO 8601
-  requise, erreur explicite si invalide.
-
-Nom conservé `list_conversations` (et non `get_conversations`) pour éviter la
-quasi-collision singulier/pluriel avec `get_conversation`, qui fait trébucher
-les modèles à l'appel. `toolsSystemPrompt()` dérive sa
+Cinq outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur.
+
+**Lecture de l'historique :**
+- `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
+  (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone.
+- `list_conversations(since, with_contents=false)` — entrées non-tombstone
+  dont `timestamp >= Date.parse(since)`. Date ISO 8601 requise. Nom conservé
+  (≠ `get_conversations`) pour éviter la quasi-collision singulier/pluriel.
+
+**Propositions de souvenirs (jamais d'écriture directe) :**
+- `propose_memory(content)` — met en file `_pendingMemoryProposals` (tools.js).
+- `propose_memory_update(old_id, new_content)` — idem pour une mise à jour.
+- `propose_memory_delete(id)` — idem pour une suppression.
+
+Chaque handler retourne un accusé de réception (`"Proposition mise en attente…"`)
+pour que le modèle finisse son tour normalement. La file est consommée dans
+`onFinal` (main.js) via `getPendingMemoryProposals` / `clearPendingMemoryProposals`.
+**Aucun outil n'écrit directement dans `miaou-memories`** — tout passe par les
+cartes Accepter/Rejeter affichées dans le thread après le tour.
 
 ## Tests
 
@@ -303,8 +325,8 @@ La boucle `tool_calls` et `silentCompletion` se vérifient à la main (cf. READM
 En cas d'ambiguïté sur un point non couvert ici : **signaler plutôt que deviner**.
 Le projet a déjà payé le prix de suppositions hâtives.
 
-> Note : `.memory-banner` et `.bg-activity` n'étaient pas dans la maquette
+> Note : `.summary-banner` et `.bg-activity` n'étaient pas dans la maquette
 > d'origine — le mode mémoire et la vue souvenirs ont été construits dans le
-> design system existant. `.memory-banner` et `.bg-activity` ont été implémentés
+> design system existant. `.summary-banner` et `.bg-activity` ont été implémentés
 > en intérimaire. **Avant de les retravailler**, demander les spécifications
 > HTML/CSS plutôt que de redessiner à l'aveugle.

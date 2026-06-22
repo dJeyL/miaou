@@ -223,8 +223,9 @@ async function runConversation(messages, hooks) {
       // Flush complet du raisonnement de ce tour AVANT d'exécuter l'outil
       // (pas de traitement en parallèle) ; il reste affiché pendant l'appel.
       reasoningAcc = joinReasoning(reasoningAcc, result.reasoning);
-      // Ce tour ne « parle » pas : effacer tout content live déjà affiché.
-      if (h.onToolTour) h.onToolTour();
+      // Passe le content du tour à l'UI : s'il est non vide, l'UI le finalise
+      // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
+      if (h.onToolTour) h.onToolTour(result.content);
 
       messages.push({
         role: 'assistant',

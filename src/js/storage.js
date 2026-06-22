@@ -31,7 +31,7 @@ const DEFAULT_SETTINGS = {
   model: '',
   systemPrompt: '',
   highlight: true,
-  memoryMode: 'propose',   // 'auto' | 'propose' | 'never'
+  summaryInjectionMode: 'propose',   // 'auto' | 'propose' | 'never'
   theme: 'system',         // 'light' | 'dark' | 'system'
   showModelSelector: false, // sélecteur de modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
@@ -188,4 +188,69 @@ function isSummaryCandidate(id) {
 function backfillCandidates() {
   return loadConversations().filter(c =>
     isSummaryCandidate(c.id) && hasSubstance(c.messages));
+}
+
+// ── Souvenirs utilisateur (miaou-memories) ───────────────────────────────────
+// Schéma : { id, content, created_at, updated_at, supersedes, suppressed }
+// Tombstone : { ..., suppressed: true }  ← conserve content pour affichage
+
+const MEMORIES_KEY = 'miaou-memories';
+
+function genMemoryId() { return 'm' + Date.now().toString(36); }
+
+function loadMemories() {
+  try { return JSON.parse(localStorage.getItem(MEMORIES_KEY)) || []; }
+  catch (e) { return []; }
+}
+
+function persistMemories(arr) {
+  localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
+}
+
+// Entrées actives : non-supprimées. supersedes est de la provenance, pas un filtre.
+function listMemoryEntries() {
+  return loadMemories().filter(e => e && !e.suppressed);
+}
+
+function saveMemory(entry) {
+  const arr = loadMemories();
+  const i = arr.findIndex(e => e.id === entry.id);
+  if (i >= 0) arr[i] = entry; else arr.push(entry);
+  persistMemories(arr);
+}
+
+// Édition directe (utilisateur) : in-place, pas de chaîne supersedes.
+function editMemory(id, newContent) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (!e) return;
+  e.content = newContent;
+  e.updated_at = Date.now();
+  persistMemories(arr);
+}
+
+// Amendement (proposition modèle acceptée) : nouvelle entrée + tombstone de l'ancienne.
+function amendMemory(oldId, newContent) {
+  const arr = loadMemories();
+  const old = arr.find(e => e.id === oldId);
+  if (old) old.suppressed = true;
+  const now = Date.now();
+  arr.push({ id: genMemoryId(), content: newContent, created_at: now, updated_at: now, supersedes: oldId, suppressed: false });
+  persistMemories(arr);
+}
+
+function suppressMemory(id) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (e) { e.suppressed = true; persistMemories(arr); }
+}
+
+function restoreMemory(id) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (e) { delete e.suppressed; persistMemories(arr); }
+}
+
+function forgetMemory(id) {
+  persistMemories(loadMemories().filter(x => x.id !== id));
 }

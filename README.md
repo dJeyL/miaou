@@ -67,8 +67,8 @@ l'interface, JetBrains Mono pour le code.
   a besoin :
   - `get_conversation(id, with_contents=false)` — une conversation précise
     (résumé+mots-clés par défaut, messages complets si `with_contents=true`) ;
-  - `list_conversations(since, with_contents=false)` — les conversations actives
-    depuis une date ISO 8601.
+  - `list_conversations(since?, with_contents=false)` — toutes les conversations
+    actives, ou filtrées depuis une date ISO 8601 si `since` est fourni.
 
 ## Build
 

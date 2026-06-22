@@ -669,8 +669,8 @@ body {
 }
 #composer-model-menu.show { transform: none; }
 
-/* bannière mémoire (mode « proposer ») */
-.memory-banner {
+/* bannière résumés (mode « proposer ») */
+.summary-banner {
   display: none;
   align-items: center;
   justify-content: space-between;
@@ -683,10 +683,10 @@ body {
   margin-bottom: 9px;
   animation: rise 220ms var(--ease) both;
 }
-.memory-banner.show { display: flex; }
-.memory-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
-.memory-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
-.memory-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.summary-banner.show { display: flex; }
+.summary-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
+.summary-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+.summary-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .mb-btn {
   background: var(--surface-2);
   border: 1px solid var(--border-2);
@@ -919,6 +919,31 @@ body {
   transition: background 140ms var(--ease), border-color 140ms var(--ease);
 }
 .btn-ghost:hover { background: var(--surface-3); border-color: var(--border-2); }
+.btn-row { display: flex; gap: 8px; }
+.btn-row .btn-ghost { flex: 1; }
+
+/* onglets du drawer combiné Résumés / Souvenirs */
+.drawer-tabs { display: flex; gap: 2px; flex: 1; margin-right: 8px; }
+.drawer-tab {
+  background: none;
+  border: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  letter-spacing: 0.01em;
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+.drawer-tab:hover { color: var(--text-2); background: var(--surface-3); }
+.drawer-tab.active { color: var(--accent); background: var(--accent-dim); }
+
+.drawer-tab-panel { display: flex; flex-direction: column; gap: 12px; }
+.drawer-tab-panel.hidden { display: none; }
+
+.hidden { display: none; }
 
 /* gestion des souvenirs */
 .mem-list { display: flex; flex-direction: column; gap: 8px; }
@@ -969,6 +994,110 @@ body {
 .mem-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
 .mem-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
 .mem-btn .spin { width: 11px; height: 11px; }
+.mem-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.mem-btns.hidden { display: none; }
+
+/* zone d'ajout d'un nouveau souvenir */
+.mem-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mem-add-input {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 58px;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.mem-add-input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.mem-add-input::placeholder { color: var(--text-3); }
+.mem-add-btn { align-self: flex-end; }
+
+/* contenu d'un souvenir + édition inline */
+.mem-content {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 6px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mem-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.mem-edit-wrap.hidden { display: none; }
+.mem-edit-input {
+  background: var(--bg);
+  border: 1px solid var(--accent-bd);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 58px;
+}
+.mem-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* propositions de souvenirs (cartes dans le thread) */
+.memory-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: var(--col);
+  margin: 14px auto;
+  padding: 0 24px;
+}
+.proposal-card {
+  background: var(--surface-2);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.proposal-header { display: flex; align-items: center; }
+.proposal-type {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+.proposal-content {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.proposal-diff { display: flex; flex-direction: column; gap: 6px; }
+.proposal-diff-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.proposal-old { opacity: 0.65; text-decoration: line-through; text-decoration-color: var(--err); }
+.proposal-new { border-color: var(--accent-bd); }
+.proposal-actions { display: flex; gap: 8px; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {
@@ -1343,16 +1472,16 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
       <div class="composer-inner">
 
         <!-- Bannière mémoire (mode « proposer ») -->
-        <div class="memory-banner" id="memory-banner">
-          <div class="memory-banner-body">
-            <svg class="memory-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-            <span id="memory-banner-text">Des conversations passées semblent liées.</span>
+        <div class="summary-banner" id="summary-banner">
+          <div class="summary-banner-body">
+            <svg class="summary-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span id="summary-banner-text">Des conversations passées semblent liées.</span>
           </div>
-          <div class="memory-banner-actions">
-            <button class="mb-btn primary" onclick="memoryBanner('inject')">Injecter</button>
-            <button class="mb-btn" onclick="memoryBanner('ignore')">Ignorer</button>
-            <button class="mb-btn" onclick="memoryBanner('always')">Toujours</button>
-            <button class="mb-btn" onclick="memoryBanner('never')">Jamais</button>
+          <div class="summary-banner-actions">
+            <button class="mb-btn primary" onclick="summaryBanner('inject')">Injecter</button>
+            <button class="mb-btn" onclick="summaryBanner('ignore')">Ignorer</button>
+            <button class="mb-btn" onclick="summaryBanner('always')">Toujours</button>
+            <button class="mb-btn" onclick="summaryBanner('never')">Jamais</button>
           </div>
         </div>
 
@@ -1450,14 +1579,20 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
       </div>
       <div class="field">
         <label>Mémoire</label>
-        <div class="seg-group" id="memory-mode">
-          <button type="button" class="seg" data-mode="auto"    onclick="selectMemoryMode('auto')">Auto</button>
-          <button type="button" class="seg" data-mode="propose" onclick="selectMemoryMode('propose')">Proposer</button>
-          <button type="button" class="seg" data-mode="never"   onclick="selectMemoryMode('never')">Jamais</button>
+        <div class="btn-row">
+          <button class="btn-ghost" onclick="openSummaryDrawer()">Résumés</button>
+          <button class="btn-ghost" onclick="openMemoryDrawer()">Souvenirs</button>
         </div>
-        <span class="hint" id="memory-hint"></span>
       </div>
-      <button class="btn-ghost" onclick="openMemory()">Gérer les souvenirs</button>
+      <div class="field">
+        <label>Conversations passées</label>
+        <div class="seg-group" id="summary-injection-mode">
+          <button type="button" class="seg" data-mode="auto"    onclick="selectSummaryInjectionMode('auto')">Auto</button>
+          <button type="button" class="seg" data-mode="propose" onclick="selectSummaryInjectionMode('propose')">Proposer</button>
+          <button type="button" class="seg" data-mode="never"   onclick="selectSummaryInjectionMode('never')">Jamais</button>
+        </div>
+        <span class="hint" id="summary-injection-hint"></span>
+      </div>
       <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
     </div>
@@ -1478,18 +1613,26 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
-  <!-- ═══ Memory manager drawer ═══ -->
-  <div class="backdrop" id="memory-backdrop" onclick="closeMemory()"></div>
-  <div class="drawer" id="memory-drawer">
+  <!-- ═══ Summary / Memories drawer (combiné, avec onglets) ═══ -->
+  <div class="backdrop" id="summary-backdrop" onclick="closeSummaryDrawer()"></div>
+  <div class="drawer" id="summary-drawer">
     <div class="drawer-head">
-      <h2>Souvenirs</h2>
-      <button class="icon-btn" onclick="closeMemory()">
+      <div class="drawer-tabs">
+        <button class="drawer-tab active" data-tab="summaries" onclick="switchMemoryTab('summaries')">Résumés</button>
+        <button class="drawer-tab" data-tab="memories" onclick="switchMemoryTab('memories')">Souvenirs</button>
+      </div>
+      <button class="icon-btn" onclick="closeSummaryDrawer()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <div class="drawer-body">
-      <span class="hint">Supprimer un souvenir ne touche jamais à la conversation elle-même. La suppression est réversible.</span>
-      <div class="mem-list" id="memory-list"></div>
+      <div id="summary-tab-panel" class="drawer-tab-panel">
+        <span class="hint">Supprimer un résumé ne touche jamais à la conversation elle-même. La suppression est réversible.</span>
+        <div class="mem-list" id="summary-list"></div>
+      </div>
+      <div id="memory-tab-panel" class="drawer-tab-panel hidden">
+        <div class="mem-list" id="memory-list"></div>
+      </div>
     </div>
   </div>
 
@@ -1499,7 +1642,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-22 11:20 UTC */
+/* miaou — built: 2026-06-22 19:53 UTC */
 
 
 /* ── utils.js ── */
@@ -1634,7 +1777,7 @@ const DEFAULT_SETTINGS = {
   model: '',
   systemPrompt: '',
   highlight: true,
-  memoryMode: 'propose',   // 'auto' | 'propose' | 'never'
+  summaryInjectionMode: 'propose',   // 'auto' | 'propose' | 'never'
   theme: 'system',         // 'light' | 'dark' | 'system'
   showModelSelector: false, // sélecteur de modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
@@ -1793,6 +1936,71 @@ function backfillCandidates() {
     isSummaryCandidate(c.id) && hasSubstance(c.messages));
 }
 
+// ── Souvenirs utilisateur (miaou-memories) ───────────────────────────────────
+// Schéma : { id, content, created_at, updated_at, supersedes, suppressed }
+// Tombstone : { ..., suppressed: true }  ← conserve content pour affichage
+
+const MEMORIES_KEY = 'miaou-memories';
+
+function genMemoryId() { return 'm' + Date.now().toString(36); }
+
+function loadMemories() {
+  try { return JSON.parse(localStorage.getItem(MEMORIES_KEY)) || []; }
+  catch (e) { return []; }
+}
+
+function persistMemories(arr) {
+  localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
+}
+
+// Entrées actives : non-supprimées. supersedes est de la provenance, pas un filtre.
+function listMemoryEntries() {
+  return loadMemories().filter(e => e && !e.suppressed);
+}
+
+function saveMemory(entry) {
+  const arr = loadMemories();
+  const i = arr.findIndex(e => e.id === entry.id);
+  if (i >= 0) arr[i] = entry; else arr.push(entry);
+  persistMemories(arr);
+}
+
+// Édition directe (utilisateur) : in-place, pas de chaîne supersedes.
+function editMemory(id, newContent) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (!e) return;
+  e.content = newContent;
+  e.updated_at = Date.now();
+  persistMemories(arr);
+}
+
+// Amendement (proposition modèle acceptée) : nouvelle entrée + tombstone de l'ancienne.
+function amendMemory(oldId, newContent) {
+  const arr = loadMemories();
+  const old = arr.find(e => e.id === oldId);
+  if (old) old.suppressed = true;
+  const now = Date.now();
+  arr.push({ id: genMemoryId(), content: newContent, created_at: now, updated_at: now, supersedes: oldId, suppressed: false });
+  persistMemories(arr);
+}
+
+function suppressMemory(id) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (e) { e.suppressed = true; persistMemories(arr); }
+}
+
+function restoreMemory(id) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (e) { delete e.suppressed; persistMemories(arr); }
+}
+
+function forgetMemory(id) {
+  persistMemories(loadMemories().filter(x => x.id !== id));
+}
+
 
 /* ── tools.js ── */
 
@@ -1802,6 +2010,12 @@ function backfillCandidates() {
    langage naturel injectée dans le prompt système est DÉRIVÉE du registre,
    jamais écrite en dur.
    ────────────────────────────────────────────────────────────────────────── */
+
+// ── File d'attente des propositions de souvenirs ─────────────────────────────
+// Les handlers des outils propose_* poussent ici ; onFinal (main.js) consomme.
+let _pendingMemoryProposals = [];
+function getPendingMemoryProposals() { return _pendingMemoryProposals.slice(); }
+function clearPendingMemoryProposals() { _pendingMemoryProposals = []; }
 
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
@@ -1873,6 +2087,76 @@ const TOOLS = [
         const conv = loadConversation(e.id);
         return conv ? Object.assign({}, e, { messages: conv.messages ?? conv }) : e;
       }));
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_memory',
+        description:
+          "Propose d'enregistrer un nouveau souvenir persistant pour l'utilisateur. " +
+          "Le souvenir sera soumis à l'utilisateur pour validation — ne rien écrire directement.",
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'Contenu du souvenir à enregistrer' },
+          },
+          required: ['content'],
+        },
+      },
+    },
+    handler: (args) => {
+      if (!args.content || !args.content.trim()) return 'Contenu vide — proposition ignorée.';
+      _pendingMemoryProposals.push({ type: 'add', content: args.content.trim() });
+      return 'Proposition mise en attente de validation par l\'utilisateur.';
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_memory_update',
+        description:
+          "Propose de remplacer un souvenir existant par un contenu mis à jour. " +
+          "La mise à jour sera soumise à l'utilisateur pour validation.",
+        parameters: {
+          type: 'object',
+          properties: {
+            old_id:      { type: 'string', description: 'Identifiant du souvenir à remplacer' },
+            new_content: { type: 'string', description: 'Nouveau contenu proposé' },
+          },
+          required: ['old_id', 'new_content'],
+        },
+      },
+    },
+    handler: (args) => {
+      if (!args.old_id || !args.new_content || !args.new_content.trim()) return 'Paramètres invalides.';
+      _pendingMemoryProposals.push({ type: 'update', old_id: args.old_id, new_content: args.new_content.trim() });
+      return 'Proposition mise en attente de validation par l\'utilisateur.';
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_memory_delete',
+        description:
+          "Propose de supprimer un souvenir existant. " +
+          "La suppression sera soumise à l'utilisateur pour validation.",
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Identifiant du souvenir à supprimer' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    handler: (args) => {
+      if (!args.id) return 'Identifiant manquant.';
+      _pendingMemoryProposals.push({ type: 'delete', id: args.id });
+      return 'Proposition mise en attente de validation par l\'utilisateur.';
     },
   },
 ];
@@ -2122,8 +2406,9 @@ async function runConversation(messages, hooks) {
       // Flush complet du raisonnement de ce tour AVANT d'exécuter l'outil
       // (pas de traitement en parallèle) ; il reste affiché pendant l'appel.
       reasoningAcc = joinReasoning(reasoningAcc, result.reasoning);
-      // Ce tour ne « parle » pas : effacer tout content live déjà affiché.
-      if (h.onToolTour) h.onToolTour();
+      // Passe le content du tour à l'UI : s'il est non vide, l'UI le finalise
+      // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
+      if (h.onToolTour) h.onToolTour(result.content);
 
       messages.push({
         role: 'assistant',
@@ -2995,7 +3280,7 @@ function pickComposerModel(m) {
 // ── Settings drawer ─────────────────────────────────────────────────────────
 function openSettings() {
   const s = loadSettings();
-  setMemoryModeUI(s.memoryMode);   // valeur courante (peut changer via la bannière)
+  setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
@@ -3008,22 +3293,22 @@ function closeSettings() {
 
 // Légende décrivant le comportement induit par l'option sélectionnée (une seule
 // à la fois), plutôt que l'énumération des trois modes.
-const MEMORY_HINTS = {
+const SUMMARY_INJECTION_HINTS = {
   auto:    "Recherche les conversations passées liées et les injecte dans le contexte, sans rien demander.",
   propose: "Détecte les conversations passées liées et propose de les injecter via une bannière, avant l'envoi.",
   never:   "Aucune recherche ni injection automatique des conversations passées.",
 };
 
-let pendingMemoryMode = 'propose';
-function setMemoryModeUI(mode) {
-  pendingMemoryMode = mode || 'propose';
-  document.querySelectorAll('#memory-mode .seg').forEach(b => {
-    b.classList.toggle('active', b.getAttribute('data-mode') === pendingMemoryMode);
+let pendingSummaryInjectionMode = 'propose';
+function setSummaryInjectionModeUI(mode) {
+  pendingSummaryInjectionMode = mode || 'propose';
+  document.querySelectorAll('#summary-injection-mode .seg').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-mode') === pendingSummaryInjectionMode);
   });
-  const hint = $('memory-hint');
-  if (hint) hint.textContent = MEMORY_HINTS[pendingMemoryMode] || '';
+  const hint = $('summary-injection-hint');
+  if (hint) hint.textContent = SUMMARY_INJECTION_HINTS[pendingSummaryInjectionMode] || '';
 }
-function selectMemoryMode(mode) { setMemoryModeUI(mode); }
+function selectSummaryInjectionMode(mode) { setSummaryInjectionModeUI(mode); }
 
 // ── Thème ────────────────────────────────────────────────────────────────────
 const THEME_HINTS = {
@@ -3058,45 +3343,58 @@ function onToggleHighlight() {
   renderThread(currentThread);
 }
 
-// ── Bannière mémoire (mode « proposer ») ────────────────────────────────────
+// ── Bannière résumés (mode « proposer ») ────────────────────────────────────
 let _bannerHandlers = null;
-function showMemoryBanner(matches, handlers) {
+function showSummaryBanner(matches, handlers) {
   _bannerHandlers = handlers;
   const n = matches.length;
-  $('memory-banner-text').textContent = n > 1
+  $('summary-banner-text').textContent = n > 1
     ? n + ' conversations passées semblent liées.'
     : 'Une conversation passée semble liée.';
-  $('memory-banner').classList.add('show');
+  $('summary-banner').classList.add('show');
 }
-function hideMemoryBanner() {
-  const b = $('memory-banner');
+function hideSummaryBanner() {
+  const b = $('summary-banner');
   if (b) b.classList.remove('show');
   _bannerHandlers = null;
 }
-function memoryBanner(action) {
+function summaryBanner(action) {
   const h = _bannerHandlers;
-  hideMemoryBanner();
+  hideSummaryBanner();
   if (h && h[action]) h[action]();
 }
 
-// ── Gestion des souvenirs ───────────────────────────────────────────────────
-function openMemory() {
-  renderMemoryList();
-  $('memory-drawer').classList.add('show');
-  $('memory-backdrop').classList.add('show');
+// ── Drawer combiné Résumés / Souvenirs ─────────────────────────────────────
+function openSummaryDrawer(tab) {
+  switchMemoryTab(tab || 'summaries');
+  $('summary-drawer').classList.add('show');
+  $('summary-backdrop').classList.add('show');
 }
-function closeMemory() {
-  $('memory-drawer').classList.remove('show');
-  $('memory-backdrop').classList.remove('show');
+function openMemoryDrawer() { openSummaryDrawer('memories'); }
+function closeSummaryDrawer() {
+  $('summary-drawer').classList.remove('show');
+  $('summary-backdrop').classList.remove('show');
 }
 
-function renderMemoryList() {
-  const wrap = $('memory-list');
+function switchMemoryTab(tab) {
+  document.querySelectorAll('#summary-drawer .drawer-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  const sp = $('summary-tab-panel');
+  const mp = $('memory-tab-panel');
+  if (sp) sp.classList.toggle('hidden', tab !== 'summaries');
+  if (mp) mp.classList.toggle('hidden', tab !== 'memories');
+  if (tab === 'summaries') renderSummaryList();
+  else renderMemoryList();
+}
+
+function renderSummaryList() {
+  const wrap = $('summary-list');
   wrap.innerHTML = '';
   const all = loadSummaries();
   const ids = Object.keys(all);
   if (!ids.length) {
-    wrap.innerHTML = '<div class="mem-empty">Aucun souvenir pour l\'instant.</div>';
+    wrap.innerHTML = '<div class="mem-empty">Aucun résumé pour l\'instant.</div>';
     return;
   }
   ids.sort((a, b) => (all[b].timestamp || 0) - (all[a].timestamp || 0));
@@ -3110,7 +3408,7 @@ function renderMemoryList() {
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
         `<div class="mem-sub">supprimé${date ? ' · ' + escHtml(date) : ''}</div></div>` +
-        `<button class="mem-btn" onclick="restoreMemory('${id}')">Ré-autoriser</button></div>`;
+        `<button class="mem-btn" onclick="restoreSummaryItem('${id}')">Rétablir</button></div>`;
     } else {
       const full = e.summary || '';
       const extrait = full.slice(0, 150);
@@ -3118,12 +3416,12 @@ function renderMemoryList() {
         ? `<div class="mem-keywords"><strong>Mots-clefs</strong> — ${escHtml(e.keywords.join(', '))}</div>`
         : '';
       item.className = 'mem-item';
-      item.onclick = () => toggleMemoryExpand(id);
+      item.onclick = () => toggleSummaryExpand(id);
       item.innerHTML =
         `<div class="mem-header">` +
         `<div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
         `<div class="mem-sub">${escHtml(date)}</div></div>` +
-        `<button class="mem-btn danger" onclick="event.stopPropagation();deleteMemory('${id}')">Supprimer</button>` +
+        `<button class="mem-btn danger" onclick="event.stopPropagation();deleteSummaryItem('${id}')">Supprimer</button>` +
         `</div>` +
         `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
         `<div class="mem-full">${escHtml(full)}${kws}</div>`;
@@ -3132,10 +3430,10 @@ function renderMemoryList() {
   }
 }
 
-function deleteMemory(id) { suppressSummary(id); renderMemoryList(); }
+function deleteSummaryItem(id) { suppressSummary(id); renderSummaryList(); }
 
-function toggleMemoryExpand(id) {
-  const list = $('memory-list');
+function toggleSummaryExpand(id) {
+  const list = $('summary-list');
   const clicked = list.querySelector('.mem-item[data-id="' + id + '"]');
   if (!clicked) return;
   const wasExpanded = clicked.classList.contains('expanded');
@@ -3145,22 +3443,22 @@ function toggleMemoryExpand(id) {
 
 // Ré-autorisation. Si le résumé est conservé sous la tombstone → retour
 // instantané. Sinon, régénération avec loader inline sur l'item concerné.
-async function restoreMemory(id) {
+async function restoreSummaryItem(id) {
   const entry = getSummaryEntry(id);
   if (entry && entry.summary) {        // état d'avant préservé : instantané
     restoreSummary(id);
-    renderMemoryList();
+    renderSummaryList();
     return;
   }
 
   const conv = loadConversation(id);
   if (!conv || !hasSubstance(conv.messages)) {   // rien à régénérer
     restoreSummary(id);
-    renderMemoryList();
+    renderSummaryList();
     return;
   }
 
-  const item = $('memory-list').querySelector('.mem-item[data-id="' + id + '"]');
+  const item = $('summary-list').querySelector('.mem-item[data-id="' + id + '"]');
   if (item) setMemItemLoading(item, 'régénération…');
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
@@ -3172,7 +3470,7 @@ async function restoreMemory(id) {
   } else {
     restoreSummary(id);   // échec : on lève la tombstone (candidate au backfill)
   }
-  renderMemoryList();
+  renderSummaryList();
 }
 
 // ── Panneau des outils ──────────────────────────────────────────────────────
@@ -3232,6 +3530,190 @@ function setMemItemLoading(item, label) {
   btn.disabled = true;
   btn.classList.add('loading');
   btn.innerHTML = '<span class="spin"></span>' + escHtml(label);
+}
+
+// ── Souvenirs utilisateur (onglet Souvenirs du drawer combiné) ───────────────
+
+function renderMemoryList() {
+  const wrap = $('memory-list');
+  wrap.innerHTML = '';
+
+  const addArea = document.createElement('div');
+  addArea.className = 'mem-add';
+  addArea.innerHTML =
+    '<textarea class="mem-add-input" id="mem-add-input" rows="2" placeholder="Nouveau souvenir…"></textarea>' +
+    '<button class="mem-btn mem-add-btn" onclick="addMemoryEntry()">Ajouter</button>';
+  wrap.appendChild(addArea);
+
+  const all = loadMemories().sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  if (!all.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucun souvenir pour l\'instant.';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  for (const e of all) {
+    const item = document.createElement('div');
+    item.className = 'mem-item' + (e.suppressed ? ' suppressed' : '');
+    item.dataset.id = e.id;
+    const date = new Date(e.updated_at || e.created_at || 0).toLocaleDateString('fr-FR');
+    const amended = e.supersedes ? ' · amendé' : '';
+
+    if (e.suppressed) {
+      item.innerHTML =
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div>` +
+        `<div class="mem-btns">` +
+        `<button class="mem-btn" onclick="restoreMemoryEntry('${e.id}')">Rétablir</button>` +
+        `<button class="mem-btn danger" onclick="forgetMemoryEntry('${e.id}')">Oublier</button>` +
+        `</div></div>` +
+        `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
+    } else {
+      item.innerHTML =
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date + amended)}</div></div>` +
+        `<div class="mem-btns" id="mem-btns-${e.id}">` +
+        `<button class="mem-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
+        `<button class="mem-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
+        `</div></div>` +
+        `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
+        `<div class="mem-edit-wrap hidden" id="mem-edit-${e.id}">` +
+        `<textarea class="mem-edit-input" id="mem-edit-input-${e.id}">${escHtml(e.content || '')}</textarea>` +
+        `<div class="mem-edit-actions">` +
+        `<button class="mem-btn primary" onclick="saveMemoryEntryEdit('${e.id}')">Enregistrer</button>` +
+        `<button class="mem-btn" onclick="cancelMemoryEntryEdit('${e.id}')">Annuler</button>` +
+        `</div></div>`;
+    }
+    wrap.appendChild(item);
+  }
+}
+
+function addMemoryEntry() {
+  const input = $('mem-add-input');
+  const content = input ? input.value.trim() : '';
+  if (!content) return;
+  const now = Date.now();
+  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, supersedes: null, suppressed: false });
+  renderMemoryList();
+}
+
+function deleteMemoryEntry(id) { suppressMemory(id); renderMemoryList(); }
+function restoreMemoryEntry(id) { restoreMemory(id); renderMemoryList(); }
+function forgetMemoryEntry(id) { forgetMemory(id); renderMemoryList(); }
+
+function startEditMemoryEntry(id) {
+  const btns = $('mem-btns-' + id);
+  const contentEl = $('mem-content-' + id);
+  const editWrap = $('mem-edit-' + id);
+  if (btns) btns.classList.add('hidden');
+  if (contentEl) contentEl.hidden = true;
+  if (editWrap) editWrap.classList.remove('hidden');
+  const area = $('mem-edit-input-' + id);
+  if (area) { area.focus(); area.selectionStart = area.selectionEnd = area.value.length; }
+}
+
+function cancelMemoryEntryEdit(id) {
+  const btns = $('mem-btns-' + id);
+  const editWrap = $('mem-edit-' + id);
+  const contentEl = $('mem-content-' + id);
+  if (btns) btns.classList.remove('hidden');
+  if (editWrap) editWrap.classList.add('hidden');
+  if (contentEl) contentEl.hidden = false;
+}
+
+function saveMemoryEntryEdit(id) {
+  const area = $('mem-edit-input-' + id);
+  if (!area) return;
+  const content = area.value.trim();
+  if (!content) return;
+  editMemory(id, content);
+  renderMemoryList();
+}
+
+// ── Propositions de souvenirs (cartes de confirmation dans le thread) ─────────
+
+const _proposalMap = {};
+
+function renderMemoryProposals(proposals) {
+  const thread = $('thread');
+  const container = document.createElement('div');
+  container.className = 'memory-proposals';
+
+  for (const p of proposals) {
+    const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    _proposalMap[pid] = p;
+
+    const card = document.createElement('div');
+    card.className = 'proposal-card';
+    card.id = pid;
+
+    let typeLabel, bodyHtml;
+    if (p.type === 'add') {
+      typeLabel = 'Nouveau souvenir';
+      bodyHtml = `<div class="proposal-content">${escHtml(p.content)}</div>`;
+    } else if (p.type === 'update') {
+      typeLabel = 'Modification de souvenir';
+      const existing = listMemoryEntries().find(e => e.id === p.old_id);
+      const oldText = existing ? existing.content : '(introuvable)';
+      bodyHtml =
+        `<div class="proposal-diff">` +
+        `<div class="proposal-diff-label">Avant</div>` +
+        `<div class="proposal-content proposal-old">${escHtml(oldText)}</div>` +
+        `<div class="proposal-diff-label">Après</div>` +
+        `<div class="proposal-content proposal-new">${escHtml(p.new_content)}</div>` +
+        `</div>`;
+    } else if (p.type === 'delete') {
+      typeLabel = 'Suppression de souvenir';
+      const existing = listMemoryEntries().find(e => e.id === p.id);
+      const text = existing ? existing.content : '(introuvable)';
+      bodyHtml = `<div class="proposal-content proposal-old">${escHtml(text)}</div>`;
+    } else {
+      typeLabel = 'Proposition';
+      bodyHtml = '';
+    }
+
+    card.innerHTML =
+      `<div class="proposal-header"><span class="proposal-type">${escHtml(typeLabel)}</span></div>` +
+      bodyHtml +
+      `<div class="proposal-actions">` +
+      `<button class="mb-btn primary" onclick="acceptProposal('${pid}')">Accepter</button>` +
+      `<button class="mb-btn" onclick="rejectProposal('${pid}')">Rejeter</button>` +
+      `</div>`;
+
+    container.appendChild(card);
+  }
+
+  thread.appendChild(container);
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function acceptProposal(pid) {
+  const p = _proposalMap[pid];
+  if (!p) return;
+  if (p.type === 'add') {
+    const now = Date.now();
+    saveMemory({ id: genMemoryId(), content: p.content, created_at: now, updated_at: now, supersedes: null, suppressed: false });
+  } else if (p.type === 'update') {
+    amendMemory(p.old_id, p.new_content);
+  } else if (p.type === 'delete') {
+    suppressMemory(p.id);
+  }
+  delete _proposalMap[pid];
+  _removeProposalCard(pid);
+  if ($('summary-drawer').classList.contains('show')) renderMemoryList();
+}
+
+function rejectProposal(pid) {
+  delete _proposalMap[pid];
+  _removeProposalCard(pid);
+}
+
+function _removeProposalCard(pid) {
+  const card = document.getElementById(pid);
+  if (!card) return;
+  const container = card.parentElement;
+  card.remove();
+  if (container && !container.children.length) container.remove();
 }
 
 
@@ -3301,7 +3783,7 @@ function setConvModel(m) {
 }
 
 // ── Construction du message système (un seul, concaténé) ────────────────────
-function buildMemoryBlock(matches) {
+function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
@@ -3312,19 +3794,35 @@ function buildMemoryBlock(matches) {
          lines.join('\n');
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, bloc mémoire.
+// Souvenirs utilisateur actifs injectés en contexte (injection complète, pas de
+// filtrage/ranking : volume faible attendu pour un usage personnel).
+function buildMemoryEntriesBlock() {
+  const entries = listMemoryEntries();
+  if (!entries.length) return '';
+  const lines = entries.map(e => `- [id: ${e.id}] ${e.content}`);
+  return "Souvenirs de l'utilisateur (persistants, à respecter et prendre en compte) :\n" +
+         lines.join('\n');
+}
+
+// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs.
 // Injecté en préfixe du dernier message utilisateur, pas dans le system message,
 // pour préserver le préfixe stable et permettre le KV cache prefix matching.
 function buildContextBlock(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
-  const model = (loadSettings().model || '').trim();
-  const lines = ['Date et heure actuelles : ' + dateStr];
-  if (model) lines.push('Modèle : ' + model + ' (c\'est toi)');
+  const model = activeModel().trim();
+  const lines = ['Date et heure : ' + dateStr];
+  if (model) lines.push('Modèle : ' + model);
   const parts = [lines.join('\n')];
-  const mem = buildMemoryBlock(matches || []);
-  if (mem) parts.push(mem);
-  return parts.join('\n\n---\n\n');
+  const summaries = buildSummaryBlock(matches || []);
+  if (summaries) parts.push(summaries);
+  const memories = buildMemoryEntriesBlock();
+  if (memories) parts.push(memories);
+  const inner = parts.join('\n\n');
+  return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
+    ' Utilise ces informations si elles sont pertinentes,' +
+    ' mais ne les mentionne pas spontanément ni ne les acquitte.\n\n' +
+    inner + '\n</miaou_context>\n\n';
 }
 
 // Contenu statique uniquement : identique d'un tour à l'autre tant que tools
@@ -3454,7 +3952,7 @@ function onSaveSettings() {
     model: $('set-model').value.trim(),
     systemPrompt: $('set-system').value,
     highlight: $('set-highlight').checked,
-    memoryMode: pendingMemoryMode,
+    summaryInjectionMode: pendingSummaryInjectionMode,
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
   };
@@ -3506,19 +4004,19 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.memoryMode !== 'never') matches = searchSummaries(text);
+  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text);
 
-  if (settings.memoryMode === 'propose' && matches.length) {
-    showMemoryBanner(matches, {
+  if (settings.summaryInjectionMode === 'propose' && matches.length) {
+    showSummaryBanner(matches, {
       inject: () => dispatchSend(matches),
       ignore: () => dispatchSend([]),
-      always: () => { saveSettings({ memoryMode: 'auto' });  setMemoryModeUI('auto');  dispatchSend(matches); },
-      never:  () => { saveSettings({ memoryMode: 'never' }); setMemoryModeUI('never'); dispatchSend([]); },
+      always: () => { saveSettings({ summaryInjectionMode: 'auto' });  setSummaryInjectionModeUI('auto');  dispatchSend(matches); },
+      never:  () => { saveSettings({ summaryInjectionMode: 'never' }); setSummaryInjectionModeUI('never'); dispatchSend([]); },
     });
     return;
   }
 
-  dispatchSend(settings.memoryMode === 'auto' ? matches : []);
+  dispatchSend(settings.summaryInjectionMode === 'auto' ? matches : []);
 }
 
 // Édition d'un message utilisateur passé (par index dans currentThread) :
@@ -3539,7 +4037,7 @@ function editUserMessage(index, newText) {
 }
 
 async function dispatchSend(matches) {
-  hideMemoryBanner();
+  hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
   const threadMsgs = currentThread.map(m => ({ role: m.role, content: m.content }));
@@ -3558,14 +4056,25 @@ async function dispatchSend(matches) {
 
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
-  const wrap = startAssistantMessage(model);
+  let wrap = startAssistantMessage(model);
   setSending(true);
   try {
     await runConversation(apiMessages, {
       model,
       onDelta: (full) => streamInto(wrap, full),
       onReasoning: (full) => setReasoning(wrap, full),
-      onToolTour: () => resetAssistant(wrap),
+      onToolTour: (content) => {
+        if (content && content.trim()) {
+          // Le tour tool_calls a produit du texte visible : on le finalise dans
+          // sa propre bulle et on en ouvre une nouvelle pour la suite.
+          finalizeAssistant(wrap, content);
+          currentThread.push({ role: 'assistant', content, model });
+          persistCurrent();
+          wrap = startAssistantMessage(model);
+        } else {
+          resetAssistant(wrap);
+        }
+      },
       onFinal: (content, reasoning) => {
         finalizeAssistant(wrap, content);
         const msg = { role: 'assistant', content, model };
@@ -3574,6 +4083,10 @@ async function dispatchSend(matches) {
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
+        // Propositions de souvenirs émises pendant le tour → cartes de confirmation.
+        const proposals = getPendingMemoryProposals();
+        clearPendingMemoryProposals();
+        if (proposals.length) renderMemoryProposals(proposals);
       },
       onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
     });
@@ -3693,7 +4206,7 @@ function init() {
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
   $('set-modelselector').checked = !!s.showModelSelector;
-  setMemoryModeUI(s.memoryMode);
+  setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
   syncKeyFieldHint();

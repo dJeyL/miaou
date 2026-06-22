@@ -658,8 +658,8 @@ body {
 }
 #composer-model-menu.show { transform: none; }
 
-/* bannière mémoire (mode « proposer ») */
-.memory-banner {
+/* bannière résumés (mode « proposer ») */
+.summary-banner {
   display: none;
   align-items: center;
   justify-content: space-between;
@@ -672,10 +672,10 @@ body {
   margin-bottom: 9px;
   animation: rise 220ms var(--ease) both;
 }
-.memory-banner.show { display: flex; }
-.memory-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
-.memory-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
-.memory-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.summary-banner.show { display: flex; }
+.summary-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
+.summary-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+.summary-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .mb-btn {
   background: var(--surface-2);
   border: 1px solid var(--border-2);
@@ -908,6 +908,31 @@ body {
   transition: background 140ms var(--ease), border-color 140ms var(--ease);
 }
 .btn-ghost:hover { background: var(--surface-3); border-color: var(--border-2); }
+.btn-row { display: flex; gap: 8px; }
+.btn-row .btn-ghost { flex: 1; }
+
+/* onglets du drawer combiné Résumés / Souvenirs */
+.drawer-tabs { display: flex; gap: 2px; flex: 1; margin-right: 8px; }
+.drawer-tab {
+  background: none;
+  border: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  letter-spacing: 0.01em;
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+.drawer-tab:hover { color: var(--text-2); background: var(--surface-3); }
+.drawer-tab.active { color: var(--accent); background: var(--accent-dim); }
+
+.drawer-tab-panel { display: flex; flex-direction: column; gap: 12px; }
+.drawer-tab-panel.hidden { display: none; }
+
+.hidden { display: none; }
 
 /* gestion des souvenirs */
 .mem-list { display: flex; flex-direction: column; gap: 8px; }
@@ -958,6 +983,110 @@ body {
 .mem-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
 .mem-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
 .mem-btn .spin { width: 11px; height: 11px; }
+.mem-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.mem-btns.hidden { display: none; }
+
+/* zone d'ajout d'un nouveau souvenir */
+.mem-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mem-add-input {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 58px;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.mem-add-input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.mem-add-input::placeholder { color: var(--text-3); }
+.mem-add-btn { align-self: flex-end; }
+
+/* contenu d'un souvenir + édition inline */
+.mem-content {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 6px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mem-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.mem-edit-wrap.hidden { display: none; }
+.mem-edit-input {
+  background: var(--bg);
+  border: 1px solid var(--accent-bd);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 58px;
+}
+.mem-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* propositions de souvenirs (cartes dans le thread) */
+.memory-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: var(--col);
+  margin: 14px auto;
+  padding: 0 24px;
+}
+.proposal-card {
+  background: var(--surface-2);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.proposal-header { display: flex; align-items: center; }
+.proposal-type {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+.proposal-content {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.proposal-diff { display: flex; flex-direction: column; gap: 6px; }
+.proposal-diff-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.proposal-old { opacity: 0.65; text-decoration: line-through; text-decoration-color: var(--err); }
+.proposal-new { border-color: var(--accent-bd); }
+.proposal-actions { display: flex; gap: 8px; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {

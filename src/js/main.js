@@ -62,7 +62,7 @@ function setConvModel(m) {
 }
 
 // ── Construction du message système (un seul, concaténé) ────────────────────
-function buildMemoryBlock(matches) {
+function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
@@ -73,19 +73,35 @@ function buildMemoryBlock(matches) {
          lines.join('\n');
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, bloc mémoire.
+// Souvenirs utilisateur actifs injectés en contexte (injection complète, pas de
+// filtrage/ranking : volume faible attendu pour un usage personnel).
+function buildMemoryEntriesBlock() {
+  const entries = listMemoryEntries();
+  if (!entries.length) return '';
+  const lines = entries.map(e => `- [id: ${e.id}] ${e.content}`);
+  return "Souvenirs de l'utilisateur (persistants, à respecter et prendre en compte) :\n" +
+         lines.join('\n');
+}
+
+// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs.
 // Injecté en préfixe du dernier message utilisateur, pas dans le system message,
 // pour préserver le préfixe stable et permettre le KV cache prefix matching.
 function buildContextBlock(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
-  const model = (loadSettings().model || '').trim();
-  const lines = ['Date et heure actuelles : ' + dateStr];
-  if (model) lines.push('Modèle : ' + model + ' (c\'est toi)');
+  const model = activeModel().trim();
+  const lines = ['Date et heure : ' + dateStr];
+  if (model) lines.push('Modèle : ' + model);
   const parts = [lines.join('\n')];
-  const mem = buildMemoryBlock(matches || []);
-  if (mem) parts.push(mem);
-  return parts.join('\n\n---\n\n');
+  const summaries = buildSummaryBlock(matches || []);
+  if (summaries) parts.push(summaries);
+  const memories = buildMemoryEntriesBlock();
+  if (memories) parts.push(memories);
+  const inner = parts.join('\n\n');
+  return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
+    ' Utilise ces informations si elles sont pertinentes,' +
+    ' mais ne les mentionne pas spontanément ni ne les acquitte.\n\n' +
+    inner + '\n</miaou_context>\n\n';
 }
 
 // Contenu statique uniquement : identique d'un tour à l'autre tant que tools
@@ -215,7 +231,7 @@ function onSaveSettings() {
     model: $('set-model').value.trim(),
     systemPrompt: $('set-system').value,
     highlight: $('set-highlight').checked,
-    memoryMode: pendingMemoryMode,
+    summaryInjectionMode: pendingSummaryInjectionMode,
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
   };
@@ -267,19 +283,19 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.memoryMode !== 'never') matches = searchSummaries(text);
+  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text);
 
-  if (settings.memoryMode === 'propose' && matches.length) {
-    showMemoryBanner(matches, {
+  if (settings.summaryInjectionMode === 'propose' && matches.length) {
+    showSummaryBanner(matches, {
       inject: () => dispatchSend(matches),
       ignore: () => dispatchSend([]),
-      always: () => { saveSettings({ memoryMode: 'auto' });  setMemoryModeUI('auto');  dispatchSend(matches); },
-      never:  () => { saveSettings({ memoryMode: 'never' }); setMemoryModeUI('never'); dispatchSend([]); },
+      always: () => { saveSettings({ summaryInjectionMode: 'auto' });  setSummaryInjectionModeUI('auto');  dispatchSend(matches); },
+      never:  () => { saveSettings({ summaryInjectionMode: 'never' }); setSummaryInjectionModeUI('never'); dispatchSend([]); },
     });
     return;
   }
 
-  dispatchSend(settings.memoryMode === 'auto' ? matches : []);
+  dispatchSend(settings.summaryInjectionMode === 'auto' ? matches : []);
 }
 
 // Édition d'un message utilisateur passé (par index dans currentThread) :
@@ -300,7 +316,7 @@ function editUserMessage(index, newText) {
 }
 
 async function dispatchSend(matches) {
-  hideMemoryBanner();
+  hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
   const threadMsgs = currentThread.map(m => ({ role: m.role, content: m.content }));
@@ -319,14 +335,25 @@ async function dispatchSend(matches) {
 
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
-  const wrap = startAssistantMessage(model);
+  let wrap = startAssistantMessage(model);
   setSending(true);
   try {
     await runConversation(apiMessages, {
       model,
       onDelta: (full) => streamInto(wrap, full),
       onReasoning: (full) => setReasoning(wrap, full),
-      onToolTour: () => resetAssistant(wrap),
+      onToolTour: (content) => {
+        if (content && content.trim()) {
+          // Le tour tool_calls a produit du texte visible : on le finalise dans
+          // sa propre bulle et on en ouvre une nouvelle pour la suite.
+          finalizeAssistant(wrap, content);
+          currentThread.push({ role: 'assistant', content, model });
+          persistCurrent();
+          wrap = startAssistantMessage(model);
+        } else {
+          resetAssistant(wrap);
+        }
+      },
       onFinal: (content, reasoning) => {
         finalizeAssistant(wrap, content);
         const msg = { role: 'assistant', content, model };
@@ -335,6 +362,10 @@ async function dispatchSend(matches) {
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
+        // Propositions de souvenirs émises pendant le tour → cartes de confirmation.
+        const proposals = getPendingMemoryProposals();
+        clearPendingMemoryProposals();
+        if (proposals.length) renderMemoryProposals(proposals);
       },
       onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
     });
@@ -454,7 +485,7 @@ function init() {
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
   $('set-modelselector').checked = !!s.showModelSelector;
-  setMemoryModeUI(s.memoryMode);
+  setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
   syncKeyFieldHint();

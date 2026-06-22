@@ -5,6 +5,12 @@
    jamais écrite en dur.
    ────────────────────────────────────────────────────────────────────────── */
 
+// ── File d'attente des propositions de souvenirs ─────────────────────────────
+// Les handlers des outils propose_* poussent ici ; onFinal (main.js) consomme.
+let _pendingMemoryProposals = [];
+function getPendingMemoryProposals() { return _pendingMemoryProposals.slice(); }
+function clearPendingMemoryProposals() { _pendingMemoryProposals = []; }
+
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -75,6 +81,76 @@ const TOOLS = [
         const conv = loadConversation(e.id);
         return conv ? Object.assign({}, e, { messages: conv.messages ?? conv }) : e;
       }));
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_memory',
+        description:
+          "Propose d'enregistrer un nouveau souvenir persistant pour l'utilisateur. " +
+          "Le souvenir sera soumis à l'utilisateur pour validation — ne rien écrire directement.",
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'Contenu du souvenir à enregistrer' },
+          },
+          required: ['content'],
+        },
+      },
+    },
+    handler: (args) => {
+      if (!args.content || !args.content.trim()) return 'Contenu vide — proposition ignorée.';
+      _pendingMemoryProposals.push({ type: 'add', content: args.content.trim() });
+      return 'Proposition mise en attente de validation par l\'utilisateur.';
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_memory_update',
+        description:
+          "Propose de remplacer un souvenir existant par un contenu mis à jour. " +
+          "La mise à jour sera soumise à l'utilisateur pour validation.",
+        parameters: {
+          type: 'object',
+          properties: {
+            old_id:      { type: 'string', description: 'Identifiant du souvenir à remplacer' },
+            new_content: { type: 'string', description: 'Nouveau contenu proposé' },
+          },
+          required: ['old_id', 'new_content'],
+        },
+      },
+    },
+    handler: (args) => {
+      if (!args.old_id || !args.new_content || !args.new_content.trim()) return 'Paramètres invalides.';
+      _pendingMemoryProposals.push({ type: 'update', old_id: args.old_id, new_content: args.new_content.trim() });
+      return 'Proposition mise en attente de validation par l\'utilisateur.';
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_memory_delete',
+        description:
+          "Propose de supprimer un souvenir existant. " +
+          "La suppression sera soumise à l'utilisateur pour validation.",
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Identifiant du souvenir à supprimer' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    handler: (args) => {
+      if (!args.id) return 'Identifiant manquant.';
+      _pendingMemoryProposals.push({ type: 'delete', id: args.id });
+      return 'Proposition mise en attente de validation par l\'utilisateur.';
     },
   },
 ];

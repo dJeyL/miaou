@@ -82,4 +82,75 @@ describe('toolDefinitions', function() {
       expect(d.function.parameters.properties.with_contents.type).toBe('boolean');
     });
   });
+  it('expose les trois outils propose_*', function() {
+    var defs = toolDefinitions();
+    var names = defs.map(function(d) { return d.function.name; });
+    expect(names.indexOf('propose_memory') >= 0).toBeTruthy();
+    expect(names.indexOf('propose_memory_update') >= 0).toBeTruthy();
+    expect(names.indexOf('propose_memory_delete') >= 0).toBeTruthy();
+  });
+});
+
+describe('propose_memory — mise en file', function() {
+  it('retourne un accusé de réception et met la proposition en file', function() {
+    clearPendingMemoryProposals();
+    var r = runTool('propose_memory', { content: 'je préfère les réponses courtes' });
+    expect(r).toContain('attente');
+    var pending = getPendingMemoryProposals();
+    expect(pending.length).toBe(1);
+    expect(pending[0].type).toBe('add');
+    expect(pending[0].content).toBe('je préfère les réponses courtes');
+  });
+  it('rejette un contenu vide sans mettre en file', function() {
+    clearPendingMemoryProposals();
+    var r = runTool('propose_memory', { content: '   ' });
+    expect(r).toContain('ignorée');
+    expect(getPendingMemoryProposals().length).toBe(0);
+  });
+});
+
+describe('propose_memory_update — mise en file', function() {
+  it('met une proposition de mise à jour en file', function() {
+    clearPendingMemoryProposals();
+    var r = runTool('propose_memory_update', { old_id: 'm1', new_content: 'contenu mis à jour' });
+    expect(r).toContain('attente');
+    var pending = getPendingMemoryProposals();
+    expect(pending.length).toBe(1);
+    expect(pending[0].type).toBe('update');
+    expect(pending[0].old_id).toBe('m1');
+    expect(pending[0].new_content).toBe('contenu mis à jour');
+  });
+  it('rejette les paramètres invalides', function() {
+    clearPendingMemoryProposals();
+    var r = runTool('propose_memory_update', { old_id: 'm1' });
+    expect(getPendingMemoryProposals().length).toBe(0);
+  });
+});
+
+describe('propose_memory_delete — mise en file', function() {
+  it('met une proposition de suppression en file', function() {
+    clearPendingMemoryProposals();
+    var r = runTool('propose_memory_delete', { id: 'm1' });
+    expect(r).toContain('attente');
+    var pending = getPendingMemoryProposals();
+    expect(pending.length).toBe(1);
+    expect(pending[0].type).toBe('delete');
+    expect(pending[0].id).toBe('m1');
+  });
+  it('rejette un id manquant', function() {
+    clearPendingMemoryProposals();
+    runTool('propose_memory_delete', {});
+    expect(getPendingMemoryProposals().length).toBe(0);
+  });
+});
+
+describe('clearPendingMemoryProposals', function() {
+  it('vide la file sans affecter le reste', function() {
+    clearPendingMemoryProposals();
+    runTool('propose_memory', { content: 'test' });
+    runTool('propose_memory_delete', { id: 'm1' });
+    expect(getPendingMemoryProposals().length).toBe(2);
+    clearPendingMemoryProposals();
+    expect(getPendingMemoryProposals().length).toBe(0);
+  });
 });
