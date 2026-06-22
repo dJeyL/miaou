@@ -17,6 +17,19 @@ function summaryLight(e) {
            summary: e.summary, keywords: e.keywords };
 }
 
+// ── Guide de déclenchement, partagé entre les 3 outils mémoire ───────────────
+// Évite la divergence entre add/update/delete si la doctrine est retouchée plus tard.
+const MEMORY_TRIGGER_GUIDE =
+  "Déclenche cet outil quand l'utilisateur :\n" +
+  "  - donne une instruction durable sur ton comportement (marqueurs : \"dorénavant\", " +
+  "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"parle-moi en X\", " +
+  "\"ne fais plus jamais Y\")\n" +
+  "  - communique un fait stable sur lui-même (métier, projet en cours, contrainte " +
+  "personnelle, préférence technique récurrente)\n" +
+  "  - exprime une préférence de fond sur le format/ton/contenu de TES réponses\n" +
+  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours " +
+  "(\"réponds en 3 points pour cette question précise\").";
+
 const TOOLS = [
   {
     definition: {
@@ -90,7 +103,8 @@ const TOOLS = [
         name: 'propose_memory',
         description:
           "Propose d'enregistrer un nouveau souvenir persistant pour l'utilisateur. " +
-          "Le souvenir sera soumis à l'utilisateur pour validation — ne rien écrire directement.",
+          "Le souvenir sera soumis à l'utilisateur pour validation — ne rien écrire directement.\n\n" +
+          MEMORY_TRIGGER_GUIDE,
         parameters: {
           type: 'object',
           properties: {
@@ -113,7 +127,11 @@ const TOOLS = [
         name: 'propose_memory_update',
         description:
           "Propose de remplacer un souvenir existant par un contenu mis à jour. " +
-          "La mise à jour sera soumise à l'utilisateur pour validation.",
+          "La mise à jour sera soumise à l'utilisateur pour validation.\n\n" +
+          MEMORY_TRIGGER_GUIDE +
+          "\nDéclencheur spécifique : l'utilisateur référence explicitement un souvenir " +
+          "existant et signale un changement d'état (\"en fait c'est plutôt X\", " +
+          "\"corrige : ...\", \"ce n'est plus vrai, maintenant je...\").",
         parameters: {
           type: 'object',
           properties: {
@@ -137,7 +155,11 @@ const TOOLS = [
         name: 'propose_memory_delete',
         description:
           "Propose de supprimer un souvenir existant. " +
-          "La suppression sera soumise à l'utilisateur pour validation.",
+          "La suppression sera soumise à l'utilisateur pour validation.\n\n" +
+          MEMORY_TRIGGER_GUIDE +
+          "\nDéclencheur spécifique : l'utilisateur référence explicitement un souvenir " +
+          "existant et demande son retrait (\"oublie ça\", \"supprime le souvenir sur X\", " +
+          "\"ce n'est plus valable\").",
         parameters: {
           type: 'object',
           properties: {
