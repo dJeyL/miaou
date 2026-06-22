@@ -1499,7 +1499,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-21 21:40 UTC */
+/* miaou — built: 2026-06-22 11:20 UTC */
 
 
 /* ── utils.js ── */
@@ -2390,7 +2390,8 @@ function decoratePre(scope) {
 function renderThread(msgs) {
   const thread = $('thread');
   thread.innerHTML = '';
-  for (const m of (msgs || [])) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  if (!msgs || msgs.length === 0) { showWelcome(); return; }
+  for (const m of msgs) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
 }

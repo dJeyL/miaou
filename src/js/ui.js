@@ -154,7 +154,8 @@ function decoratePre(scope) {
 function renderThread(msgs) {
   const thread = $('thread');
   thread.innerHTML = '';
-  for (const m of (msgs || [])) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  if (!msgs || msgs.length === 0) { showWelcome(); return; }
+  for (const m of msgs) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
 }
