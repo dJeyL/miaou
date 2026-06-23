@@ -17,15 +17,17 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
 5. **Plusieurs tool_calls par tour** : tous exécutés dans le même tour.
 6. **Anti-redemande** : redemander un appel rigoureusement identique dans le même
    échange ne redéclenche pas le handler ; deux appels distincts du même outil
-   (ex. deux `propose_memory`) sont tous deux servis.
+   (ex. deux `create_memory`) sont tous deux servis.
 7. **Suppression réversible** : supprimer un souvenir → plus jamais re-résumé,
    même après redémarrage ; « Ré-autoriser » → régénéré au passage suivant.
-8. **Souvenirs** : envoyer un message mentionnant un fait personnel → le modèle
-   propose `propose_memory` ; accepter l'entrée → elle s'affiche dans le drawer
-   Souvenirs et est réinjectée dans les tours suivants. Modifier ou supprimer
-   depuis le drawer (suppression → tombstone réversible ; oublier → définitif).
-   `propose_memory_update` et `propose_memory_delete` : vérifier les cartes
-   Accepter/Rejeter et la cohérence de la liste après chaque action.
+8. **Souvenirs — chemin direct** : "souviens-toi que X" → le modèle appelle
+   `create_memory` immédiatement, narration en un tour (pas de widget). L'entrée
+   apparaît dans le drawer Souvenirs et est réinjectée dans les tours suivants.
+   **Chemin inféré** : mentionner un fait non sollicité → le modèle appelle
+   `ask_confirmation`, background dim, composer actif (texte libre lève le widget).
+   Accepter → tour suivant : `create_memory` + narration. Rejeter → rien écrit.
+   `update_memory` / `delete_memory` : modification in-place / tombstone réversible
+   (tester depuis un fil avec souvenir existant visible dans le contexte).
 9. **Pas de résumé sur conversation fraîche** : créer une conversation, envoyer
    un message, la quitter sans contenu substantiel → aucun résumé généré.
 10. **Arrêt du streaming** : lancer une génération longue, cliquer le bouton stop

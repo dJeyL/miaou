@@ -122,7 +122,15 @@ function openConversation(id) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
-  currentThread = (conv.messages || []).map(m => ({ role: m.role, content: m.content, model: m.model }));
+  currentThread = (conv.messages || []).map(m => {
+    if (m.role === 'memory-ack') {
+      const a = { role: 'memory-ack', ackType: m.ackType, id: m.id };
+      if (m.content != null) a.content = m.content;
+      if (m.resolved) a.resolved = true;
+      return a;
+    }
+    return { role: m.role, content: m.content, model: m.model };
+  });
   currentConvModel = conv.model || '';
   needTitle = false;
   setTitle(conv.title || '');
@@ -165,6 +173,16 @@ function togglePin(id) {
   renderConvList();
 }
 
+function undoMemoryAck(btn, id) {
+  forgetMemory(id);
+  btn.outerHTML = '<span class="ack-resolved">annulé</span>';
+  const entry = currentThread.find(m => m.role === 'memory-ack' && m.id === id && !m.resolved);
+  if (entry) entry.resolved = true;
+  const wrap = document.querySelector('.memory-ack[data-mem-id="' + id + '"]');
+  if (wrap) wrap.classList.add('resolved');
+  persistCurrent();
+}
+
 function deleteConv(id) {
   deleteConversation(id);
   deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
@@ -188,6 +206,12 @@ function persistCurrent() {
   if (!currentConvId) return;
   const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
   conv.messages = currentThread.map(m => {
+    if (m.role === 'memory-ack') {
+      const o = { role: 'memory-ack', ackType: m.ackType, id: m.id };
+      if (m.content != null) o.content = m.content;
+      if (m.resolved) o.resolved = true;
+      return o;
+    }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
     return o;
@@ -270,6 +294,17 @@ function sendMessage() {
   if (!text) return;
   ta.value = ''; ta.style.height = 'auto';
 
+  // Confirmation en attente + saisie libre : la frappe vaut réponse/correction
+  // (brief §4.5). On lève le widget avant d'envoyer comme un message normal.
+  if (_confirmPending) dismissConfirmation();
+
+  sendUserText(text);
+}
+
+// Cœur d'un envoi utilisateur : crée la conv au besoin, pousse le message,
+// persiste, relance la génération. Partagé par la saisie composer (sendMessage)
+// et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
+function sendUserText(text) {
   ensureConversation();
   appendUserMessage(text);
   currentThread.push({ role: 'user', content: text });
@@ -324,7 +359,7 @@ async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
-  const threadMsgs = currentThread.map(m => ({ role: m.role, content: m.content }));
+  const threadMsgs = currentThread.filter(m => m.role !== 'memory-ack').map(m => ({ role: m.role, content: m.content }));
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
   // préfixe du dernier message utilisateur, pour préserver le préfixe stable
@@ -367,13 +402,36 @@ async function dispatchSend(matches) {
           msg.reasoning = reasoning;          // champ séparé, persisté
         }
         currentThread.push(msg);
+        // Acks côté client : émis par les handlers d'outils à écriture directe,
+        // jamais envoyés au modèle — journal visible persisté dans le thread.
+        const pending = getPendingMemoryAcks();
+        clearPendingMemoryAcks();
+        for (const ack of pending) {
+          const entry = { role: 'memory-ack', ackType: ack.ackType, id: ack.id };
+          if (ack.content != null) entry.content = ack.content;
+          currentThread.push(entry);
+          $('thread').appendChild(buildMemoryAck(entry));
+        }
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
-        // Propositions de souvenirs émises pendant le tour → cartes de confirmation.
-        const proposals = getPendingMemoryProposals();
-        clearPendingMemoryProposals();
-        if (proposals.length) renderMemoryProposals(proposals);
+      },
+      onHalt: (leadIn, question) => {
+        // Fork B (brief §4) : la question (+ lead-in éventuel) devient un message
+        // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
+        // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
+        // (« Oui » → create_memory + narration ; « Non » → rien).
+        const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
+        finalizeAssistant(wrap, text);
+        currentThread.push({ role: 'assistant', content: text, model });
+        persistCurrent();
+        setConnDot('ok');
+        // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
+        // ne porte que les actions. Accepter/Rejeter envoient « Oui »/« Non » par
+        // le même chemin qu'une saisie ; l'overlay se lève à la résolution.
+        showConfirmation('',
+          () => sendUserText('Oui'),
+          () => sendUserText('Non'));
       },
       onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
     });

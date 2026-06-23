@@ -7,6 +7,7 @@
 let highlightEnabled = true;
 let configured = false;
 let sending = false;
+let _confirmPending = false;
 
 function $(id) { return document.getElementById(id); }
 
@@ -188,12 +189,35 @@ function decoratePre(scope) {
   });
 }
 
+function buildMemoryAck(m) {
+  const wrap = document.createElement('div');
+  wrap.className = 'memory-ack' + (m.resolved ? ' resolved' : '');
+  wrap.dataset.memId = m.id || '';
+  let labelText;
+  if (m.ackType === 'delete') {
+    labelText = 'Souvenir supprimé' + (m.content ? ' : « ' + escHtml(m.content) + ' »' : '');
+  } else if (m.ackType === 'update') {
+    labelText = 'Souvenir mis à jour : « ' + escHtml(m.content || '') + ' »';
+  } else {
+    labelText = 'Mémorisé : « ' + escHtml(m.content || '') + ' »';
+  }
+  const safeId = (m.id || '').replace(/[^a-z0-9]/gi, '');
+  const actionHtml = m.resolved
+    ? '<span class="ack-resolved">annulé</span>'
+    : `<button class="ack-undo" onclick="undoMemoryAck(this,'${safeId}')">annuler</button>`;
+  wrap.innerHTML = `<span class="ack-label">${labelText}</span>${actionHtml}`;
+  return wrap;
+}
+
 function renderThread(msgs) {
   const thread = $('thread');
   thread.innerHTML = '';
   clearMemoryProposals();   // les cartes de proposition viennent d'être détruites
   if (!msgs || msgs.length === 0) { showWelcome(); return; }
-  for (const m of msgs) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  for (const m of msgs) {
+    if (m.role === 'memory-ack') thread.appendChild(buildMemoryAck(m));
+    else thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  }
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
 }
@@ -652,8 +676,9 @@ function setSending(on) {
   sending = on;
   setComposerStreaming(on);
   const send = $('send-btn');
-  // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend
-  // de l'état configuré.
+  // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend du
+  // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
+  // saisie libre vaut réponse/correction et lève le widget (dismiss-on-send).
   if (send) send.disabled = on ? false : !configured;
 }
 
@@ -667,6 +692,34 @@ function setComposerStreaming(on) {
 function setConnDot(state) {
   const dot = $('conn-dot');
   if (dot) dot.className = 'dot ' + (state || '');
+}
+
+// Active ou désactive l'état « confirmation en attente ». Le composer reste
+// ÉDITABLE (brief §4.5 : la saisie libre vaut réponse/correction) : on se borne
+// à poser l'overlay qui dim l'arrière-plan et la classe .confirming qui élève
+// composer + carte au-dessus du dim (effet spotlight, clic possible). Partagé
+// entre renderMemoryProposals (ancien chemin) et showConfirmation (primitif).
+function setConfirmPending(on) {
+  _confirmPending = on;
+  const backdrop = $('confirm-backdrop');
+  const app = $('app');
+  if (on) {
+    if (backdrop) backdrop.classList.add('show');
+    if (app) app.classList.add('confirming');
+  } else {
+    if (backdrop) backdrop.classList.remove('show');
+    if (app) app.classList.remove('confirming');
+  }
+}
+
+// Lève une confirmation en attente SANS la résoudre (l'utilisateur a tapé une
+// réponse libre plutôt que cliquer) : retire toutes les cartes du DOM et désarme
+// l'overlay. Distinct de clearMemoryProposals (qui suppose le thread déjà rasé).
+function dismissConfirmation() {
+  for (const k in _proposalMap) delete _proposalMap[k];
+  const containers = document.querySelectorAll('.memory-proposals');
+  containers.forEach(c => c.remove());
+  setConfirmPending(false);
 }
 
 // ── Composer ────────────────────────────────────────────────────────────────
@@ -1082,7 +1135,6 @@ function renderMemoryList() {
     item.className = 'mem-item' + (e.suppressed ? ' suppressed' : '');
     item.dataset.id = e.id;
     const date = new Date(e.updated_at || e.created_at || 0).toLocaleDateString('fr-FR');
-    const amended = e.supersedes ? ' · amendé' : '';
 
     if (e.suppressed) {
       item.innerHTML =
@@ -1094,7 +1146,7 @@ function renderMemoryList() {
         `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
     } else {
       item.innerHTML =
-        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date + amended)}</div></div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
         `<div class="mem-btns" id="mem-btns-${e.id}">` +
         `<button class="mem-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
         `<button class="mem-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
@@ -1116,7 +1168,7 @@ function addMemoryEntry() {
   const content = input ? input.value.trim() : '';
   if (!content) return;
   const now = Date.now();
-  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, supersedes: null, suppressed: false });
+  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false });
   renderMemoryList();
 }
 
@@ -1153,87 +1205,55 @@ function saveMemoryEntryEdit(id) {
   renderMemoryList();
 }
 
-// ── Propositions de souvenirs (cartes de confirmation dans le thread) ─────────
+// ── Confirmation inline (cartes dans le thread) ───────────────────────────────
 
+// _proposalMap[pid] = { onAccept, onReject } — callbacks, jamais les données brutes.
+// const : on vide et peuple en place, on ne réassigne jamais la référence.
 const _proposalMap = {};
 
-// Purge la table des propositions en attente. Appelée quand le DOM du thread est
-// rasé (changement/réinitialisation de conversation) : les cartes disparaissent,
-// leurs entrées n'ont plus de raison de subsister. const → on vide en place.
+// Purge la table et efface l'overlay. Appelée quand le DOM du thread est rasé
+// (changement/réinitialisation de conversation).
 function clearMemoryProposals() {
   for (const k in _proposalMap) delete _proposalMap[k];
+  setConfirmPending(false);
 }
 
-function renderMemoryProposals(proposals) {
+// Primitif générique : une carte « question » + Accepter/Rejeter, avec overlay.
+// bodyHtml : contenu libre (texte de la question, diff, etc.).
+function showConfirmation(bodyHtml, onAccept, onReject) {
   const thread = $('thread');
+  const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  _proposalMap[pid] = { onAccept: onAccept || function(){}, onReject: onReject || function(){} };
+
   const container = document.createElement('div');
   container.className = 'memory-proposals';
-
-  for (const p of proposals) {
-    const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    _proposalMap[pid] = p;
-
-    const card = document.createElement('div');
-    card.className = 'proposal-card';
-    card.id = pid;
-
-    let typeLabel, bodyHtml;
-    if (p.type === 'add') {
-      typeLabel = 'Nouveau souvenir';
-      bodyHtml = `<div class="proposal-content">${escHtml(p.content)}</div>`;
-    } else if (p.type === 'update') {
-      typeLabel = 'Modification de souvenir';
-      const existing = listMemoryEntries().find(e => e.id === p.old_id);
-      const oldText = existing ? existing.content : '(introuvable)';
-      bodyHtml =
-        `<div class="proposal-diff">` +
-        `<div class="proposal-diff-label">Avant</div>` +
-        `<div class="proposal-content proposal-old">${escHtml(oldText)}</div>` +
-        `<div class="proposal-diff-label">Après</div>` +
-        `<div class="proposal-content proposal-new">${escHtml(p.new_content)}</div>` +
-        `</div>`;
-    } else if (p.type === 'delete') {
-      typeLabel = 'Suppression de souvenir';
-      const existing = listMemoryEntries().find(e => e.id === p.id);
-      const text = existing ? existing.content : '(introuvable)';
-      bodyHtml = `<div class="proposal-content proposal-old">${escHtml(text)}</div>`;
-    } else {
-      typeLabel = 'Proposition';
-      bodyHtml = '';
-    }
-
-    card.innerHTML =
-      `<div class="proposal-header"><span class="proposal-type">${escHtml(typeLabel)}</span></div>` +
-      bodyHtml +
-      `<div class="proposal-actions">` +
-      `<button class="mb-btn primary" onclick="acceptProposal('${pid}')">Accepter</button>` +
-      `<button class="mb-btn" onclick="rejectProposal('${pid}')">Rejeter</button>` +
-      `</div>`;
-
-    container.appendChild(card);
-  }
-
+  const card = document.createElement('div');
+  card.className = 'proposal-card';
+  card.id = pid;
+  card.innerHTML =
+    bodyHtml +
+    `<div class="proposal-actions">` +
+    `<button class="mb-btn primary" onclick="acceptProposal('${pid}')">Accepter</button>` +
+    `<button class="mb-btn" onclick="rejectProposal('${pid}')">Rejeter</button>` +
+    `</div>`;
+  container.appendChild(card);
   thread.appendChild(container);
+  setConfirmPending(true);
   container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function acceptProposal(pid) {
-  const p = _proposalMap[pid];
-  if (!p) return;
-  if (p.type === 'add') {
-    const now = Date.now();
-    saveMemory({ id: genMemoryId(), content: p.content, created_at: now, updated_at: now, supersedes: null, suppressed: false });
-  } else if (p.type === 'update') {
-    amendMemory(p.old_id, p.new_content);
-  } else if (p.type === 'delete') {
-    suppressMemory(p.id);
-  }
+  const e = _proposalMap[pid];
+  if (!e) return;
+  e.onAccept();
   delete _proposalMap[pid];
   _removeProposalCard(pid);
-  if ($('summary-drawer').classList.contains('show')) renderMemoryList();
 }
 
 function rejectProposal(pid) {
+  const e = _proposalMap[pid];
+  if (!e) return;
+  e.onReject();
   delete _proposalMap[pid];
   _removeProposalCard(pid);
 }
@@ -1244,4 +1264,5 @@ function _removeProposalCard(pid) {
   const container = card.parentElement;
   card.remove();
   if (container && !container.children.length) container.remove();
+  if (!Object.keys(_proposalMap).length) setConfirmPending(false);
 }

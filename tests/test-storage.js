@@ -119,7 +119,7 @@ describe('listAllConversations — tri par updatedAt', function() {
 describe('miaou-memories — CRUD et tombstones', function() {
   it('saveMemory persiste une entrée et loadMemories la retourne', function() {
     localStorage.clear();
-    saveMemory({ id: 'm1', content: 'je suis allergique aux chats', created_at: 1000, updated_at: 1000, supersedes: null, suppressed: false });
+    saveMemory({ id: 'm1', content: 'je suis allergique aux chats', created_at: 1000, updated_at: 1000, suppressed: false });
     var all = loadMemories();
     expect(all.length).toBe(1);
     expect(all[0].id).toBe('m1');
@@ -127,15 +127,15 @@ describe('miaou-memories — CRUD et tombstones', function() {
   });
   it('listMemoryEntries n\'expose pas les entrées supprimées', function() {
     localStorage.clear();
-    saveMemory({ id: 'm1', content: 'actif',   created_at: 1, updated_at: 1, supersedes: null, suppressed: false });
-    saveMemory({ id: 'm2', content: 'tombstoné', created_at: 2, updated_at: 2, supersedes: null, suppressed: true });
+    saveMemory({ id: 'm1', content: 'actif',   created_at: 1, updated_at: 1, suppressed: false });
+    saveMemory({ id: 'm2', content: 'tombstoné', created_at: 2, updated_at: 2, suppressed: true });
     var active = listMemoryEntries();
     expect(active.length).toBe(1);
     expect(active[0].id).toBe('m1');
   });
   it('editMemory met à jour content et updated_at sans créer de nouvelle entrée', function() {
     localStorage.clear();
-    saveMemory({ id: 'm1', content: 'avant', created_at: 100, updated_at: 100, supersedes: null, suppressed: false });
+    saveMemory({ id: 'm1', content: 'avant', created_at: 100, updated_at: 100, suppressed: false });
     editMemory('m1', 'après');
     var all = loadMemories();
     expect(all.length).toBe(1);
@@ -144,7 +144,7 @@ describe('miaou-memories — CRUD et tombstones', function() {
   });
   it('suppressMemory pose une tombstone (contenu préservé)', function() {
     localStorage.clear();
-    saveMemory({ id: 'm1', content: 'à supprimer', created_at: 1, updated_at: 1, supersedes: null, suppressed: false });
+    saveMemory({ id: 'm1', content: 'à supprimer', created_at: 1, updated_at: 1, suppressed: false });
     suppressMemory('m1');
     var all = loadMemories();
     expect(all[0].suppressed).toBe(true);
@@ -153,33 +153,19 @@ describe('miaou-memories — CRUD et tombstones', function() {
   });
   it('restoreMemory lève la tombstone', function() {
     localStorage.clear();
-    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, supersedes: null, suppressed: true });
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: true });
     restoreMemory('m1');
     expect(listMemoryEntries().length).toBe(1);
     expect(loadMemories()[0].suppressed).toBeFalsy();
   });
-  it('forgetMemory supprime définitivement l\'entrée (les supersedes orphelins sont conservés)', function() {
+  it('forgetMemory supprime définitivement l\'entrée par id', function() {
     localStorage.clear();
-    saveMemory({ id: 'm1', content: 'original', created_at: 1, updated_at: 1, supersedes: null, suppressed: true });
-    saveMemory({ id: 'm2', content: 'amendé',   created_at: 2, updated_at: 2, supersedes: 'm1', suppressed: false });
+    saveMemory({ id: 'm1', content: 'original', created_at: 1, updated_at: 1, suppressed: false });
+    saveMemory({ id: 'm2', content: 'autre',    created_at: 2, updated_at: 2, suppressed: false });
     forgetMemory('m1');
     var all = loadMemories();
     expect(all.length).toBe(1);
     expect(all[0].id).toBe('m2');
-    expect(all[0].supersedes).toBe('m1');   // orphelin conservé, pas de crash
-  });
-  it('amendMemory crée une nouvelle entrée et tombstone l\'ancienne', function() {
-    localStorage.clear();
-    saveMemory({ id: 'm1', content: 'v1', created_at: 1, updated_at: 1, supersedes: null, suppressed: false });
-    amendMemory('m1', 'v2');
-    var all = loadMemories();
-    expect(all.length).toBe(2);
-    var old = all.find(function(e) { return e.id === 'm1'; });
-    var newer = all.find(function(e) { return e.id !== 'm1'; });
-    expect(old.suppressed).toBe(true);
-    expect(newer.content).toBe('v2');
-    expect(newer.supersedes).toBe('m1');
-    expect(listMemoryEntries().length).toBe(1);
   });
 });
 

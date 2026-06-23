@@ -35,10 +35,12 @@ l'interface, JetBrains Mono pour le code.
   contextuelle, et deux outils pour que le modèle aille chercher lui-même —
   `get_conversation(id, with_contents=false)` et
   `list_conversations(since?, with_contents=false)`.
-- Souvenirs persistants : le modèle propose création / mise à jour / suppression
-  (`propose_memory`, `propose_memory_update`, `propose_memory_delete`) via des
-  cartes Accepter/Rejeter ; gestion directe possible dans le drawer ; les
-  souvenirs actifs sont réinjectés dans le contexte à chaque envoi.
+- Souvenirs persistants : le modèle écrit directement (`create_memory`,
+  `update_memory`, `delete_memory`) sur instruction explicite, ou demande
+  confirmation (`ask_confirmation`) pour un fait inféré ; chaque écriture
+  produit une ligne d'ack annulable dans le thread. Gestion directe possible
+  dans le drawer ; les souvenirs actifs sont réinjectés dans le contexte à
+  chaque envoi.
 
 **Réglages**
 

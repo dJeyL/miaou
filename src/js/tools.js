@@ -5,12 +5,6 @@
    jamais écrite en dur.
    ────────────────────────────────────────────────────────────────────────── */
 
-// ── File d'attente des propositions de souvenirs ─────────────────────────────
-// Les handlers des outils propose_* poussent ici ; onFinal (main.js) consomme.
-let _pendingMemoryProposals = [];
-function getPendingMemoryProposals() { return _pendingMemoryProposals.slice(); }
-function clearPendingMemoryProposals() { _pendingMemoryProposals = []; }
-
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -21,15 +15,33 @@ function summaryLight(e) {
 // system prompt (via toolsSystemPrompt), jamais dans une function.description
 // individuelle (qui elle est dupliquée dans le schéma tools à chaque appel API).
 const MEMORY_DOCTRINE =
-  "Doctrine de déclenchement pour propose_memory / propose_memory_update / propose_memory_delete :\n" +
-  "Déclenche l'un de ces outils quand l'utilisateur :\n" +
-  "  - donne une instruction durable sur ton comportement (\"dorénavant\", \"désormais\", " +
-  "\"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\")\n" +
+  "Doctrine de déclenchement pour les outils mémoire :\n\n" +
+  "CHEMIN DIRECT — appelle create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
+  "  - donne une instruction durable explicite : \"souviens-toi que\", \"retiens\", \"dorénavant\", " +
+  "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\"\n" +
   "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
-  "  - exprime une préférence de fond sur le format/ton de tes réponses\n" +
-  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.\n" +
-  "Le contenu proposé (content / new_content) est toujours à la 3e personne, factuel, " +
-  "sans interprétation.";
+  "  - exprime une préférence de fond sur le format ou le ton de tes réponses\n" +
+  "Sur le chemin direct : tu PEUX narrer « c'est noté » car l'écriture a déjà eu lieu.\n\n" +
+  "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS (sans demande explicite) " +
+  "qu'un fait durable mérite d'être retenu. La question doit contenir LITTÉRALEMENT le " +
+  "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
+  "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
+  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé create_memory dans ce même tour.\n\n" +
+  "CHEMIN CORRECTION — quand l'utilisateur répond en texte libre à une question ask_confirmation " +
+  "(au lieu de cliquer Accepter/Rejeter) et que sa réponse contient une valeur corrigée " +
+  "(ex. « non, plutôt un modèle Y »), appelle create_memory avec la valeur corrigée. " +
+  "Ne pas se contenter d'acquitter en texte.\n\n" +
+  "MISE À JOUR / SUPPRESSION : si un souvenir existant devient obsolète ou inexact, " +
+  "appelle update_memory (correction in-place) ou delete_memory (tombstone réversible).\n\n" +
+  "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
+  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
+
+// File d'attente des acks côté client : chaque handler d'outil à écriture directe
+// y pousse une entrée ; main.js la consomme dans onFinal pour injecter les messages
+// 'memory-ack' dans le thread (jamais envoyés au modèle).
+let _pendingMemoryAcks = [];
+function getPendingMemoryAcks() { return _pendingMemoryAcks.slice(); }
+function clearPendingMemoryAcks() { _pendingMemoryAcks = []; }
 
 const TOOLS = [
   {
@@ -101,10 +113,10 @@ const TOOLS = [
     definition: {
       type: 'function',
       function: {
-        name: 'propose_memory',
+        name: 'create_memory',
         description:
-          "Propose d'enregistrer un nouveau souvenir persistant pour l'utilisateur. " +
-          "Soumis à validation — ne rien écrire directement. Voir doctrine mémoire.",
+          "Enregistre immédiatement un nouveau souvenir persistant. Utiliser sur le " +
+          "CHEMIN DIRECT uniquement (instruction explicite de l'utilisateur). Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
@@ -115,45 +127,49 @@ const TOOLS = [
       },
     },
     handler: (args) => {
-      if (!args.content || !args.content.trim()) return 'Contenu vide — proposition ignorée.';
-      _pendingMemoryProposals.push({ type: 'add', content: args.content.trim() });
-      return 'Proposition mise en attente de validation par l\'utilisateur.';
+      if (!args.content || !args.content.trim()) return 'Contenu vide — souvenir ignoré.';
+      const id = genMemoryId();
+      const now = Date.now();
+      const content = args.content.trim();
+      saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false });
+      _pendingMemoryAcks.push({ ackType: 'create', id, content });
+      return 'Souvenir enregistré. Identifiant : ' + id;
     },
   },
   {
     definition: {
       type: 'function',
       function: {
-        name: 'propose_memory_update',
+        name: 'update_memory',
         description:
-          "Propose de remplacer un souvenir existant par un contenu mis à jour. " +
-          "Soumis à validation. Voir doctrine mémoire — spécifique : l'utilisateur " +
-          "référence explicitement un souvenir existant et signale un changement d'état.",
+          "Corrige un souvenir existant en place (pas de tombstone). Utiliser quand " +
+          "un fait enregistré est devenu inexact ou doit être précisé. Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
-            old_id:      { type: 'string', description: 'Identifiant du souvenir à remplacer' },
-            new_content: { type: 'string', description: 'Nouveau contenu (3e personne, factuel)' },
+            id:      { type: 'string', description: 'Identifiant du souvenir à corriger' },
+            content: { type: 'string', description: 'Nouveau contenu (3e personne, factuel)' },
           },
-          required: ['old_id', 'new_content'],
+          required: ['id', 'content'],
         },
       },
     },
     handler: (args) => {
-      if (!args.old_id || !args.new_content || !args.new_content.trim()) return 'Paramètres invalides.';
-      _pendingMemoryProposals.push({ type: 'update', old_id: args.old_id, new_content: args.new_content.trim() });
-      return 'Proposition mise en attente de validation par l\'utilisateur.';
+      if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
+      const content = args.content.trim();
+      editMemory(args.id, content);
+      _pendingMemoryAcks.push({ ackType: 'update', id: args.id, content });
+      return 'Souvenir mis à jour.';
     },
   },
   {
     definition: {
       type: 'function',
       function: {
-        name: 'propose_memory_delete',
+        name: 'delete_memory',
         description:
-          "Propose de supprimer un souvenir existant. Soumis à validation. " +
-          "Voir doctrine mémoire — spécifique : l'utilisateur référence explicitement " +
-          "un souvenir existant et en demande le retrait.",
+          "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
+          "quand un fait enregistré n'est plus pertinent. Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
@@ -165,13 +181,55 @@ const TOOLS = [
     },
     handler: (args) => {
       if (!args.id) return 'Identifiant manquant.';
-      _pendingMemoryProposals.push({ type: 'delete', id: args.id });
-      return 'Proposition mise en attente de validation par l\'utilisateur.';
+      const existing = loadMemories().find(e => e.id === args.id);
+      suppressMemory(args.id);
+      _pendingMemoryAcks.push({ ackType: 'delete', id: args.id, content: existing ? existing.content : null });
+      return 'Souvenir supprimé (réversible depuis les paramètres).';
+    },
+  },
+  {
+    // Outil HALTING : runConversation (api.js) l'intercepte AVANT le dispatch et
+    // arrête l'échange — il ne pousse aucun message tool_calls/tool natif, ne
+    // relance pas. La reprise se fait au tour suivant via la réponse de
+    // l'utilisateur (« Oui »/« Non » ou correction libre) réécrite en texte clair.
+    halting: true,
+    definition: {
+      type: 'function',
+      function: {
+        name: 'ask_confirmation',
+        description:
+          "Demande confirmation à l'utilisateur avant d'agir, lorsque tu as INFÉRÉ " +
+          "une intention durable qu'il n'a PAS explicitement demandé d'enregistrer. " +
+          "La question doit inclure littéralement le contenu concerné, formulée ainsi : " +
+          "« Tu veux que je retienne : « … » ? ». Outil bloquant : la génération " +
+          "s'arrête après l'appel et la question est posée à l'utilisateur ; tu " +
+          "reprendras au tour suivant selon sa réponse. N'enregistre jamais sans cette " +
+          "confirmation, et n'affirme jamais avoir enregistré quoi que ce soit ici.",
+        parameters: {
+          type: 'object',
+          properties: {
+            question: { type: 'string', description: 'Question fermée à poser, contenu inclus littéralement' },
+          },
+          required: ['question'],
+        },
+      },
+    },
+    handler: (args) => {
+      // Jamais appelé dans le flux normal (interception halting en amont) ; présent
+      // par cohérence du registre (runTool, toolsSystemPrompt) et comme repli inerte.
+      return (args && args.question) ? String(args.question) : '';
     },
   },
 ];
 
 function toolDefinitions() { return TOOLS.map(t => t.definition); }
+
+// Indique si un outil est « halting » : sa simple présence dans un tour de
+// tool_calls suspend l'échange (cf. branche dédiée dans runConversation).
+function toolIsHalting(name) {
+  const tool = TOOLS.find(t => t.definition.function.name === name);
+  return !!(tool && tool.halting);
+}
 
 function runTool(name, args) {
   const tool = TOOLS.find(t => t.definition.function.name === name);
@@ -193,6 +251,7 @@ function toolsSystemPrompt() {
 }
 
 function memoryDoctrinePrompt() {
-  const hasMemoryTools = TOOLS.some(t => t.definition.function.name.startsWith('propose_memory'));
+  const hasMemoryTools = TOOLS.some(t => t.definition.function.name === 'create_memory' ||
+                                         t.definition.function.name === 'ask_confirmation');
   return hasMemoryTools ? MEMORY_DOCTRINE : '';
 }

@@ -718,6 +718,11 @@ body {
 }
 .backdrop.show { opacity: 1; visibility: visible; }
 
+/* Confirmation active (#confirm-backdrop) : l'overlay dim l'arrière-plan, mais
+   composer et carte de confirmation restent au-dessus (spotlight) et interactifs. */
+.app.confirming .composer,
+.app.confirming .memory-proposals { position: relative; z-index: 45; }
+
 .drawer {
   position: fixed;
   top: 0; right: 0;
@@ -1098,6 +1103,32 @@ body {
 .proposal-old { opacity: 0.65; text-decoration: line-through; text-decoration-color: var(--err); }
 .proposal-new { border-color: var(--accent-bd); }
 .proposal-actions { display: flex; gap: 8px; }
+
+/* ── Ack mémoire (journal client des écritures directes) ── */
+.memory-ack {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--accent-bd);
+  margin: 3px 0 3px 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.memory-ack.resolved { opacity: 0.5; }
+.memory-ack .ack-label { flex: 1; overflow-wrap: break-word; }
+.memory-ack .ack-undo {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.memory-ack .ack-undo:hover { color: var(--text); }
+.memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {
@@ -1626,6 +1657,9 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
+  <!-- backdrop confirmation inline (overlay pendant une demande ask_confirmation) -->
+  <div class="backdrop" id="confirm-backdrop"></div>
+
   <!-- ═══ Summary / Memories drawer (combiné, avec onglets) ═══ -->
   <div class="backdrop" id="summary-backdrop" onclick="closeSummaryDrawer()"></div>
   <div class="drawer" id="summary-drawer">
@@ -1655,7 +1689,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-23 06:49 UTC */
+/* miaou — built: 2026-06-23 22:52 UTC */
 
 
 /* ── utils.js ── */
@@ -1951,7 +1985,7 @@ function backfillCandidates() {
 }
 
 // ── Souvenirs utilisateur (miaou-memories) ───────────────────────────────────
-// Schéma : { id, content, created_at, updated_at, supersedes, suppressed }
+// Schéma : { id, content, created_at, updated_at, suppressed }
 // Tombstone : { ..., suppressed: true }  ← conserve content pour affichage
 
 const MEMORIES_KEY = 'miaou-memories';
@@ -1967,7 +2001,7 @@ function persistMemories(arr) {
   localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
 }
 
-// Entrées actives : non-supprimées. supersedes est de la provenance, pas un filtre.
+// Entrées actives : non-supprimées.
 function listMemoryEntries() {
   return loadMemories().filter(e => e && !e.suppressed);
 }
@@ -1979,23 +2013,13 @@ function saveMemory(entry) {
   persistMemories(arr);
 }
 
-// Édition directe (utilisateur) : in-place, pas de chaîne supersedes.
+// Édition directe (utilisateur) : in-place.
 function editMemory(id, newContent) {
   const arr = loadMemories();
   const e = arr.find(x => x.id === id);
   if (!e) return;
   e.content = newContent;
   e.updated_at = Date.now();
-  persistMemories(arr);
-}
-
-// Amendement (proposition modèle acceptée) : nouvelle entrée + tombstone de l'ancienne.
-function amendMemory(oldId, newContent) {
-  const arr = loadMemories();
-  const old = arr.find(e => e.id === oldId);
-  if (old) old.suppressed = true;
-  const now = Date.now();
-  arr.push({ id: genMemoryId(), content: newContent, created_at: now, updated_at: now, supersedes: oldId, suppressed: false });
   persistMemories(arr);
 }
 
@@ -2025,12 +2049,6 @@ function forgetMemory(id) {
    jamais écrite en dur.
    ────────────────────────────────────────────────────────────────────────── */
 
-// ── File d'attente des propositions de souvenirs ─────────────────────────────
-// Les handlers des outils propose_* poussent ici ; onFinal (main.js) consomme.
-let _pendingMemoryProposals = [];
-function getPendingMemoryProposals() { return _pendingMemoryProposals.slice(); }
-function clearPendingMemoryProposals() { _pendingMemoryProposals = []; }
-
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -2041,15 +2059,33 @@ function summaryLight(e) {
 // system prompt (via toolsSystemPrompt), jamais dans une function.description
 // individuelle (qui elle est dupliquée dans le schéma tools à chaque appel API).
 const MEMORY_DOCTRINE =
-  "Doctrine de déclenchement pour propose_memory / propose_memory_update / propose_memory_delete :\n" +
-  "Déclenche l'un de ces outils quand l'utilisateur :\n" +
-  "  - donne une instruction durable sur ton comportement (\"dorénavant\", \"désormais\", " +
-  "\"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\")\n" +
+  "Doctrine de déclenchement pour les outils mémoire :\n\n" +
+  "CHEMIN DIRECT — appelle create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
+  "  - donne une instruction durable explicite : \"souviens-toi que\", \"retiens\", \"dorénavant\", " +
+  "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\"\n" +
   "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
-  "  - exprime une préférence de fond sur le format/ton de tes réponses\n" +
-  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.\n" +
-  "Le contenu proposé (content / new_content) est toujours à la 3e personne, factuel, " +
-  "sans interprétation.";
+  "  - exprime une préférence de fond sur le format ou le ton de tes réponses\n" +
+  "Sur le chemin direct : tu PEUX narrer « c'est noté » car l'écriture a déjà eu lieu.\n\n" +
+  "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS (sans demande explicite) " +
+  "qu'un fait durable mérite d'être retenu. La question doit contenir LITTÉRALEMENT le " +
+  "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
+  "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
+  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé create_memory dans ce même tour.\n\n" +
+  "CHEMIN CORRECTION — quand l'utilisateur répond en texte libre à une question ask_confirmation " +
+  "(au lieu de cliquer Accepter/Rejeter) et que sa réponse contient une valeur corrigée " +
+  "(ex. « non, plutôt un modèle Y »), appelle create_memory avec la valeur corrigée. " +
+  "Ne pas se contenter d'acquitter en texte.\n\n" +
+  "MISE À JOUR / SUPPRESSION : si un souvenir existant devient obsolète ou inexact, " +
+  "appelle update_memory (correction in-place) ou delete_memory (tombstone réversible).\n\n" +
+  "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
+  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
+
+// File d'attente des acks côté client : chaque handler d'outil à écriture directe
+// y pousse une entrée ; main.js la consomme dans onFinal pour injecter les messages
+// 'memory-ack' dans le thread (jamais envoyés au modèle).
+let _pendingMemoryAcks = [];
+function getPendingMemoryAcks() { return _pendingMemoryAcks.slice(); }
+function clearPendingMemoryAcks() { _pendingMemoryAcks = []; }
 
 const TOOLS = [
   {
@@ -2121,10 +2157,10 @@ const TOOLS = [
     definition: {
       type: 'function',
       function: {
-        name: 'propose_memory',
+        name: 'create_memory',
         description:
-          "Propose d'enregistrer un nouveau souvenir persistant pour l'utilisateur. " +
-          "Soumis à validation — ne rien écrire directement. Voir doctrine mémoire.",
+          "Enregistre immédiatement un nouveau souvenir persistant. Utiliser sur le " +
+          "CHEMIN DIRECT uniquement (instruction explicite de l'utilisateur). Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
@@ -2135,45 +2171,49 @@ const TOOLS = [
       },
     },
     handler: (args) => {
-      if (!args.content || !args.content.trim()) return 'Contenu vide — proposition ignorée.';
-      _pendingMemoryProposals.push({ type: 'add', content: args.content.trim() });
-      return 'Proposition mise en attente de validation par l\'utilisateur.';
+      if (!args.content || !args.content.trim()) return 'Contenu vide — souvenir ignoré.';
+      const id = genMemoryId();
+      const now = Date.now();
+      const content = args.content.trim();
+      saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false });
+      _pendingMemoryAcks.push({ ackType: 'create', id, content });
+      return 'Souvenir enregistré. Identifiant : ' + id;
     },
   },
   {
     definition: {
       type: 'function',
       function: {
-        name: 'propose_memory_update',
+        name: 'update_memory',
         description:
-          "Propose de remplacer un souvenir existant par un contenu mis à jour. " +
-          "Soumis à validation. Voir doctrine mémoire — spécifique : l'utilisateur " +
-          "référence explicitement un souvenir existant et signale un changement d'état.",
+          "Corrige un souvenir existant en place (pas de tombstone). Utiliser quand " +
+          "un fait enregistré est devenu inexact ou doit être précisé. Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
-            old_id:      { type: 'string', description: 'Identifiant du souvenir à remplacer' },
-            new_content: { type: 'string', description: 'Nouveau contenu (3e personne, factuel)' },
+            id:      { type: 'string', description: 'Identifiant du souvenir à corriger' },
+            content: { type: 'string', description: 'Nouveau contenu (3e personne, factuel)' },
           },
-          required: ['old_id', 'new_content'],
+          required: ['id', 'content'],
         },
       },
     },
     handler: (args) => {
-      if (!args.old_id || !args.new_content || !args.new_content.trim()) return 'Paramètres invalides.';
-      _pendingMemoryProposals.push({ type: 'update', old_id: args.old_id, new_content: args.new_content.trim() });
-      return 'Proposition mise en attente de validation par l\'utilisateur.';
+      if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
+      const content = args.content.trim();
+      editMemory(args.id, content);
+      _pendingMemoryAcks.push({ ackType: 'update', id: args.id, content });
+      return 'Souvenir mis à jour.';
     },
   },
   {
     definition: {
       type: 'function',
       function: {
-        name: 'propose_memory_delete',
+        name: 'delete_memory',
         description:
-          "Propose de supprimer un souvenir existant. Soumis à validation. " +
-          "Voir doctrine mémoire — spécifique : l'utilisateur référence explicitement " +
-          "un souvenir existant et en demande le retrait.",
+          "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
+          "quand un fait enregistré n'est plus pertinent. Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
@@ -2185,13 +2225,55 @@ const TOOLS = [
     },
     handler: (args) => {
       if (!args.id) return 'Identifiant manquant.';
-      _pendingMemoryProposals.push({ type: 'delete', id: args.id });
-      return 'Proposition mise en attente de validation par l\'utilisateur.';
+      const existing = loadMemories().find(e => e.id === args.id);
+      suppressMemory(args.id);
+      _pendingMemoryAcks.push({ ackType: 'delete', id: args.id, content: existing ? existing.content : null });
+      return 'Souvenir supprimé (réversible depuis les paramètres).';
+    },
+  },
+  {
+    // Outil HALTING : runConversation (api.js) l'intercepte AVANT le dispatch et
+    // arrête l'échange — il ne pousse aucun message tool_calls/tool natif, ne
+    // relance pas. La reprise se fait au tour suivant via la réponse de
+    // l'utilisateur (« Oui »/« Non » ou correction libre) réécrite en texte clair.
+    halting: true,
+    definition: {
+      type: 'function',
+      function: {
+        name: 'ask_confirmation',
+        description:
+          "Demande confirmation à l'utilisateur avant d'agir, lorsque tu as INFÉRÉ " +
+          "une intention durable qu'il n'a PAS explicitement demandé d'enregistrer. " +
+          "La question doit inclure littéralement le contenu concerné, formulée ainsi : " +
+          "« Tu veux que je retienne : « … » ? ». Outil bloquant : la génération " +
+          "s'arrête après l'appel et la question est posée à l'utilisateur ; tu " +
+          "reprendras au tour suivant selon sa réponse. N'enregistre jamais sans cette " +
+          "confirmation, et n'affirme jamais avoir enregistré quoi que ce soit ici.",
+        parameters: {
+          type: 'object',
+          properties: {
+            question: { type: 'string', description: 'Question fermée à poser, contenu inclus littéralement' },
+          },
+          required: ['question'],
+        },
+      },
+    },
+    handler: (args) => {
+      // Jamais appelé dans le flux normal (interception halting en amont) ; présent
+      // par cohérence du registre (runTool, toolsSystemPrompt) et comme repli inerte.
+      return (args && args.question) ? String(args.question) : '';
     },
   },
 ];
 
 function toolDefinitions() { return TOOLS.map(t => t.definition); }
+
+// Indique si un outil est « halting » : sa simple présence dans un tour de
+// tool_calls suspend l'échange (cf. branche dédiée dans runConversation).
+function toolIsHalting(name) {
+  const tool = TOOLS.find(t => t.definition.function.name === name);
+  return !!(tool && tool.halting);
+}
 
 function runTool(name, args) {
   const tool = TOOLS.find(t => t.definition.function.name === name);
@@ -2213,7 +2295,8 @@ function toolsSystemPrompt() {
 }
 
 function memoryDoctrinePrompt() {
-  const hasMemoryTools = TOOLS.some(t => t.definition.function.name.startsWith('propose_memory'));
+  const hasMemoryTools = TOOLS.some(t => t.definition.function.name === 'create_memory' ||
+                                         t.definition.function.name === 'ask_confirmation');
   return hasMemoryTools ? MEMORY_DOCTRINE : '';
 }
 
@@ -2426,7 +2509,8 @@ function abortStream() {
 }
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
-// Hooks : onDelta(full), onReasoning(full), onToolTour(), onFinal(content, reasoning), onError(msg).
+// Hooks : onDelta(full), onReasoning(full), onToolTour(), onFinal(content, reasoning),
+//         onHalt(leadIn, question) [outil halting], onError(msg).
 // h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
 // Le résultat d'un outil n'est JAMAIS affiché : il repart au modèle, on va
 // toujours jusqu'à la réponse finale (finish_reason === 'stop').
@@ -2457,6 +2541,22 @@ async function runConversation(messages, hooks) {
       // Flush complet du raisonnement de ce tour AVANT d'exécuter l'outil
       // (pas de traitement en parallèle) ; il reste affiché pendant l'appel.
       reasoningAcc = joinReasoning(reasoningAcc, result.reasoning);
+
+      // Outil HALTING (ex. ask_confirmation) : s'il figure dans ce tour, on
+      // suspend l'échange immédiatement — aucun message assistant tool_calls
+      // poussé, aucun message tool, aucune relance. onHalt reçoit le lead-in
+      // (texte du tour) et la question ; il se charge de la reprise « fork B »
+      // (réécriture en message texte clair, cf. main.js). Les éventuels autres
+      // tool_calls du même tour sont volontairement ignorés.
+      const halting = result.toolCalls.find(tc => toolIsHalting(tc.function.name));
+      if (halting) {
+        let hargs = {};
+        try { hargs = JSON.parse(halting.function.arguments || '{}'); }
+        catch (e) { hargs = {}; }
+        if (h.onHalt) h.onHalt(result.content, hargs.question || '');
+        return result.content;
+      }
+
       // Passe le content du tour à l'UI : s'il est non vide, l'UI le finalise
       // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
       if (h.onToolTour) h.onToolTour(result.content);
@@ -2475,14 +2575,14 @@ async function runConversation(messages, hooks) {
         let out;
         // Clé d'anti-redemande sur les arguments BRUTS du tool_call, pas sur
         // id/since seuls : deux appels distincts du même outil (ex. deux
-        // propose_memory, ou get_conversation résumé puis with_contents) ont des
+        // create_memory, ou get_conversation résumé puis with_contents) ont des
         // arguments distincts et doivent tous être servis. Seul un appel
         // rigoureusement identique (modèle qui boucle) est court-circuité.
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
         } else {
-          bgActivityStart('lecture mémoire…');
+          bgActivityStart('mémoire…');
           try {
             out = runTool(tc.function.name, args);
             servedKeys.add(key);
@@ -2584,6 +2684,7 @@ async function fetchModels(override) {
 let highlightEnabled = true;
 let configured = false;
 let sending = false;
+let _confirmPending = false;
 
 function $(id) { return document.getElementById(id); }
 
@@ -2765,12 +2866,35 @@ function decoratePre(scope) {
   });
 }
 
+function buildMemoryAck(m) {
+  const wrap = document.createElement('div');
+  wrap.className = 'memory-ack' + (m.resolved ? ' resolved' : '');
+  wrap.dataset.memId = m.id || '';
+  let labelText;
+  if (m.ackType === 'delete') {
+    labelText = 'Souvenir supprimé' + (m.content ? ' : « ' + escHtml(m.content) + ' »' : '');
+  } else if (m.ackType === 'update') {
+    labelText = 'Souvenir mis à jour : « ' + escHtml(m.content || '') + ' »';
+  } else {
+    labelText = 'Mémorisé : « ' + escHtml(m.content || '') + ' »';
+  }
+  const safeId = (m.id || '').replace(/[^a-z0-9]/gi, '');
+  const actionHtml = m.resolved
+    ? '<span class="ack-resolved">annulé</span>'
+    : `<button class="ack-undo" onclick="undoMemoryAck(this,'${safeId}')">annuler</button>`;
+  wrap.innerHTML = `<span class="ack-label">${labelText}</span>${actionHtml}`;
+  return wrap;
+}
+
 function renderThread(msgs) {
   const thread = $('thread');
   thread.innerHTML = '';
   clearMemoryProposals();   // les cartes de proposition viennent d'être détruites
   if (!msgs || msgs.length === 0) { showWelcome(); return; }
-  for (const m of msgs) thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  for (const m of msgs) {
+    if (m.role === 'memory-ack') thread.appendChild(buildMemoryAck(m));
+    else thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+  }
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
 }
@@ -3229,8 +3353,9 @@ function setSending(on) {
   sending = on;
   setComposerStreaming(on);
   const send = $('send-btn');
-  // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend
-  // de l'état configuré.
+  // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend du
+  // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
+  // saisie libre vaut réponse/correction et lève le widget (dismiss-on-send).
   if (send) send.disabled = on ? false : !configured;
 }
 
@@ -3244,6 +3369,34 @@ function setComposerStreaming(on) {
 function setConnDot(state) {
   const dot = $('conn-dot');
   if (dot) dot.className = 'dot ' + (state || '');
+}
+
+// Active ou désactive l'état « confirmation en attente ». Le composer reste
+// ÉDITABLE (brief §4.5 : la saisie libre vaut réponse/correction) : on se borne
+// à poser l'overlay qui dim l'arrière-plan et la classe .confirming qui élève
+// composer + carte au-dessus du dim (effet spotlight, clic possible). Partagé
+// entre renderMemoryProposals (ancien chemin) et showConfirmation (primitif).
+function setConfirmPending(on) {
+  _confirmPending = on;
+  const backdrop = $('confirm-backdrop');
+  const app = $('app');
+  if (on) {
+    if (backdrop) backdrop.classList.add('show');
+    if (app) app.classList.add('confirming');
+  } else {
+    if (backdrop) backdrop.classList.remove('show');
+    if (app) app.classList.remove('confirming');
+  }
+}
+
+// Lève une confirmation en attente SANS la résoudre (l'utilisateur a tapé une
+// réponse libre plutôt que cliquer) : retire toutes les cartes du DOM et désarme
+// l'overlay. Distinct de clearMemoryProposals (qui suppose le thread déjà rasé).
+function dismissConfirmation() {
+  for (const k in _proposalMap) delete _proposalMap[k];
+  const containers = document.querySelectorAll('.memory-proposals');
+  containers.forEach(c => c.remove());
+  setConfirmPending(false);
 }
 
 // ── Composer ────────────────────────────────────────────────────────────────
@@ -3659,7 +3812,6 @@ function renderMemoryList() {
     item.className = 'mem-item' + (e.suppressed ? ' suppressed' : '');
     item.dataset.id = e.id;
     const date = new Date(e.updated_at || e.created_at || 0).toLocaleDateString('fr-FR');
-    const amended = e.supersedes ? ' · amendé' : '';
 
     if (e.suppressed) {
       item.innerHTML =
@@ -3671,7 +3823,7 @@ function renderMemoryList() {
         `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
     } else {
       item.innerHTML =
-        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date + amended)}</div></div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
         `<div class="mem-btns" id="mem-btns-${e.id}">` +
         `<button class="mem-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
         `<button class="mem-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
@@ -3693,7 +3845,7 @@ function addMemoryEntry() {
   const content = input ? input.value.trim() : '';
   if (!content) return;
   const now = Date.now();
-  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, supersedes: null, suppressed: false });
+  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false });
   renderMemoryList();
 }
 
@@ -3730,87 +3882,55 @@ function saveMemoryEntryEdit(id) {
   renderMemoryList();
 }
 
-// ── Propositions de souvenirs (cartes de confirmation dans le thread) ─────────
+// ── Confirmation inline (cartes dans le thread) ───────────────────────────────
 
+// _proposalMap[pid] = { onAccept, onReject } — callbacks, jamais les données brutes.
+// const : on vide et peuple en place, on ne réassigne jamais la référence.
 const _proposalMap = {};
 
-// Purge la table des propositions en attente. Appelée quand le DOM du thread est
-// rasé (changement/réinitialisation de conversation) : les cartes disparaissent,
-// leurs entrées n'ont plus de raison de subsister. const → on vide en place.
+// Purge la table et efface l'overlay. Appelée quand le DOM du thread est rasé
+// (changement/réinitialisation de conversation).
 function clearMemoryProposals() {
   for (const k in _proposalMap) delete _proposalMap[k];
+  setConfirmPending(false);
 }
 
-function renderMemoryProposals(proposals) {
+// Primitif générique : une carte « question » + Accepter/Rejeter, avec overlay.
+// bodyHtml : contenu libre (texte de la question, diff, etc.).
+function showConfirmation(bodyHtml, onAccept, onReject) {
   const thread = $('thread');
+  const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  _proposalMap[pid] = { onAccept: onAccept || function(){}, onReject: onReject || function(){} };
+
   const container = document.createElement('div');
   container.className = 'memory-proposals';
-
-  for (const p of proposals) {
-    const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    _proposalMap[pid] = p;
-
-    const card = document.createElement('div');
-    card.className = 'proposal-card';
-    card.id = pid;
-
-    let typeLabel, bodyHtml;
-    if (p.type === 'add') {
-      typeLabel = 'Nouveau souvenir';
-      bodyHtml = `<div class="proposal-content">${escHtml(p.content)}</div>`;
-    } else if (p.type === 'update') {
-      typeLabel = 'Modification de souvenir';
-      const existing = listMemoryEntries().find(e => e.id === p.old_id);
-      const oldText = existing ? existing.content : '(introuvable)';
-      bodyHtml =
-        `<div class="proposal-diff">` +
-        `<div class="proposal-diff-label">Avant</div>` +
-        `<div class="proposal-content proposal-old">${escHtml(oldText)}</div>` +
-        `<div class="proposal-diff-label">Après</div>` +
-        `<div class="proposal-content proposal-new">${escHtml(p.new_content)}</div>` +
-        `</div>`;
-    } else if (p.type === 'delete') {
-      typeLabel = 'Suppression de souvenir';
-      const existing = listMemoryEntries().find(e => e.id === p.id);
-      const text = existing ? existing.content : '(introuvable)';
-      bodyHtml = `<div class="proposal-content proposal-old">${escHtml(text)}</div>`;
-    } else {
-      typeLabel = 'Proposition';
-      bodyHtml = '';
-    }
-
-    card.innerHTML =
-      `<div class="proposal-header"><span class="proposal-type">${escHtml(typeLabel)}</span></div>` +
-      bodyHtml +
-      `<div class="proposal-actions">` +
-      `<button class="mb-btn primary" onclick="acceptProposal('${pid}')">Accepter</button>` +
-      `<button class="mb-btn" onclick="rejectProposal('${pid}')">Rejeter</button>` +
-      `</div>`;
-
-    container.appendChild(card);
-  }
-
+  const card = document.createElement('div');
+  card.className = 'proposal-card';
+  card.id = pid;
+  card.innerHTML =
+    bodyHtml +
+    `<div class="proposal-actions">` +
+    `<button class="mb-btn primary" onclick="acceptProposal('${pid}')">Accepter</button>` +
+    `<button class="mb-btn" onclick="rejectProposal('${pid}')">Rejeter</button>` +
+    `</div>`;
+  container.appendChild(card);
   thread.appendChild(container);
+  setConfirmPending(true);
   container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function acceptProposal(pid) {
-  const p = _proposalMap[pid];
-  if (!p) return;
-  if (p.type === 'add') {
-    const now = Date.now();
-    saveMemory({ id: genMemoryId(), content: p.content, created_at: now, updated_at: now, supersedes: null, suppressed: false });
-  } else if (p.type === 'update') {
-    amendMemory(p.old_id, p.new_content);
-  } else if (p.type === 'delete') {
-    suppressMemory(p.id);
-  }
+  const e = _proposalMap[pid];
+  if (!e) return;
+  e.onAccept();
   delete _proposalMap[pid];
   _removeProposalCard(pid);
-  if ($('summary-drawer').classList.contains('show')) renderMemoryList();
 }
 
 function rejectProposal(pid) {
+  const e = _proposalMap[pid];
+  if (!e) return;
+  e.onReject();
   delete _proposalMap[pid];
   _removeProposalCard(pid);
 }
@@ -3821,6 +3941,7 @@ function _removeProposalCard(pid) {
   const container = card.parentElement;
   card.remove();
   if (container && !container.children.length) container.remove();
+  if (!Object.keys(_proposalMap).length) setConfirmPending(false);
 }
 
 
@@ -3950,7 +4071,15 @@ function openConversation(id) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
-  currentThread = (conv.messages || []).map(m => ({ role: m.role, content: m.content, model: m.model }));
+  currentThread = (conv.messages || []).map(m => {
+    if (m.role === 'memory-ack') {
+      const a = { role: 'memory-ack', ackType: m.ackType, id: m.id };
+      if (m.content != null) a.content = m.content;
+      if (m.resolved) a.resolved = true;
+      return a;
+    }
+    return { role: m.role, content: m.content, model: m.model };
+  });
   currentConvModel = conv.model || '';
   needTitle = false;
   setTitle(conv.title || '');
@@ -3993,6 +4122,16 @@ function togglePin(id) {
   renderConvList();
 }
 
+function undoMemoryAck(btn, id) {
+  forgetMemory(id);
+  btn.outerHTML = '<span class="ack-resolved">annulé</span>';
+  const entry = currentThread.find(m => m.role === 'memory-ack' && m.id === id && !m.resolved);
+  if (entry) entry.resolved = true;
+  const wrap = document.querySelector('.memory-ack[data-mem-id="' + id + '"]');
+  if (wrap) wrap.classList.add('resolved');
+  persistCurrent();
+}
+
 function deleteConv(id) {
   deleteConversation(id);
   deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
@@ -4016,6 +4155,12 @@ function persistCurrent() {
   if (!currentConvId) return;
   const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
   conv.messages = currentThread.map(m => {
+    if (m.role === 'memory-ack') {
+      const o = { role: 'memory-ack', ackType: m.ackType, id: m.id };
+      if (m.content != null) o.content = m.content;
+      if (m.resolved) o.resolved = true;
+      return o;
+    }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
     return o;
@@ -4098,6 +4243,17 @@ function sendMessage() {
   if (!text) return;
   ta.value = ''; ta.style.height = 'auto';
 
+  // Confirmation en attente + saisie libre : la frappe vaut réponse/correction
+  // (brief §4.5). On lève le widget avant d'envoyer comme un message normal.
+  if (_confirmPending) dismissConfirmation();
+
+  sendUserText(text);
+}
+
+// Cœur d'un envoi utilisateur : crée la conv au besoin, pousse le message,
+// persiste, relance la génération. Partagé par la saisie composer (sendMessage)
+// et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
+function sendUserText(text) {
   ensureConversation();
   appendUserMessage(text);
   currentThread.push({ role: 'user', content: text });
@@ -4152,7 +4308,7 @@ async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
-  const threadMsgs = currentThread.map(m => ({ role: m.role, content: m.content }));
+  const threadMsgs = currentThread.filter(m => m.role !== 'memory-ack').map(m => ({ role: m.role, content: m.content }));
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
   // préfixe du dernier message utilisateur, pour préserver le préfixe stable
@@ -4195,13 +4351,36 @@ async function dispatchSend(matches) {
           msg.reasoning = reasoning;          // champ séparé, persisté
         }
         currentThread.push(msg);
+        // Acks côté client : émis par les handlers d'outils à écriture directe,
+        // jamais envoyés au modèle — journal visible persisté dans le thread.
+        const pending = getPendingMemoryAcks();
+        clearPendingMemoryAcks();
+        for (const ack of pending) {
+          const entry = { role: 'memory-ack', ackType: ack.ackType, id: ack.id };
+          if (ack.content != null) entry.content = ack.content;
+          currentThread.push(entry);
+          $('thread').appendChild(buildMemoryAck(entry));
+        }
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
-        // Propositions de souvenirs émises pendant le tour → cartes de confirmation.
-        const proposals = getPendingMemoryProposals();
-        clearPendingMemoryProposals();
-        if (proposals.length) renderMemoryProposals(proposals);
+      },
+      onHalt: (leadIn, question) => {
+        // Fork B (brief §4) : la question (+ lead-in éventuel) devient un message
+        // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
+        // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
+        // (« Oui » → create_memory + narration ; « Non » → rien).
+        const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
+        finalizeAssistant(wrap, text);
+        currentThread.push({ role: 'assistant', content: text, model });
+        persistCurrent();
+        setConnDot('ok');
+        // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
+        // ne porte que les actions. Accepter/Rejeter envoient « Oui »/« Non » par
+        // le même chemin qu'une saisie ; l'overlay se lève à la résolution.
+        showConfirmation('',
+          () => sendUserText('Oui'),
+          () => sendUserText('Non'));
       },
       onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
     });

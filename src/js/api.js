@@ -204,7 +204,8 @@ function abortStream() {
 }
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
-// Hooks : onDelta(full), onReasoning(full), onToolTour(), onFinal(content, reasoning), onError(msg).
+// Hooks : onDelta(full), onReasoning(full), onToolTour(), onFinal(content, reasoning),
+//         onHalt(leadIn, question) [outil halting], onError(msg).
 // h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
 // Le résultat d'un outil n'est JAMAIS affiché : il repart au modèle, on va
 // toujours jusqu'à la réponse finale (finish_reason === 'stop').
@@ -235,6 +236,22 @@ async function runConversation(messages, hooks) {
       // Flush complet du raisonnement de ce tour AVANT d'exécuter l'outil
       // (pas de traitement en parallèle) ; il reste affiché pendant l'appel.
       reasoningAcc = joinReasoning(reasoningAcc, result.reasoning);
+
+      // Outil HALTING (ex. ask_confirmation) : s'il figure dans ce tour, on
+      // suspend l'échange immédiatement — aucun message assistant tool_calls
+      // poussé, aucun message tool, aucune relance. onHalt reçoit le lead-in
+      // (texte du tour) et la question ; il se charge de la reprise « fork B »
+      // (réécriture en message texte clair, cf. main.js). Les éventuels autres
+      // tool_calls du même tour sont volontairement ignorés.
+      const halting = result.toolCalls.find(tc => toolIsHalting(tc.function.name));
+      if (halting) {
+        let hargs = {};
+        try { hargs = JSON.parse(halting.function.arguments || '{}'); }
+        catch (e) { hargs = {}; }
+        if (h.onHalt) h.onHalt(result.content, hargs.question || '');
+        return result.content;
+      }
+
       // Passe le content du tour à l'UI : s'il est non vide, l'UI le finalise
       // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
       if (h.onToolTour) h.onToolTour(result.content);
@@ -253,14 +270,14 @@ async function runConversation(messages, hooks) {
         let out;
         // Clé d'anti-redemande sur les arguments BRUTS du tool_call, pas sur
         // id/since seuls : deux appels distincts du même outil (ex. deux
-        // propose_memory, ou get_conversation résumé puis with_contents) ont des
+        // create_memory, ou get_conversation résumé puis with_contents) ont des
         // arguments distincts et doivent tous être servis. Seul un appel
         // rigoureusement identique (modèle qui boucle) est court-circuité.
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
         } else {
-          bgActivityStart('lecture mémoire…');
+          bgActivityStart('mémoire…');
           try {
             out = runTool(tc.function.name, args);
             servedKeys.add(key);

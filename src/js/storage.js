@@ -192,7 +192,7 @@ function backfillCandidates() {
 }
 
 // ── Souvenirs utilisateur (miaou-memories) ───────────────────────────────────
-// Schéma : { id, content, created_at, updated_at, supersedes, suppressed }
+// Schéma : { id, content, created_at, updated_at, suppressed }
 // Tombstone : { ..., suppressed: true }  ← conserve content pour affichage
 
 const MEMORIES_KEY = 'miaou-memories';
@@ -208,7 +208,7 @@ function persistMemories(arr) {
   localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
 }
 
-// Entrées actives : non-supprimées. supersedes est de la provenance, pas un filtre.
+// Entrées actives : non-supprimées.
 function listMemoryEntries() {
   return loadMemories().filter(e => e && !e.suppressed);
 }
@@ -220,23 +220,13 @@ function saveMemory(entry) {
   persistMemories(arr);
 }
 
-// Édition directe (utilisateur) : in-place, pas de chaîne supersedes.
+// Édition directe (utilisateur) : in-place.
 function editMemory(id, newContent) {
   const arr = loadMemories();
   const e = arr.find(x => x.id === id);
   if (!e) return;
   e.content = newContent;
   e.updated_at = Date.now();
-  persistMemories(arr);
-}
-
-// Amendement (proposition modèle acceptée) : nouvelle entrée + tombstone de l'ancienne.
-function amendMemory(oldId, newContent) {
-  const arr = loadMemories();
-  const old = arr.find(e => e.id === oldId);
-  if (old) old.suppressed = true;
-  const now = Date.now();
-  arr.push({ id: genMemoryId(), content: newContent, created_at: now, updated_at: now, supersedes: oldId, suppressed: false });
   persistMemories(arr);
 }
 

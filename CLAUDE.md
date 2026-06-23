@@ -80,7 +80,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
   `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
-  `forgetMemoryEntry`, `acceptProposal`, `rejectProposal`, …). Le bouton « Enregistrer »
+  `forgetMemoryEntry`, `undoMemoryAck`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Le bouton du composer appelle
   `onSendBtn()` (envoi **ou** stop selon `sending`), jamais `sendMessage()`
@@ -93,8 +93,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
    l'ordre : le prompt système utilisateur (toujours préservé tel quel) ;
    si `includeToolsInSystemPrompt` est vrai, `toolsSystemPrompt()` (description
    redondante des outils, optionnelle) ; puis `memoryDoctrinePrompt()` (doctrine
-   de déclenchement des outils `propose_memory_*`, **toujours** injectée si des
-   outils sont présents — non redondante avec le schéma).
+   de déclenchement des outils mémoire (`create_memory` / `ask_confirmation`),
+   **toujours** injectée si des outils sont présents — non redondante avec le schéma).
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du *texte* mis dans
    le message système par MIAOU (recherche locale). Les `tool_calls` sont
    déclenchés par le **modèle**. MIAOU n'appelle jamais d'outil de lui-même.
@@ -286,39 +286,50 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   (storage) exposé par le handler global `togglePin(id)` (main.js).
 - `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
-- `miaou-memories` : tableau `[{ id, content, created_at, updated_at, supersedes,
-  suppressed }]`. `supersedes` (optionnel) est l'id de l'entrée remplacée par un
-  amendement modèle accepté (`amendMemory`) — à fins de provenance uniquement,
-  l'ancienne entrée est simultanément tombstonée. **Deux chemins d'écriture
-  distincts** : édition directe utilisateur → `editMemory(id, newContent)`
-  (in-place, pas de chaîne `supersedes`) ; amendement modèle accepté →
-  `amendMemory(oldId, newContent)` (nouvelle entrée + tombstone de l'ancienne).
-  `listMemoryEntries()` renvoie uniquement les non-supprimées. `forgetMemory(id)`
-  supprime définitivement l'entrée du tableau (les `supersedes` qui pointaient
-  vers elle deviennent orphelins mais ne cassent rien — champ de provenance seul).
+- `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed }]`.
+  **Deux chemins d'écriture distincts** : édition directe utilisateur →
+  `editMemory(id, newContent)` (in-place) ; écriture par le modèle →
+  `create_memory` / `update_memory` (in-place) /
+  `delete_memory` (tombstone). `listMemoryEntries()` renvoie uniquement les
+  non-supprimées. `forgetMemory(id)` supprime définitivement l'entrée du tableau.
 
 ## Outils (`tools.js`)
 
-Cinq outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+Six outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur.
 
 **Lecture de l'historique :**
 - `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
   (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone.
-- `list_conversations(since, with_contents=false)` — entrées non-tombstone
-  dont `timestamp >= Date.parse(since)`. Date ISO 8601 requise. Nom conservé
+- `list_conversations(since?, with_contents=false)` — entrées non-tombstone
+  dont `timestamp >= Date.parse(since)`. `since` optionnel. Nom conservé
   (≠ `get_conversations`) pour éviter la quasi-collision singulier/pluriel.
 
-**Propositions de souvenirs (jamais d'écriture directe) :**
-- `propose_memory(content)` — met en file `_pendingMemoryProposals` (tools.js).
-- `propose_memory_update(old_id, new_content)` — idem pour une mise à jour.
-- `propose_memory_delete(id)` — idem pour une suppression.
+**Écriture directe de souvenirs (chemin direct — instruction explicite) :**
+- `create_memory(content)` — écrit immédiatement dans `miaou-memories`, retourne
+  l'identifiant généré (utile pour un `update_memory` ultérieur dans le même
+  échange).
+- `update_memory(id, content)` — correction in-place, pas de tombstone.
+- `delete_memory(id)` — tombstone réversible (`suppressed: true`).
 
-Chaque handler retourne un accusé de réception (`"Proposition mise en attente…"`)
-pour que le modèle finisse son tour normalement. La file est consommée dans
-`onFinal` (main.js) via `getPendingMemoryProposals` / `clearPendingMemoryProposals`.
-**Aucun outil n'écrit directement dans `miaou-memories`** — tout passe par les
-cartes Accepter/Rejeter affichées dans le thread après le tour.
+**Confirmation avant écriture (chemin inféré — fait non explicitement demandé) :**
+- `ask_confirmation(question)` — outil **halting** : `runConversation` s'arrête
+  immédiatement après, sans pousser de message `tool`/`tool_result` natif. La
+  question (+ lead-in éventuel) est réécrite en message assistant texte clair
+  (fork B). La reprise se fait au tour suivant via la réponse utilisateur
+  (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
+
+**Acks côté client (`memory-ack`) :**
+Les trois handlers à écriture directe poussent dans `_pendingMemoryAcks`
+(tools.js) au moment de l'écriture. `onFinal` (main.js) consomme la file via
+`getPendingMemoryAcks` / `clearPendingMemoryAcks` et injecte des messages
+`{ role: 'memory-ack', ackType, id, content?, resolved? }` dans `currentThread`.
+Ces messages sont **rendus** dans le thread (ligne compacte avec action « annuler »
+→ `undoMemoryAck(btn, id)` → `forgetMemory` + `resolved: true`) mais **filtrés**
+au moment de l'assemblage du payload API (`dispatchSend`). Ils survivent au
+rechargement (sérialisés dans `conv.messages` par `persistCurrent`, restaurés par
+`openConversation`). Traiter comme un journal d'événements immuable, pas un miroir
+de l'état mémoire.
 
 ## Tests
 
