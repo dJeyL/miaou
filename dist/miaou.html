@@ -1642,7 +1642,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-22 23:17 UTC */
+/* miaou — built: 2026-06-23 06:16 UTC */
 
 
 /* ── utils.js ── */
@@ -2023,18 +2023,19 @@ function summaryLight(e) {
            summary: e.summary, keywords: e.keywords };
 }
 
-// ── Guide de déclenchement, partagé entre les 3 outils mémoire ───────────────
-// Évite la divergence entre add/update/delete si la doctrine est retouchée plus tard.
-const MEMORY_TRIGGER_GUIDE =
-  "Déclenche cet outil quand l'utilisateur :\n" +
-  "  - donne une instruction durable sur ton comportement (marqueurs : \"dorénavant\", " +
-  "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"parle-moi en X\", " +
-  "\"ne fais plus jamais Y\")\n" +
-  "  - communique un fait stable sur lui-même (métier, projet en cours, contrainte " +
-  "personnelle, préférence technique récurrente)\n" +
-  "  - exprime une préférence de fond sur le format/ton/contenu de TES réponses\n" +
-  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours " +
-  "(\"réponds en 3 points pour cette question précise\").";
+// Doctrine de déclenchement des outils mémoire — émise UNE SEULE FOIS dans le
+// system prompt (via toolsSystemPrompt), jamais dans une function.description
+// individuelle (qui elle est dupliquée dans le schéma tools à chaque appel API).
+const MEMORY_DOCTRINE =
+  "Doctrine de déclenchement pour propose_memory / propose_memory_update / propose_memory_delete :\n" +
+  "Déclenche l'un de ces outils quand l'utilisateur :\n" +
+  "  - donne une instruction durable sur ton comportement (\"dorénavant\", \"désormais\", " +
+  "\"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\")\n" +
+  "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
+  "  - exprime une préférence de fond sur le format/ton de tes réponses\n" +
+  "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.\n" +
+  "Le contenu proposé (content / new_content) est toujours à la 3e personne, factuel, " +
+  "sans interprétation.";
 
 const TOOLS = [
   {
@@ -2109,12 +2110,11 @@ const TOOLS = [
         name: 'propose_memory',
         description:
           "Propose d'enregistrer un nouveau souvenir persistant pour l'utilisateur. " +
-          "Le souvenir sera soumis à l'utilisateur pour validation — ne rien écrire directement.\n\n" +
-          MEMORY_TRIGGER_GUIDE,
+          "Soumis à validation — ne rien écrire directement. Voir doctrine mémoire.",
         parameters: {
           type: 'object',
           properties: {
-            content: { type: 'string', description: 'Contenu du souvenir à enregistrer' },
+            content: { type: 'string', description: 'Contenu du souvenir (3e personne, factuel)' },
           },
           required: ['content'],
         },
@@ -2133,16 +2133,13 @@ const TOOLS = [
         name: 'propose_memory_update',
         description:
           "Propose de remplacer un souvenir existant par un contenu mis à jour. " +
-          "La mise à jour sera soumise à l'utilisateur pour validation.\n\n" +
-          MEMORY_TRIGGER_GUIDE +
-          "\nDéclencheur spécifique : l'utilisateur référence explicitement un souvenir " +
-          "existant et signale un changement d'état (\"en fait c'est plutôt X\", " +
-          "\"corrige : ...\", \"ce n'est plus vrai, maintenant je...\").",
+          "Soumis à validation. Voir doctrine mémoire — spécifique : l'utilisateur " +
+          "référence explicitement un souvenir existant et signale un changement d'état.",
         parameters: {
           type: 'object',
           properties: {
             old_id:      { type: 'string', description: 'Identifiant du souvenir à remplacer' },
-            new_content: { type: 'string', description: 'Nouveau contenu proposé' },
+            new_content: { type: 'string', description: 'Nouveau contenu (3e personne, factuel)' },
           },
           required: ['old_id', 'new_content'],
         },
@@ -2160,12 +2157,9 @@ const TOOLS = [
       function: {
         name: 'propose_memory_delete',
         description:
-          "Propose de supprimer un souvenir existant. " +
-          "La suppression sera soumise à l'utilisateur pour validation.\n\n" +
-          MEMORY_TRIGGER_GUIDE +
-          "\nDéclencheur spécifique : l'utilisateur référence explicitement un souvenir " +
-          "existant et demande son retrait (\"oublie ça\", \"supprime le souvenir sur X\", " +
-          "\"ce n'est plus valable\").",
+          "Propose de supprimer un souvenir existant. Soumis à validation. " +
+          "Voir doctrine mémoire — spécifique : l'utilisateur référence explicitement " +
+          "un souvenir existant et en demande le retrait.",
         parameters: {
           type: 'object',
           properties: {
@@ -2192,12 +2186,15 @@ function runTool(name, args) {
   catch (e) { return 'Erreur outil ' + name + ' : ' + e.message; }
 }
 
-// Description en langage naturel, dérivée du registre.
+// Description en langage naturel, dérivée du registre — la doctrine mémoire
+// n'est ajoutée qu'une fois, en aval de la liste, pas par outil.
 function toolsSystemPrompt() {
   if (!TOOLS.length) return '';
   const lines = TOOLS.map(t => `- ${t.definition.function.name} : ${t.definition.function.description}`);
+  const hasMemoryTools = TOOLS.some(t => t.definition.function.name.startsWith('propose_memory'));
+  const doctrineBlock = hasMemoryTools ? '\n\n' + MEMORY_DOCTRINE : '';
   return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
-         "sinon réponds directement.\n" + lines.join('\n');
+         "sinon réponds directement.\n" + lines.join('\n') + doctrineBlock;
 }
 
 
