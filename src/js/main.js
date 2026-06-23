@@ -110,7 +110,10 @@ function buildSystemMessage() {
   const parts = [];
   const sysUser = (loadSettings().systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
-  if (TOOLS.length) parts.push(toolsSystemPrompt());
+  if (TOOLS.length) {
+    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+    parts.push(memoryDoctrinePrompt());
+  }
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -235,6 +238,7 @@ function onSaveSettings() {
     summaryInjectionMode: pendingSummaryInjectionMode,
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
+    includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
   };
   saveSettings(obj);
   highlightEnabled = obj.highlight;

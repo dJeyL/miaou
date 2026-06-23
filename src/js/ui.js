@@ -804,6 +804,7 @@ function openSettings() {
   const s = loadSettings();
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
+  $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
 }

@@ -180,13 +180,19 @@ function runTool(name, args) {
   catch (e) { return 'Erreur outil ' + name + ' : ' + e.message; }
 }
 
-// Description en langage naturel, dérivée du registre — la doctrine mémoire
-// n'est ajoutée qu'une fois, en aval de la liste, pas par outil.
+// MEMORY_DOCTRINE n'est PAS redondante avec le schéma tools (qui ne décrit que
+// les paramètres, jamais la doctrine de déclenchement). Elle doit donc être
+// envoyée indépendamment du toggle includeToolsInSystemPrompt, qui ne contrôle
+// que la description redondante schéma/texte des outils eux-mêmes.
+
 function toolsSystemPrompt() {
   if (!TOOLS.length) return '';
   const lines = TOOLS.map(t => `- ${t.definition.function.name} : ${t.definition.function.description}`);
-  const hasMemoryTools = TOOLS.some(t => t.definition.function.name.startsWith('propose_memory'));
-  const doctrineBlock = hasMemoryTools ? '\n\n' + MEMORY_DOCTRINE : '';
   return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
-         "sinon réponds directement.\n" + lines.join('\n') + doctrineBlock;
+         "sinon réponds directement.\n" + lines.join('\n');
+}
+
+function memoryDoctrinePrompt() {
+  const hasMemoryTools = TOOLS.some(t => t.definition.function.name.startsWith('propose_memory'));
+  return hasMemoryTools ? MEMORY_DOCTRINE : '';
 }

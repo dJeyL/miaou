@@ -43,6 +43,23 @@ describe('sidebarWidth (largeur de la sidebar)', function() {
   });
 });
 
+describe('includeToolsInSystemPrompt (injection outils dans le prompt système)', function() {
+  it('est désactivé par défaut', function() {
+    localStorage.clear();
+    expect(loadSettings().includeToolsInSystemPrompt).toBe(false);
+  });
+  it('persiste l\'activation', function() {
+    localStorage.clear();
+    saveSettings({ includeToolsInSystemPrompt: true });
+    expect(loadSettings().includeToolsInSystemPrompt).toBe(true);
+  });
+  it('vaut false pour un storage sans la clef (utilisateur existant)', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-settings', JSON.stringify({ url: 'http://test/v1', model: 'gpt-4o' }));
+    expect(loadSettings().includeToolsInSystemPrompt).toBe(false);
+  });
+});
+
 describe('activeModel (override conv vs modèle par défaut)', function() {
   it('retombe sur le modèle des réglages sans override de conversation', function() {
     localStorage.clear();

@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   theme: 'system',         // 'light' | 'dark' | 'system'
   showModelSelector: false, // sélecteur de modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
+  includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────

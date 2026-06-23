@@ -90,8 +90,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
-   l'ordre, la description des outils, le prompt système utilisateur, puis le
-   bloc résumés. Le prompt système utilisateur est **toujours préservé tel quel**.
+   l'ordre : le prompt système utilisateur (toujours préservé tel quel) ;
+   si `includeToolsInSystemPrompt` est vrai, `toolsSystemPrompt()` (description
+   redondante des outils, optionnelle) ; puis `memoryDoctrinePrompt()` (doctrine
+   de déclenchement des outils `propose_memory_*`, **toujours** injectée si des
+   outils sont présents — non redondante avec le schéma).
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du *texte* mis dans
    le message système par MIAOU (recherche locale). Les `tool_calls` sont
    déclenchés par le **modèle**. MIAOU n'appelle jamais d'outil de lui-même.
@@ -237,8 +240,9 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 
 16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` ne contient
     que du contenu **statique** : prompt système configuré par l'utilisateur +
-    `toolsSystemPrompt()`. Aucune dépendance à `Date.now()` ni aux résumés
-    mémoire. Le contenu dynamique (date/heure, nom du modèle, bloc mémoire) est
+    `memoryDoctrinePrompt()` (toujours) + optionnellement `toolsSystemPrompt()`
+    (selon `includeToolsInSystemPrompt`). Aucune dépendance à `Date.now()` ni
+    aux résumés mémoire. Le contenu dynamique (date/heure, nom du modèle, bloc mémoire) est
     regroupé dans `buildContextBlock(matches)` et injecté **éphémèrement en
     préfixe du dernier message `role: 'user'`** dans `dispatchSend`, au moment
     de la construction du payload API — sans modifier `currentThread` ni
@@ -256,14 +260,20 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 ## Stockage (localStorage)
 
 - `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
-  theme, showModelSelector, sidebarWidth }`. `summaryInjectionMode` ∈ `auto | propose |
-  never`, défaut `propose`. `model` est le **modèle par défaut** (global).
-  `showModelSelector` (défaut `false`) n'affecte que la visibilité du sélecteur
-  dans le composer. `sidebarWidth` (défaut `264`) est la largeur redimensionnable
-  de la sidebar, bornée `[264, 528]` (min = largeur d'origine, max = ×2), pilotée
-  via la variable CSS `--sidebar-w` (cf. `initSidebarResize`, ui.js) ; pendant le
-  drag, la classe `.resizing` coupe la transition de largeur, et la valeur finale
-  est persistée au `mouseup`.
+  theme, showModelSelector, sidebarWidth, includeToolsInSystemPrompt }`.
+  `summaryInjectionMode` ∈ `auto | propose | never`, défaut `propose`. `model` est
+  le **modèle par défaut** (global). `showModelSelector` (défaut `false`) n'affecte
+  que la visibilité du sélecteur dans le composer. `sidebarWidth` (défaut `264`) est
+  la largeur redimensionnable de la sidebar, bornée `[264, 528]` (min = largeur
+  d'origine, max = ×2), pilotée via la variable CSS `--sidebar-w`
+  (cf. `initSidebarResize`, ui.js) ; pendant le drag, la classe `.resizing` coupe
+  la transition de largeur, et la valeur finale est persistée au `mouseup`.
+  `includeToolsInSystemPrompt` (défaut `false`) contrôle uniquement l'injection de
+  `toolsSystemPrompt()` — la description textuelle redondante des outils. La doctrine
+  de déclenchement (`memoryDoctrinePrompt()`) est **toujours** injectée dès que des
+  outils sont présents, indépendamment de ce toggle. À activer pour les modèles qui
+  lisent mal leur tool schema natif. `buildSystemMessage()` (main.js) conditionne
+  l'appel ; `tools.js` reste agnostique du réglage.
 - `miaou-conversations` : tableau `[{ id, title, timestamp, updatedAt?, messages, model?,
   pinned? }]`. `updatedAt` (optionnel) est le timestamp du dernier `persistCurrent` ;
   absent sur les anciennes conversations (tri/affichage tombent alors sur `timestamp`).

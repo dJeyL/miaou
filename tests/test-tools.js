@@ -144,6 +144,28 @@ describe('propose_memory_delete — mise en file', function() {
   });
 });
 
+describe('toolsSystemPrompt', function() {
+  it('contient le nom de chaque outil', function() {
+    var s = toolsSystemPrompt();
+    TOOLS.forEach(function(t) {
+      expect(s.indexOf(t.definition.function.name) >= 0).toBeTruthy();
+    });
+  });
+  it('retourne une chaîne non vide si TOOLS est peuplé', function() {
+    expect(toolsSystemPrompt().length > 0).toBeTruthy();
+  });
+});
+
+describe('memoryDoctrinePrompt', function() {
+  it('retourne une chaîne non vide quand les outils propose_memory sont présents', function() {
+    var s = memoryDoctrinePrompt();
+    expect(s.length > 0).toBeTruthy();
+  });
+  it('contient "propose_memory" pour orienter le modèle', function() {
+    expect(memoryDoctrinePrompt().indexOf('propose_memory') >= 0).toBeTruthy();
+  });
+});
+
 describe('clearPendingMemoryProposals', function() {
   it('vide la file sans affecter le reste', function() {
     clearPendingMemoryProposals();

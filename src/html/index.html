@@ -191,7 +191,20 @@
         </div>
         <span class="hint" id="summary-injection-hint"></span>
       </div>
-      <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Injecter les outils dans le prompt système</label>
+            <span class="hint">Recommandé pour modèles peu fiables sur tool schema.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-tools-in-prompt">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+        <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
+      </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
     </div>
   </div>
