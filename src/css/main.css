@@ -265,7 +265,7 @@ body {
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn  { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg { width: 14px; height: 14px; }
-.topbar-mid:hover .conv-dl-btn { opacity: 1; }
+.topbar:hover .conv-dl-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {
@@ -1236,9 +1236,7 @@ body {
   padding: 2px; border: none; background: none; cursor: pointer;
   color: var(--text-3); border-radius: 4px;
   transition: color .15s, background .15s;
-  opacity: 0;
 }
-.msg:hover .msg-dl, .msg-dl:focus { opacity: 1; }
 .msg-dl:hover { color: var(--text); background: var(--surface-2); }
 
 /* Horodatages inline des messages */
