@@ -80,7 +80,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
   `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
-  `forgetMemoryEntry`, `undoMemoryAck`, …). Le bouton « Enregistrer »
+  `forgetMemoryEntry`, `undoMemoryAck`, `downloadConvMd`, `downloadMsgMd`,
+  `toggleReasoning`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Le bouton du composer appelle
   `onSendBtn()` (envoi **ou** stop selon `sending`), jamais `sendMessage()`
@@ -284,6 +285,13 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   épinglées dans une section **Épinglé** (singulier assumé) en tête de liste,
   retirées de leur tranche temporelle ; toggle via `toggleConversationPin(id)`
   (storage) exposé par le handler global `togglePin(id)` (main.js).
+  Chaque message du tableau `messages` porte les champs optionnels :
+  `model?` (assistant uniquement, quel modèle a produit ce message),
+  `ts?` (epoch ms de création, absent sur les anciens messages — affichage sans
+  horodatage, pas de crash), `reasoning?` (texte de raisonnement, assistant
+  uniquement). Ces trois champs sont **sérialisés par `persistCurrent` et
+  restaurés par `openConversation`** — ne pas les omettre si on retouche ces
+  fonctions.
 - `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
 - `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed }]`.
@@ -336,11 +344,58 @@ de l'état mémoire.
 Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
 navigateur + framework maison). Seules les **fonctions pures** sont couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
-de résumés, le registre d'outils, parsing SSE/résumés. Adapter un squelette est
+de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
+(`formatMessageTime`, `formatFullDateFr`). Adapter un squelette est
 permis si le comportement testé est respecté (un cas l'a été : `indexOf` vaut 0
 pour le premier élément, donc tester la présence avec `>= 0`, pas `toBeTruthy`).
 La boucle `tool_calls` et `silentCompletion` se vérifient à la main (checklist
 dans `tests/MANUAL.md`).
+
+## Export Markdown et téléchargements
+
+- `downloadFile(filename, content, mimeType)` dans `utils.js` : Blob +
+  `createObjectURL` + `<a download>` éphémère + clic programmatique +
+  `revokeObjectURL`. **N'est pas un outil LLM.** Point d'entrée unique pour
+  tout téléchargement côté client (blocs de code, messages, export conversation,
+  et futurs backup/import).
+- `LANG_TO_EXT` / `langExt(lang)` dans `utils.js` : table langage → extension.
+  Fallback `.txt` si le langage est absent ou inconnu.
+- Bouton `.code-dl` dans `decoratePre` (ui.js) : posé aux côtés de `.code-copy`,
+  télécharge le contenu brut du bloc.
+- **`.msg-dl` (bouton download d'un message assistant) porte l'attribut `hidden`
+  à la création** (`assistantHead`) et est révélé uniquement par `finalizeAssistant`
+  (message live) **et** `buildMsg` (reload depuis storage). Ne jamais l'afficher
+  avant finalisation — le contenu est incomplet pendant le streaming.
+  Le contenu brut à télécharger est stocké dans `body.dataset.raw`, posé par
+  `finalizeAssistant` et `buildMsg` (chemin reload). Si on retouche l'un ou
+  l'autre, s'assurer que `dataset.raw` est bien mis à jour.
+- **`.conv-dl-btn` (export de la conversation) est désactivé (`disabled`) pendant
+  le streaming** via `setSending` (ui.js). CSS : `.conv-dl-btn:disabled` masque
+  le bouton. `downloadConvMd()` (main.js) filtre les `memory-ack` et inclut
+  l'horodatage par message si `ts` est défini.
+- **`.msg-ts` user est un sibling de `.bubble`**, pas un enfant — `align-items:
+  flex-end` du `.msg.user` gère l'alignement à droite. Ne pas le mettre à
+  l'intérieur du bubble (sinon il serait exclu/recréé lors des reconstructions
+  de `bubble.innerHTML` comme dans `cancelEdit`).
+
+## Horodatages des messages
+
+- `formatMessageTime(ts, now)` et `formatFullDateFr(ts)` dans `utils.js` :
+  fonctions pures, **sans `Intl` ni `toLocaleString`** (déterminisme + testabilité
+  QuickJS). Abréviations et noms complets des jours/mois codés en dur en français.
+- `SHOW_YEAR_AFTER_DAYS = 183` : constante nommée, exprimée en jours (pas en
+  mois calendaires), testable par soustraction d'epoch.
+- `formatMessageTime` distingue le découpage **calendaire** (minuit/minuit) de la
+  fenêtre 24h glissante : un message d'hier à 23:50 est « hier » même si < 24h
+  se sont écoulées ; un message à 00:10 aujourd'hui est l'heure courte même si
+  > 9h se sont écoulées.
+- `formatFullDateFr` (ex. « jeudi 26 juin 2026 à 14:30 ») est réservé aux
+  **tooltips de la sidebar** (`:hover` = contexte de détail, l'année toujours
+  présente). Pour les horodatages inline des messages, utiliser
+  `formatMessageTime`.
+- Le champ `ts` (epoch ms) est posé par `sendUserText` (user), `onFinal` et
+  `onToolTour` (assistant). Absent sur les anciens messages → affichage sans
+  horodatage, pas de crash.
 
 ## Règle d'or
 

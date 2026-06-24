@@ -129,7 +129,10 @@ function openConversation(id) {
       if (m.resolved) a.resolved = true;
       return a;
     }
-    return { role: m.role, content: m.content, model: m.model };
+    const o = { role: m.role, content: m.content, model: m.model };
+    if (m.ts) o.ts = m.ts;
+    if (m.reasoning) o.reasoning = m.reasoning;
+    return o;
   });
   currentConvModel = conv.model || '';
   needTitle = false;
@@ -173,6 +176,32 @@ function togglePin(id) {
   renderConvList();
 }
 
+// Exporte la conversation courante en Markdown. N'inclut que les messages
+// visibles (user + assistant) — les memory-ack et éventuels internaux sont exclus.
+// Appelé depuis le bouton topbar (onclick="downloadConvMd()").
+function downloadConvMd() {
+  if (!currentThread || !currentThread.length) return;
+  const conv = currentConvId ? loadConversation(currentConvId) : null;
+  const title = (conv && conv.title) || 'miaou-conversation';
+  const slug = title.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'miaou-conversation';
+
+  const lines = [];
+  for (const m of currentThread) {
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    const timeStr = m.ts ? ' — ' + formatMessageTime(m.ts, Date.now()) : '';
+    const label = (m.role === 'user' ? '### Vous' : '### MIAOU') + timeStr;
+    lines.push(label);
+    lines.push('');
+    lines.push(m.content || '');
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  }
+  downloadFile(slug + '.md', lines.join('\n').trimEnd() + '\n', 'text/markdown');
+}
+
 function undoMemoryAck(btn, id) {
   forgetMemory(id);
   btn.outerHTML = '<span class="ack-resolved">annulé</span>';
@@ -214,6 +243,8 @@ function persistCurrent() {
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
+    if (m.ts) o.ts = m.ts;
+    if (m.reasoning) o.reasoning = m.reasoning;
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
@@ -306,8 +337,9 @@ function sendMessage() {
 // et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
 function sendUserText(text) {
   ensureConversation();
-  appendUserMessage(text);
-  currentThread.push({ role: 'user', content: text });
+  const ts = Date.now();
+  appendUserMessage(text, ts);
+  currentThread.push({ role: 'user', content: text, ts });
   persistCurrent();
 
   runGenerationFromCurrentThread();
@@ -349,7 +381,7 @@ function editUserMessage(index, newText) {
   if (currentThread[index].role !== 'user') return;
 
   currentThread = currentThread.slice(0, index + 1);
-  currentThread[index] = { role: 'user', content: t };
+  currentThread[index] = { role: 'user', content: t, ts: Date.now() };
   persistCurrent();                             // troncature écrite avant relance
   renderThread(currentThread);
   runGenerationFromCurrentThread();
@@ -386,8 +418,11 @@ async function dispatchSend(matches) {
         if (content && content.trim()) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
+          const tourTs = Date.now();
           finalizeAssistant(wrap, content);
-          currentThread.push({ role: 'assistant', content, model });
+          const tsEl = wrap.querySelector('.msg-ts');
+          if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
+          currentThread.push({ role: 'assistant', content, model, ts: tourTs });
           persistCurrent();
           wrap = startAssistantMessage(model);
         } else {
@@ -395,8 +430,11 @@ async function dispatchSend(matches) {
         }
       },
       onFinal: (content, reasoning) => {
+        const ts = Date.now();
         finalizeAssistant(wrap, content);
-        const msg = { role: 'assistant', content, model };
+        const tsEl = wrap.querySelector('.msg-ts');
+        if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+        const msg = { role: 'assistant', content, model, ts };
         if (reasoning && reasoning.trim()) {
           flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
           msg.reasoning = reasoning;          // champ séparé, persisté

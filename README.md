@@ -21,7 +21,12 @@ l'interface, JetBrains Mono pour le code.
 - Affichage du raisonnement des modèles thinking-capable : icône dans l'en-tête,
   bloc dépliable alimenté en live, persisté à part du contenu.
 - Rendu Markdown + coloration syntaxique (toggle), tables, blocs de code avec
-  bouton « copier ».
+  boutons « copier » et « télécharger » (extension auto selon le langage).
+- Téléchargement d'une réponse individuelle en `.md` (bouton dans l'en-tête,
+  au survol) ; export de la conversation entière en Markdown (icône à droite
+  du titre dans la topbar, au survol).
+- Horodatage de chaque message : heure seule (même jour), « hier à HH:MM »,
+  date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
   ce point.
 - Écran d'accueil aléatoire (emoji + accroche) à chaque nouvelle conversation.

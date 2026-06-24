@@ -262,7 +262,10 @@ body {
   backdrop-filter: blur(8px);
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
-.topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; }
+.topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
+.conv-dl-btn  { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
+.conv-dl-btn svg { width: 14px; height: 14px; }
+.topbar-mid:hover .conv-dl-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {
@@ -510,14 +513,18 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .code-lang { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-transform: lowercase; }
-.code-copy {
-  background: none; border: none;
+.code-actions { display: flex; align-items: center; gap: 2px; }
+.code-copy, .code-dl {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: none; border: none; border-radius: 5px;
   color: var(--text-3);
-  font-family: var(--sans); font-size: 11px;
   cursor: pointer; padding: 0;
-  transition: color 130ms var(--ease);
+  transition: color 130ms var(--ease), background 130ms var(--ease);
 }
-.code-copy:hover { color: var(--text); }
+.code-copy svg, .code-dl svg { width: 13px; height: 13px; }
+.code-copy:hover, .code-dl:hover { color: var(--text); background: var(--surface-2); }
+.code-copy--checked { color: var(--accent) !important; }
 .body pre code {
   display: block;
   padding: 13px 14px !important;
@@ -1211,8 +1218,11 @@ body {
 
 /* bloc de raisonnement (thinking) : icône discrète dans la barre méta +
    panneau collapsible (police mono, atténué) au-dessus du corps du message. */
-.reasoning-toggle {
+.meta-actions {
   margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.reasoning-toggle {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 2px; border: none; background: none; cursor: pointer;
   color: var(--text-3); border-radius: 4px;
@@ -1221,6 +1231,22 @@ body {
 .reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
 .reasoning-toggle.open { color: var(--accent); }
 .reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
+.msg-dl {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+  opacity: 0;
+}
+.msg:hover .msg-dl, .msg-dl:focus { opacity: 1; }
+.msg-dl:hover { color: var(--text); background: var(--surface-2); }
+
+/* Horodatages inline des messages */
+.msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
+.msg.assistant .meta .msg-ts[hidden] { display: none; }
+/* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
+.msg.user .msg-ts { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+.conv-dl-btn:disabled { opacity: 0 !important; pointer-events: none; }
 
 .reasoning {
   margin: 0 0 8px;

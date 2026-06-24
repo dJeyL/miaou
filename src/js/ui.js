@@ -65,32 +65,47 @@ function modelName() {
 // masquée tant qu'aucun raisonnement) et le bloc collapsible du raisonnement
 // (replié par défaut, donc `hidden`). Sert au rendu live ET au reload depuis le
 // stockage — un seul mécanisme de pliage/dépliage, persistant sans recalcul.
-function assistantHead(model, reasoning) {
+function assistantHead(model, reasoning, ts) {
   const has = reasoning && String(reasoning).trim();
+  const tsText = ts ? '· ' + formatMessageTime(ts, Date.now()) : '';
   return (
     `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt=""><span>${escHtml(model || modelName())}</span>` +
+    `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
+    `<div class="meta-actions">` +
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 2.5l1.5 3.8 3.8 1.5-3.8 1.5L11 13.1 9.5 9.3 5.7 7.8l3.8-1.5z"/><path d="M17.5 13l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/></svg>` +
       `</button>` +
+      `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
+        `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
+      `</button>` +
+    `</div>` +
     `</div>` +
     `<div class="reasoning" hidden><div class="reasoning-content">${has ? escHtml(String(reasoning)) : ''}</div></div>`
   );
 }
 
-function buildMsg(role, content, model, reasoning) {
+function buildMsg(role, content, model, reasoning, ts) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
+    if (ts) wrap.dataset.ts = ts;
     wrap.innerHTML =
       `<div class="bubble">` +
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
-      `<div class="body">${renderMd(content)}</div></div>`;
+      `<div class="body">${renderMd(content)}</div>` +
+      `</div>` +
+      (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
   } else {
     wrap.innerHTML =
-      assistantHead(model, reasoning) +
+      assistantHead(model, reasoning, ts) +
       `<div class="body">${renderMd(content)}</div>`;
+    const bodyEl = wrap.querySelector('.body');
+    if (bodyEl) bodyEl.dataset.raw = content;
+    // Message déjà finalisé (reload) : le bouton download est opérationnel immédiatement.
+    const dlBtn = wrap.querySelector('.msg-dl');
+    if (dlBtn) dlBtn.removeAttribute('hidden');
   }
   decoratePre(wrap);
   return wrap;
@@ -166,8 +181,12 @@ function toggleReasoning(btn) {
   scrollBottom();
 }
 
-// En-tête (langage + bouton copier) sur chaque <pre>.
+// En-tête (langage + boutons copier/télécharger) sur chaque <pre>.
 function decoratePre(scope) {
+  const svgCopy = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  const svgCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgDl = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+
   scope.querySelectorAll('pre').forEach(pre => {
     if (pre.querySelector('.code-head')) return;
     const code = pre.querySelector('code');
@@ -178,15 +197,35 @@ function decoratePre(scope) {
     }
     const head = document.createElement('div');
     head.className = 'code-head';
-    head.innerHTML = `<span class="code-lang">${escHtml(lang)}</span><button class="code-copy">copier</button>`;
+    head.innerHTML =
+      `<span class="code-lang">${escHtml(lang)}</span>` +
+      `<div class="code-actions">` +
+      `<button class="code-copy" title="Copier">${svgCopy}</button>` +
+      `<button class="code-dl" title="Télécharger">${svgDl}</button>` +
+      `</div>`;
     head.querySelector('.code-copy').onclick = () => {
       navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
         const btn = head.querySelector('.code-copy');
-        btn.textContent = 'copié'; setTimeout(() => btn.textContent = 'copier', 1400);
+        btn.innerHTML = svgCheck;
+        btn.classList.add('code-copy--checked');
+        setTimeout(() => { btn.innerHTML = svgCopy; btn.classList.remove('code-copy--checked'); }, 1400);
       });
+    };
+    head.querySelector('.code-dl').onclick = () => {
+      downloadFile('miaou-snippet.' + langExt(lang), code ? code.textContent : '', 'text/plain');
     };
     pre.insertBefore(head, pre.firstChild);
   });
+}
+
+// Télécharge le contenu brut (markdown source) d'un message assistant.
+// Le contenu est stocké dans body.dataset.raw au moment du finalize/buildMsg.
+function downloadMsgMd(btn) {
+  const wrap = btn.closest('.msg');
+  const body = wrap && wrap.querySelector('.body');
+  const raw = body && body.dataset.raw;
+  if (!raw) return;
+  downloadFile('miaou-message.md', raw, 'text/markdown');
 }
 
 function buildMemoryAck(m) {
@@ -216,17 +255,17 @@ function renderThread(msgs) {
   if (!msgs || msgs.length === 0) { showWelcome(); return; }
   for (const m of msgs) {
     if (m.role === 'memory-ack') thread.appendChild(buildMemoryAck(m));
-    else thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning));
+    else thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning, m.ts));
   }
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
-function appendUserMessage(text) {
+function appendUserMessage(text, ts) {
   const welcome = $('thread').querySelector('.welcome-screen');
   if (welcome) welcome.remove();
-  const el = buildMsg('user', text);
+  const el = buildMsg('user', text, undefined, undefined, ts);
   $('thread').appendChild(el);
   highlightUnder(el);
   scrollBottom();
@@ -328,8 +367,11 @@ function finalizeAssistant(wrap, full) {
   stopWaiter();
   const body = wrap.querySelector('.body');
   body.innerHTML = renderMd(full);
+  body.dataset.raw = full;
   decoratePre(wrap);
   highlightUnder(wrap);
+  const dlBtn = wrap.querySelector('.msg-dl');
+  if (dlBtn) dlBtn.removeAttribute('hidden');
   scrollBottom();
 }
 
@@ -376,7 +418,8 @@ function enterEditMode(wrap) {
   bubble.querySelector('[data-act="save"]').onclick = () => commitEdit(wrap, ta.value);
 }
 
-// Annulation : restaure la bulle à son contenu d'origine, sans rien changer.
+// Annulation : restaure le contenu de la bulle. Le .msg-ts est un sibling du
+// .bubble (hors de sa portée), il n'est pas touché.
 function cancelEdit(wrap, original) {
   wrap.classList.remove('editing');
   const bubble = wrap.querySelector('.bubble');
@@ -427,11 +470,6 @@ function sectionFor(ts) {
   if (d.getTime() >= startOfToday - 7 * day) return '7 derniers jours';
   if (d.getTime() >= startOfToday - 30 * day) return '30 derniers jours';
   return 'Plus ancien';
-}
-
-function fullDateTime(ts) {
-  if (!ts) return '';
-  return new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function relativeWhen(ts) {
@@ -503,7 +541,7 @@ function convItemEl(c) {
   el.innerHTML =
     `<div class="conv-body">
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
-       <div class="conv-date" title="${escHtml(fullDateTime(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
+       <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
      <div class="conv-actions">
        <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
@@ -680,6 +718,9 @@ function setSending(on) {
   // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
   // saisie libre vaut réponse/correction et lève le widget (dismiss-on-send).
   if (send) send.disabled = on ? false : !configured;
+  // Export de conversation masqué pendant le streaming (contenu incomplet).
+  const convDl = document.querySelector('.conv-dl-btn');
+  if (convDl) convDl.disabled = on;
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
