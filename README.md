@@ -1,6 +1,6 @@
 # MIAOU
 
-*Mistral Intelligence Available to Orphaned Users*
+*Mostly Independent Animal, Occasionally Useful*
 
 Client de chat web minimaliste pour dialoguer avec un LLM via une API
 compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
@@ -8,8 +8,8 @@ unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts). On l'ouvre dans un
 navigateur, ou on le sert via n'importe quel serveur web statique.
 
-Thème sombre, palette ambre/corail (clin d'œil à Mistral), Hanken Grotesk pour
-l'interface, JetBrains Mono pour le code.
+Thème sombre, palette ambre/corail, Hanken Grotesk pour l'interface, JetBrains
+Mono pour le code.
 
 ## Fonctionnalités
 

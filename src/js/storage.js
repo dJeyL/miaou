@@ -24,6 +24,7 @@ const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut tru
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
+const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
 
 const DEFAULT_SETTINGS = {
   url: '',

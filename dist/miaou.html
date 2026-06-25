@@ -957,6 +957,8 @@ body {
 }
 .btn-primary:hover { background: var(--accent-2); }
 
+.build-ts-label { font-size: 10px; color: var(--text-3); text-align: center; }
+
 .btn-ghost {
   background: var(--surface-2);
   color: var(--text);
@@ -1720,6 +1722,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
       </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
+      <small id="build-ts-label" class="build-ts-label"></small>
     </div>
   </div>
 
@@ -1770,7 +1773,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-25 20:36 UTC */
+/* miaou — built: 2026-06-25 21:44 UTC */
 
 
 /* ── utils.js ── */
@@ -2022,12 +2025,13 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782423891}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
+const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
 
 const DEFAULT_SETTINGS = {
   url: '',
@@ -3897,6 +3901,12 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  const lbl = $('build-ts-label');
+  if (lbl) {
+    lbl.textContent = BUILD_TS
+      ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
+      : '';
+  }
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
 }

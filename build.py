@@ -45,7 +45,9 @@ def load_config(use_config: bool = True) -> dict:
 
 
 def assemble_js(cfg_data: dict) -> str:
-    build_date = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    now = datetime.now(timezone.utc)
+    build_date = now.strftime('%Y-%m-%d %H:%M UTC')
+    cfg_data['build_ts'] = int(now.timestamp())
     parts = [f'/* miaou — built: {build_date} */\n']
     for name in JS_ORDER:
         path = SRC / 'js' / name

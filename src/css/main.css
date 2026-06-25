@@ -946,6 +946,8 @@ body {
 }
 .btn-primary:hover { background: var(--accent-2); }
 
+.build-ts-label { font-size: 10px; color: var(--text-3); text-align: center; }
+
 .btn-ghost {
   background: var(--surface-2);
   color: var(--text);

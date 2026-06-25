@@ -971,6 +971,12 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  const lbl = $('build-ts-label');
+  if (lbl) {
+    lbl.textContent = BUILD_TS
+      ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
+      : '';
+  }
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
 }
