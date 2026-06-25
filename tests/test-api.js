@@ -55,6 +55,27 @@ describe('joinReasoning (accumulation entre tours)', function() {
   });
 });
 
+describe('searchSummaries (exclusion de la conversation courante)', function() {
+  it('exclut la conversation dont l\'id est passé en second argument', function() {
+    localStorage.clear();
+    saveSummary('conv-current', { title: 'actuelle', timestamp: 1000, summary: 'docker compose réseau', keywords: ['docker'] });
+    saveSummary('conv-other',   { title: 'autre',    timestamp: 1000, summary: 'docker compose réseau', keywords: ['docker'] });
+    var results = searchSummaries('docker', 'conv-current');
+    var ids = results.map(function(r) { return r.id; });
+    expect(ids.indexOf('conv-current') >= 0).toBe(false);
+    expect(ids.indexOf('conv-other') >= 0).toBe(true);
+    localStorage.clear();
+  });
+  it('inclut toutes les conversations si excludeId est absent', function() {
+    localStorage.clear();
+    saveSummary('conv-a', { title: 'a', timestamp: 1000, summary: 'docker compose réseau', keywords: ['docker'] });
+    saveSummary('conv-b', { title: 'b', timestamp: 1000, summary: 'docker compose réseau', keywords: ['docker'] });
+    var results = searchSummaries('docker');
+    expect(results.length).toBe(2);
+    localStorage.clear();
+  });
+});
+
 describe('parseSummaryJSON (parsing défensif des résumés)', function() {
   it('parse un JSON propre', function() {
     var r = parseSummaryJSON('{"summary":"x","keywords":["a","b"]}');

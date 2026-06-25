@@ -355,7 +355,7 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text);
+  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId);
 
   if (settings.summaryInjectionMode === 'propose' && matches.length) {
     showSummaryBanner(matches, {

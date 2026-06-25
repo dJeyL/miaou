@@ -108,3 +108,64 @@ describe('formatFullDateFr', function() {
     expect(formatFullDateFr(0)).toBe('');
   });
 });
+
+describe('formatDateRelative', function() {
+  it("même jour calendaire → aujourd'hui", function() {
+    var now = new Date();
+    var ts = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0, 0).getTime();
+    expect(formatDateRelative(ts, now.getTime())).toBe("aujourd'hui");
+  });
+
+  it("00:10 aujourd'hui → aujourd'hui (calendaire, pas 24h glissant)", function() {
+    var n = new Date();
+    var ref = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 23, 50, 0).getTime();
+    var ts  = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0, 10, 0).getTime();
+    expect(formatDateRelative(ts, ref)).toBe("aujourd'hui");
+  });
+
+  it('−1 jour → hier', function() {
+    var now = new Date();
+    var ts = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0).getTime();
+    expect(formatDateRelative(ts, now.getTime())).toBe('hier');
+  });
+
+  it('−2 jours → avant-hier', function() {
+    var now = new Date();
+    var ts = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2, 12, 0, 0).getTime();
+    expect(formatDateRelative(ts, now.getTime())).toBe('avant-hier');
+  });
+
+  it('−10 jours → nom de mois, pas d\'année 4 chiffres, pas de label relatif', function() {
+    var now = new Date();
+    var ts = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 10, 12, 0, 0).getTime();
+    var result = formatDateRelative(ts, now.getTime());
+    expect(result !== "aujourd'hui" && result !== 'hier' && result !== 'avant-hier').toBeTruthy();
+    expect(/\d{4}/.test(result)).toBe(false);
+    // contient un nom de mois français
+    var months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    var hasMo = months.some(function(m) { return result.indexOf(m) >= 0; });
+    expect(hasMo).toBeTruthy();
+  });
+
+  it('−1 an → contient l\'année et le nom du mois', function() {
+    var now = new Date();
+    var ts = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 12, 0, 0).getTime();
+    var result = formatDateRelative(ts, now.getTime());
+    expect(/\d{4}/.test(result)).toBeTruthy();
+    var months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    var hasMo = months.some(function(m) { return result.indexOf(m) >= 0; });
+    expect(hasMo).toBeTruthy();
+  });
+
+  it('retourne une chaîne vide sans timestamp', function() {
+    expect(formatDateRelative(0, Date.now())).toBe('');
+  });
+
+  it('DST spring-forward FR (31 mars 2024) : 2 avr → 31 mars = avant-hier', function() {
+    // France passe à l'heure d'été le 31 mars 2024 : le jour dure 23h.
+    // Math.floor(23h/24h) = 0 → hier classé aujourd'hui. Math.round corrige.
+    var now = new Date(2024, 3, 2, 12, 0, 0).getTime();  // 2 avril 2024
+    var ts  = new Date(2024, 2, 31, 12, 0, 0).getTime(); // 31 mars 2024
+    expect(formatDateRelative(ts, now)).toBe('avant-hier');
+  });
+});

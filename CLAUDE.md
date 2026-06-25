@@ -345,7 +345,7 @@ Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
 navigateur + framework maison). Seules les **fonctions pures** sont couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
-(`formatMessageTime`, `formatFullDateFr`). Adapter un squelette est
+(`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`). Adapter un squelette est
 permis si le comportement testé est respecté (un cas l'a été : `indexOf` vaut 0
 pour le premier élément, donc tester la présence avec `>= 0`, pas `toBeTruthy`).
 La boucle `tool_calls` et `silentCompletion` se vérifient à la main (checklist
@@ -380,19 +380,28 @@ dans `tests/MANUAL.md`).
 
 ## Horodatages des messages
 
-- `formatMessageTime(ts, now)` et `formatFullDateFr(ts)` dans `utils.js` :
-  fonctions pures, **sans `Intl` ni `toLocaleString`** (déterminisme + testabilité
-  QuickJS). Abréviations et noms complets des jours/mois codés en dur en français.
+- `formatMessageTime(ts, now)`, `formatFullDateFr(ts)` et `formatDateRelative(ts, now)`
+  dans `utils.js` : fonctions pures, **sans `Intl` ni `toLocaleString`** (déterminisme
+  + testabilité QuickJS). Abréviations et noms complets des jours/mois codés en dur
+  en français.
 - `SHOW_YEAR_AFTER_DAYS = 183` : constante nommée, exprimée en jours (pas en
   mois calendaires), testable par soustraction d'epoch.
+- `_startOfDay(d)` : helper interne (minuit local, DST-safe) partagé par
+  `formatMessageTime` et `formatDateRelative`. Le delta calendaire se calcule via
+  `Math.round((_startOfDay(n) - _startOfDay(d)) / 86400000)` — **`Math.round`, pas
+  `Math.floor`** : au passage heure d'été un jour calendaire adjacent dure 23h,
+  `floor` le classerait à tort comme « aujourd'hui ».
 - `formatMessageTime` distingue le découpage **calendaire** (minuit/minuit) de la
   fenêtre 24h glissante : un message d'hier à 23:50 est « hier » même si < 24h
   se sont écoulées ; un message à 00:10 aujourd'hui est l'heure courte même si
   > 9h se sont écoulées.
+- `formatDateRelative` est **date-only** (pas de composante horaire) : tiers
+  aujourd'hui / hier / avant-hier / `"3 mars"` / `"12 janvier 2024"`, réutilise
+  `SHOW_YEAR_AFTER_DAYS` et `FR_MONTHS_FULL`. Employé par `showSummaryBanner` pour
+  les dates des items de la liste.
 - `formatFullDateFr` (ex. « jeudi 26 juin 2026 à 14:30 ») est réservé aux
   **tooltips de la sidebar** (`:hover` = contexte de détail, l'année toujours
-  présente). Pour les horodatages inline des messages, utiliser
-  `formatMessageTime`.
+  présente). Pour les horodatages inline des messages, utiliser `formatMessageTime`.
 - Le champ `ts` (epoch ms) est posé par `sendUserText` (user), `onFinal` et
   `onToolTour` (assistant). Absent sur les anciens messages → affichage sans
   horodatage, pas de crash.
@@ -402,8 +411,7 @@ dans `tests/MANUAL.md`).
 En cas d'ambiguïté sur un point non couvert ici : **signaler plutôt que deviner**.
 Le projet a déjà payé le prix de suppositions hâtives.
 
-> Note : `.summary-banner` et `.bg-activity` n'étaient pas dans la maquette
-> d'origine — le mode mémoire et la vue souvenirs ont été construits dans le
-> design system existant. `.summary-banner` et `.bg-activity` ont été implémentés
-> en intérimaire. **Avant de les retravailler**, demander les spécifications
-> HTML/CSS plutôt que de redessiner à l'aveugle.
+> Note : `.bg-activity` n'était pas dans la maquette d'origine et a été implémenté
+> en intérimaire. **Avant de le retravailler**, demander les spécifications HTML/CSS
+> plutôt que de redessiner à l'aveugle. (`.summary-banner` a depuis reçu une spec et
+> une implémentation définitives — cette mise en garde ne le concerne plus.)

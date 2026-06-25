@@ -968,7 +968,27 @@ function showSummaryBanner(matches, handlers) {
   $('summary-banner-text').textContent = n > 1
     ? n + ' conversations passées semblent liées.'
     : 'Une conversation passée semble liée.';
+  const list = $('summary-banner-list');
+  list.innerHTML = '';
+  const now = Date.now();
+  matches.forEach(function(m) {
+    const li = document.createElement('li');
+    li.className = 'summary-banner-item';
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'sbi-title';
+    titleSpan.textContent = m.title || '(sans titre)';
+    li.appendChild(titleSpan);
+    const dateStr = formatDateRelative(m.updatedAt || m.timestamp, now);
+    if (dateStr) {
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'sbi-date';
+      dateSpan.textContent = dateStr;
+      li.appendChild(dateSpan);
+    }
+    list.appendChild(li);
+  });
   $('summary-banner').classList.add('show');
+  scrollBottom();
 }
 function hideSummaryBanner() {
   const b = $('summary-banner');

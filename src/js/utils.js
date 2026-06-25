@@ -127,6 +127,11 @@ function _tsHHMM(d) {
   return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
 }
 
+// Minuit local (DST-safe) : new Date(y,m,d) évite les soustractions brutes d'epoch.
+function _startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
 // Horodatage court par tiers calendaires (cf. brief D5). `now` est injecté (epoch ms)
 // pour être testable de façon déterministe sous QuickJS. Renvoie '' si ts est absent.
 // - même jour calendaire → "08:54"
@@ -138,12 +143,12 @@ function formatMessageTime(ts, now) {
   if (!ts || !now) return '';
   const d = new Date(ts);
   const n = new Date(now);
-  const startOfToday = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  const startOfToday = _startOfDay(n);
   const startOfYesterday = startOfToday - 86400000;
   const hhmm = _tsHHMM(d);
   if (ts >= startOfToday) return hhmm;
   if (ts >= startOfYesterday) return 'hier à ' + hhmm;
-  const startOfMsgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const startOfMsgDay = _startOfDay(d);
   const daysDiff = Math.floor((startOfToday - startOfMsgDay) / 86400000);
   const dayName = FR_DAYS_ABBR[d.getDay()];
   const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
@@ -152,6 +157,24 @@ function formatMessageTime(ts, now) {
     return dayName + ' ' + dd + '/' + mm + '/' + d.getFullYear() + ' à ' + hhmm;
   }
   return dayName + ' ' + dd + '/' + mm + ' à ' + hhmm;
+}
+
+// Date relative, sans composante horaire. `now` injecté (epoch ms) pour QuickJS.
+// Tiers : aujourd'hui / hier / avant-hier / "3 mars" / "12 janvier 2024".
+// Math.round (pas floor) : traversée DST spring/autumn → écart réel 23h ou 25h,
+// round absorbe le ±1h et donne l'écart calendaire exact.
+function formatDateRelative(ts, now) {
+  if (!ts || !now) return '';
+  const d = new Date(ts);
+  const n = new Date(now);
+  const daysDiff = Math.round((_startOfDay(n) - _startOfDay(d)) / 86400000);
+  if (daysDiff <= 0) return "aujourd'hui";
+  if (daysDiff === 1) return 'hier';
+  if (daysDiff === 2) return 'avant-hier';
+  const day = d.getDate();
+  const month = FR_MONTHS_FULL[d.getMonth()];
+  if (daysDiff >= SHOW_YEAR_AFTER_DAYS) return day + ' ' + month + ' ' + d.getFullYear();
+  return day + ' ' + month;
 }
 
 // Horodatage complet en français pour les tooltips de la sidebar (cf. brief D6).

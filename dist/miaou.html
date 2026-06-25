@@ -679,21 +679,55 @@ body {
 /* bannière résumés (mode « proposer ») */
 .summary-banner {
   display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  margin: 12px 0;
+  animation: rise 220ms var(--ease) both;
+}
+.summary-banner.show { display: flex; }
+.summary-banner-head {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  background: var(--accent-dim);
-  border: 1px solid var(--accent-bd);
-  border-radius: var(--r);
-  padding: 9px 12px;
-  margin-bottom: 9px;
-  animation: rise 220ms var(--ease) both;
 }
-.summary-banner.show { display: flex; }
 .summary-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
 .summary-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
 .summary-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.summary-banner-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--accent-bd);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.summary-banner-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.sbi-title {
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbi-date {
+  color: var(--text-2);
+  font-size: 11px;
+  flex-shrink: 0;
+}
 .mb-btn {
   background: var(--surface-2);
   border: 1px solid var(--border-2);
@@ -1249,6 +1283,7 @@ body {
   transition: color .15s, background .15s;
 }
 .msg-dl:hover { color: var(--text); background: var(--surface-2); }
+.msg-dl[hidden] { display: none; }
 
 /* Horodatages inline des messages */
 .msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
@@ -1531,16 +1566,19 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 
         <!-- Bannière mémoire (mode « proposer ») -->
         <div class="summary-banner" id="summary-banner">
-          <div class="summary-banner-body">
-            <svg class="summary-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-            <span id="summary-banner-text">Des conversations passées semblent liées.</span>
+          <div class="summary-banner-head">
+            <div class="summary-banner-body">
+              <svg class="summary-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              <span id="summary-banner-text">Des conversations passées semblent liées.</span>
+            </div>
+            <div class="summary-banner-actions">
+              <button class="mb-btn primary" onclick="summaryBanner('inject')">Injecter</button>
+              <button class="mb-btn" onclick="summaryBanner('ignore')">Ignorer</button>
+              <button class="mb-btn" onclick="summaryBanner('always')">Toujours</button>
+              <button class="mb-btn" onclick="summaryBanner('never')">Jamais</button>
+            </div>
           </div>
-          <div class="summary-banner-actions">
-            <button class="mb-btn primary" onclick="summaryBanner('inject')">Injecter</button>
-            <button class="mb-btn" onclick="summaryBanner('ignore')">Ignorer</button>
-            <button class="mb-btn" onclick="summaryBanner('always')">Toujours</button>
-            <button class="mb-btn" onclick="summaryBanner('never')">Jamais</button>
-          </div>
+          <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
         <!-- Sélecteur de modèle (optionnel, réglable) -->
@@ -1716,7 +1754,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-24 23:15 UTC */
+/* miaou — built: 2026-06-25 16:20 UTC */
 
 
 /* ── utils.js ── */
@@ -1850,6 +1888,11 @@ function _tsHHMM(d) {
   return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
 }
 
+// Minuit local (DST-safe) : new Date(y,m,d) évite les soustractions brutes d'epoch.
+function _startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
 // Horodatage court par tiers calendaires (cf. brief D5). `now` est injecté (epoch ms)
 // pour être testable de façon déterministe sous QuickJS. Renvoie '' si ts est absent.
 // - même jour calendaire → "08:54"
@@ -1861,12 +1904,12 @@ function formatMessageTime(ts, now) {
   if (!ts || !now) return '';
   const d = new Date(ts);
   const n = new Date(now);
-  const startOfToday = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  const startOfToday = _startOfDay(n);
   const startOfYesterday = startOfToday - 86400000;
   const hhmm = _tsHHMM(d);
   if (ts >= startOfToday) return hhmm;
   if (ts >= startOfYesterday) return 'hier à ' + hhmm;
-  const startOfMsgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const startOfMsgDay = _startOfDay(d);
   const daysDiff = Math.floor((startOfToday - startOfMsgDay) / 86400000);
   const dayName = FR_DAYS_ABBR[d.getDay()];
   const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
@@ -1875,6 +1918,24 @@ function formatMessageTime(ts, now) {
     return dayName + ' ' + dd + '/' + mm + '/' + d.getFullYear() + ' à ' + hhmm;
   }
   return dayName + ' ' + dd + '/' + mm + ' à ' + hhmm;
+}
+
+// Date relative, sans composante horaire. `now` injecté (epoch ms) pour QuickJS.
+// Tiers : aujourd'hui / hier / avant-hier / "3 mars" / "12 janvier 2024".
+// Math.round (pas floor) : traversée DST spring/autumn → écart réel 23h ou 25h,
+// round absorbe le ±1h et donne l'écart calendaire exact.
+function formatDateRelative(ts, now) {
+  if (!ts || !now) return '';
+  const d = new Date(ts);
+  const n = new Date(now);
+  const daysDiff = Math.round((_startOfDay(n) - _startOfDay(d)) / 86400000);
+  if (daysDiff <= 0) return "aujourd'hui";
+  if (daysDiff === 1) return 'hier';
+  if (daysDiff === 2) return 'avant-hier';
+  const day = d.getDate();
+  const month = FR_MONTHS_FULL[d.getMonth()];
+  if (daysDiff >= SHOW_YEAR_AFTER_DAYS) return day + ' ' + month + ' ' + d.getFullYear();
+  return day + ' ' + month;
 }
 
 // Horodatage complet en français pour les tooltips de la sidebar (cf. brief D6).
@@ -2764,12 +2825,13 @@ async function generateSummary(thread) {
 }
 
 // ── Recherche / sélection des résumés pertinents ────────────────────────────
-function searchSummaries(queryText) {
+function searchSummaries(queryText, excludeId) {
   const tokens = tokenize(queryText);
   if (!tokens.length) return [];
   const all = loadSummaries();
   const matches = [];
   for (const id in all) {
+    if (excludeId && id === excludeId) continue;
     const e = all[id];
     if (!e || e.suppressed || !e.summary) continue;
     const score = scoreSummary(tokens, e);
@@ -3767,7 +3829,27 @@ function showSummaryBanner(matches, handlers) {
   $('summary-banner-text').textContent = n > 1
     ? n + ' conversations passées semblent liées.'
     : 'Une conversation passée semble liée.';
+  const list = $('summary-banner-list');
+  list.innerHTML = '';
+  const now = Date.now();
+  matches.forEach(function(m) {
+    const li = document.createElement('li');
+    li.className = 'summary-banner-item';
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'sbi-title';
+    titleSpan.textContent = m.title || '(sans titre)';
+    li.appendChild(titleSpan);
+    const dateStr = formatDateRelative(m.updatedAt || m.timestamp, now);
+    if (dateStr) {
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'sbi-date';
+      dateSpan.textContent = dateStr;
+      li.appendChild(dateSpan);
+    }
+    list.appendChild(li);
+  });
   $('summary-banner').classList.add('show');
+  scrollBottom();
 }
 function hideSummaryBanner() {
   const b = $('summary-banner');
@@ -4467,7 +4549,7 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text);
+  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId);
 
   if (settings.summaryInjectionMode === 'propose' && matches.length) {
     showSummaryBanner(matches, {

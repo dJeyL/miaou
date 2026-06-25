@@ -337,12 +337,13 @@ async function generateSummary(thread) {
 }
 
 // ── Recherche / sélection des résumés pertinents ────────────────────────────
-function searchSummaries(queryText) {
+function searchSummaries(queryText, excludeId) {
   const tokens = tokenize(queryText);
   if (!tokens.length) return [];
   const all = loadSummaries();
   const matches = [];
   for (const id in all) {
+    if (excludeId && id === excludeId) continue;
     const e = all[id];
     if (!e || e.suppressed || !e.summary) continue;
     const score = scoreSummary(tokens, e);
