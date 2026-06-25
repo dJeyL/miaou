@@ -80,7 +80,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
   `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
-  `forgetMemoryEntry`, `undoMemoryAck`, `downloadConvMd`, `downloadMsgMd`,
+  `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`,
   `toggleReasoning`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Le bouton du composer appelle
@@ -327,17 +327,58 @@ description **du registre** — ne jamais la coder en dur.
   (fork B). La reprise se fait au tour suivant via la réponse utilisateur
   (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
 
-**Acks côté client (`memory-ack`) :**
-Les trois handlers à écriture directe poussent dans `_pendingMemoryAcks`
-(tools.js) au moment de l'écriture. `onFinal` (main.js) consomme la file via
-`getPendingMemoryAcks` / `clearPendingMemoryAcks` et injecte des messages
-`{ role: 'memory-ack', ackType, id, content?, resolved? }` dans `currentThread`.
-Ces messages sont **rendus** dans le thread (ligne compacte avec action « annuler »
-→ `undoMemoryAck(btn, id)` → `forgetMemory` + `resolved: true`) mais **filtrés**
-au moment de l'assemblage du payload API (`dispatchSend`). Ils survivent au
-rechargement (sérialisés dans `conv.messages` par `persistCurrent`, restaurés par
-`openConversation`). Traiter comme un journal d'événements immuable, pas un miroir
-de l'état mémoire.
+**Acks d'outils côté client (`tool-ack`, ex-`memory-ack`) :**
+Mécanisme **générique** couvrant à la fois les écritures mémoire et les lectures
+d'historique. Chaque handler traçable pousse un descripteur `{ kind, … }` dans
+`_pendingToolAcks` (tools.js) au moment de l'appel — `kind` ∈ `memory_create |
+memory_update | memory_delete | conversation_read | conversation_list`. Le hook
+`onToolAcks()` (main.js), déclenché par `runConversation` **après l'exécution des
+outils de chaque tour** (donc AVANT la réponse finale), consomme la file via
+`getPendingToolAcks` / `clearPendingToolAcks` et injecte des messages
+`{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, resolved? }` dans
+`currentThread`. La table `ACK_KINDS` (ui.js) est **l'unique
+source de vérité** : par kind, un `label(m)`, une capacité d'annulation `undo`
+(fonction `(id) => void`, ou **`null`** = variante informative sans bouton pour
+les lectures) et une icône SVG statique. Ajouter un outil traçable = ajouter une
+ligne, pas toucher au renderer.
+
+- **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`
+  pour toute donnée modèle (label/title/content) ; `innerHTML` réservé à l'icône
+  SVG author-controlled. L'action « annuler » (kinds undoables uniquement) est liée
+  par `addEventListener` → `undoToolAck(entry, wrap)` (main.js), qui dispatche via
+  `ACK_KINDS[kind].undo(id, entry)`. Sémantique par kind : **create** →
+  `forgetMemory` (retire l'ajout) ; **delete** → `restoreMemory` (lève la
+  tombstone) ; **update** → ré-écrit `entry.prevContent` via `editMemory` (l'ancien
+  contenu, capturé **avant** l'écrasement par le handler `update_memory` et porté
+  dans l'ack, car l'édition est in-place sans tombstone). Si `prevContent` manque
+  (ack legacy), l'undo d'une édition est **no-op** — jamais de `forgetMemory` sur
+  une édition. `forgetMemory`/`restoreMemory` ignorent le 2ᵉ argument. **Pas de
+  lookup par `id`** : un create et un delete du même souvenir partagent `entry.id`,
+  donc le handler reçoit l'entrée et le nœud DOM exacts (closure de `buildToolAck`) ;
+  `entry.id` ne sert qu'à l'opération mémoire.
+- **Placement = provenance, DANS la bulle** : les acks s'affichent à l'intérieur
+  de la bulle assistant (`.msg.assistant`, colonne flex), **entre l'en-tête**
+  (`.meta` : icône + nom du modèle) **et le corps** (`.body` : patienteur puis
+  réponse). Helper unique `placeToolAck(wrap, entry)` (ui.js) : `insertBefore(node,
+  wrap.querySelector('.body'))`. Ordre à l'écran : icône+modèle → acks (au fil des
+  tours) → patienteur → réponse. `resetAssistant` ne touchant que `.body`, les acks
+  survivent à la reprise d'attente entre tours. **Live** : `onToolAcks` appelle
+  `placeToolAck(wrap, …)` (le `wrap` courant, réassigné par `onToolTour`). **Reload** :
+  `renderThread` tamponne les acks (qui précèdent l'assistant dans `currentThread`,
+  ordre `[user, …acks, assistant]`) et les replace dans la bulle assistant suivante
+  via `placeToolAck` ; repli en blocs autonomes s'ils ne précèdent pas un assistant.
+- **Filtrés** du payload API (`dispatchSend`, via `!isAckRole(m.role)`) — jamais
+  envoyés au modèle. Les lectures atteignent le modèle uniquement via le
+  `role:'tool'` in-loop de `runConversation`, jamais via l'ack.
+- **Compat legacy sans migration** : les entrées `role:'memory-ack'` (champ
+  `ackType`) déjà en storage sont reconnues partout (`isAckRole`, `ackKindOf`
+  mappe `ackType` → `memory_*`) et **jamais réécrites** (`persistCurrent` /
+  `openConversation` re-sérialisent le rôle et `ackType` tels quels). CSS :
+  `.memory-ack` reste un alias de `.tool-ack`.
+- Survivent au rechargement (sérialisés par `persistCurrent`, restaurés par
+  `openConversation`). Traiter comme un journal d'événements immuable, pas un
+  miroir de l'état mémoire. Helpers purs `isAckRole` / `ackKindOf` dans utils.js,
+  `ackLabel` dans ui.js (testés QuickJS).
 
 ## Tests
 
@@ -371,8 +412,9 @@ dans `tests/MANUAL.md`).
   l'autre, s'assurer que `dataset.raw` est bien mis à jour.
 - **`.conv-dl-btn` (export de la conversation) est désactivé (`disabled`) pendant
   le streaming** via `setSending` (ui.js). CSS : `.conv-dl-btn:disabled` masque
-  le bouton. `downloadConvMd()` (main.js) filtre les `memory-ack` et inclut
-  l'horodatage par message si `ts` est défini.
+  le bouton. `downloadConvMd()` (main.js) ne garde que les rôles `user`/`assistant`
+  (les `tool-ack`/`memory-ack` sont donc exclus) et inclut l'horodatage par message
+  si `ts` est défini.
 - **`.msg-ts` user est un sibling de `.bubble`**, pas un enfant — `align-items:
   flex-end` du `.msg.user` gère l'alignement à droite. Ne pas le mettre à
   l'intérieur du bubble (sinon il serait exclu/recréé lors des reconstructions

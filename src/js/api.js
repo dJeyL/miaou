@@ -10,6 +10,13 @@ const MAX_TOURS = 4;   // borne sur les tours de la boucle tool_calls
 // la génération en cours via abortStream(). Réinitialisé à chaque streamCompletion.
 let _currentAbort = null;
 
+// Param(s) mergés dans le body des appels silencieux pour désactiver le raisonnement.
+// À modifier ici uniquement si le backend utilise un autre knob (ex. think: false).
+const NOTHINK_PARAMS = { reasoning_effort: 'none' };
+
+// Cache session : endpoints ayant rejeté NOTHINK_PARAMS (clé = URL endpoint).
+const _noThinkRejected = {};
+
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
   "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
@@ -35,29 +42,43 @@ async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
   const cfg = loadSettings();
+  const url = cfg.url;
+
   // Garde-fou : un endpoint qui accepte la connexion puis se tait laisserait le
   // fetch pendre indéfiniment, et avec lui l'indicateur d'activité (le finally de
   // runBackgroundTask ne passerait jamais). Contrôleur LOCAL, indépendant de
   // _currentAbort (le stream foreground) : abortStream() n'y touche pas, et
   // inversement. L'AbortError remonte → runBackgroundTask le capte → null.
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), o.timeout || 30000);
-  try {
-    const res = await fetch(cfg.url + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
-      },
-      body: JSON.stringify({ model: cfg.model, messages, stream: false, temperature }),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) throw new Error('silentCompletion ' + res.status);
-    const data = await res.json();
-    return (data.choices?.[0]?.message?.content ?? '').trim();
-  } finally {
-    clearTimeout(timer);
+  const _attempt = async (extra) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), o.timeout || 30000);
+    try {
+      const res = await fetch(url + '/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
+        },
+        body: JSON.stringify({ model: cfg.model, messages, stream: false, temperature, ...extra }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error('silentCompletion ' + res.status);
+      const data = await res.json();
+      return (data.choices?.[0]?.message?.content ?? '').trim();
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  if (!_noThinkRejected[url]) {
+    try {
+      return await _attempt(NOTHINK_PARAMS);
+    } catch (_) {
+      _noThinkRejected[url] = true;
+    }
+    return await _attempt({});
   }
+  return await _attempt({});
 }
 
 // ── Parsing SSE ─────────────────────────────────────────────────────────────
@@ -204,7 +225,8 @@ function abortStream() {
 }
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
-// Hooks : onDelta(full), onReasoning(full), onToolTour(), onFinal(content, reasoning),
+// Hooks : onDelta(full), onReasoning(full), onToolTour(), onToolAcks() [après les
+//         outils d'un tour], onFinal(content, reasoning),
 //         onHalt(leadIn, question) [outil halting], onError(msg).
 // h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
 // Le résultat d'un outil n'est JAMAIS affiché : il repart au modèle, on va
@@ -289,6 +311,12 @@ async function runConversation(messages, hooks) {
         messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
 
+      // Les outils de ce tour ont écrit leurs descripteurs d'ack : on laisse l'UI
+      // les vidanger MAINTENANT (avant la réponse finale du tour suivant), pour
+      // qu'ils s'affichent au-dessus de la réponse et au fil des tours. api.js
+      // reste DOM-free : le hook vit dans main.js.
+      if (h.onToolAcks) h.onToolAcks();
+
       continue;   // on relance toujours un appel
     }
 
@@ -310,7 +338,7 @@ async function generateTitle(thread) {
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.2 });
+  ], { temperature: 0.2, timeout: 60000 });
   return out.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim().slice(0, 60);
 }
 
@@ -323,7 +351,7 @@ async function generateSummary(thread) {
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.3 });
+  ], { temperature: 0.3, timeout: 60000 });
 
   const parsed = parseSummaryJSON(out);
   if (!parsed || typeof parsed.summary !== 'string') {

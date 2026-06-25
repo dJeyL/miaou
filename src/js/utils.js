@@ -16,6 +16,18 @@ function escHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// ── Acks d'outils (journal client persistant des appels d'outils) ────────────
+// Reconnaît le rôle d'ack neuf ('tool-ack') et l'ancien ('memory-ack', jamais
+// réécrit — pas de migration silencieuse).
+function isAckRole(role) { return role === 'tool-ack' || role === 'memory-ack'; }
+
+// Dérive le kind canonique : entrée neuve (kind) ou legacy (ackType → memory_*).
+function ackKindOf(m) {
+  if (m.kind) return m.kind;
+  if (m.ackType) return 'memory_' + m.ackType; // legacy : 'create'|'update'|'delete'
+  return null;
+}
+
 // Place le caret en fin de contenu d'un élément contenteditable.
 function placeCaretEnd(el) {
   const range = document.createRange();

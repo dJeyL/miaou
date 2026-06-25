@@ -228,24 +228,83 @@ function downloadMsgMd(btn) {
   downloadFile('miaou-message.md', raw, 'text/markdown');
 }
 
-function buildMemoryAck(m) {
+// ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────
+// Source unique de vérité : ajouter un outil traçable = ajouter une ligne, pas
+// toucher au renderer. `undo: null` = variante informative sans bouton (lectures).
+// `undo` est une fonction (id) => void. Les icônes sont des SVG statiques
+// author-controlled (jamais de donnée modèle dedans).
+const ICON_MEMORY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+const ICON_EYE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
+
+const ACK_KINDS = {
+  memory_create: { undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
+  memory_update: { undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
+  memory_delete: { undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
+  conversation_read: { undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
+  conversation_list: { undo: null, icon: ICON_LIST, label: m =>
+      m.count === 0 ? 'Aucune conversation trouvée'
+    : m.count === 1 ? '1 conversation listée'
+    : (m.count != null ? m.count : '?') + ' conversations listées' },
+};
+
+// Wrapper global (testable QuickJS) : résout le label depuis ACK_KINDS.
+function ackLabel(kind, m) {
+  const spec = ACK_KINDS[kind];
+  return spec ? spec.label(m) : 'Action effectuée';
+}
+
+function buildToolAck(m) {
+  const kind = ackKindOf(m);
+  const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
+
   const wrap = document.createElement('div');
-  wrap.className = 'memory-ack' + (m.resolved ? ' resolved' : '');
-  wrap.dataset.memId = m.id || '';
-  let labelText;
-  if (m.ackType === 'delete') {
-    labelText = 'Souvenir supprimé' + (m.content ? ' : « ' + escHtml(m.content) + ' »' : '');
-  } else if (m.ackType === 'update') {
-    labelText = 'Souvenir mis à jour : « ' + escHtml(m.content || '') + ' »';
-  } else {
-    labelText = 'Mémorisé : « ' + escHtml(m.content || '') + ' »';
+  wrap.className = 'tool-ack ack-' + (kind || 'unknown') + (m.resolved ? ' resolved' : '');
+  if (m.id) wrap.dataset.ackId = m.id;
+
+  if (spec.icon) {
+    const iconEl = document.createElement('span');
+    iconEl.className = 'ack-icon';
+    iconEl.innerHTML = spec.icon;   // SVG statique author-controlled uniquement
+    wrap.appendChild(iconEl);
   }
-  const safeId = (m.id || '').replace(/[^a-z0-9]/gi, '');
-  const actionHtml = m.resolved
-    ? '<span class="ack-resolved">annulé</span>'
-    : `<button class="ack-undo" onclick="undoMemoryAck(this,'${safeId}')">annuler</button>`;
-  wrap.innerHTML = `<span class="ack-label">${labelText}</span>${actionHtml}`;
+
+  const label = document.createElement('span');
+  label.className = 'ack-label';
+  label.textContent = spec.label(m);   // donnée modèle → textContent (frontière XSS)
+  wrap.appendChild(label);
+
+  if (spec.undo) {
+    if (m.resolved) {
+      const s = document.createElement('span');
+      s.className = 'ack-resolved';
+      s.textContent = 'annulé';
+      wrap.appendChild(s);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'ack-undo';
+      btn.textContent = 'annuler';
+      // On passe l'ENTRÉE et le NŒUD exacts : un create et un delete du même
+      // souvenir partagent le même m.id, une recherche par id viserait le mauvais.
+      btn.addEventListener('click', () => undoToolAck(m, wrap));
+      wrap.appendChild(btn);
+    }
+  }
   return wrap;
+}
+
+// Place un ack DANS la bulle assistant, entre l'en-tête (.meta / raisonnement) et
+// le corps (.body) : la provenance s'affiche après l'icône+nom du modèle et avant
+// le patienteur/la réponse. Si la bulle n'a pas de .body, on append en dernier
+// recours. Partagé par le rendu live (onToolAcks) et le reload (renderThread).
+function placeToolAck(wrap, entry) {
+  const node = buildToolAck(entry);
+  const body = wrap && wrap.querySelector('.body');
+  if (body) wrap.insertBefore(node, body);
+  else if (wrap) wrap.appendChild(node);
+  return node;
 }
 
 function renderThread(msgs) {
@@ -253,10 +312,23 @@ function renderThread(msgs) {
   thread.innerHTML = '';
   clearMemoryProposals();   // les cartes de proposition viennent d'être détruites
   if (!msgs || msgs.length === 0) { showWelcome(); return; }
+  // Les acks précèdent dans currentThread l'assistant qu'ils ont nourri ; on les
+  // tamponne pour les replacer DANS sa bulle (en-tête, acks, réponse), cohérent
+  // avec le rendu live. Repli en blocs autonomes s'ils ne précèdent pas un
+  // assistant (cas limite : acks orphelins ou suivis d'un message user).
+  let pendingAcks = [];
   for (const m of msgs) {
-    if (m.role === 'memory-ack') thread.appendChild(buildMemoryAck(m));
-    else thread.appendChild(buildMsg(m.role, m.content, m.model, m.reasoning, m.ts));
+    if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
+    const wrap = buildMsg(m.role, m.content, m.model, m.reasoning, m.ts);
+    if (m.role === 'assistant') {
+      for (const a of pendingAcks) placeToolAck(wrap, a);
+    } else {
+      for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
+    }
+    pendingAcks = [];
+    thread.appendChild(wrap);
   }
+  for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
 }

@@ -36,12 +36,13 @@ const MEMORY_DOCTRINE =
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
-// File d'attente des acks côté client : chaque handler d'outil à écriture directe
-// y pousse une entrée ; main.js la consomme dans onFinal pour injecter les messages
-// 'memory-ack' dans le thread (jamais envoyés au modèle).
-let _pendingMemoryAcks = [];
-function getPendingMemoryAcks() { return _pendingMemoryAcks.slice(); }
-function clearPendingMemoryAcks() { _pendingMemoryAcks = []; }
+// File d'attente des acks côté client : chaque handler d'outil (écriture mémoire
+// OU lecture d'historique) y pousse un descripteur portant son `kind` ; main.js la
+// consomme dans onFinal pour injecter les messages 'tool-ack' dans le thread
+// (jamais envoyés au modèle). Les returns model-facing restent inchangés.
+let _pendingToolAcks = [];
+function getPendingToolAcks() { return _pendingToolAcks.slice(); }
+function clearPendingToolAcks() { _pendingToolAcks = []; }
 
 const TOOLS = [
   {
@@ -67,6 +68,7 @@ const TOOLS = [
       const entry = getSummaryEntry(args.id);   // storage.js
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
+      _pendingToolAcks.push({ kind: 'conversation_read', title: light.title });
       if (!args.with_contents) return JSON.stringify(light);
       const conv = loadConversation(args.id);   // storage.js
       if (!conv) return JSON.stringify(light);   // résumé présent mais conversation absente : cas limite
@@ -102,6 +104,7 @@ const TOOLS = [
         entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
       }
       const light = entries.map(summaryLight);
+      _pendingToolAcks.push({ kind: 'conversation_list', count: light.length });
       if (!args.with_contents) return JSON.stringify(light);
       return JSON.stringify(light.map(e => {
         const conv = loadConversation(e.id);
@@ -132,7 +135,7 @@ const TOOLS = [
       const now = Date.now();
       const content = args.content.trim();
       saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false });
-      _pendingMemoryAcks.push({ ackType: 'create', id, content });
+      _pendingToolAcks.push({ kind: 'memory_create', id, content });
       return 'Souvenir enregistré. Identifiant : ' + id;
     },
   },
@@ -157,8 +160,14 @@ const TOOLS = [
     handler: (args) => {
       if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
       const content = args.content.trim();
+      const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
       editMemory(args.id, content);
-      _pendingMemoryAcks.push({ ackType: 'update', id: args.id, content });
+      _pendingToolAcks.push({
+        kind: 'memory_update',
+        id: args.id,
+        content,
+        prevContent: existing ? existing.content : null,
+      });
       return 'Souvenir mis à jour.';
     },
   },
@@ -183,7 +192,7 @@ const TOOLS = [
       if (!args.id) return 'Identifiant manquant.';
       const existing = loadMemories().find(e => e.id === args.id);
       suppressMemory(args.id);
-      _pendingMemoryAcks.push({ ackType: 'delete', id: args.id, content: existing ? existing.content : null });
+      _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';
     },
   },

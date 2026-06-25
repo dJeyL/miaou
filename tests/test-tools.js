@@ -36,6 +36,22 @@ describe('get_conversation', function() {
     var r = runTool('get_conversation', { id: 'c1' });
     expect(r).toContain('introuvable');
   });
+  it('pousse un ack conversation_read avec le titre quand trouvé', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    saveSummary('c1', { title: 'Mon titre', timestamp: 1000, summary: 's', keywords: [] });
+    runTool('get_conversation', { id: 'c1' });
+    var pending = getPendingToolAcks();
+    expect(pending.length).toBe(1);
+    expect(pending[0].kind).toBe('conversation_read');
+    expect(pending[0].title).toBe('Mon titre');
+  });
+  it('ne pousse pas d\'ack quand introuvable', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    runTool('get_conversation', { id: 'inexistant' });
+    expect(getPendingToolAcks().length).toBe(0);
+  });
 });
 
 describe('list_conversations', function() {
@@ -65,6 +81,49 @@ describe('list_conversations', function() {
     suppressSummary('c1');
     var r = JSON.parse(runTool('list_conversations', { since: '2000-01-01T00:00:00Z' }));
     expect(r.length).toBe(0);
+  });
+  it('pousse un ack conversation_list avec le count post-filtre', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    saveSummary('c1', { title: 't', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
+    saveSummary('c0', { title: 'vieux', timestamp: Date.parse('2025-01-01T00:00:00Z'), summary: 's', keywords: [] });
+    runTool('list_conversations', { since: '2026-01-01T00:00:00Z' });
+    var pending = getPendingToolAcks();
+    expect(pending.length).toBe(1);
+    expect(pending[0].kind).toBe('conversation_list');
+    expect(pending[0].count).toBe(1);
+  });
+});
+
+describe('acks d\'outils — helpers', function() {
+  it('isAckRole reconnaît le rôle neuf et le legacy', function() {
+    expect(isAckRole('tool-ack')).toBe(true);
+    expect(isAckRole('memory-ack')).toBe(true);
+    expect(isAckRole('assistant')).toBe(false);
+    expect(isAckRole('user')).toBe(false);
+  });
+  it('ackKindOf : kind présent, legacy ackType, ou null', function() {
+    expect(ackKindOf({ kind: 'conversation_read' })).toBe('conversation_read');
+    expect(ackKindOf({ ackType: 'create' })).toBe('memory_create');
+    expect(ackKindOf({ ackType: 'delete' })).toBe('memory_delete');
+    expect(ackKindOf({})).toBe(null);
+  });
+  it('ackLabel mémoire reproduit les libellés existants', function() {
+    expect(ackLabel('memory_create', { content: 'x' })).toContain('Mémorisé');
+    expect(ackLabel('memory_update', { content: 'x' })).toContain('mis à jour');
+    expect(ackLabel('memory_delete', { content: 'x' })).toContain('supprimé');
+    // delete sans content : pas de séparateur
+    expect(ackLabel('memory_delete', {})).toBe('Souvenir supprimé');
+  });
+  it('ackLabel conversation_read : titre ou repli', function() {
+    expect(ackLabel('conversation_read', { title: 'Titre' })).toContain('Titre');
+    expect(ackLabel('conversation_read', {})).toContain('sans titre');
+  });
+  it('ackLabel conversation_list : branches 0 / 1 / n / null', function() {
+    expect(ackLabel('conversation_list', { count: 0 })).toContain('Aucune');
+    expect(ackLabel('conversation_list', { count: 1 })).toBe('1 conversation listée');
+    expect(ackLabel('conversation_list', { count: 3 })).toBe('3 conversations listées');
+    expect(ackLabel('conversation_list', {})).toContain('?');
   });
 });
 
@@ -113,73 +172,74 @@ describe('ask_confirmation — outil halting', function() {
 describe('create_memory — écriture directe', function() {
   it('enregistre le souvenir, retourne un accusé avec identifiant et pousse un ack', function() {
     localStorage.clear();
-    clearPendingMemoryAcks();
+    clearPendingToolAcks();
     var r = runTool('create_memory', { content: 'préfère les réponses courtes' });
     expect(r).toContain('enregistré');
     expect(r).toContain('Identifiant');
     var entries = listMemoryEntries();
     expect(entries.length).toBe(1);
     expect(entries[0].content).toBe('préfère les réponses courtes');
-    var pending = getPendingMemoryAcks();
+    var pending = getPendingToolAcks();
     expect(pending.length).toBe(1);
-    expect(pending[0].ackType).toBe('create');
+    expect(pending[0].kind).toBe('memory_create');
     expect(pending[0].id).toBe(entries[0].id);
     expect(pending[0].content).toBe('préfère les réponses courtes');
   });
   it('rejette un contenu vide et ne pousse pas d\'ack', function() {
     localStorage.clear();
-    clearPendingMemoryAcks();
+    clearPendingToolAcks();
     var r = runTool('create_memory', { content: '   ' });
     expect(r).toContain('ignoré');
     expect(listMemoryEntries().length).toBe(0);
-    expect(getPendingMemoryAcks().length).toBe(0);
+    expect(getPendingToolAcks().length).toBe(0);
   });
 });
 
 describe('update_memory — correction in-place', function() {
   it('met à jour le contenu sans créer de nouvelle entrée et pousse un ack', function() {
     localStorage.clear();
-    clearPendingMemoryAcks();
+    clearPendingToolAcks();
     saveMemory({ id: 'm1', content: 'avant', created_at: 1, updated_at: 1, suppressed: false });
     var r = runTool('update_memory', { id: 'm1', content: 'après' });
     expect(r).toContain('mis à jour');
     var all = loadMemories();
     expect(all.length).toBe(1);
     expect(all[0].content).toBe('après');
-    var pending = getPendingMemoryAcks();
+    var pending = getPendingToolAcks();
     expect(pending.length).toBe(1);
-    expect(pending[0].ackType).toBe('update');
+    expect(pending[0].kind).toBe('memory_update');
     expect(pending[0].id).toBe('m1');
     expect(pending[0].content).toBe('après');
+    expect(pending[0].prevContent).toBe('avant');   // capturé avant écrasement pour l'undo
   });
   it('rejette les paramètres invalides et ne pousse pas d\'ack', function() {
-    clearPendingMemoryAcks();
+    clearPendingToolAcks();
     var r = runTool('update_memory', { id: 'm1' });
     expect(r).toContain('invalide');
-    expect(getPendingMemoryAcks().length).toBe(0);
+    expect(getPendingToolAcks().length).toBe(0);
   });
 });
 
 describe('delete_memory — tombstone', function() {
   it('pose une tombstone réversible et pousse un ack avec contenu', function() {
     localStorage.clear();
-    clearPendingMemoryAcks();
+    clearPendingToolAcks();
     saveMemory({ id: 'm1', content: 'obsolète', created_at: 1, updated_at: 1, suppressed: false });
     var r = runTool('delete_memory', { id: 'm1' });
     expect(r).toContain('supprimé');
     expect(loadMemories()[0].suppressed).toBe(true);
     expect(listMemoryEntries().length).toBe(0);
-    var pending = getPendingMemoryAcks();
+    var pending = getPendingToolAcks();
     expect(pending.length).toBe(1);
-    expect(pending[0].ackType).toBe('delete');
+    expect(pending[0].kind).toBe('memory_delete');
     expect(pending[0].id).toBe('m1');
     expect(pending[0].content).toBe('obsolète');
   });
   it('rejette un id manquant et ne pousse pas d\'ack', function() {
-    clearPendingMemoryAcks();
+    clearPendingToolAcks();
     var r = runTool('delete_memory', {});
     expect(r).toContain('manquant');
-    expect(getPendingMemoryAcks().length).toBe(0);
+    expect(getPendingToolAcks().length).toBe(0);
   });
 });
 

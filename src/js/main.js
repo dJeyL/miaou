@@ -123,10 +123,15 @@ function openConversation(id) {
   if (!conv) return;
   currentConvId = id;
   currentThread = (conv.messages || []).map(m => {
-    if (m.role === 'memory-ack') {
-      const a = { role: 'memory-ack', ackType: m.ackType, id: m.id };
-      if (m.content != null) a.content = m.content;
-      if (m.resolved) a.resolved = true;
+    if (isAckRole(m.role)) {
+      const a = { role: m.role, id: m.id };
+      if (m.kind != null)        a.kind = m.kind;
+      if (m.ackType != null)     a.ackType = m.ackType;   // legacy, préservé tel quel
+      if (m.content != null)     a.content = m.content;
+      if (m.prevContent != null) a.prevContent = m.prevContent;
+      if (m.title != null)       a.title = m.title;
+      if (m.count != null)       a.count = m.count;
+      if (m.resolved)            a.resolved = true;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -177,7 +182,7 @@ function togglePin(id) {
 }
 
 // Exporte la conversation courante en Markdown. N'inclut que les messages
-// visibles (user + assistant) — les memory-ack et éventuels internaux sont exclus.
+// visibles (user + assistant) — les tool-ack et éventuels internaux sont exclus.
 // Appelé depuis le bouton topbar (onclick="downloadConvMd()").
 function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
@@ -202,13 +207,23 @@ function downloadConvMd() {
   downloadFile(slug + '.md', lines.join('\n').trimEnd() + '\n', 'text/markdown');
 }
 
-function undoMemoryAck(btn, id) {
-  forgetMemory(id);
-  btn.outerHTML = '<span class="ack-resolved">annulé</span>';
-  const entry = currentThread.find(m => m.role === 'memory-ack' && m.id === id && !m.resolved);
-  if (entry) entry.resolved = true;
-  const wrap = document.querySelector('.memory-ack[data-mem-id="' + id + '"]');
-  if (wrap) wrap.classList.add('resolved');
+// Annulation d'un ack : dispatch via ACK_KINDS[kind].undo (forgetMemory pour
+// create/update, restoreMemory pour delete). Les lectures (undo: null) n'ont pas
+// de bouton, donc n'arrivent jamais ici. Reçoit l'ENTRÉE et le NŒUD exacts (closure
+// de buildToolAck) : un create et un delete du même souvenir partagent le même
+// `entry.id`, donc on ne peut PAS retrouver l'ack par id sans ambiguïté. L'id du
+// souvenir (entry.id) ne sert qu'à l'opération mémoire (forget/restore).
+function undoToolAck(entry, wrap) {
+  if (!entry || entry.resolved) return;
+  const spec = ACK_KINDS[ackKindOf(entry)];
+  if (!spec || !spec.undo) return;
+  spec.undo(entry.id, entry);   // entry pour memory_update (restaure prevContent) ; create/delete l'ignorent
+  entry.resolved = true;
+  if (wrap) {
+    wrap.classList.add('resolved');
+    const btn = wrap.querySelector('.ack-undo');
+    if (btn) btn.replaceWith(Object.assign(document.createElement('span'), { className: 'ack-resolved', textContent: 'annulé' }));
+  }
   persistCurrent();
 }
 
@@ -235,10 +250,15 @@ function persistCurrent() {
   if (!currentConvId) return;
   const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
   conv.messages = currentThread.map(m => {
-    if (m.role === 'memory-ack') {
-      const o = { role: 'memory-ack', ackType: m.ackType, id: m.id };
-      if (m.content != null) o.content = m.content;
-      if (m.resolved) o.resolved = true;
+    if (isAckRole(m.role)) {
+      const o = { role: m.role, id: m.id };
+      if (m.kind != null)        o.kind = m.kind;
+      if (m.ackType != null)     o.ackType = m.ackType;   // legacy passthrough, jamais réécrit
+      if (m.content != null)     o.content = m.content;
+      if (m.prevContent != null) o.prevContent = m.prevContent;
+      if (m.title != null)       o.title = m.title;
+      if (m.count != null)       o.count = m.count;
+      if (m.resolved)            o.resolved = true;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -391,7 +411,7 @@ async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
-  const threadMsgs = currentThread.filter(m => m.role !== 'memory-ack').map(m => ({ role: m.role, content: m.content }));
+  const threadMsgs = currentThread.filter(m => !isAckRole(m.role)).map(m => ({ role: m.role, content: m.content }));
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
   // préfixe du dernier message utilisateur, pour préserver le préfixe stable
@@ -429,6 +449,27 @@ async function dispatchSend(matches) {
           resetAssistant(wrap);
         }
       },
+      // Vidange des acks d'outils APRÈS l'exécution des outils d'un tour, donc
+      // AVANT la réponse finale : ils sont la provenance de la réponse et doivent
+      // la précéder. Placés DANS la bulle assistant (`wrap`), entre l'en-tête
+      // (icône + nom du modèle) et le corps (patienteur puis réponse), via
+      // placeToolAck. Pas de persistCurrent ici (mutation mémoire + DOM seulement) :
+      // l'unique écriture de l'échange a lieu dans onFinal.
+      onToolAcks: () => {
+        const pending = getPendingToolAcks();
+        clearPendingToolAcks();
+        for (const ack of pending) {
+          const entry = { role: 'tool-ack', kind: ack.kind };
+          if (ack.id != null)          entry.id = ack.id;
+          if (ack.content != null)     entry.content = ack.content;
+          if (ack.prevContent != null) entry.prevContent = ack.prevContent;
+          if (ack.title != null)       entry.title = ack.title;
+          if (ack.count != null)       entry.count = ack.count;
+          currentThread.push(entry);
+          placeToolAck(wrap, entry);
+        }
+        scrollBottom();
+      },
       onFinal: (content, reasoning) => {
         const ts = Date.now();
         finalizeAssistant(wrap, content);
@@ -440,16 +481,6 @@ async function dispatchSend(matches) {
           msg.reasoning = reasoning;          // champ séparé, persisté
         }
         currentThread.push(msg);
-        // Acks côté client : émis par les handlers d'outils à écriture directe,
-        // jamais envoyés au modèle — journal visible persisté dans le thread.
-        const pending = getPendingMemoryAcks();
-        clearPendingMemoryAcks();
-        for (const ack of pending) {
-          const entry = { role: 'memory-ack', ackType: ack.ackType, id: ack.id };
-          if (ack.content != null) entry.content = ack.content;
-          currentThread.push(entry);
-          $('thread').appendChild(buildMemoryAck(entry));
-        }
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
