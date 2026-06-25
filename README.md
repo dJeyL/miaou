@@ -42,10 +42,12 @@ l'interface, JetBrains Mono pour le code.
   `list_conversations(since?, with_contents=false)`.
 - Souvenirs persistants : le modèle écrit directement (`create_memory`,
   `update_memory`, `delete_memory`) sur instruction explicite, ou demande
-  confirmation (`ask_confirmation`) pour un fait inféré ; chaque écriture
-  produit une ligne d'ack annulable dans le thread. Gestion directe possible
-  dans le drawer ; les souvenirs actifs sont réinjectés dans le contexte à
-  chaque envoi.
+  confirmation (`ask_confirmation`) pour un fait inféré. Gestion directe
+  possible dans le drawer ; les souvenirs actifs sont réinjectés dans le
+  contexte à chaque envoi.
+- Chaque appel d'outil produit une ligne d'ack visible dans le thread :
+  annulable pour les écritures mémoire, informative pour les lectures
+  d'historique.
 
 **Réglages**
 
