@@ -448,10 +448,21 @@ function finalizeAssistant(wrap, full) {
 }
 
 // ── Édition d'un message utilisateur ────────────────────────────────────────
-// Index recalculé au moment du clic (jamais figé au rendu) : position du .msg
-// parmi tous les .msg du thread, qui correspond 1:1 à currentThread.
+// Index recalculé au moment du clic (jamais figé au rendu) : position DOM du
+// .msg traduite en index currentThread en sautant les entrées tool-ack.
 function msgIndex(wrap) {
-  return Array.prototype.indexOf.call($('thread').querySelectorAll('.msg'), wrap);
+  const msgs = Array.from($('thread').querySelectorAll('.msg'));
+  const domIdx = msgs.indexOf(wrap);
+  if (domIdx < 0) return -1;
+  // Les tool-ack ne génèrent pas de .msg autonome : l'index DOM ≠ index currentThread.
+  // On remonte en comptant uniquement les entrées non-ack.
+  let count = 0;
+  for (let i = 0; i < currentThread.length; i++) {
+    if (isAckRole(currentThread[i].role)) continue;
+    if (count === domIdx) return i;
+    count++;
+  }
+  return -1;
 }
 
 function onEditMsg(btn) {

@@ -1773,7 +1773,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-26 06:21 UTC */
+/* miaou — built: 2026-06-26 10:31 UTC */
 
 
 /* ── utils.js ── */
@@ -2025,7 +2025,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782454904}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782469864}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3378,10 +3378,21 @@ function finalizeAssistant(wrap, full) {
 }
 
 // ── Édition d'un message utilisateur ────────────────────────────────────────
-// Index recalculé au moment du clic (jamais figé au rendu) : position du .msg
-// parmi tous les .msg du thread, qui correspond 1:1 à currentThread.
+// Index recalculé au moment du clic (jamais figé au rendu) : position DOM du
+// .msg traduite en index currentThread en sautant les entrées tool-ack.
 function msgIndex(wrap) {
-  return Array.prototype.indexOf.call($('thread').querySelectorAll('.msg'), wrap);
+  const msgs = Array.from($('thread').querySelectorAll('.msg'));
+  const domIdx = msgs.indexOf(wrap);
+  if (domIdx < 0) return -1;
+  // Les tool-ack ne génèrent pas de .msg autonome : l'index DOM ≠ index currentThread.
+  // On remonte en comptant uniquement les entrées non-ack.
+  let count = 0;
+  for (let i = 0; i < currentThread.length; i++) {
+    if (isAckRole(currentThread[i].role)) continue;
+    if (count === domIdx) return i;
+    count++;
+  }
+  return -1;
 }
 
 function onEditMsg(btn) {
