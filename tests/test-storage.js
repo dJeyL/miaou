@@ -12,9 +12,9 @@ describe('loadSettings (valeurs par défaut)', function() {
 describe('saveSettings / loadSettings', function() {
   it('persiste et restitue le modèle', function() {
     localStorage.clear();
-    saveSettings({ url: 'http://test/v1', key: '', model: 'devstral-medium-2507', summaryInjectionMode: 'auto' });
+    saveSettings({ url: 'http://test/v1', key: '', model: 'gemma4:26b-nvfp4', summaryInjectionMode: 'auto' });
     var s = loadSettings();
-    expect(s.model).toBe('devstral-medium-2507');
+    expect(s.model).toBe('gemma4:26b-nvfp4');
     expect(s.summaryInjectionMode).toBe('auto');
   });
 });
@@ -63,9 +63,9 @@ describe('includeToolsInSystemPrompt (injection outils dans le prompt système)'
 describe('activeModel (override conv vs modèle par défaut)', function() {
   it('retombe sur le modèle des réglages sans override de conversation', function() {
     localStorage.clear();
-    saveSettings({ model: 'devstral-medium-2512' });
+    saveSettings({ model: 'gemma4:26b-nvfp4' });
     // currentConvModel vaut '' à l'état initial → fallback sur le défaut.
-    expect(activeModel()).toBe('devstral-medium-2512');
+    expect(activeModel()).toBe('gemma4:26b-nvfp4');
   });
 });
 

@@ -16,7 +16,7 @@
 <h1>MIAOU — seed fixtures</h1>
 <div id="log"></div>
 <script>
-const MODEL = 'devstral-small-2505';
+const MODEL = 'gemma4:26b-nvfp4';
 const CONV_KEY = 'miaou-conversations';
 const SUMM_KEY = 'miaou-summaries';
 
@@ -142,6 +142,72 @@ const SEEDS = [
     summary: "Discussion sur la validation d'emails par regex. Recommandation de ne pas sur-valider côté client (RFC 5322 trop complexe). Regex minimale pour feedback UX front-end, déclenchement sur blur, validation serveur indispensable.",
     keywords: ['regex', 'email', 'validation', 'rfc5322', 'front-end', 'ux', 'formulaire', 'tld', 'validator', 'javascript'],
   },
+
+  // ── Conversations avec tool calls ─────────────────────────────────────────
+
+  {
+    id: 'seed-11',
+    title: 'Conventions Python — mémorisation',
+    messages: [
+      { role: 'user',      content: "J'utilise toujours snake_case pour les fonctions et variables, PascalCase pour les classes et CapWords pour les exceptions. Mémorise ces conventions Python stp." },
+      { role: 'tool-ack',  kind: 'memory_create', id: 'mem-seed-01', content: 'Conventions Python de Julien : snake_case fonctions/variables, PascalCase/CapWords classes et exceptions. Compatible PEP 8.' },
+      { role: 'assistant', content: "C'est noté — j'ai créé un souvenir avec tes conventions Python. Je m'y référerai dans les prochaines questions sur ce sujet." },
+    ],
+    summary: "L'utilisateur demande au modèle de mémoriser ses conventions de nommage Python (snake_case fonctions, PascalCase classes). Souvenir créé.",
+    keywords: ['python', 'conventions', 'nommage', 'snake-case', 'pascal-case', 'pep8', 'mémoire', 'style', 'code', 'standardisation'],
+  },
+  {
+    id: 'seed-12',
+    title: 'Décision archi — migration microservices',
+    messages: [
+      { role: 'user',      content: "On vient de décider de découper le monolithe Python en trois services indépendants : auth, catalog, orders. Chaque service aura sa propre base de données. Retiens cette décision d'architecture." },
+      { role: 'tool-ack',  kind: 'memory_create', id: 'mem-seed-02', content: "Décision architecture (2026) : migration du monolithe Python vers 3 microservices — auth, catalog, orders. Chaque service dispose de sa propre BDD." },
+      { role: 'assistant', content: "Mémorisé. Je garderai ce contexte pour toutes les questions sur l'architecture du projet." },
+      { role: 'user',      content: "Ajoute que la communication inter-services passe par RabbitMQ, pas par REST direct." },
+      { role: 'tool-ack',  kind: 'memory_update', id: 'mem-seed-02', content: "Décision architecture (2026) : migration du monolithe Python vers 3 microservices — auth, catalog, orders. Chaque service avec sa BDD. Communication inter-services via RabbitMQ (pas REST direct).", prevContent: "Décision architecture (2026) : migration du monolithe Python vers 3 microservices — auth, catalog, orders. Chaque service dispose de sa propre BDD." },
+      { role: 'assistant', content: "Mis à jour — j'ai ajouté la précision sur RabbitMQ comme bus de communication inter-services." },
+    ],
+    summary: "Décision d'architecture : migration d'un monolithe Python vers 3 microservices (auth, catalog, orders) avec BDD par service et RabbitMQ comme bus de communication. Souvenir créé puis mis à jour.",
+    keywords: ['microservices', 'architecture', 'python', 'monolithe', 'rabbitmq', 'auth', 'catalog', 'orders', 'décision', 'migration'],
+  },
+  {
+    id: 'seed-13',
+    title: 'Recherche historique — conversations PostgreSQL',
+    messages: [
+      { role: 'user',      content: "Qu'est-ce qu'on a dit sur PostgreSQL récemment ? Cherche dans l'historique." },
+      { role: 'tool-ack',  kind: 'conversation_list', count: 2 },
+      { role: 'tool-ack',  kind: 'conversation_read', title: 'Optimisation requête PostgreSQL lente' },
+      { role: 'tool-ack',  kind: 'conversation_read', title: 'Pagination API REST : cursor vs offset' },
+      { role: 'assistant', content: "J'ai retrouvé deux conversations sur PostgreSQL. Dans la première, on avait diagnostiqué une requête lente sur 2 M de lignes : un `Seq Scan` causé par des statistiques obsolètes malgré un index sur `user_id` — conclusion : `ANALYZE ta_table` puis envisager un index partiel si la distribution est non-uniforme. Dans la seconde, on avait choisi la pagination cursor-based pour un feed temps réel, avec un tuple `(timestamp, id)` comme cursor et un index composite `(created_at DESC, id DESC)`." },
+    ],
+    summary: "Recherche dans l'historique des conversations portant sur PostgreSQL. Deux conversations retrouvées et synthétisées : optimisation de requête lente (Seq Scan, ANALYZE) et pagination cursor-based pour feed temps réel.",
+    keywords: ['postgresql', 'historique', 'recherche', 'mémoire', 'requête', 'pagination', 'cursor', 'index', 'seq-scan', 'conversations'],
+  },
+  {
+    id: 'seed-14',
+    title: 'Rappel — configuration Caddy',
+    messages: [
+      { role: 'user',      content: "Rappelle-moi ce qu'on s'était dit sur la config Caddy." },
+      { role: 'tool-ack',  kind: 'conversation_read', title: "Reverse proxy Caddy et Let's Encrypt" },
+      { role: 'assistant', content: "On avait configuré Caddy comme reverse proxy devant une app Node. Le problème était le renouvellement automatique du certificat Let's Encrypt. La racine : tu es derrière un NAT avec le port 80 non forwardé — HTTP-01 échoue donc. On avait conclu sur deux options : forwarder le 80 aussi (juste pour l'ACME), ou basculer en DNS-01 avec un plugin Caddy adapté à ton registrar." },
+    ],
+    summary: "L'utilisateur demande un rappel de la conversation sur Caddy. Le modèle consulte l'historique et synthétise : reverse proxy Node, problème ACME HTTP-01 derrière NAT, solutions port 80 ou DNS-01.",
+    keywords: ['caddy', 'rappel', 'historique', 'lets-encrypt', 'nat', 'acme', 'reverse-proxy', 'dns-01', 'mémoire', 'récap'],
+  },
+  {
+    id: 'seed-15',
+    title: 'Config Go — enregistrement et suppression',
+    messages: [
+      { role: 'user',      content: "Mémorise que j'utilise Go 1.21 avec les modules et go.work pour les workspaces multi-modules." },
+      { role: 'tool-ack',  kind: 'memory_create', id: 'mem-seed-03', content: "Julien utilise Go 1.21 avec les modules Go et go.work (workspaces multi-modules)." },
+      { role: 'assistant', content: "Noté — j'ai enregistré ta config Go 1.21 avec workspaces." },
+      { role: 'user',      content: "En fait retire ça — j'ai migré sur 1.23 et je n'utilise plus go.work en pratique. Supprime ce souvenir." },
+      { role: 'tool-ack',  kind: 'memory_delete', id: 'mem-seed-03', content: "Julien utilise Go 1.21 avec les modules Go et go.work (workspaces multi-modules)." },
+      { role: 'assistant', content: "Supprimé. La note sur Go 1.21 et go.work n'est plus dans mes souvenirs." },
+    ],
+    summary: "Tentative de mémorisation de la config Go (1.21, go.work) puis demande de suppression suite à la migration vers Go 1.23. Démonstration du cycle create → delete sur un souvenir.",
+    keywords: ['go', 'golang', 'go-work', 'workspaces', 'mémoire', 'souvenir', 'suppression', 'migration', 'modules', 'conventions'],
+  },
 ];
 
 function log(cls, text) {
@@ -155,9 +221,9 @@ function seed() {
   const now = Date.now();
   const day = 86400000;
 
-  // Timestamps aléatoires distincts dans les 15 derniers jours
-  const slots = SEEDS.map(() => now - Math.random() * 15 * day)
-    .sort((a, b) => b - a);   // tri desc (plus récent en premier, comme miaou-conversations)
+  // Timestamps distincts dans les 30 derniers jours, du plus récent au plus ancien
+  const slots = SEEDS.map(() => now - Math.random() * 30 * day)
+    .sort((a, b) => b - a);
 
   // ── Conversations ────────────────────────────────────────────────────────
   let convs = [];
@@ -167,12 +233,23 @@ function seed() {
   let addedConvs = 0;
   for (let i = 0; i < SEEDS.length; i++) {
     const s = SEEDS[i];
-    if (existingIds.has(s.id)) { log('ski', `⊘ ${s.id} — déjà présent, ignoré`); continue; }
+    if (existingIds.has(s.id)) { log('ski', '⊘ ' + s.id + ' — déjà présent, ignoré'); continue; }
     const ts = slots[i];
-    const messages = s.messages.map(m =>
-      m.role === 'assistant' ? { ...m, model: MODEL } : { ...m }
-    );
-    convs.push({ id: s.id, title: s.title, timestamp: ts, messages });
+
+    // Timestamps de messages : 30 s par message non-ack (tool-ack n'a pas de ts).
+    // lastMsgTs = ts du dernier message user/assistant, utilisé comme updatedAt.
+    let tsCounter = 0;
+    let lastMsgTs = ts;
+    const messages = s.messages.map(m => {
+      if (m.role === 'tool-ack' || m.role === 'memory-ack') return { ...m };
+      lastMsgTs = ts + tsCounter * 30000;
+      tsCounter++;
+      return m.role === 'assistant'
+        ? { ...m, model: MODEL, ts: lastMsgTs }
+        : { ...m, ts: lastMsgTs };
+    });
+
+    convs.push({ id: s.id, title: s.title, timestamp: ts, updatedAt: lastMsgTs, messages });
     addedConvs++;
   }
   // Tri desc par timestamp (attendu par listAllConversations)
@@ -188,20 +265,22 @@ function seed() {
     const s = SEEDS[i];
     if (summs[s.id] && !summs[s.id].suppressed) { continue; }
     const ts = slots[i];
+    // messageCount = messages user/assistant uniquement (pas les tool-acks)
+    const msgCount = s.messages.filter(m => m.role === 'user' || m.role === 'assistant').length;
     summs[s.id] = {
       id: s.id,
       title: s.title,
       timestamp: ts,
       summary: s.summary,
       keywords: s.keywords,
-      messageCount: s.messages.length,
+      messageCount: msgCount,
     };
     addedSumms++;
   }
   localStorage.setItem(SUMM_KEY, JSON.stringify(summs));
 
-  if (addedConvs) log('ok', `✓ ${addedConvs} conversation(s) ajoutée(s)`);
-  if (addedSumms) log('ok', `✓ ${addedSumms} résumé(s) ajouté(s)`);
+  if (addedConvs) log('ok', '✓ ' + addedConvs + ' conversation(s) ajoutée(s)');
+  if (addedSumms) log('ok', '✓ ' + addedSumms + ' résumé(s) ajouté(s)');
   if (!addedConvs && !addedSumms) log('ski', '⊘ Tout était déjà présent, rien à faire.');
   log('', '');
   log('', 'Recharge MIAOU pour voir les conversations dans la sidebar.');

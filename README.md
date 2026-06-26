@@ -8,8 +8,8 @@ unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts). On l'ouvre dans un
 navigateur, ou on le sert via n'importe quel serveur web statique.
 
-Thème sombre, palette ambre/corail, Hanken Grotesk pour l'interface, JetBrains
-Mono pour le code.
+Thème sombre et thème clair, palette ambre/corail, Hanken Grotesk pour
+l'interface, JetBrains Mono pour le code.
 
 ## Fonctionnalités
 
@@ -78,9 +78,9 @@ build.
 
 ```json
 {
-  "api_url":        "http://host-interne/v1",
-  "api_model":      "devstral-medium-2507",
-  "max_summaries":  3,
+  "api_url":         "http://host-interne/v1",
+  "api_model":       "gemma4:26b-nvfp4",
+  "max_summaries":   3,
   "require_api_key": true
 }
 ```
