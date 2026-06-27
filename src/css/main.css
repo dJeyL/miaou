@@ -1173,7 +1173,8 @@ body {
 .tool-ack .ack-label, .memory-ack .ack-label { flex: 1; overflow-wrap: break-word; }
 /* Une lecture passive lit plus léger qu'une écriture annulable. */
 .tool-ack.ack-conversation_read .ack-label,
-.tool-ack.ack-conversation_list .ack-label { color: var(--text-2); }
+.tool-ack.ack-conversation_list .ack-label,
+.tool-ack.ack-mcp_call .ack-label { color: var(--text-2); }
 .tool-ack .ack-undo, .memory-ack .ack-undo {
   flex-shrink: 0;
   background: none;
@@ -1188,6 +1189,8 @@ body {
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
 /* Séparateur › entre segments du breadcrumb MCP : teinte icône, s'efface devant le texte. */
 .tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); margin: 0 2px; }
+/* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
+.tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
 .tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
 

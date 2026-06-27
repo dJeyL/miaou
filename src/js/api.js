@@ -4,7 +4,7 @@
    recherche/scoring des résumés.
    ────────────────────────────────────────────────────────────────────────── */
 
-const MAX_TOURS = 4;   // borne sur les tours de la boucle tool_calls
+const MAX_TOURS = 20;   // borne sur les tours de la boucle tool_calls
 
 // Controller du stream courant (un seul à la fois). Permet à l'UI d'interrompre
 // la génération en cours via abortStream(). Réinitialisé à chaque streamCompletion.
@@ -307,7 +307,7 @@ async function runConversation(messages, hooks) {
             // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
             // le round-trip réseau, pas seulement après.
             const toolPromise = callTool(tc.function.name, args);
-            if (h.onEarlyAcks) h.onEarlyAcks();
+            if (h.onEarlyAcks && typeof toolPromise.then === 'function') h.onEarlyAcks();
             out = flattenToolResult(await toolPromise);
             servedKeys.add(key);
           } finally {
