@@ -26,6 +26,7 @@ Dans MIAOU → Paramètres → Serveurs MCP → Ajouter :
 import json
 import os
 import sys
+import urllib.parse
 import urllib.request
 from typing import Optional
 
@@ -45,7 +46,7 @@ async def get_weather(
     state: Optional[str] = None,
     country: Optional[str] = None,
 ) -> types.EmbeddedResource:
-    """Renvoie la météo actuelle pour une ville via wttr.in (JSON allégé sans astronomy ni hourly)."""
+    """Renvoie la météo actuelle pour une ville via wttr.in (JSON allégé sans astronomy ni hourly). Attention : heures UTC."""
     parts = [city]
     if state:
         parts.append(state)
@@ -53,7 +54,7 @@ async def get_weather(
         parts.append(country)
     location = ",".join(parts)
 
-    url = f"http://wttr.in/{urllib.request.quote(location)}?format=j1"
+    url = f"http://wttr.in/{urllib.parse.quote(location)}?format=j1"
 
     proxy_url = os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY")
     if proxy_url:
@@ -73,7 +74,7 @@ async def get_weather(
     return types.EmbeddedResource(
         type="resource",
         resource=types.TextResourceContents(
-            uri=f"miaou://weather/{location}",
+            uri=f"miaou://weather/{location}", # type: ignore
             mimeType="application/json",
             text=json.dumps(data, ensure_ascii=False),
         ),

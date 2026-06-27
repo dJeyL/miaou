@@ -367,6 +367,13 @@ function renderThread(msgs) {
   for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
+  syncConvDownloadBtn();
+}
+
+function syncConvDownloadBtn() {
+  const btn = document.querySelector('.conv-dl-btn');
+  if (!btn) return;
+  btn.hidden = !currentThread.some(m => m.role === 'assistant');
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
@@ -480,6 +487,7 @@ function finalizeAssistant(wrap, full) {
   highlightUnder(wrap);
   const dlBtn = wrap.querySelector('.msg-dl');
   if (dlBtn) dlBtn.removeAttribute('hidden');
+  syncConvDownloadBtn();
   scrollBottom();
 }
 
@@ -681,7 +689,9 @@ function sectionEl(label) {
 function renderConvList() {
   const list = $('conv-list');
   list.innerHTML = '';
-  let convs = listAllConversations();
+  const all = listAllConversations();
+  $('conv-search').disabled = all.length === 0;
+  let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
 
   // Section « Épinglé » en tête (au singulier, choix assumé), si au moins une.

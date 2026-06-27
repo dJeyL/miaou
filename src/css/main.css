@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 
 :root {
   --bg:         #0b0c0e;
@@ -262,6 +263,10 @@ body {
   backdrop-filter: blur(8px);
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
+.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 1; transform: translateX(0); transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
+.app.sidebar-open .topbar-brand { opacity: 0; transform: translateX(-6px); pointer-events: none; }
+.topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
+.topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn  { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg { width: 14px; height: 14px; }

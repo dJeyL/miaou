@@ -30,6 +30,7 @@ const LOGO_SRC =
 function applyLogo() {
   $('favicon').href = LOGO_SRC;
   $('brand-logo').src = LOGO_SRC;
+  $('topbar-logo').src = LOGO_SRC;
 }
 
 // ── État de session ─────────────────────────────────────────────────────────
@@ -89,8 +90,9 @@ function buildMemoryEntriesBlock() {
 function buildContextBlock(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const model = activeModel().trim();
-  const lines = ['Date et heure : ' + dateStr];
+  const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
   const parts = [lines.join('\n')];
   const summaries = buildSummaryBlock(matches || []);
@@ -165,6 +167,7 @@ function resetToEmpty() {
   clearMemoryProposals();   // cartes de proposition détruites avec le thread
   showWelcome();
   setTitle('');
+  syncConvDownloadBtn();
   renderConvList();
   syncModelUI();
 }
@@ -779,7 +782,7 @@ function init() {
   syncConfigured();
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
-  if (!isMobileLayout()) $('app').classList.add('sidebar-open');
+  if (!isMobileLayout() && listAllConversations().length > 0) $('app').classList.add('sidebar-open');
   initSidebarResize();
   initVisualViewport();
   wireTitleEditing();

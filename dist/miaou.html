@@ -12,6 +12,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 
 :root {
   --bg:         #0b0c0e;
@@ -273,6 +274,10 @@ body {
   backdrop-filter: blur(8px);
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
+.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 1; transform: translateX(0); transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
+.app.sidebar-open .topbar-brand { opacity: 0; transform: translateX(-6px); pointer-events: none; }
+.topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
+.topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn  { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg { width: 14px; height: 14px; }
@@ -1679,10 +1684,14 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <button class="icon-btn" onclick="toggleSidebar()" title="Historique">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
+        <div class="topbar-brand">
+          <img class="topbar-brand-logo" id="topbar-logo" alt="">
+          <span class="topbar-brand-name">MIAOU</span>
+        </div>
       </div>
       <div class="topbar-mid">
         <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
-        <button class="icon-btn conv-dl-btn" onclick="downloadConvMd()" title="Exporter la conversation en Markdown">
+        <button class="icon-btn conv-dl-btn" onclick="downloadConvMd()" title="Exporter la conversation en Markdown" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
       </div>
@@ -1914,7 +1923,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-27 18:22 UTC */
+/* miaou — built: 2026-06-27 20:59 UTC */
 
 
 /* ── utils.js ── */
@@ -2322,7 +2331,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782584571}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782593979}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3958,6 +3967,13 @@ function renderThread(msgs) {
   for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
+  syncConvDownloadBtn();
+}
+
+function syncConvDownloadBtn() {
+  const btn = document.querySelector('.conv-dl-btn');
+  if (!btn) return;
+  btn.hidden = !currentThread.some(m => m.role === 'assistant');
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
@@ -4071,6 +4087,7 @@ function finalizeAssistant(wrap, full) {
   highlightUnder(wrap);
   const dlBtn = wrap.querySelector('.msg-dl');
   if (dlBtn) dlBtn.removeAttribute('hidden');
+  syncConvDownloadBtn();
   scrollBottom();
 }
 
@@ -4272,7 +4289,9 @@ function sectionEl(label) {
 function renderConvList() {
   const list = $('conv-list');
   list.innerHTML = '';
-  let convs = listAllConversations();
+  const all = listAllConversations();
+  $('conv-search').disabled = all.length === 0;
+  let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
 
   // Section « Épinglé » en tête (au singulier, choix assumé), si au moins une.
@@ -5419,6 +5438,7 @@ const LOGO_SRC =
 function applyLogo() {
   $('favicon').href = LOGO_SRC;
   $('brand-logo').src = LOGO_SRC;
+  $('topbar-logo').src = LOGO_SRC;
 }
 
 // ── État de session ─────────────────────────────────────────────────────────
@@ -5478,8 +5498,9 @@ function buildMemoryEntriesBlock() {
 function buildContextBlock(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const model = activeModel().trim();
-  const lines = ['Date et heure : ' + dateStr];
+  const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
   const parts = [lines.join('\n')];
   const summaries = buildSummaryBlock(matches || []);
@@ -5554,6 +5575,7 @@ function resetToEmpty() {
   clearMemoryProposals();   // cartes de proposition détruites avec le thread
   showWelcome();
   setTitle('');
+  syncConvDownloadBtn();
   renderConvList();
   syncModelUI();
 }
@@ -6168,7 +6190,7 @@ function init() {
   syncConfigured();
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
-  if (!isMobileLayout()) $('app').classList.add('sidebar-open');
+  if (!isMobileLayout() && listAllConversations().length > 0) $('app').classList.add('sidebar-open');
   initSidebarResize();
   initVisualViewport();
   wireTitleEditing();

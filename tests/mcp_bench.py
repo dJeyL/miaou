@@ -13,6 +13,7 @@ Outils exposés :
   - echo(text)            : renvoie le texte (bloc text → réinjecté au modèle, D9)
   - add(a, b)             : somme (text)
   - dns_lookup(hostname)  : résolution DNS locale (text) — clin d'œil home bench
+  - reverse_dns(ip)       : résolution inverse (PTR) d'une adresse IP
   - get_image()           : un PNG inline (bloc image → cascade D8.1, UI-only)
   - get_json_resource()   : une resource texte JSON (cascade D8.2, surlignée UI)
 
@@ -77,9 +78,20 @@ async def dns_lookup(hostname: str) -> str:
     try:
         infos = socket.getaddrinfo(hostname, None)
         addrs = sorted({i[4][0] for i in infos})
-        return f"{hostname} → " + ", ".join(addrs)
+        return f"{hostname} → " + ", ".join(addrs) # type: ignore
     except OSError as e:
         return f"Échec de résolution de {hostname} : {e}"
+
+
+@mcp.tool()
+async def reverse_dns(ip: str) -> str:
+    """Résout une adresse IP en nom d'hôte (PTR) depuis le réseau local du serveur."""
+    await asyncio.sleep(2)
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip)
+        return f"{ip} → {hostname}"
+    except OSError as e:
+        return f"Échec de résolution inverse de {ip} : {e}"
 
 
 @mcp.tool()
@@ -99,7 +111,7 @@ async def get_json_resource() -> types.EmbeddedResource:
     return types.EmbeddedResource(
         type="resource",
         resource=types.TextResourceContents(
-            uri="miaou://bench/sample.json",
+            uri="miaou://bench/sample.json", # type: ignore
             mimeType="application/json",
             text='{\n  "ok": true,\n  "items": [1, 2, 3],\n  "note": "rendu via Prism côté MIAOU"\n}',
         ),
