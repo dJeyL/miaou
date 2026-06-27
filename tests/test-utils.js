@@ -247,6 +247,150 @@ describe('filterMcpTools (D7, denylist gagne)', function() {
   });
 });
 
+describe('stampTs', function() {
+  it('sans ts retourne le résultat tel quel', function() {
+    expect(stampTs(null, 'hello')).toBe('hello');
+    expect(stampTs(0, 'hello')).toBe('hello');
+  });
+  it('avec ts préfixe la date en français', function() {
+    var ts = new Date(2024, 2, 15, 14, 30, 0).getTime(); // 15 mars 2024 vendredi
+    var r = stampTs(ts, 'résultat');
+    expect(r.indexOf('2024') >= 0).toBeTruthy();
+    expect(r.indexOf('mars') >= 0).toBeTruthy();
+    expect(r.indexOf('résultat') >= 0).toBeTruthy();
+    // la date précède le résultat
+    expect(r.indexOf('[Résultat du')).toBe(0);
+    expect(r.indexOf('résultat') > r.indexOf('2024')).toBeTruthy();
+  });
+  it('result null ou undefined → chaîne vide (pas de crash)', function() {
+    expect(stampTs(null, null)).toBe('');
+    expect(stampTs(null, undefined)).toBe('');
+  });
+});
+
+describe('expandThread', function() {
+  // Helper : ack enrichi minimal
+  function ack(overrides) {
+    return Object.assign({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',
+      args: { q: 1 }, result: 'ok', ts: 0, group: 'g1' }, overrides);
+  }
+
+  it('thread vide → tableau vide', function() {
+    expect(expandThread([])).toEqual([]);
+  });
+
+  it('messages ordinaires passent sans transformation', function() {
+    var t = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }];
+    var r = expandThread(t);
+    expect(r.length).toBe(2);
+    expect(r[0].role).toBe('user');
+    expect(r[1].role).toBe('assistant');
+  });
+
+  it('ack legacy (sans args) est élagué', function() {
+    var t = [
+      { role: 'user', content: 'hi' },
+      { role: 'tool-ack', kind: 'memory_create', id: 'x' },
+      { role: 'assistant', content: 'done' },
+    ];
+    var r = expandThread(t);
+    expect(r.length).toBe(2);
+    expect(r[0].role).toBe('user');
+    expect(r[1].role).toBe('assistant');
+  });
+
+  it('ack enrichi seul → assistant+tool_calls + tool', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gA' }),
+      { role: 'assistant', content: 'réponse' },
+    ];
+    var r = expandThread(t);
+    expect(r.length).toBe(4); // user, assistant(tc), tool, assistant(final)
+    expect(r[1].role).toBe('assistant');
+    expect(Array.isArray(r[1].tool_calls)).toBeTruthy();
+    expect(r[1].tool_calls.length).toBe(1);
+    expect(r[1].tool_calls[0].function.name).toBe('srv__foo');
+    expect(r[2].role).toBe('tool');
+    expect(r[2].tool_call_id).toBe(r[1].tool_calls[0].id);
+    expect(r[3].role).toBe('assistant');
+  });
+
+  it('deux acks du même groupe → un seul assistant avec 2 tool_calls', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ name: 'srv__a', group: 'gB' }),
+      ack({ name: 'srv__b', group: 'gB' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    // user, assistant(2 tc), tool, tool, assistant
+    expect(r.length).toBe(5);
+    expect(r[1].tool_calls.length).toBe(2);
+    expect(r[1].tool_calls[0].function.name).toBe('srv__a');
+    expect(r[1].tool_calls[1].function.name).toBe('srv__b');
+    expect(r[2].role).toBe('tool');
+    expect(r[3].role).toBe('tool');
+    // ids cohérents assistant↔tool
+    expect(r[2].tool_call_id).toBe(r[1].tool_calls[0].id);
+    expect(r[3].tool_call_id).toBe(r[1].tool_calls[1].id);
+  });
+
+  it('deux groupes séquentiels → deux paires assistant+tool', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ name: 'srv__x', group: 'gC1' }),
+      ack({ name: 'srv__y', group: 'gC2' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    // user, assistant(tc1), tool1, assistant(tc2), tool2, assistant(final)
+    expect(r.length).toBe(6);
+    expect(r[1].tool_calls[0].function.name).toBe('srv__x');
+    expect(r[3].tool_calls[0].function.name).toBe('srv__y');
+  });
+
+  it('assistantText absorbé depuis le standalone précédent', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'je vais chercher' },
+      ack({ name: 'srv__foo', group: 'gD', assistantText: 'je vais chercher' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    // Le standalone est absorbé : user, assistant(tc+content), tool, assistant(final)
+    expect(r.length).toBe(4);
+    expect(r[1].content).toBe('je vais chercher');
+    expect(Array.isArray(r[1].tool_calls)).toBeTruthy();
+  });
+
+  it('stampTs injecté dans le content du message tool', function() {
+    var ts = new Date(2024, 2, 15, 14, 30, 0).getTime();
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ result: 'data', ts: ts, group: 'gE' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    var toolMsg = r[2];
+    expect(toolMsg.role).toBe('tool');
+    expect(toolMsg.content.indexOf('[Résultat du')).toBe(0);
+    expect(toolMsg.content.indexOf('data') > 0).toBeTruthy();
+  });
+
+  it('arguments JSON sérialisés dans function.arguments', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ args: { id: 'abc', with_contents: true }, group: 'gF' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    var parsed = JSON.parse(r[1].tool_calls[0].function.arguments);
+    expect(parsed.id).toBe('abc');
+    expect(parsed.with_contents).toBe(true);
+  });
+});
+
 describe('parseToolFilterList', function() {
   it('découpe sur virgules et retours ligne, trim, sans vides', function() {
     expect(parseToolFilterList('a, b\nc ,, ')).toEqual(['a', 'b', 'c']);

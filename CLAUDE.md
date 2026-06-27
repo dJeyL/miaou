@@ -347,7 +347,15 @@ memory_update | memory_delete | conversation_read | conversation_list | mcp_call
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js, décrits ci-dessous)
 consomment la file via `getPendingToolAcks` / `clearPendingToolAcks` et injectent
 des messages `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?,
-count?, server?, name?, error?, resolved? }` dans `currentThread`.
+count?, server?, name?, error?, resolved?,`
+`args?, result?, ts?, group?, assistantText? }` dans `currentThread`.
+Les champs `args` (objet d'arguments), `result` (résultat aplati par
+`flattenToolResult`), `ts` (epoch ms de l'appel), `group` (id partagé par
+tous les tool_calls d'un même tour modèle) et `assistantText` (texte produit
+par le modèle au même tour que les tool_calls, rare) sont **les champs de
+réinjection cross-turn** — voir `expandThread` ci-dessous. Ils sont posés
+par le hook `onEnrichLastAck` (main.js), appelé après chaque outil par api.js,
+et doivent être préservés par `persistCurrent` / `openConversation`.
 La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
 un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
 `(id) => void`, ou **`null`** = variante informative), une icône SVG statique, et
@@ -393,9 +401,20 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   objet ; `onToolAcks()` le détecte et rétro-applique la classe `.ack-error` + remet
   à jour le label DOM. En pratique : `onEarlyAcks` pour les pré-acks MCP ;
   `onToolAcks` pour les acks internes + la mise à jour d'erreur MCP + les blocs D8.
-- **Filtrés** du payload API (`dispatchSend`, via `!isAckRole(m.role)`) — jamais
-  envoyés au modèle. Les lectures atteignent le modèle uniquement via le
-  `role:'tool'` in-loop de `runConversation`, jamais via l'ack.
+- **Payload API — `expandThread(currentThread)`** (utils.js, pur, testé QuickJS).
+  Remplace l'ancien filtre `!isAckRole`. Acks **enrichis** (champs `args` +
+  `result` présents) → expansés en paire `[assistant+tool_calls, tool…]` pour
+  réinjecter les résultats d'outils passés dans les tours suivants ; acks
+  **legacy** (sans `args`) → élagués comme avant (compat ascendante). Si le
+  premier ack d'un groupe porte `assistantText`, le message assistant standalone
+  qui le précède immédiatement est absorbé dans le `content` de l'assistant
+  expansé pour éviter la duplication. `stampTs(ts, result)` (utils.js) préfixe
+  le résultat d'une date absolue immuable pour signaler l'ancienneté au modèle
+  sans muter le préfixe d'historique (préserve le KV cache). **Ne jamais**
+  recalculer ce stamp à chaque envoi — il est fixé à l'instant de l'appel.
+  `ask_confirmation` ne produit jamais d'ack (primitif halting) ; rien à exclure.
+  Les acks enrichis ne sont jamais envoyés directement au modèle — c'est
+  l'expansion qui génère les messages `role:'tool'` correspondants.
 - **Compat legacy sans migration** : les entrées `role:'memory-ack'` (champ
   `ackType`) déjà en storage sont reconnues partout (`isAckRole`, `ackKindOf`
   mappe `ackType` → `memory_*`) et **jamais réécrites** (`persistCurrent` /

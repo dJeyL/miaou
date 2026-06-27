@@ -284,6 +284,11 @@ async function runConversation(messages, hooks) {
         tool_calls: result.toolCalls,
       });
 
+      // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
+      // pour que expandThread puisse reconstruire un seul assistant+N tools.
+      const group = 'g' + Date.now().toString(36);
+      const assistantText = result.content || null;
+
       for (const tc of result.toolCalls) {
         let args = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); }
@@ -307,9 +312,23 @@ async function runConversation(messages, hooks) {
             // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
             // le round-trip réseau, pas seulement après.
             const toolPromise = callTool(tc.function.name, args);
-            if (h.onEarlyAcks && typeof toolPromise.then === 'function') h.onEarlyAcks();
+            const isMcp = typeof toolPromise.then === 'function';
+            if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
             out = flattenToolResult(await toolPromise);
             servedKeys.add(key);
+            // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
+            // réinjection cross-turn (args, result aplati, ts, group). Pour les
+            // outils distants l'ack est déjà dans earlyRendered ; pour les
+            // outils internes il est encore dans _pendingToolAcks.
+            if (h.onEnrichLastAck) h.onEnrichLastAck({
+              isMcp,
+              name: tc.function.name,
+              args,
+              result: out,
+              ts: Date.now(),
+              group,
+              assistantText,
+            });
           } finally {
             bgActivityEnd();
           }

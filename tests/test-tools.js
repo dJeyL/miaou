@@ -28,6 +28,10 @@ describe('flattenToolResult', function() {
     expect(r.indexOf('AAAABBBBCCCC')).toBe(-1);   // aucun base64 réinjecté
     expect(r.indexOf('ZZZZ')).toBe(-1);
   });
+  it('resource avec text → passé au LLM (JSON structuré)', function() {
+    var r = flattenToolResult({ content: [{ type: 'resource', resource: { text: '{"foo":1}', mimeType: 'application/json' } }], isError: false });
+    expect(r).toBe('{"foo":1}');
+  });
   it('résultat image-only → marqueur neutre, pas une chaîne vide', function() {
     var r = flattenToolResult({ content: [{ type: 'image', data: 'xxx', mimeType: 'image/png' }], isError: false });
     expect(r).toBe('[image rendue dans l\'interface]');

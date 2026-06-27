@@ -43,6 +43,12 @@ const MEMORY_DOCTRINE =
 let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
+// Enrichit le dernier ack en attente (outils internes synchrones). Les outils
+// distants (asynchrones) voient leur ack déjà drainé dans earlyRendered ; leur
+// enrichissement est fait directement par le hook onEnrichLastAck dans main.js.
+function updateLastPendingToolAck(fields) {
+  if (_pendingToolAcks.length) Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
+}
 
 // File des blocs NON-text renvoyés par un outil distant (image / resource /
 // binaire). Vidée par le hook UI au même moment que les acks (après l'exécution
@@ -461,18 +467,18 @@ function callTool(name, args) {
 }
 
 // Aplatit un résultat MCP en string pour le message role:'tool' renvoyé au modèle.
-// Le contenu binaire des blocs non-text (image/resource) est rendu par l'UI (D8)
-// et n'est JAMAIS réinjecté : on n'y substitue qu'un MARQUEUR NEUTRE (jamais le
-// base64 ni un fragment). But (cf. Correction A) : un résultat image-only ne doit
-// pas laisser le message `tool` vide — le vide pousse le modèle à simuler/encoder
-// l'image. Le marqueur lui dit « c'est déjà affiché », sans lui donner de matière
-// à reproduire. Fonction pure, unit-testable via le runner QuickJS.
+// Blocs `text` → passés tels quels. Blocs `resource` avec `resource.text` → passés
+// tels quels (JSON ou texte structuré renvoyé par le serveur, utile au LLM).
+// Blocs non-text sans contenu textuel (image, audio, resource binaire) → MARQUEUR
+// NEUTRE (jamais le base64). Cf. D8 : ces blocs sont rendus par l'UI ; le marqueur
+// évite qu'un résultat image/resource-only laisse un message `tool` vide, ce qui
+// pousserait le modèle à simuler/encoder le contenu. Fonction pure, unit-testable.
 function flattenToolResult(result) {
   if (!result || !Array.isArray(result.content)) return '';
   return result.content.map(b => {
     if (b.type === 'text') return b.text;
     if (b.type === 'image')    return '[image rendue dans l\'interface]';
-    if (b.type === 'resource') return '[ressource rendue dans l\'interface]';
+    if (b.type === 'resource') return b.resource && b.resource.text != null ? b.resource.text : '[ressource rendue dans l\'interface]';
     if (b.type === 'audio')    return '[audio rendu dans l\'interface]';
     return '[contenu rendu dans l\'interface]';
   }).filter(s => s != null && s !== '').join('\n');

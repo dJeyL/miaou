@@ -130,3 +130,14 @@ uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
     l'historique d'une conversation antérieure restent filtrés tant que `showCalls`
     est `false` (rétroactif). Un serveur supprimé : ses acks antérieurs restent
     visibles (serveur absent → filtre inactif).
+27. **Réinjection cross-turn des résultats d'outils** : avec `bench`, demander
+    « utilise `dns_lookup` pour résoudre `example.com`, puis dans un message suivant
+    demande-lui s'il se souvient du résultat ». Le modèle doit répondre correctement
+    au second message sans rappeler l'outil. Vérifier dans le payload réseau
+    (DevTools → Network) que le second appel contient, dans `messages`, la paire
+    `role:'assistant'` (avec `tool_calls`) + `role:'tool'` (avec un préfixe
+    `[Résultat du …]` et l'IP/domaine) — ces messages ne proviennent pas du fil
+    affiché, ils sont reconstruits par `expandThread` à l'envoi. Recharger la page
+    puis renvoyer un message dans la même conversation → la réinjection fonctionne
+    aussi après rechargement (les champs `args`/`result`/`ts`/`group` sont persistés
+    dans `localStorage['miaou-conversations']`).

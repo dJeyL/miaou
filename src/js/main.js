@@ -132,10 +132,15 @@ function openConversation(id) {
       if (m.prevContent != null) a.prevContent = m.prevContent;
       if (m.title != null)       a.title = m.title;
       if (m.count != null)       a.count = m.count;
-      if (m.server != null)      a.server = m.server;
-      if (m.name != null)        a.name = m.name;
-      if (m.error)               a.error = true;
-      if (m.resolved)            a.resolved = true;
+      if (m.server != null)        a.server = m.server;
+      if (m.name != null)          a.name = m.name;
+      if (m.error)                 a.error = true;
+      if (m.resolved)              a.resolved = true;
+      if (m.args != null)          a.args = m.args;
+      if (m.result != null)        a.result = m.result;
+      if (m.ts != null)            a.ts = m.ts;
+      if (m.group != null)         a.group = m.group;
+      if (m.assistantText != null) a.assistantText = m.assistantText;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -262,10 +267,15 @@ function persistCurrent() {
       if (m.prevContent != null) o.prevContent = m.prevContent;
       if (m.title != null)       o.title = m.title;
       if (m.count != null)       o.count = m.count;
-      if (m.server != null)      o.server = m.server;     // mcp_call : identité serveur (filtre showCalls)
-      if (m.name != null)        o.name = m.name;         // mcp_call : nom complet pour le breadcrumb
-      if (m.error)               o.error = true;          // mcp_call : appel en erreur
-      if (m.resolved)            o.resolved = true;
+      if (m.server != null)        o.server = m.server;
+      if (m.name != null)          o.name = m.name;
+      if (m.error)                 o.error = true;
+      if (m.resolved)              o.resolved = true;
+      if (m.args != null)          o.args = m.args;
+      if (m.result != null)        o.result = m.result;
+      if (m.ts != null)            o.ts = m.ts;
+      if (m.group != null)         o.group = m.group;
+      if (m.assistantText != null) o.assistantText = m.assistantText;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -468,7 +478,7 @@ async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
-  const threadMsgs = currentThread.filter(m => !isAckRole(m.role)).map(m => ({ role: m.role, content: m.content }));
+  const threadMsgs = expandThread(currentThread);
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
   // préfixe du dernier message utilisateur, pour préserver le préfixe stable
@@ -520,8 +530,15 @@ async function dispatchSend(matches) {
         clearPendingToolAcks();
         for (const ack of pending) {
           const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.server != null) entry.server = ack.server;
-          if (ack.name != null)   entry.name = ack.name;
+          if (ack.server != null)        entry.server = ack.server;
+          if (ack.name != null)          entry.name = ack.name;
+          // Champs d'enrichissement cross-turn (peuvent déjà être posés si un
+          // outil interne précédent a été drainé ici en même temps qu'un MCP).
+          if (ack.args != null)          entry.args = ack.args;
+          if (ack.result != null)        entry.result = ack.result;
+          if (ack.ts != null)            entry.ts = ack.ts;
+          if (ack.group != null)         entry.group = ack.group;
+          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
           currentThread.push(entry);
           const node = placeToolAck(wrap, entry);
           earlyRendered.push({ ack, entry, node });
@@ -557,11 +574,19 @@ async function dispatchSend(matches) {
         clearPendingToolAcks();
         for (const ack of pending) {
           const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.id != null)          entry.id = ack.id;
-          if (ack.content != null)     entry.content = ack.content;
-          if (ack.prevContent != null) entry.prevContent = ack.prevContent;
-          if (ack.title != null)       entry.title = ack.title;
-          if (ack.count != null)       entry.count = ack.count;
+          if (ack.id != null)            entry.id = ack.id;
+          if (ack.content != null)       entry.content = ack.content;
+          if (ack.prevContent != null)   entry.prevContent = ack.prevContent;
+          if (ack.title != null)         entry.title = ack.title;
+          if (ack.count != null)         entry.count = ack.count;
+          // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
+          // via le hook onEnrichLastAck, après exécution de chaque outil interne).
+          if (ack.name != null)          entry.name = ack.name;
+          if (ack.args != null)          entry.args = ack.args;
+          if (ack.result != null)        entry.result = ack.result;
+          if (ack.ts != null)            entry.ts = ack.ts;
+          if (ack.group != null)         entry.group = ack.group;
+          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
           currentThread.push(entry);
           placeToolAck(wrap, entry);
         }
@@ -572,6 +597,25 @@ async function dispatchSend(matches) {
         clearPendingToolBlocks();
         if (blocks.length) placeToolBlocks(wrap, blocks);
         scrollBottom();
+      },
+      // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
+      // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
+      // outil, AVANT onToolAcks. Pour les outils distants (isMcp) l'ack est
+      // déjà dans earlyRendered ; pour les internes il est dans _pendingToolAcks.
+      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
+        const fields = {};
+        if (name != null)          fields.name = name;
+        if (args != null)          fields.args = args;
+        if (result != null)        fields.result = result;
+        if (ts != null)            fields.ts = ts;
+        if (group != null)         fields.group = group;
+        if (assistantText != null) fields.assistantText = assistantText;
+        if (isMcp) {
+          const last = earlyRendered[earlyRendered.length - 1];
+          if (last) Object.assign(last.entry, fields);
+        } else {
+          updateLastPendingToolAck(fields);
+        }
       },
       onFinal: (content, reasoning) => {
         const ts = Date.now();

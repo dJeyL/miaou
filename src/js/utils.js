@@ -285,6 +285,75 @@ function formatFullDateFr(ts) {
     FR_MONTHS_FULL[d.getMonth()] + ' ' + d.getFullYear() + ' à ' + _tsHHMM(d);
 }
 
+// ── Reconstruction du payload API depuis currentThread ───────────────────────
+
+// Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
+// La valeur est figée à l'instant de l'appel ; le modèle en infère l'ancienneté
+// via le "now" déjà présent dans <miaou_context>. NE PAS recalculer à chaque
+// envoi (mutation → busteRait le KV cache de tout le préfixe history).
+function stampTs(ts, result) {
+  var s = result != null ? String(result) : '';
+  if (!ts) return s;
+  return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
+}
+
+// Reconstruit un tableau de messages OpenAI depuis currentThread.
+// Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
+// Acks legacy (sans args) → élagués comme avant (compat ascendante).
+// Si le premier ack d'un groupe porte assistantText, le message assistant
+// standalone qui le précède immédiatement est absorbé dans le content de
+// l'assistant expansé pour éviter la duplication.
+function expandThread(thread) {
+  var out = [];
+  var i = 0;
+  while (i < thread.length) {
+    var m = thread[i];
+    if (isAckRole(m.role)) {
+      if (m.args != null) {
+        var grp = m.group;
+        var groupAcks = [m];
+        var j = i + 1;
+        if (grp != null) {
+          while (j < thread.length && isAckRole(thread[j].role) &&
+                 thread[j].args != null && thread[j].group === grp) {
+            groupAcks.push(thread[j]);
+            j++;
+          }
+        }
+        var assistantText = groupAcks[0].assistantText != null ? groupAcks[0].assistantText : null;
+        // Absorber le standalone assistant précédent si son content correspond
+        if (assistantText && out.length &&
+            out[out.length - 1].role === 'assistant' &&
+            out[out.length - 1].content === assistantText &&
+            !out[out.length - 1].tool_calls) {
+          out.pop();
+        }
+        var prefix = grp != null ? grp : 'solo';
+        var ids = groupAcks.map(function(_, k) { return 'tc_' + prefix + '_' + k; });
+        out.push({
+          role: 'assistant',
+          content: assistantText || null,
+          tool_calls: groupAcks.map(function(a, k) {
+            return { id: ids[k], type: 'function',
+                     function: { name: a.name, arguments: JSON.stringify(a.args) } };
+          }),
+        });
+        for (var k = 0; k < groupAcks.length; k++) {
+          out.push({ role: 'tool', tool_call_id: ids[k],
+                     content: stampTs(groupAcks[k].ts, groupAcks[k].result) });
+        }
+        i = j;
+      } else {
+        i++;   // ack legacy non enrichi : élagué
+      }
+    } else {
+      out.push({ role: m.role, content: m.content });
+      i++;
+    }
+  }
+  return out;
+}
+
 // ── Parsing défensif du JSON de résumé ──────────────────────────────────────
 // Le modèle enrobe parfois sa réponse de fences ```json … ```. On nettoie,
 // puis on tente JSON.parse ; en cas d'échec on renvoie null sans planter.

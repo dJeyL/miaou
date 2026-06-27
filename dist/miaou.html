@@ -1914,7 +1914,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-27 14:01 UTC */
+/* miaou — built: 2026-06-27 18:22 UTC */
 
 
 /* ── utils.js ── */
@@ -2206,6 +2206,75 @@ function formatFullDateFr(ts) {
     FR_MONTHS_FULL[d.getMonth()] + ' ' + d.getFullYear() + ' à ' + _tsHHMM(d);
 }
 
+// ── Reconstruction du payload API depuis currentThread ───────────────────────
+
+// Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
+// La valeur est figée à l'instant de l'appel ; le modèle en infère l'ancienneté
+// via le "now" déjà présent dans <miaou_context>. NE PAS recalculer à chaque
+// envoi (mutation → busteRait le KV cache de tout le préfixe history).
+function stampTs(ts, result) {
+  var s = result != null ? String(result) : '';
+  if (!ts) return s;
+  return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
+}
+
+// Reconstruit un tableau de messages OpenAI depuis currentThread.
+// Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
+// Acks legacy (sans args) → élagués comme avant (compat ascendante).
+// Si le premier ack d'un groupe porte assistantText, le message assistant
+// standalone qui le précède immédiatement est absorbé dans le content de
+// l'assistant expansé pour éviter la duplication.
+function expandThread(thread) {
+  var out = [];
+  var i = 0;
+  while (i < thread.length) {
+    var m = thread[i];
+    if (isAckRole(m.role)) {
+      if (m.args != null) {
+        var grp = m.group;
+        var groupAcks = [m];
+        var j = i + 1;
+        if (grp != null) {
+          while (j < thread.length && isAckRole(thread[j].role) &&
+                 thread[j].args != null && thread[j].group === grp) {
+            groupAcks.push(thread[j]);
+            j++;
+          }
+        }
+        var assistantText = groupAcks[0].assistantText != null ? groupAcks[0].assistantText : null;
+        // Absorber le standalone assistant précédent si son content correspond
+        if (assistantText && out.length &&
+            out[out.length - 1].role === 'assistant' &&
+            out[out.length - 1].content === assistantText &&
+            !out[out.length - 1].tool_calls) {
+          out.pop();
+        }
+        var prefix = grp != null ? grp : 'solo';
+        var ids = groupAcks.map(function(_, k) { return 'tc_' + prefix + '_' + k; });
+        out.push({
+          role: 'assistant',
+          content: assistantText || null,
+          tool_calls: groupAcks.map(function(a, k) {
+            return { id: ids[k], type: 'function',
+                     function: { name: a.name, arguments: JSON.stringify(a.args) } };
+          }),
+        });
+        for (var k = 0; k < groupAcks.length; k++) {
+          out.push({ role: 'tool', tool_call_id: ids[k],
+                     content: stampTs(groupAcks[k].ts, groupAcks[k].result) });
+        }
+        i = j;
+      } else {
+        i++;   // ack legacy non enrichi : élagué
+      }
+    } else {
+      out.push({ role: m.role, content: m.content });
+      i++;
+    }
+  }
+  return out;
+}
+
 // ── Parsing défensif du JSON de résumé ──────────────────────────────────────
 // Le modèle enrobe parfois sa réponse de fences ```json … ```. On nettoie,
 // puis on tente JSON.parse ; en cas d'échec on renvoie null sans planter.
@@ -2253,7 +2322,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782568883}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782584571}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -2596,6 +2665,12 @@ const MEMORY_DOCTRINE =
 let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
+// Enrichit le dernier ack en attente (outils internes synchrones). Les outils
+// distants (asynchrones) voient leur ack déjà drainé dans earlyRendered ; leur
+// enrichissement est fait directement par le hook onEnrichLastAck dans main.js.
+function updateLastPendingToolAck(fields) {
+  if (_pendingToolAcks.length) Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
+}
 
 // File des blocs NON-text renvoyés par un outil distant (image / resource /
 // binaire). Vidée par le hook UI au même moment que les acks (après l'exécution
@@ -3014,18 +3089,18 @@ function callTool(name, args) {
 }
 
 // Aplatit un résultat MCP en string pour le message role:'tool' renvoyé au modèle.
-// Le contenu binaire des blocs non-text (image/resource) est rendu par l'UI (D8)
-// et n'est JAMAIS réinjecté : on n'y substitue qu'un MARQUEUR NEUTRE (jamais le
-// base64 ni un fragment). But (cf. Correction A) : un résultat image-only ne doit
-// pas laisser le message `tool` vide — le vide pousse le modèle à simuler/encoder
-// l'image. Le marqueur lui dit « c'est déjà affiché », sans lui donner de matière
-// à reproduire. Fonction pure, unit-testable via le runner QuickJS.
+// Blocs `text` → passés tels quels. Blocs `resource` avec `resource.text` → passés
+// tels quels (JSON ou texte structuré renvoyé par le serveur, utile au LLM).
+// Blocs non-text sans contenu textuel (image, audio, resource binaire) → MARQUEUR
+// NEUTRE (jamais le base64). Cf. D8 : ces blocs sont rendus par l'UI ; le marqueur
+// évite qu'un résultat image/resource-only laisse un message `tool` vide, ce qui
+// pousserait le modèle à simuler/encoder le contenu. Fonction pure, unit-testable.
 function flattenToolResult(result) {
   if (!result || !Array.isArray(result.content)) return '';
   return result.content.map(b => {
     if (b.type === 'text') return b.text;
     if (b.type === 'image')    return '[image rendue dans l\'interface]';
-    if (b.type === 'resource') return '[ressource rendue dans l\'interface]';
+    if (b.type === 'resource') return b.resource && b.resource.text != null ? b.resource.text : '[ressource rendue dans l\'interface]';
     if (b.type === 'audio')    return '[audio rendu dans l\'interface]';
     return '[contenu rendu dans l\'interface]';
   }).filter(s => s != null && s !== '').join('\n');
@@ -3373,6 +3448,11 @@ async function runConversation(messages, hooks) {
         tool_calls: result.toolCalls,
       });
 
+      // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
+      // pour que expandThread puisse reconstruire un seul assistant+N tools.
+      const group = 'g' + Date.now().toString(36);
+      const assistantText = result.content || null;
+
       for (const tc of result.toolCalls) {
         let args = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); }
@@ -3396,9 +3476,23 @@ async function runConversation(messages, hooks) {
             // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
             // le round-trip réseau, pas seulement après.
             const toolPromise = callTool(tc.function.name, args);
-            if (h.onEarlyAcks && typeof toolPromise.then === 'function') h.onEarlyAcks();
+            const isMcp = typeof toolPromise.then === 'function';
+            if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
             out = flattenToolResult(await toolPromise);
             servedKeys.add(key);
+            // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
+            // réinjection cross-turn (args, result aplati, ts, group). Pour les
+            // outils distants l'ack est déjà dans earlyRendered ; pour les
+            // outils internes il est encore dans _pendingToolAcks.
+            if (h.onEnrichLastAck) h.onEnrichLastAck({
+              isMcp,
+              name: tc.function.name,
+              args,
+              result: out,
+              ts: Date.now(),
+              group,
+              assistantText,
+            });
           } finally {
             bgActivityEnd();
           }
@@ -5427,10 +5521,15 @@ function openConversation(id) {
       if (m.prevContent != null) a.prevContent = m.prevContent;
       if (m.title != null)       a.title = m.title;
       if (m.count != null)       a.count = m.count;
-      if (m.server != null)      a.server = m.server;
-      if (m.name != null)        a.name = m.name;
-      if (m.error)               a.error = true;
-      if (m.resolved)            a.resolved = true;
+      if (m.server != null)        a.server = m.server;
+      if (m.name != null)          a.name = m.name;
+      if (m.error)                 a.error = true;
+      if (m.resolved)              a.resolved = true;
+      if (m.args != null)          a.args = m.args;
+      if (m.result != null)        a.result = m.result;
+      if (m.ts != null)            a.ts = m.ts;
+      if (m.group != null)         a.group = m.group;
+      if (m.assistantText != null) a.assistantText = m.assistantText;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -5557,10 +5656,15 @@ function persistCurrent() {
       if (m.prevContent != null) o.prevContent = m.prevContent;
       if (m.title != null)       o.title = m.title;
       if (m.count != null)       o.count = m.count;
-      if (m.server != null)      o.server = m.server;     // mcp_call : identité serveur (filtre showCalls)
-      if (m.name != null)        o.name = m.name;         // mcp_call : nom complet pour le breadcrumb
-      if (m.error)               o.error = true;          // mcp_call : appel en erreur
-      if (m.resolved)            o.resolved = true;
+      if (m.server != null)        o.server = m.server;
+      if (m.name != null)          o.name = m.name;
+      if (m.error)                 o.error = true;
+      if (m.resolved)              o.resolved = true;
+      if (m.args != null)          o.args = m.args;
+      if (m.result != null)        o.result = m.result;
+      if (m.ts != null)            o.ts = m.ts;
+      if (m.group != null)         o.group = m.group;
+      if (m.assistantText != null) o.assistantText = m.assistantText;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -5763,7 +5867,7 @@ async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
-  const threadMsgs = currentThread.filter(m => !isAckRole(m.role)).map(m => ({ role: m.role, content: m.content }));
+  const threadMsgs = expandThread(currentThread);
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
   // préfixe du dernier message utilisateur, pour préserver le préfixe stable
@@ -5815,8 +5919,15 @@ async function dispatchSend(matches) {
         clearPendingToolAcks();
         for (const ack of pending) {
           const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.server != null) entry.server = ack.server;
-          if (ack.name != null)   entry.name = ack.name;
+          if (ack.server != null)        entry.server = ack.server;
+          if (ack.name != null)          entry.name = ack.name;
+          // Champs d'enrichissement cross-turn (peuvent déjà être posés si un
+          // outil interne précédent a été drainé ici en même temps qu'un MCP).
+          if (ack.args != null)          entry.args = ack.args;
+          if (ack.result != null)        entry.result = ack.result;
+          if (ack.ts != null)            entry.ts = ack.ts;
+          if (ack.group != null)         entry.group = ack.group;
+          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
           currentThread.push(entry);
           const node = placeToolAck(wrap, entry);
           earlyRendered.push({ ack, entry, node });
@@ -5852,11 +5963,19 @@ async function dispatchSend(matches) {
         clearPendingToolAcks();
         for (const ack of pending) {
           const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.id != null)          entry.id = ack.id;
-          if (ack.content != null)     entry.content = ack.content;
-          if (ack.prevContent != null) entry.prevContent = ack.prevContent;
-          if (ack.title != null)       entry.title = ack.title;
-          if (ack.count != null)       entry.count = ack.count;
+          if (ack.id != null)            entry.id = ack.id;
+          if (ack.content != null)       entry.content = ack.content;
+          if (ack.prevContent != null)   entry.prevContent = ack.prevContent;
+          if (ack.title != null)         entry.title = ack.title;
+          if (ack.count != null)         entry.count = ack.count;
+          // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
+          // via le hook onEnrichLastAck, après exécution de chaque outil interne).
+          if (ack.name != null)          entry.name = ack.name;
+          if (ack.args != null)          entry.args = ack.args;
+          if (ack.result != null)        entry.result = ack.result;
+          if (ack.ts != null)            entry.ts = ack.ts;
+          if (ack.group != null)         entry.group = ack.group;
+          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
           currentThread.push(entry);
           placeToolAck(wrap, entry);
         }
@@ -5867,6 +5986,25 @@ async function dispatchSend(matches) {
         clearPendingToolBlocks();
         if (blocks.length) placeToolBlocks(wrap, blocks);
         scrollBottom();
+      },
+      // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
+      // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
+      // outil, AVANT onToolAcks. Pour les outils distants (isMcp) l'ack est
+      // déjà dans earlyRendered ; pour les internes il est dans _pendingToolAcks.
+      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
+        const fields = {};
+        if (name != null)          fields.name = name;
+        if (args != null)          fields.args = args;
+        if (result != null)        fields.result = result;
+        if (ts != null)            fields.ts = ts;
+        if (group != null)         fields.group = group;
+        if (assistantText != null) fields.assistantText = assistantText;
+        if (isMcp) {
+          const last = earlyRendered[earlyRendered.length - 1];
+          if (last) Object.assign(last.entry, fields);
+        } else {
+          updateLastPendingToolAck(fields);
+        }
       },
       onFinal: (content, reasoning) => {
         const ts = Date.now();
