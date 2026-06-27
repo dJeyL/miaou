@@ -169,3 +169,87 @@ describe('formatDateRelative', function() {
     expect(formatDateRelative(ts, now)).toBe('avant-hier');
   });
 });
+
+describe('parseToolName (split sur le PREMIER __ seulement)', function() {
+  it('sépare préfixe et nom nu', function() {
+    var r = parseToolName('jira__search');
+    expect(r.serverPrefix).toBe('jira');
+    expect(r.toolName).toBe('search');
+  });
+  it('un toolName contenant lui-même __ n\'est PAS corrompu', function() {
+    var r = parseToolName('jira__a__b__c');
+    expect(r.serverPrefix).toBe('jira');
+    expect(r.toolName).toBe('a__b__c');
+  });
+  it('sans séparateur : préfixe vide, nom entier', function() {
+    var r = parseToolName('create_memory');
+    expect(r.serverPrefix).toBe('');
+    expect(r.toolName).toBe('create_memory');
+  });
+  it('outil interne préfixé miaou', function() {
+    var r = parseToolName('miaou__create_memory');
+    expect(r.serverPrefix).toBe('miaou');
+    expect(r.toolName).toBe('create_memory');
+  });
+});
+
+describe('groupByNamespace (projection pure, nom nu)', function() {
+  it('groupe par préfixe et expose le nom nu', function() {
+    var g = groupByNamespace([
+      { name: 'miaou__create_memory' },
+      { name: 'jira__search' },
+      { name: 'jira__a__b' },
+    ]);
+    expect(g.length).toBe(2);
+    expect(g[0].namespace).toBe('miaou');
+    expect(g[0].tools[0].bareName).toBe('create_memory');
+    expect(g[1].namespace).toBe('jira');
+    expect(g[1].tools[0].bareName).toBe('search');
+    expect(g[1].tools[1].bareName).toBe('a__b');
+  });
+  it('nom sans préfixe → namespace miaou', function() {
+    var g = groupByNamespace([{ name: 'ask_confirmation' }]);
+    expect(g[0].namespace).toBe('miaou');
+    expect(g[0].tools[0].bareName).toBe('ask_confirmation');
+  });
+});
+
+describe('guessMcpTransport (pré-remplissage, jamais override)', function() {
+  it('/sse → sse', function() { expect(guessMcpTransport('https://h/sse')).toBe('sse'); });
+  it('/mcp → streamable-http', function() { expect(guessMcpTransport('https://h/mcp')).toBe('streamable-http'); });
+  it('chemin inconnu → streamable-http par défaut', function() { expect(guessMcpTransport('https://h/x')).toBe('streamable-http'); });
+  it('/sse avec query', function() { expect(guessMcpTransport('https://h/sse?x=1')).toBe('sse'); });
+});
+
+describe('validateMcpServerName', function() {
+  it('accepte un nom valide', function() { expect(validateMcpServerName('jira', [])).toBe(null); });
+  it('rejette miaou (réservé)', function() { expect(validateMcpServerName('miaou', [])).toContain('réservé'); });
+  it('rejette un nom contenant __', function() { expect(validateMcpServerName('a__b', [])).toContain('__'); });
+  it('rejette un espace', function() { expect(validateMcpServerName('a b', [])).toBeTruthy(); });
+  it('rejette un doublon', function() { expect(validateMcpServerName('jira', ['jira'])).toContain('utilisé'); });
+  it('rejette un nom vide', function() { expect(validateMcpServerName('', [])).toBeTruthy(); });
+});
+
+describe('filterMcpTools (D7, denylist gagne)', function() {
+  var tools = [{ name: 'a' }, { name: 'b' }, { name: 'c' }];
+  it('vide/vide → tout passe', function() { expect(filterMcpTools(tools, [], []).length).toBe(3); });
+  it('allowlist restreint', function() {
+    var r = filterMcpTools(tools, ['a', 'b'], []);
+    expect(r.length).toBe(2);
+  });
+  it('denylist retire', function() {
+    var r = filterMcpTools(tools, [], ['b']);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('a,c');
+  });
+  it('denylist gagne sur allowlist en conflit', function() {
+    var r = filterMcpTools(tools, ['a', 'b'], ['b']);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('a');
+  });
+});
+
+describe('parseToolFilterList', function() {
+  it('découpe sur virgules et retours ligne, trim, sans vides', function() {
+    expect(parseToolFilterList('a, b\nc ,, ')).toEqual(['a', 'b', 'c']);
+  });
+  it('vide → tableau vide', function() { expect(parseToolFilterList('').length).toBe(0); });
+});

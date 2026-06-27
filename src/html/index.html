@@ -211,6 +211,11 @@
         </div>
         <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
       </div>
+      <div class="field">
+        <label>Serveurs MCP distants</label>
+        <span class="hint">Délègue des appels d'outils à des serveurs MCP externes. Leurs outils sont fusionnés au registre, préfixés par le nom du serveur.</span>
+        <button class="btn-ghost" onclick="openMcpServers()">Gérer les serveurs MCP</button>
+      </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
     </div>
@@ -228,6 +233,22 @@
     <div class="drawer-body">
       <span class="hint">Outils déclarés au modèle à chaque conversation. Le modèle peut les appeler librement.</span>
       <div class="tool-list" id="tools-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ MCP servers drawer ═══ -->
+  <div class="backdrop" id="mcp-backdrop" onclick="closeMcpServers()"></div>
+  <div class="drawer" id="mcp-drawer">
+    <div class="drawer-head">
+      <h2>Serveurs MCP</h2>
+      <button class="icon-btn" onclick="closeMcpServers()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Backends MCP distants (HTTP). Leurs outils sont fusionnés au registre, préfixés par le nom du serveur. Un serveur injoignable est simplement ignoré.</span>
+      <button class="btn-ghost mcp-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
+      <div class="mcp-list" id="mcp-list"></div>
     </div>
   </div>
 

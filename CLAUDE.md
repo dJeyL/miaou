@@ -300,6 +300,18 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `create_memory` / `update_memory` (in-place) /
   `delete_memory` (tombstone). `listMemoryEntries()` renvoie uniquement les
   non-supprimées. `forgetMemory(id)` supprime définitivement l'entrée du tableau.
+- `miaou-mcp-servers` : tableau de backends MCP distants `[{ name, url, transport,
+  enabled, authorization_token, timeout, toolAllowlist, toolDenylist, showCalls }]`
+  (cf. « Agrégation MCP distante » ci-dessous). `name` est l'identité **et** le
+  préfixe d'outil (unique, charset `[A-Za-z0-9_-]`, pas de `__`, `miaou` interdit).
+  `authorization_token` est stocké **en clair** (posture assumée non-prod).
+  `showCalls` (booléen, défaut `true`) contrôle l'affichage des lignes d'appel
+  `mcp_call` dans le thread : `false` masque le rendu DOM mais **conserve les acks
+  dans l'historique** — toggle de rendu pur, sans effet sur le payload modèle. CRUD
+  dans `storage.js` (`loadMcpServers`/`upsertMcpServer`/`deleteMcpServer`/
+  `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
+  n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en
+  mémoire seule, reconstruit au démarrage.
 
 ## Outils (`tools.js`)
 
@@ -328,24 +340,27 @@ description **du registre** — ne jamais la coder en dur.
   (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
 
 **Acks d'outils côté client (`tool-ack`, ex-`memory-ack`) :**
-Mécanisme **générique** couvrant à la fois les écritures mémoire et les lectures
-d'historique. Chaque handler traçable pousse un descripteur `{ kind, … }` dans
-`_pendingToolAcks` (tools.js) au moment de l'appel — `kind` ∈ `memory_create |
-memory_update | memory_delete | conversation_read | conversation_list`. Le hook
-`onToolAcks()` (main.js), déclenché par `runConversation` **après l'exécution des
-outils de chaque tour** (donc AVANT la réponse finale), consomme la file via
-`getPendingToolAcks` / `clearPendingToolAcks` et injecte des messages
-`{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, resolved? }` dans
-`currentThread`. La table `ACK_KINDS` (ui.js) est **l'unique
-source de vérité** : par kind, un `label(m)`, une capacité d'annulation `undo`
-(fonction `(id) => void`, ou **`null`** = variante informative sans bouton pour
-les lectures) et une icône SVG statique. Ajouter un outil traçable = ajouter une
-ligne, pas toucher au renderer.
+Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique
+et les appels MCP distants. Chaque handler traçable pousse un descripteur
+`{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
+memory_update | memory_delete | conversation_read | conversation_list | mcp_call`.
+Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js, décrits ci-dessous)
+consomment la file via `getPendingToolAcks` / `clearPendingToolAcks` et injectent
+des messages `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?,
+count?, server?, name?, error?, resolved? }` dans `currentThread`.
+La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
+un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
+`(id) => void`, ou **`null`** = variante informative), une icône SVG statique, et
+optionnellement `renderLabel(m, labelEl)` pour les kinds nécessitant un rendu DOM
+riche (breadcrumb avec `<code>` et séparateur — `mcp_call` uniquement).
+`buildToolAck` appelle `spec.renderLabel` si présent, sinon `label.textContent`.
+Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au renderer.
 
 - **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`
   pour toute donnée modèle (label/title/content) ; `innerHTML` réservé à l'icône
-  SVG author-controlled. L'action « annuler » (kinds undoables uniquement) est liée
-  par `addEventListener` → `undoToolAck(entry, wrap)` (main.js), qui dispatche via
+  SVG author-controlled. La classe `ack-error` est ajoutée si `m.error` (appel MCP
+  en erreur). L'action « annuler » (kinds undoables uniquement) est liée par
+  `addEventListener` → `undoToolAck(entry, wrap)` (main.js), qui dispatche via
   `ACK_KINDS[kind].undo(id, entry)`. Sémantique par kind : **create** →
   `forgetMemory` (retire l'ajout) ; **delete** → `restoreMemory` (lève la
   tombstone) ; **update** → ré-écrit `entry.prevContent` via `editMemory` (l'ancien
@@ -360,13 +375,24 @@ ligne, pas toucher au renderer.
   de la bulle assistant (`.msg.assistant`, colonne flex), **entre l'en-tête**
   (`.meta` : icône + nom du modèle) **et le corps** (`.body` : patienteur puis
   réponse). Helper unique `placeToolAck(wrap, entry)` (ui.js) : `insertBefore(node,
-  wrap.querySelector('.body'))`. Ordre à l'écran : icône+modèle → acks (au fil des
-  tours) → patienteur → réponse. `resetAssistant` ne touchant que `.body`, les acks
-  survivent à la reprise d'attente entre tours. **Live** : `onToolAcks` appelle
-  `placeToolAck(wrap, …)` (le `wrap` courant, réassigné par `onToolTour`). **Reload** :
+  wrap.querySelector('.body'))`. Pour `mcp_call`, si le serveur a `showCalls ===
+  false`, ne pose pas de nœud et retourne `null` — l'entrée reste en `currentThread`
+  (toggle de rendu pur). Ordre à l'écran : icône+modèle → acks (au fil des tours) →
+  patienteur → réponse. `resetAssistant` ne touchant que `.body`, les acks survivent
+  à la reprise d'attente entre tours. **Live** : voir ci-dessous. **Reload** :
   `renderThread` tamponne les acks (qui précèdent l'assistant dans `currentThread`,
   ordre `[user, …acks, assistant]`) et les replace dans la bulle assistant suivante
   via `placeToolAck` ; repli en blocs autonomes s'ils ne précèdent pas un assistant.
+- **Timing des hooks live.** Les outils internes sont synchrones : leur ack est
+  poussé dans `_pendingToolAcks` à l'intérieur du handler, et `onToolAcks()` vide
+  la file **après** l'exécution de tous les outils d'un tour. Les outils MCP distants
+  sont asynchrones : `callRemoteTool` pousse l'ack **de manière synchrone** (avant
+  son premier `await`), puis api.js appelle `onEarlyAcks()` **avant** d'attendre la
+  réponse réseau — la ligne d'appel s'affiche **pendant** le round-trip. Après
+  l'`await`, si `isError`, `callRemoteTool` pose `ackEntry.error = true` sur le même
+  objet ; `onToolAcks()` le détecte et rétro-applique la classe `.ack-error` + remet
+  à jour le label DOM. En pratique : `onEarlyAcks` pour les pré-acks MCP ;
+  `onToolAcks` pour les acks internes + la mise à jour d'erreur MCP + les blocs D8.
 - **Filtrés** du payload API (`dispatchSend`, via `!isAckRole(m.role)`) — jamais
   envoyés au modèle. Les lectures atteignent le modèle uniquement via le
   `role:'tool'` in-loop de `runConversation`, jamais via l'ack.
@@ -380,17 +406,130 @@ ligne, pas toucher au renderer.
   miroir de l'état mémoire. Helpers purs `isAckRole` / `ackKindOf` dans utils.js,
   `ackLabel` dans ui.js (testés QuickJS).
 
+## Agrégation MCP distante (V2)
+
+MIAOU est un **client/agrégateur MCP** : il fusionne ses outils internes et ceux
+de N serveurs MCP distants en **un seul registre**, invisible au modèle. Les
+invariants ci-dessous sont déjà payés — ne pas les ré-introduire de travers.
+
+1. **Le préfixe est une VUE, pas un stockage.** `TOOLS` reste en noms **nus**
+   (`create_memory`, …). Le préfixe `miaou__` est ajouté **à l'exposition
+   seulement** par `exposedTools()` (consommé par `toolDefinitions()` et
+   `toolsSystemPrompt()`). Les outils distants sont mis en cache **déjà préfixés**
+   `servername__`. `parseToolName(name)` (utils, pur) splitte sur le **PREMIER**
+   `__` uniquement — un `toolName` distant peut lui-même contenir `__`, un
+   `split('__')` naïf le corromprait. `groupByNamespace` (pur) projette le nom
+   canonique en `{namespace, bareName}` pour le sous-drawer « Voir les outils
+   exposés » — rien n'est stocké, tout dérive du nom.
+2. **V2 rompt délibérément le byte-identical de V1.** Les outils internes sont
+   désormais envoyés au modèle préfixés (`miaou__create_memory`). Assumé : le
+   préfixe sert à router interne vs distant sans cas particulier. La doctrine
+   mémoire (`MEMORY_DOCTRINE`) emploie donc les noms **préfixés** — **sauf
+   `ask_confirmation`, qui reste NU** (hors registre, primitif halting ;
+   `toolIsHalting` et l'interception api.js le matchent nu). Ne pas le préfixer
+   par réflexe d'uniformité : le préfixe marque l'appartenance au registre, et
+   lui n'y est pas.
+3. **`callTool(name, args)` est le routeur unique, à retour MIXTE assumé.** Split
+   sur le 1er `__` : préfixe `miaou` (ou absent) → `callInternalTool` **synchrone**
+   (objet `{content, isError}`) ; sinon → serveur distant activé → `callRemoteTool`
+   **asynchrone** (Promise). Préfixe inconnu / serveur désactivé → objet d'erreur
+   **synchrone**. Les appelants font `await callTool(...)` (api.js) ; `await` sur
+   un objet le renvoie tel quel. Cette asymétrie est **voulue** : elle garde les
+   branches interne/erreur synchrones, donc **testables sans async** — le runner
+   QuickJS exécute `it()` sans attendre les promesses (le chemin distant se
+   vérifie à la main, cf. MANUAL.md).
+4. **Transport.** `streamable-http` implémenté (JSON-RPC 2.0 ; un seul endpoint
+   POST, réponse JSON **ou** flux SSE `event:message`/`data:` agrégé par
+   `readSseJsonRpc`). `sse` legacy **différé** : `mcpRpc` **lève** « non
+   implémenté » plutôt que de demi-câbler. Devinette de transport
+   (`guessMcpTransport`, pur) = **pré-remplissage seulement**, jamais un override :
+   l'UI ne l'applique que si le champ n'a pas été touché (`dataset.touched`).
+5. **Timeout via `AbortController` (D5).** Chaque appel `mcpRpc` arme un
+   `setTimeout(timeout)` → `abort()` ; sur abort, résultat `{ isError: true }` au
+   message clair. Sans ça le champ `timeout` serait décoratif. `Mcp-Session-Id`
+   capturé sur l'`initialize` et renvoyé sur les appels suivants.
+6. **Dégradation gracieuse (D10).** `connectMcpServer` (initialize → notification
+   initialized → tools/list → préfixe + filtre + cache) **ne lève jamais** vers
+   l'appelant : tout échec marque le serveur en erreur et **n'expose aucun** de
+   ses outils ; le reste du registre (interne + autres serveurs) tient. Un mauvais
+   backend ne gèle pas MIAOU. Connexion au démarrage via `reconnectMcpServers`
+   (fire-and-forget dans `init`), et à chaque save de carte.
+7. **Filtres `toolAllowlist`/`toolDenylist` (D7) au merge** (`filterMcpTools`,
+   pur, appliqué dans `connectMcpServer` après `tools/list`). **Denylist gagne**
+   en conflit ; allowlist vide → tout passe. Portent sur le nom **nu**.
+7b. **Acks `mcp_call` (visibilité des appels dans le thread).** Chaque appel
+   `callRemoteTool` pousse un ack `{ kind:'mcp_call', server, name }` dans
+   `_pendingToolAcks` **de manière synchrone** (avant le premier `await`), ce qui
+   permet à `onEarlyAcks` de le peindre **pendant** le round-trip. Le champ `server`
+   (= premier segment, l'identité du serveur) sert de clé pour le filtre `showCalls`.
+   `name` est le nom complet `a__b__c`, découpé sur **chaque** `__` pour le breadcrumb
+   (segments vides ignorés). Sur erreur, `callRemoteTool` pose `ackEntry.error = true`
+   sur l'objet partagé ; `onToolAcks` rétro-applique `.ack-error` sur le nœud DOM
+   déjà rendu. Ces acks sont persisted dans `currentThread` / localStorage (champs
+   `server`, `name`, `error`) et restaurés au reload. Ils sont filtrés du payload
+   modèle par le filtre rôle existant — aucune liste blanche par kind à maintenir.
+   Le toggle `showCalls` est éditable sur la **carte serveur en mode édition**
+   uniquement — pas en mode vue — pour éviter une modification accidentelle.
+8. **Blocs non-text = UI-only et ÉPHÉMÈRES (D8/D9).** `flattenToolResult` réinjecte
+   les blocs `text` tels quels et remplace chaque bloc non-text par un **marqueur
+   neutre** (`[image rendue dans l'interface]`, …) — **jamais** le base64 ni un
+   fragment. Le marqueur (et non le vide) est délibéré : un message `tool` vide après
+   un résultat image-only poussait le modèle à **simuler/encoder** l'image. Les blocs
+   `image` / `resource` / binaire sont poussés dans `_pendingToolBlocks` (tools.js),
+   drainés par le hook `onToolAcks` (main.js) au même tour que les acks, et rendus
+   **dans la bulle assistant** par `placeToolBlocks` (cascade `renderToolBlock` :
+   image → `<img>` data-URI ; resource-texte → bloc code surligné Prism via
+   `textContent` ; binaire → téléchargement éphémère `downloadFile(b64ToBytes(...))`).
+   **Jamais poussés dans `currentThread`, jamais persistés** — ils disparaissent au
+   reload (persistance des pièces jointes = futur chantier IndexedDB, hors périmètre).
+   DOM-safe : seule exception « HTML-ish » = le `src` data-URI de l'`<img>`, qui
+   n'injecte aucun markup. **Deux couches pour DEUX échecs distincts** (pas
+   primaire/repli) : le marqueur de `flattenToolResult` empêche le base64
+   d'**atteindre** le modèle ; une règle de **formulation** l'empêche de
+   **narrer/simuler** l'image même sans déclencheur. Cette règle est une doctrine
+   **comportementale transverse** → `toolsDoctrinePrompt()`, **toujours injectée**
+   par `buildSystemMessage()` dès que des outils existent, **indépendamment de
+   `includeToolsInSystemPrompt`**. Le toggle ne gouverne que l'**énumération** par
+   outil (`toolsSystemPrompt()`, token-coûteuse, redondante avec le champ API
+   `tools`). Doctrine comportementale = inconditionnelle ; énumération = sous toggle.
+   Surtout pas dans `MEMORY_DOCTRINE` (sans rapport avec la mémoire) ni dans une
+   entrée par outil. Sans ça, le mode nothink/agentique (toggle off, le plus courant)
+   perdrait le garde.
+9. **Ré-handshake paresseux sur session invalidée (Correction B).** streamable-http
+   est *stateful* : `initialize` renvoie un `Mcp-Session-Id` que le client renvoie à
+   chaque appel. Un serveur **redémarré** ne reconnaît plus l'ancien id et répond
+   **404**. `mcpRpcAttempt` tague l'erreur `staleSession` **uniquement si on détenait
+   une session** (sinon un 404 est un vrai mauvais endpoint) ; `mcpRpc` refait alors
+   `initialize` (`mcpReinitialize`, sans re-`tools/list`) et **rejoue l'appel une
+   seule fois**. Échec du ré-handshake ou du rejeu → propagé → dégradation D10. Jamais
+   de re-sonde préventive, jamais plus d'une tentative (pas de boucle sur un serveur
+   mort). `initialize`/notifications passent par `mcpRpcAttempt` directement → pas de
+   récursion.
+10. **Auth : posture ASSUME (D6).** `authorization_token` en clair dans
+    localStorage. Décision consciente : tout ce que JS lit, un XSS le lit ; un
+    chiffrement client a besoin d'une clef client → ne protège rien. Le correctif
+    prod est un **proxy** (token côté serveur) — mentionné comme la voie, **non
+    implémenté en V2**. Caveat sobre affiché dans la carte serveur.
+11. **Le sous-écran « Serveurs MCP » est un drawer à part** (`#mcp-drawer`, cartes
+    éditables construites en `createElement`/`textContent`), pas une ligne de plus
+    dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
+    espace, `__`, `miaou`, et les doublons.
+
 ## Tests
 
 Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
 navigateur + framework maison). Seules les **fonctions pures** sont couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
-(`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`). Adapter un squelette est
-permis si le comportement testé est respecté (un cas l'a été : `indexOf` vaut 0
-pour le premier élément, donc tester la présence avec `>= 0`, pas `toBeTruthy`).
-La boucle `tool_calls` et `silentCompletion` se vérifient à la main (checklist
-dans `tests/MANUAL.md`).
+(`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`), **agrégation MCP**
+(`parseToolName`, `groupByNamespace`, `guessMcpTransport`, `validateMcpServerName`,
+`filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`).
+Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
+été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
+`>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout
+le chemin MCP distant** (fetch JSON-RPC, SSE réel, AbortController, cascade D8) se
+vérifient à la main (checklist dans `tests/MANUAL.md`). Un serveur MCP Python de
+banc d'essai versionné est fourni : `tests/mcp_bench.py` (`uv run tests/mcp_bench.py`).
 
 ## Export Markdown et téléchargements
 

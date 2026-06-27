@@ -493,7 +493,12 @@ body {
   border-radius: 4px;
   color: var(--code-inline-color);
 }
-.body pre {
+/* Bloc de code, chrome partagé : les messages assistant (`.body pre`) ET les
+   ressources texte renvoyées par un outil MCP (`.tool-block pre`, insérées entre
+   .meta et .body, donc HORS de .body). Même fond/bordure/padding — aucun style
+   réinventé pour le second chemin. */
+.body pre,
+.tool-block pre {
   margin: 12px 0;
   border: 1px solid var(--border);
   border-radius: var(--r);
@@ -503,7 +508,8 @@ body {
 /* Prism recopie la classe language-* du <code> vers le <pre> parent au
    highlight ; prism-tomorrow injecte alors padding/margin/radius sur le <pre>.
    On neutralise pour garder exactement la même compacité que Prism inactif. */
-.body pre[class*="language-"] {
+.body pre[class*="language-"],
+.tool-block pre[class*="language-"] {
   padding: 0;
   margin: 12px 0;
   border-radius: var(--r);
@@ -530,7 +536,8 @@ body {
 .code-copy svg, .code-dl svg { width: 13px; height: 13px; }
 .code-copy:hover, .code-dl:hover { color: var(--text); background: var(--surface-2); }
 .code-copy--checked { color: var(--accent) !important; }
-.body pre code {
+.body pre code,
+.tool-block pre code {
   display: block;
   padding: 13px 14px !important;
   font-family: var(--mono) !important;
@@ -1018,7 +1025,7 @@ body {
 .mem-keywords strong { color: var(--text-2); font-weight: 600; }
 .mem-item:not(.expanded) .mem-full { display: none; }
 .mem-item.expanded .mem-excerpt { display: none; }
-.mem-btn {
+.drawer-btn {
   flex-shrink: 0;
   background: var(--surface-3);
   border: 1px solid var(--border-2);
@@ -1031,13 +1038,15 @@ body {
   cursor: pointer;
   transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
 }
-.mem-btn:hover { background: #262b33; color: var(--text); }
-.mem-btn.danger:hover { color: var(--err); border-color: rgba(255,93,93,.4); }
-.mem-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
-.mem-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
-.mem-btn .spin { width: 11px; height: 11px; }
-.mem-btns { display: flex; gap: 6px; flex-shrink: 0; }
-.mem-btns.hidden { display: none; }
+.drawer-btn:hover { background: #262b33; color: var(--text); }
+.drawer-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.drawer-btn.primary:hover { background: var(--accent-2); color: var(--accent-ink); border-color: transparent; }
+.drawer-btn.danger:hover { color: var(--err); border-color: rgba(255,93,93,.4); }
+.drawer-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
+.drawer-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
+.drawer-btn .spin { width: 11px; height: 11px; }
+.drawer-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.drawer-btns.hidden { display: none; }
 
 /* zone d'ajout d'un nouveau souvenir */
 .mem-add {
@@ -1177,6 +1186,10 @@ body {
 }
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
+/* Séparateur › entre segments du breadcrumb MCP : teinte icône, s'efface devant le texte. */
+.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); margin: 0 2px; }
+/* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
+.tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {
@@ -1221,6 +1234,109 @@ body {
 .tool-param-name { font-family: var(--mono); font-size: 11px; color: var(--text); flex-shrink: 0; }
 .tool-param-type { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); flex-shrink: 0; }
 .tool-param-desc { font-size: 11px; color: var(--text-3); }
+
+/* En-tête de namespace dans le sous-drawer « Outils exposés » (groupage D2). */
+.tool-ns {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-top: 6px;
+  padding-bottom: 2px;
+}
+.tool-ns:first-child { margin-top: 0; }
+
+/* ── Serveurs MCP : cartes éditables (D3) ──────────────────────────────────── */
+.mcp-add-btn { align-self: flex-start; }
+.mcp-list { display: flex; flex-direction: column; gap: 14px; }
+.mcp-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mcp-field { display: flex; flex-direction: column; gap: 5px; }
+.mcp-field > label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.mcp-field input,
+.mcp-field select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.mcp-field input:focus,
+.mcp-field select:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.mcp-field .hint { font-size: 11px; color: var(--text-3); }
+.mcp-enabled-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.mcp-status { font-size: 11.5px; color: var(--text-3); }
+.mcp-status.ok { color: var(--ok, #3fb950); }
+.mcp-status.err { color: var(--err, #f85149); }
+.mcp-err { font-size: 11.5px; color: var(--err, #f85149); }
+.mcp-actions { display: flex; gap: 6px; margin-top: 2px; }
+/* Vue / édition */
+.mcp-view { display: flex; flex-direction: column; gap: 8px; }
+.mcp-card.is-editing .mcp-view { display: none; }
+.mcp-edit { display: none; flex-direction: column; gap: 10px; }
+.mcp-card.is-editing .mcp-edit { display: flex; }
+.mcp-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.mcp-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
+.mcp-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mcp-view-toggle-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.mcp-view-row .drawer-btn { margin-left: auto; }
+
+/* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
+.tool-block {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 4px 0;
+}
+/* Variante bloc-code (ressource texte D8.2) : le conteneur s'efface (pleine
+   largeur, pas de marge propre) pour que le <pre> à l'intérieur rende exactement
+   comme un bloc de code de message assistant — le spacing vient du <pre> lui-même. */
+.tool-block-code {
+  align-self: stretch;
+  width: 100%;
+  margin: 0;
+}
+.tool-block-img {
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  display: block;
+}
+.tool-block-binary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+}
+.tool-block-label { font-size: 12px; color: var(--text-2); }
+.tool-block-dl {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.tool-block-dl:hover { background: var(--surface-3); border-color: var(--border-2); }
 
 .cursor-blink {
   display: inline-block;
@@ -1324,7 +1440,8 @@ body {
 .messages { min-height: 0; }
 
 /* blocs code : ne pas élargir la page horizontalement */
-.body pre { overflow-x: auto; max-width: 100%; }
+.body pre,
+.tool-block pre { overflow-x: auto; max-width: 100%; }
 
 /* input bar : espace pour l'indicateur home iOS */
 .composer { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
@@ -1410,7 +1527,7 @@ html[data-theme="light"] {
   --code-head-bg:          #e6dfc9;
   --code-inline-color:     #c45010;
 }
-html[data-theme="light"] .mem-btn:hover { background: var(--surface-3); }
+html[data-theme="light"] .drawer-btn:hover { background: var(--surface-3); }
 html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 
 /* Prism token overrides — thème clair */
@@ -1472,7 +1589,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     --code-head-bg:          #e6dfc9;
     --code-inline-color:     #c45010;
   }
-  html:not([data-theme="dark"]) .mem-btn:hover { background: var(--surface-3); }
+  html:not([data-theme="dark"]) .drawer-btn:hover { background: var(--surface-3); }
   html:not([data-theme="dark"]) .model-menu    { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 
   html:not([data-theme="dark"]) code[class*="language-"],

@@ -125,6 +125,93 @@ function langExt(lang) {
   return LANG_TO_EXT[(lang || '').toLowerCase()] || 'txt';
 }
 
+// Décode une chaîne base64 en Uint8Array (octets bruts) pour matérialiser un
+// Blob binaire côté client (cf. cascade de rendu D8.3 : téléchargement éphémère
+// d'un bloc binaire renvoyé par un outil distant). atob existe en navigateur ;
+// fonction pure, pas de dépendance DOM.
+function b64ToBytes(b64) {
+  const bin = atob(String(b64 || ''));
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+// ── Agrégation MCP : nommage, namespaces, filtres (fonctions pures) ───────────
+// Le préfixe est une VUE sur le nom canonique, jamais un stockage : tout outil
+// exposé au modèle est `prefix__name`. parseToolName splitte sur le PREMIER `__`
+// seulement — un toolName distant peut lui-même contenir `__`, un split naïf le
+// corromprait. Pas de séparateur → préfixe vide et le nom entier en toolName.
+function parseToolName(name) {
+  const s = String(name || '');
+  const i = s.indexOf('__');
+  if (i < 0) return { serverPrefix: '', toolName: s };
+  return { serverPrefix: s.slice(0, i), toolName: s.slice(i + 2) };
+}
+
+// Regroupe une liste d'outils canoniques `{ name: 'prefix__bare', … }` par
+// namespace, en exposant le nom NU. Projection pure (cf. D2) : rien n'est stocké,
+// le sous-drawer « Voir les outils exposés » dérive l'affichage du nom canonique.
+// Retourne [{ namespace, tools: [{ bareName, def }] }] dans l'ordre d'apparition.
+function groupByNamespace(tools) {
+  const order = [];
+  const map = {};
+  for (const def of (tools || [])) {
+    const { serverPrefix, toolName } = parseToolName(def.name);
+    const ns = serverPrefix || 'miaou';
+    if (!map[ns]) { map[ns] = []; order.push(ns); }
+    map[ns].push({ bareName: toolName, def });
+  }
+  return order.map(ns => ({ namespace: ns, tools: map[ns] }));
+}
+
+// Devine le transport MCP d'après le chemin d'URL (cf. D4). PRÉ-REMPLISSAGE
+// uniquement, jamais un override : l'appelant ne s'en sert que si le champ
+// transport n'est pas explicitement renseigné. `/sse` → 'sse', sinon (dont
+// `/mcp`) → 'streamable-http' par défaut.
+function guessMcpTransport(url) {
+  const u = String(url || '');
+  if (/\/sse\/?($|\?)/.test(u)) return 'sse';
+  return 'streamable-http';
+}
+
+// Valide le `name` local d'un serveur MCP (devient le préfixe d'outil envoyé au
+// modèle). Charset contraint, pas d'espace, pas de `__` (réservé au séparateur),
+// `miaou` interdit (anti-usurpation des outils internes), unicité. Retourne une
+// chaîne d'erreur (français) ou null si valide.
+function validateMcpServerName(name, existingNames) {
+  const n = String(name || '').trim();
+  if (!n) return 'Nom requis.';
+  if (n === 'miaou') return 'Le nom « miaou » est réservé aux outils internes.';
+  if (n.indexOf('__') >= 0) return 'Le nom ne peut pas contenir « __ » (séparateur réservé).';
+  if (!/^[a-zA-Z0-9_-]+$/.test(n)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
+  if (Array.isArray(existingNames) && existingNames.indexOf(n) >= 0) return 'Ce nom est déjà utilisé.';
+  return null;
+}
+
+// Filtre les outils d'un serveur au moment du merge (cf. D7). allowlist/denylist
+// portent sur le nom NU de l'outil (tel que renvoyé par tools/list, avant préfixe).
+// denylist gagne en cas de conflit ; allowlist vide → tout passe ; denylist retire.
+// Fonction pure : reçoit les listes déjà normalisées en tableaux de noms nus.
+function filterMcpTools(tools, allowlist, denylist) {
+  const allow = Array.isArray(allowlist) ? allowlist.filter(Boolean) : [];
+  const deny  = Array.isArray(denylist)  ? denylist.filter(Boolean)  : [];
+  return (tools || []).filter(t => {
+    const bare = t && t.name;
+    if (deny.indexOf(bare) >= 0) return false;        // denylist gagne
+    if (allow.length && allow.indexOf(bare) < 0) return false;
+    return true;
+  });
+}
+
+// Normalise un champ texte de filtre (saisi en CSV/lignes) en tableau de noms nus.
+function parseToolFilterList(raw) {
+  return String(raw || '')
+    .split(/[\n,]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 // ── Horodatages des messages ─────────────────────────────────────────────────
 
 const SHOW_YEAR_AFTER_DAYS = 183; // ≈ 6 mois ; augmenter à 365 pour 12 mois

@@ -191,3 +191,51 @@ describe('miaou-summaries — tombstone réversible', function() {
     expect(isSummaryCandidate('c1')).toBeFalsy();
   });
 });
+
+describe('Serveurs MCP : CRUD (miaou-mcp-servers)', function() {
+  it('liste vide par défaut', function() {
+    localStorage.clear();
+    expect(loadMcpServers().length).toBe(0);
+  });
+  it('upsert insère puis met à jour par name', function() {
+    localStorage.clear();
+    upsertMcpServer({ name: 'jira', url: 'https://h/mcp' });
+    expect(loadMcpServers().length).toBe(1);
+    upsertMcpServer({ name: 'jira', url: 'https://h2/mcp' });
+    var arr = loadMcpServers();
+    expect(arr.length).toBe(1);
+    expect(arr[0].url).toBe('https://h2/mcp');
+  });
+  it('normalise transport/timeout/enabled/showCalls par défaut', function() {
+    localStorage.clear();
+    upsertMcpServer({ name: 'x', url: 'https://h/mcp' });
+    var s = getMcpServer('x');
+    expect(s.transport).toBe('streamable-http');
+    expect(s.timeout).toBe(30000);
+    expect(s.enabled).toBe(true);
+    expect(s.showCalls).toBe(true);
+  });
+  it('showCalls false est préservé à la normalisation', function() {
+    localStorage.clear();
+    upsertMcpServer({ name: 'x', url: 'https://h/mcp', showCalls: false });
+    expect(getMcpServer('x').showCalls).toBe(false);
+  });
+  it('delete retire par name', function() {
+    localStorage.clear();
+    upsertMcpServer({ name: 'a', url: 'https://h/mcp' });
+    upsertMcpServer({ name: 'b', url: 'https://h/mcp' });
+    deleteMcpServer('a');
+    var arr = loadMcpServers();
+    expect(arr.length).toBe(1);
+    expect(arr[0].name).toBe('b');
+  });
+  it('listEnabledMcpServers ignore désactivés et sans url', function() {
+    localStorage.clear();
+    upsertMcpServer({ name: 'on', url: 'https://h/mcp', enabled: true });
+    upsertMcpServer({ name: 'off', url: 'https://h/mcp', enabled: false });
+    upsertMcpServer({ name: 'nourl', url: '', enabled: true });
+    var en = listEnabledMcpServers();
+    expect(en.length).toBe(1);
+    expect(en[0].name).toBe('on');
+  });
+});

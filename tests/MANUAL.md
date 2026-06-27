@@ -75,3 +75,58 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     réglages → la description textuelle redondante des outils apparaît dans le
     message système (vérifiable dans le payload réseau). La doctrine mémoire est
     toujours présente indépendamment de ce toggle.
+
+## Agrégation MCP distante (V2)
+
+Banc d'essai prêt à lancer : `tests/mcp_bench.py` (streamable-http, CORS
+ouvert, outils `echo`/`add`/`dns_lookup`/`get_image`/`get_json_resource`).
+
+```bash
+uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
+```
+
+17. **Ajout & validation d'un serveur** : Paramètres → Serveurs MCP → Ajouter.
+    Saisir l'URL `…/mcp` → le transport se pré-remplit en `streamable-http` (mais
+    ne s'écrase plus si on l'a changé à la main). Tenter `name = miaou`, un nom
+    avec espace, avec `__`, ou un doublon → message d'erreur, pas d'enregistrement.
+    Enregistrer `bench` → la carte passe « ● connecté — N outils ».
+18. **Préfixage & registre unique** : ouvrir « Voir les outils exposés » → deux
+    namespaces, `miaou` (noms nus `create_memory`, …) et `bench` (`echo`,
+    `get_image`, …). Dans le payload réseau, les outils internes sont envoyés
+    préfixés `miaou__*`, `ask_confirmation` reste **nu**.
+19. **Délégation effective** : « utilise echo pour répéter "salut" » → le modèle
+    appelle `bench__echo`, on va jusqu'à la réponse finale. Seul le bloc **text**
+    est réinjecté au modèle (`add`/`dns_lookup` renvoient du texte exploité dans
+    la réponse).
+20. **Cascade non-text (D8)** : demander `bench__get_image` → l'image PNG s'affiche
+    inline dans la bulle (pas de markup injecté). `bench__get_json_resource` → bloc
+    de code JSON surligné. Un binaire/inconnu → ligne « Pièce jointe » + bouton
+    Télécharger (Blob éphémère). **Recharger la page → ces blocs disparaissent**
+    (non persistés, c'est voulu) ; le texte de la réponse, lui, reste.
+21. **Filtres allow/deny** : sur la carte, mettre `get_image` en « Outils masqués »
+    → il disparaît du registre (drawer + sélection). Mettre `echo` seul en
+    « Outils autorisés » → seul `echo` reste. Denylist gagne si un outil est dans
+    les deux.
+22. **Timeout & dégradation** : baisser le timeout à ~1 ms et appeler un outil →
+    résultat d'erreur « Délai dépassé », pas de requête fantôme. Couper le serveur
+    puis recharger MIAOU → la carte passe « ● injoignable », ses outils
+    disparaissent, **le reste de MIAOU fonctionne** (outils internes + autres
+    serveurs intacts). Aucun gel.
+23. **`sse` différé** : choisir le transport `sse` sur une carte et appeler un
+    outil → erreur claire « non implémenté », jamais de demi-câblage.
+24. **Ack `mcp_call` — affichage pendant le round-trip** : appeler un outil distant
+    (ex. `bench__echo`) → la ligne « 🔧 Appel : `bench` › `echo` » apparaît dans la
+    bulle **avant** la réponse, dès le démarrage de l'appel réseau (pas seulement
+    après). Plusieurs `tool_calls` dans un même tour → plusieurs lignes distinctes,
+    dans l'ordre d'exécution.
+25. **Ack `mcp_call` — erreur** : baisser le timeout à ~1 ms et appeler un outil →
+    la ligne d'appel vire au rouge (`var(--err)`) après l'échec. La réponse du
+    modèle contient le message d'erreur. Recharger → la ligne reste rouge (persisté).
+26. **Toggle `showCalls`** : ouvrir la carte en mode édition, désactiver « Afficher
+    les appels dans le thread », Enregistrer. Appeler un outil de ce serveur → aucune
+    ligne `mcp_call` n'apparaît dans le thread, mais les acks sont bien dans
+    `currentThread` (vérifiable en inspectant `localStorage['miaou-conversations']`).
+    Réactiver → les appels futurs réapparaissent. Les acks existants déjà dans
+    l'historique d'une conversation antérieure restent filtrés tant que `showCalls`
+    est `false` (rétroactif). Un serveur supprimé : ses acks antérieurs restent
+    visibles (serveur absent → filtre inactif).

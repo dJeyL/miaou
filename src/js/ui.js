@@ -238,16 +238,38 @@ const ICON_EDIT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 const ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 const ICON_EYE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
+const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
 
 const ACK_KINDS = {
-  memory_create: { undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
-  memory_update: { undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
-  memory_delete: { undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
-  conversation_read: { undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
-  conversation_list: { undo: null, icon: ICON_LIST, label: m =>
+  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
+  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
+  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
+  conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
+  conversation_list: { destination: 'user', undo: null, icon: ICON_LIST, label: m =>
       m.count === 0 ? 'Aucune conversation trouvée'
     : m.count === 1 ? '1 conversation listée'
     : (m.count != null ? m.count : '?') + ' conversations listées' },
+  // Appel d'outil MCP distant : breadcrumb `seg1` › `seg2` › … sur chaque `__`.
+  // renderLabel prend le relais sur textContent pour injecter les <code> et le
+  // séparateur teinté. `label` reste la version texte brut (ackLabel, tests).
+  mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
+    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
+    renderLabel: (m, el) => {
+      el.appendChild(document.createTextNode('Appel : '));
+      const segs = (m.name || '').split('__').filter(Boolean);
+      segs.forEach((seg, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';   // ›
+          el.appendChild(sep);
+        }
+        const code = document.createElement('code');
+        code.textContent = seg;
+        el.appendChild(code);
+      });
+    },
+  },
 };
 
 // Wrapper global (testable QuickJS) : résout le label depuis ACK_KINDS.
@@ -261,7 +283,9 @@ function buildToolAck(m) {
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
 
   const wrap = document.createElement('div');
-  wrap.className = 'tool-ack ack-' + (kind || 'unknown') + (m.resolved ? ' resolved' : '');
+  wrap.className = 'tool-ack ack-' + (kind || 'unknown') +
+    (m.resolved ? ' resolved' : '') +
+    (m.error ? ' ack-error' : '');
   if (m.id) wrap.dataset.ackId = m.id;
 
   if (spec.icon) {
@@ -273,7 +297,13 @@ function buildToolAck(m) {
 
   const label = document.createElement('span');
   label.className = 'ack-label';
-  label.textContent = spec.label(m);   // donnée modèle → textContent (frontière XSS)
+  // renderLabel : construction DOM riche (breadcrumb avec <code> et séparateur) —
+  // réservé aux kinds qui en ont besoin. Sinon textContent (frontière XSS standard).
+  if (spec.renderLabel) {
+    spec.renderLabel(m, label);
+  } else {
+    label.textContent = spec.label(m);
+  }
   wrap.appendChild(label);
 
   if (spec.undo) {
@@ -298,8 +328,14 @@ function buildToolAck(m) {
 // Place un ack DANS la bulle assistant, entre l'en-tête (.meta / raisonnement) et
 // le corps (.body) : la provenance s'affiche après l'icône+nom du modèle et avant
 // le patienteur/la réponse. Si la bulle n'a pas de .body, on append en dernier
-// recours. Partagé par le rendu live (onToolAcks) et le reload (renderThread).
+// recours. Partagé par le rendu live (onToolAcks/onEarlyAcks) et le reload (renderThread).
+// Pour mcp_call : si le serveur a showCalls === false, n'insère pas dans le DOM mais
+// retourne null (l'entrée reste dans currentThread — le toggle est render-only).
 function placeToolAck(wrap, entry) {
+  if (ackKindOf(entry) === 'mcp_call' && entry.server) {
+    const srv = getMcpServer(entry.server);
+    if (srv && srv.showCalls === false) return null;
+  }
   const node = buildToolAck(entry);
   const body = wrap && wrap.querySelector('.body');
   if (body) wrap.insertBefore(node, body);
@@ -1134,7 +1170,7 @@ function renderSummaryList() {
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
         `<div class="mem-sub">supprimé${date ? ' · ' + escHtml(date) : ''}</div></div>` +
-        `<button class="mem-btn" onclick="restoreSummaryItem('${id}')">Rétablir</button></div>`;
+        `<button class="drawer-btn" onclick="restoreSummaryItem('${id}')">Rétablir</button></div>`;
     } else {
       const full = e.summary || '';
       const extrait = full.slice(0, 150);
@@ -1147,7 +1183,7 @@ function renderSummaryList() {
         `<div class="mem-header">` +
         `<div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
         `<div class="mem-sub">${escHtml(date)}</div></div>` +
-        `<button class="mem-btn danger" onclick="event.stopPropagation();deleteSummaryItem('${id}')">Supprimer</button>` +
+        `<button class="drawer-btn danger" onclick="event.stopPropagation();deleteSummaryItem('${id}')">Supprimer</button>` +
         `</div>` +
         `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
         `<div class="mem-full">${escHtml(full)}${kws}</div>`;
@@ -1210,48 +1246,388 @@ function closeTools() {
   $('tools-backdrop').classList.remove('show');
 }
 
+// Sous-drawer « Voir les outils exposés » : groupé par namespace (cf. D2), nom NU
+// affiché sous l'en-tête du préfixe. Projection pure du nom canonique — rien n'est
+// stocké : groupByNamespace splitte sur le 1er `__`. ask_confirmation (hors
+// registre mais déclaré au modèle) est ajouté sous le namespace miaou pour info.
 function renderToolsList() {
   const wrap = $('tools-list');
-  const defs = toolDefinitions();
-  if (!defs.length) {
+  const list = exposedTools().concat([{
+    name: ASK_CONFIRMATION_DEF.function.name,
+    description: ASK_CONFIRMATION_DEF.function.description,
+    inputSchema: ASK_CONFIRMATION_DEF.function.parameters,
+  }]);
+  const groups = groupByNamespace(list);
+  if (!groups.length) {
     wrap.innerHTML = '<div class="mem-empty">Aucun outil enregistré.</div>';
     return;
   }
   wrap.innerHTML = '';
-  for (const d of defs) {
-    const fn = d.function;
-    const props = (fn.parameters && fn.parameters.properties) || {};
-    const req = (fn.parameters && fn.parameters.required) || [];
-    const paramNames = Object.keys(props);
-
-    const item = document.createElement('div');
-    item.className = 'tool-item';
-
-    let paramsHtml = '';
-    if (paramNames.length) {
-      paramsHtml = '<div class="tool-params">' +
-        paramNames.map(p => {
-          const prop = props[p];
-          const optional = !req.includes(p);
-          return '<div class="tool-param">' +
-            '<span class="tool-param-name">' + escHtml(p) + '</span>' +
-            '<span class="tool-param-type">' + escHtml((prop.type || '') + (optional ? '?' : '')) + '</span>' +
-            (prop.description ? '<span class="tool-param-desc">— ' + escHtml(prop.description) + '</span>' : '') +
-            '</div>';
-        }).join('') +
-        '</div>';
-    }
-
-    item.innerHTML =
-      '<div class="tool-name">' + escHtml(fn.name) + '</div>' +
-      '<div class="tool-desc">' + escHtml(fn.description) + '</div>' +
-      paramsHtml;
-    wrap.appendChild(item);
+  for (const g of groups) {
+    const header = document.createElement('div');
+    header.className = 'tool-ns';
+    header.textContent = g.namespace;   // donnée locale, mais textContent par principe
+    wrap.appendChild(header);
+    for (const t of g.tools) wrap.appendChild(buildToolItem(t.bareName, t.def));
   }
 }
 
+function buildToolItem(bareName, def) {
+  const props = (def.inputSchema && def.inputSchema.properties) || {};
+  const req = (def.inputSchema && def.inputSchema.required) || [];
+  const paramNames = Object.keys(props);
+
+  const item = document.createElement('div');
+  item.className = 'tool-item';
+
+  let paramsHtml = '';
+  if (paramNames.length) {
+    paramsHtml = '<div class="tool-params">' +
+      paramNames.map(p => {
+        const prop = props[p];
+        const optional = !req.includes(p);
+        return '<div class="tool-param">' +
+          '<span class="tool-param-name">' + escHtml(p) + '</span>' +
+          '<span class="tool-param-type">' + escHtml((prop.type || '') + (optional ? '?' : '')) + '</span>' +
+          (prop.description ? '<span class="tool-param-desc">— ' + escHtml(prop.description) + '</span>' : '') +
+          '</div>';
+      }).join('') +
+      '</div>';
+  }
+
+  item.innerHTML =
+    '<div class="tool-name">' + escHtml(bareName) + '</div>' +
+    '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
+    paramsHtml;
+  return item;
+}
+
+// ── Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3) ───────────────────
+function openMcpServers() {
+  renderMcpServers();
+  $('mcp-drawer').classList.add('show');
+  $('mcp-backdrop').classList.add('show');
+}
+function closeMcpServers() {
+  $('mcp-drawer').classList.remove('show');
+  $('mcp-backdrop').classList.remove('show');
+}
+function renderMcpServersIfOpen() {
+  if ($('mcp-drawer') && $('mcp-drawer').classList.contains('show')) renderMcpServers();
+}
+
+function renderMcpServers() {
+  const wrap = $('mcp-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const servers = loadMcpServers();
+  if (!servers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucun serveur MCP. Ajoute un backend pour déléguer des appels d\'outils.';
+    wrap.appendChild(empty);
+  } else {
+    for (const s of servers) wrap.appendChild(buildMcpCard(s, false));
+  }
+}
+
+// Ajoute une carte vierge (nouveau serveur) en tête de liste, transport deviné
+// au fil de la saisie d'URL (pré-remplissage, jamais override — cf. D4).
+function addMcpServerCard() {
+  const wrap = $('mcp-list');
+  if (!wrap) return;
+  const empty = wrap.querySelector('.mem-empty');
+  if (empty) empty.remove();
+  wrap.insertBefore(buildMcpCard({
+    name: '', url: '', transport: '', enabled: true,
+    authorization_token: '', timeout: 30000, toolAllowlist: [], toolDenylist: [],
+  }, true), wrap.firstChild);
+}
+
+function showMcpCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.mcp-err');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+
+function mcpField(labelText, inputEl, hintText) {
+  const field = document.createElement('div');
+  field.className = 'mcp-field';
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  field.appendChild(label);
+  field.appendChild(inputEl);
+  if (hintText) {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = hintText;
+    field.appendChild(hint);
+  }
+  return field;
+}
+
+function buildMcpCard(server, isNew) {
+  const card = document.createElement('div');
+  card.className = 'mcp-card' + (isNew ? ' is-editing' : '');
+  const originalName = server.name || '';
+
+  // ── SECTION VUE ───────────────────────────────────────────────────────────
+  const viewSection = document.createElement('div');
+  viewSection.className = 'mcp-view';
+
+  const viewName = document.createElement('div');
+  viewName.className = 'mcp-view-name';
+  viewName.textContent = server.name || '';
+  viewSection.appendChild(viewName);
+
+  const viewUrl = document.createElement('div');
+  viewUrl.className = 'mcp-view-url';
+  viewUrl.textContent = server.url || '';
+  viewSection.appendChild(viewUrl);
+
+  const viewRow = document.createElement('div');
+  viewRow.className = 'mcp-view-row';
+
+  // Toggle en mode vue (class distincte — onSaveMcpCard lit .mcp-enabled dans la section édition)
+  const viewToggleLabel = document.createElement('label');
+  viewToggleLabel.className = 'mcp-view-toggle-label';
+  const viewToggleWrap = document.createElement('label');
+  viewToggleWrap.className = 'toggle';
+  const viewEnabledI = document.createElement('input');
+  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'mcp-enabled-view';
+  viewEnabledI.checked = server.enabled !== false;
+  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
+  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
+  viewToggleWrap.append(viewEnabledI, viewTrack, viewThumb);
+  const viewEnabledTxt = document.createElement('span');
+  viewEnabledTxt.textContent = 'Activé';
+  viewToggleLabel.append(viewToggleWrap, viewEnabledTxt);
+  viewRow.appendChild(viewToggleLabel);
+
+  // Pill de statut — masquée si désactivé
+  const viewStatus = document.createElement('div');
+  viewStatus.className = 'mcp-status';
+  if (!isNew && server.enabled !== false) {
+    const st = getMcpStatus(originalName);
+    if (st) {
+      if (st.state === 'ok') { viewStatus.classList.add('ok'); viewStatus.textContent = '● Connecté — ' + st.count + ' outil' + (st.count > 1 ? 's' : ''); }
+      else if (st.state === 'connecting') { viewStatus.textContent = '● connexion…'; }
+      else { viewStatus.classList.add('err'); viewStatus.textContent = '● injoignable' + (st.error ? ' : ' + st.error : ''); }
+    }
+  }
+  viewRow.appendChild(viewStatus);
+
+  // Bouton Modifier — pattern .drawer-btn de la gestion des souvenirs
+  const modBtn = document.createElement('button');
+  modBtn.className = 'drawer-btn';
+  modBtn.textContent = 'Modifier';
+  modBtn.addEventListener('click', () => card.classList.add('is-editing'));
+  viewRow.appendChild(modBtn);
+
+  viewSection.appendChild(viewRow);
+  card.appendChild(viewSection);
+
+  // Toggle vue : persistance immédiate + reconnexion
+  viewEnabledI.addEventListener('change', async () => {
+    const s = getMcpServer(originalName);
+    if (!s) return;
+    s.enabled = viewEnabledI.checked;
+    upsertMcpServer(s);
+    disconnectMcpServer(originalName);
+    if (s.enabled) {
+      await runBackgroundTask('connexion MCP…', () => connectMcpServer(getMcpServer(originalName)));
+    }
+    renderMcpServers();
+  });
+
+  // ── SECTION ÉDITION ───────────────────────────────────────────────────────
+  const editSection = document.createElement('div');
+  editSection.className = 'mcp-edit';
+
+  const mkInput = (cls, type, value, placeholder) => {
+    const i = document.createElement('input');
+    i.className = cls; i.type = type; i.value = value != null ? value : '';
+    if (placeholder) i.placeholder = placeholder;
+    i.spellcheck = false;
+    return i;
+  };
+
+  const nameI = mkInput('mcp-name', 'text', server.name, 'jira');
+  const urlI  = mkInput('mcp-url', 'text', server.url, 'https://host/mcp');
+  const transportSel = document.createElement('select');
+  transportSel.className = 'mcp-transport';
+  for (const opt of ['streamable-http', 'sse']) {
+    const o = document.createElement('option');
+    o.value = opt; o.textContent = opt + (opt === 'sse' ? ' (différé)' : '');
+    transportSel.appendChild(o);
+  }
+  transportSel.value = server.transport || 'streamable-http';
+  // Transport explicite (serveur existant) → marqué « touché » pour que la
+  // devinette d'URL ne l'écrase jamais (D4). Vierge → devinette active.
+  if (server.transport) transportSel.dataset.touched = '1';
+  transportSel.addEventListener('change', () => { transportSel.dataset.touched = '1'; });
+  urlI.addEventListener('input', () => {
+    if (!transportSel.dataset.touched) transportSel.value = guessMcpTransport(urlI.value);
+  });
+
+  const tokenI = mkInput('mcp-token', 'password', server.authorization_token, 'Bearer (optionnel)');
+  const tmoI = mkInput('mcp-timeout', 'number', server.timeout || 30000, '30000');
+  const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
+  const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
+
+  editSection.appendChild(mcpField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
+  editSection.appendChild(mcpField('URL', urlI));
+  editSection.appendChild(mcpField('Transport', transportSel));
+  editSection.appendChild(mcpField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
+  editSection.appendChild(mcpField('Timeout (ms)', tmoI));
+  editSection.appendChild(mcpField('Outils autorisés', allowI));
+  editSection.appendChild(mcpField('Outils masqués', denyI));
+
+  // Toggle en mode édition — composant .toggle réutilisé verbatim
+  const editEnabledWrap = document.createElement('label');
+  editEnabledWrap.className = 'mcp-enabled-row';
+  const editToggleWrap = document.createElement('label');
+  editToggleWrap.className = 'toggle';
+  const editEnabledI = document.createElement('input');
+  editEnabledI.type = 'checkbox'; editEnabledI.className = 'mcp-enabled'; editEnabledI.checked = server.enabled !== false;
+  const editTrack = document.createElement('span'); editTrack.className = 'track';
+  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
+  editToggleWrap.append(editEnabledI, editTrack, editThumb);
+  const editEnabledTxt = document.createElement('span');
+  editEnabledTxt.textContent = 'Activé';
+  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
+  editSection.appendChild(editEnabledWrap);
+
+  // Toggle showCalls — affiche les lignes d'appel MCP dans le thread
+  const showCallsWrap = document.createElement('label');
+  showCallsWrap.className = 'mcp-enabled-row';
+  const showCallsToggleWrap = document.createElement('label');
+  showCallsToggleWrap.className = 'toggle';
+  const showCallsI = document.createElement('input');
+  showCallsI.type = 'checkbox'; showCallsI.className = 'mcp-show-calls'; showCallsI.checked = server.showCalls !== false;
+  const showCallsTrack = document.createElement('span'); showCallsTrack.className = 'track';
+  const showCallsThumb = document.createElement('span'); showCallsThumb.className = 'thumb';
+  showCallsToggleWrap.append(showCallsI, showCallsTrack, showCallsThumb);
+  const showCallsTxt = document.createElement('span');
+  showCallsTxt.textContent = 'Afficher les appels dans le thread';
+  showCallsWrap.append(showCallsToggleWrap, showCallsTxt);
+  editSection.appendChild(showCallsWrap);
+
+  const err = document.createElement('div');
+  err.className = 'mcp-err'; err.setAttribute('hidden', '');
+  editSection.appendChild(err);
+
+  const actions = document.createElement('div');
+  actions.className = 'mcp-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'drawer-btn primary mcp-save'; saveBtn.textContent = 'Enregistrer';
+  saveBtn.addEventListener('click', () => onSaveMcpCard(card, originalName));
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'drawer-btn mcp-cancel'; cancelBtn.textContent = 'Annuler';
+  cancelBtn.addEventListener('click', () => { if (isNew) card.remove(); else card.classList.remove('is-editing'); });
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  if (!isNew) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'drawer-btn danger mcp-del'; delBtn.textContent = 'Supprimer';
+    delBtn.addEventListener('click', () => onDeleteMcpCard(card, originalName));
+    actions.appendChild(delBtn);
+  }
+  editSection.appendChild(actions);
+
+  card.appendChild(editSection);
+  return card;
+}
+
+// ── Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8) ────
+// Placés DANS la bulle assistant, avant le corps (comme les acks). Éphémères :
+// jamais persistés (cf. D8), disparaissent au reload. DOM-safe : textContent ou
+// attributs (img src en data-URI) ; aucun markup modèle injecté en innerHTML.
+function placeToolBlocks(wrap, blocks) {
+  const body = wrap && wrap.querySelector('.body');
+  for (const b of (blocks || [])) {
+    const node = renderToolBlock(b);
+    if (!node) continue;
+    if (body) wrap.insertBefore(node, body);
+    else if (wrap) wrap.appendChild(node);
+  }
+  scrollBottom();
+}
+
+function renderToolBlock(block) {
+  const box = document.createElement('div');
+  box.className = 'tool-block';
+  // 1. image base64 → <img> data-URI (DOM-safe, aucun markup injecté).
+  if (block && block.type === 'image' && block.data) {
+    const img = document.createElement('img');
+    img.className = 'tool-block-img';
+    img.src = 'data:' + (block.mimeType || 'image/png') + ';base64,' + block.data;
+    img.alt = 'Image renvoyée par un outil';
+    box.appendChild(img);
+    return box;
+  }
+  // 2. resource text-like → bloc de code surligné (Prism lazy), via textContent.
+  const r = block && block.resource;
+  if (block && block.type === 'resource' && r && r.text != null) {
+    return renderResourceText(box, r);
+  }
+  // 3. binaire / inconnu → téléchargement éphémère (rien n'est persisté).
+  return renderBinaryBlock(box, block);
+}
+
+function renderResourceText(box, resource) {
+  box.classList.add('tool-block-code');   // conteneur pleine largeur → rendu identique au bloc assistant
+  const lang = mimeToLang(resource.mimeType);
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  if (lang) code.className = 'language-' + lang;
+  code.textContent = String(resource.text);   // frontière XSS : jamais innerHTML
+  pre.appendChild(code);
+  box.appendChild(pre);
+  // Même chrome que les blocs de code des messages assistant : on construit le
+  // <pre><code> à la main (pas de markdown ici), puis on le confie aux DEUX helpers
+  // partagés — decoratePre (header + boutons copier/télécharger) et highlightUnder
+  // (Prism, garde highlightEnabled incluse). Aucun wrapper réinventé, aucun 3e chemin.
+  decoratePre(box);
+  highlightUnder(box);
+  return box;
+}
+
+function renderBinaryBlock(box, block) {
+  const b64 = (block && (block.data || (block.resource && block.resource.blob))) || '';
+  const mime = (block && (block.mimeType || (block.resource && block.resource.mimeType))) || 'application/octet-stream';
+  const uri = (block && block.resource && block.resource.uri) || '';
+  const fname = ((uri.split('/').pop() || '').split('?')[0]) || 'piece-jointe';
+  box.classList.add('tool-block-binary');
+  const label = document.createElement('span');
+  label.className = 'tool-block-label';
+  label.textContent = 'Pièce jointe : ' + fname + ' (' + mime + ')';
+  const btn = document.createElement('button');
+  btn.className = 'tool-block-dl';
+  btn.textContent = 'Télécharger';
+  btn.addEventListener('click', () => {
+    try { downloadFile(fname, b64ToBytes(b64), mime); }   // Blob éphémère, rien persisté
+    catch (e) { /* base64 invalide : rien à offrir */ }
+  });
+  box.appendChild(label);
+  box.appendChild(btn);
+  return box;
+}
+
+function mimeToLang(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.indexOf('json') >= 0) return 'json';
+  if (m.indexOf('javascript') >= 0) return 'javascript';
+  if (m.indexOf('html') >= 0) return 'html';
+  if (m.indexOf('css') >= 0) return 'css';
+  if (m.indexOf('xml') >= 0) return 'xml';
+  if (m.indexOf('yaml') >= 0 || m.indexOf('yml') >= 0) return 'yaml';
+  if (m.indexOf('markdown') >= 0) return 'markdown';
+  if (m.indexOf('python') >= 0) return 'python';
+  return '';
+}
+
 function setMemItemLoading(item, label) {
-  const btn = item.querySelector('.mem-btn');
+  const btn = item.querySelector('.drawer-btn');
   if (!btn) return;
   btn.disabled = true;
   btn.classList.add('loading');
@@ -1268,7 +1644,7 @@ function renderMemoryList() {
   addArea.className = 'mem-add';
   addArea.innerHTML =
     '<textarea class="mem-add-input" id="mem-add-input" rows="2" placeholder="Nouveau souvenir…"></textarea>' +
-    '<button class="mem-btn mem-add-btn" onclick="addMemoryEntry()">Ajouter</button>';
+    '<button class="drawer-btn mem-add-btn" onclick="addMemoryEntry()">Ajouter</button>';
   wrap.appendChild(addArea);
 
   const all = loadMemories().sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
@@ -1289,24 +1665,24 @@ function renderMemoryList() {
     if (e.suppressed) {
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div>` +
-        `<div class="mem-btns">` +
-        `<button class="mem-btn" onclick="restoreMemoryEntry('${e.id}')">Rétablir</button>` +
-        `<button class="mem-btn danger" onclick="forgetMemoryEntry('${e.id}')">Oublier</button>` +
+        `<div class="drawer-btns">` +
+        `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}')">Rétablir</button>` +
+        `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}')">Oublier</button>` +
         `</div></div>` +
         `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
     } else {
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
-        `<div class="mem-btns" id="mem-btns-${e.id}">` +
-        `<button class="mem-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
-        `<button class="mem-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
+        `<div class="drawer-btns" id="drawer-btns-${e.id}">` +
+        `<button class="drawer-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
+        `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
         `</div></div>` +
         `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
         `<div class="mem-edit-wrap hidden" id="mem-edit-${e.id}">` +
         `<textarea class="mem-edit-input" id="mem-edit-input-${e.id}">${escHtml(e.content || '')}</textarea>` +
         `<div class="mem-edit-actions">` +
-        `<button class="mem-btn primary" onclick="saveMemoryEntryEdit('${e.id}')">Enregistrer</button>` +
-        `<button class="mem-btn" onclick="cancelMemoryEntryEdit('${e.id}')">Annuler</button>` +
+        `<button class="drawer-btn primary" onclick="saveMemoryEntryEdit('${e.id}')">Enregistrer</button>` +
+        `<button class="drawer-btn" onclick="cancelMemoryEntryEdit('${e.id}')">Annuler</button>` +
         `</div></div>`;
     }
     wrap.appendChild(item);
@@ -1327,7 +1703,7 @@ function restoreMemoryEntry(id) { restoreMemory(id); renderMemoryList(); }
 function forgetMemoryEntry(id) { forgetMemory(id); renderMemoryList(); }
 
 function startEditMemoryEntry(id) {
-  const btns = $('mem-btns-' + id);
+  const btns = $('drawer-btns-' + id);
   const contentEl = $('mem-content-' + id);
   const editWrap = $('mem-edit-' + id);
   if (btns) btns.classList.add('hidden');
@@ -1338,7 +1714,7 @@ function startEditMemoryEntry(id) {
 }
 
 function cancelMemoryEntryEdit(id) {
-  const btns = $('mem-btns-' + id);
+  const btns = $('drawer-btns-' + id);
   const editWrap = $('mem-edit-' + id);
   const contentEl = $('mem-content-' + id);
   if (btns) btns.classList.remove('hidden');

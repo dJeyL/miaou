@@ -111,7 +111,8 @@ function buildSystemMessage() {
   const sysUser = (loadSettings().systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
   if (TOOLS.length) {
-    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+    parts.push(toolsDoctrinePrompt());   // comportement transverse, TOUJOURS injecté
+    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());   // énumération, sous toggle
     parts.push(memoryDoctrinePrompt());
   }
   return { role: 'system', content: parts.join('\n\n---\n\n') };
@@ -131,6 +132,9 @@ function openConversation(id) {
       if (m.prevContent != null) a.prevContent = m.prevContent;
       if (m.title != null)       a.title = m.title;
       if (m.count != null)       a.count = m.count;
+      if (m.server != null)      a.server = m.server;
+      if (m.name != null)        a.name = m.name;
+      if (m.error)               a.error = true;
       if (m.resolved)            a.resolved = true;
       return a;
     }
@@ -258,6 +262,9 @@ function persistCurrent() {
       if (m.prevContent != null) o.prevContent = m.prevContent;
       if (m.title != null)       o.title = m.title;
       if (m.count != null)       o.count = m.count;
+      if (m.server != null)      o.server = m.server;     // mcp_call : identité serveur (filtre showCalls)
+      if (m.name != null)        o.name = m.name;         // mcp_call : nom complet pour le breadcrumb
+      if (m.error)               o.error = true;          // mcp_call : appel en erreur
       if (m.resolved)            o.resolved = true;
       return o;
     }
@@ -329,6 +336,56 @@ function onSaveSettings() {
 async function prefetchModels() {
   try { await loadModelsCached(); } catch (e) { /* sélecteur masqué */ }
   syncModelUI();
+}
+
+// ── Serveurs MCP distants : orchestration ────────────────────────────────────
+// Connecte (handshake + tools/list) tous les serveurs activés. Fire-and-forget,
+// encadré par l'indicateur d'activité. Échec d'un serveur = dégradation gracieuse
+// (ses outils n'apparaissent pas), les autres tiennent (cf. D10).
+async function reconnectMcpServers() {
+  const servers = listEnabledMcpServers();   // storage.js
+  if (!servers.length) return;
+  await runBackgroundTask('connexion MCP…', () => Promise.all(servers.map(s => connectMcpServer(s))));
+  renderMcpServersIfOpen();
+}
+
+// Persiste une carte serveur (valide → upsert → (re)connecte → re-rend). Lié par
+// addEventListener dans buildMcpCard (closure : carte + nom d'origine).
+async function onSaveMcpCard(cardEl, originalName) {
+  const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
+  const name = get('.mcp-name').trim();
+  const others = loadMcpServers().map(s => s.name).filter(n => n !== originalName);
+  const nameErr = validateMcpServerName(name, others);
+  if (nameErr) { showMcpCardError(cardEl, nameErr); return; }
+  const url = get('.mcp-url').trim();
+  if (!url) { showMcpCardError(cardEl, 'URL requise.'); return; }
+  const enabledEl = cardEl.querySelector('.mcp-enabled');
+  const tmoRaw = parseInt(get('.mcp-timeout'), 10);
+  const showCallsEl = cardEl.querySelector('.mcp-show-calls');
+  const server = {
+    name, url,
+    transport: get('.mcp-transport') || 'streamable-http',
+    enabled: enabledEl ? enabledEl.checked : true,
+    authorization_token: get('.mcp-token'),
+    timeout: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : 30000,
+    toolAllowlist: parseToolFilterList(get('.mcp-allow')),
+    toolDenylist: parseToolFilterList(get('.mcp-deny')),
+    showCalls: showCallsEl ? showCallsEl.checked : true,
+  };
+  // Renommage : l'identité est le `name`, on retire l'ancienne entrée + cache.
+  if (originalName && originalName !== name) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
+  upsertMcpServer(server);
+  disconnectMcpServer(name);
+  renderMcpServers();
+  if (server.enabled) {
+    await runBackgroundTask('connexion MCP…', () => connectMcpServer(getMcpServer(name)));
+    renderMcpServers();
+  }
+}
+
+async function onDeleteMcpCard(cardEl, originalName) {
+  if (originalName) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
+  renderMcpServers();
 }
 
 // ── Flux d'envoi ────────────────────────────────────────────────────────────
@@ -428,6 +485,10 @@ async function dispatchSend(matches) {
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
   let wrap = startAssistantMessage(model);
+  // Acks MCP pré-rendus (avant await réseau) : { ack: descripteur brut, entry:
+  // entrée currentThread, node: nœud DOM }. Stockés ici pour que onToolAcks
+  // puisse rétro-appliquer la classe d'erreur si ack.error a été posé après l'await.
+  let earlyRendered = [];
   setSending(true);
   try {
     await runConversation(apiMessages, {
@@ -449,6 +510,24 @@ async function dispatchSend(matches) {
           resetAssistant(wrap);
         }
       },
+      // Vidange ANTICIPÉE des acks MCP poussés de manière synchrone par
+      // callRemoteTool AVANT son premier await. Appelé par api.js juste après le
+      // démarrage de callTool() et AVANT l'await, pour que la ligne s'affiche
+      // pendant le round-trip réseau (pas seulement après). Les acks des outils
+      // internes (synchrones) ne sont jamais ici — ils arrivent dans onToolAcks.
+      onEarlyAcks: () => {
+        const pending = getPendingToolAcks();
+        clearPendingToolAcks();
+        for (const ack of pending) {
+          const entry = { role: 'tool-ack', kind: ack.kind };
+          if (ack.server != null) entry.server = ack.server;
+          if (ack.name != null)   entry.name = ack.name;
+          currentThread.push(entry);
+          const node = placeToolAck(wrap, entry);
+          earlyRendered.push({ ack, entry, node });
+        }
+        scrollBottom();
+      },
       // Vidange des acks d'outils APRÈS l'exécution des outils d'un tour, donc
       // AVANT la réponse finale : ils sont la provenance de la réponse et doivent
       // la précéder. Placés DANS la bulle assistant (`wrap`), entre l'en-tête
@@ -456,6 +535,24 @@ async function dispatchSend(matches) {
       // placeToolAck. Pas de persistCurrent ici (mutation mémoire + DOM seulement) :
       // l'unique écriture de l'échange a lieu dans onFinal.
       onToolAcks: () => {
+        // Rétro-application de l'état d'erreur sur les acks MCP déjà rendus : après
+        // l'await réseau, callRemoteTool a pu poser ack.error = true sur le descripteur
+        // brut. On met à jour l'entrée currentThread et le nœud DOM si présent.
+        for (const { ack, entry, node } of earlyRendered) {
+          if (ack.error && !entry.error) {
+            entry.error = true;
+            if (node) {
+              node.classList.add('ack-error');
+              const lbl = node.querySelector('.ack-label');
+              if (lbl) {
+                lbl.textContent = '';
+                ACK_KINDS.mcp_call.renderLabel(entry, lbl);
+              }
+            }
+          }
+        }
+        earlyRendered = [];
+
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -468,6 +565,12 @@ async function dispatchSend(matches) {
           currentThread.push(entry);
           placeToolAck(wrap, entry);
         }
+        // Blocs NON-text renvoyés par un outil distant (image/resource/binaire) :
+        // rendus DANS la bulle courante via la cascade D8, purement éphémères —
+        // jamais poussés dans currentThread ni persistés (cf. D8).
+        const blocks = getPendingToolBlocks();
+        clearPendingToolBlocks();
+        if (blocks.length) placeToolBlocks(wrap, blocks);
         scrollBottom();
       },
       onFinal: (content, reasoning) => {
@@ -643,8 +746,9 @@ function init() {
     }
   });
 
-  prefetchModels();   // liste des modèles (cache session) → sélecteur composer
-  runBackfill();      // auto-gardé sur la présence d'URL
+  prefetchModels();      // liste des modèles (cache session) → sélecteur composer
+  reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
+  runBackfill();         // auto-gardé sur la présence d'URL
 }
 
 if (typeof __TEST_ENV__ === 'undefined') {

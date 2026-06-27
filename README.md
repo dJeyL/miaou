@@ -49,6 +49,22 @@ l'interface, JetBrains Mono pour le code.
   annulable pour les écritures mémoire, informative pour les lectures
   d'historique.
 
+**Outils distants (MCP)**
+
+- MIAOU est un **client/agrégateur MCP** : en plus de ses outils internes, il
+  délègue les appels qu'il ne sait pas servir à un ou plusieurs serveurs MCP
+  distants (HTTP). Pour le modèle il n'y a qu'**un seul registre** ; l'origine de
+  chaque outil (interne `miaou__…` vs distant `serveur__…`) est invisible.
+- Configuration dans un sous-écran dédié (Paramètres → Serveurs MCP) : cartes
+  éditables avec nom (= préfixe), URL, transport (`streamable-http`), jeton bearer
+  optionnel, timeout, et listes blanche/noire d'outils. Un serveur injoignable est
+  simplement ignoré, le reste continue de fonctionner.
+- Les résultats non-textuels d'un outil distant (image, ressource, binaire) sont
+  rendus dans la réponse : image inline, code surligné, ou téléchargement éphémère.
+- Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
+  navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
+  détient le secret côté serveur.
+
 **Réglages**
 
 - URL, clef, modèle (liste via l'API), prompt système, thème, coloration, mode
@@ -114,6 +130,17 @@ pip install -r requirements-dev.txt
 python tests/runner.py
 ```
 
+Pour exercer la délégation MCP distante (chemin réseau, non couvert par QuickJS),
+un petit serveur MCP de banc d'essai est fourni — outils texte, image et ressource
+JSON, CORS ouvert :
+
+```bash
+uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
+```
+
+Puis l'ajouter dans Paramètres → Serveurs MCP. Procédure détaillée dans
+[tests/MANUAL.md](tests/MANUAL.md).
+
 ## Architecture
 
 ```
@@ -123,7 +150,7 @@ src/
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
     ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
-    ├── tools.js       registre additif d'outils exposés au LLM
+    ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC
     ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
     ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs
     └── main.js        init, backfill, câblage, construction du contexte d'appel

@@ -299,9 +299,16 @@ async function runConversation(messages, hooks) {
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
         } else {
-          bgActivityStart('mémoire…');
+          bgActivityStart('outil…');
           try {
-            out = runTool(tc.function.name, args);
+            // Pour les outils distants, callRemoteTool pousse l'ack dans
+            // _pendingToolAcks de manière synchrone (avant son premier await).
+            // On démarre l'appel, on vide immédiatement les acks en attente
+            // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
+            // le round-trip réseau, pas seulement après.
+            const toolPromise = callTool(tc.function.name, args);
+            if (h.onEarlyAcks) h.onEarlyAcks();
+            out = flattenToolResult(await toolPromise);
             servedKeys.add(key);
           } finally {
             bgActivityEnd();

@@ -60,6 +60,72 @@ function saveSettings(obj) {
   return next;
 }
 
+// ── Serveurs MCP distants ─────────────────────────────────────────────────────
+// Configuration des backends MCP délégués (cf. brief D3). Tableau d'objets :
+//   { name, url, transport, enabled, authorization_token?, timeout,
+//     toolAllowlist?, toolDenylist? }
+// `name` est le préfixe d'outil (unique, charset contraint, `miaou` interdit).
+// Le token est stocké EN CLAIR (posture assumée non-prod, cf. D6) : tout ce que
+// JS peut lire, un XSS le peut ; un chiffrement client a besoin d'une clef
+// client, donc ne protège pas le secret. Le correctif prod est un proxy
+// (token côté serveur), hors périmètre V2.
+const MCP_SERVERS_KEY = 'miaou-mcp-servers';
+
+const MCP_DEFAULT_TIMEOUT = 30000;   // ms (cf. D3/D5) ; éditable par serveur
+
+function loadMcpServers() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(MCP_SERVERS_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveMcpServers(arr) {
+  localStorage.setItem(MCP_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  return arr;
+}
+
+// Normalise un serveur saisi : défauts de transport/timeout/enabled, filtres en
+// tableaux de noms nus. Ne valide PAS le nom (cf. validateMcpServerName, utils).
+function normalizeMcpServer(s) {
+  const o = s || {};
+  return {
+    name: String(o.name || '').trim(),
+    url: String(o.url || '').trim(),
+    transport: o.transport === 'sse' ? 'sse' : 'streamable-http',
+    enabled: o.enabled !== false,
+    authorization_token: o.authorization_token ? String(o.authorization_token) : '',
+    timeout: (typeof o.timeout === 'number' && o.timeout > 0) ? o.timeout : MCP_DEFAULT_TIMEOUT,
+    toolAllowlist: Array.isArray(o.toolAllowlist) ? o.toolAllowlist : [],
+    toolDenylist: Array.isArray(o.toolDenylist) ? o.toolDenylist : [],
+    showCalls: o.showCalls !== false,
+  };
+}
+
+// Insère ou remplace un serveur par `name` (clé d'identité). Retourne le tableau.
+function upsertMcpServer(server) {
+  const next = normalizeMcpServer(server);
+  const arr = loadMcpServers();
+  const i = arr.findIndex(s => s.name === next.name);
+  if (i >= 0) arr[i] = next; else arr.push(next);
+  saveMcpServers(arr);
+  return arr;
+}
+
+function deleteMcpServer(name) {
+  const arr = loadMcpServers().filter(s => s.name !== name);
+  saveMcpServers(arr);
+  return arr;
+}
+
+function getMcpServer(name) {
+  return loadMcpServers().find(s => s.name === name) || null;
+}
+
+function listEnabledMcpServers() {
+  return loadMcpServers().filter(s => s.enabled !== false && s.url);
+}
+
 // ── Conversations ───────────────────────────────────────────────────────────
 // Stockage simple : un tableau d'objets { id, title, timestamp, messages }.
 
