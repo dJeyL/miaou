@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS = {
   showModelSelector: false, // sélecteur de modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
+  saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────

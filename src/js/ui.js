@@ -1096,6 +1096,7 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  $('set-save-json').checked = !!s.saveJsonResponses;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');

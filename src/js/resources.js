@@ -340,7 +340,7 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
 //   "présentée" pour que le modèle sache que la ressource est déjà affichée.
 // Les blocs D8 restent dans _pendingToolBlocks pour le rendu visuel immédiat.
 // Appelé depuis api.js après await callTool, avant flattenToolResult.
-async function internResourcesFromResult(result, conversationId, now, rand) {
+async function internResourcesFromResult(result, conversationId, now, rand, saveInline) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
   const theRand = (typeof rand === 'function') ? rand : Math.random;
@@ -367,20 +367,26 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
           r.mimeType || 'application/octet-stream', name,
           base64ToArrayBuffer(r.blob), 'binary', conversationId, theNow, theRand);
       } else if (r.text != null) {
-        // Texte/JSON : stocker en IDB (persistance, accès via present_resource).
-        // Le modèle reçoit le contenu brut + le descripteur avec l'ID (pour
-        // qu'il puisse appeler present_resource si besoin), sans note « présentée ».
-        // Retire le bloc du queue D8 — pas d'affichage automatique côté UI.
-        const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
-          utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
+        // Texte/JSON : retire le bloc du queue D8 — pas d'affichage automatique
+        // côté UI (vrai quel que soit le réglage).
         if (typeof retainPendingToolBlocks === 'function') {
           retainPendingToolBlocks(b =>
             !(b.type === 'resource' && b.resource != null &&
               b.resource.text != null && b.resource.blob == null));
         }
-        const rec = storedId ? getCachedRecord(storedId) : null;
-        const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
-        newContent.push({ type: 'text', text: r.text + desc });
+        if (saveInline) {
+          // Stocker en IDB (persistance, accès via present_resource). Le modèle
+          // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
+          // appeler present_resource si besoin), sans note « présentée ».
+          const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
+            utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
+          const rec = storedId ? getCachedRecord(storedId) : null;
+          const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
+          newContent.push({ type: 'text', text: r.text + desc });
+        } else {
+          // Réglage désactivé : le modèle reçoit le texte brut, sans ressource ni ID.
+          newContent.push({ type: 'text', text: r.text });
+        }
         continue;
       }
     }

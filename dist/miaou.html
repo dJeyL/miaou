@@ -1902,6 +1902,17 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
             <span class="thumb"></span>
           </label>
         </div>
+        <div class="check-row">
+          <div class="label-col">
+            <label>Enregistrer les réponses JSON</label>
+            <span class="hint">Crée des ressources pour faciliter le debugging.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-save-json">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
         <button class="btn-ghost" onclick="openTools()">Voir les outils exposés</button>
       </div>
       <div class="field">
@@ -1977,7 +1988,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-28 07:21 UTC */
+/* miaou — built: 2026-06-28 07:35 UTC */
 
 
 /* ── utils.js ── */
@@ -2385,7 +2396,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782631261}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782632154}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -2404,6 +2415,7 @@ const DEFAULT_SETTINGS = {
   showModelSelector: false, // sélecteur de modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
+  saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -3025,7 +3037,7 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
 //   "présentée" pour que le modèle sache que la ressource est déjà affichée.
 // Les blocs D8 restent dans _pendingToolBlocks pour le rendu visuel immédiat.
 // Appelé depuis api.js après await callTool, avant flattenToolResult.
-async function internResourcesFromResult(result, conversationId, now, rand) {
+async function internResourcesFromResult(result, conversationId, now, rand, saveInline) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
   const theRand = (typeof rand === 'function') ? rand : Math.random;
@@ -3052,20 +3064,26 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
           r.mimeType || 'application/octet-stream', name,
           base64ToArrayBuffer(r.blob), 'binary', conversationId, theNow, theRand);
       } else if (r.text != null) {
-        // Texte/JSON : stocker en IDB (persistance, accès via present_resource).
-        // Le modèle reçoit le contenu brut + le descripteur avec l'ID (pour
-        // qu'il puisse appeler present_resource si besoin), sans note « présentée ».
-        // Retire le bloc du queue D8 — pas d'affichage automatique côté UI.
-        const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
-          utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
+        // Texte/JSON : retire le bloc du queue D8 — pas d'affichage automatique
+        // côté UI (vrai quel que soit le réglage).
         if (typeof retainPendingToolBlocks === 'function') {
           retainPendingToolBlocks(b =>
             !(b.type === 'resource' && b.resource != null &&
               b.resource.text != null && b.resource.blob == null));
         }
-        const rec = storedId ? getCachedRecord(storedId) : null;
-        const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
-        newContent.push({ type: 'text', text: r.text + desc });
+        if (saveInline) {
+          // Stocker en IDB (persistance, accès via present_resource). Le modèle
+          // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
+          // appeler present_resource si besoin), sans note « présentée ».
+          const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
+            utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
+          const rec = storedId ? getCachedRecord(storedId) : null;
+          const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
+          newContent.push({ type: 'text', text: r.text + desc });
+        } else {
+          // Réglage désactivé : le modèle reçoit le texte brut, sans ressource ni ID.
+          newContent.push({ type: 'text', text: r.text });
+        }
         continue;
       }
     }
@@ -4016,7 +4034,8 @@ async function runConversation(messages, hooks) {
             if (typeof internResourcesFromResult === 'function') {
               await internResourcesFromResult(rawResult,
                 typeof currentConvId !== 'undefined' ? currentConvId : null,
-                Date.now, Math.random);
+                Date.now, Math.random,
+                !!loadSettings().saveJsonResponses);
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);
@@ -5227,6 +5246,7 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  $('set-save-json').checked = !!s.saveJsonResponses;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
@@ -6376,6 +6396,7 @@ function onSaveSettings() {
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
+    saveJsonResponses: $('set-save-json').checked,
   };
   saveSettings(obj);
   highlightEnabled = obj.highlight;

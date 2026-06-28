@@ -348,6 +348,7 @@ function onSaveSettings() {
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
+    saveJsonResponses: $('set-save-json').checked,
   };
   saveSettings(obj);
   highlightEnabled = obj.highlight;
