@@ -52,6 +52,14 @@ function renderMd(text) {
   if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
   return marked.parse(text, { breaks: true });
 }
+// Variante pour les messages utilisateur : empêche les balises HTML de traverser
+// vers le DOM (angle-brackets échappés) tout en conservant le markdown.
+// Le `>` est laissé intact pour que les blockquotes fonctionnent.
+function renderUserMd(text) {
+  if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
+  const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return marked.parse(safe, { breaks: true });
+}
 function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
 function scrollBottom() { const m = $('messages'); if (m) m.scrollTop = m.scrollHeight; }
 
@@ -94,7 +102,7 @@ function buildMsg(role, content, model, reasoning, ts) {
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
-      `<div class="body">${renderMd(content)}</div>` +
+      `<div class="body">${renderUserMd(content)}</div>` +
       `</div>` +
       (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
   } else {
@@ -614,7 +622,7 @@ function cancelEdit(wrap, original) {
     `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
     `</button>` +
-    `<div class="body">${renderMd(original)}</div>`;
+    `<div class="body">${renderUserMd(original)}</div>`;
   decoratePre(wrap);
   highlightUnder(wrap);
 }

@@ -319,9 +319,15 @@ function onTitleKey(e) {
   else if (e.key === 'Escape') { e.preventDefault(); e.target.textContent = titleBefore; e.target.blur(); }
 }
 function onTitleBlur(e) {
-  const t = e.target.textContent.trim();
-  document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
-  if (currentConvId && t) {
+  const el = e.target;
+  const t = el.textContent.trim();
+  if (!t) {
+    el.textContent = titleBefore;
+    document.title = (titleBefore || 'Nouvelle conversation') + ' — MIAOU';
+    return;
+  }
+  document.title = t + ' — MIAOU';
+  if (currentConvId) {
     needTitle = false;   // titre fixé manuellement : on ne le régénère plus
     const conv = loadConversation(currentConvId);
     if (conv) { conv.title = t; saveConversation(conv); renderConvList(); }
@@ -702,7 +708,7 @@ function applyGeneratedTitle(convId, title) {
 
 async function maybeTitle() {
   if (!needTitle || !currentConvId) return;
-  if (!currentThread.some(m => m.role === 'assistant')) return;
+  if (!currentThread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
   needTitle = false;
   const convId = currentConvId;                     // figé : l'utilisateur peut naviguer
   const thread = currentThread.slice();
