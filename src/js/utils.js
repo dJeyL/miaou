@@ -149,18 +149,21 @@ function parseToolName(name) {
   return { serverPrefix: s.slice(0, i), toolName: s.slice(i + 2) };
 }
 
-// Regroupe une liste d'outils canoniques `{ name: 'prefix__bare', … }` par
-// namespace, en exposant le nom NU. Projection pure (cf. D2) : rien n'est stocké,
-// le sous-drawer « Voir les outils exposés » dérive l'affichage du nom canonique.
+// Regroupe une liste d'outils canoniques par namespace. Le namespace est formé de
+// TOUS les segments sauf le dernier ; le bareName est uniquement le dernier segment.
+// Ex : `bench__djeyl__echo` → namespace=`bench__djeyl`, bareName=`echo`.
+// Projection pure (cf. D2) : rien n'est stocké, le sous-drawer dérive l'affichage.
 // Retourne [{ namespace, tools: [{ bareName, def }] }] dans l'ordre d'apparition.
 function groupByNamespace(tools) {
   const order = [];
   const map = {};
   for (const def of (tools || [])) {
-    const { serverPrefix, toolName } = parseToolName(def.name);
-    const ns = serverPrefix || 'miaou';
+    const segs = String(def.name || '').split('__').filter(Boolean);
+    const bareName = segs.length > 1 ? segs[segs.length - 1] : (segs[0] || '');
+    const nsKey = segs.length > 1 ? segs.slice(0, -1).join('__') : '';
+    const ns = nsKey || 'miaou';
     if (!map[ns]) { map[ns] = []; order.push(ns); }
-    map[ns].push({ bareName: toolName, def });
+    map[ns].push({ bareName, def });
   }
   return order.map(ns => ({ namespace: ns, tools: map[ns] }));
 }

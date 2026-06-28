@@ -1252,7 +1252,7 @@ body {
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
 /* Séparateur › entre segments du breadcrumb MCP : teinte icône, s'efface devant le texte. */
-.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); margin: 0 2px; }
+.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
 /* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
@@ -1261,8 +1261,8 @@ body {
 /* L'icône s'aligne en haut quand deux niveaux sont affichés. */
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
-.mcp-intent-row { display: flex; align-items: center; gap: 4px; }
-.mcp-intent { flex: 1; }
+.mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.mcp-intent { }
 .mcp-chevron {
   flex-shrink: 0;
   background: none; border: none; padding: 1px; cursor: pointer;
@@ -1272,7 +1272,7 @@ body {
 .mcp-chevron:hover { opacity: 1; }
 .mcp-chevron svg { transition: transform 0.2s; }
 .mcp-chevron.open svg { transform: rotate(180deg); }
-.mcp-breadcrumb-detail { display: block; margin-top: 2px; }
+.mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
 .mcp-breadcrumb-detail[hidden] { display: none; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
@@ -1305,6 +1305,7 @@ body {
   font-weight: 500;
   color: var(--accent);
 }
+.tool-name-sep { color: var(--accent-2); margin: 0 3px; }
 .tool-desc { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
 .tool-params {
   margin-top: 10px;
@@ -1320,6 +1321,7 @@ body {
 .tool-param-desc { font-size: 11px; color: var(--text-3); }
 
 /* En-tête de namespace dans le sous-drawer « Outils exposés » (groupage D2). */
+.tool-ns-group { display: flex; flex-direction: column; gap: 10px; }
 .tool-ns {
   font-family: var(--mono);
   font-size: 11px;
@@ -1327,10 +1329,34 @@ body {
   letter-spacing: .04em;
   text-transform: uppercase;
   color: var(--text-3);
-  margin-top: 6px;
   padding-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
-.tool-ns:first-child { margin-top: 0; }
+.tool-ns-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.tool-ns:hover { color: var(--text-2); }
+.tool-ns:hover .tool-ns-chevron { opacity: 1; }
+.tool-ns-chevron svg { transition: transform 0.2s; }
+.tool-ns-chevron.open svg { transform: rotate(180deg); }
+.tool-ns-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.tool-ns-body.open { grid-template-rows: 1fr; }
+.tool-ns-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 
 /* ── Serveurs MCP : cartes éditables (D3) ──────────────────────────────────── */
 .mcp-add-btn { align-self: flex-start; }
@@ -2016,7 +2042,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-28 09:45 UTC */
+/* miaou — built: 2026-06-28 16:40 UTC */
 
 
 /* ── utils.js ── */
@@ -2172,18 +2198,21 @@ function parseToolName(name) {
   return { serverPrefix: s.slice(0, i), toolName: s.slice(i + 2) };
 }
 
-// Regroupe une liste d'outils canoniques `{ name: 'prefix__bare', … }` par
-// namespace, en exposant le nom NU. Projection pure (cf. D2) : rien n'est stocké,
-// le sous-drawer « Voir les outils exposés » dérive l'affichage du nom canonique.
+// Regroupe une liste d'outils canoniques par namespace. Le namespace est formé de
+// TOUS les segments sauf le dernier ; le bareName est uniquement le dernier segment.
+// Ex : `bench__djeyl__echo` → namespace=`bench__djeyl`, bareName=`echo`.
+// Projection pure (cf. D2) : rien n'est stocké, le sous-drawer dérive l'affichage.
 // Retourne [{ namespace, tools: [{ bareName, def }] }] dans l'ordre d'apparition.
 function groupByNamespace(tools) {
   const order = [];
   const map = {};
   for (const def of (tools || [])) {
-    const { serverPrefix, toolName } = parseToolName(def.name);
-    const ns = serverPrefix || 'miaou';
+    const segs = String(def.name || '').split('__').filter(Boolean);
+    const bareName = segs.length > 1 ? segs[segs.length - 1] : (segs[0] || '');
+    const nsKey = segs.length > 1 ? segs.slice(0, -1).join('__') : '';
+    const ns = nsKey || 'miaou';
     if (!map[ns]) { map[ns] = []; order.push(ns); }
-    map[ns].push({ bareName: toolName, def });
+    map[ns].push({ bareName, def });
   }
   return order.map(ns => ({ namespace: ns, tools: map[ns] }));
 }
@@ -2424,7 +2453,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782639902}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782664812}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4479,7 +4508,7 @@ const ACK_KINDS = {
   // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
   // `label` reste la version texte brut (ackLabel, tests) — breadcrumb uniquement.
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
-    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
+    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
       if (m.intent) {
@@ -4499,7 +4528,7 @@ const ACK_KINDS = {
         const detail = document.createElement('span');
         detail.className = 'mcp-breadcrumb-detail';
         detail.setAttribute('hidden', '');
-        detail.appendChild(document.createTextNode('Appel : '));
+        detail.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
             const sep = document.createElement('span');
@@ -4511,8 +4540,7 @@ const ACK_KINDS = {
           code.textContent = seg;
           detail.appendChild(code);
         });
-        chevron.addEventListener('click', function(e) {
-          e.stopPropagation();
+        row.addEventListener('click', function() {
           if (detail.hasAttribute('hidden')) {
             detail.removeAttribute('hidden');
             chevron.classList.add('open');
@@ -4526,7 +4554,7 @@ const ACK_KINDS = {
         el.appendChild(detail);
       } else {
         // Fallback : breadcrumb seule (inchangée)
-        el.appendChild(document.createTextNode('Appel : '));
+        el.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
             const sep = document.createElement('span');
@@ -5608,13 +5636,48 @@ function renderToolsList() {
     return;
   }
   wrap.innerHTML = '';
-  for (const g of groups) {
+  const ICON_NS_CHEVRON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  groups.forEach(function(g, i) {
+    const group = document.createElement('div');
+    group.className = 'tool-ns-group';
+
     const header = document.createElement('div');
-    header.className = 'tool-ns';
-    header.textContent = g.namespace;   // donnée locale, mais textContent par principe
-    wrap.appendChild(header);
-    for (const t of g.tools) wrap.appendChild(buildToolItem(t.bareName, t.def));
-  }
+    header.className = i === 0 ? 'tool-ns open' : 'tool-ns';
+
+    const label = document.createElement('span');
+    label.textContent = g.namespace.split('__').join(' › ');
+
+    const chev = document.createElement('span');
+    chev.className = i === 0 ? 'tool-ns-chevron open' : 'tool-ns-chevron';
+    chev.innerHTML = ICON_NS_CHEVRON;
+
+    header.appendChild(label);
+    header.appendChild(chev);
+
+    const body = document.createElement('div');
+    body.className = i === 0 ? 'tool-ns-body open' : 'tool-ns-body';
+    const bodyInner = document.createElement('div');
+    bodyInner.className = 'tool-ns-body-inner';
+    for (const t of g.tools) bodyInner.appendChild(buildToolItem(t.bareName, t.def));
+    body.appendChild(bodyInner);
+
+    header.addEventListener('click', function() {
+      wrap.querySelectorAll('.tool-ns.open').forEach(function(h) {
+        if (h === header) return;
+        h.classList.remove('open');
+        h.querySelector('.tool-ns-chevron').classList.remove('open');
+        h.nextElementSibling.classList.remove('open');
+      });
+      const opening = !header.classList.contains('open');
+      header.classList.toggle('open', opening);
+      chev.classList.toggle('open', opening);
+      body.classList.toggle('open', opening);
+    });
+
+    group.appendChild(header);
+    group.appendChild(body);
+    wrap.appendChild(group);
+  });
 }
 
 function buildToolItem(bareName, def) {
@@ -5640,8 +5703,10 @@ function buildToolItem(bareName, def) {
       '</div>';
   }
 
+  const nameHtml = bareName.split('__').filter(Boolean)
+    .map(escHtml).join('<span class="tool-name-sep">›</span>');
   item.innerHTML =
-    '<div class="tool-name">' + escHtml(bareName) + '</div>' +
+    '<div class="tool-name">' + nameHtml + '</div>' +
     '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
     paramsHtml;
   return item;

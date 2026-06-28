@@ -588,8 +588,8 @@ Adapter un squelette est permis si le comportement testé est respecté (un cas 
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout
 le chemin MCP distant** (fetch JSON-RPC, SSE réel, AbortController, cascade D8) se
-vérifient à la main (checklist dans `tests/MANUAL.md`). Un serveur MCP Python de
-banc d'essai versionné est fourni : `tests/mcp_bench.py` (`uv run tests/mcp_bench.py`).
+vérifient à la main (checklist dans `tests/MANUAL.md`). Le banc d'essai MCP
+(`mcp_bench.py`) a été extrait dans le projet `miaou-mcp-servers`.
 
 ## Export Markdown et téléchargements
 

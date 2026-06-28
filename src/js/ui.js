@@ -264,7 +264,7 @@ const ACK_KINDS = {
   // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
   // `label` reste la version texte brut (ackLabel, tests) — breadcrumb uniquement.
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
-    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
+    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
       if (m.intent) {
@@ -284,7 +284,7 @@ const ACK_KINDS = {
         const detail = document.createElement('span');
         detail.className = 'mcp-breadcrumb-detail';
         detail.setAttribute('hidden', '');
-        detail.appendChild(document.createTextNode('Appel : '));
+        detail.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
             const sep = document.createElement('span');
@@ -296,8 +296,7 @@ const ACK_KINDS = {
           code.textContent = seg;
           detail.appendChild(code);
         });
-        chevron.addEventListener('click', function(e) {
-          e.stopPropagation();
+        row.addEventListener('click', function() {
           if (detail.hasAttribute('hidden')) {
             detail.removeAttribute('hidden');
             chevron.classList.add('open');
@@ -311,7 +310,7 @@ const ACK_KINDS = {
         el.appendChild(detail);
       } else {
         // Fallback : breadcrumb seule (inchangée)
-        el.appendChild(document.createTextNode('Appel : '));
+        el.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
             const sep = document.createElement('span');
@@ -1393,13 +1392,48 @@ function renderToolsList() {
     return;
   }
   wrap.innerHTML = '';
-  for (const g of groups) {
+  const ICON_NS_CHEVRON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  groups.forEach(function(g, i) {
+    const group = document.createElement('div');
+    group.className = 'tool-ns-group';
+
     const header = document.createElement('div');
-    header.className = 'tool-ns';
-    header.textContent = g.namespace;   // donnée locale, mais textContent par principe
-    wrap.appendChild(header);
-    for (const t of g.tools) wrap.appendChild(buildToolItem(t.bareName, t.def));
-  }
+    header.className = i === 0 ? 'tool-ns open' : 'tool-ns';
+
+    const label = document.createElement('span');
+    label.textContent = g.namespace.split('__').join(' › ');
+
+    const chev = document.createElement('span');
+    chev.className = i === 0 ? 'tool-ns-chevron open' : 'tool-ns-chevron';
+    chev.innerHTML = ICON_NS_CHEVRON;
+
+    header.appendChild(label);
+    header.appendChild(chev);
+
+    const body = document.createElement('div');
+    body.className = i === 0 ? 'tool-ns-body open' : 'tool-ns-body';
+    const bodyInner = document.createElement('div');
+    bodyInner.className = 'tool-ns-body-inner';
+    for (const t of g.tools) bodyInner.appendChild(buildToolItem(t.bareName, t.def));
+    body.appendChild(bodyInner);
+
+    header.addEventListener('click', function() {
+      wrap.querySelectorAll('.tool-ns.open').forEach(function(h) {
+        if (h === header) return;
+        h.classList.remove('open');
+        h.querySelector('.tool-ns-chevron').classList.remove('open');
+        h.nextElementSibling.classList.remove('open');
+      });
+      const opening = !header.classList.contains('open');
+      header.classList.toggle('open', opening);
+      chev.classList.toggle('open', opening);
+      body.classList.toggle('open', opening);
+    });
+
+    group.appendChild(header);
+    group.appendChild(body);
+    wrap.appendChild(group);
+  });
 }
 
 function buildToolItem(bareName, def) {
@@ -1425,8 +1459,10 @@ function buildToolItem(bareName, def) {
       '</div>';
   }
 
+  const nameHtml = bareName.split('__').filter(Boolean)
+    .map(escHtml).join('<span class="tool-name-sep">›</span>');
   item.innerHTML =
-    '<div class="tool-name">' + escHtml(bareName) + '</div>' +
+    '<div class="tool-name">' + nameHtml + '</div>' +
     '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
     paramsHtml;
   return item;

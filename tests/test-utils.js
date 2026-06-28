@@ -194,18 +194,22 @@ describe('parseToolName (split sur le PREMIER __ seulement)', function() {
 });
 
 describe('groupByNamespace (projection pure, nom nu)', function() {
-  it('groupe par préfixe et expose le nom nu', function() {
+  it('groupe par tous-sauf-dernier et expose uniquement le dernier segment', function() {
     var g = groupByNamespace([
       { name: 'miaou__create_memory' },
       { name: 'jira__search' },
       { name: 'jira__a__b' },
     ]);
-    expect(g.length).toBe(2);
+    // miaou__create_memory → ns=miaou, bareName=create_memory
+    // jira__search        → ns=jira,  bareName=search
+    // jira__a__b          → ns=jira__a, bareName=b  (sous-namespace distinct)
+    expect(g.length).toBe(3);
     expect(g[0].namespace).toBe('miaou');
     expect(g[0].tools[0].bareName).toBe('create_memory');
     expect(g[1].namespace).toBe('jira');
     expect(g[1].tools[0].bareName).toBe('search');
-    expect(g[1].tools[1].bareName).toBe('a__b');
+    expect(g[2].namespace).toBe('jira__a');
+    expect(g[2].tools[0].bareName).toBe('b');
   });
   it('nom sans préfixe → namespace miaou', function() {
     var g = groupByNamespace([{ name: 'ask_confirmation' }]);

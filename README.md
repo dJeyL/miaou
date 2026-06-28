@@ -134,14 +134,8 @@ python tests/runner.py
 ```
 
 Pour exercer la délégation MCP distante (chemin réseau, non couvert par QuickJS),
-un petit serveur MCP de banc d'essai est fourni — outils texte, image et ressource
-JSON, CORS ouvert :
-
-```bash
-uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
-```
-
-Puis l'ajouter dans Paramètres → Serveurs MCP. Procédure détaillée dans
+utiliser le serveur de banc d'essai du projet `miaou-mcp-servers` puis l'ajouter
+dans Paramètres → Serveurs MCP. Procédure détaillée dans
 [tests/MANUAL.md](tests/MANUAL.md).
 
 ## Architecture

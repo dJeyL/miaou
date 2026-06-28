@@ -78,12 +78,8 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
 
 ## Agrégation MCP distante (V2)
 
-Banc d'essai prêt à lancer : `tests/mcp_bench.py` (streamable-http, CORS
-ouvert, outils `echo`/`add`/`dns_lookup`/`get_image`/`get_json_resource`).
-
-```bash
-uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
-```
+Banc d'essai : `mcp_bench.py` (extrait dans le projet `miaou-mcp-servers`).
+Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
 
 17. **Ajout & validation d'un serveur** : Paramètres → Serveurs MCP → Ajouter.
     Saisir l'URL `…/mcp` → le transport se pré-remplit en `streamable-http` (mais
@@ -146,7 +142,7 @@ uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
 
 ## Stockage de ressources (IndexedDB)
 
-Prérequis : `tests/mcp_bench.py` en cours d'exécution (`uv run tests/mcp_bench.py`).
+Prérequis : `mcp_bench.py` en cours d'exécution (projet `miaou-mcp-servers`).
 Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → `resources`.
 
 28. **Ressource inline (JSON)** : demander « utilise `get_json_resource` ». Lors de

@@ -1241,7 +1241,7 @@ body {
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
 /* Séparateur › entre segments du breadcrumb MCP : teinte icône, s'efface devant le texte. */
-.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); margin: 0 2px; }
+.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
 /* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
@@ -1250,8 +1250,8 @@ body {
 /* L'icône s'aligne en haut quand deux niveaux sont affichés. */
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
-.mcp-intent-row { display: flex; align-items: center; gap: 4px; }
-.mcp-intent { flex: 1; }
+.mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.mcp-intent { }
 .mcp-chevron {
   flex-shrink: 0;
   background: none; border: none; padding: 1px; cursor: pointer;
@@ -1261,7 +1261,7 @@ body {
 .mcp-chevron:hover { opacity: 1; }
 .mcp-chevron svg { transition: transform 0.2s; }
 .mcp-chevron.open svg { transform: rotate(180deg); }
-.mcp-breadcrumb-detail { display: block; margin-top: 2px; }
+.mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
 .mcp-breadcrumb-detail[hidden] { display: none; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
@@ -1294,6 +1294,7 @@ body {
   font-weight: 500;
   color: var(--accent);
 }
+.tool-name-sep { color: var(--accent-2); margin: 0 3px; }
 .tool-desc { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
 .tool-params {
   margin-top: 10px;
@@ -1309,6 +1310,7 @@ body {
 .tool-param-desc { font-size: 11px; color: var(--text-3); }
 
 /* En-tête de namespace dans le sous-drawer « Outils exposés » (groupage D2). */
+.tool-ns-group { display: flex; flex-direction: column; gap: 10px; }
 .tool-ns {
   font-family: var(--mono);
   font-size: 11px;
@@ -1316,10 +1318,34 @@ body {
   letter-spacing: .04em;
   text-transform: uppercase;
   color: var(--text-3);
-  margin-top: 6px;
   padding-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
-.tool-ns:first-child { margin-top: 0; }
+.tool-ns-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.tool-ns:hover { color: var(--text-2); }
+.tool-ns:hover .tool-ns-chevron { opacity: 1; }
+.tool-ns-chevron svg { transition: transform 0.2s; }
+.tool-ns-chevron.open svg { transform: rotate(180deg); }
+.tool-ns-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.tool-ns-body.open { grid-template-rows: 1fr; }
+.tool-ns-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 
 /* ── Serveurs MCP : cartes éditables (D3) ──────────────────────────────────── */
 .mcp-add-btn { align-self: flex-start; }
