@@ -15,8 +15,9 @@ function summaryLight(e) {
 // existent — indépendamment de includeToolsInSystemPrompt (qui ne gouverne que
 // l'énumération textuelle). Partie de ROOT_SYSTEM_PROMPT.
 const BINARY_DOCTRINE =
-  "Quand un outil renvoie une image ou une ressource binaire, l'application l'affiche " +
-  "elle-même dans l'interface : tu peux l'introduire par UNE phrase courte au plus " +
+  "Quand un outil renvoie des données binaires (image, fichier, base64…), l'application " +
+  "les enregistre sous forme de ressource et t'en communique l'ID. Les images sont " +
+  "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
   "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
   "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
   "placeholder inventé.";

@@ -1210,7 +1210,7 @@ body {
   border-left: 2px solid var(--accent-bd);
   margin: 3px 0 3px 2px;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .tool-ack.resolved, .memory-ack.resolved { opacity: 0.5; }
 .tool-ack .ack-icon {

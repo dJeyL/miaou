@@ -1221,7 +1221,7 @@ body {
   border-left: 2px solid var(--accent-bd);
   margin: 3px 0 3px 2px;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .tool-ack.resolved, .memory-ack.resolved { opacity: 0.5; }
 .tool-ack .ack-icon {
@@ -2042,7 +2042,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-28 16:40 UTC */
+/* miaou — built: 2026-06-28 20:15 UTC */
 
 
 /* ── utils.js ── */
@@ -2453,7 +2453,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782664812}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782677746}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3205,8 +3205,9 @@ function summaryLight(e) {
 // existent — indépendamment de includeToolsInSystemPrompt (qui ne gouverne que
 // l'énumération textuelle). Partie de ROOT_SYSTEM_PROMPT.
 const BINARY_DOCTRINE =
-  "Quand un outil renvoie une image ou une ressource binaire, l'application l'affiche " +
-  "elle-même dans l'interface : tu peux l'introduire par UNE phrase courte au plus " +
+  "Quand un outil renvoie des données binaires (image, fichier, base64…), l'application " +
+  "les enregistre sous forme de ressource et t'en communique l'ID. Les images sont " +
+  "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
   "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
   "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
   "placeholder inventé.";
@@ -5975,12 +5976,21 @@ function renderToolBlock(block) {
     box.appendChild(img);
     return box;
   }
-  // 2. resource text-like → bloc de code surligné (Prism lazy), via textContent.
+  // 2. resource avec blob image → <img> inline (miroir de makeResourcePresentBlock).
   const r = block && block.resource;
-  if (block && block.type === 'resource' && r && r.text != null) {
-    return renderResourceText(box, r);
+  if (block && block.type === 'resource' && r) {
+    if (r.blob != null && r.mimeType && r.mimeType.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.className = 'tool-block-img';
+      img.src = 'data:' + r.mimeType + ';base64,' + r.blob;
+      img.alt = 'Image renvoyée par un outil';
+      box.appendChild(img);
+      return box;
+    }
+    // 3. resource text-like → bloc de code surligné (Prism lazy), via textContent.
+    if (r.text != null) return renderResourceText(box, r);
   }
-  // 3. binaire / inconnu → téléchargement éphémère (rien n'est persisté).
+  // 4. binaire / inconnu → téléchargement éphémère (rien n'est persisté).
   return renderBinaryBlock(box, block);
 }
 

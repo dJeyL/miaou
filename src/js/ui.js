@@ -1731,12 +1731,21 @@ function renderToolBlock(block) {
     box.appendChild(img);
     return box;
   }
-  // 2. resource text-like → bloc de code surligné (Prism lazy), via textContent.
+  // 2. resource avec blob image → <img> inline (miroir de makeResourcePresentBlock).
   const r = block && block.resource;
-  if (block && block.type === 'resource' && r && r.text != null) {
-    return renderResourceText(box, r);
+  if (block && block.type === 'resource' && r) {
+    if (r.blob != null && r.mimeType && r.mimeType.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.className = 'tool-block-img';
+      img.src = 'data:' + r.mimeType + ';base64,' + r.blob;
+      img.alt = 'Image renvoyée par un outil';
+      box.appendChild(img);
+      return box;
+    }
+    // 3. resource text-like → bloc de code surligné (Prism lazy), via textContent.
+    if (r.text != null) return renderResourceText(box, r);
   }
-  // 3. binaire / inconnu → téléchargement éphémère (rien n'est persisté).
+  // 4. binaire / inconnu → téléchargement éphémère (rien n'est persisté).
   return renderBinaryBlock(box, block);
 }
 
