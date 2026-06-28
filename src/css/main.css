@@ -844,6 +844,51 @@ body {
 .field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
 .field textarea::placeholder { color: var(--text-3); }
 
+.root-prompt-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.root-prompt-details summary::-webkit-details-marker { display: none; }
+.root-prompt-details summary::before {
+  content: '▶';
+  font-size: 9px;
+  color: var(--text-3);
+  transition: transform .15s;
+  flex-shrink: 0;
+}
+.root-prompt-details[open] summary::before { transform: rotate(90deg); }
+.root-prompt-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  letter-spacing: 0.01em;
+}
+.root-prompt-pre {
+  margin: 8px 0 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .check-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .check-row .label-col { display: flex; flex-direction: column; gap: 3px; }
 

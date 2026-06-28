@@ -159,9 +159,15 @@
         </div>
       </div>
       <div class="field">
-        <label>Prompt système</label>
+        <details class="root-prompt-details" id="root-prompt-details">
+          <summary>Prompt système racine <span class="root-prompt-badge">non modifiable</span></summary>
+          <pre class="root-prompt-pre" id="root-prompt-pre"></pre>
+        </details>
+      </div>
+      <div class="field">
+        <label>Prompt système utilisateur</label>
         <textarea id="set-system" rows="4" spellcheck="false" placeholder="Optionnel"></textarea>
-        <span class="hint">Toujours préservé tel quel, en tête de chaque conversation.</span>
+        <span class="hint">Persona et préférences. Injecté après le prompt racine.</span>
       </div>
       <div class="field">
         <label>Thème</label>

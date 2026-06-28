@@ -11,9 +11,17 @@ function summaryLight(e) {
            summary: e.summary, keywords: e.keywords };
 }
 
-// Doctrine de déclenchement des outils mémoire — émise UNE SEULE FOIS dans le
-// system prompt (via toolsSystemPrompt), jamais dans une function.description
-// individuelle (qui elle est dupliquée dans le schéma tools à chaque appel API).
+// Doctrine comportementale : ressources binaires. Toujours injectée quand des outils
+// existent — indépendamment de includeToolsInSystemPrompt (qui ne gouverne que
+// l'énumération textuelle). Partie de ROOT_SYSTEM_PROMPT.
+const BINARY_DOCTRINE =
+  "Quand un outil renvoie une image ou une ressource binaire, l'application l'affiche " +
+  "elle-même dans l'interface : tu peux l'introduire par UNE phrase courte au plus " +
+  "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
+  "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
+  "placeholder inventé.";
+
+// Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
   "CHEMIN DIRECT — appelle miaou__create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
@@ -23,7 +31,10 @@ const MEMORY_DOCTRINE =
   "  - exprime une préférence de fond sur le format ou le ton de tes réponses\n" +
   "Sur le chemin direct : tu PEUX narrer « c'est noté » car l'écriture a déjà eu lieu.\n\n" +
   "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS (sans demande explicite) " +
-  "qu'un fait durable mérite d'être retenu. La question doit contenir LITTÉRALEMENT le " +
+  "qu'un fait durable mérite d'être retenu. Élargis le périmètre des faits durables pour " +
+  "inclure systématiquement la localisation géographique et l'environnement quotidien : " +
+  "si un tel détail apparaît, même s'il sert de contexte à une question technique, utilise " +
+  "ce chemin pour proposer de le retenir. La question doit contenir LITTÉRALEMENT le " +
   "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
   "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
   "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__create_memory dans ce même tour.\n\n" +
@@ -35,6 +46,11 @@ const MEMORY_DOCTRINE =
   "appelle miaou__update_memory (correction in-place) ou miaou__delete_memory (tombstone réversible).\n\n" +
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
+
+// Prompt racine — constante build-time, non modifiable depuis les paramètres.
+// Compose les deux doctrines ; référencé par buildSystemMessage() (main.js).
+// v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
 // File d'attente des acks côté client : chaque handler d'outil (écriture mémoire
 // OU lecture d'historique) y pousse un descripteur portant son `kind` ; main.js la
@@ -553,13 +569,7 @@ function toolsSystemPrompt() {
 // `tools`), c'est le seul rempart côté formulation contre la narration/simulation
 // d'une image. Le marqueur neutre de flattenToolResult coupe l'autre vecteur (le
 // base64 n'atteint jamais le modèle) ; les deux couvrent des échecs DIFFÉRENTS.
-function toolsDoctrinePrompt() {
-  return "Quand un outil renvoie une image ou une ressource binaire, l'application l'affiche " +
-    "elle-même dans l'interface : tu peux l'introduire par UNE phrase courte au plus " +
-    "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
-    "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-    "placeholder inventé.";
-}
+function toolsDoctrinePrompt() { return BINARY_DOCTRINE; }
 
 function memoryDoctrinePrompt() {
   const hasMemoryTools = TOOLS.some(t => t.name === 'create_memory');

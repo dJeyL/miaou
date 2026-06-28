@@ -106,17 +106,17 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Contenu statique uniquement : identique d'un tour à l'autre tant que tools
-// et systemPrompt configuré ne changent pas — permet le KV cache prefix matching.
+// Contenu statique uniquement : identique d'un tour à l'autre tant que tools,
+// ROOT_SYSTEM_PROMPT et systemPrompt configuré ne changent pas — permet le KV
+// cache prefix matching. Ordre : racine → énumération outils (si ON) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
+  if (TOOLS.length) {
+    parts.push(ROOT_SYSTEM_PROMPT);
+    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+  }
   const sysUser = (loadSettings().systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
-  if (TOOLS.length) {
-    parts.push(toolsDoctrinePrompt());   // comportement transverse, TOUJOURS injecté
-    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());   // énumération, sous toggle
-    parts.push(memoryDoctrinePrompt());
-  }
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 

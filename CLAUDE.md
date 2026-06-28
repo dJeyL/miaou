@@ -91,11 +91,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
-   l'ordre : le prompt système utilisateur (toujours préservé tel quel) ;
-   si `includeToolsInSystemPrompt` est vrai, `toolsSystemPrompt()` (description
-   redondante des outils, optionnelle) ; puis `memoryDoctrinePrompt()` (doctrine
-   de déclenchement des outils mémoire (`create_memory` / `ask_confirmation`),
-   **toujours** injectée si des outils sont présents — non redondante avec le schéma).
+   l'ordre : `ROOT_SYSTEM_PROMPT` (constante build-time : `BINARY_DOCTRINE` +
+   `MEMORY_DOCTRINE`, toujours injectée si des outils sont présents) ;
+   si `includeToolsInSystemPrompt` est vrai, `toolsSystemPrompt()` (énumération
+   textuelle des outils, optionnelle) ; puis le prompt système utilisateur
+   (persona/préférences, éditable en paramètres).
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du *texte* mis dans
    le message système par MIAOU (recherche locale). Les `tool_calls` sont
    déclenchés par le **modèle**. MIAOU n'appelle jamais d'outil de lui-même.
@@ -240,9 +240,9 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
     (identique au défaut quand pas d'override).
 
 16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` ne contient
-    que du contenu **statique** : prompt système configuré par l'utilisateur +
-    `memoryDoctrinePrompt()` (toujours) + optionnellement `toolsSystemPrompt()`
-    (selon `includeToolsInSystemPrompt`). Aucune dépendance à `Date.now()` ni
+    que du contenu **statique** : `ROOT_SYSTEM_PROMPT` (toujours, si outils
+    présents) + optionnellement `toolsSystemPrompt()` (selon
+    `includeToolsInSystemPrompt`) + prompt système utilisateur. Aucune dépendance à `Date.now()` ni
     aux résumés mémoire. Le contenu dynamique (date/heure, nom du modèle, bloc mémoire) est
     regroupé dans `buildContextBlock(matches)` et injecté **éphémèrement en
     préfixe du dernier message `role: 'user'`** dans `dispatchSend`, au moment
@@ -270,11 +270,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   (cf. `initSidebarResize`, ui.js) ; pendant le drag, la classe `.resizing` coupe
   la transition de largeur, et la valeur finale est persistée au `mouseup`.
   `includeToolsInSystemPrompt` (défaut `false`) contrôle uniquement l'injection de
-  `toolsSystemPrompt()` — la description textuelle redondante des outils. La doctrine
-  de déclenchement (`memoryDoctrinePrompt()`) est **toujours** injectée dès que des
-  outils sont présents, indépendamment de ce toggle. À activer pour les modèles qui
-  lisent mal leur tool schema natif. `buildSystemMessage()` (main.js) conditionne
-  l'appel ; `tools.js` reste agnostique du réglage.
+  `toolsSystemPrompt()` — la description textuelle redondante des outils. `ROOT_SYSTEM_PROMPT`
+  (doctrines binaire et mémoire) est **toujours** injecté dès que des outils sont présents,
+  indépendamment de ce toggle. À activer pour les modèles qui lisent mal leur tool schema
+  natif. `buildSystemMessage()` (main.js) conditionne l'appel ; `tools.js` reste agnostique
+  du réglage.
 - `miaou-conversations` : tableau `[{ id, title, timestamp, updatedAt?, messages, model?,
   pinned? }]`. `updatedAt` (optionnel) est le timestamp du dernier `persistCurrent` ;
   absent sur les anciennes conversations (tri/affichage tombent alors sur `timestamp`).
@@ -542,14 +542,14 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    échecs distincts** (pas primaire/repli) : le marqueur de `flattenToolResult` empêche
    le base64 d'**atteindre** le modèle ; une règle de **formulation** l'empêche de
    **narrer/simuler** l'image même sans déclencheur. Cette règle est une doctrine
-   **comportementale transverse** → `toolsDoctrinePrompt()`, **toujours injectée**
-   par `buildSystemMessage()` dès que des outils existent, **indépendamment de
-   `includeToolsInSystemPrompt`**. Le toggle ne gouverne que l'**énumération** par
-   outil (`toolsSystemPrompt()`, token-coûteuse, redondante avec le champ API
-   `tools`). Doctrine comportementale = inconditionnelle ; énumération = sous toggle.
-   Surtout pas dans `MEMORY_DOCTRINE` (sans rapport avec la mémoire) ni dans une
-   entrée par outil. Sans ça, le mode nothink/agentique (toggle off, le plus courant)
-   perdrait le garde.
+   **comportementale transverse** → `BINARY_DOCTRINE` (constante dans `tools.js`,
+   partie de `ROOT_SYSTEM_PROMPT`), **toujours injectée** dès que des outils existent,
+   **indépendamment de `includeToolsInSystemPrompt`**. Le toggle ne gouverne que
+   l'**énumération** par outil (`toolsSystemPrompt()`, token-coûteuse, redondante avec
+   le champ API `tools`). Doctrine comportementale = inconditionnelle ; énumération =
+   sous toggle. Surtout pas dans `MEMORY_DOCTRINE` (sans rapport avec la mémoire) ni
+   dans une entrée par outil. Sans ça, le mode nothink/agentique (toggle off, le plus
+   courant) perdrait le garde.
 9. **Ré-handshake paresseux sur session invalidée (Correction B).** streamable-http
    est *stateful* : `initialize` renvoie un `Mcp-Session-Id` que le client renvoie à
    chaque appel. Un serveur **redémarré** ne reconnaît plus l'ancien id et répond

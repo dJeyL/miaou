@@ -855,6 +855,51 @@ body {
 .field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
 .field textarea::placeholder { color: var(--text-3); }
 
+.root-prompt-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.root-prompt-details summary::-webkit-details-marker { display: none; }
+.root-prompt-details summary::before {
+  content: '▶';
+  font-size: 9px;
+  color: var(--text-3);
+  transition: transform .15s;
+  flex-shrink: 0;
+}
+.root-prompt-details[open] summary::before { transform: rotate(90deg); }
+.root-prompt-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  letter-spacing: 0.01em;
+}
+.root-prompt-pre {
+  margin: 8px 0 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .check-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .check-row .label-col { display: flex; flex-direction: column; gap: 3px; }
 
@@ -1797,9 +1842,15 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
       </div>
       <div class="field">
-        <label>Prompt système</label>
+        <details class="root-prompt-details" id="root-prompt-details">
+          <summary>Prompt système racine <span class="root-prompt-badge">non modifiable</span></summary>
+          <pre class="root-prompt-pre" id="root-prompt-pre"></pre>
+        </details>
+      </div>
+      <div class="field">
+        <label>Prompt système utilisateur</label>
         <textarea id="set-system" rows="4" spellcheck="false" placeholder="Optionnel"></textarea>
-        <span class="hint">Toujours préservé tel quel, en tête de chaque conversation.</span>
+        <span class="hint">Persona et préférences. Injecté après le prompt racine.</span>
       </div>
       <div class="field">
         <label>Thème</label>
@@ -1926,7 +1977,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-28 00:39 UTC */
+/* miaou — built: 2026-06-28 07:21 UTC */
 
 
 /* ── utils.js ── */
@@ -2334,7 +2385,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782607185}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782631261}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3074,9 +3125,17 @@ function summaryLight(e) {
            summary: e.summary, keywords: e.keywords };
 }
 
-// Doctrine de déclenchement des outils mémoire — émise UNE SEULE FOIS dans le
-// system prompt (via toolsSystemPrompt), jamais dans une function.description
-// individuelle (qui elle est dupliquée dans le schéma tools à chaque appel API).
+// Doctrine comportementale : ressources binaires. Toujours injectée quand des outils
+// existent — indépendamment de includeToolsInSystemPrompt (qui ne gouverne que
+// l'énumération textuelle). Partie de ROOT_SYSTEM_PROMPT.
+const BINARY_DOCTRINE =
+  "Quand un outil renvoie une image ou une ressource binaire, l'application l'affiche " +
+  "elle-même dans l'interface : tu peux l'introduire par UNE phrase courte au plus " +
+  "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
+  "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
+  "placeholder inventé.";
+
+// Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
   "CHEMIN DIRECT — appelle miaou__create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
@@ -3086,7 +3145,10 @@ const MEMORY_DOCTRINE =
   "  - exprime une préférence de fond sur le format ou le ton de tes réponses\n" +
   "Sur le chemin direct : tu PEUX narrer « c'est noté » car l'écriture a déjà eu lieu.\n\n" +
   "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS (sans demande explicite) " +
-  "qu'un fait durable mérite d'être retenu. La question doit contenir LITTÉRALEMENT le " +
+  "qu'un fait durable mérite d'être retenu. Élargis le périmètre des faits durables pour " +
+  "inclure systématiquement la localisation géographique et l'environnement quotidien : " +
+  "si un tel détail apparaît, même s'il sert de contexte à une question technique, utilise " +
+  "ce chemin pour proposer de le retenir. La question doit contenir LITTÉRALEMENT le " +
   "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
   "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
   "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__create_memory dans ce même tour.\n\n" +
@@ -3098,6 +3160,11 @@ const MEMORY_DOCTRINE =
   "appelle miaou__update_memory (correction in-place) ou miaou__delete_memory (tombstone réversible).\n\n" +
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
+
+// Prompt racine — constante build-time, non modifiable depuis les paramètres.
+// Compose les deux doctrines ; référencé par buildSystemMessage() (main.js).
+// v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
 // File d'attente des acks côté client : chaque handler d'outil (écriture mémoire
 // OU lecture d'historique) y pousse un descripteur portant son `kind` ; main.js la
@@ -3616,13 +3683,7 @@ function toolsSystemPrompt() {
 // `tools`), c'est le seul rempart côté formulation contre la narration/simulation
 // d'une image. Le marqueur neutre de flattenToolResult coupe l'autre vecteur (le
 // base64 n'atteint jamais le modèle) ; les deux couvrent des échecs DIFFÉRENTS.
-function toolsDoctrinePrompt() {
-  return "Quand un outil renvoie une image ou une ressource binaire, l'application l'affiche " +
-    "elle-même dans l'interface : tu peux l'introduire par UNE phrase courte au plus " +
-    "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
-    "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-    "placeholder inventé.";
-}
+function toolsDoctrinePrompt() { return BINARY_DOCTRINE; }
 
 function memoryDoctrinePrompt() {
   const hasMemoryTools = TOOLS.some(t => t.name === 'create_memory');
@@ -5166,6 +5227,8 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  const pre = $('root-prompt-pre');
+  if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
   if (lbl) {
     lbl.textContent = BUILD_TS
@@ -6071,17 +6134,17 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Contenu statique uniquement : identique d'un tour à l'autre tant que tools
-// et systemPrompt configuré ne changent pas — permet le KV cache prefix matching.
+// Contenu statique uniquement : identique d'un tour à l'autre tant que tools,
+// ROOT_SYSTEM_PROMPT et systemPrompt configuré ne changent pas — permet le KV
+// cache prefix matching. Ordre : racine → énumération outils (si ON) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
+  if (TOOLS.length) {
+    parts.push(ROOT_SYSTEM_PROMPT);
+    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+  }
   const sysUser = (loadSettings().systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
-  if (TOOLS.length) {
-    parts.push(toolsDoctrinePrompt());   // comportement transverse, TOUJOURS injecté
-    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());   // énumération, sous toggle
-    parts.push(memoryDoctrinePrompt());
-  }
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
