@@ -59,6 +59,9 @@ function updateLastPendingToolAck(fields) {
 let _pendingToolBlocks = [];
 function getPendingToolBlocks() { return _pendingToolBlocks.slice(); }
 function clearPendingToolBlocks() { _pendingToolBlocks = []; }
+// Filtre in-place _pendingToolBlocks (appelé par internResourcesFromResult pour
+// retirer les blocs D8 dont le stockage IDB prend le relais).
+function retainPendingToolBlocks(keepFn) { _pendingToolBlocks = _pendingToolBlocks.filter(keepFn); }
 
 // ── Registre MCP interne ─────────────────────────────────────────────────────
 // Forme canonique : { name, description, inputSchema (JSON Schema), annotations,
@@ -172,6 +175,32 @@ const TOOLS = [
         prevContent: existing ? existing.content : null,
       });
       return 'Souvenir mis à jour.';
+    },
+  },
+  {
+    name: 'present_resource',
+    description:
+      "Présente une ressource stockée (image, texte, fichier binaire) à l'utilisateur " +
+      "en l'affichant dans le thread. Utiliser l'identifiant renvoyé lors du stockage de " +
+      "la ressource (commence par res_). Pour une image, elle s'affiche inline ; pour un " +
+      "texte/JSON, un bloc de code surligné ; pour un binaire, un bouton de téléchargement.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Identifiant de la ressource (res_…)' },
+      },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const id = String(args.id || '');
+      if (!id) return 'Identifiant manquant.';
+      // getCachedRecord et makeResourcePresentBlock sont dans resources.js (chargé avant).
+      const record = getCachedRecord(id);
+      if (!record) return 'Ressource introuvable (identifiant inconnu ou non disponible en session).';
+      // Le rendu du bloc est délégué à placeToolAck (live et reload via même chemin).
+      _pendingToolAcks.push({ kind: 'resource_presented', id, resourceName: record.name, mime: record.mime });
+      return 'Ressource présentée à l\'utilisateur.';
     },
   },
   {

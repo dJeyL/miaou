@@ -141,3 +141,65 @@ uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
     puis renvoyer un message dans la même conversation → la réinjection fonctionne
     aussi après rechargement (les champs `args`/`result`/`ts`/`group` sont persistés
     dans `localStorage['miaou-conversations']`).
+
+## Stockage de ressources (IndexedDB)
+
+Prérequis : `tests/mcp_bench.py` en cours d'exécution (`uv run tests/mcp_bench.py`).
+Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → `resources`.
+
+28. **Ressource inline (JSON)** : demander « utilise `get_json_resource` ». Lors de
+    l'appel, un chip « Ressource enregistrée : … » apparaît dans la bulle (ack
+    `resource_stored`), immédiatement suivi d'un bloc de code JSON surligné (rendu
+    directement, sans bouton « voir »). Dans IndexedDB, une entrée `class: "inline"`
+    est présente avec `mime: "application/json"`. `localStorage['miaou-conversations']`
+    ne contient **pas** de base64 — le champ `result` de l'ack contient le **texte
+    brut JSON** (pas une référence `[resource_ref:…]`). Dans le payload réseau du tour
+    suivant, le message `role:'tool'` contient ce JSON directement — il provient de
+    `entry.result` sans résolution de ref (le texte brut y était déjà).
+
+29. **Ressource binaire (image)** : demander « utilise `get_image` ». Un chip
+    « Ressource enregistrée : … » apparaît suivi de l'image inline dans la bulle.
+    Dans IndexedDB : `class: "binary"`. Dans le payload réseau, le message `role:'tool'`
+    contient le descripteur `[resource id=… mime=image/png name="…" size=…]` suivi
+    de la note « La ressource a été présentée à l'utilisateur dans l'interface. » —
+    **pas de base64**. Aucun base64 ne circule vers le modèle.
+
+30. **Persistance au rechargement** : effectuer les tests 28 et 29, puis recharger
+    la page et rouvrir la conversation. Les chips acks sont toujours là (persistés
+    dans `localStorage`). Les blocs image et code JSON **réapparaissent** dans les
+    bulles assistantes — ils sont re-rendus par `placeToolAck` depuis IDB (même
+    chemin live / reload). Envoyer un nouveau message quelconque → dans DevTools
+    Network, vérifier le payload : le `role:'tool'` de la ressource **inline** contient
+    le **JSON complet** directement (issu de `entry.result` en localStorage, pas de
+    résolution de ref — le texte brut était déjà là) ; le `role:'tool'` de la ressource
+    **binary** contient le descripteur `[resource id=…]` + note « présentée » (la ref
+    `[resource_ref:res_…]` de `entry.result` a été remplacée par `resolveResourceRefs`
+    avant `expandThread`). Le préfixe `system + historique[0..N-2]` est byte-identique
+    d'une requête à l'autre.
+
+31. **`present_resource`** : après les tests 28/29 (session cache chaud, ou après
+    rechargement qui recharge le cache), demander au modèle « utilise
+    `miaou__present_resource` avec l'id `res_…` de la ressource JSON ». Le résultat
+    d'outil doit être `Ressource présentée à l'utilisateur.` ; un ack
+    `resource_presented` (icône + label « Présentée : … ») s'insère dans la bulle ;
+    le bloc JSON s'affiche inline dans la bulle. Même chose avec l'image binaire →
+    image affichée. Si l'id est inconnu (session cache absent) → résultat
+    `Ressource introuvable…`, pas de plantage.
+
+32. **Cascade suppression de conversation** : supprimer via la sidebar une conversation
+    contenant des ressources. Dans IndexedDB, toutes les entrées liées à cet `id` de
+    conversation ont disparu (vérifier dans DevTools). `localStorage['miaou-summaries']`
+    continue de fonctionner normalement pour les autres conversations.
+
+33. **Persistance du stockage** : au premier stockage de ressource de la session,
+    vérifier dans la console (`console.log`) ou DevTools → Application → Storage que
+    `navigator.storage.persist()` a été appelé. Le navigateur peut refuser — MIAOU
+    continue de fonctionner sans erreur dans tous les cas.
+
+34. **Byte-identique & KV cache** : dans une conversation avec un résultat inline
+    déjà stocké, envoyer deux messages successifs. Dans DevTools Network, comparer
+    les payloads des deux requêtes : le préfixe `system + historique[0..N-2]` (dont
+    les messages `role:'tool'` re-hydratés des tours antérieurs) doit être identique
+    byte-pour-byte entre les deux requêtes — seul le dernier message `role:'user'`
+    diffère. Cela valide que le contenu re-hydraté ne change pas d'un tour à l'autre
+    (le JSON est congelé au moment du stockage, pas recalculé).

@@ -121,7 +121,7 @@ function buildSystemMessage() {
 }
 
 // ── Navigation entre conversations ──────────────────────────────────────────
-function openConversation(id) {
+async function openConversation(id) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
@@ -134,15 +134,18 @@ function openConversation(id) {
       if (m.prevContent != null) a.prevContent = m.prevContent;
       if (m.title != null)       a.title = m.title;
       if (m.count != null)       a.count = m.count;
-      if (m.server != null)        a.server = m.server;
-      if (m.name != null)          a.name = m.name;
-      if (m.error)                 a.error = true;
-      if (m.resolved)              a.resolved = true;
-      if (m.args != null)          a.args = m.args;
-      if (m.result != null)        a.result = m.result;
-      if (m.ts != null)            a.ts = m.ts;
-      if (m.group != null)         a.group = m.group;
-      if (m.assistantText != null) a.assistantText = m.assistantText;
+      if (m.server != null)           a.server = m.server;
+      if (m.name != null)             a.name = m.name;
+      if (m.resourceName != null)     a.resourceName = m.resourceName;
+      if (m.mime != null)             a.mime = m.mime;
+      if (m.size != null)             a.size = m.size;
+      if (m.error)                    a.error = true;
+      if (m.resolved)                 a.resolved = true;
+      if (m.args != null)             a.args = m.args;
+      if (m.result != null)           a.result = m.result;
+      if (m.ts != null)               a.ts = m.ts;
+      if (m.group != null)            a.group = m.group;
+      if (m.assistantText != null)    a.assistantText = m.assistantText;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -153,6 +156,7 @@ function openConversation(id) {
   currentConvModel = conv.model || '';
   needTitle = false;
   setTitle(conv.title || '');
+  await loadConversationResources(id);   // peuple le session cache avant renderThread
   renderThread(currentThread);
   renderConvList();
   syncModelUI();
@@ -242,6 +246,7 @@ function undoToolAck(entry, wrap) {
 function deleteConv(id) {
   deleteConversation(id);
   deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
+  deleteResourcesByConversation(id).catch(function() {});   // cascade IDB (hard-delete)
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
 }
@@ -270,8 +275,11 @@ function persistCurrent() {
       if (m.prevContent != null) o.prevContent = m.prevContent;
       if (m.title != null)       o.title = m.title;
       if (m.count != null)       o.count = m.count;
-      if (m.server != null)        o.server = m.server;
-      if (m.name != null)          o.name = m.name;
+      if (m.server != null)           o.server = m.server;
+      if (m.name != null)             o.name = m.name;
+      if (m.resourceName != null)     o.resourceName = m.resourceName;
+      if (m.mime != null)             o.mime = m.mime;
+      if (m.size != null)             o.size = m.size;
       if (m.error)                 o.error = true;
       if (m.resolved)              o.resolved = true;
       if (m.args != null)          o.args = m.args;
@@ -481,7 +489,10 @@ async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const sys = buildSystemMessage();
-  const threadMsgs = expandThread(currentThread);
+  // Résout les références de ressources ([resource_ref:…]) dans les entry.result
+  // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
+  // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.
+  const threadMsgs = expandThread(resolveResourceRefs(currentThread));
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
   // préfixe du dernier message utilisateur, pour préserver le préfixe stable
@@ -584,7 +595,10 @@ async function dispatchSend(matches) {
           if (ack.count != null)         entry.count = ack.count;
           // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
           // via le hook onEnrichLastAck, après exécution de chaque outil interne).
-          if (ack.name != null)          entry.name = ack.name;
+          if (ack.name != null)           entry.name = ack.name;
+          if (ack.resourceName != null)  entry.resourceName = ack.resourceName;
+          if (ack.mime != null)          entry.mime = ack.mime;
+          if (ack.size != null)          entry.size = ack.size;
           if (ack.args != null)          entry.args = ack.args;
           if (ack.result != null)        entry.result = ack.result;
           if (ack.ts != null)            entry.ts = ack.ts;

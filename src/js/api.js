@@ -314,7 +314,16 @@ async function runConversation(messages, hooks) {
             const toolPromise = callTool(tc.function.name, args);
             const isMcp = typeof toolPromise.then === 'function';
             if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
-            out = flattenToolResult(await toolPromise);
+            const rawResult = await toolPromise;
+            // Interception ressources : stocke les blocs non-textuels dans IDB,
+            // réécrit rawResult.content avec des références. currentConvId est
+            // accessible en runtime (global déclaré dans main.js, même scope build).
+            if (typeof internResourcesFromResult === 'function') {
+              await internResourcesFromResult(rawResult,
+                typeof currentConvId !== 'undefined' ? currentConvId : null,
+                Date.now, Math.random);
+            }
+            out = flattenToolResult(rawResult);
             servedKeys.add(key);
             // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
             // réinjection cross-turn (args, result aplati, ts, group). Pour les

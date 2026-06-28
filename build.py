@@ -16,6 +16,7 @@ DIST = ROOT / 'dist'
 JS_ORDER = [
     'utils.js',
     'storage.js',
+    'resources.js',
     'tools.js',
     'api.js',
     'ui.js',

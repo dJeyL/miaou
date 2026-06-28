@@ -239,6 +239,7 @@ const ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 const ICON_EYE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
 const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 
 const ACK_KINDS = {
   memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
@@ -269,6 +270,25 @@ const ACK_KINDS = {
         el.appendChild(code);
       });
     },
+  },
+  // ── Ressources IDB ──────────────────────────────────────────────────────────
+  resource_stored: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_PACKAGE,
+    label: m => 'Ressource enregistrée : ' + (m.resourceName || m.id || '?'),
+  },
+  resource_presented: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_EYE,
+    label: m => 'Ressource présentée : ' + (m.resourceName || m.id || '?'),
+  },
+  resource_deleted: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_TRASH,
+    label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
   },
 };
 
@@ -322,6 +342,27 @@ function buildToolAck(m) {
       wrap.appendChild(btn);
     }
   }
+  // expand : bouton toggle « voir/masquer » pour les ressources stockées. Le
+  // contenu est rendu une seule fois (lazy) dans un conteneur inline.
+  if (spec.expand && !m.resolved) {
+    const expandBtn = document.createElement('button');
+    expandBtn.className = 'ack-expand';
+    expandBtn.textContent = 'voir';
+    const content = document.createElement('div');
+    content.className = 'ack-expand-content';
+    content.hidden = true;
+    let rendered = false;
+    expandBtn.addEventListener('click', function() {
+      content.hidden = !content.hidden;
+      expandBtn.textContent = content.hidden ? 'voir' : 'masquer';
+      if (!content.hidden && !rendered) {
+        rendered = true;
+        spec.expand(m, content);   // presentResourceFromChip (défini dans ui.js)
+      }
+    });
+    wrap.appendChild(expandBtn);
+    wrap.appendChild(content);
+  }
   return wrap;
 }
 
@@ -340,6 +381,25 @@ function placeToolAck(wrap, entry) {
   const body = wrap && wrap.querySelector('.body');
   if (body) wrap.insertBefore(node, body);
   else if (wrap) wrap.appendChild(node);
+  // resource_presented et resource_stored : rend le bloc ressource directement dans
+  // la bulle, entre l'ack et le corps de la réponse. Pour resource_stored en live,
+  // _pendingToolBlocks (non vide à ce stade) contient déjà le bloc brut D8 qui sera
+  // rendu par placeToolBlocks juste après — on évite le double rendu.
+  const kindNow = ackKindOf(entry);
+  const needsBlock = kindNow === 'resource_presented' ||
+    (kindNow === 'resource_stored' && typeof getPendingToolBlocks === 'function' && getPendingToolBlocks().length === 0);
+  if (needsBlock && entry.id && wrap) {
+    const record = typeof getCachedRecord === 'function' ? getCachedRecord(entry.id) : null;
+    if (record) {
+      const block = makeResourcePresentBlock(record);
+      const blockNode = block ? renderToolBlock(block) : null;
+      if (blockNode) {
+        if (body) wrap.insertBefore(blockNode, body);
+        else wrap.appendChild(blockNode);
+        if (highlightEnabled && window.Prism) Prism.highlightAll();
+      }
+    }
+  }
   return node;
 }
 
@@ -1621,6 +1681,25 @@ function renderBinaryBlock(box, block) {
   box.appendChild(label);
   box.appendChild(btn);
   return box;
+}
+
+// Présente une ressource IDB inline dans un conteneur DOM (chip expand ou autre).
+// getCachedRecord / makeResourcePresentBlock viennent de resources.js (chargé avant).
+function presentResourceFromChip(id, containerEl) {
+  const record = getCachedRecord(id);
+  if (!record) {
+    const span = document.createElement('span');
+    span.textContent = 'Ressource non disponible.';
+    containerEl.appendChild(span);
+    return;
+  }
+  const block = makeResourcePresentBlock(record);
+  if (!block) return;
+  const node = renderToolBlock(block);
+  if (node) {
+    containerEl.appendChild(node);
+    if (highlightEnabled && window.Prism) Prism.highlightAll();
+  }
 }
 
 function mimeToLang(mime) {

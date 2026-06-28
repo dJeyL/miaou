@@ -60,7 +60,10 @@ l'interface, JetBrains Mono pour le code.
   optionnel, timeout, et listes blanche/noire d'outils. Un serveur injoignable est
   simplement ignoré, le reste continue de fonctionner.
 - Les résultats non-textuels d'un outil distant (image, ressource, binaire) sont
-  rendus dans la réponse : image inline, code surligné, ou téléchargement éphémère.
+  stockés en IndexedDB (persistance locale, sans bloquer `localStorage`) et rendus
+  dans la réponse : image inline, code surligné, ou téléchargement éphémère. Les
+  ressources texte/JSON sont réinjectées au modèle à chaque tour ; les binaires
+  sont représentés par un descripteur statique.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur.
@@ -150,6 +153,7 @@ src/
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
     ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
+    ├── resources.js   IndexedDB : stockage/réhydratation des ressources MCP non-textuelles
     ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC
     ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
     ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs

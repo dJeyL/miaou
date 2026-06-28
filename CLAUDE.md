@@ -28,7 +28,7 @@ local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
 `build.py` lit `src/html/index.html` et remplace deux placeholders :
 `/* __CSS__ */` (← `src/css/main.css`) et `/* __JS__ */` (← les `src/js/*.js`
-concaténés dans l'ordre `JS_ORDER` : `utils, storage, tools, api, ui, main`).
+concaténés dans l'ordre `JS_ORDER` : `utils, storage, resources, tools, api, ui, main`).
 Il substitue aussi **un seul marqueur de config**, `__MIAOU_CONFIG__`, par
 l'objet `config.json` entier sérialisé en JSON (JSON ⊂ littéral objet JS, donc
 `json.dumps` gère seul quoting/nombres/booléens — pas de marqueur par clef, pas
@@ -312,10 +312,22 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en
   mémoire seule, reconstruit au démarrage.
+- **IndexedDB `miaou`** (géré par `resources.js`) : base version 1, object store
+  `resources`, index `by_conversation`. Chaque entrée :
+  `{ id, conversationId, class, mime, name, size, data (ArrayBuffer), createdAt }`.
+  `class` ∈ `"inline"` (texte/JSON, passé en clair au modèle — `entry.result` de
+  l'ack contient le texte brut) | `"binary"` (données opaques — `entry.result` de
+  l'ack contient `[resource_ref:res_…]`, remplacé par un descripteur statique à
+  l'envoi). Les données ne sont **jamais** dans `localStorage`. Cache session (`_resourceCache`)
+  en mémoire : peuplé par `loadConversationResources` (fire-and-forget à
+  `openConversation`) et par `_storeBlock` (au stockage). Suppression en cascade
+  par conversation via `deleteResourcesByConversation` (appelé dans `deleteConv`,
+  main.js). `requestPersistence()` sollicite `navigator.storage.persist()` au
+  premier stockage (silencieux si refusé).
 
 ## Outils (`tools.js`)
 
-Six outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+Sept outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur.
 
 **Lecture de l'historique :**
@@ -332,6 +344,12 @@ description **du registre** — ne jamais la coder en dur.
 - `update_memory(id, content)` — correction in-place, pas de tombstone.
 - `delete_memory(id)` — tombstone réversible (`suppressed: true`).
 
+**Présentation de ressource :**
+- `present_resource(id)` — handler **synchrone** (lookup `_resourceCache`) ; pousse
+  un ack `resource_presented` — le rendu du bloc (image, code, téléchargement) est
+  délégué à `placeToolAck` (même chemin live et reload via IDB). Renvoie une erreur
+  textuelle si l'id est inconnu du cache session.
+
 **Confirmation avant écriture (chemin inféré — fait non explicitement demandé) :**
 - `ask_confirmation(question)` — outil **halting** : `runConversation` s'arrête
   immédiatement après, sans pousser de message `tool`/`tool_result` natif. La
@@ -343,11 +361,12 @@ description **du registre** — ne jamais la coder en dur.
 Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique
 et les appels MCP distants. Chaque handler traçable pousse un descripteur
 `{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
-memory_update | memory_delete | conversation_read | conversation_list | mcp_call`.
+memory_update | memory_delete | conversation_read | conversation_list | mcp_call |
+resource_stored | resource_presented | resource_deleted`.
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js, décrits ci-dessous)
 consomment la file via `getPendingToolAcks` / `clearPendingToolAcks` et injectent
 des messages `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?,
-count?, server?, name?, error?, resolved?,`
+count?, server?, name?, error?, resolved?, mime?, size?,`
 `args?, result?, ts?, group?, assistantText? }` dans `currentThread`.
 Les champs `args` (objet d'arguments), `result` (résultat aplati par
 `flattenToolResult`), `ts` (epoch ms de l'appel), `group` (id partagé par
@@ -358,10 +377,14 @@ par le hook `onEnrichLastAck` (main.js), appelé après chaque outil par api.js,
 et doivent être préservés par `persistCurrent` / `openConversation`.
 La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
 un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
-`(id) => void`, ou **`null`** = variante informative), une icône SVG statique, et
+`(id) => void`, ou **`null`** = variante informative), une icône SVG statique,
 optionnellement `renderLabel(m, labelEl)` pour les kinds nécessitant un rendu DOM
-riche (breadcrumb avec `<code>` et séparateur — `mcp_call` uniquement).
-`buildToolAck` appelle `spec.renderLabel` si présent, sinon `label.textContent`.
+riche (breadcrumb avec `<code>` et séparateur — `mcp_call` uniquement), et
+optionnellement `expand(m, containerEl)` pour les kinds avec contenu dépliable au
+clic (chip « voir »/« masquer » avec rendu paresseux — aucun kind ne l'utilise
+actuellement ; le mécanisme est en place pour une extension future).
+`buildToolAck` appelle `spec.renderLabel` si présent, sinon `label.textContent` ;
+si `spec.expand` est présent et `!m.resolved`, ajoute le chip expandable.
 Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au renderer.
 
 - **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`
@@ -489,22 +512,33 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    modèle par le filtre rôle existant — aucune liste blanche par kind à maintenir.
    Le toggle `showCalls` est éditable sur la **carte serveur en mode édition**
    uniquement — pas en mode vue — pour éviter une modification accidentelle.
-8. **Blocs non-text = UI-only et ÉPHÉMÈRES (D8/D9).** `flattenToolResult` réinjecte
-   les blocs `text` tels quels et remplace chaque bloc non-text par un **marqueur
-   neutre** (`[image rendue dans l'interface]`, …) — **jamais** le base64 ni un
-   fragment. Le marqueur (et non le vide) est délibéré : un message `tool` vide après
-   un résultat image-only poussait le modèle à **simuler/encoder** l'image. Les blocs
-   `image` / `resource` / binaire sont poussés dans `_pendingToolBlocks` (tools.js),
-   drainés par le hook `onToolAcks` (main.js) au même tour que les acks, et rendus
-   **dans la bulle assistant** par `placeToolBlocks` (cascade `renderToolBlock` :
-   image → `<img>` data-URI ; resource-texte → bloc code surligné Prism via
-   `textContent` ; binaire → téléchargement éphémère `downloadFile(b64ToBytes(...))`).
-   **Jamais poussés dans `currentThread`, jamais persistés** — ils disparaissent au
-   reload (persistance des pièces jointes = futur chantier IndexedDB, hors périmètre).
+8. **Blocs non-text = données persistées en IDB, rendu via IDB au reload (D8/D9).**
+   `callRemoteTool` pousse tous les blocs non-text reçus du serveur dans
+   `_pendingToolBlocks` (tools.js). `internResourcesFromResult` (api.js) intercepte
+   le résultat **avant** `flattenToolResult` : pour les blocs **inline** (`resource.text`)
+   → stocke en IDB + pousse le texte brut dans le résultat (le modèle le reçoit
+   directement, `entry.result` = texte brut) ; pour les blocs **binaires** (image,
+   audio, resource blob) → stocke en IDB + remplace par `[resource_ref:res_…]` +
+   note « présentée » (`entry.result` = ref). `flattenToolResult` voit ensuite
+   uniquement des blocs `text` (les refs ou le texte brut) et les aplatit en chaîne.
+   Son fallback `[image rendue dans l'interface]` ne se déclenche que si le bloc
+   échappe à `internResourcesFromResult`. Le marqueur (et non le vide) est délibéré :
+   un message `tool` vide poussait le modèle à **simuler/encoder** l'image.
+   Les blocs de `_pendingToolBlocks` sont drainés par `onToolAcks` et rendus
+   **dans la bulle assistant** par `placeToolBlocks` (image → `<img>` data-URI ;
+   resource-texte → bloc code surligné Prism ; binaire → téléchargement éphémère).
+   **Au reload**, `_pendingToolBlocks` est vide : `placeToolAck` détecte l'absence
+   (`getPendingToolBlocks().length === 0`) et re-rend le bloc depuis IDB via
+   `makeResourcePresentBlock` → `renderToolBlock` (même cascade). Le double-rendu
+   live/IDB est évité par ce conditionnel dans `placeToolAck`, pas par
+   `retainPendingToolBlocks` (définie dans tools.js mais jamais appelée — dead code).
+   Au payload API, `resolveResourceRefs` (resources.js, dans `dispatchSend`) remplace
+   les refs **binaires** par le descripteur statique ; les ressources **inline** ont
+   déjà le texte brut dans `entry.result` — pas de ref à résoudre.
    DOM-safe : seule exception « HTML-ish » = le `src` data-URI de l'`<img>`, qui
-   n'injecte aucun markup. **Deux couches pour DEUX échecs distincts** (pas
-   primaire/repli) : le marqueur de `flattenToolResult` empêche le base64
-   d'**atteindre** le modèle ; une règle de **formulation** l'empêche de
+   n'injecte aucun markup. **Deux couches pour DEUX
+   échecs distincts** (pas primaire/repli) : le marqueur de `flattenToolResult` empêche
+   le base64 d'**atteindre** le modèle ; une règle de **formulation** l'empêche de
    **narrer/simuler** l'image même sans déclencheur. Cette règle est une doctrine
    **comportementale transverse** → `toolsDoctrinePrompt()`, **toujours injectée**
    par `buildSystemMessage()` dès que des outils existent, **indépendamment de
@@ -542,7 +576,12 @@ navigateur + framework maison). Seules les **fonctions pures** sont couvertes
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 (`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`), **agrégation MCP**
 (`parseToolName`, `groupByNamespace`, `guessMcpTransport`, `validateMcpServerName`,
-`filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`).
+`filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`),
+**ressources** (`classifyMime`, `humanSize`, `formatResourceDescriptor`,
+`generateResourceId`, `arrayBufferToBase64`/`base64ToArrayBuffer`,
+`utf8Encode`/`utf8Decode`, `extractResultParts`, `assembleToolResultForModel`).
+IDB, `internResourcesFromResult`, `loadConversationResources` et la cascade D8
+se vérifient à la main (tests 28–34 dans `tests/MANUAL.md`).
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout
