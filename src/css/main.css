@@ -1246,6 +1246,23 @@ body {
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
 .tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
+/* Intent en langage naturel (niveau 1) + breadcrumb technique repliée (niveau 2). */
+/* L'icône s'aligne en haut quand deux niveaux sont affichés. */
+.tool-ack.has-intent { align-items: flex-start; }
+.tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
+.mcp-intent-row { display: flex; align-items: center; gap: 4px; }
+.mcp-intent { flex: 1; }
+.mcp-chevron {
+  flex-shrink: 0;
+  background: none; border: none; padding: 1px; cursor: pointer;
+  color: var(--accent); opacity: 0.75;
+  display: inline-flex; align-items: center; line-height: 1;
+}
+.mcp-chevron:hover { opacity: 1; }
+.mcp-chevron svg { transition: transform 0.2s; }
+.mcp-chevron.open svg { transform: rotate(180deg); }
+.mcp-breadcrumb-detail { display: block; margin-top: 2px; }
+.mcp-breadcrumb-detail[hidden] { display: none; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {

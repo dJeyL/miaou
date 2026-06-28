@@ -1257,6 +1257,23 @@ body {
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
 .tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
+/* Intent en langage naturel (niveau 1) + breadcrumb technique repliée (niveau 2). */
+/* L'icône s'aligne en haut quand deux niveaux sont affichés. */
+.tool-ack.has-intent { align-items: flex-start; }
+.tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
+.mcp-intent-row { display: flex; align-items: center; gap: 4px; }
+.mcp-intent { flex: 1; }
+.mcp-chevron {
+  flex-shrink: 0;
+  background: none; border: none; padding: 1px; cursor: pointer;
+  color: var(--accent); opacity: 0.75;
+  display: inline-flex; align-items: center; line-height: 1;
+}
+.mcp-chevron:hover { opacity: 1; }
+.mcp-chevron svg { transition: transform 0.2s; }
+.mcp-chevron.open svg { transform: rotate(180deg); }
+.mcp-breadcrumb-detail { display: block; margin-top: 2px; }
+.mcp-breadcrumb-detail[hidden] { display: none; }
 
 /* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {
@@ -1904,6 +1921,17 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
         <div class="check-row">
           <div class="label-col">
+            <label>Traces en langage naturel</label>
+            <span class="hint">Demande au modèle de décrire ses appels</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-intent-tracing">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+        <div class="check-row">
+          <div class="label-col">
             <label>Enregistrer les réponses JSON</label>
             <span class="hint">Crée des ressources pour faciliter le debugging.</span>
           </div>
@@ -1988,7 +2016,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-28 07:35 UTC */
+/* miaou — built: 2026-06-28 09:45 UTC */
 
 
 /* ── utils.js ── */
@@ -2396,7 +2424,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782632154}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782639902}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -2416,6 +2444,7 @@ const DEFAULT_SETTINGS = {
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
   saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
+  intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -3184,6 +3213,15 @@ const MEMORY_DOCTRINE =
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
+// Doctrine de traçage des intentions (traces en langage naturel). Injectée
+// conditionnellement dans buildSystemMessage() selon le toggle intentTracing.
+const INTENT_DOCTRINE =
+  "Pour chaque appel d'outil, inclus miaou_intent dans les ARGUMENTS de l'appel (jamais dans le nom de l'outil). " +
+  "Sa valeur est une courte phrase décrivant le but de l'action à l'utilisateur — " +
+  "pas une paraphrase du nom technique, mais l'intention concrète. " +
+  "Exemples : « Récupération de la météo à Paris », « Enregistrement de la préférence de langue », " +
+  "« Liste des conversations de la semaine passée ». Nom d'action sans point final, sans guillemets supplémentaires.";
+
 // File d'attente des acks côté client : chaque handler d'outil (écriture mémoire
 // OU lecture d'historique) y pousse un descripteur portant son `kind` ; main.js la
 // consomme dans onFinal pour injecter les messages 'tool-ack' dans le thread
@@ -3590,9 +3628,12 @@ function disconnectMcpServer(name) {
 // le modèle (D9). Échec/timeout → résultat isError textuel, jamais de throw.
 // L'ack mcp_call est poussé dans _pendingToolAcks de manière SYNCHRONE, avant le
 // premier await, pour permettre le rendu pendant le round-trip (cf. onEarlyAcks).
-async function callRemoteTool(server, toolName, args) {
+// `intent` : description en langage naturel extraite de miaou_intent par callTool
+// (déjà strippée des args envoyés au serveur). Stockée dans l'ack pour l'UI.
+async function callRemoteTool(server, toolName, args, intent) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = { kind: 'mcp_call', server: server.name, name: fullName };
+  if (intent != null) ackEntry.intent = intent;
   _pendingToolAcks.push(ackEntry);   // synchrone — avant tout await
 
   try {
@@ -3631,16 +3672,26 @@ function callInternalTool(toolName, args) {
 // appelants font `await callTool(...)`, et `await` sur un objet le renvoie tel
 // quel. Cela garde les branches interne/erreur synchrones, donc testables sans
 // async (le runner QuickJS n'attend pas les promesses).
+// miaou_intent est strippé des args avant tout dispatch : les handlers internes
+// et serveurs MCP ne doivent jamais le recevoir. Pour les outils distants, l'intent
+// est passé à callRemoteTool pour être stocké dans l'ack. Les args originaux
+// (avec miaou_intent) restent dans l'objet référencé par api.js → stockés dans
+// entry.args via onEnrichLastAck → réinjectés tels quels aux tours suivants.
 function callTool(name, args) {
   const parsed = parseToolName(name);
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
-    return callInternalTool(parsed.toolName, args);
+    const cleanArgs = args ? Object.assign({}, args) : {};
+    delete cleanArgs.miaou_intent;
+    return callInternalTool(parsed.toolName, cleanArgs);
   }
   const server = getMcpServer(parsed.serverPrefix);   // storage.js
   if (!server || server.enabled === false) {
     return { content: [{ type: 'text', text: 'Serveur MCP inconnu ou désactivé : ' + parsed.serverPrefix }], isError: true };
   }
-  return callRemoteTool(server, parsed.toolName, args);
+  const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
+  const serverArgs = args ? Object.assign({}, args) : {};
+  delete serverArgs.miaou_intent;
+  return callRemoteTool(server, parsed.toolName, serverArgs, intent);
 }
 
 // Aplatit un résultat MCP en string pour le message role:'tool' renvoyé au modèle.
@@ -3669,11 +3720,21 @@ function toolIsHalting(name) { return name === 'ask_confirmation'; }
 // distant) + ASK_CONFIRMATION_DEF. Les noms d'outils internes y sont désormais
 // `miaou__*` : V2 rompt délibérément le byte-identical de V1 (le préfixe sert à
 // router interne vs distant sans cas particulier).
+// Si intentTracing est activé, `miaou_intent` est ajouté au schema de chaque
+// outil (hors ask_confirmation) pour que le modèle décrive son intention.
+// Nom sans underscore initial : évite les traitements spéciaux des parsers de
+// grammar (Ollama/llama.cpp) qui peuvent interpréter `_xxx` comme un champ privé.
 function toolDefinitions() {
-  const mcpDefs = exposedTools().map(t => ({
-    type: 'function',
-    function: { name: t.name, description: t.description, parameters: t.inputSchema },
-  }));
+  const intentEnabled = !!loadSettings().intentTracing;
+  const intentProp = { type: 'string', title: 'Intention', description: 'Phrase courte décrivant le but de l\'appel, pour l\'utilisateur.' };
+  const mcpDefs = exposedTools().map(t => {
+    const params = intentEnabled
+      ? Object.assign({}, t.inputSchema, {
+          properties: Object.assign({}, t.inputSchema.properties || {}, { miaou_intent: intentProp }),
+        })
+      : t.inputSchema;
+    return { type: 'function', function: { name: t.name, description: t.description, parameters: params } };
+  });
   return mcpDefs.concat([ASK_CONFIRMATION_DEF]);
 }
 
@@ -3706,6 +3767,10 @@ function toolsDoctrinePrompt() { return BINARY_DOCTRINE; }
 function memoryDoctrinePrompt() {
   const hasMemoryTools = TOOLS.some(t => t.name === 'create_memory');
   return hasMemoryTools ? MEMORY_DOCTRINE : '';
+}
+
+function intentDoctrinePrompt() {
+  return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
 }
 
 
@@ -4397,6 +4462,7 @@ const ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 const ICON_EYE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
 const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 
 const ACK_KINDS = {
@@ -4409,24 +4475,70 @@ const ACK_KINDS = {
     : m.count === 1 ? '1 conversation listée'
     : (m.count != null ? m.count : '?') + ' conversations listées' },
   // Appel d'outil MCP distant : breadcrumb `seg1` › `seg2` › … sur chaque `__`.
-  // renderLabel prend le relais sur textContent pour injecter les <code> et le
-  // séparateur teinté. `label` reste la version texte brut (ackLabel, tests).
+  // Si m.intent est présent, rendu en deux niveaux : intention (niveau 1, visible)
+  // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
+  // `label` reste la version texte brut (ackLabel, tests) — breadcrumb uniquement.
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
     label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
-      el.appendChild(document.createTextNode('Appel : '));
       const segs = (m.name || '').split('__').filter(Boolean);
-      segs.forEach((seg, i) => {
-        if (i > 0) {
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';   // ›
-          el.appendChild(sep);
-        }
-        const code = document.createElement('code');
-        code.textContent = seg;
-        el.appendChild(code);
-      });
+      if (m.intent) {
+        // Niveau 1 : intention + chevron toggle
+        const row = document.createElement('span');
+        row.className = 'mcp-intent-row';
+        const intentSpan = document.createElement('span');
+        intentSpan.className = 'mcp-intent';
+        intentSpan.textContent = m.intent;
+        row.appendChild(intentSpan);
+        const chevron = document.createElement('button');
+        chevron.className = 'mcp-chevron';
+        chevron.type = 'button';
+        chevron.title = 'Détail technique';
+        chevron.innerHTML = ICON_CHEVRON_DOWN;
+        // Niveau 2 : breadcrumb repliée par défaut
+        const detail = document.createElement('span');
+        detail.className = 'mcp-breadcrumb-detail';
+        detail.setAttribute('hidden', '');
+        detail.appendChild(document.createTextNode('Appel : '));
+        segs.forEach((seg, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'mcp-call-sep';
+            sep.textContent = '›';
+            detail.appendChild(sep);
+          }
+          const code = document.createElement('code');
+          code.textContent = seg;
+          detail.appendChild(code);
+        });
+        chevron.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (detail.hasAttribute('hidden')) {
+            detail.removeAttribute('hidden');
+            chevron.classList.add('open');
+          } else {
+            detail.setAttribute('hidden', '');
+            chevron.classList.remove('open');
+          }
+        });
+        row.appendChild(chevron);
+        el.appendChild(row);
+        el.appendChild(detail);
+      } else {
+        // Fallback : breadcrumb seule (inchangée)
+        el.appendChild(document.createTextNode('Appel : '));
+        segs.forEach((seg, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'mcp-call-sep';
+            sep.textContent = '›';
+            el.appendChild(sep);
+          }
+          const code = document.createElement('code');
+          code.textContent = seg;
+          el.appendChild(code);
+        });
+      }
     },
   },
   // ── Ressources IDB ──────────────────────────────────────────────────────────
@@ -4463,7 +4575,8 @@ function buildToolAck(m) {
   const wrap = document.createElement('div');
   wrap.className = 'tool-ack ack-' + (kind || 'unknown') +
     (m.resolved ? ' resolved' : '') +
-    (m.error ? ' ack-error' : '');
+    (m.error ? ' ack-error' : '') +
+    (kind === 'mcp_call' && m.intent ? ' has-intent' : '');
   if (m.id) wrap.dataset.ackId = m.id;
 
   if (spec.icon) {
@@ -5246,6 +5359,7 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
@@ -6154,16 +6268,17 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Contenu statique uniquement : identique d'un tour à l'autre tant que tools,
-// ROOT_SYSTEM_PROMPT et systemPrompt configuré ne changent pas — permet le KV
-// cache prefix matching. Ordre : racine → énumération outils (si ON) → utilisateur.
+// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
+  const settings = loadSettings();
   if (TOOLS.length) {
     parts.push(ROOT_SYSTEM_PROMPT);
-    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+    if (settings.includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+    const intentPart = intentDoctrinePrompt();
+    if (intentPart) parts.push(intentPart);
   }
-  const sysUser = (loadSettings().systemPrompt || '').trim();
+  const sysUser = (settings.systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
@@ -6194,6 +6309,7 @@ async function openConversation(id) {
       if (m.ts != null)               a.ts = m.ts;
       if (m.group != null)            a.group = m.group;
       if (m.assistantText != null)    a.assistantText = m.assistantText;
+      if (m.intent != null)           a.intent = m.intent;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -6335,6 +6451,7 @@ function persistCurrent() {
       if (m.ts != null)            o.ts = m.ts;
       if (m.group != null)         o.group = m.group;
       if (m.assistantText != null) o.assistantText = m.assistantText;
+      if (m.intent != null)        o.intent = m.intent;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -6396,6 +6513,7 @@ function onSaveSettings() {
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
+    intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
   };
   saveSettings(obj);
@@ -6601,6 +6719,7 @@ async function dispatchSend(matches) {
           const entry = { role: 'tool-ack', kind: ack.kind };
           if (ack.server != null)        entry.server = ack.server;
           if (ack.name != null)          entry.name = ack.name;
+          if (ack.intent != null)        entry.intent = ack.intent;
           // Champs d'enrichissement cross-turn (peuvent déjà être posés si un
           // outil interne précédent a été drainé ici en même temps qu'un MCP).
           if (ack.args != null)          entry.args = ack.args;

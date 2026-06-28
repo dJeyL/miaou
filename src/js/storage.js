@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS = {
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
   saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
+  intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────

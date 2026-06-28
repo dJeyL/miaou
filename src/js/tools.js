@@ -52,6 +52,15 @@ const MEMORY_DOCTRINE =
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
+// Doctrine de traçage des intentions (traces en langage naturel). Injectée
+// conditionnellement dans buildSystemMessage() selon le toggle intentTracing.
+const INTENT_DOCTRINE =
+  "Pour chaque appel d'outil, inclus miaou_intent dans les ARGUMENTS de l'appel (jamais dans le nom de l'outil). " +
+  "Sa valeur est une courte phrase décrivant le but de l'action à l'utilisateur — " +
+  "pas une paraphrase du nom technique, mais l'intention concrète. " +
+  "Exemples : « Récupération de la météo à Paris », « Enregistrement de la préférence de langue », " +
+  "« Liste des conversations de la semaine passée ». Nom d'action sans point final, sans guillemets supplémentaires.";
+
 // File d'attente des acks côté client : chaque handler d'outil (écriture mémoire
 // OU lecture d'historique) y pousse un descripteur portant son `kind` ; main.js la
 // consomme dans onFinal pour injecter les messages 'tool-ack' dans le thread
@@ -458,9 +467,12 @@ function disconnectMcpServer(name) {
 // le modèle (D9). Échec/timeout → résultat isError textuel, jamais de throw.
 // L'ack mcp_call est poussé dans _pendingToolAcks de manière SYNCHRONE, avant le
 // premier await, pour permettre le rendu pendant le round-trip (cf. onEarlyAcks).
-async function callRemoteTool(server, toolName, args) {
+// `intent` : description en langage naturel extraite de miaou_intent par callTool
+// (déjà strippée des args envoyés au serveur). Stockée dans l'ack pour l'UI.
+async function callRemoteTool(server, toolName, args, intent) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = { kind: 'mcp_call', server: server.name, name: fullName };
+  if (intent != null) ackEntry.intent = intent;
   _pendingToolAcks.push(ackEntry);   // synchrone — avant tout await
 
   try {
@@ -499,16 +511,26 @@ function callInternalTool(toolName, args) {
 // appelants font `await callTool(...)`, et `await` sur un objet le renvoie tel
 // quel. Cela garde les branches interne/erreur synchrones, donc testables sans
 // async (le runner QuickJS n'attend pas les promesses).
+// miaou_intent est strippé des args avant tout dispatch : les handlers internes
+// et serveurs MCP ne doivent jamais le recevoir. Pour les outils distants, l'intent
+// est passé à callRemoteTool pour être stocké dans l'ack. Les args originaux
+// (avec miaou_intent) restent dans l'objet référencé par api.js → stockés dans
+// entry.args via onEnrichLastAck → réinjectés tels quels aux tours suivants.
 function callTool(name, args) {
   const parsed = parseToolName(name);
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
-    return callInternalTool(parsed.toolName, args);
+    const cleanArgs = args ? Object.assign({}, args) : {};
+    delete cleanArgs.miaou_intent;
+    return callInternalTool(parsed.toolName, cleanArgs);
   }
   const server = getMcpServer(parsed.serverPrefix);   // storage.js
   if (!server || server.enabled === false) {
     return { content: [{ type: 'text', text: 'Serveur MCP inconnu ou désactivé : ' + parsed.serverPrefix }], isError: true };
   }
-  return callRemoteTool(server, parsed.toolName, args);
+  const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
+  const serverArgs = args ? Object.assign({}, args) : {};
+  delete serverArgs.miaou_intent;
+  return callRemoteTool(server, parsed.toolName, serverArgs, intent);
 }
 
 // Aplatit un résultat MCP en string pour le message role:'tool' renvoyé au modèle.
@@ -537,11 +559,21 @@ function toolIsHalting(name) { return name === 'ask_confirmation'; }
 // distant) + ASK_CONFIRMATION_DEF. Les noms d'outils internes y sont désormais
 // `miaou__*` : V2 rompt délibérément le byte-identical de V1 (le préfixe sert à
 // router interne vs distant sans cas particulier).
+// Si intentTracing est activé, `miaou_intent` est ajouté au schema de chaque
+// outil (hors ask_confirmation) pour que le modèle décrive son intention.
+// Nom sans underscore initial : évite les traitements spéciaux des parsers de
+// grammar (Ollama/llama.cpp) qui peuvent interpréter `_xxx` comme un champ privé.
 function toolDefinitions() {
-  const mcpDefs = exposedTools().map(t => ({
-    type: 'function',
-    function: { name: t.name, description: t.description, parameters: t.inputSchema },
-  }));
+  const intentEnabled = !!loadSettings().intentTracing;
+  const intentProp = { type: 'string', title: 'Intention', description: 'Phrase courte décrivant le but de l\'appel, pour l\'utilisateur.' };
+  const mcpDefs = exposedTools().map(t => {
+    const params = intentEnabled
+      ? Object.assign({}, t.inputSchema, {
+          properties: Object.assign({}, t.inputSchema.properties || {}, { miaou_intent: intentProp }),
+        })
+      : t.inputSchema;
+    return { type: 'function', function: { name: t.name, description: t.description, parameters: params } };
+  });
   return mcpDefs.concat([ASK_CONFIRMATION_DEF]);
 }
 
@@ -574,4 +606,8 @@ function toolsDoctrinePrompt() { return BINARY_DOCTRINE; }
 function memoryDoctrinePrompt() {
   const hasMemoryTools = TOOLS.some(t => t.name === 'create_memory');
   return hasMemoryTools ? MEMORY_DOCTRINE : '';
+}
+
+function intentDoctrinePrompt() {
+  return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
 }

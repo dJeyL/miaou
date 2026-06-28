@@ -106,16 +106,17 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Contenu statique uniquement : identique d'un tour à l'autre tant que tools,
-// ROOT_SYSTEM_PROMPT et systemPrompt configuré ne changent pas — permet le KV
-// cache prefix matching. Ordre : racine → énumération outils (si ON) → utilisateur.
+// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
+  const settings = loadSettings();
   if (TOOLS.length) {
     parts.push(ROOT_SYSTEM_PROMPT);
-    if (loadSettings().includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+    if (settings.includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
+    const intentPart = intentDoctrinePrompt();
+    if (intentPart) parts.push(intentPart);
   }
-  const sysUser = (loadSettings().systemPrompt || '').trim();
+  const sysUser = (settings.systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
@@ -146,6 +147,7 @@ async function openConversation(id) {
       if (m.ts != null)               a.ts = m.ts;
       if (m.group != null)            a.group = m.group;
       if (m.assistantText != null)    a.assistantText = m.assistantText;
+      if (m.intent != null)           a.intent = m.intent;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -287,6 +289,7 @@ function persistCurrent() {
       if (m.ts != null)            o.ts = m.ts;
       if (m.group != null)         o.group = m.group;
       if (m.assistantText != null) o.assistantText = m.assistantText;
+      if (m.intent != null)        o.intent = m.intent;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -348,6 +351,7 @@ function onSaveSettings() {
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
+    intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
   };
   saveSettings(obj);
@@ -553,6 +557,7 @@ async function dispatchSend(matches) {
           const entry = { role: 'tool-ack', kind: ack.kind };
           if (ack.server != null)        entry.server = ack.server;
           if (ack.name != null)          entry.name = ack.name;
+          if (ack.intent != null)        entry.intent = ack.intent;
           // Champs d'enrichissement cross-turn (peuvent déjà être posés si un
           // outil interne précédent a été drainé ici en même temps qu'un MCP).
           if (ack.args != null)          entry.args = ack.args;

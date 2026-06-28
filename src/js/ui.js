@@ -247,6 +247,7 @@ const ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 const ICON_EYE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
 const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 
 const ACK_KINDS = {
@@ -259,24 +260,70 @@ const ACK_KINDS = {
     : m.count === 1 ? '1 conversation listée'
     : (m.count != null ? m.count : '?') + ' conversations listées' },
   // Appel d'outil MCP distant : breadcrumb `seg1` › `seg2` › … sur chaque `__`.
-  // renderLabel prend le relais sur textContent pour injecter les <code> et le
-  // séparateur teinté. `label` reste la version texte brut (ackLabel, tests).
+  // Si m.intent est présent, rendu en deux niveaux : intention (niveau 1, visible)
+  // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
+  // `label` reste la version texte brut (ackLabel, tests) — breadcrumb uniquement.
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
     label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
-      el.appendChild(document.createTextNode('Appel : '));
       const segs = (m.name || '').split('__').filter(Boolean);
-      segs.forEach((seg, i) => {
-        if (i > 0) {
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';   // ›
-          el.appendChild(sep);
-        }
-        const code = document.createElement('code');
-        code.textContent = seg;
-        el.appendChild(code);
-      });
+      if (m.intent) {
+        // Niveau 1 : intention + chevron toggle
+        const row = document.createElement('span');
+        row.className = 'mcp-intent-row';
+        const intentSpan = document.createElement('span');
+        intentSpan.className = 'mcp-intent';
+        intentSpan.textContent = m.intent;
+        row.appendChild(intentSpan);
+        const chevron = document.createElement('button');
+        chevron.className = 'mcp-chevron';
+        chevron.type = 'button';
+        chevron.title = 'Détail technique';
+        chevron.innerHTML = ICON_CHEVRON_DOWN;
+        // Niveau 2 : breadcrumb repliée par défaut
+        const detail = document.createElement('span');
+        detail.className = 'mcp-breadcrumb-detail';
+        detail.setAttribute('hidden', '');
+        detail.appendChild(document.createTextNode('Appel : '));
+        segs.forEach((seg, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'mcp-call-sep';
+            sep.textContent = '›';
+            detail.appendChild(sep);
+          }
+          const code = document.createElement('code');
+          code.textContent = seg;
+          detail.appendChild(code);
+        });
+        chevron.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (detail.hasAttribute('hidden')) {
+            detail.removeAttribute('hidden');
+            chevron.classList.add('open');
+          } else {
+            detail.setAttribute('hidden', '');
+            chevron.classList.remove('open');
+          }
+        });
+        row.appendChild(chevron);
+        el.appendChild(row);
+        el.appendChild(detail);
+      } else {
+        // Fallback : breadcrumb seule (inchangée)
+        el.appendChild(document.createTextNode('Appel : '));
+        segs.forEach((seg, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'mcp-call-sep';
+            sep.textContent = '›';
+            el.appendChild(sep);
+          }
+          const code = document.createElement('code');
+          code.textContent = seg;
+          el.appendChild(code);
+        });
+      }
     },
   },
   // ── Ressources IDB ──────────────────────────────────────────────────────────
@@ -313,7 +360,8 @@ function buildToolAck(m) {
   const wrap = document.createElement('div');
   wrap.className = 'tool-ack ack-' + (kind || 'unknown') +
     (m.resolved ? ' resolved' : '') +
-    (m.error ? ' ack-error' : '');
+    (m.error ? ' ack-error' : '') +
+    (kind === 'mcp_call' && m.intent ? ' has-intent' : '');
   if (m.id) wrap.dataset.ackId = m.id;
 
   if (spec.icon) {
@@ -1096,6 +1144,7 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
+  $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
