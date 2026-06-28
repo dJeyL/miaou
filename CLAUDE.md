@@ -515,26 +515,28 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
 8. **Blocs non-text = données persistées en IDB, rendu via IDB au reload (D8/D9).**
    `callRemoteTool` pousse tous les blocs non-text reçus du serveur dans
    `_pendingToolBlocks` (tools.js). `internResourcesFromResult` (api.js) intercepte
-   le résultat **avant** `flattenToolResult` : pour les blocs **inline** (`resource.text`)
-   → stocke en IDB + pousse le texte brut dans le résultat (le modèle le reçoit
-   directement, `entry.result` = texte brut) ; pour les blocs **binaires** (image,
-   audio, resource blob) → stocke en IDB + remplace par `[resource_ref:res_…]` +
-   note « présentée » (`entry.result` = ref). `flattenToolResult` voit ensuite
-   uniquement des blocs `text` (les refs ou le texte brut) et les aplatit en chaîne.
+   le résultat **avant** `flattenToolResult` :
+   - Blocs **inline** (`resource.text`) → stocke en IDB (persistance, accès via
+     `present_resource`) ; appelle `retainPendingToolBlocks` pour retirer le bloc de
+     la queue D8 (pas d'affichage automatique côté UI) ; pousse dans le résultat le
+     texte brut **suivi du descripteur** `[resource id=… mime=… name="…" size=…]`
+     (même format que les binaires, sans note « présentée ») — le modèle reçoit ainsi
+     le contenu ET l'ID pour un éventuel `present_resource`.
+   - Blocs **binaires** (image, audio, resource blob) → stocke en IDB + remplace par
+     `[resource_ref:res_…]` + note « présentée » (`entry.result` = ref).
+   `flattenToolResult` voit ensuite uniquement des blocs `text` et les aplatit.
    Son fallback `[image rendue dans l'interface]` ne se déclenche que si le bloc
-   échappe à `internResourcesFromResult`. Le marqueur (et non le vide) est délibéré :
+   échappe à `internResourcesFromResult` — le marqueur (pas le vide) est délibéré :
    un message `tool` vide poussait le modèle à **simuler/encoder** l'image.
-   Les blocs de `_pendingToolBlocks` sont drainés par `onToolAcks` et rendus
-   **dans la bulle assistant** par `placeToolBlocks` (image → `<img>` data-URI ;
-   resource-texte → bloc code surligné Prism ; binaire → téléchargement éphémère).
-   **Au reload**, `_pendingToolBlocks` est vide : `placeToolAck` détecte l'absence
-   (`getPendingToolBlocks().length === 0`) et re-rend le bloc depuis IDB via
-   `makeResourcePresentBlock` → `renderToolBlock` (même cascade). Le double-rendu
-   live/IDB est évité par ce conditionnel dans `placeToolAck`, pas par
-   `retainPendingToolBlocks` (définie dans tools.js mais jamais appelée — dead code).
-   Au payload API, `resolveResourceRefs` (resources.js, dans `dispatchSend`) remplace
-   les refs **binaires** par le descripteur statique ; les ressources **inline** ont
-   déjà le texte brut dans `entry.result` — pas de ref à résoudre.
+   Les blocs **binaires** de `_pendingToolBlocks` sont drainés par `onToolAcks` et
+   rendus dans la bulle par `placeToolBlocks` (image → `<img>` ; binaire →
+   téléchargement éphémère). **Les blocs inline ont été retirés de la queue** par
+   `retainPendingToolBlocks` — seul le chip `resource_stored` reste visible.
+   **Au reload**, `placeToolAck` re-rend les blocs **binaires** depuis IDB
+   (`getPendingToolBlocks().length === 0` + `record.class !== 'inline'`) ; les inline
+   sont dans l'IDB mais non affichés (accessibles via `present_resource` si besoin).
+   Au payload API, `resolveResourceRefs` remplace les refs **binaires** par le
+   descripteur statique ; les inline ont le texte brut dans `entry.result` — pas de ref.
    DOM-safe : seule exception « HTML-ish » = le `src` data-URI de l'`<img>`, qui
    n'injecte aucun markup. **Deux couches pour DEUX
    échecs distincts** (pas primaire/repli) : le marqueur de `flattenToolResult` empêche

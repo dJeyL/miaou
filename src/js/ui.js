@@ -381,16 +381,16 @@ function placeToolAck(wrap, entry) {
   const body = wrap && wrap.querySelector('.body');
   if (body) wrap.insertBefore(node, body);
   else if (wrap) wrap.appendChild(node);
-  // resource_presented et resource_stored : rend le bloc ressource directement dans
-  // la bulle, entre l'ack et le corps de la réponse. Pour resource_stored en live,
-  // _pendingToolBlocks (non vide à ce stade) contient déjà le bloc brut D8 qui sera
-  // rendu par placeToolBlocks juste après — on évite le double rendu.
+  // resource_presented : rend le bloc ressource (toute classe).
+  // resource_stored : rend le bloc pour les binaires uniquement (les inline sont
+  // stockés en IDB mais non affichés automatiquement) ; en live, _pendingToolBlocks
+  // est non vide (binaires) → on laisse placeToolBlocks les rendre, pas de double.
   const kindNow = ackKindOf(entry);
   const needsBlock = kindNow === 'resource_presented' ||
     (kindNow === 'resource_stored' && typeof getPendingToolBlocks === 'function' && getPendingToolBlocks().length === 0);
   if (needsBlock && entry.id && wrap) {
     const record = typeof getCachedRecord === 'function' ? getCachedRecord(entry.id) : null;
-    if (record) {
+    if (record && (kindNow !== 'resource_stored' || record.class !== 'inline')) {
       const block = makeResourcePresentBlock(record);
       const blockNode = block ? renderToolBlock(block) : null;
       if (blockNode) {

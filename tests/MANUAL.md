@@ -99,10 +99,12 @@ uv run tests/mcp_bench.py        # http://127.0.0.1:8765/mcp
     est réinjecté au modèle (`add`/`dns_lookup` renvoient du texte exploité dans
     la réponse).
 20. **Cascade non-text (D8)** : demander `bench__get_image` → l'image PNG s'affiche
-    inline dans la bulle (pas de markup injecté). `bench__get_json_resource` → bloc
-    de code JSON surligné. Un binaire/inconnu → ligne « Pièce jointe » + bouton
-    Télécharger (Blob éphémère). **Recharger la page → ces blocs disparaissent**
-    (non persistés, c'est voulu) ; le texte de la réponse, lui, reste.
+    inline dans la bulle (pas de markup injecté) et **réapparaît au rechargement**
+    (persistée en IDB). Demander `bench__get_json_resource` → aucun bloc de code
+    n'apparaît (les réponses JSON sont passées au modèle mais non affichées) ; seul
+    le chip « Ressource enregistrée : … » est visible. Un binaire/inconnu → ligne
+    « Pièce jointe » + bouton Télécharger (Blob éphémère). Le texte de la réponse
+    reste dans tous les cas.
 21. **Filtres allow/deny** : sur la carte, mettre `get_image` en « Outils masqués »
     → il disparaît du registre (drawer + sélection). Mettre `echo` seul en
     « Outils autorisés » → seul `echo` reste. Denylist gagne si un outil est dans
@@ -149,13 +151,15 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
 
 28. **Ressource inline (JSON)** : demander « utilise `get_json_resource` ». Lors de
     l'appel, un chip « Ressource enregistrée : … » apparaît dans la bulle (ack
-    `resource_stored`), immédiatement suivi d'un bloc de code JSON surligné (rendu
-    directement, sans bouton « voir »). Dans IndexedDB, une entrée `class: "inline"`
-    est présente avec `mime: "application/json"`. `localStorage['miaou-conversations']`
-    ne contient **pas** de base64 — le champ `result` de l'ack contient le **texte
-    brut JSON** (pas une référence `[resource_ref:…]`). Dans le payload réseau du tour
-    suivant, le message `role:'tool'` contient ce JSON directement — il provient de
-    `entry.result` sans résolution de ref (le texte brut y était déjà).
+    `resource_stored`) — **sans bloc de code** (les ressources texte/JSON sont
+    stockées mais non affichées automatiquement). Dans IndexedDB, une entrée
+    `class: "inline"` est présente avec `mime: "application/json"`. Le champ `result`
+    de l'ack (dans `localStorage['miaou-conversations']`) contient le **texte brut
+    JSON suivi du descripteur** `[resource id=res_… mime=… name="…" size=…]` — pas
+    de base64, pas de `[resource_ref:…]`. Dans le payload réseau du tour suivant, le
+    `role:'tool'` contient ce contenu directement (pas de résolution de ref). Le
+    modèle voit le JSON complet et l'ID, et peut appeler `miaou__present_resource`
+    avec cet ID s'il juge utile d'afficher la ressource.
 
 29. **Ressource binaire (image)** : demander « utilise `get_image` ». Un chip
     « Ressource enregistrée : … » apparaît suivi de l'image inline dans la bulle.
@@ -165,17 +169,15 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     **pas de base64**. Aucun base64 ne circule vers le modèle.
 
 30. **Persistance au rechargement** : effectuer les tests 28 et 29, puis recharger
-    la page et rouvrir la conversation. Les chips acks sont toujours là (persistés
-    dans `localStorage`). Les blocs image et code JSON **réapparaissent** dans les
-    bulles assistantes — ils sont re-rendus par `placeToolAck` depuis IDB (même
-    chemin live / reload). Envoyer un nouveau message quelconque → dans DevTools
-    Network, vérifier le payload : le `role:'tool'` de la ressource **inline** contient
-    le **JSON complet** directement (issu de `entry.result` en localStorage, pas de
-    résolution de ref — le texte brut était déjà là) ; le `role:'tool'` de la ressource
-    **binary** contient le descripteur `[resource id=…]` + note « présentée » (la ref
-    `[resource_ref:res_…]` de `entry.result` a été remplacée par `resolveResourceRefs`
-    avant `expandThread`). Le préfixe `system + historique[0..N-2]` est byte-identique
-    d'une requête à l'autre.
+    la page et rouvrir la conversation. Les chips acks sont toujours là. L'image
+    **réapparaît** dans la bulle (rendue par `placeToolAck` depuis IDB, `class:
+    "binary"`). Aucun bloc JSON n'apparaît (inline : stocké en IDB mais non
+    affiché). Envoyer un nouveau message → dans DevTools Network : le `role:'tool'`
+    de la ressource **inline** contient le JSON complet (texte brut direct depuis
+    `entry.result`, sans résolution de ref) ; le `role:'tool'` de la ressource
+    **binary** contient le descripteur `[resource id=…]` + note « présentée » (ref
+    résolue par `resolveResourceRefs` avant `expandThread`). Le préfixe
+    `system + historique[0..N-2]` est byte-identique d'une requête à l'autre.
 
 31. **`present_resource`** : après les tests 28/29 (session cache chaud, ou après
     rechargement qui recharge le cache), demander au modèle « utilise
