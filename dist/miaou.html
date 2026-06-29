@@ -454,6 +454,7 @@ body {
   gap: 6px;
   margin-top: 6px;
 }
+.msg-edit-error { font-size: 12px; color: var(--err, #f85149); margin-top: 6px; text-align: left; }
 
 /* assistant: full width of column, centered block, no bubble chrome */
 .msg.assistant { align-items: stretch; margin: 4px 0 14px; }
@@ -1407,6 +1408,78 @@ body {
 .mcp-view-toggle-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
 .mcp-view-row .drawer-btn { margin-left: auto; }
 
+/* ── Skills : drawer de gestion ─────────────────────────────────────────────── */
+/* Drawer plus large : édition de corps Markdown (textarea confortable). */
+.drawer-wide { width: 620px; }
+.skill-add-btn { align-self: flex-start; }
+.skill-list { display: flex; flex-direction: column; gap: 14px; }
+.skill-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skill-field { display: flex; flex-direction: column; gap: 5px; }
+.skill-field > label { font-size: 11.5px; font-weight: 500; color: var(--text-2); }
+.skill-field input,
+.skill-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.skill-field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 140px;
+}
+.skill-field input:focus,
+.skill-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.skill-field .hint { font-size: 11px; color: var(--text-3); }
+.skill-enabled-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.skill-err { font-size: 11.5px; color: var(--err, #f85149); }
+.skill-actions { display: flex; gap: 6px; margin-top: 2px; }
+.skill-view { display: flex; align-items: center; gap: 10px; }
+.skill-card.is-editing .skill-view { display: none; }
+.skill-edit { display: none; flex-direction: column; gap: 10px; }
+.skill-card.is-editing .skill-edit { display: flex; }
+.skill-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.skill-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.skill-view-slug { font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.skill-view-row { display: flex; align-items: center; gap: 10px; }
+
+/* ── Composer : autocomplétion des skills + erreur slash ─────────────────────── */
+.skill-ac {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.skill-ac-opt {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.skill-ac-opt:hover,
+.skill-ac-opt.active { background: var(--accent-dim); }
+.skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
+.skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-skill-error { font-size: 12px; color: var(--err, #f85149); margin-top: 6px; }
+
 /* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
 .tool-block {
   align-self: flex-start;
@@ -1829,15 +1902,19 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           <div class="model-menu" id="composer-model-menu"></div>
         </div>
 
+        <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput -->
+        <div class="skill-ac" id="skill-ac" hidden></div>
+
         <div class="input-wrap" id="input-wrap">
           <textarea id="composer-text" rows="1" placeholder="Message…"
-            onkeydown="onComposerKey(event)" oninput="autoGrow(this)"></textarea>
+            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
             <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
           </button>
         </div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne</div>
+        <div class="composer-skill-error" id="composer-skill-error" hidden></div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour un skill</div>
       </div>
     </div>
   </div>
@@ -1974,6 +2051,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <span class="hint">Délègue des appels d'outils à des serveurs MCP externes. Leurs outils sont fusionnés au registre, préfixés par le nom du serveur.</span>
         <button class="btn-ghost" onclick="openMcpServers()">Gérer les serveurs MCP</button>
       </div>
+      <div class="field">
+        <label>Skills</label>
+        <span class="hint">Fragments d'instructions réutilisables. Invoquer via <code>/slug</code> dans le composer, ou laisser le modèle les découvrir par lui-même.</span>
+        <button class="btn-ghost" onclick="openSkills()">Gérer les skills</button>
+      </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
     </div>
@@ -2010,6 +2092,22 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
+  <!-- ═══ Skills drawer ═══ -->
+  <div class="backdrop" id="skills-backdrop" onclick="closeSkills()"></div>
+  <div class="drawer drawer-wide" id="skills-drawer">
+    <div class="drawer-head">
+      <h2>Skills</h2>
+      <button class="icon-btn" onclick="closeSkills()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Une skill est un fragment d'instructions Markdown. Invoquer via <code>/slug</code> (injecté tel quel dans le message), ou laisser le modèle la découvrir via ses outils. Les skills désactivées ne sont ni invocables ni visibles du modèle.</span>
+      <button class="btn-ghost skill-add-btn" onclick="addSkillCard()">Nouvelle skill</button>
+      <div class="skill-list" id="skill-list"></div>
+    </div>
+  </div>
+
   <!-- backdrop confirmation inline (overlay pendant une demande ask_confirmation) -->
   <div class="backdrop" id="confirm-backdrop"></div>
 
@@ -2042,7 +2140,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-29 11:34 UTC */
+/* miaou — built: 2026-06-29 19:43 UTC */
 
 
 /* ── utils.js ── */
@@ -2473,7 +2571,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782732873}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782762185}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3001,12 +3099,17 @@ let _persistenceRequested = false;
 function openResourceDB() {
   if (_resourceDbPromise) return _resourceDbPromise;
   _resourceDbPromise = new Promise(function(resolve, reject) {
-    const req = indexedDB.open('miaou', 1);
+    // v2 : ajout du store `skills` (cf. skills.js). onupgradeneeded est idempotent
+    // (contains-check par store) → migration v1→v2 sans toucher `resources`.
+    const req = indexedDB.open('miaou', 2);
     req.onupgradeneeded = function(e) {
       const db = e.target.result;
       if (!db.objectStoreNames.contains('resources')) {
         const store = db.createObjectStore('resources', { keyPath: 'id' });
         store.createIndex('by_conversation', 'conversationId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('skills')) {
+        db.createObjectStore('skills', { keyPath: 'slug' });
       }
     };
     req.onsuccess = function(e) { resolve(e.target.result); };
@@ -3203,6 +3306,210 @@ function makeResourcePresentBlock(record) {
   return { type: 'resource', resource: {
     blob: arrayBufferToBase64(record.data), mimeType: record.mime, uri: record.name,
   }};
+}
+
+
+/* ── skills.js ── */
+
+/* ── skills.js ─────────────────────────────────────────────────────────────
+   Skills MIAOU (stage 1) : fragments Markdown réutilisables, injectables soit
+   par slash-commande (`/slug`, injection déterministe figée côté client), soit
+   via les outils `miaou__skills__list` / `miaou__skills__read` (chemin modèle).
+
+   Deux couches :
+   1. Helpers purs + cache mémoire (QuickJS-testables) : validation de slug,
+      parsing slash, synchronisation du cache avec les CRUD.
+   2. Couche IDB (navigateur uniquement) : store `skills` (clé `slug`), partage
+      la base `miaou` v2 via openResourceDB() (resources.js).
+
+   Schéma d'enregistrement IDB : { slug, name, description, enabled, content }.
+   Le cache mémoire NE contient PAS `content` (chargé depuis IDB à l'invocation
+   seulement) : il alimente l'autocomplétion du composer, qui filtre à chaque
+   frappe et ne peut pas attendre IDB. cf. brief stage 1.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+// ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
+
+const SKILL_SLUG_MAX = 48;
+
+// Valide un slug de skill (clé d'invocation `/slug` ET clé d'objet IDB).
+// Contraintes : non vide, pas d'espace, pas de `/`, charset contraint, longueur
+// raisonnable, unicité. Retourne une chaîne d'erreur (français) ou null si valide.
+function validateSkillSlug(slug, existingSlugs) {
+  const s = String(slug == null ? '' : slug).trim();
+  if (!s) return 'Slug requis.';
+  if (s.length > SKILL_SLUG_MAX) return 'Slug trop long (max ' + SKILL_SLUG_MAX + ' caractères).';
+  if (/\s/.test(s)) return 'Le slug ne peut pas contenir d\'espace.';
+  if (s.indexOf('/') >= 0) return 'Le slug ne peut pas contenir « / ».';
+  if (!/^[a-zA-Z0-9_-]+$/.test(s)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
+  if (Array.isArray(existingSlugs) && existingSlugs.indexOf(s) >= 0) return 'Ce slug est déjà utilisé.';
+  return null;
+}
+
+// Parse un message composer en commande slash : si le texte commence par
+// `/<slug>` (slug = charset valide), retourne { slug, rest } (rest = reste du
+// texte après le slug, espaces de tête retirés). Sinon null. Pur — la résolution
+// (cache, enabled, contenu IDB) se fait ailleurs.
+function parseSlashCommand(text) {
+  const s = String(text == null ? '' : text);
+  const m = /^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(s);
+  if (!m) return null;
+  return { slug: m[1], rest: (m[2] || '').trim() };
+}
+
+// Assemble le contenu d'un message user à partir du littéral tapé et du corps du
+// skill injecté. Frozen au moment de l'envoi : le résultat est stocké tel quel
+// dans l'historique (jamais re-résolu au reload). DISTINCT de buildContextBlock
+// (miaou_context, recalculé à chaque tour) — ne pas mutualiser.
+function bakeSkillMessage(literalText, skillContent) {
+  const lit = String(literalText == null ? '' : literalText);
+  const body = String(skillContent == null ? '' : skillContent).trim();
+  if (!body) return lit;
+  return lit + '\n\n' + body;
+}
+
+// ── Cache mémoire (méta seulement : slug, name, description, enabled) ─────────
+// Tableau d'ordre d'insertion stable. Muté par les CRUD IDB ET directement par
+// les tests (synchronisation cache/IDB vérifiée sans IDB réel).
+
+let _skillsCache = [];
+
+function _skillMeta(rec) {
+  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false };
+}
+
+// Remplace tout le cache (chargement initial depuis IDB).
+function setSkillsCache(list) {
+  _skillsCache = (Array.isArray(list) ? list : []).map(_skillMeta);
+  return _skillsCache;
+}
+
+// Insère ou remplace une entrée par slug (préserve la position si déjà présente).
+function upsertSkillCache(meta) {
+  const m = _skillMeta(meta || {});
+  const i = _skillsCache.findIndex(x => x.slug === m.slug);
+  if (i >= 0) _skillsCache[i] = m; else _skillsCache.push(m);
+  return m;
+}
+
+function removeSkillCache(slug) {
+  _skillsCache = _skillsCache.filter(x => x.slug !== slug);
+}
+
+// Méta d'un skill par slug (depuis le cache mémoire, synchrone). null si absent.
+function getSkillMeta(slug) {
+  return _skillsCache.find(x => x.slug === slug) || null;
+}
+
+// Tous les skills (méta), dans l'ordre d'insertion — pour le drawer de gestion.
+function listAllSkillsCache() {
+  return _skillsCache.slice();
+}
+
+// Skills ACTIVÉS uniquement (méta) — pour l'autocomplétion et miaou__skills__list.
+function listEnabledSkills() {
+  return _skillsCache.filter(x => x.enabled !== false);
+}
+
+// Filtre les skills activés dont le slug (ou le name) matche un préfixe de saisie.
+// Pour l'autocomplétion du composer (après `/`). Pur, synchrone.
+function matchSkillCompletions(query) {
+  const q = String(query == null ? '' : query).toLowerCase();
+  return listEnabledSkills().filter(s =>
+    s.slug.toLowerCase().indexOf(q) >= 0 ||
+    (s.name && s.name.toLowerCase().indexOf(q) >= 0));
+}
+
+// ── Couche IDB (navigateur uniquement — non QuickJS-testable) ─────────────────
+// Partage la base `miaou` (v2) via openResourceDB() de resources.js. Discipline :
+// un seul await par opération, uniquement sur des requêtes IDB.
+
+// Lit tous les enregistrements (méta + content) du store.
+function getAllSkillRecords() {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('skills', 'readonly');
+      const req = tx.objectStore('skills').getAll();
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Lit un enregistrement complet par slug. null si absent.
+function getSkillRecord(slug) {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('skills', 'readonly');
+      const req = tx.objectStore('skills').get(slug);
+      req.onsuccess = function(e) { resolve(e.target.result || null); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Écrit (insert/replace) un enregistrement skill complet en IDB PUIS synchronise
+// le cache mémoire (méta). Retourne le slug.
+function putSkill(record) {
+  const rec = {
+    slug: String(record.slug || '').trim(),
+    name: String(record.name || ''),
+    description: String(record.description || ''),
+    enabled: record.enabled !== false,
+    content: String(record.content || ''),
+  };
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('skills', 'readwrite');
+      const req = tx.objectStore('skills').put(rec);
+      req.onsuccess = function() { upsertSkillCache(rec); resolve(rec.slug); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Supprime un skill (hard delete, pas de tombstone — action administrative
+// explicite, cf. brief) PUIS retire du cache mémoire.
+function deleteSkillDb(slug) {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('skills', 'readwrite');
+      const req = tx.objectStore('skills').delete(slug);
+      req.onsuccess = function() { removeSkillCache(slug); resolve(); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Bascule l'état `enabled` d'un skill en IDB + cache. Retourne le nouvel état
+// (bool) ou null si le skill est absent.
+function toggleSkillEnabled(slug) {
+  return getSkillRecord(slug).then(function(rec) {
+    if (!rec) return null;
+    rec.enabled = rec.enabled === false;   // inverse (absent === true → false)
+    return putSkill(rec).then(function() { return rec.enabled; });
+  });
+}
+
+// Récupère le contenu Markdown d'un skill ACTIVÉ depuis IDB. Renvoie null si
+// absent ou désactivé (l'appelant traite le cas erreur). Async — appelé à
+// l'invocation seulement (slash ou miaou__skills__read).
+function getSkillContent(slug) {
+  return getSkillRecord(slug).then(function(rec) {
+    if (!rec || rec.enabled === false) return null;
+    return String(rec.content || '');
+  });
+}
+
+// Peuple le cache mémoire depuis IDB au démarrage (fire-and-forget dans init).
+// Échec silencieux (IDB indisponible) → cache vide, autocomplétion/outils inertes.
+async function loadSkillsCache() {
+  try {
+    const records = await getAllSkillRecords();
+    setSkillsCache(records);
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] loadSkillsCache:', e && e.message);
+  }
 }
 
 
@@ -3461,6 +3768,61 @@ const TOOLS = [
       return 'Souvenir supprimé (réversible depuis les paramètres).';
     },
   },
+  {
+    // Sous-namespace miaou__skills__ : énumère les skills ACTIVÉS (slug + name +
+    // description) pour que le modèle découvre ce qu'il peut lire via skills__read.
+    // Les skills désactivés n'apparaissent JAMAIS (l'utilisateur les a coupés).
+    name: 'skills__list',
+    description:
+      "Liste les skills disponibles (méta : slug, nom, description). Une skill est " +
+      "un fragment d'instructions réutilisable. Appelle cet outil quand la demande " +
+      "de l'utilisateur pourrait correspondre à une skill ; lis ensuite son contenu " +
+      "avec miaou__skills__read en passant le slug. Ne liste que les skills activées.",
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: () => {
+      // listEnabledSkills (skills.js) lit le cache mémoire — synchrone.
+      const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description }));
+      _pendingToolAcks.push({ kind: 'skill_list', count: list.length });
+      return JSON.stringify(list);
+    },
+  },
+  {
+    // miaou__skills__read : renvoie le contenu Markdown complet d'un skill activé.
+    // Les contrôles (introuvable / désactivé) lisent le cache mémoire → ERREUR
+    // SYNCHRONE (testable QuickJS). Le contenu lui-même est en IDB → fetch ASYNC
+    // (Promise) ; callInternalTool gère un handler thenable. NE passe PAS par
+    // l'injection figée de la slash-commande : c'est un tool_result normal, dont
+    // le contenu doit être disponible au modèle dès ce tour.
+    name: 'skills__read',
+    description:
+      "Lit le contenu complet d'une skill par son slug (obtenu via miaou__skills__list). " +
+      "Renvoie les instructions de la skill, à suivre pour la suite de la réponse. " +
+      "Erreur claire si le slug est inconnu ou la skill désactivée.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Slug de la skill à lire' },
+      },
+      required: ['slug'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const slug = String(args.slug || '').trim();
+      if (!slug) return 'Slug manquant.';
+      const meta = getSkillMeta(slug);                 // cache mémoire (synchrone)
+      if (!meta) return 'Skill introuvable : ' + slug;
+      if (meta.enabled === false) return 'Skill désactivée : ' + slug;
+      // Activée : fetch IDB async. L'ack est poussé une fois le contenu obtenu.
+      return getSkillContent(slug).then(content => {
+        if (content == null) return 'Contenu indisponible pour la skill : ' + slug;
+        // Nom d'affichage du skill stocké en `title` (pas `name` : onEnrichLastAck
+        // écrase `name` avec le nom canonique de l'outil pour la réinjection cross-turn).
+        _pendingToolAcks.push({ kind: 'skill_read', slug, title: meta.name });
+        return content;
+      });
+    },
+  },
 ];
 
 // ── ask_confirmation : primitif halting hors registre MCP ────────────────────
@@ -3707,6 +4069,15 @@ function callInternalTool(toolName, args) {
   if (!tool) return { content: [{ type: 'text', text: 'Outil inconnu : ' + toolName }], isError: true };
   try {
     const text = tool.handler(args || {});
+    // Handler ASYNC (ex. skills__read lit le contenu en IDB) : il renvoie une
+    // Promise<string>. On la mappe vers la forme MCP. Les handlers synchrones
+    // (tous les autres) restent synchrones → branche interne testable sans async.
+    if (text && typeof text.then === 'function') {
+      return text.then(
+        t => ({ content: [{ type: 'text', text: String(t) }], isError: false }),
+        e => ({ content: [{ type: 'text', text: 'Erreur outil ' + toolName + ' : ' + ((e && e.message) || e) }], isError: true })
+      );
+    }
     return { content: [{ type: 'text', text: String(text) }], isError: false };
   } catch (e) {
     return { content: [{ type: 'text', text: 'Erreur outil ' + toolName + ' : ' + e.message }], isError: true };
@@ -4141,7 +4512,15 @@ async function runConversation(messages, hooks) {
             // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
             // le round-trip réseau, pas seulement après.
             const toolPromise = callTool(tc.function.name, args);
-            const isMcp = typeof toolPromise.then === 'function';
+            // isMcp = appel d'un serveur MCP DISTANT — déterminé par le préfixe du
+            // nom (serveur ≠ 'miaou'/''), pas par le type de retour : un outil
+            // interne ASYNC (ex. miaou__skills__read) renvoie aussi une Promise mais
+            // n'est pas distant. Le distinguer par le nom évite de router son ack
+            // dans le chemin MCP (onEarlyAcks/earlyRendered).
+            const isMcp = (function () {
+              const p = parseToolName(tc.function.name).serverPrefix;
+              return p !== '' && p !== 'miaou';
+            })();
             if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
             const rawResult = await toolPromise;
             // Interception ressources : stocke les blocs non-textuels dans IDB,
@@ -4515,6 +4894,7 @@ const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
 const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
+const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
 
 const ACK_KINDS = {
   memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
@@ -4609,6 +4989,25 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_TRASH,
     label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
+  },
+  // Énumération des skills par le modèle (miaou__skills__list) : informatif, pas
+  // d'undo (lecture — même posture que conversation_list, dont on réutilise l'icône).
+  skill_list: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m =>
+        m.count === 0 ? 'Aucune skill disponible'
+      : m.count === 1 ? '1 skill listée'
+      : (m.count != null ? m.count : '?') + ' skills listées',
+  },
+  // Lecture d'un skill par le modèle (miaou__skills__read) : informatif, pas d'undo
+  // (lecture, pas une mutation d'état — même posture que conversation_read).
+  skill_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
   },
 };
 
@@ -4736,7 +5135,10 @@ function renderThread(msgs) {
   let pendingAcks = [];
   for (const m of msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
-    const wrap = buildMsg(m.role, m.content, m.model, m.reasoning, m.ts);
+    // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
+    // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
+    const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -4900,7 +5302,11 @@ function enterEditMode(wrap) {
   if (sending) return;
   const index = msgIndex(wrap);
   if (index < 0) return;
-  const original = currentThread[index] ? currentThread[index].content : '';
+  // Source UNIQUE du texte éditable et de la bulle restaurée : displayText (littéral
+  // tapé) si présent, sinon content. Jamais le content baké d'une slash-commande
+  // skill — sinon la textarea et la bulle (après annulation) fuiteraient le corps injecté.
+  const m = currentThread[index];
+  const original = m ? (m.displayText != null ? m.displayText : m.content) : '';
 
   wrap.classList.add('editing');
   const bubble = wrap.querySelector('.bubble');
@@ -4909,7 +5315,8 @@ function enterEditMode(wrap) {
     `<div class="msg-edit-actions">` +
     `<button class="mb-btn" data-act="cancel">Annuler</button>` +
     `<button class="mb-btn primary" data-act="save">Valider</button>` +
-    `</div>`;
+    `</div>` +
+    `<div class="msg-edit-error" hidden></div>`;
 
   const ta = bubble.querySelector('.msg-edit-area');
   ta.value = original;
@@ -4917,7 +5324,7 @@ function enterEditMode(wrap) {
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
 
-  ta.addEventListener('input', () => autoGrow(ta));
+  ta.addEventListener('input', () => { autoGrow(ta); clearEditError(wrap); });
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); cancelEdit(wrap, original); }
     else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(wrap, ta.value); }
@@ -4941,13 +5348,27 @@ function cancelEdit(wrap, original) {
 }
 
 // Validation : recalcule l'index (le thread n'a pas bougé, mais on ne fige rien)
-// puis délègue la troncature + relance à editUserMessage (main.js).
-function commitEdit(wrap, value) {
+// puis délègue la troncature + relance à editUserMessage (main.js). Un slug skill
+// invalide remonte une erreur affichée SOUS LA ZONE D'ÉDITION (pas le composer) ;
+// le thread reste intact et la bulle en mode édition pour correction. En cas de
+// succès, editUserMessage re-rend le thread → la bulle d'édition (et son erreur)
+// disparaissent.
+async function commitEdit(wrap, value) {
   const t = (value || '').trim();
   if (!t) return;
   const index = msgIndex(wrap);
   if (index < 0) return;
-  editUserMessage(index, t);
+  const err = await editUserMessage(index, t);
+  if (err) showEditError(wrap, err);
+}
+
+function showEditError(wrap, msg) {
+  const el = wrap && wrap.querySelector('.msg-edit-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearEditError(wrap) {
+  const el = wrap && wrap.querySelector('.msg-edit-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
 // ── Indicateur d'activité en arrière-plan ───────────────────────────────────
@@ -5213,7 +5634,7 @@ function syncConfigured() {
     dot.className = 'dot ok';
   } else {
     wrap.classList.add('disabled');
-    ta.placeholder = 'API non configurée — ouvrez les paramètres';
+    ta.placeholder = 'API non configurée — ouvrir les paramètres';
     ta.disabled = true;
     send.disabled = true;
     dot.className = 'dot err';
@@ -5275,6 +5696,15 @@ function dismissConfirmation() {
 
 // ── Composer ────────────────────────────────────────────────────────────────
 function onComposerKey(e) {
+  // Autocomplétion skill ouverte : flèches naviguent, Tab/Entrée complètent,
+  // Échap ferme — sans envoyer ni insérer de saut de ligne.
+  if (skillAutocompleteOpen()) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(1); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(-1); return; }
+    if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(); return; }
+    if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(); return; }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(); return; }
+  }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
 }
 
@@ -5756,7 +6186,7 @@ function renderMcpServers() {
   if (!servers.length) {
     const empty = document.createElement('div');
     empty.className = 'mem-empty';
-    empty.textContent = 'Aucun serveur MCP. Ajoute un backend pour déléguer des appels d\'outils.';
+    empty.textContent = 'Aucun serveur MCP. Ajouter un backend pour déléguer des appels d\'outils.';
     wrap.appendChild(empty);
   } else {
     for (const s of servers) wrap.appendChild(buildMcpCard(s, false));
@@ -5968,6 +6398,281 @@ function buildMcpCard(server, isNew) {
 
   card.appendChild(editSection);
   return card;
+}
+
+// ── Skills : drawer de gestion ───────────────────────────────────────────────
+// Liste les skills depuis le cache mémoire (méta) ; le contenu Markdown est lu en
+// IDB à l'entrée en édition (getSkillRecord), jamais conservé en cache.
+function openSkills() {
+  renderSkills();
+  $('skills-drawer').classList.add('show');
+  $('skills-backdrop').classList.add('show');
+}
+function closeSkills() {
+  $('skills-drawer').classList.remove('show');
+  $('skills-backdrop').classList.remove('show');
+}
+
+function renderSkills() {
+  const wrap = $('skill-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const skills = listAllSkillsCache();   // skills.js — méta, ordre d'insertion
+  if (!skills.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucune skill. Créer un fragment d\'instructions réutilisable.';
+    wrap.appendChild(empty);
+    return;
+  }
+  for (const s of skills) wrap.appendChild(buildSkillCard(s, false));
+}
+
+function addSkillCard() {
+  const wrap = $('skill-list');
+  if (!wrap) return;
+  const empty = wrap.querySelector('.mem-empty');
+  if (empty) empty.remove();
+  wrap.insertBefore(buildSkillCard({ slug: '', name: '', description: '', enabled: true }, true), wrap.firstChild);
+}
+
+function showSkillCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.skill-err');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+
+function skillField(labelText, inputEl, hintText) {
+  const field = document.createElement('div');
+  field.className = 'skill-field';
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  field.appendChild(label);
+  field.appendChild(inputEl);
+  if (hintText) {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = hintText;
+    field.appendChild(hint);
+  }
+  return field;
+}
+
+function buildSkillCard(skill, isNew) {
+  const card = document.createElement('div');
+  card.className = 'skill-card' + (isNew ? ' is-editing' : '');
+  const originalSlug = skill.slug || '';
+
+  // ── SECTION VUE ───────────────────────────────────────────────────────────
+  const viewSection = document.createElement('div');
+  viewSection.className = 'skill-view';
+
+  const viewMain = document.createElement('div');
+  viewMain.className = 'skill-view-main';
+  const viewName = document.createElement('div');
+  viewName.className = 'skill-view-name';
+  viewName.textContent = skill.name || skill.slug || '(sans nom)';
+  const viewSlug = document.createElement('div');
+  viewSlug.className = 'skill-view-slug';
+  viewSlug.textContent = '/' + (skill.slug || '');
+  viewMain.append(viewName, viewSlug);
+  viewSection.appendChild(viewMain);
+
+  const viewRow = document.createElement('div');
+  viewRow.className = 'skill-view-row';
+
+  // Toggle enabled en vue (persistance immédiate via onToggleSkill, main.js)
+  const viewToggleLabel = document.createElement('label');
+  viewToggleLabel.className = 'toggle';
+  const viewEnabledI = document.createElement('input');
+  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'skill-enabled-view';
+  viewEnabledI.checked = skill.enabled !== false;
+  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
+  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
+  viewToggleLabel.append(viewEnabledI, viewTrack, viewThumb);
+  viewRow.appendChild(viewToggleLabel);
+  if (!isNew) {
+    viewEnabledI.addEventListener('change', () => onToggleSkill(originalSlug));
+  }
+
+  const modBtn = document.createElement('button');
+  modBtn.className = 'drawer-btn';
+  modBtn.textContent = 'Modifier';
+  modBtn.addEventListener('click', () => enterSkillEdit(card, originalSlug));
+  viewRow.appendChild(modBtn);
+
+  viewSection.appendChild(viewRow);
+  card.appendChild(viewSection);
+
+  // ── SECTION ÉDITION ───────────────────────────────────────────────────────
+  const editSection = document.createElement('div');
+  editSection.className = 'skill-edit';
+
+  const slugI = document.createElement('input');
+  slugI.className = 'skill-slug'; slugI.type = 'text'; slugI.value = skill.slug || '';
+  slugI.placeholder = 'revue-code'; slugI.spellcheck = false;
+  const nameI = document.createElement('input');
+  nameI.className = 'skill-name'; nameI.type = 'text'; nameI.value = skill.name || '';
+  nameI.placeholder = 'Revue de code'; nameI.spellcheck = false;
+  const descI = document.createElement('input');
+  descI.className = 'skill-desc'; descI.type = 'text'; descI.value = skill.description || '';
+  descI.placeholder = 'Brève description (visible du modèle)'; descI.spellcheck = false;
+  const contentT = document.createElement('textarea');
+  contentT.className = 'skill-content'; contentT.rows = 10; contentT.spellcheck = false;
+  contentT.placeholder = 'Corps de la skill en Markdown…';
+
+  editSection.appendChild(skillField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
+  editSection.appendChild(skillField('Nom', nameI, 'Libellé d\'affichage.'));
+  editSection.appendChild(skillField('Description', descI, 'Surface lexicale décrite au modèle.'));
+  editSection.appendChild(skillField('Contenu', contentT));
+
+  // Toggle enabled en édition (.skill-enabled lu par onSaveSkillCard)
+  const editEnabledWrap = document.createElement('label');
+  editEnabledWrap.className = 'skill-enabled-row';
+  const editToggleWrap = document.createElement('label');
+  editToggleWrap.className = 'toggle';
+  const editEnabledI = document.createElement('input');
+  editEnabledI.type = 'checkbox'; editEnabledI.className = 'skill-enabled'; editEnabledI.checked = skill.enabled !== false;
+  const editTrack = document.createElement('span'); editTrack.className = 'track';
+  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
+  editToggleWrap.append(editEnabledI, editTrack, editThumb);
+  const editEnabledTxt = document.createElement('span');
+  editEnabledTxt.textContent = 'Activée';
+  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
+  editSection.appendChild(editEnabledWrap);
+
+  const err = document.createElement('div');
+  err.className = 'skill-err'; err.setAttribute('hidden', '');
+  editSection.appendChild(err);
+
+  const actions = document.createElement('div');
+  actions.className = 'skill-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'drawer-btn primary skill-save'; saveBtn.textContent = 'Enregistrer';
+  saveBtn.addEventListener('click', () => onSaveSkillCard(card, originalSlug));
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'drawer-btn skill-cancel'; cancelBtn.textContent = 'Annuler';
+  cancelBtn.addEventListener('click', () => { if (isNew) card.remove(); else card.classList.remove('is-editing'); });
+  actions.append(saveBtn, cancelBtn);
+  if (!isNew) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'drawer-btn danger skill-del'; delBtn.textContent = 'Supprimer';
+    delBtn.addEventListener('click', () => {
+      if (window.confirm('Supprimer la skill « ' + (skill.name || skill.slug) + ' » ? Action définitive.')) {
+        onDeleteSkillCard(card, originalSlug);
+      }
+    });
+    actions.appendChild(delBtn);
+  }
+  editSection.appendChild(actions);
+
+  card.appendChild(editSection);
+  return card;
+}
+
+// Entre en mode édition : récupère le contenu Markdown en IDB (jamais en cache) et
+// le pose dans la textarea avant d'afficher la section édition.
+function enterSkillEdit(card, slug) {
+  const ta = card.querySelector('.skill-content');
+  if (ta && slug) {
+    getSkillRecord(slug).then(rec => { if (rec && ta) ta.value = rec.content || ''; }).catch(() => {});
+  }
+  card.classList.add('is-editing');
+}
+
+// ── Composer : autocomplétion des skills (slash-commande) ─────────────────────
+// Filtre le cache mémoire (skills ACTIVÉS) sur le préfixe tapé après `/`. Navigation
+// clavier gérée dans onComposerKey. Sélection = complète `/slug ` (n'envoie pas).
+let _skillAcIndex = -1;
+
+function onComposerInput() {
+  clearComposerSkillError();
+  const ta = $('composer-text');
+  if (!ta) return;
+  const cmd = parseSlashCommand(ta.value);
+  // N'ouvre l'autocomplétion que si on est en train de taper le slug (pas de reste
+  // ni d'espace après) : `/rev` → ouvert ; `/revue du code` → fermé.
+  if (!cmd || cmd.rest) { hideSkillAutocomplete(); return; }
+  const matches = matchSkillCompletions(cmd.slug);
+  if (!matches.length) { hideSkillAutocomplete(); return; }
+  renderSkillAutocomplete(matches);
+}
+
+function renderSkillAutocomplete(matches) {
+  const box = $('skill-ac');
+  if (!box) return;
+  box.innerHTML = '';
+  _skillAcIndex = -1;
+  matches.forEach((s, i) => {
+    const opt = document.createElement('div');
+    opt.className = 'skill-ac-opt';
+    opt.dataset.slug = s.slug;
+    const slugEl = document.createElement('span');
+    slugEl.className = 'skill-ac-slug';
+    slugEl.textContent = '/' + s.slug;
+    opt.appendChild(slugEl);
+    if (s.name) {
+      const nameEl = document.createElement('span');
+      nameEl.className = 'skill-ac-name';
+      nameEl.textContent = s.name;
+      opt.appendChild(nameEl);
+    }
+    opt.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSkillCompletion(s.slug); });
+    box.appendChild(opt);
+  });
+  box.removeAttribute('hidden');
+}
+
+function hideSkillAutocomplete() {
+  const box = $('skill-ac');
+  if (box) { box.setAttribute('hidden', ''); box.innerHTML = ''; }
+  _skillAcIndex = -1;
+}
+
+function skillAutocompleteOpen() {
+  const box = $('skill-ac');
+  return box && !box.hasAttribute('hidden');
+}
+
+function moveSkillAcSelection(delta) {
+  const box = $('skill-ac');
+  if (!box) return;
+  const opts = box.querySelectorAll('.skill-ac-opt');
+  if (!opts.length) return;
+  _skillAcIndex = (_skillAcIndex + delta + opts.length) % opts.length;
+  opts.forEach((o, i) => o.classList.toggle('active', i === _skillAcIndex));
+  const active = opts[_skillAcIndex];
+  if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+}
+
+// Valide la sélection courante (ou la première option) : complète `/slug ` dans le
+// composer sans envoyer (l'utilisateur déclenche l'injection en envoyant).
+function acceptSkillAcSelection() {
+  const box = $('skill-ac');
+  if (!box) return false;
+  const opts = box.querySelectorAll('.skill-ac-opt');
+  if (!opts.length) return false;
+  const opt = opts[_skillAcIndex >= 0 ? _skillAcIndex : 0];
+  if (!opt) return false;
+  pickSkillCompletion(opt.dataset.slug);
+  return true;
+}
+
+function pickSkillCompletion(slug) {
+  const ta = $('composer-text');
+  if (!ta) return;
+  ta.value = '/' + slug + ' ';
+  hideSkillAutocomplete();
+  ta.focus();
+  autoGrow(ta);
+}
+
+function showComposerSkillError(msg) {
+  const el = $('composer-skill-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearComposerSkillError() {
+  const el = $('composer-skill-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
 // ── Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8) ────
@@ -6406,11 +7111,16 @@ async function openConversation(id) {
       if (m.group != null)            a.group = m.group;
       if (m.assistantText != null)    a.assistantText = m.assistantText;
       if (m.intent != null)           a.intent = m.intent;
+      if (m.slug != null)             a.slug = m.slug;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    // littéral (slash-commande skill). Normalise l'ancien champ `display` (données
+    // de test antérieures au renommage) vers `displayText` à la lecture.
+    if (m.displayText != null) o.displayText = m.displayText;
+    else if (m.display != null) o.displayText = m.display;
     return o;
   });
   currentConvModel = conv.model || '';
@@ -6475,7 +7185,9 @@ function downloadConvMd() {
     const label = (m.role === 'user' ? '### Vous' : '### MIAOU') + timeStr;
     lines.push(label);
     lines.push('');
-    lines.push(m.content || '');
+    // Export = littéral affiché (displayText) si présent (slash-commande skill),
+    // pas le corps de skill injecté dans content.
+    lines.push((m.role === 'user' && m.displayText != null ? m.displayText : m.content) || '');
     lines.push('');
     lines.push('---');
     lines.push('');
@@ -6548,12 +7260,14 @@ function persistCurrent() {
       if (m.group != null)         o.group = m.group;
       if (m.assistantText != null) o.assistantText = m.assistantText;
       if (m.intent != null)        o.intent = m.intent;
+      if (m.slug != null)          o.slug = m.slug;
       return o;
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
@@ -6678,6 +7392,41 @@ async function onDeleteMcpCard(cardEl, originalName) {
   renderMcpServers();
 }
 
+// ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────
+// Valide → écrit IDB (putSkill synchronise le cache mémoire) → re-rend la liste.
+// Le rendu/édition des cartes vit dans ui.js (buildSkillCard) ; ici la logique de
+// validation + persistance, comme onSaveMcpCard.
+async function onSaveSkillCard(cardEl, originalSlug) {
+  const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
+  const slug = get('.skill-slug').trim();
+  const others = listAllSkillsCache().map(s => s.slug).filter(sl => sl !== originalSlug);
+  const slugErr = validateSkillSlug(slug, others);
+  if (slugErr) { showSkillCardError(cardEl, slugErr); return; }
+  const enabledEl = cardEl.querySelector('.skill-enabled');
+  const record = {
+    slug,
+    name: get('.skill-name').trim(),
+    description: get('.skill-desc').trim(),
+    enabled: enabledEl ? enabledEl.checked : true,
+    content: get('.skill-content'),
+  };
+  // Renommage de slug : la clé IDB change → retirer l'ancien enregistrement.
+  if (originalSlug && originalSlug !== slug) { await deleteSkillDb(originalSlug); }
+  await putSkill(record);
+  renderSkills();
+}
+
+async function onDeleteSkillCard(cardEl, originalSlug) {
+  if (originalSlug) await deleteSkillDb(originalSlug);
+  renderSkills();
+}
+
+// Toggle enabled depuis la vue liste : bascule IDB + cache, puis re-rend.
+async function onToggleSkill(slug) {
+  await toggleSkillEnabled(slug);
+  renderSkills();
+}
+
 // ── Flux d'envoi ────────────────────────────────────────────────────────────
 // Bouton unique du composer : envoie, ou interrompt si un stream est en cours.
 function onSendBtn() {
@@ -6685,28 +7434,65 @@ function onSendBtn() {
   else sendMessage();
 }
 
-function sendMessage() {
+// Résout une saisie utilisateur (littéral) en payload d'envoi. CHEMIN UNIQUE de
+// détection/injection de slash-commande skill, partagé par la saisie composer
+// (sendMessage) ET la réédition d'un message (editUserMessage) — pas de duplication.
+// Le contenu de la skill est re-résolu à CHAQUE appel (contenu COURANT, jamais figé
+// d'un envoi antérieur) : éditer un `/slug` au tour N rebake avec le contenu actuel.
+// Injection DÉTERMINISTE côté client (≠ buildContextBlock/miaou_context, recalculé
+// par tour). Retours :
+//   { ok:true,  literal, content }            — texte normal (content === literal)
+//   { ok:true,  literal, content, isSkill }   — slash valide (content = bakové)
+//   { ok:false, error }                        — slug inconnu / désactivé / indisponible
+async function resolveSend(literal) {
+  const cmd = parseSlashCommand(literal);
+  if (!cmd) return { ok: true, literal, content: literal, isSkill: false };
+  const meta = getSkillMeta(cmd.slug);   // cache mémoire (skills.js)
+  if (!meta || meta.enabled === false) {
+    return { ok: false, error: 'Skill inconnue ou désactivée : /' + cmd.slug };
+  }
+  let content = null;
+  try { content = await getSkillContent(cmd.slug); } catch (e) { content = null; }
+  if (content == null) return { ok: false, error: 'Contenu de la skill indisponible : /' + cmd.slug };
+  return { ok: true, literal, content: bakeSkillMessage(literal, content), isSkill: true };
+}
+
+async function sendMessage() {
   if (!configured || sending) return;
   const ta = $('composer-text');
   const text = ta.value.trim();
   if (!text) return;
+
+  // On résout AVANT de vider le composer : un slug invalide ne perd pas la saisie
+  // ni ne consomme un tour modèle.
+  const r = await resolveSend(text);
+  if (!r.ok) { showComposerSkillError(r.error); return; }
+
   ta.value = ''; ta.style.height = 'auto';
+  clearComposerSkillError();
+  hideSkillAutocomplete();
 
   // Confirmation en attente + saisie libre : la frappe vaut réponse/correction
   // (brief §4.5). On lève le widget avant d'envoyer comme un message normal.
   if (_confirmPending) dismissConfirmation();
 
-  sendUserText(text);
+  sendUserText(r.literal, r.isSkill ? r.content : undefined);
 }
 
 // Cœur d'un envoi utilisateur : crée la conv au besoin, pousse le message,
 // persiste, relance la génération. Partagé par la saisie composer (sendMessage)
 // et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
-function sendUserText(text) {
+// `bakedContent` (optionnel) : contenu réellement envoyé/stocké pour le modèle
+// (slash-commande skill = littéral + corps du skill). `text` reste le littéral
+// affiché dans la bulle et conservé en `displayText`.
+function sendUserText(text, bakedContent) {
+  clearComposerSkillError();   // tout envoi effectif lève l'erreur skill du composer
   ensureConversation();
   const ts = Date.now();
   appendUserMessage(text, ts);
-  currentThread.push({ role: 'user', content: text, ts });
+  const msg = { role: 'user', content: bakedContent != null ? bakedContent : text, ts };
+  if (bakedContent != null) msg.displayText = text;
+  currentThread.push(msg);
   persistCurrent();
 
   runGenerationFromCurrentThread();
@@ -6718,7 +7504,9 @@ function sendUserText(text) {
 // Pré-requis : le dernier message utilisateur est déjà dans currentThread.
 function runGenerationFromCurrentThread() {
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
-  const text = lastUser ? lastUser.content : '';
+  // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
+  // recherche mémoire porte sur le littéral, pas sur le corps du skill injecté.
+  const text = lastUser ? (lastUser.displayText != null ? lastUser.displayText : lastUser.content) : '';
 
   const settings = loadSettings();
   let matches = [];
@@ -6739,19 +7527,31 @@ function runGenerationFromCurrentThread() {
 
 // Édition d'un message utilisateur passé (par index dans currentThread) :
 // tronque tout ce qui suit, remplace le contenu, persiste, puis relance la
-// génération par le même chemin que l'envoi normal.
-function editUserMessage(index, newText) {
-  if (sending) return;                          // pas d'édition pendant un stream
+// génération par le même chemin que l'envoi normal. Passe par resolveSend (même
+// détection/injection slash que l'envoi composer) : éditer en `/slug …` réinjecte
+// le contenu COURANT de la skill, et un slug invalide n'altère PAS le thread.
+// Retourne le message d'erreur (slug invalide) pour que l'appelant l'affiche SOUS
+// LA ZONE D'ÉDITION (pas le composer) ; null en cas de succès.
+async function editUserMessage(index, newText) {
+  if (sending) return null;                     // pas d'édition pendant un stream
   const t = (newText || '').trim();
-  if (!t) return;
-  if (index < 0 || index >= currentThread.length) return;
-  if (currentThread[index].role !== 'user') return;
+  if (!t) return null;
+  if (index < 0 || index >= currentThread.length) return null;
+  if (currentThread[index].role !== 'user') return null;
+
+  // Résoudre AVANT toute mutation : un slug invalide laisse le thread intact et la
+  // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
+  const r = await resolveSend(t);
+  if (!r.ok) return r.error;
 
   currentThread = currentThread.slice(0, index + 1);
-  currentThread[index] = { role: 'user', content: t, ts: Date.now() };
+  const msg = { role: 'user', content: r.content, ts: Date.now() };
+  if (r.isSkill) msg.displayText = r.literal;
+  currentThread[index] = msg;
   persistCurrent();                             // troncature écrite avant relance
-  renderThread(currentThread);
+  renderThread(currentThread);                  // détruit la bulle d'édition (+ son erreur)
   runGenerationFromCurrentThread();
+  return null;
 }
 
 async function dispatchSend(matches) {
@@ -7079,6 +7879,7 @@ function init() {
 
   prefetchModels();      // liste des modèles (cache session) → sélecteur composer
   reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
+  loadSkillsCache();     // méta des skills en mémoire → autocomplétion + outils
   runBackfill();         // auto-gardé sur la présence d'URL
 }
 

@@ -443,6 +443,7 @@ body {
   gap: 6px;
   margin-top: 6px;
 }
+.msg-edit-error { font-size: 12px; color: var(--err, #f85149); margin-top: 6px; text-align: left; }
 
 /* assistant: full width of column, centered block, no bubble chrome */
 .msg.assistant { align-items: stretch; margin: 4px 0 14px; }
@@ -1395,6 +1396,78 @@ body {
 .mcp-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mcp-view-toggle-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
 .mcp-view-row .drawer-btn { margin-left: auto; }
+
+/* ── Skills : drawer de gestion ─────────────────────────────────────────────── */
+/* Drawer plus large : édition de corps Markdown (textarea confortable). */
+.drawer-wide { width: 620px; }
+.skill-add-btn { align-self: flex-start; }
+.skill-list { display: flex; flex-direction: column; gap: 14px; }
+.skill-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skill-field { display: flex; flex-direction: column; gap: 5px; }
+.skill-field > label { font-size: 11.5px; font-weight: 500; color: var(--text-2); }
+.skill-field input,
+.skill-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.skill-field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 140px;
+}
+.skill-field input:focus,
+.skill-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.skill-field .hint { font-size: 11px; color: var(--text-3); }
+.skill-enabled-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.skill-err { font-size: 11.5px; color: var(--err, #f85149); }
+.skill-actions { display: flex; gap: 6px; margin-top: 2px; }
+.skill-view { display: flex; align-items: center; gap: 10px; }
+.skill-card.is-editing .skill-view { display: none; }
+.skill-edit { display: none; flex-direction: column; gap: 10px; }
+.skill-card.is-editing .skill-edit { display: flex; }
+.skill-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.skill-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.skill-view-slug { font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.skill-view-row { display: flex; align-items: center; gap: 10px; }
+
+/* ── Composer : autocomplétion des skills + erreur slash ─────────────────────── */
+.skill-ac {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.skill-ac-opt {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.skill-ac-opt:hover,
+.skill-ac-opt.active { background: var(--accent-dim); }
+.skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
+.skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-skill-error { font-size: 12px; color: var(--err, #f85149); margin-top: 6px; }
 
 /* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
 .tool-block {

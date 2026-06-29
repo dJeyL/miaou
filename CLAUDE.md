@@ -184,6 +184,18 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
     relance par ce cœur. L'index est **recalculé au clic** (`msgIndex` = position
     du `.msg` dans le thread, 1:1 avec `currentThread`), jamais figé au rendu.
     Édition bloquée tant que `sending` (garde dans `onEditMsg`/`enterEditMode`).
+    `sendMessage` ET `editUserMessage` passent par `resolveSend(literal)` (async) :
+    **chemin UNIQUE** de détection/injection de slash-commande skill (cf. « Skills »),
+    invoqué des deux entrées, pas de double implémentation. Un slug invalide à
+    l'édition **n'altère pas le thread** (résolution AVANT troncature) : la bulle
+    reste en mode édition. `editUserMessage` **retourne** le message d'erreur (au
+    lieu de l'afficher) → `commitEdit` l'affiche **sous la zone d'édition**
+    (`.msg-edit-error`), pas sous le composer ; l'erreur s'efface à la frappe et la
+    validation réussie reconstruit la bulle. Côté composer, l'erreur skill est levée
+    par tout envoi effectif (`clearComposerSkillError` dans `sendUserText`). La
+    textarea d'édition et la bulle restaurée par `cancelEdit` sourcent
+    **`displayText`** (littéral), jamais le `content` baké — sinon fuite du corps de
+    skill (issue corrigée).
 13. **Patienteur animé.** Remplace le caret pendant l'attente : un point qui
     pulse (`.waiter-dot`, demeure) + un mot court tiré au hasard sans répéter le
     précédent (`pickWaiterWord`, fondu via `.waiter-word.fade`). `startWaiter`
@@ -312,8 +324,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en
   mémoire seule, reconstruit au démarrage.
-- **IndexedDB `miaou`** (géré par `resources.js`) : base version 1, object store
-  `resources`, index `by_conversation`. Chaque entrée :
+- **IndexedDB `miaou`** (ouverte par `resources.js`, **version 2**) : deux object
+  stores. `onupgradeneeded` est idempotent (contains-check par store) → migration
+  v1→v2 transparente, `resources` intact.
+  - store `skills` (keyPath `slug`, géré par `skills.js`) : voir « Skills » ci-dessous.
+  - store `resources`, index `by_conversation`. Chaque entrée :
   `{ id, conversationId, class, mime, name, size, data (ArrayBuffer), createdAt }`.
   `class` ∈ `"inline"` (texte/JSON, passé en clair au modèle — `entry.result` de
   l'ack contient le texte brut) | `"binary"` (données opaques — `entry.result` de
@@ -327,7 +342,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 
 ## Outils (`tools.js`)
 
-Sept outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+Neuf outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur.
 
 **Lecture de l'historique :**
@@ -350,6 +365,20 @@ description **du registre** — ne jamais la coder en dur.
   délégué à `placeToolAck` (même chemin live et reload via IDB). Renvoie une erreur
   textuelle si l'id est inconnu du cache session.
 
+**Skills (sous-namespace `miaou__skills__`, cf. section « Skills ») :**
+- `skills__list()` — méta (`slug`, `name`, `description`) des skills **activés
+  uniquement**, depuis le cache mémoire (synchrone). Pousse un ack `skill_list`
+  (informatif, sans undo, icône `ICON_LIST` réutilisée de `conversation_list`).
+- `skills__read(slug)` — corps Markdown complet d'un skill activé. Contrôles
+  introuvable/désactivé sur le cache mémoire = **erreur synchrone** (testable
+  QuickJS) ; le contenu vient d'IDB = **handler asynchrone** (renvoie une
+  `Promise<string>`). `callInternalTool` détecte un retour thenable et le mappe.
+  `api.js` calcule `isMcp` via `parseToolName` (préfixe ≠ `miaou`/`''`), **pas**
+  par duck-typing `.then`, sinon cet outil interne async serait pris pour un appel
+  distant. Pousse un ack `skill_read` (informatif, sans undo) — nom du skill stocké
+  dans `title` (pas `name` : `onEnrichLastAck` écrase `name` avec le nom canonique
+  de l'outil pour la réinjection cross-turn).
+
 **Confirmation avant écriture (chemin inféré — fait non explicitement demandé) :**
 - `ask_confirmation(question)` — outil **halting** : `runConversation` s'arrête
   immédiatement après, sans pousser de message `tool`/`tool_result` natif. La
@@ -362,7 +391,7 @@ Mécanisme **générique** couvrant les écritures mémoire, les lectures d'hist
 et les appels MCP distants. Chaque handler traçable pousse un descripteur
 `{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
 memory_update | memory_delete | conversation_read | conversation_list | mcp_call |
-resource_stored | resource_presented | resource_deleted`.
+resource_stored | resource_presented | resource_deleted | skill_list | skill_read`.
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js, décrits ci-dessous)
 consomment la file via `getPendingToolAcks` / `clearPendingToolAcks` et injectent
 des messages `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?,
@@ -570,6 +599,66 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
     dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
     espace, `__`, `miaou`, et les doublons.
 
+## Skills (stage 1)
+
+Fragments d'instructions Markdown réutilisables. **Stage 1 uniquement** : skill
+mono-fichier, CRUD + drawer, invocation slash déterministe, et chemin langage
+naturel via deux outils. **Hors périmètre stage 1** (ne pas amorcer) : autotrigger,
+skills multi-fichiers, primitive `ask_*` dédiée. Logique dans `skills.js`
+(helpers purs + cache mémoire + couche IDB).
+
+1. **Stockage = IDB store `skills`** (base `miaou` v2, keyPath `slug`) :
+   `{ slug, name, description, enabled, content }`. Le **cache mémoire**
+   (`_skillsCache`, méta SANS `content`) alimente l'autocomplétion (filtrage
+   synchrone par frappe, ne peut pas attendre IDB). `content` n'est lu en IDB
+   qu'à l'**invocation** (slash ou `skills__read`) et à l'**entrée en édition**
+   (`getSkillRecord`). Les CRUD IDB (`putSkill`/`deleteSkillDb`/
+   `toggleSkillEnabled`) synchronisent le cache ; `loadSkillsCache` le peuple au
+   démarrage (fire-and-forget dans `init`). Suppression = **hard delete** (pas de
+   tombstone : action administrative explicite de l'utilisateur, ≠ écriture mémoire
+   inférée où « undo ≠ consentement »).
+
+2. **Invocation slash = injection côté client, ≠ `<miaou_context>`.** Détection +
+   validation + injection vivent dans **`resolveSend(literal)`** (main.js, async),
+   **chemin UNIQUE partagé par `sendMessage` ET `editUserMessage`** — jamais deux
+   implémentations. `parseSlashCommand` (pur) → si `/<slug>` : lookup cache ; slug
+   absent/désactivé → `{ ok:false, error }` → erreur composer locale
+   (`showComposerSkillError`), **aucun envoi, aucun tour modèle, thread inchangé** ;
+   sinon `getSkillContent` (IDB) puis `bakeSkillMessage(littéral, content)` =
+   `littéral + '\n\n' + corps` → `{ ok:true, content:baké, isSkill:true }`.
+   - Le **content baké** est **stocké dans `content`** du message user et **figé au
+     niveau RENDU/REPLAY** : `renderThread`/`openConversation` ne re-résolvent
+     JAMAIS. Mais une **édition est un nouvel envoi** → `resolveSend` re-résout le
+     contenu **COURANT** de la skill (pas le figé d'origine) : éditer/supprimer la
+     skill entre deux envois se reflète sur le message réédité, pas sur les anciens.
+   - Le **littéral seul va dans `displayText`** : **source unique** de la bulle
+     (`renderThread`), de la textarea d'édition et de la bulle restaurée
+     (`enterEditMode`/`cancelEdit`), de l'export et de la recherche mémoire. Ne
+     JAMAIS sourcer ces chemins depuis `content` (fuite du corps injecté — bug payé).
+   - `sendUserText(text, bakedContent?)` porte les deux champs. `displayText`/`slug`
+     sérialisés par `persistCurrent`, restaurés par `openConversation` (qui
+     **normalise** l'ancien champ `display` → `displayText`, données de test
+     antérieures au renommage). **Chemin strictement distinct** de
+     `buildContextBlock`/`miaou_context` (lui recalculé et préfixé à chaque tour).
+
+3. **Autocomplétion** (`onComposerInput` → `matchSkillCompletions`, activés
+   uniquement, match slug **ou** name) : ouverte tant qu'on tape le slug
+   (`cmd.rest` vide), navigation clavier dans `onComposerKey` (↑↓ Tab Entrée Échap),
+   sélection complète `/slug ` **sans envoyer**.
+
+4. **Chemin langage naturel = `skills__list` + `skills__read`** (cf. section
+   Outils). Additif au registre `miaou__` existant — ne renomme aucun outil. C'est
+   un **tool_result normal** (passe par la généralisation tool-ack, contenu
+   disponible au modèle dès ce tour ET réinjecté cross-turn via `expandThread`),
+   **pas** par l'injection figée du slash.
+
+5. **Drawer `#skills-drawer`** (`.drawer-wide`, plus large pour éditer le corps) :
+   cartes vue/édition en `createElement`/`textContent` (jamais `innerHTML` pour les
+   données). Rendu dans `ui.js` (`renderSkills`/`buildSkillCard`), persistance dans
+   `main.js` (`onSaveSkillCard`/`onDeleteSkillCard`/`onToggleSkill`), comme le
+   pattern MCP. `validateSkillSlug` (pur) : non vide, pas d'espace/`/`, charset
+   `[A-Za-z0-9_-]`, longueur ≤ 48, unicité.
+
 ## Tests
 
 Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
@@ -581,7 +670,12 @@ de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 `filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`),
 **ressources** (`classifyMime`, `humanSize`, `formatResourceDescriptor`,
 `generateResourceId`, `arrayBufferToBase64`/`base64ToArrayBuffer`,
-`utf8Encode`/`utf8Decode`, `extractResultParts`, `assembleToolResultForModel`).
+`utf8Encode`/`utf8Decode`, `extractResultParts`, `assembleToolResultForModel`),
+**skills** (`validateSkillSlug`, `parseSlashCommand`, `bakeSkillMessage`, sync du
+cache mémoire `setSkillsCache`/`upsertSkillCache`/`removeSkillCache`/
+`listEnabledSkills`/`matchSkillCompletions`, `skills__list` activés-seulement,
+chemins d'erreur synchrones de `skills__read`). Le contenu skill lu en IDB
+(`getSkillContent`/`getSkillRecord`, chemin async) se vérifie à la main.
 IDB, `internResourcesFromResult`, `loadConversationResources` et la cascade D8
 se vérifient à la main (tests 28–34 dans `tests/MANUAL.md`).
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a

@@ -148,11 +148,16 @@ async function openConversation(id) {
       if (m.group != null)            a.group = m.group;
       if (m.assistantText != null)    a.assistantText = m.assistantText;
       if (m.intent != null)           a.intent = m.intent;
+      if (m.slug != null)             a.slug = m.slug;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    // littéral (slash-commande skill). Normalise l'ancien champ `display` (données
+    // de test antérieures au renommage) vers `displayText` à la lecture.
+    if (m.displayText != null) o.displayText = m.displayText;
+    else if (m.display != null) o.displayText = m.display;
     return o;
   });
   currentConvModel = conv.model || '';
@@ -217,7 +222,9 @@ function downloadConvMd() {
     const label = (m.role === 'user' ? '### Vous' : '### MIAOU') + timeStr;
     lines.push(label);
     lines.push('');
-    lines.push(m.content || '');
+    // Export = littéral affiché (displayText) si présent (slash-commande skill),
+    // pas le corps de skill injecté dans content.
+    lines.push((m.role === 'user' && m.displayText != null ? m.displayText : m.content) || '');
     lines.push('');
     lines.push('---');
     lines.push('');
@@ -290,12 +297,14 @@ function persistCurrent() {
       if (m.group != null)         o.group = m.group;
       if (m.assistantText != null) o.assistantText = m.assistantText;
       if (m.intent != null)        o.intent = m.intent;
+      if (m.slug != null)          o.slug = m.slug;
       return o;
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
@@ -420,6 +429,41 @@ async function onDeleteMcpCard(cardEl, originalName) {
   renderMcpServers();
 }
 
+// ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────
+// Valide → écrit IDB (putSkill synchronise le cache mémoire) → re-rend la liste.
+// Le rendu/édition des cartes vit dans ui.js (buildSkillCard) ; ici la logique de
+// validation + persistance, comme onSaveMcpCard.
+async function onSaveSkillCard(cardEl, originalSlug) {
+  const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
+  const slug = get('.skill-slug').trim();
+  const others = listAllSkillsCache().map(s => s.slug).filter(sl => sl !== originalSlug);
+  const slugErr = validateSkillSlug(slug, others);
+  if (slugErr) { showSkillCardError(cardEl, slugErr); return; }
+  const enabledEl = cardEl.querySelector('.skill-enabled');
+  const record = {
+    slug,
+    name: get('.skill-name').trim(),
+    description: get('.skill-desc').trim(),
+    enabled: enabledEl ? enabledEl.checked : true,
+    content: get('.skill-content'),
+  };
+  // Renommage de slug : la clé IDB change → retirer l'ancien enregistrement.
+  if (originalSlug && originalSlug !== slug) { await deleteSkillDb(originalSlug); }
+  await putSkill(record);
+  renderSkills();
+}
+
+async function onDeleteSkillCard(cardEl, originalSlug) {
+  if (originalSlug) await deleteSkillDb(originalSlug);
+  renderSkills();
+}
+
+// Toggle enabled depuis la vue liste : bascule IDB + cache, puis re-rend.
+async function onToggleSkill(slug) {
+  await toggleSkillEnabled(slug);
+  renderSkills();
+}
+
 // ── Flux d'envoi ────────────────────────────────────────────────────────────
 // Bouton unique du composer : envoie, ou interrompt si un stream est en cours.
 function onSendBtn() {
@@ -427,28 +471,65 @@ function onSendBtn() {
   else sendMessage();
 }
 
-function sendMessage() {
+// Résout une saisie utilisateur (littéral) en payload d'envoi. CHEMIN UNIQUE de
+// détection/injection de slash-commande skill, partagé par la saisie composer
+// (sendMessage) ET la réédition d'un message (editUserMessage) — pas de duplication.
+// Le contenu de la skill est re-résolu à CHAQUE appel (contenu COURANT, jamais figé
+// d'un envoi antérieur) : éditer un `/slug` au tour N rebake avec le contenu actuel.
+// Injection DÉTERMINISTE côté client (≠ buildContextBlock/miaou_context, recalculé
+// par tour). Retours :
+//   { ok:true,  literal, content }            — texte normal (content === literal)
+//   { ok:true,  literal, content, isSkill }   — slash valide (content = bakové)
+//   { ok:false, error }                        — slug inconnu / désactivé / indisponible
+async function resolveSend(literal) {
+  const cmd = parseSlashCommand(literal);
+  if (!cmd) return { ok: true, literal, content: literal, isSkill: false };
+  const meta = getSkillMeta(cmd.slug);   // cache mémoire (skills.js)
+  if (!meta || meta.enabled === false) {
+    return { ok: false, error: 'Skill inconnue ou désactivée : /' + cmd.slug };
+  }
+  let content = null;
+  try { content = await getSkillContent(cmd.slug); } catch (e) { content = null; }
+  if (content == null) return { ok: false, error: 'Contenu de la skill indisponible : /' + cmd.slug };
+  return { ok: true, literal, content: bakeSkillMessage(literal, content), isSkill: true };
+}
+
+async function sendMessage() {
   if (!configured || sending) return;
   const ta = $('composer-text');
   const text = ta.value.trim();
   if (!text) return;
+
+  // On résout AVANT de vider le composer : un slug invalide ne perd pas la saisie
+  // ni ne consomme un tour modèle.
+  const r = await resolveSend(text);
+  if (!r.ok) { showComposerSkillError(r.error); return; }
+
   ta.value = ''; ta.style.height = 'auto';
+  clearComposerSkillError();
+  hideSkillAutocomplete();
 
   // Confirmation en attente + saisie libre : la frappe vaut réponse/correction
   // (brief §4.5). On lève le widget avant d'envoyer comme un message normal.
   if (_confirmPending) dismissConfirmation();
 
-  sendUserText(text);
+  sendUserText(r.literal, r.isSkill ? r.content : undefined);
 }
 
 // Cœur d'un envoi utilisateur : crée la conv au besoin, pousse le message,
 // persiste, relance la génération. Partagé par la saisie composer (sendMessage)
 // et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
-function sendUserText(text) {
+// `bakedContent` (optionnel) : contenu réellement envoyé/stocké pour le modèle
+// (slash-commande skill = littéral + corps du skill). `text` reste le littéral
+// affiché dans la bulle et conservé en `displayText`.
+function sendUserText(text, bakedContent) {
+  clearComposerSkillError();   // tout envoi effectif lève l'erreur skill du composer
   ensureConversation();
   const ts = Date.now();
   appendUserMessage(text, ts);
-  currentThread.push({ role: 'user', content: text, ts });
+  const msg = { role: 'user', content: bakedContent != null ? bakedContent : text, ts };
+  if (bakedContent != null) msg.displayText = text;
+  currentThread.push(msg);
   persistCurrent();
 
   runGenerationFromCurrentThread();
@@ -460,7 +541,9 @@ function sendUserText(text) {
 // Pré-requis : le dernier message utilisateur est déjà dans currentThread.
 function runGenerationFromCurrentThread() {
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
-  const text = lastUser ? lastUser.content : '';
+  // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
+  // recherche mémoire porte sur le littéral, pas sur le corps du skill injecté.
+  const text = lastUser ? (lastUser.displayText != null ? lastUser.displayText : lastUser.content) : '';
 
   const settings = loadSettings();
   let matches = [];
@@ -481,19 +564,31 @@ function runGenerationFromCurrentThread() {
 
 // Édition d'un message utilisateur passé (par index dans currentThread) :
 // tronque tout ce qui suit, remplace le contenu, persiste, puis relance la
-// génération par le même chemin que l'envoi normal.
-function editUserMessage(index, newText) {
-  if (sending) return;                          // pas d'édition pendant un stream
+// génération par le même chemin que l'envoi normal. Passe par resolveSend (même
+// détection/injection slash que l'envoi composer) : éditer en `/slug …` réinjecte
+// le contenu COURANT de la skill, et un slug invalide n'altère PAS le thread.
+// Retourne le message d'erreur (slug invalide) pour que l'appelant l'affiche SOUS
+// LA ZONE D'ÉDITION (pas le composer) ; null en cas de succès.
+async function editUserMessage(index, newText) {
+  if (sending) return null;                     // pas d'édition pendant un stream
   const t = (newText || '').trim();
-  if (!t) return;
-  if (index < 0 || index >= currentThread.length) return;
-  if (currentThread[index].role !== 'user') return;
+  if (!t) return null;
+  if (index < 0 || index >= currentThread.length) return null;
+  if (currentThread[index].role !== 'user') return null;
+
+  // Résoudre AVANT toute mutation : un slug invalide laisse le thread intact et la
+  // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
+  const r = await resolveSend(t);
+  if (!r.ok) return r.error;
 
   currentThread = currentThread.slice(0, index + 1);
-  currentThread[index] = { role: 'user', content: t, ts: Date.now() };
+  const msg = { role: 'user', content: r.content, ts: Date.now() };
+  if (r.isSkill) msg.displayText = r.literal;
+  currentThread[index] = msg;
   persistCurrent();                             // troncature écrite avant relance
-  renderThread(currentThread);
+  renderThread(currentThread);                  // détruit la bulle d'édition (+ son erreur)
   runGenerationFromCurrentThread();
+  return null;
 }
 
 async function dispatchSend(matches) {
@@ -821,6 +916,7 @@ function init() {
 
   prefetchModels();      // liste des modèles (cache session) → sélecteur composer
   reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
+  loadSkillsCache();     // méta des skills en mémoire → autocomplétion + outils
   runBackfill();         // auto-gardé sur la présence d'URL
 }
 

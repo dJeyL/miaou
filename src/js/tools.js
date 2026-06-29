@@ -251,6 +251,61 @@ const TOOLS = [
       return 'Souvenir supprimé (réversible depuis les paramètres).';
     },
   },
+  {
+    // Sous-namespace miaou__skills__ : énumère les skills ACTIVÉS (slug + name +
+    // description) pour que le modèle découvre ce qu'il peut lire via skills__read.
+    // Les skills désactivés n'apparaissent JAMAIS (l'utilisateur les a coupés).
+    name: 'skills__list',
+    description:
+      "Liste les skills disponibles (méta : slug, nom, description). Une skill est " +
+      "un fragment d'instructions réutilisable. Appelle cet outil quand la demande " +
+      "de l'utilisateur pourrait correspondre à une skill ; lis ensuite son contenu " +
+      "avec miaou__skills__read en passant le slug. Ne liste que les skills activées.",
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: () => {
+      // listEnabledSkills (skills.js) lit le cache mémoire — synchrone.
+      const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description }));
+      _pendingToolAcks.push({ kind: 'skill_list', count: list.length });
+      return JSON.stringify(list);
+    },
+  },
+  {
+    // miaou__skills__read : renvoie le contenu Markdown complet d'un skill activé.
+    // Les contrôles (introuvable / désactivé) lisent le cache mémoire → ERREUR
+    // SYNCHRONE (testable QuickJS). Le contenu lui-même est en IDB → fetch ASYNC
+    // (Promise) ; callInternalTool gère un handler thenable. NE passe PAS par
+    // l'injection figée de la slash-commande : c'est un tool_result normal, dont
+    // le contenu doit être disponible au modèle dès ce tour.
+    name: 'skills__read',
+    description:
+      "Lit le contenu complet d'une skill par son slug (obtenu via miaou__skills__list). " +
+      "Renvoie les instructions de la skill, à suivre pour la suite de la réponse. " +
+      "Erreur claire si le slug est inconnu ou la skill désactivée.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Slug de la skill à lire' },
+      },
+      required: ['slug'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const slug = String(args.slug || '').trim();
+      if (!slug) return 'Slug manquant.';
+      const meta = getSkillMeta(slug);                 // cache mémoire (synchrone)
+      if (!meta) return 'Skill introuvable : ' + slug;
+      if (meta.enabled === false) return 'Skill désactivée : ' + slug;
+      // Activée : fetch IDB async. L'ack est poussé une fois le contenu obtenu.
+      return getSkillContent(slug).then(content => {
+        if (content == null) return 'Contenu indisponible pour la skill : ' + slug;
+        // Nom d'affichage du skill stocké en `title` (pas `name` : onEnrichLastAck
+        // écrase `name` avec le nom canonique de l'outil pour la réinjection cross-turn).
+        _pendingToolAcks.push({ kind: 'skill_read', slug, title: meta.name });
+        return content;
+      });
+    },
+  },
 ];
 
 // ── ask_confirmation : primitif halting hors registre MCP ────────────────────
@@ -497,6 +552,15 @@ function callInternalTool(toolName, args) {
   if (!tool) return { content: [{ type: 'text', text: 'Outil inconnu : ' + toolName }], isError: true };
   try {
     const text = tool.handler(args || {});
+    // Handler ASYNC (ex. skills__read lit le contenu en IDB) : il renvoie une
+    // Promise<string>. On la mappe vers la forme MCP. Les handlers synchrones
+    // (tous les autres) restent synchrones → branche interne testable sans async.
+    if (text && typeof text.then === 'function') {
+      return text.then(
+        t => ({ content: [{ type: 'text', text: String(t) }], isError: false }),
+        e => ({ content: [{ type: 'text', text: 'Erreur outil ' + toolName + ' : ' + ((e && e.message) || e) }], isError: true })
+      );
+    }
     return { content: [{ type: 'text', text: String(text) }], isError: false };
   } catch (e) {
     return { content: [{ type: 'text', text: 'Erreur outil ' + toolName + ' : ' + e.message }], isError: true };

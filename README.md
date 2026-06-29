@@ -49,6 +49,25 @@ l'interface, JetBrains Mono pour le code.
   annulable pour les écritures mémoire, informative pour les lectures
   d'historique.
 
+**Skills**
+
+- Fragments d'instructions Markdown réutilisables, gérés dans un drawer dédié
+  (Paramètres → Skills) : chaque skill a un `slug` (clé d'invocation), un nom, une
+  description et un corps Markdown. Stockés en IndexedDB ; un toggle `enabled` par
+  skill. Création/édition/suppression directes (action administrative explicite,
+  sans tombstone).
+- **Invocation par slash** : taper `/slug` dans le composer injecte le corps du
+  skill dans le message envoyé — injection **déterministe et figée** au moment de
+  l'envoi (distincte du bloc `<miaou_context>`, recalculé à chaque tour). La bulle
+  n'affiche que le texte tapé ; le corps injecté reste invisible côté UI mais fait
+  partie du message stocké/envoyé. Autocomplétion au fil de la frappe (skills
+  activés uniquement).
+- **Découverte par le modèle** : deux outils sous le sous-namespace
+  `miaou__skills__` — `miaou__skills__list` (slug + nom + description des skills
+  activés) et `miaou__skills__read(slug)` (corps complet). Le modèle décide seul de
+  les appeler quand la demande en langage naturel correspond à un skill ; une ligne
+  d'ack informative signale la lecture.
+
 **Outils distants (MCP)**
 
 - MIAOU est un **client/agrégateur MCP** : en plus de ses outils internes, il
@@ -147,7 +166,8 @@ src/
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
     ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
-    ├── resources.js   IndexedDB : stockage/réhydratation des ressources MCP non-textuelles
+    ├── resources.js   IndexedDB (base `miaou`) : stockage/réhydratation des ressources MCP non-textuelles
+    ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, parsing slash
     ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC
     ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
     ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs

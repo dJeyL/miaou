@@ -312,7 +312,15 @@ async function runConversation(messages, hooks) {
             // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
             // le round-trip réseau, pas seulement après.
             const toolPromise = callTool(tc.function.name, args);
-            const isMcp = typeof toolPromise.then === 'function';
+            // isMcp = appel d'un serveur MCP DISTANT — déterminé par le préfixe du
+            // nom (serveur ≠ 'miaou'/''), pas par le type de retour : un outil
+            // interne ASYNC (ex. miaou__skills__read) renvoie aussi une Promise mais
+            // n'est pas distant. Le distinguer par le nom évite de router son ack
+            // dans le chemin MCP (onEarlyAcks/earlyRendered).
+            const isMcp = (function () {
+              const p = parseToolName(tc.function.name).serverPrefix;
+              return p !== '' && p !== 'miaou';
+            })();
             if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
             const rawResult = await toolPromise;
             // Interception ressources : stocke les blocs non-textuels dans IDB,

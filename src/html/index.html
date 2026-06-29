@@ -103,15 +103,19 @@
           <div class="model-menu" id="composer-model-menu"></div>
         </div>
 
+        <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput -->
+        <div class="skill-ac" id="skill-ac" hidden></div>
+
         <div class="input-wrap" id="input-wrap">
           <textarea id="composer-text" rows="1" placeholder="Message…"
-            onkeydown="onComposerKey(event)" oninput="autoGrow(this)"></textarea>
+            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
             <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
           </button>
         </div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne</div>
+        <div class="composer-skill-error" id="composer-skill-error" hidden></div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour un skill</div>
       </div>
     </div>
   </div>
@@ -248,6 +252,11 @@
         <span class="hint">Délègue des appels d'outils à des serveurs MCP externes. Leurs outils sont fusionnés au registre, préfixés par le nom du serveur.</span>
         <button class="btn-ghost" onclick="openMcpServers()">Gérer les serveurs MCP</button>
       </div>
+      <div class="field">
+        <label>Skills</label>
+        <span class="hint">Fragments d'instructions réutilisables. Invoquer via <code>/slug</code> dans le composer, ou laisser le modèle les découvrir par lui-même.</span>
+        <button class="btn-ghost" onclick="openSkills()">Gérer les skills</button>
+      </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
     </div>
@@ -281,6 +290,22 @@
       <span class="hint">Backends MCP distants (HTTP). Leurs outils sont fusionnés au registre, préfixés par le nom du serveur. Un serveur injoignable est simplement ignoré.</span>
       <button class="btn-ghost mcp-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
       <div class="mcp-list" id="mcp-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Skills drawer ═══ -->
+  <div class="backdrop" id="skills-backdrop" onclick="closeSkills()"></div>
+  <div class="drawer drawer-wide" id="skills-drawer">
+    <div class="drawer-head">
+      <h2>Skills</h2>
+      <button class="icon-btn" onclick="closeSkills()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Une skill est un fragment d'instructions Markdown. Invoquer via <code>/slug</code> (injecté tel quel dans le message), ou laisser le modèle la découvrir via ses outils. Les skills désactivées ne sont ni invocables ni visibles du modèle.</span>
+      <button class="btn-ghost skill-add-btn" onclick="addSkillCard()">Nouvelle skill</button>
+      <div class="skill-list" id="skill-list"></div>
     </div>
   </div>
 

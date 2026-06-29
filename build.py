@@ -17,6 +17,7 @@ JS_ORDER = [
     'utils.js',
     'storage.js',
     'resources.js',
+    'skills.js',
     'tools.js',
     'api.js',
     'ui.js',

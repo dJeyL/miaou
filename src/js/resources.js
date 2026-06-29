@@ -226,12 +226,17 @@ let _persistenceRequested = false;
 function openResourceDB() {
   if (_resourceDbPromise) return _resourceDbPromise;
   _resourceDbPromise = new Promise(function(resolve, reject) {
-    const req = indexedDB.open('miaou', 1);
+    // v2 : ajout du store `skills` (cf. skills.js). onupgradeneeded est idempotent
+    // (contains-check par store) → migration v1→v2 sans toucher `resources`.
+    const req = indexedDB.open('miaou', 2);
     req.onupgradeneeded = function(e) {
       const db = e.target.result;
       if (!db.objectStoreNames.contains('resources')) {
         const store = db.createObjectStore('resources', { keyPath: 'id' });
         store.createIndex('by_conversation', 'conversationId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('skills')) {
+        db.createObjectStore('skills', { keyPath: 'slug' });
       }
     };
     req.onsuccess = function(e) { resolve(e.target.result); };

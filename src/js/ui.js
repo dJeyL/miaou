@@ -249,6 +249,7 @@ const ICON_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
 const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
+const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
 
 const ACK_KINDS = {
   memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
@@ -343,6 +344,25 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_TRASH,
     label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
+  },
+  // Énumération des skills par le modèle (miaou__skills__list) : informatif, pas
+  // d'undo (lecture — même posture que conversation_list, dont on réutilise l'icône).
+  skill_list: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m =>
+        m.count === 0 ? 'Aucune skill disponible'
+      : m.count === 1 ? '1 skill listée'
+      : (m.count != null ? m.count : '?') + ' skills listées',
+  },
+  // Lecture d'un skill par le modèle (miaou__skills__read) : informatif, pas d'undo
+  // (lecture, pas une mutation d'état — même posture que conversation_read).
+  skill_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
   },
 };
 
@@ -470,7 +490,10 @@ function renderThread(msgs) {
   let pendingAcks = [];
   for (const m of msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
-    const wrap = buildMsg(m.role, m.content, m.model, m.reasoning, m.ts);
+    // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
+    // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
+    const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -634,7 +657,11 @@ function enterEditMode(wrap) {
   if (sending) return;
   const index = msgIndex(wrap);
   if (index < 0) return;
-  const original = currentThread[index] ? currentThread[index].content : '';
+  // Source UNIQUE du texte éditable et de la bulle restaurée : displayText (littéral
+  // tapé) si présent, sinon content. Jamais le content baké d'une slash-commande
+  // skill — sinon la textarea et la bulle (après annulation) fuiteraient le corps injecté.
+  const m = currentThread[index];
+  const original = m ? (m.displayText != null ? m.displayText : m.content) : '';
 
   wrap.classList.add('editing');
   const bubble = wrap.querySelector('.bubble');
@@ -643,7 +670,8 @@ function enterEditMode(wrap) {
     `<div class="msg-edit-actions">` +
     `<button class="mb-btn" data-act="cancel">Annuler</button>` +
     `<button class="mb-btn primary" data-act="save">Valider</button>` +
-    `</div>`;
+    `</div>` +
+    `<div class="msg-edit-error" hidden></div>`;
 
   const ta = bubble.querySelector('.msg-edit-area');
   ta.value = original;
@@ -651,7 +679,7 @@ function enterEditMode(wrap) {
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
 
-  ta.addEventListener('input', () => autoGrow(ta));
+  ta.addEventListener('input', () => { autoGrow(ta); clearEditError(wrap); });
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); cancelEdit(wrap, original); }
     else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(wrap, ta.value); }
@@ -675,13 +703,27 @@ function cancelEdit(wrap, original) {
 }
 
 // Validation : recalcule l'index (le thread n'a pas bougé, mais on ne fige rien)
-// puis délègue la troncature + relance à editUserMessage (main.js).
-function commitEdit(wrap, value) {
+// puis délègue la troncature + relance à editUserMessage (main.js). Un slug skill
+// invalide remonte une erreur affichée SOUS LA ZONE D'ÉDITION (pas le composer) ;
+// le thread reste intact et la bulle en mode édition pour correction. En cas de
+// succès, editUserMessage re-rend le thread → la bulle d'édition (et son erreur)
+// disparaissent.
+async function commitEdit(wrap, value) {
   const t = (value || '').trim();
   if (!t) return;
   const index = msgIndex(wrap);
   if (index < 0) return;
-  editUserMessage(index, t);
+  const err = await editUserMessage(index, t);
+  if (err) showEditError(wrap, err);
+}
+
+function showEditError(wrap, msg) {
+  const el = wrap && wrap.querySelector('.msg-edit-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearEditError(wrap) {
+  const el = wrap && wrap.querySelector('.msg-edit-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
 // ── Indicateur d'activité en arrière-plan ───────────────────────────────────
@@ -947,7 +989,7 @@ function syncConfigured() {
     dot.className = 'dot ok';
   } else {
     wrap.classList.add('disabled');
-    ta.placeholder = 'API non configurée — ouvrez les paramètres';
+    ta.placeholder = 'API non configurée — ouvrir les paramètres';
     ta.disabled = true;
     send.disabled = true;
     dot.className = 'dot err';
@@ -1009,6 +1051,15 @@ function dismissConfirmation() {
 
 // ── Composer ────────────────────────────────────────────────────────────────
 function onComposerKey(e) {
+  // Autocomplétion skill ouverte : flèches naviguent, Tab/Entrée complètent,
+  // Échap ferme — sans envoyer ni insérer de saut de ligne.
+  if (skillAutocompleteOpen()) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(1); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(-1); return; }
+    if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(); return; }
+    if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(); return; }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(); return; }
+  }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
 }
 
@@ -1490,7 +1541,7 @@ function renderMcpServers() {
   if (!servers.length) {
     const empty = document.createElement('div');
     empty.className = 'mem-empty';
-    empty.textContent = 'Aucun serveur MCP. Ajoute un backend pour déléguer des appels d\'outils.';
+    empty.textContent = 'Aucun serveur MCP. Ajouter un backend pour déléguer des appels d\'outils.';
     wrap.appendChild(empty);
   } else {
     for (const s of servers) wrap.appendChild(buildMcpCard(s, false));
@@ -1702,6 +1753,281 @@ function buildMcpCard(server, isNew) {
 
   card.appendChild(editSection);
   return card;
+}
+
+// ── Skills : drawer de gestion ───────────────────────────────────────────────
+// Liste les skills depuis le cache mémoire (méta) ; le contenu Markdown est lu en
+// IDB à l'entrée en édition (getSkillRecord), jamais conservé en cache.
+function openSkills() {
+  renderSkills();
+  $('skills-drawer').classList.add('show');
+  $('skills-backdrop').classList.add('show');
+}
+function closeSkills() {
+  $('skills-drawer').classList.remove('show');
+  $('skills-backdrop').classList.remove('show');
+}
+
+function renderSkills() {
+  const wrap = $('skill-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const skills = listAllSkillsCache();   // skills.js — méta, ordre d'insertion
+  if (!skills.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucune skill. Créer un fragment d\'instructions réutilisable.';
+    wrap.appendChild(empty);
+    return;
+  }
+  for (const s of skills) wrap.appendChild(buildSkillCard(s, false));
+}
+
+function addSkillCard() {
+  const wrap = $('skill-list');
+  if (!wrap) return;
+  const empty = wrap.querySelector('.mem-empty');
+  if (empty) empty.remove();
+  wrap.insertBefore(buildSkillCard({ slug: '', name: '', description: '', enabled: true }, true), wrap.firstChild);
+}
+
+function showSkillCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.skill-err');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+
+function skillField(labelText, inputEl, hintText) {
+  const field = document.createElement('div');
+  field.className = 'skill-field';
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  field.appendChild(label);
+  field.appendChild(inputEl);
+  if (hintText) {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = hintText;
+    field.appendChild(hint);
+  }
+  return field;
+}
+
+function buildSkillCard(skill, isNew) {
+  const card = document.createElement('div');
+  card.className = 'skill-card' + (isNew ? ' is-editing' : '');
+  const originalSlug = skill.slug || '';
+
+  // ── SECTION VUE ───────────────────────────────────────────────────────────
+  const viewSection = document.createElement('div');
+  viewSection.className = 'skill-view';
+
+  const viewMain = document.createElement('div');
+  viewMain.className = 'skill-view-main';
+  const viewName = document.createElement('div');
+  viewName.className = 'skill-view-name';
+  viewName.textContent = skill.name || skill.slug || '(sans nom)';
+  const viewSlug = document.createElement('div');
+  viewSlug.className = 'skill-view-slug';
+  viewSlug.textContent = '/' + (skill.slug || '');
+  viewMain.append(viewName, viewSlug);
+  viewSection.appendChild(viewMain);
+
+  const viewRow = document.createElement('div');
+  viewRow.className = 'skill-view-row';
+
+  // Toggle enabled en vue (persistance immédiate via onToggleSkill, main.js)
+  const viewToggleLabel = document.createElement('label');
+  viewToggleLabel.className = 'toggle';
+  const viewEnabledI = document.createElement('input');
+  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'skill-enabled-view';
+  viewEnabledI.checked = skill.enabled !== false;
+  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
+  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
+  viewToggleLabel.append(viewEnabledI, viewTrack, viewThumb);
+  viewRow.appendChild(viewToggleLabel);
+  if (!isNew) {
+    viewEnabledI.addEventListener('change', () => onToggleSkill(originalSlug));
+  }
+
+  const modBtn = document.createElement('button');
+  modBtn.className = 'drawer-btn';
+  modBtn.textContent = 'Modifier';
+  modBtn.addEventListener('click', () => enterSkillEdit(card, originalSlug));
+  viewRow.appendChild(modBtn);
+
+  viewSection.appendChild(viewRow);
+  card.appendChild(viewSection);
+
+  // ── SECTION ÉDITION ───────────────────────────────────────────────────────
+  const editSection = document.createElement('div');
+  editSection.className = 'skill-edit';
+
+  const slugI = document.createElement('input');
+  slugI.className = 'skill-slug'; slugI.type = 'text'; slugI.value = skill.slug || '';
+  slugI.placeholder = 'revue-code'; slugI.spellcheck = false;
+  const nameI = document.createElement('input');
+  nameI.className = 'skill-name'; nameI.type = 'text'; nameI.value = skill.name || '';
+  nameI.placeholder = 'Revue de code'; nameI.spellcheck = false;
+  const descI = document.createElement('input');
+  descI.className = 'skill-desc'; descI.type = 'text'; descI.value = skill.description || '';
+  descI.placeholder = 'Brève description (visible du modèle)'; descI.spellcheck = false;
+  const contentT = document.createElement('textarea');
+  contentT.className = 'skill-content'; contentT.rows = 10; contentT.spellcheck = false;
+  contentT.placeholder = 'Corps de la skill en Markdown…';
+
+  editSection.appendChild(skillField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
+  editSection.appendChild(skillField('Nom', nameI, 'Libellé d\'affichage.'));
+  editSection.appendChild(skillField('Description', descI, 'Surface lexicale décrite au modèle.'));
+  editSection.appendChild(skillField('Contenu', contentT));
+
+  // Toggle enabled en édition (.skill-enabled lu par onSaveSkillCard)
+  const editEnabledWrap = document.createElement('label');
+  editEnabledWrap.className = 'skill-enabled-row';
+  const editToggleWrap = document.createElement('label');
+  editToggleWrap.className = 'toggle';
+  const editEnabledI = document.createElement('input');
+  editEnabledI.type = 'checkbox'; editEnabledI.className = 'skill-enabled'; editEnabledI.checked = skill.enabled !== false;
+  const editTrack = document.createElement('span'); editTrack.className = 'track';
+  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
+  editToggleWrap.append(editEnabledI, editTrack, editThumb);
+  const editEnabledTxt = document.createElement('span');
+  editEnabledTxt.textContent = 'Activée';
+  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
+  editSection.appendChild(editEnabledWrap);
+
+  const err = document.createElement('div');
+  err.className = 'skill-err'; err.setAttribute('hidden', '');
+  editSection.appendChild(err);
+
+  const actions = document.createElement('div');
+  actions.className = 'skill-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'drawer-btn primary skill-save'; saveBtn.textContent = 'Enregistrer';
+  saveBtn.addEventListener('click', () => onSaveSkillCard(card, originalSlug));
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'drawer-btn skill-cancel'; cancelBtn.textContent = 'Annuler';
+  cancelBtn.addEventListener('click', () => { if (isNew) card.remove(); else card.classList.remove('is-editing'); });
+  actions.append(saveBtn, cancelBtn);
+  if (!isNew) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'drawer-btn danger skill-del'; delBtn.textContent = 'Supprimer';
+    delBtn.addEventListener('click', () => {
+      if (window.confirm('Supprimer la skill « ' + (skill.name || skill.slug) + ' » ? Action définitive.')) {
+        onDeleteSkillCard(card, originalSlug);
+      }
+    });
+    actions.appendChild(delBtn);
+  }
+  editSection.appendChild(actions);
+
+  card.appendChild(editSection);
+  return card;
+}
+
+// Entre en mode édition : récupère le contenu Markdown en IDB (jamais en cache) et
+// le pose dans la textarea avant d'afficher la section édition.
+function enterSkillEdit(card, slug) {
+  const ta = card.querySelector('.skill-content');
+  if (ta && slug) {
+    getSkillRecord(slug).then(rec => { if (rec && ta) ta.value = rec.content || ''; }).catch(() => {});
+  }
+  card.classList.add('is-editing');
+}
+
+// ── Composer : autocomplétion des skills (slash-commande) ─────────────────────
+// Filtre le cache mémoire (skills ACTIVÉS) sur le préfixe tapé après `/`. Navigation
+// clavier gérée dans onComposerKey. Sélection = complète `/slug ` (n'envoie pas).
+let _skillAcIndex = -1;
+
+function onComposerInput() {
+  clearComposerSkillError();
+  const ta = $('composer-text');
+  if (!ta) return;
+  const cmd = parseSlashCommand(ta.value);
+  // N'ouvre l'autocomplétion que si on est en train de taper le slug (pas de reste
+  // ni d'espace après) : `/rev` → ouvert ; `/revue du code` → fermé.
+  if (!cmd || cmd.rest) { hideSkillAutocomplete(); return; }
+  const matches = matchSkillCompletions(cmd.slug);
+  if (!matches.length) { hideSkillAutocomplete(); return; }
+  renderSkillAutocomplete(matches);
+}
+
+function renderSkillAutocomplete(matches) {
+  const box = $('skill-ac');
+  if (!box) return;
+  box.innerHTML = '';
+  _skillAcIndex = -1;
+  matches.forEach((s, i) => {
+    const opt = document.createElement('div');
+    opt.className = 'skill-ac-opt';
+    opt.dataset.slug = s.slug;
+    const slugEl = document.createElement('span');
+    slugEl.className = 'skill-ac-slug';
+    slugEl.textContent = '/' + s.slug;
+    opt.appendChild(slugEl);
+    if (s.name) {
+      const nameEl = document.createElement('span');
+      nameEl.className = 'skill-ac-name';
+      nameEl.textContent = s.name;
+      opt.appendChild(nameEl);
+    }
+    opt.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSkillCompletion(s.slug); });
+    box.appendChild(opt);
+  });
+  box.removeAttribute('hidden');
+}
+
+function hideSkillAutocomplete() {
+  const box = $('skill-ac');
+  if (box) { box.setAttribute('hidden', ''); box.innerHTML = ''; }
+  _skillAcIndex = -1;
+}
+
+function skillAutocompleteOpen() {
+  const box = $('skill-ac');
+  return box && !box.hasAttribute('hidden');
+}
+
+function moveSkillAcSelection(delta) {
+  const box = $('skill-ac');
+  if (!box) return;
+  const opts = box.querySelectorAll('.skill-ac-opt');
+  if (!opts.length) return;
+  _skillAcIndex = (_skillAcIndex + delta + opts.length) % opts.length;
+  opts.forEach((o, i) => o.classList.toggle('active', i === _skillAcIndex));
+  const active = opts[_skillAcIndex];
+  if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+}
+
+// Valide la sélection courante (ou la première option) : complète `/slug ` dans le
+// composer sans envoyer (l'utilisateur déclenche l'injection en envoyant).
+function acceptSkillAcSelection() {
+  const box = $('skill-ac');
+  if (!box) return false;
+  const opts = box.querySelectorAll('.skill-ac-opt');
+  if (!opts.length) return false;
+  const opt = opts[_skillAcIndex >= 0 ? _skillAcIndex : 0];
+  if (!opt) return false;
+  pickSkillCompletion(opt.dataset.slug);
+  return true;
+}
+
+function pickSkillCompletion(slug) {
+  const ta = $('composer-text');
+  if (!ta) return;
+  ta.value = '/' + slug + ' ';
+  hideSkillAutocomplete();
+  ta.focus();
+  autoGrow(ta);
+}
+
+function showComposerSkillError(msg) {
+  const el = $('composer-skill-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearComposerSkillError() {
+  const el = $('composer-skill-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
 // ── Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8) ────

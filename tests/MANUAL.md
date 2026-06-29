@@ -201,3 +201,63 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     byte-pour-byte entre les deux requêtes — seul le dernier message `role:'user'`
     diffère. Cela valide que le contenu re-hydraté ne change pas d'un tour à l'autre
     (le JSON est congelé au moment du stockage, pas recalculé).
+
+## Skills (stage 1)
+
+35. **CRUD + cache** : Paramètres → Skills → Nouveau skill. Saisir slug `revue`,
+    nom, description, un corps Markdown ; Enregistrer. La carte apparaît en vue.
+    Recharger la page → le skill est toujours là (IDB). Désactiver le toggle de la
+    carte → état persisté au reload. « Modifier » → la textarea se repeuple avec le
+    corps (lecture IDB `getSkillRecord`). « Supprimer » → confirm natif → disparu,
+    hard delete (rien au reload).
+
+36. **Validation slug** : tenter d'enregistrer un slug avec espace, `/`, vide, ou
+    doublon d'un slug existant → message d'erreur inline dans la carte, pas d'écriture.
+
+37. **Autocomplétion** : taper `/` puis `rev` dans le composer → dropdown des skills
+    activés filtrés (slug **ou** name). ↑↓ navigue, Tab/Entrée complète `/revue `
+    **sans envoyer**, Échap ferme. Un skill désactivé n'apparaît jamais.
+
+38. **Injection slash (figée)** : envoyer `/revue analyse ce code`. La bulle user
+    n'affiche QUE `/revue analyse ce code` (pas le corps). Dans DevTools Network, le
+    message `role:'user'` envoyé contient le corps du skill concaténé. Recharger →
+    la bulle affiche toujours le littéral seul (`displayText`), le payload réenvoyé
+    garde le corps (`content` figé). Éditer ensuite cette skill ou la supprimer → le
+    message déjà envoyé reste byte-identique (pas de re-résolution au reload/replay).
+
+39. **Slash invalide** : envoyer `/inconnu` ou `/revue` désactivée → erreur locale
+    sous le composer, **aucun message envoyé, aucun tour modèle**, saisie préservée.
+
+39b. **Édition d'un message slash — fuite littéral/injecté** : après le test 38,
+    cliquer « Éditer » sur la bulle `/revue …`. La **textarea d'édition affiche le
+    littéral** (`/revue analyse ce code`), JAMAIS le corps injecté. « Annuler » → la
+    bulle se restaure au littéral seul (pas de fuite du corps). Tout ça est vrai au
+    premier rendu, après annulation, et après reload — même champ `displayText`.
+
+39c. **Édition d'un message slash — réinjection à l'envoi** : éditer la bulle en
+    gardant/modifiant un `/slug` valide et valider. Dans Network, le message renvoyé
+    re-bake avec le contenu **courant** de la skill (modifier la skill entre-temps
+    doit se refléter ici — re-résolution, pas le contenu figé d'origine). Éditer
+    vers un `/slug` invalide/désactivé → erreur affichée **sous la zone d'édition**
+    (PAS sous le composer), **thread inchangé**, la bulle reste en mode édition ;
+    l'erreur disparaît dès qu'on retape, et la validation réussie la fait disparaître
+    (la bulle d'édition est reconstruite). Éditer vers du texte normal → plus de
+    `displayText`, la bulle affiche le texte tel quel. Vérifier que le modèle
+    n'appelle PAS `miaou__skills__read` de lui-même pour résoudre un `/slug` édité
+    (l'injection client le résout en amont).
+
+39d. **Effacement de l'erreur composer à l'envoi** : taper `/inconnu`, envoyer →
+    erreur sous le composer. Corriger en message valide et envoyer → l'erreur
+    disparaît (tout envoi effectif lève l'erreur skill du composer).
+
+40. **Chemin langage naturel** : avec au moins un skill activé, demander en langage
+    naturel une tâche couverte par un skill (sans `/`). Le modèle doit appeler
+    `miaou__skills__list` puis `miaou__skills__read(slug)` → ack « Skill consulté :
+    … » (informatif, sans bouton annuler) dans la bulle, et le contenu influence sa
+    réponse. Vérifier qu'un skill **désactivé** n'apparaît jamais dans `skills__list`
+    et que `skills__read` sur lui renvoie une erreur claire (pas un succès vide).
+
+41. **Réinjection cross-turn d'un skill lu** : après le test 40, poursuivre la
+    conversation sur un autre tour. Dans Network, le payload doit contenir le
+    `role:'tool'` re-hydraté avec le contenu du skill (via `expandThread`), prouvant
+    que le modèle garde l'accès au skill aux tours suivants.
