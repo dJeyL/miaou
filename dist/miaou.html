@@ -2042,7 +2042,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-28 20:15 UTC */
+/* miaou — built: 2026-06-29 10:47 UTC */
 
 
 /* ── utils.js ── */
@@ -2349,6 +2349,15 @@ function stampTs(ts, result) {
   return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
 }
 
+// DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].
+// Utilisé pour générer des tool_call_id déterministes et compatibles avec les
+// backends qui imposent [a-zA-Z0-9] longueur 9 (ex. Mistral).
+function _hashId9(s) {
+  var h = 5381;
+  for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
+  return h.toString(36).padStart(9, '0').substring(0, 9);
+}
+
 // Reconstruit un tableau de messages OpenAI depuis currentThread.
 // Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
 // Acks legacy (sans args) → élagués comme avant (compat ascendante).
@@ -2381,7 +2390,7 @@ function expandThread(thread) {
           out.pop();
         }
         var prefix = grp != null ? grp : 'solo';
-        var ids = groupAcks.map(function(_, k) { return 'tc_' + prefix + '_' + k; });
+        var ids = groupAcks.map(function(_, k) { return _hashId9(prefix + '\x00' + k); });
         out.push({
           role: 'assistant',
           content: assistantText || null,
@@ -2453,7 +2462,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782677746}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782730063}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3210,7 +3219,8 @@ const BINARY_DOCTRINE =
   "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
   "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
   "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-  "placeholder inventé.";
+  "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
+  "l'application l'a déjà présentée à l'utilisateur.";
 
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =

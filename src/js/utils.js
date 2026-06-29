@@ -300,6 +300,15 @@ function stampTs(ts, result) {
   return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
 }
 
+// DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].
+// Utilisé pour générer des tool_call_id déterministes et compatibles avec les
+// backends qui imposent [a-zA-Z0-9] longueur 9 (ex. Mistral).
+function _hashId9(s) {
+  var h = 5381;
+  for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
+  return h.toString(36).padStart(9, '0').substring(0, 9);
+}
+
 // Reconstruit un tableau de messages OpenAI depuis currentThread.
 // Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
 // Acks legacy (sans args) → élagués comme avant (compat ascendante).
@@ -332,7 +341,7 @@ function expandThread(thread) {
           out.pop();
         }
         var prefix = grp != null ? grp : 'solo';
-        var ids = groupAcks.map(function(_, k) { return 'tc_' + prefix + '_' + k; });
+        var ids = groupAcks.map(function(_, k) { return _hashId9(prefix + '\x00' + k); });
         out.push({
           role: 'assistant',
           content: assistantText || null,

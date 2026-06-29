@@ -272,6 +272,30 @@ describe('stampTs', function() {
   });
 });
 
+describe('_hashId9', function() {
+  it('renvoie toujours exactement 9 caractères', function() {
+    expect(_hashId9('').length).toBe(9);
+    expect(_hashId9('abc').length).toBe(9);
+    expect(_hashId9('a very long group identifier string 0').length).toBe(9);
+  });
+
+  it('renvoie uniquement des caractères [a-z0-9]', function() {
+    var inputs = ['', 'gmqyyccce', 'solo', 'x\x001', 'abc\x000'];
+    inputs.forEach(function(s) {
+      expect(/^[a-z0-9]+$/.test(_hashId9(s))).toBeTruthy();
+    });
+  });
+
+  it('est déterministe', function() {
+    expect(_hashId9('mygroup\x000')).toBe(_hashId9('mygroup\x000'));
+    expect(_hashId9('solo\x000')).toBe(_hashId9('solo\x000'));
+  });
+
+  it('entrées adjacentes (k=0 vs k=1) produisent des ids distincts', function() {
+    expect(_hashId9('grp\x000') === _hashId9('grp\x001')).toBeFalsy();
+  });
+});
+
 describe('expandThread', function() {
   // Helper : ack enrichi minimal
   function ack(overrides) {
@@ -380,6 +404,44 @@ describe('expandThread', function() {
     expect(toolMsg.role).toBe('tool');
     expect(toolMsg.content.indexOf('[Résultat du')).toBe(0);
     expect(toolMsg.content.indexOf('data') > 0).toBeTruthy();
+  });
+
+  it('tool_call_id : format 9 chars [a-z0-9] uniquement', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gmqyyccce' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    var id = r[1].tool_calls[0].id;
+    expect(id.length).toBe(9);
+    expect(/^[a-z0-9]+$/.test(id)).toBeTruthy();
+  });
+
+  it('tool_call_id déterministe : même groupe → même id', function() {
+    var mkThread = function() {
+      return [
+        { role: 'user', content: 'q' },
+        ack({ group: 'stable' }),
+        { role: 'assistant', content: 'fin' },
+      ];
+    };
+    var id1 = expandThread(mkThread())[1].tool_calls[0].id;
+    var id2 = expandThread(mkThread())[1].tool_calls[0].id;
+    expect(id1).toBe(id2);
+  });
+
+  it('ack sans group (solo) → id valide 9 chars', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: undefined }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    var id = r[1].tool_calls[0].id;
+    expect(id.length).toBe(9);
+    expect(/^[a-z0-9]+$/.test(id)).toBeTruthy();
+    expect(r[2].tool_call_id).toBe(id);
   });
 
   it('arguments JSON sérialisés dans function.arguments', function() {

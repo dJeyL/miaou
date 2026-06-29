@@ -20,7 +20,8 @@ const BINARY_DOCTRINE =
   "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
   "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
   "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-  "placeholder inventé.";
+  "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
+  "l'application l'a déjà présentée à l'utilisateur.";
 
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =
