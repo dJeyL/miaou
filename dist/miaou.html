@@ -2042,7 +2042,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-29 10:47 UTC */
+/* miaou — built: 2026-06-29 11:34 UTC */
 
 
 /* ── utils.js ── */
@@ -2248,10 +2248,21 @@ function validateMcpServerName(name, existingNames) {
 function filterMcpTools(tools, allowlist, denylist) {
   const allow = Array.isArray(allowlist) ? allowlist.filter(Boolean) : [];
   const deny  = Array.isArray(denylist)  ? denylist.filter(Boolean)  : [];
+  function matchesValue(bare, v) {
+    if (v.indexOf('*') >= 0) {
+      const re = new RegExp('^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      const parts = bare.split('__');
+      return parts.some((_, i) => re.test(parts.slice(i).join('__')));
+    }
+    return bare === v || bare.endsWith('__' + v);
+  }
+  function matches(bare, list) {
+    return list.some(v => matchesValue(bare, v));
+  }
   return (tools || []).filter(t => {
     const bare = t && t.name;
-    if (deny.indexOf(bare) >= 0) return false;        // denylist gagne
-    if (allow.length && allow.indexOf(bare) < 0) return false;
+    if (matches(bare, deny)) return false;            // denylist gagne
+    if (allow.length && !matches(bare, allow)) return false;
     return true;
   });
 }
@@ -2462,7 +2473,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782730063}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782732873}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;

@@ -199,10 +199,21 @@ function validateMcpServerName(name, existingNames) {
 function filterMcpTools(tools, allowlist, denylist) {
   const allow = Array.isArray(allowlist) ? allowlist.filter(Boolean) : [];
   const deny  = Array.isArray(denylist)  ? denylist.filter(Boolean)  : [];
+  function matchesValue(bare, v) {
+    if (v.indexOf('*') >= 0) {
+      const re = new RegExp('^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      const parts = bare.split('__');
+      return parts.some((_, i) => re.test(parts.slice(i).join('__')));
+    }
+    return bare === v || bare.endsWith('__' + v);
+  }
+  function matches(bare, list) {
+    return list.some(v => matchesValue(bare, v));
+  }
   return (tools || []).filter(t => {
     const bare = t && t.name;
-    if (deny.indexOf(bare) >= 0) return false;        // denylist gagne
-    if (allow.length && allow.indexOf(bare) < 0) return false;
+    if (matches(bare, deny)) return false;            // denylist gagne
+    if (allow.length && !matches(bare, allow)) return false;
     return true;
   });
 }

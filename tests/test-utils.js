@@ -251,6 +251,64 @@ describe('filterMcpTools (D7, denylist gagne)', function() {
   });
 });
 
+describe('filterMcpTools (sous-namespaces)', function() {
+  var tools = [{ name: 'proxy__get_data' }, { name: 'proxy__send' }, { name: 'other__get_data' }, { name: 'bare' }];
+  it('allowlist par suffix matche les sous-namespaces', function() {
+    var r = filterMcpTools(tools, ['get_data'], []);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('proxy__get_data,other__get_data');
+  });
+  it('denylist par suffix retire les sous-namespaces', function() {
+    var r = filterMcpTools(tools, [], ['get_data']);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('proxy__send,bare');
+  });
+  it('match exact prime sur suffix (nom nu = valeur)', function() {
+    var r = filterMcpTools(tools, ['bare'], []);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('bare');
+  });
+  it('denylist suffix gagne sur allowlist suffix', function() {
+    var r = filterMcpTools(tools, ['get_data'], ['get_data']);
+    expect(r.length).toBe(0);
+  });
+});
+
+describe('filterMcpTools (globs)', function() {
+  var tools = [
+    { name: 'ns1__ns2__get_image' },
+    { name: 'ns1__ns2__send' },
+    { name: 'ns1__ns2__tool' },
+    { name: 'ns1__other__tool' },
+    { name: 'bare_tool' }
+  ];
+  it('suffix glob ns2* matche les outils sous ns2', function() {
+    var r = filterMcpTools(tools, ['ns2*'], []);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('ns1__ns2__get_image,ns1__ns2__send,ns1__ns2__tool');
+  });
+  it('glob *_image matche par suffixe de nom', function() {
+    var r = filterMcpTools(tools, ['*_image'], []);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('ns1__ns2__get_image');
+  });
+  it('glob *tool matche les noms terminant par tool', function() {
+    var r = filterMcpTools(tools, ['*tool'], []);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('ns1__ns2__tool,ns1__other__tool,bare_tool');
+  });
+  it('denylist glob ns2* retire les outils sous ns2', function() {
+    var r = filterMcpTools(tools, [], ['ns2*']);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('ns1__other__tool,bare_tool');
+  });
+  it('denylist glob gagne sur allowlist glob', function() {
+    var r = filterMcpTools(tools, ['ns2*'], ['*_image']);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('ns1__ns2__send,ns1__ns2__tool');
+  });
+  it('glob ns2* ne matche pas ns1__other__tool', function() {
+    var r = filterMcpTools(tools, ['ns2*'], []);
+    expect(r.some(function(t){return t.name === 'ns1__other__tool';})).toBe(false);
+  });
+  it('glob ns1* matche tous les outils sous ns1', function() {
+    var r = filterMcpTools(tools, ['ns1*'], []);
+    expect(r.map(function(t){return t.name;}).join(',')).toBe('ns1__ns2__get_image,ns1__ns2__send,ns1__ns2__tool,ns1__other__tool');
+  });
+});
+
 describe('stampTs', function() {
   it('sans ts retourne le résultat tel quel', function() {
     expect(stampTs(null, 'hello')).toBe('hello');
