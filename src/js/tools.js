@@ -23,6 +23,43 @@ const BINARY_DOCTRINE =
   "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
   "l'application l'a déjà présentée à l'utilisateur.";
 
+// Doctrine d'accès Web. Toujours injectée quand des outils Web sont disponibles.
+// Partie de ROOT_SYSTEM_PROMPT.
+const WEB_DOCTRINE =
+  "<ACCES_WEB>\n" +
+  "Si des outils te sont fournis pour interroger des moteurs de recherche et/ou " +
+  "récupérer des ressources sur le Web :\n" +
+  "- utilise-les si c'est pertinent, plutôt que de fabriquer des informations " +
+  "récentes\n" +
+  "- lorsque l'utilisateur te demande d'analyser, de comparer ou de synthétiser " +
+  "des informations provenant de sources web (via des résultats de recherche), ne " +
+  "te base pas uniquement sur les extraits (snippets) fournis par l'outil de " +
+  "recherche ; tu as l'obligation d'utiliser systématiquement l'outil de " +
+  "récupération de contenu (fetch_url) pour lire le corps complet des pages afin " +
+  "de garantir une analyse exhaustive et précise\n" +
+  "- si des outils permettent de récupérer une ressource binaire (image, base64...), " +
+  "tu peux les appeler, l'application interceptera les réponses pour les " +
+  "enregistrer comme ressources dont il te donnera l'ID, et présentera les images " +
+  "à l'utilisateur automatiquement le cas échéant\n" +
+  "- si l'utilisateur te demande de trouver une image ou photo, cherche des pages " +
+  "susceptibles d'en contenir, récupère leur contenu, extrais la meilleure image " +
+  "candidate, et récupère-la avec son URL : l'application la lui présentera " +
+  "automatiquement. Pour les images, n'appelle JAMAIS present_resource et n'utilise " +
+  "jamais de balise Markdown (type ![alt](url)) pour afficher une ressource déjà " +
+  "présentée par l'application ; tu peux en utiliser pour présenter des MINIATURES, " +
+  "dans ce cas fais-en un lien vers l'IMAGE originale (PAS la page qui la contient), " +
+  "en utilisant l'URL de la MINIATURE pour l'image affichée en Markdown" +
+  "- lorsque tu trouves une URL pointant vers une image via une recherche, ne te " +
+  "contente pas d'afficher un lien Markdown ; utilise systématiquement l'outil " +
+  "`fetch_url` pour récupérer le contenu de cette image afin qu'elle soit traitée " +
+  "comme une ressource native (et présentée automatiquement à l'utilisateur par " +
+  "l'application)\n" +
+  "</ACCES_WEB>\n\n" +
+  "<SANS_ACCES_WEB>\n" +
+  "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
+  "pertinent, plutôt que de fabriquer des informations récentes." +
+  "</SANS_ACCES_WEB>\n";
+
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
@@ -50,9 +87,9 @@ const MEMORY_DOCTRINE =
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
-// Compose les deux doctrines ; référencé par buildSystemMessage() (main.js).
+// Compose les trois doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
-const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
 // Doctrine de traçage des intentions (traces en langage naturel). Injectée
 // conditionnellement dans buildSystemMessage() selon le toggle intentTracing.
