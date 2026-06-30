@@ -1208,6 +1208,7 @@ function openSettings() {
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
+  $('set-confirm-skill-autouse').checked = !!s.confirmSkillAutoUse;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
@@ -1906,6 +1907,23 @@ function buildSkillCard(skill, isNew) {
   editEnabledTxt.textContent = 'Activée';
   editEnabledWrap.append(editToggleWrap, editEnabledTxt);
   editSection.appendChild(editEnabledWrap);
+
+  // Toggle autotrigger en édition (.skill-autotrigger lu par onSaveSkillCard) —
+  // stage 2 : liste cette skill dans le contexte dynamique <miaou_skills_context>
+  // à chaque tour, pour découverte proactive par le modèle.
+  const editAutotriggerWrap = document.createElement('label');
+  editAutotriggerWrap.className = 'skill-enabled-row';
+  const editAutotriggerToggleWrap = document.createElement('label');
+  editAutotriggerToggleWrap.className = 'toggle';
+  const editAutotriggerI = document.createElement('input');
+  editAutotriggerI.type = 'checkbox'; editAutotriggerI.className = 'skill-autotrigger'; editAutotriggerI.checked = skill.autotrigger === true;
+  const editAutotriggerTrack = document.createElement('span'); editAutotriggerTrack.className = 'track';
+  const editAutotriggerThumb = document.createElement('span'); editAutotriggerThumb.className = 'thumb';
+  editAutotriggerToggleWrap.append(editAutotriggerI, editAutotriggerTrack, editAutotriggerThumb);
+  const editAutotriggerTxt = document.createElement('span');
+  editAutotriggerTxt.textContent = 'Proposée proactivement au modèle';
+  editAutotriggerWrap.append(editAutotriggerToggleWrap, editAutotriggerTxt);
+  editSection.appendChild(editAutotriggerWrap);
 
   const err = document.createElement('div');
   err.className = 'skill-err'; err.setAttribute('hidden', '');

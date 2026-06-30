@@ -374,14 +374,43 @@ describe('toolsSystemPrompt', function() {
   });
 });
 
-describe('memoryDoctrinePrompt', function() {
-  it('retourne une chaîne non vide (create_memory est dans le registre)', function() {
-    var s = memoryDoctrinePrompt();
-    expect(s.length > 0).toBeTruthy();
+describe('MEMORY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PROMPT)', function() {
+  it('retourne une chaîne non vide', function() {
+    expect(MEMORY_DOCTRINE.length > 0).toBeTruthy();
   });
   it('mentionne create_memory et ask_confirmation pour orienter le modèle', function() {
-    var s = memoryDoctrinePrompt();
-    expect(s.indexOf('create_memory') >= 0).toBeTruthy();
+    expect(MEMORY_DOCTRINE.indexOf('create_memory') >= 0).toBeTruthy();
+    expect(MEMORY_DOCTRINE.indexOf('ask_confirmation') >= 0).toBeTruthy();
+  });
+});
+
+describe('skillDoctrinePrompt (stage 2, conditionnel sur skills autotrigger)', function() {
+  it('chaîne vide si aucune skill autotrigger', function() {
+    setSkillsCache([]);
+    expect(skillDoctrinePrompt()).toBe('');
+    setSkillsCache([{ slug: 'a' }]);   // enabled, mais pas autotrigger
+    expect(skillDoctrinePrompt()).toBe('');
+  });
+  it('non vide dès qu\'une skill autotrigger existe', function() {
+    setSkillsCache([{ slug: 'a', autotrigger: true }]);
+    expect(skillDoctrinePrompt().length > 0).toBeTruthy();
+  });
+  it('résout le paragraphe CONFIRMATION sur la valeur courante de confirmSkillAutoUse, jamais une condition laissée au modèle', function() {
+    setSkillsCache([{ slug: 'a', autotrigger: true }]);
+    saveSettings({ confirmSkillAutoUse: true });
+    var on = skillDoctrinePrompt();
+    expect(on.indexOf('ask_confirmation') >= 0).toBeTruthy();
+    expect(on.indexOf('si le réglage') >= 0).toBeFalsy();   // pas de condition à évaluer par le modèle
+    saveSettings({ confirmSkillAutoUse: false });
+    var off = skillDoctrinePrompt();
+    expect(off.indexOf('sans confirmation préalable') >= 0).toBeTruthy();
+    expect(off.indexOf('appelle l\'outil ask_confirmation') >= 0).toBeFalsy();
+  });
+  it('mentionne miaou__skills__read et ask_confirmation', function() {
+    setSkillsCache([{ slug: 'a', autotrigger: true }]);
+    saveSettings({ confirmSkillAutoUse: true });
+    var s = skillDoctrinePrompt();
+    expect(s.indexOf('miaou__skills__read') >= 0).toBeTruthy();
     expect(s.indexOf('ask_confirmation') >= 0).toBeTruthy();
   });
 });
@@ -426,17 +455,16 @@ describe('callTool (routage par préfixe, D1)', function() {
   });
 });
 
-describe('toolsDoctrinePrompt (comportement transverse, inconditionnel)', function() {
+describe('BINARY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PROMPT)', function() {
   it('énonce la règle non-text sans toggle ni énumération', function() {
-    var s = toolsDoctrinePrompt();
-    expect(s.indexOf('image') >= 0).toBeTruthy();
-    expect(s.indexOf('ne simule pas') >= 0).toBeTruthy();
-    expect(s.indexOf('base64') >= 0).toBeTruthy();
+    expect(BINARY_DOCTRINE.indexOf('image') >= 0).toBeTruthy();
+    expect(BINARY_DOCTRINE.indexOf('ne simule pas') >= 0).toBeTruthy();
+    expect(BINARY_DOCTRINE.indexOf('base64') >= 0).toBeTruthy();
   });
-  it('la règle ne vit PLUS dans toolsSystemPrompt (énumération seule)', function() {
+  it('la règle ne vit PAS dans toolsSystemPrompt (énumération seule)', function() {
     expect(toolsSystemPrompt().indexOf('ne simule pas')).toBe(-1);
   });
   it('la règle ne vit PAS dans MEMORY_DOCTRINE', function() {
-    expect(memoryDoctrinePrompt().indexOf('ne simule pas')).toBe(-1);
+    expect(MEMORY_DOCTRINE.indexOf('ne simule pas')).toBe(-1);
   });
 });

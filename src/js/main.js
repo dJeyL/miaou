@@ -106,7 +106,25 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → utilisateur.
+// Listing dynamique des skills autotrigger (stage 2) : SIBLING de buildContextBlock/
+// <miaou_context>, PAS une section dedans — mécanisme structurellement distinct
+// (cf. brief stage 2). Recalculé à chaque tour depuis le cache courant, comme
+// <miaou_context> ; reflète tout changement enabled/autotrigger entre deux tours
+// sans cas particulier. '' si aucune skill éligible (pas de tokens pour une liste
+// vide). JAMAIS construit via resolveSend/bakeSkillMessage (chemin slash, stage 1,
+// figé au moment de l'envoi) — ce bloc-ci est éphémère et n'entre jamais dans
+// currentThread/localStorage.
+function buildSkillsContextBlock() {
+  const skills = getAutotriggerSkillsMeta();
+  if (!skills.length) return '';
+  const lines = skills.map(s => '- [slug: ' + s.slug + '] ' + (s.name || s.slug) +
+    (s.description ? ' — ' + s.description : ''));
+  return '<miaou_skills_context>\nSkills disponibles pour usage proactif (voir doctrine skills ' +
+    'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+}
+
+// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
+// skills (si skills autotrigger) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
   const settings = loadSettings();
@@ -115,6 +133,8 @@ function buildSystemMessage() {
     if (settings.includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
     const intentPart = intentDoctrinePrompt();
     if (intentPart) parts.push(intentPart);
+    const skillPart = skillDoctrinePrompt();
+    if (skillPart) parts.push(skillPart);
   }
   const sysUser = (settings.systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
@@ -362,6 +382,7 @@ function onSaveSettings() {
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
+    confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
   };
   saveSettings(obj);
   highlightEnabled = obj.highlight;
@@ -440,11 +461,13 @@ async function onSaveSkillCard(cardEl, originalSlug) {
   const slugErr = validateSkillSlug(slug, others);
   if (slugErr) { showSkillCardError(cardEl, slugErr); return; }
   const enabledEl = cardEl.querySelector('.skill-enabled');
+  const autotriggerEl = cardEl.querySelector('.skill-autotrigger');
   const record = {
     slug,
     name: get('.skill-name').trim(),
     description: get('.skill-desc').trim(),
     enabled: enabledEl ? enabledEl.checked : true,
+    autotrigger: autotriggerEl ? autotriggerEl.checked : false,
     content: get('.skill-content'),
   };
   // Renommage de slug : la clé IDB change → retirer l'ancien enregistrement.
@@ -615,15 +638,18 @@ async function dispatchSend(matches) {
   // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.
   const threadMsgs = expandThread(resolveResourceRefs(currentThread));
 
-  // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
-  // préfixe du dernier message utilisateur, pour préserver le préfixe stable
-  // (system + historique[0..N-1]) et permettre le KV cache prefix matching.
+  // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) +,
+  // en sibling, le listing skills autotrigger — en préfixe du dernier message
+  // utilisateur, pour préserver le préfixe stable (system + historique[0..N-1])
+  // et permettre le KV cache prefix matching. Deux blocs distincts, concaténés
+  // côte à côte (skills puis contexte), pas fusionnés en un seul appel.
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
   if (lastUserIdx >= 0) {
+    const skillsCtx = buildSkillsContextBlock();
     const ctx = buildContextBlock(matches);
     threadMsgs[lastUserIdx] = {
       role: 'user',
-      content: ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
+      content: skillsCtx + ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
     };
   }
 

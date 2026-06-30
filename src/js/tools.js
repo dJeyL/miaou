@@ -57,7 +57,7 @@ const WEB_DOCTRINE =
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
-  "pertinent, plutôt que de fabriquer des informations récentes." +
+  "pertinent, plutôt que de fabriquer des informations récentes.\n" +
   "</SANS_ACCES_WEB>\n";
 
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
@@ -90,6 +90,44 @@ const MEMORY_DOCTRINE =
 // Compose les trois doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+
+// Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
+// conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
+// présents, comme INTENT_DOCTRINE. PAS dans ROOT_SYSTEM_PROMPT (constante
+// build-time inconditionnelle) : ce bloc dépend de la disponibilité des outils
+// skill au runtime, même mécanisme que intentDoctrinePrompt()/INTENT_DOCTRINE.
+// Le modèle n'a aucun moyen d'observer la valeur de confirmSkillAutoUse (c'est
+// un réglage localStorage, pas une donnée de contexte) : il ne faut donc PAS lui
+// demander de vérifier « si le réglage est activé ». C'est skillDoctrinePrompt()
+// qui lit le réglage et choisit le paragraphe CONFIRMATION à injecter — la
+// doctrine envoyée au modèle est déjà résolue, jamais une branche conditionnelle
+// textuelle. SKILL_DOCTRINE_BASE est commun aux deux variantes.
+const SKILL_DOCTRINE_BASE =
+  "Doctrine de déclenchement pour les skills :\n\n" +
+  "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
+  "skills que l'utilisateur a choisi de rendre disponibles pour un usage proactif " +
+  "— ce ne sont PAS des skills que tu es obligé d'utiliser, seulement des fragments " +
+  "d'instructions pertinents si la situation s'y prête.\n\n" +
+  "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
+  "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
+
+const SKILL_DOCTRINE_CONFIRM_ON =
+  "CONFIRMATION : APRÈS que miaou__skills__read a renvoyé son contenu et AVANT " +
+  "d'agir dessus, appelle l'outil ask_confirmation (nu, non préfixé) pour décrire " +
+  "ce que tu t'apprêtes à faire avec cette skill. Cette règle s'applique à TOUT " +
+  "appel à miaou__skills__read, que la skill ait été découverte via " +
+  "<miaou_skills_context> ou via miaou__skills__list — elle ne dépend pas du " +
+  "chemin de découverte. Elle ne s'applique PAS à l'invocation par slash-commande " +
+  "(/slug) : c'est une action explicite de l'utilisateur, déjà un consentement, " +
+  "et miaou__skills__read n'est jamais appelé sur ce chemin.\n\n";
+
+const SKILL_DOCTRINE_CONFIRM_OFF =
+  "Tu peux agir directement sur le contenu renvoyé par miaou__skills__read, sans " +
+  "confirmation préalable.\n\n";
+
+const SKILL_DOCTRINE_TAIL =
+  "Ne JAMAIS affirmer avoir appliqué les instructions d'une skill si tu n'as pas " +
+  "appelé miaou__skills__read dans ce même tour.";
 
 // Doctrine de traçage des intentions (traces en langage naturel). Injectée
 // conditionnellement dans buildSystemMessage() selon le toggle intentTracing.
@@ -694,23 +732,22 @@ function toolsSystemPrompt() {
          "sinon réponds directement.\n" + lines.join('\n');
 }
 
-// Doctrine COMPORTEMENTALE des outils (transverse, courte, statique) — TOUJOURS
-// injectée quand des outils existent, indépendamment de includeToolsInSystemPrompt.
-// Distincte de toolsSystemPrompt() (l'énumération token-coûteuse, elle sous toggle) :
-// « comment tu te comportes face à un résultat d'outil » est vrai que les outils
-// soient ré-décrits dans le prompt ou non — coupler ça au toggle d'énumération
-// serait un artefact (le toggle ne gouverne que la description redondante). En
-// particulier en mode nothink/agentique (toggle off, outils passés via le champ API
-// `tools`), c'est le seul rempart côté formulation contre la narration/simulation
-// d'une image. Le marqueur neutre de flattenToolResult coupe l'autre vecteur (le
-// base64 n'atteint jamais le modèle) ; les deux couvrent des échecs DIFFÉRENTS.
-function toolsDoctrinePrompt() { return BINARY_DOCTRINE; }
-
-function memoryDoctrinePrompt() {
-  const hasMemoryTools = TOOLS.some(t => t.name === 'create_memory');
-  return hasMemoryTools ? MEMORY_DOCTRINE : '';
-}
-
 function intentDoctrinePrompt() {
   return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
+}
+
+// Doctrine de déclenchement des skills (stage 2). Injectée seulement si AU
+// MOINS une skill autotrigger existe (≈ getAutotriggerSkillsMeta non vide) —
+// inutile de payer des tokens de doctrine pour une fonctionnalité sans skill
+// éligible à l'utiliser. miaou__skills__read est dans TOOLS inconditionnellement
+// (stage 1), donc gater sur sa présence comme intentDoctrinePrompt gate sur
+// TOOLS.length serait toujours vrai ; on gate ici sur le contenu réel du cache
+// skills à la place. Le paragraphe CONFIRMATION est choisi ICI selon la valeur
+// COURANTE de confirmSkillAutoUse (réglage localStorage, invisible au modèle) —
+// la doctrine envoyée est déjà résolue, jamais une condition que le modèle
+// devrait évaluer lui-même.
+function skillDoctrinePrompt() {
+  if (!getAutotriggerSkillsMeta().length) return '';
+  const confirmPart = loadSettings().confirmSkillAutoUse !== false ? SKILL_DOCTRINE_CONFIRM_ON : SKILL_DOCTRINE_CONFIRM_OFF;
+  return SKILL_DOCTRINE_BASE + confirmPart + SKILL_DOCTRINE_TAIL;
 }

@@ -9,10 +9,17 @@
    2. Couche IDB (navigateur uniquement) : store `skills` (clé `slug`), partage
       la base `miaou` v2 via openResourceDB() (resources.js).
 
-   Schéma d'enregistrement IDB : { slug, name, description, enabled, content }.
-   Le cache mémoire NE contient PAS `content` (chargé depuis IDB à l'invocation
-   seulement) : il alimente l'autocomplétion du composer, qui filtre à chaque
-   frappe et ne peut pas attendre IDB. cf. brief stage 1.
+   Schéma d'enregistrement IDB : { slug, name, description, enabled, content,
+   autotrigger }. Le cache mémoire NE contient PAS `content` (chargé depuis IDB
+   à l'invocation seulement) : il alimente l'autocomplétion du composer, qui
+   filtre à chaque frappe et ne peut pas attendre IDB. cf. brief stage 1.
+
+   Stage 2 ajoute `autotrigger` (bool, défaut false — OPPOSÉ à `enabled`) : un
+   skill enabled+autotrigger est listé chaque tour dans le contexte dynamique
+   (cf. main.js, getAutotriggerSkillsMeta), pour découverte proactive par le
+   modèle sans appel préalable à miaou__skills__list. Pas de bump de version
+   IDB : schemaless, les enregistrements existants en sont simplement dépourvus
+   (absence == false).
    ──────────────────────────────────────────────────────────────────────────── */
 
 // ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
@@ -94,7 +101,7 @@ function bakeSkillMessage(literalText, resolved) {
 let _skillsCache = [];
 
 function _skillMeta(rec) {
-  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false };
+  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true };
 }
 
 // Remplace tout le cache (chargement initial depuis IDB).
@@ -128,6 +135,16 @@ function listAllSkillsCache() {
 // Skills ACTIVÉS uniquement (méta) — pour l'autocomplétion et miaou__skills__list.
 function listEnabledSkills() {
   return _skillsCache.filter(x => x.enabled !== false);
+}
+
+// Skills enabled ET autotrigger (méta {slug, name, description}, même forme que
+// miaou__skills__list, mais fonction DISTINCTE — ne touche pas à ce tool ni à son
+// filtre). Pour l'injection dynamique <miaou_skills_context> (main.js), recalculée
+// à chaque tour depuis le cache courant. [] si aucun match (l'appelant omet le bloc).
+function getAutotriggerSkillsMeta() {
+  return listEnabledSkills()
+    .filter(s => s.autotrigger === true)
+    .map(s => ({ slug: s.slug, name: s.name, description: s.description }));
 }
 
 // Filtre les skills activés dont le slug (ou le name) matche un préfixe de saisie.
@@ -176,6 +193,7 @@ function putSkill(record) {
     description: String(record.description || ''),
     enabled: record.enabled !== false,
     content: String(record.content || ''),
+    autotrigger: record.autotrigger === true,
   };
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {

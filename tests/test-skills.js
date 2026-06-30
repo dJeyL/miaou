@@ -159,6 +159,32 @@ describe('cache skills — synchronisation', function() {
     var byName = matchSkillCompletions('synth').map(function(s) { return s.slug; });
     expect(byName).toEqual(['resume']);
   });
+  it('autotrigger par défaut false (opposé de enabled) ; true respecté', function() {
+    setSkillsCache([{ slug: 'a' }, { slug: 'b', autotrigger: true }]);
+    expect(getSkillMeta('a').autotrigger).toBe(false);
+    expect(getSkillMeta('b').autotrigger).toBe(true);
+  });
+});
+
+describe('getAutotriggerSkillsMeta (stage 2)', function() {
+  it('liste vide si aucune skill autotrigger', function() {
+    setSkillsCache([{ slug: 'a' }, { slug: 'b', enabled: false, autotrigger: true }]);
+    expect(getAutotriggerSkillsMeta()).toEqual([]);
+  });
+  it('exclut une skill autotrigger mais désactivée', function() {
+    setSkillsCache([{ slug: 'a', enabled: false, autotrigger: true }]);
+    expect(getAutotriggerSkillsMeta()).toEqual([]);
+  });
+  it('inclut seulement enabled ET autotrigger, forme {slug, name, description}', function() {
+    setSkillsCache([
+      { slug: 'a', name: 'A', description: 'desc-a', autotrigger: true },
+      { slug: 'b', name: 'B', description: 'desc-b' },                       // pas autotrigger
+      { slug: 'c', name: 'C', description: 'desc-c', autotrigger: true, enabled: false },
+    ]);
+    var out = getAutotriggerSkillsMeta();
+    expect(out.length).toBe(1);
+    expect(out[0]).toEqual({ slug: 'a', name: 'A', description: 'desc-a' });
+  });
 });
 
 describe('miaou__skills__list — outil', function() {

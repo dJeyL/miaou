@@ -2029,7 +2029,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <div class="check-row">
           <div class="label-col">
             <label>Traces en langage naturel</label>
-            <span class="hint">Demande au modèle de décrire ses appels</span>
+            <span class="hint">Demande au modèle de décrire ses appels.</span>
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-intent-tracing">
@@ -2059,6 +2059,17 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <label>Skills</label>
         <span class="hint">Fragments d'instructions réutilisables. Invoquer via <code>/slug</code> dans le composer, ou laisser le modèle les découvrir par lui-même.</span>
         <button class="btn-ghost" onclick="openSkills()">Gérer les skills</button>
+        <div class="check-row">
+          <div class="label-col">
+            <label>Confirmer avant l'utilisation automatique d'une skill</label>
+            <span class="hint">Demande confirmation avant que le modèle agisse sur une skill qu'il a lue de lui-même.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-confirm-skill-autouse">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
       </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
@@ -2144,7 +2155,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-30 19:56 UTC */
+/* miaou — built: 2026-06-30 20:39 UTC */
 
 
 /* ── utils.js ── */
@@ -2575,7 +2586,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782849417}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782851986}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -2596,6 +2607,7 @@ const DEFAULT_SETTINGS = {
   includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
   saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
+  confirmSkillAutoUse: true, // ask_confirmation avant d'agir sur une skill lue (stage 2 autotrigger)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -3326,10 +3338,17 @@ function makeResourcePresentBlock(record) {
    2. Couche IDB (navigateur uniquement) : store `skills` (clé `slug`), partage
       la base `miaou` v2 via openResourceDB() (resources.js).
 
-   Schéma d'enregistrement IDB : { slug, name, description, enabled, content }.
-   Le cache mémoire NE contient PAS `content` (chargé depuis IDB à l'invocation
-   seulement) : il alimente l'autocomplétion du composer, qui filtre à chaque
-   frappe et ne peut pas attendre IDB. cf. brief stage 1.
+   Schéma d'enregistrement IDB : { slug, name, description, enabled, content,
+   autotrigger }. Le cache mémoire NE contient PAS `content` (chargé depuis IDB
+   à l'invocation seulement) : il alimente l'autocomplétion du composer, qui
+   filtre à chaque frappe et ne peut pas attendre IDB. cf. brief stage 1.
+
+   Stage 2 ajoute `autotrigger` (bool, défaut false — OPPOSÉ à `enabled`) : un
+   skill enabled+autotrigger est listé chaque tour dans le contexte dynamique
+   (cf. main.js, getAutotriggerSkillsMeta), pour découverte proactive par le
+   modèle sans appel préalable à miaou__skills__list. Pas de bump de version
+   IDB : schemaless, les enregistrements existants en sont simplement dépourvus
+   (absence == false).
    ──────────────────────────────────────────────────────────────────────────── */
 
 // ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
@@ -3411,7 +3430,7 @@ function bakeSkillMessage(literalText, resolved) {
 let _skillsCache = [];
 
 function _skillMeta(rec) {
-  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false };
+  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true };
 }
 
 // Remplace tout le cache (chargement initial depuis IDB).
@@ -3445,6 +3464,16 @@ function listAllSkillsCache() {
 // Skills ACTIVÉS uniquement (méta) — pour l'autocomplétion et miaou__skills__list.
 function listEnabledSkills() {
   return _skillsCache.filter(x => x.enabled !== false);
+}
+
+// Skills enabled ET autotrigger (méta {slug, name, description}, même forme que
+// miaou__skills__list, mais fonction DISTINCTE — ne touche pas à ce tool ni à son
+// filtre). Pour l'injection dynamique <miaou_skills_context> (main.js), recalculée
+// à chaque tour depuis le cache courant. [] si aucun match (l'appelant omet le bloc).
+function getAutotriggerSkillsMeta() {
+  return listEnabledSkills()
+    .filter(s => s.autotrigger === true)
+    .map(s => ({ slug: s.slug, name: s.name, description: s.description }));
 }
 
 // Filtre les skills activés dont le slug (ou le name) matche un préfixe de saisie.
@@ -3493,6 +3522,7 @@ function putSkill(record) {
     description: String(record.description || ''),
     enabled: record.enabled !== false,
     content: String(record.content || ''),
+    autotrigger: record.autotrigger === true,
   };
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
@@ -3610,7 +3640,7 @@ const WEB_DOCTRINE =
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
-  "pertinent, plutôt que de fabriquer des informations récentes." +
+  "pertinent, plutôt que de fabriquer des informations récentes.\n" +
   "</SANS_ACCES_WEB>\n";
 
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
@@ -3643,6 +3673,44 @@ const MEMORY_DOCTRINE =
 // Compose les trois doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+
+// Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
+// conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
+// présents, comme INTENT_DOCTRINE. PAS dans ROOT_SYSTEM_PROMPT (constante
+// build-time inconditionnelle) : ce bloc dépend de la disponibilité des outils
+// skill au runtime, même mécanisme que intentDoctrinePrompt()/INTENT_DOCTRINE.
+// Le modèle n'a aucun moyen d'observer la valeur de confirmSkillAutoUse (c'est
+// un réglage localStorage, pas une donnée de contexte) : il ne faut donc PAS lui
+// demander de vérifier « si le réglage est activé ». C'est skillDoctrinePrompt()
+// qui lit le réglage et choisit le paragraphe CONFIRMATION à injecter — la
+// doctrine envoyée au modèle est déjà résolue, jamais une branche conditionnelle
+// textuelle. SKILL_DOCTRINE_BASE est commun aux deux variantes.
+const SKILL_DOCTRINE_BASE =
+  "Doctrine de déclenchement pour les skills :\n\n" +
+  "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
+  "skills que l'utilisateur a choisi de rendre disponibles pour un usage proactif " +
+  "— ce ne sont PAS des skills que tu es obligé d'utiliser, seulement des fragments " +
+  "d'instructions pertinents si la situation s'y prête.\n\n" +
+  "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
+  "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
+
+const SKILL_DOCTRINE_CONFIRM_ON =
+  "CONFIRMATION : APRÈS que miaou__skills__read a renvoyé son contenu et AVANT " +
+  "d'agir dessus, appelle l'outil ask_confirmation (nu, non préfixé) pour décrire " +
+  "ce que tu t'apprêtes à faire avec cette skill. Cette règle s'applique à TOUT " +
+  "appel à miaou__skills__read, que la skill ait été découverte via " +
+  "<miaou_skills_context> ou via miaou__skills__list — elle ne dépend pas du " +
+  "chemin de découverte. Elle ne s'applique PAS à l'invocation par slash-commande " +
+  "(/slug) : c'est une action explicite de l'utilisateur, déjà un consentement, " +
+  "et miaou__skills__read n'est jamais appelé sur ce chemin.\n\n";
+
+const SKILL_DOCTRINE_CONFIRM_OFF =
+  "Tu peux agir directement sur le contenu renvoyé par miaou__skills__read, sans " +
+  "confirmation préalable.\n\n";
+
+const SKILL_DOCTRINE_TAIL =
+  "Ne JAMAIS affirmer avoir appliqué les instructions d'une skill si tu n'as pas " +
+  "appelé miaou__skills__read dans ce même tour.";
 
 // Doctrine de traçage des intentions (traces en langage naturel). Injectée
 // conditionnellement dans buildSystemMessage() selon le toggle intentTracing.
@@ -4247,25 +4315,24 @@ function toolsSystemPrompt() {
          "sinon réponds directement.\n" + lines.join('\n');
 }
 
-// Doctrine COMPORTEMENTALE des outils (transverse, courte, statique) — TOUJOURS
-// injectée quand des outils existent, indépendamment de includeToolsInSystemPrompt.
-// Distincte de toolsSystemPrompt() (l'énumération token-coûteuse, elle sous toggle) :
-// « comment tu te comportes face à un résultat d'outil » est vrai que les outils
-// soient ré-décrits dans le prompt ou non — coupler ça au toggle d'énumération
-// serait un artefact (le toggle ne gouverne que la description redondante). En
-// particulier en mode nothink/agentique (toggle off, outils passés via le champ API
-// `tools`), c'est le seul rempart côté formulation contre la narration/simulation
-// d'une image. Le marqueur neutre de flattenToolResult coupe l'autre vecteur (le
-// base64 n'atteint jamais le modèle) ; les deux couvrent des échecs DIFFÉRENTS.
-function toolsDoctrinePrompt() { return BINARY_DOCTRINE; }
-
-function memoryDoctrinePrompt() {
-  const hasMemoryTools = TOOLS.some(t => t.name === 'create_memory');
-  return hasMemoryTools ? MEMORY_DOCTRINE : '';
-}
-
 function intentDoctrinePrompt() {
   return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
+}
+
+// Doctrine de déclenchement des skills (stage 2). Injectée seulement si AU
+// MOINS une skill autotrigger existe (≈ getAutotriggerSkillsMeta non vide) —
+// inutile de payer des tokens de doctrine pour une fonctionnalité sans skill
+// éligible à l'utiliser. miaou__skills__read est dans TOOLS inconditionnellement
+// (stage 1), donc gater sur sa présence comme intentDoctrinePrompt gate sur
+// TOOLS.length serait toujours vrai ; on gate ici sur le contenu réel du cache
+// skills à la place. Le paragraphe CONFIRMATION est choisi ICI selon la valeur
+// COURANTE de confirmSkillAutoUse (réglage localStorage, invisible au modèle) —
+// la doctrine envoyée est déjà résolue, jamais une condition que le modèle
+// devrait évaluer lui-même.
+function skillDoctrinePrompt() {
+  if (!getAutotriggerSkillsMeta().length) return '';
+  const confirmPart = loadSettings().confirmSkillAutoUse !== false ? SKILL_DOCTRINE_CONFIRM_ON : SKILL_DOCTRINE_CONFIRM_OFF;
+  return SKILL_DOCTRINE_BASE + confirmPart + SKILL_DOCTRINE_TAIL;
 }
 
 
@@ -5926,6 +5993,7 @@ function openSettings() {
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
+  $('set-confirm-skill-autouse').checked = !!s.confirmSkillAutoUse;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
@@ -6625,6 +6693,23 @@ function buildSkillCard(skill, isNew) {
   editEnabledWrap.append(editToggleWrap, editEnabledTxt);
   editSection.appendChild(editEnabledWrap);
 
+  // Toggle autotrigger en édition (.skill-autotrigger lu par onSaveSkillCard) —
+  // stage 2 : liste cette skill dans le contexte dynamique <miaou_skills_context>
+  // à chaque tour, pour découverte proactive par le modèle.
+  const editAutotriggerWrap = document.createElement('label');
+  editAutotriggerWrap.className = 'skill-enabled-row';
+  const editAutotriggerToggleWrap = document.createElement('label');
+  editAutotriggerToggleWrap.className = 'toggle';
+  const editAutotriggerI = document.createElement('input');
+  editAutotriggerI.type = 'checkbox'; editAutotriggerI.className = 'skill-autotrigger'; editAutotriggerI.checked = skill.autotrigger === true;
+  const editAutotriggerTrack = document.createElement('span'); editAutotriggerTrack.className = 'track';
+  const editAutotriggerThumb = document.createElement('span'); editAutotriggerThumb.className = 'thumb';
+  editAutotriggerToggleWrap.append(editAutotriggerI, editAutotriggerTrack, editAutotriggerThumb);
+  const editAutotriggerTxt = document.createElement('span');
+  editAutotriggerTxt.textContent = 'Proposée proactivement au modèle';
+  editAutotriggerWrap.append(editAutotriggerToggleWrap, editAutotriggerTxt);
+  editSection.appendChild(editAutotriggerWrap);
+
   const err = document.createElement('div');
   err.className = 'skill-err'; err.setAttribute('hidden', '');
   editSection.appendChild(err);
@@ -7183,7 +7268,25 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → utilisateur.
+// Listing dynamique des skills autotrigger (stage 2) : SIBLING de buildContextBlock/
+// <miaou_context>, PAS une section dedans — mécanisme structurellement distinct
+// (cf. brief stage 2). Recalculé à chaque tour depuis le cache courant, comme
+// <miaou_context> ; reflète tout changement enabled/autotrigger entre deux tours
+// sans cas particulier. '' si aucune skill éligible (pas de tokens pour une liste
+// vide). JAMAIS construit via resolveSend/bakeSkillMessage (chemin slash, stage 1,
+// figé au moment de l'envoi) — ce bloc-ci est éphémère et n'entre jamais dans
+// currentThread/localStorage.
+function buildSkillsContextBlock() {
+  const skills = getAutotriggerSkillsMeta();
+  if (!skills.length) return '';
+  const lines = skills.map(s => '- [slug: ' + s.slug + '] ' + (s.name || s.slug) +
+    (s.description ? ' — ' + s.description : ''));
+  return '<miaou_skills_context>\nSkills disponibles pour usage proactif (voir doctrine skills ' +
+    'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+}
+
+// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
+// skills (si skills autotrigger) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
   const settings = loadSettings();
@@ -7192,6 +7295,8 @@ function buildSystemMessage() {
     if (settings.includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
     const intentPart = intentDoctrinePrompt();
     if (intentPart) parts.push(intentPart);
+    const skillPart = skillDoctrinePrompt();
+    if (skillPart) parts.push(skillPart);
   }
   const sysUser = (settings.systemPrompt || '').trim();
   if (sysUser) parts.push(sysUser);
@@ -7439,6 +7544,7 @@ function onSaveSettings() {
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
+    confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
   };
   saveSettings(obj);
   highlightEnabled = obj.highlight;
@@ -7517,11 +7623,13 @@ async function onSaveSkillCard(cardEl, originalSlug) {
   const slugErr = validateSkillSlug(slug, others);
   if (slugErr) { showSkillCardError(cardEl, slugErr); return; }
   const enabledEl = cardEl.querySelector('.skill-enabled');
+  const autotriggerEl = cardEl.querySelector('.skill-autotrigger');
   const record = {
     slug,
     name: get('.skill-name').trim(),
     description: get('.skill-desc').trim(),
     enabled: enabledEl ? enabledEl.checked : true,
+    autotrigger: autotriggerEl ? autotriggerEl.checked : false,
     content: get('.skill-content'),
   };
   // Renommage de slug : la clé IDB change → retirer l'ancien enregistrement.
@@ -7692,15 +7800,18 @@ async function dispatchSend(matches) {
   // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.
   const threadMsgs = expandThread(resolveResourceRefs(currentThread));
 
-  // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) en
-  // préfixe du dernier message utilisateur, pour préserver le préfixe stable
-  // (system + historique[0..N-1]) et permettre le KV cache prefix matching.
+  // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) +,
+  // en sibling, le listing skills autotrigger — en préfixe du dernier message
+  // utilisateur, pour préserver le préfixe stable (system + historique[0..N-1])
+  // et permettre le KV cache prefix matching. Deux blocs distincts, concaténés
+  // côte à côte (skills puis contexte), pas fusionnés en un seul appel.
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
   if (lastUserIdx >= 0) {
+    const skillsCtx = buildSkillsContextBlock();
     const ctx = buildContextBlock(matches);
     threadMsgs[lastUserIdx] = {
       role: 'user',
-      content: ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
+      content: skillsCtx + ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
     };
   }
 

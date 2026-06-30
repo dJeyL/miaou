@@ -226,7 +226,7 @@
         <div class="check-row">
           <div class="label-col">
             <label>Traces en langage naturel</label>
-            <span class="hint">Demande au modèle de décrire ses appels</span>
+            <span class="hint">Demande au modèle de décrire ses appels.</span>
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-intent-tracing">
@@ -256,6 +256,17 @@
         <label>Skills</label>
         <span class="hint">Fragments d'instructions réutilisables. Invoquer via <code>/slug</code> dans le composer, ou laisser le modèle les découvrir par lui-même.</span>
         <button class="btn-ghost" onclick="openSkills()">Gérer les skills</button>
+        <div class="check-row">
+          <div class="label-col">
+            <label>Confirmer avant l'utilisation automatique d'une skill</label>
+            <span class="hint">Demande confirmation avant que le modèle agisse sur une skill qu'il a lue de lui-même.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-confirm-skill-autouse">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
       </div>
       <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
