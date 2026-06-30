@@ -665,8 +665,11 @@ function enterEditMode(wrap) {
 
   wrap.classList.add('editing');
   const bubble = wrap.querySelector('.bubble');
+  // Dropdown sous la textarea (seule différence positionnelle avec le composer,
+  // où il est au-dessus) : placé juste APRÈS dans le DOM, AVANT les actions.
   bubble.innerHTML =
     `<textarea class="msg-edit-area" spellcheck="false"></textarea>` +
+    `<div class="skill-ac" hidden></div>` +
     `<div class="msg-edit-actions">` +
     `<button class="mb-btn" data-act="cancel">Annuler</button>` +
     `<button class="mb-btn primary" data-act="save">Valider</button>` +
@@ -674,13 +677,22 @@ function enterEditMode(wrap) {
     `<div class="msg-edit-error" hidden></div>`;
 
   const ta = bubble.querySelector('.msg-edit-area');
+  const box = bubble.querySelector('.skill-ac');
+  const ac = { ta, box, index: -1, trigger: null };
   ta.value = original;
   autoGrow(ta);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
 
-  ta.addEventListener('input', () => { autoGrow(ta); clearEditError(wrap); });
+  ta.addEventListener('input', () => { autoGrow(ta); clearEditError(wrap); updateSkillAutocomplete(ac); });
   ta.addEventListener('keydown', (e) => {
+    if (skillAutocompleteOpen(ac)) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(ac, 1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(ac, -1); return; }
+      if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(ac); return; }
+      if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(ac); return; }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(ac); return; }
+    }
     if (e.key === 'Escape') { e.preventDefault(); cancelEdit(wrap, original); }
     else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(wrap, ta.value); }
   });
@@ -1053,12 +1065,12 @@ function dismissConfirmation() {
 function onComposerKey(e) {
   // Autocomplétion skill ouverte : flèches naviguent, Tab/Entrée complètent,
   // Échap ferme — sans envoyer ni insérer de saut de ligne.
-  if (skillAutocompleteOpen()) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(1); return; }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(-1); return; }
-    if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(); return; }
-    if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(); return; }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(); return; }
+  if (skillAutocompleteOpen(_composerAc)) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(_composerAc, 1); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(_composerAc, -1); return; }
+    if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(_composerAc); return; }
+    if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
 }
@@ -1934,29 +1946,49 @@ function enterSkillEdit(card, slug) {
   card.classList.add('is-editing');
 }
 
-// ── Composer : autocomplétion des skills (slash-commande) ─────────────────────
-// Filtre le cache mémoire (skills ACTIVÉS) sur le préfixe tapé après `/`. Navigation
-// clavier gérée dans onComposerKey. Sélection = complète `/slug ` (n'envoie pas).
-let _skillAcIndex = -1;
+// ── Autocomplétion des skills (slash-commande) ─────────────────────────────────
+// Filtre le cache mémoire (skills ACTIVÉS) sur le trigger `/slug` actif le plus
+// proche du curseur (cf. findSlashTriggers, skills.js — trigger = position 0 OU
+// précédé d'un espace/saut de ligne). Mécanique GÉNÉRIQUE partagée par le composer
+// et la bulle d'édition in-place : chaque contexte fournit un état `{ ta, box,
+// index }` (cf. _composerAc / état créé dans enterEditMode). `index` mémorise la
+// sélection clavier ET le trigger actif courant (start/end/slug) pour l'insertion.
+
+const _composerAc = { ta: null, box: null, index: -1, trigger: null };
 
 function onComposerInput() {
   clearComposerSkillError();
   const ta = $('composer-text');
-  if (!ta) return;
-  const cmd = parseSlashCommand(ta.value);
-  // N'ouvre l'autocomplétion que si on est en train de taper le slug (pas de reste
-  // ni d'espace après) : `/rev` → ouvert ; `/revue du code` → fermé.
-  if (!cmd || cmd.rest) { hideSkillAutocomplete(); return; }
-  const matches = matchSkillCompletions(cmd.slug);
-  if (!matches.length) { hideSkillAutocomplete(); return; }
-  renderSkillAutocomplete(matches);
+  const box = $('skill-ac');
+  if (!ta || !box) return;
+  _composerAc.ta = ta; _composerAc.box = box;
+  updateSkillAutocomplete(_composerAc);
 }
 
-function renderSkillAutocomplete(matches) {
-  const box = $('skill-ac');
+// Recalcule et (re)peint l'autocomplétion pour un état `{ ta, box }` donné, en
+// fonction du trigger `/slug` actif sous le curseur. Position 0 avec slug VIDE
+// ouvre immédiatement la liste complète (au pic du `/`, l'intention est déjà claire) ;
+// toute autre position attend ≥1 caractère après le `/` avant d'ouvrir, pour ne pas
+// être intrusif sur un `/` littéral en cours de frappe normale.
+function updateSkillAutocomplete(state) {
+  const ta = state.ta;
+  const triggers = findSlashTriggers(ta.value);
+  const caret = ta.selectionStart;
+  // Trigger actif = celui qui contient le curseur (start <= caret <= end).
+  const trig = triggers.find(t => caret >= t.start && caret <= t.end) || null;
+  if (!trig) { hideSkillAutocomplete(state); return; }
+  if (!trig.atStart && trig.slug === '') { hideSkillAutocomplete(state); return; }
+  const matches = matchSkillCompletions(trig.slug);
+  if (!matches.length) { hideSkillAutocomplete(state); return; }
+  state.trigger = trig;
+  renderSkillAutocomplete(state, matches);
+}
+
+function renderSkillAutocomplete(state, matches) {
+  const box = state.box;
   if (!box) return;
   box.innerHTML = '';
-  _skillAcIndex = -1;
+  state.index = -1;
   matches.forEach((s, i) => {
     const opt = document.createElement('div');
     opt.className = 'skill-ac-opt';
@@ -1971,53 +2003,62 @@ function renderSkillAutocomplete(matches) {
       nameEl.textContent = s.name;
       opt.appendChild(nameEl);
     }
-    opt.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSkillCompletion(s.slug); });
+    opt.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSkillCompletion(state, s.slug); });
     box.appendChild(opt);
   });
   box.removeAttribute('hidden');
 }
 
-function hideSkillAutocomplete() {
-  const box = $('skill-ac');
+function hideSkillAutocomplete(state) {
+  const s = state || _composerAc;
+  const box = s.box;
   if (box) { box.setAttribute('hidden', ''); box.innerHTML = ''; }
-  _skillAcIndex = -1;
+  s.index = -1;
+  s.trigger = null;
 }
 
-function skillAutocompleteOpen() {
-  const box = $('skill-ac');
-  return box && !box.hasAttribute('hidden');
+function skillAutocompleteOpen(state) {
+  const box = (state || _composerAc).box;
+  return !!box && !box.hasAttribute('hidden');
 }
 
-function moveSkillAcSelection(delta) {
-  const box = $('skill-ac');
+function moveSkillAcSelection(state, delta) {
+  const box = state.box;
   if (!box) return;
   const opts = box.querySelectorAll('.skill-ac-opt');
   if (!opts.length) return;
-  _skillAcIndex = (_skillAcIndex + delta + opts.length) % opts.length;
-  opts.forEach((o, i) => o.classList.toggle('active', i === _skillAcIndex));
-  const active = opts[_skillAcIndex];
+  state.index = (state.index + delta + opts.length) % opts.length;
+  opts.forEach((o, i) => o.classList.toggle('active', i === state.index));
+  const active = opts[state.index];
   if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
 }
 
 // Valide la sélection courante (ou la première option) : complète `/slug ` dans le
-// composer sans envoyer (l'utilisateur déclenche l'injection en envoyant).
-function acceptSkillAcSelection() {
-  const box = $('skill-ac');
+// champ ciblé sans envoyer (l'utilisateur déclenche l'injection en envoyant/validant).
+function acceptSkillAcSelection(state) {
+  const box = state.box;
   if (!box) return false;
   const opts = box.querySelectorAll('.skill-ac-opt');
   if (!opts.length) return false;
-  const opt = opts[_skillAcIndex >= 0 ? _skillAcIndex : 0];
+  const opt = opts[state.index >= 0 ? state.index : 0];
   if (!opt) return false;
-  pickSkillCompletion(opt.dataset.slug);
+  pickSkillCompletion(state, opt.dataset.slug);
   return true;
 }
 
-function pickSkillCompletion(slug) {
-  const ta = $('composer-text');
-  if (!ta) return;
-  ta.value = '/' + slug + ' ';
-  hideSkillAutocomplete();
+// Remplace UNIQUEMENT le segment `/slug` du trigger actif (pas tout le champ) —
+// nécessaire pour le cas mid-message où du texte entoure le trigger.
+function pickSkillCompletion(state, slug) {
+  const ta = state.ta;
+  const trig = state.trigger;
+  if (!ta || !trig) return;
+  const v = ta.value;
+  const replacement = '/' + slug + ' ';
+  ta.value = v.slice(0, trig.start) + replacement + v.slice(trig.end);
+  const caret = trig.start + replacement.length;
+  hideSkillAutocomplete(state);
   ta.focus();
+  ta.setSelectionRange(caret, caret);
   autoGrow(ta);
 }
 

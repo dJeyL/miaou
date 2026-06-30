@@ -36,7 +36,9 @@ function validateSkillSlug(slug, existingSlugs) {
 // Parse un message composer en commande slash : si le texte commence par
 // `/<slug>` (slug = charset valide), retourne { slug, rest } (rest = reste du
 // texte après le slug, espaces de tête retirés). Sinon null. Pur — la résolution
-// (cache, enabled, contenu IDB) se fait ailleurs.
+// (cache, enabled, contenu IDB) se fait ailleurs. RÉSERVÉ au cas position-0 isolé
+// (résolution du blocage Enter du composer) — pour détecter un trigger `/` à une
+// position quelconque dans un texte, voir findSlashTriggers.
 function parseSlashCommand(text) {
   const s = String(text == null ? '' : text);
   const m = /^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(s);
@@ -44,15 +46,45 @@ function parseSlashCommand(text) {
   return { slug: m[1], rest: (m[2] || '').trim() };
 }
 
-// Assemble le contenu d'un message user à partir du littéral tapé et du corps du
-// skill injecté. Frozen au moment de l'envoi : le résultat est stocké tel quel
-// dans l'historique (jamais re-résolu au reload). DISTINCT de buildContextBlock
-// (miaou_context, recalculé à chaque tour) — ne pas mutualiser.
-function bakeSkillMessage(literalText, skillContent) {
+// Trouve TOUTES les occurrences de trigger `/slug` dans un texte : en position 0,
+// ou immédiatement précédées d'un espace/saut de ligne (frontière de mot — exclut
+// `https://`, `and/or`, etc.). Retourne un tableau ordonné par position croissante :
+// [{ start, end, slug, atStart }] (start/end = bornes du `/slug` dans le texte,
+// end exclusif ; atStart = vrai si start === 0). Pur — aucune résolution cache/IDB.
+// Partagé par l'autocomplétion (composer + édition) ET resolveSend (multi-skill).
+function findSlashTriggers(text) {
+  const s = String(text == null ? '' : text);
+  const re = /\/([a-zA-Z0-9_-]*)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    const start = m.index;
+    const prev = start > 0 ? s[start - 1] : null;
+    if (start === 0 || (prev != null && /\s/.test(prev))) {
+      out.push({ start, end: start + 1 + m[1].length, slug: m[1], atStart: start === 0 });
+    }
+  }
+  return out;
+}
+
+// Assemble le contenu d'un message user à partir du littéral tapé et des skills
+// résolus (un ou plusieurs, dans l'ordre d'apparition). `resolved` est un tableau
+// [{ slug, content }]. Chaque corps non vide est appendé en fin de message, encadré
+// par des marqueurs `--- skill: slug ---` pour que le modèle distingue sans
+// ambiguïté quel contenu appartient à quel `/slug`. Frozen au moment de l'envoi :
+// le résultat est stocké tel quel dans l'historique (jamais re-résolu au reload).
+// DISTINCT de buildContextBlock (miaou_context, recalculé à chaque tour).
+function bakeSkillMessage(literalText, resolved) {
   const lit = String(literalText == null ? '' : literalText);
-  const body = String(skillContent == null ? '' : skillContent).trim();
-  if (!body) return lit;
-  return lit + '\n\n' + body;
+  const list = Array.isArray(resolved) ? resolved : [];
+  const blocks = [];
+  for (const r of list) {
+    const body = String(r && r.content == null ? '' : r.content).trim();
+    if (!body) continue;
+    blocks.push('--- skill: ' + r.slug + ' ---\n' + body + '\n--- /skill: ' + r.slug + ' ---');
+  }
+  if (!blocks.length) return lit;
+  return lit + '\n\n' + blocks.join('\n\n');
 }
 
 // ── Cache mémoire (méta seulement : slug, name, description, enabled) ─────────

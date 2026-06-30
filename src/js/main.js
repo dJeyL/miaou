@@ -474,24 +474,39 @@ function onSendBtn() {
 // Résout une saisie utilisateur (littéral) en payload d'envoi. CHEMIN UNIQUE de
 // détection/injection de slash-commande skill, partagé par la saisie composer
 // (sendMessage) ET la réédition d'un message (editUserMessage) — pas de duplication.
-// Le contenu de la skill est re-résolu à CHAQUE appel (contenu COURANT, jamais figé
-// d'un envoi antérieur) : éditer un `/slug` au tour N rebake avec le contenu actuel.
-// Injection DÉTERMINISTE côté client (≠ buildContextBlock/miaou_context, recalculé
-// par tour). Retours :
+// Le contenu de chaque skill est re-résolu à CHAQUE appel (contenu COURANT, jamais
+// figé d'un envoi antérieur) : éditer un message au tour N rebake avec le contenu
+// actuel. Injection DÉTERMINISTE côté client (≠ buildContextBlock/miaou_context,
+// recalculé par tour). Multi-skill : toutes les occurrences `/slug` détectées par
+// findSlashTriggers (position 0 OU précédées d'un espace, cf. skills.js) sont
+// résolues et bakées en fin de message, dans l'ordre d'apparition. SEULE
+// l'occurrence en position 0 bloque l'envoi si non reconnue — ailleurs un `/slug`
+// non matché reste du texte littéral, sans bake ni blocage (brief §2). Retours :
 //   { ok:true,  literal, content }            — texte normal (content === literal)
-//   { ok:true,  literal, content, isSkill }   — slash valide (content = bakové)
-//   { ok:false, error }                        — slug inconnu / désactivé / indisponible
+//   { ok:true,  literal, content, isSkill }   — au moins un slash résolu (content = bakové)
+//   { ok:false, error }                        — slug en position 0 inconnu / désactivé / indisponible
 async function resolveSend(literal) {
-  const cmd = parseSlashCommand(literal);
-  if (!cmd) return { ok: true, literal, content: literal, isSkill: false };
-  const meta = getSkillMeta(cmd.slug);   // cache mémoire (skills.js)
-  if (!meta || meta.enabled === false) {
-    return { ok: false, error: 'Skill inconnue ou désactivée : /' + cmd.slug };
+  const triggers = findSlashTriggers(literal);
+  if (!triggers.length) return { ok: true, literal, content: literal, isSkill: false };
+
+  const resolved = [];
+  for (const t of triggers) {
+    const meta = getSkillMeta(t.slug);   // cache mémoire (skills.js)
+    const known = meta && meta.enabled !== false;
+    if (!known) {
+      if (t.atStart) return { ok: false, error: 'Skill inconnue ou désactivée : /' + t.slug };
+      continue;   // mid-message non reconnu : reste texte littéral, pas de blocage
+    }
+    let content = null;
+    try { content = await getSkillContent(t.slug); } catch (e) { content = null; }
+    if (content == null) {
+      if (t.atStart) return { ok: false, error: 'Contenu de la skill indisponible : /' + t.slug };
+      continue;
+    }
+    resolved.push({ slug: t.slug, content });
   }
-  let content = null;
-  try { content = await getSkillContent(cmd.slug); } catch (e) { content = null; }
-  if (content == null) return { ok: false, error: 'Contenu de la skill indisponible : /' + cmd.slug };
-  return { ok: true, literal, content: bakeSkillMessage(literal, content), isSkill: true };
+  if (!resolved.length) return { ok: true, literal, content: literal, isSkill: false };
+  return { ok: true, literal, content: bakeSkillMessage(literal, resolved), isSkill: true };
 }
 
 async function sendMessage() {

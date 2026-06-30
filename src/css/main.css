@@ -437,6 +437,10 @@ body {
   max-height: 240px;
 }
 .msg-edit-area:focus { border-color: var(--accent-bd); }
+/* Dropdown skill de la bulle d'édition : sous la textarea (composer = au-dessus).
+   Collé à la textarea (cohérent avec le composer, où .skill-ac touche .input-wrap) ;
+   séparé des boutons par la marge normale de .msg-edit-actions. */
+.msg-edit-area + .skill-ac { margin-top: 0; margin-bottom: 10px; }
 .msg-edit-actions {
   display: flex;
   justify-content: flex-end;

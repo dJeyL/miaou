@@ -54,13 +54,64 @@ describe('parseSlashCommand', function() {
   });
 });
 
-describe('bakeSkillMessage', function() {
-  it('concatène littéral et corps du skill', function() {
-    expect(bakeSkillMessage('/revue go', 'INSTRUCTIONS')).toBe('/revue go\n\nINSTRUCTIONS');
+describe('findSlashTriggers', function() {
+  it('détecte un trigger en position 0', function() {
+    var t = findSlashTriggers('/revue ce fichier');
+    expect(t.length).toBe(1);
+    expect(t[0].slug).toBe('revue');
+    expect(t[0].atStart).toBe(true);
+    expect(t[0].start).toBe(0);
   });
-  it('corps vide → littéral seul', function() {
-    expect(bakeSkillMessage('/revue', '   ')).toBe('/revue');
+  it('détecte un trigger mid-string précédé d\'un espace', function() {
+    var t = findSlashTriggers('avant /audit après');
+    expect(t.length).toBe(1);
+    expect(t[0].slug).toBe('audit');
+    expect(t[0].atStart).toBe(false);
+    expect(t[0].start).toBe(6);
+  });
+  it('ne déclenche PAS sur un / non précédé d\'espace (URL, and/or)', function() {
+    expect(findSlashTriggers('voir https://exemple.com').length).toBe(0);
+    expect(findSlashTriggers('fromage and/or vin').length).toBe(0);
+  });
+  it('détecte plusieurs occurrences, dans l\'ordre', function() {
+    var t = findSlashTriggers('/revue ce fichier puis /audit la sécu');
+    expect(t.length).toBe(2);
+    expect(t[0].slug).toBe('revue');
+    expect(t[1].slug).toBe('audit');
+  });
+  it('trigger précédé d\'un saut de ligne', function() {
+    var t = findSlashTriggers('texte\n/revue');
+    expect(t.length).toBe(1);
+    expect(t[0].slug).toBe('revue');
+  });
+  it('slug vide (juste un /) reste un trigger valide', function() {
+    var t = findSlashTriggers('/');
+    expect(t.length).toBe(1);
+    expect(t[0].slug).toBe('');
+    expect(t[0].atStart).toBe(true);
+  });
+});
+
+describe('bakeSkillMessage', function() {
+  it('concatène littéral et corps du skill (un seul, étiqueté)', function() {
+    expect(bakeSkillMessage('/revue go', [{ slug: 'revue', content: 'INSTRUCTIONS' }]))
+      .toBe('/revue go\n\n--- skill: revue ---\nINSTRUCTIONS\n--- /skill: revue ---');
+  });
+  it('corps vide ou liste vide → littéral seul', function() {
+    expect(bakeSkillMessage('/revue', [{ slug: 'revue', content: '   ' }])).toBe('/revue');
+    expect(bakeSkillMessage('/revue', [])).toBe('/revue');
     expect(bakeSkillMessage('/revue', null)).toBe('/revue');
+  });
+  it('plusieurs skills : blocs étiquetés en fin de message, dans l\'ordre', function() {
+    var out = bakeSkillMessage('/revue ce fichier puis /audit la sécu', [
+      { slug: 'revue', content: 'CONTENU_REVUE' },
+      { slug: 'audit', content: 'CONTENU_AUDIT' },
+    ]);
+    expect(out).toBe(
+      '/revue ce fichier puis /audit la sécu\n\n' +
+      '--- skill: revue ---\nCONTENU_REVUE\n--- /skill: revue ---\n\n' +
+      '--- skill: audit ---\nCONTENU_AUDIT\n--- /skill: audit ---'
+    );
   });
 });
 
