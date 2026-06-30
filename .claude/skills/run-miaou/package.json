@@ -1,0 +1,9 @@
+{
+  "name": "run-miaou-driver",
+  "private": true,
+  "type": "module",
+  "description": "Playwright driver for the run-miaou skill — not part of the app build.",
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
+}
