@@ -683,10 +683,10 @@ async function dispatchSend(matches) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
           const tourTs = Date.now();
+          currentThread.push({ role: 'assistant', content, model, ts: tourTs });   // avant finalizeAssistant, cf. onFinal
           finalizeAssistant(wrap, content);
           const tsEl = wrap.querySelector('.msg-ts');
           if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
-          currentThread.push({ role: 'assistant', content, model, ts: tourTs });
           persistCurrent();
           wrap = startAssistantMessage(model);
         } else {
@@ -796,15 +796,17 @@ async function dispatchSend(matches) {
       },
       onFinal: (content, reasoning) => {
         const ts = Date.now();
+        const msg = { role: 'assistant', content, model, ts };
+        if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
+        // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
+        // qui teste currentThread.some(role==='assistant') — sur une conversation
+        // fraîche (premier tour), un ordre inversé laisserait le bouton caché
+        // malgré la réponse déjà affichée (bug payé : visible seulement après reload).
+        currentThread.push(msg);
         finalizeAssistant(wrap, content);
         const tsEl = wrap.querySelector('.msg-ts');
         if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
-        const msg = { role: 'assistant', content, model, ts };
-        if (reasoning && reasoning.trim()) {
-          flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
-          msg.reasoning = reasoning;          // champ séparé, persisté
-        }
-        currentThread.push(msg);
+        if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
@@ -815,8 +817,8 @@ async function dispatchSend(matches) {
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
         // (« Oui » → create_memory + narration ; « Non » → rien).
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
+        currentThread.push({ role: 'assistant', content: text, model });   // avant finalizeAssistant, cf. onFinal
         finalizeAssistant(wrap, text);
-        currentThread.push({ role: 'assistant', content: text, model });
         persistCurrent();
         setConnDot('ok');
         // Widget inline : la question est déjà dans la bulle ci-dessus, la carte

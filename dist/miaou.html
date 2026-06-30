@@ -2154,7 +2154,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-30 22:13 UTC */
+/* miaou — built: 2026-06-30 22:32 UTC */
 
 
 /* ── utils.js ── */
@@ -2642,7 +2642,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782857593}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782858732}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7912,10 +7912,10 @@ async function dispatchSend(matches) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
           const tourTs = Date.now();
+          currentThread.push({ role: 'assistant', content, model, ts: tourTs });   // avant finalizeAssistant, cf. onFinal
           finalizeAssistant(wrap, content);
           const tsEl = wrap.querySelector('.msg-ts');
           if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
-          currentThread.push({ role: 'assistant', content, model, ts: tourTs });
           persistCurrent();
           wrap = startAssistantMessage(model);
         } else {
@@ -8025,15 +8025,17 @@ async function dispatchSend(matches) {
       },
       onFinal: (content, reasoning) => {
         const ts = Date.now();
+        const msg = { role: 'assistant', content, model, ts };
+        if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
+        // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
+        // qui teste currentThread.some(role==='assistant') — sur une conversation
+        // fraîche (premier tour), un ordre inversé laisserait le bouton caché
+        // malgré la réponse déjà affichée (bug payé : visible seulement après reload).
+        currentThread.push(msg);
         finalizeAssistant(wrap, content);
         const tsEl = wrap.querySelector('.msg-ts');
         if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
-        const msg = { role: 'assistant', content, model, ts };
-        if (reasoning && reasoning.trim()) {
-          flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
-          msg.reasoning = reasoning;          // champ séparé, persisté
-        }
-        currentThread.push(msg);
+        if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
@@ -8044,8 +8046,8 @@ async function dispatchSend(matches) {
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
         // (« Oui » → create_memory + narration ; « Non » → rien).
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
+        currentThread.push({ role: 'assistant', content: text, model });   // avant finalizeAssistant, cf. onFinal
         finalizeAssistant(wrap, text);
-        currentThread.push({ role: 'assistant', content: text, model });
         persistCurrent();
         setConnDot('ok');
         // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
