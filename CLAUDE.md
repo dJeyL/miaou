@@ -735,7 +735,10 @@ cache mémoire `setSkillsCache`/`upsertSkillCache`/`removeSkillCache`/
 chemins d'erreur synchrones de `skills__read`, projection `autotrigger` de
 `_skillMeta`, `getAutotriggerSkillsMeta` (filtrage enabled+autotrigger, cas liste
 vide), `skillDoctrinePrompt` conditionnel sur skills autotrigger ET résolution de
-la variante CONFIRMATION selon `confirmSkillAutoUse`).
+la variante CONFIRMATION selon `confirmSkillAutoUse`), **export Markdown des
+traces d'outils** (`formatToolAcksMd` : singulier/pluriel, `intent` présent/absent,
+erreur, troncature args/résultat/nom de ressource, `resource_presented` sans
+data embarquée, ack sans `args`).
 Le contenu skill lu en IDB
 (`getSkillContent`/`getSkillRecord`, chemin async) se vérifie à la main.
 IDB, `internResourcesFromResult`, `loadConversationResources` et la cascade D8
@@ -768,8 +771,24 @@ vérifient à la main (checklist dans `tests/MANUAL.md`). Le banc d'essai MCP
 - **`.conv-dl-btn` (export de la conversation) est désactivé (`disabled`) pendant
   le streaming** via `setSending` (ui.js). CSS : `.conv-dl-btn:disabled` masque
   le bouton. `downloadConvMd()` (main.js) ne garde que les rôles `user`/`assistant`
-  (les `tool-ack`/`memory-ack` sont donc exclus) et inclut l'horodatage par message
-  si `ts` est défini.
+  pour le texte, et inclut l'horodatage par message si `ts` est défini.
+- **Traces d'appels d'outils dans l'export.** `formatToolAcksMd(acks)` (utils.js,
+  pure, testée QuickJS) rend un groupe d'acks **enrichis** (`args` non null —
+  mêmes acks que `expandThread` réinjecte cross-turn, cf. §16 « Acks d'outils »)
+  en blockquote Markdown juste avant le texte de réponse du tour : nom de l'outil
+  + `— intent` (si présent), arguments (JSON), résultat (ou « Résultat (erreur) »
+  si `m.error`), et pour `resource_presented` une note `Ressource présentée
+  automatiquement : nom (mime) — non incluse dans cet export` (**jamais de
+  data-URI/base64 embarqué**, cohérent avec D8/D9 — le binaire reste en IDB).
+  Un seul appel → « Outil appelé : » ; plusieurs (même `group`) → « Outils
+  appelés (n) : » en liste numérotée. Troncature pour la lisibilité du fichier
+  (n'affecte ni le storage ni le payload modèle) : args/résultat à 300 caractères,
+  nom de ressource à 60, suffixe `...` simple (pas de mention « tronqué »).
+  Acks **legacy** (sans `args`) restent **omis** de l'export, comme avant
+  cette fonctionnalité — pas de fallback sur le label compact écran.
+  `downloadConvMd()` tamponne les acks enrichis qui précèdent un message
+  assistant (même motif que `renderThread`) ; `downloadMsgMd()` (ui.js) retrouve
+  les acks de son propre tour en remontant `currentThread` depuis `msgIndex(wrap)`.
 - **`.msg-ts` user est un sibling de `.bubble`**, pas un enfant — `align-items:
   flex-end` du `.msg.user` gère l'alignement à droite. Ne pas le mettre à
   l'intérieur du bubble (sinon il serait exclu/recréé lors des reconstructions

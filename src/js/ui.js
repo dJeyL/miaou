@@ -226,14 +226,25 @@ function decoratePre(scope) {
   });
 }
 
-// Télécharge le contenu brut (markdown source) d'un message assistant.
+// Télécharge le contenu brut (markdown source) d'un message assistant, précédé
+// de la trace des acks enrichis (args+result) de son tour — mêmes acks que
+// placeToolAck affiche dans la bulle, retrouvés via msgIndex en remontant
+// currentThread (cf. downloadConvMd pour le même motif sur l'export complet).
 // Le contenu est stocké dans body.dataset.raw au moment du finalize/buildMsg.
 function downloadMsgMd(btn) {
   const wrap = btn.closest('.msg');
   const body = wrap && wrap.querySelector('.body');
   const raw = body && body.dataset.raw;
   if (!raw) return;
-  downloadFile('miaou-message.md', raw, 'text/markdown');
+  const idx = msgIndex(wrap);
+  const acks = [];
+  if (idx > 0) {
+    for (let i = idx - 1; i >= 0 && isAckRole(currentThread[i].role); i--) {
+      if (currentThread[i].args != null) acks.unshift(currentThread[i]);
+    }
+  }
+  const trace = acks.length ? formatToolAcksMd(acks) + '\n\n' : '';
+  downloadFile('miaou-message.md', trace + raw, 'text/markdown');
 }
 
 // ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────

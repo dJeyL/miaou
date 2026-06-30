@@ -311,6 +311,63 @@ function stampTs(ts, result) {
   return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
 }
 
+// ── Export Markdown : traces d'appels d'outils ───────────────────────────────
+// Seuils de troncature pour l'export (lisibilité du .md, pas de limite côté
+// modèle/stockage — ceux-ci restent intacts en mémoire et en storage).
+const EXPORT_ARGS_MAX = 300;
+const EXPORT_RESULT_MAX = 300;
+const EXPORT_RESNAME_MAX = 60;
+
+function _truncMd(s, max) {
+  s = s == null ? '' : String(s);
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+// Représentation textuelle d'un appel d'outil pour l'export (un seul ack,
+// déjà enrichi : args/result présents). `m.name` peut être préfixé
+// (`miaou__create_memory`) ou breadcrumb distant (`server__tool`) — affiché tel quel.
+function _formatToolCallMd(m) {
+  const lines = [];
+  const head = m.intent ? '`' + m.name + '` — ' + m.intent : '`' + m.name + '`';
+  lines.push(head);
+  if (m.args != null) lines.push('   Arguments : `' + _truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX) + '`');
+  if (m.error) {
+    lines.push('   Résultat (erreur) : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
+  } else if (m.result != null) {
+    lines.push('   Résultat : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
+  }
+  if (m.kind === 'resource_presented') {
+    const name = _truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX);
+    lines.push('   Ressource présentée automatiquement : `' + name + '`' +
+      (m.mime ? ' (' + m.mime + ')' : '') + ' — non incluse dans cet export');
+  }
+  return lines;
+}
+
+// Bloc Markdown (blockquote) pour un groupe d'acks enrichis d'un même tour.
+// Un seul appel → "Outil appelé :" ; plusieurs → "Outils appelés (n) :" en liste numérotée.
+function formatToolAcksMd(acks) {
+  if (!acks || !acks.length) return '';
+  const lines = [];
+  if (acks.length === 1) {
+    const inner = _formatToolCallMd(acks[0]);
+    lines.push('> **Outil appelé :** ' + inner[0]);
+    for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
+  } else {
+    lines.push('> **Outils appelés (' + acks.length + ') :**');
+    acks.forEach((m, idx) => {
+      const inner = _formatToolCallMd(m);
+      lines.push('> ' + (idx + 1) + '. ' + inner[0]);
+      for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
+    });
+  }
+  // Saut de ligne forcé (2 espaces de fin) sur chaque ligne sauf la dernière :
+  // sans ça, des lignes "> " consécutives sans paragraphe vide entre elles
+  // sont fusionnées par le parser Markdown (intent et "Arguments" collés sur
+  // la même ligne rendue).
+  return lines.map((l, i) => i < lines.length - 1 ? l + '  ' : l).join('\n');
+}
+
 // DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].
 // Utilisé pour générer des tool_call_id déterministes et compatibles avec les
 // backends qui imposent [a-zA-Z0-9] longueur 9 (ex. Mistral).

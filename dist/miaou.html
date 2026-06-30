@@ -1267,7 +1267,6 @@ body {
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
 .mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-.mcp-intent { }
 .mcp-chevron {
   flex-shrink: 0;
   background: none; border: none; padding: 1px; cursor: pointer;
@@ -2155,7 +2154,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-30 21:00 UTC */
+/* miaou — built: 2026-06-30 22:13 UTC */
 
 
 /* ── utils.js ── */
@@ -2473,6 +2472,63 @@ function stampTs(ts, result) {
   return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
 }
 
+// ── Export Markdown : traces d'appels d'outils ───────────────────────────────
+// Seuils de troncature pour l'export (lisibilité du .md, pas de limite côté
+// modèle/stockage — ceux-ci restent intacts en mémoire et en storage).
+const EXPORT_ARGS_MAX = 300;
+const EXPORT_RESULT_MAX = 300;
+const EXPORT_RESNAME_MAX = 60;
+
+function _truncMd(s, max) {
+  s = s == null ? '' : String(s);
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+// Représentation textuelle d'un appel d'outil pour l'export (un seul ack,
+// déjà enrichi : args/result présents). `m.name` peut être préfixé
+// (`miaou__create_memory`) ou breadcrumb distant (`server__tool`) — affiché tel quel.
+function _formatToolCallMd(m) {
+  const lines = [];
+  const head = m.intent ? '`' + m.name + '` — ' + m.intent : '`' + m.name + '`';
+  lines.push(head);
+  if (m.args != null) lines.push('   Arguments : `' + _truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX) + '`');
+  if (m.error) {
+    lines.push('   Résultat (erreur) : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
+  } else if (m.result != null) {
+    lines.push('   Résultat : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
+  }
+  if (m.kind === 'resource_presented') {
+    const name = _truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX);
+    lines.push('   Ressource présentée automatiquement : `' + name + '`' +
+      (m.mime ? ' (' + m.mime + ')' : '') + ' — non incluse dans cet export');
+  }
+  return lines;
+}
+
+// Bloc Markdown (blockquote) pour un groupe d'acks enrichis d'un même tour.
+// Un seul appel → "Outil appelé :" ; plusieurs → "Outils appelés (n) :" en liste numérotée.
+function formatToolAcksMd(acks) {
+  if (!acks || !acks.length) return '';
+  const lines = [];
+  if (acks.length === 1) {
+    const inner = _formatToolCallMd(acks[0]);
+    lines.push('> **Outil appelé :** ' + inner[0]);
+    for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
+  } else {
+    lines.push('> **Outils appelés (' + acks.length + ') :**');
+    acks.forEach((m, idx) => {
+      const inner = _formatToolCallMd(m);
+      lines.push('> ' + (idx + 1) + '. ' + inner[0]);
+      for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
+    });
+  }
+  // Saut de ligne forcé (2 espaces de fin) sur chaque ligne sauf la dernière :
+  // sans ça, des lignes "> " consécutives sans paragraphe vide entre elles
+  // sont fusionnées par le parser Markdown (intent et "Arguments" collés sur
+  // la même ligne rendue).
+  return lines.map((l, i) => i < lines.length - 1 ? l + '  ' : l).join('\n');
+}
+
 // DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].
 // Utilisé pour générer des tool_call_id déterministes et compatibles avec les
 // backends qui imposent [a-zA-Z0-9] longueur 9 (ex. Mistral).
@@ -2586,7 +2642,7 @@ const SUMMARIES_KEY = 'miaou-summaries';
 // dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
 // frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
 // corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782853229}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782857593}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -5011,14 +5067,25 @@ function decoratePre(scope) {
   });
 }
 
-// Télécharge le contenu brut (markdown source) d'un message assistant.
+// Télécharge le contenu brut (markdown source) d'un message assistant, précédé
+// de la trace des acks enrichis (args+result) de son tour — mêmes acks que
+// placeToolAck affiche dans la bulle, retrouvés via msgIndex en remontant
+// currentThread (cf. downloadConvMd pour le même motif sur l'export complet).
 // Le contenu est stocké dans body.dataset.raw au moment du finalize/buildMsg.
 function downloadMsgMd(btn) {
   const wrap = btn.closest('.msg');
   const body = wrap && wrap.querySelector('.body');
   const raw = body && body.dataset.raw;
   if (!raw) return;
-  downloadFile('miaou-message.md', raw, 'text/markdown');
+  const idx = msgIndex(wrap);
+  const acks = [];
+  if (idx > 0) {
+    for (let i = idx - 1; i >= 0 && isAckRole(currentThread[i].role); i--) {
+      if (currentThread[i].args != null) acks.unshift(currentThread[i]);
+    }
+  }
+  const trace = acks.length ? formatToolAcksMd(acks) + '\n\n' : '';
+  downloadFile('miaou-message.md', trace + raw, 'text/markdown');
 }
 
 // ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────
@@ -7386,8 +7453,10 @@ function togglePin(id) {
   renderConvList();
 }
 
-// Exporte la conversation courante en Markdown. N'inclut que les messages
-// visibles (user + assistant) — les tool-ack et éventuels internaux sont exclus.
+// Exporte la conversation courante en Markdown. Messages visibles (user +
+// assistant) ; les acks d'outils ENRICHIS (args+result présents) précédant un
+// message assistant sont rendus en trace (formatToolAcksMd) juste avant le
+// texte de ce tour — acks legacy (sans args) silencieusement omis, comme avant.
 // Appelé depuis le bouton topbar (onclick="downloadConvMd()").
 function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
@@ -7398,12 +7467,22 @@ function downloadConvMd() {
     .replace(/^-+|-+$/g, '') || 'miaou-conversation';
 
   const lines = [];
+  let pendingAcks = [];
   for (const m of currentThread) {
+    if (isAckRole(m.role)) {
+      if (m.args != null) pendingAcks.push(m);   // legacy (sans args) : omis de l'export
+      continue;
+    }
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     const timeStr = m.ts ? ' — ' + formatMessageTime(m.ts, Date.now()) : '';
     const label = (m.role === 'user' ? '### Vous' : '### MIAOU') + timeStr;
     lines.push(label);
     lines.push('');
+    if (m.role === 'assistant' && pendingAcks.length) {
+      lines.push(formatToolAcksMd(pendingAcks));
+      lines.push('');
+    }
+    pendingAcks = [];
     // Export = littéral affiché (displayText) si présent (slash-commande skill),
     // pas le corps de skill injecté dans content.
     lines.push((m.role === 'user' && m.displayText != null ? m.displayText : m.content) || '');

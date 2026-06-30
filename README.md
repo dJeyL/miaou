@@ -24,7 +24,10 @@ l'interface, JetBrains Mono pour le code.
   boutons « copier » et « télécharger » (extension auto selon le langage).
 - Téléchargement d'une réponse individuelle en `.md` (bouton dans l'en-tête,
   au survol) ; export de la conversation entière en Markdown (icône à droite
-  du titre dans la topbar, au survol).
+  du titre dans la topbar, au survol). Les deux exports incluent une trace
+  des appels d'outils du tour (outil, intention, arguments, résultat) juste
+  avant la réponse — sans données binaires embarquées pour les ressources
+  présentées automatiquement (juste le nom et le type).
 - Horodatage de chaque message : heure seule (même jour), « hier à HH:MM »,
   date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis

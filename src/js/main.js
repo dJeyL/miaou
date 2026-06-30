@@ -224,8 +224,10 @@ function togglePin(id) {
   renderConvList();
 }
 
-// Exporte la conversation courante en Markdown. N'inclut que les messages
-// visibles (user + assistant) — les tool-ack et éventuels internaux sont exclus.
+// Exporte la conversation courante en Markdown. Messages visibles (user +
+// assistant) ; les acks d'outils ENRICHIS (args+result présents) précédant un
+// message assistant sont rendus en trace (formatToolAcksMd) juste avant le
+// texte de ce tour — acks legacy (sans args) silencieusement omis, comme avant.
 // Appelé depuis le bouton topbar (onclick="downloadConvMd()").
 function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
@@ -236,12 +238,22 @@ function downloadConvMd() {
     .replace(/^-+|-+$/g, '') || 'miaou-conversation';
 
   const lines = [];
+  let pendingAcks = [];
   for (const m of currentThread) {
+    if (isAckRole(m.role)) {
+      if (m.args != null) pendingAcks.push(m);   // legacy (sans args) : omis de l'export
+      continue;
+    }
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     const timeStr = m.ts ? ' — ' + formatMessageTime(m.ts, Date.now()) : '';
     const label = (m.role === 'user' ? '### Vous' : '### MIAOU') + timeStr;
     lines.push(label);
     lines.push('');
+    if (m.role === 'assistant' && pendingAcks.length) {
+      lines.push(formatToolAcksMd(pendingAcks));
+      lines.push('');
+    }
+    pendingAcks = [];
     // Export = littéral affiché (displayText) si présent (slash-commande skill),
     // pas le corps de skill injecté dans content.
     lines.push((m.role === 'user' && m.displayText != null ? m.displayText : m.content) || '');

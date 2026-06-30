@@ -330,6 +330,73 @@ describe('stampTs', function() {
   });
 });
 
+describe('formatToolAcksMd', function() {
+  it('liste vide → chaîne vide', function() {
+    expect(formatToolAcksMd([])).toBe('');
+    expect(formatToolAcksMd(null)).toBe('');
+  });
+  it('un seul appel : en-tête singulier, sans numérotation', function() {
+    var r = formatToolAcksMd([{ name: 'miaou__create_memory', args: { content: 'x' }, result: '{"id":"m1"}' }]);
+    expect(r.indexOf('**Outil appelé :**') >= 0).toBeTruthy();
+    expect(r.indexOf('Outils appelés') >= 0).toBeFalsy();
+    expect(r.indexOf('`miaou__create_memory`') >= 0).toBeTruthy();
+    expect(r.indexOf('Arguments :') >= 0).toBeTruthy();
+    expect(r.indexOf('Résultat :') >= 0).toBeTruthy();
+  });
+  it('intent présent → rendu "— intent" après le nom', function() {
+    var r = formatToolAcksMd([{ name: 'weather__get', intent: 'vérifier la météo', args: {}, result: 'ok' }]);
+    expect(r.indexOf('`weather__get` — vérifier la météo') >= 0).toBeTruthy();
+  });
+  it('pas d\'intent → pas de tiret après le nom', function() {
+    var r = formatToolAcksMd([{ name: 'miaou__create_memory', args: {}, result: 'ok' }]);
+    expect(r.indexOf('`miaou__create_memory` —') >= 0).toBeFalsy();
+  });
+  it('plusieurs appels : en-tête pluriel avec compte, liste numérotée', function() {
+    var r = formatToolAcksMd([
+      { name: 'a', args: {}, result: '1' },
+      { name: 'b', args: {}, result: '2' },
+    ]);
+    expect(r.indexOf('**Outils appelés (2) :**') >= 0).toBeTruthy();
+    expect(r.indexOf('1. `a`') >= 0).toBeTruthy();
+    expect(r.indexOf('2. `b`') >= 0).toBeTruthy();
+  });
+  it('erreur : "Résultat (erreur)" au lieu de "Résultat"', function() {
+    var r = formatToolAcksMd([{ name: 'a', args: {}, result: 'timeout', error: true }]);
+    expect(r.indexOf('Résultat (erreur) :') >= 0).toBeTruthy();
+    expect(r.indexOf('Résultat :') >= 0).toBeFalsy();
+  });
+  it('résultat long tronqué avec "..." (pas de mention "tronqué")', function() {
+    var long = new Array(400).join('x');
+    var r = formatToolAcksMd([{ name: 'a', args: {}, result: long }]);
+    expect(r.indexOf('...') >= 0).toBeTruthy();
+    expect(r.indexOf('tronqué') >= 0).toBeFalsy();
+    expect(r.indexOf(long) >= 0).toBeFalsy();
+  });
+  it('résultat court : pas de troncature, pas de "..."', function() {
+    var r = formatToolAcksMd([{ name: 'a', args: {}, result: 'court' }]);
+    expect(r.indexOf('court...') >= 0).toBeFalsy();
+    expect(r.indexOf('court') >= 0).toBeTruthy();
+  });
+  it('resource_presented : note de ressource avec nom et mime, sans data embarquée', function() {
+    var r = formatToolAcksMd([{ name: 'weather__get_map', kind: 'resource_presented',
+      args: {}, result: '[resource_ref:res_1]', resourceName: 'carte.png', mime: 'image/png' }]);
+    expect(r.indexOf('Ressource présentée automatiquement') >= 0).toBeTruthy();
+    expect(r.indexOf('carte.png') >= 0).toBeTruthy();
+    expect(r.indexOf('image/png') >= 0).toBeTruthy();
+    expect(r.indexOf('data:') >= 0).toBeFalsy();
+  });
+  it('nom de ressource long tronqué avec "..."', function() {
+    var longName = new Array(80).join('a') + '.png';
+    var r = formatToolAcksMd([{ name: 'x', kind: 'resource_presented', args: {}, result: 'r', resourceName: longName }]);
+    expect(r.indexOf(longName) >= 0).toBeFalsy();
+    expect(r.indexOf('...') >= 0).toBeTruthy();
+  });
+  it('pas d\'args (absent) : pas de ligne Arguments', function() {
+    var r = formatToolAcksMd([{ name: 'a', result: 'ok' }]);
+    expect(r.indexOf('Arguments :') >= 0).toBeFalsy();
+  });
+});
+
 describe('_hashId9', function() {
   it('renvoie toujours exactement 9 caractères', function() {
     expect(_hashId9('').length).toBe(9);

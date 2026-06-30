@@ -261,3 +261,17 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     conversation sur un autre tour. Dans Network, le payload doit contenir le
     `role:'tool'` re-hydraté avec le contenu du skill (via `expandThread`), prouvant
     que le modèle garde l'accès au skill aux tours suivants.
+
+42. **Export Markdown avec traces d'outils** : sur une conversation où le modèle a
+    appelé au moins un outil (ex. test 4 ou 27), cliquer le téléchargement de
+    conversation (icône topbar) puis le téléchargement d'un message assistant
+    individuel (`.msg-dl`, au survol). Dans les deux `.md` générés, vérifier que
+    juste avant le texte de réponse du tour figure un bloc `> **Outil appelé :**`
+    (ou `Outils appelés (n) :` si plusieurs dans le même tour) avec nom de l'outil,
+    `— intent` si le modèle en a fourni un, arguments JSON, et résultat (ou
+    `Résultat (erreur)` en cas d'échec MCP). Avec une ressource présentée
+    automatiquement (test 29), la note doit donner nom + type MIME **sans**
+    embarquer l'image (pas de `data:` dans le fichier). Sur une conversation
+    ancienne avec des acks **legacy** (sans `args`, pré-réinjection cross-turn),
+    vérifier qu'aucune trace n'apparaît pour ce tour (silencieusement omis, pas
+    d'erreur).

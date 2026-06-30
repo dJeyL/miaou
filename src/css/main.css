@@ -1256,7 +1256,6 @@ body {
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
 .mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-.mcp-intent { }
 .mcp-chevron {
   flex-shrink: 0;
   background: none; border: none; padding: 1px; cursor: pointer;
