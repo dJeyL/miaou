@@ -69,6 +69,20 @@ describe('activeModel (override conv vs modèle par défaut)', function() {
   });
 });
 
+describe('activeReasoningEffort (override conv vs niveau par défaut)', function() {
+  it('retombe sur le niveau des réglages sans override de conversation', function() {
+    localStorage.clear();
+    saveSettings({ reasoningEffort: 'high' });
+    // currentConvReasoningEffort vaut '' à l'état initial → fallback sur le défaut.
+    expect(activeReasoningEffort()).toBe('high');
+  });
+  it('vaut \'\' (aucun paramètre) sans réglage ni override', function() {
+    localStorage.clear();
+    saveSettings({});
+    expect(activeReasoningEffort()).toBe('');
+  });
+});
+
 describe('toggleConversationPin (épinglage)', function() {
   it('bascule pinned à true puis false et persiste', function() {
     localStorage.clear();

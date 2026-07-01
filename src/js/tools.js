@@ -204,7 +204,7 @@ const TOOLS = [
       const entry = getSummaryEntry(args.id);   // storage.js
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
-      _pendingToolAcks.push({ kind: 'conversation_read', title: light.title });
+      _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
       const conv = loadConversation(args.id);   // storage.js
       if (!conv) return JSON.stringify(light);   // résumé présent mais conversation absente : cas limite

@@ -1,11 +1,28 @@
 # Stockage (localStorage / IndexedDB)
 
 - `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
-  theme, showModelSelector, sidebarWidth, includeToolsInSystemPrompt, saveJsonResponses,
-  intentTracing, confirmSkillAutoUse }`.
+  theme, showModelSelector, reasoningEffort, showReasoningSelector, sidebarWidth,
+  includeToolsInSystemPrompt, saveJsonResponses, intentTracing, confirmSkillAutoUse }`.
   `summaryInjectionMode` ∈ `auto | propose | never`, défaut `propose`. `model` est
   le **modèle par défaut** (global). `showModelSelector` (défaut `false`) n'affecte
-  que la visibilité du sélecteur dans le composer. `sidebarWidth` (défaut `264`) est
+  que la visibilité du sélecteur dans le composer. `reasoningEffort` (défaut `''`)
+  est le **niveau de raisonnement par défaut** (global) ∈ `'' | none | low | medium
+  | high` — `''` (défaut) n'ajoute **aucun** paramètre `reasoning_effort` à la
+  requête API (comportement natif du modèle) ; toute autre valeur est posée telle
+  quelle. `showReasoningSelector` (défaut `false`) n'affecte que la visibilité du
+  sélecteur (select natif) dans le composer, symétrique à `showModelSelector` mais
+  sans dropdown custom (liste fixe de 5 valeurs). Résolution par
+  `activeReasoningEffort()` (main.js), même pattern que `activeModel()` :
+  `conv.reasoningEffort` (override) sinon `settings.reasoningEffort` (défaut).
+  Si l'API rejette `reasoning_effort` pour un (endpoint, modèle) donné, le rejet
+  est mémorisé en session (`_reasoningEffortRejected`, api.js — clé composite
+  URL+modèle, **pas** juste l'URL comme `_noThinkRejected` : un même endpoint peut
+  exposer plusieurs modèles aux capacités de raisonnement différentes) et le
+  sélecteur se masque pour la suite de la session (`syncReasoningUI`, ui.js) ; pas
+  de retry silencieux ici (contrairement à `silentCompletion`) — l'erreur est
+  affichée telle quelle à l'utilisateur, cf. pièges 14/16 (raisonnement, KV cache)
+  pour le mécanisme voisin de détection par observation directe. `sidebarWidth`
+  (défaut `264`) est
   la largeur redimensionnable de la sidebar, bornée `[264, 528]` (min = largeur
   d'origine, max = ×2), pilotée via la variable CSS `--sidebar-w`
   (cf. `initSidebarResize`, ui.js) ; pendant le drag, la classe `.resizing` coupe
@@ -17,11 +34,14 @@
   natif. `buildSystemMessage()` (main.js) conditionne l'appel ; `tools.js` reste agnostique
   du réglage.
 - `miaou-conversations` : tableau `[{ id, title, timestamp, updatedAt?, messages, model?,
-  pinned? }]`. `updatedAt` (optionnel) est le timestamp du dernier `persistCurrent` ;
-  absent sur les anciennes conversations (tri/affichage tombent alors sur `timestamp`).
-  `model` (optionnel) est l'**override de modèle de la conversation**
-  — à ne **jamais** confondre avec le champ `model` de chaque message assistant
-  (quel modèle a produit *cette* réponse, cf. backfill modèle). `pinned`
+  reasoningEffort?, pinned? }]`. `updatedAt` (optionnel) est le timestamp du dernier
+  `persistCurrent` ; absent sur les anciennes conversations (tri/affichage tombent
+  alors sur `timestamp`). `model` (optionnel) est l'**override de modèle de la
+  conversation** — à ne **jamais** confondre avec le champ `model` de chaque
+  message assistant (quel modèle a produit *cette* réponse, cf. backfill modèle).
+  `reasoningEffort` (optionnel) est l'**override de niveau de raisonnement de la
+  conversation**, même statut que `model` (résolu par `activeReasoningEffort()`).
+  `pinned`
   (optionnel, bool) épingle la conversation : `renderConvList()` regroupe les
   épinglées dans une section **Épinglé** (singulier assumé) en tête de liste,
   retirées de leur tranche temporelle ; toggle via `toggleConversationPin(id)`

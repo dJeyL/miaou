@@ -290,16 +290,100 @@ const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill=
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
 
+// Rendu à deux niveaux partagé par les acks avec intent : intention (niveau 1,
+// visible) + détail technique (niveau 2, replié par défaut derrière un chevron).
+// `detailText` est le texte simple du niveau 2 ; `detailBuilder(detail)` (optionnel)
+// permet un contenu DOM riche (breadcrumb MCP avec <code>/séparateurs) — appelé à la
+// place de detailText si fourni.
+function renderIntentTwoLevel(el, intent, detailText, detailBuilder) {
+  const row = document.createElement('span');
+  row.className = 'mcp-intent-row';
+  const intentSpan = document.createElement('span');
+  intentSpan.className = 'mcp-intent';
+  intentSpan.textContent = intent;
+  row.appendChild(intentSpan);
+  const chevron = document.createElement('button');
+  chevron.className = 'mcp-chevron';
+  chevron.type = 'button';
+  chevron.title = 'Détail technique';
+  chevron.innerHTML = ICON_CHEVRON_DOWN;
+  const detail = document.createElement('span');
+  detail.className = 'mcp-breadcrumb-detail';
+  detail.setAttribute('hidden', '');
+  if (detailBuilder) {
+    detailBuilder(detail);
+  } else {
+    detail.textContent = detailText;
+  }
+  row.addEventListener('click', function() {
+    if (detail.hasAttribute('hidden')) {
+      detail.removeAttribute('hidden');
+      chevron.classList.add('open');
+    } else {
+      detail.setAttribute('hidden', '');
+      chevron.classList.remove('open');
+    }
+  });
+  row.appendChild(chevron);
+  el.appendChild(row);
+  el.appendChild(detail);
+}
+
 const ACK_KINDS = {
   memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
   memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
   memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
-  conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
-  conversation_list: { destination: 'user', undo: null, icon: ICON_LIST, label: m =>
+  conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,
+    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
+    renderLabel: (m, el) => {
+      // Titre cliquable si convId connu (mène à la conversation) — sans changer
+      // sa couleur hors survol, cf. .ack-conv-link.
+      const titleNode = m.convId
+        ? Object.assign(document.createElement('a'), {
+            className: 'ack-conv-link',
+            href: 'javascript:void(0)',
+            textContent: m.title || 'sans titre',
+            onclick: () => openConversation(m.convId),
+          })
+        : document.createTextNode(m.title || 'sans titre');
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Conversation consultée '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' '));
+          detail.appendChild(titleNode);
+        });
+      } else {
+        el.appendChild(document.createTextNode('Conversation consultée : « '));
+        el.appendChild(titleNode);
+        el.appendChild(document.createTextNode(' »'));
+      }
+    },
+  },
+  // Énumération des conversations par le modèle : si m.intent est présent, rendu
+  // en deux niveaux (intention visible + décompte replié) — même pattern que
+  // mcp_call. `label` reste la version texte brut (ackLabel, tests).
+  conversation_list: { destination: 'user', undo: null, icon: ICON_LIST,
+    label: m =>
       (m.intent ? m.intent + ' : ' : '') + (
         m.count === 0 ? 'Aucune conversation trouvée'
       : m.count === 1 ? '1 conversation listée'
-      : (m.count != null ? m.count : '?') + ' conversations listées') },
+      : (m.count != null ? m.count : '?') + ' conversations listées'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'Aucune conversation trouvée'
+        : m.count === 1 ? '1 conversation listée'
+        : (m.count != null ? m.count : '?') + ' conversations listées';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, countText);
+      } else {
+        el.textContent = countText;
+      }
+    },
+  },
   // Appel d'outil MCP distant : breadcrumb `seg1` › `seg2` › … sur chaque `__`.
   // Si m.intent est présent, rendu en deux niveaux : intention (niveau 1, visible)
   // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
@@ -308,23 +392,7 @@ const ACK_KINDS = {
     label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
-      if (m.intent) {
-        // Niveau 1 : intention + chevron toggle
-        const row = document.createElement('span');
-        row.className = 'mcp-intent-row';
-        const intentSpan = document.createElement('span');
-        intentSpan.className = 'mcp-intent';
-        intentSpan.textContent = m.intent;
-        row.appendChild(intentSpan);
-        const chevron = document.createElement('button');
-        chevron.className = 'mcp-chevron';
-        chevron.type = 'button';
-        chevron.title = 'Détail technique';
-        chevron.innerHTML = ICON_CHEVRON_DOWN;
-        // Niveau 2 : breadcrumb repliée par défaut
-        const detail = document.createElement('span');
-        detail.className = 'mcp-breadcrumb-detail';
-        detail.setAttribute('hidden', '');
+      const buildBreadcrumb = detail => {
         detail.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
@@ -337,32 +405,12 @@ const ACK_KINDS = {
           code.textContent = seg;
           detail.appendChild(code);
         });
-        row.addEventListener('click', function() {
-          if (detail.hasAttribute('hidden')) {
-            detail.removeAttribute('hidden');
-            chevron.classList.add('open');
-          } else {
-            detail.setAttribute('hidden', '');
-            chevron.classList.remove('open');
-          }
-        });
-        row.appendChild(chevron);
-        el.appendChild(row);
-        el.appendChild(detail);
+      };
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, buildBreadcrumb);
       } else {
         // Fallback : breadcrumb seule (inchangée)
-        el.appendChild(document.createTextNode('Appel : '));
-        segs.forEach((seg, i) => {
-          if (i > 0) {
-            const sep = document.createElement('span');
-            sep.className = 'mcp-call-sep';
-            sep.textContent = '›';
-            el.appendChild(sep);
-          }
-          const code = document.createElement('code');
-          code.textContent = seg;
-          el.appendChild(code);
-        });
+        buildBreadcrumb(el);
       }
     },
   },
@@ -396,6 +444,17 @@ const ACK_KINDS = {
         m.count === 0 ? 'Aucune skill disponible'
       : m.count === 1 ? '1 skill listée'
       : (m.count != null ? m.count : '?') + ' skills listées'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'Aucune skill disponible'
+        : m.count === 1 ? '1 skill listée'
+        : (m.count != null ? m.count : '?') + ' skills listées';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, countText);
+      } else {
+        el.textContent = countText;
+      }
+    },
   },
   // Lecture d'un skill par le modèle (miaou__skills__read) : informatif, pas d'undo
   // (lecture, pas une mutation d'état — même posture que conversation_read).
@@ -404,6 +463,20 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_BOOK,
     label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
+    renderLabel: (m, el) => {
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Skill consultée '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
+        });
+      } else {
+        el.textContent = 'Skill consultée : ' + (m.title || m.slug || '?');
+      }
+    },
   },
 };
 
@@ -421,7 +494,7 @@ function buildToolAck(m) {
   wrap.className = 'tool-ack ack-' + (kind || 'unknown') +
     (m.resolved ? ' resolved' : '') +
     (m.error ? ' ack-error' : '') +
-    (kind === 'mcp_call' && m.intent ? ' has-intent' : '');
+    (m.intent ? ' has-intent' : '');
   if (m.id) wrap.dataset.ackId = m.id;
 
   if (spec.icon) {
@@ -551,8 +624,9 @@ function renderThread(msgs) {
 
 function syncConvDownloadBtn() {
   const btn = document.querySelector('.conv-dl-btn');
-  if (!btn) return;
-  btn.hidden = !currentThread.some(m => m.role === 'assistant');
+  if (btn) btn.hidden = !currentThread.some(m => m.role === 'assistant');
+  const retitleBtn = document.querySelector('.conv-retitle-btn');
+  if (retitleBtn) retitleBtn.hidden = !currentThread.some(m => m.role === 'assistant');
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
@@ -1060,6 +1134,8 @@ function setSending(on) {
   // Export de conversation masqué pendant le streaming (contenu incomplet).
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
+  const retitleBtn = document.querySelector('.conv-retitle-btn');
+  if (retitleBtn) retitleBtn.disabled = on;
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
@@ -1180,6 +1256,14 @@ document.addEventListener('click', (e) => {
     const cm = $('composer-model-menu');
     if (cm) cm.classList.remove('show');
   }
+  if (!e.target.closest('#composer-reasoning')) {
+    const cr = $('composer-reasoning-menu');
+    if (cr) cr.classList.remove('show');
+  }
+  if (!e.target.closest('#set-reasoning-select')) {
+    const sr = $('set-reasoning-menu');
+    if (sr) sr.classList.remove('show');
+  }
 });
 
 // ── Sélecteur de modèle du composer ─────────────────────────────────────────
@@ -1239,6 +1323,101 @@ function renderComposerModelOptions() {
 function pickComposerModel(m) {
   setConvModel(m);   // override conv + persistance + syncModelUI
   $('composer-model-menu').classList.remove('show');
+}
+
+// ── Sélecteur de niveau de raisonnement du composer ─────────────────────────
+// Même mécanique que le sélecteur de modèle (bouton pilule + .model-menu
+// générique), mais liste STATIQUE (pas de fetch, pas de cache session) : les 5
+// valeurs possibles sont fixes. Masqué si le réglage est désactivé OU si l'API a
+// déjà rejeté reasoning_effort pour l'endpoint+modèle actifs cette session
+// (isReasoningEffortRejected, api.js) — dans ce cas on force aussi l'effort actif
+// à '' (défaut), pour ne pas reposer un paramètre déjà rejeté au tour suivant.
+const REASONING_EFFORT_OPTIONS = [
+  { value: '', label: 'défaut' },
+  { value: 'none', label: 'none' },
+  { value: 'low', label: 'low' },
+  { value: 'medium', label: 'medium' },
+  { value: 'high', label: 'high' },
+];
+
+function syncReasoningUI() {
+  const box = $('composer-reasoning');
+  if (!box) return;
+  const settings = loadSettings();
+  const rejected = isReasoningEffortRejected(settings.url, activeModel());
+  if (rejected && currentConvReasoningEffort) { setConvReasoningEffort(''); return; }   // ré-entre via syncReasoningUI
+  const cur = activeReasoningEffort();
+  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
+  const label = $('composer-reasoning-label');
+  if (label) label.textContent = opt ? opt.label : cur;
+  box.hidden = !settings.showReasoningSelector || rejected;
+}
+
+function toggleComposerReasoningMenu() {
+  const menu = $('composer-reasoning-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderComposerReasoningOptions();
+  menu.classList.add('show');
+}
+
+function renderComposerReasoningOptions() {
+  const menu = $('composer-reasoning-menu');
+  const cur = activeReasoningEffort();
+  menu.innerHTML = '';
+  REASONING_EFFORT_OPTIONS.forEach(o => {
+    const el = document.createElement('div');
+    el.className = 'model-opt' + (o.value === cur ? ' selected' : '');
+    el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
+    el.onmousedown = (ev) => { ev.preventDefault(); pickComposerReasoningEffort(o.value); };
+    menu.appendChild(el);
+  });
+}
+
+function pickComposerReasoningEffort(v) {
+  setConvReasoningEffort(v);   // override conv + persistance + syncReasoningUI
+  $('composer-reasoning-menu').classList.remove('show');
+}
+
+// Même composant (bouton pilule + .model-menu), pour le choix du DÉFAUT GLOBAL
+// dans les settings — pas d'override de conversation ici. La valeur vit dans le
+// hidden input #set-reasoning-effort, lu tel quel par onSaveSettings() comme les
+// autres champs du formulaire ; rien n'est persisté avant l'enregistrement.
+function toggleSettingsReasoningMenu() {
+  const menu = $('set-reasoning-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderSettingsReasoningOptions();
+  menu.classList.add('show');
+}
+
+function renderSettingsReasoningOptions() {
+  const menu = $('set-reasoning-menu');
+  const cur = $('set-reasoning-effort').value;
+  menu.innerHTML = '';
+  REASONING_EFFORT_OPTIONS.forEach(o => {
+    const el = document.createElement('div');
+    el.className = 'model-opt' + (o.value === cur ? ' selected' : '');
+    el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
+    el.onmousedown = (ev) => { ev.preventDefault(); pickSettingsReasoningEffort(o.value); };
+    menu.appendChild(el);
+  });
+}
+
+function pickSettingsReasoningEffort(v) {
+  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
+  $('set-reasoning-effort').value = v;
+  $('set-reasoning-label').textContent = opt ? opt.label : v;
+  $('set-reasoning-menu').classList.remove('show');
+}
+
+// Ré-affiche le label du bouton depuis la valeur courante du hidden input —
+// nécessaire après un chargement programmatique (init) qui ne passe pas par
+// pickSettingsReasoningEffort.
+function syncSettingsReasoningLabel() {
+  const v = $('set-reasoning-effort').value;
+  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
+  $('set-reasoning-label').textContent = opt ? opt.label : v;
 }
 
 // ── Settings drawer ─────────────────────────────────────────────────────────

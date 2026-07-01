@@ -17,6 +17,16 @@ const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 // Cache session : endpoints ayant rejeté NOTHINK_PARAMS (clé = URL endpoint).
 const _noThinkRejected = {};
 
+// Cache session : (endpoint, modèle) ayant rejeté reasoning_effort choisi par
+// l'utilisateur. Clé composite (url + '::' + model) — un même endpoint peut
+// exposer plusieurs modèles aux capacités de raisonnement différentes, donc on
+// ne peut pas généraliser le rejet à tout l'endpoint comme pour NOTHINK_PARAMS
+// (qui, lui, ne cible jamais qu'un seul modèle fixe : cfg.model).
+const _reasoningEffortRejected = {};
+function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || ''); }
+function isReasoningEffortRejected(url, model) { return !!_reasoningEffortRejected[reasoningEffortRejectedKey(url, model)]; }
+function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
+
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
   "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
@@ -128,9 +138,10 @@ function joinReasoning(a, b) {
 async function streamCompletion(messages, opts) {
   const o = opts || {};
   const cfg = loadSettings();
+  const model = o.model || cfg.model;
   const body = {
     // Override par conversation (o.model) sinon modèle par défaut des réglages.
-    model: o.model || cfg.model,
+    model,
     messages,
     stream: true,
     temperature: o.temperature == null ? 0.7 : o.temperature,
@@ -138,6 +149,12 @@ async function streamCompletion(messages, opts) {
   if (o.tools && o.tools.length) {
     body.tools = o.tools;
     body.tool_choice = 'auto';
+  }
+  // reasoning_effort : choix explicite de l'utilisateur (composer), '' = défaut =
+  // aucun paramètre envoyé. Jamais posé si l'endpoint+modèle l'a déjà rejeté cette
+  // session (cf. isReasoningEffortRejected) — le sélecteur est alors masqué côté UI.
+  if (o.reasoningEffort && !isReasoningEffortRejected(cfg.url, model)) {
+    body.reasoning_effort = o.reasoningEffort;
   }
 
   _currentAbort = new AbortController();
@@ -157,7 +174,13 @@ async function streamCompletion(messages, opts) {
       body: JSON.stringify(body),
       signal: _currentAbort.signal,
     });
-    if (!res.ok || !res.body) throw new Error('streamCompletion ' + res.status);
+    if (!res.ok || !res.body) {
+      // Hypothèse directe (pas de retry de diagnostic) : si reasoning_effort était
+      // posé, on le tient pour responsable de l'échec — marqué pour (endpoint,
+      // modèle), le sélecteur se masque pour la suite de la session.
+      if (body.reasoning_effort) markReasoningEffortRejected(cfg.url, model);
+      throw new Error('streamCompletion ' + res.status);
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -242,6 +265,7 @@ async function runConversation(messages, hooks) {
   for (let tour = 1; tour <= MAX_TOURS; tour++) {
     const result = await streamCompletion(messages, {
       model: h.model,
+      reasoningEffort: h.reasoningEffort,
       tools: toolDefinitions(),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,

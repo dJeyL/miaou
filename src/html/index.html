@@ -55,6 +55,9 @@
         </div>
       </div>
       <div class="topbar-mid">
+        <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
         <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
         <button class="icon-btn conv-dl-btn" onclick="downloadConvMd()" title="Exporter la conversation en Markdown" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -93,14 +96,24 @@
           <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
-        <!-- Sélecteur de modèle (optionnel, réglable) -->
-        <div class="composer-model" id="composer-model" hidden>
-          <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
-            <span id="composer-model-label">modèle</span>
-            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          <div class="model-menu" id="composer-model-menu"></div>
+        <!-- Sélecteurs de modèle / niveau de raisonnement (optionnels, réglables) -->
+        <div class="composer-selectors">
+          <div class="composer-model" id="composer-model" hidden>
+            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+              <span id="composer-model-label">modèle</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="composer-model-menu"></div>
+          </div>
+          <div class="composer-reasoning" id="composer-reasoning" hidden>
+            <button type="button" class="composer-reasoning-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
+              <svg class="reasoning-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.9 6.6h1.4M8.23 8.23l.99.99M6.6 8.9v1.4M4.97 8.23l-.99.99M4.3 6.6H2.9M4.97 4.97l-.99-.99M6.6 4.3V2.9M8.23 4.97l.99-.99"/><circle cx="6.6" cy="6.6" r="2.3"/><circle cx="6.6" cy="6.6" r="1" fill="currentColor"/><path d="M13.97 13.05l1.02.42M13.05 13.97l.42 1.02M11.75 13.97l-.42 1.02M10.83 13.05l-1.02.42M10.83 11.75l-1.02-.42M11.75 10.83l-.42-1.02M13.05 10.83l.42-1.02M13.97 11.75l1.02-.42"/><circle cx="12.4" cy="12.4" r="1.7"/><circle cx="12.4" cy="12.4" r="0.77" fill="currentColor"/></svg>
+              <span id="composer-reasoning-label">raisonnement</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="composer-reasoning-menu"></div>
+          </div>
         </div>
 
         <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput -->
@@ -115,7 +128,7 @@
           </button>
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour un skill</div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour une skill</div>
       </div>
     </div>
   </div>
@@ -157,6 +170,35 @@
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-modelselector">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Niveau de raisonnement par défaut</label>
+            <span class="hint">Ajoute <code>reasoning_effort</code> aux requêtes API. «&nbsp;défaut&nbsp;» n'envoie aucun paramètre.</span>
+          </div>
+          <div class="composer-reasoning settings-reasoning" id="set-reasoning-select">
+            <button type="button" class="composer-reasoning-btn" id="set-reasoning-btn" onclick="toggleSettingsReasoningMenu()">
+              <span id="set-reasoning-label">défaut</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="set-reasoning-menu"></div>
+          </div>
+          <input type="hidden" id="set-reasoning-effort" value="">
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Sélecteur de raisonnement dans le composer</label>
+            <span class="hint">Permet de changer le niveau par conversation. Masqué par défaut.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-reasoningselector">
             <span class="track"></span>
             <span class="thumb"></span>
           </label>

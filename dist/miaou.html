@@ -279,9 +279,10 @@ body {
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
 .topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
-.conv-dl-btn  { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
-.conv-dl-btn svg { width: 14px; height: 14px; }
+.conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
+.conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
 .topbar:hover .conv-dl-btn { opacity: 1; }
+.topbar-mid:hover .conv-retitle-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {
@@ -318,6 +319,8 @@ body {
 }
 .conv-title-edit:hover { background: var(--surface-2); }
 .conv-title-edit:focus { background: var(--surface-2); border-color: var(--border-2); }
+.conv-title-edit[contenteditable="false"] { cursor: default; }
+.conv-title-edit[contenteditable="false"]:hover { background: transparent; }
 .conv-title-edit:empty::before {
   content: 'Nouvelle conversation';
   color: var(--text-3);
@@ -661,8 +664,17 @@ body {
   padding: 1px 5px;
 }
 
+/* rangée des sélecteurs du composer (modèle à gauche, raisonnement à droite) */
+.composer-selectors {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 /* sélecteur de modèle du composer (optionnel) */
-.composer-model { position: relative; margin-bottom: 8px; }
+.composer-model { position: relative; margin-bottom: 0; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
   display: inline-flex;
@@ -698,6 +710,43 @@ body {
   transform: translateY(4px);
 }
 #composer-model-menu.show { transform: none; }
+
+/* sélecteur de niveau de raisonnement du composer (optionnel) : même mécanique
+   que .composer-model (bouton pilule + .model-menu générique), mais liste
+   statique de 5 valeurs fixes — pas de fetch, pas de recherche. */
+.composer-reasoning { position: relative; margin-left: auto; }
+.composer-reasoning[hidden] { display: none; }
+.composer-reasoning-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 4px 6px;
+  border-radius: 100px;
+  cursor: pointer;
+  max-width: 100%;
+  transition: background 140ms var(--ease);
+}
+.composer-reasoning-btn:hover { background: var(--accent-bd); }
+.composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; flex-shrink: 0; }
+.composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
+#composer-reasoning-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 160px;
+  max-width: 240px;
+  transform: translateY(4px);
+}
+#composer-reasoning-menu.show { transform: none; }
+.settings-reasoning { margin-left: 0; flex-shrink: 0; }
+#set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
 /* bannière résumés (mode « proposer ») */
 .summary-banner {
@@ -975,15 +1024,15 @@ body {
 }
 .model-menu.show { opacity: 1; transform: none; visibility: visible; }
 .model-opt {
-  padding: 8px 11px;
+  padding: 6px 10px;
   font-family: var(--mono);
-  font-size: 12.5px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
   transition: background 110ms var(--ease);
 }
+.model-opt span { font-size: 11px; }
 .model-opt:hover { background: var(--surface-3); }
 .model-opt .check { color: var(--accent); opacity: 0; }
 .model-opt.selected .check { opacity: 1; }
@@ -1257,14 +1306,17 @@ body {
 }
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
-/* Séparateur › entre segments du breadcrumb MCP : teinte icône, s'efface devant le texte. */
-.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+/* Séparateur › (breadcrumb MCP, et détail replié conversation_read/skill_read) : teinte icône, s'efface devant le texte. */
+.tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+/* Titre de conversation cliquable (ack conversation_read) : couleur héritée, teinte accent au survol (pas de soulignement). */
+.ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
+.ack-conv-link:hover { color: var(--accent); text-decoration: none; }
 /* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
 .tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
-/* Intent en langage naturel (niveau 1) + breadcrumb technique repliée (niveau 2). */
-/* L'icône s'aligne en haut quand deux niveaux sont affichés. */
+/* Intent en langage naturel (niveau 1) + éventuel breadcrumb technique replié (niveau 2). */
+/* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
 .mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
@@ -1600,7 +1652,7 @@ body {
 .msg.assistant .meta .msg-ts[hidden] { display: none; }
 /* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
 .msg.user .msg-ts { font-size: 11px; color: var(--text-3); margin-top: 3px; }
-.conv-dl-btn:disabled { opacity: 0 !important; pointer-events: none; }
+.conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
 
 .reasoning {
   margin: 0 0 8px;
@@ -1858,6 +1910,9 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
       </div>
       <div class="topbar-mid">
+        <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
         <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
         <button class="icon-btn conv-dl-btn" onclick="downloadConvMd()" title="Exporter la conversation en Markdown" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1896,14 +1951,24 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
-        <!-- Sélecteur de modèle (optionnel, réglable) -->
-        <div class="composer-model" id="composer-model" hidden>
-          <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
-            <span id="composer-model-label">modèle</span>
-            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          <div class="model-menu" id="composer-model-menu"></div>
+        <!-- Sélecteurs de modèle / niveau de raisonnement (optionnels, réglables) -->
+        <div class="composer-selectors">
+          <div class="composer-model" id="composer-model" hidden>
+            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+              <span id="composer-model-label">modèle</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="composer-model-menu"></div>
+          </div>
+          <div class="composer-reasoning" id="composer-reasoning" hidden>
+            <button type="button" class="composer-reasoning-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
+              <svg class="reasoning-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.9 6.6h1.4M8.23 8.23l.99.99M6.6 8.9v1.4M4.97 8.23l-.99.99M4.3 6.6H2.9M4.97 4.97l-.99-.99M6.6 4.3V2.9M8.23 4.97l.99-.99"/><circle cx="6.6" cy="6.6" r="2.3"/><circle cx="6.6" cy="6.6" r="1" fill="currentColor"/><path d="M13.97 13.05l1.02.42M13.05 13.97l.42 1.02M11.75 13.97l-.42 1.02M10.83 13.05l-1.02.42M10.83 11.75l-1.02-.42M11.75 10.83l-.42-1.02M13.05 10.83l.42-1.02M13.97 11.75l1.02-.42"/><circle cx="12.4" cy="12.4" r="1.7"/><circle cx="12.4" cy="12.4" r="0.77" fill="currentColor"/></svg>
+              <span id="composer-reasoning-label">raisonnement</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="composer-reasoning-menu"></div>
+          </div>
         </div>
 
         <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput -->
@@ -1918,7 +1983,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </button>
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour un skill</div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour une skill</div>
       </div>
     </div>
   </div>
@@ -1960,6 +2025,35 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-modelselector">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Niveau de raisonnement par défaut</label>
+            <span class="hint">Ajoute <code>reasoning_effort</code> aux requêtes API. «&nbsp;défaut&nbsp;» n'envoie aucun paramètre.</span>
+          </div>
+          <div class="composer-reasoning settings-reasoning" id="set-reasoning-select">
+            <button type="button" class="composer-reasoning-btn" id="set-reasoning-btn" onclick="toggleSettingsReasoningMenu()">
+              <span id="set-reasoning-label">défaut</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="set-reasoning-menu"></div>
+          </div>
+          <input type="hidden" id="set-reasoning-effort" value="">
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Sélecteur de raisonnement dans le composer</label>
+            <span class="hint">Permet de changer le niveau par conversation. Masqué par défaut.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-reasoningselector">
             <span class="track"></span>
             <span class="thumb"></span>
           </label>
@@ -2155,7 +2249,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-01 19:47 UTC */
+/* miaou — built: 2026-07-01 22:34 UTC */
 
 /* ── utils.js ── */
 
@@ -2540,7 +2634,7 @@ const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782935235}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782945254}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3491,7 +3585,7 @@ const TOOLS = [
       const entry = getSummaryEntry(args.id);   
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
-      _pendingToolAcks.push({ kind: 'conversation_read', title: light.title });
+      _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
       const conv = loadConversation(args.id);   
       if (!conv) return JSON.stringify(light);   
@@ -3977,6 +4071,11 @@ const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 
 const _noThinkRejected = {};
 
+const _reasoningEffortRejected = {};
+function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || ''); }
+function isReasoningEffortRejected(url, model) { return !!_reasoningEffortRejected[reasoningEffortRejectedKey(url, model)]; }
+function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
+
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
   "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
@@ -4065,9 +4164,10 @@ function joinReasoning(a, b) {
 async function streamCompletion(messages, opts) {
   const o = opts || {};
   const cfg = loadSettings();
+  const model = o.model || cfg.model;
   const body = {
     
-    model: o.model || cfg.model,
+    model,
     messages,
     stream: true,
     temperature: o.temperature == null ? 0.7 : o.temperature,
@@ -4075,6 +4175,10 @@ async function streamCompletion(messages, opts) {
   if (o.tools && o.tools.length) {
     body.tools = o.tools;
     body.tool_choice = 'auto';
+  }
+  
+  if (o.reasoningEffort && !isReasoningEffortRejected(cfg.url, model)) {
+    body.reasoning_effort = o.reasoningEffort;
   }
 
   _currentAbort = new AbortController();
@@ -4094,7 +4198,11 @@ async function streamCompletion(messages, opts) {
       body: JSON.stringify(body),
       signal: _currentAbort.signal,
     });
-    if (!res.ok || !res.body) throw new Error('streamCompletion ' + res.status);
+    if (!res.ok || !res.body) {
+      
+      if (body.reasoning_effort) markReasoningEffortRejected(cfg.url, model);
+      throw new Error('streamCompletion ' + res.status);
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -4165,6 +4273,7 @@ async function runConversation(messages, hooks) {
   for (let tour = 1; tour <= MAX_TOURS; tour++) {
     const result = await streamCompletion(messages, {
       model: h.model,
+      reasoningEffort: h.reasoningEffort,
       tools: toolDefinitions(),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
@@ -4559,38 +4668,98 @@ const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill=
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
 
+function renderIntentTwoLevel(el, intent, detailText, detailBuilder) {
+  const row = document.createElement('span');
+  row.className = 'mcp-intent-row';
+  const intentSpan = document.createElement('span');
+  intentSpan.className = 'mcp-intent';
+  intentSpan.textContent = intent;
+  row.appendChild(intentSpan);
+  const chevron = document.createElement('button');
+  chevron.className = 'mcp-chevron';
+  chevron.type = 'button';
+  chevron.title = 'Détail technique';
+  chevron.innerHTML = ICON_CHEVRON_DOWN;
+  const detail = document.createElement('span');
+  detail.className = 'mcp-breadcrumb-detail';
+  detail.setAttribute('hidden', '');
+  if (detailBuilder) {
+    detailBuilder(detail);
+  } else {
+    detail.textContent = detailText;
+  }
+  row.addEventListener('click', function() {
+    if (detail.hasAttribute('hidden')) {
+      detail.removeAttribute('hidden');
+      chevron.classList.add('open');
+    } else {
+      detail.setAttribute('hidden', '');
+      chevron.classList.remove('open');
+    }
+  });
+  row.appendChild(chevron);
+  el.appendChild(row);
+  el.appendChild(detail);
+}
+
 const ACK_KINDS = {
   memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
   memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
   memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
-  conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
-  conversation_list: { destination: 'user', undo: null, icon: ICON_LIST, label: m =>
+  conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,
+    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
+    renderLabel: (m, el) => {
+      
+      const titleNode = m.convId
+        ? Object.assign(document.createElement('a'), {
+            className: 'ack-conv-link',
+            href: 'javascript:void(0)',
+            textContent: m.title || 'sans titre',
+            onclick: () => openConversation(m.convId),
+          })
+        : document.createTextNode(m.title || 'sans titre');
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Conversation consultée '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' '));
+          detail.appendChild(titleNode);
+        });
+      } else {
+        el.appendChild(document.createTextNode('Conversation consultée : « '));
+        el.appendChild(titleNode);
+        el.appendChild(document.createTextNode(' »'));
+      }
+    },
+  },
+  
+  conversation_list: { destination: 'user', undo: null, icon: ICON_LIST,
+    label: m =>
       (m.intent ? m.intent + ' : ' : '') + (
         m.count === 0 ? 'Aucune conversation trouvée'
       : m.count === 1 ? '1 conversation listée'
-      : (m.count != null ? m.count : '?') + ' conversations listées') },
+      : (m.count != null ? m.count : '?') + ' conversations listées'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'Aucune conversation trouvée'
+        : m.count === 1 ? '1 conversation listée'
+        : (m.count != null ? m.count : '?') + ' conversations listées';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, countText);
+      } else {
+        el.textContent = countText;
+      }
+    },
+  },
   
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
     label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
-      if (m.intent) {
-        
-        const row = document.createElement('span');
-        row.className = 'mcp-intent-row';
-        const intentSpan = document.createElement('span');
-        intentSpan.className = 'mcp-intent';
-        intentSpan.textContent = m.intent;
-        row.appendChild(intentSpan);
-        const chevron = document.createElement('button');
-        chevron.className = 'mcp-chevron';
-        chevron.type = 'button';
-        chevron.title = 'Détail technique';
-        chevron.innerHTML = ICON_CHEVRON_DOWN;
-        
-        const detail = document.createElement('span');
-        detail.className = 'mcp-breadcrumb-detail';
-        detail.setAttribute('hidden', '');
+      const buildBreadcrumb = detail => {
         detail.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
@@ -4603,32 +4772,12 @@ const ACK_KINDS = {
           code.textContent = seg;
           detail.appendChild(code);
         });
-        row.addEventListener('click', function() {
-          if (detail.hasAttribute('hidden')) {
-            detail.removeAttribute('hidden');
-            chevron.classList.add('open');
-          } else {
-            detail.setAttribute('hidden', '');
-            chevron.classList.remove('open');
-          }
-        });
-        row.appendChild(chevron);
-        el.appendChild(row);
-        el.appendChild(detail);
+      };
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, buildBreadcrumb);
       } else {
         
-        el.appendChild(document.createTextNode('Appel : '));
-        segs.forEach((seg, i) => {
-          if (i > 0) {
-            const sep = document.createElement('span');
-            sep.className = 'mcp-call-sep';
-            sep.textContent = '›';
-            el.appendChild(sep);
-          }
-          const code = document.createElement('code');
-          code.textContent = seg;
-          el.appendChild(code);
-        });
+        buildBreadcrumb(el);
       }
     },
   },
@@ -4661,6 +4810,17 @@ const ACK_KINDS = {
         m.count === 0 ? 'Aucune skill disponible'
       : m.count === 1 ? '1 skill listée'
       : (m.count != null ? m.count : '?') + ' skills listées'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'Aucune skill disponible'
+        : m.count === 1 ? '1 skill listée'
+        : (m.count != null ? m.count : '?') + ' skills listées';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, countText);
+      } else {
+        el.textContent = countText;
+      }
+    },
   },
   
   skill_read: {
@@ -4668,6 +4828,20 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_BOOK,
     label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
+    renderLabel: (m, el) => {
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Skill consultée '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
+        });
+      } else {
+        el.textContent = 'Skill consultée : ' + (m.title || m.slug || '?');
+      }
+    },
   },
 };
 
@@ -4684,7 +4858,7 @@ function buildToolAck(m) {
   wrap.className = 'tool-ack ack-' + (kind || 'unknown') +
     (m.resolved ? ' resolved' : '') +
     (m.error ? ' ack-error' : '') +
-    (kind === 'mcp_call' && m.intent ? ' has-intent' : '');
+    (m.intent ? ' has-intent' : '');
   if (m.id) wrap.dataset.ackId = m.id;
 
   if (spec.icon) {
@@ -4798,8 +4972,9 @@ function renderThread(msgs) {
 
 function syncConvDownloadBtn() {
   const btn = document.querySelector('.conv-dl-btn');
-  if (!btn) return;
-  btn.hidden = !currentThread.some(m => m.role === 'assistant');
+  if (btn) btn.hidden = !currentThread.some(m => m.role === 'assistant');
+  const retitleBtn = document.querySelector('.conv-retitle-btn');
+  if (retitleBtn) retitleBtn.hidden = !currentThread.some(m => m.role === 'assistant');
 }
 
 function appendUserMessage(text, ts) {
@@ -5253,6 +5428,8 @@ function setSending(on) {
   
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
+  const retitleBtn = document.querySelector('.conv-retitle-btn');
+  if (retitleBtn) retitleBtn.disabled = on;
 }
 
 function setComposerStreaming(on) {
@@ -5360,6 +5537,14 @@ document.addEventListener('click', (e) => {
     const cm = $('composer-model-menu');
     if (cm) cm.classList.remove('show');
   }
+  if (!e.target.closest('#composer-reasoning')) {
+    const cr = $('composer-reasoning-menu');
+    if (cr) cr.classList.remove('show');
+  }
+  if (!e.target.closest('#set-reasoning-select')) {
+    const sr = $('set-reasoning-menu');
+    if (sr) sr.classList.remove('show');
+  }
 });
 
 let _modelsCache = null;
@@ -5413,6 +5598,87 @@ function renderComposerModelOptions() {
 function pickComposerModel(m) {
   setConvModel(m);   
   $('composer-model-menu').classList.remove('show');
+}
+
+const REASONING_EFFORT_OPTIONS = [
+  { value: '', label: 'défaut' },
+  { value: 'none', label: 'none' },
+  { value: 'low', label: 'low' },
+  { value: 'medium', label: 'medium' },
+  { value: 'high', label: 'high' },
+];
+
+function syncReasoningUI() {
+  const box = $('composer-reasoning');
+  if (!box) return;
+  const settings = loadSettings();
+  const rejected = isReasoningEffortRejected(settings.url, activeModel());
+  if (rejected && currentConvReasoningEffort) { setConvReasoningEffort(''); return; }   
+  const cur = activeReasoningEffort();
+  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
+  const label = $('composer-reasoning-label');
+  if (label) label.textContent = opt ? opt.label : cur;
+  box.hidden = !settings.showReasoningSelector || rejected;
+}
+
+function toggleComposerReasoningMenu() {
+  const menu = $('composer-reasoning-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderComposerReasoningOptions();
+  menu.classList.add('show');
+}
+
+function renderComposerReasoningOptions() {
+  const menu = $('composer-reasoning-menu');
+  const cur = activeReasoningEffort();
+  menu.innerHTML = '';
+  REASONING_EFFORT_OPTIONS.forEach(o => {
+    const el = document.createElement('div');
+    el.className = 'model-opt' + (o.value === cur ? ' selected' : '');
+    el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
+    el.onmousedown = (ev) => { ev.preventDefault(); pickComposerReasoningEffort(o.value); };
+    menu.appendChild(el);
+  });
+}
+
+function pickComposerReasoningEffort(v) {
+  setConvReasoningEffort(v);   
+  $('composer-reasoning-menu').classList.remove('show');
+}
+
+function toggleSettingsReasoningMenu() {
+  const menu = $('set-reasoning-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderSettingsReasoningOptions();
+  menu.classList.add('show');
+}
+
+function renderSettingsReasoningOptions() {
+  const menu = $('set-reasoning-menu');
+  const cur = $('set-reasoning-effort').value;
+  menu.innerHTML = '';
+  REASONING_EFFORT_OPTIONS.forEach(o => {
+    const el = document.createElement('div');
+    el.className = 'model-opt' + (o.value === cur ? ' selected' : '');
+    el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
+    el.onmousedown = (ev) => { ev.preventDefault(); pickSettingsReasoningEffort(o.value); };
+    menu.appendChild(el);
+  });
+}
+
+function pickSettingsReasoningEffort(v) {
+  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
+  $('set-reasoning-effort').value = v;
+  $('set-reasoning-label').textContent = opt ? opt.label : v;
+  $('set-reasoning-menu').classList.remove('show');
+}
+
+function syncSettingsReasoningLabel() {
+  const v = $('set-reasoning-effort').value;
+  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
+  $('set-reasoning-label').textContent = opt ? opt.label : v;
 }
 
 function openSettings() {
@@ -6544,6 +6810,7 @@ let currentThread = [];
 let needTitle = false;    
 let titleBefore = '';
 let currentConvModel = '';  
+let currentConvReasoningEffort = '';  
 
 const IDLE_SUMMARY_MS = 60000;
 let _idleSummaryTimer = null;
@@ -6571,6 +6838,22 @@ function setConvModel(m) {
     }
   }
   syncModelUI();
+}
+
+function activeReasoningEffort() {
+  return (currentConvReasoningEffort && currentConvReasoningEffort.trim()) || (loadSettings().reasoningEffort || '');
+}
+
+function setConvReasoningEffort(v) {
+  currentConvReasoningEffort = v || '';
+  if (currentConvId) {
+    const conv = loadConversation(currentConvId);
+    if (conv) {
+      if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
+      saveConversation(conv);
+    }
+  }
+  syncReasoningUI();
 }
 
 function buildSummaryBlock(matches) {
@@ -6663,6 +6946,7 @@ async function openConversation(id) {
       if (m.assistantText != null)    a.assistantText = m.assistantText;
       if (m.intent != null)           a.intent = m.intent;
       if (m.slug != null)             a.slug = m.slug;
+      if (m.convId != null)           a.convId = m.convId;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -6674,18 +6958,21 @@ async function openConversation(id) {
     return o;
   });
   currentConvModel = conv.model || '';
-  needTitle = false;
+  currentConvReasoningEffort = conv.reasoningEffort || '';
+  needTitle = !conv.title;   
   setTitle(conv.title || '');
   await loadConversationResources(id);   
   renderThread(currentThread);
   renderConvList();
   syncModelUI();
+  syncReasoningUI();
 }
 
 function resetToEmpty() {
   currentConvId = null;
   currentThread = [];
   currentConvModel = '';   
+  currentConvReasoningEffort = '';   
   needTitle = false;
   $('thread').innerHTML = '';
   clearMemoryProposals();   
@@ -6694,6 +6981,7 @@ function resetToEmpty() {
   syncConvDownloadBtn();
   renderConvList();
   syncModelUI();
+  syncReasoningUI();
 }
 
 function selectConv(id) {
@@ -6812,6 +7100,7 @@ function persistCurrent() {
       if (m.assistantText != null) o.assistantText = m.assistantText;
       if (m.intent != null)        o.intent = m.intent;
       if (m.slug != null)          o.slug = m.slug;
+      if (m.convId != null)        o.convId = m.convId;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -6824,6 +7113,7 @@ function persistCurrent() {
   if (!conv.timestamp) conv.timestamp = Date.now();
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
+  if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
   
   saveConversation(conv);
   renderConvList();
@@ -6870,6 +7160,8 @@ function onSaveSettings() {
     summaryInjectionMode: pendingSummaryInjectionMode,
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
+    reasoningEffort: $('set-reasoning-effort').value,
+    showReasoningSelector: $('set-reasoningselector').checked,
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
@@ -6879,6 +7171,7 @@ function onSaveSettings() {
   highlightEnabled = obj.highlight;
   syncConfigured();
   syncModelUI();        
+  syncReasoningUI();     
   prefetchModels();     
   renderThread(currentThread);   
   closeSettings();
@@ -7071,6 +7364,7 @@ async function editUserMessage(index, newText) {
 async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   
+  const reasoningEffort = activeReasoningEffort();
   const sys = buildSystemMessage();
   
   const threadMsgs = expandThread(resolveResourceRefs(currentThread));
@@ -7094,6 +7388,7 @@ async function dispatchSend(matches) {
   try {
     await runConversation(apiMessages, {
       model,
+      reasoningEffort,
       onDelta: (full) => streamInto(wrap, full),
       onReasoning: (full) => setReasoning(wrap, full),
       onToolTour: (content) => {
@@ -7159,6 +7454,8 @@ async function dispatchSend(matches) {
           if (ack.title != null)         entry.title = ack.title;
           if (ack.count != null)         entry.count = ack.count;
           if (ack.intent != null)        entry.intent = ack.intent;
+          if (ack.slug != null)          entry.slug = ack.slug;
+          if (ack.convId != null)        entry.convId = ack.convId;
           
           if (ack.name != null)           entry.name = ack.name;
           if (ack.resourceName != null)  entry.resourceName = ack.resourceName;
@@ -7225,6 +7522,7 @@ async function dispatchSend(matches) {
   } catch (e) {
     finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
     setConnDot('err');
+    syncReasoningUI();   
   } finally {
     setSending(false);
     armIdleSummaryTimer();   
@@ -7256,8 +7554,26 @@ async function maybeTitle() {
   needTitle = false;
   const convId = currentConvId;                     
   const thread = currentThread.slice();
+  setTitleEditable(convId, false);
   const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
   if (title) applyGeneratedTitle(convId, title);    
+  setTitleEditable(convId, true);
+}
+
+async function regenerateTitle() {
+  if (!currentConvId || !currentThread.length) return;
+  const convId = currentConvId;
+  const thread = currentThread.slice();
+  setTitleEditable(convId, false);
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  if (title) applyGeneratedTitle(convId, title);
+  setTitleEditable(convId, true);
+}
+
+function setTitleEditable(convId, editable) {
+  if (convId !== currentConvId) return;
+  const titleEl = $('conv-title');
+  if (titleEl) titleEl.contentEditable = editable ? 'true' : 'false';
 }
 
 async function summarizeIfNeeded(id) {
@@ -7329,11 +7645,15 @@ function init() {
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
   $('set-modelselector').checked = !!s.showModelSelector;
+  $('set-reasoning-effort').value = s.reasoningEffort || '';
+  syncSettingsReasoningLabel();
+  $('set-reasoningselector').checked = !!s.showReasoningSelector;
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
   syncKeyFieldHint();
   syncModelUI();
+  syncReasoningUI();
 
   backfillMessageModels();
   renderConvList();

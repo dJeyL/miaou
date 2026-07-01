@@ -85,6 +85,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
   `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`,
+  `regenerateTitle`,
   `toggleReasoning`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Le bouton du composer appelle

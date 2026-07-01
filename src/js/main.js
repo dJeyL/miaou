@@ -39,6 +39,7 @@ let currentThread = [];   // [{ role, content }] — fil visible courant
 let needTitle = false;    // titrage auto en attente (conversation neuve)
 let titleBefore = '';
 let currentConvModel = '';  // override de modèle de la conversation courante ('' = modèle par défaut)
+let currentConvReasoningEffort = '';  // override de reasoning_effort de la conversation courante ('' = défaut, pas de paramètre)
 
 // ── Résumé sur inactivité ────────────────────────────────────────────────────
 // Durée d'inactivité utilisateur avant déclenchement d'un résumé de la
@@ -76,6 +77,27 @@ function setConvModel(m) {
     }
   }
   syncModelUI();
+}
+
+// Niveau de reasoning_effort effectif pour l'échange courant : override de
+// conversation s'il existe, sinon le défaut des réglages. '' = défaut = pas de
+// paramètre envoyé à l'API (comportement natif du modèle).
+function activeReasoningEffort() {
+  return (currentConvReasoningEffort && currentConvReasoningEffort.trim()) || (loadSettings().reasoningEffort || '');
+}
+
+// Fixe l'override de reasoning_effort de la conversation courante (choix dans
+// le composer). Persiste sur l'objet conversation si elle existe déjà.
+function setConvReasoningEffort(v) {
+  currentConvReasoningEffort = v || '';
+  if (currentConvId) {
+    const conv = loadConversation(currentConvId);
+    if (conv) {
+      if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
+      saveConversation(conv);
+    }
+  }
+  syncReasoningUI();
 }
 
 // ── Construction du message système (un seul, concaténé) ────────────────────
@@ -185,6 +207,7 @@ async function openConversation(id) {
       if (m.assistantText != null)    a.assistantText = m.assistantText;
       if (m.intent != null)           a.intent = m.intent;
       if (m.slug != null)             a.slug = m.slug;
+      if (m.convId != null)           a.convId = m.convId;
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
@@ -197,18 +220,21 @@ async function openConversation(id) {
     return o;
   });
   currentConvModel = conv.model || '';
-  needTitle = false;
+  currentConvReasoningEffort = conv.reasoningEffort || '';
+  needTitle = !conv.title;   // conversation rouverte sans titre (streaming arrêté, etc.) : retitrer à la reprise
   setTitle(conv.title || '');
   await loadConversationResources(id);   // peuple le session cache avant renderThread
   renderThread(currentThread);
   renderConvList();
   syncModelUI();
+  syncReasoningUI();
 }
 
 function resetToEmpty() {
   currentConvId = null;
   currentThread = [];
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
+  currentConvReasoningEffort = '';   // nouvelle conversation → reasoning_effort par défaut
   needTitle = false;
   $('thread').innerHTML = '';
   clearMemoryProposals();   // cartes de proposition détruites avec le thread
@@ -217,6 +243,7 @@ function resetToEmpty() {
   syncConvDownloadBtn();
   renderConvList();
   syncModelUI();
+  syncReasoningUI();
 }
 
 function selectConv(id) {
@@ -348,6 +375,7 @@ function persistCurrent() {
       if (m.assistantText != null) o.assistantText = m.assistantText;
       if (m.intent != null)        o.intent = m.intent;
       if (m.slug != null)          o.slug = m.slug;
+      if (m.convId != null)        o.convId = m.convId;
       return o;
     }
     const o = { role: m.role, content: m.content };
@@ -360,6 +388,7 @@ function persistCurrent() {
   if (!conv.timestamp) conv.timestamp = Date.now();
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
+  if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
   // Pas de titre provisoire : « Nouvelle conversation » (placeholder topbar +
   // fallback liste) jusqu'au titrage en arrière-plan.
   saveConversation(conv);
@@ -409,6 +438,8 @@ function onSaveSettings() {
     summaryInjectionMode: pendingSummaryInjectionMode,
     theme: pendingTheme,
     showModelSelector: $('set-modelselector').checked,
+    reasoningEffort: $('set-reasoning-effort').value,
+    showReasoningSelector: $('set-reasoningselector').checked,
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
@@ -418,6 +449,7 @@ function onSaveSettings() {
   highlightEnabled = obj.highlight;
   syncConfigured();
   syncModelUI();        // labels + visibilité du sélecteur (selon cache déjà chargé)
+  syncReasoningUI();     // visibilité + valeur du sélecteur de raisonnement
   prefetchModels();     // (re)charge la liste si besoin, puis re-sync
   renderThread(currentThread);   // ré-applique/retire la coloration
   closeSettings();
@@ -663,6 +695,7 @@ async function editUserMessage(index, newText) {
 async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
+  const reasoningEffort = activeReasoningEffort();
   const sys = buildSystemMessage();
   // Résout les références de ressources ([resource_ref:…]) dans les entry.result
   // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
@@ -695,6 +728,7 @@ async function dispatchSend(matches) {
   try {
     await runConversation(apiMessages, {
       model,
+      reasoningEffort,
       onDelta: (full) => streamInto(wrap, full),
       onReasoning: (full) => setReasoning(wrap, full),
       onToolTour: (content) => {
@@ -773,6 +807,8 @@ async function dispatchSend(matches) {
           if (ack.title != null)         entry.title = ack.title;
           if (ack.count != null)         entry.count = ack.count;
           if (ack.intent != null)        entry.intent = ack.intent;
+          if (ack.slug != null)          entry.slug = ack.slug;
+          if (ack.convId != null)        entry.convId = ack.convId;
           // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
           // via le hook onEnrichLastAck, après exécution de chaque outil interne).
           if (ack.name != null)           entry.name = ack.name;
@@ -853,6 +889,7 @@ async function dispatchSend(matches) {
   } catch (e) {
     finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
     setConnDot('err');
+    syncReasoningUI();   // masque le sélecteur si l'échec vient de reasoning_effort (cf. api.js)
   } finally {
     setSending(false);
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
@@ -889,8 +926,33 @@ async function maybeTitle() {
   needTitle = false;
   const convId = currentConvId;                     // figé : l'utilisateur peut naviguer
   const thread = currentThread.slice();
+  setTitleEditable(convId, false);
   const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
   if (title) applyGeneratedTitle(convId, title);    // sinon on garde le titre provisoire
+  setTitleEditable(convId, true);
+}
+
+// Bouton topbar (onclick="regenerateTitle()") : force un nouveau titrage même
+// si un titre manuel a déjà été fixé (contrairement à maybeTitle, qui ne
+// tourne qu'une fois via needTitle). Mêmes garde-fous que maybeTitle sinon :
+// convId/thread figés avant l'appel async, pas de titre provisoire.
+async function regenerateTitle() {
+  if (!currentConvId || !currentThread.length) return;
+  const convId = currentConvId;
+  const thread = currentThread.slice();
+  setTitleEditable(convId, false);
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  if (title) applyGeneratedTitle(convId, title);
+  setTitleEditable(convId, true);
+}
+
+// Verrouille/déverrouille l'édition du titre pendant un (re)titrage async ;
+// no-op si l'utilisateur a navigué ailleurs entre-temps (convId figé vs
+// currentConvId courant), pour ne pas rendre éditable le titre d'une autre conv.
+function setTitleEditable(convId, editable) {
+  if (convId !== currentConvId) return;
+  const titleEl = $('conv-title');
+  if (titleEl) titleEl.contentEditable = editable ? 'true' : 'false';
 }
 
 // ── Résumé / mots-clés à la sortie d'une conversation ───────────────────────
@@ -967,11 +1029,15 @@ function init() {
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
   $('set-modelselector').checked = !!s.showModelSelector;
+  $('set-reasoning-effort').value = s.reasoningEffort || '';
+  syncSettingsReasoningLabel();
+  $('set-reasoningselector').checked = !!s.showReasoningSelector;
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
   syncKeyFieldHint();
   syncModelUI();
+  syncReasoningUI();
 
   backfillMessageModels();
   renderConvList();

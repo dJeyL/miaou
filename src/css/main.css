@@ -268,9 +268,10 @@ body {
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
 .topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
-.conv-dl-btn  { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
-.conv-dl-btn svg { width: 14px; height: 14px; }
+.conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
+.conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
 .topbar:hover .conv-dl-btn { opacity: 1; }
+.topbar-mid:hover .conv-retitle-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {
@@ -307,6 +308,8 @@ body {
 }
 .conv-title-edit:hover { background: var(--surface-2); }
 .conv-title-edit:focus { background: var(--surface-2); border-color: var(--border-2); }
+.conv-title-edit[contenteditable="false"] { cursor: default; }
+.conv-title-edit[contenteditable="false"]:hover { background: transparent; }
 .conv-title-edit:empty::before {
   content: 'Nouvelle conversation';
   color: var(--text-3);
@@ -650,8 +653,17 @@ body {
   padding: 1px 5px;
 }
 
+/* rangée des sélecteurs du composer (modèle à gauche, raisonnement à droite) */
+.composer-selectors {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 /* sélecteur de modèle du composer (optionnel) */
-.composer-model { position: relative; margin-bottom: 8px; }
+.composer-model { position: relative; margin-bottom: 0; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
   display: inline-flex;
@@ -687,6 +699,43 @@ body {
   transform: translateY(4px);
 }
 #composer-model-menu.show { transform: none; }
+
+/* sélecteur de niveau de raisonnement du composer (optionnel) : même mécanique
+   que .composer-model (bouton pilule + .model-menu générique), mais liste
+   statique de 5 valeurs fixes — pas de fetch, pas de recherche. */
+.composer-reasoning { position: relative; margin-left: auto; }
+.composer-reasoning[hidden] { display: none; }
+.composer-reasoning-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 4px 6px;
+  border-radius: 100px;
+  cursor: pointer;
+  max-width: 100%;
+  transition: background 140ms var(--ease);
+}
+.composer-reasoning-btn:hover { background: var(--accent-bd); }
+.composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; flex-shrink: 0; }
+.composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
+#composer-reasoning-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 160px;
+  max-width: 240px;
+  transform: translateY(4px);
+}
+#composer-reasoning-menu.show { transform: none; }
+.settings-reasoning { margin-left: 0; flex-shrink: 0; }
+#set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
 /* bannière résumés (mode « proposer ») */
 .summary-banner {
@@ -964,15 +1013,15 @@ body {
 }
 .model-menu.show { opacity: 1; transform: none; visibility: visible; }
 .model-opt {
-  padding: 8px 11px;
+  padding: 6px 10px;
   font-family: var(--mono);
-  font-size: 12.5px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
   transition: background 110ms var(--ease);
 }
+.model-opt span { font-size: 11px; }
 .model-opt:hover { background: var(--surface-3); }
 .model-opt .check { color: var(--accent); opacity: 0; }
 .model-opt.selected .check { opacity: 1; }
@@ -1246,14 +1295,17 @@ body {
 }
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
-/* Séparateur › entre segments du breadcrumb MCP : teinte icône, s'efface devant le texte. */
-.tool-ack.ack-mcp_call .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+/* Séparateur › (breadcrumb MCP, et détail replié conversation_read/skill_read) : teinte icône, s'efface devant le texte. */
+.tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+/* Titre de conversation cliquable (ack conversation_read) : couleur héritée, teinte accent au survol (pas de soulignement). */
+.ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
+.ack-conv-link:hover { color: var(--accent); text-decoration: none; }
 /* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 /* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
 .tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
-/* Intent en langage naturel (niveau 1) + breadcrumb technique repliée (niveau 2). */
-/* L'icône s'aligne en haut quand deux niveaux sont affichés. */
+/* Intent en langage naturel (niveau 1) + éventuel breadcrumb technique replié (niveau 2). */
+/* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
 .mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
@@ -1589,7 +1641,7 @@ body {
 .msg.assistant .meta .msg-ts[hidden] { display: none; }
 /* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
 .msg.user .msg-ts { font-size: 11px; color: var(--text-3); margin-top: 3px; }
-.conv-dl-btn:disabled { opacity: 0 !important; pointer-events: none; }
+.conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
 
 .reasoning {
   margin: 0 0 8px;
