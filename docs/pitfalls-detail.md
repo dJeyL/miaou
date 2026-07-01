@@ -72,6 +72,27 @@ ou au KV cache.
    (fallback `c.title || 'Nouvelle conversation'`) et barre du haut (placeholder
    CSS `.conv-title-edit:empty::before`). Ne pas réintroduire de titre tronqué
    du 1ᵉʳ message (hétérogène : il n'apparaissait que dans la barre du haut).
+   **`needTitle` : gating à un coup, par conversation.** `maybeTitle` retourne
+   immédiatement si `!needTitle`, et le remet à `false` dès qu'il se déclenche
+   — un seul essai de titrage automatique par conversation. Trois points
+   posent `needTitle` : `ensureConversation` (nouvelle conversation, `!manualTitle`
+   si un titre a été saisi à la main avant le premier envoi), `resetToEmpty`
+   (toujours `false`), et `openConversation` (réouverture — doit valoir
+   `!conv.title`, **pas** `false` inconditionnel : sinon toute conversation
+   restée sans titre — stream avorté, réponse sous le seuil `hasSubstance`
+   de 8 caractères — reste bloquée sans titre pour toujours, même après
+   édition du premier message ou envoi d'un tour supplémentaire, puisque
+   `maybeTitle` ne se redéclenchera jamais). Bug payé une fois (fix :
+   `needTitle = !conv.title` dans `openConversation`).
+   **Régénération manuelle (`regenerateTitle`, bouton topbar).** Chemin
+   distinct de `maybeTitle` : ignore `needTitle` (peut retitrer une
+   conversation déjà titrée, manuellement ou automatiquement), verrouille le
+   titre en lecture seule pendant l'appel (`setTitleEditable(convId, false)`),
+   et réutilise `applyGeneratedTitle`/`runBackgroundTask` comme `maybeTitle`.
+   Ne touche pas à `needTitle` — un titrage auto ultérieur reste possible
+   seulement si la conversation était encore sans titre (cas très rare une
+   fois la régénération manuelle appliquée, puisqu'elle pose toujours un titre
+   si l'appel réussit).
 10. **Arrêt du streaming.** `streamCompletion` ouvre un `AbortController`
     (`_currentAbort`, un seul à la fois) ; `abortStream()` l'annule. Sur
     `AbortError`, on **avale** l'erreur et on retourne le contenu déjà reçu avec

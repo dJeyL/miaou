@@ -121,7 +121,11 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
    `try/finally`.
 9. **Titrage robuste à la navigation.** `maybeTitle` fige `convId`/`thread`
    avant l'appel async ; pas de titre provisoire (« Nouvelle conversation »
-   partout tant que non résolu).
+   partout tant que non résolu). Gouverné par `needTitle` (un seul essai par
+   conversation) : `openConversation` doit le réarmer (`!conv.title`) sur une
+   conversation rouverte sans titre, sinon le titrage reste bloqué à vie.
+   Bouton de régénération manuelle (`regenerateTitle`) : ignore `needTitle`,
+   retitre à la demande même après un titre déjà posé (manuel ou auto).
 10. **Arrêt du streaming** via `AbortController` unique ; `aborted: true`
     sans rollback, court-circuite avant tout traitement de tour suivant.
 11. **Recherche historique.** Filtre persistant `convSearchFilter` ;

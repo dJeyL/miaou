@@ -23,7 +23,11 @@ data embarquée, ack sans `args`), **`list_conversations`** (filtre `query` via
 `tokenize`/`scoreSummary` cumulable avec `since`, exclusion de la conversation
 courante via `currentConvId`, capture de `miaou_intent` sur un outil interne y
 compris via un handler async), **acks — label avec intent** (`ackLabel`
-`conversation_list` et `skill_list` : préfixe `"<intent> : "` si présent), **`conv_ref`**
+`conversation_list` et `skill_list` : préfixe `"<intent> : "` si présent — c'est
+le texte brut de secours ; le rendu DOM à deux niveaux effectivement affiché
+par `renderLabel`/`renderIntentTwoLevel`, avec chevron et détail replié, n'est
+pas couvert ici, faute de DOM riche dans QuickJS — vérification manuelle),
+**`conv_ref`**
 (`parseConvRefs` : marqueur avec/sans titre, titre contenant `:`, plusieurs
 marqueurs ; `resolveConvRefs` : lien avec titre fourni, lookup storage si titre
 absent, lien conservé avec titre sur une entrée tombstone (conversation

@@ -64,7 +64,12 @@ Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js) consomment la file via
 `getPendingToolAcks` / `clearPendingToolAcks` et injectent des messages
 `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, server?,
 name?, error?, resolved?, mime?, size?, args?, result?, ts?, group?,
-assistantText?, intent? }` dans `currentThread`.
+assistantText?, intent?, slug?, convId? }` dans `currentThread`.
+⚠ **Trois copies** de cette whitelist de champs coexistent (`onToolAcks`,
+`onEarlyAcks` dans main.js, et `openConversation`/`persistCurrent` pour la
+persistance) : un champ ajouté à un `kind` doit être répercuté dans **toutes**
+les copies pertinentes, sinon il est silencieusement perdu au premier rendu
+live ou à la première réouverture (piège déjà payé avec `convId`/`slug`).
 
 Les champs `args` (objet d'arguments), `result` (résultat aplati par
 `flattenToolResult`), `ts` (epoch ms de l'appel), `group` (id partagé par
@@ -74,25 +79,39 @@ réinjection cross-turn** — voir `expandThread` ci-dessous. Ils sont posés
 par le hook `onEnrichLastAck` (main.js), appelé après chaque outil par api.js,
 et doivent être préservés par `persistCurrent` / `openConversation`.
 `intent` (texte de `miaou_intent`) était d'abord réservé à `mcp_call`
-(breadcrumb à deux niveaux, cf. `renderLabel` ci-dessous) ; il est désormais
-capturé pour **tous** les outils internes aussi (`callTool`, tools.js, branche
-`miaou`/nue) via `updateLastPendingToolAck` — extrait des args **avant** le
-strip de `miaou_intent`, attaché au dernier ack en attente. Cas particulier :
-un handler qui pousse son ack **après** résolution d'une Promise (ex.
-`skills__read`) ne peut pas être enrichi avant que cette Promise ne se résolve
-— `callTool` attend donc cette résolution dans ce cas précis avant d'attacher
-`intent`. Rendu pour `conversation_list` : simple préfixe textuel
-`"<intent> : "` dans son `label` (ACK_KINDS, ui.js) — volontairement plus sobre
-que le rendu à deux niveaux de `mcp_call` (pas de chevron/détail replié).
+(rendu à deux niveaux, cf. `renderLabel`/`renderIntentTwoLevel` ci-dessous) ;
+il est désormais capturé pour **tous** les outils internes aussi (`callTool`,
+tools.js, branche `miaou`/nue) via `updateLastPendingToolAck` — extrait des
+args **avant** le strip de `miaou_intent`, attaché au dernier ack en attente.
+Cas particulier : un handler qui pousse son ack **après** résolution d'une
+Promise (ex. `skills__read`) ne peut pas être enrichi avant que cette Promise
+ne se résolve — `callTool` attend donc cette résolution dans ce cas précis
+avant d'attacher `intent`.
+
+Rendu : `mcp_call`, `conversation_list`, `skill_list`, `conversation_read` et
+`skill_read` partagent tous le même rendu à deux niveaux quand `m.intent` est
+présent — intention en langage naturel (niveau 1, visible) + détail technique
+(niveau 2, replié par défaut derrière un chevron `mcp-chevron`), via le helper
+`renderIntentTwoLevel(el, intent, detailText, detailBuilder?)` (ui.js). Sans
+intent, chaque kind retombe sur son rendu simple d'origine (texte brut ou
+breadcrumb direct pour `mcp_call`). La classe `has-intent` (icône alignée en
+haut, pas centrée) s'applique dès que `m.intent` est présent, quel que soit
+le kind — pas seulement `mcp_call`.
+`conversation_read` va plus loin : son détail replié rend le titre de la
+conversation sous forme de lien cliquable (`.ack-conv-link`, `onclick =>
+openConversation(m.convId)`), donc `convId` doit être renseigné par le
+handler (`get_conversation`, tools.js) et préservé dans toutes les whitelists
+de champs (voir avertissement ci-dessus).
 
 La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
 un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
 `(id) => void`, ou **`null`** = variante informative), une icône SVG statique,
 optionnellement `renderLabel(m, labelEl)` pour les kinds nécessitant un rendu DOM
-riche (breadcrumb avec `<code>` et séparateur — `mcp_call` uniquement), et
-optionnellement `expand(m, containerEl)` pour les kinds avec contenu dépliable au
-clic (chip « voir »/« masquer » avec rendu paresseux — aucun kind ne l'utilise
-actuellement ; le mécanisme est en place pour une extension future).
+riche (rendu à deux niveaux via `renderIntentTwoLevel`, breadcrumb `<code>` pour
+`mcp_call`, lien cliquable pour `conversation_read`), et optionnellement
+`expand(m, containerEl)` pour les kinds avec contenu dépliable au clic (chip
+« voir »/« masquer » avec rendu paresseux — aucun kind ne l'utilise actuellement ;
+le mécanisme est en place pour une extension future).
 `buildToolAck` appelle `spec.renderLabel` si présent, sinon `label.textContent` ;
 si `spec.expand` est présent et `!m.resolved`, ajoute le chip expandable.
 Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au renderer.

@@ -23,8 +23,16 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
    tool-ack (icône + label) apparaissent dans la bulle assistant, entre l'en-tête
    et la réponse. Les acks de lecture n'ont pas de bouton « annuler ». Rechargement
    → acks toujours présents. Avec `intentTracing` activé et le modèle fournissant
-   `miaou_intent`, le label de l'ack `conversation_list` est préfixé par
-   `"<intent> : "` (ex. « retrouver la conv sur X : 3 conversations listées »).
+   `miaou_intent`, l'ack `conversation_list`/`conversation_read` (et `skill_list`/
+   `skill_read`) passe en rendu à deux niveaux : intention en langage naturel sur
+   la première ligne, icône alignée en haut (pas centrée), chevron cliquable qui
+   déplie/replie une seconde ligne de détail technique (ex. « 3 conversations
+   listées » pour `conversation_list`, ou « Conversation consultée › <titre> »
+   pour `conversation_read`). Pour `conversation_read`, le titre dans cette
+   ligne de détail est un lien cliquable (couleur héritée, teinte accent au
+   survol, pas de soulignement) qui ouvre la conversation référencée — vérifier
+   que le clic fonctionne aussi bien juste après l'appel outil (rendu live) qu'après
+   rechargement (conversation rouverte depuis l'historique).
 4b. **`list_conversations` avec `query`** : demander « cherche dans mes anciennes
     conversations celles qui parlent de X » avec plusieurs conversations résumées
     en historique, dont une pertinente et une non pertinente sur X → le modèle
@@ -108,6 +116,20 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     réglages → la description textuelle redondante des outils apparaît dans le
     message système (vérifiable dans le payload réseau). La doctrine mémoire est
     toujours présente indépendamment de ce toggle.
+17. **Titrage automatique et régénération manuelle** : nouvelle conversation, 1ʳᵉ
+    Q/R → titre auto-généré (barre du haut + sidebar). Provoquer une conversation
+    **sans titre** (stop du streaming en cours de réponse via le bouton composer,
+    ou réponse assistant trop courte, sous le seuil de substance) → la conversation
+    reste « Nouvelle conversation » partout. Sortir de la conversation puis y
+    revenir (liste des conversations) : le titre reste absent (pas de retitrage à
+    la simple réouverture). Éditer le premier message **ou** envoyer un tour
+    supplémentaire dans cette même conversation rouverte → le titrage se déclenche
+    normalement après la réponse suivante (régression sinon : titrage bloqué à vie
+    pour toute conversation restée sans titre). Bouton de régénération (icône
+    topbar à côté du titre, visible au survol de la zone titre) : cliquer sur une
+    conversation déjà titrée (manuellement ou automatiquement) → le titre est
+    remplacé par un nouveau titre généré ; le titre devient non éditable pendant
+    l'appel puis se déverrouille.
 
 ## Agrégation MCP distante (V2)
 
