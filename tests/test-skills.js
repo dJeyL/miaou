@@ -213,6 +213,16 @@ describe('miaou__skills__list — outil', function() {
     expect(acks[0].kind).toBe('skill_list');
     expect(acks[0].count).toBe(2);   // 'off' désactivé exclu
   });
+  it('ackLabel skill_list : branches 0 / 1 / n / null', function() {
+    expect(ackLabel('skill_list', { count: 0 })).toContain('Aucune');
+    expect(ackLabel('skill_list', { count: 1 })).toBe('1 skill listée');
+    expect(ackLabel('skill_list', { count: 3 })).toBe('3 skills listées');
+    expect(ackLabel('skill_list', {})).toContain('?');
+  });
+  it('ackLabel skill_list : intent préfixe le libellé', function() {
+    expect(ackLabel('skill_list', { count: 3, intent: 'trouver un outil' })).toBe('trouver un outil : 3 skills listées');
+    expect(ackLabel('skill_list', { count: 0, intent: 'trouver un outil' })).toBe('trouver un outil : Aucune skill disponible');
+  });
 });
 
 describe('miaou__skills__read — chemins d\'erreur synchrones', function() {

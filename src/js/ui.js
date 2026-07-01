@@ -392,9 +392,10 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_LIST,
     label: m =>
+      (m.intent ? m.intent + ' : ' : '') + (
         m.count === 0 ? 'Aucune skill disponible'
       : m.count === 1 ? '1 skill listée'
-      : (m.count != null ? m.count : '?') + ' skills listées',
+      : (m.count != null ? m.count : '?') + ' skills listées'),
   },
   // Lecture d'un skill par le modèle (miaou__skills__read) : informatif, pas d'undo
   // (lecture, pas une mutation d'état — même posture que conversation_read).

@@ -112,7 +112,7 @@ l'interface, JetBrains Mono pour le code.
 
 ```bash
 cp config.sample.json config.json   # première fois, puis éditer
-python3 build.py                     # → dist/miaou.html
+python3 build.py                    # → dist/miaou.html
 ```
 
 `config.json` est local et **non versionné** — chacun renseigne sa propre
@@ -144,7 +144,7 @@ build.
 ## Tests
 
 Fonctions pures testées via QuickJS (pas de `fetch` réel : le réseau se vérifie
-à la main, cf. [tests/MANUAL.md](tests/MANUAL.md)). La seule dépendance de
+à la main, cf. [docs/manual-tests.md](docs/manual-tests.md)). La seule dépendance de
 développement est `quickjs`.
 
 Avec `uv` (recommandé) :
@@ -163,13 +163,13 @@ python tests/runner.py
 Pour exercer la délégation MCP distante (chemin réseau, non couvert par QuickJS),
 utiliser le serveur de banc d'essai du projet `miaou-mcp-servers` puis l'ajouter
 dans Paramètres → Serveurs MCP. Procédure détaillée dans
-[tests/MANUAL.md](tests/MANUAL.md).
+[docs/manual-tests.md](docs/manual-tests.md).
 
 ## Architecture
 
 ```
 src/
-├── html/index.html   squelette + placeholders /* __CSS__ */ et /* __JS__ */
+├── html/index.html    squelette + placeholders /* __CSS__ */ et /* __JS__ */
 ├── css/main.css       thème complet
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
