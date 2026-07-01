@@ -80,6 +80,25 @@ function scoreSummary(queryTokens, summary) {
   return score;
 }
 
+// ── Références de conversation dans le texte du modèle ──────────────────────
+// Le modèle cite une conversation passée via [conv_ref:ID] ou [conv_ref:ID|Titre]
+// (doctrine CONV_REF_DOCTRINE, tools.js) plutôt que d'exposer l'ID brut. Extrait
+// tous les marqueurs présents dans une chaîne — fonction pure, le titre est
+// optionnel (résolu côté appelant si absent, via l'index des résumés).
+// N'utilise pas de lookahead/lookbehind variable : split sur le SEUL séparateur
+// `|`, le titre peut donc contenir `:` sans ambiguïté mais jamais `|` ni `]`.
+const CONV_REF_RE = /\[conv_ref:([^\|\]]+)(?:\|([^\]]*))?\]/g;
+
+function parseConvRefs(text) {
+  const out = [];
+  const re = new RegExp(CONV_REF_RE.source, 'g');
+  let m;
+  while ((m = re.exec(String(text))) !== null) {
+    out.push({ match: m[0], id: m[1], title: m[2] || null });
+  }
+  return out;
+}
+
 // ── Téléchargement côté client ───────────────────────────────────────────────
 // Crée un Blob, génère une URL objet éphémère, déclenche le téléchargement via
 // un <a download> invisible, puis révoque l'URL. Fonctionne sous file:// et derrière

@@ -155,6 +155,28 @@ describe('list_conversations', function() {
     expect(pending[0].kind).toBe('conversation_list');
     expect(pending[0].count).toBe(1);
   });
+  it('exclut la conversation courante (currentConvId)', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't1', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
+    saveSummary('c2', { title: 't2', timestamp: Date.parse('2026-03-02T00:00:00Z'), summary: 's', keywords: [] });
+    currentConvId = 'c1';
+    try {
+      var r = JSON.parse(ct('list_conversations', {}));
+      expect(r.length).toBe(1);
+      expect(r[0].id).toBe('c2');
+    } finally {
+      currentConvId = null;
+    }
+  });
+  it('miaou_intent (outil interne) enrichit l\'ack et n\'atteint jamais le handler', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    saveSummary('c1', { title: 't', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
+    ct('list_conversations', { since: '2000-01-01T00:00:00Z', miaou_intent: 'retrouver la conv sur X' });
+    var pending = getPendingToolAcks();
+    expect(pending.length).toBe(1);
+    expect(pending[0].intent).toBe('retrouver la conv sur X');
+  });
 });
 
 describe('acks d\'outils — helpers', function() {
@@ -186,6 +208,10 @@ describe('acks d\'outils — helpers', function() {
     expect(ackLabel('conversation_list', { count: 1 })).toBe('1 conversation listée');
     expect(ackLabel('conversation_list', { count: 3 })).toBe('3 conversations listées');
     expect(ackLabel('conversation_list', {})).toContain('?');
+  });
+  it('ackLabel conversation_list : intent préfixe le libellé', function() {
+    expect(ackLabel('conversation_list', { count: 3, intent: 'retrouver X' })).toBe('retrouver X : 3 conversations listées');
+    expect(ackLabel('conversation_list', { count: 0, intent: 'retrouver X' })).toBe('retrouver X : Aucune conversation trouvée');
   });
   it('ackLabel mcp_call : breadcrumb avec les deux segments', function() {
     var lbl = ackLabel('mcp_call', { name: 'bench__echo' });

@@ -40,6 +40,22 @@ let needTitle = false;    // titrage auto en attente (conversation neuve)
 let titleBefore = '';
 let currentConvModel = '';  // override de modèle de la conversation courante ('' = modèle par défaut)
 
+// ── Résumé sur inactivité ────────────────────────────────────────────────────
+// Durée d'inactivité utilisateur avant déclenchement d'un résumé de la
+// conversation courante (si substance). Réarmée à chaque activité (frappe
+// composer, envoi, changement de conversation, fin de réponse assistant).
+const IDLE_SUMMARY_MS = 60000;
+let _idleSummaryTimer = null;
+
+function armIdleSummaryTimer() {
+  if (_idleSummaryTimer) clearTimeout(_idleSummaryTimer);
+  _idleSummaryTimer = setTimeout(() => {
+    _idleSummaryTimer = null;
+    if (sending) return;   // pas de résumé pendant un stream en cours
+    summarizeIfNeeded(currentConvId);
+  }, IDLE_SUMMARY_MS);
+}
+
 // Modèle effectif pour l'échange courant : override de conversation s'il existe,
 // sinon le modèle par défaut des réglages. Ne JAMAIS mélanger les deux dans une
 // même variable d'état (override conv vs défaut global).
@@ -208,6 +224,7 @@ function selectConv(id) {
   const leaving = currentConvId;
   openConversation(id);
   summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+  armIdleSummaryTimer();
   if (isMobileLayout()) closeSidebarMobile();
 }
 
@@ -217,6 +234,7 @@ function newConversation() {
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
   summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+  armIdleSummaryTimer();
 }
 
 function togglePin(id) {
@@ -581,6 +599,7 @@ function sendUserText(text, bakedContent) {
   if (bakedContent != null) msg.displayText = text;
   currentThread.push(msg);
   persistCurrent();
+  armIdleSummaryTimer();
 
   runGenerationFromCurrentThread();
 }
@@ -753,6 +772,7 @@ async function dispatchSend(matches) {
           if (ack.prevContent != null)   entry.prevContent = ack.prevContent;
           if (ack.title != null)         entry.title = ack.title;
           if (ack.count != null)         entry.count = ack.count;
+          if (ack.intent != null)        entry.intent = ack.intent;
           // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
           // via le hook onEnrichLastAck, après exécution de chaque outil interne).
           if (ack.name != null)           entry.name = ack.name;
@@ -835,6 +855,7 @@ async function dispatchSend(matches) {
     setConnDot('err');
   } finally {
     setSending(false);
+    armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
   }
 }
 
@@ -969,10 +990,31 @@ function init() {
     }
   });
 
+  // Résumé sur inactivité : toute frappe/clic n'importe où dans l'app (composer,
+  // édition d'un message passé, titre de conversation, réglages, cartes MCP/skills…)
+  // réarme le timer. Délégation globale plutôt qu'un handler par point de saisie
+  // (plusieurs zones éditables sont créées dynamiquement, sans oninput= dédié).
+  document.addEventListener('input', armIdleSummaryTimer);
+  document.addEventListener('keydown', armIdleSummaryTimer);
+  document.addEventListener('click', armIdleSummaryTimer);
+
+  // Délégation unique pour les liens [conv_ref:ID] résolus par resolveConvRefs
+  // (ui.js) en <a href="#miaou-conv:ID">. Un seul listener, posé une fois, plutôt
+  // qu'un onclick par lien reconstruit à chaque rendu.
+  $('messages').addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#miaou-conv:"]');
+    if (!a) return;
+    e.preventDefault();
+    if (sending) return;   // pas de navigation pendant un stream en cours
+    const id = decodeURIComponent(a.getAttribute('href').slice('#miaou-conv:'.length));
+    selectConv(id);
+  });
+
   prefetchModels();      // liste des modèles (cache session) → sélecteur composer
   reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
   loadSkillsCache();     // méta des skills en mémoire → autocomplétion + outils
   runBackfill();         // auto-gardé sur la présence d'URL
+  armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
 }
 
 if (typeof __TEST_ENV__ === 'undefined') {

@@ -499,6 +499,7 @@ body {
 .body a:hover { border-bottom-color: var(--accent); }
 .body strong { font-weight: 600; color: var(--text); }
 .body em { color: var(--text-2); }
+.body del { color: var(--text-3); }   /* référence conv_ref vers une conversation supprimée */
 .body blockquote {
   border-left: 2px solid var(--border-2);
   padding: 2px 0 2px 14px;
@@ -2154,20 +2155,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-06-30 22:32 UTC */
-
+/* miaou — built: 2026-07-01 19:24 UTC */
 
 /* ── utils.js ── */
 
 'use strict';
-
-/* ── utils.js ──────────────────────────────────────────────────────────────
-   Fonctions pures (ou quasi pures) : échappement, helpers DOM élémentaires,
-   tokenisation, scoring, parsing défensif. Aucune logique réseau/persistance.
-   Tout est en déclarations `function` ou `const` de portée script : le build
-   concatène ces fichiers dans un seul <script>, l'ordre des dépendances est
-   garanti par build.py.
-   ────────────────────────────────────────────────────────────────────────── */
 
 function escHtml(s) {
   return String(s)
@@ -2177,19 +2169,14 @@ function escHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-// ── Acks d'outils (journal client persistant des appels d'outils) ────────────
-// Reconnaît le rôle d'ack neuf ('tool-ack') et l'ancien ('memory-ack', jamais
-// réécrit — pas de migration silencieuse).
 function isAckRole(role) { return role === 'tool-ack' || role === 'memory-ack'; }
 
-// Dérive le kind canonique : entrée neuve (kind) ou legacy (ackType → memory_*).
 function ackKindOf(m) {
   if (m.kind) return m.kind;
-  if (m.ackType) return 'memory_' + m.ackType; // legacy : 'create'|'update'|'delete'
+  if (m.ackType) return 'memory_' + m.ackType; 
   return null;
 }
 
-// Place le caret en fin de contenu d'un élément contenteditable.
 function placeCaretEnd(el) {
   const range = document.createRange();
   range.selectNodeContents(el);
@@ -2199,7 +2186,6 @@ function placeCaretEnd(el) {
   sel.addRange(range);
 }
 
-// Auto-grandissement d'un <textarea> jusqu'à une hauteur max.
 function autoGrow(el) {
   el.style.height = 'auto';
   el.style.overflowY = 'hidden';
@@ -2208,10 +2194,8 @@ function autoGrow(el) {
   el.style.overflowY = h >= 168 ? 'auto' : 'hidden';
 }
 
-// ── Tokenisation / scoring (recherche mémoire) ──────────────────────────────
-
 const STOPWORDS = new Set([
-  // français
+  
   'le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'et', 'ou', 'à', 'en',
   'dans', 'pour', 'sur', 'avec', 'que', 'qui', 'quoi', 'dont', 'où', 'ce',
   'cet', 'cette', 'ces', 'je', 'tu', 'il', 'elle', 'on', 'nous', 'vous',
@@ -2219,7 +2203,7 @@ const STOPWORDS = new Set([
   'tes', 'au', 'aux', 'par', 'pas', 'ne', 'plus', 'est', 'sont', 'être',
   'avoir', 'fait', 'comme', 'mais', 'donc', 'car', 'si', 'leur', 'leurs',
   'tout', 'tous', 'toute', 'toutes', 'cela', 'ceci',
-  // anglais courant (les modèles répondent parfois en anglais)
+  
   'the', 'and', 'or', 'for', 'with', 'that', 'this', 'are', 'was', 'you',
   'your', 'from', 'have', 'has', 'not', 'but', 'can', 'will', 'into',
 ]);
@@ -2229,7 +2213,6 @@ function tokenize(text) {
     .filter(t => t.length > 2 && !STOPWORDS.has(t));
 }
 
-// Recouvrement pondéré : un keyword vaut 2, un mot du texte/titre vaut 1.
 function scoreSummary(queryTokens, summary) {
   const kw  = new Set((summary.keywords || []).map(k => String(k).toLowerCase()));
   const txt = new Set(tokenize((summary.summary || '') + ' ' + (summary.title || '')));
@@ -2241,11 +2224,18 @@ function scoreSummary(queryTokens, summary) {
   return score;
 }
 
-// ── Téléchargement côté client ───────────────────────────────────────────────
-// Crée un Blob, génère une URL objet éphémère, déclenche le téléchargement via
-// un <a download> invisible, puis révoque l'URL. Fonctionne sous file:// et derrière
-// un reverse-proxy (Caddy). N'est pas un outil LLM — appelé uniquement par des
-// handlers de boutons.
+const CONV_REF_RE = /\[conv_ref:([^\|\]]+)(?:\|([^\]]*))?\]/g;
+
+function parseConvRefs(text) {
+  const out = [];
+  const re = new RegExp(CONV_REF_RE.source, 'g');
+  let m;
+  while ((m = re.exec(String(text))) !== null) {
+    out.push({ match: m[0], id: m[1], title: m[2] || null });
+  }
+  return out;
+}
+
 function downloadFile(filename, content, mimeType) {
   const blob = new Blob([content], { type: mimeType || 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -2258,7 +2248,6 @@ function downloadFile(filename, content, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-// Correspondance langage de bloc de code → extension de fichier.
 const LANG_TO_EXT = {
   python: 'py', py: 'py',
   javascript: 'js', js: 'js',
@@ -2286,10 +2275,6 @@ function langExt(lang) {
   return LANG_TO_EXT[(lang || '').toLowerCase()] || 'txt';
 }
 
-// Décode une chaîne base64 en Uint8Array (octets bruts) pour matérialiser un
-// Blob binaire côté client (cf. cascade de rendu D8.3 : téléchargement éphémère
-// d'un bloc binaire renvoyé par un outil distant). atob existe en navigateur ;
-// fonction pure, pas de dépendance DOM.
 function b64ToBytes(b64) {
   const bin = atob(String(b64 || ''));
   const len = bin.length;
@@ -2298,11 +2283,6 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
-// ── Agrégation MCP : nommage, namespaces, filtres (fonctions pures) ───────────
-// Le préfixe est une VUE sur le nom canonique, jamais un stockage : tout outil
-// exposé au modèle est `prefix__name`. parseToolName splitte sur le PREMIER `__`
-// seulement — un toolName distant peut lui-même contenir `__`, un split naïf le
-// corromprait. Pas de séparateur → préfixe vide et le nom entier en toolName.
 function parseToolName(name) {
   const s = String(name || '');
   const i = s.indexOf('__');
@@ -2310,11 +2290,6 @@ function parseToolName(name) {
   return { serverPrefix: s.slice(0, i), toolName: s.slice(i + 2) };
 }
 
-// Regroupe une liste d'outils canoniques par namespace. Le namespace est formé de
-// TOUS les segments sauf le dernier ; le bareName est uniquement le dernier segment.
-// Ex : `bench__djeyl__echo` → namespace=`bench__djeyl`, bareName=`echo`.
-// Projection pure (cf. D2) : rien n'est stocké, le sous-drawer dérive l'affichage.
-// Retourne [{ namespace, tools: [{ bareName, def }] }] dans l'ordre d'apparition.
 function groupByNamespace(tools) {
   const order = [];
   const map = {};
@@ -2329,20 +2304,12 @@ function groupByNamespace(tools) {
   return order.map(ns => ({ namespace: ns, tools: map[ns] }));
 }
 
-// Devine le transport MCP d'après le chemin d'URL (cf. D4). PRÉ-REMPLISSAGE
-// uniquement, jamais un override : l'appelant ne s'en sert que si le champ
-// transport n'est pas explicitement renseigné. `/sse` → 'sse', sinon (dont
-// `/mcp`) → 'streamable-http' par défaut.
 function guessMcpTransport(url) {
   const u = String(url || '');
   if (/\/sse\/?($|\?)/.test(u)) return 'sse';
   return 'streamable-http';
 }
 
-// Valide le `name` local d'un serveur MCP (devient le préfixe d'outil envoyé au
-// modèle). Charset contraint, pas d'espace, pas de `__` (réservé au séparateur),
-// `miaou` interdit (anti-usurpation des outils internes), unicité. Retourne une
-// chaîne d'erreur (français) ou null si valide.
 function validateMcpServerName(name, existingNames) {
   const n = String(name || '').trim();
   if (!n) return 'Nom requis.';
@@ -2353,10 +2320,6 @@ function validateMcpServerName(name, existingNames) {
   return null;
 }
 
-// Filtre les outils d'un serveur au moment du merge (cf. D7). allowlist/denylist
-// portent sur le nom NU de l'outil (tel que renvoyé par tools/list, avant préfixe).
-// denylist gagne en cas de conflit ; allowlist vide → tout passe ; denylist retire.
-// Fonction pure : reçoit les listes déjà normalisées en tableaux de noms nus.
 function filterMcpTools(tools, allowlist, denylist) {
   const allow = Array.isArray(allowlist) ? allowlist.filter(Boolean) : [];
   const deny  = Array.isArray(denylist)  ? denylist.filter(Boolean)  : [];
@@ -2373,13 +2336,12 @@ function filterMcpTools(tools, allowlist, denylist) {
   }
   return (tools || []).filter(t => {
     const bare = t && t.name;
-    if (matches(bare, deny)) return false;            // denylist gagne
+    if (matches(bare, deny)) return false;            
     if (allow.length && !matches(bare, allow)) return false;
     return true;
   });
 }
 
-// Normalise un champ texte de filtre (saisi en CSV/lignes) en tableau de noms nus.
 function parseToolFilterList(raw) {
   return String(raw || '')
     .split(/[\n,]+/)
@@ -2387,32 +2349,21 @@ function parseToolFilterList(raw) {
     .filter(Boolean);
 }
 
-// ── Horodatages des messages ─────────────────────────────────────────────────
-
-const SHOW_YEAR_AFTER_DAYS = 183; // ≈ 6 mois ; augmenter à 365 pour 12 mois
+const SHOW_YEAR_AFTER_DAYS = 183; 
 
 const FR_DAYS_ABBR = ['dim','lun','mar','mer','jeu','ven','sam'];
 const FR_DAYS_FULL = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
 const FR_MONTHS_FULL = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
 
-// Formate HH:MM à partir d'un objet Date, sans Intl (deterministe, testable sous QuickJS).
 function _tsHHMM(d) {
   const h = d.getHours(), m = d.getMinutes();
   return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
 }
 
-// Minuit local (DST-safe) : new Date(y,m,d) évite les soustractions brutes d'epoch.
 function _startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-// Horodatage court par tiers calendaires (cf. brief D5). `now` est injecté (epoch ms)
-// pour être testable de façon déterministe sous QuickJS. Renvoie '' si ts est absent.
-// - même jour calendaire → "08:54"
-// - veille               → "hier à 17:28"
-// - récent (< SHOW_YEAR_AFTER_DAYS) → "mar 25/09 à 14:30"
-// - ancien               → "mar 25/09/2023 à 14:30"
-// "Hier" est un écart calendaire (minuit/minuit), pas une fenêtre glissante de 24h.
 function formatMessageTime(ts, now) {
   if (!ts || !now) return '';
   const d = new Date(ts);
@@ -2433,10 +2384,6 @@ function formatMessageTime(ts, now) {
   return dayName + ' ' + dd + '/' + mm + ' à ' + hhmm;
 }
 
-// Date relative, sans composante horaire. `now` injecté (epoch ms) pour QuickJS.
-// Tiers : aujourd'hui / hier / avant-hier / "3 mars" / "12 janvier 2024".
-// Math.round (pas floor) : traversée DST spring/autumn → écart réel 23h ou 25h,
-// round absorbe le ±1h et donne l'écart calendaire exact.
 function formatDateRelative(ts, now) {
   if (!ts || !now) return '';
   const d = new Date(ts);
@@ -2451,8 +2398,6 @@ function formatDateRelative(ts, now) {
   return day + ' ' + month;
 }
 
-// Horodatage complet en français pour les tooltips de la sidebar (cf. brief D6).
-// Ex : "jeudi 26 juin 2026 à 14:30". Toujours avec l'année.
 function formatFullDateFr(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -2460,21 +2405,12 @@ function formatFullDateFr(ts) {
     FR_MONTHS_FULL[d.getMonth()] + ' ' + d.getFullYear() + ' à ' + _tsHHMM(d);
 }
 
-// ── Reconstruction du payload API depuis currentThread ───────────────────────
-
-// Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
-// La valeur est figée à l'instant de l'appel ; le modèle en infère l'ancienneté
-// via le "now" déjà présent dans <miaou_context>. NE PAS recalculer à chaque
-// envoi (mutation → busteRait le KV cache de tout le préfixe history).
 function stampTs(ts, result) {
   var s = result != null ? String(result) : '';
   if (!ts) return s;
   return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
 }
 
-// ── Export Markdown : traces d'appels d'outils ───────────────────────────────
-// Seuils de troncature pour l'export (lisibilité du .md, pas de limite côté
-// modèle/stockage — ceux-ci restent intacts en mémoire et en storage).
 const EXPORT_ARGS_MAX = 300;
 const EXPORT_RESULT_MAX = 300;
 const EXPORT_RESNAME_MAX = 60;
@@ -2484,9 +2420,6 @@ function _truncMd(s, max) {
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
-// Représentation textuelle d'un appel d'outil pour l'export (un seul ack,
-// déjà enrichi : args/result présents). `m.name` peut être préfixé
-// (`miaou__create_memory`) ou breadcrumb distant (`server__tool`) — affiché tel quel.
 function _formatToolCallMd(m) {
   const lines = [];
   const head = m.intent ? '`' + m.name + '` — ' + m.intent : '`' + m.name + '`';
@@ -2505,8 +2438,6 @@ function _formatToolCallMd(m) {
   return lines;
 }
 
-// Bloc Markdown (blockquote) pour un groupe d'acks enrichis d'un même tour.
-// Un seul appel → "Outil appelé :" ; plusieurs → "Outils appelés (n) :" en liste numérotée.
 function formatToolAcksMd(acks) {
   if (!acks || !acks.length) return '';
   const lines = [];
@@ -2522,28 +2453,16 @@ function formatToolAcksMd(acks) {
       for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
     });
   }
-  // Saut de ligne forcé (2 espaces de fin) sur chaque ligne sauf la dernière :
-  // sans ça, des lignes "> " consécutives sans paragraphe vide entre elles
-  // sont fusionnées par le parser Markdown (intent et "Arguments" collés sur
-  // la même ligne rendue).
+  
   return lines.map((l, i) => i < lines.length - 1 ? l + '  ' : l).join('\n');
 }
 
-// DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].
-// Utilisé pour générer des tool_call_id déterministes et compatibles avec les
-// backends qui imposent [a-zA-Z0-9] longueur 9 (ex. Mistral).
 function _hashId9(s) {
   var h = 5381;
   for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
   return h.toString(36).padStart(9, '0').substring(0, 9);
 }
 
-// Reconstruit un tableau de messages OpenAI depuis currentThread.
-// Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
-// Acks legacy (sans args) → élagués comme avant (compat ascendante).
-// Si le premier ack d'un groupe porte assistantText, le message assistant
-// standalone qui le précède immédiatement est absorbé dans le content de
-// l'assistant expansé pour éviter la duplication.
 function expandThread(thread) {
   var out = [];
   var i = 0;
@@ -2562,7 +2481,7 @@ function expandThread(thread) {
           }
         }
         var assistantText = groupAcks[0].assistantText != null ? groupAcks[0].assistantText : null;
-        // Absorber le standalone assistant précédent si son content correspond
+        
         if (assistantText && out.length &&
             out[out.length - 1].role === 'assistant' &&
             out[out.length - 1].content === assistantText &&
@@ -2585,7 +2504,7 @@ function expandThread(thread) {
         }
         i = j;
       } else {
-        i++;   // ack legacy non enrichi : élagué
+        i++;   
       }
     } else {
       out.push({ role: m.role, content: m.content });
@@ -2595,9 +2514,6 @@ function expandThread(thread) {
   return out;
 }
 
-// ── Parsing défensif du JSON de résumé ──────────────────────────────────────
-// Le modèle enrobe parfois sa réponse de fences ```json … ```. On nettoie,
-// puis on tente JSON.parse ; en cas d'échec on renvoie null sans planter.
 function parseSummaryJSON(raw) {
   if (!raw) return null;
   let s = String(raw).trim();
@@ -2612,43 +2528,25 @@ function parseSummaryJSON(raw) {
   let obj = tryParse(s);
   if (obj) return obj;
 
-  // Repli : extraire le premier objet {…} noyé dans de la prose ou suivi de texte.
   const first = s.indexOf('{');
   const last = s.lastIndexOf('}');
   if (first >= 0 && last > first) obj = tryParse(s.slice(first, last + 1));
   return obj;
 }
 
-
 /* ── storage.js ── */
-
-/* ── storage.js ────────────────────────────────────────────────────────────
-   Persistance localStorage : réglages, historique des conversations, index
-   des résumés (avec tombstones réversibles). Trois clés distinctes.
-   ────────────────────────────────────────────────────────────────────────── */
 
 const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-// Config injectée au build : un seul marqueur (le jeton en position de valeur
-// ligne suivante), l'objet config.json entier (build.py le sérialise en JSON,
-// qui est un littéral objet JS valide). Forme tolérante via try : si le marqueur
-// n'a pas été remplacé (sources non buildées, ex. tests QuickJS), c'est un
-// identifiant nu → ReferenceError attrapée → {} → les défauts ci-dessous.
-// Marqueur à occurrence unique, en position de valeur, pour ne pas être
-// substitué deux fois (ne jamais réécrire son nom littéral en commentaire : le
-// .replace de build.py est global). Toutes les valeurs
-// dérivées sont déclarées ici (même fichier) : un `const` ne franchit pas les
-// frontières de fichier dans le test runner, on ne les référence ailleurs qu'en
-// corps de fonction. cf. CLAUDE.md « Pipeline de build ».
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782858732}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1782933841}; } catch (e) { return {}; } })();
 
-const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
+const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
-const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   
 
 const DEFAULT_SETTINGS = {
   url: '',
@@ -2656,17 +2554,15 @@ const DEFAULT_SETTINGS = {
   model: '',
   systemPrompt: '',
   highlight: true,
-  summaryInjectionMode: 'propose',   // 'auto' | 'propose' | 'never'
-  theme: 'system',         // 'light' | 'dark' | 'system'
-  showModelSelector: false, // sélecteur de modèle dans le composer
-  sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
-  includeToolsInSystemPrompt: false, // injecter toolsSystemPrompt() dans le message système
-  saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
-  intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
-  confirmSkillAutoUse: true, // ask_confirmation avant d'agir sur une skill lue (stage 2 autotrigger)
+  summaryInjectionMode: 'propose',   
+  theme: 'system',         
+  showModelSelector: false, 
+  sidebarWidth: 264,       
+  includeToolsInSystemPrompt: false, 
+  saveJsonResponses: false, 
+  intentTracing: true,      
+  confirmSkillAutoUse: true, 
 };
-
-// ── Réglages ────────────────────────────────────────────────────────────────
 
 function loadSettingsRaw() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }
@@ -2675,7 +2571,7 @@ function loadSettingsRaw() {
 
 function loadSettings() {
   const s = Object.assign({}, DEFAULT_SETTINGS, loadSettingsRaw());
-  // Défauts de build seulement si l'utilisateur n'a rien saisi.
+  
   if (!s.url   && BUILD_API_URL)   s.url   = BUILD_API_URL;
   if (!s.model && BUILD_API_MODEL) s.model = BUILD_API_MODEL;
   return s;
@@ -2687,18 +2583,9 @@ function saveSettings(obj) {
   return next;
 }
 
-// ── Serveurs MCP distants ─────────────────────────────────────────────────────
-// Configuration des backends MCP délégués (cf. brief D3). Tableau d'objets :
-//   { name, url, transport, enabled, authorization_token?, timeout,
-//     toolAllowlist?, toolDenylist? }
-// `name` est le préfixe d'outil (unique, charset contraint, `miaou` interdit).
-// Le token est stocké EN CLAIR (posture assumée non-prod, cf. D6) : tout ce que
-// JS peut lire, un XSS le peut ; un chiffrement client a besoin d'une clef
-// client, donc ne protège pas le secret. Le correctif prod est un proxy
-// (token côté serveur), hors périmètre V2.
 const MCP_SERVERS_KEY = 'miaou-mcp-servers';
 
-const MCP_DEFAULT_TIMEOUT = 30000;   // ms (cf. D3/D5) ; éditable par serveur
+const MCP_DEFAULT_TIMEOUT = 30000;   
 
 function loadMcpServers() {
   try {
@@ -2712,8 +2599,6 @@ function saveMcpServers(arr) {
   return arr;
 }
 
-// Normalise un serveur saisi : défauts de transport/timeout/enabled, filtres en
-// tableaux de noms nus. Ne valide PAS le nom (cf. validateMcpServerName, utils).
 function normalizeMcpServer(s) {
   const o = s || {};
   return {
@@ -2729,7 +2614,6 @@ function normalizeMcpServer(s) {
   };
 }
 
-// Insère ou remplace un serveur par `name` (clé d'identité). Retourne le tableau.
 function upsertMcpServer(server) {
   const next = normalizeMcpServer(server);
   const arr = loadMcpServers();
@@ -2752,9 +2636,6 @@ function getMcpServer(name) {
 function listEnabledMcpServers() {
   return loadMcpServers().filter(s => s.enabled !== false && s.url);
 }
-
-// ── Conversations ───────────────────────────────────────────────────────────
-// Stockage simple : un tableau d'objets { id, title, timestamp, messages }.
 
 function loadConversations() {
   try { return JSON.parse(localStorage.getItem(CONV_KEY)) || []; }
@@ -2787,8 +2668,6 @@ function deleteConversation(id) {
   persistConversations(loadConversations().filter(c => c.id !== id));
 }
 
-// Épingle/désépingle une conversation. Retourne le nouvel état (bool) ou null
-// si la conversation n'existe pas (création à la volée pas encore matérialisée).
 function toggleConversationPin(id) {
   const arr = loadConversations();
   const c = arr.find(x => x.id === id);
@@ -2798,10 +2677,6 @@ function toggleConversationPin(id) {
   return c.pinned;
 }
 
-// Substance réelle : au moins un échange complet (≥1 user ET ≥1 assistant) au
-// contenu non trivial. Le but est d'écarter une conversation à peine née ou
-// avortée (pas de vraie réponse), pas d'exiger plusieurs allers-retours — sans
-// quoi les conversations courantes en 1 Q/R ne seraient jamais résumées.
 function hasSubstance(messages) {
   if (!Array.isArray(messages)) return false;
   let u = 0, a = 0;
@@ -2813,11 +2688,6 @@ function hasSubstance(messages) {
   }
   return u >= 1 && a >= 1;
 }
-
-// ── Index des résumés (miaou-summaries) ─────────────────────────────────────
-// Entrée présente : { id, title, timestamp, summary, keywords, messageCount }
-// Tombstone        : { id, suppressed: true }   ← compte comme « présente »
-// Absente          : candidate au backfill / à la génération en sortie.
 
 function loadSummaries() {
   try { return JSON.parse(localStorage.getItem(SUMMARIES_KEY)) || {}; }
@@ -2833,7 +2703,6 @@ function getSummaryEntry(id) {
   return Object.prototype.hasOwnProperty.call(all, id) ? all[id] : null;
 }
 
-// Toutes les entrées de l'index NON tombstonées, sous forme de tableau.
 function listSummaryEntries() {
   return Object.values(loadSummaries()).filter(e => e && !e.suppressed);
 }
@@ -2844,10 +2713,6 @@ function saveSummary(id, data) {
   persistSummaries(all);
 }
 
-// Suppression volontaire : pose une tombstone (réversible). On CONSERVE les
-// données du résumé (titre, texte, mots-clés, messageCount) sous le flag, pour
-// une ré-autorisation instantanée sans régénérer. Le flag suspend l'usage :
-// recherche et outils ignorent les entrées `suppressed`.
 function suppressSummary(id) {
   const all = loadSummaries();
   const prev = all[id] || { id };
@@ -2855,9 +2720,6 @@ function suppressSummary(id) {
   persistSummaries(all);
 }
 
-// Ré-autorisation : si le résumé a été conservé sous la tombstone, on retire
-// simplement le flag (retour instantané à l'état d'avant). Sinon (tombstone
-// sans données), on retire l'entrée → la conversation redevient candidate.
 function restoreSummary(id) {
   const all = loadSummaries();
   const e = all[id];
@@ -2867,27 +2729,20 @@ function restoreSummary(id) {
   persistSummaries(all);
 }
 
-// Effacement dur (utilisé quand la conversation elle-même disparaît).
 function deleteSummaryEntry(id) {
   const all = loadSummaries();
   delete all[id];
   persistSummaries(all);
 }
 
-// Candidate = absente de l'index (ni résumé, ni tombstone).
 function isSummaryCandidate(id) {
   return getSummaryEntry(id) === null;
 }
 
-// Conversations à résumer au démarrage : absentes de l'index et substantielles.
 function backfillCandidates() {
   return loadConversations().filter(c =>
     isSummaryCandidate(c.id) && hasSubstance(c.messages));
 }
-
-// ── Souvenirs utilisateur (miaou-memories) ───────────────────────────────────
-// Schéma : { id, content, created_at, updated_at, suppressed }
-// Tombstone : { ..., suppressed: true }  ← conserve content pour affichage
 
 const MEMORIES_KEY = 'miaou-memories';
 
@@ -2902,7 +2757,6 @@ function persistMemories(arr) {
   localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
 }
 
-// Entrées actives : non-supprimées.
 function listMemoryEntries() {
   return loadMemories().filter(e => e && !e.suppressed);
 }
@@ -2914,7 +2768,6 @@ function saveMemory(entry) {
   persistMemories(arr);
 }
 
-// Édition directe (utilisateur) : in-place.
 function editMemory(id, newContent) {
   const arr = loadMemories();
   const e = arr.find(x => x.id === id);
@@ -2940,21 +2793,8 @@ function forgetMemory(id) {
   persistMemories(loadMemories().filter(x => x.id !== id));
 }
 
-
 /* ── resources.js ── */
 
-/* ── resources.js ────────────────────────────────────────────────────────────
-   Stockage hybride de ressources (binaires et textuelles) issues des outils MCP.
-   Deux sections :
-   1. Helpers purs (QuickJS-testables, dépendances injectées).
-   2. Couche IDB (navigateur uniquement) + cache de session + opérations haut-niveau.
-   ──────────────────────────────────────────────────────────────────────────── */
-
-// ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
-
-// Classe d'une ressource selon son MIME : « inline » (texte/JSON réinjecté au
-// modèle à chaque tour) ou « binary » (seul un descripteur parvient au modèle).
-// Inline set : text/* et application/json. Tout le reste → binary.
 function classifyMime(mime) {
   const m = String(mime || '').toLowerCase().split(';')[0].trim();
   if (m === 'application/json') return 'inline';
@@ -2962,7 +2802,6 @@ function classifyMime(mime) {
   return 'binary';
 }
 
-// Taille lisible en anglais. Aucune dépendance Intl (testable sous QuickJS).
 function humanSize(bytes) {
   const n = Number(bytes) || 0;
   if (n < 1024) return n + ' B';
@@ -2971,20 +2810,14 @@ function humanSize(bytes) {
   return (n / 1073741824).toFixed(1) + ' GB';
 }
 
-// Descripteur statique envoyé au modèle pour les ressources binaires.
-// Déterministe, SANS composante temporelle (le modèle infère l'ancienneté via
-// le prefixe stampTs, et on ne veut pas casser le KV cache).
 function formatResourceDescriptor(rec) {
   return '[resource id=' + rec.id + ' mime=' + rec.mime +
     ' name="' + (rec.name || '') + '" size=' + humanSize(rec.size) + ']';
 }
 
-// Génère un identifiant de ressource depuis un `rand` injecté (testable).
 function generateResourceId(rand) {
   return 'res_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
 }
-
-// ── Codec base64 (hand-rolled, sans atob/btoa — QuickJS-testable) ──────────
 
 const _B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -3008,7 +2841,7 @@ function base64ToArrayBuffer(b64) {
   const len = Math.floor(s.length * 3 / 4) - pad;
   const buf = new ArrayBuffer(len);
   const bytes = new Uint8Array(buf);
-  // table de décodage
+  
   const tbl = {};
   for (let i = 0; i < _B64.length; i++) tbl[_B64[i]] = i;
   let idx = 0;
@@ -3021,8 +2854,6 @@ function base64ToArrayBuffer(b64) {
   }
   return buf;
 }
-
-// ── Codec UTF-8 (hand-rolled, sans TextEncoder/TextDecoder — QuickJS-testable)
 
 function utf8Encode(str) {
   const s = String(str == null ? '' : str);
@@ -3075,14 +2906,6 @@ function utf8Decode(buf) {
   return s;
 }
 
-// ── Partitionnement d'un résultat MCP (helper pur, QuickJS-testable) ─────────
-// Retourne un tableau de parts : { action, block, mime?, name?, text?, fromBase64? }
-// action : 'store_binary' | 'store_inline' | 'passthrough'
-//
-// DÉCISION FLAGGÉE (cf. brief §5 decision note) :
-// Les blocs {type:"text"} sont laissés en passthrough en V1 (seuil conservatif).
-// Seuls les blocs resource (avec .text ou .blob) et image/audio sont stockés.
-// Le seuil agressif (tout text→store) est déféré.
 function extractResultParts(mcpResult) {
   const parts = [];
   const content = (mcpResult && Array.isArray(mcpResult.content)) ? mcpResult.content : [];
@@ -3108,18 +2931,12 @@ function extractResultParts(mcpResult) {
         parts.push({ action: 'passthrough', block });
       }
     } else {
-      // {type:'text'}, {type:'resource_link'}, inconnu → passthrough
+      
       parts.push({ action: 'passthrough', block });
     }
   }
   return parts;
 }
-
-// ── Session cache ─────────────────────────────────────────────────────────────
-// Stocke les enregistrements IDB complets en mémoire pour accès synchrone.
-// Peuplé au chargement d'une conversation (loadConversationResources) et à chaque
-// putResource. L'ArrayBuffer data y est directement accessible pour utf8Decode et
-// arrayBufferToBase64 (present_resource synchrone).
 
 let _resourceCache = {};
 
@@ -3128,15 +2945,8 @@ function _cacheRecord(rec) { _resourceCache[rec.id] = rec; }
 function _uncacheRecord(id) { delete _resourceCache[id]; }
 function clearResourceSessionCache() { _resourceCache = {}; }
 
-// ── Helpers de référence ──────────────────────────────────────────────────────
-// Format : "[resource_ref:res_xyz]" — détectable par regex, ne contient pas de ]
-// dans l'id car base36 n'utilise pas ce caractère.
-
 function _makeResourceRef(id) { return '[resource_ref:' + id + ']'; }
 
-// Substitue tous les [resource_ref:…] dans une chaîne par leur contenu réel.
-// Inline → UTF-8 decode ; binary → descripteur statique. Synchrone (session cache).
-// Byte-identique d'un tour à l'autre car le contenu est figé à la création.
 function assembleToolResultForModel(resultStr) {
   if (!resultStr || typeof resultStr !== 'string') return resultStr || '';
   return resultStr.replace(/\[resource_ref:([^\]]+)\]/g, function(match, id) {
@@ -3147,9 +2957,6 @@ function assembleToolResultForModel(resultStr) {
   });
 }
 
-// Pre-pass sur currentThread : résout les refs dans entry.result avant expandThread.
-// Produit une copie shallow du thread avec les refs expansées — ne mute pas currentThread.
-// Utilisé dans dispatchSend. isAckRole est défini dans utils.js (chargé avant).
 function resolveResourceRefs(thread) {
   return thread.map(function(m) {
     if (!isAckRole(m.role) || m.result == null) return m;
@@ -3161,18 +2968,13 @@ function resolveResourceRefs(thread) {
   });
 }
 
-// ── IDB layer (navigateur uniquement — non QuickJS-testable) ─────────────────
-// Transaction discipline : un seul await par opération, uniquement sur des
-// requêtes IDB (pas de fetch ni de Promise étrangère dans une transaction).
-
 let _resourceDbPromise = null;
 let _persistenceRequested = false;
 
 function openResourceDB() {
   if (_resourceDbPromise) return _resourceDbPromise;
   _resourceDbPromise = new Promise(function(resolve, reject) {
-    // v2 : ajout du store `skills` (cf. skills.js). onupgradeneeded est idempotent
-    // (contains-check par store) → migration v1→v2 sans toucher `resources`.
+    
     const req = indexedDB.open('miaou', 2);
     req.onupgradeneeded = function(e) {
       const db = e.target.result;
@@ -3259,10 +3061,6 @@ function requestPersistence() {
   }
 }
 
-// ── Opérations haut-niveau ────────────────────────────────────────────────────
-
-// Stocke un bloc individuel dans IDB + session cache ; pousse l'ack resource_stored.
-// Retourne l'id généré en cas de succès, null sinon.
 async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
   const id = generateResourceId(rand);
   const record = {
@@ -3275,7 +3073,7 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
     await putResource(record);
     _cacheRecord(record);
     requestPersistence();
-    // _pendingToolAcks est déclaré dans tools.js ; accessible en runtime (même scope).
+    
     _pendingToolAcks.push({ kind: 'resource_stored', id, resourceName: record.name, mime: record.mime, size: record.size });
     return id;
   } catch (e) {
@@ -3284,12 +3082,6 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
   }
 }
 
-// Intercepte un résultat d'outil MCP brut :
-// - resource text/JSON → passe le texte brut au modèle (fiable, sans IDB, sans ref).
-// - binaires (image, audio, blob) → stocke en IDB, remplace par une ref + note
-//   "présentée" pour que le modèle sache que la ressource est déjà affichée.
-// Les blocs D8 restent dans _pendingToolBlocks pour le rendu visuel immédiat.
-// Appelé depuis api.js après await callTool, avant flattenToolResult.
 async function internResourcesFromResult(result, conversationId, now, rand, saveInline) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
@@ -3317,31 +3109,27 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
           r.mimeType || 'application/octet-stream', name,
           base64ToArrayBuffer(r.blob), 'binary', conversationId, theNow, theRand);
       } else if (r.text != null) {
-        // Texte/JSON : retire le bloc du queue D8 — pas d'affichage automatique
-        // côté UI (vrai quel que soit le réglage).
+        
         if (typeof retainPendingToolBlocks === 'function') {
           retainPendingToolBlocks(b =>
             !(b.type === 'resource' && b.resource != null &&
               b.resource.text != null && b.resource.blob == null));
         }
         if (saveInline) {
-          // Stocker en IDB (persistance, accès via present_resource). Le modèle
-          // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
-          // appeler present_resource si besoin), sans note « présentée ».
+          
           const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
             utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
           const rec = storedId ? getCachedRecord(storedId) : null;
           const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
           newContent.push({ type: 'text', text: r.text + desc });
         } else {
-          // Réglage désactivé : le modèle reçoit le texte brut, sans ressource ni ID.
+          
           newContent.push({ type: 'text', text: r.text });
         }
         continue;
       }
     }
-    // {type:'text'} et {type:'resource_link'} → passthrough
-
+    
     if (id) {
       newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
     } else {
@@ -3352,8 +3140,6 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
   result.content = newContent;
 }
 
-// Peuple le session cache depuis IDB pour une conversation donnée.
-// Fire-and-forget : appelé dans openConversation, sans await.
 async function loadConversationResources(convId) {
   try {
     const records = await getResourcesByConversation(convId);
@@ -3363,9 +3149,6 @@ async function loadConversationResources(convId) {
   }
 }
 
-// Construit un bloc D8 (format _pendingToolBlocks) depuis un enregistrement en
-// session cache. Réutilise les chemins de rendu existants (renderToolBlock).
-// Retourne null si le type n'est pas présentable.
 function makeResourcePresentBlock(record) {
   if (!record || !record.data) return null;
   if (record.mime && record.mime.startsWith('image/')) {
@@ -3374,46 +3157,16 @@ function makeResourcePresentBlock(record) {
   if (record.class === 'inline') {
     return { type: 'resource', resource: { text: utf8Decode(record.data), mimeType: record.mime } };
   }
-  // binary non-image → téléchargement
+  
   return { type: 'resource', resource: {
     blob: arrayBufferToBase64(record.data), mimeType: record.mime, uri: record.name,
   }};
 }
 
-
 /* ── skills.js ── */
-
-/* ── skills.js ─────────────────────────────────────────────────────────────
-   Skills MIAOU (stage 1) : fragments Markdown réutilisables, injectables soit
-   par slash-commande (`/slug`, injection déterministe figée côté client), soit
-   via les outils `miaou__skills__list` / `miaou__skills__read` (chemin modèle).
-
-   Deux couches :
-   1. Helpers purs + cache mémoire (QuickJS-testables) : validation de slug,
-      parsing slash, synchronisation du cache avec les CRUD.
-   2. Couche IDB (navigateur uniquement) : store `skills` (clé `slug`), partage
-      la base `miaou` v2 via openResourceDB() (resources.js).
-
-   Schéma d'enregistrement IDB : { slug, name, description, enabled, content,
-   autotrigger }. Le cache mémoire NE contient PAS `content` (chargé depuis IDB
-   à l'invocation seulement) : il alimente l'autocomplétion du composer, qui
-   filtre à chaque frappe et ne peut pas attendre IDB. cf. brief stage 1.
-
-   Stage 2 ajoute `autotrigger` (bool, défaut false — OPPOSÉ à `enabled`) : un
-   skill enabled+autotrigger est listé chaque tour dans le contexte dynamique
-   (cf. main.js, getAutotriggerSkillsMeta), pour découverte proactive par le
-   modèle sans appel préalable à miaou__skills__list. Pas de bump de version
-   IDB : schemaless, les enregistrements existants en sont simplement dépourvus
-   (absence == false).
-   ──────────────────────────────────────────────────────────────────────────── */
-
-// ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
 
 const SKILL_SLUG_MAX = 48;
 
-// Valide un slug de skill (clé d'invocation `/slug` ET clé d'objet IDB).
-// Contraintes : non vide, pas d'espace, pas de `/`, charset contraint, longueur
-// raisonnable, unicité. Retourne une chaîne d'erreur (français) ou null si valide.
 function validateSkillSlug(slug, existingSlugs) {
   const s = String(slug == null ? '' : slug).trim();
   if (!s) return 'Slug requis.';
@@ -3425,12 +3178,6 @@ function validateSkillSlug(slug, existingSlugs) {
   return null;
 }
 
-// Parse un message composer en commande slash : si le texte commence par
-// `/<slug>` (slug = charset valide), retourne { slug, rest } (rest = reste du
-// texte après le slug, espaces de tête retirés). Sinon null. Pur — la résolution
-// (cache, enabled, contenu IDB) se fait ailleurs. RÉSERVÉ au cas position-0 isolé
-// (résolution du blocage Enter du composer) — pour détecter un trigger `/` à une
-// position quelconque dans un texte, voir findSlashTriggers.
 function parseSlashCommand(text) {
   const s = String(text == null ? '' : text);
   const m = /^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(s);
@@ -3438,12 +3185,6 @@ function parseSlashCommand(text) {
   return { slug: m[1], rest: (m[2] || '').trim() };
 }
 
-// Trouve TOUTES les occurrences de trigger `/slug` dans un texte : en position 0,
-// ou immédiatement précédées d'un espace/saut de ligne (frontière de mot — exclut
-// `https://`, `and/or`, etc.). Retourne un tableau ordonné par position croissante :
-// [{ start, end, slug, atStart }] (start/end = bornes du `/slug` dans le texte,
-// end exclusif ; atStart = vrai si start === 0). Pur — aucune résolution cache/IDB.
-// Partagé par l'autocomplétion (composer + édition) ET resolveSend (multi-skill).
 function findSlashTriggers(text) {
   const s = String(text == null ? '' : text);
   const re = /\/([a-zA-Z0-9_-]*)/g;
@@ -3459,13 +3200,6 @@ function findSlashTriggers(text) {
   return out;
 }
 
-// Assemble le contenu d'un message user à partir du littéral tapé et des skills
-// résolus (un ou plusieurs, dans l'ordre d'apparition). `resolved` est un tableau
-// [{ slug, content }]. Chaque corps non vide est appendé en fin de message, encadré
-// par des marqueurs `--- skill: slug ---` pour que le modèle distingue sans
-// ambiguïté quel contenu appartient à quel `/slug`. Frozen au moment de l'envoi :
-// le résultat est stocké tel quel dans l'historique (jamais re-résolu au reload).
-// DISTINCT de buildContextBlock (miaou_context, recalculé à chaque tour).
 function bakeSkillMessage(literalText, resolved) {
   const lit = String(literalText == null ? '' : literalText);
   const list = Array.isArray(resolved) ? resolved : [];
@@ -3479,23 +3213,17 @@ function bakeSkillMessage(literalText, resolved) {
   return lit + '\n\n' + blocks.join('\n\n');
 }
 
-// ── Cache mémoire (méta seulement : slug, name, description, enabled) ─────────
-// Tableau d'ordre d'insertion stable. Muté par les CRUD IDB ET directement par
-// les tests (synchronisation cache/IDB vérifiée sans IDB réel).
-
 let _skillsCache = [];
 
 function _skillMeta(rec) {
   return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true };
 }
 
-// Remplace tout le cache (chargement initial depuis IDB).
 function setSkillsCache(list) {
   _skillsCache = (Array.isArray(list) ? list : []).map(_skillMeta);
   return _skillsCache;
 }
 
-// Insère ou remplace une entrée par slug (préserve la position si déjà présente).
 function upsertSkillCache(meta) {
   const m = _skillMeta(meta || {});
   const i = _skillsCache.findIndex(x => x.slug === m.slug);
@@ -3507,33 +3235,24 @@ function removeSkillCache(slug) {
   _skillsCache = _skillsCache.filter(x => x.slug !== slug);
 }
 
-// Méta d'un skill par slug (depuis le cache mémoire, synchrone). null si absent.
 function getSkillMeta(slug) {
   return _skillsCache.find(x => x.slug === slug) || null;
 }
 
-// Tous les skills (méta), dans l'ordre d'insertion — pour le drawer de gestion.
 function listAllSkillsCache() {
   return _skillsCache.slice();
 }
 
-// Skills ACTIVÉS uniquement (méta) — pour l'autocomplétion et miaou__skills__list.
 function listEnabledSkills() {
   return _skillsCache.filter(x => x.enabled !== false);
 }
 
-// Skills enabled ET autotrigger (méta {slug, name, description}, même forme que
-// miaou__skills__list, mais fonction DISTINCTE — ne touche pas à ce tool ni à son
-// filtre). Pour l'injection dynamique <miaou_skills_context> (main.js), recalculée
-// à chaque tour depuis le cache courant. [] si aucun match (l'appelant omet le bloc).
 function getAutotriggerSkillsMeta() {
   return listEnabledSkills()
     .filter(s => s.autotrigger === true)
     .map(s => ({ slug: s.slug, name: s.name, description: s.description }));
 }
 
-// Filtre les skills activés dont le slug (ou le name) matche un préfixe de saisie.
-// Pour l'autocomplétion du composer (après `/`). Pur, synchrone.
 function matchSkillCompletions(query) {
   const q = String(query == null ? '' : query).toLowerCase();
   return listEnabledSkills().filter(s =>
@@ -3541,11 +3260,6 @@ function matchSkillCompletions(query) {
     (s.name && s.name.toLowerCase().indexOf(q) >= 0));
 }
 
-// ── Couche IDB (navigateur uniquement — non QuickJS-testable) ─────────────────
-// Partage la base `miaou` (v2) via openResourceDB() de resources.js. Discipline :
-// un seul await par opération, uniquement sur des requêtes IDB.
-
-// Lit tous les enregistrements (méta + content) du store.
 function getAllSkillRecords() {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
@@ -3557,7 +3271,6 @@ function getAllSkillRecords() {
   });
 }
 
-// Lit un enregistrement complet par slug. null si absent.
 function getSkillRecord(slug) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
@@ -3569,8 +3282,6 @@ function getSkillRecord(slug) {
   });
 }
 
-// Écrit (insert/replace) un enregistrement skill complet en IDB PUIS synchronise
-// le cache mémoire (méta). Retourne le slug.
 function putSkill(record) {
   const rec = {
     slug: String(record.slug || '').trim(),
@@ -3590,8 +3301,6 @@ function putSkill(record) {
   });
 }
 
-// Supprime un skill (hard delete, pas de tombstone — action administrative
-// explicite, cf. brief) PUIS retire du cache mémoire.
 function deleteSkillDb(slug) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
@@ -3603,19 +3312,14 @@ function deleteSkillDb(slug) {
   });
 }
 
-// Bascule l'état `enabled` d'un skill en IDB + cache. Retourne le nouvel état
-// (bool) ou null si le skill est absent.
 function toggleSkillEnabled(slug) {
   return getSkillRecord(slug).then(function(rec) {
     if (!rec) return null;
-    rec.enabled = rec.enabled === false;   // inverse (absent === true → false)
+    rec.enabled = rec.enabled === false;   
     return putSkill(rec).then(function() { return rec.enabled; });
   });
 }
 
-// Récupère le contenu Markdown d'un skill ACTIVÉ depuis IDB. Renvoie null si
-// absent ou désactivé (l'appelant traite le cas erreur). Async — appelé à
-// l'invocation seulement (slash ou miaou__skills__read).
 function getSkillContent(slug) {
   return getSkillRecord(slug).then(function(rec) {
     if (!rec || rec.enabled === false) return null;
@@ -3623,8 +3327,6 @@ function getSkillContent(slug) {
   });
 }
 
-// Peuple le cache mémoire depuis IDB au démarrage (fire-and-forget dans init).
-// Échec silencieux (IDB indisponible) → cache vide, autocomplétion/outils inertes.
 async function loadSkillsCache() {
   try {
     const records = await getAllSkillRecords();
@@ -3634,25 +3336,13 @@ async function loadSkillsCache() {
   }
 }
 
-
 /* ── tools.js ── */
 
-/* ── tools.js ──────────────────────────────────────────────────────────────
-   Registre interne d'outils en forme MCP : { name, description, inputSchema,
-   annotations, handler }. La conversion vers le format OpenAI envoyé au modèle
-   est produite à l'envoi par toolDefinitions() — un seul sens de traduction.
-   ask_confirmation est un primitif halting hors registre MCP (voir ci-dessous).
-   ────────────────────────────────────────────────────────────────────────── */
-
-// Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
            summary: e.summary, keywords: e.keywords };
 }
 
-// Doctrine comportementale : ressources binaires. Toujours injectée quand des outils
-// existent — indépendamment de includeToolsInSystemPrompt (qui ne gouverne que
-// l'énumération textuelle). Partie de ROOT_SYSTEM_PROMPT.
 const BINARY_DOCTRINE =
   "Quand un outil renvoie des données binaires (image, fichier, base64…), l'application " +
   "les enregistre sous forme de ressource et t'en communique l'ID. Les images sont " +
@@ -3662,8 +3352,6 @@ const BINARY_DOCTRINE =
   "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
   "l'application l'a déjà présentée à l'utilisateur.";
 
-// Doctrine d'accès Web. Toujours injectée quand des outils Web sont disponibles.
-// Partie de ROOT_SYSTEM_PROMPT.
 const WEB_DOCTRINE =
   "<ACCES_WEB>\n" +
   "Si des outils te sont fournis pour interroger des moteurs de recherche et/ou " +
@@ -3699,7 +3387,14 @@ const WEB_DOCTRINE =
   "pertinent, plutôt que de fabriquer des informations récentes.\n" +
   "</SANS_ACCES_WEB>\n";
 
-// Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
+const CONV_REF_DOCTRINE =
+  "Quand tu mentionnes une conversation passée obtenue via get_conversation ou " +
+  "list_conversations (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
+  "son identifiant technique en clair (pas de guillemets, pas de backticks, pas " +
+  "de texte brut du type « conversation abc123 ») : utilise le marqueur " +
+  "[conv_ref:ID] ou, si tu connais déjà son titre, [conv_ref:ID|Titre] — " +
+  "l'application le remplace automatiquement par un lien affichant le titre.";
+
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
   "CHEMIN DIRECT — appelle miaou__create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
@@ -3725,22 +3420,9 @@ const MEMORY_DOCTRINE =
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
-// Prompt racine — constante build-time, non modifiable depuis les paramètres.
-// Compose les trois doctrines ; référencé par buildSystemMessage() (main.js).
-// v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
-const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" +
+  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
-// Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
-// conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
-// présents, comme INTENT_DOCTRINE. PAS dans ROOT_SYSTEM_PROMPT (constante
-// build-time inconditionnelle) : ce bloc dépend de la disponibilité des outils
-// skill au runtime, même mécanisme que intentDoctrinePrompt()/INTENT_DOCTRINE.
-// Le modèle n'a aucun moyen d'observer la valeur de confirmSkillAutoUse (c'est
-// un réglage localStorage, pas une donnée de contexte) : il ne faut donc PAS lui
-// demander de vérifier « si le réglage est activé ». C'est skillDoctrinePrompt()
-// qui lit le réglage et choisit le paragraphe CONFIRMATION à injecter — la
-// doctrine envoyée au modèle est déjà résolue, jamais une branche conditionnelle
-// textuelle. SKILL_DOCTRINE_BASE est commun aux deux variantes.
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
   "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
@@ -3768,8 +3450,6 @@ const SKILL_DOCTRINE_TAIL =
   "Ne JAMAIS affirmer avoir appliqué les instructions d'une skill si tu n'as pas " +
   "appelé miaou__skills__read dans ce même tour.";
 
-// Doctrine de traçage des intentions (traces en langage naturel). Injectée
-// conditionnellement dans buildSystemMessage() selon le toggle intentTracing.
 const INTENT_DOCTRINE =
   "Pour chaque appel d'outil, inclus miaou_intent dans les ARGUMENTS de l'appel (jamais dans le nom de l'outil). " +
   "Sa valeur est une courte phrase décrivant le but de l'action à l'utilisateur — " +
@@ -3777,36 +3457,20 @@ const INTENT_DOCTRINE =
   "Exemples : « Récupération de la météo à Paris », « Enregistrement de la préférence de langue », " +
   "« Liste des conversations de la semaine passée ». Nom d'action sans point final, sans guillemets supplémentaires.";
 
-// File d'attente des acks côté client : chaque handler d'outil (écriture mémoire
-// OU lecture d'historique) y pousse un descripteur portant son `kind` ; main.js la
-// consomme dans onFinal pour injecter les messages 'tool-ack' dans le thread
-// (jamais envoyés au modèle). Les returns model-facing restent inchangés.
 let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
-// Enrichit le dernier ack en attente (outils internes synchrones). Les outils
-// distants (asynchrones) voient leur ack déjà drainé dans earlyRendered ; leur
-// enrichissement est fait directement par le hook onEnrichLastAck dans main.js.
+
 function updateLastPendingToolAck(fields) {
   if (_pendingToolAcks.length) Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
 }
 
-// File des blocs NON-text renvoyés par un outil distant (image / resource /
-// binaire). Vidée par le hook UI au même moment que les acks (après l'exécution
-// des outils d'un tour) et rendue dans la bulle assistant courante via la cascade
-// D8 — purement éphémère, RIEN n'est persisté (cf. brief D8, persistance des
-// pièces jointes explicitement reportée). Les blocs `text` ne passent JAMAIS par
-// ici : ils sont aplatis pour le modèle (flattenToolResult), pas affichés.
 let _pendingToolBlocks = [];
 function getPendingToolBlocks() { return _pendingToolBlocks.slice(); }
 function clearPendingToolBlocks() { _pendingToolBlocks = []; }
-// Filtre in-place _pendingToolBlocks (appelé par internResourcesFromResult pour
-// retirer les blocs D8 dont le stockage IDB prend le relais).
+
 function retainPendingToolBlocks(keepFn) { _pendingToolBlocks = _pendingToolBlocks.filter(keepFn); }
 
-// ── Registre MCP interne ─────────────────────────────────────────────────────
-// Forme canonique : { name, description, inputSchema (JSON Schema), annotations,
-// handler }. ask_confirmation est exclu (primitif halting, voir ASK_CONFIRMATION_DEF).
 const TOOLS = [
   {
     name: 'get_conversation',
@@ -3824,39 +3488,51 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
-      const entry = getSummaryEntry(args.id);   // storage.js
+      const entry = getSummaryEntry(args.id);   
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title });
       if (!args.with_contents) return JSON.stringify(light);
-      const conv = loadConversation(args.id);   // storage.js
-      if (!conv) return JSON.stringify(light);   // résumé présent mais conversation absente : cas limite
+      const conv = loadConversation(args.id);   
+      if (!conv) return JSON.stringify(light);   
       return JSON.stringify(Object.assign({}, light, { messages: conv.messages ?? conv }));
     },
   },
   {
     name: 'list_conversations',
     description:
-      "Liste les conversations passées (résumé + mots-clés par défaut). " +
-      "Le paramètre since est OPTIONNEL : l'omettre liste TOUTES les " +
-      "conversations — appelle l'outil sans hésiter même sans date en tête ; " +
-      "le préciser (date ISO 8601) limite aux conversations actives depuis " +
-      "cette date. Passer with_contents=true pour inclure aussi le contenu " +
-      "complet de chacune (potentiellement volumineux).",
+      "Liste les conversations passées (résumé + mots-clés par défaut), hors " +
+      "la conversation en cours. Le paramètre since est OPTIONNEL : l'omettre " +
+      "liste TOUTES les conversations — appelle l'outil sans hésiter même sans " +
+      "date en tête ; le préciser (date ISO 8601) limite aux conversations " +
+      "actives depuis cette date. Passer query pour ne garder que les " +
+      "conversations dont le résumé ou les mots-clés correspondent (recherche " +
+      "par mots, pas de sous-chaîne exacte) — utile pour retrouver une " +
+      "conversation sur un sujet précis sans tout lister. Passer " +
+      "with_contents=true pour inclure aussi le contenu complet de chacune " +
+      "(potentiellement volumineux).",
     inputSchema: {
       type: 'object',
       properties: {
         since: { type: 'string', description: 'Optionnel — date ISO 8601. Omettre pour tout lister.' },
+        query: { type: 'string', description: 'Optionnel — mots-clés à rechercher dans le résumé/titre.' },
         with_contents: { type: 'boolean', description: 'Inclure le contenu complet (défaut false)' },
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
-      let entries = listSummaryEntries();        // storage.js — entrées non-tombstone
+      let entries = listSummaryEntries();        
+      
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
         if (Number.isNaN(sinceMs)) return 'Date "since" invalide (attendu ISO 8601).';
         entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
+      }
+      if (args.query != null && args.query !== '') {
+        const qTokens = tokenize(args.query);     
+        entries = entries.filter(e => scoreSummary(qTokens, e) >= 1);
       }
       const light = entries.map(summaryLight);
       _pendingToolAcks.push({ kind: 'conversation_list', count: light.length });
@@ -3907,7 +3583,7 @@ const TOOLS = [
     handler: (args) => {
       if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
       const content = args.content.trim();
-      const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
+      const existing = loadMemories().find(e => e.id === args.id);   
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -3936,10 +3612,10 @@ const TOOLS = [
     handler: (args) => {
       const id = String(args.id || '');
       if (!id) return 'Identifiant manquant.';
-      // getCachedRecord et makeResourcePresentBlock sont dans resources.js (chargé avant).
+      
       const record = getCachedRecord(id);
       if (!record) return 'Ressource introuvable (identifiant inconnu ou non disponible en session).';
-      // Le rendu du bloc est délégué à placeToolAck (live et reload via même chemin).
+      
       _pendingToolAcks.push({ kind: 'resource_presented', id, resourceName: record.name, mime: record.mime });
       return 'Ressource présentée à l\'utilisateur.';
     },
@@ -3966,9 +3642,7 @@ const TOOLS = [
     },
   },
   {
-    // Sous-namespace miaou__skills__ : énumère les skills ACTIVÉS (slug + name +
-    // description) pour que le modèle découvre ce qu'il peut lire via skills__read.
-    // Les skills désactivés n'apparaissent JAMAIS (l'utilisateur les a coupés).
+    
     name: 'skills__list',
     description:
       "Liste les skills disponibles (méta : slug, nom, description). Une skill est " +
@@ -3978,19 +3652,14 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: () => {
-      // listEnabledSkills (skills.js) lit le cache mémoire — synchrone.
+      
       const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description }));
       _pendingToolAcks.push({ kind: 'skill_list', count: list.length });
       return JSON.stringify(list);
     },
   },
   {
-    // miaou__skills__read : renvoie le contenu Markdown complet d'un skill activé.
-    // Les contrôles (introuvable / désactivé) lisent le cache mémoire → ERREUR
-    // SYNCHRONE (testable QuickJS). Le contenu lui-même est en IDB → fetch ASYNC
-    // (Promise) ; callInternalTool gère un handler thenable. NE passe PAS par
-    // l'injection figée de la slash-commande : c'est un tool_result normal, dont
-    // le contenu doit être disponible au modèle dès ce tour.
+    
     name: 'skills__read',
     description:
       "Lit le contenu complet d'une skill par son slug (obtenu via miaou__skills__list). " +
@@ -4007,14 +3676,13 @@ const TOOLS = [
     handler: (args) => {
       const slug = String(args.slug || '').trim();
       if (!slug) return 'Slug manquant.';
-      const meta = getSkillMeta(slug);                 // cache mémoire (synchrone)
+      const meta = getSkillMeta(slug);                 
       if (!meta) return 'Skill introuvable : ' + slug;
       if (meta.enabled === false) return 'Skill désactivée : ' + slug;
-      // Activée : fetch IDB async. L'ack est poussé une fois le contenu obtenu.
+      
       return getSkillContent(slug).then(content => {
         if (content == null) return 'Contenu indisponible pour la skill : ' + slug;
-        // Nom d'affichage du skill stocké en `title` (pas `name` : onEnrichLastAck
-        // écrase `name` avec le nom canonique de l'outil pour la réinjection cross-turn).
+        
         _pendingToolAcks.push({ kind: 'skill_read', slug, title: meta.name });
         return content;
       });
@@ -4022,13 +3690,6 @@ const TOOLS = [
   },
 ];
 
-// ── ask_confirmation : primitif halting hors registre MCP ────────────────────
-// Outil HALTING : runConversation (api.js) l'intercepte AVANT le dispatch et
-// arrête l'échange — il ne pousse aucun message tool_calls/tool natif, ne
-// relance pas. La reprise se fait au tour suivant via la réponse de l'utilisateur
-// (« Oui »/« Non » ou correction libre) réécrite en texte clair (fork B).
-// Il n'est PAS dans le registre TOOLS (pas de callTool) mais est inclus dans
-// toolDefinitions() pour que le modèle puisse l'appeler.
 const ASK_CONFIRMATION_DEF = {
   type: 'function',
   function: {
@@ -4051,19 +3712,13 @@ const ASK_CONFIRMATION_DEF = {
   },
 };
 
-// ── Agrégation distante : cache de session + client MCP ──────────────────────
-// MIAOU est un client/agrégateur MCP (cf. brief V2) : il fusionne ses outils
-// internes et ceux de N serveurs distants en UN seul registre, invisible au
-// modèle. État en mémoire UNIQUEMENT (jamais persisté), reconstruit au démarrage
-// par connectMcpServer pour chaque serveur activé (cf. main.js init).
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 
-let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
-let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId? } }
+let _remoteTools = {};   
+let _remoteStatus = {};  
 
 function getMcpStatus(name) { return _remoteStatus[name] || null; }
 
-// Outils distants exposables : déjà préfixés `servername__` et filtrés (D7).
 function remoteToolDefs() {
   const out = [];
   for (const name of Object.keys(_remoteTools)) {
@@ -4072,10 +3727,6 @@ function remoteToolDefs() {
   return out;
 }
 
-// Registre EXPOSÉ au modèle (forme canonique MCP) : outils internes préfixés
-// `miaou__` + outils distants (déjà préfixés). Le préfixe interne est ajouté ICI,
-// à l'exposition seulement — TOOLS reste stocké en noms NUS (le préfixe est une
-// vue, pas un stockage). ask_confirmation reste HORS de ce registre (halting).
 function exposedTools() {
   const internal = TOOLS.map(t => ({
     name: 'miaou__' + t.name, description: t.description, inputSchema: t.inputSchema,
@@ -4083,14 +3734,8 @@ function exposedTools() {
   return internal.concat(remoteToolDefs());
 }
 
-// ── Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10) ───────────
 let _mcpRpcId = 0;
 
-// UNE tentative d'appel JSON-RPC (un seul POST ; réponse JSON OU flux SSE). Timeout
-// via AbortController (cf. D5). Lève sur erreur ; sur HTTP 404 ALORS qu'on détenait
-// un Mcp-Session-Id, tague l'erreur `staleSession = true` (le serveur a redémarré
-// et ne reconnaît plus la session → déclenche le ré-handshake dans mcpRpc). Un 404
-// SANS session détenue est un vrai 404 (mauvais endpoint), non tagué.
 async function mcpRpcAttempt(server, method, params, opts) {
   const o = opts || {};
   const ctrl = new AbortController();
@@ -4112,7 +3757,7 @@ async function mcpRpcAttempt(server, method, params, opts) {
     if (o.notify) return null;
     if (!res.ok) {
       const err = new Error('HTTP ' + res.status);
-      if (res.status === 404 && hadSession) err.staleSession = true;   // session invalidée, pas un vrai 404 d'URL
+      if (res.status === 404 && hadSession) err.staleSession = true;   
       throw err;
     }
     const ctype = (res.headers && res.headers.get && res.headers.get('Content-Type')) || '';
@@ -4120,7 +3765,7 @@ async function mcpRpcAttempt(server, method, params, opts) {
     if (!msg) throw new Error('Réponse vide.');
     if (msg.error) {
       const err = new Error((msg.error && msg.error.message) || 'Erreur JSON-RPC.');
-      if (hadSession && /session/i.test(err.message)) err.staleSession = true;   // signalée par erreur JSON-RPC
+      if (hadSession && /session/i.test(err.message)) err.staleSession = true;   
       throw err;
     }
     return msg.result;
@@ -4132,24 +3777,14 @@ async function mcpRpcAttempt(server, method, params, opts) {
   }
 }
 
-// Refait le handshake initialize (+ notification initialized) pour récupérer un
-// nouveau Mcp-Session-Id après invalidation (serveur redémarré). NE re-liste PAS
-// les outils — le cache reste valide. Passe par mcpRpcAttempt (pas mcpRpc) pour
-// éviter toute récursion de ré-handshake.
 async function mcpReinitialize(server) {
-  if (_remoteStatus[server.name]) _remoteStatus[server.name].sessionId = null;   // ne plus renvoyer l'id mort
+  if (_remoteStatus[server.name]) _remoteStatus[server.name].sessionId = null;   
   await mcpRpcAttempt(server, 'initialize', {
     protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'miaou', version: '2' },
   }, {});
   try { await mcpRpcAttempt(server, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
 }
 
-// Émet une requête JSON-RPC, avec RÉ-HANDSHAKE PARESSEUX (cf. brief Correction B) :
-// si l'appel échoue par session invalidée (404 avec session détenue, ou erreur
-// JSON-RPC « session »), refait initialize pour capturer un nouvel id et REJOUE
-// l'appel UNE seule fois. Un nouvel échec (ré-handshake ou rejeu) est propagé → la
-// dégradation gracieuse D10 prend le relais côté appelant. On ne re-sonde JAMAIS la
-// session préventivement — on ne réagit qu'à sa mort avérée, et au plus une fois.
 async function mcpRpc(server, method, params, opts) {
   const o = opts || {};
   if (server.transport === 'sse') throw new Error('Transport sse non implémenté (différé en V2).');
@@ -4157,16 +3792,11 @@ async function mcpRpc(server, method, params, opts) {
     return await mcpRpcAttempt(server, method, params, o);
   } catch (e) {
     if (!e || !e.staleSession || method === 'initialize' || o.notify) throw e;
-    await mcpReinitialize(server);                          // peut lever → propagé
-    return await mcpRpcAttempt(server, method, params, o);  // rejeu unique
+    await mcpReinitialize(server);                          
+    return await mcpRpcAttempt(server, method, params, o);  
   }
 }
 
-// Lit un flux SSE de réponse streamable-http, renvoie le 1er message JSON-RPC
-// dont l'id correspond (repli : 1er message porteur de result/error si id absent).
-// Normalise CRLF→LF AVANT découpage : le SDK MCP encadre ses événements en
-// `\r\n\r\n`, un découpage sur `\n\n` seul échouerait (→ « Réponse vide »). Les
-// octets sont du texte (data: = JSON, CR/LF y sont échappés), normaliser est sûr.
 async function readSseJsonRpc(res, wantId) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -4185,7 +3815,7 @@ async function readSseJsonRpc(res, wantId) {
           const j = JSON.parse(data);
           if (j && j.id === wantId) { try { reader.cancel(); } catch (_) {} return j; }
           if (found == null && j && (j.result !== undefined || j.error)) found = j;
-        } catch (_) { /* fragment non JSON, ignoré */ }
+        } catch (_) {  }
       }
     }
     if (r.done) break;
@@ -4193,10 +3823,6 @@ async function readSseJsonRpc(res, wantId) {
   return found;
 }
 
-// Handshake d'activation (cf. D10) : initialize → notification initialized →
-// tools/list ; préfixe, filtre (D7), met en cache. DÉGRADE GRACIEUSEMENT : tout
-// échec marque le serveur en erreur et n'expose AUCUN de ses outils, sans jamais
-// lever vers l'appelant — un mauvais backend ne gèle jamais MIAOU.
 async function connectMcpServer(server) {
   const s = server;
   _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null };
@@ -4232,19 +3858,11 @@ function disconnectMcpServer(name) {
   delete _remoteStatus[name];
 }
 
-// Route un appel vers un serveur distant : tools/call → { content, isError }.
-// Pousse les blocs NON-text dans _pendingToolBlocks (rendu UI éphémère D8). Le
-// retour conserve TOUS les blocs ; flattenToolResult ne gardera que le text pour
-// le modèle (D9). Échec/timeout → résultat isError textuel, jamais de throw.
-// L'ack mcp_call est poussé dans _pendingToolAcks de manière SYNCHRONE, avant le
-// premier await, pour permettre le rendu pendant le round-trip (cf. onEarlyAcks).
-// `intent` : description en langage naturel extraite de miaou_intent par callTool
-// (déjà strippée des args envoyés au serveur). Stockée dans l'ack pour l'UI.
 async function callRemoteTool(server, toolName, args, intent) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = { kind: 'mcp_call', server: server.name, name: fullName };
   if (intent != null) ackEntry.intent = intent;
-  _pendingToolAcks.push(ackEntry);   // synchrone — avant tout await
+  _pendingToolAcks.push(ackEntry);   
 
   try {
     const result = await mcpRpc(server, 'tools/call', { name: toolName, arguments: args || {} });
@@ -4259,16 +3877,12 @@ async function callRemoteTool(server, toolName, args, intent) {
   }
 }
 
-// ── Dispatcher MCP ───────────────────────────────────────────────────────────
-// Dispatch interne synchrone (outils miaou, noms NUS). Cœur unit-testé.
 function callInternalTool(toolName, args) {
   const tool = TOOLS.find(t => t.name === toolName);
   if (!tool) return { content: [{ type: 'text', text: 'Outil inconnu : ' + toolName }], isError: true };
   try {
     const text = tool.handler(args || {});
-    // Handler ASYNC (ex. skills__read lit le contenu en IDB) : il renvoie une
-    // Promise<string>. On la mappe vers la forme MCP. Les handlers synchrones
-    // (tous les autres) restent synchrones → branche interne testable sans async.
+    
     if (text && typeof text.then === 'function') {
       return text.then(
         t => ({ content: [{ type: 'text', text: String(t) }], isError: false }),
@@ -4281,29 +3895,23 @@ function callInternalTool(toolName, args) {
   }
 }
 
-// Point d'entrée unique de dispatch (cf. brief D1). Splitte le nom canonique sur
-// le PREMIER `__` : préfixe `miaou` (ou absent) → dispatch interne SYNCHRONE ;
-// sinon → serveur distant activé portant ce nom → appel ASYNCHRONE (fetch).
-// Préfixe inconnu / serveur désactivé → erreur propre. Résultat :
-// { content:[...blocks], isError }. ask_confirmation n'atteint jamais ici
-// (interception halting en amont dans api.js).
-// Type de retour MIXTE assumé : objet (interne/erreur) OU Promise (distant) — les
-// appelants font `await callTool(...)`, et `await` sur un objet le renvoie tel
-// quel. Cela garde les branches interne/erreur synchrones, donc testables sans
-// async (le runner QuickJS n'attend pas les promesses).
-// miaou_intent est strippé des args avant tout dispatch : les handlers internes
-// et serveurs MCP ne doivent jamais le recevoir. Pour les outils distants, l'intent
-// est passé à callRemoteTool pour être stocké dans l'ack. Les args originaux
-// (avec miaou_intent) restent dans l'objet référencé par api.js → stockés dans
-// entry.args via onEnrichLastAck → réinjectés tels quels aux tours suivants.
 function callTool(name, args) {
   const parsed = parseToolName(name);
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
+    const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
-    return callInternalTool(parsed.toolName, cleanArgs);
+    const result = callInternalTool(parsed.toolName, cleanArgs);
+    
+    if (intent != null) {
+      if (result && typeof result.then === 'function') {
+        return result.then(r => { updateLastPendingToolAck({ intent }); return r; });
+      }
+      updateLastPendingToolAck({ intent });
+    }
+    return result;
   }
-  const server = getMcpServer(parsed.serverPrefix);   // storage.js
+  const server = getMcpServer(parsed.serverPrefix);   
   if (!server || server.enabled === false) {
     return { content: [{ type: 'text', text: 'Serveur MCP inconnu ou désactivé : ' + parsed.serverPrefix }], isError: true };
   }
@@ -4313,13 +3921,6 @@ function callTool(name, args) {
   return callRemoteTool(server, parsed.toolName, serverArgs, intent);
 }
 
-// Aplatit un résultat MCP en string pour le message role:'tool' renvoyé au modèle.
-// Blocs `text` → passés tels quels. Blocs `resource` avec `resource.text` → passés
-// tels quels (JSON ou texte structuré renvoyé par le serveur, utile au LLM).
-// Blocs non-text sans contenu textuel (image, audio, resource binaire) → MARQUEUR
-// NEUTRE (jamais le base64). Cf. D8 : ces blocs sont rendus par l'UI ; le marqueur
-// évite qu'un résultat image/resource-only laisse un message `tool` vide, ce qui
-// pousserait le modèle à simuler/encoder le contenu. Fonction pure, unit-testable.
 function flattenToolResult(result) {
   if (!result || !Array.isArray(result.content)) return '';
   return result.content.map(b => {
@@ -4331,18 +3932,8 @@ function flattenToolResult(result) {
   }).filter(s => s != null && s !== '').join('\n');
 }
 
-// Indique si un outil est « halting » (seul ask_confirmation l'est, et il reste
-// NU — hors registre, donc non préfixé).
 function toolIsHalting(name) { return name === 'ask_confirmation'; }
 
-// Dérive le tableau OpenAI tools depuis le registre EXPOSÉ (interne préfixé +
-// distant) + ASK_CONFIRMATION_DEF. Les noms d'outils internes y sont désormais
-// `miaou__*` : V2 rompt délibérément le byte-identical de V1 (le préfixe sert à
-// router interne vs distant sans cas particulier).
-// Si intentTracing est activé, `miaou_intent` est ajouté au schema de chaque
-// outil (hors ask_confirmation) pour que le modèle décrive son intention.
-// Nom sans underscore initial : évite les traitements spéciaux des parsers de
-// grammar (Ollama/llama.cpp) qui peuvent interpréter `_xxx` comme un champ privé.
 function toolDefinitions() {
   const intentEnabled = !!loadSettings().intentTracing;
   const intentProp = { type: 'string', title: 'Intention', description: 'Phrase courte décrivant le but de l\'appel, pour l\'utilisateur.' };
@@ -4357,11 +3948,6 @@ function toolDefinitions() {
   return mcpDefs.concat([ASK_CONFIRMATION_DEF]);
 }
 
-// MEMORY_DOCTRINE n'est PAS redondante avec le schéma tools (qui ne décrit que
-// les paramètres, jamais la doctrine de déclenchement). Elle doit donc être
-// envoyée indépendamment du toggle includeToolsInSystemPrompt, qui ne contrôle
-// que la description redondante schéma/texte des outils eux-mêmes.
-
 function toolsSystemPrompt() {
   const all = exposedTools().map(t => ({ name: t.name, description: t.description }))
     .concat([{ name: ASK_CONFIRMATION_DEF.function.name, description: ASK_CONFIRMATION_DEF.function.description }]);
@@ -4375,42 +3961,20 @@ function intentDoctrinePrompt() {
   return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
 }
 
-// Doctrine de déclenchement des skills (stage 2). Injectée seulement si AU
-// MOINS une skill autotrigger existe (≈ getAutotriggerSkillsMeta non vide) —
-// inutile de payer des tokens de doctrine pour une fonctionnalité sans skill
-// éligible à l'utiliser. miaou__skills__read est dans TOOLS inconditionnellement
-// (stage 1), donc gater sur sa présence comme intentDoctrinePrompt gate sur
-// TOOLS.length serait toujours vrai ; on gate ici sur le contenu réel du cache
-// skills à la place. Le paragraphe CONFIRMATION est choisi ICI selon la valeur
-// COURANTE de confirmSkillAutoUse (réglage localStorage, invisible au modèle) —
-// la doctrine envoyée est déjà résolue, jamais une condition que le modèle
-// devrait évaluer lui-même.
 function skillDoctrinePrompt() {
   if (!getAutotriggerSkillsMeta().length) return '';
   const confirmPart = loadSettings().confirmSkillAutoUse !== false ? SKILL_DOCTRINE_CONFIRM_ON : SKILL_DOCTRINE_CONFIRM_OFF;
   return SKILL_DOCTRINE_BASE + confirmPart + SKILL_DOCTRINE_TAIL;
 }
 
-
 /* ── api.js ── */
 
-/* ── api.js ────────────────────────────────────────────────────────────────
-   Couche réseau : endpoint OpenAI-compatible. Streaming SSE, appel « en
-   cachette » (silentCompletion) pour titrage et résumés, boucle de tool_calls,
-   recherche/scoring des résumés.
-   ────────────────────────────────────────────────────────────────────────── */
+const MAX_TOURS = 20;   
 
-const MAX_TOURS = 20;   // borne sur les tours de la boucle tool_calls
-
-// Controller du stream courant (un seul à la fois). Permet à l'UI d'interrompre
-// la génération en cours via abortStream(). Réinitialisé à chaque streamCompletion.
 let _currentAbort = null;
 
-// Param(s) mergés dans le body des appels silencieux pour désactiver le raisonnement.
-// À modifier ici uniquement si le backend utilise un autre knob (ex. think: false).
 const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 
-// Cache session : endpoints ayant rejeté NOTHINK_PARAMS (clé = URL endpoint).
 const _noThinkRejected = {};
 
 const TITLE_PROMPT =
@@ -4433,18 +3997,12 @@ Markdown, sans commentaire :
 keywords : 5 à 12 termes saillants (sujets techniques, noms propres,
 technologies, concepts), en minuscules, sans doublons.`;
 
-// ── Appel non streamé, résultat exploité en interne (jamais affiché) ────────
 async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
   const cfg = loadSettings();
   const url = cfg.url;
 
-  // Garde-fou : un endpoint qui accepte la connexion puis se tait laisserait le
-  // fetch pendre indéfiniment, et avec lui l'indicateur d'activité (le finally de
-  // runBackgroundTask ne passerait jamais). Contrôleur LOCAL, indépendant de
-  // _currentAbort (le stream foreground) : abortStream() n'y touche pas, et
-  // inversement. L'AbortError remonte → runBackgroundTask le capte → null.
   const _attempt = async (extra) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), o.timeout || 30000);
@@ -4477,8 +4035,6 @@ async function silentCompletion(messages, opts) {
   return await _attempt({});
 }
 
-// ── Parsing SSE ─────────────────────────────────────────────────────────────
-// sseDataObject : ligne -> objet chunk parsé (ou null pour vide / [DONE] / KO).
 function sseDataObject(line) {
   if (!line) return null;
   const s = line.trim();
@@ -4489,43 +4045,28 @@ function sseDataObject(line) {
   catch (e) { return null; }
 }
 
-// parseSSELine : extrait le delta de contenu d'une ligne (ou null). Utilisé
-// par les tests ; la boucle de streaming réelle passe par sseDataObject pour
-// accéder aussi aux tool_calls et au finish_reason.
 function parseSSELine(line) {
   const data = sseDataObject(line);
   return data?.choices?.[0]?.delta?.content ?? null;
 }
 
-// reasoningDelta : extrait le fragment de raisonnement d'un delta, ou null si le
-// champ est totalement absent. Plusieurs couches OpenAI-compatibles le nomment
-// différemment — `reasoning` (le plus répandu), `reasoning_content` (style
-// DeepSeek/vLLM), `thinking` (relais de l'API native Ollama). Une chaîne VIDE
-// est une *présence* (le modèle est thinking-capable) : on la renvoie telle
-// quelle ; seul un champ entièrement absent donne null. Détection par
-// observation directe, jamais via `reasoning_effort` (comportement erratique).
 function reasoningDelta(delta) {
   if (!delta) return null;
   const v = delta.reasoning ?? delta.reasoning_content ?? delta.thinking;
   return typeof v === 'string' ? v : null;
 }
 
-// Concatène deux segments de raisonnement (entre tours d'un même échange) en
-// préservant une séparation lisible, sans introduire de blancs parasites.
 function joinReasoning(a, b) {
   if (!a) return b || '';
   if (!b) return a;
   return a + '\n\n' + b;
 }
 
-// ── Streaming d'une complétion (un tour) ────────────────────────────────────
-// Agrège le content et les tool_calls (strictement par index). Ne renvoie
-// qu'à la fin du stream : { content, toolCalls, finishReason }.
 async function streamCompletion(messages, opts) {
   const o = opts || {};
   const cfg = loadSettings();
   const body = {
-    // Override par conversation (o.model) sinon modèle par défaut des réglages.
+    
     model: o.model || cfg.model,
     messages,
     stream: true,
@@ -4575,9 +4116,6 @@ async function streamCompletion(messages, opts) {
         if (!choice) continue;
         const delta = choice.delta || {};
 
-        // Le raisonnement précède le contenu (et peut précéder un tool_call) :
-        // on l'agrège à part et on le signale en live, sans jamais l'afficher
-        // comme du contenu de réponse.
         const rd = reasoningDelta(delta);
         if (rd !== null) {
           reasoningBuffer += rd;
@@ -4603,8 +4141,7 @@ async function streamCompletion(messages, opts) {
       }
     }
   } catch (e) {
-    // AbortError : interruption volontaire (abortStream). On garde le contenu
-    // déjà reçu et on le signale via `aborted` ; pas une erreur réseau.
+    
     if (e && e.name === 'AbortError') aborted = true;
     else throw e;
   } finally {
@@ -4614,25 +4151,15 @@ async function streamCompletion(messages, opts) {
   return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted };
 }
 
-// Interrompt le stream en cours (s'il y en a un). Le contenu déjà reçu est
-// conservé ; aucune relance de tour côté boucle d'outils.
 function abortStream() {
   if (_currentAbort) _currentAbort.abort();
 }
 
-// ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
-// Hooks : onDelta(full), onReasoning(full), onToolTour(), onToolAcks() [après les
-//         outils d'un tour], onFinal(content, reasoning),
-//         onHalt(leadIn, question) [outil halting], onError(msg).
-// h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
-// Le résultat d'un outil n'est JAMAIS affiché : il repart au modèle, on va
-// toujours jusqu'à la réponse finale (finish_reason === 'stop').
 async function runConversation(messages, hooks) {
   const h = hooks || {};
-  // anti-redemande, par échange : clé 'nom:id' ou 'nom:since'
+  
   const servedKeys = new Set();
-  // raisonnement accumulé sur tout l'échange (les tours tool_calls peuvent en
-  // produire avant l'appel d'outil) ; relayé en live avec ce préfixe.
+  
   let reasoningAcc = '';
 
   for (let tour = 1; tour <= MAX_TOURS; tour++) {
@@ -4643,24 +4170,15 @@ async function runConversation(messages, hooks) {
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
     });
 
-    // Interruption volontaire : on fige le contenu déjà reçu (pas de rollback)
-    // et on NE relance PAS de tour, même au milieu d'une boucle d'outils.
     if (result.aborted) {
       if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
       return result.content;
     }
 
     if (result.finishReason === 'tool_calls') {
-      // Flush complet du raisonnement de ce tour AVANT d'exécuter l'outil
-      // (pas de traitement en parallèle) ; il reste affiché pendant l'appel.
+      
       reasoningAcc = joinReasoning(reasoningAcc, result.reasoning);
 
-      // Outil HALTING (ex. ask_confirmation) : s'il figure dans ce tour, on
-      // suspend l'échange immédiatement — aucun message assistant tool_calls
-      // poussé, aucun message tool, aucune relance. onHalt reçoit le lead-in
-      // (texte du tour) et la question ; il se charge de la reprise « fork B »
-      // (réécriture en message texte clair, cf. main.js). Les éventuels autres
-      // tool_calls du même tour sont volontairement ignorés.
       const halting = result.toolCalls.find(tc => toolIsHalting(tc.function.name));
       if (halting) {
         let hargs = {};
@@ -4670,8 +4188,6 @@ async function runConversation(messages, hooks) {
         return result.content;
       }
 
-      // Passe le content du tour à l'UI : s'il est non vide, l'UI le finalise
-      // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
       if (h.onToolTour) h.onToolTour(result.content);
 
       messages.push({
@@ -4680,8 +4196,6 @@ async function runConversation(messages, hooks) {
         tool_calls: result.toolCalls,
       });
 
-      // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
-      // pour que expandThread puisse reconstruire un seul assistant+N tools.
       const group = 'g' + Date.now().toString(36);
       const assistantText = result.content || null;
 
@@ -4691,37 +4205,23 @@ async function runConversation(messages, hooks) {
         catch (e) { args = {}; }
 
         let out;
-        // Clé d'anti-redemande sur les arguments BRUTS du tool_call, pas sur
-        // id/since seuls : deux appels distincts du même outil (ex. deux
-        // create_memory, ou get_conversation résumé puis with_contents) ont des
-        // arguments distincts et doivent tous être servis. Seul un appel
-        // rigoureusement identique (modèle qui boucle) est court-circuité.
+        
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
         } else {
           bgActivityStart('outil…');
           try {
-            // Pour les outils distants, callRemoteTool pousse l'ack dans
-            // _pendingToolAcks de manière synchrone (avant son premier await).
-            // On démarre l'appel, on vide immédiatement les acks en attente
-            // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
-            // le round-trip réseau, pas seulement après.
+            
             const toolPromise = callTool(tc.function.name, args);
-            // isMcp = appel d'un serveur MCP DISTANT — déterminé par le préfixe du
-            // nom (serveur ≠ 'miaou'/''), pas par le type de retour : un outil
-            // interne ASYNC (ex. miaou__skills__read) renvoie aussi une Promise mais
-            // n'est pas distant. Le distinguer par le nom évite de router son ack
-            // dans le chemin MCP (onEarlyAcks/earlyRendered).
+            
             const isMcp = (function () {
               const p = parseToolName(tc.function.name).serverPrefix;
               return p !== '' && p !== 'miaou';
             })();
             if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
             const rawResult = await toolPromise;
-            // Interception ressources : stocke les blocs non-textuels dans IDB,
-            // réécrit rawResult.content avec des références. currentConvId est
-            // accessible en runtime (global déclaré dans main.js, même scope build).
+            
             if (typeof internResourcesFromResult === 'function') {
               await internResourcesFromResult(rawResult,
                 typeof currentConvId !== 'undefined' ? currentConvId : null,
@@ -4730,10 +4230,7 @@ async function runConversation(messages, hooks) {
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);
-            // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
-            // réinjection cross-turn (args, result aplati, ts, group). Pour les
-            // outils distants l'ack est déjà dans earlyRendered ; pour les
-            // outils internes il est encore dans _pendingToolAcks.
+            
             if (h.onEnrichLastAck) h.onEnrichLastAck({
               isMcp,
               name: tc.function.name,
@@ -4751,16 +4248,11 @@ async function runConversation(messages, hooks) {
         messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
 
-      // Les outils de ce tour ont écrit leurs descripteurs d'ack : on laisse l'UI
-      // les vidanger MAINTENANT (avant la réponse finale du tour suivant), pour
-      // qu'ils s'affichent au-dessus de la réponse et au fil des tours. api.js
-      // reste DOM-free : le hook vit dans main.js.
       if (h.onToolAcks) h.onToolAcks();
 
-      continue;   // on relance toujours un appel
+      continue;   
     }
 
-    // finish_reason === 'stop' (ou terminal) : la vraie réponse.
     if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
     return result.content;
   }
@@ -4769,7 +4261,6 @@ async function runConversation(messages, hooks) {
   return '';
 }
 
-// ── Titrage automatique ─────────────────────────────────────────────────────
 async function generateTitle(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -4782,7 +4273,6 @@ async function generateTitle(thread) {
   return out.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim().slice(0, 60);
 }
 
-// ── Génération d'un résumé ──────────────────────────────────────────────────
 async function generateSummary(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -4796,7 +4286,7 @@ async function generateSummary(thread) {
   const parsed = parseSummaryJSON(out);
   if (!parsed || typeof parsed.summary !== 'string') {
     if (typeof console !== 'undefined') console.warn('[miaou] résumé non parsable :', (out || '').slice(0, 200));
-    return null;   // abandon silencieux côté UI
+    return null;   
   }
   const keywords = Array.isArray(parsed.keywords)
     ? parsed.keywords.map(k => String(k).toLowerCase()).filter(Boolean)
@@ -4804,7 +4294,6 @@ async function generateSummary(thread) {
   return { summary: parsed.summary, keywords };
 }
 
-// ── Recherche / sélection des résumés pertinents ────────────────────────────
 function searchSummaries(queryText, excludeId) {
   const tokens = tokenize(queryText);
   if (!tokens.length) return [];
@@ -4821,7 +4310,6 @@ function searchSummaries(queryText, excludeId) {
   return matches.slice(0, MAX_SUMMARIES);
 }
 
-// ── Liste des modèles exposés par l'API ─────────────────────────────────────
 async function fetchModels(override) {
   const cfg = Object.assign({}, loadSettings(), override || {});
   const res = await fetch(cfg.url + '/models', {
@@ -4836,14 +4324,7 @@ async function fetchModels(override) {
     .sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
-
 /* ── ui.js ── */
-
-/* ── ui.js ─────────────────────────────────────────────────────────────────
-   Couche DOM : rendu des messages, sidebar, drawers, dropdown modèle, bannière
-   mémoire, indicateur d'activité, gestion des souvenirs. Aucune logique
-   d'orchestration (qui vit dans main.js) ni réseau (api.js).
-   ────────────────────────────────────────────────────────────────────────── */
 
 let highlightEnabled = true;
 let configured = false;
@@ -4852,7 +4333,6 @@ let _confirmPending = false;
 
 function $(id) { return document.getElementById(id); }
 
-// ── Écran d'accueil (nouvelle conversation) ─────────────────────────────────
 const WELCOME_SCREENS = [
   { emoji: '🌙', title: 'À tes ordres.',          sub: 'Qu\'est-ce qu\'on démonte aujourd\'hui ?' },
   { emoji: '⚡', title: 'Prêt.',                  sub: 'Pose la question que tu n\'osais pas chercher sur Google.' },
@@ -4882,20 +4362,29 @@ function showWelcome() {
   $('thread').appendChild(el);
 }
 
-// Path des composants Prism pour l'autoloader (langages chargés à la volée).
 if (window.Prism && Prism.plugins && Prism.plugins.autoloader) {
   Prism.plugins.autoloader.languages_path =
     'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
 }
 
-// ── Rendu markdown / coloration ─────────────────────────────────────────────
-function renderMd(text) {
-  if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
-  return marked.parse(text, { breaks: true });
+function resolveConvRefs(text) {
+  return String(text).replace(CONV_REF_RE, function(match, id, title) {
+    const entry = getSummaryEntry(id);
+    const label = title || (entry && entry.title) || id;
+    const safeLabel = label.replace(/\]/g, ')');
+    if (!loadConversation(id)) {
+      return '~~' + safeLabel + ' (supprimée)~~';
+    }
+    return '[' + safeLabel + '](#miaou-conv:' + encodeURIComponent(id) + ')';
+  });
 }
-// Variante pour les messages utilisateur : empêche les balises HTML de traverser
-// vers le DOM (angle-brackets échappés) tout en conservant le markdown.
-// Le `>` est laissé intact pour que les blockquotes fonctionnent.
+
+function renderMd(text) {
+  const resolved = resolveConvRefs(text);
+  if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
+  return marked.parse(resolved, { breaks: true });
+}
+
 function renderUserMd(text) {
   if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
   const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -4909,11 +4398,6 @@ function modelName() {
   return s.model || 'modèle';
 }
 
-// ── Construction d'un message ───────────────────────────────────────────────
-// En-tête d'un message assistant : la barre méta (modèle + icône raisonnement,
-// masquée tant qu'aucun raisonnement) et le bloc collapsible du raisonnement
-// (replié par défaut, donc `hidden`). Sert au rendu live ET au reload depuis le
-// stockage — un seul mécanisme de pliage/dépliage, persistant sans recalcul.
 function assistantHead(model, reasoning, ts) {
   const has = reasoning && String(reasoning).trim();
   const tsText = ts ? '· ' + formatMessageTime(ts, Date.now()) : '';
@@ -4952,7 +4436,7 @@ function buildMsg(role, content, model, reasoning, ts) {
       `<div class="body">${renderMd(content)}</div>`;
     const bodyEl = wrap.querySelector('.body');
     if (bodyEl) bodyEl.dataset.raw = content;
-    // Message déjà finalisé (reload) : le bouton download est opérationnel immédiatement.
+    
     const dlBtn = wrap.querySelector('.msg-dl');
     if (dlBtn) dlBtn.removeAttribute('hidden');
   }
@@ -4960,30 +4444,20 @@ function buildMsg(role, content, model, reasoning, ts) {
   return wrap;
 }
 
-// ── Bloc de raisonnement (thinking) ─────────────────────────────────────────
-// Texte brut en police mono (pas de markdown). Révèle l'icône à la première
-// substance reçue ; un raisonnement vide ('') ne révèle rien (cf. distinction
-// absence / chaîne vide du brief).
 let _reasonTimer = null;
 let _reasonPending = null;
 
-// Écriture effective dans le DOM (O(n) : tout le nœud est réécrit). À ne PAS
-// appeler par delta sans throttle — d'où setReasoning ci-dessous.
 function renderReasoningNow(wrap, text) {
   if (!text) return;
   const toggle = wrap.querySelector('.reasoning-toggle');
   const panel = wrap.querySelector('.reasoning');
   const content = wrap.querySelector('.reasoning-content');
   if (!toggle || !panel || !content) return;
-  toggle.removeAttribute('hidden');          // capacité détectée → icône visible
+  toggle.removeAttribute('hidden');          
   content.textContent = text;
-  if (!panel.hasAttribute('hidden')) content.scrollTop = content.scrollHeight;  // suivre si déplié
+  if (!panel.hasAttribute('hidden')) content.scrollTop = content.scrollHeight;  
 }
 
-// Alimenté en live par les deltas accumulés, throttlé par fenêtres de ~90 ms
-// (même motif que streamInto pour le contenu) : un textContent complet par delta
-// serait O(n²) en écritures DOM sur un long raisonnement. La dernière mise à
-// jour en attente est écrasée ; le flush final passe par flushReasoning.
 function setReasoning(wrap, text) {
   if (!text) return;
   _reasonPending = { wrap, text };
@@ -4996,23 +4470,16 @@ function setReasoning(wrap, text) {
   }, 90);
 }
 
-// Annule un rendu de raisonnement en attente (avant un finalize/reset, pour
-// qu'un timer en vol ne réécrive pas un état périmé). Symétrique de
-// cancelStreamRender pour le contenu.
 function cancelReasoningRender() {
   if (_reasonTimer) { clearTimeout(_reasonTimer); _reasonTimer = null; }
   _reasonPending = null;
 }
 
-// Flush synchrone du raisonnement définitif : annule le throttle en vol et écrit
-// la valeur finale d'un coup. Sans lui, les derniers tokens manqueraient au live
-// (la valeur persistée, issue de onFinal, reste complète quoi qu'il arrive).
 function flushReasoning(wrap, text) {
   cancelReasoningRender();
   renderReasoningNow(wrap, text);
 }
 
-// Toggle global (référencé en onclick= inline). Déplie/replie le bloc.
 function toggleReasoning(btn) {
   const wrap = btn.closest('.msg');
   const panel = wrap && wrap.querySelector('.reasoning');
@@ -5030,7 +4497,6 @@ function toggleReasoning(btn) {
   scrollBottom();
 }
 
-// En-tête (langage + boutons copier/télécharger) sur chaque <pre>.
 function decoratePre(scope) {
   const svgCopy = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
   const svgCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
@@ -5067,11 +4533,6 @@ function decoratePre(scope) {
   });
 }
 
-// Télécharge le contenu brut (markdown source) d'un message assistant, précédé
-// de la trace des acks enrichis (args+result) de son tour — mêmes acks que
-// placeToolAck affiche dans la bulle, retrouvés via msgIndex en remontant
-// currentThread (cf. downloadConvMd pour le même motif sur l'export complet).
-// Le contenu est stocké dans body.dataset.raw au moment du finalize/buildMsg.
 function downloadMsgMd(btn) {
   const wrap = btn.closest('.msg');
   const body = wrap && wrap.querySelector('.body');
@@ -5088,11 +4549,6 @@ function downloadMsgMd(btn) {
   downloadFile('miaou-message.md', trace + raw, 'text/markdown');
 }
 
-// ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────
-// Source unique de vérité : ajouter un outil traçable = ajouter une ligne, pas
-// toucher au renderer. `undo: null` = variante informative sans bouton (lectures).
-// `undo` est une fonction (id) => void. Les icônes sont des SVG statiques
-// author-controlled (jamais de donnée modèle dedans).
 const ICON_MEMORY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -5109,19 +4565,17 @@ const ACK_KINDS = {
   memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
   conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
   conversation_list: { destination: 'user', undo: null, icon: ICON_LIST, label: m =>
-      m.count === 0 ? 'Aucune conversation trouvée'
-    : m.count === 1 ? '1 conversation listée'
-    : (m.count != null ? m.count : '?') + ' conversations listées' },
-  // Appel d'outil MCP distant : breadcrumb `seg1` › `seg2` › … sur chaque `__`.
-  // Si m.intent est présent, rendu en deux niveaux : intention (niveau 1, visible)
-  // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
-  // `label` reste la version texte brut (ackLabel, tests) — breadcrumb uniquement.
+      (m.intent ? m.intent + ' : ' : '') + (
+        m.count === 0 ? 'Aucune conversation trouvée'
+      : m.count === 1 ? '1 conversation listée'
+      : (m.count != null ? m.count : '?') + ' conversations listées') },
+  
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
     label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
       if (m.intent) {
-        // Niveau 1 : intention + chevron toggle
+        
         const row = document.createElement('span');
         row.className = 'mcp-intent-row';
         const intentSpan = document.createElement('span');
@@ -5133,7 +4587,7 @@ const ACK_KINDS = {
         chevron.type = 'button';
         chevron.title = 'Détail technique';
         chevron.innerHTML = ICON_CHEVRON_DOWN;
-        // Niveau 2 : breadcrumb repliée par défaut
+        
         const detail = document.createElement('span');
         detail.className = 'mcp-breadcrumb-detail';
         detail.setAttribute('hidden', '');
@@ -5162,7 +4616,7 @@ const ACK_KINDS = {
         el.appendChild(row);
         el.appendChild(detail);
       } else {
-        // Fallback : breadcrumb seule (inchangée)
+        
         el.appendChild(document.createTextNode('Appel : '));
         segs.forEach((seg, i) => {
           if (i > 0) {
@@ -5178,7 +4632,7 @@ const ACK_KINDS = {
       }
     },
   },
-  // ── Ressources IDB ──────────────────────────────────────────────────────────
+  
   resource_stored: {
     destination: 'user',
     undo: null,
@@ -5197,8 +4651,7 @@ const ACK_KINDS = {
     icon: ICON_TRASH,
     label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
   },
-  // Énumération des skills par le modèle (miaou__skills__list) : informatif, pas
-  // d'undo (lecture — même posture que conversation_list, dont on réutilise l'icône).
+  
   skill_list: {
     destination: 'user',
     undo: null,
@@ -5208,8 +4661,7 @@ const ACK_KINDS = {
       : m.count === 1 ? '1 skill listée'
       : (m.count != null ? m.count : '?') + ' skills listées',
   },
-  // Lecture d'un skill par le modèle (miaou__skills__read) : informatif, pas d'undo
-  // (lecture, pas une mutation d'état — même posture que conversation_read).
+  
   skill_read: {
     destination: 'user',
     undo: null,
@@ -5218,7 +4670,6 @@ const ACK_KINDS = {
   },
 };
 
-// Wrapper global (testable QuickJS) : résout le label depuis ACK_KINDS.
 function ackLabel(kind, m) {
   const spec = ACK_KINDS[kind];
   return spec ? spec.label(m) : 'Action effectuée';
@@ -5238,14 +4689,13 @@ function buildToolAck(m) {
   if (spec.icon) {
     const iconEl = document.createElement('span');
     iconEl.className = 'ack-icon';
-    iconEl.innerHTML = spec.icon;   // SVG statique author-controlled uniquement
+    iconEl.innerHTML = spec.icon;   
     wrap.appendChild(iconEl);
   }
 
   const label = document.createElement('span');
   label.className = 'ack-label';
-  // renderLabel : construction DOM riche (breadcrumb avec <code> et séparateur) —
-  // réservé aux kinds qui en ont besoin. Sinon textContent (frontière XSS standard).
+  
   if (spec.renderLabel) {
     spec.renderLabel(m, label);
   } else {
@@ -5263,14 +4713,12 @@ function buildToolAck(m) {
       const btn = document.createElement('button');
       btn.className = 'ack-undo';
       btn.textContent = 'annuler';
-      // On passe l'ENTRÉE et le NŒUD exacts : un create et un delete du même
-      // souvenir partagent le même m.id, une recherche par id viserait le mauvais.
+      
       btn.addEventListener('click', () => undoToolAck(m, wrap));
       wrap.appendChild(btn);
     }
   }
-  // expand : bouton toggle « voir/masquer » pour les ressources stockées. Le
-  // contenu est rendu une seule fois (lazy) dans un conteneur inline.
+  
   if (spec.expand && !m.resolved) {
     const expandBtn = document.createElement('button');
     expandBtn.className = 'ack-expand';
@@ -5284,7 +4732,7 @@ function buildToolAck(m) {
       expandBtn.textContent = content.hidden ? 'voir' : 'masquer';
       if (!content.hidden && !rendered) {
         rendered = true;
-        spec.expand(m, content);   // presentResourceFromChip (défini dans ui.js)
+        spec.expand(m, content);   
       }
     });
     wrap.appendChild(expandBtn);
@@ -5293,12 +4741,6 @@ function buildToolAck(m) {
   return wrap;
 }
 
-// Place un ack DANS la bulle assistant, entre l'en-tête (.meta / raisonnement) et
-// le corps (.body) : la provenance s'affiche après l'icône+nom du modèle et avant
-// le patienteur/la réponse. Si la bulle n'a pas de .body, on append en dernier
-// recours. Partagé par le rendu live (onToolAcks/onEarlyAcks) et le reload (renderThread).
-// Pour mcp_call : si le serveur a showCalls === false, n'insère pas dans le DOM mais
-// retourne null (l'entrée reste dans currentThread — le toggle est render-only).
 function placeToolAck(wrap, entry) {
   if (ackKindOf(entry) === 'mcp_call' && entry.server) {
     const srv = getMcpServer(entry.server);
@@ -5308,10 +4750,7 @@ function placeToolAck(wrap, entry) {
   const body = wrap && wrap.querySelector('.body');
   if (body) wrap.insertBefore(node, body);
   else if (wrap) wrap.appendChild(node);
-  // resource_presented : rend le bloc ressource (toute classe).
-  // resource_stored : rend le bloc pour les binaires uniquement (les inline sont
-  // stockés en IDB mais non affichés automatiquement) ; en live, _pendingToolBlocks
-  // est non vide (binaires) → on laisse placeToolBlocks les rendre, pas de double.
+  
   const kindNow = ackKindOf(entry);
   const needsBlock = kindNow === 'resource_presented' ||
     (kindNow === 'resource_stored' && typeof getPendingToolBlocks === 'function' && getPendingToolBlocks().length === 0);
@@ -5333,17 +4772,13 @@ function placeToolAck(wrap, entry) {
 function renderThread(msgs) {
   const thread = $('thread');
   thread.innerHTML = '';
-  clearMemoryProposals();   // les cartes de proposition viennent d'être détruites
+  clearMemoryProposals();   
   if (!msgs || msgs.length === 0) { showWelcome(); return; }
-  // Les acks précèdent dans currentThread l'assistant qu'ils ont nourri ; on les
-  // tamponne pour les replacer DANS sa bulle (en-tête, acks, réponse), cohérent
-  // avec le rendu live. Repli en blocs autonomes s'ils ne précèdent pas un
-  // assistant (cas limite : acks orphelins ou suivis d'un message user).
+  
   let pendingAcks = [];
   for (const m of msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
-    // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
-    // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
+    
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
     const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts);
     if (m.role === 'assistant') {
@@ -5366,7 +4801,6 @@ function syncConvDownloadBtn() {
   btn.hidden = !currentThread.some(m => m.role === 'assistant');
 }
 
-// ── Streaming d'une réponse assistant ───────────────────────────────────────
 function appendUserMessage(text, ts) {
   const welcome = $('thread').querySelector('.welcome-screen');
   if (welcome) welcome.remove();
@@ -5382,24 +4816,18 @@ function startAssistantMessage(model) {
   wrap.className = 'msg assistant';
   wrap.innerHTML = assistantHead(model, '') + `<div class="body"></div>`;
   $('thread').appendChild(wrap);
-  startWaiter(wrap.querySelector('.body'));     // état WAITING
+  startWaiter(wrap.querySelector('.body'));     
   scrollBottom();
   return wrap;
 }
 
-// ── Patienteur animé ────────────────────────────────────────────────────────
-// Remplace le caret pendant l'attente (WAITING) et la reprise après un tour
-// tool_calls : un mot court qui change par fondu CSS toutes les ~1.8 s, tiré
-// au hasard (pas de cycle fixe). Discret, couleur texte secondaire. Jamais
-// affiché en même temps que du contenu en streaming (streamInto coupe avant
-// de peindre). Deux timers à nettoyer : la rotation et le fondu intermédiaire.
 const WAITER_WORDS = [
   'Cogite', 'Médite', 'Triture', 'Décortique', 'Mijote', 'Tisse', 'Rumine',
   'Ausculte', 'Démêle', 'Échafaude', 'Macère', 'Ourdit', 'Tergiverse',
   'Élucubre', 'Pondère', 'Fomente',
 ];
-let _waiterRotate = null;   // setInterval : changement de mot
-let _waiterFade = null;     // setTimeout : bascule du texte à mi-fondu
+let _waiterRotate = null;   
+let _waiterFade = null;     
 
 function pickWaiterWord(prev) {
   let w;
@@ -5411,16 +4839,16 @@ function pickWaiterWord(prev) {
 function startWaiter(body) {
   stopWaiter();
   body.innerHTML = `<span class="waiter"><span class="waiter-dot"></span><span class="waiter-word">${pickWaiterWord()}</span></span>`;
-  const word = body.querySelector('.waiter-word');   // le point animé, lui, demeure
+  const word = body.querySelector('.waiter-word');   
   _waiterRotate = setInterval(() => {
-    word.classList.add('fade');                 // opacity → 0 (mot + « … » via transition CSS)
+    word.classList.add('fade');                 
     _waiterFade = setTimeout(() => {
       word.textContent = pickWaiterWord(word.textContent);
       word.classList.add('dots-reset');
-      void word.offsetWidth;                    // force reflow → reset animation ::after
+      void word.offsetWidth;                    
       word.classList.remove('dots-reset');
-      word.classList.remove('fade');            // opacity → 1
-    }, 280);                                     // doit matcher .waiter-word transition
+      word.classList.remove('fade');            
+    }, 280);                                     
   }, 5400);
 }
 
@@ -5429,15 +4857,11 @@ function stopWaiter() {
   if (_waiterFade) { clearTimeout(_waiterFade); _waiterFade = null; }
 }
 
-// Rendu en cours de streaming, throttlé : on n'applique le markdown + la
-// coloration que par fenêtres de ~90 ms. Chaque frame peinte est complète
-// (parsée, décorée, colorée) — jamais d'état intermédiaire non coloré, donc
-// pas de scintillement. La dernière mise à jour en attente est écrasée.
 let _streamTimer = null;
 let _streamPending = null;
 
 function streamInto(wrap, full) {
-  stopWaiter();                 // transition WAITING/REASONING → STREAMING
+  stopWaiter();                 
   _streamPending = { wrap, full };
   if (_streamTimer) return;
   _streamTimer = setTimeout(() => {
@@ -5448,13 +4872,11 @@ function streamInto(wrap, full) {
     const body = p.wrap.querySelector('.body');
     body.innerHTML = renderMd(p.full) + '<span class="cursor-blink"></span>';
     decoratePre(p.wrap);
-    highlightUnder(p.wrap);   // coloration pendant le streaming
+    highlightUnder(p.wrap);   
     scrollBottom();
   }, 90);
 }
 
-// Annule un rendu de streaming en attente (avant un finalize/reset, pour qu'un
-// timer en vol ne réécrive pas un contenu périmé avec le caret par-dessus).
 function cancelStreamRender() {
   if (_streamTimer) { clearTimeout(_streamTimer); _streamTimer = null; }
   _streamPending = null;
@@ -5463,7 +4885,7 @@ function cancelStreamRender() {
 function resetAssistant(wrap) {
   cancelStreamRender();
   cancelReasoningRender();
-  startWaiter(wrap.querySelector('.body'));     // reprise d'attente après un tour tool_calls
+  startWaiter(wrap.querySelector('.body'));     
 }
 
 function finalizeAssistant(wrap, full) {
@@ -5481,15 +4903,11 @@ function finalizeAssistant(wrap, full) {
   scrollBottom();
 }
 
-// ── Édition d'un message utilisateur ────────────────────────────────────────
-// Index recalculé au moment du clic (jamais figé au rendu) : position DOM du
-// .msg traduite en index currentThread en sautant les entrées tool-ack.
 function msgIndex(wrap) {
   const msgs = Array.from($('thread').querySelectorAll('.msg'));
   const domIdx = msgs.indexOf(wrap);
   if (domIdx < 0) return -1;
-  // Les tool-ack ne génèrent pas de .msg autonome : l'index DOM ≠ index currentThread.
-  // On remonte en comptant uniquement les entrées non-ack.
+  
   let count = 0;
   for (let i = 0; i < currentThread.length; i++) {
     if (isAckRole(currentThread[i].role)) continue;
@@ -5500,7 +4918,7 @@ function msgIndex(wrap) {
 }
 
 function onEditMsg(btn) {
-  if (sending) return;                          // pas d'édition pendant un stream
+  if (sending) return;                          
   const wrap = btn.closest('.msg');
   if (wrap) enterEditMode(wrap);
 }
@@ -5509,16 +4927,13 @@ function enterEditMode(wrap) {
   if (sending) return;
   const index = msgIndex(wrap);
   if (index < 0) return;
-  // Source UNIQUE du texte éditable et de la bulle restaurée : displayText (littéral
-  // tapé) si présent, sinon content. Jamais le content baké d'une slash-commande
-  // skill — sinon la textarea et la bulle (après annulation) fuiteraient le corps injecté.
+  
   const m = currentThread[index];
   const original = m ? (m.displayText != null ? m.displayText : m.content) : '';
 
   wrap.classList.add('editing');
   const bubble = wrap.querySelector('.bubble');
-  // Dropdown sous la textarea (seule différence positionnelle avec le composer,
-  // où il est au-dessus) : placé juste APRÈS dans le DOM, AVANT les actions.
+  
   bubble.innerHTML =
     `<textarea class="msg-edit-area" spellcheck="false"></textarea>` +
     `<div class="skill-ac" hidden></div>` +
@@ -5552,8 +4967,6 @@ function enterEditMode(wrap) {
   bubble.querySelector('[data-act="save"]').onclick = () => commitEdit(wrap, ta.value);
 }
 
-// Annulation : restaure le contenu de la bulle. Le .msg-ts est un sibling du
-// .bubble (hors de sa portée), il n'est pas touché.
 function cancelEdit(wrap, original) {
   wrap.classList.remove('editing');
   const bubble = wrap.querySelector('.bubble');
@@ -5566,12 +4979,6 @@ function cancelEdit(wrap, original) {
   highlightUnder(wrap);
 }
 
-// Validation : recalcule l'index (le thread n'a pas bougé, mais on ne fige rien)
-// puis délègue la troncature + relance à editUserMessage (main.js). Un slug skill
-// invalide remonte une erreur affichée SOUS LA ZONE D'ÉDITION (pas le composer) ;
-// le thread reste intact et la bulle en mode édition pour correction. En cas de
-// succès, editUserMessage re-rend le thread → la bulle d'édition (et son erreur)
-// disparaissent.
 async function commitEdit(wrap, value) {
   const t = (value || '').trim();
   if (!t) return;
@@ -5590,8 +4997,6 @@ function clearEditError(wrap) {
   if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
-// ── Indicateur d'activité en arrière-plan ───────────────────────────────────
-// Point d'entrée unique avec compteur, pour gérer les chevauchements.
 let _bgCount = 0;
 function bgActivityStart(label) {
   _bgCount++;
@@ -5606,7 +5011,6 @@ function bgActivityLabel(label) {
   $('bg-label').textContent = label;
 }
 
-// ── Sidebar / sections temporelles ──────────────────────────────────────────
 function sectionFor(ts) {
   if (!ts) return 'Plus ancien';
   const now = new Date();
@@ -5624,9 +5028,7 @@ function relativeWhen(ts) {
   if (!ts) return '';
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  // Le jour même : afficher l'heure (HH:MM) plutôt que « aujourd'hui »,
-  // redondant avec l'en-tête de section « Aujourd'hui ». Calé sur le même
-  // découpage calendaire que sectionFor (pas une fenêtre glissante de 24 h).
+  
   if (ts >= startOfToday) return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const day = 86400000;
   if (ts >= startOfToday - day) return 'hier à ' + new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -5636,21 +5038,13 @@ function relativeWhen(ts) {
   return new Date(ts).toLocaleDateString('fr-FR', { month: 'long' });
 }
 
-// Filtre de recherche courant (prédicat sur une conversation), ou null pour
-// « tout afficher ». Persistant : conservé à travers les re-rendus (maj en
-// arrière-plan, sélection, etc.) tant que le champ de recherche n'est pas vidé.
 let convSearchFilter = null;
 
-// Prédicat de recherche : match direct (sous-chaîne) sur le titre, ou
-// recouvrement de mots-clés sur le résumé via le scoring existant (seuil bas,
-// plus permissif que l'injection automatique). null si requête vide.
 function searchConversations(query) {
   const q = (query || '').trim().toLowerCase();
   if (!q) return null;
   const qTokens = tokenize(q);
-  // Un seul parse des résumés, capturé par la closure : le prédicat est appelé
-  // une fois par conversation, sans re-désérialiser tout le blob à chaque appel.
-  // Instantané pris à la frappe (rafraîchi à la frappe suivante) — cf. perf.
+  
   const summaries = loadSummaries();
   return c => {
     if ((c.title || '').toLowerCase().includes(q)) return true;
@@ -5672,14 +5066,12 @@ function clearConvSearch() {
   $('search-clear').classList.remove('show');
   convSearchFilter = null;
   renderConvList();
-  // La sélection courante (potentiellement très ancienne) peut être hors écran
-  // une fois la liste complète restaurée : on la ramène dans le champ visible.
+  
   const active = $('conv-list').querySelector('.conv.active');
   if (active) active.scrollIntoView({ block: 'nearest' });
   input.focus();
 }
 
-// Icônes d'épingle (pleine = épinglé, contour = à épingler).
 const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .59 1.42L18 14.5H6l2.41-2.32A2 2 0 0 0 9 10.76z"/></svg>';
 
 function convItemEl(c) {
@@ -5715,14 +5107,12 @@ function renderConvList() {
   let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
 
-  // Section « Épinglé » en tête (au singulier, choix assumé), si au moins une.
   const pinned = convs.filter(c => c.pinned);
   if (pinned.length) {
     list.appendChild(sectionEl('Épinglé'));
     for (const c of pinned) list.appendChild(convItemEl(c));
   }
 
-  // Le reste, regroupé par tranches temporelles.
   let lastSection = null;
   for (const c of convs) {
     if (c.pinned) continue;
@@ -5766,10 +5156,6 @@ function initVisualViewport() {
   update();
 }
 
-// ── Redimensionnement de la sidebar (drag du bord droit) ────────────────────
-// Largeur bornée [min = largeur d'origine, max = ×2], persistée dans les
-// réglages. On pilote la variable CSS --sidebar-w ; pendant le drag la classe
-// .resizing coupe la transition pour un suivi 1:1 du curseur.
 const SIDEBAR_MIN = 264;
 const SIDEBAR_MAX = SIDEBAR_MIN * 2;
 let _sidebarW = SIDEBAR_MIN;
@@ -5799,7 +5185,7 @@ function initSidebarResize() {
     sidebar.classList.remove('resizing');
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
-    saveSettings({ sidebarWidth: _sidebarW });   // persiste la largeur finale
+    saveSettings({ sidebarWidth: _sidebarW });   
   };
 
   handle.addEventListener('mousedown', (e) => {
@@ -5820,8 +5206,6 @@ function setTitle(t) {
   document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
 }
 
-// Légende + placeholder du champ clef, selon REQUIRE_API_KEY (figé au build).
-// Posé une fois à l'init — la constante ne change pas au runtime.
 function syncKeyFieldHint() {
   const input = $('set-key');
   const hint = $('set-key-hint');
@@ -5834,7 +5218,6 @@ function syncKeyFieldHint() {
   }
 }
 
-// ── État configuré / non configuré ──────────────────────────────────────────
 function syncConfigured() {
   const url = $('set-url').value.trim();
   const key = $('set-key').value.trim();
@@ -5849,7 +5232,7 @@ function syncConfigured() {
     wrap.classList.remove('disabled');
     ta.placeholder = 'Message…';
     ta.disabled = false;
-    send.disabled = false;   // pendant un stream le bouton sert de « stop » : jamais désactivé
+    send.disabled = false;   
     dot.className = 'dot ok';
   } else {
     wrap.classList.add('disabled');
@@ -5864,16 +5247,13 @@ function setSending(on) {
   sending = on;
   setComposerStreaming(on);
   const send = $('send-btn');
-  // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend du
-  // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
-  // saisie libre vaut réponse/correction et lève le widget (dismiss-on-send).
+  
   if (send) send.disabled = on ? false : !configured;
-  // Export de conversation masqué pendant le streaming (contenu incomplet).
+  
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
 }
 
-// Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
 function setComposerStreaming(on) {
   const send = $('send-btn');
   if (!send) return;
@@ -5885,11 +5265,6 @@ function setConnDot(state) {
   if (dot) dot.className = 'dot ' + (state || '');
 }
 
-// Active ou désactive l'état « confirmation en attente ». Le composer reste
-// ÉDITABLE (brief §4.5 : la saisie libre vaut réponse/correction) : on se borne
-// à poser l'overlay qui dim l'arrière-plan et la classe .confirming qui élève
-// composer + carte au-dessus du dim (effet spotlight, clic possible). Partagé
-// entre renderMemoryProposals (ancien chemin) et showConfirmation (primitif).
 function setConfirmPending(on) {
   _confirmPending = on;
   const backdrop = $('confirm-backdrop');
@@ -5903,9 +5278,6 @@ function setConfirmPending(on) {
   }
 }
 
-// Lève une confirmation en attente SANS la résoudre (l'utilisateur a tapé une
-// réponse libre plutôt que cliquer) : retire toutes les cartes du DOM et désarme
-// l'overlay. Distinct de clearMemoryProposals (qui suppose le thread déjà rasé).
 function dismissConfirmation() {
   for (const k in _proposalMap) delete _proposalMap[k];
   const containers = document.querySelectorAll('.memory-proposals');
@@ -5913,10 +5285,8 @@ function dismissConfirmation() {
   setConfirmPending(false);
 }
 
-// ── Composer ────────────────────────────────────────────────────────────────
 function onComposerKey(e) {
-  // Autocomplétion skill ouverte : flèches naviguent, Tab/Entrée complètent,
-  // Échap ferme — sans envoyer ni insérer de saut de ligne.
+  
   if (skillAutocompleteOpen(_composerAc)) {
     if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(_composerAc, 1); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(_composerAc, -1); return; }
@@ -5927,7 +5297,6 @@ function onComposerKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
 }
 
-// ── Dropdown modèle (liste via l'API) ───────────────────────────────────────
 let _models = [];
 
 async function openModelMenu() {
@@ -5981,7 +5350,6 @@ function pickModel(m) {
   $('model-menu').classList.remove('show');
 }
 
-// Ferme le menu modèle au clic ailleurs.
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#set-model') && !e.target.closest('#model-menu')) {
     const menu = $('model-menu');
@@ -5993,9 +5361,6 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ── Sélecteur de modèle du composer ─────────────────────────────────────────
-// Liste mise en cache pour la session (pas de persistance), invalidée si l'URL
-// du backend change. Un seul fetch /models par session/backend.
 let _modelsCache = null;
 let _modelsCacheUrl = '';
 
@@ -6010,9 +5375,6 @@ async function loadModelsCached() {
   return models;
 }
 
-// Met à jour les libellés de modèle (pastille topbar + bouton composer) sur le
-// modèle effectif, et la visibilité du sélecteur composer (réglage activé ET
-// liste disponible — sinon fallback silencieux, le sélecteur n'apparaît pas).
 function syncModelUI() {
   const m = activeModel() || 'modèle';
   const top = $('model-label');           if (top) top.textContent = m;
@@ -6048,14 +5410,13 @@ function renderComposerModelOptions() {
 }
 
 function pickComposerModel(m) {
-  setConvModel(m);   // override conv + persistance + syncModelUI
+  setConvModel(m);   
   $('composer-model-menu').classList.remove('show');
 }
 
-// ── Settings drawer ─────────────────────────────────────────────────────────
 function openSettings() {
   const s = loadSettings();
-  setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
+  setSummaryInjectionModeUI(s.summaryInjectionMode);   
   setThemeUI(s.theme || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
@@ -6078,8 +5439,6 @@ function closeSettings() {
   $('model-menu').classList.remove('show');
 }
 
-// Légende décrivant le comportement induit par l'option sélectionnée (une seule
-// à la fois), plutôt que l'énumération des trois modes.
 const SUMMARY_INJECTION_HINTS = {
   auto:    "Recherche les conversations passées liées et les injecte dans le contexte, sans rien demander.",
   propose: "Détecte les conversations passées liées et propose de les injecter via une bannière, avant l'envoi.",
@@ -6097,7 +5456,6 @@ function setSummaryInjectionModeUI(mode) {
 }
 function selectSummaryInjectionMode(mode) { setSummaryInjectionModeUI(mode); }
 
-// ── Thème ────────────────────────────────────────────────────────────────────
 const THEME_HINTS = {
   light:  "Interface toujours en clair, indépendamment du système.",
   dark:   "Interface toujours en sombre, indépendamment du système.",
@@ -6109,7 +5467,7 @@ function applyTheme(theme) {
   const html = document.documentElement;
   if (theme === 'light')  html.setAttribute('data-theme', 'light');
   else if (theme === 'dark') html.setAttribute('data-theme', 'dark');
-  else html.removeAttribute('data-theme');   // 'system' : laisse le media query décider
+  else html.removeAttribute('data-theme');   
 }
 function setThemeUI(theme) {
   pendingTheme = theme || 'system';
@@ -6122,7 +5480,7 @@ function setThemeUI(theme) {
 function selectTheme(theme) {
   setThemeUI(theme);
   applyTheme(theme);
-  saveSettings({ theme });   // persisté immédiatement : préférence visuelle à effet direct
+  saveSettings({ theme });   
 }
 
 function onToggleHighlight() {
@@ -6130,7 +5488,6 @@ function onToggleHighlight() {
   renderThread(currentThread);
 }
 
-// ── Bannière résumés (mode « proposer ») ────────────────────────────────────
 let _bannerHandlers = null;
 function showSummaryBanner(matches, handlers) {
   _bannerHandlers = handlers;
@@ -6171,7 +5528,6 @@ function summaryBanner(action) {
   if (h && h[action]) h[action]();
 }
 
-// ── Drawer combiné Résumés / Souvenirs ─────────────────────────────────────
 function openSummaryDrawer(tab) {
   switchMemoryTab(tab || 'summaries');
   $('summary-drawer').classList.add('show');
@@ -6248,18 +5604,16 @@ function toggleSummaryExpand(id) {
   if (!wasExpanded) clicked.classList.add('expanded');
 }
 
-// Ré-autorisation. Si le résumé est conservé sous la tombstone → retour
-// instantané. Sinon, régénération avec loader inline sur l'item concerné.
 async function restoreSummaryItem(id) {
   const entry = getSummaryEntry(id);
-  if (entry && entry.summary) {        // état d'avant préservé : instantané
+  if (entry && entry.summary) {        
     restoreSummary(id);
     renderSummaryList();
     return;
   }
 
   const conv = loadConversation(id);
-  if (!conv || !hasSubstance(conv.messages)) {   // rien à régénérer
+  if (!conv || !hasSubstance(conv.messages)) {   
     restoreSummary(id);
     renderSummaryList();
     return;
@@ -6275,12 +5629,11 @@ async function restoreSummaryItem(id) {
       summary: s.summary, keywords: s.keywords, messageCount: conv.messages.length,
     });
   } else {
-    restoreSummary(id);   // échec : on lève la tombstone (candidate au backfill)
+    restoreSummary(id);   
   }
   renderSummaryList();
 }
 
-// ── Panneau des outils ──────────────────────────────────────────────────────
 function openTools() {
   renderToolsList();
   $('tools-drawer').classList.add('show');
@@ -6291,10 +5644,6 @@ function closeTools() {
   $('tools-backdrop').classList.remove('show');
 }
 
-// Sous-drawer « Voir les outils exposés » : groupé par namespace (cf. D2), nom NU
-// affiché sous l'en-tête du préfixe. Projection pure du nom canonique — rien n'est
-// stocké : groupByNamespace splitte sur le 1er `__`. ask_confirmation (hors
-// registre mais déclaré au modèle) est ajouté sous le namespace miaou pour info.
 function renderToolsList() {
   const wrap = $('tools-list');
   const list = exposedTools().concat([{
@@ -6384,7 +5733,6 @@ function buildToolItem(bareName, def) {
   return item;
 }
 
-// ── Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3) ───────────────────
 function openMcpServers() {
   renderMcpServers();
   $('mcp-drawer').classList.add('show');
@@ -6413,8 +5761,6 @@ function renderMcpServers() {
   }
 }
 
-// Ajoute une carte vierge (nouveau serveur) en tête de liste, transport deviné
-// au fil de la saisie d'URL (pré-remplissage, jamais override — cf. D4).
 function addMcpServerCard() {
   const wrap = $('mcp-list');
   if (!wrap) return;
@@ -6452,7 +5798,6 @@ function buildMcpCard(server, isNew) {
   card.className = 'mcp-card' + (isNew ? ' is-editing' : '');
   const originalName = server.name || '';
 
-  // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
   viewSection.className = 'mcp-view';
 
@@ -6469,7 +5814,6 @@ function buildMcpCard(server, isNew) {
   const viewRow = document.createElement('div');
   viewRow.className = 'mcp-view-row';
 
-  // Toggle en mode vue (class distincte — onSaveMcpCard lit .mcp-enabled dans la section édition)
   const viewToggleLabel = document.createElement('label');
   viewToggleLabel.className = 'mcp-view-toggle-label';
   const viewToggleWrap = document.createElement('label');
@@ -6485,7 +5829,6 @@ function buildMcpCard(server, isNew) {
   viewToggleLabel.append(viewToggleWrap, viewEnabledTxt);
   viewRow.appendChild(viewToggleLabel);
 
-  // Pill de statut — masquée si désactivé
   const viewStatus = document.createElement('div');
   viewStatus.className = 'mcp-status';
   if (!isNew && server.enabled !== false) {
@@ -6498,7 +5841,6 @@ function buildMcpCard(server, isNew) {
   }
   viewRow.appendChild(viewStatus);
 
-  // Bouton Modifier — pattern .drawer-btn de la gestion des souvenirs
   const modBtn = document.createElement('button');
   modBtn.className = 'drawer-btn';
   modBtn.textContent = 'Modifier';
@@ -6508,7 +5850,6 @@ function buildMcpCard(server, isNew) {
   viewSection.appendChild(viewRow);
   card.appendChild(viewSection);
 
-  // Toggle vue : persistance immédiate + reconnexion
   viewEnabledI.addEventListener('change', async () => {
     const s = getMcpServer(originalName);
     if (!s) return;
@@ -6521,7 +5862,6 @@ function buildMcpCard(server, isNew) {
     renderMcpServers();
   });
 
-  // ── SECTION ÉDITION ───────────────────────────────────────────────────────
   const editSection = document.createElement('div');
   editSection.className = 'mcp-edit';
 
@@ -6543,8 +5883,7 @@ function buildMcpCard(server, isNew) {
     transportSel.appendChild(o);
   }
   transportSel.value = server.transport || 'streamable-http';
-  // Transport explicite (serveur existant) → marqué « touché » pour que la
-  // devinette d'URL ne l'écrase jamais (D4). Vierge → devinette active.
+  
   if (server.transport) transportSel.dataset.touched = '1';
   transportSel.addEventListener('change', () => { transportSel.dataset.touched = '1'; });
   urlI.addEventListener('input', () => {
@@ -6564,7 +5903,6 @@ function buildMcpCard(server, isNew) {
   editSection.appendChild(mcpField('Outils autorisés', allowI));
   editSection.appendChild(mcpField('Outils masqués', denyI));
 
-  // Toggle en mode édition — composant .toggle réutilisé verbatim
   const editEnabledWrap = document.createElement('label');
   editEnabledWrap.className = 'mcp-enabled-row';
   const editToggleWrap = document.createElement('label');
@@ -6579,7 +5917,6 @@ function buildMcpCard(server, isNew) {
   editEnabledWrap.append(editToggleWrap, editEnabledTxt);
   editSection.appendChild(editEnabledWrap);
 
-  // Toggle showCalls — affiche les lignes d'appel MCP dans le thread
   const showCallsWrap = document.createElement('label');
   showCallsWrap.className = 'mcp-enabled-row';
   const showCallsToggleWrap = document.createElement('label');
@@ -6620,9 +5957,6 @@ function buildMcpCard(server, isNew) {
   return card;
 }
 
-// ── Skills : drawer de gestion ───────────────────────────────────────────────
-// Liste les skills depuis le cache mémoire (méta) ; le contenu Markdown est lu en
-// IDB à l'entrée en édition (getSkillRecord), jamais conservé en cache.
 function openSkills() {
   renderSkills();
   $('skills-drawer').classList.add('show');
@@ -6637,7 +5971,7 @@ function renderSkills() {
   const wrap = $('skill-list');
   if (!wrap) return;
   wrap.innerHTML = '';
-  const skills = listAllSkillsCache();   // skills.js — méta, ordre d'insertion
+  const skills = listAllSkillsCache();   
   if (!skills.length) {
     const empty = document.createElement('div');
     empty.className = 'mem-empty';
@@ -6682,7 +6016,6 @@ function buildSkillCard(skill, isNew) {
   card.className = 'skill-card' + (isNew ? ' is-editing' : '');
   const originalSlug = skill.slug || '';
 
-  // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
   viewSection.className = 'skill-view';
 
@@ -6700,7 +6033,6 @@ function buildSkillCard(skill, isNew) {
   const viewRow = document.createElement('div');
   viewRow.className = 'skill-view-row';
 
-  // Toggle enabled en vue (persistance immédiate via onToggleSkill, main.js)
   const viewToggleLabel = document.createElement('label');
   viewToggleLabel.className = 'toggle';
   const viewEnabledI = document.createElement('input');
@@ -6723,7 +6055,6 @@ function buildSkillCard(skill, isNew) {
   viewSection.appendChild(viewRow);
   card.appendChild(viewSection);
 
-  // ── SECTION ÉDITION ───────────────────────────────────────────────────────
   const editSection = document.createElement('div');
   editSection.className = 'skill-edit';
 
@@ -6745,7 +6076,6 @@ function buildSkillCard(skill, isNew) {
   editSection.appendChild(skillField('Description', descI, 'Surface lexicale décrite au modèle.'));
   editSection.appendChild(skillField('Contenu', contentT));
 
-  // Toggle enabled en édition (.skill-enabled lu par onSaveSkillCard)
   const editEnabledWrap = document.createElement('label');
   editEnabledWrap.className = 'skill-enabled-row';
   const editToggleWrap = document.createElement('label');
@@ -6760,9 +6090,6 @@ function buildSkillCard(skill, isNew) {
   editEnabledWrap.append(editToggleWrap, editEnabledTxt);
   editSection.appendChild(editEnabledWrap);
 
-  // Toggle autotrigger en édition (.skill-autotrigger lu par onSaveSkillCard) —
-  // stage 2 : liste cette skill dans le contexte dynamique <miaou_skills_context>
-  // à chaque tour, pour découverte proactive par le modèle.
   const editAutotriggerWrap = document.createElement('label');
   editAutotriggerWrap.className = 'skill-enabled-row';
   const editAutotriggerToggleWrap = document.createElement('label');
@@ -6806,8 +6133,6 @@ function buildSkillCard(skill, isNew) {
   return card;
 }
 
-// Entre en mode édition : récupère le contenu Markdown en IDB (jamais en cache) et
-// le pose dans la textarea avant d'afficher la section édition.
 function enterSkillEdit(card, slug) {
   const ta = card.querySelector('.skill-content');
   if (ta && slug) {
@@ -6815,14 +6140,6 @@ function enterSkillEdit(card, slug) {
   }
   card.classList.add('is-editing');
 }
-
-// ── Autocomplétion des skills (slash-commande) ─────────────────────────────────
-// Filtre le cache mémoire (skills ACTIVÉS) sur le trigger `/slug` actif le plus
-// proche du curseur (cf. findSlashTriggers, skills.js — trigger = position 0 OU
-// précédé d'un espace/saut de ligne). Mécanique GÉNÉRIQUE partagée par le composer
-// et la bulle d'édition in-place : chaque contexte fournit un état `{ ta, box,
-// index }` (cf. _composerAc / état créé dans enterEditMode). `index` mémorise la
-// sélection clavier ET le trigger actif courant (start/end/slug) pour l'insertion.
 
 const _composerAc = { ta: null, box: null, index: -1, trigger: null };
 
@@ -6835,16 +6152,11 @@ function onComposerInput() {
   updateSkillAutocomplete(_composerAc);
 }
 
-// Recalcule et (re)peint l'autocomplétion pour un état `{ ta, box }` donné, en
-// fonction du trigger `/slug` actif sous le curseur. Position 0 avec slug VIDE
-// ouvre immédiatement la liste complète (au pic du `/`, l'intention est déjà claire) ;
-// toute autre position attend ≥1 caractère après le `/` avant d'ouvrir, pour ne pas
-// être intrusif sur un `/` littéral en cours de frappe normale.
 function updateSkillAutocomplete(state) {
   const ta = state.ta;
   const triggers = findSlashTriggers(ta.value);
   const caret = ta.selectionStart;
-  // Trigger actif = celui qui contient le curseur (start <= caret <= end).
+  
   const trig = triggers.find(t => caret >= t.start && caret <= t.end) || null;
   if (!trig) { hideSkillAutocomplete(state); return; }
   if (!trig.atStart && trig.slug === '') { hideSkillAutocomplete(state); return; }
@@ -6903,8 +6215,6 @@ function moveSkillAcSelection(state, delta) {
   if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
 }
 
-// Valide la sélection courante (ou la première option) : complète `/slug ` dans le
-// champ ciblé sans envoyer (l'utilisateur déclenche l'injection en envoyant/validant).
 function acceptSkillAcSelection(state) {
   const box = state.box;
   if (!box) return false;
@@ -6916,8 +6226,6 @@ function acceptSkillAcSelection(state) {
   return true;
 }
 
-// Remplace UNIQUEMENT le segment `/slug` du trigger actif (pas tout le champ) —
-// nécessaire pour le cas mid-message où du texte entoure le trigger.
 function pickSkillCompletion(state, slug) {
   const ta = state.ta;
   const trig = state.trigger;
@@ -6941,10 +6249,6 @@ function clearComposerSkillError() {
   if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
-// ── Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8) ────
-// Placés DANS la bulle assistant, avant le corps (comme les acks). Éphémères :
-// jamais persistés (cf. D8), disparaissent au reload. DOM-safe : textContent ou
-// attributs (img src en data-URI) ; aucun markup modèle injecté en innerHTML.
 function placeToolBlocks(wrap, blocks) {
   const body = wrap && wrap.querySelector('.body');
   for (const b of (blocks || [])) {
@@ -6959,7 +6263,7 @@ function placeToolBlocks(wrap, blocks) {
 function renderToolBlock(block) {
   const box = document.createElement('div');
   box.className = 'tool-block';
-  // 1. image base64 → <img> data-URI (DOM-safe, aucun markup injecté).
+  
   if (block && block.type === 'image' && block.data) {
     const img = document.createElement('img');
     img.className = 'tool-block-img';
@@ -6968,7 +6272,7 @@ function renderToolBlock(block) {
     box.appendChild(img);
     return box;
   }
-  // 2. resource avec blob image → <img> inline (miroir de makeResourcePresentBlock).
+  
   const r = block && block.resource;
   if (block && block.type === 'resource' && r) {
     if (r.blob != null && r.mimeType && r.mimeType.startsWith('image/')) {
@@ -6979,26 +6283,23 @@ function renderToolBlock(block) {
       box.appendChild(img);
       return box;
     }
-    // 3. resource text-like → bloc de code surligné (Prism lazy), via textContent.
+    
     if (r.text != null) return renderResourceText(box, r);
   }
-  // 4. binaire / inconnu → téléchargement éphémère (rien n'est persisté).
+  
   return renderBinaryBlock(box, block);
 }
 
 function renderResourceText(box, resource) {
-  box.classList.add('tool-block-code');   // conteneur pleine largeur → rendu identique au bloc assistant
+  box.classList.add('tool-block-code');   
   const lang = mimeToLang(resource.mimeType);
   const pre = document.createElement('pre');
   const code = document.createElement('code');
   if (lang) code.className = 'language-' + lang;
-  code.textContent = String(resource.text);   // frontière XSS : jamais innerHTML
+  code.textContent = String(resource.text);   
   pre.appendChild(code);
   box.appendChild(pre);
-  // Même chrome que les blocs de code des messages assistant : on construit le
-  // <pre><code> à la main (pas de markdown ici), puis on le confie aux DEUX helpers
-  // partagés — decoratePre (header + boutons copier/télécharger) et highlightUnder
-  // (Prism, garde highlightEnabled incluse). Aucun wrapper réinventé, aucun 3e chemin.
+  
   decoratePre(box);
   highlightUnder(box);
   return box;
@@ -7017,16 +6318,14 @@ function renderBinaryBlock(box, block) {
   btn.className = 'tool-block-dl';
   btn.textContent = 'Télécharger';
   btn.addEventListener('click', () => {
-    try { downloadFile(fname, b64ToBytes(b64), mime); }   // Blob éphémère, rien persisté
-    catch (e) { /* base64 invalide : rien à offrir */ }
+    try { downloadFile(fname, b64ToBytes(b64), mime); }   
+    catch (e) {  }
   });
   box.appendChild(label);
   box.appendChild(btn);
   return box;
 }
 
-// Présente une ressource IDB inline dans un conteneur DOM (chip expand ou autre).
-// getCachedRecord / makeResourcePresentBlock viennent de resources.js (chargé avant).
 function presentResourceFromChip(id, containerEl) {
   const record = getCachedRecord(id);
   if (!record) {
@@ -7064,8 +6363,6 @@ function setMemItemLoading(item, label) {
   btn.classList.add('loading');
   btn.innerHTML = '<span class="spin"></span>' + escHtml(label);
 }
-
-// ── Souvenirs utilisateur (onglet Souvenirs du drawer combiné) ───────────────
 
 function renderMemoryList() {
   const wrap = $('memory-list');
@@ -7162,21 +6459,13 @@ function saveMemoryEntryEdit(id) {
   renderMemoryList();
 }
 
-// ── Confirmation inline (cartes dans le thread) ───────────────────────────────
-
-// _proposalMap[pid] = { onAccept, onReject } — callbacks, jamais les données brutes.
-// const : on vide et peuple en place, on ne réassigne jamais la référence.
 const _proposalMap = {};
 
-// Purge la table et efface l'overlay. Appelée quand le DOM du thread est rasé
-// (changement/réinitialisation de conversation).
 function clearMemoryProposals() {
   for (const k in _proposalMap) delete _proposalMap[k];
   setConfirmPending(false);
 }
 
-// Primitif générique : une carte « question » + Accepter/Rejeter, avec overlay.
-// bodyHtml : contenu libre (texte de la question, diff, etc.).
 function showConfirmation(bodyHtml, onAccept, onReject) {
   const thread = $('thread');
   const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -7224,21 +6513,8 @@ function _removeProposalCard(pid) {
   if (!Object.keys(_proposalMap).length) setConfirmPending(false);
 }
 
-
 /* ── main.js ── */
 
-/* ── main.js ───────────────────────────────────────────────────────────────
-   Orchestration : init, câblage des événements, construction du contexte
-   d'appel (message système unique), flux d'envoi, titrage, résumé en sortie,
-   backfill au démarrage. Charge en dernier dans le build.
-   ────────────────────────────────────────────────────────────────────────── */
-
-// MAX_SUMMARIES (plafond de résumés injectés) est déclaré dans storage.js,
-// dérivé de BUILD_CONFIG — n'est référencé ici/ailleurs qu'en corps de fonction.
-
-// ── Logo : source unique (favicon + sidebar) ────────────────────────────────
-// Logo MIAOU (chat), encodé en base64 et inliné ici : le SVG d'origine n'est pas
-// versionné, le build n'en dépend donc pas. Factorisée via applyLogo().
 const LOGO_SRC =
   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMC' +
   'A2NCA2NCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnQiIgeDE9IjMyIiB5MT0iMiIgeDI9IjMyIiB5Mj0iNjIiIGdyYW' +
@@ -7262,23 +6538,28 @@ function applyLogo() {
   $('topbar-logo').src = LOGO_SRC;
 }
 
-// ── État de session ─────────────────────────────────────────────────────────
 let currentConvId = null;
-let currentThread = [];   // [{ role, content }] — fil visible courant
-let needTitle = false;    // titrage auto en attente (conversation neuve)
+let currentThread = [];   
+let needTitle = false;    
 let titleBefore = '';
-let currentConvModel = '';  // override de modèle de la conversation courante ('' = modèle par défaut)
+let currentConvModel = '';  
 
-// Modèle effectif pour l'échange courant : override de conversation s'il existe,
-// sinon le modèle par défaut des réglages. Ne JAMAIS mélanger les deux dans une
-// même variable d'état (override conv vs défaut global).
+const IDLE_SUMMARY_MS = 60000;
+let _idleSummaryTimer = null;
+
+function armIdleSummaryTimer() {
+  if (_idleSummaryTimer) clearTimeout(_idleSummaryTimer);
+  _idleSummaryTimer = setTimeout(() => {
+    _idleSummaryTimer = null;
+    if (sending) return;   
+    summarizeIfNeeded(currentConvId);
+  }, IDLE_SUMMARY_MS);
+}
+
 function activeModel() {
   return (currentConvModel && currentConvModel.trim()) || (loadSettings().model || '');
 }
 
-// Fixe l'override de modèle de la conversation courante (choix dans le composer).
-// Persiste sur l'objet conversation si elle existe déjà ; n'efface ni ne tronque
-// jamais l'historique.
 function setConvModel(m) {
   currentConvModel = m || '';
   if (currentConvId) {
@@ -7291,7 +6572,6 @@ function setConvModel(m) {
   syncModelUI();
 }
 
-// ── Construction du message système (un seul, concaténé) ────────────────────
 function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
@@ -7303,8 +6583,6 @@ function buildSummaryBlock(matches) {
          lines.join('\n');
 }
 
-// Souvenirs utilisateur actifs injectés en contexte (injection complète, pas de
-// filtrage/ranking : volume faible attendu pour un usage personnel).
 function buildMemoryEntriesBlock() {
   const entries = listMemoryEntries();
   if (!entries.length) return '';
@@ -7313,9 +6591,6 @@ function buildMemoryEntriesBlock() {
          lines.join('\n');
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs.
-// Injecté en préfixe du dernier message utilisateur, pas dans le system message,
-// pour préserver le préfixe stable et permettre le KV cache prefix matching.
 function buildContextBlock(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
@@ -7335,14 +6610,6 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-// Listing dynamique des skills autotrigger (stage 2) : SIBLING de buildContextBlock/
-// <miaou_context>, PAS une section dedans — mécanisme structurellement distinct
-// (cf. brief stage 2). Recalculé à chaque tour depuis le cache courant, comme
-// <miaou_context> ; reflète tout changement enabled/autotrigger entre deux tours
-// sans cas particulier. '' si aucune skill éligible (pas de tokens pour une liste
-// vide). JAMAIS construit via resolveSend/bakeSkillMessage (chemin slash, stage 1,
-// figé au moment de l'envoi) — ce bloc-ci est éphémère et n'entre jamais dans
-// currentThread/localStorage.
 function buildSkillsContextBlock() {
   const skills = getAutotriggerSkillsMeta();
   if (!skills.length) return '';
@@ -7352,8 +6619,6 @@ function buildSkillsContextBlock() {
     'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
-// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
-// skills (si skills autotrigger) → utilisateur.
 function buildSystemMessage() {
   const parts = [];
   const settings = loadSettings();
@@ -7370,7 +6635,6 @@ function buildSystemMessage() {
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
-// ── Navigation entre conversations ──────────────────────────────────────────
 async function openConversation(id) {
   const conv = loadConversation(id);
   if (!conv) return;
@@ -7379,7 +6643,7 @@ async function openConversation(id) {
     if (isAckRole(m.role)) {
       const a = { role: m.role, id: m.id };
       if (m.kind != null)        a.kind = m.kind;
-      if (m.ackType != null)     a.ackType = m.ackType;   // legacy, préservé tel quel
+      if (m.ackType != null)     a.ackType = m.ackType;   
       if (m.content != null)     a.content = m.content;
       if (m.prevContent != null) a.prevContent = m.prevContent;
       if (m.title != null)       a.title = m.title;
@@ -7403,8 +6667,7 @@ async function openConversation(id) {
     const o = { role: m.role, content: m.content, model: m.model };
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
-    // littéral (slash-commande skill). Normalise l'ancien champ `display` (données
-    // de test antérieures au renommage) vers `displayText` à la lecture.
+    
     if (m.displayText != null) o.displayText = m.displayText;
     else if (m.display != null) o.displayText = m.display;
     return o;
@@ -7412,7 +6675,7 @@ async function openConversation(id) {
   currentConvModel = conv.model || '';
   needTitle = false;
   setTitle(conv.title || '');
-  await loadConversationResources(id);   // peuple le session cache avant renderThread
+  await loadConversationResources(id);   
   renderThread(currentThread);
   renderConvList();
   syncModelUI();
@@ -7421,10 +6684,10 @@ async function openConversation(id) {
 function resetToEmpty() {
   currentConvId = null;
   currentThread = [];
-  currentConvModel = '';   // nouvelle conversation → modèle par défaut
+  currentConvModel = '';   
   needTitle = false;
   $('thread').innerHTML = '';
-  clearMemoryProposals();   // cartes de proposition détruites avec le thread
+  clearMemoryProposals();   
   showWelcome();
   setTitle('');
   syncConvDownloadBtn();
@@ -7436,7 +6699,8 @@ function selectConv(id) {
   if (id === currentConvId) return;
   const leaving = currentConvId;
   openConversation(id);
-  summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+  summarizeIfNeeded(leaving);   
+  armIdleSummaryTimer();
   if (isMobileLayout()) closeSidebarMobile();
 }
 
@@ -7445,7 +6709,8 @@ function newConversation() {
   resetToEmpty();
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
-  summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
+  summarizeIfNeeded(leaving);   
+  armIdleSummaryTimer();
 }
 
 function togglePin(id) {
@@ -7453,11 +6718,6 @@ function togglePin(id) {
   renderConvList();
 }
 
-// Exporte la conversation courante en Markdown. Messages visibles (user +
-// assistant) ; les acks d'outils ENRICHIS (args+result présents) précédant un
-// message assistant sont rendus en trace (formatToolAcksMd) juste avant le
-// texte de ce tour — acks legacy (sans args) silencieusement omis, comme avant.
-// Appelé depuis le bouton topbar (onclick="downloadConvMd()").
 function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
   const conv = currentConvId ? loadConversation(currentConvId) : null;
@@ -7470,7 +6730,7 @@ function downloadConvMd() {
   let pendingAcks = [];
   for (const m of currentThread) {
     if (isAckRole(m.role)) {
-      if (m.args != null) pendingAcks.push(m);   // legacy (sans args) : omis de l'export
+      if (m.args != null) pendingAcks.push(m);   
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') continue;
@@ -7483,8 +6743,7 @@ function downloadConvMd() {
       lines.push('');
     }
     pendingAcks = [];
-    // Export = littéral affiché (displayText) si présent (slash-commande skill),
-    // pas le corps de skill injecté dans content.
+    
     lines.push((m.role === 'user' && m.displayText != null ? m.displayText : m.content) || '');
     lines.push('');
     lines.push('---');
@@ -7493,17 +6752,11 @@ function downloadConvMd() {
   downloadFile(slug + '.md', lines.join('\n').trimEnd() + '\n', 'text/markdown');
 }
 
-// Annulation d'un ack : dispatch via ACK_KINDS[kind].undo (forgetMemory pour
-// create/update, restoreMemory pour delete). Les lectures (undo: null) n'ont pas
-// de bouton, donc n'arrivent jamais ici. Reçoit l'ENTRÉE et le NŒUD exacts (closure
-// de buildToolAck) : un create et un delete du même souvenir partagent le même
-// `entry.id`, donc on ne peut PAS retrouver l'ack par id sans ambiguïté. L'id du
-// souvenir (entry.id) ne sert qu'à l'opération mémoire (forget/restore).
 function undoToolAck(entry, wrap) {
   if (!entry || entry.resolved) return;
   const spec = ACK_KINDS[ackKindOf(entry)];
   if (!spec || !spec.undo) return;
-  spec.undo(entry.id, entry);   // entry pour memory_update (restaure prevContent) ; create/delete l'ignorent
+  spec.undo(entry.id, entry);   
   entry.resolved = true;
   if (wrap) {
     wrap.classList.add('resolved');
@@ -7515,13 +6768,12 @@ function undoToolAck(entry, wrap) {
 
 function deleteConv(id) {
   deleteConversation(id);
-  deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
-  deleteResourcesByConversation(id).catch(function() {});   // cascade IDB (hard-delete)
+  deleteSummaryEntry(id);   
+  deleteResourcesByConversation(id).catch(function() {});   
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
 }
 
-// Crée la conversation à la volée au premier envoi (pas avant).
 function ensureConversation() {
   if (currentConvId) return;
   const id = 'c' + Date.now().toString(36);
@@ -7529,7 +6781,7 @@ function ensureConversation() {
   saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [] });
   currentConvId = id;
   currentThread = [];
-  needTitle = !manualTitle;   // titre déjà saisi → pas d'auto-titrage
+  needTitle = !manualTitle;   
   renderConvList();
 }
 
@@ -7540,7 +6792,7 @@ function persistCurrent() {
     if (isAckRole(m.role)) {
       const o = { role: m.role, id: m.id };
       if (m.kind != null)        o.kind = m.kind;
-      if (m.ackType != null)     o.ackType = m.ackType;   // legacy passthrough, jamais réécrit
+      if (m.ackType != null)     o.ackType = m.ackType;   
       if (m.content != null)     o.content = m.content;
       if (m.prevContent != null) o.prevContent = m.prevContent;
       if (m.title != null)       o.title = m.title;
@@ -7565,19 +6817,17 @@ function persistCurrent() {
     if (m.model) o.model = m.model;
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
-    if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
+    if (m.displayText != null) o.displayText = m.displayText;   
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
-  // Pas de titre provisoire : « Nouvelle conversation » (placeholder topbar +
-  // fallback liste) jusqu'au titrage en arrière-plan.
+  
   saveConversation(conv);
   renderConvList();
 }
 
-// ── Titre éditable ──────────────────────────────────────────────────────────
 function wireTitleEditing() {
   const titleEl = $('conv-title');
   titleEl.addEventListener('focus', () => {
@@ -7601,7 +6851,7 @@ function onTitleBlur(e) {
   }
   document.title = t + ' — MIAOU';
   if (currentConvId) {
-    needTitle = false;   // titre fixé manuellement : on ne le régénère plus
+    needTitle = false;   
     const conv = loadConversation(currentConvId);
     if (conv) { conv.title = t; saveConversation(conv); renderConvList(); }
     const entry = getSummaryEntry(currentConvId);
@@ -7609,7 +6859,6 @@ function onTitleBlur(e) {
   }
 }
 
-// ── Réglages ────────────────────────────────────────────────────────────────
 function onSaveSettings() {
   const obj = {
     url: $('set-url').value.trim(),
@@ -7628,32 +6877,24 @@ function onSaveSettings() {
   saveSettings(obj);
   highlightEnabled = obj.highlight;
   syncConfigured();
-  syncModelUI();        // labels + visibilité du sélecteur (selon cache déjà chargé)
-  prefetchModels();     // (re)charge la liste si besoin, puis re-sync
-  renderThread(currentThread);   // ré-applique/retire la coloration
+  syncModelUI();        
+  prefetchModels();     
+  renderThread(currentThread);   
   closeSettings();
 }
 
-// Charge la liste des modèles (cache de session) puis met à jour l'UI. Échec
-// silencieux : le sélecteur reste masqué, le modèle par défaut reste utilisé.
 async function prefetchModels() {
-  try { await loadModelsCached(); } catch (e) { /* sélecteur masqué */ }
+  try { await loadModelsCached(); } catch (e) {  }
   syncModelUI();
 }
 
-// ── Serveurs MCP distants : orchestration ────────────────────────────────────
-// Connecte (handshake + tools/list) tous les serveurs activés. Fire-and-forget,
-// encadré par l'indicateur d'activité. Échec d'un serveur = dégradation gracieuse
-// (ses outils n'apparaissent pas), les autres tiennent (cf. D10).
 async function reconnectMcpServers() {
-  const servers = listEnabledMcpServers();   // storage.js
+  const servers = listEnabledMcpServers();   
   if (!servers.length) return;
   await runBackgroundTask('connexion MCP…', () => Promise.all(servers.map(s => connectMcpServer(s))));
   renderMcpServersIfOpen();
 }
 
-// Persiste une carte serveur (valide → upsert → (re)connecte → re-rend). Lié par
-// addEventListener dans buildMcpCard (closure : carte + nom d'origine).
 async function onSaveMcpCard(cardEl, originalName) {
   const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
   const name = get('.mcp-name').trim();
@@ -7675,7 +6916,7 @@ async function onSaveMcpCard(cardEl, originalName) {
     toolDenylist: parseToolFilterList(get('.mcp-deny')),
     showCalls: showCallsEl ? showCallsEl.checked : true,
   };
-  // Renommage : l'identité est le `name`, on retire l'ancienne entrée + cache.
+  
   if (originalName && originalName !== name) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
   upsertMcpServer(server);
   disconnectMcpServer(name);
@@ -7691,10 +6932,6 @@ async function onDeleteMcpCard(cardEl, originalName) {
   renderMcpServers();
 }
 
-// ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────
-// Valide → écrit IDB (putSkill synchronise le cache mémoire) → re-rend la liste.
-// Le rendu/édition des cartes vit dans ui.js (buildSkillCard) ; ici la logique de
-// validation + persistance, comme onSaveMcpCard.
 async function onSaveSkillCard(cardEl, originalSlug) {
   const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
   const slug = get('.skill-slug').trim();
@@ -7711,7 +6948,7 @@ async function onSaveSkillCard(cardEl, originalSlug) {
     autotrigger: autotriggerEl ? autotriggerEl.checked : false,
     content: get('.skill-content'),
   };
-  // Renommage de slug : la clé IDB change → retirer l'ancien enregistrement.
+  
   if (originalSlug && originalSlug !== slug) { await deleteSkillDb(originalSlug); }
   await putSkill(record);
   renderSkills();
@@ -7722,44 +6959,27 @@ async function onDeleteSkillCard(cardEl, originalSlug) {
   renderSkills();
 }
 
-// Toggle enabled depuis la vue liste : bascule IDB + cache, puis re-rend.
 async function onToggleSkill(slug) {
   await toggleSkillEnabled(slug);
   renderSkills();
 }
 
-// ── Flux d'envoi ────────────────────────────────────────────────────────────
-// Bouton unique du composer : envoie, ou interrompt si un stream est en cours.
 function onSendBtn() {
   if (sending) abortStream();
   else sendMessage();
 }
 
-// Résout une saisie utilisateur (littéral) en payload d'envoi. CHEMIN UNIQUE de
-// détection/injection de slash-commande skill, partagé par la saisie composer
-// (sendMessage) ET la réédition d'un message (editUserMessage) — pas de duplication.
-// Le contenu de chaque skill est re-résolu à CHAQUE appel (contenu COURANT, jamais
-// figé d'un envoi antérieur) : éditer un message au tour N rebake avec le contenu
-// actuel. Injection DÉTERMINISTE côté client (≠ buildContextBlock/miaou_context,
-// recalculé par tour). Multi-skill : toutes les occurrences `/slug` détectées par
-// findSlashTriggers (position 0 OU précédées d'un espace, cf. skills.js) sont
-// résolues et bakées en fin de message, dans l'ordre d'apparition. SEULE
-// l'occurrence en position 0 bloque l'envoi si non reconnue — ailleurs un `/slug`
-// non matché reste du texte littéral, sans bake ni blocage (brief §2). Retours :
-//   { ok:true,  literal, content }            — texte normal (content === literal)
-//   { ok:true,  literal, content, isSkill }   — au moins un slash résolu (content = bakové)
-//   { ok:false, error }                        — slug en position 0 inconnu / désactivé / indisponible
 async function resolveSend(literal) {
   const triggers = findSlashTriggers(literal);
   if (!triggers.length) return { ok: true, literal, content: literal, isSkill: false };
 
   const resolved = [];
   for (const t of triggers) {
-    const meta = getSkillMeta(t.slug);   // cache mémoire (skills.js)
+    const meta = getSkillMeta(t.slug);   
     const known = meta && meta.enabled !== false;
     if (!known) {
       if (t.atStart) return { ok: false, error: 'Skill inconnue ou désactivée : /' + t.slug };
-      continue;   // mid-message non reconnu : reste texte littéral, pas de blocage
+      continue;   
     }
     let content = null;
     try { content = await getSkillContent(t.slug); } catch (e) { content = null; }
@@ -7779,8 +6999,6 @@ async function sendMessage() {
   const text = ta.value.trim();
   if (!text) return;
 
-  // On résout AVANT de vider le composer : un slug invalide ne perd pas la saisie
-  // ni ne consomme un tour modèle.
   const r = await resolveSend(text);
   if (!r.ok) { showComposerSkillError(r.error); return; }
 
@@ -7788,21 +7006,13 @@ async function sendMessage() {
   clearComposerSkillError();
   hideSkillAutocomplete();
 
-  // Confirmation en attente + saisie libre : la frappe vaut réponse/correction
-  // (brief §4.5). On lève le widget avant d'envoyer comme un message normal.
   if (_confirmPending) dismissConfirmation();
 
   sendUserText(r.literal, r.isSkill ? r.content : undefined);
 }
 
-// Cœur d'un envoi utilisateur : crée la conv au besoin, pousse le message,
-// persiste, relance la génération. Partagé par la saisie composer (sendMessage)
-// et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
-// `bakedContent` (optionnel) : contenu réellement envoyé/stocké pour le modèle
-// (slash-commande skill = littéral + corps du skill). `text` reste le littéral
-// affiché dans la bulle et conservé en `displayText`.
 function sendUserText(text, bakedContent) {
-  clearComposerSkillError();   // tout envoi effectif lève l'erreur skill du composer
+  clearComposerSkillError();   
   ensureConversation();
   const ts = Date.now();
   appendUserMessage(text, ts);
@@ -7810,18 +7020,14 @@ function sendUserText(text, bakedContent) {
   if (bakedContent != null) msg.displayText = text;
   currentThread.push(msg);
   persistCurrent();
+  armIdleSummaryTimer();
 
   runGenerationFromCurrentThread();
 }
 
-// Cœur de l'envoi : recherche mémoire (sur le dernier message utilisateur),
-// bannière éventuelle, puis dispatch. Partagé par l'envoi normal et la relance
-// après édition d'un message — pour ne pas dupliquer la logique mémoire+outils.
-// Pré-requis : le dernier message utilisateur est déjà dans currentThread.
 function runGenerationFromCurrentThread() {
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
-  // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
-  // recherche mémoire porte sur le littéral, pas sur le corps du skill injecté.
+  
   const text = lastUser ? (lastUser.displayText != null ? lastUser.displayText : lastUser.content) : '';
 
   const settings = loadSettings();
@@ -7841,22 +7047,13 @@ function runGenerationFromCurrentThread() {
   dispatchSend(settings.summaryInjectionMode === 'auto' ? matches : []);
 }
 
-// Édition d'un message utilisateur passé (par index dans currentThread) :
-// tronque tout ce qui suit, remplace le contenu, persiste, puis relance la
-// génération par le même chemin que l'envoi normal. Passe par resolveSend (même
-// détection/injection slash que l'envoi composer) : éditer en `/slug …` réinjecte
-// le contenu COURANT de la skill, et un slug invalide n'altère PAS le thread.
-// Retourne le message d'erreur (slug invalide) pour que l'appelant l'affiche SOUS
-// LA ZONE D'ÉDITION (pas le composer) ; null en cas de succès.
 async function editUserMessage(index, newText) {
-  if (sending) return null;                     // pas d'édition pendant un stream
+  if (sending) return null;                     
   const t = (newText || '').trim();
   if (!t) return null;
   if (index < 0 || index >= currentThread.length) return null;
   if (currentThread[index].role !== 'user') return null;
 
-  // Résoudre AVANT toute mutation : un slug invalide laisse le thread intact et la
-  // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
   const r = await resolveSend(t);
   if (!r.ok) return r.error;
 
@@ -7864,26 +7061,19 @@ async function editUserMessage(index, newText) {
   const msg = { role: 'user', content: r.content, ts: Date.now() };
   if (r.isSkill) msg.displayText = r.literal;
   currentThread[index] = msg;
-  persistCurrent();                             // troncature écrite avant relance
-  renderThread(currentThread);                  // détruit la bulle d'édition (+ son erreur)
+  persistCurrent();                             
+  renderThread(currentThread);                  
   runGenerationFromCurrentThread();
   return null;
 }
 
 async function dispatchSend(matches) {
   hideSummaryBanner();
-  const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
+  const model = activeModel();   
   const sys = buildSystemMessage();
-  // Résout les références de ressources ([resource_ref:…]) dans les entry.result
-  // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
-  // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.
+  
   const threadMsgs = expandThread(resolveResourceRefs(currentThread));
 
-  // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) +,
-  // en sibling, le listing skills autotrigger — en préfixe du dernier message
-  // utilisateur, pour préserver le préfixe stable (system + historique[0..N-1])
-  // et permettre le KV cache prefix matching. Deux blocs distincts, concaténés
-  // côte à côte (skills puis contexte), pas fusionnés en un seul appel.
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
   if (lastUserIdx >= 0) {
     const skillsCtx = buildSkillsContextBlock();
@@ -7897,9 +7087,7 @@ async function dispatchSend(matches) {
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
   let wrap = startAssistantMessage(model);
-  // Acks MCP pré-rendus (avant await réseau) : { ack: descripteur brut, entry:
-  // entrée currentThread, node: nœud DOM }. Stockés ici pour que onToolAcks
-  // puisse rétro-appliquer la classe d'erreur si ack.error a été posé après l'await.
+  
   let earlyRendered = [];
   setSending(true);
   try {
@@ -7909,10 +7097,9 @@ async function dispatchSend(matches) {
       onReasoning: (full) => setReasoning(wrap, full),
       onToolTour: (content) => {
         if (content && content.trim()) {
-          // Le tour tool_calls a produit du texte visible : on le finalise dans
-          // sa propre bulle et on en ouvre une nouvelle pour la suite.
+          
           const tourTs = Date.now();
-          currentThread.push({ role: 'assistant', content, model, ts: tourTs });   // avant finalizeAssistant, cf. onFinal
+          currentThread.push({ role: 'assistant', content, model, ts: tourTs });   
           finalizeAssistant(wrap, content);
           const tsEl = wrap.querySelector('.msg-ts');
           if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
@@ -7922,11 +7109,7 @@ async function dispatchSend(matches) {
           resetAssistant(wrap);
         }
       },
-      // Vidange ANTICIPÉE des acks MCP poussés de manière synchrone par
-      // callRemoteTool AVANT son premier await. Appelé par api.js juste après le
-      // démarrage de callTool() et AVANT l'await, pour que la ligne s'affiche
-      // pendant le round-trip réseau (pas seulement après). Les acks des outils
-      // internes (synchrones) ne sont jamais ici — ils arrivent dans onToolAcks.
+      
       onEarlyAcks: () => {
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
@@ -7935,8 +7118,7 @@ async function dispatchSend(matches) {
           if (ack.server != null)        entry.server = ack.server;
           if (ack.name != null)          entry.name = ack.name;
           if (ack.intent != null)        entry.intent = ack.intent;
-          // Champs d'enrichissement cross-turn (peuvent déjà être posés si un
-          // outil interne précédent a été drainé ici en même temps qu'un MCP).
+          
           if (ack.args != null)          entry.args = ack.args;
           if (ack.result != null)        entry.result = ack.result;
           if (ack.ts != null)            entry.ts = ack.ts;
@@ -7948,16 +7130,9 @@ async function dispatchSend(matches) {
         }
         scrollBottom();
       },
-      // Vidange des acks d'outils APRÈS l'exécution des outils d'un tour, donc
-      // AVANT la réponse finale : ils sont la provenance de la réponse et doivent
-      // la précéder. Placés DANS la bulle assistant (`wrap`), entre l'en-tête
-      // (icône + nom du modèle) et le corps (patienteur puis réponse), via
-      // placeToolAck. Pas de persistCurrent ici (mutation mémoire + DOM seulement) :
-      // l'unique écriture de l'échange a lieu dans onFinal.
+      
       onToolAcks: () => {
-        // Rétro-application de l'état d'erreur sur les acks MCP déjà rendus : après
-        // l'await réseau, callRemoteTool a pu poser ack.error = true sur le descripteur
-        // brut. On met à jour l'entrée currentThread et le nœud DOM si présent.
+        
         for (const { ack, entry, node } of earlyRendered) {
           if (ack.error && !entry.error) {
             entry.error = true;
@@ -7982,8 +7157,8 @@ async function dispatchSend(matches) {
           if (ack.prevContent != null)   entry.prevContent = ack.prevContent;
           if (ack.title != null)         entry.title = ack.title;
           if (ack.count != null)         entry.count = ack.count;
-          // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
-          // via le hook onEnrichLastAck, après exécution de chaque outil interne).
+          if (ack.intent != null)        entry.intent = ack.intent;
+          
           if (ack.name != null)           entry.name = ack.name;
           if (ack.resourceName != null)  entry.resourceName = ack.resourceName;
           if (ack.mime != null)          entry.mime = ack.mime;
@@ -7996,18 +7171,13 @@ async function dispatchSend(matches) {
           currentThread.push(entry);
           placeToolAck(wrap, entry);
         }
-        // Blocs NON-text renvoyés par un outil distant (image/resource/binaire) :
-        // rendus DANS la bulle courante via la cascade D8, purement éphémères —
-        // jamais poussés dans currentThread ni persistés (cf. D8).
+        
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
         if (blocks.length) placeToolBlocks(wrap, blocks);
         scrollBottom();
       },
-      // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
-      // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
-      // outil, AVANT onToolAcks. Pour les outils distants (isMcp) l'ack est
-      // déjà dans earlyRendered ; pour les internes il est dans _pendingToolAcks.
+      
       onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
         const fields = {};
         if (name != null)          fields.name = name;
@@ -8026,33 +7196,25 @@ async function dispatchSend(matches) {
       onFinal: (content, reasoning) => {
         const ts = Date.now();
         const msg = { role: 'assistant', content, model, ts };
-        if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
-        // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
-        // qui teste currentThread.some(role==='assistant') — sur une conversation
-        // fraîche (premier tour), un ordre inversé laisserait le bouton caché
-        // malgré la réponse déjà affichée (bug payé : visible seulement après reload).
+        if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   
+        
         currentThread.push(msg);
         finalizeAssistant(wrap, content);
         const tsEl = wrap.querySelector('.msg-ts');
         if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
-        if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
+        if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   
         persistCurrent();
         setConnDot('ok');
         maybeTitle();
       },
       onHalt: (leadIn, question) => {
-        // Fork B (brief §4) : la question (+ lead-in éventuel) devient un message
-        // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
-        // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
-        // (« Oui » → create_memory + narration ; « Non » → rien).
+        
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
-        currentThread.push({ role: 'assistant', content: text, model });   // avant finalizeAssistant, cf. onFinal
+        currentThread.push({ role: 'assistant', content: text, model });   
         finalizeAssistant(wrap, text);
         persistCurrent();
         setConnDot('ok');
-        // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
-        // ne porte que les actions. Accepter/Rejeter envoient « Oui »/« Non » par
-        // le même chemin qu'une saisie ; l'overlay se lève à la résolution.
+        
         showConfirmation('',
           () => sendUserText('Oui'),
           () => sendUserText('Non'));
@@ -8064,51 +7226,46 @@ async function dispatchSend(matches) {
     setConnDot('err');
   } finally {
     setSending(false);
+    armIdleSummaryTimer();   
   }
 }
 
-// ── Mécanique réutilisable : tâche LLM « en arrière-plan » ───────────────────
-// Encadre une tâche asynchrone (appel LLM silencieux) par l'indicateur
-// d'activité, avec garde try/finally et échec silencieux (retourne null).
-// Sert au titrage comme à la génération de résumés.
 async function runBackgroundTask(label, taskFn) {
   bgActivityStart(label);
   try {
     return await taskFn();
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] tâche « ' + label + ' » échouée :', (e && e.message) || e);
-    return null;   // abandon silencieux côté UI
+    return null;   
   } finally {
     bgActivityEnd();
   }
 }
 
-// ── Titrage automatique (après la première réponse) ─────────────────────────
 function applyGeneratedTitle(convId, title) {
   const conv = loadConversation(convId);
   if (conv) { conv.title = title; saveConversation(conv); }
-  if (convId === currentConvId) setTitle(title);   // barre du haut + <title> de la page
-  renderConvList();                                 // liste de gauche
+  if (convId === currentConvId) setTitle(title);   
+  renderConvList();                                 
 }
 
 async function maybeTitle() {
   if (!needTitle || !currentConvId) return;
   if (!currentThread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
   needTitle = false;
-  const convId = currentConvId;                     // figé : l'utilisateur peut naviguer
+  const convId = currentConvId;                     
   const thread = currentThread.slice();
   const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
-  if (title) applyGeneratedTitle(convId, title);    // sinon on garde le titre provisoire
+  if (title) applyGeneratedTitle(convId, title);    
 }
 
-// ── Résumé / mots-clés à la sortie d'une conversation ───────────────────────
 async function summarizeIfNeeded(id) {
   if (!id) return;
   const conv = loadConversation(id);
-  if (!conv || !hasSubstance(conv.messages)) return;     // pas de conversation fraîche
+  if (!conv || !hasSubstance(conv.messages)) return;     
   const entry = getSummaryEntry(id);
-  if (entry && entry.suppressed) return;                  // tombstone : exclu
-  if (entry && entry.messageCount === conv.messages.length) return;  // inchangé
+  if (entry && entry.suppressed) return;                  
+  if (entry && entry.messageCount === conv.messages.length) return;  
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
   if (s) saveSummary(id, {
@@ -8120,7 +7277,6 @@ async function summarizeIfNeeded(id) {
   });
 }
 
-// ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
 function backfillMessageModels() {
   const model = loadSettings().model;
   if (!model) return;
@@ -8135,10 +7291,8 @@ function backfillMessageModels() {
   }
 }
 
-// ── Backfill au démarrage (séquentiel, indicateur continu) ──────────────────
 async function runBackfill() {
-  // Le résumé n'a besoin que de l'URL (clef optionnelle) : ne pas dépendre de
-  // `configured`, qui exige aussi une clef (utile pour un endpoint sans auth).
+  
   if (!loadSettings().url) return;
   const cands = backfillCandidates();
   if (!cands.length) return;
@@ -8147,8 +7301,8 @@ async function runBackfill() {
     let n = 0;
     for (const c of cands) {
       n++;
-      bgActivityLabel('résumés ' + n + '/' + N);     // maj du libellé sans toucher au compteur
-      if (!isSummaryCandidate(c.id)) continue;        // re-vérif (suppression entre-temps)
+      bgActivityLabel('résumés ' + n + '/' + N);     
+      if (!isSummaryCandidate(c.id)) continue;        
       try {
         const s = await generateSummary(c.messages);
         if (s) saveSummary(c.id, {
@@ -8158,12 +7312,11 @@ async function runBackfill() {
           keywords: s.keywords,
           messageCount: c.messages.length,
         });
-      } catch (e) { /* on saute cette conversation */ }
+      } catch (e) {  }
     }
   });
 }
 
-// ── Init ────────────────────────────────────────────────────────────────────
 function init() {
   applyLogo();
 
@@ -8198,10 +7351,24 @@ function init() {
     }
   });
 
-  prefetchModels();      // liste des modèles (cache session) → sélecteur composer
-  reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
-  loadSkillsCache();     // méta des skills en mémoire → autocomplétion + outils
-  runBackfill();         // auto-gardé sur la présence d'URL
+  document.addEventListener('input', armIdleSummaryTimer);
+  document.addEventListener('keydown', armIdleSummaryTimer);
+  document.addEventListener('click', armIdleSummaryTimer);
+
+  $('messages').addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#miaou-conv:"]');
+    if (!a) return;
+    e.preventDefault();
+    if (sending) return;   
+    const id = decodeURIComponent(a.getAttribute('href').slice('#miaou-conv:'.length));
+    selectConv(id);
+  });
+
+  prefetchModels();      
+  reconnectMcpServers(); 
+  loadSkillsCache();     
+  runBackfill();         
+  armIdleSummaryTimer(); 
 }
 
 if (typeof __TEST_ENV__ === 'undefined') {

@@ -42,7 +42,12 @@ l'interface, JetBrains Mono pour le code.
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
   contextuelle, et deux outils pour que le modèle aille chercher lui-même —
   `get_conversation(id, with_contents=false)` et
-  `list_conversations(since?, with_contents=false)`.
+  `list_conversations(since?, query?, with_contents=false)` (recherche par
+  mots-clés/résumé, même moteur que la recherche sidebar ; exclut toujours la
+  conversation en cours).
+- Quand le modèle cite une conversation passée dans sa réponse, elle apparaît
+  comme un **lien cliquable affichant son titre** (jamais l'ID technique) ;
+  cliquer dessus l'ouvre directement, comme depuis la sidebar.
 - Souvenirs persistants : le modèle écrit directement (`create_memory`,
   `update_memory`, `delete_memory`) sur instruction explicite, ou demande
   confirmation (`ask_confirmation`) pour un fait inféré. Gestion directe

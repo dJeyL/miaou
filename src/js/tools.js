@@ -60,6 +60,21 @@ const WEB_DOCTRINE =
   "pertinent, plutôt que de fabriquer des informations récentes.\n" +
   "</SANS_ACCES_WEB>\n";
 
+// Doctrine comportementale : référence à une conversation passée. Toujours
+// injectée quand des outils existent (get_conversation/list_conversations en
+// font partie du registre de base) — même statut que BINARY_DOCTRINE. Le
+// marqueur [conv_ref:ID] (ou [conv_ref:ID|Titre] si le titre est déjà connu du
+// modèle) est résolu côté client en lien cliquable affichant le TITRE, jamais
+// l'ID brut ; le titre est optionnel car l'application le retrouve elle-même
+// depuis l'index des résumés si absent. Partie de ROOT_SYSTEM_PROMPT.
+const CONV_REF_DOCTRINE =
+  "Quand tu mentionnes une conversation passée obtenue via get_conversation ou " +
+  "list_conversations (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
+  "son identifiant technique en clair (pas de guillemets, pas de backticks, pas " +
+  "de texte brut du type « conversation abc123 ») : utilise le marqueur " +
+  "[conv_ref:ID] ou, si tu connais déjà son titre, [conv_ref:ID|Titre] — " +
+  "l'application le remplace automatiquement par un lien affichant le titre.";
+
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
@@ -87,9 +102,10 @@ const MEMORY_DOCTRINE =
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
-// Compose les trois doctrines ; référencé par buildSystemMessage() (main.js).
+// Compose les quatre doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
-const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" +
+  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
@@ -198,26 +214,40 @@ const TOOLS = [
   {
     name: 'list_conversations',
     description:
-      "Liste les conversations passées (résumé + mots-clés par défaut). " +
-      "Le paramètre since est OPTIONNEL : l'omettre liste TOUTES les " +
-      "conversations — appelle l'outil sans hésiter même sans date en tête ; " +
-      "le préciser (date ISO 8601) limite aux conversations actives depuis " +
-      "cette date. Passer with_contents=true pour inclure aussi le contenu " +
-      "complet de chacune (potentiellement volumineux).",
+      "Liste les conversations passées (résumé + mots-clés par défaut), hors " +
+      "la conversation en cours. Le paramètre since est OPTIONNEL : l'omettre " +
+      "liste TOUTES les conversations — appelle l'outil sans hésiter même sans " +
+      "date en tête ; le préciser (date ISO 8601) limite aux conversations " +
+      "actives depuis cette date. Passer query pour ne garder que les " +
+      "conversations dont le résumé ou les mots-clés correspondent (recherche " +
+      "par mots, pas de sous-chaîne exacte) — utile pour retrouver une " +
+      "conversation sur un sujet précis sans tout lister. Passer " +
+      "with_contents=true pour inclure aussi le contenu complet de chacune " +
+      "(potentiellement volumineux).",
     inputSchema: {
       type: 'object',
       properties: {
         since: { type: 'string', description: 'Optionnel — date ISO 8601. Omettre pour tout lister.' },
+        query: { type: 'string', description: 'Optionnel — mots-clés à rechercher dans le résumé/titre.' },
         with_contents: { type: 'boolean', description: 'Inclure le contenu complet (défaut false)' },
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       let entries = listSummaryEntries();        // storage.js — entrées non-tombstone
+      // Exclut la conversation en cours : lister "les conversations passées" n'a
+      // de sens que pour les AUTRES ; currentConvId est une global de main.js
+      // (accès défensif car tools.js est aussi évalué seul par le test runner).
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
         if (Number.isNaN(sinceMs)) return 'Date "since" invalide (attendu ISO 8601).';
         entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
+      }
+      if (args.query != null && args.query !== '') {
+        const qTokens = tokenize(args.query);     // utils.js
+        entries = entries.filter(e => scoreSummary(qTokens, e) >= 1);
       }
       const light = entries.map(summaryLight);
       _pendingToolAcks.push({ kind: 'conversation_list', count: light.length });
@@ -660,9 +690,22 @@ function callInternalTool(toolName, args) {
 function callTool(name, args) {
   const parsed = parseToolName(name);
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
+    const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
-    return callInternalTool(parsed.toolName, cleanArgs);
+    const result = callInternalTool(parsed.toolName, cleanArgs);
+    // Attache l'intent au dernier ack en attente. La plupart des handlers poussent
+    // leur ack de façon synchrone (avant le retour de callInternalTool) ; certains
+    // (ex. skills__read) ne le poussent qu'après résolution de leur Promise — dans
+    // ce cas on attend cette résolution avant d'enrichir, sinon l'ack n'existe pas
+    // encore dans _pendingToolAcks.
+    if (intent != null) {
+      if (result && typeof result.then === 'function') {
+        return result.then(r => { updateLastPendingToolAck({ intent }); return r; });
+      }
+      updateLastPendingToolAck({ intent });
+    }
+    return result;
   }
   const server = getMcpServer(parsed.serverPrefix);   // storage.js
   if (!server || server.enabled === false) {

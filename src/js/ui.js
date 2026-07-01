@@ -48,9 +48,37 @@ if (window.Prism && Prism.plugins && Prism.plugins.autoloader) {
 }
 
 // ── Rendu markdown / coloration ─────────────────────────────────────────────
+// Résout les [conv_ref:ID] / [conv_ref:ID|Titre] (CONV_REF_DOCTRINE, tools.js)
+// en lien Markdown standard AVANT marked.parse — jamais après : une fois passés
+// par le parseur, les crochets bruts seraient déjà interprétés (syntaxe de lien
+// incomplète) et donc invisibles/imprévisibles à ce stade. Le href pointe vers un
+// pseudo-schéma `#miaou-conv:ID` intercepté par délégation de clic (openConvRefLink),
+// jamais une vraie navigation. Titre : celui fourni par le modèle, sinon lookup
+// dans l'index des résumés (storage.js) — y compris une entrée tombstone
+// (suppressed:true ne concerne QUE le résumé/mémoire, cf. §6 CLAUDE.md ; la
+// conversation elle-même reste intacte et ouvrable, son titre reste affichable).
+// Conversation réellement supprimée (deleteConv → deleteSummaryEntry, hard
+// delete des DEUX, ≠ tombstone) : la source de vérité pour « ouvrable » est
+// loadConversation(id), pas la présence d'un résumé (cas limite existant où le
+// résumé peut survivre sans la conversation, cf. get_conversation). Dans ce cas,
+// rendu en texte barré NON cliquable plutôt qu'un lien mort — pas de
+// post-traitement DOM, juste du Markdown ~~...~~.
+function resolveConvRefs(text) {
+  return String(text).replace(CONV_REF_RE, function(match, id, title) {
+    const entry = getSummaryEntry(id);
+    const label = title || (entry && entry.title) || id;
+    const safeLabel = label.replace(/\]/g, ')');
+    if (!loadConversation(id)) {
+      return '~~' + safeLabel + ' (supprimée)~~';
+    }
+    return '[' + safeLabel + '](#miaou-conv:' + encodeURIComponent(id) + ')';
+  });
+}
+
 function renderMd(text) {
-  if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
-  return marked.parse(text, { breaks: true });
+  const resolved = resolveConvRefs(text);
+  if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
+  return marked.parse(resolved, { breaks: true });
 }
 // Variante pour les messages utilisateur : empêche les balises HTML de traverser
 // vers le DOM (angle-brackets échappés) tout en conservant le markdown.
@@ -268,9 +296,10 @@ const ACK_KINDS = {
   memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
   conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,  label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »' },
   conversation_list: { destination: 'user', undo: null, icon: ICON_LIST, label: m =>
-      m.count === 0 ? 'Aucune conversation trouvée'
-    : m.count === 1 ? '1 conversation listée'
-    : (m.count != null ? m.count : '?') + ' conversations listées' },
+      (m.intent ? m.intent + ' : ' : '') + (
+        m.count === 0 ? 'Aucune conversation trouvée'
+      : m.count === 1 ? '1 conversation listée'
+      : (m.count != null ? m.count : '?') + ' conversations listées') },
   // Appel d'outil MCP distant : breadcrumb `seg1` › `seg2` › … sur chaque `__`.
   // Si m.intent est présent, rendu en deux niveaux : intention (niveau 1, visible)
   // + breadcrumb technique (niveau 2, repliée par défaut via chevron).

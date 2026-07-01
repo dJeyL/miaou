@@ -22,7 +22,40 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
    réponse finale**, pas seulement jusqu'au résultat de l'outil. Un ou plusieurs
    tool-ack (icône + label) apparaissent dans la bulle assistant, entre l'en-tête
    et la réponse. Les acks de lecture n'ont pas de bouton « annuler ». Rechargement
-   → acks toujours présents.
+   → acks toujours présents. Avec `intentTracing` activé et le modèle fournissant
+   `miaou_intent`, le label de l'ack `conversation_list` est préfixé par
+   `"<intent> : "` (ex. « retrouver la conv sur X : 3 conversations listées »).
+4b. **`list_conversations` avec `query`** : demander « cherche dans mes anciennes
+    conversations celles qui parlent de X » avec plusieurs conversations résumées
+    en historique, dont une pertinente et une non pertinente sur X → le modèle
+    appelle `list_conversations` avec `query`, le résultat (visible en ajoutant
+    temporairement un `console.log` ou en inspectant le `role:'tool'` dans
+    DevTools Network) ne contient que les conversations dont le résumé/titre/
+    mots-clés recoupent la requête. La conversation **courante** (celle où la
+    question est posée) n'apparaît jamais dans le résultat, même si elle a déjà
+    un résumé pertinent en historique — vérifier avec au moins deux tours dans la
+    même conversation (pour qu'elle ait le temps d'être résumée par un backfill
+    antérieur) avant de reposer la question.
+4c. **Lien `conv_ref` cliquable** : à la suite du test 4/4b, si la réponse du
+    modèle mentionne une conversation par son titre, vérifier dans le texte
+    affiché qu'aucun `[conv_ref:...]` brut n'apparaît, qu'un lien souligné
+    affichant le **titre** de la conversation est bien rendu à cet endroit, et
+    que cliquer dessus bascule la sidebar/topbar sur cette conversation (comme un
+    clic sidebar classique) — y compris déclenchement du résumé de la
+    conversation quittée si elle a du contenu substantiel non encore résumé
+    (`hasSubstance`, cf. piège #5 de CLAUDE.md). Cliquer pendant un streaming en
+    cours (`sending`) → aucune navigation.
+4d. **Lien `conv_ref` vers une conversation supprimée** : noter l'id d'une
+    conversation résumée (visible dans `localStorage['miaou-summaries']`),
+    la supprimer via la sidebar (icône corbeille), puis dans une autre
+    conversation demander au modèle de la citer — ou, plus simple, injecter
+    directement une réponse assistant contenant `[conv_ref:ID_SUPPRIMÉ|Titre]`.
+    Vérifier : le texte s'affiche **barré** (`Titre (supprimée)`, rendu via
+    `<del>`, atténué visuellement), **pas de lien cliquable**, aucune navigation
+    possible au clic dessus. Vérifier aussi qu'une conversation seulement
+    **tombstonée** (souvenir supprimé via « Ré-autoriser » possible, pas
+    `deleteConv`) reste, elle, un **lien cliquable normal** — le tombstone ne
+    concerne que le résumé/mémoire, jamais la conversation elle-même.
 5. **Plusieurs tool_calls par tour** : tous exécutés dans le même tour.
 6. **Anti-redemande** : redemander un appel rigoureusement identique dans le même
    échange ne redéclenche pas le handler ; deux appels distincts du même outil

@@ -488,6 +488,7 @@ body {
 .body a:hover { border-bottom-color: var(--accent); }
 .body strong { font-weight: 600; color: var(--text); }
 .body em { color: var(--text-2); }
+.body del { color: var(--text-3); }   /* référence conv_ref vers une conversation supprimée */
 .body blockquote {
   border-left: 2px solid var(--border-2);
   padding: 2px 0 2px 14px;

@@ -32,6 +32,163 @@ def read(path: Path) -> str:
     return path.read_text(encoding='utf-8')
 
 
+def strip_js_comments(src: str) -> str:
+    """Retire les commentaires // et /* */ d'une source JS, en respectant les
+    strings ('...', "...", `...` avec ${...} imbriqués à l'infini) et les
+    regex literals. Le contenu des strings/template literals n'est jamais
+    modifié (un '//' dans une URL, par ex., doit survivre).
+
+    Implémentation à pile explicite : chaque niveau de ${...} imbriqué dans
+    un template literal empile un contexte 'template' ; un '}' dépile vers
+    le contexte parent une fois les accolades de code rééquilibrées. Ça évite
+    de dupliquer le scanner pour chaque profondeur d'imbrication."""
+    out = []
+    i = 0
+    n = len(src)
+    # Pile de frames : ('code',) en haut niveau, ('template', brace_depth)
+    # quand on est à l'intérieur d'un ${...} — brace_depth compte les accolades
+    # de code ouvertes dans ce ${...} pour savoir quel '}' referme l'expression.
+    stack = [('code',)]
+
+    def prev_significant_char():
+        for j in range(len(out) - 1, -1, -1):
+            chunk = out[j]
+            for k in range(len(chunk) - 1, -1, -1):
+                c = chunk[k]
+                if not c.isspace():
+                    return c
+        return ''
+
+    def consume_string(quote):
+        nonlocal i
+        out.append(quote)
+        i += 1
+        while i < n:
+            if src[i] == '\\' and i + 1 < n:
+                out.append(src[i:i + 2])
+                i += 2
+                continue
+            out.append(src[i])
+            if src[i] == quote:
+                i += 1
+                return
+            i += 1
+
+    def consume_template_start():
+        # Ouvre un template literal : empile juste le marqueur de backtick,
+        # le contenu est traité par la boucle principale caractère par
+        # caractère (pour détecter ${ et le backtick fermant).
+        nonlocal i
+        out.append('`')
+        i += 1
+        stack.append(('template',))
+
+    while i < n:
+        frame = stack[-1]
+        c = src[i]
+
+        if frame[0] == 'template':
+            if c == '\\' and i + 1 < n:
+                out.append(src[i:i + 2])
+                i += 2
+                continue
+            if c == '`':
+                out.append(c)
+                i += 1
+                stack.pop()
+                continue
+            if c == '$' and i + 1 < n and src[i + 1] == '{':
+                out.append('${')
+                i += 2
+                stack.append(('code',))
+                continue
+            out.append(c)
+            i += 1
+            continue
+
+        # frame == 'code' (top-level ou intérieur d'un ${...})
+        if c == '}' and len(stack) > 1:
+            out.append(c)
+            i += 1
+            stack.pop()
+            continue
+
+        if c == '/' and i + 1 < n and src[i + 1] == '/':
+            j = src.find('\n', i)
+            i = n if j == -1 else j
+            continue
+
+        if c == '/' and i + 1 < n and src[i + 1] == '*':
+            j = src.find('*/', i + 2)
+            i = n if j == -1 else j + 2
+            continue
+
+        if c == "'" or c == '"':
+            consume_string(c)
+            continue
+
+        if c == '`':
+            consume_template_start()
+            continue
+
+        if c == '/':
+            # Distinction division / regex literal : heuristique standard
+            # basée sur le dernier caractère significatif précédent.
+            prev = prev_significant_char()
+            regex_context = prev == '' or prev in '([{,;:!&|?=+-*%^~<>' or prev == '\n'
+            if regex_context:
+                j = i + 1
+                in_class = False
+                closed = False
+                while j < n:
+                    ch = src[j]
+                    if ch == '\\':
+                        j += 2
+                        continue
+                    if ch == '[':
+                        in_class = True
+                    elif ch == ']':
+                        in_class = False
+                    elif ch == '/' and not in_class:
+                        closed = True
+                        j += 1
+                        break
+                    elif ch == '\n':
+                        break
+                    j += 1
+                if closed:
+                    while j < n and src[j].isalpha():
+                        j += 1
+                    out.append(src[i:j])
+                    i = j
+                    continue
+
+        out.append(c)
+        i += 1
+
+    return ''.join(out)
+
+
+def collapse_blank_code_lines(src: str) -> str:
+    """Réduit les runs de lignes entièrement vides à une seule (le strip des
+    commentaires en laisse souvent plusieurs à la suite). Opère au niveau
+    ligne, après strip_js_comments : à ce stade il ne reste plus de
+    commentaires, donc plus besoin de distinguer regex/division/template —
+    seul un examen ligne par ligne est nécessaire."""
+    lines = src.split('\n')
+    out_lines = []
+    blank_run = 0
+    for line in lines:
+        if line.strip() == '':
+            blank_run += 1
+            if blank_run > 1:
+                continue
+        else:
+            blank_run = 0
+        out_lines.append(line)
+    return '\n'.join(out_lines)
+
+
 def load_config(use_config: bool = True) -> dict:
     if not use_config:
         print('[info] build sans config (--no-config) — le JS produit embarque '
@@ -57,8 +214,8 @@ def assemble_js(cfg_data: dict) -> str:
             print(f'  [warn] fichier manquant : {path}')
             continue
         parts.append(f'\n/* ── {name} ── */\n')
-        parts.append(read(path))
-    js = '\n'.join(parts)
+        parts.append(strip_js_comments(read(path)))
+    js = collapse_blank_code_lines('\n'.join(parts))
 
     # Injection de config : un seul marqueur, l'objet entier sérialisé en JSON
     # (JSON ⊂ littéral objet JS). json.dumps gère quoting/nombres/booléens. On

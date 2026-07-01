@@ -44,6 +44,33 @@ describe('scoreSummary', function() {
   });
 });
 
+describe('parseConvRefs', function() {
+  it('aucun marqueur → tableau vide', function() {
+    expect(parseConvRefs('bonjour, rien à signaler')).toEqual([]);
+  });
+  it('marqueur sans titre', function() {
+    var r = parseConvRefs('vois [conv_ref:c1] pour plus de détails');
+    expect(r.length).toBe(1);
+    expect(r[0].id).toBe('c1');
+    expect(r[0].title).toBe(null);
+  });
+  it('marqueur avec titre', function() {
+    var r = parseConvRefs('[conv_ref:c1|Migration Postgres]');
+    expect(r[0].id).toBe('c1');
+    expect(r[0].title).toBe('Migration Postgres');
+  });
+  it('titre pouvant contenir des deux-points', function() {
+    var r = parseConvRefs('[conv_ref:c1|Bug: crash au démarrage]');
+    expect(r[0].title).toBe('Bug: crash au démarrage');
+  });
+  it('plusieurs marqueurs dans le même texte', function() {
+    var r = parseConvRefs('[conv_ref:c1|Un] et [conv_ref:c2|Deux]');
+    expect(r.length).toBe(2);
+    expect(r[0].id).toBe('c1');
+    expect(r[1].id).toBe('c2');
+  });
+});
+
 describe('formatMessageTime', function() {
   // Constructions locales pour éviter les effets DST (pas de soustraction brute d'epoch).
 

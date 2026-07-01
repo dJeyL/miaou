@@ -349,8 +349,15 @@ description **du registre** — ne jamais la coder en dur.
 **Lecture de l'historique :**
 - `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
   (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone.
-- `list_conversations(since?, with_contents=false)` — entrées non-tombstone
-  dont `timestamp >= Date.parse(since)`. `since` optionnel. Nom conservé
+- `list_conversations(since?, query?, with_contents=false)` — entrées
+  non-tombstone dont `timestamp >= Date.parse(since)`, **exclut toujours la
+  conversation courante** (`currentConvId`, global de main.js — accès défensif
+  via `typeof … !== 'undefined'` car tools.js est aussi évalué seul par le test
+  runner) : « conversations passées » n'inclut pas celle en cours. `since` et
+  `query` optionnels, filtres cumulables (since puis query). `query` réutilise
+  le **même moteur que la recherche sidebar** (`tokenize` + `scoreSummary`,
+  utils.js, seuil `score >= 1`) — mots-clés pèsent 2, mots du résumé/titre
+  pèsent 1 ; ce n'est PAS une sous-chaîne exacte. Nom conservé
   (≠ `get_conversations`) pour éviter la quasi-collision singulier/pluriel.
 
 **Écriture directe de souvenirs (chemin direct — instruction explicite) :**
@@ -397,7 +404,7 @@ Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js, décrits ci-dessous)
 consomment la file via `getPendingToolAcks` / `clearPendingToolAcks` et injectent
 des messages `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?,
 count?, server?, name?, error?, resolved?, mime?, size?,`
-`args?, result?, ts?, group?, assistantText? }` dans `currentThread`.
+`args?, result?, ts?, group?, assistantText?, intent? }` dans `currentThread`.
 Les champs `args` (objet d'arguments), `result` (résultat aplati par
 `flattenToolResult`), `ts` (epoch ms de l'appel), `group` (id partagé par
 tous les tool_calls d'un même tour modèle) et `assistantText` (texte produit
@@ -405,6 +412,17 @@ par le modèle au même tour que les tool_calls, rare) sont **les champs de
 réinjection cross-turn** — voir `expandThread` ci-dessous. Ils sont posés
 par le hook `onEnrichLastAck` (main.js), appelé après chaque outil par api.js,
 et doivent être préservés par `persistCurrent` / `openConversation`.
+`intent` (texte de `miaou_intent`, cf. traçage des intentions ci-dessus) était
+d'abord réservé à `mcp_call` (breadcrumb à deux niveaux, cf. `renderLabel`
+ci-dessous) ; il est désormais capturé pour **tous** les outils internes aussi
+(`callTool`, tools.js, branche `miaou`/nue) via `updateLastPendingToolAck` —
+extrait des args **avant** le strip de `miaou_intent`, attaché au dernier ack
+en attente. Cas particulier : un handler qui pousse son ack **après**
+résolution d'une Promise (ex. `skills__read`) ne peut pas être enrichi avant
+que cette Promise ne se résolve — `callTool` attend donc cette résolution dans
+ce cas précis avant d'attacher `intent`. Rendu pour `conversation_list` : simple
+préfixe textuel `"<intent> : "` dans son `label` (ACK_KINDS, ui.js) — volontairement
+plus sobre que le rendu à deux niveaux de `mcp_call` (pas de chevron/détail replié).
 La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
 un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
 `(id) => void`, ou **`null`** = variante informative), une icône SVG statique,
@@ -477,6 +495,52 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   `openConversation`). Traiter comme un journal d'événements immuable, pas un
   miroir de l'état mémoire. Helpers purs `isAckRole` / `ackKindOf` dans utils.js,
   `ackLabel` dans ui.js (testés QuickJS).
+
+## Références de conversation dans le texte du modèle (`conv_ref`)
+
+Le modèle peut citer une conversation passée (obtenue via `get_conversation`/
+`list_conversations`) pour que l'utilisateur puisse l'ouvrir d'un clic — sans
+jamais exposer son ID technique en clair dans le texte affiché.
+
+1. **Doctrine `CONV_REF_DOCTRINE`** (tools.js), **toujours injectée** dès que
+   des outils existent (même statut que `BINARY_DOCTRINE`, partie de
+   `ROOT_SYSTEM_PROMPT`, constante build-time). Demande au modèle d'utiliser le
+   marqueur `[conv_ref:ID]` ou `[conv_ref:ID|Titre]` (titre optionnel, connu du
+   modèle depuis le JSON de `get_conversation`/`list_conversations`) plutôt que
+   d'écrire l'ID en clair (backticks, guillemets, texte brut).
+2. **Parsing** : `parseConvRefs(text)` (utils.js, pure, testée) extrait tous les
+   marqueurs `{ match, id, title }` d'une chaîne — regex `CONV_REF_RE`, id
+   délimité par `|` ou `]` (jamais ces deux caractères), titre optionnel après
+   `|`, jamais de `]` non plus (pas de lookahead/lookbehind variable).
+3. **Résolution = AVANT `marked.parse`, jamais après.** `resolveConvRefs(text)`
+   (ui.js, testée) remplace chaque marqueur par un lien Markdown standard
+   `[Titre](#miaou-conv:ID)` avant le rendu Markdown — traiter ça en
+   post-traitement HTML casserait, les crochets bruts auraient déjà été
+   interprétés par le parseur Markdown comme une syntaxe de lien incomplète.
+   Titre : celui du marqueur si fourni, sinon lookup dans l'index des résumés
+   (`getSummaryEntry`, storage.js) — **y compris une entrée tombstone**
+   (`suppressed:true` ne concerne QUE le résumé/mémoire, cf. piège #6 : la
+   conversation elle-même reste intacte et ouvrable, son titre reste affichable
+   normalement) ; repli sur l'ID brut si aucun titre n'est connu par ailleurs.
+   **Conversation réellement supprimée** (`deleteConv` → `deleteSummaryEntry`,
+   hard delete des deux, chemin *distinct* du tombstone) : la source de vérité
+   pour « ouvrable » est **`loadConversation(id)`**, pas la présence d'un résumé
+   (cas limite existant où le résumé peut survivre sans la conversation, cf.
+   `get_conversation`). Dans ce cas, rendu en **texte barré NON cliquable**
+   `~~Titre (supprimée)~~` (Markdown GFM standard, `marked` le rend en `<del>`
+   sans configuration) plutôt qu'un lien mort — pas de post-traitement DOM. `renderMd`
+   appelle `resolveConvRefs` en tête, avant `marked.parse` — pas `renderUserMd`
+   (les messages utilisateur ne contiennent jamais ce marqueur).
+4. **Navigation = délégation de clic unique**, posée une fois dans `init()`
+   (main.js) sur `#messages` (pas un `onclick` par lien reconstruit à chaque
+   rendu) : intercepte `a[href^="#miaou-conv:"]`, bloque si `sending` (pas de
+   navigation pendant un stream, même garde que l'édition de message), route
+   vers **`selectConv(id)`** — la même fonction que le clic sidebar, qui gère
+   déjà le garde `id === currentConvId`, le résumé de sortie
+   (`summarizeIfNeeded(leaving)`) et le mode mobile. Un `id` inconnu (conv
+   supprimée) est un no-op silencieux (`openConversation` retourne tôt si
+   `loadConversation` échoue) — pas de fonction de navigation dédiée créée,
+   pas de duplication du chemin existant.
 
 ## Agrégation MCP distante (V2)
 
@@ -738,7 +802,17 @@ vide), `skillDoctrinePrompt` conditionnel sur skills autotrigger ET résolution 
 la variante CONFIRMATION selon `confirmSkillAutoUse`), **export Markdown des
 traces d'outils** (`formatToolAcksMd` : singulier/pluriel, `intent` présent/absent,
 erreur, troncature args/résultat/nom de ressource, `resource_presented` sans
-data embarquée, ack sans `args`).
+data embarquée, ack sans `args`), **`list_conversations`** (filtre `query` via
+`tokenize`/`scoreSummary` cumulable avec `since`, exclusion de la conversation
+courante via `currentConvId`, capture de `miaou_intent` sur un outil interne y
+compris via un handler async), **acks — label avec intent** (`ackLabel`
+`conversation_list` : préfixe `"<intent> : "` si présent), **`conv_ref`**
+(`parseConvRefs` : marqueur avec/sans titre, titre contenant `:`, plusieurs
+marqueurs ; `resolveConvRefs` : lien avec titre fourni, lookup storage si titre
+absent, lien conservé avec titre sur une entrée tombstone (conversation
+existante), texte barré `~~...(supprimée)~~` si `loadConversation` échoue —
+avec titre du marqueur, avec titre orphelin en résumé, ou repli sur l'ID si
+aucun titre connu —, encodage URL de l'id).
 Le contenu skill lu en IDB
 (`getSkillContent`/`getSkillRecord`, chemin async) se vérifie à la main.
 IDB, `internResourcesFromResult`, `loadConversationResources` et la cascade D8
