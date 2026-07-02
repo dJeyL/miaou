@@ -1397,7 +1397,7 @@ body {
   color: var(--accent); opacity: 0.75;
   display: inline-flex; align-items: center; line-height: 1;
 }
-.mcp-chevron:hover { opacity: 1; }
+.mcp-intent-row:hover .mcp-chevron { opacity: 1; }
 .mcp-chevron svg { transition: transform 0.2s; }
 .mcp-chevron.open svg { transform: rotate(180deg); }
 .mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }

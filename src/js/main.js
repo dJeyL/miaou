@@ -291,7 +291,8 @@ function downloadConvMd() {
     }
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     const timeStr = m.ts ? ' — ' + formatMessageTime(m.ts, Date.now()) : '';
-    const label = (m.role === 'user' ? '### Vous' : '### MIAOU') + timeStr;
+    const modelStr = (m.role === 'assistant' && m.model) ? ' (' + m.model + ')' : '';
+    const label = (m.role === 'user' ? '### Vous' : '### MIAOU' + modelStr) + timeStr;
     lines.push(label);
     lines.push('');
     if (m.role === 'assistant' && pendingAcks.length) {

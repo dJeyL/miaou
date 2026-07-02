@@ -273,7 +273,10 @@ function downloadMsgMd(btn) {
     }
   }
   const trace = acks.length ? formatToolAcksMd(acks) + '\n\n' : '';
-  downloadFile('miaou-message.md', trace + raw, 'text/markdown');
+  const msg = idx >= 0 ? currentThread[idx] : null;
+  const modelStr = (msg && msg.model) ? ' (' + msg.model + ')' : '';
+  const header = '### MIAOU' + modelStr + '\n\n';
+  downloadFile('miaou-message.md', header + trace + raw, 'text/markdown');
 }
 
 // ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────
