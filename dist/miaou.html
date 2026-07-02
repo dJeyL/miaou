@@ -1098,6 +1098,58 @@ body {
   transition: background 140ms var(--ease);
 }
 .btn-primary:hover { background: var(--accent-2); }
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary:disabled:hover { background: var(--accent); }
+
+/* ── Drawer réglages : catégories repliables ─────────────────────────────────
+   Même mécanique d'accordéon que .tool-ns (drawer « Outils exposés »), avec en
+   plus une icône de catégorie. Le corps replié est clippé (overflow hidden)
+   pendant la transition ; une fois déplié, .settled rétablit overflow visible
+   pour que les .model-menu absolus (modèle, raisonnement) ne soient pas coupés. */
+.set-cat { display: flex; flex-direction: column; }
+.set-cat-head {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.set-cat-head:hover { color: var(--text-2); }
+.set-cat-icon,
+.set-cat-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.set-cat-head:hover .set-cat-icon,
+.set-cat-head:hover .set-cat-chevron { opacity: 1; }
+.set-cat-label { flex: 1; }
+.set-cat-chevron svg { transition: transform 0.2s; }
+.set-cat-head.open .set-cat-chevron svg { transform: rotate(180deg); }
+.set-cat-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.set-cat-body.open { grid-template-rows: 1fr; }
+.set-cat-body.settled { overflow: visible; }
+/* L'écart tête/contenu vit DANS l'inner (clippé quand replié) : pas d'espace
+   mort sous les têtes fermées, contrairement à un gap sur .set-cat. */
+.set-cat-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 14px; }
 
 .build-ts-label { font-size: 10px; color: var(--text-3); text-align: center; }
 
@@ -2045,6 +2097,15 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
       </button>
     </div>
     <div class="drawer-body">
+
+      <div class="set-cat">
+        <div class="set-cat-head open" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 2a1 1 0 0 1 1 1v4H7V3a1 1 0 0 1 1-1zm8 0a1 1 0 0 1 1 1v4h-2V3a1 1 0 0 1 1-1zM5 8h14a1 1 0 0 1 1 1v2a7 7 0 0 1-6 6.93V21a1 1 0 1 1-2 0v-3.07A7 7 0 0 1 6 11V9a1 1 0 0 1-1-1z"/></svg></span>
+          <span class="set-cat-label">Connexion</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body open settled">
+          <div class="set-cat-body-inner">
       <div class="field">
         <label>URL de l'API</label>
         <input id="set-url" type="text" placeholder="http://host-interne/v1" spellcheck="false" oninput="syncConfigured()">
@@ -2055,6 +2116,18 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <input id="set-key" type="password" oninput="syncConfigured()">
         <span class="hint" id="set-key-hint"></span>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 1h2v3h4V1h2v3h.5A2.5 2.5 0 0 1 19 6.5V7h3v2h-3v2h3v2h-3v.5a2.5 2.5 0 0 1-2.5 2.5H16v3h-2v-3h-4v3H8v-3h-.5A2.5 2.5 0 0 1 5 13.5V13H2v-2h3V9H2V7h3v-.5A2.5 2.5 0 0 1 7.5 4H8V1zm1 7a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H9z"/></svg></span>
+          <span class="set-cat-label">Modèle &amp; raisonnement</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <label>Modèle</label>
         <div class="select-anchor">
@@ -2106,6 +2179,18 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </label>
         </div>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V9h5.5L13 3.5zM8 13h8v1.6H8V13zm0 4h8v1.6H8V17z"/></svg></span>
+          <span class="set-cat-label">Prompts système</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <details class="root-prompt-details" id="root-prompt-details">
           <summary>Prompt système racine <span class="root-prompt-badge">non modifiable</span></summary>
@@ -2117,6 +2202,18 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <textarea id="set-system" rows="4" spellcheck="false" placeholder="Optionnel"></textarea>
         <span class="hint">Persona et préférences. Injecté après le prompt racine.</span>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><mask id="set-cat-palette-wells"><rect width="24" height="24" fill="white"/><circle cx="8" cy="9" r="1.6" fill="black"/><circle cx="13.5" cy="7.5" r="1.6" fill="black"/><circle cx="16.8" cy="11.5" r="1.6" fill="black"/></mask><path mask="url(#set-cat-palette-wells)" d="M12 3a9 9 0 1 0 0 18c1.6 0 2.2-1.1 1.6-2.2-.5-.9-.3-1.9.7-2.3.3-.1.6-.2 1-.2h2.2A3.5 3.5 0 0 0 21 12.8C20.9 7.4 16.9 3 12 3z"/></svg></span>
+          <span class="set-cat-label">Apparence</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <label>Thème</label>
         <div class="seg-group" id="theme-mode">
@@ -2139,8 +2236,19 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </label>
         </div>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v3H3V4z"/><path fill-rule="evenodd" d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9zm5 3a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H9z"/></svg></span>
+          <span class="set-cat-label">Mémoire</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
-        <label>Mémoire</label>
         <div class="btn-row">
           <button class="btn-ghost" onclick="openSummaryDrawer()">Résumés</button>
           <button class="btn-ghost" onclick="openMemoryDrawer()">Souvenirs</button>
@@ -2155,6 +2263,18 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
         <span class="hint" id="summary-injection-hint"></span>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21.7 6.9a5.6 5.6 0 0 1-7.2 6.7l-6.6 6.6a2.3 2.3 0 0 1-3.3-3.3l6.6-6.6a5.6 5.6 0 0 1 6.7-7.2c.4.1.5.6.2.9L15.6 6.5l1.9 1.9 2.5-2.5c.3-.3.8-.2.9.2.3.9.3 1.9-.2 2.8z"/></svg></span>
+          <span class="set-cat-label">Outils &amp; extensions</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <div class="check-row">
           <div class="label-col">
@@ -2212,7 +2332,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </label>
         </div>
       </div>
-      <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="save-settings-btn" onclick="onSaveSettings()" disabled>Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
     </div>
   </div>
@@ -2296,7 +2420,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-02 19:37 UTC */
+/* miaou — built: 2026-07-02 20:04 UTC */
 
 /* ── utils.js ── */
 
@@ -2681,7 +2805,7 @@ const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783021057}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783022664}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -5576,6 +5700,7 @@ function pickModel(m) {
   $('set-model').value = m;
   $('model-label').textContent = m;
   $('model-menu').classList.remove('show');
+  updateSettingsDirty();
 }
 
 document.addEventListener('click', (e) => {
@@ -5724,6 +5849,7 @@ function pickSettingsReasoningEffort(v) {
   $('set-reasoning-effort').value = v;
   syncSettingsReasoningLabel();
   $('set-reasoning-menu').classList.remove('show');
+  updateSettingsDirty();
 }
 
 function syncSettingsReasoningLabel() {
@@ -5731,6 +5857,41 @@ function syncSettingsReasoningLabel() {
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
   $('set-reasoning-label').textContent = opt ? opt.label : v;
   $('set-reasoning-btn').classList.toggle('effort-default', !v);
+}
+
+function toggleSettingsCat(head) {
+  const body = head.nextElementSibling;
+  const opening = !head.classList.contains('open');
+  document.querySelectorAll('#drawer .set-cat-head.open').forEach(function(h) {
+    if (h === head) return;
+    h.classList.remove('open');
+    h.nextElementSibling.classList.remove('open', 'settled');
+  });
+  head.classList.toggle('open', opening);
+  body.classList.toggle('open', opening);
+  if (!opening) body.classList.remove('settled');
+}
+
+function settingsFormDirty() {
+  const s = loadSettings();
+  return $('set-url').value.trim() !== (s.url || '')
+    || $('set-key').value.trim() !== (s.key || '')
+    || $('set-model').value.trim() !== (s.model || '')
+    || $('set-system').value !== (s.systemPrompt || '')
+    || $('set-highlight').checked !== (s.highlight !== false)
+    || pendingSummaryInjectionMode !== (s.summaryInjectionMode || 'propose')
+    || $('set-modelselector').checked !== !!s.showModelSelector
+    || $('set-reasoning-effort').value !== (s.reasoningEffort || '')
+    || $('set-reasoningselector').checked !== !!s.showReasoningSelector
+    || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
+    || $('set-intent-tracing').checked !== !!s.intentTracing
+    || $('set-save-json').checked !== !!s.saveJsonResponses
+    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse;
+}
+
+function updateSettingsDirty() {
+  const btn = $('save-settings-btn');
+  if (btn) btn.disabled = !settingsFormDirty();
 }
 
 function openSettings() {
@@ -5749,6 +5910,7 @@ function openSettings() {
       ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
       : '';
   }
+  updateSettingsDirty();   
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
 }
@@ -5773,7 +5935,7 @@ function setSummaryInjectionModeUI(mode) {
   const hint = $('summary-injection-hint');
   if (hint) hint.textContent = SUMMARY_INJECTION_HINTS[pendingSummaryInjectionMode] || '';
 }
-function selectSummaryInjectionMode(mode) { setSummaryInjectionModeUI(mode); }
+function selectSummaryInjectionMode(mode) { setSummaryInjectionModeUI(mode); updateSettingsDirty(); }
 
 const THEME_HINTS = {
   light:  "Interface toujours en clair, indépendamment du système.",
@@ -7228,6 +7390,7 @@ function onSaveSettings() {
     confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
   };
   saveSettings(obj);
+  updateSettingsDirty();   
   highlightEnabled = obj.highlight;
   syncConfigured();
   syncModelUI();        
@@ -7716,6 +7879,17 @@ function init() {
   syncKeyFieldHint();
   syncModelUI();
   syncReasoningUI();
+
+  $('drawer').addEventListener('input', updateSettingsDirty);
+  $('drawer').addEventListener('change', updateSettingsDirty);
+  updateSettingsDirty();
+
+  document.querySelectorAll('#drawer .set-cat-body').forEach((b) => {
+    b.addEventListener('transitionend', (e) => {
+      if (e.target !== b || e.propertyName !== 'grid-template-rows') return;
+      b.classList.toggle('settled', b.classList.contains('open'));
+    });
+  });
 
   backfillMessageModels();
   renderConvList();

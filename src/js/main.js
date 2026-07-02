@@ -446,6 +446,7 @@ function onSaveSettings() {
     confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
   };
   saveSettings(obj);
+  updateSettingsDirty();   // formulaire = persisté → bouton redésactivé
   highlightEnabled = obj.highlight;
   syncConfigured();
   syncModelUI();        // labels + visibilité du sélecteur (selon cache déjà chargé)
@@ -1041,6 +1042,23 @@ function init() {
   syncKeyFieldHint();
   syncModelUI();
   syncReasoningUI();
+
+  // Dirty-tracking du bouton « Enregistrer » : délégation input/change sur le
+  // drawer (couvre champs texte et toggles) ; les chemins programmatiques sans
+  // événement appellent updateSettingsDirty() directement (cf. ui.js).
+  $('drawer').addEventListener('input', updateSettingsDirty);
+  $('drawer').addEventListener('change', updateSettingsDirty);
+  updateSettingsDirty();
+
+  // Catégories du drawer réglages : overflow visible (.settled) seulement une
+  // fois la transition d'ouverture terminée, pour que les .model-menu absolus
+  // ne soient pas clippés sans montrer le contenu déborder pendant l'animation.
+  document.querySelectorAll('#drawer .set-cat-body').forEach((b) => {
+    b.addEventListener('transitionend', (e) => {
+      if (e.target !== b || e.propertyName !== 'grid-template-rows') return;
+      b.classList.toggle('settled', b.classList.contains('open'));
+    });
+  });
 
   backfillMessageModels();
   renderConvList();

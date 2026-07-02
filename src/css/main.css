@@ -1087,6 +1087,58 @@ body {
   transition: background 140ms var(--ease);
 }
 .btn-primary:hover { background: var(--accent-2); }
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary:disabled:hover { background: var(--accent); }
+
+/* ── Drawer réglages : catégories repliables ─────────────────────────────────
+   Même mécanique d'accordéon que .tool-ns (drawer « Outils exposés »), avec en
+   plus une icône de catégorie. Le corps replié est clippé (overflow hidden)
+   pendant la transition ; une fois déplié, .settled rétablit overflow visible
+   pour que les .model-menu absolus (modèle, raisonnement) ne soient pas coupés. */
+.set-cat { display: flex; flex-direction: column; }
+.set-cat-head {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.set-cat-head:hover { color: var(--text-2); }
+.set-cat-icon,
+.set-cat-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.set-cat-head:hover .set-cat-icon,
+.set-cat-head:hover .set-cat-chevron { opacity: 1; }
+.set-cat-label { flex: 1; }
+.set-cat-chevron svg { transition: transform 0.2s; }
+.set-cat-head.open .set-cat-chevron svg { transform: rotate(180deg); }
+.set-cat-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.set-cat-body.open { grid-template-rows: 1fr; }
+.set-cat-body.settled { overflow: visible; }
+/* L'écart tête/contenu vit DANS l'inner (clippé quand replié) : pas d'espace
+   mort sous les têtes fermées, contrairement à un gap sur .set-cat. */
+.set-cat-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 14px; }
 
 .build-ts-label { font-size: 10px; color: var(--text-3); text-align: center; }
 

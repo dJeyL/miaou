@@ -86,9 +86,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
   `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`,
   `regenerateTitle`,
-  `toggleReasoning`, …). Le bouton « Enregistrer »
+  `toggleReasoning`, `toggleSettingsCat`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
-  `storage.js` (persistance localStorage). Le bouton du composer appelle
+  `storage.js` (persistance localStorage). Il est désactivé tant que le
+  formulaire ne diverge pas des réglages persistés (`settingsFormDirty`,
+  ui.js — le thème est exclu : auto-persisté par `selectTheme`). Le bouton du composer appelle
   `onSendBtn()` (envoi **ou** stop selon `sending`), jamais `sendMessage()`
   directement.
 

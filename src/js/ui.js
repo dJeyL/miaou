@@ -1245,6 +1245,7 @@ function pickModel(m) {
   $('set-model').value = m;
   $('model-label').textContent = m;
   $('model-menu').classList.remove('show');
+  updateSettingsDirty();
 }
 
 // Ferme le menu modèle au clic ailleurs.
@@ -1411,6 +1412,7 @@ function pickSettingsReasoningEffort(v) {
   $('set-reasoning-effort').value = v;
   syncSettingsReasoningLabel();
   $('set-reasoning-menu').classList.remove('show');
+  updateSettingsDirty();
 }
 
 // Ré-affiche le label du bouton depuis la valeur courante du hidden input —
@@ -1424,6 +1426,54 @@ function syncSettingsReasoningLabel() {
 }
 
 // ── Settings drawer ─────────────────────────────────────────────────────────
+// Accordéon des catégories (référencé en onclick= inline) : même mécanique que
+// les namespaces du drawer outils. `.settled` (overflow visible, nécessaire aux
+// .model-menu absolus) est posée par le transitionend câblé dans init() — jamais
+// ici, pour que le clip tienne pendant toute la transition d'ouverture.
+function toggleSettingsCat(head) {
+  const body = head.nextElementSibling;
+  const opening = !head.classList.contains('open');
+  document.querySelectorAll('#drawer .set-cat-head.open').forEach(function(h) {
+    if (h === head) return;
+    h.classList.remove('open');
+    h.nextElementSibling.classList.remove('open', 'settled');
+  });
+  head.classList.toggle('open', opening);
+  body.classList.toggle('open', opening);
+  if (!opening) body.classList.remove('settled');
+}
+
+// Vrai si le formulaire diverge des réglages persistés, sur les seuls champs
+// enregistrés par onSaveSettings() ET pas déjà auto-persistés ailleurs. Le thème
+// est exclu (selectTheme sauve immédiatement). summaryInjectionMode est comparé
+// en live à loadSettings() : la bannière peut le persister pendant que le drawer
+// est ouvert, la comparaison reste juste.
+function settingsFormDirty() {
+  const s = loadSettings();
+  return $('set-url').value.trim() !== (s.url || '')
+    || $('set-key').value.trim() !== (s.key || '')
+    || $('set-model').value.trim() !== (s.model || '')
+    || $('set-system').value !== (s.systemPrompt || '')
+    || $('set-highlight').checked !== (s.highlight !== false)
+    || pendingSummaryInjectionMode !== (s.summaryInjectionMode || 'propose')
+    || $('set-modelselector').checked !== !!s.showModelSelector
+    || $('set-reasoning-effort').value !== (s.reasoningEffort || '')
+    || $('set-reasoningselector').checked !== !!s.showReasoningSelector
+    || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
+    || $('set-intent-tracing').checked !== !!s.intentTracing
+    || $('set-save-json').checked !== !!s.saveJsonResponses
+    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse;
+}
+
+// Active « Enregistrer » seulement si quelque chose est à enregistrer. Appelé
+// par délégation input/change sur le drawer (câblée dans init) et explicitement
+// par les chemins programmatiques qui n'émettent pas d'événement (pickModel,
+// pickSettingsReasoningEffort, selectSummaryInjectionMode, onSaveSettings).
+function updateSettingsDirty() {
+  const btn = $('save-settings-btn');
+  if (btn) btn.disabled = !settingsFormDirty();
+}
+
 function openSettings() {
   const s = loadSettings();
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
@@ -1440,6 +1490,7 @@ function openSettings() {
       ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
       : '';
   }
+  updateSettingsDirty();   // des saisies non enregistrées peuvent survivre à une fermeture
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
 }
@@ -1466,7 +1517,7 @@ function setSummaryInjectionModeUI(mode) {
   const hint = $('summary-injection-hint');
   if (hint) hint.textContent = SUMMARY_INJECTION_HINTS[pendingSummaryInjectionMode] || '';
 }
-function selectSummaryInjectionMode(mode) { setSummaryInjectionModeUI(mode); }
+function selectSummaryInjectionMode(mode) { setSummaryInjectionModeUI(mode); updateSettingsDirty(); }
 
 // ── Thème ────────────────────────────────────────────────────────────────────
 const THEME_HINTS = {

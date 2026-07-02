@@ -149,6 +149,15 @@
       </button>
     </div>
     <div class="drawer-body">
+
+      <div class="set-cat">
+        <div class="set-cat-head open" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 2a1 1 0 0 1 1 1v4H7V3a1 1 0 0 1 1-1zm8 0a1 1 0 0 1 1 1v4h-2V3a1 1 0 0 1 1-1zM5 8h14a1 1 0 0 1 1 1v2a7 7 0 0 1-6 6.93V21a1 1 0 1 1-2 0v-3.07A7 7 0 0 1 6 11V9a1 1 0 0 1-1-1z"/></svg></span>
+          <span class="set-cat-label">Connexion</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body open settled">
+          <div class="set-cat-body-inner">
       <div class="field">
         <label>URL de l'API</label>
         <input id="set-url" type="text" placeholder="http://host-interne/v1" spellcheck="false" oninput="syncConfigured()">
@@ -159,6 +168,18 @@
         <input id="set-key" type="password" oninput="syncConfigured()">
         <span class="hint" id="set-key-hint"></span>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 1h2v3h4V1h2v3h.5A2.5 2.5 0 0 1 19 6.5V7h3v2h-3v2h3v2h-3v.5a2.5 2.5 0 0 1-2.5 2.5H16v3h-2v-3h-4v3H8v-3h-.5A2.5 2.5 0 0 1 5 13.5V13H2v-2h3V9H2V7h3v-.5A2.5 2.5 0 0 1 7.5 4H8V1zm1 7a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H9z"/></svg></span>
+          <span class="set-cat-label">Modèle &amp; raisonnement</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <label>Modèle</label>
         <div class="select-anchor">
@@ -210,6 +231,18 @@
           </label>
         </div>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V9h5.5L13 3.5zM8 13h8v1.6H8V13zm0 4h8v1.6H8V17z"/></svg></span>
+          <span class="set-cat-label">Prompts système</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <details class="root-prompt-details" id="root-prompt-details">
           <summary>Prompt système racine <span class="root-prompt-badge">non modifiable</span></summary>
@@ -221,6 +254,18 @@
         <textarea id="set-system" rows="4" spellcheck="false" placeholder="Optionnel"></textarea>
         <span class="hint">Persona et préférences. Injecté après le prompt racine.</span>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><mask id="set-cat-palette-wells"><rect width="24" height="24" fill="white"/><circle cx="8" cy="9" r="1.6" fill="black"/><circle cx="13.5" cy="7.5" r="1.6" fill="black"/><circle cx="16.8" cy="11.5" r="1.6" fill="black"/></mask><path mask="url(#set-cat-palette-wells)" d="M12 3a9 9 0 1 0 0 18c1.6 0 2.2-1.1 1.6-2.2-.5-.9-.3-1.9.7-2.3.3-.1.6-.2 1-.2h2.2A3.5 3.5 0 0 0 21 12.8C20.9 7.4 16.9 3 12 3z"/></svg></span>
+          <span class="set-cat-label">Apparence</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <label>Thème</label>
         <div class="seg-group" id="theme-mode">
@@ -243,8 +288,19 @@
           </label>
         </div>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v3H3V4z"/><path fill-rule="evenodd" d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9zm5 3a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H9z"/></svg></span>
+          <span class="set-cat-label">Mémoire</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
-        <label>Mémoire</label>
         <div class="btn-row">
           <button class="btn-ghost" onclick="openSummaryDrawer()">Résumés</button>
           <button class="btn-ghost" onclick="openMemoryDrawer()">Souvenirs</button>
@@ -259,6 +315,18 @@
         </div>
         <span class="hint" id="summary-injection-hint"></span>
       </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21.7 6.9a5.6 5.6 0 0 1-7.2 6.7l-6.6 6.6a2.3 2.3 0 0 1-3.3-3.3l6.6-6.6a5.6 5.6 0 0 1 6.7-7.2c.4.1.5.6.2.9L15.6 6.5l1.9 1.9 2.5-2.5c.3-.3.8-.2.9.2.3.9.3 1.9-.2 2.8z"/></svg></span>
+          <span class="set-cat-label">Outils &amp; extensions</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
       <div class="field">
         <div class="check-row">
           <div class="label-col">
@@ -316,7 +384,11 @@
           </label>
         </div>
       </div>
-      <button class="btn-primary" onclick="onSaveSettings()">Enregistrer</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="save-settings-btn" onclick="onSaveSettings()" disabled>Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
     </div>
   </div>

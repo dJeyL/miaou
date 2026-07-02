@@ -140,6 +140,22 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     conversation déjà titrée (manuellement ou automatiquement) → le titre est
     remplacé par un nouveau titre généré ; le titre devient non éditable pendant
     l'appel puis se déverrouille.
+18. **Drawer réglages — catégories repliables** : ouvrir les réglages → six
+    catégories (Connexion, Modèle & raisonnement, Prompts système, Apparence,
+    Mémoire, Outils & extensions), seule « Connexion » ouverte au départ.
+    Ouvrir une catégorie replie la précédente (accordéon). Dans « Modèle &
+    raisonnement », ouvrir le dropdown du champ Modèle et la pilule de
+    raisonnement → les menus débordent de la catégorie **sans être coupés**
+    (overflow rétabli après la transition d'ouverture).
+19. **Bouton Enregistrer conditionnel** : à l'ouverture des réglages, le bouton
+    est grisé (désactivé). Modifier n'importe quel champ persisté à
+    l'enregistrement (URL, clef, modèle — y compris via le dropdown —, prompt
+    utilisateur, un toggle, le niveau de raisonnement via la pilule, le mode
+    « Conversations passées ») → le bouton s'active ; revenir à la valeur
+    d'origine → il se re-grise. Changer le **thème** ne l'active pas
+    (auto-persisté). Enregistrer → bouton re-grisé. Modifier un champ, fermer
+    le drawer sans enregistrer, rouvrir → la saisie est toujours là et le
+    bouton toujours actif.
 
 ## Agrégation MCP distante (V2)
 
