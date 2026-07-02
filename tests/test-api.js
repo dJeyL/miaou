@@ -90,3 +90,21 @@ describe('parseSummaryJSON (parsing défensif des résumés)', function() {
     expect(r).toBeFalsy();
   });
 });
+
+describe('rejet de reasoning_effort (cache session par endpoint+modèle)', function() {
+  it('non marqué → pas rejeté', function() {
+    expect(isReasoningEffortRejected('http://u1/v1', 'm1')).toBeFalsy();
+  });
+  it('marqué → rejeté pour ce couple exact', function() {
+    markReasoningEffortRejected('http://u2/v1', 'm1');
+    expect(isReasoningEffortRejected('http://u2/v1', 'm1')).toBeTruthy();
+  });
+  it('clé composite : même endpoint, autre modèle → indépendant', function() {
+    markReasoningEffortRejected('http://u3/v1', 'm1');
+    expect(isReasoningEffortRejected('http://u3/v1', 'm2')).toBeFalsy();
+  });
+  it('clé composite : même modèle, autre endpoint → indépendant', function() {
+    markReasoningEffortRejected('http://u4/v1', 'm1');
+    expect(isReasoningEffortRejected('http://u5/v1', 'm1')).toBeFalsy();
+  });
+});

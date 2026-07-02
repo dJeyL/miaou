@@ -274,8 +274,11 @@ body {
   backdrop-filter: blur(8px);
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
-.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 1; transform: translateX(0); transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
-.app.sidebar-open .topbar-brand { opacity: 0; transform: translateX(-6px); pointer-events: none; }
+/* Brand topbar : masqué EN DUR par défaut (état HTML statique), révélé par
+   init() via .booted une fois l'état de la sidebar tranché — sinon flash au
+   chargement avant que sidebar-open ne soit posée (historique non vide). */
+.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
+.app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
 .topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
@@ -298,6 +301,24 @@ body {
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn svg { width: 17px; height: 17px; }
+/* « + » de la topbar : nouvelle conversation quand la sidebar (et son bouton
+   « Nouvelle ») est fermée. Même habillage bordé que .new-btn, même fondu que
+   .topbar-brand — pointer-events: none une fois invisible, pas de cible fantôme.
+   Déclaré APRÈS .icon-btn : même spécificité, l'ordre décide. */
+.topbar-new-btn {
+  width: 24px; height: 24px;
+  margin-left: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition: opacity 190ms var(--ease), transform 190ms var(--ease), background 140ms var(--ease);
+}
+.topbar-new-btn svg { width: 13px; height: 13px; }
+.topbar-new-btn:hover { background: var(--surface-3); }
+.app.booted:not(.sidebar-open) .topbar-new-btn { opacity: 1; transform: translateX(0); pointer-events: auto; }
 
 .conv-title-edit {
   font-family: var(--sans);
@@ -596,6 +617,7 @@ body {
 }
 .composer-inner { max-width: var(--col); margin: 0 auto; }
 .input-wrap {
+  position: relative;   /* ancre du dropdown skill du composer (#skill-ac) */
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -733,6 +755,14 @@ body {
   transition: background 140ms var(--ease);
 }
 .composer-reasoning-btn:hover { background: var(--accent-bd); }
+/* valeur « défaut » (aucun paramètre envoyé) : pilule neutre/grise — l'accent
+   orange est réservé à un niveau explicitement choisi */
+.composer-reasoning-btn.effort-default {
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+.composer-reasoning-btn.effort-default:hover { background: var(--border); }
 .composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
 #composer-reasoning-menu {
@@ -1522,6 +1552,17 @@ body {
   overflow-y: auto;
   margin-bottom: 8px;
 }
+/* Instance du composer : en absolu au-dessus de .input-wrap (son ancre), donc
+   PAR-DESSUS les pilules de sélecteurs (axe z) sans les décaler à l'ouverture.
+   L'instance de la bulle d'édition (.msg-edit-area + .skill-ac) reste en flux. */
+#skill-ac {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin-bottom: 0;
+  z-index: 30;
+}
 .skill-ac-opt {
   display: flex;
   align-items: baseline;
@@ -1908,6 +1949,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           <img class="topbar-brand-logo" id="topbar-logo" alt="">
           <span class="topbar-brand-name">MIAOU</span>
         </div>
+        <!-- Nouvelle conversation sidebar fermée — même fondu que .topbar-brand,
+             le bouton « Nouvelle » de la sidebar reste le chemin normal -->
+        <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
       </div>
       <div class="topbar-mid">
         <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
@@ -1963,7 +2009,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </div>
           <div class="composer-reasoning" id="composer-reasoning" hidden>
             <button type="button" class="composer-reasoning-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
-              <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.4" cy="7.1" r="0.95" fill="black"/><circle cx="8.2" cy="7.1" r="0.95" fill="black"/><circle cx="11" cy="7.1" r="0.95" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
+              <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
               <span id="composer-reasoning-label">raisonnement</span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
@@ -1971,10 +2017,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </div>
         </div>
 
-        <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput -->
-        <div class="skill-ac" id="skill-ac" hidden></div>
-
         <div class="input-wrap" id="input-wrap">
+          <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput.
+               Positionnée en absolu au-dessus de l'input : recouvre les pilules
+               (axe z) au lieu de les décaler. -->
+          <div class="skill-ac" id="skill-ac" hidden></div>
           <textarea id="composer-text" rows="1" placeholder="Message…"
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
@@ -1983,7 +2030,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </button>
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour une skill</div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden> · <kbd>/</kbd> pour une skill</span></div>
       </div>
     </div>
   </div>
@@ -2249,7 +2296,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-02 06:04 UTC */
+/* miaou — built: 2026-07-02 19:37 UTC */
 
 /* ── utils.js ── */
 
@@ -2634,7 +2681,7 @@ const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1782972297}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783021057}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4200,7 +4247,10 @@ async function streamCompletion(messages, opts) {
     });
     if (!res.ok || !res.body) {
       
-      if (body.reasoning_effort) markReasoningEffortRejected(cfg.url, model);
+      if (body.reasoning_effort) {
+        markReasoningEffortRejected(cfg.url, model);
+        return streamCompletion(messages, opts);
+      }
       throw new Error('streamCompletion ' + res.status);
     }
 
@@ -4603,7 +4653,7 @@ function toggleReasoning(btn) {
     panel.setAttribute('hidden', '');
     btn.classList.remove('open');
   }
-  scrollBottom();
+  
 }
 
 function decoratePre(scope) {
@@ -5618,6 +5668,8 @@ function syncReasoningUI() {
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
   const label = $('composer-reasoning-label');
   if (label) label.textContent = opt ? opt.label : cur;
+  const btn = $('composer-reasoning-btn');
+  if (btn) btn.classList.toggle('effort-default', !cur);
   box.hidden = !settings.showReasoningSelector || rejected;
 }
 
@@ -5669,9 +5721,8 @@ function renderSettingsReasoningOptions() {
 }
 
 function pickSettingsReasoningEffort(v) {
-  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
   $('set-reasoning-effort').value = v;
-  $('set-reasoning-label').textContent = opt ? opt.label : v;
+  syncSettingsReasoningLabel();
   $('set-reasoning-menu').classList.remove('show');
 }
 
@@ -5679,6 +5730,7 @@ function syncSettingsReasoningLabel() {
   const v = $('set-reasoning-effort').value;
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
   $('set-reasoning-label').textContent = opt ? opt.label : v;
+  $('set-reasoning-btn').classList.toggle('effort-default', !v);
 }
 
 function openSettings() {
@@ -6234,7 +6286,13 @@ function closeSkills() {
   $('skills-backdrop').classList.remove('show');
 }
 
+function syncSkillHintUI() {
+  const el = $('composer-hint-skill');
+  if (el) el.hidden = !listEnabledSkills().length;
+}
+
 function renderSkills() {
+  syncSkillHintUI();   
   const wrap = $('skill-list');
   if (!wrap) return;
   wrap.innerHTML = '';
@@ -6476,7 +6534,9 @@ function moveSkillAcSelection(state, delta) {
   if (!box) return;
   const opts = box.querySelectorAll('.skill-ac-opt');
   if (!opts.length) return;
-  state.index = (state.index + delta + opts.length) % opts.length;
+  
+  if (state.index < 0 && delta < 0) state.index = opts.length - 1;
+  else state.index = (state.index + delta + opts.length) % opts.length;
   opts.forEach((o, i) => o.classList.toggle('active', i === state.index));
   const active = opts[state.index];
   if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
@@ -7264,6 +7324,8 @@ function onSendBtn() {
 }
 
 async function resolveSend(literal) {
+  
+  if (!listEnabledSkills().length) return { ok: true, literal, content: literal, isSkill: false };
   const triggers = findSlashTriggers(literal);
   if (!triggers.length) return { ok: true, literal, content: literal, isSkill: false };
 
@@ -7522,9 +7584,9 @@ async function dispatchSend(matches) {
   } catch (e) {
     finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
     setConnDot('err');
-    syncReasoningUI();   
   } finally {
     setSending(false);
+    syncReasoningUI();       
     armIdleSummaryTimer();   
   }
 }
@@ -7662,6 +7724,8 @@ function init() {
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
   if (!isMobileLayout() && listAllConversations().length > 0) $('app').classList.add('sidebar-open');
+  
+  $('app').classList.add('booted');
   initSidebarResize();
   initVisualViewport();
   wireTitleEditing();
@@ -7687,7 +7751,7 @@ function init() {
 
   prefetchModels();      
   reconnectMcpServers(); 
-  loadSkillsCache();     
+  loadSkillsCache().then(syncSkillHintUI);   
   runBackfill();         
   armIdleSummaryTimer(); 
 }

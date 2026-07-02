@@ -571,6 +571,9 @@ function onSendBtn() {
 //   { ok:true,  literal, content, isSkill }   — au moins un slash résolu (content = bakové)
 //   { ok:false, error }                        — slug en position 0 inconnu / désactivé / indisponible
 async function resolveSend(literal) {
+  // Aucun skill activé : rien à reconnaître — un `/mot` (même en position 0)
+  // est du texte comme un autre, jamais un blocage « skill inconnue ».
+  if (!listEnabledSkills().length) return { ok: true, literal, content: literal, isSkill: false };
   const triggers = findSlashTriggers(literal);
   if (!triggers.length) return { ok: true, literal, content: literal, isSkill: false };
 
@@ -889,9 +892,9 @@ async function dispatchSend(matches) {
   } catch (e) {
     finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
     setConnDot('err');
-    syncReasoningUI();   // masque le sélecteur si l'échec vient de reasoning_effort (cf. api.js)
   } finally {
     setSending(false);
+    syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
   }
 }
@@ -1046,6 +1049,10 @@ function init() {
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
   if (!isMobileLayout() && listAllConversations().length > 0) $('app').classList.add('sidebar-open');
+  // Posée APRÈS la décision sidebar-open : le brand topbar et le « + » sont
+  // masqués en dur tant que .booted est absente (pas de flash au chargement
+  // quand l'historique non vide va ouvrir la sidebar).
+  $('app').classList.add('booted');
   initSidebarResize();
   initVisualViewport();
   wireTitleEditing();
@@ -1078,7 +1085,7 @@ function init() {
 
   prefetchModels();      // liste des modèles (cache session) → sélecteur composer
   reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
-  loadSkillsCache();     // méta des skills en mémoire → autocomplétion + outils
+  loadSkillsCache().then(syncSkillHintUI);   // méta des skills en mémoire → autocomplétion + outils + légende « / »
   runBackfill();         // auto-gardé sur la présence d'URL
   armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
 }

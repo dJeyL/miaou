@@ -177,8 +177,14 @@ async function streamCompletion(messages, opts) {
     if (!res.ok || !res.body) {
       // Hypothèse directe (pas de retry de diagnostic) : si reasoning_effort était
       // posé, on le tient pour responsable de l'échec — marqué pour (endpoint,
-      // modèle), le sélecteur se masque pour la suite de la session.
-      if (body.reasoning_effort) markReasoningEffortRejected(cfg.url, model);
+      // modèle), le sélecteur se masque pour la suite de la session, et on rejoue
+      // LA MÊME requête une fois sans le paramètre (vLLM & co. rejettent en 400
+      // les paramètres inconnus : l'utilisateur ne doit pas voir une erreur pour
+      // ça). Le flag posé garantit que l'appel récursif n'en fait pas un autre.
+      if (body.reasoning_effort) {
+        markReasoningEffortRejected(cfg.url, model);
+        return streamCompletion(messages, opts);
+      }
       throw new Error('streamCompletion ' + res.status);
     }
 

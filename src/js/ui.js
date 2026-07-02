@@ -214,7 +214,8 @@ function toggleReasoning(btn) {
     panel.setAttribute('hidden', '');
     btn.classList.remove('open');
   }
-  scrollBottom();
+  // Pas de scrollBottom() ici : consulter le raisonnement d'un message ancien
+  // ne doit pas ramener la vue en bas du fil.
 }
 
 // En-tête (langage + boutons copier/télécharger) sur chaque <pre>.
@@ -1350,6 +1351,8 @@ function syncReasoningUI() {
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
   const label = $('composer-reasoning-label');
   if (label) label.textContent = opt ? opt.label : cur;
+  const btn = $('composer-reasoning-btn');
+  if (btn) btn.classList.toggle('effort-default', !cur);
   box.hidden = !settings.showReasoningSelector || rejected;
 }
 
@@ -1405,9 +1408,8 @@ function renderSettingsReasoningOptions() {
 }
 
 function pickSettingsReasoningEffort(v) {
-  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
   $('set-reasoning-effort').value = v;
-  $('set-reasoning-label').textContent = opt ? opt.label : v;
+  syncSettingsReasoningLabel();
   $('set-reasoning-menu').classList.remove('show');
 }
 
@@ -1418,6 +1420,7 @@ function syncSettingsReasoningLabel() {
   const v = $('set-reasoning-effort').value;
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
   $('set-reasoning-label').textContent = opt ? opt.label : v;
+  $('set-reasoning-btn').classList.toggle('effort-default', !v);
 }
 
 // ── Settings drawer ─────────────────────────────────────────────────────────
@@ -2001,7 +2004,15 @@ function closeSkills() {
   $('skills-backdrop').classList.remove('show');
 }
 
+// Légende « / pour une skill » du composer : visible seulement s'il existe au
+// moins un skill activé (sinon le slash n'a aucun sens pour l'utilisateur).
+function syncSkillHintUI() {
+  const el = $('composer-hint-skill');
+  if (el) el.hidden = !listEnabledSkills().length;
+}
+
 function renderSkills() {
+  syncSkillHintUI();   // tout CRUD skill (save/delete/toggle) repasse ici
   const wrap = $('skill-list');
   if (!wrap) return;
   wrap.innerHTML = '';
@@ -2265,7 +2276,11 @@ function moveSkillAcSelection(state, delta) {
   if (!box) return;
   const opts = box.querySelectorAll('.skill-ac-opt');
   if (!opts.length) return;
-  state.index = (state.index + delta + opts.length) % opts.length;
+  // Entrée dans la liste par ↑ sans sélection : dernière option (l'arithmétique
+  // modulaire depuis -1 donnerait l'avant-dernière). Vaut pour les deux contextes
+  // (composer et bulle d'édition), quelle que soit la position de la liste.
+  if (state.index < 0 && delta < 0) state.index = opts.length - 1;
+  else state.index = (state.index + delta + opts.length) % opts.length;
   opts.forEach((o, i) => o.classList.toggle('active', i === state.index));
   const active = opts[state.index];
   if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });

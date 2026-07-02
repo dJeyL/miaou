@@ -91,3 +91,40 @@ describe('relativeWhen (libellé de date par conversation)', function() {
     expect(relativeWhen(0)).toBe('');
   });
 });
+
+describe('moveSkillAcSelection (navigation clavier de l\'autocomplete)', function() {
+  // Faux état { box, index } : seul l'arithmétique d'index est testée — le DOM
+  // (classe .active, scrollIntoView) est hors de portée de QuickJS.
+  function fakeState(n) {
+    var opts = [];
+    for (var i = 0; i < n; i++) opts.push({ classList: { toggle: function() {} } });
+    return { box: { querySelectorAll: function() { return opts; } }, index: -1, trigger: null };
+  }
+  it('entrée par ↑ sans sélection → DERNIÈRE option (pas l\'avant-dernière)', function() {
+    var s = fakeState(4);
+    moveSkillAcSelection(s, -1);
+    expect(s.index).toBe(3);
+  });
+  it('entrée par ↓ sans sélection → première option', function() {
+    var s = fakeState(4);
+    moveSkillAcSelection(s, 1);
+    expect(s.index).toBe(0);
+  });
+  it('↑ depuis la première → wrap vers la dernière', function() {
+    var s = fakeState(4);
+    s.index = 0;
+    moveSkillAcSelection(s, -1);
+    expect(s.index).toBe(3);
+  });
+  it('↓ depuis la dernière → wrap vers la première', function() {
+    var s = fakeState(4);
+    s.index = 3;
+    moveSkillAcSelection(s, 1);
+    expect(s.index).toBe(0);
+  });
+  it('liste vide → index inchangé (garde)', function() {
+    var s = fakeState(0);
+    moveSkillAcSelection(s, -1);
+    expect(s.index).toBe(-1);
+  });
+});

@@ -109,9 +109,19 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
 15. **Raisonnement** : avec un modèle qui expose `reasoning`/`thinking`, l'icône
     raisonnement apparaît dans l'en-tête du message dès la première substance non
     vide ; cliquer déplie/referme le bloc monospace atténué. Le bloc persiste au
-    rechargement. Les appels silencieux (titrage, résumé) désactivent le
-    raisonnement (`reasoning_effort: none`) avec repli transparent si le backend
-    rejette le paramètre.
+    rechargement. Déplier/replier le raisonnement d'un message **ancien** (fil
+    scrollé vers le haut) ne doit **pas** ramener la vue en bas du fil. Les
+    appels silencieux (titrage, résumé) désactivent le raisonnement
+    (`reasoning_effort: none`) avec repli transparent si le backend rejette le
+    paramètre.
+15b. **Sélecteur de raisonnement — rejet et retry** : avec un backend qui rejette
+    `reasoning_effort` (ex. devstral via vLLM), choisir un niveau dans la pilule
+    du composer et envoyer → la réponse arrive **normalement** (pas de bulle
+    d'erreur : `streamCompletion` rejoue la requête sans le paramètre, visible
+    dans Network — deux POST, le second sans `reasoning_effort`), puis la pilule
+    disparaît pour la suite de la session (endpoint+modèle marqués rejetés).
+    Vérifier aussi l'état « défaut » : pilule **grisée** (composer et settings) ;
+    tout autre niveau la repasse en accent orange.
 16. **Toggle description outils** : activer `includeToolsInSystemPrompt` dans les
     réglages → la description textuelle redondante des outils apparaît dans le
     message système (vérifiable dans le payload réseau). La doctrine mémoire est
@@ -330,3 +340,25 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     ancienne avec des acks **legacy** (sans `args`, pré-réinjection cross-turn),
     vérifier qu'aucune trace n'apparaît pour ce tour (silencieusement omis, pas
     d'erreur).
+
+43. **Composer sans skill activée** : désactiver ou supprimer tous les skills →
+    la légende du composer perd « `/` pour une skill » (elle revient dès qu'un
+    skill est réactivé, sans recharger). Envoyer `/inconnu texte` → part comme du
+    texte normal, **aucune** erreur « skill inconnue », aucun parsing de slug ;
+    l'autocomplétion ne s'ouvre pas sur `/`.
+
+44. **Autocomplete par-dessus les pilules** : avec les sélecteurs de modèle et/ou
+    de raisonnement visibles dans le composer, taper `/` → la liste s'ouvre
+    **par-dessus** les pilules (elles ne bougent pas, elles sont recouvertes) et
+    les libère à la fermeture. Navigation clavier : liste ouverte sans sélection,
+    appuyer sur ↑ → sélectionne la **dernière** option (la plus proche du champ),
+    ↓ → la première ; les deux bouclent aux extrémités. Même comportement ↑ →
+    dernière dans l'autocomplete de la bulle d'édition (liste sous le champ).
+
+45. **« + » topbar sidebar fermée** : fermer la sidebar → logo + nom + bouton `+`
+    apparaissent en fondu dans la topbar ; cliquer le `+` crée une nouvelle
+    conversation (même effet que « Nouvelle » de la sidebar). Ouvrir la sidebar →
+    le `+` disparaît avec le brand et n'est plus cliquable (pas de cible fantôme
+    à son ancien emplacement). Au chargement avec un historique **non vide**
+    (sidebar ouverte d'office) : aucun flash du brand/`+` avant l'ouverture —
+    ils sont masqués en dur tant que `init()` n'a pas posé `.booted` sur `#app`.

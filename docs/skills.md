@@ -26,7 +26,14 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
 2. **Invocation slash = injection côté client, ≠ `<miaou_context>`.** Détection +
    validation + injection vivent dans **`resolveSend(literal)`** (main.js, async),
    **chemin UNIQUE partagé par `sendMessage` ET `editUserMessage`** — jamais deux
-   implémentations. `parseSlashCommand` (pur) → si `/<slug>` : lookup cache ; slug
+   implémentations. **Garde d'entrée : aucun skill activé
+   (`listEnabledSkills()` vide) → aucun parsing de slug, aucun blocage** — un
+   `/mot` même en position 0 part comme du texte normal (l'erreur « skill
+   inconnue » n'a pas de sens quand il n'existe aucun skill à connaître). La
+   légende « `/` pour une skill » du composer suit la même condition : span
+   `#composer-hint-skill`, visible seulement s'il existe ≥1 skill activé
+   (`syncSkillHintUI`, ui.js — synchronisée après `loadSkillsCache` au démarrage
+   et à chaque CRUD via `renderSkills`). `parseSlashCommand` (pur) → si `/<slug>` : lookup cache ; slug
    absent/désactivé → `{ ok:false, error }` → erreur composer locale
    (`showComposerSkillError`), **aucun envoi, aucun tour modèle, thread inchangé** ;
    sinon `getSkillContent` (IDB) puis `bakeSkillMessage(littéral, content)` =
@@ -50,6 +57,16 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    uniquement, match slug **ou** name) : ouverte tant qu'on tape le slug
    (`cmd.rest` vide), navigation clavier dans `onComposerKey` (↑↓ Tab Entrée Échap),
    sélection complète `/slug ` **sans envoyer**.
+   - **Instance composer superposée, pas en flux** : `#skill-ac` est DANS
+     `.input-wrap` (`position: relative`), en absolu au-dessus de l'input
+     (`bottom: calc(100% + 8px)`, `z-index: 30`) — elle **recouvre** les pilules
+     de sélecteurs à l'ouverture au lieu de les décaler vers le haut. L'instance
+     de la bulle d'édition (classe `.skill-ac` sans l'id) reste en flux, sous le
+     champ.
+   - **Entrée dans la liste par ↑ sans sélection = DERNIÈRE option**
+     (`moveSkillAcSelection`) : l'arithmétique modulaire depuis l'index -1
+     donnerait l'avant-dernière. Vaut pour les deux contextes (composer et bulle
+     d'édition).
 
 4. **Chemin langage naturel = `skills__list` + `skills__read`** (cf. `docs/tools.md`).
    Additif au registre `miaou__` existant — ne renomme aucun outil. C'est

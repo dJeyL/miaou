@@ -13,7 +13,9 @@ de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 **skills** (`validateSkillSlug`, `parseSlashCommand`, `bakeSkillMessage`, sync du
 cache mémoire `setSkillsCache`/`upsertSkillCache`/`removeSkillCache`/
 `listEnabledSkills`/`matchSkillCompletions`, `skills__list` activés-seulement,
-chemins d'erreur synchrones de `skills__read`, projection `autotrigger` de
+chemins d'erreur synchrones de `skills__read`, arithmétique d'index de
+`moveSkillAcSelection` — entrée par ↑ sans sélection = dernière option, wraps,
+garde liste vide —, projection `autotrigger` de
 `_skillMeta`, `getAutotriggerSkillsMeta` (filtrage enabled+autotrigger, cas liste
 vide), `skillDoctrinePrompt` conditionnel sur skills autotrigger ET résolution de
 la variante CONFIRMATION selon `confirmSkillAutoUse`), **export Markdown des
@@ -35,8 +37,15 @@ existante), texte barré `~~...(supprimée)~~` si `loadConversation` échoue —
 avec titre du marqueur, avec titre orphelin en résumé, ou repli sur l'ID si
 aucun titre connu —, encodage URL de l'id).
 
+Couvert aussi : le **cache session de rejet de `reasoning_effort`**
+(`markReasoningEffortRejected`/`isReasoningEffortRejected`, clé composite
+endpoint+modèle — indépendance par URL et par modèle). Le retry de
+`streamCompletion` sans le paramètre après rejet passe par `fetch` : manuel.
+
 Le contenu skill lu en IDB (`getSkillContent`/`getSkillRecord`, chemin async)
-se vérifie à la main. IDB, `internResourcesFromResult`, `loadConversationResources`
+se vérifie à la main, comme la garde « aucun skill activé » de `resolveSend`
+(async — le harness QuickJS n'exécute pas les microtâches, un `.then` ne se
+résout jamais dans le corps synchrone d'un `it`). IDB, `internResourcesFromResult`, `loadConversationResources`
 et la cascade D8 (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans
 `docs/manual-tests.md`).
 

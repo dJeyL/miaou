@@ -263,8 +263,11 @@ body {
   backdrop-filter: blur(8px);
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
-.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 1; transform: translateX(0); transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
-.app.sidebar-open .topbar-brand { opacity: 0; transform: translateX(-6px); pointer-events: none; }
+/* Brand topbar : masqué EN DUR par défaut (état HTML statique), révélé par
+   init() via .booted une fois l'état de la sidebar tranché — sinon flash au
+   chargement avant que sidebar-open ne soit posée (historique non vide). */
+.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
+.app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
 .topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
@@ -287,6 +290,24 @@ body {
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn svg { width: 17px; height: 17px; }
+/* « + » de la topbar : nouvelle conversation quand la sidebar (et son bouton
+   « Nouvelle ») est fermée. Même habillage bordé que .new-btn, même fondu que
+   .topbar-brand — pointer-events: none une fois invisible, pas de cible fantôme.
+   Déclaré APRÈS .icon-btn : même spécificité, l'ordre décide. */
+.topbar-new-btn {
+  width: 24px; height: 24px;
+  margin-left: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition: opacity 190ms var(--ease), transform 190ms var(--ease), background 140ms var(--ease);
+}
+.topbar-new-btn svg { width: 13px; height: 13px; }
+.topbar-new-btn:hover { background: var(--surface-3); }
+.app.booted:not(.sidebar-open) .topbar-new-btn { opacity: 1; transform: translateX(0); pointer-events: auto; }
 
 .conv-title-edit {
   font-family: var(--sans);
@@ -585,6 +606,7 @@ body {
 }
 .composer-inner { max-width: var(--col); margin: 0 auto; }
 .input-wrap {
+  position: relative;   /* ancre du dropdown skill du composer (#skill-ac) */
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -722,6 +744,14 @@ body {
   transition: background 140ms var(--ease);
 }
 .composer-reasoning-btn:hover { background: var(--accent-bd); }
+/* valeur « défaut » (aucun paramètre envoyé) : pilule neutre/grise — l'accent
+   orange est réservé à un niveau explicitement choisi */
+.composer-reasoning-btn.effort-default {
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+.composer-reasoning-btn.effort-default:hover { background: var(--border); }
 .composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
 #composer-reasoning-menu {
@@ -1510,6 +1540,17 @@ body {
   max-height: 220px;
   overflow-y: auto;
   margin-bottom: 8px;
+}
+/* Instance du composer : en absolu au-dessus de .input-wrap (son ancre), donc
+   PAR-DESSUS les pilules de sélecteurs (axe z) sans les décaler à l'ouverture.
+   L'instance de la bulle d'édition (.msg-edit-area + .skill-ac) reste en flux. */
+#skill-ac {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin-bottom: 0;
+  z-index: 30;
 }
 .skill-ac-opt {
   display: flex;

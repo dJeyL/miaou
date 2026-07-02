@@ -53,6 +53,11 @@
           <img class="topbar-brand-logo" id="topbar-logo" alt="">
           <span class="topbar-brand-name">MIAOU</span>
         </div>
+        <!-- Nouvelle conversation sidebar fermée — même fondu que .topbar-brand,
+             le bouton « Nouvelle » de la sidebar reste le chemin normal -->
+        <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
       </div>
       <div class="topbar-mid">
         <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
@@ -108,7 +113,7 @@
           </div>
           <div class="composer-reasoning" id="composer-reasoning" hidden>
             <button type="button" class="composer-reasoning-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
-              <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.4" cy="7.1" r="0.95" fill="black"/><circle cx="8.2" cy="7.1" r="0.95" fill="black"/><circle cx="11" cy="7.1" r="0.95" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
+              <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
               <span id="composer-reasoning-label">raisonnement</span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
@@ -116,10 +121,11 @@
           </div>
         </div>
 
-        <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput -->
-        <div class="skill-ac" id="skill-ac" hidden></div>
-
         <div class="input-wrap" id="input-wrap">
+          <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput.
+               Positionnée en absolu au-dessus de l'input : recouvre les pilules
+               (axe z) au lieu de les décaler. -->
+          <div class="skill-ac" id="skill-ac" hidden></div>
           <textarea id="composer-text" rows="1" placeholder="Message…"
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
@@ -128,7 +134,7 @@
           </button>
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne · <kbd>/</kbd> pour une skill</div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden> · <kbd>/</kbd> pour une skill</span></div>
       </div>
     </div>
   </div>

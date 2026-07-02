@@ -10,17 +10,22 @@
   | high` — `''` (défaut) n'ajoute **aucun** paramètre `reasoning_effort` à la
   requête API (comportement natif du modèle) ; toute autre valeur est posée telle
   quelle. `showReasoningSelector` (défaut `false`) n'affecte que la visibilité du
-  sélecteur (select natif) dans le composer, symétrique à `showModelSelector` mais
-  sans dropdown custom (liste fixe de 5 valeurs). Résolution par
+  sélecteur dans le composer, symétrique à `showModelSelector` : même composant
+  pilule + `.model-menu`, mais liste statique de 5 valeurs (pas de fetch). La
+  valeur « défaut » grise la pilule (classe `.effort-default`, composer ET
+  settings) — l'accent orange signale un niveau explicitement choisi. Résolution par
   `activeReasoningEffort()` (main.js), même pattern que `activeModel()` :
   `conv.reasoningEffort` (override) sinon `settings.reasoningEffort` (défaut).
-  Si l'API rejette `reasoning_effort` pour un (endpoint, modèle) donné, le rejet
-  est mémorisé en session (`_reasoningEffortRejected`, api.js — clé composite
-  URL+modèle, **pas** juste l'URL comme `_noThinkRejected` : un même endpoint peut
-  exposer plusieurs modèles aux capacités de raisonnement différentes) et le
-  sélecteur se masque pour la suite de la session (`syncReasoningUI`, ui.js) ; pas
-  de retry silencieux ici (contrairement à `silentCompletion`) — l'erreur est
-  affichée telle quelle à l'utilisateur, cf. pièges 14/16 (raisonnement, KV cache)
+  Si l'API rejette `reasoning_effort` pour un (endpoint, modèle) donné (vLLM
+  renvoie 400 sur les paramètres inconnus), le rejet est mémorisé en session
+  (`_reasoningEffortRejected`, api.js — clé composite URL+modèle, **pas** juste
+  l'URL comme `_noThinkRejected` : un même endpoint peut exposer plusieurs modèles
+  aux capacités de raisonnement différentes), puis `streamCompletion` **rejoue une
+  fois la même requête sans le paramètre** — l'utilisateur reçoit sa réponse, pas
+  une bulle d'erreur (le flag posé garantit l'unicité du retry). Le sélecteur se
+  masque pour la suite de la session via `syncReasoningUI` (ui.js), appelé dans le
+  `finally` du tour (main.js) — donc aussi quand le retry a réussi, pas seulement
+  sur le chemin d'erreur. Cf. pièges 14/16 (raisonnement, KV cache)
   pour le mécanisme voisin de détection par observation directe. `sidebarWidth`
   (défaut `264`) est
   la largeur redimensionnable de la sidebar, bornée `[264, 528]` (min = largeur
