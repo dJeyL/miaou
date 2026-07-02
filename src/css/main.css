@@ -722,7 +722,7 @@ body {
   transition: background 140ms var(--ease);
 }
 .composer-reasoning-btn:hover { background: var(--accent-bd); }
-.composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; flex-shrink: 0; }
+.composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
 #composer-reasoning-menu {
   top: auto;
