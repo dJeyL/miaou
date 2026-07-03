@@ -253,3 +253,30 @@ describe('Serveurs MCP : CRUD (miaou-mcp-servers)', function() {
     expect(en[0].name).toBe('on');
   });
 });
+
+describe('backfillMessageModels (modèle du serveur API actif)', function() {
+  it('attribue le modèle du serveur actif aux réponses sans modèle, sans écraser', function() {
+    localStorage.clear();
+    saveSettings({ model: 'legacy-model' });
+    saveApiServers([{ id: 's1', name: 'A', url: 'http://a/v1', key: '', model: 'model-a' }]);
+    setActiveApiServerId('s1');
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'r' },
+      { role: 'assistant', content: 'r2', model: 'kept' },
+    ]});
+    backfillMessageModels();
+    var conv = loadConversation('c1');
+    expect(conv.messages[1].model).toBe('model-a');
+    expect(conv.messages[2].model).toBe('kept');
+  });
+  it('inerte si aucun modèle résolu (ni serveur, ni legacy)', function() {
+    localStorage.clear();
+    saveApiServersRaw([]);
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
+      { role: 'assistant', content: 'r' },
+    ]});
+    backfillMessageModels();
+    expect(loadConversation('c1').messages[0].model === undefined).toBeTruthy();
+  });
+});

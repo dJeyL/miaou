@@ -31,8 +31,17 @@ local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 ## Pipeline de build (ne pas le réécrire)
 
 `build.py` lit `src/html/index.html` et remplace deux placeholders :
-`/* __CSS__ */` (← `src/css/main.css`) et `/* __JS__ */` (← les `src/js/*.js`
-concaténés dans l'ordre `JS_ORDER` : `utils, storage, resources, tools, api, ui, main`).
+`/* __CSS__ */` (← les `src/css/*.css` concaténés dans l'ordre `CSS_ORDER` :
+`base, sidebar, chat, composer, drawers, tools, responsive, theme-light` —
+l'ordre EST la cascade, `base` porte l'@import des fontes, `theme-light` doit
+rester dernier) et `/* __JS__ */` (← les `src/js/*.js` concaténés dans l'ordre
+`JS_ORDER` : `utils, storage, resources, skills, tools, api, ui, main`).
+Les commentaires sont retirés au passage — JS (`strip_js_comments`, respecte
+strings/templates/regex), CSS (`strip_css_comments`, respecte les strings) et
+HTML (`strip_html_comments`, sur le template avant substitution des
+placeholders) : `src/` reste la référence commentée, `dist/` est compact.
+Tests unitaires de ces transformations dans `tests/runner.py`
+(`run_build_unit_tests`).
 Il substitue aussi **un seul marqueur de config**, `__MIAOU_CONFIG__`, par
 l'objet `config.json` entier sérialisé en JSON (JSON ⊂ littéral objet JS, donc
 `json.dumps` gère seul quoting/nombres/booléens — pas de marqueur par clef, pas
@@ -151,6 +160,10 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
 
 À lire à la demande, selon la zone touchée — pas systématiquement :
 
+- **`docs/code-map.md`** — index « où se trouve quoi » (fonctions/const JS,
+  sections JS/CSS, avec lignes). **Généré par `build.py` à chaque build, ne
+  jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
+  fichiers (`ui.js`, `main.css`).
 - **`docs/pitfalls-detail.md`** — développement complet des 16 pièges ci-dessus.
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,

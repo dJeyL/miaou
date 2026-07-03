@@ -7,8 +7,10 @@
 <link rel="icon" id="favicon">
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
-<script>(function(){try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');var t=s.theme;if(t==='light')document.documentElement.setAttribute('data-theme','light');else if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+
+<script>(function(){var t='dark';try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');t=s.theme;}catch(e){}if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);})();</script>
 <style>
+
 @import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,14 +39,15 @@
   --sans: 'Hanken Grotesk', system-ui, sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
   --col: 720px;
-  --sidebar-w: 264px;   /* largeur ouverte, redimensionnable (264 → 528) et persistée */
-  /* valeurs dérivées, surchargées par le thème clair */
+  --sidebar-w: 264px;   
+  
   --topbar-bg:             rgba(17,19,22,.6);
   --scrollbar-thumb-hover: #3a4049;
   --table-stripe:          rgba(255,255,255,.012);
   --code-bg:               #0e1013;
   --code-head-bg:          var(--surface);
   --code-inline-color:     #ffb894;
+  --surface-4:             #262b33;   
 }
 
 html, body { height: 100%; }
@@ -60,16 +63,13 @@ body {
 
 ::selection { background: var(--accent-dim); }
 
-/* scrollbars */
 ::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
-/* ═══ App shell ═══ */
 .app { display: flex; height: var(--vvh, 100dvh); }
 
-/* ═══ Sidebar ═══ */
 .sidebar {
   position: relative;
   width: 0;
@@ -80,7 +80,7 @@ body {
   transition: width 190ms var(--ease);
 }
 .app.sidebar-open .sidebar { width: var(--sidebar-w); }
-/* pendant le drag : pas de transition, sinon la largeur « traîne » derrière le curseur */
+
 .sidebar.resizing { transition: none; }
 
 .sidebar-inner {
@@ -90,7 +90,6 @@ body {
   flex-direction: column;
 }
 
-/* poignée de redimensionnement (bord droit, visible seulement sidebar ouverte) */
 .sidebar-resizer {
   position: absolute;
   top: 0;
@@ -136,7 +135,6 @@ body {
 .new-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
 .new-btn svg { width: 13px; height: 13px; }
 
-/* recherche dans l'historique */
 .sidebar-search {
   display: flex;
   align-items: center;
@@ -240,6 +238,9 @@ body {
 }
 .conv:hover .conv-del { opacity: 1; }
 .conv-del:hover { color: var(--err); background: rgba(255,93,93,.1); }
+
+.conv-del.armed,
+.conv-del.armed:hover { opacity: 1; color: #fff; background: var(--err); }
 .conv-del svg { width: 13px; height: 13px; display: block; }
 .conv-pin {
   opacity: 0;
@@ -254,14 +255,12 @@ body {
 .conv:hover .conv-pin { opacity: 1; }
 .conv-pin:hover { color: var(--accent); background: var(--surface-3); }
 .conv-pin svg { width: 13px; height: 13px; display: block; }
-/* Épinglée : pastille visible en permanence, remplie, teintée accent. */
+
 .conv.pinned .conv-pin { opacity: 1; color: var(--accent); }
 .conv.pinned .conv-pin svg { fill: var(--accent); }
 
-/* ═══ Main ═══ */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
-/* top bar */
 .topbar {
   height: 52px;
   flex-shrink: 0;
@@ -274,9 +273,7 @@ body {
   backdrop-filter: blur(8px);
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
-/* Brand topbar : masqué EN DUR par défaut (état HTML statique), révélé par
-   init() via .booted une fois l'état de la sidebar tranché — sinon flash au
-   chargement avant que sidebar-open ne soit posée (historique non vide). */
+
 .topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
 .app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
@@ -284,6 +281,7 @@ body {
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
+
 .topbar:hover .conv-dl-btn { opacity: 1; }
 .topbar-mid:hover .conv-retitle-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
@@ -301,10 +299,7 @@ body {
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn svg { width: 17px; height: 17px; }
-/* « + » de la topbar : nouvelle conversation quand la sidebar (et son bouton
-   « Nouvelle ») est fermée. Même habillage bordé que .new-btn, même fondu que
-   .topbar-brand — pointer-events: none une fois invisible, pas de cible fantôme.
-   Déclaré APRÈS .icon-btn : même spécificité, l'ordre décide. */
+
 .topbar-new-btn {
   width: 24px; height: 24px;
   margin-left: 8px;
@@ -376,7 +371,6 @@ body {
 .dot.ok  { background: var(--ok);  box-shadow: 0 0 7px rgba(78,201,138,.5); }
 .dot.err { background: var(--err); box-shadow: 0 0 7px rgba(255,93,93,.5); }
 
-/* activité en arrière-plan (titrage, résumés, lecture mémoire) */
 .bg-activity {
   display: none;
   align-items: center;
@@ -393,7 +387,6 @@ body {
 .bg-activity.active { display: flex; }
 .bg-activity #bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ═══ Messages ═══ */
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -414,7 +407,6 @@ body {
 .msg { display: flex; flex-direction: column; animation: rise 260ms var(--ease) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* user: compact, right */
 .msg.user {
   align-items: flex-end;
   margin: 14px 0 4px;
@@ -431,11 +423,9 @@ body {
 .msg.user .bubble { position: relative; }
 .msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
 .msg.user .bubble .body p { margin-bottom: 7px; }
-/* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
-   plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
+
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
 
-/* action « éditer » au survol d'une bulle utilisateur */
 .msg-edit {
   position: absolute;
   top: 2px; left: -30px;
@@ -452,7 +442,6 @@ body {
 .msg-edit:hover { color: var(--accent); }
 .msg-edit svg { width: 14px; height: 14px; display: block; }
 
-/* mode édition : la bulle prend toute la largeur de la colonne */
 .msg.user.editing { width: 100%; }
 .msg.user.editing .bubble { width: 100%; max-width: 100%; }
 .msg.user.editing .msg-edit { display: none; }
@@ -472,9 +461,7 @@ body {
   max-height: 240px;
 }
 .msg-edit-area:focus { border-color: var(--accent-bd); }
-/* Dropdown skill de la bulle d'édition : sous la textarea (composer = au-dessus).
-   Collé à la textarea (cohérent avec le composer, où .skill-ac touche .input-wrap) ;
-   séparé des boutons par la marge normale de .msg-edit-actions. */
+
 .msg-edit-area + .skill-ac { margin-top: 0; margin-bottom: 10px; }
 .msg-edit-actions {
   display: flex;
@@ -482,9 +469,8 @@ body {
   gap: 6px;
   margin-top: 6px;
 }
-.msg-edit-error { font-size: 12px; color: var(--err, #f85149); margin-top: 6px; text-align: left; }
+.msg-edit-error { font-size: 12px; color: var(--err); margin-top: 6px; text-align: left; }
 
-/* assistant: full width of column, centered block, no bubble chrome */
 .msg.assistant { align-items: stretch; margin: 4px 0 14px; }
 .msg.assistant .meta {
   display: flex;
@@ -504,13 +490,10 @@ body {
   line-height: 1.68;
   color: var(--text);
 }
-/* Réponse précédée d'acks d'outils : on égalise l'espace tools→réponse avec
-   l'espace meta→tools (margin-bottom .meta 7px + margin-top ack 3px = 10px ;
-   ici margin-bottom ack 3px + 7px = 10px). */
+
 .msg.assistant .tool-ack + .body,
 .msg.assistant .memory-ack + .body { margin-top: 7px; }
 
-/* markdown body */
 .body > *:first-child { margin-top: 0; }
 .body > *:last-child { margin-bottom: 0; }
 .body p { margin: 0 0 11px; }
@@ -523,7 +506,7 @@ body {
 .body a:hover { border-bottom-color: var(--accent); }
 .body strong { font-weight: 600; color: var(--text); }
 .body em { color: var(--text-2); }
-.body del { color: var(--text-3); }   /* référence conv_ref vers une conversation supprimée */
+.body del { color: var(--text-3); }   
 .body blockquote {
   border-left: 2px solid var(--border-2);
   padding: 2px 0 2px 14px;
@@ -539,10 +522,7 @@ body {
   border-radius: 4px;
   color: var(--code-inline-color);
 }
-/* Bloc de code, chrome partagé : les messages assistant (`.body pre`) ET les
-   ressources texte renvoyées par un outil MCP (`.tool-block pre`, insérées entre
-   .meta et .body, donc HORS de .body). Même fond/bordure/padding — aucun style
-   réinventé pour le second chemin. */
+
 .body pre,
 .tool-block pre {
   margin: 12px 0;
@@ -551,9 +531,7 @@ body {
   overflow: hidden;
   background: var(--code-bg) !important;
 }
-/* Prism recopie la classe language-* du <code> vers le <pre> parent au
-   highlight ; prism-tomorrow injecte alors padding/margin/radius sur le <pre>.
-   On neutralise pour garder exactement la même compacité que Prism inactif. */
+
 .body pre[class*="language-"],
 .tool-block pre[class*="language-"] {
   padding: 0;
@@ -593,7 +571,7 @@ body {
   background: transparent !important;
   text-shadow: none !important;
 }
-/* tables */
+
 .body table {
   border-collapse: collapse;
   width: 100%;
@@ -609,7 +587,6 @@ body {
 .body td { color: var(--text-2); }
 .body tr:nth-child(even) td { background: var(--table-stripe); }
 
-/* ═══ Composer ═══ */
 .composer {
   flex-shrink: 0;
   padding: 8px 24px 18px;
@@ -617,7 +594,7 @@ body {
 }
 .composer-inner { max-width: var(--col); margin: 0 auto; }
 .input-wrap {
-  position: relative;   /* ancre du dropdown skill du composer (#skill-ac) */
+  position: relative;   
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -664,7 +641,6 @@ body {
 .send-btn:disabled { background: var(--surface-3); color: var(--text-3); cursor: not-allowed; }
 .send-btn svg { width: 16px; height: 16px; }
 
-/* état « stop » pendant le streaming : carré sobre, accent en avant */
 .send-btn .ic-stop { display: none; }
 .send-btn.streaming { background: var(--surface-3); }
 .send-btn.streaming:hover { background: var(--border); }
@@ -686,7 +662,6 @@ body {
   padding: 1px 5px;
 }
 
-/* rangée des sélecteurs du composer (modèle à gauche, raisonnement à droite) */
 .composer-selectors {
   display: flex;
   align-items: center;
@@ -695,7 +670,6 @@ body {
   margin-bottom: 8px;
 }
 
-/* sélecteur de modèle du composer (optionnel) */
 .composer-model { position: relative; margin-bottom: 0; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
@@ -733,9 +707,6 @@ body {
 }
 #composer-model-menu.show { transform: none; }
 
-/* sélecteur de niveau de raisonnement du composer (optionnel) : même mécanique
-   que .composer-model (bouton pilule + .model-menu générique), mais liste
-   statique de 5 valeurs fixes — pas de fetch, pas de recherche. */
 .composer-reasoning { position: relative; margin-left: auto; }
 .composer-reasoning[hidden] { display: none; }
 .composer-reasoning-btn {
@@ -755,8 +726,7 @@ body {
   transition: background 140ms var(--ease);
 }
 .composer-reasoning-btn:hover { background: var(--accent-bd); }
-/* valeur « défaut » (aucun paramètre envoyé) : pilule neutre/grise — l'accent
-   orange est réservé à un niveau explicitement choisi */
+
 .composer-reasoning-btn.effort-default {
   color: var(--text-2);
   background: var(--surface-2);
@@ -778,7 +748,6 @@ body {
 .settings-reasoning { margin-left: 0; flex-shrink: 0; }
 #set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
-/* bannière résumés (mode « proposer ») */
 .summary-banner {
   display: none;
   flex-direction: column;
@@ -850,7 +819,6 @@ body {
 }
 .mb-btn.primary:hover { background: var(--accent-2); }
 
-/* ═══ Settings drawer ═══ */
 .backdrop {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.5);
@@ -861,8 +829,6 @@ body {
 }
 .backdrop.show { opacity: 1; visibility: visible; }
 
-/* Confirmation active (#confirm-backdrop) : l'overlay dim l'arrière-plan, mais
-   composer et carte de confirmation restent au-dessus (spotlight) et interactifs. */
 .app.confirming .composer,
 .app.confirming .memory-proposals { position: relative; z-index: 45; }
 
@@ -972,7 +938,7 @@ body {
 }
 .root-prompt-pre {
   margin: 8px 0 0;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--mono);
   font-size: 11px;
   color: var(--text-3);
   white-space: pre-wrap;
@@ -1008,7 +974,6 @@ body {
 .toggle input:checked ~ .track { background: var(--accent-dim); border-color: var(--accent-bd); }
 .toggle input:checked ~ .thumb { transform: translateX(16px); background: var(--accent); }
 
-/* segmented control (mode mémoire) */
 .seg-group {
   display: flex;
   background: var(--bg);
@@ -1033,8 +998,6 @@ body {
 .seg:hover { color: var(--text); }
 .seg.active { background: var(--accent-dim); color: var(--accent); }
 
-/* model dropdown — ancré sur le champ (et non sur tout le .field, ce qui
-   laissait apparaître la légende entre le champ et la liste). */
 .select-anchor { position: relative; display: flex; flex-direction: column; }
 .model-menu {
   position: absolute;
@@ -1104,11 +1067,6 @@ body {
 }
 .btn-primary:disabled:hover { background: var(--accent); }
 
-/* ── Drawer réglages : catégories repliables ─────────────────────────────────
-   Même mécanique d'accordéon que .tool-ns (drawer « Outils exposés »), avec en
-   plus une icône de catégorie. Le corps replié est clippé (overflow hidden)
-   pendant la transition ; une fois déplié, .settled rétablit overflow visible
-   pour que les .model-menu absolus (modèle, raisonnement) ne soient pas coupés. */
 .set-cat { display: flex; flex-direction: column; }
 .set-cat-head {
   font-family: var(--mono);
@@ -1147,8 +1105,7 @@ body {
 }
 .set-cat-body.open { grid-template-rows: 1fr; }
 .set-cat-body.settled { overflow: visible; }
-/* L'écart tête/contenu vit DANS l'inner (clippé quand replié) : pas d'espace
-   mort sous les têtes fermées, contrairement à un gap sur .set-cat. */
+
 .set-cat-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 14px; }
 
 .build-ts-label { font-size: 10px; color: var(--text-3); text-align: center; }
@@ -1169,7 +1126,6 @@ body {
 .btn-row { display: flex; gap: 8px; }
 .btn-row .btn-ghost { flex: 1; }
 
-/* onglets du drawer combiné Résumés / Souvenirs */
 .drawer-tabs { display: flex; gap: 2px; flex: 1; margin-right: 8px; }
 .drawer-tab {
   background: none;
@@ -1192,7 +1148,6 @@ body {
 
 .hidden { display: none; }
 
-/* gestion des souvenirs */
 .mem-list { display: flex; flex-direction: column; gap: 8px; }
 .mem-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 2px; }
 .mem-item {
@@ -1236,19 +1191,21 @@ body {
   cursor: pointer;
   transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
 }
-.drawer-btn:hover { background: #262b33; color: var(--text); }
+.drawer-btn:hover { background: var(--surface-4); color: var(--text); }
 .drawer-btn:disabled { opacity: .45; cursor: default; }
 .drawer-btn:disabled:hover { background: var(--surface-3); color: var(--text-2); }
 .drawer-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
 .drawer-btn.primary:hover { background: var(--accent-2); color: var(--accent-ink); border-color: transparent; }
 .drawer-btn.danger:hover { color: var(--err); border-color: rgba(255,93,93,.4); }
+
+.drawer-btn.armed,
+.drawer-btn.armed:hover { color: #fff; background: var(--err); border-color: var(--err); }
 .drawer-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
 .drawer-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
 .drawer-btn .spin { width: 11px; height: 11px; }
 .drawer-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .drawer-btns.hidden { display: none; }
 
-/* zone d'ajout d'un nouveau souvenir */
 .mem-add {
   display: flex;
   flex-direction: column;
@@ -1274,7 +1231,6 @@ body {
 .mem-add-input::placeholder { color: var(--text-3); }
 .mem-add-btn { align-self: flex-end; }
 
-/* contenu d'un souvenir + édition inline */
 .mem-content {
   font-size: 13px;
   color: var(--text);
@@ -1301,7 +1257,6 @@ body {
 }
 .mem-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* propositions de souvenirs (cartes dans le thread) */
 .memory-proposals {
   display: flex;
   flex-direction: column;
@@ -1350,8 +1305,6 @@ body {
 .proposal-new { border-color: var(--accent-bd); }
 .proposal-actions { display: flex; gap: 8px; }
 
-/* ── Ack d'outils (journal client : écritures mémoire + lectures d'historique) ── */
-/* `.memory-ack` conservé en alias pour les entrées legacy non migrées. */
 .tool-ack, .memory-ack {
   display: flex;
   align-items: baseline;
@@ -1371,7 +1324,7 @@ body {
   align-self: center;
 }
 .tool-ack .ack-label, .memory-ack .ack-label { flex: 1; overflow-wrap: break-word; }
-/* Une lecture passive lit plus léger qu'une écriture annulable. */
+
 .tool-ack.ack-conversation_read .ack-label,
 .tool-ack.ack-conversation_list .ack-label,
 .tool-ack.ack-mcp_call .ack-label,
@@ -1390,17 +1343,16 @@ body {
 }
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
-/* Séparateur › (breadcrumb MCP, et détail replié conversation_read/skill_read) : teinte icône, s'efface devant le texte. */
+
 .tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
-/* Titre de conversation cliquable (ack conversation_read) : couleur héritée, teinte accent au survol (pas de soulignement). */
+
 .ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
 .ack-conv-link:hover { color: var(--accent); text-decoration: none; }
-/* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
+
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
-/* Appel MCP en erreur : label rouge (même token que .mcp-err / .conn-dot.err). */
+
 .tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
-/* Intent en langage naturel (niveau 1) + éventuel breadcrumb technique replié (niveau 2). */
-/* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
+
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
 .mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
@@ -1416,7 +1368,6 @@ body {
 .mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
 .mcp-breadcrumb-detail[hidden] { display: none; }
 
-/* ═══ Écran d'accueil (nouvelle conversation) ═══ */
 .welcome-screen {
   flex: 1;
   display: flex;
@@ -1432,7 +1383,6 @@ body {
 .welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
 .welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
 
-/* panneau des outils exposés */
 .tool-list { display: flex; flex-direction: column; gap: 10px; }
 .tool-item {
   background: var(--surface-2);
@@ -1461,7 +1411,6 @@ body {
 .tool-param-type { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); flex-shrink: 0; }
 .tool-param-desc { font-size: 11px; color: var(--text-3); }
 
-/* En-tête de namespace dans le sous-drawer « Outils exposés » (groupage D2). */
 .tool-ns-group { display: flex; flex-direction: column; gap: 10px; }
 .tool-ns {
   font-family: var(--mono);
@@ -1499,10 +1448,9 @@ body {
 .tool-ns-body.open { grid-template-rows: 1fr; }
 .tool-ns-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 
-/* ── Serveurs MCP : cartes éditables (D3) ──────────────────────────────────── */
-.mcp-add-btn { align-self: flex-start; }
-.mcp-list { display: flex; flex-direction: column; gap: 14px; }
-.mcp-card {
+.cfg-add-btn { align-self: flex-start; }
+.cfg-list { display: flex; flex-direction: column; gap: 14px; }
+.cfg-card {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1511,14 +1459,15 @@ body {
   flex-direction: column;
   gap: 10px;
 }
-.mcp-field { display: flex; flex-direction: column; gap: 5px; }
-.mcp-field > label {
+.cfg-field { display: flex; flex-direction: column; gap: 5px; }
+.cfg-field > label {
   font-size: 11.5px;
   font-weight: 500;
   color: var(--text-2);
 }
-.mcp-field input,
-.mcp-field select {
+.cfg-field input,
+.cfg-field select,
+.cfg-field textarea {
   width: 100%;
   box-sizing: border-box;
   background: var(--surface);
@@ -1528,129 +1477,52 @@ body {
   font-size: 13px;
   color: var(--text);
 }
-.mcp-field input:focus,
-.mcp-field select:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
-.mcp-field .hint { font-size: 11px; color: var(--text-3); }
-.mcp-enabled-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.cfg-field input:focus,
+.cfg-field select:focus,
+.cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.cfg-field .hint { font-size: 11px; color: var(--text-3); }
+.cfg-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.cfg-err { font-size: 11.5px; color: var(--err); }
+.cfg-actions { display: flex; gap: 6px; margin-top: 2px; }
+
+.cfg-view { display: flex; flex-direction: column; gap: 8px; }
+.cfg-card.is-editing .cfg-view { display: none; }
+.cfg-edit { display: none; flex-direction: column; gap: 10px; }
+.cfg-card.is-editing .cfg-edit { display: flex; }
+.cfg-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.cfg-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
+.cfg-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 .mcp-status { font-size: 11.5px; color: var(--text-3); }
-.mcp-status.ok { color: var(--ok, #3fb950); }
-.mcp-status.err { color: var(--err, #f85149); }
-.mcp-err { font-size: 11.5px; color: var(--err, #f85149); }
-.mcp-actions { display: flex; gap: 6px; margin-top: 2px; }
-/* Vue / édition */
-.mcp-view { display: flex; flex-direction: column; gap: 8px; }
-.mcp-card.is-editing .mcp-view { display: none; }
-.mcp-edit { display: none; flex-direction: column; gap: 10px; }
-.mcp-card.is-editing .mcp-edit { display: flex; }
-.mcp-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
-.mcp-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
-.mcp-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mcp-view-toggle-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.mcp-status.ok { color: var(--ok); }
+.mcp-status.err { color: var(--err); }
 .mcp-view-row .drawer-btn { margin-left: auto; }
 
-/* ── Serveurs API : cartes éditables (même pattern que MCP) ────────────────── */
-.api-add-btn { align-self: flex-start; }
-.api-list { display: flex; flex-direction: column; gap: 14px; }
-.api-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.api-field { display: flex; flex-direction: column; gap: 5px; }
-.api-field > label {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-2);
-}
-.api-field input,
-.api-field select {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  font-size: 13px;
-  color: var(--text);
-}
-.api-field input:focus,
-.api-field select:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
-.api-field .hint { font-size: 11px; color: var(--text-3); }
 .api-status { font-size: 11.5px; color: var(--text-3); }
 .api-status.active { color: var(--accent); }
-.api-err { font-size: 11.5px; color: var(--err, #f85149); }
-.api-actions { display: flex; gap: 6px; margin-top: 2px; }
-/* Vue / édition */
-.api-view { display: flex; flex-direction: column; gap: 8px; }
-.api-card.is-editing .api-view { display: none; }
-.api-edit { display: none; flex-direction: column; gap: 10px; }
-.api-card.is-editing .api-edit { display: flex; }
-.api-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
-.api-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
-.api-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* Seul le dernier bouton (Modifier) est repoussé à droite : « Utiliser ce
-   serveur » occupe la place du pill « Actif », tout à gauche. */
+
 .api-view-row .drawer-btn:last-child { margin-left: auto; }
-/* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
-   à la suite (séparateur .tool-name-sep, même format que le thread). */
+
 .active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .active-api-server-name .tool-name-sep { font-weight: 400; }
 .active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
 
-/* ── Skills : drawer de gestion ─────────────────────────────────────────────── */
-/* Drawer plus large : édition de corps Markdown (textarea confortable). */
 .drawer-wide { width: 620px; }
-.skill-add-btn { align-self: flex-start; }
-.skill-list { display: flex; flex-direction: column; gap: 14px; }
-.skill-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.skill-field { display: flex; flex-direction: column; gap: 5px; }
-.skill-field > label { font-size: 11.5px; font-weight: 500; color: var(--text-2); }
-.skill-field input,
-.skill-field textarea {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  font-size: 13px;
-  color: var(--text);
-}
-.skill-field textarea {
+
+textarea.skill-content {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   line-height: 1.5;
   resize: vertical;
   min-height: 140px;
 }
-.skill-field input:focus,
-.skill-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
-.skill-field .hint { font-size: 11px; color: var(--text-3); }
-.skill-enabled-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
-.skill-err { font-size: 11.5px; color: var(--err, #f85149); }
-.skill-actions { display: flex; gap: 6px; margin-top: 2px; }
-.skill-view { display: flex; align-items: center; gap: 10px; }
-.skill-card.is-editing .skill-view { display: none; }
-.skill-edit { display: none; flex-direction: column; gap: 10px; }
-.skill-card.is-editing .skill-edit { display: flex; }
+
+.skill-view { flex-direction: row; align-items: center; gap: 10px; }
 .skill-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .skill-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .skill-view-slug { font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.skill-view-row { display: flex; align-items: center; gap: 10px; }
+.skill-view-row { gap: 10px; }
 
-/* ── Composer : autocomplétion des skills + erreur slash ─────────────────────── */
 .skill-ac {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1659,9 +1531,7 @@ body {
   overflow-y: auto;
   margin-bottom: 8px;
 }
-/* Instance du composer : en absolu au-dessus de .input-wrap (son ancre), donc
-   PAR-DESSUS les pilules de sélecteurs (axe z) sans les décaler à l'ouverture.
-   L'instance de la bulle d'édition (.msg-edit-area + .skill-ac) reste en flux. */
+
 #skill-ac {
   position: absolute;
   left: 0;
@@ -1682,17 +1552,14 @@ body {
 .skill-ac-opt.active { background: var(--accent-dim); }
 .skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
 .skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-skill-error { font-size: 12px; color: var(--err, #f85149); margin-top: 6px; }
+.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }
 
-/* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
 .tool-block {
   align-self: flex-start;
   max-width: 100%;
   margin: 4px 0;
 }
-/* Variante bloc-code (ressource texte D8.2) : le conteneur s'efface (pleine
-   largeur, pas de marge propre) pour que le <pre> à l'intérieur rende exactement
-   comme un bloc de code de message assistant — le spacing vient du <pre> lui-même. */
+
 .tool-block-code {
   align-self: stretch;
   width: 100%;
@@ -1735,8 +1602,6 @@ body {
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* patienteur animé : attente (WAITING) et reprise après un tour tool_calls.
-   Sobre — couleur texte secondaire, mot court qui change par fondu. */
 .waiter {
   display: inline-flex;
   align-items: center;
@@ -1750,7 +1615,7 @@ body {
   width: 5px; height: 5px;
   border-radius: 50%;
   background: var(--accent);
-  /* centre le point dans un slot de 20px, aligné avec .meta .glyph */
+  
   margin-left: 7.5px; margin-right: 7.5px;
   flex-shrink: 0;
   animation: waiter-pulse 1s ease-in-out infinite;
@@ -1759,7 +1624,7 @@ body {
   0%, 100% { transform: scale(.55); opacity: .45; }
   50%      { transform: scale(1);   opacity: 1; }
 }
-/* le mot et ses points fondent ensemble ; seul le point animé reste */
+
 .waiter-word { transition: opacity .28s ease; }
 .waiter-word::after { content: ''; font-style: normal; animation: waiter-dots 1.2s step-end infinite; }
 .waiter-word.dots-reset::after { animation: none; }
@@ -1771,8 +1636,6 @@ body {
   75%  { content: '...'; }
 }
 
-/* bloc de raisonnement (thinking) : icône discrète dans la barre méta +
-   panneau collapsible (police mono, atténué) au-dessus du corps du message. */
 .meta-actions {
   margin-left: auto;
   display: flex; align-items: center; gap: 4px;
@@ -1795,13 +1658,10 @@ body {
 .msg-dl:hover { color: var(--text); background: var(--surface-2); }
 .msg-dl[hidden] { display: none; }
 
-/* Horodatages inline des messages */
-/* Séparateur « serveur › modèle » : marge négative pour compenser le gap 7px
-   du flex .meta (espacement effectif ~3px de chaque côté). */
 .msg.assistant .meta .tool-name-sep { margin: 0 -4px; }
 .msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
 .msg.assistant .meta .msg-ts[hidden] { display: none; }
-/* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
+
 .msg.user .msg-ts { font-size: 11px; color: var(--text-3); margin-top: 3px; }
 .conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
 
@@ -1824,19 +1684,13 @@ body {
   overflow-y: auto;
 }
 
-/* ═══ Responsive ═══ */
-
-/* anti-piège flexbox scroll */
 .messages { min-height: 0; }
 
-/* blocs code : ne pas élargir la page horizontalement */
 .body pre,
 .tool-block pre { overflow-x: auto; max-width: 100%; }
 
-/* input bar : espace pour l'indicateur home iOS */
 .composer { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
 
-/* backdrop sidebar (mobile overlay) */
 .sidebar-backdrop {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.5);
@@ -1848,19 +1702,16 @@ body {
 }
 .sidebar-backdrop.show { opacity: 1; visibility: visible; pointer-events: auto; }
 
-/* cibles tactiles ≥44px sur écrans touch */
 @media (pointer: coarse) {
   .icon-btn { width: 44px; height: 44px; }
   .send-btn  { width: 44px; height: 44px; }
   .new-btn   { padding: 10px 14px; }
-  /* pas de hover sur touch → ces boutons ne s'afficheraient jamais,
-     inutile qu'ils occupent de la place et tronquent le titre */
+  
   .conv-del, .conv-pin { display: none; }
 }
 
-/* ══ Mobile : sidebar overlay (< 768px) ══ */
 @media (max-width: 767px) {
-  /* sidebar en overlay fixe, hors flux */
+  
   .sidebar {
     position: fixed;
     top: 0; left: 0;
@@ -1869,7 +1720,7 @@ body {
     transform: translateX(-100%);
     transition: transform 190ms var(--ease);
     z-index: 35;
-    /* neutralise le mécanisme push (width: 0) du desktop */
+    
     overflow: hidden;
   }
   .sidebar-inner { width: 100%; }
@@ -1877,13 +1728,11 @@ body {
     width: min(80vw, 320px);
     transform: translateX(0);
   }
-  /* poignée de redimensionnement inutile sur mobile */
+  
   .sidebar-resizer { display: none; }
 
-  /* drawer paramètres plein écran */
   .drawer { width: 100%; max-width: 100%; }
 
-  /* inputs ≥16px pour éviter le zoom auto de Safari */
   #composer-text      { font-size: 16px; }
   .field input,
   .field textarea     { font-size: 16px; }
@@ -1891,8 +1740,6 @@ body {
   .sidebar-search input { font-size: 16px; }
 }
 
-/* ═══ Thème clair ═══ */
-/* Variables communes au thème clair (explicite et système). */
 html[data-theme="light"] {
   --bg:                    #f4efe5;
   --surface:               #ede8de;
@@ -1916,11 +1763,10 @@ html[data-theme="light"] {
   --code-bg:               #eee8d8;
   --code-head-bg:          #e6dfc9;
   --code-inline-color:     #c45010;
+  --surface-4:             #dbd4c7;   
 }
-html[data-theme="light"] .drawer-btn:hover { background: var(--surface-3); }
 html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 
-/* Prism token overrides — thème clair */
 html[data-theme="light"] code[class*="language-"],
 html[data-theme="light"] pre[class*="language-"]          { color: #2c2720; }
 html[data-theme="light"] .token.comment,
@@ -1954,75 +1800,12 @@ html[data-theme="light"] .token.variable                  { color: #b5440e; }
 html[data-theme="light"] .token.tag,
 html[data-theme="light"] .token.deleted                   { color: #b53030; }
 
-@media (prefers-color-scheme: light) {
-  html:not([data-theme="dark"]) {
-    --bg:                    #f4efe5;
-    --surface:               #ede8de;
-    --surface-2:             #e5dfd4;
-    --surface-3:             #dbd4c7;
-    --border:                #cdc7b8;
-    --border-2:              #c1baa8;
-    --text:                  #1e1b18;
-    --text-2:                #5a5248;
-    --text-3:                #968a7a;
-    --accent:                #e05f1c;
-    --accent-2:              #cc5016;
-    --accent-ink:            #1a0c05;
-    --accent-dim:            rgba(224,95,28,.10);
-    --accent-bd:             rgba(224,95,28,.28);
-    --ok:                    #267a4e;
-    --err:                   #c42828;
-    --topbar-bg:             rgba(244,239,229,.88);
-    --scrollbar-thumb-hover: rgba(0,0,0,.30);
-    --table-stripe:          rgba(0,0,0,.04);
-    --code-bg:               #eee8d8;
-    --code-head-bg:          #e6dfc9;
-    --code-inline-color:     #c45010;
-  }
-  html:not([data-theme="dark"]) .drawer-btn:hover { background: var(--surface-3); }
-  html:not([data-theme="dark"]) .model-menu    { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
-
-  html:not([data-theme="dark"]) code[class*="language-"],
-  html:not([data-theme="dark"]) pre[class*="language-"]          { color: #2c2720; }
-  html:not([data-theme="dark"]) .token.comment,
-  html:not([data-theme="dark"]) .token.prolog,
-  html:not([data-theme="dark"]) .token.doctype,
-  html:not([data-theme="dark"]) .token.cdata                     { color: #8a8272; font-style: italic; }
-  html:not([data-theme="dark"]) .token.punctuation               { color: #5a5248; }
-  html:not([data-theme="dark"]) .token.namespace                 { opacity: .75; }
-  html:not([data-theme="dark"]) .token.property,
-  html:not([data-theme="dark"]) .token.constant,
-  html:not([data-theme="dark"]) .token.symbol                    { color: #8a6800; }
-  html:not([data-theme="dark"]) .token.boolean,
-  html:not([data-theme="dark"]) .token.number                    { color: #b5440e; }
-  html:not([data-theme="dark"]) .token.string,
-  html:not([data-theme="dark"]) .token.char,
-  html:not([data-theme="dark"]) .token.attr-value,
-  html:not([data-theme="dark"]) .token.builtin,
-  html:not([data-theme="dark"]) .token.inserted                  { color: #276e38; }
-  html:not([data-theme="dark"]) .token.selector,
-  html:not([data-theme="dark"]) .token.attr-name                 { color: #b53030; }
-  html:not([data-theme="dark"]) .token.operator,
-  html:not([data-theme="dark"]) .token.entity,
-  html:not([data-theme="dark"]) .token.url                       { color: #1a6b6b; }
-  html:not([data-theme="dark"]) .token.atrule,
-  html:not([data-theme="dark"]) .token.keyword                   { color: #7c3c99; }
-  html:not([data-theme="dark"]) .token.function,
-  html:not([data-theme="dark"]) .token.class-name                { color: #1a5fb8; }
-  html:not([data-theme="dark"]) .token.regex,
-  html:not([data-theme="dark"]) .token.important,
-  html:not([data-theme="dark"]) .token.variable                  { color: #b5440e; }
-  html:not([data-theme="dark"]) .token.tag,
-  html:not([data-theme="dark"]) .token.deleted                   { color: #b53030; }
-}
-
 </style>
 </head>
 <body>
 
 <div class="app" id="app">
 
-  <!-- ═══ Sidebar ═══ -->
   <aside class="sidebar">
     <div class="sidebar-inner">
       <div class="sidebar-head">
@@ -2045,10 +1828,8 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
   </aside>
 
-  <!-- backdrop sidebar (mobile overlay) -->
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarMobile()"></div>
 
-  <!-- ═══ Main ═══ -->
   <div class="main">
     <header class="topbar">
       <div class="topbar-left">
@@ -2059,8 +1840,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           <img class="topbar-brand-logo" id="topbar-logo" alt="">
           <span class="topbar-brand-name">MIAOU</span>
         </div>
-        <!-- Nouvelle conversation sidebar fermée — même fondu que .topbar-brand,
-             le bouton « Nouvelle » de la sidebar reste le chemin normal -->
+        
         <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
@@ -2090,7 +1870,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     <div class="composer">
       <div class="composer-inner">
 
-        <!-- Bannière mémoire (mode « proposer ») -->
         <div class="summary-banner" id="summary-banner">
           <div class="summary-banner-head">
             <div class="summary-banner-body">
@@ -2107,7 +1886,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
-        <!-- Sélecteurs de modèle / niveau de raisonnement (optionnels, réglables) -->
         <div class="composer-selectors">
           <div class="composer-model" id="composer-model" hidden>
             <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
@@ -2128,9 +1906,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
 
         <div class="input-wrap" id="input-wrap">
-          <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput.
-               Positionnée en absolu au-dessus de l'input : recouvre les pilules
-               (axe z) au lieu de les décaler. -->
+          
           <div class="skill-ac" id="skill-ac" hidden></div>
           <textarea id="composer-text" rows="1" placeholder="Message…"
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
@@ -2145,7 +1921,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
-  <!-- ═══ Settings drawer ═══ -->
   <div class="backdrop" id="backdrop" onclick="closeSettings()"></div>
   <div class="drawer" id="drawer">
     <div class="drawer-head">
@@ -2389,7 +2164,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
-  <!-- ═══ Tools drawer ═══ -->
   <div class="backdrop" id="tools-backdrop" onclick="closeTools()"></div>
   <div class="drawer" id="tools-drawer">
     <div class="drawer-head">
@@ -2404,7 +2178,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
-  <!-- ═══ MCP servers drawer ═══ -->
   <div class="backdrop" id="mcp-backdrop" onclick="closeMcpServers()"></div>
   <div class="drawer" id="mcp-drawer">
     <div class="drawer-head">
@@ -2415,12 +2188,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
     <div class="drawer-body">
       <span class="hint">Backends MCP distants (HTTP). Leurs outils sont fusionnés au registre, préfixés par le nom du serveur. Un serveur injoignable est simplement ignoré.</span>
-      <button class="btn-ghost mcp-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
-      <div class="mcp-list" id="mcp-list"></div>
+      <button class="btn-ghost cfg-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
+      <div class="cfg-list" id="mcp-list"></div>
     </div>
   </div>
 
-  <!-- ═══ API servers drawer ═══ -->
   <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
   <div class="drawer" id="api-drawer">
     <div class="drawer-head">
@@ -2431,12 +2203,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
     <div class="drawer-body">
       <span class="hint">Chaque serveur a sa propre URL, clef et modèle par défaut. MIAOU se reconnecte au dernier serveur actif utilisé.</span>
-      <button class="btn-ghost api-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
-      <div class="api-list" id="api-list"></div>
+      <button class="btn-ghost cfg-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
+      <div class="cfg-list" id="api-list"></div>
     </div>
   </div>
 
-  <!-- ═══ Skills drawer ═══ -->
   <div class="backdrop" id="skills-backdrop" onclick="closeSkills()"></div>
   <div class="drawer drawer-wide" id="skills-drawer">
     <div class="drawer-head">
@@ -2447,15 +2218,13 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
     <div class="drawer-body">
       <span class="hint">Une skill est un fragment d'instructions Markdown. Invoquer via <code>/slug</code> (injecté tel quel dans le message), ou laisser le modèle la découvrir via ses outils. Les skills désactivées ne sont ni invocables ni visibles du modèle.</span>
-      <button class="btn-ghost skill-add-btn" onclick="addSkillCard()">Nouvelle skill</button>
-      <div class="skill-list" id="skill-list"></div>
+      <button class="btn-ghost cfg-add-btn" onclick="addSkillCard()">Nouvelle skill</button>
+      <div class="cfg-list" id="skill-list"></div>
     </div>
   </div>
 
-  <!-- backdrop confirmation inline (overlay pendant une demande ask_confirmation) -->
   <div class="backdrop" id="confirm-backdrop"></div>
 
-  <!-- ═══ Summary / Memories drawer (combiné, avec onglets) ═══ -->
   <div class="backdrop" id="summary-backdrop" onclick="closeSummaryDrawer()"></div>
   <div class="drawer" id="summary-drawer">
     <div class="drawer-head">
@@ -2484,7 +2253,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-03 07:04 UTC */
+/* miaou — built: 2026-07-03 23:31 UTC */
 
 /* ── utils.js ── */
 
@@ -2504,6 +2273,25 @@ function ackKindOf(m) {
   if (m.kind) return m.kind;
   if (m.ackType) return 'memory_' + m.ackType; 
   return null;
+}
+
+const ACK_COPY_FIELDS = [
+  'kind', 'ackType',                     
+  'id', 'content', 'prevContent',        
+  'title', 'count', 'convId',            
+  'server', 'name', 'intent',            
+  'resourceName', 'mime', 'size',        
+  'slug',                                
+  'args', 'result', 'ts', 'group', 'assistantText',   
+];
+
+function copyAckFields(src, dst) {
+  for (const f of ACK_COPY_FIELDS) {
+    if (src[f] != null) dst[f] = src[f];
+  }
+  if (src.error) dst.error = true;
+  if (src.resolved) dst.resolved = true;
+  return dst;
 }
 
 function placeCaretEnd(el) {
@@ -2869,7 +2657,7 @@ const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783062266}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783121483}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3240,16 +3028,19 @@ const _B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function arrayBufferToBase64(buf) {
   const bytes = new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer);
-  let out = '';
+  
+  const out = [];
   for (let i = 0; i < bytes.length; i += 3) {
     const b0 = bytes[i], b1 = i + 1 < bytes.length ? bytes[i + 1] : 0,
           b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    out += _B64[b0 >> 2];
-    out += _B64[((b0 & 3) << 4) | (b1 >> 4)];
-    out += (i + 1 < bytes.length) ? _B64[((b1 & 0xf) << 2) | (b2 >> 6)] : '=';
-    out += (i + 2 < bytes.length) ? _B64[b2 & 0x3f] : '=';
+    out.push(
+      _B64[b0 >> 2] +
+      _B64[((b0 & 3) << 4) | (b1 >> 4)] +
+      ((i + 1 < bytes.length) ? _B64[((b1 & 0xf) << 2) | (b2 >> 6)] : '=') +
+      ((i + 2 < bytes.length) ? _B64[b2 & 0x3f] : '=')
+    );
   }
-  return out;
+  return out.join('');
 }
 
 function base64ToArrayBuffer(b64) {
@@ -4829,8 +4620,8 @@ function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highli
 function scrollBottom() { const m = $('messages'); if (m) m.scrollTop = m.scrollHeight; }
 
 function modelName() {
-  const s = loadSettings();
-  return s.model || 'modèle';
+  
+  return activeApiConfig().model || 'modèle';
 }
 
 function assistantHead(model, reasoning, ts, server) {
@@ -5398,6 +5189,13 @@ function resetAssistant(wrap) {
   startWaiter(wrap.querySelector('.body'));     
 }
 
+function revealMsgTimestamp(wrap, ts) {
+  const tsEl = wrap.querySelector('.msg-ts');
+  if (tsEl) { tsEl.textContent = formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+  const sepEl = wrap.querySelector('.msg-ts-sep');
+  if (sepEl) sepEl.removeAttribute('hidden');
+}
+
 function finalizeAssistant(wrap, full) {
   cancelStreamRender();
   cancelReasoningRender();
@@ -5582,6 +5380,30 @@ function clearConvSearch() {
   input.focus();
 }
 
+const ARM_DELETE_MS = 2600;
+
+function armThenRun(btn, onConfirm, armedLabel) {
+  if (btn.classList.contains('armed')) {
+    clearTimeout(btn._disarmTimer);
+    btn.classList.remove('armed');
+    onConfirm();
+    return;
+  }
+  btn.classList.add('armed');
+  btn._origTitle = btn.title;
+  btn.title = 'Cliquer à nouveau pour confirmer';
+  if (armedLabel != null) { btn._origLabel = btn.textContent; btn.textContent = armedLabel; }
+  btn._disarmTimer = setTimeout(() => {
+    btn.classList.remove('armed');
+    btn.title = btn._origTitle || '';
+    if (armedLabel != null && btn._origLabel != null) btn.textContent = btn._origLabel;
+  }, ARM_DELETE_MS);
+}
+
+function onConvDel(btn, id) {
+  armThenRun(btn, () => deleteConv(id));
+}
+
 const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .59 1.42L18 14.5H6l2.41-2.32A2 2 0 0 0 9 10.76z"/></svg>';
 
 function convItemEl(c) {
@@ -5595,7 +5417,7 @@ function convItemEl(c) {
      </div>
      <div class="conv-actions">
        <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
-       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();deleteConv('${c.id}')">
+       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();onConvDel(this,'${c.id}')">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
        </button>
      </div>`;
@@ -5863,6 +5685,10 @@ document.addEventListener('click', (e) => {
     const sr = $('set-reasoning-menu');
     if (sr) sr.classList.remove('show');
   }
+  
+  if (!e.target.closest('.cfg-pill-select')) {
+    document.querySelectorAll('.cfg-pill-select .model-menu.show').forEach(m => m.classList.remove('show'));
+  }
 });
 
 let _modelsCache = null;
@@ -5930,7 +5756,8 @@ function syncReasoningUI() {
   const box = $('composer-reasoning');
   if (!box) return;
   const settings = loadSettings();
-  const rejected = isReasoningEffortRejected(settings.url, activeModel());
+  
+  const rejected = isReasoningEffortRejected(activeApiConfig().url, activeModel());
   if (rejected && currentConvReasoningEffort) { setConvReasoningEffort(''); return; }   
   const cur = activeReasoningEffort();
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
@@ -6057,7 +5884,9 @@ function openSettings() {
 function closeSettings() {
   $('drawer').classList.remove('show');
   $('backdrop').classList.remove('show');
-  $('model-menu').classList.remove('show');
+  
+  const rm = $('set-reasoning-menu');
+  if (rm) rm.classList.remove('show');
 }
 
 const SUMMARY_INJECTION_HINTS = {
@@ -6084,11 +5913,24 @@ const THEME_HINTS = {
 };
 
 let pendingTheme = 'system';
+
 function applyTheme(theme) {
-  const html = document.documentElement;
-  if (theme === 'light')  html.setAttribute('data-theme', 'light');
-  else if (theme === 'dark') html.setAttribute('data-theme', 'dark');
-  else html.removeAttribute('data-theme');   
+  let resolved = theme;
+  if (resolved !== 'light' && resolved !== 'dark') {
+    resolved = (typeof window !== 'undefined' && window.matchMedia &&
+                window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  }
+  document.documentElement.setAttribute('data-theme', resolved);
+}
+
+if (typeof window !== 'undefined' && window.matchMedia) {
+  const _themeMq = window.matchMedia('(prefers-color-scheme: light)');
+  const _onSystemThemeChange = () => {
+    const t = loadSettings().theme || 'system';
+    if (t !== 'light' && t !== 'dark') applyTheme(t);
+  };
+  if (_themeMq.addEventListener) _themeMq.addEventListener('change', _onSystemThemeChange);
+  else if (_themeMq.addListener) _themeMq.addListener(_onSystemThemeChange);   
 }
 function setThemeUI(theme) {
   pendingTheme = theme || 'system';
@@ -6393,14 +6235,14 @@ function addMcpServerCard() {
   }, true), wrap.firstChild);
 }
 
-function showMcpCardError(cardEl, msg) {
-  const el = cardEl.querySelector('.mcp-err');
+function showCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.cfg-err');
   if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
 }
 
-function mcpField(labelText, inputEl, hintText) {
+function cfgField(labelText, inputEl, hintText) {
   const field = document.createElement('div');
-  field.className = 'mcp-field';
+  field.className = 'cfg-field';
   const label = document.createElement('label');
   label.textContent = labelText;
   field.appendChild(label);
@@ -6414,41 +6256,108 @@ function mcpField(labelText, inputEl, hintText) {
   return field;
 }
 
+function cfgToggle(inputClass, checked) {
+  const root = document.createElement('label');
+  root.className = 'toggle';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.className = inputClass;
+  input.checked = checked;
+  const track = document.createElement('span'); track.className = 'track';
+  const thumb = document.createElement('span'); thumb.className = 'thumb';
+  root.append(input, track, thumb);
+  return { root, input };
+}
+
+function cfgToggleRow(inputClass, checked, labelText) {
+  const row = document.createElement('label');
+  row.className = 'cfg-toggle-row';
+  const t = cfgToggle(inputClass, checked);
+  row.appendChild(t.root);
+  const txt = document.createElement('span');
+  txt.textContent = labelText;
+  row.appendChild(txt);
+  return { row, input: t.input };
+}
+
+function cfgErrEl() {
+  const err = document.createElement('div');
+  err.className = 'cfg-err';
+  err.setAttribute('hidden', '');
+  return err;
+}
+
+function cfgPillSelect(inputClass, options, value, onChange) {
+  const root = document.createElement('div');
+  root.className = 'composer-reasoning settings-reasoning cfg-pill-select';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'composer-reasoning-btn';
+  const label = document.createElement('span');
+  btn.appendChild(label);
+  btn.insertAdjacentHTML('beforeend',
+    '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  const menu = document.createElement('div');
+  menu.className = 'model-menu';
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.className = inputClass;
+
+  function setValue(v) {
+    input.value = v;
+    const opt = options.find(o => o.value === v);
+    label.textContent = opt ? opt.label : v;
+  }
+  function renderOptions() {
+    menu.innerHTML = '';
+    options.forEach(o => {
+      const el = document.createElement('div');
+      el.className = 'model-opt' + (o.value === input.value ? ' selected' : '');
+      el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
+      el.onmousedown = (ev) => {
+        ev.preventDefault();
+        setValue(o.value);
+        menu.classList.remove('show');
+        if (onChange) onChange(o.value);
+      };
+      menu.appendChild(el);
+    });
+  }
+  btn.addEventListener('click', () => {
+    if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+    renderOptions();
+    menu.classList.add('show');
+  });
+
+  root.append(btn, menu, input);
+  setValue(value);
+  return { root, input, setValue };
+}
+
 function buildMcpCard(server, isNew) {
   const card = document.createElement('div');
-  card.className = 'mcp-card' + (isNew ? ' is-editing' : '');
+  card.className = 'cfg-card mcp-card' + (isNew ? ' is-editing' : '');
   const originalName = server.name || '';
 
   const viewSection = document.createElement('div');
-  viewSection.className = 'mcp-view';
+  viewSection.className = 'cfg-view';
 
   const viewName = document.createElement('div');
-  viewName.className = 'mcp-view-name';
+  viewName.className = 'cfg-view-name';
   viewName.textContent = server.name || '';
   viewSection.appendChild(viewName);
 
   const viewUrl = document.createElement('div');
-  viewUrl.className = 'mcp-view-url';
+  viewUrl.className = 'cfg-view-url';
   viewUrl.textContent = server.url || '';
   viewSection.appendChild(viewUrl);
 
   const viewRow = document.createElement('div');
-  viewRow.className = 'mcp-view-row';
+  viewRow.className = 'cfg-view-row mcp-view-row';
 
-  const viewToggleLabel = document.createElement('label');
-  viewToggleLabel.className = 'mcp-view-toggle-label';
-  const viewToggleWrap = document.createElement('label');
-  viewToggleWrap.className = 'toggle';
-  const viewEnabledI = document.createElement('input');
-  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'mcp-enabled-view';
-  viewEnabledI.checked = server.enabled !== false;
-  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
-  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
-  viewToggleWrap.append(viewEnabledI, viewTrack, viewThumb);
-  const viewEnabledTxt = document.createElement('span');
-  viewEnabledTxt.textContent = 'Activé';
-  viewToggleLabel.append(viewToggleWrap, viewEnabledTxt);
-  viewRow.appendChild(viewToggleLabel);
+  const viewToggle = cfgToggleRow('mcp-enabled-view', server.enabled !== false, 'Activé');
+  const viewEnabledI = viewToggle.input;
+  viewRow.appendChild(viewToggle.row);
 
   const viewStatus = document.createElement('div');
   viewStatus.className = 'mcp-status';
@@ -6484,7 +6393,7 @@ function buildMcpCard(server, isNew) {
   });
 
   const editSection = document.createElement('div');
-  editSection.className = 'mcp-edit';
+  editSection.className = 'cfg-edit';
 
   const mkInput = (cls, type, value, placeholder) => {
     const i = document.createElement('input');
@@ -6496,19 +6405,15 @@ function buildMcpCard(server, isNew) {
 
   const nameI = mkInput('mcp-name', 'text', server.name, 'jira');
   const urlI  = mkInput('mcp-url', 'text', server.url, 'https://host/mcp');
-  const transportSel = document.createElement('select');
-  transportSel.className = 'mcp-transport';
-  for (const opt of ['streamable-http', 'sse']) {
-    const o = document.createElement('option');
-    o.value = opt; o.textContent = opt + (opt === 'sse' ? ' (différé)' : '');
-    transportSel.appendChild(o);
-  }
-  transportSel.value = server.transport || 'streamable-http';
   
-  if (server.transport) transportSel.dataset.touched = '1';
-  transportSel.addEventListener('change', () => { transportSel.dataset.touched = '1'; });
+  const transport = cfgPillSelect('mcp-transport', [
+    { value: 'streamable-http', label: 'streamable-http' },
+    { value: 'sse', label: 'sse (différé)' },
+  ], server.transport || 'streamable-http',
+    () => { transport.input.dataset.touched = '1'; });
+  if (server.transport) transport.input.dataset.touched = '1';
   urlI.addEventListener('input', () => {
-    if (!transportSel.dataset.touched) transportSel.value = guessMcpTransport(urlI.value);
+    if (!transport.input.dataset.touched) transport.setValue(guessMcpTransport(urlI.value));
   });
 
   const tokenI = mkInput('mcp-token', 'password', server.authorization_token, 'Bearer (optionnel)');
@@ -6516,48 +6421,23 @@ function buildMcpCard(server, isNew) {
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
-  editSection.appendChild(mcpField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
-  editSection.appendChild(mcpField('URL', urlI));
-  editSection.appendChild(mcpField('Transport', transportSel));
-  editSection.appendChild(mcpField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
-  editSection.appendChild(mcpField('Timeout (ms)', tmoI));
-  editSection.appendChild(mcpField('Outils autorisés', allowI));
-  editSection.appendChild(mcpField('Outils masqués', denyI));
+  editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
+  editSection.appendChild(cfgField('URL', urlI));
+  editSection.appendChild(cfgField('Transport', transport.root));
+  editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
+  editSection.appendChild(cfgField('Timeout (ms)', tmoI));
+  editSection.appendChild(cfgField('Outils autorisés', allowI));
+  editSection.appendChild(cfgField('Outils masqués', denyI));
 
-  const editEnabledWrap = document.createElement('label');
-  editEnabledWrap.className = 'mcp-enabled-row';
-  const editToggleWrap = document.createElement('label');
-  editToggleWrap.className = 'toggle';
-  const editEnabledI = document.createElement('input');
-  editEnabledI.type = 'checkbox'; editEnabledI.className = 'mcp-enabled'; editEnabledI.checked = server.enabled !== false;
-  const editTrack = document.createElement('span'); editTrack.className = 'track';
-  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
-  editToggleWrap.append(editEnabledI, editTrack, editThumb);
-  const editEnabledTxt = document.createElement('span');
-  editEnabledTxt.textContent = 'Activé';
-  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
-  editSection.appendChild(editEnabledWrap);
+  editSection.appendChild(cfgToggleRow('mcp-enabled', server.enabled !== false, 'Activé').row);
 
-  const showCallsWrap = document.createElement('label');
-  showCallsWrap.className = 'mcp-enabled-row';
-  const showCallsToggleWrap = document.createElement('label');
-  showCallsToggleWrap.className = 'toggle';
-  const showCallsI = document.createElement('input');
-  showCallsI.type = 'checkbox'; showCallsI.className = 'mcp-show-calls'; showCallsI.checked = server.showCalls !== false;
-  const showCallsTrack = document.createElement('span'); showCallsTrack.className = 'track';
-  const showCallsThumb = document.createElement('span'); showCallsThumb.className = 'thumb';
-  showCallsToggleWrap.append(showCallsI, showCallsTrack, showCallsThumb);
-  const showCallsTxt = document.createElement('span');
-  showCallsTxt.textContent = 'Afficher les appels dans le thread';
-  showCallsWrap.append(showCallsToggleWrap, showCallsTxt);
-  editSection.appendChild(showCallsWrap);
+  editSection.appendChild(cfgToggleRow('mcp-show-calls', server.showCalls !== false,
+    'Afficher les appels dans le thread').row);
 
-  const err = document.createElement('div');
-  err.className = 'mcp-err'; err.setAttribute('hidden', '');
-  editSection.appendChild(err);
+  editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
-  actions.className = 'mcp-actions';
+  actions.className = 'cfg-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'drawer-btn primary mcp-save'; saveBtn.textContent = 'Enregistrer';
   saveBtn.addEventListener('click', () => onSaveMcpCard(card, originalName));
@@ -6569,7 +6449,8 @@ function buildMcpCard(server, isNew) {
   if (!isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger mcp-del'; delBtn.textContent = 'Supprimer';
-    delBtn.addEventListener('click', () => onDeleteMcpCard(card, originalName));
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, () => onDeleteMcpCard(card, originalName), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -6641,47 +6522,26 @@ function addApiServerCard() {
   wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '' }, true, false), wrap.firstChild);
 }
 
-function showApiCardError(cardEl, msg) {
-  const el = cardEl.querySelector('.api-err');
-  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
-}
-
-function apiField(labelText, inputEl, hintText) {
-  const field = document.createElement('div');
-  field.className = 'api-field';
-  const label = document.createElement('label');
-  label.textContent = labelText;
-  field.appendChild(label);
-  field.appendChild(inputEl);
-  if (hintText) {
-    const hint = document.createElement('span');
-    hint.className = 'hint';
-    hint.textContent = hintText;
-    field.appendChild(hint);
-  }
-  return field;
-}
-
 function buildApiCard(server, isNew, isActive) {
   const card = document.createElement('div');
-  card.className = 'api-card' + (isNew ? ' is-editing' : '');
+  card.className = 'cfg-card api-card' + (isNew ? ' is-editing' : '');
   const originalId = server.id || '';
 
   const viewSection = document.createElement('div');
-  viewSection.className = 'api-view';
+  viewSection.className = 'cfg-view';
 
   const viewName = document.createElement('div');
-  viewName.className = 'api-view-name';
+  viewName.className = 'cfg-view-name';
   viewName.textContent = server.name || '';
   viewSection.appendChild(viewName);
 
   const viewUrl = document.createElement('div');
-  viewUrl.className = 'api-view-url';
+  viewUrl.className = 'cfg-view-url';
   viewUrl.textContent = server.url || '';
   viewSection.appendChild(viewUrl);
 
   const viewRow = document.createElement('div');
-  viewRow.className = 'api-view-row';
+  viewRow.className = 'cfg-view-row api-view-row';
 
   if (isActive) {
     const viewStatus = document.createElement('div');
@@ -6706,7 +6566,7 @@ function buildApiCard(server, isNew, isActive) {
   card.appendChild(viewSection);
 
   const editSection = document.createElement('div');
-  editSection.className = 'api-edit';
+  editSection.className = 'cfg-edit';
 
   const mkInput = (cls, type, value, placeholder) => {
     const i = document.createElement('input');
@@ -6722,9 +6582,9 @@ function buildApiCard(server, isNew, isActive) {
   const keyI  = mkInput('api-key', 'password', server.key, keyHintInfo.placeholder);
   const modelI = mkInput('api-model', 'text', server.model, 'gemma4:26b-nvfp4');
 
-  editSection.appendChild(apiField('Nom', nameI));
-  editSection.appendChild(apiField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
-  editSection.appendChild(apiField('Clef API', keyI, keyHintInfo.hint));
+  editSection.appendChild(cfgField('Nom', nameI));
+  editSection.appendChild(cfgField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
+  editSection.appendChild(cfgField('Clef API', keyI, keyHintInfo.hint));
 
   const modelAnchor = document.createElement('div');
   modelAnchor.className = 'select-anchor api-model-anchor';
@@ -6733,23 +6593,13 @@ function buildApiCard(server, isNew, isActive) {
   modelI.addEventListener('focus', () => openApiModelMenu(modelI, modelMenu, urlI, keyI));
   modelI.addEventListener('input', () => onApiModelInput(modelI, modelMenu));
   modelAnchor.append(modelI, modelMenu);
-  const modelField = document.createElement('div');
-  modelField.className = 'api-field';
-  const modelLabel = document.createElement('label');
-  modelLabel.textContent = 'Modèle par défaut';
-  modelField.append(modelLabel, modelAnchor);
-  const modelHint = document.createElement('span');
-  modelHint.className = 'hint';
-  modelHint.textContent = 'Choisissez parmi les modèles exposés par l\'API.';
-  modelField.appendChild(modelHint);
-  editSection.appendChild(modelField);
+  editSection.appendChild(cfgField('Modèle par défaut', modelAnchor,
+    'Choisissez parmi les modèles exposés par l\'API.'));
 
-  const err = document.createElement('div');
-  err.className = 'api-err'; err.setAttribute('hidden', '');
-  editSection.appendChild(err);
+  editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
-  actions.className = 'api-actions';
+  actions.className = 'cfg-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'drawer-btn primary api-save'; saveBtn.textContent = 'Enregistrer';
   saveBtn.addEventListener('click', () => onSaveApiCard(card, originalId));
@@ -6761,7 +6611,8 @@ function buildApiCard(server, isNew, isActive) {
   if (!isNew && loadApiServers().length > 1) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger api-del'; delBtn.textContent = 'Supprimer';
-    delBtn.addEventListener('click', () => onDeleteApiCard(card, originalId));
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, () => onDeleteApiCard(card, originalId), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -6809,34 +6660,13 @@ function addSkillCard() {
   wrap.insertBefore(buildSkillCard({ slug: '', name: '', description: '', enabled: true }, true), wrap.firstChild);
 }
 
-function showSkillCardError(cardEl, msg) {
-  const el = cardEl.querySelector('.skill-err');
-  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
-}
-
-function skillField(labelText, inputEl, hintText) {
-  const field = document.createElement('div');
-  field.className = 'skill-field';
-  const label = document.createElement('label');
-  label.textContent = labelText;
-  field.appendChild(label);
-  field.appendChild(inputEl);
-  if (hintText) {
-    const hint = document.createElement('span');
-    hint.className = 'hint';
-    hint.textContent = hintText;
-    field.appendChild(hint);
-  }
-  return field;
-}
-
 function buildSkillCard(skill, isNew) {
   const card = document.createElement('div');
-  card.className = 'skill-card' + (isNew ? ' is-editing' : '');
+  card.className = 'cfg-card skill-card' + (isNew ? ' is-editing' : '');
   const originalSlug = skill.slug || '';
 
   const viewSection = document.createElement('div');
-  viewSection.className = 'skill-view';
+  viewSection.className = 'cfg-view skill-view';
 
   const viewMain = document.createElement('div');
   viewMain.className = 'skill-view-main';
@@ -6850,19 +6680,12 @@ function buildSkillCard(skill, isNew) {
   viewSection.appendChild(viewMain);
 
   const viewRow = document.createElement('div');
-  viewRow.className = 'skill-view-row';
+  viewRow.className = 'cfg-view-row skill-view-row';
 
-  const viewToggleLabel = document.createElement('label');
-  viewToggleLabel.className = 'toggle';
-  const viewEnabledI = document.createElement('input');
-  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'skill-enabled-view';
-  viewEnabledI.checked = skill.enabled !== false;
-  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
-  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
-  viewToggleLabel.append(viewEnabledI, viewTrack, viewThumb);
-  viewRow.appendChild(viewToggleLabel);
+  const viewToggle = cfgToggle('skill-enabled-view', skill.enabled !== false);
+  viewRow.appendChild(viewToggle.root);
   if (!isNew) {
-    viewEnabledI.addEventListener('change', () => onToggleSkill(originalSlug));
+    viewToggle.input.addEventListener('change', () => onToggleSkill(originalSlug));
   }
 
   const modBtn = document.createElement('button');
@@ -6875,7 +6698,7 @@ function buildSkillCard(skill, isNew) {
   card.appendChild(viewSection);
 
   const editSection = document.createElement('div');
-  editSection.className = 'skill-edit';
+  editSection.className = 'cfg-edit';
 
   const slugI = document.createElement('input');
   slugI.className = 'skill-slug'; slugI.type = 'text'; slugI.value = skill.slug || '';
@@ -6890,45 +6713,20 @@ function buildSkillCard(skill, isNew) {
   contentT.className = 'skill-content'; contentT.rows = 10; contentT.spellcheck = false;
   contentT.placeholder = 'Corps de la skill en Markdown…';
 
-  editSection.appendChild(skillField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
-  editSection.appendChild(skillField('Nom', nameI, 'Libellé d\'affichage.'));
-  editSection.appendChild(skillField('Description', descI, 'Surface lexicale décrite au modèle.'));
-  editSection.appendChild(skillField('Contenu', contentT));
+  editSection.appendChild(cfgField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
+  editSection.appendChild(cfgField('Nom', nameI, 'Libellé d\'affichage.'));
+  editSection.appendChild(cfgField('Description', descI, 'Surface lexicale décrite au modèle.'));
+  editSection.appendChild(cfgField('Contenu', contentT));
 
-  const editEnabledWrap = document.createElement('label');
-  editEnabledWrap.className = 'skill-enabled-row';
-  const editToggleWrap = document.createElement('label');
-  editToggleWrap.className = 'toggle';
-  const editEnabledI = document.createElement('input');
-  editEnabledI.type = 'checkbox'; editEnabledI.className = 'skill-enabled'; editEnabledI.checked = skill.enabled !== false;
-  const editTrack = document.createElement('span'); editTrack.className = 'track';
-  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
-  editToggleWrap.append(editEnabledI, editTrack, editThumb);
-  const editEnabledTxt = document.createElement('span');
-  editEnabledTxt.textContent = 'Activée';
-  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
-  editSection.appendChild(editEnabledWrap);
+  editSection.appendChild(cfgToggleRow('skill-enabled', skill.enabled !== false, 'Activée').row);
 
-  const editAutotriggerWrap = document.createElement('label');
-  editAutotriggerWrap.className = 'skill-enabled-row';
-  const editAutotriggerToggleWrap = document.createElement('label');
-  editAutotriggerToggleWrap.className = 'toggle';
-  const editAutotriggerI = document.createElement('input');
-  editAutotriggerI.type = 'checkbox'; editAutotriggerI.className = 'skill-autotrigger'; editAutotriggerI.checked = skill.autotrigger === true;
-  const editAutotriggerTrack = document.createElement('span'); editAutotriggerTrack.className = 'track';
-  const editAutotriggerThumb = document.createElement('span'); editAutotriggerThumb.className = 'thumb';
-  editAutotriggerToggleWrap.append(editAutotriggerI, editAutotriggerTrack, editAutotriggerThumb);
-  const editAutotriggerTxt = document.createElement('span');
-  editAutotriggerTxt.textContent = 'Proposée proactivement au modèle';
-  editAutotriggerWrap.append(editAutotriggerToggleWrap, editAutotriggerTxt);
-  editSection.appendChild(editAutotriggerWrap);
+  editSection.appendChild(cfgToggleRow('skill-autotrigger', skill.autotrigger === true,
+    'Proposée proactivement au modèle').row);
 
-  const err = document.createElement('div');
-  err.className = 'skill-err'; err.setAttribute('hidden', '');
-  editSection.appendChild(err);
+  editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
-  actions.className = 'skill-actions';
+  actions.className = 'cfg-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'drawer-btn primary skill-save'; saveBtn.textContent = 'Enregistrer';
   saveBtn.addEventListener('click', () => onSaveSkillCard(card, originalSlug));
@@ -6939,11 +6737,9 @@ function buildSkillCard(skill, isNew) {
   if (!isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger skill-del'; delBtn.textContent = 'Supprimer';
-    delBtn.addEventListener('click', () => {
-      if (window.confirm('Supprimer la skill « ' + (skill.name || skill.slug) + ' » ? Action définitive.')) {
-        onDeleteSkillCard(card, originalSlug);
-      }
-    });
+    
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, () => onDeleteSkillCard(card, originalSlug), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -7480,29 +7276,8 @@ async function openConversation(id) {
   currentConvId = id;
   currentThread = (conv.messages || []).map(m => {
     if (isAckRole(m.role)) {
-      const a = { role: m.role, id: m.id };
-      if (m.kind != null)        a.kind = m.kind;
-      if (m.ackType != null)     a.ackType = m.ackType;   
-      if (m.content != null)     a.content = m.content;
-      if (m.prevContent != null) a.prevContent = m.prevContent;
-      if (m.title != null)       a.title = m.title;
-      if (m.count != null)       a.count = m.count;
-      if (m.server != null)           a.server = m.server;
-      if (m.name != null)             a.name = m.name;
-      if (m.resourceName != null)     a.resourceName = m.resourceName;
-      if (m.mime != null)             a.mime = m.mime;
-      if (m.size != null)             a.size = m.size;
-      if (m.error)                    a.error = true;
-      if (m.resolved)                 a.resolved = true;
-      if (m.args != null)             a.args = m.args;
-      if (m.result != null)           a.result = m.result;
-      if (m.ts != null)               a.ts = m.ts;
-      if (m.group != null)            a.group = m.group;
-      if (m.assistantText != null)    a.assistantText = m.assistantText;
-      if (m.intent != null)           a.intent = m.intent;
-      if (m.slug != null)             a.slug = m.slug;
-      if (m.convId != null)           a.convId = m.convId;
-      return a;
+      
+      return copyAckFields(m, { role: m.role });
     }
     const o = { role: m.role, content: m.content, model: m.model };
     if (m.server) o.server = m.server;   
@@ -7636,29 +7411,8 @@ function persistCurrent() {
   const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
   conv.messages = currentThread.map(m => {
     if (isAckRole(m.role)) {
-      const o = { role: m.role, id: m.id };
-      if (m.kind != null)        o.kind = m.kind;
-      if (m.ackType != null)     o.ackType = m.ackType;   
-      if (m.content != null)     o.content = m.content;
-      if (m.prevContent != null) o.prevContent = m.prevContent;
-      if (m.title != null)       o.title = m.title;
-      if (m.count != null)       o.count = m.count;
-      if (m.server != null)           o.server = m.server;
-      if (m.name != null)             o.name = m.name;
-      if (m.resourceName != null)     o.resourceName = m.resourceName;
-      if (m.mime != null)             o.mime = m.mime;
-      if (m.size != null)             o.size = m.size;
-      if (m.error)                 o.error = true;
-      if (m.resolved)              o.resolved = true;
-      if (m.args != null)          o.args = m.args;
-      if (m.result != null)        o.result = m.result;
-      if (m.ts != null)            o.ts = m.ts;
-      if (m.group != null)         o.group = m.group;
-      if (m.assistantText != null) o.assistantText = m.assistantText;
-      if (m.intent != null)        o.intent = m.intent;
-      if (m.slug != null)          o.slug = m.slug;
-      if (m.convId != null)        o.convId = m.convId;
-      return o;
+      
+      return copyAckFields(m, { role: m.role });
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
@@ -7750,9 +7504,9 @@ async function onSaveMcpCard(cardEl, originalName) {
   const name = get('.mcp-name').trim();
   const others = loadMcpServers().map(s => s.name).filter(n => n !== originalName);
   const nameErr = validateMcpServerName(name, others);
-  if (nameErr) { showMcpCardError(cardEl, nameErr); return; }
+  if (nameErr) { showCardError(cardEl, nameErr); return; }
   const url = get('.mcp-url').trim();
-  if (!url) { showMcpCardError(cardEl, 'URL requise.'); return; }
+  if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const enabledEl = cardEl.querySelector('.mcp-enabled');
   const tmoRaw = parseInt(get('.mcp-timeout'), 10);
   const showCallsEl = cardEl.querySelector('.mcp-show-calls');
@@ -7785,9 +7539,9 @@ async function onDeleteMcpCard(cardEl, originalName) {
 function onSaveApiCard(cardEl, originalId) {
   const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
   const name = get('.api-name').trim();
-  if (!name) { showApiCardError(cardEl, 'Nom requis.'); return; }
+  if (!name) { showCardError(cardEl, 'Nom requis.'); return; }
   const url = get('.api-url').trim();
-  if (!url) { showApiCardError(cardEl, 'URL requise.'); return; }
+  if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const wasEmpty = !loadApiServers().length;
   const server = {
     id: originalId || undefined,
@@ -7809,7 +7563,7 @@ function onSaveApiCard(cardEl, originalId) {
 
 function onDeleteApiCard(cardEl, id) {
   const arr = loadApiServers();
-  if (arr.length <= 1) { showApiCardError(cardEl, 'Impossible de supprimer le dernier serveur.'); return; }
+  if (arr.length <= 1) { showCardError(cardEl, 'Impossible de supprimer le dernier serveur.'); return; }
   const wasActive = (activeApiServer() || {}).id === id;
   deleteApiServer(id);
   if (wasActive) {
@@ -7839,7 +7593,7 @@ async function onSaveSkillCard(cardEl, originalSlug) {
   const slug = get('.skill-slug').trim();
   const others = listAllSkillsCache().map(s => s.slug).filter(sl => sl !== originalSlug);
   const slugErr = validateSkillSlug(slug, others);
-  if (slugErr) { showSkillCardError(cardEl, slugErr); return; }
+  if (slugErr) { showCardError(cardEl, slugErr); return; }
   const enabledEl = cardEl.querySelector('.skill-enabled');
   const autotriggerEl = cardEl.querySelector('.skill-autotrigger');
   const record = {
@@ -8010,10 +7764,7 @@ async function dispatchSend(matches) {
           if (serverName) tourMsg.server = serverName;
           currentThread.push(tourMsg);   
           finalizeAssistant(wrap, content);
-          const tsEl = wrap.querySelector('.msg-ts');
-          if (tsEl) { tsEl.textContent = formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
-          const tsSepEl = wrap.querySelector('.msg-ts-sep');
-          if (tsSepEl) tsSepEl.removeAttribute('hidden');
+          revealMsgTimestamp(wrap, tourTs);
           persistCurrent();
           wrap = startAssistantMessage(model, serverName);
         } else {
@@ -8025,16 +7776,8 @@ async function dispatchSend(matches) {
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
-          const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.server != null)        entry.server = ack.server;
-          if (ack.name != null)          entry.name = ack.name;
-          if (ack.intent != null)        entry.intent = ack.intent;
           
-          if (ack.args != null)          entry.args = ack.args;
-          if (ack.result != null)        entry.result = ack.result;
-          if (ack.ts != null)            entry.ts = ack.ts;
-          if (ack.group != null)         entry.group = ack.group;
-          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
+          const entry = copyAckFields(ack, { role: 'tool-ack' });
           currentThread.push(entry);
           const node = placeToolAck(wrap, entry);
           earlyRendered.push({ ack, entry, node });
@@ -8062,25 +7805,8 @@ async function dispatchSend(matches) {
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
-          const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.id != null)            entry.id = ack.id;
-          if (ack.content != null)       entry.content = ack.content;
-          if (ack.prevContent != null)   entry.prevContent = ack.prevContent;
-          if (ack.title != null)         entry.title = ack.title;
-          if (ack.count != null)         entry.count = ack.count;
-          if (ack.intent != null)        entry.intent = ack.intent;
-          if (ack.slug != null)          entry.slug = ack.slug;
-          if (ack.convId != null)        entry.convId = ack.convId;
           
-          if (ack.name != null)           entry.name = ack.name;
-          if (ack.resourceName != null)  entry.resourceName = ack.resourceName;
-          if (ack.mime != null)          entry.mime = ack.mime;
-          if (ack.size != null)          entry.size = ack.size;
-          if (ack.args != null)          entry.args = ack.args;
-          if (ack.result != null)        entry.result = ack.result;
-          if (ack.ts != null)            entry.ts = ack.ts;
-          if (ack.group != null)         entry.group = ack.group;
-          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
+          const entry = copyAckFields(ack, { role: 'tool-ack' });
           currentThread.push(entry);
           placeToolAck(wrap, entry);
         }
@@ -8114,10 +7840,7 @@ async function dispatchSend(matches) {
         
         currentThread.push(msg);
         finalizeAssistant(wrap, content);
-        const tsEl = wrap.querySelector('.msg-ts');
-        if (tsEl) { tsEl.textContent = formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
-        const tsSepEl = wrap.querySelector('.msg-ts-sep');
-        if (tsSepEl) tsSepEl.removeAttribute('hidden');
+        revealMsgTimestamp(wrap, ts);
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   
         persistCurrent();
         setConnDot('ok');
@@ -8131,10 +7854,7 @@ async function dispatchSend(matches) {
         if (serverName) haltMsg.server = serverName;
         currentThread.push(haltMsg);   
         finalizeAssistant(wrap, text);
-        const haltTsEl = wrap.querySelector('.msg-ts');
-        if (haltTsEl) { haltTsEl.textContent = formatMessageTime(haltTs, Date.now()); haltTsEl.removeAttribute('hidden'); }
-        const haltTsSepEl = wrap.querySelector('.msg-ts-sep');
-        if (haltTsSepEl) haltTsSepEl.removeAttribute('hidden');
+        revealMsgTimestamp(wrap, haltTs);
         persistCurrent();
         setConnDot('ok');
         
@@ -8220,7 +7940,8 @@ async function summarizeIfNeeded(id) {
 }
 
 function backfillMessageModels() {
-  const model = loadSettings().model;
+  
+  const model = activeApiConfig().model;
   if (!model) return;
   for (const c of listAllConversations()) {
     const conv = loadConversation(c.id);

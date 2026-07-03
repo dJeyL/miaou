@@ -163,7 +163,10 @@ Banc d'essai : `mcp_bench.py` (extrait dans le projet `miaou-mcp-servers`).
 Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
 
 17. **Ajout & validation d'un serveur** : Paramètres → Serveurs MCP → Ajouter.
-    Saisir l'URL `…/mcp` → le transport se pré-remplit en `streamable-http` (mais
+    Le transport est un dropdown pilule custom (`cfgPillSelect`, pas de select
+    natif) : clic → menu `.model-menu` avec coche sur la valeur courante,
+    fermeture au clic ailleurs. Saisir l'URL `…/mcp` → le transport se
+    pré-remplit en `streamable-http` (mais
     ne s'écrase plus si on l'a changé à la main). Tenter `name = miaou`, un nom
     avec espace, avec `__`, ou un doublon → message d'erreur, pas d'enregistrement.
     Enregistrer `bench` → la carte passe « ● connecté — N outils ».
@@ -265,10 +268,14 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     image affichée. Si l'id est inconnu (session cache absent) → résultat
     `Ressource introuvable…`, pas de plantage.
 
-32. **Cascade suppression de conversation** : supprimer via la sidebar une conversation
+32. **Cascade suppression de conversation** : la poubelle de la sidebar demande
+    une **confirmation en deux temps** (premier clic → icône armée en rouge,
+    ~2,6 s ; second clic → suppression ; sans second clic, désarmement
+    automatique et rien n'est supprimé). Supprimer ainsi une conversation
     contenant des ressources. Dans IndexedDB, toutes les entrées liées à cet `id` de
     conversation ont disparu (vérifier dans DevTools). `localStorage['miaou-summaries']`
-    continue de fonctionner normalement pour les autres conversations.
+    continue de fonctionner normalement pour les autres conversations. Même
+    mécanique d'armement sur les boutons « Supprimer » des cartes MCP/API/skills.
 
 33. **Persistance du stockage** : au premier stockage de ressource de la session,
     vérifier dans la console (`console.log`) ou DevTools → Application → Storage que
@@ -289,8 +296,9 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     nom, description, un corps Markdown ; Enregistrer. La carte apparaît en vue.
     Recharger la page → le skill est toujours là (IDB). Désactiver le toggle de la
     carte → état persisté au reload. « Modifier » → la textarea se repeuple avec le
-    corps (lecture IDB `getSkillRecord`). « Supprimer » → confirm natif → disparu,
-    hard delete (rien au reload).
+    corps (lecture IDB `getSkillRecord`). « Supprimer » → le bouton s'arme
+    (« Confirmer ? », rempli rouge, ~2,6 s) → second clic → disparu, hard delete
+    (rien au reload) ; sans second clic, le bouton se désarme tout seul.
 
 36. **Validation slug** : tenter d'enregistrer un slug avec espace, `/`, vide, ou
     doublon d'un slug existant → message d'erreur inline dans la carte, pas d'écriture.

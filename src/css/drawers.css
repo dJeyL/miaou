@@ -1,0 +1,509 @@
+/* ── drawers.css ───────────────────────────────────────────────────────────
+   Drawers et widgets de formulaire : backdrop, panneau, champs, toggles,
+   segmented controls, dropdown .model-menu, catégories repliables des
+   réglages, onglets Résumés/Souvenirs, cartes souvenirs, propositions.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ═══ Settings drawer ═══ */
+.backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 190ms var(--ease), visibility 190ms var(--ease);
+  z-index: 40;
+}
+.backdrop.show { opacity: 1; visibility: visible; }
+
+/* Confirmation active (#confirm-backdrop) : l'overlay dim l'arrière-plan, mais
+   composer et carte de confirmation restent au-dessus (spotlight) et interactifs. */
+.app.confirming .composer,
+.app.confirming .memory-proposals { position: relative; z-index: 45; }
+
+.drawer {
+  position: fixed;
+  top: 0; right: 0;
+  height: 100%;
+  width: 380px;
+  max-width: 92vw;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 220ms var(--ease);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+.drawer.show { transform: none; }
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-head h2 { font-size: 14px; font-weight: 600; letter-spacing: 0.01em; }
+.drawer-body { padding: 18px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+
+.field { display: flex; flex-direction: column; gap: 6px; position: relative; }
+.field label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.field input {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.field input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.field input::placeholder { color: var(--text-3); }
+.field .hint { font-size: 11px; color: var(--text-3); }
+.field .hint code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--text-2);
+}
+
+.field textarea {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 76px;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.field textarea::placeholder { color: var(--text-3); }
+
+.root-prompt-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.root-prompt-details summary::-webkit-details-marker { display: none; }
+.root-prompt-details summary::before {
+  content: '▶';
+  font-size: 9px;
+  color: var(--text-3);
+  transition: transform .15s;
+  flex-shrink: 0;
+}
+.root-prompt-details[open] summary::before { transform: rotate(90deg); }
+.root-prompt-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  letter-spacing: 0.01em;
+}
+.root-prompt-pre {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.check-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.check-row .label-col { display: flex; flex-direction: column; gap: 3px; }
+
+.toggle { position: relative; width: 38px; height: 22px; flex-shrink: 0; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle .track {
+  position: absolute; inset: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  border-radius: 100px;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+}
+.toggle .thumb {
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 14px; height: 14px;
+  background: var(--text-2);
+  border-radius: 50%;
+  transition: transform 150ms var(--ease), background 150ms var(--ease);
+}
+.toggle input:checked ~ .track { background: var(--accent-dim); border-color: var(--accent-bd); }
+.toggle input:checked ~ .thumb { transform: translateX(16px); background: var(--accent); }
+
+/* segmented control (mode mémoire) */
+.seg-group {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  padding: 3px;
+  gap: 3px;
+}
+.seg {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 130ms var(--ease), color 130ms var(--ease);
+}
+.seg:hover { color: var(--text); }
+.seg.active { background: var(--accent-dim); color: var(--accent); }
+
+/* model dropdown — ancré sur le champ (et non sur tout le .field, ce qui
+   laissait apparaître la légende entre le champ et la liste). */
+.select-anchor { position: relative; display: flex; flex-direction: column; }
+.model-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0; right: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 28px rgba(0,0,0,.5);
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  transition: opacity 140ms var(--ease), transform 140ms var(--ease), visibility 140ms var(--ease);
+}
+.model-menu.show { opacity: 1; transform: none; visibility: visible; }
+.model-opt {
+  padding: 6px 10px;
+  font-family: var(--mono);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 110ms var(--ease);
+}
+.model-opt span { font-size: 11px; }
+.model-opt:hover { background: var(--surface-3); }
+.model-opt .check { color: var(--accent); opacity: 0; }
+.model-opt.selected .check { opacity: 1; }
+.model-loading, .model-error {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.model-error { color: var(--err); }
+.spin {
+  width: 12px; height: 12px;
+  border: 2px solid var(--border-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  margin-top: 4px;
+  transition: background 140ms var(--ease);
+}
+.btn-primary:hover { background: var(--accent-2); }
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary:disabled:hover { background: var(--accent); }
+
+/* ── Drawer réglages : catégories repliables ─────────────────────────────────
+   Même mécanique d'accordéon que .tool-ns (drawer « Outils exposés »), avec en
+   plus une icône de catégorie. Le corps replié est clippé (overflow hidden)
+   pendant la transition ; une fois déplié, .settled rétablit overflow visible
+   pour que les .model-menu absolus (modèle, raisonnement) ne soient pas coupés. */
+.set-cat { display: flex; flex-direction: column; }
+.set-cat-head {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.set-cat-head:hover { color: var(--text-2); }
+.set-cat-icon,
+.set-cat-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.set-cat-head:hover .set-cat-icon,
+.set-cat-head:hover .set-cat-chevron { opacity: 1; }
+.set-cat-label { flex: 1; }
+.set-cat-chevron svg { transition: transform 0.2s; }
+.set-cat-head.open .set-cat-chevron svg { transform: rotate(180deg); }
+.set-cat-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.set-cat-body.open { grid-template-rows: 1fr; }
+.set-cat-body.settled { overflow: visible; }
+/* L'écart tête/contenu vit DANS l'inner (clippé quand replié) : pas d'espace
+   mort sous les têtes fermées, contrairement à un gap sur .set-cat. */
+.set-cat-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 14px; }
+
+.build-ts-label { font-size: 10px; color: var(--text-3); text-align: center; }
+
+.btn-ghost {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.btn-ghost:hover { background: var(--surface-3); border-color: var(--border-2); }
+.btn-row { display: flex; gap: 8px; }
+.btn-row .btn-ghost { flex: 1; }
+
+/* onglets du drawer combiné Résumés / Souvenirs */
+.drawer-tabs { display: flex; gap: 2px; flex: 1; margin-right: 8px; }
+.drawer-tab {
+  background: none;
+  border: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  letter-spacing: 0.01em;
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+.drawer-tab:hover { color: var(--text-2); background: var(--surface-3); }
+.drawer-tab.active { color: var(--accent); background: var(--accent-dim); }
+
+.drawer-tab-panel { display: flex; flex-direction: column; gap: 12px; }
+.drawer-tab-panel.hidden { display: none; }
+
+.hidden { display: none; }
+
+/* gestion des souvenirs */
+.mem-list { display: flex; flex-direction: column; gap: 8px; }
+.mem-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 2px; }
+.mem-item {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}
+.mem-item.suppressed { opacity: 0.55; }
+.mem-item:not(.suppressed) { cursor: pointer; }
+.mem-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.mem-meta { min-width: 0; flex: 1; }
+.mem-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mem-item.expanded .mem-title { white-space: normal; overflow: visible; text-overflow: clip; }
+.mem-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.mem-excerpt { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-full { font-size: 12px; color: var(--text-2); margin-top: 5px; line-height: 1.45; }
+.mem-keywords { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+.mem-keywords strong { color: var(--text-2); font-weight: 600; }
+.mem-item:not(.expanded) .mem-full { display: none; }
+.mem-item.expanded .mem-excerpt { display: none; }
+.drawer-btn {
+  flex-shrink: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
+}
+.drawer-btn:hover { background: var(--surface-4); color: var(--text); }
+.drawer-btn:disabled { opacity: .45; cursor: default; }
+.drawer-btn:disabled:hover { background: var(--surface-3); color: var(--text-2); }
+.drawer-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.drawer-btn.primary:hover { background: var(--accent-2); color: var(--accent-ink); border-color: transparent; }
+.drawer-btn.danger:hover { color: var(--err); border-color: rgba(255,93,93,.4); }
+/* Armé (suppression en deux temps, cf. armThenRun ui.js) : rempli rouge, le
+   libellé bascule sur « Confirmer ? » pendant la fenêtre de confirmation. */
+.drawer-btn.armed,
+.drawer-btn.armed:hover { color: #fff; background: var(--err); border-color: var(--err); }
+.drawer-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
+.drawer-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
+.drawer-btn .spin { width: 11px; height: 11px; }
+.drawer-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.drawer-btns.hidden { display: none; }
+
+/* zone d'ajout d'un nouveau souvenir */
+.mem-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mem-add-input {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 58px;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.mem-add-input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.mem-add-input::placeholder { color: var(--text-3); }
+.mem-add-btn { align-self: flex-end; }
+
+/* contenu d'un souvenir + édition inline */
+.mem-content {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 6px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mem-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.mem-edit-wrap.hidden { display: none; }
+.mem-edit-input {
+  background: var(--bg);
+  border: 1px solid var(--accent-bd);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 58px;
+}
+.mem-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* propositions de souvenirs (cartes dans le thread) */
+.memory-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: var(--col);
+  margin: 14px auto;
+  padding: 0 24px;
+}
+.proposal-card {
+  background: var(--surface-2);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.proposal-header { display: flex; align-items: center; }
+.proposal-type {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+.proposal-content {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.proposal-diff { display: flex; flex-direction: column; gap: 6px; }
+.proposal-diff-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.proposal-old { opacity: 0.65; text-decoration: line-through; text-decoration-color: var(--err); }
+.proposal-new { border-color: var(--accent-bd); }
+.proposal-actions { display: flex; gap: 8px; }

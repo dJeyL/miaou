@@ -615,3 +615,40 @@ describe('parseToolFilterList', function() {
   });
   it('vide → tableau vide', function() { expect(parseToolFilterList('').length).toBe(0); });
 });
+
+describe('copyAckFields (whitelist unique des champs d\'ack)', function() {
+  it('copie les champs présents et préserve la cible', function() {
+    var src = { kind: 'mcp_call', server: 'srv', name: 'srv__t', args: { a: 1 },
+                result: 'r', ts: 42, group: 'g1', assistantText: 'lead', intent: 'but' };
+    var out = copyAckFields(src, { role: 'tool-ack' });
+    expect(out.role).toBe('tool-ack');
+    expect(out.kind).toBe('mcp_call');
+    expect(out.server).toBe('srv');
+    expect(out.args).toEqual({ a: 1 });
+    expect(out.group).toBe('g1');
+    expect(out.intent).toBe('but');
+  });
+  it('n\'introduit pas de clefs pour les champs absents', function() {
+    var out = copyAckFields({ kind: 'memory_create', id: 'm1', content: 'c' }, { role: 'tool-ack' });
+    expect('title' in out).toBe(false);
+    expect('args' in out).toBe(false);
+    expect('error' in out).toBe(false);
+  });
+  it('error/resolved en sémantique truthy (jamais false explicite)', function() {
+    var out1 = copyAckFields({ kind: 'mcp_call', error: true, resolved: true }, {});
+    expect(out1.error).toBe(true);
+    expect(out1.resolved).toBe(true);
+    var out2 = copyAckFields({ kind: 'mcp_call', error: false, resolved: false }, {});
+    expect('error' in out2).toBe(false);
+    expect('resolved' in out2).toBe(false);
+  });
+  it('champ hors whitelist non copié', function() {
+    var out = copyAckFields({ kind: 'mcp_call', rogue: 'x' }, {});
+    expect('rogue' in out).toBe(false);
+  });
+  it('couvre les champs piégeux déjà payés (convId, slug)', function() {
+    var out = copyAckFields({ kind: 'conversation_read', convId: 'c1', slug: 's1' }, {});
+    expect(out.convId).toBe('c1');
+    expect(out.slug).toBe('s1');
+  });
+});

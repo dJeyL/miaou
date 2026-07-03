@@ -17,8 +17,10 @@
 <div id="log"></div>
 <script>
 const MODEL = 'gemma4:26b-nvfp4';
+const SERVER = 'Par défaut';   // provenance (champ server des messages assistant)
 const CONV_KEY = 'miaou-conversations';
 const SUMM_KEY = 'miaou-summaries';
+const MEM_KEY  = 'miaou-memories';
 
 // IDs fixes → idempotent (re-run ne duplique pas)
 const SEEDS = [
@@ -208,6 +210,124 @@ const SEEDS = [
     summary: "Tentative de mémorisation de la config Go (1.21, go.work) puis demande de suppression suite à la migration vers Go 1.23. Démonstration du cycle create → delete sur un souvenir.",
     keywords: ['go', 'golang', 'go-work', 'workspaces', 'mémoire', 'souvenir', 'suppression', 'migration', 'modules', 'conventions'],
   },
+
+  // ── Features récentes : acks ENRICHIS (args/result/ts/group/intent),
+  //    mcp_call, raisonnement, provenance serveur, conv_ref, slash-skill ──────
+
+  {
+    id: 'seed-16',
+    title: 'Météo Brest via outil MCP',
+    pinned: true,   // exerce la section « Épinglé » de la sidebar
+    messages: [
+      { role: 'user',      content: "Quel temps fait-il à Brest ?" },
+      // Ack MCP enrichi : intent (rendu deux niveaux), args/result/group
+      // (réinjection cross-turn), error absent. `ts` est posé par seed().
+      { role: 'tool-ack',  kind: 'mcp_call', server: 'meteo', name: 'meteo__get_weather',
+        intent: 'Récupération de la météo à Brest',
+        args: { city: 'Brest', miaou_intent: 'Récupération de la météo à Brest' },
+        result: '{"city":"Brest","temp_c":14,"sky":"bruine","wind_kmh":32}',
+        group: 'g-seed16-a' },
+      { role: 'assistant', content: "À Brest en ce moment : 14 °C, bruine, vent d'ouest à 32 km/h. Classique — prends la capuche plutôt que le parapluie.",
+        reasoning: "L'utilisateur veut la météo actuelle. L'outil meteo__get_weather renvoie 14°C, bruine, vent 32 km/h. Je formule une réponse courte avec une touche locale (le vent rend le parapluie inutile à Brest)." },
+    ],
+    summary: "Consultation de la météo à Brest via l'outil MCP meteo__get_weather : 14 °C, bruine, vent 32 km/h.",
+    keywords: ['météo', 'brest', 'mcp', 'outil', 'weather', 'vent', 'bruine', 'température'],
+  },
+  {
+    id: 'seed-17',
+    title: 'Appel MCP en échec — timeout',
+    messages: [
+      { role: 'user',      content: "Liste les tickets Jira ouverts sur le projet MIAOU." },
+      // Ack MCP en ERREUR (classe .ack-error, label rouge)
+      { role: 'tool-ack',  kind: 'mcp_call', server: 'jira', name: 'jira__search_issues',
+        intent: 'Recherche des tickets ouverts du projet MIAOU',
+        args: { jql: 'project = MIAOU AND status = Open' },
+        result: 'Erreur outil distant jira__search_issues : Délai dépassé (30000 ms).',
+        error: true, group: 'g-seed17-a' },
+      { role: 'assistant', content: "Le serveur Jira ne répond pas (délai dépassé après 30 s). Je ne peux pas lister les tickets pour l'instant — réessaie plus tard ou vérifie que le backend MCP `jira` est joignable." },
+    ],
+    summary: "Tentative de listage des tickets Jira ouverts du projet MIAOU, échouée sur timeout du serveur MCP distant (30 s).",
+    keywords: ['jira', 'mcp', 'timeout', 'erreur', 'tickets', 'projet', 'backend', 'échec'],
+  },
+  {
+    id: 'seed-18',
+    title: 'Multi-outils : mémoire + historique',
+    messages: [
+      { role: 'user',      content: "Retiens que je préfère les réponses courtes, et rappelle-moi de quoi parlait notre discussion Docker." },
+      // Deux acks enrichis dans le MÊME tour (group partagé) → expandThread
+      // reconstruit un seul assistant + 2 messages tool.
+      { role: 'tool-ack',  kind: 'memory_create', id: 'mem-seed-04',
+        content: 'Julien préfère les réponses courtes.',
+        intent: 'Enregistrement de la préférence de concision',
+        args: { content: 'Julien préfère les réponses courtes.' },
+        result: 'Souvenir enregistré. Identifiant : mem-seed-04',
+        name: 'miaou__create_memory', group: 'g-seed18-a' },
+      { role: 'tool-ack',  kind: 'conversation_read', title: 'Docker Compose — communication inter-services',
+        convId: 'seed-05',
+        intent: 'Relecture de la conversation Docker Compose',
+        args: { id: 'seed-05' },
+        result: '{"id":"seed-05","title":"Docker Compose — communication inter-services","summary":"Problème de communication entre services Docker Compose…"}',
+        name: 'miaou__get_conversation', group: 'g-seed18-a' },
+      // conv_ref dans le texte : rendu en lien cliquable vers seed-05.
+      { role: 'assistant', content: "Noté pour la concision. Côté Docker : on avait vu dans [conv_ref:seed-05] que tes deux services ne partageaient pas le même localhost — solution : utiliser le nom du service comme hostname, et n'exposer les `ports` que sur l'app." },
+    ],
+    summary: "Enregistrement d'une préférence de concision et rappel de la conversation Docker Compose (hostname par nom de service, exposition sélective des ports). Deux appels d'outils dans le même tour.",
+    keywords: ['mémoire', 'préférence', 'concision', 'docker', 'historique', 'multi-outils', 'rappel', 'conversation'],
+  },
+  {
+    id: 'seed-19',
+    title: 'Slash-skill : revue de code',
+    messages: [
+      // displayText = littéral tapé (affiché) ; content = littéral + corps baké
+      // (envoyé au modèle). Exerce le rendu displayText + l'export.
+      { role: 'user',
+        displayText: "/revue Regarde cette fonction : `function add(a,b){return a+b}`",
+        content: "/revue Regarde cette fonction : `function add(a,b){return a+b}`\n\n--- skill: revue ---\nTu es un relecteur de code exigeant. Structure ta revue : points bloquants, améliorations, style. Sois direct.\n--- /skill: revue ---" },
+      { role: 'assistant', content: "**Points bloquants** : aucun.\n\n**Améliorations** : pas de validation des types — `add('1', 2)` renvoie `'12'`. Si la fonction est censée additionner des nombres, ajoute une garde ou du typage.\n\n**Style** : espaces manquants (`function add(a, b) { return a + b; }`)." },
+    ],
+    summary: "Revue de code d'une fonction add() via la slash-skill /revue : risque de concaténation implicite sur des strings, style à normaliser.",
+    keywords: ['revue', 'code', 'skill', 'slash', 'javascript', 'fonction', 'typage', 'style'],
+  },
+  {
+    id: 'seed-20',
+    title: 'Découverte de skill par le modèle',
+    messages: [
+      { role: 'user',      content: "Rédige un compte-rendu de notre réunion d'architecture d'hier." },
+      // Acks skill_list puis skill_read (stage 2 : découverte par le modèle).
+      { role: 'tool-ack',  kind: 'skill_list', count: 2,
+        intent: 'Recherche d\'une skill de compte-rendu',
+        args: {}, result: '[{"slug":"revue","name":"Revue de code"},{"slug":"cr","name":"Compte-rendu"}]',
+        name: 'miaou__skills__list', group: 'g-seed20-a' },
+      { role: 'tool-ack',  kind: 'skill_read', slug: 'cr', title: 'Compte-rendu',
+        intent: 'Lecture de la skill de compte-rendu',
+        args: { slug: 'cr' }, result: 'Structure : contexte, décisions, actions (porteur + échéance), risques.',
+        name: 'miaou__skills__read', group: 'g-seed20-b' },
+      { role: 'assistant', content: "**Contexte** : réunion d'architecture du 2 juillet.\n\n**Décisions** : découpage du monolithe en 3 services (auth, catalog, orders), bus RabbitMQ.\n\n**Actions** : spec des contrats d'API (Julien, 15/07) ; POC RabbitMQ (Sarah, 22/07).\n\n**Risques** : double écriture pendant la transition, à cadrer avant le POC." },
+    ],
+    summary: "Rédaction d'un compte-rendu de réunion d'architecture en s'appuyant sur la skill 'cr' découverte par le modèle (skills__list puis skills__read).",
+    keywords: ['compte-rendu', 'skill', 'réunion', 'architecture', 'microservices', 'actions', 'décisions', 'autotrigger'],
+  },
+];
+
+// ── Souvenirs (miaou-memories) : cohérents avec les acks des conversations ────
+// mem-seed-01/02 (créés en seed-11/12), mem-seed-03 supprimé (tombstone,
+// seed-15), mem-seed-04 (seed-18). Injectés en contexte à chaque tour.
+const MEMORY_SEEDS = [
+  { id: 'mem-seed-01', content: 'Conventions Python de Julien : snake_case fonctions/variables, PascalCase/CapWords classes et exceptions. Compatible PEP 8.', suppressed: false },
+  { id: 'mem-seed-02', content: "Décision architecture (2026) : migration du monolithe Python vers 3 microservices — auth, catalog, orders. Chaque service avec sa BDD. Communication inter-services via RabbitMQ (pas REST direct).", suppressed: false },
+  { id: 'mem-seed-03', content: 'Julien utilise Go 1.21 avec les modules Go et go.work (workspaces multi-modules).', suppressed: true },
+  { id: 'mem-seed-04', content: 'Julien préfère les réponses courtes.', suppressed: false },
+];
+
+// ── Skills (IndexedDB `miaou`, store `skills`) : /revue + cr (autotrigger) ────
+// Cohérentes avec seed-19 (slash) et seed-20 (découverte modèle).
+const SKILL_SEEDS = [
+  { slug: 'revue', name: 'Revue de code', description: 'Relecture de code structurée : bloquants, améliorations, style.',
+    enabled: true, autotrigger: false,
+    content: 'Tu es un relecteur de code exigeant. Structure ta revue : points bloquants, améliorations, style. Sois direct.' },
+  { slug: 'cr', name: 'Compte-rendu', description: 'Compte-rendu de réunion : contexte, décisions, actions, risques.',
+    enabled: true, autotrigger: true,
+    content: 'Structure : contexte, décisions, actions (porteur + échéance), risques.' },
 ];
 
 function log(cls, text) {
@@ -236,20 +356,26 @@ function seed() {
     if (existingIds.has(s.id)) { log('ski', '⊘ ' + s.id + ' — déjà présent, ignoré'); continue; }
     const ts = slots[i];
 
-    // Timestamps de messages : 30 s par message non-ack (tool-ack n'a pas de ts).
+    // Timestamps de messages : 30 s par message non-ack. Un ack ENRICHI (args
+    // présents) reçoit aussi un ts (celui de l'appel d'outil, cf. stampTs) ;
+    // un ack legacy (sans args) reste sans ts, comme en usage réel.
     // lastMsgTs = ts du dernier message user/assistant, utilisé comme updatedAt.
     let tsCounter = 0;
     let lastMsgTs = ts;
     const messages = s.messages.map(m => {
-      if (m.role === 'tool-ack' || m.role === 'memory-ack') return { ...m };
+      if (m.role === 'tool-ack' || m.role === 'memory-ack') {
+        return m.args != null ? { ...m, ts: lastMsgTs + 5000 } : { ...m };
+      }
       lastMsgTs = ts + tsCounter * 30000;
       tsCounter++;
       return m.role === 'assistant'
-        ? { ...m, model: MODEL, ts: lastMsgTs }
+        ? { ...m, model: MODEL, server: SERVER, ts: lastMsgTs }
         : { ...m, ts: lastMsgTs };
     });
 
-    convs.push({ id: s.id, title: s.title, timestamp: ts, updatedAt: lastMsgTs, messages });
+    const conv = { id: s.id, title: s.title, timestamp: ts, updatedAt: lastMsgTs, messages };
+    if (s.pinned) conv.pinned = true;
+    convs.push(conv);
     addedConvs++;
   }
   // Tri desc par timestamp (attendu par listAllConversations)
@@ -279,14 +405,55 @@ function seed() {
   }
   localStorage.setItem(SUMM_KEY, JSON.stringify(summs));
 
+  // ── Souvenirs (miaou-memories) ───────────────────────────────────────────
+  let mems = [];
+  try { mems = JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch {}
+  const memIds = new Set(mems.map(m => m.id));
+  let addedMems = 0;
+  for (const m of MEMORY_SEEDS) {
+    if (memIds.has(m.id)) continue;
+    mems.push({ ...m, created_at: now - 7 * day, updated_at: now - 7 * day });
+    addedMems++;
+  }
+  localStorage.setItem(MEM_KEY, JSON.stringify(mems));
+
   if (addedConvs) log('ok', '✓ ' + addedConvs + ' conversation(s) ajoutée(s)');
   if (addedSumms) log('ok', '✓ ' + addedSumms + ' résumé(s) ajouté(s)');
-  if (!addedConvs && !addedSumms) log('ski', '⊘ Tout était déjà présent, rien à faire.');
+  if (addedMems)  log('ok', '✓ ' + addedMems + ' souvenir(s) ajouté(s)');
+  if (!addedConvs && !addedSumms && !addedMems) log('ski', '⊘ Tout était déjà présent, rien à faire.');
   log('', '');
   log('', 'Recharge MIAOU pour voir les conversations dans la sidebar.');
 }
 
+// ── Skills : IndexedDB `miaou` v2, store `skills` (même schéma que skills.js).
+// Idempotent par nature (put remplace par slug). onupgradeneeded reprend la
+// création des DEUX stores : si MIAOU n'a encore jamais ouvert la base, le
+// seed la crée à l'identique (resources + skills) sans casser la migration.
+function seedSkills() {
+  const req = indexedDB.open('miaou', 2);
+  req.onupgradeneeded = function(e) {
+    const db = e.target.result;
+    if (!db.objectStoreNames.contains('resources')) {
+      const store = db.createObjectStore('resources', { keyPath: 'id' });
+      store.createIndex('by_conversation', 'conversationId', { unique: false });
+    }
+    if (!db.objectStoreNames.contains('skills')) {
+      db.createObjectStore('skills', { keyPath: 'slug' });
+    }
+  };
+  req.onsuccess = function(e) {
+    const db = e.target.result;
+    const tx = db.transaction('skills', 'readwrite');
+    const store = tx.objectStore('skills');
+    for (const s of SKILL_SEEDS) store.put(s);
+    tx.oncomplete = function() { log('ok', '✓ ' + SKILL_SEEDS.length + ' skill(s) écrites en IDB (put idempotent)'); };
+    tx.onerror = function(ev) { log('err', '✗ skills IDB : ' + (ev.target.error && ev.target.error.message)); };
+  };
+  req.onerror = function(e) { log('err', '✗ ouverture IDB : ' + (e.target.error && e.target.error.message)); };
+}
+
 seed();
+seedSkills();
 </script>
 </body>
 </html>

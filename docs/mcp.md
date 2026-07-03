@@ -36,6 +36,8 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    implémenté » plutôt que de demi-câbler. Devinette de transport
    (`guessMcpTransport`, pur) = **pré-remplissage seulement**, jamais un override :
    l'UI ne l'applique que si le champ n'a pas été touché (`dataset.touched`).
+   Côté UI, le choix passe par le dropdown pilule custom `cfgPillSelect`
+   (ui.js — valeur dans l'input hidden `.mcp-transport`), pas un select natif.
 5. **Timeout via `AbortController` (D5).** Chaque appel `mcpRpc` arme un
    `setTimeout(timeout)` → `abort()` ; sur abort, résultat `{ isError: true }` au
    message clair. Sans ça le champ `timeout` serait décoratif. `Mcp-Session-Id`

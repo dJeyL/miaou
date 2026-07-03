@@ -1,7 +1,10 @@
 # Couverture de tests
 
 Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
-navigateur + framework maison). Seules les **fonctions pures** sont couvertes
+navigateur + framework maison). Le runner exécute d'abord quelques **tests
+unitaires Python de build.py** (`run_build_unit_tests` : strip des commentaires
+JS/CSS/HTML — strings, templates, regex, commentaire non terminé), comptés dans
+le même total. Seules les **fonctions pures** sont couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 (`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`), **agrégation MCP**
@@ -37,7 +40,10 @@ existante), texte barré `~~...(supprimée)~~` si `loadConversation` échoue —
 avec titre du marqueur, avec titre orphelin en résumé, ou repli sur l'ID si
 aucun titre connu —, encodage URL de l'id).
 
-Couvert aussi : le **cache session de rejet de `reasoning_effort`**
+Couvert aussi : la **résolution multi-serveurs des chemins legacy**
+(`modelName` et `backfillMessageModels` lisent `activeApiConfig().model`, jamais
+`loadSettings().model` directement — serveur actif prioritaire, filet legacy,
+cas « rien de résolu »), et le **cache session de rejet de `reasoning_effort`**
 (`markReasoningEffortRejected`/`isReasoningEffortRejected`, clé composite
 endpoint+modèle — indépendance par URL et par modèle). Le retry de
 `streamCompletion` sans le paramètre après rejet passe par `fetch` : manuel.

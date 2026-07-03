@@ -28,6 +28,32 @@ function ackKindOf(m) {
   return null;
 }
 
+// Whitelist UNIQUE des champs d'une entrée tool-ack, partagée par les quatre
+// sites de copie (onEarlyAcks/onToolAcks pour le rendu live, openConversation/
+// persistCurrent pour la persistance — main.js). Historique : trois copies
+// manuelles divergentes, un champ oublié cassait silencieusement le rendu ou
+// la persistance (payé avec convId/slug). Ajouter un champ = UNE ligne ici.
+// `error`/`resolved` sont copiés en sémantique truthy (jamais `false` explicite
+// en storage) ; tous les autres en présence (`!= null`).
+const ACK_COPY_FIELDS = [
+  'kind', 'ackType',                     // kind canonique / legacy (jamais réécrit)
+  'id', 'content', 'prevContent',        // souvenirs (create/update/delete)
+  'title', 'count', 'convId',            // lectures d'historique
+  'server', 'name', 'intent',            // MCP / traçage d'intention
+  'resourceName', 'mime', 'size',        // ressources IDB
+  'slug',                                // skills
+  'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
+];
+
+function copyAckFields(src, dst) {
+  for (const f of ACK_COPY_FIELDS) {
+    if (src[f] != null) dst[f] = src[f];
+  }
+  if (src.error) dst.error = true;
+  if (src.resolved) dst.resolved = true;
+  return dst;
+}
+
 // Place le caret en fin de contenu d'un élément contenteditable.
 function placeCaretEnd(el) {
   const range = document.createRange();

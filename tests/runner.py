@@ -157,6 +157,54 @@ def run_file(test_path: Path) -> tuple[int, int]:
     return int(passed), int(failed)
 
 
+def run_build_unit_tests() -> tuple[int, int]:
+    """Tests unitaires (Python) des transformations de build.py — strip des
+    commentaires JS/CSS. Exécutés avant les tests QuickJS, mêmes compteurs."""
+    sys.path.insert(0, str(ROOT.parent))
+    import build
+
+    cases = [
+        # (label, fn, entrée, sortie attendue)
+        ('CSS : commentaire retiré',
+         build.strip_css_comments, 'a { color: red; /* rouge */ }', 'a { color: red;  }'),
+        ('CSS : commentaire multi-lignes retiré',
+         build.strip_css_comments, 'a {}\n/* bloc\n   long */\nb {}', 'a {}\n\nb {}'),
+        ('CSS : /* dans une string double-quotée préservé',
+         build.strip_css_comments, 'a::before { content: "/* pas un commentaire */"; }',
+         'a::before { content: "/* pas un commentaire */"; }'),
+        ('CSS : string simple-quotée avec échappement',
+         build.strip_css_comments, "a::before { content: 'l\\'astuce /*x*/'; }",
+         "a::before { content: 'l\\'astuce /*x*/'; }"),
+        ('CSS : commentaire non terminé → coupé jusqu\'à EOF, sans crash',
+         build.strip_css_comments, 'a {}\n/* ouvert', 'a {}\n'),
+        ('HTML : commentaire retiré (y compris multi-lignes)',
+         build.strip_html_comments, '<div>a</div>\n<!-- com\n   long -->\n<div>b</div>',
+         '<div>a</div>\n\n<div>b</div>'),
+        ('HTML : plusieurs commentaires, non-greedy',
+         build.strip_html_comments, '<!-- a --><p>x</p><!-- b -->', '<p>x</p>'),
+        ('HTML : commentaire non terminé laissé tel quel',
+         build.strip_html_comments, '<p>x</p><!-- ouvert', '<p>x</p><!-- ouvert'),
+        ('JS : // dans une string préservé',
+         build.strip_js_comments, "var u = 'http://x'; // com", "var u = 'http://x'; "),
+        ('JS : /* dans un template literal préservé',
+         build.strip_js_comments, 'var t = `a /* b */ ${1 /* c */} d`;', 'var t = `a /* b */ ${1 } d`;'),
+        ('JS : regex literal contenant /* préservée',
+         build.strip_js_comments, 'var re = /a\\/*b/; // com', 'var re = /a\\/*b/; '),
+    ]
+
+    passed = failed = 0
+    print('\nbuild.py (tests unitaires Python)')
+    for label, fn, given, expected in cases:
+        got = fn(given)
+        if got == expected:
+            passed += 1
+            print(f'  PASS  {label}')
+        else:
+            failed += 1
+            print(f'  FAIL  {label}\n        attendu {expected!r}, reçu {got!r}')
+    return passed, failed
+
+
 def main(args: list[str]) -> int:
     if args:
         files = [ROOT / a if not Path(a).is_absolute() else Path(a) for a in args]
@@ -167,7 +215,7 @@ def main(args: list[str]) -> int:
         print('Aucun fichier de test trouvé.')
         return 0
 
-    total_passed = total_failed = 0
+    total_passed, total_failed = run_build_unit_tests()
     for f in files:
         if not f.exists():
             print(f'Fichier introuvable : {f}')

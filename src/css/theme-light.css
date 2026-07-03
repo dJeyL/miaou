@@ -1,0 +1,70 @@
+/* ── theme-light.css ───────────────────────────────────────────────────────
+   Thème clair (surcharge des tokens + overrides Prism). UNE seule variante :
+   « system » est résolu en JS (cf. base/boot + applyTheme). Dernier fichier de
+   CSS_ORDER : ses overrides doivent rester en fin de cascade.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ═══ Thème clair ═══ */
+/* UNE seule variante : html porte toujours data-theme=light|dark, « system »
+   étant résolu en JS (script de boot du <head> + applyTheme/matchMedia, ui.js).
+   Ne pas ré-introduire de bloc @media (prefers-color-scheme) dupliqué. */
+html[data-theme="light"] {
+  --bg:                    #f4efe5;
+  --surface:               #ede8de;
+  --surface-2:             #e5dfd4;
+  --surface-3:             #dbd4c7;
+  --border:                #cdc7b8;
+  --border-2:              #c1baa8;
+  --text:                  #1e1b18;
+  --text-2:                #5a5248;
+  --text-3:                #968a7a;
+  --accent:                #e05f1c;
+  --accent-2:              #cc5016;
+  --accent-ink:            #1a0c05;
+  --accent-dim:            rgba(224,95,28,.10);
+  --accent-bd:             rgba(224,95,28,.28);
+  --ok:                    #267a4e;
+  --err:                   #c42828;
+  --topbar-bg:             rgba(244,239,229,.88);
+  --scrollbar-thumb-hover: rgba(0,0,0,.30);
+  --table-stripe:          rgba(0,0,0,.04);
+  --code-bg:               #eee8d8;
+  --code-head-bg:          #e6dfc9;
+  --code-inline-color:     #c45010;
+  --surface-4:             #dbd4c7;   /* = surface-3 : le clair n'a pas de palier au-delà */
+}
+html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+
+/* Prism token overrides — thème clair */
+html[data-theme="light"] code[class*="language-"],
+html[data-theme="light"] pre[class*="language-"]          { color: #2c2720; }
+html[data-theme="light"] .token.comment,
+html[data-theme="light"] .token.prolog,
+html[data-theme="light"] .token.doctype,
+html[data-theme="light"] .token.cdata                     { color: #8a8272; font-style: italic; }
+html[data-theme="light"] .token.punctuation               { color: #5a5248; }
+html[data-theme="light"] .token.namespace                 { opacity: .75; }
+html[data-theme="light"] .token.property,
+html[data-theme="light"] .token.constant,
+html[data-theme="light"] .token.symbol                    { color: #8a6800; }
+html[data-theme="light"] .token.boolean,
+html[data-theme="light"] .token.number                    { color: #b5440e; }
+html[data-theme="light"] .token.string,
+html[data-theme="light"] .token.char,
+html[data-theme="light"] .token.attr-value,
+html[data-theme="light"] .token.builtin,
+html[data-theme="light"] .token.inserted                  { color: #276e38; }
+html[data-theme="light"] .token.selector,
+html[data-theme="light"] .token.attr-name                 { color: #b53030; }
+html[data-theme="light"] .token.operator,
+html[data-theme="light"] .token.entity,
+html[data-theme="light"] .token.url                       { color: #1a6b6b; }
+html[data-theme="light"] .token.atrule,
+html[data-theme="light"] .token.keyword                   { color: #7c3c99; }
+html[data-theme="light"] .token.function,
+html[data-theme="light"] .token.class-name                { color: #1a5fb8; }
+html[data-theme="light"] .token.regex,
+html[data-theme="light"] .token.important,
+html[data-theme="light"] .token.variable                  { color: #b5440e; }
+html[data-theme="light"] .token.tag,
+html[data-theme="light"] .token.deleted                   { color: #b53030; }

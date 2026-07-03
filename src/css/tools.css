@@ -1,0 +1,419 @@
+/* ── tools.css ─────────────────────────────────────────────────────────────
+   Outils et compagnie : acks dans le thread (+ rendu intent à deux niveaux),
+   écran d'accueil, panneau « Outils exposés » (namespaces), cartes de
+   configuration partagées MCP/API/skills, autocomplétion slash, blocs non-text
+   D8, curseur/patienteur/raisonnement, horodatages inline.
+   Partition héritée du découpage de main.css : l'ordre de cascade d'origine
+   est préservé tel quel — déplacer une règle vers un autre fichier exige de
+   vérifier les collisions de spécificité égale.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Ack d'outils (journal client : écritures mémoire + lectures d'historique) ── */
+/* `.memory-ack` conservé en alias pour les entrées legacy non migrées. */
+.tool-ack, .memory-ack {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--accent-bd);
+  margin: 3px 0 3px 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.tool-ack.resolved, .memory-ack.resolved { opacity: 0.5; }
+.tool-ack .ack-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  align-self: center;
+}
+.tool-ack .ack-label, .memory-ack .ack-label { flex: 1; overflow-wrap: break-word; }
+/* Une lecture passive lit plus léger qu'une écriture annulable. */
+.tool-ack.ack-conversation_read .ack-label,
+.tool-ack.ack-conversation_list .ack-label,
+.tool-ack.ack-mcp_call .ack-label,
+.tool-ack.ack-resource_stored .ack-label,
+.tool-ack.ack-resource_presented .ack-label,
+.tool-ack.ack-resource_deleted .ack-label { color: var(--text-2); }
+.tool-ack .ack-undo, .memory-ack .ack-undo {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
+.tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
+/* Séparateur › (breadcrumb MCP, et détail replié conversation_read/skill_read) : teinte icône, s'efface devant le texte. */
+.tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+/* Titre de conversation cliquable (ack conversation_read) : couleur héritée, teinte accent au survol (pas de soulignement). */
+.ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
+.ack-conv-link:hover { color: var(--accent); text-decoration: none; }
+/* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
+.tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
+/* Appel MCP en erreur : label rouge (même token que .cfg-err / .conn-dot.err). */
+.tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
+/* Intent en langage naturel (niveau 1) + éventuel breadcrumb technique replié (niveau 2). */
+/* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
+.tool-ack.has-intent { align-items: flex-start; }
+.tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
+.mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.mcp-chevron {
+  flex-shrink: 0;
+  background: none; border: none; padding: 1px; cursor: pointer;
+  color: var(--accent); opacity: 0.75;
+  display: inline-flex; align-items: center; line-height: 1;
+}
+.mcp-intent-row:hover .mcp-chevron { opacity: 1; }
+.mcp-chevron svg { transition: transform 0.2s; }
+.mcp-chevron.open svg { transform: rotate(180deg); }
+.mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
+.mcp-breadcrumb-detail[hidden] { display: none; }
+
+/* ═══ Écran d'accueil (nouvelle conversation) ═══ */
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  user-select: none;
+  pointer-events: none;
+}
+.welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
+.welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
+.welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
+
+/* panneau des outils exposés */
+.tool-list { display: flex; flex-direction: column; gap: 10px; }
+.tool-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+}
+.tool-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.tool-name-sep { color: var(--accent-2); margin: 0 3px; }
+.tool-desc { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+.tool-params {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tool-param { display: flex; gap: 8px; align-items: baseline; }
+.tool-param-name { font-family: var(--mono); font-size: 11px; color: var(--text); flex-shrink: 0; }
+.tool-param-type { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); flex-shrink: 0; }
+.tool-param-desc { font-size: 11px; color: var(--text-3); }
+
+/* En-tête de namespace dans le sous-drawer « Outils exposés » (groupage D2). */
+.tool-ns-group { display: flex; flex-direction: column; gap: 10px; }
+.tool-ns {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.tool-ns-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.tool-ns:hover { color: var(--text-2); }
+.tool-ns:hover .tool-ns-chevron { opacity: 1; }
+.tool-ns-chevron svg { transition: transform 0.2s; }
+.tool-ns-chevron.open svg { transform: rotate(180deg); }
+.tool-ns-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.tool-ns-body.open { grid-template-rows: 1fr; }
+.tool-ns-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Cartes de configuration (partagé MCP / API / skills) ────────────────────
+   Anatomie commune construite par les helpers cfgField/cfgToggleRow/cfgErrEl
+   (ui.js) : carte, champs labellisés, rangées de toggle, erreur, actions,
+   sections vue/édition commutées par .is-editing. Les particularités de chaque
+   famille restent dans leurs blocs ci-dessous. */
+.cfg-add-btn { align-self: flex-start; }
+.cfg-list { display: flex; flex-direction: column; gap: 14px; }
+.cfg-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cfg-field { display: flex; flex-direction: column; gap: 5px; }
+.cfg-field > label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.cfg-field input,
+.cfg-field select,
+.cfg-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.cfg-field input:focus,
+.cfg-field select:focus,
+.cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.cfg-field .hint { font-size: 11px; color: var(--text-3); }
+.cfg-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.cfg-err { font-size: 11.5px; color: var(--err); }
+.cfg-actions { display: flex; gap: 6px; margin-top: 2px; }
+/* Vue / édition */
+.cfg-view { display: flex; flex-direction: column; gap: 8px; }
+.cfg-card.is-editing .cfg-view { display: none; }
+.cfg-edit { display: none; flex-direction: column; gap: 10px; }
+.cfg-card.is-editing .cfg-edit { display: flex; }
+.cfg-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.cfg-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
+.cfg-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ── Serveurs MCP : particularités (D3) ─────────────────────────────────────── */
+.mcp-status { font-size: 11.5px; color: var(--text-3); }
+.mcp-status.ok { color: var(--ok); }
+.mcp-status.err { color: var(--err); }
+.mcp-view-row .drawer-btn { margin-left: auto; }
+
+/* ── Serveurs API : particularités ──────────────────────────────────────────── */
+.api-status { font-size: 11.5px; color: var(--text-3); }
+.api-status.active { color: var(--accent); }
+/* Seul le dernier bouton (Modifier) est repoussé à droite : « Utiliser ce
+   serveur » occupe la place du pill « Actif », tout à gauche. */
+.api-view-row .drawer-btn:last-child { margin-left: auto; }
+/* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
+   à la suite (séparateur .tool-name-sep, même format que le thread). */
+.active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.active-api-server-name .tool-name-sep { font-weight: 400; }
+.active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
+
+/* ── Skills : particularités du drawer de gestion ──────────────────────────── */
+/* Drawer plus large : édition de corps Markdown (textarea confortable). */
+.drawer-wide { width: 620px; }
+/* Corps Markdown de la skill : mono compact, contrairement aux inputs cfg. */
+textarea.skill-content {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 140px;
+}
+/* Vue en RANGÉE (nom+slug à gauche, toggle+bouton à droite), contrairement à la
+   vue en colonne des cartes serveurs. */
+.skill-view { flex-direction: row; align-items: center; gap: 10px; }
+.skill-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.skill-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.skill-view-slug { font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.skill-view-row { gap: 10px; }
+
+/* ── Composer : autocomplétion des skills + erreur slash ─────────────────────── */
+.skill-ac {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+/* Instance du composer : en absolu au-dessus de .input-wrap (son ancre), donc
+   PAR-DESSUS les pilules de sélecteurs (axe z) sans les décaler à l'ouverture.
+   L'instance de la bulle d'édition (.msg-edit-area + .skill-ac) reste en flux. */
+#skill-ac {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin-bottom: 0;
+  z-index: 30;
+}
+.skill-ac-opt {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.skill-ac-opt:hover,
+.skill-ac-opt.active { background: var(--accent-dim); }
+.skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
+.skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }
+
+/* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
+.tool-block {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 4px 0;
+}
+/* Variante bloc-code (ressource texte D8.2) : le conteneur s'efface (pleine
+   largeur, pas de marge propre) pour que le <pre> à l'intérieur rende exactement
+   comme un bloc de code de message assistant — le spacing vient du <pre> lui-même. */
+.tool-block-code {
+  align-self: stretch;
+  width: 100%;
+  margin: 0;
+}
+.tool-block-img {
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  display: block;
+}
+.tool-block-binary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+}
+.tool-block-label { font-size: 12px; color: var(--text-2); }
+.tool-block-dl {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.tool-block-dl:hover { background: var(--surface-3); border-color: var(--border-2); }
+
+.cursor-blink {
+  display: inline-block;
+  width: 7px; height: 14px;
+  background: var(--accent);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* patienteur animé : attente (WAITING) et reprise après un tour tool_calls.
+   Sobre — couleur texte secondaire, mot court qui change par fondu. */
+.waiter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+  letter-spacing: .2px;
+}
+.waiter-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* centre le point dans un slot de 20px, aligné avec .meta .glyph */
+  margin-left: 7.5px; margin-right: 7.5px;
+  flex-shrink: 0;
+  animation: waiter-pulse 1s ease-in-out infinite;
+}
+@keyframes waiter-pulse {
+  0%, 100% { transform: scale(.55); opacity: .45; }
+  50%      { transform: scale(1);   opacity: 1; }
+}
+/* le mot et ses points fondent ensemble ; seul le point animé reste */
+.waiter-word { transition: opacity .28s ease; }
+.waiter-word::after { content: ''; font-style: normal; animation: waiter-dots 1.2s step-end infinite; }
+.waiter-word.dots-reset::after { animation: none; }
+.waiter-word.fade { opacity: 0; }
+@keyframes waiter-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
+
+/* bloc de raisonnement (thinking) : icône discrète dans la barre méta +
+   panneau collapsible (police mono, atténué) au-dessus du corps du message. */
+.meta-actions {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.reasoning-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
+.reasoning-toggle.open { color: var(--accent); }
+.reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
+.msg-dl {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.msg-dl:hover { color: var(--text); background: var(--surface-2); }
+.msg-dl[hidden] { display: none; }
+
+/* Horodatages inline des messages */
+/* Séparateur « serveur › modèle » : marge négative pour compenser le gap 7px
+   du flex .meta (espacement effectif ~3px de chaque côté). */
+.msg.assistant .meta .tool-name-sep { margin: 0 -4px; }
+.msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
+.msg.assistant .meta .msg-ts[hidden] { display: none; }
+/* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
+.msg.user .msg-ts { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+.conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
+
+.reasoning {
+  margin: 0 0 8px;
+  padding: 8px 11px;
+  border-left: 2px solid var(--border-2);
+  background: var(--surface-2);
+  border-radius: 0 6px 6px 0;
+}
+.reasoning-content {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-2);
+  opacity: .85;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow-y: auto;
+}

@@ -1,0 +1,245 @@
+/* ── composer.css ──────────────────────────────────────────────────────────
+   Composer : zone de saisie, bouton envoyer/stop, hints, sélecteurs de
+   modèle/raisonnement (pilules), bannière de résumés (mode « proposer »).
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ═══ Composer ═══ */
+.composer {
+  flex-shrink: 0;
+  padding: 8px 24px 18px;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+}
+.composer-inner { max-width: var(--col); margin: 0 auto; }
+.input-wrap {
+  position: relative;   /* ancre du dropdown skill du composer (#skill-ac) */
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  padding: 8px 8px 8px 14px;
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+.input-wrap:focus-within { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+.input-wrap.disabled { border-color: rgba(255,93,93,.3); background: rgba(255,93,93,.04); }
+.input-wrap.disabled:focus-within { box-shadow: none; }
+
+#composer-text {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  max-height: 168px;
+  overflow-y: hidden;
+  padding: 5px 0;
+}
+#composer-text::placeholder { color: var(--text-3); }
+.input-wrap.disabled #composer-text::placeholder { color: var(--err); opacity: .85; }
+
+.send-btn {
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 140ms var(--ease), opacity 140ms var(--ease), transform 100ms var(--ease);
+}
+.send-btn:hover { background: var(--accent-2); }
+.send-btn:active { transform: scale(.94); }
+.send-btn:disabled { background: var(--surface-3); color: var(--text-3); cursor: not-allowed; }
+.send-btn svg { width: 16px; height: 16px; }
+
+/* état « stop » pendant le streaming : carré sobre, accent en avant */
+.send-btn .ic-stop { display: none; }
+.send-btn.streaming { background: var(--surface-3); }
+.send-btn.streaming:hover { background: var(--border); }
+.send-btn.streaming .ic-send { display: none; }
+.send-btn.streaming .ic-stop { display: block; color: var(--accent); }
+
+.composer-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 8px;
+}
+.composer-hint kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* rangée des sélecteurs du composer (modèle à gauche, raisonnement à droite) */
+.composer-selectors {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* sélecteur de modèle du composer (optionnel) */
+.composer-model { position: relative; margin-bottom: 0; }
+.composer-model[hidden] { display: none; }
+.composer-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 4px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  max-width: 100%;
+  transition: background 140ms var(--ease);
+}
+.composer-model-btn:hover { background: var(--accent-bd); }
+.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
+.composer-model-btn #composer-model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#composer-model-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  min-width: 220px;
+  max-width: 360px;
+  transform: translateY(4px);
+}
+#composer-model-menu.show { transform: none; }
+
+/* sélecteur de niveau de raisonnement du composer (optionnel) : même mécanique
+   que .composer-model (bouton pilule + .model-menu générique), mais liste
+   statique de 5 valeurs fixes — pas de fetch, pas de recherche. */
+.composer-reasoning { position: relative; margin-left: auto; }
+.composer-reasoning[hidden] { display: none; }
+.composer-reasoning-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 4px 6px;
+  border-radius: 100px;
+  cursor: pointer;
+  max-width: 100%;
+  transition: background 140ms var(--ease);
+}
+.composer-reasoning-btn:hover { background: var(--accent-bd); }
+/* valeur « défaut » (aucun paramètre envoyé) : pilule neutre/grise — l'accent
+   orange est réservé à un niveau explicitement choisi */
+.composer-reasoning-btn.effort-default {
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+.composer-reasoning-btn.effort-default:hover { background: var(--border); }
+.composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
+.composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
+#composer-reasoning-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 160px;
+  max-width: 240px;
+  transform: translateY(4px);
+}
+#composer-reasoning-menu.show { transform: none; }
+.settings-reasoning { margin-left: 0; flex-shrink: 0; }
+#set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
+
+/* bannière résumés (mode « proposer ») */
+.summary-banner {
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  margin: 12px 0;
+  animation: rise 220ms var(--ease) both;
+}
+.summary-banner.show { display: flex; }
+.summary-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.summary-banner-body { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); min-width: 0; }
+.summary-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+.summary-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.summary-banner-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--accent-bd);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.summary-banner-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.sbi-title {
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbi-date {
+  color: var(--text-2);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.mb-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
+}
+.mb-btn:hover { background: var(--surface-3); color: var(--text); }
+.mb-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.mb-btn.primary:hover { background: var(--accent-2); }

@@ -65,11 +65,14 @@ Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js) consomment la file via
 `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, server?,
 name?, error?, resolved?, mime?, size?, args?, result?, ts?, group?,
 assistantText?, intent?, slug?, convId? }` dans `currentThread`.
-⚠ **Trois copies** de cette whitelist de champs coexistent (`onToolAcks`,
-`onEarlyAcks` dans main.js, et `openConversation`/`persistCurrent` pour la
-persistance) : un champ ajouté à un `kind` doit être répercuté dans **toutes**
-les copies pertinentes, sinon il est silencieusement perdu au premier rendu
-live ou à la première réouverture (piège déjà payé avec `convId`/`slug`).
+La whitelist de champs est **unique** : `ACK_COPY_FIELDS` + `copyAckFields`
+(utils.js), partagée par les quatre sites de copie (`onToolAcks`/`onEarlyAcks`
+dans main.js pour le rendu live, `openConversation`/`persistCurrent` pour la
+persistance). Ajouter un champ à un `kind` = **une ligne** dans
+`ACK_COPY_FIELDS` — historiquement trois copies manuelles divergentes, un champ
+oublié était silencieusement perdu au premier rendu live ou à la première
+réouverture (piège payé avec `convId`/`slug`). `error`/`resolved` sont copiés
+en sémantique truthy, les autres champs en présence (`!= null`).
 
 Les champs `args` (objet d'arguments), `result` (résultat aplati par
 `flattenToolResult`), `ts` (epoch ms de l'appel), `group` (id partagé par

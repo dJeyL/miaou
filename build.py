@@ -5,6 +5,7 @@ Usage : python build.py
 """
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,20 @@ JS_ORDER = [
     'api.js',
     'ui.js',
     'main.js',
+]
+
+# Ordre de concaténation CSS — l'ordre EST la cascade (les surcharges de même
+# spécificité comptent sur lui) : base d'abord (@import des fontes en tête de
+# feuille, exigence CSS), thème clair en dernier.
+CSS_ORDER = [
+    'base.css',
+    'sidebar.css',
+    'chat.css',
+    'composer.css',
+    'drawers.css',
+    'tools.css',
+    'responsive.css',
+    'theme-light.css',
 ]
 
 CSS_PLACEHOLDER = '/* __CSS__ */'
@@ -169,6 +184,48 @@ def strip_js_comments(src: str) -> str:
     return ''.join(out)
 
 
+def strip_css_comments(src: str) -> str:
+    """Retire les commentaires /* */ d'une source CSS en respectant les strings
+    ('…' et "…", échappements \\ compris) : un content: '/*' doit survivre.
+    Le CSS n'a ni //, ni regex literals, ni templates — un scanner à deux
+    contextes (code / string) suffit, bien plus simple que strip_js_comments."""
+    out = []
+    i = 0
+    n = len(src)
+    while i < n:
+        c = src[i]
+        if c == '"' or c == "'":
+            quote = c
+            out.append(c)
+            i += 1
+            while i < n:
+                if src[i] == '\\' and i + 1 < n:
+                    out.append(src[i:i + 2])
+                    i += 2
+                    continue
+                out.append(src[i])
+                if src[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and src[i + 1] == '*':
+            j = src.find('*/', i + 2)
+            i = n if j == -1 else j + 2
+            continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def strip_html_comments(src: str) -> str:
+    """Retire les commentaires <!-- … --> du TEMPLATE HTML. Appelé AVANT la
+    substitution des placeholders : le JS/CSS injectés ne sont jamais
+    re-scannés (un '<!--' dans une string JS survivrait donc). Un commentaire
+    non terminé est laissé tel quel (préférable à avaler la fin du fichier)."""
+    return re.sub(r'<!--.*?-->', '', src, flags=re.S)
+
+
 def collapse_blank_code_lines(src: str) -> str:
     """Réduit les runs de lignes entièrement vides à une seule (le strip des
     commentaires en laisse souvent plusieurs à la suite). Opère au niveau
@@ -203,6 +260,17 @@ def load_config(use_config: bool = True) -> dict:
     return json.loads(p.read_text(encoding='utf-8'))
 
 
+def assemble_css() -> str:
+    parts = []
+    for name in CSS_ORDER:
+        path = SRC / 'css' / name
+        if not path.exists():
+            print(f'  [warn] fichier manquant : {path}')
+            continue
+        parts.append(read(path))
+    return collapse_blank_code_lines(strip_css_comments('\n'.join(parts)))
+
+
 def assemble_js(cfg_data: dict) -> str:
     now = datetime.now(timezone.utc)
     build_date = now.strftime('%Y-%m-%d %H:%M UTC')
@@ -225,6 +293,63 @@ def assemble_js(cfg_data: dict) -> str:
     return js
 
 
+# Bannières de section : `// ── Titre ──…` (JS) / `/* ── Titre ──… */` et
+# `/* ═══ Titre ═══ */` (CSS). On capture le titre, débarrassé des filets.
+_JS_SECTION_RE  = re.compile(r'^\s*(?://|/\*)\s*[─═]+\s*(.*?)\s*[─═]*\s*(?:\*/)?\s*$')
+_JS_FUNC_RE     = re.compile(r'^(?:async\s+)?function\s+(\w+)')
+_JS_TOPCONST_RE = re.compile(r'^(?:const|let)\s+(\w+)\s*=')
+
+
+def generate_code_map() -> None:
+    """Génère docs/code-map.md : index « où se trouve quoi » — fonctions et
+    const/let top-level des fichiers JS, bannières de section JS et CSS, avec
+    numéros de ligne. Fichier GÉNÉRÉ à chaque build, ne jamais l'éditer :
+    toute correction se fait dans les sources ou dans ce générateur."""
+    lines = [
+        '# Code map — MIAOU',
+        '',
+        '> **Généré par `build.py` à chaque build — ne pas éditer.**',
+        '> Index de repérage : fonctions/const top-level (JS) et sections (JS/CSS),',
+        '> avec numéros de ligne dans `src/`.',
+    ]
+
+    for name in JS_ORDER:
+        path = SRC / 'js' / name
+        if not path.exists():
+            continue
+        lines.append('')
+        lines.append(f'## src/js/{name}')
+        lines.append('')
+        for no, raw in enumerate(read(path).split('\n'), 1):
+            m = _JS_SECTION_RE.match(raw)
+            if m and m.group(1):
+                lines.append(f'- **{m.group(1)}** (L{no})')
+                continue
+            m = _JS_FUNC_RE.match(raw)
+            if m:
+                lines.append(f'  - `{m.group(1)}()` — L{no}')
+                continue
+            m = _JS_TOPCONST_RE.match(raw)
+            if m:
+                lines.append(f'  - `{m.group(1)}` — L{no}')
+
+    for name in CSS_ORDER:
+        path = SRC / 'css' / name
+        if not path.exists():
+            continue
+        lines.append('')
+        lines.append(f'## src/css/{name}')
+        lines.append('')
+        for no, raw in enumerate(read(path).split('\n'), 1):
+            m = _JS_SECTION_RE.match(raw)
+            if m and m.group(1):
+                lines.append(f'- **{m.group(1)}** (L{no})')
+
+    out = ROOT / 'docs' / 'code-map.md'
+    out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f'Code map → {out}')
+
+
 def build(use_config: bool = True):
     DIST.mkdir(exist_ok=True)
 
@@ -232,7 +357,7 @@ def build(use_config: bool = True):
     if not template_path.exists():
         raise FileNotFoundError(f'Template introuvable : {template_path}')
 
-    template = read(template_path)
+    template = collapse_blank_code_lines(strip_html_comments(read(template_path)))
 
     if CSS_PLACEHOLDER not in template:
         raise ValueError(f'Placeholder CSS absent du template : {CSS_PLACEHOLDER!r}')
@@ -240,7 +365,7 @@ def build(use_config: bool = True):
         raise ValueError(f'Placeholder JS absent du template : {JS_PLACEHOLDER!r}')
 
     cfg_data = load_config(use_config)
-    css = read(SRC / 'css' / 'main.css')
+    css = assemble_css()
     js = assemble_js(cfg_data)
 
     output = template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, js)
@@ -248,6 +373,8 @@ def build(use_config: bool = True):
     out_path = DIST / 'miaou.html'
     out_path.write_text(output, encoding='utf-8')
     print(f'Build OK → {out_path}')
+
+    generate_code_map()
 
 
 if __name__ == '__main__':

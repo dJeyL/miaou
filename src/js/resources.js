@@ -45,16 +45,22 @@ const _B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function arrayBufferToBase64(buf) {
   const bytes = new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer);
-  let out = '';
+  // Accumulation par morceaux + join : la concaténation de string caractère par
+  // caractère est quadratique en pratique sur les gros buffers (images de
+  // plusieurs Mo) ; ici chaque quantum de 3 octets produit UNE entrée de
+  // tableau, aplatie en une seule passe.
+  const out = [];
   for (let i = 0; i < bytes.length; i += 3) {
     const b0 = bytes[i], b1 = i + 1 < bytes.length ? bytes[i + 1] : 0,
           b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    out += _B64[b0 >> 2];
-    out += _B64[((b0 & 3) << 4) | (b1 >> 4)];
-    out += (i + 1 < bytes.length) ? _B64[((b1 & 0xf) << 2) | (b2 >> 6)] : '=';
-    out += (i + 2 < bytes.length) ? _B64[b2 & 0x3f] : '=';
+    out.push(
+      _B64[b0 >> 2] +
+      _B64[((b0 & 3) << 4) | (b1 >> 4)] +
+      ((i + 1 < bytes.length) ? _B64[((b1 & 0xf) << 2) | (b2 >> 6)] : '=') +
+      ((i + 2 < bytes.length) ? _B64[b2 & 0x3f] : '=')
+    );
   }
-  return out;
+  return out.join('');
 }
 
 function base64ToArrayBuffer(b64) {

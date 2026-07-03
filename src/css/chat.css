@@ -1,0 +1,359 @@
+/* ── chat.css ──────────────────────────────────────────────────────────────
+   Zone principale : topbar (titre éditable, pills), fil de messages, bulles
+   user/assistant, rendu markdown, blocs de code (chrome partagé avec les
+   ressources D8 de tools.css), tables.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ═══ Main ═══ */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* top bar */
+.topbar {
+  height: 52px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--topbar-bg);
+  backdrop-filter: blur(8px);
+}
+.topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
+/* Brand topbar : masqué EN DUR par défaut (état HTML statique), révélé par
+   init() via .booted une fois l'état de la sidebar tranché — sinon flash au
+   chargement avant que sidebar-open ne soit posée (historique non vide). */
+.topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
+.app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
+.topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
+.topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
+.topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
+.conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
+.conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
+/* Zones de révélation VOLONTAIREMENT asymétriques (choix utilisateur) :
+   export au survol de toute la topbar, retitrage au survol du titre seulement.
+   Ne pas « harmoniser ». */
+.topbar:hover .conv-dl-btn { opacity: 1; }
+.topbar-mid:hover .conv-retitle-btn { opacity: 1; }
+.topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 130ms var(--ease), color 130ms var(--ease);
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn svg { width: 17px; height: 17px; }
+/* « + » de la topbar : nouvelle conversation quand la sidebar (et son bouton
+   « Nouvelle ») est fermée. Même habillage bordé que .new-btn, même fondu que
+   .topbar-brand — pointer-events: none une fois invisible, pas de cible fantôme.
+   Déclaré APRÈS .icon-btn : même spécificité, l'ordre décide. */
+.topbar-new-btn {
+  width: 24px; height: 24px;
+  margin-left: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition: opacity 190ms var(--ease), transform 190ms var(--ease), background 140ms var(--ease);
+}
+.topbar-new-btn svg { width: 13px; height: 13px; }
+.topbar-new-btn:hover { background: var(--surface-3); }
+.app.booted:not(.sidebar-open) .topbar-new-btn { opacity: 1; transform: translateX(0); pointer-events: auto; }
+
+.conv-title-edit {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 4px 10px;
+  outline: none;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  transition: background 130ms var(--ease), border-color 130ms var(--ease);
+}
+.conv-title-edit:hover { background: var(--surface-2); }
+.conv-title-edit:focus { background: var(--surface-2); border-color: var(--border-2); }
+.conv-title-edit[contenteditable="false"] { cursor: default; }
+.conv-title-edit[contenteditable="false"]:hover { background: transparent; }
+.conv-title-edit:empty::before {
+  content: 'Nouvelle conversation';
+  color: var(--text-3);
+}
+
+.model-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  padding: 3px 10px;
+  border-radius: 100px;
+  max-width: 210px;
+}
+#model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+  transition: background 300ms var(--ease), box-shadow 300ms var(--ease);
+}
+.dot.ok  { background: var(--ok);  box-shadow: 0 0 7px rgba(78,201,138,.5); }
+.dot.err { background: var(--err); box-shadow: 0 0 7px rgba(255,93,93,.5); }
+
+/* activité en arrière-plan (titrage, résumés, lecture mémoire) */
+.bg-activity {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 3px 10px;
+  border-radius: 100px;
+  max-width: 200px;
+}
+.bg-activity.active { display: flex; }
+.bg-activity #bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ═══ Messages ═══ */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 24px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.thread {
+  max-width: var(--col);
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.msg { display: flex; flex-direction: column; animation: rise 260ms var(--ease) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* user: compact, right */
+.msg.user {
+  align-items: flex-end;
+  margin: 14px 0 4px;
+}
+.msg.user .bubble {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 8px 13px;
+  max-width: 80%;
+  word-break: break-word;
+  text-align: left;
+}
+.msg.user .bubble { position: relative; }
+.msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
+.msg.user .bubble .body p { margin-bottom: 7px; }
+/* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
+   plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
+.msg.user .bubble .body p:last-child { margin-bottom: 0; }
+
+/* action « éditer » au survol d'une bulle utilisateur */
+.msg-edit {
+  position: absolute;
+  top: 2px; left: -30px;
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 120ms var(--ease), color 120ms var(--ease);
+}
+.msg.user:hover .msg-edit { opacity: 1; }
+.msg-edit:hover { color: var(--accent); }
+.msg-edit svg { width: 14px; height: 14px; display: block; }
+
+/* mode édition : la bulle prend toute la largeur de la colonne */
+.msg.user.editing { width: 100%; }
+.msg.user.editing .bubble { width: 100%; max-width: 100%; }
+.msg.user.editing .msg-edit { display: none; }
+.msg-edit-area {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  resize: none;
+  outline: none;
+  max-height: 240px;
+}
+.msg-edit-area:focus { border-color: var(--accent-bd); }
+/* Dropdown skill de la bulle d'édition : sous la textarea (composer = au-dessus).
+   Collé à la textarea (cohérent avec le composer, où .skill-ac touche .input-wrap) ;
+   séparé des boutons par la marge normale de .msg-edit-actions. */
+.msg-edit-area + .skill-ac { margin-top: 0; margin-bottom: 10px; }
+.msg-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+.msg-edit-error { font-size: 12px; color: var(--err); margin-top: 6px; text-align: left; }
+
+/* assistant: full width of column, centered block, no bubble chrome */
+.msg.assistant { align-items: stretch; margin: 4px 0 14px; }
+.msg.assistant .meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 7px;
+}
+.msg.assistant .meta .glyph {
+  width: 20px; height: 20px;
+  border-radius: 4px;
+  display: block;
+}
+.msg.assistant .body {
+  font-size: 14px;
+  line-height: 1.68;
+  color: var(--text);
+}
+/* Réponse précédée d'acks d'outils : on égalise l'espace tools→réponse avec
+   l'espace meta→tools (margin-bottom .meta 7px + margin-top ack 3px = 10px ;
+   ici margin-bottom ack 3px + 7px = 10px). */
+.msg.assistant .tool-ack + .body,
+.msg.assistant .memory-ack + .body { margin-top: 7px; }
+
+/* markdown body */
+.body > *:first-child { margin-top: 0; }
+.body > *:last-child { margin-bottom: 0; }
+.body p { margin: 0 0 11px; }
+.body h1, .body h2, .body h3 { font-weight: 600; line-height: 1.3; margin: 18px 0 8px; }
+.body h1 { font-size: 18px; } .body h2 { font-size: 16px; } .body h3 { font-size: 14.5px; }
+.body ul, .body ol { margin: 8px 0 12px; padding-left: 22px; }
+.body li { margin-bottom: 4px; }
+.body li::marker { color: var(--text-3); }
+.body a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-bd); }
+.body a:hover { border-bottom-color: var(--accent); }
+.body strong { font-weight: 600; color: var(--text); }
+.body em { color: var(--text-2); }
+.body del { color: var(--text-3); }   /* référence conv_ref vers une conversation supprimée */
+.body blockquote {
+  border-left: 2px solid var(--border-2);
+  padding: 2px 0 2px 14px;
+  margin: 10px 0;
+  color: var(--text-2);
+}
+.body code:not([class*="language-"]) {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--code-inline-color);
+}
+/* Bloc de code, chrome partagé : les messages assistant (`.body pre`) ET les
+   ressources texte renvoyées par un outil MCP (`.tool-block pre`, insérées entre
+   .meta et .body, donc HORS de .body). Même fond/bordure/padding — aucun style
+   réinventé pour le second chemin. */
+.body pre,
+.tool-block pre {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--code-bg) !important;
+}
+/* Prism recopie la classe language-* du <code> vers le <pre> parent au
+   highlight ; prism-tomorrow injecte alors padding/margin/radius sur le <pre>.
+   On neutralise pour garder exactement la même compacité que Prism inactif. */
+.body pre[class*="language-"],
+.tool-block pre[class*="language-"] {
+  padding: 0;
+  margin: 12px 0;
+  border-radius: var(--r);
+  background: var(--code-bg) !important;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--code-head-bg);
+  border-bottom: 1px solid var(--border);
+}
+.code-lang { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-transform: lowercase; }
+.code-actions { display: flex; align-items: center; gap: 2px; }
+.code-copy, .code-dl {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: none; border: none; border-radius: 5px;
+  color: var(--text-3);
+  cursor: pointer; padding: 0;
+  transition: color 130ms var(--ease), background 130ms var(--ease);
+}
+.code-copy svg, .code-dl svg { width: 13px; height: 13px; }
+.code-copy:hover, .code-dl:hover { color: var(--text); background: var(--surface-2); }
+.code-copy--checked { color: var(--accent) !important; }
+.body pre code,
+.tool-block pre code {
+  display: block;
+  padding: 13px 14px !important;
+  font-family: var(--mono) !important;
+  font-size: 11.5px !important;
+  line-height: 1.6 !important;
+  overflow-x: auto;
+  background: transparent !important;
+  text-shadow: none !important;
+}
+/* tables */
+.body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.body th, .body td {
+  border: 1px solid var(--border);
+  padding: 6px 11px;
+  text-align: left;
+}
+.body th { background: var(--surface); font-weight: 600; color: var(--text); }
+.body td { color: var(--text-2); }
+.body tr:nth-child(even) td { background: var(--table-stripe); }

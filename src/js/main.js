@@ -188,29 +188,9 @@ async function openConversation(id) {
   currentConvId = id;
   currentThread = (conv.messages || []).map(m => {
     if (isAckRole(m.role)) {
-      const a = { role: m.role, id: m.id };
-      if (m.kind != null)        a.kind = m.kind;
-      if (m.ackType != null)     a.ackType = m.ackType;   // legacy, préservé tel quel
-      if (m.content != null)     a.content = m.content;
-      if (m.prevContent != null) a.prevContent = m.prevContent;
-      if (m.title != null)       a.title = m.title;
-      if (m.count != null)       a.count = m.count;
-      if (m.server != null)           a.server = m.server;
-      if (m.name != null)             a.name = m.name;
-      if (m.resourceName != null)     a.resourceName = m.resourceName;
-      if (m.mime != null)             a.mime = m.mime;
-      if (m.size != null)             a.size = m.size;
-      if (m.error)                    a.error = true;
-      if (m.resolved)                 a.resolved = true;
-      if (m.args != null)             a.args = m.args;
-      if (m.result != null)           a.result = m.result;
-      if (m.ts != null)               a.ts = m.ts;
-      if (m.group != null)            a.group = m.group;
-      if (m.assistantText != null)    a.assistantText = m.assistantText;
-      if (m.intent != null)           a.intent = m.intent;
-      if (m.slug != null)             a.slug = m.slug;
-      if (m.convId != null)           a.convId = m.convId;
-      return a;
+      // Whitelist unique ACK_COPY_FIELDS (utils.js) — ne plus jamais énumérer
+      // les champs à la main ici.
+      return copyAckFields(m, { role: m.role });
     }
     const o = { role: m.role, content: m.content, model: m.model };
     if (m.server) o.server = m.server;   // provenance (serveur API), assistant uniquement
@@ -358,29 +338,9 @@ function persistCurrent() {
   const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
   conv.messages = currentThread.map(m => {
     if (isAckRole(m.role)) {
-      const o = { role: m.role, id: m.id };
-      if (m.kind != null)        o.kind = m.kind;
-      if (m.ackType != null)     o.ackType = m.ackType;   // legacy passthrough, jamais réécrit
-      if (m.content != null)     o.content = m.content;
-      if (m.prevContent != null) o.prevContent = m.prevContent;
-      if (m.title != null)       o.title = m.title;
-      if (m.count != null)       o.count = m.count;
-      if (m.server != null)           o.server = m.server;
-      if (m.name != null)             o.name = m.name;
-      if (m.resourceName != null)     o.resourceName = m.resourceName;
-      if (m.mime != null)             o.mime = m.mime;
-      if (m.size != null)             o.size = m.size;
-      if (m.error)                 o.error = true;
-      if (m.resolved)              o.resolved = true;
-      if (m.args != null)          o.args = m.args;
-      if (m.result != null)        o.result = m.result;
-      if (m.ts != null)            o.ts = m.ts;
-      if (m.group != null)         o.group = m.group;
-      if (m.assistantText != null) o.assistantText = m.assistantText;
-      if (m.intent != null)        o.intent = m.intent;
-      if (m.slug != null)          o.slug = m.slug;
-      if (m.convId != null)        o.convId = m.convId;
-      return o;
+      // Whitelist unique ACK_COPY_FIELDS (utils.js) — ne plus jamais énumérer
+      // les champs à la main ici.
+      return copyAckFields(m, { role: m.role });
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
@@ -483,9 +443,9 @@ async function onSaveMcpCard(cardEl, originalName) {
   const name = get('.mcp-name').trim();
   const others = loadMcpServers().map(s => s.name).filter(n => n !== originalName);
   const nameErr = validateMcpServerName(name, others);
-  if (nameErr) { showMcpCardError(cardEl, nameErr); return; }
+  if (nameErr) { showCardError(cardEl, nameErr); return; }
   const url = get('.mcp-url').trim();
-  if (!url) { showMcpCardError(cardEl, 'URL requise.'); return; }
+  if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const enabledEl = cardEl.querySelector('.mcp-enabled');
   const tmoRaw = parseInt(get('.mcp-timeout'), 10);
   const showCallsEl = cardEl.querySelector('.mcp-show-calls');
@@ -522,9 +482,9 @@ async function onDeleteMcpCard(cardEl, originalName) {
 function onSaveApiCard(cardEl, originalId) {
   const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
   const name = get('.api-name').trim();
-  if (!name) { showApiCardError(cardEl, 'Nom requis.'); return; }
+  if (!name) { showCardError(cardEl, 'Nom requis.'); return; }
   const url = get('.api-url').trim();
-  if (!url) { showApiCardError(cardEl, 'URL requise.'); return; }
+  if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const wasEmpty = !loadApiServers().length;
   const server = {
     id: originalId || undefined,
@@ -546,7 +506,7 @@ function onSaveApiCard(cardEl, originalId) {
 
 function onDeleteApiCard(cardEl, id) {
   const arr = loadApiServers();
-  if (arr.length <= 1) { showApiCardError(cardEl, 'Impossible de supprimer le dernier serveur.'); return; }
+  if (arr.length <= 1) { showCardError(cardEl, 'Impossible de supprimer le dernier serveur.'); return; }
   const wasActive = (activeApiServer() || {}).id === id;
   deleteApiServer(id);
   if (wasActive) {
@@ -582,7 +542,7 @@ async function onSaveSkillCard(cardEl, originalSlug) {
   const slug = get('.skill-slug').trim();
   const others = listAllSkillsCache().map(s => s.slug).filter(sl => sl !== originalSlug);
   const slugErr = validateSkillSlug(slug, others);
-  if (slugErr) { showSkillCardError(cardEl, slugErr); return; }
+  if (slugErr) { showCardError(cardEl, slugErr); return; }
   const enabledEl = cardEl.querySelector('.skill-enabled');
   const autotriggerEl = cardEl.querySelector('.skill-autotrigger');
   const record = {
@@ -805,10 +765,7 @@ async function dispatchSend(matches) {
           if (serverName) tourMsg.server = serverName;
           currentThread.push(tourMsg);   // avant finalizeAssistant, cf. onFinal
           finalizeAssistant(wrap, content);
-          const tsEl = wrap.querySelector('.msg-ts');
-          if (tsEl) { tsEl.textContent = formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
-          const tsSepEl = wrap.querySelector('.msg-ts-sep');
-          if (tsSepEl) tsSepEl.removeAttribute('hidden');
+          revealMsgTimestamp(wrap, tourTs);
           persistCurrent();
           wrap = startAssistantMessage(model, serverName);
         } else {
@@ -824,17 +781,10 @@ async function dispatchSend(matches) {
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
-          const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.server != null)        entry.server = ack.server;
-          if (ack.name != null)          entry.name = ack.name;
-          if (ack.intent != null)        entry.intent = ack.intent;
-          // Champs d'enrichissement cross-turn (peuvent déjà être posés si un
-          // outil interne précédent a été drainé ici en même temps qu'un MCP).
-          if (ack.args != null)          entry.args = ack.args;
-          if (ack.result != null)        entry.result = ack.result;
-          if (ack.ts != null)            entry.ts = ack.ts;
-          if (ack.group != null)         entry.group = ack.group;
-          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
+          // Whitelist unique ACK_COPY_FIELDS (utils.js) : couvre aussi les
+          // champs d'enrichissement cross-turn, déjà posés si un outil interne
+          // précédent a été drainé ici en même temps qu'un MCP.
+          const entry = copyAckFields(ack, { role: 'tool-ack' });
           currentThread.push(entry);
           const node = placeToolAck(wrap, entry);
           earlyRendered.push({ ack, entry, node });
@@ -869,26 +819,10 @@ async function dispatchSend(matches) {
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
-          const entry = { role: 'tool-ack', kind: ack.kind };
-          if (ack.id != null)            entry.id = ack.id;
-          if (ack.content != null)       entry.content = ack.content;
-          if (ack.prevContent != null)   entry.prevContent = ack.prevContent;
-          if (ack.title != null)         entry.title = ack.title;
-          if (ack.count != null)         entry.count = ack.count;
-          if (ack.intent != null)        entry.intent = ack.intent;
-          if (ack.slug != null)          entry.slug = ack.slug;
-          if (ack.convId != null)        entry.convId = ack.convId;
-          // Champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
+          // Whitelist unique ACK_COPY_FIELDS (utils.js) : couvre aussi les
+          // champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
           // via le hook onEnrichLastAck, après exécution de chaque outil interne).
-          if (ack.name != null)           entry.name = ack.name;
-          if (ack.resourceName != null)  entry.resourceName = ack.resourceName;
-          if (ack.mime != null)          entry.mime = ack.mime;
-          if (ack.size != null)          entry.size = ack.size;
-          if (ack.args != null)          entry.args = ack.args;
-          if (ack.result != null)        entry.result = ack.result;
-          if (ack.ts != null)            entry.ts = ack.ts;
-          if (ack.group != null)         entry.group = ack.group;
-          if (ack.assistantText != null) entry.assistantText = ack.assistantText;
+          const entry = copyAckFields(ack, { role: 'tool-ack' });
           currentThread.push(entry);
           placeToolAck(wrap, entry);
         }
@@ -930,10 +864,7 @@ async function dispatchSend(matches) {
         // malgré la réponse déjà affichée (bug payé : visible seulement après reload).
         currentThread.push(msg);
         finalizeAssistant(wrap, content);
-        const tsEl = wrap.querySelector('.msg-ts');
-        if (tsEl) { tsEl.textContent = formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
-        const tsSepEl = wrap.querySelector('.msg-ts-sep');
-        if (tsSepEl) tsSepEl.removeAttribute('hidden');
+        revealMsgTimestamp(wrap, ts);
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
         setConnDot('ok');
@@ -950,10 +881,7 @@ async function dispatchSend(matches) {
         if (serverName) haltMsg.server = serverName;
         currentThread.push(haltMsg);   // avant finalizeAssistant, cf. onFinal
         finalizeAssistant(wrap, text);
-        const haltTsEl = wrap.querySelector('.msg-ts');
-        if (haltTsEl) { haltTsEl.textContent = formatMessageTime(haltTs, Date.now()); haltTsEl.removeAttribute('hidden'); }
-        const haltTsSepEl = wrap.querySelector('.msg-ts-sep');
-        if (haltTsSepEl) haltTsSepEl.removeAttribute('hidden');
+        revealMsgTimestamp(wrap, haltTs);
         persistCurrent();
         setConnDot('ok');
         // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
@@ -1055,7 +983,10 @@ async function summarizeIfNeeded(id) {
 
 // ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
 function backfillMessageModels() {
-  const model = loadSettings().model;
+  // Modèle du serveur actif (activeApiConfig, filet legacy inclus) : sur une
+  // install configurée uniquement via les cartes serveurs, loadSettings().model
+  // est vide et le backfill serait inerte.
+  const model = activeApiConfig().model;
   if (!model) return;
   for (const c of listAllConversations()) {
     const conv = loadConversation(c.id);

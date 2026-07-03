@@ -128,3 +128,25 @@ describe('moveSkillAcSelection (navigation clavier de l\'autocomplete)', functio
     expect(s.index).toBe(-1);
   });
 });
+
+describe('modelName (fallback d\'affichage — serveur API actif)', function() {
+  it('résout le modèle du serveur actif, pas settings.model legacy', function() {
+    localStorage.clear();
+    saveSettings({ model: 'legacy-model' });
+    saveApiServers([{ id: 's1', name: 'A', url: 'http://a/v1', key: '', model: 'model-a' }]);
+    setActiveApiServerId('s1');
+    expect(modelName()).toBe('model-a');
+  });
+  it('retombe sur settings.model si le serveur actif n\'a pas de modèle', function() {
+    localStorage.clear();
+    saveSettings({ model: 'legacy-model' });
+    saveApiServers([{ id: 's1', name: 'A', url: 'http://a/v1', key: '', model: '' }]);
+    setActiveApiServerId('s1');
+    expect(modelName()).toBe('legacy-model');
+  });
+  it('« modèle » si rien n\'est résolu', function() {
+    localStorage.clear();
+    saveApiServersRaw([]);   // court-circuite la migration
+    expect(modelName()).toBe('modèle');
+  });
+});

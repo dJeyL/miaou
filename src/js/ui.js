@@ -92,8 +92,9 @@ function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highli
 function scrollBottom() { const m = $('messages'); if (m) m.scrollTop = m.scrollHeight; }
 
 function modelName() {
-  const s = loadSettings();
-  return s.model || 'modèle';
+  // activeApiConfig (storage.js) : modèle du serveur actif, filet legacy inclus —
+  // jamais loadSettings().model directement (périmé depuis le multi-serveurs).
+  return activeApiConfig().model || 'modèle';
 }
 
 // ── Construction d'un message ───────────────────────────────────────────────
@@ -742,6 +743,16 @@ function resetAssistant(wrap) {
   startWaiter(wrap.querySelector('.body'));     // reprise d'attente après un tour tool_calls
 }
 
+// Révèle l'horodatage inline d'une bulle assistant (heure + séparateur « · »),
+// masqués tant que le message n'est pas finalisé. Partagé par les trois chemins
+// de finalisation de dispatchSend (onToolTour, onFinal, onHalt — main.js).
+function revealMsgTimestamp(wrap, ts) {
+  const tsEl = wrap.querySelector('.msg-ts');
+  if (tsEl) { tsEl.textContent = formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+  const sepEl = wrap.querySelector('.msg-ts-sep');
+  if (sepEl) sepEl.removeAttribute('hidden');
+}
+
 function finalizeAssistant(wrap, full) {
   cancelStreamRender();
   cancelReasoningRender();
@@ -955,6 +966,39 @@ function clearConvSearch() {
   input.focus();
 }
 
+// ── Suppression en deux temps (« armer puis confirmer ») ────────────────────
+// Premier clic : le bouton passe en état armé (.armed, mis en évidence) pendant
+// ARM_DELETE_MS ; second clic dans la fenêtre : exécution. Timeout → désarmé.
+// Évite un dialog natif (cohérence UI) tout en protégeant d'un clic raté au
+// survol. Générique : poubelle de la sidebar (conversations) et boutons
+// « Supprimer » des cartes MCP/API/skills. `armedLabel` (optionnel) remplace le
+// texte du bouton pendant l'armement (boutons textuels) ; les boutons icône
+// s'appuient sur la classe .armed + le title.
+const ARM_DELETE_MS = 2600;
+
+function armThenRun(btn, onConfirm, armedLabel) {
+  if (btn.classList.contains('armed')) {
+    clearTimeout(btn._disarmTimer);
+    btn.classList.remove('armed');
+    onConfirm();
+    return;
+  }
+  btn.classList.add('armed');
+  btn._origTitle = btn.title;
+  btn.title = 'Cliquer à nouveau pour confirmer';
+  if (armedLabel != null) { btn._origLabel = btn.textContent; btn.textContent = armedLabel; }
+  btn._disarmTimer = setTimeout(() => {
+    btn.classList.remove('armed');
+    btn.title = btn._origTitle || '';
+    if (armedLabel != null && btn._origLabel != null) btn.textContent = btn._origLabel;
+  }, ARM_DELETE_MS);
+}
+
+// Handler global de la poubelle sidebar (référencé en onclick= inline).
+function onConvDel(btn, id) {
+  armThenRun(btn, () => deleteConv(id));
+}
+
 // Icônes d'épingle (pleine = épinglé, contour = à épingler).
 const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .59 1.42L18 14.5H6l2.41-2.32A2 2 0 0 0 9 10.76z"/></svg>';
 
@@ -969,7 +1013,7 @@ function convItemEl(c) {
      </div>
      <div class="conv-actions">
        <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
-       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();deleteConv('${c.id}')">
+       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();onConvDel(this,'${c.id}')">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
        </button>
      </div>`;
@@ -1266,6 +1310,10 @@ document.addEventListener('click', (e) => {
     const sr = $('set-reasoning-menu');
     if (sr) sr.classList.remove('show');
   }
+  // Dropdowns pilule des formulaires (cfgPillSelect — ex. transport MCP).
+  if (!e.target.closest('.cfg-pill-select')) {
+    document.querySelectorAll('.cfg-pill-select .model-menu.show').forEach(m => m.classList.remove('show'));
+  }
 });
 
 // ── Sélecteur de modèle du composer ─────────────────────────────────────────
@@ -1346,7 +1394,10 @@ function syncReasoningUI() {
   const box = $('composer-reasoning');
   if (!box) return;
   const settings = loadSettings();
-  const rejected = isReasoningEffortRejected(settings.url, activeModel());
+  // La clé du cache de rejet est l'URL du serveur ACTIF (posée par
+  // streamCompletion via activeApiConfig) — pas settings.url, legacy depuis le
+  // multi-serveurs : sur un serveur actif ≠ serveur migré, la lecture raterait.
+  const rejected = isReasoningEffortRejected(activeApiConfig().url, activeModel());
   if (rejected && currentConvReasoningEffort) { setConvReasoningEffort(''); return; }   // ré-entre via syncReasoningUI
   const cur = activeReasoningEffort();
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
@@ -1494,7 +1545,11 @@ function openSettings() {
 function closeSettings() {
   $('drawer').classList.remove('show');
   $('backdrop').classList.remove('show');
-  $('model-menu').classList.remove('show');
+  // Referme le menu du sélecteur de raisonnement des réglages s'il est resté
+  // ouvert. (L'ancien $('model-menu') — champ modèle global supprimé au passage
+  // aux cartes serveurs — levait une TypeError à chaque fermeture du drawer.)
+  const rm = $('set-reasoning-menu');
+  if (rm) rm.classList.remove('show');
 }
 
 // Légende décrivant le comportement induit par l'option sélectionnée (une seule
@@ -1524,11 +1579,29 @@ const THEME_HINTS = {
 };
 
 let pendingTheme = 'system';
+// Pose TOUJOURS un data-theme résolu (light|dark) : « system » est tranché ici
+// via matchMedia (comme le script de boot du <head>), jamais délégué à un bloc
+// @media CSS — le thème clair n'existe qu'en une seule variante
+// html[data-theme="light"]. Suivi live du changement de préférence OS ci-dessous.
 function applyTheme(theme) {
-  const html = document.documentElement;
-  if (theme === 'light')  html.setAttribute('data-theme', 'light');
-  else if (theme === 'dark') html.setAttribute('data-theme', 'dark');
-  else html.removeAttribute('data-theme');   // 'system' : laisse le media query décider
+  let resolved = theme;
+  if (resolved !== 'light' && resolved !== 'dark') {
+    resolved = (typeof window !== 'undefined' && window.matchMedia &&
+                window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  }
+  document.documentElement.setAttribute('data-theme', resolved);
+}
+
+// Réglage « system » : un changement de préférence OS en cours de session
+// ré-applique le thème résolu. Guard matchMedia : absent des stubs QuickJS.
+if (typeof window !== 'undefined' && window.matchMedia) {
+  const _themeMq = window.matchMedia('(prefers-color-scheme: light)');
+  const _onSystemThemeChange = () => {
+    const t = loadSettings().theme || 'system';
+    if (t !== 'light' && t !== 'dark') applyTheme(t);
+  };
+  if (_themeMq.addEventListener) _themeMq.addEventListener('change', _onSystemThemeChange);
+  else if (_themeMq.addListener) _themeMq.addListener(_onSystemThemeChange);   // Safari < 14
 }
 function setThemeUI(theme) {
   pendingTheme = theme || 'system';
@@ -1845,14 +1918,20 @@ function addMcpServerCard() {
   }, true), wrap.firstChild);
 }
 
-function showMcpCardError(cardEl, msg) {
-  const el = cardEl.querySelector('.mcp-err');
+// ── Helpers partagés des cartes de configuration (MCP / API / skills) ────────
+// Les trois familles de cartes partagent la même anatomie : champs labellisés
+// (.cfg-field), zone d'erreur (.cfg-err), toggles (.toggle dans une .cfg-toggle-row).
+// Un seul jeu de constructeurs — les classes DIFFÉRENCIANTES (inputs lus par les
+// handlers de sauvegarde : .mcp-name, .api-url, .skill-slug…) restent par carte.
+
+function showCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.cfg-err');
   if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
 }
 
-function mcpField(labelText, inputEl, hintText) {
+function cfgField(labelText, inputEl, hintText) {
   const field = document.createElement('div');
-  field.className = 'mcp-field';
+  field.className = 'cfg-field';
   const label = document.createElement('label');
   label.textContent = labelText;
   field.appendChild(label);
@@ -1866,43 +1945,121 @@ function mcpField(labelText, inputEl, hintText) {
   return field;
 }
 
+// Composant .toggle (input caché + track + thumb). Retourne { root, input }.
+function cfgToggle(inputClass, checked) {
+  const root = document.createElement('label');
+  root.className = 'toggle';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.className = inputClass;
+  input.checked = checked;
+  const track = document.createElement('span'); track.className = 'track';
+  const thumb = document.createElement('span'); thumb.className = 'thumb';
+  root.append(input, track, thumb);
+  return { root, input };
+}
+
+// Rangée « toggle + libellé » (.cfg-toggle-row). Retourne { row, input }.
+function cfgToggleRow(inputClass, checked, labelText) {
+  const row = document.createElement('label');
+  row.className = 'cfg-toggle-row';
+  const t = cfgToggle(inputClass, checked);
+  row.appendChild(t.root);
+  const txt = document.createElement('span');
+  txt.textContent = labelText;
+  row.appendChild(txt);
+  return { row, input: t.input };
+}
+
+// Zone d'erreur d'une carte, masquée par défaut (révélée par showCardError).
+function cfgErrEl() {
+  const err = document.createElement('div');
+  err.className = 'cfg-err';
+  err.setAttribute('hidden', '');
+  return err;
+}
+
+// Dropdown pilule pour les formulaires (règle projet : JAMAIS de <select>
+// natif — réutiliser le composant .model-menu). Même anatomie que le sélecteur
+// de raisonnement des réglages : bouton pilule + menu absolu + valeur portée
+// par un input hidden de classe `inputClass`, lu par les handlers de
+// sauvegarde comme n'importe quel champ. `options` = [{ value, label }].
+// Retourne { root, input, setValue } — setValue(v) met à jour hidden + libellé
+// SANS déclencher onChange (réservé aux choix explicites de l'utilisateur).
+function cfgPillSelect(inputClass, options, value, onChange) {
+  const root = document.createElement('div');
+  root.className = 'composer-reasoning settings-reasoning cfg-pill-select';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'composer-reasoning-btn';
+  const label = document.createElement('span');
+  btn.appendChild(label);
+  btn.insertAdjacentHTML('beforeend',
+    '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  const menu = document.createElement('div');
+  menu.className = 'model-menu';
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.className = inputClass;
+
+  function setValue(v) {
+    input.value = v;
+    const opt = options.find(o => o.value === v);
+    label.textContent = opt ? opt.label : v;
+  }
+  function renderOptions() {
+    menu.innerHTML = '';
+    options.forEach(o => {
+      const el = document.createElement('div');
+      el.className = 'model-opt' + (o.value === input.value ? ' selected' : '');
+      el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
+      el.onmousedown = (ev) => {
+        ev.preventDefault();
+        setValue(o.value);
+        menu.classList.remove('show');
+        if (onChange) onChange(o.value);
+      };
+      menu.appendChild(el);
+    });
+  }
+  btn.addEventListener('click', () => {
+    if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+    renderOptions();
+    menu.classList.add('show');
+  });
+
+  root.append(btn, menu, input);
+  setValue(value);
+  return { root, input, setValue };
+}
+
 function buildMcpCard(server, isNew) {
   const card = document.createElement('div');
-  card.className = 'mcp-card' + (isNew ? ' is-editing' : '');
+  card.className = 'cfg-card mcp-card' + (isNew ? ' is-editing' : '');
   const originalName = server.name || '';
 
   // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
-  viewSection.className = 'mcp-view';
+  viewSection.className = 'cfg-view';
 
   const viewName = document.createElement('div');
-  viewName.className = 'mcp-view-name';
+  viewName.className = 'cfg-view-name';
   viewName.textContent = server.name || '';
   viewSection.appendChild(viewName);
 
   const viewUrl = document.createElement('div');
-  viewUrl.className = 'mcp-view-url';
+  viewUrl.className = 'cfg-view-url';
   viewUrl.textContent = server.url || '';
   viewSection.appendChild(viewUrl);
 
   const viewRow = document.createElement('div');
-  viewRow.className = 'mcp-view-row';
+  viewRow.className = 'cfg-view-row mcp-view-row';
 
-  // Toggle en mode vue (class distincte — onSaveMcpCard lit .mcp-enabled dans la section édition)
-  const viewToggleLabel = document.createElement('label');
-  viewToggleLabel.className = 'mcp-view-toggle-label';
-  const viewToggleWrap = document.createElement('label');
-  viewToggleWrap.className = 'toggle';
-  const viewEnabledI = document.createElement('input');
-  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'mcp-enabled-view';
-  viewEnabledI.checked = server.enabled !== false;
-  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
-  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
-  viewToggleWrap.append(viewEnabledI, viewTrack, viewThumb);
-  const viewEnabledTxt = document.createElement('span');
-  viewEnabledTxt.textContent = 'Activé';
-  viewToggleLabel.append(viewToggleWrap, viewEnabledTxt);
-  viewRow.appendChild(viewToggleLabel);
+  // Toggle en mode vue (class d'input distincte — onSaveMcpCard lit .mcp-enabled
+  // dans la section édition)
+  const viewToggle = cfgToggleRow('mcp-enabled-view', server.enabled !== false, 'Activé');
+  const viewEnabledI = viewToggle.input;
+  viewRow.appendChild(viewToggle.row);
 
   // Pill de statut — masquée si désactivé
   const viewStatus = document.createElement('div');
@@ -1942,7 +2099,7 @@ function buildMcpCard(server, isNew) {
 
   // ── SECTION ÉDITION ───────────────────────────────────────────────────────
   const editSection = document.createElement('div');
-  editSection.className = 'mcp-edit';
+  editSection.className = 'cfg-edit';
 
   const mkInput = (cls, type, value, placeholder) => {
     const i = document.createElement('input');
@@ -1954,20 +2111,18 @@ function buildMcpCard(server, isNew) {
 
   const nameI = mkInput('mcp-name', 'text', server.name, 'jira');
   const urlI  = mkInput('mcp-url', 'text', server.url, 'https://host/mcp');
-  const transportSel = document.createElement('select');
-  transportSel.className = 'mcp-transport';
-  for (const opt of ['streamable-http', 'sse']) {
-    const o = document.createElement('option');
-    o.value = opt; o.textContent = opt + (opt === 'sse' ? ' (différé)' : '');
-    transportSel.appendChild(o);
-  }
-  transportSel.value = server.transport || 'streamable-http';
-  // Transport explicite (serveur existant) → marqué « touché » pour que la
-  // devinette d'URL ne l'écrase jamais (D4). Vierge → devinette active.
-  if (server.transport) transportSel.dataset.touched = '1';
-  transportSel.addEventListener('change', () => { transportSel.dataset.touched = '1'; });
+  // Transport : dropdown pilule custom (cfgPillSelect — pas de <select> natif).
+  // La valeur vit dans l'input hidden .mcp-transport, lu tel quel par
+  // onSaveMcpCard. Choix explicite → marqué « touché » : la devinette d'URL
+  // ne l'écrase jamais (D4) ; serveur existant → touché d'office.
+  const transport = cfgPillSelect('mcp-transport', [
+    { value: 'streamable-http', label: 'streamable-http' },
+    { value: 'sse', label: 'sse (différé)' },
+  ], server.transport || 'streamable-http',
+    () => { transport.input.dataset.touched = '1'; });
+  if (server.transport) transport.input.dataset.touched = '1';
   urlI.addEventListener('input', () => {
-    if (!transportSel.dataset.touched) transportSel.value = guessMcpTransport(urlI.value);
+    if (!transport.input.dataset.touched) transport.setValue(guessMcpTransport(urlI.value));
   });
 
   const tokenI = mkInput('mcp-token', 'password', server.authorization_token, 'Bearer (optionnel)');
@@ -1975,50 +2130,25 @@ function buildMcpCard(server, isNew) {
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
-  editSection.appendChild(mcpField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
-  editSection.appendChild(mcpField('URL', urlI));
-  editSection.appendChild(mcpField('Transport', transportSel));
-  editSection.appendChild(mcpField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
-  editSection.appendChild(mcpField('Timeout (ms)', tmoI));
-  editSection.appendChild(mcpField('Outils autorisés', allowI));
-  editSection.appendChild(mcpField('Outils masqués', denyI));
+  editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
+  editSection.appendChild(cfgField('URL', urlI));
+  editSection.appendChild(cfgField('Transport', transport.root));
+  editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
+  editSection.appendChild(cfgField('Timeout (ms)', tmoI));
+  editSection.appendChild(cfgField('Outils autorisés', allowI));
+  editSection.appendChild(cfgField('Outils masqués', denyI));
 
-  // Toggle en mode édition — composant .toggle réutilisé verbatim
-  const editEnabledWrap = document.createElement('label');
-  editEnabledWrap.className = 'mcp-enabled-row';
-  const editToggleWrap = document.createElement('label');
-  editToggleWrap.className = 'toggle';
-  const editEnabledI = document.createElement('input');
-  editEnabledI.type = 'checkbox'; editEnabledI.className = 'mcp-enabled'; editEnabledI.checked = server.enabled !== false;
-  const editTrack = document.createElement('span'); editTrack.className = 'track';
-  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
-  editToggleWrap.append(editEnabledI, editTrack, editThumb);
-  const editEnabledTxt = document.createElement('span');
-  editEnabledTxt.textContent = 'Activé';
-  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
-  editSection.appendChild(editEnabledWrap);
+  // Toggle en mode édition (.mcp-enabled lu par onSaveMcpCard)
+  editSection.appendChild(cfgToggleRow('mcp-enabled', server.enabled !== false, 'Activé').row);
 
   // Toggle showCalls — affiche les lignes d'appel MCP dans le thread
-  const showCallsWrap = document.createElement('label');
-  showCallsWrap.className = 'mcp-enabled-row';
-  const showCallsToggleWrap = document.createElement('label');
-  showCallsToggleWrap.className = 'toggle';
-  const showCallsI = document.createElement('input');
-  showCallsI.type = 'checkbox'; showCallsI.className = 'mcp-show-calls'; showCallsI.checked = server.showCalls !== false;
-  const showCallsTrack = document.createElement('span'); showCallsTrack.className = 'track';
-  const showCallsThumb = document.createElement('span'); showCallsThumb.className = 'thumb';
-  showCallsToggleWrap.append(showCallsI, showCallsTrack, showCallsThumb);
-  const showCallsTxt = document.createElement('span');
-  showCallsTxt.textContent = 'Afficher les appels dans le thread';
-  showCallsWrap.append(showCallsToggleWrap, showCallsTxt);
-  editSection.appendChild(showCallsWrap);
+  editSection.appendChild(cfgToggleRow('mcp-show-calls', server.showCalls !== false,
+    'Afficher les appels dans le thread').row);
 
-  const err = document.createElement('div');
-  err.className = 'mcp-err'; err.setAttribute('hidden', '');
-  editSection.appendChild(err);
+  editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
-  actions.className = 'mcp-actions';
+  actions.className = 'cfg-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'drawer-btn primary mcp-save'; saveBtn.textContent = 'Enregistrer';
   saveBtn.addEventListener('click', () => onSaveMcpCard(card, originalName));
@@ -2030,7 +2160,8 @@ function buildMcpCard(server, isNew) {
   if (!isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger mcp-del'; delBtn.textContent = 'Supprimer';
-    delBtn.addEventListener('click', () => onDeleteMcpCard(card, originalName));
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, () => onDeleteMcpCard(card, originalName), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -2108,48 +2239,27 @@ function addApiServerCard() {
   wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '' }, true, false), wrap.firstChild);
 }
 
-function showApiCardError(cardEl, msg) {
-  const el = cardEl.querySelector('.api-err');
-  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
-}
-
-function apiField(labelText, inputEl, hintText) {
-  const field = document.createElement('div');
-  field.className = 'api-field';
-  const label = document.createElement('label');
-  label.textContent = labelText;
-  field.appendChild(label);
-  field.appendChild(inputEl);
-  if (hintText) {
-    const hint = document.createElement('span');
-    hint.className = 'hint';
-    hint.textContent = hintText;
-    field.appendChild(hint);
-  }
-  return field;
-}
-
 function buildApiCard(server, isNew, isActive) {
   const card = document.createElement('div');
-  card.className = 'api-card' + (isNew ? ' is-editing' : '');
+  card.className = 'cfg-card api-card' + (isNew ? ' is-editing' : '');
   const originalId = server.id || '';
 
   // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
-  viewSection.className = 'api-view';
+  viewSection.className = 'cfg-view';
 
   const viewName = document.createElement('div');
-  viewName.className = 'api-view-name';
+  viewName.className = 'cfg-view-name';
   viewName.textContent = server.name || '';
   viewSection.appendChild(viewName);
 
   const viewUrl = document.createElement('div');
-  viewUrl.className = 'api-view-url';
+  viewUrl.className = 'cfg-view-url';
   viewUrl.textContent = server.url || '';
   viewSection.appendChild(viewUrl);
 
   const viewRow = document.createElement('div');
-  viewRow.className = 'api-view-row';
+  viewRow.className = 'cfg-view-row api-view-row';
 
   // Pill « Actif » OU bouton « Utiliser ce serveur » — jamais les deux : le
   // pill dit l'état, le bouton propose la transition, redondants sur une même carte.
@@ -2177,7 +2287,7 @@ function buildApiCard(server, isNew, isActive) {
 
   // ── SECTION ÉDITION ───────────────────────────────────────────────────────
   const editSection = document.createElement('div');
-  editSection.className = 'api-edit';
+  editSection.className = 'cfg-edit';
 
   const mkInput = (cls, type, value, placeholder) => {
     const i = document.createElement('input');
@@ -2193,10 +2303,12 @@ function buildApiCard(server, isNew, isActive) {
   const keyI  = mkInput('api-key', 'password', server.key, keyHintInfo.placeholder);
   const modelI = mkInput('api-model', 'text', server.model, 'gemma4:26b-nvfp4');
 
-  editSection.appendChild(apiField('Nom', nameI));
-  editSection.appendChild(apiField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
-  editSection.appendChild(apiField('Clef API', keyI, keyHintInfo.hint));
+  editSection.appendChild(cfgField('Nom', nameI));
+  editSection.appendChild(cfgField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
+  editSection.appendChild(cfgField('Clef API', keyI, keyHintInfo.hint));
 
+  // Le champ modèle enrobe l'input dans une ancre de dropdown (.model-menu) :
+  // on construit l'ancre puis on la confie à cfgField comme « input ».
   const modelAnchor = document.createElement('div');
   modelAnchor.className = 'select-anchor api-model-anchor';
   const modelMenu = document.createElement('div');
@@ -2204,23 +2316,13 @@ function buildApiCard(server, isNew, isActive) {
   modelI.addEventListener('focus', () => openApiModelMenu(modelI, modelMenu, urlI, keyI));
   modelI.addEventListener('input', () => onApiModelInput(modelI, modelMenu));
   modelAnchor.append(modelI, modelMenu);
-  const modelField = document.createElement('div');
-  modelField.className = 'api-field';
-  const modelLabel = document.createElement('label');
-  modelLabel.textContent = 'Modèle par défaut';
-  modelField.append(modelLabel, modelAnchor);
-  const modelHint = document.createElement('span');
-  modelHint.className = 'hint';
-  modelHint.textContent = 'Choisissez parmi les modèles exposés par l\'API.';
-  modelField.appendChild(modelHint);
-  editSection.appendChild(modelField);
+  editSection.appendChild(cfgField('Modèle par défaut', modelAnchor,
+    'Choisissez parmi les modèles exposés par l\'API.'));
 
-  const err = document.createElement('div');
-  err.className = 'api-err'; err.setAttribute('hidden', '');
-  editSection.appendChild(err);
+  editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
-  actions.className = 'api-actions';
+  actions.className = 'cfg-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'drawer-btn primary api-save'; saveBtn.textContent = 'Enregistrer';
   saveBtn.addEventListener('click', () => onSaveApiCard(card, originalId));
@@ -2232,7 +2334,8 @@ function buildApiCard(server, isNew, isActive) {
   if (!isNew && loadApiServers().length > 1) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger api-del'; delBtn.textContent = 'Supprimer';
-    delBtn.addEventListener('click', () => onDeleteApiCard(card, originalId));
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, () => onDeleteApiCard(card, originalId), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -2285,35 +2388,14 @@ function addSkillCard() {
   wrap.insertBefore(buildSkillCard({ slug: '', name: '', description: '', enabled: true }, true), wrap.firstChild);
 }
 
-function showSkillCardError(cardEl, msg) {
-  const el = cardEl.querySelector('.skill-err');
-  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
-}
-
-function skillField(labelText, inputEl, hintText) {
-  const field = document.createElement('div');
-  field.className = 'skill-field';
-  const label = document.createElement('label');
-  label.textContent = labelText;
-  field.appendChild(label);
-  field.appendChild(inputEl);
-  if (hintText) {
-    const hint = document.createElement('span');
-    hint.className = 'hint';
-    hint.textContent = hintText;
-    field.appendChild(hint);
-  }
-  return field;
-}
-
 function buildSkillCard(skill, isNew) {
   const card = document.createElement('div');
-  card.className = 'skill-card' + (isNew ? ' is-editing' : '');
+  card.className = 'cfg-card skill-card' + (isNew ? ' is-editing' : '');
   const originalSlug = skill.slug || '';
 
   // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
-  viewSection.className = 'skill-view';
+  viewSection.className = 'cfg-view skill-view';
 
   const viewMain = document.createElement('div');
   viewMain.className = 'skill-view-main';
@@ -2327,20 +2409,13 @@ function buildSkillCard(skill, isNew) {
   viewSection.appendChild(viewMain);
 
   const viewRow = document.createElement('div');
-  viewRow.className = 'skill-view-row';
+  viewRow.className = 'cfg-view-row skill-view-row';
 
-  // Toggle enabled en vue (persistance immédiate via onToggleSkill, main.js)
-  const viewToggleLabel = document.createElement('label');
-  viewToggleLabel.className = 'toggle';
-  const viewEnabledI = document.createElement('input');
-  viewEnabledI.type = 'checkbox'; viewEnabledI.className = 'skill-enabled-view';
-  viewEnabledI.checked = skill.enabled !== false;
-  const viewTrack = document.createElement('span'); viewTrack.className = 'track';
-  const viewThumb = document.createElement('span'); viewThumb.className = 'thumb';
-  viewToggleLabel.append(viewEnabledI, viewTrack, viewThumb);
-  viewRow.appendChild(viewToggleLabel);
+  // Toggle enabled en vue, sans libellé (persistance immédiate via onToggleSkill, main.js)
+  const viewToggle = cfgToggle('skill-enabled-view', skill.enabled !== false);
+  viewRow.appendChild(viewToggle.root);
   if (!isNew) {
-    viewEnabledI.addEventListener('change', () => onToggleSkill(originalSlug));
+    viewToggle.input.addEventListener('change', () => onToggleSkill(originalSlug));
   }
 
   const modBtn = document.createElement('button');
@@ -2354,7 +2429,7 @@ function buildSkillCard(skill, isNew) {
 
   // ── SECTION ÉDITION ───────────────────────────────────────────────────────
   const editSection = document.createElement('div');
-  editSection.className = 'skill-edit';
+  editSection.className = 'cfg-edit';
 
   const slugI = document.createElement('input');
   slugI.className = 'skill-slug'; slugI.type = 'text'; slugI.value = skill.slug || '';
@@ -2369,49 +2444,24 @@ function buildSkillCard(skill, isNew) {
   contentT.className = 'skill-content'; contentT.rows = 10; contentT.spellcheck = false;
   contentT.placeholder = 'Corps de la skill en Markdown…';
 
-  editSection.appendChild(skillField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
-  editSection.appendChild(skillField('Nom', nameI, 'Libellé d\'affichage.'));
-  editSection.appendChild(skillField('Description', descI, 'Surface lexicale décrite au modèle.'));
-  editSection.appendChild(skillField('Contenu', contentT));
+  editSection.appendChild(cfgField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
+  editSection.appendChild(cfgField('Nom', nameI, 'Libellé d\'affichage.'));
+  editSection.appendChild(cfgField('Description', descI, 'Surface lexicale décrite au modèle.'));
+  editSection.appendChild(cfgField('Contenu', contentT));
 
   // Toggle enabled en édition (.skill-enabled lu par onSaveSkillCard)
-  const editEnabledWrap = document.createElement('label');
-  editEnabledWrap.className = 'skill-enabled-row';
-  const editToggleWrap = document.createElement('label');
-  editToggleWrap.className = 'toggle';
-  const editEnabledI = document.createElement('input');
-  editEnabledI.type = 'checkbox'; editEnabledI.className = 'skill-enabled'; editEnabledI.checked = skill.enabled !== false;
-  const editTrack = document.createElement('span'); editTrack.className = 'track';
-  const editThumb = document.createElement('span'); editThumb.className = 'thumb';
-  editToggleWrap.append(editEnabledI, editTrack, editThumb);
-  const editEnabledTxt = document.createElement('span');
-  editEnabledTxt.textContent = 'Activée';
-  editEnabledWrap.append(editToggleWrap, editEnabledTxt);
-  editSection.appendChild(editEnabledWrap);
+  editSection.appendChild(cfgToggleRow('skill-enabled', skill.enabled !== false, 'Activée').row);
 
   // Toggle autotrigger en édition (.skill-autotrigger lu par onSaveSkillCard) —
   // stage 2 : liste cette skill dans le contexte dynamique <miaou_skills_context>
   // à chaque tour, pour découverte proactive par le modèle.
-  const editAutotriggerWrap = document.createElement('label');
-  editAutotriggerWrap.className = 'skill-enabled-row';
-  const editAutotriggerToggleWrap = document.createElement('label');
-  editAutotriggerToggleWrap.className = 'toggle';
-  const editAutotriggerI = document.createElement('input');
-  editAutotriggerI.type = 'checkbox'; editAutotriggerI.className = 'skill-autotrigger'; editAutotriggerI.checked = skill.autotrigger === true;
-  const editAutotriggerTrack = document.createElement('span'); editAutotriggerTrack.className = 'track';
-  const editAutotriggerThumb = document.createElement('span'); editAutotriggerThumb.className = 'thumb';
-  editAutotriggerToggleWrap.append(editAutotriggerI, editAutotriggerTrack, editAutotriggerThumb);
-  const editAutotriggerTxt = document.createElement('span');
-  editAutotriggerTxt.textContent = 'Proposée proactivement au modèle';
-  editAutotriggerWrap.append(editAutotriggerToggleWrap, editAutotriggerTxt);
-  editSection.appendChild(editAutotriggerWrap);
+  editSection.appendChild(cfgToggleRow('skill-autotrigger', skill.autotrigger === true,
+    'Proposée proactivement au modèle').row);
 
-  const err = document.createElement('div');
-  err.className = 'skill-err'; err.setAttribute('hidden', '');
-  editSection.appendChild(err);
+  editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
-  actions.className = 'skill-actions';
+  actions.className = 'cfg-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'drawer-btn primary skill-save'; saveBtn.textContent = 'Enregistrer';
   saveBtn.addEventListener('click', () => onSaveSkillCard(card, originalSlug));
@@ -2422,11 +2472,9 @@ function buildSkillCard(skill, isNew) {
   if (!isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger skill-del'; delBtn.textContent = 'Supprimer';
-    delBtn.addEventListener('click', () => {
-      if (window.confirm('Supprimer la skill « ' + (skill.name || skill.slug) + ' » ? Action définitive.')) {
-        onDeleteSkillCard(card, originalSlug);
-      }
-    });
+    // Hard delete définitif : armement deux temps (pas de window.confirm natif).
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, () => onDeleteSkillCard(card, originalSlug), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);

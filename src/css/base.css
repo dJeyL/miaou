@@ -1,0 +1,66 @@
+/* ── base.css ──────────────────────────────────────────────────────────────
+   Fondations : import des fontes, reset, tokens (:root), body, scrollbars,
+   coquille .app. Premier fichier de CSS_ORDER — l'@import doit rester en tête
+   de la feuille concaténée.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+
+:root {
+  --bg:         #0b0c0e;
+  --surface:    #111316;
+  --surface-2:  #16181c;
+  --surface-3:  #1c1f24;
+  --border:     #232730;
+  --border-2:   #2c313b;
+  --text:       #e7e8ea;
+  --text-2:     #9a9ea8;
+  --text-3:     #5e636e;
+  --accent:     #ff7a45;
+  --accent-2:   #ff6a2e;
+  --accent-ink: #1a0c05;
+  --accent-dim: rgba(255,122,69,.12);
+  --accent-bd:  rgba(255,122,69,.28);
+  --ok:         #4ec98a;
+  --err:        #ff5d5d;
+  --r:          7px;
+  --r-sm:       5px;
+  --ease:       cubic-bezier(.4, 0, .2, 1);
+  --sans: 'Hanken Grotesk', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --col: 720px;
+  --sidebar-w: 264px;   /* largeur ouverte, redimensionnable (264 → 528) et persistée */
+  /* valeurs dérivées, surchargées par le thème clair */
+  --topbar-bg:             rgba(17,19,22,.6);
+  --scrollbar-thumb-hover: #3a4049;
+  --table-stripe:          rgba(255,255,255,.012);
+  --code-bg:               #0e1013;
+  --code-head-bg:          var(--surface);
+  --code-inline-color:     #ffb894;
+  --surface-4:             #262b33;   /* palier hover au-dessus de surface-3 */
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection { background: var(--accent-dim); }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ═══ App shell ═══ */
+.app { display: flex; height: var(--vvh, 100dvh); }

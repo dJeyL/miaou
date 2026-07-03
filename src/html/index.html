@@ -7,7 +7,11 @@
 <link rel="icon" id="favicon">
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
-<script>(function(){try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');var t=s.theme;if(t==='light')document.documentElement.setAttribute('data-theme','light');else if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<!-- Résolution du thème AVANT le premier paint, y compris « system » (via
+     matchMedia) : html porte TOUJOURS data-theme=light|dark, le CSS n'a qu'une
+     seule variante claire (pas de bloc @media dupliqué). Le suivi live d'un
+     changement de préférence OS est câblé dans ui.js (applyTheme + listener). -->
+<script>(function(){var t='dark';try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');t=s.theme;}catch(e){}if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);})();</script>
 <style>
 /* __CSS__ */
 </style>
@@ -409,8 +413,8 @@
     </div>
     <div class="drawer-body">
       <span class="hint">Backends MCP distants (HTTP). Leurs outils sont fusionnés au registre, préfixés par le nom du serveur. Un serveur injoignable est simplement ignoré.</span>
-      <button class="btn-ghost mcp-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
-      <div class="mcp-list" id="mcp-list"></div>
+      <button class="btn-ghost cfg-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
+      <div class="cfg-list" id="mcp-list"></div>
     </div>
   </div>
 
@@ -425,8 +429,8 @@
     </div>
     <div class="drawer-body">
       <span class="hint">Chaque serveur a sa propre URL, clef et modèle par défaut. MIAOU se reconnecte au dernier serveur actif utilisé.</span>
-      <button class="btn-ghost api-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
-      <div class="api-list" id="api-list"></div>
+      <button class="btn-ghost cfg-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
+      <div class="cfg-list" id="api-list"></div>
     </div>
   </div>
 
@@ -441,8 +445,8 @@
     </div>
     <div class="drawer-body">
       <span class="hint">Une skill est un fragment d'instructions Markdown. Invoquer via <code>/slug</code> (injecté tel quel dans le message), ou laisser le modèle la découvrir via ses outils. Les skills désactivées ne sont ni invocables ni visibles du modèle.</span>
-      <button class="btn-ghost skill-add-btn" onclick="addSkillCard()">Nouvelle skill</button>
-      <div class="skill-list" id="skill-list"></div>
+      <button class="btn-ghost cfg-add-btn" onclick="addSkillCard()">Nouvelle skill</button>
+      <div class="cfg-list" id="skill-list"></div>
     </div>
   </div>
 

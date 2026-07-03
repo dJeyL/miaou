@@ -1,6 +1,7 @@
 /* ── storage.js ────────────────────────────────────────────────────────────
-   Persistance localStorage : réglages, historique des conversations, index
-   des résumés (avec tombstones réversibles). Trois clés distinctes.
+   Persistance localStorage : réglages, serveurs API (+ serveur actif),
+   serveurs MCP, historique des conversations, index des résumés (tombstones
+   réversibles), souvenirs utilisateur. Schéma détaillé : docs/storage.md.
    ────────────────────────────────────────────────────────────────────────── */
 
 const SETTINGS_KEY  = 'miaou-settings';
