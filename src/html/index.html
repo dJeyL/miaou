@@ -159,14 +159,10 @@
         <div class="set-cat-body open settled">
           <div class="set-cat-body-inner">
       <div class="field">
-        <label>URL de l'API</label>
-        <input id="set-url" type="text" placeholder="http://host-interne/v1" spellcheck="false" oninput="syncConfigured()">
-        <span class="hint">Endpoint compatible OpenAI, terminant par <code>/v1</code>.</span>
-      </div>
-      <div class="field">
-        <label>Clef API</label>
-        <input id="set-key" type="password" oninput="syncConfigured()">
-        <span class="hint" id="set-key-hint"></span>
+        <label>Serveur actif</label>
+        <div class="active-api-server-name" id="active-api-server-name">Aucun serveur configuré</div>
+        <div class="hint" id="active-api-server-url"></div>
+        <button class="btn-ghost" onclick="openApiServers()">Gérer les serveurs API</button>
       </div>
           </div>
         </div>
@@ -181,13 +177,7 @@
         <div class="set-cat-body">
           <div class="set-cat-body-inner">
       <div class="field">
-        <label>Modèle</label>
-        <div class="select-anchor">
-          <input id="set-model" type="text" placeholder="gemma4:26b-nvfp4" spellcheck="false"
-            onfocus="openModelMenu()" oninput="onModelInput()">
-          <div class="model-menu" id="model-menu"></div>
-        </div>
-        <span class="hint">Choisissez parmi les modèles exposés par l'API.</span>
+        <span class="hint">Le modèle par défaut se règle par serveur, dans « Gérer les serveurs API » (catégorie Connexion).</span>
       </div>
       <div class="field">
         <div class="check-row">
@@ -421,6 +411,22 @@
       <span class="hint">Backends MCP distants (HTTP). Leurs outils sont fusionnés au registre, préfixés par le nom du serveur. Un serveur injoignable est simplement ignoré.</span>
       <button class="btn-ghost mcp-add-btn" onclick="addMcpServerCard()">Ajouter un serveur</button>
       <div class="mcp-list" id="mcp-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ API servers drawer ═══ -->
+  <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
+  <div class="drawer" id="api-drawer">
+    <div class="drawer-head">
+      <h2>Serveurs API</h2>
+      <button class="icon-btn" onclick="closeApiServers()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Chaque serveur a sa propre URL, clef et modèle par défaut. MIAOU se reconnecte au dernier serveur actif utilisé.</span>
+      <button class="btn-ghost api-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
+      <div class="api-list" id="api-list"></div>
     </div>
   </div>
 

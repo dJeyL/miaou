@@ -63,6 +63,116 @@ function saveSettings(obj) {
   return next;
 }
 
+// ── Serveurs API (multi-backends) ────────────────────────────────────────────
+// Remplace les champs plats url/key/model de miaou-settings. Tableau d'objets :
+//   { id, name, url, key, model }
+// `id` (pas `name`) est la clé d'identité : contrairement aux serveurs MCP, on
+// veut pouvoir renommer une carte sans perdre la référence "actif" persistée
+// séparément. Le token est stocké EN CLAIR, même posture assumée qu'en D6 (MCP).
+const API_SERVERS_KEY = 'miaou-api-servers';
+const ACTIVE_API_SERVER_KEY = 'miaou-active-api-server';
+
+function genApiServerId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'srv_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// Transformation silencieuse : si aucun tableau de serveurs n'a jamais été
+// écrit et qu'une config url/key/model plate existe (localStorage ou défauts
+// de build via loadSettings()), crée un unique serveur "Par défaut" et
+// l'active. Ne s'exécute qu'une fois : la simple présence de la clé
+// miaou-api-servers (même tableau vide, si tout a été supprimé depuis) la
+// court-circuite pour toujours.
+function migrateApiServersIfNeeded() {
+  if (localStorage.getItem(API_SERVERS_KEY) !== null) return;
+  const s = loadSettings();
+  if (!s.url) { saveApiServersRaw([]); return; }
+  const server = normalizeApiServer({ name: 'Par défaut', url: s.url, key: s.key, model: s.model });
+  saveApiServersRaw([server]);
+  localStorage.setItem(ACTIVE_API_SERVER_KEY, server.id);
+}
+
+function saveApiServersRaw(arr) {
+  localStorage.setItem(API_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  return arr;
+}
+
+function loadApiServers() {
+  migrateApiServersIfNeeded();
+  try {
+    const arr = JSON.parse(localStorage.getItem(API_SERVERS_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveApiServers(arr) {
+  return saveApiServersRaw(arr);
+}
+
+function normalizeApiServer(s) {
+  const o = s || {};
+  return {
+    id: o.id || genApiServerId(),
+    name: String(o.name || '').trim(),
+    url: String(o.url || '').trim(),
+    key: o.key ? String(o.key) : '',
+    model: String(o.model || '').trim(),
+  };
+}
+
+// Insère ou remplace un serveur par `id` (clé d'identité). Retourne le tableau.
+function upsertApiServer(server) {
+  const next = normalizeApiServer(server);
+  const arr = loadApiServers();
+  const i = arr.findIndex(s => s.id === next.id);
+  if (i >= 0) arr[i] = next; else arr.push(next);
+  saveApiServers(arr);
+  return arr;
+}
+
+function deleteApiServer(id) {
+  const arr = loadApiServers().filter(s => s.id !== id);
+  saveApiServers(arr);
+  return arr;
+}
+
+function getApiServer(id) {
+  return loadApiServers().find(s => s.id === id) || null;
+}
+
+function getActiveApiServerId() {
+  return localStorage.getItem(ACTIVE_API_SERVER_KEY) || '';
+}
+
+function setActiveApiServerId(id) {
+  localStorage.setItem(ACTIVE_API_SERVER_KEY, id || '');
+}
+
+// Serveur actif effectif : l'id persisté s'il pointe encore sur un serveur
+// existant, sinon le premier du tableau (jamais d'état "configuré=true sans
+// serveur" tant qu'au moins une carte existe), sinon null.
+function activeApiServer() {
+  const servers = loadApiServers();
+  if (!servers.length) return null;
+  const byId = getApiServer(getActiveApiServerId());
+  return byId || servers[0];
+}
+
+// Config url/key/model résolue pour les appels API (api.js). Seule source
+// légitime depuis la migration — loadSettings().url/.key/.model restent en
+// lecture pour la migration elle-même et comme filet historique (serveur sans
+// modèle par défaut), jamais réécrits ailleurs. Le modèle DOIT venir d'ici et
+// non de loadSettings() : sinon titrage/résumé (silentCompletion) enverraient
+// le modèle legacy du serveur migré à l'endpoint du serveur actif.
+function activeApiConfig() {
+  const s = activeApiServer();
+  return {
+    url: (s && s.url) || '',
+    key: (s && s.key) || '',
+    model: (s && s.model) || loadSettings().model || '',
+  };
+}
+
 // ── Serveurs MCP distants ─────────────────────────────────────────────────────
 // Configuration des backends MCP délégués (cf. brief D3). Tableau d'objets :
 //   { name, url, transport, enabled, authorization_token?, timeout,

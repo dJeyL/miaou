@@ -1237,6 +1237,8 @@ body {
   transition: background 130ms var(--ease), color 130ms var(--ease), border-color 130ms var(--ease);
 }
 .drawer-btn:hover { background: #262b33; color: var(--text); }
+.drawer-btn:disabled { opacity: .45; cursor: default; }
+.drawer-btn:disabled:hover { background: var(--surface-3); color: var(--text-2); }
 .drawer-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
 .drawer-btn.primary:hover { background: var(--accent-2); color: var(--accent-ink); border-color: transparent; }
 .drawer-btn.danger:hover { color: var(--err); border-color: rgba(255,93,93,.4); }
@@ -1546,6 +1548,59 @@ body {
 .mcp-view-toggle-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
 .mcp-view-row .drawer-btn { margin-left: auto; }
 
+/* ── Serveurs API : cartes éditables (même pattern que MCP) ────────────────── */
+.api-add-btn { align-self: flex-start; }
+.api-list { display: flex; flex-direction: column; gap: 14px; }
+.api-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.api-field { display: flex; flex-direction: column; gap: 5px; }
+.api-field > label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.api-field input,
+.api-field select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.api-field input:focus,
+.api-field select:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.api-field .hint { font-size: 11px; color: var(--text-3); }
+.api-status { font-size: 11.5px; color: var(--text-3); }
+.api-status.active { color: var(--accent); }
+.api-err { font-size: 11.5px; color: var(--err, #f85149); }
+.api-actions { display: flex; gap: 6px; margin-top: 2px; }
+/* Vue / édition */
+.api-view { display: flex; flex-direction: column; gap: 8px; }
+.api-card.is-editing .api-view { display: none; }
+.api-edit { display: none; flex-direction: column; gap: 10px; }
+.api-card.is-editing .api-edit { display: flex; }
+.api-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.api-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
+.api-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Seul le dernier bouton (Modifier) est repoussé à droite : « Utiliser ce
+   serveur » occupe la place du pill « Actif », tout à gauche. */
+.api-view-row .drawer-btn:last-child { margin-left: auto; }
+/* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
+   à la suite (séparateur .tool-name-sep, même format que le thread). */
+.active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.active-api-server-name .tool-name-sep { font-weight: 400; }
+.active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
+
 /* ── Skills : drawer de gestion ─────────────────────────────────────────────── */
 /* Drawer plus large : édition de corps Markdown (textarea confortable). */
 .drawer-wide { width: 620px; }
@@ -1741,6 +1796,9 @@ body {
 .msg-dl[hidden] { display: none; }
 
 /* Horodatages inline des messages */
+/* Séparateur « serveur › modèle » : marge négative pour compenser le gap 7px
+   du flex .meta (espacement effectif ~3px de chaque côté). */
+.msg.assistant .meta .tool-name-sep { margin: 0 -4px; }
 .msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
 .msg.assistant .meta .msg-ts[hidden] { display: none; }
 /* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
@@ -2107,14 +2165,10 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <div class="set-cat-body open settled">
           <div class="set-cat-body-inner">
       <div class="field">
-        <label>URL de l'API</label>
-        <input id="set-url" type="text" placeholder="http://host-interne/v1" spellcheck="false" oninput="syncConfigured()">
-        <span class="hint">Endpoint compatible OpenAI, terminant par <code>/v1</code>.</span>
-      </div>
-      <div class="field">
-        <label>Clef API</label>
-        <input id="set-key" type="password" oninput="syncConfigured()">
-        <span class="hint" id="set-key-hint"></span>
+        <label>Serveur actif</label>
+        <div class="active-api-server-name" id="active-api-server-name">Aucun serveur configuré</div>
+        <div class="hint" id="active-api-server-url"></div>
+        <button class="btn-ghost" onclick="openApiServers()">Gérer les serveurs API</button>
       </div>
           </div>
         </div>
@@ -2129,13 +2183,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <div class="set-cat-body">
           <div class="set-cat-body-inner">
       <div class="field">
-        <label>Modèle</label>
-        <div class="select-anchor">
-          <input id="set-model" type="text" placeholder="gemma4:26b-nvfp4" spellcheck="false"
-            onfocus="openModelMenu()" oninput="onModelInput()">
-          <div class="model-menu" id="model-menu"></div>
-        </div>
-        <span class="hint">Choisissez parmi les modèles exposés par l'API.</span>
+        <span class="hint">Le modèle par défaut se règle par serveur, dans « Gérer les serveurs API » (catégorie Connexion).</span>
       </div>
       <div class="field">
         <div class="check-row">
@@ -2372,6 +2420,22 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
+  <!-- ═══ API servers drawer ═══ -->
+  <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
+  <div class="drawer" id="api-drawer">
+    <div class="drawer-head">
+      <h2>Serveurs API</h2>
+      <button class="icon-btn" onclick="closeApiServers()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Chaque serveur a sa propre URL, clef et modèle par défaut. MIAOU se reconnecte au dernier serveur actif utilisé.</span>
+      <button class="btn-ghost api-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
+      <div class="api-list" id="api-list"></div>
+    </div>
+  </div>
+
   <!-- ═══ Skills drawer ═══ -->
   <div class="backdrop" id="skills-backdrop" onclick="closeSkills()"></div>
   <div class="drawer drawer-wide" id="skills-drawer">
@@ -2420,7 +2484,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-02 21:03 UTC */
+/* miaou — built: 2026-07-03 07:04 UTC */
 
 /* ── utils.js ── */
 
@@ -2805,7 +2869,7 @@ const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783026220}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783062266}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -2846,6 +2910,94 @@ function saveSettings(obj) {
   const next = Object.assign({}, loadSettingsRaw(), obj || {});
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   return next;
+}
+
+const API_SERVERS_KEY = 'miaou-api-servers';
+const ACTIVE_API_SERVER_KEY = 'miaou-active-api-server';
+
+function genApiServerId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'srv_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function migrateApiServersIfNeeded() {
+  if (localStorage.getItem(API_SERVERS_KEY) !== null) return;
+  const s = loadSettings();
+  if (!s.url) { saveApiServersRaw([]); return; }
+  const server = normalizeApiServer({ name: 'Par défaut', url: s.url, key: s.key, model: s.model });
+  saveApiServersRaw([server]);
+  localStorage.setItem(ACTIVE_API_SERVER_KEY, server.id);
+}
+
+function saveApiServersRaw(arr) {
+  localStorage.setItem(API_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  return arr;
+}
+
+function loadApiServers() {
+  migrateApiServersIfNeeded();
+  try {
+    const arr = JSON.parse(localStorage.getItem(API_SERVERS_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveApiServers(arr) {
+  return saveApiServersRaw(arr);
+}
+
+function normalizeApiServer(s) {
+  const o = s || {};
+  return {
+    id: o.id || genApiServerId(),
+    name: String(o.name || '').trim(),
+    url: String(o.url || '').trim(),
+    key: o.key ? String(o.key) : '',
+    model: String(o.model || '').trim(),
+  };
+}
+
+function upsertApiServer(server) {
+  const next = normalizeApiServer(server);
+  const arr = loadApiServers();
+  const i = arr.findIndex(s => s.id === next.id);
+  if (i >= 0) arr[i] = next; else arr.push(next);
+  saveApiServers(arr);
+  return arr;
+}
+
+function deleteApiServer(id) {
+  const arr = loadApiServers().filter(s => s.id !== id);
+  saveApiServers(arr);
+  return arr;
+}
+
+function getApiServer(id) {
+  return loadApiServers().find(s => s.id === id) || null;
+}
+
+function getActiveApiServerId() {
+  return localStorage.getItem(ACTIVE_API_SERVER_KEY) || '';
+}
+
+function setActiveApiServerId(id) {
+  localStorage.setItem(ACTIVE_API_SERVER_KEY, id || '');
+}
+
+function activeApiServer() {
+  const servers = loadApiServers();
+  if (!servers.length) return null;
+  const byId = getApiServer(getActiveApiServerId());
+  return byId || servers[0];
+}
+
+function activeApiConfig() {
+  const s = activeApiServer();
+  return {
+    url: (s && s.url) || '',
+    key: (s && s.key) || '',
+    model: (s && s.model) || loadSettings().model || '',
+  };
 }
 
 const MCP_SERVERS_KEY = 'miaou-mcp-servers';
@@ -4270,7 +4422,7 @@ technologies, concepts), en minuscules, sans doublons.`;
 async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
-  const cfg = loadSettings();
+  const cfg = Object.assign({}, loadSettings(), activeApiConfig());
   const url = cfg.url;
 
   const _attempt = async (extra) => {
@@ -4334,7 +4486,7 @@ function joinReasoning(a, b) {
 
 async function streamCompletion(messages, opts) {
   const o = opts || {};
-  const cfg = loadSettings();
+  const cfg = Object.assign({}, loadSettings(), activeApiConfig());
   const model = o.model || cfg.model;
   const body = {
     
@@ -4594,7 +4746,7 @@ function searchSummaries(queryText, excludeId) {
 }
 
 async function fetchModels(override) {
-  const cfg = Object.assign({}, loadSettings(), override || {});
+  const cfg = Object.assign({}, loadSettings(), activeApiConfig(), override || {});
   const res = await fetch(cfg.url + '/models', {
     headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
   });
@@ -4681,11 +4833,16 @@ function modelName() {
   return s.model || 'modèle';
 }
 
-function assistantHead(model, reasoning, ts) {
+function assistantHead(model, reasoning, ts, server) {
   const has = reasoning && String(reasoning).trim();
-  const tsText = ts ? '· ' + formatMessageTime(ts, Date.now()) : '';
+  const tsText = ts ? formatMessageTime(ts, Date.now()) : '';
+  
+  const showSrv = server && loadApiServers().length > 1;
+  const srcHtml = (showSrv ? `<span>${escHtml(server)}</span><span class="tool-name-sep">›</span>` : '') +
+    `<span>${escHtml(model || modelName())}</span>`;
   return (
-    `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt=""><span>${escHtml(model || modelName())}</span>` +
+    `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt="">${srcHtml}` +
+    `<span class="msg-ts-sep tool-name-sep"${tsText ? '' : ' hidden'}>·</span>` +
     `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
     `<div class="meta-actions">` +
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
@@ -4700,7 +4857,7 @@ function assistantHead(model, reasoning, ts) {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts) {
+function buildMsg(role, content, model, reasoning, ts, server) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
@@ -4715,7 +4872,7 @@ function buildMsg(role, content, model, reasoning, ts) {
       (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
   } else {
     wrap.innerHTML =
-      assistantHead(model, reasoning, ts) +
+      assistantHead(model, reasoning, ts, server) +
       `<div class="body">${renderMd(content)}</div>`;
     const bodyEl = wrap.querySelector('.body');
     if (bodyEl) bodyEl.dataset.raw = content;
@@ -5132,7 +5289,7 @@ function renderThread(msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
     
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -5164,10 +5321,10 @@ function appendUserMessage(text, ts) {
   return el;
 }
 
-function startAssistantMessage(model) {
+function startAssistantMessage(model, server) {
   const wrap = document.createElement('div');
   wrap.className = 'msg assistant';
-  wrap.innerHTML = assistantHead(model, '') + `<div class="body"></div>`;
+  wrap.innerHTML = assistantHead(model, '', undefined, server) + `<div class="body"></div>`;
   $('thread').appendChild(wrap);
   startWaiter(wrap.querySelector('.body'));     
   scrollBottom();
@@ -5559,22 +5716,15 @@ function setTitle(t) {
   document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
 }
 
-function syncKeyFieldHint() {
-  const input = $('set-key');
-  const hint = $('set-key-hint');
-  if (REQUIRE_API_KEY) {
-    if (input) input.placeholder = 'Clef API';
-    if (hint) hint.textContent = "Authentification requise.";
-  } else {
-    if (input) input.placeholder = '(vide si non requise)';
-    if (hint) hint.textContent = "Laissez vide si l'endpoint n'exige pas d'authentification.";
-  }
+function apiKeyFieldHint() {
+  return REQUIRE_API_KEY
+    ? { placeholder: 'Clef API', hint: 'Authentification requise.' }
+    : { placeholder: '(vide si non requise)', hint: "Laissez vide si l'endpoint n'exige pas d'authentification." };
 }
 
 function syncConfigured() {
-  const url = $('set-url').value.trim();
-  const key = $('set-key').value.trim();
-  configured = !!(url && (key || !REQUIRE_API_KEY));
+  const cfg = activeApiConfig();
+  configured = !!(cfg.url && (cfg.key || !REQUIRE_API_KEY));
 
   const wrap = $('input-wrap');
   const ta = $('composer-text');
@@ -5654,62 +5804,52 @@ function onComposerKey(e) {
 
 let _models = [];
 
-async function openModelMenu() {
-  const menu = $('model-menu');
-  menu.classList.add('show');
-  menu.innerHTML = `<div class="model-loading"><span class="spin"></span>Interrogation de l'API…</div>`;
-  const url = $('set-url').value.trim();
-  const key = $('set-key').value.trim();
+async function openApiModelMenu(inputEl, menuEl, urlEl, keyEl) {
+  menuEl.classList.add('show');
+  menuEl.innerHTML = `<div class="model-loading"><span class="spin"></span>Interrogation de l'API…</div>`;
+  const url = urlEl.value.trim();
+  const key = keyEl.value.trim();
   if (!url) {
-    menu.innerHTML = `<div class="model-error">URL non renseignée — saisie manuelle</div>`;
+    menuEl.innerHTML = `<div class="model-error">URL non renseignée — saisie manuelle</div>`;
     return;
   }
   try {
     const models = await fetchModels({ url, key });
     _models = models;
     if (!models.length) {
-      menu.innerHTML = `<div class="model-error">Aucun modèle exposé — saisie manuelle</div>`;
+      menuEl.innerHTML = `<div class="model-error">Aucun modèle exposé — saisie manuelle</div>`;
       return;
     }
-    renderModelOptions(models, true);
+    renderApiModelOptions(models, inputEl, menuEl, true);
   } catch (e) {
-    menu.innerHTML = `<div class="model-error">API injoignable — saisie manuelle</div>`;
+    menuEl.innerHTML = `<div class="model-error">API injoignable — saisie manuelle</div>`;
   }
 }
 
-function renderModelOptions(models, scrollToSelected) {
-  const menu = $('model-menu');
-  const cur = $('set-model').value.trim();
-  menu.innerHTML = '';
+function renderApiModelOptions(models, inputEl, menuEl, scrollToSelected) {
+  const cur = inputEl.value.trim();
+  menuEl.innerHTML = '';
   models.forEach(m => {
     const o = document.createElement('div');
     o.className = 'model-opt' + (m === cur ? ' selected' : '');
     o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
-    o.onmousedown = (ev) => { ev.preventDefault(); pickModel(m); };
-    menu.appendChild(o);
+    o.onmousedown = (ev) => { ev.preventDefault(); inputEl.value = m; menuEl.classList.remove('show'); };
+    menuEl.appendChild(o);
   });
   if (scrollToSelected) {
-    const sel = menu.querySelector('.selected');
+    const sel = menuEl.querySelector('.selected');
     if (sel) sel.scrollIntoView({ block: 'nearest' });
   }
 }
 
-function onModelInput() {
-  const q = $('set-model').value.trim().toLowerCase();
-  renderModelOptions(_models.filter(m => m.toLowerCase().includes(q)));
-}
-
-function pickModel(m) {
-  $('set-model').value = m;
-  $('model-label').textContent = m;
-  $('model-menu').classList.remove('show');
-  updateSettingsDirty();
+function onApiModelInput(inputEl, menuEl) {
+  const q = inputEl.value.trim().toLowerCase();
+  renderApiModelOptions(_models.filter(m => m.toLowerCase().includes(q)), inputEl, menuEl);
 }
 
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('#set-model') && !e.target.closest('#model-menu')) {
-    const menu = $('model-menu');
-    if (menu) menu.classList.remove('show');
+  if (!e.target.closest('.api-model-anchor')) {
+    document.querySelectorAll('#api-list .model-menu.show').forEach(m => m.classList.remove('show'));
   }
   if (!e.target.closest('#composer-model')) {
     const cm = $('composer-model-menu');
@@ -5729,7 +5869,7 @@ let _modelsCache = null;
 let _modelsCacheUrl = '';
 
 async function loadModelsCached() {
-  const cfg = loadSettings();
+  const cfg = activeApiConfig();
   const url = (cfg.url || '').trim();
   if (!url) return [];
   if (_modelsCache && _modelsCacheUrl === url) return _modelsCache;
@@ -5877,10 +6017,7 @@ function toggleSettingsCat(head) {
 
 function settingsFormDirty() {
   const s = loadSettings();
-  return $('set-url').value.trim() !== (s.url || '')
-    || $('set-key').value.trim() !== (s.key || '')
-    || $('set-model').value.trim() !== (s.model || '')
-    || $('set-system').value !== (s.systemPrompt || '')
+  return $('set-system').value !== (s.systemPrompt || '')
     || $('set-highlight').checked !== (s.highlight !== false)
     || pendingSummaryInjectionMode !== (s.summaryInjectionMode || 'propose')
     || $('set-modelselector').checked !== !!s.showModelSelector
@@ -6433,6 +6570,198 @@ function buildMcpCard(server, isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger mcp-del'; delBtn.textContent = 'Supprimer';
     delBtn.addEventListener('click', () => onDeleteMcpCard(card, originalName));
+    actions.appendChild(delBtn);
+  }
+  editSection.appendChild(actions);
+
+  card.appendChild(editSection);
+  return card;
+}
+
+function openApiServers() {
+  renderApiServers();
+  $('api-drawer').classList.add('show');
+  $('api-backdrop').classList.add('show');
+}
+function closeApiServers() {
+  $('api-drawer').classList.remove('show');
+  $('api-backdrop').classList.remove('show');
+}
+function renderApiServersIfOpen() {
+  if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
+}
+
+function syncActiveApiServerUI() {
+  const s = activeApiServer();
+  const nameEl = $('active-api-server-name');
+  const urlEl = $('active-api-server-url');
+  if (nameEl) {
+    nameEl.innerHTML = '';
+    if (!s) {
+      nameEl.textContent = 'Aucun serveur configuré';
+    } else {
+      const n = document.createElement('span');
+      n.textContent = s.name;
+      nameEl.appendChild(n);
+      if (s.model) {
+        const sep = document.createElement('span');
+        sep.className = 'tool-name-sep';
+        sep.textContent = '›';
+        const m = document.createElement('span');
+        m.className = 'active-api-server-model';
+        m.textContent = s.model;
+        nameEl.append(sep, m);
+      }
+    }
+  }
+  if (urlEl) urlEl.textContent = s ? s.url : '';
+}
+
+function renderApiServers() {
+  const wrap = $('api-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const servers = loadApiServers();
+  if (!servers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucun serveur API. Ajouter un backend pour activer MIAOU.';
+    wrap.appendChild(empty);
+  } else {
+    const activeId = (activeApiServer() || {}).id;
+    for (const s of servers) wrap.appendChild(buildApiCard(s, false, s.id === activeId));
+  }
+}
+
+function addApiServerCard() {
+  const wrap = $('api-list');
+  if (!wrap) return;
+  const empty = wrap.querySelector('.mem-empty');
+  if (empty) empty.remove();
+  wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '' }, true, false), wrap.firstChild);
+}
+
+function showApiCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.api-err');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+
+function apiField(labelText, inputEl, hintText) {
+  const field = document.createElement('div');
+  field.className = 'api-field';
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  field.appendChild(label);
+  field.appendChild(inputEl);
+  if (hintText) {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = hintText;
+    field.appendChild(hint);
+  }
+  return field;
+}
+
+function buildApiCard(server, isNew, isActive) {
+  const card = document.createElement('div');
+  card.className = 'api-card' + (isNew ? ' is-editing' : '');
+  const originalId = server.id || '';
+
+  const viewSection = document.createElement('div');
+  viewSection.className = 'api-view';
+
+  const viewName = document.createElement('div');
+  viewName.className = 'api-view-name';
+  viewName.textContent = server.name || '';
+  viewSection.appendChild(viewName);
+
+  const viewUrl = document.createElement('div');
+  viewUrl.className = 'api-view-url';
+  viewUrl.textContent = server.url || '';
+  viewSection.appendChild(viewUrl);
+
+  const viewRow = document.createElement('div');
+  viewRow.className = 'api-view-row';
+
+  if (isActive) {
+    const viewStatus = document.createElement('div');
+    viewStatus.className = 'api-status active';
+    viewStatus.textContent = '● Actif';
+    viewRow.appendChild(viewStatus);
+  } else {
+    const useBtn = document.createElement('button');
+    useBtn.className = 'drawer-btn';
+    useBtn.textContent = 'Utiliser ce serveur';
+    useBtn.addEventListener('click', () => onUseApiServer(originalId));
+    viewRow.appendChild(useBtn);
+  }
+
+  const modBtn = document.createElement('button');
+  modBtn.className = 'drawer-btn';
+  modBtn.textContent = 'Modifier';
+  modBtn.addEventListener('click', () => card.classList.add('is-editing'));
+  viewRow.appendChild(modBtn);
+
+  viewSection.appendChild(viewRow);
+  card.appendChild(viewSection);
+
+  const editSection = document.createElement('div');
+  editSection.className = 'api-edit';
+
+  const mkInput = (cls, type, value, placeholder) => {
+    const i = document.createElement('input');
+    i.className = cls; i.type = type; i.value = value != null ? value : '';
+    if (placeholder) i.placeholder = placeholder;
+    i.spellcheck = false;
+    return i;
+  };
+
+  const nameI = mkInput('api-name', 'text', server.name, 'Par défaut');
+  const urlI  = mkInput('api-url', 'text', server.url, 'http://host-interne/v1');
+  const keyHintInfo = apiKeyFieldHint();
+  const keyI  = mkInput('api-key', 'password', server.key, keyHintInfo.placeholder);
+  const modelI = mkInput('api-model', 'text', server.model, 'gemma4:26b-nvfp4');
+
+  editSection.appendChild(apiField('Nom', nameI));
+  editSection.appendChild(apiField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
+  editSection.appendChild(apiField('Clef API', keyI, keyHintInfo.hint));
+
+  const modelAnchor = document.createElement('div');
+  modelAnchor.className = 'select-anchor api-model-anchor';
+  const modelMenu = document.createElement('div');
+  modelMenu.className = 'model-menu';
+  modelI.addEventListener('focus', () => openApiModelMenu(modelI, modelMenu, urlI, keyI));
+  modelI.addEventListener('input', () => onApiModelInput(modelI, modelMenu));
+  modelAnchor.append(modelI, modelMenu);
+  const modelField = document.createElement('div');
+  modelField.className = 'api-field';
+  const modelLabel = document.createElement('label');
+  modelLabel.textContent = 'Modèle par défaut';
+  modelField.append(modelLabel, modelAnchor);
+  const modelHint = document.createElement('span');
+  modelHint.className = 'hint';
+  modelHint.textContent = 'Choisissez parmi les modèles exposés par l\'API.';
+  modelField.appendChild(modelHint);
+  editSection.appendChild(modelField);
+
+  const err = document.createElement('div');
+  err.className = 'api-err'; err.setAttribute('hidden', '');
+  editSection.appendChild(err);
+
+  const actions = document.createElement('div');
+  actions.className = 'api-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'drawer-btn primary api-save'; saveBtn.textContent = 'Enregistrer';
+  saveBtn.addEventListener('click', () => onSaveApiCard(card, originalId));
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'drawer-btn api-cancel'; cancelBtn.textContent = 'Annuler';
+  cancelBtn.addEventListener('click', () => { if (isNew) card.remove(); else card.classList.remove('is-editing'); });
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  if (!isNew && loadApiServers().length > 1) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'drawer-btn danger api-del'; delBtn.textContent = 'Supprimer';
+    delBtn.addEventListener('click', () => onDeleteApiCard(card, originalId));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -7050,7 +7379,8 @@ function armIdleSummaryTimer() {
 }
 
 function activeModel() {
-  return (currentConvModel && currentConvModel.trim()) || (loadSettings().model || '');
+  
+  return (currentConvModel && currentConvModel.trim()) || activeApiConfig().model;
 }
 
 function setConvModel(m) {
@@ -7175,6 +7505,7 @@ async function openConversation(id) {
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
+    if (m.server) o.server = m.server;   
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
     
@@ -7331,6 +7662,7 @@ function persistCurrent() {
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
+    if (m.server) o.server = m.server;   
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
     if (m.displayText != null) o.displayText = m.displayText;   
@@ -7378,9 +7710,6 @@ function onTitleBlur(e) {
 
 function onSaveSettings() {
   const obj = {
-    url: $('set-url').value.trim(),
-    key: $('set-key').value.trim(),
-    model: $('set-model').value.trim(),
     systemPrompt: $('set-system').value,
     highlight: $('set-highlight').checked,
     summaryInjectionMode: pendingSummaryInjectionMode,
@@ -7451,6 +7780,58 @@ async function onSaveMcpCard(cardEl, originalName) {
 async function onDeleteMcpCard(cardEl, originalName) {
   if (originalName) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
   renderMcpServers();
+}
+
+function onSaveApiCard(cardEl, originalId) {
+  const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
+  const name = get('.api-name').trim();
+  if (!name) { showApiCardError(cardEl, 'Nom requis.'); return; }
+  const url = get('.api-url').trim();
+  if (!url) { showApiCardError(cardEl, 'URL requise.'); return; }
+  const wasEmpty = !loadApiServers().length;
+  const server = {
+    id: originalId || undefined,
+    name, url,
+    key: get('.api-key'),
+    model: get('.api-model').trim(),
+  };
+  const arr = upsertApiServer(server);
+  if (wasEmpty) {
+    const saved = arr.find(s => s.name === name && s.url === url);
+    if (saved) setActiveApiServerId(saved.id);
+  }
+  renderApiServers();
+  syncActiveApiServerUI();
+  syncConfigured();
+  syncModelUI();
+  prefetchModels();
+}
+
+function onDeleteApiCard(cardEl, id) {
+  const arr = loadApiServers();
+  if (arr.length <= 1) { showApiCardError(cardEl, 'Impossible de supprimer le dernier serveur.'); return; }
+  const wasActive = (activeApiServer() || {}).id === id;
+  deleteApiServer(id);
+  if (wasActive) {
+    const remaining = loadApiServers();
+    if (remaining.length) setActiveApiServerId(remaining[0].id);
+  }
+  renderApiServers();
+  syncActiveApiServerUI();
+  syncConfigured();
+  syncModelUI();
+  prefetchModels();
+}
+
+function onUseApiServer(id) {
+  setActiveApiServerId(id);
+  
+  setConvModel('');
+  renderApiServers();
+  syncActiveApiServerUI();
+  syncConfigured();
+  syncModelUI();
+  prefetchModels();   
 }
 
 async function onSaveSkillCard(cardEl, originalSlug) {
@@ -7593,6 +7974,7 @@ async function editUserMessage(index, newText) {
 async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   
+  const serverName = (activeApiServer() || {}).name || '';   
   const reasoningEffort = activeReasoningEffort();
   const sys = buildSystemMessage();
   
@@ -7610,7 +7992,7 @@ async function dispatchSend(matches) {
 
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
-  let wrap = startAssistantMessage(model);
+  let wrap = startAssistantMessage(model, serverName);
   
   let earlyRendered = [];
   setSending(true);
@@ -7624,12 +8006,16 @@ async function dispatchSend(matches) {
         if (content && content.trim()) {
           
           const tourTs = Date.now();
-          currentThread.push({ role: 'assistant', content, model, ts: tourTs });   
+          const tourMsg = { role: 'assistant', content, model, ts: tourTs };
+          if (serverName) tourMsg.server = serverName;
+          currentThread.push(tourMsg);   
           finalizeAssistant(wrap, content);
           const tsEl = wrap.querySelector('.msg-ts');
-          if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
+          if (tsEl) { tsEl.textContent = formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
+          const tsSepEl = wrap.querySelector('.msg-ts-sep');
+          if (tsSepEl) tsSepEl.removeAttribute('hidden');
           persistCurrent();
-          wrap = startAssistantMessage(model);
+          wrap = startAssistantMessage(model, serverName);
         } else {
           resetAssistant(wrap);
         }
@@ -7723,12 +8109,15 @@ async function dispatchSend(matches) {
       onFinal: (content, reasoning) => {
         const ts = Date.now();
         const msg = { role: 'assistant', content, model, ts };
+        if (serverName) msg.server = serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   
         
         currentThread.push(msg);
         finalizeAssistant(wrap, content);
         const tsEl = wrap.querySelector('.msg-ts');
-        if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+        if (tsEl) { tsEl.textContent = formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+        const tsSepEl = wrap.querySelector('.msg-ts-sep');
+        if (tsSepEl) tsSepEl.removeAttribute('hidden');
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   
         persistCurrent();
         setConnDot('ok');
@@ -7737,8 +8126,15 @@ async function dispatchSend(matches) {
       onHalt: (leadIn, question) => {
         
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
-        currentThread.push({ role: 'assistant', content: text, model });   
+        const haltTs = Date.now();
+        const haltMsg = { role: 'assistant', content: text, model, ts: haltTs };
+        if (serverName) haltMsg.server = serverName;
+        currentThread.push(haltMsg);   
         finalizeAssistant(wrap, text);
+        const haltTsEl = wrap.querySelector('.msg-ts');
+        if (haltTsEl) { haltTsEl.textContent = formatMessageTime(haltTs, Date.now()); haltTsEl.removeAttribute('hidden'); }
+        const haltTsSepEl = wrap.querySelector('.msg-ts-sep');
+        if (haltTsSepEl) haltTsSepEl.removeAttribute('hidden');
         persistCurrent();
         setConnDot('ok');
         
@@ -7866,10 +8262,8 @@ async function runBackfill() {
 function init() {
   applyLogo();
 
+  loadApiServers();   
   const s = loadSettings();
-  $('set-url').value = s.url || '';
-  $('set-key').value = s.key || '';
-  $('set-model').value = s.model || '';
   $('set-system').value = s.systemPrompt || '';
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
@@ -7880,7 +8274,7 @@ function init() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
-  syncKeyFieldHint();
+  syncActiveApiServerUI();
   syncModelUI();
   syncReasoningUI();
 

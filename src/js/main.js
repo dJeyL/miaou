@@ -61,7 +61,9 @@ function armIdleSummaryTimer() {
 // sinon le modèle par défaut des réglages. Ne JAMAIS mélanger les deux dans une
 // même variable d'état (override conv vs défaut global).
 function activeModel() {
-  return (currentConvModel && currentConvModel.trim()) || (loadSettings().model || '');
+  // activeApiConfig() (storage.js) résout : modèle du serveur actif, sinon
+  // settings.model legacy — même chaîne que silentCompletion/streamCompletion.
+  return (currentConvModel && currentConvModel.trim()) || activeApiConfig().model;
 }
 
 // Fixe l'override de modèle de la conversation courante (choix dans le composer).
@@ -211,6 +213,7 @@ async function openConversation(id) {
       return a;
     }
     const o = { role: m.role, content: m.content, model: m.model };
+    if (m.server) o.server = m.server;   // provenance (serveur API), assistant uniquement
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
     // littéral (slash-commande skill). Normalise l'ancien champ `display` (données
@@ -381,6 +384,7 @@ function persistCurrent() {
     }
     const o = { role: m.role, content: m.content };
     if (m.model) o.model = m.model;
+    if (m.server) o.server = m.server;   // provenance (serveur API), assistant uniquement
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
     if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
@@ -431,9 +435,6 @@ function onTitleBlur(e) {
 // ── Réglages ────────────────────────────────────────────────────────────────
 function onSaveSettings() {
   const obj = {
-    url: $('set-url').value.trim(),
-    key: $('set-key').value.trim(),
-    model: $('set-model').value.trim(),
     systemPrompt: $('set-system').value,
     highlight: $('set-highlight').checked,
     summaryInjectionMode: pendingSummaryInjectionMode,
@@ -512,6 +513,64 @@ async function onSaveMcpCard(cardEl, originalName) {
 async function onDeleteMcpCard(cardEl, originalName) {
   if (originalName) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
   renderMcpServers();
+}
+
+// ── Serveurs API : persistance + activation (orchestration depuis le drawer) ─
+// Même pattern que les cartes MCP (onSaveMcpCard/onDeleteMcpCard), mais `id`
+// fait clé d'identité (cf. storage.js) et il y a une notion supplémentaire de
+// "serveur actif" (bouton Utiliser ce serveur, pas de toggle enabled).
+function onSaveApiCard(cardEl, originalId) {
+  const get = (sel) => { const el = cardEl.querySelector(sel); return el ? el.value : ''; };
+  const name = get('.api-name').trim();
+  if (!name) { showApiCardError(cardEl, 'Nom requis.'); return; }
+  const url = get('.api-url').trim();
+  if (!url) { showApiCardError(cardEl, 'URL requise.'); return; }
+  const wasEmpty = !loadApiServers().length;
+  const server = {
+    id: originalId || undefined,
+    name, url,
+    key: get('.api-key'),
+    model: get('.api-model').trim(),
+  };
+  const arr = upsertApiServer(server);
+  if (wasEmpty) {
+    const saved = arr.find(s => s.name === name && s.url === url);
+    if (saved) setActiveApiServerId(saved.id);
+  }
+  renderApiServers();
+  syncActiveApiServerUI();
+  syncConfigured();
+  syncModelUI();
+  prefetchModels();
+}
+
+function onDeleteApiCard(cardEl, id) {
+  const arr = loadApiServers();
+  if (arr.length <= 1) { showApiCardError(cardEl, 'Impossible de supprimer le dernier serveur.'); return; }
+  const wasActive = (activeApiServer() || {}).id === id;
+  deleteApiServer(id);
+  if (wasActive) {
+    const remaining = loadApiServers();
+    if (remaining.length) setActiveApiServerId(remaining[0].id);
+  }
+  renderApiServers();
+  syncActiveApiServerUI();
+  syncConfigured();
+  syncModelUI();
+  prefetchModels();
+}
+
+function onUseApiServer(id) {
+  setActiveApiServerId(id);
+  // L'override de modèle de la conversation courante pointait sur un modèle de
+  // l'ANCIEN serveur : on le lève, sinon tout l'échange suivant (y compris les
+  // tours tool_calls) partirait avec un modèle inconnu du nouvel endpoint.
+  setConvModel('');
+  renderApiServers();
+  syncActiveApiServerUI();
+  syncConfigured();
+  syncModelUI();
+  prefetchModels();   // loadModelsCached() re-fetch si l'URL a changé (comparaison _modelsCacheUrl)
 }
 
 // ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────
@@ -700,6 +759,7 @@ async function editUserMessage(index, newText) {
 async function dispatchSend(matches) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
+  const serverName = (activeApiServer() || {}).name || '';   // provenance, persistée sur chaque message assistant
   const reasoningEffort = activeReasoningEffort();
   const sys = buildSystemMessage();
   // Résout les références de ressources ([resource_ref:…]) dans les entry.result
@@ -724,7 +784,7 @@ async function dispatchSend(matches) {
 
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
-  let wrap = startAssistantMessage(model);
+  let wrap = startAssistantMessage(model, serverName);
   // Acks MCP pré-rendus (avant await réseau) : { ack: descripteur brut, entry:
   // entrée currentThread, node: nœud DOM }. Stockés ici pour que onToolAcks
   // puisse rétro-appliquer la classe d'erreur si ack.error a été posé après l'await.
@@ -741,12 +801,16 @@ async function dispatchSend(matches) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
           const tourTs = Date.now();
-          currentThread.push({ role: 'assistant', content, model, ts: tourTs });   // avant finalizeAssistant, cf. onFinal
+          const tourMsg = { role: 'assistant', content, model, ts: tourTs };
+          if (serverName) tourMsg.server = serverName;
+          currentThread.push(tourMsg);   // avant finalizeAssistant, cf. onFinal
           finalizeAssistant(wrap, content);
           const tsEl = wrap.querySelector('.msg-ts');
-          if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
+          if (tsEl) { tsEl.textContent = formatMessageTime(tourTs, Date.now()); tsEl.removeAttribute('hidden'); }
+          const tsSepEl = wrap.querySelector('.msg-ts-sep');
+          if (tsSepEl) tsSepEl.removeAttribute('hidden');
           persistCurrent();
-          wrap = startAssistantMessage(model);
+          wrap = startAssistantMessage(model, serverName);
         } else {
           resetAssistant(wrap);
         }
@@ -858,6 +922,7 @@ async function dispatchSend(matches) {
       onFinal: (content, reasoning) => {
         const ts = Date.now();
         const msg = { role: 'assistant', content, model, ts };
+        if (serverName) msg.server = serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
         // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
         // qui teste currentThread.some(role==='assistant') — sur une conversation
@@ -866,7 +931,9 @@ async function dispatchSend(matches) {
         currentThread.push(msg);
         finalizeAssistant(wrap, content);
         const tsEl = wrap.querySelector('.msg-ts');
-        if (tsEl) { tsEl.textContent = '· ' + formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+        if (tsEl) { tsEl.textContent = formatMessageTime(ts, Date.now()); tsEl.removeAttribute('hidden'); }
+        const tsSepEl = wrap.querySelector('.msg-ts-sep');
+        if (tsSepEl) tsSepEl.removeAttribute('hidden');
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
         setConnDot('ok');
@@ -878,8 +945,15 @@ async function dispatchSend(matches) {
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
         // (« Oui » → create_memory + narration ; « Non » → rien).
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
-        currentThread.push({ role: 'assistant', content: text, model });   // avant finalizeAssistant, cf. onFinal
+        const haltTs = Date.now();
+        const haltMsg = { role: 'assistant', content: text, model, ts: haltTs };
+        if (serverName) haltMsg.server = serverName;
+        currentThread.push(haltMsg);   // avant finalizeAssistant, cf. onFinal
         finalizeAssistant(wrap, text);
+        const haltTsEl = wrap.querySelector('.msg-ts');
+        if (haltTsEl) { haltTsEl.textContent = formatMessageTime(haltTs, Date.now()); haltTsEl.removeAttribute('hidden'); }
+        const haltTsSepEl = wrap.querySelector('.msg-ts-sep');
+        if (haltTsSepEl) haltTsSepEl.removeAttribute('hidden');
         persistCurrent();
         setConnDot('ok');
         // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
@@ -1026,10 +1100,8 @@ async function runBackfill() {
 function init() {
   applyLogo();
 
+  loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
   const s = loadSettings();
-  $('set-url').value = s.url || '';
-  $('set-key').value = s.key || '';
-  $('set-model').value = s.model || '';
   $('set-system').value = s.systemPrompt || '';
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
@@ -1040,7 +1112,7 @@ function init() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
-  syncKeyFieldHint();
+  syncActiveApiServerUI();
   syncModelUI();
   syncReasoningUI();
 

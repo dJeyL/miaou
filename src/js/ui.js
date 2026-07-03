@@ -101,11 +101,20 @@ function modelName() {
 // masquée tant qu'aucun raisonnement) et le bloc collapsible du raisonnement
 // (replié par défaut, donc `hidden`). Sert au rendu live ET au reload depuis le
 // stockage — un seul mécanisme de pliage/dépliage, persistant sans recalcul.
-function assistantHead(model, reasoning, ts) {
+function assistantHead(model, reasoning, ts, server) {
   const has = reasoning && String(reasoning).trim();
-  const tsText = ts ? '· ' + formatMessageTime(ts, Date.now()) : '';
+  const tsText = ts ? formatMessageTime(ts, Date.now()) : '';
+  // Provenance : « serveur › modèle » seulement si plusieurs serveurs API sont
+  // configurés (sur une config mono-serveur l'info est du bruit). Les anciens
+  // messages sans champ server n'affichent que le modèle. Le « · » devant
+  // l'heure est un span séparé (même coloration accent que le « › »), masqué
+  // et révélé avec .msg-ts (cf. les deux mises à jour dynamiques, main.js).
+  const showSrv = server && loadApiServers().length > 1;
+  const srcHtml = (showSrv ? `<span>${escHtml(server)}</span><span class="tool-name-sep">›</span>` : '') +
+    `<span>${escHtml(model || modelName())}</span>`;
   return (
-    `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt=""><span>${escHtml(model || modelName())}</span>` +
+    `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt="">${srcHtml}` +
+    `<span class="msg-ts-sep tool-name-sep"${tsText ? '' : ' hidden'}>·</span>` +
     `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
     `<div class="meta-actions">` +
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
@@ -120,7 +129,7 @@ function assistantHead(model, reasoning, ts) {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts) {
+function buildMsg(role, content, model, reasoning, ts, server) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
@@ -135,7 +144,7 @@ function buildMsg(role, content, model, reasoning, ts) {
       (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
   } else {
     wrap.innerHTML =
-      assistantHead(model, reasoning, ts) +
+      assistantHead(model, reasoning, ts, server) +
       `<div class="body">${renderMd(content)}</div>`;
     const bodyEl = wrap.querySelector('.body');
     if (bodyEl) bodyEl.dataset.raw = content;
@@ -611,7 +620,7 @@ function renderThread(msgs) {
     // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
     // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -644,10 +653,10 @@ function appendUserMessage(text, ts) {
   return el;
 }
 
-function startAssistantMessage(model) {
+function startAssistantMessage(model, server) {
   const wrap = document.createElement('div');
   wrap.className = 'msg assistant';
-  wrap.innerHTML = assistantHead(model, '') + `<div class="body"></div>`;
+  wrap.innerHTML = assistantHead(model, '', undefined, server) + `<div class="body"></div>`;
   $('thread').appendChild(wrap);
   startWaiter(wrap.querySelector('.body'));     // état WAITING
   scrollBottom();
@@ -1087,25 +1096,20 @@ function setTitle(t) {
   document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
 }
 
-// Légende + placeholder du champ clef, selon REQUIRE_API_KEY (figé au build).
-// Posé une fois à l'init — la constante ne change pas au runtime.
-function syncKeyFieldHint() {
-  const input = $('set-key');
-  const hint = $('set-key-hint');
-  if (REQUIRE_API_KEY) {
-    if (input) input.placeholder = 'Clef API';
-    if (hint) hint.textContent = "Authentification requise.";
-  } else {
-    if (input) input.placeholder = '(vide si non requise)';
-    if (hint) hint.textContent = "Laissez vide si l'endpoint n'exige pas d'authentification.";
-  }
+// Placeholder + hint du champ clef d'une carte serveur API, selon
+// REQUIRE_API_KEY (figé au build). Appelé à la construction de chaque carte
+// (buildApiCard) plutôt qu'une fois à l'init : la cible n'est plus un champ
+// settings global mais un input par carte.
+function apiKeyFieldHint() {
+  return REQUIRE_API_KEY
+    ? { placeholder: 'Clef API', hint: 'Authentification requise.' }
+    : { placeholder: '(vide si non requise)', hint: "Laissez vide si l'endpoint n'exige pas d'authentification." };
 }
 
 // ── État configuré / non configuré ──────────────────────────────────────────
 function syncConfigured() {
-  const url = $('set-url').value.trim();
-  const key = $('set-key').value.trim();
-  configured = !!(url && (key || !REQUIRE_API_KEY));
+  const cfg = activeApiConfig();
+  configured = !!(cfg.url && (cfg.key || !REQUIRE_API_KEY));
 
   const wrap = $('input-wrap');
   const ta = $('composer-text');
@@ -1197,65 +1201,58 @@ function onComposerKey(e) {
 }
 
 // ── Dropdown modèle (liste via l'API) ───────────────────────────────────────
+// Réutilisé par carte serveur API (buildApiCard) : opère sur les éléments
+// input/menu de LA carte plutôt que sur des ids fixes, une carte MCP-like
+// pouvant en principe être éditée en même temps qu'une autre.
 let _models = [];
 
-async function openModelMenu() {
-  const menu = $('model-menu');
-  menu.classList.add('show');
-  menu.innerHTML = `<div class="model-loading"><span class="spin"></span>Interrogation de l'API…</div>`;
-  const url = $('set-url').value.trim();
-  const key = $('set-key').value.trim();
+async function openApiModelMenu(inputEl, menuEl, urlEl, keyEl) {
+  menuEl.classList.add('show');
+  menuEl.innerHTML = `<div class="model-loading"><span class="spin"></span>Interrogation de l'API…</div>`;
+  const url = urlEl.value.trim();
+  const key = keyEl.value.trim();
   if (!url) {
-    menu.innerHTML = `<div class="model-error">URL non renseignée — saisie manuelle</div>`;
+    menuEl.innerHTML = `<div class="model-error">URL non renseignée — saisie manuelle</div>`;
     return;
   }
   try {
     const models = await fetchModels({ url, key });
     _models = models;
     if (!models.length) {
-      menu.innerHTML = `<div class="model-error">Aucun modèle exposé — saisie manuelle</div>`;
+      menuEl.innerHTML = `<div class="model-error">Aucun modèle exposé — saisie manuelle</div>`;
       return;
     }
-    renderModelOptions(models, true);
+    renderApiModelOptions(models, inputEl, menuEl, true);
   } catch (e) {
-    menu.innerHTML = `<div class="model-error">API injoignable — saisie manuelle</div>`;
+    menuEl.innerHTML = `<div class="model-error">API injoignable — saisie manuelle</div>`;
   }
 }
 
-function renderModelOptions(models, scrollToSelected) {
-  const menu = $('model-menu');
-  const cur = $('set-model').value.trim();
-  menu.innerHTML = '';
+function renderApiModelOptions(models, inputEl, menuEl, scrollToSelected) {
+  const cur = inputEl.value.trim();
+  menuEl.innerHTML = '';
   models.forEach(m => {
     const o = document.createElement('div');
     o.className = 'model-opt' + (m === cur ? ' selected' : '');
     o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
-    o.onmousedown = (ev) => { ev.preventDefault(); pickModel(m); };
-    menu.appendChild(o);
+    o.onmousedown = (ev) => { ev.preventDefault(); inputEl.value = m; menuEl.classList.remove('show'); };
+    menuEl.appendChild(o);
   });
   if (scrollToSelected) {
-    const sel = menu.querySelector('.selected');
+    const sel = menuEl.querySelector('.selected');
     if (sel) sel.scrollIntoView({ block: 'nearest' });
   }
 }
 
-function onModelInput() {
-  const q = $('set-model').value.trim().toLowerCase();
-  renderModelOptions(_models.filter(m => m.toLowerCase().includes(q)));
+function onApiModelInput(inputEl, menuEl) {
+  const q = inputEl.value.trim().toLowerCase();
+  renderApiModelOptions(_models.filter(m => m.toLowerCase().includes(q)), inputEl, menuEl);
 }
 
-function pickModel(m) {
-  $('set-model').value = m;
-  $('model-label').textContent = m;
-  $('model-menu').classList.remove('show');
-  updateSettingsDirty();
-}
-
-// Ferme le menu modèle au clic ailleurs.
+// Ferme tout menu modèle de carte API ouvert au clic ailleurs.
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('#set-model') && !e.target.closest('#model-menu')) {
-    const menu = $('model-menu');
-    if (menu) menu.classList.remove('show');
+  if (!e.target.closest('.api-model-anchor')) {
+    document.querySelectorAll('#api-list .model-menu.show').forEach(m => m.classList.remove('show'));
   }
   if (!e.target.closest('#composer-model')) {
     const cm = $('composer-model-menu');
@@ -1278,7 +1275,7 @@ let _modelsCache = null;
 let _modelsCacheUrl = '';
 
 async function loadModelsCached() {
-  const cfg = loadSettings();
+  const cfg = activeApiConfig();
   const url = (cfg.url || '').trim();
   if (!url) return [];
   if (_modelsCache && _modelsCacheUrl === url) return _modelsCache;
@@ -1453,10 +1450,7 @@ function toggleSettingsCat(head) {
 // est ouvert, la comparaison reste juste.
 function settingsFormDirty() {
   const s = loadSettings();
-  return $('set-url').value.trim() !== (s.url || '')
-    || $('set-key').value.trim() !== (s.key || '')
-    || $('set-model').value.trim() !== (s.model || '')
-    || $('set-system').value !== (s.systemPrompt || '')
+  return $('set-system').value !== (s.systemPrompt || '')
     || $('set-highlight').checked !== (s.highlight !== false)
     || pendingSummaryInjectionMode !== (s.summaryInjectionMode || 'propose')
     || $('set-modelselector').checked !== !!s.showModelSelector
@@ -1470,8 +1464,8 @@ function settingsFormDirty() {
 
 // Active « Enregistrer » seulement si quelque chose est à enregistrer. Appelé
 // par délégation input/change sur le drawer (câblée dans init) et explicitement
-// par les chemins programmatiques qui n'émettent pas d'événement (pickModel,
-// pickSettingsReasoningEffort, selectSummaryInjectionMode, onSaveSettings).
+// par les chemins programmatiques qui n'émettent pas d'événement
+// (pickSettingsReasoningEffort, selectSummaryInjectionMode, onSaveSettings).
 function updateSettingsDirty() {
   const btn = $('save-settings-btn');
   if (btn) btn.disabled = !settingsFormDirty();
@@ -2037,6 +2031,208 @@ function buildMcpCard(server, isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger mcp-del'; delBtn.textContent = 'Supprimer';
     delBtn.addEventListener('click', () => onDeleteMcpCard(card, originalName));
+    actions.appendChild(delBtn);
+  }
+  editSection.appendChild(actions);
+
+  card.appendChild(editSection);
+  return card;
+}
+
+// ── Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP) ─────
+// Remplace les champs plats url/key/model de la catégorie Connexion. `id` fait
+// clé d'identité (pas `name`, cf. storage.js) : le renommage ne casse rien.
+function openApiServers() {
+  renderApiServers();
+  $('api-drawer').classList.add('show');
+  $('api-backdrop').classList.add('show');
+}
+function closeApiServers() {
+  $('api-drawer').classList.remove('show');
+  $('api-backdrop').classList.remove('show');
+}
+function renderApiServersIfOpen() {
+  if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
+}
+
+// Affichage lecture seule (catégorie Connexion) du serveur actif : nom en gras,
+// « › modèle par défaut » à la suite (même séparateur coloré que le thread),
+// URL en hint dessous — évite d'ouvrir le drawer juste pour vérifier le modèle.
+function syncActiveApiServerUI() {
+  const s = activeApiServer();
+  const nameEl = $('active-api-server-name');
+  const urlEl = $('active-api-server-url');
+  if (nameEl) {
+    nameEl.innerHTML = '';
+    if (!s) {
+      nameEl.textContent = 'Aucun serveur configuré';
+    } else {
+      const n = document.createElement('span');
+      n.textContent = s.name;
+      nameEl.appendChild(n);
+      if (s.model) {
+        const sep = document.createElement('span');
+        sep.className = 'tool-name-sep';
+        sep.textContent = '›';
+        const m = document.createElement('span');
+        m.className = 'active-api-server-model';
+        m.textContent = s.model;
+        nameEl.append(sep, m);
+      }
+    }
+  }
+  if (urlEl) urlEl.textContent = s ? s.url : '';
+}
+
+function renderApiServers() {
+  const wrap = $('api-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const servers = loadApiServers();
+  if (!servers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucun serveur API. Ajouter un backend pour activer MIAOU.';
+    wrap.appendChild(empty);
+  } else {
+    const activeId = (activeApiServer() || {}).id;
+    for (const s of servers) wrap.appendChild(buildApiCard(s, false, s.id === activeId));
+  }
+}
+
+function addApiServerCard() {
+  const wrap = $('api-list');
+  if (!wrap) return;
+  const empty = wrap.querySelector('.mem-empty');
+  if (empty) empty.remove();
+  wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '' }, true, false), wrap.firstChild);
+}
+
+function showApiCardError(cardEl, msg) {
+  const el = cardEl.querySelector('.api-err');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+
+function apiField(labelText, inputEl, hintText) {
+  const field = document.createElement('div');
+  field.className = 'api-field';
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  field.appendChild(label);
+  field.appendChild(inputEl);
+  if (hintText) {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = hintText;
+    field.appendChild(hint);
+  }
+  return field;
+}
+
+function buildApiCard(server, isNew, isActive) {
+  const card = document.createElement('div');
+  card.className = 'api-card' + (isNew ? ' is-editing' : '');
+  const originalId = server.id || '';
+
+  // ── SECTION VUE ───────────────────────────────────────────────────────────
+  const viewSection = document.createElement('div');
+  viewSection.className = 'api-view';
+
+  const viewName = document.createElement('div');
+  viewName.className = 'api-view-name';
+  viewName.textContent = server.name || '';
+  viewSection.appendChild(viewName);
+
+  const viewUrl = document.createElement('div');
+  viewUrl.className = 'api-view-url';
+  viewUrl.textContent = server.url || '';
+  viewSection.appendChild(viewUrl);
+
+  const viewRow = document.createElement('div');
+  viewRow.className = 'api-view-row';
+
+  // Pill « Actif » OU bouton « Utiliser ce serveur » — jamais les deux : le
+  // pill dit l'état, le bouton propose la transition, redondants sur une même carte.
+  if (isActive) {
+    const viewStatus = document.createElement('div');
+    viewStatus.className = 'api-status active';
+    viewStatus.textContent = '● Actif';
+    viewRow.appendChild(viewStatus);
+  } else {
+    const useBtn = document.createElement('button');
+    useBtn.className = 'drawer-btn';
+    useBtn.textContent = 'Utiliser ce serveur';
+    useBtn.addEventListener('click', () => onUseApiServer(originalId));
+    viewRow.appendChild(useBtn);
+  }
+
+  const modBtn = document.createElement('button');
+  modBtn.className = 'drawer-btn';
+  modBtn.textContent = 'Modifier';
+  modBtn.addEventListener('click', () => card.classList.add('is-editing'));
+  viewRow.appendChild(modBtn);
+
+  viewSection.appendChild(viewRow);
+  card.appendChild(viewSection);
+
+  // ── SECTION ÉDITION ───────────────────────────────────────────────────────
+  const editSection = document.createElement('div');
+  editSection.className = 'api-edit';
+
+  const mkInput = (cls, type, value, placeholder) => {
+    const i = document.createElement('input');
+    i.className = cls; i.type = type; i.value = value != null ? value : '';
+    if (placeholder) i.placeholder = placeholder;
+    i.spellcheck = false;
+    return i;
+  };
+
+  const nameI = mkInput('api-name', 'text', server.name, 'Par défaut');
+  const urlI  = mkInput('api-url', 'text', server.url, 'http://host-interne/v1');
+  const keyHintInfo = apiKeyFieldHint();
+  const keyI  = mkInput('api-key', 'password', server.key, keyHintInfo.placeholder);
+  const modelI = mkInput('api-model', 'text', server.model, 'gemma4:26b-nvfp4');
+
+  editSection.appendChild(apiField('Nom', nameI));
+  editSection.appendChild(apiField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
+  editSection.appendChild(apiField('Clef API', keyI, keyHintInfo.hint));
+
+  const modelAnchor = document.createElement('div');
+  modelAnchor.className = 'select-anchor api-model-anchor';
+  const modelMenu = document.createElement('div');
+  modelMenu.className = 'model-menu';
+  modelI.addEventListener('focus', () => openApiModelMenu(modelI, modelMenu, urlI, keyI));
+  modelI.addEventListener('input', () => onApiModelInput(modelI, modelMenu));
+  modelAnchor.append(modelI, modelMenu);
+  const modelField = document.createElement('div');
+  modelField.className = 'api-field';
+  const modelLabel = document.createElement('label');
+  modelLabel.textContent = 'Modèle par défaut';
+  modelField.append(modelLabel, modelAnchor);
+  const modelHint = document.createElement('span');
+  modelHint.className = 'hint';
+  modelHint.textContent = 'Choisissez parmi les modèles exposés par l\'API.';
+  modelField.appendChild(modelHint);
+  editSection.appendChild(modelField);
+
+  const err = document.createElement('div');
+  err.className = 'api-err'; err.setAttribute('hidden', '');
+  editSection.appendChild(err);
+
+  const actions = document.createElement('div');
+  actions.className = 'api-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'drawer-btn primary api-save'; saveBtn.textContent = 'Enregistrer';
+  saveBtn.addEventListener('click', () => onSaveApiCard(card, originalId));
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'drawer-btn api-cancel'; cancelBtn.textContent = 'Annuler';
+  cancelBtn.addEventListener('click', () => { if (isNew) card.remove(); else card.classList.remove('is-editing'); });
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  if (!isNew && loadApiServers().length > 1) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'drawer-btn danger api-del'; delBtn.textContent = 'Supprimer';
+    delBtn.addEventListener('click', () => onDeleteApiCard(card, originalId));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);

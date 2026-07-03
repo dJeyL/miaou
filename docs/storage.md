@@ -3,6 +3,11 @@
 - `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
   theme, showModelSelector, reasoningEffort, showReasoningSelector, sidebarWidth,
   includeToolsInSystemPrompt, saveJsonResponses, intentTracing, confirmSkillAutoUse }`.
+  `url`/`key`/`model` sont **legacy** : depuis l'introduction des serveurs API
+  multiples (`miaou-api-servers` ci-dessous), ils ne sont plus édités nulle
+  part dans l'UI — `onSaveSettings()` ne les écrit plus. Ils ne servent qu'à
+  la migration silencieuse (une fois) et de filet dans `activeModel()` si
+  jamais aucun serveur n'existe encore.
   `summaryInjectionMode` ∈ `auto | propose | never`, défaut `propose`. `model` est
   le **modèle par défaut** (global). `showModelSelector` (défaut `false`) n'affecte
   que la visibilité du sélecteur dans le composer. `reasoningEffort` (défaut `''`)
@@ -53,11 +58,17 @@
   (storage) exposé par le handler global `togglePin(id)` (main.js).
   Chaque message du tableau `messages` porte les champs optionnels :
   `model?` (assistant uniquement, quel modèle a produit ce message),
-  `ts?` (epoch ms de création, absent sur les anciens messages — affichage sans
+  `server?` (assistant uniquement, nom du serveur API qui a produit ce
+  message ; absent sur les messages antérieurs au multi-serveurs — pas de
+  backfill possible, la provenance est inconnue), `ts?` (epoch ms de création,
+  absent sur les anciens messages — affichage sans
   horodatage, pas de crash), `reasoning?` (texte de raisonnement, assistant
-  uniquement). Ces trois champs sont **sérialisés par `persistCurrent` et
+  uniquement). Ces quatre champs sont **sérialisés par `persistCurrent` et
   restaurés par `openConversation`** — ne pas les omettre si on retouche ces
-  fonctions.
+  fonctions. À l'affichage (`assistantHead`, ui.js), la provenance est rendue
+  « serveur › modèle » (séparateur `.tool-name-sep` coloré) **uniquement si
+  plusieurs serveurs API sont configurés** ; sinon, modèle seul. `server`
+  n'atteint jamais le payload API (`expandThread` projette en `{role, content}`).
 - `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
 - `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed }]`.
@@ -78,6 +89,35 @@
   `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en
   mémoire seule, reconstruit au démarrage.
+- `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,
+  url, key, model }]`. Remplace les champs plats `url`/`key`/`model` de
+  `miaou-settings` (cf. ci-dessus). **`id` est l'identité** (pas `name`, à la
+  différence des serveurs MCP) : permet de renommer une carte sans perdre la
+  référence de serveur actif ni casser un override en cours. `key` stocké en
+  clair (même posture D6 que `authorization_token` MCP). `model` est le modèle
+  par défaut de ce serveur, résolu par `activeApiConfig()` (avec
+  `settings.model` legacy en filet) — c'est cette fonction, et **pas**
+  `loadSettings()`, qui fournit url/key/model à **tous** les appels API
+  (`silentCompletion`, `streamCompletion`, `fetchModels`) : titrage et résumé
+  compris, sinon ils enverraient le modèle legacy du serveur migré à
+  l'endpoint du serveur actif. `activeModel()` (main.js) = override de
+  conversation sinon `activeApiConfig().model`. Changer de serveur actif
+  (`onUseApiServer`, main.js) **lève l'override de modèle de la conversation
+  courante** (`setConvModel('')`) : il pointait sur un modèle de l'ancien
+  serveur.
+  Serveur actif persisté séparément dans `miaou-active-api-server` (string,
+  `id` du serveur). CRUD dans `storage.js`
+  (`loadApiServers`/`upsertApiServer`/`deleteApiServer`/`getApiServer`/
+  `activeApiServer`/`activeApiConfig`/`getActiveApiServerId`/`setActiveApiServerId`).
+  **Transformation silencieuse** (`migrateApiServersIfNeeded`, appelée en lazy
+  par `loadApiServers()`) : au premier accès sans tableau existant, si
+  `miaou-settings.url` (ou son défaut de build) est non-vide, crée un unique
+  serveur `{ name: 'Par défaut', url, key, model }` à partir des anciens
+  champs plats et l'active. Ne s'exécute qu'une fois — la présence de la clé
+  `miaou-api-servers`, même tableau vide, la court-circuite pour toujours.
+  Suppression du dernier serveur restant bloquée dans l'UI
+  (`onDeleteApiCard`, main.js) : jamais d'état « configuré » sans aucun
+  serveur en tableau non-vide.
 - **IndexedDB `miaou`** (ouverte par `resources.js`, **version 2**) : deux object
   stores. `onupgradeneeded` est idempotent (contains-check par store) → migration
   v1→v2 transparente, `resources` intact.

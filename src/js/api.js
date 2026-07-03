@@ -51,7 +51,7 @@ technologies, concepts), en minuscules, sans doublons.`;
 async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
-  const cfg = loadSettings();
+  const cfg = Object.assign({}, loadSettings(), activeApiConfig());
   const url = cfg.url;
 
   // Garde-fou : un endpoint qui accepte la connexion puis se tait laisserait le
@@ -137,7 +137,7 @@ function joinReasoning(a, b) {
 // qu'à la fin du stream : { content, toolCalls, finishReason }.
 async function streamCompletion(messages, opts) {
   const o = opts || {};
-  const cfg = loadSettings();
+  const cfg = Object.assign({}, loadSettings(), activeApiConfig());
   const model = o.model || cfg.model;
   const body = {
     // Override par conversation (o.model) sinon modèle par défaut des réglages.
@@ -457,7 +457,7 @@ function searchSummaries(queryText, excludeId) {
 
 // ── Liste des modèles exposés par l'API ─────────────────────────────────────
 async function fetchModels(override) {
-  const cfg = Object.assign({}, loadSettings(), override || {});
+  const cfg = Object.assign({}, loadSettings(), activeApiConfig(), override || {});
   const res = await fetch(cfg.url + '/models', {
     headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
   });
