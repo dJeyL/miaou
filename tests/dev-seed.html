@@ -115,7 +115,11 @@ const SEEDS = [
       { role: 'user',      content: "Mon cron job ne s'exécute pas. Ma ligne : `* 8 * * * /home/julien/scripts/backup.sh`. Elle devrait tourner à 8h." },
       { role: 'assistant', content: "`* 8 * * *` tourne toutes les minutes entre 8h00 et 8h59. Pour exactement 8h00 : `0 8 * * *`. Vérifie aussi que le script est exécutable (`chmod +x`) et que son shebang est correct. Les crons tournent avec un PATH minimal — si ton script appelle des binaires en chemin relatif, ça échoue silencieusement." },
       { role: 'user',      content: "Ah oui, `0 8` c'était ça. Comment voir les logs pour confirmer que ça tourne ?" },
-      { role: 'assistant', content: "`journalctl -u cron` ou `grep CRON /var/log/syslog`. Pour capturer la sortie du script : `0 8 * * * /home/julien/scripts/backup.sh >> /tmp/backup.log 2>&1`. Le `2>&1` capture aussi stderr. Pour simuler l'environnement cron : `env -i HOME=/home/julien PATH=/usr/bin:/bin bash /home/julien/scripts/backup.sh`." },
+      // « ornithorynque » : mot distinctif présent uniquement ici (absent du
+      // titre, du résumé et des keywords) — sert de test manuel pour la
+      // recherche plein texte (feature D) : retrouver cette conversation en
+      // tapant ce mot alors qu'il n'apparaît nulle part ailleurs.
+      { role: 'assistant', content: "`journalctl -u cron` ou `grep CRON /var/log/syslog`. Pour capturer la sortie du script : `0 8 * * * /home/julien/scripts/backup.sh >> /tmp/backup.log 2>&1`. Le `2>&1` capture aussi stderr. Pour simuler l'environnement cron (private joke d'équipe : le serveur de test s'appelle ornithorynque) : `env -i HOME=/home/julien PATH=/usr/bin:/bin bash /home/julien/scripts/backup.sh`." },
     ],
     summary: "Correction d'une syntaxe crontab (0 8 au lieu de * 8 pour 8h00 pile). Debug via journalctl/syslog, redirection stdout+stderr en fichier, simulation de l'environnement cron minimal avec env -i.",
     keywords: ['cron', 'crontab', 'linux', 'scheduling', 'bash', 'logs', 'journalctl', 'syslog', 'debug', 'environnement'],
@@ -306,6 +310,21 @@ const SEEDS = [
     ],
     summary: "Rédaction d'un compte-rendu de réunion d'architecture en s'appuyant sur la skill 'cr' découverte par le modèle (skills__list puis skills__read).",
     keywords: ['compte-rendu', 'skill', 'réunion', 'architecture', 'microservices', 'actions', 'décisions', 'autotrigger'],
+  },
+  {
+    id: 'seed-21',
+    title: 'Migration Kubernetes — troncature',
+    messages: [
+      { role: 'user',      content: "Détaille-moi toute la procédure de migration d'un cluster Kubernetes on-prem vers EKS, étape par étape, avec les pièges à éviter à chaque phase." },
+      // Dernier message assistant coupé à la limite de tokens (feature C) :
+      // truncated: true rend le bandeau « Réponse incomplète » + bouton
+      // « Continuer » au reload (bouton actif car c'est le dernier assistant).
+      { role: 'assistant',
+        content: "**Phase 1 — Audit de l'existant** : inventorie les workloads (Deployments, StatefulSets, DaemonSets), les StorageClass utilisées, les CRD installées et les intégrations réseau (CNI, Ingress). Piège fréquent : des PodSecurityPolicy ou des admission webhooks maison qui n'ont pas d'équivalent direct sur EKS.\n\n**Phase 2 — Provisionnement EKS** : crée le cluster avec une version de contrôle proche de l'origine pour limiter les écarts d'API. Attention aux quotas IAM et aux limites par défaut du VPC CNI (nombre d'IP par nœud) si tu as beaucoup de pods par nœud.\n\n**Phase 3 — Réplication du réseau",
+        truncated: true },
+    ],
+    summary: "Procédure détaillée de migration d'un cluster Kubernetes on-prem vers EKS, réponse coupée par la limite de tokens en phase 3 (fixture troncature/continuation).",
+    keywords: ['kubernetes', 'eks', 'migration', 'cluster', 'troncature', 'continuer', 'aws'],
   },
 ];
 

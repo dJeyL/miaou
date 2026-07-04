@@ -426,9 +426,10 @@ body {
 
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
 
+.msg-copy-user,
 .msg-edit {
   position: absolute;
-  top: 2px; left: -30px;
+  left: -30px;
   opacity: 0;
   background: none;
   border: none;
@@ -438,8 +439,13 @@ body {
   border-radius: 4px;
   transition: opacity 120ms var(--ease), color 120ms var(--ease);
 }
+.msg-edit { top: 2px; }
+.msg-copy-user { top: 28px; }
+.msg.user:hover .msg-copy-user,
 .msg.user:hover .msg-edit { opacity: 1; }
+.msg-copy-user:hover,
 .msg-edit:hover { color: var(--accent); }
+.msg-copy-user svg,
 .msg-edit svg { width: 14px; height: 14px; display: block; }
 
 .msg.user.editing { width: 100%; }
@@ -493,6 +499,27 @@ body {
 
 .msg.assistant .tool-ack + .body,
 .msg.assistant .memory-ack + .body { margin-top: 7px; }
+
+.msg-truncated {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.msg-continue {
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), color 120ms var(--ease);
+}
+.msg-continue:hover:not(:disabled) { border-color: var(--accent-bd); color: var(--accent); }
+.msg-continue:disabled { opacity: .45; cursor: default; }
 
 .body > *:first-child { margin-top: 0; }
 .body > *:last-child { margin-bottom: 0; }
@@ -887,6 +914,19 @@ body {
   padding: 0 4px;
   border-radius: 3px;
   color: var(--text-2);
+}
+
+.import-summary {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: 11.5px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .field textarea {
@@ -1649,14 +1689,21 @@ textarea.skill-content {
 .reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
 .reasoning-toggle.open { color: var(--accent); }
 .reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
-.msg-dl {
+.msg-copy,
+.msg-dl,
+.msg-regen {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 2px; border: none; background: none; cursor: pointer;
   color: var(--text-3); border-radius: 4px;
   transition: color .15s, background .15s;
 }
-.msg-dl:hover { color: var(--text); background: var(--surface-2); }
-.msg-dl[hidden] { display: none; }
+.msg-copy:hover,
+.msg-dl:hover,
+.msg-regen:hover { color: var(--text); background: var(--surface-2); }
+.msg-copy[hidden],
+.msg-dl[hidden],
+.msg-regen[hidden] { display: none; }
+.msg-copy--checked { color: var(--accent) !important; }
 
 .msg.assistant .meta .tool-name-sep { margin: 0 -4px; }
 .msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
@@ -2159,6 +2206,28 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
       </div>
 
+      <div class="set-cat">
+        <div class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C7 2 3 3.34 3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5c0-1.66-4-3-9-3zm0 2c4.42 0 7 1.07 7 1.5S16.42 7 12 7 5 5.93 5 5.5 7.58 4 12 4zM5 8.02C6.4 8.63 9 9 12 9s5.6-.37 7-.98v3.46c0 .43-2.58 1.5-7 1.5s-7-1.07-7-1.5V8.02zm0 5.48c1.4.61 4 .98 7 .98s5.6-.37 7-.98v3.46c0 .43-2.58 1.5-7 1.5s-7-1.07-7-1.5v-3.46zm0 5.48c1.4.61 4 .98 7 .98s5.6-.37 7-.98V19c0 .43-2.58 1.5-7 1.5S5 19.43 5 19v-.02z"/></svg></span>
+          <span class="set-cat-label">Données</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
+      <div class="field">
+        <label>Export / import complet</label>
+        <span class="hint">Le fichier inclut les clefs API et tokens en clair.</span>
+        <button class="btn-ghost" onclick="exportAllData()">Exporter les données</button>
+        <span class="hint">L'import remplace l'intégralité des données locales.</span>
+        <button class="btn-ghost" id="import-data-btn" onclick="onImportDataClick()">Importer les données</button>
+        <input type="file" id="import-data-input" accept=".json" hidden onchange="onImportFileSelected(this)">
+        <div class="cfg-err" id="import-data-err" hidden></div>
+        <div class="import-summary" id="import-data-summary" hidden></div>
+      </div>
+          </div>
+        </div>
+      </div>
+
       <button class="btn-primary" id="save-settings-btn" onclick="onSaveSettings()" disabled>Enregistrer</button>
       <small id="build-ts-label" class="build-ts-label"></small>
     </div>
@@ -2253,7 +2322,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-03 23:31 UTC */
+/* miaou — built: 2026-07-04 08:56 UTC */
 
 /* ── utils.js ── */
 
@@ -2657,7 +2726,7 @@ const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783121483}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783155417}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -2998,6 +3067,64 @@ function forgetMemory(id) {
   persistMemories(loadMemories().filter(x => x.id !== id));
 }
 
+const EXPORT_KEYS = [
+  'miaou-settings',
+  'miaou-conversations',
+  'miaou-summaries',
+  'miaou-memories',
+  'miaou-api-servers',
+  'miaou-active-api-server',
+  'miaou-mcp-servers',
+];
+
+function buildExportPayload(lsSnapshot, skills, resources) {
+  const ls = lsSnapshot || {};
+  return {
+    format: 'miaou-export',
+    version: 1,
+    exportedAt: Date.now(),
+    localStorage: {
+      'miaou-settings': ls['miaou-settings'] || {},
+      'miaou-conversations': Array.isArray(ls['miaou-conversations']) ? ls['miaou-conversations'] : [],
+      'miaou-summaries': ls['miaou-summaries'] || {},
+      'miaou-memories': Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [],
+      'miaou-api-servers': Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [],
+      'miaou-active-api-server': typeof ls['miaou-active-api-server'] === 'string' ? ls['miaou-active-api-server'] : '',
+      'miaou-mcp-servers': Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [],
+    },
+    idb: {
+      skills: Array.isArray(skills) ? skills : [],
+      resources: Array.isArray(resources) ? resources : [],
+    },
+  };
+}
+
+function validateImportPayload(obj) {
+  if (!obj || typeof obj !== 'object') return { ok: false, error: 'Fichier illisible : contenu invalide.' };
+  if (obj.format !== 'miaou-export') return { ok: false, error: 'Format inconnu : ce n\'est pas un export MIAOU.' };
+  if (typeof obj.version !== 'number' || obj.version > 1) {
+    return { ok: false, error: 'Version d\'export non supportée (' + obj.version + ').' };
+  }
+  const ls = (obj.localStorage && typeof obj.localStorage === 'object') ? obj.localStorage : {};
+  const idb = (obj.idb && typeof obj.idb === 'object') ? obj.idb : {};
+  const conversations = Array.isArray(ls['miaou-conversations']) ? ls['miaou-conversations'] : [];
+  const memories = Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [];
+  const apiServers = Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [];
+  const mcpServers = Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [];
+  const skills = Array.isArray(idb.skills) ? idb.skills : [];
+  const resources = Array.isArray(idb.resources) ? idb.resources : [];
+  return {
+    ok: true,
+    counts: {
+      conversations: conversations.length,
+      memories: memories.length,
+      skills: skills.length,
+      resources: resources.length,
+      servers: apiServers.length + mcpServers.length,
+    },
+  };
+}
+
 /* ── resources.js ── */
 
 function classifyMime(mime) {
@@ -3267,6 +3394,28 @@ function requestPersistence() {
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
     navigator.storage.persist().catch(function() {});
   }
+}
+
+function getAllResources() {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('resources', 'readonly');
+      const req = tx.objectStore('resources').getAll();
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+function clearIdbStore(storeName) {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction(storeName, 'readwrite');
+      const req = tx.objectStore(storeName).clear();
+      req.onsuccess = function() { resolve(); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
 }
 
 async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
@@ -4391,13 +4540,13 @@ async function runConversation(messages, hooks) {
     const result = await streamCompletion(messages, {
       model: h.model,
       reasoningEffort: h.reasoningEffort,
-      tools: toolDefinitions(),
+      tools: h.noTools ? undefined : toolDefinitions(),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
     });
 
     if (result.aborted) {
-      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
+      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), 'aborted');
       return result.content;
     }
 
@@ -4479,7 +4628,7 @@ async function runConversation(messages, hooks) {
       continue;   
     }
 
-    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
+    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), result.finishReason);
     return result.content;
   }
 
@@ -4639,8 +4788,14 @@ function assistantHead(model, reasoning, ts, server) {
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 2.5l1.5 3.8 3.8 1.5-3.8 1.5L11 13.1 9.5 9.3 5.7 7.8l3.8-1.5z"/><path d="M17.5 13l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/></svg>` +
       `</button>` +
+      `<button class="msg-copy" hidden title="Copier" onclick="copyMsg(this)">` +
+        `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
+      `</button>` +
       `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
+      `</button>` +
+      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse(this)">` +
+        `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
     `</div>` +
@@ -4648,13 +4803,25 @@ function assistantHead(model, reasoning, ts, server) {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts, server) {
+function truncatedBannerHtml() {
+  return (
+    `<div class="msg-truncated">` +
+    `<span class="msg-truncated-text">Réponse incomplète</span>` +
+    `<button class="msg-continue" onclick="continueTruncated(this)">Continuer</button>` +
+    `</div>`
+  );
+}
+
+function buildMsg(role, content, model, reasoning, ts, server, truncated) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
     if (ts) wrap.dataset.ts = ts;
     wrap.innerHTML =
       `<div class="bubble">` +
+      `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
+      `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
+      `</button>` +
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
@@ -4664,10 +4831,13 @@ function buildMsg(role, content, model, reasoning, ts, server) {
   } else {
     wrap.innerHTML =
       assistantHead(model, reasoning, ts, server) +
-      `<div class="body">${renderMd(content)}</div>`;
+      `<div class="body">${renderMd(content)}</div>` +
+      (truncated ? truncatedBannerHtml() : '');
     const bodyEl = wrap.querySelector('.body');
     if (bodyEl) bodyEl.dataset.raw = content;
     
+    const copyBtn = wrap.querySelector('.msg-copy');
+    if (copyBtn) copyBtn.removeAttribute('hidden');
     const dlBtn = wrap.querySelector('.msg-dl');
     if (dlBtn) dlBtn.removeAttribute('hidden');
   }
@@ -4781,6 +4951,29 @@ function downloadMsgMd(btn) {
   const modelStr = (msg && msg.model) ? ' (' + msg.model + ')' : '';
   const header = '### MIAOU' + modelStr + '\n\n';
   downloadFile('miaou-message.md', header + trace + raw, 'text/markdown');
+}
+
+function copyMsg(btn) {
+  const wrap = btn.closest('.msg');
+  if (!wrap) return;
+  let text;
+  if (wrap.classList.contains('assistant')) {
+    const body = wrap.querySelector('.body');
+    text = body && body.dataset.raw;
+  } else {
+    const idx = msgIndex(wrap);
+    const m = idx >= 0 ? currentThread[idx] : null;
+    text = m ? (m.displayText ?? m.content) : null;
+  }
+  if (!text) return;
+  
+  const svgCheck = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgCopy = btn.innerHTML;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = svgCheck;
+    btn.classList.add('msg-copy--checked');
+    setTimeout(() => { btn.innerHTML = svgCopy; btn.classList.remove('msg-copy--checked'); }, 1400);
+  });
 }
 
 const ICON_MEMORY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
@@ -5080,7 +5273,7 @@ function renderThread(msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
     
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -5093,6 +5286,18 @@ function renderThread(msgs) {
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
   syncConvDownloadBtn();
+  syncLastAssistantActions();
+}
+
+function syncLastAssistantActions() {
+  const bubbles = Array.from($('thread').querySelectorAll('.msg.assistant'));
+  const last = bubbles[bubbles.length - 1];
+  for (const b of bubbles) {
+    const regenBtn = b.querySelector('.msg-regen');
+    if (regenBtn) regenBtn.hidden = sending || b !== last;
+    const continueBtn = b.querySelector('.msg-continue');
+    if (continueBtn) continueBtn.disabled = sending || b !== last;
+  }
 }
 
 function syncConvDownloadBtn() {
@@ -5196,7 +5401,7 @@ function revealMsgTimestamp(wrap, ts) {
   if (sepEl) sepEl.removeAttribute('hidden');
 }
 
-function finalizeAssistant(wrap, full) {
+function finalizeAssistant(wrap, full, truncated) {
   cancelStreamRender();
   cancelReasoningRender();
   stopWaiter();
@@ -5205,9 +5410,18 @@ function finalizeAssistant(wrap, full) {
   body.dataset.raw = full;
   decoratePre(wrap);
   highlightUnder(wrap);
+  const copyBtn = wrap.querySelector('.msg-copy');
+  if (copyBtn) copyBtn.removeAttribute('hidden');
   const dlBtn = wrap.querySelector('.msg-dl');
   if (dlBtn) dlBtn.removeAttribute('hidden');
+  const existingBanner = wrap.querySelector('.msg-truncated');
+  if (truncated && !existingBanner) {
+    body.insertAdjacentHTML('afterend', truncatedBannerHtml());
+  } else if (!truncated && existingBanner) {
+    existingBanner.remove();
+  }
   syncConvDownloadBtn();
+  syncLastAssistantActions();
   scrollBottom();
 }
 
@@ -5354,10 +5568,24 @@ function searchConversations(query) {
   const qTokens = tokenize(q);
   
   const summaries = loadSummaries();
+  
+  const convById = q.length >= 3 ? new Map(loadConversations().map(c => [c.id, c])) : null;
   return c => {
     if ((c.title || '').toLowerCase().includes(q)) return true;
     const entry = summaries[c.id];
-    return !!(entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1);
+    if (entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1) return true;
+    
+    if (!convById) return false;
+    const full = convById.get(c.id);
+    if (!full || !Array.isArray(full.messages)) return false;
+    for (const m of full.messages) {
+      
+      if (isAckRole(m.role)) continue;
+      
+      const text = m.role === 'user' ? (m.displayText ?? m.content) : m.content;
+      if (typeof text === 'string' && text.toLowerCase().includes(q)) return true;
+    }
+    return false;
   };
 }
 
@@ -5579,6 +5807,7 @@ function setSending(on) {
   if (convDl) convDl.disabled = on;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
+  syncLastAssistantActions();   
 }
 
 function setComposerStreaming(on) {
@@ -5887,6 +6116,34 @@ function closeSettings() {
   
   const rm = $('set-reasoning-menu');
   if (rm) rm.classList.remove('show');
+}
+
+function resetImportDataUI() {
+  const err = $('import-data-err');
+  if (err) { err.setAttribute('hidden', ''); err.textContent = ''; }
+  const sum = $('import-data-summary');
+  if (sum) { sum.setAttribute('hidden', ''); sum.innerHTML = ''; }
+}
+
+function showImportDataError(msg) {
+  resetImportDataUI();
+  const err = $('import-data-err');
+  if (err) { err.textContent = msg; err.removeAttribute('hidden'); }
+}
+
+function renderImportSummary(counts, onApply) {
+  resetImportDataUI();
+  const sum = $('import-data-summary');
+  if (!sum) return;
+  sum.innerHTML =
+    `<div>${counts.conversations} conversation(s), ${counts.memories} souvenir(s), ` +
+    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s).</div>`;
+  const btn = document.createElement('button');
+  btn.className = 'drawer-btn danger';
+  btn.textContent = 'Appliquer (remplace tout)';
+  btn.onclick = () => armThenRun(btn, onApply, 'Confirmer le remplacement');
+  sum.appendChild(btn);
+  sum.removeAttribute('hidden');
 }
 
 const SUMMARY_INJECTION_HINTS = {
@@ -7283,6 +7540,7 @@ async function openConversation(id) {
     if (m.server) o.server = m.server;   
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    if (m.truncated) o.truncated = true;   
     
     if (m.displayText != null) o.displayText = m.displayText;
     else if (m.display != null) o.displayText = m.display;
@@ -7419,6 +7677,7 @@ function persistCurrent() {
     if (m.server) o.server = m.server;   
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    if (m.truncated) o.truncated = true;   
     if (m.displayText != null) o.displayText = m.displayText;   
     return o;
   });
@@ -7620,6 +7879,69 @@ async function onToggleSkill(slug) {
   renderSkills();
 }
 
+function snapshotLocalStorageForExport() {
+  const snap = {};
+  for (const key of EXPORT_KEYS) {
+    if (key === 'miaou-active-api-server') { snap[key] = localStorage.getItem(key) || ''; continue; }
+    try { snap[key] = JSON.parse(localStorage.getItem(key)); }
+    catch (e) { snap[key] = null; }
+  }
+  return snap;
+}
+
+async function exportAllData() {
+  const lsSnapshot = snapshotLocalStorageForExport();
+  const skills = await getAllSkillRecords();
+  const rawResources = await getAllResources();
+  const resources = rawResources.map(r => Object.assign({}, r, { data: arrayBufferToBase64(r.data) }));
+  const payload = buildExportPayload(lsSnapshot, skills, resources);
+  const ts = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+  downloadFile('miaou-export-' + stamp + '.json', JSON.stringify(payload), 'application/json');
+}
+
+function onImportDataClick() {
+  const input = $('import-data-input');
+  if (input) { input.value = ''; input.click(); }
+}
+
+function onImportFileSelected(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let obj;
+    try { obj = JSON.parse(reader.result); }
+    catch (e) { showImportDataError('Fichier illisible : JSON invalide.'); return; }
+    const res = validateImportPayload(obj);
+    if (!res.ok) { showImportDataError(res.error); return; }
+    renderImportSummary(res.counts, () => applyImportedData(obj));
+  };
+  reader.onerror = () => showImportDataError('Échec de lecture du fichier.');
+  reader.readAsText(file);
+}
+
+async function applyImportedData(payload) {
+  const ls = payload.localStorage || {};
+  for (const key of EXPORT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(ls, key)) { localStorage.removeItem(key); continue; }
+    const val = ls[key];
+    if (key === 'miaou-active-api-server') localStorage.setItem(key, typeof val === 'string' ? val : '');
+    else localStorage.setItem(key, JSON.stringify(val));
+  }
+  const idb = payload.idb || {};
+  const skills = Array.isArray(idb.skills) ? idb.skills : [];
+  const resources = Array.isArray(idb.resources) ? idb.resources : [];
+  await clearIdbStore('skills');
+  for (const rec of skills) await putSkill(rec);
+  await clearIdbStore('resources');
+  for (const rec of resources) {
+    await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
+  }
+  location.reload();
+}
+
 function onSendBtn() {
   if (sending) abortStream();
   else sendMessage();
@@ -7725,7 +8047,32 @@ async function editUserMessage(index, newText) {
   return null;
 }
 
-async function dispatchSend(matches) {
+function regenerateResponse(btn) {
+  if (!configured || sending) return;
+  if (_confirmPending) dismissConfirmation();   
+  const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+  if (lastUserIdx < 0) return;
+  currentThread = currentThread.slice(0, lastUserIdx + 1);
+  persistCurrent();                             
+  renderThread(currentThread);
+  runGenerationFromCurrentThread();
+}
+
+function continueTruncated(btn) {
+  if (!configured || sending) return;
+  const wrap = btn.closest('.msg');
+  if (!wrap) return;
+  const idx = msgIndex(wrap);
+  if (idx < 0) return;
+  const msg = currentThread[idx];
+  
+  if (!msg || msg.role !== 'assistant' || !msg.truncated) return;
+  const lastAssistantIdx = currentThread.reduce((acc, m, i) => (m.role === 'assistant' ? i : acc), -1);
+  if (idx !== lastAssistantIdx) return;
+  dispatchSend([], { continueIndex: idx, wrap });
+}
+
+async function dispatchSend(matches, continuation) {
   hideSummaryBanner();
   const model = activeModel();   
   const serverName = (activeApiServer() || {}).name || '';   
@@ -7746,7 +8093,20 @@ async function dispatchSend(matches) {
 
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
-  let wrap = startAssistantMessage(model, serverName);
+  const isContinuation = !!continuation;
+  const prefix = isContinuation ? currentThread[continuation.continueIndex].content : '';
+
+  let wrap;
+  if (isContinuation) {
+    wrap = continuation.wrap;
+    
+    const banner = wrap.querySelector('.msg-truncated');
+    if (banner) banner.remove();
+    startWaiter(wrap.querySelector('.body'));   
+    scrollBottom();
+  } else {
+    wrap = startAssistantMessage(model, serverName);
+  }
   
   let earlyRendered = [];
   setSending(true);
@@ -7754,7 +8114,9 @@ async function dispatchSend(matches) {
     await runConversation(apiMessages, {
       model,
       reasoningEffort,
-      onDelta: (full) => streamInto(wrap, full),
+      
+      noTools: isContinuation,
+      onDelta: (full) => streamInto(wrap, isContinuation ? prefix + full : full),
       onReasoning: (full) => setReasoning(wrap, full),
       onToolTour: (content) => {
         if (content && content.trim()) {
@@ -7832,14 +8194,34 @@ async function dispatchSend(matches) {
           updateLastPendingToolAck(fields);
         }
       },
-      onFinal: (content, reasoning) => {
+      onFinal: (content, reasoning, finishReason) => {
+        if (isContinuation) {
+          
+          const m = currentThread[continuation.continueIndex];
+          m.content = prefix + content;
+          if (finishReason === 'length' || finishReason === 'aborted') m.truncated = true;
+          else delete m.truncated;
+          if (reasoning && reasoning.trim()) m.reasoning = joinReasoning(m.reasoning, reasoning);
+          const body = wrap.querySelector('.body');
+          if (body) body.dataset.raw = m.content;
+          finalizeAssistant(wrap, m.content, m.truncated);
+          if (m.reasoning) flushReasoning(wrap, m.reasoning);
+          persistCurrent();
+          setConnDot('ok');
+          
+          return;
+        }
         const ts = Date.now();
         const msg = { role: 'assistant', content, model, ts };
         if (serverName) msg.server = serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   
         
+        if (finishReason === 'length' || (finishReason === 'aborted' && content && content.trim())) {
+          msg.truncated = true;
+        }
+        
         currentThread.push(msg);
-        finalizeAssistant(wrap, content);
+        finalizeAssistant(wrap, content, msg.truncated);
         revealMsgTimestamp(wrap, ts);
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   
         persistCurrent();

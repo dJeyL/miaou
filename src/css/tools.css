@@ -380,14 +380,21 @@ textarea.skill-content {
 .reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
 .reasoning-toggle.open { color: var(--accent); }
 .reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
-.msg-dl {
+.msg-copy,
+.msg-dl,
+.msg-regen {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 2px; border: none; background: none; cursor: pointer;
   color: var(--text-3); border-radius: 4px;
   transition: color .15s, background .15s;
 }
-.msg-dl:hover { color: var(--text); background: var(--surface-2); }
-.msg-dl[hidden] { display: none; }
+.msg-copy:hover,
+.msg-dl:hover,
+.msg-regen:hover { color: var(--text); background: var(--surface-2); }
+.msg-copy[hidden],
+.msg-dl[hidden],
+.msg-regen[hidden] { display: none; }
+.msg-copy--checked { color: var(--accent) !important; }
 
 /* Horodatages inline des messages */
 /* Séparateur « serveur › modèle » : marge négative pour compenser le gap 7px

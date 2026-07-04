@@ -320,6 +320,34 @@ function requestPersistence() {
   }
 }
 
+// Lit tous les enregistrements du store `resources` (méta + data ArrayBuffer).
+// Sur le modèle de getAllSkillRecords (skills.js). Utilisé par l'export complet
+// (feature E) : l'appelant convertit ensuite `data` en base64.
+function getAllResources() {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('resources', 'readonly');
+      const req = tx.objectStore('resources').getAll();
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Vide intégralement un store IDB (skills ou resources). Utilisé par l'import
+// complet (feature E, remplacement destructif) avant réinsertion. Générique :
+// ne connaît pas le schéma du store, juste son nom.
+function clearIdbStore(storeName) {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction(storeName, 'readwrite');
+      const req = tx.objectStore(storeName).clear();
+      req.onsuccess = function() { resolve(); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
 // ── Opérations haut-niveau ────────────────────────────────────────────────────
 
 // Stocke un bloc individuel dans IDB + session cache ; pousse l'ack resource_stored.

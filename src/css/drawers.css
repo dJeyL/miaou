@@ -77,6 +77,22 @@
   color: var(--text-2);
 }
 
+/* Récapitulatif d'import (feature E) : compteurs + bouton d'application
+   arm-then-confirm, même registre visuel que .hint mais encadré (action
+   destructive à distinguer d'un simple texte d'aide). */
+.import-summary {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: 11.5px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .field textarea {
   background: var(--bg);
   border: 1px solid var(--border-2);

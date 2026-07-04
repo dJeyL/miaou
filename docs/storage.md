@@ -69,6 +69,28 @@
   « serveur › modèle » (séparateur `.tool-name-sep` coloré) **uniquement si
   plusieurs serveurs API sont configurés** ; sinon, modèle seul. `server`
   n'atteint jamais le payload API (`expandThread` projette en `{role, content}`).
+  `truncated?` (bool, assistant uniquement, feature C) : posé à `true` sur le
+  `onFinal` de `dispatchSend` (main.js) pour une réponse **incomplète** —
+  **absent** sinon, ce n'est pas un booléen toujours présent. Deux causes :
+  `finish_reason === 'length'` (backend coupé à la limite de tokens), ou stop
+  manuel (`runConversation` passe le sentinel `'aborted'` sur ce chemin —
+  `null` reste réservé au cas « backend sans finish_reason », traité comme une
+  fin normale) **à condition que du contenu ait été reçu** : stopper avant le
+  premier token laisse une bulle vide sans flag (« Régénérer » suffit).
+  Gouverne l'affichage du bandeau `.msg-truncated` (texte « Réponse
+  incomplète » + bouton « Continuer », ui.js) sous `.body` de
+  la bulle assistant : le **texte** persiste sur tout message qui porte le
+  flag, quelle que soit sa position dans le fil ; le **bouton** n'est
+  actif/visible que sur la dernière bulle assistant et hors stream (même
+  helper `syncLastAssistantActions` que le bouton régénérer, feature B). Une
+  continuation (`continueTruncated` → `dispatchSend(matches, continuation)`)
+  **mute** le message existant (même `ts`, pas de nouveau message) : `content`
+  devient `prefix + content`, `truncated` est **retiré** si la nouvelle
+  réponse se termine normalement, et **reposé/conservé** si elle est
+  re-tronquée (`'length'`, chaîne de continuations possible) ou de nouveau
+  stoppée à la main (`'aborted'`) — le raccord partiel reste reprenable.
+  Ce champ n'a pas besoin de backfill : sa
+  seule source est `dispatchSend`, pas de conversation antérieure à combler.
 - `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
 - `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed }]`.
@@ -133,3 +155,88 @@
   par conversation via `deleteResourcesByConversation` (appelé dans `deleteConv`,
   main.js). `requestPersistence()` sollicite `navigator.storage.persist()` au
   premier stockage (silencieux si refusé).
+
+## Export / import complet des données (feature E)
+
+Assurance-vie : tout l'état de MIAOU (les 7 clés localStorage ci-dessus + les
+deux stores IndexedDB `skills`/`resources`) tient dans un unique fichier JSON,
+téléchargeable et réimportable. **Remplacement intégral à l'import, pas de
+fusion** (décision actée pour la v1 — un import écrase tout l'état local).
+
+### Format
+
+```json
+{
+  "format": "miaou-export",
+  "version": 1,
+  "exportedAt": 1751600000000,
+  "localStorage": {
+    "miaou-settings": { "…": "…" },
+    "miaou-conversations": [ "…" ],
+    "miaou-summaries": { "…": "…" },
+    "miaou-memories": [ "…" ],
+    "miaou-api-servers": [ "…" ],
+    "miaou-active-api-server": "srv_…",
+    "miaou-mcp-servers": [ "…" ]
+  },
+  "idb": {
+    "skills": [ { "slug": "…", "name": "…", "description": "…", "enabled": true, "content": "…", "autotrigger": false } ],
+    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "data": "<base64>" } ]
+  }
+}
+```
+
+- Les valeurs `localStorage` sont les objets **désérialisés** (pas de strings
+  JSON imbriquées) — sauf `miaou-active-api-server`, seule clé du schéma qui
+  n'est **pas** stockée en JSON (string brute, l'id du serveur actif).
+- `resources[].data` (`ArrayBuffer` en IDB) devient une string base64 à
+  l'export (`arrayBufferToBase64`, resources.js) et repasse en `ArrayBuffer` à
+  l'import (`base64ToArrayBuffer`).
+- **Posture assumée (clefs en clair)** : les clefs API (`miaou-api-servers[].key`)
+  et tokens MCP (`miaou-mcp-servers[].authorization_token`) sont exportés **tels
+  quels, en clair**, même posture non-prod que leur stockage (cf. D6, plus haut
+  dans ce document). Le hint UI de la catégorie « Données » du settings drawer
+  le rappelle explicitement avant l'export.
+
+### Helpers purs (storage.js, QuickJS-testables)
+
+- `EXPORT_KEYS` : les 7 clés du schéma (référencée uniquement en corps de
+  fonction depuis les autres fichiers, même contrainte que `MAX_SUMMARIES` —
+  cf. CLAUDE.md).
+- `buildExportPayload(lsSnapshot, skills, resources)` → objet complet
+  ci-dessus. Sections manquantes de `lsSnapshot` → défauts vides (tableau ou
+  objet selon la clé), jamais d'exception.
+- `validateImportPayload(obj)` → `{ ok: true, counts: { conversations,
+  memories, skills, resources, servers } }` (compteurs bruts pour le
+  récapitulatif UI, `servers` = api-servers + mcp-servers) ou
+  `{ ok: false, error }`. Bloquant : `format !== 'miaou-export'`, `version`
+  absente/non-numérique/`> 1`. Tolérant : sections `localStorage`/`idb`
+  manquantes ou de type invalide → comptées comme vides, pas une erreur (le
+  format peut évoluer entre deux versions de MIAOU).
+
+### IDB
+
+`getAllResources()` (resources.js) lit tout le store `resources`, sur le
+modèle de `getAllSkillRecords()` (skills.js). `clearIdbStore(storeName)`
+(resources.js) vide un store par son nom (générique skills/resources) — utilisé
+par l'import avant réinsertion complète.
+
+### Orchestration (main.js)
+
+- `exportAllData()` : snapshot des 7 clés (`miaou-active-api-server` lu en
+  string brute, les 6 autres en `JSON.parse`), lecture IDB (`getAllSkillRecords`
+  + `getAllResources`), encodage base64 des `data` de ressources, puis
+  `downloadFile('miaou-export-<YYYY-MM-DD-HHmm>.json', …)`.
+- `onImportDataClick()` / `onImportFileSelected(input)` : ouvrent un
+  `<input type="file" accept=".json" hidden>`, lisent via `FileReader`,
+  `JSON.parse` puis `validateImportPayload`. Erreur → message inline sous les
+  boutons (`showImportDataError`, registre hint/`showCardError`, jamais
+  d'`alert`). Payload valide → récapitulatif des compteurs + bouton
+  d'application passé par `armThenRun` (remplacement intégral = destructif,
+  même pattern « armer puis confirmer » que les suppressions).
+- `applyImportedData(payload)` : écrit les 7 clés localStorage (clé **absente**
+  du fichier → `removeItem`, pour ne pas laisser d'état résiduel incohérent
+  mélangeant deux exports), vide puis réinsère les stores IDB `skills` et
+  `resources`, puis `location.reload()` — l'état de session (caches, thread
+  courant, statut MCP) se reconstruit proprement au boot, aucune
+  resynchronisation manuelle à écrire.

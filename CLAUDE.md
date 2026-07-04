@@ -93,9 +93,10 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
   `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
-  `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`,
-  `regenerateTitle`, `openApiServers`, `closeApiServers`, `addApiServerCard`,
-  `toggleReasoning`, `toggleSettingsCat`, …). Le bouton « Enregistrer »
+  `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`, `copyMsg`,
+  `regenerateTitle`, `regenerateResponse`, `continueTruncated`, `openApiServers`, `closeApiServers`, `addApiServerCard`,
+  `toggleReasoning`, `toggleSettingsCat`, `exportAllData`, `onImportDataClick`,
+  `onImportFileSelected`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Il est désactivé tant que le
   formulaire ne diverge pas des réglages persistés (`settingsFormDirty`,

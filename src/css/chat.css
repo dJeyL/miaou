@@ -184,10 +184,12 @@
    plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
 
-/* action « éditer » au survol d'une bulle utilisateur */
+/* actions « éditer » / « copier » au survol d'une bulle utilisateur, empilées
+   verticalement à gauche de la bulle (éditer en haut, copier dessous) */
+.msg-copy-user,
 .msg-edit {
   position: absolute;
-  top: 2px; left: -30px;
+  left: -30px;
   opacity: 0;
   background: none;
   border: none;
@@ -197,8 +199,13 @@
   border-radius: 4px;
   transition: opacity 120ms var(--ease), color 120ms var(--ease);
 }
+.msg-edit { top: 2px; }
+.msg-copy-user { top: 28px; }
+.msg.user:hover .msg-copy-user,
 .msg.user:hover .msg-edit { opacity: 1; }
+.msg-copy-user:hover,
 .msg-edit:hover { color: var(--accent); }
+.msg-copy-user svg,
 .msg-edit svg { width: 14px; height: 14px; display: block; }
 
 /* mode édition : la bulle prend toute la largeur de la colonne */
@@ -258,6 +265,32 @@
    ici margin-bottom ack 3px + 7px = 10px). */
 .msg.assistant .tool-ack + .body,
 .msg.assistant .memory-ack + .body { margin-top: 7px; }
+
+/* Bandeau de troncature (feature C) : après .body, ton atténué (même registre
+   que .hint des drawers), pas d'icône. Le TEXTE persiste sur les messages
+   anciens ; seul le bouton est borné à la dernière bulle assistant du fil
+   (désactivé, pas masqué, par syncLastAssistantActions — cf. ui.js) pour ne
+   pas faire disparaître le texte qui l'accompagne. */
+.msg-truncated {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.msg-continue {
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), color 120ms var(--ease);
+}
+.msg-continue:hover:not(:disabled) { border-color: var(--accent-bd); color: var(--accent); }
+.msg-continue:disabled { opacity: .45; cursor: default; }
 
 /* markdown body */
 .body > *:first-child { margin-top: 0; }

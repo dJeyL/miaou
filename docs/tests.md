@@ -38,7 +38,32 @@ marqueurs ; `resolveConvRefs` : lien avec titre fourni, lookup storage si titre
 absent, lien conservé avec titre sur une entrée tombstone (conversation
 existante), texte barré `~~...(supprimée)~~` si `loadConversation` échoue —
 avec titre du marqueur, avec titre orphelin en résumé, ou repli sur l'ID si
-aucun titre connu —, encodage URL de l'id).
+aucun titre connu —, encodage URL de l'id), et la **recherche plein texte de la
+sidebar** (`searchConversations` : le comportement existant — titre en
+substring, résumé via `tokenize`/`scoreSummary`, tombstone ignoré — reste
+couvert en non-régression ; le scan de contenu ajouté est testé sur un match
+message user, un match message assistant, la priorité `displayText` sur le
+`content` baké d'une slash-skill (un mot présent uniquement dans le corps
+injecté ne doit pas matcher), le seuil des 3 caractères — en dessous, aucun
+scan de contenu même si le mot existe — et l'exclusion des entrées ack, dont
+le `result` peut être volumineux et hors-sujet).
+
+Couvert aussi : l'**export/import complet des données** (feature E) —
+`EXPORT_KEYS` (les 7 clés), `buildExportPayload` (structure `format`/`version`/
+`exportedAt`, les 7 clés localStorage reprises désérialisées, `miaou-active-api-server`
+qui reste une string brute, sections manquantes → défauts vides tableau/objet,
+skills/resources embarqués sous `idb`), `validateImportPayload` (payload valide
+avec compteurs `conversations`/`memories`/`skills`/`resources`/`servers`,
+format inconnu, format absent, version future ou non-numérique, `null`/
+`undefined` sans crash, sections `localStorage`/`idb` manquantes → comptées
+vides sans erreur, types invalides — ex. un tableau attendu remplacé par un
+objet — comptés à 0 sans crash, version 1 exactement acceptée). Le round-trip
+base64 d'une ressource (`arrayBufferToBase64`/`base64ToArrayBuffer`) était déjà
+couvert par la suite existante, réutilisé tel quel pour l'export. La plomberie
+IDB (`getAllResources`, `clearIdbStore`) et l'orchestration (`exportAllData`,
+`onImportFileSelected`, `applyImportedData` — lecture fichier, `FileReader`,
+`location.reload()`) ne sont pas QuickJS-testables : vérification manuelle
+(`docs/manual-tests.md`).
 
 Couvert aussi : la **résolution multi-serveurs des chemins legacy**
 (`modelName` et `backfillMessageModels` lisent `activeApiConfig().model`, jamais

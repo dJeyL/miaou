@@ -156,6 +156,56 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     (auto-persisté). Enregistrer → bouton re-grisé. Modifier un champ, fermer
     le drawer sans enregistrer, rouvrir → la saisie est toujours là et le
     bouton toujours actif.
+20. **Bouton copier sur les messages** : sur une bulle **user**, survoler → un
+    bouton copier apparaît à côté du bouton éditer ; cliquer copie le texte tel
+    que tapé (identique au contenu affiché) dans le presse-papier, feedback
+    check ~1,4 s. Sur une bulle **assistant**, le bouton copier (dans les
+    actions méta, avant le bouton téléchargement) est masqué pendant le
+    streaming, apparaît à la finalisation **et** reste opérationnel après
+    rechargement ; cliquer copie le markdown source (`body.dataset.raw`), sans
+    en-tête ni trace d'acks d'outils. **Message user avec slash-skill** :
+    envoyer une commande `/skill ...`, puis copier ce message → le presse-
+    papier contient le **littéral tapé** (`/skill ...`), jamais le corps baké
+    injecté au modèle.
+21. **Régénérer la dernière réponse** : sur la dernière bulle assistant du fil,
+    un bouton « Régénérer la réponse » (flèches circulaires, actions méta,
+    après copier/télécharger) déclenche sans confirmation une nouvelle
+    génération qui **remplace** la réponse (les acks d'outils de l'ancienne
+    réponse, s'il y en avait, disparaissent). **Changement de modèle** :
+    changer le modèle du composer puis régénérer → la nouvelle réponse utilise
+    le nouveau modèle (`activeModel()` au clic). **Réponse précédée d'appels
+    d'outils** : régénérer une réponse dont la bulle contient des tool-acks →
+    les acks disparaissent avec la réponse, le tour est rejoué proprement.
+    **Visibilité** : le bouton n'apparaît que sur la **dernière** bulle
+    assistant (absent des bulles antérieures, y compris après avoir régénéré
+    une fois — c'est alors la nouvelle dernière bulle qui le porte) ; il est
+    masqué sur **toutes** les bulles pendant un streaming en cours.
+22. **« Continuer » une réponse incomplète** : côté serveur de test, poser un
+    `max_tokens` (ou équivalent) très bas pour forcer une coupe réelle
+    (`finish_reason: 'length'`) — envoyer une question qui appelle une réponse
+    longue. Vérifier : la bulle assistant affiche le bandeau « Réponse
+    incomplète » + bouton « Continuer » juste sous le texte, dès la
+    finalisation. **Stop manuel** : sans `max_tokens` bas, interrompre une
+    réponse en cours (bouton stop) après quelques tokens → même bandeau +
+    « Continuer » sur la bulle figée ; stopper AVANT le premier token → pas de
+    bandeau (bulle vide, « Régénérer » suffit). **Continuation** : cliquer « Continuer » → le bandeau
+    disparaît, le patienteur reprend dans la **même** bulle (pas de nouvelle
+    bulle, pas de nouveau message user), le texte se poursuit par
+    concaténation brute (pas de séparateur ajouté) ; à la fin, si la réponse
+    est complète, le bandeau ne revient pas. **Re-troncature en chaîne** :
+    remettre un `max_tokens` bas, continuer une réponse déjà tronquée une
+    première fois → le bandeau réapparaît sur la même bulle (contenu cumulé
+    des deux morceaux), « Continuer » de nouveau disponible ; répéter 2-3 fois
+    pour vérifier l'absence de dérive (pas de doublon de texte, pas de nouveau
+    message dans le fil, ts inchangé après rechargement). **Bandeau sans
+    bouton sur message ancien** : après une continuation réussie ou un nouvel
+    échange, envoyer un second message — la bulle tronquée devient une bulle
+    ancienne : le **texte** « Réponse incomplète » reste affiché dessus, mais le
+    bouton « Continuer » est grisé/inactif (seule la **dernière** bulle
+    assistant du fil a un bouton actif, même logique que le bouton régénérer).
+    **Rendu au reload** : recharger la page sur une conversation contenant un
+    message tronqué (dernier ou non) → le bandeau (texte, et bouton si c'est
+    la dernière bulle assistant) se rend correctement sans action supplémentaire.
 
 ## Agrégation MCP distante (V2)
 
@@ -386,3 +436,41 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     à son ancien emplacement). Au chargement avec un historique **non vide**
     (sidebar ouverte d'office) : aucun flash du brand/`+` avant l'ouverture —
     ils sont masqués en dur tant que `init()` n'a pas posé `.booted` sur `#app`.
+
+46. **Recherche plein texte dans les messages** : avec le seed chargé
+    (`tests/dev-seed.html`), taper « ornithorynque » dans la recherche de la
+    sidebar (ce mot n'apparaît que dans le contenu d'un message assistant de la
+    conversation « Cron — syntaxe et debugging », absent du titre et du résumé)
+    → la conversation apparaît dans les résultats. Retirer un caractère pour
+    passer à « ornithorynqu » puis tronquer à 2 caractères (ex. « or ») → la
+    conversation disparaît (seuil de 3 caractères pour le scan de contenu).
+    Effacer la recherche (croix) → la liste complète est restaurée.
+
+## Export / import complet des données (feature E)
+
+47. **Export puis import dans un profil vierge** : avec le seed chargé (ou une
+    session comportant plusieurs conversations, souvenirs, skills, ressources et
+    serveurs API/MCP), Réglages → catégorie « Données » → « Exporter les
+    données » → un fichier `miaou-export-<date>.json` est téléchargé. Ouvrir une
+    fenêtre de navigation privée (ou vider localStorage + IndexedDB du profil),
+    charger MIAOU à vide, ouvrir la même catégorie → « Importer les données » →
+    sélectionner le fichier → le récapitulatif affiche les bons comptes
+    (conversations, souvenirs, skills, ressources, serveurs). Cliquer
+    « Appliquer » (armé, un premier clic arme, le second dans la fenêtre de
+    2,6 s confirme) → rechargement de la page → conversations, souvenirs,
+    skills, ressources et serveurs API/MCP sont tous restaurés à l'identique
+    (y compris les données binaires d'une ressource image, cf. test 29).
+48. **Fichier invalide** : sélectionner un fichier qui n'est pas un export MIAOU
+    (JSON quelconque, ou fichier non-JSON) → message d'erreur affiché sous le
+    bouton « Importer les données » (pas d'`alert`, pas de recharge de page), le
+    récapitulatif ne s'affiche pas.
+49. **Arm-confirm** : sur un import valide, cliquer une seule fois sur
+    « Appliquer » → le bouton passe en état armé (libellé « Confirmer le
+    remplacement ») sans effet ; attendre l'expiration du délai (~2,6 s) → le
+    bouton revient à son état initial, aucune donnée n'a été modifiée ; refaire
+    la sélection du fichier et cliquer deux fois de suite → le remplacement
+    s'applique et la page recharge.
+50. **Boutons non liés au dirty/Enregistrer** : ouvrir Réglages, cliquer
+    « Exporter les données » → le bouton « Enregistrer » du drawer reste
+    désactivé (aucun champ de formulaire n'a été modifié) — l'export n'active
+    pas la mécanique dirty.

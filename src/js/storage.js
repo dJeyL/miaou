@@ -426,3 +426,83 @@ function restoreMemory(id) {
 function forgetMemory(id) {
   persistMemories(loadMemories().filter(x => x.id !== id));
 }
+
+// ── Export / import complet des données (feature E) ─────────────────────────
+// Assurance-vie : tout l'état de MIAOU (localStorage + IndexedDB) tient dans un
+// unique fichier JSON, réimportable par REMPLACEMENT INTÉGRAL (pas de fusion,
+// décision actée). Format détaillé : docs/storage.md.
+//
+// Les 7 clés localStorage du schéma. Référencée uniquement en corps de fonction
+// depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md) — jamais au
+// top-level d'un fichier tiers.
+const EXPORT_KEYS = [
+  'miaou-settings',
+  'miaou-conversations',
+  'miaou-summaries',
+  'miaou-memories',
+  'miaou-api-servers',
+  'miaou-active-api-server',
+  'miaou-mcp-servers',
+];
+
+// Construit le payload d'export complet. `lsSnapshot` : objet { clé: valeur
+// DÉSÉRIALISÉE } pour les 7 clés (l'appelant lit localStorage + JSON.parse, ou
+// fournit la string brute pour miaou-active-api-server — seule clé non-JSON du
+// schéma). `skills`/`resources` : tableaux bruts issus de getAllSkillRecords()/
+// getAllResources() ; `resources[].data` (ArrayBuffer) doit déjà avoir été
+// converti en base64 par l'appelant (arrayBufferToBase64, resources.js) — cette
+// fonction reste pure, sans dépendance IDB.
+function buildExportPayload(lsSnapshot, skills, resources) {
+  const ls = lsSnapshot || {};
+  return {
+    format: 'miaou-export',
+    version: 1,
+    exportedAt: Date.now(),
+    localStorage: {
+      'miaou-settings': ls['miaou-settings'] || {},
+      'miaou-conversations': Array.isArray(ls['miaou-conversations']) ? ls['miaou-conversations'] : [],
+      'miaou-summaries': ls['miaou-summaries'] || {},
+      'miaou-memories': Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [],
+      'miaou-api-servers': Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [],
+      'miaou-active-api-server': typeof ls['miaou-active-api-server'] === 'string' ? ls['miaou-active-api-server'] : '',
+      'miaou-mcp-servers': Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [],
+    },
+    idb: {
+      skills: Array.isArray(skills) ? skills : [],
+      resources: Array.isArray(resources) ? resources : [],
+    },
+  };
+}
+
+// Valide un objet importé (déjà JSON.parse). Ne vérifie PAS le contenu détaillé
+// des entrées (conversations, résumés, …) — seulement la forme d'ensemble et les
+// types des sections, pour rester tolérant à un schéma qui a évolué depuis
+// l'export. Sections manquantes → défauts vides (pas une erreur, cf. brief) ;
+// seuls le format et la version sont bloquants. Retourne { ok: true, counts }
+// (nombre de conversations/souvenirs/skills/ressources/serveurs) ou
+// { ok: false, error }.
+function validateImportPayload(obj) {
+  if (!obj || typeof obj !== 'object') return { ok: false, error: 'Fichier illisible : contenu invalide.' };
+  if (obj.format !== 'miaou-export') return { ok: false, error: 'Format inconnu : ce n\'est pas un export MIAOU.' };
+  if (typeof obj.version !== 'number' || obj.version > 1) {
+    return { ok: false, error: 'Version d\'export non supportée (' + obj.version + ').' };
+  }
+  const ls = (obj.localStorage && typeof obj.localStorage === 'object') ? obj.localStorage : {};
+  const idb = (obj.idb && typeof obj.idb === 'object') ? obj.idb : {};
+  const conversations = Array.isArray(ls['miaou-conversations']) ? ls['miaou-conversations'] : [];
+  const memories = Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [];
+  const apiServers = Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [];
+  const mcpServers = Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [];
+  const skills = Array.isArray(idb.skills) ? idb.skills : [];
+  const resources = Array.isArray(idb.resources) ? idb.resources : [];
+  return {
+    ok: true,
+    counts: {
+      conversations: conversations.length,
+      memories: memories.length,
+      skills: skills.length,
+      resources: resources.length,
+      servers: apiServers.length + mcpServers.length,
+    },
+  };
+}

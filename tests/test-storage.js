@@ -280,3 +280,133 @@ describe('backfillMessageModels (modèle du serveur API actif)', function() {
     expect(loadConversation('c1').messages[0].model === undefined).toBeTruthy();
   });
 });
+
+// ── Export / import complet des données (feature E) ─────────────────────────
+
+describe('EXPORT_KEYS', function() {
+  it('liste les 7 clés localStorage du schéma', function() {
+    expect(EXPORT_KEYS.length).toBe(7);
+    expect(EXPORT_KEYS.indexOf('miaou-settings') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-conversations') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-summaries') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-memories') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-api-servers') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-active-api-server') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-mcp-servers') >= 0).toBeTruthy();
+  });
+});
+
+describe('buildExportPayload', function() {
+  it('produit la structure attendue avec format/version/exportedAt', function() {
+    var payload = buildExportPayload({}, [], []);
+    expect(payload.format).toBe('miaou-export');
+    expect(payload.version).toBe(1);
+    expect(typeof payload.exportedAt).toBe('number');
+  });
+  it('reprend les 7 clés localStorage désérialisées', function() {
+    var ls = {
+      'miaou-settings': { theme: 'dark' },
+      'miaou-conversations': [{ id: 'c1' }],
+      'miaou-summaries': { c1: { summary: 'x' } },
+      'miaou-memories': [{ id: 'm1' }],
+      'miaou-api-servers': [{ id: 's1' }],
+      'miaou-active-api-server': 's1',
+      'miaou-mcp-servers': [{ name: 'srv' }],
+    };
+    var payload = buildExportPayload(ls, [], []);
+    expect(payload.localStorage['miaou-settings']).toEqual({ theme: 'dark' });
+    expect(payload.localStorage['miaou-conversations']).toEqual([{ id: 'c1' }]);
+    expect(payload.localStorage['miaou-summaries']).toEqual({ c1: { summary: 'x' } });
+    expect(payload.localStorage['miaou-memories']).toEqual([{ id: 'm1' }]);
+    expect(payload.localStorage['miaou-api-servers']).toEqual([{ id: 's1' }]);
+    expect(payload.localStorage['miaou-active-api-server']).toBe('s1');
+    expect(payload.localStorage['miaou-mcp-servers']).toEqual([{ name: 'srv' }]);
+  });
+  it('miaou-active-api-server reste une string brute (pas désérialisée en objet)', function() {
+    var payload = buildExportPayload({ 'miaou-active-api-server': 'srv_xyz' }, [], []);
+    expect(typeof payload.localStorage['miaou-active-api-server']).toBe('string');
+  });
+  it('sections manquantes → défauts vides (tableaux/objets), pas de crash', function() {
+    var payload = buildExportPayload({}, [], []);
+    expect(payload.localStorage['miaou-settings']).toEqual({});
+    expect(payload.localStorage['miaou-conversations']).toEqual([]);
+    expect(payload.localStorage['miaou-summaries']).toEqual({});
+    expect(payload.localStorage['miaou-memories']).toEqual([]);
+    expect(payload.localStorage['miaou-api-servers']).toEqual([]);
+    expect(payload.localStorage['miaou-active-api-server']).toBe('');
+    expect(payload.localStorage['miaou-mcp-servers']).toEqual([]);
+  });
+  it('embarque skills et resources dans idb', function() {
+    var payload = buildExportPayload({}, [{ slug: 's1' }], [{ id: 'res_1', data: 'QQ==' }]);
+    expect(payload.idb.skills).toEqual([{ slug: 's1' }]);
+    expect(payload.idb.resources).toEqual([{ id: 'res_1', data: 'QQ==' }]);
+  });
+});
+
+describe('validateImportPayload', function() {
+  function validPayload() {
+    return {
+      format: 'miaou-export', version: 1, exportedAt: 123,
+      localStorage: {
+        'miaou-settings': {}, 'miaou-conversations': [{ id: 'c1' }, { id: 'c2' }],
+        'miaou-summaries': {}, 'miaou-memories': [{ id: 'm1' }],
+        'miaou-api-servers': [{ id: 's1' }], 'miaou-active-api-server': 's1',
+        'miaou-mcp-servers': [{ name: 'srv1' }, { name: 'srv2' }],
+      },
+      idb: { skills: [{ slug: 'sk1' }], resources: [{ id: 'r1' }, { id: 'r2' }] },
+    };
+  }
+
+  it('payload valide → ok:true avec les compteurs corrects', function() {
+    var res = validateImportPayload(validPayload());
+    expect(res.ok).toBeTruthy();
+    expect(res.counts.conversations).toBe(2);
+    expect(res.counts.memories).toBe(1);
+    expect(res.counts.skills).toBe(1);
+    expect(res.counts.resources).toBe(2);
+    expect(res.counts.servers).toBe(3);   // 1 api-server + 2 mcp-servers
+  });
+  it('format inconnu → erreur', function() {
+    var res = validateImportPayload(Object.assign(validPayload(), { format: 'autre-chose' }));
+    expect(res.ok).toBeFalsy();
+    expect(typeof res.error).toBe('string');
+  });
+  it('format absent (objet quelconque) → erreur', function() {
+    var res = validateImportPayload({ foo: 'bar' });
+    expect(res.ok).toBeFalsy();
+  });
+  it('version future (> 1) → erreur', function() {
+    var res = validateImportPayload(Object.assign(validPayload(), { version: 2 }));
+    expect(res.ok).toBeFalsy();
+  });
+  it('version absente/non numérique → erreur', function() {
+    var res = validateImportPayload(Object.assign(validPayload(), { version: '1' }));
+    expect(res.ok).toBeFalsy();
+  });
+  it('null/undefined → erreur, pas de crash', function() {
+    expect(validateImportPayload(null).ok).toBeFalsy();
+    expect(validateImportPayload(undefined).ok).toBeFalsy();
+  });
+  it('sections localStorage/idb manquantes → défauts vides, pas une erreur', function() {
+    var res = validateImportPayload({ format: 'miaou-export', version: 1, exportedAt: 1 });
+    expect(res.ok).toBeTruthy();
+    expect(res.counts.conversations).toBe(0);
+    expect(res.counts.memories).toBe(0);
+    expect(res.counts.skills).toBe(0);
+    expect(res.counts.resources).toBe(0);
+    expect(res.counts.servers).toBe(0);
+  });
+  it('types invalides dans localStorage (ex. conversations non-tableau) → compte à 0, pas de crash', function() {
+    var p = validPayload();
+    p.localStorage['miaou-conversations'] = 'pas un tableau';
+    p.idb.skills = { slug: 'objet-au-lieu-de-tableau' };
+    var res = validateImportPayload(p);
+    expect(res.ok).toBeTruthy();
+    expect(res.counts.conversations).toBe(0);
+    expect(res.counts.skills).toBe(0);
+  });
+  it('version 1 exactement (limite) est acceptée', function() {
+    var res = validateImportPayload(validPayload());
+    expect(res.ok).toBeTruthy();
+  });
+});

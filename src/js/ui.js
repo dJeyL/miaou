@@ -121,8 +121,14 @@ function assistantHead(model, reasoning, ts, server) {
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 2.5l1.5 3.8 3.8 1.5-3.8 1.5L11 13.1 9.5 9.3 5.7 7.8l3.8-1.5z"/><path d="M17.5 13l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/></svg>` +
       `</button>` +
+      `<button class="msg-copy" hidden title="Copier" onclick="copyMsg(this)">` +
+        `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
+      `</button>` +
       `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
+      `</button>` +
+      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse(this)">` +
+        `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
     `</div>` +
@@ -130,13 +136,33 @@ function assistantHead(model, reasoning, ts, server) {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts, server) {
+// Bandeau de réponse incomplète (feature C) : texte persistant + bouton
+// « Continuer ». Deux causes possibles, même bandeau : coupe backend (limite
+// de tokens) ou stop manuel avec contenu déjà reçu — d'où le libellé générique.
+// Inséré APRÈS .body dans la bulle assistant, aussi bien au rendu live
+// (finalizeAssistant) qu'au reload (buildMsg) — un seul balisage pour les deux
+// chemins. Le bouton est masqué/désactivé par syncLastAssistantActions selon
+// la position (dernier message du fil) et l'état sending ; le texte, lui,
+// reste affiché sur les messages anciens (spec brief §C).
+function truncatedBannerHtml() {
+  return (
+    `<div class="msg-truncated">` +
+    `<span class="msg-truncated-text">Réponse incomplète</span>` +
+    `<button class="msg-continue" onclick="continueTruncated(this)">Continuer</button>` +
+    `</div>`
+  );
+}
+
+function buildMsg(role, content, model, reasoning, ts, server, truncated) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
     if (ts) wrap.dataset.ts = ts;
     wrap.innerHTML =
       `<div class="bubble">` +
+      `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
+      `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
+      `</button>` +
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
@@ -146,10 +172,13 @@ function buildMsg(role, content, model, reasoning, ts, server) {
   } else {
     wrap.innerHTML =
       assistantHead(model, reasoning, ts, server) +
-      `<div class="body">${renderMd(content)}</div>`;
+      `<div class="body">${renderMd(content)}</div>` +
+      (truncated ? truncatedBannerHtml() : '');
     const bodyEl = wrap.querySelector('.body');
     if (bodyEl) bodyEl.dataset.raw = content;
-    // Message déjà finalisé (reload) : le bouton download est opérationnel immédiatement.
+    // Message déjà finalisé (reload) : les boutons copier/download sont opérationnels immédiatement.
+    const copyBtn = wrap.querySelector('.msg-copy');
+    if (copyBtn) copyBtn.removeAttribute('hidden');
     const dlBtn = wrap.querySelector('.msg-dl');
     if (dlBtn) dlBtn.removeAttribute('hidden');
   }
@@ -287,6 +316,36 @@ function downloadMsgMd(btn) {
   const modelStr = (msg && msg.model) ? ' (' + msg.model + ')' : '';
   const header = '### MIAOU' + modelStr + '\n\n';
   downloadFile('miaou-message.md', header + trace + raw, 'text/markdown');
+}
+
+// Copie le markdown source d'un message (bulle assistant ou user) dans le
+// presse-papier. Assistant : body.dataset.raw (même source que downloadMsgMd,
+// pas d'en-tête ni de trace d'outils). User : le littéral tapé (displayText
+// si présent — slash-commande skill —, sinon content), jamais le corps baké.
+// Feedback visuel identique à code-copy (decoratePre) : swap SVG check ~1400 ms.
+function copyMsg(btn) {
+  const wrap = btn.closest('.msg');
+  if (!wrap) return;
+  let text;
+  if (wrap.classList.contains('assistant')) {
+    const body = wrap.querySelector('.body');
+    text = body && body.dataset.raw;
+  } else {
+    const idx = msgIndex(wrap);
+    const m = idx >= 0 ? currentThread[idx] : null;
+    text = m ? (m.displayText ?? m.content) : null;
+  }
+  if (!text) return;
+  // width/height inline obligatoires : les boutons méta assistant n'ont pas de
+  // règle CSS de dimensionnement svg (contrairement à .msg-copy-user), un svg nu
+  // s'y rendrait à taille dégénérée.
+  const svgCheck = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgCopy = btn.innerHTML;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = svgCheck;
+    btn.classList.add('msg-copy--checked');
+    setTimeout(() => { btn.innerHTML = svgCopy; btn.classList.remove('msg-copy--checked'); }, 1400);
+  });
 }
 
 // ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────
@@ -621,7 +680,7 @@ function renderThread(msgs) {
     // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
     // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -634,6 +693,28 @@ function renderThread(msgs) {
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom();
   syncConvDownloadBtn();
+  syncLastAssistantActions();
+}
+
+// Synchronise les actions réservées à la DERNIÈRE bulle assistant du fil :
+// régénérer (feature B) et continuer une troncature (feature C). Masque
+// .msg-regen et désactive .msg-continue sur toutes les bulles sauf la
+// dernière assistant, et jamais pendant un stream (sending). Le TEXTE du
+// bandeau .msg-truncated, lui, reste affiché sur les messages anciens — seul
+// le bouton est borné à la dernière bulle (spec brief §C) : on ne le masque
+// donc pas (`hidden`), on le désactive (`disabled`) pour ne pas faire
+// disparaître le texte qui l'accompagne dans la même bulle. Appelé en fin de
+// renderThread, dans finalizeAssistant et dans setSending : trois points où
+// l'ensemble des bulles ou l'état sending peuvent changer.
+function syncLastAssistantActions() {
+  const bubbles = Array.from($('thread').querySelectorAll('.msg.assistant'));
+  const last = bubbles[bubbles.length - 1];
+  for (const b of bubbles) {
+    const regenBtn = b.querySelector('.msg-regen');
+    if (regenBtn) regenBtn.hidden = sending || b !== last;
+    const continueBtn = b.querySelector('.msg-continue');
+    if (continueBtn) continueBtn.disabled = sending || b !== last;
+  }
 }
 
 function syncConvDownloadBtn() {
@@ -753,7 +834,10 @@ function revealMsgTimestamp(wrap, ts) {
   if (sepEl) sepEl.removeAttribute('hidden');
 }
 
-function finalizeAssistant(wrap, full) {
+// truncated (optionnel, feature C) : pose/retire le bandeau .msg-truncated
+// après .body. Les appelants qui ne tronquent jamais (onToolTour, onHalt,
+// onError) omettent l'argument — équivaut à false, pas de bandeau.
+function finalizeAssistant(wrap, full, truncated) {
   cancelStreamRender();
   cancelReasoningRender();
   stopWaiter();
@@ -762,9 +846,18 @@ function finalizeAssistant(wrap, full) {
   body.dataset.raw = full;
   decoratePre(wrap);
   highlightUnder(wrap);
+  const copyBtn = wrap.querySelector('.msg-copy');
+  if (copyBtn) copyBtn.removeAttribute('hidden');
   const dlBtn = wrap.querySelector('.msg-dl');
   if (dlBtn) dlBtn.removeAttribute('hidden');
+  const existingBanner = wrap.querySelector('.msg-truncated');
+  if (truncated && !existingBanner) {
+    body.insertAdjacentHTML('afterend', truncatedBannerHtml());
+  } else if (!truncated && existingBanner) {
+    existingBanner.remove();
+  }
   syncConvDownloadBtn();
+  syncLastAssistantActions();
   scrollBottom();
 }
 
@@ -930,7 +1023,8 @@ let convSearchFilter = null;
 
 // Prédicat de recherche : match direct (sous-chaîne) sur le titre, ou
 // recouvrement de mots-clés sur le résumé via le scoring existant (seuil bas,
-// plus permissif que l'injection automatique). null si requête vide.
+// plus permissif que l'injection automatique), ou enfin scan du contenu des
+// messages (à partir de 3 caractères, cf. plus bas). null si requête vide.
 function searchConversations(query) {
   const q = (query || '').trim().toLowerCase();
   if (!q) return null;
@@ -939,10 +1033,31 @@ function searchConversations(query) {
   // une fois par conversation, sans re-désérialiser tout le blob à chaque appel.
   // Instantané pris à la frappe (rafraîchi à la frappe suivante) — cf. perf.
   const summaries = loadSummaries();
+  // Idem pour les conversations complètes (avec messages) : `listAllConversations`
+  // ne renvoie que des métadonnées, il faut l'instantané brut pour scanner le
+  // contenu. Un seul parse par frappe, comme pour les résumés ci-dessus — pas
+  // de re-parse par conversation candidate. Map id → conversation pour un accès
+  // direct (évite un .find() linéaire répété).
+  const convById = q.length >= 3 ? new Map(loadConversations().map(c => [c.id, c])) : null;
   return c => {
     if ((c.title || '').toLowerCase().includes(q)) return true;
     const entry = summaries[c.id];
-    return !!(entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1);
+    if (entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1) return true;
+    // Sous 3 caractères, le bruit d'un scan substring domine : pas de scan contenu.
+    if (!convById) return false;
+    const full = convById.get(c.id);
+    if (!full || !Array.isArray(full.messages)) return false;
+    for (const m of full.messages) {
+      // Les acks (tool-ack/memory-ack) portent des `result` potentiellement
+      // énormes et hors-sujet : ignorés. Le champ `reasoning` aussi (pas du
+      // contenu adressé à l'utilisateur).
+      if (isAckRole(m.role)) continue;
+      // Côté user : le littéral tapé (displayText), jamais le corps baké d'une
+      // slash-skill (content contient aussi le corps de la skill injectée).
+      const text = m.role === 'user' ? (m.displayText ?? m.content) : m.content;
+      if (typeof text === 'string' && text.toLowerCase().includes(q)) return true;
+    }
+    return false;
   };
 }
 
@@ -1188,6 +1303,7 @@ function setSending(on) {
   if (convDl) convDl.disabled = on;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
+  syncLastAssistantActions();   // le bouton régénérer disparaît pendant un stream
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
@@ -1550,6 +1666,45 @@ function closeSettings() {
   // aux cartes serveurs — levait une TypeError à chaque fermeture du drawer.)
   const rm = $('set-reasoning-menu');
   if (rm) rm.classList.remove('show');
+}
+
+// ── Catégorie « Données » : export / import complet (feature E) ─────────────
+// Ces boutons agissent immédiatement (pas branchés sur settingsFormDirty/
+// onSaveSettings, cf. brief). Le récapitulatif d'import affiche les compteurs
+// et un bouton d'application arm-then-confirm (remplacement intégral =
+// destructif) ; l'orchestration (lecture fichier, application) vit dans main.js.
+
+// Réinitialise la zone d'import (masque erreur + récapitulatif). Appelé avant
+// chaque nouvelle sélection de fichier.
+function resetImportDataUI() {
+  const err = $('import-data-err');
+  if (err) { err.setAttribute('hidden', ''); err.textContent = ''; }
+  const sum = $('import-data-summary');
+  if (sum) { sum.setAttribute('hidden', ''); sum.innerHTML = ''; }
+}
+
+function showImportDataError(msg) {
+  resetImportDataUI();
+  const err = $('import-data-err');
+  if (err) { err.textContent = msg; err.removeAttribute('hidden'); }
+}
+
+// Affiche le récapitulatif d'un import valide (counts de validateImportPayload)
+// et câble le bouton d'application sur armThenRun. `onApply` est appelé au
+// second clic (confirmation) — l'appelant (main.js) porte l'effet de bord.
+function renderImportSummary(counts, onApply) {
+  resetImportDataUI();
+  const sum = $('import-data-summary');
+  if (!sum) return;
+  sum.innerHTML =
+    `<div>${counts.conversations} conversation(s), ${counts.memories} souvenir(s), ` +
+    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s).</div>`;
+  const btn = document.createElement('button');
+  btn.className = 'drawer-btn danger';
+  btn.textContent = 'Appliquer (remplace tout)';
+  btn.onclick = () => armThenRun(btn, onApply, 'Confirmer le remplacement');
+  sum.appendChild(btn);
+  sum.removeAttribute('hidden');
 }
 
 // Légende décrivant le comportement induit par l'option sélectionnée (une seule

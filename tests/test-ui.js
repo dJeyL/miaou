@@ -129,6 +129,96 @@ describe('moveSkillAcSelection (navigation clavier de l\'autocomplete)', functio
   });
 });
 
+describe('searchConversations (recherche sidebar : titre, résumé, contenu)', function() {
+  // Conversation candidate minimale, comme fournie par listAllConversations()
+  // (pas de champ messages — c'est justement pourquoi le scan de contenu doit
+  // repasser par un instantané loadConversations() distinct).
+  function candidate(id, title) { return { id: id, title: title }; }
+
+  it('match titre en substring : comportement existant inchangé', function() {
+    localStorage.clear();
+    var f = searchConversations('Postgres');
+    expect(f(candidate('c1', 'Optimisation Postgres lente'))).toBe(true);
+    expect(f(candidate('c2', 'Autre sujet'))).toBe(false);
+  });
+
+  it('match résumé via tokenize/scoreSummary : comportement existant inchangé', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 'Titre neutre', timestamp: Date.now(), messages: [] });
+    saveSummary('c1', { title: 'Titre neutre', timestamp: Date.now(), summary: 'discussion sur le portail captif', keywords: ['portail'] });
+    var f = searchConversations('portail');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(true);
+  });
+
+  it('résumé tombstone ignoré (non-régression)', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 'Titre neutre', timestamp: Date.now(), messages: [] });
+    saveSummary('c1', { title: 'Titre neutre', timestamp: Date.now(), summary: 'discussion sur le portail captif', keywords: ['portail'] });
+    suppressSummary('c1');
+    var f = searchConversations('portail');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  });
+
+  it('scan du contenu : match sur un message user (displayText absent → content)', function() {
+    localStorage.clear();
+    saveConversation({
+      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
+      messages: [{ role: 'user', content: 'Un mot rarissime : ornithorynque' }],
+    });
+    var f = searchConversations('ornithorynque');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(true);
+  });
+
+  it('scan du contenu : match sur un message assistant', function() {
+    localStorage.clear();
+    saveConversation({
+      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
+      messages: [{ role: 'assistant', content: 'Réponse avec un mot rarissime : ornithorynque' }],
+    });
+    var f = searchConversations('ornithorynque');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(true);
+  });
+
+  it('scan du contenu : displayText prioritaire sur le content baké (slash-skill)', function() {
+    localStorage.clear();
+    saveConversation({
+      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
+      messages: [{
+        role: 'user',
+        displayText: 'Regarde ce texte',
+        content: 'Regarde ce texte\n\n--- skill: x ---\nCorpsSkillRarissime\n--- /skill: x ---',
+      }],
+    });
+    // Le mot n'existe que dans le corps baké de la skill : ne doit PAS matcher,
+    // seul le littéral tapé (displayText) est scanné côté user.
+    var f = searchConversations('corpsskillrarissime');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  });
+
+  it('requête de 2 caractères : pas de scan contenu (mot présent uniquement dans le contenu)', function() {
+    localStorage.clear();
+    saveConversation({
+      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
+      messages: [{ role: 'user', content: 'ab mot present seulement ici' }],
+    });
+    var f = searchConversations('ab');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  });
+
+  it('entrées ack ignorées dans le scan de contenu', function() {
+    localStorage.clear();
+    saveConversation({
+      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
+      messages: [
+        { role: 'tool-ack', kind: 'mcp_call', result: 'ornithorynque dans le result' },
+        { role: 'assistant', content: 'Réponse neutre' },
+      ],
+    });
+    var f = searchConversations('ornithorynque');
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  });
+});
+
 describe('modelName (fallback d\'affichage — serveur API actif)', function() {
   it('résout le modèle du serveur actif, pas settings.model legacy', function() {
     localStorage.clear();

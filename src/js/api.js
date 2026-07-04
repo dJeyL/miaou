@@ -255,9 +255,12 @@ function abortStream() {
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
 // Hooks : onDelta(full), onReasoning(full), onToolTour(), onToolAcks() [après les
-//         outils d'un tour], onFinal(content, reasoning),
+//         outils d'un tour], onFinal(content, reasoning, finishReason),
 //         onHalt(leadIn, question) [outil halting], onError(msg).
 // h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
+// h.noTools (optionnel) : omet `tools` de streamCompletion — utilisé par la
+// continuation d'une réponse tronquée (feature C, dispatchSend/main.js) : on ne
+// veut pas qu'un tool_call s'immisce dans un simple raccord de texte coupé.
 // Le résultat d'un outil n'est JAMAIS affiché : il repart au modèle, on va
 // toujours jusqu'à la réponse finale (finish_reason === 'stop').
 async function runConversation(messages, hooks) {
@@ -272,15 +275,18 @@ async function runConversation(messages, hooks) {
     const result = await streamCompletion(messages, {
       model: h.model,
       reasoningEffort: h.reasoningEffort,
-      tools: toolDefinitions(),
+      tools: h.noTools ? undefined : toolDefinitions(),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
     });
 
     // Interruption volontaire : on fige le contenu déjà reçu (pas de rollback)
-    // et on NE relance PAS de tour, même au milieu d'une boucle d'outils.
+    // et on NE relance PAS de tour, même au milieu d'une boucle d'outils
+    // (piège n°10). Sentinel 'aborted' (≠ null, réservé au cas « backend sans
+    // finish_reason ») : main.js pose `truncated` dessus si du contenu a été
+    // reçu, pour offrir « Continuer » sur une réponse stoppée à la main.
     if (result.aborted) {
-      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
+      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), 'aborted');
       return result.content;
     }
 
@@ -394,8 +400,10 @@ async function runConversation(messages, hooks) {
       continue;   // on relance toujours un appel
     }
 
-    // finish_reason === 'stop' (ou terminal) : la vraie réponse.
-    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning));
+    // finish_reason === 'stop' (ou terminal, ex. 'length') : la vraie réponse.
+    // finishReason est propagé tel quel à onFinal, qui décide (main.js) s'il
+    // pose le flag truncated sur le message persisté.
+    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), result.finishReason);
     return result.content;
   }
 

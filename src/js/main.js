@@ -196,6 +196,7 @@ async function openConversation(id) {
     if (m.server) o.server = m.server;   // provenance (serveur API), assistant uniquement
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    if (m.truncated) o.truncated = true;   // réponse incomplète (feature C)
     // littéral (slash-commande skill). Normalise l'ancien champ `display` (données
     // de test antérieures au renommage) vers `displayText` à la lecture.
     if (m.displayText != null) o.displayText = m.displayText;
@@ -347,6 +348,7 @@ function persistCurrent() {
     if (m.server) o.server = m.server;   // provenance (serveur API), assistant uniquement
     if (m.ts) o.ts = m.ts;
     if (m.reasoning) o.reasoning = m.reasoning;
+    if (m.truncated) o.truncated = true;   // réponse incomplète (feature C)
     if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
     return o;
   });
@@ -570,6 +572,89 @@ async function onToggleSkill(slug) {
   renderSkills();
 }
 
+// ── Export / import complet des données (feature E) ──────────────────────────
+// Assurance-vie : snapshot des 7 clés localStorage + IDB (skills, resources),
+// remplacement intégral à l'import (pas de fusion, décision actée). Format et
+// posture (clefs API en clair) documentés dans docs/storage.md.
+
+// Lit les 7 clés localStorage désérialisées (miaou-active-api-server est une
+// string brute, seule exception du schéma) pour buildExportPayload (storage.js).
+function snapshotLocalStorageForExport() {
+  const snap = {};
+  for (const key of EXPORT_KEYS) {
+    if (key === 'miaou-active-api-server') { snap[key] = localStorage.getItem(key) || ''; continue; }
+    try { snap[key] = JSON.parse(localStorage.getItem(key)); }
+    catch (e) { snap[key] = null; }
+  }
+  return snap;
+}
+
+// Handler global (bouton « Exporter les données »). Snapshot localStorage +
+// lecture IDB (skills, resources), encodage base64 des données binaires des
+// ressources, puis téléchargement du fichier JSON.
+async function exportAllData() {
+  const lsSnapshot = snapshotLocalStorageForExport();
+  const skills = await getAllSkillRecords();
+  const rawResources = await getAllResources();
+  const resources = rawResources.map(r => Object.assign({}, r, { data: arrayBufferToBase64(r.data) }));
+  const payload = buildExportPayload(lsSnapshot, skills, resources);
+  const ts = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+  downloadFile('miaou-export-' + stamp + '.json', JSON.stringify(payload), 'application/json');
+}
+
+// Handler global (bouton « Importer les données ») : déclenche l'input file caché.
+function onImportDataClick() {
+  const input = $('import-data-input');
+  if (input) { input.value = ''; input.click(); }
+}
+
+// Handler global (onchange de l'input file) : lit + parse + valide. Une erreur
+// s'affiche inline (registre showCardError/hint, jamais d'alert) ; un payload
+// valide affiche un récapitulatif dont le bouton d'application est arm-then-run
+// (remplacement intégral = destructif).
+function onImportFileSelected(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let obj;
+    try { obj = JSON.parse(reader.result); }
+    catch (e) { showImportDataError('Fichier illisible : JSON invalide.'); return; }
+    const res = validateImportPayload(obj);
+    if (!res.ok) { showImportDataError(res.error); return; }
+    renderImportSummary(res.counts, () => applyImportedData(obj));
+  };
+  reader.onerror = () => showImportDataError('Échec de lecture du fichier.');
+  reader.readAsText(file);
+}
+
+// Applique un payload d'import validé : écrit les 7 clés localStorage (clé
+// absente du fichier → removeItem, pour ne pas laisser d'état résiduel
+// incohérent), vide puis réinsère les stores IDB skills/resources, puis
+// recharge la page — l'état de session (caches, thread courant, statut MCP) se
+// reconstruit proprement au boot, aucune resynchronisation manuelle à écrire.
+async function applyImportedData(payload) {
+  const ls = payload.localStorage || {};
+  for (const key of EXPORT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(ls, key)) { localStorage.removeItem(key); continue; }
+    const val = ls[key];
+    if (key === 'miaou-active-api-server') localStorage.setItem(key, typeof val === 'string' ? val : '');
+    else localStorage.setItem(key, JSON.stringify(val));
+  }
+  const idb = payload.idb || {};
+  const skills = Array.isArray(idb.skills) ? idb.skills : [];
+  const resources = Array.isArray(idb.resources) ? idb.resources : [];
+  await clearIdbStore('skills');
+  for (const rec of skills) await putSkill(rec);
+  await clearIdbStore('resources');
+  for (const rec of resources) {
+    await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
+  }
+  location.reload();
+}
+
 // ── Flux d'envoi ────────────────────────────────────────────────────────────
 // Bouton unique du composer : envoie, ou interrompt si un stream est en cours.
 function onSendBtn() {
@@ -716,7 +801,47 @@ async function editUserMessage(index, newText) {
   return null;
 }
 
-async function dispatchSend(matches) {
+// Régénère la dernière réponse assistant : tronque après le dernier message
+// user (élimine la réponse, ses acks d'outils et les bulles de tours
+// intermédiaires), puis relance par le cœur commun — même chemin que l'envoi
+// et l'édition (piège n°12), pas de duplication de la logique mémoire/outils.
+// Un seul clic, pas de confirmation (cohérent avec editUserMessage) : le
+// bouton n'est de toute façon visible que sur la dernière bulle assistant
+// (cf. syncLastAssistantActions, ui.js), donc le geste est déjà borné.
+function regenerateResponse(btn) {
+  if (!configured || sending) return;
+  if (_confirmPending) dismissConfirmation();   // même geste que sendMessage
+  const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+  if (lastUserIdx < 0) return;
+  currentThread = currentThread.slice(0, lastUserIdx + 1);
+  persistCurrent();                             // troncature écrite avant relance
+  renderThread(currentThread);
+  runGenerationFromCurrentThread();
+}
+
+// Reprend la génération d'une réponse assistant tronquée (finish_reason:
+// 'length', feature C) : appelle dispatchSend en mode continuation, SANS
+// passer par runGenerationFromCurrentThread — pas de recherche mémoire ni de
+// bannière résumés pour un simple raccord de texte coupé (le dernier message
+// user, lui, a déjà été traité lors du tour qui a produit la troncature).
+function continueTruncated(btn) {
+  if (!configured || sending) return;
+  const wrap = btn.closest('.msg');
+  if (!wrap) return;
+  const idx = msgIndex(wrap);
+  if (idx < 0) return;
+  const msg = currentThread[idx];
+  // Garde : le message doit être le DERNIER assistant du fil (cohérent avec le
+  // bouton, déjà désactivé ailleurs par syncLastAssistantActions — double
+  // vérification ici car le DOM peut être périmé si l'utilisateur a été rapide)
+  // et porter encore le flag truncated.
+  if (!msg || msg.role !== 'assistant' || !msg.truncated) return;
+  const lastAssistantIdx = currentThread.reduce((acc, m, i) => (m.role === 'assistant' ? i : acc), -1);
+  if (idx !== lastAssistantIdx) return;
+  dispatchSend([], { continueIndex: idx, wrap });
+}
+
+async function dispatchSend(matches, continuation) {
   hideSummaryBanner();
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const serverName = (activeApiServer() || {}).name || '';   // provenance, persistée sur chaque message assistant
@@ -744,7 +869,28 @@ async function dispatchSend(matches) {
 
   const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
 
-  let wrap = startAssistantMessage(model, serverName);
+  // Mode continuation (feature C) : reprise d'une réponse assistant tronquée
+  // (finish_reason: 'length'). Le thread ci-dessus se termine déjà par ce
+  // message assistant — le payload API est construit EXACTEMENT comme pour un
+  // envoi normal (system + historique + injection de contexte sur le dernier
+  // message user), le modèle voit sa propre réponse coupée en dernier tour et
+  // la continue. `prefix` = contenu déjà persisté de ce message ; la bulle
+  // existante (`continuation.wrap`) est réutilisée, pas de nouvelle bulle.
+  const isContinuation = !!continuation;
+  const prefix = isContinuation ? currentThread[continuation.continueIndex].content : '';
+
+  let wrap;
+  if (isContinuation) {
+    wrap = continuation.wrap;
+    // Retire le bandeau de troncature au démarrage : la génération reprend,
+    // le message n'est plus dans un état "en attente de continuation".
+    const banner = wrap.querySelector('.msg-truncated');
+    if (banner) banner.remove();
+    startWaiter(wrap.querySelector('.body'));   // état WAITING, comme startAssistantMessage
+    scrollBottom();
+  } else {
+    wrap = startAssistantMessage(model, serverName);
+  }
   // Acks MCP pré-rendus (avant await réseau) : { ack: descripteur brut, entry:
   // entrée currentThread, node: nœud DOM }. Stockés ici pour que onToolAcks
   // puisse rétro-appliquer la classe d'erreur si ack.error a été posé après l'await.
@@ -754,7 +900,12 @@ async function dispatchSend(matches) {
     await runConversation(apiMessages, {
       model,
       reasoningEffort,
-      onDelta: (full) => streamInto(wrap, full),
+      // Une continuation ne relance JAMAIS d'outils : autoriser des tool_calls
+      // ici ouvrirait des cas de raccord ingérables (tours intermédiaires qui
+      // pousseraient de nouvelles bulles alors qu'on veut concaténer le texte
+      // dans la bulle existante). Cf. h.noTools, api.js/runConversation.
+      noTools: isContinuation,
+      onDelta: (full) => streamInto(wrap, isContinuation ? prefix + full : full),
       onReasoning: (full) => setReasoning(wrap, full),
       onToolTour: (content) => {
         if (content && content.trim()) {
@@ -853,17 +1004,46 @@ async function dispatchSend(matches) {
           updateLastPendingToolAck(fields);
         }
       },
-      onFinal: (content, reasoning) => {
+      onFinal: (content, reasoning, finishReason) => {
+        if (isContinuation) {
+          // Mute le message existant au lieu d'en pousser un nouveau : même
+          // horodatage, même identité de message, juste plus de contenu.
+          // finishReason === 'length' : re-troncature possible (chaîne de
+          // continuations). 'aborted' (stop manuel pendant la continuation) :
+          // le raccord est resté partiel, le flag reste — le bandeau reste et
+          // « Continuer » peut reprendre. Seule une fin normale le retire.
+          const m = currentThread[continuation.continueIndex];
+          m.content = prefix + content;
+          if (finishReason === 'length' || finishReason === 'aborted') m.truncated = true;
+          else delete m.truncated;
+          if (reasoning && reasoning.trim()) m.reasoning = joinReasoning(m.reasoning, reasoning);
+          const body = wrap.querySelector('.body');
+          if (body) body.dataset.raw = m.content;
+          finalizeAssistant(wrap, m.content, m.truncated);
+          if (m.reasoning) flushReasoning(wrap, m.reasoning);
+          persistCurrent();
+          setConnDot('ok');
+          // Ni maybeTitle() ni nouveau ts : le message garde son horodatage
+          // d'origine, la conversation a déjà été titrée (ou pas) à sa création.
+          return;
+        }
         const ts = Date.now();
         const msg = { role: 'assistant', content, model, ts };
         if (serverName) msg.server = serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
+        // Réponse incomplète : champ optionnel, absent sinon. Deux causes —
+        // coupe backend ('length', limite de tokens) ou stop manuel ('aborted',
+        // seulement si du contenu a été reçu : stopper avant le premier token
+        // laisse une bulle vide, « Régénérer » suffit). Permet « Continuer ».
+        if (finishReason === 'length' || (finishReason === 'aborted' && content && content.trim())) {
+          msg.truncated = true;
+        }
         // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
         // qui teste currentThread.some(role==='assistant') — sur une conversation
         // fraîche (premier tour), un ordre inversé laisserait le bouton caché
         // malgré la réponse déjà affichée (bug payé : visible seulement après reload).
         currentThread.push(msg);
-        finalizeAssistant(wrap, content);
+        finalizeAssistant(wrap, content, msg.truncated);
         revealMsgTimestamp(wrap, ts);
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
