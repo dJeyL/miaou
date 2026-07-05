@@ -1430,7 +1430,7 @@ body {
 .drawer-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
 .drawer-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
 .drawer-btn .spin { width: 11px; height: 11px; }
-.drawer-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.drawer-btns { display: flex; gap: 6px; flex-shrink: 0; margin-top: 8px; }
 .drawer-btns.hidden { display: none; }
 
 .mem-add {
@@ -2591,7 +2591,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-05 23:19 UTC */
+/* miaou — built: 2026-07-05 23:32 UTC */
 
 /* ── utils.js ── */
 
@@ -3099,7 +3099,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783293544}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783294375}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -8456,21 +8456,21 @@ function renderMemoryList(containerId, scope) {
 
     if (e.suppressed) {
       item.innerHTML =
-        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div></div>` +
+        `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>` +
         `<div class="drawer-btns">` +
         `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}','${containerId}','${scope}')">Rétablir</button>` +
         `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}','${containerId}','${scope}')">Oublier</button>` +
-        `</div></div>` +
-        `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
+        `</div>`;
     } else {
       item.innerHTML =
-        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div></div>` +
+        `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
         `<div class="drawer-btns" id="drawer-btns-${e.id}">` +
         `<button class="drawer-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
         (promoteBtn ? promoteBtn.replace('{{ID}}', e.id) : '') +
         `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}','${containerId}','${scope}')">Supprimer</button>` +
-        `</div></div>` +
-        `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
+        `</div>` +
         `<div class="mem-edit-wrap hidden" id="mem-edit-${e.id}">` +
         `<textarea class="mem-edit-input" id="mem-edit-input-${e.id}">${escHtml(e.content || '')}</textarea>` +
         `<div class="mem-edit-actions">` +

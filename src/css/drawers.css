@@ -438,7 +438,7 @@
 .drawer-btn.loading { display: inline-flex; align-items: center; gap: 6px; cursor: default; opacity: .85; }
 .drawer-btn.loading:hover { background: var(--surface-3); color: var(--text-2); }
 .drawer-btn .spin { width: 11px; height: 11px; }
-.drawer-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.drawer-btns { display: flex; gap: 6px; flex-shrink: 0; margin-top: 8px; }
 .drawer-btns.hidden { display: none; }
 
 /* zone d'ajout d'un nouveau souvenir */

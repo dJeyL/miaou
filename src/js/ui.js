@@ -3367,21 +3367,21 @@ function renderMemoryList(containerId, scope) {
 
     if (e.suppressed) {
       item.innerHTML =
-        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div></div>` +
+        `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>` +
         `<div class="drawer-btns">` +
         `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}','${containerId}','${scope}')">Rétablir</button>` +
         `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}','${containerId}','${scope}')">Oublier</button>` +
-        `</div></div>` +
-        `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
+        `</div>`;
     } else {
       item.innerHTML =
-        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
+        `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div></div>` +
+        `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
         `<div class="drawer-btns" id="drawer-btns-${e.id}">` +
         `<button class="drawer-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
         (promoteBtn ? promoteBtn.replace('{{ID}}', e.id) : '') +
         `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}','${containerId}','${scope}')">Supprimer</button>` +
-        `</div></div>` +
-        `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
+        `</div>` +
         `<div class="mem-edit-wrap hidden" id="mem-edit-${e.id}">` +
         `<textarea class="mem-edit-input" id="mem-edit-input-${e.id}">${escHtml(e.content || '')}</textarea>` +
         `<div class="mem-edit-actions">` +
