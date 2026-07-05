@@ -550,101 +550,101 @@
   - `renderContextInspector()` — L2017
   - `switchMemoryTab()` — L2056
   - `renderSummaryList()` — L2068
-  - `deleteSummaryItem()` — L2110
-  - `toggleSummaryExpand()` — L2112
-  - `restoreSummaryItem()` — L2123
-- **Panneau des outils** (L2153)
-  - `openTools()` — L2154
-  - `closeTools()` — L2159
-  - `renderToolsList()` — L2168
-  - `buildToolItem()` — L2225
-- **Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5)** (L2257)
-  - `syncSpaceUI()` — L2265
-  - `toggleSpaceMenu()` — L2276
-  - `renderSpaceMenu()` — L2284
-  - `pickSpace()` — L2317
-  - `createSpaceAndOpen()` — L2334
-- **Écran Space (sous-drawer, pattern MCP)** (L2343)
-  - `_spaceScreenId` — L2344
-  - `openSpaceScreen()` — L2346
-  - `closeSpaceScreen()` — L2365
-  - `onSpaceFormInput()` — L2371
-  - `onSaveSpaceScreen()` — L2376
-  - `syncSpaceDeleteLabel()` — L2398
-  - `onDeleteSpaceScreen()` — L2410
-- **Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3)** (L2437)
-  - `openMcpServers()` — L2438
-  - `closeMcpServers()` — L2443
-  - `renderMcpServersIfOpen()` — L2447
-  - `renderMcpServers()` — L2451
-  - `addMcpServerCard()` — L2468
-- **Helpers partagés des cartes de configuration (MCP / API / skills)** (L2479)
-  - `showCardError()` — L2485
-  - `cfgField()` — L2490
-  - `cfgToggle()` — L2507
-  - `cfgToggleRow()` — L2521
-  - `cfgErrEl()` — L2533
-  - `cfgPillSelect()` — L2547
-  - `buildMcpCard()` — L2594
-- **SECTION VUE** (L2599)
-- **SECTION ÉDITION** (L2658)
-- **Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP)** (L2731)
-  - `openApiServers()` — L2734
-  - `closeApiServers()` — L2739
-  - `renderApiServersIfOpen()` — L2743
-  - `syncActiveApiServerUI()` — L2750
-  - `renderApiServers()` — L2776
-  - `addApiServerCard()` — L2792
-  - `buildApiCard()` — L2800
-- **SECTION VUE** (L2805)
-- **SECTION ÉDITION** (L2846)
-- **Skills : drawer de gestion** (L2923)
-  - `openSkills()` — L2926
-  - `closeSkills()` — L2931
-  - `syncSkillHintUI()` — L2938
-  - `renderSkills()` — L2943
-  - `addSkillCard()` — L2959
-  - `buildSkillCard()` — L2967
-- **SECTION VUE** (L2972)
-- **SECTION ÉDITION** (L3006)
-  - `enterSkillEdit()` — L3064
-- **Autocomplétion des skills (slash-commande)** (L3072)
-  - `_composerAc` — L3080
-  - `onComposerInput()` — L3082
-  - `updateSkillAutocomplete()` — L3096
-  - `renderSkillAutocomplete()` — L3110
-  - `hideSkillAutocomplete()` — L3135
-  - `skillAutocompleteOpen()` — L3143
-  - `moveSkillAcSelection()` — L3148
-  - `acceptSkillAcSelection()` — L3165
-  - `pickSkillCompletion()` — L3178
-  - `showComposerSkillError()` — L3192
-  - `clearComposerSkillError()` — L3196
-- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L3201)
-  - `placeToolBlocks()` — L3205
-  - `renderToolBlock()` — L3216
-  - `renderResourceText()` — L3246
-  - `renderBinaryBlock()` — L3264
-  - `presentResourceFromChip()` — L3287
-  - `mimeToLang()` — L3304
-  - `setMemItemLoading()` — L3317
-- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L3325)
-  - `renderMemoryList()` — L3333
-  - `addMemoryEntry()` — L3396
-  - `deleteMemoryEntry()` — L3407
-  - `restoreMemoryEntry()` — L3408
-  - `forgetMemoryEntry()` — L3409
-  - `promoteMemoryEntry()` — L3414
-  - `startEditMemoryEntry()` — L3423
-  - `cancelMemoryEntryEdit()` — L3434
-  - `saveMemoryEntryEdit()` — L3443
-- **Confirmation inline (cartes dans le thread)** (L3452)
-  - `_proposalMap` — L3456
-  - `clearMemoryProposals()` — L3460
-  - `showConfirmation()` — L3467
-  - `acceptProposal()` — L3489
-  - `rejectProposal()` — L3497
-  - `_removeProposalCard()` — L3505
+  - `deleteSummaryItem()` — L2116
+  - `toggleSummaryExpand()` — L2118
+  - `restoreSummaryItem()` — L2129
+- **Panneau des outils** (L2159)
+  - `openTools()` — L2160
+  - `closeTools()` — L2165
+  - `renderToolsList()` — L2174
+  - `buildToolItem()` — L2231
+- **Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5)** (L2263)
+  - `syncSpaceUI()` — L2271
+  - `toggleSpaceMenu()` — L2282
+  - `renderSpaceMenu()` — L2290
+  - `pickSpace()` — L2323
+  - `createSpaceAndOpen()` — L2340
+- **Écran Space (sous-drawer, pattern MCP)** (L2349)
+  - `_spaceScreenId` — L2350
+  - `openSpaceScreen()` — L2352
+  - `closeSpaceScreen()` — L2371
+  - `onSpaceFormInput()` — L2377
+  - `onSaveSpaceScreen()` — L2382
+  - `syncSpaceDeleteLabel()` — L2404
+  - `onDeleteSpaceScreen()` — L2416
+- **Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3)** (L2443)
+  - `openMcpServers()` — L2444
+  - `closeMcpServers()` — L2449
+  - `renderMcpServersIfOpen()` — L2453
+  - `renderMcpServers()` — L2457
+  - `addMcpServerCard()` — L2474
+- **Helpers partagés des cartes de configuration (MCP / API / skills)** (L2485)
+  - `showCardError()` — L2491
+  - `cfgField()` — L2496
+  - `cfgToggle()` — L2513
+  - `cfgToggleRow()` — L2527
+  - `cfgErrEl()` — L2539
+  - `cfgPillSelect()` — L2553
+  - `buildMcpCard()` — L2600
+- **SECTION VUE** (L2605)
+- **SECTION ÉDITION** (L2664)
+- **Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP)** (L2737)
+  - `openApiServers()` — L2740
+  - `closeApiServers()` — L2745
+  - `renderApiServersIfOpen()` — L2749
+  - `syncActiveApiServerUI()` — L2756
+  - `renderApiServers()` — L2782
+  - `addApiServerCard()` — L2798
+  - `buildApiCard()` — L2806
+- **SECTION VUE** (L2811)
+- **SECTION ÉDITION** (L2852)
+- **Skills : drawer de gestion** (L2929)
+  - `openSkills()` — L2932
+  - `closeSkills()` — L2937
+  - `syncSkillHintUI()` — L2944
+  - `renderSkills()` — L2949
+  - `addSkillCard()` — L2965
+  - `buildSkillCard()` — L2973
+- **SECTION VUE** (L2978)
+- **SECTION ÉDITION** (L3012)
+  - `enterSkillEdit()` — L3070
+- **Autocomplétion des skills (slash-commande)** (L3078)
+  - `_composerAc` — L3086
+  - `onComposerInput()` — L3088
+  - `updateSkillAutocomplete()` — L3102
+  - `renderSkillAutocomplete()` — L3116
+  - `hideSkillAutocomplete()` — L3141
+  - `skillAutocompleteOpen()` — L3149
+  - `moveSkillAcSelection()` — L3154
+  - `acceptSkillAcSelection()` — L3171
+  - `pickSkillCompletion()` — L3184
+  - `showComposerSkillError()` — L3198
+  - `clearComposerSkillError()` — L3202
+- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L3207)
+  - `placeToolBlocks()` — L3211
+  - `renderToolBlock()` — L3222
+  - `renderResourceText()` — L3252
+  - `renderBinaryBlock()` — L3270
+  - `presentResourceFromChip()` — L3293
+  - `mimeToLang()` — L3310
+  - `setMemItemLoading()` — L3323
+- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L3331)
+  - `renderMemoryList()` — L3339
+  - `addMemoryEntry()` — L3402
+  - `deleteMemoryEntry()` — L3413
+  - `restoreMemoryEntry()` — L3414
+  - `forgetMemoryEntry()` — L3415
+  - `promoteMemoryEntry()` — L3420
+  - `startEditMemoryEntry()` — L3429
+  - `cancelMemoryEntryEdit()` — L3440
+  - `saveMemoryEntryEdit()` — L3449
+- **Confirmation inline (cartes dans le thread)** (L3458)
+  - `_proposalMap` — L3462
+  - `clearMemoryProposals()` — L3466
+  - `showConfirmation()` — L3473
+  - `acceptProposal()` — L3495
+  - `rejectProposal()` — L3503
+  - `_removeProposalCard()` — L3511
 
 ## src/js/main.js
 

@@ -2075,16 +2075,21 @@ function renderSummaryList() {
     return;
   }
   ids.sort((a, b) => (all[b].timestamp || 0) - (all[a].timestamp || 0));
+  const convs = loadConversations();
   for (const id of ids) {
     const e = all[id];
     const item = document.createElement('div');
     item.dataset.id = id;
     const date = e.timestamp ? new Date(e.timestamp).toLocaleDateString('fr-FR') : '';
+    const conv = convs.find(c => c.id === id);
+    const space = getSpace(conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID);
+    const spaceLabel = space ? space.name : '';
     if (e.suppressed) {
       item.className = 'mem-item suppressed';
+      const sub = ['supprimé', date, spaceLabel].filter(Boolean).join(' · ');
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
-        `<div class="mem-sub">supprimé${date ? ' · ' + escHtml(date) : ''}</div></div>` +
+        `<div class="mem-sub">${escHtml(sub)}</div></div>` +
         `<button class="drawer-btn" onclick="restoreSummaryItem('${id}')">Rétablir</button></div>`;
     } else {
       const full = e.summary || '';
@@ -2092,12 +2097,13 @@ function renderSummaryList() {
       const kws = Array.isArray(e.keywords) && e.keywords.length
         ? `<div class="mem-keywords"><strong>Mots-clefs</strong> — ${escHtml(e.keywords.join(', '))}</div>`
         : '';
+      const sub = [date, spaceLabel].filter(Boolean).join(' · ');
       item.className = 'mem-item';
       item.onclick = () => toggleSummaryExpand(id);
       item.innerHTML =
         `<div class="mem-header">` +
         `<div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
-        `<div class="mem-sub">${escHtml(date)}</div></div>` +
+        `<div class="mem-sub">${escHtml(sub)}</div></div>` +
         `<button class="drawer-btn danger" onclick="event.stopPropagation();deleteSummaryItem('${id}')">Supprimer</button>` +
         `</div>` +
         `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
