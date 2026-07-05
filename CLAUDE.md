@@ -96,7 +96,10 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`, `copyMsg`,
   `regenerateTitle`, `regenerateResponse`, `continueTruncated`, `openApiServers`, `closeApiServers`, `addApiServerCard`,
   `toggleReasoning`, `toggleSettingsCat`, `exportAllData`, `onImportDataClick`,
-  `onImportFileSelected`, …). Le bouton « Enregistrer »
+  `onImportFileSelected`, `onAttachClick`, `onAttachFilesSelected`,
+  `onComposerDragOver`, `onComposerDragLeave`, `onComposerDrop`,
+  `removeComposerAttachment`, `toggleSpaceMenu`, `closeSpaceScreen`,
+  `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Il est désactivé tant que le
   formulaire ne diverge pas des réglages persistés (`settingsFormDirty`,
@@ -156,6 +159,44 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     statique ; contenu dynamique (date, mémoire) injecté en préfixe éphémère
     du dernier message user via `buildContextBlock()`, jamais dans le system
     message.
+17. **Persistance des images jointes (content parts → descripteur).** Une image
+    jointe part en content parts OpenAI (`image_url` base64) **seulement au
+    tour où elle est attachée** ; une fois ce tour terminé (normal, avorté ou
+    halte), le message user est réécrit **une fois** en une string = texte +
+    une ligne de descripteur byte-stable par image (`collapseAttachedMessageContent`,
+    idempotente). Le descripteur est calculé depuis les champs FIGÉS du schéma
+    (`name`, `w`, `h`, `size`) — **jamais recalculé** depuis les octets à un
+    tour ultérieur.
+18. **Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
+    convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
+    appartient-elle au Space actif ? » — sidebar, recherche, `list_conversations`/
+    `get_conversation`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
+    (via `scope`). Jamais un filtre `c.spaceId === x` réécrit localement.
+    `get_conversation`/`update_memory`/`delete_memory` sur un id hors-Space
+    répondent comme **inexistant** (pas d'oracle). Changer de Space actif
+    change le prompt système effectif : `description` du Space (pas un
+    system prompt) est **ajoutée après** le prompt système utilisateur global
+    (`resolveUserSystemPrompt`, brief D4 — concaténation, jamais substitution)
+    — **assumé** : ça casse le préfixe KV cache (piège 16), mais reste
+    statique tant qu'on ne change pas de Space.
+19. **Recall d'image : ré-injection via message user synthétique, jamais dans
+    `role:'tool'` (brief A2, D3).** Un `recall_attachment` sur une image ne
+    remet PAS les pixels dans le résultat de l'outil (`role:'tool'` textuel) :
+    le handler renvoie un tool result annonciateur, et l'image revient au modèle
+    via un **message user synthétique** porteur de la content part image, émis
+    par `expandThread` **après** les tool results du groupe. Ce message n'existe
+    pas dans `currentThread` : la dataUrl est reconstruite depuis le record en
+    cache par le pré-pass `resolveRecallImages` (resources.js) à **chaque** envoi
+    (champ `recallImage` sur une copie de l'ack), **jamais persistée** (absente
+    d'`ACK_COPY_FIELDS` — seul `attId` l'est) → byte-stable, KV-safe. Raison du
+    choix (probe 2026-07-05, `mistral-small3.2`) : une part image dans un message
+    `role:'tool'` transmet bien les pixels sur Ollama MAIS **confabule
+    silencieusement** quand elle est strippée ; le message user échoue honnêtement
+    (« AUCUNE IMAGE »). Corollaire du collapse-timing (D2) : l'image→descripteur
+    ne se fait **jamais entre deux appels d'une même boucle d'outils** — le
+    payload `apiMessages` est construit UNE fois avant la boucle `runConversation`
+    et seulement complété par push ; le collapse (`rewriteAttachedUserMessage`)
+    n'a lieu qu'en `onFinal`/`onHalt`, donc après la fin de l'échange.
 
 ## Domaines détaillés (`docs/`)
 

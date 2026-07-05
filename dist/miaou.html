@@ -135,6 +135,55 @@ body {
 .new-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
 .new-btn svg { width: 13px; height: 13px; }
 
+.space-select { position: relative; margin: 0 14px 10px; }
+.space-select-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.space-select-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
+.space-select-btn svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-3); }
+.space-select-btn .chev { margin-left: auto; opacity: .7; }
+.space-select-btn #space-select-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-menu { left: 0; right: 0; min-width: 0; }
+.space-menu .model-opt { font-family: var(--sans); gap: 6px; }
+.space-menu .model-opt .space-opt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-menu .space-opt-edit {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 20px; height: 20px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  opacity: 0;
+  transition: opacity 120ms var(--ease), background 120ms var(--ease), color 120ms var(--ease);
+}
+.space-menu .model-opt:hover .space-opt-edit { opacity: 1; }
+.space-menu .space-opt-edit:hover { background: var(--surface-4); color: var(--text); }
+.space-menu .space-opt-edit svg { width: 12px; height: 12px; }
+.space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
+
 .sidebar-search {
   display: flex;
   align-items: center;
@@ -278,6 +327,27 @@ body {
 .app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
 .topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
+
+.topbar-space-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 3px 9px;
+  border-radius: 100px;
+  margin-left: 4px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition: opacity 190ms var(--ease), transform 190ms var(--ease);
+}
+.app.booted:not(.sidebar-open) .topbar-space-badge:not([hidden]) { opacity: 1; transform: translateX(0); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
@@ -425,6 +495,14 @@ body {
 .msg.user .bubble .body p { margin-bottom: 7px; }
 
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
+
+.msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.msg-attachments:empty { display: none; }
 
 .msg-copy-user,
 .msg-edit {
@@ -628,12 +706,29 @@ body {
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  padding: 8px 8px 8px 14px;
+  
+  padding: 8px 8px 8px 5px;
   transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
 }
 .input-wrap:focus-within { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
 .input-wrap.disabled { border-color: rgba(255,93,93,.3); background: rgba(255,93,93,.04); }
 .input-wrap.disabled:focus-within { box-shadow: none; }
+
+.input-wrap.dragover { border-color: var(--accent-bd); background: var(--accent-dim); }
+
+.attach-btn {
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  border-radius: 9px;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+.attach-btn:hover { background: var(--surface-3); color: var(--text); }
+.attach-btn svg { width: 16px; height: 16px; }
 
 #composer-text {
   flex: 1;
@@ -716,6 +811,21 @@ body {
   transition: background 140ms var(--ease);
 }
 .composer-model-btn:hover { background: var(--accent-bd); }
+
+.ctx-counter {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  padding: 4px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+.ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
+.ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
 .composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
 .composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
 .composer-model-btn #composer-model-label {
@@ -846,6 +956,64 @@ body {
 }
 .mb-btn.primary:hover { background: var(--accent-2); }
 
+.attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.attach-chips[hidden] { display: none; }
+
+.att-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 220px;
+}
+.att-thumb {
+  width: 22px; height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface-3);
+}
+.att-icon {
+  width: 22px; height: 22px;
+  border-radius: 4px;
+  display: grid; place-items: center;
+  background: var(--surface-3);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.att-icon svg { width: 13px; height: 13px; }
+.att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+  color: var(--text);
+}
+.att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+.att-remove {
+  display: grid; place-items: center;
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.att-remove:hover { background: var(--surface-3); color: var(--err); }
+.att-remove svg { width: 10px; height: 10px; }
+
 .backdrop {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.5);
@@ -934,7 +1102,7 @@ body {
   border: 1px solid var(--border-2);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.55;
   padding: 9px 11px;
   border-radius: var(--r-sm);
@@ -1218,6 +1386,25 @@ body {
 .mem-keywords strong { color: var(--text-2); font-weight: 600; }
 .mem-item:not(.expanded) .mem-full { display: none; }
 .mem-item.expanded .mem-excerpt { display: none; }
+
+.ctx-bar {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+}
+.ctx-bar-seg { display: block; height: 100%; min-width: 1px; }
+.ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ctx-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.ctx-table td:first-child { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.ctx-table td:not(:first-child) { text-align: right; font-family: var(--mono); white-space: nowrap; }
+.ctx-table tr.ctx-total td { font-weight: 600; color: var(--text); border-bottom: none; border-top: 1px solid var(--border-2); }
+.ctx-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.drawer-title { font-size: 13px; font-weight: 600; color: var(--text); }
+
 .drawer-btn {
   flex-shrink: 0;
   background: var(--surface-3);
@@ -1391,7 +1578,8 @@ body {
 
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
 
-.tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
+.tool-ack.ack-error .ack-icon,
+.tool-ack.ack-error .ack-label { color: var(--err); }
 
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
@@ -1514,6 +1702,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 8px 10px;
+  font-family: var(--sans);
   font-size: 13px;
   color: var(--text);
 }
@@ -1521,6 +1710,15 @@ body {
 .cfg-field select:focus,
 .cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
 .cfg-field .hint { font-size: 11px; color: var(--text-3); }
+
+.drawer-section-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 18px 0 2px;
+}
 .cfg-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
 .cfg-err { font-size: 11.5px; color: var(--err); }
 .cfg-actions { display: flex; gap: 6px; margin-top: 2px; }
@@ -1865,6 +2063,14 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           Nouvelle
         </button>
       </div>
+      <div class="space-select" id="space-select">
+        <button type="button" class="space-select-btn" id="space-select-btn" onclick="toggleSpaceMenu()" title="Changer d'espace">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span id="space-select-label">Général</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="model-menu space-menu" id="space-menu"></div>
+      </div>
       <div class="sidebar-search">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()">
@@ -1887,6 +2093,8 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           <img class="topbar-brand-logo" id="topbar-logo" alt="">
           <span class="topbar-brand-name">MIAOU</span>
         </div>
+        
+        <span class="topbar-space-badge" id="topbar-space-badge" hidden></span>
         
         <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -1950,11 +2158,20 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
             </button>
             <div class="model-menu" id="composer-reasoning-menu"></div>
           </div>
+          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" title="Inspecteur de contexte">
+            <span id="ctx-counter-label">≈ 0 tok</span>
+          </button>
         </div>
 
-        <div class="input-wrap" id="input-wrap">
+        <div class="attach-chips" id="attach-chips" hidden></div>
+        <div class="input-wrap" id="input-wrap"
+          ondragover="onComposerDragOver(event)" ondragleave="onComposerDragLeave(event)" ondrop="onComposerDrop(event)">
           
           <div class="skill-ac" id="skill-ac" hidden></div>
+          <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
           <textarea id="composer-text" rows="1" placeholder="Message…"
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
@@ -1963,6 +2180,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </button>
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
+        <div class="composer-attach-error" id="composer-attach-error" hidden></div>
         <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden> · <kbd>/</kbd> pour une skill</span></div>
       </div>
     </div>
@@ -2049,6 +2267,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </label>
         </div>
       </div>
+      <div class="field">
+        <label for="set-contextwindow">Fenêtre de contexte (tokens)</label>
+        <span class="hint">Estimation, non détectée automatiquement. Vide = inconnu. Sert de repère à l'inspecteur de contexte (jauge d'occupation).</span>
+        <input type="number" id="set-contextwindow" min="0" step="1000" placeholder="ex. 128000">
+      </div>
           </div>
         </div>
       </div>
@@ -2121,7 +2344,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
       <div class="field">
         <div class="btn-row">
           <button class="btn-ghost" onclick="openSummaryDrawer()">Résumés</button>
-          <button class="btn-ghost" onclick="openMemoryDrawer()">Souvenirs</button>
+          <button class="btn-ghost" onclick="openMemoryDrawer()">Profil</button>
         </div>
       </div>
       <div class="field">
@@ -2262,6 +2485,34 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     </div>
   </div>
 
+  <div class="backdrop" id="space-backdrop" onclick="closeSpaceScreen()"></div>
+  <div class="drawer" id="space-drawer">
+    <div class="drawer-head">
+      <h2 id="space-drawer-title">Espace</h2>
+      <button class="icon-btn" onclick="closeSpaceScreen()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div class="cfg-field">
+        <label>Nom</label>
+        <input type="text" id="space-name-input" spellcheck="false" oninput="onSpaceFormInput()">
+      </div>
+      <div class="cfg-field">
+        <label>Description</label>
+        <textarea id="space-description-input" rows="4" placeholder="Contexte propre à cet espace, ajouté après le prompt système." oninput="onSpaceFormInput()"></textarea>
+      </div>
+      <button class="drawer-btn primary" id="space-save-btn" onclick="onSaveSpaceScreen()" disabled>Enregistrer</button>
+      <div class="cfg-err" id="space-err" hidden></div>
+
+      <div class="drawer-section-title">Souvenirs de cet espace</div>
+      <div class="mem-list" id="space-memory-list"></div>
+
+      <div class="drawer-section-title" id="space-delete-title" hidden>Zone dangereuse</div>
+      <button class="drawer-btn danger" id="space-delete-btn" onclick="onDeleteSpaceScreen()" hidden>Supprimer cet espace</button>
+    </div>
+  </div>
+
   <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
   <div class="drawer" id="api-drawer">
     <div class="drawer-head">
@@ -2299,7 +2550,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
     <div class="drawer-head">
       <div class="drawer-tabs">
         <button class="drawer-tab active" data-tab="summaries" onclick="switchMemoryTab('summaries')">Résumés</button>
-        <button class="drawer-tab" data-tab="memories" onclick="switchMemoryTab('memories')">Souvenirs</button>
+        <button class="drawer-tab" data-tab="memories" onclick="switchMemoryTab('memories')">Profil</button>
       </div>
       <button class="icon-btn" onclick="closeSummaryDrawer()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -2311,8 +2562,26 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <div class="mem-list" id="summary-list"></div>
       </div>
       <div id="memory-tab-panel" class="drawer-tab-panel hidden">
+        <span class="hint">Souvenirs du profil, injectés dans tous les espaces. Les souvenirs propres à un espace se gèrent depuis son écran (sélecteur d'espace, sidebar).</span>
         <div class="mem-list" id="memory-list"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="backdrop" id="ctx-backdrop" onclick="closeContextInspector()"></div>
+  <div class="drawer" id="ctx-drawer">
+    <div class="drawer-head">
+      <div class="drawer-tabs">
+        <span class="drawer-title">Inspecteur de contexte</span>
+      </div>
+      <button class="icon-btn" onclick="closeContextInspector()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint" id="ctx-source-hint"></span>
+      <div class="ctx-bar" id="ctx-bar"></div>
+      <table class="ctx-table" id="ctx-table"><tbody id="ctx-table-body"></tbody></table>
     </div>
   </div>
 
@@ -2322,7 +2591,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-04 08:56 UTC */
+/* miaou — built: 2026-07-05 23:00 UTC */
 
 /* ── utils.js ── */
 
@@ -2350,6 +2619,7 @@ const ACK_COPY_FIELDS = [
   'title', 'count', 'convId',            
   'server', 'name', 'intent',            
   'resourceName', 'mime', 'size',        
+  'attId',                                
   'slug',                                
   'args', 'result', 'ts', 'group', 'assistantText',   
 ];
@@ -2649,6 +2919,14 @@ function _hashId9(s) {
   return h.toString(36).padStart(9, '0').substring(0, 9);
 }
 
+function messageTextForSummary(m) {
+  if (m.displayText != null) return m.displayText;
+  const c = m.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.filter(p => p && p.type === 'text').map(p => p.text || '').join('\n\n');
+  return c || '';
+}
+
 function expandThread(thread) {
   var out = [];
   var i = 0;
@@ -2688,6 +2966,16 @@ function expandThread(thread) {
           out.push({ role: 'tool', tool_call_id: ids[k],
                      content: stampTs(groupAcks[k].ts, groupAcks[k].result) });
         }
+        
+        for (var r = 0; r < groupAcks.length; r++) {
+          if (groupAcks[r].recallImage) {
+            
+            out.push({ role: 'user', _synthetic: true, content: [
+              { type: 'text', text: '[Contenu de la pièce jointe ' + (groupAcks[r].attId || '') + ' ré-injecté :]' },
+              { type: 'image_url', image_url: { url: groupAcks[r].recallImage } },
+            ] });
+          }
+        }
         i = j;
       } else {
         i++;   
@@ -2720,19 +3008,107 @@ function parseSummaryJSON(raw) {
   return obj;
 }
 
+function estimateTokens(str) {
+  return Math.ceil((str || '').length / 4);
+}
+
+const IMAGE_TOKENS_ESTIMATE = 768;
+
+const CONTEXT_WINDOW_WARN_RATIO = 0.8;
+
+function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage) {
+  const sp = sysParts || {};
+  const dp = dynParts || {};
+  const entries = [];
+
+  const pushEntry = (source, label, str) => {
+    const s = str || '';
+    if (!s) return;
+    entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
+  };
+
+  pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
+  pushEntry('tools_system', 'Liste des outils (system)', sp.toolsSystem);
+  pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
+  pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
+  pushEntry('docs_doctrine', 'Doctrine docs', sp.docs);
+  pushEntry('user_prompt', 'Prompt utilisateur (+ Space)', sp.user);
+
+  pushEntry('context_date_model', 'Date/modèle/Space', dp.contextDateModel);
+  pushEntry('memories', 'Souvenirs', dp.memories);
+  pushEntry('summaries', 'Résumés injectés', dp.summaries);
+  pushEntry('skills_context', 'Contexte skills (autotrigger)', dp.skillsContext);
+
+  if (toolDefsJson) {
+    entries.push({
+      source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
+      chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
+    });
+  }
+
+  let threadChars = 0, threadTokens = 0, imageCount = 0;
+  const byRole = {};
+  (threadMsgs || []).forEach(m => {
+    if (!m) return;
+    let chars = 0;
+    if (Array.isArray(m.content)) {
+      m.content.forEach(part => {
+        if (!part) return;
+        if (part.type === 'image_url') imageCount++;
+        else if (typeof part.text === 'string') chars += part.text.length;
+      });
+    } else if (typeof m.content === 'string') {
+      chars = m.content.length;
+    }
+    threadChars += chars;
+    const tk = estimateTokens('x'.repeat(chars));   
+    threadTokens += tk;
+    const role = m.role || 'other';
+    if (!byRole[role]) byRole[role] = { chars: 0, tokens: 0 };
+    byRole[role].chars += chars;
+    byRole[role].tokens += tk;
+  });
+  if (threadChars > 0) {
+    entries.push({
+      source: 'thread', label: 'Historique (agrégat)',
+      chars: threadChars, tokens: threadTokens,
+      byRole: Object.keys(byRole).map(r => Object.assign({ role: r }, byRole[r])),
+    });
+  }
+
+  if (imageCount > 0) {
+    const imgTokens = imageCount * IMAGE_TOKENS_ESTIMATE;
+    entries.push({
+      source: 'attachment_images', label: 'Images jointes',
+      chars: 0, tokens: imgTokens, images: imageCount,
+    });
+  }
+
+  const totalChars = entries.reduce((a, e) => a + (e.chars || 0), 0);
+  const totalTokens = entries.reduce((a, e) => a + (e.tokens || 0), 0);
+
+  return { entries, totalChars, totalTokens, imageCount, apiUsage: apiUsage || null };
+}
+
 /* ── storage.js ── */
 
 const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
+const SPACES_KEY        = 'miaou-spaces';
+const ACTIVE_SPACE_KEY  = 'miaou-active-space';
+const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783155417}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783292406}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   
+
+const BUILD_DEFAULT_CONTEXT_WINDOW =
+  (typeof BUILD_CONFIG.default_context_window === 'number') ? BUILD_CONFIG.default_context_window : 0;
 
 const DEFAULT_SETTINGS = {
   url: '',
@@ -2748,6 +3124,7 @@ const DEFAULT_SETTINGS = {
   saveJsonResponses: false, 
   intentTracing: true,      
   confirmSkillAutoUse: true, 
+  contextWindow: '', 
 };
 
 function loadSettingsRaw() {
@@ -2767,6 +3144,13 @@ function saveSettings(obj) {
   const next = Object.assign({}, loadSettingsRaw(), obj || {});
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   return next;
+}
+
+function contextWindowFor(model) {
+  const v = loadSettings().contextWindow;
+  const n = parseInt(v, 10);
+  if (Number.isFinite(n) && n > 0) return n;
+  return BUILD_DEFAULT_CONTEXT_WINDOW > 0 ? BUILD_DEFAULT_CONTEXT_WINDOW : null;
 }
 
 const API_SERVERS_KEY = 'miaou-api-servers';
@@ -2805,13 +3189,24 @@ function saveApiServers(arr) {
 
 function normalizeApiServer(s) {
   const o = s || {};
+  
+  const vision = {};
+  if (o.vision && typeof o.vision === 'object') {
+    for (const k in o.vision) { if (o.vision[k] === false) vision[k] = false; }
+  }
   return {
     id: o.id || genApiServerId(),
     name: String(o.name || '').trim(),
     url: String(o.url || '').trim(),
     key: o.key ? String(o.key) : '',
     model: String(o.model || '').trim(),
+    vision,
   };
+}
+
+function serverModelVisionEnabled(server, model) {
+  if (!server || !server.vision) return true;
+  return server.vision[String(model || '')] !== false;
 }
 
 function upsertApiServer(server) {
@@ -2922,7 +3317,7 @@ function persistConversations(arr) {
 
 function listAllConversations() {
   return loadConversations()
-    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned }))
+    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID }))
     .sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }
 
@@ -3031,8 +3426,10 @@ function persistMemories(arr) {
   localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
 }
 
-function listMemoryEntries() {
-  return loadMemories().filter(e => e && !e.suppressed);
+function listMemoryEntries(scopes) {
+  const all = loadMemories().filter(e => e && !e.suppressed);
+  if (!Array.isArray(scopes)) return all;
+  return all.filter(e => scopes.indexOf(e.scope) !== -1);
 }
 
 function saveMemory(entry) {
@@ -3067,6 +3464,89 @@ function forgetMemory(id) {
   persistMemories(loadMemories().filter(x => x.id !== id));
 }
 
+function genSpaceId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'sp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function loadSpaces() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SPACES_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveSpaces(arr) {
+  localStorage.setItem(SPACES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  return arr;
+}
+
+function normalizeSpace(s) {
+  const o = s || {};
+  return {
+    id: o.id || genSpaceId(),
+    name: String(o.name || '').trim(),
+    description: o.description ? String(o.description) : '',
+    createdAt: o.createdAt || Date.now(),
+  };
+}
+
+function upsertSpace(space) {
+  const next = normalizeSpace(space);
+  const arr = loadSpaces();
+  const i = arr.findIndex(s => s.id === next.id);
+  if (i >= 0) arr[i] = next; else arr.push(next);
+  saveSpaces(arr);
+  return arr;
+}
+
+function deleteSpaceEntry(id) {
+  if (id === DEFAULT_SPACE_ID) return loadSpaces();
+  const arr = loadSpaces().filter(s => s.id !== id);
+  saveSpaces(arr);
+  return arr;
+}
+
+function getSpace(id) {
+  return loadSpaces().find(s => s.id === id) || null;
+}
+
+function getActiveSpaceId() {
+  return localStorage.getItem(ACTIVE_SPACE_KEY) || DEFAULT_SPACE_ID;
+}
+
+function setActiveSpaceId(id) {
+  localStorage.setItem(ACTIVE_SPACE_KEY, id || DEFAULT_SPACE_ID);
+}
+
+function migrateSpacesIfNeeded() {
+  const spaces = loadSpaces();
+  if (!spaces.some(s => s.id === DEFAULT_SPACE_ID)) {
+    spaces.unshift(normalizeSpace({ id: DEFAULT_SPACE_ID, name: 'Général', createdAt: Date.now() }));
+    saveSpaces(spaces);
+  }
+  const convs = loadConversations();
+  let convsChanged = false;
+  for (const c of convs) {
+    if (!c.spaceId) { c.spaceId = DEFAULT_SPACE_ID; convsChanged = true; }
+  }
+  if (convsChanged) persistConversations(convs);
+  const memories = loadMemories();
+  let memoriesChanged = false;
+  for (const m of memories) {
+    if (!m.scope) { m.scope = DEFAULT_SPACE_ID; memoriesChanged = true; }
+  }
+  if (memoriesChanged) persistMemories(memories);
+}
+
+function spaceConvIds(spaceId, convs) {
+  const set = new Set();
+  for (const c of (convs || [])) {
+    if (c && (c.spaceId || DEFAULT_SPACE_ID) === spaceId) set.add(c.id);
+  }
+  return set;
+}
+
 const EXPORT_KEYS = [
   'miaou-settings',
   'miaou-conversations',
@@ -3075,6 +3555,8 @@ const EXPORT_KEYS = [
   'miaou-api-servers',
   'miaou-active-api-server',
   'miaou-mcp-servers',
+  'miaou-spaces',
+  'miaou-active-space',
 ];
 
 function buildExportPayload(lsSnapshot, skills, resources) {
@@ -3091,6 +3573,8 @@ function buildExportPayload(lsSnapshot, skills, resources) {
       'miaou-api-servers': Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [],
       'miaou-active-api-server': typeof ls['miaou-active-api-server'] === 'string' ? ls['miaou-active-api-server'] : '',
       'miaou-mcp-servers': Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [],
+      'miaou-spaces': Array.isArray(ls['miaou-spaces']) ? ls['miaou-spaces'] : [],
+      'miaou-active-space': typeof ls['miaou-active-space'] === 'string' ? ls['miaou-active-space'] : '',
     },
     idb: {
       skills: Array.isArray(skills) ? skills : [],
@@ -3111,6 +3595,7 @@ function validateImportPayload(obj) {
   const memories = Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [];
   const apiServers = Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [];
   const mcpServers = Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [];
+  const spaces = Array.isArray(ls['miaou-spaces']) ? ls['miaou-spaces'] : [];
   const skills = Array.isArray(idb.skills) ? idb.skills : [];
   const resources = Array.isArray(idb.resources) ? idb.resources : [];
   return {
@@ -3121,6 +3606,7 @@ function validateImportPayload(obj) {
       skills: skills.length,
       resources: resources.length,
       servers: apiServers.length + mcpServers.length,
+      spaces: spaces.length,
     },
   };
 }
@@ -3149,6 +3635,81 @@ function formatResourceDescriptor(rec) {
 
 function generateResourceId(rand) {
   return 'res_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
+}
+
+const ATTACHMENT_TEXT_EXTENSIONS = [
+  'txt', 'md', 'markdown', 'csv', 'log', 'json', 'yaml', 'yml', 'xml', 'ini', 'toml',
+  'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'hpp',
+  'cs', 'php', 'sh', 'bash', 'sql', 'html', 'css', 'scss', 'vue', 'swift', 'kt',
+];
+
+function classifyAttachmentKind(name, mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0].trim();
+  if (m.startsWith('image/')) return 'image';
+  const dot = String(name || '').lastIndexOf('.');
+  const ext = dot >= 0 ? String(name).slice(dot + 1).toLowerCase() : '';
+  if (ATTACHMENT_TEXT_EXTENSIONS.indexOf(ext) >= 0) return 'text';
+  return 'binary';
+}
+
+function allocateAttId(counter) {
+  const n = (Number(counter) || 0) + 1;
+  return { id: 'att-' + n, counter: n };
+}
+
+function formatAttachmentDescriptor(att) {
+  return '[attachment ' + att.attId + ': image "' + (att.name || '') + '", ' +
+    att.w + 'x' + att.h + ', ' + humanSize(att.size) +
+    ' — content available via miaou__recall_attachment]';
+}
+
+function formatTextAttachmentBlock(att, text) {
+  return '[attachment ' + att.attId + ': file "' + (att.name || '') + '"]\n' +
+    '```\n' + String(text || '') + '\n```';
+}
+
+function formatBinaryAttachmentDescriptor(att) {
+  return '[attachment ' + att.attId + ': file "' + (att.name || '') + '", ' +
+    (att.mime || 'application/octet-stream') + ', ' + humanSize(att.size) +
+    ' — binary content, not inlined]';
+}
+
+function buildAttachedMessageContent(literalText, textAttachments, imageAttachments, binaryAttachments) {
+  const blocks = [String(literalText || '')];
+  for (const ta of (textAttachments || [])) {
+    blocks.push(formatTextAttachmentBlock(ta.att, ta.text));
+  }
+  for (const att of (binaryAttachments || [])) {
+    blocks.push(formatBinaryAttachmentDescriptor(att));
+  }
+  const textPart = blocks.join('\n\n');
+  if (!imageAttachments || !imageAttachments.length) return textPart;
+  const parts = [{ type: 'text', text: textPart }];
+  for (const ia of imageAttachments) {
+    parts.push({ type: 'image_url', image_url: { url: ia.dataUrl } });
+  }
+  return parts;
+}
+
+function prefixTextInContentParts(parts, prefix) {
+  const out = parts.map(p => Object.assign({}, p));
+  const firstTextIdx = out.findIndex(p => p && p.type === 'text');
+  if (firstTextIdx >= 0) {
+    out[firstTextIdx].text = prefix + (out[firstTextIdx].text || '');
+  } else {
+    out.unshift({ type: 'text', text: prefix });
+  }
+  return out;
+}
+
+function collapseAttachedMessageContent(content, attachments) {
+  if (typeof content === 'string') return content;   
+  if (!Array.isArray(content)) return content;
+  const textParts = content.filter(p => p && p.type === 'text').map(p => p.text || '');
+  const text = textParts.join('\n\n');
+  const imgAtts = (attachments || []).filter(a => a && a.kind === 'image');
+  const descriptors = imgAtts.map(formatAttachmentDescriptor);
+  return descriptors.length ? (text + '\n\n' + descriptors.join('\n')) : text;
 }
 
 const _B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -3280,6 +3841,14 @@ function _cacheRecord(rec) { _resourceCache[rec.id] = rec; }
 function _uncacheRecord(id) { delete _resourceCache[id]; }
 function clearResourceSessionCache() { _resourceCache = {}; }
 
+function getCachedRecordByAttId(attId, conversationId) {
+  for (const key in _resourceCache) {
+    const rec = _resourceCache[key];
+    if (rec && rec.attId === attId && (!conversationId || rec.conversationId === conversationId)) return rec;
+  }
+  return null;
+}
+
 function _makeResourceRef(id) { return '[resource_ref:' + id + ']'; }
 
 function assembleToolResultForModel(resultStr) {
@@ -3300,6 +3869,17 @@ function resolveResourceRefs(thread) {
     const resolved = assembleToolResultForModel(s);
     if (resolved === s) return m;
     return Object.assign({}, m, { result: resolved });
+  });
+}
+
+function resolveRecallImages(thread) {
+  return thread.map(function(m) {
+    if (!isAckRole(m.role) || m.kind !== 'attachment_recalled' || !m.attId) return m;
+    if (!m.mime || m.mime.indexOf('image/') !== 0) return m;
+    const rec = getCachedRecordByAttId(m.attId, m.convId || null);
+    if (!rec || !rec.data) return m;
+    const dataUrl = 'data:' + rec.mime + ';base64,' + arrayBufferToBase64(rec.data);
+    return Object.assign({}, m, { recallImage: dataUrl });
   });
 }
 
@@ -3416,6 +3996,26 @@ function clearIdbStore(storeName) {
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
+}
+
+async function storeAttachment(attId, mime, name, data, cls, conversationId, now, rand, dims) {
+  const id = 'att_' + generateResourceId(rand).slice(4);
+  const record = {
+    id, attId, conversationId: conversationId || null,
+    class: cls, mime: String(mime || 'application/octet-stream'),
+    name: String(name || 'attachment'), size: data.byteLength,
+    createdAt: now, data,
+  };
+  if (dims && dims.w && dims.h) { record.w = dims.w; record.h = dims.h; }
+  try {
+    await putResource(record);
+    _cacheRecord(record);
+    requestPersistence();
+    return record;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] storeAttachment:', e && e.message);
+    return null;
+  }
 }
 
 async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
@@ -3709,6 +4309,22 @@ const BINARY_DOCTRINE =
   "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
   "l'application l'a déjà présentée à l'utilisateur.";
 
+const ATTACHMENT_DOCTRINE =
+  "Les fichiers joints par l'utilisateur apparaissent dans ses messages sous forme de " +
+  "descripteurs [attachment att-N: ...]. Un fichier TEXTE joint garde son contenu " +
+  "inline dans le message (bloc de code sous son descripteur) : ne rappelle jamais un " +
+  "fichier dont le contenu est déjà visible dans la conversation. Une IMAGE jointe " +
+  "n'est visible par toi qu'au tour où elle a été attachée ; ensuite seul son " +
+  "descripteur reste. Une image que tu VOIS déjà dans le message courant (elle t'est " +
+  "fournie directement au tour où l'utilisateur l'attache) ne doit JAMAIS être rappelée : " +
+  "réponds directement à partir de ce que tu vois, n'appelle pas l'outil par précaution. " +
+  "Ce n'est qu'aux tours SUIVANTS, quand seul le descripteur subsiste et que tu dois de " +
+  "nouveau examiner l'image, que tu appelles miaou__recall_attachment(ref=\"att-N\") : son " +
+  "contenu t'est alors ré-injecté juste après le résultat de l'outil et tu peux l'analyser " +
+  "normalement. Ne décris jamais une image de mémoire sans l'avoir rappelée. Pour un " +
+  "fichier binaire, le contenu n'est pas lisible directement, sauf si un outil " +
+  "d'extraction est disponible (cf. ci-dessous).";
+
 const WEB_DOCTRINE =
   "<ACCES_WEB>\n" +
   "Si des outils te sont fournis pour interroger des moteurs de recherche et/ou " +
@@ -3777,8 +4393,21 @@ const MEMORY_DOCTRINE =
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
-const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" +
-  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+const DOCS_DOCTRINE =
+  "Un fichier binaire joint par l'utilisateur (descripteur [attachment att-N: file " +
+  "\"...\", <mime>, <taille> — binary content, not inlined]) n'est pas lisible " +
+  "directement, mais si un outil du registre déclare dans son schéma d'entrée à la " +
+  "fois un paramètre `ref` et un paramètre `content_b64` (par exemple docs__read), " +
+  "cet outil sait ouvrir la pièce jointe : appelle-le avec ref=\"att-N\" pour en " +
+  "extraire et lire le contenu, sans attendre que l'utilisateur te le demande " +
+  "explicitement si la conversation porte sur ce fichier.";
+
+function docsDoctrinePrompt() {
+  return anyToolDeclaresAttachmentInflation() ? DOCS_DOCTRINE : '';
+}
+
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
+  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
@@ -3818,6 +4447,10 @@ let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
 
+let _pendingImageInjections = [];
+function getPendingImageInjections() { return _pendingImageInjections.slice(); }
+function clearPendingImageInjections() { _pendingImageInjections = []; }
+
 function updateLastPendingToolAck(fields) {
   if (_pendingToolAcks.length) Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
 }
@@ -3847,6 +4480,11 @@ const TOOLS = [
     handler: (args) => {
       const entry = getSummaryEntry(args.id);   
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
+      
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const conv0 = loadConversation(args.id);
+      const convSpace = conv0 ? (conv0.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
+      if (convSpace !== spaceId) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
@@ -3879,6 +4517,12 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       let entries = listSummaryEntries();        
+      
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const allConvs = loadConversations();
+      const idsInSpace = spaceConvIds(spaceId, allConvs);
+      const convIds = new Set(allConvs.map(c => c.id));
+      entries = entries.filter(e => idsInSpace.has(e.id) || (!convIds.has(e.id) && spaceId === DEFAULT_SPACE_ID));
       
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       if (activeId) entries = entries.filter(e => e.id !== activeId);
@@ -3918,7 +4562,9 @@ const TOOLS = [
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
-      saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false });
+      
+      const scope = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false, scope });
       _pendingToolAcks.push({ kind: 'memory_create', id, content });
       return 'Souvenir enregistré. Identifiant : ' + id;
     },
@@ -3941,6 +4587,9 @@ const TOOLS = [
       if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   
+      
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return 'Souvenir introuvable.';
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -3978,6 +4627,48 @@ const TOOLS = [
     },
   },
   {
+    name: 'recall_attachment',
+    description:
+      "Ramène le contenu d'une pièce jointe attachée par l'utilisateur à un message " +
+      "(identifiant att-N vu dans un descripteur [attachment att-N: ...] du fil) DANS ton " +
+      "contexte, pour que tu puisses de nouveau l'examiner. Pour une image : elle t'est " +
+      "ré-injectée juste après le résultat de l'outil (tu la revois réellement) et est " +
+      "aussi ré-affichée à l'utilisateur. Pour un fichier texte : renvoie son contenu en " +
+      "clair. Pour un binaire : renvoie le descripteur (contenu non lisible directement).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Identifiant de la pièce jointe (att-N)' },
+      },
+      required: ['ref'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const ref = String(args.ref || '');
+      if (!ref) return 'Identifiant manquant.';
+      
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const record = getCachedRecordByAttId(ref, activeId);
+      if (!record) return 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).';
+      _pendingToolAcks.push({ kind: 'attachment_recalled', attId: ref, resourceName: record.name, mime: record.mime, convId: activeId });
+      if (record.mime && record.mime.startsWith('image/')) {
+        
+        if (record.data) {
+          _pendingImageInjections.push({
+            attId: ref,
+            dataUrl: 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data),
+          });
+        }
+        return 'Image att-' + ref.replace(/^att-/, '') + ' ré-affichée à l\'utilisateur ; son contenu suit dans le message suivant.';
+      }
+      if (record.class === 'inline') {
+        return utf8Decode(record.data);
+      }
+      return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+        ' — contenu non lisible directement.';
+    },
+  },
+  {
     name: 'delete_memory',
     description:
       "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
@@ -3993,6 +4684,8 @@ const TOOLS = [
     handler: (args) => {
       if (!args.id) return 'Identifiant manquant.';
       const existing = loadMemories().find(e => e.id === args.id);
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return 'Souvenir introuvable.';
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';
@@ -4071,6 +4764,8 @@ const ASK_CONFIRMATION_DEF = {
 
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 
+const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
+
 let _remoteTools = {};   
 let _remoteStatus = {};  
 
@@ -4123,6 +4818,8 @@ async function mcpRpcAttempt(server, method, params, opts) {
     if (msg.error) {
       const err = new Error((msg.error && msg.error.message) || 'Erreur JSON-RPC.');
       if (hadSession && /session/i.test(err.message)) err.staleSession = true;   
+      
+      if (msg.error && msg.error.data) err.data = msg.error.data;
       throw err;
     }
     return msg.result;
@@ -4215,11 +4912,11 @@ function disconnectMcpServer(name) {
   delete _remoteStatus[name];
 }
 
-async function callRemoteTool(server, toolName, args, intent) {
+async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   const fullName = server.name + '__' + toolName;
-  const ackEntry = { kind: 'mcp_call', server: server.name, name: fullName };
+  const ackEntry = reuseAckEntry || { kind: 'mcp_call', server: server.name, name: fullName };
   if (intent != null) ackEntry.intent = intent;
-  _pendingToolAcks.push(ackEntry);   
+  if (!reuseAckEntry) _pendingToolAcks.push(ackEntry);   
 
   try {
     const result = await mcpRpc(server, 'tools/call', { name: toolName, arguments: args || {} });
@@ -4227,10 +4924,18 @@ async function callRemoteTool(server, toolName, args, intent) {
     const nonText = content.filter(b => b && b.type !== 'text');
     if (nonText.length) _pendingToolBlocks.push.apply(_pendingToolBlocks, nonText);
     if (result && result.isError) ackEntry.error = true;
-    return { content, isError: !!(result && result.isError) };
+    else if (reuseAckEntry) delete ackEntry.error;   
+    return { content, isError: !!(result && result.isError), ackEntry };
   } catch (e) {
     ackEntry.error = true;
-    return { content: [{ type: 'text', text: 'Erreur outil distant ' + fullName + ' : ' + ((e && e.message) || e) }], isError: true };
+    
+    const errorCode = e && e.data && e.data.code;
+    return {
+      content: [{ type: 'text', text: 'Erreur outil distant ' + fullName + ' : ' + ((e && e.message) || e) }],
+      isError: true,
+      errorCode,
+      ackEntry,
+    };
   }
 }
 
@@ -4275,7 +4980,67 @@ function callTool(name, args) {
   const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
   const serverArgs = args ? Object.assign({}, args) : {};
   delete serverArgs.miaou_intent;
-  return callRemoteTool(server, parsed.toolName, serverArgs, intent);
+  return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent);
+}
+
+let _attachmentPushState = {};
+function _pushStateKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
+function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_pushStateKey(conversationId, attId)]; }
+function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_pushStateKey(conversationId, attId)] = true; }
+
+function clearAttachmentPushState(conversationId) {
+  for (const k in _attachmentPushState) {
+    if (k.indexOf((conversationId || '') + '|') === 0) delete _attachmentPushState[k];
+  }
+}
+
+function toolDeclaresAttachmentInflation(server, toolName) {
+  const fullName = server.name + '__' + toolName;
+  const list = _remoteTools[server.name] || [];
+  const def = list.find(t => t.name === fullName);
+  const props = def && def.inputSchema && def.inputSchema.properties;
+  return !!(props && props.ref && props.content_b64);
+}
+
+const ATTACHMENT_REF_RE = /^att-\d+$/;
+
+function anyToolDeclaresAttachmentInflation() {
+  for (const serverName of Object.keys(_remoteTools)) {
+    for (const t of _remoteTools[serverName]) {
+      const props = t && t.inputSchema && t.inputSchema.properties;
+      if (props && props.ref && props.content_b64) return true;
+    }
+  }
+  return false;
+}
+
+async function callDocsInflatedRemoteTool(server, toolName, args, intent) {
+  const ref = args && typeof args.ref === 'string' ? args.ref : null;
+  const capable = ref && ATTACHMENT_REF_RE.test(ref) && toolDeclaresAttachmentInflation(server, toolName);
+  if (!capable) return callRemoteTool(server, toolName, args, intent);
+
+  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+  const record = getCachedRecordByAttId(ref, activeId);
+  if (!record) return callRemoteTool(server, toolName, args, intent);   
+
+  const alreadyPushed = isAttachmentPushed(activeId, ref);
+  const wireArgs = Object.assign({}, args);
+  if (activeId != null) wireArgs.session_id = activeId;
+  if (!alreadyPushed) wireArgs.content_b64 = arrayBufferToBase64(record.data);
+  const result = await callRemoteTool(server, toolName, wireArgs, intent);
+  if (!alreadyPushed && !result.isError) { markAttachmentPushed(activeId, ref); return result; }
+  if (alreadyPushed && result.isError && _isRefUnknownError(result)) {
+    
+    const retryArgs = Object.assign({}, wireArgs, { content_b64: arrayBufferToBase64(record.data) });
+    const retryResult = await callRemoteTool(server, toolName, retryArgs, intent, result.ackEntry);
+    if (!retryResult.isError) markAttachmentPushed(activeId, ref);
+    return retryResult;
+  }
+  return result;
+}
+
+function _isRefUnknownError(result) {
+  return !!(result && result.errorCode === REF_UNKNOWN_ERROR_CODE);
 }
 
 function flattenToolResult(result) {
@@ -4338,6 +5103,44 @@ const _reasoningEffortRejected = {};
 function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || ''); }
 function isReasoningEffortRejected(url, model) { return !!_reasoningEffortRejected[reasoningEffortRejectedKey(url, model)]; }
 function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
+
+const _visionRejected = {};
+function visionRejectedKey(url, model) { return url + '::' + (model || ''); }
+function isVisionRejected(url, model) { return !!_visionRejected[visionRejectedKey(url, model)]; }
+function markVisionRejected(url, model) { _visionRejected[visionRejectedKey(url, model)] = true; }
+
+function messagesHaveImageParts(messages) {
+  return messages.some(m => Array.isArray(m.content) && m.content.some(p => p && p.type === 'image_url'));
+}
+
+const VISION_DEGRADED_NOTE =
+  "Note : les images jointes n'ont pas pu être envoyées à ce modèle/endpoint " +
+  "(non compatible avec les images) — elles ont été remplacées par leur descripteur textuel.";
+
+function degradeVisionMessages(messages, descriptors) {
+  const descBlock = (descriptors && descriptors.length) ? descriptors.join('\n') : '';
+  return messages.map(m => {
+    if (!Array.isArray(m.content)) return m;
+    const text = m.content.filter(p => p && p.type === 'text').map(p => p.text || '').join('\n\n');
+    return Object.assign({}, m, { content: descBlock ? (text + '\n\n' + descBlock) : text });
+  });
+}
+
+function injectVisionDegradedNote(messages) {
+  let lastUserIdx = -1;
+  for (let i = 0; i < messages.length; i++) if (messages[i].role === 'user') lastUserIdx = i;
+  if (lastUserIdx < 0) return messages;
+  const m = messages[lastUserIdx];
+  const content = typeof m.content === 'string' ? m.content : '';
+  const marker = '</miaou_context>';
+  const idx = content.indexOf(marker);
+  const newContent = idx >= 0
+    ? content.slice(0, idx) + VISION_DEGRADED_NOTE + '\n' + content.slice(idx)
+    : VISION_DEGRADED_NOTE + '\n\n' + content;
+  const out = messages.slice();
+  out[lastUserIdx] = Object.assign({}, m, { content: newContent });
+  return out;
+}
 
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
@@ -4444,6 +5247,10 @@ async function streamCompletion(messages, opts) {
     body.reasoning_effort = o.reasoningEffort;
   }
 
+  if (messagesHaveImageParts(body.messages) && (isVisionRejected(cfg.url, model) || o.visionDisabled)) {
+    body.messages = injectVisionDegradedNote(degradeVisionMessages(body.messages, o.imageDescriptors));
+  }
+
   _currentAbort = new AbortController();
   let contentBuffer = '';
   let reasoningBuffer = '';
@@ -4465,6 +5272,11 @@ async function streamCompletion(messages, opts) {
       
       if (body.reasoning_effort) {
         markReasoningEffortRejected(cfg.url, model);
+        return streamCompletion(messages, opts);
+      }
+      
+      if (messagesHaveImageParts(body.messages) && !isVisionRejected(cfg.url, model)) {
+        markVisionRejected(cfg.url, model);
         return streamCompletion(messages, opts);
       }
       throw new Error('streamCompletion ' + res.status);
@@ -4534,12 +5346,18 @@ async function runConversation(messages, hooks) {
   
   const servedKeys = new Set();
   
+  if (typeof clearPendingImageInjections === 'function') clearPendingImageInjections();
+  
   let reasoningAcc = '';
 
   for (let tour = 1; tour <= MAX_TOURS; tour++) {
     const result = await streamCompletion(messages, {
       model: h.model,
       reasoningEffort: h.reasoningEffort,
+      
+      imageDescriptors: h.imageDescriptors,
+      
+      visionDisabled: h.visionDisabled,
       tools: h.noTools ? undefined : toolDefinitions(),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
@@ -4623,6 +5441,17 @@ async function runConversation(messages, hooks) {
         messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
 
+      if (typeof getPendingImageInjections === 'function') {
+        const injections = getPendingImageInjections();
+        clearPendingImageInjections();
+        for (const inj of injections) {
+          messages.push({ role: 'user', content: [
+            { type: 'text', text: '[Contenu de la pièce jointe ' + (inj.attId || '') + ' ré-injecté :]' },
+            { type: 'image_url', image_url: { url: inj.dataUrl } },
+          ] });
+        }
+      }
+
       if (h.onToolAcks) h.onToolAcks();
 
       continue;   
@@ -4639,7 +5468,7 @@ async function runConversation(messages, hooks) {
 async function generateTitle(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => m.role + ': ' + m.content)
+    .map(m => m.role + ': ' + messageTextForSummary(m))
     .join('\n\n');
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
@@ -4651,7 +5480,7 @@ async function generateTitle(thread) {
 async function generateSummary(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => m.role + ': ' + m.content)
+    .map(m => m.role + ': ' + messageTextForSummary(m))
     .join('\n\n');
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
@@ -4669,13 +5498,15 @@ async function generateSummary(thread) {
   return { summary: parsed.summary, keywords };
 }
 
-function searchSummaries(queryText, excludeId) {
+function searchSummaries(queryText, excludeId, spaceId) {
   const tokens = tokenize(queryText);
   if (!tokens.length) return [];
   const all = loadSummaries();
+  const idsInSpace = spaceId != null ? spaceConvIds(spaceId, loadConversations()) : null;
   const matches = [];
   for (const id in all) {
     if (excludeId && id === excludeId) continue;
+    if (idsInSpace && !idsInSpace.has(id)) continue;
     const e = all[id];
     if (!e || e.suppressed || !e.summary) continue;
     const score = scoreSummary(tokens, e);
@@ -4812,7 +5643,7 @@ function truncatedBannerHtml() {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts, server, truncated) {
+function buildMsg(role, content, model, reasoning, ts, server, truncated, attachments) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
@@ -4825,6 +5656,7 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated) {
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
+      renderMsgAttachments(attachments, currentConvId) +
       `<div class="body">${renderUserMd(content)}</div>` +
       `</div>` +
       (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
@@ -5119,6 +5951,13 @@ const ACK_KINDS = {
     label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
   },
   
+  attachment_recalled: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_EYE,
+    label: m => 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
+  },
+  
   skill_list: {
     destination: 'user',
     undo: null,
@@ -5259,6 +6098,18 @@ function placeToolAck(wrap, entry) {
       }
     }
   }
+  
+  if (kindNow === 'attachment_recalled' && entry.attId && wrap) {
+    const record = typeof getCachedRecordByAttId === 'function' ? getCachedRecordByAttId(entry.attId, entry.convId) : null;
+    if (record && record.mime && record.mime.startsWith('image/')) {
+      const block = makeResourcePresentBlock(record);
+      const blockNode = block ? renderToolBlock(block) : null;
+      if (blockNode) {
+        if (body) wrap.insertBefore(blockNode, body);
+        else wrap.appendChild(blockNode);
+      }
+    }
+  }
   return node;
 }
 
@@ -5273,7 +6124,7 @@ function renderThread(msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
     
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated, m.attachments);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -5307,10 +6158,10 @@ function syncConvDownloadBtn() {
   if (retitleBtn) retitleBtn.hidden = !currentThread.some(m => m.role === 'assistant');
 }
 
-function appendUserMessage(text, ts) {
+function appendUserMessage(text, ts, attachments) {
   const welcome = $('thread').querySelector('.welcome-screen');
   if (welcome) welcome.remove();
-  const el = buildMsg('user', text, undefined, undefined, ts);
+  const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments);
   $('thread').appendChild(el);
   highlightUnder(el);
   scrollBottom();
@@ -5491,11 +6342,14 @@ function enterEditMode(wrap) {
 
 function cancelEdit(wrap, original) {
   wrap.classList.remove('editing');
+  const index = msgIndex(wrap);
+  const m = index >= 0 ? currentThread[index] : null;
   const bubble = wrap.querySelector('.bubble');
   bubble.innerHTML =
     `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
     `</button>` +
+    renderMsgAttachments(m && m.attachments, currentConvId) +
     `<div class="body">${renderUserMd(original)}</div>`;
   decoratePre(wrap);
   highlightUnder(wrap);
@@ -5662,7 +6516,7 @@ function sectionEl(label) {
 function renderConvList() {
   const list = $('conv-list');
   list.innerHTML = '';
-  const all = listAllConversations();
+  const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
   $('conv-search').disabled = all.length === 0;
   let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
@@ -5851,6 +6705,70 @@ function onComposerKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
+}
+
+function onComposerDragOver(e) {
+  e.preventDefault();
+  const wrap = $('input-wrap');
+  if (wrap) wrap.classList.add('dragover');
+}
+function onComposerDragLeave(e) {
+  
+  const wrap = $('input-wrap');
+  if (wrap && (!e.relatedTarget || !wrap.contains(e.relatedTarget))) wrap.classList.remove('dragover');
+}
+function onComposerDrop(e) {
+  e.preventDefault();
+  const wrap = $('input-wrap');
+  if (wrap) wrap.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) handleAttachFiles(files);
+}
+
+function attIconSvg() {
+  return '<span class="att-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
+}
+
+function attChipHtml(att, thumbSrc, removable) {
+  const thumb = thumbSrc
+    ? `<img class="att-thumb" src="${thumbSrc}" alt="">`
+    : attIconSvg();
+  const removeBtn = removable
+    ? `<button class="att-remove" title="Retirer" onclick="removeComposerAttachment('${att.attId}')">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`
+    : '';
+  return (
+    `<span class="att-chip" data-att-id="${att.attId}">` +
+    thumb +
+    `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
+    `<span class="att-size">${humanSize(att.size)}</span>` +
+    removeBtn +
+    `</span>`
+  );
+}
+
+function resolveAttachmentThumb(att, conversationId) {
+  if (att.kind !== 'image') return null;
+  const rec = getCachedRecordByAttId(att.attId, conversationId);
+  if (!rec || !rec.data) return null;
+  return 'data:' + rec.mime + ';base64,' + arrayBufferToBase64(rec.data);
+}
+
+function renderComposerAttachments() {
+  const el = $('attach-chips');
+  if (!el) return;
+  if (!pendingAttachments.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = pendingAttachments.map(att =>
+    attChipHtml(att, resolveAttachmentThumb(att, currentConvId), true)
+  ).join('');
+}
+
+function renderMsgAttachments(attachments, conversationId) {
+  if (!attachments || !attachments.length) return '';
+  return `<div class="msg-attachments">` +
+    attachments.map(att => attChipHtml(att, resolveAttachmentThumb(att, conversationId), false)).join('') +
+    `</div>`;
 }
 
 let _models = [];
@@ -6082,7 +7000,8 @@ function settingsFormDirty() {
     || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-save-json').checked !== !!s.saveJsonResponses
-    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse;
+    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse
+    || $('set-contextwindow').value !== (s.contextWindow || '');
 }
 
 function updateSettingsDirty() {
@@ -6137,7 +7056,8 @@ function renderImportSummary(counts, onApply) {
   if (!sum) return;
   sum.innerHTML =
     `<div>${counts.conversations} conversation(s), ${counts.memories} souvenir(s), ` +
-    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s).</div>`;
+    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s), ` +
+    `${counts.spaces} espace(s).</div>`;
   const btn = document.createElement('button');
   btn.className = 'drawer-btn danger';
   btn.textContent = 'Appliquer (remplace tout)';
@@ -6257,6 +7177,84 @@ function openMemoryDrawer() { openSummaryDrawer('memories'); }
 function closeSummaryDrawer() {
   $('summary-drawer').classList.remove('show');
   $('summary-backdrop').classList.remove('show');
+}
+
+const CTX_PALETTE = {
+  root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
+  intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a', docs_doctrine: '#c98bf2',
+  user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
+  summaries: '#e0955a', skills_context: '#8bc98b', thread: '#4a90d9',
+  attachment_images: '#d9974a',
+};
+
+function effectiveContextManifest() {
+  return _lastContextManifest || computeContextManifestNow();
+}
+
+function syncContextCounter() {
+  const el = $('ctx-counter-label');
+  if (!el) return;
+  const m = effectiveContextManifest();
+  const win = contextWindowFor(activeModel());
+  let label = '≈ ' + m.totalTokens + ' tok';
+  const counter = $('ctx-counter');
+  if (win) {
+    const pct = Math.round((m.totalTokens / win) * 100);
+    label += ' (' + pct + '%)';
+    if (counter) counter.classList.toggle('ctx-counter-warn', m.totalTokens / win >= CONTEXT_WINDOW_WARN_RATIO);
+  } else if (counter) {
+    counter.classList.remove('ctx-counter-warn');
+  }
+  el.textContent = label;
+}
+
+function openContextInspector() {
+  renderContextInspector();
+  $('ctx-drawer').classList.add('show');
+  $('ctx-backdrop').classList.add('show');
+}
+function closeContextInspector() {
+  $('ctx-drawer').classList.remove('show');
+  $('ctx-backdrop').classList.remove('show');
+}
+
+function renderContextInspector() {
+  const m = effectiveContextManifest();
+  const win = contextWindowFor(activeModel());
+  const scale = win || m.totalTokens || 1;
+
+  const hint = $('ctx-source-hint');
+  if (hint) {
+    if (_lastContextManifest) {
+      hint.textContent = 'Dernier envoi réel à ce modèle.';
+    } else if (currentThread.length) {
+      hint.textContent = 'Simulation du prochain envoi (aucun envoi depuis le rechargement de cette conversation).';
+    } else {
+      hint.textContent = 'Simulation du prochain envoi (aucun message dans cette conversation).';
+    }
+  }
+
+  const bar = $('ctx-bar');
+  if (bar) {
+    bar.innerHTML = m.entries.map(e => {
+      const pct = Math.max(0, Math.min(100, (e.tokens / scale) * 100));
+      const color = CTX_PALETTE[e.source] || '#888';
+      return `<span class="ctx-bar-seg" style="width:${pct}%;background:${color}" title="${escHtml(e.label)}"></span>`;
+    }).join('');
+  }
+
+  const body = $('ctx-table-body');
+  if (body) {
+    const rows = m.entries.map(e => {
+      const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
+      const color = CTX_PALETTE[e.source] || '#888';
+      const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
+      return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>${escHtml(e.label)}${note}</td>` +
+        `<td>${e.chars}</td><td>≈${e.tokens}</td><td>${pct}%</td></tr>`;
+    });
+    rows.push(`<tr class="ctx-total"><td>Total</td><td>${m.totalChars}</td><td>≈${m.totalTokens}</td><td>100%</td></tr>`);
+    body.innerHTML = rows.join('');
+  }
 }
 
 function switchMemoryTab(tab) {
@@ -6451,6 +7449,163 @@ function buildToolItem(bareName, def) {
     '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
     paramsHtml;
   return item;
+}
+
+function syncSpaceUI() {
+  const space = getSpace(activeSpaceId) || { name: 'Général' };
+  const label = $('space-select-label');
+  if (label) label.textContent = space.name || 'Général';
+  const badge = $('topbar-space-badge');
+  if (badge) {
+    badge.textContent = space.name || '';
+    badge.hidden = activeSpaceId === DEFAULT_SPACE_ID;
+  }
+}
+
+function toggleSpaceMenu() {
+  const menu = $('space-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderSpaceMenu();
+  menu.classList.add('show');
+}
+
+function renderSpaceMenu() {
+  const menu = $('space-menu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  const spaces = loadSpaces();
+  for (const s of spaces) {
+    const opt = document.createElement('div');
+    opt.className = 'model-opt' + (s.id === activeSpaceId ? ' selected' : '');
+    opt.innerHTML =
+      `<span class="space-opt-name">${escHtml(s.name || '')}</span>` +
+      `<button type="button" class="space-opt-edit" title="Modifier l'espace">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
+      `</button>` +
+      `<span class="check">✓</span>`;
+    opt.querySelector('.space-opt-name').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
+    opt.querySelector('.check').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
+    opt.querySelector('.space-opt-edit').onmousedown = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      menu.classList.remove('show');
+      openSpaceScreen(s.id);
+    };
+    menu.appendChild(opt);
+  }
+  const newOpt = document.createElement('div');
+  newOpt.className = 'model-opt space-new';
+  newOpt.innerHTML = '<span>+ Nouvel espace</span>';
+  newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
+  menu.appendChild(newOpt);
+}
+
+function pickSpace(id) {
+  if (id === activeSpaceId) { $('space-menu').classList.remove('show'); return; }
+  const leaving = currentConvId;
+  activeSpaceId = id;
+  setActiveSpaceId(id);
+  resetToEmpty();
+  syncSpaceUI();
+  $('space-menu').classList.remove('show');
+  summarizeIfNeeded(leaving);
+  armIdleSummaryTimer();
+  if (isMobileLayout()) closeSidebarMobile();
+}
+
+function createSpaceAndOpen() {
+  const id = genSpaceId();
+  upsertSpace({ id, name: 'Nouvel espace' });
+  pickSpace(id);
+  openSpaceScreen(id);
+  const nameInput = $('space-name-input');
+  if (nameInput) { nameInput.focus(); nameInput.select(); }
+}
+
+let _spaceScreenId = null;
+
+function openSpaceScreen(id) {
+  const space = getSpace(id);
+  if (!space) return;
+  _spaceScreenId = id;
+  $('space-drawer-title').textContent = space.name || 'Espace';
+  $('space-name-input').value = space.name || '';
+  $('space-description-input').value = space.description || '';
+  $('space-save-btn').disabled = true;
+  $('space-err').setAttribute('hidden', '');
+  const isDefault = id === DEFAULT_SPACE_ID;
+  $('space-name-input').disabled = isDefault;
+  $('space-delete-btn').hidden = isDefault;
+  $('space-delete-title').hidden = isDefault;
+  if (!isDefault) syncSpaceDeleteLabel(id);
+  renderMemoryList('space-memory-list', id);
+  $('space-drawer').classList.add('show');
+  $('space-backdrop').classList.add('show');
+}
+
+function closeSpaceScreen() {
+  $('space-drawer').classList.remove('show');
+  $('space-backdrop').classList.remove('show');
+  _spaceScreenId = null;
+}
+
+function onSpaceFormInput() {
+  $('space-save-btn').disabled = false;
+  $('space-err').setAttribute('hidden', '');
+}
+
+function onSaveSpaceScreen() {
+  if (!_spaceScreenId) return;
+  const space = getSpace(_spaceScreenId);
+  if (!space) return;
+  const name = $('space-name-input').value.trim();
+  if (_spaceScreenId !== DEFAULT_SPACE_ID && !name) {
+    $('space-err').textContent = 'Le nom ne peut pas être vide.';
+    $('space-err').removeAttribute('hidden');
+    return;
+  }
+  upsertSpace(Object.assign({}, space, {
+    name: _spaceScreenId === DEFAULT_SPACE_ID ? (space.name || 'Général') : name,
+    description: $('space-description-input').value,
+  }));
+  renderSpaceMenu();
+  syncSpaceUI();
+  closeSpaceScreen();
+}
+
+function syncSpaceDeleteLabel(id) {
+  const btn = $('space-delete-btn');
+  if (!btn) return;
+  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
+  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
+  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
+}
+
+function onDeleteSpaceScreen() {
+  const btn = $('space-delete-btn');
+  if (!_spaceScreenId || _spaceScreenId === DEFAULT_SPACE_ID) return;
+  const id = _spaceScreenId;
+  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
+  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
+  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
+  armThenRun(btn, () => {
+    const wasActive = id === activeSpaceId;
+    for (const c of loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id)) {
+      deleteConv(c.id);
+    }
+    for (const m of loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id)) {
+      forgetMemory(m.id);
+    }
+    deleteSpaceEntry(id);
+    closeSpaceScreen();
+    if (wasActive) {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      setActiveSpaceId(DEFAULT_SPACE_ID);
+      resetToEmpty();
+      syncSpaceUI();
+    }
+    renderSpaceMenu();
+  }, label);
 }
 
 function openMcpServers() {
@@ -6853,6 +8008,17 @@ function buildApiCard(server, isNew, isActive) {
   editSection.appendChild(cfgField('Modèle par défaut', modelAnchor,
     'Choisissez parmi les modèles exposés par l\'API.'));
 
+  const visionPill = cfgPillSelect('api-vision', [
+    { value: 'on', label: 'Images activées' },
+    { value: 'off', label: 'Sans vision (descripteur seul)' },
+  ], serverModelVisionEnabled(server, server.model) ? 'on' : 'off');
+  
+  modelI.addEventListener('change', () => {
+    visionPill.setValue(serverModelVisionEnabled(server, modelI.value.trim()) ? 'on' : 'off');
+  });
+  editSection.appendChild(cfgField('Vision (images)', visionPill.root,
+    'Si ce modèle ne sait pas lire les images, choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.'));
+
   editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
@@ -7238,18 +8404,23 @@ function setMemItemLoading(item, label) {
   btn.innerHTML = '<span class="spin"></span>' + escHtml(label);
 }
 
-function renderMemoryList() {
-  const wrap = $('memory-list');
+function renderMemoryList(containerId, scope) {
+  containerId = containerId || 'memory-list';
+  scope = scope || 'profile';
+  const wrap = $(containerId);
+  if (!wrap) return;
   wrap.innerHTML = '';
+  const addInputId = 'mem-add-input-' + containerId;
 
   const addArea = document.createElement('div');
   addArea.className = 'mem-add';
   addArea.innerHTML =
-    '<textarea class="mem-add-input" id="mem-add-input" rows="2" placeholder="Nouveau souvenir…"></textarea>' +
-    '<button class="drawer-btn mem-add-btn" onclick="addMemoryEntry()">Ajouter</button>';
+    `<textarea class="mem-add-input" id="${addInputId}" rows="2" placeholder="Nouveau souvenir…"></textarea>` +
+    `<button class="drawer-btn mem-add-btn" onclick="addMemoryEntry('${containerId}','${scope}')">Ajouter</button>`;
   wrap.appendChild(addArea);
 
-  const all = loadMemories().sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const all = listMemoryEntries([scope]).concat(loadMemories().filter(e => e.suppressed && (e.scope || DEFAULT_SPACE_ID) === scope))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   if (!all.length) {
     const empty = document.createElement('div');
     empty.className = 'mem-empty';
@@ -7257,6 +8428,10 @@ function renderMemoryList() {
     wrap.appendChild(empty);
     return;
   }
+
+  const promoteBtn = scope !== 'profile'
+    ? `<button class="drawer-btn" onclick="promoteMemoryEntry('${'{{ID}}'}','${containerId}','${scope}')">Promouvoir en profil</button>`
+    : '';
 
   for (const e of all) {
     const item = document.createElement('div');
@@ -7268,8 +8443,8 @@ function renderMemoryList() {
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div>` +
         `<div class="drawer-btns">` +
-        `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}')">Rétablir</button>` +
-        `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}')">Oublier</button>` +
+        `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}','${containerId}','${scope}')">Rétablir</button>` +
+        `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}','${containerId}','${scope}')">Oublier</button>` +
         `</div></div>` +
         `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
     } else {
@@ -7277,13 +8452,14 @@ function renderMemoryList() {
         `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
         `<div class="drawer-btns" id="drawer-btns-${e.id}">` +
         `<button class="drawer-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
-        `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
+        (promoteBtn ? promoteBtn.replace('{{ID}}', e.id) : '') +
+        `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}','${containerId}','${scope}')">Supprimer</button>` +
         `</div></div>` +
         `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
         `<div class="mem-edit-wrap hidden" id="mem-edit-${e.id}">` +
         `<textarea class="mem-edit-input" id="mem-edit-input-${e.id}">${escHtml(e.content || '')}</textarea>` +
         `<div class="mem-edit-actions">` +
-        `<button class="drawer-btn primary" onclick="saveMemoryEntryEdit('${e.id}')">Enregistrer</button>` +
+        `<button class="drawer-btn primary" onclick="saveMemoryEntryEdit('${e.id}','${containerId}','${scope}')">Enregistrer</button>` +
         `<button class="drawer-btn" onclick="cancelMemoryEntryEdit('${e.id}')">Annuler</button>` +
         `</div></div>`;
     }
@@ -7291,18 +8467,29 @@ function renderMemoryList() {
   }
 }
 
-function addMemoryEntry() {
-  const input = $('mem-add-input');
+function addMemoryEntry(containerId, scope) {
+  containerId = containerId || 'memory-list';
+  scope = scope || 'profile';
+  const input = $('mem-add-input-' + containerId);
   const content = input ? input.value.trim() : '';
   if (!content) return;
   const now = Date.now();
-  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false });
-  renderMemoryList();
+  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false, scope });
+  renderMemoryList(containerId, scope);
 }
 
-function deleteMemoryEntry(id) { suppressMemory(id); renderMemoryList(); }
-function restoreMemoryEntry(id) { restoreMemory(id); renderMemoryList(); }
-function forgetMemoryEntry(id) { forgetMemory(id); renderMemoryList(); }
+function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderMemoryList(containerId, scope); }
+function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); }
+function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); }
+
+function promoteMemoryEntry(id, containerId, scope) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (!e) return;
+  e.scope = 'profile';
+  persistMemories(arr);
+  renderMemoryList(containerId, scope);
+}
 
 function startEditMemoryEntry(id) {
   const btns = $('drawer-btns-' + id);
@@ -7324,13 +8511,13 @@ function cancelMemoryEntryEdit(id) {
   if (contentEl) contentEl.hidden = false;
 }
 
-function saveMemoryEntryEdit(id) {
+function saveMemoryEntryEdit(id, containerId, scope) {
   const area = $('mem-edit-input-' + id);
   if (!area) return;
   const content = area.value.trim();
   if (!content) return;
   editMemory(id, content);
-  renderMemoryList();
+  renderMemoryList(containerId, scope);
 }
 
 const _proposalMap = {};
@@ -7413,11 +8600,15 @@ function applyLogo() {
 }
 
 let currentConvId = null;
+let activeSpaceId = DEFAULT_SPACE_ID;   
 let currentThread = [];   
 let needTitle = false;    
 let titleBefore = '';
 let currentConvModel = '';  
 let currentConvReasoningEffort = '';  
+let pendingAttachments = [];   
+let attachIngestInFlight = 0;  
+let _lastContextManifest = null;   
 
 const IDLE_SUMMARY_MS = 60000;
 let _idleSummaryTimer = null;
@@ -7476,25 +8667,35 @@ function buildSummaryBlock(matches) {
 }
 
 function buildMemoryEntriesBlock() {
-  const entries = listMemoryEntries();
+  const entries = listMemoryEntries(['profile', activeSpaceId]);
   if (!entries.length) return '';
   const lines = entries.map(e => `- [id: ${e.id}] ${e.content}`);
   return "Souvenirs de l'utilisateur (persistants, à respecter et prendre en compte) :\n" +
          lines.join('\n');
 }
 
-function buildContextBlock(matches) {
+function contextBlockParts(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const model = activeModel().trim();
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
-  const parts = [lines.join('\n')];
-  const summaries = buildSummaryBlock(matches || []);
-  if (summaries) parts.push(summaries);
-  const memories = buildMemoryEntriesBlock();
-  if (memories) parts.push(memories);
+  const space = getSpace(activeSpaceId);
+  if (space && space.name) lines.push('Espace : ' + space.name);
+  return {
+    contextDateModel: lines.join('\n'),
+    summaries: buildSummaryBlock(matches || []),
+    memories: buildMemoryEntriesBlock(),
+    skillsContext: buildSkillsContextBlock(),
+  };
+}
+
+function buildContextBlock(matches) {
+  const dp = contextBlockParts(matches);
+  const parts = [dp.contextDateModel];
+  if (dp.summaries) parts.push(dp.summaries);
+  if (dp.memories) parts.push(dp.memories);
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -7511,20 +8712,47 @@ function buildSkillsContextBlock() {
     'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
-function buildSystemMessage() {
+function resolveUserSystemPrompt(globalSystemPrompt, space) {
   const parts = [];
+  const global = (globalSystemPrompt || '').trim();
+  if (global) parts.push(global);
+  const spaceDescription = (space && space.description || '').trim();
+  if (spaceDescription) parts.push(spaceDescription);
+  return parts.join('\n\n---\n\n');
+}
+
+function systemMessageParts() {
   const settings = loadSettings();
+  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', user: '' };
   if (TOOLS.length) {
-    parts.push(ROOT_SYSTEM_PROMPT);
-    if (settings.includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
-    const intentPart = intentDoctrinePrompt();
-    if (intentPart) parts.push(intentPart);
-    const skillPart = skillDoctrinePrompt();
-    if (skillPart) parts.push(skillPart);
+    out.root = ROOT_SYSTEM_PROMPT;
+    if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
+    out.intent = intentDoctrinePrompt();
+    out.skills = skillDoctrinePrompt();
+    out.docs = docsDoctrinePrompt();
   }
-  const sysUser = (settings.systemPrompt || '').trim();
-  if (sysUser) parts.push(sysUser);
+  out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
+  return out;
+}
+
+function buildSystemMessage() {
+  const sp = systemMessageParts();
+  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
+}
+
+function computeContextManifestNow() {
+  const sysParts = systemMessageParts();
+  const dynParts = contextBlockParts([]);
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
+  return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+}
+
+function recomputeLastContextManifest(matches) {
+  const sysParts = systemMessageParts();
+  const dynParts = contextBlockParts(matches);
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
 }
 
 async function openConversation(id) {
@@ -7544,6 +8772,7 @@ async function openConversation(id) {
     
     if (m.displayText != null) o.displayText = m.displayText;
     else if (m.display != null) o.displayText = m.display;
+    if (m.attachments) o.attachments = m.attachments;   
     return o;
   });
   currentConvModel = conv.model || '';
@@ -7555,6 +8784,8 @@ async function openConversation(id) {
   renderConvList();
   syncModelUI();
   syncReasoningUI();
+  _lastContextManifest = null;   
+  syncContextCounter();
 }
 
 function resetToEmpty() {
@@ -7571,6 +8802,8 @@ function resetToEmpty() {
   renderConvList();
   syncModelUI();
   syncReasoningUI();
+  _lastContextManifest = null;
+  syncContextCounter();
 }
 
 function selectConv(id) {
@@ -7657,7 +8890,7 @@ function ensureConversation() {
   if (currentConvId) return;
   const id = 'c' + Date.now().toString(36);
   const manualTitle = $('conv-title').textContent.trim();
-  saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [] });
+  saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [], spaceId: activeSpaceId });
   currentConvId = id;
   currentThread = [];
   needTitle = !manualTitle;   
@@ -7679,6 +8912,7 @@ function persistCurrent() {
     if (m.reasoning) o.reasoning = m.reasoning;
     if (m.truncated) o.truncated = true;   
     if (m.displayText != null) o.displayText = m.displayText;   
+    if (m.attachments) o.attachments = m.attachments;   
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
@@ -7734,6 +8968,7 @@ function onSaveSettings() {
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
     confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
+    contextWindow: $('set-contextwindow').value,
   };
   saveSettings(obj);
   updateSettingsDirty();   
@@ -7743,6 +8978,7 @@ function onSaveSettings() {
   syncReasoningUI();     
   prefetchModels();     
   renderThread(currentThread);   
+  syncContextCounter();   
   closeSettings();
 }
 
@@ -7802,11 +9038,18 @@ function onSaveApiCard(cardEl, originalId) {
   const url = get('.api-url').trim();
   if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const wasEmpty = !loadApiServers().length;
+  const model = get('.api-model').trim();
+  
+  const prior = originalId ? getApiServer(originalId) : null;
+  const vision = Object.assign({}, (prior && prior.vision) || {});
+  if (get('.api-vision') === 'off') vision[model] = false;
+  else delete vision[model];
   const server = {
     id: originalId || undefined,
     name, url,
     key: get('.api-key'),
-    model: get('.api-model').trim(),
+    model,
+    vision,
   };
   const arr = upsertApiServer(server);
   if (wasEmpty) {
@@ -7882,7 +9125,7 @@ async function onToggleSkill(slug) {
 function snapshotLocalStorageForExport() {
   const snap = {};
   for (const key of EXPORT_KEYS) {
-    if (key === 'miaou-active-api-server') { snap[key] = localStorage.getItem(key) || ''; continue; }
+    if (key === 'miaou-active-api-server' || key === 'miaou-active-space') { snap[key] = localStorage.getItem(key) || ''; continue; }
     try { snap[key] = JSON.parse(localStorage.getItem(key)); }
     catch (e) { snap[key] = null; }
   }
@@ -7927,7 +9170,7 @@ async function applyImportedData(payload) {
   for (const key of EXPORT_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(ls, key)) { localStorage.removeItem(key); continue; }
     const val = ls[key];
-    if (key === 'miaou-active-api-server') localStorage.setItem(key, typeof val === 'string' ? val : '');
+    if (key === 'miaou-active-api-server' || key === 'miaou-active-space') localStorage.setItem(key, typeof val === 'string' ? val : '');
     else localStorage.setItem(key, JSON.stringify(val));
   }
   const idb = payload.idb || {};
@@ -7940,6 +9183,160 @@ async function applyImportedData(payload) {
     await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
   }
   location.reload();
+}
+
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;        
+const ATTACHMENT_IMAGE_MAX_EDGE = 1536;                
+const ATTACHMENT_IMAGE_JPEG_QUALITY = 0.85;            
+const ATTACHMENT_TEXT_MAX_BYTES = 200 * 1024;          
+const ATTACHMENT_MAX_IMAGES = 4;                       
+
+async function downscaleImageFile(file) {
+  const bitmap = await createImageBitmap(file);
+  const srcW = bitmap.width, srcH = bitmap.height;
+  const scale = Math.min(1, ATTACHMENT_IMAGE_MAX_EDGE / Math.max(srcW, srcH));
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  if (typeof bitmap.close === 'function') bitmap.close();
+
+  const toBlob = (mime, quality) => new Promise(resolve => canvas.toBlob(resolve, mime, quality));
+  const jpegBlob = await toBlob('image/jpeg', ATTACHMENT_IMAGE_JPEG_QUALITY);
+
+  const isPng = /png/i.test(file.type);
+  if (isPng) {
+    const pngBlob = await toBlob('image/png');
+    if (pngBlob && (!jpegBlob || pngBlob.size <= jpegBlob.size)) {
+      return { blob: pngBlob, mime: 'image/png', w, h };
+    }
+  }
+  return { blob: jpegBlob, mime: 'image/jpeg', w, h };
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Échec de lecture du fichier'));
+    reader.readAsText(file);
+  });
+}
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Échec de lecture du fichier'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function showComposerAttachError(msg) {
+  const el = $('composer-attach-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearComposerAttachError() {
+  const el = $('composer-attach-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
+}
+
+async function ingestAttachmentFile(file) {
+  if (file.size > ATTACHMENT_MAX_BYTES) {
+    showComposerAttachError('« ' + file.name + ' » dépasse 10 Mo — fichier ignoré.');
+    return null;
+  }
+  const kind0 = classifyAttachmentKind(file.name, file.type);
+  if (kind0 === 'image') {
+    const imgCount = pendingAttachments.filter(a => a.kind === 'image').length;
+    if (imgCount >= ATTACHMENT_MAX_IMAGES) {
+      showComposerAttachError('Maximum ' + ATTACHMENT_MAX_IMAGES + ' images par message.');
+      return null;
+    }
+  }
+
+  ensureConversation();   
+  const conv = loadConversation(currentConvId);
+  const alloc = allocateAttId(conv && conv.attSeq);
+  const now = Date.now();
+
+  try {
+    if (kind0 === 'image') {
+      const { blob, mime, w, h } = await downscaleImageFile(file);
+      const buf = await blob.arrayBuffer();
+      const rec = await storeAttachment(alloc.id, mime, file.name, buf, 'binary', currentConvId, now, Math.random, { w, h });
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      persistAttSeq(alloc.counter);
+      return { attId: alloc.id, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
+    }
+
+    if (kind0 === 'text') {
+      const text = await readFileAsText(file);
+      const buf = utf8Encode(text);
+      if (buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES) {
+        
+        const rec = await storeAttachment(alloc.id, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+        if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+        persistAttSeq(alloc.counter);
+        return { attId: alloc.id, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+      }
+      const rec = await storeAttachment(alloc.id, file.type || 'text/plain', file.name, buf, 'inline', currentConvId, now, Math.random);
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      persistAttSeq(alloc.counter);
+      return { attId: alloc.id, name: file.name, mime: file.type || 'text/plain', size: buf.byteLength, kind: 'text' };
+    }
+
+    const buf = await readFileAsArrayBuffer(file);
+    const rec = await storeAttachment(alloc.id, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+    if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+    persistAttSeq(alloc.counter);
+    return { attId: alloc.id, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
+    showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
+    return null;
+  }
+}
+
+function persistAttSeq(counter) {
+  if (!currentConvId) return;
+  const conv = loadConversation(currentConvId);
+  if (!conv) return;
+  conv.attSeq = counter;
+  saveConversation(conv);
+}
+
+async function handleAttachFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  clearComposerAttachError();
+  attachIngestInFlight++;
+  try {
+    for (const file of files) {
+      const att = await ingestAttachmentFile(file);
+      if (att) pendingAttachments.push(att);
+    }
+  } finally {
+    attachIngestInFlight--;
+  }
+  renderComposerAttachments();
+}
+
+function onAttachClick() {
+  const input = $('attach-file-input');
+  if (input) { input.value = ''; input.click(); }
+}
+
+function onAttachFilesSelected(input) {
+  handleAttachFiles(input.files);
+}
+
+function removeComposerAttachment(attId) {
+  pendingAttachments = pendingAttachments.filter(a => a.attId !== attId);
+  renderComposerAttachments();
 }
 
 function onSendBtn() {
@@ -7975,29 +9372,69 @@ async function resolveSend(literal) {
 
 async function sendMessage() {
   if (!configured || sending) return;
+  
+  if (attachIngestInFlight > 0) {
+    showComposerAttachError('Pièce jointe en cours de traitement… réessaie dans un instant.');
+    return;
+  }
   const ta = $('composer-text');
   const text = ta.value.trim();
-  if (!text) return;
+  
+  if (!text && !pendingAttachments.length) return;
 
   const r = await resolveSend(text);
   if (!r.ok) { showComposerSkillError(r.error); return; }
 
   ta.value = ''; ta.style.height = 'auto';
   clearComposerSkillError();
+  clearComposerAttachError();   
   hideSkillAutocomplete();
 
   if (_confirmPending) dismissConfirmation();
 
-  sendUserText(r.literal, r.isSkill ? r.content : undefined);
+  const attachments = pendingAttachments;
+  pendingAttachments = [];
+  renderComposerAttachments();
+  await sendUserText(r.literal, r.isSkill ? r.content : undefined, attachments);
 }
 
-function sendUserText(text, bakedContent) {
+async function buildOutgoingContentForAttachments(baseText, attachments) {
+  const textAttachments = [];
+  const imageAttachments = [];
+  const binaryAttachments = [];
+  for (const att of attachments) {
+    if (att.kind === 'text') {
+      const rec = getCachedRecordByAttId(att.attId, currentConvId);
+      const text = rec ? utf8Decode(rec.data) : '';
+      textAttachments.push({ att, text });
+    } else if (att.kind === 'image') {
+      const rec = getCachedRecordByAttId(att.attId, currentConvId);
+      const dataUrl = rec ? ('data:' + att.mime + ';base64,' + arrayBufferToBase64(rec.data)) : null;
+      if (dataUrl) imageAttachments.push({ att, dataUrl });
+    } else if (att.kind === 'binary') {
+      
+      binaryAttachments.push(att);
+    }
+  }
+  return buildAttachedMessageContent(baseText, textAttachments, imageAttachments, binaryAttachments);
+}
+
+async function sendUserText(text, bakedContent, attachments) {
   clearComposerSkillError();   
   ensureConversation();
   const ts = Date.now();
-  appendUserMessage(text, ts);
-  const msg = { role: 'user', content: bakedContent != null ? bakedContent : text, ts };
-  if (bakedContent != null) msg.displayText = text;
+  appendUserMessage(text, ts, attachments);
+  const baseText = bakedContent != null ? bakedContent : text;
+  let content = baseText;
+  if (attachments && attachments.length) {
+    content = await buildOutgoingContentForAttachments(baseText, attachments);
+  }
+  const msg = { role: 'user', content, ts };
+  
+  if (bakedContent != null || (attachments && attachments.length && content !== text)) {
+    msg.displayText = text;
+  }
+  if (attachments && attachments.length) msg.attachments = attachments;
   currentThread.push(msg);
   persistCurrent();
   armIdleSummaryTimer();
@@ -8012,7 +9449,7 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId);
+  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId, activeSpaceId);
 
   if (settings.summaryInjectionMode === 'propose' && matches.length) {
     showSummaryBanner(matches, {
@@ -8072,26 +9509,64 @@ function continueTruncated(btn) {
   dispatchSend([], { continueIndex: idx, wrap });
 }
 
+function rewriteAttachedUserMessage(idx) {
+  if (idx < 0 || idx >= currentThread.length) return;
+  const m = currentThread[idx];
+  if (m.role !== 'user' || !Array.isArray(m.content)) return;
+  m.content = collapseAttachedMessageContent(m.content, m.attachments);
+}
+
 async function dispatchSend(matches, continuation) {
   hideSummaryBanner();
+  
+  {
+    const lastUserAt = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+    for (let i = 0; i < currentThread.length; i++) {
+      if (i !== lastUserAt) rewriteAttachedUserMessage(i);
+    }
+  }
   const model = activeModel();   
   const serverName = (activeApiServer() || {}).name || '';   
   const reasoningEffort = activeReasoningEffort();
-  const sys = buildSystemMessage();
+  const sysParts = systemMessageParts();
+  const sys = { role: 'system', content: [sysParts.root, sysParts.toolsSystem, sysParts.intent, sysParts.skills, sysParts.docs, sysParts.user].filter(Boolean).join('\n\n---\n\n') };
   
-  const threadMsgs = expandThread(resolveResourceRefs(currentThread));
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
 
-  const lastUserIdx = threadMsgs.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
+  const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
+  const dynParts = contextBlockParts(matches);
   if (lastUserIdx >= 0) {
-    const skillsCtx = buildSkillsContextBlock();
+    const skillsCtx = dynParts.skillsContext;
     const ctx = buildContextBlock(matches);
+    const prefix = skillsCtx + ctx + '\n\n---\n\n';
+    const lastContent = threadMsgs[lastUserIdx].content;
+    
     threadMsgs[lastUserIdx] = {
       role: 'user',
-      content: skillsCtx + ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
+      content: Array.isArray(lastContent)
+        ? prefixTextInContentParts(lastContent, prefix)
+        : prefix + lastContent,
     };
   }
 
-  const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
+  const apiMessages = [sys].concat(threadMsgs.map(m =>
+    m && m._synthetic ? { role: m.role, content: m.content } : m
+  )).filter(Boolean);
+
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  syncContextCounter();
+
+  let imageDescriptors;
+  {
+    const lastUserMsg = currentThread.reduce((acc, m) => (m.role === 'user' ? m : acc), null);
+    if (lastUserMsg && Array.isArray(lastUserMsg.content) && lastUserMsg.attachments) {
+      imageDescriptors = lastUserMsg.attachments
+        .filter(a => a && a.kind === 'image')
+        .map(formatAttachmentDescriptor);
+    }
+  }
+
+  const visionDisabled = !serverModelVisionEnabled(activeApiServer(), model);
 
   const isContinuation = !!continuation;
   const prefix = isContinuation ? currentThread[continuation.continueIndex].content : '';
@@ -8114,6 +9589,8 @@ async function dispatchSend(matches, continuation) {
     await runConversation(apiMessages, {
       model,
       reasoningEffort,
+      imageDescriptors,   
+      visionDisabled,     
       
       noTools: isContinuation,
       onDelta: (full) => streamInto(wrap, isContinuation ? prefix + full : full),
@@ -8207,6 +9684,8 @@ async function dispatchSend(matches, continuation) {
           finalizeAssistant(wrap, m.content, m.truncated);
           if (m.reasoning) flushReasoning(wrap, m.reasoning);
           persistCurrent();
+          recomputeLastContextManifest(matches);
+          syncContextCounter();
           setConnDot('ok');
           
           return;
@@ -8220,16 +9699,27 @@ async function dispatchSend(matches, continuation) {
           msg.truncated = true;
         }
         
+        {
+          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(lastUserIdx);
+        }
+        
         currentThread.push(msg);
         finalizeAssistant(wrap, content, msg.truncated);
         revealMsgTimestamp(wrap, ts);
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   
         persistCurrent();
+        recomputeLastContextManifest(matches);
+        syncContextCounter();
         setConnDot('ok');
         maybeTitle();
       },
       onHalt: (leadIn, question) => {
         
+        {
+          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(lastUserIdx);
+        }
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const haltTs = Date.now();
         const haltMsg = { role: 'assistant', content: text, model, ts: haltTs };
@@ -8238,6 +9728,8 @@ async function dispatchSend(matches, continuation) {
         finalizeAssistant(wrap, text);
         revealMsgTimestamp(wrap, haltTs);
         persistCurrent();
+        recomputeLastContextManifest(matches);
+        syncContextCounter();
         setConnDot('ok');
         
         showConfirmation('',
@@ -8365,6 +9857,9 @@ async function runBackfill() {
 function init() {
   applyLogo();
 
+  migrateSpacesIfNeeded();   
+  activeSpaceId = getActiveSpaceId();   
+  syncSpaceUI();
   loadApiServers();   
   const s = loadSettings();
   $('set-system').value = s.systemPrompt || '';
@@ -8374,6 +9869,7 @@ function init() {
   $('set-reasoning-effort').value = s.reasoningEffort || '';
   syncSettingsReasoningLabel();
   $('set-reasoningselector').checked = !!s.showReasoningSelector;
+  $('set-contextwindow').value = s.contextWindow || '';
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');

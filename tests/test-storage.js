@@ -83,6 +83,32 @@ describe('activeReasoningEffort (override conv vs niveau par défaut)', function
   });
 });
 
+describe('flag vision manuel par (serveur, modèle) — D5 brief A2', function() {
+  it('normalizeApiServer : map vision par défaut vide, ne garde que les false', function() {
+    var s = normalizeApiServer({ name: 'S', url: 'u', model: 'm',
+      vision: { a: false, b: true, c: false } });
+    expect(s.vision.a).toBe(false);
+    expect(s.vision.c).toBe(false);
+    // 'b: true' n'est pas conservé (true = équivaut à absent = envoyer)
+    expect('b' in s.vision).toBeFalsy();
+  });
+  it('normalizeApiServer : vision absent → map vide, pas de crash', function() {
+    var s = normalizeApiServer({ name: 'S', url: 'u', model: 'm' });
+    expect(s.vision).toEqual({});
+  });
+  it('serverModelVisionEnabled : true par défaut (modèle inconnu de la map)', function() {
+    expect(serverModelVisionEnabled({ vision: {} }, 'gemma')).toBe(true);
+    expect(serverModelVisionEnabled({ vision: { autre: false } }, 'gemma')).toBe(true);
+  });
+  it('serverModelVisionEnabled : false seulement si explicitement marqué', function() {
+    expect(serverModelVisionEnabled({ vision: { gemma: false } }, 'gemma')).toBe(false);
+  });
+  it('serverModelVisionEnabled : serveur nul/sans map → true (envoyer)', function() {
+    expect(serverModelVisionEnabled(null, 'm')).toBe(true);
+    expect(serverModelVisionEnabled({}, 'm')).toBe(true);
+  });
+});
+
 describe('toggleConversationPin (épinglage)', function() {
   it('bascule pinned à true puis false et persiste', function() {
     localStorage.clear();
@@ -281,11 +307,182 @@ describe('backfillMessageModels (modèle du serveur API actif)', function() {
   });
 });
 
+// ── Espaces (miaou-spaces) — feature Spaces (lot C) ──────────────────────────
+
+describe('Spaces : CRUD (miaou-spaces)', function() {
+  it('registre vide par défaut (avant migration)', function() {
+    localStorage.clear();
+    expect(loadSpaces().length).toBe(0);
+  });
+  it('upsertSpace insère puis met à jour par id', function() {
+    localStorage.clear();
+    upsertSpace({ id: 'sp1', name: 'Perso' });
+    expect(loadSpaces().length).toBe(1);
+    upsertSpace({ id: 'sp1', name: 'Perso 2' });
+    var arr = loadSpaces();
+    expect(arr.length).toBe(1);
+    expect(arr[0].name).toBe('Perso 2');
+  });
+  it('normalizeSpace pose id/name/description/createdAt par défaut', function() {
+    localStorage.clear();
+    upsertSpace({ name: 'x' });
+    var s = loadSpaces()[0];
+    expect(typeof s.id).toBe('string');
+    expect(s.description).toBe('');
+    expect(typeof s.createdAt).toBe('number');
+  });
+  it('getSpace retrouve par id, null sinon', function() {
+    localStorage.clear();
+    upsertSpace({ id: 'sp1', name: 'a' });
+    expect(getSpace('sp1').name).toBe('a');
+    expect(getSpace('nope')).toBe(null);
+  });
+  it('deleteSpaceEntry retire par id', function() {
+    localStorage.clear();
+    upsertSpace({ id: 'a', name: 'A' });
+    upsertSpace({ id: 'b', name: 'B' });
+    deleteSpaceEntry('a');
+    var arr = loadSpaces();
+    expect(arr.length).toBe(1);
+    expect(arr[0].id).toBe('b');
+  });
+  it('deleteSpaceEntry est un no-op sur le default Space', function() {
+    localStorage.clear();
+    upsertSpace({ id: DEFAULT_SPACE_ID, name: 'Général' });
+    deleteSpaceEntry(DEFAULT_SPACE_ID);
+    expect(loadSpaces().length).toBe(1);
+  });
+  it('getActiveSpaceId retombe sur DEFAULT_SPACE_ID si rien de persisté', function() {
+    localStorage.clear();
+    expect(getActiveSpaceId()).toBe(DEFAULT_SPACE_ID);
+  });
+  it('setActiveSpaceId / getActiveSpaceId round-trip', function() {
+    localStorage.clear();
+    setActiveSpaceId('sp1');
+    expect(getActiveSpaceId()).toBe('sp1');
+  });
+});
+
+describe('migrateSpacesIfNeeded — backfill idempotent', function() {
+  it('crée le registre avec le default Space si absent', function() {
+    localStorage.clear();
+    migrateSpacesIfNeeded();
+    var spaces = loadSpaces();
+    expect(spaces.length).toBe(1);
+    expect(spaces[0].id).toBe(DEFAULT_SPACE_ID);
+    expect(spaces[0].name).toBe('Général');
+  });
+  it('stampe spaceId=default sur les conversations qui en manquent', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [] });
+    migrateSpacesIfNeeded();
+    expect(loadConversation('c1').spaceId).toBe(DEFAULT_SPACE_ID);
+  });
+  it('stampe scope=default sur les souvenirs qui en manquent (PAS profile)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false });
+    migrateSpacesIfNeeded();
+    expect(loadMemories()[0].scope).toBe(DEFAULT_SPACE_ID);
+  });
+  it('double passe = même état (idempotence)', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, spaceId: 'sp-custom', messages: [] });
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    migrateSpacesIfNeeded();
+    migrateSpacesIfNeeded();
+    expect(loadSpaces().length).toBe(1);
+    expect(loadConversation('c1').spaceId).toBe('sp-custom');   // pas écrasé
+    expect(loadMemories()[0].scope).toBe('profile');            // pas écrasé
+  });
+});
+
+describe('spaceConvIds — prédicat d\'herméticité', function() {
+  it('retourne les ids des conversations du Space donné', function() {
+    var convs = [
+      { id: 'c1', spaceId: 'a' },
+      { id: 'c2', spaceId: 'b' },
+      { id: 'c3', spaceId: 'a' },
+    ];
+    var ids = spaceConvIds('a', convs);
+    expect(ids.has('c1')).toBeTruthy();
+    expect(ids.has('c3')).toBeTruthy();
+    expect(ids.has('c2')).toBeFalsy();
+  });
+  it('traite une conv sans spaceId comme appartenant au default Space', function() {
+    var convs = [{ id: 'c1' }];
+    expect(spaceConvIds(DEFAULT_SPACE_ID, convs).has('c1')).toBeTruthy();
+    expect(spaceConvIds('other', convs).has('c1')).toBeFalsy();
+  });
+});
+
+describe('listMemoryEntries — filtrage par scope', function() {
+  it('sans argument, retourne toutes les entrées actives (comportement historique)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'a', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    saveMemory({ id: 'm2', content: 'b', created_at: 2, updated_at: 2, suppressed: false, scope: 'sp1' });
+    expect(listMemoryEntries().length).toBe(2);
+  });
+  it('avec scopes, ne retourne que les scopes autorisés', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'a', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    saveMemory({ id: 'm2', content: 'b', created_at: 2, updated_at: 2, suppressed: false, scope: 'sp1' });
+    saveMemory({ id: 'm3', content: 'c', created_at: 3, updated_at: 3, suppressed: false, scope: 'sp2' });
+    var entries = listMemoryEntries(['profile', 'sp1']);
+    expect(entries.length).toBe(2);
+    expect(entries.some(function(e) { return e.id === 'm3'; })).toBeFalsy();
+  });
+  it('respecte toujours les tombstones sous filtrage par scope', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'a', created_at: 1, updated_at: 1, suppressed: true, scope: 'profile' });
+    expect(listMemoryEntries(['profile']).length).toBe(0);
+  });
+});
+
+describe('listAllConversations — expose spaceId', function() {
+  it('retombe sur DEFAULT_SPACE_ID si absent', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [] });
+    expect(listAllConversations()[0].spaceId).toBe(DEFAULT_SPACE_ID);
+  });
+  it('reprend le spaceId posé sur la conv', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, spaceId: 'sp1', messages: [] });
+    expect(listAllConversations()[0].spaceId).toBe('sp1');
+  });
+});
+
+describe('resolveUserSystemPrompt — description du Space ajoutée après le prompt global (D4 corrigé)', function() {
+  it('concatène description du Space APRÈS le prompt global (jamais un remplacement)', function() {
+    var r = resolveUserSystemPrompt('Prompt global', { description: 'Description du Space' });
+    expect(r).toBe('Prompt global\n\n---\n\nDescription du Space');
+  });
+  it('seul le prompt global si le Space n\'a pas de description', function() {
+    var r = resolveUserSystemPrompt('Prompt global', { description: '' });
+    expect(r).toBe('Prompt global');
+  });
+  it('seul le prompt global si le Space est null (introuvable)', function() {
+    var r = resolveUserSystemPrompt('Prompt global', null);
+    expect(r).toBe('Prompt global');
+  });
+  it('seule la description si pas de prompt global', function() {
+    var r = resolveUserSystemPrompt('', { description: 'Description du Space' });
+    expect(r).toBe('Description du Space');
+  });
+  it('chaîne vide si ni Space ni global', function() {
+    expect(resolveUserSystemPrompt('', null)).toBe('');
+    expect(resolveUserSystemPrompt('', { description: '' })).toBe('');
+  });
+  it('trim des deux côtés', function() {
+    expect(resolveUserSystemPrompt('  global  ', null)).toBe('global');
+    expect(resolveUserSystemPrompt('', { description: '  space  ' })).toBe('space');
+  });
+});
+
 // ── Export / import complet des données (feature E) ─────────────────────────
 
 describe('EXPORT_KEYS', function() {
-  it('liste les 7 clés localStorage du schéma', function() {
-    expect(EXPORT_KEYS.length).toBe(7);
+  it('liste les 9 clés localStorage du schéma', function() {
+    expect(EXPORT_KEYS.length).toBe(9);
     expect(EXPORT_KEYS.indexOf('miaou-settings') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-conversations') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-summaries') >= 0).toBeTruthy();
@@ -293,6 +490,8 @@ describe('EXPORT_KEYS', function() {
     expect(EXPORT_KEYS.indexOf('miaou-api-servers') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-active-api-server') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-mcp-servers') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-spaces') >= 0).toBeTruthy();
+    expect(EXPORT_KEYS.indexOf('miaou-active-space') >= 0).toBeTruthy();
   });
 });
 
@@ -303,7 +502,7 @@ describe('buildExportPayload', function() {
     expect(payload.version).toBe(1);
     expect(typeof payload.exportedAt).toBe('number');
   });
-  it('reprend les 7 clés localStorage désérialisées', function() {
+  it('reprend les 9 clés localStorage désérialisées', function() {
     var ls = {
       'miaou-settings': { theme: 'dark' },
       'miaou-conversations': [{ id: 'c1' }],
@@ -312,6 +511,8 @@ describe('buildExportPayload', function() {
       'miaou-api-servers': [{ id: 's1' }],
       'miaou-active-api-server': 's1',
       'miaou-mcp-servers': [{ name: 'srv' }],
+      'miaou-spaces': [{ id: 'sp1' }],
+      'miaou-active-space': 'sp1',
     };
     var payload = buildExportPayload(ls, [], []);
     expect(payload.localStorage['miaou-settings']).toEqual({ theme: 'dark' });
@@ -321,10 +522,13 @@ describe('buildExportPayload', function() {
     expect(payload.localStorage['miaou-api-servers']).toEqual([{ id: 's1' }]);
     expect(payload.localStorage['miaou-active-api-server']).toBe('s1');
     expect(payload.localStorage['miaou-mcp-servers']).toEqual([{ name: 'srv' }]);
+    expect(payload.localStorage['miaou-spaces']).toEqual([{ id: 'sp1' }]);
+    expect(payload.localStorage['miaou-active-space']).toBe('sp1');
   });
-  it('miaou-active-api-server reste une string brute (pas désérialisée en objet)', function() {
-    var payload = buildExportPayload({ 'miaou-active-api-server': 'srv_xyz' }, [], []);
+  it('miaou-active-api-server et miaou-active-space restent des strings brutes (pas désérialisées en objet)', function() {
+    var payload = buildExportPayload({ 'miaou-active-api-server': 'srv_xyz', 'miaou-active-space': 'sp_xyz' }, [], []);
     expect(typeof payload.localStorage['miaou-active-api-server']).toBe('string');
+    expect(typeof payload.localStorage['miaou-active-space']).toBe('string');
   });
   it('sections manquantes → défauts vides (tableaux/objets), pas de crash', function() {
     var payload = buildExportPayload({}, [], []);
@@ -335,6 +539,8 @@ describe('buildExportPayload', function() {
     expect(payload.localStorage['miaou-api-servers']).toEqual([]);
     expect(payload.localStorage['miaou-active-api-server']).toBe('');
     expect(payload.localStorage['miaou-mcp-servers']).toEqual([]);
+    expect(payload.localStorage['miaou-spaces']).toEqual([]);
+    expect(payload.localStorage['miaou-active-space']).toBe('');
   });
   it('embarque skills et resources dans idb', function() {
     var payload = buildExportPayload({}, [{ slug: 's1' }], [{ id: 'res_1', data: 'QQ==' }]);
@@ -352,6 +558,7 @@ describe('validateImportPayload', function() {
         'miaou-summaries': {}, 'miaou-memories': [{ id: 'm1' }],
         'miaou-api-servers': [{ id: 's1' }], 'miaou-active-api-server': 's1',
         'miaou-mcp-servers': [{ name: 'srv1' }, { name: 'srv2' }],
+        'miaou-spaces': [{ id: 'sp1' }], 'miaou-active-space': 'sp1',
       },
       idb: { skills: [{ slug: 'sk1' }], resources: [{ id: 'r1' }, { id: 'r2' }] },
     };
@@ -365,6 +572,7 @@ describe('validateImportPayload', function() {
     expect(res.counts.skills).toBe(1);
     expect(res.counts.resources).toBe(2);
     expect(res.counts.servers).toBe(3);   // 1 api-server + 2 mcp-servers
+    expect(res.counts.spaces).toBe(1);
   });
   it('format inconnu → erreur', function() {
     var res = validateImportPayload(Object.assign(validPayload(), { format: 'autre-chose' }));
@@ -395,6 +603,7 @@ describe('validateImportPayload', function() {
     expect(res.counts.skills).toBe(0);
     expect(res.counts.resources).toBe(0);
     expect(res.counts.servers).toBe(0);
+    expect(res.counts.spaces).toBe(0);
   });
   it('types invalides dans localStorage (ex. conversations non-tableau) → compte à 0, pas de crash', function() {
     var p = validPayload();

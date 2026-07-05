@@ -21,6 +21,14 @@ const SERVER = 'Par défaut';   // provenance (champ server des messages assista
 const CONV_KEY = 'miaou-conversations';
 const SUMM_KEY = 'miaou-summaries';
 const MEM_KEY  = 'miaou-memories';
+const SPACES_KEY = 'miaou-spaces';
+
+// ── Spaces (lot C) : un second Space « Pro » pour exercer l'herméticité ──────
+// seed-01..seed-05 (réseau/backend) partent dans ce Space ; le reste (default
+// Space, implicite) sert de contrôle pour vérifier l'isolation bidirectionnelle
+// sidebar/recherche/outils. Id fixe → idempotent comme le reste des seeds.
+const SPACE_SEED_ID = 'space-seed-pro';
+const SPACE_SEED_CONV_IDS = new Set(['seed-01', 'seed-02', 'seed-03', 'seed-04', 'seed-05']);
 
 // IDs fixes → idempotent (re-run ne duplique pas)
 const SEEDS = [
@@ -147,6 +155,56 @@ const SEEDS = [
     ],
     summary: "Discussion sur la validation d'emails par regex. Recommandation de ne pas sur-valider côté client (RFC 5322 trop complexe). Regex minimale pour feedback UX front-end, déclenchement sur blur, validation serveur indispensable.",
     keywords: ['regex', 'email', 'validation', 'rfc5322', 'front-end', 'ux', 'formulaire', 'tld', 'validator', 'javascript'],
+  },
+  {
+    // Exemple de message avec pièces jointes (brief A / lot 1). Le tableau
+    // `attachments` suit le schéma message.attachments : {attId, name, mime,
+    // size, kind, w?, h?}. Les blobs réels (IndexedDB, store `resources`) sont
+    // écrits séparément par seedAttachmentResources() ci-dessous — recharger la
+    // conversation peuple le cache session (loadConversationResources), donc la
+    // vignette ET recall_attachment/present_resource trouvent un enregistrement
+    // (lots 3-4). Avant l'ajout de ce seed IDB, la chip tombait sur le fallback
+    // gracieux (icône, pas de vignette) — toujours le comportement attendu
+    // quand le cache session n'a pas le blob (cf. resolveAttachmentThumb, ui.js),
+    // mais ce n'est plus le cas ici.
+    id: 'seed-10b',
+    title: 'Debug capture réseau — pièce jointe',
+    messages: [
+      {
+        role: 'user',
+        content: "Voici la capture d'écran de l'erreur et le fichier de log associé.",
+        attachments: [
+          { attId: 'att-1', name: 'erreur-503.png', mime: 'image/png', size: 184320, kind: 'image', w: 1280, h: 720 },
+          { attId: 'att-2', name: 'nginx-access.log', mime: 'text/plain', size: 4096, kind: 'text' },
+        ],
+      },
+      { role: 'assistant', content: "D'après la capture, le 503 vient du backend qui timeout — visible aussi dans les dernières lignes du log nginx (upstream timed out). Vérifie le `proxy_read_timeout` de ta conf nginx et la charge du service en amont au moment de l'erreur." },
+    ],
+    summary: "Diagnostic d'une erreur 503 à partir d'une capture d'écran et d'un log nginx joints au message. Cause : timeout du backend en amont, à corriger via proxy_read_timeout.",
+    keywords: ['nginx', '503', 'timeout', 'pièce-jointe', 'attachment', 'capture-écran', 'log', 'debug', 'proxy', 'backend'],
+  },
+  {
+    // Attachment kind:'binary' (brief H — descripteur générique). Contrairement
+    // à seed-10b, aucun blob n'est écrit en IDB pour att-1 ici : le descripteur
+    // binaire est dérivé des champs FIGÉS du schéma attachment lui-même
+    // (formatBinaryAttachmentDescriptor, resources.js), pas des octets — la chip
+    // visuelle retombe sur son fallback gracieux (icône, pas de vignette), c'est
+    // le comportement attendu et suffisant pour exercer ce lot (l'IDB n'entre en
+    // jeu que pour recall_attachment/present_resource, hors périmètre H).
+    id: 'seed-10c',
+    title: 'Document Word joint — extraction docs',
+    messages: [
+      {
+        role: 'user',
+        content: "Peux-tu regarder ce compte-rendu et me dire s'il y a des actions en retard ?",
+        attachments: [
+          { attId: 'att-1', name: 'compte-rendu-sprint12.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 48200, kind: 'binary' },
+        ],
+      },
+      { role: 'assistant', content: "Sans serveur d'extraction documentaire (mcp_docs) actif, je ne peux pas ouvrir le contenu de ce .docx — seul son descripteur m'est visible. Active un serveur MCP docs pour que je puisse l'analyser (cf. docs/mcp.md §12)." },
+    ],
+    summary: "Message avec un fichier Word joint (kind:'binary') pour exercer le descripteur générique du brief H, sans serveur mcp_docs actif dans ce seed.",
+    keywords: ['docx', 'pièce-jointe', 'attachment', 'binaire', 'mcp_docs', 'descripteur', 'compte-rendu', 'sprint'],
   },
 
   // ── Conversations avec tool calls ─────────────────────────────────────────
@@ -332,10 +390,10 @@ const SEEDS = [
 // mem-seed-01/02 (créés en seed-11/12), mem-seed-03 supprimé (tombstone,
 // seed-15), mem-seed-04 (seed-18). Injectés en contexte à chaque tour.
 const MEMORY_SEEDS = [
-  { id: 'mem-seed-01', content: 'Conventions Python de Julien : snake_case fonctions/variables, PascalCase/CapWords classes et exceptions. Compatible PEP 8.', suppressed: false },
-  { id: 'mem-seed-02', content: "Décision architecture (2026) : migration du monolithe Python vers 3 microservices — auth, catalog, orders. Chaque service avec sa BDD. Communication inter-services via RabbitMQ (pas REST direct).", suppressed: false },
-  { id: 'mem-seed-03', content: 'Julien utilise Go 1.21 avec les modules Go et go.work (workspaces multi-modules).', suppressed: true },
-  { id: 'mem-seed-04', content: 'Julien préfère les réponses courtes.', suppressed: false },
+  { id: 'mem-seed-01', content: 'Conventions Python de Julien : snake_case fonctions/variables, PascalCase/CapWords classes et exceptions. Compatible PEP 8.', suppressed: false, scope: SPACE_SEED_ID },
+  { id: 'mem-seed-02', content: "Décision architecture (2026) : migration du monolithe Python vers 3 microservices — auth, catalog, orders. Chaque service avec sa BDD. Communication inter-services via RabbitMQ (pas REST direct).", suppressed: false, scope: SPACE_SEED_ID },
+  { id: 'mem-seed-03', content: 'Julien utilise Go 1.21 avec les modules Go et go.work (workspaces multi-modules).', suppressed: true, scope: SPACE_SEED_ID },
+  { id: 'mem-seed-04', content: 'Julien préfère les réponses courtes.', suppressed: false, scope: 'profile' },
 ];
 
 // ── Skills (IndexedDB `miaou`, store `skills`) : /revue + cr (autotrigger) ────
@@ -394,6 +452,7 @@ function seed() {
 
     const conv = { id: s.id, title: s.title, timestamp: ts, updatedAt: lastMsgTs, messages };
     if (s.pinned) conv.pinned = true;
+    if (SPACE_SEED_CONV_IDS.has(s.id)) conv.spaceId = SPACE_SEED_ID;
     convs.push(conv);
     addedConvs++;
   }
@@ -436,10 +495,29 @@ function seed() {
   }
   localStorage.setItem(MEM_KEY, JSON.stringify(mems));
 
+  // ── Espaces (miaou-spaces, lot C) ────────────────────────────────────────
+  // Le default Space lui-même n'est PAS seedé ici : migrateSpacesIfNeeded()
+  // (storage.js) le crée au premier chargement de MIAOU, avant tout rendu —
+  // le seed n'a besoin d'ajouter que le second Space.
+  let spaces = [];
+  try { spaces = JSON.parse(localStorage.getItem(SPACES_KEY) || '[]'); } catch {}
+  let addedSpaces = 0;
+  if (!spaces.some(s => s.id === SPACE_SEED_ID)) {
+    spaces.push({
+      id: SPACE_SEED_ID,
+      name: 'Pro',
+      description: 'Contexte infra/réseau à la maison : Pi-hole, Caddy, subnet 192.168.42.*.',
+      createdAt: now - 14 * day,
+    });
+    addedSpaces++;
+  }
+  localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
+
   if (addedConvs) log('ok', '✓ ' + addedConvs + ' conversation(s) ajoutée(s)');
   if (addedSumms) log('ok', '✓ ' + addedSumms + ' résumé(s) ajouté(s)');
   if (addedMems)  log('ok', '✓ ' + addedMems + ' souvenir(s) ajouté(s)');
-  if (!addedConvs && !addedSumms && !addedMems) log('ski', '⊘ Tout était déjà présent, rien à faire.');
+  if (addedSpaces) log('ok', '✓ ' + addedSpaces + ' espace(s) ajouté(s) (« Pro », seed-01..05)');
+  if (!addedConvs && !addedSumms && !addedMems && !addedSpaces) log('ski', '⊘ Tout était déjà présent, rien à faire.');
   log('', '');
   log('', 'Recharge MIAOU pour voir les conversations dans la sidebar.');
 }
@@ -471,8 +549,40 @@ function seedSkills() {
   req.onerror = function(e) { log('err', '✗ ouverture IDB : ' + (e.target.error && e.target.error.message)); };
 }
 
+// ── Pièces jointes (brief A, lots 3-4) : blobs réels en IDB pour seed-10b, afin
+// que recall_attachment/getCachedRecordByAttId trouvent un enregistrement (le
+// commentaire de seed-10b ci-dessus décrit le cas SANS blob — celui-ci ajoute
+// le cas AVEC blob, sans dupliquer la conversation). Schéma exact de
+// storeAttachment (resources.js) : id `att_…` distinct de attId `att-N`.
+function seedAttachmentResources() {
+  const enc = new TextEncoder();
+  const RECORDS = [
+    { id: 'att_seed10b_1', attId: 'att-1', conversationId: 'seed-10b', class: 'binary',
+      mime: 'image/png', name: 'erreur-503.png', size: 184320, createdAt: Date.now(),
+      w: 1280, h: 720,
+      // PNG 1x1 minimal valide (transparent) — suffisant pour exercer le rendu
+      // <img> de recall_attachment/present_resource, pas la vraie capture d'écran.
+      data: Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), c => c.charCodeAt(0)).buffer },
+    { id: 'att_seed10b_2', attId: 'att-2', conversationId: 'seed-10b', class: 'inline',
+      mime: 'text/plain', name: 'nginx-access.log', size: 0, createdAt: Date.now(),
+      data: enc.encode('127.0.0.1 - - [05/Jul/2026:10:00:00] "GET /api/x HTTP/1.1" 503 0 "-" "-"\nupstream timed out (110: Connection timed out) while reading response header from upstream').buffer },
+  ];
+  RECORDS[1].size = RECORDS[1].data.byteLength;
+  const req = indexedDB.open('miaou', 2);
+  req.onsuccess = function(e) {
+    const db = e.target.result;
+    const tx = db.transaction('resources', 'readwrite');
+    const store = tx.objectStore('resources');
+    for (const r of RECORDS) store.put(r);
+    tx.oncomplete = function() { log('ok', '✓ ' + RECORDS.length + ' pièce(s) jointe(s) écrites en IDB (put idempotent, seed-10b)'); };
+    tx.onerror = function(ev) { log('err', '✗ resources IDB (attachments) : ' + (ev.target.error && ev.target.error.message)); };
+  };
+  req.onerror = function(e) { log('err', '✗ ouverture IDB (attachments) : ' + (e.target.error && e.target.error.message)); };
+}
+
 seed();
 seedSkills();
+seedAttachmentResources();
 </script>
 </body>
 </html>

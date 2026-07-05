@@ -27,6 +27,29 @@
 .app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
 .topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
+/* Badge du Space actif : même fondu que .topbar-brand (visible sidebar
+   repliée), masqué en plus par [hidden] côté JS quand on est dans le default
+   Space (syncSpaceUI, ui.js — deux conditions indépendantes qui se cumulent). */
+.topbar-space-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 3px 9px;
+  border-radius: 100px;
+  margin-left: 4px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition: opacity 190ms var(--ease), transform 190ms var(--ease);
+}
+.app.booted:not(.sidebar-open) .topbar-space-badge:not([hidden]) { opacity: 1; transform: translateX(0); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
@@ -183,6 +206,18 @@
 /* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
    plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
+
+/* Chips de pièces jointes dans la bulle utilisateur — rendues DEPUIS le tableau
+   `attachments` du message, jamais reconstruites depuis content (cf. brief A).
+   Réutilise .att-chip/.att-thumb/.att-icon/.att-name/.att-size (composer.css) ;
+   pas de .att-remove ici (non-goal : pas de retrait après envoi). */
+.msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.msg-attachments:empty { display: none; }
 
 /* actions « éditer » / « copier » au survol d'une bulle utilisateur, empilées
    verticalement à gauche de la bulle (éditer en haut, copier dessous) */

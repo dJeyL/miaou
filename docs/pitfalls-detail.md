@@ -205,3 +205,153 @@ ou au KV cache.
     `buildContextBlock()` dans `buildSystemMessage()` : le point de divergence
     serait avant tout l'historique, le cache ne profiterait plus à partir du 2ᵉ
     tour.
+17. **Persistance des images jointes (content parts → descripteur, brief A
+    lot 2).** Un message user portant un attachment `kind:'image'` (composer,
+    trombone/drag&drop) est envoyé au modèle en **content parts OpenAI**
+    (`[{type:'text',text},{type:'image_url',image_url:{url:'data:<mime>;base64,…'}}]`,
+    une part par image, `buildAttachedMessageContent` — resources.js, pure)
+    **seulement le tour où il est attaché**. Une fois ce tour terminé — fin
+    normale (`onFinal`), tour avorté (`AbortController`, `aborted: true`) ou
+    halte (`onHalt`, ask_confirmation) —, `rewriteAttachedUserMessage` (main.js)
+    mute en place ce message : son `content` (tableau de parts) devient une
+    **string** = les parts texte concaténées + **une ligne de descripteur par
+    attachment `kind:'image'`** du message (`collapseAttachedMessageContent`,
+    resources.js). C'est une invalidation **délibérée et ponctuelle** du KV
+    cache (piège 16 interdit les invalidations *récurrentes*, pas une
+    réécriture actée une fois par message) : à partir de ce moment, plus aucun
+    base64 ne repart jamais pour cet attachment.
+
+    Format du descripteur, EXACT et BYTE-STABLE (`formatAttachmentDescriptor`) :
+    ```
+    [attachment att-3: image "diagram.png", 1280x960, 214 kB — content available via miaou__recall_attachment]
+    ```
+    Dérivé UNIQUEMENT des champs FIGÉS du schéma attachment (`name`, `w`, `h`,
+    `size`, posés au lot 1 lors du downscale/stockage) — **jamais recalculé**
+    depuis les octets à un tour ultérieur, exactement comme `stampTs` n'est
+    jamais recalculé pour un résultat d'outil réinjecté. Le nom `miaou__recall_attachment`
+    est un choix acté : le brief d'origine écrivait `miaou__present_resource`,
+    mais un outil de ce nom existe déjà dans le registre (`res_…`, id-space
+    distinct) — collision signalée à l'audit, résolue par un nom d'outil
+    différent (cet outil de rappel lui-même est un lot ultérieur, D4, non
+    couvert ici : seul son NOM figure dans le descripteur).
+
+    **Réécriture idempotente** (`collapseAttachedMessageContent` : si `content`
+    est déjà une string, no-op) : `rewriteAttachedUserMessage` peut être rejouée
+    sans effet, ce qui couvre le cas où plusieurs points d'appel (onFinal,
+    onHalt, filet de sécurité en tête de `dispatchSend`) s'exécuteraient sur le
+    même message. **Chemin d'abort** : `onFinal` est appelé par `runConversation`
+    aussi bien en fin normale qu'après un abort volontaire (`result.aborted`,
+    piège 10) — un seul point d'implémentation dans `onFinal` couvre les deux.
+    En complément, un filet balaie en tête de `dispatchSend` tout message user
+    **antérieur** au dernier (donc pas le message du tour en cours) encore en
+    content parts — cas plus rare d'une exception réseau qui aurait
+    court-circuité `onFinal` sans passer par le catch de plus haut niveau.
+
+    **Injection texte (D3, attachments `kind:'text'`)** : traitement volontairement
+    différent — le texte est injecté au tour d'attache dans un bloc fencé avec
+    en-tête nom de fichier (`formatTextAttachmentBlock`) et **persisté tel
+    quel, sans réécriture ultérieure** (contrairement aux images) : le texte
+    est cheap et sa stabilité dès le premier tour profite déjà au KV cache — un
+    aller-retour parts→descripteur n'apporterait rien pour ce cas.
+
+    **Composition avec les slash-skills** : `sendUserText` construit le
+    `content` final à partir du texte déjà baké par `resolveSend` (corps de
+    skill inclus) — les blocs texte-attachment et les parts image s'ajoutent
+    PAR-DESSUS ce texte baké, sans interférence entre les deux mécanismes
+    (`displayText` reste le littéral tapé dans les deux cas, piège 12).
+18. **Herméticité des Spaces : un seul prédicat, partout (lot C, brief D2).**
+    `spaceConvIds(spaceId, convs)` (storage.js, pure — `convs` déjà chargé par
+    l'appelant, pas de rechargement caché) est LA seule source de vérité pour
+    « cette conversation appartient-elle au Space donné ? ». Tous les sites qui
+    doivent respecter l'herméticité passent par elle (ou par une variante
+    directe équivalente) — jamais par un filtre `c.spaceId === x` réécrit
+    localement, qui finirait par diverger d'un site à l'autre :
+    - `renderConvList()` (ui.js) filtre `listAllConversations()` sur
+      `c.spaceId === activeSpaceId` avant tout regroupement par section/épinglage.
+    - `searchConversations()` (ui.js) n'a pas besoin de connaître le Space : son
+      closure filtre un tableau déjà scopé par l'appelant (`renderConvList`).
+    - `list_conversations`/`get_conversation` (tools.js) : le modèle ne doit
+      **jamais** voir ni référencer une conversation d'un autre Space —
+      `get_conversation` sur un id hors-Space répond exactement le même message
+      que pour un id inexistant (« Conversation introuvable ou souvenir
+      supprimé. ») : **pas d'oracle** qui permettrait de déduire l'existence
+      d'une conversation dans un autre Space par la différence de message.
+    - Sélection d'injection de résumés : `searchSummaries(queryText, excludeId,
+      spaceId)` (api.js) accepte un 3ᵉ paramètre optionnel qui exclut aussi les
+      résumés hors-Space — les résumés (`miaou-summaries`) ne portent PAS de
+      `spaceId` dupliqué, la jointure se fait via la conversation.
+    - Mémoire (brief D3) : `buildMemoryEntriesBlock()` (main.js) injecte
+      `listMemoryEntries(['profile', activeSpaceId])` — profile (global) + Space
+      actif, jamais les souvenirs d'un autre Space. `create_memory` stampe
+      `scope = activeSpaceId` sans exposer de paramètre scope au modèle ;
+      `update_memory`/`delete_memory` vérifient `existing.scope === activeSpaceId`
+      avant d'agir et répondent « Souvenir introuvable. » sinon — même posture
+      sans-oracle que `get_conversation`.
+
+    **Résumé ou souvenir orphelin (conversation/entrée sans Space propre
+    retrouvable)** : traité comme appartenant au **default Space** — jamais
+    visible depuis un autre Space, jamais invisible partout. Concrètement :
+    une entrée `miaou-memories` sans `scope` (pré-migration, ou en pratique
+    impossible après `migrateSpacesIfNeeded()` mais traité par précaution)
+    vaut `DEFAULT_SPACE_ID`, pas `undefined` — comparer `existing.scope !==
+    spaceId` directement serait FAUX pour une entrée non encore migrée dans un
+    contexte de test qui ne rejoue pas la migration ; il faut normaliser via
+    `existing.scope || DEFAULT_SPACE_ID` avant de comparer. Même chose pour un
+    résumé `miaou-summaries` dont la conversation associée (`loadConversation`)
+    a été supprimée : `conv.spaceId || DEFAULT_SPACE_ID` si `conv` existe,
+    sinon `DEFAULT_SPACE_ID` directement — jamais absent de tout Space.
+
+    **Description de Space, pas un system prompt (brief D4, CORRIGÉ).** Le
+    champ s'appelle `description` (pas `systemPrompt`) et n'est **JAMAIS un
+    remplacement** : `resolveUserSystemPrompt(globalSystemPrompt, space)`
+    (main.js, pure) **concatène** la description du Space actif APRÈS le
+    prompt système utilisateur global (séparateur `\n\n---\n\n`, si les deux
+    sont non vides), exactement comme les autres parts de `buildSystemMessage()`.
+    (Le brief D4 d'origine proposait un remplacement — décision inversée
+    explicitement par l'utilisateur après implémentation initiale : un Space
+    porte une description contextuelle, pas un system prompt de substitution.)
+    C'est la SEULE part de `buildSystemMessage()` qui varie d'un Space à
+    l'autre — `ROOT_SYSTEM_PROMPT`, `toolsSystemPrompt()`, les doctrines
+    intent/skills et le prompt système utilisateur global restent identiques
+    quel que soit le Space. Changer de Space actif change donc le system
+    message complet (la part ajoutée en fin) : **assumé et documenté**, ça
+    invalide le préfixe KV cache (piège 16) au moment du switch — mais le
+    message redevient statique tant qu'on reste dans le Space nouvellement
+    actif, donc le cache se reconstruit normalement dès le tour suivant.
+
+    **`<miaou_context>` (brief D4, ambiguïté confirmée OUI)** : une ligne
+    statique-par-Space « Espace : &lt;nom&gt; » est ajoutée par
+    `buildContextBlock()` à côté de Date/Modèle, dès que `getSpace(activeSpaceId)`
+    résout un nom — y compris pour le default Space (« Espace : Général »),
+    pas de cas spécial masquant la ligne côté modèle (à la différence du badge
+    UI topbar, qui lui masque le default Space — deux décisions indépendantes,
+    ne pas les confondre).
+
+    **Injection de `<miaou_context>` sur un message en content parts** :
+    `dispatchSend` ne peut plus concaténer une string sur `threadMsgs[lastUserIdx].content`
+    si celui-ci est un tableau (produirait `[object Object]`) — `prefixTextInContentParts`
+    (resources.js) insère le préfixe dynamique DANS la première part `text`
+    existante (ou en crée une en tête si le message n'a que des images).
+
+    **Durcissement `generateTitle`/`generateSummary`** (api.js) : ces fonctions
+    concaténaient `m.content` en supposant une string — un message en content
+    parts aurait produit `"user: [object Object],[object Object]"`.
+    `messageTextForSummary` (utils.js) normalise : `displayText` en priorité,
+    sinon extraction des SEULES parts `text` d'un tableau de content parts,
+    sinon `content` tel quel.
+
+    **Dégradation vision-less (D5)** : si l'endpoint/modèle rejette les content
+    parts image (HTTP 400) ou est déjà connu non-vision cette session, MIAOU
+    envoie texte + descripteurs à la place et ajoute une ligne dans
+    `<miaou_context>` (jamais le system message, piège 16) signalant la
+    dégradation — pas de strip silencieux. Cache session scopé **(endpoint,
+    modèle)** — pas juste l'URL — sur le modèle de `_reasoningEffortRejected`
+    (`_visionRejected`/`isVisionRejected`/`markVisionRejected`, api.js) : un même
+    endpoint peut exposer un modèle vision-capable et un autre qui ne l'est
+    pas, on ne veut pas dégrader le second sur le rejet du premier. Un SEUL
+    rejeu par tour : `streamCompletion` détecte un 400 avec des `image_url`
+    dans le payload, marque le flag AVANT l'appel récursif (`degradeVisionMessages`
+    + `injectVisionDegradedNote`), puis rejoue — le flag posé empêche une
+    boucle si le rejet a une autre cause. Sur les tours suivants (flag déjà
+    posé), la dégradation est faite PROACTIVEMENT avant même le premier appel
+    réseau, pour ne pas reproduire le même rejet à chaque tour.

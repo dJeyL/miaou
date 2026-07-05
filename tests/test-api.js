@@ -108,3 +108,105 @@ describe('rejet de reasoning_effort (cache session par endpoint+modèle)', funct
     expect(isReasoningEffortRejected('http://u5/v1', 'm1')).toBeFalsy();
   });
 });
+
+// ── Dégradation vision-less (D5, brief A lot 2) ──────────────────────────────
+
+describe('rejet vision (cache session par endpoint+modèle)', function() {
+  it('non marqué → pas rejeté', function() {
+    expect(isVisionRejected('http://v1/v1', 'm1')).toBeFalsy();
+  });
+  it('marqué → rejeté pour ce couple exact', function() {
+    markVisionRejected('http://v2/v1', 'm1');
+    expect(isVisionRejected('http://v2/v1', 'm1')).toBeTruthy();
+  });
+  it('clé composite : même endpoint, autre modèle → indépendant (ne dégrade pas un autre modèle vision-capable)', function() {
+    markVisionRejected('http://v3/v1', 'm1');
+    expect(isVisionRejected('http://v3/v1', 'm2')).toBeFalsy();
+  });
+  it('clé composite : même modèle, autre endpoint → indépendant', function() {
+    markVisionRejected('http://v4/v1', 'm1');
+    expect(isVisionRejected('http://v5/v1', 'm1')).toBeFalsy();
+  });
+});
+
+describe('messagesHaveImageParts', function() {
+  it('aucun message en content parts → false', function() {
+    expect(messagesHaveImageParts([{ role: 'user', content: 'texte' }])).toBeFalsy();
+  });
+  it('content parts sans image_url → false', function() {
+    expect(messagesHaveImageParts([{ role: 'user', content: [{ type: 'text', text: 'x' }] }])).toBeFalsy();
+  });
+  it('au moins une part image_url → true', function() {
+    var msgs = [{ role: 'user', content: [{ type: 'text', text: 'x' }, { type: 'image_url', image_url: { url: 'data:x' } }] }];
+    expect(messagesHaveImageParts(msgs)).toBeTruthy();
+  });
+});
+
+describe('degradeVisionMessages', function() {
+  it('remplace les parts image par texte + descripteurs (brief D5, jamais un strip nu)', function() {
+    var msgs = [{ role: 'user', content: [{ type: 'text', text: 'analyse' }, { type: 'image_url', image_url: { url: 'data:x' } }] }];
+    var desc = formatAttachmentDescriptor({ attId: 'att-1', name: 'diagram.png', w: 1280, h: 960, size: 219136 });
+    var out = degradeVisionMessages(msgs, [desc]);
+    expect(typeof out[0].content).toBe('string');
+    expect(out[0].content).toBe('analyse\n\n' + desc);
+    expect(out[0].content.indexOf('data:x') < 0).toBeTruthy();   // plus de base64
+  });
+  it('plusieurs descripteurs → une ligne chacun, dans l\'ordre fourni', function() {
+    var msgs = [{ role: 'user', content: [{ type: 'text', text: 'deux' },
+      { type: 'image_url', image_url: { url: 'data:a' } },
+      { type: 'image_url', image_url: { url: 'data:b' } }] }];
+    var out = degradeVisionMessages(msgs, ['[attachment att-1: X]', '[attachment att-2: Y]']);
+    expect(out[0].content).toBe('deux\n\n[attachment att-1: X]\n[attachment att-2: Y]');
+  });
+  it('sans descripteurs fournis → collapse en texte seul (filet, pas de crash)', function() {
+    var msgs = [{ role: 'user', content: [{ type: 'text', text: 'analyse' }, { type: 'image_url', image_url: { url: 'data:x' } }] }];
+    var out = degradeVisionMessages(msgs);
+    expect(out[0].content).toBe('analyse');
+  });
+  it('messages sans content-parts inchangés (descripteurs jamais collés sur un message string)', function() {
+    var msgs = [{ role: 'system', content: 'sys' }, { role: 'user', content: 'q' }];
+    var out = degradeVisionMessages(msgs, ['[attachment att-1: X]']);
+    expect(out[0].content).toBe('sys');
+    expect(out[1].content).toBe('q');
+  });
+  it('ne mute pas le tableau reçu', function() {
+    var original = [{ role: 'user', content: [{ type: 'text', text: 'a' }] }];
+    degradeVisionMessages(original, ['d']);
+    expect(Array.isArray(original[0].content)).toBeTruthy();
+  });
+});
+
+describe('injectVisionDegradedNote', function() {
+  it('insère la note DANS le bloc <miaou_context> existant du dernier message user', function() {
+    var msgs = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: '<miaou_context>\nDate : x\n</miaou_context>\n\n---\n\ntexte user' },
+    ];
+    var out = injectVisionDegradedNote(msgs);
+    var c = out[1].content;
+    expect(c.indexOf('</miaou_context>') > c.indexOf(VISION_DEGRADED_NOTE)).toBeTruthy();
+    expect(c.indexOf('texte user') >= 0).toBeTruthy();
+  });
+  it('pas de <miaou_context> → préfixe simple, ne touche pas le system message', function() {
+    var msgs = [{ role: 'system', content: 'sys' }, { role: 'user', content: 'texte user' }];
+    var out = injectVisionDegradedNote(msgs);
+    expect(out[0].content).toBe('sys');   // system message intact (piège 16)
+    expect(out[1].content.indexOf(VISION_DEGRADED_NOTE)).toBe(0);
+    expect(out[1].content.indexOf('texte user') >= 0).toBeTruthy();
+  });
+  it('cible le DERNIER message user (pas le premier)', function() {
+    var msgs = [
+      { role: 'user', content: 'premier' },
+      { role: 'assistant', content: 'réponse' },
+      { role: 'user', content: 'second' },
+    ];
+    var out = injectVisionDegradedNote(msgs);
+    expect(out[0].content).toBe('premier');   // inchangé
+    expect(out[2].content.indexOf('second') >= 0).toBeTruthy();
+    expect(out[2].content.indexOf(VISION_DEGRADED_NOTE) >= 0).toBeTruthy();
+  });
+  it('aucun message user → renvoie le tableau inchangé', function() {
+    var msgs = [{ role: 'system', content: 'sys' }];
+    expect(injectVisionDegradedNote(msgs)).toEqual(msgs);
+  });
+});

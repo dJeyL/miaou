@@ -55,8 +55,9 @@
 .ack-conv-link:hover { color: var(--accent); text-decoration: none; }
 /* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
-/* Appel MCP en erreur : label rouge (même token que .cfg-err / .conn-dot.err). */
-.tool-ack.ack-mcp_call.ack-error .ack-label { color: var(--err); }
+/* Ack en erreur (tool_call ou mcp_call) : icône + label en rouge (même token que .cfg-err / .conn-dot.err), jamais orange accent. */
+.tool-ack.ack-error .ack-icon,
+.tool-ack.ack-error .ack-label { color: var(--err); }
 /* Intent en langage naturel (niveau 1) + éventuel breadcrumb technique replié (niveau 2). */
 /* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
 .tool-ack.has-intent { align-items: flex-start; }
@@ -188,6 +189,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 8px 10px;
+  font-family: var(--sans);
   font-size: 13px;
   color: var(--text);
 }
@@ -195,6 +197,16 @@
 .cfg-field select:focus,
 .cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
 .cfg-field .hint { font-size: 11px; color: var(--text-3); }
+/* Séparateur de section dans un drawer body plat (pas de collapse — écran
+   Space, C3) : même vocabulaire visuel que .conv-section (sidebar). */
+.drawer-section-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 18px 0 2px;
+}
 .cfg-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
 .cfg-err { font-size: 11.5px; color: var(--err); }
 .cfg-actions { display: flex; gap: 6px; margin-top: 2px; }

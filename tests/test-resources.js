@@ -274,3 +274,306 @@ describe('assembleToolResultForModel', function() {
     expect(result).toBe('[resource autre format]');
   });
 });
+
+// ── resolveRecallImages (brief A2 / D3 voie b) ────────────────────────────────
+describe('resolveRecallImages', function() {
+  function ackRecall(over) {
+    return Object.assign({ role: 'tool-ack', kind: 'attachment_recalled',
+      attId: 'att-1', mime: 'image/jpeg', convId: 'c1' }, over);
+  }
+
+  it('ack image avec record en cache → recallImage = dataUrl reconstruite', function() {
+    var ab = new ArrayBuffer(3);
+    new Uint8Array(ab).set([1, 2, 3]);
+    _resourceCache['res_att1'] = { id: 'res_att1', attId: 'att-1', conversationId: 'c1',
+      class: 'binary', mime: 'image/jpeg', name: 'p.jpg', data: ab };
+    var out = resolveRecallImages([{ role: 'user', content: 'q' }, ackRecall()]);
+    var expected = 'data:image/jpeg;base64,' + arrayBufferToBase64(ab);
+    expect(out[1].recallImage).toBe(expected);
+    // ne mute pas l'entrée d'origine (copie)
+    delete _resourceCache['res_att1'];
+  });
+
+  it('record absent du cache → ack inchangé, pas de recallImage', function() {
+    var out = resolveRecallImages([ackRecall({ attId: 'att-99' })]);
+    expect(out[0].recallImage).toBeFalsy();
+  });
+
+  it('ack attachment_recalled non-image → ignoré', function() {
+    var out = resolveRecallImages([ackRecall({ mime: 'text/plain' })]);
+    expect(out[0].recallImage).toBeFalsy();
+  });
+
+  it('messages ordinaires et autres acks → passthrough', function() {
+    var t = [{ role: 'user', content: 'q' },
+             { role: 'tool-ack', kind: 'mcp_call', name: 'srv__x' }];
+    var out = resolveRecallImages(t);
+    expect(out[0]).toBe(t[0]);
+    expect(out[1]).toBe(t[1]);
+  });
+});
+
+// ── classifyAttachmentKind (pièces jointes, brief A / D1) ─────────────────────
+
+describe('classifyAttachmentKind', function() {
+  it('mime image/* → image, quelle que soit l\'extension', function() {
+    expect(classifyAttachmentKind('photo.png', 'image/png')).toBe('image');
+    expect(classifyAttachmentKind('photo.weird', 'image/jpeg')).toBe('image');
+  });
+  it('extensions texte connues → text', function() {
+    expect(classifyAttachmentKind('notes.txt', 'text/plain')).toBe('text');
+    expect(classifyAttachmentKind('readme.md', '')).toBe('text');
+    expect(classifyAttachmentKind('data.csv', '')).toBe('text');
+    expect(classifyAttachmentKind('app.log', '')).toBe('text');
+    expect(classifyAttachmentKind('script.py', '')).toBe('text');
+    expect(classifyAttachmentKind('main.js', '')).toBe('text');
+    expect(classifyAttachmentKind('style.css', '')).toBe('text');
+  });
+  it('extension inconnue, mime non-image → binary', function() {
+    expect(classifyAttachmentKind('archive.zip', 'application/zip')).toBe('binary');
+    expect(classifyAttachmentKind('doc.pdf', 'application/pdf')).toBe('binary');
+  });
+  it('sans extension, sans mime → binary', function() {
+    expect(classifyAttachmentKind('Makefile', '')).toBe('binary');
+  });
+  it('extension en majuscules reconnue (insensible à la casse)', function() {
+    expect(classifyAttachmentKind('NOTES.TXT', '')).toBe('text');
+  });
+  it('mime image/* prioritaire sur une extension texte homonyme improbable', function() {
+    expect(classifyAttachmentKind('scan.txt', 'image/png')).toBe('image');
+  });
+});
+
+// ── allocateAttId (pièces jointes, brief A / D1) ──────────────────────────────
+
+describe('allocateAttId', function() {
+  it('premier appel (compteur 0/undefined) → att-1', function() {
+    expect(allocateAttId(0).id).toBe('att-1');
+    expect(allocateAttId(undefined).id).toBe('att-1');
+  });
+  it('incrémente le compteur retourné', function() {
+    var a = allocateAttId(0);
+    expect(a.counter).toBe(1);
+    var b = allocateAttId(a.counter);
+    expect(b.id).toBe('att-2');
+    expect(b.counter).toBe(2);
+  });
+  it('séquence monotone sur plusieurs appels', function() {
+    var counter = 0;
+    var ids = [];
+    for (var i = 0; i < 5; i++) {
+      var alloc = allocateAttId(counter);
+      counter = alloc.counter;
+      ids.push(alloc.id);
+    }
+    expect(ids.join(',')).toBe('att-1,att-2,att-3,att-4,att-5');
+  });
+  it('ne réutilise jamais un id déjà alloué même en repartant d\'un compteur élevé (troncature)', function() {
+    // Simule : 3 attachments alloués (compteur=3), message tronqué par édition,
+    // mais le compteur PERSISTE (jamais réinitialisé) — le prochain attachment
+    // doit être att-4, pas att-1 (pas de collision avec les entrées IDB orphelines).
+    var afterTruncation = allocateAttId(3);
+    expect(afterTruncation.id).toBe('att-4');
+  });
+});
+
+// ── formatAttachmentDescriptor (brief A lot 2, D2 — byte-stable) ──────────────
+
+describe('formatAttachmentDescriptor', function() {
+  it('format exact, avec miaou__recall_attachment', function() {
+    var d = formatAttachmentDescriptor({ attId: 'att-3', name: 'diagram.png', w: 1280, h: 960, size: 219136 });
+    expect(d).toBe('[attachment att-3: image "diagram.png", 1280x960, ' + humanSize(219136) +
+      ' — content available via miaou__recall_attachment]');
+  });
+  it('dérivé uniquement des champs figés (name/w/h/size) — jamais des octets', function() {
+    // Deux appels avec les mêmes champs figés produisent EXACTEMENT le même
+    // descripteur (byte-stable), peu importe tout autre état.
+    var att = { attId: 'att-1', name: 'photo.jpg', w: 800, h: 600, size: 45000 };
+    expect(formatAttachmentDescriptor(att)).toBe(formatAttachmentDescriptor(att));
+  });
+});
+
+// ── formatTextAttachmentBlock (D3) ────────────────────────────────────────────
+
+describe('formatTextAttachmentBlock', function() {
+  it('en-tête avec attId et nom, contenu fencé', function() {
+    var block = formatTextAttachmentBlock({ attId: 'att-2', name: 'notes.txt' }, 'ligne1\nligne2');
+    expect(block).toBe('[attachment att-2: file "notes.txt"]\n```\nligne1\nligne2\n```');
+  });
+  it('texte vide/absent → fence vide, pas de crash', function() {
+    var block = formatTextAttachmentBlock({ attId: 'att-1', name: 'x.txt' }, undefined);
+    expect(block).toBe('[attachment att-1: file "x.txt"]\n```\n\n```');
+  });
+});
+
+// ── formatBinaryAttachmentDescriptor (brief H — générique, byte-stable) ──────
+
+describe('formatBinaryAttachmentDescriptor', function() {
+  it('format exact, note neutre (aucun outil mentionné)', function() {
+    var d = formatBinaryAttachmentDescriptor({ attId: 'att-4', name: 'rapport.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 219136 });
+    expect(d).toBe('[attachment att-4: file "rapport.docx", application/vnd.openxmlformats-officedocument.wordprocessingml.document, ' +
+      humanSize(219136) + ' — binary content, not inlined]');
+  });
+  it('mime absent → fallback application/octet-stream', function() {
+    var d = formatBinaryAttachmentDescriptor({ attId: 'att-1', name: 'x.bin', size: 10 });
+    expect(d.indexOf('application/octet-stream') >= 0).toBeTruthy();
+  });
+  it('dérivé uniquement des champs figés — byte-stable entre deux appels identiques', function() {
+    var att = { attId: 'att-2', name: 'archive.zip', mime: 'application/zip', size: 4096 };
+    expect(formatBinaryAttachmentDescriptor(att)).toBe(formatBinaryAttachmentDescriptor(att));
+  });
+  it('générique : même format quel que soit le type de fichier (pas de cas particulier docx)', function() {
+    var docx = formatBinaryAttachmentDescriptor({ attId: 'att-1', name: 'a.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 100 });
+    var bin = formatBinaryAttachmentDescriptor({ attId: 'att-1', name: 'a.bin', mime: 'application/octet-stream', size: 100 });
+    expect(docx.indexOf(' — binary content, not inlined]') >= 0).toBeTruthy();
+    expect(bin.indexOf(' — binary content, not inlined]') >= 0).toBeTruthy();
+  });
+});
+
+// ── buildAttachedMessageContent (D2/D3/H — construction au tour d'attache) ───
+
+describe('buildAttachedMessageContent', function() {
+  it('texte seul, aucun attachment → string (pas de content parts inutiles)', function() {
+    var c = buildAttachedMessageContent('bonjour', [], []);
+    expect(c).toBe('bonjour');
+  });
+  it('attachment texte seul → string = texte + bloc fencé, pas de tableau', function() {
+    var c = buildAttachedMessageContent('regarde ce fichier', [{ att: { attId: 'att-1', name: 'a.txt' }, text: 'contenu' }], []);
+    expect(typeof c).toBe('string');
+    expect(c.indexOf('regarde ce fichier') === 0).toBeTruthy();
+    expect(c.indexOf('[attachment att-1: file "a.txt"]') >= 0).toBeTruthy();
+  });
+  it('attachment image → tableau de content parts OpenAI, une part par image', function() {
+    var c = buildAttachedMessageContent('vois cette image', [], [{ att: { attId: 'att-1' }, dataUrl: 'data:image/png;base64,AAA' }]);
+    expect(Array.isArray(c)).toBeTruthy();
+    expect(c.length).toBe(2);
+    expect(c[0].type).toBe('text');
+    expect(c[0].text).toBe('vois cette image');
+    expect(c[1].type).toBe('image_url');
+    expect(c[1].image_url.url).toBe('data:image/png;base64,AAA');
+  });
+  it('plusieurs images → une part image_url par image, ordre préservé', function() {
+    var c = buildAttachedMessageContent('', [], [
+      { att: { attId: 'att-1' }, dataUrl: 'data:image/png;base64,AAA' },
+      { att: { attId: 'att-2' }, dataUrl: 'data:image/jpeg;base64,BBB' },
+    ]);
+    expect(c.length).toBe(3);
+    expect(c[1].image_url.url).toBe('data:image/png;base64,AAA');
+    expect(c[2].image_url.url).toBe('data:image/jpeg;base64,BBB');
+  });
+  it('texte + attachment texte + image → text part inclut le texte tapé et le bloc fencé', function() {
+    var c = buildAttachedMessageContent('titre', [{ att: { attId: 'att-1', name: 'a.txt' }, text: 'X' }],
+      [{ att: { attId: 'att-2' }, dataUrl: 'data:image/png;base64,ZZZ' }]);
+    expect(Array.isArray(c)).toBeTruthy();
+    expect(c[0].text.indexOf('titre') === 0).toBeTruthy();
+    expect(c[0].text.indexOf('[attachment att-1: file "a.txt"]') >= 0).toBeTruthy();
+  });
+  it('attachment binaire seul → string = texte + descripteur, pas de tableau (brief H)', function() {
+    var c = buildAttachedMessageContent('voici un fichier', [], [], [{ attId: 'att-1', name: 'rapport.docx', mime: 'application/msword', size: 5000 }]);
+    expect(typeof c).toBe('string');
+    expect(c.indexOf('voici un fichier') === 0).toBeTruthy();
+    expect(c.indexOf('[attachment att-1: file "rapport.docx"') >= 0).toBeTruthy();
+    expect(c.indexOf('binary content, not inlined') >= 0).toBeTruthy();
+  });
+  it('binaire + image → text part inclut le descripteur binaire, image reste une part séparée', function() {
+    var c = buildAttachedMessageContent('titre', [], [{ att: { attId: 'att-2' }, dataUrl: 'data:image/png;base64,ZZZ' }],
+      [{ attId: 'att-1', name: 'a.zip', mime: 'application/zip', size: 100 }]);
+    expect(Array.isArray(c)).toBeTruthy();
+    expect(c[0].text.indexOf('[attachment att-1: file "a.zip"') >= 0).toBeTruthy();
+    expect(c[1].type).toBe('image_url');
+  });
+  it('byte-stabilité tour d\'attache : descripteur binaire identique via buildAttachedMessageContent et formatBinaryAttachmentDescriptor direct', function() {
+    var att = { attId: 'att-3', name: 'x.pdf', mime: 'application/pdf', size: 777 };
+    var c = buildAttachedMessageContent('', [], [], [att]);
+    expect(c.indexOf(formatBinaryAttachmentDescriptor(att)) >= 0).toBeTruthy();
+  });
+});
+
+// ── prefixTextInContentParts (dispatchSend — injection <miaou_context>) ──────
+
+describe('prefixTextInContentParts', function() {
+  it('préfixe la première part texte existante', function() {
+    var parts = [{ type: 'text', text: 'bonjour' }, { type: 'image_url', image_url: { url: 'data:x' } }];
+    var out = prefixTextInContentParts(parts, 'CTX\n\n');
+    expect(out[0].text).toBe('CTX\n\nbonjour');
+    expect(out[1].image_url.url).toBe('data:x');
+  });
+  it('aucune part texte → en crée une en tête', function() {
+    var parts = [{ type: 'image_url', image_url: { url: 'data:x' } }];
+    var out = prefixTextInContentParts(parts, 'CTX\n\n');
+    expect(out.length).toBe(2);
+    expect(out[0].type).toBe('text');
+    expect(out[0].text).toBe('CTX\n\n');
+    expect(out[1].type).toBe('image_url');
+  });
+  it('ne mute pas le tableau reçu', function() {
+    var parts = [{ type: 'text', text: 'a' }];
+    prefixTextInContentParts(parts, 'X');
+    expect(parts[0].text).toBe('a');
+  });
+});
+
+// ── collapseAttachedMessageContent (D2 — réécriture UNIQUE parts→descripteur) ─
+
+describe('collapseAttachedMessageContent', function() {
+  it('content déjà string → renvoyée telle quelle (idempotence / garde rejeu)', function() {
+    expect(collapseAttachedMessageContent('déjà réécrit', [{ kind: 'image', attId: 'att-1' }])).toBe('déjà réécrit');
+  });
+  it('parts texte + une image → texte + une ligne de descripteur', function() {
+    var parts = [{ type: 'text', text: 'voici' }, { type: 'image_url', image_url: { url: 'data:...' } }];
+    var atts = [{ attId: 'att-1', name: 'diagram.png', mime: 'image/png', size: 219136, kind: 'image', w: 1280, h: 960 }];
+    var out = collapseAttachedMessageContent(parts, atts);
+    expect(typeof out).toBe('string');
+    expect(out.indexOf('voici') === 0).toBeTruthy();
+    expect(out.indexOf('[attachment att-1: image "diagram.png", 1280x960') >= 0).toBeTruthy();
+    expect(out.indexOf('base64') >= 0).toBeFalsy();   // zéro base64 résiduel
+  });
+  it('plusieurs images → une ligne de descripteur par image, dans l\'ordre des attachments', function() {
+    var parts = [
+      { type: 'text', text: 'deux images' },
+      { type: 'image_url', image_url: { url: 'data:AAA' } },
+      { type: 'image_url', image_url: { url: 'data:BBB' } },
+    ];
+    var atts = [
+      { attId: 'att-1', name: 'a.png', mime: 'image/png', size: 1000, kind: 'image', w: 10, h: 10 },
+      { attId: 'att-2', name: 'b.png', mime: 'image/png', size: 2000, kind: 'image', w: 20, h: 20 },
+    ];
+    var out = collapseAttachedMessageContent(parts, atts);
+    var idxA = out.indexOf('[attachment att-1:');
+    var idxB = out.indexOf('[attachment att-2:');
+    expect(idxA >= 0 && idxB > idxA).toBeTruthy();
+  });
+  it('attachments non-image (text/binary) ignorés dans les descripteurs (pas de ligne)', function() {
+    var parts = [{ type: 'text', text: 'x' }];
+    var atts = [{ attId: 'att-1', name: 'notes.txt', kind: 'text' }];
+    var out = collapseAttachedMessageContent(parts, atts);
+    expect(out).toBe('x');
+  });
+  it('parts multiples de type text sont concaténées avant les descripteurs', function() {
+    var parts = [{ type: 'text', text: 'A' }, { type: 'text', text: 'B' }];
+    var out = collapseAttachedMessageContent(parts, []);
+    expect(out).toBe('A\n\nB');
+  });
+  it('brief H : attachment binaire seul (déjà string dès buildAttachedMessageContent) → no-op, descripteur préservé', function() {
+    var att = { attId: 'att-1', name: 'rapport.docx', mime: 'application/msword', size: 5000 };
+    var content = buildAttachedMessageContent('salut', [], [], [att]);
+    var out = collapseAttachedMessageContent(content, [Object.assign({ kind: 'binary' }, att)]);
+    expect(out).toBe(content);
+    expect(out.indexOf('binary content, not inlined') >= 0).toBeTruthy();
+  });
+  it('brief H : binaire + image → descripteur binaire déjà dans la part texte, pas dupliqué par collapse', function() {
+    var parts = [
+      { type: 'text', text: 'voici\n\n[attachment att-1: file "a.zip", application/zip, 100 B — binary content, not inlined]' },
+      { type: 'image_url', image_url: { url: 'data:AAA' } },
+    ];
+    var atts = [
+      { attId: 'att-1', name: 'a.zip', kind: 'binary' },
+      { attId: 'att-2', name: 'b.png', mime: 'image/png', size: 10, kind: 'image', w: 1, h: 1 },
+    ];
+    var out = collapseAttachedMessageContent(parts, atts);
+    var firstIdx = out.indexOf('[attachment att-1:');
+    var lastIdx = out.lastIndexOf('[attachment att-1:');
+    expect(firstIdx >= 0 && firstIdx === lastIdx).toBeTruthy();   // une seule occurrence, pas de doublon
+    expect(out.indexOf('[attachment att-2:') >= 0).toBeTruthy();  // le descripteur image, lui, est bien ajouté par collapse
+  });
+});

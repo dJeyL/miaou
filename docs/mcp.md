@@ -122,5 +122,93 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
     dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
     espace, `__`, `miaou`, et les doublons.
 
+12. **Hook d'inflation dispatcher pour les pièces jointes (brief A, D6 — moitié
+    client du lot D `mcp_docs`).** `callTool` route désormais les appels
+    distants via `callDocsInflatedRemoteTool(server, toolName, args, intent)`
+    (tools.js), point d'accroche juste avant `callRemoteTool`. But : injecter
+    le contenu base64 d'une pièce jointe (`att-N`) **sur le wire uniquement**
+    quand l'outil distant ciblé en a besoin, sans jamais toucher aux `args`
+    capturés par l'appelant pour la réinjection cross-turn (`onEnrichLastAck`)
+    — le contexte modèle reste les args **originaux**, non inflés.
+    - **Détection de capability SANS nom de serveur en dur** (contrainte
+      explicite de l'audit lot A) : `toolDeclaresAttachmentInflation(server,
+      toolName)` lit l'`inputSchema` mis en cache dans `_remoteTools` (issu du
+      `tools/list` du serveur) et vérifie que les propriétés `ref` **et**
+      `content_b64` y sont **toutes deux** déclarées — signature stable du
+      contrat brief D, indépendante du nom que l'utilisateur donne à son
+      serveur MCP docs.
+    - Ne se déclenche que si `args.ref` matche `ATTACHMENT_REF_RE` (`att-N`,
+      même forme que `allocateAttId`, resources.js) ET que
+      `getCachedRecordByAttId(ref, currentConvId)` trouve un enregistrement en
+      session cache (sinon la ref est inconnue localement — on laisse le
+      serveur distant répondre lui-même, pas de matérialisation à l'aveugle).
+    - **Table d'état poussé/non-poussé** `_attachmentPushState`, clé
+      `(conversationId, attId)`, EN MÉMOIRE uniquement (comme
+      `_remoteStatus`/`_remoteTools` — pas de persistance ; un rechargement de
+      page revient à « non poussé », cohérent avec la session serveur
+      elle-même éphémère, TTL sweep côté serveur docs). `session_id`
+      (= `currentConvId`) est injecté sur **chaque** appel capable à ref
+      connue — le serveur en a besoin pour localiser sa session, et le modèle
+      ne connaît pas l'id de la conversation courante, il ne peut pas le
+      fournir lui-même. `content_b64` n'est ajouté qu'au **premier** appel
+      pour un `(conversationId, attId)` non encore poussé ; succès →
+      `markAttachmentPushed`, les appels suivants repartent sans le contenu
+      (le serveur a déjà matérialisé le fichier dans sa session).
+    - **Contrat d'erreur partagé `REF_UNKNOWN`** (brief D D1) : porté par le
+      serveur dans `error.data.code` (JSON-RPC 2.0, `code` reste l'entier
+      protocolaire, `data` est le slot applicatif). `mcpRpcAttempt` attache
+      `err.data = msg.error.data` ; `callRemoteTool` le recopie dans
+      `result.errorCode` sur le chemin `catch` (jamais persisté — lu
+      synchrone par l'appelant immédiat, pas dans `ACK_COPY_FIELDS`).
+      `_isRefUnknownError(result)` teste `result.errorCode ===
+      REF_UNKNOWN_ERROR_CODE` (constante unique, tools.js) — **jamais** une
+      recherche de sous-chaîne dans le texte d'erreur (fragile, dépendrait de
+      la formulation libre du message serveur).
+    - Si l'état local dit « déjà poussé » mais le serveur répond
+      `REF_UNKNOWN` (ex. session serveur expirée par TTL malgré notre table
+      client) : **un seul rejeu** avec le contenu inliné, même discipline
+      « un seul rejeu » que le ré-handshake `staleSession` (point 9
+      ci-dessus), mais implémentée à un niveau **au-dessus** de `mcpRpc` (le
+      hook D6 vit dans `callDocsInflatedRemoteTool`, pas dans `mcpRpc` lui-même
+      — cf. audit lot A, section 4). Le rejeu passe `result.ackEntry` en 5ᵉ
+      argument de `callRemoteTool` (`reuseAckEntry`) : il **réutilise la ligne
+      d'ack du premier essai** au lieu d'en pousser une seconde, et l'erreur
+      transitoire est effacée (`delete ackEntry.error`) si le rejeu réussit —
+      une seule ligne d'appel visible pour l'échange complet, identique au
+      rendu d'un rejeu `staleSession` (dont le retry vit sous UN
+      `callRemoteTool`). `errorCode`/`ackEntry` sur l'objet résultat de
+      `callRemoteTool` sont des champs internes, jamais persistés (hors
+      `ACK_COPY_FIELDS`), consommés en synchrone par le hook seul.
+    - Hook **inerte** tant qu'aucun serveur ne déclare le contrat `ref` +
+      `content_b64` : `toolDeclaresAttachmentInflation` renvoie `false`, la
+      fonction délègue directement à `callRemoteTool` sans changement de
+      comportement — le lot D peut brancher son serveur sans retoucher MIAOU.
+    - **Déclencheur côté modèle (brief H) : le descripteur binaire est ce qui
+      amorce toute cette mécanique.** Les points ci-dessus décrivent l'aval
+      (le hook, une fois que le modèle a choisi d'appeler l'outil) ; en amont,
+      un attachment `kind:'binary'` (fichier joint non-image/texte : .docx,
+      .zip, .pdf, …) émet dans le message user un descripteur générique
+      `formatBinaryAttachmentDescriptor` (resources.js) — `[attachment att-N:
+      file "...", <mime>, <taille> — binary content, not inlined]`, dérivé
+      des champs figés du schéma, byte-stable, câblé dans
+      `buildAttachedMessageContent`/`buildOutgoingContentForAttachments`
+      (même famille que le bloc texte D3 : pas de content part, pas de
+      rewrite ultérieur nécessaire — un binaire n'a aucun octet à envoyer).
+      Le modèle voit systématiquement la pièce, quel que soit le type de
+      fichier et indépendamment de la présence d'un serveur `mcp_docs` —
+      c'est délibéré (nommage par capability, pas par type en dur).
+    - Le **guidage** (« comment » ouvrir la pièce) est porté séparément par
+      `docsDoctrinePrompt()` (tools.js), injectée dans `buildSystemMessage()`
+      **seulement** si `anyToolDeclaresAttachmentInflation()` détecte au moins
+      un outil du registre distant déclarant `ref`+`content_b64` — même
+      mécanisme conditionnel que `skillDoctrinePrompt`/`intentDoctrinePrompt`.
+      Nommage par **critère** (« un outil déclarant `ref` et `content_b64` »)
+      **et exemple** (`docs__read`) : le prompt reste correct si l'utilisateur
+      renomme son serveur MCP docs. Sans serveur qualifiant, la doctrine est
+      une chaîne vide — zéro pollution des setups sans extraction documentaire.
+      La phrase binaire d'`ATTACHMENT_DOCTRINE` (inconditionnelle) est nuancée
+      en conséquence (« pas lisible directement, sauf si un outil d'extraction
+      est disponible ») plutôt que de rester catégorique comme avant le lot D.
+
 Le banc d'essai MCP (`mcp_bench.py`) a été extrait dans le projet
 `miaou-mcp-servers`. Procédure de test manuel : `docs/manual-tests.md`.

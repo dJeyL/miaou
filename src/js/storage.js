@@ -7,6 +7,9 @@
 const SETTINGS_KEY  = 'miaou-settings';
 const CONV_KEY      = 'miaou-conversations';
 const SUMMARIES_KEY = 'miaou-summaries';
+const SPACES_KEY        = 'miaou-spaces';
+const ACTIVE_SPACE_KEY  = 'miaou-active-space';
+const DEFAULT_SPACE_ID  = 'default';
 
 // Config injectée au build : un seul marqueur (le jeton en position de valeur
 // ligne suivante), l'objet config.json entier (build.py le sérialise en JSON,
@@ -26,6 +29,13 @@ const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+// Fenêtre de contexte par défaut (tokens) si l'utilisateur n'a rien saisi dans
+// les réglages (`contextWindow` reste '' — cf. DEFAULT_SETTINGS ci-dessous) :
+// permet de fournir une valeur d'installation sans forcer chaque utilisateur à
+// la ressaisir (brief B, D5 complété). 0 = pas de défaut de build (comportement
+// v1 inchangé, `contextWindowFor` renvoie null).
+const BUILD_DEFAULT_CONTEXT_WINDOW =
+  (typeof BUILD_CONFIG.default_context_window === 'number') ? BUILD_CONFIG.default_context_window : 0;
 
 const DEFAULT_SETTINGS = {
   url: '',
@@ -41,6 +51,7 @@ const DEFAULT_SETTINGS = {
   saveJsonResponses: false, // créer des ressources pour les réponses JSON/texte des outils (debug)
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
   confirmSkillAutoUse: true, // ask_confirmation avant d'agir sur une skill lue (stage 2 autotrigger)
+  contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -62,6 +73,16 @@ function saveSettings(obj) {
   const next = Object.assign({}, loadSettingsRaw(), obj || {});
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   return next;
+}
+
+// Accesseur isolé (brief B, D5) : champ global unique en v1 (`model` ignoré),
+// signature prête pour une future map (serveur, modèle) sans toucher les
+// call-sites. `null`/vide = inconnu.
+function contextWindowFor(model) {
+  const v = loadSettings().contextWindow;
+  const n = parseInt(v, 10);
+  if (Number.isFinite(n) && n > 0) return n;
+  return BUILD_DEFAULT_CONTEXT_WINDOW > 0 ? BUILD_DEFAULT_CONTEXT_WINDOW : null;
 }
 
 // ── Serveurs API (multi-backends) ────────────────────────────────────────────
@@ -112,13 +133,36 @@ function saveApiServers(arr) {
 
 function normalizeApiServer(s) {
   const o = s || {};
+  // `vision` : map { [nomModèle]: false } — flag MANUEL D5 (brief A2). Seule la
+  // valeur `false` est signifiante (« ce modèle sur ce serveur n'a pas la
+  // vision » — mitigation du silent-failure Ollama F1, aucun 400 renvoyé).
+  // Absence d'entrée = inconnu = on envoie les parts image (comportement par
+  // défaut). Distinct du cache SESSION _visionRejected (api.js, réactif sur 400,
+  // non persisté) : ici c'est un réglage utilisateur persisté. On ne conserve
+  // que les entrées explicitement `false` (une entrée `true` équivaut à absente).
+  const vision = {};
+  if (o.vision && typeof o.vision === 'object') {
+    for (const k in o.vision) { if (o.vision[k] === false) vision[k] = false; }
+  }
   return {
     id: o.id || genApiServerId(),
     name: String(o.name || '').trim(),
     url: String(o.url || '').trim(),
     key: o.key ? String(o.key) : '',
     model: String(o.model || '').trim(),
+    vision,
   };
+}
+
+// Flag vision manuel (D5) pour un couple (serveur, modèle). Pur, testable.
+// Retourne `false` SEULEMENT si l'utilisateur a explicitement marqué ce modèle
+// sans vision sur ce serveur ; sinon `true` (défaut : on envoie les images).
+// N.B. « true » ici = « envoyer les parts », pas « vision confirmée » : l'état
+// inconnu et l'état vision-capable sont traités pareil (le brief : unknown =
+// send anyway). Seul `false` déclenche la dégradation proactive.
+function serverModelVisionEnabled(server, model) {
+  if (!server || !server.vision) return true;
+  return server.vision[String(model || '')] !== false;
 }
 
 // Insère ou remplace un serveur par `id` (clé d'identité). Retourne le tableau.
@@ -254,7 +298,7 @@ function persistConversations(arr) {
 
 function listAllConversations() {
   return loadConversations()
-    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned }))
+    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID }))
     .sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }
 
@@ -389,9 +433,14 @@ function persistMemories(arr) {
   localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
 }
 
-// Entrées actives : non-supprimées.
-function listMemoryEntries() {
-  return loadMemories().filter(e => e && !e.suppressed);
+// Entrées actives : non-supprimées. `scopes` optionnel (tableau de scopes
+// autorisés, ex. ['profile', activeSpaceId] — cf. D3) ; omis = toutes (usage
+// historique, ex. export/import). Migration garantit `scope` toujours posé
+// (default Space) donc pas de filet 'pas de scope = visible partout' ici.
+function listMemoryEntries(scopes) {
+  const all = loadMemories().filter(e => e && !e.suppressed);
+  if (!Array.isArray(scopes)) return all;
+  return all.filter(e => scopes.indexOf(e.scope) !== -1);
 }
 
 function saveMemory(entry) {
@@ -427,14 +476,121 @@ function forgetMemory(id) {
   persistMemories(loadMemories().filter(x => x.id !== id));
 }
 
+// ── Espaces (miaou-spaces) — feature Spaces (lot C) ──────────────────────────
+// Registre : { id, name, description?, createdAt }. `description` (texte
+// libre du Space) est CONCATÉNÉE après le prompt système utilisateur global
+// dans buildSystemMessage() — ce n'est PAS un system prompt de substitution
+// (correction actée : le brief D4 d'origine, qui proposait un remplacement,
+// est inversé). Le default Space (id fixe
+// DEFAULT_SPACE_ID) est l'espace hors-Space historique : non supprimable,
+// renommable, toujours présent en tête après migration (cf.
+// migrateSpacesIfNeeded). Calqué sur le pattern serveurs API (id = clé
+// d'identité, tableau brut en localStorage).
+
+function genSpaceId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'sp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function loadSpaces() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SPACES_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveSpaces(arr) {
+  localStorage.setItem(SPACES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  return arr;
+}
+
+function normalizeSpace(s) {
+  const o = s || {};
+  return {
+    id: o.id || genSpaceId(),
+    name: String(o.name || '').trim(),
+    description: o.description ? String(o.description) : '',
+    createdAt: o.createdAt || Date.now(),
+  };
+}
+
+// Insère ou remplace un Space par `id`. Retourne le tableau.
+function upsertSpace(space) {
+  const next = normalizeSpace(space);
+  const arr = loadSpaces();
+  const i = arr.findIndex(s => s.id === next.id);
+  if (i >= 0) arr[i] = next; else arr.push(next);
+  saveSpaces(arr);
+  return arr;
+}
+
+// Le default Space n'est jamais supprimable par ce chemin (l'appelant doit de
+// toute façon garder l'UI de suppression désactivée dessus, cf. brief D1).
+function deleteSpaceEntry(id) {
+  if (id === DEFAULT_SPACE_ID) return loadSpaces();
+  const arr = loadSpaces().filter(s => s.id !== id);
+  saveSpaces(arr);
+  return arr;
+}
+
+function getSpace(id) {
+  return loadSpaces().find(s => s.id === id) || null;
+}
+
+function getActiveSpaceId() {
+  return localStorage.getItem(ACTIVE_SPACE_KEY) || DEFAULT_SPACE_ID;
+}
+
+function setActiveSpaceId(id) {
+  localStorage.setItem(ACTIVE_SPACE_KEY, id || DEFAULT_SPACE_ID);
+}
+
+// Migration idempotente (PAS un one-shot façon migrateApiServersIfNeeded) :
+// backfill à chaque chargement, cf. audit §3. Garantit le registre + le
+// default Space + spaceId sur chaque conv + scope sur chaque souvenir. Rejoué
+// sans effet une fois l'état déjà cohérent (double passe = même état).
+function migrateSpacesIfNeeded() {
+  const spaces = loadSpaces();
+  if (!spaces.some(s => s.id === DEFAULT_SPACE_ID)) {
+    spaces.unshift(normalizeSpace({ id: DEFAULT_SPACE_ID, name: 'Général', createdAt: Date.now() }));
+    saveSpaces(spaces);
+  }
+  const convs = loadConversations();
+  let convsChanged = false;
+  for (const c of convs) {
+    if (!c.spaceId) { c.spaceId = DEFAULT_SPACE_ID; convsChanged = true; }
+  }
+  if (convsChanged) persistConversations(convs);
+  const memories = loadMemories();
+  let memoriesChanged = false;
+  for (const m of memories) {
+    if (!m.scope) { m.scope = DEFAULT_SPACE_ID; memoriesChanged = true; }
+  }
+  if (memoriesChanged) persistMemories(memories);
+}
+
+// Prédicat d'herméticité UNIQUE (audit §4, brief D2) : ids des conversations
+// appartenant à `spaceId` parmi `convs` (déjà chargées par l'appelant — pas de
+// rechargement caché). Pure, testable QuickJS ; tous les sites listés dans
+// l'audit (sidebar, recherche, outils, injection résumés) doivent passer par
+// elle, jamais par un filtre `c.spaceId === x` réécrit localement.
+function spaceConvIds(spaceId, convs) {
+  const set = new Set();
+  for (const c of (convs || [])) {
+    if (c && (c.spaceId || DEFAULT_SPACE_ID) === spaceId) set.add(c.id);
+  }
+  return set;
+}
+
 // ── Export / import complet des données (feature E) ─────────────────────────
 // Assurance-vie : tout l'état de MIAOU (localStorage + IndexedDB) tient dans un
 // unique fichier JSON, réimportable par REMPLACEMENT INTÉGRAL (pas de fusion,
 // décision actée). Format détaillé : docs/storage.md.
 //
-// Les 7 clés localStorage du schéma. Référencée uniquement en corps de fonction
-// depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md) — jamais au
-// top-level d'un fichier tiers.
+// Les 9 clés localStorage du schéma (miaou-spaces + miaou-active-space
+// ajoutées par la feature Spaces, lot C). Référencée uniquement en corps de
+// fonction depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md)
+// — jamais au top-level d'un fichier tiers.
 const EXPORT_KEYS = [
   'miaou-settings',
   'miaou-conversations',
@@ -443,15 +599,17 @@ const EXPORT_KEYS = [
   'miaou-api-servers',
   'miaou-active-api-server',
   'miaou-mcp-servers',
+  'miaou-spaces',
+  'miaou-active-space',
 ];
 
 // Construit le payload d'export complet. `lsSnapshot` : objet { clé: valeur
-// DÉSÉRIALISÉE } pour les 7 clés (l'appelant lit localStorage + JSON.parse, ou
-// fournit la string brute pour miaou-active-api-server — seule clé non-JSON du
-// schéma). `skills`/`resources` : tableaux bruts issus de getAllSkillRecords()/
-// getAllResources() ; `resources[].data` (ArrayBuffer) doit déjà avoir été
-// converti en base64 par l'appelant (arrayBufferToBase64, resources.js) — cette
-// fonction reste pure, sans dépendance IDB.
+// DÉSÉRIALISÉE } pour les 9 clés (l'appelant lit localStorage + JSON.parse, ou
+// fournit la string brute pour miaou-active-api-server / miaou-active-space —
+// seules clés non-JSON du schéma). `skills`/`resources` : tableaux bruts issus
+// de getAllSkillRecords()/getAllResources() ; `resources[].data` (ArrayBuffer)
+// doit déjà avoir été converti en base64 par l'appelant (arrayBufferToBase64,
+// resources.js) — cette fonction reste pure, sans dépendance IDB.
 function buildExportPayload(lsSnapshot, skills, resources) {
   const ls = lsSnapshot || {};
   return {
@@ -466,6 +624,8 @@ function buildExportPayload(lsSnapshot, skills, resources) {
       'miaou-api-servers': Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [],
       'miaou-active-api-server': typeof ls['miaou-active-api-server'] === 'string' ? ls['miaou-active-api-server'] : '',
       'miaou-mcp-servers': Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [],
+      'miaou-spaces': Array.isArray(ls['miaou-spaces']) ? ls['miaou-spaces'] : [],
+      'miaou-active-space': typeof ls['miaou-active-space'] === 'string' ? ls['miaou-active-space'] : '',
     },
     idb: {
       skills: Array.isArray(skills) ? skills : [],
@@ -493,6 +653,7 @@ function validateImportPayload(obj) {
   const memories = Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [];
   const apiServers = Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [];
   const mcpServers = Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [];
+  const spaces = Array.isArray(ls['miaou-spaces']) ? ls['miaou-spaces'] : [];
   const skills = Array.isArray(idb.skills) ? idb.skills : [];
   const resources = Array.isArray(idb.resources) ? idb.resources : [];
   return {
@@ -503,6 +664,7 @@ function validateImportPayload(obj) {
       skills: skills.length,
       resources: resources.length,
       servers: apiServers.length + mcpServers.length,
+      spaces: spaces.length,
     },
   };
 }

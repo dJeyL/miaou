@@ -39,6 +39,155 @@ function generateResourceId(rand) {
   return 'res_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
 }
 
+// ── Pièces jointes (composer) — helpers purs (QuickJS-testables) ────────────
+// D1 (brief A) : classification kind + allocation d'id conversation-scopée.
+// Constantes ajustables regroupées ici, en un seul endroit.
+
+// Extensions → 'text' (contenu lisible, injectable tel quel). Liste fermée,
+// ajustable : txt/md/csv/log + extensions de code source courantes.
+const ATTACHMENT_TEXT_EXTENSIONS = [
+  'txt', 'md', 'markdown', 'csv', 'log', 'json', 'yaml', 'yml', 'xml', 'ini', 'toml',
+  'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'hpp',
+  'cs', 'php', 'sh', 'bash', 'sql', 'html', 'css', 'scss', 'vue', 'swift', 'kt',
+];
+
+// Classe une pièce jointe selon son mime et/ou son extension de fichier.
+// Priorité : mime image/* → 'image' ; sinon extension dans la liste texte →
+// 'text' ; sinon 'binary'. Pure, ne dépend pas du contenu du fichier (le cap
+// 200 kB texte→binary est appliqué séparément, après lecture — cf. D3).
+function classifyAttachmentKind(name, mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0].trim();
+  if (m.startsWith('image/')) return 'image';
+  const dot = String(name || '').lastIndexOf('.');
+  const ext = dot >= 0 ? String(name).slice(dot + 1).toLowerCase() : '';
+  if (ATTACHMENT_TEXT_EXTENSIONS.indexOf(ext) >= 0) return 'text';
+  return 'binary';
+}
+
+// Alloue le prochain attId conversation-scopé, séquentiel (att-1, att-2, …).
+// Reçoit le compteur courant (persisté sur la conversation, `conv.attSeq`,
+// jamais réinitialisé/décrémenté même après troncature par édition — les
+// enregistrements IDB orphelins restent, cf. piège 12 / non-goal du brief).
+// Pure : ne touche à aucun stockage, l'appelant persiste `nextCounter`.
+function allocateAttId(counter) {
+  const n = (Number(counter) || 0) + 1;
+  return { id: 'att-' + n, counter: n };
+}
+
+// ── Pièces jointes (composer) — envoi au modèle et politique de persistance
+// (LOT 2, brief A / D2-D3-D5) ────────────────────────────────────────────────
+// Descripteur BYTE-STABLE d'une image jointe, calculé UNE FOIS depuis les
+// champs FIGÉS du schéma attachment (name, w, h, size) — jamais recalculé
+// depuis les octets. Format exact acté (le brief écrit `present_resource`,
+// collision de nom avec l'outil existant res_… — décision : nom distinct
+// `miaou__recall_attachment`, cf. audit/brief lot 2) :
+//   [attachment att-3: image "diagram.png", 1280x960, 214 kB — content available via miaou__recall_attachment]
+// Réutilise humanSize (déjà en usage pour les ressources) plutôt que d'ajouter
+// un second formateur de taille : son rendu ("1.5 KB", majuscules, un point)
+// diverge du style de l'exemple du brief ("214 kB", k minuscule) — écart
+// assumé et signalé (cf. rapport de lot), pas de reformattage ad hoc ici.
+function formatAttachmentDescriptor(att) {
+  return '[attachment ' + att.attId + ': image "' + (att.name || '') + '", ' +
+    att.w + 'x' + att.h + ', ' + humanSize(att.size) +
+    ' — content available via miaou__recall_attachment]';
+}
+
+// Bloc texte injecté pour un attachment kind:'text' (D3) : fence avec en-tête
+// nom de fichier, PERSISTÉ TEL QUEL (pas de descripteur, pas de rewrite
+// ultérieur — texte cheap, KV cache préservé). `text` = contenu déjà décodé
+// (UTF-8) du fichier.
+function formatTextAttachmentBlock(att, text) {
+  return '[attachment ' + att.attId + ': file "' + (att.name || '') + '"]\n' +
+    '```\n' + String(text || '') + '\n```';
+}
+
+// Descripteur pour un attachment kind:'binary' (brief H) : GÉNÉRIQUE (émis pour
+// tout binaire, pas seulement les types qu'un serveur MCP docs sait ouvrir),
+// dérivé des champs FIGÉS du schéma (attId, name, mime, size) — jamais des
+// octets, aucun timestamp (invariant #2, piège #17 CLAUDE.md) → byte-stable
+// tour d'attache == tours suivants. Note NEUTRE (ne mentionne aucun outil) :
+// c'est docsDoctrinePrompt() (tools.js), conditionnelle, qui porte le « comment »
+// — un binaire non-docx et un serveur docs absent doivent produire un
+// descripteur STRICTEMENT identique, aucune branche ici.
+function formatBinaryAttachmentDescriptor(att) {
+  return '[attachment ' + att.attId + ': file "' + (att.name || '') + '", ' +
+    (att.mime || 'application/octet-stream') + ', ' + humanSize(att.size) +
+    ' — binary content, not inlined]';
+}
+
+// Construit le CONTENU du message user au tour d'attache (D2/D3/H) : texte
+// tapé + blocs texte injectés (fence, D3) + descripteurs binaires (H) forment
+// la partie 'text' ; chaque attachment kind:'image' devient une part
+// 'image_url' distincte (content parts OpenAI). `textAttachments` :
+// [{att, text}] déjà lus (D3, appelant fournit le texte décodé).
+// `imageAttachments` : [{att, dataUrl}] — dataUrl déjà préparée par l'appelant
+// (base64 + mime, cf. arrayBufferToBase64) : pure, ne touche à aucun
+// stockage/cache ici. `binaryAttachments` (brief H) : [att] — pas de contenu à
+// lire (aucun octet envoyé), un binaire n'a pas de phase content-parts : son
+// descripteur est stable dès ce tour, comme le texte D3 (pas de rewrite
+// ultérieur pour lui, cf. collapseAttachedMessageContent qui le régénère à
+// l'identique par idempotence de format, pas par rewrite réel).
+// Retourne soit une string (aucune image jointe : pas de content parts inutiles,
+// un message texte simple reste un message texte simple) soit un tableau de
+// content parts `[{type:'text',text},{type:'image_url',image_url:{url}}, …]`.
+function buildAttachedMessageContent(literalText, textAttachments, imageAttachments, binaryAttachments) {
+  const blocks = [String(literalText || '')];
+  for (const ta of (textAttachments || [])) {
+    blocks.push(formatTextAttachmentBlock(ta.att, ta.text));
+  }
+  for (const att of (binaryAttachments || [])) {
+    blocks.push(formatBinaryAttachmentDescriptor(att));
+  }
+  const textPart = blocks.join('\n\n');
+  if (!imageAttachments || !imageAttachments.length) return textPart;
+  const parts = [{ type: 'text', text: textPart }];
+  for (const ia of imageAttachments) {
+    parts.push({ type: 'image_url', image_url: { url: ia.dataUrl } });
+  }
+  return parts;
+}
+
+// Préfixe du texte dynamique (skills context + <miaou_context>, main.js
+// dispatchSend) DANS un tableau de content parts : insère dans la première
+// part 'text' existante (préfixée), ou crée une part 'text' en tête si aucune
+// n'existe (cas dégénéré : un message tout-images sans texte tapé). Les autres
+// parts (image_url) sont conservées telles quelles, dans leur ordre. Pure,
+// ne mute pas le tableau reçu.
+function prefixTextInContentParts(parts, prefix) {
+  const out = parts.map(p => Object.assign({}, p));
+  const firstTextIdx = out.findIndex(p => p && p.type === 'text');
+  if (firstTextIdx >= 0) {
+    out[firstTextIdx].text = prefix + (out[firstTextIdx].text || '');
+  } else {
+    out.unshift({ type: 'text', text: prefix });
+  }
+  return out;
+}
+
+// Réécriture UNIQUE parts→descripteur (D2, politique de persistance) : un
+// message user dont `content` est un tableau de content parts (tour d'attache)
+// est collapsé en une string finale = la ou les parts texte concaténées + une
+// ligne de descripteur PAR image attachment (dans l'ordre des attachments
+// kind:'image' du message, pas dans l'ordre des parts — le descripteur est
+// dérivé du schéma `attachments`, jamais des octets image_url eux-mêmes).
+// IDEMPOTENTE : si `content` est déjà une string, renvoyée telle quelle (garde
+// contre un rejeu de la réécriture, cf. chemin abort). Pure : ne mute rien,
+// l'appelant réassigne `msg.content`.
+// Un binaire (brief H) n'a pas de phase content-parts (aucun octet en
+// image_url) : son descripteur vit dans la part 'text' de `content` dès
+// buildAttachedMessageContent et voyage donc DÉJÀ dans `textParts` ci-dessous
+// — rien à ajouter ici pour lui (contrairement à l'image, qui doit regagner
+// son descripteur puisque sa part image_url, elle, est droppée au collapse).
+function collapseAttachedMessageContent(content, attachments) {
+  if (typeof content === 'string') return content;   // déjà réécrit : no-op
+  if (!Array.isArray(content)) return content;
+  const textParts = content.filter(p => p && p.type === 'text').map(p => p.text || '');
+  const text = textParts.join('\n\n');
+  const imgAtts = (attachments || []).filter(a => a && a.kind === 'image');
+  const descriptors = imgAtts.map(formatAttachmentDescriptor);
+  return descriptors.length ? (text + '\n\n' + descriptors.join('\n')) : text;
+}
+
 // ── Codec base64 (hand-rolled, sans atob/btoa — QuickJS-testable) ──────────
 
 const _B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -189,6 +338,19 @@ function _cacheRecord(rec) { _resourceCache[rec.id] = rec; }
 function _uncacheRecord(id) { delete _resourceCache[id]; }
 function clearResourceSessionCache() { _resourceCache = {}; }
 
+// Lookup par attId (conversation-scoped), pour le rendu des vignettes de la
+// bulle utilisateur (fallback gracieux si le blob n'est pas/plus en cache —
+// conversation pas encore rechargée, ou entrée orpheline après édition).
+// Scan linéaire du cache session : nombre d'attachments par conversation
+// toujours petit (cap 4 images/message), pas besoin d'un second index.
+function getCachedRecordByAttId(attId, conversationId) {
+  for (const key in _resourceCache) {
+    const rec = _resourceCache[key];
+    if (rec && rec.attId === attId && (!conversationId || rec.conversationId === conversationId)) return rec;
+  }
+  return null;
+}
+
 // ── Helpers de référence ──────────────────────────────────────────────────────
 // Format : "[resource_ref:res_xyz]" — détectable par regex, ne contient pas de ]
 // dans l'id car base36 n'utilise pas ce caractère.
@@ -219,6 +381,26 @@ function resolveResourceRefs(thread) {
     const resolved = assembleToolResultForModel(s);
     if (resolved === s) return m;
     return Object.assign({}, m, { result: resolved });
+  });
+}
+
+// Pre-pass (brief A2 / D3, voie (b)) : pour chaque ack attachment_recalled dont
+// le record est une IMAGE, reconstruit la dataUrl base64 depuis le cache session
+// et la pose sur une COPIE de l'ack (champ `recallImage`), à charge d'expandThread
+// (utils.js, pur) d'émettre le message user synthétique porteur de la part image.
+// Reconstruit à chaque envoi depuis le record FIGÉ (byte-stable, cf. piège 17) :
+// `recallImage` n'est jamais persisté (absent d'ACK_COPY_FIELDS), seul `attId`
+// l'est. Ne mute pas le thread reçu. Un ack dont l'attId n'est plus en cache
+// (record purgé) est laissé tel quel : pas de part image → expandThread n'émet
+// rien, seul le tool result textuel subsiste (dégradation propre).
+function resolveRecallImages(thread) {
+  return thread.map(function(m) {
+    if (!isAckRole(m.role) || m.kind !== 'attachment_recalled' || !m.attId) return m;
+    if (!m.mime || m.mime.indexOf('image/') !== 0) return m;
+    const rec = getCachedRecordByAttId(m.attId, m.convId || null);
+    if (!rec || !rec.data) return m;
+    const dataUrl = 'data:' + rec.mime + ';base64,' + arrayBufferToBase64(rec.data);
+    return Object.assign({}, m, { recallImage: dataUrl });
   });
 }
 
@@ -349,6 +531,34 @@ function clearIdbStore(storeName) {
 }
 
 // ── Opérations haut-niveau ────────────────────────────────────────────────────
+
+// Stocke une pièce jointe utilisateur (composer) dans le store IDB `resources`
+// existant, avec `conversationId` (GC gratuit via deleteResourcesByConversation)
+// ET `attId` (id conversation-scopé, cf. allocateAttId). À la différence de
+// _storeBlock : PAS d'ack `resource_stored` — un attachment n'est pas un
+// résultat d'outil, rien à annoncer dans le fil. `class` suit `classifyMime`
+// (inline pour un texte, binary pour image/binaire) ; `dims` (optionnel,
+// {w,h}) pour une image, figées à l'attache (cf. D2, byte-stable au lot 2).
+// Retourne l'enregistrement stocké en cas de succès, null sinon.
+async function storeAttachment(attId, mime, name, data, cls, conversationId, now, rand, dims) {
+  const id = 'att_' + generateResourceId(rand).slice(4);
+  const record = {
+    id, attId, conversationId: conversationId || null,
+    class: cls, mime: String(mime || 'application/octet-stream'),
+    name: String(name || 'attachment'), size: data.byteLength,
+    createdAt: now, data,
+  };
+  if (dims && dims.w && dims.h) { record.w = dims.w; record.h = dims.h; }
+  try {
+    await putResource(record);
+    _cacheRecord(record);
+    requestPersistence();
+    return record;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] storeAttachment:', e && e.message);
+    return null;
+  }
+}
 
 // Stocke un bloc individuel dans IDB + session cache ; pousse l'ack resource_stored.
 // Retourne l'id généré en cas de succès, null sinon.

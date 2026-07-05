@@ -98,7 +98,7 @@
   border: 1px solid var(--border-2);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.55;
   padding: 9px 11px;
   border-radius: var(--r-sm);
@@ -393,6 +393,25 @@
 .mem-keywords strong { color: var(--text-2); font-weight: 600; }
 .mem-item:not(.expanded) .mem-full { display: none; }
 .mem-item.expanded .mem-excerpt { display: none; }
+/* inspecteur de contexte (brief B) : barre empilée + table de répartition */
+.ctx-bar {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+}
+.ctx-bar-seg { display: block; height: 100%; min-width: 1px; }
+.ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ctx-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.ctx-table td:first-child { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.ctx-table td:not(:first-child) { text-align: right; font-family: var(--mono); white-space: nowrap; }
+.ctx-table tr.ctx-total td { font-weight: 600; color: var(--text); border-bottom: none; border-top: 1px solid var(--border-2); }
+.ctx-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.drawer-title { font-size: 13px; font-weight: 600; color: var(--text); }
+
 .drawer-btn {
   flex-shrink: 0;
   background: var(--surface-3);

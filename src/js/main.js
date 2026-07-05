@@ -35,11 +35,15 @@ function applyLogo() {
 
 // ── État de session ─────────────────────────────────────────────────────────
 let currentConvId = null;
+let activeSpaceId = DEFAULT_SPACE_ID;   // Space actif (feature Spaces, lot C) — init() le réhydrate depuis miaou-active-space
 let currentThread = [];   // [{ role, content }] — fil visible courant
 let needTitle = false;    // titrage auto en attente (conversation neuve)
 let titleBefore = '';
 let currentConvModel = '';  // override de modèle de la conversation courante ('' = modèle par défaut)
 let currentConvReasoningEffort = '';  // override de reasoning_effort de la conversation courante ('' = défaut, pas de paramètre)
+let pendingAttachments = [];   // pièces jointes du composer, en attente d'envoi (cf. §Pièces jointes)
+let attachIngestInFlight = 0;  // ingestions en cours (garde anti-course : envoi refusé tant que ≠ 0)
+let _lastContextManifest = null;   // manifeste du dernier envoi RÉEL (brief B, B4) — null si aucun envoi cette session
 
 // ── Résumé sur inactivité ────────────────────────────────────────────────────
 // Durée d'inactivité utilisateur avant déclenchement d'un résumé de la
@@ -115,30 +119,45 @@ function buildSummaryBlock(matches) {
 }
 
 // Souvenirs utilisateur actifs injectés en contexte (injection complète, pas de
-// filtrage/ranking : volume faible attendu pour un usage personnel).
+// filtrage/ranking : volume faible attendu pour un usage personnel). Scope
+// profile (global) + Space actif uniquement (brief D3) — jamais les souvenirs
+// d'un autre Space.
 function buildMemoryEntriesBlock() {
-  const entries = listMemoryEntries();
+  const entries = listMemoryEntries(['profile', activeSpaceId]);
   if (!entries.length) return '';
   const lines = entries.map(e => `- [id: ${e.id}] ${e.content}`);
   return "Souvenirs de l'utilisateur (persistants, à respecter et prendre en compte) :\n" +
          lines.join('\n');
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs.
-// Injecté en préfixe du dernier message utilisateur, pas dans le system message,
-// pour préserver le préfixe stable et permettre le KV cache prefix matching.
-function buildContextBlock(matches) {
+// Sous-blocs du contexte dynamique, AVANT concaténation (brief B, D1) — même
+// principe que systemMessageParts() : source unique pour buildContextBlock()
+// ET pour le manifeste de contexte.
+function contextBlockParts(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const model = activeModel().trim();
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
-  const parts = [lines.join('\n')];
-  const summaries = buildSummaryBlock(matches || []);
-  if (summaries) parts.push(summaries);
-  const memories = buildMemoryEntriesBlock();
-  if (memories) parts.push(memories);
+  const space = getSpace(activeSpaceId);
+  if (space && space.name) lines.push('Espace : ' + space.name);
+  return {
+    contextDateModel: lines.join('\n'),
+    summaries: buildSummaryBlock(matches || []),
+    memories: buildMemoryEntriesBlock(),
+    skillsContext: buildSkillsContextBlock(),
+  };
+}
+
+// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs.
+// Injecté en préfixe du dernier message utilisateur, pas dans le system message,
+// pour préserver le préfixe stable et permettre le KV cache prefix matching.
+function buildContextBlock(matches) {
+  const dp = contextBlockParts(matches);
+  const parts = [dp.contextDateModel];
+  if (dp.summaries) parts.push(dp.summaries);
+  if (dp.memories) parts.push(dp.memories);
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -163,22 +182,76 @@ function buildSkillsContextBlock() {
     'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
-// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
-// skills (si skills autotrigger) → utilisateur.
-function buildSystemMessage() {
+// Résolution pure (testable QuickJS) : la description du Space actif est
+// AJOUTÉE après le prompt système utilisateur global (brief D4, corrigé — la
+// version d'origine proposait un remplacement, inversée par décision
+// explicite : un Space porte une description, pas un system prompt de
+// substitution). `space` peut être null (Space introuvable/default sans
+// description) → seul le prompt global s'applique alors.
+function resolveUserSystemPrompt(globalSystemPrompt, space) {
   const parts = [];
+  const global = (globalSystemPrompt || '').trim();
+  if (global) parts.push(global);
+  const spaceDescription = (space && space.description || '').trim();
+  if (spaceDescription) parts.push(spaceDescription);
+  return parts.join('\n\n---\n\n');
+}
+
+// Sous-blocs du system message, AVANT concaténation (brief B, D1) : source
+// unique pour buildSystemMessage() ET pour le manifeste de contexte — jamais
+// de re-split du séparateur '\n\n---\n\n' (fragile, audit §6). '' pour un
+// sous-bloc absent/désactivé.
+function systemMessageParts() {
   const settings = loadSettings();
+  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', user: '' };
   if (TOOLS.length) {
-    parts.push(ROOT_SYSTEM_PROMPT);
-    if (settings.includeToolsInSystemPrompt) parts.push(toolsSystemPrompt());
-    const intentPart = intentDoctrinePrompt();
-    if (intentPart) parts.push(intentPart);
-    const skillPart = skillDoctrinePrompt();
-    if (skillPart) parts.push(skillPart);
+    out.root = ROOT_SYSTEM_PROMPT;
+    if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
+    out.intent = intentDoctrinePrompt();
+    out.skills = skillDoctrinePrompt();
+    out.docs = docsDoctrinePrompt();
   }
-  const sysUser = (settings.systemPrompt || '').trim();
-  if (sysUser) parts.push(sysUser);
+  out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
+  return out;
+}
+
+// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
+// skills (si skills autotrigger) → utilisateur → description du Space actif
+// (concaténée, jamais substituée — D4 corrigé). Piège 18 (CLAUDE.md) : cette
+// dernière part varie d'un Space à l'autre — changer de Space change donc le
+// system message (assumé, documenté), mais il reste statique tant qu'on reste
+// dans le même Space (KV cache, piège 16).
+function buildSystemMessage() {
+  const sp = systemMessageParts();
+  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
+}
+
+// Simulation « prochain envoi » au repos (brief B, B4) : mêmes fonctions pures
+// que dispatchSend (systemMessageParts, contextBlockParts, expandThread,
+// toolDefinitions), jamais rejouée avec des résumés (matches=[] — non
+// simulables hors déclenchement d'envoi réel, audit §9). Purement lecture :
+// ne modifie ni currentThread ni localStorage. Compteur compact et ouverture
+// du drawer l'appellent tant qu'aucun `_lastContextManifest` n'existe encore.
+function computeContextManifestNow() {
+  const sysParts = systemMessageParts();
+  const dynParts = contextBlockParts([]);
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
+  return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+}
+
+// Rejoue le manifeste du DERNIER ENVOI RÉEL une fois le tour terminé (onFinal/
+// onHalt) : la capture faite avant `runConversation` (dispatchSend) ne voit ni
+// les tool-acks ni la réponse assistant produits pendant la boucle d'outils,
+// ce qui sous-évaluait durablement le compteur jusqu'au prochain envoi/switch
+// de conv (bug payé : écart ~50% vs un reload qui recalcule sur le thread
+// complet). `matches` = les résumés effectivement injectés à CE tour (reçus
+// en paramètre de dispatchSend, non simulables après coup — audit §9).
+function recomputeLastContextManifest(matches) {
+  const sysParts = systemMessageParts();
+  const dynParts = contextBlockParts(matches);
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
 }
 
 // ── Navigation entre conversations ──────────────────────────────────────────
@@ -201,6 +274,7 @@ async function openConversation(id) {
     // de test antérieures au renommage) vers `displayText` à la lecture.
     if (m.displayText != null) o.displayText = m.displayText;
     else if (m.display != null) o.displayText = m.display;
+    if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
     return o;
   });
   currentConvModel = conv.model || '';
@@ -212,6 +286,8 @@ async function openConversation(id) {
   renderConvList();
   syncModelUI();
   syncReasoningUI();
+  _lastContextManifest = null;   // switch de conv : le dernier envoi réel ne s'applique plus, retombe sur simulation
+  syncContextCounter();
 }
 
 function resetToEmpty() {
@@ -228,6 +304,8 @@ function resetToEmpty() {
   renderConvList();
   syncModelUI();
   syncReasoningUI();
+  _lastContextManifest = null;
+  syncContextCounter();
 }
 
 function selectConv(id) {
@@ -322,12 +400,13 @@ function deleteConv(id) {
   else renderConvList();
 }
 
-// Crée la conversation à la volée au premier envoi (pas avant).
+// Crée la conversation à la volée au premier envoi (pas avant). Stampée dans
+// le Space actif (seul point de création — brief D5, lot C).
 function ensureConversation() {
   if (currentConvId) return;
   const id = 'c' + Date.now().toString(36);
   const manualTitle = $('conv-title').textContent.trim();
-  saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [] });
+  saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [], spaceId: activeSpaceId });
   currentConvId = id;
   currentThread = [];
   needTitle = !manualTitle;   // titre déjà saisi → pas d'auto-titrage
@@ -350,6 +429,7 @@ function persistCurrent() {
     if (m.reasoning) o.reasoning = m.reasoning;
     if (m.truncated) o.truncated = true;   // réponse incomplète (feature C)
     if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
+    if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
     return o;
   });
   if (!conv.timestamp) conv.timestamp = Date.now();
@@ -408,6 +488,7 @@ function onSaveSettings() {
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
     confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
+    contextWindow: $('set-contextwindow').value,
   };
   saveSettings(obj);
   updateSettingsDirty();   // formulaire = persisté → bouton redésactivé
@@ -417,6 +498,7 @@ function onSaveSettings() {
   syncReasoningUI();     // visibilité + valeur du sélecteur de raisonnement
   prefetchModels();     // (re)charge la liste si besoin, puis re-sync
   renderThread(currentThread);   // ré-applique/retire la coloration
+  syncContextCounter();   // fenêtre de contexte modifiée : recalcule occupation/jauge
   closeSettings();
 }
 
@@ -488,11 +570,22 @@ function onSaveApiCard(cardEl, originalId) {
   const url = get('.api-url').trim();
   if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const wasEmpty = !loadApiServers().length;
+  const model = get('.api-model').trim();
+  // Flag vision manuel (D5) : on préserve la map `vision` du serveur existant
+  // (autres modèles déjà réglés) et on met à jour la seule entrée du modèle
+  // courant. 'off' → `false` explicite (dégradation proactive) ; 'on' → on
+  // RETIRE l'entrée (retour au défaut « inconnu = envoyer »), pas de `true`
+  // persisté (normalizeApiServer ne garde que les `false`).
+  const prior = originalId ? getApiServer(originalId) : null;
+  const vision = Object.assign({}, (prior && prior.vision) || {});
+  if (get('.api-vision') === 'off') vision[model] = false;
+  else delete vision[model];
   const server = {
     id: originalId || undefined,
     name, url,
     key: get('.api-key'),
-    model: get('.api-model').trim(),
+    model,
+    vision,
   };
   const arr = upsertApiServer(server);
   if (wasEmpty) {
@@ -573,16 +666,17 @@ async function onToggleSkill(slug) {
 }
 
 // ── Export / import complet des données (feature E) ──────────────────────────
-// Assurance-vie : snapshot des 7 clés localStorage + IDB (skills, resources),
+// Assurance-vie : snapshot des 9 clés localStorage + IDB (skills, resources),
 // remplacement intégral à l'import (pas de fusion, décision actée). Format et
 // posture (clefs API en clair) documentés dans docs/storage.md.
 
-// Lit les 7 clés localStorage désérialisées (miaou-active-api-server est une
-// string brute, seule exception du schéma) pour buildExportPayload (storage.js).
+// Lit les 9 clés localStorage désérialisées (miaou-active-api-server et
+// miaou-active-space sont des strings brutes, seules exceptions du schéma)
+// pour buildExportPayload (storage.js).
 function snapshotLocalStorageForExport() {
   const snap = {};
   for (const key of EXPORT_KEYS) {
-    if (key === 'miaou-active-api-server') { snap[key] = localStorage.getItem(key) || ''; continue; }
+    if (key === 'miaou-active-api-server' || key === 'miaou-active-space') { snap[key] = localStorage.getItem(key) || ''; continue; }
     try { snap[key] = JSON.parse(localStorage.getItem(key)); }
     catch (e) { snap[key] = null; }
   }
@@ -630,7 +724,7 @@ function onImportFileSelected(input) {
   reader.readAsText(file);
 }
 
-// Applique un payload d'import validé : écrit les 7 clés localStorage (clé
+// Applique un payload d'import validé : écrit les 9 clés localStorage (clé
 // absente du fichier → removeItem, pour ne pas laisser d'état résiduel
 // incohérent), vide puis réinsère les stores IDB skills/resources, puis
 // recharge la page — l'état de session (caches, thread courant, statut MCP) se
@@ -640,7 +734,7 @@ async function applyImportedData(payload) {
   for (const key of EXPORT_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(ls, key)) { localStorage.removeItem(key); continue; }
     const val = ls[key];
-    if (key === 'miaou-active-api-server') localStorage.setItem(key, typeof val === 'string' ? val : '');
+    if (key === 'miaou-active-api-server' || key === 'miaou-active-space') localStorage.setItem(key, typeof val === 'string' ? val : '');
     else localStorage.setItem(key, JSON.stringify(val));
   }
   const idb = payload.idb || {};
@@ -653,6 +747,207 @@ async function applyImportedData(payload) {
     await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
   }
   location.reload();
+}
+
+// ── Pièces jointes (composer) ────────────────────────────────────────────────
+// Attache de fichiers au message en cours de saisie : trombone + drag&drop,
+// downscale image côté client, lecture texte plafonnée, stockage IDB (store
+// `resources` existant, cf. resources.js). LOT 1 (brief A, D1) : ingestion,
+// downscale, stockage IDB, chips. LOT 2 (D2/D3/D5, ici) : construction du
+// contenu envoyé au modèle au tour d'attache (content parts image + injection
+// texte) et politique de persistance (réécriture unique parts→descripteur
+// après le tour, cf. rewriteAttachedUserMessage/onFinal de dispatchSend).
+//
+// Constantes ajustables, regroupées ici :
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;        // 10 Mo, rejet pré-resize
+const ATTACHMENT_IMAGE_MAX_EDGE = 1536;                // plus grand côté après downscale
+const ATTACHMENT_IMAGE_JPEG_QUALITY = 0.85;            // ré-encodage JPEG
+const ATTACHMENT_TEXT_MAX_BYTES = 200 * 1024;          // 200 kB, au-delà → binary
+const ATTACHMENT_MAX_IMAGES = 4;                       // cap images par message
+
+// Downscale une image (File/Blob) via canvas : plus grand côté ≤
+// ATTACHMENT_IMAGE_MAX_EDGE, ré-encodage JPEG qualité ATTACHMENT_IMAGE_JPEG_QUALITY,
+// PNG conservé si son encodage est plus petit que le JPEG après downscale.
+// Dimensions finales calculées ICI et retournées : FIGÉES pour tout le cycle
+// de vie de l'attachment (nécessaire au lot 2 pour le descripteur byte-stable
+// — ne jamais recalculer plus tard). Retourne { blob, mime, w, h }.
+async function downscaleImageFile(file) {
+  const bitmap = await createImageBitmap(file);
+  const srcW = bitmap.width, srcH = bitmap.height;
+  const scale = Math.min(1, ATTACHMENT_IMAGE_MAX_EDGE / Math.max(srcW, srcH));
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  if (typeof bitmap.close === 'function') bitmap.close();
+
+  const toBlob = (mime, quality) => new Promise(resolve => canvas.toBlob(resolve, mime, quality));
+  const jpegBlob = await toBlob('image/jpeg', ATTACHMENT_IMAGE_JPEG_QUALITY);
+
+  const isPng = /png/i.test(file.type);
+  if (isPng) {
+    const pngBlob = await toBlob('image/png');
+    if (pngBlob && (!jpegBlob || pngBlob.size <= jpegBlob.size)) {
+      return { blob: pngBlob, mime: 'image/png', w, h };
+    }
+  }
+  return { blob: jpegBlob, mime: 'image/jpeg', w, h };
+}
+
+// Lit un fichier texte via FileReader, en Promise. Retourne la string décodée.
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Échec de lecture du fichier'));
+    reader.readAsText(file);
+  });
+}
+
+// Lit un fichier binaire (image, ou tout fichier) en ArrayBuffer, en Promise.
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Échec de lecture du fichier'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Affiche un message d'erreur d'attache visible (jamais silencieux, cf. brief
+// D2/cap images). Zone dédiée du composer, distincte de composer-skill-error
+// (préoccupation différente).
+function showComposerAttachError(msg) {
+  const el = $('composer-attach-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearComposerAttachError() {
+  const el = $('composer-attach-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
+}
+
+// Ingestion d'un seul fichier : classification, downscale/lecture selon le
+// kind, allocation attId, stockage IDB. Retourne le descripteur attachment
+// (poussé dans pendingAttachments par l'appelant) ou null si rejeté (message
+// d'erreur déjà affiché). Appelle ensureConversation() inconditionnellement :
+// la conversation est créée dès la PREMIÈRE attache (pas seulement au premier
+// envoi), pour disposer d'un currentConvId stable — clef de rattachement IDB
+// (conversationId toujours renseigné, GC couvert par
+// deleteResourcesByConversation) et support du compteur attSeq persisté.
+async function ingestAttachmentFile(file) {
+  if (file.size > ATTACHMENT_MAX_BYTES) {
+    showComposerAttachError('« ' + file.name + ' » dépasse 10 Mo — fichier ignoré.');
+    return null;
+  }
+  const kind0 = classifyAttachmentKind(file.name, file.type);
+  if (kind0 === 'image') {
+    const imgCount = pendingAttachments.filter(a => a.kind === 'image').length;
+    if (imgCount >= ATTACHMENT_MAX_IMAGES) {
+      showComposerAttachError('Maximum ' + ATTACHMENT_MAX_IMAGES + ' images par message.');
+      return null;
+    }
+  }
+
+  ensureConversation();   // conversationId stable pour le rattachement IDB
+  const conv = loadConversation(currentConvId);
+  const alloc = allocateAttId(conv && conv.attSeq);
+  const now = Date.now();
+
+  try {
+    if (kind0 === 'image') {
+      const { blob, mime, w, h } = await downscaleImageFile(file);
+      const buf = await blob.arrayBuffer();
+      const rec = await storeAttachment(alloc.id, mime, file.name, buf, 'binary', currentConvId, now, Math.random, { w, h });
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      persistAttSeq(alloc.counter);
+      return { attId: alloc.id, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
+    }
+
+    if (kind0 === 'text') {
+      const text = await readFileAsText(file);
+      const buf = utf8Encode(text);
+      if (buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES) {
+        // Rétrogradé à binary : trop volumineux pour une injection texte (D3).
+        const rec = await storeAttachment(alloc.id, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+        if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+        persistAttSeq(alloc.counter);
+        return { attId: alloc.id, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+      }
+      const rec = await storeAttachment(alloc.id, file.type || 'text/plain', file.name, buf, 'inline', currentConvId, now, Math.random);
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      persistAttSeq(alloc.counter);
+      return { attId: alloc.id, name: file.name, mime: file.type || 'text/plain', size: buf.byteLength, kind: 'text' };
+    }
+
+    // binary
+    const buf = await readFileAsArrayBuffer(file);
+    const rec = await storeAttachment(alloc.id, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+    if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+    persistAttSeq(alloc.counter);
+    return { attId: alloc.id, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
+    showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
+    return null;
+  }
+}
+
+// Persiste le compteur d'attId de la conversation courante (monotone, jamais
+// décrémenté — cf. allocateAttId). Écriture immédiate, indépendante de
+// persistCurrent (peut survenir avant tout envoi de message).
+function persistAttSeq(counter) {
+  if (!currentConvId) return;
+  const conv = loadConversation(currentConvId);
+  if (!conv) return;
+  conv.attSeq = counter;
+  saveConversation(conv);
+}
+
+// Traite une FileList (picker ou drop) : ingère chaque fichier séquentiellement
+// (le compteur attId doit avancer dans l'ordre d'attache), pousse les
+// descripteurs obtenus dans pendingAttachments, puis rafraîchit les chips.
+// Garde anti-course : attachIngestInFlight compte les ingestions en vol
+// (try/finally) — sendMessage refuse l'envoi tant qu'il est non nul, sinon un
+// drop suivi d'un Entrée immédiat verrait pendingAttachments vidé pendant
+// l'ingestion, et l'attachment en retard accroché au message SUIVANT.
+async function handleAttachFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  clearComposerAttachError();
+  attachIngestInFlight++;
+  try {
+    for (const file of files) {
+      const att = await ingestAttachmentFile(file);
+      if (att) pendingAttachments.push(att);
+    }
+  } finally {
+    attachIngestInFlight--;
+  }
+  renderComposerAttachments();
+}
+
+// Handler global (bouton trombone) : déclenche l'input file caché. Pattern
+// identique à onImportDataClick (main.js).
+function onAttachClick() {
+  const input = $('attach-file-input');
+  if (input) { input.value = ''; input.click(); }
+}
+
+// Handler global (onchange de l'input file caché).
+function onAttachFilesSelected(input) {
+  handleAttachFiles(input.files);
+}
+
+// Retrait d'une pièce jointe EN ATTENTE (avant envoi) — pas de suppression
+// après envoi (non-goal du brief, cf. editUserMessage pour ce cas). L'entrée
+// IDB déjà stockée devient orpheline (collectée à la suppression de la
+// conversation, comportement assumé identique à une troncature par édition).
+function removeComposerAttachment(attId) {
+  pendingAttachments = pendingAttachments.filter(a => a.attId !== attId);
+  renderComposerAttachments();
 }
 
 // ── Flux d'envoi ────────────────────────────────────────────────────────────
@@ -705,9 +1000,20 @@ async function resolveSend(literal) {
 
 async function sendMessage() {
   if (!configured || sending) return;
+  // Garde anti-course : une ingestion de pièce jointe encore en vol (drop puis
+  // Entrée immédiat) — refuser l'envoi avec un message visible, sinon le
+  // message partirait incomplet et l'attachment en retard s'accrocherait au
+  // message suivant. Chemin unique : onComposerKey (Entrée) et onSendBtn
+  // passent tous deux par ici, le garde couvre les deux.
+  if (attachIngestInFlight > 0) {
+    showComposerAttachError('Pièce jointe en cours de traitement… réessaie dans un instant.');
+    return;
+  }
   const ta = $('composer-text');
   const text = ta.value.trim();
-  if (!text) return;
+  // Texte vide toléré SI des pièces jointes sont en attente (message
+  // « image seule », cas naturel avec le trombone/drag&drop).
+  if (!text && !pendingAttachments.length) return;
 
   // On résout AVANT de vider le composer : un slug invalide ne perd pas la saisie
   // ni ne consomme un tour modèle.
@@ -716,13 +1022,52 @@ async function sendMessage() {
 
   ta.value = ''; ta.style.height = 'auto';
   clearComposerSkillError();
+  clearComposerAttachError();   // l'envoi effectif lève le message « en cours de traitement » d'un essai précédent
   hideSkillAutocomplete();
 
   // Confirmation en attente + saisie libre : la frappe vaut réponse/correction
   // (brief §4.5). On lève le widget avant d'envoyer comme un message normal.
   if (_confirmPending) dismissConfirmation();
 
-  sendUserText(r.literal, r.isSkill ? r.content : undefined);
+  const attachments = pendingAttachments;
+  pendingAttachments = [];
+  renderComposerAttachments();
+  await sendUserText(r.literal, r.isSkill ? r.content : undefined, attachments);
+}
+
+// Construit le `content` d'un message porteur d'attachments au tour d'attache
+// (D2/D3) : lit chaque attachment depuis le cache session (déjà peuplé par
+// storeAttachment à l'ingestion — cf. ingestAttachmentFile) et délègue à
+// buildAttachedMessageContent (resources.js, fonction pure) la construction
+// finale (string si aucune image, sinon tableau de content parts OpenAI).
+// `baseText` : littéral ou contenu baké (slash-skill) déjà résolu par
+// l'appelant — les DEUX doctrines (attachments + skill) composent : le texte
+// baké (skill) reste la partie 'text' de base, les blocs texte-attachment (D3)
+// et les parts image (D2) s'y ajoutent, sans interférence entre les deux
+// mécanismes (bakeSkillMessage ignore tout ce qui concerne les attachments).
+// Attachment introuvable en cache (rare : cache vidé sans reload) → dégradé
+// silencieusement en descripteur direct plutôt que de bloquer l'envoi.
+async function buildOutgoingContentForAttachments(baseText, attachments) {
+  const textAttachments = [];
+  const imageAttachments = [];
+  const binaryAttachments = [];
+  for (const att of attachments) {
+    if (att.kind === 'text') {
+      const rec = getCachedRecordByAttId(att.attId, currentConvId);
+      const text = rec ? utf8Decode(rec.data) : '';
+      textAttachments.push({ att, text });
+    } else if (att.kind === 'image') {
+      const rec = getCachedRecordByAttId(att.attId, currentConvId);
+      const dataUrl = rec ? ('data:' + att.mime + ';base64,' + arrayBufferToBase64(rec.data)) : null;
+      if (dataUrl) imageAttachments.push({ att, dataUrl });
+    } else if (att.kind === 'binary') {
+      // Brief H : aucun octet à envoyer, seulement son descripteur générique
+      // (formatBinaryAttachmentDescriptor, resources.js) — le modèle l'ouvre
+      // ensuite via un outil déclarant le contrat ref+content_b64 (docsDoctrinePrompt).
+      binaryAttachments.push(att);
+    }
+  }
+  return buildAttachedMessageContent(baseText, textAttachments, imageAttachments, binaryAttachments);
 }
 
 // Cœur d'un envoi utilisateur : crée la conv au besoin, pousse le message,
@@ -730,14 +1075,34 @@ async function sendMessage() {
 // et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
 // `bakedContent` (optionnel) : contenu réellement envoyé/stocké pour le modèle
 // (slash-commande skill = littéral + corps du skill). `text` reste le littéral
-// affiché dans la bulle et conservé en `displayText`.
-function sendUserText(text, bakedContent) {
+// affiché dans la bulle et conservé en `displayText`. `attachments` (optionnel,
+// brief A) : tableau de descripteurs {attId,name,mime,size,kind,w?,h?} déjà
+// stockés en IDB par ingestAttachmentFile. LOT 2 : si des attachments
+// image/text sont présents, `content` devient les content parts OpenAI (image)
+// et/ou les blocs texte injectés (D3) — SEULEMENT au tour d'attache ; la
+// réécriture parts→descripteur a lieu une fois le tour terminé (onFinal de
+// dispatchSend, cf. rewriteAttachedUserMessage).
+async function sendUserText(text, bakedContent, attachments) {
   clearComposerSkillError();   // tout envoi effectif lève l'erreur skill du composer
   ensureConversation();
   const ts = Date.now();
-  appendUserMessage(text, ts);
-  const msg = { role: 'user', content: bakedContent != null ? bakedContent : text, ts };
-  if (bakedContent != null) msg.displayText = text;
+  appendUserMessage(text, ts, attachments);
+  const baseText = bakedContent != null ? bakedContent : text;
+  let content = baseText;
+  if (attachments && attachments.length) {
+    content = await buildOutgoingContentForAttachments(baseText, attachments);
+  }
+  const msg = { role: 'user', content, ts };
+  // Doctrine displayText (invariant n°1, META) : displayText = source UNIQUE
+  // de la bulle dès que `content` diverge du littéral tapé. Deux causes,
+  // cumulables : slash-skill bakée (bakedContent), et attachments (content
+  // parts au tour d'attache, puis texte + descripteurs après réécriture, ou
+  // bloc fencé persistant pour un fichier texte) — sans displayText, la bulle
+  // et la textarea d'édition fuiteraient descripteurs/fence après reload.
+  if (bakedContent != null || (attachments && attachments.length && content !== text)) {
+    msg.displayText = text;
+  }
+  if (attachments && attachments.length) msg.attachments = attachments;
   currentThread.push(msg);
   persistCurrent();
   armIdleSummaryTimer();
@@ -757,7 +1122,7 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId);
+  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId, activeSpaceId);
 
   if (settings.summaryInjectionMode === 'propose' && matches.length) {
     showSummaryBanner(matches, {
@@ -841,33 +1206,120 @@ function continueTruncated(btn) {
   dispatchSend([], { continueIndex: idx, wrap });
 }
 
+// Réécriture UNIQUE parts→descripteur (D2, politique de persistance) : mute en
+// place le message user à `idx` de currentThread si son `content` est encore
+// un tableau de content parts (collapseAttachedMessageContent, resources.js,
+// IDEMPOTENTE — no-op si déjà une string). Appelée depuis onFinal de
+// dispatchSend (couvre à la fois une fin normale ET un tour avorté : les deux
+// chemins de runConversation appellent onFinal, cf. api.js) : après un tour
+// avorté, le message NE DOIT PAS rester en parts indéfiniment, sinon le
+// prochain envoi repousserait le même base64 (violation de « images envoyées
+// SEULEMENT au tour d'attache »). Filet supplémentaire au tout début de
+// dispatchSend (voir plus bas) pour le cas plus rare d'une exception réseau
+// qui court-circuite onFinal.
+function rewriteAttachedUserMessage(idx) {
+  if (idx < 0 || idx >= currentThread.length) return;
+  const m = currentThread[idx];
+  if (m.role !== 'user' || !Array.isArray(m.content)) return;
+  m.content = collapseAttachedMessageContent(m.content, m.attachments);
+}
+
 async function dispatchSend(matches, continuation) {
   hideSummaryBanner();
+  // Filet : toute ANCIENNE pièce jointe encore en content-parts (message
+  // user antérieur au dernier, dont le tour précédent n'a pas pu réécrire —
+  // ex. exception réseau qui a court-circuité onFinal) est collapsée avant de
+  // reconstruire le payload, pour ne jamais repousser deux fois le même
+  // base64. Le dernier message user (tour courant) n'est jamais concerné ici :
+  // s'il porte des attachments fraîchement attachés, c'est lui qui doit partir
+  // en parts CE tour-ci.
+  {
+    const lastUserAt = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+    for (let i = 0; i < currentThread.length; i++) {
+      if (i !== lastUserAt) rewriteAttachedUserMessage(i);
+    }
+  }
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const serverName = (activeApiServer() || {}).name || '';   // provenance, persistée sur chaque message assistant
   const reasoningEffort = activeReasoningEffort();
-  const sys = buildSystemMessage();
+  const sysParts = systemMessageParts();
+  const sys = { role: 'system', content: [sysParts.root, sysParts.toolsSystem, sysParts.intent, sysParts.skills, sysParts.docs, sysParts.user].filter(Boolean).join('\n\n---\n\n') };
   // Résout les références de ressources ([resource_ref:…]) dans les entry.result
   // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
   // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.
-  const threadMsgs = expandThread(resolveResourceRefs(currentThread));
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) +,
   // en sibling, le listing skills autotrigger — en préfixe du dernier message
   // utilisateur, pour préserver le préfixe stable (system + historique[0..N-1])
   // et permettre le KV cache prefix matching. Deux blocs distincts, concaténés
   // côte à côte (skills puis contexte), pas fusionnés en un seul appel.
-  const lastUserIdx = threadMsgs.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
+  // Exclut les messages user SYNTHÉTIQUES (recall image, expandThread — flag
+  // _synthetic) : l'injection <miaou_context> doit viser le dernier message user
+  // AUTHENTIQUE, pas une ré-injection d'image (suspect S1, brief A2).
+  const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
+  const dynParts = contextBlockParts(matches);
   if (lastUserIdx >= 0) {
-    const skillsCtx = buildSkillsContextBlock();
+    const skillsCtx = dynParts.skillsContext;
     const ctx = buildContextBlock(matches);
+    const prefix = skillsCtx + ctx + '\n\n---\n\n';
+    const lastContent = threadMsgs[lastUserIdx].content;
+    // Tour d'attache (D2, brief A lot 2) : `content` peut être un tableau de
+    // content parts OpenAI (image jointe) — le préfixe dynamique s'insère alors
+    // DANS la première part texte (créée si absente), jamais par concaténation
+    // de chaîne sur le tableau (produirait "[object Object]…").
     threadMsgs[lastUserIdx] = {
       role: 'user',
-      content: skillsCtx + ctx + '\n\n---\n\n' + threadMsgs[lastUserIdx].content,
+      content: Array.isArray(lastContent)
+        ? prefixTextInContentParts(lastContent, prefix)
+        : prefix + lastContent,
     };
   }
 
-  const apiMessages = [sys].concat(threadMsgs).filter(Boolean);
+  // `_synthetic` est un marqueur interne (suspect S1) : on le retire du payload
+  // réseau — chaque message ne porte que {role, content} comme le reste.
+  const apiMessages = [sys].concat(threadMsgs.map(m =>
+    m && m._synthetic ? { role: m.role, content: m.content } : m
+  )).filter(Boolean);
+
+  // Manifeste du DERNIER ENVOI RÉEL (brief B, B4) : dérivé des mêmes sous-parts
+  // que le payload qui part sur le fil, jamais re-parsé depuis les strings déjà
+  // concaténées (audit §6). threadMsgs a déjà reçu le préfixe dynamique sur le
+  // dernier message user (ci-dessus) : le manifeste le reflète tel qu'envoyé.
+  // Recalculé à nouveau en fin de tour (recomputeLastContextManifest) une fois
+  // les tool-acks/la réponse assistant ajoutés ; ici il doit déjà être posé
+  // AVANT l'appel réseau pour que la pilule (syncContextCounter ci-dessous) et
+  // le drawer, ouvert pendant le streaming, montrent la même chose — bug payé :
+  // sans ce syncContextCounter(), la pilule restait au total du tour précédent
+  // tant que le tour en cours n'était pas terminé, alors que le drawer (ouvert
+  // au clic, recalculé à l'instant) affichait déjà le nouveau total.
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  syncContextCounter();
+
+  // Descripteurs byte-stables des images du TOUR COURANT (D5, brief A lot 2) :
+  // si le dernier message user part en content parts (tour d'attache), on
+  // pré-calcule les mêmes lignes de descripteur que la réécriture définitive
+  // post-tour (formatAttachmentDescriptor, depuis les champs FIGÉS de
+  // message.attachments). streamCompletion (api.js) les utilise UNIQUEMENT si
+  // la dégradation vision-less remplace les parts image — le brief exige
+  // « texte + descripteur à la place », jamais un strip sans équivalent
+  // textuel. Seul le dernier message user peut porter des parts (le filet en
+  // tête de cette fonction a collapsé les messages antérieurs).
+  let imageDescriptors;
+  {
+    const lastUserMsg = currentThread.reduce((acc, m) => (m.role === 'user' ? m : acc), null);
+    if (lastUserMsg && Array.isArray(lastUserMsg.content) && lastUserMsg.attachments) {
+      imageDescriptors = lastUserMsg.attachments
+        .filter(a => a && a.kind === 'image')
+        .map(formatAttachmentDescriptor);
+    }
+  }
+
+  // Flag vision manuel (D5, brief A2) : le modèle qui va produire cette réponse
+  // (`model` = activeModel(), override conv inclus) est-il marqué « sans vision »
+  // sur le serveur actif ? Si oui, streamCompletion dégrade proactivement les
+  // parts image en descripteur, sans attendre un 400 qu'Ollama ne renvoie pas.
+  const visionDisabled = !serverModelVisionEnabled(activeApiServer(), model);
 
   // Mode continuation (feature C) : reprise d'une réponse assistant tronquée
   // (finish_reason: 'length'). Le thread ci-dessus se termine déjà par ce
@@ -900,6 +1352,8 @@ async function dispatchSend(matches, continuation) {
     await runConversation(apiMessages, {
       model,
       reasoningEffort,
+      imageDescriptors,   // D5 : descripteurs du tour courant pour la dégradation vision-less
+      visionDisabled,     // D5 (A2) : modèle marqué sans vision → dégradation proactive
       // Une continuation ne relance JAMAIS d'outils : autoriser des tool_calls
       // ici ouvrirait des cas de raccord ingérables (tours intermédiaires qui
       // pousseraient de nouvelles bulles alors qu'on veut concaténer le texte
@@ -1022,6 +1476,8 @@ async function dispatchSend(matches, continuation) {
           finalizeAssistant(wrap, m.content, m.truncated);
           if (m.reasoning) flushReasoning(wrap, m.reasoning);
           persistCurrent();
+          recomputeLastContextManifest(matches);
+          syncContextCounter();
           setConnDot('ok');
           // Ni maybeTitle() ni nouveau ts : le message garde son horodatage
           // d'origine, la conversation a déjà été titrée (ou pas) à sa création.
@@ -1038,6 +1494,16 @@ async function dispatchSend(matches, continuation) {
         if (finishReason === 'length' || (finishReason === 'aborted' && content && content.trim())) {
           msg.truncated = true;
         }
+        // Réécriture UNIQUE parts→descripteur (D2) : le tour vient de se
+        // terminer (normalement OU avorté, cf. commentaire de
+        // rewriteAttachedUserMessage) — le message user qui portait les
+        // attachments de CE tour ne doit plus repartir en content parts au
+        // tour suivant. AVANT de pousser le message assistant : l'index du
+        // dernier user est stable tant qu'on n'a rien ajouté après lui.
+        {
+          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(lastUserIdx);
+        }
         // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
         // qui teste currentThread.some(role==='assistant') — sur une conversation
         // fraîche (premier tour), un ordre inversé laisserait le bouton caché
@@ -1047,6 +1513,8 @@ async function dispatchSend(matches, continuation) {
         revealMsgTimestamp(wrap, ts);
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
+        recomputeLastContextManifest(matches);
+        syncContextCounter();
         setConnDot('ok');
         maybeTitle();
       },
@@ -1055,6 +1523,12 @@ async function dispatchSend(matches, continuation) {
         // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
         // (« Oui » → create_memory + narration ; « Non » → rien).
+        // Réécriture parts→descripteur (D2) : la halte termine aussi le tour
+        // pour le message user qui a pu porter des attachments.
+        {
+          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(lastUserIdx);
+        }
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const haltTs = Date.now();
         const haltMsg = { role: 'assistant', content: text, model, ts: haltTs };
@@ -1063,6 +1537,8 @@ async function dispatchSend(matches, continuation) {
         finalizeAssistant(wrap, text);
         revealMsgTimestamp(wrap, haltTs);
         persistCurrent();
+        recomputeLastContextManifest(matches);
+        syncContextCounter();
         setConnDot('ok');
         // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
         // ne porte que les actions. Accepter/Rejeter envoient « Oui »/« Non » par
@@ -1211,6 +1687,9 @@ async function runBackfill() {
 function init() {
   applyLogo();
 
+  migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
+  activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space (A3) ; défaut DEFAULT_SPACE_ID
+  syncSpaceUI();
   loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
   const s = loadSettings();
   $('set-system').value = s.systemPrompt || '';
@@ -1220,6 +1699,7 @@ function init() {
   $('set-reasoning-effort').value = s.reasoningEffort || '';
   syncSettingsReasoningLabel();
   $('set-reasoningselector').checked = !!s.showReasoningSelector;
+  $('set-contextwindow').value = s.contextWindow || '';
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');

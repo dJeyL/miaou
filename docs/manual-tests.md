@@ -474,3 +474,212 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     « Exporter les données » → le bouton « Enregistrer » du drawer reste
     désactivé (aucun champ de formulaire n'a été modifié) — l'export n'active
     pas la mécanique dirty.
+
+## Pièces jointes — envoi au modèle et persistance (brief A lot 2)
+
+Nécessite un modèle vision-capable (ex. via un backend qui expose des modèles
+multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque.
+
+51. **Image jointe → le modèle décrit le contenu** : joindre une image (trombone
+    ou drag&drop) à un message, envoyer. Dans DevTools → Network, le payload de
+    CE tour contient `content` en **tableau** pour le message user
+    (`[{type:'text',…},{type:'image_url',image_url:{url:'data:image/…;base64,…'}}]`).
+    La réponse du modèle doit correctement décrire l'image (preuve que le
+    base64 est bien arrivé).
+52. **Tour suivant → payload = descripteur, pas de base64** : dans la même
+    conversation, envoyer un second message (sans nouvelle pièce jointe).
+    Dans Network, le message user du tour précédent apparaît maintenant en
+    `content` **string**, contenant une ligne
+    `[attachment att-N: image "nom.ext", LxH, TAILLE — content available via miaou__recall_attachment]`
+    — **aucun** `data:image` ni base64 dans tout le payload pour ce message.
+    Recharger la page et rouvrir la conversation : la forme persistée
+    (`localStorage['miaou-conversations']`) est déjà la string avec descripteur
+    (vérifiable directement dans DevTools → Application → Local Storage).
+53. **Fichier texte joint → injection directe** : joindre un `.txt`/`.md`/`.py`
+    (liste `ATTACHMENT_TEXT_EXTENSIONS`), envoyer. Dans Network, le message user
+    de ce tour contient le texte tapé **et** un bloc fencé avec en-tête
+    `[attachment att-N: file "nom.ext"]` suivi du contenu du fichier entre
+    ` ``` `. Le modèle doit pouvoir répondre sur le contenu du fichier. Tour
+    suivant : le même bloc fencé reste identique dans le payload (PAS de
+    descripteur pour un attachment texte, contrairement à l'image) —
+    comparer les deux payloads octet pour octet sur ce message.
+54. **Tour avorté avec image jointe (stop manuel)** : joindre une image,
+    envoyer, cliquer stop AVANT ou PENDANT la réponse. Envoyer un message
+    supplémentaire dans la même conversation → dans Network, le message user
+    qui portait l'image doit apparaître en **string avec descripteur**, jamais
+    encore en content parts (la réécriture a bien eu lieu malgré l'abort, pas
+    seulement sur une fin normale).
+55. **Dégradation vision-less (D5)** : avec un backend/modèle qui rejette les
+    `image_url` (400), joindre une image et envoyer. Vérifier dans Network
+    qu'un premier POST échoue (400) puis qu'un second POST part automatiquement
+    SANS `image_url` (texte + descripteur à la place) et que la réponse arrive
+    normalement (pas de bulle d'erreur visible). Le message user de CE tour
+    doit contenir, dans le bloc `<miaou_context>` du payload, une phrase
+    signalant que les images ont été remplacées par du texte. Envoyer un
+    troisième message (sans nouvelle image) dans la même conversation → un
+    seul POST cette fois (pas de nouveau 400/retry, le rejet est mémorisé pour
+    ce couple endpoint+modèle). Changer de modèle vision-capable sur le même
+    endpoint (si disponible) et joindre une image → doit repartir normalement
+    en content parts (le flag de rejet ne doit pas avoir contaminé l'autre
+    modèle).
+56. **`recall_attachment` round-trip (D4 + A2/D3)** : dans une conversation avec
+    une image jointe déjà réécrite en descripteur (tour suivant, cf. test 52),
+    demander explicitement au modèle de **décrire** l'image (par son `att-N` ou
+    en langage naturel — p. ex. « quel texte est écrit sur att-1 ? »). Le modèle
+    doit appeler `miaou__recall_attachment`, un ack « Pièce jointe rappelée : … »
+    doit apparaître dans le fil avec le bloc image affiché (même rendu que
+    `present_resource`). **Point clé A2/D3** : la réponse du modèle doit décrire
+    l'image **fidèlement** (pas de confabulation) — la ré-injection (message user
+    synthétique porteur de la part image, généré par `expandThread`) fonctionne.
+    Vérifier dans l'onglet Network que la requête `/completions` qui suit le
+    recall contient bien, **après** le message `role:'tool'`, un message
+    `role:'user'` avec une part `image_url` (data URL). Recharger la page et
+    rouvrir la conversation : l'ack et son bloc image doivent persister à
+    l'identique ; le storage ne doit contenir que `attId` sur l'ack (pas de
+    dataUrl `recallImage` persistée — elle est recomputée à chaque envoi).
+    Répéter avec un fichier texte joint (le contenu doit revenir en clair, sans
+    bloc image ni message synthétique) et, si possible, un binaire non-image (le
+    contenu retourné doit être le descripteur + la note « non lisible
+    directement », jamais les octets).
+57. **Hook d'inflation dispatcher (D6, nécessite un serveur `mcp_docs` — lot D
+    miaou-mcp-servers — configuré et activé)** : joindre un fichier binaire
+    (ex. PDF), demander au modèle de l'explorer via un outil `docs__*`
+    (ex. lister ses pages). Dans Network, le premier appel `tools/call` vers
+    ce serveur pour ce `ref` doit porter `content_b64` (et `session_id`) dans
+    ses arguments — vérifier qu'ils sont **absents** de l'ack `mcp_call`
+    affiché dans le fil (les args visibles/persistés restent les args
+    originaux du modèle, sans `content_b64` ni `session_id`). Un second appel
+    du modèle sur le **même** `ref` dans le même échange ne doit **plus**
+    porter `content_b64` (état « déjà poussé ») mais doit **toujours** porter
+    `session_id` (injecté sur chaque appel capable — le serveur en a besoin
+    pour localiser sa session). Recharger la page (réinitialise l'état en
+    mémoire) et redemander un appel sur ce `ref` dans la même conversation →
+    `content_b64` réapparaît dans les args du wire (l'état poussé ne survit
+    pas au rechargement, par design). Si possible, simuler une expiration
+    TTL côté serveur (ou redémarrer le serveur docs) puis redemander un appel
+    sur un `ref` que MIAOU croit déjà poussé → un `REF_UNKNOWN` doit
+    déclencher exactement UN rejeu automatique avec le contenu inliné,
+    invisible dans le fil : UNE seule ligne d'ack `mcp_call` pour l'échange
+    complet, sans classe d'erreur si le rejeu réussit (l'entrée d'ack du
+    premier essai est réutilisée par le rejeu — même rendu qu'un rejeu
+    `staleSession` ; deux POST visibles dans Network, un seul ack).
+58. **Spaces — création et switch (lot C).** Depuis la sidebar, cliquer le
+    sélecteur de Space (« Général » par défaut) → menu déroulant. Cliquer
+    « + Nouvel espace » → l'écran Space s'ouvre directement, renommer (ex.
+    « Perso ») et Enregistrer. Revenir au sélecteur : le nouveau Space
+    apparaît dans la liste. Cliquer dessus (pas le crayon) → bascule vers ce
+    Space : la sidebar se vide (aucune conversation), le fil se réinitialise
+    (écran d'accueil), le badge topbar (sidebar repliée) affiche le nom du
+    nouveau Space. Revenir au default Space (« Général ») → le badge
+    disparaît (exception assumée, brief D5).
+59. **Spaces — herméticité bidirectionnelle.** Dans « Général », créer une
+    conversation « Test A ». Basculer vers « Perso », créer « Test B ».
+    Vérifier : la sidebar de « Perso » ne montre que « Test B » ; la
+    recherche sidebar dans « Perso » ne retrouve jamais « Test A » (titre ou
+    contenu) ; demander au modèle (outil `list_conversations`) → ne doit
+    lister que « Test B ». Demander explicitement `get_conversation` sur
+    l'id technique de « Test A » (si connu) depuis « Perso » → réponse
+    « introuvable », identique à un id inventé (pas d'oracle). Rebasculer
+    vers « Général » → symétrique (« Test A » visible, « Test B » invisible
+    partout).
+60. **Spaces — mémoire scopée et promotion.** Depuis « Perso », demander au
+    modèle de mémoriser un fait (`create_memory`, chemin direct). Basculer
+    vers « Général » : le souvenir ne doit apparaître ni dans l'injection de
+    contexte ni dans l'écran Space de « Général ». Retourner dans « Perso »,
+    ouvrir son écran → le souvenir est listé avec un bouton « Promouvoir en
+    profil ». Cliquer dessus → le souvenir disparaît de la liste de « Perso »
+    et apparaît dans Paramètres → Profil (drawer réglages, onglet renommé).
+    Vérifier qu'il est désormais injecté quel que soit le Space actif.
+61. **Spaces — description ajoutée, pas substituée (D4 corrigé).** Dans
+    Paramètres, renseigner un prompt système global non vide. Ouvrir l'écran
+    d'un Space, renseigner une description, Enregistrer. Envoyer un message
+    dans ce Space et inspecter la requête réseau (payload du message
+    `system`) : le prompt global ET la description du Space doivent tous les
+    deux être présents (concaténés, séparateur `---`), jamais l'un à la place
+    de l'autre. Basculer vers un Space sans description → seul le prompt
+    global apparaît.
+62. **Spaces — suppression avec cascade (D6).** Créer un Space de test avec
+    au moins une conversation et un souvenir. Ouvrir son écran → bouton
+    « Supprimer cet espace » affiche les comptes (ex. « Supprimer (1 conv.,
+    1 souvenir) »). Premier clic arme le bouton, second clic dans la fenêtre
+    confirme : le Space, ses conversations (et leurs pièces jointes IDB) et
+    ses souvenirs scopés disparaissent ; si c'était le Space actif, bascule
+    automatique vers « Général ». Un souvenir profil créé en parallèle doit
+    rester intact. Vérifier qu'aucun bouton de suppression n'existe sur
+    l'écran du default Space.
+63. **Spaces — export/import round-trip.** Créer un second Space avec du
+    contenu, exporter (Paramètres → Données). Importer ce fichier (remplace
+    tout l'état local) : vérifier que le second Space, ses conversations et
+    ses souvenirs scopés reviennent identiques, et que le Space actif
+    persisté (`miaou-active-space`) est cohérent après le `location.reload()`
+    de fin d'import.
+64. **Flag vision MANUEL par (serveur, modèle) — D5 brief A2** : ce test couvre
+    le silent-failure Ollama (F1), que le test 55 (réactif sur 400) ne peut PAS
+    attraper. **Diagnostic préalable** — repérer un modèle sans vision : joindre
+    une image à un modèle suspect et l'interroger ; si la réponse (ou le
+    raisonnement streamé) mentionne un placeholder brut du type `[img-0]` lu
+    comme du texte, le build du modèle n'a pas de projecteur vision. Confirmer
+    par un curl direct :
+    ```bash
+    B64=$(base64 -i /chemin/image.jpg | tr -d '\n')
+    curl -s http://HOST:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{
+      "model":"MODELE","messages":[{"role":"user","content":[
+        {"type":"text","text":"Décris cette image."},
+        {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,'"$B64"'"}}]}]}' | python3 -m json.tool
+    ```
+    Une description hors-sujet / la mention d'un placeholder = pas de vision.
+    **Réglage** : ouvrir le drawer des serveurs API, éditer la carte du serveur,
+    passer le pill « Vision (images) » du modèle concerné sur « Sans vision ».
+    Enregistrer. **Vérification** : joindre une image et envoyer. Dans Network,
+    un **seul** POST doit partir (pas de 400/retry), **sans** `image_url` — le
+    message user porte le texte + le descripteur, et le bloc `<miaou_context>`
+    la phrase de remplacement. Recharger la page : le réglage doit persister (le
+    storage `miaou-api-servers[].vision` porte `{ "MODELE": false }`). Repasser
+    sur « Images activées » : le prochain envoi repart en content parts. Vérifier
+    l'isolation : marquer un modèle A « sans vision » ne doit pas dégrader un
+    modèle B vision-capable du même serveur (clé par nom de modèle).
+65. **Descripteur binaire générique + doctrine docs conditionnelle (brief H)** :
+    ce test couvre le déclencheur en AMONT du hook D6 (test 57 couvre l'aval,
+    une fois l'outil déjà appelé) — le modèle doit choisir d'appeler l'outil
+    docs **spontanément**, sans qu'on le lui demande. Nécessite un serveur
+    `mcp_docs` (miaou-mcp-servers) configuré et activé.
+    - **Sans serveur docs actif** : joindre un fichier binaire quelconque
+      (.docx, .zip, .pdf) à un message, envoyer. Dans Network, le message user
+      de ce tour contient une ligne `[attachment att-N: file "nom.ext", <mime>,
+      <taille> — binary content, not inlined]` dans sa partie texte (pas de
+      content part, contrairement à l'image). Le message système ne doit PAS
+      contenir la doctrine docs (chercher `content_b64` dans le payload
+      `system` : absent).
+    - **Avec serveur docs actif** : même envoi. Le payload `system` doit cette
+      fois contenir la doctrine docs (mention de `ref`, `content_b64`, et de
+      l'exemple `docs__read`). Sans qu'on demande explicitement d'ouvrir le
+      fichier, le modèle doit appeler spontanément un outil `docs__*` (typ.
+      `docs__list` puis `docs__read`) avec `ref="att-N"` et restituer le
+      contenu extrait dans sa réponse.
+    - **Généricité** : répéter avec un type de fichier que le serveur docs ne
+      sait PAS ouvrir (ex. un `.bin` arbitraire) — le descripteur émis doit
+      être structurellement identique (même format, juste le mime qui change),
+      le modèle peut alors soit tenter l'outil (qui répondra une erreur propre
+      « type non supporté »), soit s'abstenir : dans tous les cas, pas de
+      confabulation de contenu.
+    - **Cas réel piégeux (documents tabulaires)** : si le `.docx` joint est un
+      formulaire dont tout le contenu est dans un tableau Word (aucun
+      paragraphe non-vide) — cas réel rencontré en session — le serveur docs
+      doit renvoyer un contenu non-vide (fix côté serveur, `docx_tables`,
+      hors périmètre MIAOU mais bloquant pour ce test si le serveur n'est pas
+      à jour). Un résultat vide de `docs__read` sur un fichier qui contient
+      manifestement du texte signale un bug serveur, pas un problème de
+      déclenchement côté MIAOU.
+
+66. **Inspecteur de contexte (brief B)** : le compteur `≈ N tok` apparaît dans
+    le composer. Activer plusieurs serveurs MCP + skills autotrigger + quelques
+    souvenirs → le total augmente visiblement. Ouvrir le drawer (clic sur le
+    compteur) : les segments de la barre empilée et les lignes de la table
+    doivent sommer au total affiché. Envoyer un message → le drawer rouvert
+    affiche l'en-tête « dernier envoi réel » (pas simulation). Changer de
+    conversation ou de Space → le compteur retombe sur une simulation (en-tête
+    « simulation du prochain envoi »). Joindre une image → une ligne « Images
+    jointes (très approximatif) » apparaît, comptée à une constante fixe (pas
+    au poids du base64). Réglages → Modèle & raisonnement → renseigner une
+    fenêtre de contexte → le compteur affiche un `%` et passe ambre au-delà de
+    80% d'occupation.

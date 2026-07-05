@@ -335,6 +335,105 @@ describe('create_memory — écriture directe', function() {
     expect(listMemoryEntries().length).toBe(0);
     expect(getPendingToolAcks().length).toBe(0);
   });
+  it('stampe le scope avec le Space actif (brief D3)', function() {
+    localStorage.clear();
+    activeSpaceId = 'sp1';
+    try {
+      ct('create_memory', { content: 'x' });
+      expect(listMemoryEntries()[0].scope).toBe('sp1');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+});
+
+describe('Herméticité des Spaces — outils modèle (brief D2/D3)', function() {
+  it('get_conversation sur une conv d\'un autre Space répond "introuvable" (pas d\'oracle)', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't', timestamp: 1000, spaceId: 'sp-other', messages: [] });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('get_conversation', { id: 'c1' });
+      expect(r).toContain('introuvable');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('get_conversation sur une conv du Space actif fonctionne normalement', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't', timestamp: 1000, spaceId: 'sp1', messages: [] });
+    activeSpaceId = 'sp1';
+    try {
+      var r = JSON.parse(ct('get_conversation', { id: 'c1' }));
+      expect(r.summary).toBe('s');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('list_conversations exclut les conversations d\'un autre Space', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't1', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't1', timestamp: 1000, spaceId: 'sp1', messages: [] });
+    saveSummary('c2', { title: 't2', timestamp: Date.parse('2026-03-02T00:00:00Z'), summary: 's', keywords: [] });
+    saveConversation({ id: 'c2', title: 't2', timestamp: 1000, spaceId: 'sp-other', messages: [] });
+    activeSpaceId = 'sp1';
+    try {
+      var r = JSON.parse(ct('list_conversations', {}));
+      expect(r.length).toBe(1);
+      expect(r[0].id).toBe('c1');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('update_memory refuse hors-Space ("Souvenir introuvable.")', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp-other' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('update_memory', { id: 'm1', content: 'y' });
+      expect(r).toContain('introuvable');
+      expect(loadMemories()[0].content).toBe('x');   // pas modifié
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('update_memory refuse un souvenir de scope profile (pas exposé aux outils Space)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('update_memory', { id: 'm1', content: 'y' });
+      expect(r).toContain('introuvable');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('delete_memory refuse hors-Space ("Souvenir introuvable.")', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp-other' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('delete_memory', { id: 'm1' });
+      expect(r).toContain('introuvable');
+      expect(loadMemories()[0].suppressed).toBeFalsy();   // pas tombstoné
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('update_memory/delete_memory fonctionnent normalement dans le Space actif', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp1' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('update_memory', { id: 'm1', content: 'y' });
+      expect(r).toContain('mis à jour');
+      expect(loadMemories()[0].content).toBe('y');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
 });
 
 describe('update_memory — correction in-place', function() {
@@ -492,5 +591,152 @@ describe('BINARY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PRO
   });
   it('la règle ne vit PAS dans MEMORY_DOCTRINE', function() {
     expect(MEMORY_DOCTRINE.indexOf('ne simule pas')).toBe(-1);
+  });
+});
+
+describe('ATTACHMENT_DOCTRINE (constante, partie de ROOT_SYSTEM_PROMPT)', function() {
+  it('mentionne recall_attachment et est incluse dans ROOT_SYSTEM_PROMPT', function() {
+    expect(ATTACHMENT_DOCTRINE.indexOf('recall_attachment') >= 0).toBeTruthy();
+    expect(ROOT_SYSTEM_PROMPT.indexOf(ATTACHMENT_DOCTRINE) >= 0).toBeTruthy();
+  });
+  it('brief H : la phrase binaire est nuancée (renvoie vers la doctrine docs conditionnelle), plus affirmative "pas lisible" sans réserve', function() {
+    expect(ATTACHMENT_DOCTRINE.indexOf('sauf si un outil') >= 0).toBeTruthy();
+    expect(ATTACHMENT_DOCTRINE.indexOf('le résultat renvoie le') >= 0).toBeFalsy();
+  });
+});
+
+describe('anyToolDeclaresAttachmentInflation (brief H — balayage générique du registre)', function() {
+  it('false si _remoteTools vide', function() {
+    expect(anyToolDeclaresAttachmentInflation()).toBe(false);
+  });
+  it('true dès qu\'un serveur, quel qu\'il soit, expose ref+content_b64', function() {
+    _remoteTools['whatevername'] = [{
+      name: 'whatevername__read',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } },
+    }];
+    expect(anyToolDeclaresAttachmentInflation()).toBe(true);
+    delete _remoteTools['whatevername'];
+  });
+  it('false si un serveur existe mais ne déclare que ref (pas content_b64)', function() {
+    _remoteTools['partial'] = [{
+      name: 'partial__search',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {} } },
+    }];
+    expect(anyToolDeclaresAttachmentInflation()).toBe(false);
+    delete _remoteTools['partial'];
+  });
+  it('plusieurs serveurs, un seul qualifiant → true', function() {
+    _remoteTools['noop'] = [{ name: 'noop__x', description: '', inputSchema: { type: 'object', properties: {} } }];
+    _remoteTools['docs'] = [{ name: 'docs__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } } }];
+    expect(anyToolDeclaresAttachmentInflation()).toBe(true);
+    delete _remoteTools['noop'];
+    delete _remoteTools['docs'];
+  });
+});
+
+describe('docsDoctrinePrompt (brief H — conditionnel, pattern skillDoctrinePrompt)', function() {
+  it('chaîne vide si aucun outil ne déclare le contrat', function() {
+    expect(docsDoctrinePrompt()).toBe('');
+  });
+  it('non vide dès qu\'un outil déclare ref+content_b64, mentionne ref et content_b64 par CRITÈRE + docs__read en EXEMPLE', function() {
+    _remoteTools['docs'] = [{ name: 'docs__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } } }];
+    var p = docsDoctrinePrompt();
+    expect(p.length > 0).toBeTruthy();
+    expect(p.indexOf('content_b64') >= 0).toBeTruthy();
+    expect(p.indexOf('docs__read') >= 0).toBeTruthy();
+    delete _remoteTools['docs'];
+  });
+  it('ne mentionne aucun nom de serveur en dur (renommable par l\'utilisateur)', function() {
+    _remoteTools['monserveurperso'] = [{ name: 'monserveurperso__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } } }];
+    var p = docsDoctrinePrompt();
+    expect(p.indexOf('monserveurperso') >= 0).toBeFalsy();
+    delete _remoteTools['monserveurperso'];
+  });
+});
+
+describe('recall_attachment (D4) — outil registre', function() {
+  it('ref manquant → message d\'erreur explicite, pas de crash', function() {
+    var r = ct('recall_attachment', {});
+    expect(r).toContain('manquant');
+  });
+  it('ref inconnu du cache session → message explicite', function() {
+    var r = ct('recall_attachment', { ref: 'att-999' });
+    expect(r).toContain('introuvable');
+  });
+  it('image → tool result annonciateur + injection empilée (A2/D3, tour courant)', function() {
+    var ab = new ArrayBuffer(3);
+    new Uint8Array(ab).set([1, 2, 3]);
+    _resourceCache['res_i'] = { id: 'res_i', attId: 'att-7', conversationId: 'cX',
+      class: 'binary', mime: 'image/png', name: 'x.png', data: ab };
+    currentConvId = 'cX';
+    clearPendingImageInjections();
+    var r = ct('recall_attachment', { ref: 'att-7' });
+    expect(r).toContain('suit dans le message suivant');
+    var inj = getPendingImageInjections();
+    expect(inj.length).toBe(1);
+    expect(inj[0].attId).toBe('att-7');
+    expect(inj[0].dataUrl.indexOf('data:image/png;base64,')).toBe(0);
+    clearPendingImageInjections();
+    delete _resourceCache['res_i'];
+    currentConvId = null;
+  });
+  it('texte inline → contenu en clair, aucune injection image empilée', function() {
+    var buf = utf8Encode('coucou');
+    _resourceCache['res_t'] = { id: 'res_t', attId: 'att-8', conversationId: 'cX',
+      class: 'inline', mime: 'text/plain', name: 't.txt', data: buf };
+    currentConvId = 'cX';
+    clearPendingImageInjections();
+    var r = ct('recall_attachment', { ref: 'att-8' });
+    expect(r).toBe('coucou');
+    expect(getPendingImageInjections().length).toBe(0);
+    delete _resourceCache['res_t'];
+    currentConvId = null;
+  });
+});
+
+describe('hook d\'inflation dispatcher (brief A, D6) — helpers purs', function() {
+  it('toolDeclaresAttachmentInflation : capability détectée via ref+content_b64 déclarés, sans nom de serveur en dur', function() {
+    _remoteTools['docstest'] = [{
+      name: 'docstest__read',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, session_id: {} } },
+    }];
+    expect(toolDeclaresAttachmentInflation({ name: 'docstest' }, 'read')).toBe(true);
+    delete _remoteTools['docstest'];
+  });
+  it('toolDeclaresAttachmentInflation : absent si ref seul (pas de content_b64 déclaré)', function() {
+    _remoteTools['other'] = [{
+      name: 'other__search',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {} } },
+    }];
+    expect(toolDeclaresAttachmentInflation({ name: 'other' }, 'search')).toBe(false);
+    delete _remoteTools['other'];
+  });
+  it('toolDeclaresAttachmentInflation : outil inconnu du cache distant → false, pas de throw', function() {
+    expect(toolDeclaresAttachmentInflation({ name: 'inconnu' }, 'x')).toBe(false);
+  });
+  it('ATTACHMENT_REF_RE : reconnaît att-N, rejette les autres formes', function() {
+    expect(ATTACHMENT_REF_RE.test('att-1')).toBe(true);
+    expect(ATTACHMENT_REF_RE.test('att-42')).toBe(true);
+    expect(ATTACHMENT_REF_RE.test('res_abc')).toBe(false);
+    expect(ATTACHMENT_REF_RE.test('att-')).toBe(false);
+    expect(ATTACHMENT_REF_RE.test('att-1x')).toBe(false);
+  });
+  it('état poussé/non-poussé : scopé par (conversationId, attId), indépendant entre conversations', function() {
+    expect(isAttachmentPushed('c1', 'att-1')).toBe(false);
+    markAttachmentPushed('c1', 'att-1');
+    expect(isAttachmentPushed('c1', 'att-1')).toBe(true);
+    expect(isAttachmentPushed('c2', 'att-1')).toBe(false);   // autre conversation, même attId
+    clearAttachmentPushState('c1');
+    expect(isAttachmentPushed('c1', 'att-1')).toBe(false);
+  });
+  it('_isRefUnknownError : détecte le code machine REF_UNKNOWN, jamais par sous-chaîne du texte libre', function() {
+    expect(_isRefUnknownError({ isError: true, errorCode: 'REF_UNKNOWN' })).toBe(true);
+    expect(_isRefUnknownError({ isError: true, errorCode: 'AUTRE_ERREUR' })).toBe(false);
+    expect(_isRefUnknownError({ isError: true, content: [{ type: 'text', text: 'contient REF_UNKNOWN dans le texte' }] })).toBe(false);
+    expect(_isRefUnknownError(null)).toBe(false);
   });
 });

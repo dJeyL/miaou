@@ -70,6 +70,58 @@
 .new-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
 .new-btn svg { width: 13px; height: 13px; }
 
+/* sélecteur de Space (tête de sidebar) : même mécanique que les sélecteurs du
+   composer (bouton pilule + .model-menu générique via la classe partagée
+   .space-menu), PAS de <select> natif (règle projet). */
+.space-select { position: relative; margin: 0 14px 10px; }
+.space-select-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease);
+}
+.space-select-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
+.space-select-btn svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-3); }
+.space-select-btn .chev { margin-left: auto; opacity: .7; }
+.space-select-btn #space-select-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-menu { left: 0; right: 0; min-width: 0; }
+.space-menu .model-opt { font-family: var(--sans); gap: 6px; }
+.space-menu .model-opt .space-opt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-menu .space-opt-edit {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 20px; height: 20px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  opacity: 0;
+  transition: opacity 120ms var(--ease), background 120ms var(--ease), color 120ms var(--ease);
+}
+.space-menu .model-opt:hover .space-opt-edit { opacity: 1; }
+.space-menu .space-opt-edit:hover { background: var(--surface-4); color: var(--text); }
+.space-menu .space-opt-edit svg { width: 12px; height: 12px; }
+.space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
+
 /* recherche dans l'historique */
 .sidebar-search {
   display: flex;

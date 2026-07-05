@@ -33,6 +33,11 @@ l'interface, JetBrains Mono pour le code.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
   ce point.
 - Écran d'accueil aléatoire (emoji + accroche) à chaque nouvelle conversation.
+- **Inspecteur de contexte** : compteur `≈ N tok` dans le composer, cliquable ;
+  ouvre un drawer détaillant la composition du payload envoyé au modèle (prompt
+  racine, outils, prompt utilisateur, mémoire, résumés, historique, pièces
+  jointes…) avec une barre empilée et une table chars/tokens/%. Estimation
+  chars/4, réglage optionnel de la fenêtre de contexte (jauge d'occupation).
 
 **Historique & mémoire**
 
@@ -56,6 +61,23 @@ l'interface, JetBrains Mono pour le code.
 - Chaque appel d'outil produit une ligne d'ack visible dans le thread :
   annulable pour les écritures mémoire, informative pour les lectures
   d'historique.
+
+**Espaces**
+
+- Espaces de travail mutuellement hermétiques (sélecteur en tête de sidebar) :
+  chaque Space a ses propres conversations, pièces jointes et souvenirs. La
+  zone historique hors-Space est elle-même un Space (« Général »), sans cas
+  particulier. Le modèle ne voit et ne peut agir que sur le contenu du Space
+  actif — aucun outil ne peut lire ou modifier un autre Space.
+  Un scope **profil** existe au-dessus des Spaces pour les souvenirs qui
+  doivent rester valables partout (promotion manuelle depuis l'écran d'un
+  Space).
+- Chaque Space peut porter une **description** libre, ajoutée après le
+  prompt système utilisateur (jamais en remplacement) — pour un contexte
+  propre au Space sans dupliquer les réglages globaux.
+- Suppression d'un Space : cascade explicite à double confirmation
+  (conversations, pièces jointes et souvenirs scopés supprimés ; les
+  souvenirs profil restent intacts).
 
 **Skills**
 

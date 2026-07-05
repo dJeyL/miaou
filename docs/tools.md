@@ -2,17 +2,24 @@
 
 ## Registre d'outils
 
-Neuf outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+Dix outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur.
 
 **Lecture de l'historique :**
 - `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
-  (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone.
+  (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone. **Herméticité
+  des Spaces (brief D2, lot C)** : une conversation d'un autre Space que
+  `activeSpaceId` répond le même message « Conversation introuvable ou
+  souvenir supprimé. » — pas d'oracle qui distinguerait « hors-Space » de
+  « n'existe pas ». Un résumé orphelin (conversation supprimée) vaut default
+  Space. Cf. piège n°18, `CLAUDE.md`.
 - `list_conversations(since?, query?, with_contents=false)` — entrées
   non-tombstone dont `timestamp >= Date.parse(since)`, **exclut toujours la
   conversation courante** (`currentConvId`, global de main.js — accès défensif
   via `typeof … !== 'undefined'` car tools.js est aussi évalué seul par le test
-  runner) : « conversations passées » n'inclut pas celle en cours. `since` et
+  runner) : « conversations passées » n'inclut pas celle en cours. Filtrée en
+  amont par Space actif (même posture d'herméticité que `get_conversation`,
+  résumé orphelin = default Space). `since` et
   `query` optionnels, filtres cumulables (since puis query). `query` réutilise
   le **même moteur que la recherche sidebar** (`tokenize` + `scoreSummary`,
   utils.js, seuil `score >= 1`) — mots-clés pèsent 2, mots du résumé/titre
@@ -22,15 +29,68 @@ description **du registre** — ne jamais la coder en dur.
 **Écriture directe de souvenirs (chemin direct — instruction explicite) :**
 - `create_memory(content)` — écrit immédiatement dans `miaou-memories`, retourne
   l'identifiant généré (utile pour un `update_memory` ultérieur dans le même
-  échange).
+  échange). **Stampe `scope = activeSpaceId`** (brief D3) : aucun paramètre
+  `scope` exposé au modèle, toujours le Space actif — jamais `'profile'`
+  (promotion réservée à une action UI).
 - `update_memory(id, content)` — correction in-place, pas de tombstone.
-- `delete_memory(id)` — tombstone réversible (`suppressed: true`).
+  **Refuse hors-Space** (`existing.scope !== activeSpaceId`, y compris scope
+  `'profile'`) avec « Souvenir introuvable. » — même posture sans-oracle que
+  `get_conversation`.
+- `delete_memory(id)` — tombstone réversible (`suppressed: true`). Même garde
+  de scope que `update_memory`.
 
 **Présentation de ressource :**
 - `present_resource(id)` — handler **synchrone** (lookup `_resourceCache`) ; pousse
   un ack `resource_presented` — le rendu du bloc (image, code, téléchargement) est
   délégué à `placeToolAck` (même chemin live et reload via IDB). Renvoie une erreur
   textuelle si l'id est inconnu du cache session.
+
+**Rappel de pièce jointe (brief A, lot 3, D4) :**
+- `recall_attachment(ref)` — `ref` = `att-N` (id conversation-scopé d'une pièce
+  jointe de message, cf. `docs/storage.md`). Handler **synchrone**, lookup
+  `getCachedRecordByAttId(ref, currentConvId)` (resources.js — même session
+  cache que `present_resource`, peuplé par `loadConversationResources` à
+  l'ouverture). Distinct de `present_resource` : id-space différent (`att-N`
+  vs `res_...`), paramètre `ref` (pas `id`) — collision de nom évitée
+  volontairement (décision actée lot 2, cf. handover). Comportement par
+  `kind` du record : **image** → **les pixels SONT ré-injectés au modèle**
+  (brief A2 / D3, voie (b) validée par probe le 2026-07-05 : la voie (a) — part
+  image dans le message `role:'tool'` — transmet bien les pixels sur Ollama mais
+  **confabule silencieusement** quand la part est strippée ; la voie (b) échoue
+  honnêtement « AUCUNE IMAGE », d'où le choix). Le handler renvoie un tool result
+  **textuel annonciateur** (« Image att-N ré-affichée… son contenu suit dans le
+  message suivant ») et pousse un ack `attachment_recalled`. La ré-injection
+  proprement dite est un **message user synthétique** porteur de la part image,
+  **généré à la volée par `expandThread`** (utils.js, pur) et inséré APRÈS tous
+  les tool results du groupe — jamais un entry `currentThread` persisté. La
+  dataUrl est posée sur une copie de l'ack (champ `recallImage`) par le pré-pass
+  **`resolveRecallImages`** (resources.js, navigateur) qui la reconstruit depuis
+  le record en cache (`arrayBufferToBase64(record.data)`) à **chaque** envoi —
+  byte-stable (dérivée du record figé), **jamais persistée** (absente
+  d'`ACK_COPY_FIELDS`, seul `attId` l'est). Branché dans `dispatchSend` :
+  `expandThread(resolveRecallImages(resolveResourceRefs(currentThread)))`. Record
+  purgé du cache → pas de `recallImage` → aucun message synthétique émis, seul le
+  tool result textuel subsiste (dégradation propre). L'ack pousse aussi le bloc
+  image affiché à l'utilisateur via `placeToolAck` (lookup par `attId` **pas**
+  par `id` — seule différence de contrat avec `resource_presented`) ; **texte**
+  (`record.class === 'inline'`) → renvoie le contenu déchiffré en clair
+  (`utf8Decode`) ; **binaire** → renvoie `formatResourceDescriptor(...)` + note
+  « contenu non lisible directement » (les futurs outils `docs__*` du lot D
+  restent la voie d'extraction pour ce cas). Erreur textuelle si `ref` inconnu du
+  cache session ou absent de la conversation courante. La forme cross-turn
+  **persistée** reste le descripteur (`formatAttachmentDescriptor`, resources.js,
+  piège n°17) : le message user d'origine porte toujours le descripteur `att-N`,
+  la ré-injection image n'est que transitoire (recomputée par le pré-pass, jamais
+  écrite). `servedKeys` (api.js) court-circuite un recall rigoureusement identique
+  répété dans le même échange (clé `nom:arguments`) : acceptable, l'image ré-injectée
+  plus haut est encore dans le contexte de l'échange. Doctrine dédiée
+  `ATTACHMENT_DOCTRINE` (tools.js, partie de `ROOT_SYSTEM_PROMPT`) : distincte de
+  `BINARY_DOCTRINE` (qui couvre les ressources produites par un outil, pas les
+  fichiers attachés par l'utilisateur). Elle est calée sur l'implémentation
+  réelle : fichier texte → contenu toujours inline (D3, ne jamais rappeler) ;
+  image → rappel qui **ré-injecte les pixels** dans le contexte (et ré-affiche à
+  l'utilisateur), interdiction de décrire une image « de mémoire » sans l'avoir
+  rappelée ; binaire → descripteur seul.
 
 **Skills (sous-namespace `miaou__skills__`, cf. `docs/skills.md`) :**
 - `skills__list()` — méta (`slug`, `name`, `description`) des skills **activés
@@ -59,11 +119,12 @@ Mécanisme **générique** couvrant les écritures mémoire, les lectures d'hist
 et les appels MCP distants. Chaque handler traçable pousse un descripteur
 `{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
 memory_update | memory_delete | conversation_read | conversation_list | mcp_call |
-resource_stored | resource_presented | resource_deleted | skill_list | skill_read`.
+resource_stored | resource_presented | resource_deleted | attachment_recalled |
+skill_list | skill_read`.
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js) consomment la file via
 `getPendingToolAcks` / `clearPendingToolAcks` et injectent des messages
 `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, server?,
-name?, error?, resolved?, mime?, size?, args?, result?, ts?, group?,
+name?, error?, resolved?, mime?, size?, attId?, args?, result?, ts?, group?,
 assistantText?, intent?, slug?, convId? }` dans `currentThread`.
 La whitelist de champs est **unique** : `ACK_COPY_FIELDS` + `copyAckFields`
 (utils.js), partagée par les quatre sites de copie (`onToolAcks`/`onEarlyAcks`

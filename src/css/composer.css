@@ -18,12 +18,33 @@
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  padding: 8px 8px 8px 14px;
+  /* Padding gauche réduit : le trombone (34px de large, glyphe 16px centré)
+     apporte déjà ~9px de blanc interne — 5px le placent plus près du bord
+     gauche que du placeholder, pas l'inverse. */
+  padding: 8px 8px 8px 5px;
   transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
 }
 .input-wrap:focus-within { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
 .input-wrap.disabled { border-color: rgba(255,93,93,.3); background: rgba(255,93,93,.04); }
 .input-wrap.disabled:focus-within { box-shadow: none; }
+/* survol drag&drop d'un fichier — même mécanique visuelle que .disabled (bordure
+   + fond teintés), couleur accent au lieu de rouge */
+.input-wrap.dragover { border-color: var(--accent-bd); background: var(--accent-dim); }
+
+/* bouton trombone : gabarit icon-btn du composer, voisin du send-btn */
+.attach-btn {
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  border-radius: 9px;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+.attach-btn:hover { background: var(--surface-3); color: var(--text); }
+.attach-btn svg { width: 16px; height: 16px; }
 
 #composer-text {
   flex: 1;
@@ -109,6 +130,22 @@
   transition: background 140ms var(--ease);
 }
 .composer-model-btn:hover { background: var(--accent-bd); }
+
+/* compteur compact d'inspecteur de contexte (brief B) */
+.ctx-counter {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  padding: 4px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+.ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
+.ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
 .composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
 .composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
 .composer-model-btn #composer-model-label {
@@ -243,3 +280,65 @@
   border-color: transparent;
 }
 .mb-btn.primary:hover { background: var(--accent-2); }
+
+/* ═══ Pièces jointes (composer) ═══ */
+/* Chips en attente, au-dessus de l'input-wrap. Structure partagée avec les
+   chips rendues dans la bulle (chat.css .msg-attachments) — mêmes classes
+   .att-chip/.att-thumb/.att-name/.att-size, gabarit identique. */
+.attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.attach-chips[hidden] { display: none; }
+
+.att-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 220px;
+}
+.att-thumb {
+  width: 22px; height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface-3);
+}
+.att-icon {
+  width: 22px; height: 22px;
+  border-radius: 4px;
+  display: grid; place-items: center;
+  background: var(--surface-3);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.att-icon svg { width: 13px; height: 13px; }
+.att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+  color: var(--text);
+}
+.att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+.att-remove {
+  display: grid; place-items: center;
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.att-remove:hover { background: var(--surface-3); color: var(--err); }
+.att-remove svg { width: 10px; height: 10px; }

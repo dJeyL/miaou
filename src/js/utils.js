@@ -41,6 +41,7 @@ const ACK_COPY_FIELDS = [
   'title', 'count', 'convId',            // lectures d'historique
   'server', 'name', 'intent',            // MCP / traçage d'intention
   'resourceName', 'mime', 'size',        // ressources IDB
+  'attId',                                // pièces jointes (recall_attachment)
   'slug',                                // skills
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
@@ -422,6 +423,22 @@ function _hashId9(s) {
   return h.toString(36).padStart(9, '0').substring(0, 9);
 }
 
+// Texte exploitable d'un message pour titrage/résumé (generateTitle/
+// generateSummary, api.js) : `displayText` (littéral tapé, slash-skill) en
+// priorité, sinon `content` — mais `content` peut être un tableau de content
+// parts (tour d'attache avec image, brief A lot 2) : une concaténation
+// implicite `role + ': ' + content` stringifierait maladroitement un tel
+// tableau (« [object Object] »). N'extrait QUE la/les part(s) texte ; les
+// images n'ont pas de représentation textuelle ici (titrage/résumé n'ont pas
+// besoin de voir l'image, seulement le texte qui l'accompagne). Pure.
+function messageTextForSummary(m) {
+  if (m.displayText != null) return m.displayText;
+  const c = m.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.filter(p => p && p.type === 'text').map(p => p.text || '').join('\n\n');
+  return c || '';
+}
+
 // Reconstruit un tableau de messages OpenAI depuis currentThread.
 // Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
 // Acks legacy (sans args) → élagués comme avant (compat ascendante).
@@ -467,6 +484,25 @@ function expandThread(thread) {
           out.push({ role: 'tool', tool_call_id: ids[k],
                      content: stampTs(groupAcks[k].ts, groupAcks[k].result) });
         }
+        // Brief A2 / D3, voie (b) : un recall d'IMAGE ré-injecte les pixels via
+        // un message user SYNTHÉTIQUE inséré APRÈS tous les tool results du
+        // groupe (séquence assistant→tools→user bien formée). La dataUrl est
+        // posée par le pré-pass resolveRecallImages (resources.js) — absente si
+        // le record n'est plus en cache, auquel cas rien n'est émis. Content
+        // parts OpenAI, même forme que le tour d'attache (voie F2-prouvée).
+        for (var r = 0; r < groupAcks.length; r++) {
+          if (groupAcks[r].recallImage) {
+            // `_synthetic` : marque ce message user comme NON authentique (ni
+            // saisi ni édité par l'utilisateur). Suspect S1 (brief A2) : le
+            // calcul de lastUserIdx (dispatchSend, main.js) doit l'exclure, sinon
+            // l'injection <miaou_context> se poserait dessus au lieu du vrai
+            // dernier message user (cas d'un thread finissant sur un recall).
+            out.push({ role: 'user', _synthetic: true, content: [
+              { type: 'text', text: '[Contenu de la pièce jointe ' + (groupAcks[r].attId || '') + ' ré-injecté :]' },
+              { type: 'image_url', image_url: { url: groupAcks[r].recallImage } },
+            ] });
+          }
+        }
         i = j;
       } else {
         i++;   // ack legacy non enrichi : élagué
@@ -501,4 +537,112 @@ function parseSummaryJSON(raw) {
   const last = s.lastIndexOf('}');
   if (first >= 0 && last > first) obj = tryParse(s.slice(first, last + 1));
   return obj;
+}
+
+// ── Context inspector (brief B) ─────────────────────────────────────────────
+// Heuristique unique, source unique (D2) : un vrai tokenizer ou un total
+// rapporté par l'API pourra remplacer ce calcul sans toucher les call-sites.
+function estimateTokens(str) {
+  return Math.ceil((str || '').length / 4);
+}
+
+// Estimation conventionnelle, volontairement grossière (D3) : la vision est
+// dépendante du modèle et inconnaissable côté client ; on affiche une ligne
+// séparée labellisée "très approximatif" plutôt que de compter le base64 en
+// chars/4 (qui exploserait le total sans rapport avec le coût réel).
+const IMAGE_TOKENS_ESTIMATE = 768;
+
+// Seuil d'alerte (D5) : au-delà de ce ratio d'occupation de la fenêtre de
+// contexte connue, la jauge passe ambre.
+const CONTEXT_WINDOW_WARN_RATIO = 0.8;
+
+// Construit le manifeste de contexte (D1) : une entrée par bloc logique, plus
+// les totaux. Pure, testable QuickJS — ne lit AUCUN global (settings, TOOLS,
+// currentThread…), tout arrive en arguments. Les deux call-sites (assemblage
+// réel dans dispatchSend, simulation à froid via computeContextManifestNow)
+// doivent lui passer des pièces déjà calculées par les mêmes fonctions pures
+// (systemMessageParts, buildContextBlock, expandThread, toolDefinitions) pour
+// ne jamais dupliquer la logique d'assemblage (audit §0/§6).
+//
+// `sysParts` : { root, toolsSystem, intent, skills, docs, user } (systemMessageParts()).
+// `dynParts` : { contextDateModel, memories, summaries, skillsContext } — chaque
+//   sous-bloc DÉJÀ formaté en string (ou '' si absent).
+// `threadMsgs` : array {role, content} (content string ou array de content-parts).
+// `toolDefsJson` : string = JSON.stringify(toolDefinitions()), ou '' si aucun outil.
+// `apiUsage` : {prompt_tokens, completion_tokens, total_tokens} ou null (réservé, non-goal v1).
+function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage) {
+  const sp = sysParts || {};
+  const dp = dynParts || {};
+  const entries = [];
+
+  const pushEntry = (source, label, str) => {
+    const s = str || '';
+    if (!s) return;
+    entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
+  };
+
+  pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
+  pushEntry('tools_system', 'Liste des outils (system)', sp.toolsSystem);
+  pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
+  pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
+  pushEntry('docs_doctrine', 'Doctrine docs', sp.docs);
+  pushEntry('user_prompt', 'Prompt utilisateur (+ Space)', sp.user);
+
+  pushEntry('context_date_model', 'Date/modèle/Space', dp.contextDateModel);
+  pushEntry('memories', 'Souvenirs', dp.memories);
+  pushEntry('summaries', 'Résumés injectés', dp.summaries);
+  pushEntry('skills_context', 'Contexte skills (autotrigger)', dp.skillsContext);
+
+  if (toolDefsJson) {
+    entries.push({
+      source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
+      chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
+    });
+  }
+
+  // Thread : agrégat + sous-comptes par rôle (brief D1). Les parts image ne
+  // sont JAMAIS comptées en chars (le base64 exploserait le total) : une seule
+  // ligne agrégée `attachment_images` = imageCount × IMAGE_TOKENS_ESTIMATE (D3).
+  let threadChars = 0, threadTokens = 0, imageCount = 0;
+  const byRole = {};
+  (threadMsgs || []).forEach(m => {
+    if (!m) return;
+    let chars = 0;
+    if (Array.isArray(m.content)) {
+      m.content.forEach(part => {
+        if (!part) return;
+        if (part.type === 'image_url') imageCount++;
+        else if (typeof part.text === 'string') chars += part.text.length;
+      });
+    } else if (typeof m.content === 'string') {
+      chars = m.content.length;
+    }
+    threadChars += chars;
+    const tk = estimateTokens('x'.repeat(chars));   // même arrondi que pushEntry
+    threadTokens += tk;
+    const role = m.role || 'other';
+    if (!byRole[role]) byRole[role] = { chars: 0, tokens: 0 };
+    byRole[role].chars += chars;
+    byRole[role].tokens += tk;
+  });
+  if (threadChars > 0) {
+    entries.push({
+      source: 'thread', label: 'Historique (agrégat)',
+      chars: threadChars, tokens: threadTokens,
+      byRole: Object.keys(byRole).map(r => Object.assign({ role: r }, byRole[r])),
+    });
+  }
+
+  if (imageCount > 0) {
+    const imgTokens = imageCount * IMAGE_TOKENS_ESTIMATE;
+    entries.push({
+      source: 'attachment_images', label: 'Images jointes',
+      chars: 0, tokens: imgTokens, images: imageCount,
+    });
+  }
+
+  const totalChars = entries.reduce((a, e) => a + (e.chars || 0), 0);
+  const totalTokens = entries.reduce((a, e) => a + (e.tokens || 0), 0);
+
+  return { entries, totalChars, totalTokens, imageCount, apiUsage: apiUsage || null };
 }

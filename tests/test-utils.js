@@ -558,6 +558,42 @@ describe('expandThread', function() {
     expect(toolMsg.content.indexOf('data') > 0).toBeTruthy();
   });
 
+  it('recall image (D3 voie b) : user synthétique inséré APRÈS le tool result', function() {
+    var t = [
+      { role: 'user', content: 'montre att-1' },
+      ack({ name: 'miaou__recall_attachment', args: { ref: 'att-1' },
+            kind: 'attachment_recalled', attId: 'att-1', mime: 'image/jpeg',
+            result: 'Image att-1 ré-affichée…', group: 'gImg',
+            recallImage: 'data:image/jpeg;base64,AAAA' }),
+      { role: 'assistant', content: 'la voici' },
+    ];
+    var r = expandThread(t);
+    // user, assistant(tc), tool, user(synthétique image), assistant(final)
+    expect(r.length).toBe(5);
+    expect(r[2].role).toBe('tool');
+    expect(r[3].role).toBe('user');
+    expect(Array.isArray(r[3].content)).toBeTruthy();
+    expect(r[3].content[0].type).toBe('text');
+    expect(r[3].content[1].type).toBe('image_url');
+    expect(r[3].content[1].image_url.url).toBe('data:image/jpeg;base64,AAAA');
+    expect(r[3]._synthetic).toBe(true);   // marqueur S1 : exclu du calcul lastUserIdx
+    expect(r[4].role).toBe('assistant');
+  });
+
+  it('recall image sans recallImage (record purgé) : aucun user synthétique', function() {
+    var t = [
+      { role: 'user', content: 'montre att-1' },
+      ack({ name: 'miaou__recall_attachment', kind: 'attachment_recalled',
+            attId: 'att-1', mime: 'image/jpeg', result: 'txt', group: 'gImg2' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    // user, assistant(tc), tool, assistant — pas de user synthétique
+    expect(r.length).toBe(4);
+    expect(r[3].role).toBe('assistant');
+    expect(r.some(function(m) { return m.role === 'user' && Array.isArray(m.content); })).toBeFalsy();
+  });
+
   it('tool_call_id : format 9 chars [a-z0-9] uniquement', function() {
     var t = [
       { role: 'user', content: 'q' },
@@ -606,6 +642,38 @@ describe('expandThread', function() {
     var parsed = JSON.parse(r[1].tool_calls[0].function.arguments);
     expect(parsed.id).toBe('abc');
     expect(parsed.with_contents).toBe(true);
+  });
+
+  it('content en tableau de content parts (tour d\'attache, brief A lot 2) passe tel quel', function() {
+    var parts = [{ type: 'text', text: 'vois' }, { type: 'image_url', image_url: { url: 'data:x' } }];
+    var t = [{ role: 'user', content: parts }];
+    var r = expandThread(t);
+    expect(r.length).toBe(1);
+    expect(r[0].content).toBe(parts);   // même référence : aucune transformation
+  });
+});
+
+// ── messageTextForSummary (brief A lot 2 — durcissement generateTitle/generateSummary) ─
+
+describe('messageTextForSummary', function() {
+  it('content string simple → renvoyé tel quel', function() {
+    expect(messageTextForSummary({ role: 'user', content: 'bonjour' })).toBe('bonjour');
+  });
+  it('displayText prioritaire sur content (slash-skill bakée)', function() {
+    expect(messageTextForSummary({ role: 'user', content: 'corps baké', displayText: '/skill x' })).toBe('/skill x');
+  });
+  it('content en tableau de parts (tour d\'attache image) → extrait seulement le texte, jamais "[object Object]"', function() {
+    var m = { role: 'user', content: [{ type: 'text', text: 'analyse ceci' }, { type: 'image_url', image_url: { url: 'data:x' } }] };
+    var out = messageTextForSummary(m);
+    expect(out).toBe('analyse ceci');
+    expect(out.indexOf('object Object') < 0).toBeTruthy();
+  });
+  it('plusieurs parts texte concaténées', function() {
+    var m = { content: [{ type: 'text', text: 'A' }, { type: 'text', text: 'B' }] };
+    expect(messageTextForSummary(m)).toBe('A\n\nB');
+  });
+  it('content absent/null → chaîne vide, pas de crash', function() {
+    expect(messageTextForSummary({ role: 'assistant', content: null })).toBe('');
   });
 });
 

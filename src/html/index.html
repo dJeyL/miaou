@@ -33,6 +33,14 @@
           Nouvelle
         </button>
       </div>
+      <div class="space-select" id="space-select">
+        <button type="button" class="space-select-btn" id="space-select-btn" onclick="toggleSpaceMenu()" title="Changer d'espace">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span id="space-select-label">Général</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="model-menu space-menu" id="space-menu"></div>
+      </div>
       <div class="sidebar-search">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()">
@@ -57,6 +65,8 @@
           <img class="topbar-brand-logo" id="topbar-logo" alt="">
           <span class="topbar-brand-name">MIAOU</span>
         </div>
+        <!-- Badge du Space actif : visible sidebar repliée, masqué en default Space (brief D5) -->
+        <span class="topbar-space-badge" id="topbar-space-badge" hidden></span>
         <!-- Nouvelle conversation sidebar fermée — même fondu que .topbar-brand,
              le bouton « Nouvelle » de la sidebar reste le chemin normal -->
         <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
@@ -123,13 +133,22 @@
             </button>
             <div class="model-menu" id="composer-reasoning-menu"></div>
           </div>
+          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" title="Inspecteur de contexte">
+            <span id="ctx-counter-label">≈ 0 tok</span>
+          </button>
         </div>
 
-        <div class="input-wrap" id="input-wrap">
+        <div class="attach-chips" id="attach-chips" hidden></div>
+        <div class="input-wrap" id="input-wrap"
+          ondragover="onComposerDragOver(event)" ondragleave="onComposerDragLeave(event)" ondrop="onComposerDrop(event)">
           <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput.
                Positionnée en absolu au-dessus de l'input : recouvre les pilules
                (axe z) au lieu de les décaler. -->
           <div class="skill-ac" id="skill-ac" hidden></div>
+          <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
           <textarea id="composer-text" rows="1" placeholder="Message…"
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
@@ -138,6 +157,7 @@
           </button>
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
+        <div class="composer-attach-error" id="composer-attach-error" hidden></div>
         <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden> · <kbd>/</kbd> pour une skill</span></div>
       </div>
     </div>
@@ -225,6 +245,11 @@
           </label>
         </div>
       </div>
+      <div class="field">
+        <label for="set-contextwindow">Fenêtre de contexte (tokens)</label>
+        <span class="hint">Estimation, non détectée automatiquement. Vide = inconnu. Sert de repère à l'inspecteur de contexte (jauge d'occupation).</span>
+        <input type="number" id="set-contextwindow" min="0" step="1000" placeholder="ex. 128000">
+      </div>
           </div>
         </div>
       </div>
@@ -297,7 +322,7 @@
       <div class="field">
         <div class="btn-row">
           <button class="btn-ghost" onclick="openSummaryDrawer()">Résumés</button>
-          <button class="btn-ghost" onclick="openMemoryDrawer()">Souvenirs</button>
+          <button class="btn-ghost" onclick="openMemoryDrawer()">Profil</button>
         </div>
       </div>
       <div class="field">
@@ -440,6 +465,35 @@
     </div>
   </div>
 
+  <!-- ═══ Space screen (renommage, description, souvenirs scopés, suppression D6) ═══ -->
+  <div class="backdrop" id="space-backdrop" onclick="closeSpaceScreen()"></div>
+  <div class="drawer" id="space-drawer">
+    <div class="drawer-head">
+      <h2 id="space-drawer-title">Espace</h2>
+      <button class="icon-btn" onclick="closeSpaceScreen()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div class="cfg-field">
+        <label>Nom</label>
+        <input type="text" id="space-name-input" spellcheck="false" oninput="onSpaceFormInput()">
+      </div>
+      <div class="cfg-field">
+        <label>Description</label>
+        <textarea id="space-description-input" rows="4" placeholder="Contexte propre à cet espace, ajouté après le prompt système." oninput="onSpaceFormInput()"></textarea>
+      </div>
+      <button class="drawer-btn primary" id="space-save-btn" onclick="onSaveSpaceScreen()" disabled>Enregistrer</button>
+      <div class="cfg-err" id="space-err" hidden></div>
+
+      <div class="drawer-section-title">Souvenirs de cet espace</div>
+      <div class="mem-list" id="space-memory-list"></div>
+
+      <div class="drawer-section-title" id="space-delete-title" hidden>Zone dangereuse</div>
+      <button class="drawer-btn danger" id="space-delete-btn" onclick="onDeleteSpaceScreen()" hidden>Supprimer cet espace</button>
+    </div>
+  </div>
+
   <!-- ═══ API servers drawer ═══ -->
   <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
   <div class="drawer" id="api-drawer">
@@ -481,7 +535,7 @@
     <div class="drawer-head">
       <div class="drawer-tabs">
         <button class="drawer-tab active" data-tab="summaries" onclick="switchMemoryTab('summaries')">Résumés</button>
-        <button class="drawer-tab" data-tab="memories" onclick="switchMemoryTab('memories')">Souvenirs</button>
+        <button class="drawer-tab" data-tab="memories" onclick="switchMemoryTab('memories')">Profil</button>
       </div>
       <button class="icon-btn" onclick="closeSummaryDrawer()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -493,8 +547,26 @@
         <div class="mem-list" id="summary-list"></div>
       </div>
       <div id="memory-tab-panel" class="drawer-tab-panel hidden">
+        <span class="hint">Souvenirs du profil, injectés dans tous les espaces. Les souvenirs propres à un espace se gèrent depuis son écran (sélecteur d'espace, sidebar).</span>
         <div class="mem-list" id="memory-list"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="backdrop" id="ctx-backdrop" onclick="closeContextInspector()"></div>
+  <div class="drawer" id="ctx-drawer">
+    <div class="drawer-head">
+      <div class="drawer-tabs">
+        <span class="drawer-title">Inspecteur de contexte</span>
+      </div>
+      <button class="icon-btn" onclick="closeContextInspector()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint" id="ctx-source-hint"></span>
+      <div class="ctx-bar" id="ctx-bar"></div>
+      <table class="ctx-table" id="ctx-table"><tbody id="ctx-table-body"></tbody></table>
     </div>
   </div>
 

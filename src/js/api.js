@@ -27,6 +27,76 @@ function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || 
 function isReasoningEffortRejected(url, model) { return !!_reasoningEffortRejected[reasoningEffortRejectedKey(url, model)]; }
 function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
 
+// Cache session : (endpoint, modèle) ayant rejeté des content parts image_url
+// (D5, brief A lot 2). Même gabarit que _reasoningEffortRejected — clé
+// composite endpoint+modèle, PAS juste l'URL (_noThinkRejected) : un même
+// endpoint peut exposer un modèle vision-capable et un autre qui ne l'est pas,
+// on ne veut pas dégrader tous les modèles d'un endpoint sur le rejet d'un seul.
+const _visionRejected = {};
+function visionRejectedKey(url, model) { return url + '::' + (model || ''); }
+function isVisionRejected(url, model) { return !!_visionRejected[visionRejectedKey(url, model)]; }
+function markVisionRejected(url, model) { _visionRejected[visionRejectedKey(url, model)] = true; }
+
+// Un message porte-t-il des content parts image (tableau avec au moins une
+// part image_url) ? Détection structurelle, pas de dépendance à un champ
+// attachments (streamCompletion ne connaît que `messages`, pas currentThread).
+function messagesHaveImageParts(messages) {
+  return messages.some(m => Array.isArray(m.content) && m.content.some(p => p && p.type === 'image_url'));
+}
+
+// Dégrade un tableau de messages OpenAI pour un rejeu vision-less (D5) :
+// chaque message dont `content` est un tableau de parts redevient une string =
+// la concaténation des parts texte + les descripteurs byte-stables des images
+// jointes (brief A : « send text + descriptor instead » — les parts image sont
+// REMPLACÉES par leur descripteur, jamais strippées sans équivalent textuel).
+// `descriptors` (tableau de strings, un par image du tour courant) est calculé
+// en amont par dispatchSend depuis message.attachments
+// (formatAttachmentDescriptor, resources.js — mêmes lignes que la réécriture
+// définitive post-tour) et transite par les opts de streamCompletion
+// (o.imageDescriptors) via runConversation. Seul le DERNIER message user du
+// payload peut porter des parts image (le filet de dispatchSend collapse les
+// messages antérieurs), donc les descripteurs s'appliquent sans ambiguïté au
+// message dégradé. Contrairement à la réécriture définitive
+// (collapseAttachedMessageContent, resources.js), CETTE dégradation est un
+// downgrade de PAYLOAD RÉSEAU ponctuel pour le rejeu — currentThread/storage
+// ne sont pas touchés ici (c'est dispatchSend/onFinal qui réécrit le message
+// persisté une fois le tour terminé). Ajoute une ligne dans le bloc
+// <miaou_context> déjà présent en préfixe du dernier message user (piège 16 —
+// jamais dans le system message) : signale que les images ont été remplacées
+// par des descripteurs ce tour, PAS de strip silencieux.
+const VISION_DEGRADED_NOTE =
+  "Note : les images jointes n'ont pas pu être envoyées à ce modèle/endpoint " +
+  "(non compatible avec les images) — elles ont été remplacées par leur descripteur textuel.";
+
+function degradeVisionMessages(messages, descriptors) {
+  const descBlock = (descriptors && descriptors.length) ? descriptors.join('\n') : '';
+  return messages.map(m => {
+    if (!Array.isArray(m.content)) return m;
+    const text = m.content.filter(p => p && p.type === 'text').map(p => p.text || '').join('\n\n');
+    return Object.assign({}, m, { content: descBlock ? (text + '\n\n' + descBlock) : text });
+  });
+}
+
+// Insère VISION_DEGRADED_NOTE dans le dernier message user du payload — dans
+// le bloc <miaou_context> existant s'il y en a un (juste avant la balise
+// fermante, pour rester DANS le bloc dédié au contenu dynamique éphémère,
+// piège 16), sinon en préfixe simple. N'écrit jamais dans le system message.
+function injectVisionDegradedNote(messages) {
+  let lastUserIdx = -1;
+  for (let i = 0; i < messages.length; i++) if (messages[i].role === 'user') lastUserIdx = i;
+  if (lastUserIdx < 0) return messages;
+  const m = messages[lastUserIdx];
+  const content = typeof m.content === 'string' ? m.content : '';
+  const marker = '</miaou_context>';
+  const idx = content.indexOf(marker);
+  const newContent = idx >= 0
+    ? content.slice(0, idx) + VISION_DEGRADED_NOTE + '\n' + content.slice(idx)
+    : VISION_DEGRADED_NOTE + '\n\n' + content;
+  const out = messages.slice();
+  out[lastUserIdx] = Object.assign({}, m, { content: newContent });
+  return out;
+}
+
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
   "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
@@ -157,6 +227,22 @@ async function streamCompletion(messages, opts) {
     body.reasoning_effort = o.reasoningEffort;
   }
 
+  // Dégradation vision-less PROACTIVE (avant tout appel réseau) : remplace les
+  // parts image par leur descripteur textuel (o.imageDescriptors, fournis par
+  // dispatchSend) + note dans <miaou_context> (jamais le system message, piège
+  // 16). Deux déclencheurs :
+  //  - D5 lot A (réactif) : (endpoint, modèle) déjà connu non-vision CETTE
+  //    session (rejet 400 essuyé sur un tour antérieur, isVisionRejected) — pour
+  //    ne pas reproduire le même rejet à chaque tour ;
+  //  - D5 brief A2 (manuel) : l'utilisateur a marqué ce modèle « sans vision »
+  //    sur le serveur actif (o.visionDisabled, calculé par dispatchSend depuis
+  //    serverModelVisionEnabled). Nécessaire car Ollama ne renvoie AUCUN 400
+  //    sur un modèle sans projecteur vision (F1) : le chemin réactif ne peut pas
+  //    l'attraper, seul le réglage manuel le déclenche.
+  if (messagesHaveImageParts(body.messages) && (isVisionRejected(cfg.url, model) || o.visionDisabled)) {
+    body.messages = injectVisionDegradedNote(degradeVisionMessages(body.messages, o.imageDescriptors));
+  }
+
   _currentAbort = new AbortController();
   let contentBuffer = '';
   let reasoningBuffer = '';
@@ -183,6 +269,16 @@ async function streamCompletion(messages, opts) {
       // ça). Le flag posé garantit que l'appel récursif n'en fait pas un autre.
       if (body.reasoning_effort) {
         markReasoningEffortRejected(cfg.url, model);
+        return streamCompletion(messages, opts);
+      }
+      // D5 : rejet probable des content parts image (400 avec image_url dans
+      // le payload, pas encore flaggé pour ce (endpoint, modèle) — sinon on
+      // serait déjà passé par la dégradation proactive ci-dessus). Un SEUL
+      // rejeu : le flag posé AVANT l'appel récursif garantit que celui-ci
+      // prend la branche proactive plutôt que de re-tenter avec images et
+      // reboucler indéfiniment sur un 400 persistant pour une autre raison.
+      if (messagesHaveImageParts(body.messages) && !isVisionRejected(cfg.url, model)) {
+        markVisionRejected(cfg.url, model);
         return streamCompletion(messages, opts);
       }
       throw new Error('streamCompletion ' + res.status);
@@ -267,6 +363,10 @@ async function runConversation(messages, hooks) {
   const h = hooks || {};
   // anti-redemande, par échange : clé 'nom:id' ou 'nom:since'
   const servedKeys = new Set();
+  // Filet : purge toute injection image résiduelle (brief A2/D3) d'un échange
+  // précédent avorté avant le drain (le handler push et la boucle draine dans la
+  // même itération synchrone, mais on ne laisse rien traîner entre échanges).
+  if (typeof clearPendingImageInjections === 'function') clearPendingImageInjections();
   // raisonnement accumulé sur tout l'échange (les tours tool_calls peuvent en
   // produire avant l'appel d'outil) ; relayé en live avec ce préfixe.
   let reasoningAcc = '';
@@ -275,6 +375,12 @@ async function runConversation(messages, hooks) {
     const result = await streamCompletion(messages, {
       model: h.model,
       reasoningEffort: h.reasoningEffort,
+      // Descripteurs byte-stables des images du tour courant (D5) : utilisés
+      // uniquement si la dégradation vision-less doit remplacer les parts image.
+      imageDescriptors: h.imageDescriptors,
+      // Flag vision manuel (D5, brief A2) : ce modèle est marqué « sans vision »
+      // sur le serveur actif → dégradation proactive même sans 400.
+      visionDisabled: h.visionDisabled,
       tools: h.noTools ? undefined : toolDefinitions(),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
@@ -391,6 +497,26 @@ async function runConversation(messages, hooks) {
         messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
 
+      // Brief A2 / D3 — ré-injection image intra-échange. Un recall_attachment
+      // sur une image a empilé { dataUrl, attId } dans _pendingImageInjections
+      // (tools.js) ; on pousse pour chacune un message user SYNTHÉTIQUE porteur
+      // de la part image, APRÈS tous les tool results du tour, pour que la
+      // relance ci-dessous (continue) le fasse voir au modèle. Sans ça, le
+      // modèle ne verrait que le tool result textuel « son contenu suit » et
+      // confabulerait. Même forme de content parts que expandThread (envois
+      // ultérieurs) — un seul contrat de message image. Accès défensif : le
+      // registre n'existe pas dans le test runner qui évalue api.js seul.
+      if (typeof getPendingImageInjections === 'function') {
+        const injections = getPendingImageInjections();
+        clearPendingImageInjections();
+        for (const inj of injections) {
+          messages.push({ role: 'user', content: [
+            { type: 'text', text: '[Contenu de la pièce jointe ' + (inj.attId || '') + ' ré-injecté :]' },
+            { type: 'image_url', image_url: { url: inj.dataUrl } },
+          ] });
+        }
+      }
+
       // Les outils de ce tour ont écrit leurs descripteurs d'ack : on laisse l'UI
       // les vidanger MAINTENANT (avant la réponse finale du tour suivant), pour
       // qu'ils s'affichent au-dessus de la réponse et au fil des tours. api.js
@@ -415,7 +541,7 @@ async function runConversation(messages, hooks) {
 async function generateTitle(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => m.role + ': ' + m.content)
+    .map(m => m.role + ': ' + messageTextForSummary(m))
     .join('\n\n');
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
@@ -428,7 +554,7 @@ async function generateTitle(thread) {
 async function generateSummary(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => m.role + ': ' + m.content)
+    .map(m => m.role + ': ' + messageTextForSummary(m))
     .join('\n\n');
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
@@ -447,13 +573,18 @@ async function generateSummary(thread) {
 }
 
 // ── Recherche / sélection des résumés pertinents ────────────────────────────
-function searchSummaries(queryText, excludeId) {
+// `spaceId` optionnel (brief D2) : si fourni, exclut aussi les résumés dont la
+// conversation n'appartient pas à ce Space (les résumés ne portent pas de
+// spaceId propre — jointure via spaceConvIds/loadConversations, storage.js).
+function searchSummaries(queryText, excludeId, spaceId) {
   const tokens = tokenize(queryText);
   if (!tokens.length) return [];
   const all = loadSummaries();
+  const idsInSpace = spaceId != null ? spaceConvIds(spaceId, loadConversations()) : null;
   const matches = [];
   for (const id in all) {
     if (excludeId && id === excludeId) continue;
+    if (idsInSpace && !idsInSpace.has(id)) continue;
     const e = all[id];
     if (!e || e.suppressed || !e.summary) continue;
     const score = scoreSummary(tokens, e);

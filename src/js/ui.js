@@ -153,7 +153,7 @@ function truncatedBannerHtml() {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts, server, truncated) {
+function buildMsg(role, content, model, reasoning, ts, server, truncated, attachments) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
@@ -166,6 +166,7 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated) {
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
+      renderMsgAttachments(attachments, currentConvId) +
       `<div class="body">${renderUserMd(content)}</div>` +
       `</div>` +
       (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
@@ -506,6 +507,15 @@ const ACK_KINDS = {
     icon: ICON_TRASH,
     label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
   },
+  // Rappel d'une pièce jointe de message (miaou__recall_attachment, D4 brief A).
+  // Même posture que resource_presented (lecture, pas d'undo) mais lookup par
+  // attId (conversation-scoped), pas id de ressource — cf. placeToolAck.
+  attachment_recalled: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_EYE,
+    label: m => 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
+  },
   // Énumération des skills par le modèle (miaou__skills__list) : informatif, pas
   // d'undo (lecture — même posture que conversation_list, dont on réutilise l'icône).
   skill_list: {
@@ -662,6 +672,20 @@ function placeToolAck(wrap, entry) {
       }
     }
   }
+  // attachment_recalled : idem resource_presented mais lookup par attId
+  // (conversation-scoped) — seules les images ont un bloc visuel à rendre ;
+  // texte/binaire sont déjà retournés en clair/descripteur au modèle (rien à afficher ici).
+  if (kindNow === 'attachment_recalled' && entry.attId && wrap) {
+    const record = typeof getCachedRecordByAttId === 'function' ? getCachedRecordByAttId(entry.attId, entry.convId) : null;
+    if (record && record.mime && record.mime.startsWith('image/')) {
+      const block = makeResourcePresentBlock(record);
+      const blockNode = block ? renderToolBlock(block) : null;
+      if (blockNode) {
+        if (body) wrap.insertBefore(blockNode, body);
+        else wrap.appendChild(blockNode);
+      }
+    }
+  }
   return node;
 }
 
@@ -680,7 +704,7 @@ function renderThread(msgs) {
     // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
     // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated, m.attachments);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a);
     } else {
@@ -725,10 +749,10 @@ function syncConvDownloadBtn() {
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
-function appendUserMessage(text, ts) {
+function appendUserMessage(text, ts, attachments) {
   const welcome = $('thread').querySelector('.welcome-screen');
   if (welcome) welcome.remove();
-  const el = buildMsg('user', text, undefined, undefined, ts);
+  const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments);
   $('thread').appendChild(el);
   highlightUnder(el);
   scrollBottom();
@@ -933,14 +957,20 @@ function enterEditMode(wrap) {
 }
 
 // Annulation : restaure le contenu de la bulle. Le .msg-ts est un sibling du
-// .bubble (hors de sa portée), il n'est pas touché.
+// .bubble (hors de sa portée), il n'est pas touché. Les chips d'attachments
+// (brief A) sont réinsérées au même emplacement que dans buildMsg (entre le
+// bouton édition et le body) — sans quoi elles disparaîtraient jusqu'au
+// prochain reload (le message, lui, les porte toujours).
 function cancelEdit(wrap, original) {
   wrap.classList.remove('editing');
+  const index = msgIndex(wrap);
+  const m = index >= 0 ? currentThread[index] : null;
   const bubble = wrap.querySelector('.bubble');
   bubble.innerHTML =
     `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
     `</button>` +
+    renderMsgAttachments(m && m.attachments, currentConvId) +
     `<div class="body">${renderUserMd(original)}</div>`;
   decoratePre(wrap);
   highlightUnder(wrap);
@@ -1145,7 +1175,7 @@ function sectionEl(label) {
 function renderConvList() {
   const list = $('conv-list');
   list.innerHTML = '';
-  const all = listAllConversations();
+  const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
   $('conv-search').disabled = all.length === 0;
   let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
@@ -1358,6 +1388,87 @@ function onComposerKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
+}
+
+// ── Pièces jointes (composer) : drag & drop + chips ─────────────────────────
+// État visuel .dragover sur .input-wrap (pattern .disabled existant, composer.css).
+function onComposerDragOver(e) {
+  e.preventDefault();
+  const wrap = $('input-wrap');
+  if (wrap) wrap.classList.add('dragover');
+}
+function onComposerDragLeave(e) {
+  // relatedTarget peut être un enfant de .input-wrap (dragenter/leave imbriqués) —
+  // ne retire l'état que si on quitte vraiment le conteneur.
+  const wrap = $('input-wrap');
+  if (wrap && (!e.relatedTarget || !wrap.contains(e.relatedTarget))) wrap.classList.remove('dragover');
+}
+function onComposerDrop(e) {
+  e.preventDefault();
+  const wrap = $('input-wrap');
+  if (wrap) wrap.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) handleAttachFiles(files);
+}
+
+// Icône générique pour un chip sans vignette (texte/binaire, ou image dont le
+// blob est absent du cache — fallback gracieux, cf. brief §4).
+function attIconSvg() {
+  return '<span class="att-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
+}
+
+// Construit le markup d'un chip d'attachment. `removable` (composer, pré-envoi)
+// ajoute le bouton de retrait ; sinon (bulle envoyée) chip en lecture seule.
+// `thumbSrc` (optionnel) : data URL de vignette déjà résolue par l'appelant
+// (cf. resolveAttachmentThumb) — fallback gracieux vers l'icône si absente.
+function attChipHtml(att, thumbSrc, removable) {
+  const thumb = thumbSrc
+    ? `<img class="att-thumb" src="${thumbSrc}" alt="">`
+    : attIconSvg();
+  const removeBtn = removable
+    ? `<button class="att-remove" title="Retirer" onclick="removeComposerAttachment('${att.attId}')">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`
+    : '';
+  return (
+    `<span class="att-chip" data-att-id="${att.attId}">` +
+    thumb +
+    `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
+    `<span class="att-size">${humanSize(att.size)}</span>` +
+    removeBtn +
+    `</span>`
+  );
+}
+
+// Résout une vignette d'image depuis le cache session (peuplé par
+// storeAttachment à l'attache, ou loadConversationResources à la réouverture).
+// Fallback gracieux (null) si le blob n'est pas/plus disponible.
+function resolveAttachmentThumb(att, conversationId) {
+  if (att.kind !== 'image') return null;
+  const rec = getCachedRecordByAttId(att.attId, conversationId);
+  if (!rec || !rec.data) return null;
+  return 'data:' + rec.mime + ';base64,' + arrayBufferToBase64(rec.data);
+}
+
+// Rafraîchit les chips du composer depuis pendingAttachments (état module-level,
+// main.js). Vignettes résolues depuis le cache session (image tout juste attachée,
+// donc déjà en cache — cf. storeAttachment/_cacheRecord).
+function renderComposerAttachments() {
+  const el = $('attach-chips');
+  if (!el) return;
+  if (!pendingAttachments.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = pendingAttachments.map(att =>
+    attChipHtml(att, resolveAttachmentThumb(att, currentConvId), true)
+  ).join('');
+}
+
+// Construit les chips d'une bulle utilisateur ENVOYÉE, depuis message.attachments
+// (jamais depuis content — cf. brief A §4). Retourne '' si aucun attachment.
+function renderMsgAttachments(attachments, conversationId) {
+  if (!attachments || !attachments.length) return '';
+  return `<div class="msg-attachments">` +
+    attachments.map(att => attChipHtml(att, resolveAttachmentThumb(att, conversationId), false)).join('') +
+    `</div>`;
 }
 
 // ── Dropdown modèle (liste via l'API) ───────────────────────────────────────
@@ -1626,7 +1737,8 @@ function settingsFormDirty() {
     || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-save-json').checked !== !!s.saveJsonResponses
-    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse;
+    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse
+    || $('set-contextwindow').value !== (s.contextWindow || '');
 }
 
 // Active « Enregistrer » seulement si quelque chose est à enregistrer. Appelé
@@ -1698,7 +1810,8 @@ function renderImportSummary(counts, onApply) {
   if (!sum) return;
   sum.innerHTML =
     `<div>${counts.conversations} conversation(s), ${counts.memories} souvenir(s), ` +
-    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s).</div>`;
+    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s), ` +
+    `${counts.spaces} espace(s).</div>`;
   const btn = document.createElement('button');
   btn.className = 'drawer-btn danger';
   btn.textContent = 'Appliquer (remplace tout)';
@@ -1828,6 +1941,95 @@ function openMemoryDrawer() { openSummaryDrawer('memories'); }
 function closeSummaryDrawer() {
   $('summary-drawer').classList.remove('show');
   $('summary-backdrop').classList.remove('show');
+}
+
+// ── Inspecteur de contexte (brief B) ────────────────────────────────────────
+// Palette fixe par source (ordre d'apparition dans buildContextManifest),
+// cohérente barre/table. 'thread'/'attachment_images' en dernier (volumes les
+// plus variables).
+const CTX_PALETTE = {
+  root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
+  intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a', docs_doctrine: '#c98bf2',
+  user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
+  summaries: '#e0955a', skills_context: '#8bc98b', thread: '#4a90d9',
+  attachment_images: '#d9974a',
+};
+
+// Manifeste effectif (B4) : dernier envoi réel s'il existe, sinon simulation
+// à froid. Ne recalcule PAS depuis zéro à chaque appel du compteur : la
+// simulation est bon marché (fonctions pures déjà utilisées à l'envoi), mais
+// PAS de polling — appelée seulement aux points de l'audit (send, switch conv,
+// save settings, switch Space).
+function effectiveContextManifest() {
+  return _lastContextManifest || computeContextManifestNow();
+}
+
+// Compteur compact du composer (D4). Câblé aux points send-relevant (audit
+// §5b), jamais à l'oninput du textarea (brief B3, draft exclu v1).
+function syncContextCounter() {
+  const el = $('ctx-counter-label');
+  if (!el) return;
+  const m = effectiveContextManifest();
+  const win = contextWindowFor(activeModel());
+  let label = '≈ ' + m.totalTokens + ' tok';
+  const counter = $('ctx-counter');
+  if (win) {
+    const pct = Math.round((m.totalTokens / win) * 100);
+    label += ' (' + pct + '%)';
+    if (counter) counter.classList.toggle('ctx-counter-warn', m.totalTokens / win >= CONTEXT_WINDOW_WARN_RATIO);
+  } else if (counter) {
+    counter.classList.remove('ctx-counter-warn');
+  }
+  el.textContent = label;
+}
+
+function openContextInspector() {
+  renderContextInspector();
+  $('ctx-drawer').classList.add('show');
+  $('ctx-backdrop').classList.add('show');
+}
+function closeContextInspector() {
+  $('ctx-drawer').classList.remove('show');
+  $('ctx-backdrop').classList.remove('show');
+}
+
+function renderContextInspector() {
+  const m = effectiveContextManifest();
+  const win = contextWindowFor(activeModel());
+  const scale = win || m.totalTokens || 1;
+
+  const hint = $('ctx-source-hint');
+  if (hint) {
+    if (_lastContextManifest) {
+      hint.textContent = 'Dernier envoi réel à ce modèle.';
+    } else if (currentThread.length) {
+      hint.textContent = 'Simulation du prochain envoi (aucun envoi depuis le rechargement de cette conversation).';
+    } else {
+      hint.textContent = 'Simulation du prochain envoi (aucun message dans cette conversation).';
+    }
+  }
+
+  const bar = $('ctx-bar');
+  if (bar) {
+    bar.innerHTML = m.entries.map(e => {
+      const pct = Math.max(0, Math.min(100, (e.tokens / scale) * 100));
+      const color = CTX_PALETTE[e.source] || '#888';
+      return `<span class="ctx-bar-seg" style="width:${pct}%;background:${color}" title="${escHtml(e.label)}"></span>`;
+    }).join('');
+  }
+
+  const body = $('ctx-table-body');
+  if (body) {
+    const rows = m.entries.map(e => {
+      const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
+      const color = CTX_PALETTE[e.source] || '#888';
+      const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
+      return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>${escHtml(e.label)}${note}</td>` +
+        `<td>${e.chars}</td><td>≈${e.tokens}</td><td>${pct}%</td></tr>`;
+    });
+    rows.push(`<tr class="ctx-total"><td>Total</td><td>${m.totalChars}</td><td>≈${m.totalTokens}</td><td>100%</td></tr>`);
+    body.innerHTML = rows.join('');
+  }
 }
 
 function switchMemoryTab(tab) {
@@ -2029,6 +2231,186 @@ function buildToolItem(bareName, def) {
     '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
     paramsHtml;
   return item;
+}
+
+// ── Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5) ────────
+// Sélecteur pilule + .model-menu générique (règle projet : jamais de <select>
+// natif), pattern le plus proche du sélecteur de modèle composer. Chaque ligne
+// bascule le Space actif au clic ; un petit bouton crayon ouvre l'écran Space
+// (renommage, description, souvenirs, suppression) sans changer de Space.
+
+// Libellé pilule + badge topbar (masqué en default Space, brief D5) — à
+// appeler après tout changement de Space actif ou de nom de Space.
+function syncSpaceUI() {
+  const space = getSpace(activeSpaceId) || { name: 'Général' };
+  const label = $('space-select-label');
+  if (label) label.textContent = space.name || 'Général';
+  const badge = $('topbar-space-badge');
+  if (badge) {
+    badge.textContent = space.name || '';
+    badge.hidden = activeSpaceId === DEFAULT_SPACE_ID;
+  }
+}
+
+function toggleSpaceMenu() {
+  const menu = $('space-menu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  renderSpaceMenu();
+  menu.classList.add('show');
+}
+
+function renderSpaceMenu() {
+  const menu = $('space-menu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  const spaces = loadSpaces();
+  for (const s of spaces) {
+    const opt = document.createElement('div');
+    opt.className = 'model-opt' + (s.id === activeSpaceId ? ' selected' : '');
+    opt.innerHTML =
+      `<span class="space-opt-name">${escHtml(s.name || '')}</span>` +
+      `<button type="button" class="space-opt-edit" title="Modifier l'espace">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
+      `</button>` +
+      `<span class="check">✓</span>`;
+    opt.querySelector('.space-opt-name').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
+    opt.querySelector('.check').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
+    opt.querySelector('.space-opt-edit').onmousedown = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      menu.classList.remove('show');
+      openSpaceScreen(s.id);
+    };
+    menu.appendChild(opt);
+  }
+  const newOpt = document.createElement('div');
+  newOpt.className = 'model-opt space-new';
+  newOpt.innerHTML = '<span>+ Nouvel espace</span>';
+  newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
+  menu.appendChild(newOpt);
+}
+
+// Bascule le Space actif : la conversation ouverte appartient à l'ancien Space
+// (structurellement obligatoire, cf. docs/spaces.md) — résumé de sortie avant
+// de vider le fil, comme newConversation/selectConv.
+function pickSpace(id) {
+  if (id === activeSpaceId) { $('space-menu').classList.remove('show'); return; }
+  const leaving = currentConvId;
+  activeSpaceId = id;
+  setActiveSpaceId(id);
+  resetToEmpty();
+  syncSpaceUI();
+  $('space-menu').classList.remove('show');
+  summarizeIfNeeded(leaving);
+  armIdleSummaryTimer();
+  if (isMobileLayout()) closeSidebarMobile();
+}
+
+// Crée le Space, bascule dessus immédiatement (sinon l'utilisateur reste dans
+// l'ancien Space en éditant à l'aveugle celui qu'il vient de créer), puis
+// ouvre son écran avec le nom pré-sélectionné (focus + select) pour que la
+// première frappe remplace directement le nom générique.
+function createSpaceAndOpen() {
+  const id = genSpaceId();
+  upsertSpace({ id, name: 'Nouvel espace' });
+  pickSpace(id);
+  openSpaceScreen(id);
+  const nameInput = $('space-name-input');
+  if (nameInput) { nameInput.focus(); nameInput.select(); }
+}
+
+// ── Écran Space (sous-drawer, pattern MCP) ───────────────────────────────────
+let _spaceScreenId = null;
+
+function openSpaceScreen(id) {
+  const space = getSpace(id);
+  if (!space) return;
+  _spaceScreenId = id;
+  $('space-drawer-title').textContent = space.name || 'Espace';
+  $('space-name-input').value = space.name || '';
+  $('space-description-input').value = space.description || '';
+  $('space-save-btn').disabled = true;
+  $('space-err').setAttribute('hidden', '');
+  const isDefault = id === DEFAULT_SPACE_ID;
+  $('space-name-input').disabled = isDefault;
+  $('space-delete-btn').hidden = isDefault;
+  $('space-delete-title').hidden = isDefault;
+  if (!isDefault) syncSpaceDeleteLabel(id);
+  renderMemoryList('space-memory-list', id);
+  $('space-drawer').classList.add('show');
+  $('space-backdrop').classList.add('show');
+}
+
+function closeSpaceScreen() {
+  $('space-drawer').classList.remove('show');
+  $('space-backdrop').classList.remove('show');
+  _spaceScreenId = null;
+}
+
+function onSpaceFormInput() {
+  $('space-save-btn').disabled = false;
+  $('space-err').setAttribute('hidden', '');
+}
+
+function onSaveSpaceScreen() {
+  if (!_spaceScreenId) return;
+  const space = getSpace(_spaceScreenId);
+  if (!space) return;
+  const name = $('space-name-input').value.trim();
+  if (_spaceScreenId !== DEFAULT_SPACE_ID && !name) {
+    $('space-err').textContent = 'Le nom ne peut pas être vide.';
+    $('space-err').removeAttribute('hidden');
+    return;
+  }
+  upsertSpace(Object.assign({}, space, {
+    name: _spaceScreenId === DEFAULT_SPACE_ID ? (space.name || 'Général') : name,
+    description: $('space-description-input').value,
+  }));
+  renderSpaceMenu();
+  syncSpaceUI();
+  closeSpaceScreen();
+}
+
+// Libellé du bouton de suppression AVEC comptes, posé dès l'ouverture de
+// l'écran (pas seulement recalculé au clic) : l'utilisateur doit voir l'impact
+// avant même d'armer le bouton, pas seulement lire « Supprimer cet espace ».
+function syncSpaceDeleteLabel(id) {
+  const btn = $('space-delete-btn');
+  if (!btn) return;
+  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
+  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
+  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
+}
+
+// Suppression D6 : arm-then-run (même pattern que la poubelle sidebar),
+// cascade = boucle deleteConv sur les conversations du Space + purge des
+// souvenirs scopés ; les souvenirs profile restent intacts. Le default Space
+// n'a pas de bouton (masqué dans openSpaceScreen) — rien à protéger ici.
+function onDeleteSpaceScreen() {
+  const btn = $('space-delete-btn');
+  if (!_spaceScreenId || _spaceScreenId === DEFAULT_SPACE_ID) return;
+  const id = _spaceScreenId;
+  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
+  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
+  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
+  armThenRun(btn, () => {
+    const wasActive = id === activeSpaceId;
+    for (const c of loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id)) {
+      deleteConv(c.id);
+    }
+    for (const m of loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id)) {
+      forgetMemory(m.id);
+    }
+    deleteSpaceEntry(id);
+    closeSpaceScreen();
+    if (wasActive) {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      setActiveSpaceId(DEFAULT_SPACE_ID);
+      resetToEmpty();
+      syncSpaceUI();
+    }
+    renderSpaceMenu();
+  }, label);
 }
 
 // ── Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3) ───────────────────
@@ -2474,6 +2856,24 @@ function buildApiCard(server, isNew, isActive) {
   editSection.appendChild(cfgField('Modèle par défaut', modelAnchor,
     'Choisissez parmi les modèles exposés par l\'API.'));
 
+  // Flag vision manuel (D5, brief A2) : mitigation du silent-failure Ollama
+  // (un modèle sans projecteur vision accepte l'image sans erreur puis lit le
+  // placeholder [img-0] comme du texte). Réglé par (serveur, modèle courant) ;
+  // « Sans vision » remplace proactivement les parts image par un descripteur.
+  // Valeur initiale sur le modèle actuellement saisi. `.api-vision` (hidden)
+  // porte 'on'/'off', lu par onSaveApiCard. Pas de select natif (cfgPillSelect).
+  const visionPill = cfgPillSelect('api-vision', [
+    { value: 'on', label: 'Images activées' },
+    { value: 'off', label: 'Sans vision (descripteur seul)' },
+  ], serverModelVisionEnabled(server, server.model) ? 'on' : 'off');
+  // Le flag suit le modèle : changer de modèle réévalue l'état affiché depuis la
+  // map `vision` du serveur (un modèle non encore réglé retombe sur « activées »).
+  modelI.addEventListener('change', () => {
+    visionPill.setValue(serverModelVisionEnabled(server, modelI.value.trim()) ? 'on' : 'off');
+  });
+  editSection.appendChild(cfgField('Vision (images)', visionPill.root,
+    'Si ce modèle ne sait pas lire les images, choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.'));
+
   editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
@@ -2901,20 +3301,31 @@ function setMemItemLoading(item, label) {
   btn.innerHTML = '<span class="spin"></span>' + escHtml(label);
 }
 
-// ── Souvenirs utilisateur (onglet Souvenirs du drawer combiné) ───────────────
-
-function renderMemoryList() {
-  const wrap = $('memory-list');
+// ── Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;
+//    écran Space = scope de ce Space, brief D5 lot C) ────────────────────────
+// Paramétrée conteneur + scope (au lieu de dupliquer, cf. audit §7) :
+// `containerId` = id de l'élément conteneur ; `scope` = 'profile' (défaut,
+// drawer réglages) ou un spaceId (écran Space, promotion disponible en plus).
+// L'input d'ajout est namespacé par conteneur ('mem-add-input-' + containerId)
+// pour coexister sans collision si les deux écrans étaient un jour montés
+// simultanément ; les ids par ENTRÉE restent globaux (memory id unique).
+function renderMemoryList(containerId, scope) {
+  containerId = containerId || 'memory-list';
+  scope = scope || 'profile';
+  const wrap = $(containerId);
+  if (!wrap) return;
   wrap.innerHTML = '';
+  const addInputId = 'mem-add-input-' + containerId;
 
   const addArea = document.createElement('div');
   addArea.className = 'mem-add';
   addArea.innerHTML =
-    '<textarea class="mem-add-input" id="mem-add-input" rows="2" placeholder="Nouveau souvenir…"></textarea>' +
-    '<button class="drawer-btn mem-add-btn" onclick="addMemoryEntry()">Ajouter</button>';
+    `<textarea class="mem-add-input" id="${addInputId}" rows="2" placeholder="Nouveau souvenir…"></textarea>` +
+    `<button class="drawer-btn mem-add-btn" onclick="addMemoryEntry('${containerId}','${scope}')">Ajouter</button>`;
   wrap.appendChild(addArea);
 
-  const all = loadMemories().sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const all = listMemoryEntries([scope]).concat(loadMemories().filter(e => e.suppressed && (e.scope || DEFAULT_SPACE_ID) === scope))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   if (!all.length) {
     const empty = document.createElement('div');
     empty.className = 'mem-empty';
@@ -2922,6 +3333,10 @@ function renderMemoryList() {
     wrap.appendChild(empty);
     return;
   }
+
+  const promoteBtn = scope !== 'profile'
+    ? `<button class="drawer-btn" onclick="promoteMemoryEntry('${'{{ID}}'}','${containerId}','${scope}')">Promouvoir en profil</button>`
+    : '';
 
   for (const e of all) {
     const item = document.createElement('div');
@@ -2933,8 +3348,8 @@ function renderMemoryList() {
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">supprimé · ${escHtml(date)}</div></div>` +
         `<div class="drawer-btns">` +
-        `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}')">Rétablir</button>` +
-        `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}')">Oublier</button>` +
+        `<button class="drawer-btn" onclick="restoreMemoryEntry('${e.id}','${containerId}','${scope}')">Rétablir</button>` +
+        `<button class="drawer-btn danger" onclick="forgetMemoryEntry('${e.id}','${containerId}','${scope}')">Oublier</button>` +
         `</div></div>` +
         `<div class="mem-excerpt">${escHtml((e.content || '').slice(0, 120))}${(e.content || '').length > 120 ? '…' : ''}</div>`;
     } else {
@@ -2942,13 +3357,14 @@ function renderMemoryList() {
         `<div class="mem-header"><div class="mem-meta"><div class="mem-sub">${escHtml(date)}</div></div>` +
         `<div class="drawer-btns" id="drawer-btns-${e.id}">` +
         `<button class="drawer-btn" onclick="startEditMemoryEntry('${e.id}')">Modifier</button>` +
-        `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}')">Supprimer</button>` +
+        (promoteBtn ? promoteBtn.replace('{{ID}}', e.id) : '') +
+        `<button class="drawer-btn danger" onclick="deleteMemoryEntry('${e.id}','${containerId}','${scope}')">Supprimer</button>` +
         `</div></div>` +
         `<div class="mem-content" id="mem-content-${e.id}">${escHtml(e.content || '')}</div>` +
         `<div class="mem-edit-wrap hidden" id="mem-edit-${e.id}">` +
         `<textarea class="mem-edit-input" id="mem-edit-input-${e.id}">${escHtml(e.content || '')}</textarea>` +
         `<div class="mem-edit-actions">` +
-        `<button class="drawer-btn primary" onclick="saveMemoryEntryEdit('${e.id}')">Enregistrer</button>` +
+        `<button class="drawer-btn primary" onclick="saveMemoryEntryEdit('${e.id}','${containerId}','${scope}')">Enregistrer</button>` +
         `<button class="drawer-btn" onclick="cancelMemoryEntryEdit('${e.id}')">Annuler</button>` +
         `</div></div>`;
     }
@@ -2956,18 +3372,32 @@ function renderMemoryList() {
   }
 }
 
-function addMemoryEntry() {
-  const input = $('mem-add-input');
+function addMemoryEntry(containerId, scope) {
+  containerId = containerId || 'memory-list';
+  scope = scope || 'profile';
+  const input = $('mem-add-input-' + containerId);
   const content = input ? input.value.trim() : '';
   if (!content) return;
   const now = Date.now();
-  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false });
-  renderMemoryList();
+  saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false, scope });
+  renderMemoryList(containerId, scope);
 }
 
-function deleteMemoryEntry(id) { suppressMemory(id); renderMemoryList(); }
-function restoreMemoryEntry(id) { restoreMemory(id); renderMemoryList(); }
-function forgetMemoryEntry(id) { forgetMemory(id); renderMemoryList(); }
+function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderMemoryList(containerId, scope); }
+function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); }
+function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); }
+
+// Promotion Space → profile (UI-only, brief D3/D5) : réécrit le scope en
+// place, pas de nouvelle entrée. Démotion volontairement absente en v1 (cf.
+// docs/spaces.md, non-goal) — décision à revalider avec Julien si demandée.
+function promoteMemoryEntry(id, containerId, scope) {
+  const arr = loadMemories();
+  const e = arr.find(x => x.id === id);
+  if (!e) return;
+  e.scope = 'profile';
+  persistMemories(arr);
+  renderMemoryList(containerId, scope);
+}
 
 function startEditMemoryEntry(id) {
   const btns = $('drawer-btns-' + id);
@@ -2989,13 +3419,13 @@ function cancelMemoryEntryEdit(id) {
   if (contentEl) contentEl.hidden = false;
 }
 
-function saveMemoryEntryEdit(id) {
+function saveMemoryEntryEdit(id, containerId, scope) {
   const area = $('mem-edit-input-' + id);
   if (!area) return;
   const content = area.value.trim();
   if (!content) return;
   editMemory(id, content);
-  renderMemoryList();
+  renderMemoryList(containerId, scope);
 }
 
 // ── Confirmation inline (cartes dans le thread) ───────────────────────────────

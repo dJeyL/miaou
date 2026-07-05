@@ -23,6 +23,34 @@ const BINARY_DOCTRINE =
   "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
   "l'application l'a déjà présentée à l'utilisateur.";
 
+// Doctrine comportementale : pièces jointes de message (brief A, D4 ; corrigée
+// brief A2 / D3-D4). Toujours injectée quand des outils existent — même statut
+// que BINARY_DOCTRINE, mais distincte : BINARY_DOCTRINE couvre les ressources
+// PRODUITES par un outil, celle-ci couvre les fichiers ATTACHÉS par l'utilisateur
+// à un message (descripteurs [attachment att-N: ...] visibles dans le fil après
+// le tour d'attache, cf. piège n°17 CLAUDE.md). Distinctions VÉRIFIÉES contre
+// l'implémentation, ne pas les « simplifier » : un fichier TEXTE garde son
+// contenu inline à jamais (D3, pas de rewrite) — le rappeler serait redondant ;
+// une IMAGE rappelée est RÉ-INJECTÉE dans le contexte (probe A2 : message user
+// synthétique porteur de la part image, inséré après le tool result — tu la
+// revois réellement) et aussi ré-affichée à l'utilisateur. Partie de
+// ROOT_SYSTEM_PROMPT.
+const ATTACHMENT_DOCTRINE =
+  "Les fichiers joints par l'utilisateur apparaissent dans ses messages sous forme de " +
+  "descripteurs [attachment att-N: ...]. Un fichier TEXTE joint garde son contenu " +
+  "inline dans le message (bloc de code sous son descripteur) : ne rappelle jamais un " +
+  "fichier dont le contenu est déjà visible dans la conversation. Une IMAGE jointe " +
+  "n'est visible par toi qu'au tour où elle a été attachée ; ensuite seul son " +
+  "descripteur reste. Une image que tu VOIS déjà dans le message courant (elle t'est " +
+  "fournie directement au tour où l'utilisateur l'attache) ne doit JAMAIS être rappelée : " +
+  "réponds directement à partir de ce que tu vois, n'appelle pas l'outil par précaution. " +
+  "Ce n'est qu'aux tours SUIVANTS, quand seul le descripteur subsiste et que tu dois de " +
+  "nouveau examiner l'image, que tu appelles miaou__recall_attachment(ref=\"att-N\") : son " +
+  "contenu t'est alors ré-injecté juste après le résultat de l'outil et tu peux l'analyser " +
+  "normalement. Ne décris jamais une image de mémoire sans l'avoir rappelée. Pour un " +
+  "fichier binaire, le contenu n'est pas lisible directement, sauf si un outil " +
+  "d'extraction est disponible (cf. ci-dessous).";
+
 // Doctrine d'accès Web. Toujours injectée quand des outils Web sont disponibles.
 // Partie de ROOT_SYSTEM_PROMPT.
 const WEB_DOCTRINE =
@@ -101,11 +129,31 @@ const MEMORY_DOCTRINE =
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
+// Doctrine docs (brief H) : injectée SEULEMENT si un outil du registre distant
+// déclare le contrat ref+content_b64 (anyToolDeclaresAttachmentInflation) —
+// zéro pollution des setups sans serveur d'extraction. Nommage par CRITÈRE
+// (« un outil déclarant ref et content_b64 ») + EXEMPLE (docs__read) : robuste
+// au renommage du serveur MCP par l'utilisateur, cohérent avec la discipline
+// no-hardcode du lot A. PAS dans ROOT_SYSTEM_PROMPT (dépend de l'état runtime
+// du registre distant), même mécanisme que skillDoctrinePrompt/intentDoctrinePrompt.
+const DOCS_DOCTRINE =
+  "Un fichier binaire joint par l'utilisateur (descripteur [attachment att-N: file " +
+  "\"...\", <mime>, <taille> — binary content, not inlined]) n'est pas lisible " +
+  "directement, mais si un outil du registre déclare dans son schéma d'entrée à la " +
+  "fois un paramètre `ref` et un paramètre `content_b64` (par exemple docs__read), " +
+  "cet outil sait ouvrir la pièce jointe : appelle-le avec ref=\"att-N\" pour en " +
+  "extraire et lire le contenu, sans attendre que l'utilisateur te le demande " +
+  "explicitement si la conversation porte sur ce fichier.";
+
+function docsDoctrinePrompt() {
+  return anyToolDeclaresAttachmentInflation() ? DOCS_DOCTRINE : '';
+}
+
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
-// Compose les quatre doctrines ; référencé par buildSystemMessage() (main.js).
+// Compose les cinq doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
-const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + WEB_DOCTRINE + "\n\n---\n\n" +
-  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
+  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
@@ -161,6 +209,19 @@ const INTENT_DOCTRINE =
 let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
+// Brief A2 / D3 — injections image du tour COURANT. Un recall_attachment sur une
+// image ne peut pas remettre les pixels dans son résultat role:'tool' (textuel) :
+// il annonce l'image et pousse ici { dataUrl, attId }. La boucle runConversation
+// (api.js) draine ce registre APRÈS avoir poussé les tool results du tour et,
+// pour chaque entrée, pousse un message user synthétique porteur de la part
+// image DANS `messages` — pour que le tour suivant (relance de la boucle) le
+// voie. C'est le pendant intra-échange de resolveRecallImages/expandThread, qui
+// eux ne régénèrent le message qu'aux ENVOIS ultérieurs (thread rechargé). Sans
+// ce canal, le modèle répondrait au tour d'après sans jamais recevoir l'image
+// (il ne verrait que « son contenu suit ») et confabulerait.
+let _pendingImageInjections = [];
+function getPendingImageInjections() { return _pendingImageInjections.slice(); }
+function clearPendingImageInjections() { _pendingImageInjections = []; }
 // Enrichit le dernier ack en attente (outils internes synchrones). Les outils
 // distants (asynchrones) voient leur ack déjà drainé dans earlyRendered ; leur
 // enrichissement est fait directement par le hook onEnrichLastAck dans main.js.
@@ -203,6 +264,15 @@ const TOOLS = [
     handler: (args) => {
       const entry = getSummaryEntry(args.id);   // storage.js
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
+      // Herméticité (brief D2) : une conversation d'un autre Space répond comme
+      // inexistante — même message, pas d'oracle. activeSpaceId est une global
+      // de main.js, accès défensif car tools.js est aussi évalué seul (test runner).
+      // Un résumé orphelin (conversation supprimée, index conservé) n'a pas de
+      // Space propre : traité comme default Space (visible seulement là).
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const conv0 = loadConversation(args.id);
+      const convSpace = conv0 ? (conv0.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
+      if (convSpace !== spaceId) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
@@ -235,6 +305,14 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       let entries = listSummaryEntries();        // storage.js — entrées non-tombstone
+      // Herméticité (brief D2) : ne jamais exposer une conversation d'un autre
+      // Space au modèle. Même accès défensif que currentConvId ci-dessous. Un
+      // résumé orphelin (conversation supprimée) est traité comme default Space.
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const allConvs = loadConversations();
+      const idsInSpace = spaceConvIds(spaceId, allConvs);
+      const convIds = new Set(allConvs.map(c => c.id));
+      entries = entries.filter(e => idsInSpace.has(e.id) || (!convIds.has(e.id) && spaceId === DEFAULT_SPACE_ID));
       // Exclut la conversation en cours : lister "les conversations passées" n'a
       // de sens que pour les AUTRES ; currentConvId est une global de main.js
       // (accès défensif car tools.js est aussi évalué seul par le test runner).
@@ -276,7 +354,11 @@ const TOOLS = [
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
-      saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false });
+      // Stampe le Space actif (brief D3) : pas de paramètre scope exposé au
+      // modèle, écriture toujours dans le Space courant ; promotion vers
+      // 'profile' réservée à une action UI (jamais depuis cet outil).
+      const scope = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false, scope });
       _pendingToolAcks.push({ kind: 'memory_create', id, content });
       return 'Souvenir enregistré. Identifiant : ' + id;
     },
@@ -299,6 +381,11 @@ const TOOLS = [
       if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
+      // Herméticité (brief D3, extension D2) : hors du Space actif (ou scope
+      // profile) = « introuvable », même posture sans-oracle que get_conversation.
+      // Une entrée sans scope (pré-migration) vaut default Space.
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return 'Souvenir introuvable.';
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -336,6 +423,62 @@ const TOOLS = [
     },
   },
   {
+    name: 'recall_attachment',
+    description:
+      "Ramène le contenu d'une pièce jointe attachée par l'utilisateur à un message " +
+      "(identifiant att-N vu dans un descripteur [attachment att-N: ...] du fil) DANS ton " +
+      "contexte, pour que tu puisses de nouveau l'examiner. Pour une image : elle t'est " +
+      "ré-injectée juste après le résultat de l'outil (tu la revois réellement) et est " +
+      "aussi ré-affichée à l'utilisateur. Pour un fichier texte : renvoie son contenu en " +
+      "clair. Pour un binaire : renvoie le descripteur (contenu non lisible directement).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Identifiant de la pièce jointe (att-N)' },
+      },
+      required: ['ref'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const ref = String(args.ref || '');
+      if (!ref) return 'Identifiant manquant.';
+      // getCachedRecordByAttId est dans resources.js (chargé avant). currentConvId
+      // est une global de main.js — accès défensif (tools.js évalué seul par le
+      // test runner), même pattern que list_conversations ci-dessus.
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const record = getCachedRecordByAttId(ref, activeId);
+      if (!record) return 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).';
+      _pendingToolAcks.push({ kind: 'attachment_recalled', attId: ref, resourceName: record.name, mime: record.mime, convId: activeId });
+      if (record.mime && record.mime.startsWith('image/')) {
+        // Brief A2 / D3 (probe validée 2026-07-05, voie (b)) : les pixels SONT
+        // ré-injectés au modèle, non pas dans ce résultat role:'tool' (textuel,
+        // et un contenu image y confabule quand il est strippé — cf. contrôle
+        // de probe), mais via un message user SYNTHÉTIQUE porteur de la part
+        // image. Deux voies complémentaires selon le moment :
+        //  - tour COURANT : on empile ici l'injection ; la boucle runConversation
+        //    (api.js) la draine et pousse le message user DANS `messages` après
+        //    les tool results, pour que le tour suivant le voie ;
+        //  - envois ULTÉRIEURS (thread rechargé) : resolveRecallImages +
+        //    expandThread régénèrent le message depuis l'ack persisté (attId).
+        // La dataUrl est reconstruite depuis le record FIGÉ (byte-stable) et
+        // n'est jamais persistée (seul attId l'est). Le tool result ci-dessous
+        // ne fait qu'annoncer l'image qui suit.
+        if (record.data) {
+          _pendingImageInjections.push({
+            attId: ref,
+            dataUrl: 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data),
+          });
+        }
+        return 'Image att-' + ref.replace(/^att-/, '') + ' ré-affichée à l\'utilisateur ; son contenu suit dans le message suivant.';
+      }
+      if (record.class === 'inline') {
+        return utf8Decode(record.data);
+      }
+      return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+        ' — contenu non lisible directement.';
+    },
+  },
+  {
     name: 'delete_memory',
     description:
       "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
@@ -351,6 +494,8 @@ const TOOLS = [
     handler: (args) => {
       if (!args.id) return 'Identifiant manquant.';
       const existing = loadMemories().find(e => e.id === args.id);
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return 'Souvenir introuvable.';
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';
@@ -449,6 +594,12 @@ const ASK_CONFIRMATION_DEF = {
 // par connectMcpServer pour chaque serveur activé (cf. main.js init).
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 
+// Code d'erreur machine partagé avec le serveur mcp_docs (brief D, D1) : un
+// `ref` inconnu sans `content_b64` fourni. Porté dans `error.data.code` (slot
+// applicatif standard JSON-RPC 2.0, cf. mcpRpcAttempt) — UNE seule constante,
+// ne pas la dupliquer en dur ailleurs.
+const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
+
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
 let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId? } }
 
@@ -512,6 +663,10 @@ async function mcpRpcAttempt(server, method, params, opts) {
     if (msg.error) {
       const err = new Error((msg.error && msg.error.message) || 'Erreur JSON-RPC.');
       if (hadSession && /session/i.test(err.message)) err.staleSession = true;   // signalée par erreur JSON-RPC
+      // Code machine applicatif (brief D, contrat REF_UNKNOWN) : slot standard
+      // JSON-RPC 2.0 pour les données d'erreur applicatives, `code` restant
+      // réservé à l'entier protocolaire. err.data.code, jamais err.code.
+      if (msg.error && msg.error.data) err.data = msg.error.data;
       throw err;
     }
     return msg.result;
@@ -631,11 +786,15 @@ function disconnectMcpServer(name) {
 // premier await, pour permettre le rendu pendant le round-trip (cf. onEarlyAcks).
 // `intent` : description en langage naturel extraite de miaou_intent par callTool
 // (déjà strippée des args envoyés au serveur). Stockée dans l'ack pour l'UI.
-async function callRemoteTool(server, toolName, args, intent) {
+// `reuseAckEntry` (D6, rejeu REF_UNKNOWN) : réutilise la ligne d'ack du premier
+// essai au lieu d'en pousser une seconde — même rendu qu'un rejeu staleSession
+// (dont le rejeu vit SOUS un seul callRemoteTool) : UNE ligne d'appel pour
+// l'échange complet, l'erreur transitoire est effacée si le rejeu réussit.
+async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   const fullName = server.name + '__' + toolName;
-  const ackEntry = { kind: 'mcp_call', server: server.name, name: fullName };
+  const ackEntry = reuseAckEntry || { kind: 'mcp_call', server: server.name, name: fullName };
   if (intent != null) ackEntry.intent = intent;
-  _pendingToolAcks.push(ackEntry);   // synchrone — avant tout await
+  if (!reuseAckEntry) _pendingToolAcks.push(ackEntry);   // synchrone — avant tout await
 
   try {
     const result = await mcpRpc(server, 'tools/call', { name: toolName, arguments: args || {} });
@@ -643,10 +802,22 @@ async function callRemoteTool(server, toolName, args, intent) {
     const nonText = content.filter(b => b && b.type !== 'text');
     if (nonText.length) _pendingToolBlocks.push.apply(_pendingToolBlocks, nonText);
     if (result && result.isError) ackEntry.error = true;
-    return { content, isError: !!(result && result.isError) };
+    else if (reuseAckEntry) delete ackEntry.error;   // rejeu réussi : échec transitoire effacé
+    return { content, isError: !!(result && result.isError), ackEntry };
   } catch (e) {
     ackEntry.error = true;
-    return { content: [{ type: 'text', text: 'Erreur outil distant ' + fullName + ' : ' + ((e && e.message) || e) }], isError: true };
+    // errorCode et ackEntry (pas dans ACK_COPY_FIELDS : jamais persistés, lus
+    // synchrones par l'appelant immédiat callDocsInflatedRemoteTool, cf. D6) :
+    // errorCode porte le code machine brut (ex. REF_UNKNOWN) depuis err.data.code
+    // (mcpRpcAttempt) — évite de dépendre du texte libre du message pour une
+    // décision de rejeu ; ackEntry permet au rejeu de réutiliser la même ligne.
+    const errorCode = e && e.data && e.data.code;
+    return {
+      content: [{ type: 'text', text: 'Erreur outil distant ' + fullName + ' : ' + ((e && e.message) || e) }],
+      isError: true,
+      errorCode,
+      ackEntry,
+    };
   }
 }
 
@@ -714,7 +885,107 @@ function callTool(name, args) {
   const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
   const serverArgs = args ? Object.assign({}, args) : {};
   delete serverArgs.miaou_intent;
-  return callRemoteTool(server, parsed.toolName, serverArgs, intent);
+  return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent);
+}
+
+// ── Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D) ───────
+// Table d'état poussé/non-poussé par (conversationId, attId) : évite de
+// réinjecter le contenu à chaque appel une fois le serveur docs l'a matérialisé
+// en session. En mémoire uniquement (comme _remoteStatus/_remoteTools), pas de
+// persistance — un rechargement de page revient à "non poussé", cohérent avec
+// la session serveur elle-même éphémère (TTL sweep, brief D D2).
+let _attachmentPushState = {};
+function _pushStateKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
+function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_pushStateKey(conversationId, attId)]; }
+function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_pushStateKey(conversationId, attId)] = true; }
+// Exposée pour un futur nettoyage à la suppression de conversation (non requis
+// par ce lot — deleteConv ne connaît pas cette table, cf. handover).
+function clearAttachmentPushState(conversationId) {
+  for (const k in _attachmentPushState) {
+    if (k.indexOf((conversationId || '') + '|') === 0) delete _attachmentPushState[k];
+  }
+}
+
+// Détection de capability SANS nom de serveur en dur (cf. audit lot A) :
+// l'outil distant déclare, dans son inputSchema (issu de tools/list, mis en
+// cache par connectMcpServer), à la fois `ref` et `content_b64` — signature
+// stable du contrat brief D, peu de faux positifs, aucune dépendance à un nom
+// de serveur/outil précis (l'utilisateur peut nommer son serveur MCP docs
+// comme il veut).
+function toolDeclaresAttachmentInflation(server, toolName) {
+  const fullName = server.name + '__' + toolName;
+  const list = _remoteTools[server.name] || [];
+  const def = list.find(t => t.name === fullName);
+  const props = def && def.inputSchema && def.inputSchema.properties;
+  return !!(props && props.ref && props.content_b64);
+}
+
+// Motif conversation-scopé des attachments (att-1, att-2, …) — même forme que
+// allocateAttId (resources.js).
+const ATTACHMENT_REF_RE = /^att-\d+$/;
+
+// Généralisation de toolDeclaresAttachmentInflation (brief H) : balaye TOUT le
+// registre _remoteTools (tous serveurs confondus), sans nom de serveur/outil en
+// dur — même discipline no-hardcode que le prédicat par-outil. Sert à décider
+// SI docsDoctrinePrompt() doit être injecté, indépendamment de quel(s) serveur(s)
+// exposent le contrat ref+content_b64 (brief D). Renvoie true dès qu'AU MOINS
+// un outil déclare la signature, quel que soit son nom.
+function anyToolDeclaresAttachmentInflation() {
+  for (const serverName of Object.keys(_remoteTools)) {
+    for (const t of _remoteTools[serverName]) {
+      const props = t && t.inputSchema && t.inputSchema.properties;
+      if (props && props.ref && props.content_b64) return true;
+    }
+  }
+  return false;
+}
+
+// Point d'accroche D6 : juste avant callRemoteTool. Si l'outil ciblé déclare le
+// contrat d'inflation ET que args.ref référence un att-N connu de la session
+// courante, injecte SUR LE WIRE UNIQUEMENT — les `args` déjà capturés par
+// l'appelant (callTool) pour la réinjection cross-turn via onEnrichLastAck
+// restent les args ORIGINAUX, non inflés (contexte modèle intact, cf. brief) :
+// - session_id (= conversation id) sur CHAQUE appel : le serveur docs en a
+//   besoin pour localiser son répertoire de session, et le modèle ne connaît
+//   pas l'id de la conversation courante — il ne peut pas le fournir lui-même ;
+// - content_b64 seulement au premier appel pour ce (conversationId, attId)
+//   (table d'état ci-dessus).
+// Sur erreur REF_UNKNOWN (contenu pas encore matérialisé côté serveur malgré
+// notre état "pushed" — ex. session serveur TTL-expirée), UN seul rejeu avec le
+// contenu inliné, puis on marque poussé si ce rejeu réussit.
+async function callDocsInflatedRemoteTool(server, toolName, args, intent) {
+  const ref = args && typeof args.ref === 'string' ? args.ref : null;
+  const capable = ref && ATTACHMENT_REF_RE.test(ref) && toolDeclaresAttachmentInflation(server, toolName);
+  if (!capable) return callRemoteTool(server, toolName, args, intent);
+
+  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+  const record = getCachedRecordByAttId(ref, activeId);
+  if (!record) return callRemoteTool(server, toolName, args, intent);   // ref inconnue localement, laisser le serveur répondre
+
+  const alreadyPushed = isAttachmentPushed(activeId, ref);
+  const wireArgs = Object.assign({}, args);
+  if (activeId != null) wireArgs.session_id = activeId;
+  if (!alreadyPushed) wireArgs.content_b64 = arrayBufferToBase64(record.data);
+  const result = await callRemoteTool(server, toolName, wireArgs, intent);
+  if (!alreadyPushed && !result.isError) { markAttachmentPushed(activeId, ref); return result; }
+  if (alreadyPushed && result.isError && _isRefUnknownError(result)) {
+    // Rejeu unique avec contenu inliné (discipline "un seul rejeu", cf.
+    // mcpRpc/staleSession). result.ackEntry réutilisé : une seule ligne d'ack
+    // pour l'échange complet, l'erreur transitoire s'efface si le rejeu réussit.
+    const retryArgs = Object.assign({}, wireArgs, { content_b64: arrayBufferToBase64(record.data) });
+    const retryResult = await callRemoteTool(server, toolName, retryArgs, intent, result.ackEntry);
+    if (!retryResult.isError) markAttachmentPushed(activeId, ref);
+    return retryResult;
+  }
+  return result;
+}
+
+// Lit le code machine porté par callRemoteTool (result.errorCode, depuis
+// err.data.code — cf. mcpRpcAttempt/callRemoteTool) plutôt que de chercher une
+// sous-chaîne dans le texte d'erreur (fragile, dépendrait de la formulation
+// libre du message serveur).
+function _isRefUnknownError(result) {
+  return !!(result && result.errorCode === REF_UNKNOWN_ERROR_CODE);
 }
 
 // Aplatit un résultat MCP en string pour le message role:'tool' renvoyé au modèle.
