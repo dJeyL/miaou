@@ -2173,7 +2173,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </button>
           <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
           <textarea id="composer-text" rows="1" placeholder="Message…"
-            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
+            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
             <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
@@ -2591,7 +2591,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-05 23:00 UTC */
+/* miaou — built: 2026-07-05 23:19 UTC */
 
 /* ── utils.js ── */
 
@@ -3099,7 +3099,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783292406}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783293544}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6723,6 +6723,21 @@ function onComposerDrop(e) {
   if (wrap) wrap.classList.remove('dragover');
   const files = e.dataTransfer && e.dataTransfer.files;
   if (files && files.length) handleAttachFiles(files);
+}
+
+function onComposerPaste(e) {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  const files = [];
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (!files.length) return;
+  e.preventDefault();
+  handleAttachFiles(files);
 }
 
 function attIconSvg() {

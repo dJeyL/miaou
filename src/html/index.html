@@ -150,7 +150,7 @@
           </button>
           <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
           <textarea id="composer-text" rows="1" placeholder="Message…"
-            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()"></textarea>
+            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
           <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
             <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>

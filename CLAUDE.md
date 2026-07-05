@@ -97,7 +97,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `regenerateTitle`, `regenerateResponse`, `continueTruncated`, `openApiServers`, `closeApiServers`, `addApiServerCard`,
   `toggleReasoning`, `toggleSettingsCat`, `exportAllData`, `onImportDataClick`,
   `onImportFileSelected`, `onAttachClick`, `onAttachFilesSelected`,
-  `onComposerDragOver`, `onComposerDragLeave`, `onComposerDrop`,
+  `onComposerDragOver`, `onComposerDragLeave`, `onComposerDrop`, `onComposerPaste`,
   `removeComposerAttachment`, `toggleSpaceMenu`, `closeSpaceScreen`,
   `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de

@@ -1411,6 +1411,27 @@ function onComposerDrop(e) {
   if (files && files.length) handleAttachFiles(files);
 }
 
+// Collage presse-papier : seules les images collées (screenshot, copie depuis
+// navigateur/explorateur) sont interceptées et détournées vers le pipeline
+// d'attachment — le texte collé (cas immensément majoritaire) suit son cours
+// natif dans le textarea, non empêché. `clipboardData.items` (pas `.files`,
+// absent sur une image collée sans fichier réel derrière) donne accès aux
+// Blob via `getAsFile()` pour chaque item de type image/*.
+function onComposerPaste(e) {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  const files = [];
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (!files.length) return;
+  e.preventDefault();
+  handleAttachFiles(files);
+}
+
 // Icône générique pour un chip sans vignette (texte/binaire, ou image dont le
 // blob est absent du cache — fallback gracieux, cf. brief §4).
 function attIconSvg() {
