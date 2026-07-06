@@ -792,11 +792,13 @@ body {
   margin-bottom: 8px;
 }
 
-.composer-model { position: relative; margin-bottom: 0; }
+.composer-model { position: relative; margin-bottom: 0; display: flex; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
   display: inline-flex;
   align-items: center;
+  line-height: 1;
+  min-height: 22px;
   gap: 6px;
   font-family: var(--mono);
   font-size: 11px;
@@ -813,6 +815,10 @@ body {
 .composer-model-btn:hover { background: var(--accent-bd); }
 
 .ctx-counter {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  min-height: 22px;
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 500;
@@ -826,7 +832,7 @@ body {
 }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
-.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
 .composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
 .composer-model-btn #composer-model-label {
   overflow: hidden;
@@ -844,11 +850,13 @@ body {
 }
 #composer-model-menu.show { transform: none; }
 
-.composer-reasoning { position: relative; margin-left: auto; }
+.composer-reasoning { position: relative; margin-left: auto; display: flex; }
 .composer-reasoning[hidden] { display: none; }
 .composer-reasoning-btn {
   display: inline-flex;
   align-items: center;
+  line-height: 1;
+  min-height: 22px;
   gap: 4px;
   font-family: var(--mono);
   font-size: 11px;
@@ -2591,7 +2599,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-05 23:50 UTC */
+/* miaou — built: 2026-07-06 17:22 UTC */
 
 /* ── utils.js ── */
 
@@ -3099,7 +3107,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783295456}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783358560}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;

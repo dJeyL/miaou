@@ -111,11 +111,13 @@
 }
 
 /* sélecteur de modèle du composer (optionnel) */
-.composer-model { position: relative; margin-bottom: 0; }
+.composer-model { position: relative; margin-bottom: 0; display: flex; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
   display: inline-flex;
   align-items: center;
+  line-height: 1;
+  min-height: 22px;
   gap: 6px;
   font-family: var(--mono);
   font-size: 11px;
@@ -133,6 +135,10 @@
 
 /* compteur compact d'inspecteur de contexte (brief B) */
 .ctx-counter {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  min-height: 22px;
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 500;
@@ -146,7 +152,7 @@
 }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
-.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
 .composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
 .composer-model-btn #composer-model-label {
   overflow: hidden;
@@ -167,11 +173,13 @@
 /* sélecteur de niveau de raisonnement du composer (optionnel) : même mécanique
    que .composer-model (bouton pilule + .model-menu générique), mais liste
    statique de 5 valeurs fixes — pas de fetch, pas de recherche. */
-.composer-reasoning { position: relative; margin-left: auto; }
+.composer-reasoning { position: relative; margin-left: auto; display: flex; }
 .composer-reasoning[hidden] { display: none; }
 .composer-reasoning-btn {
   display: inline-flex;
   align-items: center;
+  line-height: 1;
+  min-height: 22px;
   gap: 4px;
   font-family: var(--mono);
   font-size: 11px;

@@ -783,7 +783,7 @@
 
 - **composer.css** (L1)
 - **Composer** (L6)
-- **Pièces jointes (composer)** (L284)
+- **Pièces jointes (composer)** (L292)
 
 ## src/css/drawers.css
 
