@@ -1425,7 +1425,7 @@ async function dispatchSend(matches, continuation) {
     const banner = wrap.querySelector('.msg-truncated');
     if (banner) banner.remove();
     startWaiter(wrap.querySelector('.body'));   // état WAITING, comme startAssistantMessage
-    scrollBottom();
+    scrollBottom(true);   // clic "continuer" explicite : toujours suivre
   } else {
     wrap = startAssistantMessage(model, serverName);
   }
@@ -1469,6 +1469,10 @@ async function dispatchSend(matches, continuation) {
       // pendant le round-trip réseau (pas seulement après). Les acks des outils
       // internes (synchrones) ne sont jamais ici — ils arrivent dans onToolAcks.
       onEarlyAcks: () => {
+        // Lu avant les insertions DOM ci-dessous : cf. streamInto/finalizeAssistant,
+        // sinon isAtBottom() verrait déjà le nouveau contenu et répondrait "faux"
+        // même quand l'utilisateur suivait le fil.
+        const follow = isAtBottom();
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -1480,7 +1484,7 @@ async function dispatchSend(matches, continuation) {
           const node = placeToolAck(wrap, entry);
           earlyRendered.push({ ack, entry, node });
         }
-        scrollBottom();
+        if (follow) scrollBottom(true);
       },
       // Vidange des acks d'outils APRÈS l'exécution des outils d'un tour, donc
       // AVANT la réponse finale : ils sont la provenance de la réponse et doivent
@@ -1507,6 +1511,8 @@ async function dispatchSend(matches, continuation) {
         }
         earlyRendered = [];
 
+        // Lu avant les insertions DOM ci-dessous, même raison que onEarlyAcks.
+        const follow = isAtBottom();
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -1523,7 +1529,7 @@ async function dispatchSend(matches, continuation) {
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
         if (blocks.length) placeToolBlocks(wrap, blocks);
-        scrollBottom();
+        if (follow) scrollBottom(true);
 
         // Recalcul MI-ÉCHANGE (pas seulement en fin de tour) : un tour d'outils
         // vient de se clore (tool-acks poussés dans currentThread ci-dessus),
@@ -1845,7 +1851,15 @@ function init() {
 
   migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
   activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space (A3) ; défaut DEFAULT_SPACE_ID
-  loadSpaceLibrary(activeSpaceId);   // peuple le session cache library avant le premier envoi (fire-and-forget)
+  // Fire-and-forget (résolution après le premier rendu) : la pilule/l'inspecteur
+  // calculés avant résolution ignorent la bibliothèque du Space, sous-évaluant le
+  // total tant que ce .then() n'a pas rafraîchi le compteur (cf. commentaire de
+  // loadSpaceLibrary, resources.js — écart pilule/inspecteur/nouvelle conv payé
+  // en prod, brief bugfix contexte).
+  loadSpaceLibrary(activeSpaceId).then(() => {
+    _lastContextManifest = null;   // le manifeste calculé avant résolution est périmé (biblio absente)
+    syncContextCounter();
+  });
   syncSpaceUI();
   loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
   const s = loadSettings();
@@ -1923,8 +1937,20 @@ function init() {
   });
 
   prefetchModels();      // liste des modèles (cache session) → sélecteur composer
-  reconnectMcpServers(); // handshake + tools/list des serveurs MCP activés
-  loadSkillsCache().then(syncSkillHintUI);   // méta des skills en mémoire → autocomplétion + outils + légende « / »
+  // handshake + tools/list des serveurs MCP activés ; rafraîchit aussi la pilule de
+  // contexte, sous-évaluée tant que toolDefinitions() ignore les outils MCP distants.
+  reconnectMcpServers().then(() => {
+    _lastContextManifest = null;
+    syncContextCounter();
+  });
+  // méta des skills en mémoire → autocomplétion + outils + légende « / » ; rafraîchit
+  // aussi la pilule de contexte, sous-évaluée tant que le bloc skills autotrigger
+  // (buildSkillsContextBlock) n'a pas ces données (même écart que loadSpaceLibrary).
+  loadSkillsCache().then(() => {
+    syncSkillHintUI();
+    _lastContextManifest = null;
+    syncContextCounter();
+  });
   runBackfill();         // auto-gardé sur la présence d'URL
   armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
 }

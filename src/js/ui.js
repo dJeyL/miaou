@@ -89,7 +89,28 @@ function renderUserMd(text) {
   return marked.parse(safe, { breaks: true });
 }
 function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
-function scrollBottom() { const m = $('messages'); if (m) m.scrollTop = m.scrollHeight; }
+// Autoscroll pendant le streaming : ne suit le bas du fil que si l'utilisateur
+// s'y trouvait déjà avant le rendu (isAtBottom), pour ne pas arracher la vue
+// d'un lecteur remonté consulter une réponse précédente ou un raisonnement en
+// cours. Tolérance en pixels car un scrollHeight recalculé après rendu markdown
+// peut différer de quelques px de la position "pile en bas" mesurée avant.
+const AUTOSCROLL_TOLERANCE_PX = 24;
+
+function isAtBottom() {
+  const m = $('messages');
+  if (!m) return true;
+  return m.scrollHeight - m.scrollTop - m.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
+}
+
+// scrollBottom(force) : force=true ramène toujours en bas (nouveau message
+// user, nouvelle bulle assistant, ouverture de conversation). Sans argument,
+// ne scrolle que si l'utilisateur était déjà en bas — cf. isAtBottom.
+function scrollBottom(force) {
+  const m = $('messages');
+  if (!m) return;
+  if (!force && !isAtBottom()) return;
+  m.scrollTop = m.scrollHeight;
+}
 
 function modelName() {
   // activeApiConfig (storage.js) : modèle du serveur actif, filet legacy inclus —
@@ -776,7 +797,7 @@ function renderThread(msgs) {
   }
   for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
-  scrollBottom();
+  scrollBottom(true);   // ouverture/rechargement de conversation : toujours au fond
   syncConvDownloadBtn();
   syncLastAssistantActions();
 }
@@ -816,7 +837,7 @@ function appendUserMessage(text, ts, attachments) {
   const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments);
   $('thread').appendChild(el);
   highlightUnder(el);
-  scrollBottom();
+  scrollBottom(true);   // l'utilisateur vient d'envoyer : toujours suivre
   return el;
 }
 
@@ -826,7 +847,7 @@ function startAssistantMessage(model, server) {
   wrap.innerHTML = assistantHead(model, '', undefined, server) + `<div class="body"></div>`;
   $('thread').appendChild(wrap);
   startWaiter(wrap.querySelector('.body'));     // état WAITING
-  scrollBottom();
+  scrollBottom(true);   // nouvelle bulle en réponse à un envoi : toujours suivre
   return wrap;
 }
 
@@ -888,11 +909,15 @@ function streamInto(wrap, full) {
     const p = _streamPending;
     _streamPending = null;
     if (!p) return;
+    // isAtBottom() DOIT être lu avant la mutation du DOM ci-dessous : le
+    // nouveau contenu fait grandir scrollHeight, donc évalué après il donnerait
+    // presque toujours "pas en bas" même quand l'utilisateur suivait le fil.
+    const follow = isAtBottom();
     const body = p.wrap.querySelector('.body');
     body.innerHTML = renderMd(p.full) + '<span class="cursor-blink"></span>';
     decoratePre(p.wrap);
     highlightUnder(p.wrap);   // coloration pendant le streaming
-    scrollBottom();
+    if (follow) scrollBottom(true);
   }, 90);
 }
 
@@ -926,6 +951,7 @@ function finalizeAssistant(wrap, full, truncated) {
   cancelStreamRender();
   cancelReasoningRender();
   stopWaiter();
+  const follow = isAtBottom();   // lu avant mutation DOM, cf. streamInto
   const body = wrap.querySelector('.body');
   body.innerHTML = renderMd(full);
   body.dataset.raw = full;
@@ -943,7 +969,7 @@ function finalizeAssistant(wrap, full, truncated) {
   }
   syncConvDownloadBtn();
   syncLastAssistantActions();
-  scrollBottom();
+  if (follow) scrollBottom(true);
 }
 
 // ── Édition d'un message utilisateur ────────────────────────────────────────
@@ -1639,7 +1665,7 @@ function onApiModelInput(inputEl, menuEl) {
 // Ferme tout menu modèle de carte API ouvert au clic ailleurs.
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.api-model-anchor')) {
-    document.querySelectorAll('#api-list .model-menu.show').forEach(m => m.classList.remove('show'));
+    document.querySelectorAll('#api-list .api-model-anchor .model-menu.show').forEach(m => m.classList.remove('show'));
   }
   if (!e.target.closest('#composer-model')) {
     const cm = $('composer-model-menu');
@@ -1747,7 +1773,7 @@ function syncReasoningUI() {
   const label = $('composer-reasoning-label');
   if (label) label.textContent = opt ? opt.label : cur;
   const btn = $('composer-reasoning-btn');
-  if (btn) btn.classList.toggle('effort-default', !cur);
+  if (btn) btn.classList.toggle('is-default', !cur);
   box.hidden = !settings.showReasoningSelector || rejected;
 }
 
@@ -1816,7 +1842,7 @@ function syncSettingsReasoningLabel() {
   const v = $('set-reasoning-effort').value;
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === v);
   $('set-reasoning-label').textContent = opt ? opt.label : v;
-  $('set-reasoning-btn').classList.toggle('effort-default', !v);
+  $('set-reasoning-btn').classList.toggle('is-default', !v);
 }
 
 // ── Settings drawer ─────────────────────────────────────────────────────────
@@ -2470,7 +2496,12 @@ function pickSpace(id) {
   const leaving = currentConvId;
   activeSpaceId = id;
   setActiveSpaceId(id);
-  loadSpaceLibrary(id);   // peuple le session cache library du nouveau Space (fire-and-forget)
+  // Fire-and-forget (résolution après resetToEmpty) : rafraîchit la pilule une fois
+  // la bibliothèque du nouveau Space chargée, même écart que dans init() (main.js).
+  loadSpaceLibrary(id).then(() => {
+    _lastContextManifest = null;
+    syncContextCounter();
+  });
   resetToEmpty();
   syncSpaceUI();
   $('space-menu').classList.remove('show');
@@ -2709,10 +2740,10 @@ function cfgErrEl() {
 // SANS déclencher onChange (réservé aux choix explicites de l'utilisateur).
 function cfgPillSelect(inputClass, options, value, onChange) {
   const root = document.createElement('div');
-  root.className = 'composer-reasoning settings-reasoning cfg-pill-select';
+  root.className = 'pill-select is-compact cfg-pill-select';
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'composer-reasoning-btn';
+  btn.className = 'pill-select-btn';
   const label = document.createElement('span');
   btn.appendChild(label);
   btn.insertAdjacentHTML('beforeend',
@@ -3373,7 +3404,6 @@ function placeToolBlocks(wrap, blocks) {
     if (body) wrap.insertBefore(node, body);
     else if (wrap) wrap.appendChild(node);
   }
-  scrollBottom();
 }
 
 function renderToolBlock(block) {

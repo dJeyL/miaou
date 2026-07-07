@@ -160,7 +160,7 @@
    suit collée via le gap. Deux margin-left:auto consécutifs répartiraient
    l'espace libre en deux, poussant le raisonnement au milieu au lieu de le
    grouper à droite avec le contexte. */
-.composer-reasoning:not([hidden]) + .ctx-counter { margin-left: 0; }
+.pill-select:not([hidden]) + .ctx-counter { margin-left: 0; }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
 .ctx-counter.ctx-counter-over { color: #d64545; border-color: #d6454555; background: #d645451a; }
@@ -186,12 +186,13 @@
 }
 #composer-model-menu.show { transform: none; }
 
-/* sélecteur de niveau de raisonnement du composer (optionnel) : même mécanique
-   que .composer-model (bouton pilule + .model-menu générique), mais liste
-   statique de 5 valeurs fixes — pas de fetch, pas de recherche. */
-.composer-reasoning { position: relative; margin-left: auto; display: flex; }
-.composer-reasoning[hidden] { display: none; }
-.composer-reasoning-btn {
+/* pilule de sélection générique (bouton pilule + .model-menu) : sert le
+   sélecteur de raisonnement du composer, celui des réglages globaux, et
+   cfgPillSelect (Vision, transport MCP) — même mécanique que .composer-model,
+   liste statique de valeurs fixes, pas de fetch, pas de recherche. */
+.pill-select { position: relative; margin-left: auto; display: flex; }
+.pill-select[hidden] { display: none; }
+.pill-select-btn {
   display: inline-flex;
   align-items: center;
   line-height: 1;
@@ -209,17 +210,17 @@
   max-width: 100%;
   transition: background 140ms var(--ease);
 }
-.composer-reasoning-btn:hover { background: var(--accent-bd); }
+.pill-select-btn:hover { background: var(--accent-bd); }
 /* valeur « défaut » (aucun paramètre envoyé) : pilule neutre/grise — l'accent
-   orange est réservé à un niveau explicitement choisi */
-.composer-reasoning-btn.effort-default {
+   orange est réservé à une valeur explicitement choisie */
+.pill-select-btn.is-default {
   color: var(--text-2);
   background: var(--surface-2);
   border-color: var(--border-2);
 }
-.composer-reasoning-btn.effort-default:hover { background: var(--border); }
-.composer-reasoning-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
-.composer-reasoning-btn .chev { width: 12px; height: 12px; opacity: .7; }
+.pill-select-btn.is-default:hover { background: var(--border); }
+.pill-select-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
+.pill-select-btn .chev { width: 12px; height: 12px; opacity: .7; }
 #composer-reasoning-menu {
   top: auto;
   bottom: calc(100% + 4px);
@@ -230,7 +231,7 @@
   transform: translateY(4px);
 }
 #composer-reasoning-menu.show { transform: none; }
-.settings-reasoning { margin-left: 0; flex-shrink: 0; }
+.pill-select.is-compact { margin-left: 0; flex-shrink: 0; }
 #set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
 /* bannière résumés (mode « proposer ») */

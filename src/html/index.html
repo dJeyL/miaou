@@ -125,8 +125,8 @@
             </button>
             <div class="model-menu" id="composer-model-menu"></div>
           </div>
-          <div class="composer-reasoning" id="composer-reasoning" hidden>
-            <button type="button" class="composer-reasoning-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
+          <div class="pill-select" id="composer-reasoning" hidden>
+            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
               <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
               <span id="composer-reasoning-label">raisonnement</span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
@@ -222,8 +222,8 @@
             <label>Niveau de raisonnement par défaut</label>
             <span class="hint">Ajoute <code>reasoning_effort</code> aux requêtes API. «&nbsp;défaut&nbsp;» n'envoie aucun paramètre.</span>
           </div>
-          <div class="composer-reasoning settings-reasoning" id="set-reasoning-select">
-            <button type="button" class="composer-reasoning-btn" id="set-reasoning-btn" onclick="toggleSettingsReasoningMenu()">
+          <div class="pill-select is-compact" id="set-reasoning-select">
+            <button type="button" class="pill-select-btn" id="set-reasoning-btn" onclick="toggleSettingsReasoningMenu()">
               <span id="set-reasoning-label">défaut</span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
