@@ -101,6 +101,90 @@ describe('buildContextManifest', function() {
   });
 });
 
+describe('scaleManifestToUsage (Bbis, prorata sur l\'estimé)', function() {
+  function baseSysParts() {
+    return { root: 'ROOT', toolsSystem: '', intent: '', skills: '', docs: '', user: 'USER PROMPT' };
+  }
+  function baseDynParts() {
+    return { contextDateModel: 'Date: x', memories: '', summaries: '', skillsContext: '' };
+  }
+
+  it('usage null → manifeste inchangé', function() {
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), [{ role: 'user', content: 'hello' }], '', null);
+    var out = scaleManifestToUsage(m, null);
+    expect(out).toEqual(m);
+  });
+
+  it('usage.prompt_tokens absent → manifeste inchangé', function() {
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), [{ role: 'user', content: 'hello' }], '', null);
+    var out = scaleManifestToUsage(m, { completion_tokens: 5 });
+    expect(out).toEqual(m);
+  });
+
+  it('totalTokens estimé à 0 (hors images) → manifeste inchangé (pas de division par zéro)', function() {
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), [], '', null);
+    m.totalTokens = 0;
+    m.entries = [];
+    var out = scaleManifestToUsage(m, { prompt_tokens: 100 });
+    expect(out).toEqual(m);
+  });
+
+  it('la somme des lignes (hors images) égale exactement prompt_tokens (résidu d\'arrondi absorbé)', function() {
+    var thread = [
+      { role: 'user', content: 'a'.repeat(101) },
+      { role: 'assistant', content: 'b'.repeat(53) },
+    ];
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), thread, '', null);
+    var out = scaleManifestToUsage(m, { prompt_tokens: 777 });
+    var sum = out.entries.reduce(function(a, e) { return a + e.tokens; }, 0);
+    expect(sum).toBe(777);
+    expect(out.totalTokens).toBe(777);
+    expect(out.real).toBe(true);
+  });
+
+  it('ligne attachment_images exclue du facteur et non proratisée', function() {
+    var thread = [
+      { role: 'user', content: [
+        { type: 'text', text: 'texte'.repeat(20) },
+        { type: 'image_url', image_url: { url: 'data:x' } },
+      ] },
+    ];
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), thread, '', null);
+    var imgTokensBefore = m.entries.filter(function(e) { return e.source === 'attachment_images'; })[0].tokens;
+    var out = scaleManifestToUsage(m, { prompt_tokens: 999 });
+    var imgEntry = out.entries.filter(function(e) { return e.source === 'attachment_images'; })[0];
+    expect(imgEntry.tokens).toBe(imgTokensBefore);   // inchangée
+    // total = prompt_tokens (texte réel) + tokens image (constante, hors budget réel)
+    expect(out.totalTokens).toBe(999 + imgTokensBefore);
+  });
+
+  it('apiUsage posé sur le retour', function() {
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), [{ role: 'user', content: 'hello' }], '', null);
+    var usage = { prompt_tokens: 50, completion_tokens: 3 };
+    var out = scaleManifestToUsage(m, usage);
+    expect(out.apiUsage).toEqual(usage);
+  });
+});
+
+describe('usageDerived (Bbis)', function() {
+  it('usage null → tout null', function() {
+    expect(usageDerived(null)).toEqual({ inTokens: null, outTokens: null, cachedTokens: null, cachedRatio: null });
+  });
+  it('usage complet avec cached_tokens → ratio correct', function() {
+    var d = usageDerived({ prompt_tokens: 1000, completion_tokens: 44, prompt_tokens_details: { cached_tokens: 250 } });
+    expect(d.inTokens).toBe(1000);
+    expect(d.outTokens).toBe(44);
+    expect(d.cachedTokens).toBe(250);
+    expect(d.cachedRatio).toBe(0.25);
+  });
+  it('cached_tokens absent (ex. Ollama) → cachedTokens et cachedRatio null', function() {
+    var d = usageDerived({ prompt_tokens: 1000, completion_tokens: 44 });
+    expect(d.cachedTokens).toBe(null);
+    expect(d.cachedRatio).toBe(null);
+    expect(d.inTokens).toBe(1000);
+  });
+});
+
 describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function() {
   it('buildSystemMessage reste identique à la concaténation des parts (pas de régression du séparateur)', function() {
     var sp = systemMessageParts();

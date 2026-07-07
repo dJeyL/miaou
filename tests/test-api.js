@@ -18,6 +18,22 @@ describe('parseSSELine', function() {
   });
 });
 
+describe('sseDataObject sur un chunk terminal stream_options.include_usage (Bbis)', function() {
+  it('choices vide + usage présent → objet exploitable indépendamment de choices', function() {
+    var line = 'data: {"usage":{"prompt_tokens":10351,"total_tokens":10395,"completion_tokens":44,"prompt_tokens_details":{"cached_tokens":9824}},"choices":[]}';
+    var chunk = sseDataObject(line);
+    expect(chunk).toBeTruthy();
+    expect(Array.isArray(chunk.choices)).toBeTruthy();
+    expect(chunk.choices.length).toBe(0);
+    expect(chunk.usage.prompt_tokens).toBe(10351);
+    expect(chunk.usage.prompt_tokens_details.cached_tokens).toBe(9824);
+  });
+  it('chunk normal sans usage → champ usage absent', function() {
+    var chunk = sseDataObject('data: {"choices":[{"delta":{"content":"hi"}}]}');
+    expect(chunk.usage).toBeFalsy();
+  });
+});
+
 describe('reasoningDelta (détection du raisonnement streamé)', function() {
   it('extrait le champ reasoning', function() {
     expect(reasoningDelta({ reasoning: 'hmm' })).toBe('hmm');

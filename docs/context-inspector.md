@@ -156,7 +156,118 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
   raisonnement »), lu/écrit dans `init`/`onSaveSettings`, participe à
   `settingsFormDirty`.
 
+## Usage API réel (Bbis)
+
+`streamCompletion` (api.js) pose `stream_options: { include_usage: true }` dans
+le body, inconditionnel — les backends qui ne le connaissent pas l'ignorent
+silencieusement (aucun cas de rejet 400 observé ; si ça survenait, à traiter
+comme `reasoning_effort`, pas anticipé/YAGNI). Le dernier chunk SSE émis avec ce
+flag porte `chunk.usage` et `choices: []` — capturé **avant** le filtrage sur
+choix vide existant (`if (!choice) continue`), donc indépendant de la présence
+de `choices`. `usage` est `null` si absent (backend qui ignore le flag, ex.
+beaucoup de configs Ollama) — tolérance totale, même posture que
+`reasoning_effort`/vision.
+
+`streamCompletion` renvoie désormais `{ ..., usage }`. `runConversation`
+(api.js) le repasse aux hooks terminaux en **4e argument optionnel objet**
+(non cassant pour les call-sites existants) : `onFinal(content, reasoning,
+finishReason, { usage })`, `onToolAcks({ usage })`, `onHalt(leadIn, question,
+{ usage })`. Chaque tour de la boucle produit son propre `result.usage` —
+**dernier tour reçu**, jamais sommé (cohérent avec
+`recomputeLastContextManifest(matches, midTurn)`, déjà en place pour
+l'estimé).
+
+Les appels non-conversationnels (titrage, résumé, description de fichier
+d'espace) passent tous par `silentCompletion` (non streamé) — exclus
+mécaniquement, aucune liste d'exclusion à maintenir.
+
+Le câblage de `usage` vers `_lastContextManifest` (2e barre cache, UI) est
+décrit dans les sections suivantes une fois posé (Bbis-3).
+
+## Prorata sur l'estimé (Bbis)
+
+`scaleManifestToUsage(manifest, usage)` (utils.js, pure, QuickJS-testable) —
+calibre un manifeste ESTIMÉ (chars/4) sur l'`usage.prompt_tokens` réel :
+
+- **Fallback = manifeste inchangé** si `usage` est `null`, `usage.prompt_tokens`
+  absent, ou si le total scalable (hors ligne images, cf. ci-dessous) est ≤ 0 —
+  aucune erreur, aucun log, même posture que reasoning_effort/vision.
+- `factor = usage.prompt_tokens / (totalTokens_estimé - imageTokens)` : chaque
+  entrée (sauf `attachment_images`) est multipliée par `factor` et arrondie.
+- **Résidu d'arrondi** reporté sur la plus grosse ligne (par tokens estimés
+  avant scaling, typiquement `thread`) pour que Σ(entries.tokens hors images)
+  === `usage.prompt_tokens` exactement.
+- `totalTokens` du manifeste retourné = `usage.prompt_tokens + imageTokens`
+  (la ligne images reste HORS budget réel, additionnée telle quelle).
+- Drapeau `real: true` posé sur le manifeste — consommé par le rendu pour
+  retirer le `≈` du total (jamais des lignes individuelles : la ventilation
+  par bloc reste toujours une heuristique proratisée, jamais mesurée par
+  l'API).
+
+**Ligne `attachment_images` volontairement exclue** du facteur ET du scaling
+(décision actée, PLAN-Bbis §Bbis-2) : c'est une constante conventionnelle
+« très approximatif » (D3), pas une estimation chars/4 — la mélanger au
+calibrage la ferait paraître doublement fausse. Le `prompt_tokens` réel
+inclut déjà le coût vision réel côté backend, non ventilable côté client ;
+la ligne reste affichée à part, toujours en estimé.
+
+`usageDerived(usage)` (utils.js, pure) extrait `{ inTokens, outTokens,
+cachedTokens, cachedRatio }` depuis `usage` — nulls tolérés à chaque niveau
+(`usage` absent, ou `prompt_tokens_details.cached_tokens` absent comme sur la
+plupart des backends Ollama). Évite au code de rendu de re-décoder la forme
+brute de l'API inline.
+
+L'application du prorata a lieu à la **capture** (`dispatchSend`/
+`recomputeLastContextManifest`, Bbis-3), pas au rendu : `_lastContextManifest`
+porte déjà les tokens réels quand disponibles, pilule et drawer lisent la
+même valeur sans recalcul.
+
+## Câblage + UI réel/estimé (Bbis-3)
+
+- **`applyUsageToLastManifest(usage)`** (main.js) : calibre
+  `_lastContextManifest` via `scaleManifestToUsage`, appelée APRÈS
+  `recomputeLastContextManifest(matches[, midTurn])` dans les trois hooks de
+  `runConversation` (`onToolAcks`, `onFinal` — les deux branches continuation
+  et normale —, `onHalt`). Séparation volontaire : `recomputeLastContextManifest`
+  reste toujours l'estimé pur (rejoue le thread), le scaling est une passe
+  optionnelle appliquée après, jamais fusionnée dedans (elle est aussi appelée
+  sans usage disponible). `computeContextManifestNow()` (simulation à froid)
+  reste inchangée : `apiUsage` toujours `null`, jamais calibrée (A5). Aucun
+  reset explicite de l'usage n'est nécessaire au switch de conv : `_lastContextManifest
+  = null` (déjà fait) suffit à retomber sur la simulation estimée.
+- **Pilule** (`syncContextCounter`, ui.js) : `≈` retiré si `m.real`, gardé
+  sinon. Occupation/`%`/classes warn-over inchangées (déjà calculées sur
+  `m.totalTokens`, réel ou estimé indifféremment). Rafraîchit aussi le drawer
+  (`renderContextInspector()`) s'il est déjà ouvert (`#ctx-drawer.show`) —
+  sinon son contenu restait figé sur l'état au moment de l'ouverture pendant
+  toute une boucle d'outils ou un streaming, désynchronisé de la pilule qui,
+  elle, se met à jour en continu.
+- **Drawer** (`renderContextInspector`, ui.js) :
+  - En-tête (`#ctx-source-hint`) distingue maintenant quatre cas : mi-échange ;
+    dernier envoi réel avec usage (« tokens rapportés par l'API ») ; dernier
+    envoi réel sans usage (« estimation, pas d'info backend ») ;
+    simulation.
+  - Barre 1 (`#ctx-bar`) inchangée dans sa logique — les tokens affichés sont
+    déjà réels si `scaleManifestToUsage` est passé, l'occupation en tient
+    compte automatiquement.
+  - Barre 2 cache (`#ctx-bar-cache`, index.html, masquée par défaut) : un seul
+    segment, largeur = `cachedRatio` (échelle interne à l'entrée, PAS celle de
+    la fenêtre de contexte) — rendu/masqué selon `usageDerived(m.apiUsage).cachedTokens`.
+  - Table : lignes toujours `≈` (jamais mesurées par bloc, même proratisées) ;
+    le TOTAL seul perd le `≈` si `m.real`. Ligne « Réponse (sortie) »
+    (`.ctx-output`, `completion_tokens`) ajoutée après le total quand connue —
+    hors barres, hors somme d'entrée (la sortie n'occupe pas le contexte
+    d'ENTRÉE).
+- **CSS** (`drawers.css`) : `.ctx-bar-cache` (6px, collée à 2px sous `.ctx-bar`,
+  segment teinté `#5fb3d9`) ; `.ctx-table tr.ctx-output` (italique, teinte
+  atténuée) — même schéma que `.ctx-total`, pas de surcharge `theme-light.css`
+  nécessaire (`CTX_PALETTE` existante n'en a pas non plus).
+- **Pas d'affichage de la sortie dans la pilule elle-même** (décision par
+  défaut, PLAN-Bbis) : la pilule reste une mesure d'occupation d'ENTRÉE, la
+  sortie ne vit que dans le drawer.
+
 ## État
 
-B1, B2, B3 livrés. Vérification manuelle restante : voir
-`docs/manual-tests.md`.
+B1, B2, B3 livrés. Bbis-1 (capture usage côté stream), Bbis-2 (prorata pur) et
+Bbis-3 (câblage + UI) livrés. Vérification manuelle restante : voir
+`docs/manual-tests.md` (#67).

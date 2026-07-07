@@ -272,6 +272,18 @@ function recomputeLastContextManifest(matches, midTurn) {
   _lastContextManifestMidTurn = !!midTurn;
 }
 
+// Calibre `_lastContextManifest` sur l'usage réel du tour qui vient de
+// terminer (Bbis) — appelée APRÈS recomputeLastContextManifest (estimé pur),
+// jamais avant : la séparation reste nette entre « rejeu du thread » (estimé)
+// et « calibrage sur l'API » (passe optionnelle). `usage` null (backend sans
+// stream_options, ex. beaucoup de configs Ollama) → no-op, scaleManifestToUsage
+// renvoie déjà le manifeste inchangé dans ce cas. Dernier tour reçu (A6) :
+// chaque appel écrase, jamais de somme entre tours.
+function applyUsageToLastManifest(usage) {
+  if (!usage || !_lastContextManifest) return;
+  _lastContextManifest = scaleManifestToUsage(_lastContextManifest, usage);
+}
+
 // ── Navigation entre conversations ──────────────────────────────────────────
 async function openConversation(id) {
   const conv = loadConversation(id);
@@ -1476,7 +1488,7 @@ async function dispatchSend(matches, continuation) {
       // (icône + nom du modèle) et le corps (patienteur puis réponse), via
       // placeToolAck. Pas de persistCurrent ici (mutation mémoire + DOM seulement) :
       // l'unique écriture de l'échange a lieu dans onFinal.
-      onToolAcks: () => {
+      onToolAcks: ({ usage } = {}) => {
         // Rétro-application de l'état d'erreur sur les acks MCP déjà rendus : après
         // l'await réseau, callRemoteTool a pu poser ack.error = true sur le descripteur
         // brut. On met à jour l'entrée currentThread et le nœud DOM si présent.
@@ -1524,6 +1536,7 @@ async function dispatchSend(matches, continuation) {
         // saturé le contexte. midTurn=true : le drawer distingue ce total
         // encore provisoire d'un total de fin d'échange stable.
         recomputeLastContextManifest(matches, true);
+        applyUsageToLastManifest(usage);
         syncContextCounter();
       },
       // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
@@ -1545,7 +1558,7 @@ async function dispatchSend(matches, continuation) {
           updateLastPendingToolAck(fields);
         }
       },
-      onFinal: (content, reasoning, finishReason) => {
+      onFinal: (content, reasoning, finishReason, { usage } = {}) => {
         if (isContinuation) {
           // Mute le message existant au lieu d'en pousser un nouveau : même
           // horodatage, même identité de message, juste plus de contenu.
@@ -1564,6 +1577,7 @@ async function dispatchSend(matches, continuation) {
           if (m.reasoning) flushReasoning(wrap, m.reasoning);
           persistCurrent();
           recomputeLastContextManifest(matches);
+          applyUsageToLastManifest(usage);
           syncContextCounter();
           setConnDot('ok');
           // Ni maybeTitle() ni nouveau ts : le message garde son horodatage
@@ -1601,11 +1615,12 @@ async function dispatchSend(matches, continuation) {
         if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
         persistCurrent();
         recomputeLastContextManifest(matches);
+        applyUsageToLastManifest(usage);
         syncContextCounter();
         setConnDot('ok');
         maybeTitle();
       },
-      onHalt: (leadIn, question) => {
+      onHalt: (leadIn, question, { usage } = {}) => {
         // Fork B (brief §4) : la question (+ lead-in éventuel) devient un message
         // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
@@ -1625,6 +1640,7 @@ async function dispatchSend(matches, continuation) {
         revealMsgTimestamp(wrap, haltTs);
         persistCurrent();
         recomputeLastContextManifest(matches);
+        applyUsageToLastManifest(usage);
         syncContextCounter();
         setConnDot('ok');
         // Widget inline : la question est déjà dans la bulle ci-dessus, la carte

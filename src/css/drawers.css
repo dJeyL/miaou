@@ -404,12 +404,18 @@
   border: 1px solid var(--border-2);
 }
 .ctx-bar-seg { display: block; height: 100%; min-width: 1px; }
+/* 2e barre, accolée sous la barre d'entrée : part de l'entrée servie par le
+   cache API (Bbis). Échelle interne (cached/prompt), PAS celle de la fenêtre
+   de contexte — masquée (hidden) tant que cached_tokens est inconnu. */
+.ctx-bar-cache { height: 6px; margin-top: 2px; }
+.ctx-bar-cache .ctx-bar-seg { background: #5fb3d9; }
 .ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.ctx-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-2); }
-.ctx-table td:first-child { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.ctx-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
+.ctx-table td:first-child { color: var(--text); }
 .ctx-table td:not(:first-child) { text-align: right; font-family: var(--mono); white-space: nowrap; }
 .ctx-table tr.ctx-total td { font-weight: 600; color: var(--text); border-bottom: none; border-top: 1px solid var(--border-2); }
-.ctx-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.ctx-table tr.ctx-output td { font-style: italic; color: var(--text-3); }
+.ctx-swatch { display: inline-block; vertical-align: middle; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; margin-bottom: 2px; }
 .drawer-title { font-size: 13px; font-weight: 600; color: var(--text); }
 
 .drawer-btn {

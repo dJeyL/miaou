@@ -160,16 +160,20 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
     if (ts) wrap.dataset.ts = ts;
     wrap.innerHTML =
       `<div class="bubble">` +
-      `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
-      `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
-      `</button>` +
-      `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
-      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
-      `</button>` +
       renderMsgAttachments(attachments, currentConvId) +
       `<div class="body">${renderUserMd(content)}</div>` +
       `</div>` +
-      (ts ? `<div class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</div>` : '');
+      `<div class="msg-user-footer">` +
+      `<div class="msg-user-actions">` +
+      `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
+      `</button>` +
+      `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
+      `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
+      `</button>` +
+      `</div>` +
+      (ts ? `<span class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</span>` : '') +
+      `</div>`;
   } else {
     wrap.innerHTML =
       assistantHead(model, reasoning, ts, server) +
@@ -1013,20 +1017,17 @@ function enterEditMode(wrap) {
   bubble.querySelector('[data-act="save"]').onclick = () => commitEdit(wrap, ta.value);
 }
 
-// Annulation : restaure le contenu de la bulle. Le .msg-ts est un sibling du
-// .bubble (hors de sa portée), il n'est pas touché. Les chips d'attachments
-// (brief A) sont réinsérées au même emplacement que dans buildMsg (entre le
-// bouton édition et le body) — sans quoi elles disparaîtraient jusqu'au
-// prochain reload (le message, lui, les porte toujours).
+// Annulation : restaure le contenu de la bulle. Le footer (.msg-user-footer :
+// boutons + .msg-ts) est un sibling du .bubble (hors de sa portée), il n'est
+// pas touché. Les chips d'attachments (brief A) sont réinsérées au même
+// emplacement que dans buildMsg (avant le body) — sans quoi elles
+// disparaîtraient jusqu'au prochain reload (le message, lui, les porte toujours).
 function cancelEdit(wrap, original) {
   wrap.classList.remove('editing');
   const index = msgIndex(wrap);
   const m = index >= 0 ? currentThread[index] : null;
   const bubble = wrap.querySelector('.bubble');
   bubble.innerHTML =
-    `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
-    `</button>` +
     renderMsgAttachments(m && m.attachments, currentConvId) +
     `<div class="body">${renderUserMd(original)}</div>`;
   decoratePre(wrap);
@@ -2088,7 +2089,10 @@ function syncContextCounter() {
   if (!el) return;
   const m = effectiveContextManifest();
   const win = contextWindowFor(activeModel());
-  let label = '≈ ' + m.totalTokens + ' tok';
+  // Pilule = photo du dernier envoi réel (Bbis, décision A5) : sans `≈` quand
+  // l'usage API a calibré le manifeste (m.real), avec `≈` sinon (estimé
+  // chars/4 — simulation à froid TOUJOURS estimée, apiUsage y est null).
+  let label = (m.real ? '' : '≈ ') + m.totalTokens + ' tok';
   const counter = $('ctx-counter');
   if (win) {
     const pct = Math.round((m.totalTokens / win) * 100);
@@ -2107,6 +2111,13 @@ function syncContextCounter() {
   // avoir à ouvrir l'inspecteur.
   if (counter) counter.classList.toggle('ctx-counter-midturn', !!_lastContextManifestMidTurn);
   el.textContent = label;
+
+  // Drawer déjà ouvert (ex. laissé ouvert pendant une boucle d'outils ou un
+  // streaming) : le rafraîchir en même temps que la pilule, sinon son contenu
+  // reste figé sur l'état au moment de l'ouverture jusqu'à une fermeture/
+  // réouverture manuelle.
+  const drawer = $('ctx-drawer');
+  if (drawer && drawer.classList.contains('show')) renderContextInspector();
 }
 
 function openContextInspector() {
@@ -2124,12 +2135,16 @@ function renderContextInspector() {
   const win = contextWindowFor(activeModel());
   const scale = win || m.totalTokens || 1;
 
+  const ud = usageDerived(m.apiUsage);
+
   const hint = $('ctx-source-hint');
   if (hint) {
     if (_lastContextManifest && _lastContextManifestMidTurn) {
       hint.textContent = 'Échange en cours (outils) — total provisoire, va encore évoluer.';
+    } else if (_lastContextManifest && m.real) {
+      hint.textContent = 'Dernier envoi réel — tokens rapportés par l\'API.';
     } else if (_lastContextManifest) {
-      hint.textContent = 'Dernier envoi réel à ce modèle.';
+      hint.textContent = 'Dernier envoi réel — estimation (pas d\'info backend).';
     } else if (currentThread.length) {
       hint.textContent = 'Simulation du prochain envoi (aucun envoi depuis le rechargement de cette conversation).';
     } else {
@@ -2146,8 +2161,26 @@ function renderContextInspector() {
     }).join('');
   }
 
+  // 2e barre, accolée : part de l'ENTRÉE servie par le cache (Bbis). Échelle
+  // interne (cached/prompt), indépendante de la fenêtre — affichée dès que
+  // cached_tokens est connu, quel que soit le mode de la barre 1. Absente sur
+  // les backends qui ne le renvoient pas (ex. Ollama).
+  const barCache = $('ctx-bar-cache');
+  if (barCache) {
+    if (ud.cachedTokens != null && ud.cachedRatio != null) {
+      const pct = Math.max(0, Math.min(100, ud.cachedRatio * 100));
+      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${ud.cachedTokens} tok servis par le cache (${Math.round(pct)}%)"></span>`;
+      barCache.hidden = false;
+    } else {
+      barCache.innerHTML = '';
+      barCache.hidden = true;
+    }
+  }
+
   const body = $('ctx-table-body');
   if (body) {
+    // Lignes toujours `≈` (ventilation par bloc jamais mesurée par l'API,
+    // même proratisée) ; seul le TOTAL perd le `≈` quand m.real (Bbis A2).
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
@@ -2155,7 +2188,12 @@ function renderContextInspector() {
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>${escHtml(e.label)}${note}</td>` +
         `<td>${e.chars}</td><td>≈${e.tokens}</td><td>${pct}%</td></tr>`;
     });
-    rows.push(`<tr class="ctx-total"><td>Total</td><td>${m.totalChars}</td><td>≈${m.totalTokens}</td><td>100%</td></tr>`);
+    const totalTokLabel = (m.real ? '' : '≈') + m.totalTokens;
+    rows.push(`<tr class="ctx-total"><td>Total</td><td>${m.totalChars}</td><td>${totalTokLabel}</td><td>100%</td></tr>`);
+    // Sortie : ligne à part, HORS barres (l'entrée seule occupe le contexte).
+    if (ud.outTokens != null) {
+      rows.push(`<tr class="ctx-output"><td>Réponse (sortie)</td><td></td><td>${ud.outTokens}</td><td></td></tr>`);
+    }
     body.innerHTML = rows.join('');
   }
 }

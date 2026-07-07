@@ -414,8 +414,9 @@ textarea.skill-content {
 .msg.assistant .meta .tool-name-sep { margin: 0 -4px; }
 .msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
 .msg.assistant .meta .msg-ts[hidden] { display: none; }
-/* Timestamp sous la bulle user : align-items:flex-end du .msg.user gère l'alignement à droite */
-.msg.user .msg-ts { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+/* Timestamp sous la bulle user, dans .msg-user-footer (align-items:flex-end
+   du .msg.user gère l'alignement à droite du footer entier) */
+.msg.user .msg-ts { font-size: 11px; color: var(--text-3); }
 .conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
 
 .reasoning {

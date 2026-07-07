@@ -152,9 +152,15 @@
   padding: 4px 10px;
   border-radius: 100px;
   cursor: pointer;
-  margin-left: auto;   /* toujours collée à droite, même seule (modèle/raisonnement masqués) */
+  margin-left: auto;   /* colle la pilule à droite quand elle n'est précédée d'aucune marge auto (raisonnement masqué) */
   transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
 }
+/* Quand le sélecteur de raisonnement est visible juste avant, c'est LUI qui
+   porte la marge auto (il ouvre l'espace flexible) et la pilule de contexte le
+   suit collée via le gap. Deux margin-left:auto consécutifs répartiraient
+   l'espace libre en deux, poussant le raisonnement au milieu au lieu de le
+   grouper à droite avec le contexte. */
+.composer-reasoning:not([hidden]) + .ctx-counter { margin-left: 0; }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
 .ctx-counter.ctx-counter-over { color: #d64545; border-color: #d6454555; background: #d645451a; }

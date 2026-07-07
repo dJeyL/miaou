@@ -37,7 +37,11 @@ l'interface, JetBrains Mono pour le code.
   ouvre un drawer détaillant la composition du payload envoyé au modèle (prompt
   racine, outils, prompt utilisateur, mémoire, résumés, historique, pièces
   jointes…) avec une barre empilée et une table chars/tokens/%. Estimation
-  chars/4, réglage optionnel de la fenêtre de contexte (jauge d'occupation).
+  chars/4 par défaut, remplacée par les **tokens réels rapportés par l'API**
+  (`stream_options.include_usage`) dès qu'un envoi a répondu — tolère les
+  backends qui ne le renvoient pas (fallback estimé, sans erreur). Réglage
+  optionnel de la fenêtre de contexte (jauge d'occupation) ; 2e barre indiquant
+  la part de l'entrée servie par le cache quand le backend la rapporte.
 
 **Historique & mémoire**
 

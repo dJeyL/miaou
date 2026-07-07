@@ -366,6 +366,10 @@ const EXPORT_RESNAME_MAX = 60;
 
 function _truncMd(s, max) {
   s = s == null ? '' : String(s);
+  // Un contenu multiligne dans un code span `...` inline casse le rendu
+  // Markdown (les backticks ne s'étendent pas sur plusieurs lignes) : on
+  // rend les sauts de ligne visibles au lieu de les laisser tels quels.
+  s = s.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n');
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
@@ -646,4 +650,66 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   const totalTokens = entries.reduce((a, e) => a + (e.tokens || 0), 0);
 
   return { entries, totalChars, totalTokens, imageCount, apiUsage: apiUsage || null };
+}
+
+// Calibre un manifeste ESTIMÉ (chars/4) sur l'usage réel rapporté par l'API
+// (Bbis). Pure, QuickJS-testable. Fallback = manifeste inchangé si `usage` est
+// absent/incomplet ou si le manifeste n'a rien à mettre à l'échelle — jamais
+// d'erreur, même posture que reasoning_effort/vision (tolérance null).
+//
+// La ligne `attachment_images` est EXCLUE du facteur ET du scaling (décision
+// PLAN-Bbis §Bbis-2) : c'est une constante conventionnelle « très
+// approximatif », pas une estimation chars/4 — la mélanger au calibrage la
+// ferait paraître doublement fausse. Le `prompt_tokens` réel inclut déjà le
+// coût vision réel (non ventilable côté client) ; la ligne reste affichée à
+// part, en estimé, hors budget texte réel.
+function scaleManifestToUsage(manifest, usage) {
+  const m = manifest || { entries: [], totalChars: 0, totalTokens: 0, imageCount: 0, apiUsage: null };
+  if (!usage || usage.prompt_tokens == null) return m;
+
+  const imagesEntry = (m.entries || []).find(e => e.source === 'attachment_images');
+  const imageTokens = imagesEntry ? (imagesEntry.tokens || 0) : 0;
+  const scalableTokens = (m.totalTokens || 0) - imageTokens;
+  if (scalableTokens <= 0) return m;
+
+  const factor = usage.prompt_tokens / scalableTokens;
+  let scaledSum = 0;
+  let biggestIdx = -1, biggestTokens = -1;
+  const entries = (m.entries || []).map((e, i) => {
+    if (e.source === 'attachment_images') return e;   // exclue, cf. commentaire ci-dessus
+    const tokens = Math.round((e.tokens || 0) * factor);
+    if (e.tokens > biggestTokens) { biggestTokens = e.tokens; biggestIdx = i; }
+    scaledSum += tokens;
+    return Object.assign({}, e, { tokens });
+  });
+
+  // Résidu d'arrondi reporté sur la plus grosse ligne (source, pas la copie
+  // déjà poussée dans `entries`) pour que Σ(entries.tokens hors images) ===
+  // usage.prompt_tokens exactement.
+  const residual = usage.prompt_tokens - scaledSum;
+  if (residual !== 0 && biggestIdx >= 0) {
+    entries[biggestIdx] = Object.assign({}, entries[biggestIdx], {
+      tokens: entries[biggestIdx].tokens + residual,
+    });
+  }
+
+  return Object.assign({}, m, {
+    entries,
+    totalTokens: usage.prompt_tokens + imageTokens,
+    apiUsage: usage,
+    real: true,
+  });
+}
+
+// Extrait les compteurs dérivés de l'usage API en un objet simple, nulls
+// tolérés partout (Bbis) — évite au code de rendu de re-décoder
+// `prompt_tokens_details.cached_tokens` inline.
+function usageDerived(usage) {
+  if (!usage) return { inTokens: null, outTokens: null, cachedTokens: null, cachedRatio: null };
+  const inTokens = usage.prompt_tokens != null ? usage.prompt_tokens : null;
+  const outTokens = usage.completion_tokens != null ? usage.completion_tokens : null;
+  const cachedTokens = usage.prompt_tokens_details && usage.prompt_tokens_details.cached_tokens != null
+    ? usage.prompt_tokens_details.cached_tokens : null;
+  const cachedRatio = (cachedTokens != null && inTokens) ? cachedTokens / inTokens : null;
+  return { inTokens, outTokens, cachedTokens, cachedRatio };
 }

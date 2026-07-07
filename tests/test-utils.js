@@ -422,6 +422,11 @@ describe('formatToolAcksMd', function() {
     var r = formatToolAcksMd([{ name: 'a', result: 'ok' }]);
     expect(r.indexOf('Arguments :') >= 0).toBeFalsy();
   });
+  it('résultat multiligne : \\n rendu visible, pas de saut de ligne brut dans le code span', function() {
+    var r = formatToolAcksMd([{ name: 'a', args: {}, result: 'ligne1\nligne2\r\nligne3' }]);
+    expect(r.indexOf('ligne1\\nligne2\\nligne3') >= 0).toBeTruthy();
+    expect(r.indexOf('ligne1\nligne2') >= 0).toBeFalsy();
+  });
 });
 
 describe('_hashId9', function() {

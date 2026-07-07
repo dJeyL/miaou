@@ -683,3 +683,18 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     au poids du base64). Réglages → Modèle & raisonnement → renseigner une
     fenêtre de contexte → le compteur affiche un `%` et passe ambre au-delà de
     80% d'occupation.
+
+67. **Usage API réel (Bbis)** : avec un backend qui renvoie `usage` en fin de
+    stream (la plupart des endpoints OpenAI-compatibles récents) — envoyer un
+    message : la pilule passe de `≈ N tok` (estimé, avant la réponse) à `N tok`
+    sans `≈` une fois la réponse reçue. Ouvrir le drawer : le total en pied de
+    table n'a plus `≈`, les lignes individuelles le gardent (ventilation par
+    bloc jamais mesurée, seulement proratisée) ; une ligne « Réponse (sortie) »
+    apparaît avec `completion_tokens`, hors barres. Envoyer un nouveau message →
+    la pilule revient à l'estimé `≈` pendant que la nouvelle réponse arrive.
+    Boucle d'outils multi-tours : la pilule/le total évoluent au dernier usage
+    reçu à chaque tour (pas de somme des tours). Sur un backend qui renvoie
+    `prompt_tokens_details.cached_tokens` : une 2e barre fine apparaît collée
+    sous la barre principale, proportionnelle à la part en cache. Sur un
+    backend qui l'omet (ex. beaucoup de configs Ollama) : la 2e barre reste
+    absente, tout le reste retombe sur l'estimé chars/4, sans erreur console.

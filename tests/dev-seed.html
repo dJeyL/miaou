@@ -522,17 +522,26 @@ function seed() {
   log('', 'Recharge MIAOU pour voir les conversations dans la sidebar.');
 }
 
-// ── Skills : IndexedDB `miaou` v2, store `skills` (même schéma que skills.js).
+// ── Skills : IndexedDB `miaou` v3, store `skills` (même schéma que skills.js).
 // Idempotent par nature (put remplace par slug). onupgradeneeded reprend la
-// création des DEUX stores : si MIAOU n'a encore jamais ouvert la base, le
-// seed la crée à l'identique (resources + skills) sans casser la migration.
+// création des DEUX stores + l'index `by_space` (lot Cbis, resources.js v3) :
+// si MIAOU n'a encore jamais ouvert la base, le seed la crée à l'identique
+// sans casser la migration ; si elle existe déjà en v2, l'index manquant est
+// ajouté (même garde contains-check que resources.js).
 function seedSkills() {
-  const req = indexedDB.open('miaou', 2);
+  const req = indexedDB.open('miaou', 3);
   req.onupgradeneeded = function(e) {
     const db = e.target.result;
+    const tx = e.target.transaction;
     if (!db.objectStoreNames.contains('resources')) {
       const store = db.createObjectStore('resources', { keyPath: 'id' });
       store.createIndex('by_conversation', 'conversationId', { unique: false });
+      store.createIndex('by_space', 'spaceId', { unique: false });
+    } else if (e.oldVersion < 3) {
+      const store = tx.objectStore('resources');
+      if (!store.indexNames.contains('by_space')) {
+        store.createIndex('by_space', 'spaceId', { unique: false });
+      }
     }
     if (!db.objectStoreNames.contains('skills')) {
       db.createObjectStore('skills', { keyPath: 'slug' });
@@ -568,7 +577,7 @@ function seedAttachmentResources() {
       data: enc.encode('127.0.0.1 - - [05/Jul/2026:10:00:00] "GET /api/x HTTP/1.1" 503 0 "-" "-"\nupstream timed out (110: Connection timed out) while reading response header from upstream').buffer },
   ];
   RECORDS[1].size = RECORDS[1].data.byteLength;
-  const req = indexedDB.open('miaou', 2);
+  const req = indexedDB.open('miaou', 3);
   req.onsuccess = function(e) {
     const db = e.target.result;
     const tx = db.transaction('resources', 'readwrite');

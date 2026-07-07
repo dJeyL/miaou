@@ -239,6 +239,7 @@ async function streamCompletion(messages, opts) {
     messages,
     stream: true,
     temperature: o.temperature == null ? 0.7 : o.temperature,
+    stream_options: { include_usage: true },
   };
   if (o.tools && o.tools.length) {
     body.tools = o.tools;
@@ -273,6 +274,7 @@ async function streamCompletion(messages, opts) {
   let finishReason = null;
   const toolCalls = [];
   let aborted = false;
+  let usage = null;
 
   try {
     const res = await fetch(cfg.url + '/chat/completions', {
@@ -324,6 +326,9 @@ async function streamCompletion(messages, opts) {
 
         const chunk = sseDataObject(line);
         if (!chunk) continue;
+        // Chunk terminal stream_options.include_usage : choices=[], capté AVANT
+        // le filtrage sur choix vide (piège 4 adapté) — pas de delta à agréger.
+        if (chunk.usage) usage = chunk.usage;
         const choice = chunk.choices?.[0];
         if (!choice) continue;
         const delta = choice.delta || {};
@@ -364,7 +369,7 @@ async function streamCompletion(messages, opts) {
     _currentAbort = null;
   }
 
-  return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted };
+  return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, usage };
 }
 
 // Interrompt le stream en cours (s'il y en a un). Le contenu déjà reçu est
@@ -374,9 +379,11 @@ function abortStream() {
 }
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
-// Hooks : onDelta(full), onReasoning(full), onToolTour(), onToolAcks() [après les
-//         outils d'un tour], onFinal(content, reasoning, finishReason),
-//         onHalt(leadIn, question) [outil halting], onError(msg).
+// Hooks : onDelta(full), onReasoning(full), onToolTour(), onToolAcks({usage}) [après
+//         les outils d'un tour], onFinal(content, reasoning, finishReason, {usage}),
+//         onHalt(leadIn, question, {usage}) [outil halting], onError(msg).
+// {usage} : usage API du DERNIER tour reçu (Bbis) — jamais sommé sur l'échange,
+// tolère null (backend sans stream_options.include_usage).
 // h.model (optionnel) : modèle à utiliser pour cet échange (override conv).
 // h.noTools (optionnel) : omet `tools` de streamCompletion — utilisé par la
 // continuation d'une réponse tronquée (feature C, dispatchSend/main.js) : on ne
@@ -416,7 +423,7 @@ async function runConversation(messages, hooks) {
     // finish_reason ») : main.js pose `truncated` dessus si du contenu a été
     // reçu, pour offrir « Continuer » sur une réponse stoppée à la main.
     if (result.aborted) {
-      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), 'aborted');
+      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), 'aborted', { usage: result.usage });
       return result.content;
     }
 
@@ -436,7 +443,7 @@ async function runConversation(messages, hooks) {
         let hargs = {};
         try { hargs = JSON.parse(halting.function.arguments || '{}'); }
         catch (e) { hargs = {}; }
-        if (h.onHalt) h.onHalt(result.content, hargs.question || '');
+        if (h.onHalt) h.onHalt(result.content, hargs.question || '', { usage: result.usage });
         return result.content;
       }
 
@@ -545,7 +552,7 @@ async function runConversation(messages, hooks) {
       // les vidanger MAINTENANT (avant la réponse finale du tour suivant), pour
       // qu'ils s'affichent au-dessus de la réponse et au fil des tours. api.js
       // reste DOM-free : le hook vit dans main.js.
-      if (h.onToolAcks) h.onToolAcks();
+      if (h.onToolAcks) h.onToolAcks({ usage: result.usage });
 
       continue;   // on relance toujours un appel
     }
@@ -553,7 +560,7 @@ async function runConversation(messages, hooks) {
     // finish_reason === 'stop' (ou terminal, ex. 'length') : la vraie réponse.
     // finishReason est propagé tel quel à onFinal, qui décide (main.js) s'il
     // pose le flag truncated sur le message persisté.
-    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), result.finishReason);
+    if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), result.finishReason, { usage: result.usage });
     return result.content;
   }
 

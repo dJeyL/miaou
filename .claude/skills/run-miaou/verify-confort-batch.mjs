@@ -65,21 +65,29 @@ await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);   // loadSkillsCache + rendus initiaux
 
-const CONV_COUNT = 21;   // 20 fixtures d'origine + seed-21 (troncature)
+// 23 conversations seedées au total (seed-01..seed-21, dont seed-10b/seed-10c) ;
+// seed-01..05 portent spaceId=space-seed-pro (lot C, herméticité Spaces) et
+// sont donc absentes de la sidebar/liste par défaut (Space "default" actif) —
+// deux compteurs distincts : la vue filtrée (sidebar) vs le brut (export/import,
+// non filtré par Space, cf. validateImportPayload/storage.js).
+const CONV_COUNT_SIDEBAR = 18;
+const CONV_COUNT_TOTAL = 23;
 
 // ── A. Boutons copier ────────────────────────────────────────────────────────
 await page.click('.conv-title:text("Cron — syntaxe et debugging")');
 await page.waitForTimeout(300);
 
-// bulle user : bouton empilé SOUS le bouton éditer (même left, top supérieur)
-const stacked = await page.evaluate(() => {
+// bulle user : boutons côte à côte dans .msg-user-actions (même top, éditer
+// à gauche puis copier — cf. commentaire chat.css "édition à gauche du
+// groupe, copie ensuite, horodatage en dernier")
+const sideBySide = await page.evaluate(() => {
   const edit = document.querySelector('#thread .msg.user .msg-edit');
   const copy = document.querySelector('#thread .msg.user .msg-copy-user');
   if (!edit || !copy) return null;
   const e = edit.getBoundingClientRect(), c = copy.getBoundingClientRect();
-  return { sameCol: Math.abs(e.left - c.left) < 2, below: c.top > e.top };
+  return { sameRow: Math.abs(e.top - c.top) < 2, copyAfterEdit: c.left > e.left };
 });
-check('A : bouton copier user présent, empilé sous éditer', !!stacked && stacked.sameCol && stacked.below);
+check('A : bouton copier user présent, à côté d\'éditer (même ligne)', !!sideBySide && sideBySide.sameRow && sideBySide.copyAfterEdit);
 
 // copie user : texte du thread, feedback check
 await page.locator('#thread .msg.user').first().hover();
@@ -167,7 +175,7 @@ await shot('04-search-fulltext.png');
 await page.evaluate(() => clearConvSearch());
 await page.waitForTimeout(150);
 check('D : liste restaurée après effacement', await page.evaluate(() =>
-  document.querySelectorAll('#conv-list .conv').length) === CONV_COUNT);
+  document.querySelectorAll('#conv-list .conv').length) === CONV_COUNT_SIDEBAR);
 
 // ── E. Export / import ───────────────────────────────────────────────────────
 await page.evaluate(() => openSettings());
@@ -191,7 +199,7 @@ const EXPORT_KEYS = ['miaou-settings', 'miaou-conversations', 'miaou-summaries',
 check('E : nom de fichier miaou-export-….json', /^miaou-export-\d{4}-\d{2}-\d{2}-\d{4}\.json$/.test(download.suggestedFilename()));
 check('E : payload JSON valide, format/version', !!payload && payload.format === 'miaou-export' && payload.version === 1);
 check('E : les 7 clés localStorage présentes', !!payload && EXPORT_KEYS.every(k => k in payload.localStorage));
-check('E : conversations exportées au complet', !!payload && payload.localStorage['miaou-conversations'].length === CONV_COUNT);
+check('E : conversations exportées au complet', !!payload && payload.localStorage['miaou-conversations'].length === CONV_COUNT_TOTAL);
 check('E : skills IDB embarquées (2 seedées)', !!payload && payload.idb.skills.length === 2);
 
 // import invalide : erreur inline, pas de récapitulatif
@@ -218,7 +226,7 @@ const good = await page.evaluate(() => ({
   sumText: document.getElementById('import-data-summary').textContent,
 }));
 check('E : fichier valide → récapitulatif affiché, erreur levée', good.errHidden && good.sumVisible);
-check('E : compteurs cohérents dans le récapitulatif', good.sumText.includes(CONV_COUNT + ' conversation'));
+check('E : compteurs cohérents dans le récapitulatif', good.sumText.includes(CONV_COUNT_TOTAL + ' conversation'));
 await page.locator('#import-data-summary button').click();
 await page.waitForTimeout(150);
 check('E : bouton d\'application armé au 1er clic (« Confirmer le remplacement »)', await page.evaluate(() => {

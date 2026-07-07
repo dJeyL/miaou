@@ -113,7 +113,7 @@ check('A : pilule mise à jour dès la capture de début de tour (pas figée sur
 check('B : manifest de fin de tour > manifest de début de tour (tool-ack + réponse assistant comptés)',
   roundTrip.manifestTokensAfterFinal > roundTrip.manifestTokensAtStart);
 check('B : pilule de fin de tour reflète le total recalculé',
-  roundTrip.pillAfterFinal === `≈ ${roundTrip.manifestTokensAfterFinal} tok`);
+  roundTrip.pillAfterFinal.startsWith(`≈ ${roundTrip.manifestTokensAfterFinal} tok`));
 console.log(`  info  tokens début=${roundTrip.manifestTokensAtStart} fin=${roundTrip.manifestTokensAfterFinal}`);
 
 // ── C. Hint à trois états ────────────────────────────────────────────────────
@@ -121,8 +121,11 @@ await page.evaluate(() => openContextInspector());
 await page.waitForSelector('#ctx-drawer.show');
 await page.waitForTimeout(200);
 const hintRealSend = await page.evaluate(() => document.getElementById('ctx-source-hint').textContent);
+// Depuis Bbis (usage API réel), le hint distingue « tokens rapportés par
+// l'API » (m.real) de « estimation, pas d'info backend » (apiUsage absent) —
+// ici la simulation n'a pas d'usage, donc c'est la seconde variante attendue.
 check('C : hint "dernier envoi réel" quand _lastContextManifest existe',
-  hintRealSend === 'Dernier envoi réel à ce modèle.');
+  hintRealSend === 'Dernier envoi réel — estimation (pas d\'info backend).');
 await shot('01-hint-real-send.png');
 
 // Simule un rechargement d'historique (openConversation remet _lastContextManifest à null)

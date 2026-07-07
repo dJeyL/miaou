@@ -200,7 +200,6 @@
   word-break: break-word;
   text-align: left;
 }
-.msg.user .bubble { position: relative; }
 .msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
 .msg.user .bubble .body p { margin-bottom: 7px; }
 /* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
@@ -237,34 +236,44 @@
 .att-promote.done { color: var(--ok); cursor: default; }
 .att-promote svg { width: 14px; height: 14px; }
 
-/* actions « éditer » / « copier » au survol d'une bulle utilisateur, empilées
-   verticalement à gauche de la bulle (éditer en haut, copier dessous) */
+/* Pied de bulle utilisateur : boutons éditer/copier + horodatage, alignés à
+   droite sous la bulle (édition à gauche du groupe, copie ensuite, horodatage
+   en dernier). Les boutons ne s'affichent qu'au survol de la zone .msg, pas
+   du footer seul, pour rester visibles pendant qu'on va cliquer dessus. */
+.msg-user-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.msg-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.msg.user:hover .msg-user-actions { opacity: 1; }
 .msg-copy-user,
 .msg-edit {
-  position: absolute;
-  left: -30px;
-  opacity: 0;
   background: none;
   border: none;
   color: var(--text-3);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
-  transition: opacity 120ms var(--ease), color 120ms var(--ease);
+  transition: color 120ms var(--ease);
 }
-.msg-edit { top: 2px; }
-.msg-copy-user { top: 28px; }
-.msg.user:hover .msg-copy-user,
-.msg.user:hover .msg-edit { opacity: 1; }
 .msg-copy-user:hover,
 .msg-edit:hover { color: var(--accent); }
 .msg-copy-user svg,
 .msg-edit svg { width: 14px; height: 14px; display: block; }
 
-/* mode édition : la bulle prend toute la largeur de la colonne */
+/* mode édition : la bulle prend toute la largeur de la colonne, le footer
+   (boutons + horodatage) disparaît le temps de l'édition */
 .msg.user.editing { width: 100%; }
 .msg.user.editing .bubble { width: 100%; max-width: 100%; }
-.msg.user.editing .msg-edit { display: none; }
+.msg.user.editing .msg-user-footer { display: none; }
 .msg-edit-area {
   width: 100%;
   box-sizing: border-box;

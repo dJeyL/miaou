@@ -95,7 +95,7 @@ const recallImage = await page.evaluate(() => {
   return { text: flattenToolResult(r), isError: r.isError, acks: getPendingToolAcks() };
 });
 check('B : recall image → pas d\'erreur, texte informatif (pas de base64)',
-  !recallImage.isError && recallImage.text.indexOf('présentée') >= 0 && recallImage.text.indexOf('base64') < 0);
+  !recallImage.isError && recallImage.text.indexOf('ré-affichée') >= 0 && recallImage.text.indexOf('base64') < 0);
 check('B : ack attachment_recalled poussé avec attId=att-1',
   recallImage.acks.length === 1 && recallImage.acks[0].kind === 'attachment_recalled' && recallImage.acks[0].attId === 'att-1');
 
