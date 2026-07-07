@@ -308,6 +308,58 @@ body {
 .conv.pinned .conv-pin { opacity: 1; color: var(--accent); }
 .conv.pinned .conv-pin svg { fill: var(--accent); }
 
+.conv-select {
+  display: none;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.conv-list.select-mode .conv-select { display: block; }
+
+.move-bar {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  margin: 8px;
+  animation: rise 220ms var(--ease) both;
+}
+.move-bar.show { display: flex; }
+.move-bar-count { font-size: 12.5px; color: var(--text); }
+.move-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.move-bar-go,
+.move-bar-cancel {
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  border: 1px solid var(--accent-bd);
+  background: transparent;
+  color: var(--text);
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.move-bar-go { background: var(--accent); color: #fff; border-color: var(--accent); }
+.move-bar-go:hover { opacity: .9; }
+.move-bar-cancel:hover { background: var(--surface-3); }
+
+.move-bar .model-menu {
+  top: auto;
+  bottom: calc(100% + 2px);
+  transform: translateY(4px);
+}
+.move-bar .model-menu.show { transform: none; }
+
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 .topbar {
@@ -2115,6 +2167,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <button class="search-clear" id="search-clear" title="Effacer" onclick="clearConvSearch()">×</button>
       </div>
       <div class="conv-list" id="conv-list"></div>
+      <div class="move-bar" id="move-bar"></div>
     </div>
     <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
   </aside>
@@ -2650,7 +2703,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-07 18:34 UTC */
+/* miaou — built: 2026-07-07 19:24 UTC */
 
 /* ── utils.js ── */
 
@@ -3206,7 +3259,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783449271}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783452273}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3653,6 +3706,11 @@ function spaceConvIds(spaceId, convs) {
     if (c && (c.spaceId || DEFAULT_SPACE_ID) === spaceId) set.add(c.id);
   }
   return set;
+}
+
+function moveConversationsToSpace(convs, ids, targetSpaceId) {
+  const idSet = new Set(ids || []);
+  return (convs || []).map(c => (c && idSet.has(c.id)) ? { ...c, spaceId: targetSpaceId } : c);
 }
 
 const EXPORT_KEYS = [
@@ -6985,12 +7043,41 @@ function onConvDel(btn, id) {
 
 const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .59 1.42L18 14.5H6l2.41-2.32A2 2 0 0 0 9 10.76z"/></svg>';
 
+let _moveMode = false;
+let _moveSelection = new Set();
+
+function enterMoveMode() {
+  _moveMode = true;
+  _moveSelection = new Set();
+  renderConvList();
+  renderMoveBar();
+}
+
+function exitMoveMode() {
+  if (!_moveMode) return;
+  _moveMode = false;
+  _moveSelection = new Set();
+  renderConvList();
+  renderMoveBar();
+}
+
+function exitMoveModeIfActive() {
+  if (_moveMode) exitMoveMode();
+}
+
+function toggleConvSelection(id, checked) {
+  if (checked) _moveSelection.add(id); else _moveSelection.delete(id);
+  renderMoveBar();
+}
+
 function convItemEl(c) {
   const el = document.createElement('div');
   el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
   el.onclick = () => selectConv(c.id);
+  const checked = _moveSelection.has(c.id) ? ' checked' : '';
   el.innerHTML =
-    `<div class="conv-body">
+    `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}>
+     <div class="conv-body">
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
        <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
@@ -7013,6 +7100,7 @@ function sectionEl(label) {
 function renderConvList() {
   const list = $('conv-list');
   list.innerHTML = '';
+  list.classList.toggle('select-mode', _moveMode);
   const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
   $('conv-search').disabled = all.length === 0;
   let convs = all;
@@ -7034,6 +7122,45 @@ function renderConvList() {
     }
     list.appendChild(convItemEl(c));
   }
+}
+
+function renderMoveBar() {
+  const bar = $('move-bar');
+  if (!bar) return;
+  if (!_moveMode || _moveSelection.size === 0) {
+    bar.innerHTML = '';
+    bar.classList.remove('show');
+    return;
+  }
+  bar.classList.add('show');
+  bar.innerHTML = '';
+
+  const count = document.createElement('div');
+  count.className = 'move-bar-count';
+  const n = _moveSelection.size;
+  count.textContent = `Déplacer ${n} conversation${n > 1 ? 's' : ''} vers…`;
+  bar.appendChild(count);
+
+  const row = document.createElement('div');
+  row.className = 'move-bar-row';
+  const destinations = loadSpaces().filter(s => s.id !== activeSpaceId).map(s => ({ value: s.id, label: s.name || '' }));
+  if (destinations.length) {
+    const pill = cfgPillSelect('move-bar-dest', destinations, destinations[0].value, null);
+    row.appendChild(pill.root);
+    const moveBtn = document.createElement('button');
+    moveBtn.type = 'button';
+    moveBtn.className = 'move-bar-go';
+    moveBtn.textContent = 'Déplacer';
+    moveBtn.onclick = () => moveSelectedConversations(pill.input.value);
+    row.appendChild(moveBtn);
+  }
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'move-bar-cancel';
+  cancelBtn.textContent = 'Annuler';
+  cancelBtn.onclick = () => exitMoveMode();
+  row.appendChild(cancelBtn);
+  bar.appendChild(row);
 }
 
 function isMobileLayout() { return window.innerWidth < 768; }
@@ -8076,10 +8203,20 @@ function renderSpaceMenu() {
   newOpt.innerHTML = '<span>+ Nouvel espace</span>';
   newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
   menu.appendChild(newOpt);
+
+  if (spaces.length >= 2) {
+    const moveOpt = document.createElement('div');
+    moveOpt.className = 'model-opt space-move-trigger';
+    moveOpt.innerHTML = '<span>Déplacer des conversations…</span>';
+    moveOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); enterMoveMode(); };
+    menu.appendChild(moveOpt);
+  }
 }
 
 function pickSpace(id) {
   if (id === activeSpaceId) { $('space-menu').classList.remove('show'); return; }
+  
+  exitMoveModeIfActive();
   const leaving = currentConvId;
   activeSpaceId = id;
   setActiveSpaceId(id);
@@ -8094,6 +8231,20 @@ function pickSpace(id) {
   summarizeIfNeeded(leaving);
   armIdleSummaryTimer();
   if (isMobileLayout()) closeSidebarMobile();
+}
+
+function followSpace(id) {
+  activeSpaceId = id;
+  setActiveSpaceId(id);
+  loadSpaceLibrary(id).then(() => {
+    _lastContextManifest = null;
+    syncContextCounter();
+  });
+  syncSpaceUI();
+  renderConvList();
+  _lastContextManifest = null;   
+  syncContextCounter();
+  armIdleSummaryTimer();
 }
 
 function createSpaceAndOpen() {
@@ -9514,6 +9665,18 @@ function selectConv(id) {
   if (isMobileLayout()) closeSidebarMobile();
 }
 
+function moveSelectedConversations(targetSpaceId) {
+  if (!targetSpaceId || !_moveSelection.size) return;
+  const ids = Array.from(_moveSelection);
+  const moved = moveConversationsToSpace(loadConversations(), ids, targetSpaceId);
+  persistConversations(moved);
+
+  const shouldFollow = currentConvId && ids.includes(currentConvId);
+  exitMoveMode();
+  if (shouldFollow) followSpace(targetSpaceId);
+  else renderConvList();
+}
+
 function newConversation() {
   const leaving = currentConvId;
   resetToEmpty();
@@ -10187,6 +10350,8 @@ async function sendUserText(text, bakedContent, attachments) {
 }
 
 function runGenerationFromCurrentThread() {
+  
+  exitMoveModeIfActive();
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
   
   const text = lastUser ? (lastUser.displayText != null ? lastUser.displayText : lastUser.content) : '';

@@ -347,6 +347,26 @@ function selectConv(id) {
   if (isMobileLayout()) closeSidebarMobile();
 }
 
+// Déplacement effectif du lot sélectionné (D4/D7, brief Cter). Mutation UNIQUE
+// de conv.spaceId via le helper pur (storage.js) + un seul persistConversations
+// pour tout le lot (pas N saveConversation successifs, cf. audit §5). Résumés,
+// souvenirs et pièces jointes suivent automatiquement : ils scopent par convId,
+// jamais par une copie côté Space.
+function moveSelectedConversations(targetSpaceId) {
+  if (!targetSpaceId || !_moveSelection.size) return;
+  const ids = Array.from(_moveSelection);
+  const moved = moveConversationsToSpace(loadConversations(), ids, targetSpaceId);
+  persistConversations(moved);
+
+  // Follow (D6) : seulement si la conversation ouverte fait partie du lot
+  // déplacé — sinon rien ne bouge pour elle (audit §3, décision Julien
+  // 2026-07-07 : pas de cas ambigu, le follow est borné à son propre cas).
+  const shouldFollow = currentConvId && ids.includes(currentConvId);
+  exitMoveMode();
+  if (shouldFollow) followSpace(targetSpaceId);
+  else renderConvList();
+}
+
 function newConversation() {
   const leaving = currentConvId;
   resetToEmpty();
@@ -1201,6 +1221,10 @@ async function sendUserText(text, bakedContent, attachments) {
 // après édition d'un message — pour ne pas dupliquer la logique mémoire+outils.
 // Pré-requis : le dernier message utilisateur est déjà dans currentThread.
 function runGenerationFromCurrentThread() {
+  // Sortie du mode sélection (D5, brief Cter) : point de convergence réel de
+  // sendMessage/editUserMessage/regenerateResponse (piège 12) — un seul call
+  // site plutôt que dispersé dans les 3 points d'entrée (décision Cter §2).
+  exitMoveModeIfActive();
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
   // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
   // recherche mémoire porte sur le littéral, pas sur le corps du skill injecté.

@@ -101,7 +101,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `removeComposerAttachment`, `toggleSpaceMenu`, `closeSpaceScreen`,
   `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`,
   `promoteAttachmentToLibrary`, `onSpaceFilesUploadClick`, `onSpaceFilesSelected`,
-  `onDeleteSpaceFile`, `onRegenerateFileDescription`, …). Le bouton « Enregistrer »
+  `onDeleteSpaceFile`, `onRegenerateFileDescription`, `toggleConvSelection`, …).
+  Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Il est désactivé tant que le
   formulaire ne diverge pas des réglages persistés (`settingsFormDirty`,

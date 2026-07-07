@@ -102,8 +102,44 @@ branchés en C2 :
   liste mixte, pas de badge de scope à afficher.
 - **Création de conversation** : `ensureConversation()` (main.js) stampe
   `spaceId: activeSpaceId` au moment de la création (point unique).
-- **Déplacement de conversation entre Spaces : NON-GOAL v1** (herméticité
-  d'abord, cf. non-goals ci-dessous).
+- **Déplacement de conversation entre Spaces (brief Cter, livré)** :
+  lot-C livrait l'herméticité d'abord et différait le déplacement (non-goal
+  v1 initial, **levé**). Seule mutation : `conv.spaceId` — résumés,
+  souvenirs et pièces jointes suivent automatiquement (scopés par `convId`,
+  jamais de copie côté Space).
+  - **Helper pur** : `moveConversationsToSpace(convs, ids, targetSpaceId)`
+    (storage.js, testé QuickJS) réécrit `spaceId` des conversations du lot,
+    laisse les autres inchangées (même référence). Persistance : un seul
+    `persistConversations` pour tout le lot (pas de `saveConversation` par
+    id), via `moveSelectedConversations(targetSpaceId)` (main.js).
+  - **UX (rien de visible au repos, contrainte dure)** : déclenchée par
+    l'item « Déplacer des conversations… » du menu Space (`renderSpaceMenu`,
+    après « + Nouvel espace », masqué si `loadSpaces().length < 2`) →
+    `enterMoveMode()`. Bascule `#conv-list` en `.select-mode` (ui.js,
+    `_moveMode`/`_moveSelection`), fait apparaître une checkbox par
+    conversation (`convItemEl`, `toggleConvSelection`). Dès ≥1 sélection,
+    une barre contextuelle (`#move-bar`, `renderMoveBar`) apparaît sous la
+    liste : compteur, destination via `cfgPillSelect` (jamais de `<select>`
+    natif), bouton Déplacer, bouton Annuler.
+  - **Sortie du mode** (D5) — un point de sortie unique,
+    `exitMoveModeIfActive()`, appelé depuis `runGenerationFromCurrentThread()`
+    (main.js) : ce point couvre `sendMessage`, `editUserMessage` ET
+    `regenerateResponse` (piège 12 — les trois partagent ce même point de
+    convergence, contrairement à une lecture littérale du brief qui ne
+    nommait que `sendMessage`). Sortie aussi sur Cancel (`exitMoveMode()`)
+    et sur move effectué. Changer de Space actif (`pickSpace`) pendant une
+    sélection en cours vide aussi la sélection (décision : le switch
+    équivaut à un changement d'intention, symétrique à D5).
+  - **Follow post-move (D6)** : si la conversation ouverte fait partie du
+    lot déplacé, la vue bascule vers le Space destination SANS vider le fil
+    (`followSpace(id)`, variante de `pickSpace` sans `resetToEmpty()` ni
+    `summarizeIfNeeded` — on ne quitte rien, on suit). Si la conversation
+    ouverte n'est PAS dans le lot, rien ne bouge pour elle : le follow est
+    strictement borné à son propre cas, pas de bascule de filtre par
+    ricochet. `_lastContextManifest` est invalidé dans les deux branches où
+    la conv suivie change de Space (piège 16/18).
+  - Décisions et audit complet (alternatives écartées, ambiguïtés tranchées) :
+    `untracked/muscle/Cter-audit.md` (non versionné).
 
 ## Bibliothèque de fichiers d'espace (lot Cbis)
 
@@ -235,6 +271,5 @@ aide à la décision de lecture).
 ## Non-goals v1
 
 - Pas de configuration MCP ni de skills par Space (restent globaux).
-- Pas de déplacement de conversation entre Spaces.
 - Pas d'export/import par Space (l'export global inclut les Spaces, cf.
   `docs/storage.md`).

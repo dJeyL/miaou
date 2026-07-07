@@ -583,6 +583,17 @@ function spaceConvIds(spaceId, convs) {
   return set;
 }
 
+// Déplacement de conversations entre Spaces (brief Cter, lot 1). Pure :
+// convs in → convs out, nouvelles références pour les éléments mutés
+// seulement (mêmes objets pour les non concernés). L'appelant (storage,
+// couche impure) fait un unique persistConversations sur le résultat —
+// pas un saveConversation par id, pour éviter N réécritures localStorage
+// successives sur un déplacement multi-sélection.
+function moveConversationsToSpace(convs, ids, targetSpaceId) {
+  const idSet = new Set(ids || []);
+  return (convs || []).map(c => (c && idSet.has(c.id)) ? { ...c, spaceId: targetSpaceId } : c);
+}
+
 // ── Export / import complet des données (feature E) ─────────────────────────
 // Assurance-vie : tout l'état de MIAOU (localStorage + IndexedDB) tient dans un
 // unique fichier JSON, réimportable par REMPLACEMENT INTÉGRAL (pas de fusion,

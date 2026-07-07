@@ -1231,12 +1231,55 @@ function onConvDel(btn, id) {
 // Icônes d'épingle (pleine = épinglé, contour = à épingler).
 const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .59 1.42L18 14.5H6l2.41-2.32A2 2 0 0 0 9 10.76z"/></svg>';
 
+// ── Mode sélection / déplacement de conversations entre Spaces (brief Cter) ──
+// Rien de visible au repos (contrainte UX dure du brief) : `_moveMode` gouverne
+// la classe `.select-mode` sur #conv-list (affiche les checkboxes) et la
+// présence de la barre contextuelle (#move-bar). `_moveSelection` (Set d'ids)
+// est l'état source, relu par convItemEl à chaque reconstruction de la liste
+// (renderConvList ne préserve aucun état DOM, cf. audit §1).
+let _moveMode = false;
+let _moveSelection = new Set();
+
+// Déclenché par l'item du menu Space (D1). Pas de vérification ici sur le
+// nombre de Spaces disponibles : renderSpaceMenu masque déjà l'item si
+// loadSpaces().length < 2 (aucune destination possible).
+function enterMoveMode() {
+  _moveMode = true;
+  _moveSelection = new Set();
+  renderConvList();
+  renderMoveBar();
+}
+
+// Sortie du mode, quelle qu'en soit la cause (Cancel, move effectué, envoi
+// d'un message — D5). Un seul point de sortie, ré-utilisé partout : évite
+// la logique éparpillée que le brief proscrit explicitement.
+function exitMoveMode() {
+  if (!_moveMode) return;
+  _moveMode = false;
+  _moveSelection = new Set();
+  renderConvList();
+  renderMoveBar();
+}
+
+// Appelée uniquement si le mode est actif — évite tout re-render superflu sur
+// le chemin d'envoi normal (hors mode sélection, l'appel est un no-op immédiat).
+function exitMoveModeIfActive() {
+  if (_moveMode) exitMoveMode();
+}
+
+function toggleConvSelection(id, checked) {
+  if (checked) _moveSelection.add(id); else _moveSelection.delete(id);
+  renderMoveBar();
+}
+
 function convItemEl(c) {
   const el = document.createElement('div');
   el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
   el.onclick = () => selectConv(c.id);
+  const checked = _moveSelection.has(c.id) ? ' checked' : '';
   el.innerHTML =
-    `<div class="conv-body">
+    `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}>
+     <div class="conv-body">
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
        <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
@@ -1259,6 +1302,7 @@ function sectionEl(label) {
 function renderConvList() {
   const list = $('conv-list');
   list.innerHTML = '';
+  list.classList.toggle('select-mode', _moveMode);
   const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
   $('conv-search').disabled = all.length === 0;
   let convs = all;
@@ -1282,6 +1326,50 @@ function renderConvList() {
     }
     list.appendChild(convItemEl(c));
   }
+}
+
+// Barre contextuelle (D4) : n'apparaît qu'à ≥1 conversation cochée, en mode
+// sélection. Reconstruite à chaque changement de sélection (toggleConvSelection)
+// ou de mode (enterMoveMode/exitMoveMode) — coût négligeable, pas d'état DOM
+// à préserver entre deux renders (cfgPillSelect est reconstruit avec la même
+// value à chaque fois, cohérent avec le pattern conv-list).
+function renderMoveBar() {
+  const bar = $('move-bar');
+  if (!bar) return;
+  if (!_moveMode || _moveSelection.size === 0) {
+    bar.innerHTML = '';
+    bar.classList.remove('show');
+    return;
+  }
+  bar.classList.add('show');
+  bar.innerHTML = '';
+
+  const count = document.createElement('div');
+  count.className = 'move-bar-count';
+  const n = _moveSelection.size;
+  count.textContent = `Déplacer ${n} conversation${n > 1 ? 's' : ''} vers…`;
+  bar.appendChild(count);
+
+  const row = document.createElement('div');
+  row.className = 'move-bar-row';
+  const destinations = loadSpaces().filter(s => s.id !== activeSpaceId).map(s => ({ value: s.id, label: s.name || '' }));
+  if (destinations.length) {
+    const pill = cfgPillSelect('move-bar-dest', destinations, destinations[0].value, null);
+    row.appendChild(pill.root);
+    const moveBtn = document.createElement('button');
+    moveBtn.type = 'button';
+    moveBtn.className = 'move-bar-go';
+    moveBtn.textContent = 'Déplacer';
+    moveBtn.onclick = () => moveSelectedConversations(pill.input.value);
+    row.appendChild(moveBtn);
+  }
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'move-bar-cancel';
+  cancelBtn.textContent = 'Annuler';
+  cancelBtn.onclick = () => exitMoveMode();
+  row.appendChild(cancelBtn);
+  bar.appendChild(row);
 }
 
 function isMobileLayout() { return window.innerWidth < 768; }
@@ -2486,6 +2574,17 @@ function renderSpaceMenu() {
   newOpt.innerHTML = '<span>+ Nouvel espace</span>';
   newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
   menu.appendChild(newOpt);
+
+  // Déclencheur du mode déplacement (D1, brief Cter) : masqué sans destination
+  // possible (un seul Space = rien à déplacer vers). Après « + Nouvel espace »
+  // (décision Julien, 2026-07-07), pour ne pas perturber le geste de création.
+  if (spaces.length >= 2) {
+    const moveOpt = document.createElement('div');
+    moveOpt.className = 'model-opt space-move-trigger';
+    moveOpt.innerHTML = '<span>Déplacer des conversations…</span>';
+    moveOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); enterMoveMode(); };
+    menu.appendChild(moveOpt);
+  }
 }
 
 // Bascule le Space actif : la conversation ouverte appartient à l'ancien Space
@@ -2493,6 +2592,10 @@ function renderSpaceMenu() {
 // de vider le fil, comme newConversation/selectConv.
 function pickSpace(id) {
   if (id === activeSpaceId) { $('space-menu').classList.remove('show'); return; }
+  // Changer de Space actif pendant une sélection en cours vide la sélection
+  // (décision Cter, 2026-07-07) : sortir du mode est le geste le plus sûr,
+  // symétrique à D5 (changer d'intention met fin au mode sélection).
+  exitMoveModeIfActive();
   const leaving = currentConvId;
   activeSpaceId = id;
   setActiveSpaceId(id);
@@ -2508,6 +2611,25 @@ function pickSpace(id) {
   summarizeIfNeeded(leaving);
   armIdleSummaryTimer();
   if (isMobileLayout()) closeSidebarMobile();
+}
+
+// Variante de pickSpace pour le « follow » post-déplacement (D6, brief Cter) :
+// bascule la vue vers le Space destination SANS vider le fil affiché — utilisée
+// uniquement quand la conversation ouverte fait partie du lot déplacé (sinon
+// aucun follow n'a lieu, cf. audit §3). Pas de summarizeIfNeeded(leaving) : on
+// ne quitte aucune conversation, on la suit dans son nouveau Space.
+function followSpace(id) {
+  activeSpaceId = id;
+  setActiveSpaceId(id);
+  loadSpaceLibrary(id).then(() => {
+    _lastContextManifest = null;
+    syncContextCounter();
+  });
+  syncSpaceUI();
+  renderConvList();
+  _lastContextManifest = null;   // la conv suivie change de Space : contexte affiché périmé (piège 16/18)
+  syncContextCounter();
+  armIdleSummaryTimer();
 }
 
 // Crée le Space, bascule dessus immédiatement (sinon l'utilisateur reste dans

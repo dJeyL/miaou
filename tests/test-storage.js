@@ -426,6 +426,34 @@ describe('spaceConvIds — prédicat d\'herméticité', function() {
   });
 });
 
+describe('moveConversationsToSpace (brief Cter — déplacement entre Spaces)', function() {
+  it('réécrit spaceId des conversations sélectionnées', function() {
+    var convs = [
+      { id: 'c1', spaceId: 'a' },
+      { id: 'c2', spaceId: 'a' },
+      { id: 'c3', spaceId: 'b' },
+    ];
+    var out = moveConversationsToSpace(convs, ['c1', 'c2'], 'target');
+    expect(out.find(function(c) { return c.id === 'c1'; }).spaceId).toBe('target');
+    expect(out.find(function(c) { return c.id === 'c2'; }).spaceId).toBe('target');
+    expect(out.find(function(c) { return c.id === 'c3'; }).spaceId).toBe('b');
+  });
+  it('laisse les conversations non sélectionnées inchangées (même référence)', function() {
+    var untouched = { id: 'c3', spaceId: 'b' };
+    var out = moveConversationsToSpace([untouched], ['c1'], 'target');
+    expect(out[0]).toBe(untouched);
+  });
+  it('id absent du lot : aucune mutation, retourne le tableau tel quel', function() {
+    var convs = [{ id: 'c1', spaceId: 'a' }];
+    var out = moveConversationsToSpace(convs, ['inconnu'], 'target');
+    expect(out[0].spaceId).toBe('a');
+  });
+  it('convs vide ou ids vide : ne casse pas', function() {
+    expect(moveConversationsToSpace([], ['c1'], 'target')).toEqual([]);
+    expect(moveConversationsToSpace([{ id: 'c1', spaceId: 'a' }], [], 'target')[0].spaceId).toBe('a');
+  });
+});
+
 describe('listMemoryEntries — filtrage par scope', function() {
   it('sans argument, retourne toutes les entrées actives (comportement historique)', function() {
     localStorage.clear();
