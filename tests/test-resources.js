@@ -20,6 +20,141 @@ describe('generateResourceId', function() {
   });
 });
 
+// ── generateFileId (lot Cbis — bibliothèque de fichiers d'espace) ────────────
+
+describe('generateFileId', function() {
+  it('commence par file_', function() {
+    expect(generateFileId(Math.random).startsWith('file_')).toBeTruthy();
+  });
+  it('préfixe distinct de generateResourceId et de storeAttachment (att_)', function() {
+    var rand = function() { return 0.5; };
+    expect(generateFileId(rand).startsWith('res_')).toBeFalsy();
+    expect(generateFileId(rand).startsWith('att_')).toBeFalsy();
+  });
+  it('déterministe avec rand injecté', function() {
+    var rand = function() { return 0.5; };
+    expect(generateFileId(rand)).toBe(generateFileId(rand));
+  });
+});
+
+// ── libraryRefFromId / parseLibraryRef (ref modèle file-<id>) ────────────────
+
+describe('libraryRefFromId / parseLibraryRef', function() {
+  it('libraryRefFromId : file_<hex> → file-<hex>', function() {
+    expect(libraryRefFromId('file_1a2b3c')).toBe('file-1a2b3c');
+  });
+  it('round-trip : parseLibraryRef(libraryRefFromId(id)) === id', function() {
+    var id = 'file_' + 'deadbeef';
+    expect(parseLibraryRef(libraryRefFromId(id))).toBe(id);
+  });
+  it('parseLibraryRef : ref malformée → null', function() {
+    expect(parseLibraryRef('att-1')).toBe(null);
+    expect(parseLibraryRef('file_abc')).toBe(null);   // underscore, pas tiret
+    expect(parseLibraryRef('')).toBe(null);
+    expect(parseLibraryRef('bogus')).toBe(null);
+  });
+});
+
+// ── capFileDescription (D7 — cap longueur description) ───────────────────────
+
+describe('capFileDescription', function() {
+  it('description courte → inchangée', function() {
+    expect(capFileDescription('Une description courte.')).toBe('Une description courte.');
+  });
+  it('trim des espaces superflus', function() {
+    expect(capFileDescription('  texte  ')).toBe('texte');
+  });
+  it('description absente/vide → chaîne vide', function() {
+    expect(capFileDescription(undefined)).toBe('');
+    expect(capFileDescription('')).toBe('');
+  });
+  it('description trop longue → tronquée avec ellipsis, pas de coupure en plein mot', function() {
+    var long = new Array(Math.ceil(FILE_DESCRIPTION_MAX_CHARS / 9) + 20).join('mot long ');
+    var capped = capFileDescription(long);
+    expect(capped.length <= FILE_DESCRIPTION_MAX_CHARS + 1).toBeTruthy();
+    expect(capped.endsWith('…')).toBeTruthy();
+    expect(capped.indexOf(' …') === -1).toBeTruthy(); // pas d'espace juste avant l'ellipsis
+  });
+});
+
+// ── normalizeLibraryRecord (D1 — champs figés du schéma) ─────────────────────
+
+describe('normalizeLibraryRecord', function() {
+  it('champs minimaux, sans source/description', function() {
+    var r = normalizeLibraryRecord({ id: 'file_a', spaceId: 'space-1', name: 'doc.txt', mime: 'text/plain', size: 100, createdAt: 1000 });
+    expect(r.id).toBe('file_a');
+    expect(r.spaceId).toBe('space-1');
+    expect(r.kind).toBe('library');
+    expect(r.name).toBe('doc.txt');
+    expect(r.mime).toBe('text/plain');
+    expect(r.size).toBe(100);
+    expect(r.createdAt).toBe(1000);
+    expect('source' in r).toBeFalsy();
+    expect('description' in r).toBeFalsy();
+  });
+  it('source et description présents si fournis', function() {
+    var r = normalizeLibraryRecord({ id: 'file_b', spaceId: 's1', name: 'a', mime: 'text/plain', size: 1, createdAt: 1, source: 'conv-1', description: 'Description.' });
+    expect(r.source).toBe('conv-1');
+    expect(r.description).toBe('Description.');
+  });
+  it('description passée par capFileDescription', function() {
+    var long = new Array(50).join('mot long ');
+    var r = normalizeLibraryRecord({ id: 'file_c', spaceId: 's1', name: 'a', mime: 'text/plain', size: 1, createdAt: 1, description: long });
+    expect(r.description).toBe(capFileDescription(long));
+  });
+  it('name/mime par défaut si absents', function() {
+    var r = normalizeLibraryRecord({ id: 'file_d', spaceId: 's1', size: 0, createdAt: 1 });
+    expect(r.name).toBe('file');
+    expect(r.mime).toBe('application/octet-stream');
+  });
+});
+
+// ── buildLibraryManifestBlock (D4 — manifeste contexte, byte-stable) ─────────
+
+describe('buildLibraryManifestBlock', function() {
+  it('bibliothèque vide/absente → chaîne vide, pas de bloc', function() {
+    expect(buildLibraryManifestBlock([])).toBe('');
+    expect(buildLibraryManifestBlock(null)).toBe('');
+    expect(buildLibraryManifestBlock(undefined)).toBe('');
+  });
+  it('une entrée sans description → intro générique + une ligne file-<id> — name (mime, size)', function() {
+    var out = buildLibraryManifestBlock([{ id: 'file_a1', name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1 }]);
+    expect(out).toBe('Fichiers disponibles dans cet espace :\nfile-a1 — doc.txt (text/plain, ' + humanSize(1024) + ')');
+  });
+  it('nom d\'espace fourni → intro le nomme', function() {
+    var out = buildLibraryManifestBlock([{ id: 'file_a1', name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1 }], 'Projet X');
+    expect(out.split('\n')[0]).toBe('Fichiers disponibles dans l\'espace Projet X :');
+  });
+  it('une entrée avec description → même ligne (format A4)', function() {
+    var out = buildLibraryManifestBlock([{ id: 'file_b2', name: 'rapport.pdf', mime: 'application/pdf', size: 5000, createdAt: 1, description: 'Description du rapport.' }]);
+    expect(out.split('\n')[1]).toBe('file-b2 — rapport.pdf (application/pdf, ' + humanSize(5000) + ') — Description du rapport.');
+  });
+  it('tri déterministe par createdAt puis id', function() {
+    var entries = [
+      { id: 'file_z', name: 'z.txt', mime: 'text/plain', size: 1, createdAt: 100 },
+      { id: 'file_a', name: 'a.txt', mime: 'text/plain', size: 1, createdAt: 50 },
+      { id: 'file_m', name: 'm.txt', mime: 'text/plain', size: 1, createdAt: 50 },
+    ];
+    var out = buildLibraryManifestBlock(entries);
+    var lines = out.split('\n');
+    expect(lines[1].indexOf('a.txt') >= 0).toBeTruthy();
+    expect(lines[2].indexOf('m.txt') >= 0).toBeTruthy();
+    expect(lines[3].indexOf('z.txt') >= 0).toBeTruthy();
+  });
+  it('byte-stabilité : deux appels avec les mêmes entrées produisent le même bloc', function() {
+    var entries = [{ id: 'file_x', name: 'x.txt', mime: 'text/plain', size: 10, createdAt: 1, description: 'S.' }];
+    expect(buildLibraryManifestBlock(entries)).toBe(buildLibraryManifestBlock(entries));
+  });
+  it('ne mute pas le tableau reçu (tri sur une copie)', function() {
+    var entries = [
+      { id: 'file_b', name: 'b', mime: 'text/plain', size: 1, createdAt: 2 },
+      { id: 'file_a', name: 'a', mime: 'text/plain', size: 1, createdAt: 1 },
+    ];
+    buildLibraryManifestBlock(entries);
+    expect(entries[0].id).toBe('file_b');
+  });
+});
+
 // ── classifyMime ──────────────────────────────────────────────────────────────
 
 describe('classifyMime', function() {

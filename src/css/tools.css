@@ -426,9 +426,9 @@ textarea.skill-content {
   border-radius: 0 6px 6px 0;
 }
 .reasoning-content {
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.55;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.2;
   color: var(--text-2);
   opacity: .85;
   white-space: pre-wrap;

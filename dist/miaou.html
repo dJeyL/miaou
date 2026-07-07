@@ -504,6 +504,21 @@ body {
 }
 .msg-attachments:empty { display: none; }
 
+.att-promote {
+  display: grid; place-items: center;
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.att-promote:hover { background: var(--surface-3); color: var(--text); }
+.att-promote.done { color: var(--ok); cursor: default; }
+.att-promote svg { width: 14px; height: 14px; }
+
 .msg-copy-user,
 .msg-edit {
   position: absolute;
@@ -1926,9 +1941,9 @@ textarea.skill-content {
   border-radius: 0 6px 6px 0;
 }
 .reasoning-content {
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.55;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.2;
   color: var(--text-2);
   opacity: .85;
   white-space: pre-wrap;
@@ -2433,6 +2448,20 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
           </label>
         </div>
       </div>
+      <div class="field">
+        <label>Bibliothèque de fichiers</label>
+        <div class="check-row">
+          <div class="label-col">
+            <label>Descriptions de fichiers</label>
+            <span class="hint">Génère automatiquement une description à l'ajout d'un fichier dans la bibliothèque d'un espace.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-describe-files">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
           </div>
         </div>
       </div>
@@ -2515,6 +2544,12 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 
       <div class="drawer-section-title">Souvenirs de cet espace</div>
       <div class="mem-list" id="space-memory-list"></div>
+
+      <div class="drawer-section-title">Fichiers</div>
+      <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
+      <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
+      <div class="cfg-err" id="space-files-error" hidden></div>
+      <div class="mem-list" id="space-files-list"></div>
 
       <div class="drawer-section-title" id="space-delete-title" hidden>Zone dangereuse</div>
       <button class="drawer-btn danger" id="space-delete-btn" onclick="onDeleteSpaceScreen()" hidden>Supprimer cet espace</button>
@@ -2599,7 +2634,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-06 17:22 UTC */
+/* miaou — built: 2026-07-07 05:47 UTC */
 
 /* ── utils.js ── */
 
@@ -3046,6 +3081,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('memories', 'Souvenirs', dp.memories);
   pushEntry('summaries', 'Résumés injectés', dp.summaries);
   pushEntry('skills_context', 'Contexte skills (autotrigger)', dp.skillsContext);
+  pushEntry('space_library', 'Fichiers d\'espace', dp.library);
 
   if (toolDefsJson) {
     entries.push({
@@ -3107,7 +3143,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783358560}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783403223}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3133,6 +3169,7 @@ const DEFAULT_SETTINGS = {
   intentTracing: true,      
   confirmSkillAutoUse: true, 
   contextWindow: '', 
+  describeFiles: true, 
 };
 
 function loadSettingsRaw() {
@@ -3645,6 +3682,54 @@ function generateResourceId(rand) {
   return 'res_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
 }
 
+function generateFileId(rand) {
+  return 'file_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
+}
+
+function libraryRefFromId(id) { return 'file-' + String(id || '').replace(/^file_/, ''); }
+
+const LIBRARY_REF_RE = /^file-([a-z0-9]+)$/;
+
+function parseLibraryRef(ref) {
+  const m = LIBRARY_REF_RE.exec(String(ref || ''));
+  return m ? 'file_' + m[1] : null;
+}
+
+const FILE_DESCRIPTION_MAX_CHARS = 512;
+function capFileDescription(str) {
+  const s = String(str || '').trim();
+  if (s.length <= FILE_DESCRIPTION_MAX_CHARS) return s;
+  return s.slice(0, FILE_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
+}
+
+function normalizeLibraryRecord(rec) {
+  const out = {
+    id: rec.id, spaceId: rec.spaceId, kind: 'library',
+    name: String(rec.name || 'file'), mime: String(rec.mime || 'application/octet-stream'),
+    size: Number(rec.size) || 0, createdAt: rec.createdAt,
+  };
+  if (rec.source) out.source = rec.source;
+  if (rec.description) out.description = capFileDescription(rec.description);
+  return out;
+}
+
+function buildLibraryManifestBlock(entries, spaceName) {
+  if (!entries || !entries.length) return '';
+  const sorted = entries.slice().sort(function(a, b) {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  const intro = spaceName
+    ? 'Fichiers disponibles dans l\'espace ' + spaceName + ' :'
+    : 'Fichiers disponibles dans cet espace :';
+  const lines = sorted.map(function(e) {
+    let line = libraryRefFromId(e.id) + ' — ' + e.name + ' (' + e.mime + ', ' + humanSize(e.size) + ')';
+    if (e.description) line += ' — ' + e.description;
+    return line;
+  });
+  return intro + '\n' + lines.join('\n');
+}
+
 const ATTACHMENT_TEXT_EXTENSIONS = [
   'txt', 'md', 'markdown', 'csv', 'log', 'json', 'yaml', 'yml', 'xml', 'ini', 'toml',
   'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'hpp',
@@ -3857,6 +3942,24 @@ function getCachedRecordByAttId(attId, conversationId) {
   return null;
 }
 
+function getCachedLibraryEntriesBySpace(spaceId) {
+  const out = [];
+  for (const key in _resourceCache) {
+    const rec = _resourceCache[key];
+    if (rec && rec.kind === 'library' && rec.spaceId === spaceId) out.push(rec);
+  }
+  return out;
+}
+
+async function loadSpaceLibrary(spaceId) {
+  try {
+    const records = await getResourcesBySpace(spaceId);
+    for (const rec of records) _cacheRecord(rec);
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] loadSpaceLibrary:', e && e.message);
+  }
+}
+
 function _makeResourceRef(id) { return '[resource_ref:' + id + ']'; }
 
 function assembleToolResultForModel(resultStr) {
@@ -3898,12 +4001,19 @@ function openResourceDB() {
   if (_resourceDbPromise) return _resourceDbPromise;
   _resourceDbPromise = new Promise(function(resolve, reject) {
     
-    const req = indexedDB.open('miaou', 2);
+    const req = indexedDB.open('miaou', 3);
     req.onupgradeneeded = function(e) {
       const db = e.target.result;
+      const tx = e.target.transaction;
       if (!db.objectStoreNames.contains('resources')) {
         const store = db.createObjectStore('resources', { keyPath: 'id' });
         store.createIndex('by_conversation', 'conversationId', { unique: false });
+        store.createIndex('by_space', 'spaceId', { unique: false });
+      } else if (e.oldVersion < 3) {
+        const store = tx.objectStore('resources');
+        if (!store.indexNames.contains('by_space')) {
+          store.createIndex('by_space', 'spaceId', { unique: false });
+        }
       }
       if (!db.objectStoreNames.contains('skills')) {
         db.createObjectStore('skills', { keyPath: 'slug' });
@@ -3942,6 +4052,17 @@ function getResourcesByConversation(convId) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('resources', 'readonly');
       const req = tx.objectStore('resources').index('by_conversation').getAll(convId);
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+function getResourcesBySpace(spaceId) {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('resources', 'readonly');
+      const req = tx.objectStore('resources').index('by_space').getAll(spaceId);
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
@@ -4022,6 +4143,27 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
     return record;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] storeAttachment:', e && e.message);
+    return null;
+  }
+}
+
+async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand) {
+  const id = generateFileId(rand);
+  const record = {
+    id, spaceId, kind: 'library',
+    class: cls, mime: String(mime || 'application/octet-stream'),
+    name: String(name || 'file'), size: data.byteLength,
+    createdAt: now, data,
+  };
+  if (source) record.source = source;
+  if (description) record.description = capFileDescription(description);
+  try {
+    await putResource(record);
+    _cacheRecord(record);
+    requestPersistence();
+    return record;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] storeLibraryFile:', e && e.message);
     return null;
   }
 }
@@ -4401,6 +4543,25 @@ const MEMORY_DOCTRINE =
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
+const FILES_DOCTRINE =
+  "Doctrine de déclenchement pour miaou__files__promote (bibliothèque de fichiers " +
+  "de l'espace) :\n\n" +
+  "N'appelle JAMAIS miaou__files__promote directement. Si tu identifies qu'une " +
+  "pièce jointe du tour courant (att-N) mériterait d'être conservée dans la " +
+  "bibliothèque persistante de l'espace (contenu de référence, réutilisable au-delà " +
+  "de cette conversation), appelle d'abord ask_confirmation avec une question qui " +
+  "inclut LITTÉRALEMENT le nom du fichier, son type, sa taille approximative, et la " +
+  "description que tu proposes de stocker (ce que le fichier EST, pas son contenu) : " +
+  "« Tu veux que j'ajoute « nom_fichier » à la bibliothèque de l'espace, avec cette " +
+  "description : « … » ? ».\n\n" +
+  "SEULEMENT si l'utilisateur confirme positivement au tour suivant, appelle " +
+  "miaou__files__promote(ref, description, name?) avec le MÊME ref, description et " +
+  "name (si fourni) que ceux annoncés dans la question — ne reformule pas la " +
+  "description entre la question et l'appel. Ne JAMAIS affirmer avoir ajouté un " +
+  "fichier à la bibliothèque si tu n'as pas appelé miaou__files__promote avec " +
+  "succès dans ce même tour. Si l'utilisateur décline, n'appelle pas l'outil et " +
+  "n'insiste pas.";
+
 const DOCS_DOCTRINE =
   "Un fichier binaire joint par l'utilisateur (descripteur [attachment att-N: file " +
   "\"...\", <mime>, <taille> — binary content, not inlined]) n'est pas lisible " +
@@ -4415,7 +4576,7 @@ function docsDoctrinePrompt() {
 }
 
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
-  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE;
 
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
@@ -4468,6 +4629,13 @@ function getPendingToolBlocks() { return _pendingToolBlocks.slice(); }
 function clearPendingToolBlocks() { _pendingToolBlocks = []; }
 
 function retainPendingToolBlocks(keepFn) { _pendingToolBlocks = _pendingToolBlocks.filter(keepFn); }
+
+function validateFilesPromoteArgs(args) {
+  const ref = String((args && args.ref) || '');
+  const description = String((args && args.description) || '').trim();
+  if (!ref || !description) return 'Paramètres invalides (ref et description requis).';
+  return '';
+}
 
 const TOOLS = [
   {
@@ -4674,6 +4842,102 @@ const TOOLS = [
       }
       return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
         ' — contenu non lisible directement.';
+    },
+  },
+  {
+    name: 'files__list',
+    description:
+      "Liste les fichiers de la bibliothèque de l'espace actif (id, nom, type, " +
+      "taille, provenance). Utiliser avant files__read pour retrouver l'identifiant " +
+      "d'un fichier (file-N).",
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: () => {
+      
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const entries = getCachedLibraryEntriesBySpace(spaceId);   
+      const light = entries.map(e => ({
+        id: libraryRefFromId(e.id), name: e.name, mime: e.mime, size: e.size,
+        source: e.source || null,
+      }));
+      _pendingToolAcks.push({ kind: 'files_list', count: light.length });
+      return JSON.stringify(light);
+    },
+  },
+  {
+    name: 'files__read',
+    description:
+      "Lit un fichier de la bibliothèque de l'espace actif par son identifiant " +
+      "(file-N, obtenu via files__list). Un fichier texte est renvoyé en clair ; " +
+      "un binaire (PDF, Office, zip…) est routé vers les outils d'extraction de " +
+      "documents ; une image est soumise à la capacité de vision du modèle actif.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Identifiant du fichier (file-N)' },
+      },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const recordId = parseLibraryRef(String(args.id || ''));   
+      if (!recordId) return 'Fichier introuvable.';
+      const record = getCachedRecord(recordId);   
+      
+      if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return 'Fichier introuvable.';
+      _pendingToolAcks.push({ kind: 'files_read', id: args.id, resourceName: record.name, mime: record.mime });
+      if (record.mime && record.mime.startsWith('image/')) {
+        const model = typeof activeModel === 'function' ? activeModel() : '';
+        const server = typeof activeApiServer === 'function' ? activeApiServer() : null;
+        if (!serverModelVisionEnabled(server, model)) {
+          return 'Ce contenu (image) ne peut pas être présenté à ce modèle (pas de capacité de vision).';
+        }
+        
+        return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+          ' — image, capacité de vision présente mais non ré-injectée par cet outil.';
+      }
+      if (record.class === 'inline') return utf8Decode(record.data);
+      
+      return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+        ' — contenu binaire, non inlinable directement ; utiliser les outils de lecture de documents (mcp_docs).';
+    },
+  },
+  {
+    name: 'files__promote',
+    description:
+      "Copie une pièce jointe du tour courant (ref att-N) dans la bibliothèque " +
+      "persistante de l'espace actif, avec une description de ce qu'elle contient " +
+      "(pas un résumé de son contenu — ce que le fichier EST, pour qu'un futur " +
+      "appel décide s'il faut le lire). Consentement de l'utilisateur REQUIS au " +
+      "préalable (voir doctrine bibliothèque) : n'appelle cet outil qu'après avoir " +
+      "posé la question via ask_confirmation et reçu une réponse positive.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Identifiant de la pièce jointe du tour courant (att-N)' },
+        description: { type: 'string', description: 'Description factuelle de ce que contient le fichier (≤ 2 phrases), pas un résumé de son contenu' },
+        name: { type: 'string', description: 'Nom optionnel (défaut : nom du fichier d\'origine)' },
+      },
+      required: ['ref', 'description'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    handler: async (args) => {
+      const invalid = validateFilesPromoteArgs(args);
+      if (invalid) return invalid;
+      const ref = String(args.ref || '');
+      const description = String(args.description || '').trim();
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const record = getCachedRecordByAttId(ref, activeId);   
+      if (!record) return 'Fichier introuvable.';   
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const name = args.name ? String(args.name).trim() : record.name;
+      const stored = await storeLibraryFile(   
+        spaceId, record.mime, name, record.data, record.class, activeId, description, Date.now(), Math.random
+      );
+      if (!stored) return 'Échec de l\'enregistrement dans la bibliothèque.';
+      _pendingToolAcks.push({ kind: 'file_promote', id: libraryRefFromId(stored.id), resourceName: stored.name });
+      return 'Fichier ajouté à la bibliothèque de l\'espace. Identifiant : ' + libraryRefFromId(stored.id);
     },
   },
   {
@@ -5002,6 +5266,11 @@ function clearAttachmentPushState(conversationId) {
   }
 }
 
+let _filePushState = {};
+function _filePushStateKey(spaceId, fileId) { return (spaceId || '') + '|' + fileId; }
+function isFilePushed(spaceId, fileId) { return !!_filePushState[_filePushStateKey(spaceId, fileId)]; }
+function markFilePushed(spaceId, fileId) { _filePushState[_filePushStateKey(spaceId, fileId)] = true; }
+
 function toolDeclaresAttachmentInflation(server, toolName) {
   const fullName = server.name + '__' + toolName;
   const list = _remoteTools[server.name] || [];
@@ -5011,6 +5280,8 @@ function toolDeclaresAttachmentInflation(server, toolName) {
 }
 
 const ATTACHMENT_REF_RE = /^att-\d+$/;
+
+const FILE_REF_RE = /^file-[a-z0-9]+$/;
 
 function anyToolDeclaresAttachmentInflation() {
   for (const serverName of Object.keys(_remoteTools)) {
@@ -5022,26 +5293,93 @@ function anyToolDeclaresAttachmentInflation() {
   return false;
 }
 
+function _declaresContentReadSignature(props) {
+  return !!(props && (props.char_start || props.line_start) && !props.query);
+}
+
+function findDocsInflationTool() {
+  for (const serverName of Object.keys(_remoteTools)) {
+    const server = getMcpServer(serverName);
+    if (!server) continue;
+    for (const t of _remoteTools[serverName]) {
+      const props = t && t.inputSchema && t.inputSchema.properties;
+      if (props && props.ref && props.content_b64 && _declaresContentReadSignature(props)) {
+        const bareName = t.name.indexOf(serverName + '__') === 0 ? t.name.slice(serverName.length + 2) : t.name;
+        return { server, toolName: bareName };
+      }
+    }
+  }
+  return null;
+}
+
+async function extractBinaryFileTextForDescription(record, maxChars) {
+  const found = findDocsInflationTool();
+  if (!found) return null;
+  try {
+    const result = await mcpRpc(found.server, 'tools/call', {
+      name: found.toolName,
+      arguments: {
+        ref: libraryRefFromId(record.id),
+        content_b64: arrayBufferToBase64(record.data),
+        session_id: 'lib-description-' + record.id,
+      },
+    });
+    const content = (result && Array.isArray(result.content)) ? result.content : [];
+    const text = content.filter(b => b && b.type === 'text').map(b => b.text).join('\n');
+    return text ? text.slice(0, maxChars) : null;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] extractBinaryFileTextForDescription:', e && e.message);
+    return null;
+  }
+}
+
+function _resolveInflationRef(ref) {
+  if (ATTACHMENT_REF_RE.test(ref)) {
+    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+    const record = getCachedRecordByAttId(ref, activeId);
+    if (!record) return null;
+    return {
+      record, sessionId: activeId,
+      isPushed: () => isAttachmentPushed(activeId, ref),
+      markPushed: () => markAttachmentPushed(activeId, ref),
+    };
+  }
+  if (FILE_REF_RE.test(ref)) {
+    const recordId = parseLibraryRef(ref);   
+    const record = recordId ? getCachedRecord(recordId) : null;
+    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return null;
+    
+    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+    return {
+      record, sessionId: activeId,
+      isPushed: () => isFilePushed(spaceId, recordId),
+      markPushed: () => markFilePushed(spaceId, recordId),
+    };
+  }
+  return null;
+}
+
 async function callDocsInflatedRemoteTool(server, toolName, args, intent) {
   const ref = args && typeof args.ref === 'string' ? args.ref : null;
-  const capable = ref && ATTACHMENT_REF_RE.test(ref) && toolDeclaresAttachmentInflation(server, toolName);
+  const capable = ref && toolDeclaresAttachmentInflation(server, toolName);
   if (!capable) return callRemoteTool(server, toolName, args, intent);
 
-  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
-  const record = getCachedRecordByAttId(ref, activeId);
-  if (!record) return callRemoteTool(server, toolName, args, intent);   
+  const resolved = _resolveInflationRef(ref);
+  if (!resolved) return callRemoteTool(server, toolName, args, intent);   
 
-  const alreadyPushed = isAttachmentPushed(activeId, ref);
+  const { record, sessionId, isPushed, markPushed } = resolved;
+  const alreadyPushed = isPushed();
   const wireArgs = Object.assign({}, args);
-  if (activeId != null) wireArgs.session_id = activeId;
+  if (sessionId != null) wireArgs.session_id = sessionId;
   if (!alreadyPushed) wireArgs.content_b64 = arrayBufferToBase64(record.data);
   const result = await callRemoteTool(server, toolName, wireArgs, intent);
-  if (!alreadyPushed && !result.isError) { markAttachmentPushed(activeId, ref); return result; }
+  if (!alreadyPushed && !result.isError) { markPushed(); return result; }
   if (alreadyPushed && result.isError && _isRefUnknownError(result)) {
     
     const retryArgs = Object.assign({}, wireArgs, { content_b64: arrayBufferToBase64(record.data) });
     const retryResult = await callRemoteTool(server, toolName, retryArgs, intent, result.ackEntry);
-    if (!retryResult.isError) markAttachmentPushed(activeId, ref);
+    if (!retryResult.isError) markPushed();
     return retryResult;
   }
   return result;
@@ -5169,6 +5507,21 @@ Markdown, sans commentaire :
 
 keywords : 5 à 12 termes saillants (sujets techniques, noms propres,
 technologies, concepts), en minuscules, sans doublons.`;
+
+const FILE_DESCRIPTION_PROMPT =
+  "Tu es un module de description de document. On te fournit le contenu (ou " +
+  "un extrait) d'un fichier. Décris en au plus DEUX phrases factuelles ce " +
+  "qu'on y trouve — nature du contenu, sujets/entités couverts, structure " +
+  "notable (ex. tableau de prix, journal d'événements, spécification " +
+  "technique, liste de contacts) — de façon à ce qu'un lecteur qui n'a PAS " +
+  "encore ouvert le fichier puisse juger s'il doit le lire pour répondre à " +
+  "un besoin donné. Ce n'est PAS un résumé du contenu (n'essaie pas de " +
+  "condenser l'information elle-même, ex. les valeurs d'un tableau ou la " +
+  "conclusion d'un rapport) : c'est une description de ce que le fichier EST, " +
+  "à des fins d'indexation. N'utilise AUCUNE expression de temps relatif " +
+  "(« aujourd'hui », « récemment », « ce mois-ci ») : la description doit " +
+  "rester valable indéfiniment. Réponds UNIQUEMENT par la description, sans " +
+  "préambule, sans guillemets, sans balises Markdown.";
 
 async function silentCompletion(messages, opts) {
   const o = opts || {};
@@ -6008,6 +6361,57 @@ const ACK_KINDS = {
       }
     },
   },
+  
+  files_list: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m =>
+      (m.intent ? m.intent + ' : ' : '') + (
+        m.count === 0 ? 'Aucun fichier dans la bibliothèque'
+      : m.count === 1 ? '1 fichier listé'
+      : (m.count != null ? m.count : '?') + ' fichiers listés'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'Aucun fichier dans la bibliothèque'
+        : m.count === 1 ? '1 fichier listé'
+        : (m.count != null ? m.count : '?') + ' fichiers listés';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, countText);
+      } else {
+        el.textContent = countText;
+      }
+    },
+  },
+  
+  files_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Fichier consulté : ' + (m.resourceName || m.id || '?'),
+    renderLabel: (m, el) => {
+      const name = m.resourceName || m.id || '?';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Fichier consulté '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + name));
+        });
+      } else {
+        el.textContent = 'Fichier consulté : ' + name;
+      }
+    },
+  },
+  
+  file_promote: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_PACKAGE,
+    label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
+  },
 };
 
 function ackLabel(kind, m) {
@@ -6752,7 +7156,7 @@ function attIconSvg() {
   return '<span class="att-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
 }
 
-function attChipHtml(att, thumbSrc, removable) {
+function attChipHtml(att, thumbSrc, removable, conversationId) {
   const thumb = thumbSrc
     ? `<img class="att-thumb" src="${thumbSrc}" alt="">`
     : attIconSvg();
@@ -6760,14 +7164,38 @@ function attChipHtml(att, thumbSrc, removable) {
     ? `<button class="att-remove" title="Retirer" onclick="removeComposerAttachment('${att.attId}')">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`
     : '';
+  const promoteBtn = (!removable && conversationId)
+    ? `<button class="att-promote" title="Ajouter à la bibliothèque de l'espace" ` +
+      `onclick="promoteAttachmentToLibrary(this, '${att.attId}', '${conversationId}')">${ICON_PACKAGE}</button>`
+    : '';
   return (
     `<span class="att-chip" data-att-id="${att.attId}">` +
     thumb +
     `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
     `<span class="att-size">${humanSize(att.size)}</span>` +
     removeBtn +
+    promoteBtn +
     `</span>`
   );
+}
+
+async function promoteAttachmentToLibrary(btn, attId, conversationId) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const record = getCachedRecordByAttId(attId, conversationId);
+  if (!record) { btn.disabled = false; return; }
+  const stored = await storeLibraryFile(
+    activeSpaceId, record.mime, record.name, record.data, record.class,
+    conversationId, undefined, Date.now(), Math.random
+  );
+  if (stored) {
+    btn.classList.add('done');
+    btn.title = 'Ajouté à la bibliothèque de l\'espace';
+    
+    describeFileIfNeeded(stored.id);
+  } else {
+    btn.disabled = false;
+  }
 }
 
 function resolveAttachmentThumb(att, conversationId) {
@@ -6790,7 +7218,7 @@ function renderComposerAttachments() {
 function renderMsgAttachments(attachments, conversationId) {
   if (!attachments || !attachments.length) return '';
   return `<div class="msg-attachments">` +
-    attachments.map(att => attChipHtml(att, resolveAttachmentThumb(att, conversationId), false)).join('') +
+    attachments.map(att => attChipHtml(att, resolveAttachmentThumb(att, conversationId), false, conversationId)).join('') +
     `</div>`;
 }
 
@@ -7024,6 +7452,7 @@ function settingsFormDirty() {
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-save-json').checked !== !!s.saveJsonResponses
     || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse
+    || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
 }
 
@@ -7040,6 +7469,7 @@ function openSettings() {
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
   $('set-confirm-skill-autouse').checked = !!s.confirmSkillAutoUse;
+  $('set-describe-files').checked = s.describeFiles !== false;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
@@ -7206,8 +7636,8 @@ const CTX_PALETTE = {
   root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
   intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a', docs_doctrine: '#c98bf2',
   user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
-  summaries: '#e0955a', skills_context: '#8bc98b', thread: '#4a90d9',
-  attachment_images: '#d9974a',
+  summaries: '#e0955a', skills_context: '#8bc98b', space_library: '#5ac98b',
+  thread: '#4a90d9', attachment_images: '#d9974a',
 };
 
 function effectiveContextManifest() {
@@ -7534,6 +7964,7 @@ function pickSpace(id) {
   const leaving = currentConvId;
   activeSpaceId = id;
   setActiveSpaceId(id);
+  loadSpaceLibrary(id);   
   resetToEmpty();
   syncSpaceUI();
   $('space-menu').classList.remove('show');
@@ -7568,6 +7999,8 @@ function openSpaceScreen(id) {
   $('space-delete-title').hidden = isDefault;
   if (!isDefault) syncSpaceDeleteLabel(id);
   renderMemoryList('space-memory-list', id);
+  clearSpaceFilesError();
+  renderSpaceFilesList(id);
   $('space-drawer').classList.add('show');
   $('space-backdrop').classList.add('show');
 }
@@ -7602,28 +8035,33 @@ function onSaveSpaceScreen() {
   closeSpaceScreen();
 }
 
-function syncSpaceDeleteLabel(id) {
+async function syncSpaceDeleteLabel(id) {
   const btn = $('space-delete-btn');
   if (!btn) return;
   const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
   const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
+  const fileCount = (await getResourcesBySpace(id)).length;
+  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileCount} fichier${fileCount > 1 ? 's' : ''})`;
 }
 
-function onDeleteSpaceScreen() {
+async function onDeleteSpaceScreen() {
   const btn = $('space-delete-btn');
   if (!_spaceScreenId || _spaceScreenId === DEFAULT_SPACE_ID) return;
   const id = _spaceScreenId;
   const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
   const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
-  armThenRun(btn, () => {
+  const fileEntries = await getResourcesBySpace(id);
+  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileEntries.length} fichier${fileEntries.length > 1 ? 's' : ''})`;
+  armThenRun(btn, async () => {
     const wasActive = id === activeSpaceId;
     for (const c of loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id)) {
       deleteConv(c.id);
     }
     for (const m of loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id)) {
       forgetMemory(m.id);
+    }
+    for (const f of await getResourcesBySpace(id)) {
+      await deleteResource(f.id);
     }
     deleteSpaceEntry(id);
     closeSpaceScreen();
@@ -8520,6 +8958,101 @@ function promoteMemoryEntry(id, containerId, scope) {
   renderMemoryList(containerId, scope);
 }
 
+async function renderSpaceFilesList(spaceId) {
+  const wrap = $('space-files-list');
+  if (!wrap) return;
+  const entries = (await getResourcesBySpace(spaceId)).slice()
+    .sort((a, b) => (a.createdAt !== b.createdAt ? a.createdAt - b.createdAt : String(a.id).localeCompare(String(b.id))));
+  wrap.innerHTML = '';
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucun fichier dans la bibliothèque de cet espace.';
+    wrap.appendChild(empty);
+    return;
+  }
+  for (const e of entries) {
+    const item = document.createElement('div');
+    item.className = 'mem-item';
+    item.dataset.id = e.id;
+    const provenanceBadge = e.source ? '<span class="mem-sub"> · promu depuis une conversation</span>' : '';
+    const descriptionLine = `<div class="mem-excerpt file-description-line" id="file-description-${e.id}">${e.description ? escHtml(e.description) : ''}</div>`;
+    item.innerHTML =
+      `<div class="mem-header"><div class="mem-meta">` +
+      `<div class="mem-sub">${escHtml(e.mime)} · ${escHtml(humanSize(e.size))}${provenanceBadge}</div>` +
+      `</div></div>` +
+      `<div class="mem-content">${escHtml(e.name)}</div>` +
+      descriptionLine +
+      `<div class="drawer-btns" id="file-btns-${e.id}">` +
+      `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? '(re)générer' : 'Générer une description'}</button>` +
+      `<button class="drawer-btn danger" onclick="onDeleteSpaceFile(this,'${e.id}','${spaceId}')">Supprimer</button>` +
+      `</div>`;
+    wrap.appendChild(item);
+  }
+}
+
+function setFileDescriptionStatus(fileId, status, description) {
+  const line = $('file-description-' + fileId);
+  const btns = $('file-btns-' + fileId);
+  const btn = btns ? btns.querySelector('.drawer-btn:not(.danger)') : null;
+  if (status === 'loading') {
+    if (line) line.textContent = 'description en cours…';
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+  } else if (status === 'done') {
+    if (line) line.textContent = description || '';
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '(re)générer'; }
+  } else if (status === 'failed') {
+    if (line) line.textContent = '';
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Générer une description'; }
+  }
+}
+
+async function onRegenerateFileDescription(btn, fileId, spaceId) {
+  await describeFileIfNeeded(fileId, (status) => {
+    if (status === 'done') {
+      getResource(fileId).then(rec => setFileDescriptionStatus(fileId, 'done', rec && rec.description));
+    } else {
+      setFileDescriptionStatus(fileId, status);
+    }
+  }, true);
+}
+
+function onSpaceFilesUploadClick() {
+  const input = $('space-file-input');
+  if (input) { input.value = ''; input.click(); }
+}
+
+async function onSpaceFilesSelected(input) {
+  const files = Array.from(input.files || []);
+  if (!files.length || !_spaceScreenId) return;
+  clearSpaceFilesError();
+  const spaceId = _spaceScreenId;
+  const stored = [];
+  for (const file of files) {
+    const rec = await ingestLibraryFile(spaceId, file);
+    if (rec) stored.push(rec);
+  }
+  await renderSpaceFilesList(spaceId);
+  
+  for (const rec of stored) {
+    describeFileIfNeeded(rec.id, (status) => {
+      if (status === 'done') {
+        getResource(rec.id).then(r => setFileDescriptionStatus(rec.id, 'done', r && r.description));
+      } else {
+        setFileDescriptionStatus(rec.id, status);
+      }
+    });
+  }
+}
+
+function onDeleteSpaceFile(btn, id, spaceId) {
+  armThenRun(btn, async () => {
+    await deleteResource(id);
+    renderSpaceFilesList(spaceId);
+    if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
+  });
+}
+
 function startEditMemoryEntry(id) {
   const btns = $('drawer-btns-' + id);
   const contentEl = $('mem-content-' + id);
@@ -8717,6 +9250,7 @@ function contextBlockParts(matches) {
     summaries: buildSummaryBlock(matches || []),
     memories: buildMemoryEntriesBlock(),
     skillsContext: buildSkillsContextBlock(),
+    library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name),
   };
 }
 
@@ -8725,6 +9259,7 @@ function buildContextBlock(matches) {
   const parts = [dp.contextDateModel];
   if (dp.summaries) parts.push(dp.summaries);
   if (dp.memories) parts.push(dp.memories);
+  if (dp.library) parts.push(dp.library);
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -8746,7 +9281,13 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
   const global = (globalSystemPrompt || '').trim();
   if (global) parts.push(global);
   const spaceDescription = (space && space.description || '').trim();
-  if (spaceDescription) parts.push(spaceDescription);
+  if (spaceDescription) {
+    const spaceName = (space && space.name || '').trim();
+    const intro = spaceName
+      ? 'Description de l\'espace ' + spaceName + ' :'
+      : 'Description de cet espace :';
+    parts.push(intro + '\n' + spaceDescription);
+  }
   return parts.join('\n\n---\n\n');
 }
 
@@ -8997,6 +9538,7 @@ function onSaveSettings() {
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
     confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
+    describeFiles: $('set-describe-files').checked,
     contextWindow: $('set-contextwindow').value,
   };
   saveSettings(obj);
@@ -9326,6 +9868,50 @@ async function ingestAttachmentFile(file) {
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
     showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
+    return null;
+  }
+}
+
+function showSpaceFilesError(msg) {
+  const el = $('space-files-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearSpaceFilesError() {
+  const el = $('space-files-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
+}
+
+async function ingestLibraryFile(spaceId, file) {
+  if (file.size > ATTACHMENT_MAX_BYTES) {
+    showSpaceFilesError('« ' + file.name + ' » dépasse 10 Mo — fichier ignoré.');
+    return null;
+  }
+  const kind0 = classifyAttachmentKind(file.name, file.type);
+  const now = Date.now();
+  try {
+    if (kind0 === 'image') {
+      const { blob, mime, w, h } = await downscaleImageFile(file);
+      const buf = await blob.arrayBuffer();
+      const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random);
+      if (rec && w && h) { rec.w = w; rec.h = h; await putResource(rec); }
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      return rec;
+    }
+    if (kind0 === 'text') {
+      const text = await readFileAsText(file);
+      const buf = utf8Encode(text);
+      const cls = buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES ? 'binary' : 'inline';
+      const rec = await storeLibraryFile(spaceId, file.type || 'text/plain', file.name, buf, cls, undefined, undefined, now, Math.random);
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      return rec;
+    }
+    const buf = await readFileAsArrayBuffer(file);
+    const rec = await storeLibraryFile(spaceId, file.type || 'application/octet-stream', file.name, buf, 'binary', undefined, undefined, now, Math.random);
+    if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+    return rec;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] ingestLibraryFile:', e && e.message);
+    showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
 }
@@ -9842,6 +10428,40 @@ async function summarizeIfNeeded(id) {
   });
 }
 
+const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
+
+async function describeFileIfNeeded(fileId, onStatus, force) {
+  if (!force && !loadSettings().describeFiles) return;
+  const record = await getResource(fileId);
+  if (!record || record.kind !== 'library') return;
+  if (!force && record.description) return;
+  if (record.mime && record.mime.startsWith('image/')) return;   
+
+  if (onStatus) onStatus('loading');
+  let text = null;
+  if (record.class === 'inline') {
+    text = utf8Decode(record.data).slice(0, FILE_DESCRIPTION_EXTRACT_MAX_CHARS);
+  } else {
+    text = await extractBinaryFileTextForDescription(record, FILE_DESCRIPTION_EXTRACT_MAX_CHARS);
+  }
+  if (!text) { if (onStatus) onStatus('failed'); return; }   
+
+  const description = await runBackgroundTask('description de fichier…', () => silentCompletion([
+    { role: 'system', content: FILE_DESCRIPTION_PROMPT },
+    { role: 'user', content: text },
+  ], { temperature: 0.2, timeout: 60000 }));
+  if (!description) { if (onStatus) onStatus('failed'); return; }
+
+  record.description = capFileDescription(description);
+  try {
+    await putResource(record);
+    if (onStatus) onStatus('done');
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] describeFileIfNeeded:', e && e.message);
+    if (onStatus) onStatus('failed');
+  }
+}
+
 function backfillMessageModels() {
   
   const model = activeApiConfig().model;
@@ -9888,6 +10508,7 @@ function init() {
 
   migrateSpacesIfNeeded();   
   activeSpaceId = getActiveSpaceId();   
+  loadSpaceLibrary(activeSpaceId);   
   syncSpaceUI();
   loadApiServers();   
   const s = loadSettings();

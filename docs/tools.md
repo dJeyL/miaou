@@ -2,7 +2,7 @@
 
 ## Registre d'outils
 
-Dix outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+Treize outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur.
 
 **Lecture de l'historique :**
@@ -105,6 +105,96 @@ description **du registre** — ne jamais la coder en dur.
   distant. Pousse un ack `skill_read` (informatif, sans undo) — nom du skill stocké
   dans `title` (pas `name` : `onEnrichLastAck` écrase `name` avec le nom canonique
   de l'outil pour la réinjection cross-turn).
+
+**Bibliothèque de fichiers d'espace (lot Cbis, read-only v1) :**
+- `files__list()` — entrées de la bibliothèque de l'**espace actif uniquement**
+  (`getCachedLibraryEntriesBySpace(activeSpaceId)`, cache session unifié avec
+  les attachments — cf. `docs/storage.md`) : `{ id: file-<id>, name, mime,
+  size, source }`. Pas de pagination v1. Pousse un ack `files_list` (informatif,
+  sans undo, icône `ICON_LIST` réutilisée de `skill_list`/`conversation_list`).
+- `files__read(id)` — `id` = `file-<id>` (obtenu via `files__list`, cf.
+  `libraryRefFromId`/`parseLibraryRef`, resources.js). Handler **synchrone**,
+  lookup `getCachedRecord(parseLibraryRef(id))` puis vérification
+  `record.kind === 'library' && record.spaceId === activeSpaceId` — même
+  posture no-oracle que `get_conversation`/`update_memory` : id malformé,
+  inconnu, ou d'un **autre Space** répondent tous « Fichier introuvable. »,
+  aucune distinction de message. Comportement par mime : **texte** (`class ===
+  'inline'`) → contenu en clair (`utf8Decode`, mêmes caps que lot A) ; **image**
+  → soumise au flag vision `serverModelVisionEnabled(activeApiServer(),
+  activeModel())` — sur un modèle sans vision, posture explicite (« ne peut pas
+  être présenté… pas de capacité de vision »), jamais de placeholder muet ; v1
+  ne ré-injecte pas les pixels depuis cet outil (contrairement à
+  `recall_attachment` — pas de besoin identifié pour l'instant, même mécanisme
+  transposable si un besoin se confirme) ; **binaire** (PDF/Office/zip) →
+  descripteur + renvoi explicite vers les outils mcp_docs (le modèle enchaîne
+  via `files__read` puis les outils de lecture de documents, comme pour un
+  attachment de message). Pousse un ack `files_read` (informatif, sans undo,
+  icône `ICON_BOOK` réutilisée de `skill_read`).
+- **Nom d'outil avec double underscore interne** (`files__list`/`files__read`,
+  comme `skills__list`/`skills__read`) : `parseToolName` (utils.js) splitte sur
+  le **premier** `__` seulement, donc le nom exposé au modèle
+  (`miaou__files__list`) reste sans ambiguïté (`serverPrefix='miaou'`,
+  `toolName='files__list'`). **Piège en test/debug direct** : appeler
+  `callTool('files__list', …)` **sans** le préfixe `miaou__` route à tort vers
+  un serveur MCP distant nommé `files` (le split se ferait alors sur `files` /
+  `list`) — toujours tester/appeler avec le nom complet `miaou__files__list`
+  (cf. `tests/test-tools.js`, même piège déjà présent pour `skills__*`).
+- **Hook d'inflation généralisé (§4 audit Cbis)** : la lecture d'un fichier
+  binaire de bibliothèque passe par `callDocsInflatedRemoteTool` (tools.js),
+  **le même hook que pour les attachments de message** (brief H), pas un
+  second mécanisme. Généralisation : `_resolveInflationRef(ref)` reconnaît
+  `att-N` (résolution par `getCachedRecordByAttId`, conversation-scopée) OU
+  `file-<id>` (résolution par `getCachedRecord` + vérification `spaceId`,
+  Space-scopée) et renvoie un objet `{ record, sessionId, isPushed, markPushed
+  }` uniforme ; deux tables d'état poussé distinctes (`_attachmentPushState`
+  clé `(conversationId, attId)`, `_filePushState` clé `(spaceId, fileId)`) —
+  pas de format de clé partagé entre les deux familles de refs. `session_id`
+  reste **toujours** la conversation courante, même pour un fichier d'espace
+  (le serveur mcp_docs ne connaît que des sessions de conversation) : un
+  fichier lu depuis une conversation est poussé dans LA session de cette
+  conversation — pas de partage de session inter-conversation pour un fichier
+  (dette assumée, cf. `docs/mcp.md`).
+
+**Promotion vers la bibliothèque d'espace (lot Cbis, D2 path 3, écriture
+model-side unique sur la bibliothèque) :**
+- `files__promote(ref, description, name?)` — copie une pièce jointe du tour
+  courant (`ref` = `att-N`) dans la bibliothèque du Space actif. `description`
+  **obligatoire** (le point de la promotion depuis le contexte est que le
+  contenu est déjà lu — pas de résumé de ce contenu, une description de ce
+  que le fichier EST, cf. `docs/spaces.md`) ; `name` optionnel
+  (défaut : nom du fichier d'origine). Handler **asynchrone** (copie via
+  `storeLibraryFile`, resources.js, IDB) : validation des paramètres extraite
+  en fonction PURE `validateFilesPromoteArgs` (tools.js) car un handler async
+  renvoie toujours un thenable — même sur un retour anticipé avant tout
+  `await` — donc jamais résolu synchrone par `callTool` sous QuickJS ; la
+  validation doit être testée séparément (cf. `tests/test-tools.js`).
+  `ref` inconnu/périmé → « Fichier introuvable. » (même posture no-oracle que
+  `files__read`). Copie = nouveau record `kind:'library'`, `source =
+  currentConvId` (provenance) ; l'attachment d'origine reste intact (D2
+  semantics). Pousse un ack `file_promote` (informatif, **pas d'undo** —
+  la promotion est déjà consent-gated en amont, un undo confondrait
+  consentement et réversibilité).
+- **Consentement — voie B, PAS de généralisation du halting (décision Cbis-4,
+  revient sur l'audit §5 après relecture du mécanisme réel).** `files__promote`
+  n'est **jamais** un outil halting : `toolIsHalting` reste câblé
+  exclusivement sur `ask_confirmation`, aucune modification du primitif
+  partagé. Le gate est **doctrinal** : `FILES_DOCTRINE` (tools.js, partie
+  inconditionnelle de `ROOT_SYSTEM_PROMPT`, comme `MEMORY_DOCTRINE`) prescrit
+  au modèle d'appeler `ask_confirmation` avec un récapitulatif (nom, type,
+  taille, description proposée) **avant** tout appel à `files__promote`, puis
+  de rappeler avec le **même** `ref`/`description` sur confirmation positive —
+  exactement le patron déjà éprouvé pour `create_memory` sur le chemin inféré
+  mémoire
+  (le modèle rappelle un AUTRE outil après le « Oui », jamais lui-même).
+  Pourquoi la voie A (généraliser `toolIsHalting`, `files__promote` lui-même
+  halting-puis-exécutant) a été écartée : elle aurait introduit un patron
+  inédit — aucun outil existant ne s'auto-rappelle en mode
+  halting-puis-exécutant — sur un primitif partagé avec `ask_confirmation`/les
+  skills, pour un gain de robustesse marginal (le gate doctrinal est déjà le
+  modèle de confiance accepté pour `create_memory`). Conséquence assumée : rien
+  n'empêche techniquement un modèle indiscipliné d'appeler `files__promote`
+  sans passer par `ask_confirmation` au préalable — le gate n'est pas un
+  verrou, c'est une doctrine, comme pour la mémoire inférée.
 
 **Confirmation avant écriture (chemin inféré — fait non explicitement demandé) :**
 - `ask_confirmation(question)` — outil **halting** : `runConversation` s'arrête

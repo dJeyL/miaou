@@ -210,5 +210,77 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       en conséquence (« pas lisible directement, sauf si un outil d'extraction
       est disponible ») plutôt que de rester catégorique comme avant le lot D.
 
+13. **Généralisation du hook d'inflation aux fichiers de bibliothèque d'espace
+    (lot Cbis, `files__read` — §4 audit).** Le hook du point 12 était câblé en
+    dur sur la forme `att-N` (regex, cache par `attId`+`conversationId`, clé de
+    push `(conversationId, attId)`) : un `file-<id>` d'espace ne passait aucune
+    des trois conditions. Généralisation, **pas de second hook** :
+    - `_resolveInflationRef(ref)` (tools.js) reconnaît `ATTACHMENT_REF_RE`
+      (`att-N`) OU `FILE_REF_RE` (`file-<id>`, même forme que
+      `LIBRARY_REF_RE`/resources.js) et renvoie un objet uniforme `{ record,
+      sessionId, isPushed, markPushed }` — `callDocsInflatedRemoteTool` ne
+      connaît plus la forme de la ref, seulement ce contrat.
+    - `att-N` → résolution par `getCachedRecordByAttId(ref, currentConvId)`
+      (conversation-scopée, inchangé) ; `file-<id>` → `parseLibraryRef(ref)`
+      puis `getCachedRecord(recordId)` (cache session **unifié** avec les
+      attachments) suivi d'une vérification `record.kind === 'library' &&
+      record.spaceId === activeSpaceId` — **herméticité** : un fichier d'un
+      autre Space n'est pas résolu, exactement comme s'il était inconnu (pas
+      d'oracle, cf. piège 18).
+    - **Deux tables de push distinctes** : `_attachmentPushState` (clé
+      `(conversationId, attId)`, inchangée) et `_filePushState` (nouvelle, clé
+      `(spaceId, fileId)`) — les deux familles de refs ne partagent jamais un
+      format de clé, aucun risque de collision entre un `attId` et un `fileId`
+      qui se ressembleraient.
+    - `session_id` reste **toujours** = `currentConvId`, même pour un
+      `file-<id>` : le serveur mcp_docs ne connaît que des sessions de
+      conversation (`session_id` keyé sur `conversationId`), pas de notion de
+      session de Space. **Conséquence assumée (dette documentée)** : un
+      fichier d'espace lu depuis la conversation A puis relu depuis la
+      conversation B est poussé (et payé en `content_b64`) **deux fois**, une
+      fois par session de conversation — pas de partage de session
+      inter-conversation pour un fichier de bibliothèque. Le brief H ne
+      promettait pas ce partage ; revisiter seulement si le coût se révèle
+      significatif en usage réel.
+    - `clearAttachmentPushState`/`_filePushState` restent des tables purement
+      en mémoire (comme le reste du hook) : un rechargement de page les vide,
+      cohérent avec la session serveur elle-même éphémère.
+
+14. **Sélection de l'outil de LECTURE de contenu, sans nom en dur (D7, lot
+    Cbis-5 — bug corrigé après retour utilisateur).** Un serveur d'extraction
+    documentaire expose typiquement PLUSIEURS outils déclarant tous
+    `ref`+`content_b64` (structure/lecture/recherche — mcp_docs :
+    `list`/`read`/`search`, les trois partagent le même mécanisme de
+    matérialisation `resolve_ref`). Quand c'est le **modèle** qui choisit
+    l'outil (hook §4/12, `toolDeclaresAttachmentInflation`), il voit les vrais
+    noms et descriptions — aucune ambiguïté, le dispatcher vérifie seulement
+    que l'outil CHOISI PAR LE MODÈLE qualifie. Mais l'extraction D7
+    (description de fichier de bibliothèque, appel **applicatif direct** sans
+    modèle) doit
+    choisir tout seul lequel appeler — bug observé : `findDocsInflationTool()`
+    prenait le premier outil qualifiant du tableau (`docs__list`, listé avant
+    `docs__read` par le serveur), provoquant une erreur ref/contrat du serveur
+    (`list` valide son ref différemment de `read`).
+    - **Signal de contrat retenu** (déjà réel côté mcp_docs, pas une
+      invention) : l'outil de lecture de contenu déclare, en plus de
+      `ref`+`content_b64`, au moins un paramètre de bornage d'extrait
+      (`char_start` ou `line_start` — pagination d'un texte trop long) et
+      **aucun** paramètre `query` (signature d'une recherche, pas d'une
+      lecture). `_declaresContentReadSignature(props)` (tools.js, pure)
+      encode ce critère ; `findDocsInflationTool()` filtre désormais sur
+      `ref && content_b64 && _declaresContentReadSignature(...)`, pas
+      seulement `ref && content_b64`.
+    - **Convention à respecter par tout futur serveur d'extraction
+      documentaire** (brief D/H) : son outil de lecture doit exposer ce
+      signal (`char_start`/`line_start`) pour être reconnu par
+      `findDocsInflationTool` ; un outil de structure/liste ou de recherche ne
+      doit PAS les déclarer, sous peine d'être pris à tort pour l'outil de
+      lecture par cette sélection applicative.
+    - Le hook §4/12 (`toolDeclaresAttachmentInflation`,
+      `callDocsInflatedRemoteTool`) **n'est pas concerné** par ce signal : il
+      continue de vérifier seulement `ref`+`content_b64` sur l'outil que le
+      modèle a explicitement nommé — aucune ambiguïté à lever côté modèle,
+      qui voit le nom réel de l'outil.
+
 Le banc d'essai MCP (`mcp_bench.py`) a été extrait dans le projet
 `miaou-mcp-servers`. Procédure de test manuel : `docs/manual-tests.md`.

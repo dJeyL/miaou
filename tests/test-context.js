@@ -41,6 +41,16 @@ describe('buildContextManifest', function() {
     expect(sources.indexOf('tools_system')).toBe(-1);
     expect(sources.indexOf('intent_doctrine')).toBe(-1);
     expect(sources.indexOf('memories')).toBe(-1);
+    expect(sources.indexOf('space_library')).toBe(-1);
+  });
+
+  it('dp.library non vide → entrée space_library (lot Cbis, D4)', function() {
+    var dp = baseDynParts();
+    dp.library = 'file-abc — doc.txt (text/plain, 1.0 KB)';
+    var m = buildContextManifest(baseSysParts(), dp, [], '', null);
+    var entry = m.entries.filter(function(e) { return e.source === 'space_library'; })[0];
+    expect(entry).toBeTruthy();
+    expect(entry.chars).toBe(dp.library.length);
   });
 
   it('les définitions d\'outils sont mesurées depuis leur JSON, pas depuis les messages', function() {

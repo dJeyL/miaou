@@ -105,11 +105,136 @@ branchés en C2 :
 - **Déplacement de conversation entre Spaces : NON-GOAL v1** (herméticité
   d'abord, cf. non-goals ci-dessous).
 
+## Bibliothèque de fichiers d'espace (lot Cbis)
+
+Non-goal v1 (ci-dessous) **levé** : chaque Space a sa propre bibliothèque de
+fichiers, hermétique comme le reste (piège 18), persistante à travers les
+conversations. Distincte des pièces jointes de message (lot A, `att-N`,
+ephémères — restent inchangées) : la bibliothèque est le chemin persistant.
+
+- **Stockage** : store IDB `resources` réutilisé (pas de store dédié, pas de
+  clé localStorage), discriminant `kind:'library'` + `spaceId`, index `by_space`
+  (IDB v3). Détail complet : `docs/storage.md`.
+- **Ingestion** — trois chemins :
+  1. **Upload direct** depuis l'écran Space (section « Fichiers »,
+     `ingestLibraryFile`, main.js) — mêmes caps que les pièces jointes (image
+     1536px q0.85, texte ≤200 kB inline, binaire tel quel).
+  2. **Promotion utilisateur** : action « Ajouter à la bibliothèque de
+     l'espace » sur un attachment de message déjà envoyé (chip, `.att-promote`,
+     `promoteAttachmentToLibrary`, ui.js) — copie immédiate, pas de gate (déjà
+     une action utilisateur explicite), l'attachment d'origine reste intact.
+  3. **Promotion modèle** via l'outil `miaou__files__promote(ref, description,
+     name?)` — **consent-gated en amont**, voie B (voir ci-dessous).
+- **Accès modèle (lecture)** : `miaou__files__list` / `miaou__files__read`,
+  read-only, scopés au Space actif (`getCachedLibraryEntriesBySpace`), même
+  posture no-oracle que `get_conversation` sur id étranger/inconnu. Lecture
+  binaire routée via le hook d'inflation mcp_docs généralisé (att-N ou
+  file-<id>, cf. `docs/mcp.md`). Détail : `docs/tools.md`.
+- **Contexte** : manifeste compact (`buildLibraryManifestBlock`) injecté dans
+  `<miaou_context>` si la bibliothèque du Space actif est non vide — une ligne
+  d'intro nommant le Space (« Fichiers disponibles dans l'espace X : »), puis
+  une ligne par fichier, description incluse si elle existe. Alimente aussi le
+  context inspector (entrée `space_library`). Détail : pitfalls-detail.md,
+  piège 18.
+- **Consentement de la promotion modèle — voie B (décision Cbis-4).** Le
+  primitif halting existant (`ask_confirmation`) n'est **jamais** auto-rappelé
+  par le même outil dans la base actuelle : le modèle l'appelle, obtient
+  « Oui »/« Non » en texte, puis rappelle un AUTRE outil pour exécuter
+  (`create_memory` sur le chemin inféré mémoire, l'action d'une skill après
+  confirmation). La voie A envisagée initialement (généraliser `toolIsHalting`
+  pour que `files__promote` soit lui-même halting-puis-exécutant) aurait
+  introduit un patron inédit, non éprouvé, sur un primitif partagé — écartée
+  après relecture du mécanisme réel. **Voie B retenue** : `files__promote`
+  reste un outil ordinaire (jamais halting), le gate est **doctrinal**
+  (`FILES_DOCTRINE`, tools.js, toujours injectée dans `ROOT_SYSTEM_PROMPT`) —
+  le modèle doit appeler `ask_confirmation` avec un récapitulatif (nom, type,
+  taille, description proposée) avant tout appel à `files__promote`, et
+  rappeler ensuite avec le MÊME `ref`/`description`. Conséquence assumée : le
+  gate repose
+  sur la discipline du modèle, pas sur un verrou technique côté handler —
+  exactement le même modèle de confiance que pour `create_memory` sur le
+  chemin inféré, pas une régression de posture.
+- **Suppression** : cascade de suppression de Space purge aussi ses fichiers
+  (`getResourcesBySpace` + `deleteResource` par entrée) ; suppression d'une
+  conversation ne touche jamais les fichiers d'espace, y compris ceux promus
+  depuis elle (copiés, provenance informationnelle via `source`).
+- **Non-goals v1 (bibliothèque)** : pas de suppression/mise à jour de fichier
+  par le modèle (seule la promotion est un write model-side), pas de partage
+  inter-Space, pas de versioning/dédup/dossiers/tags/renommage, pas de
+  pagination de `files__list`.
+
+### Descriptions de fichiers (D7, lot Cbis-5)
+
+Transforme le manifeste de métadonnées froides en index sémantique — même
+posture que les résumés de conversation (`summarizeIfNeeded`/
+`miaou-summaries`), pas le même contenu : **ce n'est pas un résumé du
+contenu du fichier**, c'est une description de ce que le fichier EST (nature,
+sujets couverts, structure) pour que le modèle juge s'il doit l'ouvrir
+(`files__read`) avant de s'en servir — un résumé condenserait l'information,
+une description aide à décider de la lire ou non. Revu après retour
+utilisateur (le prompt initial produisait un résumé exploitable seul, pas une
+aide à la décision de lecture).
+
+- **Trigger à l'ingestion, jamais un daemon.** `describeFileIfNeeded(fileId,
+  onStatus, force?)` (main.js) est appelée une fois par fichier :
+  - upload direct (D2 path 1, `onSpaceFilesSelected`) — fire-and-forget après
+    le re-render de la liste, un appel par fichier, indépendants entre eux ;
+  - promotion utilisateur (D2 path 2, `promoteAttachmentToLibrary`) —
+    fire-and-forget, aucun statut par carte affiché immédiatement (pas d'écran
+    Space ouvert à cet instant), visible à la prochaine ouverture ;
+  - **jamais** pour la promotion modèle (D2 path 3, `files__promote`) : la
+    `description` y est déjà fournie par le modèle et stockée telle quelle (A3
+    confirmé), une génération D7 supplémentaire serait un doublon.
+  Pas de queue, pas de retry : un échec laisse le fichier sans description,
+  plus une action manuelle « (re)générer » sur la carte
+  (`onRegenerateFileDescription`, paramètre `force=true` — ignore le toggle ET
+  une description déjà présente).
+- **Extraction** : texte (`class:'inline'`) → contenu déchiffré, tronqué à
+  `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` (8 kB, proposition A5 confirmée) ;
+  binaire → **appel direct** à `mcpRpc` via `findDocsInflationTool()` +
+  `extractBinaryFileTextForDescription()` (tools.js) — **PAS** le hook
+  dispatcher `callDocsInflatedRemoteTool` du §4/D3 : celui-ci est conçu pour un
+  tool_call du **modèle** (pousse un ack visible, dépend d'une conversation en
+  cours), alors qu'une description D7 est une opération applicative en
+  arrière-plan, sans ack, potentiellement hors de toute conversation ouverte
+  (upload direct). `findDocsInflationTool()` reproduit la même détection sans
+  nom en dur (`ref`+`content_b64` déclarés) mais retourne `(server, toolName)`
+  pour un appel `mcpRpc(server, 'tools/call', …)` direct ; `session_id`
+  synthétique `'lib-description-' + fileId` (pas un id de conversation —
+  l'ingestion n'en a pas forcément une). Image → skip v1 systématique (pas de
+  modèle vision dédié, décision D7 actée) — pas d'erreur, juste l'absence de
+  description.
+  **Bug corrigé après retour utilisateur** : un serveur d'extraction expose
+  souvent plusieurs outils déclarant `ref`+`content_b64` (mcp_docs :
+  `list`/`read`/`search`) — le premier trouvé n'est pas forcément celui qui
+  lit du contenu. `findDocsInflationTool()` filtre désormais aussi sur
+  `_declaresContentReadSignature` (présence de `char_start`/`line_start`,
+  absence de `query`), cf. `docs/mcp.md` point 14 pour le détail complet et la
+  convention à respecter par tout futur serveur d'extraction.
+- **Appel de description** : `silentCompletion` + `NOTHINK_PARAMS` (api.js),
+  prompt constant dédié `FILE_DESCRIPTION_PROMPT` (**distinct** de
+  `SUMMARY_PROMPT`, qui cible une conversation en JSON summary+keywords, et
+  sémantiquement distinct d'un résumé — cf. plus haut) — sortie texte libre,
+  cap strict ≤ 2 phrases, interdiction explicite des expressions temporelles
+  relatives (la description atterrit dans le manifeste `<miaou_context>`,
+  byte-stable tant qu'elle ne change pas — piège 18/16). Stockée dans
+  `record.description` via `capFileDescription` (cap dur 240 car., cf.
+  `docs/storage.md`).
+- **Réglage** : `describeFiles` (storage.js `DEFAULT_SETTINGS`, **défaut
+  `true`**, décidé), case dans le drawer réglages (« Descriptions de
+  fichiers »), rejoint `settingsFormDirty`. **Pas de model picker** (décidé) :
+  la génération de description utilise le modèle de chat actif
+  (`activeApiConfig`) — le coût de contention multi-modèle est accepté (YAGNI,
+  revisiter seulement si ça gêne en usage réel).
+- **Statut par carte** (`renderSpaceFilesList`/`setFileDescriptionStatus`,
+  ui.js) : « description en cours… » sur la ligne d'excerpt + bouton désactivé
+  pendant le calcul, puis contenu (`done`) ou retour à l'état neutre avec
+  bouton « Générer une description » (`failed`) — pas de message d'erreur
+  intrusif, cohérent avec la posture « dégradé, jamais bloquant ».
+
 ## Non-goals v1
 
 - Pas de configuration MCP ni de skills par Space (restent globaux).
-- Pas de bibliothèque de fichiers partagée par Space (les pièces jointes
-  restent par message).
 - Pas de déplacement de conversation entre Spaces.
 - Pas d'export/import par Space (l'export global inclut les Spaces, cf.
   `docs/storage.md`).

@@ -39,6 +39,80 @@ function generateResourceId(rand) {
   return 'res_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
 }
 
+// ── Bibliothèque de fichiers d'espace (lot Cbis) — helpers purs ──────────────
+// Réutilise le store `resources` (discriminant `kind:'library'` + `spaceId`),
+// PAS de store dédié ni de clé localStorage (audit Cbis §1, D1 tranché).
+
+// Id de record library, préfixe distinct de `att_`/`res_` (frère de generateResourceId).
+function generateFileId(rand) {
+  return 'file_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
+}
+
+// Ref modèle exposée pour un fichier de bibliothèque : `file-<id>` (tiret,
+// distinct du style interne `file_<hex>` du record). Id = celui du record —
+// pas d'indirection table par conversation comme pour `att-N` (les fichiers
+// sont Space-stables, pas conversation-scopés).
+function libraryRefFromId(id) { return 'file-' + String(id || '').replace(/^file_/, ''); }
+
+const LIBRARY_REF_RE = /^file-([a-z0-9]+)$/;
+// Parse une ref modèle `file-<hex>` → id de record `file_<hex>`, ou null si la
+// forme ne correspond pas (ref étrangère, malformée).
+function parseLibraryRef(ref) {
+  const m = LIBRARY_REF_RE.exec(String(ref || ''));
+  return m ? 'file_' + m[1] : null;
+}
+
+// Cap la description de fichier (D7) : longueur max, pas de troncature en
+// plein mot. Nommée « description », PAS « résumé » : le texte ne condense
+// pas le contenu (ce n'est pas un résumé exploitable directement par le
+// modèle) mais décrit ce que le fichier EST — nature, sujets couverts,
+// structure — pour que le modèle juge s'il doit l'ouvrir (files__read) avant
+// de s'en servir (cf. FILE_DESCRIPTION_PROMPT, api.js).
+const FILE_DESCRIPTION_MAX_CHARS = 512;
+function capFileDescription(str) {
+  const s = String(str || '').trim();
+  if (s.length <= FILE_DESCRIPTION_MAX_CHARS) return s;
+  return s.slice(0, FILE_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
+}
+
+// Normalise un record library aux champs figés du schéma (D1) : présent dès le
+// jour un pour éviter une migration ultérieure de `source`/`description`.
+function normalizeLibraryRecord(rec) {
+  const out = {
+    id: rec.id, spaceId: rec.spaceId, kind: 'library',
+    name: String(rec.name || 'file'), mime: String(rec.mime || 'application/octet-stream'),
+    size: Number(rec.size) || 0, createdAt: rec.createdAt,
+  };
+  if (rec.source) out.source = rec.source;
+  if (rec.description) out.description = capFileDescription(rec.description);
+  return out;
+}
+
+// Manifeste compact de la bibliothèque de fichiers du Space actif (D4, lot
+// Cbis) : une ligne d'intro nommant le Space, puis une ligne par fichier,
+// triée `createdAt` puis `id` (déterministe, byte-stable — même nature que le
+// manifeste de résumés de conversation, piège 18/16). '' si la bibliothèque
+// est vide (pas de bloc, pas d'en-tête creux). La description (D7), si elle
+// existe, est ajoutée sur la MÊME ligne (format A4 confirmé) — jamais de
+// contenu image, seulement métadonnées + description texte. `spaceName`
+// optionnel (Space sans nom résolu, cas limite) : l'intro reste générique.
+function buildLibraryManifestBlock(entries, spaceName) {
+  if (!entries || !entries.length) return '';
+  const sorted = entries.slice().sort(function(a, b) {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  const intro = spaceName
+    ? 'Fichiers disponibles dans l\'espace ' + spaceName + ' :'
+    : 'Fichiers disponibles dans cet espace :';
+  const lines = sorted.map(function(e) {
+    let line = libraryRefFromId(e.id) + ' — ' + e.name + ' (' + e.mime + ', ' + humanSize(e.size) + ')';
+    if (e.description) line += ' — ' + e.description;
+    return line;
+  });
+  return intro + '\n' + lines.join('\n');
+}
+
 // ── Pièces jointes (composer) — helpers purs (QuickJS-testables) ────────────
 // D1 (brief A) : classification kind + allocation d'id conversation-scopée.
 // Constantes ajustables regroupées ici, en un seul endroit.
@@ -351,6 +425,33 @@ function getCachedRecordByAttId(attId, conversationId) {
   return null;
 }
 
+// Entrées de bibliothèque du Space donné, depuis le cache session (même cache
+// unifié que les attachments — pas de second cache, cf. lot Cbis D1). Scan
+// linéaire : nombre de fichiers par Space attendu faible (même hypothèse que
+// getCachedRecordByAttId pour les attachments).
+function getCachedLibraryEntriesBySpace(spaceId) {
+  const out = [];
+  for (const key in _resourceCache) {
+    const rec = _resourceCache[key];
+    if (rec && rec.kind === 'library' && rec.spaceId === spaceId) out.push(rec);
+  }
+  return out;
+}
+
+// Peuple le session cache depuis IDB pour la bibliothèque d'un Space donné.
+// Fire-and-forget (symétrique à loadConversationResources) : appelé à
+// l'ouverture/switch de Space, sans await — contextBlockParts reste synchrone,
+// lit le cache tel qu'il est au moment de l'appel (manifeste éventuellement en
+// retard d'un tick au tout premier rendu après switch, comme les attachments).
+async function loadSpaceLibrary(spaceId) {
+  try {
+    const records = await getResourcesBySpace(spaceId);
+    for (const rec of records) _cacheRecord(rec);
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] loadSpaceLibrary:', e && e.message);
+  }
+}
+
 // ── Helpers de référence ──────────────────────────────────────────────────────
 // Format : "[resource_ref:res_xyz]" — détectable par regex, ne contient pas de ]
 // dans l'id car base36 n'utilise pas ce caractère.
@@ -414,14 +515,24 @@ let _persistenceRequested = false;
 function openResourceDB() {
   if (_resourceDbPromise) return _resourceDbPromise;
   _resourceDbPromise = new Promise(function(resolve, reject) {
-    // v2 : ajout du store `skills` (cf. skills.js). onupgradeneeded est idempotent
-    // (contains-check par store) → migration v1→v2 sans toucher `resources`.
-    const req = indexedDB.open('miaou', 2);
+    // v2 : ajout du store `skills` (cf. skills.js). v3 (lot Cbis) : ajout de
+    // l'index `by_space` sur `resources` existant, pour les fichiers de
+    // bibliothèque d'espace (`spaceId` sur le record, `kind:'library'`).
+    // onupgradeneeded est idempotent (contains-check par store/index) → chaque
+    // palier ne touche que ce qui manque.
+    const req = indexedDB.open('miaou', 3);
     req.onupgradeneeded = function(e) {
       const db = e.target.result;
+      const tx = e.target.transaction;
       if (!db.objectStoreNames.contains('resources')) {
         const store = db.createObjectStore('resources', { keyPath: 'id' });
         store.createIndex('by_conversation', 'conversationId', { unique: false });
+        store.createIndex('by_space', 'spaceId', { unique: false });
+      } else if (e.oldVersion < 3) {
+        const store = tx.objectStore('resources');
+        if (!store.indexNames.contains('by_space')) {
+          store.createIndex('by_space', 'spaceId', { unique: false });
+        }
       }
       if (!db.objectStoreNames.contains('skills')) {
         db.createObjectStore('skills', { keyPath: 'slug' });
@@ -460,6 +571,19 @@ function getResourcesByConversation(convId) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('resources', 'readonly');
       const req = tx.objectStore('resources').index('by_conversation').getAll(convId);
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Fichiers de bibliothèque d'un Space (records `kind:'library'`, cf. lot Cbis).
+// Les attachments n'ont pas de `spaceId` → absents de cet index, jamais mélangés.
+function getResourcesBySpace(spaceId) {
+  return openResourceDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('resources', 'readonly');
+      const req = tx.objectStore('resources').index('by_space').getAll(spaceId);
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
@@ -556,6 +680,34 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
     return record;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] storeAttachment:', e && e.message);
+    return null;
+  }
+}
+
+// Stocke un fichier de bibliothèque d'espace (lot Cbis) dans le store IDB
+// `resources` existant, avec `spaceId` (scoping, cf. getResourcesBySpace) et
+// `kind:'library'` (discriminant vs attachment). `source` optionnel : id de la
+// conversation d'origine si le fichier vient d'une promotion d'attachment
+// (path 2/3), absent pour un upload direct (path 1). `description` optionnel
+// (D7 ou fourni par `files__promote`), toujours passé par `capFileDescription`.
+// Retourne l'enregistrement stocké en cas de succès, null sinon.
+async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand) {
+  const id = generateFileId(rand);
+  const record = {
+    id, spaceId, kind: 'library',
+    class: cls, mime: String(mime || 'application/octet-stream'),
+    name: String(name || 'file'), size: data.byteLength,
+    createdAt: now, data,
+  };
+  if (source) record.source = source;
+  if (description) record.description = capFileDescription(description);
+  try {
+    await putResource(record);
+    _cacheRecord(record);
+    requestPersistence();
+    return record;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] storeLibraryFile:', e && e.message);
     return null;
   }
 }

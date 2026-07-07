@@ -219,6 +219,24 @@
 }
 .msg-attachments:empty { display: none; }
 
+/* Action de promotion vers la bibliothèque d'espace (D2 path 2, lot Cbis) —
+   même gabarit que .att-remove (composer.css), icône ICON_PACKAGE au lieu de
+   la croix. Pas d'arm-then-run : action explicite non destructive, en un clic. */
+.att-promote {
+  display: grid; place-items: center;
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.att-promote:hover { background: var(--surface-3); color: var(--text); }
+.att-promote.done { color: var(--ok); cursor: default; }
+.att-promote svg { width: 14px; height: 14px; }
+
 /* actions « éditer » / « copier » au survol d'une bulle utilisateur, empilées
    verticalement à gauche de la bulle (éditer en haut, copier dessous) */
 .msg-copy-user,

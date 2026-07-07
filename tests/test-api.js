@@ -210,3 +210,18 @@ describe('injectVisionDegradedNote', function() {
     expect(injectVisionDegradedNote(msgs)).toEqual(msgs);
   });
 });
+
+describe('FILE_DESCRIPTION_PROMPT (D7, lot Cbis) — distinct de SUMMARY_PROMPT, no-volatile', function() {
+  it('distinct de SUMMARY_PROMPT (pas le même prompt réutilisé)', function() {
+    expect(FILE_DESCRIPTION_PROMPT === SUMMARY_PROMPT).toBeFalsy();
+  });
+  it('prescrit un cap de deux phrases', function() {
+    expect(FILE_DESCRIPTION_PROMPT.indexOf('DEUX phrases') >= 0).toBeTruthy();
+  });
+  it('interdit les expressions temporelles relatives (no-volatile, KV cache manifeste)', function() {
+    expect(FILE_DESCRIPTION_PROMPT.indexOf('temps relatif') >= 0).toBeTruthy();
+  });
+  it('décrit ce que le fichier EST, pas un résumé de son contenu', function() {
+    expect(FILE_DESCRIPTION_PROMPT.indexOf('PAS un résumé') >= 0).toBeTruthy();
+  });
+});

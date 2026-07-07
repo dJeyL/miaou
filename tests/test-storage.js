@@ -7,6 +7,17 @@ describe('loadSettings (valeurs par défaut)', function() {
     var s = loadSettings();
     expect(s.summaryInjectionMode).toBe('propose');
   });
+  it('describeFiles par défaut à true (D7, lot Cbis)', function() {
+    localStorage.clear();
+    var s = loadSettings();
+    expect(s.describeFiles).toBe(true);
+  });
+  it('describeFiles persiste à false quand explicitement désactivé', function() {
+    localStorage.clear();
+    saveSettings({ describeFiles: false });
+    var s = loadSettings();
+    expect(s.describeFiles).toBe(false);
+  });
 });
 
 describe('saveSettings / loadSettings', function() {
@@ -452,9 +463,13 @@ describe('listAllConversations — expose spaceId', function() {
 });
 
 describe('resolveUserSystemPrompt — description du Space ajoutée après le prompt global (D4 corrigé)', function() {
-  it('concatène description du Space APRÈS le prompt global (jamais un remplacement)', function() {
+  it('concatène description du Space APRÈS le prompt global (jamais un remplacement), avec intro générique sans nom', function() {
     var r = resolveUserSystemPrompt('Prompt global', { description: 'Description du Space' });
-    expect(r).toBe('Prompt global\n\n---\n\nDescription du Space');
+    expect(r).toBe('Prompt global\n\n---\n\nDescription de cet espace :\nDescription du Space');
+  });
+  it('nom d\'espace fourni → intro le nomme', function() {
+    var r = resolveUserSystemPrompt('Prompt global', { name: 'Projet X', description: 'Description du Space' });
+    expect(r).toBe('Prompt global\n\n---\n\nDescription de l\'espace Projet X :\nDescription du Space');
   });
   it('seul le prompt global si le Space n\'a pas de description', function() {
     var r = resolveUserSystemPrompt('Prompt global', { description: '' });
@@ -464,9 +479,9 @@ describe('resolveUserSystemPrompt — description du Space ajoutée après le pr
     var r = resolveUserSystemPrompt('Prompt global', null);
     expect(r).toBe('Prompt global');
   });
-  it('seule la description si pas de prompt global', function() {
+  it('seule la description (avec intro) si pas de prompt global', function() {
     var r = resolveUserSystemPrompt('', { description: 'Description du Space' });
-    expect(r).toBe('Description du Space');
+    expect(r).toBe('Description de cet espace :\nDescription du Space');
   });
   it('chaîne vide si ni Space ni global', function() {
     expect(resolveUserSystemPrompt('', null)).toBe('');
@@ -474,7 +489,7 @@ describe('resolveUserSystemPrompt — description du Space ajoutée après le pr
   });
   it('trim des deux côtés', function() {
     expect(resolveUserSystemPrompt('  global  ', null)).toBe('global');
-    expect(resolveUserSystemPrompt('', { description: '  space  ' })).toBe('space');
+    expect(resolveUserSystemPrompt('', { description: '  space  ' })).toBe('Description de cet espace :\nspace');
   });
 });
 

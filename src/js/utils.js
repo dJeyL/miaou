@@ -592,6 +592,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('memories', 'Souvenirs', dp.memories);
   pushEntry('summaries', 'Résumés injectés', dp.summaries);
   pushEntry('skills_context', 'Contexte skills (autotrigger)', dp.skillsContext);
+  pushEntry('space_library', 'Fichiers d\'espace', dp.library);
 
   if (toolDefsJson) {
     entries.push({

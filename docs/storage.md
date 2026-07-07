@@ -248,11 +248,12 @@
   filtre `c.spaceId === x` réécrit localement. Les résumés (`miaou-summaries`)
   ne portent **pas** de `spaceId` dupliqué : ils scopent via leur conversation
   (jointure sur l'id), cf. `docs/spaces.md` pour le détail des sites branchés.
-- **IndexedDB `miaou`** (ouverte par `resources.js`, **version 2**) : deux object
-  stores. `onupgradeneeded` est idempotent (contains-check par store) → migration
-  v1→v2 transparente, `resources` intact.
+- **IndexedDB `miaou`** (ouverte par `resources.js`, **version 3**) : deux object
+  stores. `onupgradeneeded` est idempotent (contains-check par store/index) →
+  migrations v1→v2→v3 transparentes, `resources` intact à chaque palier.
   - store `skills` (keyPath `slug`, géré par `skills.js`) : voir `docs/skills.md`.
-  - store `resources`, index `by_conversation`. Chaque entrée :
+  - store `resources`, index `by_conversation` **et** `by_space` (v3, lot Cbis —
+    scoping des fichiers de bibliothèque d'espace, cf. ci-dessous). Chaque entrée :
   `{ id, conversationId, class, mime, name, size, data (ArrayBuffer), createdAt }`.
   `class` ∈ `"inline"` (texte/JSON, passé en clair au modèle — `entry.result` de
   l'ack contient le texte brut) | `"binary"` (données opaques — `entry.result` de
@@ -284,6 +285,35 @@
     taille lisible ; son rendu (`"1.5 KB"`, majuscules) diverge du style de
     l'exemple du brief (`"214 kB"`) — écart assumé, pas de second formateur de
     taille ad hoc.
+  - **Bibliothèque de fichiers d'espace (lot Cbis, D1)** : mêmes store
+    `resources` et IDB (pas de store dédié, pas de clé localStorage
+    `miaou-space-files` — décision actée, smallest diff). Discriminant
+    `kind: 'library'` sur le record (absent/`'attachment'` = pièce jointe,
+    comportement inchangé — backfill gratuit, pas de migration de données) ;
+    champ `spaceId` (les attachments gardent `conversationId`, `spaceId`
+    absent — jamais les deux). Enregistrement : `{ id, spaceId, kind:'library',
+    class, mime, name, size, data (ArrayBuffer), createdAt, source?, description?
+    }`. `id` (`file_<base36>`, `generateFileId`, resources.js) — préfixe
+    distinct de `res_`/`att_`. `source` (optionnel) = id de la conversation
+    d'origine si le fichier vient d'une promotion d'attachment (path 2/3),
+    absent pour un upload direct (path 1). `description` (optionnel, D7 ou
+    fournie par `files__promote`) — **PAS un résumé du contenu** : décrit ce
+    que le fichier EST (nature, sujets, structure) pour que le modèle juge
+    s'il doit l'ouvrir (`files__read`), pas ce qu'il contient en détail.
+    Toujours passée par `capFileDescription` (resources.js, cap
+    `FILE_DESCRIPTION_MAX_CHARS` = 240, troncature sans coupure en plein mot).
+    **Ref modèle** = `file-<id>` (tiret, `libraryRefFromId`/`parseLibraryRef`,
+    resources.js) — distinct du style interne `file_<hex>` du record, et
+    **sans indirection table par conversation** comme pour `att-N` : les
+    fichiers sont Space-stables, la ref exposée est directement l'id du
+    record. `getResourcesBySpace(spaceId)` (résultats non filtrés par ordre —
+    le tri `createdAt`→`id` byte-stable, si requis, est à la charge de
+    l'appelant, cf. manifeste D4) lit via l'index `by_space`. `storeLibraryFile`
+    (opération haut-niveau, frère de `storeAttachment`) construit le record et
+    persiste. Cascade de suppression : purge Space (D5) → boucle
+    `getResourcesBySpace` + `deleteResource` par entrée ; suppression de
+    conversation ne touche **jamais** les fichiers d'espace, y compris promus
+    (ils ont été copiés, provenance informationnelle).
 
 ## Export / import complet des données (feature E)
 

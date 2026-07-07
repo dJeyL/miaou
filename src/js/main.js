@@ -147,10 +147,12 @@ function contextBlockParts(matches) {
     summaries: buildSummaryBlock(matches || []),
     memories: buildMemoryEntriesBlock(),
     skillsContext: buildSkillsContextBlock(),
+    library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name),
   };
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs.
+// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs,
+// manifeste de la bibliothèque de fichiers d'espace (D4, lot Cbis).
 // Injecté en préfixe du dernier message utilisateur, pas dans le system message,
 // pour préserver le préfixe stable et permettre le KV cache prefix matching.
 function buildContextBlock(matches) {
@@ -158,6 +160,7 @@ function buildContextBlock(matches) {
   const parts = [dp.contextDateModel];
   if (dp.summaries) parts.push(dp.summaries);
   if (dp.memories) parts.push(dp.memories);
+  if (dp.library) parts.push(dp.library);
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -193,7 +196,13 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
   const global = (globalSystemPrompt || '').trim();
   if (global) parts.push(global);
   const spaceDescription = (space && space.description || '').trim();
-  if (spaceDescription) parts.push(spaceDescription);
+  if (spaceDescription) {
+    const spaceName = (space && space.name || '').trim();
+    const intro = spaceName
+      ? 'Description de l\'espace ' + spaceName + ' :'
+      : 'Description de cet espace :';
+    parts.push(intro + '\n' + spaceDescription);
+  }
   return parts.join('\n\n---\n\n');
 }
 
@@ -488,6 +497,7 @@ function onSaveSettings() {
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
     confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
+    describeFiles: $('set-describe-files').checked,
     contextWindow: $('set-contextwindow').value,
   };
   saveSettings(obj);
@@ -891,6 +901,61 @@ async function ingestAttachmentFile(file) {
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
     showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
+    return null;
+  }
+}
+
+// Erreur d'upload direct dans la bibliothèque d'espace (D2 path 1, lot Cbis) —
+// zone dédiée du drawer Space, distincte de composer-attach-error (préoccupation
+// différente, cf. showComposerAttachError).
+function showSpaceFilesError(msg) {
+  const el = $('space-files-error');
+  if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
+}
+function clearSpaceFilesError() {
+  const el = $('space-files-error');
+  if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
+}
+
+// Ingestion d'un fichier de bibliothèque d'espace (D2 path 1, lot Cbis) :
+// mêmes caps/downscale que ingestAttachmentFile (image 1536px q0.85, texte
+// ≤200kB inline-able), mais stocke via storeLibraryFile (kind:'library',
+// spaceId) au lieu de storeAttachment (attId, conversationId) — pas d'attId,
+// pas de conversation, pas de pendingAttachments : chemins distincts,
+// mêmes helpers de traitement bas niveau réutilisés. Pas de résumé à
+// l'ingestion (D7, séparé). Retourne le record stocké ou null (message
+// d'erreur déjà affiché).
+async function ingestLibraryFile(spaceId, file) {
+  if (file.size > ATTACHMENT_MAX_BYTES) {
+    showSpaceFilesError('« ' + file.name + ' » dépasse 10 Mo — fichier ignoré.');
+    return null;
+  }
+  const kind0 = classifyAttachmentKind(file.name, file.type);
+  const now = Date.now();
+  try {
+    if (kind0 === 'image') {
+      const { blob, mime, w, h } = await downscaleImageFile(file);
+      const buf = await blob.arrayBuffer();
+      const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random);
+      if (rec && w && h) { rec.w = w; rec.h = h; await putResource(rec); }
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      return rec;
+    }
+    if (kind0 === 'text') {
+      const text = await readFileAsText(file);
+      const buf = utf8Encode(text);
+      const cls = buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES ? 'binary' : 'inline';
+      const rec = await storeLibraryFile(spaceId, file.type || 'text/plain', file.name, buf, cls, undefined, undefined, now, Math.random);
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      return rec;
+    }
+    const buf = await readFileAsArrayBuffer(file);
+    const rec = await storeLibraryFile(spaceId, file.type || 'application/octet-stream', file.name, buf, 'binary', undefined, undefined, now, Math.random);
+    if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+    return rec;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] ingestLibraryFile:', e && e.message);
+    showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
 }
@@ -1637,6 +1702,59 @@ async function summarizeIfNeeded(id) {
   });
 }
 
+// ── Description de fichier de bibliothèque d'espace (D7, lot Cbis) ─────────
+// Nommée « description », PAS « résumé » : le texte ne condense pas le
+// contenu, il décrit ce que le fichier EST (nature, sujets, structure) pour
+// que le modèle juge s'il doit l'ouvrir (files__read) — cf. FILE_DESCRIPTION_PROMPT.
+// Budget d'extraction pour un binaire routé via mcp_docs (proposition A5,
+// confirmée) : suffisant pour une description ≤2 phrases via NOTHINK, sans
+// solliciter excessivement le modèle actif sur un document volumineux.
+const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
+
+// Trigger à l'INGESTION (upload direct D2 path 1, promotion utilisateur D2
+// path 2), jamais un daemon — pas de queue/retry (D7 : dégradé, jamais
+// bloquant). PAS appelé pour la promotion modèle (D2 path 3, files__promote) :
+// la description y est déjà fournie par le modèle et stockée telle quelle (A3
+// confirmé), cette fonction ne s'applique qu'aux deux chemins SANS
+// description d'origine. Gouverné par le toggle describeFiles (défaut ON) —
+// no-op silencieux si OFF (pas de statut "désactivé" par carte, juste
+// l'absence de description, comme un échec ordinaire). Image : skip v1 (pas
+// de modèle vision dédié, décision D7). `force` (action manuelle
+// "(re)générer" d'une carte, cf. renderSpaceFilesList) : ignore le toggle ET
+// une description déjà présente — sinon (trigger d'ingestion), les deux
+// court-circuitent silencieusement (pas un échec, juste un no-op).
+async function describeFileIfNeeded(fileId, onStatus, force) {
+  if (!force && !loadSettings().describeFiles) return;
+  const record = await getResource(fileId);
+  if (!record || record.kind !== 'library') return;
+  if (!force && record.description) return;
+  if (record.mime && record.mime.startsWith('image/')) return;   // skip v1, pas d'erreur
+
+  if (onStatus) onStatus('loading');
+  let text = null;
+  if (record.class === 'inline') {
+    text = utf8Decode(record.data).slice(0, FILE_DESCRIPTION_EXTRACT_MAX_CHARS);
+  } else {
+    text = await extractBinaryFileTextForDescription(record, FILE_DESCRIPTION_EXTRACT_MAX_CHARS);
+  }
+  if (!text) { if (onStatus) onStatus('failed'); return; }   // pas d'outil qualifiant, ou extraction vide
+
+  const description = await runBackgroundTask('description de fichier…', () => silentCompletion([
+    { role: 'system', content: FILE_DESCRIPTION_PROMPT },
+    { role: 'user', content: text },
+  ], { temperature: 0.2, timeout: 60000 }));
+  if (!description) { if (onStatus) onStatus('failed'); return; }
+
+  record.description = capFileDescription(description);
+  try {
+    await putResource(record);
+    if (onStatus) onStatus('done');
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] describeFileIfNeeded:', e && e.message);
+    if (onStatus) onStatus('failed');
+  }
+}
+
 // ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
 function backfillMessageModels() {
   // Modèle du serveur actif (activeApiConfig, filet legacy inclus) : sur une
@@ -1689,6 +1807,7 @@ function init() {
 
   migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
   activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space (A3) ; défaut DEFAULT_SPACE_ID
+  loadSpaceLibrary(activeSpaceId);   // peuple le session cache library avant le premier envoi (fire-and-forget)
   syncSpaceUI();
   loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
   const s = loadSettings();

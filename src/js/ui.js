@@ -561,6 +561,63 @@ const ACK_KINDS = {
       }
     },
   },
+  // ── Bibliothèque de fichiers d'espace (lot Cbis) ────────────────────────────
+  // Énumération des fichiers de l'espace actif (miaou__files__list) : même
+  // posture que skill_list/conversation_list (lecture, pas d'undo).
+  files_list: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m =>
+      (m.intent ? m.intent + ' : ' : '') + (
+        m.count === 0 ? 'Aucun fichier dans la bibliothèque'
+      : m.count === 1 ? '1 fichier listé'
+      : (m.count != null ? m.count : '?') + ' fichiers listés'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'Aucun fichier dans la bibliothèque'
+        : m.count === 1 ? '1 fichier listé'
+        : (m.count != null ? m.count : '?') + ' fichiers listés';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, countText);
+      } else {
+        el.textContent = countText;
+      }
+    },
+  },
+  // Lecture d'un fichier de bibliothèque (miaou__files__read) : même posture
+  // que skill_read/attachment_recalled (lecture, pas d'undo).
+  files_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Fichier consulté : ' + (m.resourceName || m.id || '?'),
+    renderLabel: (m, el) => {
+      const name = m.resourceName || m.id || '?';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Fichier consulté '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + name));
+        });
+      } else {
+        el.textContent = 'Fichier consulté : ' + name;
+      }
+    },
+  },
+  // Promotion d'une pièce jointe vers la bibliothèque (miaou__files__promote) :
+  // informatif seulement, PAS d'undo — la promotion est déjà consent-gated en
+  // amont (ask_confirmation, voie B), un undo ici confondrait consentement et
+  // réversibilité (brief D2 : « undo n'est pas consentement »).
+  file_promote: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_PACKAGE,
+    label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
+  },
 };
 
 // Wrapper global (testable QuickJS) : résout le label depuis ACK_KINDS.
@@ -1439,10 +1496,13 @@ function attIconSvg() {
 }
 
 // Construit le markup d'un chip d'attachment. `removable` (composer, pré-envoi)
-// ajoute le bouton de retrait ; sinon (bulle envoyée) chip en lecture seule.
+// ajoute le bouton de retrait ; sinon (bulle envoyée) chip en lecture seule
+// SAUF pour l'action de promotion (D2 path 2, lot Cbis), qui n'est pertinente
+// que pour un attachment déjà envoyé (a un conversationId stable) — d'où
+// `conversationId` optionnel en dernier paramètre, absent pour le composer.
 // `thumbSrc` (optionnel) : data URL de vignette déjà résolue par l'appelant
 // (cf. resolveAttachmentThumb) — fallback gracieux vers l'icône si absente.
-function attChipHtml(att, thumbSrc, removable) {
+function attChipHtml(att, thumbSrc, removable, conversationId) {
   const thumb = thumbSrc
     ? `<img class="att-thumb" src="${thumbSrc}" alt="">`
     : attIconSvg();
@@ -1450,14 +1510,48 @@ function attChipHtml(att, thumbSrc, removable) {
     ? `<button class="att-remove" title="Retirer" onclick="removeComposerAttachment('${att.attId}')">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`
     : '';
+  const promoteBtn = (!removable && conversationId)
+    ? `<button class="att-promote" title="Ajouter à la bibliothèque de l'espace" ` +
+      `onclick="promoteAttachmentToLibrary(this, '${att.attId}', '${conversationId}')">${ICON_PACKAGE}</button>`
+    : '';
   return (
     `<span class="att-chip" data-att-id="${att.attId}">` +
     thumb +
     `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
     `<span class="att-size">${humanSize(att.size)}</span>` +
     removeBtn +
+    promoteBtn +
     `</span>`
   );
+}
+
+// Promotion utilisateur d'un attachment de message vers la bibliothèque de
+// l'espace actif (D2 path 2, lot Cbis) : action explicite en un clic, PAS de
+// gate (contrairement à la promotion modèle — c'est déjà un consentement).
+// Copie bytes+méta ; l'attachment d'origine reste intact (mêmes sémantiques
+// que la promotion modèle, storeLibraryFile). Description absente (D7 la
+// génère séparément si le toggle est actif) ; `source` = conversationId
+// d'origine.
+async function promoteAttachmentToLibrary(btn, attId, conversationId) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const record = getCachedRecordByAttId(attId, conversationId);
+  if (!record) { btn.disabled = false; return; }
+  const stored = await storeLibraryFile(
+    activeSpaceId, record.mime, record.name, record.data, record.class,
+    conversationId, undefined, Date.now(), Math.random
+  );
+  if (stored) {
+    btn.classList.add('done');
+    btn.title = 'Ajouté à la bibliothèque de l\'espace';
+    // Trigger D7 fire-and-forget : aucun écran Space ouvert ici pour afficher un
+    // statut par carte (l'utilisateur est dans une conversation) — la
+    // description, si elle aboutit, sera visible à la prochaine ouverture de
+    // l'écran Space.
+    describeFileIfNeeded(stored.id);
+  } else {
+    btn.disabled = false;
+  }
 }
 
 // Résout une vignette d'image depuis le cache session (peuplé par
@@ -1488,7 +1582,7 @@ function renderComposerAttachments() {
 function renderMsgAttachments(attachments, conversationId) {
   if (!attachments || !attachments.length) return '';
   return `<div class="msg-attachments">` +
-    attachments.map(att => attChipHtml(att, resolveAttachmentThumb(att, conversationId), false)).join('') +
+    attachments.map(att => attChipHtml(att, resolveAttachmentThumb(att, conversationId), false, conversationId)).join('') +
     `</div>`;
 }
 
@@ -1759,6 +1853,7 @@ function settingsFormDirty() {
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-save-json').checked !== !!s.saveJsonResponses
     || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse
+    || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
 }
 
@@ -1779,6 +1874,7 @@ function openSettings() {
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
   $('set-confirm-skill-autouse').checked = !!s.confirmSkillAutoUse;
+  $('set-describe-files').checked = s.describeFiles !== false;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
@@ -1972,8 +2068,8 @@ const CTX_PALETTE = {
   root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
   intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a', docs_doctrine: '#c98bf2',
   user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
-  summaries: '#e0955a', skills_context: '#8bc98b', thread: '#4a90d9',
-  attachment_images: '#d9974a',
+  summaries: '#e0955a', skills_context: '#8bc98b', space_library: '#5ac98b',
+  thread: '#4a90d9', attachment_images: '#d9974a',
 };
 
 // Manifeste effectif (B4) : dernier envoi réel s'il existe, sinon simulation
@@ -2325,6 +2421,7 @@ function pickSpace(id) {
   const leaving = currentConvId;
   activeSpaceId = id;
   setActiveSpaceId(id);
+  loadSpaceLibrary(id);   // peuple le session cache library du nouveau Space (fire-and-forget)
   resetToEmpty();
   syncSpaceUI();
   $('space-menu').classList.remove('show');
@@ -2364,6 +2461,8 @@ function openSpaceScreen(id) {
   $('space-delete-title').hidden = isDefault;
   if (!isDefault) syncSpaceDeleteLabel(id);
   renderMemoryList('space-memory-list', id);
+  clearSpaceFilesError();
+  renderSpaceFilesList(id);
   $('space-drawer').classList.add('show');
   $('space-backdrop').classList.add('show');
 }
@@ -2401,32 +2500,41 @@ function onSaveSpaceScreen() {
 // Libellé du bouton de suppression AVEC comptes, posé dès l'ouverture de
 // l'écran (pas seulement recalculé au clic) : l'utilisateur doit voir l'impact
 // avant même d'armer le bouton, pas seulement lire « Supprimer cet espace ».
-function syncSpaceDeleteLabel(id) {
+// Async (lot Cbis) : le compte fichiers vient d'IDB (getResourcesBySpace) —
+// la première peinture peut donc afficher un compte fichiers en retard d'un
+// tick, comme le reste du cache session library (cf. piège 18/CLAUDE.md).
+async function syncSpaceDeleteLabel(id) {
   const btn = $('space-delete-btn');
   if (!btn) return;
   const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
   const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
+  const fileCount = (await getResourcesBySpace(id)).length;
+  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileCount} fichier${fileCount > 1 ? 's' : ''})`;
 }
 
 // Suppression D6 : arm-then-run (même pattern que la poubelle sidebar),
 // cascade = boucle deleteConv sur les conversations du Space + purge des
-// souvenirs scopés ; les souvenirs profile restent intacts. Le default Space
-// n'a pas de bouton (masqué dans openSpaceScreen) — rien à protéger ici.
-function onDeleteSpaceScreen() {
+// souvenirs scopés + purge des fichiers de bibliothèque (lot Cbis, D5) ; les
+// souvenirs profile restent intacts. Le default Space n'a pas de bouton
+// (masqué dans openSpaceScreen) — rien à protéger ici.
+async function onDeleteSpaceScreen() {
   const btn = $('space-delete-btn');
   if (!_spaceScreenId || _spaceScreenId === DEFAULT_SPACE_ID) return;
   const id = _spaceScreenId;
   const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
   const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''})`;
-  armThenRun(btn, () => {
+  const fileEntries = await getResourcesBySpace(id);
+  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileEntries.length} fichier${fileEntries.length > 1 ? 's' : ''})`;
+  armThenRun(btn, async () => {
     const wasActive = id === activeSpaceId;
     for (const c of loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id)) {
       deleteConv(c.id);
     }
     for (const m of loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id)) {
       forgetMemory(m.id);
+    }
+    for (const f of await getResourcesBySpace(id)) {
+      await deleteResource(f.id);
     }
     deleteSpaceEntry(id);
     closeSpaceScreen();
@@ -3424,6 +3532,120 @@ function promoteMemoryEntry(id, containerId, scope) {
   e.scope = 'profile';
   persistMemories(arr);
   renderMemoryList(containerId, scope);
+}
+
+// ── Bibliothèque de fichiers d'espace (D6, lot Cbis) ─────────────────────────
+// Frère de renderMemoryList : composants de carte réutilisés (mem-item/
+// mem-header/mem-sub/mem-excerpt, drawers.css), pas de duplication de style.
+// Async (getResourcesBySpace lit IDB) — appelée fire-and-forget par
+// openSpaceScreen, comme loadSpaceLibrary. Tri createdAt→id, même ordre
+// déterministe que le manifeste de contexte (Cbis-2).
+async function renderSpaceFilesList(spaceId) {
+  const wrap = $('space-files-list');
+  if (!wrap) return;
+  const entries = (await getResourcesBySpace(spaceId)).slice()
+    .sort((a, b) => (a.createdAt !== b.createdAt ? a.createdAt - b.createdAt : String(a.id).localeCompare(String(b.id))));
+  wrap.innerHTML = '';
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Aucun fichier dans la bibliothèque de cet espace.';
+    wrap.appendChild(empty);
+    return;
+  }
+  for (const e of entries) {
+    const item = document.createElement('div');
+    item.className = 'mem-item';
+    item.dataset.id = e.id;
+    const provenanceBadge = e.source ? '<span class="mem-sub"> · promu depuis une conversation</span>' : '';
+    const descriptionLine = `<div class="mem-excerpt file-description-line" id="file-description-${e.id}">${e.description ? escHtml(e.description) : ''}</div>`;
+    item.innerHTML =
+      `<div class="mem-header"><div class="mem-meta">` +
+      `<div class="mem-sub">${escHtml(e.mime)} · ${escHtml(humanSize(e.size))}${provenanceBadge}</div>` +
+      `</div></div>` +
+      `<div class="mem-content">${escHtml(e.name)}</div>` +
+      descriptionLine +
+      `<div class="drawer-btns" id="file-btns-${e.id}">` +
+      `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? '(re)générer' : 'Générer une description'}</button>` +
+      `<button class="drawer-btn danger" onclick="onDeleteSpaceFile(this,'${e.id}','${spaceId}')">Supprimer</button>` +
+      `</div>`;
+    wrap.appendChild(item);
+  }
+}
+
+// Statut de description par carte (D7) : « description en cours… » pendant le
+// calcul, puis contenu (done) ou message d'échec discret (failed) — précédent
+// setMemItemLoading, mais ciblé sur les deux zones (excerpt + bouton) plutôt
+// qu'un seul bouton, pour afficher le résultat sans re-render complet.
+function setFileDescriptionStatus(fileId, status, description) {
+  const line = $('file-description-' + fileId);
+  const btns = $('file-btns-' + fileId);
+  const btn = btns ? btns.querySelector('.drawer-btn:not(.danger)') : null;
+  if (status === 'loading') {
+    if (line) line.textContent = 'description en cours…';
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+  } else if (status === 'done') {
+    if (line) line.textContent = description || '';
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '(re)générer'; }
+  } else if (status === 'failed') {
+    if (line) line.textContent = '';
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Générer une description'; }
+  }
+}
+
+// Action manuelle "(re)générer" — force le calcul même si le toggle est OFF
+// ou qu'une description existe déjà (contrairement au trigger d'ingestion).
+async function onRegenerateFileDescription(btn, fileId, spaceId) {
+  await describeFileIfNeeded(fileId, (status) => {
+    if (status === 'done') {
+      getResource(fileId).then(rec => setFileDescriptionStatus(fileId, 'done', rec && rec.description));
+    } else {
+      setFileDescriptionStatus(fileId, status);
+    }
+  }, true);
+}
+
+function onSpaceFilesUploadClick() {
+  const input = $('space-file-input');
+  if (input) { input.value = ''; input.click(); }
+}
+
+// Upload direct (D2 path 1) : mêmes caps que le composer (ingestLibraryFile,
+// main.js), mais aucune notion d'attId/conversation ici — chaque fichier
+// rejoint directement la bibliothèque du Space ouvert dans l'écran.
+async function onSpaceFilesSelected(input) {
+  const files = Array.from(input.files || []);
+  if (!files.length || !_spaceScreenId) return;
+  clearSpaceFilesError();
+  const spaceId = _spaceScreenId;
+  const stored = [];
+  for (const file of files) {
+    const rec = await ingestLibraryFile(spaceId, file);
+    if (rec) stored.push(rec);
+  }
+  await renderSpaceFilesList(spaceId);
+  // Trigger D7 après le re-render (statut par carte visible dès le premier tick) :
+  // fire-and-forget, chaque fichier indépendant (pas de blocage séquentiel).
+  for (const rec of stored) {
+    describeFileIfNeeded(rec.id, (status) => {
+      if (status === 'done') {
+        getResource(rec.id).then(r => setFileDescriptionStatus(rec.id, 'done', r && r.description));
+      } else {
+        setFileDescriptionStatus(rec.id, status);
+      }
+    });
+  }
+}
+
+// Suppression d'un fichier de bibliothèque : arm-then-run (même pattern que
+// la poubelle sidebar/mémoire), pas de tombstone — le brief D6 ne prévoit pas
+// de restauration (non-goal v1, mirror de C).
+function onDeleteSpaceFile(btn, id, spaceId) {
+  armThenRun(btn, async () => {
+    await deleteResource(id);
+    renderSpaceFilesList(spaceId);
+    if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
+  });
 }
 
 function startEditMemoryEntry(id) {

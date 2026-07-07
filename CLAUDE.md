@@ -99,7 +99,9 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `onImportFileSelected`, `onAttachClick`, `onAttachFilesSelected`,
   `onComposerDragOver`, `onComposerDragLeave`, `onComposerDrop`, `onComposerPaste`,
   `removeComposerAttachment`, `toggleSpaceMenu`, `closeSpaceScreen`,
-  `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`, …). Le bouton « Enregistrer »
+  `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`,
+  `promoteAttachmentToLibrary`, `onSpaceFilesUploadClick`, `onSpaceFilesSelected`,
+  `onDeleteSpaceFile`, `onRegenerateFileDescription`, …). Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Il est désactivé tant que le
   formulaire ne diverge pas des réglages persistés (`settingsFormDirty`,
@@ -171,14 +173,23 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
     appartient-elle au Space actif ? » — sidebar, recherche, `list_conversations`/
     `get_conversation`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
-    (via `scope`). Jamais un filtre `c.spaceId === x` réécrit localement.
+    (via `scope`), **fichiers de bibliothèque d'espace** (`getResourcesBySpace`/
+    `getCachedLibraryEntriesBySpace`, filtre `spaceId === activeSpaceId`, lot Cbis).
+    Jamais un filtre `c.spaceId === x` réécrit localement.
     `get_conversation`/`update_memory`/`delete_memory` sur un id hors-Space
-    répondent comme **inexistant** (pas d'oracle). Changer de Space actif
-    change le prompt système effectif : `description` du Space (pas un
-    system prompt) est **ajoutée après** le prompt système utilisateur global
-    (`resolveUserSystemPrompt`, brief D4 — concaténation, jamais substitution)
-    — **assumé** : ça casse le préfixe KV cache (piège 16), mais reste
-    statique tant qu'on ne change pas de Space.
+    répondent comme **inexistant** (pas d'oracle) ; même posture pour
+    `files__list`/`files__read` sur un `file-<id>` étranger ou inconnu (lot Cbis).
+    Changer de Space actif change le prompt système effectif : `description` du
+    Space (pas un system prompt) est **ajoutée après** le prompt système
+    utilisateur global (`resolveUserSystemPrompt`, brief D4 — concaténation,
+    jamais substitution) — **assumé** : ça casse le préfixe KV cache (piège 16),
+    mais reste statique tant qu'on ne change pas de Space. Le **manifeste de
+    bibliothèque de fichiers** (`buildLibraryManifestBlock`, injecté dans
+    `<miaou_context>` via `contextBlockParts().library`, lot Cbis) est de même
+    nature : byte-stable tant que la bibliothèque du Space actif ne change pas
+    (tri `createdAt`→`id` déterministe), casse le prefix KV cache à chaque
+    ajout/suppression/atterrissage de description de fichier (PAS un résumé
+    du contenu — cf. `docs/spaces.md`) — assumé, comme un changement de Space.
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
     `role:'tool'` (brief A2, D3).** Un `recall_attachment` sur une image ne
     remet PAS les pixels dans le résultat de l'outil (`role:'tool'` textuel) :

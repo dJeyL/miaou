@@ -129,6 +129,31 @@ const MEMORY_DOCTRINE =
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
+// Doctrine de déclenchement pour la bibliothèque de fichiers d'espace (lot Cbis,
+// D2 path 3). Voie B (décision Cbis-4, revient sur A0.2 après relecture du
+// primitif halting existant) : PAS de généralisation du halting — ask_confirmation
+// est réutilisé tel quel, comme pour le chemin inféré mémoire ou les skills.
+// Le gate repose donc sur la discipline du modèle (cette doctrine), pas sur un
+// verrou technique côté handler — même modèle de confiance que MEMORY_DOCTRINE.
+const FILES_DOCTRINE =
+  "Doctrine de déclenchement pour miaou__files__promote (bibliothèque de fichiers " +
+  "de l'espace) :\n\n" +
+  "N'appelle JAMAIS miaou__files__promote directement. Si tu identifies qu'une " +
+  "pièce jointe du tour courant (att-N) mériterait d'être conservée dans la " +
+  "bibliothèque persistante de l'espace (contenu de référence, réutilisable au-delà " +
+  "de cette conversation), appelle d'abord ask_confirmation avec une question qui " +
+  "inclut LITTÉRALEMENT le nom du fichier, son type, sa taille approximative, et la " +
+  "description que tu proposes de stocker (ce que le fichier EST, pas son contenu) : " +
+  "« Tu veux que j'ajoute « nom_fichier » à la bibliothèque de l'espace, avec cette " +
+  "description : « … » ? ».\n\n" +
+  "SEULEMENT si l'utilisateur confirme positivement au tour suivant, appelle " +
+  "miaou__files__promote(ref, description, name?) avec le MÊME ref, description et " +
+  "name (si fourni) que ceux annoncés dans la question — ne reformule pas la " +
+  "description entre la question et l'appel. Ne JAMAIS affirmer avoir ajouté un " +
+  "fichier à la bibliothèque si tu n'as pas appelé miaou__files__promote avec " +
+  "succès dans ce même tour. Si l'utilisateur décline, n'appelle pas l'outil et " +
+  "n'insiste pas.";
+
 // Doctrine docs (brief H) : injectée SEULEMENT si un outil du registre distant
 // déclare le contrat ref+content_b64 (anyToolDeclaresAttachmentInflation) —
 // zéro pollution des setups sans serveur d'extraction. Nommage par CRITÈRE
@@ -150,10 +175,10 @@ function docsDoctrinePrompt() {
 }
 
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
-// Compose les cinq doctrines ; référencé par buildSystemMessage() (main.js).
+// Compose les six doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
-  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE;
+  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE;
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
@@ -241,6 +266,18 @@ function clearPendingToolBlocks() { _pendingToolBlocks = []; }
 // Filtre in-place _pendingToolBlocks (appelé par internResourcesFromResult pour
 // retirer les blocs D8 dont le stockage IDB prend le relais).
 function retainPendingToolBlocks(keepFn) { _pendingToolBlocks = _pendingToolBlocks.filter(keepFn); }
+
+// Validation pure des arguments de files__promote (lot Cbis) — extraite du
+// handler (async, non testable synchrone via callTool/QuickJS, cf. pattern
+// callInternalTool : un handler async renvoie TOUJOURS un thenable, même sur
+// un retour anticipé avant le premier await) pour rester couverte par les
+// tests QuickJS. Retourne un message d'erreur si invalide, '' sinon.
+function validateFilesPromoteArgs(args) {
+  const ref = String((args && args.ref) || '');
+  const description = String((args && args.description) || '').trim();
+  if (!ref || !description) return 'Paramètres invalides (ref et description requis).';
+  return '';
+}
 
 // ── Registre MCP interne ─────────────────────────────────────────────────────
 // Forme canonique : { name, description, inputSchema (JSON Schema), annotations,
@@ -476,6 +513,108 @@ const TOOLS = [
       }
       return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
         ' — contenu non lisible directement.';
+    },
+  },
+  {
+    name: 'files__list',
+    description:
+      "Liste les fichiers de la bibliothèque de l'espace actif (id, nom, type, " +
+      "taille, provenance). Utiliser avant files__read pour retrouver l'identifiant " +
+      "d'un fichier (file-N).",
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: () => {
+      // Herméticité (piège 18, lot Cbis) : bibliothèque du Space actif SEULEMENT.
+      // activeSpaceId est une global de main.js — accès défensif (tools.js aussi
+      // évalué seul par le test runner), même pattern que get_conversation.
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const entries = getCachedLibraryEntriesBySpace(spaceId);   // resources.js (chargé avant)
+      const light = entries.map(e => ({
+        id: libraryRefFromId(e.id), name: e.name, mime: e.mime, size: e.size,
+        source: e.source || null,
+      }));
+      _pendingToolAcks.push({ kind: 'files_list', count: light.length });
+      return JSON.stringify(light);
+    },
+  },
+  {
+    name: 'files__read',
+    description:
+      "Lit un fichier de la bibliothèque de l'espace actif par son identifiant " +
+      "(file-N, obtenu via files__list). Un fichier texte est renvoyé en clair ; " +
+      "un binaire (PDF, Office, zip…) est routé vers les outils d'extraction de " +
+      "documents ; une image est soumise à la capacité de vision du modèle actif.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Identifiant du fichier (file-N)' },
+      },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const recordId = parseLibraryRef(String(args.id || ''));   // resources.js
+      if (!recordId) return 'Fichier introuvable.';
+      const record = getCachedRecord(recordId);   // resources.js — cache session unifié
+      // Foreign-Space ou id inconnu → même posture no-oracle que get_conversation/mémoires.
+      if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return 'Fichier introuvable.';
+      _pendingToolAcks.push({ kind: 'files_read', id: args.id, resourceName: record.name, mime: record.mime });
+      if (record.mime && record.mime.startsWith('image/')) {
+        const model = typeof activeModel === 'function' ? activeModel() : '';
+        const server = typeof activeApiServer === 'function' ? activeApiServer() : null;
+        if (!serverModelVisionEnabled(server, model)) {
+          return 'Ce contenu (image) ne peut pas être présenté à ce modèle (pas de capacité de vision).';
+        }
+        // Pas de placeholder muet, mais pas non plus de ré-injection de pixels ici :
+        // v1 se limite à la posture explicite ; la ré-injection suivrait le même
+        // mécanisme que recall_attachment si un besoin se confirme (hors scope Cbis-3).
+        return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+          ' — image, capacité de vision présente mais non ré-injectée par cet outil.';
+      }
+      if (record.class === 'inline') return utf8Decode(record.data);
+      // Binaire (PDF/Office/zip…) : routé via le hook d'inflation généralisé
+      // (callDocsInflatedRemoteTool, §4/D3) — le modèle lit via les outils
+      // mcp_docs list/read, comme pour un attachment de message.
+      return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+        ' — contenu binaire, non inlinable directement ; utiliser les outils de lecture de documents (mcp_docs).';
+    },
+  },
+  {
+    name: 'files__promote',
+    description:
+      "Copie une pièce jointe du tour courant (ref att-N) dans la bibliothèque " +
+      "persistante de l'espace actif, avec une description de ce qu'elle contient " +
+      "(pas un résumé de son contenu — ce que le fichier EST, pour qu'un futur " +
+      "appel décide s'il faut le lire). Consentement de l'utilisateur REQUIS au " +
+      "préalable (voir doctrine bibliothèque) : n'appelle cet outil qu'après avoir " +
+      "posé la question via ask_confirmation et reçu une réponse positive.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Identifiant de la pièce jointe du tour courant (att-N)' },
+        description: { type: 'string', description: 'Description factuelle de ce que contient le fichier (≤ 2 phrases), pas un résumé de son contenu' },
+        name: { type: 'string', description: 'Nom optionnel (défaut : nom du fichier d\'origine)' },
+      },
+      required: ['ref', 'description'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    handler: async (args) => {
+      const invalid = validateFilesPromoteArgs(args);
+      if (invalid) return invalid;
+      const ref = String(args.ref || '');
+      const description = String(args.description || '').trim();
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const record = getCachedRecordByAttId(ref, activeId);   // resources.js — att-N du tour courant
+      if (!record) return 'Fichier introuvable.';   // ref inconnue/périmée, même posture que files__read
+      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const name = args.name ? String(args.name).trim() : record.name;
+      const stored = await storeLibraryFile(   // resources.js — copie, l'attachment d'origine reste intact
+        spaceId, record.mime, name, record.data, record.class, activeId, description, Date.now(), Math.random
+      );
+      if (!stored) return 'Échec de l\'enregistrement dans la bibliothèque.';
+      _pendingToolAcks.push({ kind: 'file_promote', id: libraryRefFromId(stored.id), resourceName: stored.name });
+      return 'Fichier ajouté à la bibliothèque de l\'espace. Identifiant : ' + libraryRefFromId(stored.id);
     },
   },
   {
@@ -906,6 +1045,16 @@ function clearAttachmentPushState(conversationId) {
   }
 }
 
+// Table d'état poussé/non-poussé pour les fichiers de bibliothèque d'espace
+// (lot Cbis, §4) — même principe que ci-dessus mais scopée (spaceId, fileId)
+// plutôt que (conversationId, attId) : un fichier d'espace n'a pas de
+// conversation propre. Table distincte (pas de collision de clé possible avec
+// _attachmentPushState — formats de ref différents, att-N vs file-<id>).
+let _filePushState = {};
+function _filePushStateKey(spaceId, fileId) { return (spaceId || '') + '|' + fileId; }
+function isFilePushed(spaceId, fileId) { return !!_filePushState[_filePushStateKey(spaceId, fileId)]; }
+function markFilePushed(spaceId, fileId) { _filePushState[_filePushStateKey(spaceId, fileId)] = true; }
+
 // Détection de capability SANS nom de serveur en dur (cf. audit lot A) :
 // l'outil distant déclare, dans son inputSchema (issu de tools/list, mis en
 // cache par connectMcpServer), à la fois `ref` et `content_b64` — signature
@@ -924,6 +1073,11 @@ function toolDeclaresAttachmentInflation(server, toolName) {
 // allocateAttId (resources.js).
 const ATTACHMENT_REF_RE = /^att-\d+$/;
 
+// Motif des refs de bibliothèque d'espace (file-<id>, lot Cbis) — même forme
+// que LIBRARY_REF_RE (resources.js), dupliqué ici pour ne pas coupler tools.js
+// au détail interne du parsing (parseLibraryRef fait le travail réel).
+const FILE_REF_RE = /^file-[a-z0-9]+$/;
+
 // Généralisation de toolDeclaresAttachmentInflation (brief H) : balaye TOUT le
 // registre _remoteTools (tous serveurs confondus), sans nom de serveur/outil en
 // dur — même discipline no-hardcode que le prédicat par-outil. Sert à décider
@@ -940,41 +1094,156 @@ function anyToolDeclaresAttachmentInflation() {
   return false;
 }
 
+// Un serveur d'extraction documentaire (brief D/H) expose typiquement PLUSIEURS
+// outils qui déclarent tous `ref`+`content_b64` (structure/lecture/recherche —
+// ex. mcp_docs list/read/search), car les trois partagent le même mécanisme de
+// matérialisation de fichier. Quand c'est le MODÈLE qui choisit l'outil (hook
+// §4, toolDeclaresAttachmentInflation), il voit les vrais noms et description
+// et choisit lui-même — aucune ambiguïté à lever côté client. Mais un appel
+// APPLICATIF direct (D7, ci-dessous) doit choisir tout seul : il lui faut un
+// signal qui distingue « renvoie du contenu texte lisible en continu » de
+// « renvoie une structure » ou « cherche un motif ». Convention de contrat
+// (brief D/H, documentée pour tout futur serveur d'extraction) : l'outil de
+// LECTURE déclare en plus, dans son schéma, au moins un paramètre de bornage
+// de contenu (`char_start` ou `line_start` — pagination d'un extrait) et
+// aucun paramètre `query` obligatoire-par-nature (une recherche). C'est déjà
+// le contrat réel de mcp_docs (`read` déclare char_start/line_start, ni
+// `list` ni `search` ne les déclarent).
+function _declaresContentReadSignature(props) {
+  return !!(props && (props.char_start || props.line_start) && !props.query);
+}
+
+// Trouve le (server, toolName nu) qui déclare le contrat d'inflation ET le
+// signal de lecture de contenu ci-dessus (lot Cbis, D7) — utilisé pour
+// l'extraction binaire d'un résumé de fichier, un appel APPLICATIF direct
+// (pas un tool_call du modèle, aucune conversation en cours). Même discipline
+// no-hardcode que anyToolDeclaresAttachmentInflation : aucun nom de serveur ni
+// d'outil en dur, seulement des signatures de schéma. `getMcpServer`
+// (storage.js) résout l'objet serveur complet depuis son nom ; un serveur peut
+// avoir disparu du registre localStorage entre la connexion et cet appel
+// (désactivé/supprimé) → filtré (server null).
+function findDocsInflationTool() {
+  for (const serverName of Object.keys(_remoteTools)) {
+    const server = getMcpServer(serverName);
+    if (!server) continue;
+    for (const t of _remoteTools[serverName]) {
+      const props = t && t.inputSchema && t.inputSchema.properties;
+      if (props && props.ref && props.content_b64 && _declaresContentReadSignature(props)) {
+        const bareName = t.name.indexOf(serverName + '__') === 0 ? t.name.slice(serverName.length + 2) : t.name;
+        return { server, toolName: bareName };
+      }
+    }
+  }
+  return null;
+}
+
+// Extrait le texte d'un fichier binaire de bibliothèque pour la description D7,
+// via le même contrat d'inflation que le hook dispatcher (§4), mais en appel
+// APPLICATIF direct (mcpRpc, pas callRemoteTool) : aucun ack ne doit apparaître
+// dans un thread (l'ingestion peut survenir hors de toute conversation
+// ouverte, ex. upload direct depuis l'écran Space). `session_id` synthétique
+// dédié (PAS un id de conversation — l'ingestion n'en a pas forcément une) :
+// le serveur mcp_docs traite chaque session comme un répertoire de travail
+// isolé, une valeur stable par fichier suffit à ne pas collisionner. Retourne
+// le texte extrait (tronqué au cap fourni) ou null si aucun outil ne qualifie
+// ou si l'appel échoue (dégradé, jamais bloquant — cf. D7 "pas de queue/retry").
+async function extractBinaryFileTextForDescription(record, maxChars) {
+  const found = findDocsInflationTool();
+  if (!found) return null;
+  try {
+    const result = await mcpRpc(found.server, 'tools/call', {
+      name: found.toolName,
+      arguments: {
+        ref: libraryRefFromId(record.id),
+        content_b64: arrayBufferToBase64(record.data),
+        session_id: 'lib-description-' + record.id,
+      },
+    });
+    const content = (result && Array.isArray(result.content)) ? result.content : [];
+    const text = content.filter(b => b && b.type === 'text').map(b => b.text).join('\n');
+    return text ? text.slice(0, maxChars) : null;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] extractBinaryFileTextForDescription:', e && e.message);
+    return null;
+  }
+}
+
+// Résolution polymorphe d'une ref d'inflation (lot Cbis, généralisation §4) :
+// att-N (conversation-scopé, cache par attId) OU file-<id> (Space-scopé, cache
+// unifié par id de record — herméticité : un fichier d'un autre Space n'est
+// PAS résolu, comme s'il n'existait pas localement). Retourne null si la ref
+// ne correspond à aucune forme reconnue ou si le record est introuvable/hors
+// scope. `pushKey` est la clé de la table d'état poussé adaptée à la forme de
+// ref — les deux tables (_attachmentPushState, _filePushState) restent
+// distinctes, pas de format de clé partagé entre les deux familles de refs.
+function _resolveInflationRef(ref) {
+  if (ATTACHMENT_REF_RE.test(ref)) {
+    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+    const record = getCachedRecordByAttId(ref, activeId);
+    if (!record) return null;
+    return {
+      record, sessionId: activeId,
+      isPushed: () => isAttachmentPushed(activeId, ref),
+      markPushed: () => markAttachmentPushed(activeId, ref),
+    };
+  }
+  if (FILE_REF_RE.test(ref)) {
+    const recordId = parseLibraryRef(ref);   // resources.js (chargé avant)
+    const record = recordId ? getCachedRecord(recordId) : null;
+    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return null;
+    // session_id reste la conversation courante (le serveur mcp_docs ne connaît
+    // que des sessions de conversation) : un fichier d'espace lu depuis une
+    // conversation est poussé dans LA session de CETTE conversation — pas de
+    // partage de session inter-conversation pour un fichier (dette assumée,
+    // le brief H ne le promet pas).
+    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+    return {
+      record, sessionId: activeId,
+      isPushed: () => isFilePushed(spaceId, recordId),
+      markPushed: () => markFilePushed(spaceId, recordId),
+    };
+  }
+  return null;
+}
+
 // Point d'accroche D6 : juste avant callRemoteTool. Si l'outil ciblé déclare le
-// contrat d'inflation ET que args.ref référence un att-N connu de la session
-// courante, injecte SUR LE WIRE UNIQUEMENT — les `args` déjà capturés par
-// l'appelant (callTool) pour la réinjection cross-turn via onEnrichLastAck
-// restent les args ORIGINAUX, non inflés (contexte modèle intact, cf. brief) :
-// - session_id (= conversation id) sur CHAQUE appel : le serveur docs en a
-//   besoin pour localiser son répertoire de session, et le modèle ne connaît
-//   pas l'id de la conversation courante — il ne peut pas le fournir lui-même ;
-// - content_b64 seulement au premier appel pour ce (conversationId, attId)
-//   (table d'état ci-dessus).
+// contrat d'inflation ET que args.ref référence un att-N ou un file-<id> connu
+// (lot Cbis, §4 — généralisation, PAS de duplication du hook), injecte SUR LE
+// WIRE UNIQUEMENT — les `args` déjà capturés par l'appelant (callTool) pour la
+// réinjection cross-turn via onEnrichLastAck restent les args ORIGINAUX, non
+// inflés (contexte modèle intact, cf. brief) :
+// - session_id (= conversation id courante, quelle que soit la forme de ref)
+//   sur CHAQUE appel : le serveur docs en a besoin pour localiser son
+//   répertoire de session, et le modèle ne connaît pas l'id de la conversation
+//   courante — il ne peut pas le fournir lui-même ;
+// - content_b64 seulement au premier appel pour cette ref (table d'état
+//   adaptée à la forme de ref, cf. _resolveInflationRef).
 // Sur erreur REF_UNKNOWN (contenu pas encore matérialisé côté serveur malgré
 // notre état "pushed" — ex. session serveur TTL-expirée), UN seul rejeu avec le
 // contenu inliné, puis on marque poussé si ce rejeu réussit.
 async function callDocsInflatedRemoteTool(server, toolName, args, intent) {
   const ref = args && typeof args.ref === 'string' ? args.ref : null;
-  const capable = ref && ATTACHMENT_REF_RE.test(ref) && toolDeclaresAttachmentInflation(server, toolName);
+  const capable = ref && toolDeclaresAttachmentInflation(server, toolName);
   if (!capable) return callRemoteTool(server, toolName, args, intent);
 
-  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
-  const record = getCachedRecordByAttId(ref, activeId);
-  if (!record) return callRemoteTool(server, toolName, args, intent);   // ref inconnue localement, laisser le serveur répondre
+  const resolved = _resolveInflationRef(ref);
+  if (!resolved) return callRemoteTool(server, toolName, args, intent);   // ref inconnue/hors scope localement, laisser le serveur répondre
 
-  const alreadyPushed = isAttachmentPushed(activeId, ref);
+  const { record, sessionId, isPushed, markPushed } = resolved;
+  const alreadyPushed = isPushed();
   const wireArgs = Object.assign({}, args);
-  if (activeId != null) wireArgs.session_id = activeId;
+  if (sessionId != null) wireArgs.session_id = sessionId;
   if (!alreadyPushed) wireArgs.content_b64 = arrayBufferToBase64(record.data);
   const result = await callRemoteTool(server, toolName, wireArgs, intent);
-  if (!alreadyPushed && !result.isError) { markAttachmentPushed(activeId, ref); return result; }
+  if (!alreadyPushed && !result.isError) { markPushed(); return result; }
   if (alreadyPushed && result.isError && _isRefUnknownError(result)) {
     // Rejeu unique avec contenu inliné (discipline "un seul rejeu", cf.
     // mcpRpc/staleSession). result.ackEntry réutilisé : une seule ligne d'ack
     // pour l'échange complet, l'erreur transitoire s'efface si le rejeu réussit.
     const retryArgs = Object.assign({}, wireArgs, { content_b64: arrayBufferToBase64(record.data) });
     const retryResult = await callRemoteTool(server, toolName, retryArgs, intent, result.ackEntry);
-    if (!retryResult.isError) markAttachmentPushed(activeId, ref);
+    if (!retryResult.isError) markPushed();
     return retryResult;
   }
   return result;

@@ -696,6 +696,175 @@ describe('recall_attachment (D4) — outil registre', function() {
   });
 });
 
+describe('files__list / files__read (lot Cbis) — outils registre', function() {
+  function libRecord(over) {
+    return Object.assign({ id: 'file_a1', spaceId: 'sp1', kind: 'library',
+      class: 'inline', mime: 'text/plain', name: 'doc.txt', size: 5, createdAt: 1 }, over);
+  }
+
+  it('files__list : vide → count 0, JSON []', function() {
+    localStorage.clear();
+    activeSpaceId = 'sp1';
+    try {
+      var r = JSON.parse(ct('miaou__files__list', {}));
+      expect(r.length).toBe(0);
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('files__list : scope au Space actif seul, ignore un autre Space', function() {
+    localStorage.clear();
+    _resourceCache['file_a1'] = libRecord({ spaceId: 'sp1' });
+    _resourceCache['file_b1'] = libRecord({ id: 'file_b1', spaceId: 'sp-other', name: 'other.txt' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = JSON.parse(ct('miaou__files__list', {}));
+      expect(r.length).toBe(1);
+      expect(r[0].id).toBe('file-a1');
+      expect(r[0].name).toBe('doc.txt');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+      delete _resourceCache['file_b1'];
+    }
+  });
+
+  it('files__list : pousse un ack files_list avec le compte', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    _resourceCache['file_a1'] = libRecord();
+    activeSpaceId = 'sp1';
+    try {
+      ct('miaou__files__list', {});
+      var pending = getPendingToolAcks();
+      expect(pending.length).toBe(1);
+      expect(pending[0].kind).toBe('files_list');
+      expect(pending[0].count).toBe(1);
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+    }
+  });
+
+  it('files__read : id manquant/malformé → "Fichier introuvable."', function() {
+    localStorage.clear();
+    expect(ct('miaou__files__read', { id: 'att-1' })).toBe('Fichier introuvable.');
+    expect(ct('miaou__files__read', { id: '' })).toBe('Fichier introuvable.');
+  });
+
+  it('files__read : fichier d\'un autre Space → introuvable (pas d\'oracle)', function() {
+    localStorage.clear();
+    _resourceCache['file_a1'] = libRecord({ spaceId: 'sp-other' });
+    activeSpaceId = 'sp1';
+    try {
+      expect(ct('miaou__files__read', { id: 'file-a1' })).toBe('Fichier introuvable.');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+    }
+  });
+
+  it('files__read : fichier inline du Space actif → contenu en clair', function() {
+    localStorage.clear();
+    var buf = utf8Encode('contenu texte');
+    _resourceCache['file_a1'] = libRecord({ class: 'inline', data: buf });
+    activeSpaceId = 'sp1';
+    try {
+      expect(ct('miaou__files__read', { id: 'file-a1' })).toBe('contenu texte');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+    }
+  });
+
+  it('files__read : fichier binaire → descripteur + renvoi vers mcp_docs, pas le contenu brut', function() {
+    localStorage.clear();
+    _resourceCache['file_a1'] = libRecord({ class: 'binary', mime: 'application/pdf', name: 'a.pdf' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('miaou__files__read', { id: 'file-a1' });
+      expect(r).toContain('mcp_docs');
+      expect(r).toContain('a.pdf');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+    }
+  });
+
+  it('files__read : image sur serveur/modèle sans vision → posture explicite, pas de placeholder muet', function() {
+    localStorage.clear();
+    saveApiServers([{ id: 's1', name: 'A', url: 'http://a/v1', key: '', model: 'no-vision-model', vision: { 'no-vision-model': false } }]);
+    setActiveApiServerId('s1');
+    saveSettings({ model: 'no-vision-model' });
+    _resourceCache['file_a1'] = libRecord({ class: 'binary', mime: 'image/png', name: 'photo.png' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('miaou__files__read', { id: 'file-a1' });
+      expect(r).toContain('vision');
+      expect(r.indexOf('data:image')).toBe(-1);
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+    }
+  });
+
+  it('files__read : pousse un ack files_read avec le nom/mime', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    _resourceCache['file_a1'] = libRecord({ class: 'inline', data: utf8Encode('x') });
+    activeSpaceId = 'sp1';
+    try {
+      ct('miaou__files__read', { id: 'file-a1' });
+      var pending = getPendingToolAcks();
+      expect(pending.length).toBe(1);
+      expect(pending[0].kind).toBe('files_read');
+      expect(pending[0].resourceName).toBe('doc.txt');
+      expect(pending[0].mime).toBe('text/plain');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_a1'];
+    }
+  });
+});
+
+describe('validateFilesPromoteArgs (lot Cbis) — extrait du handler async pour rester testable', function() {
+  it('ref manquant → message d\'erreur', function() {
+    expect(validateFilesPromoteArgs({ description: 'x' })).toContain('invalides');
+  });
+  it('description manquante → message d\'erreur', function() {
+    expect(validateFilesPromoteArgs({ ref: 'att-1' })).toContain('invalides');
+  });
+  it('description vide après trim → message d\'erreur', function() {
+    expect(validateFilesPromoteArgs({ ref: 'att-1', description: '   ' })).toContain('invalides');
+  });
+  it('ref et description présents → chaîne vide (valide)', function() {
+    expect(validateFilesPromoteArgs({ ref: 'att-1', description: 'Une description.' })).toBe('');
+  });
+  it('args absent → invalide, pas de crash', function() {
+    expect(validateFilesPromoteArgs(undefined)).toContain('invalides');
+  });
+});
+
+describe('files__promote — définition d\'outil et doctrine (lot Cbis, voie B)', function() {
+  it('files__promote est dans TOOLS avec ref/description requis', function() {
+    const def = TOOLS.find(t => t.name === 'files__promote');
+    expect(def).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('ref') >= 0).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('description') >= 0).toBeTruthy();
+  });
+  it('FILES_DOCTRINE fait partie de ROOT_SYSTEM_PROMPT (toujours injectée)', function() {
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__files__promote') >= 0).toBeTruthy();
+  });
+  it('FILES_DOCTRINE prescrit ask_confirmation avant tout appel (voie B, pas de généralisation du halting)', function() {
+    expect(FILES_DOCTRINE.indexOf('ask_confirmation') >= 0).toBeTruthy();
+    expect(FILES_DOCTRINE.indexOf('JAMAIS') >= 0).toBeTruthy();
+  });
+  it('toolIsHalting reste exclusivement câblé sur ask_confirmation (pas de régression voie A)', function() {
+    expect(toolIsHalting('files__promote')).toBe(false);
+    expect(toolIsHalting('miaou__files__promote')).toBe(false);
+    expect(toolIsHalting('ask_confirmation')).toBe(true);
+  });
+});
+
 describe('hook d\'inflation dispatcher (brief A, D6) — helpers purs', function() {
   it('toolDeclaresAttachmentInflation : capability détectée via ref+content_b64 déclarés, sans nom de serveur en dur', function() {
     _remoteTools['docstest'] = [{
@@ -739,4 +908,164 @@ describe('hook d\'inflation dispatcher (brief A, D6) — helpers purs', function
     expect(_isRefUnknownError({ isError: true, content: [{ type: 'text', text: 'contient REF_UNKNOWN dans le texte' }] })).toBe(false);
     expect(_isRefUnknownError(null)).toBe(false);
   });
+  it('FILE_REF_RE : reconnaît file-<id>, rejette les autres formes (lot Cbis, généralisation §4)', function() {
+    expect(FILE_REF_RE.test('file-a1b2')).toBe(true);
+    expect(FILE_REF_RE.test('att-1')).toBe(false);
+    expect(FILE_REF_RE.test('file_a1b2')).toBe(false);   // underscore, pas tiret
+    expect(FILE_REF_RE.test('file-')).toBe(false);
+  });
+  it('état poussé/non-poussé fichiers : scopé par (spaceId, fileId), table distincte de _attachmentPushState', function() {
+    expect(isFilePushed('sp1', 'file_a1')).toBe(false);
+    markFilePushed('sp1', 'file_a1');
+    expect(isFilePushed('sp1', 'file_a1')).toBe(true);
+    expect(isFilePushed('sp-other', 'file_a1')).toBe(false);   // autre Space, même fileId
+    expect(isAttachmentPushed('sp1', 'file_a1')).toBe(false);  // tables indépendantes
+  });
+  it('_resolveInflationRef : att-N résout via getCachedRecordByAttId, scopé conversation courante', function() {
+    var ab = new ArrayBuffer(1);
+    _resourceCache['res_x'] = { id: 'res_x', attId: 'att-3', conversationId: 'c1', class: 'binary', mime: 'application/pdf', name: 'x.pdf', data: ab };
+    currentConvId = 'c1';
+    try {
+      var resolved = _resolveInflationRef('att-3');
+      expect(resolved).toBeTruthy();
+      expect(resolved.record.id).toBe('res_x');
+      expect(resolved.sessionId).toBe('c1');
+    } finally {
+      delete _resourceCache['res_x'];
+      currentConvId = null;
+    }
+  });
+  it('_resolveInflationRef : file-<id> résout depuis le cache library, herméticité Space (pas conversation)', function() {
+    _resourceCache['file_z9'] = { id: 'file_z9', spaceId: 'sp1', kind: 'library', class: 'binary', mime: 'application/pdf', name: 'z.pdf', data: new ArrayBuffer(1) };
+    activeSpaceId = 'sp1';
+    currentConvId = 'c-any';
+    try {
+      var resolved = _resolveInflationRef('file-z9');
+      expect(resolved).toBeTruthy();
+      expect(resolved.record.id).toBe('file_z9');
+      expect(resolved.sessionId).toBe('c-any');   // session_id = conversation courante même pour un fichier d'espace
+    } finally {
+      delete _resourceCache['file_z9'];
+      activeSpaceId = DEFAULT_SPACE_ID;
+      currentConvId = null;
+    }
+  });
+  it('_resolveInflationRef : file-<id> d\'un autre Space → null (pas d\'oracle, même hors dispatcher)', function() {
+    _resourceCache['file_z9'] = { id: 'file_z9', spaceId: 'sp-other', kind: 'library', class: 'binary', mime: 'application/pdf', name: 'z.pdf', data: new ArrayBuffer(1) };
+    activeSpaceId = 'sp1';
+    try {
+      expect(_resolveInflationRef('file-z9')).toBe(null);
+    } finally {
+      delete _resourceCache['file_z9'];
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('_resolveInflationRef : ref ne correspondant à aucune forme reconnue → null', function() {
+    expect(_resolveInflationRef('bogus-ref')).toBe(null);
+  });
 });
+
+describe('_declaresContentReadSignature — signal de lecture de contenu (D7)', function() {
+  it('char_start présent, pas de query → lecture', function() {
+    expect(_declaresContentReadSignature({ ref: {}, content_b64: {}, char_start: {} })).toBe(true);
+  });
+  it('line_start présent, pas de query → lecture', function() {
+    expect(_declaresContentReadSignature({ ref: {}, content_b64: {}, line_start: {} })).toBe(true);
+  });
+  it('ni char_start ni line_start → pas lecture (ex. list : structure seule)', function() {
+    expect(_declaresContentReadSignature({ ref: {}, content_b64: {}, path: {}, filename: {} })).toBe(false);
+  });
+  it('char_start présent MAIS query aussi → pas lecture (ex. search)', function() {
+    expect(_declaresContentReadSignature({ ref: {}, content_b64: {}, char_start: {}, query: {} })).toBe(false);
+  });
+  it('props absent/vide → pas lecture', function() {
+    expect(_declaresContentReadSignature(null)).toBe(false);
+    expect(_declaresContentReadSignature({})).toBe(false);
+  });
+});
+
+describe('findDocsInflationTool (D7, lot Cbis) — résolution sans nom en dur', function() {
+  it('aucun serveur/outil qualifiant → null', function() {
+    localStorage.clear();
+    _remoteTools = {};
+    expect(findDocsInflationTool()).toBe(null);
+  });
+  it('un seul outil qualifiant (ref+content_b64+char_start) → résout nom nu et serveur complet', function() {
+    localStorage.clear();
+    saveMcpServers([{ id: 's1', name: 'docstest', url: 'http://x/mcp', enabled: true }]);
+    _remoteTools['docstest'] = [{
+      name: 'docstest__read',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, session_id: {}, char_start: {} } },
+    }];
+    try {
+      var found = findDocsInflationTool();
+      expect(found).toBeTruthy();
+      expect(found.toolName).toBe('read');
+      expect(found.server.name).toBe('docstest');
+    } finally {
+      delete _remoteTools['docstest'];
+    }
+  });
+  it('plusieurs outils qualifiant ref+content_b64 (list/read/search, contrat mcp_docs réel) → choisit CELUI qui lit du contenu, pas le premier du tableau', function() {
+    // Reproduit le bug observé : list (structure) déclarée AVANT read (contenu)
+    // dans le tableau _remoteTools — sans le signal char_start/line_start,
+    // findDocsInflationTool choisissait list à tort (premier qualifiant trouvé).
+    localStorage.clear();
+    saveMcpServers([{ id: 's1', name: 'docs', url: 'http://x/mcp', enabled: true }]);
+    _remoteTools['docs'] = [
+      { name: 'docs__list', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, session_id: {}, path: {}, filename: {} } } },
+      { name: 'docs__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, session_id: {}, path: {}, selector: {}, char_start: {}, char_end: {}, line_start: {}, line_end: {}, filename: {} } } },
+      { name: 'docs__search', description: '', inputSchema: { type: 'object', properties: { ref: {}, query: {}, content_b64: {}, session_id: {}, path: {}, filename: {} } } },
+    ];
+    try {
+      var found = findDocsInflationTool();
+      expect(found).toBeTruthy();
+      expect(found.toolName).toBe('read');
+    } finally {
+      delete _remoteTools['docs'];
+    }
+  });
+  it('serveur disparu du registre localStorage entre connexion et appel → ignoré (pas de crash)', function() {
+    localStorage.clear();   // aucun serveur sauvegardé
+    _remoteTools['ghost'] = [{
+      name: 'ghost__read',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, char_start: {} } },
+    }];
+    try {
+      expect(findDocsInflationTool()).toBe(null);
+    } finally {
+      delete _remoteTools['ghost'];
+    }
+  });
+  it('outil sans content_b64 déclaré → non qualifiant', function() {
+    localStorage.clear();
+    saveMcpServers([{ id: 's1', name: 'partial', url: 'http://x/mcp', enabled: true }]);
+    _remoteTools['partial'] = [{
+      name: 'partial__search',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {}, char_start: {} } },
+    }];
+    try {
+      expect(findDocsInflationTool()).toBe(null);
+    } finally {
+      delete _remoteTools['partial'];
+    }
+  });
+  it('seul outil qualifiant est une structure (list, sans char_start/line_start) → aucun outil de lecture trouvé, null', function() {
+    localStorage.clear();
+    saveMcpServers([{ id: 's1', name: 'liststuff', url: 'http://x/mcp', enabled: true }]);
+    _remoteTools['liststuff'] = [{
+      name: 'liststuff__list',
+      description: '',
+      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, path: {} } },
+    }];
+    try {
+      expect(findDocsInflationTool()).toBe(null);
+    } finally {
+      delete _remoteTools['liststuff'];
+    }
+  });
+});
+

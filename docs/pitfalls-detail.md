@@ -287,6 +287,21 @@ ou au KV cache.
       `update_memory`/`delete_memory` vérifient `existing.scope === activeSpaceId`
       avant d'agir et répondent « Souvenir introuvable. » sinon — même posture
       sans-oracle que `get_conversation`.
+    - **Bibliothèque de fichiers d'espace (lot Cbis)** : `getResourcesBySpace(spaceId)`
+      (resources.js, IDB, index `by_space`) et son miroir synchrone
+      `getCachedLibraryEntriesBySpace(spaceId)` (scan du cache session
+      `_resourceCache`, filtre `rec.kind === 'library' && rec.spaceId === spaceId`)
+      sont les points de scoping. `files__list`/`files__read` (tools.js) filtrent
+      par `spaceId === activeSpaceId` ; un `file-<id>` étranger ou inconnu répond
+      « Fichier introuvable. » — même posture sans-oracle que `get_conversation`/
+      les mémoires (pas de distinction de message entre « existe dans un autre
+      Space » et « n'existe pas »). Suppression d'un Space (`onDeleteSpaceScreen`,
+      ui.js) purge aussi ses fichiers via `getResourcesBySpace` + `deleteResource`
+      par entrée ; suppression d'une conversation ne touche JAMAIS les fichiers
+      d'espace, y compris ceux promus depuis un attachment de cette conversation
+      (ils ont été copiés à la promotion — `deleteResourcesByConversation` filtre
+      par `conversationId`, absent sur un record `kind:'library'`, donc déjà
+      épargné sans logique dédiée).
 
     **Résumé ou souvenir orphelin (conversation/entrée sans Space propre
     retrouvable)** : traité comme appartenant au **default Space** — jamais
@@ -326,6 +341,43 @@ ou au KV cache.
     pas de cas spécial masquant la ligne côté modèle (à la différence du badge
     UI topbar, qui lui masque le default Space — deux décisions indépendantes,
     ne pas les confondre).
+
+    **Manifeste de bibliothèque de fichiers (D4, lot Cbis)** : `contextBlockParts()`
+    gagne un champ `library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name)`
+    (main.js), consommé à la fois par `buildContextBlock()` (injection réelle,
+    ajouté après `memories` dans `<miaou_context>`) et par `buildContextManifest()`
+    (utils.js, entrée `space_library` — même source unique que les autres
+    sous-blocs, pas de second calcul pour le context inspector). `buildLibraryManifestBlock`
+    (resources.js, pure) trie par `createdAt` puis `id` (déterministe, byte-stable),
+    une ligne d'intro nommant le Space (« Fichiers disponibles dans l'espace
+    X : », ou une forme générique si le nom est absent — cf. retour
+    utilisateur : sans elle, le modèle recevait la liste sans savoir qu'elle
+    concernait spécifiquement le Space actif), puis une ligne par fichier
+    `file-<id> — name (mime, size)` + description sur la MÊME ligne si elle
+    existe (format confirmé — **PAS un résumé du contenu**, une description de
+    ce que le fichier EST, cf. `docs/spaces.md`) ; bibliothèque vide → `''`,
+    aucun bloc (pas d'en-tête creux, même logique que les autres sous-blocs, y
+    compris l'intro qui n'apparaît jamais seule). Comme la description de
+    Space (ci-dessus, sens différent du même mot — ne pas confondre : ici
+    « description » qualifie le contenu d'un fichier, plus haut le contexte
+    d'un Space — qui gagne elle aussi une intro nommant le Space, même
+    retour), ce bloc casse le préfixe KV cache à chaque changement (ajout, suppression, ou atterrissage
+    d'une description de fichier D7) — assumé, de même nature qu'un switch de
+    Space : statique tant que la bibliothèque du Space actif est inchangée.
+
+    **Synchronicité `contextBlockParts()` (lecture IDB en amont)** : la fonction
+    reste synchrone — elle lit `getCachedLibraryEntriesBySpace` sur le cache
+    session déjà peuplé, jamais un appel IDB direct. Le peuplement se fait via
+    `loadSpaceLibrary(spaceId)` (resources.js, fire-and-forget, symétrique à
+    `loadConversationResources`), appelé à `init()` (activeSpaceId initial) et
+    dans `pickSpace()` (ui.js, switch de Space). Cache **unifié** avec les
+    attachments (`_resourceCache`, pas de second cache dédié) : un record
+    library s'y distingue par `kind === 'library'` + `spaceId`, un attachment
+    par `attId` + `conversationId` — jamais les deux à la fois sur un même
+    record. Conséquence assumée : au tout premier rendu juste après un switch
+    de Space, le manifeste peut refléter un cache pas encore peuplé (retard
+    d'un tick), identique au comportement déjà existant pour les attachments
+    d'une conversation qui vient d'être ouverte.
 
     **Injection de `<miaou_context>` sur un message en content parts** :
     `dispatchSend` ne peut plus concaténer une string sur `threadMsgs[lastUserIdx].content`

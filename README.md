@@ -78,6 +78,15 @@ l'interface, JetBrains Mono pour le code.
 - Suppression d'un Space : cascade explicite à double confirmation
   (conversations, pièces jointes et souvenirs scopés supprimés ; les
   souvenirs profil restent intacts).
+- **Bibliothèque de fichiers par Space** (écran Space → « Fichiers ») :
+  fichiers persistants, hermétiques comme le reste du Space, accessibles au
+  modèle via des outils dédiés (lecture seule, herméticité identique aux
+  conversations/souvenirs). Trois façons d'alimenter la bibliothèque : upload
+  direct, promotion en un clic d'une pièce jointe déjà envoyée, ou promotion
+  proposée par le modèle lui-même (toujours soumise à confirmation explicite
+  avant écriture). Une description automatique (désactivable) accompagne
+  chaque fichier — pas un résumé de son contenu, mais un indice de ce qu'il
+  contient pour que le modèle décide s'il vaut la peine de l'ouvrir.
 
 **Skills**
 

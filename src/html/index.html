@@ -403,6 +403,20 @@
           </label>
         </div>
       </div>
+      <div class="field">
+        <label>Bibliothèque de fichiers</label>
+        <div class="check-row">
+          <div class="label-col">
+            <label>Descriptions de fichiers</label>
+            <span class="hint">Génère automatiquement une description à l'ajout d'un fichier dans la bibliothèque d'un espace.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-describe-files">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
           </div>
         </div>
       </div>
@@ -488,6 +502,12 @@
 
       <div class="drawer-section-title">Souvenirs de cet espace</div>
       <div class="mem-list" id="space-memory-list"></div>
+
+      <div class="drawer-section-title">Fichiers</div>
+      <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
+      <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
+      <div class="cfg-err" id="space-files-error" hidden></div>
+      <div class="mem-list" id="space-files-list"></div>
 
       <div class="drawer-section-title" id="space-delete-title" hidden>Zone dangereuse</div>
       <button class="drawer-btn danger" id="space-delete-btn" onclick="onDeleteSpaceScreen()" hidden>Supprimer cet espace</button>

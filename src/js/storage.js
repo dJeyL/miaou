@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS = {
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
   confirmSkillAutoUse: true, // ask_confirmation avant d'agir sur une skill lue (stage 2 autotrigger)
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
+  describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (D7, lot Cbis)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────

@@ -117,6 +117,30 @@ Markdown, sans commentaire :
 keywords : 5 à 12 termes saillants (sujets techniques, noms propres,
 technologies, concepts), en minuscules, sans doublons.`;
 
+// Prompt dédié à la description de fichier de bibliothèque (D7, lot Cbis) —
+// DISTINCT de SUMMARY_PROMPT (qui vise une conversation, format JSON
+// summary+keywords) : ici une sortie texte libre, cap strict, aucune donnée
+// volatile (la description atterrit dans le manifeste <miaou_context>,
+// byte-stable tant qu'elle ne change pas — une formulation relative à
+// « aujourd'hui » romprait cette invariance à chaque relecture). PAS un
+// résumé du contenu : décrit ce que le fichier EST (nature, sujets, structure)
+// pour que le modèle juge s'il doit l'ouvrir, pas ce qu'il contient en détail.
+// Constante, non éditable en v1 (décision D7).
+const FILE_DESCRIPTION_PROMPT =
+  "Tu es un module de description de document. On te fournit le contenu (ou " +
+  "un extrait) d'un fichier. Décris en au plus DEUX phrases factuelles ce " +
+  "qu'on y trouve — nature du contenu, sujets/entités couverts, structure " +
+  "notable (ex. tableau de prix, journal d'événements, spécification " +
+  "technique, liste de contacts) — de façon à ce qu'un lecteur qui n'a PAS " +
+  "encore ouvert le fichier puisse juger s'il doit le lire pour répondre à " +
+  "un besoin donné. Ce n'est PAS un résumé du contenu (n'essaie pas de " +
+  "condenser l'information elle-même, ex. les valeurs d'un tableau ou la " +
+  "conclusion d'un rapport) : c'est une description de ce que le fichier EST, " +
+  "à des fins d'indexation. N'utilise AUCUNE expression de temps relatif " +
+  "(« aujourd'hui », « récemment », « ce mois-ci ») : la description doit " +
+  "rester valable indéfiniment. Réponds UNIQUEMENT par la description, sans " +
+  "préambule, sans guillemets, sans balises Markdown.";
+
 // ── Appel non streamé, résultat exploité en interne (jamais affiché) ────────
 async function silentCompletion(messages, opts) {
   const o = opts || {};
