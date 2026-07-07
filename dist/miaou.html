@@ -802,7 +802,6 @@ body {
 .composer-selectors {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -843,10 +842,14 @@ body {
   padding: 4px 10px;
   border-radius: 100px;
   cursor: pointer;
+  margin-left: auto;   
   transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
 }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
+.ctx-counter.ctx-counter-over { color: #d64545; border-color: #d6454555; background: #d645451a; }
+
+.ctx-counter.ctx-counter-midturn { border-style: dashed; }
 .composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
 .composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
 .composer-model-btn #composer-model-label {
@@ -2634,7 +2637,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-07 05:47 UTC */
+/* miaou — built: 2026-07-07 11:27 UTC */
 
 /* ── utils.js ── */
 
@@ -3143,7 +3146,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783403223}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783423621}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7654,10 +7657,16 @@ function syncContextCounter() {
   if (win) {
     const pct = Math.round((m.totalTokens / win) * 100);
     label += ' (' + pct + '%)';
-    if (counter) counter.classList.toggle('ctx-counter-warn', m.totalTokens / win >= CONTEXT_WINDOW_WARN_RATIO);
+    if (counter) {
+      const ratio = m.totalTokens / win;
+      counter.classList.toggle('ctx-counter-warn', ratio >= CONTEXT_WINDOW_WARN_RATIO && ratio < 1);
+      counter.classList.toggle('ctx-counter-over', ratio >= 1);
+    }
   } else if (counter) {
-    counter.classList.remove('ctx-counter-warn');
+    counter.classList.remove('ctx-counter-warn', 'ctx-counter-over');
   }
+  
+  if (counter) counter.classList.toggle('ctx-counter-midturn', !!_lastContextManifestMidTurn);
   el.textContent = label;
 }
 
@@ -7678,7 +7687,9 @@ function renderContextInspector() {
 
   const hint = $('ctx-source-hint');
   if (hint) {
-    if (_lastContextManifest) {
+    if (_lastContextManifest && _lastContextManifestMidTurn) {
+      hint.textContent = 'Échange en cours (outils) — total provisoire, va encore évoluer.';
+    } else if (_lastContextManifest) {
       hint.textContent = 'Dernier envoi réel à ce modèle.';
     } else if (currentThread.length) {
       hint.textContent = 'Simulation du prochain envoi (aucun envoi depuis le rechargement de cette conversation).';
@@ -9171,6 +9182,7 @@ let currentConvReasoningEffort = '';
 let pendingAttachments = [];   
 let attachIngestInFlight = 0;  
 let _lastContextManifest = null;   
+let _lastContextManifestMidTurn = false;   
 
 const IDLE_SUMMARY_MS = 60000;
 let _idleSummaryTimer = null;
@@ -9318,11 +9330,12 @@ function computeContextManifestNow() {
   return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
 }
 
-function recomputeLastContextManifest(matches) {
+function recomputeLastContextManifest(matches, midTurn) {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts(matches);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
   _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  _lastContextManifestMidTurn = !!midTurn;
 }
 
 async function openConversation(id) {
@@ -10269,6 +10282,9 @@ async function dispatchSend(matches, continuation) {
         clearPendingToolBlocks();
         if (blocks.length) placeToolBlocks(wrap, blocks);
         scrollBottom();
+
+        recomputeLastContextManifest(matches, true);
+        syncContextCounter();
       },
       
       onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {

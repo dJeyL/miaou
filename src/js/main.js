@@ -44,6 +44,7 @@ let currentConvReasoningEffort = '';  // override de reasoning_effort de la conv
 let pendingAttachments = [];   // pièces jointes du composer, en attente d'envoi (cf. §Pièces jointes)
 let attachIngestInFlight = 0;  // ingestions en cours (garde anti-course : envoi refusé tant que ≠ 0)
 let _lastContextManifest = null;   // manifeste du dernier envoi RÉEL (brief B, B4) — null si aucun envoi cette session
+let _lastContextManifestMidTurn = false;   // true si _lastContextManifest a été recalculé PENDANT une boucle d'outils (tour non terminé), cf. recomputeLastContextManifest
 
 // ── Résumé sur inactivité ────────────────────────────────────────────────────
 // Durée d'inactivité utilisateur avant déclenchement d'un résumé de la
@@ -249,18 +250,26 @@ function computeContextManifestNow() {
   return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
 }
 
-// Rejoue le manifeste du DERNIER ENVOI RÉEL une fois le tour terminé (onFinal/
-// onHalt) : la capture faite avant `runConversation` (dispatchSend) ne voit ni
-// les tool-acks ni la réponse assistant produits pendant la boucle d'outils,
-// ce qui sous-évaluait durablement le compteur jusqu'au prochain envoi/switch
-// de conv (bug payé : écart ~50% vs un reload qui recalcule sur le thread
-// complet). `matches` = les résumés effectivement injectés à CE tour (reçus
-// en paramètre de dispatchSend, non simulables après coup — audit §9).
-function recomputeLastContextManifest(matches) {
+// Rejoue le manifeste du DERNIER ENVOI RÉEL, à la fin du tour (onFinal/onHalt,
+// midTurn=false) ou PENDANT une boucle d'outils encore ouverte (onToolAcks,
+// midTurn=true — cf. dispatchSend) : la capture faite avant `runConversation`
+// (dispatchSend) ne voit ni les tool-acks ni la réponse assistant produits
+// pendant la boucle d'outils, ce qui sous-évaluait durablement le compteur —
+// potentiellement plusieurs tours d'affilée si un outil renvoie beaucoup de
+// volume — jusqu'à la fin de l'échange complet (bug payé : écart ~50% vs un
+// reload qui recalcule sur le thread complet). Rejouer aussi à CHAQUE tour
+// d'outils (pas seulement en fin d'échange) rend la pilule/le drawer
+// représentatifs en continu, y compris à mi-échange. `matches` = les résumés
+// effectivement injectés à CE tour (reçus en paramètre de dispatchSend, non
+// simulables après coup — audit §9). expandThread tolère un thread se
+// terminant par un groupe de tool-acks sans réponse assistant qui le clôt
+// (tour en cours) : pas de lookahead exigeant une suite.
+function recomputeLastContextManifest(matches, midTurn) {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts(matches);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
   _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  _lastContextManifestMidTurn = !!midTurn;
 }
 
 // ── Navigation entre conversations ──────────────────────────────────────────
@@ -1503,6 +1512,19 @@ async function dispatchSend(matches, continuation) {
         clearPendingToolBlocks();
         if (blocks.length) placeToolBlocks(wrap, blocks);
         scrollBottom();
+
+        // Recalcul MI-ÉCHANGE (pas seulement en fin de tour) : un tour d'outils
+        // vient de se clore (tool-acks poussés dans currentThread ci-dessus),
+        // potentiellement pas le dernier de la boucle (api.js relance tant que
+        // finish_reason === 'tool_calls', jusqu'à MAX_TOURS). Sans ce recalcul,
+        // un outil qui renvoie beaucoup de volume (ex. lecture de fichier
+        // volumineuse) restait invisible dans la pilule/le drawer tant que
+        // l'échange entier (potentiellement plusieurs tours) n'était pas
+        // terminé — l'utilisateur ne pouvait pas réagir avant d'avoir déjà
+        // saturé le contexte. midTurn=true : le drawer distingue ce total
+        // encore provisoire d'un total de fin d'échange stable.
+        recomputeLastContextManifest(matches, true);
+        syncContextCounter();
       },
       // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
       // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque

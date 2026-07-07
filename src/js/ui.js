@@ -2093,10 +2093,19 @@ function syncContextCounter() {
   if (win) {
     const pct = Math.round((m.totalTokens / win) * 100);
     label += ' (' + pct + '%)';
-    if (counter) counter.classList.toggle('ctx-counter-warn', m.totalTokens / win >= CONTEXT_WINDOW_WARN_RATIO);
+    if (counter) {
+      const ratio = m.totalTokens / win;
+      counter.classList.toggle('ctx-counter-warn', ratio >= CONTEXT_WINDOW_WARN_RATIO && ratio < 1);
+      counter.classList.toggle('ctx-counter-over', ratio >= 1);
+    }
   } else if (counter) {
-    counter.classList.remove('ctx-counter-warn');
+    counter.classList.remove('ctx-counter-warn', 'ctx-counter-over');
   }
+  // Total provisoire (recalculé en cours de boucle d'outils, pas encore la
+  // réponse finale) : marqueur visuel léger sur la pilule elle-même, pas
+  // seulement dans le drawer — l'utilisateur doit voir que ça évolue sans
+  // avoir à ouvrir l'inspecteur.
+  if (counter) counter.classList.toggle('ctx-counter-midturn', !!_lastContextManifestMidTurn);
   el.textContent = label;
 }
 
@@ -2117,7 +2126,9 @@ function renderContextInspector() {
 
   const hint = $('ctx-source-hint');
   if (hint) {
-    if (_lastContextManifest) {
+    if (_lastContextManifest && _lastContextManifestMidTurn) {
+      hint.textContent = 'Échange en cours (outils) — total provisoire, va encore évoluer.';
+    } else if (_lastContextManifest) {
       hint.textContent = 'Dernier envoi réel à ce modèle.';
     } else if (currentThread.length) {
       hint.textContent = 'Simulation du prochain envoi (aucun envoi depuis le rechargement de cette conversation).';

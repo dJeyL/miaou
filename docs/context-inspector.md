@@ -73,12 +73,45 @@ API sans toucher les call-sites.
 
 Le compteur compact et le drawer préfèrent `_lastContextManifest` s'il existe,
 sinon retombent sur la simulation — avec un en-tête indiquant lequel des deux
-est montré. Ce en-tête (`renderContextInspector`, ui.js) distingue trois cas,
-pas deux : dernier envoi réel ; simulation faute d'envoi depuis le rechargement
-de la conversation (`currentThread.length > 0`) ; simulation car conversation
-réellement vide. Le premier libellé de repli ("aucun message envoyé encore")
-était trompeur après un rechargement d'historique : il ne testait que la
-variable volatile `_lastContextManifest`, pas la présence réelle de messages.
+est montré. Ce en-tête (`renderContextInspector`, ui.js) distingue quatre cas :
+mi-échange (boucle d'outils en cours, cf. ci-dessous) ; dernier envoi réel ;
+simulation faute d'envoi depuis le rechargement de la conversation
+(`currentThread.length > 0`) ; simulation car conversation réellement vide.
+Le premier libellé de repli historique ("aucun message envoyé encore") était
+trompeur après un rechargement d'historique : il ne testait que la variable
+volatile `_lastContextManifest`, pas la présence réelle de messages.
+
+### Recalcul mi-échange (boucle d'outils)
+
+Bug payé, distinct du précédent : même avec la recapture en fin de tour
+(`onFinal`/`onHalt`), un échange qui enchaîne PLUSIEURS tours d'outils
+(`runConversation`, api.js, boucle tant que `finish_reason === 'tool_calls'`,
+jusqu'à `MAX_TOURS`) ne recalculait jamais le manifeste entre deux tours. Si un
+outil renvoyait beaucoup de volume (ex. lecture de fichier volumineuse),
+l'utilisateur ne le voyait dans la pilule/le drawer qu'une fois l'échange
+ENTIER terminé — potentiellement après plusieurs allers-retours ayant déjà
+saturé le contexte, sans qu'il puisse intervenir (interrompre, ajuster) avant.
+
+Fix : `recomputeLastContextManifest(matches, true)` + `syncContextCounter()`
+appelés dans `onToolAcks` (`dispatchSend`, main.js) — hook déjà existant,
+déclenché après CHAQUE tour d'outils (tool-acks poussés dans `currentThread`),
+avant que la boucle ne relance un nouvel appel réseau. `expandThread` tolère un
+thread se terminant par un groupe de tool-acks sans réponse assistant qui le
+clôt (pas de lookahead exigeant une suite) : le recalcul est sûr même en plein
+milieu d'une boucle. Second paramètre `midTurn` (`true` depuis `onToolAcks`,
+`false`/absent depuis `onFinal`/`onHalt`) posé sur le nouveau global
+`_lastContextManifestMidTurn`, distinct de `_lastContextManifest` — permet à
+l'UI de savoir si le total affiché est encore provisoire (le tour suivant
+peut le faire évoluer) ou définitif (échange terminé).
+
+Effets UI : pilule avec bordure en tirets (`.ctx-counter-midturn`, composer.css)
+tant que `_lastContextManifestMidTurn` est vrai, et hint dédié dans le drawer
+(« Échange en cours (outils) — total provisoire, va encore évoluer. »),
+prioritaire sur le hint "dernier envoi réel". `_lastContextManifestMidTurn`
+n'est PAS remis à `false` explicitement à l'ouverture d'une conv/reset : ces
+points remettent `_lastContextManifest` à `null` (cf. plus bas), qui fait
+retomber `effectiveContextManifest()` sur la simulation — le hint mi-échange
+ne peut apparaître que si `_lastContextManifest` est non-null.
 
 ## Fenêtre de contexte (D5, B1-a)
 
@@ -86,7 +119,9 @@ variable volatile `_lastContextManifest`, pas la présence réelle de messages.
 global unique, `''` = inconnu) ; `model` est ignoré en v1 mais fait partie de la
 signature pour basculer plus tard vers une map (serveur, modèle) sans toucher
 les call-sites. `CONTEXT_WINDOW_WARN_RATIO = 0.8` (utils.js) : seuil d'occupation
-au-delà duquel la jauge UI passe ambre.
+au-delà duquel la pilule passe ambre (`.ctx-counter-warn`) ; à 100 % ou plus
+(`ratio >= 1`), elle passe rouge (`.ctx-counter-over`) à la place — les deux
+classes sont mutuellement exclusives (`syncContextCounter`, ui.js).
 
 Si le réglage est vide, repli sur `BUILD_DEFAULT_CONTEXT_WINDOW` (storage.js) —
 lu depuis `BUILD_CONFIG.default_context_window` (config.json, même mécanisme
@@ -98,15 +133,20 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
 
 - **Compteur compact** : `#ctx-counter` dans `.composer-selectors` (à droite des
   pills modèle/raisonnement), `≈ N tok` (+ `%` si `contextWindowFor` connu,
-  classe `.ctx-counter-warn` au-delà de `CONTEXT_WINDOW_WARN_RATIO`). Ouvre le
-  drawer au clic (`openContextInspector`).
+  classe `.ctx-counter-warn` entre `CONTEXT_WINDOW_WARN_RATIO` et 100 %,
+  `.ctx-counter-over` à 100 % ou plus, `.ctx-counter-midturn` — bordure en
+  tirets, cumulable avec les deux précédentes — tant que le total affiché est
+  un recalcul mi-échange). Ouvre le drawer au clic (`openContextInspector`).
 - **`syncContextCounter()`** (ui.js) : recalcule le libellé depuis
   `effectiveContextManifest()` (= `_lastContextManifest` sinon simulation).
   Câblé à `openConversation`, `resetToEmpty` (donc `newConversation`,
-  `pickSpace`), `onSaveSettings`, et en fin de tour (`onFinal`/`onHalt` dans
-  `dispatchSend`). PAS sur `oninput` du textarea (D4/B3 : draft exclu v1).
-  `openConversation`/`resetToEmpty` remettent aussi `_lastContextManifest` à
-  `null` (le dernier envoi réel appartenait à l'ancienne conversation).
+  `pickSpace`), `onSaveSettings`, à CHAQUE tour d'outils (`onToolAcks` dans
+  `dispatchSend`, midTurn=true) et en fin de tour (`onFinal`/`onHalt` dans
+  `dispatchSend`, midTurn=false). PAS sur `oninput` du textarea (D4/B3 : draft
+  exclu v1). `openConversation`/`resetToEmpty` remettent aussi
+  `_lastContextManifest` à `null` (le dernier envoi réel appartenait à
+  l'ancienne conversation) — ce qui fait retomber le hint mi-échange aussi,
+  puisqu'il n'est affiché que si `_lastContextManifest` est non-null.
 - **Drawer** (`#ctx-drawer`, pattern premier niveau) : en-tête indiquant
   « dernier envoi réel » vs « simulation », barre empilée (`.ctx-bar`, un
   segment par entrée du manifeste, couleurs fixes `CTX_PALETTE` dans ui.js,

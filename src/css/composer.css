@@ -101,11 +101,15 @@
   padding: 1px 5px;
 }
 
-/* rangée des sélecteurs du composer (modèle à gauche, raisonnement à droite) */
+/* rangée des sélecteurs du composer (modèle à gauche, raisonnement + pilule de
+   contexte à droite). Pas de justify-content: space-between : avec modèle ET
+   raisonnement masqués ([hidden], cas fréquent), la pilule serait le seul
+   enfant visible du flex et se retrouverait poussée à gauche au lieu de
+   rester à droite. margin-left: auto sur la pilule la colle à droite quel que
+   soit le nombre d'enfants visibles avant elle. */
 .composer-selectors {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -148,10 +152,16 @@
   padding: 4px 10px;
   border-radius: 100px;
   cursor: pointer;
+  margin-left: auto;   /* toujours collée à droite, même seule (modèle/raisonnement masqués) */
   transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
 }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
+.ctx-counter.ctx-counter-over { color: #d64545; border-color: #d6454555; background: #d645451a; }
+/* total provisoire (recalculé en cours de boucle d'outils, pas encore la
+   réponse finale) : bordure en tirets pour signaler "va encore bouger",
+   cumulable avec ctx-counter-warn/-over (leur couleur garde la priorité). */
+.ctx-counter.ctx-counter-midturn { border-style: dashed; }
 .composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
 .composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
 .composer-model-btn #composer-model-label {

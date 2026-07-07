@@ -572,113 +572,113 @@
   - `CTX_PALETTE` — L2067
   - `effectiveContextManifest()` — L2080
   - `syncContextCounter()` — L2086
-  - `openContextInspector()` — L2103
-  - `closeContextInspector()` — L2108
-  - `renderContextInspector()` — L2113
-  - `switchMemoryTab()` — L2152
-  - `renderSummaryList()` — L2164
-  - `deleteSummaryItem()` — L2212
-  - `toggleSummaryExpand()` — L2214
-  - `restoreSummaryItem()` — L2225
-- **Panneau des outils** (L2255)
-  - `openTools()` — L2256
-  - `closeTools()` — L2261
-  - `renderToolsList()` — L2270
-  - `buildToolItem()` — L2327
-- **Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5)** (L2359)
-  - `syncSpaceUI()` — L2367
-  - `toggleSpaceMenu()` — L2378
-  - `renderSpaceMenu()` — L2386
-  - `pickSpace()` — L2419
-  - `createSpaceAndOpen()` — L2437
-- **Écran Space (sous-drawer, pattern MCP)** (L2446)
-  - `_spaceScreenId` — L2447
-  - `openSpaceScreen()` — L2449
-  - `closeSpaceScreen()` — L2470
-  - `onSpaceFormInput()` — L2476
-  - `onSaveSpaceScreen()` — L2481
-  - `syncSpaceDeleteLabel()` — L2506
-  - `onDeleteSpaceScreen()` — L2520
-- **Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3)** (L2551)
-  - `openMcpServers()` — L2552
-  - `closeMcpServers()` — L2557
-  - `renderMcpServersIfOpen()` — L2561
-  - `renderMcpServers()` — L2565
-  - `addMcpServerCard()` — L2582
-- **Helpers partagés des cartes de configuration (MCP / API / skills)** (L2593)
-  - `showCardError()` — L2599
-  - `cfgField()` — L2604
-  - `cfgToggle()` — L2621
-  - `cfgToggleRow()` — L2635
-  - `cfgErrEl()` — L2647
-  - `cfgPillSelect()` — L2661
-  - `buildMcpCard()` — L2708
-- **SECTION VUE** (L2713)
-- **SECTION ÉDITION** (L2772)
-- **Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP)** (L2845)
-  - `openApiServers()` — L2848
-  - `closeApiServers()` — L2853
-  - `renderApiServersIfOpen()` — L2857
-  - `syncActiveApiServerUI()` — L2864
-  - `renderApiServers()` — L2890
-  - `addApiServerCard()` — L2906
-  - `buildApiCard()` — L2914
-- **SECTION VUE** (L2919)
-- **SECTION ÉDITION** (L2960)
-- **Skills : drawer de gestion** (L3037)
-  - `openSkills()` — L3040
-  - `closeSkills()` — L3045
-  - `syncSkillHintUI()` — L3052
-  - `renderSkills()` — L3057
-  - `addSkillCard()` — L3073
-  - `buildSkillCard()` — L3081
-- **SECTION VUE** (L3086)
-- **SECTION ÉDITION** (L3120)
-  - `enterSkillEdit()` — L3178
-- **Autocomplétion des skills (slash-commande)** (L3186)
-  - `_composerAc` — L3194
-  - `onComposerInput()` — L3196
-  - `updateSkillAutocomplete()` — L3210
-  - `renderSkillAutocomplete()` — L3224
-  - `hideSkillAutocomplete()` — L3249
-  - `skillAutocompleteOpen()` — L3257
-  - `moveSkillAcSelection()` — L3262
-  - `acceptSkillAcSelection()` — L3279
-  - `pickSkillCompletion()` — L3292
-  - `showComposerSkillError()` — L3306
-  - `clearComposerSkillError()` — L3310
-- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L3315)
-  - `placeToolBlocks()` — L3319
-  - `renderToolBlock()` — L3330
-  - `renderResourceText()` — L3360
-  - `renderBinaryBlock()` — L3378
-  - `presentResourceFromChip()` — L3401
-  - `mimeToLang()` — L3418
-  - `setMemItemLoading()` — L3431
-- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L3439)
-  - `renderMemoryList()` — L3447
-  - `addMemoryEntry()` — L3510
-  - `deleteMemoryEntry()` — L3521
-  - `restoreMemoryEntry()` — L3522
-  - `forgetMemoryEntry()` — L3523
-  - `promoteMemoryEntry()` — L3528
-- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L3537)
-  - `renderSpaceFilesList()` — L3543
-  - `setFileDescriptionStatus()` — L3580
-  - `onRegenerateFileDescription()` — L3598
-  - `onSpaceFilesUploadClick()` — L3608
-  - `onSpaceFilesSelected()` — L3616
-  - `onDeleteSpaceFile()` — L3643
-  - `startEditMemoryEntry()` — L3651
-  - `cancelMemoryEntryEdit()` — L3662
-  - `saveMemoryEntryEdit()` — L3671
-- **Confirmation inline (cartes dans le thread)** (L3680)
-  - `_proposalMap` — L3684
-  - `clearMemoryProposals()` — L3688
-  - `showConfirmation()` — L3695
-  - `acceptProposal()` — L3717
-  - `rejectProposal()` — L3725
-  - `_removeProposalCard()` — L3733
+  - `openContextInspector()` — L2112
+  - `closeContextInspector()` — L2117
+  - `renderContextInspector()` — L2122
+  - `switchMemoryTab()` — L2163
+  - `renderSummaryList()` — L2175
+  - `deleteSummaryItem()` — L2223
+  - `toggleSummaryExpand()` — L2225
+  - `restoreSummaryItem()` — L2236
+- **Panneau des outils** (L2266)
+  - `openTools()` — L2267
+  - `closeTools()` — L2272
+  - `renderToolsList()` — L2281
+  - `buildToolItem()` — L2338
+- **Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5)** (L2370)
+  - `syncSpaceUI()` — L2378
+  - `toggleSpaceMenu()` — L2389
+  - `renderSpaceMenu()` — L2397
+  - `pickSpace()` — L2430
+  - `createSpaceAndOpen()` — L2448
+- **Écran Space (sous-drawer, pattern MCP)** (L2457)
+  - `_spaceScreenId` — L2458
+  - `openSpaceScreen()` — L2460
+  - `closeSpaceScreen()` — L2481
+  - `onSpaceFormInput()` — L2487
+  - `onSaveSpaceScreen()` — L2492
+  - `syncSpaceDeleteLabel()` — L2517
+  - `onDeleteSpaceScreen()` — L2531
+- **Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3)** (L2562)
+  - `openMcpServers()` — L2563
+  - `closeMcpServers()` — L2568
+  - `renderMcpServersIfOpen()` — L2572
+  - `renderMcpServers()` — L2576
+  - `addMcpServerCard()` — L2593
+- **Helpers partagés des cartes de configuration (MCP / API / skills)** (L2604)
+  - `showCardError()` — L2610
+  - `cfgField()` — L2615
+  - `cfgToggle()` — L2632
+  - `cfgToggleRow()` — L2646
+  - `cfgErrEl()` — L2658
+  - `cfgPillSelect()` — L2672
+  - `buildMcpCard()` — L2719
+- **SECTION VUE** (L2724)
+- **SECTION ÉDITION** (L2783)
+- **Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP)** (L2856)
+  - `openApiServers()` — L2859
+  - `closeApiServers()` — L2864
+  - `renderApiServersIfOpen()` — L2868
+  - `syncActiveApiServerUI()` — L2875
+  - `renderApiServers()` — L2901
+  - `addApiServerCard()` — L2917
+  - `buildApiCard()` — L2925
+- **SECTION VUE** (L2930)
+- **SECTION ÉDITION** (L2971)
+- **Skills : drawer de gestion** (L3048)
+  - `openSkills()` — L3051
+  - `closeSkills()` — L3056
+  - `syncSkillHintUI()` — L3063
+  - `renderSkills()` — L3068
+  - `addSkillCard()` — L3084
+  - `buildSkillCard()` — L3092
+- **SECTION VUE** (L3097)
+- **SECTION ÉDITION** (L3131)
+  - `enterSkillEdit()` — L3189
+- **Autocomplétion des skills (slash-commande)** (L3197)
+  - `_composerAc` — L3205
+  - `onComposerInput()` — L3207
+  - `updateSkillAutocomplete()` — L3221
+  - `renderSkillAutocomplete()` — L3235
+  - `hideSkillAutocomplete()` — L3260
+  - `skillAutocompleteOpen()` — L3268
+  - `moveSkillAcSelection()` — L3273
+  - `acceptSkillAcSelection()` — L3290
+  - `pickSkillCompletion()` — L3303
+  - `showComposerSkillError()` — L3317
+  - `clearComposerSkillError()` — L3321
+- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L3326)
+  - `placeToolBlocks()` — L3330
+  - `renderToolBlock()` — L3341
+  - `renderResourceText()` — L3371
+  - `renderBinaryBlock()` — L3389
+  - `presentResourceFromChip()` — L3412
+  - `mimeToLang()` — L3429
+  - `setMemItemLoading()` — L3442
+- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L3450)
+  - `renderMemoryList()` — L3458
+  - `addMemoryEntry()` — L3521
+  - `deleteMemoryEntry()` — L3532
+  - `restoreMemoryEntry()` — L3533
+  - `forgetMemoryEntry()` — L3534
+  - `promoteMemoryEntry()` — L3539
+- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L3548)
+  - `renderSpaceFilesList()` — L3554
+  - `setFileDescriptionStatus()` — L3591
+  - `onRegenerateFileDescription()` — L3609
+  - `onSpaceFilesUploadClick()` — L3619
+  - `onSpaceFilesSelected()` — L3627
+  - `onDeleteSpaceFile()` — L3654
+  - `startEditMemoryEntry()` — L3662
+  - `cancelMemoryEntryEdit()` — L3673
+  - `saveMemoryEntryEdit()` — L3682
+- **Confirmation inline (cartes dans le thread)** (L3691)
+  - `_proposalMap` — L3695
+  - `clearMemoryProposals()` — L3699
+  - `showConfirmation()` — L3706
+  - `acceptProposal()` — L3728
+  - `rejectProposal()` — L3736
+  - `_removeProposalCard()` — L3744
 
 ## src/js/main.js
 
@@ -697,111 +697,112 @@
   - `pendingAttachments` — L44
   - `attachIngestInFlight` — L45
   - `_lastContextManifest` — L46
-- **Résumé sur inactivité** (L48)
-  - `IDLE_SUMMARY_MS` — L52
-  - `_idleSummaryTimer` — L53
-  - `armIdleSummaryTimer()` — L55
-  - `activeModel()` — L67
-  - `setConvModel()` — L76
-  - `activeReasoningEffort()` — L91
-  - `setConvReasoningEffort()` — L97
-- **Construction du message système (un seul, concaténé)** (L109)
-  - `buildSummaryBlock()` — L110
-  - `buildMemoryEntriesBlock()` — L125
-  - `contextBlockParts()` — L136
-  - `buildContextBlock()` — L158
-  - `buildSkillsContextBlock()` — L179
-  - `resolveUserSystemPrompt()` — L194
-  - `systemMessageParts()` — L213
-  - `buildSystemMessage()` — L233
-  - `computeContextManifestNow()` — L245
-  - `recomputeLastContextManifest()` — L259
-- **Navigation entre conversations** (L266)
-  - `openConversation()` — L267
-  - `resetToEmpty()` — L302
-  - `selectConv()` — L320
-  - `newConversation()` — L329
-  - `togglePin()` — L338
-  - `downloadConvMd()` — L348
-  - `undoToolAck()` — L390
-  - `deleteConv()` — L404
-  - `ensureConversation()` — L414
-  - `persistCurrent()` — L425
-- **Titre éditable** (L454)
-  - `wireTitleEditing()` — L455
-  - `onTitleKey()` — L464
-  - `onTitleBlur()` — L468
-- **Réglages** (L486)
-  - `onSaveSettings()` — L487
-  - `prefetchModels()` — L517
-- **Serveurs MCP distants : orchestration** (L522)
-  - `reconnectMcpServers()` — L526
-  - `onSaveMcpCard()` — L535
-  - `onDeleteMcpCard()` — L567
-- **Serveurs API : persistance + activation (orchestration depuis le drawer)** (L572)
-  - `onSaveApiCard()` — L576
-  - `onDeleteApiCard()` — L612
-  - `onUseApiServer()` — L628
-- **Skills : persistance (orchestration depuis le drawer de gestion)** (L641)
-  - `onSaveSkillCard()` — L645
-  - `onDeleteSkillCard()` — L667
-  - `onToggleSkill()` — L673
-- **Export / import complet des données (feature E)** (L678)
-  - `snapshotLocalStorageForExport()` — L686
-  - `exportAllData()` — L699
-  - `onImportDataClick()` — L712
-  - `onImportFileSelected()` — L721
-  - `applyImportedData()` — L742
-- **Pièces jointes (composer)** (L762)
-  - `ATTACHMENT_MAX_BYTES` — L772
-  - `ATTACHMENT_IMAGE_MAX_EDGE` — L773
-  - `ATTACHMENT_IMAGE_JPEG_QUALITY` — L774
-  - `ATTACHMENT_TEXT_MAX_BYTES` — L775
-  - `ATTACHMENT_MAX_IMAGES` — L776
-  - `downscaleImageFile()` — L784
-  - `readFileAsText()` — L811
-  - `readFileAsArrayBuffer()` — L821
-  - `showComposerAttachError()` — L833
-  - `clearComposerAttachError()` — L837
-  - `ingestAttachmentFile()` — L850
-  - `showSpaceFilesError()` — L911
-  - `clearSpaceFilesError()` — L915
-  - `ingestLibraryFile()` — L928
-  - `persistAttSeq()` — L966
-  - `handleAttachFiles()` — L981
-  - `onAttachClick()` — L999
-  - `onAttachFilesSelected()` — L1005
-  - `removeComposerAttachment()` — L1013
-- **Flux d'envoi** (L1018)
-  - `onSendBtn()` — L1020
-  - `resolveSend()` — L1039
-  - `sendMessage()` — L1066
-  - `buildOutgoingContentForAttachments()` — L1115
-  - `sendUserText()` — L1150
-  - `runGenerationFromCurrentThread()` — L1182
-  - `editUserMessage()` — L1212
-  - `regenerateResponse()` — L1241
-  - `continueTruncated()` — L1257
-  - `rewriteAttachedUserMessage()` — L1285
-  - `dispatchSend()` — L1292
-- **Mécanique réutilisable : tâche LLM « en arrière-plan »** (L1627)
-  - `runBackgroundTask()` — L1631
-- **Titrage automatique (après la première réponse)** (L1643)
-  - `applyGeneratedTitle()` — L1644
-  - `maybeTitle()` — L1651
-  - `regenerateTitle()` — L1667
-  - `setTitleEditable()` — L1680
-- **Résumé / mots-clés à la sortie d'une conversation** (L1686)
-  - `summarizeIfNeeded()` — L1687
-- **Description de fichier de bibliothèque d'espace (D7, lot Cbis)** (L1705)
-  - `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` — L1712
-  - `describeFileIfNeeded()` — L1726
-- **Backfill modèle : attribue le modèle courant aux réponses sans modèle** (L1758)
-  - `backfillMessageModels()` — L1759
-- **Backfill au démarrage (séquentiel, indicateur continu)** (L1776)
-  - `runBackfill()` — L1777
-- **Init** (L1804)
-  - `init()` — L1805
+  - `_lastContextManifestMidTurn` — L47
+- **Résumé sur inactivité** (L49)
+  - `IDLE_SUMMARY_MS` — L53
+  - `_idleSummaryTimer` — L54
+  - `armIdleSummaryTimer()` — L56
+  - `activeModel()` — L68
+  - `setConvModel()` — L77
+  - `activeReasoningEffort()` — L92
+  - `setConvReasoningEffort()` — L98
+- **Construction du message système (un seul, concaténé)** (L110)
+  - `buildSummaryBlock()` — L111
+  - `buildMemoryEntriesBlock()` — L126
+  - `contextBlockParts()` — L137
+  - `buildContextBlock()` — L159
+  - `buildSkillsContextBlock()` — L180
+  - `resolveUserSystemPrompt()` — L195
+  - `systemMessageParts()` — L214
+  - `buildSystemMessage()` — L234
+  - `computeContextManifestNow()` — L246
+  - `recomputeLastContextManifest()` — L267
+- **Navigation entre conversations** (L275)
+  - `openConversation()` — L276
+  - `resetToEmpty()` — L311
+  - `selectConv()` — L329
+  - `newConversation()` — L338
+  - `togglePin()` — L347
+  - `downloadConvMd()` — L357
+  - `undoToolAck()` — L399
+  - `deleteConv()` — L413
+  - `ensureConversation()` — L423
+  - `persistCurrent()` — L434
+- **Titre éditable** (L463)
+  - `wireTitleEditing()` — L464
+  - `onTitleKey()` — L473
+  - `onTitleBlur()` — L477
+- **Réglages** (L495)
+  - `onSaveSettings()` — L496
+  - `prefetchModels()` — L526
+- **Serveurs MCP distants : orchestration** (L531)
+  - `reconnectMcpServers()` — L535
+  - `onSaveMcpCard()` — L544
+  - `onDeleteMcpCard()` — L576
+- **Serveurs API : persistance + activation (orchestration depuis le drawer)** (L581)
+  - `onSaveApiCard()` — L585
+  - `onDeleteApiCard()` — L621
+  - `onUseApiServer()` — L637
+- **Skills : persistance (orchestration depuis le drawer de gestion)** (L650)
+  - `onSaveSkillCard()` — L654
+  - `onDeleteSkillCard()` — L676
+  - `onToggleSkill()` — L682
+- **Export / import complet des données (feature E)** (L687)
+  - `snapshotLocalStorageForExport()` — L695
+  - `exportAllData()` — L708
+  - `onImportDataClick()` — L721
+  - `onImportFileSelected()` — L730
+  - `applyImportedData()` — L751
+- **Pièces jointes (composer)** (L771)
+  - `ATTACHMENT_MAX_BYTES` — L781
+  - `ATTACHMENT_IMAGE_MAX_EDGE` — L782
+  - `ATTACHMENT_IMAGE_JPEG_QUALITY` — L783
+  - `ATTACHMENT_TEXT_MAX_BYTES` — L784
+  - `ATTACHMENT_MAX_IMAGES` — L785
+  - `downscaleImageFile()` — L793
+  - `readFileAsText()` — L820
+  - `readFileAsArrayBuffer()` — L830
+  - `showComposerAttachError()` — L842
+  - `clearComposerAttachError()` — L846
+  - `ingestAttachmentFile()` — L859
+  - `showSpaceFilesError()` — L920
+  - `clearSpaceFilesError()` — L924
+  - `ingestLibraryFile()` — L937
+  - `persistAttSeq()` — L975
+  - `handleAttachFiles()` — L990
+  - `onAttachClick()` — L1008
+  - `onAttachFilesSelected()` — L1014
+  - `removeComposerAttachment()` — L1022
+- **Flux d'envoi** (L1027)
+  - `onSendBtn()` — L1029
+  - `resolveSend()` — L1048
+  - `sendMessage()` — L1075
+  - `buildOutgoingContentForAttachments()` — L1124
+  - `sendUserText()` — L1159
+  - `runGenerationFromCurrentThread()` — L1191
+  - `editUserMessage()` — L1221
+  - `regenerateResponse()` — L1250
+  - `continueTruncated()` — L1266
+  - `rewriteAttachedUserMessage()` — L1294
+  - `dispatchSend()` — L1301
+- **Mécanique réutilisable : tâche LLM « en arrière-plan »** (L1649)
+  - `runBackgroundTask()` — L1653
+- **Titrage automatique (après la première réponse)** (L1665)
+  - `applyGeneratedTitle()` — L1666
+  - `maybeTitle()` — L1673
+  - `regenerateTitle()` — L1689
+  - `setTitleEditable()` — L1702
+- **Résumé / mots-clés à la sortie d'une conversation** (L1708)
+  - `summarizeIfNeeded()` — L1709
+- **Description de fichier de bibliothèque d'espace (D7, lot Cbis)** (L1727)
+  - `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` — L1734
+  - `describeFileIfNeeded()` — L1748
+- **Backfill modèle : attribue le modèle courant aux réponses sans modèle** (L1780)
+  - `backfillMessageModels()` — L1781
+- **Backfill au démarrage (séquentiel, indicateur continu)** (L1798)
+  - `runBackfill()` — L1799
+- **Init** (L1826)
+  - `init()` — L1827
 
 ## src/css/base.css
 
@@ -823,7 +824,7 @@
 
 - **composer.css** (L1)
 - **Composer** (L6)
-- **Pièces jointes (composer)** (L292)
+- **Pièces jointes (composer)** (L302)
 
 ## src/css/drawers.css
 
