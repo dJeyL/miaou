@@ -232,7 +232,7 @@
   justify-content: space-between;
   transition: background 110ms var(--ease);
 }
-.model-opt span { font-size: 11px; }
+.model-opt span { font-size: 12px; }
 .model-opt:hover { background: var(--surface-3); }
 .model-opt .check { color: var(--accent); opacity: 0; }
 .model-opt.selected .check { opacity: 1; }

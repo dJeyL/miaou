@@ -1934,12 +1934,6 @@ function init() {
   initVisualViewport();
   wireTitleEditing();
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && $('app').classList.contains('sidebar-open') && isMobileLayout()) {
-      closeSidebarMobile();
-    }
-  });
-
   // Résumé sur inactivité : toute frappe/clic n'importe où dans l'app (composer,
   // édition d'un message passé, titre de conversation, réglages, cartes MCP/skills…)
   // réarme le timer. Délégation globale plutôt qu'un handler par point de saisie

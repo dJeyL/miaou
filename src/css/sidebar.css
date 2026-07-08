@@ -263,7 +263,8 @@
 .conv-list.select-mode .conv-select { display: block; }
 
 /* Barre contextuelle (D4) : même anatomie que .summary-banner (composer.css)
-   — masquée par défaut, .show l'affiche ; apparaît seulement à ≥1 sélection. */
+   — masquée par défaut, .show l'affiche ; visible dès le mode déplacement actif
+   (indépendamment du nombre de conversations cochées, correctif UX 2026-07-08). */
 .move-bar {
   display: none;
   flex-direction: column;
@@ -283,20 +284,46 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.move-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .move-bar-go,
 .move-bar-cancel {
-  font-size: 12.5px;
-  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border-radius: var(--r-sm);
   cursor: pointer;
   border: 1px solid var(--accent-bd);
   background: transparent;
   color: var(--text);
-  transition: background 120ms var(--ease), color 120ms var(--ease);
+  transition: background 120ms var(--ease), color 120ms var(--ease), opacity 120ms var(--ease);
 }
+.move-bar-go svg, .move-bar-cancel svg { width: 15px; height: 15px; }
 .move-bar-go { background: var(--accent); color: #fff; border-color: var(--accent); }
 .move-bar-go:hover { opacity: .9; }
+.move-bar-go:disabled { opacity: .4; cursor: not-allowed; }
 .move-bar-cancel:hover { background: var(--surface-3); }
+/* Le sélecteur d'espace occupe l'espace restant de la ligne (boutons icônes à
+   largeur fixe à côté) et tronque un nom trop long plutôt que de le faire
+   passer à la ligne (moche, cf. capture d'écran signalée). */
+.move-bar-row .pill-select { flex: 1 1 auto; min-width: 0; max-width: 100%; margin-left: 0; }
+.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; }
+.move-bar-row .pill-select-btn > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-bar-row .pill-select-btn .chev { margin-left: auto; }
 /* .move-bar est ancrée en bas de la sidebar : le menu générique (.model-menu,
    drawers.css) ouvre vers le bas par défaut et sortirait du viewport. Ici il
    doit s'ouvrir vers le haut, au-dessus du bouton pilule. */
@@ -306,3 +333,9 @@
   transform: translateY(4px);
 }
 .move-bar .model-menu.show { transform: none; }
+.move-bar .model-menu .model-opt span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}

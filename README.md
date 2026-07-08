@@ -159,10 +159,11 @@ build.
 
 ```json
 {
-  "api_url":         "http://host-interne/v1",
-  "api_model":       "gemma4:26b-nvfp4",
-  "max_summaries":   3,
-  "require_api_key": true
+  "api_url":                 "http://host-interne/v1",
+  "api_model":                "gemma4:26b-nvfp4",
+  "max_summaries":            3,
+  "require_api_key":          true,
+  "default_context_window":   32768
 }
 ```
 
@@ -175,6 +176,9 @@ build.
 - `require_api_key` : gouverne l'état « configuré ». Par défaut (`true`), le
   composer exige URL **et** clef. À `false`, l'URL seule suffit — pour un
   endpoint sans authentification.
+- `default_context_window` : taille de fenêtre de contexte (en tokens) utilisée
+  par défaut tant que l'utilisateur n'a rien saisi dans les réglages. `0` ou
+  absent = inconnue (aucune valeur par défaut appliquée).
 
 ## Tests
 

@@ -1243,9 +1243,11 @@ let _moveSelection = new Set();
 // Déclenché par l'item du menu Space (D1). Pas de vérification ici sur le
 // nombre de Spaces disponibles : renderSpaceMenu masque déjà l'item si
 // loadSpaces().length < 2 (aucune destination possible).
+// Préselectionne la conversation actuellement affichée (si présente dans le
+// Space actif) : geste le plus probable en entrant en mode déplacement.
 function enterMoveMode() {
   _moveMode = true;
-  _moveSelection = new Set();
+  _moveSelection = currentConvId ? new Set([currentConvId]) : new Set();
   renderConvList();
   renderMoveBar();
 }
@@ -1336,7 +1338,7 @@ function renderConvList() {
 function renderMoveBar() {
   const bar = $('move-bar');
   if (!bar) return;
-  if (!_moveMode || _moveSelection.size === 0) {
+  if (!_moveMode) {
     bar.innerHTML = '';
     bar.classList.remove('show');
     return;
@@ -1347,28 +1349,43 @@ function renderMoveBar() {
   const count = document.createElement('div');
   count.className = 'move-bar-count';
   const n = _moveSelection.size;
-  count.textContent = `Déplacer ${n} conversation${n > 1 ? 's' : ''} vers…`;
+  count.textContent = n > 0
+    ? `Déplacer ${n} conversation${n > 1 ? 's' : ''} vers…`
+    : 'Sélectionner des conversations à déplacer…';
   bar.appendChild(count);
 
   const row = document.createElement('div');
   row.className = 'move-bar-row';
   const destinations = loadSpaces().filter(s => s.id !== activeSpaceId).map(s => ({ value: s.id, label: s.name || '' }));
+  let pill = null;
   if (destinations.length) {
-    const pill = cfgPillSelect('move-bar-dest', destinations, destinations[0].value, null);
+    pill = cfgPillSelect('move-bar-dest', destinations, destinations[0].value, null);
     row.appendChild(pill.root);
-    const moveBtn = document.createElement('button');
-    moveBtn.type = 'button';
-    moveBtn.className = 'move-bar-go';
-    moveBtn.textContent = 'Déplacer';
-    moveBtn.onclick = () => moveSelectedConversations(pill.input.value);
-    row.appendChild(moveBtn);
   }
+
+  // Groupés pour que le retour à la ligne (manque de place) déplace les deux
+  // boutons ensemble plutôt que de les séparer l'un de l'autre.
+  const actions = document.createElement('div');
+  actions.className = 'move-bar-actions';
+
+  const moveBtn = document.createElement('button');
+  moveBtn.type = 'button';
+  moveBtn.className = 'move-bar-go';
+  moveBtn.title = 'Déplacer';
+  moveBtn.disabled = n === 0 || !pill;
+  moveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  if (pill) moveBtn.onclick = () => moveSelectedConversations(pill.input.value);
+  actions.appendChild(moveBtn);
+
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'move-bar-cancel';
-  cancelBtn.textContent = 'Annuler';
+  cancelBtn.title = 'Annuler';
+  cancelBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   cancelBtn.onclick = () => exitMoveMode();
-  row.appendChild(cancelBtn);
+  actions.appendChild(cancelBtn);
+
+  row.appendChild(actions);
   bar.appendChild(row);
 }
 
@@ -1378,6 +1395,16 @@ function closeSidebarMobile() {
   $('app').classList.remove('sidebar-open');
   $('sidebar-backdrop').classList.remove('show');
   document.body.style.overflow = '';
+}
+
+// Fermeture de la sidebar via Escape (dernier recours de la cascade, cf. plus
+// bas) : même effet que closeSidebarMobile en layout mobile (backdrop +
+// overflow), simple retrait de la classe sur desktop (pas de backdrop).
+function closeSidebarViaEscape() {
+  if (!$('app').classList.contains('sidebar-open')) return false;
+  if (isMobileLayout()) closeSidebarMobile();
+  else $('app').classList.remove('sidebar-open');
+  return true;
 }
 
 function toggleSidebar() {
@@ -1771,6 +1798,75 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.cfg-pill-select')) {
     document.querySelectorAll('.cfg-pill-select .model-menu.show').forEach(m => m.classList.remove('show'));
   }
+  if (!e.target.closest('#space-select')) {
+    const sm = $('space-menu');
+    if (sm) sm.classList.remove('show');
+  }
+});
+
+// Cascade Escape (D-Esc) : un seul niveau fermé par pression, priorité au plus
+// « au-dessus ». 1) une dropdown ouverte (mêmes cibles que le clic extérieur
+// ci-dessus) — 2) le drawer/écran le plus récemment ouvert (pile explicite :
+// certains écrans s'empilent volontairement sur un autre déjà ouvert, ex.
+// openApiServers depuis le drawer Settings — sans pile, Escape fermait
+// toujours le premier de la liste au lieu du sommet réellement affiché) —
+// 3) en dernier recours, la sidebar. Aucun de ces niveaux n'avait de gestion
+// clavier avant ce correctif (à l'exception de la sidebar, mobile uniquement
+// — étendue ici au desktop).
+let _drawerStack = [];
+// Enveloppe chaque paire open*/close* de drawer : l'ouverture pousse sur la
+// pile (dédoublonnée — rouvrir un écran déjà au sommet ne l'empile pas deux
+// fois), la fermeture — quelle qu'en soit la cause (bouton, backdrop, Escape)
+// — la retire où qu'elle se trouve dans la pile (fermeture hors-ordre possible
+// via un bouton "Annuler" direct, pas seulement Escape).
+function trackDrawer(openFn, closeFn) {
+  return {
+    open: (...args) => {
+      _drawerStack = _drawerStack.filter(fn => fn !== closeFn);
+      _drawerStack.push(closeFn);
+      return openFn(...args);
+    },
+    close: (...args) => {
+      _drawerStack = _drawerStack.filter(fn => fn !== closeFn);
+      return closeFn(...args);
+    },
+  };
+}
+const _tSettings = trackDrawer(openSettings, closeSettings);
+openSettings = _tSettings.open; closeSettings = _tSettings.close;
+const _tSummary = trackDrawer(openSummaryDrawer, closeSummaryDrawer);
+openSummaryDrawer = _tSummary.open; closeSummaryDrawer = _tSummary.close;
+const _tCtx = trackDrawer(openContextInspector, closeContextInspector);
+openContextInspector = _tCtx.open; closeContextInspector = _tCtx.close;
+const _tTools = trackDrawer(openTools, closeTools);
+openTools = _tTools.open; closeTools = _tTools.close;
+const _tSpace = trackDrawer(openSpaceScreen, closeSpaceScreen);
+openSpaceScreen = _tSpace.open; closeSpaceScreen = _tSpace.close;
+const _tMcp = trackDrawer(openMcpServers, closeMcpServers);
+openMcpServers = _tMcp.open; closeMcpServers = _tMcp.close;
+const _tApi = trackDrawer(openApiServers, closeApiServers);
+openApiServers = _tApi.open; closeApiServers = _tApi.close;
+const _tSkills = trackDrawer(openSkills, closeSkills);
+openSkills = _tSkills.open; closeSkills = _tSkills.close;
+
+function closeTopDropdownViaEscape() {
+  const open = document.querySelectorAll('.model-menu.show');
+  if (!open.length) return false;
+  open.forEach(m => m.classList.remove('show'));
+  return true;
+}
+function closeTopDrawerViaEscape() {
+  if (!_drawerStack.length) return false;
+  const top = _drawerStack[_drawerStack.length - 1];
+  _drawerStack = _drawerStack.slice(0, -1);
+  top();
+  return true;
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (closeTopDropdownViaEscape()) return;
+  if (closeTopDrawerViaEscape()) return;
+  closeSidebarViaEscape();
 });
 
 // ── Sélecteur de modèle du composer ─────────────────────────────────────────

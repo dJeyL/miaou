@@ -374,6 +374,11 @@
   margin: 10px 0;
   color: var(--text-2);
 }
+.body hr {
+  border: none;
+  border-top: 1px solid var(--border-2);
+  margin: 18px 0;
+}
 .body code:not([class*="language-"]) {
   font-family: var(--mono);
   font-size: 12.5px;
