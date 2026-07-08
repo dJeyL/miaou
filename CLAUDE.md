@@ -101,7 +101,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `removeComposerAttachment`, `toggleSpaceMenu`, `closeSpaceScreen`,
   `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`,
   `promoteAttachmentToLibrary`, `onSpaceFilesUploadClick`, `onSpaceFilesSelected`,
-  `onDeleteSpaceFile`, `onRegenerateFileDescription`, `toggleConvSelection`, …).
+  `onDeleteSpaceFile`, `onRegenerateFileDescription`, `toggleConvSelection`,
+  `selectSpaceTab`, …).
   Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Il est désactivé tant que le
@@ -209,6 +210,13 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     payload `apiMessages` est construit UNE fois avant la boucle `runConversation`
     et seulement complété par push ; le collapse (`rewriteAttachedUserMessage`)
     n'a lieu qu'en `onFinal`/`onHalt`, donc après la fin de l'échange.
+20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`,
+    `restoreSummaryItem` et `runBackfill` re-vérifient `loadConversation(id)`
+    juste avant `saveSummary`, pour ne pas ressusciter une entrée
+    `miaou-summaries` si la conversation a été supprimée pendant l'`await`
+    LLM (`deleteSummaryEntry` dans `deleteConv` a déjà tourné avant, en pure
+    perte). `pruneOrphanSummariesOnInit()` nettoie en complément les résidus
+    au démarrage, avant `runBackfill()`.
 
 ## Domaines détaillés (`docs/`)
 

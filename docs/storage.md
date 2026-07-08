@@ -152,6 +152,15 @@
   seule source est `dispatchSend`, pas de conversation antérieure à combler.
 - `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
+  **Invariant visé (pas garanti à 100% en historique)** : toute clé de cet
+  objet correspond à un id présent dans `miaou-conversations`. `deleteConv`
+  (main.js) supprime l'entrée via `deleteSummaryEntry` ; les trois sites de
+  génération async (`summarizeIfNeeded`, `restoreSummaryItem`, `runBackfill`,
+  cf. piège 20 CLAUDE.md) re-vérifient `loadConversation(id)` avant d'écrire,
+  pour ne pas ressusciter une entrée si la conversation a été supprimée
+  pendant l'appel LLM. `pruneOrphanSummariesOnInit()` (main.js, au démarrage,
+  avant `runBackfill()`) balaie les résidus d'une race antérieure à ce fix via
+  la fonction pure `pruneOrphanSummaries(summaries, convs)` (storage.js).
 - `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed, scope? }]`.
   **Deux chemins d'écriture distincts** : édition directe utilisateur →
   `editMemory(id, newContent)` (in-place) ; écriture par le modèle →

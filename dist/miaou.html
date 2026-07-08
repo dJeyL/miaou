@@ -184,6 +184,38 @@ body {
 .space-menu .space-opt-edit svg { width: 12px; height: 12px; }
 .space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
 
+.space-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 14px 10px;
+}
+.space-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+.space-tab-btn:hover { background: var(--surface-3); color: var(--text-2); }
+.space-tab-btn.active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); }
+.space-tab-btn svg { width: 15px; height: 15px; }
+
+.space-side-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 14px 14px;
+}
+.space-side-panel > .drawer-btn { margin-bottom: 12px; }
+.space-side-panel > .cfg-err:not([hidden]) { margin-bottom: 12px; }
+
+.space-side-panel .drawer-btns { flex-wrap: wrap; }
+
 .sidebar-search {
   display: flex;
   align-items: center;
@@ -2196,12 +2228,35 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </button>
         <div class="model-menu space-menu" id="space-menu"></div>
       </div>
-      <div class="sidebar-search">
+      <div class="space-tabs" id="space-tabs">
+        <button type="button" class="space-tab-btn active" id="space-tab-conversations" onclick="selectSpaceTab('conversations')" title="Conversations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button type="button" class="space-tab-btn" id="space-tab-files" onclick="selectSpaceTab('files')" title="Fichiers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>
+        </button>
+        <button type="button" class="space-tab-btn" id="space-tab-memories" onclick="selectSpaceTab('memories')" title="Souvenirs">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2 9.2 8.6 2 9.3l5.5 4.7L5.8 21 12 17.3 18.2 21l-1.7-7 5.5-4.7-7.2-.7Z"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-search" id="sidebar-search">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()">
         <button class="search-clear" id="search-clear" title="Effacer" onclick="clearConvSearch()">×</button>
       </div>
       <div class="conv-list" id="conv-list"></div>
+
+      <div class="space-side-panel" id="space-files-panel" hidden>
+        <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
+        <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
+        <div class="cfg-err" id="space-files-error" hidden></div>
+        <div class="mem-list" id="space-files-list"></div>
+      </div>
+
+      <div class="space-side-panel" id="space-memories-panel" hidden>
+        <div class="mem-list" id="space-memory-list"></div>
+      </div>
+
       <div class="move-bar" id="move-bar"></div>
     </div>
     <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
@@ -2645,15 +2700,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
       <button class="drawer-btn primary" id="space-save-btn" onclick="onSaveSpaceScreen()" disabled>Enregistrer</button>
       <div class="cfg-err" id="space-err" hidden></div>
 
-      <div class="drawer-section-title">Souvenirs de cet espace</div>
-      <div class="mem-list" id="space-memory-list"></div>
-
-      <div class="drawer-section-title">Fichiers</div>
-      <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
-      <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
-      <div class="cfg-err" id="space-files-error" hidden></div>
-      <div class="mem-list" id="space-files-list"></div>
-
       <div class="drawer-section-title" id="space-delete-title" hidden>Zone dangereuse</div>
       <button class="drawer-btn danger" id="space-delete-btn" onclick="onDeleteSpaceScreen()" hidden>Supprimer cet espace</button>
     </div>
@@ -2738,7 +2784,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-08 18:51 UTC */
+/* miaou — built: 2026-07-08 21:03 UTC */
 
 /* ── utils.js ── */
 
@@ -3294,7 +3340,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783536681}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783544624}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3602,6 +3648,15 @@ function deleteSummaryEntry(id) {
 
 function isSummaryCandidate(id) {
   return getSummaryEntry(id) === null;
+}
+
+function pruneOrphanSummaries(summaries, convs) {
+  const ids = new Set(convs.map(c => c.id));
+  const out = {};
+  for (const id of Object.keys(summaries)) {
+    if (ids.has(id)) out[id] = summaries[id];
+  }
+  return out;
 }
 
 function backfillCandidates() {
@@ -8157,11 +8212,13 @@ async function restoreSummaryItem(id) {
   if (item) setMemItemLoading(item, 'régénération…');
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
-  if (s) {
+  if (s && loadConversation(id)) {   
     saveSummary(id, {
       title: conv.title, timestamp: conv.timestamp,
       summary: s.summary, keywords: s.keywords, messageCount: conv.messages.length,
     });
+  } else if (s) {
+    return;   
   } else {
     restoreSummary(id);   
   }
@@ -8278,6 +8335,26 @@ function syncSpaceUI() {
   }
 }
 
+let _spaceTab = 'conversations';
+
+function selectSpaceTab(tab) {
+  if (tab !== 'conversations') exitMoveModeIfActive();
+  _spaceTab = tab;
+  $('space-tab-conversations').classList.toggle('active', tab === 'conversations');
+  $('space-tab-files').classList.toggle('active', tab === 'files');
+  $('space-tab-memories').classList.toggle('active', tab === 'memories');
+  $('sidebar-search').hidden = tab !== 'conversations';
+  $('conv-list').hidden = tab !== 'conversations';
+  $('space-files-panel').hidden = tab !== 'files';
+  $('space-memories-panel').hidden = tab !== 'memories';
+  if (tab === 'files') { clearSpaceFilesError(); renderSpaceFilesList(activeSpaceId); }
+  else if (tab === 'memories') renderMemoryList('space-memory-list', activeSpaceId);
+}
+
+function resetSpaceTab() {
+  selectSpaceTab('conversations');
+}
+
 function toggleSpaceMenu() {
   const menu = $('space-menu');
   if (!menu) return;
@@ -8300,8 +8377,12 @@ function renderSpaceMenu() {
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
-    opt.querySelector('.space-opt-name').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
-    opt.querySelector('.check').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
+    
+    opt.onmousedown = (ev) => {
+      if (ev.target.closest('.space-opt-edit')) return;
+      ev.preventDefault();
+      pickSpace(s.id);
+    };
     opt.querySelector('.space-opt-edit').onmousedown = (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       menu.classList.remove('show');
@@ -8338,6 +8419,7 @@ function pickSpace(id) {
   });
   resetToEmpty();
   syncSpaceUI();
+  resetSpaceTab();
   $('space-menu').classList.remove('show');
   summarizeIfNeeded(leaving);
   armIdleSummaryTimer();
@@ -8352,6 +8434,7 @@ function followSpace(id) {
     syncContextCounter();
   });
   syncSpaceUI();
+  resetSpaceTab();
   renderConvList();
   _lastContextManifest = null;   
   syncContextCounter();
@@ -8383,9 +8466,6 @@ function openSpaceScreen(id) {
   $('space-delete-btn').hidden = isDefault;
   $('space-delete-title').hidden = isDefault;
   if (!isDefault) syncSpaceDeleteLabel(id);
-  renderMemoryList('space-memory-list', id);
-  clearSpaceFilesError();
-  renderSpaceFilesList(id);
   $('space-drawer').classList.add('show');
   $('space-backdrop').classList.add('show');
 }
@@ -9327,11 +9407,12 @@ function addMemoryEntry(containerId, scope) {
   const now = Date.now();
   saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false, scope });
   renderMemoryList(containerId, scope);
+  if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope);
 }
 
-function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderMemoryList(containerId, scope); }
-function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); }
-function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); }
+function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
+function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
+function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
 
 function promoteMemoryEntry(id, containerId, scope) {
   const arr = loadMemories();
@@ -9408,15 +9489,16 @@ function onSpaceFilesUploadClick() {
 
 async function onSpaceFilesSelected(input) {
   const files = Array.from(input.files || []);
-  if (!files.length || !_spaceScreenId) return;
+  if (!files.length) return;
   clearSpaceFilesError();
-  const spaceId = _spaceScreenId;
+  const spaceId = activeSpaceId;
   const stored = [];
   for (const file of files) {
     const rec = await ingestLibraryFile(spaceId, file);
     if (rec) stored.push(rec);
   }
   await renderSpaceFilesList(spaceId);
+  if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
   
   for (const rec of stored) {
     describeFileIfNeeded(rec.id, (status) => {
@@ -10834,7 +10916,9 @@ async function summarizeIfNeeded(id) {
   if (entry && entry.messageCount === conv.messages.length) return;  
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
-  if (s) saveSummary(id, {
+  if (!s) return;
+  if (!loadConversation(id)) return;   
+  saveSummary(id, {
     title: conv.title,
     timestamp: conv.updatedAt || conv.timestamp,
     summary: s.summary,
@@ -10877,6 +10961,11 @@ async function describeFileIfNeeded(fileId, onStatus, force) {
   }
 }
 
+function pruneOrphanSummariesOnInit() {
+  const pruned = pruneOrphanSummaries(loadSummaries(), listAllConversations());
+  persistSummaries(pruned);
+}
+
 function backfillMessageModels() {
   
   const model = activeApiConfig().model;
@@ -10906,7 +10995,7 @@ async function runBackfill() {
       if (!isSummaryCandidate(c.id)) continue;        
       try {
         const s = await generateSummary(c.messages);
-        if (s) saveSummary(c.id, {
+        if (s && loadConversation(c.id)) saveSummary(c.id, {
           title: c.title,
           timestamp: c.updatedAt || c.timestamp,
           summary: s.summary,
@@ -10995,6 +11084,7 @@ function init() {
     _lastContextManifest = null;
     syncContextCounter();
   });
+  pruneOrphanSummariesOnInit();   
   runBackfill();         
   armIdleSummaryTimer(); 
 }

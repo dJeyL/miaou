@@ -407,3 +407,22 @@ ou au KV cache.
     boucle si le rejet a une autre cause. Sur les tours suivants (flag déjà
     posé), la dégradation est faite PROACTIVEMENT avant même le premier appel
     réseau, pour ne pas reproduire le même rejet à chaque tour.
+
+20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`
+    (main.js), `restoreSummaryItem` (ui.js) et la boucle de `runBackfill`
+    (main.js) appellent tous `generateSummary` (LLM, async) puis `saveSummary(id,
+    …)`. Si la conversation `id` est supprimée (`deleteConv`) **pendant**
+    l'`await`, `deleteSummaryEntry(id)` a déjà tourné et nettoyé (rien à
+    nettoyer, le résumé n'existait pas encore) — mais le `saveSummary` qui suit
+    la résolution de l'`await` **réécrit** une entrée dans `miaou-summaries`
+    pour un `id` absent de `miaou-conversations` : résumé orphelin ressuscité
+    après coup. Fix, même pattern que le titrage (piège 9, `setTitleEditable`
+    re-checke `convId === currentConvId`) mais orienté existence plutôt que
+    navigation : chaque site re-vérifie `loadConversation(id)` juste avant
+    `saveSummary`, et n'écrit que si elle existe encore. En complément défensif
+    (résidus d'une race déjà survenue avant ce fix, ou d'une interruption avant
+    `deleteSummaryEntry` dans `deleteConv`), `pruneOrphanSummariesOnInit()`
+    (main.js, appelle la fonction pure `pruneOrphanSummaries(summaries, convs)`
+    de storage.js) tourne à chaque `init()`, juste avant `runBackfill()` (sinon
+    `backfillCandidates()` verrait une liste faussée par des entrées
+    orphelines).

@@ -1761,7 +1761,9 @@ async function summarizeIfNeeded(id) {
   if (entry && entry.messageCount === conv.messages.length) return;  // inchangé
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
-  if (s) saveSummary(id, {
+  if (!s) return;
+  if (!loadConversation(id)) return;   // supprimée pendant la génération (async) : ne pas ressusciter l'entrée
+  saveSummary(id, {
     title: conv.title,
     timestamp: conv.updatedAt || conv.timestamp,
     summary: s.summary,
@@ -1823,6 +1825,16 @@ async function describeFileIfNeeded(fileId, onStatus, force) {
   }
 }
 
+// ── Nettoyage des résumés orphelins (démarrage) ──────────────────────────────
+// Résidus d'une suppression concurrente à une génération de résumé (race
+// corrigée à la source dans summarizeIfNeeded/restoreSummaryItem/runBackfill,
+// ceci couvre l'état déjà écrit par une race passée, ou une interruption avant
+// deleteSummaryEntry dans deleteConv). pruneOrphanSummaries (storage.js) est pure.
+function pruneOrphanSummariesOnInit() {
+  const pruned = pruneOrphanSummaries(loadSummaries(), listAllConversations());
+  persistSummaries(pruned);
+}
+
 // ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
 function backfillMessageModels() {
   // Modèle du serveur actif (activeApiConfig, filet legacy inclus) : sur une
@@ -1857,7 +1869,7 @@ async function runBackfill() {
       if (!isSummaryCandidate(c.id)) continue;        // re-vérif (suppression entre-temps)
       try {
         const s = await generateSummary(c.messages);
-        if (s) saveSummary(c.id, {
+        if (s && loadConversation(c.id)) saveSummary(c.id, {
           title: c.title,
           timestamp: c.updatedAt || c.timestamp,
           summary: s.summary,
@@ -1969,6 +1981,7 @@ function init() {
     _lastContextManifest = null;
     syncContextCounter();
   });
+  pruneOrphanSummariesOnInit();   // résidus d'une suppression concurrente à une génération (avant le backfill, sinon liste faussée)
   runBackfill();         // auto-gardé sur la présence d'URL
   armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
 }

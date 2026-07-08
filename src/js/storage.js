@@ -411,6 +411,20 @@ function isSummaryCandidate(id) {
   return getSummaryEntry(id) === null;
 }
 
+// Retire de l'index les entrées dont la conversation n'existe plus (fonction
+// pure, QuickJS-testable). Cas normal : `deleteConv` appelle déjà
+// `deleteSummaryEntry` — ceci couvre les résidus (interruption avant ce point,
+// résumé généré/sauvegardé après une suppression concurrente, ancien état
+// pré-fix). Renvoie l'objet résumés nettoyé ; ne touche pas à `localStorage`.
+function pruneOrphanSummaries(summaries, convs) {
+  const ids = new Set(convs.map(c => c.id));
+  const out = {};
+  for (const id of Object.keys(summaries)) {
+    if (ids.has(id)) out[id] = summaries[id];
+  }
+  return out;
+}
+
 // Conversations à résumer au démarrage : absentes de l'index et substantielles.
 function backfillCandidates() {
   return loadConversations().filter(c =>

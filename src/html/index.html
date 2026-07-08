@@ -41,12 +41,35 @@
         </button>
         <div class="model-menu space-menu" id="space-menu"></div>
       </div>
-      <div class="sidebar-search">
+      <div class="space-tabs" id="space-tabs">
+        <button type="button" class="space-tab-btn active" id="space-tab-conversations" onclick="selectSpaceTab('conversations')" title="Conversations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button type="button" class="space-tab-btn" id="space-tab-files" onclick="selectSpaceTab('files')" title="Fichiers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>
+        </button>
+        <button type="button" class="space-tab-btn" id="space-tab-memories" onclick="selectSpaceTab('memories')" title="Souvenirs">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2 9.2 8.6 2 9.3l5.5 4.7L5.8 21 12 17.3 18.2 21l-1.7-7 5.5-4.7-7.2-.7Z"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-search" id="sidebar-search">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()">
         <button class="search-clear" id="search-clear" title="Effacer" onclick="clearConvSearch()">×</button>
       </div>
       <div class="conv-list" id="conv-list"></div>
+
+      <div class="space-side-panel" id="space-files-panel" hidden>
+        <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
+        <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
+        <div class="cfg-err" id="space-files-error" hidden></div>
+        <div class="mem-list" id="space-files-list"></div>
+      </div>
+
+      <div class="space-side-panel" id="space-memories-panel" hidden>
+        <div class="mem-list" id="space-memory-list"></div>
+      </div>
+
       <div class="move-bar" id="move-bar"></div>
     </div>
     <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
@@ -500,15 +523,6 @@
       </div>
       <button class="drawer-btn primary" id="space-save-btn" onclick="onSaveSpaceScreen()" disabled>Enregistrer</button>
       <div class="cfg-err" id="space-err" hidden></div>
-
-      <div class="drawer-section-title">Souvenirs de cet espace</div>
-      <div class="mem-list" id="space-memory-list"></div>
-
-      <div class="drawer-section-title">Fichiers</div>
-      <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
-      <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
-      <div class="cfg-err" id="space-files-error" hidden></div>
-      <div class="mem-list" id="space-files-list"></div>
 
       <div class="drawer-section-title" id="space-delete-title" hidden>Zone dangereuse</div>
       <button class="drawer-btn danger" id="space-delete-btn" onclick="onDeleteSpaceScreen()" hidden>Supprimer cet espace</button>

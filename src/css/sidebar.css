@@ -122,6 +122,44 @@
 .space-menu .space-opt-edit svg { width: 12px; height: 12px; }
 .space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
 
+/* onglets Conversations / Fichiers / Souvenirs (remplacent le drawer Space
+   pour la gestion fichiers/souvenirs) : swap complet de la zone scrollable,
+   Conversations seul à garder recherche + mode déplacement. */
+.space-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 14px 10px;
+}
+.space-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+.space-tab-btn:hover { background: var(--surface-3); color: var(--text-2); }
+.space-tab-btn.active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); }
+.space-tab-btn svg { width: 15px; height: 15px; }
+
+/* panneaux Fichiers / Souvenirs : mêmes composants que l'ancien écran Space
+   (mem-list, mem-item, mem-add, drawers.css), scrollables comme conv-list. */
+.space-side-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 14px 14px;
+}
+.space-side-panel > .drawer-btn { margin-bottom: 12px; }
+.space-side-panel > .cfg-err:not([hidden]) { margin-bottom: 12px; }
+/* sidebar plus étroite que le drawer d'origine (264px vs 380px) : les 2-3
+   boutons d'action par carte (mem-item) n'y tiennent pas sur une ligne. */
+.space-side-panel .drawer-btns { flex-wrap: wrap; }
+
 /* recherche dans l'historique */
 .sidebar-search {
   display: flex;

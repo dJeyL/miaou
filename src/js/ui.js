@@ -2500,11 +2500,13 @@ async function restoreSummaryItem(id) {
   if (item) setMemItemLoading(item, 'régénération…');
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
-  if (s) {
+  if (s && loadConversation(id)) {   // supprimée pendant la génération : ne pas ressusciter l'entrée
     saveSummary(id, {
       title: conv.title, timestamp: conv.timestamp,
       summary: s.summary, keywords: s.keywords, messageCount: conv.messages.length,
     });
+  } else if (s) {
+    return;   // conversation disparue entre-temps : rien à afficher ni à sauvegarder
   } else {
     restoreSummary(id);   // échec : on lève la tombstone (candidate au backfill)
   }
@@ -2634,6 +2636,35 @@ function syncSpaceUI() {
   }
 }
 
+// ── Onglets sidebar « Conversations / Fichiers / Souvenirs » (remplace le
+//    drawer Space pour la gestion fichiers/souvenirs) ────────────────────────
+// Une seule zone visible à la fois (swap complet, pas 3 zones scroll
+// indépendantes). Conversations reste seul à porter la recherche et le
+// mode déplacement — changer d'onglet en sort proprement (symétrique au
+// changement de Space, cf. pickSpace).
+let _spaceTab = 'conversations';
+
+function selectSpaceTab(tab) {
+  if (tab !== 'conversations') exitMoveModeIfActive();
+  _spaceTab = tab;
+  $('space-tab-conversations').classList.toggle('active', tab === 'conversations');
+  $('space-tab-files').classList.toggle('active', tab === 'files');
+  $('space-tab-memories').classList.toggle('active', tab === 'memories');
+  $('sidebar-search').hidden = tab !== 'conversations';
+  $('conv-list').hidden = tab !== 'conversations';
+  $('space-files-panel').hidden = tab !== 'files';
+  $('space-memories-panel').hidden = tab !== 'memories';
+  if (tab === 'files') { clearSpaceFilesError(); renderSpaceFilesList(activeSpaceId); }
+  else if (tab === 'memories') renderMemoryList('space-memory-list', activeSpaceId);
+}
+
+// Force le retour sur Conversations : appelé au switch/reset de Space, pour
+// ne pas laisser l'utilisateur face à la bibliothèque d'un Space qu'il vient
+// de quitter (spec Julien, 2026-07-08).
+function resetSpaceTab() {
+  selectSpaceTab('conversations');
+}
+
 function toggleSpaceMenu() {
   const menu = $('space-menu');
   if (!menu) return;
@@ -2656,8 +2687,14 @@ function renderSpaceMenu() {
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
-    opt.querySelector('.space-opt-name').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
-    opt.querySelector('.check').onmousedown = (ev) => { ev.preventDefault(); pickSpace(s.id); };
+    // Toute la ligne cliquable (pas seulement le texte/check) : le padding de
+    // .model-opt n'est couvert par aucun enfant, un clic dessus ne déclenchait
+    // rien avant ce correctif (Julien, 2026-07-08 — « il faut cliquer 2 fois »).
+    opt.onmousedown = (ev) => {
+      if (ev.target.closest('.space-opt-edit')) return;
+      ev.preventDefault();
+      pickSpace(s.id);
+    };
     opt.querySelector('.space-opt-edit').onmousedown = (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       menu.classList.remove('show');
@@ -2703,6 +2740,7 @@ function pickSpace(id) {
   });
   resetToEmpty();
   syncSpaceUI();
+  resetSpaceTab();
   $('space-menu').classList.remove('show');
   summarizeIfNeeded(leaving);
   armIdleSummaryTimer();
@@ -2722,6 +2760,7 @@ function followSpace(id) {
     syncContextCounter();
   });
   syncSpaceUI();
+  resetSpaceTab();
   renderConvList();
   _lastContextManifest = null;   // la conv suivie change de Space : contexte affiché périmé (piège 16/18)
   syncContextCounter();
@@ -2758,9 +2797,6 @@ function openSpaceScreen(id) {
   $('space-delete-btn').hidden = isDefault;
   $('space-delete-title').hidden = isDefault;
   if (!isDefault) syncSpaceDeleteLabel(id);
-  renderMemoryList('space-memory-list', id);
-  clearSpaceFilesError();
-  renderSpaceFilesList(id);
   $('space-drawer').classList.add('show');
   $('space-backdrop').classList.add('show');
 }
@@ -3813,11 +3849,12 @@ function addMemoryEntry(containerId, scope) {
   const now = Date.now();
   saveMemory({ id: genMemoryId(), content, created_at: now, updated_at: now, suppressed: false, scope });
   renderMemoryList(containerId, scope);
+  if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope);
 }
 
-function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderMemoryList(containerId, scope); }
-function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); }
-function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); }
+function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
+function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
+function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
 
 // Promotion Space → profile (UI-only, brief D3/D5) : réécrit le scope en
 // place, pas de nouvelle entrée. Démotion volontairement absente en v1 (cf.
@@ -3909,18 +3946,20 @@ function onSpaceFilesUploadClick() {
 
 // Upload direct (D2 path 1) : mêmes caps que le composer (ingestLibraryFile,
 // main.js), mais aucune notion d'attId/conversation ici — chaque fichier
-// rejoint directement la bibliothèque du Space ouvert dans l'écran.
+// rejoint directement la bibliothèque du Space actif (onglet sidebar,
+// indépendant de l'écran Space qui peut être fermé).
 async function onSpaceFilesSelected(input) {
   const files = Array.from(input.files || []);
-  if (!files.length || !_spaceScreenId) return;
+  if (!files.length) return;
   clearSpaceFilesError();
-  const spaceId = _spaceScreenId;
+  const spaceId = activeSpaceId;
   const stored = [];
   for (const file of files) {
     const rec = await ingestLibraryFile(spaceId, file);
     if (rec) stored.push(rec);
   }
   await renderSpaceFilesList(spaceId);
+  if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
   // Trigger D7 après le re-render (statut par carte visible dès le premier tick) :
   // fire-and-forget, chaque fichier indépendant (pas de blocage séquentiel).
   for (const rec of stored) {

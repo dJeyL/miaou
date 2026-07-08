@@ -662,3 +662,30 @@ describe('validateImportPayload', function() {
     expect(res.ok).toBeTruthy();
   });
 });
+
+describe('pruneOrphanSummaries', function() {
+  it('retire les entrées dont la conversation n\'existe plus', function() {
+    var summaries = { c1: { id: 'c1', summary: 'a' }, c2: { id: 'c2', summary: 'b' } };
+    var convs = [{ id: 'c1' }];
+    var out = pruneOrphanSummaries(summaries, convs);
+    expect(Object.keys(out).length).toBe(1);
+    expect(out.c1).toBeTruthy();
+    expect(out.c2).toBe(undefined);
+  });
+  it('conserve les tombstones dont la conversation existe encore', function() {
+    var summaries = { c1: { id: 'c1', suppressed: true } };
+    var convs = [{ id: 'c1' }];
+    var out = pruneOrphanSummaries(summaries, convs);
+    expect(out.c1.suppressed).toBe(true);
+  });
+  it('objet vide → objet vide, pas de crash', function() {
+    var out = pruneOrphanSummaries({}, []);
+    expect(Object.keys(out).length).toBe(0);
+  });
+  it('aucune conversation supprimée → index inchangé', function() {
+    var summaries = { c1: { id: 'c1', summary: 'a' } };
+    var convs = [{ id: 'c1' }, { id: 'c2' }];
+    var out = pruneOrphanSummaries(summaries, convs);
+    expect(Object.keys(out).length).toBe(1);
+  });
+});

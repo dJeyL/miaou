@@ -75,8 +75,10 @@ branchés en C2 :
 - **Écran Space** (`#space-drawer`, pattern sous-drawer MCP) : `openSpaceScreen(id)`
   peuple nom/description, désactive le champ nom et masque le bouton
   suppression si `id === DEFAULT_SPACE_ID` (non renommable-nom-vide, non
-  supprimable), rend la liste mémoire scopée (`renderMemoryList('space-memory-list',
-  id)`). `onSaveSpaceScreen()` valide un nom non vide (sauf default, dont le
+  supprimable). **Depuis le passage aux onglets sidebar (ci-dessous), le
+  drawer ne porte plus que nom/description/suppression** — souvenirs et
+  fichiers en ont été retirés (ne s'y rendent plus à l'ouverture).
+  `onSaveSpaceScreen()` valide un nom non vide (sauf default, dont le
   nom est laissé intact si le champ est vidé par erreur) et persiste via
   `upsertSpace`. **Suppression D6** (`onDeleteSpaceScreen`) : arm-then-run
   (`armThenRun`, même pattern que la poubelle sidebar) avec le libellé du
@@ -87,15 +89,32 @@ branchés en C2 :
   disparaît) + `deleteSpaceEntry`. Si le Space supprimé était l'actif, bascule
   immédiatement vers le default Space (`resetToEmpty` + persistance). Profile
   intact dans tous les cas — jamais touché par cette cascade.
+- **Onglets sidebar « Conversations / Fichiers / Souvenirs »** (`#space-tabs`,
+  sous le sélecteur de Space, `selectSpaceTab(tab)` ui.js) : remplacent
+  l'ancien emplacement drawer pour la gestion courante des fichiers/souvenirs
+  d'un Space — swap complet d'une zone unique (`#conv-list` /
+  `#space-files-panel` / `#space-memory-panel`), pas trois zones de scroll
+  indépendantes. Conversations reste seul onglet à porter `#sidebar-search`
+  (masquée sur les deux autres) et le mode déplacement (`exitMoveModeIfActive()`
+  appelé en quittant l'onglet Conversations). L'onglet actif retombe sur
+  Conversations à chaque changement de Space actif (`resetSpaceTab()`, appelé
+  depuis `pickSpace`/`followSpace`) — jamais de bibliothèque affichée « en
+  retard » sur le Space qu'on vient de quitter. Les rendus (`renderSpaceFilesList`,
+  `renderMemoryList('space-memory-list', activeSpaceId)`) sont déclenchés à
+  la sélection de l'onglet, pas à l'ouverture du drawer.
 - **Liste mémoire paramétrée** (`renderMemoryList(containerId, scope)`,
   ui.js) : un seul jeu de fonctions pour le drawer réglages (profile,
-  `containerId` et `scope` par défaut) et l'écran Space (`scope` = id du
-  Space). L'input d'ajout est namespacé par conteneur
+  `containerId` et `scope` par défaut) et l'onglet Souvenirs sidebar (`scope` =
+  id du Space actif). L'input d'ajout est namespacé par conteneur
   (`mem-add-input-<containerId>`) ; les ids par entrée restent globaux (id de
   souvenir unique). **Promotion Space → profile** (`promoteMemoryEntry`,
   bouton visible uniquement quand `scope !== 'profile'`) : réécrit `scope` en
   place, pas de nouvelle entrée. **Démotion volontairement absente en v1** —
-  non-goal, à revalider explicitement si demandée plus tard.
+  non-goal, à revalider explicitement si demandée plus tard. CRUD (ajout,
+  suppression, oubli, restauration) rafraîchit en plus le libellé du bouton
+  de suppression du drawer Space si celui-ci est ouvert sur le même Space
+  (`_spaceScreenId === scope` → `syncSpaceDeleteLabel`), pour ne pas afficher
+  un compte périmé si les deux surfaces sont ouvertes en même temps.
 - **Drawer réglages « Souvenirs »** devient l'onglet **Profil** (libellé
   renommé côté HTML et bouton d'ouverture) : gère exclusivement le scope
   `'profile'` (appel `renderMemoryList()` sans argument = défaut) — pas de
@@ -152,9 +171,10 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   clé localStorage), discriminant `kind:'library'` + `spaceId`, index `by_space`
   (IDB v3). Détail complet : `docs/storage.md`.
 - **Ingestion** — trois chemins :
-  1. **Upload direct** depuis l'écran Space (section « Fichiers »,
-     `ingestLibraryFile`, main.js) — mêmes caps que les pièces jointes (image
-     1536px q0.85, texte ≤200 kB inline, binaire tel quel).
+  1. **Upload direct** depuis l'onglet sidebar « Fichiers » (`ingestLibraryFile`,
+     main.js) — mêmes caps que les pièces jointes (image 1536px q0.85, texte
+     ≤200 kB inline, binaire tel quel). Cible `activeSpaceId` (pas
+     `_spaceScreenId` — indépendant du drawer, cf. section UI ci-dessus).
   2. **Promotion utilisateur** : action « Ajouter à la bibliothèque de
      l'espace » sur un attachment de message déjà envoyé (chip, `.att-promote`,
      `promoteAttachmentToLibrary`, ui.js) — copie immédiate, pas de gate (déjà
