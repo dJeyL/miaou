@@ -1806,11 +1806,14 @@ document.addEventListener('click', (e) => {
 
 // Cascade Escape (D-Esc) : un seul niveau fermé par pression, priorité au plus
 // « au-dessus ». 1) une dropdown ouverte (mêmes cibles que le clic extérieur
-// ci-dessus) — 2) le drawer/écran le plus récemment ouvert (pile explicite :
+// ci-dessus) — 2) le mode déplacement de conversations (_moveMode), s'il est
+// actif — 3) le drawer/écran le plus récemment ouvert (pile explicite :
 // certains écrans s'empilent volontairement sur un autre déjà ouvert, ex.
 // openApiServers depuis le drawer Settings — sans pile, Escape fermait
 // toujours le premier de la liste au lieu du sommet réellement affiché) —
-// 3) en dernier recours, la sidebar. Aucun de ces niveaux n'avait de gestion
+// 4) en dernier recours, la sidebar (la referme si ouverte, sinon la réaffiche
+// — spec Julien, 2026-07-09 : rien d'autre à faire, Esc redonne l'accès au
+// slider plutôt que d'être un no-op). Aucun de ces niveaux n'avait de gestion
 // clavier avant ce correctif (à l'exception de la sidebar, mobile uniquement
 // — étendue ici au desktop).
 let _drawerStack = [];
@@ -1862,11 +1865,18 @@ function closeTopDrawerViaEscape() {
   top();
   return true;
 }
+function exitMoveModeViaEscape() {
+  if (!_moveMode) return false;
+  exitMoveMode();
+  return true;
+}
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (closeTopDropdownViaEscape()) return;
+  if (exitMoveModeViaEscape()) return;
   if (closeTopDrawerViaEscape()) return;
-  closeSidebarViaEscape();
+  if (closeSidebarViaEscape()) return;
+  toggleSidebar();
 });
 
 // ── Sélecteur de modèle du composer ─────────────────────────────────────────
@@ -2704,17 +2714,22 @@ function renderSpaceMenu() {
   }
   const newOpt = document.createElement('div');
   newOpt.className = 'model-opt space-new';
-  newOpt.innerHTML = '<span>+ Nouvel espace</span>';
+  newOpt.innerHTML =
+    '<svg class="space-move-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>' +
+    '<span>Nouvel espace</span>';
   newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
   menu.appendChild(newOpt);
 
   // Déclencheur du mode déplacement (D1, brief Cter) : masqué sans destination
-  // possible (un seul Space = rien à déplacer vers). Après « + Nouvel espace »
+  // possible (un seul Space = rien à déplacer vers) ou sans rien à déplacer
+  // (Space actif vide — spec Julien, 2026-07-09). Après « + Nouvel espace »
   // (décision Julien, 2026-07-07), pour ne pas perturber le geste de création.
-  if (spaces.length >= 2) {
+  if (spaces.length >= 2 && spaceConvIds(activeSpaceId, loadConversations()).size > 0) {
     const moveOpt = document.createElement('div');
     moveOpt.className = 'model-opt space-move-trigger';
-    moveOpt.innerHTML = '<span>Déplacer des conversations…</span>';
+    moveOpt.innerHTML =
+      '<svg class="space-move-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M12 7l5 5-5 5"/></svg>' +
+      '<span>Déplacer des conversations…</span>';
     moveOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); enterMoveMode(); };
     menu.appendChild(moveOpt);
   }

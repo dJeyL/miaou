@@ -121,6 +121,13 @@
 .space-menu .space-opt-edit:hover { background: var(--surface-4); color: var(--text); }
 .space-menu .space-opt-edit svg { width: 12px; height: 12px; }
 .space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
+/* "Nouvel espace" et "Déplacer des conversations…" : même structure exacte
+   (svg.space-move-icon + span), donc icônes et textes alignés par construction
+   plutôt que par tâtonnement de padding. */
+.space-menu .model-opt.space-new,
+.space-menu .model-opt.space-move-trigger { justify-content: flex-start; gap: 6px; }
+.space-menu .model-opt.space-move-trigger { color: var(--text-2); }
+.space-menu .space-move-icon { width: 11px; height: 11px; flex-shrink: 0; }
 
 /* onglets Conversations / Fichiers / Souvenirs (remplacent le drawer Space
    pour la gestion fichiers/souvenirs) : swap complet de la zone scrollable,
@@ -353,13 +360,14 @@
    largeur fixe à côté) et tronque un nom trop long plutôt que de le faire
    passer à la ligne (moche, cf. capture d'écran signalée). */
 .move-bar-row .pill-select { flex: 1 1 auto; min-width: 0; max-width: 100%; margin-left: 0; }
-.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; }
+.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 12px; }
 .move-bar-row .pill-select-btn > span:first-child {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 .move-bar-row .pill-select-btn .chev { margin-left: auto; }
 /* .move-bar est ancrée en bas de la sidebar : le menu générique (.model-menu,
@@ -371,6 +379,9 @@
   transform: translateY(4px);
 }
 .move-bar .model-menu.show { transform: none; }
+.move-bar .model-menu .model-opt {
+  font-family: var(--sans);
+}
 .move-bar .model-menu .model-opt span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;

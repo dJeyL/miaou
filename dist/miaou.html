@@ -184,6 +184,11 @@ body {
 .space-menu .space-opt-edit svg { width: 12px; height: 12px; }
 .space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
 
+.space-menu .model-opt.space-new,
+.space-menu .model-opt.space-move-trigger { justify-content: flex-start; gap: 6px; }
+.space-menu .model-opt.space-move-trigger { color: var(--text-2); }
+.space-menu .space-move-icon { width: 11px; height: 11px; flex-shrink: 0; }
+
 .space-tabs {
   display: flex;
   gap: 4px;
@@ -399,13 +404,14 @@ body {
 .move-bar-cancel:hover { background: var(--surface-3); }
 
 .move-bar-row .pill-select { flex: 1 1 auto; min-width: 0; max-width: 100%; margin-left: 0; }
-.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; }
+.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 12px; }
 .move-bar-row .pill-select-btn > span:first-child {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 .move-bar-row .pill-select-btn .chev { margin-left: auto; }
 
@@ -415,6 +421,9 @@ body {
   transform: translateY(4px);
 }
 .move-bar .model-menu.show { transform: none; }
+.move-bar .model-menu .model-opt {
+  font-family: var(--sans);
+}
 .move-bar .model-menu .model-opt span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2784,7 +2793,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-08 21:03 UTC */
+/* miaou — built: 2026-07-08 22:46 UTC */
 
 /* ── utils.js ── */
 
@@ -3340,7 +3349,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783544624}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783550797}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7660,11 +7669,18 @@ function closeTopDrawerViaEscape() {
   top();
   return true;
 }
+function exitMoveModeViaEscape() {
+  if (!_moveMode) return false;
+  exitMoveMode();
+  return true;
+}
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (closeTopDropdownViaEscape()) return;
+  if (exitMoveModeViaEscape()) return;
   if (closeTopDrawerViaEscape()) return;
-  closeSidebarViaEscape();
+  if (closeSidebarViaEscape()) return;
+  toggleSidebar();
 });
 
 let _modelsCache = null;
@@ -8392,14 +8408,18 @@ function renderSpaceMenu() {
   }
   const newOpt = document.createElement('div');
   newOpt.className = 'model-opt space-new';
-  newOpt.innerHTML = '<span>+ Nouvel espace</span>';
+  newOpt.innerHTML =
+    '<svg class="space-move-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>' +
+    '<span>Nouvel espace</span>';
   newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
   menu.appendChild(newOpt);
 
-  if (spaces.length >= 2) {
+  if (spaces.length >= 2 && spaceConvIds(activeSpaceId, loadConversations()).size > 0) {
     const moveOpt = document.createElement('div');
     moveOpt.className = 'model-opt space-move-trigger';
-    moveOpt.innerHTML = '<span>Déplacer des conversations…</span>';
+    moveOpt.innerHTML =
+      '<svg class="space-move-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M12 7l5 5-5 5"/></svg>' +
+      '<span>Déplacer des conversations…</span>';
     moveOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); enterMoveMode(); };
     menu.appendChild(moveOpt);
   }
