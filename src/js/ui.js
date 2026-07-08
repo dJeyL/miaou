@@ -1032,11 +1032,11 @@ function enterEditMode(wrap) {
     if (skillAutocompleteOpen(ac)) {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(ac, 1); return; }
       if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(ac, -1); return; }
-      if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(ac); return; }
+      if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); hideSkillAutocomplete(ac); return; }
       if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(ac); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(ac); return; }
     }
-    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(wrap, original); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelEdit(wrap, original); }
     else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(wrap, ta.value); }
   });
   bubble.querySelector('[data-act="cancel"]').onclick = () => cancelEdit(wrap, original);
@@ -1582,7 +1582,7 @@ function onComposerKey(e) {
   if (skillAutocompleteOpen(_composerAc)) {
     if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(_composerAc, 1); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(_composerAc, -1); return; }
-    if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(_composerAc); return; }
+    if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); hideSkillAutocomplete(_composerAc); return; }
     if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }

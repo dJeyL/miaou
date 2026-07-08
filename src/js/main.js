@@ -504,7 +504,7 @@ function wireTitleEditing() {
 }
 function onTitleKey(e) {
   if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-  else if (e.key === 'Escape') { e.preventDefault(); e.target.textContent = titleBefore; e.target.blur(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.textContent = titleBefore; e.target.blur(); }
 }
 function onTitleBlur(e) {
   const el = e.target;

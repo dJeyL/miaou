@@ -2793,7 +2793,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-08 22:46 UTC */
+/* miaou — built: 2026-07-08 22:57 UTC */
 
 /* ── utils.js ── */
 
@@ -3349,7 +3349,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783550797}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783551479}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6986,11 +6986,11 @@ function enterEditMode(wrap) {
     if (skillAutocompleteOpen(ac)) {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(ac, 1); return; }
       if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(ac, -1); return; }
-      if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(ac); return; }
+      if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); hideSkillAutocomplete(ac); return; }
       if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(ac); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(ac); return; }
     }
-    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(wrap, original); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelEdit(wrap, original); }
     else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(wrap, ta.value); }
   });
   bubble.querySelector('[data-act="cancel"]').onclick = () => cancelEdit(wrap, original);
@@ -7443,7 +7443,7 @@ function onComposerKey(e) {
   if (skillAutocompleteOpen(_composerAc)) {
     if (e.key === 'ArrowDown') { e.preventDefault(); moveSkillAcSelection(_composerAc, 1); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); moveSkillAcSelection(_composerAc, -1); return; }
-    if (e.key === 'Escape')    { e.preventDefault(); hideSkillAutocomplete(_composerAc); return; }
+    if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); hideSkillAutocomplete(_composerAc); return; }
     if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }
@@ -10010,7 +10010,7 @@ function wireTitleEditing() {
 }
 function onTitleKey(e) {
   if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-  else if (e.key === 'Escape') { e.preventDefault(); e.target.textContent = titleBefore; e.target.blur(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.textContent = titleBefore; e.target.blur(); }
 }
 function onTitleBlur(e) {
   const el = e.target;
