@@ -237,6 +237,58 @@ describe('acks d\'outils — helpers', function() {
   });
 });
 
+// ── B5 : l'intent n'enrichit que l'ack de SON propre outil ────────────────────
+// Régression campagne 2026-07-09 : un handler qui sort en erreur précoce sans
+// pousser d'ack ne doit pas voir son intent se coller à l'ack d'un outil
+// antérieur du même tour multi-outils.
+describe('callTool : intent ne déborde pas sur l\'ack d\'un outil précédent (B5)', function() {
+  it('outil OK puis outil échouant sans ack : l\'intent du 2e ne réécrit pas le 1er', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    // 1er appel : create_memory pousse un ack memory_create + son intent.
+    callTool('create_memory', { content: 'un fait à retenir', miaou_intent: 'intent-un' });
+    // 2e appel : update_memory sur un id inexistant → 'Souvenir introuvable.',
+    // AUCUN ack poussé. Son intent ne doit PAS se poser sur l'ack du 1er.
+    callTool('update_memory', { id: 'inexistant', content: 'x', miaou_intent: 'intent-deux' });
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('memory_create');
+    expect(acks[0].intent).toBe('intent-un');
+  });
+  it('deux outils poussant chacun un ack : chaque intent va sur le bon ack', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    callTool('create_memory', { content: 'premier fait', miaou_intent: 'intent-A' });
+    callTool('create_memory', { content: 'second fait', miaou_intent: 'intent-B' });
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(2);
+    expect(acks[0].intent).toBe('intent-A');
+    expect(acks[1].intent).toBe('intent-B');
+  });
+});
+
+// updateLastPendingToolAck : garde minLength (support direct du correctif B5)
+describe('updateLastPendingToolAck : garde minLength', function() {
+  it('sans minLength : enrichit le dernier ack', function() {
+    clearPendingToolAcks();
+    _pendingToolAcks.push({ kind: 'memory_create', id: '1' });
+    updateLastPendingToolAck({ intent: 'x' });
+    expect(getPendingToolAcks()[0].intent).toBe('x');
+  });
+  it('minLength égal à la longueur courante : n\'enrichit pas (aucun ack neuf)', function() {
+    clearPendingToolAcks();
+    _pendingToolAcks.push({ kind: 'memory_create', id: '1' });
+    updateLastPendingToolAck({ intent: 'y' }, 1);   // length (1) <= minLength (1)
+    expect(getPendingToolAcks()[0].intent).toBe(undefined);
+  });
+  it('minLength inférieur à la longueur : enrichit (un ack a été poussé)', function() {
+    clearPendingToolAcks();
+    _pendingToolAcks.push({ kind: 'memory_create', id: '1' });
+    updateLastPendingToolAck({ intent: 'z' }, 0);   // length (1) > minLength (0)
+    expect(getPendingToolAcks()[0].intent).toBe('z');
+  });
+});
+
 describe('toolDefinitions', function() {
   it('expose miaou__get_conversation et miaou__list_conversations (préfixés V2)', function() {
     var defs = toolDefinitions();
@@ -506,6 +558,24 @@ describe('MEMORY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PRO
   it('mentionne create_memory et ask_confirmation pour orienter le modèle', function() {
     expect(MEMORY_DOCTRINE.indexOf('create_memory') >= 0).toBeTruthy();
     expect(MEMORY_DOCTRINE.indexOf('ask_confirmation') >= 0).toBeTruthy();
+  });
+});
+
+describe('intentDoctrinePrompt (conditionnel sur TOOLS.length && settings.intentTracing)', function() {
+  it('intentTracing vrai (et TOOLS non vide) → renvoie INTENT_DOCTRINE', function() {
+    localStorage.clear();
+    saveSettings({ intentTracing: true });
+    expect(intentDoctrinePrompt()).toContain('intent');
+    expect(intentDoctrinePrompt()).toBe(INTENT_DOCTRINE);
+  });
+  it('intentTracing explicitement désactivé → chaîne vide', function() {
+    localStorage.clear();
+    saveSettings({ intentTracing: false });
+    expect(intentDoctrinePrompt()).toBe('');
+  });
+  it('intentTracing absent (storage vierge) → true par défaut, doctrine renvoyée', function() {
+    localStorage.clear();
+    expect(intentDoctrinePrompt()).toBe(INTENT_DOCTRINE);
   });
 });
 

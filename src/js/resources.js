@@ -7,16 +7,6 @@
 
 // ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
 
-// Classe d'une ressource selon son MIME : « inline » (texte/JSON réinjecté au
-// modèle à chaque tour) ou « binary » (seul un descripteur parvient au modèle).
-// Inline set : text/* et application/json. Tout le reste → binary.
-function classifyMime(mime) {
-  const m = String(mime || '').toLowerCase().split(';')[0].trim();
-  if (m === 'application/json') return 'inline';
-  if (m.startsWith('text/')) return 'inline';
-  return 'binary';
-}
-
 // Taille lisible en anglais. Aucune dépendance Intl (testable sous QuickJS).
 function humanSize(bytes) {
   const n = Number(bytes) || 0;
@@ -410,7 +400,6 @@ let _resourceCache = {};
 function getCachedRecord(id) { return _resourceCache[id] || null; }
 function _cacheRecord(rec) { _resourceCache[rec.id] = rec; }
 function _uncacheRecord(id) { delete _resourceCache[id]; }
-function clearResourceSessionCache() { _resourceCache = {}; }
 
 // Lookup par attId (conversation-scoped), pour le rendu des vignettes de la
 // bulle utilisateur (fallback gracieux si le blob n'est pas/plus en cache —
@@ -539,7 +528,13 @@ function openResourceDB() {
       }
     };
     req.onsuccess = function(e) { resolve(e.target.result); };
-    req.onerror = function(e) { reject(e.target.error); };
+    req.onerror = function(e) {
+      // Ne pas figer la promesse mémoïsée sur un échec (transitoire) : la
+      // remettre à null pour qu'un appel ultérieur retente l'ouverture, sinon
+      // toute la session reste sur une base inaccessible après un premier raté.
+      _resourceDbPromise = null;
+      reject(e.target.error);
+    };
   });
   return _resourceDbPromise;
 }
@@ -591,12 +586,13 @@ function getResourcesBySpace(spaceId) {
 }
 
 function deleteResource(id) {
-  _uncacheRecord(id);
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('resources', 'readwrite');
       const req = tx.objectStore('resources').delete(id);
-      req.onsuccess = function() { resolve(); };
+      // Évincer le cache seulement APRÈS le succès IDB : sinon un delete qui
+      // échoue laisserait le record en base mais absent du cache (incohérence).
+      req.onsuccess = function() { _uncacheRecord(id); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -660,8 +656,8 @@ function clearIdbStore(storeName) {
 // existant, avec `conversationId` (GC gratuit via deleteResourcesByConversation)
 // ET `attId` (id conversation-scopé, cf. allocateAttId). À la différence de
 // _storeBlock : PAS d'ack `resource_stored` — un attachment n'est pas un
-// résultat d'outil, rien à annoncer dans le fil. `class` suit `classifyMime`
-// (inline pour un texte, binary pour image/binaire) ; `dims` (optionnel,
+// résultat d'outil, rien à annoncer dans le fil. `class` (cls) est décidé par
+// l'appelant (inline pour un texte, binary pour image/binaire) ; `dims` (optionnel,
 // {w,h}) pour une image, figées à l'attache (cf. D2, byte-stable au lot 2).
 // Retourne l'enregistrement stocké en cas de succès, null sinon.
 async function storeAttachment(attId, mime, name, data, cls, conversationId, now, rand, dims) {
@@ -693,14 +689,11 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
 // Retourne l'enregistrement stocké en cas de succès, null sinon.
 async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand) {
   const id = generateFileId(rand);
-  const record = {
-    id, spaceId, kind: 'library',
-    class: cls, mime: String(mime || 'application/octet-stream'),
-    name: String(name || 'file'), size: data.byteLength,
-    createdAt: now, data,
-  };
-  if (source) record.source = source;
-  if (description) record.description = capFileDescription(description);
+  // normalizeLibraryRecord (helper pur, testé) porte les champs figés du schéma
+  // + capFileDescription ; class/data (exclus du schéma normalisé) sont greffés ici.
+  const record = Object.assign(
+    normalizeLibraryRecord({ id, spaceId, name, mime, size: data.byteLength, createdAt: now, source, description }),
+    { class: cls, data });
   try {
     await putResource(record);
     _cacheRecord(record);
@@ -749,54 +742,41 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
   const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
   const newContent = [];
 
-  for (const block of result.content) {
-    if (!block) { newContent.push(block); continue; }
-
-    let id = null;
-
-    if (block.type === 'image' && block.data) {
-      id = await _storeBlock(block.mimeType || 'image/png', 'image',
-        base64ToArrayBuffer(block.data), 'binary', conversationId, theNow, theRand);
-    } else if (block.type === 'audio' && block.data) {
-      id = await _storeBlock(block.mimeType || 'audio/mpeg', 'audio',
-        base64ToArrayBuffer(block.data), 'binary', conversationId, theNow, theRand);
-    } else if (block.type === 'resource') {
-      const r = block.resource || {};
-      const name = (r.uri && r.uri.split('/').pop()) || 'resource';
-      if (r.blob != null) {
-        id = await _storeBlock(
-          r.mimeType || 'application/octet-stream', name,
-          base64ToArrayBuffer(r.blob), 'binary', conversationId, theNow, theRand);
-      } else if (r.text != null) {
-        // Texte/JSON : retire le bloc du queue D8 — pas d'affichage automatique
-        // côté UI (vrai quel que soit le réglage).
-        if (typeof retainPendingToolBlocks === 'function') {
-          retainPendingToolBlocks(b =>
-            !(b.type === 'resource' && b.resource != null &&
-              b.resource.text != null && b.resource.blob == null));
-        }
-        if (saveInline) {
-          // Stocker en IDB (persistance, accès via present_resource). Le modèle
-          // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
-          // appeler present_resource si besoin), sans note « présentée ».
-          const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
-            utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
-          const rec = storedId ? getCachedRecord(storedId) : null;
-          const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
-          newContent.push({ type: 'text', text: r.text + desc });
-        } else {
-          // Réglage désactivé : le modèle reçoit le texte brut, sans ressource ni ID.
-          newContent.push({ type: 'text', text: r.text });
-        }
-        continue;
+  // Partitionnement (helper pur, testé) — même branchement image/audio/resource
+  // qu'ici, mais sans effet de bord ; on ne fait qu'exécuter le stockage.
+  for (const part of extractResultParts(result)) {
+    if (part.action === 'store_binary') {
+      const id = await _storeBlock(part.mime, part.name,
+        base64ToArrayBuffer(part.fromBase64), 'binary', conversationId, theNow, theRand);
+      if (id) {
+        newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+      } else {
+        newContent.push(part.block);
       }
-    }
-    // {type:'text'} et {type:'resource_link'} → passthrough
-
-    if (id) {
-      newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+    } else if (part.action === 'store_inline') {
+      // Texte/JSON : retire le bloc du queue D8 — pas d'affichage automatique
+      // côté UI (vrai quel que soit le réglage).
+      if (typeof retainPendingToolBlocks === 'function') {
+        retainPendingToolBlocks(b =>
+          !(b.type === 'resource' && b.resource != null &&
+            b.resource.text != null && b.resource.blob == null));
+      }
+      if (saveInline) {
+        // Stocker en IDB (persistance, accès via present_resource). Le modèle
+        // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
+        // appeler present_resource si besoin), sans note « présentée ».
+        const storedId = await _storeBlock(part.mime, part.name,
+          utf8Encode(part.text), 'inline', conversationId, theNow, theRand);
+        const rec = storedId ? getCachedRecord(storedId) : null;
+        const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
+        newContent.push({ type: 'text', text: part.text + desc });
+      } else {
+        // Réglage désactivé : le modèle reçoit le texte brut, sans ressource ni ID.
+        newContent.push({ type: 'text', text: part.text });
+      }
     } else {
-      newContent.push(block);
+      // passthrough : {type:'text'}, {type:'resource_link'}, bloc null, inconnu
+      newContent.push(part.block);
     }
   }
 

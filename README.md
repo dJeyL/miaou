@@ -213,12 +213,13 @@ dans Paramètres → Serveurs MCP. Procédure détaillée dans
 ```
 src/
 ├── html/index.html    squelette + placeholders /* __CSS__ */ et /* __JS__ */
-├── css/main.css       thème complet
+├── css/*.css          8 feuilles concaténées dans l'ordre CSS_ORDER (base, sidebar,
+│                      chat, composer, drawers, tools, responsive, theme-light)
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
     ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
     ├── resources.js   IndexedDB (base `miaou`) : stockage/réhydratation des ressources MCP non-textuelles
-    ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, parsing slash
+    ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, triggers slash
     ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC
     ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
     ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs

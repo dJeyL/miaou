@@ -176,9 +176,12 @@ ultérieures du même lot).
   via **`confirm()` natif** si elle dépasse `EXPORT_HTML_SIZE_WARN` (8 Mo —
   pas de dialogue dédié en v1, YAGNI), puis télécharge
   `miaou-<slug>-<dateStamp>.html` via `downloadFile`.
-- **Étape suivante du lot (non livrée ici)** : bouton topbar jumeau de
-  `.conv-dl-btn`, câblage `syncConvDownloadBtn`/`setSending`, entrée palette
-  (gatée sur le lot F, absent).
+- **Câblage topbar (livré, commit `106245c`)** : bouton `.conv-dl-html-btn`
+  jumeau de `.conv-dl-btn` (index.html), `onclick="exportConvHtml()"` (ui.js).
+  `syncConvDownloadBtn()` gère les DEUX boutons ensemble : même condition
+  d'affichage (`hidden` levé quand une conversation a du contenu), désactivés
+  pendant l'envoi (`setSending`). Pas d'entrée palette (gatée sur le lot F,
+  absent) — le point d'entrée est le bouton topbar seul.
 
 ## Horodatages des messages
 

@@ -460,3 +460,128 @@
 .body th { background: var(--surface); font-weight: 600; color: var(--text); }
 .body td { color: var(--text-2); }
 .body tr:nth-child(even) td { background: var(--table-stripe); }
+
+/* ═══ Écran d'accueil (nouvelle conversation) ═══ */
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  user-select: none;
+  pointer-events: none;
+}
+.welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
+.welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
+.welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
+
+/* Curseur de streaming (clignote pendant que le message assistant se remplit). */
+.cursor-blink {
+  display: inline-block;
+  width: 7px; height: 14px;
+  background: var(--accent);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* patienteur animé : attente (WAITING) et reprise après un tour tool_calls.
+   Sobre — couleur texte secondaire, mot court qui change par fondu. */
+.waiter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+  letter-spacing: .2px;
+}
+.waiter-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* centre le point dans un slot de 20px, aligné avec .meta .glyph */
+  margin-left: 7.5px; margin-right: 7.5px;
+  flex-shrink: 0;
+  animation: waiter-pulse 1s ease-in-out infinite;
+}
+@keyframes waiter-pulse {
+  0%, 100% { transform: scale(.55); opacity: .45; }
+  50%      { transform: scale(1);   opacity: 1; }
+}
+/* le mot et ses points fondent ensemble ; seul le point animé reste */
+.waiter-word { transition: opacity .28s ease; }
+.waiter-word::after { content: ''; font-style: normal; animation: waiter-dots 1.2s step-end infinite; }
+.waiter-word.dots-reset::after { animation: none; }
+.waiter-word.fade { opacity: 0; }
+@keyframes waiter-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
+
+/* Barre méta : actions à droite (raisonnement, copie, download, régénération). */
+.meta-actions {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.reasoning-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
+.reasoning-toggle.open { color: var(--accent); }
+.reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
+.msg-copy,
+.msg-dl,
+.msg-regen {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.msg-copy:hover,
+.msg-dl:hover,
+.msg-regen:hover { color: var(--text); background: var(--surface-2); }
+.msg-copy[hidden],
+.msg-dl[hidden],
+.msg-regen[hidden] { display: none; }
+.msg-copy--checked { color: var(--accent) !important; }
+
+/* Horodatages inline des messages */
+/* Séparateur « serveur › modèle » : marge négative pour compenser le gap 7px
+   du flex .meta (espacement effectif ~3px de chaque côté). */
+.msg.assistant .meta .inline-sep { margin: 0 -4px; }
+.msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
+.msg.assistant .meta .msg-ts[hidden] { display: none; }
+/* Timestamp sous la bulle user, dans .msg-user-footer (align-items:flex-end
+   du .msg.user gère l'alignement à droite du footer entier) */
+.msg.user .msg-ts { font-size: 11px; color: var(--text-3); }
+.conv-dl-btn:disabled, .conv-dl-html-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
+
+/* Bloc de raisonnement (thinking) : panneau collapsible (atténué) au-dessus du
+   corps du message, révélé par .reasoning-toggle de la barre méta. */
+.reasoning {
+  margin: 0 0 8px;
+  padding: 8px 11px;
+  border-left: 2px solid var(--border-2);
+  background: var(--surface-2);
+  border-radius: 0 6px 6px 0;
+}
+.reasoning-content {
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--text-2);
+  opacity: .85;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow-y: auto;
+}

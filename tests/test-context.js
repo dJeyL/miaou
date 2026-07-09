@@ -194,6 +194,67 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
   });
 });
 
+describe('buildSummaryBlock (résumés matchés injectés dans le contexte)', function() {
+  it('[] → chaîne vide (pas de bloc creux)', function() {
+    expect(buildSummaryBlock([])).toBe('');
+  });
+  it('absent → chaîne vide', function() {
+    expect(buildSummaryBlock(undefined || [])).toBe('');
+  });
+  it('1+ match → bloc contenant id, titre et résumé', function() {
+    var b = buildSummaryBlock([{ id: 'c1', title: 'Titre X', summary: 'Un résumé concis' }]);
+    expect(b).toContain('c1');
+    expect(b).toContain('Titre X');
+    expect(b).toContain('Un résumé concis');
+    expect(b).toContain('list_conversations');
+  });
+});
+
+describe('buildMemoryEntriesBlock (souvenirs actifs, scope profile + Space actif)', function() {
+  it('aucun souvenir → chaîne vide', function() {
+    localStorage.clear();
+    activeSpaceId = DEFAULT_SPACE_ID;
+    expect(buildMemoryEntriesBlock()).toBe('');
+  });
+  it('un souvenir de scope profile → bloc le listant', function() {
+    localStorage.clear();
+    activeSpaceId = DEFAULT_SPACE_ID;
+    saveMemory({ id: 'm1', content: 'Aime le café noir', scope: 'profile' });
+    var b = buildMemoryEntriesBlock();
+    expect(b).toContain('m1');
+    expect(b).toContain('Aime le café noir');
+  });
+  it('souvenir hors scope (autre Space) → absent du bloc', function() {
+    localStorage.clear();
+    activeSpaceId = DEFAULT_SPACE_ID;
+    saveMemory({ id: 'm1', content: 'Souvenir isolé', scope: 'sp-autre' });
+    expect(buildMemoryEntriesBlock()).toBe('');
+  });
+});
+
+describe('buildSkillsContextBlock (skills autotrigger, stage 2)', function() {
+  it('aucun skill autotrigger → chaîne vide', function() {
+    setSkillsCache([]);
+    expect(buildSkillsContextBlock()).toBe('');
+    setSkillsCache([{ slug: 'a' }]);   // enabled mais pas autotrigger
+    expect(buildSkillsContextBlock()).toBe('');
+  });
+  it('≥1 skill enabled+autotrigger → bloc les listant', function() {
+    setSkillsCache([{ slug: 'my-skill', name: 'Ma Skill', description: 'fait un truc', autotrigger: true }]);
+    var b = buildSkillsContextBlock();
+    expect(b).toContain('my-skill');
+    expect(b).toContain('Ma Skill');
+    expect(b).toContain('fait un truc');
+    expect(b).toContain('miaou_skills_context');
+  });
+});
+
+// NOTE : contextBlockParts()/buildContextBlock() appellent Intl.DateTimeFormat
+// (contextDateModel) — Intl n'est pas stubé sous QuickJS (tests/runner.py),
+// donc non testables ici tels quels. Couverts indirectement via leurs
+// sous-blocs purs ci-dessus (buildSummaryBlock/buildMemoryEntriesBlock/
+// buildSkillsContextBlock).
+
 describe('contextWindowFor', function() {
   it('valeur vide/non numérique → null (inconnu)', function() {
     localStorage.clear();

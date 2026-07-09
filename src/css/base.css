@@ -26,6 +26,13 @@
   --accent-bd:  rgba(255,122,69,.28);
   --ok:         #4ec98a;
   --err:        #ff5d5d;
+  --ctx-cache:    #5fb3d9;               /* barre de cache KV (inspecteur de contexte) */
+  --ctx-warn:     #b8720a;               /* compteur de contexte — approche de la limite */
+  --ctx-warn-bd:  rgba(184,114,10,.33);  /* bordure du compteur warn (motif --accent-bd) */
+  --ctx-warn-dim: rgba(184,114,10,.10);  /* fond du compteur warn (motif --accent-dim) */
+  --ctx-over:     #d64545;               /* compteur de contexte — dépassement */
+  --ctx-over-bd:  rgba(214,69,69,.33);   /* bordure du compteur over */
+  --ctx-over-dim: rgba(214,69,69,.10);   /* fond du compteur over */
   --r:          7px;
   --r-sm:       5px;
   --ease:       cubic-bezier(.4, 0, .2, 1);
@@ -61,6 +68,11 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* Séparateur inline accentué générique (« › » provenance/breadcrumb, « · »
+   horodatage, séparateur de namespace…). Neutre : ne présume pas d'un usage
+   « outil » — les overrides contextuels (marges) vivent près de leur usage. */
+.inline-sep { color: var(--accent-2); margin: 0 3px; }
 
 /* ═══ App shell ═══ */
 .app { display: flex; height: var(--vvh, 100dvh); }

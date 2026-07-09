@@ -162,8 +162,8 @@
    grouper à droite avec le contexte. */
 .pill-select:not([hidden]) + .ctx-counter { margin-left: 0; }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
-.ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
-.ctx-counter.ctx-counter-over { color: #d64545; border-color: #d6454555; background: #d645451a; }
+.ctx-counter.ctx-counter-warn { color: var(--ctx-warn); border-color: var(--ctx-warn-bd); background: var(--ctx-warn-dim); }
+.ctx-counter.ctx-counter-over { color: var(--ctx-over); border-color: var(--ctx-over-bd); background: var(--ctx-over-dim); }
 /* total provisoire (recalculé en cours de boucle d'outils, pas encore la
    réponse finale) : bordure en tirets pour signaler "va encore bouger",
    cumulable avec ctx-counter-warn/-over (leur couleur garde la priorité). */
@@ -367,3 +367,38 @@
 }
 .att-remove:hover { background: var(--surface-3); color: var(--err); }
 .att-remove svg { width: 10px; height: 10px; }
+
+/* ── Autocomplétion des skills (slash) + erreur slash ────────────────────────
+   Panneau proposé sous la saisie du composer. Une seconde instance vit dans la
+   bulle d'édition d'un message user (.msg-edit-area + .skill-ac, cf. chat.css). */
+.skill-ac {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+/* Instance du composer : en absolu au-dessus de .input-wrap (son ancre), donc
+   PAR-DESSUS les pilules de sélecteurs (axe z) sans les décaler à l'ouverture. */
+#skill-ac {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin-bottom: 0;
+  z-index: 30;
+}
+.skill-ac-opt {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.skill-ac-opt:hover,
+.skill-ac-opt.active { background: var(--accent-dim); }
+.skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
+.skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }

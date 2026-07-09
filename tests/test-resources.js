@@ -155,35 +155,6 @@ describe('buildLibraryManifestBlock', function() {
   });
 });
 
-// ── classifyMime ──────────────────────────────────────────────────────────────
-
-describe('classifyMime', function() {
-  it('application/json → inline', function() {
-    expect(classifyMime('application/json')).toBe('inline');
-  });
-  it('text/plain → inline', function() {
-    expect(classifyMime('text/plain')).toBe('inline');
-  });
-  it('text/html → inline', function() {
-    expect(classifyMime('text/html')).toBe('inline');
-  });
-  it('image/png → binary', function() {
-    expect(classifyMime('image/png')).toBe('binary');
-  });
-  it('audio/mpeg → binary', function() {
-    expect(classifyMime('audio/mpeg')).toBe('binary');
-  });
-  it('application/pdf → binary', function() {
-    expect(classifyMime('application/pdf')).toBe('binary');
-  });
-  it('vide → binary', function() {
-    expect(classifyMime('')).toBe('binary');
-  });
-  it('ignore les paramètres MIME (;charset=...)', function() {
-    expect(classifyMime('text/plain; charset=utf-8')).toBe('inline');
-  });
-});
-
 // ── humanSize ─────────────────────────────────────────────────────────────────
 
 describe('humanSize', function() {
@@ -710,5 +681,42 @@ describe('collapseAttachedMessageContent', function() {
     var lastIdx = out.lastIndexOf('[attachment att-1:');
     expect(firstIdx >= 0 && firstIdx === lastIdx).toBeTruthy();   // une seule occurrence, pas de doublon
     expect(out.indexOf('[attachment att-2:') >= 0).toBeTruthy();  // le descripteur image, lui, est bien ajouté par collapse
+  });
+});
+
+// ── Cache session (_resourceCache) — getCachedRecordByAttId / getCachedLibraryEntriesBySpace ──
+// Pas de reset public (clearResourceSessionCache supprimée au lot 2) : ids distincts par test.
+
+describe('getCachedRecordByAttId (scan linéaire, double filtre attId + conversationId)', function() {
+  it('match exact (attId + conversationId)', function() {
+    _cacheRecord({ id: 'r1', attId: 'att-e1', conversationId: 'conv-e1' });
+    var rec = getCachedRecordByAttId('att-e1', 'conv-e1');
+    expect(rec.id).toBe('r1');
+  });
+  it('match attId avec conversationId omis → renvoie le premier attId qui matche', function() {
+    _cacheRecord({ id: 'r2', attId: 'att-e2', conversationId: 'conv-e2' });
+    var rec = getCachedRecordByAttId('att-e2');
+    expect(rec.id).toBe('r2');
+  });
+  it('attId présent mais conversationId différent → null', function() {
+    _cacheRecord({ id: 'r3', attId: 'att-e3', conversationId: 'conv-e3' });
+    expect(getCachedRecordByAttId('att-e3', 'conv-autre')).toBe(null);
+  });
+  it('attId absent → null', function() {
+    expect(getCachedRecordByAttId('att-inconnu-e4')).toBe(null);
+  });
+});
+
+describe('getCachedLibraryEntriesBySpace (filtre kind===library ET spaceId)', function() {
+  it('cache mêlant attachments et library d\'espaces différents → ne renvoie que ceux du spaceId demandé', function() {
+    _cacheRecord({ id: 'att-x1', attId: 'att-x1' });   // attachment, kind absent
+    _cacheRecord({ id: 'lib-x1', kind: 'library', spaceId: 'sp-e1' });
+    _cacheRecord({ id: 'lib-x2', kind: 'library', spaceId: 'sp-e2' });
+    var entries = getCachedLibraryEntriesBySpace('sp-e1');
+    expect(entries.length).toBe(1);
+    expect(entries[0].id).toBe('lib-x1');
+  });
+  it('spaceId sans fichier → []', function() {
+    expect(getCachedLibraryEntriesBySpace('sp-e-vide')).toEqual([]);
   });
 });

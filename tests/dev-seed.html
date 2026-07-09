@@ -169,6 +169,9 @@ const SEEDS = [
     // mais ce n'est plus le cas ici.
     id: 'seed-10b',
     title: 'Debug capture réseau — pièce jointe',
+    // attSeq suit le dernier att-N émis (docs/storage.md) : sans lui,
+    // allocateAttId(undefined) ré-émettrait att-1, déjà pris ci-dessous.
+    attSeq: 2,
     messages: [
       {
         role: 'user',

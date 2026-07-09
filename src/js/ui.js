@@ -106,10 +106,21 @@ function resolveConvRefs(text, opts) {
   });
 }
 
+// Sanitisation du HTML issu de marked (campagne relecture 2026-07, A1) : le
+// markdown du MODÈLE peut contenir du HTML inline (marked le laisse passer tel
+// quel) — sans sanitisation, un payload reproduit par le modèle depuis une
+// source hostile (page web lue par outil) s'exécuterait dans le DOM, avec
+// accès aux clefs API du localStorage. DOMPurify (CDN, comme marked/Prism) ;
+// s'il n'est pas chargé (offline), marked ne l'est probablement pas non plus
+// (même CDN) et le fallback escHtml des renderers prend le relais — le cas
+// marked-sans-DOMPurify laisse passer comme avant, dégradation assumée.
+function sanitizeHtml(html) {
+  return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+}
 function renderMd(text, opts) {
   const resolved = resolveConvRefs(text, opts);
   if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
-  return marked.parse(resolved, { breaks: true });
+  return sanitizeHtml(marked.parse(resolved, { breaks: true }));
 }
 // Variante pour les messages utilisateur : empêche les balises HTML de traverser
 // vers le DOM (angle-brackets échappés) tout en conservant le markdown.
@@ -117,7 +128,7 @@ function renderMd(text, opts) {
 function renderUserMd(text) {
   if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
   const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  return marked.parse(safe, { breaks: true });
+  return sanitizeHtml(marked.parse(safe, { breaks: true }));
 }
 function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
 // Autoscroll pendant le streaming : ne suit le bas du fil que si l'utilisateur
@@ -163,11 +174,11 @@ function assistantHead(model, reasoning, ts, server) {
   // l'heure est un span séparé (même coloration accent que le « › »), masqué
   // et révélé avec .msg-ts (cf. les deux mises à jour dynamiques, main.js).
   const showSrv = server && loadApiServers().length > 1;
-  const srcHtml = (showSrv ? `<span>${escHtml(server)}</span><span class="tool-name-sep">›</span>` : '') +
+  const srcHtml = (showSrv ? `<span>${escHtml(server)}</span><span class="inline-sep">›</span>` : '') +
     `<span>${escHtml(model || modelName())}</span>`;
   return (
     `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt="">${srcHtml}` +
-    `<span class="msg-ts-sep tool-name-sep"${tsText ? '' : ' hidden'}>·</span>` +
+    `<span class="msg-ts-sep inline-sep"${tsText ? '' : ' hidden'}>·</span>` +
     `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
     `<div class="meta-actions">` +
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
@@ -731,6 +742,13 @@ function buildToolAck(m) {
   }
   // expand : bouton toggle « voir/masquer » pour les ressources stockées. Le
   // contenu est rendu une seule fois (lazy) dans un conteneur inline.
+  // ⚠️ DORMANT / NON BRANCHÉ (audit F, 2026-07-10) : aucun ACK_SPEC ne définit
+  // `expand:` aujourd'hui, donc ce bloc ne s'exécute JAMAIS. Les classes
+  // `.ack-expand`/`.ack-expand-content` n'ont d'ailleurs aucun style CSS, et
+  // `presentResourceFromChip` (le `spec.expand` attendu) n'est câblé nulle part.
+  // Conservé sciemment comme jalon d'une feature « déplier une ressource stockée
+  // depuis son ack » à finir. Pour l'activer : poser `expand: presentResourceFromChip`
+  // sur le spec `resource_stored` (ACK_SPECS) ET styler `.ack-expand*`.
   if (spec.expand && !m.resolved) {
     const expandBtn = document.createElement('button');
     expandBtn.className = 'ack-expand';
@@ -1137,32 +1155,30 @@ function bgActivityLabel(label) {
 }
 
 // ── Sidebar / sections temporelles ──────────────────────────────────────────
+// En-tête de section de la sidebar. Bornes calendaires via calendarBucket
+// (utils.js) — partagées avec relativeWhen.
 function sectionFor(ts) {
   if (!ts) return 'Plus ancien';
-  const now = new Date();
-  const d = new Date(ts);
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const day = 86400000;
-  if (d.getTime() >= startOfToday) return "Aujourd'hui";
-  if (d.getTime() >= startOfToday - day) return 'Hier';
-  if (d.getTime() >= startOfToday - 7 * day) return '7 derniers jours';
-  if (d.getTime() >= startOfToday - 30 * day) return '30 derniers jours';
-  return 'Plus ancien';
+  switch (calendarBucket(ts, Date.now()).bucket) {
+    case 'today':     return "Aujourd'hui";
+    case 'yesterday': return 'Hier';
+    case 'week':      return '7 derniers jours';
+    case 'month':     return '30 derniers jours';
+    default:          return 'Plus ancien';
+  }
 }
 
+// Libellé de date d'une conversation dans la sidebar. Même découpage calendaire
+// que sectionFor (calendarBucket), formatage distinct : le jour même affiche
+// l'heure (HH:MM) plutôt que « aujourd'hui », redondant avec l'en-tête de section.
 function relativeWhen(ts) {
   if (!ts) return '';
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  // Le jour même : afficher l'heure (HH:MM) plutôt que « aujourd'hui »,
-  // redondant avec l'en-tête de section « Aujourd'hui ». Calé sur le même
-  // découpage calendaire que sectionFor (pas une fenêtre glissante de 24 h).
-  if (ts >= startOfToday) return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const day = 86400000;
-  if (ts >= startOfToday - day) return 'hier à ' + new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const days = Math.floor((startOfToday - ts) / day) + 1;
-  if (days < 7) return 'il y a ' + days + ' j';
-  if (days < 30) return 'il y a ' + Math.floor(days / 7) + ' sem';
+  const b = calendarBucket(ts, Date.now());
+  const hhmm = () => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  if (b.bucket === 'today') return hhmm();
+  if (b.bucket === 'yesterday') return 'hier à ' + hhmm();
+  if (b.daysAgo < 7) return 'il y a ' + b.daysAgo + ' j';
+  if (b.daysAgo < 30) return 'il y a ' + Math.floor(b.daysAgo / 7) + ' sem';
   return new Date(ts).toLocaleDateString('fr-FR', { month: 'long' });
 }
 
@@ -2657,7 +2673,7 @@ function buildToolItem(bareName, def) {
   }
 
   const nameHtml = bareName.split('__').filter(Boolean)
-    .map(escHtml).join('<span class="tool-name-sep">›</span>');
+    .map(escHtml).join('<span class="inline-sep">›</span>');
   item.innerHTML =
     '<div class="tool-name">' + nameHtml + '</div>' +
     '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
@@ -3241,10 +3257,6 @@ function closeApiServers() {
   $('api-drawer').classList.remove('show');
   $('api-backdrop').classList.remove('show');
 }
-function renderApiServersIfOpen() {
-  if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
-}
-
 // Affichage lecture seule (catégorie Connexion) du serveur actif : nom en gras,
 // « › modèle par défaut » à la suite (même séparateur coloré que le thread),
 // URL en hint dessous — évite d'ouvrir le drawer juste pour vérifier le modèle.
@@ -3262,7 +3274,7 @@ function syncActiveApiServerUI() {
       nameEl.appendChild(n);
       if (s.model) {
         const sep = document.createElement('span');
-        sep.className = 'tool-name-sep';
+        sep.className = 'inline-sep';
         sep.textContent = '›';
         const m = document.createElement('span');
         m.className = 'active-api-server-model';
@@ -3784,6 +3796,9 @@ function renderBinaryBlock(box, block) {
 
 // Présente une ressource IDB inline dans un conteneur DOM (chip expand ou autre).
 // getCachedRecord / makeResourcePresentBlock viennent de resources.js (chargé avant).
+// ⚠️ DORMANT / NON APPELÉE (audit F, 2026-07-10) : destinée à être le `spec.expand`
+// du bloc expand de renderAck (cf. commentaire là-bas), mais aucun ACK_SPEC ne
+// pose `expand:` → jamais invoquée. Conservée comme jalon, pas du code actif.
 function presentResourceFromChip(id, containerEl) {
   const record = getCachedRecord(id);
   if (!record) {

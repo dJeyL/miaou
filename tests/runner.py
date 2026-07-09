@@ -140,10 +140,15 @@ def run_file(test_path: Path) -> tuple[int, int]:
 
     # 3. Fichier de test
     test_code = test_path.read_text(encoding='utf-8')
+    eval_failed = 0
     try:
         ctx.eval(test_code)
     except Exception as e:
+        # Une erreur hors it() (syntaxe, exception top-level) saute le reste du
+        # fichier : compter un échec, sinon la suite resterait verte en sautant
+        # silencieusement des tests (code retour 0 trompeur).
         print(f'  [erreur JS] {e}')
+        eval_failed = 1
 
     # 4. Récupération des résultats
     logs = ctx.eval('_log_buffer.join("\\n")')
@@ -154,7 +159,7 @@ def run_file(test_path: Path) -> tuple[int, int]:
     if logs:
         print(logs)
 
-    return int(passed), int(failed)
+    return int(passed), int(failed) + eval_failed
 
 
 def run_build_unit_tests() -> tuple[int, int]:

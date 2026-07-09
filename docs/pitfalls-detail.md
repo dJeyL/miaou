@@ -1,6 +1,6 @@
 # Pièges déjà payés — détail
 
-Développement complet des 16 pièges résumés dans CLAUDE.md. À consulter avant
+Développement complet des 22 pièges résumés dans CLAUDE.md. À consulter avant
 de toucher au flux de conversation, au streaming, aux résumés/titrage, à
 l'édition de message, au patienteur, au raisonnement, au sélecteur de modèle,
 ou au KV cache.
@@ -408,6 +408,33 @@ ou au KV cache.
     posé), la dégradation est faite PROACTIVEMENT avant même le premier appel
     réseau, pour ne pas reproduire le même rejet à chaque tour.
 
+19. **Recall d'image : ré-injection via message user synthétique, jamais dans
+    `role:'tool'` (brief A2, D3).** Un `recall_attachment` portant sur une image
+    ne remet PAS les pixels dans le résultat de l'outil : un tool result est
+    `role:'tool'` textuel, et une part image n'y a pas sa place fiable. Le
+    handler renvoie donc un tool result *annonciateur* (texte), et l'image
+    revient au modèle via un **message user synthétique** porteur de la content
+    part image, émis par `expandThread` **après** les tool results du groupe. Ce
+    message n'existe pas dans `currentThread` : la dataUrl est reconstruite depuis
+    le record en cache par le pré-pass `resolveRecallImages` (resources.js) à
+    **chaque** envoi (champ `recallImage` posé sur une *copie* de l'ack), et
+    n'est **jamais persistée** — absente d'`ACK_COPY_FIELDS`, seul `attId` l'est
+    → byte-stable, KV-safe (piège 16/17).
+
+    Raison du choix (probe 2026-07-05, `mistral-small3.2` sur Ollama) : une part
+    image glissée dans un message `role:'tool'` transmet bien les pixels sur
+    Ollama MAIS **confabule silencieusement** quand la part est ensuite strippée
+    (contexte tronqué, `num_ctx`) — le modèle décrit une image qu'il ne voit
+    plus. Le message user, lui, échoue *honnêtement* (« AUCUNE IMAGE ») : on
+    préfère un échec visible à une hallucination crédible.
+
+    Corollaire du collapse-timing (piège 17, D2) : la transformation
+    image→descripteur ne se fait **jamais entre deux appels d'une même boucle
+    d'outils**. Le payload `apiMessages` est construit UNE fois avant la boucle
+    `runConversation`, puis seulement complété par push ; le collapse
+    (`rewriteAttachedUserMessage`) n'a lieu qu'en `onFinal`/`onHalt`, donc après
+    la fin de l'échange — jamais au milieu d'un groupe de tool calls.
+
 20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`
     (main.js), `restoreSummaryItem` (ui.js) et la boucle de `runBackfill`
     (main.js) appellent tous `generateSummary` (LLM, async) puis `saveSummary(id,
@@ -426,3 +453,31 @@ ou au KV cache.
     de storage.js) tourne à chaque `init()`, juste avant `runBackfill()` (sinon
     `backfillCandidates()` verrait une liste faussée par des entrées
     orphelines).
+
+21. **Export HTML standalone : un seul chemin string→HTML à risque.** L'export
+    (`renderExportBody`, ui.js) hérite de la sûreté de l'écran UNIQUEMENT parce
+    qu'il re-rend le contenu via `renderMd`/`renderUserMd` — les mêmes renderers
+    que le DOM live, dont la sortie passe par `sanitizeHtml` (DOMPurify). marked
+    laisse traverser le HTML inline produit par le modèle ; c'est la
+    sanitisation, pas le rendu, qui empêche un payload reproduit depuis une
+    source hostile de s'exécuter. L'export ne doit **jamais** cloner ou stripper
+    le `#thread` live à la place : il reconstruit depuis les données.
+
+    `formatToolAcksHtml` (utils.js) est l'EXCEPTION : c'est la seule fonction qui
+    concatène directement des chaînes d'origine modèle/outil (`name`, `intent`,
+    args JSON, `result`) en HTML, sans passer par marked. `escHtml` y est donc
+    **systématique** sur chacune de ces valeurs. Toute future extension de
+    l'export qui ajoute un chemin de concaténation string→HTML similaire doit
+    `escHtml` de la même façon — c'est la contrepartie de ne pas re-rendre via
+    marked (cf. `docs/exports.md`).
+
+22. **`EXPORT_CSS` ne suit PAS les évolutions de `chat.css`/`tools.css`/
+    `composer.css`.** C'est une feuille dédiée écrite à la main (audit lot G),
+    pas un miroir vivant de l'écran — assumé : un export est un instantané figé.
+    **Conséquence** : retoucher une classe réutilisée par l'export (`.msg`,
+    `.bubble`, `.reasoning`, `.tool-ack`, `.att-*`, tables, blocs de code) ne
+    casse rien silencieusement, mais l'export continue de produire l'**ancien**
+    style, et aucun test ne détecte la dérive. Seuls les tokens de couleur
+    (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent
+    synchronisés automatiquement. Revue manuelle à la charge de qui touche ce CSS :
+    vérifier si `EXPORT_CSS` doit suivre (cf. `docs/exports.md`).

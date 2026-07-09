@@ -33,6 +33,13 @@
   --accent-bd:  rgba(255,122,69,.28);
   --ok:         #4ec98a;
   --err:        #ff5d5d;
+  --ctx-cache:    #5fb3d9;               
+  --ctx-warn:     #b8720a;               
+  --ctx-warn-bd:  rgba(184,114,10,.33);  
+  --ctx-warn-dim: rgba(184,114,10,.10);  
+  --ctx-over:     #d64545;               
+  --ctx-over-bd:  rgba(214,69,69,.33);   
+  --ctx-over-dim: rgba(214,69,69,.10);   
   --r:          7px;
   --r-sm:       5px;
   --ease:       cubic-bezier(.4, 0, .2, 1);
@@ -67,6 +74,8 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+.inline-sep { color: var(--accent-2); margin: 0 3px; }
 
 .app { display: flex; height: var(--vvh, 100dvh); }
 
@@ -841,6 +850,120 @@ body {
 .body td { color: var(--text-2); }
 .body tr:nth-child(even) td { background: var(--table-stripe); }
 
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  user-select: none;
+  pointer-events: none;
+}
+.welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
+.welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
+.welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
+
+.cursor-blink {
+  display: inline-block;
+  width: 7px; height: 14px;
+  background: var(--accent);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.waiter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+  letter-spacing: .2px;
+}
+.waiter-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  
+  margin-left: 7.5px; margin-right: 7.5px;
+  flex-shrink: 0;
+  animation: waiter-pulse 1s ease-in-out infinite;
+}
+@keyframes waiter-pulse {
+  0%, 100% { transform: scale(.55); opacity: .45; }
+  50%      { transform: scale(1);   opacity: 1; }
+}
+
+.waiter-word { transition: opacity .28s ease; }
+.waiter-word::after { content: ''; font-style: normal; animation: waiter-dots 1.2s step-end infinite; }
+.waiter-word.dots-reset::after { animation: none; }
+.waiter-word.fade { opacity: 0; }
+@keyframes waiter-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
+
+.meta-actions {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.reasoning-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
+.reasoning-toggle.open { color: var(--accent); }
+.reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
+.msg-copy,
+.msg-dl,
+.msg-regen {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px; border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.msg-copy:hover,
+.msg-dl:hover,
+.msg-regen:hover { color: var(--text); background: var(--surface-2); }
+.msg-copy[hidden],
+.msg-dl[hidden],
+.msg-regen[hidden] { display: none; }
+.msg-copy--checked { color: var(--accent) !important; }
+
+.msg.assistant .meta .inline-sep { margin: 0 -4px; }
+.msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
+.msg.assistant .meta .msg-ts[hidden] { display: none; }
+
+.msg.user .msg-ts { font-size: 11px; color: var(--text-3); }
+.conv-dl-btn:disabled, .conv-dl-html-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
+
+.reasoning {
+  margin: 0 0 8px;
+  padding: 8px 11px;
+  border-left: 2px solid var(--border-2);
+  background: var(--surface-2);
+  border-radius: 0 6px 6px 0;
+}
+.reasoning-content {
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--text-2);
+  opacity: .85;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
 .composer {
   flex-shrink: 0;
   padding: 8px 24px 18px;
@@ -982,8 +1105,8 @@ body {
 
 .pill-select:not([hidden]) + .ctx-counter { margin-left: 0; }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
-.ctx-counter.ctx-counter-warn { color: #b8720a; border-color: #b8720a55; background: #b8720a1a; }
-.ctx-counter.ctx-counter-over { color: #d64545; border-color: #d6454555; background: #d645451a; }
+.ctx-counter.ctx-counter-warn { color: var(--ctx-warn); border-color: var(--ctx-warn-bd); background: var(--ctx-warn-dim); }
+.ctx-counter.ctx-counter-over { color: var(--ctx-over); border-color: var(--ctx-over-bd); background: var(--ctx-over-dim); }
 
 .ctx-counter.ctx-counter-midturn { border-style: dashed; }
 .composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
@@ -1175,6 +1298,37 @@ body {
 }
 .att-remove:hover { background: var(--surface-3); color: var(--err); }
 .att-remove svg { width: 10px; height: 10px; }
+
+.skill-ac {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+#skill-ac {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin-bottom: 0;
+  z-index: 30;
+}
+.skill-ac-opt {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.skill-ac-opt:hover,
+.skill-ac-opt.active { background: var(--accent-dim); }
+.skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
+.skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }
 
 .backdrop {
   position: fixed; inset: 0;
@@ -1561,7 +1715,7 @@ body {
 .ctx-bar-seg { display: block; height: 100%; min-width: 1px; }
 
 .ctx-bar-cache { height: 6px; margin-top: 2px; }
-.ctx-bar-cache .ctx-bar-seg { background: #5fb3d9; }
+.ctx-bar-cache .ctx-bar-seg { background: var(--ctx-cache); }
 .ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ctx-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
 .ctx-table td:first-child { color: var(--text); }
@@ -1667,115 +1821,6 @@ body {
   flex-direction: column;
   gap: 10px;
 }
-.proposal-header { display: flex; align-items: center; }
-.proposal-type {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--accent);
-}
-.proposal-content {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 9px 11px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.proposal-diff { display: flex; flex-direction: column; gap: 6px; }
-.proposal-diff-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
-}
-.proposal-old { opacity: 0.65; text-decoration: line-through; text-decoration-color: var(--err); }
-.proposal-new { border-color: var(--accent-bd); }
-.proposal-actions { display: flex; gap: 8px; }
-
-.tool-ack, .memory-ack {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 0 4px 10px;
-  border-left: 2px solid var(--accent-bd);
-  margin: 3px 0 3px 2px;
-  font-size: 12px;
-  color: var(--text-2);
-}
-.tool-ack.resolved, .memory-ack.resolved { opacity: 0.5; }
-.tool-ack .ack-icon {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  color: var(--accent);
-  align-self: center;
-}
-.tool-ack .ack-label, .memory-ack .ack-label { flex: 1; overflow-wrap: break-word; }
-
-.tool-ack.ack-conversation_read .ack-label,
-.tool-ack.ack-conversation_list .ack-label,
-.tool-ack.ack-mcp_call .ack-label,
-.tool-ack.ack-resource_stored .ack-label,
-.tool-ack.ack-resource_presented .ack-label,
-.tool-ack.ack-resource_deleted .ack-label { color: var(--text-2); }
-.tool-ack .ack-undo, .memory-ack .ack-undo {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 11px;
-  color: var(--text-3);
-  cursor: pointer;
-  text-decoration: underline;
-}
-.tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
-.tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
-
-.tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
-
-.ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
-.ack-conv-link:hover { color: var(--accent); text-decoration: none; }
-
-.tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
-
-.tool-ack.ack-error .ack-icon,
-.tool-ack.ack-error .ack-label { color: var(--err); }
-
-.tool-ack.has-intent { align-items: flex-start; }
-.tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
-.mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-.mcp-chevron {
-  flex-shrink: 0;
-  background: none; border: none; padding: 1px; cursor: pointer;
-  color: var(--accent); opacity: 0.75;
-  display: inline-flex; align-items: center; line-height: 1;
-}
-.mcp-intent-row:hover .mcp-chevron { opacity: 1; }
-.mcp-chevron svg { transition: transform 0.2s; }
-.mcp-chevron.open svg { transform: rotate(180deg); }
-.mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
-.mcp-breadcrumb-detail[hidden] { display: none; }
-
-.welcome-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  text-align: center;
-  user-select: none;
-  pointer-events: none;
-}
-.welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
-.welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
-.welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
 
 .tool-list { display: flex; flex-direction: column; gap: 10px; }
 .tool-item {
@@ -1790,7 +1835,6 @@ body {
   font-weight: 500;
   color: var(--accent);
 }
-.tool-name-sep { color: var(--accent-2); margin: 0 3px; }
 .tool-desc { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
 .tool-params {
   margin-top: 10px;
@@ -1908,7 +1952,7 @@ body {
 .api-view-row .drawer-btn:last-child { margin-left: auto; }
 
 .active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }
-.active-api-server-name .tool-name-sep { font-weight: 400; }
+.active-api-server-name .inline-sep { font-weight: 400; }
 .active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
 
 .drawer-wide { width: 620px; }
@@ -1926,37 +1970,71 @@ textarea.skill-content {
 .skill-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .skill-view-slug { font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .skill-view-row { gap: 10px; }
+.proposal-actions { display: flex; gap: 8px; }
 
-.skill-ac {
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  max-height: 220px;
-  overflow-y: auto;
-  margin-bottom: 8px;
-}
-
-#skill-ac {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 8px);
-  margin-bottom: 0;
-  z-index: 30;
-}
-.skill-ac-opt {
+.tool-ack, .memory-ack {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 13px;
+  gap: 8px;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--accent-bd);
+  margin: 3px 0 3px 2px;
+  font-size: 12px;
+  color: var(--text-2);
 }
-.skill-ac-opt:hover,
-.skill-ac-opt.active { background: var(--accent-dim); }
-.skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
-.skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }
+.tool-ack.resolved, .memory-ack.resolved { opacity: 0.5; }
+.tool-ack .ack-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  align-self: center;
+}
+.tool-ack .ack-label, .memory-ack .ack-label { flex: 1; overflow-wrap: break-word; }
+
+.tool-ack.ack-conversation_read .ack-label,
+.tool-ack.ack-conversation_list .ack-label,
+.tool-ack.ack-mcp_call .ack-label,
+.tool-ack.ack-resource_stored .ack-label,
+.tool-ack.ack-resource_presented .ack-label,
+.tool-ack.ack-resource_deleted .ack-label { color: var(--text-2); }
+.tool-ack .ack-undo, .memory-ack .ack-undo {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
+.tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
+
+.tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+
+.ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
+.ack-conv-link:hover { color: var(--accent); text-decoration: none; }
+
+.tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
+
+.tool-ack.ack-error .ack-icon,
+.tool-ack.ack-error .ack-label { color: var(--err); }
+
+.tool-ack.has-intent { align-items: flex-start; }
+.tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
+.mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.mcp-chevron {
+  flex-shrink: 0;
+  background: none; border: none; padding: 1px; cursor: pointer;
+  color: var(--accent); opacity: 0.75;
+  display: inline-flex; align-items: center; line-height: 1;
+}
+.mcp-intent-row:hover .mcp-chevron { opacity: 1; }
+.mcp-chevron svg { transition: transform 0.2s; }
+.mcp-chevron.open svg { transform: rotate(180deg); }
+.mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
+.mcp-breadcrumb-detail[hidden] { display: none; }
 
 .tool-block {
   align-self: flex-start;
@@ -1995,105 +2073,6 @@ textarea.skill-content {
   cursor: pointer;
 }
 .tool-block-dl:hover { background: var(--surface-3); border-color: var(--border-2); }
-
-.cursor-blink {
-  display: inline-block;
-  width: 7px; height: 14px;
-  background: var(--accent);
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  animation: blink 1s step-end infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-
-.waiter {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--text-2);
-  font-style: italic;
-  letter-spacing: .2px;
-}
-.waiter-dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  
-  margin-left: 7.5px; margin-right: 7.5px;
-  flex-shrink: 0;
-  animation: waiter-pulse 1s ease-in-out infinite;
-}
-@keyframes waiter-pulse {
-  0%, 100% { transform: scale(.55); opacity: .45; }
-  50%      { transform: scale(1);   opacity: 1; }
-}
-
-.waiter-word { transition: opacity .28s ease; }
-.waiter-word::after { content: ''; font-style: normal; animation: waiter-dots 1.2s step-end infinite; }
-.waiter-word.dots-reset::after { animation: none; }
-.waiter-word.fade { opacity: 0; }
-@keyframes waiter-dots {
-  0%   { content: ''; }
-  25%  { content: '.'; }
-  50%  { content: '..'; }
-  75%  { content: '...'; }
-}
-
-.meta-actions {
-  margin-left: auto;
-  display: flex; align-items: center; gap: 4px;
-}
-.reasoning-toggle {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 2px; border: none; background: none; cursor: pointer;
-  color: var(--text-3); border-radius: 4px;
-  transition: color .15s, background .15s;
-}
-.reasoning-toggle:hover { color: var(--text); background: var(--surface-2); }
-.reasoning-toggle.open { color: var(--accent); }
-.reasoning-toggle[hidden], .reasoning[hidden] { display: none; }
-.msg-copy,
-.msg-dl,
-.msg-regen {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 2px; border: none; background: none; cursor: pointer;
-  color: var(--text-3); border-radius: 4px;
-  transition: color .15s, background .15s;
-}
-.msg-copy:hover,
-.msg-dl:hover,
-.msg-regen:hover { color: var(--text); background: var(--surface-2); }
-.msg-copy[hidden],
-.msg-dl[hidden],
-.msg-regen[hidden] { display: none; }
-.msg-copy--checked { color: var(--accent) !important; }
-
-.msg.assistant .meta .tool-name-sep { margin: 0 -4px; }
-.msg.assistant .meta .msg-ts { font-size: 11px; color: var(--text-3); }
-.msg.assistant .meta .msg-ts[hidden] { display: none; }
-
-.msg.user .msg-ts { font-size: 11px; color: var(--text-3); }
-.conv-dl-btn:disabled, .conv-dl-html-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
-
-.reasoning {
-  margin: 0 0 8px;
-  padding: 8px 11px;
-  border-left: 2px solid var(--border-2);
-  background: var(--surface-2);
-  border-radius: 0 6px 6px 0;
-}
-.reasoning-content {
-  font-family: var(--sans);
-  font-size: 12px;
-  line-height: 1.2;
-  color: var(--text-2);
-  opacity: .85;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 340px;
-  overflow-y: auto;
-}
 
 .messages { min-height: 0; }
 
@@ -2168,6 +2147,13 @@ html[data-theme="light"] {
   --accent-bd:             rgba(224,95,28,.28);
   --ok:                    #267a4e;
   --err:                   #c42828;
+  --ctx-cache:             #2c7fa6;              
+  --ctx-warn:              #9a5f08;              
+  --ctx-warn-bd:           rgba(154,95,8,.38);   
+  --ctx-warn-dim:          rgba(154,95,8,.12);   
+  --ctx-over:              #b83232;              
+  --ctx-over-bd:           rgba(184,50,50,.38);  
+  --ctx-over-dim:          rgba(184,50,50,.12);  
   --topbar-bg:             rgba(244,239,229,.88);
   --scrollbar-thumb-hover: rgba(0,0,0,.30);
   --table-stripe:          rgba(0,0,0,.04);
@@ -2793,10 +2779,11 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-09 19:07 UTC */
+/* miaou — built: 2026-07-09 23:56 UTC */
 
 /* ── utils.js ── */
 
@@ -2807,7 +2794,8 @@ function escHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function isAckRole(role) { return role === 'tool-ack' || role === 'memory-ack'; }
@@ -3086,6 +3074,20 @@ function formatDateRelative(ts, now) {
   return day + ' ' + month;
 }
 
+function calendarBucket(ts, now) {
+  const day = 86400000;
+  const startOfToday = _startOfDay(new Date(now));
+  if (!ts) return { bucket: 'older', startOfToday, day, daysAgo: Infinity };
+  let bucket;
+  if (ts >= startOfToday) bucket = 'today';
+  else if (ts >= startOfToday - day) bucket = 'yesterday';
+  else if (ts >= startOfToday - 7 * day) bucket = 'week';
+  else if (ts >= startOfToday - 30 * day) bucket = 'month';
+  else bucket = 'older';
+  const daysAgo = Math.floor((startOfToday - ts) / day) + 1;
+  return { bucket, startOfToday, day, daysAgo };
+}
+
 function formatFullDateFr(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -3098,6 +3100,12 @@ function exportDateStamp(now) {
   const mm = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
   const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
   return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+function exportDateTimeStamp(now) {
+  const d = new Date(now);
+  const p = n => (n < 10 ? '0' : '') + n;
+  return exportDateStamp(now) + '-' + p(d.getHours()) + p(d.getMinutes());
 }
 
 function exportDateDisplay(now) {
@@ -3442,7 +3450,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783624027}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783641388}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -3768,7 +3776,7 @@ function backfillCandidates() {
 
 const MEMORIES_KEY = 'miaou-memories';
 
-function genMemoryId() { return 'm' + Date.now().toString(36); }
+function genMemoryId() { return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 function loadMemories() {
   try { return JSON.parse(localStorage.getItem(MEMORIES_KEY)) || []; }
@@ -3970,13 +3978,6 @@ function validateImportPayload(obj) {
 }
 
 /* ── resources.js ── */
-
-function classifyMime(mime) {
-  const m = String(mime || '').toLowerCase().split(';')[0].trim();
-  if (m === 'application/json') return 'inline';
-  if (m.startsWith('text/')) return 'inline';
-  return 'binary';
-}
 
 function humanSize(bytes) {
   const n = Number(bytes) || 0;
@@ -4245,7 +4246,6 @@ let _resourceCache = {};
 function getCachedRecord(id) { return _resourceCache[id] || null; }
 function _cacheRecord(rec) { _resourceCache[rec.id] = rec; }
 function _uncacheRecord(id) { delete _resourceCache[id]; }
-function clearResourceSessionCache() { _resourceCache = {}; }
 
 function getCachedRecordByAttId(attId, conversationId) {
   for (const key in _resourceCache) {
@@ -4333,7 +4333,11 @@ function openResourceDB() {
       }
     };
     req.onsuccess = function(e) { resolve(e.target.result); };
-    req.onerror = function(e) { reject(e.target.error); };
+    req.onerror = function(e) {
+      
+      _resourceDbPromise = null;
+      reject(e.target.error);
+    };
   });
   return _resourceDbPromise;
 }
@@ -4383,12 +4387,12 @@ function getResourcesBySpace(spaceId) {
 }
 
 function deleteResource(id) {
-  _uncacheRecord(id);
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('resources', 'readwrite');
       const req = tx.objectStore('resources').delete(id);
-      req.onsuccess = function() { resolve(); };
+      
+      req.onsuccess = function() { _uncacheRecord(id); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -4462,14 +4466,10 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
 
 async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand) {
   const id = generateFileId(rand);
-  const record = {
-    id, spaceId, kind: 'library',
-    class: cls, mime: String(mime || 'application/octet-stream'),
-    name: String(name || 'file'), size: data.byteLength,
-    createdAt: now, data,
-  };
-  if (source) record.source = source;
-  if (description) record.description = capFileDescription(description);
+  
+  const record = Object.assign(
+    normalizeLibraryRecord({ id, spaceId, name, mime, size: data.byteLength, createdAt: now, source, description }),
+    { class: cls, data });
   try {
     await putResource(record);
     _cacheRecord(record);
@@ -4510,50 +4510,36 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
   const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
   const newContent = [];
 
-  for (const block of result.content) {
-    if (!block) { newContent.push(block); continue; }
-
-    let id = null;
-
-    if (block.type === 'image' && block.data) {
-      id = await _storeBlock(block.mimeType || 'image/png', 'image',
-        base64ToArrayBuffer(block.data), 'binary', conversationId, theNow, theRand);
-    } else if (block.type === 'audio' && block.data) {
-      id = await _storeBlock(block.mimeType || 'audio/mpeg', 'audio',
-        base64ToArrayBuffer(block.data), 'binary', conversationId, theNow, theRand);
-    } else if (block.type === 'resource') {
-      const r = block.resource || {};
-      const name = (r.uri && r.uri.split('/').pop()) || 'resource';
-      if (r.blob != null) {
-        id = await _storeBlock(
-          r.mimeType || 'application/octet-stream', name,
-          base64ToArrayBuffer(r.blob), 'binary', conversationId, theNow, theRand);
-      } else if (r.text != null) {
-        
-        if (typeof retainPendingToolBlocks === 'function') {
-          retainPendingToolBlocks(b =>
-            !(b.type === 'resource' && b.resource != null &&
-              b.resource.text != null && b.resource.blob == null));
-        }
-        if (saveInline) {
-          
-          const storedId = await _storeBlock(r.mimeType || 'text/plain', name,
-            utf8Encode(r.text), 'inline', conversationId, theNow, theRand);
-          const rec = storedId ? getCachedRecord(storedId) : null;
-          const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
-          newContent.push({ type: 'text', text: r.text + desc });
-        } else {
-          
-          newContent.push({ type: 'text', text: r.text });
-        }
-        continue;
+  for (const part of extractResultParts(result)) {
+    if (part.action === 'store_binary') {
+      const id = await _storeBlock(part.mime, part.name,
+        base64ToArrayBuffer(part.fromBase64), 'binary', conversationId, theNow, theRand);
+      if (id) {
+        newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+      } else {
+        newContent.push(part.block);
       }
-    }
-    
-    if (id) {
-      newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+    } else if (part.action === 'store_inline') {
+      
+      if (typeof retainPendingToolBlocks === 'function') {
+        retainPendingToolBlocks(b =>
+          !(b.type === 'resource' && b.resource != null &&
+            b.resource.text != null && b.resource.blob == null));
+      }
+      if (saveInline) {
+        
+        const storedId = await _storeBlock(part.mime, part.name,
+          utf8Encode(part.text), 'inline', conversationId, theNow, theRand);
+        const rec = storedId ? getCachedRecord(storedId) : null;
+        const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
+        newContent.push({ type: 'text', text: part.text + desc });
+      } else {
+        
+        newContent.push({ type: 'text', text: part.text });
+      }
     } else {
-      newContent.push(block);
+      
+      newContent.push(part.block);
     }
   }
 
@@ -4598,13 +4584,6 @@ function validateSkillSlug(slug, existingSlugs) {
   return null;
 }
 
-function parseSlashCommand(text) {
-  const s = String(text == null ? '' : text);
-  const m = /^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(s);
-  if (!m) return null;
-  return { slug: m[1], rest: (m[2] || '').trim() };
-}
-
 function findSlashTriggers(text) {
   const s = String(text == null ? '' : text);
   const re = /\/([a-zA-Z0-9_-]*)/g;
@@ -4625,7 +4604,7 @@ function bakeSkillMessage(literalText, resolved) {
   const list = Array.isArray(resolved) ? resolved : [];
   const blocks = [];
   for (const r of list) {
-    const body = String(r && r.content == null ? '' : r.content).trim();
+    const body = String(!r || r.content == null ? '' : r.content).trim();
     if (!body) continue;
     blocks.push('--- skill: ' + r.slug + ' ---\n' + body + '\n--- /skill: ' + r.slug + ' ---');
   }
@@ -4811,7 +4790,7 @@ const WEB_DOCTRINE =
   "jamais de balise Markdown (type ![alt](url)) pour afficher une ressource déjà " +
   "présentée par l'application ; tu peux en utiliser pour présenter des MINIATURES, " +
   "dans ce cas fais-en un lien vers l'IMAGE originale (PAS la page qui la contient), " +
-  "en utilisant l'URL de la MINIATURE pour l'image affichée en Markdown" +
+  "en utilisant l'URL de la MINIATURE pour l'image affichée en Markdown\n" +
   "- lorsque tu trouves une URL pointant vers une image via une recherche, ne te " +
   "contente pas d'afficher un lien Markdown ; utilise systématiquement l'outil " +
   "`fetch_url` pour récupérer le contenu de cette image afin qu'elle soit traitée " +
@@ -4941,8 +4920,10 @@ let _pendingImageInjections = [];
 function getPendingImageInjections() { return _pendingImageInjections.slice(); }
 function clearPendingImageInjections() { _pendingImageInjections = []; }
 
-function updateLastPendingToolAck(fields) {
-  if (_pendingToolAcks.length) Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
+function updateLastPendingToolAck(fields, minLength) {
+  if (!_pendingToolAcks.length) return;
+  if (typeof minLength === 'number' && _pendingToolAcks.length <= minLength) return;
+  Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
 }
 
 let _pendingToolBlocks = [];
@@ -4979,13 +4960,12 @@ const TOOLS = [
       if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
       
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      const conv0 = loadConversation(args.id);
-      const convSpace = conv0 ? (conv0.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
+      const conv = loadConversation(args.id);   
+      const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
       if (convSpace !== spaceId) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
-      const conv = loadConversation(args.id);   
       if (!conv) return JSON.stringify(light);   
       return JSON.stringify(Object.assign({}, light, { messages: conv.messages ?? conv }));
     },
@@ -5556,13 +5536,15 @@ function callTool(name, args) {
     const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
+    
+    const baseAcks = _pendingToolAcks.length;
     const result = callInternalTool(parsed.toolName, cleanArgs);
     
     if (intent != null) {
       if (result && typeof result.then === 'function') {
-        return result.then(r => { updateLastPendingToolAck({ intent }); return r; });
+        return result.then(r => { updateLastPendingToolAck({ intent }, baseAcks); return r; });
       }
-      updateLastPendingToolAck({ intent });
+      updateLastPendingToolAck({ intent }, baseAcks);
     }
     return result;
   }
@@ -5740,7 +5722,6 @@ function toolDefinitions() {
 function toolsSystemPrompt() {
   const all = exposedTools().map(t => ({ name: t.name, description: t.description }))
     .concat([{ name: ASK_CONFIRMATION_DEF.function.name, description: ASK_CONFIRMATION_DEF.function.description }]);
-  if (!all.length) return '';
   const lines = all.map(t => '- ' + t.name + ' : ' + t.description);
   return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
          "sinon réponds directement.\n" + lines.join('\n');
@@ -6204,9 +6185,18 @@ function searchSummaries(queryText, excludeId, spaceId) {
 
 async function fetchModels(override) {
   const cfg = Object.assign({}, loadSettings(), activeApiConfig(), override || {});
-  const res = await fetch(cfg.url + '/models', {
-    headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
-  });
+  
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
+  let res;
+  try {
+    res = await fetch(cfg.url + '/models', {
+      headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error('models ' + res.status);
   const data = await res.json();
   const list = data.data || data.models || [];
@@ -6288,16 +6278,19 @@ function resolveConvRefs(text, opts) {
   });
 }
 
+function sanitizeHtml(html) {
+  return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+}
 function renderMd(text, opts) {
   const resolved = resolveConvRefs(text, opts);
   if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
-  return marked.parse(resolved, { breaks: true });
+  return sanitizeHtml(marked.parse(resolved, { breaks: true }));
 }
 
 function renderUserMd(text) {
   if (!window.marked) return escHtml(text).replace(/\n/g, '<br>');
   const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  return marked.parse(safe, { breaks: true });
+  return sanitizeHtml(marked.parse(safe, { breaks: true }));
 }
 function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
 
@@ -6326,11 +6319,11 @@ function assistantHead(model, reasoning, ts, server) {
   const tsText = ts ? formatMessageTime(ts, Date.now()) : '';
   
   const showSrv = server && loadApiServers().length > 1;
-  const srcHtml = (showSrv ? `<span>${escHtml(server)}</span><span class="tool-name-sep">›</span>` : '') +
+  const srcHtml = (showSrv ? `<span>${escHtml(server)}</span><span class="inline-sep">›</span>` : '') +
     `<span>${escHtml(model || modelName())}</span>`;
   return (
     `<div class="meta"><img class="glyph" src="${LOGO_SRC}" alt="">${srcHtml}` +
-    `<span class="msg-ts-sep tool-name-sep"${tsText ? '' : ' hidden'}>·</span>` +
+    `<span class="msg-ts-sep inline-sep"${tsText ? '' : ' hidden'}>·</span>` +
     `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
     `<div class="meta-actions">` +
       `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
@@ -7166,28 +7159,23 @@ function bgActivityLabel(label) {
 
 function sectionFor(ts) {
   if (!ts) return 'Plus ancien';
-  const now = new Date();
-  const d = new Date(ts);
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const day = 86400000;
-  if (d.getTime() >= startOfToday) return "Aujourd'hui";
-  if (d.getTime() >= startOfToday - day) return 'Hier';
-  if (d.getTime() >= startOfToday - 7 * day) return '7 derniers jours';
-  if (d.getTime() >= startOfToday - 30 * day) return '30 derniers jours';
-  return 'Plus ancien';
+  switch (calendarBucket(ts, Date.now()).bucket) {
+    case 'today':     return "Aujourd'hui";
+    case 'yesterday': return 'Hier';
+    case 'week':      return '7 derniers jours';
+    case 'month':     return '30 derniers jours';
+    default:          return 'Plus ancien';
+  }
 }
 
 function relativeWhen(ts) {
   if (!ts) return '';
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  
-  if (ts >= startOfToday) return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const day = 86400000;
-  if (ts >= startOfToday - day) return 'hier à ' + new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const days = Math.floor((startOfToday - ts) / day) + 1;
-  if (days < 7) return 'il y a ' + days + ' j';
-  if (days < 30) return 'il y a ' + Math.floor(days / 7) + ' sem';
+  const b = calendarBucket(ts, Date.now());
+  const hhmm = () => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  if (b.bucket === 'today') return hhmm();
+  if (b.bucket === 'yesterday') return 'hier à ' + hhmm();
+  if (b.daysAgo < 7) return 'il y a ' + b.daysAgo + ' j';
+  if (b.daysAgo < 30) return 'il y a ' + Math.floor(b.daysAgo / 7) + ' sem';
   return new Date(ts).toLocaleDateString('fr-FR', { month: 'long' });
 }
 
@@ -8457,7 +8445,7 @@ function buildToolItem(bareName, def) {
   }
 
   const nameHtml = bareName.split('__').filter(Boolean)
-    .map(escHtml).join('<span class="tool-name-sep">›</span>');
+    .map(escHtml).join('<span class="inline-sep">›</span>');
   item.innerHTML =
     '<div class="tool-name">' + nameHtml + '</div>' +
     '<div class="tool-desc">' + escHtml(def.description || '') + '</div>' +
@@ -8957,9 +8945,6 @@ function closeApiServers() {
   $('api-drawer').classList.remove('show');
   $('api-backdrop').classList.remove('show');
 }
-function renderApiServersIfOpen() {
-  if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
-}
 
 function syncActiveApiServerUI() {
   const s = activeApiServer();
@@ -8975,7 +8960,7 @@ function syncActiveApiServerUI() {
       nameEl.appendChild(n);
       if (s.model) {
         const sep = document.createElement('span');
-        sep.className = 'tool-name-sep';
+        sep.className = 'inline-sep';
         sep.textContent = '›';
         const m = document.createElement('span');
         m.className = 'active-api-server-model';
@@ -10006,6 +9991,7 @@ let currentConvModel = '';
 let currentConvReasoningEffort = '';  
 let pendingAttachments = [];   
 let attachIngestInFlight = 0;  
+let _sendResolving = false;    
 let _lastContextManifest = null;   
 let _lastContextManifestMidTurn = false;   
 
@@ -10307,6 +10293,7 @@ function deleteConv(id) {
   deleteConversation(id);
   deleteSummaryEntry(id);   
   deleteResourcesByConversation(id).catch(function() {});   
+  clearAttachmentPushState(id);   
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
 }
@@ -10564,9 +10551,7 @@ async function exportAllData() {
   const rawResources = await getAllResources();
   const resources = rawResources.map(r => Object.assign({}, r, { data: arrayBufferToBase64(r.data) }));
   const payload = buildExportPayload(lsSnapshot, skills, resources);
-  const ts = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+  const stamp = exportDateTimeStamp(Date.now());
   downloadFile('miaou-export-' + stamp + '.json', JSON.stringify(payload), 'application/json');
 }
 
@@ -10841,7 +10826,8 @@ async function resolveSend(literal) {
 }
 
 async function sendMessage() {
-  if (!configured || sending) return;
+  
+  if (!configured || sending || _sendResolving) return;
   
   if (attachIngestInFlight > 0) {
     showComposerAttachError('Pièce jointe en cours de traitement… réessaie dans un instant.');
@@ -10852,7 +10838,13 @@ async function sendMessage() {
   
   if (!text && !pendingAttachments.length) return;
 
-  const r = await resolveSend(text);
+  let r;
+  _sendResolving = true;
+  try {
+    r = await resolveSend(text);
+  } finally {
+    _sendResolving = false;
+  }
   if (!r.ok) { showComposerSkillError(r.error); return; }
 
   ta.value = ''; ta.style.height = 'auto';
@@ -10937,13 +10929,19 @@ function runGenerationFromCurrentThread() {
 }
 
 async function editUserMessage(index, newText) {
-  if (sending) return null;                     
+  if (sending || _sendResolving) return null;   
   const t = (newText || '').trim();
   if (!t) return null;
   if (index < 0 || index >= currentThread.length) return null;
   if (currentThread[index].role !== 'user') return null;
 
-  const r = await resolveSend(t);
+  let r;
+  _sendResolving = true;
+  try {
+    r = await resolveSend(t);
+  } finally {
+    _sendResolving = false;
+  }
   if (!r.ok) return r.error;
 
   currentThread = currentThread.slice(0, index + 1);
@@ -11221,7 +11219,8 @@ async function dispatchSend(matches, continuation) {
       onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
     });
   } catch (e) {
-    finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
+    
+    finalizeAssistant(wrap, '_Erreur réseau : ' + (e.message || String(e)) + '_');
     setConnDot('err');
   } finally {
     setSending(false);

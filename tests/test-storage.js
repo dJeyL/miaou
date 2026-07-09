@@ -120,6 +120,205 @@ describe('flag vision manuel par (serveur, modèle) — D5 brief A2', function()
   });
 });
 
+describe('hasSubstance (piège 5 — seuil conversation avortée)', function() {
+  it('1 user substantiel + 1 assistant substantiel → true', function() {
+    expect(hasSubstance([
+      { role: 'user', content: 'une question suffisamment longue' },
+      { role: 'assistant', content: 'une réponse suffisamment longue' },
+    ])).toBe(true);
+  });
+  it('assistant trivial (< 8 car.) ne compte pas → false', function() {
+    expect(hasSubstance([
+      { role: 'user', content: 'une question suffisamment longue' },
+      { role: 'assistant', content: 'ok' },
+    ])).toBe(false);
+  });
+  it('2 users substantiels, 0 assistant → false', function() {
+    expect(hasSubstance([
+      { role: 'user', content: 'première question assez longue' },
+      { role: 'user', content: 'deuxième question assez longue' },
+    ])).toBe(false);
+  });
+  it('tableau vide → false', function() {
+    expect(hasSubstance([])).toBe(false);
+  });
+  it('non-array (null/undefined/string) → false (garde Array.isArray)', function() {
+    expect(hasSubstance(null)).toBe(false);
+    expect(hasSubstance(undefined)).toBe(false);
+    expect(hasSubstance('x')).toBe(false);
+  });
+  it('content non-string (content parts/objet) ignoré (len=0)', function() {
+    expect(hasSubstance([
+      { role: 'user', content: [] },
+      { role: 'assistant', content: 'une réponse suffisamment longue' },
+    ])).toBe(false);
+  });
+  it('exactement 8 caractères compte (borne >=8, pas >8)', function() {
+    expect(hasSubstance([
+      { role: 'user', content: 'abcdefgh' },
+      { role: 'assistant', content: 'abcdefgh' },
+    ])).toBe(true);
+  });
+});
+
+describe('backfillCandidates (isSummaryCandidate + hasSubstance)', function() {
+  it('retient une conversation sans entrée de résumé et avec substance', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
+      { role: 'user', content: 'une question assez longue' },
+      { role: 'assistant', content: 'une réponse assez longue' },
+    ]});
+    var cands = backfillCandidates();
+    expect(cands.length).toBe(1);
+    expect(cands[0].id).toBe('c1');
+  });
+  it('exclut une conversation déjà indexée (résumé ou tombstone)', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
+      { role: 'user', content: 'une question assez longue' },
+      { role: 'assistant', content: 'une réponse assez longue' },
+    ]});
+    saveSummary('c1', { suppressed: true });
+    expect(backfillCandidates().length).toBe(0);
+  });
+  it('exclut une conversation sans substance', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
+      { role: 'user', content: 'ok' },
+    ]});
+    expect(backfillCandidates().length).toBe(0);
+  });
+});
+
+describe('Serveurs API : migration one-shot (miaou-api-servers)', function() {
+  it('clé absente + settings avec url/model → crée "Par défaut" et l\'active', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-settings', JSON.stringify({ url: 'http://a/v1', model: 'model-a' }));
+    var arr = loadApiServers();
+    expect(arr.length).toBe(1);
+    expect(arr[0].name).toBe('Par défaut');
+    expect(getActiveApiServerId()).toBe(arr[0].id);
+  });
+  it('clé absente + settings sans url → [] et pas de serveur actif', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-settings', JSON.stringify({ model: 'model-a' }));
+    var arr = loadApiServers();
+    expect(arr.length).toBe(0);
+    expect(getActiveApiServerId()).toBe('');
+  });
+  it('clé déjà présente (même []) → migration ne fait rien (one-shot)', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-api-servers', JSON.stringify([]));
+    localStorage.setItem('miaou-settings', JSON.stringify({ url: 'http://a/v1', model: 'model-a' }));
+    var arr = loadApiServers();
+    expect(arr.length).toBe(0);
+  });
+});
+
+describe('Serveurs API : CRUD (upsert/delete/get/activeApiServer/activeApiConfig)', function() {
+  it('upsertApiServer insère puis met à jour par id', function() {
+    localStorage.clear();
+    saveApiServersRaw([]);
+    upsertApiServer({ id: 's1', name: 'A', url: 'http://a/v1' });
+    expect(loadApiServers().length).toBe(1);
+    upsertApiServer({ id: 's1', name: 'A renommé', url: 'http://a/v1' });
+    var arr = loadApiServers();
+    expect(arr.length).toBe(1);
+    expect(arr[0].name).toBe('A renommé');
+    upsertApiServer({ id: 's2', name: 'B', url: 'http://b/v1' });
+    expect(loadApiServers().length).toBe(2);
+  });
+  it('deleteApiServer retire par id', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 's1', name: 'A' }, { id: 's2', name: 'B' }]);
+    var arr = deleteApiServer('s1');
+    expect(arr.length).toBe(1);
+    expect(arr[0].id).toBe('s2');
+  });
+  it('getApiServer trouve ou null', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 's1', name: 'A' }]);
+    expect(getApiServer('s1').name).toBe('A');
+    expect(getApiServer('inconnu')).toBe(null);
+  });
+  it('activeApiServer : id actif périmé → retombe sur le premier du tableau', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 's1', name: 'A' }, { id: 's2', name: 'B' }]);
+    setActiveApiServerId('id-inexistant');
+    expect(activeApiServer().id).toBe('s1');
+  });
+  it('activeApiServer : aucun serveur → null', function() {
+    localStorage.clear();
+    saveApiServersRaw([]);
+    expect(activeApiServer()).toBe(null);
+  });
+  it('activeApiConfig : model du serveur actif si présent', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 's1', name: 'A', url: 'http://a/v1', key: 'k', model: 'model-a' }]);
+    setActiveApiServerId('s1');
+    expect(activeApiConfig()).toEqual({ url: 'http://a/v1', key: 'k', model: 'model-a' });
+  });
+  it('activeApiConfig : model vide sur le serveur actif → filet loadSettings().model', function() {
+    localStorage.clear();
+    saveSettings({ model: 'legacy-model' });
+    saveApiServersRaw([{ id: 's1', name: 'A', url: 'http://a/v1', key: '', model: '' }]);
+    setActiveApiServerId('s1');
+    expect(activeApiConfig().model).toBe('legacy-model');
+  });
+  it('activeApiConfig : aucun serveur → url/key vides, model de loadSettings()', function() {
+    localStorage.clear();
+    saveSettings({ model: 'legacy-model' });
+    saveApiServersRaw([]);
+    expect(activeApiConfig()).toEqual({ url: '', key: '', model: 'legacy-model' });
+  });
+});
+
+describe('normalizeMcpServer (defaults et coercition)', function() {
+  it('objet vide → tous les defaults', function() {
+    var s = normalizeMcpServer({});
+    expect(s.name).toBe('');
+    expect(s.url).toBe('');
+    expect(s.transport).toBe('streamable-http');
+    expect(s.enabled).toBe(true);
+    expect(s.authorization_token).toBe('');
+    expect(s.timeout).toBe(30000);
+    expect(s.toolAllowlist).toEqual([]);
+    expect(s.toolDenylist).toEqual([]);
+    expect(s.showCalls).toBe(true);
+  });
+  it('objet complet → valeurs conservées', function() {
+    var s = normalizeMcpServer({
+      name: 'jira', url: 'https://h/mcp', transport: 'sse', enabled: false,
+      authorization_token: 'tok', timeout: 5000,
+      toolAllowlist: ['a'], toolDenylist: ['b'], showCalls: false,
+    });
+    expect(s.name).toBe('jira');
+    expect(s.transport).toBe('sse');
+    expect(s.enabled).toBe(false);
+    expect(s.authorization_token).toBe('tok');
+    expect(s.timeout).toBe(5000);
+    expect(s.toolAllowlist).toEqual(['a']);
+    expect(s.toolDenylist).toEqual(['b']);
+    expect(s.showCalls).toBe(false);
+  });
+  it('champs de type inattendu → coercition (transport inconnu, timeout non-positif, listes non-array)', function() {
+    var s = normalizeMcpServer({ transport: 'websocket', timeout: -5, toolAllowlist: 'x', toolDenylist: null });
+    expect(s.transport).toBe('streamable-http');
+    expect(s.timeout).toBe(30000);
+    expect(s.toolAllowlist).toEqual([]);
+    expect(s.toolDenylist).toEqual([]);
+  });
+});
+
+describe('getMcpServer / deleteMcpServer (clé d\'identité = name)', function() {
+  it('getMcpServer trouve par name ou null', function() {
+    localStorage.clear();
+    upsertMcpServer({ name: 'jira', url: 'https://h/mcp' });
+    expect(getMcpServer('jira').url).toBe('https://h/mcp');
+    expect(getMcpServer('inconnu')).toBe(null);
+  });
+});
+
 describe('toggleConversationPin (épinglage)', function() {
   it('bascule pinned à true puis false et persiste', function() {
     localStorage.clear();
@@ -592,6 +791,31 @@ describe('buildExportPayload', function() {
   });
 });
 
+describe('snapshotLocalStorageForExport (lit les 9 clés, tolère le JSON corrompu)', function() {
+  it('clés JSON valides → parsées', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-settings', JSON.stringify({ theme: 'dark' }));
+    localStorage.setItem('miaou-conversations', JSON.stringify([{ id: 'c1' }]));
+    var snap = snapshotLocalStorageForExport();
+    expect(snap['miaou-settings']).toEqual({ theme: 'dark' });
+    expect(snap['miaou-conversations']).toEqual([{ id: 'c1' }]);
+  });
+  it('miaou-active-api-server / miaou-active-space restent des strings brutes', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-active-api-server', 'srv_xyz');
+    localStorage.setItem('miaou-active-space', 'sp_xyz');
+    var snap = snapshotLocalStorageForExport();
+    expect(snap['miaou-active-api-server']).toBe('srv_xyz');
+    expect(snap['miaou-active-space']).toBe('sp_xyz');
+  });
+  it('clé au JSON corrompu → null sans crash', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-memories', '{not json');
+    var snap = snapshotLocalStorageForExport();
+    expect(snap['miaou-memories']).toBe(null);
+  });
+});
+
 describe('validateImportPayload', function() {
   function validPayload() {
     return {
@@ -687,5 +911,15 @@ describe('pruneOrphanSummaries', function() {
     var convs = [{ id: 'c1' }, { id: 'c2' }];
     var out = pruneOrphanSummaries(summaries, convs);
     expect(Object.keys(out).length).toBe(1);
+  });
+});
+
+describe('genMemoryId', function() {
+  it('préfixe m + base36', function() {
+    var id = genMemoryId();
+    expect(/^m[a-z0-9]+$/.test(id)).toBeTruthy();
+  });
+  it('deux appels immédiats ne collisionnent pas (suffixe aléatoire — deux create_memory du même tour)', function() {
+    expect(genMemoryId() === genMemoryId()).toBeFalsy();
   });
 });

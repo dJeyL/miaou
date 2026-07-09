@@ -86,8 +86,14 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   tout le script est strict. Déclarer chaque variable, pas de global implicite.
 - Garde de test obligatoire en fin de `main.js` :
   `if (typeof __TEST_ENV__ === 'undefined') { document.addEventListener('DOMContentLoaded', init); }`
-- Les handlers référencés en `onclick=`/`oninput=` inline dans `index.html`
-  doivent rester des fonctions globales portant exactement ces noms
+- Les handlers câblés depuis l'UI doivent rester des fonctions globales portant
+  exactement ces noms — que le câblage soit un attribut `onclick=`/`oninput=`
+  **statique** dans `index.html`, un attribut **généré dynamiquement** en
+  template string dans `ui.js` (ex. `onRegenerateFileDescription`), ou un
+  `addEventListener`/callback (ainsi `sendMessage`, `undoToolAck`, `deleteConv`
+  ne sont **jamais** en attribut inline littéral, mais restent des globals
+  appelés par listener/closure). La liste ci-dessous est **non exhaustive**
+  (terminée par « … ») et mélange ces trois modes de câblage :
   (`sendMessage`, `onSendBtn`, `newConversation`, `openSettings`,
   `onSaveSettings`, `selectSummaryInjectionMode`, `summaryBanner`, `deleteConv`,
   `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
@@ -221,10 +227,12 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     perte). `pruneOrphanSummariesOnInit()` nettoie en complément les résidus
     au démarrage, avant `runBackfill()`.
 21. **Export HTML standalone : un seul chemin string→HTML à risque.**
-    L'export (`renderExportBody`, ui.js) hérite de la sûreté `textContent` de
-    l'écran UNIQUEMENT parce qu'il re-rend via `renderMd`/`renderUserMd`
-    (marked) — les mêmes renderers que le DOM live, jamais un clone/strip du
-    `#thread` live. `formatToolAcksHtml` (utils.js) est l'EXCEPTION : seule
+    L'export (`renderExportBody`, ui.js) hérite de la sûreté de l'écran
+    UNIQUEMENT parce qu'il re-rend via `renderMd`/`renderUserMd` (marked,
+    sortie passée à `sanitizeHtml`/DOMPurify — marked laisse passer le HTML
+    inline du modèle, la sanitisation est ce qui empêche un payload reproduit
+    depuis une source hostile de s'exécuter) — les mêmes renderers que le DOM
+    live, jamais un clone/strip du `#thread` live. `formatToolAcksHtml` (utils.js) est l'EXCEPTION : seule
     fonction qui concatène directement des chaînes d'origine modèle/outil
     (`name`, `intent`, args JSON, result) en HTML — `escHtml` y est
     systématique. Toute future extension de l'export qui ajoute un chemin de
@@ -249,8 +257,8 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
 - **`docs/code-map.md`** — index « où se trouve quoi » (fonctions/const JS,
   sections JS/CSS, avec lignes). **Généré par `build.py` à chaque build, ne
   jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
-  fichiers (`ui.js`, `main.css`).
-- **`docs/pitfalls-detail.md`** — développement complet des 16 pièges ci-dessus.
+  fichiers (`ui.js`, `chat.css`).
+- **`docs/pitfalls-detail.md`** — développement complet des 22 pièges ci-dessus.
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
   `miaou-mcp-servers`) et IndexedDB (`skills`, `resources`).

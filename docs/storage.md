@@ -130,7 +130,7 @@
     + parts).
 
   À l'affichage (`assistantHead`, ui.js), la provenance est rendue
-  « serveur › modèle » (séparateur `.tool-name-sep` coloré) **uniquement si
+  « serveur › modèle » (séparateur `.inline-sep` coloré) **uniquement si
   plusieurs serveurs API sont configurés** ; sinon, modèle seul. `server`
   n'atteint jamais le payload API (`expandThread` projette en `{role, content}`).
   `truncated?` (bool, assistant uniquement, feature C) : posé à `true` sur le

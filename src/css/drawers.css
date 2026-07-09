@@ -408,7 +408,7 @@
    cache API (Bbis). Échelle interne (cached/prompt), PAS celle de la fenêtre
    de contexte — masquée (hidden) tant que cached_tokens est inconnu. */
 .ctx-bar-cache { height: 6px; margin-top: 2px; }
-.ctx-bar-cache .ctx-bar-seg { background: #5fb3d9; }
+.ctx-bar-cache .ctx-bar-seg { background: var(--ctx-cache); }
 .ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ctx-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
 .ctx-table td:first-child { color: var(--text); }
@@ -518,33 +518,167 @@
   flex-direction: column;
   gap: 10px;
 }
-.proposal-header { display: flex; align-items: center; }
-.proposal-type {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--accent);
-}
-.proposal-content {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--text);
-  background: var(--bg);
+/* ═══ Panneau « Outils exposés » (sous-drawer) ═══ */
+.tool-list { display: flex; flex-direction: column; gap: 10px; }
+.tool-item {
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 9px 11px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  padding: 12px 14px;
 }
-.proposal-diff { display: flex; flex-direction: column; gap: 6px; }
-.proposal-diff-label {
-  font-size: 10px;
-  font-weight: 700;
+.tool-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.tool-desc { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+.tool-params {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tool-param { display: flex; gap: 8px; align-items: baseline; }
+.tool-param-name { font-family: var(--mono); font-size: 11px; color: var(--text); flex-shrink: 0; }
+.tool-param-type { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); flex-shrink: 0; }
+.tool-param-desc { font-size: 11px; color: var(--text-3); }
+
+/* En-tête de namespace dans le sous-drawer « Outils exposés » (groupage D2). */
+.tool-ns-group { display: flex; flex-direction: column; gap: 10px; }
+.tool-ns {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--text-3);
+  padding-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
-.proposal-old { opacity: 0.65; text-decoration: line-through; text-decoration-color: var(--err); }
-.proposal-new { border-color: var(--accent-bd); }
+.tool-ns-chevron {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.tool-ns:hover { color: var(--text-2); }
+.tool-ns:hover .tool-ns-chevron { opacity: 1; }
+.tool-ns-chevron svg { transition: transform 0.2s; }
+.tool-ns-chevron.open svg { transform: rotate(180deg); }
+.tool-ns-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  overflow: hidden;
+}
+.tool-ns-body.open { grid-template-rows: 1fr; }
+.tool-ns-body-inner { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Cartes de configuration (partagé MCP / API / skills / Space) ─────────────
+   Anatomie commune construite par les helpers cfgField/cfgToggleRow/cfgErrEl
+   (ui.js) : carte, champs labellisés, rangées de toggle, erreur, actions,
+   sections vue/édition commutées par .is-editing. Les particularités de chaque
+   famille restent dans leurs blocs ci-dessous. */
+.cfg-add-btn { align-self: flex-start; }
+.cfg-list { display: flex; flex-direction: column; gap: 14px; }
+.cfg-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cfg-field { display: flex; flex-direction: column; gap: 5px; }
+.cfg-field > label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.cfg-field input,
+.cfg-field select,
+.cfg-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+}
+.cfg-field input:focus,
+.cfg-field select:focus,
+.cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.cfg-field .hint { font-size: 11px; color: var(--text-3); }
+/* Séparateur de section dans un drawer body plat (pas de collapse — écran
+   Space, C3) : même vocabulaire visuel que .conv-section (sidebar). */
+.drawer-section-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 18px 0 2px;
+}
+.cfg-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.cfg-err { font-size: 11.5px; color: var(--err); }
+.cfg-actions { display: flex; gap: 6px; margin-top: 2px; }
+/* Vue / édition */
+.cfg-view { display: flex; flex-direction: column; gap: 8px; }
+.cfg-card.is-editing .cfg-view { display: none; }
+.cfg-edit { display: none; flex-direction: column; gap: 10px; }
+.cfg-card.is-editing .cfg-edit { display: flex; }
+.cfg-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.cfg-view-url { font-size: 12px; color: var(--text-3); word-break: break-all; }
+.cfg-view-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ── Serveurs MCP : particularités (D3) ─────────────────────────────────────── */
+.mcp-status { font-size: 11.5px; color: var(--text-3); }
+.mcp-status.ok { color: var(--ok); }
+.mcp-status.err { color: var(--err); }
+.mcp-view-row .drawer-btn { margin-left: auto; }
+
+/* ── Serveurs API : particularités ──────────────────────────────────────────── */
+.api-status { font-size: 11.5px; color: var(--text-3); }
+.api-status.active { color: var(--accent); }
+/* Seul le dernier bouton (Modifier) est repoussé à droite : « Utiliser ce
+   serveur » occupe la place du pill « Actif », tout à gauche. */
+.api-view-row .drawer-btn:last-child { margin-left: auto; }
+/* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
+   à la suite (séparateur .inline-sep, même format que le thread). */
+.active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.active-api-server-name .inline-sep { font-weight: 400; }
+.active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
+
+/* ── Skills : particularités du drawer de gestion ──────────────────────────── */
+/* Drawer plus large : édition de corps Markdown (textarea confortable). */
+.drawer-wide { width: 620px; }
+/* Corps Markdown de la skill : mono compact, contrairement aux inputs cfg. */
+textarea.skill-content {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 140px;
+}
+/* Vue en RANGÉE (nom+slug à gauche, toggle+bouton à droite), contrairement à la
+   vue en colonne des cartes serveurs. */
+.skill-view { flex-direction: row; align-items: center; gap: 10px; }
+.skill-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.skill-view-name { font-weight: 600; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.skill-view-slug { font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.skill-view-row { gap: 10px; }
 .proposal-actions { display: flex; gap: 8px; }

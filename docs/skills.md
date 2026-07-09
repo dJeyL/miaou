@@ -33,11 +33,12 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    légende « `/` pour une skill » du composer suit la même condition : span
    `#composer-hint-skill`, visible seulement s'il existe ≥1 skill activé
    (`syncSkillHintUI`, ui.js — synchronisée après `loadSkillsCache` au démarrage
-   et à chaque CRUD via `renderSkills`). `parseSlashCommand` (pur) → si `/<slug>` : lookup cache ; slug
-   absent/désactivé → `{ ok:false, error }` → erreur composer locale
-   (`showComposerSkillError`), **aucun envoi, aucun tour modèle, thread inchangé** ;
-   sinon `getSkillContent` (IDB) puis `bakeSkillMessage(littéral, content)` =
-   `littéral + '\n\n' + corps` → `{ ok:true, content:baké, isSkill:true }`.
+   et à chaque CRUD via `renderSkills`). `findSlashTriggers` (pur) repère les
+   `/<slug>` du texte ; pour chacun, lookup cache : slug absent/désactivé →
+   `{ ok:false, error }` → erreur composer locale (`showComposerSkillError`),
+   **aucun envoi, aucun tour modèle, thread inchangé** ; sinon `getSkillContent`
+   (IDB) puis `bakeSkillMessage(littéral, resolved)` encadre chaque corps résolu
+   de marqueurs `--- skill: slug ---` → `{ ok:true, content:baké, isSkill:true }`.
    - Le **content baké** est **stocké dans `content`** du message user et **figé au
      niveau RENDU/REPLAY** : `renderThread`/`openConversation` ne re-résolvent
      JAMAIS. Mais une **édition est un nouvel envoi** → `resolveSend` re-résout le

@@ -76,7 +76,7 @@ const WEB_DOCTRINE =
   "jamais de balise Markdown (type ![alt](url)) pour afficher une ressource déjà " +
   "présentée par l'application ; tu peux en utiliser pour présenter des MINIATURES, " +
   "dans ce cas fais-en un lien vers l'IMAGE originale (PAS la page qui la contient), " +
-  "en utilisant l'URL de la MINIATURE pour l'image affichée en Markdown" +
+  "en utilisant l'URL de la MINIATURE pour l'image affichée en Markdown\n" +
   "- lorsque tu trouves une URL pointant vers une image via une recherche, ne te " +
   "contente pas d'afficher un lien Markdown ; utilise systématiquement l'outil " +
   "`fetch_url` pour récupérer le contenu de cette image afin qu'elle soit traitée " +
@@ -264,8 +264,14 @@ function clearPendingImageInjections() { _pendingImageInjections = []; }
 // Enrichit le dernier ack en attente (outils internes synchrones). Les outils
 // distants (asynchrones) voient leur ack déjà drainé dans earlyRendered ; leur
 // enrichissement est fait directement par le hook onEnrichLastAck dans main.js.
-function updateLastPendingToolAck(fields) {
-  if (_pendingToolAcks.length) Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
+// `minLength` (optionnel) : n'enrichit que si _pendingToolAcks a CRÛ au-delà de
+// cette borne — garde-fou contre l'enrichissement de l'ack d'un AUTRE outil
+// quand le handler courant sort en erreur précoce sans pousser d'ack (tour
+// multi-outils : sinon l'intent du 2e appel écrase celui du 1er). Voir callTool.
+function updateLastPendingToolAck(fields, minLength) {
+  if (!_pendingToolAcks.length) return;
+  if (typeof minLength === 'number' && _pendingToolAcks.length <= minLength) return;
+  Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
 }
 
 // File des blocs NON-text renvoyés par un outil distant (image / resource /
@@ -321,13 +327,12 @@ const TOOLS = [
       // Un résumé orphelin (conversation supprimée, index conservé) n'a pas de
       // Space propre : traité comme default Space (visible seulement là).
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      const conv0 = loadConversation(args.id);
-      const convSpace = conv0 ? (conv0.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
+      const conv = loadConversation(args.id);   // storage.js — un seul chargement (herméticité ET contenu)
+      const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
       if (convSpace !== spaceId) return 'Conversation introuvable ou souvenir supprimé.';
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
-      const conv = loadConversation(args.id);   // storage.js
       if (!conv) return JSON.stringify(light);   // résumé présent mais conversation absente : cas limite
       return JSON.stringify(Object.assign({}, light, { messages: conv.messages ?? conv }));
     },
@@ -1017,6 +1022,12 @@ function callTool(name, args) {
     const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
+    // Repère la position AVANT l'appel : l'intent ne doit enrichir un ack que si
+    // CE handler en a poussé un nouveau (length > baseAcks). Un handler qui sort
+    // en erreur précoce (souvenir introuvable, id manquant…) ne pousse pas d'ack ;
+    // sans ce garde, l'intent se poserait sur l'ack d'un outil ANTÉRIEUR du même
+    // tour multi-outils (cf. B5, campagne 2026-07-09).
+    const baseAcks = _pendingToolAcks.length;
     const result = callInternalTool(parsed.toolName, cleanArgs);
     // Attache l'intent au dernier ack en attente. La plupart des handlers poussent
     // leur ack de façon synchrone (avant le retour de callInternalTool) ; certains
@@ -1025,9 +1036,9 @@ function callTool(name, args) {
     // encore dans _pendingToolAcks.
     if (intent != null) {
       if (result && typeof result.then === 'function') {
-        return result.then(r => { updateLastPendingToolAck({ intent }); return r; });
+        return result.then(r => { updateLastPendingToolAck({ intent }, baseAcks); return r; });
       }
-      updateLastPendingToolAck({ intent });
+      updateLastPendingToolAck({ intent }, baseAcks);
     }
     return result;
   }
@@ -1051,8 +1062,9 @@ let _attachmentPushState = {};
 function _pushStateKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
 function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_pushStateKey(conversationId, attId)]; }
 function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_pushStateKey(conversationId, attId)] = true; }
-// Exposée pour un futur nettoyage à la suppression de conversation (non requis
-// par ce lot — deleteConv ne connaît pas cette table, cf. handover).
+// Appelée par deleteConv (main.js) à la suppression d'une conversation : purge
+// les clés (conversationId, *) de la table de push, sinon elles fuient jusqu'au
+// rechargement de page.
 function clearAttachmentPushState(conversationId) {
   for (const k in _attachmentPushState) {
     if (k.indexOf((conversationId || '') + '|') === 0) delete _attachmentPushState[k];
@@ -1323,7 +1335,6 @@ function toolDefinitions() {
 function toolsSystemPrompt() {
   const all = exposedTools().map(t => ({ name: t.name, description: t.description }))
     .concat([{ name: ASK_CONFIRMATION_DEF.function.name, description: ASK_CONFIRMATION_DEF.function.description }]);
-  if (!all.length) return '';
   const lines = all.map(t => '- ' + t.name + ' : ' + t.description);
   return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
          "sinon réponds directement.\n" + lines.join('\n');

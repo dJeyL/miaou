@@ -13,7 +13,8 @@ function escHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── Acks d'outils (journal client persistant des appels d'outils) ────────────
@@ -384,6 +385,27 @@ function formatDateRelative(ts, now) {
   return day + ' ' + month;
 }
 
+// Palier calendaire d'un ts par rapport à `now` (both epoch ms), partagé par
+// sectionFor (en-tête de section sidebar) et relativeWhen (libellé de date) —
+// un seul calcul des bornes today/hier/7j/30j, formatages distincts au-dessus.
+// `now` injecté pour QuickJS. Découpage CALENDAIRE (via _startOfDay), pas une
+// fenêtre glissante de 24 h. Retourne { bucket, startOfToday, day, daysAgo } où
+// bucket ∈ 'today'|'yesterday'|'week'|'month'|'older' et daysAgo = nombre de
+// jours calendaires écoulés (0 = aujourd'hui), utile aux libellés « il y a N j ».
+function calendarBucket(ts, now) {
+  const day = 86400000;
+  const startOfToday = _startOfDay(new Date(now));
+  if (!ts) return { bucket: 'older', startOfToday, day, daysAgo: Infinity };
+  let bucket;
+  if (ts >= startOfToday) bucket = 'today';
+  else if (ts >= startOfToday - day) bucket = 'yesterday';
+  else if (ts >= startOfToday - 7 * day) bucket = 'week';
+  else if (ts >= startOfToday - 30 * day) bucket = 'month';
+  else bucket = 'older';
+  const daysAgo = Math.floor((startOfToday - ts) / day) + 1;
+  return { bucket, startOfToday, day, daysAgo };
+}
+
 // Horodatage complet en français pour les tooltips de la sidebar (cf. brief D6).
 // Ex : "jeudi 26 juin 2026 à 14:30". Toujours avec l'année.
 function formatFullDateFr(ts) {
@@ -400,6 +422,15 @@ function exportDateStamp(now) {
   const mm = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
   const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
   return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+// Variante avec heure : YYYY-MM-DD-HHMM (heure locale), pour le nom de fichier
+// de l'export global (exportAllData) — même logique de pad qu'exportDateStamp,
+// pas de dé-duplication d'un pad inline dans main.js.
+function exportDateTimeStamp(now) {
+  const d = new Date(now);
+  const p = n => (n < 10 ? '0' : '') + n;
+  return exportDateStamp(now) + '-' + p(d.getHours()) + p(d.getMinutes());
 }
 
 // Horodatage déterministe dd/mm/yyyy (heure locale) pour l'affichage dans

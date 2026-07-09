@@ -389,6 +389,15 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     erreur sous le composer. Corriger en message valide et envoyer → l'erreur
     disparaît (tout envoi effectif lève l'erreur skill du composer).
 
+39e. **Pas de double-envoi pendant la résolution d'une slash-skill (B7)** : avec
+    une skill activée dont le contenu est en IDB, taper `/slug ...` puis presser
+    **Entrée deux fois très rapidement** (ou Entrée + clic bouton d'envoi dans la
+    foulée). Un SEUL message user doit être poussé, un seul tour modèle lancé —
+    l'`await resolveSend` (lecture IDB) ne doit plus laisser passer deux envois
+    concurrents (verrou `_sendResolving`). Vérifier aussi le pendant côté édition :
+    valider deux fois une bulle en mode édition ne doit produire qu'une
+    régénération.
+
 40. **Chemin langage naturel** : avec au moins un skill activé, demander en langage
     naturel une tâche couverte par un skill (sans `/`). Le modèle doit appeler
     `miaou__skills__list` puis `miaou__skills__read(slug)` → ack « Skill consulté :
@@ -585,9 +594,11 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
 60. **Spaces — mémoire scopée et promotion.** Depuis « Perso », demander au
     modèle de mémoriser un fait (`create_memory`, chemin direct). Basculer
     vers « Général » : le souvenir ne doit apparaître ni dans l'injection de
-    contexte ni dans l'écran Space de « Général ». Retourner dans « Perso »,
-    ouvrir son écran → le souvenir est listé avec un bouton « Promouvoir en
-    profil ». Cliquer dessus → le souvenir disparaît de la liste de « Perso »
+    contexte ni dans l'onglet « Souvenirs » de « Général ». Retourner dans
+    « Perso », ouvrir l'onglet sidebar « Souvenirs » (`selectSpaceTab('memories')`,
+    plus le drawer Space depuis la migration onglets) → le souvenir est listé
+    avec un bouton « Promouvoir en profil ». Cliquer dessus → le souvenir
+    disparaît de la liste de « Perso »
     et apparaît dans Paramètres → Profil (drawer réglages, onglet renommé).
     Vérifier qu'il est désormais injecté quel que soit le Space actif.
 61. **Spaces — description ajoutée, pas substituée (D4 corrigé).** Dans

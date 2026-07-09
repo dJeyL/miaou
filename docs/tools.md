@@ -2,8 +2,10 @@
 
 ## Registre d'outils
 
-Treize outils au total dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
-description **du registre** — ne jamais la coder en dur.
+Douze outils dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+description **du registre** — ne jamais la coder en dur. `ask_confirmation`
+(primitif halting, cf. plus bas) est exposé au modèle mais **hors registre** :
+il ne figure pas dans `TOOLS` et ne compte pas dans ces douze.
 
 **Lecture de l'historique :**
 - `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
@@ -264,10 +266,19 @@ optionnellement `renderLabel(m, labelEl)` pour les kinds nécessitant un rendu D
 riche (rendu à deux niveaux via `renderIntentTwoLevel`, breadcrumb `<code>` pour
 `mcp_call`, lien cliquable pour `conversation_read`), et optionnellement
 `expand(m, containerEl)` pour les kinds avec contenu dépliable au clic (chip
-« voir »/« masquer » avec rendu paresseux — aucun kind ne l'utilise actuellement ;
-le mécanisme est en place pour une extension future).
+« voir »/« masquer » avec rendu paresseux).
 `buildToolAck` appelle `spec.renderLabel` si présent, sinon `label.textContent` ;
 si `spec.expand` est présent et `!m.resolved`, ajoute le chip expandable.
+
+> **⚠️ `expand` est DORMANT / non branché (audit F, 2026-07-10).** Aucun
+> `ACK_SPEC` ne définit `expand:` → le bloc correspondant de `renderAck` (ui.js)
+> ne s'exécute **jamais**, les classes `.ack-expand`/`.ack-expand-content` n'ont
+> aucun style CSS, et `presentResourceFromChip` (ui.js, le `spec.expand` attendu)
+> n'est appelée nulle part. Chaîne à moitié écrite puis jamais câblée, **conservée
+> sciemment** comme jalon d'une feature « déplier une ressource stockée depuis son
+> ack ». Pour l'activer : poser `expand: presentResourceFromChip` sur le spec
+> `resource_stored` ET styler `.ack-expand*`. Ne pas la croire vivante en lisant
+> le code.
 Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au renderer.
 
 - **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`

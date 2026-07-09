@@ -25,6 +25,13 @@ html[data-theme="light"] {
   --accent-bd:             rgba(224,95,28,.28);
   --ok:                    #267a4e;
   --err:                   #c42828;
+  --ctx-cache:             #2c7fa6;              /* barre cache KV — assombri pour le fond clair */
+  --ctx-warn:              #9a5f08;              /* compteur — approche limite (fond clair) */
+  --ctx-warn-bd:           rgba(154,95,8,.38);   /* bordure warn (fond clair, un peu plus dense) */
+  --ctx-warn-dim:          rgba(154,95,8,.12);   /* fond warn (fond clair) */
+  --ctx-over:              #b83232;              /* compteur — dépassement (fond clair) */
+  --ctx-over-bd:           rgba(184,50,50,.38);  /* bordure over (fond clair) */
+  --ctx-over-dim:          rgba(184,50,50,.12);  /* fond over (fond clair) */
   --topbar-bg:             rgba(244,239,229,.88);
   --scrollbar-thumb-hover: rgba(0,0,0,.30);
   --table-stripe:          rgba(0,0,0,.04);

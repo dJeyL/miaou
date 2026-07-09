@@ -11,6 +11,9 @@ describe('escHtml', function() {
   it('échappe les guillemets doubles', function() {
     expect(escHtml('"quote"')).toBe('&quot;quote&quot;');
   });
+  it("échappe l'apostrophe (attributs single-quote des gabarits onclick)", function() {
+    expect(escHtml("l'apostrophe d'ici")).toBe('l&#39;apostrophe d&#39;ici');
+  });
   it('ne modifie pas une chaîne sans caractères spéciaux', function() {
     expect(escHtml('hello world')).toBe('hello world');
   });
@@ -194,6 +197,41 @@ describe('formatDateRelative', function() {
     var now = new Date(2024, 3, 2, 12, 0, 0).getTime();  // 2 avril 2024
     var ts  = new Date(2024, 2, 31, 12, 0, 0).getTime(); // 31 mars 2024
     expect(formatDateRelative(ts, now)).toBe('avant-hier');
+  });
+});
+
+// calendarBucket : bornes calendaires partagées par sectionFor/relativeWhen (ui.js)
+describe('calendarBucket', function() {
+  function at(y, m, d, h) { return new Date(y, m, d, h || 12, 0, 0).getTime(); }
+  var now = at(2026, 5, 15, 12);   // 15 juin 2026, midi
+
+  it('même jour → today', function() {
+    expect(calendarBucket(at(2026, 5, 15, 8), now).bucket).toBe('today');
+  });
+  it('découpage calendaire, pas 24h glissant (00:10 le jour même → today)', function() {
+    var ref = at(2026, 5, 15, 23);          // 23h
+    expect(calendarBucket(at(2026, 5, 15, 0), ref).bucket).toBe('today');   // 0h même jour
+  });
+  it('la veille → yesterday', function() {
+    expect(calendarBucket(at(2026, 5, 14, 12), now).bucket).toBe('yesterday');
+  });
+  it('dans les 7 jours → week', function() {
+    expect(calendarBucket(at(2026, 5, 10, 12), now).bucket).toBe('week');
+  });
+  it('dans les 30 jours → month', function() {
+    expect(calendarBucket(at(2026, 4, 25, 12), now).bucket).toBe('month');
+  });
+  it('au-delà de 30 jours → older', function() {
+    expect(calendarBucket(at(2026, 3, 1, 12), now).bucket).toBe('older');
+  });
+  it('ts absent → older, daysAgo Infinity', function() {
+    var r = calendarBucket(0, now);
+    expect(r.bucket).toBe('older');
+    expect(r.daysAgo).toBe(Infinity);
+  });
+  it('daysAgo : 1 pour la veille, croissant', function() {
+    expect(calendarBucket(at(2026, 5, 14, 12), now).daysAgo).toBe(1);
+    expect(calendarBucket(at(2026, 5, 10, 12), now).daysAgo).toBe(5);
   });
 });
 
@@ -460,6 +498,21 @@ describe('exportDateStamp', function() {
   });
 });
 
+describe('exportDateTimeStamp', function() {
+  it('formate en YYYY-MM-DD-HHMM avec zero-padding heure/minute', function() {
+    var ts = new Date(2026, 0, 5, 9, 7).getTime();  // 5 jan 2026, 09:07
+    expect(exportDateTimeStamp(ts)).toBe('2026-01-05-0907');
+  });
+  it('heure et minute à deux chiffres', function() {
+    var ts = new Date(2026, 10, 23, 14, 30).getTime();  // 23 nov 2026, 14:30
+    expect(exportDateTimeStamp(ts)).toBe('2026-11-23-1430');
+  });
+  it('minuit → 0000', function() {
+    var ts = new Date(2026, 5, 1, 0, 0).getTime();
+    expect(exportDateTimeStamp(ts)).toBe('2026-06-01-0000');
+  });
+});
+
 describe('exportDateDisplay', function() {
   it('formate en dd/mm/yyyy avec zero-padding', function() {
     var ts = new Date(2026, 0, 5, 14, 30).getTime(); // 5 janvier 2026
@@ -492,7 +545,7 @@ describe('formatToolAcksHtml', function() {
   it('preview repliée : intent affiché au lieu du nom d\'outil quand présent', function() {
     var r = formatToolAcksHtml([{ name: 'get_time', intent: 'Donner l\'heure actuelle', args: {}, result: '14:32' }]);
     var previewSection = r.slice(0, r.indexOf('<ul>'));
-    expect(previewSection.indexOf('Donner l\'heure actuelle') >= 0).toBeTruthy();
+    expect(previewSection.indexOf('Donner l&#39;heure actuelle') >= 0).toBeTruthy();
     expect(previewSection.indexOf('<code>get_time</code>') >= 0).toBeFalsy();
   });
   it('preview repliée : une ligne par ack pour un groupe multiple', function() {

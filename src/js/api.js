@@ -628,9 +628,19 @@ function searchSummaries(queryText, excludeId, spaceId) {
 // ── Liste des modèles exposés par l'API ─────────────────────────────────────
 async function fetchModels(override) {
   const cfg = Object.assign({}, loadSettings(), activeApiConfig(), override || {});
-  const res = await fetch(cfg.url + '/models', {
-    headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
-  });
+  // Timeout borné (même motif que streamCompletion) : un endpoint qui pend ne
+  // doit pas laisser le chargement de modèles en attente indéfinie.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
+  let res;
+  try {
+    res = await fetch(cfg.url + '/models', {
+      headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error('models ' + res.status);
   const data = await res.json();
   const list = data.data || data.models || [];

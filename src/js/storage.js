@@ -437,7 +437,11 @@ function backfillCandidates() {
 
 const MEMORIES_KEY = 'miaou-memories';
 
-function genMemoryId() { return 'm' + Date.now().toString(36); }
+// Suffixe aléatoire (même gabarit que genSpaceId/genApiServerId) : deux
+// create_memory dans le même tour d'outils s'exécutent en séquence
+// sub-milliseconde — un id purement horodaté ferait écraser le premier
+// souvenir par le second (saveMemory upsert par id).
+function genMemoryId() { return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 function loadMemories() {
   try { return JSON.parse(localStorage.getItem(MEMORIES_KEY)) || []; }

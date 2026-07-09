@@ -43,6 +43,7 @@ let currentConvModel = '';  // override de modèle de la conversation courante (
 let currentConvReasoningEffort = '';  // override de reasoning_effort de la conversation courante ('' = défaut, pas de paramètre)
 let pendingAttachments = [];   // pièces jointes du composer, en attente d'envoi (cf. §Pièces jointes)
 let attachIngestInFlight = 0;  // ingestions en cours (garde anti-course : envoi refusé tant que ≠ 0)
+let _sendResolving = false;    // verrou anti double-envoi pendant l'await resolveSend (B7) — cf. sendMessage
 let _lastContextManifest = null;   // manifeste du dernier envoi RÉEL (brief B, B4) — null si aucun envoi cette session
 let _lastContextManifestMidTurn = false;   // true si _lastContextManifest a été recalculé PENDANT une boucle d'outils (tour non terminé), cf. recomputeLastContextManifest
 
@@ -449,6 +450,7 @@ function deleteConv(id) {
   deleteConversation(id);
   deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
   deleteResourcesByConversation(id).catch(function() {});   // cascade IDB (hard-delete)
+  clearAttachmentPushState(id);   // libère l'état de push MCP scopé à la conversation
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
 }
@@ -746,9 +748,7 @@ async function exportAllData() {
   const rawResources = await getAllResources();
   const resources = rawResources.map(r => Object.assign({}, r, { data: arrayBufferToBase64(r.data) }));
   const payload = buildExportPayload(lsSnapshot, skills, resources);
-  const ts = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+  const stamp = exportDateTimeStamp(Date.now());
   downloadFile('miaou-export-' + stamp + '.json', JSON.stringify(payload), 'application/json');
 }
 
@@ -1108,7 +1108,11 @@ async function resolveSend(literal) {
 }
 
 async function sendMessage() {
-  if (!configured || sending) return;
+  // `sending` ne passe à true que dans dispatchSend, APRÈS l'await resolveSend
+  // ci-dessous ; ce dernier peut attendre IDB (getSkillContent d'une slash-skill),
+  // laissant une fenêtre où deux Entrée rapides franchiraient toutes deux la garde
+  // et pousseraient deux messages. `_sendResolving` ferme cette fenêtre (B7).
+  if (!configured || sending || _sendResolving) return;
   // Garde anti-course : une ingestion de pièce jointe encore en vol (drop puis
   // Entrée immédiat) — refuser l'envoi avec un message visible, sinon le
   // message partirait incomplet et l'attachment en retard s'accrocherait au
@@ -1125,8 +1129,14 @@ async function sendMessage() {
   if (!text && !pendingAttachments.length) return;
 
   // On résout AVANT de vider le composer : un slug invalide ne perd pas la saisie
-  // ni ne consomme un tour modèle.
-  const r = await resolveSend(text);
+  // ni ne consomme un tour modèle. Le verrou couvre exactement cet await.
+  let r;
+  _sendResolving = true;
+  try {
+    r = await resolveSend(text);
+  } finally {
+    _sendResolving = false;
+  }
   if (!r.ok) { showComposerSkillError(r.error); return; }
 
   ta.value = ''; ta.style.height = 'auto';
@@ -1258,7 +1268,7 @@ function runGenerationFromCurrentThread() {
 // Retourne le message d'erreur (slug invalide) pour que l'appelant l'affiche SOUS
 // LA ZONE D'ÉDITION (pas le composer) ; null en cas de succès.
 async function editUserMessage(index, newText) {
-  if (sending) return null;                     // pas d'édition pendant un stream
+  if (sending || _sendResolving) return null;   // pas d'édition pendant un stream ni une résolution en vol (B7)
   const t = (newText || '').trim();
   if (!t) return null;
   if (index < 0 || index >= currentThread.length) return null;
@@ -1266,7 +1276,14 @@ async function editUserMessage(index, newText) {
 
   // Résoudre AVANT toute mutation : un slug invalide laisse le thread intact et la
   // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
-  const r = await resolveSend(t);
+  // Même verrou que sendMessage : l'await resolveSend peut attendre IDB.
+  let r;
+  _sendResolving = true;
+  try {
+    r = await resolveSend(t);
+  } finally {
+    _sendResolving = false;
+  }
   if (!r.ok) return r.error;
 
   currentThread = currentThread.slice(0, index + 1);
@@ -1686,7 +1703,10 @@ async function dispatchSend(matches, continuation) {
       onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
     });
   } catch (e) {
-    finalizeAssistant(wrap, '_Erreur réseau : ' + escHtml(e.message || String(e)) + '_');
+    // Texte brut : finalizeAssistant → renderMd (marked + sanitizeHtml) échappe
+    // déjà. Un escHtml ici double-échapperait (& → &amp; visible). Cohérent avec
+    // onError ci-dessus qui passe aussi le message brut.
+    finalizeAssistant(wrap, '_Erreur réseau : ' + (e.message || String(e)) + '_');
     setConnDot('err');
   } finally {
     setSending(false);

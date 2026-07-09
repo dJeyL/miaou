@@ -33,27 +33,6 @@ describe('validateSkillSlug', function() {
   });
 });
 
-describe('parseSlashCommand', function() {
-  it('renvoie null si pas de slash en tête', function() {
-    expect(parseSlashCommand('bonjour')).toBe(null);
-    expect(parseSlashCommand('  /revue')).toBe(null);   // espace avant → pas une commande
-  });
-  it('extrait le slug seul', function() {
-    expect(parseSlashCommand('/revue')).toEqual({ slug: 'revue', rest: '' });
-  });
-  it('extrait le slug et le reste', function() {
-    expect(parseSlashCommand('/revue ce fichier')).toEqual({ slug: 'revue', rest: 'ce fichier' });
-  });
-  it('reste multi-ligne préservé, slug isolé', function() {
-    var r = parseSlashCommand('/revue\nligne2');
-    expect(r.slug).toBe('revue');
-    expect(r.rest).toBe('ligne2');
-  });
-  it('rejette un slug avec caractère invalide', function() {
-    expect(parseSlashCommand('/a.b')).toBe(null);
-  });
-});
-
 describe('findSlashTriggers', function() {
   it('détecte un trigger en position 0', function() {
     var t = findSlashTriggers('/revue ce fichier');
@@ -101,6 +80,10 @@ describe('bakeSkillMessage', function() {
     expect(bakeSkillMessage('/revue', [{ slug: 'revue', content: '   ' }])).toBe('/revue');
     expect(bakeSkillMessage('/revue', [])).toBe('/revue');
     expect(bakeSkillMessage('/revue', null)).toBe('/revue');
+  });
+  it('tolère un élément null/incomplet dans resolved (garde-fou, pas de TypeError)', function() {
+    expect(bakeSkillMessage('txt', [null, { slug: 'a' }, { slug: 'b', content: 'C' }]))
+      .toBe('txt\n\n--- skill: b ---\nC\n--- /skill: b ---');
   });
   it('plusieurs skills : blocs étiquetés en fin de message, dans l\'ordre', function() {
     var out = bakeSkillMessage('/revue ce fichier puis /audit la sécu', [

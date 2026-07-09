@@ -40,19 +40,6 @@ function validateSkillSlug(slug, existingSlugs) {
   return null;
 }
 
-// Parse un message composer en commande slash : si le texte commence par
-// `/<slug>` (slug = charset valide), retourne { slug, rest } (rest = reste du
-// texte après le slug, espaces de tête retirés). Sinon null. Pur — la résolution
-// (cache, enabled, contenu IDB) se fait ailleurs. RÉSERVÉ au cas position-0 isolé
-// (résolution du blocage Enter du composer) — pour détecter un trigger `/` à une
-// position quelconque dans un texte, voir findSlashTriggers.
-function parseSlashCommand(text) {
-  const s = String(text == null ? '' : text);
-  const m = /^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(s);
-  if (!m) return null;
-  return { slug: m[1], rest: (m[2] || '').trim() };
-}
-
 // Trouve TOUTES les occurrences de trigger `/slug` dans un texte : en position 0,
 // ou immédiatement précédées d'un espace/saut de ligne (frontière de mot — exclut
 // `https://`, `and/or`, etc.). Retourne un tableau ordonné par position croissante :
@@ -86,7 +73,7 @@ function bakeSkillMessage(literalText, resolved) {
   const list = Array.isArray(resolved) ? resolved : [];
   const blocks = [];
   for (const r of list) {
-    const body = String(r && r.content == null ? '' : r.content).trim();
+    const body = String(!r || r.content == null ? '' : r.content).trim();
     if (!body) continue;
     blocks.push('--- skill: ' + r.slug + ' ---\n' + body + '\n--- /skill: ' + r.slug + ' ---');
   }

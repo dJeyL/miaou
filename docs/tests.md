@@ -9,8 +9,15 @@ le même total. Seules les **fonctions pures** sont couvertes
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 (`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`), **agrégation MCP**
 (`parseToolName`, `groupByNamespace`, `guessMcpTransport`, `validateMcpServerName`,
-`filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`),
-**ressources** (`classifyMime`, `humanSize`, `formatResourceDescriptor`,
+`filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`
+— y compris `normalizeMcpServer` défauts/coercition, `getMcpServer`/`deleteMcpServer`
+par `name`), **serveurs API** (`miaou-api-servers` : `migrateApiServersIfNeeded`
+one-shot gardé sur la présence de clé, CRUD `upsertApiServer`/`deleteApiServer`/
+`getApiServer`, `activeApiServer` avec repli sur le premier serveur si l'id actif
+est périmé, `activeApiConfig` avec filet `loadSettings().model`), **`hasSubstance`**
+(piège 5 — seuil `trim().length >= 8`, comptage user/assistant distinct, garde
+`Array.isArray`) et `backfillCandidates`,
+**ressources** (`humanSize`, `formatResourceDescriptor`,
 `generateResourceId`, `arrayBufferToBase64`/`base64ToArrayBuffer`,
 `utf8Encode`/`utf8Decode`, `extractResultParts`, `assembleToolResultForModel`),
 **pièces jointes — envoi et persistance (brief A lot 2)** :
@@ -48,7 +55,16 @@ round-trip réseau complet + le rejeu `REF_UNKNOWN`) reste manuel — nécessite
 serveur `mcp_docs` réel, cf. `docs/manual-tests.md` (test 57) ; le stub `fetch`
 du runner QuickJS (`tests/runner.py`) ne résout ni ne rejette jamais, un test
 qui l'exercerait resterait bloqué silencieusement.
-**skills** (`validateSkillSlug`, `parseSlashCommand`, `bakeSkillMessage`, sync du
+**ressources — cache session** (`getCachedRecordByAttId` : match exact attId+conversationId,
+conversationId omis, conversationId différent, attId absent ; `getCachedLibraryEntriesBySpace` :
+filtre `kind==='library'` et `spaceId`, spaceId sans fichier), **doctrines conditionnelles**
+`intentDoctrinePrompt` (gate `TOOLS.length && settings.intentTracing`, défaut `true`) et
+les **blocs de contexte dynamique** (main.js : `buildSummaryBlock` — vide/1+ match avec
+id/titre/résumé —, `buildMemoryEntriesBlock` — scope profile+Space actif, absent hors
+scope — et `buildSkillsContextBlock` — vide sans autotrigger, listing sinon ; `contextBlockParts`/
+`buildContextBlock` ne sont PAS testés directement, `Intl.DateTimeFormat` n'étant pas
+stubé sous QuickJS),
+**skills** (`validateSkillSlug`, `findSlashTriggers`, `bakeSkillMessage`, sync du
 cache mémoire `setSkillsCache`/`upsertSkillCache`/`removeSkillCache`/
 `listEnabledSkills`/`matchSkillCompletions`, `skills__list` activés-seulement,
 chemins d'erreur synchrones de `skills__read`, arithmétique d'index de
@@ -94,7 +110,10 @@ format inconnu, format absent, version future ou non-numérique, `null`/
 vides sans erreur, types invalides — ex. un tableau attendu remplacé par un
 objet — comptés à 0 sans crash, version 1 exactement acceptée). Le round-trip
 base64 d'une ressource (`arrayBufferToBase64`/`base64ToArrayBuffer`) était déjà
-couvert par la suite existante, réutilisé tel quel pour l'export. La plomberie
+couvert par la suite existante, réutilisé tel quel pour l'export. `snapshotLocalStorageForExport`
+(main.js) est couvert : les 9 clés JSON valides désérialisées, `miaou-active-api-server`/
+`miaou-active-space` conservées en string brute, une clé au JSON corrompu → `null` sans crash.
+La plomberie
 IDB (`getAllResources`, `clearIdbStore`) et l'orchestration (`exportAllData`,
 `onImportFileSelected`, `applyImportedData` — lecture fichier, `FileReader`,
 `location.reload()`) ne sont pas QuickJS-testables : vérification manuelle
