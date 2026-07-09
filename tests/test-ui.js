@@ -95,7 +95,7 @@ describe('resolveConvRefs', function() {
 });
 
 describe('buildExportHtml', function() {
-  var base = { title: 'Ma conversation', dateStamp: '2026-07-09', theme: 'dark', styleCss: 'body{color:red}', bodyHtml: '<div class="msg">hello</div>' };
+  var base = { title: 'Ma conversation', dateDisplay: '09/07/2026', theme: 'dark', styleCss: 'body{color:red}', bodyHtml: '<div class="msg">hello</div>' };
   it('produit un doctype et un html avec data-theme', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<!doctype html>') >= 0).toBeTruthy();
@@ -117,7 +117,7 @@ describe('buildExportHtml', function() {
   it('contient la topbar (titre + date) et le footer "Généré par MIAOU"', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('Ma conversation') >= 0).toBeTruthy();
-    expect(r.indexOf('2026-07-09') >= 0).toBeTruthy();
+    expect(r.indexOf('09/07/2026') >= 0).toBeTruthy();
     expect(r.indexOf('Généré par MIAOU') >= 0).toBeTruthy();
   });
   it('zéro <script> et zéro <link> dans la sortie (D1)', function() {

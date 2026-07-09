@@ -402,6 +402,16 @@ function exportDateStamp(now) {
   return d.getFullYear() + '-' + mm + '-' + dd;
 }
 
+// Horodatage déterministe dd/mm/yyyy (heure locale) pour l'affichage dans
+// l'export HTML standalone (.export-meta) — distinct de exportDateStamp
+// (YYYY-MM-DD, réservé au nom de fichier).
+function exportDateDisplay(now) {
+  const d = new Date(now);
+  const mm = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+  const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
+  return dd + '/' + mm + '/' + d.getFullYear();
+}
+
 // ── Reconstruction du payload API depuis currentThread ───────────────────────
 
 // Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
@@ -502,19 +512,44 @@ function _formatToolCallHtml(m) {
   return lines.join('');
 }
 
+// Icône générique (clé plate) pour la preview repliée d'un ack dans l'export —
+// une seule icône pour tous les kinds (pas de dépendance à ACK_KINDS, défini
+// dans ui.js, hors de portée depuis utils.js — cf. CLAUDE.md, frontière de
+// fichiers du test runner).
+const EXPORT_ACK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+
+// Ligne de preview d'un ack, visible tant que le <details> est replié — imite
+// .tool-ack du thread live (bordure + icône + intent), sans la richesse
+// interactive (undo/expand) hors de propos pour un export figé. Fallback sur
+// le nom d'outil si m.intent est absent.
+function _formatToolCallPreviewHtml(m) {
+  const text = m.intent ? escHtml(m.intent) : '<code>' + escHtml(m.name) + '</code>';
+  return '<div class="tool-ack-preview"><span class="ack-icon">' + EXPORT_ACK_ICON + '</span>' +
+    '<span class="ack-label">' + text + '</span></div>';
+}
+
 // Bloc HTML (<details class="tool-trace">) pour un groupe d'acks enrichis
 // d'un même tour — sœur HTML de formatToolAcksMd, même seuils/politique.
 // Fermé par défaut (cohérent avec le reasoning, cf. brief G D1/§10).
+// Repliée : une ligne de preview par ack façon .tool-ack (bordure+icône+intent
+// ou fallback nom d'outil). Dépliée : le détail actuel (nom, arguments,
+// résultat) remplace les previews — basculé en CSS via [open] (EXPORT_CSS).
 function formatToolAcksHtml(acks) {
   if (!acks || !acks.length) return '';
   const summary = acks.length === 1 ? 'Outil appelé' : 'Outils appelés (' + acks.length + ')';
+  const previews = acks.map(_formatToolCallPreviewHtml).join('');
   let inner;
   if (acks.length === 1) {
     inner = '<li>' + _formatToolCallHtml(acks[0]) + '</li>';
   } else {
     inner = acks.map(m => '<li>' + _formatToolCallHtml(m) + '</li>').join('');
   }
-  return '<details class="tool-trace"><summary>' + summary + '</summary><ul>' + inner + '</ul></details>';
+  return '<details class="tool-trace">' +
+    '<summary><span class="tool-trace-summary-text">' + summary + '</span>' +
+    '<div class="tool-ack-preview-list">' + previews + '</div>' +
+    '<ul>' + inner + '</ul>' +
+    '</summary>' +
+    '</details>';
 }
 
 // DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].

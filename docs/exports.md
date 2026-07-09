@@ -69,9 +69,18 @@ ultérieures du même lot).
   `resource_presented` (nom + mime, jamais de binaire/data-URI), mêmes acks
   legacy (sans `args`) omis. Sortie : `<details class="tool-trace">` fermé par
   défaut (cohérent avec le reasoning masqué à l'écran) contenant un
-  `<summary>` (« Outil appelé » / « Outils appelés (n) ») et une `<ul>` des
-  appels. **`escHtml` systématique** sur `name`, `intent`, les arguments JSON
-  et le résultat : ce sont des chaînes d'origine modèle/outil, et c'est
+  `<summary>` (« Outil appelé » / « Outils appelés (n) », masqué en CSS) et
+  une `<ul>` des appels. **Preview repliée** (`.tool-ack-preview-list`, une
+  `.tool-ack-preview` par ack) : imite `.tool-ack` du thread live (bordure
+  gauche + icône outil générique `EXPORT_ACK_ICON`, une seule icône pour
+  tous les kinds — pas de dépendance à `ACK_KINDS`/ui.js, hors de portée
+  depuis `utils.js`) + `m.intent` si présent, sinon fallback `<code>name</code>`.
+  Bascule preview ↔ détail pilotée en CSS pur via le sélecteur `[open]`
+  (`EXPORT_CSS`, ui.js) : `.tool-trace[open] .tool-ack-preview-list { display:
+  none }` / `.tool-trace:not([open]) ul { display: none }` — un seul
+  `<details>`, deux vues exclusives, zéro JS. **`escHtml` systématique** sur
+  `name`, `intent`, les arguments JSON et le résultat (preview ET détail) : ce
+  sont des chaînes d'origine modèle/outil, et c'est
   l'unique chemin de concaténation string→HTML de tout l'export (cf. note de
   piège dans `CLAUDE.md`/`docs/pitfalls-detail.md`) — toute future extension
   qui ajoute un chemin similaire doit `escHtml` de la même façon.

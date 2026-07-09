@@ -48,29 +48,32 @@
   - `formatDateRelative()` — L373
   - `formatFullDateFr()` — L389
   - `exportDateStamp()` — L398
-- **Reconstruction du payload API depuis currentThread** (L405)
-  - `stampTs()` — L411
-- **Export Markdown : traces d'appels d'outils** (L417)
-  - `EXPORT_ARGS_MAX` — L420
-  - `EXPORT_RESULT_MAX` — L421
-  - `EXPORT_RESNAME_MAX` — L422
-  - `_truncMd()` — L424
-  - `_formatToolCallMd()` — L436
-  - `formatToolAcksMd()` — L456
-  - `_formatToolCallHtml()` — L483
-  - `formatToolAcksHtml()` — L508
-  - `_hashId9()` — L523
-  - `messageTextForSummary()` — L537
-  - `expandThread()` — L551
-- **Parsing défensif du JSON de résumé** (L621)
-  - `parseSummaryJSON()` — L624
-- **Context inspector (brief B)** (L645)
-  - `estimateTokens()` — L648
-  - `IMAGE_TOKENS_ESTIMATE` — L656
-  - `CONTEXT_WINDOW_WARN_RATIO` — L660
-  - `buildContextManifest()` — L676
-  - `scaleManifestToUsage()` — L766
-  - `usageDerived()` — L807
+  - `exportDateDisplay()` — L408
+- **Reconstruction du payload API depuis currentThread** (L415)
+  - `stampTs()` — L421
+- **Export Markdown : traces d'appels d'outils** (L427)
+  - `EXPORT_ARGS_MAX` — L430
+  - `EXPORT_RESULT_MAX` — L431
+  - `EXPORT_RESNAME_MAX` — L432
+  - `_truncMd()` — L434
+  - `_formatToolCallMd()` — L446
+  - `formatToolAcksMd()` — L466
+  - `_formatToolCallHtml()` — L493
+  - `EXPORT_ACK_ICON` — L519
+  - `_formatToolCallPreviewHtml()` — L525
+  - `formatToolAcksHtml()` — L537
+  - `_hashId9()` — L558
+  - `messageTextForSummary()` — L572
+  - `expandThread()` — L586
+- **Parsing défensif du JSON de résumé** (L656)
+  - `parseSummaryJSON()` — L659
+- **Context inspector (brief B)** (L680)
+  - `estimateTokens()` — L683
+  - `IMAGE_TOKENS_ESTIMATE` — L691
+  - `CONTEXT_WINDOW_WARN_RATIO` — L695
+  - `buildContextManifest()` — L711
+  - `scaleManifestToUsage()` — L801
+  - `usageDerived()` — L842
 
 ## src/js/storage.js
 
@@ -724,10 +727,10 @@
   - `serializeThemeTokens()` — L4157
   - `PRISM_THEME_CSS` — L4169
   - `EXPORT_CSS` — L4232
-  - `buildExportHtml()` — L4298
-  - `renderExportBody()` — L4327
-  - `EXPORT_HTML_SIZE_WARN` — L4364
-  - `exportConvHtml()` — L4369
+  - `buildExportHtml()` — L4310
+  - `renderExportBody()` — L4339
+  - `EXPORT_HTML_SIZE_WARN` — L4376
+  - `exportConvHtml()` — L4381
 
 ## src/js/main.js
 

@@ -460,16 +460,54 @@ describe('exportDateStamp', function() {
   });
 });
 
+describe('exportDateDisplay', function() {
+  it('formate en dd/mm/yyyy avec zero-padding', function() {
+    var ts = new Date(2026, 0, 5, 14, 30).getTime(); // 5 janvier 2026
+    expect(exportDateDisplay(ts)).toBe('05/01/2026');
+  });
+  it('mois et jour à deux chiffres sans padding nécessaire', function() {
+    var ts = new Date(2026, 10, 23, 9, 0).getTime(); // 23 novembre 2026
+    expect(exportDateDisplay(ts)).toBe('23/11/2026');
+  });
+});
+
 describe('formatToolAcksHtml', function() {
   it('liste vide → chaîne vide', function() {
     expect(formatToolAcksHtml([])).toBe('');
     expect(formatToolAcksHtml(null)).toBe('');
   });
-  it('un seul appel : <details><summary>Outil appelé</summary>', function() {
+  it('un seul appel : <details><summary> avec texte "Outil appelé"', function() {
     var r = formatToolAcksHtml([{ name: 'miaou__create_memory', args: { content: 'x' }, result: 'ok' }]);
     expect(r.indexOf('<details class="tool-trace">') >= 0).toBeTruthy();
-    expect(r.indexOf('<summary>Outil appelé</summary>') >= 0).toBeTruthy();
+    expect(r.indexOf('<span class="tool-trace-summary-text">Outil appelé</span>') >= 0).toBeTruthy();
     expect(r.indexOf(' open') >= 0).toBeFalsy();
+  });
+  it('preview repliée : une ligne .tool-ack-preview avec icône + fallback nom d\'outil (sans intent)', function() {
+    var r = formatToolAcksHtml([{ name: 'get_time', args: {}, result: '14:32' }]);
+    expect(r.indexOf('class="tool-ack-preview-list"') >= 0).toBeTruthy();
+    expect(r.indexOf('class="tool-ack-preview"') >= 0).toBeTruthy();
+    expect(r.indexOf('class="ack-icon"') >= 0).toBeTruthy();
+    expect(r.indexOf('<code>get_time</code>') >= 0).toBeTruthy();
+  });
+  it('preview repliée : intent affiché au lieu du nom d\'outil quand présent', function() {
+    var r = formatToolAcksHtml([{ name: 'get_time', intent: 'Donner l\'heure actuelle', args: {}, result: '14:32' }]);
+    var previewSection = r.slice(0, r.indexOf('<ul>'));
+    expect(previewSection.indexOf('Donner l\'heure actuelle') >= 0).toBeTruthy();
+    expect(previewSection.indexOf('<code>get_time</code>') >= 0).toBeFalsy();
+  });
+  it('preview repliée : une ligne par ack pour un groupe multiple', function() {
+    var r = formatToolAcksHtml([
+      { name: 'a', args: {}, result: '1' },
+      { name: 'b', intent: 'Faire b', args: {}, result: '2' },
+    ]);
+    var previewSection = r.slice(0, r.indexOf('<ul>'));
+    expect((previewSection.match(/class="tool-ack-preview"/g) || []).length).toBe(2);
+  });
+  it('<ul> du détail imbriquée DANS <summary> (zone de clic unique couvrant preview et détail)', function() {
+    var r = formatToolAcksHtml([{ name: 'get_time', args: {}, result: '14:32' }]);
+    var ulIdx = r.indexOf('<ul>');
+    var summaryCloseIdx = r.indexOf('</summary>');
+    expect(ulIdx > 0 && ulIdx < summaryCloseIdx).toBeTruthy();
   });
   it('plusieurs appels : en-tête pluriel avec compte', function() {
     var r = formatToolAcksHtml([

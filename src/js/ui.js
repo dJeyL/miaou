@@ -4277,11 +4277,23 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .reasoning { margin: 0 0 8px; padding: 8px 11px; border-left: 2px solid var(--border-2); background: var(--surface-2); border-radius: 0 6px 6px 0; }
 .reasoning summary { cursor: pointer; font-size: 11px; color: var(--text-3); }
 .reasoning-content { font-family: var(--sans); font-size: 12px; line-height: 1.5; color: var(--text-2); opacity: .85; white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
-.tool-trace { margin: 3px 0 8px 2px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); font-size: 12px; color: var(--text-2); }
-.tool-trace summary { cursor: pointer; color: var(--accent); }
-.tool-trace ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.tool-trace { margin: 3px 0 8px 2px; font-size: 12px; color: var(--text-2); }
+.tool-trace summary { cursor: pointer; list-style: none; display: block; }
+.tool-trace summary::-webkit-details-marker { display: none; }
+.tool-trace summary::marker { content: ''; }
+.tool-trace-summary-text { display: block; color: var(--accent); margin-bottom: 4px; }
+.tool-trace ul { list-style: none; margin: 6px 0 0; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-trace li { margin-bottom: 6px; }
 .tool-trace code { font-family: var(--mono); font-size: 11.5px; }
+/* Preview repliée : une ligne par ack façon .tool-ack du thread live (bordure
+   gauche + icône + intent ou fallback nom d'outil). Disparaît à l'ouverture,
+   remplacée par le détail (ul) — un seul <details>, deux vues exclusives. */
+.tool-ack-preview-list { display: flex; flex-direction: column; gap: 3px; }
+.tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
+.tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
+.tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }
+.tool-trace[open] .tool-ack-preview-list { display: none; }
+.tool-trace:not([open]) ul { display: none; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
 .att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }
@@ -4295,7 +4307,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 // composé par l'appelant (tokens runtime non purs), buildExportHtml se
 // contente de l'insérer. Zéro <script>, zéro <link> (Prism inliné, pas de
 // CDN) — invariant D1.
-function buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml }) {
+function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml }) {
   return '<!doctype html>\n' +
     '<html data-theme="' + escHtml(theme) + '">\n' +
     '<head>\n' +
@@ -4309,7 +4321,7 @@ function buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml }) {
     '<img class="export-logo" src="' + LOGO_SRC + '" alt="">' +
     '<div>' +
     '<p class="export-title">' + escHtml(title) + '</p>' +
-    '<p class="export-meta">Exporté le ' + escHtml(dateStamp) + '</p>' +
+    '<p class="export-meta">Exporté le ' + escHtml(dateDisplay) + '</p>' +
     '</div>' +
     '</div>\n' +
     '</div>\n' +
@@ -4372,10 +4384,12 @@ function exportConvHtml() {
   const title = (conv && conv.title) || 'miaou-conversation';
   const slug = slugTitle(title);
   const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-  const dateStamp = exportDateStamp(Date.now());
+  const now = Date.now();
+  const dateStamp = exportDateStamp(now);
+  const dateDisplay = exportDateDisplay(now);
   const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
   const bodyHtml = renderExportBody(currentThread, currentConvId);
-  const html = buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml });
+  const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml });
   const sizeBytes = new Blob([html]).size;
   if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
     const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
