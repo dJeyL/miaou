@@ -472,11 +472,11 @@ body {
 }
 .app.booted:not(.sidebar-open) .topbar-space-badge:not([hidden]) { opacity: 1; transform: translateX(0); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
-.conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
-.conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
+.conv-dl-btn, .conv-dl-html-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
+.conv-dl-btn svg, .conv-dl-html-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
 
-.topbar:hover .conv-dl-btn { opacity: 1; }
-.topbar-mid:hover .conv-retitle-btn { opacity: 1; }
+.topbar:hover .conv-dl-btn, .topbar:hover .conv-dl-html-btn { opacity: 1; }
+.topbar-mid:has(#conv-title:hover, .conv-retitle-btn:hover) .conv-retitle-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {
@@ -2074,7 +2074,7 @@ textarea.skill-content {
 .msg.assistant .meta .msg-ts[hidden] { display: none; }
 
 .msg.user .msg-ts { font-size: 11px; color: var(--text-3); }
-.conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
+.conv-dl-btn:disabled, .conv-dl-html-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
 
 .reasoning {
   margin: 0 0 8px;
@@ -2297,6 +2297,9 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
         <button class="icon-btn conv-dl-btn" onclick="downloadConvMd()" title="Exporter la conversation en Markdown" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="icon-btn conv-dl-html-btn" onclick="exportConvHtml()" title="Exporter la conversation en HTML" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9.5 13.5 7.5 15.5 9.5 17.5"/><polyline points="14.5 13.5 16.5 15.5 14.5 17.5"/></svg>
         </button>
       </div>
       <div class="topbar-right">
@@ -2793,7 +2796,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-09 11:37 UTC */
+/* miaou — built: 2026-07-09 17:54 UTC */
 
 /* ── utils.js ── */
 
@@ -2892,6 +2895,13 @@ function parseConvRefs(text) {
     out.push({ match: m[0], id: m[1], title: m[2] || null });
   }
   return out;
+}
+
+function slugTitle(title) {
+  return String(title || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'miaou-conversation';
 }
 
 function downloadFile(filename, content, mimeType) {
@@ -3083,6 +3093,13 @@ function formatFullDateFr(ts) {
     FR_MONTHS_FULL[d.getMonth()] + ' ' + d.getFullYear() + ' à ' + _tsHHMM(d);
 }
 
+function exportDateStamp(now) {
+  const d = new Date(now);
+  const mm = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+  const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
 function stampTs(ts, result) {
   var s = result != null ? String(result) : '';
   if (!ts) return s;
@@ -3135,6 +3152,40 @@ function formatToolAcksMd(acks) {
   }
   
   return lines.map((l, i) => i < lines.length - 1 ? l + '  ' : l).join('\n');
+}
+
+function _formatToolCallHtml(m) {
+  const lines = [];
+  const head = m.intent
+    ? '<code>' + escHtml(m.name) + '</code> — ' + escHtml(m.intent)
+    : '<code>' + escHtml(m.name) + '</code>';
+  lines.push(head);
+  if (m.args != null) {
+    lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
+  }
+  if (m.error) {
+    lines.push('<br>Résultat (erreur) : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
+  } else if (m.result != null) {
+    lines.push('<br>Résultat : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
+  }
+  if (m.kind === 'resource_presented') {
+    const name = escHtml(_truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX));
+    lines.push('<br>Ressource présentée automatiquement : <code>' + name + '</code>' +
+      (m.mime ? ' (' + escHtml(m.mime) + ')' : '') + ' — non incluse dans cet export');
+  }
+  return lines.join('');
+}
+
+function formatToolAcksHtml(acks) {
+  if (!acks || !acks.length) return '';
+  const summary = acks.length === 1 ? 'Outil appelé' : 'Outils appelés (' + acks.length + ')';
+  let inner;
+  if (acks.length === 1) {
+    inner = '<li>' + _formatToolCallHtml(acks[0]) + '</li>';
+  } else {
+    inner = acks.map(m => '<li>' + _formatToolCallHtml(m) + '</li>').join('');
+  }
+  return '<details class="tool-trace"><summary>' + summary + '</summary><ul>' + inner + '</ul></details>';
 }
 
 function _hashId9(s) {
@@ -3370,7 +3421,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783597046}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783619644}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6202,7 +6253,8 @@ if (window.marked) {
   });
 }
 
-function resolveConvRefs(text) {
+function resolveConvRefs(text, opts) {
+  const asPlainText = !!(opts && opts.asPlainText);
   return String(text).replace(CONV_REF_RE, function(match, id, title) {
     const entry = getSummaryEntry(id);
     const label = title || (entry && entry.title) || id;
@@ -6210,12 +6262,13 @@ function resolveConvRefs(text) {
     if (!loadConversation(id)) {
       return '~~' + safeLabel + ' (supprimée)~~';
     }
+    if (asPlainText) return safeLabel;
     return '[' + safeLabel + '](#miaou-conv:' + encodeURIComponent(id) + ')';
   });
 }
 
-function renderMd(text) {
-  const resolved = resolveConvRefs(text);
+function renderMd(text, opts) {
+  const resolved = resolveConvRefs(text, opts);
   if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
   return marked.parse(resolved, { breaks: true });
 }
@@ -6852,10 +6905,13 @@ function syncLastAssistantActions() {
 }
 
 function syncConvDownloadBtn() {
+  const hasAssistant = currentThread.some(m => m.role === 'assistant');
   const btn = document.querySelector('.conv-dl-btn');
-  if (btn) btn.hidden = !currentThread.some(m => m.role === 'assistant');
+  if (btn) btn.hidden = !hasAssistant;
+  const htmlBtn = document.querySelector('.conv-dl-html-btn');
+  if (htmlBtn) htmlBtn.hidden = !hasAssistant;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
-  if (retitleBtn) retitleBtn.hidden = !currentThread.some(m => m.role === 'assistant');
+  if (retitleBtn) retitleBtn.hidden = !hasAssistant;
 }
 
 function appendUserMessage(text, ts, attachments) {
@@ -7448,6 +7504,8 @@ function setSending(on) {
   
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
+  const convDlHtml = document.querySelector('.conv-dl-html-btn');
+  if (convDlHtml) convDlHtml.disabled = on;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   
@@ -9668,6 +9726,217 @@ function _removeProposalCard(pid) {
   if (!Object.keys(_proposalMap).length) setConfirmPending(false);
 }
 
+const THEME_TOKENS = [
+  '--bg', '--surface', '--surface-2', '--surface-3', '--surface-4',
+  '--border', '--border-2',
+  '--text', '--text-2', '--text-3',
+  '--accent', '--accent-2', '--accent-ink', '--accent-dim', '--accent-bd',
+  '--ok', '--err',
+  '--r', '--r-sm', '--ease',
+  '--sans', '--mono',
+  '--topbar-bg', '--scrollbar-thumb-hover', '--table-stripe',
+  '--code-bg', '--code-head-bg', '--code-inline-color',
+];
+
+function serializeThemeTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const lines = THEME_TOKENS.map(name => name + ':' + cs.getPropertyValue(name).trim() + ';');
+  return ':root{' + lines.join('') + '}';
+}
+
+const PRISM_THEME_CSS =
+  'code[class*=language-],pre[class*=language-]{color:#ccc;background:0 0;font-family:Consolas,Monaco,\'Andale Mono\',\'Ubuntu Mono\',monospace;font-size:1em;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}' +
+  'pre[class*=language-]{padding:1em;margin:.5em 0;overflow:auto}' +
+  ':not(pre)>code[class*=language-],pre[class*=language-]{background:#2d2d2d}' +
+  ':not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal}' +
+  '.token.block-comment,.token.cdata,.token.comment,.token.doctype,.token.prolog{color:#999}' +
+  '.token.punctuation{color:#ccc}' +
+  '.token.attr-name,.token.deleted,.token.namespace,.token.tag{color:#e2777a}' +
+  '.token.function-name{color:#6196cc}' +
+  '.token.boolean,.token.function,.token.number{color:#f08d49}' +
+  '.token.class-name,.token.constant,.token.property,.token.symbol{color:#f8c555}' +
+  '.token.atrule,.token.builtin,.token.important,.token.keyword,.token.selector{color:#cc99cd}' +
+  '.token.attr-value,.token.char,.token.regex,.token.string,.token.variable{color:#7ec699}' +
+  '.token.entity,.token.operator,.token.url{color:#67cdcc}' +
+  '.token.bold,.token.important{font-weight:700}' +
+  '.token.italic{font-style:italic}' +
+  '.token.inserted{color:green}' +
+  'html[data-theme="light"] code[class*="language-"],' +
+  'html[data-theme="light"] pre[class*="language-"]{color:#2c2720}' +
+  'html[data-theme="light"] .token.comment,' +
+  'html[data-theme="light"] .token.prolog,' +
+  'html[data-theme="light"] .token.doctype,' +
+  'html[data-theme="light"] .token.cdata{color:#8a8272;font-style:italic}' +
+  'html[data-theme="light"] .token.punctuation{color:#5a5248}' +
+  'html[data-theme="light"] .token.namespace{opacity:.75}' +
+  'html[data-theme="light"] .token.property,' +
+  'html[data-theme="light"] .token.constant,' +
+  'html[data-theme="light"] .token.symbol{color:#8a6800}' +
+  'html[data-theme="light"] .token.boolean,' +
+  'html[data-theme="light"] .token.number{color:#b5440e}' +
+  'html[data-theme="light"] .token.string,' +
+  'html[data-theme="light"] .token.char,' +
+  'html[data-theme="light"] .token.attr-value,' +
+  'html[data-theme="light"] .token.builtin,' +
+  'html[data-theme="light"] .token.inserted{color:#276e38}' +
+  'html[data-theme="light"] .token.selector,' +
+  'html[data-theme="light"] .token.attr-name{color:#b53030}' +
+  'html[data-theme="light"] .token.operator,' +
+  'html[data-theme="light"] .token.entity,' +
+  'html[data-theme="light"] .token.url{color:#1a6b6b}' +
+  'html[data-theme="light"] .token.atrule,' +
+  'html[data-theme="light"] .token.keyword{color:#7c3c99}' +
+  'html[data-theme="light"] .token.function,' +
+  'html[data-theme="light"] .token.class-name{color:#1a5fb8}' +
+  'html[data-theme="light"] .token.regex,' +
+  'html[data-theme="light"] .token.important,' +
+  'html[data-theme="light"] .token.variable{color:#b5440e}' +
+  'html[data-theme="light"] .token.tag,' +
+  'html[data-theme="light"] .token.deleted{color:#b53030}';
+
+const EXPORT_CSS = `
+html { zoom: 0.9; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
+.export-topbar-wrap { border-bottom: 1px solid var(--border); }
+.export-topbar { max-width: 900px; margin: 0 auto; padding: 14px 20px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
+.export-logo { width: 44px; height: 44px; flex-shrink: 0; }
+.export-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+.export-meta { font-size: 12px; color: var(--text-3); }
+.export-body { max-width: 900px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+.export-footer-wrap { border-top: 1px solid var(--border); }
+.export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
+.msg { display: flex; flex-direction: column; }
+.msg.user { align-items: flex-end; margin: 14px 0 4px; }
+.msg.user .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 13px; max-width: 80%; word-break: break-word; text-align: left; }
+.msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
+.msg.assistant { align-items: stretch; margin: 4px 0 14px; }
+.msg.assistant .meta { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-3); margin-bottom: 7px; }
+.msg.assistant .body { font-size: 14px; line-height: 1.68; color: var(--text); }
+.msg.assistant .tool-trace + .body { margin-top: 7px; }
+.msg-ts { font-size: 11px; color: var(--text-3); }
+.body > *:first-child { margin-top: 0; }
+.body > *:last-child { margin-bottom: 0; }
+.body p { margin: 0 0 11px; }
+.body h1, .body h2, .body h3 { font-weight: 600; line-height: 1.3; margin: 18px 0 8px; }
+.body h1 { font-size: 18px; }
+.body h2 { font-size: 16px; }
+.body h3 { font-size: 14.5px; }
+.body ul, .body ol { margin: 8px 0 12px; padding-left: 22px; }
+.body li { margin-bottom: 4px; }
+.body li::marker { color: var(--text-3); }
+.body a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-bd); }
+.body strong { font-weight: 600; color: var(--text); }
+.body em { color: var(--text-2); }
+.body del { color: var(--text-3); }
+.body blockquote { border-left: 2px solid var(--border-2); padding: 2px 0 2px 14px; margin: 10px 0; color: var(--text-2); }
+.body hr { border: none; border-top: 1px solid var(--border-2); margin: 18px 0; }
+.body code:not([class*="language-"]) { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; color: var(--code-inline-color); }
+.body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+.body th, .body td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
+.body th { background: var(--surface); font-weight: 600; color: var(--text); }
+.body td { color: var(--text-2); }
+.body tr:nth-child(even) td { background: var(--table-stripe); }
+.body pre { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--code-bg) !important; }
+.body pre[class*="language-"] { padding: 0; margin: 12px 0; border-radius: var(--r); background: var(--code-bg) !important; }
+.body pre code { display: block; padding: 13px 14px !important; font-family: var(--mono) !important; font-size: 11.5px !important; line-height: 1.6 !important; overflow-x: auto; background: transparent !important; text-shadow: none !important; }
+.reasoning { margin: 0 0 8px; padding: 8px 11px; border-left: 2px solid var(--border-2); background: var(--surface-2); border-radius: 0 6px 6px 0; }
+.reasoning summary { cursor: pointer; font-size: 11px; color: var(--text-3); }
+.reasoning-content { font-family: var(--sans); font-size: 12px; line-height: 1.5; color: var(--text-2); opacity: .85; white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
+.tool-trace { margin: 3px 0 8px 2px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); font-size: 12px; color: var(--text-2); }
+.tool-trace summary { cursor: pointer; color: var(--accent); }
+.tool-trace ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.tool-trace li { margin-bottom: 6px; }
+.tool-trace code { font-family: var(--mono); font-size: 11.5px; }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
+.att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }
+.att-icon { width: 22px; height: 22px; border-radius: 4px; display: grid; place-items: center; background: var(--surface-3); color: var(--text-3); flex-shrink: 0; }
+.att-icon svg { width: 13px; height: 13px; }
+.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; color: var(--text); }
+.att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+`;
+
+function buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml }) {
+  return '<!doctype html>\n' +
+    '<html data-theme="' + escHtml(theme) + '">\n' +
+    '<head>\n' +
+    '<meta charset="utf-8">\n' +
+    '<title>' + escHtml(title) + '</title>\n' +
+    '<style>' + styleCss + '</style>\n' +
+    '</head>\n' +
+    '<body>\n' +
+    '<div class="export-topbar-wrap">' +
+    '<div class="export-topbar">' +
+    '<img class="export-logo" src="' + LOGO_SRC + '" alt="">' +
+    '<div>' +
+    '<p class="export-title">' + escHtml(title) + '</p>' +
+    '<p class="export-meta">Exporté le ' + escHtml(dateStamp) + '</p>' +
+    '</div>' +
+    '</div>\n' +
+    '</div>\n' +
+    '<div class="export-body">' + bodyHtml + '</div>\n' +
+    '<div class="export-footer-wrap"><div class="export-footer">Généré par MIAOU</div></div>\n' +
+    '</body>\n' +
+    '</html>\n';
+}
+
+function renderExportBody(thread, convId) {
+  const container = document.createElement('div');
+  let pendingAcks = [];
+  for (const m of thread) {
+    if (isAckRole(m.role)) {
+      if (m.args != null) pendingAcks.push(m);
+      continue;
+    }
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    const msgEl = document.createElement('div');
+    msgEl.className = 'msg ' + m.role;
+    if (m.role === 'user') {
+      const shown = m.displayText != null ? m.displayText : m.content;
+      const attHtml = (m.attachments && m.attachments.length)
+        ? '<div class="msg-attachments">' + m.attachments.map(att =>
+            attChipHtml(att, resolveAttachmentThumb(att, convId), false, null)).join('') + '</div>'
+        : '';
+      const tsHtml = m.ts ? '<div class="msg-ts">' + escHtml(formatMessageTime(m.ts, Date.now())) + '</div>' : '';
+      msgEl.innerHTML = '<div class="bubble">' + attHtml + '<div class="body">' + renderUserMd(shown || '') + '</div></div>' + tsHtml;
+      pendingAcks = [];
+    } else {
+      const acksHtml = pendingAcks.length ? formatToolAcksHtml(pendingAcks) : '';
+      pendingAcks = [];
+      const tsText = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
+      const metaHtml = '<div class="meta"><span>' + escHtml(m.model || modelName()) + '</span>' +
+        (tsText ? '<span>· ' + escHtml(tsText) + '</span>' : '') + '</div>';
+      const reasoningHtml = (m.reasoning && String(m.reasoning).trim())
+        ? '<details class="reasoning"><summary>Raisonnement</summary><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></details>'
+        : '';
+      msgEl.innerHTML = metaHtml + acksHtml + reasoningHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
+    }
+    container.appendChild(msgEl);
+  }
+  if (highlightEnabled && window.Prism) Prism.highlightAllUnder(container);
+  return container.innerHTML;
+}
+
+const EXPORT_HTML_SIZE_WARN = 8 * 1024 * 1024;
+
+function exportConvHtml() {
+  if (!currentThread || !currentThread.length) return;
+  const conv = currentConvId ? loadConversation(currentConvId) : null;
+  const title = (conv && conv.title) || 'miaou-conversation';
+  const slug = slugTitle(title);
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  const dateStamp = exportDateStamp(Date.now());
+  const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
+  const bodyHtml = renderExportBody(currentThread, currentConvId);
+  const html = buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml });
+  const sizeBytes = new Blob([html]).size;
+  if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
+    const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
+    if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
+  }
+  downloadFile('miaou-' + slug + '-' + dateStamp + '.html', html, 'text/html');
+}
+
 /* ── main.js ── */
 
 const LOGO_SRC =
@@ -9870,7 +10139,7 @@ async function openConversation(id) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
-  currentThread = (conv.messages || []).map(m => {
+  currentThread = (conv.messages || []).filter(Boolean).map(m => {
     if (isAckRole(m.role)) {
       
       return copyAckFields(m, { role: m.role });
@@ -9956,9 +10225,7 @@ function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
   const conv = currentConvId ? loadConversation(currentConvId) : null;
   const title = (conv && conv.title) || 'miaou-conversation';
-  const slug = title.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'miaou-conversation';
+  const slug = slugTitle(title);
 
   const lines = [];
   let pendingAcks = [];

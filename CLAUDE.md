@@ -94,7 +94,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
   `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
   `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`, `copyMsg`,
-  `regenerateTitle`, `regenerateResponse`, `continueTruncated`, `openApiServers`, `closeApiServers`, `addApiServerCard`,
+  `regenerateTitle`, `regenerateResponse`, `continueTruncated`, `exportConvHtml`,
+  `openApiServers`, `closeApiServers`, `addApiServerCard`,
   `toggleReasoning`, `toggleSettingsCat`, `exportAllData`, `onImportDataClick`,
   `onImportFileSelected`, `onAttachClick`, `onAttachFilesSelected`,
   `onComposerDragOver`, `onComposerDragLeave`, `onComposerDrop`, `onComposerPaste`,
@@ -219,6 +220,27 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     LLM (`deleteSummaryEntry` dans `deleteConv` a déjà tourné avant, en pure
     perte). `pruneOrphanSummariesOnInit()` nettoie en complément les résidus
     au démarrage, avant `runBackfill()`.
+21. **Export HTML standalone : un seul chemin string→HTML à risque.**
+    L'export (`renderExportBody`, ui.js) hérite de la sûreté `textContent` de
+    l'écran UNIQUEMENT parce qu'il re-rend via `renderMd`/`renderUserMd`
+    (marked) — les mêmes renderers que le DOM live, jamais un clone/strip du
+    `#thread` live. `formatToolAcksHtml` (utils.js) est l'EXCEPTION : seule
+    fonction qui concatène directement des chaînes d'origine modèle/outil
+    (`name`, `intent`, args JSON, result) en HTML — `escHtml` y est
+    systématique. Toute future extension de l'export qui ajoute un chemin de
+    concaténation similaire doit `escHtml` de la même façon (cf.
+    `docs/exports.md`).
+22. **`EXPORT_CSS` (export HTML) ne suit PAS les évolutions de
+    `chat.css`/`tools.css`/`composer.css`.** C'est une feuille dédiée écrite
+    à la main (audit lot G, `docs/exports.md`), pas un miroir vivant de
+    l'écran — assumé, un export est un instantané figé. **Conséquence** : si
+    on retouche une classe réutilisée par l'export (`.msg`/`.bubble`/
+    `.reasoning`/`.tool-ack`/`.att-*`/tables/blocs de code), rien ne casse
+    silencieusement, mais l'export continue de produire l'**ancien** style —
+    aucun test ne détecte cette dérive. Seuls les tokens de couleur
+    (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent
+    synchronisés automatiquement. Revue manuelle à la charge de qui touche ce
+    CSS : vérifier si `EXPORT_CSS` doit suivre.
 
 ## Domaines détaillés (`docs/`)
 
@@ -241,8 +263,8 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   stage 2 (autotrigger, doctrine de déclenchement, confirmation).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
   ce qui doit être vérifié à la main (`docs/manual-tests.md`).
-- **`docs/export-timestamps.md`** — export Markdown des conversations/messages
-  (incluant traces d'outils) et fonctions d'horodatage.
+- **`docs/exports.md`** — export Markdown et export HTML standalone des
+  conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
 
 ## Règle d'or
 

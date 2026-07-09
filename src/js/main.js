@@ -294,7 +294,7 @@ async function openConversation(id) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
-  currentThread = (conv.messages || []).map(m => {
+  currentThread = (conv.messages || []).filter(Boolean).map(m => {
     if (isAckRole(m.role)) {
       // Whitelist unique ACK_COPY_FIELDS (utils.js) — ne plus jamais énumérer
       // les champs à la main ici.
@@ -395,9 +395,7 @@ function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
   const conv = currentConvId ? loadConversation(currentConvId) : null;
   const title = (conv && conv.title) || 'miaou-conversation';
-  const slug = title.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'miaou-conversation';
+  const slug = slugTitle(title);
 
   const lines = [];
   let pendingAcks = [];

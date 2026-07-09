@@ -88,7 +88,12 @@ if (window.marked) {
 // résumé peut survivre sans la conversation, cf. get_conversation). Dans ce cas,
 // rendu en texte barré NON cliquable plutôt qu'un lien mort — pas de
 // post-traitement DOM, juste du Markdown ~~...~~.
-function resolveConvRefs(text) {
+// `opts.asPlainText` (défaut false, écran inchangé) : pour l'export standalone
+// (brief G, D3) où le lien `#miaou-conv:` ne résout jamais hors MIAOU — rend
+// le label nu au lieu d'un lien mort. Le tombstone `~~…~~` reste inchangé
+// (c'est du texte, pas un lien).
+function resolveConvRefs(text, opts) {
+  const asPlainText = !!(opts && opts.asPlainText);
   return String(text).replace(CONV_REF_RE, function(match, id, title) {
     const entry = getSummaryEntry(id);
     const label = title || (entry && entry.title) || id;
@@ -96,12 +101,13 @@ function resolveConvRefs(text) {
     if (!loadConversation(id)) {
       return '~~' + safeLabel + ' (supprimée)~~';
     }
+    if (asPlainText) return safeLabel;
     return '[' + safeLabel + '](#miaou-conv:' + encodeURIComponent(id) + ')';
   });
 }
 
-function renderMd(text) {
-  const resolved = resolveConvRefs(text);
+function renderMd(text, opts) {
+  const resolved = resolveConvRefs(text, opts);
   if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
   return marked.parse(resolved, { breaks: true });
 }
@@ -851,10 +857,13 @@ function syncLastAssistantActions() {
 }
 
 function syncConvDownloadBtn() {
+  const hasAssistant = currentThread.some(m => m.role === 'assistant');
   const btn = document.querySelector('.conv-dl-btn');
-  if (btn) btn.hidden = !currentThread.some(m => m.role === 'assistant');
+  if (btn) btn.hidden = !hasAssistant;
+  const htmlBtn = document.querySelector('.conv-dl-html-btn');
+  if (htmlBtn) htmlBtn.hidden = !hasAssistant;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
-  if (retitleBtn) retitleBtn.hidden = !currentThread.some(m => m.role === 'assistant');
+  if (retitleBtn) retitleBtn.hidden = !hasAssistant;
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
@@ -1557,6 +1566,8 @@ function setSending(on) {
   // Export de conversation masqué pendant le streaming (contenu incomplet).
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
+  const convDlHtml = document.querySelector('.conv-dl-html-btn');
+  if (convDlHtml) convDlHtml.disabled = on;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   // le bouton régénérer disparaît pendant un stream
@@ -4115,4 +4126,260 @@ function _removeProposalCard(pid) {
   card.remove();
   if (container && !container.children.length) container.remove();
   if (!Object.keys(_proposalMap).length) setConfirmPending(false);
+}
+
+// ── Export HTML standalone (brief `untracked/muscle/G-html-export.md`) ──────
+// Fichier autonome zéro-JS, ouvrable hors MIAOU. Le corps est un RE-RENDU
+// depuis currentThread (jamais un clone du DOM live #thread) : sûr par
+// construction (mêmes renderers que l'écran), pas de nouveau chemin de
+// concaténation de texte modèle hors formatToolAcksHtml (cf. utils.js).
+
+// Liste des tokens de thème (:root, base.css) à sérialiser pour l'export.
+// SEULE chose à tenir à jour si un token --… est ajouté au thème (dette
+// assumée, cf. docs/exports.md) : --col/--sidebar-w exclus, spécifiques à la
+// mise en page écran, sans usage dans un document statique.
+const THEME_TOKENS = [
+  '--bg', '--surface', '--surface-2', '--surface-3', '--surface-4',
+  '--border', '--border-2',
+  '--text', '--text-2', '--text-3',
+  '--accent', '--accent-2', '--accent-ink', '--accent-dim', '--accent-bd',
+  '--ok', '--err',
+  '--r', '--r-sm', '--ease',
+  '--sans', '--mono',
+  '--topbar-bg', '--scrollbar-thumb-hover', '--table-stripe',
+  '--code-bg', '--code-head-bg', '--code-inline-color',
+];
+
+// Lit les valeurs RÉSOLUES (thème effectif, data-theme déjà tranché light|dark)
+// via getComputedStyle — voie runtime tranchée (audit §5) : zéro modif
+// build.py, capture automatiquement toute évolution des valeurs de tokens
+// (mais PAS l'ajout d'un nouveau nom : cf. THEME_TOKENS ci-dessus).
+function serializeThemeTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const lines = THEME_TOKENS.map(name => name + ':' + cs.getPropertyValue(name).trim() + ';');
+  return ':root{' + lines.join('') + '}';
+}
+
+// Copie figée de prism-tomorrow.min.css (thème Prism dark chargé depuis le
+// CDN, cf. index.html) + les overrides Prism clair de theme-light.css.
+// Dette assumée (docs/exports.md) : à resynchroniser si le thème Prism CDN
+// change. Pas de <link> CDN dans l'export (D1, zéro-JS) : les <span> de
+// tokens sont pré-générés par Prism.highlightAllUnder à l'export (voie B),
+// ce CSS leur donne juste leurs couleurs.
+const PRISM_THEME_CSS =
+  'code[class*=language-],pre[class*=language-]{color:#ccc;background:0 0;font-family:Consolas,Monaco,\'Andale Mono\',\'Ubuntu Mono\',monospace;font-size:1em;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}' +
+  'pre[class*=language-]{padding:1em;margin:.5em 0;overflow:auto}' +
+  ':not(pre)>code[class*=language-],pre[class*=language-]{background:#2d2d2d}' +
+  ':not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal}' +
+  '.token.block-comment,.token.cdata,.token.comment,.token.doctype,.token.prolog{color:#999}' +
+  '.token.punctuation{color:#ccc}' +
+  '.token.attr-name,.token.deleted,.token.namespace,.token.tag{color:#e2777a}' +
+  '.token.function-name{color:#6196cc}' +
+  '.token.boolean,.token.function,.token.number{color:#f08d49}' +
+  '.token.class-name,.token.constant,.token.property,.token.symbol{color:#f8c555}' +
+  '.token.atrule,.token.builtin,.token.important,.token.keyword,.token.selector{color:#cc99cd}' +
+  '.token.attr-value,.token.char,.token.regex,.token.string,.token.variable{color:#7ec699}' +
+  '.token.entity,.token.operator,.token.url{color:#67cdcc}' +
+  '.token.bold,.token.important{font-weight:700}' +
+  '.token.italic{font-style:italic}' +
+  '.token.inserted{color:green}' +
+  'html[data-theme="light"] code[class*="language-"],' +
+  'html[data-theme="light"] pre[class*="language-"]{color:#2c2720}' +
+  'html[data-theme="light"] .token.comment,' +
+  'html[data-theme="light"] .token.prolog,' +
+  'html[data-theme="light"] .token.doctype,' +
+  'html[data-theme="light"] .token.cdata{color:#8a8272;font-style:italic}' +
+  'html[data-theme="light"] .token.punctuation{color:#5a5248}' +
+  'html[data-theme="light"] .token.namespace{opacity:.75}' +
+  'html[data-theme="light"] .token.property,' +
+  'html[data-theme="light"] .token.constant,' +
+  'html[data-theme="light"] .token.symbol{color:#8a6800}' +
+  'html[data-theme="light"] .token.boolean,' +
+  'html[data-theme="light"] .token.number{color:#b5440e}' +
+  'html[data-theme="light"] .token.string,' +
+  'html[data-theme="light"] .token.char,' +
+  'html[data-theme="light"] .token.attr-value,' +
+  'html[data-theme="light"] .token.builtin,' +
+  'html[data-theme="light"] .token.inserted{color:#276e38}' +
+  'html[data-theme="light"] .token.selector,' +
+  'html[data-theme="light"] .token.attr-name{color:#b53030}' +
+  'html[data-theme="light"] .token.operator,' +
+  'html[data-theme="light"] .token.entity,' +
+  'html[data-theme="light"] .token.url{color:#1a6b6b}' +
+  'html[data-theme="light"] .token.atrule,' +
+  'html[data-theme="light"] .token.keyword{color:#7c3c99}' +
+  'html[data-theme="light"] .token.function,' +
+  'html[data-theme="light"] .token.class-name{color:#1a5fb8}' +
+  'html[data-theme="light"] .token.regex,' +
+  'html[data-theme="light"] .token.important,' +
+  'html[data-theme="light"] .token.variable{color:#b5440e}' +
+  'html[data-theme="light"] .token.tag,' +
+  'html[data-theme="light"] .token.deleted{color:#b53030}';
+
+// Feuille dédiée MINIMALE (audit §5, choix A) : le sectionnement chat/tools
+// n'est pas assez propre pour une extraction programmatique par marqueurs
+// (dette next.md), et la majorité des règles écran (:hover, boutons, drawers)
+// n'ont aucun sens dans un document statique. Écrite à la main, PAS un miroir
+// vivant de chat.css/tools.css/composer.css : dérive silencieusement si ces
+// fichiers évoluent (dette assumée, cf. docs/exports.md et mémoire projet).
+// Largeur de lecture (900px) EN DUR, pas via var(--col) (720px, gabarit
+// composer écran plus étroit) : --col est un token de mise en page écran,
+// volontairement absent de THEME_TOKENS (sans usage dans un document
+// statique) — le référencer ici résoudrait à rien puisque
+// serializeThemeTokens() ne l'émet jamais. 900px choisi pour l'export
+// (lecture plus confortable qu'à l'écran, sans devenir "vertigineux" sur un
+// grand écran). Si on veut la faire suivre `--col`, l'ajouter à THEME_TOKENS.
+const EXPORT_CSS = `
+html { zoom: 0.9; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
+.export-topbar-wrap { border-bottom: 1px solid var(--border); }
+.export-topbar { max-width: 900px; margin: 0 auto; padding: 14px 20px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
+.export-logo { width: 44px; height: 44px; flex-shrink: 0; }
+.export-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+.export-meta { font-size: 12px; color: var(--text-3); }
+.export-body { max-width: 900px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+.export-footer-wrap { border-top: 1px solid var(--border); }
+.export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
+.msg { display: flex; flex-direction: column; }
+.msg.user { align-items: flex-end; margin: 14px 0 4px; }
+.msg.user .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 13px; max-width: 80%; word-break: break-word; text-align: left; }
+.msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
+.msg.assistant { align-items: stretch; margin: 4px 0 14px; }
+.msg.assistant .meta { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-3); margin-bottom: 7px; }
+.msg.assistant .body { font-size: 14px; line-height: 1.68; color: var(--text); }
+.msg.assistant .tool-trace + .body { margin-top: 7px; }
+.msg-ts { font-size: 11px; color: var(--text-3); }
+.body > *:first-child { margin-top: 0; }
+.body > *:last-child { margin-bottom: 0; }
+.body p { margin: 0 0 11px; }
+.body h1, .body h2, .body h3 { font-weight: 600; line-height: 1.3; margin: 18px 0 8px; }
+.body h1 { font-size: 18px; }
+.body h2 { font-size: 16px; }
+.body h3 { font-size: 14.5px; }
+.body ul, .body ol { margin: 8px 0 12px; padding-left: 22px; }
+.body li { margin-bottom: 4px; }
+.body li::marker { color: var(--text-3); }
+.body a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-bd); }
+.body strong { font-weight: 600; color: var(--text); }
+.body em { color: var(--text-2); }
+.body del { color: var(--text-3); }
+.body blockquote { border-left: 2px solid var(--border-2); padding: 2px 0 2px 14px; margin: 10px 0; color: var(--text-2); }
+.body hr { border: none; border-top: 1px solid var(--border-2); margin: 18px 0; }
+.body code:not([class*="language-"]) { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; color: var(--code-inline-color); }
+.body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+.body th, .body td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
+.body th { background: var(--surface); font-weight: 600; color: var(--text); }
+.body td { color: var(--text-2); }
+.body tr:nth-child(even) td { background: var(--table-stripe); }
+.body pre { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--code-bg) !important; }
+.body pre[class*="language-"] { padding: 0; margin: 12px 0; border-radius: var(--r); background: var(--code-bg) !important; }
+.body pre code { display: block; padding: 13px 14px !important; font-family: var(--mono) !important; font-size: 11.5px !important; line-height: 1.6 !important; overflow-x: auto; background: transparent !important; text-shadow: none !important; }
+.reasoning { margin: 0 0 8px; padding: 8px 11px; border-left: 2px solid var(--border-2); background: var(--surface-2); border-radius: 0 6px 6px 0; }
+.reasoning summary { cursor: pointer; font-size: 11px; color: var(--text-3); }
+.reasoning-content { font-family: var(--sans); font-size: 12px; line-height: 1.5; color: var(--text-2); opacity: .85; white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
+.tool-trace { margin: 3px 0 8px 2px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); font-size: 12px; color: var(--text-2); }
+.tool-trace summary { cursor: pointer; color: var(--accent); }
+.tool-trace ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.tool-trace li { margin-bottom: 6px; }
+.tool-trace code { font-family: var(--mono); font-size: 11.5px; }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
+.att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }
+.att-icon { width: 22px; height: 22px; border-radius: 4px; display: grid; place-items: center; background: var(--surface-3); color: var(--text-3); flex-shrink: 0; }
+.att-icon svg { width: 13px; height: 13px; }
+.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; color: var(--text); }
+.att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+`;
+
+// Assemblage PUR du squelette HTML (testable QuickJS) : le styleCss est
+// composé par l'appelant (tokens runtime non purs), buildExportHtml se
+// contente de l'insérer. Zéro <script>, zéro <link> (Prism inliné, pas de
+// CDN) — invariant D1.
+function buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml }) {
+  return '<!doctype html>\n' +
+    '<html data-theme="' + escHtml(theme) + '">\n' +
+    '<head>\n' +
+    '<meta charset="utf-8">\n' +
+    '<title>' + escHtml(title) + '</title>\n' +
+    '<style>' + styleCss + '</style>\n' +
+    '</head>\n' +
+    '<body>\n' +
+    '<div class="export-topbar-wrap">' +
+    '<div class="export-topbar">' +
+    '<img class="export-logo" src="' + LOGO_SRC + '" alt="">' +
+    '<div>' +
+    '<p class="export-title">' + escHtml(title) + '</p>' +
+    '<p class="export-meta">Exporté le ' + escHtml(dateStamp) + '</p>' +
+    '</div>' +
+    '</div>\n' +
+    '</div>\n' +
+    '<div class="export-body">' + bodyHtml + '</div>\n' +
+    '<div class="export-footer-wrap"><div class="export-footer">Généré par MIAOU</div></div>\n' +
+    '</body>\n' +
+    '</html>\n';
+}
+
+// Construit le corps HTML de l'export dans un fragment DÉTACHÉ (jamais de
+// lecture/mutation de #thread live). Même motif de buffer d'acks que
+// downloadConvMd/renderThread : seuls les acks enrichis précédant un message
+// assistant sont émis (ceux devant un user sont silencieusement omis, comme
+// dans downloadConvMd — pas un blocage, un choix déjà assumé côté export MD).
+function renderExportBody(thread, convId) {
+  const container = document.createElement('div');
+  let pendingAcks = [];
+  for (const m of thread) {
+    if (isAckRole(m.role)) {
+      if (m.args != null) pendingAcks.push(m);
+      continue;
+    }
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    const msgEl = document.createElement('div');
+    msgEl.className = 'msg ' + m.role;
+    if (m.role === 'user') {
+      const shown = m.displayText != null ? m.displayText : m.content;
+      const attHtml = (m.attachments && m.attachments.length)
+        ? '<div class="msg-attachments">' + m.attachments.map(att =>
+            attChipHtml(att, resolveAttachmentThumb(att, convId), false, null)).join('') + '</div>'
+        : '';
+      const tsHtml = m.ts ? '<div class="msg-ts">' + escHtml(formatMessageTime(m.ts, Date.now())) + '</div>' : '';
+      msgEl.innerHTML = '<div class="bubble">' + attHtml + '<div class="body">' + renderUserMd(shown || '') + '</div></div>' + tsHtml;
+      pendingAcks = [];
+    } else {
+      const acksHtml = pendingAcks.length ? formatToolAcksHtml(pendingAcks) : '';
+      pendingAcks = [];
+      const tsText = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
+      const metaHtml = '<div class="meta"><span>' + escHtml(m.model || modelName()) + '</span>' +
+        (tsText ? '<span>· ' + escHtml(tsText) + '</span>' : '') + '</div>';
+      const reasoningHtml = (m.reasoning && String(m.reasoning).trim())
+        ? '<details class="reasoning"><summary>Raisonnement</summary><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></details>'
+        : '';
+      msgEl.innerHTML = metaHtml + acksHtml + reasoningHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
+    }
+    container.appendChild(msgEl);
+  }
+  if (highlightEnabled && window.Prism) Prism.highlightAllUnder(container);
+  return container.innerHTML;
+}
+
+const EXPORT_HTML_SIZE_WARN = 8 * 1024 * 1024;
+
+// Point d'entrée bouton topbar (global, cf. CLAUDE.md liste des handlers
+// inline). Assemble titre/slug/CSS/corps, avertit via confirm() natif au-delà
+// du seuil de taille (pas de dialogue dédié en v1, YAGNI), télécharge.
+function exportConvHtml() {
+  if (!currentThread || !currentThread.length) return;
+  const conv = currentConvId ? loadConversation(currentConvId) : null;
+  const title = (conv && conv.title) || 'miaou-conversation';
+  const slug = slugTitle(title);
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  const dateStamp = exportDateStamp(Date.now());
+  const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
+  const bodyHtml = renderExportBody(currentThread, currentConvId);
+  const html = buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml });
+  const sizeBytes = new Blob([html]).size;
+  if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
+    const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
+    if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
+  }
+  downloadFile('miaou-' + slug + '-' + dateStamp + '.html', html, 'text/html');
 }

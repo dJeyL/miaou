@@ -70,6 +70,65 @@ describe('resolveConvRefs', function() {
     var r = resolveConvRefs('[conv_ref:a b|T]');
     expect(r).toBe('[T](#miaou-conv:a%20b)');
   });
+  it('opts.asPlainText: sans marqueur, texte inchangé', function() {
+    expect(resolveConvRefs('bonjour', { asPlainText: true })).toBe('bonjour');
+  });
+  it('opts.asPlainText: ref vivante → label nu, pas de lien', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 'x', timestamp: Date.now(), messages: [] });
+    var r = resolveConvRefs('[conv_ref:c1|Migration Postgres]', { asPlainText: true });
+    expect(r).toBe('Migration Postgres');
+    expect(r.indexOf('#miaou-conv:')).toBe(-1);
+    expect(r.indexOf('[')).toBe(-1);
+  });
+  it('opts.asPlainText: ref supprimée → tombstone conservé (texte, pas un lien)', function() {
+    localStorage.clear();
+    var r = resolveConvRefs('[conv_ref:c1|Ancien titre]', { asPlainText: true });
+    expect(r).toBe('~~Ancien titre (supprimée)~~');
+  });
+  it('sans opts (défaut), comportement écran inchangé (lien Markdown)', function() {
+    localStorage.clear();
+    saveConversation({ id: 'c1', title: 'x', timestamp: Date.now(), messages: [] });
+    var r = resolveConvRefs('[conv_ref:c1|Migration Postgres]');
+    expect(r).toBe('[Migration Postgres](#miaou-conv:c1)');
+  });
+});
+
+describe('buildExportHtml', function() {
+  var base = { title: 'Ma conversation', dateStamp: '2026-07-09', theme: 'dark', styleCss: 'body{color:red}', bodyHtml: '<div class="msg">hello</div>' };
+  it('produit un doctype et un html avec data-theme', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<!doctype html>') >= 0).toBeTruthy();
+    expect(r.indexOf('<html data-theme="dark">') >= 0).toBeTruthy();
+  });
+  it('échappe le titre dans <title> et la topbar', function() {
+    var r = buildExportHtml(Object.assign({}, base, { title: '<b>Titre</b> & Cie' }));
+    expect(r.indexOf('<b>Titre</b>') >= 0).toBeFalsy();
+    expect(r.indexOf('&lt;b&gt;Titre&lt;/b&gt; &amp; Cie') >= 0).toBeTruthy();
+  });
+  it('insère le styleCss fourni dans <style>', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<style>body{color:red}</style>') >= 0).toBeTruthy();
+  });
+  it('insère le bodyHtml fourni', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<div class="msg">hello</div>') >= 0).toBeTruthy();
+  });
+  it('contient la topbar (titre + date) et le footer "Généré par MIAOU"', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('Ma conversation') >= 0).toBeTruthy();
+    expect(r.indexOf('2026-07-09') >= 0).toBeTruthy();
+    expect(r.indexOf('Généré par MIAOU') >= 0).toBeTruthy();
+  });
+  it('zéro <script> et zéro <link> dans la sortie (D1)', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<script') >= 0).toBeFalsy();
+    expect(r.indexOf('<link') >= 0).toBeFalsy();
+  });
+  it('theme "light" reflété dans data-theme', function() {
+    var r = buildExportHtml(Object.assign({}, base, { theme: 'light' }));
+    expect(r.indexOf('<html data-theme="light">') >= 0).toBeTruthy();
+  });
 });
 
 describe('relativeWhen (libellé de date par conversation)', function() {

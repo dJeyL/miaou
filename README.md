@@ -28,6 +28,10 @@ l'interface, JetBrains Mono pour le code.
   des appels d'outils du tour (outil, intention, arguments, résultat) juste
   avant la réponse — sans données binaires embarquées pour les ressources
   présentées automatiquement (juste le nom et le type).
+- Export de la conversation en **fichier HTML autonome** (icône jumelle, même
+  emplacement) : zéro JavaScript, thème et coloration de code figés à
+  l'ouverture, ouvrable hors MIAOU (mail, partage) sans infrastructure —
+  cf. `docs/exports.md`.
 - Horodatage de chaque message : heure seule (même jour), « hier à HH:MM »,
   date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis

@@ -83,6 +83,11 @@
   uniquement**, figées à l'attache). Ces cinq champs sont
   **sérialisés par `persistCurrent` et restaurés par `openConversation`** — ne
   pas les omettre si on retouche ces fonctions.
+  `openConversation` filtre les entrées falsy (`null`/`undefined`) de
+  `messages` avant de les mapper (`.filter(Boolean)`) : une entrée corrompue
+  plantait silencieusement tout le rechargement de la conversation (accès à
+  `m.role` sur `null`), sans erreur visible à l'écran — juste un clic sidebar
+  sans effet.
 
   **Forme de `content` d'un message user porteur d'un attachment `kind:'image'`
   (brief A lot 2, D2/D3 — envoi au modèle et politique de persistance)** :

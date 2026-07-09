@@ -127,6 +127,18 @@ function parseConvRefs(text) {
 }
 
 // ── Téléchargement côté client ───────────────────────────────────────────────
+// Slug de nom de fichier depuis un titre de conversation. Les lettres
+// accentuées sont translittérées vers leur équivalent ASCII (NFD + suppression
+// des diacritiques) avant le remplacement en tirets, pour que "café" donne
+// "cafe" et non "caf". Fallback si le titre est vide ou ne contient que des
+// caractères non alphanumériques.
+function slugTitle(title) {
+  return String(title || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'miaou-conversation';
+}
+
 // Crée un Blob, génère une URL objet éphémère, déclenche le téléchargement via
 // un <a download> invisible, puis révoque l'URL. Fonctionne sous file:// et derrière
 // un reverse-proxy (Caddy). N'est pas un outil LLM — appelé uniquement par des
@@ -381,6 +393,15 @@ function formatFullDateFr(ts) {
     FR_MONTHS_FULL[d.getMonth()] + ' ' + d.getFullYear() + ' à ' + _tsHHMM(d);
 }
 
+// Horodatage déterministe YYYY-MM-DD (heure locale), sans Intl/toLocale, pour
+// les noms de fichiers d'export (brief G, D5).
+function exportDateStamp(now) {
+  const d = new Date(now);
+  const mm = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+  const dd = (d.getDate() < 10 ? '0' : '') + d.getDate();
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
 // ── Reconstruction du payload API depuis currentThread ───────────────────────
 
 // Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
@@ -452,6 +473,48 @@ function formatToolAcksMd(acks) {
   // sont fusionnées par le parser Markdown (intent et "Arguments" collés sur
   // la même ligne rendue).
   return lines.map((l, i) => i < lines.length - 1 ? l + '  ' : l).join('\n');
+}
+
+// Représentation HTML d'un appel d'outil pour l'export standalone (brief G,
+// D3). Même politique que _formatToolCallMd (troncature, resource_presented
+// nom+mime sans binaire) mais en <li> HTML. escHtml systématique : m.name,
+// m.intent, args JSON et result sont des chaînes d'origine modèle/outil —
+// seul chemin string→HTML de l'export (cf. CLAUDE.md, piège dédié).
+function _formatToolCallHtml(m) {
+  const lines = [];
+  const head = m.intent
+    ? '<code>' + escHtml(m.name) + '</code> — ' + escHtml(m.intent)
+    : '<code>' + escHtml(m.name) + '</code>';
+  lines.push(head);
+  if (m.args != null) {
+    lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
+  }
+  if (m.error) {
+    lines.push('<br>Résultat (erreur) : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
+  } else if (m.result != null) {
+    lines.push('<br>Résultat : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
+  }
+  if (m.kind === 'resource_presented') {
+    const name = escHtml(_truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX));
+    lines.push('<br>Ressource présentée automatiquement : <code>' + name + '</code>' +
+      (m.mime ? ' (' + escHtml(m.mime) + ')' : '') + ' — non incluse dans cet export');
+  }
+  return lines.join('');
+}
+
+// Bloc HTML (<details class="tool-trace">) pour un groupe d'acks enrichis
+// d'un même tour — sœur HTML de formatToolAcksMd, même seuils/politique.
+// Fermé par défaut (cohérent avec le reasoning, cf. brief G D1/§10).
+function formatToolAcksHtml(acks) {
+  if (!acks || !acks.length) return '';
+  const summary = acks.length === 1 ? 'Outil appelé' : 'Outils appelés (' + acks.length + ')';
+  let inner;
+  if (acks.length === 1) {
+    inner = '<li>' + _formatToolCallHtml(acks[0]) + '</li>';
+  } else {
+    inner = acks.map(m => '<li>' + _formatToolCallHtml(m) + '</li>').join('');
+  }
+  return '<details class="tool-trace"><summary>' + summary + '</summary><ul>' + inner + '</ul></details>';
 }
 
 // DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].

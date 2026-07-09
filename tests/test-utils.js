@@ -429,6 +429,91 @@ describe('formatToolAcksMd', function() {
   });
 });
 
+describe('slugTitle', function() {
+  it('minuscule et remplace la ponctuation par des tirets', function() {
+    expect(slugTitle('Bonjour, le Monde !')).toBe('bonjour-le-monde');
+  });
+  it('translittère les accents en ASCII au lieu de les jeter comme des tirets', function() {
+    expect(slugTitle('Café à Paris, résumé été')).toBe('cafe-a-paris-resume-ete');
+  });
+  it('titre vide → fallback', function() {
+    expect(slugTitle('')).toBe('miaou-conversation');
+    expect(slugTitle(null)).toBe('miaou-conversation');
+    expect(slugTitle(undefined)).toBe('miaou-conversation');
+  });
+  it('titre uniquement ponctuation → fallback', function() {
+    expect(slugTitle('!!!  ---  ???')).toBe('miaou-conversation');
+  });
+  it('trim les tirets de début/fin', function() {
+    expect(slugTitle('  -- Hello --  ')).toBe('hello');
+  });
+});
+
+describe('exportDateStamp', function() {
+  it('formate en YYYY-MM-DD avec zero-padding', function() {
+    var ts = new Date(2026, 0, 5, 14, 30).getTime(); // 5 janvier 2026
+    expect(exportDateStamp(ts)).toBe('2026-01-05');
+  });
+  it('mois et jour à deux chiffres sans padding nécessaire', function() {
+    var ts = new Date(2026, 10, 23, 9, 0).getTime(); // 23 novembre 2026
+    expect(exportDateStamp(ts)).toBe('2026-11-23');
+  });
+});
+
+describe('formatToolAcksHtml', function() {
+  it('liste vide → chaîne vide', function() {
+    expect(formatToolAcksHtml([])).toBe('');
+    expect(formatToolAcksHtml(null)).toBe('');
+  });
+  it('un seul appel : <details><summary>Outil appelé</summary>', function() {
+    var r = formatToolAcksHtml([{ name: 'miaou__create_memory', args: { content: 'x' }, result: 'ok' }]);
+    expect(r.indexOf('<details class="tool-trace">') >= 0).toBeTruthy();
+    expect(r.indexOf('<summary>Outil appelé</summary>') >= 0).toBeTruthy();
+    expect(r.indexOf(' open') >= 0).toBeFalsy();
+  });
+  it('plusieurs appels : en-tête pluriel avec compte', function() {
+    var r = formatToolAcksHtml([
+      { name: 'a', args: {}, result: '1' },
+      { name: 'b', args: {}, result: '2' },
+    ]);
+    expect(r.indexOf('Outils appelés (2)') >= 0).toBeTruthy();
+  });
+  it('échappe les caractères HTML dans name/args/result', function() {
+    var r = formatToolAcksHtml([{ name: '<script>x</script>', args: { q: '<b>&"</b>' }, result: '<img src=x>' }]);
+    expect(r.indexOf('<script>x</script>') >= 0).toBeFalsy();
+    expect(r.indexOf('&lt;script&gt;') >= 0).toBeTruthy();
+    expect(r.indexOf('<img src=x>') >= 0).toBeFalsy();
+    expect(r.indexOf('&lt;img') >= 0).toBeTruthy();
+  });
+  it('échappe intent contenant du HTML', function() {
+    var r = formatToolAcksHtml([{ name: 'a', intent: '<b>inject</b>', args: {}, result: 'ok' }]);
+    expect(r.indexOf('<b>inject</b>') >= 0).toBeFalsy();
+    expect(r.indexOf('&lt;b&gt;inject&lt;/b&gt;') >= 0).toBeTruthy();
+  });
+  it('erreur : "Résultat (erreur)"', function() {
+    var r = formatToolAcksHtml([{ name: 'a', args: {}, result: 'timeout', error: true }]);
+    expect(r.indexOf('Résultat (erreur)') >= 0).toBeTruthy();
+  });
+  it('resource_presented : nom + mime, jamais de data: embarquée', function() {
+    var r = formatToolAcksHtml([{ name: 'weather__get_map', kind: 'resource_presented',
+      args: {}, result: '[resource_ref:res_1]', resourceName: 'carte.png', mime: 'image/png' }]);
+    expect(r.indexOf('Ressource présentée automatiquement') >= 0).toBeTruthy();
+    expect(r.indexOf('carte.png') >= 0).toBeTruthy();
+    expect(r.indexOf('image/png') >= 0).toBeTruthy();
+    expect(r.indexOf('data:') >= 0).toBeFalsy();
+  });
+  it('résultat long tronqué avec "..."', function() {
+    var long = new Array(400).join('x');
+    var r = formatToolAcksHtml([{ name: 'a', args: {}, result: long }]);
+    expect(r.indexOf('...') >= 0).toBeTruthy();
+    expect(r.indexOf(long) >= 0).toBeFalsy();
+  });
+  it('acks legacy (sans args) : pas de ligne Arguments', function() {
+    var r = formatToolAcksHtml([{ name: 'a', result: 'ok' }]);
+    expect(r.indexOf('Arguments') >= 0).toBeFalsy();
+  });
+});
+
 describe('_hashId9', function() {
   it('renvoie toujours exactement 9 caractères', function() {
     expect(_hashId9('').length).toBe(9);

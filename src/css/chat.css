@@ -51,13 +51,16 @@
 }
 .app.booted:not(.sidebar-open) .topbar-space-badge:not([hidden]) { opacity: 1; transform: translateX(0); }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
-.conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
-.conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
+.conv-dl-btn, .conv-dl-html-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
+.conv-dl-btn svg, .conv-dl-html-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
 /* Zones de révélation VOLONTAIREMENT asymétriques (choix utilisateur) :
-   export au survol de toute la topbar, retitrage au survol du titre seulement.
-   Ne pas « harmoniser ». */
-.topbar:hover .conv-dl-btn { opacity: 1; }
-.topbar-mid:hover .conv-retitle-btn { opacity: 1; }
+   export au survol de toute la topbar, retitrage au survol du TITRE seulement
+   (pas les boutons export voisins dans .topbar-mid — :has() cible précisément
+   #conv-title ou le bouton lui-même, pas tout le conteneur flex : sans inclure
+   .conv-retitle-btn dans la condition, le survol du bouton lui-même le ferait
+   disparaître sous le curseur). Ne pas « harmoniser ». */
+.topbar:hover .conv-dl-btn, .topbar:hover .conv-dl-html-btn { opacity: 1; }
+.topbar-mid:has(#conv-title:hover, .conv-retitle-btn:hover) .conv-retitle-btn { opacity: 1; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {

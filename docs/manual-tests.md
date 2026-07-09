@@ -711,3 +711,50 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     langage (`fibonacci.py`). Vérifier l'injection : le drawer d'inspection de
     contexte affiche une ligne « Doctrine codeblock » (toujours présente, même
     sans aucun outil actif), comptée dans le total de tokens.
+
+69. **Export HTML standalone** (lot G, `docs/exports.md`) : sur une conversation
+    contenant du code, une table Markdown, un raisonnement, au moins une trace
+    d'appel d'outil et une image attachée, cliquer le bouton d'export HTML
+    (icône jumelle du download Markdown dans la topbar, révélée au survol).
+    Ouvrir le fichier téléchargé **hors MIAOU** (double-clic, ou `file://`) et
+    vérifier :
+    - Aucune requête réseau dans l'onglet Network au chargement, sauf les
+      polices Google Fonts (et éventuellement leur échec si offline — dans ce
+      cas vérifier que le texte reste lisible via les fallbacks système).
+    - Code coloré (Prism) **sans JavaScript** — vérifier dans la source de la
+      page qu'aucune balise `<script>` ni `<link>` n'est présente.
+    - Un bloc de code dont le langage n'a jamais été affiché à l'écran avant
+      l'export (grammaire Prism jamais chargée par l'autoloader) reste lisible
+      en texte brut, sans erreur ni bloc vide.
+    - Raisonnement et traces d'outils sont des `<details>` **fermés** par
+      défaut (dépliables au clic, sans JS — natif au navigateur).
+    - La trace d'outil affiche nom, intent (si fourni), arguments, résultat ;
+      pour une ressource présentée automatiquement, seulement nom + type MIME
+      (jamais de `data:` binaire).
+    - L'image attachée est visible inline (data-URI), les caractères
+      accentués du titre de conversation sont bien rendus dans `<title>` et
+      la topbar de l'export.
+    - Le thème (clair/sombre) correspond à celui actif dans MIAOU au moment
+      de l'export, figé (pas de bascule au changement de préférence système).
+    - Nom de fichier `miaou-<slug-titre>-<YYYY-MM-DD>.html`, avec un titre
+      accentué : vérifier que les accents sont translittérés en ASCII dans le
+      slug (`café` → `cafe`, pas de tiret à la place).
+    - Sur une conversation volumineuse (beaucoup d'images attachées) dépassant
+      ~8 Mo, une confirmation navigateur (`confirm()`) apparaît avant le
+      téléchargement ; annuler n'écrit aucun fichier.
+    - Bouton masqué tant qu'aucune réponse assistant n'existe encore, désactivé
+      pendant un streaming en cours (même comportement que le download
+      Markdown).
+    - Topbar de l'export : logo MIAOU (glyphe animé) à côté du titre et de la
+      date d'export, pas isolé au-dessus. Topbar/corps/footer contenus à la
+      même largeur de lecture (900px, pas la largeur totale de l'écran sur un
+      grand moniteur). Page affichée à échelle réduite (~90%, `zoom` CSS) —
+      dégradation gracieuse sur un navigateur sans support `zoom` (page à
+      100%, toujours lisible).
+
+70. **Survol du bouton de retitrage (topbar)** : survoler le bouton d'export
+    Markdown ou HTML dans la topbar → le bouton de retitrage (icône flèches
+    circulaires, à gauche du titre) ne doit PAS apparaître. Survoler le titre
+    de la conversation → il apparaît. Glisser la souris du titre vers le
+    bouton de retitrage lui-même → il reste visible (ne doit pas disparaître
+    sous le curseur).
