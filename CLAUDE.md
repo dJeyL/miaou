@@ -121,7 +121,9 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs.
    `buildSystemMessage()` concatène `ROOT_SYSTEM_PROMPT` (doctrines build-time,
    toujours injectées si outils présents) + éventuellement `toolsSystemPrompt()`
-   + le prompt système utilisateur.
+   + `CODEBLOCK_DOCTRINE` (nommage des blocs de code, **toujours** injectée,
+   indépendamment de la présence d'outils — cf. `docs/tools.md`) + le prompt
+   système utilisateur.
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du texte ajouté
    par MIAOU ; les `tool_calls` sont déclenchés par le **modèle** uniquement.
 3. **Le résultat d'un outil n'est jamais affiché** avant `finish_reason:

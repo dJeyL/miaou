@@ -384,6 +384,23 @@ const SEEDS = [
     summary: "Procédure détaillée de migration d'un cluster Kubernetes on-prem vers EKS, réponse coupée par la limite de tokens en phase 3 (fixture troncature/continuation).",
     keywords: ['kubernetes', 'eks', 'migration', 'cluster', 'troncature', 'continuer', 'aws'],
   },
+  {
+    id: 'seed-22',
+    title: 'Fibonacci — nom de fichier sur le codeblock',
+    messages: [
+      { role: 'user', content: "Donne-moi une fonction Fibonacci récursive avec mémoïsation, dans un fichier à part." },
+      // filename= (espace, cf. CODEBLOCK_DOCTRINE/docs/tools.md) : coloration Prism
+      // normale (lang='python'), download propose 'fibonacci.py' au lieu du
+      // générique miaou-snippet.py. Deuxième fence sans filename dans le même
+      // message : non-régression (download générique). Troisième fence avec
+      // l'ancienne forme cassée virgule (python, filename=...), testée et rejetée
+      // par Julien : ne doit plus casser Prism (lang nettoyé de la virgule).
+      { role: 'assistant',
+        content: "Voici la fonction, avec mémoïsation via `functools.lru_cache` :\n\n```python filename=fibonacci.py\nfrom functools import lru_cache\n\n@lru_cache(maxsize=None)\ndef fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\n```\n\nUn extrait d'usage rapide, sans vocation de fichier à part :\n\n```python\nprint(fib(30))\n```\n\nEt la forme historique (virgule collée au langage) pour vérifier la non-régression :\n\n```python, filename=fibonacci_legacy.py\ndef fib(n):\n    return n if n < 2 else fib(n - 1) + fib(n - 2)\n```" },
+    ],
+    summary: "Fonction Fibonacci récursive mémoïsée en Python, fournie dans un bloc de code nommé fibonacci.py (fixture filename=, cf. docs/tools.md).",
+    keywords: ['python', 'fibonacci', 'mémoïsation', 'récursion', 'codeblock', 'filename', 'téléchargement'],
+  },
 ];
 
 // ── Souvenirs (miaou-memories) : cohérents avec les acks des conversations ────

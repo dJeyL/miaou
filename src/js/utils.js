@@ -171,6 +171,42 @@ function langExt(lang) {
   return LANG_TO_EXT[(lang || '').toLowerCase()] || 'txt';
 }
 
+// Parse l'info string d'une fence markdown enrichie (ex. "python filename=foo.py")
+// en { lang, filename }. Le premier segment non-espace est le langage (comme le
+// renderer par défaut de marked, ^\S*), débarrassé d'une éventuelle virgule
+// terminale (tolérance à l'ancienne forme cassée "python, filename=…", testée et
+// rejetée par Julien — cf. untracked/brief-codeblock-filename.md). Le filename
+// est cherché dans le reste via filename=valeur ou filename="valeur entre guillemets"
+// (guillemets retirés). '' si absent. Pure, sans effet de bord — appelée par le
+// renderer custom marked (ui.js) et testable seule en QuickJS.
+function parseCodeFenceInfo(info) {
+  const raw = (info || '').match(/^\S*/)[0];
+  const lang = raw.replace(/,$/, '');
+  const rest = (info || '').slice(raw.length);
+  const m = rest.match(/\bfilename=("([^"]*)"|(\S+))/);
+  const filename = m ? (m[2] !== undefined ? m[2] : m[3]) : '';
+  return { lang, filename };
+}
+
+// Assainit un nom de fichier proposé par le modèle pour le téléchargement d'un
+// codeblock : retire tout séparateur de chemin et les caractères de contrôle —
+// on écrit un nom de fichier, jamais un chemin (defense-in-depth, pas de directory
+// traversal possible côté downloadFile qui n'écrit que via <a download>, mais un
+// nom "../../etc/passwd" resterait un nom absurde à proposer). Suffixe l'extension
+// dérivée de `lang` (langExt) si le nom n'en a aucune — la doctrine (CODEBLOCK_DOCTRINE)
+// demande au modèle de la fournir, ce suffixe est un filet de sécurité. '' si le
+// nom assaini est vide (fallback à l'appelant : nom générique miaou-snippet.<ext>).
+function sanitizeDownloadName(name, lang) {
+  let n = String(name || '')
+    .replace(/[\/\\]/g, '_')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/^\.+/, '')
+    .trim();
+  if (!n) return '';
+  if (!/\.[^.\/\\]+$/.test(n)) n += '.' + langExt(lang);
+  return n;
+}
+
 // Décode une chaîne base64 en Uint8Array (octets bruts) pour matérialiser un
 // Blob binaire côté client (cf. cascade de rendu D8.3 : téléchargement éphémère
 // d'un bloc binaire renvoyé par un outil distant). atob existe en navigateur ;
@@ -568,7 +604,7 @@ const CONTEXT_WINDOW_WARN_RATIO = 0.8;
 // (systemMessageParts, buildContextBlock, expandThread, toolDefinitions) pour
 // ne jamais dupliquer la logique d'assemblage (audit §0/§6).
 //
-// `sysParts` : { root, toolsSystem, intent, skills, docs, user } (systemMessageParts()).
+// `sysParts` : { root, toolsSystem, intent, skills, docs, codeblock, user } (systemMessageParts()).
 // `dynParts` : { contextDateModel, memories, summaries, skillsContext } — chaque
 //   sous-bloc DÉJÀ formaté en string (ou '' si absent).
 // `threadMsgs` : array {role, content} (content string ou array de content-parts).
@@ -590,6 +626,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('docs_doctrine', 'Doctrine docs', sp.docs);
+  pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
   pushEntry('user_prompt', 'Prompt utilisateur (+ Space)', sp.user);
 
   pushEntry('context_date_model', 'Date/modèle/Space', dp.contextDateModel);

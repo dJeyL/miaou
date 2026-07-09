@@ -47,6 +47,31 @@ if (window.Prism && Prism.plugins && Prism.plugins.autoloader) {
     'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
 }
 
+// Renderer custom pour les fences de code : marked 12.0.0 (désassemblage vérifié,
+// cf. untracked/brief-codeblock-filename.md) conserve l'info string COMPLÈTE dans
+// `lang` (ex. "python filename=foo.py") et son renderer par défaut prend juste
+// `^\S*` pour la classe language-xxx — un filename séparé par un ESPACE ne casse
+// donc déjà rien côté Prism, mais est perdu (jamais lu). On réutilise le même corps
+// que le renderer d'origine (signature vérifiée : code(text, lang, escaped)) en y
+// ajoutant l'extraction du filename (parseCodeFenceInfo, utils.js) posé en attribut
+// data- sur le <code>, jamais dans la classe. Pur/déterministe (même entrée → même
+// HTML), s'applique aussi à renderUserMd (même instance marked globale — souhaité :
+// un user peut coller un codeblock nommé).
+if (window.marked) {
+  marked.use({
+    renderer: {
+      code(text, infoString, escaped) {
+        const { lang, filename } = parseCodeFenceInfo(infoString);
+        const body = String(text).replace(/\n$/, '') + '\n';
+        const content = escaped ? body : escHtml(body);
+        const cls = lang ? ' class="language-' + escHtml(lang) + '"' : '';
+        const attr = filename ? ' data-filename="' + escHtml(filename) + '"' : '';
+        return '<pre><code' + cls + attr + '>' + content + '</code></pre>\n';
+      },
+    },
+  });
+}
+
 // ── Rendu markdown / coloration ─────────────────────────────────────────────
 // Résout les [conv_ref:ID] / [conv_ref:ID|Titre] (CONV_REF_DOCTRINE, tools.js)
 // en lien Markdown standard AVANT marked.parse — jamais après : une fois passés
@@ -314,7 +339,9 @@ function decoratePre(scope) {
       });
     };
     head.querySelector('.code-dl').onclick = () => {
-      downloadFile('miaou-snippet.' + langExt(lang), code ? code.textContent : '', 'text/plain');
+      const rawName = code ? code.getAttribute('data-filename') : '';
+      const dlName = sanitizeDownloadName(rawName, lang) || ('miaou-snippet.' + langExt(lang));
+      downloadFile(dlName, code ? code.textContent : '', 'text/plain');
     };
     pre.insertBefore(head, pre.firstChild);
   });

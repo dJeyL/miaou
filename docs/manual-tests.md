@@ -698,3 +698,16 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     sous la barre principale, proportionnelle à la part en cache. Sur un
     backend qui l'omet (ex. beaucoup de configs Ollama) : la 2e barre reste
     absente, tout le reste retombe sur l'estimé chars/4, sans erreur console.
+
+68. **Nom de fichier proposé par le modèle pour un bloc de code (`filename=`,
+    cf. `docs/tools.md`)** : coller/simuler un message assistant avec une fence
+    ` ```python filename=fib.py ` → coloration Prism correcte (label `python`
+    dans le header), bouton Télécharger propose `fib.py`. Fence sans `filename`
+    → non-régression, download `miaou-snippet.py`, coloration inchangée.
+    Ancienne forme cassée ` ```python, filename=x.py ` (virgule collée au lang,
+    forme testée et rejetée par Julien) → ne doit plus casser Prism (lang
+    nettoyé de la virgule terminale), download propose `x.py`. `filename=` sans
+    extension (ex. `fibonacci`) → download suffixe l'extension dérivée du
+    langage (`fibonacci.py`). Vérifier l'injection : le drawer d'inspection de
+    contexte affiche une ligne « Doctrine codeblock » (toujours présente, même
+    sans aucun outil actif), comptée dans le total de tokens.

@@ -2793,7 +2793,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-08 22:57 UTC */
+/* miaou — built: 2026-07-09 11:37 UTC */
 
 /* ── utils.js ── */
 
@@ -2931,6 +2931,26 @@ const LANG_TO_EXT = {
 
 function langExt(lang) {
   return LANG_TO_EXT[(lang || '').toLowerCase()] || 'txt';
+}
+
+function parseCodeFenceInfo(info) {
+  const raw = (info || '').match(/^\S*/)[0];
+  const lang = raw.replace(/,$/, '');
+  const rest = (info || '').slice(raw.length);
+  const m = rest.match(/\bfilename=("([^"]*)"|(\S+))/);
+  const filename = m ? (m[2] !== undefined ? m[2] : m[3]) : '';
+  return { lang, filename };
+}
+
+function sanitizeDownloadName(name, lang) {
+  let n = String(name || '')
+    .replace(/[\/\\]/g, '_')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/^\.+/, '')
+    .trim();
+  if (!n) return '';
+  if (!/\.[^.\/\\]+$/.test(n)) n += '.' + langExt(lang);
+  return n;
 }
 
 function b64ToBytes(b64) {
@@ -3236,6 +3256,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('docs_doctrine', 'Doctrine docs', sp.docs);
+  pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
   pushEntry('user_prompt', 'Prompt utilisateur (+ Space)', sp.user);
 
   pushEntry('context_date_model', 'Date/modèle/Space', dp.contextDateModel);
@@ -3349,7 +3370,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783551479}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783597046}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4798,6 +4819,14 @@ function docsDoctrinePrompt() {
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE;
 
+const CODEBLOCK_DOCTRINE =
+  "Quand tu génères un bloc de code destiné à être enregistré comme fichier (script, " +
+  "config, module…), fournis un nom de fichier sur la ligne d'ouverture de la fence, " +
+  "après le langage, séparé par un espace, au format filename=nom.ext (sans espace " +
+  "dans le nom, avec son extension). Exemple : ```python filename=fibonacci.py. " +
+  "L'application proposera ce nom au téléchargement. Pour un extrait illustratif court " +
+  "sans vocation de fichier, tu peux l'omettre.";
+
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
   "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
@@ -6158,6 +6187,21 @@ if (window.Prism && Prism.plugins && Prism.plugins.autoloader) {
     'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
 }
 
+if (window.marked) {
+  marked.use({
+    renderer: {
+      code(text, infoString, escaped) {
+        const { lang, filename } = parseCodeFenceInfo(infoString);
+        const body = String(text).replace(/\n$/, '') + '\n';
+        const content = escaped ? body : escHtml(body);
+        const cls = lang ? ' class="language-' + escHtml(lang) + '"' : '';
+        const attr = filename ? ' data-filename="' + escHtml(filename) + '"' : '';
+        return '<pre><code' + cls + attr + '>' + content + '</code></pre>\n';
+      },
+    },
+  });
+}
+
 function resolveConvRefs(text) {
   return String(text).replace(CONV_REF_RE, function(match, id, title) {
     const entry = getSummaryEntry(id);
@@ -6363,7 +6407,9 @@ function decoratePre(scope) {
       });
     };
     head.querySelector('.code-dl').onclick = () => {
-      downloadFile('miaou-snippet.' + langExt(lang), code ? code.textContent : '', 'text/plain');
+      const rawName = code ? code.getAttribute('data-filename') : '';
+      const dlName = sanitizeDownloadName(rawName, lang) || ('miaou-snippet.' + langExt(lang));
+      downloadFile(dlName, code ? code.textContent : '', 'text/plain');
     };
     pre.insertBefore(head, pre.firstChild);
   });
@@ -9780,7 +9826,7 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', user: '' };
+  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
   if (TOOLS.length) {
     out.root = ROOT_SYSTEM_PROMPT;
     if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
@@ -9788,13 +9834,15 @@ function systemMessageParts() {
     out.skills = skillDoctrinePrompt();
     out.docs = docsDoctrinePrompt();
   }
+  
+  out.codeblock = CODEBLOCK_DOCTRINE;
   out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
   return out;
 }
 
-function buildSystemMessage() {
-  const sp = systemMessageParts();
-  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.user].filter(Boolean);
+function buildSystemMessage(sp) {
+  sp = sp || systemMessageParts();
+  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -10651,7 +10699,7 @@ async function dispatchSend(matches, continuation) {
   const serverName = (activeApiServer() || {}).name || '';   
   const reasoningEffort = activeReasoningEffort();
   const sysParts = systemMessageParts();
-  const sys = { role: 'system', content: [sysParts.root, sysParts.toolsSystem, sysParts.intent, sysParts.skills, sysParts.docs, sysParts.user].filter(Boolean).join('\n\n---\n\n') };
+  const sys = buildSystemMessage(sysParts);
   
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
 

@@ -378,3 +378,65 @@ jamais exposer son ID technique en clair dans le texte affiché.
    supprimée) est un no-op silencieux (`openConversation` retourne tôt si
    `loadConversation` échoue) — pas de fonction de navigation dédiée créée,
    pas de duplication du chemin existant.
+
+## Nom de fichier proposé par le modèle pour un bloc de code (`filename=`)
+
+Le bouton « Télécharger » d'un `<pre>` (posé par `decoratePre`, ui.js) propose
+par défaut un nom générique `miaou-snippet.<ext>` (`langExt(lang)`, utils.js).
+Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
+
+1. **Doctrine `CODEBLOCK_DOCTRINE`** (tools.js), **toujours injectée**
+   (`systemMessageParts()`/`buildSystemMessage()`, main.js), **inconditionnellement**
+   — contrairement aux six doctrines de `ROOT_SYSTEM_PROMPT` (gouvernées par
+   `TOOLS.length`) : générer un codeblock n'a aucun rapport avec la présence
+   d'outils. Demande au modèle le format `filename=nom.ext` après le langage,
+   séparé par un **espace** (pas une virgule — cf. point 2), sans espace dans le
+   nom, avec extension. Constante build-time (`v1`), même statut KV cache
+   (piège #16) que `ROOT_SYSTEM_PROMPT` : une modification invalide le préfixe
+   une fois au déploiement. **Bug payé à l'introduction de cette doctrine** :
+   `dispatchSend` (main.js, chemin d'envoi réel) ne construisait PAS le message
+   système via `buildSystemMessage()`, mais recopiait localement sa formule de
+   concaténation (`[sysParts.root, ..., sysParts.user].filter(Boolean).join(...)`)
+   — ajouter `sp.codeblock` dans `buildSystemMessage()` seule ne suffisait donc
+   pas, la doctrine restait absente du payload réel malgré un test QuickJS vert
+   (le test ne couvre que `buildSystemMessage()`, jamais appelée en prod).
+   Corrigé en faisant de `buildSystemMessage(sp)` la fonction réutilisée par
+   `dispatchSend` (paramètre `sp` optionnel pour éviter un second appel de
+   `systemMessageParts()`, `sysParts` restant par ailleurs nécessaire à
+   `buildContextManifest` plus loin dans la même fonction) — un seul point de
+   concaténation désormais, conforme à l'audit §6 déjà énoncé mais pas respecté
+   dans les faits.
+2. **Pourquoi l'espace, pas la virgule.** marked 12.0.0 prend `^\S*` sur l'info
+   string pour construire la classe `language-xxx` (renderer par défaut,
+   vérifié en désassemblant le bundle CDN). `python, filename=foo.py` (virgule
+   collée) produit `class="language-python,"` → Prism ne reconnaît pas le
+   langage → coloration cassée. `python filename=foo.py` (espace) produit
+   `class="language-python"` correct, mais le renderer par défaut ignore
+   silencieusement le reste de l'info string (le filename est perdu) — d'où le
+   renderer custom au point 3.
+3. **Parsing** : `parseCodeFenceInfo(info)` (utils.js, pure, testée) sépare
+   `{ lang, filename }` — `lang` = premier segment `^\S*`, **virgule terminale
+   retirée** (tolérance à l'ancienne forme cassée, non-régression) ; `filename`
+   cherché dans le reste via `filename=valeur` ou `filename="valeur avec espaces"`
+   (guillemets retirés).
+4. **Rendu = renderer marked custom**, posé une fois via `marked.use({ renderer:
+   { code } })` (ui.js, près de la config Prism), signature `code(text, lang,
+   escaped)` — reprend le corps du renderer par défaut (échappement identique,
+   pas de double-échappement) en ajoutant l'attribut `data-filename` sur le
+   `<code>`, **jamais dans la classe**. Pur/déterministe. S'applique aussi à
+   `renderUserMd` (même instance `marked` globale, souhaité : un message
+   utilisateur collé peut porter un codeblock nommé).
+5. **Consommation au download** : `decoratePre` lit `code.getAttribute('data-filename')`,
+   passe par `sanitizeDownloadName(name, lang)` (utils.js, pure, testée) —
+   retire séparateurs de chemin (`/`, `\`), caractères de contrôle, points de
+   tête (anti path-traversal ceinture-bretelles ; `downloadFile` n'écrit que via
+   `<a download>`, pas de risque serveur, mais un nom absurde ne doit pas être
+   proposé) ; suffixe `.<langExt>` si l'extension est absente (filet de
+   sécurité, la doctrine demande l'extension au modèle). Chaîne vide en sortie
+   → repli sur `miaou-snippet.<ext>`. Si `data-filename` absent : comportement
+   inchangé.
+6. **Pas d'affichage du filename dans le header `.code-head`** dans ce lot
+   (décision explicite, cf. règle d'or CLAUDE.md sur `.bg-activity` : ne pas
+   redessiner un composant visuel sans spec) — le nom n'est utilisé que pour le
+   download. `decoratePre` reste le **chemin unique** de décoration des `<pre>`
+   (rendu message ET rendu ressource texte en bloc de code, `ui.js:~3701`).

@@ -129,6 +129,18 @@ résout jamais dans le corps synchrone d'un `it`). IDB, `internResourcesFromResu
 et la cascade D8 (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans
 `docs/manual-tests.md`).
 
+Couvert aussi : le **nom de fichier proposé par le modèle pour un bloc de code**
+(`filename=`, cf. `docs/tools.md`) — `parseCodeFenceInfo` (lang seul, lang +
+filename séparés par un espace, espaces multiples, filename entre guillemets
+avec espace interne, virgule terminale sur le lang nettoyée — ancienne forme
+cassée, non-régression —, info string vide ou absente) et
+`sanitizeDownloadName` (nom simple inchangé, séparateurs de chemin neutralisés,
+traversée de répertoire, suffixe d'extension dérivée du langage si absente,
+caractères de contrôle retirés, chaîne vide/`undefined` → chaîne vide). Le
+renderer marked custom (`marked.use({ renderer: { code } })`, ui.js) et la
+lecture de `data-filename` par `decoratePre` ne sont pas QuickJS-testables (pas
+de DOM riche/Prism) : vérification manuelle (`docs/manual-tests.md`).
+
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout

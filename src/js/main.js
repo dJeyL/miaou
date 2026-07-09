@@ -213,7 +213,7 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 // sous-bloc absent/désactivé.
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', user: '' };
+  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
   if (TOOLS.length) {
     out.root = ROOT_SYSTEM_PROMPT;
     if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
@@ -221,19 +221,24 @@ function systemMessageParts() {
     out.skills = skillDoctrinePrompt();
     out.docs = docsDoctrinePrompt();
   }
+  // Inconditionnelle (piège N/A outils) : générer un codeblock ne dépend pas de TOOLS.length.
+  out.codeblock = CODEBLOCK_DOCTRINE;
   out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
   return out;
 }
 
 // Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
-// skills (si skills autotrigger) → utilisateur → description du Space actif
-// (concaténée, jamais substituée — D4 corrigé). Piège 18 (CLAUDE.md) : cette
-// dernière part varie d'un Space à l'autre — changer de Space change donc le
-// system message (assumé, documenté), mais il reste statique tant qu'on reste
-// dans le même Space (KV cache, piège 16).
-function buildSystemMessage() {
-  const sp = systemMessageParts();
-  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.user].filter(Boolean);
+// skills (si skills autotrigger) → doctrine codeblock (toujours) → utilisateur →
+// description du Space actif (concaténée, jamais substituée — D4 corrigé). Piège 18
+// (CLAUDE.md) : cette dernière part varie d'un Space à l'autre — changer de Space
+// change donc le system message (assumé, documenté), mais il reste statique tant
+// qu'on reste dans le même Space (KV cache, piège 16).
+// `sp` optionnel : réutilise des parts déjà calculées (dispatchSend en a déjà
+// besoin pour buildContextManifest) plutôt que de rappeler systemMessageParts()
+// une deuxième fois — un seul point de concaténation malgré tout (audit §6).
+function buildSystemMessage(sp) {
+  sp = sp || systemMessageParts();
+  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -1353,7 +1358,7 @@ async function dispatchSend(matches, continuation) {
   const serverName = (activeApiServer() || {}).name || '';   // provenance, persistée sur chaque message assistant
   const reasoningEffort = activeReasoningEffort();
   const sysParts = systemMessageParts();
-  const sys = { role: 'system', content: [sysParts.root, sysParts.toolsSystem, sysParts.intent, sysParts.skills, sysParts.docs, sysParts.user].filter(Boolean).join('\n\n---\n\n') };
+  const sys = buildSystemMessage(sysParts);
   // Résout les références de ressources ([resource_ref:…]) dans les entry.result
   // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
   // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.

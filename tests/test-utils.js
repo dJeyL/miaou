@@ -725,3 +725,65 @@ describe('copyAckFields (whitelist unique des champs d\'ack)', function() {
     expect(out.slug).toBe('s1');
   });
 });
+
+describe('parseCodeFenceInfo', function() {
+  it('lang seul, pas de filename', function() {
+    var r = parseCodeFenceInfo('python');
+    expect(r.lang).toBe('python');
+    expect(r.filename).toBe('');
+  });
+  it('lang + filename séparés par un espace', function() {
+    var r = parseCodeFenceInfo('python filename=foo.py');
+    expect(r.lang).toBe('python');
+    expect(r.filename).toBe('foo.py');
+  });
+  it('espaces multiples entre lang et filename', function() {
+    var r = parseCodeFenceInfo('js  filename=x.js');
+    expect(r.lang).toBe('js');
+    expect(r.filename).toBe('x.js');
+  });
+  it('filename entre guillemets, avec espace interne', function() {
+    var r = parseCodeFenceInfo('python filename="a b.py"');
+    expect(r.lang).toBe('python');
+    expect(r.filename).toBe('a b.py');
+  });
+  it('virgule terminale sur le lang (ancienne forme cassée) nettoyée', function() {
+    var r = parseCodeFenceInfo('python, filename=foo.py');
+    expect(r.lang).toBe('python');
+    expect(r.filename).toBe('foo.py');
+  });
+  it('info string vide', function() {
+    var r = parseCodeFenceInfo('');
+    expect(r.lang).toBe('');
+    expect(r.filename).toBe('');
+  });
+  it('info string absente (undefined)', function() {
+    var r = parseCodeFenceInfo(undefined);
+    expect(r.lang).toBe('');
+    expect(r.filename).toBe('');
+  });
+});
+
+describe('sanitizeDownloadName', function() {
+  it('nom simple avec extension inchangé', function() {
+    expect(sanitizeDownloadName('foo.py', 'python')).toBe('foo.py');
+  });
+  it('retire les séparateurs de chemin', function() {
+    expect(sanitizeDownloadName('a/b.py', 'python')).toBe('a_b.py');
+  });
+  it('neutralise une traversée de répertoire', function() {
+    expect(sanitizeDownloadName('../etc/passwd', 'text')).toBe('_etc_passwd.txt');
+  });
+  it('suffixe une extension dérivée du langage si absente', function() {
+    expect(sanitizeDownloadName('fibonacci', 'python')).toBe('fibonacci.py');
+  });
+  it('retire les caractères de contrôle', function() {
+    expect(sanitizeDownloadName('foo\x00bar.js', 'js')).toBe('foobar.js');
+  });
+  it('chaîne vide → chaîne vide (fallback à l\'appelant)', function() {
+    expect(sanitizeDownloadName('', 'python')).toBe('');
+  });
+  it('undefined → chaîne vide', function() {
+    expect(sanitizeDownloadName(undefined, 'python')).toBe('');
+  });
+});

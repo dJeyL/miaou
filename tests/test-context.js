@@ -188,7 +188,7 @@ describe('usageDerived (Bbis)', function() {
 describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function() {
   it('buildSystemMessage reste identique à la concaténation des parts (pas de régression du séparateur)', function() {
     var sp = systemMessageParts();
-    var expected = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.user]
+    var expected = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user]
       .filter(Boolean).join('\n\n---\n\n');
     expect(buildSystemMessage().content).toBe(expected);
   });
