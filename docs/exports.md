@@ -93,15 +93,36 @@ ultérieures du même lot).
   modes (c'est déjà du texte, pas un lien). `renderMd(text, opts)` transmet
   `opts` à `resolveConvRefs` en passe-plat.
 - **`buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag })`**
-  (ui.js, pure, testée QuickJS) : assemble le squelette `<!doctype html><html
-  data-theme="…"><head>…</head><body>` (topbar titre+date, `bodyHtml`, footer
-  « Généré par MIAOU », `scriptTag` avant `</body>`). **Zéro `<link>`**
-  (invariant D1). Le `<script>` n'est plus interdit (**D1 révisé**, cf.
-  ci-dessous) : il est composé par l'appelant dans `scriptTag` (vide → export
-  strictement statique, ou `<script>…</script>` → progressive enhancement).
-  Le `styleCss` (tokens + `EXPORT_CSS` + `PRISM_THEME_CSS`) est de même
-  composé par l'appelant — `buildExportHtml` reste pur en ne faisant qu'insérer
-  des strings déjà assemblées.
+  (ui.js, pure — mais **pas** couverte par le runner QuickJS, malgré une
+  mention historique contraire : `tests/runner.py` ne l'appelle pas ; référencer
+  `LOGO_SRC` — global de main.js — y est donc sans danger) : assemble le
+  squelette `<!doctype html><html data-theme="…"><head>…</head><body>` (topbar
+  titre+date, `bodyHtml`, footer « Généré par MIAOU », `scriptTag` avant
+  `</body>`). **Zéro `<link>`** (invariant D1). Le `<script>` n'est plus
+  interdit (**D1 révisé**, cf. ci-dessous) : il est composé par l'appelant dans
+  `scriptTag` (vide → export strictement statique, ou `<script>…</script>` →
+  progressive enhancement). Le `styleCss` (tokens + `EXPORT_CSS` +
+  `PRISM_THEME_CSS`) est de même composé par l'appelant — `buildExportHtml`
+  reste pur en ne faisant qu'insérer des strings déjà assemblées.
+- **Métadonnées de preview de lien (Open Graph / Twitter Card).** Le `<head>`
+  porte `og:title`/`twitter:title` (= titre de conv), `og:description`/
+  `twitter:description`/`<meta name="description">` (= `« {titre} — exporté
+  depuis MIAOU le {date} »`, `ogDesc`), `og:site_name=MIAOU`, `og:type=article`,
+  `og:image`/`twitter:image` (= `LOGO_SRC`, data-URI). But : quand l'export est
+  partagé dans Teams/Slack/Discord, ces balises pilotent la carte de preview —
+  sinon le crawler pêche au hasard un texte de la page (typiquement le footer
+  « Généré par MIAOU »). **Échappement `escHtml` systématique** sur chaque
+  `content=` (un titre avec `"` casserait sinon l'attribut). **Limites connues
+  et assumées** (ne pas re-investiguer sans URL réelle) : (1) `og:image` en
+  **data-URI est ignoré** par la plupart des crawlers (Teams inclus) — ils
+  exigent une URL http(s) fetchable ; sur une pièce jointe locale, pas de
+  vignette. La balise reste (coût nul, honorée par quelques lecteurs). (2) Le
+  **style de la carte** (fond/texte) est celui du client (Teams), pas pilotable
+  par la page. (3) Certains clients ne génèrent une preview **que pour des URL**,
+  pas pour un fichier `.html` joint — auquel cas même titre/description peuvent
+  ne pas s'afficher. La seule voie vers une preview riche complète (image
+  comprise) est d'héberger l'export derrière une URL publique, hors du modèle
+  « fichier autonome ».
 - **D1 révisé (progressive enhancement, réglage `exportInteractive`).** D1
   d'origine posait l'export comme strictement zéro-JS, abandonnant les boutons
   copier/télécharger. Révisé : le réglage `exportInteractive` (défaut `true`,

@@ -4399,11 +4399,27 @@ const EXPORT_SCRIPT = `
 // <script>EXPORT_SCRIPT</script> sinon — progressive enhancement, D1 révisé
 // brief G). Zéro <link> (Prism inliné, pas de CDN).
 function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag }) {
+  const ogDesc = title + ' — exporté depuis MIAOU le ' + dateDisplay;
   return '<!doctype html>\n' +
     '<html data-theme="' + escHtml(theme) + '">\n' +
     '<head>\n' +
     '<meta charset="utf-8">\n' +
     '<title>' + escHtml(title) + '</title>\n' +
+    // Métadonnées Open Graph / Twitter Card : pilotent la preview de lien dans
+    // Teams/Slack/Discord (sinon ils pêchent au hasard un texte de la page —
+    // typiquement le footer « Généré par MIAOU »). L'image (logo data-URI) est
+    // généralement ignorée par ces crawlers qui exigent une URL fetchable, mais
+    // coût nul. Titre + description restent, eux, honorés même sur pièce jointe.
+    '<meta name="description" content="' + escHtml(ogDesc) + '">\n' +
+    '<meta property="og:type" content="article">\n' +
+    '<meta property="og:site_name" content="MIAOU">\n' +
+    '<meta property="og:title" content="' + escHtml(title) + '">\n' +
+    '<meta property="og:description" content="' + escHtml(ogDesc) + '">\n' +
+    '<meta property="og:image" content="' + escHtml(LOGO_SRC) + '">\n' +
+    '<meta name="twitter:card" content="summary">\n' +
+    '<meta name="twitter:title" content="' + escHtml(title) + '">\n' +
+    '<meta name="twitter:description" content="' + escHtml(ogDesc) + '">\n' +
+    '<meta name="twitter:image" content="' + escHtml(LOGO_SRC) + '">\n' +
     '<style>' + styleCss + '</style>\n' +
     '</head>\n' +
     '<body>\n' +

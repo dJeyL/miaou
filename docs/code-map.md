@@ -728,10 +728,10 @@
   - `EXPORT_CSS` — L4249
   - `EXPORT_SCRIPT` — L4345
   - `buildExportHtml()` — L4401
-  - `renderExportBody()` — L4431
-  - `decorateExportPre()` — L4476
-  - `EXPORT_HTML_SIZE_WARN` — L4492
-  - `exportConvHtml()` — L4497
+  - `renderExportBody()` — L4447
+  - `decorateExportPre()` — L4492
+  - `EXPORT_HTML_SIZE_WARN` — L4508
+  - `exportConvHtml()` — L4513
 
 ## src/js/main.js
 
