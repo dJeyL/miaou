@@ -33,8 +33,38 @@ Configuration (`mermaidInit`) :
   aucun `<foreignObject>` dans le SVG produit. Prérequis de l'export PNG
   canvas (lot E3 : un `<foreignObject>` rend le canvas tainted/blanc sur
   Safari). Rendu des labels légèrement différent du défaut Mermaid : assumé.
+  **Corollaire** : les balises HTML de mise en forme (`<b>`, `<i>`, `<em>`…)
+  ne sont PAS interprétées, elles s'affichent littéralement dans les `<text>`.
+  Le modèle en glisse parfois malgré la doctrine → strippées avant render,
+  cf. `sanitizeMermaidSource` ci-dessous.
 - `theme` — dérivé du `data-theme` résolu via `mermaidThemeFor` (utils.js,
   pure) : `dark` → `'dark'`, tout le reste → `'default'` (clair).
+
+## Nettoyage de la source avant render (sanitizeMermaidSource, utils.js)
+
+`CODEBLOCK_DOCTRINE` (tools.js, `v3`) demande au modèle deux choses pour les
+diagrammes : **quoter** tout label contenant un caractère spécial
+(`A["France (2-0)"]` — une parenthèse nue dans un `[label]` casse le parse,
+Mermaid l'interprète comme un délimiteur de forme) et **ne pas** poser de
+balises HTML de mise en forme dans les labels. Le modèle obéit de façon
+inégale (la contrainte négative sur `<b>` en particulier).
+
+Défense en profondeur côté application, **indépendante de l'obéissance du
+modèle** : `sanitizeMermaidSource(src)` (pure, testée QuickJS) strippe les
+balises `b/i/em/strong/u/mark/small` de la chaîne **passée à `mermaid.render`**,
+en préservant `<br/>` (seule balise reconnue par Mermaid, saut de ligne). Elle
+n'altère **jamais** `code.textContent` (source de vérité pour toggle, thème,
+exports, lightbox). Appliquée aux **deux** points de rendu — `renderMermaidUnder`
+(écran) et `embedExportMermaid` (export standalone) — pour que l'export
+corresponde à l'écran. Comme `src` sert aussi de clef d'idempotence
+(`_mermaidSrc`/`_mermaidErrSrc`) et de garde anti-obsolescence, ces
+comparaisons portent sur la version **strippée** (re-strip de `code.textContent`
+au retour d'`await`), pas sur le brut.
+
+Le quoting des parenthèses, lui, n'est **pas** rattrapé côté app (il faudrait
+un parseur mermaid pour distinguer une parenthèse de label d'un délimiteur de
+forme) : seul le prompt le couvre, et un diagramme non quoté qui casse tombe
+proprement sur la notice `.mermaid-error`.
 
 ## Cycle de rendu (renderMermaidUnder, ui.js)
 
@@ -197,8 +227,8 @@ sur le clone). À la fermeture, le clone est purgé (pas de gros SVG résident).
 ## Tests
 
 - QuickJS (`tests/test-utils.js`) : `isMermaidLang`, `mermaidThemeFor`,
-  `isPreviewableLang`, `buildPreviewSrcdoc`, `diagramImageName` — les seuls
-  helpers purs. Le rendu, le toggle, le thème, l'iframe, la lightbox et le
+  `sanitizeMermaidSource`, `isPreviewableLang`, `buildPreviewSrcdoc`,
+  `diagramImageName` — les seuls helpers purs. Le rendu, le toggle, le thème, l'iframe, la lightbox et le
   canvas PNG sont du **territoire manuel** : `docs/manual-tests.md` tests 71
   à 84.
 - Fixtures : `tests/dev-seed.html` seed-23 (bloc mermaid valide avec

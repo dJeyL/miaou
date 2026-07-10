@@ -32,57 +32,58 @@
 - **Rendu Mermaid (lot E) : helpers purs** (L223)
   - `isMermaidLang()` — L227
   - `mermaidThemeFor()` — L235
-  - `diagramImageName()` — L245
-- **Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs** (L251)
-  - `isPreviewableLang()` — L255
-  - `buildPreviewSrcdoc()` — L265
-  - `b64ToBytes()` — L278
-- **Agrégation MCP : nommage, namespaces, filtres (fonctions pures)** (L286)
-  - `parseToolName()` — L291
-  - `groupByNamespace()` — L303
-  - `guessMcpTransport()` — L321
-  - `validateMcpServerName()` — L331
-  - `filterMcpTools()` — L345
-  - `parseToolFilterList()` — L368
-- **Horodatages des messages** (L375)
-  - `SHOW_YEAR_AFTER_DAYS` — L377
-  - `FR_DAYS_ABBR` — L379
-  - `FR_DAYS_FULL` — L380
-  - `FR_MONTHS_FULL` — L381
-  - `_tsHHMM()` — L384
-  - `_startOfDay()` — L390
-  - `formatMessageTime()` — L401
-  - `formatDateRelative()` — L425
-  - `calendarBucket()` — L446
-  - `formatFullDateFr()` — L462
-  - `exportDateStamp()` — L471
-  - `exportDateTimeStamp()` — L481
-  - `exportDateDisplay()` — L490
-- **Reconstruction du payload API depuis currentThread** (L497)
-  - `stampTs()` — L503
-- **Export Markdown : traces d'appels d'outils** (L509)
-  - `EXPORT_ARGS_MAX` — L512
-  - `EXPORT_RESULT_MAX` — L513
-  - `EXPORT_RESNAME_MAX` — L514
-  - `_truncMd()` — L516
-  - `_formatToolCallMd()` — L528
-  - `formatToolAcksMd()` — L548
-  - `_formatToolCallHtml()` — L575
-  - `EXPORT_ACK_ICON` — L601
-  - `_formatToolCallPreviewHtml()` — L607
-  - `formatToolAcksHtml()` — L619
-  - `_hashId9()` — L640
-  - `messageTextForSummary()` — L654
-  - `expandThread()` — L668
-- **Parsing défensif du JSON de résumé** (L738)
-  - `parseSummaryJSON()` — L741
-- **Context inspector (brief B)** (L762)
-  - `estimateTokens()` — L765
-  - `IMAGE_TOKENS_ESTIMATE` — L773
-  - `CONTEXT_WINDOW_WARN_RATIO` — L777
-  - `buildContextManifest()` — L793
-  - `scaleManifestToUsage()` — L883
-  - `usageDerived()` — L924
+  - `sanitizeMermaidSource()` — L248
+  - `diagramImageName()` — L259
+- **Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs** (L265)
+  - `isPreviewableLang()` — L269
+  - `buildPreviewSrcdoc()` — L279
+  - `b64ToBytes()` — L292
+- **Agrégation MCP : nommage, namespaces, filtres (fonctions pures)** (L300)
+  - `parseToolName()` — L305
+  - `groupByNamespace()` — L317
+  - `guessMcpTransport()` — L335
+  - `validateMcpServerName()` — L345
+  - `filterMcpTools()` — L359
+  - `parseToolFilterList()` — L382
+- **Horodatages des messages** (L389)
+  - `SHOW_YEAR_AFTER_DAYS` — L391
+  - `FR_DAYS_ABBR` — L393
+  - `FR_DAYS_FULL` — L394
+  - `FR_MONTHS_FULL` — L395
+  - `_tsHHMM()` — L398
+  - `_startOfDay()` — L404
+  - `formatMessageTime()` — L415
+  - `formatDateRelative()` — L439
+  - `calendarBucket()` — L460
+  - `formatFullDateFr()` — L476
+  - `exportDateStamp()` — L485
+  - `exportDateTimeStamp()` — L495
+  - `exportDateDisplay()` — L504
+- **Reconstruction du payload API depuis currentThread** (L511)
+  - `stampTs()` — L517
+- **Export Markdown : traces d'appels d'outils** (L523)
+  - `EXPORT_ARGS_MAX` — L526
+  - `EXPORT_RESULT_MAX` — L527
+  - `EXPORT_RESNAME_MAX` — L528
+  - `_truncMd()` — L530
+  - `_formatToolCallMd()` — L542
+  - `formatToolAcksMd()` — L562
+  - `_formatToolCallHtml()` — L589
+  - `EXPORT_ACK_ICON` — L615
+  - `_formatToolCallPreviewHtml()` — L621
+  - `formatToolAcksHtml()` — L633
+  - `_hashId9()` — L654
+  - `messageTextForSummary()` — L668
+  - `expandThread()` — L682
+- **Parsing défensif du JSON de résumé** (L752)
+  - `parseSummaryJSON()` — L755
+- **Context inspector (brief B)** (L776)
+  - `estimateTokens()` — L779
+  - `IMAGE_TOKENS_ESTIMATE` — L787
+  - `CONTEXT_WINDOW_WARN_RATIO` — L791
+  - `buildContextManifest()` — L807
+  - `scaleManifestToUsage()` — L897
+  - `usageDerived()` — L938
 
 ## src/js/storage.js
 
@@ -294,74 +295,74 @@
   - `DOCS_DOCTRINE` — L164
   - `docsDoctrinePrompt()` — L173
   - `ROOT_SYSTEM_PROMPT` — L180
-  - `CODEBLOCK_DOCTRINE` — L191
-  - `SKILL_DOCTRINE_BASE` — L212
-  - `SKILL_DOCTRINE_CONFIRM_ON` — L221
-  - `SKILL_DOCTRINE_CONFIRM_OFF` — L231
-  - `SKILL_DOCTRINE_TAIL` — L235
-  - `INTENT_DOCTRINE` — L241
-  - `_pendingToolAcks` — L252
-  - `getPendingToolAcks()` — L253
-  - `clearPendingToolAcks()` — L254
-  - `_pendingImageInjections` — L265
-  - `getPendingImageInjections()` — L266
-  - `clearPendingImageInjections()` — L267
-  - `updateLastPendingToolAck()` — L275
-  - `_pendingToolBlocks` — L287
-  - `getPendingToolBlocks()` — L288
-  - `clearPendingToolBlocks()` — L289
-  - `retainPendingToolBlocks()` — L292
-  - `validateFilesPromoteArgs()` — L299
-- **Registre MCP interne** (L306)
-  - `TOOLS` — L309
-- **ask_confirmation : primitif halting hors registre MCP** (L723)
-  - `ASK_CONFIRMATION_DEF` — L730
-- **Agrégation distante : cache de session + client MCP** (L752)
-  - `MCP_PROTOCOL_VERSION` — L757
-  - `REF_UNKNOWN_ERROR_CODE` — L763
-  - `_remoteTools` — L765
-  - `_remoteStatus` — L766
-  - `getMcpStatus()` — L768
-  - `remoteToolDefs()` — L771
-  - `exposedTools()` — L783
-- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L790)
-  - `_mcpRpcId` — L791
-  - `mcpRpcAttempt()` — L798
-  - `mcpReinitialize()` — L847
-  - `mcpRpc()` — L861
-  - `readSseJsonRpc()` — L878
-  - `connectMcpServer()` — L908
-  - `disconnectMcpServer()` — L938
-  - `callRemoteTool()` — L955
-- **Dispatcher MCP** (L986)
-  - `callInternalTool()` — L988
-  - `callTool()` — L1023
-- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1059)
-  - `_attachmentPushState` — L1065
-  - `_pushStateKey()` — L1066
-  - `isAttachmentPushed()` — L1067
-  - `markAttachmentPushed()` — L1068
-  - `clearAttachmentPushState()` — L1072
-  - `_filePushState` — L1083
-  - `_filePushStateKey()` — L1084
-  - `isFilePushed()` — L1085
-  - `markFilePushed()` — L1086
-  - `toolDeclaresAttachmentInflation()` — L1094
-  - `ATTACHMENT_REF_RE` — L1104
-  - `FILE_REF_RE` — L1109
-  - `anyToolDeclaresAttachmentInflation()` — L1117
-  - `_declaresContentReadSignature()` — L1142
-  - `findDocsInflationTool()` — L1155
-  - `extractBinaryFileTextForDescription()` — L1180
-  - `_resolveInflationRef()` — L1209
-  - `callDocsInflatedRemoteTool()` — L1255
-  - `_isRefUnknownError()` — L1286
-  - `flattenToolResult()` — L1297
-  - `toolIsHalting()` — L1310
-  - `toolDefinitions()` — L1320
-  - `toolsSystemPrompt()` — L1339
-  - `intentDoctrinePrompt()` — L1347
-  - `skillDoctrinePrompt()` — L1361
+  - `CODEBLOCK_DOCTRINE` — L193
+  - `SKILL_DOCTRINE_BASE` — L223
+  - `SKILL_DOCTRINE_CONFIRM_ON` — L232
+  - `SKILL_DOCTRINE_CONFIRM_OFF` — L242
+  - `SKILL_DOCTRINE_TAIL` — L246
+  - `INTENT_DOCTRINE` — L252
+  - `_pendingToolAcks` — L263
+  - `getPendingToolAcks()` — L264
+  - `clearPendingToolAcks()` — L265
+  - `_pendingImageInjections` — L276
+  - `getPendingImageInjections()` — L277
+  - `clearPendingImageInjections()` — L278
+  - `updateLastPendingToolAck()` — L286
+  - `_pendingToolBlocks` — L298
+  - `getPendingToolBlocks()` — L299
+  - `clearPendingToolBlocks()` — L300
+  - `retainPendingToolBlocks()` — L303
+  - `validateFilesPromoteArgs()` — L310
+- **Registre MCP interne** (L317)
+  - `TOOLS` — L320
+- **ask_confirmation : primitif halting hors registre MCP** (L734)
+  - `ASK_CONFIRMATION_DEF` — L741
+- **Agrégation distante : cache de session + client MCP** (L763)
+  - `MCP_PROTOCOL_VERSION` — L768
+  - `REF_UNKNOWN_ERROR_CODE` — L774
+  - `_remoteTools` — L776
+  - `_remoteStatus` — L777
+  - `getMcpStatus()` — L779
+  - `remoteToolDefs()` — L782
+  - `exposedTools()` — L794
+- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L801)
+  - `_mcpRpcId` — L802
+  - `mcpRpcAttempt()` — L809
+  - `mcpReinitialize()` — L858
+  - `mcpRpc()` — L872
+  - `readSseJsonRpc()` — L889
+  - `connectMcpServer()` — L919
+  - `disconnectMcpServer()` — L949
+  - `callRemoteTool()` — L966
+- **Dispatcher MCP** (L997)
+  - `callInternalTool()` — L999
+  - `callTool()` — L1034
+- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1070)
+  - `_attachmentPushState` — L1076
+  - `_pushStateKey()` — L1077
+  - `isAttachmentPushed()` — L1078
+  - `markAttachmentPushed()` — L1079
+  - `clearAttachmentPushState()` — L1083
+  - `_filePushState` — L1094
+  - `_filePushStateKey()` — L1095
+  - `isFilePushed()` — L1096
+  - `markFilePushed()` — L1097
+  - `toolDeclaresAttachmentInflation()` — L1105
+  - `ATTACHMENT_REF_RE` — L1115
+  - `FILE_REF_RE` — L1120
+  - `anyToolDeclaresAttachmentInflation()` — L1128
+  - `_declaresContentReadSignature()` — L1153
+  - `findDocsInflationTool()` — L1166
+  - `extractBinaryFileTextForDescription()` — L1191
+  - `_resolveInflationRef()` — L1220
+  - `callDocsInflatedRemoteTool()` — L1266
+  - `_isRefUnknownError()` — L1297
+  - `flattenToolResult()` — L1308
+  - `toolIsHalting()` — L1321
+  - `toolDefinitions()` — L1331
+  - `toolsSystemPrompt()` — L1350
+  - `intentDoctrinePrompt()` — L1358
+  - `skillDoctrinePrompt()` — L1372
 
 ## src/js/api.js
 

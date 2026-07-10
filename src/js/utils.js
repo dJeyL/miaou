@@ -236,6 +236,20 @@ function mermaidThemeFor(resolved) {
   return resolved === 'dark' ? 'dark' : 'default';
 }
 
+// Nettoie la source mermaid AVANT parse/render : retire les balises HTML de mise
+// en forme inline (b/i/em/strong/u/mark/small) que le modèle glisse parfois dans
+// les labels malgré la doctrine (CODEBLOCK_DOCTRINE). En htmlLabels:false, ces
+// balises ne sont PAS interprétées : elles s'affichent littéralement (« <b>x</b> »)
+// dans les <text> SVG. On les strippe pour ne garder que le texte ; <br/> est
+// PRÉSERVÉ (seule balise reconnue par Mermaid comme saut de ligne). Défense en
+// profondeur côté application, indépendante de l'obéissance du modèle.
+// N'altère JAMAIS code.textContent (source de vérité) : appliquée uniquement à la
+// chaîne passée à mermaid.render. Pure, testable en QuickJS.
+function sanitizeMermaidSource(src) {
+  return String(src == null ? '' : src)
+    .replace(/<\/?(?:b|i|em|strong|u|mark|small)\s*>/gi, '');
+}
+
 // Nom de fichier pour l'export image d'un diagramme Mermaid (lot E3) : le
 // data-filename du fence, assaini par sanitizeDownloadName, extension
 // REMPLACÉE par celle de l'image demandée (un data-filename de bloc mermaid

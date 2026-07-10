@@ -997,6 +997,31 @@ describe('mermaidThemeFor', function() {
   });
 });
 
+describe('sanitizeMermaidSource', function() {
+  it('strippe les balises de mise en forme, garde le texte', function() {
+    expect(sanitizeMermaidSource('A["France <b>(2-0)</b>"]'))
+      .toBe('A["France (2-0)"]');
+  });
+  it('couvre b/i/em/strong/u/mark/small, insensible à la casse', function() {
+    expect(sanitizeMermaidSource('<i>a</i><EM>b</EM><Strong>c</Strong><u>d</u><mark>e</mark><small>f</small>'))
+      .toBe('abcdef');
+  });
+  it('préserve <br/> (saut de ligne reconnu par Mermaid)', function() {
+    expect(sanitizeMermaidSource('A["x<br/><b>y</b>"]'))
+      .toBe('A["x<br/>y"]');
+  });
+  it('tolère un espace avant le chevron fermant', function() {
+    expect(sanitizeMermaidSource('<b >x</b >')).toBe('x');
+  });
+  it('ne touche pas une source sans balise', function() {
+    expect(sanitizeMermaidSource('graph TD\n A-->B')).toBe('graph TD\n A-->B');
+  });
+  it('null / undefined → chaîne vide', function() {
+    expect(sanitizeMermaidSource(null)).toBe('');
+    expect(sanitizeMermaidSource(undefined)).toBe('');
+  });
+});
+
 describe('isPreviewableLang', function() {
   it('html et svg → true', function() {
     expect(isPreviewableLang('html')).toBeTruthy();

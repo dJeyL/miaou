@@ -187,7 +187,9 @@ const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE
 // v2 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
 // même statut que le v1 de ROOT_SYSTEM_PROMPT. (v2, lot E3 : doctrine étendue
 // aux blocs mermaid — le filename= nomme les exports d'image SVG/PNG, extension
-// ajustée côté application par diagramImageName.)
+// ajustée côté application par diagramImageName. v3 : contraintes de syntaxe des
+// labels mermaid — parenthèses dans un [label] font échouer le parse ; balises
+// HTML (<b>/<i>) inertes car htmlLabels:false, cf. docs/rendering.md.)
 const CODEBLOCK_DOCTRINE =
   "Quand tu génères un bloc de code destiné à être enregistré comme fichier (script, " +
   "config, module…), fournis un nom de fichier sur la ligne d'ouverture de la fence, " +
@@ -196,7 +198,16 @@ const CODEBLOCK_DOCTRINE =
   "L'application proposera ce nom au téléchargement. Fais-le aussi pour les blocs " +
   "mermaid (ex. ```mermaid filename=flux-auth.mmd) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
-  "illustratif court sans vocation de fichier, tu peux l'omettre.";
+  "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
+  "Pour les diagrammes mermaid, respecte ces contraintes de syntaxe sous peine de " +
+  "diagramme non rendu :\n" +
+  "- Si un texte de nœud contient une parenthèse, une accolade, un crochet, un guillemet " +
+  "ou tout autre caractère spécial, entoure TOUT le texte de guillemets doubles. " +
+  "Exemple : A[\"France vs Maroc (2-0)\"] et non A[France vs Maroc (2-0)] — une " +
+  "parenthèse nue dans un [label] casse le parse.\n" +
+  "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
+  "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
+  "reconnu, pour un saut de ligne.";
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont

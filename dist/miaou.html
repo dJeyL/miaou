@@ -2899,7 +2899,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-10 17:21 UTC */
+/* miaou — built: 2026-07-10 18:14 UTC */
 
 /* ── utils.js ── */
 
@@ -3073,6 +3073,11 @@ function isMermaidLang(lang) {
 
 function mermaidThemeFor(resolved) {
   return resolved === 'dark' ? 'dark' : 'default';
+}
+
+function sanitizeMermaidSource(src) {
+  return String(src == null ? '' : src)
+    .replace(/<\/?(?:b|i|em|strong|u|mark|small)\s*>/gi, '');
 }
 
 function diagramImageName(rawName, ext) {
@@ -3594,7 +3599,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783704087}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783707274}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -5023,7 +5028,16 @@ const CODEBLOCK_DOCTRINE =
   "L'application proposera ce nom au téléchargement. Fais-le aussi pour les blocs " +
   "mermaid (ex. ```mermaid filename=flux-auth.mmd) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
-  "illustratif court sans vocation de fichier, tu peux l'omettre.";
+  "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
+  "Pour les diagrammes mermaid, respecte ces contraintes de syntaxe sous peine de " +
+  "diagramme non rendu :\n" +
+  "- Si un texte de nœud contient une parenthèse, une accolade, un crochet, un guillemet " +
+  "ou tout autre caractère spécial, entoure TOUT le texte de guillemets doubles. " +
+  "Exemple : A[\"France vs Maroc (2-0)\"] et non A[France vs Maroc (2-0)] — une " +
+  "parenthèse nue dans un [label] casse le parse.\n" +
+  "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
+  "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
+  "reconnu, pour un saut de ligne.";
 
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
@@ -6483,7 +6497,7 @@ async function renderMermaidUnder(scope) {
   for (const code of codes) {
     const pre = code.closest('pre');
     if (!pre) continue;
-    const src = code.textContent;
+    const src = sanitizeMermaidSource(code.textContent);   
     const existing = pre.querySelector('.mermaid-view');
     if (existing && existing._mermaidSrc === src) continue;   
     if (pre._mermaidErrSrc === src) continue;                 
@@ -6492,7 +6506,7 @@ async function renderMermaidUnder(scope) {
     try {
       const out = await mm.render(uid, src);
       
-      if (!pre.isConnected || code.textContent !== src) continue;
+      if (!pre.isConnected || sanitizeMermaidSource(code.textContent) !== src) continue;
       const stale = pre.querySelector('.mermaid-view');
       if (stale) stale.remove();
       const oldNote = pre.querySelector('.mermaid-error');
@@ -6513,7 +6527,7 @@ async function renderMermaidUnder(scope) {
         const orphan = document.getElementById(id);
         if (orphan) orphan.remove();
       });
-      if (!pre.isConnected || code.textContent !== src) continue;
+      if (!pre.isConnected || sanitizeMermaidSource(code.textContent) !== src) continue;
       pre._mermaidErrSrc = src;
       pre.classList.remove('mermaid-rendered');
       if (!pre.querySelector('.mermaid-error')) {
@@ -10504,7 +10518,7 @@ async function embedExportMermaid(container) {
     const uid = 'xmmd' + (++_mermaidUid) + Math.random().toString(36).slice(2, 8);
     let svg;
     try {
-      svg = (await mm.render(uid, code.textContent)).svg;
+      svg = (await mm.render(uid, sanitizeMermaidSource(code.textContent))).svg;   
     } catch (e) {
       
       ['d' + uid, uid].forEach(id => {

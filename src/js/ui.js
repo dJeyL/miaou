@@ -205,7 +205,7 @@ async function renderMermaidUnder(scope) {
   for (const code of codes) {
     const pre = code.closest('pre');
     if (!pre) continue;
-    const src = code.textContent;
+    const src = sanitizeMermaidSource(code.textContent);   // strippe <b>/<i>… inertes ; textContent intact
     const existing = pre.querySelector('.mermaid-view');
     if (existing && existing._mermaidSrc === src) continue;   // déjà rendu pour cette source
     if (pre._mermaidErrSrc === src) continue;                 // déjà en échec pour cette source
@@ -217,7 +217,7 @@ async function renderMermaidUnder(scope) {
       // Garde anti-obsolescence : le DOM a pu changer pendant l'await
       // (re-render du fil, édition). isConnected est vrai au retour de
       // microtâche pour un wrap construit par buildMsg puis appendé.
-      if (!pre.isConnected || code.textContent !== src) continue;
+      if (!pre.isConnected || sanitizeMermaidSource(code.textContent) !== src) continue;
       const stale = pre.querySelector('.mermaid-view');
       if (stale) stale.remove();
       const oldNote = pre.querySelector('.mermaid-error');
@@ -238,7 +238,7 @@ async function renderMermaidUnder(scope) {
         const orphan = document.getElementById(id);
         if (orphan) orphan.remove();
       });
-      if (!pre.isConnected || code.textContent !== src) continue;
+      if (!pre.isConnected || sanitizeMermaidSource(code.textContent) !== src) continue;
       pre._mermaidErrSrc = src;
       pre.classList.remove('mermaid-rendered');
       if (!pre.querySelector('.mermaid-error')) {
@@ -4930,7 +4930,7 @@ async function embedExportMermaid(container) {
     const uid = 'xmmd' + (++_mermaidUid) + Math.random().toString(36).slice(2, 8);
     let svg;
     try {
-      svg = (await mm.render(uid, code.textContent)).svg;
+      svg = (await mm.render(uid, sanitizeMermaidSource(code.textContent))).svg;   // même strip que l'écran (renderMermaidUnder)
     } catch (e) {
       // Même hygiène que renderMermaidUnder : Mermaid v11 peut laisser un
       // nœud d'erreur orphelin dans document.body.
