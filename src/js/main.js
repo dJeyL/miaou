@@ -1390,6 +1390,14 @@ async function dispatchSend(matches, continuation) {
   // AUTHENTIQUE, pas une ré-injection d'image (suspect S1, brief A2).
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   const dynParts = contextBlockParts(matches);
+  // Photo du thread AVANT injection du préfixe dynamique, pour le manifeste de
+  // contexte (plus bas) : buildContextManifest compte déjà `dynParts` en entrées
+  // séparées — lui passer le thread préfixé recompterait les blocs dynamiques
+  // une deuxième fois dans l'agrégat thread (bug payé : pilule gonflée de
+  // ~600 tokens entre l'envoi et le calibrage sur l'usage réel). Les deux
+  // autres call-sites (computeContextManifestNow, recomputeLastContextManifest)
+  // passent naturellement un thread sans préfixe : même convention ici.
+  const manifestThreadMsgs = threadMsgs.slice();
   if (lastUserIdx >= 0) {
     const skillsCtx = dynParts.skillsContext;
     const ctx = buildContextBlock(matches);
@@ -1415,8 +1423,9 @@ async function dispatchSend(matches, continuation) {
 
   // Manifeste du DERNIER ENVOI RÉEL (brief B, B4) : dérivé des mêmes sous-parts
   // que le payload qui part sur le fil, jamais re-parsé depuis les strings déjà
-  // concaténées (audit §6). threadMsgs a déjà reçu le préfixe dynamique sur le
-  // dernier message user (ci-dessus) : le manifeste le reflète tel qu'envoyé.
+  // concaténées (audit §6). Thread SANS le préfixe dynamique (photo
+  // manifestThreadMsgs prise avant l'injection ci-dessus) : les blocs
+  // dynamiques sont déjà ventilés en entrées séparées via `dynParts`.
   // Recalculé à nouveau en fin de tour (recomputeLastContextManifest) une fois
   // les tool-acks/la réponse assistant ajoutés ; ici il doit déjà être posé
   // AVANT l'appel réseau pour que la pilule (syncContextCounter ci-dessous) et
@@ -1424,7 +1433,7 @@ async function dispatchSend(matches, continuation) {
   // sans ce syncContextCounter(), la pilule restait au total du tour précédent
   // tant que le tour en cours n'était pas terminé, alors que le drawer (ouvert
   // au clic, recalculé à l'instant) affichait déjà le nouveau total.
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null);
   syncContextCounter();
 
   // Descripteurs byte-stables des images du TOUR COURANT (D5, brief A lot 2) :

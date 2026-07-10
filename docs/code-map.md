@@ -288,81 +288,81 @@
   - `summaryLight()` — L9
   - `BINARY_DOCTRINE` — L17
   - `ATTACHMENT_DOCTRINE` — L38
-  - `WEB_DOCTRINE` — L56
-  - `CONV_REF_DOCTRINE` — L98
-  - `MEMORY_DOCTRINE` — L107
-  - `FILES_DOCTRINE` — L138
-  - `DOCS_DOCTRINE` — L164
-  - `docsDoctrinePrompt()` — L173
-  - `ROOT_SYSTEM_PROMPT` — L180
-  - `CODEBLOCK_DOCTRINE` — L193
-  - `SKILL_DOCTRINE_BASE` — L223
-  - `SKILL_DOCTRINE_CONFIRM_ON` — L232
-  - `SKILL_DOCTRINE_CONFIRM_OFF` — L242
-  - `SKILL_DOCTRINE_TAIL` — L246
-  - `INTENT_DOCTRINE` — L252
-  - `_pendingToolAcks` — L263
-  - `getPendingToolAcks()` — L264
-  - `clearPendingToolAcks()` — L265
-  - `_pendingImageInjections` — L276
-  - `getPendingImageInjections()` — L277
-  - `clearPendingImageInjections()` — L278
-  - `updateLastPendingToolAck()` — L286
-  - `_pendingToolBlocks` — L298
-  - `getPendingToolBlocks()` — L299
-  - `clearPendingToolBlocks()` — L300
-  - `retainPendingToolBlocks()` — L303
-  - `validateFilesPromoteArgs()` — L310
-- **Registre MCP interne** (L317)
-  - `TOOLS` — L320
-- **ask_confirmation : primitif halting hors registre MCP** (L734)
-  - `ASK_CONFIRMATION_DEF` — L741
-- **Agrégation distante : cache de session + client MCP** (L763)
-  - `MCP_PROTOCOL_VERSION` — L768
-  - `REF_UNKNOWN_ERROR_CODE` — L774
-  - `_remoteTools` — L776
-  - `_remoteStatus` — L777
-  - `getMcpStatus()` — L779
-  - `remoteToolDefs()` — L782
-  - `exposedTools()` — L794
-- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L801)
-  - `_mcpRpcId` — L802
-  - `mcpRpcAttempt()` — L809
-  - `mcpReinitialize()` — L858
-  - `mcpRpc()` — L872
-  - `readSseJsonRpc()` — L889
-  - `connectMcpServer()` — L919
-  - `disconnectMcpServer()` — L949
-  - `callRemoteTool()` — L966
-- **Dispatcher MCP** (L997)
-  - `callInternalTool()` — L999
-  - `callTool()` — L1034
-- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1070)
-  - `_attachmentPushState` — L1076
-  - `_pushStateKey()` — L1077
-  - `isAttachmentPushed()` — L1078
-  - `markAttachmentPushed()` — L1079
-  - `clearAttachmentPushState()` — L1083
-  - `_filePushState` — L1094
-  - `_filePushStateKey()` — L1095
-  - `isFilePushed()` — L1096
-  - `markFilePushed()` — L1097
-  - `toolDeclaresAttachmentInflation()` — L1105
-  - `ATTACHMENT_REF_RE` — L1115
-  - `FILE_REF_RE` — L1120
-  - `anyToolDeclaresAttachmentInflation()` — L1128
-  - `_declaresContentReadSignature()` — L1153
-  - `findDocsInflationTool()` — L1166
-  - `extractBinaryFileTextForDescription()` — L1191
-  - `_resolveInflationRef()` — L1220
-  - `callDocsInflatedRemoteTool()` — L1266
-  - `_isRefUnknownError()` — L1297
-  - `flattenToolResult()` — L1308
-  - `toolIsHalting()` — L1321
-  - `toolDefinitions()` — L1331
-  - `toolsSystemPrompt()` — L1350
-  - `intentDoctrinePrompt()` — L1358
-  - `skillDoctrinePrompt()` — L1372
+  - `WEB_DOCTRINE` — L63
+  - `CONV_REF_DOCTRINE` — L94
+  - `MEMORY_DOCTRINE` — L103
+  - `FILES_DOCTRINE` — L134
+  - `DOCS_DOCTRINE` — L160
+  - `docsDoctrinePrompt()` — L169
+  - `ROOT_SYSTEM_PROMPT` — L176
+  - `CODEBLOCK_DOCTRINE` — L189
+  - `SKILL_DOCTRINE_BASE` — L219
+  - `SKILL_DOCTRINE_CONFIRM_ON` — L228
+  - `SKILL_DOCTRINE_CONFIRM_OFF` — L238
+  - `SKILL_DOCTRINE_TAIL` — L242
+  - `INTENT_DOCTRINE` — L248
+  - `_pendingToolAcks` — L259
+  - `getPendingToolAcks()` — L260
+  - `clearPendingToolAcks()` — L261
+  - `_pendingImageInjections` — L272
+  - `getPendingImageInjections()` — L273
+  - `clearPendingImageInjections()` — L274
+  - `updateLastPendingToolAck()` — L282
+  - `_pendingToolBlocks` — L294
+  - `getPendingToolBlocks()` — L295
+  - `clearPendingToolBlocks()` — L296
+  - `retainPendingToolBlocks()` — L299
+  - `validateFilesPromoteArgs()` — L306
+- **Registre MCP interne** (L313)
+  - `TOOLS` — L316
+- **ask_confirmation : primitif halting hors registre MCP** (L736)
+  - `ASK_CONFIRMATION_DEF` — L743
+- **Agrégation distante : cache de session + client MCP** (L768)
+  - `MCP_PROTOCOL_VERSION` — L773
+  - `REF_UNKNOWN_ERROR_CODE` — L779
+  - `_remoteTools` — L781
+  - `_remoteStatus` — L782
+  - `getMcpStatus()` — L784
+  - `remoteToolDefs()` — L787
+  - `exposedTools()` — L799
+- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L806)
+  - `_mcpRpcId` — L807
+  - `mcpRpcAttempt()` — L814
+  - `mcpReinitialize()` — L863
+  - `mcpRpc()` — L877
+  - `readSseJsonRpc()` — L894
+  - `connectMcpServer()` — L924
+  - `disconnectMcpServer()` — L954
+  - `callRemoteTool()` — L971
+- **Dispatcher MCP** (L1002)
+  - `callInternalTool()` — L1004
+  - `callTool()` — L1039
+- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1075)
+  - `_attachmentPushState` — L1081
+  - `_pushStateKey()` — L1082
+  - `isAttachmentPushed()` — L1083
+  - `markAttachmentPushed()` — L1084
+  - `clearAttachmentPushState()` — L1088
+  - `_filePushState` — L1099
+  - `_filePushStateKey()` — L1100
+  - `isFilePushed()` — L1101
+  - `markFilePushed()` — L1102
+  - `toolDeclaresAttachmentInflation()` — L1110
+  - `ATTACHMENT_REF_RE` — L1120
+  - `FILE_REF_RE` — L1125
+  - `anyToolDeclaresAttachmentInflation()` — L1133
+  - `_declaresContentReadSignature()` — L1158
+  - `findDocsInflationTool()` — L1171
+  - `extractBinaryFileTextForDescription()` — L1196
+  - `_resolveInflationRef()` — L1225
+  - `callDocsInflatedRemoteTool()` — L1271
+  - `_isRefUnknownError()` — L1302
+  - `flattenToolResult()` — L1313
+  - `toolIsHalting()` — L1326
+  - `toolDefinitions()` — L1336
+  - `toolsSystemPrompt()` — L1355
+  - `intentDoctrinePrompt()` — L1363
+  - `skillDoctrinePrompt()` — L1377
 
 ## src/js/api.js
 
@@ -876,26 +876,26 @@
   - `continueTruncated()` — L1323
   - `rewriteAttachedUserMessage()` — L1351
   - `dispatchSend()` — L1358
-- **Mécanique réutilisable : tâche LLM « en arrière-plan »** (L1719)
-  - `runBackgroundTask()` — L1723
-- **Titrage automatique (après la première réponse)** (L1735)
-  - `applyGeneratedTitle()` — L1736
-  - `maybeTitle()` — L1743
-  - `regenerateTitle()` — L1759
-  - `setTitleEditable()` — L1772
-- **Résumé / mots-clés à la sortie d'une conversation** (L1778)
-  - `summarizeIfNeeded()` — L1779
-- **Description de fichier de bibliothèque d'espace (D7, lot Cbis)** (L1799)
-  - `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` — L1806
-  - `describeFileIfNeeded()` — L1820
-- **Nettoyage des résumés orphelins (démarrage)** (L1852)
-  - `pruneOrphanSummariesOnInit()` — L1857
-- **Backfill modèle : attribue le modèle courant aux réponses sans modèle** (L1862)
-  - `backfillMessageModels()` — L1863
-- **Backfill au démarrage (séquentiel, indicateur continu)** (L1880)
-  - `runBackfill()` — L1881
-- **Init** (L1908)
-  - `init()` — L1909
+- **Mécanique réutilisable : tâche LLM « en arrière-plan »** (L1728)
+  - `runBackgroundTask()` — L1732
+- **Titrage automatique (après la première réponse)** (L1744)
+  - `applyGeneratedTitle()` — L1745
+  - `maybeTitle()` — L1752
+  - `regenerateTitle()` — L1768
+  - `setTitleEditable()` — L1781
+- **Résumé / mots-clés à la sortie d'une conversation** (L1787)
+  - `summarizeIfNeeded()` — L1788
+- **Description de fichier de bibliothèque d'espace (D7, lot Cbis)** (L1808)
+  - `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` — L1815
+  - `describeFileIfNeeded()` — L1829
+- **Nettoyage des résumés orphelins (démarrage)** (L1861)
+  - `pruneOrphanSummariesOnInit()` — L1866
+- **Backfill modèle : attribue le modèle courant aux réponses sans modèle** (L1871)
+  - `backfillMessageModels()` — L1872
+- **Backfill au démarrage (séquentiel, indicateur continu)** (L1889)
+  - `runBackfill()` — L1890
+- **Init** (L1917)
+  - `init()` — L1918
 
 ## src/css/base.css
 

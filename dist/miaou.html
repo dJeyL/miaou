@@ -2899,7 +2899,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-10 18:14 UTC */
+/* miaou — built: 2026-07-10 21:43 UTC */
 
 /* ── utils.js ── */
 
@@ -3599,7 +3599,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783707274}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783719818}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4923,29 +4923,18 @@ const WEB_DOCTRINE =
   "récupérer des ressources sur le Web :\n" +
   "- utilise-les si c'est pertinent, plutôt que de fabriquer des informations " +
   "récentes\n" +
-  "- lorsque l'utilisateur te demande d'analyser, de comparer ou de synthétiser " +
-  "des informations provenant de sources web (via des résultats de recherche), ne " +
-  "te base pas uniquement sur les extraits (snippets) fournis par l'outil de " +
-  "recherche ; tu as l'obligation d'utiliser systématiquement l'outil de " +
-  "récupération de contenu (fetch_url) pour lire le corps complet des pages afin " +
-  "de garantir une analyse exhaustive et précise\n" +
-  "- si des outils permettent de récupérer une ressource binaire (image, base64...), " +
-  "tu peux les appeler, l'application interceptera les réponses pour les " +
-  "enregistrer comme ressources dont il te donnera l'ID, et présentera les images " +
-  "à l'utilisateur automatiquement le cas échéant\n" +
-  "- si l'utilisateur te demande de trouver une image ou photo, cherche des pages " +
-  "susceptibles d'en contenir, récupère leur contenu, extrais la meilleure image " +
-  "candidate, et récupère-la avec son URL : l'application la lui présentera " +
-  "automatiquement. Pour les images, n'appelle JAMAIS present_resource et n'utilise " +
-  "jamais de balise Markdown (type ![alt](url)) pour afficher une ressource déjà " +
-  "présentée par l'application ; tu peux en utiliser pour présenter des MINIATURES, " +
-  "dans ce cas fais-en un lien vers l'IMAGE originale (PAS la page qui la contient), " +
-  "en utilisant l'URL de la MINIATURE pour l'image affichée en Markdown\n" +
-  "- lorsque tu trouves une URL pointant vers une image via une recherche, ne te " +
-  "contente pas d'afficher un lien Markdown ; utilise systématiquement l'outil " +
-  "`fetch_url` pour récupérer le contenu de cette image afin qu'elle soit traitée " +
-  "comme une ressource native (et présentée automatiquement à l'utilisateur par " +
-  "l'application)\n" +
+  "- pour analyser, comparer ou synthétiser des informations issues de résultats " +
+  "de recherche, ne te base jamais sur les seuls extraits (snippets) : utilise " +
+  "systématiquement l'outil de récupération de contenu (fetch_url) pour lire le " +
+  "corps complet des pages\n" +
+  "- si l'utilisateur cherche une image ou photo : cherche des pages susceptibles " +
+  "d'en contenir, récupère leur contenu, extrais la meilleure candidate. Toute URL " +
+  "d'image retenue doit être récupérée avec fetch_url, jamais rendue en simple lien " +
+  "ou balise Markdown : l'application enregistre le binaire comme ressource et " +
+  "présente l'image à l'utilisateur automatiquement. N'utilise jamais de Markdown " +
+  "(type ![alt](url)) pour afficher une ressource déjà présentée ; le Markdown ne " +
+  "sert qu'aux MINIATURES — l'URL de la MINIATURE pour l'image affichée, en lien " +
+  "vers l'IMAGE originale (PAS la page qui la contient)\n" +
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
@@ -5266,13 +5255,13 @@ const TOOLS = [
   },
   {
     name: 'recall_attachment',
+    
     description:
-      "Ramène le contenu d'une pièce jointe attachée par l'utilisateur à un message " +
-      "(identifiant att-N vu dans un descripteur [attachment att-N: ...] du fil) DANS ton " +
-      "contexte, pour que tu puisses de nouveau l'examiner. Pour une image : elle t'est " +
-      "ré-injectée juste après le résultat de l'outil (tu la revois réellement) et est " +
-      "aussi ré-affichée à l'utilisateur. Pour un fichier texte : renvoie son contenu en " +
-      "clair. Pour un binaire : renvoie le descripteur (contenu non lisible directement).",
+      "Ramène le contenu d'une pièce jointe de l'utilisateur (ref att-N, vu dans un " +
+      "descripteur [attachment att-N: ...] du fil) dans ton contexte pour l'examiner de " +
+      "nouveau. Image : ré-injectée juste après le résultat de l'outil (tu la revois " +
+      "réellement) et ré-affichée à l'utilisateur. Texte : contenu en clair. Binaire : " +
+      "descripteur seul.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -5367,13 +5356,12 @@ const TOOLS = [
   },
   {
     name: 'files__promote',
+    
     description:
       "Copie une pièce jointe du tour courant (ref att-N) dans la bibliothèque " +
-      "persistante de l'espace actif, avec une description de ce qu'elle contient " +
-      "(pas un résumé de son contenu — ce que le fichier EST, pour qu'un futur " +
-      "appel décide s'il faut le lire). Consentement de l'utilisateur REQUIS au " +
-      "préalable (voir doctrine bibliothèque) : n'appelle cet outil qu'après avoir " +
-      "posé la question via ask_confirmation et reçu une réponse positive.",
+      "persistante de l'espace actif, avec une description de ce que le fichier EST " +
+      "(pas un résumé de son contenu). Consentement préalable de l'utilisateur REQUIS " +
+      "via ask_confirmation (voir doctrine bibliothèque).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -5478,14 +5466,13 @@ const ASK_CONFIRMATION_DEF = {
   type: 'function',
   function: {
     name: 'ask_confirmation',
+    
     description:
-      "Demande confirmation à l'utilisateur avant d'agir, lorsque tu as INFÉRÉ " +
-      "une intention durable qu'il n'a PAS explicitement demandé d'enregistrer. " +
-      "La question doit inclure littéralement le contenu concerné, formulée ainsi : " +
-      "« Tu veux que je retienne : « … » ? ». Outil bloquant : la génération " +
-      "s'arrête après l'appel et la question est posée à l'utilisateur ; tu " +
-      "reprendras au tour suivant selon sa réponse. N'enregistre jamais sans cette " +
-      "confirmation, et n'affirme jamais avoir enregistré quoi que ce soit ici.",
+      "Demande confirmation à l'utilisateur avant d'agir, quand une doctrine l'exige " +
+      "(fait inféré à retenir, ajout à la bibliothèque, usage d'une skill…). La question " +
+      "doit inclure littéralement le contenu concerné. Outil bloquant : la génération " +
+      "s'arrête après l'appel, tu reprendras au tour suivant selon la réponse. N'agis " +
+      "jamais sans la confirmation, et n'affirme jamais ici avoir déjà agi.",
     parameters: {
       type: 'object',
       properties: {
@@ -11642,6 +11629,8 @@ async function dispatchSend(matches, continuation) {
 
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   const dynParts = contextBlockParts(matches);
+  
+  const manifestThreadMsgs = threadMsgs.slice();
   if (lastUserIdx >= 0) {
     const skillsCtx = dynParts.skillsContext;
     const ctx = buildContextBlock(matches);
@@ -11660,7 +11649,7 @@ async function dispatchSend(matches, continuation) {
     m && m._synthetic ? { role: m.role, content: m.content } : m
   )).filter(Boolean);
 
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null);
   syncContextCounter();
 
   let imageDescriptors;
