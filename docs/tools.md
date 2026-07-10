@@ -402,7 +402,11 @@ Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
    `TOOLS.length`) : générer un codeblock n'a aucun rapport avec la présence
    d'outils. Demande au modèle le format `filename=nom.ext` après le langage,
    séparé par un **espace** (pas une virgule — cf. point 2), sans espace dans le
-   nom, avec extension. Constante build-time (`v1`), même statut KV cache
+   nom, avec extension. Depuis le lot E3 (`v2`), la doctrine demande aussi le
+   `filename=` sur les blocs `mermaid` (ex. `flux-auth.mmd`) : il nomme les
+   exports d'image du diagramme, extension remplacée côté application par
+   `diagramImageName` (utils.js — cf. `docs/rendering.md`). Constante
+   build-time (`v2`), même statut KV cache
    (piège #16) que `ROOT_SYSTEM_PROMPT` : une modification invalide le préfixe
    une fois au déploiement. **Bug payé à l'introduction de cette doctrine** :
    `dispatchSend` (main.js, chemin d'envoi réel) ne construisait PAS le message

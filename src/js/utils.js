@@ -220,6 +220,57 @@ function sanitizeDownloadName(name, lang) {
   return n;
 }
 
+// ── Rendu Mermaid (lot E) : helpers purs ─────────────────────────────────────
+// Détection du langage mermaid sur la classe language-* posée par le renderer
+// marked custom (via parseCodeFenceInfo) — seule source de vérité de langue,
+// comme decoratePre (ui.js). Pure, testable en QuickJS.
+function isMermaidLang(lang) {
+  return String(lang || '').toLowerCase() === 'mermaid';
+}
+
+// Thème Mermaid dérivé du data-theme RÉSOLU (light|dark) posé par applyTheme
+// (ui.js) — 'default' est le thème clair de Mermaid. Pure, testable ; toute
+// valeur non-'dark' (y compris absente) retombe sur le thème clair, cohérent
+// avec le fallback de applyTheme.
+function mermaidThemeFor(resolved) {
+  return resolved === 'dark' ? 'dark' : 'default';
+}
+
+// Nom de fichier pour l'export image d'un diagramme Mermaid (lot E3) : le
+// data-filename du fence, assaini par sanitizeDownloadName, extension
+// REMPLACÉE par celle de l'image demandée (un data-filename de bloc mermaid
+// porte typiquement .mmd — on télécharge une image, pas la source) ; nom
+// générique miaou-diagram.<ext> si absent ou vide après assainissement.
+// Pure, testable en QuickJS.
+function diagramImageName(rawName, ext) {
+  const n = sanitizeDownloadName(rawName, '');
+  if (!n) return 'miaou-diagram.' + ext;
+  return n.replace(/\.[^.]+$/, '') + '.' + ext;
+}
+
+// ── Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs ─────────────────────
+// Langues éligibles au bouton « Aperçu » : html et svg SEULEMENT (pas de
+// runner JS, pas de transpile — non-goals du brief). xml/xhtml exclus
+// volontairement : trop ambigus pour promettre un rendu.
+function isPreviewableLang(lang) {
+  const l = String(lang || '').toLowerCase();
+  return l === 'html' || l === 'svg';
+}
+
+// Document srcdoc de l'iframe de préviz. html → passthrough BYTE-IDENTIQUE
+// (le contenu est déjà un document ou fragment HTML, le navigateur complète) ;
+// svg → enveloppé dans un document HTML minimal (un SVG nu n'est pas un
+// document HTML valide pour srcdoc, et il peut porter <script> : il s'exécute,
+// mais confiné dans la sandbox — c'est le contrat D2). Pure, déterministe.
+function buildPreviewSrcdoc(lang, code) {
+  const src = String(code == null ? '' : code);
+  if (String(lang || '').toLowerCase() === 'svg') {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"></head>' +
+           '<body style="margin:0">' + src + '</body></html>';
+  }
+  return src;
+}
+
 // Décode une chaîne base64 en Uint8Array (octets bruts) pour matérialiser un
 // Blob binaire côté client (cf. cascade de rendu D8.3 : téléchargement éphémère
 // d'un bloc binaire renvoyé par un outil distant). atob existe en navigateur ;

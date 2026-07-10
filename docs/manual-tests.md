@@ -769,3 +769,140 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     de la conversation → il apparaît. Glisser la souris du titre vers le
     bouton de retitrage lui-même → il reste visible (ne doit pas disparaître
     sous le curseur).
+
+## Rendu Mermaid (lot E1)
+
+Fixture : `tests/dev-seed.html` seed-23 (« Diagrammes Mermaid — rendu et
+fallback ») — un bloc mermaid valide, un bloc mermaid invalide, un bloc bash
+de contrôle.
+
+71. **Happy path (live)** : demander au modèle un diagramme Mermaid (ou ouvrir
+    seed-23). À la fin du message, le bloc ` ```mermaid ` valide s'affiche en
+    diagramme rendu (SVG) sous l'en-tête du bloc (langage « mermaid » +
+    boutons). L'onglet réseau montre que `mermaid.min.js` (cdnjs) n'est chargé
+    qu'à ce moment-là — pas au chargement de la page ni sur une conversation
+    sans diagramme.
+
+72. **Pas de rendu pendant le streaming** : pendant qu'une réponse contenant
+    un bloc mermaid streame, le bloc reste en source (surlignée ou non) sans
+    flicker ni tentative de rendu intermédiaire ; le diagramme n'apparaît
+    qu'à la finalisation du message.
+
+73. **Erreur de parse → fallback** : le deuxième bloc de seed-23 (invalide)
+    reste en source surlignée, avec la notice discrète « Diagramme invalide —
+    source affichée » sous le bloc. Aucun rendu cassé, aucun nœud d'erreur
+    Mermaid résiduel en bas de page (inspecter `document.body`). Le bouton de
+    bascule reste caché sur ce bloc. Le bloc bash de contrôle n'a ni bouton de
+    bascule ni tentative de rendu.
+
+74. **Toggle diagramme ↔ source** : sur le bloc valide, le bouton « diagramme »
+    (3 nœuds reliés, dans les actions de l'en-tête) bascule entre vue rendue et
+    source ; l'en-tête (langage + copier/télécharger/bascule) reste visible
+    dans les deux états ; copier et télécharger renvoient toujours la SOURCE
+    mermaid, pas le SVG. Le bouton est accentué quand la vue rendue est
+    affichée.
+
+75. **Thème** : basculer clair ↔ sombre (Réglages, et aussi via la préférence
+    OS en mode « system ») → les diagrammes déjà rendus se re-rendent dans le
+    thème Mermaid correspondant (clair = `default`, sombre = `dark`), sans
+    flash de source ni doublon de vue. Un bloc en état d'erreur reste en
+    erreur (pas de nouvelle tentative).
+
+76. **Historique et re-render** : recharger la page puis rouvrir la
+    conversation → les diagrammes se rendent au reload. Éditer le message
+    user et régénérer, ou basculer la coloration syntaxique (Réglages) →
+    re-render complet du fil sans doublon de `.mermaid-view`. Hors-ligne
+    (couper le réseau, vider le cache) : les blocs mermaid restent en source
+    surlignée, silencieusement — aucun message d'erreur bloquant.
+
+## Préviz sandboxée HTML/SVG (lot E2)
+
+Fixture : `tests/dev-seed.html` seed-24 (« Préviz sandboxée — HTML et SVG »)
+— page HTML dont le script sonde `localStorage`, SVG animé avec `<script>`
+embarqué, bloc xml de contrôle.
+
+77. **Sandbox effective (localStorage)** : sur le bloc html de seed-24,
+    cliquer le bouton « œil » → l'aperçu s'ouvre à la place de la source
+    (l'en-tête du bloc reste visible, l'œil passe en accent) et la page rendue
+    affiche « localStorage inaccessible (SecurityError) — sandbox effective. »
+    Si elle affichait « ACCESSIBLE », la sandbox est cassée — arrêter tout et
+    vérifier l'attribut `sandbox` de l'iframe (`allow-scripts` seul, JAMAIS
+    `allow-same-origin`).
+
+78. **SVG à script embarqué, confiné** : sur le bloc svg, l'aperçu montre le
+    cercle qui alterne tomato/steelblue (le `<script>` du SVG s'exécute) ;
+    la page MIAOU autour reste intacte (aucun accès au DOM parent). Le bloc
+    xml de contrôle n'a PAS de bouton « œil ».
+
+79. **Fermer / rouvrir / re-render** : le bouton × restaure la vue source.
+    Re-cliquer l'œil ré-ouvre. Éditer le message user amont pour changer le
+    contenu du bloc, régénérer, puis cliquer l'œil → l'aperçu reflète la
+    source COURANTE (re-render, pas de cache). Un seul aperçu par bloc
+    (re-clics successifs ne dupliquent pas l'iframe).
+
+80. **Hauteur et scroll** : sur un contenu HTML plus haut que 420px, l'iframe
+    garde sa hauteur fixe et le contenu scrolle À L'INTÉRIEUR de l'iframe (le
+    fil de conversation ne bouge pas). Fond de l'aperçu blanc dans les deux
+    thèmes MIAOU.
+
+## Lightbox & exports d'image Mermaid (lot E3)
+
+Fixture : `tests/dev-seed.html` seed-23 — le diagramme de séquence valide
+porte `filename=flux-oauth.mmd` (exercice du nommage d'export).
+
+81. **Exports SVG et PNG depuis la vue** : sur le diagramme rendu de seed-23,
+    survoler la vue → la barre d'actions (agrandir, SVG, PNG) devient pleinement
+    visible en haut à droite. « SVG » télécharge `flux-oauth.svg` (s'ouvre dans
+    un navigateur, dimensions correctes — pas 300×150). « PNG » télécharge
+    `flux-oauth.png` en 2x, **fond opaque** de la couleur `--code-bg` du thème
+    actif : refaire l'export dans les DEUX thèmes, les deux PNG doivent rester
+    lisibles collés sur un fond blanc (pas de texte clair sur transparent).
+    Sur un bloc mermaid sans `filename=`, les noms retombent sur
+    `miaou-diagram.svg` / `miaou-diagram.png`.
+
+82. **Lightbox — ouverture et pan/zoom** : cliquer « agrandir » → overlay
+    plein écran sombre, diagramme centré sur fond `--code-bg`, jamais agrandi
+    au-delà de sa taille native à l'ouverture. Molette = zoom centré sur le
+    curseur (le point sous le curseur ne bouge pas) ; drag = pan (curseur
+    grab/grabbing), y compris en sortant de la fenêtre pendant le drag ;
+    double-clic = retour à l'état initial (fit centré).
+
+83. **Lightbox — fermetures** : Escape ferme la lightbox et NE ferme rien
+    d'autre (rouvrir avec un drawer Settings ouvert derrière : premier Esc =
+    lightbox, deuxième = drawer). Clic sans mouvement sur le fond sombre hors
+    diagramme ferme ; un drag qui se termine sur le fond ne ferme PAS. Le
+    bouton × ferme. Les boutons SVG/PNG de la lightbox téléchargent les mêmes
+    fichiers que ceux de la vue.
+
+84. **Lightbox — cycle et thème** : fermer puis rouvrir la lightbox
+    (transform réinitialisée, pas d'état résiduel). Changer de thème pendant
+    que la lightbox est FERMÉE puis rouvrir depuis la vue re-rendue → le
+    diagramme agrandi suit le nouveau thème.
+
+## Export HTML avec SVG Mermaid embarqué (lot E4)
+
+Fixture : `tests/dev-seed.html` seed-23 (un diagramme valide + un bloc mermaid
+invalide).
+
+85. **Export en ligne** : sur seed-23 (diagramme rendu à l'écran), exporter la
+    conversation en HTML. Ouvrir le fichier **avec JS désactivé** (ou
+    `exportInteractive` décoché) : le diagramme est visible, stylé (couleurs du
+    thème exporté, pas du noir sur noir), correctement dimensionné. Sous le
+    diagramme, « Source mermaid » replié ; déplié → la source surlignée avec
+    son en-tête de langage. Le bloc mermaid INVALIDE de seed-23 reste en source
+    surlignée, sans vue vide ni message d'erreur parasite.
+
+86. **Export interactif** : avec `exportInteractive` actif et JS activé, la
+    source dépliée porte les boutons copier/télécharger ; « télécharger »
+    propose `flux-oauth.mmd` (le `data-filename` du fence est sérialisé).
+
+87. **Export hors-ligne** : couper le réseau, recharger MIAOU (Mermaid non
+    chargé), ouvrir seed-23 (sources surlignées, pas de rendu) et exporter →
+    l'export aboutit, les blocs mermaid restent en source surlignée avec
+    en-tête de langage (comportement lot G, aucune régression, pas de blocage
+    sur le CDN). L'indicateur d'activité « export HTML… » apparaît pendant la
+    tentative puis disparaît.
+
+88. **Thèmes** : exporter seed-23 dans les deux thèmes → le SVG embarqué suit
+    le thème de l'export (fond `--code-bg`, couleurs Mermaid dark/neutral
+    cohérentes avec l'écran au moment de l'export).

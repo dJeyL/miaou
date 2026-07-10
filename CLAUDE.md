@@ -243,19 +243,34 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     modèle/outil concaténée dedans), mais `exportConvHtml` échappe quand même
     `</` (`.replace(/<\//g, '<\\/')`) avant l'insertion dans le `<script>`
     porteur — ne jamais y interpoler de contenu d'origine modèle sans repenser
-    cette sûreté.
+    cette sûreté. **Depuis E4**, deuxième exception sanctionnée :
+    `embedExportMermaid` injecte `out.svg` (sortie de Mermaid `strict`, même
+    posture que `renderMermaidUnder`, piège 23) via `innerHTML` — pas de
+    re-sanitisation, couverte par la sanitisation interne de Mermaid.
 22. **`EXPORT_CSS` (export HTML) ne suit PAS les évolutions de
     `chat.css`/`tools.css`/`composer.css`.** C'est une feuille dédiée écrite
     à la main (audit lot G, `docs/exports.md`), pas un miroir vivant de
     l'écran — assumé, un export est un instantané figé. **Conséquence** : si
     on retouche une classe réutilisée par l'export (`.msg`/`.bubble`/
     `.reasoning`/`.tool-ack`/`.att-*`/`.code-head`/`.code-lang`/`.code-copy`/
-    `.code-dl`/tables/blocs de code), rien ne casse
+    `.code-dl`/`.mermaid-view`/`.mermaid-src`/tables/blocs de code), rien ne casse
     silencieusement, mais l'export continue de produire l'**ancien** style —
     aucun test ne détecte cette dérive. Seuls les tokens de couleur
     (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent
     synchronisés automatiquement. Revue manuelle à la charge de qui touche ce
     CSS : vérifier si `EXPORT_CSS` doit suivre.
+23. **Préviz HTML/SVG : la frontière est l'iframe sandbox, aucune autre voie.**
+    L'aperçu des blocs `html`/`svg` (bouton « œil », `decoratePre`) est
+    l'exception sanctionnée à la doctrine `textContent` : du markup d'origine
+    modèle atteint une surface de rendu, mais UNIQUEMENT dans un
+    `<iframe sandbox="allow-scripts">` **sans `allow-same-origin`** (origine
+    opaque : pas de localStorage/IndexedDB/DOM parent — un `<script>` embarqué
+    s'exécute, confiné). Cette iframe ne doit **jamais** gagner
+    `allow-same-origin`, et aucune autre voie d'injection de markup modèle ne
+    doit être ajoutée (le SVG Mermaid, piège hors numérotation, passe par la
+    sanitisation interne de Mermaid `strict` — cf. `docs/rendering.md`).
+    `srcdoc` est posé par **propriété JS** sur un élément `createElement`,
+    jamais interpolé dans un template string HTML.
 
 ## Domaines détaillés (`docs/`)
 
@@ -265,7 +280,7 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   sections JS/CSS, avec lignes). **Généré par `build.py` à chaque build, ne
   jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
   fichiers (`ui.js`, `chat.css`).
-- **`docs/pitfalls-detail.md`** — développement complet des 22 pièges ci-dessus.
+- **`docs/pitfalls-detail.md`** — développement complet des 23 pièges ci-dessus.
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
   `miaou-mcp-servers`) et IndexedDB (`skills`, `resources`).
@@ -280,6 +295,8 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   ce qui doit être vérifié à la main (`docs/manual-tests.md`).
 - **`docs/exports.md`** — export Markdown et export HTML standalone des
   conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
+- **`docs/rendering.md`** — rendu enrichi des blocs de code : diagrammes
+  Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité).
 
 ## Règle d'or
 

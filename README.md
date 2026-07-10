@@ -22,6 +22,19 @@ l'interface, JetBrains Mono pour le code.
   bloc dépliable alimenté en live, persisté à part du contenu.
 - Rendu Markdown + coloration syntaxique (toggle), tables, blocs de code avec
   boutons « copier » et « télécharger » (extension auto selon le langage).
+- **Diagrammes Mermaid rendus en place** : un bloc ` ```mermaid ` s'affiche en
+  diagramme à la fin du message (jamais pendant le streaming) ; bouton de
+  bascule diagramme ↔ source dans l'en-tête du bloc, thème du diagramme suivant
+  le thème MIAOU (re-rendu au changement), erreur de syntaxe → source affichée
+  avec une notice discrète. Mermaid n'est chargé (CDN) qu'au premier diagramme
+  rencontré. Sur le diagramme rendu : lightbox plein écran pan/zoom (molette,
+  drag, double-clic pour recentrer, Esc pour fermer) et export en image SVG ou
+  PNG (fond opaque du thème actif) — cf. `docs/rendering.md`.
+- **Aperçu sandboxé des blocs HTML et SVG** : bouton « œil » dans l'en-tête du
+  bloc (clic explicite, jamais automatique) → rendu dans une iframe
+  `sandbox="allow-scripts"` sans `allow-same-origin` — le contenu prévisualisé
+  ne peut toucher ni localStorage, ni IndexedDB, ni la page. Bouton fermer
+  pour revenir à la source ; re-clic = re-rendu depuis la source courante.
 - Téléchargement d'une réponse individuelle en `.md` (bouton dans l'en-tête,
   au survol) ; export de la conversation entière en Markdown (icône à droite
   du titre dans la topbar, au survol). Les deux exports incluent une trace
@@ -29,8 +42,9 @@ l'interface, JetBrains Mono pour le code.
   avant la réponse — sans données binaires embarquées pour les ressources
   présentées automatiquement (juste le nom et le type).
 - Export de la conversation en **fichier HTML autonome** (icône jumelle, même
-  emplacement) : zéro JavaScript, thème et coloration de code figés à
-  l'ouverture, ouvrable hors MIAOU (mail, partage) sans infrastructure —
+  emplacement) : thème et coloration de code figés à l'ouverture, diagrammes
+  Mermaid embarqués en SVG statique (source repliée en dessous), lisible sans
+  JavaScript, ouvrable hors MIAOU (mail, partage) sans infrastructure —
   cf. `docs/exports.md`.
 - Horodatage de chaque message : heure seule (même jour), « hier à HH:MM »,
   date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.

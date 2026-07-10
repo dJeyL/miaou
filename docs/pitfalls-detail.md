@@ -1,6 +1,6 @@
 # Pièges déjà payés — détail
 
-Développement complet des 22 pièges résumés dans CLAUDE.md. À consulter avant
+Développement complet des 23 pièges résumés dans CLAUDE.md. À consulter avant
 de toucher au flux de conversation, au streaming, aux résumés/titrage, à
 l'édition de message, au patienteur, au raisonnement, au sélecteur de modèle,
 ou au KV cache.
@@ -481,3 +481,30 @@ ou au KV cache.
     (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent
     synchronisés automatiquement. Revue manuelle à la charge de qui touche ce CSS :
     vérifier si `EXPORT_CSS` doit suivre (cf. `docs/exports.md`).
+
+23. **Préviz HTML/SVG : la frontière est l'iframe sandbox, aucune autre voie.**
+    Le bouton « œil » (`decoratePre`, ui.js) sur les blocs `html`/`svg`
+    (`isPreviewableLang`, utils.js) ouvre un aperçu dans un
+    `<iframe sandbox="allow-scripts">` **sans `allow-same-origin`** : origine
+    opaque, donc aucun accès à localStorage (clefs API !), IndexedDB ou au DOM
+    parent — un `<script>` embarqué dans le contenu prévisualisé s'exécute,
+    mais confiné. C'est l'exception SANCTIONNÉE à la doctrine `textContent`
+    (le seul endroit où du markup d'origine modèle atteint une surface de
+    rendu sans sanitisation) ; le brief E (D2) l'a actée. Trois règles en
+    découlent :
+
+    - cette iframe ne doit **jamais** gagner `allow-same-origin` (la
+      combinaison avec `allow-scripts` annule la sandbox : le contenu
+      récupérerait l'origine de la page, donc le localStorage) ;
+    - **aucune autre voie** d'injection de markup modèle ne doit être ajoutée
+      (le SVG des diagrammes Mermaid est un cas distinct, couvert par la
+      sanitisation interne de Mermaid en `securityLevel: 'strict'` — cf.
+      `docs/rendering.md`) ;
+    - `srcdoc` est posé par **propriété JS** (`frame.srcdoc = …`) sur un
+      élément créé par `createElement`, jamais interpolé dans un template
+      string HTML — il n'existe donc pas de problème d'échappement d'attribut,
+      et il ne faut pas en créer un en « simplifiant » vers du innerHTML.
+
+    L'aperçu est déclenché par un clic explicite uniquement (jamais
+    automatique — posture de sécurité ET de coût du brief), et l'export HTML
+    standalone n'embarque aucune iframe de préviz.

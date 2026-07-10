@@ -160,6 +160,18 @@ renderer marked custom (`marked.use({ renderer: { code } })`, ui.js) et la
 lecture de `data-filename` par `decoratePre` ne sont pas QuickJS-testables (pas
 de DOM riche/Prism) : vérification manuelle (`docs/manual-tests.md`).
 
+**Rendu Mermaid et préviz sandboxée (lot E, cf. `docs/rendering.md`)** : seuls
+les helpers purs sont couverts — `isMermaidLang` (casse, langues voisines,
+vide/`undefined`), `mermaidThemeFor` (`dark` → `dark`, tout le reste →
+`default`), `isPreviewableLang` (html/svg seuls, casse, xml/xhtml exclus) et
+`buildPreviewSrcdoc` (html passthrough byte-identique, svg enveloppé dans un
+document minimal, contenu vide/null), `diagramImageName` (remplacement
+d'extension, nom générique, assainissement via `sanitizeDownloadName`). Le
+lazy-load CDN, la passe `renderMermaidUnder`, le toggle, le hook thème,
+l'iframe sandbox, la lightbox pan/zoom, le canvas PNG, la passe d'export
+`embedExportMermaid` (E4, DOM/async) et les fallbacks
+d'erreur sont du territoire manuel (tests 71–88 dans `docs/manual-tests.md`).
+
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout

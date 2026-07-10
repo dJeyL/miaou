@@ -131,6 +131,361 @@ function renderUserMd(text) {
   return sanitizeHtml(marked.parse(safe, { breaks: true }));
 }
 function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
+
+// ── Rendu Mermaid (lot E, D1) ────────────────────────────────────────────────
+// Lazy-load réel : Mermaid (~2,5 Mo minifié) n'est chargé qu'au premier bloc
+// ```mermaid rencontré, par injection dynamique de <script> — pattern DIFFÉRENT
+// de Prism (dont le cœur est un <script src> statique dans index.html), assumé :
+// le poids ne doit être payé que si la feature sert. Promesse mémoïsée avec
+// reset sur rejet (hygiène des caches async) : un échec CDN n'empoisonne pas la
+// session, le prochain bloc retente.
+// Config (mermaidInit) : securityLevel 'strict' posé EXPLICITEMENT (c'est le
+// défaut Mermaid, mais un upgrade de version ne doit pas pouvoir l'assouplir en
+// silence) — Mermaid sanitise lui-même labels/liens (DOMPurify interne) ; on ne
+// re-passe PAS son SVG dans sanitizeHtml : DOMPurify généraliste ampute les
+// <style> internes du SVG (rendu cassé) et la sanitisation amont couvre déjà le
+// vecteur. htmlLabels:false : labels en <text> SVG pur, pas de <foreignObject>
+// — prérequis de l'export PNG canvas (lot E3, canvas tainted sur Safari sinon) ;
+// rendu des labels légèrement différent du défaut Mermaid, assumé.
+// Cf. docs/rendering.md.
+const MERMAID_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js';
+let _mermaidPromise = null;
+let _mermaidTheme = null;   // thème du dernier initialize (détection de changement)
+let _mermaidUid = 0;
+
+function mermaidInit(themeName) {
+  _mermaidTheme = themeName;
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    htmlLabels: false,
+    flowchart: { htmlLabels: false },
+    theme: themeName,
+  });
+}
+
+function ensureMermaid() {
+  if (_mermaidPromise) return _mermaidPromise;
+  _mermaidPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = MERMAID_CDN;
+    s.onload = () => {
+      if (!window.mermaid) { reject(new Error('mermaid absent après chargement')); return; }
+      mermaidInit(mermaidThemeFor(document.documentElement.getAttribute('data-theme')));
+      resolve(window.mermaid);
+    };
+    s.onerror = () => reject(new Error('échec de chargement Mermaid (CDN)'));
+    document.head.appendChild(s);
+  });
+  _mermaidPromise.catch(() => { _mermaidPromise = null; });   // reset sur rejet → retry possible
+  return _mermaidPromise;
+}
+
+// Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.
+// Appelée à la FINALISATION uniquement — finalizeAssistant et buildMsg, JAMAIS
+// streamInto (source partielle = flicker + erreurs de parse en cascade, D1).
+// Fire-and-forget : les appelants n'attendent pas.
+// Architecture : le <pre> n'est JAMAIS détruit ; la vue rendue (.mermaid-view)
+// vit DANS le <pre> (précédent .code-head, div déjà insérée là par decoratePre)
+// pour que l'en-tête — et donc le bouton toggle — reste visible dans les deux
+// états. La classe .mermaid-rendered sur le <pre> inverse code ↔ vue (CSS).
+// code.textContent reste l'unique source de vérité (re-render thème, exports,
+// lightbox relisent là).
+// Échec de parse → <pre> intact + notice .mermaid-error, jamais de rendu cassé ;
+// l'échec est mémorisé par source (pre._mermaidErrSrc) pour ne pas retenter la
+// même source invalide à chaque passe (le re-render d'un message édité change
+// la source → retente). CDN indisponible → silencieux, la source surlignée
+// reste (même dégradation que marked/DOMPurify offline).
+async function renderMermaidUnder(scope) {
+  const codes = scope.querySelectorAll('code.language-mermaid');
+  if (!codes.length) return;
+  let mm;
+  try { mm = await ensureMermaid(); }
+  catch (e) { return; }
+  for (const code of codes) {
+    const pre = code.closest('pre');
+    if (!pre) continue;
+    const src = code.textContent;
+    const existing = pre.querySelector('.mermaid-view');
+    if (existing && existing._mermaidSrc === src) continue;   // déjà rendu pour cette source
+    if (pre._mermaidErrSrc === src) continue;                 // déjà en échec pour cette source
+    // Id unique exigé par mermaid.render : compteur + suffixe aléatoire
+    // (jamais un timestamp seul — deux rendus dans la même ms collisionnent).
+    const uid = 'mmd' + (++_mermaidUid) + Math.random().toString(36).slice(2, 8);
+    try {
+      const out = await mm.render(uid, src);
+      // Garde anti-obsolescence : le DOM a pu changer pendant l'await
+      // (re-render du fil, édition). isConnected est vrai au retour de
+      // microtâche pour un wrap construit par buildMsg puis appendé.
+      if (!pre.isConnected || code.textContent !== src) continue;
+      const stale = pre.querySelector('.mermaid-view');
+      if (stale) stale.remove();
+      const oldNote = pre.querySelector('.mermaid-error');
+      if (oldNote) oldNote.remove();
+      pre._mermaidErrSrc = null;
+      const view = document.createElement('div');
+      view.className = 'mermaid-view';
+      view.innerHTML = out.svg;   // markup produit par Mermaid strict — pas de re-sanitisation (cf. en-tête)
+      view._mermaidSrc = src;
+      attachDiagramActions(view, code);   // agrandir + exports SVG/PNG (lot E3)
+      pre.appendChild(view);
+      pre.classList.add('mermaid-rendered');
+      const toggle = pre.querySelector('.code-mmd-toggle');
+      if (toggle) toggle.removeAttribute('hidden');
+    } catch (e) {
+      // Mermaid v11 peut laisser un nœud d'erreur orphelin dans document.body.
+      ['d' + uid, uid].forEach(id => {
+        const orphan = document.getElementById(id);
+        if (orphan) orphan.remove();
+      });
+      if (!pre.isConnected || code.textContent !== src) continue;
+      pre._mermaidErrSrc = src;
+      pre.classList.remove('mermaid-rendered');
+      if (!pre.querySelector('.mermaid-error')) {
+        const note = document.createElement('div');
+        note.className = 'mermaid-error';
+        note.textContent = 'Diagramme invalide — source affichée';
+        pre.appendChild(note);
+      }
+    }
+  }
+}
+
+// Re-render au changement de thème résolu. Hook UNIQUE, appelé par applyTheme —
+// couvre donc selectTheme ET le suivi matchMedia OS. mermaid.initialize ne
+// ré-applique pas le thème aux SVG déjà rendus : purge des vues puis re-render
+// explicite. La classe .mermaid-rendered est conservée pendant le re-render
+// (pas de flash de source) ; un échec inattendu la retire (chemin d'erreur de
+// renderMermaidUnder).
+function refreshMermaidTheme(resolved) {
+  if (typeof window === 'undefined' || !window.mermaid || !_mermaidPromise) return;
+  const t = mermaidThemeFor(resolved);
+  if (t === _mermaidTheme) return;
+  mermaidInit(t);
+  const thread = $('thread');
+  if (!thread) return;
+  thread.querySelectorAll('.mermaid-view').forEach(v => v.remove());
+  renderMermaidUnder(thread);   // fire-and-forget
+}
+// ── Exports d'image & lightbox Mermaid (lot E3) ──────────────────────────────
+// Sérialise le SVG rendu avec des dimensions EXPLICITES tirées du viewBox :
+// Mermaid pose width="100%" + style max-width, dont la taille intrinsèque
+// retombe à 300×150 quand le XML est rasterisé via <img> (export PNG). Clone
+// normalisé — le SVG affiché n'est jamais touché.
+function serializeDiagramSvg(svgEl) {
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  const rect = svgEl.getBoundingClientRect();
+  const w = (vb && vb.width) || rect.width || 800;
+  const h = (vb && vb.height) || rect.height || 600;
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('width', w);
+  clone.setAttribute('height', h);
+  clone.style.maxWidth = '';
+  return { xml: new XMLSerializer().serializeToString(clone), w, h };
+}
+
+function downloadDiagramSvg(svgEl, rawName) {
+  const s = serializeDiagramSvg(svgEl);
+  downloadFile(diagramImageName(rawName, 'svg'), s.xml, 'image/svg+xml');
+}
+
+// PNG : SVG sérialisé → Blob → <img> → canvas 2x (dimensions viewBox) →
+// toBlob → downloadFile (seul point d'entrée download du projet ; Blob accepte
+// un Blob comme part, pas de chemin parallèle). Fond OPAQUE rempli avec le
+// --code-bg résolu du thème actif avant drawImage : un PNG transparent issu du
+// thème sombre est illisible collé dans un document clair. htmlLabels:false
+// (mermaidInit) garantit l'absence de <foreignObject> → canvas jamais tainted.
+function downloadDiagramPng(svgEl, rawName) {
+  const s = serializeDiagramSvg(svgEl);
+  const url = URL.createObjectURL(new Blob([s.xml], { type: 'image/svg+xml' }));
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(s.w * 2);
+    canvas.height = Math.round(s.h * 2);
+    const ctx = canvas.getContext('2d');
+    const cs = getComputedStyle(document.documentElement);
+    const bg = (cs.getPropertyValue('--code-bg') || cs.getPropertyValue('--bg')).trim() || '#fff';
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (blob) downloadFile(diagramImageName(rawName, 'png'), blob, 'image/png');
+    }, 'image/png');
+  };
+  img.onerror = () => URL.revokeObjectURL(url);
+  img.src = url;
+}
+
+// Barre d'actions posée par renderMermaidUnder sur chaque .mermaid-view :
+// agrandir (lightbox) + exports SVG/PNG. Câblage en CLOSURES comme decoratePre
+// — pas de nouveaux handlers globaux, la liste CLAUDE.md est inchangée. La
+// source des exports est TOUJOURS le SVG courant de la vue (relu au clic),
+// jamais une référence figée : le re-render thème remplace la vue entière
+// (actions recréées avec), mais inutile de parier sur l'ordre.
+function attachDiagramActions(view, code) {
+  const svgExpand = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+  const bar = document.createElement('div');
+  bar.className = 'mermaid-actions';
+  const rawName = () => (code ? code.getAttribute('data-filename') : '');
+  const svg = () => view.querySelector('svg');
+  const mk = (cls, title, html, fn) => {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.title = title;
+    b.innerHTML = html;
+    b.onclick = fn;
+    bar.appendChild(b);
+  };
+  mk('mermaid-btn mermaid-btn-expand', 'Agrandir', svgExpand,
+     () => { const el = svg(); if (el) openMermaidLightbox(el, rawName()); });
+  mk('mermaid-btn', 'Télécharger en SVG', 'SVG',
+     () => { const el = svg(); if (el) downloadDiagramSvg(el, rawName()); });
+  mk('mermaid-btn', 'Télécharger en PNG', 'PNG',
+     () => { const el = svg(); if (el) downloadDiagramPng(el, rawName()); });
+  view.appendChild(bar);
+}
+
+// Lightbox pan/zoom : singleton DOM créé au premier usage, affiche un CLONE du
+// SVG rendu (l'original reste dans le fil). Transform CSS translate+scale sur
+// un wrapper interne (transform-origin 0 0 → maths de zoom centré curseur
+// triviales). Molette = zoom autour du curseur, drag = pan, double-clic =
+// reset (re-fit), Esc (cascade D-Esc, niveau prioritaire) + clic hors diagramme
+// + bouton × = fermer. Vanilla, pas de lib.
+let _lbEl = null;        // overlay singleton
+let _lbCanvas = null;    // wrapper transformé
+let _lbName = '';        // data-filename du diagramme affiché (exports)
+let _lbScale = 1, _lbTx = 0, _lbTy = 0;
+let _lbW = 0, _lbH = 0;  // dimensions viewBox du clone courant
+
+function lbApply() {
+  _lbCanvas.style.transform = `translate(${_lbTx}px, ${_lbTy}px) scale(${_lbScale})`;
+}
+
+// Reset / état initial : fit dans la scène avec marge, sans jamais agrandir
+// (un petit diagramme reste net à l'échelle 1), centré.
+function lbFit() {
+  const stage = _lbEl.querySelector('.mermaid-lightbox-stage');
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  if (!sw || !sh) return;   // lightbox cachée (display:none) : dimensions nulles, ne rien calculer
+  _lbScale = Math.min(1, (sw - 48) / _lbW, (sh - 48) / _lbH);
+  if (!(_lbScale > 0)) _lbScale = 1;
+  _lbTx = (sw - _lbW * _lbScale) / 2;
+  _lbTy = (sh - _lbH * _lbScale) / 2;
+  lbApply();
+}
+
+function ensureMermaidLightbox() {
+  if (_lbEl) return _lbEl;
+  _lbEl = document.createElement('div');
+  _lbEl.className = 'mermaid-lightbox';
+  const stage = document.createElement('div');
+  stage.className = 'mermaid-lightbox-stage';
+  _lbCanvas = document.createElement('div');
+  _lbCanvas.className = 'mermaid-lightbox-canvas';
+  stage.appendChild(_lbCanvas);
+  const bar = document.createElement('div');
+  bar.className = 'mermaid-lightbox-actions';
+  const svg = () => _lbCanvas.querySelector('svg');
+  const mk = (title, html, fn) => {
+    const b = document.createElement('button');
+    b.className = 'mermaid-lb-btn';
+    b.title = title;
+    b.innerHTML = html;
+    b.onclick = fn;
+    bar.appendChild(b);
+  };
+  mk('Télécharger en SVG', 'SVG', () => { const el = svg(); if (el) downloadDiagramSvg(el, _lbName); });
+  mk('Télécharger en PNG', 'PNG', () => { const el = svg(); if (el) downloadDiagramPng(el, _lbName); });
+  mk('Fermer', '×', closeMermaidLightbox);
+  _lbEl.appendChild(stage);
+  _lbEl.appendChild(bar);
+
+  // Zoom centré curseur : le point sous le curseur reste fixe. Avec
+  // transform-origin 0 0 : p_écran = t + p_monde·s, donc t' = p − (p − t)·f.
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const f = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+    const next = _lbScale * f;
+    if (next < 0.1 || next > 24) return;
+    const rect = stage.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    _lbTx = px - (px - _lbTx) * f;
+    _lbTy = py - (py - _lbTy) * f;
+    _lbScale = next;
+    lbApply();
+  }, { passive: false });
+
+  // Pan au drag (pointer capture : le drag survit à la sortie de la scène).
+  // Un pointerup sans mouvement sur le FOND de la scène — pas sur le diagramme
+  // — vaut « clic hors » et ferme ; un vrai drag ne ferme jamais. ATTENTION :
+  // setPointerCapture RECIBLE les pointerup vers la scène (e.target === stage
+  // même en cliquant le diagramme) — la cible réelle du clic doit être figée
+  // AU pointerdown, avant la capture, sinon tout clic ferme la lightbox.
+  let dragging = false, moved = false, lx = 0, ly = 0, downTarget = null;
+  stage.addEventListener('pointerdown', (e) => {
+    dragging = true; moved = false; lx = e.clientX; ly = e.clientY;
+    downTarget = e.target;
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lx, dy = e.clientY - ly;
+    if (!dx && !dy) return;
+    _lbTx += dx; _lbTy += dy; lx = e.clientX; ly = e.clientY;
+    if (Math.abs(dx) + Math.abs(dy) >= 1) moved = true;
+    lbApply();
+  });
+  stage.addEventListener('pointerup', () => {
+    dragging = false;
+    stage.classList.remove('dragging');
+    if (!moved && downTarget === stage) closeMermaidLightbox();
+  });
+  stage.addEventListener('dblclick', lbFit);
+
+  document.body.appendChild(_lbEl);
+  return _lbEl;
+}
+
+function openMermaidLightbox(svgEl, rawName) {
+  ensureMermaidLightbox();
+  _lbName = rawName || '';
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  const rect = svgEl.getBoundingClientRect();
+  _lbW = (vb && vb.width) || rect.width || 800;
+  _lbH = (vb && vb.height) || rect.height || 600;
+  // Le clone GARDE son id : le <style> interne de Mermaid scope toutes ses
+  // règles par #<id> — le retirer rend le diagramme totalement dé-stylé. L'id
+  // dupliqué dans le document est assumé : les règles CSS (identiques) matchent
+  // les deux occurrences, et rien ne fait de getElementById dessus.
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('width', _lbW);
+  clone.setAttribute('height', _lbH);
+  clone.style.maxWidth = '';
+  _lbCanvas.textContent = '';
+  _lbCanvas.appendChild(clone);
+  _lbCanvas.style.width = _lbW + 'px';
+  _lbCanvas.style.height = _lbH + 'px';
+  _lbEl.classList.add('show');
+  lbFit();
+}
+
+function closeMermaidLightbox() {
+  if (!_lbEl) return;
+  _lbEl.classList.remove('show');
+  _lbCanvas.textContent = '';   // libère le clone (un gros SVG n'a pas à survivre fermé)
+}
+
+// Niveau prioritaire de la cascade Escape (D-Esc) : la lightbox est l'overlay
+// le plus « au-dessus » de l'application (z-index > drawers).
+function closeMermaidLightboxViaEscape() {
+  if (!_lbEl || !_lbEl.classList.contains('show')) return false;
+  closeMermaidLightbox();
+  return true;
+}
+
 // Autoscroll pendant le streaming : ne suit le bas du fil que si l'utilisateur
 // s'y trouvait déjà avant le rendu (isAtBottom), pour ne pas arracher la vue
 // d'un lecteur remonté consulter une réponse précédente ou un raisonnement en
@@ -251,6 +606,10 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
     if (dlBtn) dlBtn.removeAttribute('hidden');
   }
   decoratePre(wrap);
+  // Rendu mermaid des messages historiques (reload/renderThread). Fire-and-
+  // forget : la continuation async ne s'exécute qu'en microtâche, une fois le
+  // wrap appendé au DOM par l'appelant (garde isConnected dans la passe).
+  renderMermaidUnder(wrap);
   return wrap;
 }
 
@@ -330,6 +689,12 @@ function decoratePre(scope) {
   const svgCopy = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
   const svgCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
   const svgDl = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+  // Pictogramme « diagramme » (3 nœuds reliés) — toggle rendu ↔ source des
+  // blocs mermaid. Métaphore réservée à cet usage (vocabulaire d'icônes).
+  const svgDiagram = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M7.5 8.7 10.5 15.4"/><path d="M16.5 8.7 13.5 15.4"/><path d="M9 6h6"/></svg>`;
+  // Pictogramme « œil » — aperçu sandboxé des blocs html/svg (lot E, D2).
+  // Métaphore réservée à cet usage (vocabulaire d'icônes).
+  const svgEye = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
 
   scope.querySelectorAll('pre').forEach(pre => {
     if (pre.querySelector('.code-head')) return;
@@ -344,9 +709,46 @@ function decoratePre(scope) {
     head.innerHTML =
       `<span class="code-lang">${escHtml(lang)}</span>` +
       `<div class="code-actions">` +
+      // Toggle mermaid : présent dès le décor (y compris pendant le streaming)
+      // mais caché — révélé par renderMermaidUnder au premier rendu réussi.
+      (isMermaidLang(lang) ? `<button class="code-mmd-toggle" title="Diagramme / source" hidden>${svgDiagram}</button>` : '') +
+      // Aperçu sandboxé (D2) : clic EXPLICITE uniquement, jamais automatique.
+      (isPreviewableLang(lang) ? `<button class="code-preview-btn" title="Aperçu">${svgEye}</button>` : '') +
       `<button class="code-copy" title="Copier">${svgCopy}</button>` +
       `<button class="code-dl" title="Télécharger">${svgDl}</button>` +
       `</div>`;
+    const mmdToggle = head.querySelector('.code-mmd-toggle');
+    if (mmdToggle) mmdToggle.onclick = () => {
+      // Ne bascule que si une vue rendue existe (le bouton est caché sinon,
+      // ceinture-bretelles) ; l'inversion visuelle est portée par le CSS.
+      if (pre.querySelector('.mermaid-view')) pre.classList.toggle('mermaid-rendered');
+    };
+    const pvBtn = head.querySelector('.code-preview-btn');
+    if (pvBtn) pvBtn.onclick = () => {
+      // Frontière de sécurité (piège 23) : le markup d'origine modèle n'atteint
+      // une surface de rendu QUE via cette iframe sandbox="allow-scripts",
+      // JAMAIS avec allow-same-origin (origine opaque : pas de localStorage/
+      // IndexedDB/DOM parent). srcdoc posé par PROPRIÉTÉ sur un élément créé
+      // par createElement — jamais interpolé dans un template string HTML.
+      let box = pre.querySelector('.code-preview');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'code-preview';
+        const close = document.createElement('button');
+        close.className = 'code-preview-close';
+        close.title = "Fermer l'aperçu";
+        close.textContent = '×';
+        close.onclick = () => { box.remove(); pre.classList.remove('preview-open'); };
+        const frame = document.createElement('iframe');
+        frame.setAttribute('sandbox', 'allow-scripts');
+        box.appendChild(close);
+        box.appendChild(frame);
+        pre.appendChild(box);
+      }
+      // Re-clic = re-render depuis la source COURANTE (source de vérité unique).
+      box.querySelector('iframe').srcdoc = buildPreviewSrcdoc(lang, code ? code.textContent : '');
+      pre.classList.add('preview-open');
+    };
     head.querySelector('.code-copy').onclick = () => {
       navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
         const btn = head.querySelector('.code-copy');
@@ -1011,6 +1413,7 @@ function finalizeAssistant(wrap, full, truncated) {
   body.dataset.raw = full;
   decoratePre(wrap);
   highlightUnder(wrap);
+  renderMermaidUnder(wrap);   // rendu mermaid à la finalisation SEULEMENT (jamais streamInto)
   const copyBtn = wrap.querySelector('.msg-copy');
   if (copyBtn) copyBtn.removeAttribute('hidden');
   const dlBtn = wrap.querySelector('.msg-dl');
@@ -1859,7 +2262,8 @@ document.addEventListener('click', (e) => {
 });
 
 // Cascade Escape (D-Esc) : un seul niveau fermé par pression, priorité au plus
-// « au-dessus ». 1) une dropdown ouverte (mêmes cibles que le clic extérieur
+// « au-dessus ». 0) la lightbox Mermaid (overlay plein écran au-dessus de tout,
+// lot E3) — 1) une dropdown ouverte (mêmes cibles que le clic extérieur
 // ci-dessus) — 2) le mode déplacement de conversations (_moveMode), s'il est
 // actif — 3) le drawer/écran le plus récemment ouvert (pile explicite :
 // certains écrans s'empilent volontairement sur un autre déjà ouvert, ex.
@@ -1926,6 +2330,7 @@ function exitMoveModeViaEscape() {
 }
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (closeMermaidLightboxViaEscape()) return;
   if (closeTopDropdownViaEscape()) return;
   if (exitMoveModeViaEscape()) return;
   if (closeTopDrawerViaEscape()) return;
@@ -2252,6 +2657,7 @@ function applyTheme(theme) {
                 window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
   }
   document.documentElement.setAttribute('data-theme', resolved);
+  refreshMermaidTheme(resolved);   // hook unique : couvre selectTheme ET le suivi OS
 }
 
 // Réglage « system » : un changement de préférence OS en cours de session
@@ -4332,6 +4738,18 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .att-icon svg { width: 13px; height: 13px; }
 .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; color: var(--text); }
 .att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+/* Diagrammes Mermaid embarqués (lot E4). Né synchronisé avec .mermaid-view de
+   chat.css (padding, fond, centrage svg) — dérive ensuite comme le reste de
+   cette feuille (piège 22). Pas de display:none/toggle ici : dans l'export le
+   SVG est TOUJOURS visible, la source vit repliée dans .mermaid-src. */
+.mermaid-view { margin: 12px 0; padding: 14px; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r); overflow-x: auto; }
+.mermaid-view svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.mermaid-src { margin: -6px 0 12px; }
+.mermaid-src summary { cursor: pointer; list-style: none; font-size: 11px; color: var(--text-3); padding: 2px 0; }
+.mermaid-src summary::-webkit-details-marker { display: none; }
+.mermaid-src summary::marker { content: ''; }
+.mermaid-src summary:hover { color: var(--text); }
+.mermaid-src[open] summary { margin-bottom: 2px; }
 `;
 
 // Script inline OPTIONNEL de l'export (progressive enhancement, D1 révisé —
@@ -4444,7 +4862,9 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
 // downloadConvMd/renderThread : seuls les acks enrichis précédant un message
 // assistant sont émis (ceux devant un user sont silencieusement omis, comme
 // dans downloadConvMd — pas un blocage, un choix déjà assumé côté export MD).
-function renderExportBody(thread, convId) {
+// Async depuis le lot E4 : la passe Mermaid (embedExportMermaid) attend le
+// chargement CDN et les rendus — le reste de la construction est synchrone.
+async function renderExportBody(thread, convId) {
   const container = document.createElement('div');
   let pendingAcks = [];
   for (const m of thread) {
@@ -4479,7 +4899,59 @@ function renderExportBody(thread, convId) {
   }
   if (highlightEnabled && window.Prism) Prism.highlightAllUnder(container);
   decorateExportPre(container);
+  await embedExportMermaid(container);
   return container.innerHTML;
+}
+
+// Passe Mermaid de l'export (lot E4) : chaque bloc ```mermaid du fragment
+// devient un SVG embarqué STATIQUEMENT (visible sans JS dans le fichier
+// exporté), la source surlignée restant disponible repliée dans un
+// <details class="mermaid-src"> — le <pre> y déménage intact (code-head
+// compris : EXPORT_SCRIPT y greffera copier/télécharger si l'export est
+// interactif). Le SVG conserve son id : le <style> interne de Mermaid scope
+// chaque règle par #<id> (même raison que la lightbox, lot E3) ; ids uniques
+// par rendu, pas de collision entre diagrammes du même export.
+// view.innerHTML = markup produit par Mermaid strict, pas de re-sanitisation
+// — même posture que renderMermaidUnder (cf. en-tête de la section Mermaid).
+// Double fallback, zéro régression vs lot G : Mermaid non chargeable
+// (offline) → passe entière ignorée, toutes les sources surlignées restent ;
+// erreur de parse d'un bloc → CE bloc reste source surlignée, les autres
+// sont rendus. Pas de barre d'actions ni de toggle dans l'export (boutons
+// perdus à la sérialisation innerHTML, et aucun global MIAOU côté fichier).
+async function embedExportMermaid(container) {
+  const codes = container.querySelectorAll('code.language-mermaid');
+  if (!codes.length) return;
+  let mm;
+  try { mm = await ensureMermaid(); }
+  catch (e) { return; }
+  for (const code of codes) {
+    const pre = code.closest('pre');
+    if (!pre) continue;
+    const uid = 'xmmd' + (++_mermaidUid) + Math.random().toString(36).slice(2, 8);
+    let svg;
+    try {
+      svg = (await mm.render(uid, code.textContent)).svg;
+    } catch (e) {
+      // Même hygiène que renderMermaidUnder : Mermaid v11 peut laisser un
+      // nœud d'erreur orphelin dans document.body.
+      ['d' + uid, uid].forEach(id => {
+        const orphan = document.getElementById(id);
+        if (orphan) orphan.remove();
+      });
+      continue;
+    }
+    const view = document.createElement('div');
+    view.className = 'mermaid-view';
+    view.innerHTML = svg;
+    const details = document.createElement('details');
+    details.className = 'mermaid-src';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Source mermaid';
+    details.appendChild(summary);
+    pre.before(view);
+    view.after(details);
+    details.appendChild(pre);
+  }
 }
 
 // Insère l'en-tête STATIQUE (langage seul) sur chaque <pre> de l'export. Ne pas
@@ -4510,29 +4982,42 @@ const EXPORT_HTML_SIZE_WARN = 8 * 1024 * 1024;
 // Point d'entrée bouton topbar (global, cf. CLAUDE.md liste des handlers
 // inline). Assemble titre/slug/CSS/corps, avertit via confirm() natif au-delà
 // du seuil de taille (pas de dialogue dédié en v1, YAGNI), télécharge.
-function exportConvHtml() {
+// Async depuis le lot E4 (passe Mermaid) : verrou de réentrance _exportingHtml
+// (l'await CDN ouvre une fenêtre de double-clic → double téléchargement), et
+// indicateur d'activité via runBackgroundTask (qui avale un échec en null —
+// renderExportBody ne rejette jamais en pratique, tous ses await sont gardés).
+let _exportingHtml = false;
+async function exportConvHtml() {
   if (!currentThread || !currentThread.length) return;
-  const conv = currentConvId ? loadConversation(currentConvId) : null;
-  const title = (conv && conv.title) || 'miaou-conversation';
-  const slug = slugTitle(title);
-  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-  const now = Date.now();
-  const dateStamp = exportDateStamp(now);
-  const dateDisplay = exportDateDisplay(now);
-  const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
-  const bodyHtml = renderExportBody(currentThread, currentConvId);
-  // Script optionnel (progressive enhancement, D1 révisé). Échappement défensif
-  // de </ pour ne pas clore prématurément le <script> porteur (même parade que
-  // build.py sur __MIAOU_CONFIG__), même si EXPORT_SCRIPT n'en contient pas.
-  const s = loadSettings();
-  const scriptTag = (s.exportInteractive !== false)
-    ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
-    : '';
-  const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag });
-  const sizeBytes = new Blob([html]).size;
-  if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
-    const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
-    if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
+  if (_exportingHtml) return;
+  _exportingHtml = true;
+  try {
+    const conv = currentConvId ? loadConversation(currentConvId) : null;
+    const title = (conv && conv.title) || 'miaou-conversation';
+    const slug = slugTitle(title);
+    const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const now = Date.now();
+    const dateStamp = exportDateStamp(now);
+    const dateDisplay = exportDateDisplay(now);
+    const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
+    const bodyHtml = await runBackgroundTask('export HTML…',
+      () => renderExportBody(currentThread, currentConvId));
+    if (bodyHtml == null) return;
+    // Script optionnel (progressive enhancement, D1 révisé). Échappement défensif
+    // de </ pour ne pas clore prématurément le <script> porteur (même parade que
+    // build.py sur __MIAOU_CONFIG__), même si EXPORT_SCRIPT n'en contient pas.
+    const s = loadSettings();
+    const scriptTag = (s.exportInteractive !== false)
+      ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
+      : '';
+    const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag });
+    const sizeBytes = new Blob([html]).size;
+    if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
+      const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
+      if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
+    }
+    downloadFile('miaou-' + slug + '-' + dateStamp + '.html', html, 'text/html');
+  } finally {
+    _exportingHtml = false;
   }
-  downloadFile('miaou-' + slug + '-' + dateStamp + '.html', html, 'text/html');
 }

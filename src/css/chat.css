@@ -423,7 +423,7 @@
 }
 .code-lang { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-transform: lowercase; }
 .code-actions { display: flex; align-items: center; gap: 2px; }
-.code-copy, .code-dl {
+.code-copy, .code-dl, .code-mmd-toggle {
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px;
   background: none; border: none; border-radius: 5px;
@@ -431,9 +431,127 @@
   cursor: pointer; padding: 0;
   transition: color 130ms var(--ease), background 130ms var(--ease);
 }
-.code-copy svg, .code-dl svg { width: 13px; height: 13px; }
-.code-copy:hover, .code-dl:hover { color: var(--text); background: var(--surface-2); }
+.code-copy svg, .code-dl svg, .code-mmd-toggle svg { width: 13px; height: 13px; }
+.code-copy:hover, .code-dl:hover, .code-mmd-toggle:hover { color: var(--text); background: var(--surface-2); }
 .code-copy--checked { color: var(--accent) !important; }
+/* Toggle mermaid : accentué quand la vue rendue est affichée (état courant). */
+.code-mmd-toggle[hidden] { display: none; }
+pre.mermaid-rendered .code-mmd-toggle { color: var(--accent); }
+
+/* ── Rendu Mermaid (lot E) ──
+   La vue rendue vit DANS le <pre> (comme .code-head) ; .mermaid-rendered sur le
+   <pre> inverse code ↔ vue. Le <pre> n'est jamais détruit : code.textContent
+   reste la source de vérité (toggle, re-render thème, exports). */
+.mermaid-view {
+  display: none;
+  position: relative;       /* ancre de .mermaid-actions (lot E3) */
+  padding: 14px;
+  background: var(--code-bg);
+  white-space: normal;      /* neutralise le white-space:pre hérité du <pre> */
+  overflow-x: auto;
+}
+.mermaid-view svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+pre.mermaid-rendered .mermaid-view { display: block; }
+pre.mermaid-rendered > code { display: none !important; }
+.mermaid-error {
+  padding: 4px 12px 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--err);
+  opacity: .75;
+  white-space: normal;
+}
+
+/* ── Préviz sandboxée HTML/SVG (lot E, D2) ──
+   L'aperçu vit DANS le <pre> (même motif que .mermaid-view) ; .preview-open
+   sur le <pre> masque la source, le bouton fermer restaure. Fond blanc forcé :
+   le contenu prévisualisé suppose un fond clair par défaut, quel que soit le
+   thème MIAOU. Hauteur fixe + scroll interne au contenu de l'iframe. */
+.code-preview { position: relative; background: #fff; white-space: normal; }
+.code-preview iframe {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: none;
+  background: #fff;
+}
+pre.preview-open > code { display: none !important; }
+pre.preview-open .code-preview-btn { color: var(--accent); }
+.code-preview-close {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #d0d0d0; border-radius: 50%;
+  background: #f4f4f4; color: #444;
+  font-size: 14px; line-height: 1;
+  cursor: pointer; padding: 0;
+}
+.code-preview-close:hover { background: #e8e8e8; color: #000; }
+
+/* ── Lightbox & exports Mermaid (lot E3) ──
+   Barre d'actions discrète en haut à droite de la vue rendue (agrandir,
+   SVG, PNG) ; lightbox = overlay plein écran singleton, z-index au-dessus
+   des drawers (50). Le fond du diagramme dans la lightbox reprend --code-bg
+   (comme la vue inline) : un SVG transparent serait illisible sur l'overlay
+   sombre. */
+.mermaid-actions {
+  position: absolute;
+  top: 6px; right: 6px;
+  display: flex; gap: 3px;
+  opacity: .4;
+  transition: opacity 130ms var(--ease);
+}
+.mermaid-view:hover .mermaid-actions { opacity: 1; }
+.mermaid-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 22px; min-width: 22px;
+  padding: 0 5px;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text-3);
+  font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  cursor: pointer;
+  transition: color 130ms var(--ease), background 130ms var(--ease);
+}
+.mermaid-btn svg { width: 12px; height: 12px; }
+.mermaid-btn:hover { color: var(--text); background: var(--surface-2); }
+
+.mermaid-lightbox {
+  display: none;
+  position: fixed; inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, .75);
+}
+.mermaid-lightbox.show { display: block; }
+.mermaid-lightbox-stage {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  cursor: grab;
+}
+.mermaid-lightbox-stage.dragging { cursor: grabbing; }
+.mermaid-lightbox-canvas {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0;
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+/* Couleurs fixes : l'overlay est toujours sombre, quel que soit le thème. */
+.mermaid-lightbox-actions {
+  position: absolute;
+  top: 14px; right: 14px;
+  display: flex; gap: 6px;
+}
+.mermaid-lb-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; min-width: 28px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, .12); border: none; border-radius: 6px;
+  color: #fff;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  transition: background 130ms var(--ease);
+}
+.mermaid-lb-btn:hover { background: rgba(255, 255, 255, .24); }
 .body pre code,
 .tool-block pre code {
   display: block;

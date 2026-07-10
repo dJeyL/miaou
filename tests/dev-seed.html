@@ -404,6 +404,39 @@ const SEEDS = [
     summary: "Fonction Fibonacci récursive mémoïsée en Python, fournie dans un bloc de code nommé fibonacci.py (fixture filename=, cf. docs/tools.md).",
     keywords: ['python', 'fibonacci', 'mémoïsation', 'récursion', 'codeblock', 'filename', 'téléchargement'],
   },
+  {
+    id: 'seed-23',
+    title: 'Diagrammes Mermaid — rendu et fallback',
+    messages: [
+      { role: 'user', content: "Dessine-moi le flux d'authentification OAuth2 en diagramme de séquence, et un petit organigramme de décision." },
+      // Fixture lot E : premier bloc mermaid VALIDE (rendu attendu au reload,
+      // toggle rendu/source visible, exports E3 : le filename= du fence doit
+      // donner flux-oauth.svg / flux-oauth.png), deuxième bloc mermaid INVALIDE (fallback
+      // source surlignée + notice .mermaid-error, jamais de rendu cassé),
+      // troisième bloc non-mermaid (contrôle : aucun toggle, aucun rendu).
+      // Export HTML E4 : le bloc valide doit sortir en SVG embarqué + source
+      // repliée (.mermaid-src), l'invalide rester en source surlignée.
+      { role: 'assistant',
+        content: "Voici le flux OAuth2 (authorization code) :\n\n```mermaid filename=flux-oauth.mmd\nsequenceDiagram\n    participant U as Utilisateur\n    participant C as Client\n    participant A as Serveur d'auth\n    U->>C: Accède à l'app\n    C->>A: Redirige (authorize)\n    A->>U: Formulaire de login\n    U->>A: Identifiants\n    A->>C: Code d'autorisation\n    C->>A: Échange code contre token\n    A->>C: Access token\n```\n\nEt l'organigramme de décision (volontairement cassé, fixture d'erreur) :\n\n```mermaid\ngraph TD\n    A[Début] --> B{Token valide ?}\n    B -->|oui| C[Accès accordé\n    B -->|non D[Refus]]]\n```\n\nPour référence, la requête d'échange en shell :\n\n```bash\ncurl -X POST https://auth.example.com/token -d grant_type=authorization_code -d code=$CODE\n```" },
+    ],
+    summary: "Flux OAuth2 authorization code en diagramme de séquence Mermaid, plus un organigramme invalide (fixture rendu Mermaid + fallback d'erreur, lot E).",
+    keywords: ['mermaid', 'diagramme', 'oauth2', 'séquence', 'rendu', 'fallback', 'toggle'],
+  },
+  {
+    id: 'seed-24',
+    title: 'Préviz sandboxée — HTML et SVG',
+    messages: [
+      { role: 'user', content: "Fais-moi une petite page HTML de démo qui essaie de lire le localStorage, et un SVG animé avec un script embarqué." },
+      // Fixture lot E2 : bloc html dont le script SONDE localStorage (l'aperçu
+      // sandboxé doit afficher « localStorage inaccessible » — l'iframe est en
+      // origine opaque, sans allow-same-origin) ; bloc svg avec <script>
+      // embarqué (s'exécute, confiné) ; bloc xml de contrôle (pas de bouton œil).
+      { role: 'assistant',
+        content: "Voici la page de démo — le script tente de lire `localStorage` et affiche le résultat :\n\n```html\n<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;padding:2rem}#out{padding:1rem;border-radius:8px}.ko{background:#fde8e8;color:#b71c1c}.ok{background:#e8f5e9;color:#1b5e20}</style></head>\n<body>\n<h1>Sonde sandbox</h1>\n<div id=\"out\"></div>\n<script>\nvar out = document.getElementById('out');\ntry {\n  var n = window.localStorage.length;\n  out.textContent = 'localStorage ACCESSIBLE (' + n + ' clefs) — sandbox défaillante !';\n  out.className = 'ok';\n} catch (e) {\n  out.textContent = 'localStorage inaccessible (' + e.name + ') — sandbox effective.';\n  out.className = 'ko';\n}\n<\/script>\n</body></html>\n```\n\nEt le SVG animé, avec un script embarqué qui recolore le cercle :\n\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"120\">\n  <circle id=\"c\" cx=\"100\" cy=\"60\" r=\"40\" fill=\"tomato\"/>\n  <script>\n    var c = document.getElementById('c');\n    setInterval(function(){ c.setAttribute('fill', c.getAttribute('fill') === 'tomato' ? 'steelblue' : 'tomato'); }, 800);\n  <\/script>\n</svg>\n```\n\nPour comparaison, le même contenu en XML brut (pas d'aperçu attendu) :\n\n```xml\n<config><entry key=\"demo\">valeur</entry></config>\n```" },
+    ],
+    summary: "Page HTML de démo sondant localStorage et SVG animé à script embarqué (fixture préviz sandboxée lot E2 : sandbox effective, script confiné, xml de contrôle).",
+    keywords: ['html', 'svg', 'aperçu', 'sandbox', 'iframe', 'localstorage', 'préviz'],
+  },
 ];
 
 // ── Souvenirs (miaou-memories) : cohérents avec les acks des conversations ────

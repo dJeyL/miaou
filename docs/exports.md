@@ -174,7 +174,32 @@ ultérieures du même lot).
   sérialisés dans le HTML exporté, donc **déjà coloriés à l'ouverture, sans
   JS**. Un langage jamais affiché à l'écran (grammaire non chargée par
   l'autoloader Prism) reste en texte brut — dégradation gracieuse, pas de
-  crash (cas limite v1 acceptable).
+  crash (cas limite v1 acceptable). **Async depuis le lot E4** : après le
+  highlight Prism et `decorateExportPre`, `await embedExportMermaid(fragment)`
+  (ci-dessous) — le reste de la construction est synchrone.
+- **`embedExportMermaid(container)`** (ui.js, DOM/async — pas QuickJS, lot E4) :
+  passe Mermaid de l'export. Chaque `code.language-mermaid` du fragment devient
+  un **SVG embarqué statiquement** (`.mermaid-view` — visible à l'ouverture du
+  fichier, **sans JS**), la source surlignée restant disponible repliée dans un
+  `<details class="mermaid-src">` : le `<pre>` d'origine y **déménage intact**
+  (code-head compris — `EXPORT_SCRIPT` y greffe copier/télécharger si l'export
+  est interactif, `data-filename` inclus). Le SVG **conserve son id** : le
+  `<style>` interne de Mermaid scope chaque règle par `#<id>` (même raison que
+  la lightbox E3) ; ids uniques par rendu (`xmmd` + compteur + suffixe
+  aléatoire), pas de collision entre diagrammes. Thème : celui de la session au
+  moment de l'export (`mermaidInit` courant), cohérent avec le `data-theme`
+  émis. `view.innerHTML = out.svg` : markup produit par **Mermaid strict**, pas
+  de re-sanitisation — même posture que `renderMermaidUnder`
+  (cf. `docs/rendering.md`), c'est la **deuxième exception sanctionnée** du
+  chemin string→HTML de l'export après `formatToolAcksHtml` (piège 21).
+  **Double fallback, zéro régression vs lot G** : Mermaid non chargeable
+  (offline, `ensureMermaid` rejette) → passe entière ignorée, toutes les
+  sources surlignées restent telles quelles ; erreur de parse d'un bloc → CE
+  bloc reste source surlignée (nœud d'erreur orphelin de Mermaid v11 purgé,
+  même hygiène que le live), les autres sont rendus. **Pas de barre d'actions,
+  de toggle ni de lightbox dans l'export** (boutons perdus à la sérialisation
+  `innerHTML`, aucun global MIAOU côté fichier) ; pas de préviz iframe non
+  plus (audit §4b).
 - **`THEME_TOKENS`** (ui.js, liste de noms `--…`) + **`serializeThemeTokens()`**
   (lit `getComputedStyle(document.documentElement)` pour chaque nom, assemble
   un `:root{…}`) : voie **runtime** tranchée (pas de modif `build.py`, pas de
@@ -197,7 +222,11 @@ ultérieures du même lot).
   ce qui a un sens dans un document statique : bulles, typo markdown, tables,
   blocs de code (dont la barre `.code-head`/`.code-lang`/`.code-actions`/
   `.code-copy`/`.code-dl` portée depuis `chat.css`), `.reasoning`/`.tool-trace`
-  en `<details>`, attachments (`.att-chip`/`.att-thumb`/`.att-icon`). **Dette
+  en `<details>`, attachments (`.att-chip`/`.att-thumb`/`.att-icon`),
+  diagrammes Mermaid embarqués (`.mermaid-view`/`.mermaid-src`, lot E4 — nés
+  synchronisés avec le `.mermaid-view` de `chat.css` : padding, fond
+  `--code-bg`, centrage svg ; sans `display:none`/toggle, le SVG exporté est
+  toujours visible). **Dette
   assumée et mémorisée** : si
   `chat.css`/`tools.css`/`composer.css` évoluent (nouvelle classe, structure
   changée), `EXPORT_CSS` ne suit PAS automatiquement — seuls les tokens de
@@ -228,13 +257,19 @@ ultérieures du même lot).
   `:has(#conv-title:hover, .conv-retitle-btn:hover)` (chat.css) : la
   condition inclut le bouton lui-même, sinon il disparaîtrait sous le
   curseur dès qu'on quitte `#conv-title` pour l'atteindre.
-- **`exportConvHtml()`** (ui.js, global — futur handler `onclick`) : point
+- **`exportConvHtml()`** (ui.js, global — handler `onclick`) : point
   d'entrée. Résout titre/slug (`slugTitle`)/thème actif/`dateStamp`
   (`exportDateStamp`), assemble `styleCss` et `bodyHtml`, appelle
   `buildExportHtml`, calcule la taille du HTML final (`Blob.size`) et avertit
   via **`confirm()` natif** si elle dépasse `EXPORT_HTML_SIZE_WARN` (8 Mo —
   pas de dialogue dédié en v1, YAGNI), puis télécharge
-  `miaou-<slug>-<dateStamp>.html` via `downloadFile`.
+  `miaou-<slug>-<dateStamp>.html` via `downloadFile`. **Async depuis le lot
+  E4** (la passe Mermaid attend le CDN et les rendus) : verrou de réentrance
+  `_exportingHtml` (l'await ouvre une fenêtre de double-clic → double
+  téléchargement, cf. mémoire B5/B7), et `renderExportBody` est encadré par
+  `runBackgroundTask('export HTML…')` (indicateur d'activité pendant le
+  chargement CDN ; un échec — improbable, tous les await internes sont
+  gardés — rend `null` → abandon silencieux).
 - **Câblage topbar (livré, commit `106245c`)** : bouton `.conv-dl-html-btn`
   jumeau de `.conv-dl-btn` (index.html), `onclick="exportConvHtml()"` (ui.js).
   `syncConvDownloadBtn()` gère les DEUX boutons ensemble : même condition

@@ -963,3 +963,103 @@ describe('sanitizeDownloadName', function() {
     expect(sanitizeDownloadName(undefined, 'python')).toBe('');
   });
 });
+
+describe('isMermaidLang', function() {
+  it('mermaid → true', function() {
+    expect(isMermaidLang('mermaid')).toBeTruthy();
+  });
+  it('insensible à la casse', function() {
+    expect(isMermaidLang('Mermaid')).toBeTruthy();
+    expect(isMermaidLang('MERMAID')).toBeTruthy();
+  });
+  it('langues voisines → false', function() {
+    expect(isMermaidLang('mermaidjs')).toBeFalsy();
+    expect(isMermaidLang('mmd')).toBeFalsy();
+    expect(isMermaidLang('markdown')).toBeFalsy();
+  });
+  it('vide / undefined → false', function() {
+    expect(isMermaidLang('')).toBeFalsy();
+    expect(isMermaidLang(undefined)).toBeFalsy();
+  });
+});
+
+describe('mermaidThemeFor', function() {
+  it('dark → dark', function() {
+    expect(mermaidThemeFor('dark')).toBe('dark');
+  });
+  it('light → default (thème clair Mermaid)', function() {
+    expect(mermaidThemeFor('light')).toBe('default');
+  });
+  it('valeur inattendue ou absente → default (fallback clair)', function() {
+    expect(mermaidThemeFor('system')).toBe('default');
+    expect(mermaidThemeFor(null)).toBe('default');
+    expect(mermaidThemeFor(undefined)).toBe('default');
+  });
+});
+
+describe('isPreviewableLang', function() {
+  it('html et svg → true', function() {
+    expect(isPreviewableLang('html')).toBeTruthy();
+    expect(isPreviewableLang('svg')).toBeTruthy();
+  });
+  it('insensible à la casse', function() {
+    expect(isPreviewableLang('HTML')).toBeTruthy();
+    expect(isPreviewableLang('Svg')).toBeTruthy();
+  });
+  it('langues voisines exclues (xml, xhtml, js, css)', function() {
+    expect(isPreviewableLang('xml')).toBeFalsy();
+    expect(isPreviewableLang('xhtml')).toBeFalsy();
+    expect(isPreviewableLang('js')).toBeFalsy();
+    expect(isPreviewableLang('css')).toBeFalsy();
+  });
+  it('vide / undefined → false', function() {
+    expect(isPreviewableLang('')).toBeFalsy();
+    expect(isPreviewableLang(undefined)).toBeFalsy();
+  });
+});
+
+describe('buildPreviewSrcdoc', function() {
+  it('html : passthrough byte-identique', function() {
+    var src = '<!DOCTYPE html>\n<html><body><h1>Té&st</h1><script>1<2</script></body></html>';
+    expect(buildPreviewSrcdoc('html', src)).toBe(src);
+  });
+  it('svg : enveloppé dans un document HTML minimal, source intacte dedans', function() {
+    var src = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>';
+    var doc = buildPreviewSrcdoc('svg', src);
+    expect(doc).toContain(src);
+    expect(doc.indexOf('<!DOCTYPE html>')).toBe(0);
+    expect(doc).toContain('charset="utf-8"');
+  });
+  it('casse du lang svg indifférente', function() {
+    expect(buildPreviewSrcdoc('SVG', '<svg/>').indexOf('<!DOCTYPE html>')).toBe(0);
+  });
+  it('contenu vide → chaîne vide (html) / wrapper seul (svg)', function() {
+    expect(buildPreviewSrcdoc('html', '')).toBe('');
+    expect(buildPreviewSrcdoc('svg', '')).toContain('<body style="margin:0"></body>');
+  });
+  it('null / undefined tolérés', function() {
+    expect(buildPreviewSrcdoc('html', null)).toBe('');
+    expect(buildPreviewSrcdoc('html', undefined)).toBe('');
+  });
+});
+
+describe('diagramImageName', function() {
+  it('extension du data-filename remplacée par celle de l\'image', function() {
+    expect(diagramImageName('flux-oauth.mmd', 'svg')).toBe('flux-oauth.svg');
+    expect(diagramImageName('flux-oauth.mmd', 'png')).toBe('flux-oauth.png');
+  });
+  it('nom sans extension → extension ajoutée', function() {
+    expect(diagramImageName('archi', 'svg')).toBe('archi.svg');
+  });
+  it('seule la DERNIÈRE extension est remplacée', function() {
+    expect(diagramImageName('v2.archi.mmd', 'png')).toBe('v2.archi.png');
+  });
+  it('absent / vide → nom générique', function() {
+    expect(diagramImageName('', 'svg')).toBe('miaou-diagram.svg');
+    expect(diagramImageName(null, 'png')).toBe('miaou-diagram.png');
+    expect(diagramImageName(undefined, 'svg')).toBe('miaou-diagram.svg');
+  });
+  it('assaini via sanitizeDownloadName (séparateurs de chemin neutralisés)', function() {
+    expect(diagramImageName('sub/dir/flow.mmd', 'svg')).toBe('sub_dir_flow.svg');
+  });
+});

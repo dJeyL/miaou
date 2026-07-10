@@ -184,15 +184,19 @@ const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE
 // aux six ci-dessus) : générer un codeblock n'a aucun rapport avec la présence
 // d'outils, donc PAS dans ROOT_SYSTEM_PROMPT (gouverné par TOOLS.length). Portée
 // directement par systemMessageParts()/buildSystemMessage() (main.js) via out.codeblock.
-// v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
-// même statut que le v1 de ROOT_SYSTEM_PROMPT.
+// v2 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
+// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v2, lot E3 : doctrine étendue
+// aux blocs mermaid — le filename= nomme les exports d'image SVG/PNG, extension
+// ajustée côté application par diagramImageName.)
 const CODEBLOCK_DOCTRINE =
   "Quand tu génères un bloc de code destiné à être enregistré comme fichier (script, " +
   "config, module…), fournis un nom de fichier sur la ligne d'ouverture de la fence, " +
   "après le langage, séparé par un espace, au format filename=nom.ext (sans espace " +
   "dans le nom, avec son extension). Exemple : ```python filename=fibonacci.py. " +
-  "L'application proposera ce nom au téléchargement. Pour un extrait illustratif court " +
-  "sans vocation de fichier, tu peux l'omettre.";
+  "L'application proposera ce nom au téléchargement. Fais-le aussi pour les blocs " +
+  "mermaid (ex. ```mermaid filename=flux-auth.mmd) : ce nom sert à nommer les exports " +
+  "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
+  "illustratif court sans vocation de fichier, tu peux l'omettre.";
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
