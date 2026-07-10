@@ -2129,6 +2129,7 @@ function settingsFormDirty() {
     || $('set-save-json').checked !== !!s.saveJsonResponses
     || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse
     || $('set-describe-files').checked !== (s.describeFiles !== false)
+    || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
 }
 
@@ -2150,6 +2151,7 @@ function openSettings() {
   $('set-save-json').checked = !!s.saveJsonResponses;
   $('set-confirm-skill-autouse').checked = !!s.confirmSkillAutoUse;
   $('set-describe-files').checked = s.describeFiles !== false;
+  $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');
   if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
   const lbl = $('build-ts-label');
@@ -4256,7 +4258,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .export-footer-wrap { border-top: 1px solid var(--border); }
 .export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
 .msg { display: flex; flex-direction: column; }
-.msg.user { align-items: flex-end; margin: 14px 0 4px; }
+.msg.user { align-items: flex-end; margin: 24px 0 10px; }
 .msg.user .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 13px; max-width: 80%; word-break: break-word; text-align: left; }
 .msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
 .msg.assistant { align-items: stretch; margin: 4px 0 14px; }
@@ -4288,9 +4290,23 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .body tr:nth-child(even) td { background: var(--table-stripe); }
 .body pre { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--code-bg) !important; }
 .body pre[class*="language-"] { padding: 0; margin: 12px 0; border-radius: var(--r); background: var(--code-bg) !important; }
+.code-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: var(--code-head-bg); border-bottom: 1px solid var(--border); }
+.code-lang { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-transform: lowercase; }
+.code-actions { display: flex; align-items: center; gap: 2px; }
+.code-copy, .code-dl { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; background: none; border: none; border-radius: 5px; color: var(--text-3); cursor: pointer; padding: 0; }
+.code-copy svg, .code-dl svg { width: 13px; height: 13px; }
+.code-copy:hover, .code-dl:hover { color: var(--text); background: var(--surface-2); }
+.code-copy--checked { color: var(--accent) !important; }
 .body pre code { display: block; padding: 13px 14px !important; font-family: var(--mono) !important; font-size: 11.5px !important; line-height: 1.6 !important; overflow-x: auto; background: transparent !important; text-shadow: none !important; }
 .reasoning { margin: 0 0 8px; padding: 8px 11px; border-left: 2px solid var(--border-2); background: var(--surface-2); border-radius: 0 6px 6px 0; }
-.reasoning summary { cursor: pointer; font-size: 11px; color: var(--text-3); }
+/* Contenu imbriqué DANS le <summary> (pas en frère) : tout le bloc — en-tête
+   ET texte du raisonnement — est une seule zone de clic pliable, nativement,
+   sans JS (cf. piège <details>/<summary>). Marqueur natif retiré. */
+.reasoning summary { cursor: pointer; list-style: none; display: block; }
+.reasoning summary::-webkit-details-marker { display: none; }
+.reasoning summary::marker { content: ''; }
+.reasoning-label { font-size: 11px; color: var(--text-3); }
+.reasoning:not([open]) .reasoning-content { display: none; }
 .reasoning-content { font-family: var(--sans); font-size: 12px; line-height: 1.5; color: var(--text-2); opacity: .85; white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
 .tool-trace { margin: 3px 0 8px 2px; font-size: 12px; color: var(--text-2); }
 .tool-trace summary { cursor: pointer; list-style: none; display: block; }
@@ -4318,11 +4334,71 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
 `;
 
+// Script inline OPTIONNEL de l'export (progressive enhancement, D1 révisé —
+// brief G). Injecté seulement si settings.exportInteractive (défaut true) via
+// scriptTag ; absent, l'export reste strictement statique. Autonome : l'export
+// n'a AUCUN global MIAOU (downloadFile, sanitizeDownloadName, LANG_TO_EXT
+// n'existent pas), tout est réimplémenté ici en minimal. Révèle sur chaque
+// <pre> deux boutons (copier via navigator.clipboard, télécharger via Blob) à
+// côté du .code-lang déjà présent statiquement. La barre de langage, elle,
+// existe sans JS (decorateExportPre) : ce script n'ajoute QUE les actions.
+const EXPORT_SCRIPT = `
+(function () {
+  var EXT = { python:'py', py:'py', javascript:'js', js:'js', typescript:'ts', ts:'ts', jsx:'jsx', tsx:'tsx', bash:'sh', sh:'sh', shell:'sh', zsh:'sh', json:'json', html:'html', css:'css', sql:'sql', yaml:'yml', yml:'yml', markdown:'md', md:'md' };
+  var svgCopy = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var svgCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+  var svgDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  function dlName(raw, lang) {
+    var n = String(raw || '').replace(/[\\/\\\\]/g, '_').replace(/[\\x00-\\x1f\\x7f]/g, '').replace(/^\\.+/, '').trim();
+    if (n && !/\\.[^.\\/\\\\]+$/.test(n)) n += '.' + (EXT[(lang || '').toLowerCase()] || 'txt');
+    return n || ('miaou-snippet.' + (EXT[(lang || '').toLowerCase()] || 'txt'));
+  }
+  function download(name, text) {
+    var blob = new Blob([text], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  var pres = document.querySelectorAll('pre');
+  for (var i = 0; i < pres.length; i++) {
+    (function (pre) {
+      var head = pre.querySelector('.code-head');
+      if (!head || head.querySelector('.code-actions')) return;
+      var code = pre.querySelector('code');
+      var langSpan = head.querySelector('.code-lang');
+      var lang = langSpan ? langSpan.textContent : 'text';
+      var actions = document.createElement('div');
+      actions.className = 'code-actions';
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'code-copy'; copyBtn.title = 'Copier'; copyBtn.innerHTML = svgCopy;
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'code-dl'; dlBtn.title = 'Télécharger'; dlBtn.innerHTML = svgDl;
+      copyBtn.onclick = function () {
+        navigator.clipboard.writeText(code ? code.textContent : '').then(function () {
+          copyBtn.innerHTML = svgCheck; copyBtn.classList.add('code-copy--checked');
+          setTimeout(function () { copyBtn.innerHTML = svgCopy; copyBtn.classList.remove('code-copy--checked'); }, 1400);
+        });
+      };
+      dlBtn.onclick = function () {
+        var raw = code ? code.getAttribute('data-filename') : '';
+        download(dlName(raw, lang), code ? code.textContent : '');
+      };
+      actions.appendChild(copyBtn); actions.appendChild(dlBtn);
+      head.appendChild(actions);
+    })(pres[i]);
+  }
+})();
+`;
+
 // Assemblage PUR du squelette HTML (testable QuickJS) : le styleCss est
 // composé par l'appelant (tokens runtime non purs), buildExportHtml se
-// contente de l'insérer. Zéro <script>, zéro <link> (Prism inliné, pas de
-// CDN) — invariant D1.
-function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml }) {
+// contente de l'insérer. scriptTag est composé par l'appelant (vide si
+// settings.exportInteractive est false → export strictement statique, ou
+// <script>EXPORT_SCRIPT</script> sinon — progressive enhancement, D1 révisé
+// brief G). Zéro <link> (Prism inliné, pas de CDN).
+function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag }) {
   return '<!doctype html>\n' +
     '<html data-theme="' + escHtml(theme) + '">\n' +
     '<head>\n' +
@@ -4342,6 +4418,7 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml }) {
     '</div>\n' +
     '<div class="export-body">' + bodyHtml + '</div>\n' +
     '<div class="export-footer-wrap"><div class="export-footer">Généré par MIAOU</div></div>\n' +
+    (scriptTag || '') +
     '</body>\n' +
     '</html>\n';
 }
@@ -4378,14 +4455,38 @@ function renderExportBody(thread, convId) {
       const metaHtml = '<div class="meta"><span>' + escHtml(m.model || modelName()) + '</span>' +
         (tsText ? '<span>· ' + escHtml(tsText) + '</span>' : '') + '</div>';
       const reasoningHtml = (m.reasoning && String(m.reasoning).trim())
-        ? '<details class="reasoning"><summary>Raisonnement</summary><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></details>'
+        ? '<details class="reasoning"><summary><span class="reasoning-label">Raisonnement</span><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></summary></details>'
         : '';
-      msgEl.innerHTML = metaHtml + acksHtml + reasoningHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
+      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
     }
     container.appendChild(msgEl);
   }
   if (highlightEnabled && window.Prism) Prism.highlightAllUnder(container);
+  decorateExportPre(container);
   return container.innerHTML;
+}
+
+// Insère l'en-tête STATIQUE (langage seul) sur chaque <pre> de l'export. Ne pas
+// confondre avec decoratePre (live) : ici pas de boutons ni de onclick — ils
+// seraient perdus par la sérialisation innerHTML, et l'export n'a pas les
+// globals (navigator.clipboard wrapper, downloadFile). Les boutons copier/
+// télécharger sont ajoutés au runtime dans le fichier exporté par EXPORT_SCRIPT
+// (progressive enhancement : présents seulement si JS actif). Le libellé de
+// langage, lui, est du HTML pur → visible même sans JS.
+function decorateExportPre(scope) {
+  scope.querySelectorAll('pre').forEach(pre => {
+    if (pre.querySelector('.code-head')) return;
+    const code = pre.querySelector('code');
+    let lang = 'text';
+    if (code) {
+      const m = (code.className || '').match(/language-([\w-]+)/);
+      if (m) lang = m[1];
+    }
+    const head = document.createElement('div');
+    head.className = 'code-head';
+    head.innerHTML = '<span class="code-lang">' + escHtml(lang) + '</span>';
+    pre.insertBefore(head, pre.firstChild);
+  });
 }
 
 const EXPORT_HTML_SIZE_WARN = 8 * 1024 * 1024;
@@ -4404,7 +4505,14 @@ function exportConvHtml() {
   const dateDisplay = exportDateDisplay(now);
   const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
   const bodyHtml = renderExportBody(currentThread, currentConvId);
-  const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml });
+  // Script optionnel (progressive enhancement, D1 révisé). Échappement défensif
+  // de </ pour ne pas clore prématurément le <script> porteur (même parade que
+  // build.py sur __MIAOU_CONFIG__), même si EXPORT_SCRIPT n'en contient pas.
+  const s = loadSettings();
+  const scriptTag = (s.exportInteractive !== false)
+    ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
+    : '';
+  const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag });
   const sizeBytes = new Blob([html]).size;
   if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
     const mb = (sizeBytes / (1024 * 1024)).toFixed(1);

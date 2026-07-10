@@ -92,22 +92,58 @@ ultérieures du même lot).
   links »). Le tombstone `~~label (supprimée)~~` reste inchangé dans les deux
   modes (c'est déjà du texte, pas un lien). `renderMd(text, opts)` transmet
   `opts` à `resolveConvRefs` en passe-plat.
-- **`buildExportHtml({ title, dateStamp, theme, styleCss, bodyHtml })`** (ui.js,
-  pure, testée QuickJS) : assemble le squelette `<!doctype html><html
+- **`buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag })`**
+  (ui.js, pure, testée QuickJS) : assemble le squelette `<!doctype html><html
   data-theme="…"><head>…</head><body>` (topbar titre+date, `bodyHtml`, footer
-  « Généré par MIAOU »). **Zéro `<script>`, zéro `<link>`** (invariant D1,
-  testé). Le `styleCss` (tokens + `EXPORT_CSS` + `PRISM_THEME_CSS`) est
-  composé par l'appelant et passé en argument — `buildExportHtml` reste pur
-  en ne faisant qu'insérer une string déjà assemblée.
+  « Généré par MIAOU », `scriptTag` avant `</body>`). **Zéro `<link>`**
+  (invariant D1). Le `<script>` n'est plus interdit (**D1 révisé**, cf.
+  ci-dessous) : il est composé par l'appelant dans `scriptTag` (vide → export
+  strictement statique, ou `<script>…</script>` → progressive enhancement).
+  Le `styleCss` (tokens + `EXPORT_CSS` + `PRISM_THEME_CSS`) est de même
+  composé par l'appelant — `buildExportHtml` reste pur en ne faisant qu'insérer
+  des strings déjà assemblées.
+- **D1 révisé (progressive enhancement, réglage `exportInteractive`).** D1
+  d'origine posait l'export comme strictement zéro-JS, abandonnant les boutons
+  copier/télécharger. Révisé : le réglage `exportInteractive` (défaut `true`,
+  `storage.js`) gouverne l'ajout d'un `<script>` inline (`EXPORT_SCRIPT`) qui
+  **révèle** au chargement les boutons copier (`navigator.clipboard`) et
+  télécharger (`Blob`) sur chaque bloc de code. Décoché → `scriptTag` vide →
+  export identique à l'ancien zéro-JS (barre de langage comprise, cf.
+  `decorateExportPre`). Les bénéfices D1 d'origine (sûr à ouvrir, pas de CSP,
+  pas de dérive de re-parsing) restent atteignables **sur option**. La barre
+  de langage, elle, est **toujours statique** — indépendante du réglage.
+- **`EXPORT_SCRIPT`** (ui.js, constante template string, injectée seulement si
+  `exportInteractive`) : script **autonome** (l'export n'a aucun global MIAOU —
+  `downloadFile`/`sanitizeDownloadName`/`LANG_TO_EXT` réimplémentés inline en
+  minimal). Parcourt les `<pre>`, ajoute dans le `.code-head` (déjà présent) un
+  `.code-actions` avec deux boutons câblés à `code.textContent` /
+  `code.getAttribute('data-filename')`. `exportConvHtml` échappe `</` du script
+  (`.replace(/<\//g, '<\\/')`) avant de l'insérer dans le `<script>` porteur —
+  même parade défensive que `build.py` sur `__MIAOU_CONFIG__` (EXPORT_SCRIPT
+  n'en contient pas aujourd'hui, mais la garde évite qu'un futur ajout casse
+  silencieusement le `</script>`).
+- **`decorateExportPre(scope)`** (ui.js, DOM — pas QuickJS) : appelée par
+  `renderExportBody` après le highlight Prism. Insère dans chaque `<pre>` un
+  `.code-head` **statique** = un seul `<span class="code-lang">` (langage lu
+  depuis `language-xxx`). **Zéro bouton, zéro onclick** (ils seraient perdus par
+  la sérialisation `innerHTML`, et l'export n'a pas les globals) — les actions
+  sont l'affaire d'`EXPORT_SCRIPT` au runtime. À ne pas confondre avec
+  `decoratePre` (live), qui pose barre **et** boutons câblés en une passe.
 - **`renderExportBody(thread, convId)`** (ui.js, DOM/marked — pas QuickJS) :
   construit un **fragment détaché** (jamais de lecture/mutation de `#thread`
   live), itère `thread` avec le même buffer d'acks que `downloadConvMd`/
   `renderThread` : les acks enrichis (`args != null`) précédant un message
-  `assistant` sont rendus en `formatToolAcksHtml` avant le corps ; ceux
-  précédant un `user` sont silencieusement droppés (même choix que
-  `downloadConvMd`, pas une régression). Corps assistant via
-  `renderMd(content, { asPlainText: true })` (conv_ref délié), reasoning en
-  `<details class="reasoning">` **fermé** par défaut. Corps user via
+  `assistant` sont rendus en `formatToolAcksHtml`. **Ordre dans le message
+  assistant : `meta → reasoning → outils appelés → corps`** (le raisonnement
+  précède l'appel d'outils qu'il motive) ; les acks précédant un `user` sont
+  silencieusement droppés (même choix que `downloadConvMd`, pas une régression).
+  Corps assistant via `renderMd(content, { asPlainText: true })` (conv_ref
+  délié), reasoning en `<details class="reasoning">` **fermé** par défaut, avec
+  le contenu (`.reasoning-content`) **imbriqué DANS le `<summary>`** — même
+  motif que `formatToolAcksHtml` (le détail est dans le summary, pas en frère) :
+  tout le bloc est une zone de clic pliable **sans JS** (cf. piège
+  `<details>/<summary>`, CSS `.reasoning:not([open]) .reasoning-content {
+  display:none }`). Corps user via
   `renderUserMd`, attachments réutilisant `attChipHtml(att, thumb, false,
   null)` — `removable=false` et `conversationId=null` suppriment
   respectivement `.att-remove` et `.att-promote` (aucune de ces affordances
@@ -138,8 +174,10 @@ ultérieures du même lot).
   `chat.css`/`tools.css` (leur sectionnement mélange règles écran/export,
   dette `next.md`), PAS un miroir vivant de ces fichiers. Couvre uniquement
   ce qui a un sens dans un document statique : bulles, typo markdown, tables,
-  blocs de code, `.reasoning`/`.tool-trace` en `<details>`, attachments
-  (`.att-chip`/`.att-thumb`/`.att-icon`). **Dette assumée et mémorisée** : si
+  blocs de code (dont la barre `.code-head`/`.code-lang`/`.code-actions`/
+  `.code-copy`/`.code-dl` portée depuis `chat.css`), `.reasoning`/`.tool-trace`
+  en `<details>`, attachments (`.att-chip`/`.att-thumb`/`.att-icon`). **Dette
+  assumée et mémorisée** : si
   `chat.css`/`tools.css`/`composer.css` évoluent (nouvelle classe, structure
   changée), `EXPORT_CSS` ne suit PAS automatiquement — seuls les tokens de
   couleur (voie `getComputedStyle`) restent synchronisés. Revue manuelle à la

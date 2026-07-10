@@ -237,13 +237,20 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     (`name`, `intent`, args JSON, result) en HTML — `escHtml` y est
     systématique. Toute future extension de l'export qui ajoute un chemin de
     concaténation similaire doit `escHtml` de la même façon (cf.
-    `docs/exports.md`).
+    `docs/exports.md`). **Depuis D1 révisé** (export interactif optionnel,
+    réglage `exportInteractive`), l'export peut porter un `<script>` inline
+    (`EXPORT_SCRIPT`) : c'est du JS statique **build-time** (aucune donnée
+    modèle/outil concaténée dedans), mais `exportConvHtml` échappe quand même
+    `</` (`.replace(/<\//g, '<\\/')`) avant l'insertion dans le `<script>`
+    porteur — ne jamais y interpoler de contenu d'origine modèle sans repenser
+    cette sûreté.
 22. **`EXPORT_CSS` (export HTML) ne suit PAS les évolutions de
     `chat.css`/`tools.css`/`composer.css`.** C'est une feuille dédiée écrite
     à la main (audit lot G, `docs/exports.md`), pas un miroir vivant de
     l'écran — assumé, un export est un instantané figé. **Conséquence** : si
     on retouche une classe réutilisée par l'export (`.msg`/`.bubble`/
-    `.reasoning`/`.tool-ack`/`.att-*`/tables/blocs de code), rien ne casse
+    `.reasoning`/`.tool-ack`/`.att-*`/`.code-head`/`.code-lang`/`.code-copy`/
+    `.code-dl`/tables/blocs de code), rien ne casse
     silencieusement, mais l'export continue de produire l'**ancien** style —
     aucun test ne détecte cette dérive. Seuls les tokens de couleur
     (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent

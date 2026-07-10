@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS = {
   confirmSkillAutoUse: true, // ask_confirmation avant d'agir sur une skill lue (stage 2 autotrigger)
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (D7, lot Cbis)
+  exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (D1 révisé, brief G)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
