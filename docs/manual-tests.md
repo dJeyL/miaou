@@ -978,3 +978,52 @@ invalide).
 103. **Raccourci contextuel** : sans conversation ouverte, `D`/`W` (exports)
      n'ont pas d'effet (commande masquée, `enabled()` réévalué à la frappe).
      Ouvrir une conversation puis `D` télécharge le .md.
+
+## Synchro multi-onglets (lot J — BroadcastChannel)
+
+Tests à faire dans **deux onglets du même navigateur** (A et B), même origine.
+BroadcastChannel est same-origin/same-browser : un autre navigateur ou une
+navigation privée séparée ne partagent rien (attendu).
+
+104. **Rehydratation de la réponse — LE bug du piège 24(b)** : ouvrir la même
+     conversation dans A et B. Envoyer un message depuis A, laisser la réponse
+     se terminer. **La réponse assistant doit apparaître dans B sans action**
+     (ni reload, ni navigation). Régression à surveiller en priorité : avant le
+     fix, B restait « en retard d'un tour » (la dernière réponse n'apparaissait
+     qu'après navigation d'historique ou reload). Enchaîner plusieurs tours :
+     chaque réponse arrive dans B au fur et à mesure, y compris la dernière.
+
+105. **Readonly pendant génération d'un pair** : pendant que A génère (tester
+     avec un modèle assez lent pour voir l'état), B affiche le bandeau « réponse
+     en cours dans un autre onglet », composer et boutons de mutation grisés,
+     lecture + scroll intacts. À la fin, B se déverrouille ET affiche la réponse.
+
+106. **Onglet ouvert PENDANT la génération** : lancer une génération dans A, puis
+     ouvrir la même conv dans B pendant que ça tourne → B se verrouille au
+     premier heartbeat (≤ 5 s), sans avoir vu le `-started` initial.
+
+107. **Soft-lock (même conv, sans génération)** : ouvrir la même conv dans A et
+     B → bandeau « aussi ouverte dans un autre onglet » des deux côtés. Fermer B
+     (ou changer de conv) → le bandeau disparaît dans A.
+
+108. **Modifications hors conv affichée** : dans A, épingler/rencommer/supprimer
+     une conversation NON affichée dans B → la sidebar de B se rafraîchit sans
+     toucher au fil affiché ni au draft du composer de B.
+
+109. **Réglages** : changer thème / serveur API actif / serveurs MCP dans A →
+     B applique le changement (thème, sélecteur, pilule) **sans** vider un draft
+     en cours ni interrompre une génération locale de B.
+
+110. **Suppression de la conv affichée** : afficher la même conv dans A et B,
+     la supprimer depuis A → B revient à l'accueil (non destructif).
+
+111. **Import / reset** : importer des données (feature E) dans A → B recharge
+     franchement (`full-reload`), comme A.
+
+112. **Dégradation** : dans un navigateur sans BroadcastChannel (ou `file://` à
+     origine opaque selon le navigateur), l'app fonctionne normalement en mono-
+     onglet, aucune erreur console — la synchro est simplement inerte.
+
+Script de non-régression partiel : `.claude/skills/run-miaou/verify-multitab-sync.mjs`
+(deux pages sur un contexte partagé, `fetch` stubé, stream lent pour déclencher
+le heartbeat) — couvre 104/105 en synthétique ; le reste est manuel.

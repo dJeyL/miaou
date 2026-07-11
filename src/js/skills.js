@@ -187,6 +187,7 @@ function putSkill(record) {
       const tx = db.transaction('skills', 'readwrite');
       const req = tx.objectStore('skills').put(rec);
       req.onsuccess = function() { upsertSkillCache(rec); resolve(rec.slug); };
+      tx.oncomplete = function() { syncPost('skills-updated', {}); };   // post-commit (piège 24)
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -200,6 +201,7 @@ function deleteSkillDb(slug) {
       const tx = db.transaction('skills', 'readwrite');
       const req = tx.objectStore('skills').delete(slug);
       req.onsuccess = function() { removeSkillCache(slug); resolve(); };
+      tx.oncomplete = function() { syncPost('skills-updated', {}); };   // post-commit (piège 24)
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });

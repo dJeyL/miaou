@@ -401,6 +401,15 @@ function getCachedRecord(id) { return _resourceCache[id] || null; }
 function _cacheRecord(rec) { _resourceCache[rec.id] = rec; }
 function _uncacheRecord(id) { delete _resourceCache[id]; }
 
+// Invalidation du cache session pour un lot d'ids (synchro multi-onglets, lot J,
+// réception de `resources-updated`). Un autre onglet a écrit/supprimé ces
+// records en IDB : évincer les copies RAM périmées ici, pour que le prochain
+// `getResource`/`loadConversationResources` relise l'état frais. Ne recharge
+// PAS (l'appelant décide s'il faut re-hydrater la conv affichée).
+function invalidateResourceCache(ids) {
+  for (const id of (ids || [])) _uncacheRecord(id);
+}
+
 // Lookup par attId (conversation-scoped), pour le rendu des vignettes de la
 // bulle utilisateur (fallback gracieux si le blob n'est pas/plus en cache —
 // conversation pas encore rechargée, ou entrée orpheline après édition).
@@ -545,6 +554,13 @@ function putResource(record) {
       const tx = db.transaction('resources', 'readwrite');
       const req = tx.objectStore('resources').put(record);
       req.onsuccess = function() { resolve(record.id); };
+      // Broadcast POST-COMMIT (tx.oncomplete, pas req.onsuccess — piège 24) :
+      // un pair qui relit le store sur onsuccess verrait l'ancien état. Émission
+      // indépendante du resolve() ci-dessus (qui reste sur onsuccess, sémantique
+      // inchangée pour les appelants).
+      tx.oncomplete = function() {
+        syncPost('resources-updated', { ids: [record.id], convId: record.conversationId || null });
+      };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -593,6 +609,7 @@ function deleteResource(id) {
       // Évincer le cache seulement APRÈS le succès IDB : sinon un delete qui
       // échoue laisserait le record en base mais absent du cache (incohérence).
       req.onsuccess = function() { _uncacheRecord(id); resolve(); };
+      tx.oncomplete = function() { syncPost('resources-updated', { ids: [id], convId: null }); };  // post-commit (piège 24)
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -604,11 +621,16 @@ function deleteResourcesByConversation(convId) {
       const tx = db.transaction('resources', 'readwrite');
       const idx = tx.objectStore('resources').index('by_conversation');
       const req = idx.openCursor(IDBKeyRange.only(convId));
+      const removed = [];
       req.onsuccess = function(e) {
         const cursor = e.target.result;
-        if (cursor) { _uncacheRecord(cursor.value.id); cursor.delete(); cursor.continue(); }
+        if (cursor) { removed.push(cursor.value.id); _uncacheRecord(cursor.value.id); cursor.delete(); cursor.continue(); }
       };
-      tx.oncomplete = function() { resolve(); };
+      tx.oncomplete = function() {
+        resolve();
+        // Post-commit (piège 24) : n'émettre que si des records ont bougé.
+        if (removed.length) syncPost('resources-updated', { ids: removed, convId: convId });
+      };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });

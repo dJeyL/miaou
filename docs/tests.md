@@ -172,6 +172,23 @@ l'iframe sandbox, la lightbox pan/zoom, le canvas PNG, la passe d'export
 `embedExportMermaid` (E4, DOM/async) et les fallbacks
 d'erreur sont du territoire manuel (tests 71–88 dans `docs/manual-tests.md`).
 
+**Synchro multi-onglets (lot J, cf. `docs/multitab-sync.md`)** : le noyau pur de
+`sync.js` est couvert par `tests/test-sync.js` — `makeEnvelope`/`validateEnvelope`
+(version, type dans la liste fermée, `tabId` non vide, rejet des formes
+invalides), `routeMessage` (présélection d'action par type × conv affichée ou
+non, `ignore-self` par `tabId`), `generateTabId` (préfixe, suffixe aléatoire).
+`tests/test-main.js` couvre `projectConvMessages` (projection fidèle des
+messages persistés vers `currentThread` : user/assistant avec champs affichables,
+`displayText` et normalisation `display`→`displayText`, attachments, acks via la
+whitelist `ACK_COPY_FIELDS`, ordre et cardinalité 1:1, et l'invariant du fix
+piège 24 — la projection reflète la DERNIÈRE réponse présente, base de la
+relecture post-await). L'adaptateur impur (`BroadcastChannel`, `initSyncChannel`,
+`syncPost`, `syncOnMessage`), le câblage `openConversation` (l'`await` et le jeton
+`_openConvSeq`) et tout le comportement inter-onglets réel (soft-lock, readonly,
+heartbeat/TTL, rehydratation post-await) ne sont pas QuickJS-testables : script de
+non-régression Playwright `verify-multitab-sync.mjs` (deux pages sur un contexte
+partagé, `fetch` stubé) et scénarios manuels deux-onglets (`docs/manual-tests.md`).
+
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout

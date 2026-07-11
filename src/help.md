@@ -269,6 +269,16 @@ Quelques repères pour te déplacer dans MIAOU :
     d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les
     skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,
     `H` coloration syntaxique, `D` export Markdown, `W` export HTML.
+- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
+  navigateur ; ils restent synchronisés. Une modification faite dans un onglet
+  (nouveau message, titre, réglage, Espace, fichier…) se reflète dans les autres
+  sans rechargement. Si la même conversation est ouverte à deux endroits, un
+  bandeau discret le signale. Et si une réponse est en cours de génération dans
+  un onglet, la même conversation passe en **lecture seule** dans les autres le
+  temps de la réponse — pour éviter deux générations concurrentes qui
+  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale
+  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs
+  différents).
 
 ## donnees
 

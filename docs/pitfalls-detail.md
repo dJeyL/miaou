@@ -1,9 +1,9 @@
 # Pièges déjà payés — détail
 
-Développement complet des 23 pièges résumés dans CLAUDE.md. À consulter avant
+Développement complet des 24 pièges résumés dans CLAUDE.md. À consulter avant
 de toucher au flux de conversation, au streaming, aux résumés/titrage, à
 l'édition de message, au patienteur, au raisonnement, au sélecteur de modèle,
-ou au KV cache.
+au KV cache, ou à la synchro multi-onglets.
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
@@ -508,3 +508,69 @@ ou au KV cache.
     L'aperçu est déclenché par un clic explicite uniquement (jamais
     automatique — posture de sécurité ET de coût du brief), et l'export HTML
     standalone n'embarque aucune iframe de préviz.
+
+24. **Synchro multi-onglets : broadcast POST-commit, et relecture APRÈS l'await.**
+
+    Deux invariants jumeaux de la synchro BroadcastChannel (lot J), tous deux
+    payés. Le premier était anticipé dès la conception ; le second a coûté une
+    longue session de diagnostic (bug « le dernier tour n'apparaît jamais dans
+    l'autre onglet, seulement après navigation »).
+
+    **(a) Émettre APRÈS la persistance durable, jamais avant.** Un pair qui
+    reçoit `conv-updated`/`settings-updated`/`resources-updated`/`skills-updated`
+    réagit en **relisant le store** (localStorage ou IDB), pas en recevant les
+    données dans le message (le payload ne porte que des identifiants). Donc
+    l'émission ne doit jamais devancer l'écriture :
+
+    - localStorage (synchrone) : `syncPost(...)` est placé **après** le
+      `setItem` correspondant, dans le même corps de fonction
+      (`saveConversation`, `saveSettings`, `saveSpaces`, `saveApiServersRaw`…).
+    - IDB (asynchrone) : l'émission se fait sur `tx.oncomplete`, **jamais** sur
+      `req.onsuccess` — la requête peut réussir avant que la transaction soit
+      durable, et un pair relisant trop tôt verrait l'ancien état
+      (`putResource`, `deleteResource`, `putSkill`, `deleteSkillDb`…).
+
+    **(b) Un récepteur qui rehydrate relit l'état APRÈS son `await`, jamais un
+    instantané figé avant.** C'est la face qui a mordu. `openConversation` (le
+    chemin de rehydratation, piège 17) contient un `await`
+    (`loadConversationResources`). L'ancien code construisait `currentThread`
+    depuis `conv.messages` **avant** cet await, puis rendait après. Séquence du
+    bug, deux onglets A (émetteur) et B (récepteur) sur la même conversation :
+
+    1. Tu envoies depuis A. A persiste le message **user** (`conv-updated`),
+       lance la génération (`conv-generation-started` → B passe readonly).
+    2. B reçoit le `conv-updated` du user → `openConversation` démarre, fige
+       `currentThread` = `[…, user]`, entre dans son `await`.
+    3. A termine : `onFinal` persiste la **réponse assistant** (`conv-updated`),
+       puis le `finally`/`setSending(false)` émet `conv-generation-ended`. Selon
+       l'entrelacement réel observé, la réponse est parfois persistée **après**
+       que B a déjà traité `conv-generation-ended` (readonly-off).
+    4. Le `openConversation` de B sort de son await et rend son
+       `currentThread` **figé à l'étape 2** — sans la réponse. Le `conv-updated`
+       de la réponse, arrivé pendant l'await, a déclenché un second
+       `openConversation` qui, lui aussi lisant trop tôt (ou abandonné par la
+       garde), ne rattrape pas. Résultat : B reste « en retard d'un tour ». Un
+       reload ou une simple navigation d'historique relit le store à jour et
+       fait apparaître la réponse — d'où le symptôme trompeur.
+
+    Corrections (main.js) :
+
+    - **Relecture post-await.** `openConversation` ne lit `conv.messages`
+      qu'**après** l'await, via `projectConvMessages(conv)` (pur, extrait, testé
+      dans `tests/test-main.js`). Un `saveConversation` d'un pair survenu pendant
+      l'await est ainsi capté. Avant l'await on ne fait qu'une vérification
+      d'existence (`loadConversation(id)`), pas de projection.
+    - **Jeton de séquence** `_openConvSeq` : chaque appel s'incrémente ; après
+      l'await, un appel dont le jeton n'est plus le dernier **abandonne** avant
+      de toucher `currentThread`/DOM. Le plus récent (qui relira le store le plus
+      frais) gagne. Réentrance bornée, pas de rendu périmé qui écrase un rendu
+      frais (cf. mémoire `await_reentrancy_guard`).
+    - **Filet `readonly-off`** : à la fin de génération d'un pair, le récepteur
+      relance une rehydratation (`openConversation` du fil affiché) plutôt que de
+      se reposer sur le seul `conv-updated` final, dont l'arrivée peut précéder
+      la persistance effective de la réponse. Idempotent (byte-stable, piège 17),
+      différé si une génération LOCALE est en vol (drainé par `setSending(false)`).
+
+    Règle générale à retenir : **tout `await` entre la réception d'un signal de
+    synchro et le commit du rendu est une fenêtre où le store peut avancer ;
+    relire après l'await, jamais figer avant.**

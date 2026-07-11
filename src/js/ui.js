@@ -2114,6 +2114,41 @@ function setSending(on) {
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   // le bouton régénérer disparaît pendant un stream
+  // Readonly relay (lot J, J5) : signaler aux autres onglets le début/fin de
+  // génération sur la conv affichée. Point de fin UNIQUE (couvre succès/erreur/
+  // abort) → appariement -started/-ended garanti. convId capturé = currentConvId
+  // au démarrage (on génère toujours sur la conv affichée).
+  if (on) { if (typeof startGenerationRelay === 'function') startGenerationRelay(currentConvId); }
+  else    { if (typeof stopGenerationRelay === 'function') stopGenerationRelay(); }
+  // Fin de génération locale : rejouer les actions de synchro multi-onglets
+  // différées pendant qu'une génération mutait currentThread (lot J, J3). Point
+  // de fin UNIQUE (couvre succès/erreur/abort), d'où le drain ici et pas ailleurs.
+  if (!on && typeof drainPendingSync === 'function') drainPendingSync();
+}
+
+// Readonly cross-onglets (lot J, J5) : un pair génère sur la conv affichée →
+// verrouiller les entrées et mutations LOCALES (composer, édition, suppression,
+// régénération) pour empêcher une seconde génération concurrente silencieuse.
+// Lecture + scroll restent permis (A6). Piloté par une classe sur <body>
+// (.conv-readonly, CSS dans composer.css) + désactivation directe du composer.
+// Indépendant de `sending` (état local de génération) : ne PAS s'appuyer sur lui.
+// À la levée, on restaure l'état du composer via son seul déterminant hors
+// streaming, `configured` (mêmes règles que setSending(false)).
+let _convReadonly = false;
+function setConvReadonly(on) {
+  _convReadonly = !!on;
+  document.body.classList.toggle('conv-readonly', _convReadonly);
+  const ta = $('composer-text');
+  const send = $('send-btn');
+  if (on) {
+    if (ta) ta.disabled = true;
+    if (send) send.disabled = true;
+  } else {
+    // Ne pas ré-activer si une génération LOCALE est en cours (le composer sert
+    // alors de « stop ») ni si l'app n'est pas configurée.
+    if (ta) ta.disabled = sending ? false : !configured;
+    if (send) send.disabled = sending ? false : !configured;
+  }
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
@@ -3283,6 +3318,29 @@ function summaryBanner(action) {
   if (h && h[action]) h[action]();
 }
 
+// ── Bandeau multi-onglets (lot J : soft-lock / readonly) ────────────────────
+// Informatif, non-bloquant. Le texte est piloté par l'appelant (main.js, selon
+// l'état soft-lock/readonly) ; ici on ne fait qu'afficher/masquer + poser le
+// libellé. Réutilise l'anatomie .banner (composer.css).
+function setTabBanner(text) {
+  const el = $('tab-banner');
+  if (!el) return;
+  const t = $('tab-banner-text');
+  if (t) t.textContent = text || '';
+  // Le bandeau est dans .composer-inner (en flux) : son apparition agrandit le
+  // composer et rogne la hauteur de .messages par le bas. Si le lecteur suivait
+  // le fil (au fond), le re-coller au fond pour que le dernier message ne passe
+  // pas sous le composer agrandi. isAtBottom() est mesuré AVANT le reflow.
+  const wasAtBottom = isAtBottom();
+  const wasShown = el.classList.contains('show');
+  el.classList.add('show');
+  if (!wasShown && wasAtBottom) scrollBottom(true);
+}
+function clearTabBanner() {
+  const el = $('tab-banner');
+  if (el) el.classList.remove('show');
+}
+
 // ── Drawer combiné Résumés / Souvenirs ─────────────────────────────────────
 function openSummaryDrawer(tab) {
   switchMemoryTab(tab || 'summaries');
@@ -3923,6 +3981,13 @@ function closeMcpServers() {
 }
 function renderMcpServersIfOpen() {
   if ($('mcp-drawer') && $('mcp-drawer').classList.contains('show')) renderMcpServers();
+}
+
+// Drawer skills ouvert ? (synchro multi-onglets, lot J : re-render du drawer sur
+// réception `skills-updated` seulement s'il est visible.)
+function isSkillsDrawerOpen() {
+  const el = $('skills-drawer');
+  return !!(el && el.classList.contains('show'));
 }
 
 function renderMcpServers() {

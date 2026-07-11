@@ -336,11 +336,11 @@ function applyUsageToLastManifest(usage) {
 }
 
 // ── Navigation entre conversations ──────────────────────────────────────────
-async function openConversation(id, reveal) {
-  const conv = loadConversation(id);
-  if (!conv) return;
-  currentConvId = id;
-  currentThread = (conv.messages || []).filter(Boolean).map(m => {
+// Pur : projette les messages persistés (conv.messages) vers currentThread
+// (whitelist ACK_COPY_FIELDS pour les acks, champs affichables sinon). Extrait
+// pour être appelé APRÈS l'await de openConversation (cf. ci-dessous).
+function projectConvMessages(conv) {
+  return ((conv && conv.messages) || []).filter(Boolean).map(m => {
     if (isAckRole(m.role)) {
       // Whitelist unique ACK_COPY_FIELDS (utils.js) — ne plus jamais énumérer
       // les champs à la main ici.
@@ -358,11 +358,47 @@ async function openConversation(id, reveal) {
     if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
     return o;
   });
+}
+
+// Jeton de séquence. openConversation contient un `await`
+// (loadConversationResources) ; un second appel (ex. deux conv-updated
+// multi-onglets rapprochés) peut démarrer pendant cet await. DEUX invariants :
+//  1. On (re)lit conv.messages APRÈS l'await, jamais avant : sinon un
+//     saveConversation d'un pair survenu PENDANT l'await (typiquement la réponse
+//     assistant persistée juste après conv-generation-ended) serait ignoré — le
+//     thread resterait figé sur l'état d'avant, et la dernière réponse
+//     n'apparaîtrait jamais en live (visible seulement après navigation). C'était
+//     LE bug multi-onglets « toujours en retard d'un tour ».
+//  2. Un appel devenu obsolète pendant son await (un openConversation plus
+//     récent a démarré) abandonne avant de toucher currentThread/DOM : le plus
+//     récent, qui relira le storage le plus frais, gagne.
+let _openConvSeq = 0;
+async function openConversation(id, reveal) {
+  if (!loadConversation(id)) return;   // existence seulement ; le contenu est relu après l'await
+  const mySeq = ++_openConvSeq;
+  // Soft-lock (J4) : signaler le changement de conv affichée aux autres onglets,
+  // SEULEMENT sur un vrai switch. Une re-hydratation (récepteur `rehydrate`
+  // rappelle openConversation sur la MÊME conv) ne doit pas émettre closed/opened
+  // ni vider le peer state — d'où le garde `id !== currentConvId`.
+  const switching = id !== currentConvId;
+  if (switching) {
+    announceConvClosed(currentConvId);   // quitte l'ancienne (no-op si null)
+    resetPeerState();                    // repart d'un set vide pour la nouvelle
+  }
+  currentConvId = id;
+  await loadConversationResources(id);   // peuple le session cache avant renderThread
+  // Un openConversation plus récent a pris la main pendant l'await : abandonner
+  // avant toute écriture d'état/DOM (invariant 2).
+  if (mySeq !== _openConvSeq) return;
+  // (Re)lecture APRÈS l'await (invariant 1) : capte un saveConversation survenu
+  // entre-temps (réponse d'un pair persistée après -ended).
+  const conv = loadConversation(id);
+  if (!conv) return;   // supprimée pendant l'await
+  currentThread = projectConvMessages(conv);
   currentConvModel = conv.model || '';
   currentConvReasoningEffort = conv.reasoningEffort || '';
   needTitle = !conv.title;   // conversation rouverte sans titre (streaming arrêté, etc.) : retitrer à la reprise
   setTitle(conv.title || '');
-  await loadConversationResources(id);   // peuple le session cache avant renderThread
   renderThread(currentThread);
   renderConvList();
   // Ouverture depuis la palette (recherche de conversation) : ramener la conv
@@ -373,9 +409,14 @@ async function openConversation(id, reveal) {
   syncReasoningUI();
   _lastContextManifest = null;   // switch de conv : le dernier envoi réel ne s'applique plus, retombe sur simulation
   syncContextCounter();
+  // Soft-lock (J4) : annoncer la conv nouvellement affichée (déclenche le
+  // handshake côté pairs qui l'affichent déjà). Seulement sur un vrai switch.
+  if (switching) announceConvOpened(id);
 }
 
 function resetToEmpty() {
+  // Soft-lock (J4) : on quitte la conv affichée (le cas échéant) vers l'accueil.
+  if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
   currentConvId = null;
   currentThread = [];
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
@@ -420,6 +461,10 @@ function moveSelectedConversations(targetSpaceId) {
   const ids = Array.from(_moveSelection);
   const moved = moveConversationsToSpace(loadConversations(), ids, targetSpaceId);
   persistConversations(moved);
+  // Post-commit (piège 24) : un conv-updated par id déplacé (nouveau spaceId).
+  // Le récepteur coalesce le re-render de liste via sa file (J3) ; l'herméticité
+  // de Space est tranchée à la réception (spaceConvIds, piège 18).
+  for (const id of ids) syncPost('conv-updated', { convId: id, spaceId: targetSpaceId });
 
   // Follow (D6) : seulement si la conversation ouverte fait partie du lot
   // déplacé — sinon rien ne bouge pour elle (audit §3, décision Julien
@@ -510,6 +555,332 @@ function deleteConv(id) {
   clearAttachmentPushState(id);   // libère l'état de push MCP scopé à la conversation
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
+}
+
+// ── Réception synchro multi-onglets (lot J, J3) ──────────────────────────────
+// Câblé via syncOnMessage(handleSyncMessage) dans init(). L'enveloppe est déjà
+// VALIDÉE (validateEnvelope, sync.js) ; on décide l'effet via routeMessage (pur)
+// puis on l'applique ici (couche impure : DOM, caches, re-render).
+//
+// Herméticité de Space (piège 18) : routeMessage présélectionne « conv affichée ? »
+// mais l'appartenance au Space actif est tranchée ICI, via spaceConvIds — un
+// re-render de liste sur une conv d'un autre Space que l'actif ne doit rien
+// changer de visible (renderConvList est déjà scopé Space, mais on évite le
+// travail inutile). La conv AFFICHÉE, elle, est par construction dans le Space
+// actif (on ne peut afficher qu'une conv du Space courant).
+//
+// Queue pendant génération locale (brief §4.3, piège documenté) : re-hydrater la
+// conv affichée pendant qu'une génération locale mute currentThread l'écraserait.
+// On diffère alors l'action ; drainPendingSync() la rejoue après setSending(false).
+
+let _pendingSyncActions = [];   // actions différées (re-hydratation) pendant une génération locale
+
+// ── Soft-lock (J4) : awareness « même conv ouverte ailleurs » ────────────────
+// _peersOnConv = tabIds des AUTRES onglets tenant la conv actuellement affichée.
+// _peersGenerating = sous-ensemble en train de générer (readonly, J5). Le bandeau
+// soft-lock est visible tant que _peersOnConv est non vide ; le readonly (J5)
+// prime sur le soft-lock quand _peersGenerating est non vide. Les deux sets sont
+// vidés à chaque changement de conv affichée (openConversation/resetToEmpty).
+let _peersOnConv = new Set();
+let _peersGenerating = new Set();   // tabIds générant sur la conv affichée (readonly, J5)
+let _peerHeartbeatAt = {};          // tabId → epoch ms du dernier heartbeat reçu (TTL, J5)
+let _peerTtlSweeper = null;         // timer de balayage TTL (auto-release si crash émetteur)
+
+// Émet conv-opened pour la conv que cet onglet vient d'afficher. Les pairs qui
+// affichent la même conv se signalent en retour (handshake borné, cf. récepteur).
+function announceConvOpened(convId) {
+  if (convId != null) syncPost('conv-opened', { convId: convId, tabId: syncTabId() });
+}
+// Émet conv-closed pour la conv que cet onglet quitte (best-effort).
+function announceConvClosed(convId) {
+  if (convId != null) syncPost('conv-closed', { convId: convId, tabId: syncTabId() });
+}
+// Réinitialise l'état de peering au changement de conv affichée : on ne tient
+// plus l'ancienne, on repart d'un set vide pour la nouvelle (les pairs se
+// re-signaleront via le handshake déclenché par notre conv-opened).
+function resetPeerState() {
+  _peersOnConv = new Set();
+  _peersGenerating = new Set();
+  _peerHeartbeatAt = {};
+  if (_peerTtlSweeper) { clearInterval(_peerTtlSweeper); _peerTtlSweeper = null; }
+  refreshTabBanner();
+  applyReadonlyState();
+}
+// Recalcule le bandeau à partir des deux sets. Readonly (J5) prime sur soft-lock.
+function refreshTabBanner() {
+  if (_peersGenerating.size > 0) {
+    setTabBanner('Réponse en cours dans un autre onglet — lecture seule.');
+  } else if (_peersOnConv.size > 0) {
+    setTabBanner('Cette conversation est aussi ouverte dans un autre onglet.');
+  } else {
+    clearTabBanner();
+  }
+}
+
+// Active/désactive le readonly de l'UI selon _peersGenerating. Readonly = un pair
+// génère sur la conv qu'on affiche : on désactive les entrées et mutations
+// locales (composer, édition/suppression/régénération) pour éviter une seconde
+// génération concurrente silencieuse. Lecture/scroll restent permis (A6). Le
+// résultat persisté revient via le conv-updated qui suit la fin (J3, re-hydrate).
+function applyReadonlyState() {
+  setConvReadonly(_peersGenerating.size > 0);   // ui.js
+}
+
+// Balayage TTL : auto-release des pairs générateurs dont le heartbeat a expiré
+// (crash de l'émetteur sans -ended). Armé tant qu'au moins un pair génère.
+function armTtlSweeper() {
+  if (_peerTtlSweeper) return;
+  _peerTtlSweeper = setInterval(function () {
+    const now = Date.now();
+    let changed = false;
+    for (const tabId of Array.from(_peersGenerating)) {
+      const last = _peerHeartbeatAt[tabId] || 0;
+      if (now - last > SYNC_HEARTBEAT_TTL_MS) {
+        _peersGenerating.delete(tabId);
+        delete _peerHeartbeatAt[tabId];
+        changed = true;
+      }
+    }
+    if (_peersGenerating.size === 0 && _peerTtlSweeper) {
+      clearInterval(_peerTtlSweeper); _peerTtlSweeper = null;
+    }
+    if (changed) { refreshTabBanner(); applyReadonlyState(); }
+  }, SYNC_HEARTBEAT_MS);
+}
+
+function handleSyncMessage(env) {
+  const decision = routeMessage(env, {
+    tabId: syncTabId(),
+    currentConvId: currentConvId,
+    activeSpaceId: activeSpaceId,
+  });
+  applySyncDecision(decision);
+}
+
+function applySyncDecision(d) {
+  switch (d.action) {
+    case 'ignore':
+    case 'ignore-self':
+      return;
+
+    case 'rehydrate':
+      // Conv affichée modifiée ailleurs. Si une génération locale est en vol,
+      // différer (ne jamais écraser currentThread en pleine mutation). Sinon
+      // re-hydrater par le chemin byte-stable (openConversation, piège 17). Le
+      // draft du composer n'est pas touché (renderThread ne lit que #thread).
+      if (sending) { _queueSyncAction(d); return; }
+      if (currentConvId) openConversation(currentConvId);
+      return;
+
+    case 'render-list':
+      // Conv non affichée modifiée/supprimée ailleurs : rafraîchir la liste
+      // (scopée au Space actif par renderConvList). Pas de re-hydratation.
+      renderConvList();
+      return;
+
+    case 'conv-gone':
+      // Conv AFFICHÉE supprimée dans un autre onglet. L'émetteur a déjà persisté
+      // la suppression (J2) : ne rien re-supprimer, juste réagir côté UI, comme
+      // le fait deleteConv local sur la conv courante. (Notice riche : reléguée
+      // à l'infra bandeau de J4 ; ici retour à l'accueil, non destructif.)
+      if (sending) { _queueSyncAction(d); return; }
+      resetToEmpty();
+      return;
+
+    case 'space-list':
+      // Registre des Espaces modifié ailleurs (création/renommage/suppression).
+      // Recharger le sélecteur + la liste (le Space actif de CET onglet ne change
+      // pas — miaou-active-space n'est jamais diffusé). Si le Space actif a été
+      // supprimé ailleurs, il reste sélectionné ici jusqu'à action locale : cas
+      // limite assumé V1 (pas de réconciliation forcée du Space actif).
+      syncSpaceUI();
+      renderConvList();
+      return;
+
+    case 'apply-settings':
+      applySyncedSettings(d.keys);
+      return;
+
+    case 'invalidate-resources':
+      // Évincer les copies RAM périmées ; si la conv affichée est concernée,
+      // recharger ses ressources et re-render (vignettes d'attachments à jour).
+      invalidateResourceCache(d.ids);
+      if (!sending && d.convId != null && d.convId === currentConvId) {
+        loadConversationResources(currentConvId).then(function() { renderThread(currentThread); });
+      }
+      return;
+
+    case 'reload-skills':
+      // Cache skills périmé (CRUD dans un autre onglet). Recharger le miroir RAM ;
+      // re-render le drawer seulement s'il est ouvert (sinon renderSkills au
+      // prochain openSkills suffit). syncSkillHintUI (légende composer) suit via
+      // renderSkills ; on le rappelle explicitement si le drawer est fermé.
+      loadSkillsCache().then(function() {
+        if (isSkillsDrawerOpen()) renderSkills();
+        else syncSkillHintUI();
+      });
+      return;
+
+    case 'full-reload':
+      // Import/reset dans un autre onglet : l'état localStorage+IDB a été
+      // intégralement remplacé. Rechargement franc, comme l'onglet émetteur.
+      location.reload();
+      return;
+
+    case 'soft-lock': {
+      // Un pair (d.tabId) affiche la même conv que nous. L'ajouter au set. Si
+      // c'est un pair INCONNU, se re-signaler une fois (handshake) pour que le
+      // pair récemment ouvert nous connaisse à son tour. Le garde « nouveau »
+      // borne l'échange : une fois chacun dans le set de l'autre, plus de
+      // re-signalement → pas de boucle. (routeMessage n'émet 'soft-lock' que si
+      // la conv est affichée localement ; l'appartenance au Space actif est
+      // garantie : on n'affiche qu'une conv du Space courant.)
+      if (d.tabId && !_peersOnConv.has(d.tabId)) {
+        _peersOnConv.add(d.tabId);
+        refreshTabBanner();
+        announceConvOpened(currentConvId);   // réponse au handshake
+      }
+      return;
+    }
+    case 'soft-unlock': {
+      // Le pair a fermé la conv (ou quitté) : le retirer des deux sets. Le
+      // bandeau ne disparaît que si plus aucun pair ne tient la conv.
+      if (d.tabId) {
+        _peersOnConv.delete(d.tabId);
+        _peersGenerating.delete(d.tabId);
+        refreshTabBanner();
+      }
+      return;
+    }
+
+    case 'readonly-on': {
+      // Un pair génère sur la conv qu'on affiche (message initial OU heartbeat).
+      // Enregistrer le tabId + l'horodatage (pour le TTL), armer le balayage,
+      // activer le readonly. Idempotent : un heartbeat répété rafraîchit juste
+      // l'horodatage. Un onglet ouvert PENDANT la génération se verrouille ici,
+      // au premier heartbeat reçu (pas besoin d'avoir vu le -started initial).
+      if (d.tabId) {
+        const wasGenerating = _peersGenerating.has(d.tabId);
+        _peersGenerating.add(d.tabId);
+        _peerHeartbeatAt[d.tabId] = Date.now();
+        armTtlSweeper();
+        if (!wasGenerating) { refreshTabBanner(); applyReadonlyState(); }
+      }
+      return;
+    }
+    case 'readonly-off': {
+      // Le pair a fini de générer : retirer du set. Le readonly ne se lève que si
+      // plus aucun pair ne génère.
+      if (d.tabId && _peersGenerating.has(d.tabId)) {
+        _peersGenerating.delete(d.tabId);
+        delete _peerHeartbeatAt[d.tabId];
+        refreshTabBanner();
+        applyReadonlyState();
+        // Re-hydratation à la fin de génération d'un pair. On NE se repose PAS
+        // sur le seul conv-updated de la persistance finale (J2) : lorsqu'il est
+        // émis juste avant conv-generation-ended, il peut arriver pendant l'await
+        // interne d'un openConversation() déclenché par un conv-updated ANTÉRIEUR
+        // (message user du même tour), et le rendu final retombe alors sur l'état
+        // « user sans réponse » — la réponse du pair n'apparaît jamais en live
+        // (visible seulement après navigation/reload). Relire le storage frais
+        // ici est idempotent (openConversation est byte-stable, piège 17) et ferme
+        // le trou quel que soit l'ordre d'arrivée des messages. Différé si une
+        // génération LOCALE est en vol (drainé par setSending(false), J3).
+        if (currentConvId && d.convId === currentConvId) {
+          if (sending) { _queueSyncAction({ action: 'rehydrate', convId: currentConvId }); }
+          else openConversation(currentConvId);
+        }
+      }
+      return;
+    }
+
+    default:
+      return;
+  }
+}
+
+// Ré-application des réglages modifiés dans un autre onglet. `keys` = clés de
+// settings modifiées, ou sentinelles de sous-domaine ('api-servers',
+// 'active-api-server', 'mcp-servers'). On ré-applique de façon ciblée pour ne
+// pas perturber inutilement l'UI (A1 : ne jamais vider un draft ni interrompre
+// une génération — on ne touche qu'aux surfaces de réglage/serveur).
+function applySyncedSettings(keys) {
+  const set = new Set(keys || []);
+  // Serveurs API / serveur actif : re-render cartes + sélecteur composer + pilule.
+  if (set.has('api-servers') || set.has('active-api-server')) {
+    loadApiServers();
+    syncActiveApiServerUI();
+    if (typeof renderApiServers === 'function') renderApiServers();
+    syncModelUI();
+  }
+  // Serveurs MCP : re-render cartes (les outils distants se rebranchent à la
+  // prochaine reconnexion manuelle ; pas de reconnexion auto imposée ici).
+  if (set.has('mcp-servers') && typeof renderMcpServers === 'function') renderMcpServers();
+  // Réglages généraux : ré-appliquer thème + surlignage + sélecteurs, sans
+  // toucher au draft ni au thread. On relit l'état persisté à la source.
+  const s = loadSettings();
+  if (set.has('theme')) applyTheme(s.theme || 'system');
+  if (set.has('highlight')) highlightEnabled = s.highlight !== false;
+  // Autres clés (systemPrompt, contextWindow, sélecteurs…) : effet au prochain
+  // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
+  // recalcule au prochain syncContextCounter.
+  syncContextCounter();
+}
+
+// File d'attente des actions de synchro différées pendant une génération locale.
+function _queueSyncAction(d) {
+  // Coalescing : une seule re-hydratation/conv-gone en attente suffit (la
+  // dernière gagne, l'état persisté est de toute façon relu au drain).
+  _pendingSyncActions = _pendingSyncActions.filter(function(a) {
+    return a.action !== 'rehydrate' && a.action !== 'conv-gone';
+  });
+  _pendingSyncActions.push(d);
+}
+
+// Drain appelé après la fin d'une génération locale (setSending(false), ui.js).
+// Rejoue les actions différées maintenant que currentThread n'est plus muté.
+function drainPendingSync() {
+  if (!_pendingSyncActions.length) return;
+  const actions = _pendingSyncActions;
+  _pendingSyncActions = [];
+  for (const d of actions) applySyncDecision(d);
+}
+
+// ── Readonly relay + heartbeat (J5) ──────────────────────────────────────────
+// Un onglet qui génère sur la conv X émet conv-generation-started(X) au début et
+// conv-generation-ended(X) à la fin (tous chemins : succès/erreur/abort, via le
+// setSending(false) du finally). Un heartbeat ré-émet -started toutes les
+// SYNC_HEARTBEAT_MS ; les récepteurs auto-libèrent le readonly s'ils ne
+// reçoivent pas de heartbeat en SYNC_HEARTBEAT_TTL_MS (crash de l'émetteur).
+// Un onglet ouvert PENDANT une génération se verrouille au prochain heartbeat.
+const SYNC_HEARTBEAT_MS = 5000;        // ré-émission de -started (A5 : N = 5 s)
+const SYNC_HEARTBEAT_TTL_MS = 10000;   // auto-release récepteur sans heartbeat (2×N)
+
+let _genRelayConvId = null;   // conv sur laquelle CET onglet génère (null si aucune)
+let _genHeartbeatTimer = null;
+
+// Démarre le relais : émet -started + arme le heartbeat. convId capturé =
+// currentConvId au moment du setSending(true) (on génère sur la conv affichée).
+function startGenerationRelay(convId) {
+  if (convId == null) return;
+  _genRelayConvId = convId;
+  syncPost('conv-generation-started', { convId: convId, tabId: syncTabId() });
+  if (_genHeartbeatTimer) { clearInterval(_genHeartbeatTimer); }
+  _genHeartbeatTimer = setInterval(function () {
+    if (_genRelayConvId == null) return;   // course : arrêt entre deux ticks
+    syncPost('conv-generation-started', { convId: _genRelayConvId, tabId: syncTabId() });
+  }, SYNC_HEARTBEAT_MS);
+}
+
+// Arrête le relais : coupe le heartbeat + émet -ended. Idempotent (double appel
+// sans effet). Discipline deux-timers (piège 13) : ne touche QUE _genHeartbeatTimer,
+// jamais les timers du patienteur (startWaiter/stopWaiter).
+function stopGenerationRelay() {
+  if (_genHeartbeatTimer) { clearInterval(_genHeartbeatTimer); _genHeartbeatTimer = null; }
+  if (_genRelayConvId != null) {
+    syncPost('conv-generation-ended', { convId: _genRelayConvId, tabId: syncTabId() });
+    _genRelayConvId = null;
+  }
 }
 
 // Crée la conversation à la volée au premier envoi (pas avant). Stampée dans
@@ -858,6 +1229,12 @@ async function applyImportedData(payload) {
   for (const rec of resources) {
     await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
   }
+  // Prévenir les autres onglets AVANT de recharger celui-ci : remplacement
+  // intégral destructif → les pairs doivent repartir d'un état frais, pas
+  // re-render par bribes sur les resources-updated émis pendant la réinsertion
+  // (un seul full-reload, cf. PLAN-J J2 / doctrine post-commit). Cet onglet-ci
+  // recharge juste après ; les pairs rechargent sur réception.
+  syncPost('full-reload', {});
   location.reload();
 }
 
@@ -1989,6 +2366,26 @@ function init() {
   });
   syncSpaceUI();
   loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
+  // Synchro multi-onglets : branche le récepteur ET construit le canal, APRÈS
+  // les migrations de boot (Spaces + serveurs API). Tant que _syncChannel était
+  // null, syncPost restait no-op — la migration n'a émis aucun broadcast
+  // parasite. À partir d'ici, cet onglet émet (post-commit) ET écoute
+  // (handleSyncMessage → routeMessage → applySyncDecision).
+  syncOnMessage(handleSyncMessage);
+  // Soft-lock (J4) : à la fermeture/masquage de l'onglet, signaler best-effort
+  // qu'on lâche la conv affichée (les pairs retirent le bandeau). pagehide couvre
+  // le cas mobile/bfcache où beforeunload ne tire pas ; les deux sont tolérés en
+  // double (le pair déduplique par tabId dans son set). Le TTL de J5 est le vrai
+  // filet contre un crash sans événement ; ceci est l'accélérateur du cas propre.
+  const onTabLeaving = function () {
+    // Best-effort : libérer le readonly des pairs si on générait (J5) AVANT de
+    // lâcher la conv (J4). stopGenerationRelay est idempotent et émet -ended ;
+    // le TTL reste le filet si l'onglet meurt sans que ces events partent.
+    stopGenerationRelay();
+    if (currentConvId) announceConvClosed(currentConvId);
+  };
+  window.addEventListener('pagehide', onTabLeaving);
+  window.addEventListener('beforeunload', onTabLeaving);
   const s = loadSettings();
   $('set-system').value = s.systemPrompt || '';
   $('set-highlight').checked = s.highlight !== false;

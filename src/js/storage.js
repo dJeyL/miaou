@@ -74,6 +74,9 @@ function loadSettings() {
 function saveSettings(obj) {
   const next = Object.assign({}, loadSettingsRaw(), obj || {});
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  // Broadcast post-commit (piège 24 ; setItem synchrone donc déjà durable) : les
+  // pairs relisent+ré-appliquent les clés modifiées (thème, modèle, sélecteurs…).
+  syncPost('settings-updated', { keys: Object.keys(obj || {}) });
   return next;
 }
 
@@ -118,6 +121,7 @@ function migrateApiServersIfNeeded() {
 
 function saveApiServersRaw(arr) {
   localStorage.setItem(API_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  syncPost('settings-updated', { keys: ['api-servers'] });   // post-commit (piège 24)
   return arr;
 }
 
@@ -193,6 +197,7 @@ function getActiveApiServerId() {
 
 function setActiveApiServerId(id) {
   localStorage.setItem(ACTIVE_API_SERVER_KEY, id || '');
+  syncPost('settings-updated', { keys: ['active-api-server'] });   // post-commit (piège 24)
 }
 
 // Serveur actif effectif : l'id persisté s'il pointe encore sur un serveur
@@ -242,6 +247,7 @@ function loadMcpServers() {
 
 function saveMcpServers(arr) {
   localStorage.setItem(MCP_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  syncPost('settings-updated', { keys: ['mcp-servers'] });   // post-commit (piège 24)
   return arr;
 }
 
@@ -313,11 +319,18 @@ function saveConversation(conv) {
   const i = arr.findIndex(c => c.id === conv.id);
   if (i >= 0) arr[i] = conv; else arr.push(conv);
   persistConversations(arr);
+  // Post-commit (piège 24) : les pairs re-hydratent si affichée, sinon rafraîchissent
+  // la liste (herméticité de Space tranchée côté récepteur via spaceConvIds, piège 18).
+  syncPost('conv-updated', { convId: conv.id, spaceId: conv.spaceId || DEFAULT_SPACE_ID });
   return conv;
 }
 
 function deleteConversation(id) {
+  // Résoudre le spaceId AVANT filtrage (le payload en a besoin ; après, la conv
+  // a disparu). Émettre seulement si la conv existait réellement.
+  const existing = loadConversation(id);
   persistConversations(loadConversations().filter(c => c.id !== id));
+  if (existing) syncPost('conv-deleted', { convId: id, spaceId: existing.spaceId || DEFAULT_SPACE_ID });  // post-commit (piège 24)
 }
 
 // Épingle/désépingle une conversation. Retourne le nouvel état (bool) ou null
@@ -328,6 +341,7 @@ function toggleConversationPin(id) {
   if (!c) return null;
   c.pinned = !c.pinned;
   persistConversations(arr);
+  syncPost('conv-updated', { convId: id, spaceId: c.spaceId || DEFAULT_SPACE_ID });  // post-commit (piège 24)
   return c.pinned;
 }
 
@@ -521,6 +535,11 @@ function loadSpaces() {
 
 function saveSpaces(arr) {
   localStorage.setItem(SPACES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  // Post-commit (piège 24) : le registre des Espaces a changé (création/renommage/
+  // suppression) → les pairs re-render leur sélecteur/liste de Spaces. Pas de
+  // spaceId précis (saveSpaces reçoit le tableau entier) : le récepteur recharge
+  // la liste complète. `miaou-active-space` n'est JAMAIS diffusé (état par onglet).
+  syncPost('space-changed', {});
   return arr;
 }
 

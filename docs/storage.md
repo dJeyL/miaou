@@ -1,5 +1,12 @@
 # Stockage (localStorage / IndexedDB)
 
+> **Synchro multi-onglets (lot J)** : depuis J2, la plupart des écritures
+> émettent un broadcast `BroadcastChannel` **post-commit** (après `setItem` pour
+> localStorage, sur `tx.oncomplete` pour IndexedDB — jamais `req.onsuccess`) pour
+> notifier les autres onglets. Table des émetteurs et exceptions (`miaou-active-space`,
+> résumés) dans `docs/multitab-sync.md`. `miaou-active-space` n'est **jamais**
+> diffusé (état par onglet).
+
 - `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
   theme, showModelSelector, reasoningEffort, showReasoningSelector, sidebarWidth,
   includeToolsInSystemPrompt, saveJsonResponses, intentTracing, confirmSkillAutoUse }`.

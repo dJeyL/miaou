@@ -235,7 +235,13 @@
 #set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
 /* bannière résumés (mode « proposer ») */
-.summary-banner {
+/* Anatomie de bandeau contextuel PARTAGÉE (lot J) : base commune de
+   .summary-banner (résumés liés, ci-dessous), .move-bar (mode déplacement,
+   sidebar.css) et .tab-banner (soft-lock / readonly multi-onglets, ci-dessous).
+   Masqué par défaut, .show l'affiche. Les variantes ne portent QUE leurs
+   spécificités (margin, layout interne). NE PAS refléter dans EXPORT_CSS (figé,
+   piège 22) — aucun bandeau n'y apparaît. */
+.banner {
   display: none;
   flex-direction: column;
   align-items: stretch;
@@ -244,10 +250,11 @@
   border: 1px solid var(--accent-bd);
   border-radius: var(--r);
   padding: 10px 12px;
-  margin: 12px 0;
   animation: rise 220ms var(--ease) both;
 }
-.summary-banner.show { display: flex; }
+.banner.show { display: flex; }
+
+.summary-banner { margin: 12px 0; }
 .summary-banner-head {
   display: flex;
   align-items: center;
@@ -305,6 +312,36 @@
   border-color: transparent;
 }
 .mb-btn.primary:hover { background: var(--accent-2); }
+
+/* ── Bandeau multi-onglets (lot J : soft-lock + readonly) ────────────────────
+   Variante informative de .banner (base ci-dessus) : icône + texte, sans
+   boutons d'action ni liste. Deux états portés par des classes modificatrices
+   (contenu/texte pilotés en JS) ; l'anatomie visuelle reste celle de .banner. */
+.tab-banner { margin: 12px 0; }
+.tab-banner-body {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 0;
+}
+.tab-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+
+/* Readonly cross-onglets (lot J : génération en cours dans un autre onglet).
+   Verrouille les mutations LOCALES sans empêcher lecture/scroll (A6). Le composer
+   est aussi désactivé en JS (setConvReadonly) ; ici on grise et on neutralise les
+   boutons d'action au survol des bulles (édition/suppression/régénération/
+   continuation/copie de conv). pointer-events:none suffit à bloquer le clic ;
+   opacity signale l'état. Ne touche PAS au contenu du thread (lecture intacte). */
+body.conv-readonly .composer-inner { opacity: 0.55; }
+body.conv-readonly .msg-edit,
+body.conv-readonly .msg-regen,
+body.conv-readonly .msg-continue,
+body.conv-readonly .conv-retitle-btn {
+  pointer-events: none;
+  opacity: 0.4;
+}
 
 /* ═══ Pièces jointes (composer) ═══ */
 /* Chips en attente, au-dessus de l'input-wrap. Structure partagée avec les

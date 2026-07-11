@@ -307,21 +307,11 @@
 }
 .conv-list.select-mode .conv-select { display: block; }
 
-/* Barre contextuelle (D4) : même anatomie que .summary-banner (composer.css)
-   — masquée par défaut, .show l'affiche ; visible dès le mode déplacement actif
-   (indépendamment du nombre de conversations cochées, correctif UX 2026-07-08). */
-.move-bar {
-  display: none;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--accent-dim);
-  border: 1px solid var(--accent-bd);
-  border-radius: var(--r);
-  padding: 10px 12px;
-  margin: 8px;
-  animation: rise 220ms var(--ease) both;
-}
-.move-bar.show { display: flex; }
+/* Barre contextuelle (D4) : variante de .banner (base partagée dans
+   composer.css, lot J) — masquée par défaut, .banner.show l'affiche ; visible
+   dès le mode déplacement actif (indépendamment du nombre de conversations
+   cochées, correctif UX 2026-07-08). Ne porte ici que sa marge propre. */
+.move-bar { margin: 8px; }
 .move-bar-count { font-size: 12.5px; color: var(--text); }
 .move-bar-row {
   display: flex;

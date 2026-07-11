@@ -321,6 +321,26 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     sanitisation interne de Mermaid `strict` — cf. `docs/rendering.md`).
     `srcdoc` est posé par **propriété JS** sur un élément `createElement`,
     jamais interpolé dans un template string HTML.
+24. **Synchro multi-onglets : broadcast POST-commit, et relecture APRÈS l'await.**
+    Deux invariants jumeaux, tous deux payés (lot J). **(a) Émettre après la
+    persistance durable, jamais avant** : tout `syncPost` de mutation
+    (`conv-updated`, `settings-updated`, `resources-updated`…) suit le `setItem`/
+    `tx.oncomplete` correspondant — un pair qui rehydrate lit le store, l'émission
+    ne doit donc jamais le devancer (IDB : sur `tx.oncomplete`, **jamais**
+    `req.onsuccess`). **(b) Un récepteur qui rehydrate relit l'état APRÈS son
+    `await`, jamais un instantané figé avant.** `openConversation` contient un
+    `await` (`loadConversationResources`) : construire `currentThread` **avant**
+    cet await fige le fil, et un `saveConversation` d'un pair survenu **pendant**
+    l'await — typiquement la réponse assistant persistée juste après
+    `conv-generation-ended` — est perdu, le dernier tour n'apparaissant qu'à la
+    navigation suivante (bug « toujours en retard d'un tour »). La lecture de
+    `conv.messages` (`projectConvMessages`, pur, testé) se fait **après** l'await ;
+    un **jeton de séquence** (`_openConvSeq`) fait abandonner tout appel devenu
+    obsolète pendant son await (le plus récent, qui relit le store le plus frais,
+    gagne). Filet complémentaire : `readonly-off` (fin de génération d'un pair)
+    relance une rehydratation, sans se reposer sur le seul `conv-updated` final
+    dont l'arrivée peut précéder la persistance de la réponse. Cf.
+    `docs/multitab-sync.md`.
 
 ## Domaines détaillés (`docs/`)
 
@@ -330,7 +350,7 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   sections JS/CSS, avec lignes). **Généré par `build.py` à chaque build, ne
   jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
   fichiers (`ui.js`, `chat.css`).
-- **`docs/pitfalls-detail.md`** — développement complet des 23 pièges ci-dessus.
+- **`docs/pitfalls-detail.md`** — développement complet des 24 pièges ci-dessus.
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
   `miaou-mcp-servers`) et IndexedDB (`skills`, `resources`).
@@ -349,6 +369,10 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité).
 - **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
   déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée.
+- **`docs/multitab-sync.md`** — synchro multi-onglets (lot J, BroadcastChannel) :
+  protocole d'enveloppe, liste fermée de types, émetteurs/récepteurs, file
+  d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
+  broadcast post-commit + relecture post-await (piège 24).
 
 ## Règle d'or
 
