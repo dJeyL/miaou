@@ -324,7 +324,7 @@ function applyUsageToLastManifest(usage) {
 }
 
 // ── Navigation entre conversations ──────────────────────────────────────────
-async function openConversation(id) {
+async function openConversation(id, reveal) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
@@ -353,6 +353,10 @@ async function openConversation(id) {
   await loadConversationResources(id);   // peuple le session cache avant renderThread
   renderThread(currentThread);
   renderConvList();
+  // Ouverture depuis la palette (recherche de conversation) : ramener la conv
+  // fraîchement chargée dans la liste visible, même sidebar masquée (reveal),
+  // centrée pour ne pas la coller au bord.
+  if (reveal) revealActiveConv('center');
   syncModelUI();
   syncReasoningUI();
   _lastContextManifest = null;   // switch de conv : le dernier envoi réel ne s'applique plus, retombe sur simulation
@@ -380,10 +384,15 @@ function resetToEmpty() {
   syncContextCounter();
 }
 
-function selectConv(id) {
-  if (id === currentConvId) return;
+function selectConv(id, reveal) {
+  if (id === currentConvId) {
+    // Déjà ouverte : rien à charger, mais un appel « reveal » (palette) doit
+    // quand même ramener la conv en vue (centrée, comme à l'ouverture).
+    if (reveal) revealActiveConv('center');
+    return;
+  }
   const leaving = currentConvId;
-  openConversation(id);
+  openConversation(id, reveal);
   summarizeIfNeeded(leaving);   // résumé de la conversation quittée (arrière-plan)
   armIdleSummaryTimer();
   if (isMobileLayout()) closeSidebarMobile();

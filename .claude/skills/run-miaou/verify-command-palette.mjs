@@ -350,6 +350,18 @@ check('recherche cross-Space : ouvrir une conv "Pro" bascule vers "Pro"', await 
   document.getElementById('space-select-label').textContent === 'Pro'));
 check('recherche cross-Space : la conversation ciblée est ouverte', await page.evaluate(() =>
   currentConvId === 'seed-02'));
+// reveal : la conv ouverte depuis la palette est scrollée en vue dans la liste
+// (élément .active présent et son rect vertical compris dans le conteneur
+// scrollable) — vaut même sidebar masquée, cf. revealActiveConv().
+check('recherche cross-Space : la conv ouverte est révélée (scrollée en vue)', await page.evaluate(() => {
+  const el = document.querySelector('#conv-list .conv.active');
+  if (!el) return false;
+  const list = document.getElementById('conv-list');
+  const r = el.getBoundingClientRect();
+  const c = list.getBoundingClientRect();
+  const mid = (r.top + r.bottom) / 2;
+  return mid >= c.top && mid <= c.bottom;
+}));
 await shot('07-conv-opened-followed-space.png');
 
 // ── 11. Priorité Space actif en tête (rankConvResults appliqué en réel) ──────

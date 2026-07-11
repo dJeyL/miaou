@@ -3115,7 +3115,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-11 13:10 UTC */
+/* miaou — built: 2026-07-11 13:30 UTC */
 
 /* ── utils.js ── */
 
@@ -3868,7 +3868,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783775428}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783776621}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -8072,6 +8072,11 @@ function onConvSearch() {
   renderConvList();
 }
 
+function revealActiveConv(block) {
+  const active = $('conv-list').querySelector('.conv.active');
+  if (active) active.scrollIntoView({ block: block || 'nearest' });
+}
+
 function clearConvSearch() {
   const input = $('conv-search');
   input.value = '';
@@ -8079,8 +8084,7 @@ function clearConvSearch() {
   convSearchFilter = null;
   renderConvList();
   
-  const active = $('conv-list').querySelector('.conv.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
+  revealActiveConv();
   input.focus();
 }
 
@@ -8796,7 +8800,8 @@ function cmdkConvItems(query) {
     run: () => {
       closeCommandPalette();
       if (c.spaceId !== getActiveSpaceId()) followSpace(c.spaceId);
-      selectConv(c.id);
+      
+      selectConv(c.id, true);
     },
   }));
 }
@@ -11607,7 +11612,7 @@ function applyUsageToLastManifest(usage) {
   _lastContextManifest = scaleManifestToUsage(_lastContextManifest, usage);
 }
 
-async function openConversation(id) {
+async function openConversation(id, reveal) {
   const conv = loadConversation(id);
   if (!conv) return;
   currentConvId = id;
@@ -11634,6 +11639,8 @@ async function openConversation(id) {
   await loadConversationResources(id);   
   renderThread(currentThread);
   renderConvList();
+  
+  if (reveal) revealActiveConv('center');
   syncModelUI();
   syncReasoningUI();
   _lastContextManifest = null;   
@@ -11660,10 +11667,14 @@ function resetToEmpty() {
   syncContextCounter();
 }
 
-function selectConv(id) {
-  if (id === currentConvId) return;
+function selectConv(id, reveal) {
+  if (id === currentConvId) {
+    
+    if (reveal) revealActiveConv('center');
+    return;
+  }
   const leaving = currentConvId;
-  openConversation(id);
+  openConversation(id, reveal);
   summarizeIfNeeded(leaving);   
   armIdleSummaryTimer();
   if (isMobileLayout()) closeSidebarMobile();

@@ -1746,6 +1746,16 @@ function onConvSearch() {
   renderConvList();
 }
 
+// Ramène l'élément de conversation actif dans la partie visible de la liste.
+// Sans effet si aucune conversation active. Fonctionne même sidebar masquée
+// (scrollIntoView agit sur le conteneur overflow hors écran) : on la retrouve
+// déjà en vue à sa réouverture. `block` = 'nearest' par défaut (scroll minimal,
+// pas de mouvement si déjà visible) ; 'center' pour dégager la conv du bord.
+function revealActiveConv(block) {
+  const active = $('conv-list').querySelector('.conv.active');
+  if (active) active.scrollIntoView({ block: block || 'nearest' });
+}
+
 function clearConvSearch() {
   const input = $('conv-search');
   input.value = '';
@@ -1754,8 +1764,7 @@ function clearConvSearch() {
   renderConvList();
   // La sélection courante (potentiellement très ancienne) peut être hors écran
   // une fois la liste complète restaurée : on la ramène dans le champ visible.
-  const active = $('conv-list').querySelector('.conv.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
+  revealActiveConv();
   input.focus();
 }
 
@@ -2651,7 +2660,9 @@ function cmdkConvItems(query) {
     run: () => {
       closeCommandPalette();
       if (c.spaceId !== getActiveSpaceId()) followSpace(c.spaceId);
-      selectConv(c.id);
+      // reveal : après l'éventuel changement d'espace, scroller la liste vers la
+      // conv ouverte (même sidebar masquée) pour la retrouver en place.
+      selectConv(c.id, true);
     },
   }));
 }
