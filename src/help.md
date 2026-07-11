@@ -98,7 +98,8 @@ généré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout
 moment pour reprendre où tu en étais.
 
 Un champ de **recherche** filtre l'historique en temps réel, par titre ou par
-mots-clés du contenu.
+mots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même
+recherche, elle étendue à tous tes espaces.
 
 Pour la **continuité entre conversations**, MIAOU résume tes échanges en
 arrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi
@@ -126,7 +127,9 @@ Deux façons de s'en servir :
 - **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps du
   skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de
   la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté
-  reste en coulisse mais fait bien partie du message.
+  reste en coulisse mais fait bien partie du message. La palette de commandes
+  (Ctrl/Cmd+K → « Invoquer une skill ») fait la même chose : elle insère `/slug `
+  dans le composer, prêt à envoyer.
 - **Découverte par le modèle** : si ta demande en langage naturel correspond à
   un skill activé, le modèle peut décider seul de le consulter. Une trace
   visible signale alors qu'il l'a lu.
@@ -200,6 +203,21 @@ Quelques repères pour te déplacer dans MIAOU :
   conversation courante sans toucher à ton défaut.
 - **Thème clair / sombre** et coloration syntaxique se règlent dans les
   Paramètres.
+- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour
+  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
+  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —
+  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,
+  inspecteur de contexte, bascule de thème et de coloration, export de la
+  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
+  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou
+  rechercher une conversation (dans tous tes espaces — Échap revient en arrière).
+  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule
+    touche lance la commande — la lettre est affichée à gauche de chaque ligne.
+    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une
+    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer
+    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les
+    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,
+    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.
 
 ## donnees
 

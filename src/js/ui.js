@@ -30,8 +30,18 @@ const WELCOME_SCREENS = [
   { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.' },
 ];
 
-function showWelcome() {
-  const w = WELCOME_SCREENS[Math.floor(Math.random() * WELCOME_SCREENS.length)];
+// Tire un écran d'accueil au hasard, en évitant `exceptTitle` si fourni (pour
+// garantir un changement VISIBLE au re-tirage — cf. refreshWelcomeIfPresent).
+function pickWelcomeScreen(exceptTitle) {
+  const pool = exceptTitle
+    ? WELCOME_SCREENS.filter(w => w.title !== exceptTitle)
+    : WELCOME_SCREENS;
+  const src = pool.length ? pool : WELCOME_SCREENS;   // garde-fou (jamais vide en pratique)
+  return src[Math.floor(Math.random() * src.length)];
+}
+
+function showWelcome(exceptTitle) {
+  const w = pickWelcomeScreen(exceptTitle);
   const el = document.createElement('div');
   el.className = 'welcome-screen';
   el.innerHTML =
@@ -39,6 +49,20 @@ function showWelcome() {
     '<div class="welcome-title">' + escHtml(w.title) + '</div>' +
     '<div class="welcome-sub">'   + escHtml(w.sub)   + '</div>';
   $('thread').appendChild(el);
+}
+
+// Coquetterie : si l'écran d'accueil est affiché (conversation vierge), un
+// changement de thème re-tire un message d'accueil au hasard, DIFFÉRENT de
+// l'actuel (changement toujours visible). Retire l'ancien avant de rappeler
+// showWelcome (qui append). No-op hors écran d'accueil ou avant tout rendu.
+function refreshWelcomeIfPresent() {
+  const thread = $('thread');
+  if (!thread) return;
+  const w = thread.querySelector('.welcome-screen');
+  if (!w) return;
+  const curTitle = (w.querySelector('.welcome-title') || {}).textContent || '';
+  w.remove();
+  showWelcome(curTitle);
 }
 
 // Path des composants Prism pour l'autoloader (langages chargés à la volée).
@@ -1307,9 +1331,13 @@ function placeToolAck(wrap, entry) {
 
 function renderThread(msgs) {
   const thread = $('thread');
+  // Titre du welcome courant AVANT vidage : si on re-rend un thread vide alors
+  // qu'un accueil était déjà affiché (Nouvelle conversation répétée, bouton ou
+  // palette), on garantit un accueil DIFFÉRENT (changement toujours visible).
+  const prevWelcome = (thread.querySelector('.welcome-screen .welcome-title') || {}).textContent || '';
   thread.innerHTML = '';
   clearMemoryProposals();   // les cartes de proposition viennent d'être détruites
-  if (!msgs || msgs.length === 0) { showWelcome(); return; }
+  if (!msgs || msgs.length === 0) { showWelcome(prevWelcome || undefined); return; }
   // Les acks précèdent dans currentThread l'assistant qu'ils ont nourri ; on les
   // tamponne pour les replacer DANS sa bulle (en-tête, acks, réponse), cohérent
   // avec le rendu live. Repli en blocs autonomes s'ils ne précèdent pas un
@@ -2446,6 +2474,319 @@ openApiServers = _tApi.open; closeApiServers = _tApi.close;
 const _tSkills = trackDrawer(openSkills, closeSkills);
 openSkills = _tSkills.open; closeSkills = _tSkills.close;
 
+// ── Command palette (Ctrl/Cmd+K, lot F) ─────────────────────────────────────
+// Overlay type Spotlight : input de filtrage + liste navigable au clavier. Le
+// registre est déclaratif (COMMANDS) — ajouter une commande = ajouter une
+// entrée, aucun code de palette touché. Chaque `run()` appelle une fonction
+// globale existante (contrainte inline-handler du projet). Scoring/tri PURS dans
+// utils.js (scoreCommand/filterCommands/rankConvResults), testés QuickJS ; ici
+// vit tout l'impur (DOM, état, effets de bord).
+//
+// Submodes : la palette peut basculer d'un mode « racine » vers un mode
+// secondaire (choix de modèle, skill, conversation, espace) où l'input filtre
+// une liste dédiée. Escape recule d'un mode avant de fermer.
+
+let _cmdkOpen = false;
+let _cmdkMode = 'root';        // 'root' | 'model' | 'skill' | 'conv' | 'space'
+let _cmdkItems = [];           // items rendus (mode courant, après filtrage)
+let _cmdkSel = 0;              // index sélectionné dans _cmdkItems
+let _cmdkFocusBefore = null;   // élément à re-focus à la fermeture (composer)
+// Mode filtre armé (racine) : champ vide, une lettre = RACCOURCI par défaut ;
+// taper Espace (avalé) bascule en filtrage, où une lettre = texte de recherche.
+// Se réarme (retour aux raccourcis) dès que le champ redevient vide (décision
+// Julien 2026-07-11). Ambigu sinon : « r » lancerait « Résumés » au lieu de
+// filtrer « réglages ». En mode filtre armé, les touches à gauche sont teintées.
+let _cmdkFilterArmed = false;
+
+// Placeholders par mode. En racine, deux variantes selon _cmdkFilterArmed.
+const CMDK_PLACEHOLDERS = {
+  root:  'Taper un raccourci, ou Espace pour filtrer…',
+  rootFilter: 'Filtrer les commandes…',
+  model: 'Choisir un modèle…',
+  skill: 'Invoquer une skill…',
+  conv:  'Rechercher une conversation…',
+  space: 'Changer d’espace…',
+};
+function cmdkRootPlaceholder() {
+  return _cmdkFilterArmed ? CMDK_PLACEHOLDERS.rootFilter : CMDK_PLACEHOLDERS.root;
+}
+
+// Registre déclaratif des commandes racine. `run()` : action ou entrée de
+// submode. `enabled()` (optionnel) : masque la commande hors contexte (liste
+// courte). `hint` (optionnel) : annotation à droite. `keywords` : matchés par
+// scoreCommand en plus du label.
+const COMMANDS = [
+  { id: 'new', key: 'n', label: 'Nouvelle conversation', keywords: ['new', 'conversation', 'nouveau'],
+    run: () => { closeCommandPalette(); newConversation(); } },
+  { id: 'search-conv', key: 'f', label: 'Rechercher une conversation', keywords: ['search', 'historique', 'find', 'chercher'],
+    run: () => enterCmdkSubmode('conv') },
+  { id: 'switch-model', key: 'm', label: 'Changer de modèle', keywords: ['model', 'modèle', 'switch'],
+    enabled: () => !!(_modelsCache && _modelsCache.length),
+    run: () => enterCmdkSubmode('model') },
+  { id: 'invoke-skill', key: 'k', label: 'Invoquer une skill', keywords: ['skill', 'slash', 'commande'],
+    enabled: () => listEnabledSkills().length > 0,
+    run: () => enterCmdkSubmode('skill') },
+  { id: 'switch-space', key: 'e', label: 'Changer d’espace', keywords: ['space', 'espace', 'workspace'],
+    enabled: () => loadSpaces().length > 1,
+    run: () => enterCmdkSubmode('space') },
+  { id: 'settings', key: ',', label: 'Ouvrir les réglages', keywords: ['settings', 'réglages', 'préférences', 'config'],
+    run: () => { closeCommandPalette(); openSettings(); } },
+  { id: 'memory', key: 'p', label: 'Ouvrir les souvenirs (profil)', keywords: ['memory', 'souvenirs', 'mémoire', 'profil'],
+    run: () => { closeCommandPalette(); openMemoryDrawer(); } },
+  { id: 'summaries', key: 'r', label: 'Ouvrir les résumés', keywords: ['summaries', 'résumés', 'historique'],
+    run: () => { closeCommandPalette(); openSummaryDrawer('summaries'); } },
+  { id: 'skills-drawer', key: 'g', label: 'Gérer les skills', keywords: ['skills', 'gestion'],
+    run: () => { closeCommandPalette(); openSkills(); } },
+  { id: 'mcp', key: 's', label: 'Serveurs MCP', keywords: ['mcp', 'serveurs', 'outils distants'],
+    run: () => { closeCommandPalette(); openMcpServers(); } },
+  { id: 'context', key: 'c', label: 'Inspecteur de contexte', keywords: ['context', 'contexte', 'tokens'],
+    run: () => { closeCommandPalette(); openContextInspector(); } },
+  { id: 'theme', key: 't', label: 'Basculer clair / sombre', keywords: ['theme', 'thème', 'dark', 'light', 'sombre', 'clair'],
+    run: () => { toggleThemeLightDark(); closeCommandPalette(); } },
+  { id: 'highlight', key: 'h', label: 'Basculer la coloration syntaxique', keywords: ['highlight', 'coloration', 'syntaxe', 'prism'],
+    run: () => { toggleHighlightFromPalette(); closeCommandPalette(); } },
+  { id: 'export-md', key: 'd', label: 'Exporter la conversation (Markdown)', keywords: ['export', 'markdown', 'md', 'télécharger'],
+    enabled: () => !!currentConvId,
+    run: () => { closeCommandPalette(); downloadConvMd(); } },
+  { id: 'export-html', key: 'w', label: 'Exporter la conversation (HTML)', keywords: ['export', 'html', 'page', 'télécharger'],
+    enabled: () => !!currentConvId,
+    run: () => { closeCommandPalette(); exportConvHtml(); } },
+];
+
+// Table touche → commande (mode racine, champ vide). Construite à la volée pour
+// ne pas dupliquer la source ; `enabled()` réévalué au moment de la frappe.
+function cmdkKeyCommand(key) {
+  const k = String(key || '').toLowerCase();
+  return COMMANDS.find(c => c.key === k && (!c.enabled || c.enabled())) || null;
+}
+
+// Bascule de thème vers l'apparence NON-active : on lit le thème EFFECTIF à
+// l'écran (si le réglage est « system », on résout via matchMedia comme
+// applyTheme le fait) et on force l'opposé — garantit toujours un changement
+// visible, y compris depuis « system » quand l'OS impose déjà clair/sombre
+// (décision Julien 2026-07-11). Réutilise selectTheme (persistance immédiate).
+function effectiveTheme() {
+  const t = loadSettings().theme;
+  if (t === 'light' || t === 'dark') return t;
+  return (typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+}
+function toggleThemeLightDark() {
+  selectTheme(effectiveTheme() === 'dark' ? 'light' : 'dark');
+}
+
+// Bascule la coloration syntaxique depuis la palette. onToggleHighlight() LIT la
+// checkbox DOM (no-op si on ne l'inverse pas d'abord) : on bascule l'état,
+// reflète la checkbox, puis délègue le re-render à onToggleHighlight.
+function toggleHighlightFromPalette() {
+  const cb = $('set-highlight');
+  if (cb) cb.checked = !cb.checked;
+  onToggleHighlight();
+}
+
+// Source d'items du mode courant, déjà rendus en objets {label, note?, hint?,
+// keyLabel?, run}. `note` = annotation secondaire (nom d'espace) ; `hint` =
+// annotation à droite (✓) ; `keyLabel` = touche de raccourci affichée à GAUCHE
+// (mode racine seulement — la touche lance la commande, champ vide).
+function cmdkModeItems(query) {
+  if (_cmdkMode === 'root') {
+    const avail = COMMANDS.filter(c => !c.enabled || c.enabled());
+    return filterCommands(avail, query).map(c => ({
+      label: c.label, hint: c.hint || '', keyLabel: c.key ? c.key.toUpperCase() : '', run: c.run,
+    }));
+  }
+  if (_cmdkMode === 'model') {
+    const cur = activeModel();
+    const models = (_modelsCache || []).filter(m => !query || m.toLowerCase().indexOf(query.toLowerCase()) >= 0);
+    return models.map(m => ({
+      label: m, hint: m === cur ? '✓' : '',
+      run: () => { closeCommandPalette(); pickComposerModel(m); },
+    }));
+  }
+  if (_cmdkMode === 'skill') {
+    return matchSkillCompletions(query).map(s => ({
+      label: s.name || s.slug, note: s.name ? ('/' + s.slug) : '',
+      run: () => { closeCommandPalette(); insertSkillIntoComposer(s.slug); },
+    }));
+  }
+  if (_cmdkMode === 'space') {
+    const spaces = loadSpaces().filter(s => !query || (s.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0);
+    const active = getActiveSpaceId();
+    return spaces.map(s => ({
+      label: s.name || '(sans nom)', hint: s.id === active ? '✓' : '',
+      run: () => { closeCommandPalette(); pickSpace(s.id); },
+    }));
+  }
+  if (_cmdkMode === 'conv') {
+    return cmdkConvItems(query);
+  }
+  return [];
+}
+
+// Submode « recherche conversation » : CROSS-Space (décision Julien D2), mais
+// les conversations du Space actif passent en tête même à score inférieur
+// (rankConvResults). Réutilise le prédicat de la sidebar (searchConversations)
+// pour la logique de match (titre/résumé/contenu) ; score léger local (titre =
+// 3, autre = 1) suffisant pour départager dans un groupe de Space. Chaque ligne
+// annotée du nom de son Space. Ouvrir une conv d'un autre Space suit le Space
+// (followSpace) avant selectConv, pour ne pas afficher un fil hors du Space actif.
+function cmdkConvItems(query) {
+  const q = (query || '').trim();
+  if (!q) return [];
+  const pred = searchConversations(q);
+  if (!pred) return [];
+  const ql = q.toLowerCase();
+  const spaceNames = new Map(loadSpaces().map(s => [s.id, s.name || '']));
+  const active = getActiveSpaceId();
+  const scored = listAllConversations()
+    .filter(pred)
+    .map(c => ({
+      id: c.id, spaceId: c.spaceId,
+      title: c.title || 'Sans titre',
+      score: (c.title || '').toLowerCase().includes(ql) ? 3 : 1,
+    }));
+  return rankConvResults(scored, active).map(c => ({
+    label: c.title,
+    note: c.spaceId === active ? '' : (spaceNames.get(c.spaceId) || 'Autre espace'),
+    run: () => {
+      closeCommandPalette();
+      if (c.spaceId !== getActiveSpaceId()) followSpace(c.spaceId);
+      selectConv(c.id);
+    },
+  }));
+}
+
+// Insère `/slug ` dans le composer et le focus (l'invocation reste au composer :
+// chemin slash-skill unique, docs/skills.md). Ne PAS invoquer directement.
+function insertSkillIntoComposer(slug) {
+  const ta = $('composer-text');
+  if (!ta || ta.disabled) return;
+  ta.value = '/' + slug + ' ';
+  ta.focus();
+  const caret = ta.value.length;
+  ta.setSelectionRange(caret, caret);
+  autoGrow(ta);
+  if (typeof onComposerInput === 'function') onComposerInput();
+}
+
+function enterCmdkSubmode(mode) {
+  _cmdkMode = mode;
+  _cmdkFilterArmed = false;   // les sous-modes filtrent nativement (pas de raccourcis)
+  const input = $('cmdk-input');
+  if (input) {
+    input.value = '';
+    input.placeholder = mode === 'root' ? cmdkRootPlaceholder() : (CMDK_PLACEHOLDERS[mode] || '');
+  }
+  renderCommandList('');
+}
+
+function renderCommandList(query) {
+  const list = $('cmdk-list');
+  const empty = $('cmdk-empty');
+  if (!list) return;
+  _cmdkItems = cmdkModeItems(query);
+  if (_cmdkSel >= _cmdkItems.length) _cmdkSel = 0;
+  // Teinte les touches quand le mode RACCOURCI est actif (racine, filtrage non
+  // armé) : signal qu'une lettre lance directement la commande. Dès que le
+  // filtrage est armé (Espace tapé), les touches redeviennent neutres (inertes).
+  list.classList.toggle('cmdk-shortcuts', _cmdkMode === 'root' && !_cmdkFilterArmed);
+  list.textContent = '';
+  // Rendu par createElement + textContent (labels = données utilisateur :
+  // titres de conversation, noms d'espace — jamais innerHTML, doctrine projet).
+  _cmdkItems.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.className = 'cmdk-item' + (i === _cmdkSel ? ' selected' : '');
+    // Touche de raccourci à GAUCHE (mode racine). Emplacement réservé (span
+    // vide) même sans touche, pour aligner les labels verticalement.
+    const keyEl = document.createElement('span');
+    keyEl.className = 'cmdk-item-key';
+    if (it.keyLabel) keyEl.textContent = it.keyLabel;
+    else keyEl.classList.add('cmdk-item-key-empty');
+    li.appendChild(keyEl);
+    const label = document.createElement('span');
+    label.className = 'cmdk-item-label';
+    label.textContent = it.label;
+    li.appendChild(label);
+    if (it.note) {
+      const note = document.createElement('span');
+      note.className = 'cmdk-item-note';
+      note.textContent = it.note;
+      li.appendChild(note);
+    }
+    if (it.hint) {
+      const hint = document.createElement('span');
+      hint.className = 'cmdk-item-hint';
+      hint.textContent = it.hint;
+      li.appendChild(hint);
+    }
+    li.addEventListener('mousedown', (ev) => { ev.preventDefault(); runCmdkItem(i); });
+    list.appendChild(li);
+  });
+  if (empty) empty.hidden = _cmdkItems.length > 0;
+}
+
+function runCmdkItem(i) {
+  const it = _cmdkItems[i];
+  if (it && typeof it.run === 'function') it.run();
+}
+
+function moveCmdkSelection(delta) {
+  if (!_cmdkItems.length) return;
+  _cmdkSel = (_cmdkSel + delta + _cmdkItems.length) % _cmdkItems.length;
+  const list = $('cmdk-list');
+  if (!list) return;
+  Array.from(list.children).forEach((li, i) => li.classList.toggle('selected', i === _cmdkSel));
+  const sel = list.children[_cmdkSel];
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function openCommandPalette() {
+  if (_cmdkOpen) return;
+  _cmdkOpen = true;
+  _cmdkMode = 'root';
+  _cmdkSel = 0;
+  _cmdkFilterArmed = false;   // à l'ouverture, mode raccourci (touches en orange)
+  _cmdkFocusBefore = document.activeElement;
+  const overlay = $('cmdk-overlay');
+  const input = $('cmdk-input');
+  if (overlay) overlay.hidden = false;
+  if (input) { input.value = ''; input.placeholder = cmdkRootPlaceholder(); }
+  renderCommandList('');
+  if (input) input.focus();
+}
+
+function closeCommandPalette() {
+  if (!_cmdkOpen) return;
+  _cmdkOpen = false;
+  _cmdkMode = 'root';
+  _cmdkItems = [];
+  const overlay = $('cmdk-overlay');
+  if (overlay) overlay.hidden = true;
+  // Restaure le focus au composer (brief D3). Fallback : élément focus avant.
+  const ta = $('composer-text');
+  if (ta && !ta.disabled) ta.focus();
+  else if (_cmdkFocusBefore && typeof _cmdkFocusBefore.focus === 'function') _cmdkFocusBefore.focus();
+  _cmdkFocusBefore = null;
+}
+
+// Escape sur la palette : recule d'un submode (retour racine) avant de fermer.
+// Renvoie true si l'événement est consommé (cascade Escape, ui.js).
+function closeCommandPaletteViaEscape() {
+  if (!_cmdkOpen) return false;
+  // Sous-mode → retour racine (enterCmdkSubmode réarme le placeholder). Racine
+  // avec filtrage armé → un Escape désarme d'abord (retour aux raccourcis) ;
+  // racine mode raccourci → ferme.
+  if (_cmdkMode !== 'root') { enterCmdkSubmode('root'); return true; }
+  if (_cmdkFilterArmed) { enterCmdkSubmode('root'); return true; }
+  closeCommandPalette();
+  return true;
+}
+
+function toggleCommandPalette() {
+  if (_cmdkOpen) closeCommandPalette();
+  else openCommandPalette();
+}
+
 function closeTopDropdownViaEscape() {
   const open = document.querySelectorAll('.model-menu.show');
   if (!open.length) return false;
@@ -2465,7 +2806,16 @@ function exitMoveModeViaEscape() {
   return true;
 }
 document.addEventListener('keydown', (e) => {
+  // Ctrl/Cmd+K : ouvre/ferme la palette de commandes (lot F). preventDefault
+  // pour couvrir la barre de recherche du navigateur (Firefox). Ignore si un
+  // autre modificateur est enfoncé (évite les collisions accidentelles).
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    toggleCommandPalette();
+    return;
+  }
   if (e.key !== 'Escape') return;
+  if (closeCommandPaletteViaEscape()) return;
   if (closeMermaidLightboxViaEscape()) return;
   if (closeTopDropdownViaEscape()) return;
   if (exitMoveModeViaEscape()) return;
@@ -2473,6 +2823,54 @@ document.addEventListener('keydown', (e) => {
   if (closeSidebarViaEscape()) return;
   toggleSidebar();
 });
+
+// Câblage de la palette : frappe (filtrage), navigation ↑/↓/Enter, clic backdrop.
+// Fait au chargement du module (globals, hors init) — les éléments existent dans
+// le HTML statique.
+(function wireCommandPalette() {
+  const input = $('cmdk-input');
+  const backdrop = $('cmdk-backdrop');
+  if (input) {
+    input.addEventListener('input', () => {
+      _cmdkSel = 0;
+      // Réarme le mode raccourci dès que le champ redevient vide (retour aux
+      // touches orange) ; l'input reste en filtrage tant qu'il y a du texte.
+      if (_cmdkMode === 'root' && !input.value && _cmdkFilterArmed) {
+        _cmdkFilterArmed = false;
+        input.placeholder = cmdkRootPlaceholder();
+      }
+      renderCommandList(input.value);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveCmdkSelection(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); moveCmdkSelection(-1); return; }
+      if (e.key === 'Enter') { e.preventDefault(); runCmdkItem(_cmdkSel); return; }
+      // Raccourci par commande (lot F, suite) : en mode racine, champ vide et
+      // filtrage NON armé, une lettre lance directement la commande. Comme « r »
+      // pourrait aussi vouloir dire « filtrer réglages », l'utilisateur DÉSAMBIGUÏSE
+      // en tapant Espace d'abord (avalé) → bascule en filtrage (décision Julien
+      // 2026-07-11). Pas de modificateur (le raccourci EST la séquence Ctrl/Cmd+K
+      // → lettre, K ayant déjà ouvert la palette).
+      if (_cmdkMode === 'root' && !input.value && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.key === ' ') {
+          // Espace en tête : bascule en filtrage sans l'insérer dans le champ.
+          e.preventDefault();
+          if (!_cmdkFilterArmed) {
+            _cmdkFilterArmed = true;
+            input.placeholder = cmdkRootPlaceholder();
+            renderCommandList('');
+          }
+          return;
+        }
+        if (!_cmdkFilterArmed) {
+          const cmd = cmdkKeyCommand(e.key);
+          if (cmd) { e.preventDefault(); cmd.run(); }
+        }
+      }
+    });
+  }
+  if (backdrop) backdrop.addEventListener('mousedown', closeCommandPalette);
+})();
 
 // ── Sélecteur de modèle du composer ─────────────────────────────────────────
 // Liste mise en cache pour la session (pas de persistance), invalidée si l'URL
@@ -2794,6 +3192,7 @@ function applyTheme(theme) {
   }
   document.documentElement.setAttribute('data-theme', resolved);
   refreshMermaidTheme(resolved);   // hook unique : couvre selectTheme ET le suivi OS
+  refreshWelcomeIfPresent();       // coquetterie : re-tire l'accueil si affiché (vierge)
 }
 
 // Réglage « system » : un changement de préférence OS en cours de session

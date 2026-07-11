@@ -109,6 +109,71 @@ function scoreSummary(queryTokens, summary) {
   return score;
 }
 
+// ── Command palette : scoring / filtrage / tri (fonctions pures, lot F) ─────
+// La palette (Ctrl/Cmd+K) filtre une liste de commandes déclaratives
+// `{id, label, keywords[]}` à la frappe. Scoring distinct de scoreSummary
+// (résumés) : ici substring + word-boundary sur label + keywords (brief F, D3 —
+// pas de lib fuzzy). Tout ce bloc est pur → testé QuickJS ; le registre lui-même
+// (run()/enabled(), effets de bord DOM) vit dans ui.js.
+
+// Score d'une commande pour une requête déjà tokenisée. Pour chaque token :
+// - match en début de mot (word-boundary) du label → +3
+// - substring interne du label → +2
+// - match d'un keyword (exact ou préfixe) → +2
+// - substring interne d'un keyword → +1
+// Un token sans aucun match n'annule PAS le score (recouvrement, pas conjonction
+// stricte) mais un score global de 0 signifie « aucun match » côté filterCommands.
+// Requête vide (aucun token) → score 0 (l'appelant conserve alors l'ordre du registre).
+function scoreCommand(queryTokens, cmd) {
+  const label = String(cmd.label || '').toLowerCase();
+  const kws = (cmd.keywords || []).map(k => String(k).toLowerCase());
+  // Mots du label pour la détection de frontière (préfixe de mot).
+  const labelWords = label.match(/[\p{L}\p{N}]+/gu) || [];
+  let score = 0;
+  for (const t of queryTokens) {
+    if (labelWords.some(w => w.startsWith(t))) score += 3;
+    else if (label.indexOf(t) >= 0) score += 2;
+    else if (kws.some(k => k === t || k.startsWith(t))) score += 2;
+    else if (kws.some(k => k.indexOf(t) >= 0)) score += 1;
+  }
+  return score;
+}
+
+// Filtre + trie une liste de commandes pour une requête brute. Requête vide →
+// liste inchangée (ordre du registre préservé). Sinon : score chaque commande,
+// garde score > 0, tri score décroissant STABLE (départage par index d'origine).
+// N'évalue PAS enabled() — le filtrage de disponibilité se fait en amont
+// (impur, côté ui.js) : cette fonction reste pure.
+function filterCommands(commands, query) {
+  const list = commands || [];
+  const qTokens = tokenize(query || '');
+  if (!qTokens.length) return list.slice();
+  return list
+    .map((cmd, i) => ({ cmd, i, score: scoreCommand(qTokens, cmd) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => (b.score - a.score) || (a.i - b.i))
+    .map(x => x.cmd);
+}
+
+// Tri des résultats du submode « recherche de conversation » (brief F, D2 —
+// décision Julien 2026-07-11 : recherche CROSS-Space, mais les conversations du
+// Space actif passent EN TÊTE même si elles scorent moins). Clef à deux niveaux :
+// (1) Space actif d'abord, (2) score décroissant, (3) ordre d'origine stable.
+// Entrées déjà scorées `{spaceId, score, ...}` — pur, aucun accès storage.
+function rankConvResults(results, activeSpaceId) {
+  return (results || [])
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const aActive = a.r.spaceId === activeSpaceId ? 0 : 1;
+      const bActive = b.r.spaceId === activeSpaceId ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      const ds = (b.r.score || 0) - (a.r.score || 0);
+      if (ds) return ds;
+      return a.i - b.i;
+    })
+    .map(x => x.r);
+}
+
 // ── Références de conversation dans le texte du modèle ──────────────────────
 // Le modèle cite une conversation passée via [conv_ref:ID] ou [conv_ref:ID|Titre]
 // (doctrine CONV_REF_DOCTRINE, tools.js) plutôt que d'exposer l'ID brut. Extrait

@@ -18,6 +18,25 @@
 </head>
 <body>
 
+<!-- Overlay de préchargement : masque le montage de l'UI (chargement plus
+     instantané depuis la palette). Logo MIAOU inline (mêmes formes que LOGO_SRC)
+     en fade-in, clignement décalé tôt ; estompé par init() (.boot-done) une fois
+     l'app en place (main.js). Fond opaque var(--bg) → aucun flash derrière. -->
+<div class="boot-overlay" id="boot-overlay">
+  <svg class="boot-logo" viewBox="0 0 64 64" aria-hidden="true">
+    <defs><linearGradient id="bootgB" x1="32" y1="2" x2="32" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC93C"/><stop offset=".55" stop-color="#FF7A1A"/><stop offset="1" stop-color="#F2431A"/>
+    </linearGradient></defs>
+    <g fill="url(#bootgB)">
+      <path d="M14 18 L18 5 L28 18 Z"/><path d="M50 18 L46 5 L36 18 Z"/>
+      <rect x="6" y="16" width="52" height="30" rx="11"/><path d="M16 43 L15 57 L29 44 Z"/>
+    </g>
+    <circle class="boot-eye" cx="26" cy="30" r="3.3" fill="#160d07"/>
+    <circle class="boot-eye" cx="38" cy="30" r="3.3" fill="#160d07"/>
+    <path d="M29 37 Q32 40 35 37" fill="none" stroke="#160d07" stroke-width="2.2" stroke-linecap="round"/>
+  </svg>
+</div>
+
 <div class="app" id="app">
 
   <!-- ═══ Sidebar ═══ -->
@@ -601,6 +620,17 @@
         <span class="hint">Souvenirs du profil, injectés dans tous les espaces. Les souvenirs propres à un espace se gèrent depuis son écran (sélecteur d'espace, sidebar).</span>
         <div class="mem-list" id="memory-list"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══ Command palette (Ctrl/Cmd+K) ═══ -->
+  <div class="cmdk-overlay" id="cmdk-overlay" hidden>
+    <div class="cmdk-backdrop" id="cmdk-backdrop"></div>
+    <div class="cmdk-box" role="dialog" aria-modal="true" aria-label="Palette de commandes">
+      <input type="text" id="cmdk-input" class="cmdk-input" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Tape une commande…">
+      <ul class="cmdk-list" id="cmdk-list"></ul>
+      <div class="cmdk-empty" id="cmdk-empty" hidden>Aucun résultat</div>
     </div>
   </div>
 

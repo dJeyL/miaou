@@ -47,6 +47,78 @@ describe('scoreSummary', function() {
   });
 });
 
+describe('scoreCommand', function() {
+  it('match en début de mot du label bat un substring interne', function() {
+    var boundary = scoreCommand(['conv'], { label: 'Nouvelle conversation', keywords: [] });
+    var inner    = scoreCommand(['ouv'],  { label: 'Nouvelle conversation', keywords: [] });
+    expect(boundary > inner).toBeTruthy();
+  });
+  it('match sur un keyword compte', function() {
+    var s = scoreCommand(['theme'], { label: 'Basculer clair/sombre', keywords: ['theme', 'thème'] });
+    expect(s > 0).toBeTruthy();
+  });
+  it('aucun match → 0', function() {
+    var s = scoreCommand(['introuvable'], { label: 'Réglages', keywords: ['settings'] });
+    expect(s).toBe(0);
+  });
+  it('requête vide (aucun token) → 0', function() {
+    expect(scoreCommand([], { label: 'Réglages', keywords: ['settings'] })).toBe(0);
+  });
+});
+
+describe('filterCommands', function() {
+  var cmds = [
+    { id: 'new',      label: 'Nouvelle conversation', keywords: ['new'] },
+    { id: 'settings', label: 'Réglages',              keywords: ['settings', 'préférences'] },
+    { id: 'theme',    label: 'Basculer clair/sombre', keywords: ['theme'] },
+  ];
+  it('requête vide conserve la liste et son ordre', function() {
+    var r = filterCommands(cmds, '');
+    expect(r.length).toBe(3);
+    expect(r[0].id).toBe('new');
+    expect(r[2].id).toBe('theme');
+  });
+  it('filtre les commandes sans match', function() {
+    var r = filterCommands(cmds, 'réglages');
+    expect(r.length).toBe(1);
+    expect(r[0].id).toBe('settings');
+  });
+  it('trie par score décroissant', function() {
+    // 'co' matche 'conversation' (frontière, +3) et rien d'autre fort.
+    var r = filterCommands(cmds, 'conversation');
+    expect(r[0].id).toBe('new');
+  });
+});
+
+describe('rankConvResults', function() {
+  it('le Space actif passe en tête même à score inférieur', function() {
+    var results = [
+      { id: 'a', spaceId: 'other',  score: 9 },
+      { id: 'b', spaceId: 'active', score: 2 },
+    ];
+    var r = rankConvResults(results, 'active');
+    expect(r[0].id).toBe('b');
+    expect(r[1].id).toBe('a');
+  });
+  it('à Space égal, départage par score décroissant', function() {
+    var results = [
+      { id: 'a', spaceId: 'active', score: 1 },
+      { id: 'b', spaceId: 'active', score: 5 },
+    ];
+    var r = rankConvResults(results, 'active');
+    expect(r[0].id).toBe('b');
+  });
+  it('score égal et même Space : ordre d\'origine stable', function() {
+    var results = [
+      { id: 'a', spaceId: 'active', score: 3 },
+      { id: 'b', spaceId: 'active', score: 3 },
+    ];
+    var r = rankConvResults(results, 'active');
+    expect(r[0].id).toBe('a');
+    expect(r[1].id).toBe('b');
+  });
+});
+
 describe('parseConvRefs', function() {
   it('aucun marqueur → tableau vide', function() {
     expect(parseConvRefs('bonjour, rien à signaler')).toEqual([]);

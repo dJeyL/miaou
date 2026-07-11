@@ -164,6 +164,12 @@ l'interface, JetBrains Mono pour le code.
   l'API n'est pas renseignée (voir `require_api_key` pour les endpoints sans
   authentification).
 - Date/heure et nom du modèle injectés automatiquement dans le contexte.
+- **Palette de commandes** (Ctrl/Cmd+K) : overlay type Spotlight, filtrage à la
+  frappe, navigation clavier (↑/↓/Entrée/Échap). Registre déclaratif : nouvelle
+  conversation, réglages, drawers (souvenirs, résumés, skills, MCP, contexte),
+  bascule thème/coloration, export .md/HTML. Sous-modes filtrants pour choisir un
+  modèle, invoquer une skill, changer d'espace, ou rechercher une conversation
+  (cross-Space, Space actif en tête). Détail : `docs/command-palette.md`.
 
 ## Build
 

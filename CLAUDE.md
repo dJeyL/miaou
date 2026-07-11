@@ -241,6 +241,16 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
     (tri `createdAt`→`id` déterministe), casse le prefix KV cache à chaque
     ajout/suppression/atterrissage de description de fichier (PAS un résumé
     du contenu — cf. `docs/spaces.md`) — assumé, comme un changement de Space.
+    **Exception sanctionnée (lot F, palette de commandes)** : le submode
+    « recherche de conversation » de la palette (`cmdkConvItems`, ui.js) est
+    **volontairement cross-Space** — il itère `listAllConversations()` (TOUS les
+    Spaces), pas `spaceConvIds`, et annote chaque résultat de son Space. Les
+    conversations du Space actif restent priorisées en tête (`rankConvResults`,
+    utils.js, pure). Ouvrir un résultat d'un autre Space **suit** ce Space
+    (`followSpace` avant `selectConv`) pour ne jamais afficher un fil hors du
+    Space actif. C'est la SEULE voie cross-Space assumée ; la recherche sidebar
+    (`renderConvList`) reste, elle, scopée au Space actif. Décision Julien
+    2026-07-11, cf. `docs/command-palette.md`.
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
     `role:'tool'` (brief A2, D3).** Un `recall_attachment` sur une image ne
     remet PAS les pixels dans le résultat de l'outil (`role:'tool'` textuel) :
@@ -337,6 +347,8 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
 - **`docs/rendering.md`** — rendu enrichi des blocs de code : diagrammes
   Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité).
+- **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
+  déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée.
 
 ## Règle d'or
 

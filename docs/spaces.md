@@ -50,6 +50,15 @@ branchés en C2 :
 - `<miaou_context>` porte une ligne statique-par-Space « Espace : &lt;nom&gt; »
   (y compris pour le default Space).
 
+**Exception cross-Space assumée (lot F).** Le sous-mode « recherche de
+conversation » de la palette de commandes (`cmdkConvItems`, ui.js) est la SEULE
+voie qui perce délibérément cette herméticité : il cherche dans **tous** les
+Spaces (`listAllConversations()`, pas `spaceConvIds`), annote chaque résultat
+de son Space, priorise le Space actif en tête (`rankConvResults`, pur) et
+**suit** le Space cible (`followSpace`) avant d'ouvrir une conversation d'un
+autre Space. La recherche sidebar (`renderConvList`) reste scopée. Décision
+Julien 2026-07-11 — cf. `docs/command-palette.md` et piège n°18.
+
 ## UI (C3)
 
 - **Sélecteur de Space** (`#space-select`, tête de sidebar, au-dessus de la

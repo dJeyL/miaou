@@ -1,0 +1,145 @@
+/* ── Command palette (Ctrl/Cmd+K, lot F) ─────────────────────────────────────
+   Overlay centré (≠ drawer latéral) : backdrop + boîte input/liste. Style tiré
+   des tokens de thème existants (var(--surface*), var(--border*), var(--accent))
+   → clair + sombre automatiques via theme-light.css. z-index au-dessus des
+   drawers (50), sous la lightbox (60) qu'on ne combine jamais avec la palette. */
+
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.cmdk-overlay[hidden] { display: none; }
+
+/* Sur desktop la sidebar ouverte pousse le contenu : la palette se centre sur
+   la zone de contenu (à droite de la sidebar), pas sur tout le viewport, sinon
+   elle paraît décalée sous la sidebar. Décalage = largeur courante de la
+   sidebar (--sidebar-w, surchargée sur #app au redimensionnement). En mobile la
+   sidebar est un overlay hors flux → pas de décalage (media query ci-dessous). */
+.app.sidebar-open .cmdk-overlay {
+  padding-left: var(--sidebar-w);
+  transition: padding-left 190ms var(--ease);
+}
+@media (max-width: 767px) {
+  .app.sidebar-open .cmdk-overlay { padding-left: 0; }
+}
+
+.cmdk-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+}
+
+.cmdk-box {
+  position: relative;
+  width: min(600px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .45);
+  overflow: hidden;
+}
+
+.cmdk-input {
+  flex: 0 0 auto;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  padding: 14px 16px;
+  outline: none;
+}
+.cmdk-input::placeholder { color: var(--text-3); }
+
+.cmdk-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+.cmdk-item:hover { background: var(--surface-3); }
+.cmdk-item.selected { background: var(--accent-dim); }
+
+/* Touche de raccourci à gauche (mode racine). Largeur fixe pour aligner tous
+   les labels ; span vide réservé (cmdk-item-key-empty) quand pas de touche. */
+.cmdk-item-key {
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-4);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 0;
+  line-height: 1;
+}
+.cmdk-item-key-empty {
+  background: transparent;
+  border-color: transparent;
+}
+.cmdk-item.selected .cmdk-item-key { color: var(--text); }
+
+/* Mode raccourci actif (le système attend une lettre-commande) : touches en
+   orange terne (accent assourdi vers le texte atténué), pour signaler qu'elles
+   sont « armées ». En mode filtre, la liste perd .cmdk-shortcuts → touches
+   neutres (règle de base ci-dessus). */
+.cmdk-list.cmdk-shortcuts .cmdk-item-key:not(.cmdk-item-key-empty) {
+  color: color-mix(in srgb, var(--accent) 62%, var(--text-2));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--accent-dim);
+}
+
+.cmdk-item-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Annotation secondaire (nom d'espace d'une conversation, description…). */
+.cmdk-item-note {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-size: 12px;
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Raccourci/annotation à droite (hint du registre). */
+.cmdk-item-hint {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.cmdk-empty {
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 14px;
+  text-align: center;
+}
+.cmdk-empty[hidden] { display: none; }

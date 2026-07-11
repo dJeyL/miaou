@@ -906,3 +906,75 @@ invalide).
 88. **Thèmes** : exporter seed-23 dans les deux thèmes → le SVG embarqué suit
     le thème de l'export (fond `--code-bg`, couleurs Mermaid dark/neutral
     cohérentes avec l'écran au moment de l'export).
+
+## Palette de commandes (lot F)
+
+89. **Ouverture / fermeture** : Ctrl+K (Cmd+K sur Mac) ouvre l'overlay centré,
+    input focalisé. Ré-appuyer sur Ctrl/Cmd+K ferme. Escape ferme aussi. La
+    barre de recherche du navigateur ne se déclenche pas (preventDefault).
+    À la fermeture, le focus revient au composer.
+
+90. **Filtrage et navigation clavier** : taper filtre la liste en temps réel
+    (ex. « régl » → « Ouvrir les réglages »). ↑/↓ déplacent la sélection (wrap
+    aux bornes), Entrée lance la commande sélectionnée. Une liste vide affiche
+    « Aucun résultat ».
+
+91. **Round-trip clavier de chaque commande** : lancer au clavier seul
+    (Ctrl/Cmd+K → filtrer → Entrée) : nouvelle conversation, réglages, souvenirs,
+    résumés, gérer les skills, serveurs MCP, inspecteur de contexte. Chacune
+    ouvre la cible attendue et la palette se ferme.
+
+92. **Commandes contextuelles masquées** : sans conversation ouverte, « Exporter
+    la conversation (Markdown/HTML) » n'apparaît pas. Sans skill activée,
+    « Invoquer une skill » absente. Avec un seul espace, « Changer d'espace »
+    absente. Sans modèles chargés, « Changer de modèle » absente.
+
+93. **Bascule thème** : « Basculer clair / sombre » alterne le thème (et persiste,
+    visible en rouvrant les Réglages). Depuis un thème `auto`, part sur `dark`
+    puis alterne.
+
+94. **Bascule coloration** : « Basculer la coloration syntaxique » inverse la
+    coloration (vérifier un bloc de code dans le thread) et la checkbox des
+    Réglages reflète le nouvel état.
+
+95. **Sous-mode modèle** : « Changer de modèle » → l'input filtre la liste des
+    modèles, `✓` sur le modèle actif. Choisir applique l'override de conversation
+    (pastille composer à jour). Escape revient à la racine (pas fermeture directe).
+
+96. **Sous-mode skill** : « Invoquer une skill » → liste des skills activées.
+    Choisir insère `/slug ` dans le composer, focus au composer, prêt à compléter
+    et envoyer (l'envoi n'est PAS automatique).
+
+97. **Sous-mode espace** : « Changer d'espace » → liste des espaces, `✓` sur
+    l'actif. Choisir bascule d'espace (sidebar/fil suivent).
+
+98. **Sous-mode recherche conversation — cross-Space** : « Rechercher une
+    conversation » → taper une requête matchant des conversations dans PLUSIEURS
+    espaces. Les résultats du Space actif apparaissent en tête (même à pertinence
+    moindre) ; les autres sont annotés du nom de leur espace. Choisir une conv
+    d'un autre espace **bascule** vers cet espace puis l'ouvre (le fil affiché
+    n'est jamais hors de l'espace actif).
+
+99. **Profondeur Escape / sous-mode** : dans un sous-mode, Escape revient à la
+    racine (liste des commandes) sans fermer ; un second Escape ferme la palette.
+
+100. **Raccourci multi-OS** : vérifier Ctrl+K sous Linux/Windows et Cmd+K sous
+     macOS (le handler teste `metaKey || ctrlKey`). Alt+K ou Ctrl+Shift+K
+     n'ouvrent PAS la palette.
+
+101. **Mode raccourci (touches orange)** : à l'ouverture (champ vide), chaque
+     ligne racine porte un badge de touche à gauche (N, F, M, K, E, `,`, P, R, G,
+     S, C, T, H, D, W), teinté orange. Placeholder « Taper un raccourci, ou Espace
+     pour filtrer… ». Appuyer une lettre (ex. `S`) lance la commande (Serveurs
+     MCP) sans Entrée et ferme la palette.
+
+102. **Bascule filtre par Espace** : palette ouverte (champ vide), appuyer
+     **Espace** : rien ne s'insère dans le champ, le placeholder devient « Filtrer
+     les commandes… », les badges passent au neutre (gris). Taper `s` filtre
+     désormais la liste (ne lance PAS Serveurs MCP). Vider le champ → retour au
+     mode raccourci (badges orange). Escape en mode filtre désarme d'abord
+     (retour raccourci), un second Escape ferme.
+
+103. **Raccourci contextuel** : sans conversation ouverte, `D`/`W` (exports)
+     n'ont pas d'effet (commande masquée, `enabled()` réévalué à la frappe).
+     Ouvrir une conversation puis `D` télécharge le .md.

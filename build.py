@@ -35,6 +35,7 @@ CSS_ORDER = [
     'composer.css',
     'drawers.css',
     'tools.css',
+    'palette.css',
     'responsive.css',
     'theme-light.css',
 ]

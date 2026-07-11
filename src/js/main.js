@@ -7,6 +7,35 @@
 // MAX_SUMMARIES (plafond de résumés injectés) est déclaré dans storage.js,
 // dérivé de BUILD_CONFIG — n'est référencé ici/ailleurs qu'en corps de fonction.
 
+// ── Overlay de préchargement (boot) ─────────────────────────────────────────
+// Le délai minimum d'affichage est mesuré depuis l'instant où fade-in + blink
+// DÉMARRENT réellement (_bootReadyAt, posé avec .boot-ready), PAS depuis le
+// chargement du script : sur Chrome .boot-ready peut arriver sensiblement après
+// le parse (paint retardé), et mesurer depuis le parse faisait disparaître
+// l'overlay PENDANT le clignement (retour Julien). En calant sur _bootReadyAt,
+// le double-clin (fin ~1.7s après ready) a toujours le temps de jouer.
+let _bootReadyAt = 0;
+const BOOT_MIN_AFTER_READY_MS = 1800;
+function finishBoot() {
+  const el = document.getElementById('boot-overlay');
+  if (!el) return;
+  const since = _bootReadyAt ? (Date.now() - _bootReadyAt) : 0;
+  const wait = Math.max(0, BOOT_MIN_AFTER_READY_MS - since);
+  setTimeout(() => { el.classList.add('boot-done'); }, wait);
+}
+// Déclenche fade-in + blink au FRAME SUIVANT (double rAF → un paint garanti à
+// opacity:0 d'abord), pas au parse : synchronise Chrome et Safari (Chrome peignait
+// après l'animation au parse → apparition d'un coup). Enregistre _bootReadyAt =
+// début réel des animations (base du délai minimum). Posé hors init(), au plus
+// tôt (l'overlay existe déjà dans le HTML statique quand ce script tourne).
+if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+  const _boot = document.getElementById('boot-overlay');
+  if (_boot) requestAnimationFrame(() => requestAnimationFrame(() => {
+    _boot.classList.add('boot-ready');
+    _bootReadyAt = Date.now();
+  }));
+}
+
 // ── Logo : source unique (favicon + sidebar) ────────────────────────────────
 // Logo MIAOU (chat), encodé en base64 et inliné ici : le SVG d'origine n'est pas
 // versionné, le build n'en dépend donc pas. Factorisée via applyLogo().
@@ -336,9 +365,12 @@ function resetToEmpty() {
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
   currentConvReasoningEffort = '';   // nouvelle conversation → reasoning_effort par défaut
   needTitle = false;
+  // Titre du welcome courant AVANT vidage : Nouvelle conversation répétée depuis
+  // l'écran d'accueil re-tire un accueil DIFFÉRENT (changement visible).
+  const prevWelcome = ($('thread').querySelector('.welcome-screen .welcome-title') || {}).textContent || '';
   $('thread').innerHTML = '';
   clearMemoryProposals();   // cartes de proposition détruites avec le thread
-  showWelcome();
+  showWelcome(prevWelcome || undefined);
   setTitle('');
   syncConvDownloadBtn();
   renderConvList();
@@ -2021,6 +2053,13 @@ function init() {
   pruneOrphanSummariesOnInit();   // résidus d'une suppression concurrente à une génération (avant le backfill, sinon liste faussée)
   runBackfill();         // auto-gardé sur la présence d'URL
   armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
+
+  // L'UI est montée (.booted posée, sidebar décidée, thread rendu) : estompe
+  // l'overlay de préchargement, en garantissant un temps d'affichage minimum
+  // (finishBoot) pour laisser jouer le clignement même si tout est allé vite.
+  // Les tâches async ci-dessus (prefetch/reconnect/skills) ne bloquent pas le
+  // visuel — pas la peine de les attendre.
+  finishBoot();
 }
 
 if (typeof __TEST_ENV__ === 'undefined') {

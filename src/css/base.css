@@ -74,5 +74,67 @@ body {
    « outil » — les overrides contextuels (marges) vivent près de leur usage. */
 .inline-sep { color: var(--accent-2); margin: 0 3px; }
 
+/* ═══ Overlay de préchargement (boot) ═══ */
+/* Masque le montage de l'UI : logo MIAOU en fade-in, clignement décalé tôt,
+   overlay estompé par init() (.boot-done). Fond opaque → pas de flash. */
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;                 /* au-dessus de tout (palette 70, lightbox 60…) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  opacity: 1;
+  transition: opacity 320ms ease;
+}
+/* Estompage rapide une fois l'app en place, puis retrait du flux (aucun clic
+   capturé) via visibility à la fin de la transition d'opacité. */
+.boot-overlay.boot-done {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 320ms ease, visibility 0s linear 320ms;
+}
+/* Fade-in par TRANSITION déclenchée en JS (classe .boot-ready posée en rAF après
+   le premier paint), pas par animation au parse : sinon Chrome peut peindre après
+   que l'animation a déjà couru → apparition « d'un coup » (Safari peint plus tôt
+   et voyait le fade). Déclencher au frame suivant synchronise les deux moteurs. */
+.boot-logo {
+  width: 192px;
+  height: 192px;
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity 500ms ease-out, transform 500ms ease-out;
+}
+.boot-overlay.boot-ready .boot-logo {
+  opacity: 1;
+  transform: scale(1);
+}
+/* Clignement : yeux OUVERTS au départ (pas de delay négatif qui figerait un
+   œil mi-clos au premier paint — bug corrigé), premier clin franc vers 0.7s
+   (après le fade-in), puis re-clins périodiques. Cycle court (2.4s) pour qu'un
+   clin soit toujours vu pendant l'affichage bref de l'overlay. */
+/* Blink lancé AVEC le fade-in (via .boot-ready) pour rester synchronisé au même
+   instant de démarrage sur tous les moteurs. Delay 0.7s = après le fade. */
+.boot-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.boot-overlay.boot-ready .boot-eye {
+  animation: boot-blink 2.4s ease-in-out 0.7s infinite;
+}
+@keyframes boot-blink {
+  0%, 22%, 100% { transform: scaleY(1); }
+  26%, 28%      { transform: scaleY(.1); }
+  32%           { transform: scaleY(1); }
+  36%, 38%      { transform: scaleY(.1); }
+  42%           { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-logo { animation: none; opacity: 1; }
+  .boot-eye  { animation: none; }
+  .boot-overlay { transition: none; }
+}
+
 /* ═══ App shell ═══ */
 .app { display: flex; height: var(--vvh, 100dvh); }
