@@ -20,8 +20,8 @@ Ce que tu peux faire ici :
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
 
 Pour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,
-mémoire, historique, skills, outils distants, exports, interface, ou données
-personnelles.
+mémoire, historique, skills, outils distants, exports, interface, contexte
+envoyé au modèle, données personnelles, ou la genèse du projet.
 
 ## attachments
 
@@ -141,8 +141,12 @@ procédure, un gabarit — tout ce que tu répéterais sinon à la main.
 
 Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs
 compagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi
-comme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'origine
-est transparente.
+comme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'usage est
+transparent, l'origine ne l'est pas. Les outils venus d'un serveur compagnon
+portent un **nom préfixé** par le serveur (par exemple `miaou-proxy__web__…`) ;
+le modèle peut donc constater, à la seule lecture de sa propre liste d'outils,
+quels serveurs sont branchés et ce qu'ils apportent — il n'a pas besoin d'un
+outil dédié pour « lister les serveurs », l'information est déjà sous ses yeux.
 
 Ces serveurs sont **optionnels** : ils n'existent que si tu les as configurés
 (Paramètres → Serveurs MCP). Selon ceux que tu ajoutes, le modèle peut par
@@ -162,7 +166,8 @@ bloquer les autres.
 Pour l'accès au web et la lecture de documents, le projet compagnon
 **miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et
 recherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est
-la façon recommandée d'ajouter ces capacités à MIAOU.
+la façon recommandée d'ajouter ces capacités à MIAOU. Il est open source :
+https://github.com/dJeyL/miaou-mcp-servers
 
 ## exports
 
@@ -182,6 +187,47 @@ Côté blocs de code, chaque bloc a ses propres boutons pour **copier** ou
 **télécharger** son contenu (avec la bonne extension selon le langage), et les
 diagrammes peuvent être exportés en image SVG ou PNG.
 
+## contexte
+
+À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y
+ajoute automatiquement un **contexte** pour que le modèle réponde en connaissance
+de cause. Ce contexte comprend, selon le cas, tes instructions système, la
+définition des outils disponibles (y compris ceux des serveurs compagnons), tes
+souvenirs actifs, les résumés des conversations passées jugés pertinents, la date
+du jour et le manifeste de la bibliothèque de fichiers de l'Espace. Tout cela
+part vers l'API **à chaque tour**, en plus de ton message — donc oui, cela
+consomme des tokens en entrée, au-delà de ce que tu as tapé toi-même.
+
+Deux idées à ne pas confondre :
+
+- **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.
+  Clique-le pour voir la ventilation part par part.
+- **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**
+  un levier de réduction : c'est le dénominateur qui sert à afficher un taux de
+  remplissage (« combien sur le maximum du modèle »). La modifier ne change rien
+  à ce qui est envoyé — c'est une jauge, pas un robinet.
+
+Les **vrais leviers** pour alléger ce qui part à chaque tour :
+
+- **Résumés** : leur injection a un mode réglable (automatique, sur proposition,
+  ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.
+- **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en
+  supprimer ou en mettre en veille réduit d'autant le contexte.
+- **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la
+  joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est
+  déjà une optimisation intégrée.
+- **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses
+  outils au contexte. En débrancher un allège la liste d'outils envoyée.
+
+Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
+(instructions système, définitions d'outils) reste **identique octet pour octet**
+d'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés) en
+préfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe
+(Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au
+lieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes
+instructions système, casse volontairement ce préfixe stable (le contexte change
+vraiment) : c'est attendu.
+
 ## interface
 
 Quelques repères pour te déplacer dans MIAOU :
@@ -195,7 +241,12 @@ Quelques repères pour te déplacer dans MIAOU :
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une
   estimation du poids de chaque part. Utile pour comprendre ce que « voit » le
-  modèle et surveiller le remplissage de la fenêtre de contexte.
+  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de
+  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce
+  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la
+  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part
+  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet
+  contexte.
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.
@@ -239,4 +290,32 @@ Conséquences pratiques :
 
 Ce que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr
 vers l'API configurée pour être traité — c'est le principe même d'un client de
-chat. Le reste ne quitte pas ton navigateur.
+chat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il
+contient et comment l'alléger, voir le sujet contexte. Le reste ne quitte pas
+ton navigateur.
+
+## genesis
+
+MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,
+faute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans
+interface digne de ce nom. Plutôt que de s'en contenter, il a décidé d'en faire
+un vrai chatbot : intelligent, agréable à utiliser, joli, et bardé de fonctions
+qui en jettent — mémoire, Espaces, skills, exports, diagrammes — épaulé par des
+serveurs MCP maison pour le web et les documents.
+
+Il ne l'a pas écrit seul : il l'a construit **en binôme avec Claude**
+(Anthropic), au fil des versions de modèles, de Sonnet à Fable en passant par
+Opus. Lui aux commandes — architecture, décisions, exigences, relectures —
+Claude au clavier sur sa dictée. Un projet de bout en bout mené à quatre mains,
+dont deux virtuelles.
+
+Côté technique, MIAOU est volontairement minimaliste : **un seul fichier HTML
+autonome**, sans framework, sans bundler, sans serveur applicatif — tout tourne
+dans le navigateur, en JavaScript pur, contre n'importe quelle API compatible
+OpenAI. Les capacités web et documents viennent de serveurs MCP distants
+optionnels (le projet compagnon miaou-mcp-servers).
+
+Les deux dépôts sont open source :
+
+- MIAOU (ce client) : https://github.com/dJeyL/miaou
+- Serveurs compagnons : https://github.com/dJeyL/miaou-mcp-servers

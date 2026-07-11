@@ -708,8 +708,14 @@ function renderReasoningNow(wrap, text) {
   const content = wrap.querySelector('.reasoning-content');
   if (!toggle || !panel || !content) return;
   toggle.removeAttribute('hidden');          // capacité détectée → icône visible
+  // Autoscroll du raisonnement : même doctrine que le fil (isAtBottom) — ne
+  // suivre le bas que si l'utilisateur y était déjà AVANT la réécriture, pour
+  // ne pas arracher la vue d'un lecteur remonté dans un raisonnement en cours.
+  // Mesuré avant textContent (qui réécrit tout et modifie scrollHeight).
+  const stick = !panel.hasAttribute('hidden') &&
+    content.scrollHeight - content.scrollTop - content.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
   content.textContent = text;
-  if (!panel.hasAttribute('hidden')) content.scrollTop = content.scrollHeight;  // suivre si déplié
+  if (stick) content.scrollTop = content.scrollHeight;  // suivre si déplié ET déjà en bas
 }
 
 // Alimenté en live par les deltas accumulés, throttlé par fenêtres de ~90 ms
@@ -3103,7 +3109,7 @@ function openSettings() {
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');
-  if (pre && !pre.textContent) pre.textContent = ROOT_SYSTEM_PROMPT;
+  if (pre && !pre.textContent) pre.textContent = rootSystemPromptDisplay();
   const lbl = $('build-ts-label');
   if (lbl) {
     lbl.textContent = BUILD_TS

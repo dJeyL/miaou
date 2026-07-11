@@ -276,6 +276,18 @@ function buildSystemMessage(sp) {
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
+// Texte affiché sous « Prompt système racine (non modifiable) » dans les réglages
+// (openSettings, ui.js). Reconstitue les SEULES parts INCONDITIONNELLES du message
+// système — identity, root, codeblock — dans l'ordre exact du join de
+// buildSystemMessage() (identity EN TÊTE, codeblock juste avant la part user).
+// PAS les parts conditionnelles (toolsSystem/intent/skills/docs) : elles dépendent
+// de réglages runtime, donc ni « racine » ni « non modifiable ». Même séparateur
+// que le message réel : ce que voit l'utilisateur est byte-identique au préfixe
+// statique effectivement envoyé au modèle. Constante build-time, jamais mutée.
+function rootSystemPromptDisplay() {
+  return [IDENTITY_BLURB, ROOT_SYSTEM_PROMPT, CODEBLOCK_DOCTRINE].join('\n\n---\n\n');
+}
+
 // Simulation « prochain envoi » au repos (brief B, B4) : mêmes fonctions pures
 // que dispatchSend (systemMessageParts, contextBlockParts, expandThread,
 // toolDefinitions), jamais rejouée avec des résumés (matches=[] — non
