@@ -2669,7 +2669,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         </div>
         <div class="composer-skill-error" id="composer-skill-error" hidden></div>
         <div class="composer-attach-error" id="composer-attach-error" hidden></div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden> · <kbd>/</kbd> pour une skill</span></div>
+        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer<span class="inline-sep">·</span><kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden><span class="inline-sep">·</span><kbd>/</kbd> pour une skill</span><span class="inline-sep">·</span><kbd id="composer-hint-cmdk-key">Ctrl+K</kbd> palette de commandes</div>
       </div>
     </div>
   </div>
@@ -3115,7 +3115,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-11 17:22 UTC */
+/* miaou — built: 2026-07-11 18:12 UTC */
 
 /* ── utils.js ── */
 
@@ -3868,7 +3868,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783790563}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783793554}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -10333,6 +10333,13 @@ function syncSkillHintUI() {
   if (el) el.hidden = !listEnabledSkills().length;
 }
 
+function syncPaletteHintUI() {
+  const el = $('composer-hint-cmdk-key');
+  if (!el) return;
+  const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+  el.textContent = isMac ? 'Cmd+K' : 'Ctrl+K';
+}
+
 function renderSkills() {
   syncSkillHintUI();   
   const wrap = $('skill-list');
@@ -12852,6 +12859,7 @@ async function runBackfill() {
 
 function init() {
   applyLogo();
+  syncPaletteHintUI();   
 
   migrateSpacesIfNeeded();   
   activeSpaceId = getActiveSpaceId();   

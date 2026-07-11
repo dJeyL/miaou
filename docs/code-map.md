@@ -747,69 +747,70 @@
   - `openSkills()` — L4399
   - `closeSkills()` — L4404
   - `syncSkillHintUI()` — L4411
-  - `renderSkills()` — L4416
-  - `addSkillCard()` — L4432
-  - `buildSkillCard()` — L4440
-- **SECTION VUE** (L4445)
-- **SECTION ÉDITION** (L4479)
-  - `enterSkillEdit()` — L4537
-- **Autocomplétion des skills (slash-commande)** (L4545)
-  - `_composerAc` — L4553
-  - `onComposerInput()` — L4555
-  - `updateSkillAutocomplete()` — L4569
-  - `renderSkillAutocomplete()` — L4583
-  - `hideSkillAutocomplete()` — L4608
-  - `skillAutocompleteOpen()` — L4616
-  - `moveSkillAcSelection()` — L4621
-  - `acceptSkillAcSelection()` — L4638
-  - `pickSkillCompletion()` — L4651
-  - `showComposerSkillError()` — L4665
-  - `clearComposerSkillError()` — L4669
-- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L4674)
-  - `placeToolBlocks()` — L4678
-  - `renderToolBlock()` — L4688
-  - `renderResourceText()` — L4724
-  - `renderBinaryBlock()` — L4742
-  - `presentResourceFromChip()` — L4768
-  - `mimeToLang()` — L4785
-  - `setMemItemLoading()` — L4798
-- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L4806)
-  - `renderMemoryList()` — L4814
-  - `addMemoryEntry()` — L4877
-  - `deleteMemoryEntry()` — L4889
-  - `restoreMemoryEntry()` — L4890
-  - `forgetMemoryEntry()` — L4891
-  - `promoteMemoryEntry()` — L4896
-- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L4905)
-  - `renderSpaceFilesList()` — L4911
-  - `setFileDescriptionStatus()` — L4948
-  - `onRegenerateFileDescription()` — L4966
-  - `onSpaceFilesUploadClick()` — L4976
-  - `onSpaceFilesSelected()` — L4985
-  - `onDeleteSpaceFile()` — L5013
-  - `startEditMemoryEntry()` — L5021
-  - `cancelMemoryEntryEdit()` — L5032
-  - `saveMemoryEntryEdit()` — L5041
-- **Confirmation inline (cartes dans le thread)** (L5050)
-  - `_proposalMap` — L5054
-  - `clearMemoryProposals()` — L5058
-  - `showConfirmation()` — L5065
-  - `acceptProposal()` — L5087
-  - `rejectProposal()` — L5095
-  - `_removeProposalCard()` — L5103
-- **Export HTML standalone (brief `untracked/muscle/G-html-export.md`)** (L5112)
-  - `THEME_TOKENS` — L5122
-  - `serializeThemeTokens()` — L5138
-  - `PRISM_THEME_CSS` — L5150
-  - `EXPORT_CSS` — L5213
-  - `EXPORT_SCRIPT` — L5329
-  - `buildExportHtml()` — L5429
-  - `renderExportBody()` — L5477
-  - `embedExportMermaid()` — L5561
-  - `decorateExportPre()` — L5604
-  - `EXPORT_HTML_SIZE_WARN` — L5620
-  - `_exportingHtml` — L5629
-  - `exportConvHtml()` — L5630
+  - `syncPaletteHintUI()` — L4418
+  - `renderSkills()` — L4425
+  - `addSkillCard()` — L4441
+  - `buildSkillCard()` — L4449
+- **SECTION VUE** (L4454)
+- **SECTION ÉDITION** (L4488)
+  - `enterSkillEdit()` — L4546
+- **Autocomplétion des skills (slash-commande)** (L4554)
+  - `_composerAc` — L4562
+  - `onComposerInput()` — L4564
+  - `updateSkillAutocomplete()` — L4578
+  - `renderSkillAutocomplete()` — L4592
+  - `hideSkillAutocomplete()` — L4617
+  - `skillAutocompleteOpen()` — L4625
+  - `moveSkillAcSelection()` — L4630
+  - `acceptSkillAcSelection()` — L4647
+  - `pickSkillCompletion()` — L4660
+  - `showComposerSkillError()` — L4674
+  - `clearComposerSkillError()` — L4678
+- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L4683)
+  - `placeToolBlocks()` — L4687
+  - `renderToolBlock()` — L4697
+  - `renderResourceText()` — L4733
+  - `renderBinaryBlock()` — L4751
+  - `presentResourceFromChip()` — L4777
+  - `mimeToLang()` — L4794
+  - `setMemItemLoading()` — L4807
+- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L4815)
+  - `renderMemoryList()` — L4823
+  - `addMemoryEntry()` — L4886
+  - `deleteMemoryEntry()` — L4898
+  - `restoreMemoryEntry()` — L4899
+  - `forgetMemoryEntry()` — L4900
+  - `promoteMemoryEntry()` — L4905
+- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L4914)
+  - `renderSpaceFilesList()` — L4920
+  - `setFileDescriptionStatus()` — L4957
+  - `onRegenerateFileDescription()` — L4975
+  - `onSpaceFilesUploadClick()` — L4985
+  - `onSpaceFilesSelected()` — L4994
+  - `onDeleteSpaceFile()` — L5022
+  - `startEditMemoryEntry()` — L5030
+  - `cancelMemoryEntryEdit()` — L5041
+  - `saveMemoryEntryEdit()` — L5050
+- **Confirmation inline (cartes dans le thread)** (L5059)
+  - `_proposalMap` — L5063
+  - `clearMemoryProposals()` — L5067
+  - `showConfirmation()` — L5074
+  - `acceptProposal()` — L5096
+  - `rejectProposal()` — L5104
+  - `_removeProposalCard()` — L5112
+- **Export HTML standalone (brief `untracked/muscle/G-html-export.md`)** (L5121)
+  - `THEME_TOKENS` — L5131
+  - `serializeThemeTokens()` — L5147
+  - `PRISM_THEME_CSS` — L5159
+  - `EXPORT_CSS` — L5222
+  - `EXPORT_SCRIPT` — L5338
+  - `buildExportHtml()` — L5438
+  - `renderExportBody()` — L5486
+  - `embedExportMermaid()` — L5570
+  - `decorateExportPre()` — L5613
+  - `EXPORT_HTML_SIZE_WARN` — L5629
+  - `_exportingHtml` — L5638
+  - `exportConvHtml()` — L5639
 
 ## src/js/main.js
 

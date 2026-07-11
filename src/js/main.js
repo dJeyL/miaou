@@ -1974,6 +1974,7 @@ async function runBackfill() {
 // ── Init ────────────────────────────────────────────────────────────────────
 function init() {
   applyLogo();
+  syncPaletteHintUI();   // libellé Cmd+K / Ctrl+K selon la plateforme (statique, une fois)
 
   migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
   activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space (A3) ; défaut DEFAULT_SPACE_ID

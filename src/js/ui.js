@@ -4413,6 +4413,15 @@ function syncSkillHintUI() {
   if (el) el.hidden = !listEnabledSkills().length;
 }
 
+// Légende de la palette : le raccourci écoute metaKey||ctrlKey partout (cf.
+// handler cmdk), mais le libellé suit la plateforme (Cmd sur Mac, Ctrl ailleurs).
+function syncPaletteHintUI() {
+  const el = $('composer-hint-cmdk-key');
+  if (!el) return;
+  const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+  el.textContent = isMac ? 'Cmd+K' : 'Ctrl+K';
+}
+
 function renderSkills() {
   syncSkillHintUI();   // tout CRUD skill (save/delete/toggle) repasse ici
   const wrap = $('skill-list');
