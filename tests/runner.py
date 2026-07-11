@@ -246,6 +246,42 @@ def run_build_unit_tests() -> tuple[int, int]:
     return passed, failed
 
 
+def run_docs_index_check() -> tuple[int, int]:
+    """Vérifie que chaque docs/*.md figure dans la section « Domaines détaillés »
+    de CLAUDE.md. Angle mort déjà payé : ajouter un doc de domaine sans mettre à
+    jour l'index le rend invisible (context-inspector.md l'était). On borne à la
+    section pour attraper le cas d'un doc référencé ailleurs mais hors index."""
+    passed = failed = 0
+    print('\ndocs/ ↔ index CLAUDE.md')
+
+    claude_md = ROOT.parent / 'CLAUDE.md'
+    docs_dir = ROOT.parent / 'docs'
+    text = claude_md.read_text(encoding='utf-8')
+
+    # Isoler la section « Domaines détaillés » : de son en-tête ## jusqu'au ##
+    # suivant (ou EOF).
+    lines = text.splitlines()
+    start = next((i for i, ln in enumerate(lines)
+                  if ln.startswith('## ') and 'Domaines détaillés' in ln), None)
+    if start is None:
+        print("  FAIL  section « Domaines détaillés » introuvable dans CLAUDE.md")
+        return passed, failed + 1
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith('## ')), len(lines))
+    section = '\n'.join(lines[start:end])
+
+    for f in sorted(docs_dir.glob('*.md')):
+        rel = f'docs/{f.name}'
+        if rel in section:
+            passed += 1
+            print(f'  PASS  {rel} indexé')
+        else:
+            failed += 1
+            print(f'  FAIL  {rel} absent de l\'index « Domaines détaillés »')
+
+    return passed, failed
+
+
 def main(args: list[str]) -> int:
     if args:
         files = [ROOT / a if not Path(a).is_absolute() else Path(a) for a in args]
@@ -257,6 +293,9 @@ def main(args: list[str]) -> int:
         return 0
 
     total_passed, total_failed = run_build_unit_tests()
+    p, fa = run_docs_index_check()
+    total_passed += p
+    total_failed += fa
     for f in files:
         if not f.exists():
             print(f'Fichier introuvable : {f}')

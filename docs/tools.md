@@ -468,7 +468,7 @@ Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
    → repli sur `miaou-snippet.<ext>`. Si `data-filename` absent : comportement
    inchangé.
 6. **Pas d'affichage du filename dans le header `.code-head`** dans ce lot
-   (décision explicite, cf. règle d'or CLAUDE.md sur `.bg-activity` : ne pas
-   redessiner un composant visuel sans spec) — le nom n'est utilisé que pour le
+   (décision explicite, cf. « Composants UI provisoires » dans
+   `CLAUDE.md` : ne pas redessiner un composant visuel sans spec) — le nom n'est utilisé que pour le
    download. `decoratePre` reste le **chemin unique** de décoration des `<pre>`
    (rendu message ET rendu ressource texte en bloc de code, `ui.js:~3701`).

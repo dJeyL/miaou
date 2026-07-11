@@ -38,69 +38,32 @@ local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
 **Messages de commit en anglais** (le reste des échanges reste en français).
 
-## Pipeline de build (ne pas le réécrire)
+## Pipeline de build (ne pas le réécrire — détail : `docs/build.md`)
 
-`build.py` lit `src/html/index.html` et remplace deux placeholders :
-`/* __CSS__ */` (← les `src/css/*.css` concaténés dans l'ordre `CSS_ORDER` :
-`base, sidebar, chat, composer, drawers, tools, responsive, theme-light` —
-l'ordre EST la cascade, `base` porte l'@import des fontes, `theme-light` doit
-rester dernier) et `/* __JS__ */` (← les `src/js/*.js` concaténés dans l'ordre
-`JS_ORDER` : `utils, storage, resources, skills, tools, api, ui, main`).
-Les commentaires sont retirés au passage — JS (`strip_js_comments`, respecte
-strings/templates/regex), CSS (`strip_css_comments`, respecte les strings) et
-HTML (`strip_html_comments`, sur le template avant substitution des
-placeholders) : `src/` reste la référence commentée, `dist/` est compact.
-Tests unitaires de ces transformations dans `tests/runner.py`
-(`run_build_unit_tests`).
-Il substitue aussi un **marqueur de config**, `__MIAOU_CONFIG__`, par
-l'objet `config.json` entier sérialisé en JSON (JSON ⊂ littéral objet JS, donc
-`json.dumps` gère seul quoting/nombres/booléens — pas de marqueur par clef, pas
-de distinction guillemets/sans-guillemets). `build.py` échappe `</` dans le
-littéral pour ne pas casser le `</script>` porteur. Côté source (`storage.js`),
-un **unique point d'injection** :
+`build.py` assemble `dist/miaou.html` à partir de `src/html/index.html` par
+substitution de placeholders. Ossature à garder en tête ; le **raisonnement fin**
+(échappement `</`, `try/catch` vs `typeof`, valeurs dérivées) est dans
+`docs/build.md` — le lire avant de toucher au build ou aux points d'injection.
 
-```js
-const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) { return {}; } })();
-```
+- **`/* __CSS__ */`** ← `src/css/*.css` dans l'ordre `CSS_ORDER`
+  (`base, sidebar, chat, composer, drawers, tools, responsive, theme-light` —
+  l'ordre EST la cascade ; `base` porte l'@import des fontes, `theme-light`
+  reste dernier).
+- **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER`
+  (`utils, storage, resources, skills, tools, api, ui, main`).
+- **`__MIAOU_CONFIG__`** ← `config.json` sérialisé (injecté dans `storage.js`,
+  d'où dérivent `REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
+  `BUILD_API_MODEL`).
+- **`__MIAOU_HELP__`** ← `src/help.md` parsé en `{slug: markdown}` (injecté
+  dans `tools.js`, alimente `miaou__about` et l'enum `topic`).
 
-- **Marqueur à occurrence unique, en position de valeur** : `.replace` global,
-  donc toute autre occurrence serait substituée aussi.
-- **Forme tolérante via `try`** : sources non buildées (tests QuickJS),
-  `__MIAOU_CONFIG__` est un identifiant nu → `ReferenceError` attrapée → `{}`.
-  (Un `typeof … !== 'undefined'` ne convient pas : la garde elle-même contient
-  le marqueur, qui serait substitué → objet dupliqué.)
-- Les quatre valeurs dérivées (`REQUIRE_API_KEY`, `MAX_SUMMARIES`,
-  `BUILD_API_URL`, `BUILD_API_MODEL`) sont **toutes déclarées dans `storage.js`**,
-  juste sous `BUILD_CONFIG`, avec leurs défauts. Elles ne sont **référencées
-  ailleurs qu'en corps de fonction** (cf. contrainte `const`/test runner
-  ci-dessous) : ne pas les redéclarer dans un autre fichier au top-level.
-- `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
-  le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
-  `syncConfigured` (ui.js).
-
-Il substitue de même **un second marqueur**, `__MIAOU_HELP__`, par le contenu
-d'aide utilisateur (`src/help.md`) : `parse_help_sections` (build.py, pur,
-testé) découpe le `.md` en objet ordonné `{slug: markdown}` (une section par
-`## <slug>`, texte avant la 1re section ignoré, `## ` dans un fence non pris
-pour un titre, slug dupliqué → erreur), sérialisé par `json.dumps` + échappement
-`</` exactement comme la config. `load_help()` **échoue bruyamment** si
-`src/help.md` est absent (fichier versionné, contrairement à `config.json` qui
-warn). Côté source (`tools.js`), unique point d'injection, mêmes contraintes que
-`BUILD_CONFIG` (occurrence unique en position de valeur, forme `try/catch` pour
-les tests QuickJS) :
-
-```js
-const HELP_CONTENT = (function () { try { return __MIAOU_HELP__; } catch (e) { return {}; } })();
-```
-
-`HELP_CONTENT` alimente l'outil `miaou__about` (contenu servi à la demande, une
-section par appel) et l'enum `topic` de son `inputSchema` (dérivé de
-`Object.keys(HELP_CONTENT)` — même source que le contenu, pas de drift). Sous
-QuickJS, `HELP_CONTENT` vaut `{}` (enum vide) : les tests du parseur couvrent
-build.py, le test du handler injecte un contenu stub. **`HELP_CONTENT` n'entre
-jamais dans le contexte du modèle** : seul le blurb d'identité (statique, court)
-et l'enum de slugs y vont ; le contenu des sections n'arrive qu'en tool result,
-une section à la fois, sur appel du modèle.
+Les commentaires sont retirés au passage (`strip_js_comments`/`strip_css_comments`/
+`strip_html_comments`, testés dans `run_build_unit_tests`) : `src/` reste la
+référence commentée, `dist/` est compact. Les trois marqueurs sont à **occurrence
+unique en position de valeur**, avec une garde `try/catch` côté source pour que
+les tests QuickJS (sources non buildées) retombent sur `{}`. **`HELP_CONTENT`
+n'entre jamais dans le contexte du modèle** : seul le blurb d'identité et l'enum
+de slugs y vont, le contenu des sections arrive en tool result à la demande.
 
 ## Contraintes structurelles à respecter
 
@@ -121,226 +84,167 @@ une section à la fois, sur appel du modèle.
 - Garde de test obligatoire en fin de `main.js` :
   `if (typeof __TEST_ENV__ === 'undefined') { document.addEventListener('DOMContentLoaded', init); }`
 - Les handlers câblés depuis l'UI doivent rester des fonctions globales portant
-  exactement ces noms — que le câblage soit un attribut `onclick=`/`oninput=`
-  **statique** dans `index.html`, un attribut **généré dynamiquement** en
-  template string dans `ui.js` (ex. `onRegenerateFileDescription`), ou un
+  **exactement** le nom attendu au point de câblage — que ce soit un attribut
+  `onclick=`/`oninput=` **statique** dans `index.html`, un attribut **généré**
+  en template string dans `ui.js` (ex. `onRegenerateFileDescription`), ou un
   `addEventListener`/callback (ainsi `sendMessage`, `undoToolAck`, `deleteConv`
-  ne sont **jamais** en attribut inline littéral, mais restent des globals
-  appelés par listener/closure). La liste ci-dessous est **non exhaustive**
-  (terminée par « … ») et mélange ces trois modes de câblage :
-  (`sendMessage`, `onSendBtn`, `newConversation`, `openSettings`,
-  `onSaveSettings`, `selectSummaryInjectionMode`, `summaryBanner`, `deleteConv`,
-  `onConvSearch`, `clearConvSearch`, `onEditMsg`, `switchMemoryTab`,
-  `addMemoryEntry`, `deleteMemoryEntry`, `restoreMemoryEntry`,
-  `startEditMemoryEntry`, `cancelMemoryEntryEdit`, `saveMemoryEntryEdit`,
-  `forgetMemoryEntry`, `undoToolAck`, `downloadConvMd`, `downloadMsgMd`, `copyMsg`,
-  `regenerateTitle`, `regenerateResponse`, `continueTruncated`, `exportConvHtml`,
-  `openApiServers`, `closeApiServers`, `addApiServerCard`,
-  `toggleReasoning`, `toggleSettingsCat`, `exportAllData`, `onImportDataClick`,
-  `onImportFileSelected`, `onAttachClick`, `onAttachFilesSelected`,
-  `onComposerDragOver`, `onComposerDragLeave`, `onComposerDrop`, `onComposerPaste`,
-  `removeComposerAttachment`, `toggleSpaceMenu`, `closeSpaceScreen`,
-  `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`,
-  `promoteAttachmentToLibrary`, `onSpaceFilesUploadClick`, `onSpaceFilesSelected`,
-  `onDeleteSpaceFile`, `onRegenerateFileDescription`, `toggleConvSelection`,
-  `selectSpaceTab`, `onAttachmentChipClick`, …).
-  Le bouton « Enregistrer »
-  appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
-  `storage.js` (persistance localStorage). Il est désactivé tant que le
-  formulaire ne diverge pas des réglages persistés (`settingsFormDirty`,
-  ui.js — le thème est exclu : auto-persisté par `selectTheme`). Le bouton du composer appelle
-  `onSendBtn()` (envoi **ou** stop selon `sending`), jamais `sendMessage()`
-  directement.
+  ne sont jamais en attribut inline littéral mais restent des globals appelés
+  par listener/closure). Renommer/déplacer un tel handler sans mettre à jour son
+  câblage casse silencieusement. Deux pièges de nommage à connaître :
+  - Le bouton « Enregistrer » appelle `onSaveSettings()` — **pas** `saveSettings(obj)`
+    de `storage.js` (persistance localStorage). Il est désactivé tant que le
+    formulaire ne diverge pas des réglages persistés (`settingsFormDirty`, ui.js
+    — le thème est exclu : auto-persisté par `selectTheme`).
+  - Le bouton du composer appelle `onSendBtn()` (envoi **ou** stop selon
+    `sending`), jamais `sendMessage()` directement.
 
 ## Pièges déjà payés (ne pas les ré-introduire)
 
-Résumés ci-dessous ; développement complet, exemples et noms de fonctions
-précis dans **`docs/pitfalls-detail.md`** — le lire avant de toucher au flux
-de conversation, au streaming, aux résumés/titrage, à l'édition de message,
-au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
+Une ligne par piège ci-dessous — **développement complet, exemples et noms de
+fonctions dans `docs/pitfalls-detail.md`** (le lire avant de toucher au flux de
+conversation, au streaming, aux résumés/titrage, à l'édition de message, au
+patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache). Les pièges
+16, 18, 21 et 24 — invariants transverses les plus coûteux — restent développés
+inline sous la liste.
 
-1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs.
-   `buildSystemMessage()` concatène, dans l'ordre : `IDENTITY_BLURB` (blurb
-   d'identité MIAOU, **en tête**, inconditionnel, statique — lot I) +
-   `ROOT_SYSTEM_PROMPT` (doctrines build-time) + éventuellement
-   `toolsSystemPrompt()` + doctrines intent/skills/docs (gardes réelles internes :
-   `intentTracing`, skills autotrigger, inflation) + `CODEBLOCK_DOCTRINE`
-   (nommage des blocs de code, **toujours** injectée) + le prompt système
-   utilisateur (+ description du Space actif). `IDENTITY_BLURB` et
-   `CODEBLOCK_DOCTRINE` sont inconditionnels ; l'ancien gate `if (TOOLS.length)`
-   de `systemMessageParts()` (main.js) était une branche morte (`TOOLS` est une
-   const build-time non vide) — retiré au lot I, byte-neutre sur le message
-   produit (cf. `docs/tools.md`).
-2. **Injection ≠ appel d'outil.** L'injection de résumés est du texte ajouté
-   par MIAOU ; les `tool_calls` sont déclenchés par le **modèle** uniquement.
-3. **Le résultat d'un outil n'est jamais affiché** avant `finish_reason:
-   'stop'`. Borne `MAX_TOURS` sur le nombre de tours, pas d'outils. Anti-
-   redemande via `servedKeys` dans le même échange.
-4. **Agrégation SSE par `index`.** `tool_calls` fragmentés : agréger par
-   `tcDelta.index`, jamais parser `function.arguments` avant fin de stream.
-5. **Pas de résumé sur conversation fraîche/avortée.** Seuil `hasSubstance()` :
-   ≥1 user ET ≥1 assistant non trivial (≥8 car.). Backfill gardé sur présence
-   d'URL seule (pas `configured`).
-6. **Tombstones.** Suppression d'un souvenir = `suppressed: true` en conservant
-   les données ; compte comme entrée présente (empêche re-résumé).
-7. **Parsing défensif des résumés.** Nettoyage des fences ```` ```json ````
-   avant `JSON.parse` ; échec → `null`, silencieux.
+1. **Un seul message `role: 'system'`.** `buildSystemMessage()` concatène tout
+   dans l'ordre (`IDENTITY_BLURB` en tête, … `CODEBLOCK_DOCTRINE`, prompt
+   utilisateur, description du Space) ; jamais empiler plusieurs `system`.
+2. **Injection ≠ appel d'outil.** L'injection de résumés est du texte ajouté par
+   MIAOU ; les `tool_calls` viennent du **modèle** uniquement.
+3. **Résultat d'outil jamais affiché avant `finish_reason: 'stop'`.** Borne
+   `MAX_TOURS` sur les tours ; anti-redemande via `servedKeys`.
+4. **Agrégation SSE par `index`.** Agréger `tool_calls` fragmentés par
+   `tcDelta.index` ; ne pas parser `function.arguments` avant fin de stream.
+5. **Pas de résumé sur conversation fraîche/avortée.** Seuil `hasSubstance()`
+   (≥1 user ET ≥1 assistant ≥8 car.). Backfill gardé sur URL seule.
+6. **Tombstones.** Suppression d'un souvenir = `suppressed: true`, données
+   conservées ; compte comme entrée présente (empêche re-résumé).
+7. **Parsing défensif des résumés.** Nettoyer les fences ` ```json ` avant
+   `JSON.parse` ; échec → `null` silencieux.
 8. **Indicateur d'activité** via `runBackgroundTask(label, fn)`, toujours
    `try/finally`.
-9. **Titrage robuste à la navigation.** `maybeTitle` fige `convId`/`thread`
-   avant l'appel async ; pas de titre provisoire (« Nouvelle conversation »
-   partout tant que non résolu). Gouverné par `needTitle` (un seul essai par
-   conversation) : `openConversation` doit le réarmer (`!conv.title`) sur une
-   conversation rouverte sans titre, sinon le titrage reste bloqué à vie.
-   Bouton de régénération manuelle (`regenerateTitle`) : ignore `needTitle`,
-   retitre à la demande même après un titre déjà posé (manuel ou auto).
-10. **Arrêt du streaming** via `AbortController` unique ; `aborted: true`
-    sans rollback, court-circuite avant tout traitement de tour suivant.
+9. **Titrage robuste à la navigation.** `maybeTitle` fige `convId`/`thread` avant
+   l'async ; gouverné par `needTitle` (réarmé par `openConversation` si
+   `!conv.title`) ; `regenerateTitle` l'ignore et retitre à la demande.
+10. **Arrêt du streaming** via `AbortController` unique ; `aborted: true` sans
+    rollback, court-circuite le tour suivant.
 11. **Recherche historique.** Filtre persistant `convSearchFilter` ;
     `renderConvList()` reste sans argument exprès.
 12. **Édition d'un message utilisateur.** `sendMessage`/`editUserMessage`
-    partagent `runGenerationFromCurrentThread()` et `resolveSend(literal)`
-    (chemin unique slash-skill, cf. `docs/skills.md`).
+    partagent `runGenerationFromCurrentThread()` et `resolveSend(literal)`.
 13. **Patienteur animé.** `startWaiter`/`stopWaiter` nettoient deux timers ;
     jamais patienteur + streaming simultanés.
 14. **Affichage du raisonnement.** Détection par observation directe du delta
-    (`reasoningDelta`), jamais via `reasoning_effort`. Champ séparé `reasoning`.
+    (`reasoningDelta`), jamais via `reasoning_effort` ; champ séparé `reasoning`.
 15. **Sélecteur de modèle (composer).** `settings.model` (défaut global) vs
-    `conv.model`/`currentConvModel` (override par conversation) strictement
-    séparés ; résolus par `activeModel()`.
-16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` reste
-    statique ; contenu dynamique (date, mémoire) injecté en préfixe éphémère
-    du dernier message user via `buildContextBlock()`, jamais dans le system
-    message.
-17. **Persistance des images jointes (content parts → descripteur).** Une image
-    jointe part en content parts OpenAI (`image_url` base64) **seulement au
-    tour où elle est attachée** ; une fois ce tour terminé (normal, avorté ou
-    halte), le message user est réécrit **une fois** en une string = texte +
-    une ligne de descripteur byte-stable par image (`collapseAttachedMessageContent`,
-    idempotente). Le descripteur est calculé depuis les champs FIGÉS du schéma
-    (`name`, `w`, `h`, `size`) — **jamais recalculé** depuis les octets à un
-    tour ultérieur.
-18. **Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
-    convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
-    appartient-elle au Space actif ? » — sidebar, recherche, `list_conversations`/
-    `get_conversation`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
-    (via `scope`), **fichiers de bibliothèque d'espace** (`getResourcesBySpace`/
-    `getCachedLibraryEntriesBySpace`, filtre `spaceId === activeSpaceId`, lot Cbis).
-    Jamais un filtre `c.spaceId === x` réécrit localement.
-    `get_conversation`/`update_memory`/`delete_memory` sur un id hors-Space
-    répondent comme **inexistant** (pas d'oracle) ; même posture pour
-    `files__list`/`files__read` sur un `file-<id>` étranger ou inconnu (lot Cbis).
-    Changer de Space actif change le prompt système effectif : `description` du
-    Space (pas un system prompt) est **ajoutée après** le prompt système
-    utilisateur global (`resolveUserSystemPrompt`, brief D4 — concaténation,
-    jamais substitution) — **assumé** : ça casse le préfixe KV cache (piège 16),
-    mais reste statique tant qu'on ne change pas de Space. Le **manifeste de
-    bibliothèque de fichiers** (`buildLibraryManifestBlock`, injecté dans
-    `<miaou_context>` via `contextBlockParts().library`, lot Cbis) est de même
-    nature : byte-stable tant que la bibliothèque du Space actif ne change pas
-    (tri `createdAt`→`id` déterministe), casse le prefix KV cache à chaque
-    ajout/suppression/atterrissage de description de fichier (PAS un résumé
-    du contenu — cf. `docs/spaces.md`) — assumé, comme un changement de Space.
-    **Exception sanctionnée (lot F, palette de commandes)** : le submode
-    « recherche de conversation » de la palette (`cmdkConvItems`, ui.js) est
-    **volontairement cross-Space** — il itère `listAllConversations()` (TOUS les
-    Spaces), pas `spaceConvIds`, et annote chaque résultat de son Space. Les
-    conversations du Space actif restent priorisées en tête (`rankConvResults`,
-    utils.js, pure). Ouvrir un résultat d'un autre Space **suit** ce Space
-    (`followSpace` avant `selectConv`) pour ne jamais afficher un fil hors du
-    Space actif. C'est la SEULE voie cross-Space assumée ; la recherche sidebar
-    (`renderConvList`) reste, elle, scopée au Space actif. Décision Julien
-    2026-07-11, cf. `docs/command-palette.md`.
+    `conv.model`/`currentConvModel` (override) séparés ; résolus par
+    `activeModel()`.
+16. **Préservation du KV cache (Ollama).** → invariant transverse, développé
+    sous la liste.
+17. **Persistance des images jointes (content parts → descripteur).** Image en
+    content parts OpenAI (`image_url` base64) **seulement au tour d'attache** ;
+    ensuite le message user est réécrit **une fois** en string = texte + ligne(s)
+    de descripteur byte-stable (`collapseAttachedMessageContent`, idempotente,
+    calculée depuis les champs FIGÉS `name`/`w`/`h`/`size`, jamais recalculée
+    depuis les octets).
+18. **Herméticité des Spaces : un seul prédicat, partout.** → invariant
+    transverse, développé sous la liste.
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
-    `role:'tool'` (brief A2, D3).** Un `recall_attachment` sur une image ne
-    remet PAS les pixels dans le résultat de l'outil (`role:'tool'` textuel) :
-    le handler renvoie un tool result annonciateur, et l'image revient au modèle
-    via un **message user synthétique** porteur de la content part image, émis
-    par `expandThread` **après** les tool results du groupe. Ce message n'existe
-    pas dans `currentThread` : la dataUrl est reconstruite depuis le record en
-    cache par le pré-pass `resolveRecallImages` (resources.js) à **chaque** envoi
-    (champ `recallImage` sur une copie de l'ack), **jamais persistée** (absente
-    d'`ACK_COPY_FIELDS` — seul `attId` l'est) → byte-stable, KV-safe. Raison du
-    choix (probe 2026-07-05, `mistral-small3.2`) : une part image dans un message
-    `role:'tool'` transmet bien les pixels sur Ollama MAIS **confabule
-    silencieusement** quand elle est strippée ; le message user échoue honnêtement
-    (« AUCUNE IMAGE »). Corollaire du collapse-timing (D2) : l'image→descripteur
-    ne se fait **jamais entre deux appels d'une même boucle d'outils** — le
-    payload `apiMessages` est construit UNE fois avant la boucle `runConversation`
-    et seulement complété par push ; le collapse (`rewriteAttachedUserMessage`)
-    n'a lieu qu'en `onFinal`/`onHalt`, donc après la fin de l'échange.
-20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`,
-    `restoreSummaryItem` et `runBackfill` re-vérifient `loadConversation(id)`
-    juste avant `saveSummary`, pour ne pas ressusciter une entrée
-    `miaou-summaries` si la conversation a été supprimée pendant l'`await`
-    LLM (`deleteSummaryEntry` dans `deleteConv` a déjà tourné avant, en pure
-    perte). `pruneOrphanSummariesOnInit()` nettoie en complément les résidus
-    au démarrage, avant `runBackfill()`.
-21. **Export HTML standalone : un seul chemin string→HTML à risque.**
-    L'export (`renderExportBody`, ui.js) hérite de la sûreté de l'écran
-    UNIQUEMENT parce qu'il re-rend via `renderMd`/`renderUserMd` (marked,
-    sortie passée à `sanitizeHtml`/DOMPurify — marked laisse passer le HTML
-    inline du modèle, la sanitisation est ce qui empêche un payload reproduit
-    depuis une source hostile de s'exécuter) — les mêmes renderers que le DOM
-    live, jamais un clone/strip du `#thread` live. `formatToolAcksHtml` (utils.js) est l'EXCEPTION : seule
-    fonction qui concatène directement des chaînes d'origine modèle/outil
-    (`name`, `intent`, args JSON, result) en HTML — `escHtml` y est
-    systématique. Toute future extension de l'export qui ajoute un chemin de
-    concaténation similaire doit `escHtml` de la même façon (cf.
-    `docs/exports.md`). **Depuis D1 révisé** (export interactif optionnel,
-    réglage `exportInteractive`), l'export peut porter un `<script>` inline
-    (`EXPORT_SCRIPT`) : c'est du JS statique **build-time** (aucune donnée
-    modèle/outil concaténée dedans), mais `exportConvHtml` échappe quand même
-    `</` (`.replace(/<\//g, '<\\/')`) avant l'insertion dans le `<script>`
-    porteur — ne jamais y interpoler de contenu d'origine modèle sans repenser
-    cette sûreté. **Depuis E4**, deuxième exception sanctionnée :
-    `embedExportMermaid` injecte `out.svg` (sortie de Mermaid `strict`, même
-    posture que `renderMermaidUnder`, piège 23) via `innerHTML` — pas de
-    re-sanitisation, couverte par la sanitisation interne de Mermaid.
-22. **`EXPORT_CSS` (export HTML) ne suit PAS les évolutions de
-    `chat.css`/`tools.css`/`composer.css`.** C'est une feuille dédiée écrite
-    à la main (audit lot G, `docs/exports.md`), pas un miroir vivant de
-    l'écran — assumé, un export est un instantané figé. **Conséquence** : si
-    on retouche une classe réutilisée par l'export (`.msg`/`.bubble`/
-    `.reasoning`/`.tool-ack`/`.att-*`/`.code-head`/`.code-lang`/`.code-copy`/
-    `.code-dl`/`.mermaid-view`/`.mermaid-src`/tables/blocs de code), rien ne casse
-    silencieusement, mais l'export continue de produire l'**ancien** style —
-    aucun test ne détecte cette dérive. Seuls les tokens de couleur
-    (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent
-    synchronisés automatiquement. Revue manuelle à la charge de qui touche ce
-    CSS : vérifier si `EXPORT_CSS` doit suivre.
+    `role:'tool'`.** Le handler renvoie un tool result annonciateur ; l'image
+    revient via un message user synthétique émis par `expandThread`, sa dataUrl
+    reconstruite à chaque envoi par `resolveRecallImages` (champ `recallImage`,
+    **jamais persisté**) → byte-stable, KV-safe (brief A2/D3).
+20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`/
+    `restoreSummaryItem`/`runBackfill` re-vérifient `loadConversation(id)` juste
+    avant `saveSummary` ; `pruneOrphanSummariesOnInit()` nettoie au démarrage.
+21. **Export HTML standalone : un seul chemin string→HTML à risque.** →
+    invariant transverse, développé sous la liste.
+22. **`EXPORT_CSS` ne suit PAS `chat.css`/`tools.css`/`composer.css`.** Feuille
+    dédiée figée (lot G) : retoucher une classe réutilisée par l'export ne
+    propage rien (sauf tokens de couleur via `getComputedStyle`). Revue manuelle
+    à la charge de qui touche ce CSS (cf. `docs/exports.md`).
 23. **Préviz HTML/SVG : la frontière est l'iframe sandbox, aucune autre voie.**
-    L'aperçu des blocs `html`/`svg` (bouton « œil », `decoratePre`) est
-    l'exception sanctionnée à la doctrine `textContent` : du markup d'origine
-    modèle atteint une surface de rendu, mais UNIQUEMENT dans un
-    `<iframe sandbox="allow-scripts">` **sans `allow-same-origin`** (origine
-    opaque : pas de localStorage/IndexedDB/DOM parent — un `<script>` embarqué
-    s'exécute, confiné). Cette iframe ne doit **jamais** gagner
-    `allow-same-origin`, et aucune autre voie d'injection de markup modèle ne
-    doit être ajoutée (le SVG Mermaid, piège hors numérotation, passe par la
-    sanitisation interne de Mermaid `strict` — cf. `docs/rendering.md`).
-    `srcdoc` est posé par **propriété JS** sur un élément `createElement`,
-    jamais interpolé dans un template string HTML.
-24. **Synchro multi-onglets : broadcast POST-commit, et relecture APRÈS l'await.**
-    Deux invariants jumeaux, tous deux payés (lot J). **(a) Émettre après la
-    persistance durable, jamais avant** : tout `syncPost` de mutation
-    (`conv-updated`, `settings-updated`, `resources-updated`…) suit le `setItem`/
-    `tx.oncomplete` correspondant — un pair qui rehydrate lit le store, l'émission
-    ne doit donc jamais le devancer (IDB : sur `tx.oncomplete`, **jamais**
-    `req.onsuccess`). **(b) Un récepteur qui rehydrate relit l'état APRÈS son
-    `await`, jamais un instantané figé avant.** `openConversation` contient un
-    `await` (`loadConversationResources`) : construire `currentThread` **avant**
-    cet await fige le fil, et un `saveConversation` d'un pair survenu **pendant**
-    l'await — typiquement la réponse assistant persistée juste après
-    `conv-generation-ended` — est perdu, le dernier tour n'apparaissant qu'à la
-    navigation suivante (bug « toujours en retard d'un tour »). La lecture de
-    `conv.messages` (`projectConvMessages`, pur, testé) se fait **après** l'await ;
-    un **jeton de séquence** (`_openConvSeq`) fait abandonner tout appel devenu
-    obsolète pendant son await (le plus récent, qui relit le store le plus frais,
-    gagne). Filet complémentaire : `readonly-off` (fin de génération d'un pair)
-    relance une rehydratation, sans se reposer sur le seul `conv-updated` final
-    dont l'arrivée peut précéder la persistance de la réponse. Cf.
-    `docs/multitab-sync.md`.
+    Markup modèle rendu **uniquement** dans un `<iframe sandbox="allow-scripts">`
+    **sans `allow-same-origin`** (`decoratePre`) ; `srcdoc` posé par propriété
+    JS, jamais interpolé en template string. Ne jamais ajouter `allow-same-origin`
+    ni une autre voie d'injection (cf. `docs/rendering.md`).
+24. **Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
+    → invariant transverse, développé sous la liste.
+
+### Invariants transverses (développés)
+
+Les quatre pièges les plus coûteux, gardés inline parce qu'ils gouvernent des
+frontières traversées par beaucoup de code.
+
+**#16 — Préservation du KV cache (Ollama).** `buildSystemMessage()` reste
+**statique** ; tout contenu dynamique (date, mémoire) est injecté en préfixe
+éphémère du dernier message user via `buildContextBlock()`, jamais dans le
+system message. Corollaire du piège 18 : changer de Space ou modifier la
+bibliothèque de fichiers casse ce préfixe — assumé, mais reste statique tant
+que ces états ne bougent pas.
+
+**#18 — Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
+convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
+appartient-elle au Space actif ? » — sidebar, recherche, `list_conversations`/
+`get_conversation`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
+(via `scope`), **fichiers de bibliothèque d'espace** (`getResourcesBySpace`/
+`getCachedLibraryEntriesBySpace`, filtre `spaceId === activeSpaceId`, lot Cbis).
+Jamais un filtre `c.spaceId === x` réécrit localement.
+`get_conversation`/`update_memory`/`delete_memory` sur un id hors-Space
+répondent comme **inexistant** (pas d'oracle) ; même posture pour
+`files__list`/`files__read` sur un `file-<id>` étranger ou inconnu (lot Cbis).
+Changer de Space actif change le prompt système effectif : `description` du
+Space (pas un system prompt) est **ajoutée après** le prompt système
+utilisateur global (`resolveUserSystemPrompt`, brief D4 — concaténation,
+jamais substitution) — **assumé** : ça casse le préfixe KV cache (piège 16),
+mais reste statique tant qu'on ne change pas de Space. Le **manifeste de
+bibliothèque de fichiers** (`buildLibraryManifestBlock`, injecté dans
+`<miaou_context>` via `contextBlockParts().library`, lot Cbis) est de même
+nature : byte-stable tant que la bibliothèque du Space actif ne change pas
+(tri `createdAt`→`id` déterministe), casse le prefix KV cache à chaque
+ajout/suppression/atterrissage de description de fichier (PAS un résumé
+du contenu — cf. `docs/spaces.md`) — assumé, comme un changement de Space.
+**Exception sanctionnée (lot F, palette de commandes)** : le submode
+« recherche de conversation » de la palette (`cmdkConvItems`, ui.js) est
+**volontairement cross-Space** — il itère `listAllConversations()` (TOUS les
+Spaces), pas `spaceConvIds`, et annote chaque résultat de son Space. Les
+conversations du Space actif restent priorisées en tête (`rankConvResults`,
+utils.js, pure). Ouvrir un résultat d'un autre Space **suit** ce Space
+(`followSpace` avant `selectConv`) pour ne jamais afficher un fil hors du
+Space actif. C'est la SEULE voie cross-Space assumée ; la recherche sidebar
+(`renderConvList`) reste, elle, scopée au Space actif. Décision Julien
+2026-07-11, cf. `docs/command-palette.md`.
+
+**#21 — Export HTML standalone : un seul chemin string→HTML à risque.**
+L'export (`renderExportBody`, ui.js) hérite de la sûreté de l'écran
+UNIQUEMENT parce qu'il re-rend via `renderMd`/`renderUserMd` (marked, sortie
+passée à `sanitizeHtml`/DOMPurify) — les mêmes renderers que le DOM live, jamais
+un clone/strip du `#thread` live. `formatToolAcksHtml` (utils.js) est
+l'EXCEPTION : seule fonction qui concatène directement des chaînes d'origine
+modèle/outil (`name`, `intent`, args JSON, result) en HTML — `escHtml` y est
+systématique, et toute future extension similaire doit faire de même (cf.
+`docs/exports.md`). **Depuis D1 révisé** (export interactif optionnel, réglage
+`exportInteractive`), l'export peut porter un `<script>` inline (`EXPORT_SCRIPT`) :
+JS statique **build-time** (aucune donnée modèle/outil dedans), mais
+`exportConvHtml` échappe quand même `</` avant insertion — ne jamais y interpoler
+de contenu modèle sans repenser cette sûreté. **Depuis E4**, deuxième exception :
+`embedExportMermaid` injecte `out.svg` (Mermaid `strict`, piège 23) via
+`innerHTML`, couverte par la sanitisation interne de Mermaid.
+
+**#24 — Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
+Deux invariants jumeaux (lot J). **(a) Émettre après la persistance durable,
+jamais avant** : tout `syncPost` de mutation (`conv-updated`, `settings-updated`,
+`resources-updated`…) suit le `setItem`/`tx.oncomplete` correspondant — un pair
+qui rehydrate lit le store (IDB : sur `tx.oncomplete`, **jamais** `req.onsuccess`).
+**(b) Un récepteur qui rehydrate relit l'état APRÈS son `await`, jamais un
+instantané figé avant.** `openConversation` contient un `await`
+(`loadConversationResources`) : figer `currentThread` **avant** cet await perd un
+`saveConversation` d'un pair survenu pendant (bug « toujours en retard d'un
+tour »). La lecture de `conv.messages` (`projectConvMessages`, pur, testé) se fait
+**après** l'await ; un **jeton de séquence** (`_openConvSeq`) fait abandonner tout
+appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
+`docs/multitab-sync.md`.
 
 ## Domaines détaillés (`docs/`)
 
@@ -350,6 +254,9 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   sections JS/CSS, avec lignes). **Généré par `build.py` à chaque build, ne
   jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
   fichiers (`ui.js`, `chat.css`).
+- **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
+  marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`, points d'injection et gardes
+  `try/catch`.
 - **`docs/pitfalls-detail.md`** — développement complet des 24 pièges ci-dessus.
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
@@ -357,6 +264,12 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), et références de conversation dans le texte du modèle
   (`conv_ref`).
+- **`docs/context-inspector.md`** — inspecteur de contexte (brief B) : manifeste
+  par bloc logique du contexte envoyé au modèle (`buildContextManifest`, pur) et
+  totaux chars/tokens, rendu dans le drawer (`renderContextInspector`).
+- **`docs/spaces.md`** — Spaces / « Espaces » (lot C) : herméticité (piège 18,
+  `spaceConvIds`), default Space, scope `profile` des souvenirs, description de
+  Space concaténée au prompt système, bibliothèque de fichiers par Space.
 - **`docs/mcp.md`** — agrégation MCP distante (V2) : préfixage, routage,
   transport, timeout, dégradation gracieuse, D5–D10.
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
@@ -374,12 +287,16 @@ au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
   d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
   broadcast post-commit + relecture post-await (piège 24).
 
+## Composants UI provisoires (ne pas redessiner sans spec)
+
+Un composant visuel implémenté en intérimaire ne se retravaille pas à l'aveugle :
+demander les spécifications HTML/CSS avant de le redessiner. Seul cas restant :
+**`.bg-activity`** (indicateur d'activité de fond, `chat.css`, `index.html`,
+piloté par `runBackgroundTask`), hors maquette d'origine. (`.summary-banner`
+relevait de la même réserve mais a depuis reçu une spec définitive — plus
+concerné.)
+
 ## Règle d'or
 
 En cas d'ambiguïté sur un point non couvert ici : **signaler plutôt que deviner**.
 Le projet a déjà payé le prix de suppositions hâtives.
-
-> Note : `.bg-activity` n'était pas dans la maquette d'origine et a été implémenté
-> en intérimaire. **Avant de le retravailler**, demander les spécifications HTML/CSS
-> plutôt que de redessiner à l'aveugle. (`.summary-banner` a depuis reçu une spec et
-> une implémentation définitives — cette mise en garde ne le concerne plus.)
