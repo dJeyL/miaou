@@ -299,3 +299,26 @@ describe('modelName (fallback d\'affichage — serveur API actif)', function() {
     expect(modelName()).toBe('modèle');
   });
 });
+
+describe('attachmentClickAction (A3-1 — clic sur un chip de bulle envoyée)', function() {
+  it('record absent (plus en cache) → null, dégradation silencieuse', function() {
+    expect(attachmentClickAction(null, false)).toBe(null);
+  });
+  it('record non-image (pas de w/h) → download, modificateur ignoré', function() {
+    var rec = { name: 'a.pdf', mime: 'application/pdf', size: 10 };
+    expect(attachmentClickAction(rec, false)).toBe('download');
+    expect(attachmentClickAction(rec, true)).toBe('download');
+  });
+  it('record image (w/h posés) sans modificateur → lightbox', function() {
+    var rec = { name: 'a.png', mime: 'image/png', w: 100, h: 80 };
+    expect(attachmentClickAction(rec, false)).toBe('lightbox');
+  });
+  it('record image avec modificateur (Cmd/Ctrl) → nouvel onglet', function() {
+    var rec = { name: 'a.png', mime: 'image/png', w: 100, h: 80 };
+    expect(attachmentClickAction(rec, true)).toBe('tab');
+  });
+  it('record.class === "binary" seul (fichier binaire non-image) n\'est pas traité comme image', function() {
+    var rec = { name: 'a.bin', mime: 'application/octet-stream', class: 'binary' };
+    expect(attachmentClickAction(rec, false)).toBe('download');
+  });
+});

@@ -246,6 +246,63 @@ def collapse_blank_code_lines(src: str) -> str:
     return '\n'.join(out_lines)
 
 
+_HELP_SECTION_RE = re.compile(r'^##\s+(\S.*?)\s*$')
+
+
+def parse_help_sections(text: str) -> dict:
+    """Parse `src/help.md` en dict ordonné {slug: markdown}.
+
+    Une section démarre sur une ligne `## <slug>` en début de ligne. Le contenu
+    d'une section court jusqu'au prochain `## ` ou la fin. Le texte avant la
+    première section est ignoré (le fichier commence par `## overview`). Un slug
+    dupliqué est une erreur (l'enum de l'outil dérive de ces clefs : pas de
+    collision silencieuse). Les `## ` à l'intérieur d'un fence ``` ... ``` ne
+    démarrent PAS de section.
+    """
+    sections = {}
+    current = None
+    buf = []
+    in_fence = False
+
+    def flush():
+        if current is not None:
+            sections[current] = '\n'.join(buf).strip('\n')
+
+    for line in text.split('\n'):
+        stripped = line.lstrip()
+        if stripped.startswith('```') or stripped.startswith('~~~'):
+            in_fence = not in_fence
+            if current is not None:
+                buf.append(line)
+            continue
+        m = None if in_fence else _HELP_SECTION_RE.match(line)
+        if m:
+            flush()
+            slug = m.group(1)
+            if slug in sections:
+                raise ValueError(f'help.md : section « {slug} » dupliquée')
+            current = slug
+            buf = []
+        elif current is not None:
+            buf.append(line)
+    flush()
+    return sections
+
+
+def load_help() -> dict:
+    """Lit et parse `src/help.md`. Absent → échec bruyant (fichier versionné,
+    son absence est une erreur, contrairement à config.json qui warn)."""
+    p = SRC / 'help.md'
+    if not p.exists():
+        raise FileNotFoundError(
+            f'{p} introuvable — contenu d\'aide requis (outil miaou__about). '
+            'Ce fichier est versionné : son absence est une erreur de build.')
+    sections = parse_help_sections(p.read_text(encoding='utf-8'))
+    if not sections:
+        raise ValueError(f'{p} ne contient aucune section « ## <slug> ».')
+    return sections
+
+
 def load_config(use_config: bool = True) -> dict:
     if not use_config:
         print('[info] build sans config (--no-config) — le JS produit embarque '
@@ -271,7 +328,7 @@ def assemble_css() -> str:
     return collapse_blank_code_lines(strip_css_comments('\n'.join(parts)))
 
 
-def assemble_js(cfg_data: dict) -> str:
+def assemble_js(cfg_data: dict, help_data: dict) -> str:
     now = datetime.now(timezone.utc)
     build_date = now.strftime('%Y-%m-%d %H:%M UTC')
     cfg_data['build_ts'] = int(now.timestamp())
@@ -290,6 +347,12 @@ def assemble_js(cfg_data: dict) -> str:
     # échappe '</' pour ne pas casser le </script> du HTML porteur.
     cfg_literal = json.dumps(cfg_data, ensure_ascii=False).replace('</', '<\\/')
     js = js.replace('__MIAOU_CONFIG__', cfg_literal)
+
+    # Injection du contenu d'aide : même mécanisme que __MIAOU_CONFIG__ — objet
+    # {slug: markdown} sérialisé en JSON, marqueur unique en position de valeur,
+    # échappement '</' pour le </script> porteur.
+    help_literal = json.dumps(help_data, ensure_ascii=False).replace('</', '<\\/')
+    js = js.replace('__MIAOU_HELP__', help_literal)
     return js
 
 
@@ -365,8 +428,9 @@ def build(use_config: bool = True):
         raise ValueError(f'Placeholder JS absent du template : {JS_PLACEHOLDER!r}')
 
     cfg_data = load_config(use_config)
+    help_data = load_help()
     css = assemble_css()
-    js = assemble_js(cfg_data)
+    js = assemble_js(cfg_data, help_data)
 
     output = template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, js)
 

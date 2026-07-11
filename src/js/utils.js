@@ -44,6 +44,7 @@ const ACK_COPY_FIELDS = [
   'resourceName', 'mime', 'size',        // ressources IDB
   'attId',                                // pièces jointes (recall_attachment)
   'slug',                                // skills
+  'topic',                               // aide (about_read)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
 
@@ -648,6 +649,28 @@ function formatToolAcksHtml(acks) {
     '</details>';
 }
 
+// Sélection PURE (testée QuickJS) des acks porteurs d'une image à ré-émettre
+// dans l'export HTML (lot Gbis), miroir des règles de placeToolAck (ui.js) :
+//   resource_presented → lookup par record id ;
+//   resource_stored    → idem (le filtre class !== 'inline' se fait APRÈS le
+//                        lookup dans renderExportBody, on ne connaît pas la
+//                        classe ici — comme en live) ;
+//   attachment_recalled → lookup par attId (conversation-scoped).
+// Le gate anti-doublon D8 du live (getPendingToolBlocks().length === 0) n'a pas
+// de sens à l'export (aucune file pendante) : non transposé (cf. AUDIT-Gbis §3).
+// Retourne { by: 'id' } | { by: 'attId' } | null ; le lookup cache + filtre
+// image/classe reste dans renderExportBody (seul à avoir getCachedRecord*).
+function exportableAckImageKey(ack) {
+  const kind = ackKindOf(ack);
+  if (kind === 'resource_presented' || kind === 'resource_stored') {
+    return ack.id ? { by: 'id' } : null;
+  }
+  if (kind === 'attachment_recalled') {
+    return ack.attId ? { by: 'attId' } : null;
+  }
+  return null;
+}
+
 // DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].
 // Utilisé pour générer des tool_call_id déterministes et compatibles avec les
 // backends qui imposent [a-zA-Z0-9] longueur 9 (ex. Mistral).
@@ -815,6 +838,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
   };
 
+  pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
   pushEntry('tools_system', 'Liste des outils (system)', sp.toolsSystem);
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);

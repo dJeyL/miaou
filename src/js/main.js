@@ -214,22 +214,26 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 // sous-bloc absent/désactivé.
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
-  if (TOOLS.length) {
-    out.root = ROOT_SYSTEM_PROMPT;
-    if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
-    out.intent = intentDoctrinePrompt();
-    out.skills = skillDoctrinePrompt();
-    out.docs = docsDoctrinePrompt();
-  }
-  // Inconditionnelle (piège N/A outils) : générer un codeblock ne dépend pas de TOOLS.length.
+  const out = { identity: '', root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
+  // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
+  // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
+  // Les gardes RÉELLES restent internes à chaque helper : includeToolsInSystemPrompt
+  // (toolsSystem), intentTracing (intent), skills autotrigger (skills), inflation
+  // d'attachement (docs). Zéro changement de comportement (gate toujours vrai).
+  out.identity = IDENTITY_BLURB;
+  out.root = ROOT_SYSTEM_PROMPT;
+  if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
+  out.intent = intentDoctrinePrompt();
+  out.skills = skillDoctrinePrompt();
+  out.docs = docsDoctrinePrompt();
   out.codeblock = CODEBLOCK_DOCTRINE;
   out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
   return out;
 }
 
-// Ordre : racine → énumération outils (si ON) → doctrine intent (si ON) → doctrine
-// skills (si skills autotrigger) → doctrine codeblock (toujours) → utilisateur →
+// Ordre : identité (toujours, EN TÊTE) → racine → énumération outils (si ON) →
+// doctrine intent (si ON) → doctrine skills (si skills autotrigger) → doctrine
+// codeblock (toujours) → utilisateur →
 // description du Space actif (concaténée, jamais substituée — D4 corrigé). Piège 18
 // (CLAUDE.md) : cette dernière part varie d'un Space à l'autre — changer de Space
 // change donc le system message (assumé, documenté), mais il reste statique tant
@@ -239,7 +243,7 @@ function systemMessageParts() {
 // une deuxième fois — un seul point de concaténation malgré tout (audit §6).
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
-  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
+  const parts = [sp.identity, sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 

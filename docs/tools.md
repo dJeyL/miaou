@@ -2,10 +2,10 @@
 
 ## Registre d'outils
 
-Douze outils dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
+Treize outils dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
 description **du registre** — ne jamais la coder en dur. `ask_confirmation`
 (primitif halting, cf. plus bas) est exposé au modèle mais **hors registre** :
-il ne figure pas dans `TOOLS` et ne compte pas dans ces douze.
+il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
 
 **Lecture de l'historique :**
 - `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
@@ -107,6 +107,23 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces douze.
   distant. Pousse un ack `skill_read` (informatif, sans undo) — nom du skill stocké
   dans `title` (pas `name` : `onEnrichLastAck` écrase `name` avec le nom canonique
   de l'outil pour la réinjection cross-turn).
+
+**Aide utilisateur (lot I) :**
+- `about(topic?)` — sert une section de l'aide utilisateur de MIAOU depuis
+  `HELP_CONTENT` (objet `{slug: markdown}` injecté au build depuis `src/help.md`
+  par `parse_help_sections`, cf. `CLAUDE.md` section pipeline). Handler
+  **synchrone** (const en mémoire) → testable QuickJS. L'`enum` du paramètre
+  `topic` dérive de `Object.keys(HELP_CONTENT)` (même source que le contenu, pas
+  de drift) ; `required` vide → un `topic` absent **ou inconnu** retombe sur
+  `overview` (défaut). Pousse un ack `about_read` (informatif, sans undo, icône
+  `ICON_BOOK` réutilisée de `skill_read`/`files_read`, champ `topic`). Le contenu
+  d'aide **n'est jamais dans le contexte** : seuls le blurb d'identité
+  (`IDENTITY_BLURB`, statique, en tête du system message) et l'`enum` de slugs y
+  vont ; les sections n'arrivent qu'en tool result, une par appel. Sous QuickJS
+  `HELP_CONTENT` vaut `{}` (marqueur non substitué → enum vide) : les tests du
+  parseur couvrent le découpage côté `build.py`, ceux du handler couvrent la
+  mécanique (fallback overview, ack) — le lookup positif est garanti par le build
+  (dist/ contient les topics).
 
 **Bibliothèque de fichiers d'espace (lot Cbis, read-only v1) :**
 - `files__list()` — entrées de la bibliothèque de l'**espace actif uniquement**

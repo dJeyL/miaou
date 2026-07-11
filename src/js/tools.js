@@ -5,6 +5,15 @@
    ask_confirmation est un primitif halting hors registre MCP (voir ci-dessous).
    ────────────────────────────────────────────────────────────────────────── */
 
+// Contenu d'aide utilisateur servi par l'outil miaou__about : objet
+// { slug: markdown } injecté au build depuis src/help.md (parse_help_sections,
+// build.py). Même mécanisme que BUILD_CONFIG (storage.js) : marqueur unique en
+// position de valeur, forme try/catch pour les sources non buildées (tests
+// QuickJS) où __MIAOU_HELP__ est un identifiant nu → ReferenceError → {}.
+// L'enum topic de l'outil dérive de Object.keys(HELP_CONTENT) : même source que
+// le contenu, pas de drift possible.
+const HELP_CONTENT = (function () { try { return __MIAOU_HELP__; } catch (e) { return {}; } })();
+
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -176,9 +185,9 @@ function docsDoctrinePrompt() {
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE;
 
-// Doctrine de nommage des blocs de code. Injectée INCONDITIONNELLEMENT (contrairement
-// aux six ci-dessus) : générer un codeblock n'a aucun rapport avec la présence
-// d'outils, donc PAS dans ROOT_SYSTEM_PROMPT (gouverné par TOOLS.length). Portée
+// Doctrine de nommage des blocs de code. Injectée INCONDITIONNELLEMENT (comme
+// IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
+// d'outils, donc PAS dans ROOT_SYSTEM_PROMPT. Portée
 // directement par systemMessageParts()/buildSystemMessage() (main.js) via out.codeblock.
 // v2 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
 // même statut que le v1 de ROOT_SYSTEM_PROMPT. (v2, lot E3 : doctrine étendue
@@ -204,6 +213,25 @@ const CODEBLOCK_DOCTRINE =
   "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
   "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
   "reconnu, pour un saut de ligne.";
+
+// Blurb d'identité — constante build-time, INCONDITIONNELLE (même statut que
+// CODEBLOCK_DOCTRINE) : quelques phrases situant l'application et renvoyant vers
+// l'outil miaou__about pour les détails. STATIQUE (piège 16 KV cache) : aucun
+// contenu dynamique (date, état, config). Le contenu d'aide lourd vit derrière
+// l'outil, pas ici. Portée par systemMessageParts()/buildSystemMessage() (main.js)
+// via out.identity, placée EN TÊTE du join. v1 — une modification invalide le
+// préfixe KV cache sur toutes les conversations (même statut que ROOT_SYSTEM_PROMPT).
+const IDENTITY_BLURB =
+  "Tu opères dans MIAOU, un client de chat web pour dialoguer avec un modèle de " +
+  "langage via une API compatible OpenAI. MIAOU tourne entièrement dans le " +
+  "navigateur de l'utilisateur : conversations, souvenirs, skills, espaces et " +
+  "fichiers sont stockés localement. Il offre des espaces de travail étanches, " +
+  "une mémoire (souvenirs et résumés), des pièces jointes, des skills, l'agrégation " +
+  "d'outils MCP distants, et des exports Markdown/HTML.\n" +
+  "Quand l'utilisateur pose une question sur MIAOU lui-même — comment joindre un " +
+  "fichier, ce que sont les espaces, où sont stockées ses données, etc. — appelle " +
+  "l'outil miaou__about (paramètre topic) plutôt que de deviner : il sert une aide " +
+  "utilisateur fiable, section par section.";
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
@@ -729,6 +757,40 @@ const TOOLS = [
         _pendingToolAcks.push({ kind: 'skill_read', slug, title: meta.name });
         return content;
       });
+    },
+  },
+  {
+    // Aide utilisateur servie à la demande depuis HELP_CONTENT (contenu build-time
+    // injecté depuis src/help.md). Handler SYNCHRONE (const en mémoire) → testable
+    // QuickJS. L'enum `topic` dérive de Object.keys(HELP_CONTENT) : même source que
+    // le contenu, pas de drift. `required` vide : topic absent/inconnu → overview.
+    // Sous QuickJS HELP_CONTENT vaut {} → enum vide (assumé par les tests).
+    name: 'about',
+    description:
+      "Sert l'aide utilisateur de MIAOU (l'application), section par section. Appelle " +
+      "cet outil quand l'utilisateur demande comment faire quelque chose dans MIAOU, " +
+      "ce qu'est une fonctionnalité (espaces, pièces jointes, mémoire, skills, MCP, " +
+      "exports…), ou où sont ses données — plutôt que de deviner. Passe un topic ; " +
+      "sans topic, tu obtiens la vue d'ensemble.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'Sujet d\'aide à consulter (défaut : overview).',
+          enum: Object.keys(HELP_CONTENT),
+        },
+      },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const requested = String((args && args.topic) || '').trim();
+      // topic inconnu/absent → overview (défaut). Fallback string vide si même
+      // overview manque (HELP_CONTENT={} sous QuickJS non stubé).
+      const topic = HELP_CONTENT[requested] != null ? requested : 'overview';
+      const content = HELP_CONTENT[topic];
+      _pendingToolAcks.push({ kind: 'about_read', topic });
+      return content != null ? content : 'Aide indisponible.';
     },
   },
 ];
@@ -1361,16 +1423,16 @@ function toolsSystemPrompt() {
 }
 
 function intentDoctrinePrompt() {
-  return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
+  return loadSettings().intentTracing ? INTENT_DOCTRINE : '';
 }
 
 // Doctrine de déclenchement des skills (stage 2). Injectée seulement si AU
 // MOINS une skill autotrigger existe (≈ getAutotriggerSkillsMeta non vide) —
 // inutile de payer des tokens de doctrine pour une fonctionnalité sans skill
 // éligible à l'utiliser. miaou__skills__read est dans TOOLS inconditionnellement
-// (stage 1), donc gater sur sa présence comme intentDoctrinePrompt gate sur
-// TOOLS.length serait toujours vrai ; on gate ici sur le contenu réel du cache
-// skills à la place. Le paragraphe CONFIRMATION est choisi ICI selon la valeur
+// (stage 1), donc gater sur sa présence serait toujours vrai (TOOLS est une const
+// build-time non vide) ; on gate ici sur le contenu réel du cache skills à la
+// place. Le paragraphe CONFIRMATION est choisi ICI selon la valeur
 // COURANTE de confirmSkillAutoUse (réglage localStorage, invisible au modèle) —
 // la doctrine envoyée est déjà résolue, jamais une condition que le modèle
 // devrait évaluer lui-même.

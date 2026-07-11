@@ -207,9 +207,9 @@ toujours le SVG **courant** de la vue, relu au clic.
 
 ### Lightbox pan/zoom
 
-Singleton DOM (`.mermaid-lightbox`, créé au premier usage, `ensureMermaidLightbox`),
-affiche un **clone** du SVG rendu (id retiré — pas de doublon d'id dans le
-document) sur fond `--code-bg`, overlay `rgba(0,0,0,.75)` en `z-index: 60`
+Singleton DOM (`.mermaid-lightbox`, créé au premier usage, `ensureLightbox`),
+affiche le contenu courant (clone SVG ou `<img>`, cf. généralisation A3-2
+ci-dessous) sur fond `--code-bg`, overlay `rgba(0,0,0,.75)` en `z-index: 60`
 (au-dessus des drawers, 50). Transform CSS `translate+scale` sur un wrapper
 interne (`transform-origin: 0 0`) :
 
@@ -223,6 +223,38 @@ interne (`transform-origin: 0 0`) :
 
 Les boutons SVG/PNG sont repris dans la lightbox (mêmes fonctions d'export,
 sur le clone). À la fermeture, le clone est purgé (pas de gros SVG résident).
+
+**Généralisation image (lot A3-2)** : le cœur pan/zoom/fermeture (agnostique
+du contenu depuis l'origine — il transforme `_lbCanvas`, peu importe ce qu'il
+contient) est resté inchangé. Extraction mécanique :
+`openLightboxWith(contentEl, w, h, rawName, mode)` factorise le
+dimensionnement/affichage/fit communs ; `openMermaidLightbox` (diagrammes,
+`mode:'mermaid'`) et deux nouveaux appelants portent chacun leur construction
+de contenu :
+
+- `openAttachmentLightbox(record)` — pièce jointe de bulle envoyée (clic
+  vignette, cf. `docs/storage.md` §A3-1) : `<img>` sur le record du cache
+  session (mêmes bytes que `resolveAttachmentThumb`, déjà downscalés
+  ≤1536px — pas de résolution « pleine taille » distincte), dimensions
+  `record.w`/`record.h` (champs figés du schéma attachment).
+- `openToolImageLightbox(imgEl)` — image modèle inline (`.tool-block-img`,
+  résultat d'outil éphémère, `renderToolBlock`) : clic direct sur l'`<img>`
+  déjà rendu (closure posée à la création, pas de handler global — élément
+  créé par `createElement`) ; dimensions lues sur l'élément
+  (`naturalWidth`/`naturalHeight`, pas de schéma figé ici, contenu jamais
+  persisté).
+
+La barre d'actions (`.mermaid-lightbox-actions`) est construite **une seule
+fois** (pas de refonte du singleton) : boutons SVG/PNG et bouton unique
+« Télécharger » (icône `ICON_DOWNLOAD`, même tracé que `.code-dl`) coexistent
+dans le DOM, togglés via `hidden` selon le mode — `openLightboxWith` masque
+SVG/PNG et révèle Télécharger en mode `'image'` (et inversement). Les
+closures SVG/PNG restent posées mais inertes (cachées) en mode image ; la
+closure du bouton Télécharger est reciblée (`onclick` réassigné) à chaque
+ouverture vers le download du contenu courant (`downloadFile`, direct depuis
+le record ou reconstruit depuis le `src` data-URI pour le mode outil).
+Téléchargement d'une image = **exclusivement** ce bouton (le clic simple sur
+la vignette/l'image ouvre la lightbox, ne télécharge jamais).
 
 ## Tests
 

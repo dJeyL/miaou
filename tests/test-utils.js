@@ -605,6 +605,31 @@ describe('formatToolAcksHtml', function() {
   });
 });
 
+describe('exportableAckImageKey', function() {
+  it('resource_presented → lookup par id', function() {
+    expect(exportableAckImageKey({ kind: 'resource_presented', id: 'r1' })).toEqual({ by: 'id' });
+  });
+  it('resource_stored → lookup par id', function() {
+    expect(exportableAckImageKey({ kind: 'resource_stored', id: 'r2' })).toEqual({ by: 'id' });
+  });
+  it('attachment_recalled → lookup par attId', function() {
+    expect(exportableAckImageKey({ kind: 'attachment_recalled', attId: 'att-3' })).toEqual({ by: 'attId' });
+  });
+  it('resource_presented sans id → null', function() {
+    expect(exportableAckImageKey({ kind: 'resource_presented' })).toBe(null);
+  });
+  it('attachment_recalled sans attId → null', function() {
+    expect(exportableAckImageKey({ kind: 'attachment_recalled' })).toBe(null);
+  });
+  it('kind non porteur d\'image → null', function() {
+    expect(exportableAckImageKey({ kind: 'memory_create', id: 'x' })).toBe(null);
+    expect(exportableAckImageKey({ kind: 'mcp_call', id: 'x' })).toBe(null);
+  });
+  it('ack sans kind → null', function() {
+    expect(exportableAckImageKey({ id: 'x' })).toBe(null);
+  });
+});
+
 describe('_hashId9', function() {
   it('renvoie toujours exactement 9 caractères', function() {
     expect(_hashId9('').length).toBe(9);

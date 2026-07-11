@@ -376,7 +376,13 @@ function lbFit() {
   lbApply();
 }
 
-function ensureMermaidLightbox() {
+// A3-2 : boutons taggés par mode ('mermaid' | 'image'), togglés via `hidden`
+// plutôt que reconstruits — la barre ne bouge plus après création, mais les
+// closures SVG/PNG ne s'exécutent jamais en mode image (elles restent
+// cachées, jamais retirées du DOM).
+let _lbDlBtn = null;   // bouton Télécharger, mode image — closure reciblée à chaque open
+
+function ensureLightbox() {
   if (_lbEl) return _lbEl;
   _lbEl = document.createElement('div');
   _lbEl.className = 'mermaid-lightbox';
@@ -395,10 +401,14 @@ function ensureMermaidLightbox() {
     b.innerHTML = html;
     b.onclick = fn;
     bar.appendChild(b);
+    return b;
   };
-  mk('Télécharger en SVG', 'SVG', () => { const el = svg(); if (el) downloadDiagramSvg(el, _lbName); });
-  mk('Télécharger en PNG', 'PNG', () => { const el = svg(); if (el) downloadDiagramPng(el, _lbName); });
+  const svgBtn = mk('Télécharger en SVG', 'SVG', () => { const el = svg(); if (el) downloadDiagramSvg(el, _lbName); });
+  const pngBtn = mk('Télécharger en PNG', 'PNG', () => { const el = svg(); if (el) downloadDiagramPng(el, _lbName); });
+  _lbDlBtn = mk('Télécharger', ICON_DOWNLOAD, () => {});
   mk('Fermer', '×', closeMermaidLightbox);
+  _lbEl._svgBtn = svgBtn;
+  _lbEl._pngBtn = pngBtn;
   _lbEl.appendChild(stage);
   _lbEl.appendChild(bar);
 
@@ -449,27 +459,72 @@ function ensureMermaidLightbox() {
   return _lbEl;
 }
 
-function openMermaidLightbox(svgEl, rawName) {
-  ensureMermaidLightbox();
+// A3-2 : cœur commun mermaid/image — dimensionne `_lbCanvas`, affiche, fit.
+// `contentEl` est déjà le nœud à insérer (clone SVG ou <img>), construit par
+// l'appelant : `openLightboxWith` ne connaît pas son origine.
+function openLightboxWith(contentEl, w, h, rawName, mode) {
+  ensureLightbox();
   _lbName = rawName || '';
+  _lbW = w || 800;
+  _lbH = h || 600;
+  _lbCanvas.textContent = '';
+  _lbCanvas.appendChild(contentEl);
+  _lbCanvas.style.width = _lbW + 'px';
+  _lbCanvas.style.height = _lbH + 'px';
+  const isImage = mode === 'image';
+  _lbEl._svgBtn.hidden = isImage;
+  _lbEl._pngBtn.hidden = isImage;
+  _lbDlBtn.hidden = !isImage;
+  _lbEl.classList.add('show');
+  lbFit();
+}
+
+function openMermaidLightbox(svgEl, rawName) {
   const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
   const rect = svgEl.getBoundingClientRect();
-  _lbW = (vb && vb.width) || rect.width || 800;
-  _lbH = (vb && vb.height) || rect.height || 600;
+  const w = (vb && vb.width) || rect.width || 800;
+  const h = (vb && vb.height) || rect.height || 600;
   // Le clone GARDE son id : le <style> interne de Mermaid scope toutes ses
   // règles par #<id> — le retirer rend le diagramme totalement dé-stylé. L'id
   // dupliqué dans le document est assumé : les règles CSS (identiques) matchent
   // les deux occurrences, et rien ne fait de getElementById dessus.
   const clone = svgEl.cloneNode(true);
-  clone.setAttribute('width', _lbW);
-  clone.setAttribute('height', _lbH);
+  clone.setAttribute('width', w);
+  clone.setAttribute('height', h);
   clone.style.maxWidth = '';
-  _lbCanvas.textContent = '';
-  _lbCanvas.appendChild(clone);
-  _lbCanvas.style.width = _lbW + 'px';
-  _lbCanvas.style.height = _lbH + 'px';
-  _lbEl.classList.add('show');
-  lbFit();
+  openLightboxWith(clone, w, h, rawName, 'mermaid');
+}
+
+// A3-2 : mode image — pièce jointe de bulle envoyée (record du cache session,
+// mêmes bytes que resolveAttachmentThumb, déjà downscalés ≤1536px à
+// l'ingestion — pas de "pleine taille" distincte à résoudre). `<img>` créé par
+// `createElement` + `src` en propriété JS, jamais en template string (piège 23).
+function openAttachmentLightbox(record) {
+  const img = document.createElement('img');
+  img.src = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
+  img.alt = '';
+  // openLightboxWith → ensureLightbox() en premier : _lbDlBtn n'existe qu'après
+  // (créé au premier usage du singleton), d'où l'ordre (jamais l'inverse).
+  openLightboxWith(img, record.w || 800, record.h || 600, record.name, 'image');
+  _lbDlBtn.onclick = () => downloadFile(record.name, record.data, record.mime);
+}
+
+// A3-2 : mode image — image modèle inline (`.tool-block-img`, résultat
+// d'outil). Éphémère (jamais persistée, cf. placeToolBlocks) : pas de
+// name/w/h figés au schéma, dimensions lues sur l'<img> déjà rendu
+// (naturalWidth/Height, disponibles une fois l'image chargée dans le DOM).
+// Téléchargement dérivé du `src` data-URI existant (pas de record IDB ici).
+function openToolImageLightbox(imgEl) {
+  const w = imgEl.naturalWidth || imgEl.width || 800;
+  const h = imgEl.naturalHeight || imgEl.height || 600;
+  const clone = document.createElement('img');
+  clone.src = imgEl.src;
+  clone.alt = '';
+  openLightboxWith(clone, w, h, '', 'image');
+  _lbDlBtn.onclick = () => {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(imgEl.src);
+    if (m) downloadFile('image.' + (m[1].split('/')[1] || 'png'), b64ToBytes(m[2]), m[1]);
+  };
 }
 
 function closeMermaidLightbox() {
@@ -834,6 +889,9 @@ const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none"
 const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+// Même tracé que `.code-dl` (decoratePre) — vocabulaire d'icônes, flèche vers
+// le bas = télécharger, réservée à cet usage (A3-2, bouton lightbox mode image).
+const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
 // Rendu à deux niveaux partagé par les acks avec intent : intention (niveau 1,
 // visible) + détail technique (niveau 2, replié par défaut derrière un chevron).
@@ -1029,6 +1087,29 @@ const ACK_KINDS = {
         });
       } else {
         el.textContent = 'Skill consultée : ' + (m.title || m.slug || '?');
+      }
+    },
+  },
+  // Consultation de l'aide MIAOU par le modèle (miaou__about) : informatif, pas
+  // d'undo (lecture — même posture que skill_read).
+  about_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Aide consultée : ' + (m.topic || 'overview'),
+    renderLabel: (m, el) => {
+      const topic = m.topic || 'overview';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Aide consultée '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + topic));
+        });
+      } else {
+        el.textContent = 'Aide consultée : ' + topic;
       }
     },
   },
@@ -2113,8 +2194,17 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
     ? `<button class="att-promote" title="Ajouter à la bibliothèque de l'espace" ` +
       `onclick="promoteAttachmentToLibrary(this, '${att.attId}', '${conversationId}')">${ICON_PACKAGE}</button>`
     : '';
+  // A3-1 : chip cliquable UNIQUEMENT en bulle envoyée (conversationId truthy) —
+  // exclut naturellement composer (inerte, statu quo acté) et export (Gbis,
+  // chemin distinct, ne doit jamais porter d'onclick référençant des globals
+  // MIAOU absents du fichier exporté).
+  const liveAttrs = (!removable && conversationId)
+    ? ` onclick="onAttachmentChipClick(event, '${att.attId}', '${conversationId}')" ` +
+      `title="${att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger'}"`
+    : '';
+  const chipClass = (!removable && conversationId) ? 'att-chip att-chip-live' : 'att-chip';
   return (
-    `<span class="att-chip" data-att-id="${att.attId}">` +
+    `<span class="${chipClass}" data-att-id="${att.attId}"${liveAttrs}>` +
     thumb +
     `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
     `<span class="att-size">${humanSize(att.size)}</span>` +
@@ -2122,6 +2212,52 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
     promoteBtn +
     `</span>`
   );
+}
+
+// A3-1 : prédicat pur — quelle action déclenche un clic sur un chip
+// d'attachment de bulle envoyée. Séparé du handler DOM pour rester testable
+// (QuickJS) sans DOM/cache. `record` peut être null (bytes plus en cache,
+// dégradation gracieuse) ; `hasModifier` = event.metaKey || event.ctrlKey.
+// Discriminant image : `record.w`/`record.h` (posés uniquement pour une image,
+// storeAttachment/resources.js) — `record.class` vaut 'binary' pour une image
+// ET un fichier binaire non-image (cf. ingestAttachmentFile, main.js), donc
+// inutilisable seul comme discriminant.
+function attachmentClickAction(record, hasModifier) {
+  if (!record) return null;
+  if (record.w && record.h) {
+    return hasModifier ? 'tab' : 'lightbox';
+  }
+  return 'download';
+}
+
+// A3-1 : handler global câblé en onclick inline généré (contrainte CLAUDE.md,
+// liste des handlers globaux). Ignore les clics issus des boutons existants
+// du chip (retrait/promotion, qui portent leur propre onclick) pour ne pas
+// déclencher un download/lightbox accidentel.
+function onAttachmentChipClick(event, attId, conversationId) {
+  if (event.target.closest('.att-promote, .att-remove')) return;
+  const record = getCachedRecordByAttId(attId, conversationId);
+  const hasModifier = !!(event.metaKey || event.ctrlKey);
+  const action = attachmentClickAction(record, hasModifier);
+  if (action === 'download') {
+    downloadFile(record.name, record.data, record.mime);
+  } else if (action === 'tab') {
+    openAttachmentInTab(record);
+  } else if (action === 'lightbox') {
+    openAttachmentLightbox(record);
+  }
+  // action === null (record absent du cache) : no-op silencieux, même
+  // posture que resolveAttachmentThumb.
+}
+
+// A3-1 : ouverture nouvel onglet (Cmd/Ctrl+clic sur une image). `data:` est
+// bloqué en navigation top-level par les navigateurs — Blob + objectURL,
+// révocation différée (une révocation immédiate casse le chargement sur
+// certains navigateurs).
+function openAttachmentInTab(record) {
+  const url = URL.createObjectURL(new Blob([record.data], { type: record.mime }));
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 // Promotion utilisateur d'un attachment de message vers la bibliothèque de
@@ -4142,6 +4278,10 @@ function renderToolBlock(block) {
     img.className = 'tool-block-img';
     img.src = 'data:' + (block.mimeType || 'image/png') + ';base64,' + block.data;
     img.alt = 'Image renvoyée par un outil';
+    img.title = 'Agrandir';
+    // A3-2 : closure directe (élément créé par createElement) — pas de
+    // handler global nécessaire, contrairement aux chips (onclick inline).
+    img.onclick = () => openToolImageLightbox(img);
     box.appendChild(img);
     return box;
   }
@@ -4153,6 +4293,8 @@ function renderToolBlock(block) {
       img.className = 'tool-block-img';
       img.src = 'data:' + r.mimeType + ';base64,' + r.blob;
       img.alt = 'Image renvoyée par un outil';
+      img.title = 'Agrandir';
+      img.onclick = () => openToolImageLightbox(img);
       box.appendChild(img);
       return box;
     }
@@ -4738,6 +4880,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .att-icon svg { width: 13px; height: 13px; }
 .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; color: var(--text); }
 .att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+/* Images modèle embarquées (lot Gbis) : parité reload — resource_presented /
+   resource_stored non-inline / attachment_recalled images. Inspiré de
+   .tool-block/.tool-block-img de tools.css (bordure, rayon, max-width) sans le
+   copier (piège 22). Pas de cursor:pointer ici : en export statique l'image
+   n'est pas cliquable (décision A.4) ; EXPORT_SCRIPT posera le lien + curseur
+   en mode interactif (lot Gb2). */
+.tool-block { margin: 6px 0; max-width: 100%; }
+.tool-block-img { max-width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: var(--r-sm); }
 /* Diagrammes Mermaid embarqués (lot E4). Né synchronisé avec .mermaid-view de
    chat.css (padding, fond, centrage svg) — dérive ensuite comme le reste de
    cette feuille (piège 22). Pas de display:none/toggle ici : dans l'export le
@@ -4807,6 +4957,50 @@ const EXPORT_SCRIPT = `
       head.appendChild(actions);
     })(pres[i]);
   }
+  // Images cliquables (lot Gb2) : nouvel onglet. La navigation top-level vers un
+  // data: est bloquée par les navigateurs → on convertit le data URL en Blob et
+  // on window.open l'URL d'objet. AUCUNE donnée modèle/outil interpolée ici
+  // (piège 21) : les data URL sont LUS depuis le DOM (img.src déjà posé par
+  // renderExportBody), jamais injectés dans ce script. Cibles : images modèle
+  // (.tool-block-img) et vignettes de chips user image (.att-chip > img.att-thumb,
+  // clic sur le chip ENTIER). Échec de conversion → rien (pas de fallback data:
+  // top-level, interdit) ; en export STATIQUE (ce script absent) les images
+  // restent visibles mais non cliquables (décision A.4).
+  function dataUrlToBlob(u) {
+    var comma = u.indexOf(',');
+    if (comma < 0 || u.slice(0, 5) !== 'data:') return null;
+    var meta = u.slice(5, comma);
+    var mime = meta.split(';')[0] || 'application/octet-stream';
+    var isB64 = /;base64/i.test(meta);
+    var body = u.slice(comma + 1);
+    try {
+      if (isB64) {
+        var bin = atob(body);
+        var bytes = new Uint8Array(bin.length);
+        for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        return new Blob([bytes], { type: mime });
+      }
+      return new Blob([decodeURIComponent(body)], { type: mime });
+    } catch (e) { return null; }
+  }
+  function openImage(dataUrl) {
+    var blob = dataUrlToBlob(dataUrl);
+    if (!blob) return;
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  }
+  function bindImageOpen(el, dataUrl) {
+    if (!dataUrl || dataUrl.slice(0, 5) !== 'data:') return;
+    el.style.cursor = 'zoom-in';
+    el.addEventListener('click', function () { openImage(dataUrl); });
+  }
+  var modelImgs = document.querySelectorAll('img.tool-block-img');
+  for (var mi = 0; mi < modelImgs.length; mi++) bindImageOpen(modelImgs[mi], modelImgs[mi].src);
+  var chips = document.querySelectorAll('.att-chip');
+  for (var ci = 0; ci < chips.length; ci++) {
+    var thumb = chips[ci].querySelector('img.att-thumb');
+    if (thumb) bindImageOpen(chips[ci], thumb.src);
+  }
 })();
 `;
 
@@ -4869,7 +5063,15 @@ async function renderExportBody(thread, convId) {
   let pendingAcks = [];
   for (const m of thread) {
     if (isAckRole(m.role)) {
-      if (m.args != null) pendingAcks.push(m);
+      // Empiler TOUS les acks (comme renderThread live) : le filtre `args != null`
+      // ne s'applique qu'à la TRACE textuelle (formatToolAcksHtml, ci-dessous), PAS
+      // au rendu d'IMAGE. Un ack image secondaire — ex. `resource_stored` créé par
+      // internResourcesFromResult en sous-produit d'un fetch_url — n'est jamais
+      // enrichi (onEnrichLastAck vise le fetch_url, pas lui) donc n'a pas d'`args` ;
+      // le filtrer ici masquait son image dans l'export alors qu'elle est en cache
+      // et s'affiche en live (bug Gbis : image trouvée par le modèle absente de
+      // l'export). Idem pour les acks legacy antérieurs à l'enrichissement cross-turn.
+      pendingAcks.push(m);
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') continue;
@@ -4885,7 +5087,29 @@ async function renderExportBody(thread, convId) {
       msgEl.innerHTML = '<div class="bubble">' + attHtml + '<div class="body">' + renderUserMd(shown || '') + '</div></div>' + tsHtml;
       pendingAcks = [];
     } else {
-      const acksHtml = pendingAcks.length ? formatToolAcksHtml(pendingAcks) : '';
+      // Trace textuelle : seuls les acks enrichis (`args != null`) — les acks
+      // legacy/secondaires sans args restent omis de la trace (statu quo), mais
+      // leur IMAGE est rendue par la boucle ci-dessous (pendingAcks entier).
+      const traceAcks = pendingAcks.filter(a => a.args != null);
+      const acksHtml = traceAcks.length ? formatToolAcksHtml(traceAcks) : '';
+      // Images modèle (lot Gbis) : parité reload. On ré-émet, APRÈS le bloc
+      // d'acks et AVANT le corps (miroir du DOM live, placeToolAck), les images
+      // persistées en IDB portées par les acks du groupe. Sélection PURE
+      // (exportableAckImageKey), lookup cache ICI seulement — record absent
+      // (fenêtre de course théorique, cf. AUDIT-Gbis §3) → rien, pas d'await IDB.
+      const ackImgHtml = pendingAcks.map(ack => {
+        const key = exportableAckImageKey(ack);
+        if (!key) return '';
+        const record = key.by === 'attId'
+          ? (typeof getCachedRecordByAttId === 'function' ? getCachedRecordByAttId(ack.attId, ack.convId) : null)
+          : (typeof getCachedRecord === 'function' ? getCachedRecord(ack.id) : null);
+        if (!record || !record.data || !record.mime || !record.mime.startsWith('image/')) return '';
+        // resource_stored inline : stocké mais non affiché auto (comme en live).
+        if (ackKindOf(ack) === 'resource_stored' && record.class === 'inline') return '';
+        const dataUrl = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
+        return '<div class="tool-block"><img class="tool-block-img" src="' +
+          escHtml(dataUrl) + '" alt="' + escHtml(record.name || '') + '"></div>';
+      }).join('');
       pendingAcks = [];
       const tsText = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
       const metaHtml = '<div class="meta"><span>' + escHtml(m.model || modelName()) + '</span>' +
@@ -4893,7 +5117,7 @@ async function renderExportBody(thread, convId) {
       const reasoningHtml = (m.reasoning && String(m.reasoning).trim())
         ? '<details class="reasoning"><summary><span class="reasoning-label">Raisonnement</span><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></summary></details>'
         : '';
-      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
+      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + ackImgHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
     }
     container.appendChild(msgEl);
   }

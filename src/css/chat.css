@@ -239,6 +239,16 @@
 .att-promote.done { color: var(--ok); cursor: default; }
 .att-promote svg { width: 14px; height: 14px; }
 
+/* A3-1 : affordance clic sur un chip de bulle envoyée (download/lightbox/
+   nouvel onglet, onAttachmentChipClick) — UNIQUEMENT les chips de bulle,
+   jamais le composer (statu quo inerte acté au pré-brief). */
+.msg-attachments .att-chip-live {
+  cursor: pointer;
+}
+.msg-attachments .att-chip-live:hover {
+  background: var(--surface-3);
+}
+
 /* Pied de bulle utilisateur : boutons éditer/copier + horodatage, alignés à
    droite sous la bulle (édition à gauche du groupe, copie ensuite, horodatage
    en dernier). Les boutons ne s'affichent qu'au survol de la zone .msg, pas
@@ -534,6 +544,13 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   transform-origin: 0 0;
   background: var(--code-bg);
   border-radius: 6px;
+}
+/* A3-2 : mode image — le canvas est dimensionné en px par openLightboxWith,
+   l'<img> le remplit intégralement (svg mode = clone dimensionné pareil). */
+.mermaid-lightbox-canvas img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 /* Couleurs fixes : l'overlay est toujours sombre, quel que soit le thème. */
 .mermaid-lightbox-actions {

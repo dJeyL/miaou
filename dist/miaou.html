@@ -650,6 +650,13 @@ body {
 .att-promote.done { color: var(--ok); cursor: default; }
 .att-promote svg { width: 14px; height: 14px; }
 
+.msg-attachments .att-chip-live {
+  cursor: pointer;
+}
+.msg-attachments .att-chip-live:hover {
+  background: var(--surface-3);
+}
+
 .msg-user-footer {
   display: flex;
   align-items: center;
@@ -908,6 +915,12 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   transform-origin: 0 0;
   background: var(--code-bg);
   border-radius: 6px;
+}
+
+.mermaid-lightbox-canvas img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .mermaid-lightbox-actions {
@@ -2155,6 +2168,7 @@ textarea.skill-content {
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   display: block;
+  cursor: pointer;   
 }
 .tool-block-binary {
   display: flex;
@@ -2899,7 +2913,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-10 21:43 UTC */
+/* miaou — built: 2026-07-11 11:40 UTC */
 
 /* ── utils.js ── */
 
@@ -2930,6 +2944,7 @@ const ACK_COPY_FIELDS = [
   'resourceName', 'mime', 'size',        
   'attId',                                
   'slug',                                
+  'topic',                               
   'args', 'result', 'ts', 'group', 'assistantText',   
 ];
 
@@ -3366,6 +3381,17 @@ function formatToolAcksHtml(acks) {
     '</details>';
 }
 
+function exportableAckImageKey(ack) {
+  const kind = ackKindOf(ack);
+  if (kind === 'resource_presented' || kind === 'resource_stored') {
+    return ack.id ? { by: 'id' } : null;
+  }
+  if (kind === 'attachment_recalled') {
+    return ack.attId ? { by: 'attId' } : null;
+  }
+  return null;
+}
+
 function _hashId9(s) {
   var h = 5381;
   for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
@@ -3480,6 +3506,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
   };
 
+  pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
   pushEntry('tools_system', 'Liste des outils (system)', sp.toolsSystem);
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
@@ -3599,7 +3626,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783719818}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783770027}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4887,6 +4914,8 @@ async function loadSkillsCache() {
 
 /* ── tools.js ── */
 
+const HELP_CONTENT = (function () { try { return {"overview": "MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu\ndiscutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix\nhaute quand il en est capable, afficher du code coloré, dessiner des diagrammes,\net se servir d'outils pour retrouver des informations dans tes conversations\npassées, tes souvenirs ou tes fichiers.\n\nCe que tu peux faire ici :\n\n- **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un\n  de tes messages pour repartir de ce point.\n- **Joindre des fichiers** à un message : images et fichiers texte.\n- **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,\n  ses fichiers et ses souvenirs.\n- **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer\n  des souvenirs durables pour te reconnaître d'une conversation à l'autre.\n- **Étendre** le modèle avec des skills (instructions réutilisables) et des\n  outils distants (serveurs compagnons, si configurés).\n- **Exporter** une conversation en Markdown ou en page HTML autonome.\n\nPour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,\nmémoire, historique, skills, outils distants, exports, interface, ou données\npersonnelles.", "attachments": "Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le\ntrombone du composer, ou fais un glisser-déposer, ou colle directement une image\ndepuis le presse-papier. Deux types sont acceptés : **images** (le modèle les\nvoit réellement, s'il gère la vision) et **fichiers texte** (leur contenu est\ntransmis au modèle).\n\nUne fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton\nmessage. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,\net un bouton permet de la retélécharger. Le modèle peut aussi redemander une\npièce jointe d'un message précédent quand il en a besoin pour répondre.\n\nLes images ne sont envoyées en pleine résolution qu'au moment où tu les joins ;\nensuite le modèle en garde une trace légère plutôt que de recharger les pixels à\nchaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible\ndurablement (pas seulement le temps d'un message), promeus-le dans la\nbibliothèque de fichiers de ton Espace — voir le sujet Espaces.", "spaces": "Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun\na ses propres conversations, ses propres pièces jointes et ses propres\nsouvenirs. Le modèle ne voit et ne peut agir que sur le contenu de l'Espace\nactif : aucun outil ne peut lire ou modifier un autre Espace. C'est utile pour\nséparer des sujets qui ne doivent pas déborder l'un sur l'autre (travail,\nperso, un projet précis…).\n\nLe sélecteur d'Espace est en haut de la barre latérale. L'historique « hors\nEspace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.\n\nChaque Espace peut porter une **description** libre : un contexte propre à\nl'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne\nles remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à\nchaque fois.\n\nChaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de\nl'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter\nà la demande, étanches comme le reste de l'Espace. Tu l'alimentes de trois\nfaçons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée, ou\nproposition du modèle lui-même (toujours confirmée par toi avant écriture).\n\nSupprimer un Espace supprime en cascade ses conversations, ses fichiers et ses\nsouvenirs propres (double confirmation) ; les souvenirs de profil, valables\npartout, restent intacts.", "memory": "Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton\ntravail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton\ninstruction explicite (« retiens que… »), ou te demande confirmation quand il\ninfère quelque chose de lui-même — rien n'est enregistré en douce.\n\nTu gardes la main : un panneau dédié te laisse consulter, modifier ou supprimer\ntes souvenirs directement. Les souvenirs actifs sont réinjectés dans le contexte\nà chaque message, pour que le modèle en tienne compte.\n\nLes souvenirs appartiennent à l'Espace où ils sont créés. Un souvenir qui doit\nrester valable partout peut être promu au **profil** (portée globale, présente\ndans tous les Espaces) depuis l'écran de l'Espace.\n\nChaque écriture ou lecture de souvenir par le modèle laisse une trace visible\ndans la conversation ; les écritures sont annulables d'un clic.\n\nLa mémoire des souvenirs est distincte de la continuité entre conversations\n(résumés automatiques) — voir le sujet historique.", "historique": "Tes conversations sont **conservées** et rangées dans la barre latérale par\npériode (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre\ngénéré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout\nmoment pour reprendre où tu en étais.\n\nUn champ de **recherche** filtre l'historique en temps réel, par titre ou par\nmots-clés du contenu.\n\nPour la **continuité entre conversations**, MIAOU résume tes échanges en\narrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi\nun fil de ce que vous vous êtes déjà dit, sans que tu aies à tout recopier. Le\nmodèle peut aussi aller chercher lui-même dans ton historique — lister ou\nretrouver une conversation passée par mots-clés — quand ta demande le justifie.\nLa conversation en cours est toujours exclue de ces recherches.\n\nQuand le modèle cite une conversation passée, elle apparaît comme un lien\ncliquable affichant son titre ; cliquer dessus l'ouvre directement.\n\nNote : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas\nl'historique d'un autre.", "skills": "Les **skills** sont des fragments d'instructions réutilisables que tu écris une\nfois et rappelles à volonté. Chacun a un mot-clé d'invocation (son « slug »), un\nnom, une description et un corps en Markdown. Tu les gères dans un panneau dédié\n(Paramètres → Skills) : création, édition, suppression, et un interrupteur pour\nactiver ou désactiver chacun.\n\nDeux façons de s'en servir :\n\n- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps du\n  skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de\n  la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté\n  reste en coulisse mais fait bien partie du message.\n- **Découverte par le modèle** : si ta demande en langage naturel correspond à\n  un skill activé, le modèle peut décider seul de le consulter. Une trace\n  visible signale alors qu'il l'a lu.\n\nUn skill est utile pour un cadrage récurrent : un style de réponse, une\nprocédure, un gabarit — tout ce que tu répéterais sinon à la main.", "mcp": "Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs\ncompagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi\ncomme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'origine\nest transparente.\n\nCes serveurs sont **optionnels** : ils n'existent que si tu les as configurés\n(Paramètres → Serveurs MCP). Selon ceux que tu ajoutes, le modèle peut par\nexemple :\n\n- **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.\n- **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,\n  Excel, PowerPoint), archives Zip — utile pour interroger un document que tu\n  as joint ou déposé dans une bibliothèque d'Espace.\n- Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs\n  disponibles.\n\nSi aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; le\nreste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans\nbloquer les autres.\n\nPour l'accès au web et la lecture de documents, le projet compagnon\n**miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et\nrecherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est\nla façon recommandée d'ajouter ces capacités à MIAOU.", "exports": "Tu peux sortir tes conversations de MIAOU de plusieurs manières :\n\n- **Une réponse seule** en Markdown : au survol d'un message du modèle, un\n  bouton la télécharge en `.md`.\n- **La conversation entière** en Markdown : une icône à droite du titre, en\n  haut. L'export inclut la trace des outils utilisés à chaque tour.\n- **La conversation en page HTML autonome** : une icône jumelle, au même\n  endroit. Le fichier obtenu est un instantané complet — thème et coloration\n  figés, diagrammes inclus en image — lisible dans n'importe quel navigateur\n  sans MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images\n  y sont embarquées et restent cliquables.\n\nCôté blocs de code, chaque bloc a ses propres boutons pour **copier** ou\n**télécharger** son contenu (avec la bonne extension selon le langage), et les\ndiagrammes peuvent être exportés en image SVG ou PNG.", "interface": "Quelques repères pour te déplacer dans MIAOU :\n\n- **Barre latérale** : le sélecteur d'Espace en haut, puis tes conversations\n  rangées par période, avec la recherche. Elle est redimensionnable.\n- **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un\n  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. À\n  côté, le trombone pour joindre des fichiers.\n- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre\n  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les\n  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une\n  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le\n  modèle et surveiller le remplissage de la fenêtre de contexte.\n- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône\n  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,\n  gardé à part de la réponse.\n- **Sélecteur de modèle par conversation** (optionnel) : change le modèle de la\n  conversation courante sans toucher à ton défaut.\n- **Thème clair / sombre** et coloration syntaxique se règlent dans les\n  Paramètres.", "donnees": "MIAOU s'exécute **entièrement dans ton navigateur**. Il n'y a pas de serveur\napplicatif MIAOU : tes conversations, tes souvenirs, tes skills, tes Espaces et\ntes fichiers sont stockés **localement**, sur ta machine, dans le stockage du\nnavigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as\nconfigurée (et vers les serveurs compagnons que tu aurais ajoutés).\n\nConséquences pratiques :\n\n- Tes données restent sur cet appareil et ce navigateur. Changer de navigateur\n  ou de machine ne les emporte pas automatiquement.\n- Vider les données de site du navigateur efface aussi MIAOU. Pense à exporter\n  ce qui compte.\n- La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à\n  un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès\n  protégé côté serveur.\n\nCe que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr\nvers l'API configurée pour être traité — c'est le principe même d'un client de\nchat. Le reste ne quitte pas ton navigateur."}; } catch (e) { return {}; } })();
+
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
            summary: e.summary, keywords: e.keywords };
@@ -5027,6 +5056,18 @@ const CODEBLOCK_DOCTRINE =
   "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
   "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
   "reconnu, pour un saut de ligne.";
+
+const IDENTITY_BLURB =
+  "Tu opères dans MIAOU, un client de chat web pour dialoguer avec un modèle de " +
+  "langage via une API compatible OpenAI. MIAOU tourne entièrement dans le " +
+  "navigateur de l'utilisateur : conversations, souvenirs, skills, espaces et " +
+  "fichiers sont stockés localement. Il offre des espaces de travail étanches, " +
+  "une mémoire (souvenirs et résumés), des pièces jointes, des skills, l'agrégation " +
+  "d'outils MCP distants, et des exports Markdown/HTML.\n" +
+  "Quand l'utilisateur pose une question sur MIAOU lui-même — comment joindre un " +
+  "fichier, ce que sont les espaces, où sont stockées ses données, etc. — appelle " +
+  "l'outil miaou__about (paramètre topic) plutôt que de deviner : il sert une aide " +
+  "utilisateur fiable, section par section.";
 
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
@@ -5460,6 +5501,35 @@ const TOOLS = [
       });
     },
   },
+  {
+    
+    name: 'about',
+    description:
+      "Sert l'aide utilisateur de MIAOU (l'application), section par section. Appelle " +
+      "cet outil quand l'utilisateur demande comment faire quelque chose dans MIAOU, " +
+      "ce qu'est une fonctionnalité (espaces, pièces jointes, mémoire, skills, MCP, " +
+      "exports…), ou où sont ses données — plutôt que de deviner. Passe un topic ; " +
+      "sans topic, tu obtiens la vue d'ensemble.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'Sujet d\'aide à consulter (défaut : overview).',
+          enum: Object.keys(HELP_CONTENT),
+        },
+      },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const requested = String((args && args.topic) || '').trim();
+      
+      const topic = HELP_CONTENT[requested] != null ? requested : 'overview';
+      const content = HELP_CONTENT[topic];
+      _pendingToolAcks.push({ kind: 'about_read', topic });
+      return content != null ? content : 'Aide indisponible.';
+    },
+  },
 ];
 
 const ASK_CONFIRMATION_DEF = {
@@ -5876,7 +5946,7 @@ function toolsSystemPrompt() {
 }
 
 function intentDoctrinePrompt() {
-  return TOOLS.length && loadSettings().intentTracing ? INTENT_DOCTRINE : '';
+  return loadSettings().intentTracing ? INTENT_DOCTRINE : '';
 }
 
 function skillDoctrinePrompt() {
@@ -6622,7 +6692,9 @@ function lbFit() {
   lbApply();
 }
 
-function ensureMermaidLightbox() {
+let _lbDlBtn = null;   
+
+function ensureLightbox() {
   if (_lbEl) return _lbEl;
   _lbEl = document.createElement('div');
   _lbEl.className = 'mermaid-lightbox';
@@ -6641,10 +6713,14 @@ function ensureMermaidLightbox() {
     b.innerHTML = html;
     b.onclick = fn;
     bar.appendChild(b);
+    return b;
   };
-  mk('Télécharger en SVG', 'SVG', () => { const el = svg(); if (el) downloadDiagramSvg(el, _lbName); });
-  mk('Télécharger en PNG', 'PNG', () => { const el = svg(); if (el) downloadDiagramPng(el, _lbName); });
+  const svgBtn = mk('Télécharger en SVG', 'SVG', () => { const el = svg(); if (el) downloadDiagramSvg(el, _lbName); });
+  const pngBtn = mk('Télécharger en PNG', 'PNG', () => { const el = svg(); if (el) downloadDiagramPng(el, _lbName); });
+  _lbDlBtn = mk('Télécharger', ICON_DOWNLOAD, () => {});
   mk('Fermer', '×', closeMermaidLightbox);
+  _lbEl._svgBtn = svgBtn;
+  _lbEl._pngBtn = pngBtn;
   _lbEl.appendChild(stage);
   _lbEl.appendChild(bar);
 
@@ -6687,24 +6763,56 @@ function ensureMermaidLightbox() {
   return _lbEl;
 }
 
-function openMermaidLightbox(svgEl, rawName) {
-  ensureMermaidLightbox();
+function openLightboxWith(contentEl, w, h, rawName, mode) {
+  ensureLightbox();
   _lbName = rawName || '';
-  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
-  const rect = svgEl.getBoundingClientRect();
-  _lbW = (vb && vb.width) || rect.width || 800;
-  _lbH = (vb && vb.height) || rect.height || 600;
-  
-  const clone = svgEl.cloneNode(true);
-  clone.setAttribute('width', _lbW);
-  clone.setAttribute('height', _lbH);
-  clone.style.maxWidth = '';
+  _lbW = w || 800;
+  _lbH = h || 600;
   _lbCanvas.textContent = '';
-  _lbCanvas.appendChild(clone);
+  _lbCanvas.appendChild(contentEl);
   _lbCanvas.style.width = _lbW + 'px';
   _lbCanvas.style.height = _lbH + 'px';
+  const isImage = mode === 'image';
+  _lbEl._svgBtn.hidden = isImage;
+  _lbEl._pngBtn.hidden = isImage;
+  _lbDlBtn.hidden = !isImage;
   _lbEl.classList.add('show');
   lbFit();
+}
+
+function openMermaidLightbox(svgEl, rawName) {
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  const rect = svgEl.getBoundingClientRect();
+  const w = (vb && vb.width) || rect.width || 800;
+  const h = (vb && vb.height) || rect.height || 600;
+  
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('width', w);
+  clone.setAttribute('height', h);
+  clone.style.maxWidth = '';
+  openLightboxWith(clone, w, h, rawName, 'mermaid');
+}
+
+function openAttachmentLightbox(record) {
+  const img = document.createElement('img');
+  img.src = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
+  img.alt = '';
+  
+  openLightboxWith(img, record.w || 800, record.h || 600, record.name, 'image');
+  _lbDlBtn.onclick = () => downloadFile(record.name, record.data, record.mime);
+}
+
+function openToolImageLightbox(imgEl) {
+  const w = imgEl.naturalWidth || imgEl.width || 800;
+  const h = imgEl.naturalHeight || imgEl.height || 600;
+  const clone = document.createElement('img');
+  clone.src = imgEl.src;
+  clone.alt = '';
+  openLightboxWith(clone, w, h, '', 'image');
+  _lbDlBtn.onclick = () => {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(imgEl.src);
+    if (m) downloadFile('image.' + (m[1].split('/')[1] || 'png'), b64ToBytes(m[2]), m[1]);
+  };
 }
 
 function closeMermaidLightbox() {
@@ -6996,6 +7104,8 @@ const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill=
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
 
+const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
 function renderIntentTwoLevel(el, intent, detailText, detailBuilder) {
   const row = document.createElement('span');
   row.className = 'mcp-intent-row';
@@ -7175,6 +7285,28 @@ const ACK_KINDS = {
         });
       } else {
         el.textContent = 'Skill consultée : ' + (m.title || m.slug || '?');
+      }
+    },
+  },
+  
+  about_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Aide consultée : ' + (m.topic || 'overview'),
+    renderLabel: (m, el) => {
+      const topic = m.topic || 'overview';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Aide consultée '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + topic));
+        });
+      } else {
+        el.textContent = 'Aide consultée : ' + topic;
       }
     },
   },
@@ -8075,8 +8207,14 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
     ? `<button class="att-promote" title="Ajouter à la bibliothèque de l'espace" ` +
       `onclick="promoteAttachmentToLibrary(this, '${att.attId}', '${conversationId}')">${ICON_PACKAGE}</button>`
     : '';
+  
+  const liveAttrs = (!removable && conversationId)
+    ? ` onclick="onAttachmentChipClick(event, '${att.attId}', '${conversationId}')" ` +
+      `title="${att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger'}"`
+    : '';
+  const chipClass = (!removable && conversationId) ? 'att-chip att-chip-live' : 'att-chip';
   return (
-    `<span class="att-chip" data-att-id="${att.attId}">` +
+    `<span class="${chipClass}" data-att-id="${att.attId}"${liveAttrs}>` +
     thumb +
     `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
     `<span class="att-size">${humanSize(att.size)}</span>` +
@@ -8084,6 +8222,35 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
     promoteBtn +
     `</span>`
   );
+}
+
+function attachmentClickAction(record, hasModifier) {
+  if (!record) return null;
+  if (record.w && record.h) {
+    return hasModifier ? 'tab' : 'lightbox';
+  }
+  return 'download';
+}
+
+function onAttachmentChipClick(event, attId, conversationId) {
+  if (event.target.closest('.att-promote, .att-remove')) return;
+  const record = getCachedRecordByAttId(attId, conversationId);
+  const hasModifier = !!(event.metaKey || event.ctrlKey);
+  const action = attachmentClickAction(record, hasModifier);
+  if (action === 'download') {
+    downloadFile(record.name, record.data, record.mime);
+  } else if (action === 'tab') {
+    openAttachmentInTab(record);
+  } else if (action === 'lightbox') {
+    openAttachmentLightbox(record);
+  }
+  
+}
+
+function openAttachmentInTab(record) {
+  const url = URL.createObjectURL(new Blob([record.data], { type: record.mime }));
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 async function promoteAttachmentToLibrary(btn, attId, conversationId) {
@@ -9837,6 +10004,9 @@ function renderToolBlock(block) {
     img.className = 'tool-block-img';
     img.src = 'data:' + (block.mimeType || 'image/png') + ';base64,' + block.data;
     img.alt = 'Image renvoyée par un outil';
+    img.title = 'Agrandir';
+    
+    img.onclick = () => openToolImageLightbox(img);
     box.appendChild(img);
     return box;
   }
@@ -9848,6 +10018,8 @@ function renderToolBlock(block) {
       img.className = 'tool-block-img';
       img.src = 'data:' + r.mimeType + ';base64,' + r.blob;
       img.alt = 'Image renvoyée par un outil';
+      img.title = 'Agrandir';
+      img.onclick = () => openToolImageLightbox(img);
       box.appendChild(img);
       return box;
     }
@@ -10353,6 +10525,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .att-icon svg { width: 13px; height: 13px; }
 .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; color: var(--text); }
 .att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
+/* Images modèle embarquées (lot Gbis) : parité reload — resource_presented /
+   resource_stored non-inline / attachment_recalled images. Inspiré de
+   .tool-block/.tool-block-img de tools.css (bordure, rayon, max-width) sans le
+   copier (piège 22). Pas de cursor:pointer ici : en export statique l'image
+   n'est pas cliquable (décision A.4) ; EXPORT_SCRIPT posera le lien + curseur
+   en mode interactif (lot Gb2). */
+.tool-block { margin: 6px 0; max-width: 100%; }
+.tool-block-img { max-width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: var(--r-sm); }
 /* Diagrammes Mermaid embarqués (lot E4). Né synchronisé avec .mermaid-view de
    chat.css (padding, fond, centrage svg) — dérive ensuite comme le reste de
    cette feuille (piège 22). Pas de display:none/toggle ici : dans l'export le
@@ -10414,6 +10594,50 @@ const EXPORT_SCRIPT = `
       head.appendChild(actions);
     })(pres[i]);
   }
+  // Images cliquables (lot Gb2) : nouvel onglet. La navigation top-level vers un
+  // data: est bloquée par les navigateurs → on convertit le data URL en Blob et
+  // on window.open l'URL d'objet. AUCUNE donnée modèle/outil interpolée ici
+  // (piège 21) : les data URL sont LUS depuis le DOM (img.src déjà posé par
+  // renderExportBody), jamais injectés dans ce script. Cibles : images modèle
+  // (.tool-block-img) et vignettes de chips user image (.att-chip > img.att-thumb,
+  // clic sur le chip ENTIER). Échec de conversion → rien (pas de fallback data:
+  // top-level, interdit) ; en export STATIQUE (ce script absent) les images
+  // restent visibles mais non cliquables (décision A.4).
+  function dataUrlToBlob(u) {
+    var comma = u.indexOf(',');
+    if (comma < 0 || u.slice(0, 5) !== 'data:') return null;
+    var meta = u.slice(5, comma);
+    var mime = meta.split(';')[0] || 'application/octet-stream';
+    var isB64 = /;base64/i.test(meta);
+    var body = u.slice(comma + 1);
+    try {
+      if (isB64) {
+        var bin = atob(body);
+        var bytes = new Uint8Array(bin.length);
+        for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        return new Blob([bytes], { type: mime });
+      }
+      return new Blob([decodeURIComponent(body)], { type: mime });
+    } catch (e) { return null; }
+  }
+  function openImage(dataUrl) {
+    var blob = dataUrlToBlob(dataUrl);
+    if (!blob) return;
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  }
+  function bindImageOpen(el, dataUrl) {
+    if (!dataUrl || dataUrl.slice(0, 5) !== 'data:') return;
+    el.style.cursor = 'zoom-in';
+    el.addEventListener('click', function () { openImage(dataUrl); });
+  }
+  var modelImgs = document.querySelectorAll('img.tool-block-img');
+  for (var mi = 0; mi < modelImgs.length; mi++) bindImageOpen(modelImgs[mi], modelImgs[mi].src);
+  var chips = document.querySelectorAll('.att-chip');
+  for (var ci = 0; ci < chips.length; ci++) {
+    var thumb = chips[ci].querySelector('img.att-thumb');
+    if (thumb) bindImageOpen(chips[ci], thumb.src);
+  }
 })();
 `;
 
@@ -10459,7 +10683,8 @@ async function renderExportBody(thread, convId) {
   let pendingAcks = [];
   for (const m of thread) {
     if (isAckRole(m.role)) {
-      if (m.args != null) pendingAcks.push(m);
+      
+      pendingAcks.push(m);
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') continue;
@@ -10475,7 +10700,23 @@ async function renderExportBody(thread, convId) {
       msgEl.innerHTML = '<div class="bubble">' + attHtml + '<div class="body">' + renderUserMd(shown || '') + '</div></div>' + tsHtml;
       pendingAcks = [];
     } else {
-      const acksHtml = pendingAcks.length ? formatToolAcksHtml(pendingAcks) : '';
+      
+      const traceAcks = pendingAcks.filter(a => a.args != null);
+      const acksHtml = traceAcks.length ? formatToolAcksHtml(traceAcks) : '';
+      
+      const ackImgHtml = pendingAcks.map(ack => {
+        const key = exportableAckImageKey(ack);
+        if (!key) return '';
+        const record = key.by === 'attId'
+          ? (typeof getCachedRecordByAttId === 'function' ? getCachedRecordByAttId(ack.attId, ack.convId) : null)
+          : (typeof getCachedRecord === 'function' ? getCachedRecord(ack.id) : null);
+        if (!record || !record.data || !record.mime || !record.mime.startsWith('image/')) return '';
+        
+        if (ackKindOf(ack) === 'resource_stored' && record.class === 'inline') return '';
+        const dataUrl = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
+        return '<div class="tool-block"><img class="tool-block-img" src="' +
+          escHtml(dataUrl) + '" alt="' + escHtml(record.name || '') + '"></div>';
+      }).join('');
       pendingAcks = [];
       const tsText = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
       const metaHtml = '<div class="meta"><span>' + escHtml(m.model || modelName()) + '</span>' +
@@ -10483,7 +10724,7 @@ async function renderExportBody(thread, convId) {
       const reasoningHtml = (m.reasoning && String(m.reasoning).trim())
         ? '<details class="reasoning"><summary><span class="reasoning-label">Raisonnement</span><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></summary></details>'
         : '';
-      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
+      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + ackImgHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
     }
     container.appendChild(msgEl);
   }
@@ -10739,15 +10980,14 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
-  if (TOOLS.length) {
-    out.root = ROOT_SYSTEM_PROMPT;
-    if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
-    out.intent = intentDoctrinePrompt();
-    out.skills = skillDoctrinePrompt();
-    out.docs = docsDoctrinePrompt();
-  }
+  const out = { identity: '', root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
   
+  out.identity = IDENTITY_BLURB;
+  out.root = ROOT_SYSTEM_PROMPT;
+  if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
+  out.intent = intentDoctrinePrompt();
+  out.skills = skillDoctrinePrompt();
+  out.docs = docsDoctrinePrompt();
   out.codeblock = CODEBLOCK_DOCTRINE;
   out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
   return out;
@@ -10755,7 +10995,7 @@ function systemMessageParts() {
 
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
-  const parts = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
+  const parts = [sp.identity, sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 

@@ -50,6 +50,12 @@ l'interface, JetBrains Mono pour le code.
   date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
   ce point.
+- **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire. Un
+  court blurb d'identité dans le prompt système et un outil interne
+  (`miaou__about`, une aide utilisateur rédigée à la main servie section par
+  section) lui permettent de répondre juste aux questions « comment je joins un
+  fichier ? », « c'est quoi les Espaces ? », « où sont stockées mes données ? »
+  au lieu de confabuler.
 - Écran d'accueil aléatoire (emoji + accroche) à chaque nouvelle conversation.
 - **Inspecteur de contexte** : compteur `≈ N tok` dans le composer, cliquable ;
   ouvre un drawer détaillant la composition du payload envoyé au modèle (prompt

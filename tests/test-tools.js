@@ -320,6 +320,44 @@ describe('toolDefinitions', function() {
   });
 });
 
+describe('about — aide utilisateur (lot I)', function() {
+  function aboutTool() { return TOOLS.find(function(t) { return t.name === 'about'; }); }
+
+  it('est enregistré et exposé préfixé miaou__about', function() {
+    expect(aboutTool()).toBeTruthy();
+    var names = toolDefinitions().map(function(d) { return d.function.name; });
+    expect(names.indexOf('miaou__about') >= 0).toBeTruthy();
+  });
+  it('inputSchema : topic enum dérivé de Object.keys(HELP_CONTENT), required absent', function() {
+    var schema = aboutTool().inputSchema;
+    expect(schema.properties.topic.type).toBe('string');
+    // Sous QuickJS HELP_CONTENT = {} → enum vide (assumé, audit §3) ; on vérifie
+    // que c'est bien le tableau des clefs, pas une liste en dur.
+    expect(Array.isArray(schema.properties.topic.enum)).toBe(true);
+    expect(schema.properties.topic.enum.length).toBe(Object.keys(HELP_CONTENT).length);
+    expect(schema.required === undefined || schema.required.length === 0).toBeTruthy();
+  });
+  it('handler : pousse un ack about_read avec le topic normalisé et retourne une string', function() {
+    _pendingToolAcks.length = 0;
+    // HELP_CONTENT vide sous QuickJS → topic inconnu retombe sur overview (défaut),
+    // lui-même absent → message d'indisponibilité (jamais un crash).
+    var out = aboutTool().handler({ topic: 'spaces' });
+    expect(typeof out).toBe('string');
+    var ack = _pendingToolAcks[_pendingToolAcks.length - 1];
+    expect(ack.kind).toBe('about_read');
+    expect(ack.topic).toBe('overview');   // 'spaces' absent de {} → défaut overview
+  });
+  it('handler : topic absent → défaut overview dans l\'ack', function() {
+    _pendingToolAcks.length = 0;
+    aboutTool().handler({});
+    expect(_pendingToolAcks[_pendingToolAcks.length - 1].topic).toBe('overview');
+  });
+  it('ackLabel about_read : topic ou repli overview', function() {
+    expect(ackLabel('about_read', { topic: 'spaces' })).toContain('spaces');
+    expect(ackLabel('about_read', {})).toContain('overview');
+  });
+});
+
 describe('ask_confirmation — outil halting', function() {
   it('est exposé dans toolDefinitions avec un paramètre question requis', function() {
     var d = toolDefinitions().find(function(d) { return d.function.name === 'ask_confirmation'; });
@@ -561,8 +599,8 @@ describe('MEMORY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PRO
   });
 });
 
-describe('intentDoctrinePrompt (conditionnel sur TOOLS.length && settings.intentTracing)', function() {
-  it('intentTracing vrai (et TOOLS non vide) → renvoie INTENT_DOCTRINE', function() {
+describe('intentDoctrinePrompt (conditionnel sur settings.intentTracing)', function() {
+  it('intentTracing vrai → renvoie INTENT_DOCTRINE', function() {
     localStorage.clear();
     saveSettings({ intentTracing: true });
     expect(intentDoctrinePrompt()).toContain('intent');

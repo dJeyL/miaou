@@ -44,6 +44,15 @@ describe('buildContextManifest', function() {
     expect(sources.indexOf('space_library')).toBe(-1);
   });
 
+  it('sp.identity non vide → entrée identity_blurb, comptée une seule fois (lot I, piège B)', function() {
+    var sp = baseSysParts();
+    sp.identity = 'IDENTITE MIAOU';
+    var m = buildContextManifest(sp, baseDynParts(), [], '', null);
+    var matches = m.entries.filter(function(e) { return e.source === 'identity_blurb'; });
+    expect(matches.length).toBe(1);
+    expect(matches[0].chars).toBe(sp.identity.length);
+  });
+
   it('dp.library non vide → entrée space_library (lot Cbis, D4)', function() {
     var dp = baseDynParts();
     dp.library = 'file-abc — doc.txt (text/plain, 1.0 KB)';
@@ -188,9 +197,21 @@ describe('usageDerived (Bbis)', function() {
 describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function() {
   it('buildSystemMessage reste identique à la concaténation des parts (pas de régression du séparateur)', function() {
     var sp = systemMessageParts();
-    var expected = [sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user]
+    var expected = [sp.identity, sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user]
       .filter(Boolean).join('\n\n---\n\n');
     expect(buildSystemMessage().content).toBe(expected);
+  });
+  it('la part identity est présente, inconditionnelle et EN TÊTE (lot I)', function() {
+    var sp = systemMessageParts();
+    expect(sp.identity).toBe(IDENTITY_BLURB);
+    expect(sp.identity.length > 0).toBe(true);
+    // En tête du join : le message système commence par le blurb.
+    expect(buildSystemMessage().content.indexOf(IDENTITY_BLURB)).toBe(0);
+  });
+  it('root/codeblock inconditionnelles (retrait du gate mort TOOLS.length, lot I)', function() {
+    var sp = systemMessageParts();
+    expect(sp.root).toBe(ROOT_SYSTEM_PROMPT);
+    expect(sp.codeblock).toBe(CODEBLOCK_DOCTRINE);
   });
 });
 

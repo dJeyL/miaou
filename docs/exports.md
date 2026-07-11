@@ -84,6 +84,13 @@ ultérieures du même lot).
   l'unique chemin de concaténation string→HTML de tout l'export (cf. note de
   piège dans `CLAUDE.md`/`docs/pitfalls-detail.md`) — toute future extension
   qui ajoute un chemin similaire doit `escHtml` de la même façon.
+- **`exportableAckImageKey(ack)`** dans `utils.js` (pure, testée QuickJS,
+  lot Gbis) : miroir des règles image de `placeToolAck` (ui.js). Retourne
+  `{ by: 'id' }` (`resource_presented`, `resource_stored`), `{ by: 'attId' }`
+  (`attachment_recalled`) ou `null` (kind non porteur d'image, ou id/attId
+  manquant). Ne fait **que** la sélection — le lookup cache et le filtre
+  `image/`/`class !== 'inline'` restent dans `renderExportBody` (voir ci-dessous),
+  seul à avoir accès au cache resources.
 - **`resolveConvRefs(text, opts)`** (ui.js) gagne un paramètre optionnel
   `opts.asPlainText` (défaut `false`, comportement écran **inchangé**). En
   mode `asPlainText`, une référence de conversation vivante est rendue en
@@ -143,6 +150,23 @@ ultérieures du même lot).
   même parade défensive que `build.py` sur `__MIAOU_CONFIG__` (EXPORT_SCRIPT
   n'en contient pas aujourd'hui, mais la garde évite qu'un futur ajout casse
   silencieusement le `</script>`).
+  - **Images cliquables → nouvel onglet (lot Gb2, décision A.4).** Le même
+    script pose au chargement un handler de clic sur les images ouvrables :
+    images modèle (`img.tool-block-img`, lot Gbis) et vignettes de chips user
+    image (`.att-chip` contenant `img.att-thumb` — clic sur le **chip entier**,
+    cible plus large). Le data URL est **lu depuis le DOM** (`img.src`, posé par
+    `renderExportBody`), **jamais interpolé dans le script** (piège 21). La
+    navigation top-level vers un `data:` étant bloquée par les navigateurs, le
+    handler convertit le data URL en `Blob` (décodeur base64 minimal
+    `dataUrlToBlob`, l'IIFE n'a aucun global MIAOU) → `URL.createObjectURL` →
+    `window.open(url, '_blank')`. Curseur `zoom-in` posé sur les cibles.
+    **Fallback / dégradation** : conversion en échec → aucune action (pas de
+    fallback `location = data:`, interdit) ; **export statique**
+    (`exportInteractive` décoché, script absent) → images **visibles mais non
+    cliquables** — pas d'enveloppe `<a>` posée statiquement (décision A.4 :
+    liens interactifs seuls, évite le doublement des octets base64 `src` +
+    `href`). Les chips **non-image** restent inertes (pas de `.att-thumb`, donc
+    ignorées par la boucle de découverte).
 - **`decorateExportPre(scope)`** (ui.js, DOM — pas QuickJS) : appelée par
   `renderExportBody` après le highlight Prism. Insère dans chaque `<pre>` un
   `.code-head` **statique** = un seul `<span class="code-lang">` (langage lu
@@ -152,12 +176,21 @@ ultérieures du même lot).
   `decoratePre` (live), qui pose barre **et** boutons câblés en une passe.
 - **`renderExportBody(thread, convId)`** (ui.js, DOM/marked — pas QuickJS) :
   construit un **fragment détaché** (jamais de lecture/mutation de `#thread`
-  live), itère `thread` avec le même buffer d'acks que `downloadConvMd`/
-  `renderThread` : les acks enrichis (`args != null`) précédant un message
-  `assistant` sont rendus en `formatToolAcksHtml`. **Ordre dans le message
-  assistant : `meta → reasoning → outils appelés → corps`** (le raisonnement
-  précède l'appel d'outils qu'il motive) ; les acks précédant un `user` sont
-  silencieusement droppés (même choix que `downloadConvMd`, pas une régression).
+  live), itère `thread` en tamponnant les acks précédant un message
+  `assistant`. **Le buffer empile TOUS les acks** (comme `renderThread` live,
+  PAS comme `downloadConvMd` qui ne garde que les enrichis) : le filtre
+  `args != null` ne s'applique **qu'à la trace textuelle** (`traceAcks` →
+  `formatToolAcksHtml`), pas au rendu d'image (lot Gbis ci-dessous). Distinction
+  **payée** : un ack image secondaire — ex. `resource_stored` créé par
+  `internResourcesFromResult` en sous-produit d'un `fetch_url`, jamais enrichi
+  par `onEnrichLastAck` (qui vise le `fetch_url`), donc sans `args` — voyait son
+  image masquée dans l'export alors qu'elle est en cache et s'affiche en live
+  (image « trouvée par le modèle » absente de l'export). Même cas pour les acks
+  legacy antérieurs à l'enrichissement cross-turn. **Ordre dans le message
+  assistant : `meta → reasoning → outils appelés → images → corps`** (le
+  raisonnement précède l'appel d'outils qu'il motive) ; les acks précédant un
+  `user` sont silencieusement droppés (même choix que `downloadConvMd`, pas une
+  régression).
   Corps assistant via `renderMd(content, { asPlainText: true })` (conv_ref
   délié), reasoning en `<details class="reasoning">` **fermé** par défaut, avec
   le contenu (`.reasoning-content`) **imbriqué DANS le `<summary>`** — même
@@ -177,6 +210,32 @@ ultérieures du même lot).
   crash (cas limite v1 acceptable). **Async depuis le lot E4** : après le
   highlight Prism et `decorateExportPre`, `await embedExportMermaid(fragment)`
   (ci-dessous) — le reste de la construction est synchrone.
+  - **Images modèle embarquées (lot Gbis) : parité reload.** Dans la branche
+    assistant, après `formatToolAcksHtml(pendingAcks)` et **avant** le
+    `<div class="body">` (miroir du DOM live, `placeToolAck`), on ré-émet les
+    images persistées en IDB portées par les acks du groupe. La **sélection**
+    est pure et testée QuickJS (`exportableAckImageKey(ack)` dans `utils.js`,
+    ci-dessous) ; le **lookup cache** reste dans `renderExportBody` (seul à
+    avoir `getCachedRecord`/`getCachedRecordByAttId`). Pour chaque ack retenu :
+    `resource_presented` → `getCachedRecord(ack.id)` ; `resource_stored` → idem
+    mais **écarté si `record.class === 'inline'`** (stocké mais non affiché auto,
+    comme en live) ; `attachment_recalled` → `getCachedRecordByAttId(ack.attId,
+    ack.convId)`. Bloc émis **seulement si `record.mime` commence par `image/`**,
+    en `<div class="tool-block"><img class="tool-block-img" src="<dataURL>"
+    alt="<escHtml(name)>"></div>`, `dataURL = 'data:' + record.mime +
+    ';base64,' + arrayBufferToBase64(record.data)`. **`escHtml` sur `src` et
+    `alt`** (piège 21 : `record.mime`/`record.name` viennent du stockage MIAOU,
+    pas du texte modèle, mais échappés quand même en position d'attribut ; le
+    base64 est construit par nous). **Record absent → rien** (fenêtre de course
+    théorique : export déclenché juste après ouverture, avant que
+    `loadConversationResources` fire-and-forget ait peuplé le cache) — **pas
+    d'`await` IDB dans ce chemin**, dégradation identique à aujourd'hui.
+    **Non-parité assumée** : les blocs D8 éphémères en échec de stockage (jamais
+    internés en IDB) ne sont pas exportés — hors périmètre (décision Gbis §0.3),
+    comme ils sont absents au reload live. Le gate anti-doublon D8 du live
+    (`getPendingToolBlocks().length === 0` sur `resource_stored`) n'est **pas**
+    transposé : aucune file pendante à l'export. Affichage **pleine largeur**
+    (décision A.2), curseur/lien de clic posés uniquement en interactif (Gb2).
 - **`embedExportMermaid(container)`** (ui.js, DOM/async — pas QuickJS, lot E4) :
   passe Mermaid de l'export. Chaque `code.language-mermaid` du fragment devient
   un **SVG embarqué statiquement** (`.mermaid-view` — visible à l'ouverture du

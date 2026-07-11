@@ -23,6 +23,16 @@ uv run --with quickjs python tests/runner.py   # tests des fonctions pures
 **Avant chaque commit :** build si du code a changé, puis tests. Ne jamais
 commit ni push sans avoir demandé l'accord explicite de l'utilisateur au préalable.
 
+**Nouvelle feature utilisateur → se poser la question « faut-il mettre à jour
+`src/help.md` ? »** `src/help.md` est l'aide utilisateur final servie au modèle
+par l'outil `miaou__about` (injectée au build, une section par topic). Ce n'est
+PAS de la doc dev (`docs/` l'est) : elle décrit ce que l'utilisateur peut faire,
+sans internals. Toute capacité visible par l'utilisateur qu'on ajoute, modifie
+ou retire doit déclencher cette question — si la réponse est oui, mettre à jour
+la section concernée (souvent `interface`, sinon le topic dédié). L'oublier fait
+confabuler le modèle sur les fonctionnalités de l'appli. Le contenu est
+maintenu à la main, jamais généré depuis `docs/`.
+
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
@@ -42,7 +52,7 @@ HTML (`strip_html_comments`, sur le template avant substitution des
 placeholders) : `src/` reste la référence commentée, `dist/` est compact.
 Tests unitaires de ces transformations dans `tests/runner.py`
 (`run_build_unit_tests`).
-Il substitue aussi **un seul marqueur de config**, `__MIAOU_CONFIG__`, par
+Il substitue aussi un **marqueur de config**, `__MIAOU_CONFIG__`, par
 l'objet `config.json` entier sérialisé en JSON (JSON ⊂ littéral objet JS, donc
 `json.dumps` gère seul quoting/nombres/booléens — pas de marqueur par clef, pas
 de distinction guillemets/sans-guillemets). `build.py` échappe `</` dans le
@@ -67,6 +77,30 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).
+
+Il substitue de même **un second marqueur**, `__MIAOU_HELP__`, par le contenu
+d'aide utilisateur (`src/help.md`) : `parse_help_sections` (build.py, pur,
+testé) découpe le `.md` en objet ordonné `{slug: markdown}` (une section par
+`## <slug>`, texte avant la 1re section ignoré, `## ` dans un fence non pris
+pour un titre, slug dupliqué → erreur), sérialisé par `json.dumps` + échappement
+`</` exactement comme la config. `load_help()` **échoue bruyamment** si
+`src/help.md` est absent (fichier versionné, contrairement à `config.json` qui
+warn). Côté source (`tools.js`), unique point d'injection, mêmes contraintes que
+`BUILD_CONFIG` (occurrence unique en position de valeur, forme `try/catch` pour
+les tests QuickJS) :
+
+```js
+const HELP_CONTENT = (function () { try { return __MIAOU_HELP__; } catch (e) { return {}; } })();
+```
+
+`HELP_CONTENT` alimente l'outil `miaou__about` (contenu servi à la demande, une
+section par appel) et l'enum `topic` de son `inputSchema` (dérivé de
+`Object.keys(HELP_CONTENT)` — même source que le contenu, pas de drift). Sous
+QuickJS, `HELP_CONTENT` vaut `{}` (enum vide) : les tests du parseur couvrent
+build.py, le test du handler injecte un contenu stub. **`HELP_CONTENT` n'entre
+jamais dans le contexte du modèle** : seul le blurb d'identité (statique, court)
+et l'enum de slugs y vont ; le contenu des sections n'arrive qu'en tool result,
+une section à la fois, sur appel du modèle.
 
 ## Contraintes structurelles à respecter
 
@@ -109,7 +143,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `onSpaceFormInput`, `onSaveSpaceScreen`, `onDeleteSpaceScreen`,
   `promoteAttachmentToLibrary`, `onSpaceFilesUploadClick`, `onSpaceFilesSelected`,
   `onDeleteSpaceFile`, `onRegenerateFileDescription`, `toggleConvSelection`,
-  `selectSpaceTab`, …).
+  `selectSpaceTab`, `onAttachmentChipClick`, …).
   Le bouton « Enregistrer »
   appelle `onSaveSettings()` — à ne pas confondre avec `saveSettings(obj)` de
   `storage.js` (persistance localStorage). Il est désactivé tant que le
@@ -126,11 +160,17 @@ de conversation, au streaming, aux résumés/titrage, à l'édition de message,
 au patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache.
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs.
-   `buildSystemMessage()` concatène `ROOT_SYSTEM_PROMPT` (doctrines build-time,
-   toujours injectées si outils présents) + éventuellement `toolsSystemPrompt()`
-   + `CODEBLOCK_DOCTRINE` (nommage des blocs de code, **toujours** injectée,
-   indépendamment de la présence d'outils — cf. `docs/tools.md`) + le prompt
-   système utilisateur.
+   `buildSystemMessage()` concatène, dans l'ordre : `IDENTITY_BLURB` (blurb
+   d'identité MIAOU, **en tête**, inconditionnel, statique — lot I) +
+   `ROOT_SYSTEM_PROMPT` (doctrines build-time) + éventuellement
+   `toolsSystemPrompt()` + doctrines intent/skills/docs (gardes réelles internes :
+   `intentTracing`, skills autotrigger, inflation) + `CODEBLOCK_DOCTRINE`
+   (nommage des blocs de code, **toujours** injectée) + le prompt système
+   utilisateur (+ description du Space actif). `IDENTITY_BLURB` et
+   `CODEBLOCK_DOCTRINE` sont inconditionnels ; l'ancien gate `if (TOOLS.length)`
+   de `systemMessageParts()` (main.js) était une branche morte (`TOOLS` est une
+   const build-time non vide) — retiré au lot I, byte-neutre sur le message
+   produit (cf. `docs/tools.md`).
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du texte ajouté
    par MIAOU ; les `tool_calls` sont déclenchés par le **modèle** uniquement.
 3. **Le résultat d'un outil n'est jamais affiché** avant `finish_reason:

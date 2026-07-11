@@ -299,6 +299,22 @@
     taille lisible ; son rendu (`"1.5 KB"`, majuscules) diverge du style de
     l'exemple du brief (`"214 kB"`) — écart assumé, pas de second formateur de
     taille ad hoc.
+  - **Récupération depuis la bulle (lot A3-1)** : un chip d'attachment en
+    bulle envoyée (`attChipHtml`, ui.js — gate `conversationId` truthy,
+    exclut composer ET export/Gbis) porte un handler global unique
+    `onAttachmentChipClick(event, attId, conversationId)`. Le prédicat pur
+    `attachmentClickAction(record, hasModifier)` (ui.js, testé QuickJS)
+    décide l'action depuis le même enregistrement IDB que ci-dessus :
+    discriminant image = présence de `record.w`/`record.h` (`record.class`
+    vaut `'binary'` pour une image ET un binaire non-image, donc inutilisable
+    seul). Sans modificateur : non-image → `downloadFile` direct ; image →
+    lightbox (`openAttachmentLightbox`, généralisation E3, lot A3-2 — cf.
+    `docs/rendering.md`). Avec Cmd(Mac)/Ctrl : image → nouvel onglet
+    (`openAttachmentInTab`, Blob + `URL.createObjectURL` + `window.open`,
+    révocation différée ~30s — navigation top-level vers `data:` bloquée par
+    les navigateurs). Record absent du cache (pas encore peuplé par
+    `loadConversationResources`, fire-and-forget) → no-op silencieux, même
+    posture que `resolveAttachmentThumb`.
   - **Bibliothèque de fichiers d'espace (lot Cbis, D1)** : mêmes store
     `resources` et IDB (pas de store dédié, pas de clé localStorage
     `miaou-space-files` — décision actée, smallest diff). Discriminant

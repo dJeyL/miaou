@@ -207,6 +207,42 @@ def run_build_unit_tests() -> tuple[int, int]:
         else:
             failed += 1
             print(f'  FAIL  {label}\n        attendu {expected!r}, reçu {got!r}')
+
+    # parse_help_sections : dict ordonné + cas d'erreur (formes hors gabarit
+    # (label, fn, in, out) ci-dessus).
+    def check(label, cond):
+        nonlocal passed, failed
+        if cond:
+            passed += 1
+            print(f'  PASS  {label}')
+        else:
+            failed += 1
+            print(f'  FAIL  {label}')
+
+    nominal = build.parse_help_sections(
+        'préambule ignoré\n## overview\ncorps A\n\n## spaces\ncorps B\n')
+    check('help : sections nominales → {slug: corps}',
+          nominal == {'overview': 'corps A', 'spaces': 'corps B'})
+    check('help : ordre des sections préservé',
+          list(nominal.keys()) == ['overview', 'spaces'])
+    check('help : texte avant la 1re section ignoré',
+          'préambule' not in ''.join(nominal.values()))
+
+    fence = build.parse_help_sections(
+        '## overview\navant\n```\n## pas une section\n```\naprès\n## spaces\nx\n')
+    check('help : ## dans un fence ne démarre pas de section',
+          set(fence.keys()) == {'overview', 'spaces'}
+          and '## pas une section' in fence['overview'])
+
+    try:
+        build.parse_help_sections('## overview\na\n## overview\nb\n')
+        check('help : slug dupliqué → ValueError', False)
+    except ValueError:
+        check('help : slug dupliqué → ValueError', True)
+
+    check('help : fichier sans section → dict vide',
+          build.parse_help_sections('juste du texte, pas de titre\n') == {})
+
     return passed, failed
 
 
