@@ -984,7 +984,6 @@ function onSaveSettings() {
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
-    confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
     describeFiles: $('set-describe-files').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,

@@ -71,8 +71,8 @@ chemins d'erreur synchrones de `skills__read`, arithmétique d'index de
 `moveSkillAcSelection` — entrée par ↑ sans sélection = dernière option, wraps,
 garde liste vide —, projection `autotrigger` de
 `_skillMeta`, `getAutotriggerSkillsMeta` (filtrage enabled+autotrigger, cas liste
-vide), `skillDoctrinePrompt` conditionnel sur skills autotrigger ET résolution de
-la variante CONFIRMATION selon `confirmSkillAutoUse`), **export Markdown des
+vide), `skillDoctrinePrompt` conditionnel sur skills autotrigger, jamais de
+confirmation), **export Markdown des
 traces d'outils** (`formatToolAcksMd` : singulier/pluriel, `intent` présent/absent,
 erreur, troncature args/résultat/nom de ressource, `resource_presented` sans
 data embarquée, ack sans `args`), **`list_conversations`** (filtre `query` via

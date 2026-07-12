@@ -275,10 +275,24 @@ const CODEBLOCK_DOCTRINE =
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
   "Pour les diagrammes mermaid, respecte ces contraintes de syntaxe sous peine de " +
   "diagramme non rendu :\n" +
+  "- ERREUR LA PLUS FRÉQUENTE : ne mets JAMAIS la séquence backslash-n (\\n) à " +
+  "l'intérieur d'un label, même pour un saut de ligne visuellement voulu. Mermaid ne " +
+  "l'interprète PAS comme un saut de ligne, contrairement à d'autres formats texte : elle " +
+  "reste affichée telle quelle ou casse le parse. Pour un saut de ligne DANS un label, " +
+  "utilise UNIQUEMENT la balise <br/>. Exemple : A[\"Ligne un<br/>Ligne deux\"] et non " +
+  "A[Ligne un\\nLigne deux].\n" +
   "- Si un texte de nœud contient une parenthèse, une accolade, un crochet, un guillemet " +
   "ou tout autre caractère spécial, entoure TOUT le texte de guillemets doubles. " +
   "Exemple : A[\"France vs Maroc (2-0)\"] et non A[France vs Maroc (2-0)] — une " +
   "parenthèse nue dans un [label] casse le parse.\n" +
+  "- Ne mets JAMAIS de crochets [ ] à l'intérieur d'un label, même entouré de guillemets " +
+  "doubles : contrairement aux parenthèses/accolades, les guillemets ne neutralisent PAS " +
+  "un crochet interne, il ferme prématurément la forme du nœud. Reformule sans crochets " +
+  "(parenthèses ou tirets à la place). Exemple : B[\"Message avec pièce jointe (att-N)\"] " +
+  "et non B[\"Message avec pièce jointe [att-N]\"].\n" +
+  "- Si un label doit lui-même contenir des guillemets doubles, ne les mets pas tels " +
+  "quels même avec le label entouré de guillemets : deux guillemets imbriqués cassent " +
+  "le parse. Reformule sans guillemets, ou remplace-les par l'entité #quot;.\n" +
   "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
   "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
   "reconnu, pour un saut de ligne.";
@@ -307,12 +321,6 @@ const IDENTITY_BLURB =
 // présents, comme INTENT_DOCTRINE. PAS dans ROOT_SYSTEM_PROMPT (constante
 // build-time inconditionnelle) : ce bloc dépend de la disponibilité des outils
 // skill au runtime, même mécanisme que intentDoctrinePrompt()/INTENT_DOCTRINE.
-// Le modèle n'a aucun moyen d'observer la valeur de confirmSkillAutoUse (c'est
-// un réglage localStorage, pas une donnée de contexte) : il ne faut donc PAS lui
-// demander de vérifier « si le réglage est activé ». C'est skillDoctrinePrompt()
-// qui lit le réglage et choisit le paragraphe CONFIRMATION à injecter — la
-// doctrine envoyée au modèle est déjà résolue, jamais une branche conditionnelle
-// textuelle. SKILL_DOCTRINE_BASE est commun aux deux variantes.
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
   "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
@@ -322,16 +330,9 @@ const SKILL_DOCTRINE_BASE =
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
   "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
 
-const SKILL_DOCTRINE_CONFIRM_ON =
-  "CONFIRMATION : APRÈS que miaou__skills__read a renvoyé son contenu et AVANT " +
-  "d'agir dessus, appelle l'outil ask_confirmation (nu, non préfixé) pour décrire " +
-  "ce que tu t'apprêtes à faire avec cette skill. Cette règle s'applique à TOUT " +
-  "appel à miaou__skills__read, que la skill ait été découverte via " +
-  "<miaou_skills_context> ou via miaou__skills__list — elle ne dépend pas du " +
-  "chemin de découverte. Elle ne s'applique PAS à l'invocation par slash-commande " +
-  "(/slug) : c'est une action explicite de l'utilisateur, déjà un consentement, " +
-  "et miaou__skills__read n'est jamais appelé sur ce chemin.\n\n";
-
+// PAS de variante CONFIRM_ON : ask_confirmation après skills__read casse le
+// mécanisme fork B (cf. skillDoctrinePrompt) — jamais réintroduire cette
+// branche sans revoir onHalt (api.js/main.js) pour préserver le contenu lu.
 const SKILL_DOCTRINE_CONFIRM_OFF =
   "Tu peux agir directement sur le contenu renvoyé par miaou__skills__read, sans " +
   "confirmation préalable.\n\n";
@@ -1758,12 +1759,16 @@ function intentDoctrinePrompt() {
 // éligible à l'utiliser. miaou__skills__read est dans TOOLS inconditionnellement
 // (stage 1), donc gater sur sa présence serait toujours vrai (TOOLS est une const
 // build-time non vide) ; on gate ici sur le contenu réel du cache skills à la
-// place. Le paragraphe CONFIRMATION est choisi ICI selon la valeur
-// COURANTE de confirmSkillAutoUse (réglage localStorage, invisible au modèle) —
-// la doctrine envoyée est déjà résolue, jamais une condition que le modèle
-// devrait évaluer lui-même.
+// place. PAS de confirmation ask_confirmation après skills__read (ex-réglage
+// confirmSkillAutoUse, retiré) : le halting jette tout le tour, y compris le
+// contenu de skills__read (cf. api.js onHalt) — au tour suivant (« Oui ») le
+// modèle n'a plus ce contenu, doit le relire, reconfirme, boucle sans jamais
+// agir. Bug structurel du mécanisme fork B (conçu pour create_memory, où la
+// question seule suffit), pas un défaut d'obéissance du modèle — observé en
+// pratique. La confirmation reste inutile de toute façon : lire une skill n'a
+// pas d'effet de bord, seul agir dessus en a un, et l'utilisateur voit l'appel
+// d'outil dans l'ack.
 function skillDoctrinePrompt() {
   if (!getAutotriggerSkillsMeta().length) return '';
-  const confirmPart = loadSettings().confirmSkillAutoUse !== false ? SKILL_DOCTRINE_CONFIRM_ON : SKILL_DOCTRINE_CONFIRM_OFF;
-  return SKILL_DOCTRINE_BASE + confirmPart + SKILL_DOCTRINE_TAIL;
+  return SKILL_DOCTRINE_BASE + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
 }

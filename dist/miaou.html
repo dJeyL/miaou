@@ -2931,17 +2931,6 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
         <label>Skills</label>
         <span class="hint">Fragments d'instructions réutilisables. Invoquer via <code>/slug</code> dans le composer, ou laisser le modèle les découvrir par lui-même.</span>
         <button class="btn-ghost" onclick="openSkills()">Gérer les skills</button>
-        <div class="check-row">
-          <div class="label-col">
-            <label>Confirmer avant l'utilisation automatique d'une skill</label>
-            <span class="hint">Demande confirmation avant que le modèle agisse sur une skill qu'il a lue de lui-même.</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-confirm-skill-autouse">
-            <span class="track"></span>
-            <span class="thumb"></span>
-          </label>
-        </div>
       </div>
       <div class="field">
         <label>Bibliothèque de fichiers</label>
@@ -3132,7 +3121,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-12 18:00 UTC */
+/* miaou — built: 2026-07-12 19:16 UTC */
 
 /* ── utils.js ── */
 
@@ -3352,7 +3341,8 @@ function mermaidThemeFor(resolved) {
 
 function sanitizeMermaidSource(src) {
   return String(src == null ? '' : src)
-    .replace(/<\/?(?:b|i|em|strong|u|mark|small)\s*>/gi, '');
+    .replace(/<\/?(?:b|i|em|strong|u|mark|small)\s*>/gi, '')
+    .replace(/\\n/g, '<br/>');
 }
 
 function diagramImageName(rawName, ext) {
@@ -4046,7 +4036,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783879256}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783883799}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4070,7 +4060,6 @@ const DEFAULT_SETTINGS = {
   includeToolsInSystemPrompt: false, 
   saveJsonResponses: false, 
   intentTracing: true,      
-  confirmSkillAutoUse: true, 
   contextWindow: '', 
   describeFiles: true, 
   exportInteractive: true, 
@@ -5591,10 +5580,24 @@ const CODEBLOCK_DOCTRINE =
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
   "Pour les diagrammes mermaid, respecte ces contraintes de syntaxe sous peine de " +
   "diagramme non rendu :\n" +
+  "- ERREUR LA PLUS FRÉQUENTE : ne mets JAMAIS la séquence backslash-n (\\n) à " +
+  "l'intérieur d'un label, même pour un saut de ligne visuellement voulu. Mermaid ne " +
+  "l'interprète PAS comme un saut de ligne, contrairement à d'autres formats texte : elle " +
+  "reste affichée telle quelle ou casse le parse. Pour un saut de ligne DANS un label, " +
+  "utilise UNIQUEMENT la balise <br/>. Exemple : A[\"Ligne un<br/>Ligne deux\"] et non " +
+  "A[Ligne un\\nLigne deux].\n" +
   "- Si un texte de nœud contient une parenthèse, une accolade, un crochet, un guillemet " +
   "ou tout autre caractère spécial, entoure TOUT le texte de guillemets doubles. " +
   "Exemple : A[\"France vs Maroc (2-0)\"] et non A[France vs Maroc (2-0)] — une " +
   "parenthèse nue dans un [label] casse le parse.\n" +
+  "- Ne mets JAMAIS de crochets [ ] à l'intérieur d'un label, même entouré de guillemets " +
+  "doubles : contrairement aux parenthèses/accolades, les guillemets ne neutralisent PAS " +
+  "un crochet interne, il ferme prématurément la forme du nœud. Reformule sans crochets " +
+  "(parenthèses ou tirets à la place). Exemple : B[\"Message avec pièce jointe (att-N)\"] " +
+  "et non B[\"Message avec pièce jointe [att-N]\"].\n" +
+  "- Si un label doit lui-même contenir des guillemets doubles, ne les mets pas tels " +
+  "quels même avec le label entouré de guillemets : deux guillemets imbriqués cassent " +
+  "le parse. Reformule sans guillemets, ou remplace-les par l'entité #quot;.\n" +
   "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
   "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
   "reconnu, pour un saut de ligne.";
@@ -5619,16 +5622,6 @@ const SKILL_DOCTRINE_BASE =
   "d'instructions pertinents si la situation s'y prête.\n\n" +
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
   "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
-
-const SKILL_DOCTRINE_CONFIRM_ON =
-  "CONFIRMATION : APRÈS que miaou__skills__read a renvoyé son contenu et AVANT " +
-  "d'agir dessus, appelle l'outil ask_confirmation (nu, non préfixé) pour décrire " +
-  "ce que tu t'apprêtes à faire avec cette skill. Cette règle s'applique à TOUT " +
-  "appel à miaou__skills__read, que la skill ait été découverte via " +
-  "<miaou_skills_context> ou via miaou__skills__list — elle ne dépend pas du " +
-  "chemin de découverte. Elle ne s'applique PAS à l'invocation par slash-commande " +
-  "(/slug) : c'est une action explicite de l'utilisateur, déjà un consentement, " +
-  "et miaou__skills__read n'est jamais appelé sur ce chemin.\n\n";
 
 const SKILL_DOCTRINE_CONFIRM_OFF =
   "Tu peux agir directement sur le contenu renvoyé par miaou__skills__read, sans " +
@@ -6657,8 +6650,7 @@ function intentDoctrinePrompt() {
 
 function skillDoctrinePrompt() {
   if (!getAutotriggerSkillsMeta().length) return '';
-  const confirmPart = loadSettings().confirmSkillAutoUse !== false ? SKILL_DOCTRINE_CONFIRM_ON : SKILL_DOCTRINE_CONFIRM_OFF;
-  return SKILL_DOCTRINE_BASE + confirmPart + SKILL_DOCTRINE_TAIL;
+  return SKILL_DOCTRINE_BASE + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
 }
 
 /* ── api.js ── */
@@ -9698,7 +9690,6 @@ function settingsFormDirty() {
     || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-save-json').checked !== !!s.saveJsonResponses
-    || $('set-confirm-skill-autouse').checked !== !!s.confirmSkillAutoUse
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
@@ -9716,7 +9707,6 @@ function openSettings() {
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
-  $('set-confirm-skill-autouse').checked = !!s.confirmSkillAutoUse;
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');
@@ -12674,7 +12664,6 @@ function onSaveSettings() {
     includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
     saveJsonResponses: $('set-save-json').checked,
-    confirmSkillAutoUse: $('set-confirm-skill-autouse').checked,
     describeFiles: $('set-describe-files').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,

@@ -628,23 +628,16 @@ describe('skillDoctrinePrompt (stage 2, conditionnel sur skills autotrigger)', f
     setSkillsCache([{ slug: 'a', autotrigger: true }]);
     expect(skillDoctrinePrompt().length > 0).toBeTruthy();
   });
-  it('résout le paragraphe CONFIRMATION sur la valeur courante de confirmSkillAutoUse, jamais une condition laissée au modèle', function() {
+  it('jamais de confirmation : ask_confirmation casserait le contenu lu au tour suivant (fork B)', function() {
     setSkillsCache([{ slug: 'a', autotrigger: true }]);
-    saveSettings({ confirmSkillAutoUse: true });
-    var on = skillDoctrinePrompt();
-    expect(on.indexOf('ask_confirmation') >= 0).toBeTruthy();
-    expect(on.indexOf('si le réglage') >= 0).toBeFalsy();   // pas de condition à évaluer par le modèle
-    saveSettings({ confirmSkillAutoUse: false });
-    var off = skillDoctrinePrompt();
-    expect(off.indexOf('sans confirmation préalable') >= 0).toBeTruthy();
-    expect(off.indexOf('appelle l\'outil ask_confirmation') >= 0).toBeFalsy();
+    var s = skillDoctrinePrompt();
+    expect(s.indexOf('sans confirmation préalable') >= 0).toBeTruthy();
+    expect(s.indexOf('ask_confirmation') >= 0).toBeFalsy();
   });
-  it('mentionne miaou__skills__read et ask_confirmation', function() {
+  it('mentionne miaou__skills__read', function() {
     setSkillsCache([{ slug: 'a', autotrigger: true }]);
-    saveSettings({ confirmSkillAutoUse: true });
     var s = skillDoctrinePrompt();
     expect(s.indexOf('miaou__skills__read') >= 0).toBeTruthy();
-    expect(s.indexOf('ask_confirmation') >= 0).toBeTruthy();
   });
 });
 

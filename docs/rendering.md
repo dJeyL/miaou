@@ -42,24 +42,30 @@ Configuration (`mermaidInit`) :
 
 ## Nettoyage de la source avant render (sanitizeMermaidSource, utils.js)
 
-`CODEBLOCK_DOCTRINE` (tools.js, `v3`) demande au modèle deux choses pour les
-diagrammes : **quoter** tout label contenant un caractère spécial
-(`A["France (2-0)"]` — une parenthèse nue dans un `[label]` casse le parse,
-Mermaid l'interprète comme un délimiteur de forme) et **ne pas** poser de
-balises HTML de mise en forme dans les labels. Le modèle obéit de façon
-inégale (la contrainte négative sur `<b>` en particulier).
+`CODEBLOCK_DOCTRINE` (tools.js, `v4`) demande au modèle trois choses pour les
+diagrammes : ne **jamais** poser de séquence backslash-n littérale dans un
+label (Mermaid ne l'interprète pas comme saut de ligne — seul `<br/>` l'est),
+**quoter** tout label contenant un caractère spécial (`A["France (2-0)"]` —
+une parenthèse nue dans un `[label]` casse le parse, Mermaid l'interprète
+comme un délimiteur de forme), et **ne pas** poser de balises HTML de mise en
+forme dans les labels. Le modèle obéit de façon inégale (le backslash-n
+littéral et la contrainte négative sur `<b>` en particulier — récidive
+observée sur plusieurs modèles malgré la doctrine, cf. lot E retouche
+post-livraison).
 
 Défense en profondeur côté application, **indépendante de l'obéissance du
 modèle** : `sanitizeMermaidSource(src)` (pure, testée QuickJS) strippe les
 balises `b/i/em/strong/u/mark/small` de la chaîne **passée à `mermaid.render`**,
-en préservant `<br/>` (seule balise reconnue par Mermaid, saut de ligne). Elle
-n'altère **jamais** `code.textContent` (source de vérité pour toggle, thème,
-exports, lightbox). Appliquée aux **deux** points de rendu — `renderMermaidUnder`
-(écran) et `embedExportMermaid` (export standalone) — pour que l'export
-corresponde à l'écran. Comme `src` sert aussi de clef d'idempotence
-(`_mermaidSrc`/`_mermaidErrSrc`) et de garde anti-obsolescence, ces
-comparaisons portent sur la version **strippée** (re-strip de `code.textContent`
-au retour d'`await`), pas sur le brut.
+en préservant `<br/>` (seule balise reconnue par Mermaid, saut de ligne), et
+convertit toute séquence backslash-n **littérale** (deux caractères `\`+`n`
+dans le texte, pas un vrai saut de ligne) en `<br/>`. Elle n'altère **jamais**
+`code.textContent` (source de vérité pour toggle, thème, exports, lightbox).
+Appliquée aux **deux** points de rendu — `renderMermaidUnder` (écran) et
+`embedExportMermaid` (export standalone) — pour que l'export corresponde à
+l'écran. Comme `src` sert aussi de clef d'idempotence (`_mermaidSrc`/
+`_mermaidErrSrc`) et de garde anti-obsolescence, ces comparaisons portent sur
+la version **strippée** (re-strip de `code.textContent` au retour d'`await`),
+pas sur le brut.
 
 Le quoting des parenthèses, lui, n'est **pas** rattrapé côté app (il faudrait
 un parseur mermaid pour distinguer une parenthèse de label d'un délimiteur de

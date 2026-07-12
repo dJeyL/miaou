@@ -38,7 +38,8 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    `{ ok:false, error }` → erreur composer locale (`showComposerSkillError`),
    **aucun envoi, aucun tour modèle, thread inchangé** ; sinon `getSkillContent`
    (IDB) puis `bakeSkillMessage(littéral, resolved)` encadre chaque corps résolu
-   de marqueurs `--- skill: slug ---` → `{ ok:true, content:baké, isSkill:true }`.
+   de marqueurs `--- skill: slug --- ... --- /skill: slug ---` →
+   `{ ok:true, content:baké, isSkill:true }`.
    - Le **content baké** est **stocké dans `content`** du message user et **figé au
      niveau RENDU/REPLAY** : `renderThread`/`openConversation` ne re-résolvent
      JAMAIS. Mais une **édition est un nouvel envoi** → `resolveSend` re-résout le
@@ -108,27 +109,17 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      (pas sur la présence de l'outil `skills__read`, toujours vrai depuis le
      stage 1 — gater là-dessus aurait rendu le bloc inconditionnel en pratique).
      Contenu : le listing est informatif (pas une obligation d'usage) ; pour
-     utiliser une skill listée, appeler `miaou__skills__read(slug)`.
-     **Règle de confirmation, RÉSOLUE côté client, jamais une condition posée au
-     modèle** : `confirmSkillAutoUse` est un réglage `localStorage`, invisible au
-     modèle — lui demander de « vérifier si le réglage est actif » serait
-     incohérent (rien dans son contexte ne porte cette valeur). `tools.js`
-     découpe donc la doctrine en trois constantes (`SKILL_DOCTRINE_BASE`,
-     `SKILL_DOCTRINE_CONFIRM_ON`/`_OFF`, `SKILL_DOCTRINE_TAIL`) ;
-     `skillDoctrinePrompt()` lit `loadSettings().confirmSkillAutoUse` et assemble
-     la version déjà tranchée — le modèle ne reçoit jamais qu'une seule
-     instruction sans branche, cohérente avec l'état réel du toggle au moment de
-     l'appel. Variante ON : appeler `ask_confirmation` (nu) **après** la lecture
-     et **avant** d'agir, uniforme sur les deux chemins de découverte (listing
-     dynamique ou `skills__list`), mais **ne s'applique jamais** à l'invocation
-     slash (`/slug` = consentement déjà explicite, `skills__read` n'est jamais
-     appelé sur ce chemin). Variante OFF : agir directement sur le résultat de
-     `skills__read`. Garde anti-narration commune aux deux variantes (`_TAIL`) :
-     ne pas prétendre avoir appliqué une skill sans avoir appelé `skills__read`
-     dans le même tour.
-   - **Réglage global `confirmSkillAutoUse`** (`miaou-settings`, défaut `true`) :
-     toggle dans le drawer Paramètres (`#set-confirm-skill-autouse`), dans le champ
-     « Skills » (pas le champ « outils »), juste après le bouton « Gérer les
-     skills » — propriété spécifique aux skills, pas un toggle global d'outils
-     comme « Traces en langage naturel ». C'est la valeur que `skillDoctrinePrompt()`
-     lit pour choisir la variante de doctrine à injecter (cf. ci-dessus).
+     utiliser une skill listée, appeler `miaou__skills__read(slug)`, puis agir
+     directement sur le résultat — **jamais** de `ask_confirmation` après
+     `skills__read` (ex-réglage `confirmSkillAutoUse`, retiré). Le halting
+     `ask_confirmation` jette tout le tour courant, y compris le résultat de
+     `skills__read` (cf. `onHalt`, api.js/main.js — mécanisme fork B conçu pour
+     `create_memory`, où la question seule suffit au tour suivant). Pour une
+     skill, le corps lu peut faire plusieurs paragraphes : au tour suivant
+     (« Oui »), le modèle ne l'a plus, doit le relire, reconfirme → boucle sans
+     jamais agir (observé en pratique). Retiré, pas contourné : lire une skill
+     n'a pas d'effet de bord, agir dessus n'en a pas non plus par nature (ce
+     sont des instructions, pas une action irréversible), et l'utilisateur voit
+     l'appel `skills__read` dans l'ack. Garde anti-narration (`_TAIL`) : ne pas
+     prétendre avoir appliqué une skill sans avoir appelé `skills__read` dans
+     le même tour.

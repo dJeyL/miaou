@@ -308,13 +308,19 @@ function mermaidThemeFor(resolved) {
 // les labels malgré la doctrine (CODEBLOCK_DOCTRINE). En htmlLabels:false, ces
 // balises ne sont PAS interprétées : elles s'affichent littéralement (« <b>x</b> »)
 // dans les <text> SVG. On les strippe pour ne garder que le texte ; <br/> est
-// PRÉSERVÉ (seule balise reconnue par Mermaid comme saut de ligne). Défense en
+// PRÉSERVÉ (seule balise reconnue par Mermaid comme saut de ligne). Convertit
+// aussi les séquences backslash-n LITTÉRALES (deux caractères \ et n dans le
+// texte, pas un vrai saut de ligne) en <br/> : malgré la doctrine, les modèles
+// en glissent régulièrement dans les labels — mermaid ne les interprète pas et
+// ça casse le parse ou s'affiche tel quel. Ne touche PAS aux vrais retours à la
+// ligne (\r\n/\n réels), qui délimitent les instructions mermaid. Défense en
 // profondeur côté application, indépendante de l'obéissance du modèle.
 // N'altère JAMAIS code.textContent (source de vérité) : appliquée uniquement à la
 // chaîne passée à mermaid.render. Pure, testable en QuickJS.
 function sanitizeMermaidSource(src) {
   return String(src == null ? '' : src)
-    .replace(/<\/?(?:b|i|em|strong|u|mark|small)\s*>/gi, '');
+    .replace(/<\/?(?:b|i|em|strong|u|mark|small)\s*>/gi, '')
+    .replace(/\\n/g, '<br/>');
 }
 
 // Nom de fichier pour l'export image d'un diagramme Mermaid (lot E3) : le

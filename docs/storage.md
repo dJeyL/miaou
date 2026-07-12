@@ -9,7 +9,7 @@
 
 - `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
   theme, showModelSelector, reasoningEffort, showReasoningSelector, sidebarWidth,
-  includeToolsInSystemPrompt, saveJsonResponses, intentTracing, confirmSkillAutoUse }`.
+  includeToolsInSystemPrompt, saveJsonResponses, intentTracing }`.
   `url`/`key`/`model` sont **legacy** : depuis l'introduction des serveurs API
   multiples (`miaou-api-servers` ci-dessous), ils ne sont plus édités nulle
   part dans l'UI — `onSaveSettings()` ne les écrit plus. Ils ne servent qu'à

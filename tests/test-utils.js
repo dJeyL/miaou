@@ -1117,6 +1117,14 @@ describe('sanitizeMermaidSource', function() {
     expect(sanitizeMermaidSource(null)).toBe('');
     expect(sanitizeMermaidSource(undefined)).toBe('');
   });
+  it('convertit un backslash-n littéral en <br/> (piège modèle malgré la doctrine)', function() {
+    expect(sanitizeMermaidSource('A[Ligne un\\nLigne deux]'))
+      .toBe('A[Ligne un<br/>Ligne deux]');
+  });
+  it('convertit plusieurs occurrences, ne touche pas les vrais retours à la ligne', function() {
+    expect(sanitizeMermaidSource('graph TD\nA[x\\ny]-->B[z\\nw]'))
+      .toBe('graph TD\nA[x<br/>y]-->B[z<br/>w]');
+  });
 });
 
 describe('isPreviewableLang', function() {
