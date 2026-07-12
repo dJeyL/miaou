@@ -165,7 +165,14 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
   `att-N` (résolution par `getCachedRecordByAttId`, conversation-scopée) OU
   `file-<id>` (résolution par `getCachedRecord` + vérification `spaceId`,
   Space-scopée) et renvoie un objet `{ record, sessionId, isPushed, markPushed
-  }` uniforme ; deux tables d'état poussé distinctes (`_attachmentPushState`
+  }` uniforme. **Depuis le lot L, le lookup record lui-même est factorisé dans
+  `resolveHandleRecord(ref)`** (tools.js — source unique « quel record derrière
+  ce handle », les trois branches sans push-state), au-dessus de la
+  classification pure `classifyHandleRef(ref)` → `'att'|'file'|'resource'|null`
+  (réutilise les trois `*_REF_RE`, jamais dupliquées). `_resolveInflationRef`
+  **consomme** `resolveHandleRecord` et n'ajoute QUE le descripteur push-MCP
+  (sessionId + tables) par famille — refactor à comportement constant, mêmes
+  deux tables d'état poussé distinctes (`_attachmentPushState`
   clé `(conversationId, attId)`, `_filePushState` clé `(spaceId, fileId)`) —
   pas de format de clé partagé entre les deux familles de refs. `session_id`
   reste **toujours** la conversation courante, même pour un fichier d'espace
@@ -173,6 +180,14 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
   fichier lu depuis une conversation est poussé dans LA session de cette
   conversation — pas de partage de session inter-conversation pour un fichier
   (dette assumée, cf. `docs/mcp.md`).
+  - **Troisième famille `res_…` (lot K)** : le même hook reconnaît aussi
+    `RESOURCE_REF_RE` (`res_<base36>`, underscore) — un `res_…` est directement
+    l'id d'un record (`getCachedRecord(ref)`), scopé conversation par le cache
+    session (herméticité). Troisième table `_resourcePushState` clé
+    `(conversationId, resId)`, purgée par `deleteConv`. Source phare : les octets
+    d'une ressource web transférés par `web__fetch_resource` et matérialisés en
+    `res_…` binaire (lot K §4.1) — mais tout `res_…` binaire est injectable, pas
+    seulement web. Détail complet : `docs/mcp.md` point 13bis.
 
 **Promotion vers la bibliothèque d'espace (lot Cbis, D2 path 3, écriture
 model-side unique sur la bibliothèque) :**
@@ -221,6 +236,89 @@ model-side unique sur la bibliothèque) :**
   question (+ lead-in éventuel) est réécrite en message assistant texte clair
   (fork B). La reprise se fait au tour suivant via la réponse utilisateur
   (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
+
+**Compute sandboxé sur un blob client (lot L, `js__eval`) :**
+- `js__eval(handle, code)` — exécute du JavaScript **écrit par le modèle** dans
+  un bac à sable **QuickJS-WASM** sur le contenu **textuel** d'UN fichier
+  référencé par handle (`att-N` / `file-<id>` / `res_<id>`), **sans jamais
+  charger les octets bruts dans le contexte du modèle**. Cas d'usage : interroger
+  un gros fichier (log, JSON-lines, CSV, texte volumineux) — compter, filtrer,
+  agréger, extraire un sous-ensemble — quand le lire en entier serait inutile ou
+  impossible. Handler **asynchrone** (lazy-load de l'engine + exécution VM) →
+  renvoie une `Promise<string>` mappée par `callInternalTool` (précédent
+  `skills__read`). Contrôles synchrones d'abord (`handle`/`code` manquants,
+  `classifyHandleRef(handle) === null` → messages d'erreur testables QuickJS) ;
+  puis `resolveHandleRecord(handle)` (impur, cache session → herméticité piège 18,
+  handle hors-scope = « introuvable », pas d'oracle), `utf8Decode(record.data)`
+  (contenu textuel, AL3), et `runInQuickJs(text, code)`.
+- **Entrée : handle only.** L'`inputSchema` déclare `handle` et `code` requis, un
+  seul handle (YAGNI multi-blob, brief §5). Le modèle ne fournit **jamais** le
+  contenu ni un chemin : le contenu vient des primitives guest.
+- **Surface guest FERMÉE** (`JS_EVAL_GUEST_PRELUDE`, tools.js) : quatre primitives
+  définies en **JS pur côté guest** au-dessus d'UNE seule host function
+  `__miaou_text()` (le seul pont host→guest) — `text()` (contenu entier),
+  `lines()` (découpe sur `\n`, miroir de `splitLines`), `jsonLines()` (une ligne
+  JSON parsée par élément, lignes vides/invalides ignorées), `parse()` (document
+  JSON entier). Plus les globals JS standard. **RIEN d'autre** : ni `fetch`, ni
+  réseau, ni DOM, ni `globalThis` hôte. Discipline de marshaling : une seule
+  valeur traverse (la string), tout le reste est du JS guest — pas de marshaling
+  manuel de tableaux/objets (coûteux, source de fuites de handles).
+- **Trois guards** (`runInQuickJs`, tools.js, dispose de tous les handles en
+  `try/finally`) : `setInterruptHandler` wall-time (timeout `JS_EVAL_TIMEOUT_MS`
+  = 5 s → boucle infinie tuée ; 2 s à l'origine, remonté après qu'un `split('\n')`
+  + regex + agrégation sur un log de 21 Mo réel a dépassé 2 s), `setMemoryLimit`
+  (`JS_EVAL_MEM_BYTES` = 128 Mo →
+  OOM catchable, tab intact), et cap de sortie `JS_EVAL_OUTPUT_CAP` = 20000 chars
+  appliqué **après** dump via `checkOutputCap` (utils.js, pure).
+- **Refus, pas troncature (§3).** Sortie > cap → **message de refus explicite**
+  renvoyé comme tool result texte **non-erreur** (pas `isError`, pour que le
+  modèle re-cible dans le même tour, borné par `MAX_TOURS`) : « ta sortie fait N
+  chars > cap M, réduis-la (compte/top-N/échantillon) ». Throw guest / timeout /
+  OOM → également un result texte cadré (« erreur d'exécution … vérifie ton
+  code »), pas `isError`.
+- **Ack `js_eval`** poussé **après résolution** (pattern `skills__read`) :
+  `{ kind:'js_eval', handle, ok, outLen, code }`. Informatif, **pas d'undo** (pur
+  compute, aucune écriture d'état). La ligne de thread annonce seulement le handle
+  et l'issue (`ICON_CODE`) — **le code exécuté n'est PAS rendu dans le thread**
+  (brief §3 : la doctrine no-silent-action vise les écritures d'état inférées, pas
+  le compute pur). Le `code` n'est capté que **dans l'ack, pour l'export**
+  (`formatToolAcksHtml`/`_formatToolCallMd`, champ `code` rendu COMPLET, non
+  tronqué contrairement aux args). Champs ajoutés à `ACK_COPY_FIELDS` (utils.js).
+- **Sécurité — parenté piège 23 (iframe sandbox), nouveau piège CLAUDE.md.** Le
+  monde guest est **clos** : surface vide par défaut, on n'injecte QUE
+  `__miaou_text` + le prélude. **Ne JAMAIS** y injecter `fetch`, un accès DOM, un
+  pont vers le host au-delà des primitives énumérées, ni ré-exposer `globalThis`
+  hôte — l'équivalent QuickJS du « jamais `allow-same-origin` ». Le `code` est
+  d'origine **modèle** : dans l'export (`_formatToolCallHtml`), `escHtml` est
+  impératif (exception piège 21). L'engine est chargé en lazy-load calqué sur
+  Mermaid (`ensureQuickJs`, ui.js — promesse mémoïsée, reset-on-reject) mais
+  l'échec CDN **ne se dégrade PAS en silence** : il se propage en erreur d'outil
+  propre (un compute demandé qui ne peut tourner doit le dire). Artefact figé :
+  `quickjs-emscripten@0.32.0/dist/index.global.min.js` (IIFE `window.QJS`, WASM
+  `RELEASE_SYNC` inliné, un seul `<script src>` — spike L0, cf. `AUDIT-L.md`).
+- **Guidage des modèles — pièges du mode global (`JS_EVAL_DOCTRINE`).** Le code
+  modèle est évalué en **mode global** (pas dans une fonction — l'enveloppe IIFE a
+  été retirée car elle supprimait la completion-value). Ce mode expose trois pièges
+  que des modèles moins solides déclenchent en boucle (constaté sur des exports
+  réels : mistral tâtonnait ~10 tours là où gemma4 réussissait du premier coup) —
+  la doctrine les prévient explicitement, et c'est de la **doctrine**, jamais un
+  changement du harnais d'évaluation (fragile, cf. bug IIFE) :
+  1. **Collision de noms** — `const lines = lines()` → `invalid redefinition of
+     global identifier` (les primitives sont des globals). La doctrine liste les
+     quatre noms réservés ; `_jsEvalErrText` **accole en plus un hint** au message
+     d'erreur brut (qui ne nomme ni l'identifiant ni la cause).
+  2. **Objet nu final** — `{ a: 1 }` en dernière ligne est lu comme un **bloc**, pas
+     une valeur → `expecting ';'`. La doctrine impose `JSON.stringify({…})` ou
+     `({…})` (ce que gemma4 fait spontanément).
+  3. **ASI** — instructions sans point-virgule + `const` en mode global →
+     `ReferenceError: X is not initialized`. La doctrine réclame les points-virgules.
+  La doctrine incite aussi à **enchaîner plusieurs petits appels** (inspecter puis
+  cibler) plutôt qu'un gros script unique, et à ne PAS raccourcir vers un one-liner
+  (contre-productif : le problème n'est jamais la longueur mais la forme du retour).
+  C'est pourquoi `MAX_TOURS` (api.js) est passé de 20 à 40 : un usage sain de
+  `js__eval` consomme légitimement beaucoup de tours. Corollaire piège 16 : ces
+  ajouts à `JS_EVAL_DOCTRINE` invalident le préfixe KV cache une fois (statique
+  ensuite).
 
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 

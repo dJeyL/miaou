@@ -553,6 +553,7 @@ function deleteConv(id) {
   deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
   deleteResourcesByConversation(id).catch(function() {});   // cascade IDB (hard-delete)
   clearAttachmentPushState(id);   // libère l'état de push MCP scopé à la conversation
+  clearResourcePushState(id);     // idem pour les res_… (lot K, même scope conversation)
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
 }
@@ -812,6 +813,19 @@ function applySyncedSettings(keys) {
     syncActiveApiServerUI();
     if (typeof renderApiServers === 'function') renderApiServers();
     syncModelUI();
+  }
+  // Bascule de serveur actif : reproduire le nettoyage d'`onUseApiServer` que le
+  // simple re-render ci-dessus ne couvre pas. L'override de modèle de la conv
+  // affichée (`currentConvModel`) pointait sur un modèle de l'ANCIEN serveur ;
+  // sans le lever, `activeModel()` resterait collé dessus (piège 15) et le label
+  // ne bougerait pas malgré le changement de serveur. On le lève EN MÉMOIRE
+  // seulement : l'onglet émetteur a déjà fait `setConvModel('')` → saveConversation
+  // → broadcast `conv-updated`, donc pas de re-persistance ni de rebroadcast ici
+  // (évite l'écho). `prefetchModels()` refetch le cache modèles du nouveau serveur
+  // (comparaison `_modelsCacheUrl`) et rappelle `syncModelUI()`.
+  if (set.has('active-api-server')) {
+    currentConvModel = '';
+    prefetchModels();
   }
   // Serveurs MCP : re-render cartes (les outils distants se rebranchent à la
   // prochaine reconnexion manuelle ; pas de reconnexion auto imposée ici).
@@ -1248,11 +1262,27 @@ async function applyImportedData(payload) {
 // après le tour, cf. rewriteAttachedUserMessage/onFinal de dispatchSend).
 //
 // Constantes ajustables, regroupées ici :
-const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;        // 10 Mo, rejet pré-resize
+// Deux caps distincts, appliqués APRÈS classifyAttachmentKind (le seuil dépend
+// du kind) : une image est plafonnée avant resize/base64 canvas ; un fichier
+// texte/binary sert de blob source à js__eval, dimensionné pour 32 Mo (cf.
+// tools.js : mémoire VM 128 Mo = « 32 Mo texte injecté »). Un log de 22 Mo doit
+// passer côté texte/binary sans être bloqué par la borne image.
+const ATTACHMENT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;   // 10 Mo, rejet pré-resize (image)
+const ATTACHMENT_BLOB_MAX_BYTES = 32 * 1024 * 1024;    // 32 Mo, blob texte/binary (aligné js__eval)
 const ATTACHMENT_IMAGE_MAX_EDGE = 1536;                // plus grand côté après downscale
 const ATTACHMENT_IMAGE_JPEG_QUALITY = 0.85;            // ré-encodage JPEG
 const ATTACHMENT_TEXT_MAX_BYTES = 200 * 1024;          // 200 kB, au-delà → binary
 const ATTACHMENT_MAX_IMAGES = 4;                       // cap images par message
+
+// Cap de taille selon le kind classifié (pure) : image → borne pré-resize,
+// texte/binary → borne blob js__eval. Retourne { bytes, label } (label pour le
+// message d'erreur, ex. « 10 Mo »). Une seule source pour les deux ingesteurs
+// (message + bibliothèque de Space).
+function attachmentCapForKind(kind) {
+  return kind === 'image'
+    ? { bytes: ATTACHMENT_IMAGE_MAX_BYTES, label: '10 Mo' }
+    : { bytes: ATTACHMENT_BLOB_MAX_BYTES, label: '32 Mo' };
+}
 
 // Downscale une image (File/Blob) via canvas : plus grand côté ≤
 // ATTACHMENT_IMAGE_MAX_EDGE, ré-encodage JPEG qualité ATTACHMENT_IMAGE_JPEG_QUALITY,
@@ -1327,11 +1357,12 @@ function clearComposerAttachError() {
 // (conversationId toujours renseigné, GC couvert par
 // deleteResourcesByConversation) et support du compteur attSeq persisté.
 async function ingestAttachmentFile(file) {
-  if (file.size > ATTACHMENT_MAX_BYTES) {
-    showComposerAttachError('« ' + file.name + ' » dépasse 10 Mo — fichier ignoré.');
+  const kind0 = classifyAttachmentKind(file.name, file.type);
+  const cap = attachmentCapForKind(kind0);
+  if (file.size > cap.bytes) {
+    showComposerAttachError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
     return null;
   }
-  const kind0 = classifyAttachmentKind(file.name, file.type);
   if (kind0 === 'image') {
     const imgCount = pendingAttachments.filter(a => a.kind === 'image').length;
     if (imgCount >= ATTACHMENT_MAX_IMAGES) {
@@ -1405,11 +1436,12 @@ function clearSpaceFilesError() {
 // l'ingestion (D7, séparé). Retourne le record stocké ou null (message
 // d'erreur déjà affiché).
 async function ingestLibraryFile(spaceId, file) {
-  if (file.size > ATTACHMENT_MAX_BYTES) {
-    showSpaceFilesError('« ' + file.name + ' » dépasse 10 Mo — fichier ignoré.');
+  const kind0 = classifyAttachmentKind(file.name, file.type);
+  const cap = attachmentCapForKind(kind0);
+  if (file.size > cap.bytes) {
+    showSpaceFilesError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
     return null;
   }
-  const kind0 = classifyAttachmentKind(file.name, file.type);
   const now = Date.now();
   try {
     if (kind0 === 'image') {

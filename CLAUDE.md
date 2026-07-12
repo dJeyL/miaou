@@ -171,6 +171,20 @@ inline sous la liste.
     ni une autre voie d'injection (cf. `docs/rendering.md`).
 24. **Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
     → invariant transverse, développé sous la liste.
+25. **Monde guest `js__eval` clos : une seule host function, jamais plus.**
+    L'outil natif `js__eval` (lot L) exécute du JS modèle dans un bac à sable
+    QuickJS-WASM (`runInQuickJs`, tools.js) sur le contenu textuel d'UN blob
+    client. Surface guest FERMÉE : on n'injecte QUE `__miaou_text()` (unique pont
+    host→guest) + un prélude JS pur (`text`/`lines`/`jsonLines`/`parse`) ; **jamais
+    `fetch`, DOM, `globalThis` hôte, ni aucun autre pont** — symétrique du « jamais
+    `allow-same-origin` » de l'iframe (piège 23). Trois guards obligatoires
+    (`setInterruptHandler` timeout, `setMemoryLimit`, cap de sortie via
+    `checkOutputCap`), tous les handles VM disposés en `try/finally`. Overflow de
+    sortie = **REFUS explicite, pas troncature** (result texte non-`isError`, pour
+    re-cibler dans le tour). Le `code` est d'origine **modèle** : `escHtml`
+    impératif à l'export (exception piège 21). Doctrine `JS_EVAL_DOCTRINE`
+    statique, inconditionnelle dans `ROOT_SYSTEM_PROMPT` (KV-safe, piège 16). Cf.
+    `docs/tools.md` (section `js__eval`).
 
 ### Invariants transverses (développés)
 

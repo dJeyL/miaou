@@ -205,6 +205,41 @@ function ensureMermaid() {
   return _mermaidPromise;
 }
 
+// ── Moteur QuickJS-WASM pour js__eval (lot L) ────────────────────────────────
+// Artefact tranché par le spike L0 : build IIFE `index.global.min.js` exposant
+// le global `window.QJS`, WASM RELEASE_SYNC (synchrone, Model 2) INLINÉ dans ce
+// fichier unique → un seul <script src>, 2 requêtes réseau totales, aucun fetch
+// .wasm séparé, aucun module ES au niveau source (contrainte dure MIAOU). Version
+// épinglée @0.32.0 comme Mermaid @11.12.0. Détail : AUDIT-L §Spike L0.
+const QUICKJS_CDN = 'https://cdn.jsdelivr.net/npm/quickjs-emscripten@0.32.0/dist/index.global.min.js';
+let _quickjsPromise = null;
+
+// Lazy-load calqué sur ensureMermaid (précédent exact) : promesse mémoïsée,
+// reset-on-reject (hygiène des caches async, cf. CLAUDE.md). Différence avec
+// Mermaid : l'échec ici NE se dégrade PAS silencieusement — il se propage en
+// rejet, capté par le handler js__eval qui le remonte en erreur d'outil propre
+// (un compute demandé qui ne peut pas tourner doit le dire, pas échouer en
+// silence comme un diagramme non rendu). La promesse résout le MODULE QuickJS
+// prêt (post getQuickJS = WASM compilé), pas juste le script chargé.
+function ensureQuickJs() {
+  if (_quickjsPromise) return _quickjsPromise;
+  _quickjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = QUICKJS_CDN;
+    s.onload = () => {
+      if (!window.QJS || typeof window.QJS.getQuickJS !== 'function') {
+        reject(new Error('QuickJS absent après chargement')); return;
+      }
+      // getQuickJS() compile/instancie le WASM (async) et résout le module.
+      window.QJS.getQuickJS().then(resolve, reject);
+    };
+    s.onerror = () => reject(new Error('échec de chargement QuickJS (CDN)'));
+    document.head.appendChild(s);
+  });
+  _quickjsPromise.catch(() => { _quickjsPromise = null; });   // reset sur rejet → retry possible
+  return _quickjsPromise;
+}
+
 // Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.
 // Appelée à la FINALISATION uniquement — finalizeAssistant et buildMsg, JAMAIS
 // streamInto (source partielle = flicker + erreurs de parse en cascade, D1).
@@ -919,6 +954,9 @@ const ICON_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none"
 const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const ICON_PACKAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+// Métaphore code (chevrons < >) — réservée au compute js__eval (lot L), une
+// métaphore = un usage (cf. CLAUDE.md, vocabulaire d'icônes).
+const ICON_CODE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
 // Même tracé que `.code-dl` (decoratePre) — vocabulaire d'icônes, flèche vers
 // le bas = télécharger, réservée à cet usage (A3-2, bouton lightbox mode image).
 const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
@@ -1199,6 +1237,34 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_PACKAGE,
     label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
+  },
+  // Compute sandboxé sur un blob client (miaou__js__eval, lot L) : informatif,
+  // pas d'undo (pur compute, aucune écriture d'état). Le code exécuté N'est PAS
+  // rendu dans le thread (brief §3 : la doctrine no-silent-action vise les
+  // écritures d'état inférées, pas le compute pur) — il n'est capté que dans
+  // l'ack pour l'export (champ `code`, cf. formatToolAcksHtml). La ligne de
+  // thread annonce seulement le handle et l'issue.
+  js_eval: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_CODE,
+    label: m => 'Code exécuté sur ' + (m.handle || '?') +
+      (m.ok === false ? ' (refusé)' : (m.outLen != null ? ' → ' + m.outLen + ' car.' : '')),
+    renderLabel: (m, el) => {
+      const tail = m.ok === false ? ' (refusé)' : (m.outLen != null ? ' → ' + m.outLen + ' car.' : '');
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Code exécuté sur '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + (m.handle || '?') + tail));
+        });
+      } else {
+        el.textContent = 'Code exécuté sur ' + (m.handle || '?') + tail;
+      }
+    },
   },
 };
 
@@ -5354,6 +5420,11 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-trace ul { list-style: none; margin: 6px 0 0; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-trace li { margin-bottom: 6px; }
 .tool-trace code { font-family: var(--mono); font-size: 11.5px; }
+/* Code exécuté par js__eval (lot L) : bloc <pre> COMPLET dans la trace d'outil,
+   seule trace du code (absent du thread live). EXPORT_CSS est une feuille figée
+   qui ne suit PAS chat/tools/composer.css (piège 22) — règle dédiée ici. */
+.tool-ack-code { margin: 4px 0 2px; padding: 8px 10px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; overflow-x: auto; white-space: pre; }
+.tool-ack-code code { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-2); }
 /* Preview repliée : une ligne par ack façon .tool-ack du thread live (bordure
    gauche + icône + intent ou fallback nom d'outil). Disparaît à l'ouverture,
    remplacée par le détail (ul) — un seul <details>, deux vues exclusives. */

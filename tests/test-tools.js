@@ -713,6 +713,70 @@ describe('ATTACHMENT_DOCTRINE (constante, partie de ROOT_SYSTEM_PROMPT)', functi
   });
 });
 
+describe('JS_EVAL_DOCTRINE (constante inconditionnelle de ROOT_SYSTEM_PROMPT, lot L)', function() {
+  it('incluse dans ROOT_SYSTEM_PROMPT (inconditionnelle, AL4)', function() {
+    expect(ROOT_SYSTEM_PROMPT.indexOf(JS_EVAL_DOCTRINE) >= 0).toBeTruthy();
+  });
+  it('énumère la surface FERMÉE des primitives guest', function() {
+    expect(JS_EVAL_DOCTRINE.indexOf('text()') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf('lines()') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf('jsonLines()') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf('parse()') >= 0).toBeTruthy();
+  });
+  it('énonce le refus sur dépassement (pas troncature) et le cap', function() {
+    expect(JS_EVAL_DOCTRINE.indexOf('REFUS') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf(String(JS_EVAL_OUTPUT_CAP)) >= 0).toBeTruthy();
+  });
+  it('handle only : jamais le contenu ni un chemin', function() {
+    expect(JS_EVAL_DOCTRINE.indexOf('handle') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf('att-N') >= 0).toBeTruthy();
+  });
+});
+
+describe('js__eval exposé au modèle (registre TOOLS, lot L)', function() {
+  it('miaou__js__eval est dans exposedTools avec handle+code requis', function() {
+    var def = exposedTools().find(function(t) { return t.name === 'miaou__js__eval'; });
+    expect(!!def).toBe(true);
+    var props = def.inputSchema.properties;
+    expect(!!props.handle).toBe(true);
+    expect(!!props.code).toBe(true);
+    expect(def.inputSchema.required.indexOf('handle') >= 0).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('code') >= 0).toBeTruthy();
+  });
+  it('rejette un handle vide/manquant en erreur synchrone (avant tout async)', function() {
+    expect(flattenToolResult(callTool('miaou__js__eval', { code: '1' }))).toBe('Handle manquant.');
+  });
+  it('rejette un code manquant en erreur synchrone', function() {
+    expect(flattenToolResult(callTool('miaou__js__eval', { handle: 'att-1' }))).toBe('Code manquant.');
+  });
+  it('rejette un handle de forme invalide en erreur synchrone', function() {
+    var r = flattenToolResult(callTool('miaou__js__eval', { handle: 'res-x', code: '1' }));
+    expect(r.indexOf('Handle invalide') >= 0).toBeTruthy();
+  });
+});
+
+describe('_jsEvalErrText (normalisation des erreurs guest, lot L)', function() {
+  it('extrait « name: message » d\'un objet erreur dumpé (pas [object Object])', function() {
+    var s = _jsEvalErrText({ name: 'TypeError', message: 'x is not a function' });
+    expect(s.indexOf('TypeError: x is not a function') >= 0).toBeTruthy();
+    expect(s.indexOf('[object Object]') >= 0).toBe(false);
+  });
+  it('accole un hint nommant les primitives réservées sur une collision de nom', function() {
+    // « const lines = lines() » → invalid redefinition ; le message brut ne nomme
+    // ni l'identifiant ni la cause — sans le hint les modèles tâtonnent (observé).
+    var s = _jsEvalErrText({ name: 'SyntaxError', message: 'invalid redefinition of global identifier' });
+    expect(s.indexOf('réservés') >= 0).toBeTruthy();
+    expect(s.indexOf('lines') >= 0).toBeTruthy();
+  });
+  it('n\'accole PAS le hint sur une erreur sans rapport', function() {
+    var s = _jsEvalErrText({ name: 'RangeError', message: 'invalid array length' });
+    expect(s.indexOf('réservés') >= 0).toBe(false);
+  });
+  it('gère une string brute (filet host) sans planter', function() {
+    expect(_jsEvalErrText('interrupted').indexOf('interrupted') >= 0).toBeTruthy();
+  });
+});
+
 describe('anyToolDeclaresAttachmentInflation (brief H — balayage générique du registre)', function() {
   it('false si _remoteTools vide', function() {
     expect(anyToolDeclaresAttachmentInflation()).toBe(false);
@@ -1010,6 +1074,24 @@ describe('hook d\'inflation dispatcher (brief A, D6) — helpers purs', function
     clearAttachmentPushState('c1');
     expect(isAttachmentPushed('c1', 'att-1')).toBe(false);
   });
+  it('RESOURCE_REF_RE : reconnaît res_<base36>, rejette tiret/majuscule/vide (lot K)', function() {
+    expect(RESOURCE_REF_RE.test('res_abc123')).toBe(true);
+    expect(RESOURCE_REF_RE.test('res_2rhku6t4')).toBe(true);
+    expect(RESOURCE_REF_RE.test('res-abc')).toBe(false);   // tiret, PAS underscore
+    expect(RESOURCE_REF_RE.test('res_ABC')).toBe(false);   // base36 minuscule uniquement
+    expect(RESOURCE_REF_RE.test('res_')).toBe(false);      // suffixe vide
+    expect(RESOURCE_REF_RE.test('att-1')).toBe(false);     // autre famille
+    expect(RESOURCE_REF_RE.test('file-abc')).toBe(false);  // autre famille
+  });
+  it('_resourcePushState : scopé (conversationId, resId), table distincte, purgée par conversation (lot K)', function() {
+    expect(isResourcePushed('c1', 'res_x')).toBe(false);
+    markResourcePushed('c1', 'res_x');
+    expect(isResourcePushed('c1', 'res_x')).toBe(true);
+    expect(isResourcePushed('c2', 'res_x')).toBe(false);   // autre conversation, même resId
+    expect(isAttachmentPushed('c1', 'res_x')).toBe(false); // table distincte de _attachmentPushState
+    clearResourcePushState('c1');
+    expect(isResourcePushed('c1', 'res_x')).toBe(false);
+  });
   it('_isRefUnknownError : détecte le code machine REF_UNKNOWN, jamais par sous-chaîne du texte libre', function() {
     expect(_isRefUnknownError({ isError: true, errorCode: 'REF_UNKNOWN' })).toBe(true);
     expect(_isRefUnknownError({ isError: true, errorCode: 'AUTRE_ERREUR' })).toBe(false);
@@ -1174,6 +1256,38 @@ describe('findDocsInflationTool (D7, lot Cbis) — résolution sans nom en dur',
     } finally {
       delete _remoteTools['liststuff'];
     }
+  });
+});
+
+describe('classifyHandleRef (famille de handle, lot L)', function() {
+  it('att-N → att', function() {
+    expect(classifyHandleRef('att-1')).toBe('att');
+    expect(classifyHandleRef('att-42')).toBe('att');
+  });
+  it('file-<id> → file', function() {
+    expect(classifyHandleRef('file-abc')).toBe('file');
+    expect(classifyHandleRef('file-a1b2c3')).toBe('file');
+  });
+  it('res_<id> → resource', function() {
+    expect(classifyHandleRef('res_abc')).toBe('resource');
+    expect(classifyHandleRef('res_x9y8')).toBe('resource');
+  });
+  it('chaîne vide → null', function() {
+    expect(classifyHandleRef('')).toBe(null);
+  });
+  it('res-x (tiret au lieu du underscore) → null', function() {
+    expect(classifyHandleRef('res-x')).toBe(null);
+  });
+  it('attN (sans tiret) → null', function() {
+    expect(classifyHandleRef('attN')).toBe(null);
+  });
+  it('att- majuscule dans l\'id file → null (le motif exige [a-z0-9])', function() {
+    expect(classifyHandleRef('file-ABC')).toBe(null);
+  });
+  it('non-string → null', function() {
+    expect(classifyHandleRef(null)).toBe(null);
+    expect(classifyHandleRef(undefined)).toBe(null);
+    expect(classifyHandleRef(42)).toBe(null);
   });
 });
 

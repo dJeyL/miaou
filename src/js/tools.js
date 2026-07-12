@@ -179,11 +179,80 @@ function docsDoctrinePrompt() {
   return anyToolDeclaresAttachmentInflation() ? DOCS_DOCTRINE : '';
 }
 
+// ── js__eval : compute sandboxé sur un blob client (lot L) ────────────────────
+// Paramètres du sandbox (constantes MIAOU dédiées, tranchées à l'audit AL2 sur
+// mesure du spike L0). Le cap suit la convention docs__*/fetch_* (20000). La
+// mémoire 128 Mo couvre « 32 Mo texte injecté + working set streamé » ; un
+// débordement (parse() d'un JSON monstre) meurt en OOM catchable — comportement
+// VOULU, pas un bug. Le timeout 5 s laisse respirer une passe sur 32 Mo
+// (injection seule ~158 ms au spike ; mais un split('\n') + regex + agrégation
+// sur 21 Mo réel a dépassé 2 s en usage — remonté à 5 s, une vraie boucle
+// infinie meurt toujours proprement). Référencés UNIQUEMENT dans des corps de
+// fonction (runtime), jamais au top-level d'un autre fichier (contrainte de
+// portée du test runner, cf. CLAUDE.md).
+const JS_EVAL_TIMEOUT_MS = 5000;
+const JS_EVAL_MEM_BYTES = 128 * 1024 * 1024;
+const JS_EVAL_OUTPUT_CAP = 20000;
+
+// Doctrine js__eval — INCONDITIONNELLE (AL4, décision Julien) : l'outil est natif,
+// toujours présent (pas de MCP, pas de toggle), donc dans ROOT_SYSTEM_PROMPT
+// comme BINARY_DOCTRINE. Constante STATIQUE (aucune donnée dynamique/modèle) →
+// KV-safe (piège 16), byte-stable d'un tour à l'autre. La liste ÉNUMÉRÉE des
+// primitives guest vit ici (brief §6 : « closed enumerated list ») — c'est le
+// SEUL contrat que le modèle a sur le monde guest. AL3 : le contenu injecté est
+// TEXTUEL (UTF-8 décodé) ; un binaire pur (PDF, image) va à docs__*, jamais ici.
+const JS_EVAL_DOCTRINE =
+  "<COMPUTE_SANDBOX>\n" +
+  "L'outil miaou__js__eval exécute du JavaScript que TU écris dans un bac à sable " +
+  "isolé (QuickJS), sur le contenu TEXTUEL d'UN fichier référencé par son handle " +
+  "(att-N, file-<id> ou res_<id>), sans jamais charger ce contenu dans ta fenêtre " +
+  "de contexte. Sers-t'en pour interroger un gros fichier joint (log, JSON-lines, " +
+  "CSV, texte volumineux) — compter, filtrer, agréger, extraire un sous-ensemble — " +
+  "quand le lire en entier serait inutile ou impossible. C'est aussi la voie à " +
+  "prendre quand docs__read refuse un fichier trop volumineux : n'insiste pas avec " +
+  "docs__read, passe directement à miaou__js__eval sur le même handle.\n\n" +
+  "APPEL : miaou__js__eval(handle, code). `handle` = le handle du fichier (jamais " +
+  "son contenu ni un chemin). `code` = une expression ou une suite d'instructions " +
+  "JavaScript dont la DERNIÈRE valeur évaluée est le résultat renvoyé. Le code " +
+  "s'exécute au niveau global (PAS dans une fonction) : pour renvoyer un objet, " +
+  "enveloppe-le dans un appel — `JSON.stringify({ a: 1, b: 2 })` — ou parenthèse-le " +
+  "— `({ a: 1, b: 2 })`. Un objet nu en dernière ligne (`{ a: 1 }`) est lu comme un " +
+  "BLOC, pas comme une valeur, et échoue : préfère la forme JSON.stringify(…). " +
+  "Termine tes instructions par des points-virgules. N'inclus JAMAIS le contenu du " +
+  "fichier dans `code` : il est déjà disponible via les primitives ci-dessous.\n\n" +
+  "PRIMITIVES disponibles dans le bac à sable (liste FERMÉE — rien d'autre du monde " +
+  "hôte n'est accessible : ni fetch, ni réseau, ni DOM, ni système de fichiers) :\n" +
+  "- text() → le contenu textuel entier du fichier (string).\n" +
+  "- lines() → un tableau des lignes du fichier (découpe sur les sauts de ligne).\n" +
+  "- jsonLines() → un tableau d'objets, une ligne JSON parsée par élément (les " +
+  "lignes vides ou non parsables sont ignorées) ; pour un fichier JSON-lines/NDJSON.\n" +
+  "- parse() → le fichier entier parsé comme un unique document JSON.\n" +
+  "Ces quatre noms (text, lines, jsonLines, parse) sont RÉSERVÉS : ne les réutilise " +
+  "pas comme noms de variable. `const lines = lines()` échoue (redéclaration d'un " +
+  "identifiant global) — nomme ta variable autrement, ex. `const rows = lines();`.\n" +
+  "Les globals JavaScript standard (JSON, Math, Array, String, RegExp, Date…) sont " +
+  "disponibles. Aucun déterminisme n'est requis (Date/Math.random autorisés).\n\n" +
+  "MÉTHODE : procède par petits appels successifs plutôt que de viser un seul gros " +
+  "script parfait. Un premier appel pour inspecter la forme du fichier (quelques " +
+  "lignes de tête/queue, un décompte), puis un ou des appels ciblés selon ce que tu " +
+  "as vu. Un script clair de plusieurs lignes, avec des variables intermédiaires " +
+  "nommées, réussit mieux qu'un one-liner condensé — n'essaie pas de tout " +
+  "raccourcir. Tu peux enchaîner de nombreux appels : c'est l'usage attendu.\n\n" +
+  "SORTIE : le résultat est ramené en texte (les objets/tableaux sont sérialisés en " +
+  "JSON). Si ce texte dépasse " + JS_EVAL_OUTPUT_CAP + " caractères, l'appel est " +
+  "REFUSÉ (pas tronqué) : réécris ton code pour renvoyer une synthèse plus petite " +
+  "(un compte, un top-N, un échantillon), jamais le fichier brut. Le bac à sable a " +
+  "aussi une limite de temps et de mémoire : une boucle infinie ou une accumulation " +
+  "démesurée échoue proprement — écris du code borné.\n" +
+  "</COMPUTE_SANDBOX>";
+
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
-// Compose les six doctrines ; référencé par buildSystemMessage() (main.js).
+// Compose les doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
+// (v2, lot L : JS_EVAL_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
-  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE;
+  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
+  "\n\n---\n\n" + JS_EVAL_DOCTRINE;
 
 // Doctrine de nommage des blocs de code. Injectée INCONDITIONNELLEMENT (comme
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
@@ -793,6 +862,70 @@ const TOOLS = [
       return content != null ? content : 'Aide indisponible.';
     },
   },
+  {
+    // miaou__js__eval (lot L) : exécute du JS écrit par le modèle dans un bac à
+    // sable QuickJS-WASM sur le contenu TEXTUEL d'un blob client référencé par
+    // handle (att-N/file-<id>/res_<id>), sans jamais charger les octets bruts en
+    // contexte. Handler ASYNC (lazy-load engine + exécution VM) → renvoie une
+    // Promise<string> ; callInternalTool la mappe (précédent skills__read). Les
+    // contrôles d'args (handle/code manquants) sont synchrones ; la résolution de
+    // handle et l'exécution sont async. L'ack est poussé APRÈS résolution (le
+    // résultat — ok/refus/erreur — n'est connu qu'à ce moment), pattern
+    // skills__read. Herméticité (piège 18) : resolveHandleRecord lit le cache
+    // session, un handle hors-scope → null → « handle introuvable » (pas d'oracle).
+    name: 'js__eval',
+    description:
+      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé sur le contenu " +
+      "TEXTUEL d'UN fichier référencé par son handle (att-N, file-<id> ou res_<id>), " +
+      "sans charger ce contenu dans ton contexte. Sers-t'en pour interroger un gros " +
+      "fichier (log, JSON-lines, CSV, texte) — compter, filtrer, agréger, extraire. " +
+      "Primitives disponibles dans le bac à sable : text(), lines(), jsonLines(), " +
+      "parse() (voir la doctrine COMPUTE_SANDBOX). La dernière valeur évaluée du code " +
+      "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
+      "grosse → refus explicite (réécris pour synthétiser). N'inclus jamais le " +
+      "contenu du fichier dans le code : il vient des primitives.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        handle: { type: 'string', description: 'Handle du fichier : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin)' },
+        code: { type: 'string', description: 'Code JavaScript à exécuter ; sa dernière valeur évaluée est le résultat renvoyé' },
+      },
+      required: ['handle', 'code'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },   // pur compute, aucune écriture d'état
+    handler: (args) => {
+      const handle = String((args && args.handle) || '').trim();
+      const code = args && args.code != null ? String(args.code) : '';
+      if (!handle) return 'Handle manquant.';
+      if (!code) return 'Code manquant.';
+      if (classifyHandleRef(handle) === null) {
+        return 'Handle invalide : ' + handle + ' (attendu att-N, file-<id> ou res_<id>).';
+      }
+      const record = resolveHandleRecord(handle);   // impur : cache session (herméticité)
+      if (!record || !record.data) return 'Handle introuvable : ' + handle + '.';
+      const text = utf8Decode(record.data);   // resources.js — AL3 : contenu textuel
+      return runInQuickJs(text, code).then(r => {   // ui.js/tools.js — async, lazy-load + VM
+        if (r.ok) {
+          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: true, outLen: r.output.length, code });
+          return r.output;
+        }
+        if (r.reason === 'cap') {
+          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, outLen: r.len, code });
+          // REFUS explicite (§3), PAS un isError : result texte cadré pour que le
+          // modèle re-cible dans le même tour (borné par MAX_TOURS). isError
+          // pourrait couper la boucle.
+          return 'Sortie refusée : ' + r.len + ' caractères dépassent la limite de ' +
+            r.cap + '. Réécris ton code pour renvoyer une synthèse plus petite ' +
+            '(un compte, un top-N, un échantillon), jamais le fichier brut.';
+        }
+        // reason === 'error' : throw guest / timeout / OOM. result texte (pas
+        // isError) pour laisser le modèle corriger son code au tour suivant.
+        _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, code });
+        return 'Erreur d\'exécution dans le bac à sable : ' + r.message +
+          '. Vérifie ton code (syntaxe, borne mémoire/temps).';
+      });
+    },
+  },
 ];
 
 // ── ask_confirmation : primitif halting hors registre MCP ────────────────────
@@ -1163,6 +1296,21 @@ function _filePushStateKey(spaceId, fileId) { return (spaceId || '') + '|' + fil
 function isFilePushed(spaceId, fileId) { return !!_filePushState[_filePushStateKey(spaceId, fileId)]; }
 function markFilePushed(spaceId, fileId) { _filePushState[_filePushStateKey(spaceId, fileId)] = true; }
 
+// Table d'état poussé/non-poussé pour les ressources de session (res_<id>, lot K,
+// §4.2) — scopée (conversationId, resId), même forme que _attachmentPushState
+// (un res_… porte un conversationId comme un attachment). Table DISTINCTE des deux
+// autres (doctrine « tables distinctes, formats de ref différents » ci-dessus) :
+// pas de collision de clé possible (att-N vs file-<id> vs res_<id>). Purgée par
+// deleteConv via clearResourcePushState, comme clearAttachmentPushState.
+let _resourcePushState = {};
+function isResourcePushed(conversationId, resId) { return !!_resourcePushState[_pushStateKey(conversationId, resId)]; }
+function markResourcePushed(conversationId, resId) { _resourcePushState[_pushStateKey(conversationId, resId)] = true; }
+function clearResourcePushState(conversationId) {
+  for (const k in _resourcePushState) {
+    if (k.indexOf((conversationId || '') + '|') === 0) delete _resourcePushState[k];
+  }
+}
+
 // Détection de capability SANS nom de serveur en dur (cf. audit lot A) :
 // l'outil distant déclare, dans son inputSchema (issu de tools/list, mis en
 // cache par connectMcpServer), à la fois `ref` et `content_b64` — signature
@@ -1185,6 +1333,13 @@ const ATTACHMENT_REF_RE = /^att-\d+$/;
 // que LIBRARY_REF_RE (resources.js), dupliqué ici pour ne pas coupler tools.js
 // au détail interne du parsing (parseLibraryRef fait le travail réel).
 const FILE_REF_RE = /^file-[a-z0-9]+$/;
+
+// Motif des refs de ressource de session (res_<id>, lot K) — même forme que
+// generateResourceId (resources.js) : 'res_' + base36, underscore après "res"
+// (PAS un tiret comme att-/file-). Un res_… est directement l'id d'un record du
+// store `resources` (getCachedRecord), matérialisé par store_binary (attachment
+// binaire, résultat d'outil, ou octets web via web__fetch_resource, lot K §4.1).
+const RESOURCE_REF_RE = /^res_[a-z0-9]+$/;
 
 // Généralisation de toolDeclaresAttachmentInflation (brief H) : balaye TOUT le
 // registre _remoteTools (tous serveurs confondus), sans nom de serveur/outil en
@@ -1276,43 +1431,214 @@ async function extractBinaryFileTextForDescription(record, maxChars) {
   }
 }
 
+// Classification pure de la famille d'un handle (lot L, §checkpoint 4). Retourne
+// 'att' | 'file' | 'resource' | null en réutilisant les trois regex existantes
+// (JAMAIS de duplication de leur motif ici — source de vérité unique
+// ATTACHMENT_REF_RE/FILE_REF_RE/RESOURCE_REF_RE). Pure et QuickJS-testable :
+// c'est le cœur de décision « quelle famille de handle », isolé du lookup record
+// (impur, lit le cache session). Consommée par resolveHandleRecord et par le
+// handler js__eval.
+function classifyHandleRef(ref) {
+  if (typeof ref !== 'string') return null;
+  if (ATTACHMENT_REF_RE.test(ref)) return 'att';
+  if (FILE_REF_RE.test(ref)) return 'file';
+  if (RESOURCE_REF_RE.test(ref)) return 'resource';
+  return null;
+}
+
+// Résolution handle → record IDB, par famille (lot L, factorisation §checkpoint 1).
+// LA source de vérité unique pour « quel record derrière ce handle », consommée
+// par _resolveInflationRef (chemin docs, wire MCP) ET par le handler js__eval
+// (compute sandboxé). Impure (lit le cache session — getCachedRecord*), donc
+// PAS QuickJS-testable ; la décision de famille (classifyHandleRef) l'est.
+// Retourne le `record` (dont `record.data` est un ArrayBuffer) ou null si la ref
+// n'est d'aucune famille reconnue, ou si le record est introuvable/hors scope.
+//
+// Herméticité (piège 18) — un seul prédicat, hérité gratuitement : les trois
+// lookups lisent le cache session (peuplé par loadConversationResources scopé à
+// la conversation/Space courant). Un handle d'une autre conversation/Space n'y
+// est pas → null → traité comme inexistant (pas d'oracle). AUCUN filtre de scope
+// réécrit : le cache EST le filtre (cf. AUDIT-K §2).
+function resolveHandleRecord(ref) {
+  const family = classifyHandleRef(ref);
+  if (family === 'att') {
+    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+    return getCachedRecordByAttId(ref, activeId) || null;
+  }
+  if (family === 'file') {
+    const recordId = parseLibraryRef(ref);   // resources.js (chargé avant)
+    const record = recordId ? getCachedRecord(recordId) : null;
+    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return null;
+    return record;
+  }
+  if (family === 'resource') {
+    // res_… EST directement l'id du record (le plus simple des trois lookups :
+    // pas de getCachedRecordByAttId ni de parseLibraryRef).
+    return getCachedRecord(ref) || null;
+  }
+  return null;
+}
+
+// Prélude JS injecté dans le guest AVANT le code du modèle (lot L). Définit les
+// quatre primitives de la surface FERMÉE (brief §6) en JS pur côté guest, au-
+// dessus d'UNE seule host function `__miaou_text()` qui renvoie le contenu
+// textuel décodé. Choix de discipline VM : ne marshaler qu'UNE valeur host→guest
+// (la string), et construire lines()/jsonLines()/parse() en JS standard DANS le
+// guest — pas de marshaling manuel de tableaux/objets (coûteux, source de fuites
+// de handles). splitLines/checkOutputCap (utils.js) restent la référence pure
+// testée ; la découpe guest ci-dessous en est le miroir volontaire (même
+// sémantique : normalisation CRLF/CR→LF puis split sur \n). \n est écrit ici en
+// séquence d'échappement JS classique (ce prélude est une string source JS
+// normale de tools.js, PAS un template imbriqué — le piège d'échappement du
+// spike ne s'applique pas, cf. AUDIT-L §Spike note harnais).
+const JS_EVAL_GUEST_PRELUDE =
+  "var __t = null;\n" +
+  "function text(){ if(__t===null){__t=__miaou_text();} return __t; }\n" +
+  "function lines(){ return text().replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n').split('\\n'); }\n" +
+  "function jsonLines(){ var out=[]; var ls=lines(); for(var i=0;i<ls.length;i++){ var s=ls[i]; if(!s) continue; try{ out.push(JSON.parse(s)); }catch(e){} } return out; }\n" +
+  "function parse(){ return JSON.parse(text()); }\n";
+
+// Exécute le code modèle dans un bac à sable QuickJS-WASM sur le texte fourni
+// (lot L, cœur impur — NON testable QuickJS, vérif runtime L3). Discipline VM
+// stricte : tous les handles créés côté host sont disposés en try/finally, le
+// runtime porte les guards (setInterruptHandler wall-time, setMemoryLimit), la
+// sortie est bornée APRÈS dump (checkOutputCap). Retourne un objet discriminé :
+//   { ok:true, output }                    — succès, `output` = string bornée
+//   { ok:false, reason:'cap', len, cap }   — sortie trop grosse (REFUS §3)
+//   { ok:false, reason:'error', message }  — throw guest / timeout / OOM
+// L'appelant (handler js__eval) transforme chaque cas en tool result texte.
+// Sécurité (parenté piège 23) : le monde guest est CLOS — on n'injecte QUE
+// __miaou_text (host) + le prélude JS ; jamais fetch, DOM, globalThis hôte, ni
+// aucun autre pont. Équivalent QuickJS du « jamais allow-same-origin » de
+// l'iframe. Ne JAMAIS élargir cette surface sans repenser la posture.
+async function runInQuickJs(text, code, opts) {
+  const timeoutMs = opts && opts.timeoutMs != null ? opts.timeoutMs : JS_EVAL_TIMEOUT_MS;
+  const memBytes = opts && opts.memBytes != null ? opts.memBytes : JS_EVAL_MEM_BYTES;
+  const cap = opts && opts.cap != null ? opts.cap : JS_EVAL_OUTPUT_CAP;
+
+  const QuickJS = await ensureQuickJs();   // ui.js — lazy-load, rejet propagé en erreur d'outil
+  const ctx = QuickJS.newContext();
+  const rt = ctx.runtime;
+  let textFn = null;
+  try {
+    rt.setMemoryLimit(memBytes);
+    const start = Date.now();
+    rt.setInterruptHandler(() => Date.now() - start > timeoutMs);
+
+    // UNIQUE pont host→guest : renvoie le contenu textuel décodé. newString crée
+    // un handle host qu'il FAUT disposer (retourné au guest qui en prend copie).
+    textFn = ctx.newFunction('__miaou_text', () => ctx.newString(text));
+    ctx.setProp(ctx.global, '__miaou_text', textFn);
+
+    // Prélude (définit text/lines/jsonLines/parse) puis code modèle : évalués
+    // ensemble en mode GLOBAL, la dernière valeur du code est le retour. Le
+    // prélude est neutre (déclarations, completion-value undefined), le résultat
+    // vient de la completion-value du dernier statement du `code`. PAS d'enveloppe
+    // IIFE : dans une fonction, un statement d'expression (`lines().length`) n'est
+    // PAS retourné sans `return` explicite — l'IIFE forçait donc undefined et
+    // contredisait la doctrine « dernière valeur évaluée ». En mode global d'une
+    // VM jetable, isoler les `var` du modèle n'apporte rien (aucun état ne survit).
+    const res = ctx.evalCode(JS_EVAL_GUEST_PRELUDE + '\n' + code);
+    if (res.error) {
+      const errObj = ctx.dump(res.error);   // { name, message, stack } — objet, pas string
+      res.error.dispose();
+      return { ok: false, reason: 'error', message: _jsEvalErrText(errObj) };
+    }
+    // Marshale le retour ; sérialise en JSON si ce n'est pas déjà une string
+    // (un objet/tableau doit sortir en texte lisible, cf. doctrine SORTIE).
+    const val = ctx.dump(res.value);
+    res.value.dispose();
+    const output = typeof val === 'string' ? val : _jsEvalStringify(val);
+    const capped = checkOutputCap(output, cap);   // utils.js — REFUS, pas troncature
+    if (!capped.ok) return { ok: false, reason: 'cap', len: capped.len, cap: capped.cap };
+    return { ok: true, output };
+  } catch (e) {
+    // Interruption (timeout) et OOM se manifestent soit en res.error ci-dessus,
+    // soit en throw host selon l'engine — filet ici pour les deux.
+    return { ok: false, reason: 'error', message: _jsEvalErrText((e && e.message) || String(e)) };
+  } finally {
+    if (textFn) textFn.dispose();
+    ctx.dispose();   // dispose le runtime lié
+  }
+}
+
+// Sérialisation du retour non-string (objet/tableau/nombre…) en texte. JSON pour
+// les structures ; String() pour les scalaires non-JSON-ables (undefined, etc.).
+function _jsEvalStringify(val) {
+  if (val == null) return String(val);
+  try { return JSON.stringify(val); } catch (e) { return String(val); }
+}
+
+// Message d'erreur guest normalisé, tronqué (une stack QuickJS peut être longue ;
+// le modèle a besoin du message, pas de 40 lignes de trace). Un throw guest
+// dumpé par ctx.dump(res.error) est un OBJET { name, message, stack } (pas une
+// string) : on en extrait « name: message » — un String() nu donnerait
+// « [object Object] », inexploitable pour corriger le code au tour suivant.
+function _jsEvalErrText(raw) {
+  let s;
+  if (raw && typeof raw === 'object') {
+    const name = raw.name ? String(raw.name) : 'Error';
+    const msg = raw.message != null ? String(raw.message) : '';
+    s = msg ? name + ': ' + msg : name;
+  } else {
+    s = String(raw == null ? 'erreur inconnue' : raw);
+  }
+  s = s.length > 500 ? s.slice(0, 500) + '…' : s;
+  // « invalid redefinition of global identifier » (QuickJS mode global) survient
+  // typiquement quand le modèle redéclare une primitive du prélude en const/let
+  // (ex. `const lines = lines()`). Le message brut ne nomme NI l'identifiant NI
+  // la cause — sans ce hint, les modèles tâtonnent (observé : ~10 tours perdus).
+  // On rattache la cause probable et le remède directement au message d'erreur.
+  if (/invalid redefinition of global identifier/i.test(s)) {
+    s += " — tu as probablement redéclaré (const/let) une variable portant le nom " +
+      "d'une primitive du bac à sable (text, lines, jsonLines, parse). Ces noms sont " +
+      "réservés : renomme ta variable (ex. `const rows = lines();`).";
+  }
+  return s;
+}
+
 // Résolution polymorphe d'une ref d'inflation (lot Cbis, généralisation §4) :
 // att-N (conversation-scopé, cache par attId) OU file-<id> (Space-scopé, cache
 // unifié par id de record — herméticité : un fichier d'un autre Space n'est
 // PAS résolu, comme s'il n'existait pas localement). Retourne null si la ref
 // ne correspond à aucune forme reconnue ou si le record est introuvable/hors
-// scope. `pushKey` est la clé de la table d'état poussé adaptée à la forme de
-// ref — les deux tables (_attachmentPushState, _filePushState) restent
-// distinctes, pas de format de clé partagé entre les deux familles de refs.
+// scope. Le record lui-même vient de resolveHandleRecord (source unique, lot L) ;
+// cette fonction n'ajoute QUE le descripteur push-MCP (sessionId + tables d'état
+// poussé/non-poussé), spécifique au wire docs et distinct par famille de ref
+// (les deux tables _attachmentPushState / _filePushState restent séparées).
 function _resolveInflationRef(ref) {
-  if (ATTACHMENT_REF_RE.test(ref)) {
-    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
-    const record = getCachedRecordByAttId(ref, activeId);
-    if (!record) return null;
+  const record = resolveHandleRecord(ref);
+  if (!record) return null;
+  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+  const family = classifyHandleRef(ref);
+  if (family === 'att') {
     return {
       record, sessionId: activeId,
       isPushed: () => isAttachmentPushed(activeId, ref),
       markPushed: () => markAttachmentPushed(activeId, ref),
     };
   }
-  if (FILE_REF_RE.test(ref)) {
-    const recordId = parseLibraryRef(ref);   // resources.js (chargé avant)
-    const record = recordId ? getCachedRecord(recordId) : null;
-    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-    if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return null;
+  if (family === 'file') {
     // session_id reste la conversation courante (le serveur mcp_docs ne connaît
     // que des sessions de conversation) : un fichier d'espace lu depuis une
     // conversation est poussé dans LA session de CETTE conversation — pas de
     // partage de session inter-conversation pour un fichier (dette assumée,
     // le brief H ne le promet pas).
-    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+    const recordId = parseLibraryRef(ref);
+    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
     return {
       record, sessionId: activeId,
       isPushed: () => isFilePushed(spaceId, recordId),
       markPushed: () => markFilePushed(spaceId, recordId),
     };
   }
-  return null;
+  // family === 'resource' (resolveHandleRecord a déjà écarté null/inconnu)
+  return {
+    record, sessionId: activeId,
+    isPushed: () => isResourcePushed(activeId, ref),
+    markPushed: () => markResourcePushed(activeId, ref),
+  };
 }
 
 // Point d'accroche D6 : juste avant callRemoteTool. Si l'outil ciblé déclare le

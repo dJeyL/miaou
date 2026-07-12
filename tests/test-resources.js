@@ -279,6 +279,30 @@ describe('extractResultParts', function() {
     expect(p[0].mime).toBe('application/pdf');
     expect(p[0].name).toBe('doc.pdf');
     expect(p[0].fromBase64).toBe('CCCC');
+    expect(p[0].originUrl).toBe('/a/doc.pdf');   // uri du blob → originUrl (lot K §4.1)
+  });
+
+  it('web__fetch_resource (2 blocs) → descripteur passthrough + blob store_binary avec originUrl', function() {
+    // Contrat de transfert K-server : [TextContent(descripteur), EmbeddedResource(blob)].
+    var p = extractResultParts({
+      content: [
+        { type: 'text', text: 'Resource transférée au client : application/pdf, 1234 octets, depuis https://ex.com/f.pdf.' },
+        { type: 'resource', resource: { blob: 'RAW==', mimeType: 'application/pdf', uri: 'https://ex.com/f.pdf' } },
+      ]
+    });
+    expect(p[0].action).toBe('passthrough');   // le descripteur va au modèle intact
+    expect(p[1].action).toBe('store_binary');
+    expect(p[1].fromBase64).toBe('RAW==');
+    expect(p[1].originUrl).toBe('https://ex.com/f.pdf');
+    expect(p[1].name).toBe('f.pdf');
+  });
+
+  it('image base64 sans uri → store_binary, originUrl null', function() {
+    var p = extractResultParts({
+      content: [{ type: 'image', data: 'IMG', mimeType: 'image/png' }]
+    });
+    expect(p[0].action).toBe('store_binary');
+    expect(p[0].originUrl == null).toBe(true);   // pas d'origine web pour une image d'outil
   });
 
   it('resource avec text JSON → store_inline (IDB) + texte brut au modèle', function() {

@@ -246,6 +246,35 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       en mémoire (comme le reste du hook) : un rechargement de page les vide,
       cohérent avec la session serveur elle-même éphémère.
 
+13bis. **Troisième famille de ref : ressources de session `res_…` (lot K, §4.2).**
+    Même généralisation, **toujours pas de second hook** : `_resolveInflationRef`
+    reconnaît une troisième forme `RESOURCE_REF_RE` (`res_<base36>`, underscore
+    après `res` — PAS un tiret comme att-/file-). Un `res_…` est **directement
+    l'id** d'un record du store `resources` : résolution par `getCachedRecord(ref)`
+    (le plus simple des trois lookups, sans `getCachedRecordByAttId` ni
+    `parseLibraryRef`). **Herméticité par le cache session** : ce cache ne contient
+    que les records de la conversation courante (`loadConversationResources`) —
+    un `res_…` d'une autre conversation n'y est pas, `getCachedRecord` renvoie
+    `null`, la résolution retourne `null` et le serveur répond REF_UNKNOWN. Aucun
+    filtre de scope réécrit : le cache EST le filtre.
+    - **Troisième table de push distincte** : `_resourcePushState`, clé
+      `(conversationId, resId)` (même forme que `_attachmentPushState`, un `res_…`
+      porte un `conversationId`) — purgée par `deleteConv` via
+      `clearResourcePushState`, comme les attachments (les fichiers d'espace, eux,
+      space-scopés, ne sont pas purgés par `deleteConv`).
+    - **Provenance web (lot K §4.1).** La source phare d'un `res_…` binaire est
+      `web__fetch_resource` : le serveur renvoie deux blocs — un descripteur `text`
+      (passthrough → modèle) et un `resource.blob` que `extractResultParts` route
+      en `store_binary` → record `res_…` en IDB (canal existant, pas un nouveau).
+      Mais la capacité n'est **pas web-only** : tout `res_…` binaire (image
+      d'outil, résultat MCP quelconque) devient injectable vers `docs__*`/`js__eval`
+      — un blob est un blob.
+    - **Blocage serveur levé (cross-repo, lot K0).** Avant K, `mcp_docs`
+      `validate_ref` (`_REF_RE`) rejetait tout ref hors `att-`/`file-`. K a élargi
+      `_REF_RE` à `res_[a-z0-9]+` côté miaou-mcp-servers (commit `91de653`) : le
+      serveur reste ref-opaque (type par magic bytes, matérialisation idempotente),
+      il ne fait qu'accepter le préfixe. Contrat miroir à tenir synchronisé.
+
 14. **Sélection de l'outil de LECTURE de contenu, sans nom en dur (D7, lot
     Cbis-5 — bug corrigé après retour utilisateur).** Un serveur d'extraction
     documentaire expose typiquement PLUSIEURS outils déclarant tous

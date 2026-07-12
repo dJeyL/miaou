@@ -150,7 +150,7 @@ inoffensif, les pairs rechargent de toute façon.
 | `render-list` | `renderConvList()` (scopé Space actif, piège 18). |
 | `conv-gone` | conv affichée supprimée ailleurs → `resetToEmpty()` (émetteur a déjà persisté ; pas de re-suppression). Différé si `sending`. |
 | `space-list` | `syncSpaceUI()` + `renderConvList()`. Le Space actif local ne change pas. |
-| `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés, **sans toucher au draft ni au thread** (A1). |
+| `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés, **sans toucher au draft ni au thread** (A1). Sur `active-api-server` (bascule de serveur) : lève l'override de modèle de la conv affichée (`currentConvModel=''`, **en mémoire seul** — l'émetteur a déjà persisté/broadcasté via son `setConvModel('')`) et `prefetchModels()` (refetch cache modèles du nouveau serveur), sinon `activeModel()` resterait collé sur l'ancien modèle (piège 15). |
 | `invalidate-resources` | `invalidateResourceCache(ids)` ; si conv affichée concernée et `!sending` → `loadConversationResources` + `renderThread`. |
 | `reload-skills` | `loadSkillsCache()` ; `renderSkills()` si drawer ouvert (`isSkillsDrawerOpen`), sinon `syncSkillHintUI`. |
 | `full-reload` | `location.reload()`. |

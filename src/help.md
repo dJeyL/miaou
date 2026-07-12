@@ -17,6 +17,9 @@ Ce que tu peux faire ici :
   des souvenirs durables pour te reconnaître d'une conversation à l'autre.
 - **Étendre** le modèle avec des skills (instructions réutilisables) et des
   outils distants (serveurs compagnons, si configurés).
+- **Analyser** un fichier volumineux (log, JSON, CSV, texte) : le modèle peut
+  exécuter du code sur son contenu pour compter, filtrer ou extraire, sans
+  charger le fichier entier dans le contexte.
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
 
 Pour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,
@@ -41,6 +44,14 @@ ensuite le modèle en garde une trace légère plutôt que de recharger les pixe
 chaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible
 durablement (pas seulement le temps d'un message), promeus-le dans la
 bibliothèque de fichiers de ton Espace — voir le sujet Espaces.
+
+Pour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle
+n'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le
+calcul** — compter des lignes, filtrer, agréger, extraire un extrait — en
+exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile
+pour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat
+demandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt
+qu'à déverser le fichier brut.
 
 ## spaces
 

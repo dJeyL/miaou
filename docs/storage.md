@@ -275,11 +275,16 @@
   - store `skills` (keyPath `slug`, géré par `skills.js`) : voir `docs/skills.md`.
   - store `resources`, index `by_conversation` **et** `by_space` (v3, lot Cbis —
     scoping des fichiers de bibliothèque d'espace, cf. ci-dessous). Chaque entrée :
-  `{ id, conversationId, class, mime, name, size, data (ArrayBuffer), createdAt }`.
+  `{ id, conversationId, class, mime, name, size, data (ArrayBuffer), createdAt, originUrl? }`.
   `class` ∈ `"inline"` (texte/JSON, passé en clair au modèle — `entry.result` de
   l'ack contient le texte brut) | `"binary"` (données opaques — `entry.result` de
   l'ack contient `[resource_ref:res_…]`, remplacé par un descripteur statique à
-  l'envoi). Les données ne sont **jamais** dans `localStorage`. Cache session (`_resourceCache`)
+  l'envoi). `originUrl` (optionnel, lot K) = URL d'origine d'une ressource web
+  matérialisée par `web__fetch_resource` (`_storeBlock` la reçoit de
+  `extractResultParts`, source = l'`uri` du `BlobResourceContents`) ; `null`/absent
+  pour les attachments et les autres blobs. **Champ de traçabilité seulement** :
+  jamais injecté au contexte modèle (`formatResourceDescriptor` ne le lit pas —
+  KV-stabilité, piège 16/17). Les données ne sont **jamais** dans `localStorage`. Cache session (`_resourceCache`)
   en mémoire : peuplé par `loadConversationResources` (fire-and-forget à
   `openConversation`) et par `_storeBlock` (au stockage). Suppression en cascade
   par conversation via `deleteResourcesByConversation` (appelé dans `deleteConv`,
@@ -379,7 +384,7 @@ fusion** (décision actée pour la v1 — un import écrase tout l'état local).
   },
   "idb": {
     "skills": [ { "slug": "…", "name": "…", "description": "…", "enabled": true, "content": "…", "autotrigger": false } ],
-    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "data": "<base64>" } ]
+    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "data": "<base64>", "originUrl": null } ]
   }
 }
 ```

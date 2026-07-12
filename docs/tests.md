@@ -189,6 +189,22 @@ heartbeat/TTL, rehydratation post-await) ne sont pas QuickJS-testables : script 
 non-régression Playwright `verify-multitab-sync.mjs` (deux pages sur un contexte
 partagé, `fetch` stubé) et scénarios manuels deux-onglets (`docs/manual-tests.md`).
 
+**`js__eval` — briques pures du sandbox de compute (lot L, cf. `docs/tools.md`)** :
+la frontière pure est couverte avant tout câblage VM. `tests/test-utils.js`
+couvre `splitLines` (multi-lignes sur `\n`, dernier fragment sans `\n` final
+conservé, normalisation CRLF/CR→LF, `\n` final → dernier fragment vide, texte
+vide → `['']`, null/undefined) — substrat de la primitive guest `lines()` — et
+`checkOutputCap` (sous/à/au-dessus du cap avec borne inclusive, null/undefined →
+longueur 0) — garde de refus §3, la logique isolée du marshaling VM.
+`tests/test-tools.js` couvre `classifyHandleRef` (positifs `att-N`/`file-<id>`/
+`res_<id>` → tag de famille ; rejets vide/`res-x`/`attN`/`file-ABC`/non-string →
+null) — le cœur de décision « quelle famille de handle », pur, réutilisant les
+trois regex existantes. Impurs, NON QuickJS-testables (vérif runtime L3 via
+`verify-js-eval.mjs`) : `resolveHandleRecord` (lit le cache session), le
+lazy-load CDN de l'engine, la création VM, l'injection de globals, l'exécution
+guest et les guards timeout/mémoire — tout l'embedding QuickJS-WASM chargé en
+browser, autre embedding que le `qjs` du runner.
+
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout

@@ -1185,3 +1185,56 @@ describe('diagramImageName', function() {
     expect(diagramImageName('sub/dir/flow.mmd', 'svg')).toBe('sub_dir_flow.svg');
   });
 });
+
+describe('splitLines (substrat guest lines(), lot L)', function() {
+  it('découpe un texte multi-lignes sur \\n', function() {
+    var r = splitLines('a\nbb\nccc');
+    expect(r.length).toBe(3);
+    expect(r[0]).toBe('a');
+    expect(r[2]).toBe('ccc');
+  });
+  it('conserve le dernier fragment sans \\n final', function() {
+    var r = splitLines('a\nbb\nccc\ndddd');
+    expect(r.length).toBe(4);
+    expect(r[3]).toBe('dddd');
+  });
+  it('normalise CRLF et CR en LF', function() {
+    expect(splitLines('a\r\nb\rc').length).toBe(3);
+  });
+  it('un \\n final produit un dernier fragment vide', function() {
+    var r = splitLines('a\nb\n');
+    expect(r.length).toBe(3);
+    expect(r[2]).toBe('');
+  });
+  it('texte vide → une seule ligne vide', function() {
+    var r = splitLines('');
+    expect(r.length).toBe(1);
+    expect(r[0]).toBe('');
+  });
+  it('null/undefined traités comme vide', function() {
+    expect(splitLines(null).length).toBe(1);
+    expect(splitLines(undefined).length).toBe(1);
+  });
+});
+
+describe('checkOutputCap (garde de refus, lot L §3)', function() {
+  it('sous le cap → ok true', function() {
+    var r = checkOutputCap('abc', 10);
+    expect(r.ok).toBe(true);
+    expect(r.len).toBe(3);
+    expect(r.cap).toBe(10);
+  });
+  it('exactement au cap → ok true (borne inclusive)', function() {
+    expect(checkOutputCap('abcde', 5).ok).toBe(true);
+  });
+  it('au-dessus du cap → ok false, longueur et cap reportés', function() {
+    var r = checkOutputCap('abcdef', 5);
+    expect(r.ok).toBe(false);
+    expect(r.len).toBe(6);
+    expect(r.cap).toBe(5);
+  });
+  it('null/undefined → longueur 0, ok true', function() {
+    expect(checkOutputCap(null, 5).ok).toBe(true);
+    expect(checkOutputCap(undefined, 5).len).toBe(0);
+  });
+});

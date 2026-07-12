@@ -89,6 +89,18 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
 
 ## Gotchas
 
+- **Every `.mjs` that imports `playwright` MUST live in this directory
+  (`.claude/skills/run-miaou/`).** Playwright + Chromium are installed in
+  the `node_modules` *scoped to this folder* (see Setup) — nowhere else.
+  A script run from the scratchpad or `/tmp` fails instantly at
+  `import ... from 'playwright'` with `ERR_MODULE_NOT_FOUND`. This holds
+  for **any** such script with no exception: the main verify/shot scripts,
+  *and* a throwaway diagnostic probe written "just to isolate a bug". The
+  words "temporary / disposable / just to check" are not an exemption —
+  put it here, prefix a throwaway one with `_` (e.g. `_probe-foo.mjs`) to
+  mark it, and `rm` it when done. The scratchpad is only for files that do
+  **not** import from this `node_modules` (data, HTML, notes). This has
+  been the single most-repeated mistake driving this skill.
 - **`npx playwright install chromium` prints nothing on success.** Don't
   mistake silence for failure — verify with
   `node -e "console.log(require('playwright').chromium.executablePath())"`

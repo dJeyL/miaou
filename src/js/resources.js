@@ -373,8 +373,13 @@ function extractResultParts(mcpResult) {
       const r = block.resource || {};
       const name = (r.uri && r.uri.split('/').pop()) || 'resource';
       if (r.blob != null) {
+        // originUrl : l'URI du blob porte l'URL d'origine pour une ressource web
+        // (web__fetch_resource pose BlobResourceContents(uri=url), lot K §4.1).
+        // Champ de traçabilité seulement — JAMAIS injecté au contexte modèle
+        // (hors formatResourceDescriptor, KV-stabilité, cf. AUDIT-K checkpoint 5).
         parts.push({ action: 'store_binary', block,
-          mime: r.mimeType || 'application/octet-stream', name, fromBase64: r.blob });
+          mime: r.mimeType || 'application/octet-stream', name, fromBase64: r.blob,
+          originUrl: r.uri || null });
       } else if (r.text != null) {
         parts.push({ action: 'store_inline', block,
           mime: r.mimeType || 'text/plain', name, text: r.text });
@@ -729,13 +734,16 @@ async function storeLibraryFile(spaceId, mime, name, data, cls, source, descript
 
 // Stocke un bloc individuel dans IDB + session cache ; pousse l'ack resource_stored.
 // Retourne l'id généré en cas de succès, null sinon.
-async function _storeBlock(mime, name, data, cls, conversationId, now, rand) {
+async function _storeBlock(mime, name, data, cls, conversationId, now, rand, originUrl) {
   const id = generateResourceId(rand);
   const record = {
     id, conversationId: conversationId || null,
     class: cls, mime: String(mime || 'application/octet-stream'),
     name: String(name || 'resource'), size: data.byteLength,
     createdAt: now, data,
+    // originUrl : URL d'origine d'une ressource web (lot K), null sinon
+    // (attachments, autres blobs). Traçabilité, jamais dans le contexte modèle.
+    originUrl: originUrl || null,
   };
   try {
     await putResource(record);
@@ -769,7 +777,8 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
   for (const part of extractResultParts(result)) {
     if (part.action === 'store_binary') {
       const id = await _storeBlock(part.mime, part.name,
-        base64ToArrayBuffer(part.fromBase64), 'binary', conversationId, theNow, theRand);
+        base64ToArrayBuffer(part.fromBase64), 'binary', conversationId, theNow, theRand,
+        part.originUrl);
       if (id) {
         newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
       } else {

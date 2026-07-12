@@ -4,7 +4,9 @@
    recherche/scoring des résumés.
    ────────────────────────────────────────────────────────────────────────── */
 
-const MAX_TOURS = 20;   // borne sur les tours de la boucle tool_calls
+const MAX_TOURS = 40;   // borne sur les tours de la boucle tool_calls
+                        // (20 → 40 : js__eval sur un gros fichier peut demander
+                        //  plusieurs passes exploratoires avant la synthèse)
 
 // Controller du stream courant (un seul à la fois). Permet à l'UI d'interrompre
 // la génération en cours via abortStream(). Réinitialisé à chaque streamCompletion.

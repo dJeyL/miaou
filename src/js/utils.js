@@ -45,6 +45,7 @@ const ACK_COPY_FIELDS = [
   'attId',                                // pièces jointes (recall_attachment)
   'slug',                                // skills
   'topic',                               // aide (about_read)
+  'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
 
@@ -363,6 +364,28 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
+// ── js__eval : briques pures du sandbox de compute (lot L) ────────────────────
+// Substrat de la primitive guest lines() : découpe un texte en lignes sur \n,
+// après normalisation des fins de ligne CRLF/CR → LF. Le dernier fragment sans
+// \n final est conservé (une ligne non terminée compte). Un texte vide donne
+// [''] (une ligne vide), cohérent avec String.split. Pure, QuickJS-testable ;
+// exposée au guest via une host newFunction fermant sur le texte décodé.
+function splitLines(text) {
+  const s = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return s.split('\n');
+}
+
+// Garde de cap d'output (lot L, §3 du brief — REFUS explicite, pas troncature).
+// Mesure la longueur de la sortie marshalée depuis le guest et décide si elle
+// tient sous le cap. Retourne {ok:true, len, cap} si len <= cap, sinon
+// {ok:false, len, cap} : l'appelant transforme le cas ok:false en message de
+// refus (« ta sortie fait N chars > cap M, réduis-la »), JAMAIS en troncature
+// silencieuse. Pure, QuickJS-testable, isolée du marshaling VM.
+function checkOutputCap(str, cap) {
+  const len = String(str == null ? '' : str).length;
+  return { ok: len <= cap, len: len, cap: cap };
+}
+
 // ── Agrégation MCP : nommage, namespaces, filtres (fonctions pures) ───────────
 // Le préfixe est une VUE sur le nom canonique, jamais un stockage : tout outil
 // exposé au modèle est `prefix__name`. parseToolName splitte sur le PREMIER `__`
@@ -620,6 +643,18 @@ function _formatToolCallMd(m) {
     lines.push('   Ressource présentée automatiquement : `' + name + '`' +
       (m.mime ? ' (' + m.mime + ')' : '') + ' — non incluse dans cet export');
   }
+  // js__eval (lot L) : le code exécuté est capté dans l'ack (champ `code`),
+  // rendu ici COMPLET (non tronqué comme les args) dans un fence — c'est la
+  // seule trace du code, invisible dans le thread live (brief §3). `handle` et
+  // `outLen` donnent le contexte (sur quoi, taille du résultat).
+  if (m.kind === 'js_eval' && m.code != null) {
+    lines.push('   Handle : `' + _truncMd(m.handle || '?', EXPORT_RESNAME_MAX) + '`' +
+      (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : ''));
+    lines.push('   Code exécuté :');
+    lines.push('   ```js');
+    String(m.code).split('\n').forEach(cl => lines.push('   ' + cl));
+    lines.push('   ```');
+  }
   return lines;
 }
 
@@ -670,6 +705,15 @@ function _formatToolCallHtml(m) {
     const name = escHtml(_truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX));
     lines.push('<br>Ressource présentée automatiquement : <code>' + name + '</code>' +
       (m.mime ? ' (' + escHtml(m.mime) + ')' : '') + ' — non incluse dans cet export');
+  }
+  // js__eval (lot L) : `code` et `handle` sont d'origine MODÈLE → escHtml
+  // impératif (piège 21, cette fonction est l'unique chemin string→HTML à
+  // risque de l'export). Code rendu COMPLET dans un <pre> (seule trace du code,
+  // absent du thread live, brief §3), pas tronqué contrairement aux args.
+  if (m.kind === 'js_eval' && m.code != null) {
+    lines.push('<br>Handle : <code>' + escHtml(_truncMd(m.handle || '?', EXPORT_RESNAME_MAX)) + '</code>' +
+      (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : ''));
+    lines.push('<br>Code exécuté :<pre class="tool-ack-code"><code>' + escHtml(String(m.code)) + '</code></pre>');
   }
   return lines.join('');
 }
