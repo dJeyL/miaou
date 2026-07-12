@@ -269,6 +269,25 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       Mais la capacité n'est **pas web-only** : tout `res_…` binaire (image
       d'outil, résultat MCP quelconque) devient injectable vers `docs__*`/`js__eval`
       — un blob est un blob.
+    - **Provenance texte intégral, `docs__extract` (lot M).** Deuxième source d'un
+      `res_…`, mais de **classe `'inline'`** plutôt que binaire : `docs__extract`
+      renvoie le texte complet d'un membre de zip (JSON/texte/CSV/XML/NDJSON) en
+      `resource.blob` (canal transfert `content_b64`, jamais en contexte modèle —
+      c'est le point de l'outil : contourner `docs__read`/`READ_CAP` sans payer de
+      tokens). Côté client, `extractResultParts` (resources.js) route ce cas via
+      `_isTextualMime(r.mimeType)` (mime `text/*` ou allowlist
+      `application/{json,xml,x-ndjson,csv}`) en action `store_inline_from_bytes`
+      (M1a, pure) ; `internResourcesFromResult` (M1b) réutilise le **tail de
+      `store_binary`** — handle + note, jamais le texte — pour construire le
+      message `role:'tool'`, mais stocke le record en classe `'inline'` (M1b,
+      resources.js) via `_storeBlock`. Résultat : un `res_…` de classe `'inline'`,
+      donc `js__eval`-adressable (`utf8Decode(record.data)` sans branche par
+      classe) et non rendu automatiquement à l'écran (`placeToolAck` ignore le
+      rendu bloc pour `class === 'inline'`), alors que ses octets ont transité par
+      le canal binaire — hybridation assumée entre les deux tails existants, pas
+      un troisième mécanisme de stockage. Le bloc `resource` correspondant est
+      retiré de la queue de rendu D8 (`retainPendingToolBlocks`) pour éviter un
+      bouton de téléchargement parasite sur un handle destiné à `js__eval`.
     - **Blocage serveur levé (cross-repo, lot K0).** Avant K, `mcp_docs`
       `validate_ref` (`_REF_RE`) rejetait tout ref hors `att-`/`file-`. K a élargi
       `_REF_RE` à `res_[a-z0-9]+` côté miaou-mcp-servers (commit `91de653`) : le

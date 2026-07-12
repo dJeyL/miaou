@@ -239,6 +239,70 @@ describe('utf8 round-trip', function() {
   it('null byte (U+0000)', function() { trip(String.fromCharCode(0)); });
 });
 
+// ── _isTextualMime ───────────────────────────────────────────────────────────
+
+describe('_isTextualMime', function() {
+  it('text/plain → true', function() {
+    expect(_isTextualMime('text/plain')).toBe(true);
+  });
+
+  it('text/csv → true', function() {
+    expect(_isTextualMime('text/csv')).toBe(true);
+  });
+
+  it('application/json → true (allowlist)', function() {
+    expect(_isTextualMime('application/json')).toBe(true);
+  });
+
+  it('application/xml → true (allowlist)', function() {
+    expect(_isTextualMime('application/xml')).toBe(true);
+  });
+
+  it('application/x-ndjson → true (allowlist)', function() {
+    expect(_isTextualMime('application/x-ndjson')).toBe(true);
+  });
+
+  it('application/csv → true (allowlist)', function() {
+    expect(_isTextualMime('application/csv')).toBe(true);
+  });
+
+  it('APPLICATION/JSON (casse) → true', function() {
+    expect(_isTextualMime('APPLICATION/JSON')).toBe(true);
+  });
+
+  it('text/plain; charset=utf-8 → true (suffixe toléré)', function() {
+    expect(_isTextualMime('text/plain; charset=utf-8')).toBe(true);
+  });
+
+  it('application/pdf → false', function() {
+    expect(_isTextualMime('application/pdf')).toBe(false);
+  });
+
+  it('image/png → false', function() {
+    expect(_isTextualMime('image/png')).toBe(false);
+  });
+
+  it('application/octet-stream → false', function() {
+    expect(_isTextualMime('application/octet-stream')).toBe(false);
+  });
+
+  it('null → false', function() {
+    expect(_isTextualMime(null)).toBe(false);
+  });
+
+  it('undefined → false', function() {
+    expect(_isTextualMime(undefined)).toBe(false);
+  });
+
+  it('chaîne vide → false', function() {
+    expect(_isTextualMime('')).toBe(false);
+  });
+
+  it('garbage non-string → false', function() {
+    expect(_isTextualMime(42)).toBe(false);
+  });
+});
+
 // ── extractResultParts ────────────────────────────────────────────────────────
 
 describe('extractResultParts', function() {
@@ -346,6 +410,46 @@ describe('extractResultParts', function() {
   it('mime absent sur image → image/png par défaut', function() {
     var p = extractResultParts({ content: [{ type: 'image', data: 'AAAA' }] });
     expect(p[0].mime).toBe('image/png');
+  });
+
+  it('resource blob avec mimeType textuel (docs__extract, lot M) → store_inline_from_bytes', function() {
+    var p = extractResultParts({
+      content: [{ type: 'resource', resource: { blob: 'RVhU', mimeType: 'text/plain', uri: 'data.json' } }]
+    });
+    expect(p[0].action).toBe('store_inline_from_bytes');
+    expect(p[0].mime).toBe('text/plain');
+    expect(p[0].name).toBe('data.json');
+    expect(p[0].fromBase64).toBe('RVhU');
+  });
+
+  it('resource blob avec mimeType application/json → store_inline_from_bytes', function() {
+    var p = extractResultParts({
+      content: [{ type: 'resource', resource: { blob: 'eyJhIjoxfQ==', mimeType: 'application/json', uri: 'zip-member:att-1/data.json' } }]
+    });
+    expect(p[0].action).toBe('store_inline_from_bytes');
+    expect(p[0].mime).toBe('application/json');
+  });
+
+  it('resource blob avec mimeType binaire (application/pdf) → reste store_binary', function() {
+    var p = extractResultParts({
+      content: [{ type: 'resource', resource: { blob: 'CCCC', mimeType: 'application/pdf', uri: '/a/doc.pdf' } }]
+    });
+    expect(p[0].action).toBe('store_binary');
+  });
+
+  it('resource blob sans mimeType (défaut octet-stream) → reste store_binary', function() {
+    var p = extractResultParts({
+      content: [{ type: 'resource', resource: { blob: 'CCCC', uri: '/a/doc.bin' } }]
+    });
+    expect(p[0].action).toBe('store_binary');
+    expect(p[0].mime).toBe('application/octet-stream');
+  });
+
+  it('resource.text (store_inline) reste inchangé même si mimeType textuel', function() {
+    var p = extractResultParts({
+      content: [{ type: 'resource', resource: { text: 'hello', mimeType: 'text/plain', uri: '/a.txt' } }]
+    });
+    expect(p[0].action).toBe('store_inline');
   });
 });
 

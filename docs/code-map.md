@@ -247,42 +247,44 @@
 - **Codec UTF-8 (hand-rolled, sans TextEncoder/TextDecoder — QuickJS-testable)** (L299)
   - `utf8Encode()` — L301
   - `utf8Decode()` — L327
-- **Partitionnement d'un résultat MCP (helper pur, QuickJS-testable)** (L352)
-  - `extractResultParts()` — L360
-- **Session cache** (L397)
-  - `_resourceCache` — L403
-  - `getCachedRecord()` — L405
-  - `_cacheRecord()` — L406
-  - `_uncacheRecord()` — L407
-  - `invalidateResourceCache()` — L414
-  - `getCachedRecordByAttId()` — L423
-  - `getCachedLibraryEntriesBySpace()` — L435
-  - `loadSpaceLibrary()` — L449
-- **Helpers de référence** (L458)
-  - `_makeResourceRef()` — L462
-  - `assembleToolResultForModel()` — L467
-  - `resolveResourceRefs()` — L480
-  - `resolveRecallImages()` — L500
-- **IDB layer (navigateur uniquement — non QuickJS-testable)** (L511)
-  - `_resourceDbPromise` — L515
-  - `_persistenceRequested` — L516
-  - `openResourceDB()` — L518
-  - `putResource()` — L556
-  - `getResource()` — L574
-  - `getResourcesByConversation()` — L585
-  - `getResourcesBySpace()` — L598
-  - `deleteResource()` — L609
-  - `deleteResourcesByConversation()` — L623
-  - `requestPersistence()` — L644
-  - `getAllResources()` — L655
-  - `clearIdbStore()` — L669
-- **Opérations haut-niveau** (L680)
-  - `storeAttachment()` — L690
-  - `storeLibraryFile()` — L717
-  - `_storeBlock()` — L737
-  - `internResourcesFromResult()` — L767
-  - `loadConversationResources()` — L819
-  - `makeResourcePresentBlock()` — L831
+  - `_TEXTUAL_MIME_ALLOWLIST` — L355
+  - `_isTextualMime()` — L358
+- **Partitionnement d'un résultat MCP (helper pur, QuickJS-testable)** (L365)
+  - `extractResultParts()` — L373
+- **Session cache** (L417)
+  - `_resourceCache` — L423
+  - `getCachedRecord()` — L425
+  - `_cacheRecord()` — L426
+  - `_uncacheRecord()` — L427
+  - `invalidateResourceCache()` — L434
+  - `getCachedRecordByAttId()` — L443
+  - `getCachedLibraryEntriesBySpace()` — L455
+  - `loadSpaceLibrary()` — L469
+- **Helpers de référence** (L478)
+  - `_makeResourceRef()` — L482
+  - `assembleToolResultForModel()` — L487
+  - `resolveResourceRefs()` — L500
+  - `resolveRecallImages()` — L520
+- **IDB layer (navigateur uniquement — non QuickJS-testable)** (L531)
+  - `_resourceDbPromise` — L535
+  - `_persistenceRequested` — L536
+  - `openResourceDB()` — L538
+  - `putResource()` — L576
+  - `getResource()` — L594
+  - `getResourcesByConversation()` — L605
+  - `getResourcesBySpace()` — L618
+  - `deleteResource()` — L629
+  - `deleteResourcesByConversation()` — L643
+  - `requestPersistence()` — L664
+  - `getAllResources()` — L675
+  - `clearIdbStore()` — L689
+- **Opérations haut-niveau** (L700)
+  - `storeAttachment()` — L710
+  - `storeLibraryFile()` — L737
+  - `_storeBlock()` — L757
+  - `internResourcesFromResult()` — L787
+  - `loadConversationResources()` — L861
+  - `makeResourcePresentBlock()` — L873
 
 ## src/js/skills.js
 

@@ -166,7 +166,11 @@ exemple :
 - **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.
 - **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,
   Excel, PowerPoint), archives Zip — utile pour interroger un document que tu
-  as joint ou déposé dans une bibliothèque d'Espace.
+  as joint ou déposé dans une bibliothèque d'Espace. Pour un fichier texte ou
+  JSON contenu dans une archive Zip, le modèle peut aussi en récupérer le
+  contenu intégral sans le recopier dans la conversation, puis l'analyser par
+  le calcul (voir pièces jointes) — pratique pour travailler sur un fichier
+  d'archive sans le rapatrier entièrement à l'écran.
 - Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs
   disponibles.
 

@@ -244,7 +244,10 @@ model-side unique sur la bibliothèque) :**
   charger les octets bruts dans le contexte du modèle**. Cas d'usage : interroger
   un gros fichier (log, JSON-lines, CSV, texte volumineux) — compter, filtrer,
   agréger, extraire un sous-ensemble — quand le lire en entier serait inutile ou
-  impossible. Handler **asynchrone** (lazy-load de l'engine + exécution VM) →
+  impossible. Un `res_<id>` peut désormais provenir de `docs__extract` (lot M,
+  cf. `docs/mcp.md` point 13bis) : le texte complet d'un membre de zip, transféré
+  par le canal binaire mais stocké en classe `'inline'` — `js__eval` ne
+  distingue pas cette provenance de `web__fetch_resource`, la décode identique. Handler **asynchrone** (lazy-load de l'engine + exécution VM) →
   renvoie une `Promise<string>` mappée par `callInternalTool` (précédent
   `skills__read`). Contrôles synchrones d'abord (`handle`/`code` manquants,
   `classifyHandleRef(handle) === null` → messages d'erreur testables QuickJS) ;

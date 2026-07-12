@@ -349,9 +349,22 @@ function utf8Decode(buf) {
   return s;
 }
 
+// Détecte un mimeType textuel (text/* + allowlist JSON/XML/NDJSON/CSV), pour router
+// un bloc resource.blob textuel (ex. docs__extract, lot M) vers un stockage 'inline'
+// plutôt que 'binary' — insensible à la casse, tolérant d'un suffixe ";charset=...".
+const _TEXTUAL_MIME_ALLOWLIST = [
+  'application/json', 'application/xml', 'application/x-ndjson', 'application/csv',
+];
+function _isTextualMime(mime) {
+  if (typeof mime !== 'string') return false;
+  const base = mime.split(';')[0].trim().toLowerCase();
+  if (base.indexOf('text/') === 0) return true;
+  return _TEXTUAL_MIME_ALLOWLIST.indexOf(base) !== -1;
+}
+
 // ── Partitionnement d'un résultat MCP (helper pur, QuickJS-testable) ─────────
 // Retourne un tableau de parts : { action, block, mime?, name?, text?, fromBase64? }
-// action : 'store_binary' | 'store_inline' | 'passthrough'
+// action : 'store_binary' | 'store_inline' | 'store_inline_from_bytes' | 'passthrough'
 //
 // DÉCISION FLAGGÉE (cf. brief §5 decision note) :
 // Les blocs {type:"text"} sont laissés en passthrough en V1 (seuil conservatif).
@@ -372,7 +385,14 @@ function extractResultParts(mcpResult) {
     } else if (block.type === 'resource') {
       const r = block.resource || {};
       const name = (r.uri && r.uri.split('/').pop()) || 'resource';
-      if (r.blob != null) {
+      if (r.blob != null && _isTextualMime(r.mimeType)) {
+        // Bloc blob textuel (ex. docs__extract, lot M) : octets base64 mais mime
+        // texte/JSON/XML/NDJSON/CSV → classe de stockage 'inline' (M1b), tout en
+        // transitant par le canal binaire (jamais de texte en contexte ici, M1a
+        // ne fait que router — l'invariant context-safety est tenu par M1b).
+        parts.push({ action: 'store_inline_from_bytes', block,
+          mime: r.mimeType || 'text/plain', name, fromBase64: r.blob });
+      } else if (r.blob != null) {
         // originUrl : l'URI du blob porte l'URL d'origine pour une ressource web
         // (web__fetch_resource pose BlobResourceContents(uri=url), lot K §4.1).
         // Champ de traçabilité seulement — JAMAIS injecté au contexte modèle
@@ -779,6 +799,28 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
       const id = await _storeBlock(part.mime, part.name,
         base64ToArrayBuffer(part.fromBase64), 'binary', conversationId, theNow, theRand,
         part.originUrl);
+      if (id) {
+        newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+      } else {
+        newContent.push(part.block);
+      }
+    } else if (part.action === 'store_inline_from_bytes') {
+      // Bloc blob à mime textuel (docs__extract, lot M) : stockage classe 'inline'
+      // (adressable par js__eval, présentable), mais TAIL DE store_binary — handle
+      // seul + note « présentée », JAMAIS le texte dans newContent. C'est tout
+      // l'enjeu : sûreté-contexte de store_binary (rien du contenu au modèle) +
+      // classe de stockage 'inline'. Les octets viennent de fromBase64 (canal
+      // binaire), pas de utf8Encode(text) — aucun texte n'a transité par le part.
+      // Retirer le bloc du queue D8 : un resource blob textuel non-image tomberait
+      // sinon dans renderBinaryBlock (bouton de téléchargement), affichage non voulu
+      // pour un handle js__eval — même posture que store_inline sur son bloc text.
+      if (typeof retainPendingToolBlocks === 'function') {
+        retainPendingToolBlocks(b =>
+          !(b.type === 'resource' && b.resource != null &&
+            b.resource.blob != null && _isTextualMime(b.resource.mimeType)));
+      }
+      const id = await _storeBlock(part.mime, part.name,
+        base64ToArrayBuffer(part.fromBase64), 'inline', conversationId, theNow, theRand);
       if (id) {
         newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
       } else {
