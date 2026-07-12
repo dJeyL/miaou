@@ -219,72 +219,73 @@
 - **Helpers purs (QuickJS-testables)** (L8)
   - `humanSize()` — L11
   - `formatResourceDescriptor()` — L22
-  - `generateResourceId()` — L28
-- **Bibliothèque de fichiers d'espace (lot Cbis) — helpers purs** (L32)
-  - `generateFileId()` — L37
-  - `libraryRefFromId()` — L45
-  - `LIBRARY_REF_RE` — L47
-  - `parseLibraryRef()` — L50
-  - `FILE_DESCRIPTION_MAX_CHARS` — L61
-  - `capFileDescription()` — L62
-  - `normalizeLibraryRecord()` — L70
-  - `buildLibraryManifestBlock()` — L89
-- **Pièces jointes (composer) — helpers purs (QuickJS-testables)** (L106)
-  - `ATTACHMENT_TEXT_EXTENSIONS` — L112
-  - `classifyAttachmentKind()` — L122
-  - `allocateAttId()` — L136
-- **Pièces jointes (composer) — envoi au modèle et politique de persistance** (L141)
-  - `formatAttachmentDescriptor()` — L153
-  - `formatTextAttachmentBlock()` — L163
-  - `formatBinaryAttachmentDescriptor()` — L176
-  - `buildAttachedMessageContent()` — L197
-  - `prefixTextInContentParts()` — L220
-  - `collapseAttachedMessageContent()` — L245
-- **Codec base64 (hand-rolled, sans atob/btoa — QuickJS-testable)** (L255)
-  - `_B64` — L257
-  - `arrayBufferToBase64()` — L259
-  - `base64ToArrayBuffer()` — L279
-- **Codec UTF-8 (hand-rolled, sans TextEncoder/TextDecoder — QuickJS-testable)** (L299)
-  - `utf8Encode()` — L301
-  - `utf8Decode()` — L327
-  - `_TEXTUAL_MIME_ALLOWLIST` — L355
-  - `_isTextualMime()` — L358
-- **Partitionnement d'un résultat MCP (helper pur, QuickJS-testable)** (L365)
-  - `extractResultParts()` — L373
-- **Session cache** (L417)
-  - `_resourceCache` — L423
-  - `getCachedRecord()` — L425
-  - `_cacheRecord()` — L426
-  - `_uncacheRecord()` — L427
-  - `invalidateResourceCache()` — L434
-  - `getCachedRecordByAttId()` — L443
-  - `getCachedLibraryEntriesBySpace()` — L455
-  - `loadSpaceLibrary()` — L469
-- **Helpers de référence** (L478)
-  - `_makeResourceRef()` — L482
-  - `assembleToolResultForModel()` — L487
-  - `resolveResourceRefs()` — L500
-  - `resolveRecallImages()` — L520
-- **IDB layer (navigateur uniquement — non QuickJS-testable)** (L531)
-  - `_resourceDbPromise` — L535
-  - `_persistenceRequested` — L536
-  - `openResourceDB()` — L538
-  - `putResource()` — L576
-  - `getResource()` — L594
-  - `getResourcesByConversation()` — L605
-  - `getResourcesBySpace()` — L618
-  - `deleteResource()` — L629
-  - `deleteResourcesByConversation()` — L643
-  - `requestPersistence()` — L664
-  - `getAllResources()` — L675
-  - `clearIdbStore()` — L689
-- **Opérations haut-niveau** (L700)
-  - `storeAttachment()` — L710
-  - `storeLibraryFile()` — L737
-  - `_storeBlock()` — L757
-  - `internResourcesFromResult()` — L787
-  - `loadConversationResources()` — L861
-  - `makeResourcePresentBlock()` — L873
+  - `formatInlineHandleForModel()` — L36
+  - `generateResourceId()` — L45
+- **Bibliothèque de fichiers d'espace (lot Cbis) — helpers purs** (L49)
+  - `generateFileId()` — L54
+  - `libraryRefFromId()` — L62
+  - `LIBRARY_REF_RE` — L64
+  - `parseLibraryRef()` — L67
+  - `FILE_DESCRIPTION_MAX_CHARS` — L78
+  - `capFileDescription()` — L79
+  - `normalizeLibraryRecord()` — L87
+  - `buildLibraryManifestBlock()` — L106
+- **Pièces jointes (composer) — helpers purs (QuickJS-testables)** (L123)
+  - `ATTACHMENT_TEXT_EXTENSIONS` — L129
+  - `classifyAttachmentKind()` — L139
+  - `allocateAttId()` — L153
+- **Pièces jointes (composer) — envoi au modèle et politique de persistance** (L158)
+  - `formatAttachmentDescriptor()` — L170
+  - `formatTextAttachmentBlock()` — L180
+  - `formatBinaryAttachmentDescriptor()` — L193
+  - `buildAttachedMessageContent()` — L214
+  - `prefixTextInContentParts()` — L237
+  - `collapseAttachedMessageContent()` — L262
+- **Codec base64 (hand-rolled, sans atob/btoa — QuickJS-testable)** (L272)
+  - `_B64` — L274
+  - `arrayBufferToBase64()` — L276
+  - `base64ToArrayBuffer()` — L296
+- **Codec UTF-8 (hand-rolled, sans TextEncoder/TextDecoder — QuickJS-testable)** (L316)
+  - `utf8Encode()` — L318
+  - `utf8Decode()` — L344
+  - `_TEXTUAL_MIME_ALLOWLIST` — L372
+  - `_isTextualMime()` — L375
+- **Partitionnement d'un résultat MCP (helper pur, QuickJS-testable)** (L382)
+  - `extractResultParts()` — L390
+- **Session cache** (L434)
+  - `_resourceCache` — L440
+  - `getCachedRecord()` — L442
+  - `_cacheRecord()` — L443
+  - `_uncacheRecord()` — L444
+  - `invalidateResourceCache()` — L451
+  - `getCachedRecordByAttId()` — L460
+  - `getCachedLibraryEntriesBySpace()` — L472
+  - `loadSpaceLibrary()` — L486
+- **Helpers de référence** (L495)
+  - `_makeResourceRef()` — L499
+  - `assembleToolResultForModel()` — L504
+  - `resolveResourceRefs()` — L517
+  - `resolveRecallImages()` — L537
+- **IDB layer (navigateur uniquement — non QuickJS-testable)** (L548)
+  - `_resourceDbPromise` — L552
+  - `_persistenceRequested` — L553
+  - `openResourceDB()` — L555
+  - `putResource()` — L593
+  - `getResource()` — L611
+  - `getResourcesByConversation()` — L622
+  - `getResourcesBySpace()` — L635
+  - `deleteResource()` — L646
+  - `deleteResourcesByConversation()` — L660
+  - `requestPersistence()` — L681
+  - `getAllResources()` — L692
+  - `clearIdbStore()` — L706
+- **Opérations haut-niveau** (L717)
+  - `storeAttachment()` — L727
+  - `storeLibraryFile()` — L754
+  - `_storeBlock()` — L774
+  - `internResourcesFromResult()` — L804
+  - `loadConversationResources()` — L885
+  - `makeResourcePresentBlock()` — L897
 
 ## src/js/skills.js
 

@@ -277,17 +277,35 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       tokens). Côté client, `extractResultParts` (resources.js) route ce cas via
       `_isTextualMime(r.mimeType)` (mime `text/*` ou allowlist
       `application/{json,xml,x-ndjson,csv}`) en action `store_inline_from_bytes`
-      (M1a, pure) ; `internResourcesFromResult` (M1b) réutilise le **tail de
-      `store_binary`** — handle + note, jamais le texte — pour construire le
-      message `role:'tool'`, mais stocke le record en classe `'inline'` (M1b,
-      resources.js) via `_storeBlock`. Résultat : un `res_…` de classe `'inline'`,
-      donc `js__eval`-adressable (`utf8Decode(record.data)` sans branche par
-      classe) et non rendu automatiquement à l'écran (`placeToolAck` ignore le
-      rendu bloc pour `class === 'inline'`), alors que ses octets ont transité par
-      le canal binaire — hybridation assumée entre les deux tails existants, pas
-      un troisième mécanisme de stockage. Le bloc `resource` correspondant est
-      retiré de la queue de rendu D8 (`retainPendingToolBlocks`) pour éviter un
-      bouton de téléchargement parasite sur un handle destiné à `js__eval`.
+      (M1a, pure) ; `internResourcesFromResult` (M1b) stocke le record en classe
+      `'inline'` (via `_storeBlock`, octets décodés de `r.blob` par le canal
+      binaire — jamais le texte dans le message `role:'tool'`), puis construit le
+      handle modèle avec **`formatInlineHandleForModel`** (resources.js, pur) :
+      un **descripteur statique compact** (`[resource id=… mime=… name=… size=…]`)
+      + une note « texte adressable par js__eval (blob=res_…) ». Résultat : un
+      `res_…` de classe `'inline'`, `js__eval`-adressable
+      (`utf8Decode(record.data)` sans branche par classe) et non rendu
+      automatiquement à l'écran (`placeToolAck` ignore le rendu bloc pour
+      `class === 'inline'`), alors que ses octets ont transité par le canal
+      binaire. Le bloc `resource` correspondant est retiré de la queue de rendu D8
+      (`retainPendingToolBlocks`) pour éviter un bouton de téléchargement parasite
+      sur un handle destiné à `js__eval`.
+      - **Piège fermé — jamais de `[resource_ref:…]` pour ce handle.** Contrairement
+        au tail `store_binary` (qui pose `_makeResourceRef(id)` + note « présentée »),
+        la branche M **n'émet pas** de marqueur `[resource_ref:res_…]`. Raison :
+        `assembleToolResultForModel` résout tout `[resource_ref:]` vers un record
+        `class:'inline'` en **`utf8Decode(data)` — le contenu ENTIER** — au tour
+        *suivant* (`resolveResourceRefs`, pre-pass de `dispatchSend`). Un handle M
+        ré-inlinable ré-injecterait donc le membre de zip complet dans le contexte
+        à chaque tour (bug initial du lot M : ~5,6 M tokens fantômes dans
+        l'inspecteur + `400` sur `streamCompletion` au 2ᵉ tour, dépassement de
+        fenêtre). Le descripteur compact de `formatInlineHandleForModel` est
+        byte-stable et jamais expansé. Non-régression verrouillée par
+        `test-resources.js` (`formatInlineHandleForModel` : assertion « ne contient
+        jamais `[resource_ref:` », + contraste avec un ref inline qui, lui, se
+        ré-inline). Un blob inline M ne s'atteint QUE par `js__eval`, jamais par
+        ré-injection inline — symétrie avec la posture « handle seul » des autres
+        familles de ref.
     - **Blocage serveur levé (cross-repo, lot K0).** Avant K, `mcp_docs`
       `validate_ref` (`_REF_RE`) rejetait tout ref hors `att-`/`file-`. K a élargi
       `_REF_RE` à `res_[a-z0-9]+` côté miaou-mcp-servers (commit `91de653`) : le

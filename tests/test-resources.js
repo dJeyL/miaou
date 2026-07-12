@@ -453,6 +453,55 @@ describe('extractResultParts', function() {
   });
 });
 
+// ── formatInlineHandleForModel (handle js__eval, lot M) ──────────────────────
+// Contrat de non-régression du bug lot M initial : le handle émis au tour
+// d'extraction pour un blob inline res_… ne doit JAMAIS porter de marqueur
+// [resource_ref:…] (qui serait ré-inliné en texte complet au tour suivant par
+// assembleToolResultForModel → explosion de contexte), et doit porter l'id res_…
+// pour js__eval.
+
+describe('formatInlineHandleForModel', function() {
+  it('ne contient JAMAIS de marqueur [resource_ref: (non ré-inlinable — cœur du fix lot M)', function() {
+    var rec = { id: 'res_abc', class: 'inline', mime: 'application/json', name: 'data.json', size: 4200 };
+    var h = formatInlineHandleForModel('res_abc', 'application/json', rec);
+    expect(h.indexOf('[resource_ref:') >= 0).toBeFalsy();
+  });
+
+  it('porte l\'id res_… pour js__eval', function() {
+    var rec = { id: 'res_abc', class: 'inline', mime: 'application/json', name: 'data.json', size: 4200 };
+    var h = formatInlineHandleForModel('res_abc', 'application/json', rec);
+    expect(h.indexOf('res_abc') >= 0).toBeTruthy();
+    expect(h.indexOf('js__eval') >= 0).toBeTruthy();
+  });
+
+  it('mentionne blob=<id> et reste compact (taille lisible, pas le contenu)', function() {
+    var rec = { id: 'res_x', class: 'inline', mime: 'text/csv', name: 'rows.csv', size: 1048576 };
+    var h = formatInlineHandleForModel('res_x', 'text/csv', rec);
+    expect(h.indexOf('blob=res_x') >= 0).toBeTruthy();
+    expect(h.indexOf('1.0 MB') >= 0).toBeTruthy();   // humanSize, pas les octets
+  });
+
+  it('fallback sans rec en cache : descripteur minimal sur id + mime, toujours sans ref', function() {
+    var h = formatInlineHandleForModel('res_late', 'text/plain', null);
+    expect(h.indexOf('res_late') >= 0).toBeTruthy();
+    expect(h.indexOf('text/plain') >= 0).toBeTruthy();
+    expect(h.indexOf('[resource_ref:') >= 0).toBeFalsy();
+  });
+
+  it('un ref inline reste, LUI, ré-inliné par assembleToolResultForModel (contraste : le handle M n\'en produit pas)', function() {
+    // Preuve que la résolution générique EST bien le vecteur qu'on évite :
+    // un [resource_ref:] vers un record inline décode tout le contenu.
+    var buf = utf8Encode('MEMBRE_ENTIER_DU_ZIP');
+    _resourceCache['res_m1'] = { id: 'res_m1', class: 'inline', mime: 'text/plain',
+      name: 'm.txt', size: buf.byteLength, data: buf };
+    expect(assembleToolResultForModel('[resource_ref:res_m1]')).toBe('MEMBRE_ENTIER_DU_ZIP');
+    // …tandis que le handle réellement émis par la branche M ne s'expanse pas :
+    var handle = formatInlineHandleForModel('res_m1', 'text/plain', _resourceCache['res_m1']);
+    expect(assembleToolResultForModel(handle)).toBe(handle);   // aucun marqueur → inchangé
+    delete _resourceCache['res_m1'];
+  });
+});
+
 // ── assembleToolResultForModel ────────────────────────────────────────────────
 
 describe('assembleToolResultForModel', function() {

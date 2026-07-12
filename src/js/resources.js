@@ -24,6 +24,23 @@ function formatResourceDescriptor(rec) {
     ' name="' + (rec.name || '') + '" size=' + humanSize(rec.size) + ']';
 }
 
+// Handle envoyé au modèle pour un blob inline `res_…` matérialisé depuis un
+// membre de conteneur (docs__extract, lot M) : descripteur statique compact +
+// note orientant vers js__eval. CRUCIAL — ce texte ne DOIT jamais contenir un
+// `[resource_ref:…]` : un tel marqueur serait résolu par assembleToolResultForModel
+// en utf8Decode(data) au tour SUIVANT (classe 'inline'), ré-inlinant tout le
+// membre dans le contexte (bug lot M initial : ~5,6M tokens fantômes + 400).
+// Le handle transporte l'id res_… (pour js__eval), jamais le texte. `id` fourni
+// séparément car appelé après _storeBlock (le rec peut n'être pas encore en
+// cache — fallback minimal sur l'id seul). Pur, testable QuickJS.
+function formatInlineHandleForModel(id, mime, rec) {
+  const desc = rec
+    ? formatResourceDescriptor(rec)
+    : ('[resource id=' + id + ' mime=' + (mime || 'text/plain') + ']');
+  return desc + ' — texte adressable par js__eval (blob=' + id +
+    '), non inliné dans le contexte.';
+}
+
 // Génère un identifiant de ressource depuis un `rand` injecté (testable).
 function generateResourceId(rand) {
   return 'res_' + Math.floor((typeof rand === 'function' ? rand() : Math.random()) * 1e12).toString(36);
@@ -806,11 +823,11 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
       }
     } else if (part.action === 'store_inline_from_bytes') {
       // Bloc blob à mime textuel (docs__extract, lot M) : stockage classe 'inline'
-      // (adressable par js__eval, présentable), mais TAIL DE store_binary — handle
-      // seul + note « présentée », JAMAIS le texte dans newContent. C'est tout
-      // l'enjeu : sûreté-contexte de store_binary (rien du contenu au modèle) +
-      // classe de stockage 'inline'. Les octets viennent de fromBase64 (canal
-      // binaire), pas de utf8Encode(text) — aucun texte n'a transité par le part.
+      // (adressable par js__eval), mais TAIL DE store_binary — handle seul,
+      // JAMAIS le texte dans newContent. C'est tout l'enjeu : sûreté-contexte de
+      // store_binary (rien du contenu au modèle) + classe de stockage 'inline'.
+      // Les octets viennent de fromBase64 (canal binaire), pas de utf8Encode(text)
+      // — aucun texte n'a transité par le part.
       // Retirer le bloc du queue D8 : un resource blob textuel non-image tomberait
       // sinon dans renderBinaryBlock (bouton de téléchargement), affichage non voulu
       // pour un handle js__eval — même posture que store_inline sur son bloc text.
@@ -822,7 +839,14 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
       const id = await _storeBlock(part.mime, part.name,
         base64ToArrayBuffer(part.fromBase64), 'inline', conversationId, theNow, theRand);
       if (id) {
-        newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+        // PAS de _makeResourceRef ici (contrairement à store_binary/store_inline) :
+        // ce handle inline est destiné à js__eval SEUL, jamais à une ré-injection
+        // inline. formatInlineHandleForModel émet un descripteur statique compact
+        // (byte-stable, KV-safe, jamais expansé) portant l'id res_… à passer à
+        // js__eval, sans jamais transporter le texte — cf. le commentaire du helper
+        // pour le détail du bug qu'il ferme (ré-inline via [resource_ref:], lot M).
+        newContent.push({ type: 'text',
+          text: formatInlineHandleForModel(id, part.mime, getCachedRecord(id)) });
       } else {
         newContent.push(part.block);
       }

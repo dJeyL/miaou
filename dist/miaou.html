@@ -3132,7 +3132,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-12 16:57 UTC */
+/* miaou — built: 2026-07-12 18:00 UTC */
 
 /* ── utils.js ── */
 
@@ -4046,7 +4046,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1783875425}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1783879256}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4600,6 +4600,14 @@ function humanSize(bytes) {
 function formatResourceDescriptor(rec) {
   return '[resource id=' + rec.id + ' mime=' + rec.mime +
     ' name="' + (rec.name || '') + '" size=' + humanSize(rec.size) + ']';
+}
+
+function formatInlineHandleForModel(id, mime, rec) {
+  const desc = rec
+    ? formatResourceDescriptor(rec)
+    : ('[resource id=' + id + ' mime=' + (mime || 'text/plain') + ']');
+  return desc + ' — texte adressable par js__eval (blob=' + id +
+    '), non inliné dans le contexte.';
 }
 
 function generateResourceId(rand) {
@@ -5172,7 +5180,9 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
       const id = await _storeBlock(part.mime, part.name,
         base64ToArrayBuffer(part.fromBase64), 'inline', conversationId, theNow, theRand);
       if (id) {
-        newContent.push({ type: 'text', text: _makeResourceRef(id) + PRESENTED_NOTE });
+        
+        newContent.push({ type: 'text',
+          text: formatInlineHandleForModel(id, part.mime, getCachedRecord(id)) });
       } else {
         newContent.push(part.block);
       }
