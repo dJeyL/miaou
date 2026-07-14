@@ -3256,7 +3256,10 @@ function openSettings() {
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');
-  if (pre && !pre.textContent) pre.textContent = rootSystemPromptDisplay();
+  if (pre && !pre.dataset.loaded) {
+    pre.innerHTML = renderMd(rootSystemPromptDisplay());
+    pre.dataset.loaded = '1';
+  }
   const lbl = $('build-ts-label');
   if (lbl) {
     lbl.textContent = BUILD_TS
@@ -4715,10 +4718,19 @@ function buildSystemSkillCard(skill) {
   viewSection.appendChild(viewRow);
   card.appendChild(viewSection);
 
+  const panel = document.createElement('div');
+  panel.className = 'skill-system-panel';
+  panel.hidden = true;
+  if (skill.description) {
+    const descView = document.createElement('div');
+    descView.className = 'skill-system-desc';
+    descView.textContent = skill.description;
+    panel.appendChild(descView);
+  }
   const contentView = document.createElement('div');
   contentView.className = 'skill-system-content';
-  contentView.hidden = true;
-  card.appendChild(contentView);
+  panel.appendChild(contentView);
+  card.appendChild(panel);
 
   return card;
 }
@@ -4728,10 +4740,11 @@ function buildSystemSkillCard(skill) {
 // recharger (re-clic sur Consulter rouvre direct, contenu déjà posé). Le
 // libellé du bouton suit l'état (Consulter ↔ Fermer).
 function toggleSystemSkillContent(card, slug, btn) {
+  const panel = card.querySelector('.skill-system-panel');
   const el = card.querySelector('.skill-system-content');
-  if (!el) return;
-  if (!el.hidden) { el.hidden = true; if (btn) btn.textContent = 'Consulter'; return; }
-  el.hidden = false;
+  if (!panel || !el) return;
+  if (!panel.hidden) { panel.hidden = true; if (btn) btn.textContent = 'Consulter'; return; }
+  panel.hidden = false;
   if (btn) btn.textContent = 'Fermer';
   if (el.dataset.loaded === '1') return;
   getSkillRecord(slug).then(rec => {

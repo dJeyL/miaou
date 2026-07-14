@@ -1,5 +1,5 @@
 ---
-name: Mermaid
+name: Génération de diagrammes Mermaid
 description: Règles obligatoires pour générer un diagramme mermaid valide dans MIAOU
 ---
 

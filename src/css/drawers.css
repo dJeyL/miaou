@@ -141,12 +141,15 @@
   padding: 1px 5px;
   letter-spacing: 0.01em;
 }
+/* Rendu marked.js (renderMd) du prompt racine, plus lisible que du texte brut
+   en <pre> — règles de titres/listes/code dupliquées et resserrées depuis
+   .skill-system-content (piège EXPORT_CSS, CLAUDE.md #22 : pas de feuille
+   partagée entre panneaux readonly similaires). */
 .root-prompt-pre {
   margin: 8px 0 0;
-  font-family: var(--mono);
   font-size: 11px;
+  line-height: 1.5;
   color: var(--text-3);
-  white-space: pre-wrap;
   word-break: break-word;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -154,6 +157,40 @@
   padding: 8px 10px;
   max-height: 220px;
   overflow-y: auto;
+}
+.root-prompt-pre > :first-child { margin-top: 0; }
+.root-prompt-pre > :last-child { margin-bottom: 0; }
+.root-prompt-pre p { margin: 0 0 8px; }
+.root-prompt-pre h1, .root-prompt-pre h2, .root-prompt-pre h3,
+.root-prompt-pre h4, .root-prompt-pre h5, .root-prompt-pre h6 {
+  font-weight: 600; line-height: 1.3; margin: 12px 0 6px; color: var(--text-2);
+}
+.root-prompt-pre h1 { font-size: 13px; }
+.root-prompt-pre h2 { font-size: 12px; }
+.root-prompt-pre h3, .root-prompt-pre h4,
+.root-prompt-pre h5, .root-prompt-pre h6 { font-size: 11px; }
+.root-prompt-pre ul, .root-prompt-pre ol { margin: 6px 0 8px; padding-left: 18px; }
+.root-prompt-pre li { margin-bottom: 3px; }
+.root-prompt-pre li::marker { color: var(--text-3); }
+.root-prompt-pre li > ul, .root-prompt-pre li > ol { margin: 3px 0 3px; }
+.root-prompt-pre code:not([class*="language-"]) {
+  font-family: var(--mono); font-size: 10.5px;
+  background: var(--surface-3); border: 1px solid var(--border);
+  padding: 1px 4px; border-radius: 4px; color: var(--code-inline-color);
+}
+.root-prompt-pre pre {
+  margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: var(--r); overflow: auto; background: var(--code-bg);
+}
+.root-prompt-pre pre code { font-size: 10.5px; background: none; border: none; padding: 0; }
+.root-prompt-pre blockquote {
+  border-left: 2px solid var(--border-2); padding: 2px 0 2px 12px;
+  margin: 8px 0; color: var(--text-3);
+}
+.root-prompt-pre hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
 }
 
 .check-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
@@ -684,6 +721,14 @@ textarea.skill-content {
 .skill-view-row { gap: 10px; }
 .proposal-actions { display: flex; gap: 8px; }
 
+/* Séparateur horizontal avant le groupe de skills système (buildSystemSkillCard),
+   pour le distinguer visuellement des skills utilisateur qui précèdent. */
+.skill-system-intro {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 /* Skill système : non éditable/supprimable (cf. buildSystemSkillCard, ui.js).
    Badge repris de .root-prompt-badge (même vocabulaire d'étiquette de drawer). */
 .skill-system-badge {
@@ -704,6 +749,14 @@ textarea.skill-content {
    étroit, contenu de référence à parcourir vite. Règles de titres/listes
    dupliquées et resserrées depuis .body plutôt que partagées (piège
    EXPORT_CSS, CLAUDE.md #22 : une feuille dédiée ne suit pas chat.css). */
+/* Description de la skill système (frontmatter), affichée entre le slug et le
+   séparateur qui précède le contenu Markdown rendu. */
+.skill-system-desc {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
 .skill-system-content {
   margin-top: 10px;
   padding-top: 10px;
@@ -740,4 +793,9 @@ textarea.skill-content {
 .skill-system-content blockquote {
   border-left: 2px solid var(--border-2); padding: 2px 0 2px 12px;
   margin: 8px 0; color: var(--text-3);
+}
+.skill-system-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
 }

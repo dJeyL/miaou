@@ -894,7 +894,8 @@ const TOOLS = [
       "parse() (voir la doctrine COMPUTE_SANDBOX). La dernière valeur évaluée du code " +
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
       "grosse → refus explicite (réécris pour synthétiser). N'inclus jamais le " +
-      "contenu du fichier dans le code : il vient des primitives.",
+      "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
+      "de la skill 'js-eval' avant utilisation dans une conversation.",
     inputSchema: {
       type: 'object',
       properties: {

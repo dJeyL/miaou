@@ -11,7 +11,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 12vh;
+  padding-top: 8vh;
 }
 .cmdk-overlay[hidden] { display: none; }
 
@@ -54,8 +54,8 @@
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 15px;
-  padding: 14px 16px;
+  font-size: 14px;
+  padding: 11px 14px;
   outline: none;
 }
 .cmdk-input::placeholder { color: var(--text-3); }
@@ -72,10 +72,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;
   color: var(--text);
+  font-size: 13px;
 }
 .cmdk-item:hover { background: var(--surface-3); }
 .cmdk-item.selected { background: var(--accent-dim); }
