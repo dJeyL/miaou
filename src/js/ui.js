@@ -28,6 +28,12 @@ const WELCOME_SCREENS = [
   { emoji: '🎸', title: 'Accordé.',               sub: 'À toi de jouer.' },
   { emoji: '🎲', title: 'Prêt à tout.',           sub: 'Une question, une idée, un bug — on y va.' },
   { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.' },
+  { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.' },
+  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.' },
+  { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.' },
+  { emoji: '🎬', title: 'Moteur.',                sub: 'À toi de dire action.' },
+  { emoji: '🧩', title: 'Pièce manquante.',       sub: 'Cherchons la forme.' },
+  { emoji: '♟️', title: 'À ton tour.',            sub: 'J\'ai trois coups d\'avance. Ou je bluffe.' },
 ];
 
 // Tire un écran d'accueil au hasard, en évitant `exceptTitle` si fourni (pour

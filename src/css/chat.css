@@ -616,6 +616,11 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   text-align: center;
   user-select: none;
   pointer-events: none;
+  animation: welcome-fade-in 0.5s ease-out;
+}
+@keyframes welcome-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
 .welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }

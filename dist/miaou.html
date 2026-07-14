@@ -1034,6 +1034,11 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   text-align: center;
   user-select: none;
   pointer-events: none;
+  animation: welcome-fade-in 0.5s ease-out;
+}
+@keyframes welcome-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
 .welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
@@ -3314,7 +3319,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-14 22:07 UTC */
+/* miaou — built: 2026-07-14 22:34 UTC */
 
 /* ── utils.js ── */
 
@@ -4251,7 +4256,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784066858}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784068490}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7423,6 +7428,12 @@ const WELCOME_SCREENS = [
   { emoji: '🎸', title: 'Accordé.',               sub: 'À toi de jouer.' },
   { emoji: '🎲', title: 'Prêt à tout.',           sub: 'Une question, une idée, un bug — on y va.' },
   { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.' },
+  { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.' },
+  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.' },
+  { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.' },
+  { emoji: '🎬', title: 'Moteur.',                sub: 'À toi de dire action.' },
+  { emoji: '🧩', title: 'Pièce manquante.',       sub: 'Cherchons la forme.' },
+  { emoji: '♟️', title: 'À ton tour.',            sub: 'J\'ai trois coups d\'avance. Ou je bluffe.' },
 ];
 
 function pickWelcomeScreen(exceptTitle) {
