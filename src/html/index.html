@@ -98,7 +98,8 @@
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarMobile()"></div>
 
   <!-- ═══ Main ═══ -->
-  <div class="main">
+  <div class="main" id="main-col"
+    ondragover="onMainDragOver(event)" ondragleave="onMainDragLeave(event)" ondrop="onMainDrop(event)">
     <header class="topbar">
       <div class="topbar-left">
         <button class="icon-btn" onclick="toggleSidebar()" title="Historique">
@@ -580,7 +581,8 @@
 
   <!-- ═══ Skills drawer ═══ -->
   <div class="backdrop" id="skills-backdrop" onclick="closeSkills()"></div>
-  <div class="drawer drawer-wide" id="skills-drawer">
+  <div class="drawer drawer-wide" id="skills-drawer"
+    ondragover="onSkillsDragOver(event)" ondragleave="onSkillsDragLeave(event)" ondrop="onSkillsDrop(event)" onpaste="onSkillsDrawerPaste(event)">
     <div class="drawer-head">
       <h2>Skills</h2>
       <button class="icon-btn" onclick="closeSkills()">

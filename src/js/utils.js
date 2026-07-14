@@ -43,7 +43,7 @@ const ACK_COPY_FIELDS = [
   'server', 'name', 'intent',            // MCP / traçage d'intention
   'resourceName', 'mime', 'size',        // ressources IDB
   'attId',                                // pièces jointes (recall_attachment)
-  'slug',                                // skills
+  'slug', 'created',                      // skills (created : write = création vs modification)
   'topic',                               // aide (about_read)
   'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn

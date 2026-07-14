@@ -40,6 +40,61 @@ function validateSkillSlug(slug, existingSlugs) {
   return null;
 }
 
+// Dérive un slug valide (charset validateSkillSlug) à partir d'un nom libre :
+// minuscules, espaces/séparateurs → tiret, caractères hors charset retirés.
+function slugifySkillName(name) {
+  return String(name == null ? '' : name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// Parse un cartouche frontmatter (```---\nclé: valeur\n---```) en tête d'un
+// contenu de skill collé (format Claude Code, cf. untracked/example-skill.md).
+// Ne reconnaît que les 3 clés utiles au formulaire MIAOU : `name`, `description`,
+// `disable-model-invocation`. Retourne null si aucun cartouche détecté en tête
+// (pas de bloc `---`/`---`) ; sinon { name, description, disableModelInvocation }
+// où chaque champ est `null` si la clé est absente du cartouche (l'appelant ne
+// touche pas au champ formulaire correspondant). Pur, ne modifie jamais le texte
+// source : le cartouche reste dans le contenu collé (décision explicite Julien).
+function parseSkillFrontmatter(text) {
+  const s = String(text == null ? '' : text);
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(s);
+  if (!m) return null;
+  const out = { name: null, description: null, disableModelInvocation: null };
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = /^([A-Za-z_-]+)\s*:\s*(.*)$/.exec(line);
+    if (!kv) continue;
+    const key = kv[1].trim().toLowerCase();
+    const val = kv[2].trim().replace(/^["']|["']$/g, '');
+    if (key === 'name') out.name = val;
+    else if (key === 'description') out.description = val;
+    else if (key === 'disable-model-invocation') out.disableModelInvocation = /^true$/i.test(val);
+  }
+  return out;
+}
+
+// Décide du routage d'un import de fichier .md dans le drawer skills (drag&drop
+// ou copier-coller Finder/Explorateur, cf. docs/skills.md) : `fm` est le résultat
+// de parseSkillFrontmatter (ou null si aucun cartouche). Règles :
+//  - pas de cartouche, ou cartouche sans `name` → création (slug dérivé du name
+//    quand présent quand même — cas cartouche partiel — sinon slug vide, laissé
+//    à la saisie manuelle).
+//  - cartouche avec `name` dont le slug slugifié matche un slug EXISTANT →
+//    édition de CE slug (bascule sur la card déjà en base).
+//  - sinon → création, slug pré-rempli par le name slugifié.
+// Pur, ne lit ni n'écrit aucun store — l'appelant (main.js) route ensuite vers
+// la card DOM correspondante.
+function resolveSkillDropTarget(fm, existingSlugs) {
+  const slugs = Array.isArray(existingSlugs) ? existingSlugs : [];
+  const name = fm && fm.name != null ? fm.name : '';
+  const slug = name ? slugifySkillName(name) : '';
+  if (slug && slugs.indexOf(slug) >= 0) return { mode: 'edit', slug };
+  return { mode: 'create', slug };
+}
+
 // Trouve TOUTES les occurrences de trigger `/slug` dans un texte : en position 0,
 // ou immédiatement précédées d'un espace/saut de ligne (frontière de mot — exclut
 // `https://`, `and/or`, etc.). Retourne un tableau ordonné par position croissante :
@@ -109,7 +164,7 @@ function removeSkillCache(slug) {
   _skillsCache = _skillsCache.filter(x => x.slug !== slug);
 }
 
-// Méta d'un skill par slug (depuis le cache mémoire, synchrone). null si absent.
+// Méta d'une skill par slug (depuis le cache mémoire, synchrone). null si absent.
 function getSkillMeta(slug) {
   return _skillsCache.find(x => x.slug === slug) || null;
 }
@@ -193,7 +248,7 @@ function putSkill(record) {
   });
 }
 
-// Supprime un skill (hard delete, pas de tombstone — action administrative
+// Supprime une skill (hard delete, pas de tombstone — action administrative
 // explicite, cf. brief) PUIS retire du cache mémoire.
 function deleteSkillDb(slug) {
   return openResourceDB().then(function(db) {
@@ -207,8 +262,8 @@ function deleteSkillDb(slug) {
   });
 }
 
-// Bascule l'état `enabled` d'un skill en IDB + cache. Retourne le nouvel état
-// (bool) ou null si le skill est absent.
+// Bascule l'état `enabled` d'une skill en IDB + cache. Retourne le nouvel état
+// (bool) ou null si la skill est absente.
 function toggleSkillEnabled(slug) {
   return getSkillRecord(slug).then(function(rec) {
     if (!rec) return null;
@@ -217,7 +272,7 @@ function toggleSkillEnabled(slug) {
   });
 }
 
-// Récupère le contenu Markdown d'un skill ACTIVÉ depuis IDB. Renvoie null si
+// Récupère le contenu Markdown d'une skill ACTIVÉE depuis IDB. Renvoie null si
 // absent ou désactivé (l'appelant traite le cas erreur). Async — appelé à
 // l'invocation seulement (slash ou miaou__skills__read).
 function getSkillContent(slug) {

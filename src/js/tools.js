@@ -794,7 +794,7 @@ const TOOLS = [
     },
   },
   {
-    // miaou__skills__read : renvoie le contenu Markdown complet d'un skill activé.
+    // miaou__skills__read : renvoie le contenu Markdown complet d'une skill activée.
     // Les contrôles (introuvable / désactivé) lisent le cache mémoire → ERREUR
     // SYNCHRONE (testable QuickJS). Le contenu lui-même est en IDB → fetch ASYNC
     // (Promise) ; callInternalTool gère un handler thenable. NE passe PAS par
@@ -822,11 +822,67 @@ const TOOLS = [
       // Activée : fetch IDB async. L'ack est poussé une fois le contenu obtenu.
       return getSkillContent(slug).then(content => {
         if (content == null) return 'Contenu indisponible pour la skill : ' + slug;
-        // Nom d'affichage du skill stocké en `title` (pas `name` : onEnrichLastAck
+        // Nom d'affichage de la skill stocké en `title` (pas `name` : onEnrichLastAck
         // écrase `name` avec le nom canonique de l'outil pour la réinjection cross-turn).
         _pendingToolAcks.push({ kind: 'skill_read', slug, title: meta.name });
         return content;
       });
+    },
+  },
+  {
+    // miaou__skills__write : crée ou modifie une skill. Garde-fou : modifier un
+    // slug EXISTANT exige overwrite:true explicite (sinon erreur claire, aucune
+    // écriture) — évite qu'un modèle écrase une skill par un slug déjà pris sans
+    // s'en rendre compte. Merge partiel en modification : les champs omis
+    // (name/description/content) conservent la valeur existante ; `autotrigger`
+    // n'est PAS exposé au modèle (réservé au toggle utilisateur du drawer,
+    // cf. docs/skills.md stage 2) et est toujours préservé tel quel depuis
+    // l'enregistrement existant (false par défaut en création, comme putSkill).
+    // Contrôles slug/existence = cache mémoire (synchrone) ; lecture de
+    // l'existant + écriture = IDB (async, pattern skills__read/putSkill).
+    name: 'skills__write',
+    description:
+      "Crée ou modifie une skill (fragment d'instructions Markdown réutilisable). " +
+      "Si le slug existe déjà, passe overwrite:true pour la modifier (sinon erreur, " +
+      "aucune écriture) ; les champs omis conservent leur valeur actuelle. Une " +
+      "nouvelle skill est activée par défaut.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Identifiant de la skill (charset lettres/chiffres/tiret/underscore, sans espace)' },
+        name: { type: 'string', description: 'Nom affiché de la skill' },
+        description: { type: 'string', description: 'Description courte de la skill' },
+        content: { type: 'string', description: 'Corps Markdown complet de la skill' },
+        enabled: { type: 'boolean', description: 'Skill activée (défaut : true à la création, inchangé en modification)' },
+        overwrite: { type: 'boolean', description: 'Requis (true) pour modifier une skill dont le slug existe déjà' },
+      },
+      required: ['slug'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    handler: (args) => {
+      const slug = String((args && args.slug) || '').trim();
+      const existingMeta = slug ? getSkillMeta(slug) : null;
+      const err = validateSkillSlug(slug, existingMeta ? [] : listAllSkillsCache().map(s => s.slug));
+      if (err) return err;
+      if (existingMeta && args.overwrite !== true) {
+        return 'Une skill « ' + slug + ' » existe déjà. Passe overwrite:true pour la modifier.';
+      }
+      const created = !existingMeta;
+      const finish = (base) => {
+        const rec = {
+          slug,
+          name: args.name != null ? String(args.name) : (base ? base.name : ''),
+          description: args.description != null ? String(args.description) : (base ? base.description : ''),
+          content: args.content != null ? String(args.content) : (base ? base.content : ''),
+          enabled: args.enabled != null ? args.enabled === true : (base ? base.enabled !== false : true),
+          autotrigger: base ? base.autotrigger === true : false,
+        };
+        return putSkill(rec).then(() => {
+          _pendingToolAcks.push({ kind: 'skill_write', slug, title: rec.name, created });
+          return (created ? 'Skill créée : ' : 'Skill modifiée : ') + slug;
+        });
+      };
+      return created ? finish(null) : getSkillRecord(slug).then(finish);
     },
   },
   {

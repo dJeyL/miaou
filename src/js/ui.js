@@ -1136,7 +1136,7 @@ const ACK_KINDS = {
       }
     },
   },
-  // Lecture d'un skill par le modèle (miaou__skills__read) : informatif, pas d'undo
+  // Lecture d'une skill par le modèle (miaou__skills__read) : informatif, pas d'undo
   // (lecture, pas une mutation d'état — même posture que conversation_read).
   skill_read: {
     destination: 'user',
@@ -1155,6 +1155,30 @@ const ACK_KINDS = {
         });
       } else {
         el.textContent = 'Skill consultée : ' + (m.title || m.slug || '?');
+      }
+    },
+  },
+  // Création/modification d'une skill par le modèle (miaou__skills__write) :
+  // informatif, pas d'undo (cohérent avec l'absence de tombstone sur la
+  // suppression de skill — action explicite, pas de undo async IDB introduit ici).
+  skill_write: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_EDIT,
+    label: m => (m.created ? 'Skill créée : ' : 'Skill modifiée : ') + (m.title || m.slug || '?'),
+    renderLabel: (m, el) => {
+      const verb = m.created ? 'Skill créée' : 'Skill modifiée';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode(verb + ' '));
+          const sep = document.createElement('span');
+          sep.className = 'mcp-call-sep';
+          sep.textContent = '›';
+          detail.appendChild(sep);
+          detail.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
+        });
+      } else {
+        el.textContent = verb + ' : ' + (m.title || m.slug || '?');
       }
     },
   },
@@ -1418,7 +1442,7 @@ function renderThread(msgs) {
   for (const m of msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
     // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
-    // commande skill, où content embarque le corps du skill injecté (invisible à l'UI).
+    // commande skill, où content embarque le corps de la skill injectée (invisible à l'UI).
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
     const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated, m.attachments);
     if (m.role === 'assistant') {
@@ -2292,18 +2316,42 @@ function onComposerDrop(e) {
   if (files && files.length) handleAttachFiles(files);
 }
 
-// Collage presse-papier : seules les images collées (screenshot, copie depuis
-// navigateur/explorateur) sont interceptées et détournées vers le pipeline
-// d'attachment — le texte collé (cas immensément majoritaire) suit son cours
-// natif dans le textarea, non empêché. `clipboardData.items` (pas `.files`,
-// absent sur une image collée sans fichier réel derrière) donne accès aux
-// Blob via `getAsFile()` pour chaque item de type image/*.
+// Zone de drop étendue à toute la colonne chat (#main-col : topbar + messages
+// + composer, hors sidebar/drawers, siblings de .main sous #app) — même
+// pipeline handleAttachFiles que .input-wrap, juste une cible plus large pour
+// éviter de viser précisément la barre de saisie. .stopPropagation() n'est pas
+// nécessaire : .input-wrap n'a pas de handler de bulle distinct à court-circuiter
+// (ondragover/drop y sont posés directement, pas de listener sur #main-col
+// qui remonterait en double).
+function onMainDragOver(e) {
+  e.preventDefault();
+  const main = $('main-col');
+  if (main) main.classList.add('dragover');
+}
+function onMainDragLeave(e) {
+  const main = $('main-col');
+  if (main && (!e.relatedTarget || !main.contains(e.relatedTarget))) main.classList.remove('dragover');
+}
+function onMainDrop(e) {
+  e.preventDefault();
+  const main = $('main-col');
+  if (main) main.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) handleAttachFiles(files);
+}
+
+// Collage presse-papier : tout item de type 'file' (image copiée depuis un
+// navigateur, OU fichier copié depuis le Finder/Explorateur) est intercepté et
+// détourné vers le pipeline d'attachment — le texte collé (cas immensément
+// majoritaire) suit son cours natif dans le textarea, non empêché.
+// `clipboardData.items` (pas `.files`, absent sur une image collée sans
+// fichier réel derrière) donne accès aux Blob via `getAsFile()`.
 function onComposerPaste(e) {
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
   const files = [];
   for (const item of items) {
-    if (item.kind === 'file' && item.type.startsWith('image/')) {
+    if (item.kind === 'file') {
       const file = item.getAsFile();
       if (file) files.push(file);
     }
@@ -4523,6 +4571,50 @@ function buildApiCard(server, isNew, isActive) {
 }
 
 // ── Skills : drawer de gestion ───────────────────────────────────────────────
+// ── Import de fichier .md dans le drawer skills : drag&drop + paste Finder ────
+// Cible = tout le drawer (#skills-drawer), pas seulement la liste : zone de drop
+// large et prévisible, pattern .dragover identique au composer (composer.css).
+// Seul un fichier .md/text est retenu (filtre nom/type — un .png ou autre glissé
+// par erreur est ignoré silencieusement, pas d'erreur bruyante pour un mauvais drop).
+function isMarkdownFile(file) {
+  if (!file) return false;
+  if (file.type === 'text/markdown' || file.type === 'text/plain') return true;
+  return /\.(md|markdown|txt)$/i.test(file.name || '');
+}
+function onSkillsDragOver(e) {
+  e.preventDefault();
+  const dz = $('skills-drawer');
+  if (dz) dz.classList.add('dragover');
+}
+function onSkillsDragLeave(e) {
+  const dz = $('skills-drawer');
+  if (dz && (!e.relatedTarget || !dz.contains(e.relatedTarget))) dz.classList.remove('dragover');
+}
+function onSkillsDrop(e) {
+  e.preventDefault();
+  const dz = $('skills-drawer');
+  if (dz) dz.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const file = Array.from(files).find(isMarkdownFile);
+  if (!file) return;
+  file.text().then(text => ingestSkillMarkdownFile(text)).catch(() => {});
+}
+// Copier-coller Finder/Explorateur sur le drawer (hors focus d'une textarea déjà
+// en édition — ce cas est intercepté par le listener .skill-content lui-même,
+// stopPropagation, avant de remonter ici). Même filtre/lecture que le drop.
+function onSkillsDrawerPaste(e) {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  let file = null;
+  for (const item of items) {
+    if (item.kind === 'file') { const f = item.getAsFile(); if (f && isMarkdownFile(f)) { file = f; break; } }
+  }
+  if (!file) return;
+  e.preventDefault();
+  file.text().then(text => ingestSkillMarkdownFile(text)).catch(() => {});
+}
+
 // Liste les skills depuis le cache mémoire (méta) ; le contenu Markdown est lu en
 // IDB à l'entrée en édition (getSkillRecord), jamais conservé en cache.
 function openSkills() {
@@ -4536,7 +4628,7 @@ function closeSkills() {
 }
 
 // Légende « / pour une skill » du composer : visible seulement s'il existe au
-// moins un skill activé (sinon le slash n'a aucun sens pour l'utilisateur).
+// moins une skill activée (sinon le slash n'a aucun sens pour l'utilisateur).
 function syncSkillHintUI() {
   const el = $('composer-hint-skill');
   if (el) el.hidden = !listEnabledSkills().length;
@@ -4575,10 +4667,34 @@ function addSkillCard() {
   wrap.insertBefore(buildSkillCard({ slug: '', name: '', description: '', enabled: true }, true), wrap.firstChild);
 }
 
+// Pré-remplit slug/nom/description/autotrigger d'une card skill (vue édition)
+// depuis le cartouche d'un texte donné, sans jamais toucher un champ dont la
+// clé correspondante est absente du cartouche. `scope` est la card ou sa section
+// édition (querySelector cherche par classe, marche dans les deux cas). Partagé
+// par le paste dans .skill-content ET l'import fichier (drag&drop / paste Finder
+// hors édition, cf. ingestSkillMarkdownFile, main.js).
+function applySkillFrontmatterToCard(scope, text) {
+  const fm = parseSkillFrontmatter(text);
+  if (!fm) return;
+  const slugI = scope.querySelector('.skill-slug');
+  const nameI = scope.querySelector('.skill-name');
+  const descI = scope.querySelector('.skill-desc');
+  if (fm.name != null) {
+    if (slugI) slugI.value = slugifySkillName(fm.name);
+    if (nameI) nameI.value = fm.name;
+  }
+  if (fm.description != null && descI) descI.value = fm.description;
+  if (fm.disableModelInvocation != null) {
+    const autotriggerEl = scope.querySelector('.skill-autotrigger');
+    if (autotriggerEl) autotriggerEl.checked = !fm.disableModelInvocation;
+  }
+}
+
 function buildSkillCard(skill, isNew) {
   const card = document.createElement('div');
   card.className = 'cfg-card skill-card' + (isNew ? ' is-editing' : '');
   const originalSlug = skill.slug || '';
+  if (originalSlug) card.dataset.slug = originalSlug;
 
   // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
@@ -4646,6 +4762,29 @@ function buildSkillCard(skill, isNew) {
     'Proposée proactivement au modèle').row);
 
   editSection.appendChild(cfgErrEl());
+
+  // Collage d'un contenu à cartouche (format Claude Code, ex. untracked/example-skill.md),
+  // OU d'un vrai fichier .md copié depuis le Finder/Explorateur (clipboardData porte un
+  // File, pas garanti d'être posé en texte nativement par le navigateur — on le lit
+  // nous-mêmes via getAsFile() plutôt que de compter sur le comportement natif) :
+  // pré-remplit slug/nom/description/autotrigger depuis le frontmatter, sans jamais
+  // le retirer du contenu posé dans la textarea (skills.js, parseSkillFrontmatter — pur).
+  contentT.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    let file = null;
+    if (items) {
+      for (const item of items) {
+        if (item.kind === 'file') { const f = item.getAsFile(); if (f) { file = f; break; } }
+      }
+    }
+    if (file) {
+      e.preventDefault();
+      e.stopPropagation();   // évite un double-traitement par le listener du drawer (paste sur #skills-drawer)
+      file.text().then(text => { contentT.value = text; applySkillFrontmatterToCard(editSection, text); }).catch(() => {});
+      return;
+    }
+    setTimeout(() => { applySkillFrontmatterToCard(editSection, contentT.value); }, 0);
+  });
 
   const actions = document.createElement('div');
   actions.className = 'cfg-actions';

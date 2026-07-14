@@ -254,7 +254,7 @@ describe('buildMemoryEntriesBlock (souvenirs actifs, scope profile + Space actif
 });
 
 describe('buildSkillsContextBlock (skills autotrigger, stage 2)', function() {
-  it('aucun skill autotrigger → chaîne vide', function() {
+  it('aucune skill autotrigger → chaîne vide', function() {
     setSkillsCache([]);
     expect(buildSkillsContextBlock()).toBe('');
     setSkillsCache([{ slug: 'a' }]);   // enabled mais pas autotrigger

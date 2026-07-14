@@ -342,9 +342,9 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
 
 ## Skills (stage 1)
 
-35. **CRUD + cache** : Paramètres → Skills → Nouveau skill. Saisir slug `revue`,
+35. **CRUD + cache** : Paramètres → Skills → Nouvelle skill. Saisir slug `revue`,
     nom, description, un corps Markdown ; Enregistrer. La carte apparaît en vue.
-    Recharger la page → le skill est toujours là (IDB). Désactiver le toggle de la
+    Recharger la page → la skill est toujours là (IDB). Désactiver le toggle de la
     carte → état persisté au reload. « Modifier » → la textarea se repeuple avec le
     corps (lecture IDB `getSkillRecord`). « Supprimer » → le bouton s'arme
     (« Confirmer ? », rempli rouge, ~2,6 s) → second clic → disparu, hard delete
@@ -354,12 +354,12 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     doublon d'un slug existant → message d'erreur inline dans la carte, pas d'écriture.
 
 37. **Autocomplétion** : taper `/` puis `rev` dans le composer → dropdown des skills
-    activés filtrés (slug **ou** name). ↑↓ navigue, Tab/Entrée complète `/revue `
-    **sans envoyer**, Échap ferme. Un skill désactivé n'apparaît jamais.
+    activées filtrées (slug **ou** name). ↑↓ navigue, Tab/Entrée complète `/revue `
+    **sans envoyer**, Échap ferme. Une skill désactivée n'apparaît jamais.
 
 38. **Injection slash (figée)** : envoyer `/revue analyse ce code`. La bulle user
     n'affiche QUE `/revue analyse ce code` (pas le corps). Dans DevTools Network, le
-    message `role:'user'` envoyé contient le corps du skill concaténé. Recharger →
+    message `role:'user'` envoyé contient le corps de la skill concaténé. Recharger →
     la bulle affiche toujours le littéral seul (`displayText`), le payload réenvoyé
     garde le corps (`content` figé). Éditer ensuite cette skill ou la supprimer → le
     message déjà envoyé reste byte-identique (pas de re-résolution au reload/replay).
@@ -398,17 +398,17 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     valider deux fois une bulle en mode édition ne doit produire qu'une
     régénération.
 
-40. **Chemin langage naturel** : avec au moins un skill activé, demander en langage
-    naturel une tâche couverte par un skill (sans `/`). Le modèle doit appeler
-    `miaou__skills__list` puis `miaou__skills__read(slug)` → ack « Skill consulté :
+40. **Chemin langage naturel** : avec au moins une skill activée, demander en langage
+    naturel une tâche couverte par une skill (sans `/`). Le modèle doit appeler
+    `miaou__skills__list` puis `miaou__skills__read(slug)` → ack « Skill consultée :
     … » (informatif, sans bouton annuler) dans la bulle, et le contenu influence sa
-    réponse. Vérifier qu'un skill **désactivé** n'apparaît jamais dans `skills__list`
-    et que `skills__read` sur lui renvoie une erreur claire (pas un succès vide).
+    réponse. Vérifier qu'une skill **désactivée** n'apparaît jamais dans `skills__list`
+    et que `skills__read` sur elle renvoie une erreur claire (pas un succès vide).
 
-41. **Réinjection cross-turn d'un skill lu** : après le test 40, poursuivre la
+41. **Réinjection cross-turn d'une skill lue** : après le test 40, poursuivre la
     conversation sur un autre tour. Dans Network, le payload doit contenir le
-    `role:'tool'` re-hydraté avec le contenu du skill (via `expandThread`), prouvant
-    que le modèle garde l'accès au skill aux tours suivants.
+    `role:'tool'` re-hydraté avec le contenu de la skill (via `expandThread`), prouvant
+    que le modèle garde l'accès à la skill aux tours suivants.
 
 42. **Export Markdown avec traces d'outils** : sur une conversation où le modèle a
     appelé au moins un outil (ex. test 4 ou 27), cliquer le téléchargement de

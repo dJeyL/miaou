@@ -98,15 +98,29 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
 - `skills__list()` — méta (`slug`, `name`, `description`) des skills **activés
   uniquement**, depuis le cache mémoire (synchrone). Pousse un ack `skill_list`
   (informatif, sans undo, icône `ICON_LIST` réutilisée de `conversation_list`).
-- `skills__read(slug)` — corps Markdown complet d'un skill activé. Contrôles
+- `skills__read(slug)` — corps Markdown complet d'une skill activée. Contrôles
   introuvable/désactivé sur le cache mémoire = **erreur synchrone** (testable
   QuickJS) ; le contenu vient d'IDB = **handler asynchrone** (renvoie une
   `Promise<string>`). `callInternalTool` détecte un retour thenable et le mappe.
   `api.js` calcule `isMcp` via `parseToolName` (préfixe ≠ `miaou`/`''`), **pas**
   par duck-typing `.then`, sinon cet outil interne async serait pris pour un appel
-  distant. Pousse un ack `skill_read` (informatif, sans undo) — nom du skill stocké
+  distant. Pousse un ack `skill_read` (informatif, sans undo) — nom de la skill stocké
   dans `title` (pas `name` : `onEnrichLastAck` écrase `name` avec le nom canonique
   de l'outil pour la réinjection cross-turn).
+- `skills__write(slug, name?, description?, content?, enabled?, overwrite?)` —
+  crée ou modifie une skill. Slug existant sans `overwrite:true` → erreur claire,
+  **aucune écriture** (garde-fou anti-écrasement accidentel). En modification,
+  merge partiel : tout champ omis (`name`/`description`/`content`/`enabled`)
+  conserve la valeur actuelle, lue depuis IDB (`getSkillRecord`, async) avant
+  écriture. `autotrigger` n'est **pas** exposé au modèle (réservé au toggle
+  utilisateur du drawer, stage 2) : toujours préservé tel quel depuis
+  l'enregistrement existant, `false` par défaut en création — comme `putSkill`.
+  Nouvelle skill activée par défaut (`enabled` omis → `true`). Contrôles
+  slug/existence sur le cache mémoire (synchrone, `validateSkillSlug`/
+  `getSkillMeta`) ; lecture de l'existant + écriture via `putSkill` (async,
+  pattern `skills__read`). Pousse un ack `skill_write` (informatif, sans undo —
+  cohérent avec l'absence de tombstone sur `deleteSkillDb`) portant `created`
+  (bool) pour distinguer création/modification dans le libellé.
 
 **Aide utilisateur (lot I) :**
 - `about(topic?)` — sert une section de l'aide utilisateur de MIAOU depuis

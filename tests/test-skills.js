@@ -72,7 +72,7 @@ describe('findSlashTriggers', function() {
 });
 
 describe('bakeSkillMessage', function() {
-  it('concatène littéral et corps du skill (un seul, étiqueté)', function() {
+  it('concatène littéral et corps de la skill (un seul, étiqueté)', function() {
     expect(bakeSkillMessage('/revue go', [{ slug: 'revue', content: 'INSTRUCTIONS' }]))
       .toBe('/revue go\n\n--- skill: revue ---\nINSTRUCTIONS\n--- /skill: revue ---');
   });
@@ -138,7 +138,7 @@ describe('cache skills — synchronisation', function() {
     ]);
     var bySlug = matchSkillCompletions('rev').map(function(s) { return s.slug; });
     expect(bySlug).toEqual(['revue']);
-    // 'synth' matche le name de resume ; le skill désactivé 'cache' (name « revue ») exclu
+    // 'synth' matche le name de resume ; la skill désactivée 'cache' (name « revue ») exclue
     var byName = matchSkillCompletions('synth').map(function(s) { return s.slug; });
     expect(byName).toEqual(['resume']);
   });
@@ -221,5 +221,78 @@ describe('miaou__skills__read — chemins d\'erreur synchrones', function() {
     setSkillsCache([{ slug: 'off', name: 'Off', enabled: false }]);
     var out = ct('miaou__skills__read', { slug: 'off' });
     expect(out).toContain('désactivé');
+  });
+});
+
+describe('slugifySkillName', function() {
+  it('minuscules, espaces → tirets', function() {
+    expect(slugifySkillName('Revue de Code')).toBe('revue-de-code');
+  });
+  it('caractères hors charset retirés', function() {
+    expect(slugifySkillName('Revue: Code!')).toBe('revue-code');
+  });
+  it('tirets multiples et bords nettoyés', function() {
+    expect(slugifySkillName('  --revue--code--  ')).toBe('revue-code');
+  });
+  it('null/undefined → chaîne vide', function() {
+    expect(slugifySkillName(null)).toBe('');
+    expect(slugifySkillName(undefined)).toBe('');
+  });
+});
+
+describe('parseSkillFrontmatter', function() {
+  it('absence de cartouche → null', function() {
+    expect(parseSkillFrontmatter('Corps sans cartouche.')).toBe(null);
+    expect(parseSkillFrontmatter('')).toBe(null);
+  });
+  it('extrait name/description/disable-model-invocation', function() {
+    var text = '---\nname: handoff\ndescription: Compact la conversation.\ndisable-model-invocation: true\n---\n\nCorps.';
+    var fm = parseSkillFrontmatter(text);
+    expect(fm.name).toBe('handoff');
+    expect(fm.description).toBe('Compact la conversation.');
+    expect(fm.disableModelInvocation).toBe(true);
+  });
+  it('clé absente du cartouche → champ null (ne pas toucher au formulaire)', function() {
+    var text = '---\nname: solo\n---\nCorps.';
+    var fm = parseSkillFrontmatter(text);
+    expect(fm.name).toBe('solo');
+    expect(fm.description).toBe(null);
+    expect(fm.disableModelInvocation).toBe(null);
+  });
+  it('disable-model-invocation absent ou false → false/null distingués', function() {
+    var text = '---\nname: x\ndisable-model-invocation: false\n---\n';
+    expect(parseSkillFrontmatter(text).disableModelInvocation).toBe(false);
+  });
+  it('valeurs entre guillemets dépouillées', function() {
+    var text = '---\nname: "avec guillemets"\ndescription: \'simples\'\n---\n';
+    var fm = parseSkillFrontmatter(text);
+    expect(fm.name).toBe('avec guillemets');
+    expect(fm.description).toBe('simples');
+  });
+  it('cartouche non fermé (pas de second ---) → null', function() {
+    expect(parseSkillFrontmatter('---\nname: x\nsans fermeture')).toBe(null);
+  });
+});
+
+describe('resolveSkillDropTarget', function() {
+  it('pas de cartouche → création, slug vide', function() {
+    var t = resolveSkillDropTarget(null, ['autre']);
+    expect(t.mode).toBe('create');
+    expect(t.slug).toBe('');
+  });
+  it('cartouche sans name → création, slug vide', function() {
+    var t = resolveSkillDropTarget({ name: null, description: 'x', disableModelInvocation: null }, ['autre']);
+    expect(t.mode).toBe('create');
+    expect(t.slug).toBe('');
+  });
+  it('name dont le slug ne matche AUCUNE skill existante → création, slug dérivé', function() {
+    var t = resolveSkillDropTarget({ name: 'Nouvelle Skill', description: null, disableModelInvocation: null }, ['autre']);
+    expect(t.mode).toBe('create');
+    expect(t.slug).toBe('nouvelle-skill');
+  });
+  it('name dont le slug matche une skill EXISTANTE → édition de ce slug', function() {
+    var t = resolveSkillDropTarget({ name: 'Handoff', description: null, disableModelInvocation: null }, ['handoff', 'autre']);
+    expect(t.mode).toBe('edit');
+    expect(t.slug).toBe('handoff');
   });
 });

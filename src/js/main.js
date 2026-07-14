@@ -1152,6 +1152,40 @@ async function onSaveSkillCard(cardEl, originalSlug) {
   renderSkills();
 }
 
+// Import d'un fichier .md dans le drawer skills (drag&drop sur le drawer, ou
+// copier-coller Finder/Explorateur hors d'une card déjà en édition — cf.
+// docs/skills.md). Décide création vs édition via resolveSkillDropTarget (pur,
+// skills.js) : cartouche avec `name` dont le slug matche une skill EXISTANTE →
+// bascule sur sa card ; sinon nouvelle card. Remplit les champs comme le paste
+// texte dans la textarea (même parseSkillFrontmatter), contenu intégral posé
+// dans .skill-content quel que soit le mode.
+function ingestSkillMarkdownFile(text) {
+  const fm = parseSkillFrontmatter(text);
+  const existing = listAllSkillsCache().map(s => s.slug);
+  const target = resolveSkillDropTarget(fm, existing);
+  renderSkills();   // ferme toute card restée en édition, repart d'un état propre
+  const wrap = $('skill-list');
+  if (!wrap) return;
+  // Ne PAS passer par enterSkillEdit (charge l'ancien contenu depuis IDB, async) :
+  // le texte importé est posé plus bas et ne doit pas être écrasé par cette lecture
+  // qui résoudrait après coup.
+  let card;
+  if (target.mode === 'edit') {
+    card = wrap.querySelector('.skill-card[data-slug="' + target.slug + '"]');
+  }
+  if (!card) {
+    const empty = wrap.querySelector('.mem-empty');
+    if (empty) empty.remove();
+    card = buildSkillCard({ slug: target.slug, name: '', description: '', enabled: true }, true);
+    wrap.insertBefore(card, wrap.firstChild);
+  }
+  card.classList.add('is-editing');
+  const contentT = card.querySelector('.skill-content');
+  if (contentT) contentT.value = text;
+  applySkillFrontmatterToCard(card, text);
+  card.scrollIntoView({ block: 'nearest' });
+}
+
 async function onDeleteSkillCard(cardEl, originalSlug) {
   if (originalSlug) await deleteSkillDb(originalSlug);
   renderSkills();
@@ -1659,7 +1693,7 @@ async function buildOutgoingContentForAttachments(baseText, attachments) {
 // persiste, relance la génération. Partagé par la saisie composer (sendMessage)
 // et la reprise « fork B » d'ask_confirmation (Accepter → « Oui » / Rejeter → « Non »).
 // `bakedContent` (optionnel) : contenu réellement envoyé/stocké pour le modèle
-// (slash-commande skill = littéral + corps du skill). `text` reste le littéral
+// (slash-commande skill = littéral + corps de la skill). `text` reste le littéral
 // affiché dans la bulle et conservé en `displayText`. `attachments` (optionnel,
 // brief A) : tableau de descripteurs {attId,name,mime,size,kind,w?,h?} déjà
 // stockés en IDB par ingestAttachmentFile. LOT 2 : si des attachments
@@ -1706,7 +1740,7 @@ function runGenerationFromCurrentThread() {
   exitMoveModeIfActive();
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
   // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
-  // recherche mémoire porte sur le littéral, pas sur le corps du skill injecté.
+  // recherche mémoire porte sur le littéral, pas sur le corps de la skill injecté.
   const text = lastUser ? (lastUser.displayText != null ? lastUser.displayText : lastUser.content) : '';
 
   const settings = loadSettings();

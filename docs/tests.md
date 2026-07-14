@@ -142,7 +142,7 @@ endpoint+modèle — indépendance par URL et par modèle). Le retry de
 `streamCompletion` sans le paramètre après rejet passe par `fetch` : manuel.
 
 Le contenu skill lu en IDB (`getSkillContent`/`getSkillRecord`, chemin async)
-se vérifie à la main, comme la garde « aucun skill activé » de `resolveSend`
+se vérifie à la main, comme la garde « aucune skill activée » de `resolveSend`
 (async — le harness QuickJS n'exécute pas les microtâches, un `.then` ne se
 résout jamais dans le corps synchrone d'un `it`). IDB, `internResourcesFromResult`, `loadConversationResources`
 et la cascade D8 (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans

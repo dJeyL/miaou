@@ -26,12 +26,12 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
 2. **Invocation slash = injection côté client, ≠ `<miaou_context>`.** Détection +
    validation + injection vivent dans **`resolveSend(literal)`** (main.js, async),
    **chemin UNIQUE partagé par `sendMessage` ET `editUserMessage`** — jamais deux
-   implémentations. **Garde d'entrée : aucun skill activé
+   implémentations. **Garde d'entrée : aucune skill activée
    (`listEnabledSkills()` vide) → aucun parsing de slug, aucun blocage** — un
    `/mot` même en position 0 part comme du texte normal (l'erreur « skill
-   inconnue » n'a pas de sens quand il n'existe aucun skill à connaître). La
+   inconnue » n'a pas de sens quand il n'existe aucune skill à connaître). La
    légende « `/` pour une skill » du composer suit la même condition : span
-   `#composer-hint-skill`, visible seulement s'il existe ≥1 skill activé
+   `#composer-hint-skill`, visible seulement s'il existe ≥1 skill activée
    (`syncSkillHintUI`, ui.js — synchronisée après `loadSkillsCache` au démarrage
    et à chaque CRUD via `renderSkills`). `findSlashTriggers` (pur) repère les
    `/<slug>` du texte ; pour chacun, lookup cache : slug absent/désactivé →
@@ -70,11 +70,19 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      donnerait l'avant-dernière. Vaut pour les deux contextes (composer et bulle
      d'édition).
 
-4. **Chemin langage naturel = `skills__list` + `skills__read`** (cf. `docs/tools.md`).
-   Additif au registre `miaou__` existant — ne renomme aucun outil. C'est
-   un **tool_result normal** (passe par la généralisation tool-ack, contenu
-   disponible au modèle dès ce tour ET réinjecté cross-turn via `expandThread`),
-   **pas** par l'injection figée du slash.
+4. **Chemin langage naturel = `skills__list` + `skills__read` + `skills__write`**
+   (cf. `docs/tools.md`). Additif au registre `miaou__` existant — ne renomme
+   aucun outil. C'est un **tool_result normal** (passe par la généralisation
+   tool-ack, contenu disponible au modèle dès ce tour ET réinjecté cross-turn via
+   `expandThread`), **pas** par l'injection figée du slash. `skills__write` crée
+   ou modifie une skill (`putSkill`, async) : modifier un slug existant exige
+   `overwrite:true` explicite (sinon erreur, aucune écriture) — le modèle ne peut
+   pas écraser une skill par accident. Merge partiel en modification (champs
+   omis = valeur existante conservée) ; `autotrigger` **non exposé** au modèle
+   (reste un toggle utilisateur du drawer, préservé tel quel depuis
+   l'enregistrement existant). Ack `skill_write` informatif, sans undo — même
+   posture que la suppression (hard delete, pas de tombstone : action
+   explicite).
 
 5. **Drawer `#skills-drawer`** (`.drawer-wide`, plus large pour éditer le corps) :
    cartes vue/édition en `createElement`/`textContent` (jamais `innerHTML` pour les
@@ -84,6 +92,45 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    `[A-Za-z0-9_-]`, longueur ≤ 48, unicité. Toggle `autotrigger` (stage 2) en
    section édition uniquement (`.skill-autotrigger`), à côté du toggle `enabled`
    existant ; lu par `onSaveSkillCard` comme `enabled`.
+   - **Import de cartouche au collage** (`.skill-content`, listener `paste`) :
+     `parseSkillFrontmatter` (skills.js, pur) détecte un bloc `---\n…\n---` en
+     tête du texte collé (format Claude Code, ex. skill Claude Code) et
+     pré-remplit `slug` (slugifié via `slugifySkillName`) + `name` depuis la clé
+     `name`, `description` depuis `description`, et **inverse**
+     `disable-model-invocation` vers le toggle `autotrigger` (approximation
+     assumée : pas d'équivalent MIAOU exact à « désactiver l'invocation modèle »,
+     `autotrigger` est le champ le plus proche disponible). Le **cartouche reste
+     dans le contenu collé** (jamais retiré) — seul le formulaire est pré-rempli.
+     Une clé absente du cartouche laisse le champ formulaire correspondant
+     inchangé. Extraction factorisée dans `applySkillFrontmatterToCard(scope, text)`
+     (ui.js), partagée avec l'import de fichier ci-dessous.
+   - **Import de fichier `.md` : drag&drop OU copier-coller Finder/Explorateur,
+     sur tout le drawer (`#skills-drawer`)**, pas seulement la liste — zone large,
+     pattern `.dragover` identique au composer (`composer.css`/`drawers.css`).
+     Filtre `isMarkdownFile` (nom `.md`/`.markdown`/`.txt` ou type
+     `text/markdown`/`text/plain`) : tout autre fichier glissé/collé est ignoré
+     silencieusement. Lecture via `file.text()`. Routage décidé par
+     `resolveSkillDropTarget(fm, existingSlugs)` (skills.js, pur) :
+     - pas de cartouche, ou cartouche sans `name` → **création**, nouvelle card
+       vide (slug à saisir).
+     - cartouche avec `name` dont le slug slugifié **matche une skill
+       existante** → **édition** de cette skill (bascule sur sa card).
+     - sinon → **création**, slug pré-rempli par le `name` slugifié.
+     Orchestré par `ingestSkillMarkdownFile(text)` (main.js) : ferme toute card
+     restée ouverte (`renderSkills()`), cible/crée la card, pose le contenu
+     intégral dans `.skill-content` **avant** d'appeler
+     `applySkillFrontmatterToCard` — **ne passe jamais par `enterSkillEdit`**
+     (celui-ci recharge l'ancien contenu depuis IDB de façon asynchrone : appeler
+     les deux dans le mauvais ordre écraserait le texte importé une fois la
+     promesse résolue).
+     - **Paste-fichier DANS une card déjà en édition** (focus dans sa
+       `.skill-content`) : intercepté par le listener de CETTE textarea
+       (`getAsFile()` + `file.text()`, plus fiable qu'attendre que le navigateur
+       pose le texte nativement — comportement non garanti pour un vrai `File`
+       copié depuis le Finder), avec `stopPropagation()` pour ne **pas**
+       remonter au listener `paste` du drawer et déclencher un second routage
+       (sinon double-traitement : la card courante ET potentiellement une
+       bascule vers une autre skill).
 
 6. **Autotrigger (stage 2) : listing dynamique, SIBLING de `<miaou_context>`, pas
    une section dedans.** `getAutotriggerSkillsMeta()` (skills.js, pure) filtre le

@@ -29,10 +29,12 @@ envoyé au modèle, données personnelles, ou la genèse du projet.
 ## attachments
 
 Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le
-trombone du composer, ou fais un glisser-déposer, ou colle directement une image
-depuis le presse-papier. Deux types sont acceptés : **images** (le modèle les
-voit réellement, s'il gère la vision) et **fichiers texte** (leur contenu est
-transmis au modèle).
+trombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur
+la zone de conversation (pas seulement sur la barre de saisie), ou colle
+directement depuis le presse-papier — une image copiée, ou un fichier copié
+depuis l'explorateur de fichiers. Deux types sont acceptés : **images** (le
+modèle les voit réellement, s'il gère la vision) et **fichiers texte** (leur
+contenu est transmis au modèle).
 
 Une fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton
 message. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,
@@ -128,25 +130,42 @@ l'historique d'un autre.
 ## skills
 
 Les **skills** sont des fragments d'instructions réutilisables que tu écris une
-fois et rappelles à volonté. Chacun a un mot-clé d'invocation (son « slug »), un
+fois et rappelles à volonté. Chacune a un mot-clé d'invocation (son « slug »), un
 nom, une description et un corps en Markdown. Tu les gères dans un panneau dédié
 (Paramètres → Skills) : création, édition, suppression, et un interrupteur pour
-activer ou désactiver chacun.
+activer ou désactiver chacune.
 
 Deux façons de s'en servir :
 
-- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps du
-  skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de
+- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps de
+  la skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de
   la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté
   reste en coulisse mais fait bien partie du message. La palette de commandes
   (Ctrl/Cmd+K → « Invoquer une skill ») fait la même chose : elle insère `/slug `
   dans le composer, prêt à envoyer.
 - **Découverte par le modèle** : si ta demande en langage naturel correspond à
-  un skill activé, le modèle peut décider seul de le consulter. Une trace
-  visible signale alors qu'il l'a lu.
+  une skill activée, le modèle peut décider seul de la consulter. Une trace
+  visible signale alors qu'il l'a lue.
+- **Création/modification par le modèle** : à ta demande, le modèle peut aussi
+  créer une nouvelle skill ou modifier le contenu d'une existante — une trace
+  visible signale la création ou la modification. Modifier une skill déjà
+  existante lui demande une confirmation explicite avant d'écraser son contenu.
 
-Un skill est utile pour un cadrage récurrent : un style de réponse, une
+Une skill est utile pour un cadrage récurrent : un style de réponse, une
 procédure, un gabarit — tout ce que tu répéterais sinon à la main.
+
+**Importer une skill existante** (par exemple une skill écrite pour Claude Code,
+avec un cartouche `--- name: … description: … ---` en tête de fichier) :
+
+- **Coller** le texte dans le champ Contenu d'une skill en édition : slug, nom,
+  description sont extraits automatiquement du cartouche et pré-remplissent les
+  champs (ceux absents du cartouche restent inchangés) ; le cartouche lui-même
+  reste dans le contenu.
+- **Glisser-déposer** un fichier `.md` sur le panneau Skills, ou **coller un
+  fichier `.md` copié** depuis ton explorateur de fichiers : si son cartouche
+  correspond à une skill déjà existante (même nom), tu bascules directement en
+  édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et
+  enregistrer.
 
 ## mcp
 
