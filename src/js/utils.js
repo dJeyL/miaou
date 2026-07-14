@@ -740,27 +740,54 @@ function _formatToolCallPreviewHtml(m) {
     '<span class="ack-label">' + text + '</span></div>';
 }
 
-// Bloc HTML (<details class="tool-trace">) pour un groupe d'acks enrichis
-// d'un même tour — sœur HTML de formatToolAcksMd, même seuils/politique.
-// Fermé par défaut (cohérent avec le reasoning, cf. brief G D1/§10).
-// Repliée : une ligne de preview par ack façon .tool-ack (bordure+icône+intent
-// ou fallback nom d'outil). Dépliée : le détail actuel (nom, arguments,
-// résultat) remplace les previews — basculé en CSS via [open] (EXPORT_CSS).
+// Compteur local (sœur de _mermaidUid, ui.js) — ids de groupe de radios uniques
+// par appel, jamais référencé hors de cette fonction. Pas de dépendance
+// cross-fichier (frontière du test runner, cf. CLAUDE.md).
+let _toolTraceUid = 0;
+
+// Bloc HTML pour un groupe d'acks enrichis d'un même tour — sœur HTML de
+// formatToolAcksMd, même seuils/politique. Fermé par défaut (cohérent avec le
+// reasoning, cf. brief G D1/§10). Trois paliers (lot N, écran dégonflé en
+// usage agentique → export allégé à son tour) :
+//   1. replié : SEUL le compteur est visible ("n outil(s) appelé(s)").
+//   2. 1er clic (<details class="tool-trace">) : liste des intents (previews).
+//   3. clic sur la liste d'intents : bascule vers le détail JSON (<ul>).
+//   4. clic sur le détail JSON : REVIENT à la liste d'intents (cycle, pas de
+//      cul-de-sac) — <details> natif ne permettant qu'un <summary> par palier,
+//      le cycle intents↔JSON est porté par une paire de radios masqués +
+//      labels cliquables (:checked ~), zéro JS, fonctionne même en export
+//      statique (exportInteractive: false). Fermer/rouvrir le <details>
+//      externe NE réinitialise PAS ce choix (les radios, contrairement à un
+//      <details> imbriqué, ne sont pas remis à zéro par le DOM) — assumé :
+//      le vrai besoin était une porte de sortie cliquable, pas la remise à
+//      zéro au collapse (tranché avec Julien).
 function formatToolAcksHtml(acks) {
   if (!acks || !acks.length) return '';
-  const summary = acks.length === 1 ? 'Outil appelé' : 'Outils appelés (' + acks.length + ')';
+  const n = acks.length;
+  const summary = n === 1 ? '1 outil appelé' : n + ' outils appelés';
   const previews = acks.map(_formatToolCallPreviewHtml).join('');
   let inner;
-  if (acks.length === 1) {
+  if (n === 1) {
     inner = '<li>' + _formatToolCallHtml(acks[0]) + '</li>';
   } else {
     inner = acks.map(m => '<li>' + _formatToolCallHtml(m) + '</li>').join('');
   }
+  const uid = 'tt' + (++_toolTraceUid) + Math.random().toString(36).slice(2, 8);
+  const radioName = 'ttr' + uid;
+  const idIntents = 'tti' + uid;
+  const idJson = 'ttj' + uid;
   return '<details class="tool-trace">' +
-    '<summary><span class="tool-trace-summary-text">' + summary + '</span>' +
+    '<summary><span class="tool-trace-summary-text">' + summary + '</span></summary>' +
+    '<div class="tool-trace-toggle">' +
+    '<input type="radio" class="tt-radio" name="' + radioName + '" id="' + idIntents + '" checked>' +
+    '<input type="radio" class="tt-radio" name="' + radioName + '" id="' + idJson + '">' +
+    '<label class="tt-view tt-view-intents" for="' + idJson + '">' +
     '<div class="tool-ack-preview-list">' + previews + '</div>' +
+    '</label>' +
+    '<label class="tt-view tt-view-json" for="' + idIntents + '">' +
     '<ul>' + inner + '</ul>' +
-    '</summary>' +
+    '</label>' +
+    '</div>' +
     '</details>';
 }
 

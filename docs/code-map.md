@@ -78,20 +78,21 @@
   - `_formatToolCallHtml()` — L696
   - `EXPORT_ACK_ICON` — L731
   - `_formatToolCallPreviewHtml()` — L737
-  - `formatToolAcksHtml()` — L749
-  - `exportableAckImageKey()` — L778
-  - `_hashId9()` — L792
-  - `messageTextForSummary()` — L806
-  - `expandThread()` — L820
-- **Parsing défensif du JSON de résumé** (L890)
-  - `parseSummaryJSON()` — L893
-- **Context inspector (brief B)** (L914)
-  - `estimateTokens()` — L917
-  - `IMAGE_TOKENS_ESTIMATE` — L925
-  - `CONTEXT_WINDOW_WARN_RATIO` — L929
-  - `buildContextManifest()` — L945
-  - `scaleManifestToUsage()` — L1036
-  - `usageDerived()` — L1077
+  - `_toolTraceUid` — L746
+  - `formatToolAcksHtml()` — L764
+  - `exportableAckImageKey()` — L805
+  - `_hashId9()` — L819
+  - `messageTextForSummary()` — L833
+  - `expandThread()` — L847
+- **Parsing défensif du JSON de résumé** (L917)
+  - `parseSummaryJSON()` — L920
+- **Context inspector (brief B)** (L941)
+  - `estimateTokens()` — L944
+  - `IMAGE_TOKENS_ESTIMATE` — L952
+  - `CONTEXT_WINDOW_WARN_RATIO` — L956
+  - `buildContextManifest()` — L972
+  - `scaleManifestToUsage()` — L1063
+  - `usageDerived()` — L1104
 
 ## src/js/sync.js
 
@@ -897,14 +898,14 @@
   - `serializeThemeTokens()` — L5834
   - `PRISM_THEME_CSS` — L5846
   - `EXPORT_CSS` — L5909
-  - `EXPORT_SCRIPT` — L6030
-  - `buildExportHtml()` — L6130
-  - `renderExportBody()` — L6178
-  - `embedExportMermaid()` — L6262
-  - `decorateExportPre()` — L6305
-  - `EXPORT_HTML_SIZE_WARN` — L6321
-  - `_exportingHtml` — L6330
-  - `exportConvHtml()` — L6331
+  - `EXPORT_SCRIPT` — L6048
+  - `buildExportHtml()` — L6148
+  - `renderExportBody()` — L6196
+  - `embedExportMermaid()` — L6280
+  - `decorateExportPre()` — L6323
+  - `EXPORT_HTML_SIZE_WARN` — L6339
+  - `_exportingHtml` — L6348
+  - `exportConvHtml()` — L6349
 
 ## src/js/main.js
 

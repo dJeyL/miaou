@@ -601,10 +601,10 @@ describe('formatToolAcksHtml', function() {
     expect(formatToolAcksHtml([])).toBe('');
     expect(formatToolAcksHtml(null)).toBe('');
   });
-  it('un seul appel : <details><summary> avec texte "Outil appelé"', function() {
+  it('un seul appel : <details><summary> avec texte "1 outil appelé"', function() {
     var r = formatToolAcksHtml([{ name: 'miaou__create_memory', args: { content: 'x' }, result: 'ok' }]);
     expect(r.indexOf('<details class="tool-trace">') >= 0).toBeTruthy();
-    expect(r.indexOf('<span class="tool-trace-summary-text">Outil appelé</span>') >= 0).toBeTruthy();
+    expect(r.indexOf('<span class="tool-trace-summary-text">1 outil appelé</span>') >= 0).toBeTruthy();
     expect(r.indexOf(' open') >= 0).toBeFalsy();
   });
   it('preview repliée : une ligne .tool-ack-preview avec icône + fallback nom d\'outil (sans intent)', function() {
@@ -628,18 +628,41 @@ describe('formatToolAcksHtml', function() {
     var previewSection = r.slice(0, r.indexOf('<ul>'));
     expect((previewSection.match(/class="tool-ack-preview"/g) || []).length).toBe(2);
   });
-  it('<ul> du détail imbriquée DANS <summary> (zone de clic unique couvrant preview et détail)', function() {
+  it('trois paliers (lot N) : compteur seul → intents ↔ détail JSON via radios cliquables', function() {
     var r = formatToolAcksHtml([{ name: 'get_time', args: {}, result: '14:32' }]);
+    // Summary externe ne porte QUE le compteur, pas les previews ni le détail.
+    var outerSummaryClose = r.indexOf('</summary>');
+    var outerSummary = r.slice(0, outerSummaryClose);
+    expect(outerSummary.indexOf('tool-ack-preview-list') >= 0).toBeFalsy();
+    expect(outerSummary.indexOf('<ul>') >= 0).toBeFalsy();
+    // .tool-trace-toggle vient APRÈS le summary externe.
+    var toggleIdx = r.indexOf('class="tool-trace-toggle"');
+    expect(toggleIdx > outerSummaryClose).toBeTruthy();
+    // Ordre DOM figé (cf. commentaire CSS) : 2 radios, puis label intents,
+    // puis label json — le sélecteur CSS `.tt-radio + .tt-radio:checked ~`
+    // en dépend.
+    var idxR1 = r.indexOf('class="tt-radio"');
+    var idxR2 = r.indexOf('class="tt-radio"', idxR1 + 1);
+    var idxLabelIntents = r.indexOf('tt-view-intents');
+    var idxLabelJson = r.indexOf('tt-view-json');
+    expect(idxR1 >= 0 && idxR2 > idxR1 && idxLabelIntents > idxR2 && idxLabelJson > idxLabelIntents).toBeTruthy();
+    // 1er radio (intents, état par défaut) coché, pas le 2e (json).
+    var firstRadioTag = r.slice(idxR1 - 20, idxR2);
+    var secondRadioTag = r.slice(idxR2 - 20, idxLabelIntents);
+    expect(firstRadioTag.indexOf('checked') >= 0).toBeTruthy();
+    expect(secondRadioTag.indexOf('checked') >= 0).toBeFalsy();
+    // Le label "intents" porte les previews, le label "json" porte le <ul>.
+    var labelIntentsSection = r.slice(r.indexOf('<label', idxLabelIntents - 30), r.indexOf('</label>', idxLabelIntents));
+    expect(labelIntentsSection.indexOf('tool-ack-preview-list') >= 0).toBeTruthy();
     var ulIdx = r.indexOf('<ul>');
-    var summaryCloseIdx = r.indexOf('</summary>');
-    expect(ulIdx > 0 && ulIdx < summaryCloseIdx).toBeTruthy();
+    expect(ulIdx > idxLabelJson).toBeTruthy();
   });
-  it('plusieurs appels : en-tête pluriel avec compte', function() {
+  it('plusieurs appels : en-tête pluriel "n outils appelés"', function() {
     var r = formatToolAcksHtml([
       { name: 'a', args: {}, result: '1' },
       { name: 'b', args: {}, result: '2' },
     ]);
-    expect(r.indexOf('Outils appelés (2)') >= 0).toBeTruthy();
+    expect(r.indexOf('2 outils appelés') >= 0).toBeTruthy();
   });
   it('échappe les caractères HTML dans name/args/result', function() {
     var r = formatToolAcksHtml([{ name: '<script>x</script>', args: { q: '<b>&"</b>' }, result: '<img src=x>' }]);

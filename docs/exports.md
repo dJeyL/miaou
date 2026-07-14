@@ -69,23 +69,43 @@ ultérieures du même lot).
   sœur HTML de `formatToolAcksMd` — même seuils de troncature
   (`EXPORT_ARGS_MAX`/`EXPORT_RESULT_MAX`/`EXPORT_RESNAME_MAX`), même politique
   `resource_presented` (nom + mime, jamais de binaire/data-URI), mêmes acks
-  legacy (sans `args`) omis. Sortie : `<details class="tool-trace">` fermé par
-  défaut (cohérent avec le reasoning masqué à l'écran) contenant un
-  `<summary>` (« Outil appelé » / « Outils appelés (n) », masqué en CSS) et
-  une `<ul>` des appels. **Preview repliée** (`.tool-ack-preview-list`, une
-  `.tool-ack-preview` par ack) : imite `.tool-ack` du thread live (bordure
-  gauche + icône outil générique `EXPORT_ACK_ICON`, une seule icône pour
-  tous les kinds — pas de dépendance à `ACK_KINDS`/ui.js, hors de portée
-  depuis `utils.js`) + `m.intent` si présent, sinon fallback `<code>name</code>`.
-  Bascule preview ↔ détail pilotée en CSS pur via le sélecteur `[open]`
-  (`EXPORT_CSS`, ui.js) : `.tool-trace[open] .tool-ack-preview-list { display:
-  none }` / `.tool-trace:not([open]) ul { display: none }` — un seul
-  `<details>`, deux vues exclusives, zéro JS. **`escHtml` systématique** sur
-  `name`, `intent`, les arguments JSON et le résultat (preview ET détail) : ce
-  sont des chaînes d'origine modèle/outil, et c'est
-  l'unique chemin de concaténation string→HTML de tout l'export (cf. note de
-  piège dans `CLAUDE.md`/`docs/pitfalls-detail.md`) — toute future extension
-  qui ajoute un chemin similaire doit `escHtml` de la même façon.
+  legacy (sans `args`) omis. **Trois paliers** (allégé après le repli à deux
+  étages du thread live, brief N — l'export suit désormais le même geste
+  d'allègement en usage agentique) :
+  1. replié : `<details class="tool-trace">` fermé par défaut, `<summary>`
+     ne porte QUE le compteur (« 1 outil appelé » / « n outils appelés »,
+     sans parenthèses ; couleur `--text-2`, volontairement discrète — pas
+     `--accent`).
+  2. 1er clic (ouvre le `<details>`) : liste d'intents visible
+     (`.tool-ack-preview-list`, une `.tool-ack-preview` par ack — imite
+     `.tool-ack` du thread live : bordure gauche + icône outil générique
+     `EXPORT_ACK_ICON`, une seule icône pour tous les kinds, pas de
+     dépendance à `ACK_KINDS`/ui.js hors de portée depuis `utils.js` — +
+     `m.intent` si présent, sinon fallback `<code>name</code>`).
+  3. clic sur la liste d'intents : bascule vers le détail JSON (`<ul>`,
+     séparateur `border-top` discret entre `<li>` consécutifs).
+  4. clic sur le détail JSON : **revient** à la liste d'intents (cycle, pas
+     de cul-de-sac).
+  Le cycle intents ↔ JSON (paliers 3/4) n'est **pas** un second `<details>`
+  imbriqué : un `<details>` interne ne serait pas réinitialisé par le DOM à
+  la fermeture du parent (testé — l'état `open` d'un `<details>` imbriqué
+  survit à la fermeture de son parent), ce qui bloquerait en JSON après un
+  collapse/reopen sans porte de sortie. À la place : une paire de
+  `<input type="radio">` masqués (`.tt-radio`, `opacity:0`) + deux
+  `<label for="…">` cliquables (`.tt-view-intents`/`.tt-view-json`,
+  `EXPORT_CSS`) pilotées par le sélecteur `.tt-radio + .tt-radio:checked ~`
+  — zéro JS, fonctionne même en export statique (`exportInteractive:
+  false`). Ordre DOM figé (radio intents, radio json, label intents, label
+  json) : le sélecteur CSS en dépend, ne pas réordonner sans l'ajuster.
+  Fermer puis rouvrir le `<details>` externe **ne réinitialise pas** le
+  choix radio (contrairement à un `<details>` imbriqué) — assumé : le
+  besoin réel était une porte de sortie cliquable, pas une remise à zéro au
+  collapse. **`escHtml` systématique** sur `name`, `intent`, les arguments
+  JSON et le résultat (preview ET détail JSON) : ce sont des chaînes
+  d'origine modèle/outil, et c'est l'unique chemin de concaténation
+  string→HTML de tout l'export (cf. note de piège dans
+  `CLAUDE.md`/`docs/pitfalls-detail.md`) — toute future extension qui
+  ajoute un chemin similaire doit `escHtml` de la même façon.
 - **`exportableAckImageKey(ack)`** dans `utils.js` (pure, testée QuickJS,
   lot Gbis) : miroir des règles image de `placeToolAck` (ui.js). Retourne
   `{ by: 'id' }` (`resource_presented`, `resource_stored`), `{ by: 'attId' }`

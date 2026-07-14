@@ -5972,24 +5972,42 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-trace summary { cursor: pointer; list-style: none; display: block; }
 .tool-trace summary::-webkit-details-marker { display: none; }
 .tool-trace summary::marker { content: ''; }
-.tool-trace-summary-text { display: block; color: var(--accent); margin-bottom: 4px; }
+.tool-trace-summary-text { display: block; color: var(--text-2); margin-bottom: 4px; }
 .tool-trace ul { list-style: none; margin: 6px 0 0; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
-.tool-trace li { margin-bottom: 6px; }
+.tool-trace li { margin-bottom: 6px; padding-top: 6px; }
+.tool-trace li:first-child { padding-top: 0; border-top: none; }
+.tool-trace li + li { border-top: 1px solid var(--border); }
 .tool-trace code { font-family: var(--mono); font-size: 11.5px; }
 /* Code exécuté par js__eval (lot L) : bloc <pre> COMPLET dans la trace d'outil,
    seule trace du code (absent du thread live). EXPORT_CSS est une feuille figée
    qui ne suit PAS chat/tools/composer.css (piège 22) — règle dédiée ici. */
 .tool-ack-code { margin: 4px 0 2px; padding: 8px 10px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; overflow-x: auto; white-space: pre; }
 .tool-ack-code code { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-2); }
-/* Preview repliée : une ligne par ack façon .tool-ack du thread live (bordure
-   gauche + icône + intent ou fallback nom d'outil). Disparaît à l'ouverture,
-   remplacée par le détail (ul) — un seul <details>, deux vues exclusives. */
+/* Trois paliers (lot N) : replié, .tool-trace ne montre QUE le compteur
+   (summary externe) ; ouvert, .tool-trace-toggle apparaît sur la liste
+   d'intents (état par défaut du groupe de radios) ; cliquer dessus bascule
+   au détail JSON, cliquer sur le détail JSON revient aux intents — cycle
+   piloté par une paire de radios masqués + labels cliquables, PAS par un
+   second <details> (un <details> imbriqué ne serait pas réinitialisé par le
+   DOM à la fermeture du parent, cul-de-sac sur JSON — cf. formatToolAcksHtml,
+   utils.js). Zéro JS, fonctionne même en export statique. */
+.tool-trace-toggle { margin-top: 4px; }
+.tt-radio { position: absolute; opacity: 0; pointer-events: none; }
+.tt-view { display: block; cursor: pointer; }
+.tt-view-json { display: none; }
+/* 2ᵉ radio (id="ttj…", label for="tti…" = clic pour REVENIR aux intents)
+   coché → son frère immédiat .tt-view-intents disparaît, .tt-view-json
+   (frère suivant) apparaît. Ordre DOM figé par formatToolAcksHtml : radio
+   intents, radio json, label intents, label json — ne pas réordonner sans
+   ajuster ce sélecteur. */
+.tt-radio + .tt-radio:checked ~ .tt-view-intents { display: none; }
+.tt-radio + .tt-radio:checked ~ .tt-view-json { display: block; }
 .tool-ack-preview-list { display: flex; flex-direction: column; gap: 3px; }
 .tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
 .tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }
-.tool-trace[open] .tool-ack-preview-list { display: none; }
-.tool-trace:not([open]) ul { display: none; }
+.tool-trace-inner[open] .tool-ack-preview-list { display: none; }
+.tool-trace-inner:not([open]) ul { display: none; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
 .att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }
