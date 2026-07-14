@@ -136,5 +136,32 @@ body {
   .boot-overlay { transition: none; }
 }
 
+/* ═══ Reduced-motion : kill-switch global ═══
+   Le réglage Animations (storage.js `motion`, appliqué par applyMotion, ui.js)
+   pose data-motion="reduced" sur <html> — réglage explicite prioritaire sur la
+   préférence système (même doctrine que data-theme ; applyMotion absorbe déjà
+   le mode 'system' en interrogeant matchMedia, cf. resolveMotionReduced). Cette
+   règle unique neutralise TOUTES les animations et transitions du projet sous
+   ce mode, plutôt qu'un gate par classe (qui dériverait à chaque animation
+   ajoutée). Forme canonique a11y : durée quasi nulle (pas `none`) pour laisser
+   une anim en cours se terminer instantanément sans saut visuel, et
+   iteration-count 1 pour stopper les boucles infinies (blink, spin, waiter).
+   `!important` : insensible à l'ordre de cascade, prime sur toute déclaration.
+   Le kill-switch JS pour les animations pilotées en JS (motionReduced(), ui.js)
+   reste le pendant de cette règle côté script. Exceptions ciblées à ajouter ici
+   si une animation devait rester (aucune à ce jour). Le blink de boot au-dessus
+   garde son propre gate @media : il tourne AVANT que applyMotion ne s'applique
+   (JS pas encore chargé), donc data-motion n'est pas encore posé à cet instant. */
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
 /* ═══ App shell ═══ */
 .app { display: flex; height: var(--vvh, 100dvh); }

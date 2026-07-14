@@ -836,6 +836,7 @@ function applySyncedSettings(keys) {
   // toucher au draft ni au thread. On relit l'état persisté à la source.
   const s = loadSettings();
   if (set.has('theme')) applyTheme(s.theme || 'system');
+  if (set.has('motion')) applyMotion(s.motion || 'system');
   if (set.has('highlight')) highlightEnabled = s.highlight !== false;
   // Autres clés (systemPrompt, contextWindow, sélecteurs…) : effet au prochain
   // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
@@ -2465,6 +2466,8 @@ function init() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
+  setMotionUI(s.motion || 'system');
+  applyMotion(s.motion || 'system');
   syncActiveApiServerUI();
   syncModelUI();
   syncReasoningUI();

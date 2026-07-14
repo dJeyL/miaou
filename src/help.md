@@ -295,6 +295,15 @@ Quelques repères pour te déplacer dans MIAOU :
   conversation courante sans toucher à ton défaut.
 - **Thème clair / sombre** et coloration syntaxique se règlent dans les
   Paramètres.
+- **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,
+  recherche, outils distants…) pour une même réponse, elles s'affichent en
+  mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et
+  se replier à nouveau.
+- **Animations** : un réglage dans les Paramètres
+  (Normales / Réduites / Suivre le système) coupe toutes les transitions et
+  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de
+  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la
+  préférence de réduction d'animations de ton OS.
 - **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour
   ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
   Échap pour fermer. Elle donne accès aux actions courantes sans la souris —

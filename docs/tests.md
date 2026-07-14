@@ -177,6 +177,16 @@ l'iframe sandbox, la lightbox pan/zoom, le canvas PNG, la passe d'export
 `embedExportMermaid` (E4, DOM/async) et les fallbacks
 d'erreur sont du territoire manuel (tests 71–88 dans `docs/manual-tests.md`).
 
+**Groupe d'acks (ticker, brief N, cf. `docs/tools.md`)** : le réducteur pur
+`ackGroupReduce` (arrivée, franchissement du seuil à 2 acks, héritage
+`slotExpanded`, bascule `toggleMode` dans les deux sens mid-stream) et ses
+dérivées `ackGroupIsCompact`/`ackGroupCount`/`ackGroupVisibleAck`, ainsi que
+`resolveMotionReduced` (les 3 réglages, préférence système injectée en
+paramètre) sont couverts QuickJS. Le DOM (ticker `translateY`, agrandissement
+vertical `height` à la bascule, badge, reduced-motion appliqué) et le drawer
+Apparence sont vérifiés à la main (scénario ajouté dans
+`docs/manual-tests.md`).
+
 **Synchro multi-onglets (lot J, cf. `docs/multitab-sync.md`)** : le noyau pur de
 `sync.js` est couvert par `tests/test-sync.js` — `makeEnvelope`/`validateEnvelope`
 (version, type dans la liste fermée, `tabId` non vide, rejet des formes

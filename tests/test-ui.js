@@ -322,3 +322,85 @@ describe('attachmentClickAction (A3-1 — clic sur un chip de bulle envoyée)', 
     expect(attachmentClickAction(rec, false)).toBe('download');
   });
 });
+
+describe('ackGroupReduce (brief N — réducteur pur du groupe d\'acks / ticker)', function() {
+  it('arrive incrémente acks.length sans muter l\'état précédent', function() {
+    var s0 = ackGroupInitState();
+    var s1 = ackGroupReduce(s0, { type: 'arrive', ack: { id: 'a1' } });
+    expect(s0.acks.length).toBe(0);
+    expect(s1.acks.length).toBe(1);
+  });
+  it('1 ack → ackGroupIsCompact false (transparence sous le seuil)', function() {
+    var s = ackGroupReduce(ackGroupInitState(), { type: 'arrive', ack: { id: 'a1' } });
+    expect(ackGroupIsCompact(s)).toBe(false);
+  });
+  it('2e ack → ackGroupIsCompact true, mode compact conservé', function() {
+    var s = ackGroupInitState();
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a1' } });
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a2' } });
+    expect(ackGroupIsCompact(s)).toBe(true);
+    expect(s.mode).toBe('compact');
+  });
+  it('arrive conserve slotExpanded (héritage §3)', function() {
+    var s = ackGroupReduce(ackGroupInitState(), { type: 'toggleSlot' });
+    expect(s.slotExpanded).toBe(true);
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a1' } });
+    expect(s.slotExpanded).toBe(true);
+  });
+  it('toggleMode bascule compact vers list', function() {
+    var s = ackGroupReduce(ackGroupInitState(), { type: 'toggleMode' });
+    expect(s.mode).toBe('list');
+  });
+  it('toggleMode bascule list vers compact (aller-retour)', function() {
+    var s = ackGroupReduce(ackGroupInitState(), { type: 'toggleMode' });
+    s = ackGroupReduce(s, { type: 'toggleMode' });
+    expect(s.mode).toBe('compact');
+  });
+  it('arrive après toggle en mode list garde le mode list (bascule mid-stream)', function() {
+    var s = ackGroupReduce(ackGroupInitState(), { type: 'toggleMode' });
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a1' } });
+    expect(s.mode).toBe('list');
+  });
+  it('toggleSlot bascule le booléen dans les deux sens', function() {
+    var s = ackGroupReduce(ackGroupInitState(), { type: 'toggleSlot' });
+    expect(s.slotExpanded).toBe(true);
+    s = ackGroupReduce(s, { type: 'toggleSlot' });
+    expect(s.slotExpanded).toBe(false);
+  });
+});
+
+describe('ackGroupVisibleAck / ackGroupCount (dérivées pures)', function() {
+  it('ackGroupVisibleAck renvoie le dernier ack arrivé', function() {
+    var s = ackGroupInitState();
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a1' } });
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a2' } });
+    expect(ackGroupVisibleAck(s).id).toBe('a2');
+  });
+  it('ackGroupVisibleAck sur groupe vide → null', function() {
+    expect(ackGroupVisibleAck(ackGroupInitState())).toBe(null);
+  });
+  it('ackGroupCount reflète le nombre réel d\'acks (source unique du badge)', function() {
+    var s = ackGroupInitState();
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a1' } });
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a2' } });
+    s = ackGroupReduce(s, { type: 'arrive', ack: { id: 'a3' } });
+    expect(ackGroupCount(s)).toBe(3);
+  });
+});
+
+describe('resolveMotionReduced (réglage Animations — brief N §8)', function() {
+  it('"normal" → false, quelle que soit la préférence système', function() {
+    expect(resolveMotionReduced('normal', true)).toBe(false);
+    expect(resolveMotionReduced('normal', false)).toBe(false);
+  });
+  it('"reduced" → true, quelle que soit la préférence système', function() {
+    expect(resolveMotionReduced('reduced', true)).toBe(true);
+    expect(resolveMotionReduced('reduced', false)).toBe(true);
+  });
+  it('"system" → reflète la préférence système injectée (true)', function() {
+    expect(resolveMotionReduced('system', true)).toBe(true);
+  });
+  it('"system" → reflète la préférence système injectée (false)', function() {
+    expect(resolveMotionReduced('system', false)).toBe(false);
+  });
+});

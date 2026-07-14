@@ -372,6 +372,15 @@ if (window.requestAnimationFrame) {
         <span class="hint" id="theme-hint"></span>
       </div>
       <div class="field">
+        <label>Animations</label>
+        <div class="seg-group" id="motion-mode">
+          <button type="button" class="seg" data-mode="normal"  onclick="selectMotion('normal')">Normales</button>
+          <button type="button" class="seg" data-mode="reduced" onclick="selectMotion('reduced')">Réduites</button>
+          <button type="button" class="seg" data-mode="system"  onclick="selectMotion('system')">Système</button>
+        </div>
+        <span class="hint" id="motion-hint"></span>
+      </div>
+      <div class="field">
         <div class="check-row">
           <div class="label-col">
             <label>Coloration syntaxique</label>

@@ -1380,15 +1380,274 @@ function buildToolAck(m) {
 // recours. Partagé par le rendu live (onToolAcks/onEarlyAcks) et le reload (renderThread).
 // Pour mcp_call : si le serveur a showCalls === false, n'insère pas dans le DOM mais
 // retourne null (l'entrée reste dans currentThread — le toggle est render-only).
-function placeToolAck(wrap, entry) {
+// ── Groupe d'acks (ticker) : réducteur d'état pur ──────────────────────────
+// Pont entrée d'ack → nœud DOM. WeakMap et NON une propriété `entry.__node` :
+// l'objet `entry` est le MÊME que celui poussé dans `currentThread` (main.js,
+// onEarlyAcks/onToolAcks) puis persisté par saveConversation — y greffer une
+// référence DOM la ferait partir en JSON.stringify (clé parasite au store) et
+// surtout retiendrait le nœud en mémoire tant que la conversation vit (fuite).
+// La WeakMap garde le lien hors de l'objet persisté et laisse le nœud être GC.
+const ackNodeOf = new WeakMap();
+// État d'un groupe d'acks contigu dans UNE bulle assistant : { acks, mode,
+// slotExpanded }. `acks` = descripteurs d'entrée (mêmes objets que placeToolAck
+// reçoit), ordre d'arrivée. `mode` = 'compact'|'list'. `slotExpanded` = détail
+// visible dans le slot compact, hérité d'un ack à l'autre (brief §3). Aucune
+// mutation en place : chaque action renvoie un nouvel état.
+function ackGroupInitState() {
+  return { acks: [], mode: 'compact', slotExpanded: false };
+}
+function ackGroupReduce(state, action) {
+  const s = state || ackGroupInitState();
+  if (action.type === 'arrive') {
+    return { acks: s.acks.concat([action.ack]), mode: s.mode, slotExpanded: s.slotExpanded };
+  }
+  if (action.type === 'toggleMode') {
+    return { acks: s.acks, mode: s.mode === 'compact' ? 'list' : 'compact', slotExpanded: s.slotExpanded };
+  }
+  if (action.type === 'toggleSlot') {
+    return { acks: s.acks, mode: s.mode, slotExpanded: !s.slotExpanded };
+  }
+  return s;
+}
+// Seuil de bascule visuelle : compact tant que < 2 acks, le mode ne suffit pas
+// (un groupe à 1 ack reste transparent même en mode 'compact').
+function ackGroupIsCompact(state) {
+  return state.mode === 'compact' && state.acks.length >= 2;
+}
+function ackGroupCount(state) {
+  return state.acks.length;
+}
+function ackGroupVisibleAck(state) {
+  return state.acks.length ? state.acks[state.acks.length - 1] : null;
+}
+
+// Résolution pure du booléen reduced-motion effectif : préférence système
+// injectée en paramètre (jamais de matchMedia interne — testable QuickJS).
+function resolveMotionReduced(setting, systemPrefersReduced) {
+  if (setting === 'reduced') return true;
+  if (setting === 'normal') return false;
+  return !!systemPrefersReduced;
+}
+
+// Bascule compact/liste animée SIMULTANÉMENT (retour Julien : un flash de
+// groupe vide apparaissait avec un enchaînement séquentiel repli-puis-
+// agrandissement). Appelé APRÈS renderAckGroup (contenu déjà correct des DEUX
+// côtés — `outgoing` est masqué par `hidden` mais son contenu DOM reste
+// intact, cf. renderAckGroup : le mode compact ne vide jamais .ack-list, il
+// ne fait que le cacher). `outgoingStart` = hauteur mesurée AVANT le
+// re-render (le sortant avait encore son ancien contenu visible à ce moment).
+// `height` n'anime pas vers/depuis `auto` : on fixe une valeur px de départ
+// des deux côtés, un seul rAF pour poser les cibles, cleanup sur
+// transitionend de chaque panneau (indépendants, jamais orphelins).
+function animateGroupPanelSwap(outgoing, incoming, outgoingStart) {
+  const incomingTarget = incoming.scrollHeight;
+  outgoing.hidden = false;   // ré-affiché le temps de l'anim (contenu intact)
+  outgoing.style.height = outgoingStart + 'px';
+  outgoing.style.overflow = 'hidden';
+  outgoing.style.opacity = '1';
+  outgoing.classList.add('ack-panel-animating');
+  incoming.style.height = '0px';
+  incoming.style.overflow = 'hidden';
+  incoming.classList.add('ack-panel-animating');
+  requestAnimationFrame(() => {
+    outgoing.style.height = '0px';
+    // Fondu du sortant EN PLUS du rétrécissement (les deux panneaux partagent
+    // la même cellule de grille — cf. .ack-panels — donc le sortant restait
+    // visible par-dessus le texte entrant jusqu'à la toute fin, superposition
+    // signalée par Julien) : à hauteur quasi nulle son contenu ne devrait de
+    // toute façon plus être lisible, l'opacité masque le résidu avant ça.
+    outgoing.style.opacity = '0';
+    incoming.style.height = incomingTarget + 'px';
+  });
+  const onOutEnd = function(ev) {
+    if (ev.target !== outgoing || ev.propertyName !== 'height') return;
+    outgoing.removeEventListener('transitionend', onOutEnd);
+    outgoing.classList.remove('ack-panel-animating');
+    outgoing.style.height = '';
+    outgoing.style.overflow = '';
+    outgoing.style.opacity = '';
+    outgoing.hidden = true;   // reconforme à l'état voulu par renderAckGroup
+  };
+  const onInEnd = function(ev) {
+    if (ev.target !== incoming || ev.propertyName !== 'height') return;
+    incoming.removeEventListener('transitionend', onInEnd);
+    incoming.classList.remove('ack-panel-animating');
+    incoming.style.height = '';
+    incoming.style.overflow = '';
+  };
+  outgoing.addEventListener('transitionend', onOutEnd);
+  incoming.addEventListener('transitionend', onInEnd);
+}
+
+// ── Groupe d'acks (ticker) : partie DOM ─────────────────────────────────────
+// Un groupe par bulle assistant (`wrap._ackGroup`), créé paresseusement au 1er
+// ack. Porte l'état pur (ackGroupReduce) + les nœuds DOM. Le wrapper est posé
+// dès le 1er ack et reste visuellement transparent tant que count < 2 (PLAN
+// étape 4, ambiguïté 4 tranchée : pas de re-parent au franchissement du seuil).
+function ensureAckGroup(wrap) {
+  if (wrap._ackGroup) return wrap._ackGroup;
+  const el = document.createElement('div');
+  el.className = 'ack-group';
+  const slot = document.createElement('div');
+  slot.className = 'ack-slot';
+  const track = document.createElement('div');
+  track.className = 'ticker-track';
+  slot.appendChild(track);
+  const list = document.createElement('div');
+  list.className = 'ack-list';
+  list.hidden = true;
+  const badge = document.createElement('button');
+  badge.type = 'button';
+  badge.className = 'ack-badge';
+  badge.setAttribute('aria-expanded', 'false');
+  badge.hidden = true;   // masqué tant que count < 2 (transparence sous le seuil)
+  badge.addEventListener('click', () => {
+    // Bascule compact/liste (retour Julien : agrandissement/repli vertical
+    // SIMULTANÉS, pas séquentiels — sinon un flash de groupe vide entre le
+    // repli du panneau sortant et la réécriture du panneau entrant). On
+    // mesure le sortant AVANT toute mutation, on ré-affiche (contenu correct
+    // tout de suite, renderAckGroup), on mesure l'entrant maintenant peuplé,
+    // puis on anime les deux `height` en parallèle dans le même rAF.
+    const outgoing = group.state.mode === 'list' ? group.list : group.slot;
+    const animate = !motionReduced() && !outgoing.hidden;
+    const outgoingStart = animate ? outgoing.scrollHeight : 0;
+    group.state = ackGroupReduce(group.state, { type: 'toggleMode' });
+    renderAckGroup(group);
+    if (!animate) return;
+    const incoming = group.state.mode === 'list' ? group.list : group.slot;
+    animateGroupPanelSwap(outgoing, incoming, outgoingStart);
+  });
+  const panels = document.createElement('div');
+  panels.className = 'ack-panels';
+  panels.appendChild(slot);
+  panels.appendChild(list);
+  el.appendChild(panels);
+  el.appendChild(badge);
+  const body = wrap.querySelector('.body');
+  if (body) wrap.insertBefore(el, body);
+  else wrap.appendChild(el);
+  const group = { state: ackGroupInitState(), el, slot, track, list, badge };
+  // Slot-expanded (brief §3) : la ligne intent gère déjà son propre toggle
+  // DOM (renderIntentTwoLevel, self-contained) ; on écoute en bulle sur .ack-slot
+  // pour resynchroniser l'état de GROUPE — donc l'héritage à l'ack suivant —
+  // sans toucher à la signature de renderIntentTwoLevel/buildToolAck.
+  slot.addEventListener('click', (ev) => {
+    if (!ev.target.closest('.mcp-intent-row')) return;
+    const visible = ackGroupVisibleAck(group.state);
+    const visibleNode = visible && ackNodeOf.get(visible);
+    if (!visibleNode) return;
+    const detail = visibleNode.querySelector('.mcp-breadcrumb-detail');
+    if (!detail) return;
+    const nowExpanded = !detail.hasAttribute('hidden');
+    if (nowExpanded !== group.state.slotExpanded) {
+      group.state = ackGroupReduce(group.state, { type: 'toggleSlot' });
+    }
+  });
+  wrap._ackGroup = group;
+  return group;
+}
+
+// Ré-affiche l'intégralité du groupe depuis son état (source unique de vérité
+// pour le compteur — brief §No silent action). Pas d'animation ici : c'est un
+// resync, pas une arrivée (le ticker anime dans addAckAnimated, à part).
+function renderAckGroup(group) {
+  const count = ackGroupCount(group.state);
+  group.el.dataset.count = String(count);
+  group.el.dataset.mode = (group.state.mode === 'list' && count >= 2) ? 'list' : 'compact';
+  group.badge.hidden = count < 2;
+  group.badge.textContent = (group.state.mode === 'list' ? '▴ ' : '') + count + ' étape' + (count > 1 ? 's' : '');
+  group.badge.setAttribute('aria-expanded', String(group.state.mode === 'list'));
+  const showList = count >= 2 && group.state.mode === 'list';
+  group.list.hidden = !showList;
+  group.slot.hidden = showList;
+  if (showList) {
+    // Rebuild depuis l'état (source unique) : un ack a pu arriver pendant que
+    // le groupe était en mode compact (donc jamais append à .ack-list), ou le
+    // nœud visible a été déplacé dans le track par un précédent rendu compact.
+    for (const a of group.state.acks) {
+      const n = ackNodeOf.get(a);
+      if (n && n.parentNode !== group.list) group.list.appendChild(n);
+    }
+  } else {
+    // Slot compact (ou transparent sous le seuil) : ne montre que le dernier ack.
+    const visible = ackGroupVisibleAck(group.state);
+    const visibleNode = visible && ackNodeOf.get(visible);
+    group.track.querySelectorAll('.tool-ack').forEach(n => { if (n !== visibleNode) n.remove(); });
+    if (visibleNode && !group.track.contains(visibleNode)) {
+      group.track.appendChild(visibleNode);
+    }
+    if (visibleNode) applySlotExpanded(visibleNode, group.state.slotExpanded);
+    group.track.style.transform = '';
+    group.track.classList.remove('animating');
+  }
+}
+
+// Pré-ouvre/replie le détail d'un nœud .tool-ack déjà construit (héritage
+// slot-expanded, brief §3) : ne touche pas à buildToolAck/renderIntentTwoLevel,
+// juste l'attribut hidden + la classe .open du chevron.
+function applySlotExpanded(node, expanded) {
+  const detail = node.querySelector('.mcp-breadcrumb-detail');
+  const chevron = node.querySelector('.mcp-chevron');
+  if (!detail) return;
+  if (expanded) {
+    detail.removeAttribute('hidden');
+    if (chevron) chevron.classList.add('open');
+  } else {
+    detail.setAttribute('hidden', '');
+    if (chevron) chevron.classList.remove('open');
+  }
+}
+
+// Ajoute un ack au groupe. `animate` = true en live (arrivée réelle pendant le
+// streaming), false au reload (renderThread) — reconstruction, pas arrivée.
+function ackGroupAddAck(group, entry, node, animate) {
+  ackNodeOf.set(entry, node);   // pont état pur → nœud DOM, hors objet persisté
+  const prevVisible = ackGroupVisibleAck(group.state);
+  const wasCompact = ackGroupIsCompact(group.state);
+  group.state = ackGroupReduce(group.state, { type: 'arrive', ack: entry });
+  const nowCompact = ackGroupIsCompact(group.state);
+  applySlotExpanded(node, group.state.slotExpanded);
+
+  if (group.state.mode === 'list') {
+    group.list.appendChild(node);   // append en bas, sans animation (brief §4)
+    renderAckGroup(group);
+    return;
+  }
+  const prevNode = prevVisible && ackNodeOf.get(prevVisible);
+  if (!wasCompact || !nowCompact || !animate || !prevNode || motionReduced()) {
+    // Pas encore de transition à animer (1er/2e ack, reduced-motion, reload) :
+    // dry swap direct.
+    renderAckGroup(group);
+    return;
+  }
+  // Arrivée animée en compact : le nœud entrant est déjà en place (empilé sous
+  // le sortant dans le track), on measure/translate/cleanup sur transitionend.
+  group.track.appendChild(node);
+  const outgoing = prevNode;
+  const h = outgoing.offsetHeight;
+  group.track.classList.add('animating');
+  group.track.style.transform = 'translateY(-' + h + 'px)';
+  const onEnd = function() {
+    group.track.removeEventListener('transitionend', onEnd);
+    if (outgoing.parentNode === group.track) outgoing.remove();
+    group.track.classList.remove('animating');
+    group.track.style.transform = '';
+    renderAckGroup(group);   // resync badge/attrs, ne touche plus au track (déjà propre)
+  };
+  group.track.addEventListener('transitionend', onEnd, { once: true });
+}
+
+function placeToolAck(wrap, entry, animate) {
   if (ackKindOf(entry) === 'mcp_call' && entry.server) {
     const srv = getMcpServer(entry.server);
     if (srv && srv.showCalls === false) return null;
   }
   const node = buildToolAck(entry);
+  if (wrap) {
+    const group = ensureAckGroup(wrap);
+    ackGroupAddAck(group, entry, node, animate !== false);
+  }
   const body = wrap && wrap.querySelector('.body');
-  if (body) wrap.insertBefore(node, body);
-  else if (wrap) wrap.appendChild(node);
   // resource_presented : rend le bloc ressource (toute classe).
   // resource_stored : rend le bloc pour les binaires uniquement (les inline sont
   // stockés en IDB mais non affichés automatiquement) ; en live, _pendingToolBlocks
@@ -1446,7 +1705,7 @@ function renderThread(msgs) {
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
     const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated, m.attachments);
     if (m.role === 'assistant') {
-      for (const a of pendingAcks) placeToolAck(wrap, a);
+      for (const a of pendingAcks) placeToolAck(wrap, a, false);
     } else {
       for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
     }
@@ -3250,6 +3509,7 @@ function openSettings() {
   const s = loadSettings();
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
+  setMotionUI(s.motion || 'system');
   $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-save-json').checked = !!s.saveJsonResponses;
@@ -3385,6 +3645,69 @@ function selectTheme(theme) {
   setThemeUI(theme);
   applyTheme(theme);
   saveSettings({ theme });   // persisté immédiatement : préférence visuelle à effet direct
+}
+
+// ── Animations (reduced-motion) ─────────────────────────────────────────────
+const MOTION_HINTS = {
+  normal:  "Animations toujours actives, indépendamment du système.",
+  reduced: "Animations désactivées, indépendamment du système.",
+  system:  "Suit la préférence de réduction des animations du système.",
+};
+
+let pendingMotion = 'system';
+// Cache du booléen reduced-motion effectif, alimenté par applyMotion (seul point
+// de passage à chaque changement : init, selectMotion, sync multi-onglets,
+// changement de préférence OS). motionReduced() n'a donc PAS à re-parser le
+// localStorage à chaque appel — il est sollicité par ack animé et clic badge,
+// fréquence trop lourde pour un loadSettings() à chaque fois (retour Julien).
+// null = jamais initialisé → calcul complet une fois (défensif, avant init).
+let _motionReducedCache = null;
+function systemPrefersReducedMotion() {
+  return !!(typeof window !== 'undefined' && window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+// Booléen effectif consommé par les animations (ticker d'acks pour l'instant,
+// brief N §8) : accessor global, jamais de matchMedia câblé en dur ailleurs.
+function motionReduced() {
+  if (_motionReducedCache === null) {
+    _motionReducedCache = resolveMotionReduced(loadSettings().motion || 'system',
+                                               systemPrefersReducedMotion());
+  }
+  return _motionReducedCache;
+}
+// Pose/retire l'attribut sur <html>, même doctrine que data-theme (piège N/A
+// ici, pas de KV-cache concerné) : jamais délégué à un bloc @media CSS seul,
+// pour que le réglage explicite prime toujours sur la préférence système.
+// Rafraîchit aussi le cache lu par motionReduced() (seul point de passage).
+function applyMotion(setting) {
+  const reduced = resolveMotionReduced(setting, systemPrefersReducedMotion());
+  _motionReducedCache = reduced;
+  if (reduced) document.documentElement.setAttribute('data-motion', 'reduced');
+  else document.documentElement.removeAttribute('data-motion');
+}
+// Réglage « system » : un changement de préférence OS en cours de session
+// ré-applique le gate. Guard matchMedia : absent des stubs QuickJS.
+if (typeof window !== 'undefined' && window.matchMedia) {
+  const _motionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const _onSystemMotionChange = () => {
+    const m = loadSettings().motion || 'system';
+    if (m === 'system') applyMotion(m);
+  };
+  if (_motionMq.addEventListener) _motionMq.addEventListener('change', _onSystemMotionChange);
+  else if (_motionMq.addListener) _motionMq.addListener(_onSystemMotionChange);   // Safari < 14
+}
+function setMotionUI(motion) {
+  pendingMotion = motion || 'system';
+  document.querySelectorAll('#motion-mode .seg').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-mode') === pendingMotion);
+  });
+  const hint = $('motion-hint');
+  if (hint) hint.textContent = MOTION_HINTS[pendingMotion] || '';
+}
+function selectMotion(motion) {
+  setMotionUI(motion);
+  applyMotion(motion);
+  saveSettings({ motion });   // persisté immédiatement, modèle selectTheme
 }
 
 function onToggleHighlight() {
@@ -5452,7 +5775,9 @@ function showConfirmation(bodyHtml, onAccept, onReject) {
   container.appendChild(card);
   thread.appendChild(container);
   setConfirmPending(true);
-  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // behavior:'smooth' est une option JS, non couverte par le kill-switch CSS
+  // (scroll-behavior:auto) : gate explicite via motionReduced() (ui.js).
+  container.scrollIntoView({ behavior: motionReduced() ? 'auto' : 'smooth', block: 'nearest' });
 }
 
 function acceptProposal(pid) {

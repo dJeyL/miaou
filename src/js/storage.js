@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS = {
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (D7, lot Cbis)
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (D1 révisé, brief G)
+  motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────

@@ -1027,3 +1027,36 @@ navigation privée séparée ne partagent rien (attendu).
 Script de non-régression partiel : `.claude/skills/run-miaou/verify-multitab-sync.mjs`
 (deux pages sur un contexte partagé, `fetch` stubé, stream lent pour déclencher
 le heartbeat) — couvre 104/105 en synthétique ; le reste est manuel.
+
+113. **Groupe d'acks (ticker, brief N)** : une conversation où le modèle
+     enchaîne ≥3 outils dans un même tour. Vérifier : 1 ack = rendu identique
+     à avant le lot N (pas de badge, pas de chrome) ; dès le 2e ack, mode
+     compact avec ticker (le slot bascule verticalement vers le nouvel ack,
+     `transform` seulement, sans à-coup de layout) et badge « N étapes » à
+     jour en direct ; clic sur le badge → liste complète (agrandissement
+     vertical fluide, chevrons individuels intacts) ; reclic → retour compact
+     (le dernier ack) avec le même agrandissement vertical ; déplier le détail
+     du slot compact puis laisser arriver un nouvel ack → il arrive déjà
+     déplié (héritage) ; recharger la conversation → groupe reconstruit sans
+     animation, compact par défaut. Réglage **Animations** (Paramètres →
+     Apparence) : `Réduites` coupe le ticker ET l'agrandissement vertical
+     (bascule instantanée) ; `Système` suit `prefers-reduced-motion` du
+     système (basculer la préférence OS pendant que MIAOU est ouvert doit
+     re-appliquer le gate en direct, comme le thème). Export HTML de cette
+     conversation : acks rendus en `<details>` repliés comme avant le lot N,
+     aucune trace du ticker.
+  6. **Kill-switch global reduced-motion** — le réglage `Réduites` ne coupe pas
+     que les acks : `html[data-motion="reduced"]` (base.css) neutralise TOUTES
+     les transitions/animations du projet. Vérifier à vue en `Réduites` : arrivée
+     de messages sans le fade `rise`, ouverture des drawers/catégories de
+     réglages instantanée, spinner de chargement figé, curseur de streaming sans
+     `blink`, patienteur sans pulse ni points animés, scroll vers une proposition
+     de confirmation instantané (pas de smooth). Repasser en `Normales` : tout
+     revient. Le clin d'œil de boot garde son propre gate `@media` (il tourne
+     avant que le réglage JS soit appliqué).
+
+Script de non-régression : `.claude/skills/run-miaou/verify-ack-ticker.mjs`
+(simule l'arrivée de 5 acks via `placeToolAck` dans une bulle assistant
+fraîche — seuil, ticker, toggle liste/compact, héritage slot-expanded, gate
+Animations) — couvre le comportement synthétique ; le rendu en conversation
+réelle et l'export restent manuels.

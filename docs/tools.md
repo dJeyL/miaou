@@ -448,6 +448,36 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   `renderThread` tamponne les acks (qui précèdent l'assistant dans `currentThread`,
   ordre `[user, …acks, assistant]`) et les replace dans la bulle assistant suivante
   via `placeToolAck` ; repli en blocs autonomes s'ils ne précèdent pas un assistant.
+- **Repli à deux étages (ticker, brief N) — LIVE-ONLY.** `placeToolAck` route
+  chaque nœud `.tool-ack` vers un groupe (`wrap._ackGroup`, ui.js), créé
+  paresseusement au 1er ack de la bulle et posé **avant** `.body`, transparent
+  tant que `count < 2` (pas de re-parent au franchissement du seuil). État pur
+  testable QuickJS : `ackGroupReduce(state, action)` (`arrive` / `toggleMode` /
+  `toggleSlot`), dérivées `ackGroupIsCompact`/`ackGroupCount`/`ackGroupVisibleAck`.
+  Compact : un slot montre le dernier ack, arrivée animée en ticker vertical
+  (`transform: translateY`, jamais de layout) sauf reduced-motion (dry swap).
+  Liste : tous les acks empilés (`.ack-list`, rebuild depuis `state.acks` à
+  l'ouverture — un ack a pu arriver pendant que le groupe était compact, donc
+  jamais append à `.ack-list` sur le moment), chevrons individuels inchangés
+  (`renderIntentTwoLevel`). Un seul badge pilule persistant (« N étapes » /
+  « ▴ N étapes », `aria-expanded`), toggle animé par agrandissement/repli
+  vertical SIMULTANÉS des deux panneaux (`animateGroupPanelSwap`, appelée
+  APRÈS `renderAckGroup` — le sortant garde son contenu DOM intact sous
+  `hidden`, le mode compact ne vide jamais `.ack-list`) : hauteur du sortant
+  mesurée AVANT le re-render, les deux `height` animées dans le même rAF
+  (jamais de séquencement repli-puis-agrandissement, qui laissait voir un
+  flash de groupe vide). Transition posée seulement pendant l'anim, jamais en
+  permanence. Indépendant du ticker, sauté si reduced-motion. Expansion du slot
+  (`slotExpanded`) synchronisée par délégation de clic sur `.ack-slot`
+  (`renderIntentTwoLevel` garde son toggle DOM self-contained, inchangé) — hérite
+  à l'ack suivant sans toucher à `buildToolAck`. `placeToolAck(wrap, entry,
+  animate)` : `animate=false` au reload (`renderThread`), pas d'animation pour
+  une reconstruction. État **tab-local éphémère**, rien en IDB, rien broadcast
+  (lot J) ; export HTML **inchangé** (le repli ne concerne que le rendu live,
+  `renderExportBody`/`EXPORT_CSS`/`formatToolAcksHtml` n'y touchent pas). Réglage
+  **Animations** associé (`storage.js` `motion`, `'normal'|'reduced'|'system'`) :
+  accessor `motionReduced()`, gate `html[data-motion="reduced"]`, même doctrine
+  que `data-theme` (jamais `@media` seul).
 - **Timing des hooks live.** Les outils internes sont synchrones : leur ack est
   poussé dans `_pendingToolAcks` à l'intérieur du handler, et `onToolAcks()` vide
   la file **après** l'exécution de tous les outils d'un tour. Les outils MCP distants

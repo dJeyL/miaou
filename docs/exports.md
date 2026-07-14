@@ -63,6 +63,8 @@ hors MIAOU (mail, partage). Étape G-1 : socle de fonctions pures (le
 générateur de template complet et le bouton topbar sont des étapes
 ultérieures du même lot).
 
+- **Le repli à deux étages (ticker, brief N) est LIVE-ONLY** — `formatToolAcksHtml`/
+  `EXPORT_CSS` en sont indépendants, aucun impact (cf. `docs/tools.md`).
 - **`formatToolAcksHtml(acks)`** dans `utils.js` (pure, testée QuickJS) :
   sœur HTML de `formatToolAcksMd` — même seuils de troncature
   (`EXPORT_ARGS_MAX`/`EXPORT_RESULT_MAX`/`EXPORT_RESNAME_MAX`), même politique

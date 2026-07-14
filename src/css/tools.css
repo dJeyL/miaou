@@ -74,6 +74,52 @@
 .mcp-breadcrumb-detail { display: block; margin-top: 2px; color: var(--text-3); }
 .mcp-breadcrumb-detail[hidden] { display: none; }
 
+/* ── Groupe d'acks (ticker, brief N) : repli à deux étages ──────────────────── */
+/* Wrapper posé dès le 1er ack, transparent tant que data-count < 2 : aucun
+   chrome propre, le .tool-ack visible rend exactement comme avant le lot N.
+   Marge basse pour respirer avant .body (maquette v2, retour visuel Julien). */
+.ack-group { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+/* Colonne unique en grille : .ack-slot et .ack-list occupent la MÊME cellule
+   (superposés) plutôt que deux enfants flex côte à côte — pendant la bascule
+   compact/liste (animateGroupPanelSwap, ui.js) les deux sont visibles en même
+   temps le temps de l'anim, et deux items flex indépendants se disputaient la
+   largeur (jitter horizontal, retour Julien). Une seule colonne = pas de
+   redistribution de largeur possible. */
+.ack-panels { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; min-width: 0; }
+.ack-slot { grid-area: 1 / 1; overflow: hidden; position: relative; }
+.ack-list { grid-area: 1 / 1; min-width: 0; }
+.ticker-track { display: flex; flex-direction: column; }
+.ticker-track.animating { transition: transform 0.32s ease; }
+/* Reduced-motion : neutralisé par le kill-switch global data-motion="reduced"
+   (base.css), plus de gate dédié ici. */
+.ack-list .tool-ack { margin: 3px 0 3px 2px; }
+/* Agrandissement vertical à la bascule compact/liste (retour visuel Julien),
+   indépendant du ticker (translateY, arrivée d'ack) : transition posée
+   uniquement pendant l'anim (animateGroupPanelExpand, ui.js), jamais en
+   permanence sur .ack-slot/.ack-list — sinon un resize de fenêtre ou un
+   changement de contenu hors toggle hériterait d'une transition parasite.
+   `opacity` en plus de `height` : les deux panneaux partagent la même cellule
+   de grille (.ack-panels) pendant la bascule, le sortant fondu masque le
+   résidu de texte superposé à l'entrant en toute fin d'anim (retour Julien). */
+.ack-panel-animating { transition: height 0.22s ease, opacity 0.22s ease; }
+/* Pilule de bascule (maquette v2 .ack-count) : même colonne de droite,
+   alignée en haut, en compact comme en liste. */
+.ack-badge {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  margin-top: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms, border-color 120ms;
+}
+.ack-badge:hover { color: var(--accent); border-color: var(--accent-bd); }
+
 /* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
 .tool-block {
   align-self: flex-start;
