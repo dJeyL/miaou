@@ -140,24 +140,17 @@ const MEMORY_DOCTRINE =
 // est réutilisé tel quel, comme pour le chemin inféré mémoire ou les skills.
 // Le gate repose donc sur la discipline du modèle (cette doctrine), pas sur un
 // verrou technique côté handler — même modèle de confiance que MEMORY_DOCTRINE.
+// v2 (extraction skill système) : le corps complet (QUAND + COMMENT, indissociables
+// ici — c'est une doctrine de déclenchement, pas un mode d'emploi d'API) a été
+// déplacé dans la skill système `files-promote` (src/system-skills/files-promote.md,
+// cf. docs/skills.md) : usage assez rare pour ne pas justifier sa présence
+// permanente dans ROOT_SYSTEM_PROMPT. Ne reste ici qu'un pointeur court.
 const FILES_DOCTRINE =
-  "Doctrine de déclenchement pour miaou__files__promote (bibliothèque de fichiers " +
-  "de l'espace) :\n\n" +
-  "N'appelle JAMAIS miaou__files__promote directement. Si tu identifies qu'une " +
-  "pièce jointe du tour courant (att-N) mériterait d'être conservée dans la " +
-  "bibliothèque persistante de l'espace (contenu de référence, réutilisable au-delà " +
-  "de cette conversation), appelle d'abord ask_confirmation avec une question qui " +
-  "inclut LITTÉRALEMENT le nom du fichier, son type, sa taille approximative, et la " +
-  "description que tu proposes de stocker (ce que le fichier EST, pas son contenu) : " +
-  "« Tu veux que j'ajoute « nom_fichier » à la bibliothèque de l'espace, avec cette " +
-  "description : « … » ? ».\n\n" +
-  "SEULEMENT si l'utilisateur confirme positivement au tour suivant, appelle " +
-  "miaou__files__promote(ref, description, name?) avec le MÊME ref, description et " +
-  "name (si fourni) que ceux annoncés dans la question — ne reformule pas la " +
-  "description entre la question et l'appel. Ne JAMAIS affirmer avoir ajouté un " +
-  "fichier à la bibliothèque si tu n'as pas appelé miaou__files__promote avec " +
-  "succès dans ce même tour. Si l'utilisateur décline, n'appelle pas l'outil et " +
-  "n'insiste pas.";
+  "Si une pièce jointe du tour courant (att-N) mériterait d'être conservée dans " +
+  "la bibliothèque persistante de l'espace, appelle d'abord miaou__skills__read " +
+  "avec le slug « files-promote » (skill système, listée dans <miaou_skills_context> " +
+  "si présente) : elle donne la doctrine de déclenchement complète (confirmation " +
+  "préalable, format d'appel) avant tout appel à miaou__files__promote.";
 
 // Doctrine docs (brief H) : injectée SEULEMENT si un outil du registre distant
 // déclare le contrat ref+content_b64 (anyToolDeclaresAttachmentInflation) —
@@ -197,12 +190,16 @@ const JS_EVAL_OUTPUT_CAP = 20000;
 // Doctrine js__eval — INCONDITIONNELLE (AL4, décision Julien) : l'outil est natif,
 // toujours présent (pas de MCP, pas de toggle), donc dans ROOT_SYSTEM_PROMPT
 // comme BINARY_DOCTRINE. Constante STATIQUE (aucune donnée dynamique/modèle) →
-// KV-safe (piège 16), byte-stable d'un tour à l'autre. La liste ÉNUMÉRÉE des
-// primitives guest vit ici (brief §6 : « closed enumerated list ») — c'est le
-// SEUL contrat que le modèle a sur le monde guest. AL3 : le contenu injecté est
-// TEXTUEL (UTF-8 décodé) ; un binaire pur (PDF, image) va à docs__*, jamais ici.
+// KV-safe (piège 16), byte-stable d'un tour à l'autre.
+// v2 (extraction skill système) : SEUL le QUAND (déclencheur du réflexe — cas
+// d'usage, fallback docs__read) reste ici, pour ne pas perdre le réflexe
+// d'appel (décision explicite : contrairement à FILES_DOCTRINE, on accepte ici
+// l'invalidation ponctuelle du KV cache car JS_EVAL_DOCTRINE était la plus
+// grosse doctrine du prompt racine). Le COMMENT (signature d'appel, primitives
+// énumérées, méthode, contraintes de sortie) est déplacé dans la skill système
+// `js-eval` (src/system-skills/js-eval.md, cf. docs/skills.md) : le modèle
+// l'appelle via miaou__skills__read avant d'écrire son premier appel.
 const JS_EVAL_DOCTRINE =
-  "<COMPUTE_SANDBOX>\n" +
   "L'outil miaou__js__eval exécute du JavaScript que TU écris dans un bac à sable " +
   "isolé (QuickJS), sur le contenu TEXTUEL d'UN fichier référencé par son handle " +
   "(att-N, file-<id> ou res_<id>), sans jamais charger ce contenu dans ta fenêtre " +
@@ -211,40 +208,13 @@ const JS_EVAL_DOCTRINE =
   "quand le lire en entier serait inutile ou impossible. C'est aussi la voie à " +
   "prendre quand docs__read refuse un fichier trop volumineux : n'insiste pas avec " +
   "docs__read, passe directement à miaou__js__eval sur le même handle.\n\n" +
-  "APPEL : miaou__js__eval(handle, code). `handle` = le handle du fichier (jamais " +
-  "son contenu ni un chemin). `code` = une expression ou une suite d'instructions " +
-  "JavaScript dont la DERNIÈRE valeur évaluée est le résultat renvoyé. Le code " +
-  "s'exécute au niveau global (PAS dans une fonction) : pour renvoyer un objet, " +
-  "enveloppe-le dans un appel — `JSON.stringify({ a: 1, b: 2 })` — ou parenthèse-le " +
-  "— `({ a: 1, b: 2 })`. Un objet nu en dernière ligne (`{ a: 1 }`) est lu comme un " +
-  "BLOC, pas comme une valeur, et échoue : préfère la forme JSON.stringify(…). " +
-  "Termine tes instructions par des points-virgules. N'inclus JAMAIS le contenu du " +
-  "fichier dans `code` : il est déjà disponible via les primitives ci-dessous.\n\n" +
-  "PRIMITIVES disponibles dans le bac à sable (liste FERMÉE — rien d'autre du monde " +
-  "hôte n'est accessible : ni fetch, ni réseau, ni DOM, ni système de fichiers) :\n" +
-  "- text() → le contenu textuel entier du fichier (string).\n" +
-  "- lines() → un tableau des lignes du fichier (découpe sur les sauts de ligne).\n" +
-  "- jsonLines() → un tableau d'objets, une ligne JSON parsée par élément (les " +
-  "lignes vides ou non parsables sont ignorées) ; pour un fichier JSON-lines/NDJSON.\n" +
-  "- parse() → le fichier entier parsé comme un unique document JSON.\n" +
-  "Ces quatre noms (text, lines, jsonLines, parse) sont RÉSERVÉS : ne les réutilise " +
-  "pas comme noms de variable. `const lines = lines()` échoue (redéclaration d'un " +
-  "identifiant global) — nomme ta variable autrement, ex. `const rows = lines();`.\n" +
-  "Les globals JavaScript standard (JSON, Math, Array, String, RegExp, Date…) sont " +
-  "disponibles. Aucun déterminisme n'est requis (Date/Math.random autorisés).\n\n" +
-  "MÉTHODE : procède par petits appels successifs plutôt que de viser un seul gros " +
-  "script parfait. Un premier appel pour inspecter la forme du fichier (quelques " +
-  "lignes de tête/queue, un décompte), puis un ou des appels ciblés selon ce que tu " +
-  "as vu. Un script clair de plusieurs lignes, avec des variables intermédiaires " +
-  "nommées, réussit mieux qu'un one-liner condensé — n'essaie pas de tout " +
-  "raccourcir. Tu peux enchaîner de nombreux appels : c'est l'usage attendu.\n\n" +
-  "SORTIE : le résultat est ramené en texte (les objets/tableaux sont sérialisés en " +
-  "JSON). Si ce texte dépasse " + JS_EVAL_OUTPUT_CAP + " caractères, l'appel est " +
-  "REFUSÉ (pas tronqué) : réécris ton code pour renvoyer une synthèse plus petite " +
-  "(un compte, un top-N, un échantillon), jamais le fichier brut. Le bac à sable a " +
-  "aussi une limite de temps et de mémoire : une boucle infinie ou une accumulation " +
-  "démesurée échoue proprement — écris du code borné.\n" +
-  "</COMPUTE_SANDBOX>";
+  "Le résultat est ramené en texte : au-delà de " + JS_EVAL_OUTPUT_CAP + " caractères, " +
+  "l'appel est REFUSÉ (pas tronqué) — vise toujours une synthèse (compte, top-N, " +
+  "échantillon), jamais le fichier brut.\n\n" +
+  "Avant ton PREMIER appel à miaou__js__eval dans cette conversation, appelle " +
+  "miaou__skills__read avec le slug « js-eval » (skill système, listée dans " +
+  "<miaou_skills_context> si présente) : elle donne la signature d'appel exacte, " +
+  "les primitives disponibles dans le bac à sable et le détail des contraintes de sortie.";
 
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
 // Compose les doctrines ; référencé par buildSystemMessage() (main.js).
@@ -258,12 +228,13 @@ const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
 // d'outils, donc PAS dans ROOT_SYSTEM_PROMPT. Portée
 // directement par systemMessageParts()/buildSystemMessage() (main.js) via out.codeblock.
-// v2 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
-// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v2, lot E3 : doctrine étendue
-// aux blocs mermaid — le filename= nomme les exports d'image SVG/PNG, extension
-// ajustée côté application par diagramImageName. v3 : contraintes de syntaxe des
-// labels mermaid — parenthèses dans un [label] font échouer le parse ; balises
-// HTML (<b>/<i>) inertes car htmlLabels:false, cf. docs/rendering.md.)
+// v4 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
+// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v4 : les règles de syntaxe mermaid-only
+// — ex-v2/v3 — sont retirées d'ici et déplacées dans la skill système `mermaid`
+// (src/system-skills/mermaid.md, cf. docs/skills.md) : le modèle l'appelle via
+// miaou__skills__read avant de générer un diagramme, autotrigger listant sa
+// disponibilité dans <miaou_skills_context>. Ne reste ici que la convention
+// filename=, générique à tout langage.)
 const CODEBLOCK_DOCTRINE =
   "Quand tu génères un bloc de code destiné à être enregistré comme fichier (script, " +
   "config, module…), fournis un nom de fichier sur la ligne d'ouverture de la fence, " +
@@ -273,29 +244,9 @@ const CODEBLOCK_DOCTRINE =
   "mermaid (ex. ```mermaid filename=flux-auth.mmd) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
-  "Pour les diagrammes mermaid, respecte ces contraintes de syntaxe sous peine de " +
-  "diagramme non rendu :\n" +
-  "- ERREUR LA PLUS FRÉQUENTE : ne mets JAMAIS la séquence backslash-n (\\n) à " +
-  "l'intérieur d'un label, même pour un saut de ligne visuellement voulu. Mermaid ne " +
-  "l'interprète PAS comme un saut de ligne, contrairement à d'autres formats texte : elle " +
-  "reste affichée telle quelle ou casse le parse. Pour un saut de ligne DANS un label, " +
-  "utilise UNIQUEMENT la balise <br/>. Exemple : A[\"Ligne un<br/>Ligne deux\"] et non " +
-  "A[Ligne un\\nLigne deux].\n" +
-  "- Si un texte de nœud contient une parenthèse, une accolade, un crochet, un guillemet " +
-  "ou tout autre caractère spécial, entoure TOUT le texte de guillemets doubles. " +
-  "Exemple : A[\"France vs Maroc (2-0)\"] et non A[France vs Maroc (2-0)] — une " +
-  "parenthèse nue dans un [label] casse le parse.\n" +
-  "- Ne mets JAMAIS de crochets [ ] à l'intérieur d'un label, même entouré de guillemets " +
-  "doubles : contrairement aux parenthèses/accolades, les guillemets ne neutralisent PAS " +
-  "un crochet interne, il ferme prématurément la forme du nœud. Reformule sans crochets " +
-  "(parenthèses ou tirets à la place). Exemple : B[\"Message avec pièce jointe (att-N)\"] " +
-  "et non B[\"Message avec pièce jointe [att-N]\"].\n" +
-  "- Si un label doit lui-même contenir des guillemets doubles, ne les mets pas tels " +
-  "quels même avec le label entouré de guillemets : deux guillemets imbriqués cassent " +
-  "le parse. Reformule sans guillemets, ou remplace-les par l'entité #quot;.\n" +
-  "- N'utilise PAS de balises HTML de mise en forme (<b>, <i>, <em>, <strong>…) dans les " +
-  "labels : elles ne sont pas interprétées et s'affichent littéralement. Seul <br/> est " +
-  "reconnu, pour un saut de ligne.";
+  "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +
+  "avec le slug « mermaid » (skill système, listée dans <miaou_skills_context> si " +
+  "présente) : elle donne les règles de syntaxe à respecter.";
 
 // Blurb d'identité — constante build-time, INCONDITIONNELLE (même statut que
 // CODEBLOCK_DOCTRINE) : quelques phrases situant l'application et renvoyant vers
@@ -862,6 +813,9 @@ const TOOLS = [
     handler: (args) => {
       const slug = String((args && args.slug) || '').trim();
       const existingMeta = slug ? getSkillMeta(slug) : null;
+      if (existingMeta && existingMeta.system === true) {
+        return 'Skill système : « ' + slug + ' » n\'est pas modifiable par cet outil.';
+      }
       const err = validateSkillSlug(slug, existingMeta ? [] : listAllSkillsCache().map(s => s.slug));
       if (err) return err;
       if (existingMeta && args.overwrite !== true) {

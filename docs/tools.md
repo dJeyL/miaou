@@ -226,14 +226,17 @@ model-side unique sur la bibliothèque) :**
   revient sur l'audit §5 après relecture du mécanisme réel).** `files__promote`
   n'est **jamais** un outil halting : `toolIsHalting` reste câblé
   exclusivement sur `ask_confirmation`, aucune modification du primitif
-  partagé. Le gate est **doctrinal** : `FILES_DOCTRINE` (tools.js, partie
-  inconditionnelle de `ROOT_SYSTEM_PROMPT`, comme `MEMORY_DOCTRINE`) prescrit
-  au modèle d'appeler `ask_confirmation` avec un récapitulatif (nom, type,
-  taille, description proposée) **avant** tout appel à `files__promote`, puis
-  de rappeler avec le **même** `ref`/`description` sur confirmation positive —
-  exactement le patron déjà éprouvé pour `create_memory` sur le chemin inféré
-  mémoire
-  (le modèle rappelle un AUTRE outil après le « Oui », jamais lui-même).
+  partagé. Le gate est **doctrinal** : il prescrit au modèle d'appeler
+  `ask_confirmation` avec un récapitulatif (nom, type, taille, description
+  proposée) **avant** tout appel à `files__promote`, puis de rappeler avec le
+  **même** `ref`/`description` sur confirmation positive — exactement le
+  patron déjà éprouvé pour `create_memory` sur le chemin inféré mémoire (le
+  modèle rappelle un AUTRE outil après le « Oui », jamais lui-même). Depuis
+  l'extraction en skill système (cf. `docs/skills.md` §8), le corps complet de
+  cette doctrine vit dans `src/system-skills/files-promote.md` — `FILES_DOCTRINE`
+  (tools.js, toujours partie inconditionnelle de `ROOT_SYSTEM_PROMPT`, comme
+  `MEMORY_DOCTRINE`) ne garde plus qu'un pointeur court vers
+  `miaou__skills__read('files-promote')`.
   Pourquoi la voie A (généraliser `toolIsHalting`, `files__promote` lui-même
   halting-puis-exécutant) a été écartée : elle aurait introduit un patron
   inédit — aucun outil existant ne s'auto-rappelle en mode
@@ -313,29 +316,34 @@ model-side unique sur la bibliothèque) :**
   propre (un compute demandé qui ne peut tourner doit le dire). Artefact figé :
   `quickjs-emscripten@0.32.0/dist/index.global.min.js` (IIFE `window.QJS`, WASM
   `RELEASE_SYNC` inliné, un seul `<script src>` — spike L0, cf. `AUDIT-L.md`).
-- **Guidage des modèles — pièges du mode global (`JS_EVAL_DOCTRINE`).** Le code
-  modèle est évalué en **mode global** (pas dans une fonction — l'enveloppe IIFE a
-  été retirée car elle supprimait la completion-value). Ce mode expose trois pièges
-  que des modèles moins solides déclenchent en boucle (constaté sur des exports
-  réels : mistral tâtonnait ~10 tours là où gemma4 réussissait du premier coup) —
-  la doctrine les prévient explicitement, et c'est de la **doctrine**, jamais un
-  changement du harnais d'évaluation (fragile, cf. bug IIFE) :
+- **Guidage des modèles — pièges du mode global (skill système `js-eval`, ex-
+  `JS_EVAL_DOCTRINE`).** Le code modèle est évalué en **mode global** (pas dans
+  une fonction — l'enveloppe IIFE a été retirée car elle supprimait la
+  completion-value). Ce mode expose trois pièges que des modèles moins solides
+  déclenchent en boucle (constaté sur des exports réels : mistral tâtonnait ~10
+  tours là où gemma4 réussissait du premier coup) — c'est de la **doctrine**,
+  jamais un changement du harnais d'évaluation (fragile, cf. bug IIFE) :
   1. **Collision de noms** — `const lines = lines()` → `invalid redefinition of
-     global identifier` (les primitives sont des globals). La doctrine liste les
+     global identifier` (les primitives sont des globals). La skill liste les
      quatre noms réservés ; `_jsEvalErrText` **accole en plus un hint** au message
      d'erreur brut (qui ne nomme ni l'identifiant ni la cause).
   2. **Objet nu final** — `{ a: 1 }` en dernière ligne est lu comme un **bloc**, pas
-     une valeur → `expecting ';'`. La doctrine impose `JSON.stringify({…})` ou
+     une valeur → `expecting ';'`. La skill impose `JSON.stringify({…})` ou
      `({…})` (ce que gemma4 fait spontanément).
   3. **ASI** — instructions sans point-virgule + `const` en mode global →
-     `ReferenceError: X is not initialized`. La doctrine réclame les points-virgules.
-  La doctrine incite aussi à **enchaîner plusieurs petits appels** (inspecter puis
+     `ReferenceError: X is not initialized`. La skill réclame les points-virgules.
+  La skill incite aussi à **enchaîner plusieurs petits appels** (inspecter puis
   cibler) plutôt qu'un gros script unique, et à ne PAS raccourcir vers un one-liner
   (contre-productif : le problème n'est jamais la longueur mais la forme du retour).
   C'est pourquoi `MAX_TOURS` (api.js) est passé de 20 à 40 : un usage sain de
-  `js__eval` consomme légitimement beaucoup de tours. Corollaire piège 16 : ces
-  ajouts à `JS_EVAL_DOCTRINE` invalident le préfixe KV cache une fois (statique
-  ensuite).
+  `js__eval` consomme légitimement beaucoup de tours.
+  Depuis l'extraction en skill système (cf. `docs/skills.md` §8), ce guidage
+  (le COMMENT) vit dans `src/system-skills/js-eval.md` ; `JS_EVAL_DOCTRINE`
+  (tools.js) ne garde que le QUAND (cas d'usage, fallback `docs__read`, cap de
+  sortie chiffré) et un pointeur `miaou__skills__read('js-eval')` — décision
+  volontaire d'invalider une fois le préfixe KV cache (piège 16) en réduisant
+  cette doctrine, la plus grosse des sept de `ROOT_SYSTEM_PROMPT`, jugée plus
+  coûteuse à garder entière sur chaque tour qu'à payer une fois l'invalidation.
 
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 

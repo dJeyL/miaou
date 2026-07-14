@@ -56,10 +56,15 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   `BUILD_API_MODEL`).
 - **`__MIAOU_HELP__`** ← `src/help.md` parsé en `{slug: markdown}` (injecté
   dans `tools.js`, alimente `miaou__about` et l'enum `topic`).
+- **`__MIAOU_SYSTEM_SKILLS__`** ← `src/system-skills/*.md` (un fichier par
+  skill, nom de fichier = slug) parsés en `{slug: {name, description,
+  content}}` (injecté dans `skills.js`, upserté en IDB à chaque démarrage par
+  `ensureSystemSkills()` — skills non éditables par l'utilisateur, `enabled`/
+  `autotrigger` figés à `true`, cf. `docs/skills.md`).
 
 Les commentaires sont retirés au passage (`strip_js_comments`/`strip_css_comments`/
 `strip_html_comments`, testés dans `run_build_unit_tests`) : `src/` reste la
-référence commentée, `dist/` est compact. Les trois marqueurs sont à **occurrence
+référence commentée, `dist/` est compact. Les quatre marqueurs sont à **occurrence
 unique en position de valeur**, avec une garde `try/catch` côté source pour que
 les tests QuickJS (sources non buildées) retombent sur `{}`. **`HELP_CONTENT`
 n'entre jamais dans le contexte du modèle** : seul le blurb d'identité et l'enum
@@ -269,8 +274,8 @@ appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
   jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
   fichiers (`ui.js`, `chat.css`).
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
-  marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`, points d'injection et gardes
-  `try/catch`.
+  marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
+  points d'injection et gardes `try/catch`.
 - **`docs/pitfalls-detail.md`** — développement complet des 24 pièges ci-dessus.
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,

@@ -3,8 +3,13 @@
 Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
 navigateur + framework maison). Le runner exécute d'abord quelques **tests
 unitaires Python de build.py** (`run_build_unit_tests` : strip des commentaires
-JS/CSS/HTML — strings, templates, regex, commentaire non terminé), comptés dans
-le même total. Seules les **fonctions pures** sont couvertes
+JS/CSS/HTML — strings, templates, regex, commentaire non terminé ;
+`parse_help_sections` — nominal, ordre, fence, slug dupliqué, fichier sans
+section ; `parse_system_skill_file`/`load_system_skills` — cartouche nominal,
+description absente, cartouche/`name`/corps manquant → `ValueError`, lecture
+réelle de `src/system-skills/*.md`, dossier absent → `{}` via un `SRC` de test
+temporaire), comptés dans le même total. Seules les **fonctions pures** sont
+couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 (`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`), **agrégation MCP**

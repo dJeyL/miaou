@@ -3470,10 +3470,10 @@ function closeSummaryDrawer() {
 // cohérente barre/table. 'thread'/'attachment_images' en dernier (volumes les
 // plus variables).
 const CTX_PALETTE = {
-  root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
+  identity_blurb: '#e0d45a', root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
   intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a', docs_doctrine: '#c98bf2',
-  user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
-  summaries: '#e0955a', skills_context: '#8bc98b', space_library: '#5ac98b',
+  codeblock_doctrine: '#e05ac9', user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
+  summaries: '#e0955a', skills_context: '#8bc98b', space_library: '#3ea8d9',
   thread: '#4a90d9', attachment_images: '#d9974a',
 };
 
@@ -4656,7 +4656,88 @@ function renderSkills() {
     wrap.appendChild(empty);
     return;
   }
-  for (const s of skills) wrap.appendChild(buildSkillCard(s, false));
+  // Skills utilisateur en tête (ce qu'on modifie le plus souvent), skills
+  // système ensuite dans un groupe distinct précédé d'un texte d'intro —
+  // non éditables (cf. buildSystemSkillCard), pour ne pas les noyer dans la
+  // liste modifiable.
+  const system = skills.filter(s => s.system === true);
+  const user = skills.filter(s => s.system !== true);
+  for (const s of user) wrap.appendChild(buildSkillCard(s, false));
+  if (system.length) {
+    const intro = document.createElement('div');
+    intro.className = 'hint skill-system-intro';
+    intro.textContent = 'Skills système : fournies par l\'application, toujours actives, non modifiables ni supprimables.';
+    wrap.appendChild(intro);
+    for (const s of system) wrap.appendChild(buildSystemSkillCard(s));
+  }
+}
+
+// Carte d'une skill SYSTÈME (non éditable/supprimable, cf. docs/skills.md) :
+// toggle enabled (seul réglage utilisateur légitime) + bouton « Consulter »
+// qui bascule un panneau readonly rendu via renderMd (marked.js), jamais de
+// section édition. Contenu chargé en IDB à l'ouverture, comme enterSkillEdit.
+function buildSystemSkillCard(skill) {
+  const card = document.createElement('div');
+  card.className = 'cfg-card skill-card skill-card--system';
+  const slug = skill.slug || '';
+  if (slug) card.dataset.slug = slug;
+
+  const viewSection = document.createElement('div');
+  viewSection.className = 'cfg-view skill-view';
+
+  const viewMain = document.createElement('div');
+  viewMain.className = 'skill-view-main';
+  const viewName = document.createElement('div');
+  viewName.className = 'skill-view-name';
+  viewName.textContent = skill.name || skill.slug || '(sans nom)';
+  const viewBadge = document.createElement('span');
+  viewBadge.className = 'skill-system-badge';
+  viewBadge.textContent = 'Système';
+  viewName.appendChild(viewBadge);
+  const viewSlug = document.createElement('div');
+  viewSlug.className = 'skill-view-slug';
+  viewSlug.textContent = '/' + slug;
+  viewMain.append(viewName, viewSlug);
+  viewSection.appendChild(viewMain);
+
+  const viewRow = document.createElement('div');
+  viewRow.className = 'cfg-view-row skill-view-row';
+
+  // Pas de toggle enabled : une skill système est TOUJOURS activée (cf.
+  // ensureSystemSkills, skills.js — enabled figé à true à chaque démarrage).
+
+  const viewBtn = document.createElement('button');
+  viewBtn.className = 'drawer-btn';
+  viewBtn.textContent = 'Consulter';
+  viewBtn.addEventListener('click', () => toggleSystemSkillContent(card, slug, viewBtn));
+  viewRow.appendChild(viewBtn);
+
+  viewSection.appendChild(viewRow);
+  card.appendChild(viewSection);
+
+  const contentView = document.createElement('div');
+  contentView.className = 'skill-system-content';
+  contentView.hidden = true;
+  card.appendChild(contentView);
+
+  return card;
+}
+
+// Bascule le panneau de consultation d'une skill système : ouvre + charge le
+// contenu (IDB, rendu renderMd) au premier clic, referme ensuite sans
+// recharger (re-clic sur Consulter rouvre direct, contenu déjà posé). Le
+// libellé du bouton suit l'état (Consulter ↔ Fermer).
+function toggleSystemSkillContent(card, slug, btn) {
+  const el = card.querySelector('.skill-system-content');
+  if (!el) return;
+  if (!el.hidden) { el.hidden = true; if (btn) btn.textContent = 'Consulter'; return; }
+  el.hidden = false;
+  if (btn) btn.textContent = 'Fermer';
+  if (el.dataset.loaded === '1') return;
+  getSkillRecord(slug).then(rec => {
+    el.innerHTML = renderMd(rec ? (rec.content || '') : '');
+    el.dataset.loaded = '1';
+  }).catch(() => {});
 }
 
 function addSkillCard() {

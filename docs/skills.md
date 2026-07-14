@@ -1,27 +1,33 @@
-# Skills (stage 1 + stage 2 autotrigger)
+# Skills (stage 1 + stage 2 autotrigger + skills système)
 
 Fragments d'instructions Markdown réutilisables. **Stage 1** : skill
 mono-fichier, CRUD + drawer, invocation slash déterministe, et chemin langage
 naturel via deux outils. **Stage 2** ajoute l'**autotrigger** : un booléen par
 skill qui la fait lister chaque tour dans un bloc de contexte dynamique, pour
-découverte proactive par le modèle sans appel préalable à `skills__list`.
+découverte proactive par le modèle sans appel préalable à `skills__list`. Un
+troisième axe (non numéroté en stage) ajoute les **skills système** : skills
+non éditables/supprimables par l'utilisateur, dont le contenu vit dans
+`src/system-skills/*.md` et est injecté au build (cf. §7 ci-dessous).
 **Hors périmètre stage 1+2** (ne pas amorcer) : skills multi-fichiers (stage 3),
 primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémoire
 + couche IDB).
 
 1. **Stockage = IDB store `skills`** (base `miaou` v2, keyPath `slug`) :
-   `{ slug, name, description, enabled, content, autotrigger }`. `autotrigger`
-   (stage 2, défaut `false` — **opposé** de `enabled`) : pas de bump de version
-   IDB pour ce seul ajout (schemaless, absence == `false`). Le **cache mémoire**
-   (`_skillsCache`, méta SANS `content`, projection `_skillMeta` — couvre
-   désormais `autotrigger`) alimente l'autocomplétion (filtrage synchrone par
-   frappe, ne peut pas attendre IDB). `content` n'est lu en IDB qu'à
-   l'**invocation** (slash ou `skills__read`) et à l'**entrée en édition**
-   (`getSkillRecord`). Les CRUD IDB (`putSkill`/`deleteSkillDb`/
-   `toggleSkillEnabled`) synchronisent le cache ; `loadSkillsCache` le peuple au
-   démarrage (fire-and-forget dans `init`). Suppression = **hard delete** (pas de
-   tombstone : action administrative explicite de l'utilisateur, ≠ écriture mémoire
-   inférée où « undo ≠ consentement »).
+   `{ slug, name, description, enabled, content, autotrigger, system }`.
+   `autotrigger` (stage 2, défaut `false` — **opposé** de `enabled`) : pas de
+   bump de version IDB pour ce seul ajout (schemaless, absence == `false`).
+   `system` (défaut `false`, même logique schemaless) marque une skill système
+   — cf. §7. Le **cache mémoire** (`_skillsCache`, méta SANS `content`,
+   projection `_skillMeta` — couvre `autotrigger` et `system`) alimente
+   l'autocomplétion (filtrage synchrone par frappe, ne peut pas attendre IDB).
+   `content` n'est lu en IDB qu'à l'**invocation** (slash ou `skills__read`) et
+   à l'**entrée en édition** (`getSkillRecord`). Les CRUD IDB (`putSkill`/
+   `deleteSkillDb`/`toggleSkillEnabled`) synchronisent le cache ;
+   `loadSkillsCache` le peuple au démarrage (fire-and-forget dans `init`).
+   Suppression = **hard delete** (pas de tombstone : action administrative
+   explicite de l'utilisateur, ≠ écriture mémoire inférée où « undo ≠
+   consentement ») — s'applique aux skills utilisateur ; une skill système
+   n'expose pas de bouton Supprimer (cf. §7).
 
 2. **Invocation slash = injection côté client, ≠ `<miaou_context>`.** Détection +
    validation + injection vivent dans **`resolveSend(literal)`** (main.js, async),
@@ -170,3 +176,97 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      l'appel `skills__read` dans l'ack. Garde anti-narration (`_TAIL`) : ne pas
      prétendre avoir appliqué une skill sans avoir appelé `skills__read` dans
      le même tour.
+
+7. **Skills système : non éditables, source = `src/system-skills/*.md`.** Une
+   skill système (`system: true` sur le record IDB) sert à documenter une
+   capacité de l'application elle-même (ex. la syntaxe mermaid, cf. ci-dessous)
+   sans dupliquer ce contenu à la main dans une constante JS ni le rendre
+   éditable par erreur. Elle **réutilise tout le mécanisme stage 1+2 existant**
+   (invocation slash, `skills__list`/`skills__read`, autotrigger, listing
+   `<miaou_skills_context>`) : aucune de ces fonctions ne traite `system`
+   spécifiquement, elles lisent seulement `enabled`/`autotrigger`/`slug`/
+   `name`/`description`.
+   - **Fichiers source** : un fichier par skill système dans
+     `src/system-skills/<slug>.md` — le **nom de fichier (sans extension) est
+     le slug**, la clé IDB. Cartouche frontmatter en tête (`name`,
+     `description` — sous-ensemble des clés de l'import utilisateur,
+     `parseSkillFrontmatter`, mais parsé côté build par
+     `parse_system_skill_file`, `build.py`) puis le corps Markdown complet.
+     **Pas de clé `autotrigger`/`enabled`** : une skill système n'expose AUCUN
+     réglage, cf. upsert ci-dessous.
+   - **Injection au build** : `load_system_skills()` (`build.py`) lit tous les
+     `.md` du dossier, sérialise `{slug: {name, description, content}}` en
+     JSON, remplace le marqueur `__MIAOU_SYSTEM_SKILLS__` dans `assemble_js()`
+     — même mécanisme que `__MIAOU_CONFIG__`/`__MIAOU_HELP__` (marqueur unique
+     en position de valeur, échappement `</`). Côté source,
+     `SYSTEM_SKILLS_CONTENT` (`skills.js`, tout en haut du fichier) porte la
+     garde `try/catch` habituelle → `{}` pour les tests QuickJS (sources non
+     buildées).
+   - **Upsert inconditionnel à l'init** : `ensureSystemSkills()` (`skills.js`,
+     appelée depuis `init()`, `main.js`, **avant** `loadSkillsCache()`) réécrit
+     `name`/`description`/`content`/`system:true` en IDB à **chaque
+     démarrage**, pour chaque slug de `SYSTEM_SKILLS_CONTENT` — le fichier
+     source est la seule source de vérité, aucune dérive IDB persistante n'est
+     possible. `enabled` ET `autotrigger` sont **figés à `true`** (une skill
+     système ne se désactive jamais et reste toujours proposée
+     proactivement — **aucun réglage utilisateur possible**, pas de toggle
+     dans le drawer, cf. `buildSystemSkillCard` ci-dessous).
+   - **Protection en écriture** : `miaou__skills__write` (`tools.js`) refuse
+     toute écriture sur un slug dont la méta cache porte `system: true` —
+     erreur explicite, avant même la vérification `overwrite`. Le modèle ne
+     peut ni créer un slug système par collision, ni le modifier.
+   - **Drawer** : `renderSkills()` (`ui.js`) sépare la liste en deux groupes —
+     skills système en tête (via `buildSystemSkillCard`, badge « Système »,
+     `.skill-card--system`), skills utilisateur ensuite (`buildSkillCard`
+     inchangé). Une carte système n'a **aucune section édition** et **aucun
+     toggle enabled** (toujours activée, cf. ci-dessus) : seul un bouton
+     **Consulter/Fermer** (libellé qui suit l'état, `toggleSystemSkillContent`)
+     est rendu. Consulter bascule un panneau `.skill-system-content`, contenu
+     chargé depuis IDB (`getSkillRecord`) au premier clic puis mis en cache DOM
+     (`dataset.loaded`), rendu via `renderMd()` (marked.js + sanitize, même
+     pipeline que les messages de chat) — jamais de `textarea` éditable. CSS
+     dédié et resserré (`drawers.css`, police 11.5px vs 14px pour `.body` en
+     bulle de chat) plutôt que partagé avec `chat.css` (même piège que
+     `EXPORT_CSS`, CLAUDE.md #22 : une feuille dédiée ne suit pas les évolutions
+     de `.body`, revue manuelle à la charge de qui y touche).
+   - **Skill système `mermaid`** (`src/system-skills/mermaid.md`) : règles de
+     syntaxe strictes pour générer un diagramme mermaid valide (labels avec
+     `<br/>` uniquement pour un saut de ligne, quoting des caractères
+     spéciaux, interdiction des crochets/guillemets/balises HTML internes à un
+     label, convention `filename=` pour les exports d'image). Contenu déplacé
+     depuis `CODEBLOCK_DOCTRINE` (`tools.js`, ex-v2/v3) : cette constante,
+     injectée inconditionnellement dans `buildSystemMessage()`, ne garde plus
+     que la convention `filename=nom.ext` générique à tout langage, et renvoie
+     vers `miaou__skills__read('mermaid')` pour la syntaxe — cf.
+     `docs/rendering.md`. `autotrigger: true` (défaut du parseur, non modifié)
+     la liste dans `<miaou_skills_context>` dès qu'elle est activée, donnant au
+     modèle sa disponibilité sans avoir à durcir un slug en dur dans une
+     doctrine statique.
+
+8. **Skills système extraites de `ROOT_SYSTEM_PROMPT` (`files-promote`,
+   `js-eval`)** — même mécanisme que `mermaid`, appliqué à deux des sept
+   doctrines statiques de `tools.js` (cf. `docs/tools.md` pour la composition
+   complète de `ROOT_SYSTEM_PROMPT`), avec un traitement différent selon la
+   fréquence d'usage attendue :
+   - **`files-promote`** (`src/system-skills/files-promote.md`) : doctrine de
+     déclenchement **entière** déplacée (gate `ask_confirmation`, format exact
+     de l'appel `miaou__files__promote`). Usage assez rare (promotion d'une
+     pièce jointe en bibliothèque d'espace persistante) pour que le QUAND et le
+     COMMENT soient indissociables — il n'y a pas de réflexe fréquent à
+     préserver dans le prompt racine. `FILES_DOCTRINE` (`tools.js`) ne garde
+     qu'un pointeur court vers `miaou__skills__read('files-promote')`.
+   - **`js-eval`** (`src/system-skills/js-eval.md`) : seul le **COMMENT** est
+     déplacé (signature d'appel exacte, primitives fermées `text`/`lines`/
+     `jsonLines`/`parse`, méthode par petits appels successifs). Le **QUAND**
+     (cas d'usage — gros fichier joint, fallback quand `docs__read` refuse un
+     fichier trop volumineux — et la contrainte de cap de sortie chiffrée)
+     reste dans `JS_EVAL_DOCTRINE` (`tools.js`) : c'est le réflexe de
+     déclenchement, à ne pas dégrader en le rendant conditionnel à un appel
+     `skills__read`. Le cap numérique (`JS_EVAL_OUTPUT_CAP`) n'est délibérément
+     **pas dupliqué** dans le `.md` (valeur non chiffrée dans la skill, qui
+     renvoie vers la doctrine pour l'exactitude) — éviter qu'une mise à jour de
+     la constante laisse un chiffre obsolète dans un fichier Markdown. Décision
+     assumée d'invalider une fois le préfixe KV cache (piège 16, CLAUDE.md) en
+     réduisant `JS_EVAL_DOCTRINE` : c'était la plus grosse des sept doctrines du
+     prompt racine, le gain de contexte par tour l'emporte sur le coût
+     ponctuel.

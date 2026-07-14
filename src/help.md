@@ -167,6 +167,13 @@ avec un cartouche `--- name: … description: … ---` en tête de fichier) :
   édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et
   enregistrer.
 
+**Skills système** : quelques skills sont fournies par l'application (par
+exemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le
+mode d'emploi de certains outils avancés). Elles apparaissent en tête du
+panneau Skills, dans une liste distincte, repérables à leur badge « Système ».
+Toujours actives, non modifiables ni supprimables : un bouton « Consulter »
+affiche leur contenu en lecture seule.
+
 ## mcp
 
 Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs

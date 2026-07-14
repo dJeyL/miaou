@@ -243,6 +243,58 @@ def run_build_unit_tests() -> tuple[int, int]:
     check('help : fichier sans section → dict vide',
           build.parse_help_sections('juste du texte, pas de titre\n') == {})
 
+    # parse_system_skill_file / load_system_skills (skills système, src/system-skills/*.md)
+    fake_path = Path('src/system-skills/fake.md')
+
+    nominal_skill = build.parse_system_skill_file(
+        '---\nname: Fake\ndescription: Une skill de test\n---\n\nCorps de la skill.\n',
+        fake_path)
+    check('system-skills : cartouche nominal → {name, description, content}',
+          nominal_skill == {'name': 'Fake', 'description': 'Une skill de test',
+                             'content': 'Corps de la skill.'})
+
+    no_desc_skill = build.parse_system_skill_file(
+        '---\nname: Fake\n---\n\nCorps.\n', fake_path)
+    check('system-skills : description absente → chaîne vide',
+          no_desc_skill['description'] == '')
+
+    try:
+        build.parse_system_skill_file('Pas de cartouche ici.\n', fake_path)
+        check('system-skills : cartouche absent → ValueError', False)
+    except ValueError:
+        check('system-skills : cartouche absent → ValueError', True)
+
+    try:
+        build.parse_system_skill_file('---\ndescription: sans nom\n---\nCorps.\n', fake_path)
+        check('system-skills : cartouche sans « name » → ValueError', False)
+    except ValueError:
+        check('system-skills : cartouche sans « name » → ValueError', True)
+
+    try:
+        build.parse_system_skill_file('---\nname: Fake\n---\n\n', fake_path)
+        check('system-skills : corps vide → ValueError', False)
+    except ValueError:
+        check('system-skills : corps vide → ValueError', True)
+
+    real_skills = build.load_system_skills()
+    check('system-skills : load_system_skills() lit src/system-skills/*.md et trouve « mermaid »',
+          'mermaid' in real_skills
+          and set(real_skills['mermaid'].keys()) == {'name', 'description', 'content'})
+    check('system-skills : trouve aussi « files-promote » et « js-eval » (doctrines extraites de ROOT_SYSTEM_PROMPT)',
+          'files-promote' in real_skills and 'js-eval' in real_skills)
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        empty_src = Path(tmp) / 'src'
+        empty_src.mkdir()
+        orig_src = build.SRC
+        build.SRC = empty_src
+        try:
+            check('system-skills : dossier absent → {} (additif, pas un prérequis de build)',
+                  build.load_system_skills() == {})
+        finally:
+            build.SRC = orig_src
+
     return passed, failed
 
 

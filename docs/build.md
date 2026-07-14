@@ -82,3 +82,31 @@ build.py, le test du handler injecte un contenu stub. **`HELP_CONTENT` n'entre
 jamais dans le contexte du modèle** : seul le blurb d'identité (statique, court)
 et l'enum de slugs y vont ; le contenu des sections n'arrive qu'en tool result,
 une section à la fois, sur appel du modèle.
+
+## Marqueur des skills système : `__MIAOU_SYSTEM_SKILLS__`
+
+Substitué par le contenu des skills système (`src/system-skills/*.md`, cf.
+`docs/skills.md` §7) : un fichier par skill, **nom de fichier = slug**.
+`parse_system_skill_file` (build.py, pur) lit le cartouche frontmatter en tête
+(`name` obligatoire, `description` optionnelle — **pas** de clé `autotrigger`/
+`enabled`, une skill système n'expose aucun réglage) puis le corps Markdown ;
+erreur bruyante si le cartouche est absent ou sans `name`, ou si le corps est
+vide (contrairement à `config.json`, ces fichiers sont censés être valides dès
+qu'ils existent). `load_system_skills()` agrège tous les fichiers du dossier
+en objet ordonné `{slug: {name, description, content}}` ; dossier absent ou
+vide → `{}` (additif, pas un prérequis de build). Sérialisé par `json.dumps` +
+échappement `</`, mêmes contraintes que les deux marqueurs précédents.
+
+Côté source (`skills.js`), unique point d'injection :
+
+```js
+const SYSTEM_SKILLS_CONTENT = (function () { try { return __MIAOU_SYSTEM_SKILLS__; } catch (e) { return {}; } })();
+```
+
+`ensureSystemSkills()` (`skills.js`, appelée depuis `init()` avant
+`loadSkillsCache()`) upsert chaque entrée en IDB **inconditionnellement à
+chaque démarrage** : le fichier `.md` source est la seule source de vérité
+pour `name`/`description`/`content` ; `enabled` et `autotrigger` sont **figés
+à `true`** (aucun réglage utilisateur possible sur une skill système). Sous
+QuickJS, `SYSTEM_SKILLS_CONTENT` vaut `{}` (aucune skill système, comportement
+identique à l'absence du dossier).

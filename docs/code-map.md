@@ -290,33 +290,35 @@
 ## src/js/skills.js
 
 - **skills.js** (L1)
-- **Helpers purs (QuickJS-testables)** (L25)
-  - `SKILL_SLUG_MAX` — L27
-  - `validateSkillSlug()` — L32
-  - `slugifySkillName()` — L45
-  - `parseSkillFrontmatter()` — L62
-  - `resolveSkillDropTarget()` — L90
-  - `findSlashTriggers()` — L104
-  - `bakeSkillMessage()` — L126
-- **Cache mémoire (méta seulement : slug, name, description, enabled)** (L139)
-  - `_skillsCache` — L143
-  - `_skillMeta()` — L145
-  - `setSkillsCache()` — L150
-  - `upsertSkillCache()` — L156
-  - `removeSkillCache()` — L163
-  - `getSkillMeta()` — L168
-  - `listAllSkillsCache()` — L173
-  - `listEnabledSkills()` — L178
-  - `getAutotriggerSkillsMeta()` — L186
-  - `matchSkillCompletions()` — L194
-- **Couche IDB (navigateur uniquement — non QuickJS-testable)** (L201)
-  - `getAllSkillRecords()` — L206
-  - `getSkillRecord()` — L218
-  - `putSkill()` — L231
-  - `deleteSkillDb()` — L253
-  - `toggleSkillEnabled()` — L267
-  - `getSkillContent()` — L278
-  - `loadSkillsCache()` — L287
+  - `SYSTEM_SKILLS_CONTENT` — L42
+- **Helpers purs (QuickJS-testables)** (L44)
+  - `SKILL_SLUG_MAX` — L46
+  - `validateSkillSlug()` — L51
+  - `slugifySkillName()` — L64
+  - `parseSkillFrontmatter()` — L81
+  - `resolveSkillDropTarget()` — L109
+  - `findSlashTriggers()` — L123
+  - `bakeSkillMessage()` — L145
+- **Cache mémoire (méta seulement : slug, name, description, enabled)** (L158)
+  - `_skillsCache` — L162
+  - `_skillMeta()` — L164
+  - `setSkillsCache()` — L169
+  - `upsertSkillCache()` — L175
+  - `removeSkillCache()` — L182
+  - `getSkillMeta()` — L187
+  - `listAllSkillsCache()` — L192
+  - `listEnabledSkills()` — L197
+  - `getAutotriggerSkillsMeta()` — L205
+  - `matchSkillCompletions()` — L213
+- **Couche IDB (navigateur uniquement — non QuickJS-testable)** (L220)
+  - `getAllSkillRecords()` — L225
+  - `getSkillRecord()` — L237
+  - `putSkill()` — L250
+  - `deleteSkillDb()` — L273
+  - `toggleSkillEnabled()` — L287
+  - `getSkillContent()` — L298
+  - `loadSkillsCache()` — L307
+  - `ensureSystemSkills()` — L324
 
 ## src/js/tools.js
 
@@ -328,94 +330,94 @@
   - `WEB_DOCTRINE` — L72
   - `CONV_REF_DOCTRINE` — L103
   - `MEMORY_DOCTRINE` — L112
-  - `FILES_DOCTRINE` — L143
-  - `DOCS_DOCTRINE` — L169
-  - `docsDoctrinePrompt()` — L178
-- **js__eval : compute sandboxé sur un blob client (lot L)** (L182)
-  - `JS_EVAL_TIMEOUT_MS` — L193
-  - `JS_EVAL_MEM_BYTES` — L194
-  - `JS_EVAL_OUTPUT_CAP` — L195
-  - `JS_EVAL_DOCTRINE` — L204
-  - `ROOT_SYSTEM_PROMPT` — L253
-  - `CODEBLOCK_DOCTRINE` — L267
-  - `IDENTITY_BLURB` — L307
-  - `SKILL_DOCTRINE_BASE` — L324
-  - `SKILL_DOCTRINE_CONFIRM_OFF` — L336
-  - `SKILL_DOCTRINE_TAIL` — L340
-  - `INTENT_DOCTRINE` — L346
-  - `_pendingToolAcks` — L357
-  - `getPendingToolAcks()` — L358
-  - `clearPendingToolAcks()` — L359
-  - `_pendingImageInjections` — L370
-  - `getPendingImageInjections()` — L371
-  - `clearPendingImageInjections()` — L372
-  - `updateLastPendingToolAck()` — L380
-  - `_pendingToolBlocks` — L392
-  - `getPendingToolBlocks()` — L393
-  - `clearPendingToolBlocks()` — L394
-  - `retainPendingToolBlocks()` — L397
-  - `validateFilesPromoteArgs()` — L404
-- **Registre MCP interne** (L411)
-  - `TOOLS` — L414
-- **ask_confirmation : primitif halting hors registre MCP** (L988)
-  - `ASK_CONFIRMATION_DEF` — L995
-- **Agrégation distante : cache de session + client MCP** (L1020)
-  - `MCP_PROTOCOL_VERSION` — L1025
-  - `REF_UNKNOWN_ERROR_CODE` — L1031
-  - `_remoteTools` — L1033
-  - `_remoteStatus` — L1034
-  - `getMcpStatus()` — L1036
-  - `remoteToolDefs()` — L1039
-  - `exposedTools()` — L1051
-- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L1058)
-  - `_mcpRpcId` — L1059
-  - `mcpRpcAttempt()` — L1066
-  - `mcpReinitialize()` — L1115
-  - `mcpRpc()` — L1129
-  - `readSseJsonRpc()` — L1146
-  - `connectMcpServer()` — L1176
-  - `disconnectMcpServer()` — L1206
-  - `callRemoteTool()` — L1223
-- **Dispatcher MCP** (L1254)
-  - `callInternalTool()` — L1256
-  - `callTool()` — L1291
-- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1327)
-  - `_attachmentPushState` — L1333
-  - `_pushStateKey()` — L1334
-  - `isAttachmentPushed()` — L1335
-  - `markAttachmentPushed()` — L1336
-  - `clearAttachmentPushState()` — L1340
-  - `_filePushState` — L1351
-  - `_filePushStateKey()` — L1352
-  - `isFilePushed()` — L1353
-  - `markFilePushed()` — L1354
-  - `_resourcePushState` — L1362
-  - `isResourcePushed()` — L1363
-  - `markResourcePushed()` — L1364
-  - `clearResourcePushState()` — L1365
-  - `toolDeclaresAttachmentInflation()` — L1377
-  - `ATTACHMENT_REF_RE` — L1387
-  - `FILE_REF_RE` — L1392
-  - `RESOURCE_REF_RE` — L1399
-  - `anyToolDeclaresAttachmentInflation()` — L1407
-  - `_declaresContentReadSignature()` — L1432
-  - `findDocsInflationTool()` — L1445
-  - `extractBinaryFileTextForDescription()` — L1470
-  - `classifyHandleRef()` — L1498
-  - `resolveHandleRecord()` — L1519
-  - `JS_EVAL_GUEST_PRELUDE` — L1552
-  - `runInQuickJs()` — L1572
-  - `_jsEvalStringify()` — L1625
-  - `_jsEvalErrText()` — L1635
-  - `_resolveInflationRef()` — L1667
-  - `callDocsInflatedRemoteTool()` — L1716
-  - `_isRefUnknownError()` — L1747
-  - `flattenToolResult()` — L1758
-  - `toolIsHalting()` — L1771
-  - `toolDefinitions()` — L1781
-  - `toolsSystemPrompt()` — L1800
-  - `intentDoctrinePrompt()` — L1808
-  - `skillDoctrinePrompt()` — L1827
+  - `FILES_DOCTRINE` — L148
+  - `DOCS_DOCTRINE` — L162
+  - `docsDoctrinePrompt()` — L171
+- **js__eval : compute sandboxé sur un blob client (lot L)** (L175)
+  - `JS_EVAL_TIMEOUT_MS` — L186
+  - `JS_EVAL_MEM_BYTES` — L187
+  - `JS_EVAL_OUTPUT_CAP` — L188
+  - `JS_EVAL_DOCTRINE` — L202
+  - `ROOT_SYSTEM_PROMPT` — L223
+  - `CODEBLOCK_DOCTRINE` — L238
+  - `IDENTITY_BLURB` — L258
+  - `SKILL_DOCTRINE_BASE` — L275
+  - `SKILL_DOCTRINE_CONFIRM_OFF` — L287
+  - `SKILL_DOCTRINE_TAIL` — L291
+  - `INTENT_DOCTRINE` — L297
+  - `_pendingToolAcks` — L308
+  - `getPendingToolAcks()` — L309
+  - `clearPendingToolAcks()` — L310
+  - `_pendingImageInjections` — L321
+  - `getPendingImageInjections()` — L322
+  - `clearPendingImageInjections()` — L323
+  - `updateLastPendingToolAck()` — L331
+  - `_pendingToolBlocks` — L343
+  - `getPendingToolBlocks()` — L344
+  - `clearPendingToolBlocks()` — L345
+  - `retainPendingToolBlocks()` — L348
+  - `validateFilesPromoteArgs()` — L355
+- **Registre MCP interne** (L362)
+  - `TOOLS` — L365
+- **ask_confirmation : primitif halting hors registre MCP** (L942)
+  - `ASK_CONFIRMATION_DEF` — L949
+- **Agrégation distante : cache de session + client MCP** (L974)
+  - `MCP_PROTOCOL_VERSION` — L979
+  - `REF_UNKNOWN_ERROR_CODE` — L985
+  - `_remoteTools` — L987
+  - `_remoteStatus` — L988
+  - `getMcpStatus()` — L990
+  - `remoteToolDefs()` — L993
+  - `exposedTools()` — L1005
+- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L1012)
+  - `_mcpRpcId` — L1013
+  - `mcpRpcAttempt()` — L1020
+  - `mcpReinitialize()` — L1069
+  - `mcpRpc()` — L1083
+  - `readSseJsonRpc()` — L1100
+  - `connectMcpServer()` — L1130
+  - `disconnectMcpServer()` — L1160
+  - `callRemoteTool()` — L1177
+- **Dispatcher MCP** (L1208)
+  - `callInternalTool()` — L1210
+  - `callTool()` — L1245
+- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1281)
+  - `_attachmentPushState` — L1287
+  - `_pushStateKey()` — L1288
+  - `isAttachmentPushed()` — L1289
+  - `markAttachmentPushed()` — L1290
+  - `clearAttachmentPushState()` — L1294
+  - `_filePushState` — L1305
+  - `_filePushStateKey()` — L1306
+  - `isFilePushed()` — L1307
+  - `markFilePushed()` — L1308
+  - `_resourcePushState` — L1316
+  - `isResourcePushed()` — L1317
+  - `markResourcePushed()` — L1318
+  - `clearResourcePushState()` — L1319
+  - `toolDeclaresAttachmentInflation()` — L1331
+  - `ATTACHMENT_REF_RE` — L1341
+  - `FILE_REF_RE` — L1346
+  - `RESOURCE_REF_RE` — L1353
+  - `anyToolDeclaresAttachmentInflation()` — L1361
+  - `_declaresContentReadSignature()` — L1386
+  - `findDocsInflationTool()` — L1399
+  - `extractBinaryFileTextForDescription()` — L1424
+  - `classifyHandleRef()` — L1452
+  - `resolveHandleRecord()` — L1473
+  - `JS_EVAL_GUEST_PRELUDE` — L1506
+  - `runInQuickJs()` — L1526
+  - `_jsEvalStringify()` — L1579
+  - `_jsEvalErrText()` — L1589
+  - `_resolveInflationRef()` — L1621
+  - `callDocsInflatedRemoteTool()` — L1670
+  - `_isRefUnknownError()` — L1701
+  - `flattenToolResult()` — L1712
+  - `toolIsHalting()` — L1725
+  - `toolDefinitions()` — L1735
+  - `toolsSystemPrompt()` — L1754
+  - `intentDoctrinePrompt()` — L1762
+  - `skillDoctrinePrompt()` — L1781
 
 ## src/js/api.js
 
@@ -815,69 +817,71 @@
   - `syncSkillHintUI()` — L4632
   - `syncPaletteHintUI()` — L4639
   - `renderSkills()` — L4646
-  - `addSkillCard()` — L4662
-  - `applySkillFrontmatterToCard()` — L4676
-  - `buildSkillCard()` — L4693
-- **SECTION VUE** (L4699)
-- **SECTION ÉDITION** (L4733)
-  - `enterSkillEdit()` — L4814
-- **Autocomplétion des skills (slash-commande)** (L4822)
-  - `_composerAc` — L4830
-  - `onComposerInput()` — L4832
-  - `updateSkillAutocomplete()` — L4846
-  - `renderSkillAutocomplete()` — L4860
-  - `hideSkillAutocomplete()` — L4885
-  - `skillAutocompleteOpen()` — L4893
-  - `moveSkillAcSelection()` — L4898
-  - `acceptSkillAcSelection()` — L4915
-  - `pickSkillCompletion()` — L4928
-  - `showComposerSkillError()` — L4942
-  - `clearComposerSkillError()` — L4946
-- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L4951)
-  - `placeToolBlocks()` — L4955
-  - `renderToolBlock()` — L4965
-  - `renderResourceText()` — L5001
-  - `renderBinaryBlock()` — L5019
-  - `presentResourceFromChip()` — L5045
-  - `mimeToLang()` — L5062
-  - `setMemItemLoading()` — L5075
-- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L5083)
-  - `renderMemoryList()` — L5091
-  - `addMemoryEntry()` — L5154
-  - `deleteMemoryEntry()` — L5166
-  - `restoreMemoryEntry()` — L5167
-  - `forgetMemoryEntry()` — L5168
-  - `promoteMemoryEntry()` — L5173
-- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L5182)
-  - `renderSpaceFilesList()` — L5188
-  - `setFileDescriptionStatus()` — L5225
-  - `onRegenerateFileDescription()` — L5243
-  - `onSpaceFilesUploadClick()` — L5253
-  - `onSpaceFilesSelected()` — L5262
-  - `onDeleteSpaceFile()` — L5290
-  - `startEditMemoryEntry()` — L5298
-  - `cancelMemoryEntryEdit()` — L5309
-  - `saveMemoryEntryEdit()` — L5318
-- **Confirmation inline (cartes dans le thread)** (L5327)
-  - `_proposalMap` — L5331
-  - `clearMemoryProposals()` — L5335
-  - `showConfirmation()` — L5342
-  - `acceptProposal()` — L5364
-  - `rejectProposal()` — L5372
-  - `_removeProposalCard()` — L5380
-- **Export HTML standalone (brief `untracked/muscle/G-html-export.md`)** (L5389)
-  - `THEME_TOKENS` — L5399
-  - `serializeThemeTokens()` — L5415
-  - `PRISM_THEME_CSS` — L5427
-  - `EXPORT_CSS` — L5490
-  - `EXPORT_SCRIPT` — L5611
-  - `buildExportHtml()` — L5711
-  - `renderExportBody()` — L5759
-  - `embedExportMermaid()` — L5843
-  - `decorateExportPre()` — L5886
-  - `EXPORT_HTML_SIZE_WARN` — L5902
-  - `_exportingHtml` — L5911
-  - `exportConvHtml()` — L5912
+  - `buildSystemSkillCard()` — L4679
+  - `toggleSystemSkillContent()` — L4730
+  - `addSkillCard()` — L4743
+  - `applySkillFrontmatterToCard()` — L4757
+  - `buildSkillCard()` — L4774
+- **SECTION VUE** (L4780)
+- **SECTION ÉDITION** (L4814)
+  - `enterSkillEdit()` — L4895
+- **Autocomplétion des skills (slash-commande)** (L4903)
+  - `_composerAc` — L4911
+  - `onComposerInput()` — L4913
+  - `updateSkillAutocomplete()` — L4927
+  - `renderSkillAutocomplete()` — L4941
+  - `hideSkillAutocomplete()` — L4966
+  - `skillAutocompleteOpen()` — L4974
+  - `moveSkillAcSelection()` — L4979
+  - `acceptSkillAcSelection()` — L4996
+  - `pickSkillCompletion()` — L5009
+  - `showComposerSkillError()` — L5023
+  - `clearComposerSkillError()` — L5027
+- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L5032)
+  - `placeToolBlocks()` — L5036
+  - `renderToolBlock()` — L5046
+  - `renderResourceText()` — L5082
+  - `renderBinaryBlock()` — L5100
+  - `presentResourceFromChip()` — L5126
+  - `mimeToLang()` — L5143
+  - `setMemItemLoading()` — L5156
+- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L5164)
+  - `renderMemoryList()` — L5172
+  - `addMemoryEntry()` — L5235
+  - `deleteMemoryEntry()` — L5247
+  - `restoreMemoryEntry()` — L5248
+  - `forgetMemoryEntry()` — L5249
+  - `promoteMemoryEntry()` — L5254
+- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L5263)
+  - `renderSpaceFilesList()` — L5269
+  - `setFileDescriptionStatus()` — L5306
+  - `onRegenerateFileDescription()` — L5324
+  - `onSpaceFilesUploadClick()` — L5334
+  - `onSpaceFilesSelected()` — L5343
+  - `onDeleteSpaceFile()` — L5371
+  - `startEditMemoryEntry()` — L5379
+  - `cancelMemoryEntryEdit()` — L5390
+  - `saveMemoryEntryEdit()` — L5399
+- **Confirmation inline (cartes dans le thread)** (L5408)
+  - `_proposalMap` — L5412
+  - `clearMemoryProposals()` — L5416
+  - `showConfirmation()` — L5423
+  - `acceptProposal()` — L5445
+  - `rejectProposal()` — L5453
+  - `_removeProposalCard()` — L5461
+- **Export HTML standalone (brief `untracked/muscle/G-html-export.md`)** (L5470)
+  - `THEME_TOKENS` — L5480
+  - `serializeThemeTokens()` — L5496
+  - `PRISM_THEME_CSS` — L5508
+  - `EXPORT_CSS` — L5571
+  - `EXPORT_SCRIPT` — L5692
+  - `buildExportHtml()` — L5792
+  - `renderExportBody()` — L5840
+  - `embedExportMermaid()` — L5924
+  - `decorateExportPre()` — L5967
+  - `EXPORT_HTML_SIZE_WARN` — L5983
+  - `_exportingHtml` — L5992
+  - `exportConvHtml()` — L5993
 
 ## src/js/main.js
 

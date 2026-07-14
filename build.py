@@ -305,6 +305,54 @@ def load_help() -> dict:
     return sections
 
 
+_SKILL_FRONTMATTER_RE = re.compile(r'^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)')
+
+
+def parse_system_skill_file(text: str, path: Path) -> dict:
+    """Parse un fichier `src/system-skills/<slug>.md` : cartouche frontmatter
+    `---\\nclé: valeur\\n---` en tête (name, description) suivi du corps
+    Markdown. Le slug est dérivé du nom de fichier (sans extension), pas du
+    cartouche : c'est la clé IDB, elle doit être stable et lisible depuis le
+    nom du fichier source. Pas de clé `autotrigger` ni `enabled` : une skill
+    système est TOUJOURS activée et autotrigger (figé par ensureSystemSkills,
+    skills.js — aucun réglage possible dessus, cf. docs/skills.md)."""
+    m = _SKILL_FRONTMATTER_RE.match(text)
+    if not m:
+        raise ValueError(f'{path} : cartouche frontmatter --- manquant en tête de fichier.')
+    meta = {}
+    for line in m.group(1).split('\n'):
+        kv = re.match(r'^([A-Za-z_-]+)\s*:\s*(.*)$', line.strip())
+        if not kv:
+            continue
+        key = kv.group(1).strip().lower()
+        val = kv.group(2).strip().strip('"\'')
+        meta[key] = val
+    if 'name' not in meta:
+        raise ValueError(f'{path} : cartouche sans clé « name ».')
+    body = text[m.end():].strip('\n')
+    if not body:
+        raise ValueError(f'{path} : corps de skill vide.')
+    return {
+        'name': meta['name'],
+        'description': meta.get('description', ''),
+        'content': body,
+    }
+
+
+def load_system_skills() -> dict:
+    """Lit `src/system-skills/*.md` → dict ordonné {slug: {name, description,
+    content}}. Dossier absent ou vide → {} (pas d'erreur : les skills système
+    sont une fonctionnalité additive, pas un prérequis de build)."""
+    d = SRC / 'system-skills'
+    if not d.exists():
+        return {}
+    out = {}
+    for path in sorted(d.glob('*.md')):
+        slug = path.stem
+        out[slug] = parse_system_skill_file(read(path), path)
+    return out
+
+
 def load_config(use_config: bool = True) -> dict:
     if not use_config:
         print('[info] build sans config (--no-config) — le JS produit embarque '
@@ -330,7 +378,7 @@ def assemble_css() -> str:
     return collapse_blank_code_lines(strip_css_comments('\n'.join(parts)))
 
 
-def assemble_js(cfg_data: dict, help_data: dict) -> str:
+def assemble_js(cfg_data: dict, help_data: dict, system_skills_data: dict) -> str:
     now = datetime.now(timezone.utc)
     build_date = now.strftime('%Y-%m-%d %H:%M UTC')
     cfg_data['build_ts'] = int(now.timestamp())
@@ -355,6 +403,12 @@ def assemble_js(cfg_data: dict, help_data: dict) -> str:
     # échappement '</' pour le </script> porteur.
     help_literal = json.dumps(help_data, ensure_ascii=False).replace('</', '<\\/')
     js = js.replace('__MIAOU_HELP__', help_literal)
+
+    # Injection des skills système : même mécanisme, dict {slug: {name,
+    # description, autotrigger, content}} sérialisé en JSON (skills.js les
+    # upsert en IDB à l'init, cf. docs/skills.md).
+    system_skills_literal = json.dumps(system_skills_data, ensure_ascii=False).replace('</', '<\\/')
+    js = js.replace('__MIAOU_SYSTEM_SKILLS__', system_skills_literal)
     return js
 
 
@@ -431,8 +485,9 @@ def build(use_config: bool = True):
 
     cfg_data = load_config(use_config)
     help_data = load_help()
+    system_skills_data = load_system_skills()
     css = assemble_css()
-    js = assemble_js(cfg_data, help_data)
+    js = assemble_js(cfg_data, help_data, system_skills_data)
 
     output = template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, js)
 

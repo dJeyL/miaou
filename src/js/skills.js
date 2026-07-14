@@ -20,7 +20,26 @@
    modèle sans appel préalable à miaou__skills__list. Pas de bump de version
    IDB : schemaless, les enregistrements existants en sont simplement dépourvus
    (absence == false).
+
+   Skills SYSTÈME (`system: true`) : non éditables/supprimables par
+   l'utilisateur (drawer en lecture seule, cf. ui.js buildSkillCard), et
+   miaou__skills__write refuse toute écriture sur leur slug (tools.js). Leur
+   contenu vit dans `src/system-skills/*.md` (frontmatter + corps), upserté en
+   IDB de façon INCONDITIONNELLE à chaque démarrage (ensureSystemSkills,
+   appelé depuis init() avant loadSkillsCache) : le fichier source est la
+   seule source de vérité, une édition IDB locale ne survivrait pas au
+   prochain chargement de page. `enabled`/`autotrigger` restent des toggles
+   utilisateur légitimes (préservés au ré-upsert, seuls name/description/
+   content/system sont réécrits depuis la source).
    ──────────────────────────────────────────────────────────────────────────── */
+
+// Contenu des skills système, injecté au build depuis src/system-skills/*.md
+// (parse_system_skill_file, build.py) : { slug: { name, description,
+// autotrigger, content } }. Même mécanisme que HELP_CONTENT (tools.js) :
+// marqueur unique en position de valeur, garde try/catch pour les sources non
+// buildées (tests QuickJS) où __MIAOU_SYSTEM_SKILLS__ est un identifiant nu →
+// ReferenceError → {}.
+const SYSTEM_SKILLS_CONTENT = (function () { try { return __MIAOU_SYSTEM_SKILLS__; } catch (e) { return {}; } })();
 
 // ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
 
@@ -143,7 +162,7 @@ function bakeSkillMessage(literalText, resolved) {
 let _skillsCache = [];
 
 function _skillMeta(rec) {
-  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true };
+  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true, system: rec.system === true };
 }
 
 // Remplace tout le cache (chargement initial depuis IDB).
@@ -236,6 +255,7 @@ function putSkill(record) {
     enabled: record.enabled !== false,
     content: String(record.content || ''),
     autotrigger: record.autotrigger === true,
+    system: record.system === true,
   };
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
@@ -290,5 +310,34 @@ async function loadSkillsCache() {
     setSkillsCache(records);
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] loadSkillsCache:', e && e.message);
+  }
+}
+
+// Upsert INCONDITIONNEL des skills système depuis SYSTEM_SKILLS_CONTENT (build-
+// time) en IDB, à chaque démarrage — cf. note d'en-tête. `enabled` ET
+// `autotrigger` sont FIGÉS à `true` (une skill système ne se désactive pas et
+// reste toujours proposée proactivement — pas de toggle dans le drawer, cf.
+// buildSystemSkillCard : AUCUN réglage utilisateur sur une skill système, tout
+// vient de la source à chaque démarrage). Appelé depuis init() (main.js)
+// AVANT loadSkillsCache, pour que le premier chargement du cache voie déjà les
+// skills système à jour. Échec silencieux (IDB indisponible).
+async function ensureSystemSkills() {
+  const slugs = Object.keys(SYSTEM_SKILLS_CONTENT);
+  if (!slugs.length) return;
+  for (const slug of slugs) {
+    const src = SYSTEM_SKILLS_CONTENT[slug];
+    try {
+      await putSkill({
+        slug,
+        name: src.name,
+        description: src.description,
+        content: src.content,
+        system: true,
+        enabled: true,
+        autotrigger: true,
+      });
+    } catch (e) {
+      if (typeof console !== 'undefined') console.warn('[miaou] ensureSystemSkills:', slug, e && e.message);
+    }
   }
 }

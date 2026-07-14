@@ -710,11 +710,9 @@ describe('JS_EVAL_DOCTRINE (constante inconditionnelle de ROOT_SYSTEM_PROMPT, lo
   it('incluse dans ROOT_SYSTEM_PROMPT (inconditionnelle, AL4)', function() {
     expect(ROOT_SYSTEM_PROMPT.indexOf(JS_EVAL_DOCTRINE) >= 0).toBeTruthy();
   });
-  it('énumère la surface FERMÉE des primitives guest', function() {
-    expect(JS_EVAL_DOCTRINE.indexOf('text()') >= 0).toBeTruthy();
-    expect(JS_EVAL_DOCTRINE.indexOf('lines()') >= 0).toBeTruthy();
-    expect(JS_EVAL_DOCTRINE.indexOf('jsonLines()') >= 0).toBeTruthy();
-    expect(JS_EVAL_DOCTRINE.indexOf('parse()') >= 0).toBeTruthy();
+  it('renvoie vers la skill système js-eval pour le mode d\'emploi détaillé', function() {
+    expect(JS_EVAL_DOCTRINE.indexOf('skills__read') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf('js-eval') >= 0).toBeTruthy();
   });
   it('énonce le refus sur dépassement (pas troncature) et le cap', function() {
     expect(JS_EVAL_DOCTRINE.indexOf('REFUS') >= 0).toBeTruthy();
@@ -1019,9 +1017,9 @@ describe('files__promote — définition d\'outil et doctrine (lot Cbis, voie B)
   it('FILES_DOCTRINE fait partie de ROOT_SYSTEM_PROMPT (toujours injectée)', function() {
     expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__files__promote') >= 0).toBeTruthy();
   });
-  it('FILES_DOCTRINE prescrit ask_confirmation avant tout appel (voie B, pas de généralisation du halting)', function() {
-    expect(FILES_DOCTRINE.indexOf('ask_confirmation') >= 0).toBeTruthy();
-    expect(FILES_DOCTRINE.indexOf('JAMAIS') >= 0).toBeTruthy();
+  it('FILES_DOCTRINE renvoie vers la skill système files-promote pour la doctrine complète (ask_confirmation, voie B)', function() {
+    expect(FILES_DOCTRINE.indexOf('skills__read') >= 0).toBeTruthy();
+    expect(FILES_DOCTRINE.indexOf('files-promote') >= 0).toBeTruthy();
   });
   it('toolIsHalting reste exclusivement câblé sur ask_confirmation (pas de régression voie A)', function() {
     expect(toolIsHalting('files__promote')).toBe(false);

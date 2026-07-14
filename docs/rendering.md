@@ -42,16 +42,23 @@ Configuration (`mermaidInit`) :
 
 ## Nettoyage de la source avant render (sanitizeMermaidSource, utils.js)
 
-`CODEBLOCK_DOCTRINE` (tools.js, `v4`) demande au modèle trois choses pour les
-diagrammes : ne **jamais** poser de séquence backslash-n littérale dans un
-label (Mermaid ne l'interprète pas comme saut de ligne — seul `<br/>` l'est),
-**quoter** tout label contenant un caractère spécial (`A["France (2-0)"]` —
+Les règles de syntaxe mermaid (ne **jamais** poser de séquence backslash-n
+littérale dans un label — Mermaid ne l'interprète pas comme saut de ligne,
+seul `<br/>` l'est ; **quoter** tout label contenant un caractère spécial —
 une parenthèse nue dans un `[label]` casse le parse, Mermaid l'interprète
-comme un délimiteur de forme), et **ne pas** poser de balises HTML de mise en
-forme dans les labels. Le modèle obéit de façon inégale (le backslash-n
+comme un délimiteur de forme ; **ne pas** poser de balises HTML de mise en
+forme dans les labels) vivent désormais dans la **skill système `mermaid`**
+(`src/system-skills/mermaid.md`, cf. `docs/skills.md` §7), pas dans
+`CODEBLOCK_DOCTRINE` (`tools.js`, `v4` depuis ce déplacement — ex-v2/v3 pour
+la partie mermaid). Le modèle l'appelle via `miaou__skills__read('mermaid')`
+avant de générer un diagramme (autotrigger listant sa disponibilité dans
+`<miaou_skills_context>` si activée) ; `CODEBLOCK_DOCTRINE` ne garde que la
+convention `filename=nom.ext`, générique à tout langage, et une phrase de
+renvoi vers cette skill. Le modèle obéit de façon inégale (le backslash-n
 littéral et la contrainte négative sur `<b>` en particulier — récidive
 observée sur plusieurs modèles malgré la doctrine, cf. lot E retouche
-post-livraison).
+post-livraison) : raison pour laquelle la défense en profondeur ci-dessous
+reste nécessaire indépendamment de la doctrine/skill.
 
 Défense en profondeur côté application, **indépendante de l'obéissance du
 modèle** : `sanitizeMermaidSource(src)` (pure, testée QuickJS) strippe les

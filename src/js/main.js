@@ -2526,10 +2526,12 @@ function init() {
     _lastContextManifest = null;
     syncContextCounter();
   });
-  // méta des skills en mémoire → autocomplétion + outils + légende « / » ; rafraîchit
-  // aussi la pilule de contexte, sous-évaluée tant que le bloc skills autotrigger
-  // (buildSkillsContextBlock) n'a pas ces données (même écart que loadSpaceLibrary).
-  loadSkillsCache().then(() => {
+  // skills système (upsert inconditionnel depuis src/system-skills/*.md, cf.
+  // skills.js) PUIS méta des skills en mémoire → autocomplétion + outils +
+  // légende « / » ; rafraîchit aussi la pilule de contexte, sous-évaluée tant
+  // que le bloc skills autotrigger (buildSkillsContextBlock) n'a pas ces
+  // données (même écart que loadSpaceLibrary).
+  ensureSystemSkills().then(loadSkillsCache).then(() => {
     syncSkillHintUI();
     _lastContextManifest = null;
     syncContextCounter();
