@@ -36,6 +36,27 @@
     <path d="M29 37 Q32 40 35 37" fill="none" stroke="#160d07" stroke-width="2.2" stroke-linecap="round"/>
   </svg>
 </div>
+<!-- Déclenche le fade-in + blink de l'overlay ICI, avant les <script src> CDN
+     (marked/dompurify/prism) plus bas : ces scripts sont bloquants (pas de
+     defer/async, l'ordre de chargement doit rester garanti pour le JS
+     applicatif) et retardaient sinon visiblement l'apparition du logo le temps
+     de leur fetch. _bootReady/_bootReadyAt sont des globals lus par
+     finishBoot() dans main.js (__JS__, plus bas). -->
+<script>
+var _bootReady = false;
+var _bootReadyAt = 0;
+if (window.requestAnimationFrame) {
+  (function () {
+    var _boot = document.getElementById('boot-overlay');
+    if (!_boot) return;
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      _boot.classList.add('boot-ready');
+      _bootReadyAt = Date.now();
+      _bootReady = true;
+    }); });
+  })();
+}
+</script>
 
 <div class="app" id="app">
 

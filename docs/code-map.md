@@ -887,165 +887,164 @@
 
 - **main.js** (L1)
 - **Overlay de préchargement (boot)** (L10)
-  - `_bootReadyAt` — L17
-  - `BOOT_MIN_AFTER_READY_MS` — L18
-  - `finishBoot()` — L19
-- **Logo : source unique (favicon + sidebar)** (L39)
-  - `LOGO_SRC` — L42
-  - `applyLogo()` — L59
-- **État de session** (L65)
-  - `currentConvId` — L66
-  - `activeSpaceId` — L67
-  - `currentThread` — L68
-  - `needTitle` — L69
-  - `titleBefore` — L70
-  - `currentConvModel` — L71
-  - `currentConvReasoningEffort` — L72
-  - `pendingAttachments` — L73
-  - `attachIngestInFlight` — L74
-  - `_sendResolving` — L75
-  - `_lastContextManifest` — L76
-  - `_lastContextManifestMidTurn` — L77
-- **Résumé sur inactivité** (L79)
-  - `IDLE_SUMMARY_MS` — L83
-  - `_idleSummaryTimer` — L84
-  - `armIdleSummaryTimer()` — L86
-  - `activeModel()` — L98
-  - `setConvModel()` — L107
-  - `activeReasoningEffort()` — L122
-  - `setConvReasoningEffort()` — L128
-- **Construction du message système (un seul, concaténé)** (L140)
-  - `buildSummaryBlock()` — L141
-  - `buildMemoryEntriesBlock()` — L156
-  - `contextBlockParts()` — L167
-  - `buildContextBlock()` — L189
-  - `buildSkillsContextBlock()` — L210
-  - `resolveUserSystemPrompt()` — L225
-  - `systemMessageParts()` — L244
-  - `buildSystemMessage()` — L273
-  - `rootSystemPromptDisplay()` — L287
-  - `computeContextManifestNow()` — L297
-  - `recomputeLastContextManifest()` — L318
-  - `applyUsageToLastManifest()` — L333
-- **Navigation entre conversations** (L338)
-  - `projectConvMessages()` — L342
-  - `_openConvSeq` — L375
-  - `openConversation()` — L376
-  - `resetToEmpty()` — L417
-  - `selectConv()` — L440
-  - `moveSelectedConversations()` — L459
-  - `newConversation()` — L478
-  - `togglePin()` — L487
-  - `downloadConvMd()` — L497
-  - `undoToolAck()` — L537
-  - `deleteConv()` — L551
-- **Réception synchro multi-onglets (lot J, J3)** (L561)
-  - `_pendingSyncActions` — L577
-- **Soft-lock (J4) : awareness « même conv ouverte ailleurs »** (L579)
-  - `_peersOnConv` — L585
-  - `_peersGenerating` — L586
-  - `_peerHeartbeatAt` — L587
-  - `_peerTtlSweeper` — L588
-  - `announceConvOpened()` — L592
-  - `announceConvClosed()` — L596
-  - `resetPeerState()` — L602
-  - `refreshTabBanner()` — L611
-  - `applyReadonlyState()` — L626
-  - `armTtlSweeper()` — L632
-  - `handleSyncMessage()` — L652
-  - `applySyncDecision()` — L661
-  - `applySyncedSettings()` — L808
-  - `_queueSyncAction()` — L845
-  - `drainPendingSync()` — L856
-- **Readonly relay + heartbeat (J5)** (L863)
-  - `SYNC_HEARTBEAT_MS` — L870
-  - `SYNC_HEARTBEAT_TTL_MS` — L871
-  - `_genRelayConvId` — L873
-  - `_genHeartbeatTimer` — L874
-  - `startGenerationRelay()` — L878
-  - `stopGenerationRelay()` — L892
-  - `ensureConversation()` — L902
-  - `persistCurrent()` — L913
-- **Titre éditable** (L942)
-  - `wireTitleEditing()` — L943
-  - `onTitleKey()` — L952
-  - `onTitleBlur()` — L956
-- **Réglages** (L974)
-  - `onSaveSettings()` — L975
-  - `prefetchModels()` — L1005
-- **Serveurs MCP distants : orchestration** (L1010)
-  - `reconnectMcpServers()` — L1014
-  - `onSaveMcpCard()` — L1023
-  - `onDeleteMcpCard()` — L1055
-- **Serveurs API : persistance + activation (orchestration depuis le drawer)** (L1060)
-  - `onSaveApiCard()` — L1064
-  - `onDeleteApiCard()` — L1100
-  - `onUseApiServer()` — L1116
-- **Skills : persistance (orchestration depuis le drawer de gestion)** (L1129)
-  - `onSaveSkillCard()` — L1133
-  - `ingestSkillMarkdownFile()` — L1162
-  - `onDeleteSkillCard()` — L1189
-  - `onToggleSkill()` — L1195
-- **Export / import complet des données (feature E)** (L1200)
-  - `snapshotLocalStorageForExport()` — L1208
-  - `exportAllData()` — L1221
-  - `onImportDataClick()` — L1232
-  - `onImportFileSelected()` — L1241
-  - `applyImportedData()` — L1262
-- **Pièces jointes (composer)** (L1288)
-  - `ATTACHMENT_IMAGE_MAX_BYTES` — L1303
-  - `ATTACHMENT_BLOB_MAX_BYTES` — L1304
-  - `ATTACHMENT_IMAGE_MAX_EDGE` — L1305
-  - `ATTACHMENT_IMAGE_JPEG_QUALITY` — L1306
-  - `ATTACHMENT_TEXT_MAX_BYTES` — L1307
-  - `ATTACHMENT_MAX_IMAGES` — L1308
-  - `attachmentCapForKind()` — L1314
-  - `downscaleImageFile()` — L1326
-  - `readFileAsText()` — L1353
-  - `readFileAsArrayBuffer()` — L1363
-  - `showComposerAttachError()` — L1375
-  - `clearComposerAttachError()` — L1379
-  - `ingestAttachmentFile()` — L1392
-  - `showSpaceFilesError()` — L1454
-  - `clearSpaceFilesError()` — L1458
-  - `ingestLibraryFile()` — L1471
-  - `persistAttSeq()` — L1510
-  - `handleAttachFiles()` — L1525
-  - `onAttachClick()` — L1543
-  - `onAttachFilesSelected()` — L1549
-  - `removeComposerAttachment()` — L1557
-- **Flux d'envoi** (L1562)
-  - `onSendBtn()` — L1564
-  - `resolveSend()` — L1583
-  - `sendMessage()` — L1610
-  - `buildOutgoingContentForAttachments()` — L1669
-  - `sendUserText()` — L1704
-  - `runGenerationFromCurrentThread()` — L1736
-  - `editUserMessage()` — L1770
-  - `regenerateResponse()` — L1806
-  - `continueTruncated()` — L1822
-  - `rewriteAttachedUserMessage()` — L1850
-  - `dispatchSend()` — L1857
-- **Mécanique réutilisable : tâche LLM « en arrière-plan »** (L2227)
-  - `runBackgroundTask()` — L2231
-- **Titrage automatique (après la première réponse)** (L2243)
-  - `applyGeneratedTitle()` — L2244
-  - `maybeTitle()` — L2251
-  - `regenerateTitle()` — L2267
-  - `setTitleEditable()` — L2280
-- **Résumé / mots-clés à la sortie d'une conversation** (L2286)
-  - `summarizeIfNeeded()` — L2287
-- **Description de fichier de bibliothèque d'espace (D7, lot Cbis)** (L2307)
-  - `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` — L2314
-  - `describeFileIfNeeded()` — L2328
-- **Nettoyage des résumés orphelins (démarrage)** (L2360)
-  - `pruneOrphanSummariesOnInit()` — L2365
-- **Backfill modèle : attribue le modèle courant aux réponses sans modèle** (L2370)
-  - `backfillMessageModels()` — L2371
-- **Backfill au démarrage (séquentiel, indicateur continu)** (L2388)
-  - `runBackfill()` — L2389
-- **Init** (L2416)
-  - `init()` — L2417
+  - `BOOT_MIN_AFTER_READY_MS` — L28
+  - `finishBoot()` — L29
+- **Logo : source unique (favicon + sidebar)** (L41)
+  - `LOGO_SRC` — L44
+  - `applyLogo()` — L61
+- **État de session** (L67)
+  - `currentConvId` — L68
+  - `activeSpaceId` — L69
+  - `currentThread` — L70
+  - `needTitle` — L71
+  - `titleBefore` — L72
+  - `currentConvModel` — L73
+  - `currentConvReasoningEffort` — L74
+  - `pendingAttachments` — L75
+  - `attachIngestInFlight` — L76
+  - `_sendResolving` — L77
+  - `_lastContextManifest` — L78
+  - `_lastContextManifestMidTurn` — L79
+- **Résumé sur inactivité** (L81)
+  - `IDLE_SUMMARY_MS` — L85
+  - `_idleSummaryTimer` — L86
+  - `armIdleSummaryTimer()` — L88
+  - `activeModel()` — L100
+  - `setConvModel()` — L109
+  - `activeReasoningEffort()` — L124
+  - `setConvReasoningEffort()` — L130
+- **Construction du message système (un seul, concaténé)** (L142)
+  - `buildSummaryBlock()` — L143
+  - `buildMemoryEntriesBlock()` — L158
+  - `contextBlockParts()` — L169
+  - `buildContextBlock()` — L191
+  - `buildSkillsContextBlock()` — L212
+  - `resolveUserSystemPrompt()` — L227
+  - `systemMessageParts()` — L246
+  - `buildSystemMessage()` — L275
+  - `rootSystemPromptDisplay()` — L289
+  - `computeContextManifestNow()` — L299
+  - `recomputeLastContextManifest()` — L320
+  - `applyUsageToLastManifest()` — L335
+- **Navigation entre conversations** (L340)
+  - `projectConvMessages()` — L344
+  - `_openConvSeq` — L377
+  - `openConversation()` — L378
+  - `resetToEmpty()` — L419
+  - `selectConv()` — L442
+  - `moveSelectedConversations()` — L461
+  - `newConversation()` — L480
+  - `togglePin()` — L489
+  - `downloadConvMd()` — L499
+  - `undoToolAck()` — L539
+  - `deleteConv()` — L553
+- **Réception synchro multi-onglets (lot J, J3)** (L563)
+  - `_pendingSyncActions` — L579
+- **Soft-lock (J4) : awareness « même conv ouverte ailleurs »** (L581)
+  - `_peersOnConv` — L587
+  - `_peersGenerating` — L588
+  - `_peerHeartbeatAt` — L589
+  - `_peerTtlSweeper` — L590
+  - `announceConvOpened()` — L594
+  - `announceConvClosed()` — L598
+  - `resetPeerState()` — L604
+  - `refreshTabBanner()` — L613
+  - `applyReadonlyState()` — L628
+  - `armTtlSweeper()` — L634
+  - `handleSyncMessage()` — L654
+  - `applySyncDecision()` — L663
+  - `applySyncedSettings()` — L810
+  - `_queueSyncAction()` — L847
+  - `drainPendingSync()` — L858
+- **Readonly relay + heartbeat (J5)** (L865)
+  - `SYNC_HEARTBEAT_MS` — L872
+  - `SYNC_HEARTBEAT_TTL_MS` — L873
+  - `_genRelayConvId` — L875
+  - `_genHeartbeatTimer` — L876
+  - `startGenerationRelay()` — L880
+  - `stopGenerationRelay()` — L894
+  - `ensureConversation()` — L904
+  - `persistCurrent()` — L915
+- **Titre éditable** (L944)
+  - `wireTitleEditing()` — L945
+  - `onTitleKey()` — L954
+  - `onTitleBlur()` — L958
+- **Réglages** (L976)
+  - `onSaveSettings()` — L977
+  - `prefetchModels()` — L1007
+- **Serveurs MCP distants : orchestration** (L1012)
+  - `reconnectMcpServers()` — L1016
+  - `onSaveMcpCard()` — L1025
+  - `onDeleteMcpCard()` — L1057
+- **Serveurs API : persistance + activation (orchestration depuis le drawer)** (L1062)
+  - `onSaveApiCard()` — L1066
+  - `onDeleteApiCard()` — L1102
+  - `onUseApiServer()` — L1118
+- **Skills : persistance (orchestration depuis le drawer de gestion)** (L1131)
+  - `onSaveSkillCard()` — L1135
+  - `ingestSkillMarkdownFile()` — L1164
+  - `onDeleteSkillCard()` — L1191
+  - `onToggleSkill()` — L1197
+- **Export / import complet des données (feature E)** (L1202)
+  - `snapshotLocalStorageForExport()` — L1210
+  - `exportAllData()` — L1223
+  - `onImportDataClick()` — L1234
+  - `onImportFileSelected()` — L1243
+  - `applyImportedData()` — L1264
+- **Pièces jointes (composer)** (L1290)
+  - `ATTACHMENT_IMAGE_MAX_BYTES` — L1305
+  - `ATTACHMENT_BLOB_MAX_BYTES` — L1306
+  - `ATTACHMENT_IMAGE_MAX_EDGE` — L1307
+  - `ATTACHMENT_IMAGE_JPEG_QUALITY` — L1308
+  - `ATTACHMENT_TEXT_MAX_BYTES` — L1309
+  - `ATTACHMENT_MAX_IMAGES` — L1310
+  - `attachmentCapForKind()` — L1316
+  - `downscaleImageFile()` — L1328
+  - `readFileAsText()` — L1355
+  - `readFileAsArrayBuffer()` — L1365
+  - `showComposerAttachError()` — L1377
+  - `clearComposerAttachError()` — L1381
+  - `ingestAttachmentFile()` — L1394
+  - `showSpaceFilesError()` — L1456
+  - `clearSpaceFilesError()` — L1460
+  - `ingestLibraryFile()` — L1473
+  - `persistAttSeq()` — L1512
+  - `handleAttachFiles()` — L1527
+  - `onAttachClick()` — L1545
+  - `onAttachFilesSelected()` — L1551
+  - `removeComposerAttachment()` — L1559
+- **Flux d'envoi** (L1564)
+  - `onSendBtn()` — L1566
+  - `resolveSend()` — L1585
+  - `sendMessage()` — L1612
+  - `buildOutgoingContentForAttachments()` — L1671
+  - `sendUserText()` — L1706
+  - `runGenerationFromCurrentThread()` — L1738
+  - `editUserMessage()` — L1772
+  - `regenerateResponse()` — L1808
+  - `continueTruncated()` — L1824
+  - `rewriteAttachedUserMessage()` — L1852
+  - `dispatchSend()` — L1859
+- **Mécanique réutilisable : tâche LLM « en arrière-plan »** (L2229)
+  - `runBackgroundTask()` — L2233
+- **Titrage automatique (après la première réponse)** (L2245)
+  - `applyGeneratedTitle()` — L2246
+  - `maybeTitle()` — L2253
+  - `regenerateTitle()` — L2269
+  - `setTitleEditable()` — L2282
+- **Résumé / mots-clés à la sortie d'une conversation** (L2288)
+  - `summarizeIfNeeded()` — L2289
+- **Description de fichier de bibliothèque d'espace (D7, lot Cbis)** (L2309)
+  - `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` — L2316
+  - `describeFileIfNeeded()` — L2330
+- **Nettoyage des résumés orphelins (démarrage)** (L2362)
+  - `pruneOrphanSummariesOnInit()` — L2367
+- **Backfill modèle : attribue le modèle courant aux réponses sans modèle** (L2372)
+  - `backfillMessageModels()` — L2373
+- **Backfill au démarrage (séquentiel, indicateur continu)** (L2390)
+  - `runBackfill()` — L2391
+- **Init** (L2418)
+  - `init()` — L2419
 
 ## src/css/base.css
 

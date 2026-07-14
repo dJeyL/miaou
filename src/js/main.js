@@ -8,32 +8,34 @@
 // dérivé de BUILD_CONFIG — n'est référencé ici/ailleurs qu'en corps de fonction.
 
 // ── Overlay de préchargement (boot) ─────────────────────────────────────────
+// Le déclenchement du fade-in + blink (_bootReady/_bootReadyAt, classe
+// .boot-ready) est posé par un <script> inline dans index.html, PLACÉ AVANT
+// les <script src> CDN (marked/dompurify/prism) : ces derniers sont bloquants
+// et retardaient sinon visiblement l'apparition du logo le temps de leur
+// fetch. _bootReady/_bootReadyAt sont donc des globals déjà posés quand ce
+// fichier s'exécute — ne pas les redéclarer ici.
 // Le délai minimum d'affichage est mesuré depuis l'instant où fade-in + blink
-// DÉMARRENT réellement (_bootReadyAt, posé avec .boot-ready), PAS depuis le
-// chargement du script : sur Chrome .boot-ready peut arriver sensiblement après
-// le parse (paint retardé), et mesurer depuis le parse faisait disparaître
-// l'overlay PENDANT le clignement (retour Julien). En calant sur _bootReadyAt,
-// le double-clin (fin ~1.7s après ready) a toujours le temps de jouer.
-let _bootReadyAt = 0;
+// DÉMARRENT réellement (_bootReadyAt), PAS depuis le chargement du script :
+// sur Chrome .boot-ready peut arriver sensiblement après le parse (paint
+// retardé), et mesurer depuis le parse faisait disparaître l'overlay PENDANT
+// le clignement (retour Julien). En calant sur _bootReadyAt, le double-clin
+// (fin ~1.7s après ready) a toujours le temps de jouer. finishBoot() est
+// appelée depuis init() sur DOMContentLoaded, qui peut tirer avant que le rAF
+// du script inline n'ait posé .boot-ready : sans garde, _bootReadyAt à 0
+// serait lu comme « ready depuis toujours » et le setTimeout(1800) expirerait
+// parfois avant même le démarrage du fade-in — _bootReady fait attendre le
+// vrai rAF avant de planifier.
 const BOOT_MIN_AFTER_READY_MS = 1800;
 function finishBoot() {
   const el = document.getElementById('boot-overlay');
   if (!el) return;
-  const since = _bootReadyAt ? (Date.now() - _bootReadyAt) : 0;
+  // typeof (pas de référence directe) : le test runner QuickJS évalue ce
+  // fichier seul, jamais index.html — _bootReady/_bootReadyAt n'y sont posés
+  // par aucun script.
+  if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
+  const since = Date.now() - _bootReadyAt;
   const wait = Math.max(0, BOOT_MIN_AFTER_READY_MS - since);
   setTimeout(() => { el.classList.add('boot-done'); }, wait);
-}
-// Déclenche fade-in + blink au FRAME SUIVANT (double rAF → un paint garanti à
-// opacity:0 d'abord), pas au parse : synchronise Chrome et Safari (Chrome peignait
-// après l'animation au parse → apparition d'un coup). Enregistre _bootReadyAt =
-// début réel des animations (base du délai minimum). Posé hors init(), au plus
-// tôt (l'overlay existe déjà dans le HTML statique quand ce script tourne).
-if (typeof window !== 'undefined' && window.requestAnimationFrame) {
-  const _boot = document.getElementById('boot-overlay');
-  if (_boot) requestAnimationFrame(() => requestAnimationFrame(() => {
-    _boot.classList.add('boot-ready');
-    _bootReadyAt = Date.now();
-  }));
 }
 
 // ── Logo : source unique (favicon + sidebar) ────────────────────────────────

@@ -2631,6 +2631,22 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
   </svg>
 </div>
 
+<script>
+var _bootReady = false;
+var _bootReadyAt = 0;
+if (window.requestAnimationFrame) {
+  (function () {
+    var _boot = document.getElementById('boot-overlay');
+    if (!_boot) return;
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      _boot.classList.add('boot-ready');
+      _bootReadyAt = Date.now();
+      _bootReady = true;
+    }); });
+  })();
+}
+</script>
+
 <div class="app" id="app">
 
   <aside class="sidebar">
@@ -3234,7 +3250,7 @@ html[data-theme="light"] .token.deleted                   { color: #b53030; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-14 11:30 UTC */
+/* miaou — built: 2026-07-14 11:40 UTC */
 
 /* ── utils.js ── */
 
@@ -4149,7 +4165,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784028649}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784029259}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12309,22 +12325,15 @@ async function exportConvHtml() {
 
 /* ── main.js ── */
 
-let _bootReadyAt = 0;
 const BOOT_MIN_AFTER_READY_MS = 1800;
 function finishBoot() {
   const el = document.getElementById('boot-overlay');
   if (!el) return;
-  const since = _bootReadyAt ? (Date.now() - _bootReadyAt) : 0;
+  
+  if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
+  const since = Date.now() - _bootReadyAt;
   const wait = Math.max(0, BOOT_MIN_AFTER_READY_MS - since);
   setTimeout(() => { el.classList.add('boot-done'); }, wait);
-}
-
-if (typeof window !== 'undefined' && window.requestAnimationFrame) {
-  const _boot = document.getElementById('boot-overlay');
-  if (_boot) requestAnimationFrame(() => requestAnimationFrame(() => {
-    _boot.classList.add('boot-ready');
-    _bootReadyAt = Date.now();
-  }));
 }
 
 const LOGO_SRC =
