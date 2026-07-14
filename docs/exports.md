@@ -131,21 +131,24 @@ ultérieures du même lot).
   `LOGO_SRC` — global de main.js — y est donc sans danger) : assemble le
   squelette `<!doctype html><html data-theme="…"><head>…</head><body>` (topbar
   titre+date, `bodyHtml`, footer « Généré par MIAOU », `scriptTag` avant
-  `</body>`). **Zéro `<link>`** (invariant D1). Le `<script>` n'est plus
-  interdit (**D1 révisé**, cf. ci-dessous) : il est composé par l'appelant dans
-  `scriptTag` (vide → export strictement statique, ou `<script>…</script>` →
-  progressive enhancement). Le `styleCss` (tokens + `EXPORT_CSS` +
-  `PRISM_THEME_CSS`) est de même composé par l'appelant — `buildExportHtml`
-  reste pur en ne faisant qu'insérer des strings déjà assemblées.
-- **Métadonnées de preview de lien (Open Graph / Twitter Card).** Le `<head>`
-  porte `og:title`/`twitter:title` (= titre de conv), `og:description`/
-  `twitter:description`/`<meta name="description">` (= `« {titre} — exporté
-  depuis MIAOU le {date} »`, `ogDesc`), `og:site_name=MIAOU`, `og:type=article`,
-  `og:image`/`twitter:image` (= `LOGO_SRC`, data-URI). But : quand l'export est
-  partagé dans Teams/Slack/Discord, ces balises pilotent la carte de preview —
-  sinon le crawler pêche au hasard un texte de la page (typiquement le footer
-  « Généré par MIAOU »). **Échappement `escHtml` systématique** sur chaque
-  `content=` (un titre avec `"` casserait sinon l'attribut). **Limites connues
+  `</body>`). Un seul `<link>` (favicon, cf. ci-dessous) ; pas de CDN/CSS externe
+  (Prism inliné). Le `<script>` n'est plus interdit (**D1 révisé**, cf.
+  ci-dessous) : il est composé par l'appelant dans `scriptTag` (vide → export
+  strictement statique, ou `<script>…</script>` → progressive enhancement). Le
+  `styleCss` (tokens + `EXPORT_CSS` + `PRISM_THEME_CSS`) est de même composé par
+  l'appelant — `buildExportHtml` reste pur en ne faisant qu'insérer des strings
+  déjà assemblées.
+- **Favicon.** `<link rel="icon" href="LOGO_SRC">` — même logo data-URI que la
+  sidebar (source unique, `main.js`). Statique, présent inconditionnellement
+  (indépendant de `exportInteractive`/`scriptTag`).
+- **Métadonnées de preview de lien (Open Graph).** Le `<head>` porte `og:title`
+  (= titre de conv), `og:description`/`<meta name="description">` (= `« {titre}
+  — exporté depuis MIAOU le {date} »`, `ogDesc`), `og:site_name=MIAOU`,
+  `og:type=article`, `og:image` (= `LOGO_SRC`, data-URI). But : quand l'export
+  est partagé dans Teams/Slack/Discord, ces balises pilotent la carte de
+  preview — sinon le crawler pêche au hasard un texte de la page (typiquement
+  le footer « Généré par MIAOU »). **Échappement `escHtml` systématique** sur
+  chaque `content=` (un titre avec `"` casserait sinon l'attribut). **Limites connues
   et assumées** (ne pas re-investiguer sans URL réelle) : (1) `og:image` en
   **data-URI est ignoré** par la plupart des crawlers (Teams inclus) — ils
   exigent une URL http(s) fetchable ; sur une pièce jointe locale, pas de

@@ -1260,6 +1260,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 .composer-model-btn:hover { background: var(--accent-bd); }
 
 .ctx-counter {
+  position: relative;
   display: inline-flex;
   align-items: center;
   line-height: 1;
@@ -1274,7 +1275,17 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   border-radius: 100px;
   cursor: pointer;
   margin-left: auto;   
+  overflow: hidden;    
   transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.ctx-counter-cache {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ctx-cache);
+  transition: width 140ms var(--ease);
 }
 
 .pill-select:not([hidden]) + .ctx-counter { margin-left: 0; }
@@ -2430,7 +2441,8 @@ textarea.skill-content {
 .cmdk-box {
   position: relative;
   width: min(600px, 92vw);
-  max-height: 60vh;
+  
+  max-height: min(540px, calc(100vh - 16vh));
   display: flex;
   flex-direction: column;
   background: var(--surface-2);
@@ -2835,6 +2847,7 @@ if (window.requestAnimationFrame) {
           </div>
           <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" title="Inspecteur de contexte">
             <span id="ctx-counter-label">≈ 0 tok</span>
+            <span class="ctx-counter-cache" id="ctx-counter-cache" hidden></span>
           </button>
         </div>
 
@@ -3301,7 +3314,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-14 21:10 UTC */
+/* miaou — built: 2026-07-14 22:07 UTC */
 
 /* ── utils.js ── */
 
@@ -4238,7 +4251,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784063434}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784066858}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -10506,6 +10519,19 @@ function syncContextCounter() {
   if (counter) counter.classList.toggle('ctx-counter-midturn', !!_lastContextManifestMidTurn);
   el.textContent = label;
 
+  const cacheEl = $('ctx-counter-cache');
+  if (cacheEl) {
+    const ud = usageDerived(m.apiUsage);
+    if (ud.cachedTokens != null && ud.cachedRatio != null) {
+      const pct = Math.max(0, Math.min(100, ud.cachedRatio * 100));
+      cacheEl.style.width = pct + '%';
+      cacheEl.title = ud.cachedTokens + ' tok servis par le cache (' + Math.round(pct) + '%)';
+      cacheEl.hidden = false;
+    } else {
+      cacheEl.hidden = true;
+    }
+  }
+
   const drawer = $('ctx-drawer');
   if (drawer && drawer.classList.contains('show')) renderContextInspector();
 }
@@ -12532,16 +12558,14 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     '<meta charset="utf-8">\n' +
     '<title>' + escHtml(title) + '</title>\n' +
     
+    '<link rel="icon" href="' + escHtml(LOGO_SRC) + '">\n' +
+    
     '<meta name="description" content="' + escHtml(ogDesc) + '">\n' +
     '<meta property="og:type" content="article">\n' +
     '<meta property="og:site_name" content="MIAOU">\n' +
     '<meta property="og:title" content="' + escHtml(title) + '">\n' +
     '<meta property="og:description" content="' + escHtml(ogDesc) + '">\n' +
     '<meta property="og:image" content="' + escHtml(LOGO_SRC) + '">\n' +
-    '<meta name="twitter:card" content="summary">\n' +
-    '<meta name="twitter:title" content="' + escHtml(title) + '">\n' +
-    '<meta name="twitter:description" content="' + escHtml(ogDesc) + '">\n' +
-    '<meta name="twitter:image" content="' + escHtml(LOGO_SRC) + '">\n' +
     '<style>' + styleCss + '</style>\n' +
     '</head>\n' +
     '<body>\n' +

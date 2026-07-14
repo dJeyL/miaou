@@ -120,10 +120,10 @@ describe('buildExportHtml', function() {
     expect(r.indexOf('09/07/2026') >= 0).toBeTruthy();
     expect(r.indexOf('Généré par MIAOU') >= 0).toBeTruthy();
   });
-  it('zéro <script> et zéro <link> dans la sortie (D1)', function() {
+  it('zéro <script> sans scriptTag ; un seul <link> (favicon)', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<script') >= 0).toBeFalsy();
-    expect(r.indexOf('<link') >= 0).toBeFalsy();
+    expect(r.indexOf('<link rel="icon"') >= 0).toBeTruthy();
   });
   it('theme "light" reflété dans data-theme', function() {
     var r = buildExportHtml(Object.assign({}, base, { theme: 'light' }));

@@ -139,6 +139,7 @@
 
 /* compteur compact d'inspecteur de contexte (brief B) */
 .ctx-counter {
+  position: relative;
   display: inline-flex;
   align-items: center;
   line-height: 1;
@@ -153,7 +154,19 @@
   border-radius: 100px;
   cursor: pointer;
   margin-left: auto;   /* colle la pilule à droite quand elle n'est précédée d'aucune marge auto (raisonnement masqué) */
+  overflow: hidden;    /* la barre de cache reste sous le rayon des bords */
   transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+/* Liseré de cache, en bas de la pilule (miroir compact de .ctx-bar-cache dans
+   l'inspecteur) : largeur = part des tokens d'entrée servie par le cache.
+   Absent si le backend ne rapporte pas cached_tokens (ex. Ollama). */
+.ctx-counter-cache {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ctx-cache);
+  transition: width 140ms var(--ease);
 }
 /* Quand le sélecteur de raisonnement est visible juste avant, c'est LUI qui
    porte la marge auto (il ouvre l'espace flexible) et la pilule de contexte le

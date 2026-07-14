@@ -37,7 +37,16 @@
 .cmdk-box {
   position: relative;
   width: min(600px, 92vw);
-  max-height: 60vh;
+  /* Plafond en pixels absolus, pas en vh : 60vh d'un viewport de 900px (540px)
+     est confortable, mais 60vh d'un viewport de 715px (429px, cas remonté —
+     laptop pro) coupe la liste alors que l'espace réel sous le padding-top
+     (8vh) de l'overlay reste largement disponible. 540px fixe se comporte
+     comme 60vh sur les résolutions courantes (device-height ≥ 900px, où le
+     problème ne se posait pas) mais laisse la boîte grandir davantage sur les
+     petits viewports au lieu de couper à un pourcentage qui, lui, rétrécit
+     avec l'écran. calc(100vh - 16vh) reste le garde-fou bas (8vh de marge
+     haute + 8vh de marge basse) pour ne jamais toucher les bords. */
+  max-height: min(540px, calc(100vh - 16vh));
   display: flex;
   flex-direction: column;
   background: var(--surface-2);

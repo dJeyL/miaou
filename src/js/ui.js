@@ -3880,6 +3880,21 @@ function syncContextCounter() {
   if (counter) counter.classList.toggle('ctx-counter-midturn', !!_lastContextManifestMidTurn);
   el.textContent = label;
 
+  // Liseré de cache sur la pilule elle-même : même donnée que la barre de
+  // l'inspecteur (usageDerived), pour un aperçu sans ouvrir le drawer.
+  const cacheEl = $('ctx-counter-cache');
+  if (cacheEl) {
+    const ud = usageDerived(m.apiUsage);
+    if (ud.cachedTokens != null && ud.cachedRatio != null) {
+      const pct = Math.max(0, Math.min(100, ud.cachedRatio * 100));
+      cacheEl.style.width = pct + '%';
+      cacheEl.title = ud.cachedTokens + ' tok servis par le cache (' + Math.round(pct) + '%)';
+      cacheEl.hidden = false;
+    } else {
+      cacheEl.hidden = true;
+    }
+  }
+
   // Drawer déjà ouvert (ex. laissé ouvert pendant une boucle d'outils ou un
   // streaming) : le rafraîchir en même temps que la pilule, sinon son contenu
   // reste figé sur l'état au moment de l'ouverture jusqu'à une fermeture/
@@ -6190,9 +6205,12 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     '<head>\n' +
     '<meta charset="utf-8">\n' +
     '<title>' + escHtml(title) + '</title>\n' +
-    // Métadonnées Open Graph / Twitter Card : pilotent la preview de lien dans
-    // Teams/Slack/Discord (sinon ils pêchent au hasard un texte de la page —
-    // typiquement le footer « Généré par MIAOU »). L'image (logo data-URI) est
+    // Favicon : même logo que la sidebar (LOGO_SRC, source unique, main.js) —
+    // statique, indépendant du réglage exportInteractive/EXPORT_SCRIPT.
+    '<link rel="icon" href="' + escHtml(LOGO_SRC) + '">\n' +
+    // Métadonnées Open Graph : pilotent la preview de lien dans Teams/Slack/
+    // Discord (sinon ils pêchent au hasard un texte de la page — typiquement
+    // le footer « Généré par MIAOU »). L'image (logo data-URI) est
     // généralement ignorée par ces crawlers qui exigent une URL fetchable, mais
     // coût nul. Titre + description restent, eux, honorés même sur pièce jointe.
     '<meta name="description" content="' + escHtml(ogDesc) + '">\n' +
@@ -6201,10 +6219,6 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     '<meta property="og:title" content="' + escHtml(title) + '">\n' +
     '<meta property="og:description" content="' + escHtml(ogDesc) + '">\n' +
     '<meta property="og:image" content="' + escHtml(LOGO_SRC) + '">\n' +
-    '<meta name="twitter:card" content="summary">\n' +
-    '<meta name="twitter:title" content="' + escHtml(title) + '">\n' +
-    '<meta name="twitter:description" content="' + escHtml(ogDesc) + '">\n' +
-    '<meta name="twitter:image" content="' + escHtml(LOGO_SRC) + '">\n' +
     '<style>' + styleCss + '</style>\n' +
     '</head>\n' +
     '<body>\n' +
