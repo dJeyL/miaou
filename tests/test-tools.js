@@ -108,11 +108,15 @@ describe('get_conversation', function() {
     expect(pending[0].kind).toBe('conversation_read');
     expect(pending[0].title).toBe('Mon titre');
   });
-  it('ne pousse pas d\'ack quand introuvable', function() {
+  it('pousse un ack d\'échec quand introuvable (jamais un conversation_read)', function() {
     localStorage.clear();
     clearPendingToolAcks();
     ct('get_conversation', { id: 'inexistant' });
-    expect(getPendingToolAcks().length).toBe(0);
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].name).toBe('miaou__get_conversation');
+    expect(acks[0].error).toBe(true);
   });
 });
 
@@ -242,18 +246,23 @@ describe('acks d\'outils — helpers', function() {
 // pousser d'ack ne doit pas voir son intent se coller à l'ack d'un outil
 // antérieur du même tour multi-outils.
 describe('callTool : intent ne déborde pas sur l\'ack d\'un outil précédent (B5)', function() {
-  it('outil OK puis outil échouant sans ack : l\'intent du 2e ne réécrit pas le 1er', function() {
+  it('outil OK puis outil échouant : l\'intent du 2e va sur SON ack d\'échec, pas sur le 1er', function() {
     localStorage.clear();
     clearPendingToolAcks();
     // 1er appel : create_memory pousse un ack memory_create + son intent.
     callTool('create_memory', { content: 'un fait à retenir', miaou_intent: 'intent-un' });
-    // 2e appel : update_memory sur un id inexistant → 'Souvenir introuvable.',
-    // AUCUN ack poussé. Son intent ne doit PAS se poser sur l'ack du 1er.
+    // 2e appel : update_memory sur un id inexistant → 'Souvenir introuvable.'.
+    // Depuis les acks d'échec, il pousse SON PROPRE ack tool_failed : l'intent du
+    // 2e doit s'y poser, et surtout PAS réécrire celui du 1er (invariant B5).
     callTool('update_memory', { id: 'inexistant', content: 'x', miaou_intent: 'intent-deux' });
     var acks = getPendingToolAcks();
-    expect(acks.length).toBe(1);
+    expect(acks.length).toBe(2);
     expect(acks[0].kind).toBe('memory_create');
     expect(acks[0].intent).toBe('intent-un');
+    expect(acks[1].kind).toBe('tool_failed');
+    expect(acks[1].intent).toBe('intent-deux');
+    expect(acks[1].name).toBe('miaou__update_memory');
+    expect(acks[1].error).toBe(true);
   });
   it('deux outils poussant chacun un ack : chaque intent va sur le bon ack', function() {
     localStorage.clear();
@@ -417,13 +426,16 @@ describe('create_memory — écriture directe', function() {
     expect(pending[0].id).toBe(entries[0].id);
     expect(pending[0].content).toBe('préfère les réponses courtes');
   });
-  it('rejette un contenu vide et ne pousse pas d\'ack', function() {
+  it('rejette un contenu vide : rien d\'écrit, ack d\'échec (pas de memory_create)', function() {
     localStorage.clear();
     clearPendingToolAcks();
     var r = ct('create_memory', { content: '   ' });
     expect(r).toContain('ignoré');
     expect(listMemoryEntries().length).toBe(0);
-    expect(getPendingToolAcks().length).toBe(0);
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].name).toBe('miaou__create_memory');
   });
   it('stampe le scope avec le Space actif (brief D3)', function() {
     localStorage.clear();
@@ -543,11 +555,14 @@ describe('update_memory — correction in-place', function() {
     expect(pending[0].content).toBe('après');
     expect(pending[0].prevContent).toBe('avant');   // capturé avant écrasement pour l'undo
   });
-  it('rejette les paramètres invalides et ne pousse pas d\'ack', function() {
+  it('rejette les paramètres invalides : ack d\'échec, pas de memory_update', function() {
     clearPendingToolAcks();
     var r = ct('update_memory', { id: 'm1' });
     expect(r).toContain('invalide');
-    expect(getPendingToolAcks().length).toBe(0);
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].name).toBe('miaou__update_memory');
   });
 });
 
@@ -566,11 +581,14 @@ describe('delete_memory — tombstone', function() {
     expect(pending[0].id).toBe('m1');
     expect(pending[0].content).toBe('obsolète');
   });
-  it('rejette un id manquant et ne pousse pas d\'ack', function() {
+  it('rejette un id manquant : ack d\'échec, pas de memory_delete', function() {
     clearPendingToolAcks();
     var r = ct('delete_memory', {});
     expect(r).toContain('manquant');
-    expect(getPendingToolAcks().length).toBe(0);
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].name).toBe('miaou__delete_memory');
   });
 });
 
@@ -1282,3 +1300,58 @@ describe('classifyHandleRef (famille de handle, lot L)', function() {
   });
 });
 
+
+// Acks d'échec des outils natifs : avant toolFail, un handler en échec retournait
+// sa chaîne SANS pousser d'ack — le modèle voyait l'erreur, mais l'appel était
+// invisible dans le fil. Les échecs TECHNIQUES (outil inconnu, throw = bug) étaient
+// les plus anormaux et pourtant les plus muets.
+describe('toolFail — ack d\'échec des outils natifs', function() {
+  it('pousse un ack tool_failed en erreur et renvoie le message inchangé', function() {
+    clearPendingToolAcks();
+    var msg = toolFail('update_memory', 'Souvenir introuvable.');
+    expect(msg).toBe('Souvenir introuvable.');   // tool result byte-identique
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].error).toBe(true);
+    expect(acks[0].message).toBe('Souvenir introuvable.');
+  });
+  it('préfixe le nom nu en nom canonique (miaou__), une seule fois', function() {
+    clearPendingToolAcks();
+    toolFail('files__read', 'Fichier introuvable.');
+    expect(getPendingToolAcks()[0].name).toBe('miaou__files__read');
+  });
+  it('outil inconnu : isError ET ack d\'échec (avant : isError muet)', function() {
+    clearPendingToolAcks();
+    var r = callTool('outil_qui_nexiste_pas', {});
+    expect(r.isError).toBe(true);
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].error).toBe(true);
+  });
+  it('handler qui throw : isError ET ack d\'échec (un bug laisse une trace)', function() {
+    clearPendingToolAcks();
+    TOOLS.push({
+      // Nom SANS `__` en tête : parseToolName splitte sur le PREMIER `__`, donc
+      // `__test_boom` serait lu comme préfixe vide + outil `test_boom` (introuvable).
+      name: 'testboom', description: 'x', inputSchema: { type: 'object', properties: {} },
+      handler: () => { throw new Error('boum'); },
+    });
+    try {
+      var r = callTool('testboom', {});
+      expect(r.isError).toBe(true);
+      var acks = getPendingToolAcks();
+      expect(acks.length).toBe(1);
+      expect(acks[0].kind).toBe('tool_failed');
+      expect(acks[0].message).toContain('boum');
+    } finally {
+      TOOLS.pop();
+    }
+  });
+  it('l\'ack d\'échec est rouge (ackIsError le reconnaît via error)', function() {
+    clearPendingToolAcks();
+    toolFail('create_memory', 'Contenu vide — souvenir ignoré.');
+    expect(ackIsError(getPendingToolAcks()[0])).toBe(true);
+  });
+});

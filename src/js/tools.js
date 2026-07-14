@@ -334,6 +334,29 @@ function updateLastPendingToolAck(fields, minLength) {
   Object.assign(_pendingToolAcks[_pendingToolAcks.length - 1], fields);
 }
 
+// Sortie en échec d'un outil NATIF : pousse un ack `tool_failed` (rouge, cf.
+// ackIsError) ET retourne le message, pour que le site d'appel reste une seule
+// ligne — `return toolFail('update_memory', 'Souvenir introuvable.')`.
+//
+// Le retour est la chaîne NUE, inchangée : le tool result envoyé au modèle reste
+// byte-identique à ce qu'il était avant l'introduction des acks d'échec (aucun
+// effet sur le comportement du modèle, ni sur le KV cache). L'ack est une trace
+// PUREMENT UI — le contenu d'un ack n'entre jamais dans le contexte.
+//
+// Historique : les handlers faisaient `return 'Souvenir introuvable.'` sans
+// pousser d'ack. Le modèle recevait bien l'erreur, mais l'appel n'apparaissait
+// NULLE PART dans le fil (pas un ack blanc : aucun ack). L'utilisateur ne voyait
+// donc pas passer un update_memory qui avait raté sa cible.
+//
+// `toolName` est le nom NU du handler (`update_memory`), comme déclaré dans TOOLS ;
+// le préfixe `miaou__` est ajouté ICI, une seule fois, pour que l'ack porte le nom
+// canonique que le modèle a réellement appelé (cohérent avec mcp_call qui affiche
+// `server__tool`) sans dupliquer le préfixe sur chaque site d'appel.
+function toolFail(toolName, message) {
+  _pendingToolAcks.push({ kind: 'tool_failed', name: 'miaou__' + toolName, message, error: true });
+  return message;
+}
+
 // File des blocs NON-text renvoyés par un outil distant (image / resource /
 // binaire). Vidée par le hook UI au même moment que les acks (après l'exécution
 // des outils d'un tour) et rendue dans la bulle assistant courante via la cascade
@@ -380,16 +403,18 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const entry = getSummaryEntry(args.id);   // storage.js
-      if (!entry || entry.suppressed) return 'Conversation introuvable ou souvenir supprimé.';
-      // Herméticité (brief D2) : une conversation d'un autre Space répond comme
-      // inexistante — même message, pas d'oracle. activeSpaceId est une global
-      // de main.js, accès défensif car tools.js est aussi évalué seul (test runner).
-      // Un résumé orphelin (conversation supprimée, index conservé) n'a pas de
-      // Space propre : traité comme default Space (visible seulement là).
+      // Herméticité (brief D2, piège 18) : les DEUX sorties ci-dessous partagent le
+      // même message ET le même ack — l'absence d'oracle vise le MODÈLE, et un ack
+      // `tool_failed` identique dans les deux cas n'en crée aucun. (L'utilisateur,
+      // lui, doit bien voir que le modèle a tenté la lecture : c'est le but.)
+      if (!entry || entry.suppressed) return toolFail('get_conversation', 'Conversation introuvable ou souvenir supprimé.');
+      // activeSpaceId est une global de main.js, accès défensif car tools.js est
+      // aussi évalué seul (test runner). Un résumé orphelin (conversation supprimée,
+      // index conservé) n'a pas de Space propre : traité comme default Space.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
       const conv = loadConversation(args.id);   // storage.js — un seul chargement (herméticité ET contenu)
       const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
-      if (convSpace !== spaceId) return 'Conversation introuvable ou souvenir supprimé.';
+      if (convSpace !== spaceId) return toolFail('get_conversation', 'Conversation introuvable ou souvenir supprimé.');
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
@@ -436,7 +461,7 @@ const TOOLS = [
       if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
-        if (Number.isNaN(sinceMs)) return 'Date "since" invalide (attendu ISO 8601).';
+        if (Number.isNaN(sinceMs)) return toolFail('list_conversations', 'Date "since" invalide (attendu ISO 8601).');
         entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
       }
       if (args.query != null && args.query !== '') {
@@ -466,7 +491,7 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args) => {
-      if (!args.content || !args.content.trim()) return 'Contenu vide — souvenir ignoré.';
+      if (!args.content || !args.content.trim()) return toolFail('create_memory', 'Contenu vide — souvenir ignoré.');
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
@@ -494,14 +519,14 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
     handler: (args) => {
-      if (!args.id || !args.content || !args.content.trim()) return 'Paramètres invalides.';
+      if (!args.id || !args.content || !args.content.trim()) return toolFail('update_memory', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
       // Herméticité (brief D3, extension D2) : hors du Space actif (ou scope
       // profile) = « introuvable », même posture sans-oracle que get_conversation.
       // Une entrée sans scope (pré-migration) vaut default Space.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return 'Souvenir introuvable.';
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('update_memory', 'Souvenir introuvable.');
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -529,10 +554,10 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const id = String(args.id || '');
-      if (!id) return 'Identifiant manquant.';
+      if (!id) return toolFail('present_resource', 'Identifiant manquant.');
       // getCachedRecord et makeResourcePresentBlock sont dans resources.js (chargé avant).
       const record = getCachedRecord(id);
-      if (!record) return 'Ressource introuvable (identifiant inconnu ou non disponible en session).';
+      if (!record) return toolFail('present_resource', 'Ressource introuvable (identifiant inconnu ou non disponible en session).');
       // Le rendu du bloc est délégué à placeToolAck (live et reload via même chemin).
       _pendingToolAcks.push({ kind: 'resource_presented', id, resourceName: record.name, mime: record.mime });
       return 'Ressource présentée à l\'utilisateur.';
@@ -561,13 +586,13 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const ref = String(args.ref || '');
-      if (!ref) return 'Identifiant manquant.';
+      if (!ref) return toolFail('recall_attachment', 'Identifiant manquant.');
       // getCachedRecordByAttId est dans resources.js (chargé avant). currentConvId
       // est une global de main.js — accès défensif (tools.js évalué seul par le
       // test runner), même pattern que list_conversations ci-dessus.
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const record = getCachedRecordByAttId(ref, activeId);
-      if (!record) return 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).';
+      if (!record) return toolFail('recall_attachment', 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).');
       _pendingToolAcks.push({ kind: 'attachment_recalled', attId: ref, resourceName: record.name, mime: record.mime, convId: activeId });
       if (record.mime && record.mime.startsWith('image/')) {
         // Brief A2 / D3 (probe validée 2026-07-05, voie (b)) : les pixels SONT
@@ -638,15 +663,23 @@ const TOOLS = [
     handler: (args) => {
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
       const recordId = parseLibraryRef(String(args.id || ''));   // resources.js
-      if (!recordId) return 'Fichier introuvable.';
+      if (!recordId) return toolFail('files__read', 'Fichier introuvable.');
       const record = getCachedRecord(recordId);   // resources.js — cache session unifié
-      // Foreign-Space ou id inconnu → même posture no-oracle que get_conversation/mémoires.
-      if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return 'Fichier introuvable.';
+      // Foreign-Space ou id inconnu → même posture no-oracle que get_conversation/mémoires
+      // (message ET ack identiques dans les deux sorties : aucun oracle créé).
+      if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return toolFail('files__read', 'Fichier introuvable.');
       _pendingToolAcks.push({ kind: 'files_read', id: args.id, resourceName: record.name, mime: record.mime });
       if (record.mime && record.mime.startsWith('image/')) {
         const model = typeof activeModel === 'function' ? activeModel() : '';
         const server = typeof activeApiServer === 'function' ? activeApiServer() : null;
         if (!serverModelVisionEnabled(server, model)) {
+          // Seul échec de ce fichier qui survient APRÈS le push de l'ack files_read
+          // (le fichier a bien été trouvé et lu — c'est sa PRÉSENTATION au modèle qui
+          // échoue). Pas de toolFail ici : il pousserait un SECOND ack, et le fil
+          // afficherait « fichier lu » suivi de « échec » pour un unique appel. On
+          // marque l'ack déjà poussé, qui vire au rouge (ackIsError) en gardant sa
+          // trace (nom du fichier, mime).
+          updateLastPendingToolAck({ error: true });
           return 'Ce contenu (image) ne peut pas être présenté à ce modèle (pas de capacité de vision).';
         }
         // Pas de placeholder muet, mais pas non plus de ré-injection de pixels ici :
@@ -685,19 +718,21 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args) => {
+      // validateFilesPromoteArgs reste PURE (testée à part) : elle renvoie le
+      // message, c'est le site de sortie qui pousse l'ack.
       const invalid = validateFilesPromoteArgs(args);
-      if (invalid) return invalid;
+      if (invalid) return toolFail('files__promote', invalid);
       const ref = String(args.ref || '');
       const description = String(args.description || '').trim();
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const record = getCachedRecordByAttId(ref, activeId);   // resources.js — att-N du tour courant
-      if (!record) return 'Fichier introuvable.';   // ref inconnue/périmée, même posture que files__read
+      if (!record) return toolFail('files__promote', 'Fichier introuvable.');   // ref inconnue/périmée, même posture que files__read
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
       const name = args.name ? String(args.name).trim() : record.name;
       const stored = await storeLibraryFile(   // resources.js — copie, l'attachment d'origine reste intact
         spaceId, record.mime, name, record.data, record.class, activeId, description, Date.now(), Math.random
       );
-      if (!stored) return 'Échec de l\'enregistrement dans la bibliothèque.';
+      if (!stored) return toolFail('files__promote', 'Échec de l\'enregistrement dans la bibliothèque.');
       _pendingToolAcks.push({ kind: 'file_promote', id: libraryRefFromId(stored.id), resourceName: stored.name });
       return 'Fichier ajouté à la bibliothèque de l\'espace. Identifiant : ' + libraryRefFromId(stored.id);
     },
@@ -716,10 +751,10 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
     handler: (args) => {
-      if (!args.id) return 'Identifiant manquant.';
+      if (!args.id) return toolFail('delete_memory', 'Identifiant manquant.');
       const existing = loadMemories().find(e => e.id === args.id);
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return 'Souvenir introuvable.';
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('delete_memory', 'Souvenir introuvable.');
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';
@@ -766,13 +801,13 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const slug = String(args.slug || '').trim();
-      if (!slug) return 'Slug manquant.';
+      if (!slug) return toolFail('skills__read', 'Slug manquant.');
       const meta = getSkillMeta(slug);                 // cache mémoire (synchrone)
-      if (!meta) return 'Skill introuvable : ' + slug;
-      if (meta.enabled === false) return 'Skill désactivée : ' + slug;
+      if (!meta) return toolFail('skills__read', 'Skill introuvable : ' + slug);
+      if (meta.enabled === false) return toolFail('skills__read', 'Skill désactivée : ' + slug);
       // Activée : fetch IDB async. L'ack est poussé une fois le contenu obtenu.
       return getSkillContent(slug).then(content => {
-        if (content == null) return 'Contenu indisponible pour la skill : ' + slug;
+        if (content == null) return toolFail('skills__read', 'Contenu indisponible pour la skill : ' + slug);
         // Nom d'affichage de la skill stocké en `title` (pas `name` : onEnrichLastAck
         // écrase `name` avec le nom canonique de l'outil pour la réinjection cross-turn).
         _pendingToolAcks.push({ kind: 'skill_read', slug, title: meta.name });
@@ -814,12 +849,14 @@ const TOOLS = [
       const slug = String((args && args.slug) || '').trim();
       const existingMeta = slug ? getSkillMeta(slug) : null;
       if (existingMeta && existingMeta.system === true) {
-        return 'Skill système : « ' + slug + ' » n\'est pas modifiable par cet outil.';
+        return toolFail('skills__write', 'Skill système : « ' + slug + ' » n\'est pas modifiable par cet outil.');
       }
+      // validateSkillSlug reste PURE (testée à part) : elle renvoie le message,
+      // c'est le site de sortie qui pousse l'ack.
       const err = validateSkillSlug(slug, existingMeta ? [] : listAllSkillsCache().map(s => s.slug));
-      if (err) return err;
+      if (err) return toolFail('skills__write', err);
       if (existingMeta && args.overwrite !== true) {
-        return 'Une skill « ' + slug + ' » existe déjà. Passe overwrite:true pour la modifier.';
+        return toolFail('skills__write', 'Une skill « ' + slug + ' » existe déjà. Passe overwrite:true pour la modifier.');
       }
       const created = !existingMeta;
       const finish = (base) => {
@@ -908,13 +945,18 @@ const TOOLS = [
     handler: (args) => {
       const handle = String((args && args.handle) || '').trim();
       const code = args && args.code != null ? String(args.code) : '';
-      if (!handle) return 'Handle manquant.';
-      if (!code) return 'Code manquant.';
+      // Sorties PRÉCOCES (rien n'a été exécuté) → ack tool_failed. Les échecs de
+      // l'exécution elle-même (cap, throw guest) gardent leur ack js_eval propre,
+      // porteur du code et de ok:false — également rouge (ackIsError), mais avec
+      // sa trace complète. Les deux ne se cumulent jamais : une sortie précoce
+      // n'atteint pas le .then.
+      if (!handle) return toolFail('js__eval', 'Handle manquant.');
+      if (!code) return toolFail('js__eval', 'Code manquant.');
       if (classifyHandleRef(handle) === null) {
-        return 'Handle invalide : ' + handle + ' (attendu att-N, file-<id> ou res_<id>).';
+        return toolFail('js__eval', 'Handle invalide : ' + handle + ' (attendu att-N, file-<id> ou res_<id>).');
       }
       const record = resolveHandleRecord(handle);   // impur : cache session (herméticité)
-      if (!record || !record.data) return 'Handle introuvable : ' + handle + '.';
+      if (!record || !record.data) return toolFail('js__eval', 'Handle introuvable : ' + handle + '.');
       const text = utf8Decode(record.data);   // resources.js — AL3 : contenu textuel
       return runInQuickJs(text, code).then(r => {   // ui.js/tools.js — async, lazy-load + VM
         if (r.ok) {
@@ -1208,9 +1250,17 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
 
 // ── Dispatcher MCP ───────────────────────────────────────────────────────────
 // Dispatch interne synchrone (outils miaou, noms NUS). Cœur unit-testé.
+//
+// Les échecs MÉTIER (« Souvenir introuvable ») sont poussés par les handlers via
+// toolFail et ne sont PAS des isError : le modèle doit pouvoir se corriger sans
+// que la boucle d'outils soit coupée. Les trois isError ci-dessous sont les échecs
+// TECHNIQUES (outil inconnu, throw d'un handler — un bug) : eux aussi poussent
+// désormais un ack `tool_failed`, sinon un plantage JS ne laissait AUCUNE trace à
+// l'écran (le plus anormal était le plus invisible). toolFail renvoie le message,
+// ce qui évite de le dupliquer entre l'ack et le tool result.
 function callInternalTool(toolName, args) {
   const tool = TOOLS.find(t => t.name === toolName);
-  if (!tool) return { content: [{ type: 'text', text: 'Outil inconnu : ' + toolName }], isError: true };
+  if (!tool) return { content: [{ type: 'text', text: toolFail(toolName, 'Outil inconnu : ' + toolName) }], isError: true };
   try {
     const text = tool.handler(args || {});
     // Handler ASYNC (ex. skills__read lit le contenu en IDB) : il renvoie une
@@ -1219,12 +1269,12 @@ function callInternalTool(toolName, args) {
     if (text && typeof text.then === 'function') {
       return text.then(
         t => ({ content: [{ type: 'text', text: String(t) }], isError: false }),
-        e => ({ content: [{ type: 'text', text: 'Erreur outil ' + toolName + ' : ' + ((e && e.message) || e) }], isError: true })
+        e => ({ content: [{ type: 'text', text: toolFail(toolName, 'Erreur outil ' + toolName + ' : ' + ((e && e.message) || e)) }], isError: true })
       );
     }
     return { content: [{ type: 'text', text: String(text) }], isError: false };
   } catch (e) {
-    return { content: [{ type: 'text', text: 'Erreur outil ' + toolName + ' : ' + e.message }], isError: true };
+    return { content: [{ type: 'text', text: toolFail(toolName, 'Erreur outil ' + toolName + ' : ' + e.message) }], isError: true };
   }
 }
 

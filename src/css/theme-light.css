@@ -25,6 +25,7 @@ html[data-theme="light"] {
   --accent-bd:             rgba(224,95,28,.28);
   --ok:                    #267a4e;
   --err:                   #c42828;
+  --err-soft:              #b04a4a;              /* label d'ack en échec — adouci (cf. base.css) */
   --ctx-cache:             #2c7fa6;              /* barre cache KV — assombri pour le fond clair */
   --ctx-warn:              #9a5f08;              /* compteur — approche limite (fond clair) */
   --ctx-warn-bd:           rgba(154,95,8,.38);   /* bordure warn (fond clair, un peu plus dense) */

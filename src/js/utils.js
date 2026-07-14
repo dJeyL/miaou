@@ -46,6 +46,7 @@ const ACK_COPY_FIELDS = [
   'slug', 'created',                      // skills (created : write = création vs modification)
   'topic',                               // aide (about_read)
   'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
+  'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
 
@@ -56,6 +57,26 @@ function copyAckFields(src, dst) {
   if (src.error) dst.error = true;
   if (src.resolved) dst.resolved = true;
   return dst;
+}
+
+// Prédicat UNIQUE « cet ack rend compte d'un échec ? » — source de vérité du
+// rendu en erreur, partagée par le thread live (buildToolAck, ui.js) et les DEUX
+// exports (_formatToolCallMd / _formatToolCallHtml). Deux signaux, jamais
+// fusionnés dans l'objet persisté :
+//   - `error: true` : posé par callRemoteTool (tools.js) sur les acks MCP
+//     distants (isError du serveur, ou throw/timeout du transport).
+//   - `ok === false` : posé par le handler js__eval (lot L) — refus de cap ET
+//     plantage guest. Côté MODÈLE ces deux cas ne sont volontairement PAS des
+//     isError (result texte cadré, pour laisser le modèle se re-cibler sans
+//     couper la boucle d'outils) : l'échec n'existe donc QUE dans l'ack, d'où
+//     ce second signal. Tester `m.error` seul laissait ces acks en blanc.
+// `ok` est explicitement `false` (pas absent) : `!m.ok` serait faux positif sur
+// tous les acks qui ne portent pas le champ.
+function ackIsError(m) {
+  if (!m) return false;
+  if (m.error) return true;
+  if (m.ok === false) return true;
+  return false;
 }
 
 // Place le caret en fin de contenu d'un élément contenteditable.
@@ -639,7 +660,7 @@ function _formatToolCallMd(m) {
   const head = m.intent ? '`' + m.name + '` — ' + m.intent : '`' + m.name + '`';
   lines.push(head);
   if (m.args != null) lines.push('   Arguments : `' + _truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX) + '`');
-  if (m.error) {
+  if (ackIsError(m)) {
     lines.push('   Résultat (erreur) : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
   } else if (m.result != null) {
     lines.push('   Résultat : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
@@ -665,7 +686,9 @@ function _formatToolCallMd(m) {
 }
 
 // Bloc Markdown (blockquote) pour un groupe d'acks enrichis d'un même tour.
-// Un seul appel → "Outil appelé :" ; plusieurs → "Outils appelés (n) :" en liste numérotée.
+// Un seul appel → "Outil appelé :" ; plusieurs → "n outils appelés :" en liste
+// numérotée — compteur en toutes lettres, JAMAIS entre parenthèses (même formule
+// que le summary de l'export HTML, cf. formatToolAcksHtml).
 function formatToolAcksMd(acks) {
   if (!acks || !acks.length) return '';
   const lines = [];
@@ -674,7 +697,7 @@ function formatToolAcksMd(acks) {
     lines.push('> **Outil appelé :** ' + inner[0]);
     for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
   } else {
-    lines.push('> **Outils appelés (' + acks.length + ') :**');
+    lines.push('> **' + acks.length + ' outils appelés :**');
     acks.forEach((m, idx) => {
       const inner = _formatToolCallMd(m);
       lines.push('> ' + (idx + 1) + '. ' + inner[0]);
@@ -702,7 +725,7 @@ function _formatToolCallHtml(m) {
   if (m.args != null) {
     lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
   }
-  if (m.error) {
+  if (ackIsError(m)) {
     lines.push('<br>Résultat (erreur) : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
   } else if (m.result != null) {
     lines.push('<br>Résultat : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');

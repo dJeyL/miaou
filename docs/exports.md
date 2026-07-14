@@ -39,11 +39,15 @@
   mêmes acks que `expandThread` réinjecte cross-turn, cf. `docs/tools.md`)
   en blockquote Markdown juste avant le texte de réponse du tour : nom de l'outil
   + `— intent` (si présent), arguments (JSON), résultat (ou « Résultat (erreur) »
-  si `m.error`), et pour `resource_presented` une note `Ressource présentée
+  si `ackIsError(m)` — prédicat unique partagé avec le rendu live `buildToolAck`
+  et l'export HTML, cf. `docs/tools.md` : couvre `m.error` (MCP distant) **et**
+  `m.ok === false` (`js__eval`, refus de cap ou plantage guest)), et pour
+  `resource_presented` une note `Ressource présentée
   automatiquement : nom (mime) — non incluse dans cet export` (**jamais de
   data-URI/base64 embarqué**, cohérent avec D8/D9 (`docs/mcp.md`) — le binaire
   reste en IDB). Un seul appel → « Outil appelé : » ; plusieurs (même `group`) →
-  « Outils appelés (n) : » en liste numérotée. Troncature pour la lisibilité du
+  « n outils appelés : » en liste numérotée (compteur **en toutes lettres, jamais
+  entre parenthèses** — même formule que le summary de l'export HTML). Troncature pour la lisibilité du
   fichier (n'affecte ni le storage ni le payload modèle) : args/résultat à 300
   caractères, nom de ressource à 60, suffixe `...` simple (pas de mention
   « tronqué »). Acks **legacy** (sans `args`) restent **omis** de l'export, comme

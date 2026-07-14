@@ -415,9 +415,10 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     conversation (icône topbar) puis le téléchargement d'un message assistant
     individuel (`.msg-dl`, au survol). Dans les deux `.md` générés, vérifier que
     juste avant le texte de réponse du tour figure un bloc `> **Outil appelé :**`
-    (ou `Outils appelés (n) :` si plusieurs dans le même tour) avec nom de l'outil,
+    (ou `n outils appelés :` si plusieurs dans le même tour) avec nom de l'outil,
     `— intent` si le modèle en a fourni un, arguments JSON, et résultat (ou
-    `Résultat (erreur)` en cas d'échec MCP). Avec une ressource présentée
+    `Résultat (erreur)` en cas d'échec — MCP distant **ou** `js__eval` en échec,
+    cf. `ackIsError`). Avec une ressource présentée
     automatiquement (test 29), la note doit donner nom + type MIME **sans**
     embarquer l'image (pas de `data:` dans le fichier). Sur une conversation
     ancienne avec des acks **legacy** (sans `args`, pré-réinjection cross-turn),

@@ -957,6 +957,11 @@ const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 // Métaphore code (chevrons < >) — réservée au compute js__eval (lot L), une
 // métaphore = un usage (cf. CLAUDE.md, vocabulaire d'icônes).
 const ICON_CODE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
+// Triangle d'alerte — métaphore RÉSERVÉE à l'échec d'outil (kind tool_failed) :
+// ne pas la réemployer ailleurs (vocabulaire d'icônes : une métaphore = un usage).
+// L'outil MCP en échec garde SON icône (clé à molette) + la couleur d'erreur ;
+// ce triangle est pour les échecs natifs, qui n'ont pas d'icône propre.
+const ICON_ALERT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
 // Même tracé que `.code-dl` (decoratePre) — vocabulaire d'icônes, flèche vers
 // le bas = télécharger, réservée à cet usage (A3-2, bouton lightbox mode image).
 const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
@@ -1290,6 +1295,31 @@ const ACK_KINDS = {
       }
     },
   },
+  // Échec d'un outil NATIF (miaou__*) : kind générique, poussé par toolFail()
+  // (tools.js) au point de sortie en erreur du handler. Avant ce kind, un handler
+  // en échec (« Souvenir introuvable », « Handle manquant »…) retournait sa chaîne
+  // sans pousser d'ack : le modèle voyait l'erreur en tool result, mais l'appel
+  // était TOTALEMENT invisible dans le fil (pas d'ack blanc — pas d'ack du tout).
+  // Toujours en erreur (`error: true`, posé par toolFail) → rendu rouge via
+  // ackIsError. Pas d'undo : rien ne s'est produit, il n'y a rien à annuler.
+  // Les échecs MCP distants ne passent PAS par ici : ils gardent leur kind
+  // mcp_call (avec leur breadcrumb) et sont colorés par `error`.
+  tool_failed: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_ALERT,
+    label: m => 'Échec : ' + (m.name || 'outil') + (m.message ? ' — ' + m.message : ''),
+    renderLabel: (m, el) => {
+      const detailText = (m.name || 'outil') + (m.message ? ' — ' + m.message : '');
+      // Avec intent : l'intention du modèle en niveau 1 (ce qu'il VOULAIT faire),
+      // le nom d'outil + le message d'échec en niveau 2 (pourquoi ça a raté).
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, detailText);
+      } else {
+        el.textContent = 'Échec : ' + detailText;
+      }
+    },
+  },
 };
 
 // Wrapper global (testable QuickJS) : résout le label depuis ACK_KINDS.
@@ -1305,7 +1335,7 @@ function buildToolAck(m) {
   const wrap = document.createElement('div');
   wrap.className = 'tool-ack ack-' + (kind || 'unknown') +
     (m.resolved ? ' resolved' : '') +
-    (m.error ? ' ack-error' : '') +
+    (ackIsError(m) ? ' ack-error' : '') +
     (m.intent ? ' has-intent' : '');
   if (m.id) wrap.dataset.ackId = m.id;
 
@@ -1528,14 +1558,22 @@ function ensureAckGroup(wrap) {
   else wrap.appendChild(el);
   const group = { state: ackGroupInitState(), el, slot, track, list, badge };
   // Slot-expanded (brief §3) : la ligne intent gère déjà son propre toggle
-  // DOM (renderIntentTwoLevel, self-contained) ; on écoute en bulle sur .ack-slot
-  // pour resynchroniser l'état de GROUPE — donc l'héritage à l'ack suivant —
-  // sans toucher à la signature de renderIntentTwoLevel/buildToolAck.
-  slot.addEventListener('click', (ev) => {
+  // DOM (renderIntentTwoLevel, self-contained) ; on écoute en bulle sur .ack-panels
+  // pour resynchroniser l'état de GROUPE — donc l'héritage à l'ack suivant, ET la
+  // valeur que renderAckGroup réapplique au retour en compact (applySlotExpanded)
+  // — sans toucher à la signature de renderIntentTwoLevel/buildToolAck.
+  //
+  // Écouter sur `panels` (parent commun) et non sur `slot` seul : en mode liste
+  // le nœud visible vit dans `.ack-list`, donc un toggle fait là-bas ne bullait
+  // pas jusqu'ici, `slotExpanded` restait périmé, et le retour en compact
+  // écrasait l'expand manuel de l'utilisateur (applySlotExpanded réapplique
+  // l'état de groupe, source unique). Le filtre reste le nœud de l'ack VISIBLE :
+  // toggler un ack plus ancien dans la liste ne concerne pas le slot compact.
+  panels.addEventListener('click', (ev) => {
     if (!ev.target.closest('.mcp-intent-row')) return;
     const visible = ackGroupVisibleAck(group.state);
     const visibleNode = visible && ackNodeOf.get(visible);
-    if (!visibleNode) return;
+    if (!visibleNode || !visibleNode.contains(ev.target)) return;
     const detail = visibleNode.querySelector('.mcp-breadcrumb-detail');
     if (!detail) return;
     const nowExpanded = !detail.hasAttribute('hidden');

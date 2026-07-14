@@ -493,9 +493,17 @@ describe('formatToolAcksMd', function() {
       { name: 'a', args: {}, result: '1' },
       { name: 'b', args: {}, result: '2' },
     ]);
-    expect(r.indexOf('**Outils appelés (2) :**') >= 0).toBeTruthy();
+    expect(r.indexOf('**2 outils appelés :**') >= 0).toBeTruthy();
     expect(r.indexOf('1. `a`') >= 0).toBeTruthy();
     expect(r.indexOf('2. `b`') >= 0).toBeTruthy();
+  });
+  it('compteur en toutes lettres, jamais entre parenthèses', function() {
+    var r = formatToolAcksMd([
+      { name: 'a', args: {}, result: '1' },
+      { name: 'b', args: {}, result: '2' },
+    ]);
+    expect(r.indexOf('(2)') >= 0).toBeFalsy();
+    expect(r.indexOf('Outils appelés (') >= 0).toBeFalsy();
   });
   it('erreur : "Résultat (erreur)" au lieu de "Résultat"', function() {
     var r = formatToolAcksMd([{ name: 'a', args: {}, result: 'timeout', error: true }]);
@@ -1267,5 +1275,38 @@ describe('checkOutputCap (garde de refus, lot L §3)', function() {
   it('null/undefined → longueur 0, ok true', function() {
     expect(checkOutputCap(null, 5).ok).toBe(true);
     expect(checkOutputCap(undefined, 5).len).toBe(0);
+  });
+});
+
+describe('ackIsError (prédicat unique de rendu en erreur)', function() {
+  it('error: true → erreur (ack MCP distant, callRemoteTool)', function() {
+    expect(ackIsError({ kind: 'mcp_call', error: true })).toBe(true);
+  });
+  it('ok: false → erreur (js__eval : refus de cap ET plantage guest)', function() {
+    expect(ackIsError({ kind: 'js_eval', ok: false })).toBe(true);
+  });
+  it('ok: true → pas d\'erreur (js__eval réussi)', function() {
+    expect(ackIsError({ kind: 'js_eval', ok: true, outLen: 42 })).toBe(false);
+  });
+  it('ack sans champ ok ni error → pas d\'erreur (faux positif de !m.ok)', function() {
+    expect(ackIsError({ kind: 'memory_create', id: 'm1' })).toBe(false);
+    expect(ackIsError({ kind: 'conversation_list', count: 0 })).toBe(false);
+  });
+  it('error absent + ok absent, autres champs falsy → pas d\'erreur', function() {
+    expect(ackIsError({ kind: 'files_list', count: 0 })).toBe(false);
+  });
+  it('null/undefined → pas d\'erreur (jamais de throw)', function() {
+    expect(ackIsError(null)).toBe(false);
+    expect(ackIsError(undefined)).toBe(false);
+  });
+  it('survit à copyAckFields (ok: false est copié, présence != null)', function() {
+    var dst = copyAckFields({ kind: 'js_eval', handle: 'att-1', ok: false, code: 'x' }, {});
+    expect(dst.ok).toBe(false);
+    expect(ackIsError(dst)).toBe(true);
+  });
+  it('copyAckFields conserve ok: true sans le muer en erreur', function() {
+    var dst = copyAckFields({ kind: 'js_eval', handle: 'att-1', ok: true, outLen: 7 }, {});
+    expect(dst.ok).toBe(true);
+    expect(ackIsError(dst)).toBe(false);
   });
 });

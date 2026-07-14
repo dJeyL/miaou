@@ -352,12 +352,13 @@ et les appels MCP distants. Chaque handler traçable pousse un descripteur
 `{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
 memory_update | memory_delete | conversation_read | conversation_list | mcp_call |
 resource_stored | resource_presented | resource_deleted | attachment_recalled |
-skill_list | skill_read`.
+skill_list | skill_read | skill_write | files_list | files_read | file_promote |
+about_read | js_eval | tool_failed`.
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js) consomment la file via
 `getPendingToolAcks` / `clearPendingToolAcks` et injectent des messages
 `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, server?,
 name?, error?, resolved?, mime?, size?, attId?, args?, result?, ts?, group?,
-assistantText?, intent?, slug?, convId? }` dans `currentThread`.
+assistantText?, intent?, slug?, convId?, message? }` dans `currentThread`.
 La whitelist de champs est **unique** : `ACK_COPY_FIELDS` + `copyAckFields`
 (utils.js), partagée par les quatre sites de copie (`onToolAcks`/`onEarlyAcks`
 dans main.js pour le rendu live, `openConversation`/`persistCurrent` pour la
@@ -399,6 +400,52 @@ openConversation(m.convId)`), donc `convId` doit être renseigné par le
 handler (`get_conversation`, tools.js) et préservé dans toutes les whitelists
 de champs (voir avertissement ci-dessus).
 
+### Échecs d'outils : `tool_failed` et `toolFail()`
+
+**Tout échec d'un outil natif pousse un ack.** Un handler qui sort en erreur ne
+retourne JAMAIS sa chaîne nue : il passe par `toolFail(toolName, message)`
+(tools.js), qui pousse un ack `{ kind: 'tool_failed', name, message, error: true }`
+**et** renvoie le message — le site d'appel reste une ligne
+(`return toolFail('update_memory', 'Souvenir introuvable.')`).
+
+Le retour est la chaîne **inchangée** : le tool result envoyé au modèle est
+byte-identique à ce qu'il était avant l'introduction de ces acks (aucun effet sur
+le comportement du modèle ni sur le KV cache). Un ack est une trace **purement
+UI** — son contenu n'entre jamais dans le contexte. `toolFail` ajoute le préfixe
+`miaou__` en un seul endroit ; les sites d'appel passent le nom **nu** du handler.
+
+Historiquement, ces échecs étaient **totalement invisibles** : le handler faisait
+`return 'Souvenir introuvable.'` sans pousser d'ack. Le modèle recevait bien
+l'erreur en tool result, mais l'appel n'apparaissait nulle part dans le fil (pas
+un ack blanc — *aucun* ack), et il **disparaissait aussi de la réinjection
+cross-turn** (`expandThread` ne réinjecte que les acks porteurs d'`args`) : au tour
+suivant le modèle ne voyait plus qu'il avait essayé et raté, ce qui l'invitait à
+retenter à l'identique. Corollaire réglé au passage : `onEnrichLastAck`
+(sans `minLength`) enrichissait alors l'ack de l'outil **précédent** du même tour
+avec les `name`/`args`/`result` de l'outil échoué — même famille que le piège B5.
+
+Deux nuances à connaître avant d'ajouter un site d'échec :
+
+- **Échec métier ≠ échec technique.** Les échecs métier (« Souvenir introuvable »)
+  ne sont **pas** des `isError` : le modèle doit pouvoir se corriger sans que la
+  boucle d'outils soit coupée. Les trois `isError` de `callInternalTool` (outil
+  inconnu, throw d'un handler = bug) poussent eux aussi un `tool_failed` — avant,
+  le plus anormal était le plus muet : un plantage JS ne laissait aucune trace.
+- **Échec APRÈS le push d'un ack : marquer, ne pas repousser.** Si le handler a
+  déjà poussé son ack métier et échoue ensuite (seul cas actuel : `files__read` sur
+  une image, modèle sans vision — le fichier a bien été lu, c'est sa *présentation*
+  qui échoue), ne pas appeler `toolFail` (il pousserait un SECOND ack : le fil
+  afficherait « fichier lu » puis « échec » pour un unique appel). Marquer l'ack
+  existant : `updateLastPendingToolAck({ error: true })` — il vire au rouge en
+  gardant sa trace. Même logique pour `js__eval`, dont les échecs d'exécution
+  (cap, throw guest) gardent leur ack `js_eval` porteur du code et de `ok: false` ;
+  seules ses sorties *précoces* (avant exécution) passent par `toolFail`.
+
+Les **échecs MCP distants** ne passent pas par `toolFail` : ils gardent leur kind
+`mcp_call` (avec son breadcrumb) et sont colorés via `error`, posé par
+`callRemoteTool`. Dans tous les cas, la couleur est décidée par le prédicat unique
+`ackIsError` (voir Rendu ci-dessous).
+
 La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
 un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
 `(id) => void`, ou **`null`** = variante informative), une icône SVG statique,
@@ -423,8 +470,17 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
 
 - **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`
   pour toute donnée modèle (label/title/content) ; `innerHTML` réservé à l'icône
-  SVG author-controlled. La classe `ack-error` est ajoutée si `m.error` (appel MCP
-  en erreur). L'action « annuler » (kinds undoables uniquement) est liée par
+  SVG author-controlled. La classe `ack-error` est ajoutée si **`ackIsError(m)`**
+  (utils.js, pure) — prédicat UNIQUE partagé avec les deux exports
+  (`_formatToolCallMd`/`_formatToolCallHtml`), qui couvre **deux** signaux jamais
+  fusionnés dans l'objet persisté : `m.error === true` (appel MCP distant en
+  erreur, posé par `callRemoteTool`) **ou** `m.ok === false` (`js__eval` : refus de
+  cap ET plantage guest). Ce second signal existe parce que, côté modèle, ces deux
+  cas ne sont volontairement **pas** des `isError` (result texte cadré, pour laisser
+  le modèle se re-cibler sans couper la boucle d'outils) : l'échec n'est donc porté
+  que par l'ack. Tester `m.error` seul laissait les `js__eval` en échec en blanc ;
+  tester `!m.ok` serait un faux positif sur tout ack ne portant pas le champ, d'où
+  la comparaison stricte à `false`. L'action « annuler » (kinds undoables uniquement) est liée par
   `addEventListener` → `undoToolAck(entry, wrap)` (main.js), qui dispatche via
   `ACK_KINDS[kind].undo(id, entry)`. Sémantique par kind : **create** →
   `forgetMemory` (retire l'ajout) ; **delete** → `restoreMemory` (lève la

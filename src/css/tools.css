@@ -54,9 +54,12 @@
 .ack-conv-link:hover { color: var(--accent); text-decoration: none; }
 /* Les <code> du breadcrumb héritent de la police du parent pour rester alignés avec les autres acks. */
 .tool-ack.ack-mcp_call .ack-label code { font-family: inherit; }
-/* Ack en erreur (tool_call ou mcp_call) : icône + label en rouge (même token que .cfg-err / .conn-dot.err), jamais orange accent. */
-.tool-ack.ack-error .ack-icon,
-.tool-ack.ack-error .ack-label { color: var(--err); }
+/* Ack en erreur (mcp_call en échec, ou js_eval ok:false — cf. ackIsError, utils.js) :
+   jamais orange accent. L'ICÔNE garde --err vif (repère net, petite surface) ; le LABEL
+   prend --err-soft (désaturé) : la ligne d'intent peut faire une phrase entière, et le
+   rouge vif y vibrait sur fond sombre. Le breadcrumb replié garde son --text-3 propre. */
+.tool-ack.ack-error .ack-icon { color: var(--err); }
+.tool-ack.ack-error .ack-label { color: var(--err-soft); }
 /* Intent en langage naturel (niveau 1) + éventuel breadcrumb technique replié (niveau 2). */
 /* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
 .tool-ack.has-intent { align-items: flex-start; }

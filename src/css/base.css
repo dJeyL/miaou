@@ -26,6 +26,11 @@
   --accent-bd:  rgba(255,122,69,.28);
   --ok:         #4ec98a;
   --err:        #ff5d5d;
+  /* Rouge d'erreur DÉSATURÉ, réservé aux textes d'erreur longs affichés en
+     permanence (label d'ack en échec) : --err vif convient à une icône ou un
+     fragment court, mais vibre sur fond sombre quand il colore une phrase
+     entière. Même esprit que --ctx-over (état persistant, pas alerte). */
+  --err-soft:   #d96a6a;
   --ctx-cache:    #5fb3d9;               /* barre de cache KV (inspecteur de contexte) */
   --ctx-warn:     #b8720a;               /* compteur de contexte — approche de la limite */
   --ctx-warn-bd:  rgba(184,114,10,.33);  /* bordure du compteur warn (motif --accent-bd) */
