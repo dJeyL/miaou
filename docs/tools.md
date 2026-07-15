@@ -345,6 +345,73 @@ model-side unique sur la bibliothèque) :**
   cette doctrine, la plus grosse des sept de `ROOT_SYSTEM_PROMPT`, jugée plus
   coûteuse à garder entière sur chaque tour qu'à payer une fois l'invalidation.
 
+**Matérialisation de ressource model-side (lot O) :**
+- `resource_create(content, name?, mime?)` — le modèle range un texte qu'il
+  fournit **directement dans l'appel** en ressource `res_…` classe `'inline'`,
+  via `_storeBlock` (brique existante depuis les lots K/L/M, rien de neuf côté
+  stockage). Handler asynchrone : `validateResourceCreateArgs` (tools.js, pure,
+  testable QuickJS malgré le handler async — même motif que
+  `validateFilesPromoteArgs`) vérifie `content` non vide en amont, le site de
+  sortie pousse l'échec via `toolFail` (non-`isError`, cf. section acks). Succès
+  → renvoie **toujours** `formatInlineHandleForModel(id, mime, record)` — jamais
+  `_makeResourceRef`/`[resource_ref:…]` : ce marqueur, résolu par
+  `assembleToolResultForModel` en `utf8Decode(data)` au tour suivant pour un
+  record `'inline'`, ré-inlinerait tout le contenu dans le contexte (le piège
+  `resource_ref` payé au lot M, ~5,6M tokens fantômes). L'ack `resource_stored`
+  est déjà poussé par `_storeBlock`, aucun ack supplémentaire à câbler ici.
+- `resource_from_result(ref, description, name?)` (lot O-2) — convertit un
+  **résultat d'outil déjà présent dans l'historique** en ressource `res_…`
+  `'inline'`, ET **allège le contexte** : le gros contenu quitte l'historique,
+  remplacé par le handle compact + la `description` (résumé fourni par le modèle,
+  qui a lu le contenu). Deux outils distincts plutôt qu'un seul bimodal :
+  `content` (mode libre) et `ref` vers un tool result passé sont deux paramètres
+  dont la présence s'exclut, contrainte que JSON Schema ne porte pas nativement ;
+  deux `inputSchema` pleinement contraints (`resource_from_result` requiert `ref`
+  ET `description`, sans condition) évitent ce trou de validation et lèvent
+  l'ambiguïté pour des modèles qui tâtonnent déjà sur la forme (`js__eval`
+  ci-dessus). Mécanique :
+  - **Adressage `[call:…]`** : `expandThread` (utils.js) préfixe le `content` de
+    chaque tool result réinjecté par `formatCallMarker(id)` = `[call:<id>]\n`, où
+    `<id>` est le `tool_call_id` déjà dérivé (`_hashId9(prefix + '\x00' + k)`).
+    Byte-stable → coût KV **permanent et constant** (le marqueur grossit le
+    préfixe d'un montant fixe sur TOUS les tours à outils, sans l'invalider),
+    distinct de l'invalidation ponctuelle de la conversion (ci-dessous). Ce
+    marqueur est ajouté **à l'émission uniquement**, jamais stocké dans l'ack.
+  - **Source unique de dérivation** : `enrichedAckGroups(thread)` (utils.js, pure)
+    regroupe les acks enrichis et dérive les ids ; `expandThread` (émission) ET
+    `findAckByCallId` (résolution) la consomment — jamais deux formules, sinon
+    dérive de ciblage muette. `findAckByCallId(thread, callId)` accepte le hash
+    nu ou la forme `[call:…]`, renvoie `{ ack, group, k, callId }` ou `null`.
+  - **Réentrance** (mémoire `await_reentrancy_guard`) : la cible est résolue et
+    gelée AVANT l'`await _storeBlock`, puis **re-résolue APRÈS** ; si la cible a
+    disparu (suppression/navigation concurrente) ou est déjà un handle, on ne
+    réécrit pas mais on renvoie quand même le handle (la ressource est valide —
+    dégradation propre).
+  - **Idempotence** : `isInlineHandleResult(result)` détecte qu'un `result` est
+    déjà une sortie de `formatInlineHandleForModel` → refus propre via `toolFail`
+    (« Ce résultat est déjà une ressource. »), pas de double matérialisation.
+  - **Réécriture d'historique** : le SEUL champ muté est `entry.result` de l'ack
+    ciblé (= `handle + ' — ' + description`) ; `result` est déjà dans
+    `ACK_COPY_FIELDS`, rien à whitelister. `persistCurrent()` durabilise et émet
+    `conv-updated` post-commit (piège 24, via `saveConversation`). Le **rendu UI**
+    de l'ack d'origine ne lit pas `result` (kinds `mcp_call`/`files_read`/…
+    rendent depuis `intent`/breadcrumb/titre) → inchangé. Sûreté anti-`resource_ref`
+    identique à `resource_create` : **toujours** `formatInlineHandleForModel`,
+    jamais `_makeResourceRef`.
+  - **Type de contenu** : `internResourcesFromResult` tourne AVANT
+    `flattenToolResult` (api.js) — un blob binaire est déjà un handle dans
+    `entry.result`, donc la conversion ne rencontre que du **texte aplati** (le
+    cas visé : gros `fetch_url`/`docs__read`). Aucune garde de type à ajouter.
+- **Doctrine `RESOURCE_DOCTRINE`** (tools.js, inconditionnelle comme
+  `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux deux outils — `resource_create`
+  pour un texte que le modèle vient de produire/recomposer, `resource_from_result`
+  pour un tool result déjà en contexte qui l'encombre. Posée dès le commit de
+  `resource_create` en couvrant DÉJÀ le second outil (pas encore livré) : le
+  texte de doctrine est stable, évite une deuxième invalidation du préfixe KV
+  cache (piège 16) à l'arrivée de `resource_from_result`. Le QUOI de chaque
+  outil (dont le renvoi vers `js__eval` pour l'exploitation du handle) reste
+  dans sa propre description, pas dans la doctrine — pas de duplication.
+
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 
 Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique

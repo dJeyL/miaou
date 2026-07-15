@@ -55,6 +55,18 @@ pour interroger un fichier trop gros pour tenir dans le contexte. Si le résulta
 demandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt
 qu'à déverser le fichier brut.
 
+Le modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de
+recomposer (une compilation, un résultat intermédiaire volumineux) sous forme
+de ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource
+apparaît alors comme une pièce jointe et peut à son tour être interrogée par le
+calcul, comme un fichier que tu aurais joint toi-même.
+
+De la même façon, quand un résultat d'outil volumineux (une longue page web
+récupérée, un fichier lu) encombre la conversation, le modèle peut le ranger en
+ressource : le contenu lourd disparaît alors de l'historique, remplacé par une
+pièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le
+calcul. La conversation s'allège sans rien perdre d'exploitable.
+
 ## spaces
 
 Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun
@@ -321,8 +333,12 @@ Quelques repères pour te déplacer dans MIAOU :
     `H` coloration syntaxique, `D` export Markdown, `W` export HTML.
 - **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
   navigateur ; ils restent synchronisés. Une modification faite dans un onglet
-  (nouveau message, titre, réglage, Espace, fichier…) se reflète dans les autres
-  sans rechargement. Si la même conversation est ouverte à deux endroits, un
+  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en
+  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.
+  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que
+  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux
+  Espaces différents dans deux onglets. Si la même conversation est ouverte à
+  deux endroits, un
   bandeau discret le signale. Et si une réponse est en cours de génération dans
   un onglet, la même conversation passe en **lecture seule** dans les autres le
   temps de la réponse — pour éviter deux générations concurrentes qui

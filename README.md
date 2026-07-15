@@ -5,8 +5,10 @@
 Client de chat web minimaliste pour dialoguer avec un LLM via une API
 compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
 unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
-aucune dépendance hors CDN (marked.js, Prism, Google Fonts). On l'ouvre dans un
-navigateur, ou on le sert via n'importe quel serveur web statique.
+aucune dépendance hors CDN (marked.js, Prism, Google Fonts, et — chargés à la
+demande seulement — Mermaid pour les diagrammes et QuickJS-WASM pour le calcul
+sandboxé). On l'ouvre dans un navigateur, ou on le sert via n'importe quel
+serveur web statique.
 
 Thème sombre et thème clair, palette ambre/corail, Hanken Grotesk pour
 l'interface, JetBrains Mono pour le code.
@@ -50,6 +52,20 @@ l'interface, JetBrains Mono pour le code.
   date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
   ce point.
+- **Calcul sandboxé sur un fichier (`js__eval`)** : le modèle peut exécuter du
+  JavaScript sur le contenu textuel d'un blob client (pièce jointe, fichier de
+  bibliothèque, ou ressource `res_…`) dans un bac à sable **QuickJS-WASM** — pour
+  compter, filtrer, agréger, extraire — sans jamais charger le fichier entier
+  dans le contexte, et ne ramener que le résultat. Monde guest clos (une seule
+  fonction hôte, aucun accès réseau/DOM), garde de temps/mémoire, refus explicite
+  si la sortie dépasse le plafond. QuickJS-WASM n'est chargé (CDN) qu'au premier
+  appel. Cf. `docs/tools.md`.
+- **Ressources adressables model-side** : le modèle peut ranger un texte en
+  ressource `res_…` — soit un texte qu'il produit lui-même (`resource_create`),
+  soit un gros résultat d'outil déjà présent qu'il convertit pour **alléger la
+  conversation** (`resource_from_result` : le contenu lourd quitte l'historique,
+  remplacé par un handle compact + un court résumé). Ces ressources sont ensuite
+  interrogeables par `js__eval` sans repayer leur texte en tokens à chaque tour.
 - **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire. Un
   court blurb d'identité dans le prompt système et un outil interne
   (`miaou__about`, une aide utilisateur rédigée à la main servie section par
@@ -66,6 +82,16 @@ l'interface, JetBrains Mono pour le code.
   backends qui ne le renvoient pas (fallback estimé, sans erreur). Réglage
   optionnel de la fenêtre de contexte (jauge d'occupation) ; 2e barre indiquant
   la part de l'entrée servie par le cache quand le backend la rapporte.
+- **Synchronisation multi-onglets** (BroadcastChannel, local au navigateur) :
+  plusieurs onglets MIAOU restent synchronisés sans rechargement — un nouveau
+  message, un titre, un réglage, un fichier ou la liste des Espaces
+  (création/renommage/suppression) se répercute partout. L'Espace **actif**, lui,
+  reste propre à chaque onglet (c'est un état de vue, pas une donnée partagée).
+  Une conversation ouverte à deux endroits affiche un bandeau
+  discret ; si une réponse s'y génère dans un onglet, la même conversation passe
+  en **lecture seule** dans les autres le temps de la réponse (pas de générations
+  concurrentes qui s'écraseraient). Diffusion **post-commit**, relecture d'état
+  **après** l'await — cf. `docs/multitab-sync.md`.
 
 **Historique & mémoire**
 
@@ -134,6 +160,18 @@ l'interface, JetBrains Mono pour le code.
   activés) et `miaou__skills__read(slug)` (corps complet). Le modèle décide seul de
   les appeler quand la demande en langage naturel correspond à un skill ; une ligne
   d'ack informative signale la lecture.
+- **Création/édition par le modèle** : `miaou__skills__write` permet au modèle de
+  créer une skill ou de mettre à jour le corps d'une existante à ta demande ; une
+  modification de skill existante passe par une confirmation explicite avant
+  écrasement.
+- **Import d'une skill Claude Code** : coller un corps portant un cartouche
+  `--- name: … description: … ---` en édition pré-remplit slug/nom/description
+  depuis le frontmatter ; glisser-déposer (ou coller) un fichier `.md` bascule en
+  édition de la skill homonyme si elle existe, sinon en crée une nouvelle.
+- **Skills système** : quelques skills sont fournies par l'application, seedées au
+  build depuis `src/system-skills/*.md` (règles de syntaxe Mermaid, mode d'emploi
+  d'outils avancés). Toujours actives, non éditables/supprimables, listées à part
+  avec un badge « Système » et consultables en lecture seule.
 
 **Outils distants (MCP)**
 
@@ -150,6 +188,11 @@ l'interface, JetBrains Mono pour le code.
   dans la réponse : image inline, code surligné, ou téléchargement éphémère. Les
   ressources texte/JSON sont réinjectées au modèle à chaque tour ; les binaires
   sont représentés par un descripteur statique.
+- Les octets récupérés du web (`web__fetch_resource`) et le texte d'un membre
+  d'archive (`docs__extract`) atterrissent comme ressources `res_…` de première
+  classe : le modèle les passe en entrée aux autres outils `docs__*` ou les
+  analyse par le calcul (`js__eval`) sans jamais recopier leur contenu dans la
+  conversation.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur.
@@ -242,11 +285,12 @@ src/
 ├── css/*.css          8 feuilles concaténées dans l'ordre CSS_ORDER (base, sidebar,
 │                      chat, composer, drawers, tools, responsive, theme-light)
 └── js/
-    ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif
+    ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif, expandThread
+    ├── sync.js        synchro multi-onglets (BroadcastChannel) : enveloppe, soft-lock, relais lecture seule
     ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
-    ├── resources.js   IndexedDB (base `miaou`) : stockage/réhydratation des ressources MCP non-textuelles
-    ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, triggers slash
-    ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC
+    ├── resources.js   IndexedDB (base `miaou`) : ressources MCP/model-side (`res_…`), bibliothèque de fichiers d'Espace
+    ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, skills système seedées, triggers slash
+    ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC, `js__eval` (QuickJS-WASM)
     ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
     ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs
     └── main.js        init, backfill, câblage, construction du contexte d'appel

@@ -972,6 +972,16 @@ const ICON_ALERT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 // le bas = télécharger, réservée à cet usage (A3-2, bouton lightbox mode image).
 const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
+// Séparateur › coloré (teinte accent) partagé par tous les acks à deux segments
+// (breadcrumb MCP, détail replié, ou simple label "Action › cible") — générique,
+// pas réservé aux outils MCP — classe CSS générique `.ack-sep`.
+function appendAckSep(el) {
+  const sep = document.createElement('span');
+  sep.className = 'ack-sep';
+  sep.textContent = '›';
+  el.appendChild(sep);
+}
+
 // Rendu à deux niveaux partagé par les acks avec intent : intention (niveau 1,
 // visible) + détail technique (niveau 2, replié par défaut derrière un chevron).
 // `detailText` est le texte simple du niveau 2 ; `detailBuilder(detail)` (optionnel)
@@ -1031,15 +1041,14 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Conversation consultée '));
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';
-          detail.appendChild(sep);
+          appendAckSep(detail);
           detail.appendChild(document.createTextNode(' '));
           detail.appendChild(titleNode);
         });
       } else {
-        el.appendChild(document.createTextNode('Conversation consultée : « '));
+        el.appendChild(document.createTextNode('Conversation consultée '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' « '));
         el.appendChild(titleNode);
         el.appendChild(document.createTextNode(' »'));
       }
@@ -1075,14 +1084,11 @@ const ACK_KINDS = {
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
       const buildBreadcrumb = detail => {
-        detail.appendChild(document.createTextNode('Appel : '));
+        detail.appendChild(document.createTextNode('Appel '));
+        appendAckSep(detail);
+        detail.appendChild(document.createTextNode(' '));
         segs.forEach((seg, i) => {
-          if (i > 0) {
-            const sep = document.createElement('span');
-            sep.className = 'mcp-call-sep';
-            sep.textContent = '›';
-            detail.appendChild(sep);
-          }
+          if (i > 0) appendAckSep(detail);
           const code = document.createElement('code');
           code.textContent = seg;
           detail.appendChild(code);
@@ -1101,13 +1107,25 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => 'Ressource enregistrée : ' + (m.resourceName || m.id || '?'),
+    label: m => 'Ressource enregistrée : ' + (m.resourceName || m.id || '?') +
+      (m.size != null ? ' (' + humanSize(m.size) + ')' : ''),
+    renderLabel: (m, el) => {
+      el.appendChild(document.createTextNode('Ressource enregistrée '));
+      appendAckSep(el);
+      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?') +
+        (m.size != null ? ' (' + humanSize(m.size) + ')' : '')));
+    },
   },
   resource_presented: {
     destination: 'user',
     undo: null,
     icon: ICON_EYE,
     label: m => 'Ressource présentée : ' + (m.resourceName || m.id || '?'),
+    renderLabel: (m, el) => {
+      el.appendChild(document.createTextNode('Ressource présentée '));
+      appendAckSep(el);
+      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
+    },
   },
   resource_deleted: {
     destination: 'user',
@@ -1123,6 +1141,11 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_EYE,
     label: m => 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
+    renderLabel: (m, el) => {
+      el.appendChild(document.createTextNode('Pièce jointe rappelée '));
+      appendAckSep(el);
+      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.attId || '?')));
+    },
   },
   // Énumération des skills par le modèle (miaou__skills__list) : informatif, pas
   // d'undo (lecture — même posture que conversation_list, dont on réutilise l'icône).
@@ -1158,14 +1181,13 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Skill consultée '));
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';
-          detail.appendChild(sep);
+          appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
         });
       } else {
-        el.textContent = 'Skill consultée : ' + (m.title || m.slug || '?');
+        el.appendChild(document.createTextNode('Skill consultée '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
       }
     },
   },
@@ -1182,14 +1204,13 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode(verb + ' '));
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';
-          detail.appendChild(sep);
+          appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
         });
       } else {
-        el.textContent = verb + ' : ' + (m.title || m.slug || '?');
+        el.appendChild(document.createTextNode(verb + ' '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
       }
     },
   },
@@ -1205,14 +1226,13 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Aide consultée '));
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';
-          detail.appendChild(sep);
+          appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + topic));
         });
       } else {
-        el.textContent = 'Aide consultée : ' + topic;
+        el.appendChild(document.createTextNode('Aide consultée '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + topic));
       }
     },
   },
@@ -1252,14 +1272,13 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Fichier consulté '));
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';
-          detail.appendChild(sep);
+          appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + name));
         });
       } else {
-        el.textContent = 'Fichier consulté : ' + name;
+        el.appendChild(document.createTextNode('Fichier consulté '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + name));
       }
     },
   },
@@ -1272,6 +1291,11 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_PACKAGE,
     label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
+    renderLabel: (m, el) => {
+      el.appendChild(document.createTextNode('Fichier ajouté à la bibliothèque '));
+      appendAckSep(el);
+      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
+    },
   },
   // Compute sandboxé sur un blob client (miaou__js__eval, lot L) : informatif,
   // pas d'undo (pur compute, aucune écriture d'état). Le code exécuté N'est PAS
@@ -1290,14 +1314,13 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Code exécuté sur '));
-          const sep = document.createElement('span');
-          sep.className = 'mcp-call-sep';
-          sep.textContent = '›';
-          detail.appendChild(sep);
+          appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + (m.handle || '?') + tail));
         });
       } else {
-        el.textContent = 'Code exécuté sur ' + (m.handle || '?') + tail;
+        el.appendChild(document.createTextNode('Code exécuté sur '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + (m.handle || '?') + tail));
       }
     },
   },
@@ -1322,7 +1345,9 @@ const ACK_KINDS = {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, detailText);
       } else {
-        el.textContent = 'Échec : ' + detailText;
+        el.appendChild(document.createTextNode('Échec '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + detailText));
       }
     },
   },

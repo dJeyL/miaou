@@ -50,7 +50,7 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   l'ordre EST la cascade ; `base` porte l'@import des fontes, `theme-light`
   reste dernier).
 - **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER`
-  (`utils, storage, resources, skills, tools, api, ui, main`).
+  (`utils, sync, storage, resources, skills, tools, api, ui, main`).
 - **`__MIAOU_CONFIG__`** ← `config.json` sérialisé (injecté dans `storage.js`,
   d'où dérivent `REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
   `BUILD_API_MODEL`).
@@ -190,6 +190,24 @@ inline sous la liste.
     impératif à l'export (exception piège 21). Doctrine `JS_EVAL_DOCTRINE`
     statique, inconditionnelle dans `ROOT_SYSTEM_PROMPT` (KV-safe, piège 16). Cf.
     `docs/tools.md` (section `js__eval`).
+26. **Réécriture d'historique model-triggered : matérialisation d'un tool result
+    passé (lot O-2).** `resource_from_result` (tools.js) mute **en place** le
+    `entry.result` d'un ack passé (gros contenu → handle compact + résumé modèle)
+    sur décision du modèle — première réécriture d'historique DÉCLENCHÉE par le
+    modèle (l'image→descripteur du piège 17 est automatique, pas model-triggered).
+    Trois gardes obligatoires : (a) **source unique de dérivation d'id**
+    `enrichedAckGroups` (utils.js, pure), partagée par `expandThread` (émission du
+    marqueur `[call:<id>]`) ET `findAckByCallId` (résolution) — jamais deux
+    formules, sinon ciblage muet. (b) **réentrance** (mémoire
+    `await_reentrancy_guard`) : cible gelée avant l'`await _storeBlock`,
+    **re-résolue après** ; disparue ou déjà convertie → pas de réécriture, on
+    renvoie quand même le handle valide. (c) **jamais `_makeResourceRef`**
+    (record `'inline'` → ré-inline tout, piège du lot M) : toujours
+    `formatInlineHandleForModel`, idempotence via `isInlineHandleResult`. Le
+    **rendu UI** de l'ack ne lit pas `result` → inchangé. Double coût KV assumé :
+    marqueur `[call:…]` **permanent et constant** (tous les tool results), et
+    invalidation **ponctuelle** à chaque conversion (réécriture d'un ack passé).
+    Cf. `docs/tools.md` (section « Matérialisation de ressource model-side »).
 
 ### Invariants transverses (développés)
 

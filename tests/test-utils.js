@@ -863,7 +863,9 @@ describe('expandThread', function() {
     var r = expandThread(t);
     var toolMsg = r[2];
     expect(toolMsg.role).toBe('tool');
-    expect(toolMsg.content.indexOf('[Résultat du')).toBe(0);
+    // Depuis O-2 : le content s'ouvre sur le marqueur [call:<id>], puis le stampTs.
+    expect(toolMsg.content.indexOf('[call:')).toBe(0);
+    expect(toolMsg.content.indexOf('[Résultat du') > 0).toBeTruthy();
     expect(toolMsg.content.indexOf('data') > 0).toBeTruthy();
   });
 
@@ -959,6 +961,132 @@ describe('expandThread', function() {
     var r = expandThread(t);
     expect(r.length).toBe(1);
     expect(r[0].content).toBe(parts);   // même référence : aucune transformation
+  });
+
+  it('marqueur [call:<id>] présent en tête du content de CHAQUE tool result (O-2)', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ name: 'srv__a', group: 'gO', args: { q: 1 } }),
+      ack({ name: 'srv__b', group: 'gO', args: { q: 2 } }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    // user, assistant(2 tc), tool, tool, assistant
+    expect(r[2].content.indexOf('[call:' + r[1].tool_calls[0].id + ']')).toBe(0);
+    expect(r[3].content.indexOf('[call:' + r[1].tool_calls[1].id + ']')).toBe(0);
+  });
+
+  it('le marqueur [call:] n\'apparaît QUE sur les tool results, pas sur user/assistant (O-2)', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gP' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    expect(r[0].content.indexOf('[call:')).toBe(-1);   // user
+    expect((r[1].content || '').indexOf('[call:')).toBe(-1);   // assistant(tc)
+    expect(r[3].content.indexOf('[call:')).toBe(-1);   // assistant final
+  });
+
+  it('marqueur [call:] byte-stable entre deux appels identiques (KV cache, O-2)', function() {
+    var mk = function() {
+      return [{ role: 'user', content: 'q' }, ack({ group: 'gStable2' }), { role: 'assistant', content: 'fin' }];
+    };
+    expect(expandThread(mk())[2].content).toBe(expandThread(mk())[2].content);
+  });
+});
+
+describe('formatCallMarker (source unique du marqueur d\'id, O-2)', function() {
+  it('encadre l\'id en [call:<id>] suivi d\'un saut de ligne', function() {
+    expect(formatCallMarker('abc123def')).toBe('[call:abc123def]\n');
+  });
+});
+
+describe('enrichedAckGroups (dérivation partagée émission/résolution, O-2)', function() {
+  function ack(overrides) {
+    return Object.assign({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',
+      args: { q: 1 }, result: 'ok', ts: 0, group: 'g1' }, overrides);
+  }
+
+  it('thread sans ack enrichi → aucun groupe', function() {
+    expect(enrichedAckGroups([{ role: 'user', content: 'hi' }])).toEqual([]);
+  });
+
+  it('un groupe de deux acks → ids alignés sur expandThread', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ name: 'srv__a', group: 'gQ' }),
+      ack({ name: 'srv__b', group: 'gQ' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var groups = enrichedAckGroups(t);
+    expect(groups.length).toBe(1);
+    expect(groups[0].acks.length).toBe(2);
+    expect(groups[0].ids.length).toBe(2);
+    // Même dérivation que l'émission expandThread.
+    var r = expandThread(t);
+    expect(groups[0].ids[0]).toBe(r[1].tool_calls[0].id);
+    expect(groups[0].ids[1]).toBe(r[1].tool_calls[1].id);
+  });
+
+  it('bornes start/end couvrent les acks du groupe', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gR' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var groups = enrichedAckGroups(t);
+    expect(groups[0].start).toBe(1);
+    expect(groups[0].end).toBe(2);
+  });
+});
+
+describe('findAckByCallId (résolution O-2, round-trip avec expandThread)', function() {
+  function ack(overrides) {
+    return Object.assign({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',
+      args: { q: 1 }, result: 'ok', ts: 0, group: 'g1' }, overrides);
+  }
+
+  it('l\'id émis par expandThread retrouve le bon ack', function() {
+    var a1 = ack({ name: 'srv__a', result: 'AAA', group: 'gS' });
+    var a2 = ack({ name: 'srv__b', result: 'BBB', group: 'gS' });
+    var t = [{ role: 'user', content: 'q' }, a1, a2, { role: 'assistant', content: 'fin' }];
+    var r = expandThread(t);
+    var id2 = r[1].tool_calls[1].id;
+    var hit = findAckByCallId(t, id2);
+    expect(!!hit).toBe(true);
+    expect(hit.ack.result).toBe('BBB');
+    expect(hit.k).toBe(1);
+  });
+
+  it('accepte la forme préfixée [call:<id>] comme le hash nu', function() {
+    var a1 = ack({ result: 'ZZZ', group: 'gT' });
+    var t = [{ role: 'user', content: 'q' }, a1, { role: 'assistant', content: 'fin' }];
+    var id = expandThread(t)[1].tool_calls[0].id;
+    expect(findAckByCallId(t, id).ack.result).toBe('ZZZ');
+    expect(findAckByCallId(t, 'call:' + id).ack.result).toBe('ZZZ');
+    expect(findAckByCallId(t, '[call:' + id + ']').ack.result).toBe('ZZZ');
+  });
+
+  it('id inconnu → null', function() {
+    var t = [{ role: 'user', content: 'q' }, ack({ group: 'gU' }), { role: 'assistant', content: 'fin' }];
+    expect(findAckByCallId(t, 'zzzzzzzzz')).toBe(null);
+  });
+
+  it('callId vide → null', function() {
+    expect(findAckByCallId([ack()], '')).toBe(null);
+  });
+
+  it('robustesse aux groupes multiples : chaque id résout son propre groupe', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ result: 'G1', group: 'gV1' }),
+      ack({ result: 'G2', group: 'gV2' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    expect(findAckByCallId(t, r[1].tool_calls[0].id).ack.result).toBe('G1');
+    expect(findAckByCallId(t, r[3].tool_calls[0].id).ack.result).toBe('G2');
   });
 });
 

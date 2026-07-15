@@ -1046,6 +1046,95 @@ describe('files__promote — définition d\'outil et doctrine (lot Cbis, voie B)
   });
 });
 
+describe('validateResourceCreateArgs (lot O) — extrait du handler async pour rester testable', function() {
+  it('content manquant → message d\'erreur', function() {
+    expect(validateResourceCreateArgs({})).toContain('vide');
+  });
+  it('content vide → message d\'erreur', function() {
+    expect(validateResourceCreateArgs({ content: '' })).toContain('vide');
+  });
+  it('content présent → chaîne vide (valide)', function() {
+    expect(validateResourceCreateArgs({ content: 'du texte' })).toBe('');
+  });
+  it('args absent → invalide, pas de crash', function() {
+    expect(validateResourceCreateArgs(undefined)).toContain('vide');
+  });
+});
+
+describe('resource_create — définition d\'outil et doctrine (lot O)', function() {
+  it('resource_create est dans TOOLS avec content requis, mode inline uniquement', function() {
+    const def = TOOLS.find(t => t.name === 'resource_create');
+    expect(def).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('content') >= 0).toBeTruthy();
+    expect(def.inputSchema.properties.ref).toBe(undefined);
+  });
+  it('RESOURCE_DOCTRINE fait partie de ROOT_SYSTEM_PROMPT (toujours injectée)', function() {
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource_create') >= 0).toBeTruthy();
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource_from_result') >= 0).toBeTruthy();
+  });
+  it('la description de resource_create pointe vers js__eval et exclut la conversion de tool result', function() {
+    const def = TOOLS.find(t => t.name === 'resource_create');
+    expect(def.description.indexOf('js__eval') >= 0).toBeTruthy();
+    expect(def.description.indexOf('resource_from_result') >= 0).toBeTruthy();
+  });
+  it('toolIsHalting reste exclusivement câblé sur ask_confirmation (pas de régression)', function() {
+    expect(toolIsHalting('resource_create')).toBe(false);
+    expect(toolIsHalting('miaou__resource_create')).toBe(false);
+  });
+});
+
+describe('validateResourceFromResultArgs (lot O-2) — extrait du handler async', function() {
+  it('ref + description présents → chaîne vide (valide)', function() {
+    expect(validateResourceFromResultArgs({ ref: 'call:abc', description: 'un résumé' })).toBe('');
+  });
+  it('ref manquant → invalide', function() {
+    expect(validateResourceFromResultArgs({ description: 'x' })).toContain('requis');
+  });
+  it('description manquante → invalide', function() {
+    expect(validateResourceFromResultArgs({ ref: 'call:abc' })).toContain('requis');
+  });
+  it('description blanche (espaces) → invalide', function() {
+    expect(validateResourceFromResultArgs({ ref: 'call:abc', description: '   ' })).toContain('requis');
+  });
+  it('args absent → invalide, pas de crash', function() {
+    expect(validateResourceFromResultArgs(undefined)).toContain('requis');
+  });
+});
+
+describe('isInlineHandleResult (idempotence resource_from_result, lot O-2)', function() {
+  it('reconnaît une sortie de formatInlineHandleForModel comme déjà-handle', function() {
+    const handle = formatInlineHandleForModel('res_x', 'text/plain', null);
+    expect(isInlineHandleResult(handle)).toBe(true);
+  });
+  it('un résultat d\'outil ordinaire n\'est pas un handle', function() {
+    expect(isInlineHandleResult('Voici le contenu de la page web récupérée.')).toBe(false);
+  });
+  it('null/undefined → false, pas de crash', function() {
+    expect(isInlineHandleResult(null)).toBe(false);
+    expect(isInlineHandleResult(undefined)).toBe(false);
+  });
+});
+
+describe('resource_from_result — définition d\'outil (lot O-2)', function() {
+  it('resource_from_result est dans TOOLS avec ref ET description requis (schéma pleinement contraint)', function() {
+    const def = TOOLS.find(t => t.name === 'resource_from_result');
+    expect(def).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('ref') >= 0).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('description') >= 0).toBeTruthy();
+    expect(def.inputSchema.properties.content).toBe(undefined);   // pas de mode inline ici
+  });
+  it('la description pointe vers js__eval, l\'allègement de contexte, et renvoie vers resource_create', function() {
+    const def = TOOLS.find(t => t.name === 'resource_from_result');
+    expect(def.description.indexOf('js__eval') >= 0).toBeTruthy();
+    expect(def.description.indexOf('resource_create') >= 0).toBeTruthy();
+    expect(def.description.indexOf('call:') >= 0).toBeTruthy();
+  });
+  it('n\'est pas halting', function() {
+    expect(toolIsHalting('resource_from_result')).toBe(false);
+    expect(toolIsHalting('miaou__resource_from_result')).toBe(false);
+  });
+});
+
 describe('hook d\'inflation dispatcher (brief A, D6) — helpers purs', function() {
   it('toolDeclaresAttachmentInflation : capability détectée via ref+content_b64 déclarés, sans nom de serveur en dur', function() {
     _remoteTools['docstest'] = [{

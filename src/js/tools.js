@@ -216,13 +216,31 @@ const JS_EVAL_DOCTRINE =
   "<miaou_skills_context> si présente) : elle donne la signature d'appel exacte, " +
   "les primitives disponibles dans le bac à sable et le détail des contraintes de sortie.";
 
+// Doctrine de déclenchement resource_create / resource_from_result (lot O).
+// INCONDITIONNELLE comme JS_EVAL_DOCTRINE (les deux outils sont natifs, toujours
+// présents) : posée dès O-1 en couvrant DÉJÀ le réflexe resource_from_result
+// (livré en O-2) pour éviter une 2ᵉ invalidation KV cache (piège 16, assumé une
+// fois — mémoire project_kv_cache_invalidation_accepted_once). QUAND seulement :
+// le QUOI de chaque outil vit dans sa description (pas de duplication de la
+// mention js__eval, portée par les deux descriptions d'outils).
+const RESOURCE_DOCTRINE =
+  "Deux outils permettent de ranger du texte en ressource adressable (res_…), " +
+  "exploitable ensuite par miaou__js__eval sans repayer ce texte en tokens : " +
+  "miaou__resource_create quand TU as produit ou recomposé un texte volumineux " +
+  "que tu voudras interroger plus tard (au lieu de l'écrire en clair dans ta " +
+  "réponse) ; miaou__resource_from_result quand un résultat d'outil déjà présent " +
+  "plus haut dans la conversation encombre le contexte et que tu veux le garder " +
+  "exploitable sans le traîner à chaque tour. N'utilise ni l'un ni l'autre pour " +
+  "un texte court que tu peux simplement écrire dans ta réponse.";
+
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
 // Compose les doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 // (v2, lot L : JS_EVAL_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
+// (v3, lot O : RESOURCE_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
-  "\n\n---\n\n" + JS_EVAL_DOCTRINE;
+  "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE;
 
 // Doctrine de nommage des blocs de code. Injectée INCONDITIONNELLEMENT (comme
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
@@ -380,6 +398,34 @@ function validateFilesPromoteArgs(args) {
   const description = String((args && args.description) || '').trim();
   if (!ref || !description) return 'Paramètres invalides (ref et description requis).';
   return '';
+}
+
+// Validation pure des arguments de resource_create (lot O) — même motif que
+// validateFilesPromoteArgs : extraite pour rester testable QuickJS malgré le
+// handler async. Retourne un message d'erreur si invalide, '' sinon.
+function validateResourceCreateArgs(args) {
+  const content = String((args && args.content) || '');
+  if (!content) return 'Contenu vide.';
+  return '';
+}
+
+// Validation pure des arguments de resource_from_result (lot O-2) — schéma
+// pleinement contraint (pas de conditionnalité hors-schéma, tout le gain des
+// deux outils séparés) : `ref` (id call:…) ET `description` (résumé modèle)
+// requis, sans exclusivité à gérer. Testable QuickJS malgré le handler async.
+function validateResourceFromResultArgs(args) {
+  const ref = String((args && args.ref) || '').trim();
+  const description = String((args && args.description) || '').trim();
+  if (!ref || !description) return 'Paramètres invalides (ref et description requis).';
+  return '';
+}
+
+// Détecte qu'un `result` d'ack est DÉJÀ un handle inline model-side (sortie de
+// formatInlineHandleForModel) — idempotence de resource_from_result : convertir
+// deux fois un même tool result est un refus propre, pas une double
+// matérialisation. Marqueur stable de formatInlineHandleForModel.
+function isInlineHandleResult(result) {
+  return /texte adressable par js__eval \(blob=/.test(String(result || ''));
 }
 
 // ── Registre MCP interne ─────────────────────────────────────────────────────
@@ -735,6 +781,112 @@ const TOOLS = [
       if (!stored) return toolFail('files__promote', 'Échec de l\'enregistrement dans la bibliothèque.');
       _pendingToolAcks.push({ kind: 'file_promote', id: libraryRefFromId(stored.id), resourceName: stored.name });
       return 'Fichier ajouté à la bibliothèque de l\'espace. Identifiant : ' + libraryRefFromId(stored.id);
+    },
+  },
+  {
+    name: 'resource_create',
+    // Description v1 (lot O) : QUOI (ranger un texte fourni en ressource res_…)
+    // + l'aval js__eval (AUDIT-O §7bis) pour guider le modèle sans dupliquer le
+    // QUAND, porté par RESOURCE_DOCTRINE (ROOT_SYSTEM_PROMPT). Mode inline
+    // UNIQUEMENT — la conversion d'un tool result passé est un outil séparé
+    // (resource_from_result).
+    description:
+      "Range un texte que TU fournis directement (contenu déjà en main : composé, " +
+      "recomposé, ou recopié) en ressource res_… adressable, sans l'afficher tel quel " +
+      "dans ta réponse. Le handle renvoyé se passe ensuite à miaou__js__eval(handle, code) " +
+      "pour compter/filtrer/agréger/extraire sans repayer ce texte en tokens à chaque tour. " +
+      "N'accepte PAS de référence à un résultat d'outil passé — pour convertir un tool " +
+      "result déjà dans l'historique, utilise miaou__resource_from_result.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Texte à matérialiser en ressource' },
+        name: { type: 'string', description: 'Nom optionnel du record (défaut : "resource")' },
+        mime: { type: 'string', description: 'Type MIME optionnel (défaut : "text/plain")' },
+      },
+      required: ['content'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    handler: async (args) => {
+      // validateResourceCreateArgs reste PURE (testée à part) : elle renvoie le
+      // message, c'est le site de sortie qui pousse l'ack (cf. toolFail).
+      const invalid = validateResourceCreateArgs(args);
+      if (invalid) return toolFail('resource_create', invalid);
+      const content = String(args.content || '');
+      const mime = args.mime ? String(args.mime).trim() : 'text/plain';
+      const name = args.name ? String(args.name).trim() : 'resource';
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const id = await _storeBlock(mime, name, utf8Encode(content), 'inline', activeId, Date.now(), Math.random);
+      if (!id) return toolFail('resource_create', 'Échec de stockage.');
+      // JAMAIS _makeResourceRef ici (AUDIT-O §5) : un [resource_ref:…] vers un
+      // record 'inline' ré-inlinerait tout le contenu au tour suivant. L'ack
+      // resource_stored est déjà poussé par _storeBlock, rien à pousser ici.
+      return formatInlineHandleForModel(id, mime, getCachedRecord(id));
+    },
+  },
+  {
+    name: 'resource_from_result',
+    // Description v1 (lot O-2) : QUOI (convertir un tool result passé en
+    // ressource res_… + ALLÉGER le contexte, le gros contenu quitte l'historique)
+    // + l'aval js__eval mutualisé avec resource_create. Le QUAND est en doctrine
+    // (RESOURCE_DOCTRINE). Adressage par id call:… exposé sur chaque tool result
+    // réinjecté (expandThread, marqueur [call:…]).
+    description:
+      "Convertit un RÉSULTAT d'outil déjà présent plus haut dans la conversation " +
+      "(ciblé par son id call:… affiché en tête du résultat) en ressource res_… " +
+      "adressable, ET allège le contexte : le gros contenu quitte l'historique, " +
+      "remplacé par un handle compact + ta description. Le handle se passe ensuite à " +
+      "miaou__js__eval(handle, code) pour compter/filtrer/agréger/extraire sans " +
+      "repayer ce texte en tokens. Pour ranger un texte que TU fournis directement " +
+      "(pas un résultat d'outil passé), utilise miaou__resource_create.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Id call:… du résultat d\'outil à convertir (affiché en tête de ce résultat)' },
+        description: { type: 'string', description: 'Court résumé de ce que contient le résultat converti (tu l\'as lu) — remplace le contenu dans l\'historique' },
+        name: { type: 'string', description: 'Nom optionnel du record (défaut : "resource")' },
+      },
+      required: ['ref', 'description'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    handler: async (args) => {
+      const invalid = validateResourceFromResultArgs(args);
+      if (invalid) return toolFail('resource_from_result', invalid);
+      const ref = String(args.ref || '').trim();
+      const description = String(args.description || '').trim();
+      const name = args.name ? String(args.name).trim() : 'resource';
+      const thread = typeof currentThread !== 'undefined' ? currentThread : [];
+      // Résolution + gel de la cible AVANT tout await (réentrance, mémoire
+      // await_reentrancy_guard) : findAckByCallId partage la dérivation d'id
+      // avec expandThread (source unique, jamais dupliquée).
+      const hit = findAckByCallId(thread, ref);
+      if (!hit) return toolFail('resource_from_result', 'Résultat introuvable.');
+      const targetAck = hit.ack;
+      if (isInlineHandleResult(targetAck.result)) {
+        return toolFail('resource_from_result', 'Ce résultat est déjà une ressource.');
+      }
+      const text = targetAck.result != null ? String(targetAck.result) : '';
+      if (!text) return toolFail('resource_from_result', 'Résultat vide, rien à convertir.');
+      const mime = 'text/plain';
+      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const id = await _storeBlock(mime, name, utf8Encode(text), 'inline', activeId, Date.now(), Math.random);
+      if (!id) return toolFail('resource_from_result', 'Échec de stockage.');
+      // JAMAIS _makeResourceRef (AUDIT-O §5) — record 'inline', un ref
+      // ré-inlinerait tout au tour suivant. Handle compact + description modèle.
+      const handle = formatInlineHandleForModel(id, mime, getCachedRecord(id)) + ' — ' + description;
+      // APRÈS l'await : re-vérifier que la cible existe toujours (suppression/
+      // navigation concurrente). Absente → la ressource reste valide, on renvoie
+      // le handle sans réécrire (dégradation propre, PLAN-O étape 5).
+      const still = findAckByCallId(typeof currentThread !== 'undefined' ? currentThread : [], ref);
+      if (still && !isInlineHandleResult(still.ack.result)) {
+        // SEUL champ muté : le `result` de l'ack passé (payload modèle). Le rendu
+        // UI de l'ack d'origine ne lit pas `result` → inchangé. persistCurrent
+        // durabilise et émet conv-updated post-commit (piège 24, via saveConversation).
+        still.ack.result = handle;
+        if (typeof persistCurrent === 'function') persistCurrent();
+      }
+      // L'ack resource_stored est déjà poussé par _storeBlock ; rien à pousser.
+      return handle;
     },
   },
   {

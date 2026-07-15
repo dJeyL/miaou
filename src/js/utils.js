@@ -861,6 +861,70 @@ function messageTextForSummary(m) {
   return c || '';
 }
 
+// Marqueur d'id public d'un tool result, exposé au modèle en tête du content
+// réinjecté par expandThread (lot O, décision B1). Dérivé UNIQUEMENT de l'id de
+// tool_call (`_hashId9(prefix + '\x00' + k)`) → byte-stable d'un tour à l'autre :
+// il agrandit le préfixe KV d'un montant constant sans l'invalider. Source
+// unique côté émission (expandThread) ET côté résolution (findAckByCallId) —
+// jamais réécrire ce format d'un seul côté (dérive de ciblage muette).
+function formatCallMarker(id) { return '[call:' + id + ']\n'; }
+
+// Regroupe les acks ENRICHIS de `thread` en tours [assistant+tool_calls, tool…],
+// avec l'id de tool_call dérivé pour chaque ack. SOURCE UNIQUE de la logique de
+// groupement/dérivation d'id, partagée par expandThread (émission) et
+// findAckByCallId (résolution O-2). Pur, testable QuickJS. Chaque élément :
+// { acks: [ack…], ids: [callId…], start, end, assistantText }.
+// `end` est l'index (exclusif) du dernier ack du groupe dans `thread`.
+function enrichedAckGroups(thread) {
+  var groups = [];
+  var i = 0;
+  while (i < thread.length) {
+    var m = thread[i];
+    if (isAckRole(m.role) && m.args != null) {
+      var grp = m.group;
+      var groupAcks = [m];
+      var j = i + 1;
+      if (grp != null) {
+        while (j < thread.length && isAckRole(thread[j].role) &&
+               thread[j].args != null && thread[j].group === grp) {
+          groupAcks.push(thread[j]);
+          j++;
+        }
+      }
+      var prefix = grp != null ? grp : 'solo';
+      groups.push({
+        acks: groupAcks,
+        ids: groupAcks.map(function(_, k) { return _hashId9(prefix + '\x00' + k); }),
+        start: i,
+        end: j,
+        assistantText: groupAcks[0].assistantText != null ? groupAcks[0].assistantText : null,
+      });
+      i = j;
+    } else {
+      i++;
+    }
+  }
+  return groups;
+}
+
+// Retrouve l'ack de `thread` dont l'expansion produit le tool_call_id `callId`
+// (avec ou sans préfixe `call:`). Rejoue enrichedAckGroups — MÊME dérivation que
+// l'émission, jamais dupliquée. Renvoie { ack, group, k, callId } ou null.
+// Pur, testable QuickJS (lot O-2).
+function findAckByCallId(thread, callId) {
+  var target = String(callId || '').replace(/^\[?call:/, '').replace(/\]$/, '').trim();
+  if (!target) return null;
+  var groups = enrichedAckGroups(thread || []);
+  for (var g = 0; g < groups.length; g++) {
+    for (var k = 0; k < groups[g].ids.length; k++) {
+      if (groups[g].ids[k] === target) {
+        return { ack: groups[g].acks[k], group: groups[g], k: k, callId: target };
+      }
+    }
+  }
+  return null;
+}
+
 // Reconstruit un tableau de messages OpenAI depuis currentThread.
 // Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
 // Acks legacy (sans args) → élagués comme avant (compat ascendante).
@@ -869,22 +933,21 @@ function messageTextForSummary(m) {
 // l'assistant expansé pour éviter la duplication.
 function expandThread(thread) {
   var out = [];
+  // Groupes pré-calculés par enrichedAckGroups (source unique de la dérivation
+  // d'id, partagée avec findAckByCallId) : on les indexe par leur `start`.
+  var byStart = {};
+  var allGroups = enrichedAckGroups(thread);
+  for (var gi = 0; gi < allGroups.length; gi++) byStart[allGroups[gi].start] = allGroups[gi];
   var i = 0;
   while (i < thread.length) {
     var m = thread[i];
     if (isAckRole(m.role)) {
       if (m.args != null) {
-        var grp = m.group;
-        var groupAcks = [m];
-        var j = i + 1;
-        if (grp != null) {
-          while (j < thread.length && isAckRole(thread[j].role) &&
-                 thread[j].args != null && thread[j].group === grp) {
-            groupAcks.push(thread[j]);
-            j++;
-          }
-        }
-        var assistantText = groupAcks[0].assistantText != null ? groupAcks[0].assistantText : null;
+        var group = byStart[i];
+        var groupAcks = group.acks;
+        var ids = group.ids;
+        var j = group.end;
+        var assistantText = group.assistantText;
         // Absorber le standalone assistant précédent si son content correspond
         if (assistantText && out.length &&
             out[out.length - 1].role === 'assistant' &&
@@ -892,8 +955,6 @@ function expandThread(thread) {
             !out[out.length - 1].tool_calls) {
           out.pop();
         }
-        var prefix = grp != null ? grp : 'solo';
-        var ids = groupAcks.map(function(_, k) { return _hashId9(prefix + '\x00' + k); });
         out.push({
           role: 'assistant',
           content: assistantText || null,
@@ -903,8 +964,12 @@ function expandThread(thread) {
           }),
         });
         for (var k = 0; k < groupAcks.length; k++) {
+          // Préfixe [call:<id>] (byte-stable, dérivé du seul id) devant le
+          // content réinjecté : expose l'id de ce tool result au modèle pour
+          // qu'il puisse le cibler via resource_from_result (lot O-2). Ajouté à
+          // l'ÉMISSION uniquement, jamais stocké dans l'ack.
           out.push({ role: 'tool', tool_call_id: ids[k],
-                     content: stampTs(groupAcks[k].ts, groupAcks[k].result) });
+                     content: formatCallMarker(ids[k]) + stampTs(groupAcks[k].ts, groupAcks[k].result) });
         }
         // Brief A2 / D3, voie (b) : un recall d'IMAGE ré-injecte les pixels via
         // un message user SYNTHÉTIQUE inséré APRÈS tous les tool results du

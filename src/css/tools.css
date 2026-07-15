@@ -47,8 +47,11 @@
 }
 .tool-ack .ack-undo:hover, .memory-ack .ack-undo:hover { color: var(--text); }
 .tool-ack .ack-resolved, .memory-ack .ack-resolved { flex-shrink: 0; font-size: 11px; text-decoration: line-through; }
-/* Séparateur › (breadcrumb MCP, et détail replié conversation_read/skill_read) : teinte icône, s'efface devant le texte. */
-.tool-ack .mcp-call-sep { color: var(--accent); opacity: 0.45; margin: 0 2px; }
+/* Séparateur › générique (breadcrumb MCP, détail replié, ou simple label "Action › cible") : teinte icône.
+   Dans le label primaire (ack-label direct), pleine teinte accent — doit se voir au même titre que l'icône.
+   Replié dans le détail secondaire (.mcp-breadcrumb-detail, --text-3, cf. plus bas), il s'efface davantage. */
+.tool-ack .ack-sep { color: var(--accent); margin: 0 2px; }
+.tool-ack .mcp-breadcrumb-detail .ack-sep { opacity: 0.45; }
 /* Titre de conversation cliquable (ack conversation_read) : couleur héritée, teinte accent au survol (pas de soulignement). */
 .ack-conv-link { color: inherit; text-decoration: none; cursor: pointer; }
 .ack-conv-link:hover { color: var(--accent); text-decoration: none; }
