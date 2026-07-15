@@ -5,7 +5,7 @@ de N serveurs MCP distants en **un seul registre**, invisible au modèle. Les
 invariants ci-dessous sont déjà payés — ne pas les ré-introduire de travers.
 
 1. **Le préfixe est une VUE, pas un stockage.** `TOOLS` reste en noms **nus**
-   (`create_memory`, …). Le préfixe `miaou__` est ajouté **à l'exposition
+   (`memory__create`, …). Le préfixe `miaou__` est ajouté **à l'exposition
    seulement** par `exposedTools()` (consommé par `toolDefinitions()` et
    `toolsSystemPrompt()`). Les outils distants sont mis en cache **déjà préfixés**
    `servername__`. `parseToolName(name)` (utils, pur) splitte sur le **PREMIER**
@@ -14,7 +14,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    canonique en `{namespace, bareName}` pour le sous-drawer « Voir les outils
    exposés » — rien n'est stocké, tout dérive du nom.
 2. **V2 rompt délibérément le byte-identical de V1.** Les outils internes sont
-   désormais envoyés au modèle préfixés (`miaou__create_memory`). Assumé : le
+   désormais envoyés au modèle préfixés (`miaou__memory__create`). Assumé : le
    préfixe sert à router interne vs distant sans cas particulier. La doctrine
    mémoire (`MEMORY_DOCTRINE`) emploie donc les noms **préfixés** — **sauf
    `ask_confirmation`, qui reste NU** (hors registre, primitif halting ;
@@ -69,11 +69,11 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    `_pendingToolBlocks` (tools.js). `internResourcesFromResult` (api.js) intercepte
    le résultat **avant** `flattenToolResult` :
    - Blocs **inline** (`resource.text`) → stocke en IDB (persistance, accès via
-     `present_resource`) ; appelle `retainPendingToolBlocks` pour retirer le bloc de
+     `resource__present`) ; appelle `retainPendingToolBlocks` pour retirer le bloc de
      la queue D8 (pas d'affichage automatique côté UI) ; pousse dans le résultat le
      texte brut **suivi du descripteur** `[resource id=… mime=… name="…" size=…]`
      (même format que les binaires, sans note « présentée ») — le modèle reçoit ainsi
-     le contenu ET l'ID pour un éventuel `present_resource`.
+     le contenu ET l'ID pour un éventuel `resource__present`.
    - Blocs **binaires** (image, audio, resource blob) → stocke en IDB + remplace par
      `[resource_ref:res_…]` + note « présentée » (`entry.result` = ref).
    `flattenToolResult` voit ensuite uniquement des blocs `text` et les aplatit.
@@ -86,7 +86,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    `retainPendingToolBlocks` — seul le chip `resource_stored` reste visible.
    **Au reload**, `placeToolAck` re-rend les blocs **binaires** depuis IDB
    (`getPendingToolBlocks().length === 0` + `record.class !== 'inline'`) ; les inline
-   sont dans l'IDB mais non affichés (accessibles via `present_resource` si besoin).
+   sont dans l'IDB mais non affichés (accessibles via `resource__present` si besoin).
    Au payload API, `resolveResourceRefs` remplace les refs **binaires** par le
    descripteur statique ; les inline ont le texte brut dans `entry.result` — pas de ref.
    DOM-safe : seule exception « HTML-ish » = le `src` data-URI de l'`<img>`, qui

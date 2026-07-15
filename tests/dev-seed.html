@@ -162,7 +162,7 @@ const SEEDS = [
     // size, kind, w?, h?}. Les blobs réels (IndexedDB, store `resources`) sont
     // écrits séparément par seedAttachmentResources() ci-dessous — recharger la
     // conversation peuple le cache session (loadConversationResources), donc la
-    // vignette ET recall_attachment/present_resource trouvent un enregistrement
+    // vignette ET recall_attachment/resource__present trouvent un enregistrement
     // (lots 3-4). Avant l'ajout de ce seed IDB, la chip tombait sur le fallback
     // gracieux (icône, pas de vignette) — toujours le comportement attendu
     // quand le cache session n'a pas le blob (cf. resolveAttachmentThumb, ui.js),
@@ -193,7 +193,7 @@ const SEEDS = [
     // (formatBinaryAttachmentDescriptor, resources.js), pas des octets — la chip
     // visuelle retombe sur son fallback gracieux (icône, pas de vignette), c'est
     // le comportement attendu et suffisant pour exercer ce lot (l'IDB n'entre en
-    // jeu que pour recall_attachment/present_resource, hors périmètre H).
+    // jeu que pour recall_attachment/resource__present, hors périmètre H).
     id: 'seed-10c',
     title: 'Document Word joint — extraction docs',
     messages: [
@@ -326,13 +326,13 @@ const SEEDS = [
         intent: 'Enregistrement de la préférence de concision',
         args: { content: 'Julien préfère les réponses courtes.' },
         result: 'Souvenir enregistré. Identifiant : mem-seed-04',
-        name: 'miaou__create_memory', group: 'g-seed18-a' },
+        name: 'miaou__memory__create', group: 'g-seed18-a' },
       { role: 'tool-ack',  kind: 'conversation_read', title: 'Docker Compose — communication inter-services',
         convId: 'seed-05',
         intent: 'Relecture de la conversation Docker Compose',
         args: { id: 'seed-05' },
         result: '{"id":"seed-05","title":"Docker Compose — communication inter-services","summary":"Problème de communication entre services Docker Compose…"}',
-        name: 'miaou__get_conversation', group: 'g-seed18-a' },
+        name: 'miaou__conv__get', group: 'g-seed18-a' },
       // conv_ref dans le texte : rendu en lien cliquable vers seed-05.
       { role: 'assistant', content: "Noté pour la concision. Côté Docker : on avait vu dans [conv_ref:seed-05] que tes deux services ne partageaient pas le même localhost — solution : utiliser le nom du service comme hostname, et n'exposer les `ports` que sur l'app." },
     ],
@@ -623,7 +623,7 @@ function seedAttachmentResources() {
       mime: 'image/png', name: 'erreur-503.png', size: 184320, createdAt: Date.now(),
       w: 1280, h: 720,
       // PNG 1x1 minimal valide (transparent) — suffisant pour exercer le rendu
-      // <img> de recall_attachment/present_resource, pas la vraie capture d'écran.
+      // <img> de recall_attachment/resource__present, pas la vraie capture d'écran.
       data: Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), c => c.charCodeAt(0)).buffer },
     { id: 'att_seed10b_2', attId: 'att-2', conversationId: 'seed-10b', class: 'inline',
       mime: 'text/plain', name: 'nginx-access.log', size: 0, createdAt: Date.now(),

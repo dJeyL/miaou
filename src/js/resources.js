@@ -159,7 +159,7 @@ function allocateAttId(counter) {
 // (LOT 2, brief A / D2-D3-D5) ────────────────────────────────────────────────
 // Descripteur BYTE-STABLE d'une image jointe, calculé UNE FOIS depuis les
 // champs FIGÉS du schéma attachment (name, w, h, size) — jamais recalculé
-// depuis les octets. Format exact acté (le brief écrit `present_resource`,
+// depuis les octets. Format exact acté (le brief écrit `resource__present`,
 // collision de nom avec l'outil existant res_… — décision : nom distinct
 // `miaou__recall_attachment`, cf. audit/brief lot 2) :
 //   [attachment att-3: image "diagram.png", 1280x960, 214 kB — content available via miaou__recall_attachment]
@@ -435,7 +435,7 @@ function extractResultParts(mcpResult) {
 // Stocke les enregistrements IDB complets en mémoire pour accès synchrone.
 // Peuplé au chargement d'une conversation (loadConversationResources) et à chaque
 // putResource. L'ArrayBuffer data y est directement accessible pour utf8Decode et
-// arrayBufferToBase64 (present_resource synchrone).
+// arrayBufferToBase64 (resource__present synchrone).
 
 let _resourceCache = {};
 
@@ -859,9 +859,9 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
             b.resource.text != null && b.resource.blob == null));
       }
       if (saveInline) {
-        // Stocker en IDB (persistance, accès via present_resource). Le modèle
+        // Stocker en IDB (persistance, accès via resource__present). Le modèle
         // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
-        // appeler present_resource si besoin), sans note « présentée ».
+        // appeler resource__present si besoin), sans note « présentée ».
         const storedId = await _storeBlock(part.mime, part.name,
           utf8Encode(part.text), 'inline', conversationId, theNow, theRand);
         const rec = storedId ? getCachedRecord(storedId) : null;

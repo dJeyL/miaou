@@ -144,8 +144,8 @@ function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
-         "Si l'une mérite un examen détaillé, appelle get_conversation avec son id " +
-         "et with_contents=true. Tu peux aussi appeler list_conversations pour " +
+         "Si l'une mérite un examen détaillé, appelle conv__get avec son id " +
+         "et with_contents=true. Tu peux aussi appeler conv__list pour " +
          "parcourir l'historique — sans date pour tout lister, ou avec une date " +
          "pour te limiter à une période.\n" +
          lines.join('\n');
@@ -2186,7 +2186,7 @@ async function dispatchSend(matches, continuation) {
         // Fork B (brief §4) : la question (+ lead-in éventuel) devient un message
         // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
-        // (« Oui » → create_memory + narration ; « Non » → rien).
+        // (« Oui » → memory__create + narration ; « Non » → rien).
         // Réécriture parts→descripteur (D2) : la halte termine aussi le tour
         // pour le message user qui a pu porter des attachments.
         {

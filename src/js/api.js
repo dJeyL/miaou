@@ -472,7 +472,7 @@ async function runConversation(messages, hooks) {
         let out;
         // Clé d'anti-redemande sur les arguments BRUTS du tool_call, pas sur
         // id/since seuls : deux appels distincts du même outil (ex. deux
-        // create_memory, ou get_conversation résumé puis with_contents) ont des
+        // memory__create, ou conv__get résumé puis with_contents) ont des
         // arguments distincts et doivent tous être servis. Seul un appel
         // rigoureusement identique (modèle qui boucle) est court-circuité.
         const key = tc.function.name + ':' + (tc.function.arguments || '');

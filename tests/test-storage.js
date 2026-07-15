@@ -919,7 +919,7 @@ describe('genMemoryId', function() {
     var id = genMemoryId();
     expect(/^m[a-z0-9]+$/.test(id)).toBeTruthy();
   });
-  it('deux appels immédiats ne collisionnent pas (suffixe aléatoire — deux create_memory du même tour)', function() {
+  it('deux appels immédiats ne collisionnent pas (suffixe aléatoire — deux memory__create du même tour)', function() {
     expect(genMemoryId() === genMemoryId()).toBeFalsy();
   });
 });

@@ -8,41 +8,40 @@ description **du registre** — ne jamais la coder en dur. `ask_confirmation`
 il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
 
 **Lecture de l'historique :**
-- `get_conversation(id, with_contents=false)` — lit l'**index des résumés**
+- `conv__get(id, with_contents=false)` — lit l'**index des résumés**
   (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone. **Herméticité
   des Spaces (brief D2, lot C)** : une conversation d'un autre Space que
   `activeSpaceId` répond le même message « Conversation introuvable ou
   souvenir supprimé. » — pas d'oracle qui distinguerait « hors-Space » de
   « n'existe pas ». Un résumé orphelin (conversation supprimée) vaut default
   Space. Cf. piège n°18, `CLAUDE.md`.
-- `list_conversations(since?, query?, with_contents=false)` — entrées
+- `conv__list(since?, query?, with_contents=false)` — entrées
   non-tombstone dont `timestamp >= Date.parse(since)`, **exclut toujours la
   conversation courante** (`currentConvId`, global de main.js — accès défensif
   via `typeof … !== 'undefined'` car tools.js est aussi évalué seul par le test
   runner) : « conversations passées » n'inclut pas celle en cours. Filtrée en
-  amont par Space actif (même posture d'herméticité que `get_conversation`,
+  amont par Space actif (même posture d'herméticité que `conv__get`,
   résumé orphelin = default Space). `since` et
   `query` optionnels, filtres cumulables (since puis query). `query` réutilise
   le **même moteur que la recherche sidebar** (`tokenize` + `scoreSummary`,
   utils.js, seuil `score >= 1`) — mots-clés pèsent 2, mots du résumé/titre
-  pèsent 1 ; ce n'est PAS une sous-chaîne exacte. Nom conservé
-  (≠ `get_conversations`) pour éviter la quasi-collision singulier/pluriel.
+  pèsent 1 ; ce n'est PAS une sous-chaîne exacte.
 
 **Écriture directe de souvenirs (chemin direct — instruction explicite) :**
-- `create_memory(content)` — écrit immédiatement dans `miaou-memories`, retourne
-  l'identifiant généré (utile pour un `update_memory` ultérieur dans le même
+- `memory__create(content)` — écrit immédiatement dans `miaou-memories`, retourne
+  l'identifiant généré (utile pour un `memory__update` ultérieur dans le même
   échange). **Stampe `scope = activeSpaceId`** (brief D3) : aucun paramètre
   `scope` exposé au modèle, toujours le Space actif — jamais `'profile'`
   (promotion réservée à une action UI).
-- `update_memory(id, content)` — correction in-place, pas de tombstone.
+- `memory__update(id, content)` — correction in-place, pas de tombstone.
   **Refuse hors-Space** (`existing.scope !== activeSpaceId`, y compris scope
   `'profile'`) avec « Souvenir introuvable. » — même posture sans-oracle que
-  `get_conversation`.
-- `delete_memory(id)` — tombstone réversible (`suppressed: true`). Même garde
-  de scope que `update_memory`.
+  `conv__get`.
+- `memory__delete(id)` — tombstone réversible (`suppressed: true`). Même garde
+  de scope que `memory__update`.
 
 **Présentation de ressource :**
-- `present_resource(id)` — handler **synchrone** (lookup `_resourceCache`) ; pousse
+- `resource__present(id)` — handler **synchrone** (lookup `_resourceCache`) ; pousse
   un ack `resource_presented` — le rendu du bloc (image, code, téléchargement) est
   délégué à `placeToolAck` (même chemin live et reload via IDB). Renvoie une erreur
   textuelle si l'id est inconnu du cache session.
@@ -51,8 +50,8 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
 - `recall_attachment(ref)` — `ref` = `att-N` (id conversation-scopé d'une pièce
   jointe de message, cf. `docs/storage.md`). Handler **synchrone**, lookup
   `getCachedRecordByAttId(ref, currentConvId)` (resources.js — même session
-  cache que `present_resource`, peuplé par `loadConversationResources` à
-  l'ouverture). Distinct de `present_resource` : id-space différent (`att-N`
+  cache que `resource__present`, peuplé par `loadConversationResources` à
+  l'ouverture). Distinct de `resource__present` : id-space différent (`att-N`
   vs `res_...`), paramètre `ref` (pas `id`) — collision de nom évitée
   volontairement (décision actée lot 2, cf. handover). Comportement par
   `kind` du record : **image** → **les pixels SONT ré-injectés au modèle**
@@ -149,7 +148,7 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
   `libraryRefFromId`/`parseLibraryRef`, resources.js). Handler **synchrone**,
   lookup `getCachedRecord(parseLibraryRef(id))` puis vérification
   `record.kind === 'library' && record.spaceId === activeSpaceId` — même
-  posture no-oracle que `get_conversation`/`update_memory` : id malformé,
+  posture no-oracle que `conv__get`/`memory__update` : id malformé,
   inconnu, ou d'un **autre Space** répondent tous « Fichier introuvable. »,
   aucune distinction de message. Comportement par mime : **texte** (`class ===
   'inline'`) → contenu en clair (`utf8Decode`, mêmes caps que lot A) ; **image**
@@ -230,7 +229,7 @@ model-side unique sur la bibliothèque) :**
   `ask_confirmation` avec un récapitulatif (nom, type, taille, description
   proposée) **avant** tout appel à `files__promote`, puis de rappeler avec le
   **même** `ref`/`description` sur confirmation positive — exactement le
-  patron déjà éprouvé pour `create_memory` sur le chemin inféré mémoire (le
+  patron déjà éprouvé pour `memory__create` sur le chemin inféré mémoire (le
   modèle rappelle un AUTRE outil après le « Oui », jamais lui-même). Depuis
   l'extraction en skill système (cf. `docs/skills.md` §8), le corps complet de
   cette doctrine vit dans `src/system-skills/files-promote.md` — `FILES_DOCTRINE`
@@ -242,7 +241,7 @@ model-side unique sur la bibliothèque) :**
   inédit — aucun outil existant ne s'auto-rappelle en mode
   halting-puis-exécutant — sur un primitif partagé avec `ask_confirmation`/les
   skills, pour un gain de robustesse marginal (le gate doctrinal est déjà le
-  modèle de confiance accepté pour `create_memory`). Conséquence assumée : rien
+  modèle de confiance accepté pour `memory__create`). Conséquence assumée : rien
   n'empêche techniquement un modèle indiscipliné d'appeler `files__promote`
   sans passer par `ask_confirmation` au préalable — le gate n'est pas un
   verrou, c'est une doctrine, comme pour la mémoire inférée.
@@ -346,7 +345,7 @@ model-side unique sur la bibliothèque) :**
   coûteuse à garder entière sur chaque tour qu'à payer une fois l'invalidation.
 
 **Matérialisation de ressource model-side (lot O) :**
-- `resource_create(content, name?, mime?)` — le modèle range un texte qu'il
+- `resource__create(content, name?, mime?)` — le modèle range un texte qu'il
   fournit **directement dans l'appel** en ressource `res_…` classe `'inline'`,
   via `_storeBlock` (brique existante depuis les lots K/L/M, rien de neuf côté
   stockage). Handler asynchrone : `validateResourceCreateArgs` (tools.js, pure,
@@ -359,14 +358,14 @@ model-side unique sur la bibliothèque) :**
   record `'inline'`, ré-inlinerait tout le contenu dans le contexte (le piège
   `resource_ref` payé au lot M, ~5,6M tokens fantômes). L'ack `resource_stored`
   est déjà poussé par `_storeBlock`, aucun ack supplémentaire à câbler ici.
-- `resource_from_result(ref, description, name?)` (lot O-2) — convertit un
+- `resource__from_result(ref, description, name?)` (lot O-2) — convertit un
   **résultat d'outil déjà présent dans l'historique** en ressource `res_…`
   `'inline'`, ET **allège le contexte** : le gros contenu quitte l'historique,
   remplacé par le handle compact + la `description` (résumé fourni par le modèle,
   qui a lu le contenu). Deux outils distincts plutôt qu'un seul bimodal :
   `content` (mode libre) et `ref` vers un tool result passé sont deux paramètres
   dont la présence s'exclut, contrainte que JSON Schema ne porte pas nativement ;
-  deux `inputSchema` pleinement contraints (`resource_from_result` requiert `ref`
+  deux `inputSchema` pleinement contraints (`resource__from_result` requiert `ref`
   ET `description`, sans condition) évitent ce trou de validation et lèvent
   l'ambiguïté pour des modèles qui tâtonnent déjà sur la forme (`js__eval`
   ci-dessus). Mécanique :
@@ -396,19 +395,19 @@ model-side unique sur la bibliothèque) :**
     `conv-updated` post-commit (piège 24, via `saveConversation`). Le **rendu UI**
     de l'ack d'origine ne lit pas `result` (kinds `mcp_call`/`files_read`/…
     rendent depuis `intent`/breadcrumb/titre) → inchangé. Sûreté anti-`resource_ref`
-    identique à `resource_create` : **toujours** `formatInlineHandleForModel`,
+    identique à `resource__create` : **toujours** `formatInlineHandleForModel`,
     jamais `_makeResourceRef`.
   - **Type de contenu** : `internResourcesFromResult` tourne AVANT
     `flattenToolResult` (api.js) — un blob binaire est déjà un handle dans
     `entry.result`, donc la conversion ne rencontre que du **texte aplati** (le
     cas visé : gros `fetch_url`/`docs__read`). Aucune garde de type à ajouter.
 - **Doctrine `RESOURCE_DOCTRINE`** (tools.js, inconditionnelle comme
-  `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux deux outils — `resource_create`
-  pour un texte que le modèle vient de produire/recomposer, `resource_from_result`
+  `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux deux outils — `resource__create`
+  pour un texte que le modèle vient de produire/recomposer, `resource__from_result`
   pour un tool result déjà en contexte qui l'encombre. Posée dès le commit de
-  `resource_create` en couvrant DÉJÀ le second outil (pas encore livré) : le
+  `resource__create` en couvrant DÉJÀ le second outil (pas encore livré) : le
   texte de doctrine est stable, évite une deuxième invalidation du préfixe KV
-  cache (piège 16) à l'arrivée de `resource_from_result`. Le QUOI de chaque
+  cache (piège 16) à l'arrivée de `resource__from_result`. Le QUOI de chaque
   outil (dont le renvoi vers `js__eval` pour l'exploitation du handle) reste
   dans sa propre description, pas dans la doctrine — pas de duplication.
 
@@ -464,7 +463,7 @@ le kind — pas seulement `mcp_call`.
 `conversation_read` va plus loin : son détail replié rend le titre de la
 conversation sous forme de lien cliquable (`.ack-conv-link`, `onclick =>
 openConversation(m.convId)`), donc `convId` doit être renseigné par le
-handler (`get_conversation`, tools.js) et préservé dans toutes les whitelists
+handler (`conv__get`, tools.js) et préservé dans toutes les whitelists
 de champs (voir avertissement ci-dessus).
 
 ### Échecs d'outils : `tool_failed` et `toolFail()`
@@ -473,7 +472,7 @@ de champs (voir avertissement ci-dessus).
 retourne JAMAIS sa chaîne nue : il passe par `toolFail(toolName, message)`
 (tools.js), qui pousse un ack `{ kind: 'tool_failed', name, message, error: true }`
 **et** renvoie le message — le site d'appel reste une ligne
-(`return toolFail('update_memory', 'Souvenir introuvable.')`).
+(`return toolFail('memory__update', 'Souvenir introuvable.')`).
 
 Le retour est la chaîne **inchangée** : le tool result envoyé au modèle est
 byte-identique à ce qu'il était avant l'introduction de ces acks (aucun effet sur
@@ -552,7 +551,7 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   `ACK_KINDS[kind].undo(id, entry)`. Sémantique par kind : **create** →
   `forgetMemory` (retire l'ajout) ; **delete** → `restoreMemory` (lève la
   tombstone) ; **update** → ré-écrit `entry.prevContent` via `editMemory` (l'ancien
-  contenu, capturé **avant** l'écrasement par le handler `update_memory` et porté
+  contenu, capturé **avant** l'écrasement par le handler `memory__update` et porté
   dans l'ack, car l'édition est in-place sans tombstone). Si `prevContent` manque
   (ack legacy), l'undo d'une édition est **no-op** — jamais de `forgetMemory` sur
   une édition. `forgetMemory`/`restoreMemory` ignorent le 2ᵉ argument. **Pas de
@@ -638,15 +637,15 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
 
 ## Références de conversation dans le texte du modèle (`conv_ref`)
 
-Le modèle peut citer une conversation passée (obtenue via `get_conversation`/
-`list_conversations`) pour que l'utilisateur puisse l'ouvrir d'un clic — sans
+Le modèle peut citer une conversation passée (obtenue via `conv__get`/
+`conv__list`) pour que l'utilisateur puisse l'ouvrir d'un clic — sans
 jamais exposer son ID technique en clair dans le texte affiché.
 
 1. **Doctrine `CONV_REF_DOCTRINE`** (tools.js), **toujours injectée** dès que
    des outils existent (même statut que `BINARY_DOCTRINE`, partie de
    `ROOT_SYSTEM_PROMPT`, constante build-time). Demande au modèle d'utiliser le
    marqueur `[conv_ref:ID]` ou `[conv_ref:ID|Titre]` (titre optionnel, connu du
-   modèle depuis le JSON de `get_conversation`/`list_conversations`) plutôt que
+   modèle depuis le JSON de `conv__get`/`conv__list`) plutôt que
    d'écrire l'ID en clair (backticks, guillemets, texte brut).
 2. **Parsing** : `parseConvRefs(text)` (utils.js, pure, testée) extrait tous les
    marqueurs `{ match, id, title }` d'une chaîne — regex `CONV_REF_RE`, id
@@ -666,7 +665,7 @@ jamais exposer son ID technique en clair dans le texte affiché.
    (`deleteConv` → `deleteSummaryEntry`, hard delete des deux, chemin *distinct*
    du tombstone) : la source de vérité pour « ouvrable » est
    **`loadConversation(id)`**, pas la présence d'un résumé (cas limite existant
-   où le résumé peut survivre sans la conversation, cf. `get_conversation`).
+   où le résumé peut survivre sans la conversation, cf. `conv__get`).
    Dans ce cas, rendu en **texte barré NON cliquable** `~~Titre (supprimée)~~`
    (Markdown GFM standard, `marked` le rend en `<del>` sans configuration)
    plutôt qu'un lien mort — pas de post-traitement DOM. `renderMd`

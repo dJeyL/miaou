@@ -227,7 +227,7 @@ describe('buildSummaryBlock (résumés matchés injectés dans le contexte)', fu
     expect(b).toContain('c1');
     expect(b).toContain('Titre X');
     expect(b).toContain('Un résumé concis');
-    expect(b).toContain('list_conversations');
+    expect(b).toContain('conv__list');
   });
 });
 

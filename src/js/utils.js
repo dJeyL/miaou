@@ -425,6 +425,21 @@ function parseToolName(name) {
   return { serverPrefix: s.slice(0, i), toolName: s.slice(i + 2) };
 }
 
+// Résout un nom d'appel vers son nom canonique d'outil INTERNE, ou null si l'outil
+// n'est pas interne (→ serveur MCP distant). Le REGISTRE tranche, pas la forme du
+// nom : depuis que des outils internes portent un sous-namespace (`memory__create`,
+// `conv__get`, `resource__present`, lot P), parseToolName ne peut plus distinguer
+// `memory__update` (interne) de `server__tool` (distant) — les deux ont un `__`.
+// On accepte le nom NU (`memory__create`) comme le nom préfixé (`miaou__memory__create`) :
+// dans les deux cas, on cherche le nom nu dans `tools` (registre TOOLS, entrées `{name}`).
+// Pur (cf. D1) : aucune dépendance à l'état, testable sans stub.
+function resolveInternalToolName(name, tools) {
+  const s = String(name || '');
+  const bare = s.indexOf('miaou__') === 0 ? s.slice('miaou__'.length) : s;
+  const hit = (tools || []).some(t => t && t.name === bare);
+  return hit ? bare : null;
+}
+
 // Regroupe une liste d'outils canoniques par namespace. Le namespace est formé de
 // TOUS les segments sauf le dernier ; le bareName est uniquement le dernier segment.
 // Ex : `bench__djeyl__echo` → namespace=`bench__djeyl`, bareName=`echo`.
@@ -654,7 +669,7 @@ function _truncMd(s, max) {
 
 // Représentation textuelle d'un appel d'outil pour l'export (un seul ack,
 // déjà enrichi : args/result présents). `m.name` peut être préfixé
-// (`miaou__create_memory`) ou breadcrumb distant (`server__tool`) — affiché tel quel.
+// (`miaou__memory__create`) ou breadcrumb distant (`server__tool`) — affiché tel quel.
 function _formatToolCallMd(m) {
   const lines = [];
   const head = m.intent ? '`' + m.name + '` — ' + m.intent : '`' + m.name + '`';
@@ -966,7 +981,7 @@ function expandThread(thread) {
         for (var k = 0; k < groupAcks.length; k++) {
           // Préfixe [call:<id>] (byte-stable, dérivé du seul id) devant le
           // content réinjecté : expose l'id de ce tool result au modèle pour
-          // qu'il puisse le cibler via resource_from_result (lot O-2). Ajouté à
+          // qu'il puisse le cibler via resource__from_result (lot O-2). Ajouté à
           // l'ÉMISSION uniquement, jamais stocké dans l'ack.
           out.push({ role: 'tool', tool_call_id: ids[k],
                      content: formatCallMarker(ids[k]) + stampTs(groupAcks[k].ts, groupAcks[k].result) });

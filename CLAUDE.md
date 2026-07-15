@@ -191,7 +191,7 @@ inline sous la liste.
     statique, inconditionnelle dans `ROOT_SYSTEM_PROMPT` (KV-safe, piège 16). Cf.
     `docs/tools.md` (section `js__eval`).
 26. **Réécriture d'historique model-triggered : matérialisation d'un tool result
-    passé (lot O-2).** `resource_from_result` (tools.js) mute **en place** le
+    passé (lot O-2).** `resource__from_result` (tools.js) mute **en place** le
     `entry.result` d'un ack passé (gros contenu → handle compact + résumé modèle)
     sur décision du modèle — première réécriture d'historique DÉCLENCHÉE par le
     modèle (l'image→descripteur du piège 17 est automatique, pas model-triggered).
@@ -223,12 +223,12 @@ que ces états ne bougent pas.
 
 **#18 — Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
 convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
-appartient-elle au Space actif ? » — sidebar, recherche, `list_conversations`/
-`get_conversation`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
+appartient-elle au Space actif ? » — sidebar, recherche, `conv__list`/
+`conv__get`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
 (via `scope`), **fichiers de bibliothèque d'espace** (`getResourcesBySpace`/
 `getCachedLibraryEntriesBySpace`, filtre `spaceId === activeSpaceId`, lot Cbis).
 Jamais un filtre `c.spaceId === x` réécrit localement.
-`get_conversation`/`update_memory`/`delete_memory` sur un id hors-Space
+`conv__get`/`memory__update`/`memory__delete` sur un id hors-Space
 répondent comme **inexistant** (pas d'oracle) ; même posture pour
 `files__list`/`files__read` sur un `file-<id>` étranger ou inconnu (lot Cbis).
 Changer de Space actif change le prompt système effectif : `description` du

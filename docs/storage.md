@@ -176,8 +176,8 @@
 - `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed, scope? }]`.
   **Deux chemins d'écriture distincts** : édition directe utilisateur →
   `editMemory(id, newContent)` (in-place) ; écriture par le modèle →
-  `create_memory` / `update_memory` (in-place) /
-  `delete_memory` (tombstone). `listMemoryEntries(scopes?)` renvoie les
+  `memory__create` / `memory__update` (in-place) /
+  `memory__delete` (tombstone). `listMemoryEntries(scopes?)` renvoie les
   non-supprimées ; sans argument, toutes (usage historique, export/import) ;
   avec un tableau de scopes (ex. `['profile', activeSpaceId]`), filtre en plus
   sur `scope` (cf. Spaces ci-dessous). `forgetMemory(id)` supprime définitivement l'entrée du tableau.
@@ -264,7 +264,7 @@
   pure, `convs` déjà chargé par l'appelant) : `Set` des ids de conversations du
   Space donné, une conversation sans `spaceId` comptant pour
   `DEFAULT_SPACE_ID`. Tous les sites qui doivent respecter l'herméticité
-  (sidebar, recherche, outils `list_conversations`/`get_conversation`,
+  (sidebar, recherche, outils `conv__list`/`conv__get`,
   sélection d'injection de résumés) passent par ce prédicat — jamais par un
   filtre `c.spaceId === x` réécrit localement. Les résumés (`miaou-summaries`)
   ne portent **pas** de `spaceId` dupliqué : ils scopent via leur conversation

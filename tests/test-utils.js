@@ -319,39 +319,68 @@ describe('parseToolName (split sur le PREMIER __ seulement)', function() {
     expect(r.toolName).toBe('a__b__c');
   });
   it('sans séparateur : préfixe vide, nom entier', function() {
-    var r = parseToolName('create_memory');
+    var r = parseToolName('about');
     expect(r.serverPrefix).toBe('');
-    expect(r.toolName).toBe('create_memory');
+    expect(r.toolName).toBe('about');
   });
   it('outil interne préfixé miaou', function() {
-    var r = parseToolName('miaou__create_memory');
+    var r = parseToolName('miaou__memory__create');
     expect(r.serverPrefix).toBe('miaou');
-    expect(r.toolName).toBe('create_memory');
+    expect(r.toolName).toBe('memory__create');
   });
 });
 
 describe('groupByNamespace (projection pure, nom nu)', function() {
   it('groupe par tous-sauf-dernier et expose uniquement le dernier segment', function() {
     var g = groupByNamespace([
-      { name: 'miaou__create_memory' },
+      { name: 'miaou__about' },
+      { name: 'miaou__memory__create' },
       { name: 'jira__search' },
       { name: 'jira__a__b' },
     ]);
-    // miaou__create_memory → ns=miaou, bareName=create_memory
-    // jira__search        → ns=jira,  bareName=search
-    // jira__a__b          → ns=jira__a, bareName=b  (sous-namespace distinct)
-    expect(g.length).toBe(3);
+    // miaou__about          → ns=miaou,         bareName=about
+    // miaou__memory__create → ns=miaou__memory, bareName=create (sous-namespace interne, lot P)
+    // jira__search          → ns=jira,          bareName=search
+    // jira__a__b            → ns=jira__a,        bareName=b       (sous-namespace distant)
+    expect(g.length).toBe(4);
     expect(g[0].namespace).toBe('miaou');
-    expect(g[0].tools[0].bareName).toBe('create_memory');
-    expect(g[1].namespace).toBe('jira');
-    expect(g[1].tools[0].bareName).toBe('search');
-    expect(g[2].namespace).toBe('jira__a');
-    expect(g[2].tools[0].bareName).toBe('b');
+    expect(g[0].tools[0].bareName).toBe('about');
+    expect(g[1].namespace).toBe('miaou__memory');
+    expect(g[1].tools[0].bareName).toBe('create');
+    expect(g[2].namespace).toBe('jira');
+    expect(g[2].tools[0].bareName).toBe('search');
+    expect(g[3].namespace).toBe('jira__a');
+    expect(g[3].tools[0].bareName).toBe('b');
   });
   it('nom sans préfixe → namespace miaou', function() {
     var g = groupByNamespace([{ name: 'ask_confirmation' }]);
     expect(g[0].namespace).toBe('miaou');
     expect(g[0].tools[0].bareName).toBe('ask_confirmation');
+  });
+});
+
+describe('resolveInternalToolName (le registre tranche, pas la forme du nom — lot P)', function() {
+  // Registre minimal : le vrai TOOLS n'est pas chargé dans ce contexte de test pur.
+  var reg = [{ name: 'about' }, { name: 'memory__create' }, { name: 'conv__get' }, { name: 'resource__present' }];
+  it('sous-namespace interne nu → nom canonique (ne part PAS vers un serveur MCP)', function() {
+    expect(resolveInternalToolName('memory__create', reg)).toBe('memory__create');
+    expect(resolveInternalToolName('conv__get', reg)).toBe('conv__get');
+  });
+  it('nom nu simple (sans __) → lui-même', function() {
+    expect(resolveInternalToolName('about', reg)).toBe('about');
+  });
+  it('préfixe miaou__ strippé avant lookup', function() {
+    expect(resolveInternalToolName('miaou__memory__create', reg)).toBe('memory__create');
+    expect(resolveInternalToolName('miaou__about', reg)).toBe('about');
+  });
+  it('outil distant (préfixe serveur) → null', function() {
+    expect(resolveInternalToolName('jira__search', reg)).toBe(null);
+    expect(resolveInternalToolName('memory__unknown', reg)).toBe(null);
+  });
+  it('inconnu / vide → null', function() {
+    expect(resolveInternalToolName('nope', reg)).toBe(null);
+    expect(resolveInternalToolName('', reg)).toBe(null);
+    expect(resolveInternalToolName(null, reg)).toBe(null);
   });
 });
 
@@ -473,10 +502,10 @@ describe('formatToolAcksMd', function() {
     expect(formatToolAcksMd(null)).toBe('');
   });
   it('un seul appel : en-tête singulier, sans numérotation', function() {
-    var r = formatToolAcksMd([{ name: 'miaou__create_memory', args: { content: 'x' }, result: '{"id":"m1"}' }]);
+    var r = formatToolAcksMd([{ name: 'miaou__memory__create', args: { content: 'x' }, result: '{"id":"m1"}' }]);
     expect(r.indexOf('**Outil appelé :**') >= 0).toBeTruthy();
     expect(r.indexOf('Outils appelés') >= 0).toBeFalsy();
-    expect(r.indexOf('`miaou__create_memory`') >= 0).toBeTruthy();
+    expect(r.indexOf('`miaou__memory__create`') >= 0).toBeTruthy();
     expect(r.indexOf('Arguments :') >= 0).toBeTruthy();
     expect(r.indexOf('Résultat :') >= 0).toBeTruthy();
   });
@@ -485,8 +514,8 @@ describe('formatToolAcksMd', function() {
     expect(r.indexOf('`weather__get` — vérifier la météo') >= 0).toBeTruthy();
   });
   it('pas d\'intent → pas de tiret après le nom', function() {
-    var r = formatToolAcksMd([{ name: 'miaou__create_memory', args: {}, result: 'ok' }]);
-    expect(r.indexOf('`miaou__create_memory` —') >= 0).toBeFalsy();
+    var r = formatToolAcksMd([{ name: 'miaou__memory__create', args: {}, result: 'ok' }]);
+    expect(r.indexOf('`miaou__memory__create` —') >= 0).toBeFalsy();
   });
   it('plusieurs appels : en-tête pluriel avec compte, liste numérotée', function() {
     var r = formatToolAcksMd([
@@ -610,7 +639,7 @@ describe('formatToolAcksHtml', function() {
     expect(formatToolAcksHtml(null)).toBe('');
   });
   it('un seul appel : <details><summary> avec texte "1 outil appelé"', function() {
-    var r = formatToolAcksHtml([{ name: 'miaou__create_memory', args: { content: 'x' }, result: 'ok' }]);
+    var r = formatToolAcksHtml([{ name: 'miaou__memory__create', args: { content: 'x' }, result: 'ok' }]);
     expect(r.indexOf('<details class="tool-trace">') >= 0).toBeTruthy();
     expect(r.indexOf('<span class="tool-trace-summary-text">1 outil appelé</span>') >= 0).toBeTruthy();
     expect(r.indexOf(' open') >= 0).toBeFalsy();

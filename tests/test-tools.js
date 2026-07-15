@@ -46,7 +46,7 @@ describe('flattenToolResult', function() {
 describe('callTool — dispatch registre', function() {
   it('renvoie { content, isError } pour un outil connu', function() {
     localStorage.clear();
-    var res = callTool('list_conversations', {});
+    var res = callTool('conv__list', {});
     expect(typeof res).toBe('object');
     expect(Array.isArray(res.content)).toBeTruthy();
     expect(res.isError).toBe(false);
@@ -59,7 +59,7 @@ describe('callTool — dispatch registre', function() {
   });
   it('les blocs content sont de type text', function() {
     localStorage.clear();
-    var res = callTool('list_conversations', {});
+    var res = callTool('conv__list', {});
     res.content.forEach(function(b) { expect(b.type).toBe('text'); });
   });
 });
@@ -72,11 +72,11 @@ describe('callTool — outil inconnu (via flattenToolResult)', function() {
   });
 });
 
-describe('get_conversation', function() {
+describe('conv__get', function() {
   it('retourne résumé+keywords sans with_contents', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: ['k'] });
-    var r = JSON.parse(ct('get_conversation', { id: 'c1' }));
+    var r = JSON.parse(ct('conv__get', { id: 'c1' }));
     expect(r.summary !== undefined).toBeTruthy();
     expect(r.messages).toBeFalsy();
   });
@@ -84,25 +84,25 @@ describe('get_conversation', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: ['k'] });
     saveConversation({ id: 'c1', title: 't', timestamp: 1000, messages: [{ role: 'user', content: 'salut' }] });
-    var r = JSON.parse(ct('get_conversation', { id: 'c1', with_contents: true }));
+    var r = JSON.parse(ct('conv__get', { id: 'c1', with_contents: true }));
     expect(r.messages !== undefined).toBeTruthy();
   });
   it('introuvable si aucun souvenir', function() {
     localStorage.clear();
-    var r = ct('get_conversation', { id: 'inexistant' });
+    var r = ct('conv__get', { id: 'inexistant' });
     expect(r).toContain('introuvable');
   });
   it('introuvable si le souvenir est une tombstone', function() {
     localStorage.clear();
     suppressSummary('c1');
-    var r = ct('get_conversation', { id: 'c1' });
+    var r = ct('conv__get', { id: 'c1' });
     expect(r).toContain('introuvable');
   });
   it('pousse un ack conversation_read avec le titre quand trouvé', function() {
     localStorage.clear();
     clearPendingToolAcks();
     saveSummary('c1', { title: 'Mon titre', timestamp: 1000, summary: 's', keywords: [] });
-    ct('get_conversation', { id: 'c1' });
+    ct('conv__get', { id: 'c1' });
     var pending = getPendingToolAcks();
     expect(pending.length).toBe(1);
     expect(pending[0].kind).toBe('conversation_read');
@@ -111,33 +111,33 @@ describe('get_conversation', function() {
   it('pousse un ack d\'échec quand introuvable (jamais un conversation_read)', function() {
     localStorage.clear();
     clearPendingToolAcks();
-    ct('get_conversation', { id: 'inexistant' });
+    ct('conv__get', { id: 'inexistant' });
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(1);
     expect(acks[0].kind).toBe('tool_failed');
-    expect(acks[0].name).toBe('miaou__get_conversation');
+    expect(acks[0].name).toBe('miaou__conv__get');
     expect(acks[0].error).toBe(true);
   });
 });
 
-describe('list_conversations', function() {
+describe('conv__list', function() {
   it('sans since, liste toutes les conversations', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't1', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
     saveSummary('c0', { title: 't0', timestamp: Date.parse('2025-01-01T00:00:00Z'), summary: 's', keywords: [] });
-    var r = JSON.parse(ct('list_conversations', {}));
+    var r = JSON.parse(ct('conv__list', {}));
     expect(Array.isArray(r)).toBeTruthy();
     expect(r.length).toBe(2);
   });
   it('rejette une date fournie mais invalide', function() {
-    var r = ct('list_conversations', { since: 'pas une date' });
+    var r = ct('conv__list', { since: 'pas une date' });
     expect(r).toContain('invalide');
   });
   it('filtre par date', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
     saveSummary('c0', { title: 'vieux', timestamp: Date.parse('2025-01-01T00:00:00Z'), summary: 's', keywords: [] });
-    var r = JSON.parse(ct('list_conversations', { since: '2026-01-01T00:00:00Z' }));
+    var r = JSON.parse(ct('conv__list', { since: '2026-01-01T00:00:00Z' }));
     expect(Array.isArray(r)).toBeTruthy();
     expect(r.length).toBe(1);
     expect(r[0].id).toBe('c1');
@@ -145,7 +145,7 @@ describe('list_conversations', function() {
   it('exclut les tombstones', function() {
     localStorage.clear();
     suppressSummary('c1');
-    var r = JSON.parse(ct('list_conversations', { since: '2000-01-01T00:00:00Z' }));
+    var r = JSON.parse(ct('conv__list', { since: '2000-01-01T00:00:00Z' }));
     expect(r.length).toBe(0);
   });
   it('pousse un ack conversation_list avec le count post-filtre', function() {
@@ -153,7 +153,7 @@ describe('list_conversations', function() {
     clearPendingToolAcks();
     saveSummary('c1', { title: 't', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
     saveSummary('c0', { title: 'vieux', timestamp: Date.parse('2025-01-01T00:00:00Z'), summary: 's', keywords: [] });
-    ct('list_conversations', { since: '2026-01-01T00:00:00Z' });
+    ct('conv__list', { since: '2026-01-01T00:00:00Z' });
     var pending = getPendingToolAcks();
     expect(pending.length).toBe(1);
     expect(pending[0].kind).toBe('conversation_list');
@@ -165,7 +165,7 @@ describe('list_conversations', function() {
     saveSummary('c2', { title: 't2', timestamp: Date.parse('2026-03-02T00:00:00Z'), summary: 's', keywords: [] });
     currentConvId = 'c1';
     try {
-      var r = JSON.parse(ct('list_conversations', {}));
+      var r = JSON.parse(ct('conv__list', {}));
       expect(r.length).toBe(1);
       expect(r[0].id).toBe('c2');
     } finally {
@@ -176,7 +176,7 @@ describe('list_conversations', function() {
     localStorage.clear();
     clearPendingToolAcks();
     saveSummary('c1', { title: 't', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
-    ct('list_conversations', { since: '2000-01-01T00:00:00Z', miaou_intent: 'retrouver la conv sur X' });
+    ct('conv__list', { since: '2000-01-01T00:00:00Z', miaou_intent: 'retrouver la conv sur X' });
     var pending = getPendingToolAcks();
     expect(pending.length).toBe(1);
     expect(pending[0].intent).toBe('retrouver la conv sur X');
@@ -249,26 +249,26 @@ describe('callTool : intent ne déborde pas sur l\'ack d\'un outil précédent (
   it('outil OK puis outil échouant : l\'intent du 2e va sur SON ack d\'échec, pas sur le 1er', function() {
     localStorage.clear();
     clearPendingToolAcks();
-    // 1er appel : create_memory pousse un ack memory_create + son intent.
-    callTool('create_memory', { content: 'un fait à retenir', miaou_intent: 'intent-un' });
-    // 2e appel : update_memory sur un id inexistant → 'Souvenir introuvable.'.
+    // 1er appel : memory__create pousse un ack memory_create + son intent.
+    callTool('memory__create', { content: 'un fait à retenir', miaou_intent: 'intent-un' });
+    // 2e appel : memory__update sur un id inexistant → 'Souvenir introuvable.'.
     // Depuis les acks d'échec, il pousse SON PROPRE ack tool_failed : l'intent du
     // 2e doit s'y poser, et surtout PAS réécrire celui du 1er (invariant B5).
-    callTool('update_memory', { id: 'inexistant', content: 'x', miaou_intent: 'intent-deux' });
+    callTool('memory__update', { id: 'inexistant', content: 'x', miaou_intent: 'intent-deux' });
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(2);
     expect(acks[0].kind).toBe('memory_create');
     expect(acks[0].intent).toBe('intent-un');
     expect(acks[1].kind).toBe('tool_failed');
     expect(acks[1].intent).toBe('intent-deux');
-    expect(acks[1].name).toBe('miaou__update_memory');
+    expect(acks[1].name).toBe('miaou__memory__update');
     expect(acks[1].error).toBe(true);
   });
   it('deux outils poussant chacun un ack : chaque intent va sur le bon ack', function() {
     localStorage.clear();
     clearPendingToolAcks();
-    callTool('create_memory', { content: 'premier fait', miaou_intent: 'intent-A' });
-    callTool('create_memory', { content: 'second fait', miaou_intent: 'intent-B' });
+    callTool('memory__create', { content: 'premier fait', miaou_intent: 'intent-A' });
+    callTool('memory__create', { content: 'second fait', miaou_intent: 'intent-B' });
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(2);
     expect(acks[0].intent).toBe('intent-A');
@@ -299,25 +299,25 @@ describe('updateLastPendingToolAck : garde minLength', function() {
 });
 
 describe('toolDefinitions', function() {
-  it('expose miaou__get_conversation et miaou__list_conversations (préfixés V2)', function() {
+  it('expose miaou__conv__get et miaou__conv__list (préfixés V2)', function() {
     var defs = toolDefinitions();
     var names = defs.map(function(d) { return d.function.name; });
-    expect(names.indexOf('miaou__get_conversation') >= 0).toBeTruthy();
-    expect(names.indexOf('miaou__list_conversations') >= 0).toBeTruthy();
+    expect(names.indexOf('miaou__conv__get') >= 0).toBeTruthy();
+    expect(names.indexOf('miaou__conv__list') >= 0).toBeTruthy();
   });
-  it('get_conversation et list_conversations déclarent un booléen with_contents', function() {
+  it('conv__get et conv__list déclarent un booléen with_contents', function() {
     var defs = toolDefinitions();
-    ['miaou__get_conversation', 'miaou__list_conversations'].forEach(function(name) {
+    ['miaou__conv__get', 'miaou__conv__list'].forEach(function(name) {
       var d = defs.find(function(d) { return d.function.name === name; });
       expect(d.function.parameters.properties.with_contents.type).toBe('boolean');
     });
   });
-  it('expose miaou__create/update/delete_memory et ask_confirmation (nu)', function() {
+  it('expose miaou__create/update/memory__delete et ask_confirmation (nu)', function() {
     var defs = toolDefinitions();
     var names = defs.map(function(d) { return d.function.name; });
-    expect(names.indexOf('miaou__create_memory') >= 0).toBeTruthy();
-    expect(names.indexOf('miaou__update_memory') >= 0).toBeTruthy();
-    expect(names.indexOf('miaou__delete_memory') >= 0).toBeTruthy();
+    expect(names.indexOf('miaou__memory__create') >= 0).toBeTruthy();
+    expect(names.indexOf('miaou__memory__update') >= 0).toBeTruthy();
+    expect(names.indexOf('miaou__memory__delete') >= 0).toBeTruthy();
     expect(names.indexOf('ask_confirmation') >= 0).toBeTruthy();   // hors registre, NON préfixé
   });
   it('chaque définition est au format OpenAI (type function, parameters)', function() {
@@ -376,7 +376,7 @@ describe('ask_confirmation — outil halting', function() {
   });
   it('toolIsHalting le reconnaît, et pas les outils non-halting ni inconnus', function() {
     expect(toolIsHalting('ask_confirmation')).toBe(true);
-    expect(toolIsHalting('get_conversation')).toBe(false);
+    expect(toolIsHalting('conv__get')).toBe(false);
     expect(toolIsHalting('outil_inconnu')).toBe(false);
   });
   it('n\'est pas dans le registre MCP TOOLS (callTool renvoie isError: true)', function() {
@@ -393,13 +393,13 @@ describe('registre MCP — annotations', function() {
     });
   });
   it('les outils de lecture sont readOnlyHint: true', function() {
-    ['get_conversation', 'list_conversations'].forEach(function(name) {
+    ['conv__get', 'conv__list'].forEach(function(name) {
       var t = TOOLS.find(function(t) { return t.name === name; });
       expect(t.annotations.readOnlyHint).toBe(true);
     });
   });
   it('les outils d\'écriture sont readOnlyHint: false', function() {
-    ['create_memory', 'update_memory', 'delete_memory'].forEach(function(name) {
+    ['memory__create', 'memory__update', 'memory__delete'].forEach(function(name) {
       var t = TOOLS.find(function(t) { return t.name === name; });
       expect(t.annotations.readOnlyHint).toBe(false);
     });
@@ -410,11 +410,11 @@ describe('registre MCP — annotations', function() {
   });
 });
 
-describe('create_memory — écriture directe', function() {
+describe('memory__create — écriture directe', function() {
   it('enregistre le souvenir, retourne un accusé avec identifiant et pousse un ack', function() {
     localStorage.clear();
     clearPendingToolAcks();
-    var r = ct('create_memory', { content: 'préfère les réponses courtes' });
+    var r = ct('memory__create', { content: 'préfère les réponses courtes' });
     expect(r).toContain('enregistré');
     expect(r).toContain('Identifiant');
     var entries = listMemoryEntries();
@@ -429,19 +429,19 @@ describe('create_memory — écriture directe', function() {
   it('rejette un contenu vide : rien d\'écrit, ack d\'échec (pas de memory_create)', function() {
     localStorage.clear();
     clearPendingToolAcks();
-    var r = ct('create_memory', { content: '   ' });
+    var r = ct('memory__create', { content: '   ' });
     expect(r).toContain('ignoré');
     expect(listMemoryEntries().length).toBe(0);
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(1);
     expect(acks[0].kind).toBe('tool_failed');
-    expect(acks[0].name).toBe('miaou__create_memory');
+    expect(acks[0].name).toBe('miaou__memory__create');
   });
   it('stampe le scope avec le Space actif (brief D3)', function() {
     localStorage.clear();
     activeSpaceId = 'sp1';
     try {
-      ct('create_memory', { content: 'x' });
+      ct('memory__create', { content: 'x' });
       expect(listMemoryEntries()[0].scope).toBe('sp1');
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
@@ -450,31 +450,31 @@ describe('create_memory — écriture directe', function() {
 });
 
 describe('Herméticité des Spaces — outils modèle (brief D2/D3)', function() {
-  it('get_conversation sur une conv d\'un autre Space répond "introuvable" (pas d\'oracle)', function() {
+  it('conv__get sur une conv d\'un autre Space répond "introuvable" (pas d\'oracle)', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: [] });
     saveConversation({ id: 'c1', title: 't', timestamp: 1000, spaceId: 'sp-other', messages: [] });
     activeSpaceId = 'sp1';
     try {
-      var r = ct('get_conversation', { id: 'c1' });
+      var r = ct('conv__get', { id: 'c1' });
       expect(r).toContain('introuvable');
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('get_conversation sur une conv du Space actif fonctionne normalement', function() {
+  it('conv__get sur une conv du Space actif fonctionne normalement', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: [] });
     saveConversation({ id: 'c1', title: 't', timestamp: 1000, spaceId: 'sp1', messages: [] });
     activeSpaceId = 'sp1';
     try {
-      var r = JSON.parse(ct('get_conversation', { id: 'c1' }));
+      var r = JSON.parse(ct('conv__get', { id: 'c1' }));
       expect(r.summary).toBe('s');
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('list_conversations exclut les conversations d\'un autre Space', function() {
+  it('conv__list exclut les conversations d\'un autre Space', function() {
     localStorage.clear();
     saveSummary('c1', { title: 't1', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
     saveConversation({ id: 'c1', title: 't1', timestamp: 1000, spaceId: 'sp1', messages: [] });
@@ -482,54 +482,54 @@ describe('Herméticité des Spaces — outils modèle (brief D2/D3)', function()
     saveConversation({ id: 'c2', title: 't2', timestamp: 1000, spaceId: 'sp-other', messages: [] });
     activeSpaceId = 'sp1';
     try {
-      var r = JSON.parse(ct('list_conversations', {}));
+      var r = JSON.parse(ct('conv__list', {}));
       expect(r.length).toBe(1);
       expect(r[0].id).toBe('c1');
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('update_memory refuse hors-Space ("Souvenir introuvable.")', function() {
+  it('memory__update refuse hors-Space ("Souvenir introuvable.")', function() {
     localStorage.clear();
     saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp-other' });
     activeSpaceId = 'sp1';
     try {
-      var r = ct('update_memory', { id: 'm1', content: 'y' });
+      var r = ct('memory__update', { id: 'm1', content: 'y' });
       expect(r).toContain('introuvable');
       expect(loadMemories()[0].content).toBe('x');   // pas modifié
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('update_memory refuse un souvenir de scope profile (pas exposé aux outils Space)', function() {
+  it('memory__update refuse un souvenir de scope profile (pas exposé aux outils Space)', function() {
     localStorage.clear();
     saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
     activeSpaceId = 'sp1';
     try {
-      var r = ct('update_memory', { id: 'm1', content: 'y' });
+      var r = ct('memory__update', { id: 'm1', content: 'y' });
       expect(r).toContain('introuvable');
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('delete_memory refuse hors-Space ("Souvenir introuvable.")', function() {
+  it('memory__delete refuse hors-Space ("Souvenir introuvable.")', function() {
     localStorage.clear();
     saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp-other' });
     activeSpaceId = 'sp1';
     try {
-      var r = ct('delete_memory', { id: 'm1' });
+      var r = ct('memory__delete', { id: 'm1' });
       expect(r).toContain('introuvable');
       expect(loadMemories()[0].suppressed).toBeFalsy();   // pas tombstoné
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('update_memory/delete_memory fonctionnent normalement dans le Space actif', function() {
+  it('memory__update/memory__delete fonctionnent normalement dans le Space actif', function() {
     localStorage.clear();
     saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp1' });
     activeSpaceId = 'sp1';
     try {
-      var r = ct('update_memory', { id: 'm1', content: 'y' });
+      var r = ct('memory__update', { id: 'm1', content: 'y' });
       expect(r).toContain('mis à jour');
       expect(loadMemories()[0].content).toBe('y');
     } finally {
@@ -538,12 +538,12 @@ describe('Herméticité des Spaces — outils modèle (brief D2/D3)', function()
   });
 });
 
-describe('update_memory — correction in-place', function() {
+describe('memory__update — correction in-place', function() {
   it('met à jour le contenu sans créer de nouvelle entrée et pousse un ack', function() {
     localStorage.clear();
     clearPendingToolAcks();
     saveMemory({ id: 'm1', content: 'avant', created_at: 1, updated_at: 1, suppressed: false });
-    var r = ct('update_memory', { id: 'm1', content: 'après' });
+    var r = ct('memory__update', { id: 'm1', content: 'après' });
     expect(r).toContain('mis à jour');
     var all = loadMemories();
     expect(all.length).toBe(1);
@@ -557,21 +557,21 @@ describe('update_memory — correction in-place', function() {
   });
   it('rejette les paramètres invalides : ack d\'échec, pas de memory_update', function() {
     clearPendingToolAcks();
-    var r = ct('update_memory', { id: 'm1' });
+    var r = ct('memory__update', { id: 'm1' });
     expect(r).toContain('invalide');
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(1);
     expect(acks[0].kind).toBe('tool_failed');
-    expect(acks[0].name).toBe('miaou__update_memory');
+    expect(acks[0].name).toBe('miaou__memory__update');
   });
 });
 
-describe('delete_memory — tombstone', function() {
+describe('memory__delete — tombstone', function() {
   it('pose une tombstone réversible et pousse un ack avec contenu', function() {
     localStorage.clear();
     clearPendingToolAcks();
     saveMemory({ id: 'm1', content: 'obsolète', created_at: 1, updated_at: 1, suppressed: false });
-    var r = ct('delete_memory', { id: 'm1' });
+    var r = ct('memory__delete', { id: 'm1' });
     expect(r).toContain('supprimé');
     expect(loadMemories()[0].suppressed).toBe(true);
     expect(listMemoryEntries().length).toBe(0);
@@ -583,12 +583,12 @@ describe('delete_memory — tombstone', function() {
   });
   it('rejette un id manquant : ack d\'échec, pas de memory_delete', function() {
     clearPendingToolAcks();
-    var r = ct('delete_memory', {});
+    var r = ct('memory__delete', {});
     expect(r).toContain('manquant');
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(1);
     expect(acks[0].kind).toBe('tool_failed');
-    expect(acks[0].name).toBe('miaou__delete_memory');
+    expect(acks[0].name).toBe('miaou__memory__delete');
   });
 });
 
@@ -611,8 +611,8 @@ describe('MEMORY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PRO
   it('retourne une chaîne non vide', function() {
     expect(MEMORY_DOCTRINE.length > 0).toBeTruthy();
   });
-  it('mentionne create_memory et ask_confirmation pour orienter le modèle', function() {
-    expect(MEMORY_DOCTRINE.indexOf('create_memory') >= 0).toBeTruthy();
+  it('mentionne memory__create et ask_confirmation pour orienter le modèle', function() {
+    expect(MEMORY_DOCTRINE.indexOf('memory__create') >= 0).toBeTruthy();
     expect(MEMORY_DOCTRINE.indexOf('ask_confirmation') >= 0).toBeTruthy();
   });
 });
@@ -670,20 +670,20 @@ describe('exposedTools / préfixage miaou__ (V2)', function() {
   it('toolDefinitions expose les noms préfixés + ask_confirmation nu', function() {
     var defs = toolDefinitions();
     var names = defs.map(function(d){ return d.function.name; });
-    expect(names.indexOf('miaou__create_memory') >= 0).toBeTruthy();
+    expect(names.indexOf('miaou__memory__create') >= 0).toBeTruthy();
     expect(names.indexOf('ask_confirmation') >= 0).toBeTruthy();   // hors registre, NON préfixé
-    expect(names.indexOf('create_memory') < 0).toBeTruthy();        // plus de nom nu exposé
+    expect(names.indexOf('memory__create') < 0).toBeTruthy();        // plus de nom nu exposé
   });
 });
 
 describe('callTool (routage par préfixe, D1)', function() {
   it('miaou__ route vers le dispatch interne', function() {
-    var r = callTool('miaou__get_conversation', { id: 'inexistant' });
+    var r = callTool('miaou__conv__get', { id: 'inexistant' });
     expect(r.isError).toBeFalsy();
     expect(flattenToolResult(r)).toContain('introuvable');
   });
   it('nom nu (sans préfixe) route aussi vers l\'interne', function() {
-    var r = callTool('get_conversation', { id: 'inexistant' });
+    var r = callTool('conv__get', { id: 'inexistant' });
     expect(r.isError).toBeFalsy();
   });
   it('outil interne inconnu → erreur propre', function() {
@@ -1061,25 +1061,25 @@ describe('validateResourceCreateArgs (lot O) — extrait du handler async pour r
   });
 });
 
-describe('resource_create — définition d\'outil et doctrine (lot O)', function() {
-  it('resource_create est dans TOOLS avec content requis, mode inline uniquement', function() {
-    const def = TOOLS.find(t => t.name === 'resource_create');
+describe('resource__create — définition d\'outil et doctrine (lot O)', function() {
+  it('resource__create est dans TOOLS avec content requis, mode inline uniquement', function() {
+    const def = TOOLS.find(t => t.name === 'resource__create');
     expect(def).toBeTruthy();
     expect(def.inputSchema.required.indexOf('content') >= 0).toBeTruthy();
     expect(def.inputSchema.properties.ref).toBe(undefined);
   });
   it('RESOURCE_DOCTRINE fait partie de ROOT_SYSTEM_PROMPT (toujours injectée)', function() {
-    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource_create') >= 0).toBeTruthy();
-    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource_from_result') >= 0).toBeTruthy();
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource__create') >= 0).toBeTruthy();
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource__from_result') >= 0).toBeTruthy();
   });
-  it('la description de resource_create pointe vers js__eval et exclut la conversion de tool result', function() {
-    const def = TOOLS.find(t => t.name === 'resource_create');
+  it('la description de resource__create pointe vers js__eval et exclut la conversion de tool result', function() {
+    const def = TOOLS.find(t => t.name === 'resource__create');
     expect(def.description.indexOf('js__eval') >= 0).toBeTruthy();
-    expect(def.description.indexOf('resource_from_result') >= 0).toBeTruthy();
+    expect(def.description.indexOf('resource__from_result') >= 0).toBeTruthy();
   });
   it('toolIsHalting reste exclusivement câblé sur ask_confirmation (pas de régression)', function() {
-    expect(toolIsHalting('resource_create')).toBe(false);
-    expect(toolIsHalting('miaou__resource_create')).toBe(false);
+    expect(toolIsHalting('resource__create')).toBe(false);
+    expect(toolIsHalting('miaou__resource__create')).toBe(false);
   });
 });
 
@@ -1101,7 +1101,7 @@ describe('validateResourceFromResultArgs (lot O-2) — extrait du handler async'
   });
 });
 
-describe('isInlineHandleResult (idempotence resource_from_result, lot O-2)', function() {
+describe('isInlineHandleResult (idempotence resource__from_result, lot O-2)', function() {
   it('reconnaît une sortie de formatInlineHandleForModel comme déjà-handle', function() {
     const handle = formatInlineHandleForModel('res_x', 'text/plain', null);
     expect(isInlineHandleResult(handle)).toBe(true);
@@ -1115,23 +1115,23 @@ describe('isInlineHandleResult (idempotence resource_from_result, lot O-2)', fun
   });
 });
 
-describe('resource_from_result — définition d\'outil (lot O-2)', function() {
-  it('resource_from_result est dans TOOLS avec ref ET description requis (schéma pleinement contraint)', function() {
-    const def = TOOLS.find(t => t.name === 'resource_from_result');
+describe('resource__from_result — définition d\'outil (lot O-2)', function() {
+  it('resource__from_result est dans TOOLS avec ref ET description requis (schéma pleinement contraint)', function() {
+    const def = TOOLS.find(t => t.name === 'resource__from_result');
     expect(def).toBeTruthy();
     expect(def.inputSchema.required.indexOf('ref') >= 0).toBeTruthy();
     expect(def.inputSchema.required.indexOf('description') >= 0).toBeTruthy();
     expect(def.inputSchema.properties.content).toBe(undefined);   // pas de mode inline ici
   });
-  it('la description pointe vers js__eval, l\'allègement de contexte, et renvoie vers resource_create', function() {
-    const def = TOOLS.find(t => t.name === 'resource_from_result');
+  it('la description pointe vers js__eval, l\'allègement de contexte, et renvoie vers resource__create', function() {
+    const def = TOOLS.find(t => t.name === 'resource__from_result');
     expect(def.description.indexOf('js__eval') >= 0).toBeTruthy();
-    expect(def.description.indexOf('resource_create') >= 0).toBeTruthy();
+    expect(def.description.indexOf('resource__create') >= 0).toBeTruthy();
     expect(def.description.indexOf('call:') >= 0).toBeTruthy();
   });
   it('n\'est pas halting', function() {
-    expect(toolIsHalting('resource_from_result')).toBe(false);
-    expect(toolIsHalting('miaou__resource_from_result')).toBe(false);
+    expect(toolIsHalting('resource__from_result')).toBe(false);
+    expect(toolIsHalting('miaou__resource__from_result')).toBe(false);
   });
 });
 
@@ -1397,7 +1397,7 @@ describe('classifyHandleRef (famille de handle, lot L)', function() {
 describe('toolFail — ack d\'échec des outils natifs', function() {
   it('pousse un ack tool_failed en erreur et renvoie le message inchangé', function() {
     clearPendingToolAcks();
-    var msg = toolFail('update_memory', 'Souvenir introuvable.');
+    var msg = toolFail('memory__update', 'Souvenir introuvable.');
     expect(msg).toBe('Souvenir introuvable.');   // tool result byte-identique
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(1);
@@ -1440,7 +1440,7 @@ describe('toolFail — ack d\'échec des outils natifs', function() {
   });
   it('l\'ack d\'échec est rouge (ackIsError le reconnaît via error)', function() {
     clearPendingToolAcks();
-    toolFail('create_memory', 'Contenu vide — souvenir ignoré.');
+    toolFail('memory__create', 'Contenu vide — souvenir ignoré.');
     expect(ackIsError(getPendingToolAcks()[0])).toBe(true);
   });
 });

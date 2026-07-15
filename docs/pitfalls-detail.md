@@ -229,7 +229,7 @@ au KV cache, ou à la synchro multi-onglets.
     `size`, posés au lot 1 lors du downscale/stockage) — **jamais recalculé**
     depuis les octets à un tour ultérieur, exactement comme `stampTs` n'est
     jamais recalculé pour un résultat d'outil réinjecté. Le nom `miaou__recall_attachment`
-    est un choix acté : le brief d'origine écrivait `miaou__present_resource`,
+    est un choix acté : le brief d'origine écrivait `miaou__resource__present`,
     mais un outil de ce nom existe déjà dans le registre (`res_…`, id-space
     distinct) — collision signalée à l'audit, résolue par un nom d'outil
     différent (cet outil de rappel lui-même est un lot ultérieur, D4, non
@@ -270,9 +270,9 @@ au KV cache, ou à la synchro multi-onglets.
       `c.spaceId === activeSpaceId` avant tout regroupement par section/épinglage.
     - `searchConversations()` (ui.js) n'a pas besoin de connaître le Space : son
       closure filtre un tableau déjà scopé par l'appelant (`renderConvList`).
-    - `list_conversations`/`get_conversation` (tools.js) : le modèle ne doit
+    - `conv__list`/`conv__get` (tools.js) : le modèle ne doit
       **jamais** voir ni référencer une conversation d'un autre Space —
-      `get_conversation` sur un id hors-Space répond exactement le même message
+      `conv__get` sur un id hors-Space répond exactement le même message
       que pour un id inexistant (« Conversation introuvable ou souvenir
       supprimé. ») : **pas d'oracle** qui permettrait de déduire l'existence
       d'une conversation dans un autre Space par la différence de message.
@@ -282,18 +282,18 @@ au KV cache, ou à la synchro multi-onglets.
       `spaceId` dupliqué, la jointure se fait via la conversation.
     - Mémoire (brief D3) : `buildMemoryEntriesBlock()` (main.js) injecte
       `listMemoryEntries(['profile', activeSpaceId])` — profile (global) + Space
-      actif, jamais les souvenirs d'un autre Space. `create_memory` stampe
+      actif, jamais les souvenirs d'un autre Space. `memory__create` stampe
       `scope = activeSpaceId` sans exposer de paramètre scope au modèle ;
-      `update_memory`/`delete_memory` vérifient `existing.scope === activeSpaceId`
+      `memory__update`/`memory__delete` vérifient `existing.scope === activeSpaceId`
       avant d'agir et répondent « Souvenir introuvable. » sinon — même posture
-      sans-oracle que `get_conversation`.
+      sans-oracle que `conv__get`.
     - **Bibliothèque de fichiers d'espace (lot Cbis)** : `getResourcesBySpace(spaceId)`
       (resources.js, IDB, index `by_space`) et son miroir synchrone
       `getCachedLibraryEntriesBySpace(spaceId)` (scan du cache session
       `_resourceCache`, filtre `rec.kind === 'library' && rec.spaceId === spaceId`)
       sont les points de scoping. `files__list`/`files__read` (tools.js) filtrent
       par `spaceId === activeSpaceId` ; un `file-<id>` étranger ou inconnu répond
-      « Fichier introuvable. » — même posture sans-oracle que `get_conversation`/
+      « Fichier introuvable. » — même posture sans-oracle que `conv__get`/
       les mémoires (pas de distinction de message entre « existe dans un autre
       Space » et « n'existe pas »). Suppression d'un Space (`onDeleteSpaceScreen`,
       ui.js) purge aussi ses fichiers via `getResourcesBySpace` + `deleteResource`

@@ -29,7 +29,7 @@ const BINARY_DOCTRINE =
   "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
   "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
   "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-  "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
+  "placeholder inventé. N'appelle pas resource__present pour une image sans demande explicite : " +
   "l'application l'a déjà présentée à l'utilisateur.";
 
 // Doctrine comportementale : pièces jointes de message (brief A, D4 ; corrigée
@@ -66,7 +66,7 @@ const ATTACHMENT_DOCTRINE =
 // angles dans la v1, est fusionné en UN bullet ; l'interception des binaires
 // produits par un outil (enregistrement en ressource + ID + présentation auto)
 // n'est plus répétée ici — BINARY_DOCTRINE la couvre déjà, y compris
-// l'interdiction present_resource sur image. Les contraintes conservées sont
+// l'interdiction resource__present sur image. Les contraintes conservées sont
 // inchangées sur le fond : fetch_url obligatoire (snippets ET URLs d'image),
 // pas de Markdown pour une ressource déjà présentée, règle des miniatures.
 const WEB_DOCTRINE =
@@ -94,15 +94,15 @@ const WEB_DOCTRINE =
   "</SANS_ACCES_WEB>\n";
 
 // Doctrine comportementale : référence à une conversation passée. Toujours
-// injectée quand des outils existent (get_conversation/list_conversations en
+// injectée quand des outils existent (conv__get/conv__list en
 // font partie du registre de base) — même statut que BINARY_DOCTRINE. Le
 // marqueur [conv_ref:ID] (ou [conv_ref:ID|Titre] si le titre est déjà connu du
 // modèle) est résolu côté client en lien cliquable affichant le TITRE, jamais
 // l'ID brut ; le titre est optionnel car l'application le retrouve elle-même
 // depuis l'index des résumés si absent. Partie de ROOT_SYSTEM_PROMPT.
 const CONV_REF_DOCTRINE =
-  "Quand tu mentionnes une conversation passée obtenue via get_conversation ou " +
-  "list_conversations (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
+  "Quand tu mentionnes une conversation passée obtenue via conv__get ou " +
+  "conv__list (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
   "son identifiant technique en clair (pas de guillemets, pas de backticks, pas " +
   "de texte brut du type « conversation abc123 ») : utilise le marqueur " +
   "[conv_ref:ID] ou, si tu connais déjà son titre, [conv_ref:ID|Titre] — " +
@@ -111,7 +111,7 @@ const CONV_REF_DOCTRINE =
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
-  "CHEMIN DIRECT — appelle miaou__create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
+  "CHEMIN DIRECT — appelle miaou__memory__create immédiatement (sans demander) quand l'utilisateur :\n" +
   "  - donne une instruction durable explicite : \"souviens-toi que\", \"retiens\", \"dorénavant\", " +
   "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\"\n" +
   "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
@@ -124,13 +124,13 @@ const MEMORY_DOCTRINE =
   "ce chemin pour proposer de le retenir. La question doit contenir LITTÉRALEMENT le " +
   "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
   "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
-  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__create_memory dans ce même tour.\n\n" +
+  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__memory__create dans ce même tour.\n\n" +
   "CHEMIN CORRECTION — quand l'utilisateur répond en texte libre à une question ask_confirmation " +
   "(au lieu de cliquer Accepter/Rejeter) et que sa réponse contient une valeur corrigée " +
-  "(ex. « non, plutôt un modèle Y »), appelle miaou__create_memory avec la valeur corrigée. " +
+  "(ex. « non, plutôt un modèle Y »), appelle miaou__memory__create avec la valeur corrigée. " +
   "Ne pas se contenter d'acquitter en texte.\n\n" +
   "MISE À JOUR / SUPPRESSION : si un souvenir existant devient obsolète ou inexact, " +
-  "appelle miaou__update_memory (correction in-place) ou miaou__delete_memory (tombstone réversible).\n\n" +
+  "appelle miaou__memory__update (correction in-place) ou miaou__memory__delete (tombstone réversible).\n\n" +
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
@@ -216,9 +216,9 @@ const JS_EVAL_DOCTRINE =
   "<miaou_skills_context> si présente) : elle donne la signature d'appel exacte, " +
   "les primitives disponibles dans le bac à sable et le détail des contraintes de sortie.";
 
-// Doctrine de déclenchement resource_create / resource_from_result (lot O).
+// Doctrine de déclenchement resource__create / resource__from_result (lot O).
 // INCONDITIONNELLE comme JS_EVAL_DOCTRINE (les deux outils sont natifs, toujours
-// présents) : posée dès O-1 en couvrant DÉJÀ le réflexe resource_from_result
+// présents) : posée dès O-1 en couvrant DÉJÀ le réflexe resource__from_result
 // (livré en O-2) pour éviter une 2ᵉ invalidation KV cache (piège 16, assumé une
 // fois — mémoire project_kv_cache_invalidation_accepted_once). QUAND seulement :
 // le QUOI de chaque outil vit dans sa description (pas de duplication de la
@@ -226,9 +226,9 @@ const JS_EVAL_DOCTRINE =
 const RESOURCE_DOCTRINE =
   "Deux outils permettent de ranger du texte en ressource adressable (res_…), " +
   "exploitable ensuite par miaou__js__eval sans repayer ce texte en tokens : " +
-  "miaou__resource_create quand TU as produit ou recomposé un texte volumineux " +
+  "miaou__resource__create quand TU as produit ou recomposé un texte volumineux " +
   "que tu voudras interroger plus tard (au lieu de l'écrire en clair dans ta " +
-  "réponse) ; miaou__resource_from_result quand un résultat d'outil déjà présent " +
+  "réponse) ; miaou__resource__from_result quand un résultat d'outil déjà présent " +
   "plus haut dans la conversation encombre le contexte et que tu veux le garder " +
   "exploitable sans le traîner à chaque tour. N'utilise ni l'un ni l'autre pour " +
   "un texte court que tu peux simplement écrire dans ta réponse.";
@@ -354,7 +354,7 @@ function updateLastPendingToolAck(fields, minLength) {
 
 // Sortie en échec d'un outil NATIF : pousse un ack `tool_failed` (rouge, cf.
 // ackIsError) ET retourne le message, pour que le site d'appel reste une seule
-// ligne — `return toolFail('update_memory', 'Souvenir introuvable.')`.
+// ligne — `return toolFail('memory__update', 'Souvenir introuvable.')`.
 //
 // Le retour est la chaîne NUE, inchangée : le tool result envoyé au modèle reste
 // byte-identique à ce qu'il était avant l'introduction des acks d'échec (aucun
@@ -364,9 +364,9 @@ function updateLastPendingToolAck(fields, minLength) {
 // Historique : les handlers faisaient `return 'Souvenir introuvable.'` sans
 // pousser d'ack. Le modèle recevait bien l'erreur, mais l'appel n'apparaissait
 // NULLE PART dans le fil (pas un ack blanc : aucun ack). L'utilisateur ne voyait
-// donc pas passer un update_memory qui avait raté sa cible.
+// donc pas passer un memory__update qui avait raté sa cible.
 //
-// `toolName` est le nom NU du handler (`update_memory`), comme déclaré dans TOOLS ;
+// `toolName` est le nom NU du handler (`memory__update`), comme déclaré dans TOOLS ;
 // le préfixe `miaou__` est ajouté ICI, une seule fois, pour que l'ack porte le nom
 // canonique que le modèle a réellement appelé (cohérent avec mcp_call qui affiche
 // `server__tool`) sans dupliquer le préfixe sur chaque site d'appel.
@@ -400,7 +400,7 @@ function validateFilesPromoteArgs(args) {
   return '';
 }
 
-// Validation pure des arguments de resource_create (lot O) — même motif que
+// Validation pure des arguments de resource__create (lot O) — même motif que
 // validateFilesPromoteArgs : extraite pour rester testable QuickJS malgré le
 // handler async. Retourne un message d'erreur si invalide, '' sinon.
 function validateResourceCreateArgs(args) {
@@ -409,7 +409,7 @@ function validateResourceCreateArgs(args) {
   return '';
 }
 
-// Validation pure des arguments de resource_from_result (lot O-2) — schéma
+// Validation pure des arguments de resource__from_result (lot O-2) — schéma
 // pleinement contraint (pas de conditionnalité hors-schéma, tout le gain des
 // deux outils séparés) : `ref` (id call:…) ET `description` (résumé modèle)
 // requis, sans exclusivité à gérer. Testable QuickJS malgré le handler async.
@@ -421,7 +421,7 @@ function validateResourceFromResultArgs(args) {
 }
 
 // Détecte qu'un `result` d'ack est DÉJÀ un handle inline model-side (sortie de
-// formatInlineHandleForModel) — idempotence de resource_from_result : convertir
+// formatInlineHandleForModel) — idempotence de resource__from_result : convertir
 // deux fois un même tool result est un refus propre, pas une double
 // matérialisation. Marqueur stable de formatInlineHandleForModel.
 function isInlineHandleResult(result) {
@@ -433,7 +433,7 @@ function isInlineHandleResult(result) {
 // handler }. ask_confirmation est exclu (primitif halting, voir ASK_CONFIRMATION_DEF).
 const TOOLS = [
   {
-    name: 'get_conversation',
+    name: 'conv__get',
     description:
       "Récupère une conversation passée par son identifiant. Par défaut " +
       "(with_contents=false), retourne seulement son résumé et ses mots-clés ; " +
@@ -453,14 +453,14 @@ const TOOLS = [
       // même message ET le même ack — l'absence d'oracle vise le MODÈLE, et un ack
       // `tool_failed` identique dans les deux cas n'en crée aucun. (L'utilisateur,
       // lui, doit bien voir que le modèle a tenté la lecture : c'est le but.)
-      if (!entry || entry.suppressed) return toolFail('get_conversation', 'Conversation introuvable ou souvenir supprimé.');
+      if (!entry || entry.suppressed) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
       // activeSpaceId est une global de main.js, accès défensif car tools.js est
       // aussi évalué seul (test runner). Un résumé orphelin (conversation supprimée,
       // index conservé) n'a pas de Space propre : traité comme default Space.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
       const conv = loadConversation(args.id);   // storage.js — un seul chargement (herméticité ET contenu)
       const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
-      if (convSpace !== spaceId) return toolFail('get_conversation', 'Conversation introuvable ou souvenir supprimé.');
+      if (convSpace !== spaceId) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
@@ -469,7 +469,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'list_conversations',
+    name: 'conv__list',
     description:
       "Liste les conversations passées (résumé + mots-clés par défaut), hors " +
       "la conversation en cours. Le paramètre since est OPTIONNEL : l'omettre " +
@@ -507,7 +507,7 @@ const TOOLS = [
       if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
-        if (Number.isNaN(sinceMs)) return toolFail('list_conversations', 'Date "since" invalide (attendu ISO 8601).');
+        if (Number.isNaN(sinceMs)) return toolFail('conv__list', 'Date "since" invalide (attendu ISO 8601).');
         entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
       }
       if (args.query != null && args.query !== '') {
@@ -524,7 +524,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'create_memory',
+    name: 'memory__create',
     description:
       "Enregistre immédiatement un nouveau souvenir persistant. Utiliser sur le " +
       "CHEMIN DIRECT uniquement (instruction explicite de l'utilisateur). Voir doctrine mémoire.",
@@ -537,7 +537,7 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args) => {
-      if (!args.content || !args.content.trim()) return toolFail('create_memory', 'Contenu vide — souvenir ignoré.');
+      if (!args.content || !args.content.trim()) return toolFail('memory__create', 'Contenu vide — souvenir ignoré.');
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
@@ -551,7 +551,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'update_memory',
+    name: 'memory__update',
     description:
       "Corrige un souvenir existant en place (pas de tombstone). Utiliser quand " +
       "un fait enregistré est devenu inexact ou doit être précisé. Voir doctrine mémoire.",
@@ -565,14 +565,14 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
     handler: (args) => {
-      if (!args.id || !args.content || !args.content.trim()) return toolFail('update_memory', 'Paramètres invalides.');
+      if (!args.id || !args.content || !args.content.trim()) return toolFail('memory__update', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
       // Herméticité (brief D3, extension D2) : hors du Space actif (ou scope
-      // profile) = « introuvable », même posture sans-oracle que get_conversation.
+      // profile) = « introuvable », même posture sans-oracle que conv__get.
       // Une entrée sans scope (pré-migration) vaut default Space.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('update_memory', 'Souvenir introuvable.');
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('memory__update', 'Souvenir introuvable.');
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -584,7 +584,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'present_resource',
+    name: 'resource__present',
     description:
       "Présente une ressource stockée (image, texte, fichier binaire) à l'utilisateur " +
       "en l'affichant dans le thread. Utiliser l'identifiant renvoyé lors du stockage de " +
@@ -600,10 +600,10 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const id = String(args.id || '');
-      if (!id) return toolFail('present_resource', 'Identifiant manquant.');
+      if (!id) return toolFail('resource__present', 'Identifiant manquant.');
       // getCachedRecord et makeResourcePresentBlock sont dans resources.js (chargé avant).
       const record = getCachedRecord(id);
-      if (!record) return toolFail('present_resource', 'Ressource introuvable (identifiant inconnu ou non disponible en session).');
+      if (!record) return toolFail('resource__present', 'Ressource introuvable (identifiant inconnu ou non disponible en session).');
       // Le rendu du bloc est délégué à placeToolAck (live et reload via même chemin).
       _pendingToolAcks.push({ kind: 'resource_presented', id, resourceName: record.name, mime: record.mime });
       return 'Ressource présentée à l\'utilisateur.';
@@ -635,7 +635,7 @@ const TOOLS = [
       if (!ref) return toolFail('recall_attachment', 'Identifiant manquant.');
       // getCachedRecordByAttId est dans resources.js (chargé avant). currentConvId
       // est une global de main.js — accès défensif (tools.js évalué seul par le
-      // test runner), même pattern que list_conversations ci-dessus.
+      // test runner), même pattern que conv__list ci-dessus.
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const record = getCachedRecordByAttId(ref, activeId);
       if (!record) return toolFail('recall_attachment', 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).');
@@ -680,7 +680,7 @@ const TOOLS = [
     handler: () => {
       // Herméticité (piège 18, lot Cbis) : bibliothèque du Space actif SEULEMENT.
       // activeSpaceId est une global de main.js — accès défensif (tools.js aussi
-      // évalué seul par le test runner), même pattern que get_conversation.
+      // évalué seul par le test runner), même pattern que conv__get.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
       const entries = getCachedLibraryEntriesBySpace(spaceId);   // resources.js (chargé avant)
       const light = entries.map(e => ({
@@ -711,7 +711,7 @@ const TOOLS = [
       const recordId = parseLibraryRef(String(args.id || ''));   // resources.js
       if (!recordId) return toolFail('files__read', 'Fichier introuvable.');
       const record = getCachedRecord(recordId);   // resources.js — cache session unifié
-      // Foreign-Space ou id inconnu → même posture no-oracle que get_conversation/mémoires
+      // Foreign-Space ou id inconnu → même posture no-oracle que conv__get/mémoires
       // (message ET ack identiques dans les deux sorties : aucun oracle créé).
       if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return toolFail('files__read', 'Fichier introuvable.');
       _pendingToolAcks.push({ kind: 'files_read', id: args.id, resourceName: record.name, mime: record.mime });
@@ -784,19 +784,19 @@ const TOOLS = [
     },
   },
   {
-    name: 'resource_create',
+    name: 'resource__create',
     // Description v1 (lot O) : QUOI (ranger un texte fourni en ressource res_…)
     // + l'aval js__eval (AUDIT-O §7bis) pour guider le modèle sans dupliquer le
     // QUAND, porté par RESOURCE_DOCTRINE (ROOT_SYSTEM_PROMPT). Mode inline
     // UNIQUEMENT — la conversion d'un tool result passé est un outil séparé
-    // (resource_from_result).
+    // (resource__from_result).
     description:
       "Range un texte que TU fournis directement (contenu déjà en main : composé, " +
       "recomposé, ou recopié) en ressource res_… adressable, sans l'afficher tel quel " +
       "dans ta réponse. Le handle renvoyé se passe ensuite à miaou__js__eval(handle, code) " +
       "pour compter/filtrer/agréger/extraire sans repayer ce texte en tokens à chaque tour. " +
       "N'accepte PAS de référence à un résultat d'outil passé — pour convertir un tool " +
-      "result déjà dans l'historique, utilise miaou__resource_from_result.",
+      "result déjà dans l'historique, utilise miaou__resource__from_result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -811,13 +811,13 @@ const TOOLS = [
       // validateResourceCreateArgs reste PURE (testée à part) : elle renvoie le
       // message, c'est le site de sortie qui pousse l'ack (cf. toolFail).
       const invalid = validateResourceCreateArgs(args);
-      if (invalid) return toolFail('resource_create', invalid);
+      if (invalid) return toolFail('resource__create', invalid);
       const content = String(args.content || '');
       const mime = args.mime ? String(args.mime).trim() : 'text/plain';
       const name = args.name ? String(args.name).trim() : 'resource';
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const id = await _storeBlock(mime, name, utf8Encode(content), 'inline', activeId, Date.now(), Math.random);
-      if (!id) return toolFail('resource_create', 'Échec de stockage.');
+      if (!id) return toolFail('resource__create', 'Échec de stockage.');
       // JAMAIS _makeResourceRef ici (AUDIT-O §5) : un [resource_ref:…] vers un
       // record 'inline' ré-inlinerait tout le contenu au tour suivant. L'ack
       // resource_stored est déjà poussé par _storeBlock, rien à pousser ici.
@@ -825,10 +825,10 @@ const TOOLS = [
     },
   },
   {
-    name: 'resource_from_result',
+    name: 'resource__from_result',
     // Description v1 (lot O-2) : QUOI (convertir un tool result passé en
     // ressource res_… + ALLÉGER le contexte, le gros contenu quitte l'historique)
-    // + l'aval js__eval mutualisé avec resource_create. Le QUAND est en doctrine
+    // + l'aval js__eval mutualisé avec resource__create. Le QUAND est en doctrine
     // (RESOURCE_DOCTRINE). Adressage par id call:… exposé sur chaque tool result
     // réinjecté (expandThread, marqueur [call:…]).
     description:
@@ -838,7 +838,7 @@ const TOOLS = [
       "remplacé par un handle compact + ta description. Le handle se passe ensuite à " +
       "miaou__js__eval(handle, code) pour compter/filtrer/agréger/extraire sans " +
       "repayer ce texte en tokens. Pour ranger un texte que TU fournis directement " +
-      "(pas un résultat d'outil passé), utilise miaou__resource_create.",
+      "(pas un résultat d'outil passé), utilise miaou__resource__create.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -851,7 +851,7 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args) => {
       const invalid = validateResourceFromResultArgs(args);
-      if (invalid) return toolFail('resource_from_result', invalid);
+      if (invalid) return toolFail('resource__from_result', invalid);
       const ref = String(args.ref || '').trim();
       const description = String(args.description || '').trim();
       const name = args.name ? String(args.name).trim() : 'resource';
@@ -860,17 +860,17 @@ const TOOLS = [
       // await_reentrancy_guard) : findAckByCallId partage la dérivation d'id
       // avec expandThread (source unique, jamais dupliquée).
       const hit = findAckByCallId(thread, ref);
-      if (!hit) return toolFail('resource_from_result', 'Résultat introuvable.');
+      if (!hit) return toolFail('resource__from_result', 'Résultat introuvable.');
       const targetAck = hit.ack;
       if (isInlineHandleResult(targetAck.result)) {
-        return toolFail('resource_from_result', 'Ce résultat est déjà une ressource.');
+        return toolFail('resource__from_result', 'Ce résultat est déjà une ressource.');
       }
       const text = targetAck.result != null ? String(targetAck.result) : '';
-      if (!text) return toolFail('resource_from_result', 'Résultat vide, rien à convertir.');
+      if (!text) return toolFail('resource__from_result', 'Résultat vide, rien à convertir.');
       const mime = 'text/plain';
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const id = await _storeBlock(mime, name, utf8Encode(text), 'inline', activeId, Date.now(), Math.random);
-      if (!id) return toolFail('resource_from_result', 'Échec de stockage.');
+      if (!id) return toolFail('resource__from_result', 'Échec de stockage.');
       // JAMAIS _makeResourceRef (AUDIT-O §5) — record 'inline', un ref
       // ré-inlinerait tout au tour suivant. Handle compact + description modèle.
       const handle = formatInlineHandleForModel(id, mime, getCachedRecord(id)) + ' — ' + description;
@@ -890,7 +890,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'delete_memory',
+    name: 'memory__delete',
     description:
       "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
       "quand un fait enregistré n'est plus pertinent. Voir doctrine mémoire.",
@@ -903,10 +903,10 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
     handler: (args) => {
-      if (!args.id) return toolFail('delete_memory', 'Identifiant manquant.');
+      if (!args.id) return toolFail('memory__delete', 'Identifiant manquant.');
       const existing = loadMemories().find(e => e.id === args.id);
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('delete_memory', 'Souvenir introuvable.');
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('memory__delete', 'Souvenir introuvable.');
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';
@@ -1447,7 +1447,14 @@ function callInternalTool(toolName, args) {
 // entry.args via onEnrichLastAck → réinjectés tels quels aux tours suivants.
 function callTool(name, args) {
   const parsed = parseToolName(name);
-  if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
+  // Le REGISTRE tranche, pas la forme du nom : depuis que des outils internes
+  // portent un sous-namespace (`memory__`, `conv__`, `resource__`, lot P), le
+  // split de parseToolName sur le PREMIER `__` prendrait `memory` pour un préfixe
+  // serveur MCP et `memory__update` serait routé vers un serveur inexistant.
+  // resolveInternalToolName (utils.js, pur) rend le nom canonique interne si le
+  // nom — nu ou préfixé `miaou__` — existe dans TOOLS, sinon null → vrai serveur.
+  const internalName = resolveInternalToolName(name, TOOLS);
+  if (internalName != null) {
     const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
@@ -1457,7 +1464,7 @@ function callTool(name, args) {
     // sans ce garde, l'intent se poserait sur l'ack d'un outil ANTÉRIEUR du même
     // tour multi-outils (cf. B5, campagne 2026-07-09).
     const baseAcks = _pendingToolAcks.length;
-    const result = callInternalTool(parsed.toolName, cleanArgs);
+    const result = callInternalTool(internalName, cleanArgs);
     // Attache l'intent au dernier ack en attente. La plupart des handlers poussent
     // leur ack de façon synchrone (avant le retour de callInternalTool) ; certains
     // (ex. skills__read) ne le poussent qu'après résolution de leur Promise — dans
@@ -1470,6 +1477,12 @@ function callTool(name, args) {
       updateLastPendingToolAck({ intent }, baseAcks);
     }
     return result;
+  }
+  // Préfixe `miaou`/absent mais nom non résolu en interne → outil interne INCONNU
+  // (pas un serveur MCP nommé `miaou` ou `''`) : garde la sémantique d'origine
+  // (« Outil inconnu ») + son ack d'échec, plutôt qu'un trompeur « Serveur MCP … ».
+  if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
+    return callInternalTool(parsed.toolName, args || {});
   }
   const server = getMcpServer(parsed.serverPrefix);   // storage.js
   if (!server || server.enabled === false) {
@@ -1976,7 +1989,7 @@ function intentDoctrinePrompt() {
 // confirmSkillAutoUse, retiré) : le halting jette tout le tour, y compris le
 // contenu de skills__read (cf. api.js onHalt) — au tour suivant (« Oui ») le
 // modèle n'a plus ce contenu, doit le relire, reconfirme, boucle sans jamais
-// agir. Bug structurel du mécanisme fork B (conçu pour create_memory, où la
+// agir. Bug structurel du mécanisme fork B (conçu pour memory__create, où la
 // question seule suffit), pas un défaut d'obéissance du modèle — observé en
 // pratique. La confirmation reste inutile de toute façon : lire une skill n'a
 // pas d'effet de bord, seul agir dessus en a un, et l'utilisateur voit l'appel

@@ -80,7 +80,7 @@ vide), `skillDoctrinePrompt` conditionnel sur skills autotrigger, jamais de
 confirmation), **export Markdown des
 traces d'outils** (`formatToolAcksMd` : singulier/pluriel, `intent` présent/absent,
 erreur, troncature args/résultat/nom de ressource, `resource_presented` sans
-data embarquée, ack sans `args`), **`list_conversations`** (filtre `query` via
+data embarquée, ack sans `args`), **`conv__list`** (filtre `query` via
 `tokenize`/`scoreSummary` cumulable avec `since`, exclusion de la conversation
 courante via `currentConvId`, capture de `miaou_intent` sur un outil interne y
 compris via un handler async), **acks — label avec intent** (`ackLabel`

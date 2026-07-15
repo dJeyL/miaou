@@ -18,7 +18,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
    pas dans le system. Si `includeToolsInSystemPrompt` est activé, la description
    textuelle des outils s'ajoute au system.
 4. **Outil conversation** : question dont le résumé ne suffit pas → le modèle
-   appelle `get_conversation` ou `list_conversations`, et on va **jusqu'à la
+   appelle `conv__get` ou `conv__list`, et on va **jusqu'à la
    réponse finale**, pas seulement jusqu'au résultat de l'outil. Un ou plusieurs
    tool-ack (icône + label) apparaissent dans la bulle assistant, entre l'en-tête
    et la réponse. Les acks de lecture n'ont pas de bouton « annuler ». Rechargement
@@ -33,10 +33,10 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
    survol, pas de soulignement) qui ouvre la conversation référencée — vérifier
    que le clic fonctionne aussi bien juste après l'appel outil (rendu live) qu'après
    rechargement (conversation rouverte depuis l'historique).
-4b. **`list_conversations` avec `query`** : demander « cherche dans mes anciennes
+4b. **`conv__list` avec `query`** : demander « cherche dans mes anciennes
     conversations celles qui parlent de X » avec plusieurs conversations résumées
     en historique, dont une pertinente et une non pertinente sur X → le modèle
-    appelle `list_conversations` avec `query`, le résultat (visible en ajoutant
+    appelle `conv__list` avec `query`, le résultat (visible en ajoutant
     temporairement un `console.log` ou en inspectant le `role:'tool'` dans
     DevTools Network) ne contient que les conversations dont le résumé/titre/
     mots-clés recoupent la requête. La conversation **courante** (celle où la
@@ -67,18 +67,18 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
 5. **Plusieurs tool_calls par tour** : tous exécutés dans le même tour.
 6. **Anti-redemande** : redemander un appel rigoureusement identique dans le même
    échange ne redéclenche pas le handler ; deux appels distincts du même outil
-   (ex. deux `create_memory`) sont tous deux servis.
+   (ex. deux `memory__create`) sont tous deux servis.
 7. **Suppression réversible** : supprimer un souvenir → plus jamais re-résumé,
    même après redémarrage ; « Ré-autoriser » → régénéré au passage suivant.
 8. **Souvenirs — chemin direct** : "souviens-toi que X" → le modèle appelle
-   `create_memory` immédiatement, narration en un tour (pas de widget). Un
+   `memory__create` immédiatement, narration en un tour (pas de widget). Un
    tool-ack (icône + label + bouton « annuler ») s'insère dans la bulle ; annuler
    supprime définitivement l'entrée. Persiste au rechargement.
    **Chemin inféré** : mentionner un fait non sollicité → le modèle appelle
    `ask_confirmation`, background dim, composer actif (texte libre lève le widget).
-   Accepter → `create_memory` + tool-ack. Rejeter → rien écrit.
-   `update_memory` : tool-ack avec bouton annuler → rétablit le contenu précédent
-   (no-op si `prevContent` absent). `delete_memory` : tool-ack avec bouton annuler
+   Accepter → `memory__create` + tool-ack. Rejeter → rien écrit.
+   `memory__update` : tool-ack avec bouton annuler → rétablit le contenu précédent
+   (no-op si `prevContent` absent). `memory__delete` : tool-ack avec bouton annuler
    → lève la tombstone.
 9. **Pas de résumé sur conversation fraîche** : créer une conversation, envoyer un
    message, la quitter sans contenu substantiel → aucun résumé généré. La
@@ -221,7 +221,7 @@ Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
     avec espace, avec `__`, ou un doublon → message d'erreur, pas d'enregistrement.
     Enregistrer `bench` → la carte passe « ● connecté — N outils ».
 18. **Préfixage & registre unique** : ouvrir « Voir les outils exposés » → deux
-    namespaces, `miaou` (noms nus `create_memory`, …) et `bench` (`echo`,
+    namespaces, `miaou` (noms nus `memory__create`, …) et `bench` (`echo`,
     `get_image`, …). Dans le payload réseau, les outils internes sont envoyés
     préfixés `miaou__*`, `ask_confirmation` reste **nu**.
 19. **Délégation effective** : « utilise echo pour répéter "salut" » → le modèle
@@ -288,7 +288,7 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     JSON suivi du descripteur** `[resource id=res_… mime=… name="…" size=…]` — pas
     de base64, pas de `[resource_ref:…]`. Dans le payload réseau du tour suivant, le
     `role:'tool'` contient ce contenu directement (pas de résolution de ref). Le
-    modèle voit le JSON complet et l'ID, et peut appeler `miaou__present_resource`
+    modèle voit le JSON complet et l'ID, et peut appeler `miaou__resource__present`
     avec cet ID s'il juge utile d'afficher la ressource.
 
 29. **Ressource binaire (image)** : demander « utilise `get_image` ». Un chip
@@ -309,9 +309,9 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     résolue par `resolveResourceRefs` avant `expandThread`). Le préfixe
     `system + historique[0..N-2]` est byte-identique d'une requête à l'autre.
 
-31. **`present_resource`** : après les tests 28/29 (session cache chaud, ou après
+31. **`resource__present`** : après les tests 28/29 (session cache chaud, ou après
     rechargement qui recharge le cache), demander au modèle « utilise
-    `miaou__present_resource` avec l'id `res_…` de la ressource JSON ». Le résultat
+    `miaou__resource__present` avec l'id `res_…` de la ressource JSON ». Le résultat
     d'outil doit être `Ressource présentée à l'utilisateur.` ; un ack
     `resource_presented` (icône + label « Présentée : … ») s'insère dans la bulle ;
     le bloc JSON s'affiche inline dans la bulle. Même chose avec l'image binaire →
@@ -538,7 +538,7 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     en langage naturel — p. ex. « quel texte est écrit sur att-1 ? »). Le modèle
     doit appeler `miaou__recall_attachment`, un ack « Pièce jointe rappelée : … »
     doit apparaître dans le fil avec le bloc image affiché (même rendu que
-    `present_resource`). **Point clé A2/D3** : la réponse du modèle doit décrire
+    `resource__present`). **Point clé A2/D3** : la réponse du modèle doit décrire
     l'image **fidèlement** (pas de confabulation) — la ré-injection (message user
     synthétique porteur de la part image, généré par `expandThread`) fonctionne.
     Vérifier dans l'onglet Network que la requête `/completions` qui suit le
@@ -586,14 +586,14 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     conversation « Test A ». Basculer vers « Perso », créer « Test B ».
     Vérifier : la sidebar de « Perso » ne montre que « Test B » ; la
     recherche sidebar dans « Perso » ne retrouve jamais « Test A » (titre ou
-    contenu) ; demander au modèle (outil `list_conversations`) → ne doit
-    lister que « Test B ». Demander explicitement `get_conversation` sur
+    contenu) ; demander au modèle (outil `conv__list`) → ne doit
+    lister que « Test B ». Demander explicitement `conv__get` sur
     l'id technique de « Test A » (si connu) depuis « Perso » → réponse
     « introuvable », identique à un id inventé (pas d'oracle). Rebasculer
     vers « Général » → symétrique (« Test A » visible, « Test B » invisible
     partout).
 60. **Spaces — mémoire scopée et promotion.** Depuis « Perso », demander au
-    modèle de mémoriser un fait (`create_memory`, chemin direct). Basculer
+    modèle de mémoriser un fait (`memory__create`, chemin direct). Basculer
     vers « Général » : le souvenir ne doit apparaître ni dans l'injection de
     contexte ni dans l'onglet « Souvenirs » de « Général ». Retourner dans
     « Perso », ouvrir l'onglet sidebar « Souvenirs » (`selectSpaceTab('memories')`,

@@ -33,15 +33,15 @@ Prédicat unique `spaceConvIds(spaceId, convs)` (storage.js, pur). Sites
 branchés en C2 :
 - `renderConvList()` (ui.js) : filtre `listAllConversations()` sur
   `c.spaceId === activeSpaceId`.
-- `list_conversations` / `get_conversation` (tools.js) : réponse
+- `conv__list` / `conv__get` (tools.js) : réponse
   « introuvable » identique à un id inexistant pour toute conversation hors
   Space actif — pas d'oracle. Résumé orphelin (conversation supprimée) traité
   comme default Space.
 - Sélection d'injection de résumés : `searchSummaries(text, excludeId,
   spaceId)` (api.js) exclut les résumés hors-Space.
 - Mémoire : `buildMemoryEntriesBlock()` injecte scope `'profile'` +
-  `activeSpaceId` ; `create_memory` stampe le Space actif ; `update_memory`/
-  `delete_memory` refusent hors-Space (« Souvenir introuvable. »).
+  `activeSpaceId` ; `memory__create` stampe le Space actif ; `memory__update`/
+  `memory__delete` refusent hors-Space (« Souvenir introuvable. »).
 - Description de Space : `resolveUserSystemPrompt()` — la `description` du
   Space actif est **ajoutée après** le prompt système global (concaténation,
   jamais substitution — brief D4 corrigé). Changer de Space change donc le
@@ -192,7 +192,7 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
      name?)` — **consent-gated en amont**, voie B (voir ci-dessous).
 - **Accès modèle (lecture)** : `miaou__files__list` / `miaou__files__read`,
   read-only, scopés au Space actif (`getCachedLibraryEntriesBySpace`), même
-  posture no-oracle que `get_conversation` sur id étranger/inconnu. Lecture
+  posture no-oracle que `conv__get` sur id étranger/inconnu. Lecture
   binaire routée via le hook d'inflation mcp_docs généralisé (att-N ou
   file-<id>, cf. `docs/mcp.md`). Détail : `docs/tools.md`.
 - **Contexte** : manifeste compact (`buildLibraryManifestBlock`) injecté dans
@@ -205,7 +205,7 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   primitif halting existant (`ask_confirmation`) n'est **jamais** auto-rappelé
   par le même outil dans la base actuelle : le modèle l'appelle, obtient
   « Oui »/« Non » en texte, puis rappelle un AUTRE outil pour exécuter
-  (`create_memory` sur le chemin inféré mémoire, l'action d'une skill après
+  (`memory__create` sur le chemin inféré mémoire, l'action d'une skill après
   confirmation). La voie A envisagée initialement (généraliser `toolIsHalting`
   pour que `files__promote` soit lui-même halting-puis-exécutant) aurait
   introduit un patron inédit, non éprouvé, sur un primitif partagé — écartée
@@ -217,7 +217,7 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   rappeler ensuite avec le MÊME `ref`/`description`. Conséquence assumée : le
   gate repose
   sur la discipline du modèle, pas sur un verrou technique côté handler —
-  exactement le même modèle de confiance que pour `create_memory` sur le
+  exactement le même modèle de confiance que pour `memory__create` sur le
   chemin inféré, pas une régression de posture.
 - **Suppression** : cascade de suppression de Space purge aussi ses fichiers
   (`getResourcesBySpace` + `deleteResource` par entrée) ; suppression d'une

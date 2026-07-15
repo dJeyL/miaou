@@ -3320,7 +3320,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-15 17:58 UTC */
+/* miaou — built: 2026-07-15 18:28 UTC */
 
 /* ── utils.js ── */
 
@@ -3595,6 +3595,13 @@ function parseToolName(name) {
   const i = s.indexOf('__');
   if (i < 0) return { serverPrefix: '', toolName: s };
   return { serverPrefix: s.slice(0, i), toolName: s.slice(i + 2) };
+}
+
+function resolveInternalToolName(name, tools) {
+  const s = String(name || '');
+  const bare = s.indexOf('miaou__') === 0 ? s.slice('miaou__'.length) : s;
+  const hit = (tools || []).some(t => t && t.name === bare);
+  return hit ? bare : null;
 }
 
 function groupByNamespace(tools) {
@@ -4302,7 +4309,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784138288}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784140089}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -5733,7 +5740,7 @@ const BINARY_DOCTRINE =
   "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
   "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
   "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-  "placeholder inventé. N'appelle pas present_resource pour une image sans demande explicite : " +
+  "placeholder inventé. N'appelle pas resource__present pour une image sans demande explicite : " +
   "l'application l'a déjà présentée à l'utilisateur.";
 
 const ATTACHMENT_DOCTRINE =
@@ -5777,8 +5784,8 @@ const WEB_DOCTRINE =
   "</SANS_ACCES_WEB>\n";
 
 const CONV_REF_DOCTRINE =
-  "Quand tu mentionnes une conversation passée obtenue via get_conversation ou " +
-  "list_conversations (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
+  "Quand tu mentionnes une conversation passée obtenue via conv__get ou " +
+  "conv__list (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
   "son identifiant technique en clair (pas de guillemets, pas de backticks, pas " +
   "de texte brut du type « conversation abc123 ») : utilise le marqueur " +
   "[conv_ref:ID] ou, si tu connais déjà son titre, [conv_ref:ID|Titre] — " +
@@ -5786,7 +5793,7 @@ const CONV_REF_DOCTRINE =
 
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
-  "CHEMIN DIRECT — appelle miaou__create_memory immédiatement (sans demander) quand l'utilisateur :\n" +
+  "CHEMIN DIRECT — appelle miaou__memory__create immédiatement (sans demander) quand l'utilisateur :\n" +
   "  - donne une instruction durable explicite : \"souviens-toi que\", \"retiens\", \"dorénavant\", " +
   "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\"\n" +
   "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
@@ -5799,13 +5806,13 @@ const MEMORY_DOCTRINE =
   "ce chemin pour proposer de le retenir. La question doit contenir LITTÉRALEMENT le " +
   "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
   "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
-  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__create_memory dans ce même tour.\n\n" +
+  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__memory__create dans ce même tour.\n\n" +
   "CHEMIN CORRECTION — quand l'utilisateur répond en texte libre à une question ask_confirmation " +
   "(au lieu de cliquer Accepter/Rejeter) et que sa réponse contient une valeur corrigée " +
-  "(ex. « non, plutôt un modèle Y »), appelle miaou__create_memory avec la valeur corrigée. " +
+  "(ex. « non, plutôt un modèle Y »), appelle miaou__memory__create avec la valeur corrigée. " +
   "Ne pas se contenter d'acquitter en texte.\n\n" +
   "MISE À JOUR / SUPPRESSION : si un souvenir existant devient obsolète ou inexact, " +
-  "appelle miaou__update_memory (correction in-place) ou miaou__delete_memory (tombstone réversible).\n\n" +
+  "appelle miaou__memory__update (correction in-place) ou miaou__memory__delete (tombstone réversible).\n\n" +
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
@@ -5853,9 +5860,9 @@ const JS_EVAL_DOCTRINE =
 const RESOURCE_DOCTRINE =
   "Deux outils permettent de ranger du texte en ressource adressable (res_…), " +
   "exploitable ensuite par miaou__js__eval sans repayer ce texte en tokens : " +
-  "miaou__resource_create quand TU as produit ou recomposé un texte volumineux " +
+  "miaou__resource__create quand TU as produit ou recomposé un texte volumineux " +
   "que tu voudras interroger plus tard (au lieu de l'écrire en clair dans ta " +
-  "réponse) ; miaou__resource_from_result quand un résultat d'outil déjà présent " +
+  "réponse) ; miaou__resource__from_result quand un résultat d'outil déjà présent " +
   "plus haut dans la conversation encombre le contexte et que tu veux le garder " +
   "exploitable sans le traîner à chaque tour. N'utilise ni l'un ni l'autre pour " +
   "un texte court que tu peux simplement écrire dans ta réponse.";
@@ -5964,7 +5971,7 @@ function isInlineHandleResult(result) {
 
 const TOOLS = [
   {
-    name: 'get_conversation',
+    name: 'conv__get',
     description:
       "Récupère une conversation passée par son identifiant. Par défaut " +
       "(with_contents=false), retourne seulement son résumé et ses mots-clés ; " +
@@ -5981,12 +5988,12 @@ const TOOLS = [
     handler: (args) => {
       const entry = getSummaryEntry(args.id);   
       
-      if (!entry || entry.suppressed) return toolFail('get_conversation', 'Conversation introuvable ou souvenir supprimé.');
+      if (!entry || entry.suppressed) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
       
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
       const conv = loadConversation(args.id);   
       const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
-      if (convSpace !== spaceId) return toolFail('get_conversation', 'Conversation introuvable ou souvenir supprimé.');
+      if (convSpace !== spaceId) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
       const light = summaryLight(entry);
       _pendingToolAcks.push({ kind: 'conversation_read', title: light.title, convId: args.id });
       if (!args.with_contents) return JSON.stringify(light);
@@ -5995,7 +6002,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'list_conversations',
+    name: 'conv__list',
     description:
       "Liste les conversations passées (résumé + mots-clés par défaut), hors " +
       "la conversation en cours. Le paramètre since est OPTIONNEL : l'omettre " +
@@ -6029,7 +6036,7 @@ const TOOLS = [
       if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
-        if (Number.isNaN(sinceMs)) return toolFail('list_conversations', 'Date "since" invalide (attendu ISO 8601).');
+        if (Number.isNaN(sinceMs)) return toolFail('conv__list', 'Date "since" invalide (attendu ISO 8601).');
         entries = entries.filter(e => (e.timestamp || 0) >= sinceMs);
       }
       if (args.query != null && args.query !== '') {
@@ -6046,7 +6053,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'create_memory',
+    name: 'memory__create',
     description:
       "Enregistre immédiatement un nouveau souvenir persistant. Utiliser sur le " +
       "CHEMIN DIRECT uniquement (instruction explicite de l'utilisateur). Voir doctrine mémoire.",
@@ -6059,7 +6066,7 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args) => {
-      if (!args.content || !args.content.trim()) return toolFail('create_memory', 'Contenu vide — souvenir ignoré.');
+      if (!args.content || !args.content.trim()) return toolFail('memory__create', 'Contenu vide — souvenir ignoré.');
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
@@ -6071,7 +6078,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'update_memory',
+    name: 'memory__update',
     description:
       "Corrige un souvenir existant en place (pas de tombstone). Utiliser quand " +
       "un fait enregistré est devenu inexact ou doit être précisé. Voir doctrine mémoire.",
@@ -6085,12 +6092,12 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
     handler: (args) => {
-      if (!args.id || !args.content || !args.content.trim()) return toolFail('update_memory', 'Paramètres invalides.');
+      if (!args.id || !args.content || !args.content.trim()) return toolFail('memory__update', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   
       
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('update_memory', 'Souvenir introuvable.');
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('memory__update', 'Souvenir introuvable.');
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -6102,7 +6109,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'present_resource',
+    name: 'resource__present',
     description:
       "Présente une ressource stockée (image, texte, fichier binaire) à l'utilisateur " +
       "en l'affichant dans le thread. Utiliser l'identifiant renvoyé lors du stockage de " +
@@ -6118,10 +6125,10 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const id = String(args.id || '');
-      if (!id) return toolFail('present_resource', 'Identifiant manquant.');
+      if (!id) return toolFail('resource__present', 'Identifiant manquant.');
       
       const record = getCachedRecord(id);
-      if (!record) return toolFail('present_resource', 'Ressource introuvable (identifiant inconnu ou non disponible en session).');
+      if (!record) return toolFail('resource__present', 'Ressource introuvable (identifiant inconnu ou non disponible en session).');
       
       _pendingToolAcks.push({ kind: 'resource_presented', id, resourceName: record.name, mime: record.mime });
       return 'Ressource présentée à l\'utilisateur.';
@@ -6268,7 +6275,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'resource_create',
+    name: 'resource__create',
     
     description:
       "Range un texte que TU fournis directement (contenu déjà en main : composé, " +
@@ -6276,7 +6283,7 @@ const TOOLS = [
       "dans ta réponse. Le handle renvoyé se passe ensuite à miaou__js__eval(handle, code) " +
       "pour compter/filtrer/agréger/extraire sans repayer ce texte en tokens à chaque tour. " +
       "N'accepte PAS de référence à un résultat d'outil passé — pour convertir un tool " +
-      "result déjà dans l'historique, utilise miaou__resource_from_result.",
+      "result déjà dans l'historique, utilise miaou__resource__from_result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -6290,19 +6297,19 @@ const TOOLS = [
     handler: async (args) => {
       
       const invalid = validateResourceCreateArgs(args);
-      if (invalid) return toolFail('resource_create', invalid);
+      if (invalid) return toolFail('resource__create', invalid);
       const content = String(args.content || '');
       const mime = args.mime ? String(args.mime).trim() : 'text/plain';
       const name = args.name ? String(args.name).trim() : 'resource';
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const id = await _storeBlock(mime, name, utf8Encode(content), 'inline', activeId, Date.now(), Math.random);
-      if (!id) return toolFail('resource_create', 'Échec de stockage.');
+      if (!id) return toolFail('resource__create', 'Échec de stockage.');
       
       return formatInlineHandleForModel(id, mime, getCachedRecord(id));
     },
   },
   {
-    name: 'resource_from_result',
+    name: 'resource__from_result',
     
     description:
       "Convertit un RÉSULTAT d'outil déjà présent plus haut dans la conversation " +
@@ -6311,7 +6318,7 @@ const TOOLS = [
       "remplacé par un handle compact + ta description. Le handle se passe ensuite à " +
       "miaou__js__eval(handle, code) pour compter/filtrer/agréger/extraire sans " +
       "repayer ce texte en tokens. Pour ranger un texte que TU fournis directement " +
-      "(pas un résultat d'outil passé), utilise miaou__resource_create.",
+      "(pas un résultat d'outil passé), utilise miaou__resource__create.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -6324,24 +6331,24 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args) => {
       const invalid = validateResourceFromResultArgs(args);
-      if (invalid) return toolFail('resource_from_result', invalid);
+      if (invalid) return toolFail('resource__from_result', invalid);
       const ref = String(args.ref || '').trim();
       const description = String(args.description || '').trim();
       const name = args.name ? String(args.name).trim() : 'resource';
       const thread = typeof currentThread !== 'undefined' ? currentThread : [];
       
       const hit = findAckByCallId(thread, ref);
-      if (!hit) return toolFail('resource_from_result', 'Résultat introuvable.');
+      if (!hit) return toolFail('resource__from_result', 'Résultat introuvable.');
       const targetAck = hit.ack;
       if (isInlineHandleResult(targetAck.result)) {
-        return toolFail('resource_from_result', 'Ce résultat est déjà une ressource.');
+        return toolFail('resource__from_result', 'Ce résultat est déjà une ressource.');
       }
       const text = targetAck.result != null ? String(targetAck.result) : '';
-      if (!text) return toolFail('resource_from_result', 'Résultat vide, rien à convertir.');
+      if (!text) return toolFail('resource__from_result', 'Résultat vide, rien à convertir.');
       const mime = 'text/plain';
       const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
       const id = await _storeBlock(mime, name, utf8Encode(text), 'inline', activeId, Date.now(), Math.random);
-      if (!id) return toolFail('resource_from_result', 'Échec de stockage.');
+      if (!id) return toolFail('resource__from_result', 'Échec de stockage.');
       
       const handle = formatInlineHandleForModel(id, mime, getCachedRecord(id)) + ' — ' + description;
       
@@ -6356,7 +6363,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'delete_memory',
+    name: 'memory__delete',
     description:
       "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
       "quand un fait enregistré n'est plus pertinent. Voir doctrine mémoire.",
@@ -6369,10 +6376,10 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
     handler: (args) => {
-      if (!args.id) return toolFail('delete_memory', 'Identifiant manquant.');
+      if (!args.id) return toolFail('memory__delete', 'Identifiant manquant.');
       const existing = loadMemories().find(e => e.id === args.id);
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('delete_memory', 'Souvenir introuvable.');
+      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('memory__delete', 'Souvenir introuvable.');
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';
@@ -6779,13 +6786,15 @@ function callInternalTool(toolName, args) {
 
 function callTool(name, args) {
   const parsed = parseToolName(name);
-  if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
+  
+  const internalName = resolveInternalToolName(name, TOOLS);
+  if (internalName != null) {
     const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
     
     const baseAcks = _pendingToolAcks.length;
-    const result = callInternalTool(parsed.toolName, cleanArgs);
+    const result = callInternalTool(internalName, cleanArgs);
     
     if (intent != null) {
       if (result && typeof result.then === 'function') {
@@ -6794,6 +6803,10 @@ function callTool(name, args) {
       updateLastPendingToolAck({ intent }, baseAcks);
     }
     return result;
+  }
+  
+  if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
+    return callInternalTool(parsed.toolName, args || {});
   }
   const server = getMcpServer(parsed.serverPrefix);   
   if (!server || server.enabled === false) {
@@ -10923,7 +10936,14 @@ function renderToolsList() {
     description: ASK_CONFIRMATION_DEF.function.description,
     inputSchema: ASK_CONFIRMATION_DEF.function.parameters,
   }]);
-  const groups = groupByNamespace(list);
+  
+  const nsFamily = ns => ns === 'miaou' ? 0 : (ns.indexOf('miaou__') === 0 ? 1 : 2);
+  const nsSortKey = ns => ns.split('__').filter(Boolean).join(' ');
+  const groups = groupByNamespace(list).slice().sort(function(a, b) {
+    const fa = nsFamily(a.namespace), fb = nsFamily(b.namespace);
+    if (fa !== fb) return fa - fb;
+    return nsSortKey(a.namespace).localeCompare(nsSortKey(b.namespace));
+  });
   if (!groups.length) {
     wrap.innerHTML = '<div class="mem-empty">Aucun outil enregistré.</div>';
     return;
@@ -13020,8 +13040,8 @@ function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
-         "Si l'une mérite un examen détaillé, appelle get_conversation avec son id " +
-         "et with_contents=true. Tu peux aussi appeler list_conversations pour " +
+         "Si l'une mérite un examen détaillé, appelle conv__get avec son id " +
+         "et with_contents=true. Tu peux aussi appeler conv__list pour " +
          "parcourir l'historique — sans date pour tout lister, ou avec une date " +
          "pour te limiter à une période.\n" +
          lines.join('\n');

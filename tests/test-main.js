@@ -63,12 +63,12 @@ describe('projectConvMessages — projection fidèle des messages persistés', f
 
   it('ack (tool-ack) : passe par la whitelist ACK_COPY_FIELDS, role préservé', function () {
     const out = projectConvMessages({ messages: [{
-      role: 'tool-ack', kind: 'create_memory', id: 'mem1', content: 'un souvenir',
+      role: 'tool-ack', kind: 'memory__create', id: 'mem1', content: 'un souvenir',
       champInconnu: 'ne doit pas passer', ts: 3,
     }] });
     const a = out[0];
     expect(a.role).toBe('tool-ack');
-    expect(a.kind).toBe('create_memory');
+    expect(a.kind).toBe('memory__create');
     expect(a.id).toBe('mem1');
     expect(a.content).toBe('un souvenir');
     // Champ hors whitelist : absent (copyAckFields n'énumère que ACK_COPY_FIELDS).

@@ -167,7 +167,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      `skills__read` (ex-réglage `confirmSkillAutoUse`, retiré). Le halting
      `ask_confirmation` jette tout le tour courant, y compris le résultat de
      `skills__read` (cf. `onHalt`, api.js/main.js — mécanisme fork B conçu pour
-     `create_memory`, où la question seule suffit au tour suivant). Pour une
+     `memory__create`, où la question seule suffit au tour suivant). Pour une
      skill, le corps lu peut faire plusieurs paragraphes : au tour suivant
      (« Oui »), le modèle ne l'a plus, doit le relire, reconfirme → boucle sans
      jamais agir (observé en pratique). Retiré, pas contourné : lire une skill

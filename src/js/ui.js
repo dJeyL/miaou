@@ -115,7 +115,7 @@ if (window.marked) {
 // Conversation réellement supprimée (deleteConv → deleteSummaryEntry, hard
 // delete des DEUX, ≠ tombstone) : la source de vérité pour « ouvrable » est
 // loadConversation(id), pas la présence d'un résumé (cas limite existant où le
-// résumé peut survivre sans la conversation, cf. get_conversation). Dans ce cas,
+// résumé peut survivre sans la conversation, cf. conv__get). Dans ce cas,
 // rendu en texte barré NON cliquable plutôt qu'un lien mort — pas de
 // post-traitement DOM, juste du Markdown ~~...~~.
 // `opts.asPlainText` (défaut false, écran inchangé) : pour l'export standalone
@@ -4139,7 +4139,19 @@ function renderToolsList() {
     description: ASK_CONFIRMATION_DEF.function.description,
     inputSchema: ASK_CONFIRMATION_DEF.function.parameters,
   }]);
-  const groups = groupByNamespace(list);
+  // Ordre d'affichage en trois familles, pour ne PAS entrelacer l'interne et le
+  // distant (sinon le tri alpha mêle `miaou › conv` et `mcp › brave`) :
+  //   0. « miaou » nu (outils internes plats) — toujours en tête ;
+  //   1. sous-namespaces internes `miaou__*` (memory, conv, resource…), alpha ;
+  //   2. serveurs MCP distants (préfixe ≠ miaou), alpha.
+  // Tri purement présentationnel : groupByNamespace reste en ordre d'apparition.
+  const nsFamily = ns => ns === 'miaou' ? 0 : (ns.indexOf('miaou__') === 0 ? 1 : 2);
+  const nsSortKey = ns => ns.split('__').filter(Boolean).join(' ');
+  const groups = groupByNamespace(list).slice().sort(function(a, b) {
+    const fa = nsFamily(a.namespace), fb = nsFamily(b.namespace);
+    if (fa !== fb) return fa - fb;
+    return nsSortKey(a.namespace).localeCompare(nsSortKey(b.namespace));
+  });
   if (!groups.length) {
     wrap.innerHTML = '<div class="mem-empty">Aucun outil enregistré.</div>';
     return;

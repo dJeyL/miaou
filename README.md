@@ -61,9 +61,9 @@ l'interface, JetBrains Mono pour le code.
   si la sortie dépasse le plafond. QuickJS-WASM n'est chargé (CDN) qu'au premier
   appel. Cf. `docs/tools.md`.
 - **Ressources adressables model-side** : le modèle peut ranger un texte en
-  ressource `res_…` — soit un texte qu'il produit lui-même (`resource_create`),
+  ressource `res_…` — soit un texte qu'il produit lui-même (`resource__create`),
   soit un gros résultat d'outil déjà présent qu'il convertit pour **alléger la
-  conversation** (`resource_from_result` : le contenu lourd quitte l'historique,
+  conversation** (`resource__from_result` : le contenu lourd quitte l'historique,
   remplacé par un handle compact + un court résumé). Ces ressources sont ensuite
   interrogeables par `js__eval` sans repayer leur texte en tokens à chaque tour.
 - **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire. Un
@@ -100,15 +100,15 @@ l'interface, JetBrains Mono pour le code.
 - Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
   contextuelle, et deux outils pour que le modèle aille chercher lui-même —
-  `get_conversation(id, with_contents=false)` et
-  `list_conversations(since?, query?, with_contents=false)` (recherche par
+  `conv__get(id, with_contents=false)` et
+  `conv__list(since?, query?, with_contents=false)` (recherche par
   mots-clés/résumé, même moteur que la recherche sidebar ; exclut toujours la
   conversation en cours).
 - Quand le modèle cite une conversation passée dans sa réponse, elle apparaît
   comme un **lien cliquable affichant son titre** (jamais l'ID technique) ;
   cliquer dessus l'ouvre directement, comme depuis la sidebar.
-- Souvenirs persistants : le modèle écrit directement (`create_memory`,
-  `update_memory`, `delete_memory`) sur instruction explicite, ou demande
+- Souvenirs persistants : le modèle écrit directement (`memory__create`,
+  `memory__update`, `memory__delete`) sur instruction explicite, ou demande
   confirmation (`ask_confirmation`) pour un fait inféré. Gestion directe
   possible dans le drawer ; les souvenirs actifs sont réinjectés dans le
   contexte à chaque envoi.
