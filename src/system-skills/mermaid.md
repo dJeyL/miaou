@@ -8,6 +8,60 @@ exception. Un diagramme qui viole une seule de ces règles ne s'affiche pas
 (erreur de parse) ou affiche des caractères parasites à l'écran. Ce n'est pas
 une question de style : c'est une syntaxe stricte.
 
+## Règle 0 — Le type de diagramme (premier mot) doit exister. N'en invente JAMAIS un
+
+Avant tout label, le premier mot non-commentaire du bloc DÉCLARE le type de
+diagramme. Si ce mot-clé n'existe pas dans Mermaid, RIEN ne s'affiche : le parse
+échoue immédiatement, avant même de regarder un seul nœud. C'est l'erreur la plus
+coûteuse et la plus fréquente — un modèle croit qu'un type « logique » existe et
+plaque dessus une syntaxe plausible mais entièrement fantôme.
+
+N'utilise QUE l'un de ces types (liste FERMÉE — tout autre mot-clé est invalide) :
+
+- `flowchart` (ou `graph`) — organigrammes, flux, arbres de décision
+- `sequenceDiagram` — échanges chronologiques entre acteurs
+- `stateDiagram-v2` — machines à états
+- `classDiagram` — classes / relations objet
+- `erDiagram` — entités-relations (modèle de données)
+- `pie` — camembert (répartition en pourcentages)
+- `xychart-beta` — **le SEUL** graphe à axes X/Y : barres ET courbes
+- `gantt` — planning temporel
+- `mindmap` — carte mentale
+
+Tout mot-clé hors de cette liste est à considérer comme inexistant, même s'il
+« sonne juste ». En particulier ces mots-clés n'existent PAS et cassent le
+parse : `bar`, `barChart`, `barchart`, `histogram`, `lineChart`, `scatter`,
+`plot`, `chart`, `graphBar`. Il n'y a **aucun** type dédié aux barres : les
+graphes en barres passent obligatoirement par `xychart-beta` (voir Règle 0bis).
+
+Si le type de données que tu veux représenter n'entre dans aucun de ces neuf
+types, ne fabrique pas un type : choisis le plus proche, ou renonce au diagramme
+et présente les données en tableau Markdown.
+
+## Règle 0bis — Données quantitatives (barres / courbes) → `xychart-beta`, jamais autre chose
+
+Pour tout graphe de valeurs numériques par catégorie (barres) ou par progression
+(courbe), le seul type valide est `xychart-beta`. Sa syntaxe est stricte et ne
+ressemble à aucune paire `clé: valeur` : les catégories forment un tableau sur
+`x-axis`, les valeurs un tableau sur la même position, dans l'ordre.
+
+- INVALIDE (types et syntaxe inventés) : `bar`, `barChart`, lignes `web: 11`,
+  déclarations `x Lignes` / `y Domaine`, `barColor #1e90ff`.
+- VALIDE :
+
+```
+xychart-beta
+    title "Nombre de lignes par domaine"
+    x-axis ["web-server", "db-pool", "auth", "cache", "security"]
+    y-axis "Lignes"
+    bar [11, 6, 6, 5, 3]
+```
+
+Le tableau de `x-axis` et le tableau de `bar` (ou `line`) doivent avoir le MÊME
+nombre d'éléments, dans le MÊME ordre. Le titre et le libellé d'axe qui
+contiennent un espace vont entre guillemets doubles. Pas de couleur en ligne
+nue : la couleur relève du thème, pas de la syntaxe du diagramme.
+
 ## Règle 1 — Saut de ligne dans un label : `<br/>` UNIQUEMENT
 
 INTERDIT d'écrire les deux caractères `\` puis `n` (backslash-n) dans un
@@ -77,9 +131,11 @@ ajustée automatiquement.
 
 ## Checklist avant de produire le bloc final
 
-Avant d'émettre le bloc mermaid, relis CHAQUE label que tu as écrit et
-vérifie dans l'ordre :
+Avant d'émettre le bloc mermaid, commence par le premier mot, puis relis CHAQUE
+label que tu as écrit et vérifie dans l'ordre :
 
+0. Le premier mot est-il un type de la liste fermée de la Règle 0 ? → sinon,
+   c'est invalide : corrige le type (pour des barres/valeurs, `xychart-beta`).
 1. Est-ce qu'il contient `\n` (backslash-n littéral) ? → remplace par `<br/>`.
 2. Est-ce qu'il contient un caractère spécial (`( ) { } : ? ; &`) ? → entoure
    tout le label de guillemets doubles.
