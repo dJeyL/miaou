@@ -9,7 +9,7 @@
 
 - `miaou-settings` : `{ url, key, model, systemPrompt, highlight, summaryInjectionMode,
   theme, showModelSelector, reasoningEffort, showReasoningSelector, sidebarWidth,
-  includeToolsInSystemPrompt, saveJsonResponses, intentTracing }`.
+  intentTracing }`.
   `url`/`key`/`model` sont **legacy** : depuis l'introduction des serveurs API
   multiples (`miaou-api-servers` ci-dessous), ils ne sont plus édités nulle
   part dans l'UI — `onSaveSettings()` ne les écrit plus. Ils ne servent qu'à
@@ -44,12 +44,8 @@
   d'origine, max = ×2), pilotée via la variable CSS `--sidebar-w`
   (cf. `initSidebarResize`, ui.js) ; pendant le drag, la classe `.resizing` coupe
   la transition de largeur, et la valeur finale est persistée au `mouseup`.
-  `includeToolsInSystemPrompt` (défaut `false`) contrôle uniquement l'injection de
-  `toolsSystemPrompt()` — la description textuelle redondante des outils. `ROOT_SYSTEM_PROMPT`
-  (doctrines binaire et mémoire) est **toujours** injecté dès que des outils sont présents,
-  indépendamment de ce toggle. À activer pour les modèles qui lisent mal leur tool schema
-  natif. `buildSystemMessage()` (main.js) conditionne l'appel ; `tools.js` reste agnostique
-  du réglage.
+  `ROOT_SYSTEM_PROMPT` (doctrines binaire et mémoire) est **toujours** injecté
+  dès que des outils sont présents.
 - `miaou-conversations` : tableau `[{ id, title, timestamp, updatedAt?, messages, model?,
   reasoningEffort?, pinned?, spaceId? }]`. `spaceId` (feature Spaces, lot C) :
   id du Space propriétaire ; absent = `DEFAULT_SPACE_ID` (`listAllConversations()`

@@ -1851,7 +1851,8 @@ body.conv-readonly .conv-retitle-btn {
   cursor: pointer;
   user-select: none;
 }
-.set-cat-head:hover { color: var(--text-2); }
+.set-cat-head:hover,
+.set-cat-head.open { color: var(--text-2); }
 .set-cat-icon,
 .set-cat-chevron {
   flex-shrink: 0;
@@ -1863,6 +1864,7 @@ body.conv-readonly .conv-retitle-btn {
   pointer-events: none;
 }
 .set-cat-head:hover .set-cat-icon,
+.set-cat-head.open .set-cat-icon,
 .set-cat-head:hover .set-cat-chevron { opacity: 1; }
 .set-cat-label { flex: 1; }
 .set-cat-chevron svg { transition: transform 0.2s; }
@@ -2119,7 +2121,8 @@ body.conv-readonly .conv-retitle-btn {
   line-height: 1;
   pointer-events: none;
 }
-.tool-ns:hover { color: var(--text-2); }
+.tool-ns:hover,
+.tool-ns.open { color: var(--text-2); }
 .tool-ns:hover .tool-ns-chevron { opacity: 1; }
 .tool-ns-chevron svg { transition: transform 0.2s; }
 .tool-ns-chevron.open svg { transform: rotate(180deg); }
@@ -2202,6 +2205,8 @@ body.conv-readonly .conv-retitle-btn {
 .active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
 
 .drawer-wide { width: 620px; }
+
+.drawer-mid { width: 500px; }
 
 textarea.skill-content {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2881,7 +2886,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="backdrop" onclick="closeSettings()"></div>
-  <div class="drawer" id="drawer">
+  <div class="drawer drawer-mid" id="drawer">
     <div class="drawer-head">
       <h2>Paramètres</h2>
       <button class="icon-btn" onclick="closeSettings()">
@@ -3087,33 +3092,11 @@ if (window.requestAnimationFrame) {
       <div class="field">
         <div class="check-row">
           <div class="label-col">
-            <label>Injecter les outils dans le prompt système</label>
-            <span class="hint">Recommandé pour modèles peu fiables sur tool schema.</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-tools-in-prompt">
-            <span class="track"></span>
-            <span class="thumb"></span>
-          </label>
-        </div>
-        <div class="check-row">
-          <div class="label-col">
             <label>Traces en langage naturel</label>
             <span class="hint">Demande au modèle de décrire ses appels.</span>
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-intent-tracing">
-            <span class="track"></span>
-            <span class="thumb"></span>
-          </label>
-        </div>
-        <div class="check-row">
-          <div class="label-col">
-            <label>Enregistrer les réponses JSON</label>
-            <span class="hint">Crée des ressources pour faciliter le debugging.</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-save-json">
             <span class="track"></span>
             <span class="thumb"></span>
           </label>
@@ -3176,7 +3159,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="tools-backdrop" onclick="closeTools()"></div>
-  <div class="drawer" id="tools-drawer">
+  <div class="drawer drawer-wide" id="tools-drawer">
     <div class="drawer-head">
       <h2>Outils exposés</h2>
       <button class="icon-btn" onclick="closeTools()">
@@ -3190,7 +3173,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="mcp-backdrop" onclick="closeMcpServers()"></div>
-  <div class="drawer" id="mcp-drawer">
+  <div class="drawer drawer-mid" id="mcp-drawer">
     <div class="drawer-head">
       <h2>Serveurs MCP</h2>
       <button class="icon-btn" onclick="closeMcpServers()">
@@ -3205,7 +3188,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="space-backdrop" onclick="closeSpaceScreen()"></div>
-  <div class="drawer" id="space-drawer">
+  <div class="drawer drawer-mid" id="space-drawer">
     <div class="drawer-head">
       <h2 id="space-drawer-title">Espace</h2>
       <button class="icon-btn" onclick="closeSpaceScreen()">
@@ -3230,7 +3213,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
-  <div class="drawer" id="api-drawer">
+  <div class="drawer drawer-mid" id="api-drawer">
     <div class="drawer-head">
       <h2>Serveurs API</h2>
       <button class="icon-btn" onclick="closeApiServers()">
@@ -3263,7 +3246,7 @@ if (window.requestAnimationFrame) {
   <div class="backdrop" id="confirm-backdrop"></div>
 
   <div class="backdrop" id="summary-backdrop" onclick="closeSummaryDrawer()"></div>
-  <div class="drawer" id="summary-drawer">
+  <div class="drawer drawer-mid" id="summary-drawer">
     <div class="drawer-head">
       <div class="drawer-tabs">
         <button class="drawer-tab active" data-tab="summaries" onclick="switchMemoryTab('summaries')">Résumés</button>
@@ -3296,7 +3279,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="ctx-backdrop" onclick="closeContextInspector()"></div>
-  <div class="drawer" id="ctx-drawer">
+  <div class="drawer drawer-mid" id="ctx-drawer">
     <div class="drawer-head">
       <div class="drawer-tabs">
         <span class="drawer-title">Inspecteur de contexte</span>
@@ -3320,7 +3303,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-15 21:25 UTC */
+/* miaou — built: 2026-07-15 21:47 UTC */
 
 /* ── utils.js ── */
 
@@ -4309,7 +4292,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784150748}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784152039}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4330,8 +4313,6 @@ const DEFAULT_SETTINGS = {
   theme: 'system',         
   showModelSelector: false, 
   sidebarWidth: 264,       
-  includeToolsInSystemPrompt: false, 
-  saveJsonResponses: false, 
   intentTracing: true,      
   contextWindow: '', 
   describeFiles: true, 
@@ -5415,7 +5396,7 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
   }
 }
 
-async function internResourcesFromResult(result, conversationId, now, rand, saveInline) {
+async function internResourcesFromResult(result, conversationId, now, rand) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
   const theRand = (typeof rand === 'function') ? rand : Math.random;
@@ -5456,17 +5437,8 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
           !(b.type === 'resource' && b.resource != null &&
             b.resource.text != null && b.resource.blob == null));
       }
-      if (saveInline) {
-        
-        const storedId = await _storeBlock(part.mime, part.name,
-          utf8Encode(part.text), 'inline', conversationId, theNow, theRand);
-        const rec = storedId ? getCachedRecord(storedId) : null;
-        const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
-        newContent.push({ type: 'text', text: part.text + desc });
-      } else {
-        
-        newContent.push({ type: 'text', text: part.text });
-      }
+      
+      newContent.push({ type: 'text', text: part.text });
     } else {
       
       newContent.push(part.block);
@@ -7091,14 +7063,6 @@ function toolDefinitions() {
   return mcpDefs.concat([ASK_CONFIRMATION_DEF]);
 }
 
-function toolsSystemPrompt() {
-  const all = exposedTools().map(t => ({ name: t.name, description: t.description }))
-    .concat([{ name: ASK_CONFIRMATION_DEF.function.name, description: ASK_CONFIRMATION_DEF.function.description }]);
-  const lines = all.map(t => '- ' + t.name + ' : ' + t.description);
-  return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
-         "sinon réponds directement.\n" + lines.join('\n');
-}
-
 function intentDoctrinePrompt() {
   return loadSettings().intentTracing ? INTENT_DOCTRINE : '';
 }
@@ -7456,8 +7420,7 @@ async function runConversation(messages, hooks) {
             if (typeof internResourcesFromResult === 'function') {
               await internResourcesFromResult(rawResult,
                 typeof currentConvId !== 'undefined' ? currentConvId : null,
-                Date.now, Math.random,
-                !!loadSettings().saveJsonResponses);
+                Date.now, Math.random);
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);
@@ -10433,9 +10396,7 @@ function settingsFormDirty() {
     || $('set-modelselector').checked !== !!s.showModelSelector
     || $('set-reasoning-effort').value !== (s.reasoningEffort || '')
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
-    || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
     || $('set-intent-tracing').checked !== !!s.intentTracing
-    || $('set-save-json').checked !== !!s.saveJsonResponses
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
@@ -10451,9 +10412,7 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   
   setThemeUI(s.theme || 'system');
   setMotionUI(s.motion || 'system');
-  $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
-  $('set-save-json').checked = !!s.saveJsonResponses;
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');
@@ -13112,11 +13071,10 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { identity: '', root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
+  const out = { identity: '', root: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
   
   out.identity = IDENTITY_BLURB;
   out.root = ROOT_SYSTEM_PROMPT;
-  if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
   out.intent = intentDoctrinePrompt();
   out.skills = skillDoctrinePrompt();
   out.docs = docsDoctrinePrompt();
@@ -13127,7 +13085,7 @@ function systemMessageParts() {
 
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
-  const parts = [sp.identity, sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
+  const parts = [sp.identity, sp.root, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -13643,9 +13601,7 @@ function onSaveSettings() {
     showModelSelector: $('set-modelselector').checked,
     reasoningEffort: $('set-reasoning-effort').value,
     showReasoningSelector: $('set-reasoningselector').checked,
-    includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
-    saveJsonResponses: $('set-save-json').checked,
     describeFiles: $('set-describe-files').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,

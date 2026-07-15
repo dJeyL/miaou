@@ -21,8 +21,7 @@ function summaryLight(e) {
 }
 
 // Doctrine comportementale : ressources binaires. Toujours injectée quand des outils
-// existent — indépendamment de includeToolsInSystemPrompt (qui ne gouverne que
-// l'énumération textuelle). Partie de ROOT_SYSTEM_PROMPT.
+// existent. Partie de ROOT_SYSTEM_PROMPT.
 const BINARY_DOCTRINE =
   "Quand un outil renvoie des données binaires (image, fichier, base64…), l'application " +
   "les enregistre sous forme de ressource et t'en communique l'ID. Les images sont " +
@@ -1960,19 +1959,6 @@ function toolDefinitions() {
     return { type: 'function', function: { name: t.name, description: t.description, parameters: params } };
   });
   return mcpDefs.concat([ASK_CONFIRMATION_DEF]);
-}
-
-// MEMORY_DOCTRINE n'est PAS redondante avec le schéma tools (qui ne décrit que
-// les paramètres, jamais la doctrine de déclenchement). Elle doit donc être
-// envoyée indépendamment du toggle includeToolsInSystemPrompt, qui ne contrôle
-// que la description redondante schéma/texte des outils eux-mêmes.
-
-function toolsSystemPrompt() {
-  const all = exposedTools().map(t => ({ name: t.name, description: t.description }))
-    .concat([{ name: ASK_CONFIRMATION_DEF.function.name, description: ASK_CONFIRMATION_DEF.function.description }]);
-  const lines = all.map(t => '- ' + t.name + ' : ' + t.description);
-  return "Tu disposes des outils suivants. Appelle-les quand ils peuvent t'aider à mieux répondre, " +
-         "sinon réponds directement.\n" + lines.join('\n');
 }
 
 function intentDoctrinePrompt() {

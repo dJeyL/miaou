@@ -245,15 +245,14 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 // sous-bloc absent/désactivé.
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { identity: '', root: '', toolsSystem: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
+  const out = { identity: '', root: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
-  // Les gardes RÉELLES restent internes à chaque helper : includeToolsInSystemPrompt
-  // (toolsSystem), intentTracing (intent), skills autotrigger (skills), inflation
-  // d'attachement (docs). Zéro changement de comportement (gate toujours vrai).
+  // Les gardes RÉELLES restent internes à chaque helper : intentTracing (intent),
+  // skills autotrigger (skills), inflation d'attachement (docs). Zéro changement
+  // de comportement (gate toujours vrai).
   out.identity = IDENTITY_BLURB;
   out.root = ROOT_SYSTEM_PROMPT;
-  if (settings.includeToolsInSystemPrompt) out.toolsSystem = toolsSystemPrompt();
   out.intent = intentDoctrinePrompt();
   out.skills = skillDoctrinePrompt();
   out.docs = docsDoctrinePrompt();
@@ -262,19 +261,18 @@ function systemMessageParts() {
   return out;
 }
 
-// Ordre : identité (toujours, EN TÊTE) → racine → énumération outils (si ON) →
-// doctrine intent (si ON) → doctrine skills (si skills autotrigger) → doctrine
-// codeblock (toujours) → utilisateur →
-// description du Space actif (concaténée, jamais substituée — D4 corrigé). Piège 18
-// (CLAUDE.md) : cette dernière part varie d'un Space à l'autre — changer de Space
-// change donc le system message (assumé, documenté), mais il reste statique tant
-// qu'on reste dans le même Space (KV cache, piège 16).
+// Ordre : identité (toujours, EN TÊTE) → racine → doctrine intent (si ON) →
+// doctrine skills (si skills autotrigger) → doctrine codeblock (toujours) →
+// utilisateur → description du Space actif (concaténée, jamais substituée —
+// D4 corrigé). Piège 18 (CLAUDE.md) : cette dernière part varie d'un Space à
+// l'autre — changer de Space change donc le system message (assumé, documenté),
+// mais il reste statique tant qu'on reste dans le même Space (KV cache, piège 16).
 // `sp` optionnel : réutilise des parts déjà calculées (dispatchSend en a déjà
 // besoin pour buildContextManifest) plutôt que de rappeler systemMessageParts()
 // une deuxième fois — un seul point de concaténation malgré tout (audit §6).
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
-  const parts = [sp.identity, sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
+  const parts = [sp.identity, sp.root, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -282,8 +280,8 @@ function buildSystemMessage(sp) {
 // (openSettings, ui.js). Reconstitue les SEULES parts INCONDITIONNELLES du message
 // système — identity, root, codeblock — dans l'ordre exact du join de
 // buildSystemMessage() (identity EN TÊTE, codeblock juste avant la part user).
-// PAS les parts conditionnelles (toolsSystem/intent/skills/docs) : elles dépendent
-// de réglages runtime, donc ni « racine » ni « non modifiable ». Même séparateur
+// PAS les parts conditionnelles (intent/skills/docs) : elles dépendent de
+// réglages runtime, donc ni « racine » ni « non modifiable ». Même séparateur
 // que le message réel : ce que voit l'utilisateur est byte-identique au préfixe
 // statique effectivement envoyé au modèle. Constante build-time, jamais mutée.
 function rootSystemPromptDisplay() {
@@ -984,9 +982,7 @@ function onSaveSettings() {
     showModelSelector: $('set-modelselector').checked,
     reasoningEffort: $('set-reasoning-effort').value,
     showReasoningSelector: $('set-reasoningselector').checked,
-    includeToolsInSystemPrompt: $('set-tools-in-prompt').checked,
     intentTracing: $('set-intent-tracing').checked,
-    saveJsonResponses: $('set-save-json').checked,
     describeFiles: $('set-describe-files').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,

@@ -331,7 +331,8 @@
   cursor: pointer;
   user-select: none;
 }
-.set-cat-head:hover { color: var(--text-2); }
+.set-cat-head:hover,
+.set-cat-head.open { color: var(--text-2); }
 .set-cat-icon,
 .set-cat-chevron {
   flex-shrink: 0;
@@ -343,6 +344,7 @@
   pointer-events: none;
 }
 .set-cat-head:hover .set-cat-icon,
+.set-cat-head.open .set-cat-icon,
 .set-cat-head:hover .set-cat-chevron { opacity: 1; }
 .set-cat-label { flex: 1; }
 .set-cat-chevron svg { transition: transform 0.2s; }
@@ -609,7 +611,8 @@
   line-height: 1;
   pointer-events: none;
 }
-.tool-ns:hover { color: var(--text-2); }
+.tool-ns:hover,
+.tool-ns.open { color: var(--text-2); }
 .tool-ns:hover .tool-ns-chevron { opacity: 1; }
 .tool-ns-chevron svg { transition: transform 0.2s; }
 .tool-ns-chevron.open svg { transform: rotate(180deg); }
@@ -702,8 +705,12 @@
 .active-api-server-name .active-api-server-model { font-weight: 400; color: var(--text-2); }
 
 /* ── Skills : particularités du drawer de gestion ──────────────────────────── */
-/* Drawer plus large : édition de corps Markdown (textarea confortable). */
+/* Drawer plus large : édition de corps Markdown (textarea confortable), et
+   drawer « Outils exposés » (aligné sur la même largeur, lot Q). */
 .drawer-wide { width: 620px; }
+/* Tous les autres drawers (hors .drawer et .drawer-wide) : mi-chemin entre la
+   largeur de base (380px) et .drawer-wide (620px), lot Q. */
+.drawer-mid { width: 500px; }
 /* Corps Markdown de la skill : mono compact, contrairement aux inputs cfg. */
 textarea.skill-content {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

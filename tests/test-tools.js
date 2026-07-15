@@ -592,21 +592,6 @@ describe('memory__delete — tombstone', function() {
   });
 });
 
-describe('toolsSystemPrompt', function() {
-  it('contient le nom de chaque outil du registre MCP', function() {
-    var s = toolsSystemPrompt();
-    TOOLS.forEach(function(t) {
-      expect(s.indexOf(t.name) >= 0).toBeTruthy();
-    });
-  });
-  it('contient aussi ask_confirmation (hors registre MCP mais dans le prompt)', function() {
-    expect(toolsSystemPrompt().indexOf('ask_confirmation') >= 0).toBeTruthy();
-  });
-  it('retourne une chaîne non vide si TOOLS est peuplé', function() {
-    expect(toolsSystemPrompt().length > 0).toBeTruthy();
-  });
-});
-
 describe('MEMORY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PROMPT)', function() {
   it('retourne une chaîne non vide', function() {
     expect(MEMORY_DOCTRINE.length > 0).toBeTruthy();
@@ -704,9 +689,6 @@ describe('BINARY_DOCTRINE (constante, partie inconditionnelle de ROOT_SYSTEM_PRO
     expect(BINARY_DOCTRINE.indexOf('image') >= 0).toBeTruthy();
     expect(BINARY_DOCTRINE.indexOf('ne simule pas') >= 0).toBeTruthy();
     expect(BINARY_DOCTRINE.indexOf('base64') >= 0).toBeTruthy();
-  });
-  it('la règle ne vit PAS dans toolsSystemPrompt (énumération seule)', function() {
-    expect(toolsSystemPrompt().indexOf('ne simule pas')).toBe(-1);
   });
   it('la règle ne vit PAS dans MEMORY_DOCTRINE', function() {
     expect(MEMORY_DOCTRINE.indexOf('ne simule pas')).toBe(-1);

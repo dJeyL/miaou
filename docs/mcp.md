@@ -6,8 +6,8 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
 
 1. **Le préfixe est une VUE, pas un stockage.** `TOOLS` reste en noms **nus**
    (`memory__create`, …). Le préfixe `miaou__` est ajouté **à l'exposition
-   seulement** par `exposedTools()` (consommé par `toolDefinitions()` et
-   `toolsSystemPrompt()`). Les outils distants sont mis en cache **déjà préfixés**
+   seulement** par `exposedTools()` (consommé par `toolDefinitions()`). Les
+   outils distants sont mis en cache **déjà préfixés**
    `servername__`. `parseToolName(name)` (utils, pur) splitte sur le **PREMIER**
    `__` uniquement — un `toolName` distant peut lui-même contenir `__`, un
    `split('__')` naïf le corromprait. `groupByNamespace` (pur) projette le nom
@@ -95,13 +95,9 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    le base64 d'**atteindre** le modèle ; une règle de **formulation** l'empêche de
    **narrer/simuler** l'image même sans déclencheur. Cette règle est une doctrine
    **comportementale transverse** → `BINARY_DOCTRINE` (constante dans `tools.js`,
-   partie de `ROOT_SYSTEM_PROMPT`), **toujours injectée** dès que des outils existent,
-   **indépendamment de `includeToolsInSystemPrompt`**. Le toggle ne gouverne que
-   l'**énumération** par outil (`toolsSystemPrompt()`, token-coûteuse, redondante avec
-   le champ API `tools`). Doctrine comportementale = inconditionnelle ; énumération =
-   sous toggle. Surtout pas dans `MEMORY_DOCTRINE` (sans rapport avec la mémoire) ni
-   dans une entrée par outil. Sans ça, le mode nothink/agentique (toggle off, le plus
-   courant) perdrait le garde.
+   partie de `ROOT_SYSTEM_PROMPT`), **toujours injectée** dès que des outils existent.
+   Surtout pas dans `MEMORY_DOCTRINE` (sans rapport avec la mémoire) ni dans une
+   entrée par outil.
 9. **Ré-handshake paresseux sur session invalidée (Correction B).** streamable-http
    est *stateful* : `initialize` renvoie un `Mcp-Session-Id` que le client renvoie à
    chaque appel. Un serveur **redémarré** ne reconnaît plus l'ancien id et répond

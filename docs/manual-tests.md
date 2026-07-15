@@ -15,8 +15,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
    `role: 'system'` contenant le prompt configuré et la doctrine mémoire (si des
    outils sont présents). Les résumés, mémoires, date/heure et modèle actif sont
    dans un bloc `<miaou_context>` préfixé au **dernier message `role: 'user'`** —
-   pas dans le system. Si `includeToolsInSystemPrompt` est activé, la description
-   textuelle des outils s'ajoute au system.
+   pas dans le system.
 4. **Outil conversation** : question dont le résumé ne suffit pas → le modèle
    appelle `conv__get` ou `conv__list`, et on va **jusqu'à la
    réponse finale**, pas seulement jusqu'au résultat de l'outil. Un ou plusieurs
@@ -122,11 +121,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     disparaît pour la suite de la session (endpoint+modèle marqués rejetés).
     Vérifier aussi l'état « défaut » : pilule **grisée** (composer et settings) ;
     tout autre niveau la repasse en accent orange.
-16. **Toggle description outils** : activer `includeToolsInSystemPrompt` dans les
-    réglages → la description textuelle redondante des outils apparaît dans le
-    message système (vérifiable dans le payload réseau). La doctrine mémoire est
-    toujours présente indépendamment de ce toggle.
-17. **Titrage automatique et régénération manuelle** : nouvelle conversation, 1ʳᵉ
+16. **Titrage automatique et régénération manuelle** : nouvelle conversation, 1ʳᵉ
     Q/R → titre auto-généré (barre du haut + sidebar). Provoquer une conversation
     **sans titre** (stop du streaming en cours de réponse via le bouton composer,
     ou réponse assistant trop courte, sous le seuil de substance) → la conversation
@@ -140,14 +135,14 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     conversation déjà titrée (manuellement ou automatiquement) → le titre est
     remplacé par un nouveau titre généré ; le titre devient non éditable pendant
     l'appel puis se déverrouille.
-18. **Drawer réglages — catégories repliables** : ouvrir les réglages → six
+17. **Drawer réglages — catégories repliables** : ouvrir les réglages → six
     catégories (Connexion, Modèle & raisonnement, Prompts système, Apparence,
     Mémoire, Outils & extensions), seule « Connexion » ouverte au départ.
     Ouvrir une catégorie replie la précédente (accordéon). Dans « Modèle &
     raisonnement », ouvrir le dropdown du champ Modèle et la pilule de
     raisonnement → les menus débordent de la catégorie **sans être coupés**
     (overflow rétabli après la transition d'ouverture).
-19. **Bouton Enregistrer conditionnel** : à l'ouverture des réglages, le bouton
+18. **Bouton Enregistrer conditionnel** : à l'ouverture des réglages, le bouton
     est grisé (désactivé). Modifier n'importe quel champ persisté à
     l'enregistrement (URL, clef, modèle — y compris via le dropdown —, prompt
     utilisateur, un toggle, le niveau de raisonnement via la pilule, le mode
@@ -156,7 +151,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     (auto-persisté). Enregistrer → bouton re-grisé. Modifier un champ, fermer
     le drawer sans enregistrer, rouvrir → la saisie est toujours là et le
     bouton toujours actif.
-20. **Bouton copier sur les messages** : sur une bulle **user**, survoler → un
+19. **Bouton copier sur les messages** : sur une bulle **user**, survoler → un
     bouton copier apparaît à côté du bouton éditer ; cliquer copie le texte tel
     que tapé (identique au contenu affiché) dans le presse-papier, feedback
     check ~1,4 s. Sur une bulle **assistant**, le bouton copier (dans les
@@ -167,7 +162,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     envoyer une commande `/skill ...`, puis copier ce message → le presse-
     papier contient le **littéral tapé** (`/skill ...`), jamais le corps baké
     injecté au modèle.
-21. **Régénérer la dernière réponse** : sur la dernière bulle assistant du fil,
+20. **Régénérer la dernière réponse** : sur la dernière bulle assistant du fil,
     un bouton « Régénérer la réponse » (flèches circulaires, actions méta,
     après copier/télécharger) déclenche sans confirmation une nouvelle
     génération qui **remplace** la réponse (les acks d'outils de l'ancienne
@@ -180,7 +175,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     assistant (absent des bulles antérieures, y compris après avoir régénéré
     une fois — c'est alors la nouvelle dernière bulle qui le porte) ; il est
     masqué sur **toutes** les bulles pendant un streaming en cours.
-22. **« Continuer » une réponse incomplète** : côté serveur de test, poser un
+21. **« Continuer » une réponse incomplète** : côté serveur de test, poser un
     `max_tokens` (ou équivalent) très bas pour forcer une coupe réelle
     (`finish_reason: 'length'`) — envoyer une question qui appelle une réponse
     longue. Vérifier : la bulle assistant affiche le bandeau « Réponse

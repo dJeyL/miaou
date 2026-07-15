@@ -3557,9 +3557,7 @@ function settingsFormDirty() {
     || $('set-modelselector').checked !== !!s.showModelSelector
     || $('set-reasoning-effort').value !== (s.reasoningEffort || '')
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
-    || $('set-tools-in-prompt').checked !== !!s.includeToolsInSystemPrompt
     || $('set-intent-tracing').checked !== !!s.intentTracing
-    || $('set-save-json').checked !== !!s.saveJsonResponses
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
@@ -3579,9 +3577,7 @@ function openSettings() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   setMotionUI(s.motion || 'system');
-  $('set-tools-in-prompt').checked = !!s.includeToolsInSystemPrompt;
   $('set-intent-tracing').checked = !!s.intentTracing;
-  $('set-save-json').checked = !!s.saveJsonResponses;
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');

@@ -801,7 +801,7 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
 //   "présentée" pour que le modèle sache que la ressource est déjà affichée.
 // Les blocs D8 restent dans _pendingToolBlocks pour le rendu visuel immédiat.
 // Appelé depuis api.js après await callTool, avant flattenToolResult.
-async function internResourcesFromResult(result, conversationId, now, rand, saveInline) {
+async function internResourcesFromResult(result, conversationId, now, rand) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
   const theRand = (typeof rand === 'function') ? rand : Math.random;
@@ -858,19 +858,8 @@ async function internResourcesFromResult(result, conversationId, now, rand, save
           !(b.type === 'resource' && b.resource != null &&
             b.resource.text != null && b.resource.blob == null));
       }
-      if (saveInline) {
-        // Stocker en IDB (persistance, accès via resource__present). Le modèle
-        // reçoit le contenu brut + le descripteur avec l'ID (pour qu'il puisse
-        // appeler resource__present si besoin), sans note « présentée ».
-        const storedId = await _storeBlock(part.mime, part.name,
-          utf8Encode(part.text), 'inline', conversationId, theNow, theRand);
-        const rec = storedId ? getCachedRecord(storedId) : null;
-        const desc = rec ? ('\n' + formatResourceDescriptor(rec)) : '';
-        newContent.push({ type: 'text', text: part.text + desc });
-      } else {
-        // Réglage désactivé : le modèle reçoit le texte brut, sans ressource ni ID.
-        newContent.push({ type: 'text', text: part.text });
-      }
+      // Le modèle reçoit le texte brut, sans ressource ni ID.
+      newContent.push({ type: 'text', text: part.text });
     } else {
       // passthrough : {type:'text'}, {type:'resource_link'}, bloc null, inconnu
       newContent.push(part.block);

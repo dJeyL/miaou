@@ -2,8 +2,8 @@
 
 ## Registre d'outils
 
-Treize outils dans le tableau `TOOLS` ; `toolsSystemPrompt()` dérive sa
-description **du registre** — ne jamais la coder en dur. `ask_confirmation`
+Treize outils dans le tableau `TOOLS` ; leur description au modèle dérive **du
+registre** (`toolDefinitions()`) — ne jamais la coder en dur. `ask_confirmation`
 (primitif halting, cf. plus bas) est exposé au modèle mais **hors registre** :
 il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
 

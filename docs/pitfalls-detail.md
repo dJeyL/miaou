@@ -8,10 +8,8 @@ au KV cache, ou à la synchro multi-onglets.
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
    l'ordre : `ROOT_SYSTEM_PROMPT` (constante build-time : `BINARY_DOCTRINE` +
-   `MEMORY_DOCTRINE`, toujours injectée si des outils sont présents) ;
-   si `includeToolsInSystemPrompt` est vrai, `toolsSystemPrompt()` (énumération
-   textuelle des outils, optionnelle) ; puis le prompt système utilisateur
-   (persona/préférences, éditable en paramètres).
+   `MEMORY_DOCTRINE`, toujours injectée si des outils sont présents) ; puis le
+   prompt système utilisateur (persona/préférences, éditable en paramètres).
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du *texte* mis dans
    le message système par MIAOU (recherche locale). Les `tool_calls` sont
    déclenchés par le **modèle**. MIAOU n'appelle jamais d'outil de lui-même.
@@ -188,9 +186,8 @@ au KV cache, ou à la synchro multi-onglets.
     (identique au défaut quand pas d'override).
 16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` ne contient
     que du contenu **statique** : `ROOT_SYSTEM_PROMPT` (toujours, si outils
-    présents) + optionnellement `toolsSystemPrompt()` (selon
-    `includeToolsInSystemPrompt`) + prompt système utilisateur. Aucune dépendance
-    à `Date.now()` ni aux résumés mémoire. Le contenu dynamique (date/heure, nom
+    présents) + prompt système utilisateur. Aucune dépendance à `Date.now()`
+    ni aux résumés mémoire. Le contenu dynamique (date/heure, nom
     du modèle, bloc mémoire) est regroupé dans `buildContextBlock(matches)` et
     injecté **éphémèrement en préfixe du dernier message `role: 'user'`** dans
     `dispatchSend`, au moment de la construction du payload API — sans modifier
@@ -326,9 +323,9 @@ au KV cache, ou à la synchro multi-onglets.
     explicitement par l'utilisateur après implémentation initiale : un Space
     porte une description contextuelle, pas un system prompt de substitution.)
     C'est la SEULE part de `buildSystemMessage()` qui varie d'un Space à
-    l'autre — `ROOT_SYSTEM_PROMPT`, `toolsSystemPrompt()`, les doctrines
-    intent/skills et le prompt système utilisateur global restent identiques
-    quel que soit le Space. Changer de Space actif change donc le system
+    l'autre — `ROOT_SYSTEM_PROMPT`, les doctrines intent/skills et le prompt
+    système utilisateur global restent identiques quel que soit le Space.
+    Changer de Space actif change donc le system
     message complet (la part ajoutée en fin) : **assumé et documenté**, ça
     invalide le préfixe KV cache (piège 16) au moment du switch — mais le
     message redevient statique tant qu'on reste dans le Space nouvellement

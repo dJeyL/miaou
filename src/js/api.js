@@ -504,8 +504,7 @@ async function runConversation(messages, hooks) {
             if (typeof internResourcesFromResult === 'function') {
               await internResourcesFromResult(rawResult,
                 typeof currentConvId !== 'undefined' ? currentConvId : null,
-                Date.now, Math.random,
-                !!loadSettings().saveJsonResponses);
+                Date.now, Math.random);
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);

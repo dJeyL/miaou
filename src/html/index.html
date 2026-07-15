@@ -243,7 +243,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ Settings drawer ═══ -->
   <div class="backdrop" id="backdrop" onclick="closeSettings()"></div>
-  <div class="drawer" id="drawer">
+  <div class="drawer drawer-mid" id="drawer">
     <div class="drawer-head">
       <h2>Paramètres</h2>
       <button class="icon-btn" onclick="closeSettings()">
@@ -449,33 +449,11 @@ if (window.requestAnimationFrame) {
       <div class="field">
         <div class="check-row">
           <div class="label-col">
-            <label>Injecter les outils dans le prompt système</label>
-            <span class="hint">Recommandé pour modèles peu fiables sur tool schema.</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-tools-in-prompt">
-            <span class="track"></span>
-            <span class="thumb"></span>
-          </label>
-        </div>
-        <div class="check-row">
-          <div class="label-col">
             <label>Traces en langage naturel</label>
             <span class="hint">Demande au modèle de décrire ses appels.</span>
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-intent-tracing">
-            <span class="track"></span>
-            <span class="thumb"></span>
-          </label>
-        </div>
-        <div class="check-row">
-          <div class="label-col">
-            <label>Enregistrer les réponses JSON</label>
-            <span class="hint">Crée des ressources pour faciliter le debugging.</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-save-json">
             <span class="track"></span>
             <span class="thumb"></span>
           </label>
@@ -539,7 +517,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ Tools drawer ═══ -->
   <div class="backdrop" id="tools-backdrop" onclick="closeTools()"></div>
-  <div class="drawer" id="tools-drawer">
+  <div class="drawer drawer-wide" id="tools-drawer">
     <div class="drawer-head">
       <h2>Outils exposés</h2>
       <button class="icon-btn" onclick="closeTools()">
@@ -554,7 +532,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ MCP servers drawer ═══ -->
   <div class="backdrop" id="mcp-backdrop" onclick="closeMcpServers()"></div>
-  <div class="drawer" id="mcp-drawer">
+  <div class="drawer drawer-mid" id="mcp-drawer">
     <div class="drawer-head">
       <h2>Serveurs MCP</h2>
       <button class="icon-btn" onclick="closeMcpServers()">
@@ -570,7 +548,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ Space screen (renommage, description, souvenirs scopés, suppression D6) ═══ -->
   <div class="backdrop" id="space-backdrop" onclick="closeSpaceScreen()"></div>
-  <div class="drawer" id="space-drawer">
+  <div class="drawer drawer-mid" id="space-drawer">
     <div class="drawer-head">
       <h2 id="space-drawer-title">Espace</h2>
       <button class="icon-btn" onclick="closeSpaceScreen()">
@@ -596,7 +574,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ API servers drawer ═══ -->
   <div class="backdrop" id="api-backdrop" onclick="closeApiServers()"></div>
-  <div class="drawer" id="api-drawer">
+  <div class="drawer drawer-mid" id="api-drawer">
     <div class="drawer-head">
       <h2>Serveurs API</h2>
       <button class="icon-btn" onclick="closeApiServers()">
@@ -632,7 +610,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ Summary / Memories drawer (combiné, avec onglets) ═══ -->
   <div class="backdrop" id="summary-backdrop" onclick="closeSummaryDrawer()"></div>
-  <div class="drawer" id="summary-drawer">
+  <div class="drawer drawer-mid" id="summary-drawer">
     <div class="drawer-head">
       <div class="drawer-tabs">
         <button class="drawer-tab active" data-tab="summaries" onclick="switchMemoryTab('summaries')">Résumés</button>
@@ -666,7 +644,7 @@ if (window.requestAnimationFrame) {
   </div>
 
   <div class="backdrop" id="ctx-backdrop" onclick="closeContextInspector()"></div>
-  <div class="drawer" id="ctx-drawer">
+  <div class="drawer drawer-mid" id="ctx-drawer">
     <div class="drawer-head">
       <div class="drawer-tabs">
         <span class="drawer-title">Inspecteur de contexte</span>
