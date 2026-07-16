@@ -4361,13 +4361,47 @@ function followSpace(id) {
 // l'ancien Space en éditant à l'aveugle celui qu'il vient de créer), puis
 // ouvre son écran avec le nom pré-sélectionné (focus + select) pour que la
 // première frappe remplace directement le nom générique.
+// Le Space est persisté AVANT l'ouverture de l'écran (pickSpace exige un Space
+// existant) : abandonner l'écran sans enregistrer laisserait donc un « Nouvel
+// espace » fantôme. `_spaceDraftId` marque ce Space comme provisoire ; il est
+// consommé par onSaveSpaceScreen (premier enregistrement = le Space devient
+// réel) et honoré par closeSpaceScreen (sortie sans save = rollback). Ne PAS
+// remplacer ce mécanisme par un report du upsertSpace après saisie : la bascule
+// immédiate est une spec (éditer le Space courant, pas à l'aveugle depuis
+// l'ancien).
+let _spaceDraftId = null;
+
 function createSpaceAndOpen() {
   const id = genSpaceId();
+  const previous = activeSpaceId;
   upsertSpace({ id, name: 'Nouvel espace' });
+  _spaceDraftId = id;
+  _spaceDraftPrevSpaceId = previous;
   pickSpace(id);
   openSpaceScreen(id);
   const nameInput = $('space-name-input');
   if (nameInput) { nameInput.focus(); nameInput.select(); }
+}
+
+// Space actif au moment de la création — cible du retour si le brouillon est
+// abandonné (ne jamais retomber sur DEFAULT_SPACE_ID en dur : l'utilisateur
+// serait déplacé hors du Space d'où il vient).
+let _spaceDraftPrevSpaceId = null;
+
+// Annule un brouillon de Space jamais enregistré : suppression sèche (aucune
+// cascade — un Space créé il y a quelques secondes n'a ni conversation, ni
+// souvenir, ni fichier) puis retour au Space d'origine. No-op si le Space
+// courant n'est pas un brouillon.
+function discardSpaceDraftIfAny() {
+  const id = _spaceDraftId;
+  if (!id) return;
+  _spaceDraftId = null;
+  const back = _spaceDraftPrevSpaceId || DEFAULT_SPACE_ID;
+  _spaceDraftPrevSpaceId = null;
+  deleteSpaceEntry(id);
+  if (activeSpaceId === id) pickSpace(getSpace(back) ? back : DEFAULT_SPACE_ID);
+  renderSpaceMenu();
+  syncSpaceUI();
 }
 
 // ── Écran Space (sous-drawer, pattern MCP) ───────────────────────────────────
@@ -4391,10 +4425,15 @@ function openSpaceScreen(id) {
   $('space-backdrop').classList.add('show');
 }
 
+// Point de sortie UNIQUE de l'écran (croix, backdrop, Escape via trackDrawer) :
+// le rollback du brouillon s'y greffe une seule fois, pas sur chaque câblage.
+// onSaveSpaceScreen consomme _spaceDraftId avant d'appeler ici, donc un
+// enregistrement ne déclenche jamais la suppression.
 function closeSpaceScreen() {
   $('space-drawer').classList.remove('show');
   $('space-backdrop').classList.remove('show');
   _spaceScreenId = null;
+  discardSpaceDraftIfAny();
 }
 
 function onSpaceFormInput() {
@@ -4412,6 +4451,9 @@ function onSaveSpaceScreen() {
     $('space-err').removeAttribute('hidden');
     return;
   }
+  // Enregistrement réussi : le brouillon devient un Space réel. Consommé AVANT
+  // closeSpaceScreen (qui rollbacke tout brouillon encore marqué).
+  if (_spaceDraftId === _spaceScreenId) { _spaceDraftId = null; _spaceDraftPrevSpaceId = null; }
   upsertSpace(Object.assign({}, space, {
     name: _spaceScreenId === DEFAULT_SPACE_ID ? (space.name || 'Général') : name,
     description: $('space-description-input').value,
@@ -4464,6 +4506,10 @@ async function onDeleteSpaceScreen() {
       await deleteResource(f.id);
     }
     deleteSpaceEntry(id);
+    // Suppression explicite d'un Space encore à l'état de brouillon (créé puis
+    // supprimé sans passer par Enregistrer) : désarmer le drapeau, sinon le
+    // closeSpaceScreen ci-dessous rejouerait un rollback sur un id déjà supprimé.
+    if (_spaceDraftId === id) { _spaceDraftId = null; _spaceDraftPrevSpaceId = null; }
     closeSpaceScreen();
     if (wasActive) {
       activeSpaceId = DEFAULT_SPACE_ID;

@@ -71,9 +71,25 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    - Blocs **inline** (`resource.text`) → stocke en IDB (persistance, accès via
      `resource__present`) ; appelle `retainPendingToolBlocks` pour retirer le bloc de
      la queue D8 (pas d'affichage automatique côté UI) ; pousse dans le résultat le
-     texte brut **suivi du descripteur** `[resource id=… mime=… name="…" size=…]`
-     (même format que les binaires, sans note « présentée ») — le modèle reçoit ainsi
-     le contenu ET l'ID pour un éventuel `resource__present`.
+     texte brut **suivi de `NOT_PRESENTED_NOTE`** (composition par
+     `formatInlineTextForModel`, resources.js, pure et testée) — le modèle reçoit le
+     contenu, et l'information qu'il est **le seul** à l'avoir sous les yeux.
+     - **Pourquoi la note.** Cette branche est la seule où un contenu **substantiel**
+       part au modèle sans que rien ne soit affiché : le bloc est retiré de la queue
+       D8, et le seul signal visible est le chip `resource_stored` (« Ressource
+       enregistrée »), qui trace **l'appel d'outil, jamais son contenu**. Sans note, le
+       modèle ne reçoit aucun marqueur — contrairement au `[ressource rendue dans
+       l'interface]` de `flattenToolResult`, réservé aux blocs **sans** texte — et
+       applique alors `BINARY_DOCTRINE` (« l'application l'a déjà présentée à
+       l'utilisateur ») : il répond « comme tu peux le voir ci-dessus » sur un JSON que
+       l'utilisateur n'a **jamais** vu. Observé en prod (serveur MCP maison renvoyant
+       une réponse d'API distante en `resource`). `BINARY_DOCTRINE` (tools.js, v2) borne
+       désormais explicitement la présentation automatique aux **binaires affichables** ;
+       la note est le rappel per-résultat, la doctrine la règle générale — les deux
+       ensemble, car la doctrine seule laisse le silence s'interpréter.
+     - Pas de descripteur `[resource id=…]` ici (contrairement aux binaires et au handle
+       `store_inline_from_bytes`) : le modèle a déjà le contenu en clair, un ID ne lui
+       servirait qu'à un `resource__present` non désiré.
    - Blocs **binaires** (image, audio, resource blob) → stocke en IDB + remplace par
      `[resource_ref:res_…]` + note « présentée » (`entry.result` = ref).
    `flattenToolResult` voit ensuite uniquement des blocs `text` et les aplatit.

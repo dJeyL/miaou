@@ -303,6 +303,34 @@ describe('_isTextualMime', function() {
   });
 });
 
+// ── formatInlineTextForModel ──────────────────────────────────────────────────
+// Invariant : un résultat d'outil textuel rangé en ressource N'EST PAS affiché à
+// l'utilisateur (branche store_inline : bloc retiré de _pendingToolBlocks). Sans
+// note explicite, le modèle applique BINARY_DOCTRINE et croit que l'application a
+// présenté le contenu — il répond « comme tu peux le voir » sur un contenu que
+// l'utilisateur n'a jamais eu sous les yeux (bug prod, serveur MCP → JSON).
+describe('formatInlineTextForModel', function() {
+  it('accole la note de non-présentation au texte, sans l\'altérer', function() {
+    var out = formatInlineTextForModel('{"ok":true}');
+    expect(out.indexOf('{"ok":true}') === 0).toBe(true);
+    expect(out.length > '{"ok":true}'.length).toBe(true);
+  });
+
+  it('la note dit explicitement que l\'utilisateur ne voit pas le contenu', function() {
+    var out = formatInlineTextForModel('x');
+    expect(out.indexOf('ne le voit PAS') > 0).toBe(true);
+  });
+
+  it('texte vide → note quand même présente (jamais de résultat nu)', function() {
+    expect(formatInlineTextForModel('').indexOf('ne le voit PAS') > 0).toBe(true);
+  });
+
+  it('null/undefined → pas de throw, pas de "null" injecté', function() {
+    expect(formatInlineTextForModel(null).indexOf('null') === -1).toBe(true);
+    expect(formatInlineTextForModel(undefined).indexOf('undefined') === -1).toBe(true);
+  });
+});
+
 // ── extractResultParts ────────────────────────────────────────────────────────
 
 describe('extractResultParts', function() {
@@ -384,6 +412,16 @@ describe('extractResultParts', function() {
       content: [{ type: 'resource', resource: { text: 'hello', mimeType: 'text/plain' } }]
     });
     expect(p[0].action).toBe('store_inline');
+  });
+
+  it('resource avec text JSON → texte modèle porteur de la note de non-présentation', function() {
+    var p = extractResultParts({
+      content: [{ type: 'resource', resource: { text: '{"a":1}', mimeType: 'application/json' } }]
+    });
+    // Ce que internResourcesFromResult pousse réellement au modèle sur cette branche.
+    var sent = formatInlineTextForModel(p[0].text);
+    expect(sent.indexOf('{"a":1}') === 0).toBe(true);            // le texte d'abord, intact
+    expect(sent.indexOf('ne le voit PAS') > 0).toBe(true);       // suivi de la note
   });
 
   it('resource_link → passthrough', function() {

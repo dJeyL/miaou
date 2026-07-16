@@ -22,14 +22,29 @@ function summaryLight(e) {
 
 // Doctrine comportementale : ressources binaires. Toujours injectée quand des outils
 // existent. Partie de ROOT_SYSTEM_PROMPT.
+// v2 : la v1 disait « l'application l'a déjà présentée à l'utilisateur » sans borner
+// la portée de « ressource ». Un résultat d'outil texte/JSON rangé en ressource
+// (branche store_inline, resources.js) N'EST PAS affiché — seul l'ack « Ressource
+// enregistrée » l'est, qui trace l'appel et non le contenu — mais le modèle lisait
+// « enregistre sous forme de ressource » + « déjà présentée » et répondait comme si
+// l'utilisateur avait le contenu sous les yeux (observé en prod). La distinction
+// affiché/non-affiché est désormais explicite ici, et NOT_PRESENTED_NOTE
+// (resources.js) la rappelle sur chaque résultat concerné.
 const BINARY_DOCTRINE =
-  "Quand un outil renvoie des données binaires (image, fichier, base64…), l'application " +
-  "les enregistre sous forme de ressource et t'en communique l'ID. Les images sont " +
-  "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
-  "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
-  "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-  "placeholder inventé. N'appelle pas resource__present pour une image sans demande explicite : " +
-  "l'application l'a déjà présentée à l'utilisateur.";
+  "Quand un outil renvoie des données BINAIRES (image, audio, fichier, base64…), " +
+  "l'application les enregistre sous forme de ressource et t'en communique l'ID. Les " +
+  "images sont affichées directement dans l'interface : tu peux les introduire par UNE " +
+  "phrase courte au plus (« Voici l'image demandée. »), mais ne reproduis jamais, " +
+  "n'encode pas, ne simule pas et ne décris pas le contenu binaire — pas de base64, pas " +
+  "d'image Markdown, pas de placeholder inventé. N'appelle pas resource__present pour " +
+  "une image sans demande explicite : l'application l'a déjà présentée à l'utilisateur.\n\n" +
+  "Cette présentation automatique vaut UNIQUEMENT pour les binaires affichables ci-dessus. " +
+  "Un résultat d'outil TEXTUEL (texte, JSON, XML, CSV…), même rangé en ressource et même " +
+  "si une trace « Ressource enregistrée » apparaît dans la conversation, n'est PAS montré " +
+  "à l'utilisateur : cette trace signale l'appel d'outil, jamais son contenu. Un tel " +
+  "contenu n'est lisible que par toi. Ne dis donc jamais à l'utilisateur qu'il peut le " +
+  "voir, ni qu'il lui a été affiché, ni « comme tu peux le constater ci-dessus » : s'il " +
+  "en a besoin, cite, extrais ou résume toi-même dans ta réponse ce qui lui est utile.";
 
 // Doctrine comportementale : pièces jointes de message (brief A, D4 ; corrigée
 // brief A2 / D3-D4). Toujours injectée quand des outils existent — même statut

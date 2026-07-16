@@ -280,11 +280,14 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     stockées mais non affichées automatiquement). Dans IndexedDB, une entrée
     `class: "inline"` est présente avec `mime: "application/json"`. Le champ `result`
     de l'ack (dans `localStorage['miaou-conversations']`) contient le **texte brut
-    JSON suivi du descripteur** `[resource id=res_… mime=… name="…" size=…]` — pas
-    de base64, pas de `[resource_ref:…]`. Dans le payload réseau du tour suivant, le
-    `role:'tool'` contient ce contenu directement (pas de résolution de ref). Le
-    modèle voit le JSON complet et l'ID, et peut appeler `miaou__resource__present`
-    avec cet ID s'il juge utile d'afficher la ressource.
+    JSON suivi de la note de non-présentation** (`[Ce contenu ne t'est communiqué
+    qu'à toi : l'utilisateur ne le voit PAS dans l'interface. …]`) — pas de base64,
+    pas de `[resource_ref:…]`. Dans le payload réseau du tour suivant, le
+    `role:'tool'` contient ce contenu directement (pas de résolution de ref).
+    **Vérifier ensuite le comportement du modèle** : il ne doit ni prétendre que la
+    ressource est affichée, ni renvoyer l'utilisateur vers « le JSON ci-dessus » — s'il
+    doit en parler, il en cite ou résume le contenu utile dans sa réponse (cf.
+    `BINARY_DOCTRINE` v2 + `NOT_PRESENTED_NOTE`, `docs/mcp.md` §8).
 
 29. **Ressource binaire (image)** : demander « utilise `get_image` ». Un chip
     « Ressource enregistrée : … » apparaît suivi de l'image inline dans la bulle.
@@ -298,15 +301,18 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     **réapparaît** dans la bulle (rendue par `placeToolAck` depuis IDB, `class:
     "binary"`). Aucun bloc JSON n'apparaît (inline : stocké en IDB mais non
     affiché). Envoyer un nouveau message → dans DevTools Network : le `role:'tool'`
-    de la ressource **inline** contient le JSON complet (texte brut direct depuis
-    `entry.result`, sans résolution de ref) ; le `role:'tool'` de la ressource
+    de la ressource **inline** contient le JSON complet suivi de la note de
+    non-présentation (texte brut direct depuis `entry.result`, sans résolution de
+    ref) ; le `role:'tool'` de la ressource
     **binary** contient le descripteur `[resource id=…]` + note « présentée » (ref
     résolue par `resolveResourceRefs` avant `expandThread`). Le préfixe
     `system + historique[0..N-2]` est byte-identique d'une requête à l'autre.
 
 31. **`resource__present`** : après les tests 28/29 (session cache chaud, ou après
     rechargement qui recharge le cache), demander au modèle « utilise
-    `miaou__resource__present` avec l'id `res_…` de la ressource JSON ». Le résultat
+    `miaou__resource__present` avec l'id `res_…` de la ressource JSON ». L'id de la
+    ressource inline n'étant PAS communiqué au modèle (cf. test 28), le relever dans
+    IndexedDB et le lui donner explicitement. Le résultat
     d'outil doit être `Ressource présentée à l'utilisateur.` ; un ack
     `resource_presented` (icône + label « Présentée : … ») s'insère dans la bulle ;
     le bloc JSON s'affiche inline dans la bulle. Même chose avec l'image binaire →

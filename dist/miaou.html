@@ -3310,7 +3310,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-16 17:23 UTC */
+/* miaou — built: 2026-07-16 19:55 UTC */
 
 /* ── utils.js ── */
 
@@ -4302,7 +4302,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784222585}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784231734}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -5406,12 +5406,21 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
   }
 }
 
+const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
+
+const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
+  'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
+  'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+
+function formatInlineTextForModel(text) {
+  return String(text == null ? '' : text) + NOT_PRESENTED_NOTE;
+}
+
 async function internResourcesFromResult(result, conversationId, now, rand) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
   const theRand = (typeof rand === 'function') ? rand : Math.random;
 
-  const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
   const newContent = [];
 
   for (const part of extractResultParts(result)) {
@@ -5448,7 +5457,7 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
             b.resource.text != null && b.resource.blob == null));
       }
       
-      newContent.push({ type: 'text', text: part.text });
+      newContent.push({ type: 'text', text: formatInlineTextForModel(part.text) });
     } else {
       
       newContent.push(part.block);
@@ -5715,13 +5724,20 @@ function summaryLight(e) {
 }
 
 const BINARY_DOCTRINE =
-  "Quand un outil renvoie des données binaires (image, fichier, base64…), l'application " +
-  "les enregistre sous forme de ressource et t'en communique l'ID. Les images sont " +
-  "affichées directement dans l'interface : tu peux les introduire par UNE phrase courte au plus " +
-  "(« Voici l'image demandée. »), mais ne reproduis jamais, n'encode pas, ne simule pas " +
-  "et ne décris pas le contenu binaire — pas de base64, pas d'image Markdown, pas de " +
-  "placeholder inventé. N'appelle pas resource__present pour une image sans demande explicite : " +
-  "l'application l'a déjà présentée à l'utilisateur.";
+  "Quand un outil renvoie des données BINAIRES (image, audio, fichier, base64…), " +
+  "l'application les enregistre sous forme de ressource et t'en communique l'ID. Les " +
+  "images sont affichées directement dans l'interface : tu peux les introduire par UNE " +
+  "phrase courte au plus (« Voici l'image demandée. »), mais ne reproduis jamais, " +
+  "n'encode pas, ne simule pas et ne décris pas le contenu binaire — pas de base64, pas " +
+  "d'image Markdown, pas de placeholder inventé. N'appelle pas resource__present pour " +
+  "une image sans demande explicite : l'application l'a déjà présentée à l'utilisateur.\n\n" +
+  "Cette présentation automatique vaut UNIQUEMENT pour les binaires affichables ci-dessus. " +
+  "Un résultat d'outil TEXTUEL (texte, JSON, XML, CSV…), même rangé en ressource et même " +
+  "si une trace « Ressource enregistrée » apparaît dans la conversation, n'est PAS montré " +
+  "à l'utilisateur : cette trace signale l'appel d'outil, jamais son contenu. Un tel " +
+  "contenu n'est lisible que par toi. Ne dis donc jamais à l'utilisateur qu'il peut le " +
+  "voir, ni qu'il lui a été affiché, ni « comme tu peux le constater ci-dessus » : s'il " +
+  "en a besoin, cite, extrais ou résume toi-même dans ta réponse ce qui lui est utile.";
 
 const ATTACHMENT_DOCTRINE =
   "Les fichiers joints par l'utilisateur apparaissent dans ses messages sous forme de " +
@@ -11092,13 +11108,32 @@ function followSpace(id) {
   armIdleSummaryTimer();
 }
 
+let _spaceDraftId = null;
+
 function createSpaceAndOpen() {
   const id = genSpaceId();
+  const previous = activeSpaceId;
   upsertSpace({ id, name: 'Nouvel espace' });
+  _spaceDraftId = id;
+  _spaceDraftPrevSpaceId = previous;
   pickSpace(id);
   openSpaceScreen(id);
   const nameInput = $('space-name-input');
   if (nameInput) { nameInput.focus(); nameInput.select(); }
+}
+
+let _spaceDraftPrevSpaceId = null;
+
+function discardSpaceDraftIfAny() {
+  const id = _spaceDraftId;
+  if (!id) return;
+  _spaceDraftId = null;
+  const back = _spaceDraftPrevSpaceId || DEFAULT_SPACE_ID;
+  _spaceDraftPrevSpaceId = null;
+  deleteSpaceEntry(id);
+  if (activeSpaceId === id) pickSpace(getSpace(back) ? back : DEFAULT_SPACE_ID);
+  renderSpaceMenu();
+  syncSpaceUI();
 }
 
 let _spaceScreenId = null;
@@ -11125,6 +11160,7 @@ function closeSpaceScreen() {
   $('space-drawer').classList.remove('show');
   $('space-backdrop').classList.remove('show');
   _spaceScreenId = null;
+  discardSpaceDraftIfAny();
 }
 
 function onSpaceFormInput() {
@@ -11142,6 +11178,8 @@ function onSaveSpaceScreen() {
     $('space-err').removeAttribute('hidden');
     return;
   }
+  
+  if (_spaceDraftId === _spaceScreenId) { _spaceDraftId = null; _spaceDraftPrevSpaceId = null; }
   upsertSpace(Object.assign({}, space, {
     name: _spaceScreenId === DEFAULT_SPACE_ID ? (space.name || 'Général') : name,
     description: $('space-description-input').value,
@@ -11181,6 +11219,8 @@ async function onDeleteSpaceScreen() {
       await deleteResource(f.id);
     }
     deleteSpaceEntry(id);
+    
+    if (_spaceDraftId === id) { _spaceDraftId = null; _spaceDraftPrevSpaceId = null; }
     closeSpaceScreen();
     if (wasActive) {
       activeSpaceId = DEFAULT_SPACE_ID;

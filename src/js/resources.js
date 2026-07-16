@@ -797,18 +797,43 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
   }
 }
 
+const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
+
+// Symétrique de PRESENTED_NOTE, pour la branche store_inline (resource texte/JSON).
+// Fait STABLE, pas une heuristique : cette branche retire inconditionnellement le
+// bloc de _pendingToolBlocks (aucun rendu, quel que soit le réglage) et le seul
+// signal visible reste l'ack « Ressource enregistrée » — qui trace l'appel, pas le
+// contenu. Sans cette note le modèle ne reçoit AUCUN marqueur (contrairement au
+// '[ressource rendue dans l'interface]' de flattenToolResult, réservé aux blocs
+// SANS texte) et conclut, en suivant BINARY_DOCTRINE, que l'application a déjà
+// présenté le contenu — il répond alors comme si l'utilisateur l'avait sous les
+// yeux. Observé en prod (serveur MCP maison renvoyant du JSON en resource).
+const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
+  'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
+  'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+
+// Compose le texte modèle d'un part store_inline. Helper PUR (extrait exprès de
+// internResourcesFromResult, async + IDB donc hors QuickJS) : l'invariant à tenir
+// — le texte part TOUJOURS avec sa note de non-présentation — devient testable
+// sans stub IDB.
+function formatInlineTextForModel(text) {
+  return String(text == null ? '' : text) + NOT_PRESENTED_NOTE;
+}
+
 // Intercepte un résultat d'outil MCP brut :
-// - resource text/JSON → passe le texte brut au modèle (fiable, sans IDB, sans ref).
+// - resource text/JSON → stocke en IDB (class 'inline', accès resource__present)
+//   et passe le texte brut au modèle, SANS ref ni ID, suivi de NOT_PRESENTED_NOTE
+//   (le contenu n'est affiché nulle part : le modèle est le seul à le voir).
 // - binaires (image, audio, blob) → stocke en IDB, remplace par une ref + note
 //   "présentée" pour que le modèle sache que la ressource est déjà affichée.
-// Les blocs D8 restent dans _pendingToolBlocks pour le rendu visuel immédiat.
+// Les blocs D8 des binaires restent dans _pendingToolBlocks pour le rendu visuel
+// immédiat ; les blocs inline en sont retirés (retainPendingToolBlocks).
 // Appelé depuis api.js après await callTool, avant flattenToolResult.
 async function internResourcesFromResult(result, conversationId, now, rand) {
   if (!result || !Array.isArray(result.content)) return;
   const theNow = (typeof now === 'function') ? now() : (now || Date.now());
   const theRand = (typeof rand === 'function') ? rand : Math.random;
 
-  const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
   const newContent = [];
 
   // Partitionnement (helper pur, testé) — même branchement image/audio/resource
@@ -841,7 +866,8 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
       const id = await _storeBlock(part.mime, part.name,
         base64ToArrayBuffer(part.fromBase64), 'inline', conversationId, theNow, theRand);
       if (id) {
-        // PAS de _makeResourceRef ici (contrairement à store_binary/store_inline) :
+        // PAS de _makeResourceRef ici (contrairement à store_binary ; store_inline
+        // n'en pose pas non plus — il pousse le texte en clair) :
         // ce handle inline est destiné à js__eval SEUL, jamais à une ré-injection
         // inline. formatInlineHandleForModel émet un descripteur statique compact
         // (byte-stable, KV-safe, jamais expansé) portant l'id res_… à passer à
@@ -860,8 +886,9 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
           !(b.type === 'resource' && b.resource != null &&
             b.resource.text != null && b.resource.blob == null));
       }
-      // Le modèle reçoit le texte brut, sans ressource ni ID.
-      newContent.push({ type: 'text', text: part.text });
+      // Le modèle reçoit le texte brut, sans ressource ni ID — suivi de la note
+      // de non-présentation (le contenu n'est affiché nulle part côté UI).
+      newContent.push({ type: 'text', text: formatInlineTextForModel(part.text) });
     } else {
       // passthrough : {type:'text'}, {type:'resource_link'}, bloc null, inconnu
       newContent.push(part.block);
