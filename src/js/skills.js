@@ -14,8 +14,8 @@
    à l'invocation seulement) : il alimente l'autocomplétion du composer, qui
    filtre à chaque frappe et ne peut pas attendre IDB. cf. brief stage 1.
 
-   Stage 2 ajoute `autotrigger` (bool, défaut false — OPPOSÉ à `enabled`) : un
-   skill enabled+autotrigger est listé chaque tour dans le contexte dynamique
+   Stage 2 ajoute `autotrigger` (bool, défaut false — OPPOSÉ à `enabled`) : une
+   skill enabled+autotrigger est listée chaque tour dans le contexte dynamique
    (cf. main.js, getAutotriggerSkillsMeta), pour découverte proactive par le
    modèle sans appel préalable à miaou__skills__list. Pas de bump de version
    IDB : schemaless, les enregistrements existants en sont simplement dépourvus
@@ -28,9 +28,9 @@
    IDB de façon INCONDITIONNELLE à chaque démarrage (ensureSystemSkills,
    appelé depuis init() avant loadSkillsCache) : le fichier source est la
    seule source de vérité, une édition IDB locale ne survivrait pas au
-   prochain chargement de page. `enabled`/`autotrigger` restent des toggles
-   utilisateur légitimes (préservés au ré-upsert, seuls name/description/
-   content/system sont réécrits depuis la source).
+   prochain chargement de page. `enabled`/`autotrigger` sont FIGÉS à `true` à
+   chaque upsert : aucun réglage utilisateur sur une skill système (cf.
+   ensureSystemSkills plus bas).
    ──────────────────────────────────────────────────────────────────────────── */
 
 // Contenu des skills système, injecté au build depuis src/system-skills/*.md
@@ -188,7 +188,7 @@ function getSkillMeta(slug) {
   return _skillsCache.find(x => x.slug === slug) || null;
 }
 
-// Tous les skills (méta), dans l'ordre d'insertion — pour le drawer de gestion.
+// Toutes les skills (méta), dans l'ordre d'insertion — pour le drawer de gestion.
 function listAllSkillsCache() {
   return _skillsCache.slice();
 }
@@ -208,7 +208,7 @@ function getAutotriggerSkillsMeta() {
     .map(s => ({ slug: s.slug, name: s.name, description: s.description }));
 }
 
-// Filtre les skills activés dont le slug (ou le name) matche un préfixe de saisie.
+// Filtre les skills activées dont le slug (ou le name) matche un préfixe de saisie.
 // Pour l'autocomplétion du composer (après `/`). Pur, synchrone.
 function matchSkillCompletions(query) {
   const q = String(query == null ? '' : query).toLowerCase();
@@ -260,9 +260,8 @@ function putSkill(record) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('skills', 'readwrite');
-      const req = tx.objectStore('skills').put(rec);
-      req.onsuccess = function() { upsertSkillCache(rec); resolve(rec.slug); };
-      tx.oncomplete = function() { syncPost('skills-updated', {}); };   // post-commit (piège 24)
+      tx.objectStore('skills').put(rec);
+      tx.oncomplete = function() { upsertSkillCache(rec); syncPost('skills-updated', {}); resolve(rec.slug); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -274,9 +273,8 @@ function deleteSkillDb(slug) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('skills', 'readwrite');
-      const req = tx.objectStore('skills').delete(slug);
-      req.onsuccess = function() { removeSkillCache(slug); resolve(); };
-      tx.oncomplete = function() { syncPost('skills-updated', {}); };   // post-commit (piège 24)
+      tx.objectStore('skills').delete(slug);
+      tx.oncomplete = function() { removeSkillCache(slug); syncPost('skills-updated', {}); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });

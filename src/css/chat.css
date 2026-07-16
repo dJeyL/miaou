@@ -7,9 +7,8 @@
 /* ═══ Main ═══ */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 
-/* Survol drag&drop pièce jointe étendu à toute la colonne chat (topbar +
-   messages + composer, hors sidebar/drawers) — .input-wrap garde son propre
-   état visuel plus discret pour un drop ciblé sur la barre de saisie. */
+/* Survol drag&drop pièce jointe : seul état visuel de drop, sur toute la
+   colonne chat (topbar + messages + composer, hors sidebar/drawers). */
 .main.dragover::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 50;
   box-shadow: inset 0 0 0 3px var(--accent-bd);
@@ -486,13 +485,28 @@ pre.mermaid-rendered > code { display: none !important; }
    sur le <pre> masque la source, le bouton fermer restaure. Fond blanc forcé :
    le contenu prévisualisé suppose un fond clair par défaut, quel que soit le
    thème MIAOU. Hauteur fixe + scroll interne au contenu de l'iframe. */
-.code-preview { position: relative; background: #fff; white-space: normal; }
+.code-preview {
+  position: relative;
+  /* Fond clair FIXE, volontairement indépendant du thème MIAOU (le contenu
+     prévisualisé suppose un fond blanc par défaut, cf. commentaire ci-dessus) :
+     variables locales dédiées, pas les tokens de thème --surface / --text
+     (qui suivraient le thème), pour que le couplage soit explicite plutôt
+     qu'une coïncidence de valeurs en dur. */
+  --preview-bg: #fff;
+  --preview-close-border: #d0d0d0;
+  --preview-close-bg: #f4f4f4;
+  --preview-close-text: #444;
+  --preview-close-bg-hover: #e8e8e8;
+  --preview-close-text-hover: #000;
+  background: var(--preview-bg);
+  white-space: normal;
+}
 .code-preview iframe {
   display: block;
   width: 100%;
   height: 420px;
   border: none;
-  background: #fff;
+  background: var(--preview-bg);
 }
 pre.preview-open > code { display: none !important; }
 pre.preview-open .code-preview-btn { color: var(--accent); }
@@ -501,12 +515,12 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   top: 6px; right: 6px;
   width: 22px; height: 22px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #d0d0d0; border-radius: 50%;
-  background: #f4f4f4; color: #444;
+  border: 1px solid var(--preview-close-border); border-radius: 50%;
+  background: var(--preview-close-bg); color: var(--preview-close-text);
   font-size: 14px; line-height: 1;
   cursor: pointer; padding: 0;
 }
-.code-preview-close:hover { background: #e8e8e8; color: #000; }
+.code-preview-close:hover { background: var(--preview-close-bg-hover); color: var(--preview-close-text-hover); }
 
 /* ── Lightbox & exports Mermaid (lot E3) ──
    Barre d'actions discrète en haut à droite de la vue rendue (agrandir,

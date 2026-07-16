@@ -902,7 +902,7 @@ function stopGenerationRelay() {
 // le Space actif (seul point de création — brief D5, lot C).
 function ensureConversation() {
   if (currentConvId) return;
-  const id = 'c' + Date.now().toString(36);
+  const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const manualTitle = $('conv-title').textContent.trim();
   saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [], spaceId: activeSpaceId });
   currentConvId = id;
@@ -1479,8 +1479,7 @@ async function ingestLibraryFile(spaceId, file) {
     if (kind0 === 'image') {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
-      const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random);
-      if (rec && w && h) { rec.w = w; rec.h = h; await putResource(rec); }
+      const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random, { w, h });
       if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
@@ -1580,7 +1579,7 @@ function onSendBtn() {
 //   { ok:true,  literal, content, isSkill }   — au moins un slash résolu (content = bakové)
 //   { ok:false, error }                        — slug en position 0 inconnu / désactivé / indisponible
 async function resolveSend(literal) {
-  // Aucun skill activé : rien à reconnaître — un `/mot` (même en position 0)
+  // Aucune skill activée : rien à reconnaître — un `/mot` (même en position 0)
   // est du texte comme un autre, jamais un blocage « skill inconnue ».
   if (!listEnabledSkills().length) return { ok: true, literal, content: literal, isSkill: false };
   const triggers = findSlashTriggers(literal);
@@ -1773,21 +1772,46 @@ async function editUserMessage(index, newText) {
   if (index < 0 || index >= currentThread.length) return null;
   if (currentThread[index].role !== 'user') return null;
 
+  // Pièces jointes du message édité (c20) : figées AVANT tout await. Éditer le
+  // texte ne touche jamais à la liste (ni ajout ni retrait) — elle est reportée
+  // telle quelle sur le message réécrit, et l'édition re-déclenche un tour
+  // d'attache (piège 17) : le content repart en content parts (image) / blocs
+  // fencés (texte) / descripteurs (binaire) par le MÊME chemin que l'envoi
+  // initial, puis onFinal/onHalt de dispatchSend re-collapsent en descripteur
+  // (ils reciblent le dernier index user, donc le message édité après troncature).
+  // Sans ça, l'édition détachait silencieusement l'image : le modèle régénérait
+  // sa réponse sans la voir.
+  const old = currentThread[index];
+  const oldAttachments = old.attachments;
+
   // Résoudre AVANT toute mutation : un slug invalide laisse le thread intact et la
   // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
   // Même verrou que sendMessage : l'await resolveSend peut attendre IDB.
-  let r;
+  // buildOutgoingContentForAttachments est async lui aussi : il rentre dans le
+  // MÊME bloc _sendResolving/finally (garde B7) — sinon ce second await rouvre
+  // une fenêtre de double-tir entre la résolution et la mutation du thread. Il
+  // ne touche pas au thread, il peut donc précéder la troncature.
+  let r, content;
   _sendResolving = true;
   try {
     r = await resolveSend(t);
+    if (r.ok && oldAttachments && oldAttachments.length) {
+      content = await buildOutgoingContentForAttachments(r.content, oldAttachments);
+    }
   } finally {
     _sendResolving = false;
   }
   if (!r.ok) return r.error;
+  if (content === undefined) content = r.content;
 
   currentThread = currentThread.slice(0, index + 1);
-  const msg = { role: 'user', content: r.content, ts: Date.now() };
-  if (r.isSkill) msg.displayText = r.literal;
+  const msg = { role: 'user', content, ts: Date.now() };
+  // Doctrine displayText alignée sur sendUserText : source UNIQUE de la bulle
+  // dès que `content` diverge du littéral tapé. Deux causes cumulables — skill
+  // bakée, et attachments (parts/blocs fencés/descripteurs). Sans l'élargir aux
+  // attachments, la textarea d'une future ré-édition fuiterait fences/descripteurs.
+  if (r.isSkill || content !== r.literal) msg.displayText = r.literal;
+  if (oldAttachments) msg.attachments = oldAttachments;
   currentThread[index] = msg;
   persistCurrent();                             // troncature écrite avant relance
   renderThread(currentThread);                  // détruit la bulle d'édition (+ son erreur)
@@ -1802,7 +1826,7 @@ async function editUserMessage(index, newText) {
 // Un seul clic, pas de confirmation (cohérent avec editUserMessage) : le
 // bouton n'est de toute façon visible que sur la dernière bulle assistant
 // (cf. syncLastAssistantActions, ui.js), donc le geste est déjà borné.
-function regenerateResponse(btn) {
+function regenerateResponse() {
   if (!configured || sending) return;
   if (_confirmPending) dismissConfirmation();   // même geste que sendMessage
   const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
@@ -2430,11 +2454,13 @@ function init() {
   });
   syncSpaceUI();
   loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
+  backfillMessageModels();   // migration : idem, doit tourner avant le branchement du canal
   // Synchro multi-onglets : branche le récepteur ET construit le canal, APRÈS
-  // les migrations de boot (Spaces + serveurs API). Tant que _syncChannel était
-  // null, syncPost restait no-op — la migration n'a émis aucun broadcast
-  // parasite. À partir d'ici, cet onglet émet (post-commit) ET écoute
-  // (handleSyncMessage → routeMessage → applySyncDecision).
+  // les migrations de boot (Spaces + serveurs API + backfill modèles). Tant
+  // que _syncChannel était null, syncPost restait no-op — les migrations
+  // n'ont émis aucun broadcast parasite. À partir d'ici, cet onglet émet
+  // (post-commit) ET écoute (handleSyncMessage → routeMessage →
+  // applySyncDecision).
   syncOnMessage(handleSyncMessage);
   // Soft-lock (J4) : à la fermeture/masquage de l'onglet, signaler best-effort
   // qu'on lâche la conv affichée (les pairs retirent le bandeau). pagehide couvre
@@ -2485,7 +2511,6 @@ function init() {
     });
   });
 
-  backfillMessageModels();
   renderConvList();
   resetToEmpty();
   syncConfigured();

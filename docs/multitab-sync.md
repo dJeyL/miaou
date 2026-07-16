@@ -124,15 +124,22 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
   peuvent légitimement être sur des Espaces différents.
 - Résumés (`saveSummary`, tombstones, `deleteSummaryEntry`) — aucune surface UI
   cross-onglet à rafraîchir en V1 (l'index des résumés n'est pas rendu en direct).
-- `migrateSpacesIfNeeded` / `migrateApiServersIfNeeded` au boot — le canal est
-  construit (`initSyncChannel`) **après** ces migrations dans `init()`, donc
-  `syncPost` y est un no-op (aucun broadcast de démarrage parasite).
+- `migrateSpacesIfNeeded` / `migrateApiServersIfNeeded` / `backfillMessageModels`
+  au boot — le canal est construit (`initSyncChannel`) **après** ces migrations
+  dans `init()`, donc `syncPost` y est un no-op (aucun broadcast de démarrage
+  parasite).
+- Souvenirs (`saveMemory`/`editMemory`/`suppressMemory`/`restoreMemory`/
+  `forgetMemory`) — même raisonnement que les résumés : le drawer souvenirs est
+  relu à chaque ouverture, pas de surface UI cross-onglet à rafraîchir en
+  direct (« ne pas broadcaster l'invisible »). Contrairement aux résumés, ce
+  store a un chemin d'écriture model-triggered (`memory__create`/`update`/
+  `delete`), mais `<miaou_context>` relit l'état frais au tour suivant.
 
 **Init du canal** : `syncOnMessage(handleSyncMessage)` est appelé dans `init()`
-(main.js) juste après `loadApiServers()`, après toutes les migrations synchrones
-de boot. Il branche le récepteur ET construit le canal (via `initSyncChannel`).
-Avant ce point le canal est null → `syncPost` no-op → aucun broadcast de
-démarrage parasite.
+(main.js) juste après `loadApiServers()` et `backfillMessageModels()`, après
+toutes les migrations de boot. Il branche le récepteur ET construit le canal
+(via `initSyncChannel`). Avant ce point le canal est null → `syncPost` no-op →
+aucun broadcast de démarrage parasite.
 
 **Bruit d'import assumé** : pendant `applyImportedData`, la réinsertion émet des
 `resources-updated`/`skills-updated` en rafale avant le `full-reload` final —

@@ -381,6 +381,15 @@ model-side unique sur la bibliothèque) :**
     `findAckByCallId` (résolution) la consomment — jamais deux formules, sinon
     dérive de ciblage muette. `findAckByCallId(thread, callId)` accepte le hash
     nu ou la forme `[call:…]`, renvoie `{ ack, group, k, callId }` ou `null`.
+    Le `prefix` de `_hashId9` est la valeur de `group` (source api.js, unique
+    par tour) pour les acks groupés, et `solo:<start>` (index du groupe dans le
+    thread) pour les acks **« solo » legacy** sans `group` — d'avant le
+    groupement. Le préfixe positionnel garantit un id distinct par ack solo dans
+    un même fil (un préfixe `'solo'` constant les faisait tous collisionner :
+    `tool_call_id` dupliqués côté payload, `findAckByCallId` renvoyant le premier
+    match, donc réécriture du mauvais ack). Il change les ids émis pour ces
+    vieux threads : marqueurs `[call:]` **non persistés** (pas de casse de
+    données), seule invalidation = le KV cache de ces fils, une fois.
   - **Réentrance** (mémoire `await_reentrancy_guard`) : la cible est résolue et
     gelée AVANT l'`await _storeBlock`, puis **re-résolue APRÈS** ; si la cible a
     disparu (suppression/navigation concurrente) ou est déjà un handle, on ne
@@ -417,7 +426,7 @@ Mécanisme **générique** couvrant les écritures mémoire, les lectures d'hist
 et les appels MCP distants. Chaque handler traçable pousse un descripteur
 `{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
 memory_update | memory_delete | conversation_read | conversation_list | mcp_call |
-resource_stored | resource_presented | resource_deleted | attachment_recalled |
+resource_stored | resource_presented | attachment_recalled |
 skill_list | skill_read | skill_write | files_list | files_read | file_promote |
 about_read | js_eval | tool_failed`.
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js) consomment la file via

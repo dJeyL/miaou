@@ -89,7 +89,9 @@ function placeCaretEnd(el) {
   sel.addRange(range);
 }
 
-// Auto-grandissement d'un <textarea> jusqu'à une hauteur max.
+// Auto-grandissement d'un <textarea> jusqu'à une hauteur max. 168px DOIT
+// rester synchronisé avec `max-height` de #composer-text (composer.css) —
+// deux constantes en dur, aucune source unique côté build.
 function autoGrow(el) {
   el.style.height = 'auto';
   el.style.overflowY = 'hidden';
@@ -396,7 +398,9 @@ function b64ToBytes(b64) {
 // après normalisation des fins de ligne CRLF/CR → LF. Le dernier fragment sans
 // \n final est conservé (une ligne non terminée compte). Un texte vide donne
 // [''] (une ligne vide), cohérent avec String.split. Pure, QuickJS-testable ;
-// exposée au guest via une host newFunction fermant sur le texte décodé.
+// référence qui PIN le comportement du prélude guest lines() (réécrit en
+// string pure dans tools.js, cf. piège 25 — surface guest fermée à la seule
+// __miaou_text()).
 function splitLines(text) {
   const s = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   return s.split('\n');
@@ -644,7 +648,7 @@ function exportDateDisplay(now) {
 // Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
 // La valeur est figée à l'instant de l'appel ; le modèle en infère l'ancienneté
 // via le "now" déjà présent dans <miaou_context>. NE PAS recalculer à chaque
-// envoi (mutation → busteRait le KV cache de tout le préfixe history).
+// envoi (mutation → busterait le KV cache de tout le préfixe history).
 function stampTs(ts, result) {
   var s = result != null ? String(result) : '';
   if (!ts) return s;
@@ -664,6 +668,10 @@ function _truncMd(s, max) {
   // Markdown (les backticks ne s'étendent pas sur plusieurs lignes) : on
   // rend les sauts de ligne visibles au lieu de les laisser tels quels.
   s = s.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n');
+  // Un backtick dans le contenu fermerait prématurément le code span inline
+  // (tous les call-sites enveloppent le retour dans `...`) : neutralisé par
+  // une apostrophe courbe, visuellement proche, sans risque de collision.
+  s = s.replace(/`/g, '´');
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
@@ -906,7 +914,18 @@ function enrichedAckGroups(thread) {
           j++;
         }
       }
-      var prefix = grp != null ? grp : 'solo';
+      // Acks groupés → préfixe = valeur de `group` (source api.js, commence par
+      // 'g', unique par tour). Acks « solo » legacy (sans `group`, d'avant le
+      // groupement) → préfixe positionnel `solo:<start>` : `start` (index du
+      // groupe dans le thread) est unique par thread, donc pas de collision
+      // d'ids entre plusieurs solos d'un même fil (un préfixe 'solo' constant
+      // faisait dériver LE MÊME id pour tous — tool_call_id dupliqués côté
+      // payload, ciblage `findAckByCallId` sur le mauvais ack, piège 26). Ne
+      // collisionne pas avec l'espace 'g…' des groupes réels. Change les ids
+      // émis pour ces vieux threads legacy : marqueurs `[call:]` non persistés
+      // (pas de casse de données), seul le KV cache de ces fils est invalidé une
+      // fois. Source unique émission/résolution (enrichedAckGroups), piège 26a.
+      var prefix = grp != null ? grp : 'solo:' + i;
       groups.push({
         acks: groupAcks,
         ids: groupAcks.map(function(_, k) { return _hashId9(prefix + '\x00' + k); }),
@@ -1123,7 +1142,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
       chars = m.content.length;
     }
     threadChars += chars;
-    const tk = estimateTokens('x'.repeat(chars));   // même arrondi que pushEntry
+    const tk = Math.ceil(chars / 4);   // même arrondi qu'estimateTokens, sans son allocation
     threadTokens += tk;
     const role = m.role || 'other';
     if (!byRole[role]) byRole[role] = { chars: 0, tokens: 0 };

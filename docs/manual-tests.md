@@ -514,6 +514,26 @@ multimodaux) pour les tests 51-52 ; 53-54 ne nécessitent qu'un texte quelconque
     qui portait l'image doit apparaître en **string avec descripteur**, jamais
     encore en content parts (la réécriture a bien eu lieu malgré l'abort, pas
     seulement sur une fin normale).
+
+    **54b — Édition d'un message porteur d'une image (c20)** (rattaché au 54,
+    non numéroté pour ne pas décaler les références croisées des autres docs) :
+    envoyer une image avec un texte, attendre la réponse, puis **éditer** le
+    texte de ce message (crayon sur la bulle) et valider. Vérifier :
+    - la **vignette** de l'image est toujours dans la bulle réécrite (pas de
+      détachement silencieux) ;
+    - dans Network, le payload du tour régénéré contient à nouveau le message
+      user en **tableau de content parts** avec le `data:image/…;base64,…` —
+      c'est un nouveau tour d'attache — et la réponse régénérée **décrit bien
+      l'image** (preuve que le modèle la voit encore) ;
+    - au tour **suivant** (message supplémentaire, sans nouvelle pièce jointe),
+      ce message est re-collapsé en **string avec descripteur**, byte-identique
+      au descripteur d'avant l'édition (le collapse recible le dernier user) ;
+      contrôler aussi via l'inspecteur de contexte que le volume est retombé ;
+    - **ré-éditer** ce même message : la textarea contient le **littéral tapé**,
+      jamais le descripteur ni un bloc fencé (doctrine `displayText`) ;
+    - variantes : même scénario avec un **fichier texte** joint (le bloc fencé
+      reste, pas de descripteur — cf. 53) et avec une édition en `/slug …`
+      (corps de skill baké **et** pièce jointe conservés).
 55. **Dégradation vision-less (D5)** : avec un backend/modèle qui rejette les
     `image_url` (400), joindre une image et envoyer. Vérifier dans Network
     qu'un premier POST échoue (400) puis qu'un second POST part automatiquement

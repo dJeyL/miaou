@@ -1,5 +1,6 @@
 /* ── resources.js ────────────────────────────────────────────────────────────
-   Stockage hybride de ressources (binaires et textuelles) issues des outils MCP.
+   Stockage hybride de ressources (binaires et textuelles) : outils MCP, pièces
+   jointes du composer (att_) et bibliothèque de fichiers par Space (kind:'library').
    Deux sections :
    1. Helpers purs (QuickJS-testables, dépendances injectées).
    2. Couche IDB (navigateur uniquement) + cache de session + opérations haut-niveau.
@@ -647,11 +648,11 @@ function deleteResource(id) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('resources', 'readwrite');
-      const req = tx.objectStore('resources').delete(id);
-      // Évincer le cache seulement APRÈS le succès IDB : sinon un delete qui
-      // échoue laisserait le record en base mais absent du cache (incohérence).
-      req.onsuccess = function() { _uncacheRecord(id); resolve(); };
-      tx.oncomplete = function() { syncPost('resources-updated', { ids: [id], convId: null }); };  // post-commit (piège 24)
+      tx.objectStore('resources').delete(id);
+      // Évincer le cache seulement APRÈS le commit durable : sinon un delete
+      // qui échoue après un onsuccess prématuré laisserait le record en base
+      // mais absent du cache (incohérence).
+      tx.oncomplete = function() { _uncacheRecord(id); syncPost('resources-updated', { ids: [id], convId: null }); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -751,13 +752,14 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
 // (path 2/3), absent pour un upload direct (path 1). `description` optionnel
 // (D7 ou fourni par `files__promote`), toujours passé par `capFileDescription`.
 // Retourne l'enregistrement stocké en cas de succès, null sinon.
-async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand) {
+async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand, dims) {
   const id = generateFileId(rand);
   // normalizeLibraryRecord (helper pur, testé) porte les champs figés du schéma
   // + capFileDescription ; class/data (exclus du schéma normalisé) sont greffés ici.
   const record = Object.assign(
     normalizeLibraryRecord({ id, spaceId, name, mime, size: data.byteLength, createdAt: now, source, description }),
     { class: cls, data });
+  if (dims && dims.w && dims.h) { record.w = dims.w; record.h = dims.h; }
   try {
     await putResource(record);
     _cacheRecord(record);

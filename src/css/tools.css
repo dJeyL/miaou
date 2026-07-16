@@ -33,8 +33,7 @@
 .tool-ack.ack-conversation_list .ack-label,
 .tool-ack.ack-mcp_call .ack-label,
 .tool-ack.ack-resource_stored .ack-label,
-.tool-ack.ack-resource_presented .ack-label,
-.tool-ack.ack-resource_deleted .ack-label { color: var(--text-2); }
+.tool-ack.ack-resource_presented .ack-label { color: var(--text-2); }
 .tool-ack .ack-undo, .memory-ack .ack-undo {
   flex-shrink: 0;
   background: none;

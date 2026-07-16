@@ -1068,6 +1068,32 @@ describe('enrichedAckGroups (dérivation partagée émission/résolution, O-2)',
     expect(groups[0].start).toBe(1);
     expect(groups[0].end).toBe(2);
   });
+
+  it('acks « solo » legacy (sans group) : ids DISTINCTS par position, jamais collision (C5)', function() {
+    // Acks d'avant le groupement : pas de champ `group`. Chacun est son propre
+    // groupe solo. Le préfixe positionnel `solo:<start>` doit produire un id
+    // différent par ack — un préfixe 'solo' constant les faisait tous collisionner.
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ result: 'S1', group: undefined }),
+      { role: 'assistant', content: 'entre-deux' },
+      ack({ result: 'S2', group: undefined }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var groups = enrichedAckGroups(t);
+    expect(groups.length).toBe(2);
+    expect(groups[0].acks.length).toBe(1);
+    expect(groups[1].acks.length).toBe(1);
+    expect(groups[0].ids[0] === groups[1].ids[0]).toBe(false);
+    // Même dérivation que l'émission. Le message assistant « entre-deux »
+    // (standalone, pas un ack) reste dans le payload et décale le 2e groupe :
+    // [user, asst(A), tool(A), asst "entre-deux", asst(B), tool(B), asst "fin"].
+    var r = expandThread(t);
+    expect(groups[0].ids[0]).toBe(r[1].tool_calls[0].id);
+    expect(groups[1].ids[0]).toBe(r[4].tool_calls[0].id);
+    // Et les deux ids émis sont bien distincts dans le payload.
+    expect(r[1].tool_calls[0].id === r[4].tool_calls[0].id).toBe(false);
+  });
 });
 
 describe('findAckByCallId (résolution O-2, round-trip avec expandThread)', function() {
@@ -1116,6 +1142,25 @@ describe('findAckByCallId (résolution O-2, round-trip avec expandThread)', func
     var r = expandThread(t);
     expect(findAckByCallId(t, r[1].tool_calls[0].id).ack.result).toBe('G1');
     expect(findAckByCallId(t, r[3].tool_calls[0].id).ack.result).toBe('G2');
+  });
+
+  it('acks « solo » legacy multiples : chaque id cible LE BON ack, pas le premier (C5, piège 26)', function() {
+    // Régression du ciblage resource__from_result : avec un préfixe 'solo'
+    // constant, les deux ids étaient identiques → findAckByCallId renvoyait
+    // toujours le premier match, donc réécriture du mauvais ack.
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ result: 'SOLO_A', group: undefined }),
+      { role: 'assistant', content: 'entre-deux' },
+      ack({ result: 'SOLO_B', group: undefined }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    var idA = r[1].tool_calls[0].id;
+    var idB = r[4].tool_calls[0].id;
+    expect(idA === idB).toBe(false);
+    expect(findAckByCallId(t, idA).ack.result).toBe('SOLO_A');
+    expect(findAckByCallId(t, idB).ack.result).toBe('SOLO_B');
   });
 });
 

@@ -1,15 +1,18 @@
 # Pièges déjà payés — détail
 
-Développement complet des 24 pièges résumés dans CLAUDE.md. À consulter avant
+Développement complet des pièges 1-24 résumés dans CLAUDE.md (25 et 26 sont
+développés inline dans CLAUDE.md même, comme 16/18/21/24). À consulter avant
 de toucher au flux de conversation, au streaming, aux résumés/titrage, à
 l'édition de message, au patienteur, au raisonnement, au sélecteur de modèle,
 au KV cache, ou à la synchro multi-onglets.
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
-   l'ordre : `ROOT_SYSTEM_PROMPT` (constante build-time : `BINARY_DOCTRINE` +
-   `MEMORY_DOCTRINE`, toujours injectée si des outils sont présents) ; puis le
-   prompt système utilisateur (persona/préférences, éditable en paramètres).
+   l'ordre : `ROOT_SYSTEM_PROMPT` (constante build-time enchaînant huit
+   doctrines — `BINARY_DOCTRINE`, `ATTACHMENT_DOCTRINE`, `WEB_DOCTRINE`,
+   `CONV_REF_DOCTRINE`, `MEMORY_DOCTRINE`, `FILES_DOCTRINE`, `JS_EVAL_DOCTRINE`,
+   `RESOURCE_DOCTRINE` — injectée inconditionnellement) ; puis le prompt
+   système utilisateur (persona/préférences, éditable en paramètres).
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du *texte* mis dans
    le message système par MIAOU (recherche locale). Les `tool_calls` sont
    déclenchés par le **modèle**. MIAOU n'appelle jamais d'outil de lui-même.
@@ -19,8 +22,9 @@ au KV cache, ou à la synchro multi-onglets.
    'stop'`** avant d'afficher quoi que ce soit. Borne : `MAX_TOURS` tours (pas
    une borne sur le nombre d'outils — tous les `tool_calls` d'un tour sont
    exécutés dans ce tour). **Anti-redemande par échange** : `servedKeys`
-   (clé `nom:id` ou `nom:since`) court-circuite un appel déjà servi dans le même
-   échange, pour les deux outils.
+   (clé `nom + ':' + arguments bruts`) court-circuite un appel rigoureusement
+   identique déjà servi dans le même échange — deux appels du même outil avec
+   des arguments distincts (ex. deux `memory__create`) sont tous les deux servis.
 4. **Agrégation SSE par `index`.** Les `tool_calls` arrivent fragmentés :
    agréger strictement par `tcDelta.index`, ne jamais parser
    `function.arguments` avant la fin du stream, reprendre le `tool_call_id` exact.
@@ -256,6 +260,22 @@ au KV cache, ou à la synchro multi-onglets.
     skill inclus) — les blocs texte-attachment et les parts image s'ajoutent
     PAR-DESSUS ce texte baké, sans interférence entre les deux mécanismes
     (`displayText` reste le littéral tapé dans les deux cas, piège 12).
+
+    **Édition d'un message porteur d'attachments (c20)** : `editUserMessage`
+    re-déclenche un **tour d'attache** — les `attachments` du message d'origine
+    sont reportés tels quels sur le message réécrit (l'édition du texte ne touche
+    jamais la liste) et le `content` repart en parts/blocs fencés/descripteurs
+    via `buildOutgoingContentForAttachments`, le même chemin que l'envoi initial.
+    Le collapse existant n'a rien de spécifique à faire : `onFinal`/`onHalt`
+    reciblent **le dernier index user**, qui est le message édité après
+    troncature, et le filet de `dispatchSend` l'épargne délibérément. Byte-stable
+    (descripteurs re-générés depuis les champs FIGÉS de `att`, jamais depuis les
+    octets) ; pas de coût KV nouveau (la troncature invalide déjà à partir de ce
+    point). Le `await` de la reconstruction vit dans le **même bloc
+    `_sendResolving`/`finally`** que `resolveSend` (garde B7 : sans ça, ce second
+    await rouvre une fenêtre de double-tir avant la mutation du thread). Sans ce
+    report, l'édition détachait silencieusement l'image et le modèle régénérait
+    sa réponse sans la voir.
 18. **Herméticité des Spaces : un seul prédicat, partout (lot C, brief D2).**
     `spaceConvIds(spaceId, convs)` (storage.js, pure — `convs` déjà chargé par
     l'appelant, pas de rechargement caché) est LA seule source de vérité pour

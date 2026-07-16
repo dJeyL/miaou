@@ -217,7 +217,7 @@ describe('miaou__skills__read — chemins d\'erreur synchrones', function() {
     setSkillsCache([{ slug: 'autre' }]);
     expect(ct('miaou__skills__read', { slug: 'absent' })).toContain('introuvable');
   });
-  it('skill désactivé → erreur désactivé (jamais de contenu)', function() {
+  it('skill désactivée → erreur désactivée (jamais de contenu)', function() {
     setSkillsCache([{ slug: 'off', name: 'Off', enabled: false }]);
     var out = ct('miaou__skills__read', { slug: 'off' });
     expect(out).toContain('désactivé');

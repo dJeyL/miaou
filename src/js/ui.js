@@ -665,7 +665,7 @@ function assistantHead(model, reasoning, ts, server) {
       `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
       `</button>` +
-      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse(this)">` +
+      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse()">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
@@ -1127,12 +1127,6 @@ const ACK_KINDS = {
       el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
     },
   },
-  resource_deleted: {
-    destination: 'user',
-    undo: null,
-    icon: ICON_TRASH,
-    label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
-  },
   // Rappel d'une pièce jointe de message (miaou__recall_attachment, D4 brief A).
   // Même posture que resource_presented (lecture, pas d'undo) mais lookup par
   // attId (conversation-scoped), pas id de ressource — cf. placeToolAck.
@@ -1353,7 +1347,8 @@ const ACK_KINDS = {
   },
 };
 
-// Wrapper global (testable QuickJS) : résout le label depuis ACK_KINDS.
+// Wrapper exposé pour les tests (aucun call-site app — buildToolAck utilise
+// spec.label directement) : résout le label depuis ACK_KINDS.
 function ackLabel(kind, m) {
   const spec = ACK_KINDS[kind];
   return spec ? spec.label(m) : 'Action effectuée';
@@ -2584,8 +2579,8 @@ function setConnDot(state) {
 // Active ou désactive l'état « confirmation en attente ». Le composer reste
 // ÉDITABLE (brief §4.5 : la saisie libre vaut réponse/correction) : on se borne
 // à poser l'overlay qui dim l'arrière-plan et la classe .confirming qui élève
-// composer + carte au-dessus du dim (effet spotlight, clic possible). Partagé
-// entre renderMemoryProposals (ancien chemin) et showConfirmation (primitif).
+// composer + carte au-dessus du dim (effet spotlight, clic possible). Posé/
+// retiré par showConfirmation (primitif de confirmation).
 function setConfirmPending(on) {
   _confirmPending = on;
   const backdrop = $('confirm-backdrop');
@@ -2623,34 +2618,12 @@ function onComposerKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
 }
 
-// ── Pièces jointes (composer) : drag & drop + chips ─────────────────────────
-// État visuel .dragover sur .input-wrap (pattern .disabled existant, composer.css).
-function onComposerDragOver(e) {
-  e.preventDefault();
-  const wrap = $('input-wrap');
-  if (wrap) wrap.classList.add('dragover');
-}
-function onComposerDragLeave(e) {
-  // relatedTarget peut être un enfant de .input-wrap (dragenter/leave imbriqués) —
-  // ne retire l'état que si on quitte vraiment le conteneur.
-  const wrap = $('input-wrap');
-  if (wrap && (!e.relatedTarget || !wrap.contains(e.relatedTarget))) wrap.classList.remove('dragover');
-}
-function onComposerDrop(e) {
-  e.preventDefault();
-  const wrap = $('input-wrap');
-  if (wrap) wrap.classList.remove('dragover');
-  const files = e.dataTransfer && e.dataTransfer.files;
-  if (files && files.length) handleAttachFiles(files);
-}
-
-// Zone de drop étendue à toute la colonne chat (#main-col : topbar + messages
-// + composer, hors sidebar/drawers, siblings de .main sous #app) — même
-// pipeline handleAttachFiles que .input-wrap, juste une cible plus large pour
-// éviter de viser précisément la barre de saisie. .stopPropagation() n'est pas
-// nécessaire : .input-wrap n'a pas de handler de bulle distinct à court-circuiter
-// (ondragover/drop y sont posés directement, pas de listener sur #main-col
-// qui remonterait en double).
+// ── Pièces jointes : drag & drop + chips ────────────────────────────────────
+// Zone de drop unique = toute la colonne chat (#main-col : topbar + messages
+// + composer, hors sidebar/drawers, siblings de .main sous #app). .input-wrap
+// n'a délibérément AUCUN handler propre : il est un descendant de #main-col,
+// donc un drop sur la barre de saisie y bulle déjà. Un handler local en plus
+// attachait le fichier deux fois (une par handler du chemin de bulle).
 function onMainDragOver(e) {
   e.preventDefault();
   const main = $('main-col');
@@ -4448,19 +4421,25 @@ function onSaveSpaceScreen() {
   closeSpaceScreen();
 }
 
-// Libellé du bouton de suppression AVEC comptes, posé dès l'ouverture de
-// l'écran (pas seulement recalculé au clic) : l'utilisateur doit voir l'impact
-// avant même d'armer le bouton, pas seulement lire « Supprimer cet espace ».
-// Async (lot Cbis) : le compte fichiers vient d'IDB (getResourcesBySpace) —
-// la première peinture peut donc afficher un compte fichiers en retard d'un
-// tick, comme le reste du cache session library (cf. piège 18/CLAUDE.md).
+// Libellé du bouton de suppression AVEC comptes (piège 18 : passe par
+// spaceConvIds, jamais un filtre c.spaceId réécrit localement). Async (lot
+// Cbis) : le compte fichiers vient d'IDB (getResourcesBySpace).
+async function spaceDeleteLabel(id) {
+  const convCount = spaceConvIds(id, loadConversations()).size;
+  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
+  const fileCount = (await getResourcesBySpace(id)).length;
+  return `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileCount} fichier${fileCount > 1 ? 's' : ''})`;
+}
+
+// Libellé du bouton de suppression, posé dès l'ouverture de l'écran (pas
+// seulement recalculé au clic) : l'utilisateur doit voir l'impact avant même
+// d'armer le bouton, pas seulement lire « Supprimer cet espace ». La première
+// peinture peut afficher un compte fichiers en retard d'un tick, comme le
+// reste du cache session library (cf. piège 18/CLAUDE.md).
 async function syncSpaceDeleteLabel(id) {
   const btn = $('space-delete-btn');
   if (!btn) return;
-  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
-  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  const fileCount = (await getResourcesBySpace(id)).length;
-  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileCount} fichier${fileCount > 1 ? 's' : ''})`;
+  btn.textContent = await spaceDeleteLabel(id);
 }
 
 // Suppression D6 : arm-then-run (même pattern que la poubelle sidebar),
@@ -4472,14 +4451,11 @@ async function onDeleteSpaceScreen() {
   const btn = $('space-delete-btn');
   if (!_spaceScreenId || _spaceScreenId === DEFAULT_SPACE_ID) return;
   const id = _spaceScreenId;
-  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
-  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  const fileEntries = await getResourcesBySpace(id);
-  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileEntries.length} fichier${fileEntries.length > 1 ? 's' : ''})`;
+  const label = await spaceDeleteLabel(id);
   armThenRun(btn, async () => {
     const wasActive = id === activeSpaceId;
-    for (const c of loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id)) {
-      deleteConv(c.id);
+    for (const convId of spaceConvIds(id, loadConversations())) {
+      deleteConv(convId);
     }
     for (const m of loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id)) {
       forgetMemory(m.id);
@@ -5847,7 +5823,9 @@ function clearMemoryProposals() {
 }
 
 // Primitif générique : une carte « question » + Accepter/Rejeter, avec overlay.
-// bodyHtml : contenu libre (texte de la question, diff, etc.).
+// bodyHtml : contenu HTML AUTHOR-CONTROLLED UNIQUEMENT (posé en innerHTML sans
+// échappement) — jamais de donnée modèle brute ici sans escHtml au préalable.
+// L'unique appelant actuel (onHalt, main.js) passe ''.
 function showConfirmation(bodyHtml, onAccept, onReject) {
   const thread = $('thread');
   const pid = 'prop-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -6098,8 +6076,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
 .tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }
-.tool-trace-inner[open] .tool-ack-preview-list { display: none; }
-.tool-trace-inner:not([open]) ul { display: none; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
 .att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }

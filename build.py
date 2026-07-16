@@ -56,15 +56,18 @@ def strip_js_comments(src: str) -> str:
     modifié (un '//' dans une URL, par ex., doit survivre).
 
     Implémentation à pile explicite : chaque niveau de ${...} imbriqué dans
-    un template literal empile un contexte 'template' ; un '}' dépile vers
-    le contexte parent une fois les accolades de code rééquilibrées. Ça évite
-    de dupliquer le scanner pour chaque profondeur d'imbrication."""
+    un template literal empile un contexte 'template' ; le PREMIER '}'
+    rencontré dépile vers le contexte parent (pas de comptage d'accolades de
+    code internes) — conservateur : un objet littéral nu dans un ${...} (ex.
+    `${ {a:1}.a }`) dépile prématurément, mais le frame template dégénéré
+    recopie tout verbatim, donc la sortie reste correcte (au pire un
+    commentaire à l'intérieur du ${...} survivrait). Aucune occurrence réelle
+    dans src/js à ce jour."""
     out = []
     i = 0
     n = len(src)
-    # Pile de frames : ('code',) en haut niveau, ('template', brace_depth)
-    # quand on est à l'intérieur d'un ${...} — brace_depth compte les accolades
-    # de code ouvertes dans ce ${...} pour savoir quel '}' referme l'expression.
+    # Pile de frames : ('code',) en haut niveau, ('template',) quand on est à
+    # l'intérieur d'un ${...} — dépilé au premier '}' rencontré (voir docstring).
     stack = [('code',)]
 
     def prev_significant_char():

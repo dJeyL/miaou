@@ -912,13 +912,24 @@ pre.mermaid-rendered > code { display: none !important; }
   white-space: normal;
 }
 
-.code-preview { position: relative; background: #fff; white-space: normal; }
+.code-preview {
+  position: relative;
+  
+  --preview-bg: #fff;
+  --preview-close-border: #d0d0d0;
+  --preview-close-bg: #f4f4f4;
+  --preview-close-text: #444;
+  --preview-close-bg-hover: #e8e8e8;
+  --preview-close-text-hover: #000;
+  background: var(--preview-bg);
+  white-space: normal;
+}
 .code-preview iframe {
   display: block;
   width: 100%;
   height: 420px;
   border: none;
-  background: #fff;
+  background: var(--preview-bg);
 }
 pre.preview-open > code { display: none !important; }
 pre.preview-open .code-preview-btn { color: var(--accent); }
@@ -927,12 +938,12 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   top: 6px; right: 6px;
   width: 22px; height: 22px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #d0d0d0; border-radius: 50%;
-  background: #f4f4f4; color: #444;
+  border: 1px solid var(--preview-close-border); border-radius: 50%;
+  background: var(--preview-close-bg); color: var(--preview-close-text);
   font-size: 14px; line-height: 1;
   cursor: pointer; padding: 0;
 }
-.code-preview-close:hover { background: #e8e8e8; color: #000; }
+.code-preview-close:hover { background: var(--preview-close-bg-hover); color: var(--preview-close-text-hover); }
 
 .mermaid-actions {
   position: absolute;
@@ -1165,8 +1176,6 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 .input-wrap.disabled { border-color: rgba(255,93,93,.3); background: rgba(255,93,93,.04); }
 .input-wrap.disabled:focus-within { box-shadow: none; }
 
-.input-wrap.dragover { border-color: var(--accent-bd); background: var(--accent-dim); }
-
 .attach-btn {
   display: grid; place-items: center;
   width: 34px; height: 34px;
@@ -1191,7 +1200,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.55;
-  max-height: 168px;
+  max-height: 168px; 
   overflow-y: hidden;
   padding: 5px 0;
 }
@@ -1539,7 +1548,7 @@ body.conv-readonly .conv-retitle-btn {
 .skill-ac-opt.active { background: var(--accent-dim); }
 .skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
 .skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }
+.composer-skill-error, .composer-attach-error { font-size: 12px; color: var(--err); margin-top: 6px; }
 
 .backdrop {
   position: fixed; inset: 0;
@@ -2316,8 +2325,7 @@ textarea.skill-content {
 .tool-ack.ack-conversation_list .ack-label,
 .tool-ack.ack-mcp_call .ack-label,
 .tool-ack.ack-resource_stored .ack-label,
-.tool-ack.ack-resource_presented .ack-label,
-.tool-ack.ack-resource_deleted .ack-label { color: var(--text-2); }
+.tool-ack.ack-resource_presented .ack-label { color: var(--text-2); }
 .tool-ack .ack-undo, .memory-ack .ack-undo {
   flex-shrink: 0;
   background: none;
@@ -2863,8 +2871,7 @@ if (window.requestAnimationFrame) {
         </div>
 
         <div class="attach-chips" id="attach-chips" hidden></div>
-        <div class="input-wrap" id="input-wrap"
-          ondragover="onComposerDragOver(event)" ondragleave="onComposerDragLeave(event)" ondrop="onComposerDrop(event)">
+        <div class="input-wrap" id="input-wrap">
           
           <div class="skill-ac" id="skill-ac" hidden></div>
           <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
@@ -3303,7 +3310,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-15 21:47 UTC */
+/* miaou — built: 2026-07-16 17:23 UTC */
 
 /* ── utils.js ── */
 
@@ -3750,6 +3757,8 @@ function _truncMd(s, max) {
   s = s == null ? '' : String(s);
   
   s = s.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n');
+  
+  s = s.replace(/`/g, '´');
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
@@ -3910,7 +3919,8 @@ function enrichedAckGroups(thread) {
           j++;
         }
       }
-      var prefix = grp != null ? grp : 'solo';
+      
+      var prefix = grp != null ? grp : 'solo:' + i;
       groups.push({
         acks: groupAcks,
         ids: groupAcks.map(function(_, k) { return _hashId9(prefix + '\x00' + k); }),
@@ -4074,7 +4084,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
       chars = m.content.length;
     }
     threadChars += chars;
-    const tk = estimateTokens('x'.repeat(chars));   
+    const tk = Math.ceil(chars / 4);   
     threadTokens += tk;
     const role = m.role || 'other';
     if (!byRole[role]) byRole[role] = { chars: 0, tokens: 0 };
@@ -4292,7 +4302,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784152039}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784222585}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -5276,10 +5286,9 @@ function deleteResource(id) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('resources', 'readwrite');
-      const req = tx.objectStore('resources').delete(id);
+      tx.objectStore('resources').delete(id);
       
-      req.onsuccess = function() { _uncacheRecord(id); resolve(); };
-      tx.oncomplete = function() { syncPost('resources-updated', { ids: [id], convId: null }); };  
+      tx.oncomplete = function() { _uncacheRecord(id); syncPost('resources-updated', { ids: [id], convId: null }); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -5356,12 +5365,13 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
   }
 }
 
-async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand) {
+async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand, dims) {
   const id = generateFileId(rand);
   
   const record = Object.assign(
     normalizeLibraryRecord({ id, spaceId, name, mime, size: data.byteLength, createdAt: now, source, description }),
     { class: cls, data });
+  if (dims && dims.w && dims.h) { record.w = dims.w; record.h = dims.h; }
   try {
     await putResource(record);
     _cacheRecord(record);
@@ -5632,9 +5642,8 @@ function putSkill(record) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('skills', 'readwrite');
-      const req = tx.objectStore('skills').put(rec);
-      req.onsuccess = function() { upsertSkillCache(rec); resolve(rec.slug); };
-      tx.oncomplete = function() { syncPost('skills-updated', {}); };   
+      tx.objectStore('skills').put(rec);
+      tx.oncomplete = function() { upsertSkillCache(rec); syncPost('skills-updated', {}); resolve(rec.slug); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -5644,9 +5653,8 @@ function deleteSkillDb(slug) {
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('skills', 'readwrite');
-      const req = tx.objectStore('skills').delete(slug);
-      req.onsuccess = function() { removeSkillCache(slug); resolve(); };
-      tx.oncomplete = function() { syncPost('skills-updated', {}); };   
+      tx.objectStore('skills').delete(slug);
+      tx.oncomplete = function() { removeSkillCache(slug); syncPost('skills-updated', {}); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
     });
   });
@@ -6493,7 +6501,7 @@ const TOOLS = [
       "sans charger ce contenu dans ton contexte. Sers-t'en pour interroger un gros " +
       "fichier (log, JSON-lines, CSV, texte) — compter, filtrer, agréger, extraire. " +
       "Primitives disponibles dans le bac à sable : text(), lines(), jsonLines(), " +
-      "parse() (voir la doctrine COMPUTE_SANDBOX). La dernière valeur évaluée du code " +
+      "parse() (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
       "grosse → refus explicite (réécris pour synthétiser). N'inclus jamais le " +
       "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
@@ -6778,7 +6786,9 @@ function callTool(name, args) {
   }
   
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
-    return callInternalTool(parsed.toolName, args || {});
+    const cleanArgs = args ? Object.assign({}, args) : {};
+    delete cleanArgs.miaou_intent;
+    return callInternalTool(parsed.toolName, cleanArgs);
   }
   const server = getMcpServer(parsed.serverPrefix);   
   if (!server || server.enabled === false) {
@@ -6791,9 +6801,9 @@ function callTool(name, args) {
 }
 
 let _attachmentPushState = {};
-function _pushStateKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
-function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_pushStateKey(conversationId, attId)]; }
-function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_pushStateKey(conversationId, attId)] = true; }
+function _conversationScopedPushKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
+function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_conversationScopedPushKey(conversationId, attId)]; }
+function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_conversationScopedPushKey(conversationId, attId)] = true; }
 
 function clearAttachmentPushState(conversationId) {
   for (const k in _attachmentPushState) {
@@ -6807,8 +6817,8 @@ function isFilePushed(spaceId, fileId) { return !!_filePushState[_filePushStateK
 function markFilePushed(spaceId, fileId) { _filePushState[_filePushStateKey(spaceId, fileId)] = true; }
 
 let _resourcePushState = {};
-function isResourcePushed(conversationId, resId) { return !!_resourcePushState[_pushStateKey(conversationId, resId)]; }
-function markResourcePushed(conversationId, resId) { _resourcePushState[_pushStateKey(conversationId, resId)] = true; }
+function isResourcePushed(conversationId, resId) { return !!_resourcePushState[_conversationScopedPushKey(conversationId, resId)]; }
+function markResourcePushed(conversationId, resId) { _resourcePushState[_conversationScopedPushKey(conversationId, resId)] = true; }
 function clearResourcePushState(conversationId) {
   for (const k in _resourcePushState) {
     if (k.indexOf((conversationId || '') + '|') === 0) delete _resourcePushState[k];
@@ -7191,6 +7201,7 @@ async function silentCompletion(messages, opts) {
     try {
       return await _attempt(NOTHINK_PARAMS);
     } catch (_) {
+      
       _noThinkRejected[url] = true;
     }
     return await _attempt({});
@@ -7391,7 +7402,7 @@ async function runConversation(messages, hooks) {
         tool_calls: result.toolCalls,
       });
 
-      const group = 'g' + Date.now().toString(36);
+      const group = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       const assistantText = result.content || null;
 
       for (const tc of result.toolCalls) {
@@ -8030,7 +8041,7 @@ function assistantHead(model, reasoning, ts, server) {
       `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
       `</button>` +
-      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse(this)">` +
+      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse()">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
@@ -8415,12 +8426,6 @@ const ACK_KINDS = {
       appendAckSep(el);
       el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
     },
-  },
-  resource_deleted: {
-    destination: 'user',
-    undo: null,
-    icon: ICON_TRASH,
-    label: m => 'Ressource(s) supprimée(s)' + (m.count != null ? ' (' + m.count + ')' : ''),
   },
   
   attachment_recalled: {
@@ -9641,24 +9646,6 @@ function onComposerKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
-}
-
-function onComposerDragOver(e) {
-  e.preventDefault();
-  const wrap = $('input-wrap');
-  if (wrap) wrap.classList.add('dragover');
-}
-function onComposerDragLeave(e) {
-  
-  const wrap = $('input-wrap');
-  if (wrap && (!e.relatedTarget || !wrap.contains(e.relatedTarget))) wrap.classList.remove('dragover');
-}
-function onComposerDrop(e) {
-  e.preventDefault();
-  const wrap = $('input-wrap');
-  if (wrap) wrap.classList.remove('dragover');
-  const files = e.dataTransfer && e.dataTransfer.files;
-  if (files && files.length) handleAttachFiles(files);
 }
 
 function onMainDragOver(e) {
@@ -11164,27 +11151,28 @@ function onSaveSpaceScreen() {
   closeSpaceScreen();
 }
 
+async function spaceDeleteLabel(id) {
+  const convCount = spaceConvIds(id, loadConversations()).size;
+  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
+  const fileCount = (await getResourcesBySpace(id)).length;
+  return `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileCount} fichier${fileCount > 1 ? 's' : ''})`;
+}
+
 async function syncSpaceDeleteLabel(id) {
   const btn = $('space-delete-btn');
   if (!btn) return;
-  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
-  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  const fileCount = (await getResourcesBySpace(id)).length;
-  btn.textContent = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileCount} fichier${fileCount > 1 ? 's' : ''})`;
+  btn.textContent = await spaceDeleteLabel(id);
 }
 
 async function onDeleteSpaceScreen() {
   const btn = $('space-delete-btn');
   if (!_spaceScreenId || _spaceScreenId === DEFAULT_SPACE_ID) return;
   const id = _spaceScreenId;
-  const convCount = loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id).length;
-  const memCount = loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id && !m.suppressed).length;
-  const fileEntries = await getResourcesBySpace(id);
-  const label = `Supprimer (${convCount} conv., ${memCount} souvenir${memCount > 1 ? 's' : ''}, ${fileEntries.length} fichier${fileEntries.length > 1 ? 's' : ''})`;
+  const label = await spaceDeleteLabel(id);
   armThenRun(btn, async () => {
     const wasActive = id === activeSpaceId;
-    for (const c of loadConversations().filter(c => (c.spaceId || DEFAULT_SPACE_ID) === id)) {
-      deleteConv(c.id);
+    for (const convId of spaceConvIds(id, loadConversations())) {
+      deleteConv(convId);
     }
     for (const m of loadMemories().filter(m => (m.scope || DEFAULT_SPACE_ID) === id)) {
       forgetMemory(m.id);
@@ -12598,8 +12586,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
 .tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }
-.tool-trace-inner[open] .tool-ack-preview-list { display: none; }
-.tool-trace-inner:not([open]) ul { display: none; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
 .att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }
@@ -13525,7 +13511,7 @@ function stopGenerationRelay() {
 
 function ensureConversation() {
   if (currentConvId) return;
-  const id = 'c' + Date.now().toString(36);
+  const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const manualTitle = $('conv-title').textContent.trim();
   saveConversation({ id, title: manualTitle, timestamp: Date.now(), messages: [], spaceId: activeSpaceId });
   currentConvId = id;
@@ -13991,8 +13977,7 @@ async function ingestLibraryFile(spaceId, file) {
     if (kind0 === 'image') {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
-      const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random);
-      if (rec && w && h) { rec.w = w; rec.h = h; await putResource(rec); }
+      const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random, { w, h });
       if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
@@ -14194,18 +14179,27 @@ async function editUserMessage(index, newText) {
   if (index < 0 || index >= currentThread.length) return null;
   if (currentThread[index].role !== 'user') return null;
 
-  let r;
+  const old = currentThread[index];
+  const oldAttachments = old.attachments;
+
+  let r, content;
   _sendResolving = true;
   try {
     r = await resolveSend(t);
+    if (r.ok && oldAttachments && oldAttachments.length) {
+      content = await buildOutgoingContentForAttachments(r.content, oldAttachments);
+    }
   } finally {
     _sendResolving = false;
   }
   if (!r.ok) return r.error;
+  if (content === undefined) content = r.content;
 
   currentThread = currentThread.slice(0, index + 1);
-  const msg = { role: 'user', content: r.content, ts: Date.now() };
-  if (r.isSkill) msg.displayText = r.literal;
+  const msg = { role: 'user', content, ts: Date.now() };
+  
+  if (r.isSkill || content !== r.literal) msg.displayText = r.literal;
+  if (oldAttachments) msg.attachments = oldAttachments;
   currentThread[index] = msg;
   persistCurrent();                             
   renderThread(currentThread);                  
@@ -14213,7 +14207,7 @@ async function editUserMessage(index, newText) {
   return null;
 }
 
-function regenerateResponse(btn) {
+function regenerateResponse() {
   if (!configured || sending) return;
   if (_confirmPending) dismissConfirmation();   
   const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
@@ -14650,6 +14644,7 @@ function init() {
   });
   syncSpaceUI();
   loadApiServers();   
+  backfillMessageModels();   
   
   syncOnMessage(handleSyncMessage);
   
@@ -14689,7 +14684,6 @@ function init() {
     });
   });
 
-  backfillMessageModels();
   renderConvList();
   resetToEmpty();
   syncConfigured();

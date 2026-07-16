@@ -180,6 +180,11 @@ async function silentCompletion(messages, opts) {
     try {
       return await _attempt(NOTHINK_PARAMS);
     } catch (_) {
+      // Assumé : ce catch marque l'endpoint rejetant même sur un timeout/panne
+      // réseau transitoire (pas seulement un vrai rejet du param), perdant le
+      // no-think pour la session par excès de prudence. Dégradation douce
+      // (retry direct juste après, se réactive sur les appels suivants) —
+      // pas affiné tant qu'aucun cas réel n'a montré le besoin.
       _noThinkRejected[url] = true;
     }
     return await _attempt({});
@@ -394,7 +399,8 @@ function abortStream() {
 // toujours jusqu'à la réponse finale (finish_reason === 'stop').
 async function runConversation(messages, hooks) {
   const h = hooks || {};
-  // anti-redemande, par échange : clé 'nom:id' ou 'nom:since'
+  // anti-redemande, par échange : clé nom + ':' + arguments bruts (voir plus
+  // bas, pas 'nom:id'/'nom:since' — deux appels distincts doivent tous être servis)
   const servedKeys = new Set();
   // Filet : purge toute injection image résiduelle (brief A2/D3) d'un échange
   // précédent avorté avant le drain (le handler push et la boucle draine dans la
@@ -461,7 +467,7 @@ async function runConversation(messages, hooks) {
 
       // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
       // pour que expandThread puisse reconstruire un seul assistant+N tools.
-      const group = 'g' + Date.now().toString(36);
+      const group = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       const assistantText = result.content || null;
 
       for (const tc of result.toolCalls) {

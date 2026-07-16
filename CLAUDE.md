@@ -46,9 +46,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
 `docs/build.md` — le lire avant de toucher au build ou aux points d'injection.
 
 - **`/* __CSS__ */`** ← `src/css/*.css` dans l'ordre `CSS_ORDER`
-  (`base, sidebar, chat, composer, drawers, tools, responsive, theme-light` —
-  l'ordre EST la cascade ; `base` porte l'@import des fontes, `theme-light`
-  reste dernier).
+  (`base, sidebar, chat, composer, drawers, tools, palette, responsive,
+  theme-light` — l'ordre EST la cascade ; `base` porte l'@import des fontes,
+  `theme-light` reste dernier).
 - **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER`
   (`utils, sync, storage, resources, skills, tools, api, ui, main`).
 - **`__MIAOU_CONFIG__`** ← `config.json` sérialisé (injecté dans `storage.js`,
@@ -294,10 +294,12 @@ appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
   marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
   points d'injection et gardes `try/catch`.
-- **`docs/pitfalls-detail.md`** — développement complet des 24 pièges ci-dessus.
+- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
+  ci-dessus (25 et 26 sont développés inline ici même, comme 16/18/21/24).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
-  `miaou-mcp-servers`) et IndexedDB (`skills`, `resources`).
+  `miaou-mcp-servers`, `miaou-api-servers`, `miaou-active-api-server`,
+  `miaou-spaces`, `miaou-active-space`) et IndexedDB (`skills`, `resources`).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), et références de conversation dans le texte du modèle
   (`conv_ref`).

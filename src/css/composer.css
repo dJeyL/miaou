@@ -29,7 +29,6 @@
 .input-wrap.disabled:focus-within { box-shadow: none; }
 /* survol drag&drop d'un fichier — même mécanique visuelle que .disabled (bordure
    + fond teintés), couleur accent au lieu de rouge */
-.input-wrap.dragover { border-color: var(--accent-bd); background: var(--accent-dim); }
 
 /* bouton trombone : gabarit icon-btn du composer, voisin du send-btn */
 .attach-btn {
@@ -56,7 +55,7 @@
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.55;
-  max-height: 168px;
+  max-height: 168px; /* DOIT rester synchronisé avec autoGrow (utils.js) */
   overflow-y: hidden;
   padding: 5px 0;
 }
@@ -451,4 +450,4 @@ body.conv-readonly .conv-retitle-btn {
 .skill-ac-opt.active { background: var(--accent-dim); }
 .skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
 .skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-skill-error { font-size: 12px; color: var(--err); margin-top: 6px; }
+.composer-skill-error, .composer-attach-error { font-size: 12px; color: var(--err); margin-top: 6px; }

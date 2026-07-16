@@ -558,6 +558,61 @@ describe('assembleToolResultForModel', function() {
   });
 });
 
+// ── resolveResourceRefs (pre-pass thread, maillon anti-ré-inline) ─────────────
+describe('resolveResourceRefs', function() {
+  it('ne mute pas le message d\'origine (nouvel objet si résolu)', function() {
+    var buf = utf8Encode('contenu_res');
+    _resourceCache['res_t1'] = { id: 'res_t1', class: 'inline', mime: 'text/plain', name: 't1.txt', size: 11, data: buf };
+    var msg = { role: 'tool-ack', result: '[resource_ref:res_t1]' };
+    var out = resolveResourceRefs([msg]);
+    expect(out[0] === msg).toBe(false);
+    expect(msg.result).toBe('[resource_ref:res_t1]');
+    expect(out[0].result).toBe('contenu_res');
+    delete _resourceCache['res_t1'];
+  });
+
+  it('messages non-ack (user/assistant) passent inchangés, même objet', function() {
+    var msg = { role: 'user', result: '[resource_ref:res_t2]' };
+    var out = resolveResourceRefs([msg]);
+    expect(out[0]).toBe(msg);
+  });
+
+  it('ack sans marqueur de ref passe inchangé, même objet', function() {
+    var msg = { role: 'tool-ack', result: 'rien à résoudre ici' };
+    var out = resolveResourceRefs([msg]);
+    expect(out[0]).toBe(msg);
+  });
+
+  it('ack avec result null/absent passe inchangé', function() {
+    var msg = { role: 'tool-ack' };
+    var out = resolveResourceRefs([msg]);
+    expect(out[0]).toBe(msg);
+  });
+
+  it('résout memory-ack aussi bien que tool-ack (isAckRole couvre les deux)', function() {
+    var buf = utf8Encode('mem_contenu');
+    _resourceCache['res_t3'] = { id: 'res_t3', class: 'inline', mime: 'text/plain', name: 't3.txt', size: 11, data: buf };
+    var msg = { role: 'memory-ack', result: '[resource_ref:res_t3]' };
+    var out = resolveResourceRefs([msg]);
+    expect(out[0].result).toBe('mem_contenu');
+    delete _resourceCache['res_t3'];
+  });
+
+  it('thread mixte : seuls les acks avec ref sont réécrits, ordre préservé', function() {
+    var buf = utf8Encode('X');
+    _resourceCache['res_t4'] = { id: 'res_t4', class: 'inline', mime: 'text/plain', name: 't4.txt', size: 1, data: buf };
+    var m1 = { role: 'user', content: 'bonjour' };
+    var m2 = { role: 'tool-ack', result: '[resource_ref:res_t4]' };
+    var m3 = { role: 'assistant', content: 'réponse' };
+    var out = resolveResourceRefs([m1, m2, m3]);
+    expect(out.length).toBe(3);
+    expect(out[0]).toBe(m1);
+    expect(out[1].result).toBe('X');
+    expect(out[2]).toBe(m3);
+    delete _resourceCache['res_t4'];
+  });
+});
+
 // ── resolveRecallImages (brief A2 / D3 voie b) ────────────────────────────────
 describe('resolveRecallImages', function() {
   function ackRecall(over) {
@@ -895,5 +950,44 @@ describe('getCachedLibraryEntriesBySpace (filtre kind===library ET spaceId)', fu
   });
   it('spaceId sans fichier → []', function() {
     expect(getCachedLibraryEntriesBySpace('sp-e-vide')).toEqual([]);
+  });
+});
+
+// ── makeResourcePresentBlock (routage D8 : image/inline/binary) ───────────────
+describe('makeResourcePresentBlock', function() {
+  it('record absent ou sans data → null', function() {
+    expect(makeResourcePresentBlock(null)).toBe(null);
+    expect(makeResourcePresentBlock({ mime: 'image/png' })).toBe(null);
+  });
+
+  it('mime image/* → bloc type "image", base64 + mimeType', function() {
+    var ab = new ArrayBuffer(4);
+    var block = makeResourcePresentBlock({ mime: 'image/png', data: ab });
+    expect(block.type).toBe('image');
+    expect(block.mimeType).toBe('image/png');
+    expect(typeof block.data).toBe('string');
+  });
+
+  it('class inline (non-image) → bloc "resource" avec text décodé', function() {
+    var buf = utf8Encode('contenu');
+    var block = makeResourcePresentBlock({ class: 'inline', mime: 'text/plain', data: buf });
+    expect(block.type).toBe('resource');
+    expect(block.resource.text).toBe('contenu');
+    expect(block.resource.mimeType).toBe('text/plain');
+  });
+
+  it('binary non-image → bloc "resource" avec blob base64 + uri = name', function() {
+    var ab = new ArrayBuffer(8);
+    var block = makeResourcePresentBlock({ class: 'binary', mime: 'application/pdf', name: 'doc.pdf', data: ab });
+    expect(block.type).toBe('resource');
+    expect(typeof block.resource.blob).toBe('string');
+    expect(block.resource.uri).toBe('doc.pdf');
+    expect(block.resource.mimeType).toBe('application/pdf');
+  });
+
+  it('mime image prime sur class (image classée inline reste routée image)', function() {
+    var ab = new ArrayBuffer(4);
+    var block = makeResourcePresentBlock({ class: 'inline', mime: 'image/jpeg', data: ab });
+    expect(block.type).toBe('image');
   });
 });

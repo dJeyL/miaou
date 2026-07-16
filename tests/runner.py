@@ -116,8 +116,13 @@ function expect(actual) {
 """
 
 
-def load_sources(ctx: "quickjs.Context") -> None:
-    """Charge tous les fichiers source dans l'ordre du build."""
+def load_sources(ctx: "quickjs.Context") -> int:
+    """Charge tous les fichiers source dans l'ordre du build. Retourne le
+    nombre de fichiers en échec : une erreur ici casse silencieusement TOUS
+    les tests qui dépendent de la fonction manquante (ReferenceError en
+    cascade) sans faire échouer le run — doit compter comme un échec, pas un
+    simple warn (cf. c27)."""
+    errors = 0
     for name in JS_ORDER:
         path = SRC_JS / name
         if not path.exists():
@@ -125,7 +130,9 @@ def load_sources(ctx: "quickjs.Context") -> None:
         try:
             ctx.eval(path.read_text(encoding='utf-8'))
         except Exception as e:
-            print(f'  [warn] erreur au chargement de {name}: {e}')
+            print(f'  [erreur JS] erreur au chargement de {name}: {e}')
+            errors += 1
+    return errors
 
 
 def run_file(test_path: Path) -> tuple[int, int]:
@@ -136,7 +143,7 @@ def run_file(test_path: Path) -> tuple[int, int]:
     ctx.eval(FRAMEWORK)
 
     # 2. Sources (tout le code applicatif)
-    load_sources(ctx)
+    source_errors = load_sources(ctx)
 
     # 3. Fichier de test
     test_code = test_path.read_text(encoding='utf-8')
@@ -159,7 +166,7 @@ def run_file(test_path: Path) -> tuple[int, int]:
     if logs:
         print(logs)
 
-    return int(passed), int(failed) + eval_failed
+    return int(passed), int(failed) + eval_failed + source_errors
 
 
 def run_build_unit_tests() -> tuple[int, int]:

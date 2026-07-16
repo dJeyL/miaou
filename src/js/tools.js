@@ -912,9 +912,9 @@ const TOOLS = [
     },
   },
   {
-    // Sous-namespace miaou__skills__ : énumère les skills ACTIVÉS (slug + name +
+    // Sous-namespace miaou__skills__ : énumère les skills ACTIVÉES (slug + name +
     // description) pour que le modèle découvre ce qu'il peut lire via skills__read.
-    // Les skills désactivés n'apparaissent JAMAIS (l'utilisateur les a coupés).
+    // Les skills désactivées n'apparaissent JAMAIS (l'utilisateur les a coupées).
     name: 'skills__list',
     description:
       "Liste les skills disponibles (méta : slug, nom, description). Une skill est " +
@@ -1079,7 +1079,7 @@ const TOOLS = [
       "sans charger ce contenu dans ton contexte. Sers-t'en pour interroger un gros " +
       "fichier (log, JSON-lines, CSV, texte) — compter, filtrer, agréger, extraire. " +
       "Primitives disponibles dans le bac à sable : text(), lines(), jsonLines(), " +
-      "parse() (voir la doctrine COMPUTE_SANDBOX). La dernière valeur évaluée du code " +
+      "parse() (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
       "grosse → refus explicite (réécris pour synthétiser). N'inclus jamais le " +
       "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
@@ -1481,7 +1481,9 @@ function callTool(name, args) {
   // (pas un serveur MCP nommé `miaou` ou `''`) : garde la sémantique d'origine
   // (« Outil inconnu ») + son ack d'échec, plutôt qu'un trompeur « Serveur MCP … ».
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
-    return callInternalTool(parsed.toolName, args || {});
+    const cleanArgs = args ? Object.assign({}, args) : {};
+    delete cleanArgs.miaou_intent;
+    return callInternalTool(parsed.toolName, cleanArgs);
   }
   const server = getMcpServer(parsed.serverPrefix);   // storage.js
   if (!server || server.enabled === false) {
@@ -1500,9 +1502,9 @@ function callTool(name, args) {
 // persistance — un rechargement de page revient à "non poussé", cohérent avec
 // la session serveur elle-même éphémère (TTL sweep, brief D D2).
 let _attachmentPushState = {};
-function _pushStateKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
-function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_pushStateKey(conversationId, attId)]; }
-function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_pushStateKey(conversationId, attId)] = true; }
+function _conversationScopedPushKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
+function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_conversationScopedPushKey(conversationId, attId)]; }
+function markAttachmentPushed(conversationId, attId) { _attachmentPushState[_conversationScopedPushKey(conversationId, attId)] = true; }
 // Appelée par deleteConv (main.js) à la suppression d'une conversation : purge
 // les clés (conversationId, *) de la table de push, sinon elles fuient jusqu'au
 // rechargement de page.
@@ -1529,8 +1531,8 @@ function markFilePushed(spaceId, fileId) { _filePushState[_filePushStateKey(spac
 // pas de collision de clé possible (att-N vs file-<id> vs res_<id>). Purgée par
 // deleteConv via clearResourcePushState, comme clearAttachmentPushState.
 let _resourcePushState = {};
-function isResourcePushed(conversationId, resId) { return !!_resourcePushState[_pushStateKey(conversationId, resId)]; }
-function markResourcePushed(conversationId, resId) { _resourcePushState[_pushStateKey(conversationId, resId)] = true; }
+function isResourcePushed(conversationId, resId) { return !!_resourcePushState[_conversationScopedPushKey(conversationId, resId)]; }
+function markResourcePushed(conversationId, resId) { _resourcePushState[_conversationScopedPushKey(conversationId, resId)] = true; }
 function clearResourcePushState(conversationId) {
   for (const k in _resourcePushState) {
     if (k.indexOf((conversationId || '') + '|') === 0) delete _resourcePushState[k];

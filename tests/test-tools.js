@@ -746,6 +746,30 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L)', function() {
   });
 });
 
+describe('_jsEvalStringify (sérialisation du retour guest, lot L)', function() {
+  it('null → "null"', function() {
+    expect(_jsEvalStringify(null)).toBe('null');
+  });
+  it('undefined → "undefined"', function() {
+    expect(_jsEvalStringify(undefined)).toBe('undefined');
+  });
+  it('objet → JSON.stringify', function() {
+    expect(_jsEvalStringify({ a: 1, b: 'x' })).toBe('{"a":1,"b":"x"}');
+  });
+  it('string déjà string → re-sérialisée avec guillemets (JSON.stringify, pas passthrough)', function() {
+    expect(_jsEvalStringify('bonjour')).toBe('"bonjour"');
+  });
+  it('nombre → sérialisé nu', function() {
+    expect(_jsEvalStringify(42)).toBe('42');
+  });
+  it('cycle → JSON.stringify échoue, fallback String(val) sans planter', function() {
+    var cyc = {};
+    cyc.self = cyc;
+    var s = _jsEvalStringify(cyc);
+    expect(s).toBe('[object Object]');
+  });
+});
+
 describe('_jsEvalErrText (normalisation des erreurs guest, lot L)', function() {
   it('extrait « name: message » d\'un objet erreur dumpé (pas [object Object])', function() {
     var s = _jsEvalErrText({ name: 'TypeError', message: 'x is not a function' });
