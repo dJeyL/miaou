@@ -348,22 +348,22 @@ describe('about — aide utilisateur (lot I)', function() {
   });
   it('handler : pousse un ack about_read avec le topic normalisé et retourne une string', function() {
     _pendingToolAcks.length = 0;
-    // HELP_CONTENT vide sous QuickJS → topic inconnu retombe sur overview (défaut),
+    // HELP_CONTENT vide sous QuickJS → topic inconnu retombe sur apercu (défaut),
     // lui-même absent → message d'indisponibilité (jamais un crash).
-    var out = aboutTool().handler({ topic: 'spaces' });
+    var out = aboutTool().handler({ topic: 'espaces' });
     expect(typeof out).toBe('string');
     var ack = _pendingToolAcks[_pendingToolAcks.length - 1];
     expect(ack.kind).toBe('about_read');
-    expect(ack.topic).toBe('overview');   // 'spaces' absent de {} → défaut overview
+    expect(ack.topic).toBe('apercu');   // 'espaces' absent de {} → défaut apercu
   });
-  it('handler : topic absent → défaut overview dans l\'ack', function() {
+  it('handler : topic absent → défaut apercu dans l\'ack', function() {
     _pendingToolAcks.length = 0;
     aboutTool().handler({});
-    expect(_pendingToolAcks[_pendingToolAcks.length - 1].topic).toBe('overview');
+    expect(_pendingToolAcks[_pendingToolAcks.length - 1].topic).toBe('apercu');
   });
-  it('ackLabel about_read : topic ou repli overview', function() {
-    expect(ackLabel('about_read', { topic: 'spaces' })).toContain('spaces');
-    expect(ackLabel('about_read', {})).toContain('overview');
+  it('ackLabel about_read : topic ou repli apercu', function() {
+    expect(ackLabel('about_read', { topic: 'espaces' })).toContain('espaces');
+    expect(ackLabel('about_read', {})).toContain('apercu');
   });
 });
 

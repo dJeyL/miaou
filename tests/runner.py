@@ -227,22 +227,22 @@ def run_build_unit_tests() -> tuple[int, int]:
             print(f'  FAIL  {label}')
 
     nominal = build.parse_help_sections(
-        'préambule ignoré\n## overview\ncorps A\n\n## spaces\ncorps B\n')
+        'préambule ignoré\n## apercu\ncorps A\n\n## espaces\ncorps B\n')
     check('help : sections nominales → {slug: corps}',
-          nominal == {'overview': 'corps A', 'spaces': 'corps B'})
+          nominal == {'apercu': 'corps A', 'espaces': 'corps B'})
     check('help : ordre des sections préservé',
-          list(nominal.keys()) == ['overview', 'spaces'])
+          list(nominal.keys()) == ['apercu', 'espaces'])
     check('help : texte avant la 1re section ignoré',
           'préambule' not in ''.join(nominal.values()))
 
     fence = build.parse_help_sections(
-        '## overview\navant\n```\n## pas une section\n```\naprès\n## spaces\nx\n')
+        '## apercu\navant\n```\n## pas une section\n```\naprès\n## espaces\nx\n')
     check('help : ## dans un fence ne démarre pas de section',
-          set(fence.keys()) == {'overview', 'spaces'}
-          and '## pas une section' in fence['overview'])
+          set(fence.keys()) == {'apercu', 'espaces'}
+          and '## pas une section' in fence['apercu'])
 
     try:
-        build.parse_help_sections('## overview\na\n## overview\nb\n')
+        build.parse_help_sections('## apercu\na\n## apercu\nb\n')
         check('help : slug dupliqué → ValueError', False)
     except ValueError:
         check('help : slug dupliqué → ValueError', True)

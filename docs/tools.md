@@ -128,14 +128,14 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
   **synchrone** (const en mémoire) → testable QuickJS. L'`enum` du paramètre
   `topic` dérive de `Object.keys(HELP_CONTENT)` (même source que le contenu, pas
   de drift) ; `required` vide → un `topic` absent **ou inconnu** retombe sur
-  `overview` (défaut). Pousse un ack `about_read` (informatif, sans undo, icône
+  `apercu` (défaut). Pousse un ack `about_read` (informatif, sans undo, icône
   `ICON_BOOK` réutilisée de `skill_read`/`files_read`, champ `topic`). Le contenu
   d'aide **n'est jamais dans le contexte** : seuls le blurb d'identité
   (`IDENTITY_BLURB`, statique, en tête du system message) et l'`enum` de slugs y
   vont ; les sections n'arrivent qu'en tool result, une par appel. Sous QuickJS
   `HELP_CONTENT` vaut `{}` (marqueur non substitué → enum vide) : les tests du
   parseur couvrent le découpage côté `build.py`, ceux du handler couvrent la
-  mécanique (fallback overview, ack) — le lookup positif est garanti par le build
+  mécanique (fallback apercu, ack) — le lookup positif est garanti par le build
   (dist/ contient les topics).
 
 **Bibliothèque de fichiers d'espace (lot Cbis, read-only v1) :**

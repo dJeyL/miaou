@@ -259,7 +259,7 @@ def parse_help_sections(text: str) -> dict:
 
     Une section démarre sur une ligne `## <slug>` en début de ligne. Le contenu
     d'une section court jusqu'au prochain `## ` ou la fin. Le texte avant la
-    première section est ignoré (le fichier commence par `## overview`). Un slug
+    première section est ignoré (le fichier commence par `## apercu`). Un slug
     dupliqué est une erreur (l'enum de l'outil dérive de ces clefs : pas de
     collision silencieuse). Les `## ` à l'intérieur d'un fence ``` ... ``` ne
     démarrent PAS de section.

@@ -1214,9 +1214,9 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_BOOK,
-    label: m => 'Aide consultée : ' + (m.topic || 'overview'),
+    label: m => 'Aide consultée : ' + (m.topic || 'apercu'),
     renderLabel: (m, el) => {
-      const topic = m.topic || 'overview';
+      const topic = m.topic || 'apercu';
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Aide consultée '));

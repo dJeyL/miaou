@@ -1046,7 +1046,7 @@ const TOOLS = [
     // Aide utilisateur servie à la demande depuis HELP_CONTENT (contenu build-time
     // injecté depuis src/help.md). Handler SYNCHRONE (const en mémoire) → testable
     // QuickJS. L'enum `topic` dérive de Object.keys(HELP_CONTENT) : même source que
-    // le contenu, pas de drift. `required` vide : topic absent/inconnu → overview.
+    // le contenu, pas de drift. `required` vide : topic absent/inconnu → apercu.
     // Sous QuickJS HELP_CONTENT vaut {} → enum vide (assumé par les tests).
     name: 'about',
     description:
@@ -1060,7 +1060,7 @@ const TOOLS = [
       properties: {
         topic: {
           type: 'string',
-          description: 'Sujet d\'aide à consulter (défaut : overview).',
+          description: 'Sujet d\'aide à consulter (défaut : apercu).',
           enum: Object.keys(HELP_CONTENT),
         },
       },
@@ -1068,9 +1068,9 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args) => {
       const requested = String((args && args.topic) || '').trim();
-      // topic inconnu/absent → overview (défaut). Fallback string vide si même
-      // overview manque (HELP_CONTENT={} sous QuickJS non stubé).
-      const topic = HELP_CONTENT[requested] != null ? requested : 'overview';
+      // topic inconnu/absent → apercu (défaut). Fallback string vide si même
+      // apercu manque (HELP_CONTENT={} sous QuickJS non stubé).
+      const topic = HELP_CONTENT[requested] != null ? requested : 'apercu';
       const content = HELP_CONTENT[topic];
       _pendingToolAcks.push({ kind: 'about_read', topic });
       return content != null ? content : 'Aide indisponible.';

@@ -1,4 +1,4 @@
-## overview
+## apercu
 
 MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu
 discutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix
@@ -26,7 +26,7 @@ Pour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces
 mémoire, historique, skills, outils distants, exports, interface, contexte
 envoyé au modèle, données personnelles, ou la genèse du projet.
 
-## attachments
+## pieces-jointes
 
 Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le
 trombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur
@@ -45,7 +45,7 @@ Les images ne sont envoyées en pleine résolution qu'au moment où tu les joins
 ensuite le modèle en garde une trace légère plutôt que de recharger les pixels à
 chaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible
 durablement (pas seulement le temps d'un message), promeus-le dans la
-bibliothèque de fichiers de ton Espace — voir le sujet Espaces.
+bibliothèque de fichiers de ton Espace — voir le sujet `espaces`.
 
 Pour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle
 n'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le
@@ -67,7 +67,7 @@ ressource : le contenu lourd disparaît alors de l'historique, remplacé par une
 pièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le
 calcul. La conversation s'allège sans rien perdre d'exploitable.
 
-## spaces
+## espaces
 
 Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun
 a ses propres conversations, ses propres pièces jointes et ses propres
@@ -75,6 +75,11 @@ souvenirs. Le modèle ne voit et ne peut agir que sur le contenu de l'Espace
 actif : aucun outil ne peut lire ou modifier un autre Espace. C'est utile pour
 séparer des sujets qui ne doivent pas déborder l'un sur l'autre (travail,
 perso, un projet précis…).
+
+Seule exception : la recherche de conversation dans la palette de commandes
+(Ctrl/Cmd+K) porte sur tous tes Espaces, pas seulement l'actif — ouvrir un
+résultat d'un autre Espace bascule automatiquement dessus (détails : sujet
+`interface`).
 
 Le sélecteur d'Espace est en haut de la barre latérale. L'historique « hors
 Espace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.
@@ -92,9 +97,16 @@ proposition du modèle lui-même (toujours confirmée par toi avant écriture).
 
 Supprimer un Espace supprime en cascade ses conversations, ses fichiers et ses
 souvenirs propres (double confirmation) ; les souvenirs de profil, valables
-partout, restent intacts.
+partout, restent intacts (détails : sujet `memoire`).
 
-## memory
+Tu peux **déplacer des conversations** d'un Espace à l'autre : sélecteur
+d'Espace en haut de la barre latérale → « Déplacer des conversations… »
+(visible dès qu'il existe au moins deux Espaces et que l'Espace actif contient
+des conversations). Choisis les conversations puis l'Espace de destination.
+C'est le seul moyen de faire passer une conversation d'un Espace à l'autre —
+les exports (sujet `exports`) ne se réimportent pas.
+
+## memoire
 
 Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton
 travail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton
@@ -105,15 +117,18 @@ Tu gardes la main : un panneau dédié te laisse consulter, modifier ou supprime
 tes souvenirs directement. Les souvenirs actifs sont réinjectés dans le contexte
 à chaque message, pour que le modèle en tienne compte.
 
-Les souvenirs appartiennent à l'Espace où ils sont créés. Un souvenir qui doit
+Les souvenirs appartiennent à l'Espace où ils sont créés (sujet `espaces`) ; ils
+suivent donc son étanchéité et sa suppression en cascade. Un souvenir qui doit
 rester valable partout peut être promu au **profil** (portée globale, présente
 dans tous les Espaces) depuis l'écran de l'Espace.
 
-Chaque écriture ou lecture de souvenir par le modèle laisse une trace visible
-dans la conversation ; les écritures sont annulables d'un clic.
+Chaque écriture de souvenir par le modèle laisse une trace visible dans la
+conversation, annulable d'un clic. Il n'existe pas d'outil de lecture : un
+souvenir actif est simplement réinjecté dans le contexte à chaque message,
+sans trace dans la conversation (mécanisme détaillé au sujet `contexte`).
 
 La mémoire des souvenirs est distincte de la continuité entre conversations
-(résumés automatiques) — voir le sujet historique.
+(résumés automatiques) — voir le sujet `historique`.
 
 ## historique
 
@@ -236,6 +251,11 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   sans MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images
   y sont embarquées et restent cliquables.
 
+Ces exports sont à sens unique : ce sont des fichiers de lecture, il n'existe
+aucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni
+pour le remettre dans un Espace — voir le sujet `espaces` pour déplacer une
+conversation existante entre Espaces).
+
 Côté blocs de code, chaque bloc a ses propres boutons pour **copier** ou
 **télécharger** son contenu (avec la bonne extension selon le langage), et les
 diagrammes peuvent être exportés en image SVG ou PNG.
@@ -246,10 +266,11 @@ diagrammes peuvent être exportés en image SVG ou PNG.
 ajoute automatiquement un **contexte** pour que le modèle réponde en connaissance
 de cause. Ce contexte comprend, selon le cas, tes instructions système, la
 définition des outils disponibles (y compris ceux des serveurs compagnons), tes
-souvenirs actifs, les résumés des conversations passées jugés pertinents, la date
-du jour et le manifeste de la bibliothèque de fichiers de l'Espace. Tout cela
-part vers l'API **à chaque tour**, en plus de ton message — donc oui, cela
-consomme des tokens en entrée, au-delà de ce que tu as tapé toi-même.
+souvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés
+pertinents, la date du jour et le manifeste de la bibliothèque de fichiers de
+l'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus
+de ton message — donc oui, cela consomme des tokens en entrée, au-delà de ce
+que tu as tapé toi-même.
 
 Deux idées à ne pas confondre :
 
@@ -323,7 +344,9 @@ Quelques repères pour te déplacer dans MIAOU :
   inspecteur de contexte, bascule de thème et de coloration, export de la
   conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
   une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou
-  rechercher une conversation (dans tous tes espaces — Échap revient en arrière).
+  rechercher une conversation — seule exception à l'étanchéité des Espaces
+  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en
+  arrière).
   - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule
     touche lance la commande — la lettre est affichée à gauche de chaque ligne.
     En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une
@@ -367,10 +390,10 @@ Conséquences pratiques :
 Ce que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr
 vers l'API configurée pour être traité — c'est le principe même d'un client de
 chat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il
-contient et comment l'alléger, voir le sujet contexte. Le reste ne quitte pas
+contient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas
 ton navigateur.
 
-## genesis
+## genese
 
 MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,
 faute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans
