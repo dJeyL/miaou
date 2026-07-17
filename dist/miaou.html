@@ -3394,7 +3394,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-17 22:17 UTC */
+/* miaou — built: 2026-07-17 22:42 UTC */
 
 /* ── utils.js ── */
 
@@ -3897,7 +3897,7 @@ function _formatToolCallHtml(m) {
   const head = m.intent
     ? '<code>' + escHtml(m.name) + '</code> — ' + escHtml(m.intent)
     : '<code>' + escHtml(m.name) + '</code>';
-  lines.push(head);
+  lines.push(ackIsError(m) ? '<span class="ack-head-error">' + head + '</span>' : head);
   if (m.args != null) {
     lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
   }
@@ -3924,7 +3924,8 @@ const EXPORT_ACK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="n
 
 function _formatToolCallPreviewHtml(m) {
   const text = m.intent ? escHtml(m.intent) : '<code>' + escHtml(m.name) + '</code>';
-  return '<div class="tool-ack-preview"><span class="ack-icon">' + EXPORT_ACK_ICON + '</span>' +
+  const cls = ackIsError(m) ? 'tool-ack-preview ack-error' : 'tool-ack-preview';
+  return '<div class="' + cls + '"><span class="ack-icon">' + EXPORT_ACK_ICON + '</span>' +
     '<span class="ack-label">' + text + '</span></div>';
 }
 
@@ -4402,7 +4403,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784326630}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784328140}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6037,6 +6038,10 @@ function toolFail(toolName, message) {
   return message;
 }
 
+function pushDuplicateCallAck(name, message) {
+  _pendingToolAcks.push({ kind: 'tool_failed', name, message, error: true });
+}
+
 let _pendingToolBlocks = [];
 function getPendingToolBlocks() { return _pendingToolBlocks.slice(); }
 function clearPendingToolBlocks() { _pendingToolBlocks = []; }
@@ -7554,6 +7559,19 @@ async function runConversation(messages, hooks) {
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
+          
+          if (typeof pushDuplicateCallAck === 'function') {
+            pushDuplicateCallAck(tc.function.name, out);
+            if (h.onEnrichLastAck) h.onEnrichLastAck({
+              isMcp: false,
+              name: tc.function.name,
+              args,
+              result: out,
+              ts: Date.now(),
+              group,
+              assistantText,
+            });
+          }
         } else {
           bgActivityStart('outil…');
           try {
@@ -11149,7 +11167,9 @@ function renderToolsList() {
     body.className = i === 0 ? 'tool-ns-body open' : 'tool-ns-body';
     const bodyInner = document.createElement('div');
     bodyInner.className = 'tool-ns-body-inner';
-    for (const t of g.tools) bodyInner.appendChild(buildToolItem(t.bareName, t.def));
+    
+    const sorted = g.tools.slice().sort((a, b) => a.bareName.localeCompare(b.bareName));
+    for (const t of sorted) bodyInner.appendChild(buildToolItem(t.bareName, t.def));
     body.appendChild(bodyInner);
 
     header.addEventListener('click', function() {
@@ -12679,7 +12699,7 @@ const THEME_TOKENS = [
   '--border', '--border-2',
   '--text', '--text-2', '--text-3',
   '--accent', '--accent-2', '--accent-ink', '--accent-dim', '--accent-bd',
-  '--ok', '--err',
+  '--ok', '--err', '--err-soft',
   '--r', '--r-sm', '--ease',
   '--sans', '--mono',
   '--topbar-bg', '--scrollbar-thumb-hover', '--table-stripe',
@@ -12842,6 +12862,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
 .tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }
+.tool-ack-preview.ack-error .ack-icon { color: var(--err); }
+.tool-ack-preview.ack-error .ack-label { color: var(--err-soft); }
+.tool-trace .ack-head-error, .tool-trace .ack-head-error code { color: var(--err-soft); }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
 .att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }

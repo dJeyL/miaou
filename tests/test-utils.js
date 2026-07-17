@@ -717,6 +717,21 @@ describe('formatToolAcksHtml', function() {
     var r = formatToolAcksHtml([{ name: 'a', args: {}, result: 'timeout', error: true }]);
     expect(r.indexOf('Résultat (erreur)') >= 0).toBeTruthy();
   });
+  it('erreur : preview marquée ack-error et tête du détail JSON en ack-head-error', function() {
+    var r = formatToolAcksHtml([{ name: 'a', args: {}, result: 'timeout', error: true }]);
+    expect(r.indexOf('class="tool-ack-preview ack-error"') >= 0).toBeTruthy();
+    expect(r.indexOf('<span class="ack-head-error"><code>a</code></span>') >= 0).toBeTruthy();
+  });
+  it('erreur js__eval (ok === false) : mêmes marqueurs que error: true', function() {
+    var r = formatToolAcksHtml([{ name: 'miaou__js__eval', args: {}, result: 'refus', ok: false }]);
+    expect(r.indexOf('ack-error') >= 0).toBeTruthy();
+    expect(r.indexOf('ack-head-error') >= 0).toBeTruthy();
+  });
+  it('succès : aucun marqueur d\'erreur', function() {
+    var r = formatToolAcksHtml([{ name: 'a', args: {}, result: 'ok' }]);
+    expect(r.indexOf('ack-error') >= 0).toBeFalsy();
+    expect(r.indexOf('ack-head-error') >= 0).toBeFalsy();
+  });
   it('resource_presented : nom + mime, jamais de data: embarquée', function() {
     var r = formatToolAcksHtml([{ name: 'weather__get_map', kind: 'resource_presented',
       args: {}, result: '[resource_ref:res_1]', resourceName: 'carte.png', mime: 'image/png' }]);

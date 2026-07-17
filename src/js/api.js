@@ -512,6 +512,25 @@ async function runConversation(messages, hooks) {
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
           out = '(déjà fourni plus haut dans cet échange)';
+          // Trace UI du court-circuit : sans elle, l'appel ne laissait AUCUN
+          // ack dans le fil (aucun handler n'a tourné). Ack tool_failed rouge
+          // + enrichissement standard (args/result/ts/group) pour la fidélité
+          // reload/export. isMcp: false — l'ack est poussé dans
+          // _pendingToolAcks quel que soit l'outil visé, jamais dans le
+          // chemin earlyRendered. Garde typeof : le test runner évalue api.js
+          // sans tools.js (cf. internResourcesFromResult plus bas).
+          if (typeof pushDuplicateCallAck === 'function') {
+            pushDuplicateCallAck(tc.function.name, out);
+            if (h.onEnrichLastAck) h.onEnrichLastAck({
+              isMcp: false,
+              name: tc.function.name,
+              args,
+              result: out,
+              ts: Date.now(),
+              group,
+              assistantText,
+            });
+          }
         } else {
           bgActivityStart('outil…');
           try {

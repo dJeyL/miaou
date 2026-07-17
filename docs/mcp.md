@@ -12,7 +12,10 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    `__` uniquement — un `toolName` distant peut lui-même contenir `__`, un
    `split('__')` naïf le corromprait. `groupByNamespace` (pur) projette le nom
    canonique en `{namespace, bareName}` pour le sous-drawer « Voir les outils
-   exposés » — rien n'est stocké, tout dérive du nom.
+   exposés » — rien n'est stocké, tout dérive du nom. Le tri d'affichage
+   (namespaces en trois familles, puis outils alpha par `bareName` dans chaque
+   groupe) vit dans `renderToolsList` (ui.js), purement présentationnel :
+   `groupByNamespace` reste en ordre d'apparition.
 2. **V2 rompt délibérément le byte-identical de V1.** Les outils internes sont
    désormais envoyés au modèle préfixés (`miaou__memory__create`). Assumé : le
    préfixe sert à router interne vs distant sans cas particulier. La doctrine

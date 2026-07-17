@@ -4263,7 +4263,10 @@ function renderToolsList() {
     body.className = i === 0 ? 'tool-ns-body open' : 'tool-ns-body';
     const bodyInner = document.createElement('div');
     bodyInner.className = 'tool-ns-body-inner';
-    for (const t of g.tools) bodyInner.appendChild(buildToolItem(t.bareName, t.def));
+    // Tri alpha par nom nu, purement présentationnel (comme le tri des
+    // namespaces ci-dessus) : groupByNamespace reste en ordre d'apparition.
+    const sorted = g.tools.slice().sort((a, b) => a.bareName.localeCompare(b.bareName));
+    for (const t of sorted) bodyInner.appendChild(buildToolItem(t.bareName, t.def));
     body.appendChild(bodyInner);
 
     header.addEventListener('click', function() {
@@ -6051,7 +6054,7 @@ const THEME_TOKENS = [
   '--border', '--border-2',
   '--text', '--text-2', '--text-3',
   '--accent', '--accent-2', '--accent-ink', '--accent-dim', '--accent-bd',
-  '--ok', '--err',
+  '--ok', '--err', '--err-soft',
   '--r', '--r-sm', '--ease',
   '--sans', '--mono',
   '--topbar-bg', '--scrollbar-thumb-hover', '--table-stripe',
@@ -6237,6 +6240,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
 .tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }
+.tool-ack-preview.ack-error .ack-icon { color: var(--err); }
+.tool-ack-preview.ack-error .ack-label { color: var(--err-soft); }
+.tool-trace .ack-head-error, .tool-trace .ack-head-error code { color: var(--err-soft); }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .att-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 8px; font-size: 12px; color: var(--text-2); max-width: 220px; }
 .att-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface-3); }

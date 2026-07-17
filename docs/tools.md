@@ -506,6 +506,14 @@ Deux nuances à connaître avant d'ajouter un site d'échec :
   boucle d'outils soit coupée. Les trois `isError` de `callInternalTool` (outil
   inconnu, throw d'un handler = bug) poussent eux aussi un `tool_failed` — avant,
   le plus anormal était le plus muet : un plantage JS ne laissait aucune trace.
+- **Le court-circuit anti-redemande pousse aussi un `tool_failed`.** Quand
+  `servedKeys` (api.js, piège n°3) court-circuite un tool_call identique à un
+  appel déjà servi dans l'échange, aucun handler ne tourne — donc aucun ack par
+  le chemin normal. `pushDuplicateCallAck(name, message)` (tools.js) pousse la
+  trace : même forme que `toolFail`, mais `name` arrive déjà canonique (nom
+  exact du tool_call, interne ou distant) — pas de préfixe ajouté. api.js
+  enchaîne avec `onEnrichLastAck` (args/result/ts/group) pour la fidélité
+  reload/export.
 - **Échec APRÈS le push d'un ack : marquer, ne pas repousser.** Si le handler a
   déjà poussé son ack métier et échoue ensuite (seul cas actuel : `files__read` sur
   une image, modèle sans vision — le fichier a bien été lu, c'est sa *présentation*

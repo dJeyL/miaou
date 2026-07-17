@@ -1450,3 +1450,24 @@ describe('toolFail — ack d\'échec des outils natifs', function() {
     expect(ackIsError(getPendingToolAcks()[0])).toBe(true);
   });
 });
+
+// Court-circuit anti-redemande (servedKeys, api.js) : un tool_call identique à
+// un appel déjà servi dans l'échange n'exécute AUCUN handler — sans ack dédié,
+// il était invisible dans le fil.
+describe('pushDuplicateCallAck — ack du court-circuit anti-redemande', function() {
+  it('pousse un ack tool_failed en erreur, reconnu par ackIsError', function() {
+    clearPendingToolAcks();
+    pushDuplicateCallAck('miaou__conv__get', '(déjà fourni plus haut dans cet échange)');
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].error).toBe(true);
+    expect(acks[0].message).toBe('(déjà fourni plus haut dans cet échange)');
+    expect(ackIsError(acks[0])).toBe(true);
+  });
+  it('name déjà canonique : AUCUN préfixe ajouté (contrairement à toolFail)', function() {
+    clearPendingToolAcks();
+    pushDuplicateCallAck('brave__web_search', 'x');
+    expect(getPendingToolAcks()[0].name).toBe('brave__web_search');
+  });
+});

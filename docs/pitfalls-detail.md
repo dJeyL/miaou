@@ -25,6 +25,9 @@ au KV cache, ou à la synchro multi-onglets.
    (clé `nom + ':' + arguments bruts`) court-circuite un appel rigoureusement
    identique déjà servi dans le même échange — deux appels du même outil avec
    des arguments distincts (ex. deux `memory__create`) sont tous les deux servis.
+   Le court-circuit laisse une trace dans le fil : ack `tool_failed` rouge poussé
+   par `pushDuplicateCallAck` (tools.js) + enrichissement standard — sans lui,
+   aucun handler ne tournant, l'appel était totalement invisible.
 4. **Agrégation SSE par `index`.** Les `tool_calls` arrivent fragmentés :
    agréger strictement par `tcDelta.index`, ne jamais parser
    `function.arguments` avant la fin du stream, reprendre le `tool_call_id` exact.

@@ -85,9 +85,13 @@ ultérieures du même lot).
      `.tool-ack` du thread live : bordure gauche + icône outil générique
      `EXPORT_ACK_ICON`, une seule icône pour tous les kinds, pas de
      dépendance à `ACK_KINDS`/ui.js hors de portée depuis `utils.js` — +
-     `m.intent` si présent, sinon fallback `<code>name</code>`).
+     `m.intent` si présent, sinon fallback `<code>name</code>`). Un ack en
+     échec (`ackIsError`) porte la classe `ack-error` : icône `--err`, label
+     `--err-soft` — mêmes couleurs que `.tool-ack.ack-error` du thread live.
   3. clic sur la liste d'intents : bascule vers le détail JSON (`<ul>`,
-     séparateur `border-top` discret entre `<li>` consécutifs).
+     séparateur `border-top` discret entre `<li>` consécutifs). La première
+     ligne d'un ack en échec (nom + intent) est enveloppée dans
+     `<span class="ack-head-error">` (couleur `--err-soft`).
   4. clic sur le détail JSON : **revient** à la liste d'intents (cycle, pas
      de cul-de-sac).
   Le cycle intents ↔ JSON (paliers 3/4) n'est **pas** un second `<details>`

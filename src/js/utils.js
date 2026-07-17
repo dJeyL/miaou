@@ -744,7 +744,7 @@ function _formatToolCallHtml(m) {
   const head = m.intent
     ? '<code>' + escHtml(m.name) + '</code> — ' + escHtml(m.intent)
     : '<code>' + escHtml(m.name) + '</code>';
-  lines.push(head);
+  lines.push(ackIsError(m) ? '<span class="ack-head-error">' + head + '</span>' : head);
   if (m.args != null) {
     lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
   }
@@ -782,7 +782,8 @@ const EXPORT_ACK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="n
 // le nom d'outil si m.intent est absent.
 function _formatToolCallPreviewHtml(m) {
   const text = m.intent ? escHtml(m.intent) : '<code>' + escHtml(m.name) + '</code>';
-  return '<div class="tool-ack-preview"><span class="ack-icon">' + EXPORT_ACK_ICON + '</span>' +
+  const cls = ackIsError(m) ? 'tool-ack-preview ack-error' : 'tool-ack-preview';
+  return '<div class="' + cls + '"><span class="ack-icon">' + EXPORT_ACK_ICON + '</span>' +
     '<span class="ack-label">' + text + '</span></div>';
 }
 
