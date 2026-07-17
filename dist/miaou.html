@@ -3310,7 +3310,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-16 19:55 UTC */
+/* miaou — built: 2026-07-17 11:23 UTC */
 
 /* ── utils.js ── */
 
@@ -4302,13 +4302,15 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784231734}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784287429}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   
+
+const BUILD_CHAT_TEMPERATURE = (typeof BUILD_CONFIG.chat_temperature === 'number') ? BUILD_CONFIG.chat_temperature : 0.7;
 
 const BUILD_DEFAULT_CONTEXT_WINDOW =
   (typeof BUILD_CONFIG.default_context_window === 'number') ? BUILD_CONFIG.default_context_window : 0;
@@ -7252,6 +7254,27 @@ function joinReasoning(a, b) {
   return a + '\n\n' + b;
 }
 
+let _chatTempOverride = null;
+
+function setChatTemperature(t) {
+  if (t == null) {
+    _chatTempOverride = null;
+    console.log('[miaou] température chat : défaut build (' + BUILD_CHAT_TEMPERATURE + ')');
+    return;
+  }
+  
+  if (typeof t !== 'number' || !(t >= 0 && t <= 2)) {
+    console.warn('[miaou] température invalide, ignorée :', t);
+    return;
+  }
+  _chatTempOverride = t;
+  console.log('[miaou] température chat : ' + t + ' (prochains envois)');
+}
+
+function activeChatTemperature() {
+  return _chatTempOverride == null ? BUILD_CHAT_TEMPERATURE : _chatTempOverride;
+}
+
 async function streamCompletion(messages, opts) {
   const o = opts || {};
   const cfg = Object.assign({}, loadSettings(), activeApiConfig());
@@ -7261,7 +7284,7 @@ async function streamCompletion(messages, opts) {
     model,
     messages,
     stream: true,
-    temperature: o.temperature == null ? 0.7 : o.temperature,
+    temperature: o.temperature == null ? activeChatTemperature() : o.temperature,
     stream_options: { include_usage: true },
   };
   if (o.tools && o.tools.length) {

@@ -241,3 +241,45 @@ describe('FILE_DESCRIPTION_PROMPT (D7, lot Cbis) — distinct de SUMMARY_PROMPT,
     expect(FILE_DESCRIPTION_PROMPT.indexOf('PAS un résumé') >= 0).toBeTruthy();
   });
 });
+
+describe('activeChatTemperature / setChatTemperature (override console, lot température)', function() {
+  it('sans override → défaut du build (0.7 hors config.json)', function() {
+    setChatTemperature(null);
+    expect(activeChatTemperature()).toBe(0.7);
+  });
+  it('override numérique → valeur posée', function() {
+    setChatTemperature(0.2);
+    expect(activeChatTemperature()).toBe(0.2);
+    setChatTemperature(null);
+  });
+  it('0 est une valeur valide (greedy), pas un reset', function() {
+    setChatTemperature(0);
+    expect(activeChatTemperature()).toBe(0);
+    setChatTemperature(null);
+  });
+  it('null remet le défaut du build', function() {
+    setChatTemperature(0.2);
+    setChatTemperature(null);
+    expect(activeChatTemperature()).toBe(0.7);
+  });
+  it('hors bornes → ignoré, valeur précédente conservée', function() {
+    setChatTemperature(0.2);
+    setChatTemperature(5);
+    expect(activeChatTemperature()).toBe(0.2);
+    setChatTemperature(-1);
+    expect(activeChatTemperature()).toBe(0.2);
+    setChatTemperature(null);
+  });
+  it('NaN → ignoré (le !(t >= 0 && t <= 2) le rejette)', function() {
+    setChatTemperature(0.2);
+    setChatTemperature(NaN);
+    expect(activeChatTemperature()).toBe(0.2);
+    setChatTemperature(null);
+  });
+  it('chaîne numérique → ignorée (typeof strict)', function() {
+    setChatTemperature(0.2);
+    setChatTemperature('0.9');
+    expect(activeChatTemperature()).toBe(0.2);
+    setChatTemperature(null);
+  });
+});

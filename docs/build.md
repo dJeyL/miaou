@@ -47,11 +47,18 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `__MIAOU_CONFIG__` est un identifiant nu → `ReferenceError` attrapée → `{}`.
   (Un `typeof … !== 'undefined'` ne convient pas : la garde elle-même contient
   le marqueur, qui serait substitué → objet dupliqué.)
-- Les quatre valeurs dérivées (`REQUIRE_API_KEY`, `MAX_SUMMARIES`,
-  `BUILD_API_URL`, `BUILD_API_MODEL`) sont **toutes déclarées dans `storage.js`**,
-  juste sous `BUILD_CONFIG`, avec leurs défauts. Elles ne sont **référencées
-  ailleurs qu'en corps de fonction** (cf. contrainte `const`/test runner dans
-  `CLAUDE.md`) : ne pas les redéclarer dans un autre fichier au top-level.
+- Les valeurs dérivées (`REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
+  `BUILD_API_MODEL`, `BUILD_CHAT_TEMPERATURE`, plus `BUILD_TS` ci-dessous) sont
+  **toutes déclarées dans `storage.js`**, juste sous `BUILD_CONFIG`, avec leurs
+  défauts. Elles ne sont **référencées ailleurs qu'en corps de fonction**
+  (cf. contrainte `const`/test runner dans `CLAUDE.md`) : ne pas les redéclarer
+  dans un autre fichier au top-level.
+- **`build_ts` n'est pas une clef de `config.json`** : `build.py` l'écrase dans
+  `cfg_data` juste avant sérialisation (epoch Unix en secondes). En écrire une
+  dans `config.json` ne sert à rien — elle serait remplacée en silence. Son
+  défaut `0` côté `storage.js` signifie donc « sources non buildées » (tests
+  QuickJS), jamais « config incomplète ». Les autres clefs, elles, viennent
+  toutes de `config.json` et sont documentées dans le README.
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).

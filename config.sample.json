@@ -3,5 +3,6 @@
   "api_model":               "gemma4:26b-nvfp4",
   "max_summaries":           3,
   "require_api_key":         true,
+  "chat_temperature":        0.7,
   "default_context_window":  32768
 }

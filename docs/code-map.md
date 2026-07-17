@@ -135,89 +135,90 @@
   - `BUILD_API_URL` — L29
   - `BUILD_API_MODEL` — L30
   - `BUILD_TS` — L31
-  - `BUILD_DEFAULT_CONTEXT_WINDOW` — L37
-  - `DEFAULT_SETTINGS` — L40
-- **Réglages** (L57)
-  - `loadSettingsRaw()` — L59
-  - `loadSettings()` — L64
-  - `saveSettings()` — L72
-  - `contextWindowFor()` — L84
-- **Serveurs API (multi-backends)** (L91)
-  - `API_SERVERS_KEY` — L97
-  - `ACTIVE_API_SERVER_KEY` — L98
-  - `genApiServerId()` — L100
-  - `migrateApiServersIfNeeded()` — L111
-  - `saveApiServersRaw()` — L120
-  - `loadApiServers()` — L126
-  - `saveApiServers()` — L134
-  - `normalizeApiServer()` — L138
-  - `serverModelVisionEnabled()` — L167
-  - `upsertApiServer()` — L173
-  - `deleteApiServer()` — L182
-  - `getApiServer()` — L188
-  - `getActiveApiServerId()` — L192
-  - `setActiveApiServerId()` — L196
-  - `activeApiServer()` — L204
-  - `activeApiConfig()` — L217
-- **Serveurs MCP distants** (L226)
-  - `MCP_SERVERS_KEY` — L235
-  - `MCP_DEFAULT_TIMEOUT` — L237
-  - `loadMcpServers()` — L239
-  - `saveMcpServers()` — L246
-  - `normalizeMcpServer()` — L254
-  - `upsertMcpServer()` — L270
-  - `deleteMcpServer()` — L279
-  - `getMcpServer()` — L285
-  - `listEnabledMcpServers()` — L289
-- **Conversations** (L293)
-  - `loadConversations()` — L296
-  - `persistConversations()` — L301
-  - `listAllConversations()` — L305
-  - `loadConversation()` — L311
-  - `saveConversation()` — L315
-  - `deleteConversation()` — L326
-  - `toggleConversationPin()` — L336
-  - `hasSubstance()` — L350
-- **Index des résumés (miaou-summaries)** (L362)
-  - `loadSummaries()` — L367
-  - `persistSummaries()` — L372
-  - `getSummaryEntry()` — L376
-  - `listSummaryEntries()` — L382
-  - `saveSummary()` — L386
-  - `suppressSummary()` — L396
-  - `restoreSummary()` — L406
-  - `deleteSummaryEntry()` — L416
-  - `isSummaryCandidate()` — L423
-  - `pruneOrphanSummaries()` — L432
-  - `backfillCandidates()` — L442
-- **Souvenirs utilisateur (miaou-memories)** (L447)
-  - `MEMORIES_KEY` — L451
-  - `genMemoryId()` — L457
-  - `loadMemories()` — L459
-  - `persistMemories()` — L464
-  - `listMemoryEntries()` — L472
-  - `saveMemory()` — L478
-  - `editMemory()` — L486
-  - `suppressMemory()` — L495
-  - `restoreMemory()` — L501
-  - `forgetMemory()` — L507
-- **Espaces (miaou-spaces) — feature Spaces (lot C)** (L511)
-  - `genSpaceId()` — L522
-  - `loadSpaces()` — L527
-  - `saveSpaces()` — L534
-  - `normalizeSpace()` — L544
-  - `upsertSpace()` — L555
-  - `deleteSpaceEntry()` — L566
-  - `getSpace()` — L573
-  - `getActiveSpaceId()` — L577
-  - `setActiveSpaceId()` — L581
-  - `migrateSpacesIfNeeded()` — L589
-  - `spaceConvIds()` — L614
-  - `moveConversationsToSpace()` — L628
-- **Export / import complet des données (feature E)** (L633)
-  - `EXPORT_KEYS` — L642
-  - `buildExportPayload()` — L661
-  - `validateImportPayload()` — L692
+  - `BUILD_CHAT_TEMPERATURE` — L36
+  - `BUILD_DEFAULT_CONTEXT_WINDOW` — L42
+  - `DEFAULT_SETTINGS` — L45
+- **Réglages** (L62)
+  - `loadSettingsRaw()` — L64
+  - `loadSettings()` — L69
+  - `saveSettings()` — L77
+  - `contextWindowFor()` — L89
+- **Serveurs API (multi-backends)** (L96)
+  - `API_SERVERS_KEY` — L102
+  - `ACTIVE_API_SERVER_KEY` — L103
+  - `genApiServerId()` — L105
+  - `migrateApiServersIfNeeded()` — L116
+  - `saveApiServersRaw()` — L125
+  - `loadApiServers()` — L131
+  - `saveApiServers()` — L139
+  - `normalizeApiServer()` — L143
+  - `serverModelVisionEnabled()` — L172
+  - `upsertApiServer()` — L178
+  - `deleteApiServer()` — L187
+  - `getApiServer()` — L193
+  - `getActiveApiServerId()` — L197
+  - `setActiveApiServerId()` — L201
+  - `activeApiServer()` — L209
+  - `activeApiConfig()` — L222
+- **Serveurs MCP distants** (L231)
+  - `MCP_SERVERS_KEY` — L240
+  - `MCP_DEFAULT_TIMEOUT` — L242
+  - `loadMcpServers()` — L244
+  - `saveMcpServers()` — L251
+  - `normalizeMcpServer()` — L259
+  - `upsertMcpServer()` — L275
+  - `deleteMcpServer()` — L284
+  - `getMcpServer()` — L290
+  - `listEnabledMcpServers()` — L294
+- **Conversations** (L298)
+  - `loadConversations()` — L301
+  - `persistConversations()` — L306
+  - `listAllConversations()` — L310
+  - `loadConversation()` — L316
+  - `saveConversation()` — L320
+  - `deleteConversation()` — L331
+  - `toggleConversationPin()` — L341
+  - `hasSubstance()` — L355
+- **Index des résumés (miaou-summaries)** (L367)
+  - `loadSummaries()` — L372
+  - `persistSummaries()` — L377
+  - `getSummaryEntry()` — L381
+  - `listSummaryEntries()` — L387
+  - `saveSummary()` — L391
+  - `suppressSummary()` — L401
+  - `restoreSummary()` — L411
+  - `deleteSummaryEntry()` — L421
+  - `isSummaryCandidate()` — L428
+  - `pruneOrphanSummaries()` — L437
+  - `backfillCandidates()` — L447
+- **Souvenirs utilisateur (miaou-memories)** (L452)
+  - `MEMORIES_KEY` — L456
+  - `genMemoryId()` — L462
+  - `loadMemories()` — L464
+  - `persistMemories()` — L469
+  - `listMemoryEntries()` — L477
+  - `saveMemory()` — L483
+  - `editMemory()` — L491
+  - `suppressMemory()` — L500
+  - `restoreMemory()` — L506
+  - `forgetMemory()` — L512
+- **Espaces (miaou-spaces) — feature Spaces (lot C)** (L516)
+  - `genSpaceId()` — L527
+  - `loadSpaces()` — L532
+  - `saveSpaces()` — L539
+  - `normalizeSpace()` — L549
+  - `upsertSpace()` — L560
+  - `deleteSpaceEntry()` — L571
+  - `getSpace()` — L578
+  - `getActiveSpaceId()` — L582
+  - `setActiveSpaceId()` — L586
+  - `migrateSpacesIfNeeded()` — L594
+  - `spaceConvIds()` — L619
+  - `moveConversationsToSpace()` — L633
+- **Export / import complet des données (feature E)** (L638)
+  - `EXPORT_KEYS` — L647
+  - `buildExportPayload()` — L666
+  - `validateImportPayload()` — L697
 
 ## src/js/resources.js
 
@@ -461,19 +462,23 @@
   - `parseSSELine()` — L210
   - `reasoningDelta()` — L222
   - `joinReasoning()` — L230
-- **Streaming d'une complétion (un tour)** (L236)
-  - `streamCompletion()` — L239
-  - `abortStream()` — L384
-- **Boucle complète d'un échange (injection + tool_calls)** (L388)
-  - `runConversation()` — L400
-- **Titrage automatique** (L578)
-  - `generateTitle()` — L579
-- **Génération d'un résumé** (L591)
-  - `generateSummary()` — L592
-- **Recherche / sélection des résumés pertinents** (L613)
-  - `searchSummaries()` — L617
-- **Liste des modèles exposés par l'API** (L635)
-  - `fetchModels()` — L636
+- **Température du chat : override console** (L236)
+  - `_chatTempOverride` — L243
+  - `setChatTemperature()` — L245
+  - `activeChatTemperature()` — L260
+- **Streaming d'une complétion (un tour)** (L264)
+  - `streamCompletion()` — L267
+  - `abortStream()` — L412
+- **Boucle complète d'un échange (injection + tool_calls)** (L416)
+  - `runConversation()` — L428
+- **Titrage automatique** (L606)
+  - `generateTitle()` — L607
+- **Génération d'un résumé** (L619)
+  - `generateSummary()` — L620
+- **Recherche / sélection des résumés pertinents** (L641)
+  - `searchSummaries()` — L645
+- **Liste des modèles exposés par l'API** (L663)
+  - `fetchModels()` — L664
 
 ## src/js/ui.js
 

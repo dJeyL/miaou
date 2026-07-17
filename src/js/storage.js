@@ -29,6 +29,11 @@ const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+// Température des envois de chat (streamCompletion uniquement — les appels
+// silencieux gardent la valeur explicite de leur site d'appel). Le typeof
+// rejette une clé absente, une chaîne ou null : tous retombent sur 0.7 plutôt
+// que d'envoyer une valeur invalide à l'endpoint.
+const BUILD_CHAT_TEMPERATURE = (typeof BUILD_CONFIG.chat_temperature === 'number') ? BUILD_CONFIG.chat_temperature : 0.7;
 // Fenêtre de contexte par défaut (tokens) si l'utilisateur n'a rien saisi dans
 // les réglages (`contextWindow` reste '' — cf. DEFAULT_SETTINGS ci-dessous) :
 // permet de fournir une valeur d'installation sans forcer chaque utilisateur à

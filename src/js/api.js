@@ -233,6 +233,34 @@ function joinReasoning(a, b) {
   return a + '\n\n' + b;
 }
 
+// ── Température du chat : override console ──────────────────────────────────
+// Instrument de mesure, pas un réglage : aucune surface UI, non persisté, non
+// broadcasté aux autres onglets. Un reload le perd et la valeur du build
+// (BUILD_CHAT_TEMPERATURE) reprend — on ne peut pas laisser une session sur une
+// valeur d'essai sans le savoir. Ne concerne que streamCompletion : les appels
+// silencieux (titrage, résumé, description de fichier) portent leur température
+// explicite au site d'appel et n'ont rien à voir avec ces mesures.
+let _chatTempOverride = null;
+
+function setChatTemperature(t) {
+  if (t == null) {
+    _chatTempOverride = null;
+    console.log('[miaou] température chat : défaut build (' + BUILD_CHAT_TEMPERATURE + ')');
+    return;
+  }
+  // !(t >= 0 && t <= 2) plutôt que t < 0 || t > 2 : rejette aussi NaN.
+  if (typeof t !== 'number' || !(t >= 0 && t <= 2)) {
+    console.warn('[miaou] température invalide, ignorée :', t);
+    return;
+  }
+  _chatTempOverride = t;
+  console.log('[miaou] température chat : ' + t + ' (prochains envois)');
+}
+
+function activeChatTemperature() {
+  return _chatTempOverride == null ? BUILD_CHAT_TEMPERATURE : _chatTempOverride;
+}
+
 // ── Streaming d'une complétion (un tour) ────────────────────────────────────
 // Agrège le content et les tool_calls (strictement par index). Ne renvoie
 // qu'à la fin du stream : { content, toolCalls, finishReason }.
@@ -245,7 +273,7 @@ async function streamCompletion(messages, opts) {
     model,
     messages,
     stream: true,
-    temperature: o.temperature == null ? 0.7 : o.temperature,
+    temperature: o.temperature == null ? activeChatTemperature() : o.temperature,
     stream_options: { include_usage: true },
   };
   if (o.tools && o.tools.length) {
