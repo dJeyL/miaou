@@ -1643,6 +1643,8 @@ function renderAckGroup(group) {
     if (visibleNode) applySlotExpanded(visibleNode, group.state.slotExpanded);
     group.track.style.transform = '';
     group.track.classList.remove('animating');
+    group.slot.classList.remove('animating');
+    group.slot.style.height = '';
   }
 }
 
@@ -1686,16 +1688,35 @@ function ackGroupAddAck(group, entry, node, animate) {
   }
   // Arrivée animée en compact : le nœud entrant est déjà en place (empilé sous
   // le sortant dans le track), on measure/translate/cleanup sur transitionend.
-  group.track.appendChild(node);
+  // La hauteur du slot est ÉPINGLÉE en px AVANT l'append puis transitionnée
+  // vers celle de l'entrant : sans ça, le slot (height auto) mesurerait
+  // sortant+entrant pendant l'anim puis retomberait au retrait du sortant —
+  // aller-retour de hauteur qui faisait sautiller l'autoscroll collé en bas.
+  // Toutes les mesures sont des hauteurs EXTÉRIEURES : .tool-ack porte des
+  // marges verticales (non collapsées dans le track flex) qu'offsetHeight
+  // ignore — épingler offsetHeight nu faisait perdre 6px au départ puis les
+  // reprenait au cleanup (height:'' → auto), wobble inverse du sautillement.
+  // Départ = hauteur auto courante du slot ; cible = boîte de marge de
+  // l'entrant ; translation = écart d'offsetTop (exact marges comprises,
+  // offsetParent = .ack-slot, position:relative).
   const outgoing = prevNode;
-  const h = outgoing.offsetHeight;
+  const hStart = group.slot.offsetHeight;
+  group.slot.style.height = hStart + 'px';
+  group.track.appendChild(node);
+  const dist = node.offsetTop - outgoing.offsetTop;
+  const mcs = getComputedStyle(node);
+  const hEnd = node.offsetHeight + (parseFloat(mcs.marginTop) || 0) + (parseFloat(mcs.marginBottom) || 0);
+  group.slot.classList.add('animating');
   group.track.classList.add('animating');
-  group.track.style.transform = 'translateY(-' + h + 'px)';
+  group.track.style.transform = 'translateY(-' + dist + 'px)';
+  group.slot.style.height = hEnd + 'px';
   const onEnd = function() {
     group.track.removeEventListener('transitionend', onEnd);
     if (outgoing.parentNode === group.track) outgoing.remove();
     group.track.classList.remove('animating');
     group.track.style.transform = '';
+    group.slot.classList.remove('animating');
+    group.slot.style.height = '';
     renderAckGroup(group);   // resync badge/attrs, ne touche plus au track (déjà propre)
   };
   group.track.addEventListener('transitionend', onEnd, { once: true });

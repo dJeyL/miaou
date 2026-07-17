@@ -220,10 +220,14 @@ inline sous la liste.
     bulle), **jamais** une classe DOM `.ack-shell` hors-thread (piste abandonnée :
     artefact DOM sans contrepartie données → divergence live/reload + mappings à
     rustiner). `content` toujours vide (le texte du tour est déjà consommé par
-    `onToolTour`, appelé AVANT les acks). `expandThread` **élague** cette bulle
-    (`m._acksOnly`) : un assistant vide sans `tool_calls` entre tool results et
-    interjection user est du bruit KV ; le flag cible UNIQUEMENT cette bulle, un
-    assistant final réellement vide n'est pas concerné. La bulle user de
+    `onToolTour`, appelé AVANT les acks). `expandThread` **élague à l'émission
+    tout assistant à content blanc** (null/vide/blancs purs) : bruit KV, et 400
+    sur les backends stricts (« must have either content or tool_calls ») —
+    couvre cette bulle `_acksOnly` ET la bulle vide d'un stop sans contenu reçu
+    (`onFinal 'aborted'`) ; le flag reste comme documentation d'origine,
+    l'élagage n'en dépend plus. L'entrée reste dans le thread (rendu,
+    « Régénérer », fidélité live/reload), elle ne part juste jamais sur le fil.
+    La bulle user de
     l'interjection est **authentique** (`buildInterjectionEntry`, jamais
     `_synthetic` — l'injection `<miaou_context>` doit pouvoir la viser). Coût KV
     assumé : insertion mid-séquence, **volontaire et ponctuelle** (corollaire

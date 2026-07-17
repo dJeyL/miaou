@@ -97,9 +97,13 @@ acks. Re-lire un texte serait une double bulle.
 
 **Flag `_acksOnly`** : `expandThread` (utils.js) élague cette bulle du payload
 (un assistant vide sans `tool_calls` entre les tool results et l'interjection
-user est du bruit KV, mal toléré par certains backends). Le flag cible
-UNIQUEMENT la bulle posée par `onInterjections` — un assistant final réellement
-vide venu d'ailleurs n'est pas concerné. Le groupe d'acks qui précède a déjà
+user est du bruit KV, et certains backends REJETTENT en 400 tout assistant sans
+content ni `tool_calls`). Depuis le fix post-lot Q, le prédicat d'élagage est
+**généralisé à tout assistant à content blanc** (null/vide/blancs purs) : il
+couvre aussi la bulle vide d'un stop avant le premier token (`onFinal 'aborted'`
+sans contenu — affordance « Régénérer » côté UI, aucune valeur payload). Le flag
+`_acksOnly` reste posé par `onInterjections` comme documentation d'origine de la
+bulle, mais l'élagage ne dépend plus de lui. Le groupe d'acks qui précède a déjà
 produit son `assistant+tool_calls`.
 
 **Bulle user authentique** : `buildInterjectionEntry` produit un message user
@@ -151,7 +155,8 @@ Une continuation (`isContinuation`, reprise d'une troncature) tourne avec
 QuickJS (`tests/test-utils.js`, describe « interjections mid-génération ») :
 `joinInterjectionLiterals` (fusion/trim/filtre, tolérance null, frontière
 `/slug` après jointure), `buildInterjectionEntry` (displayText conditionnel,
-jamais `_synthetic`), `expandThread` (élagage `_acksOnly`, non-élagage d'un
-assistant vide non marqué). Le câblage orchestration (timing du hook, branche
+jamais `_synthetic`), `expandThread` (élagage `_acksOnly`, et élagage généralisé
+de tout assistant à content blanc — null/vide/blancs purs — les non-vides
+restant émis). Le câblage orchestration (timing du hook, branche
 composer, drains, rendu des puces) relève de la vérification manuelle /
 Playwright — voir `docs/manual-tests.md`.

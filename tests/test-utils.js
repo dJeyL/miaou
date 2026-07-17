@@ -1093,14 +1093,24 @@ describe('interjections mid-génération (lot Q)', function() {
     expect(interj[0]._synthetic === undefined).toBe(true);
   });
 
-  it('expandThread n\'élague PAS un assistant vide non marqué (_acksOnly absent)', function() {
+  it('expandThread élague AUSSI un assistant vide non marqué (400 backend strict)', function() {
+    // Cas réel (bug historique) : stop avant le premier token → onFinal pousse
+    // un assistant content:'' persisté ; ré-émis tel quel, certains backends
+    // répondent 400 « Assistant message must have either content or tool_calls ».
+    // Le prédicat d'élagage est la BLANCHEUR du content, pas le flag _acksOnly.
     var t = [
       { role: 'user', content: 'q' },
-      { role: 'assistant', content: '' },   // final réellement vide, non marqué
+      { role: 'assistant', content: '' },      // stop avant premier token
+      { role: 'user', content: 'q2' },
+      { role: 'assistant', content: null },    // défense : content null
+      { role: 'user', content: 'q3' },
+      { role: 'assistant', content: '  \n ' }, // défense : blanc pur
+      { role: 'user', content: 'q4' },
+      { role: 'assistant', content: 'ok' },    // non-vide : émis
     ];
     var r = expandThread(t);
-    expect(r.length).toBe(2);
-    expect(r[1].role).toBe('assistant');
+    expect(r.length).toBe(5);
+    expect(r.every(function(m) { return m.role !== 'assistant' || m.content === 'ok'; })).toBe(true);
   });
 });
 

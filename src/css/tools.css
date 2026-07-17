@@ -95,6 +95,10 @@
 .ack-list { grid-area: 1 / 1; min-width: 0; }
 .ticker-track { display: flex; flex-direction: column; }
 .ticker-track.animating { transition: transform 0.32s ease; }
+/* Hauteur du slot transitionnée en parallèle du translateY d'arrivée (épinglée
+   en px par ackGroupAddAck) : le slot ne mesure jamais deux acks empilés, donc
+   plus d'aller-retour de hauteur qui fait sautiller l'autoscroll. */
+.ack-slot.animating { transition: height 0.32s ease; }
 /* Reduced-motion : neutralisé par le kill-switch global data-motion="reduced"
    (base.css), plus de gate dédié ici. */
 .ack-list .tool-ack { margin: 3px 0 3px 2px; }

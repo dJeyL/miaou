@@ -1028,15 +1028,18 @@ function expandThread(thread) {
       } else {
         i++;   // ack legacy non enrichi : élagué
       }
-    } else if (m.role === 'assistant' && m._acksOnly) {
-      // Bulle assistant « acks seuls » matérialisée au drain d'une interjection
-      // (lot Q) : hôte DOM des acks du tour interrompu, sans valeur dans le
-      // payload (content vide, pas de tool_calls). L'émettre insérerait un
-      // message assistant vide entre les tool results et l'interjection user —
-      // bruit KV, mal toléré par certains backends. On l'élague à l'émission ;
-      // le groupe d'acks qui la précède a déjà produit son assistant+tool_calls.
-      // Flag posé UNIQUEMENT par onInterjections (main.js) : un assistant final
-      // réellement vide venu d'ailleurs n'est pas concerné.
+    } else if (m.role === 'assistant' && (m.content == null || String(m.content).trim() === '')) {
+      // Assistant à content BLANC : jamais émis. Un assistant sans content ni
+      // tool_calls est REJETÉ par les backends stricts (400 « Assistant message
+      // must have either content or tool_calls ») — et les tool_calls sont
+      // reconstruits depuis les groupes d'acks, jamais portés par ces entrées.
+      // Deux sources connues : la bulle `_acksOnly` matérialisée au drain d'une
+      // interjection (lot Q — hôte DOM des acks du tour interrompu, le groupe
+      // qui précède a déjà produit son assistant+tool_calls) et la bulle vide
+      // d'un stop avant le premier token (onFinal 'aborted' sans contenu,
+      // main.js — affordance « Régénérer » côté UI, aucune valeur payload).
+      // L'élagage se fait à l'ÉMISSION : l'entrée reste dans le thread (rendu,
+      // affordances, fidélité live/reload), elle ne part juste jamais sur le fil.
       i++;
     } else {
       out.push({ role: m.role, content: m.content });
