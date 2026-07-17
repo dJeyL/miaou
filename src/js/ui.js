@@ -2570,6 +2570,10 @@ function setComposerStreaming(on) {
   if (!send) return;
   send.classList.toggle('streaming', on);
   send.title = on ? 'Arrêter' : 'Envoyer';
+  // Mode file (lot Q) : le placeholder annonce la mise en file pendant la
+  // génération — l'affordance principale du mécanisme, avec le rail de puces.
+  const ta = $('composer-text');
+  if (ta) ta.placeholder = on ? 'Le modèle travaille — Entrée ajoute à la file…' : 'Message…';
 }
 function setConnDot(state) {
   const dot = $('conn-dot');
@@ -2615,7 +2619,97 @@ function onComposerKey(e) {
     if (e.key === 'Tab')       { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); acceptSkillAcSelection(_composerAc); return; }
   }
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sending) sendMessage(); }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    // Mode file (lot Q) : pendant une génération, Entrée met la saisie en file
+    // d'interjection (drainée à la frontière de tour, cf. main.js) — jamais
+    // d'envoi direct concurrent. Le bouton du composer reste le stop
+    // (onSendBtn inchangé).
+    if (sending) enqueueInterjection();
+    else sendMessage();
+  }
+}
+
+// ── Rail d'interjections (lot Q) ────────────────────────────────────────────
+// Rendu DOM du rail des messages en file pendant une génération. L'état vit
+// dans main.js (_pendingInterjections) ; ces fonctions ne font que refléter/
+// animer. SVG statiques author-controlled (innerHTML sûr) ; le texte des puces
+// passe par textContent (frontière XSS). Câblage des clics : editInterjection/
+// cancelInterjection (main.js), retrouvés par l'id porté en dataset.
+function renderInterjectionRail() {
+  const rail = $('ij-rail');
+  const chips = $('ij-chips');
+  if (!rail || !chips) return;
+  const items = (typeof _pendingInterjections !== 'undefined') ? _pendingInterjections : [];
+  rail.hidden = items.length === 0;
+  const cap = $('ij-caption-text');
+  if (cap) {
+    cap.textContent = items.length <= 1
+      ? 'sera transmise au prochain point d’étape'
+      : items.length + ' interjections, fusionnées et transmises au prochain point d’étape';
+  }
+  // Réconciliation minimale : n'ajoute que les puces manquantes (par id), pour
+  // ne pas rejouer l'animation d'entrée des puces déjà présentes à chaque appel.
+  const present = new Set(Array.from(chips.children).map(c => c.dataset.ijId));
+  for (const item of items) {
+    if (present.has(item.id)) continue;
+    chips.appendChild(buildInterjectionChip(item));
+  }
+}
+
+function buildInterjectionChip(item) {
+  const el = document.createElement('div');
+  el.className = 'ij-chip';
+  el.dataset.ijId = item.id;
+  el.innerHTML =
+    '<span class="ij-glyph"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 20l1.1-4.1a8.3 8.3 0 0 1-1-4A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z"/><path d="M12 8v4l2.5 1.5"/></svg></span>' +
+    '<span class="ij-text"></span>' +
+    '<span class="ij-hint">cliquer pour éditer</span>' +
+    '<button class="ij-x" title="Annuler" aria-label="Annuler cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  el.querySelector('.ij-text').textContent = item.literal;
+  el.querySelector('.ij-x').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (el.classList.contains('ij-draining')) return;   // en vol de drain : figée
+    cancelInterjection(item.id);
+  });
+  el.addEventListener('click', () => {
+    if (el.classList.contains('ij-draining')) return;
+    editInterjection(item.id);
+  });
+  return el;
+}
+
+// Fige les puces d'un batch en cours de drain (état non interactif) : pendant
+// dans le splice synchrone de takePendingInterjections, AVANT tout await —
+// l'invariant de réentrance rendu visible.
+function markInterjectionChipsDraining(ids) {
+  const chips = $('ij-chips');
+  if (!chips) return;
+  for (const id of ids) {
+    const el = chips.querySelector('[data-ij-id="' + CSS.escape(id) + '"]');
+    if (el) el.classList.add('ij-draining');
+  }
+}
+
+// Retire une puce du DOM avec l'animation de sortie choisie : 'up' (décollage
+// vers le fil, drain réussi) ou 'down' (plongée vers le composer, annulation/
+// édition/reflux). Idempotent : puce déjà partie = no-op. Nettoie le rail si
+// vide après la transition.
+function dismissInterjectionChip(id, dir) {
+  const chips = $('ij-chips');
+  if (!chips) return;
+  const el = chips.querySelector('[data-ij-id="' + CSS.escape(id) + '"]');
+  if (!el) return;
+  el.classList.add(dir === 'up' ? 'ij-away' : 'ij-down');
+  const remove = () => {
+    el.remove();
+    if (!chips.children.length) { const rail = $('ij-rail'); if (rail) rail.hidden = true; }
+  };
+  if (motionReduced()) { remove(); return; }
+  let done = false;
+  const fin = () => { if (done) return; done = true; remove(); };
+  el.addEventListener('transitionend', fin, { once: true });
+  setTimeout(fin, 400);   // filet si transitionend ne tire pas (kill-switch, onglet masqué)
 }
 
 // ── Pièces jointes : drag & drop + chips ────────────────────────────────────

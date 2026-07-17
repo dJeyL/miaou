@@ -19,6 +19,14 @@ l'interface, JetBrains Mono pour le code.
 
 - Streaming SSE contre un endpoint OpenAI-compatible ; le bouton d'envoi devient
   un **stop** pendant la génération (le texte déjà reçu est conservé).
+- **Interjections en cours de génération** : taper un message + Entrée pendant
+  que le modèle travaille ne l'interrompt pas — il se met en file au-dessus du
+  composer et lui est transmis à la prochaine étape d'outils, permettant de le
+  **réorienter avant qu'il ait fini** une longue boucle d'outils. Message en
+  attente modifiable (clic → retour au composer) ou annulable ; plusieurs en
+  file partent fusionnés. Un arrêt (stop, halte) refait descendre les messages
+  en attente dans le composer plutôt que de les envoyer — cf.
+  `docs/interjections.md`.
 - Patienteur animé pendant l'attente, effacé net au premier fragment de réponse.
 - Affichage du raisonnement des modèles thinking-capable : icône dans l'en-tête,
   bloc dépliable alimenté en live, persisté à part du contenu.

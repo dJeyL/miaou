@@ -124,6 +124,11 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
   peuvent légitimement être sur des Espaces différents.
 - Résumés (`saveSummary`, tombstones, `deleteSummaryEntry`) — aucune surface UI
   cross-onglet à rafraîchir en V1 (l'index des résumés n'est pas rendu en direct).
+- **File d'interjections** (`_pendingInterjections`, lot Q) — messages tapés
+  pendant une génération, en attente de drain. État **par onglet** et éphémère :
+  il ne vit que dans l'onglet qui génère (les pairs sont déjà en readonly sur
+  cette conv, J5), et meurt avec l'onglet. Rien à broadcaster ; cf.
+  `docs/interjections.md`.
 - `migrateSpacesIfNeeded` / `migrateApiServersIfNeeded` / `backfillMessageModels`
   au boot — le canal est construit (`initSyncChannel`) **après** ces migrations
   dans `init()`, donc `syncPost` y est un no-op (aucun broadcast de démarrage

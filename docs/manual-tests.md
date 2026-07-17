@@ -1082,3 +1082,46 @@ Script de non-régression : `.claude/skills/run-miaou/verify-ack-ticker.mjs`
 fraîche — seuil, ticker, toggle liste/compact, héritage slot-expanded, gate
 Animations) — couvre le comportement synthétique ; le rendu en conversation
 réelle et l'export restent manuels.
+
+## Interjections mid-génération (lot Q)
+
+À valider dans une vraie conversation avec un modèle qui enchaîne des outils
+(pour observer le drain B). Voir `docs/interjections.md` pour le modèle mental.
+
+1. **Mise en file pendant une boucle d'outils** — lancer une requête qui
+   déclenche plusieurs appels d'outils. Pendant que le modèle travaille, taper
+   un message + Entrée : il ne s'envoie PAS directement, il apparaît en puce
+   au-dessus du composer, le composer se vide, le placeholder indique le mode
+   file. Le bouton reste un stop. À la frontière de tour suivante, la puce
+   « embarque » (liséré balayant), décolle, et une bulle user apparaît dans le
+   fil, SOUS les acks du tour interrompu ; le modèle en tient compte au tour
+   suivant. La bulle user et la bulle assistant d'acks au-dessus ont toutes deux
+   un horodatage.
+2. **Réaiguillage effectif** — pendant une longue série d'outils, taper « arrête,
+   fais plutôt X ». Vérifier que le modèle réoriente AVANT d'avoir fini la série
+   (pas seulement après).
+3. **Fusion** — mettre deux interjections en file rapidement (deux puces, la
+   légende passe au pluriel). Au drain, elles arrivent en UNE seule bulle user
+   (littéraux joints par ligne vide).
+4. **Annulation** — cliquer la croix d'une puce : elle plonge et disparaît, la
+   file se vide si c'était la dernière.
+5. **Édition** — cliquer le corps d'une puce : elle disparaît, son texte remplit
+   le composer (préfixé à un éventuel brouillon). Ré-appuyer Entrée pendant que
+   le modèle travaille encore : ça RE-MET en file (pas d'envoi direct).
+6. **Reflux sur stop** — mettre une interjection en file, puis cliquer le bouton
+   stop : la génération s'arrête ET l'interjection reflue dans le composer
+   (jamais d'envoi auto après un arrêt). Idem pour une halte `ask_confirmation`
+   déclenchée par le modèle avec une interjection en attente.
+7. **Envoi auto (drain A)** — taper une interjection juste au moment où le modèle
+   finit sa réponse (trop tard pour un drain B). À la fin nominale, elle part
+   automatiquement comme nouvel échange.
+8. **Slug invalide bloqué à la file** — pendant une génération, taper `/inconnu …`
+   + Entrée : refus immédiat avec l'erreur composer habituelle, saisie préservée,
+   rien mis en file (validation à l'enqueue, pas au drain).
+9. **Pièce jointe refusée** — joindre un fichier puis taper + Entrée pendant une
+   génération : refus visible, la pièce n'est pas mise en file ni détachée.
+10. **Reload après interjection** — recharger la page sur une conversation qui a
+    connu une interjection mid-boucle : le fil doit se reconstruire À L'IDENTIQUE
+    (acks du tour interrompu dans une bulle assistant avec en-tête + horodatage,
+    puis la bulle user d'interjection, puis la suite), sans acks nus flottants ni
+    bulle assistant vide parasite.

@@ -311,6 +311,13 @@ Quelques repères pour te déplacer dans MIAOU :
 - **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un
   **stop** pendant que le modèle répond — le texte déjà reçu est conservé. À
   côté, le trombone pour joindre des fichiers.
+- **Ajouter en cours de route** : si le modèle travaille (surtout quand il
+  enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée
+  sans l'interrompre** — il se met en file au-dessus du composer et lui est
+  transmis dès la prochaine étape, ce qui te permet de le **réorienter avant
+  qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour
+  le récupérer dans le composer) ou annulable (la croix). Si tu en mets
+  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.
 - **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une

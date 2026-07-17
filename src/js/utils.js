@@ -1028,12 +1028,46 @@ function expandThread(thread) {
       } else {
         i++;   // ack legacy non enrichi : élagué
       }
+    } else if (m.role === 'assistant' && m._acksOnly) {
+      // Bulle assistant « acks seuls » matérialisée au drain d'une interjection
+      // (lot Q) : hôte DOM des acks du tour interrompu, sans valeur dans le
+      // payload (content vide, pas de tool_calls). L'émettre insérerait un
+      // message assistant vide entre les tool results et l'interjection user —
+      // bruit KV, mal toléré par certains backends. On l'élague à l'émission ;
+      // le groupe d'acks qui la précède a déjà produit son assistant+tool_calls.
+      // Flag posé UNIQUEMENT par onInterjections (main.js) : un assistant final
+      // réellement vide venu d'ailleurs n'est pas concerné.
+      i++;
     } else {
       out.push({ role: m.role, content: m.content });
       i++;
     }
   }
   return out;
+}
+
+// ── Interjections mid-génération (lot Q) — helpers purs ─────────────────────
+// Fusion des littéraux d'un même drain en UN message user (arbitrage lot Q :
+// jamais N messages user consécutifs). Jointure par ligne vide : un `/slug` en
+// tête d'un littéral non-premier reste détecté par findSlashTriggers (frontière
+// \s, dont \n) et bake donc normalement au drain.
+function joinInterjectionLiterals(literals) {
+  return (literals || [])
+    .map(function (s) { return String(s == null ? '' : s).trim(); })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+// Entrée currentThread d'une interjection drainée : message user AUTHENTIQUE
+// (jamais _synthetic — l'injection <miaou_context> doit pouvoir le viser au
+// tour suivant), content = ce qui part réellement sur le fil (baké si skill),
+// displayText = littéral tapé dès qu'ils divergent (doctrine invariant n°1).
+// Byte-stabilité : content stocké tel qu'envoyé → expandThread rejoue à
+// l'identique aux envois suivants.
+function buildInterjectionEntry(literal, content, ts) {
+  const entry = { role: 'user', content: content, ts: ts };
+  if (content !== literal) entry.displayText = literal;
+  return entry;
 }
 
 // ── Parsing défensif du JSON de résumé ──────────────────────────────────────

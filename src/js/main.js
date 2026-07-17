@@ -1605,6 +1605,130 @@ async function resolveSend(literal) {
   return { ok: true, literal, content: bakeSkillMessage(literal, resolved), isSkill: true };
 }
 
+// ── Interjections mid-génération (lot Q) ────────────────────────────────────
+// File des messages tapés PENDANT une génération (Entrée en mode file, cf.
+// onComposerKey, ui.js). Mémoire seulement, locale à l'onglet : jamais
+// persistée ni broadcastée (lot J non concerné — état jamais affiché ailleurs,
+// meurt avec l'onglet). Chaque entrée : { id, literal } — LITTÉRAL uniquement,
+// jamais de contenu baké : les slash-skills sont re-résolues au drain (contenu
+// COURANT, même doctrine que editUserMessage). Deux points de vidange, une
+// seule mécanique :
+//   drain B (nominal)  — hook onInterjections (dispatchSend → runConversation) :
+//     à la frontière de tour de la boucle d'outils, le modèle voit
+//     l'interjection AVANT son prochain geste (réaiguillage mid-boucle) ;
+//   drain A (résiduel) — settleInterjectionQueue : fin d'échange nominale
+//     (finish 'stop'), la file part comme NOUVEL échange par le chemin d'envoi
+//     normal ; toute fin NON-nominale (stop manuel, halte ask_confirmation,
+//     erreur, MAX_TOURS) REFOULE les littéraux dans le composer — jamais
+//     d'envoi auto après un arrêt (arbitrages lot Q).
+let _pendingInterjections = [];
+let _ijResolving = false;   // garde B7 : double-Entrée pendant l'await resolveSend de l'enqueue
+
+// Splice SYNCHRONE du snapshot (invariant réentrance, mémoire projet) : les
+// éléments sortent du registre AVANT tout await du drain — un clic éditer/
+// annuler pendant la résolution ne peut plus saisir un élément en vol. Les
+// puces correspondantes passent en état « draining » (non interactif).
+function takePendingInterjections() {
+  const batch = _pendingInterjections.splice(0, _pendingInterjections.length);
+  if (batch.length) markInterjectionChipsDraining(batch.map(b => b.id));
+  return batch;
+}
+
+// Entrée en mode file (Entrée pendant `sending`). Validation du slug À LA MISE
+// EN FILE (arbitrage lot Q) : même chemin que sendMessage — resolveSend sur le
+// littéral, un /slug inconnu/désactivé en position 0 bloque ici avec l'erreur
+// composer habituelle, saisie préservée. Le contenu baké est JETÉ : la file ne
+// garde que le littéral, re-résolu à frais au drain.
+async function enqueueInterjection() {
+  if (!sending || _ijResolving) return;
+  // Texte seul (arbitrage lot Q) : une pièce jointe en attente ne rejoint pas
+  // la file — refus visible, jamais de détachement silencieux.
+  if (pendingAttachments.length) {
+    showComposerAttachError('Pièce jointe impossible pendant la génération — attends la fin de la réponse.');
+    return;
+  }
+  const ta = $('composer-text');
+  const text = ta.value.trim();
+  if (!text) return;
+  let r;
+  _ijResolving = true;
+  try {
+    r = await resolveSend(text);
+  } finally {
+    _ijResolving = false;
+  }
+  if (!r.ok) { showComposerSkillError(r.error); return; }
+  // La génération s'est terminée PENDANT l'await : plus de mode file — la
+  // saisie (intacte dans la textarea) part en envoi normal, jamais en file morte.
+  if (!sending) { sendMessage(); return; }
+  ta.value = ''; ta.style.height = 'auto';
+  clearComposerSkillError();
+  hideSkillAutocomplete();
+  // Id : jamais Date.now() seul (mémoire projet B1) — suffixe aléatoire.
+  _pendingInterjections.push({
+    id: 'ij-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+    literal: text,
+  });
+  renderInterjectionRail();
+}
+
+// Annulation (croix d'une puce) : retire du registre, la puce plonge.
+// Introuvable = déjà drainée pendant la fenêtre de clic : no-op.
+function cancelInterjection(id) {
+  const idx = _pendingInterjections.findIndex(q => q.id === id);
+  if (idx < 0) return;
+  _pendingInterjections.splice(idx, 1);
+  dismissInterjectionChip(id, 'down');
+}
+
+// Édition (clic sur le corps d'une puce) : retire du registre et re-remplit le
+// composer, préfixé à un brouillon éventuel. Ré-appuyer Entrée RE-MET EN FILE
+// (le mode file reste actif tant que `sending`) — jamais d'envoi direct.
+function editInterjection(id) {
+  const idx = _pendingInterjections.findIndex(q => q.id === id);
+  if (idx < 0) return;
+  const item = _pendingInterjections.splice(idx, 1)[0];
+  dismissInterjectionChip(id, 'down');
+  const ta = $('composer-text');
+  ta.value = item.literal + (ta.value.trim() ? '\n\n' + ta.value : '');
+  autoGrow(ta);
+  ta.focus();
+}
+
+// Fin d'échange (finally de dispatchSend, APRÈS setSending(false) — appel
+// fire-and-forget). nominal (finish 'stop') → drain A : la file part comme
+// nouvel échange par le chemin d'envoi normal. Non-nominal → reflux : les
+// littéraux reviennent au composer, préfixés au brouillon (« stop veut dire
+// stop » : rien ne part tout seul après un arrêt, rien n'est perdu).
+async function settleInterjectionQueue(nominal) {
+  const batch = takePendingInterjections();
+  if (!batch.length) return;
+  const literal = joinInterjectionLiterals(batch.map(b => b.literal));
+  batch.forEach(b => dismissInterjectionChip(b.id, nominal ? 'up' : 'down'));
+  if (!literal) return;
+  if (!nominal) {
+    const ta = $('composer-text');
+    ta.value = literal + (ta.value.trim() ? '\n\n' + ta.value : '');
+    autoGrow(ta);
+    ta.focus();
+    return;
+  }
+  // Drain A. Échec résiduel de résolution (skill désactivée/supprimée PENDANT
+  // la génération — chaque littéral a déjà passé la garde à l'enqueue) : envoi
+  // du littéral tel quel, sans erreur bloquante (arbitrage lot Q).
+  let r = null;
+  _sendResolving = true;
+  try {
+    r = await resolveSend(literal);
+  } catch (e) {
+    r = null;
+  } finally {
+    _sendResolving = false;
+  }
+  if (r && r.ok) await sendUserText(r.literal, r.isSkill ? r.content : undefined);
+  else await sendUserText(literal);
+}
+
 async function sendMessage() {
   // `sending` ne passe à true que dans dispatchSend, APRÈS l'await resolveSend
   // ci-dessous ; ce dernier peut attendre IDB (getSkillContent d'une slash-skill),
@@ -2009,6 +2133,10 @@ async function dispatchSend(matches, continuation) {
   // entrée currentThread, node: nœud DOM }. Stockés ici pour que onToolAcks
   // puisse rétro-appliquer la classe d'erreur si ack.error a été posé après l'await.
   let earlyRendered = [];
+  // Fin nominale (finish 'stop') : seul cas où la file d'interjections
+  // résiduelle part en drain A (settleInterjectionQueue, finally ci-dessous).
+  // 'aborted'/'length'/halte/erreur → reflux composer (arbitrages lot Q).
+  let endedNominal = false;
   setSending(true);
   try {
     await runConversation(apiMessages, {
@@ -2140,7 +2268,68 @@ async function dispatchSend(matches, continuation) {
           updateLastPendingToolAck(fields);
         }
       },
+      // Interjections (lot Q, drain B) : appelé par runConversation à la
+      // frontière de tour, APRÈS onToolAcks — les acks du tour sont déjà dans
+      // currentThread, l'entrée user s'insère donc TOUJOURS entre deux groupes
+      // (enrichedAckGroups/[call:…] intacts par construction). Splice synchrone
+      // (réentrance) puis résolution ; content = ce qui part réellement sur le
+      // fil (skill bakée au contenu COURANT), displayText = littéral. Pas de
+      // persistCurrent ici (même doctrine que onToolAcks) : l'unique écriture
+      // de l'échange a lieu dans onFinal. Côté DOM : la bulle en cours est
+      // close en « shell » d'acks (revue maquette 2026-07-17 : la suite du
+      // travail se matérialise SOUS l'interjection), la bulle user apparaît,
+      // et un wrap NEUF s'ouvre — l'ancien ne reçoit plus jamais rien.
+      onInterjections: async () => {
+        const batch = takePendingInterjections();
+        if (!batch.length) return null;
+        const literal = joinInterjectionLiterals(batch.map(b => b.literal));
+        if (!literal) return null;
+        // Échec résiduel (skill désactivée pendant la génération) : littéral
+        // tel quel — chaque élément a déjà passé la garde à l'enqueue.
+        let r = null;
+        try { r = await resolveSend(literal); } catch (e) { r = null; }
+        const content = (r && r.ok) ? r.content : literal;
+
+        // Clôture du tour interrompu en une VRAIE bulle assistant (revue
+        // maquette 2026-07-17 : la suite du travail se matérialise SOUS
+        // l'interjection). État de `wrap` à ce point : onToolTour a DÉJÀ tourné
+        // (api.js l'appelle avant les acks) — si le tour a produit du texte, il
+        // l'a finalisé dans SA propre bulle et ouvert ce `wrap` neuf ; sinon il
+        // a reposé le patienteur. Le texte du tour n'est donc JAMAIS dans `wrap`
+        // ici : cette bulle ne porte que les acks du tour. On matérialise un
+        // message assistant à content VIDE (surtout pas re-lire un texte déjà
+        // consommé — double bulle), pour donner aux acks un hôte dans
+        // currentThread. Sans lui, renderThread les rendrait nus au reload
+        // (branche orpheline). Live ET reload passent alors par le MÊME chemin
+        // (placeToolAck dans cette bulle), sans classe spéciale. finalizeAssistant
+        // clôt la bulle avec son chrome, horodatage inclus (exigence du brief).
+        const tourTs = Date.now();
+        // `_acksOnly` : marque cette bulle comme hôte d'acks sans texte, pour
+        // que expandThread l'élague du payload (assistant vide = bruit KV) sans
+        // toucher à un éventuel assistant final réellement vide venu d'ailleurs.
+        const tourMsg = { role: 'assistant', content: '', model, ts: tourTs, _acksOnly: true };
+        if (serverName) tourMsg.server = serverName;
+        currentThread.push(tourMsg);
+        finalizeAssistant(wrap, '');
+        revealMsgTimestamp(wrap, tourTs);
+
+        // Message user de l'interjection : authentique (jamais _synthetic —
+        // l'injection <miaou_context> doit pouvoir le viser), content = ce qui
+        // part sur le fil, displayText = littéral. Bulle rendue comme n'importe
+        // quel message user envoyé, horodatage compris (exigence du brief).
+        const userTs = Date.now();
+        currentThread.push(buildInterjectionEntry(literal, content, userTs));
+        batch.forEach(b => dismissInterjectionChip(b.id, 'up'));
+        appendUserMessage(literal, userTs);
+
+        // Wrap neuf : la suite (acks du tour suivant, réponse finale) s'y place ;
+        // l'ancien ne reçoit plus jamais rien (invariant lot N préservé : un seul
+        // groupe d'acks contigu par bulle assistant).
+        wrap = startAssistantMessage(model, serverName);
+        return [{ role: 'user', content }];
+      },
       onFinal: (content, reasoning, finishReason, { usage } = {}) => {
+        if (finishReason === 'stop') endedNominal = true;
         if (isContinuation) {
           // Mute le message existant au lieu d'en pousser un nouveau : même
           // horodatage, même identité de message, juste plus de contenu.
@@ -2244,6 +2433,10 @@ async function dispatchSend(matches, continuation) {
     setSending(false);
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
+    // Interjections restantes (lot Q) : drain A si fin nominale, reflux
+    // composer sinon. APRÈS setSending(false) — le drain A repart par le
+    // chemin d'envoi normal (sendUserText → dispatchSend). Fire-and-forget.
+    settleInterjectionQueue(endedNominal);
   }
 }
 

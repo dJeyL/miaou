@@ -589,6 +589,22 @@ async function runConversation(messages, hooks) {
       // reste DOM-free : le hook vit dans main.js.
       if (h.onToolAcks) h.onToolAcks({ usage: result.usage });
 
+      // Interjections utilisateur (lot Q) — drain B, à la frontière de tour :
+      // les messages tapés PENDANT la génération sont résolus côté main.js
+      // (resolveSend, contenu de skill COURANT) et poussés ici, APRÈS les tool
+      // results et les ré-injections image, AVANT la relance — le modèle les
+      // voit avant son prochain geste d'outil (réaiguillage mid-boucle).
+      // api.js reste libre de toute résolution/DOM : le hook renvoie des
+      // messages OpenAI prêts à l'emploi (null si la file est vide). Coût KV
+      // assumé : insertion volontaire, déclenchée par l'utilisateur — même
+      // nature que la ré-injection image ci-dessus (corollaire du piège 16).
+      if (h.onInterjections) {
+        const extra = await h.onInterjections();
+        if (extra && extra.length) {
+          for (const em of extra) messages.push(em);
+        }
+      }
+
       continue;   // on relance toujours un appel
     }
 

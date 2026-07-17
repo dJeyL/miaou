@@ -1031,6 +1031,79 @@ describe('formatCallMarker (source unique du marqueur d\'id, O-2)', function() {
   });
 });
 
+describe('interjections mid-génération (lot Q)', function() {
+  it('joinInterjectionLiterals fusionne par ligne vide, trim, filtre les vides', function() {
+    expect(joinInterjectionLiterals(['a', 'b'])).toBe('a\n\nb');
+    expect(joinInterjectionLiterals(['  a  ', '', '  ', 'b'])).toBe('a\n\nb');
+    expect(joinInterjectionLiterals([])).toBe('');
+    expect(joinInterjectionLiterals(['seul'])).toBe('seul');
+  });
+
+  it('joinInterjectionLiterals tolère null/undefined', function() {
+    expect(joinInterjectionLiterals(null)).toBe('');
+    expect(joinInterjectionLiterals([null, 'x', undefined])).toBe('x');
+  });
+
+  it('un /slug en tête d\'un littéral non-premier reste détectable après jointure', function() {
+    // Frontière \n acceptée par findSlashTriggers → bake normal au drain.
+    var joined = joinInterjectionLiterals(['bonjour', '/skillx fais ceci']);
+    var triggers = findSlashTriggers(joined);
+    var slugs = triggers.map(function(t) { return t.slug; });
+    expect(slugs.indexOf('skillx') >= 0).toBe(true);
+  });
+
+  it('buildInterjectionEntry : content == literal → pas de displayText', function() {
+    var e = buildInterjectionEntry('salut', 'salut', 42);
+    expect(e.role).toBe('user');
+    expect(e.content).toBe('salut');
+    expect(e.ts).toBe(42);
+    expect(e.displayText === undefined).toBe(true);
+    expect(e._synthetic === undefined).toBe(true);   // authentique : jamais _synthetic
+  });
+
+  it('buildInterjectionEntry : content baké ≠ literal → displayText = literal', function() {
+    var e = buildInterjectionEntry('/sk go', '/sk go\n\n[corps skill]', 7);
+    expect(e.content).toBe('/sk go\n\n[corps skill]');
+    expect(e.displayText).toBe('/sk go');
+  });
+
+  it('expandThread élague la bulle assistant _acksOnly (hôte DOM sans valeur payload)', function() {
+    function ack(o) {
+      return Object.assign({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',
+        args: { q: 1 }, result: 'ok', ts: 0, group: 'gQ' }, o);
+    }
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gQ1' }),
+      { role: 'assistant', content: '', _acksOnly: true, ts: 1 },   // bulle matérialisée
+      { role: 'user', content: 'interjection' },
+      ack({ group: 'gQ2' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    // Attendu : user, assistant(tc gQ1), tool, user(interjection),
+    //           assistant(tc gQ2), tool, assistant(final) — SANS assistant vide.
+    var hasEmptyAssistant = r.some(function(m) {
+      return m.role === 'assistant' && (m.content == null || m.content === '') && !m.tool_calls;
+    });
+    expect(hasEmptyAssistant).toBe(false);
+    // L'interjection user est bien présente et authentique (pas _synthetic).
+    var interj = r.filter(function(m) { return m.role === 'user' && m.content === 'interjection'; });
+    expect(interj.length).toBe(1);
+    expect(interj[0]._synthetic === undefined).toBe(true);
+  });
+
+  it('expandThread n\'élague PAS un assistant vide non marqué (_acksOnly absent)', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: '' },   // final réellement vide, non marqué
+    ];
+    var r = expandThread(t);
+    expect(r.length).toBe(2);
+    expect(r[1].role).toBe('assistant');
+  });
+});
+
 describe('enrichedAckGroups (dérivation partagée émission/résolution, O-2)', function() {
   function ack(overrides) {
     return Object.assign({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',

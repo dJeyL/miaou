@@ -208,6 +208,26 @@ inline sous la liste.
     marqueur `[call:…]` **permanent et constant** (tous les tool results), et
     invalidation **ponctuelle** à chaque conversion (réécriture d'un ack passé).
     Cf. `docs/tools.md` (section « Matérialisation de ressource model-side »).
+27. **Interjection mid-génération : bulle assistant `_acksOnly` matérialisée,
+    élaguée à l'émission (lot Q).** Un message user tapé pendant la génération
+    (`onInterjections`, dispatchSend) est drainé à la frontière de tour, APRÈS
+    les acks du tour. Ces acks (entrées `tool-ack` autonomes dans `currentThread`,
+    pas de paire assistant+tool avant `onFinal`) n'ont **pas d'assistant hôte** :
+    sans lui, `renderThread` les rendrait **nus** au reload (branche orpheline,
+    sans en-tête ni horodatage). On matérialise donc un `assistant`
+    `{ content:'', _acksOnly:true }` — même geste que `onToolTour` — pour héberger
+    les acks : live ET reload passent par le MÊME chemin (`placeToolAck` dans la
+    bulle), **jamais** une classe DOM `.ack-shell` hors-thread (piste abandonnée :
+    artefact DOM sans contrepartie données → divergence live/reload + mappings à
+    rustiner). `content` toujours vide (le texte du tour est déjà consommé par
+    `onToolTour`, appelé AVANT les acks). `expandThread` **élague** cette bulle
+    (`m._acksOnly`) : un assistant vide sans `tool_calls` entre tool results et
+    interjection user est du bruit KV ; le flag cible UNIQUEMENT cette bulle, un
+    assistant final réellement vide n'est pas concerné. La bulle user de
+    l'interjection est **authentique** (`buildInterjectionEntry`, jamais
+    `_synthetic` — l'injection `<miaou_context>` doit pouvoir la viser). Coût KV
+    assumé : insertion mid-séquence, **volontaire et ponctuelle** (corollaire
+    piège 16, comme la ré-injection image). Cf. `docs/interjections.md`.
 
 ### Invariants transverses (développés)
 
@@ -325,6 +345,11 @@ appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
   protocole d'enveloppe, liste fermée de types, émetteurs/récepteurs, file
   d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
   broadcast post-commit + relecture post-await (piège 24).
+- **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
+  locale de messages tapés pendant une génération, drainée à la frontière de
+  tour (réaiguillage mid-boucle) ou en fin d'échange nominale ; composer en
+  mode file, puces annulables/éditables, bulle assistant matérialisée
+  (`_acksOnly`, piège 27), reflux sur fin non-nominale.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)
 
