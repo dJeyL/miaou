@@ -34,6 +34,41 @@ describe('sseDataObject sur un chunk terminal stream_options.include_usage (Bbis
   });
 });
 
+describe('formatErrorDetail (détail lisible d\'une réponse HTTP en échec)', function() {
+  it('body vide → chaîne vide (« HTTP <code> » reste seul)', function() {
+    expect(formatErrorDetail('')).toBe('');
+    expect(formatErrorDetail(null)).toBe('');
+    expect(formatErrorDetail('   ')).toBe('');
+  });
+  it('forme { message } (ex. vLLM) → préfixe « : » + message', function() {
+    var body = '{"object":"error","message":"Assistant message must have either content or tool_calls, but not none.","type":"invalid_request_assistant_message","code":"3240"}';
+    expect(formatErrorDetail(body)).toBe(' : Assistant message must have either content or tool_calls, but not none.');
+  });
+  it('forme OpenAI { error: { message } }', function() {
+    var body = '{"error":{"message":"Invalid API key","type":"auth_error"}}';
+    expect(formatErrorDetail(body)).toBe(' : Invalid API key');
+  });
+  it('forme { error: "…" } (error string)', function() {
+    expect(formatErrorDetail('{"error":"model not found"}')).toBe(' : model not found');
+  });
+  it('forme tableau Gemini/Google [{ error: { message } }] → message déballé', function() {
+    var body = '[{"error":{"code":429,"message":"You exceeded your current quota.","status":"RESOURCE_EXHAUSTED"}}]';
+    expect(formatErrorDetail(body)).toBe(' : You exceeded your current quota.');
+  });
+  it('tableau vide → texte brut du body (pas de throw)', function() {
+    expect(formatErrorDetail('[]')).toBe(' : []');
+  });
+  it('JSON illisible → texte brut conservé, préfixé', function() {
+    expect(formatErrorDetail('{oops not json')).toBe(' : {oops not json');
+  });
+  it('texte brut non-JSON (ex. proxy HTML) → tel quel, préfixé', function() {
+    expect(formatErrorDetail('Bad Gateway')).toBe(' : Bad Gateway');
+  });
+  it('JSON sans champ de message reconnu → texte brut du body', function() {
+    expect(formatErrorDetail('{"foo":1}')).toBe(' : {"foo":1}');
+  });
+});
+
 describe('reasoningDelta (détection du raisonnement streamé)', function() {
   it('extrait le champ reasoning', function() {
     expect(reasoningDelta({ reasoning: 'hmm' })).toBe('hmm');

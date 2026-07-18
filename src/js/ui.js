@@ -1802,6 +1802,7 @@ function renderThread(msgs) {
   scrollBottom(true);   // ouverture/rechargement de conversation : toujours au fond
   syncConvDownloadBtn();
   syncLastAssistantActions();
+  reindexThreadDom();   // toutes les bulles viennent d'être (re)construites depuis msgs
 }
 
 // Synchronise les actions réservées à la DERNIÈRE bulle assistant du fil :
@@ -1975,25 +1976,68 @@ function finalizeAssistant(wrap, full, truncated) {
   }
   syncConvDownloadBtn();
   syncLastAssistantActions();
+  reindexThreadDom();   // l'entrée assistant vient d'être poussée (cf. call-sites main.js)
+  if (follow) scrollBottom(true);
+}
+
+// Finalisation d'un tour en ÉCHEC (400 backend, exception réseau, non-convergence).
+// N'existe que pour l'affichage : ce message n'est jamais persisté ni exporté.
+// Rendu en texte brut échappé (le message peut porter un JSON multi-ligne, cf.
+// erreurs de backend) dans un .msg-error dédié — surtout PAS via renderMd, qui
+// mangerait la mise en forme et imposerait un italique. Style : rouge désaturé,
+// plus petit, non-italique (chat.css).
+function finalizeAssistantError(wrap, msg) {
+  cancelStreamRender();
+  cancelReasoningRender();
+  stopWaiter();
+  const follow = isAtBottom();
+  const body = wrap.querySelector('.body');
+  body.className = 'body msg-error';
+  body.textContent = String(msg);
+  const copyBtn = wrap.querySelector('.msg-copy');
+  if (copyBtn) copyBtn.setAttribute('hidden', '');
+  const dlBtn = wrap.querySelector('.msg-dl');
+  if (dlBtn) dlBtn.setAttribute('hidden', '');
+  syncLastAssistantActions();
   if (follow) scrollBottom(true);
 }
 
 // ── Édition d'un message utilisateur ────────────────────────────────────────
-// Index recalculé au moment du clic (jamais figé au rendu) : position DOM du
-// .msg traduite en index currentThread en sautant les entrées tool-ack.
-function msgIndex(wrap) {
-  const msgs = Array.from($('thread').querySelectorAll('.msg'));
-  const domIdx = msgs.indexOf(wrap);
-  if (domIdx < 0) return -1;
-  // Les tool-ack ne génèrent pas de .msg autonome : l'index DOM ≠ index currentThread.
-  // On remonte en comptant uniquement les entrées non-ack.
-  let count = 0;
+// Réindexation autoritaire DOM → currentThread. Chaque bulle `.msg` reçoit
+// `data-thread-idx` = l'index RÉEL de son entrée dans currentThread (les
+// tool-ack ne produisent pas de `.msg` autonome : ils sont sautés). C'est LA
+// source de vérité de l'appariement bulle↔entrée — jamais un recomptage par
+// call-site (l'ancien msgIndex appariait « n-ième .msg ↔ n-ième non-ack », qui
+// désalignait silencieusement dès qu'un `.msg` DOM et une entrée divergeaient
+// en nombre/ordre : édition d'un message qui chargeait la mauvaise entrée). À
+// rappeler après toute mutation qui change la correspondance (renderThread,
+// ajout live, finalisation, suppression). Garde de divergence : si le nombre de
+// `.msg` ne correspond pas au nombre d'entrées non-ack, on le signale (console)
+// — un mapping partiel vaut mieux qu'un mapping faux et muet.
+function reindexThreadDom() {
+  const msgs = $('thread').querySelectorAll('.msg');
+  const nonAck = [];
   for (let i = 0; i < currentThread.length; i++) {
-    if (isAckRole(currentThread[i].role)) continue;
-    if (count === domIdx) return i;
-    count++;
+    if (!isAckRole(currentThread[i].role)) nonAck.push(i);
   }
-  return -1;
+  if (msgs.length !== nonAck.length && typeof console !== 'undefined') {
+    console.warn('[miaou] reindexThreadDom: ' + msgs.length + ' bulle(s) .msg pour ' +
+      nonAck.length + ' entrée(s) non-ack — appariement partiel');
+  }
+  const n = Math.min(msgs.length, nonAck.length);
+  for (let k = 0; k < n; k++) msgs[k].dataset.threadIdx = nonAck[k];
+  // Bulles en excès (jamais censé arriver) : pas d'attribut → msgIndex renvoie -1.
+  for (let k = n; k < msgs.length; k++) delete msgs[k].dataset.threadIdx;
+}
+
+// Traduit une bulle `.msg` en index currentThread. Lit `data-thread-idx` posé
+// par reindexThreadDom ; re-réindexe d'abord si l'attribut manque (bulle créée
+// après la dernière passe, ou conversation d'avant l'introduction de l'attribut).
+function msgIndex(wrap) {
+  if (!wrap || !wrap.classList || !wrap.classList.contains('msg')) return -1;
+  if (wrap.dataset.threadIdx == null) reindexThreadDom();
+  const n = wrap.dataset.threadIdx == null ? -1 : Number(wrap.dataset.threadIdx);
+  return Number.isInteger(n) ? n : -1;
 }
 
 function onEditMsg(btn) {

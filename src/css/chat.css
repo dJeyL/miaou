@@ -375,6 +375,21 @@
 .msg-continue:hover:not(:disabled) { border-color: var(--accent-bd); color: var(--accent); }
 .msg-continue:disabled { opacity: .45; cursor: default; }
 
+/* Message d'erreur de génération (400+ backend, exception réseau, non-convergence).
+   Éphémère : jamais persisté ni exporté. Texte brut échappé (peut porter un JSON
+   multi-ligne), pas de markdown → white-space: pre-wrap. --err-soft (rouge
+   désaturé, cf. base.css), plus petit que le corps, non-italique.
+   Scopé sur .msg.assistant : sinon .msg.assistant .body (spécificité 0,2,0)
+   écrase color/font-size/line-height de .msg-error nu (0,1,0) — d'où un texte
+   d'erreur rendu en couleur/taille de réponse normale. */
+.msg.assistant .body.msg-error {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--err-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* markdown body */
 .body > *:first-child { margin-top: 0; }
 .body > *:last-child { margin-bottom: 0; }

@@ -19,6 +19,43 @@ const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 // Cache session : endpoints ayant rejeté NOTHINK_PARAMS (clé = URL endpoint).
 const _noThinkRejected = {};
 
+// Extrait un détail lisible du corps d'une réponse HTTP en échec, pour l'afficher
+// à l'utilisateur (chemin onError → .msg-error). Défensif : les backends OpenAI-
+// compatibles ne s'accordent pas sur la forme. On gère, par ordre de préférence :
+//   { message: "…" }                     (forme vue en pratique, ex. vLLM)
+//   { error: { message: "…" } }          (forme OpenAI canonique)
+//   { error: "…" }                       (error string)
+//   [ { error: { message: "…" } } ]      (forme Gemini/Google : body = tableau)
+//   texte brut (JSON illisible ou body non-JSON)
+// Toujours pur, jamais throw : entrée = texte brut du body, sortie = string
+// (préfixée « : » si non-vide, chaîne vide sinon → l'appelant garde « HTTP <code> » seul).
+function formatErrorDetail(bodyText) {
+  const raw = (bodyText || '').trim();
+  if (!raw) return '';
+  let msg = raw;
+  try {
+    let o = JSON.parse(raw);
+    // Google/Gemini enveloppe l'erreur dans un tableau ([{ error: {…} }]) : on
+    // déballe le premier élément avant d'appliquer les formes objet ci-dessous.
+    if (Array.isArray(o)) o = o[0];
+    if (o && typeof o === 'object') {
+      if (typeof o.message === 'string' && o.message) msg = o.message;
+      else if (o.error && typeof o.error === 'object' && typeof o.error.message === 'string') msg = o.error.message;
+      else if (typeof o.error === 'string' && o.error) msg = o.error;
+    }
+  } catch (_) { /* body non-JSON : on garde le texte brut */ }
+  return msg ? ' : ' + msg : '';
+}
+
+// Lit le corps d'une réponse en échec (une seule fois, tolère l'échec de lecture)
+// et le passe à formatErrorDetail. Impur (I/O) ; la logique de forme est dans
+// formatErrorDetail (pure, testée).
+async function readErrorDetail(res) {
+  let bodyText = '';
+  try { bodyText = await res.text(); } catch (_) { /* body illisible : « HTTP <code> » seul */ }
+  return formatErrorDetail(bodyText);
+}
+
 // Cache session : (endpoint, modèle) ayant rejeté reasoning_effort choisi par
 // l'utilisateur. Clé composite (url + '::' + model) — un même endpoint peut
 // exposer plusieurs modèles aux capacités de raisonnement différentes, donc on
@@ -342,7 +379,7 @@ async function streamCompletion(messages, opts) {
         markVisionRejected(cfg.url, model);
         return streamCompletion(messages, opts);
       }
-      throw new Error('streamCompletion ' + res.status);
+      throw new Error('HTTP ' + res.status + await readErrorDetail(res));
     }
 
     const reader = res.body.getReader();

@@ -2421,13 +2421,18 @@ async function dispatchSend(matches, continuation) {
           () => sendUserText('Oui'),
           () => sendUserText('Non'));
       },
-      onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
+      onError: (msg) => { finalizeAssistantError(wrap, msg); },
     });
   } catch (e) {
-    // Texte brut : finalizeAssistant → renderMd (marked + sanitizeHtml) échappe
-    // déjà. Un escHtml ici double-échapperait (& → &amp; visible). Cohérent avec
-    // onError ci-dessus qui passe aussi le message brut.
-    finalizeAssistant(wrap, '_Erreur réseau : ' + (e.message || String(e)) + '_');
+    // Message brut confié à finalizeAssistantError, qui l'échappe (textContent) —
+    // le message d'un backend peut porter un JSON multi-ligne. Cohérent avec
+    // onError ci-dessus (non-convergence) : même rendu .msg-error. Une réponse
+    // HTTP d'erreur (streamCompletion throw « HTTP <code> : … », détail extrait
+    // par formatErrorDetail) porte déjà son préfixe et n'est PAS une erreur
+    // réseau au sens strict — on ne re-préfixe « Erreur réseau » que le vrai
+    // échec de transport (fetch rejeté : DNS, CORS, connexion refusée).
+    const detail = (e && e.message) || String(e);
+    finalizeAssistantError(wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
     setConnDot('err');
   } finally {
     setSending(false);

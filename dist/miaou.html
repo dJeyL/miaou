@@ -817,6 +817,14 @@ html[data-motion="reduced"] *::after {
 .msg-continue:hover:not(:disabled) { border-color: var(--accent-bd); color: var(--accent); }
 .msg-continue:disabled { opacity: .45; cursor: default; }
 
+.msg.assistant .body.msg-error {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--err-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .body > *:first-child { margin-top: 0; }
 .body > *:last-child { margin-bottom: 0; }
 .body p { margin: 0 0 11px; }
@@ -3394,7 +3402,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-17 22:42 UTC */
+/* miaou — built: 2026-07-18 07:35 UTC */
 
 /* ── utils.js ── */
 
@@ -4403,7 +4411,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784328140}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784360151}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7215,6 +7223,29 @@ const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 
 const _noThinkRejected = {};
 
+function formatErrorDetail(bodyText) {
+  const raw = (bodyText || '').trim();
+  if (!raw) return '';
+  let msg = raw;
+  try {
+    let o = JSON.parse(raw);
+    
+    if (Array.isArray(o)) o = o[0];
+    if (o && typeof o === 'object') {
+      if (typeof o.message === 'string' && o.message) msg = o.message;
+      else if (o.error && typeof o.error === 'object' && typeof o.error.message === 'string') msg = o.error.message;
+      else if (typeof o.error === 'string' && o.error) msg = o.error;
+    }
+  } catch (_) {  }
+  return msg ? ' : ' + msg : '';
+}
+
+async function readErrorDetail(res) {
+  let bodyText = '';
+  try { bodyText = await res.text(); } catch (_) {  }
+  return formatErrorDetail(bodyText);
+}
+
 const _reasoningEffortRejected = {};
 function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || ''); }
 function isReasoningEffortRejected(url, model) { return !!_reasoningEffortRejected[reasoningEffortRejectedKey(url, model)]; }
@@ -7434,7 +7465,7 @@ async function streamCompletion(messages, opts) {
         markVisionRejected(cfg.url, model);
         return streamCompletion(messages, opts);
       }
-      throw new Error('streamCompletion ' + res.status);
+      throw new Error('HTTP ' + res.status + await readErrorDetail(res));
     }
 
     const reader = res.body.getReader();
@@ -9138,6 +9169,7 @@ function renderThread(msgs) {
   scrollBottom(true);   
   syncConvDownloadBtn();
   syncLastAssistantActions();
+  reindexThreadDom();   
 }
 
 function syncLastAssistantActions() {
@@ -9280,21 +9312,47 @@ function finalizeAssistant(wrap, full, truncated) {
   }
   syncConvDownloadBtn();
   syncLastAssistantActions();
+  reindexThreadDom();   
   if (follow) scrollBottom(true);
 }
 
-function msgIndex(wrap) {
-  const msgs = Array.from($('thread').querySelectorAll('.msg'));
-  const domIdx = msgs.indexOf(wrap);
-  if (domIdx < 0) return -1;
-  
-  let count = 0;
+function finalizeAssistantError(wrap, msg) {
+  cancelStreamRender();
+  cancelReasoningRender();
+  stopWaiter();
+  const follow = isAtBottom();
+  const body = wrap.querySelector('.body');
+  body.className = 'body msg-error';
+  body.textContent = String(msg);
+  const copyBtn = wrap.querySelector('.msg-copy');
+  if (copyBtn) copyBtn.setAttribute('hidden', '');
+  const dlBtn = wrap.querySelector('.msg-dl');
+  if (dlBtn) dlBtn.setAttribute('hidden', '');
+  syncLastAssistantActions();
+  if (follow) scrollBottom(true);
+}
+
+function reindexThreadDom() {
+  const msgs = $('thread').querySelectorAll('.msg');
+  const nonAck = [];
   for (let i = 0; i < currentThread.length; i++) {
-    if (isAckRole(currentThread[i].role)) continue;
-    if (count === domIdx) return i;
-    count++;
+    if (!isAckRole(currentThread[i].role)) nonAck.push(i);
   }
-  return -1;
+  if (msgs.length !== nonAck.length && typeof console !== 'undefined') {
+    console.warn('[miaou] reindexThreadDom: ' + msgs.length + ' bulle(s) .msg pour ' +
+      nonAck.length + ' entrée(s) non-ack — appariement partiel');
+  }
+  const n = Math.min(msgs.length, nonAck.length);
+  for (let k = 0; k < n; k++) msgs[k].dataset.threadIdx = nonAck[k];
+  
+  for (let k = n; k < msgs.length; k++) delete msgs[k].dataset.threadIdx;
+}
+
+function msgIndex(wrap) {
+  if (!wrap || !wrap.classList || !wrap.classList.contains('msg')) return -1;
+  if (wrap.dataset.threadIdx == null) reindexThreadDom();
+  const n = wrap.dataset.threadIdx == null ? -1 : Number(wrap.dataset.threadIdx);
+  return Number.isInteger(n) ? n : -1;
 }
 
 function onEditMsg(btn) {
@@ -14865,11 +14923,12 @@ async function dispatchSend(matches, continuation) {
           () => sendUserText('Oui'),
           () => sendUserText('Non'));
       },
-      onError: (msg) => { finalizeAssistant(wrap, '_' + msg + '_'); },
+      onError: (msg) => { finalizeAssistantError(wrap, msg); },
     });
   } catch (e) {
     
-    finalizeAssistant(wrap, '_Erreur réseau : ' + (e.message || String(e)) + '_');
+    const detail = (e && e.message) || String(e);
+    finalizeAssistantError(wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
     setConnDot('err');
   } finally {
     setSending(false);
