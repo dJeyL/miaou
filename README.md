@@ -56,8 +56,11 @@ l'interface, JetBrains Mono pour le code.
   statique (source repliée en dessous), lisible sans JavaScript, ouvrable hors
   MIAOU (mail, partage) sans infrastructure — cf. `docs/exports.md`. Les **deux
   thèmes** sont embarqués : la page s'ouvre sur celui qui était actif à l'export
-  et un bouton bascule à la lecture (export interactif uniquement ; les
-  diagrammes gardent leurs couleurs d'origine).
+  et un bouton bascule à la lecture. Cette bascule est du markup piloté par CSS,
+  donc opérante **même sans JavaScript** (visionneuses de pièces jointes type
+  Quick Look iOS) ; le réglage « Export HTML interactif » n'ajoute que la
+  mémorisation du choix et les boutons copier/télécharger. Les diagrammes
+  gardent leurs couleurs d'origine.
 - **Conversion Markdown → HTML** : n'importe quel fichier `.md` peut être
   transformé en page HTML au même format (réglages » Outils & extensions, clic
   ou drag&drop), et un bouton dédié fait de même depuis un bloc de code

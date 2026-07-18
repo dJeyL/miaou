@@ -173,6 +173,9 @@ ultérieures du même lot).
   `decorateExportPre`). Les bénéfices D1 d'origine (sûr à ouvrir, pas de CSP,
   pas de dérive de re-parsing) restent atteignables **sur option**. La barre
   de langage, elle, est **toujours statique** — indépendante du réglage.
+  **Depuis le lot R**, `EXPORT_SCRIPT` porte un second rôle : la mémorisation du
+  thème choisi. La **bascule** de thème, elle, est du markup statique et ne
+  dépend PAS du réglage (cf. section dédiée plus bas).
 - **`EXPORT_SCRIPT`** (ui.js, constante template string, injectée seulement si
   `exportInteractive`) : script **autonome** (l'export n'a aucun global MIAOU —
   `downloadFile`/`sanitizeDownloadName`/`LANG_TO_EXT` réimplémentés inline en
@@ -401,20 +404,26 @@ ultérieures du même lot).
 
 ## Bascule de thème dans l'export (lot R)
 
-Bouton ajouté par `EXPORT_SCRIPT`, donc **présent uniquement en export
-interactif** (`exportInteractive`, défaut `true`). Il ne fait que basculer
-`data-theme` sur `<html>` — les deux jeux de tokens étant déjà embarqués (cf.
-`serializeThemeTokens()` plus haut).
+**Markup STATIQUE, pas de JavaScript** : une case `#theme-switch` masquée en tête
+de `<body>` + un `<label class="theme-switch-label">` cliquable, tous deux émis
+par `buildExportHtml`. La bascule est donc **présente et opérante dans TOUS les
+exports**, y compris `exportInteractive: false` — et surtout dans les
+visionneuses de pièces jointes qui n'exécutent aucun script (Quick Look iOS,
+aperçus de mail). Première version : bouton construit par `EXPORT_SCRIPT`, donc
+absent de ces visionneuses (constaté par Julien sur iPhone) — c'est ce qui a
+motivé le passage au markup statique.
 
-- **Placement** : dans `.export-topbar` quand le cartouche existe
-  (`--intopbar`, poussé à droite par `margin-left:auto`) ; **repli flottant**
-  haut-droite (`--floating`, `position:fixed`) quand il n'y a pas de cartouche
-  — cas d'un Markdown converti sans titre de niveau 1. Un premier jet le
-  plaçait en `position:fixed` bas-droite dans tous les cas : rejeté (le bouton
-  flottait dans le vide sous la fin du contenu).
-- **Persistance** : clé `localStorage` dérivée de `location.pathname`, pour
-  qu'un export ne contamine pas la préférence d'un autre. Lecture/écriture sous
-  `try/catch` (jamais bloquant).
+- **Rôle résiduel d'`EXPORT_SCRIPT`** : la **persistance** du choix seulement
+  (clé `localStorage` dérivée de `location.pathname`, pour qu'un export ne
+  contamine pas la préférence d'un autre ; lecture/écriture sous `try/catch`).
+  Sans lui, la bascule marche, le choix n'est simplement pas mémorisé d'une
+  ouverture à l'autre. Il ne pose **aucun attribut de thème** (cf.
+  `serializeThemeTokens()` : la case est seule source de vérité).
+- **Placement** : `position: fixed` — contrainte du sélecteur `:has()`, qui
+  impose que la case reste en tête de `body`. Calé sur la **colonne de lecture**
+  (`left: min(100vw - 50px, 50% + 450px)`), pas sur le bord du viewport. Deux
+  jets antérieurs rejetés : bas-droite (flottait dans le vide sous le contenu),
+  puis `right: 16px` (désolidarisé du cartouche sur grand écran).
 - **Icône** : soleil quand on est en sombre, lune quand on est en clair —
   l'icône montre **la destination**, pas l'état courant.
 - **Limite connue : les diagrammes Mermaid ne suivent pas.** `embedExportMermaid`
