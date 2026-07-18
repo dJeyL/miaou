@@ -52,10 +52,18 @@ l'interface, JetBrains Mono pour le code.
   avant la réponse — sans données binaires embarquées pour les ressources
   présentées automatiquement (juste le nom et le type).
 - Export de la conversation en **fichier HTML autonome** (icône jumelle, même
-  emplacement) : thème et coloration de code figés à l'ouverture, diagrammes
-  Mermaid embarqués en SVG statique (source repliée en dessous), lisible sans
-  JavaScript, ouvrable hors MIAOU (mail, partage) sans infrastructure —
-  cf. `docs/exports.md`.
+  emplacement) : coloration de code figée, diagrammes Mermaid embarqués en SVG
+  statique (source repliée en dessous), lisible sans JavaScript, ouvrable hors
+  MIAOU (mail, partage) sans infrastructure — cf. `docs/exports.md`. Les **deux
+  thèmes** sont embarqués : la page s'ouvre sur celui qui était actif à l'export
+  et un bouton bascule à la lecture (export interactif uniquement ; les
+  diagrammes gardent leurs couleurs d'origine).
+- **Conversion Markdown → HTML** : n'importe quel fichier `.md` peut être
+  transformé en page HTML au même format (réglages » Outils & extensions, clic
+  ou drag&drop), et un bouton dédié fait de même depuis un bloc de code
+  Markdown affiché à l'écran. Purement local, sans passer par le modèle. Un
+  titre de niveau 1 en tête devient l'en-tête de la page ; sans lui, pas de
+  cartouche et la date passe en pied.
 - Horodatage de chaque message : heure seule (même jour), « hier à HH:MM »,
   date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis

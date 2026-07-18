@@ -596,6 +596,123 @@ describe('slugTitle', function() {
   });
 });
 
+describe('extractMdTitle', function() {
+  it('extrait le h1 de tête et le RETIRE du corps (pas de doublon)', function() {
+    const r = extractMdTitle('# Mon titre\n\nDu texte.\n');
+    expect(r.title).toBe('Mon titre');
+    expect(r.body).toBe('Du texte.\n');
+  });
+  it('sans h1 en tête → pas de titre (donc pas de cartouche), corps intact', function() {
+    const r = extractMdTitle('Du texte direct.\n\n# Titre plus bas\n');
+    expect(r.title).toBe(null);
+    expect(r.body).toBe('Du texte direct.\n\n# Titre plus bas\n');
+  });
+  it('h2 en tête ne compte pas comme titre', function() {
+    const r = extractMdTitle('## Sous-titre\n\ntexte\n');
+    expect(r.title).toBe(null);
+  });
+  it('tolère les lignes vides avant le h1', function() {
+    const r = extractMdTitle('\n\n   \n# Titre\n\ntexte\n');
+    expect(r.title).toBe('Titre');
+    expect(r.body).toBe('texte\n');
+  });
+  it('retire un front-matter YAML et trouve le h1 derrière', function() {
+    const r = extractMdTitle('---\ntitle: x\ntags: [a]\n---\n# Vrai titre\n\ntexte\n');
+    expect(r.title).toBe('Vrai titre');
+    expect(r.body).toBe('texte\n');
+  });
+  it('front-matter sans h1 derrière → pas de titre, front-matter quand même retiré', function() {
+    const r = extractMdTitle('---\ntitle: x\n---\nDu texte.\n');
+    expect(r.title).toBe(null);
+    expect(r.body).toBe('Du texte.\n');
+  });
+  it('ne confond pas un --- de séparation avec un front-matter', function() {
+    const r = extractMdTitle('# Titre\n\n---\n\ntexte\n');
+    expect(r.title).toBe('Titre');
+    expect(r.body).toBe('---\n\ntexte\n');
+  });
+  it('supporte les fins de ligne CRLF', function() {
+    const r = extractMdTitle('# Titre\r\n\r\ntexte\r\n');
+    expect(r.title).toBe('Titre');
+    expect(r.body).toBe('texte\r\n');
+  });
+  it('gère les # de fermeture ATX', function() {
+    expect(extractMdTitle('# Titre #\n\ntexte').title).toBe('Titre');
+    expect(extractMdTitle('# Titre ###\n\ntexte').title).toBe('Titre');
+  });
+  it('h1 vide (# seul) → pas de titre', function() {
+    expect(extractMdTitle('#\n\ntexte').title).toBe(null);
+    expect(extractMdTitle('#   \n\ntexte').title).toBe(null);
+  });
+  it('# sans espace (hashtag) n\'est pas un titre', function() {
+    expect(extractMdTitle('#hashtag\n\ntexte').title).toBe(null);
+  });
+  it('document réduit au seul h1 → corps vide', function() {
+    const r = extractMdTitle('# Titre seul');
+    expect(r.title).toBe('Titre seul');
+    expect(r.body).toBe('');
+  });
+  it('entrée vide ou nulle ne jette pas', function() {
+    expect(extractMdTitle('').title).toBe(null);
+    expect(extractMdTitle(null).title).toBe(null);
+    expect(extractMdTitle(undefined).body).toBe('');
+  });
+});
+
+describe('isMarkdownLang', function() {
+  it('reconnaît markdown et md', function() {
+    expect(isMarkdownLang('markdown')).toBe(true);
+    expect(isMarkdownLang('md')).toBe(true);
+  });
+  it('insensible à la casse', function() {
+    expect(isMarkdownLang('Markdown')).toBe(true);
+    expect(isMarkdownLang('MD')).toBe(true);
+  });
+  it('rejette les autres langages', function() {
+    expect(isMarkdownLang('python')).toBe(false);
+    expect(isMarkdownLang('html')).toBe(false);
+    expect(isMarkdownLang('mermaid')).toBe(false);
+  });
+  it('vide/null → false', function() {
+    expect(isMarkdownLang('')).toBe(false);
+    expect(isMarkdownLang(null)).toBe(false);
+    expect(isMarkdownLang(undefined)).toBe(false);
+  });
+});
+
+describe('mdHtmlFileName', function() {
+  it('remplace .md par .html en gardant le reste du nom', function() {
+    expect(mdHtmlFileName('notes.md')).toBe('notes.html');
+    expect(mdHtmlFileName('notes v2.md')).toBe('notes v2.html');
+  });
+  it('accepte .markdown et est insensible à la casse', function() {
+    expect(mdHtmlFileName('README.MD')).toBe('README.html');
+    expect(mdHtmlFileName('guide.markdown')).toBe('guide.html');
+  });
+  it('ne touche qu\'à l\'extension finale', function() {
+    expect(mdHtmlFileName('archive.md.md')).toBe('archive.md.html');
+    expect(mdHtmlFileName('v1.2.notes.md')).toBe('v1.2.notes.html');
+  });
+  it('sans extension connue → ajoute simplement .html', function() {
+    expect(mdHtmlFileName('CHANGELOG')).toBe('CHANGELOG.html');
+  });
+  it('neutralise les séparateurs de chemin et les caractères de contrôle', function() {
+    // Les / deviennent _, PUIS les points de tête sautent (pas de ../ ni de
+    // fichier caché) : l'ordre compte, d'où ce résultat.
+    expect(mdHtmlFileName('../etc/passwd.md')).toBe('_etc_passwd.html');
+    expect(mdHtmlFileName('sub/dir/notes.md')).toBe('sub_dir_notes.html');
+    expect(mdHtmlFileName('a\x01b.md')).toBe('ab.html');
+  });
+  it('un nom de fichier caché perd son point de tête', function() {
+    expect(mdHtmlFileName('.hidden.md')).toBe('hidden.html');
+  });
+  it('nom vide ou nul → repli neutre', function() {
+    expect(mdHtmlFileName('')).toBe('document.html');
+    expect(mdHtmlFileName(null)).toBe('document.html');
+    expect(mdHtmlFileName('   ')).toBe('document.html');
+  });
+});
+
 describe('exportDateStamp', function() {
   it('formate en YYYY-MM-DD avec zero-padding', function() {
     var ts = new Date(2026, 0, 5, 14, 30).getTime(); // 5 janvier 2026

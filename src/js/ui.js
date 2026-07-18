@@ -821,6 +821,10 @@ function decoratePre(scope) {
   // Pictogramme « œil » — aperçu sandboxé des blocs html/svg (lot E, D2).
   // Métaphore réservée à cet usage (vocabulaire d'icônes).
   const svgEye = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  // Pictogramme « page » — conversion d'un bloc markdown en page HTML (lot R).
+  // Distinct de la flèche de téléchargement (qui rend le contenu BRUT) : ici on
+  // produit un document mis en forme. Métaphore réservée à cet usage.
+  const svgPage = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>`;
 
   scope.querySelectorAll('pre').forEach(pre => {
     if (pre.querySelector('.code-head')) return;
@@ -840,6 +844,9 @@ function decoratePre(scope) {
       (isMermaidLang(lang) ? `<button class="code-mmd-toggle" title="Diagramme / source" hidden>${svgDiagram}</button>` : '') +
       // Aperçu sandboxé (D2) : clic EXPLICITE uniquement, jamais automatique.
       (isPreviewableLang(lang) ? `<button class="code-preview-btn" title="Aperçu">${svgEye}</button>` : '') +
+      // Conversion en page HTML (lot R) : même geste que le convertisseur des
+      // réglages, appliqué au contenu du bloc. Markdown seulement.
+      (isMarkdownLang(lang) ? `<button class="code-md-html" title="Convertir en page HTML">${svgPage}</button>` : '') +
       `<button class="code-copy" title="Copier">${svgCopy}</button>` +
       `<button class="code-dl" title="Télécharger">${svgDl}</button>` +
       `</div>`;
@@ -887,6 +894,24 @@ function decoratePre(scope) {
       const rawName = code ? code.getAttribute('data-filename') : '';
       const dlName = sanitizeDownloadName(rawName, lang) || ('miaou-snippet.' + langExt(lang));
       downloadFile(dlName, code ? code.textContent : '', 'text/plain');
+    };
+    // Conversion en page HTML (lot R) : réutilise convertMarkdownToHtmlFile,
+    // exactement comme la zone de dépôt des réglages — un seul chemin de
+    // conversion, pas de second rendu à faire dériver. Le nom de sortie vient
+    // du data-filename du bloc s'il existe, sinon du titre h1 du markdown,
+    // sinon d'un repli neutre (mdHtmlFileName pose l'extension .html).
+    const mdBtn = head.querySelector('.code-md-html');
+    if (mdBtn) mdBtn.onclick = async () => {
+      if (mdBtn.disabled) return;
+      const md = code ? code.textContent : '';
+      const rawName = code ? code.getAttribute('data-filename') : '';
+      const fallback = (extractMdTitle(md).title || 'document') + '.md';
+      mdBtn.disabled = true;
+      try {
+        await convertMarkdownToHtmlFile(md, rawName || fallback);
+      } finally {
+        mdBtn.disabled = false;
+      }
     };
     pre.insertBefore(head, pre.firstChild);
   });
@@ -6109,10 +6134,84 @@ const THEME_TOKENS = [
 // via getComputedStyle — voie runtime tranchée (audit §5) : zéro modif
 // build.py, capture automatiquement toute évolution des valeurs de tokens
 // (mais PAS l'ajout d'un nouveau nom : cf. THEME_TOKENS ci-dessus).
-function serializeThemeTokens() {
+function readThemeTokens() {
   const cs = getComputedStyle(document.documentElement);
-  const lines = THEME_TOKENS.map(name => name + ':' + cs.getPropertyValue(name).trim() + ';');
-  return ':root{' + lines.join('') + '}';
+  return THEME_TOKENS.map(name => name + ':' + cs.getPropertyValue(name).trim() + ';').join('');
+}
+
+// Sérialise les DEUX jeux de tokens pour que l'export interactif puisse
+// basculer de thème (bouton posé par EXPORT_SCRIPT) — même forme que
+// theme-light.css et PRISM_THEME_CSS : `:root` porte le sombre, le clair
+// surcharge sous `html[data-theme="light"]`. PAS de @media
+// (prefers-color-scheme) : theme-light.css proscrit explicitement ce doublon
+// (« UNE seule variante ») et l'export s'aligne. Conséquence assumée
+// (arbitrage Julien) : un export NON interactif reste figé sur le thème actif
+// à l'export, sans suivi de l'OS — statu quo, pas une régression.
+//
+// Les tokens du thème inactif ne sont lisibles QUE sur documentElement : les
+// sélecteurs sont ancrés sur `html`, un élément détaché ou hors écran portant
+// data-theme ne les résout pas (spike tranché). D'où la bascule temporaire de
+// l'attribut, ENTIÈREMENT SYNCHRONE (aucun await entre bascule et restauration
+// → aucun repaint intercalé, invisible) et sous try/finally. On touche
+// l'attribut EN DIRECT, jamais via applyTheme (hooks Mermaid/accueil) ni
+// selectTheme (persistance + broadcast multi-onglets, piège 24).
+// Construit le sélecteur « thème clair » d'un export pour une cible donnée.
+// UNE seule formule, partagée par les tokens et par les surcharges Prism —
+// deux formules divergentes redonneraient le bug « l'icône change mais pas les
+// couleurs ». La case (#theme-switch) est la source de vérité ; `:has()` permet
+// de remonter jusqu'à un ancêtre de la cible, donc de fonctionner SANS
+// JavaScript (visionneuses type Quick Look iOS).
+function exportLightSelector(target) {
+  return target === 'body'
+    ? 'body:has(#theme-switch:checked)'
+    : 'body:has(#theme-switch:checked) ' + target;
+}
+
+// PRISM_THEME_CSS est écrite avec des préfixes `html[data-theme="light"]`
+// (hérités du lot G, et toujours la forme utilisée par l'app à l'écran). Dans
+// l'EXPORT, l'attribut n'est plus la source de vérité : on réécrit ces préfixes
+// vers la case. Réécriture à l'usage plutôt que constante en dur → la copie
+// figée du thème Prism reste lisible et resynchronisable telle quelle
+// (dette assumée documentée), et une seule formule gouverne le thème clair.
+function prismThemeCssForExport() {
+  return PRISM_THEME_CSS.replace(/html\[data-theme="light"\] /g,
+                                 exportLightSelector('body') + ' ');
+}
+
+function serializeThemeTokens() {
+  const root = document.documentElement;
+  const active = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const activeCss = readThemeTokens();
+  let otherCss;
+  try {
+    root.setAttribute('data-theme', active === 'light' ? 'dark' : 'light');
+    otherCss = readThemeTokens();
+  } finally {
+    root.setAttribute('data-theme', active);
+  }
+  const darkCss = active === 'dark' ? activeCss : otherCss;
+  const lightCss = active === 'light' ? activeCss : otherCss;
+  // Les tokens sont portés par `body`, PAS `:root` : la bascule sans JS repose
+  // sur une case à cocher (#theme-switch, premier enfant de body) et un
+  // sélecteur de frère — un frère ne peut pas remonter jusqu'à <html>. Depuis
+  // body les variables héritent à tout le document, ce qui revient au même.
+  //
+  // Deux voies de surcharge claire, volontairement redondantes :
+  //  - `body:has(#theme-switch:checked)` : fonctionne **sans JavaScript**
+  //    (visionneuses type Quick Look iOS, qui n'exécutent aucun script).
+  //    `:has()` évite d'énumérer les frères de la case — sinon tout nouveau
+  //    bloc de premier niveau devrait être ajouté à la liste, et le fond de
+  //    `body` lui-même resterait non couvert.
+  //  - `html[data-theme="light"] body` : posée par EXPORT_SCRIPT quand le JS
+  //    tourne (et par buildExportHtml pour le thème d'ouverture).
+  // La case reflète le thème d'export à la génération ; le JS, quand il est
+  // présent, la garde synchronisée avec l'attribut.
+  // La CASE est la seule source de vérité du thème dans l'export — pas
+  // l'attribut. Un `html[data-theme]` figé par buildExportHtml gagnerait sur
+  // elle en permanence : sans JS pour le mettre à jour, le clic changeait
+  // l'icône mais pas les couleurs (bug constaté). L'attribut n'est donc plus
+  // posé du tout ; EXPORT_SCRIPT le reflète pour Prism (cf. exportLightSelector).
+  return 'body{' + darkCss + '}' + exportLightSelector('body') + '{' + lightCss + '}';
 }
 
 // Copie figée de prism-tomorrow.min.css (thème Prism dark chargé depuis le
@@ -6186,13 +6285,34 @@ const PRISM_THEME_CSS =
 // grand écran). Si on veut la faire suivre `--col`, l'ajouter à THEME_TOKENS.
 const EXPORT_CSS = `
 html { zoom: 0.9; }
+/* Sur mobile, le zoom 0.9 (confortable sur grand écran, où il donne de l'air à
+   une colonne de 900px) rend le texte trop petit : on revient à 100 % sous le
+   point de rupture 767px, le même que responsive.css. Retour Julien après test
+   sur mobile. Indissociable du <meta viewport> ajouté au même lot dans
+   buildExportHtml : sans lui cette media query ne se déclencherait jamais. */
+@media (max-width: 767px) {
+  html { zoom: 1; }
+  .export-body { padding: 16px 14px; }
+  .export-topbar { padding: 12px 14px; }
+  .export-footer { padding: 16px 14px; }
+}
 body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
 .export-topbar-wrap { border-bottom: 1px solid var(--border); }
-.export-topbar { max-width: 900px; margin: 0 auto; padding: 14px 20px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
+/* Le padding droit RÉSERVE la place du bouton de thème : celui-ci est en
+   position:fixed (contrainte du sélecteur :has(), cf. serializeThemeTokens) donc
+   hors du flux — sans cette réserve, un titre long passe DESSOUS et se fait
+   amputer (constaté sur iPhone). 34px de bouton + 16px de marge + respiration.
+   La variante tactile (bouton 40px) ajoute sa propre réserve plus bas. */
+.export-topbar { max-width: 900px; margin: 0 auto; padding: 14px 20px; padding-right: 66px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
 .export-logo { width: 44px; height: 44px; flex-shrink: 0; }
-.export-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
-.export-meta { font-size: 12px; color: var(--text-3); }
+/* Le cartouche ne porte plus que logo + titre (la date est passée au footer,
+   décision Julien) : plus de marge basse, plus de règle .export-meta. */
+.export-title { font-size: 16px; font-weight: 600; margin: 0; }
 .export-body { max-width: 900px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+/* Sans cartouche (Markdown sans titre h1), le corps est le premier élément de
+   la page : il lui faut sa propre respiration en haut, celle que la barre de
+   séparation du cartouche apporte sinon. */
+.export-body:first-child { padding-top: 40px; }
 .export-footer-wrap { border-top: 1px solid var(--border); }
 .export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
 .msg { display: flex; flex-direction: column; }
@@ -6314,6 +6434,55 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .mermaid-src summary::marker { content: ''; }
 .mermaid-src summary:hover { color: var(--text); }
 .mermaid-src[open] summary { margin-bottom: 2px; }
+/* Document Markdown converti (lot R) : réutilise la classe .body pour toute la
+   typographie, n'ajoute que ce qui lui est propre. Les h1 restants dans le
+   corps (le premier est consommé par le cartouche, cf. extractMdTitle) sont
+   remontés en taille : dans un document autonome ils structurent la lecture,
+   là où dans une bulle de chat ils restaient discrets.
+   ATTENTION : EXPORT_CSS est un template literal — jamais de backtick dans
+   ces commentaires, il clôt la chaîne et casse le chargement du fichier. */
+.md-doc { font-size: 14px; line-height: 1.68; color: var(--text); }
+.md-doc h1 { font-size: 21px; margin: 24px 0 10px; }
+.md-doc h2 { font-size: 17px; margin: 22px 0 9px; }
+.md-doc > *:first-child { margin-top: 0; }
+/* Bascule de thème (export interactif uniquement) : le bouton est créé par
+   EXPORT_SCRIPT, ces règles restent inertes en export statique. Fixe en coin
+   bas-droite, discret au repos, révélé au survol — l'export est un document de
+   lecture, pas une app. */
+/* Bascule de thème SANS JavaScript (lot R révisé) : case masquée + label.
+   La case doit rester focusable au clavier — d'où opacity/position plutôt que
+   display:none, qui la sortirait de l'ordre de tabulation. */
+#theme-switch { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+/* Le label est en tête de body (contrainte du sélecteur :has / frère) mais doit
+   s'afficher dans le cartouche : on le cale en fixed sur la même ligne que la
+   topbar. Sans cartouche il occupe la même place, en haut à droite du document
+   — dans les deux cas il reste accessible au scroll. */
+/* Aligné sur la COLONNE de lecture (900px centrés), pas sur le bord du
+   viewport : sur grand écran, un right:16px le laissait flotter à ~270px du
+   cartouche, visuellement désolidarisé. left:50% + une demi-colonne le cale au
+   bord droit de la colonne ; min() le ramène au bord de l'écran quand le
+   viewport est plus étroit que la colonne (mobile).
+   Pas de backtick ici : EXPORT_CSS est un template literal (piège 22). */
+.theme-switch-label { position: fixed; top: 16px; left: min(100vw - 50px, 50% + 450px); z-index: 10; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 50%; background: var(--surface-2); color: var(--text-3); cursor: pointer; opacity: 0.55; transition: opacity var(--ease), color var(--ease), border-color var(--ease); }
+.theme-switch-label:hover { opacity: 1; color: var(--text); border-color: var(--accent-bd); }
+#theme-switch:focus-visible + .theme-switch-label { opacity: 1; color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.theme-switch-label svg { width: 17px; height: 17px; }
+/* Une seule icône visible : elle montre la DESTINATION. Décochée = sombre →
+   soleil ; cochée = clair → lune. */
+.theme-switch-label .ts-moon { display: none; }
+#theme-switch:checked + .theme-switch-label .ts-sun { display: none; }
+#theme-switch:checked + .theme-switch-label .ts-moon { display: block; }
+/* Sur écran tactile il n'y a PAS de survol : le bouton resterait indéfiniment à
+   demi-effacé et passe pour absent (retour Julien après test sur mobile). On le
+   rend pleinement visible d'emblée, et un peu plus grand pour la cible tactile
+   (34px est en dessous des 44px recommandés au doigt). */
+@media (pointer: coarse) {
+  .theme-switch-label { opacity: 1; color: var(--text-2); width: 40px; height: 40px; }
+  .theme-switch-label svg { width: 19px; height: 19px; }
+  /* Bouton plus gros → réserve plus large dans le cartouche. */
+  .export-topbar { padding-right: 72px; }
+}
+@media print { .theme-switch-label { display: none; } }
 `;
 
 // Script inline OPTIONNEL de l'export (progressive enhancement, D1 révisé —
@@ -6415,6 +6584,33 @@ const EXPORT_SCRIPT = `
     var thumb = chips[ci].querySelector('img.att-thumb');
     if (thumb) bindImageOpen(chips[ci], thumb.src);
   }
+  // Bascule de thème : les DEUX jeux de tokens sont embarqués par
+  // serializeThemeTokens (:root sombre + html[data-theme="light"]), il suffit
+  // donc de basculer l'attribut. LIMITE CONNUE : les SVG Mermaid embarqués
+  // (embedExportMermaid) portent un <style> interne aux couleurs RÉSOLUES à
+  // l'export — ils ne suivent pas la bascule et gardent leur thème d'origine.
+  // Les recolorer imposerait d'embarquer Mermaid dans l'export (hors sujet) ;
+  // limite assumée, cf. docs/exports.md.
+  //
+  // Le bouton est du HTML STATIQUE (case + label, cf. buildExportHtml) et la
+  // bascule fonctionne SANS ce script — c'est le point du lot R révisé (les
+  // visionneuses type Quick Look iOS n'exécutent aucun script). Ce bloc n'ajoute
+  // que ce qui exige du JS : la PERSISTANCE du choix d'un chargement à l'autre.
+  // Il ne pose AUCUN attribut de thème : la case est seule source de vérité,
+  // tokens et couleurs Prism sont gouvernés par le sélecteur :has() sur elle.
+  // (Pas de backtick dans ce commentaire : EXPORT_SCRIPT est un template
+  // literal, piège 22.)
+  var THEME_KEY = 'miaou-export-theme:' + location.pathname;
+  var sw = document.getElementById('theme-switch');
+  if (sw) {
+    try {
+      var saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') sw.checked = (saved === 'light');
+    } catch (e) {}
+    sw.addEventListener('change', function () {
+      try { localStorage.setItem(THEME_KEY, sw.checked ? 'light' : 'dark'); } catch (e) {}
+    });
+  }
 })();
 `;
 
@@ -6424,13 +6620,48 @@ const EXPORT_SCRIPT = `
 // settings.exportInteractive est false → export strictement statique, ou
 // <script>EXPORT_SCRIPT</script> sinon — progressive enhancement, D1 révisé
 // brief G). Zéro <link> (Prism inliné, pas de CDN).
-function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag }) {
-  const ogDesc = title + ' — exporté depuis MIAOU le ' + dateDisplay;
+// Icônes de la bascule de thème des exports. Les DEUX sont dans le markup ;
+// le CSS n'en montre qu'une selon l'état de la case (soleil quand on est en
+// sombre, lune quand on est en clair — l'icône montre la DESTINATION). Ce sont
+// les mêmes tracés que ceux qu'utilisait EXPORT_SCRIPT avant qu'on passe au
+// markup statique, gardés identiques pour ne pas dévier du vocabulaire d'icônes.
+const THEME_SWITCH_SUN_SVG = '<svg class="ts-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const THEME_SWITCH_MOON_SVG = '<svg class="ts-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+
+// `title` null/vide → AUCUN cartouche d'en-tête (Markdown converti sans titre
+// de niveau 1, lot R) : ni logo, ni titre, ni date. Le footer, lui, est
+// systématique.
+//
+// `verb` distingue les deux producteurs de documents : l'export de
+// conversation dit « Exporté le … » / « Généré par MIAOU », le convertisseur
+// Markdown dit « Converti le … » / « Converti par MIAOU ». Un seul paramètre
+// pilote les deux endroits pour qu'ils ne puissent pas diverger.
+const EXPORT_VERBS = {
+  export:  { meta: 'Exporté',  footer: 'Généré par MIAOU' },
+  convert: { meta: 'Converti', footer: 'Converti par MIAOU' },
+};
+function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind }) {
+  const hasHeader = !!(title && String(title).trim());
+  const docTitle = hasHeader ? title : 'Document';
+  const verbs = EXPORT_VERBS[kind] || EXPORT_VERBS.export;
+  const verb = verbs.meta;
+  const ogDesc = hasHeader
+    ? title + ' — ' + verb.toLowerCase() + ' depuis MIAOU le ' + dateDisplay
+    : 'Document ' + verb.toLowerCase() + ' depuis MIAOU le ' + dateDisplay;
+  // PAS de data-theme sur <html> : dans l'export, la CASE (#theme-switch) est la
+  // seule source de vérité du thème. Un attribut figé ici gagnerait sur elle en
+  // permanence — sans JS pour le mettre à jour, le clic changeait l'icône mais
+  // pas les couleurs (bug constaté au lot R). Le thème d'ouverture est porté par
+  // l'état initial de la case, plus bas.
   return '<!doctype html>\n' +
-    '<html data-theme="' + escHtml(theme) + '">\n' +
+    '<html>\n' +
     '<head>\n' +
     '<meta charset="utf-8">\n' +
-    '<title>' + escHtml(title) + '</title>\n' +
+    // Sans viewport, un mobile rend la page à ~980px puis la réduit : le texte
+    // paraît minuscule ET les media queries mobiles ne se déclenchent jamais
+    // (lot R — l'export n'en avait aucun jusque-là).
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    '<title>' + escHtml(docTitle) + '</title>\n' +
     // Favicon : même logo que la sidebar (LOGO_SRC, source unique, main.js) —
     // statique, indépendant du réglage exportInteractive/EXPORT_SCRIPT.
     '<link rel="icon" href="' + escHtml(LOGO_SRC) + '">\n' +
@@ -6442,23 +6673,38 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     '<meta name="description" content="' + escHtml(ogDesc) + '">\n' +
     '<meta property="og:type" content="article">\n' +
     '<meta property="og:site_name" content="MIAOU">\n' +
-    '<meta property="og:title" content="' + escHtml(title) + '">\n' +
+    '<meta property="og:title" content="' + escHtml(docTitle) + '">\n' +
     '<meta property="og:description" content="' + escHtml(ogDesc) + '">\n' +
     '<meta property="og:image" content="' + escHtml(LOGO_SRC) + '">\n' +
     '<style>' + styleCss + '</style>\n' +
     '</head>\n' +
     '<body>\n' +
-    '<div class="export-topbar-wrap">' +
-    '<div class="export-topbar">' +
-    '<img class="export-logo" src="' + LOGO_SRC + '" alt="">' +
-    '<div>' +
-    '<p class="export-title">' + escHtml(title) + '</p>' +
-    '<p class="export-meta">Exporté le ' + escHtml(dateDisplay) + '</p>' +
-    '</div>' +
-    '</div>\n' +
-    '</div>\n' +
+    // Bascule de thème SANS JavaScript (lot R, révisé) : une case masquée en
+    // tête de body + un <label for> cliquable. Le CSS bascule via
+    // `body:has(#theme-switch:checked)`. Fonctionne dans les visionneuses qui
+    // n'exécutent pas de script (Quick Look iOS) — c'est tout l'intérêt.
+    // Cochée = thème CLAIR, d'où l'état initial dérivé du thème d'export.
+    // EXPORT_SCRIPT, quand il tourne, garde case et attribut synchronisés et
+    // ajoute la persistance ; sans lui, la bascule marche quand même.
+    '<input type="checkbox" id="theme-switch"' + (theme === 'light' ? ' checked' : '') + '>\n' +
+    '<label class="theme-switch-label" for="theme-switch" title="Changer de thème" role="button" aria-label="Changer de thème">' +
+    THEME_SWITCH_SUN_SVG + THEME_SWITCH_MOON_SVG +
+    '</label>\n' +
+    (hasHeader
+      ? '<div class="export-topbar-wrap">' +
+        '<div class="export-topbar">' +
+        '<img class="export-logo" src="' + LOGO_SRC + '" alt="">' +
+        '<p class="export-title">' + escHtml(title) + '</p>' +
+        '</div>\n' +
+        '</div>\n'
+      : '') +
     '<div class="export-body">' + bodyHtml + '</div>\n' +
-    '<div class="export-footer-wrap"><div class="export-footer">Généré par MIAOU</div></div>\n' +
+    // Footer systématique, et SEUL porteur de la date (décision Julien) : le
+    // cartouche ne garde que logo + titre. Un seul endroit, quel que soit le
+    // type de document et qu'il y ait un cartouche ou non.
+    '<div class="export-footer-wrap"><div class="export-footer">' + escHtml(verbs.footer) +
+    ' le ' + escHtml(dateDisplay) +
+    '</div></div>\n' +
     (scriptTag || '') +
     '</body>\n' +
     '</html>\n';
@@ -6614,6 +6860,185 @@ function decorateExportPre(scope) {
   });
 }
 
+// ── Conversion Markdown → HTML (lot R) ───────────────────────────────────────
+// Convertit un .md quelconque (fichier de l'utilisateur, PAS du contenu modèle)
+// en document HTML autonome au format des exports de conversation.
+//
+// TROISIÈME chemin string→HTML (piège 21), assumé et documenté : ni renderMd
+// (qui applique resolveConvRefs — des références de conversation n'ont aucun
+// sens dans un .md externe, et transformeraient un `#123` en lien mort), ni
+// renderUserMd (qui échappe les `<`, alors qu'un .md peut légitimement porter
+// du HTML inline). On passe donc marked directement, MAIS la sortie traverse
+// sanitizeHtml/DOMPurify comme les deux autres : c'est ce qui rend ce chemin
+// sûr, et toute évolution ici doit conserver cette passe.
+//
+// `breaks: true` comme les renderers de l'écran (cohérence de rendu).
+// Colorise les blocs de code d'un fragment DÉTACHÉ, grammaires comprises.
+//
+// Piège vérifié au spike : passer un callback à Prism.highlightElement NE SUFFIT
+// PAS. L'autoloader demande bien la grammaire manquante (requête observée, 200),
+// mais le callback est rappelé APRÈS que le bloc a déjà été rendu sans elle —
+// résultat : requête réussie, `Prism.languages.python` absent, zéro token. Il
+// faut donc PRÉCHARGER les grammaires, puis coloriser.
+//
+// Ce cas ne se pose pas dans l'export de conversation : ses blocs ont déjà été
+// coloriés à l'écran, grammaires chargées de longue date.
+const MD_HIGHLIGHT_TIMEOUT_MS = 5000;
+// Charge un composant de grammaire par <script>, une seule fois par langage.
+// Échec (CDN injoignable, langage inexistant) → résolution quand même : le bloc
+// sortira non colorié, la conversion n'échoue jamais pour ça.
+const _prismGrammarLoads = {};
+function loadPrismGrammar(lang) {
+  if (!lang || !window.Prism) return Promise.resolve();
+  if (Prism.languages[lang]) return Promise.resolve();
+  const base = (Prism.plugins && Prism.plugins.autoloader && Prism.plugins.autoloader.languages_path) || '';
+  if (!base) return Promise.resolve();
+  if (_prismGrammarLoads[lang]) return _prismGrammarLoads[lang];
+  _prismGrammarLoads[lang] = new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    const timer = setTimeout(finish, MD_HIGHLIGHT_TIMEOUT_MS);
+    const s = document.createElement('script');
+    s.src = base + 'prism-' + lang + '.min.js';
+    s.onload = () => { clearTimeout(timer); finish(); };
+    s.onerror = () => { clearTimeout(timer); finish(); };
+    document.head.appendChild(s);
+  }).then(() => {
+    // Hygiène de cache async : un échec ne doit pas empoisonner la session —
+    // si la grammaire n'est pas arrivée, la prochaine conversion retentera.
+    if (!Prism.languages[lang]) delete _prismGrammarLoads[lang];
+  });
+  return _prismGrammarLoads[lang];
+}
+async function highlightMarkdownDocCode(container) {
+  if (!highlightEnabled || !window.Prism || !Prism.highlightElement) return;
+  const blocks = Array.from(container.querySelectorAll('code[class*="language-"]'));
+  if (!blocks.length) return;
+  const langOf = el => {
+    const m = (el.className || '').match(/language-([\w-]+)/);
+    return m ? m[1] : '';
+  };
+  // Précharge les grammaires manquantes (dédupliquées) AVANT de coloriser.
+  const langs = Array.from(new Set(blocks.map(langOf).filter(Boolean)));
+  await Promise.all(langs.map(loadPrismGrammar));
+  // Colorisation synchrone : les grammaires disponibles le sont maintenant,
+  // celles qui ont échoué laisseront simplement leur bloc non colorié.
+  for (const el of blocks) {
+    try { Prism.highlightElement(el, false); } catch (e) { /* bloc laissé brut */ }
+  }
+}
+
+async function renderMarkdownDocBody(md) {
+  const container = document.createElement('div');
+  // Classe `.body` RÉUTILISÉE telle quelle : toutes les règles typographiques
+  // d'EXPORT_CSS (titres, listes, tableaux, blockquote, code) y sont attachées
+  // sans dépendre de `.msg.assistant`. Inventer une seconde classe la
+  // dupliquerait et la ferait dériver (piège 22). `.md-doc` ne porte que le peu
+  // qui est propre au document converti (taille de base, titre de niveau 1).
+  container.className = 'body md-doc';
+  container.innerHTML = window.marked
+    ? sanitizeHtml(marked.parse(String(md || ''), { breaks: true }))
+    : escHtml(String(md || '')).replace(/\n/g, '<br>');
+  // Mêmes passes que renderExportBody, dans le même ordre : coloration, puis
+  // en-têtes de blocs de code, puis Mermaid (qui déménage les <pre> concernés).
+  // MAIS coloration ATTENDUE ici (highlightMarkdownDocCode), pas le
+  // highlightAllUnder synchrone de renderExportBody : les blocs d'un .md sont
+  // NEUFS, leur grammaire n'a jamais été chargée, et l'autoloader Prism la
+  // récupère en asynchrone — lire outerHTML juste après rendait un code non
+  // colorié (bloc correct, zéro token). Dans l'export de conversation le
+  // problème ne se pose pas : les mêmes blocs ont déjà été coloriés à l'écran.
+  await highlightMarkdownDocCode(container);
+  decorateExportPre(container);
+  await embedExportMermaid(container);
+  return container.outerHTML;
+}
+
+// Point d'entrée de la conversion : prend le TEXTE d'un .md et son nom de
+// fichier, produit le HTML complet et le télécharge. Séparé du handler d'UI
+// pour rester appelable depuis un verify sans passer par un vrai <input file>.
+async function convertMarkdownToHtmlFile(mdText, sourceName) {
+  const { title, body } = extractMdTitle(mdText);
+  const now = Date.now();
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport();
+  const bodyHtml = await renderMarkdownDocBody(body);
+  const s = loadSettings();
+  const scriptTag = (s.exportInteractive !== false)
+    ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
+    : '';
+  const html = buildExportHtml({
+    title,                       // null → aucun cartouche (spec)
+    dateDisplay: exportDateDisplay(now),
+    kind: 'convert',
+    theme, styleCss, bodyHtml, scriptTag,
+  });
+  downloadFile(mdHtmlFileName(sourceName), html, 'text/html');
+  return html;
+}
+
+// ── Conversion Markdown : câblage UI (réglages » Outils & extensions) ────────
+// Handlers globaux référencés en attributs inline dans index.html (cf. CLAUDE.md) :
+// onMdConvertPick / onMdConvertInput / onMdConvertDragOver / onMdConvertDragLeave /
+// onMdConvertDrop. Renommer ici sans mettre à jour index.html casse en silence.
+// Réutilise isMarkdownFile (drawer skills) : même filtre, pas de second prédicat.
+function setMdConvertStatus(msg, isError) {
+  const el = $('md-convert-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('md-convert-status--error', !!isError);
+}
+// Verrou de réentrance : la conversion est async (passe Mermaid + CDN), un
+// second dépôt pendant ce temps produirait deux téléchargements concurrents.
+// Même motif que _exportingHtml.
+let _convertingMd = false;
+async function runMdConversion(file) {
+  if (!file || _convertingMd) return;
+  _convertingMd = true;
+  try {
+    setMdConvertStatus('Conversion de « ' + file.name +' »…', false);
+    const text = await file.text();
+    await convertMarkdownToHtmlFile(text, file.name);
+    setMdConvertStatus('Converti : ' + mdHtmlFileName(file.name), false);
+  } catch (e) {
+    setMdConvertStatus('Échec de la conversion : ' + (e && e.message ? e.message : 'erreur inconnue'), true);
+  } finally {
+    _convertingMd = false;
+  }
+}
+function onMdConvertPick() {
+  const input = $('md-convert-input');
+  if (input) input.click();
+}
+function onMdConvertInput(e) {
+  const input = e && e.target;
+  const file = input && input.files && input.files[0];
+  // Réinitialise la valeur : sans ça, re-choisir LE MÊME fichier ne relance
+  // aucun change (valeur inchangée) — piège classique de <input type=file>.
+  if (input) input.value = '';
+  if (file) runMdConversion(file);
+}
+function onMdConvertDragOver(e) {
+  e.preventDefault();
+  const dz = $('md-convert-zone');
+  if (dz) dz.classList.add('dragover');
+}
+function onMdConvertDragLeave(e) {
+  const dz = $('md-convert-zone');
+  if (dz && (!e.relatedTarget || !dz.contains(e.relatedTarget))) dz.classList.remove('dragover');
+}
+function onMdConvertDrop(e) {
+  e.preventDefault();
+  const dz = $('md-convert-zone');
+  if (dz) dz.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const file = Array.from(files).find(isMarkdownFile);
+  // Ici, contrairement au drawer skills, un mauvais fichier mérite un retour :
+  // l'utilisateur a visé une zone dédiée, le silence passerait pour un bug.
+  if (!file) { setMdConvertStatus('Fichier ignoré : seuls les .md sont convertis.', true); return; }
+  runMdConversion(file);
+}
+
 const EXPORT_HTML_SIZE_WARN = 8 * 1024 * 1024;
 
 // Point d'entrée bouton topbar (global, cf. CLAUDE.md liste des handlers
@@ -6636,7 +7061,7 @@ async function exportConvHtml() {
     const now = Date.now();
     const dateStamp = exportDateStamp(now);
     const dateDisplay = exportDateDisplay(now);
-    const styleCss = serializeThemeTokens() + EXPORT_CSS + PRISM_THEME_CSS;
+    const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport();
     const bodyHtml = await runBackgroundTask('export HTML…',
       () => renderExportBody(currentThread, currentConvId));
     if (bodyHtml == null) return;
@@ -6647,7 +7072,7 @@ async function exportConvHtml() {
     const scriptTag = (s.exportInteractive !== false)
       ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
       : '';
-    const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag });
+    const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind: 'export' });
     const sizeBytes = new Blob([html]).size;
     if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
       const mb = (sizeBytes / (1024 * 1024)).toFixed(1);

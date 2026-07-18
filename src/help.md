@@ -246,19 +246,41 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
 - **La conversation entière** en Markdown : une icône à droite du titre, en
   haut. L'export inclut la trace des outils utilisés à chaque tour.
 - **La conversation en page HTML autonome** : une icône jumelle, au même
-  endroit. Le fichier obtenu est un instantané complet — thème et coloration
-  figés, diagrammes inclus en image — lisible dans n'importe quel navigateur
-  sans MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images
-  y sont embarquées et restent cliquables.
+  endroit. Le fichier obtenu est un instantané complet — coloration figée,
+  diagrammes inclus en image — lisible dans n'importe quel navigateur sans
+  MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images y
+  sont embarquées et restent cliquables.
+
+Les pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles
+s'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut
+à droite permet de basculer à la lecture ; le choix est retenu pour ce fichier.
+Ce bouton dépend du réglage **« Export HTML interactif »** (réglages, section
+« Apparence ») : activé par défaut, il autorise un peu de JavaScript
+dans les pages produites — c'est lui qui fournit la bascule de thème et les
+boutons copier/télécharger sur les blocs de code. Décoché, les exports sont
+strictement sans JavaScript : ils restent parfaitement lisibles, mais figés sur
+leur thème d'origine et sans ces boutons. Les diagrammes, eux, gardent dans tous
+les cas les couleurs qu'ils avaient à l'export.
 
 Ces exports sont à sens unique : ce sont des fichiers de lecture, il n'existe
 aucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni
 pour le remettre dans un Espace — voir le sujet `espaces` pour déplacer une
 conversation existante entre Espaces).
 
+**Convertir un fichier Markdown quelconque.** Indépendamment des conversations,
+MIAOU sait transformer n'importe quel fichier `.md` en page HTML au même format.
+C'est dans les réglages, section « Outils & extensions » : tu choisis un fichier
+ou tu le déposes sur la zone prévue, et le `.html` correspondant se télécharge
+(même nom, extension changée). Si le document commence par un titre de niveau 1,
+celui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête et la date
+figure en pied. Cette conversion est purement locale : le modèle n'est pas
+sollicité et rien n'est envoyé nulle part.
+
 Côté blocs de code, chaque bloc a ses propres boutons pour **copier** ou
 **télécharger** son contenu (avec la bonne extension selon le langage), et les
-diagrammes peuvent être exportés en image SVG ou PNG.
+diagrammes peuvent être exportés en image SVG ou PNG. Sur un bloc **Markdown**,
+un bouton supplémentaire le convertit directement en page HTML — même résultat
+que la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.
 
 ## contexte
 

@@ -456,7 +456,7 @@
 }
 .code-lang { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-transform: lowercase; }
 .code-actions { display: flex; align-items: center; gap: 2px; }
-.code-copy, .code-dl, .code-mmd-toggle {
+.code-copy, .code-dl, .code-mmd-toggle, .code-preview-btn, .code-md-html {
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px;
   background: none; border: none; border-radius: 5px;
@@ -464,8 +464,9 @@
   cursor: pointer; padding: 0;
   transition: color 130ms var(--ease), background 130ms var(--ease);
 }
-.code-copy svg, .code-dl svg, .code-mmd-toggle svg { width: 13px; height: 13px; }
-.code-copy:hover, .code-dl:hover, .code-mmd-toggle:hover { color: var(--text); background: var(--surface-2); }
+.code-copy svg, .code-dl svg, .code-mmd-toggle svg, .code-preview-btn svg, .code-md-html svg { width: 13px; height: 13px; }
+.code-copy:hover, .code-dl:hover, .code-mmd-toggle:hover, .code-preview-btn:hover, .code-md-html:hover { color: var(--text); background: var(--surface-2); }
+.code-md-html:disabled { opacity: 0.45; cursor: default; background: none; }
 .code-copy--checked { color: var(--accent) !important; }
 /* Toggle mermaid : accentué quand la vue rendue est affichée (état courant). */
 .code-mmd-toggle[hidden] { display: none; }

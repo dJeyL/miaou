@@ -246,6 +246,48 @@ function downloadFile(filename, content, mimeType) {
   URL.revokeObjectURL(url);
 }
 
+// ── Conversion Markdown → HTML (lot R) ───────────────────────────────────────
+// Extrait le titre de niveau 1 EN TÊTE de document, s'il existe : il alimente
+// le cartouche d'en-tête de l'export et est RETIRÉ du corps (sinon il
+// apparaîtrait deux fois). Sans h1 en tête, pas de cartouche du tout (spec
+// Julien) — d'où le `title: null` retourné, distinct d'une chaîne vide.
+//
+// « En tête » = premier contenu non blanc, en tolérant un front-matter YAML
+// (délimité par ---) qu'on retire au passage : un .md exporté depuis un autre
+// outil en porte souvent un, et le laisser produirait un tableau parasite en
+// tête de rendu.
+//
+// Seule la forme ATX (`# Titre`) est reconnue, pas Setext (`Titre\n=====`) :
+// forme marginale, et la reconnaître obligerait à distinguer un souligné d'une
+// ligne horizontale. Un Setext reste rendu normalement dans le corps, il ne
+// devient juste pas le titre du cartouche.
+function extractMdTitle(md) {
+  let body = String(md == null ? '' : md);
+  // Front-matter YAML : uniquement s'il ouvre le document.
+  body = body.replace(/^﻿/, '');
+  const fm = /^[ \t]*---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/.exec(body);
+  if (fm) body = body.slice(fm[0].length);
+  // Premier contenu non blanc : doit être un h1 ATX pour donner un titre.
+  const m = /^(?:[ \t]*\r?\n)*[ \t]{0,3}#[ \t]+(.+?)[ \t]*#*[ \t]*(?:\r?\n|$)/.exec(body);
+  if (!m) return { title: null, body: body.replace(/^(?:[ \t]*\r?\n)+/, '') };
+  const title = m[1].trim();
+  if (!title) return { title: null, body: body.replace(/^(?:[ \t]*\r?\n)+/, '') };
+  return { title, body: body.slice(m[0].length).replace(/^(?:[ \t]*\r?\n)+/, '') };
+}
+
+// Nom du fichier HTML produit à partir du nom du .md source : on remplace la
+// seule extension .md/.markdown finale, sans toucher au reste du nom (« notes
+// v2.md » → « notes v2.html »). Le titre h1 éventuel n'intervient PAS (spec
+// Julien : le nom suit le fichier source). Nom vide/absent → repli neutre.
+function mdHtmlFileName(sourceName) {
+  const raw = String(sourceName == null ? '' : sourceName).trim()
+    .replace(/[\\/]/g, '_')            // jamais de séparateur de chemin
+    .replace(/[\x00-\x1f\x7f]/g, '')   // caractères de contrôle
+    .replace(/^\.+/, '');              // pas de fichier caché ni de ../
+  if (!raw) return 'document.html';
+  return raw.replace(/\.(?:md|markdown)$/i, '') + '.html';
+}
+
 // Correspondance langage de bloc de code → extension de fichier.
 const LANG_TO_EXT = {
   python: 'py', py: 'py',
@@ -365,6 +407,15 @@ function diagramImageName(rawName, ext) {
 function isPreviewableLang(lang) {
   const l = String(lang || '').toLowerCase();
   return l === 'html' || l === 'svg';
+}
+
+// Langues éligibles au bouton « Convertir en HTML » d'un bloc de code (lot R,
+// point 4) : markdown seulement. Même geste que le convertisseur des réglages,
+// appliqué au contenu d'un bloc affiché à l'écran — sans passer par un fichier.
+// Pure, testable en QuickJS.
+function isMarkdownLang(lang) {
+  const l = String(lang || '').toLowerCase();
+  return l === 'markdown' || l === 'md';
 }
 
 // Document srcdoc de l'iframe de préviz. html → passthrough BYTE-IDENTIQUE

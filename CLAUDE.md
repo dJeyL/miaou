@@ -168,7 +168,11 @@ inline sous la liste.
 22. **`EXPORT_CSS` ne suit PAS `chat.css`/`tools.css`/`composer.css`.** Feuille
     dédiée figée (lot G) : retoucher une classe réutilisée par l'export ne
     propage rien (sauf tokens de couleur via `getComputedStyle`). Revue manuelle
-    à la charge de qui touche ce CSS (cf. `docs/exports.md`).
+    à la charge de qui touche ce CSS (cf. `docs/exports.md`). **`EXPORT_CSS` et
+    `EXPORT_SCRIPT` sont des template literals** : jamais de backtick dans leur
+    contenu, commentaires compris (un `` `.body` `` dans un commentaire CSS clôt
+    la chaîne — le build passe, mais le chargement du fichier casse en
+    `TypeError: not a function`, erreur payée au lot R).
 23. **Préviz HTML/SVG : la frontière est l'iframe sandbox, aucune autre voie.**
     Markup modèle rendu **uniquement** dans un `<iframe sandbox="allow-scripts">`
     **sans `allow-same-origin`** (`decoratePre`) ; `srcdoc` posé par propriété
@@ -291,7 +295,13 @@ JS statique **build-time** (aucune donnée modèle/outil dedans), mais
 `exportConvHtml` échappe quand même `</` avant insertion — ne jamais y interpoler
 de contenu modèle sans repenser cette sûreté. **Depuis E4**, deuxième exception :
 `embedExportMermaid` injecte `out.svg` (Mermaid `strict`, piège 23) via
-`innerHTML`, couverte par la sanitisation interne de Mermaid.
+`innerHTML`, couverte par la sanitisation interne de Mermaid. **Depuis le lot R**,
+troisième chemin : `renderMarkdownDocBody` (conversion d'un `.md` **utilisateur**,
+pas du contenu modèle) appelle `marked` directement — ni `renderMd`
+(`resolveConvRefs` n'a pas de sens sur un fichier externe) ni `renderUserMd`
+(qui échapperait le HTML inline légitime d'un `.md`) — **mais passe sa sortie
+dans `sanitizeHtml`/DOMPurify** comme les deux autres : c'est cette passe qui
+rend le chemin sûr, ne jamais la retirer (cf. `docs/exports.md`).
 
 **#24 — Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
 Deux invariants jumeaux (lot J). **(a) Émettre après la persistance durable,

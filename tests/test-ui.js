@@ -96,10 +96,18 @@ describe('resolveConvRefs', function() {
 
 describe('buildExportHtml', function() {
   var base = { title: 'Ma conversation', dateDisplay: '09/07/2026', theme: 'dark', styleCss: 'body{color:red}', bodyHtml: '<div class="msg">hello</div>' };
-  it('produit un doctype et un html avec data-theme', function() {
+  it('produit un doctype et un <html> SANS data-theme', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<!doctype html>') >= 0).toBeTruthy();
-    expect(r.indexOf('<html data-theme="dark">') >= 0).toBeTruthy();
+    // Lot R : la case #theme-switch est la seule source de vérité du thème.
+    // Un data-theme figé sur <html> gagnerait sur elle en permanence — sans JS
+    // pour le mettre à jour, le clic changeait l'icône mais pas les couleurs.
+    expect(r.indexOf('<html>') >= 0).toBeTruthy();
+    expect(r.indexOf('data-theme') >= 0).toBeFalsy();
+  });
+  it('thème sombre : case décochée', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<input type="checkbox" id="theme-switch">') >= 0).toBeTruthy();
   });
   it('échappe le titre dans <title> et la topbar', function() {
     var r = buildExportHtml(Object.assign({}, base, { title: '<b>Titre</b> & Cie' }));
@@ -125,9 +133,14 @@ describe('buildExportHtml', function() {
     expect(r.indexOf('<script') >= 0).toBeFalsy();
     expect(r.indexOf('<link rel="icon"') >= 0).toBeTruthy();
   });
-  it('theme "light" reflété dans data-theme', function() {
+  it('theme "light" reflété par la case cochée', function() {
     var r = buildExportHtml(Object.assign({}, base, { theme: 'light' }));
-    expect(r.indexOf('<html data-theme="light">') >= 0).toBeTruthy();
+    expect(r.indexOf('<input type="checkbox" id="theme-switch" checked>') >= 0).toBeTruthy();
+  });
+  it('la bascule de thème est du markup STATIQUE (présente sans scriptTag)', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<script') >= 0).toBeFalsy();
+    expect(r.indexOf('class="theme-switch-label"') >= 0).toBeTruthy();
   });
 });
 

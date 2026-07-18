@@ -68,6 +68,37 @@
 .field input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
 .field input::placeholder { color: var(--text-3); }
 .field .hint { font-size: 11px; color: var(--text-3); }
+
+/* Zone de dépôt de la conversion Markdown → HTML (lot R). Cliquable (ouvre le
+   sélecteur de fichiers) ET cible de drag&drop : le .dragover reprend le motif
+   du composer et du drawer skills. */
+.md-convert-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 16px 12px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text-3);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 140ms var(--ease), color 140ms var(--ease), background 140ms var(--ease);
+}
+.md-convert-zone:hover { border-color: var(--accent-bd); color: var(--text-2); }
+.md-convert-zone.dragover {
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--text);
+  background: var(--accent-dim);
+}
+.md-convert-zone svg { flex-shrink: 0; }
+.md-convert-label { font-size: 12px; }
+/* Statut de conversion : réutilise .hint (même famille), vire au rouge doux en
+   cas d'échec ou de fichier refusé. */
+.md-convert-status--error { color: var(--err-soft); }
+
 .field .hint code {
   font-family: var(--mono);
   font-size: 10.5px;

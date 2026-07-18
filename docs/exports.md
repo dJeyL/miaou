@@ -293,14 +293,44 @@ ultérieures du même lot).
   `innerHTML`, aucun global MIAOU côté fichier) ; pas de préviz iframe non
   plus (audit §4b).
 - **`THEME_TOKENS`** (ui.js, liste de noms `--…`) + **`serializeThemeTokens()`**
-  (lit `getComputedStyle(document.documentElement)` pour chaque nom, assemble
-  un `:root{…}`) : voie **runtime** tranchée (pas de modif `build.py`, pas de
-  placeholder). Comme `data-theme` est déjà résolu `light|dark` au moment de
-  l'export, `getComputedStyle` renvoie les valeurs du **thème effectif** — un
-  seul jeu de tokens émis, pas les deux. **`THEME_TOKENS` est la seule chose à
-  tenir à jour** si un token `--…` est ajouté à `base.css`/`theme-light.css` ;
-  `--col`/`--sidebar-w` volontairement exclus (mise en page écran, sans usage
-  dans un document statique).
+  (via `readThemeTokens()`, qui lit `getComputedStyle(document.documentElement)`
+  pour chaque nom) : voie **runtime** tranchée (pas de modif `build.py`, pas de
+  placeholder). **`THEME_TOKENS` est la seule chose à tenir à jour** si un token
+  `--…` est ajouté à `base.css`/`theme-light.css` ; `--col`/`--sidebar-w`
+  volontairement exclus (mise en page écran, sans usage dans un document
+  statique).
+
+  **Depuis le lot R, les DEUX jeux de tokens sont émis** (avant : le seul thème
+  effectif) — c'est ce qui permet de changer de thème à la lecture.
+
+  **La case à cocher `#theme-switch` est la SEULE source de vérité du thème**
+  dans un export. Les tokens sortent sous la forme `body{…sombre…}` +
+  `body:has(#theme-switch:checked){…clair…}` (helper `exportLightSelector()`,
+  formule unique partagée avec les surcharges Prism via
+  `prismThemeCssForExport()` — deux formules divergentes redonneraient le bug
+  « l'icône change mais pas les couleurs »).
+
+  **Aucun `data-theme` n'est posé sur le `<html>` exporté**, contrairement à
+  l'app. Première version du lot : attribut figé par `buildExportHtml` + bouton
+  construit en JS — l'attribut gagnait en permanence sur la case, donc sans
+  JavaScript le clic changeait l'icône mais **pas** les couleurs (bug constaté).
+  Les tokens sont portés par `body` et non `:root` parce que la case vit dans
+  `body` : `:has()` remonte à un ancêtre, un sélecteur de frère non.
+
+  **Pas de `@media (prefers-color-scheme)`** : `theme-light.css` proscrit
+  explicitement ce doublon (« UNE seule variante ») et l'export s'aligne.
+
+  **Lecture du thème inactif : bascule temporaire de `documentElement`.** Les
+  tokens du thème non appliqué ne sont lisibles QUE sur l'élément racine — les
+  sélecteurs de l'app sont ancrés sur `html`, donc un élément détaché ou hors
+  écran portant `data-theme` ne les résout pas (vérifié au spike : détaché →
+  chaînes vides ; hors écran → valeurs du thème *actif*). `serializeThemeTokens()`
+  bascule donc l'attribut de l'APP, mesure, restaure — **entièrement synchrone**
+  (aucun `await` entre bascule et restauration, donc aucun repaint intercalé :
+  invisible) et sous `try/finally`. L'attribut est touché **en direct**, jamais
+  via `applyTheme` (hooks Mermaid/accueil) ni `selectTheme` (persistance +
+  broadcast multi-onglets, piège 24).
+
 - **`PRISM_THEME_CSS`** (ui.js, constante) : copie **figée** de
   `prism-tomorrow.min.css` (CDN, cf. `index.html`) + les overrides Prism clair
   de `theme-light.css`. Inlinée dans l'export (pas de `<link>` CDN) puisque
@@ -368,6 +398,147 @@ ultérieures du même lot).
   d'affichage (`hidden` levé quand une conversation a du contenu), désactivés
   pendant l'envoi (`setSending`). Pas d'entrée palette (gatée sur le lot F,
   absent) — le point d'entrée est le bouton topbar seul.
+
+## Bascule de thème dans l'export (lot R)
+
+Bouton ajouté par `EXPORT_SCRIPT`, donc **présent uniquement en export
+interactif** (`exportInteractive`, défaut `true`). Il ne fait que basculer
+`data-theme` sur `<html>` — les deux jeux de tokens étant déjà embarqués (cf.
+`serializeThemeTokens()` plus haut).
+
+- **Placement** : dans `.export-topbar` quand le cartouche existe
+  (`--intopbar`, poussé à droite par `margin-left:auto`) ; **repli flottant**
+  haut-droite (`--floating`, `position:fixed`) quand il n'y a pas de cartouche
+  — cas d'un Markdown converti sans titre de niveau 1. Un premier jet le
+  plaçait en `position:fixed` bas-droite dans tous les cas : rejeté (le bouton
+  flottait dans le vide sous la fin du contenu).
+- **Persistance** : clé `localStorage` dérivée de `location.pathname`, pour
+  qu'un export ne contamine pas la préférence d'un autre. Lecture/écriture sous
+  `try/catch` (jamais bloquant).
+- **Icône** : soleil quand on est en sombre, lune quand on est en clair —
+  l'icône montre **la destination**, pas l'état courant.
+- **Limite connue : les diagrammes Mermaid ne suivent pas.** `embedExportMermaid`
+  produit un SVG portant un `<style>` interne aux couleurs **résolues à
+  l'export** ; la bascule ne les recolore pas. Les faire suivre imposerait
+  d'embarquer Mermaid dans le fichier exporté (hors sujet, ~2,5 Mo). Limite
+  assumée, documentée aussi dans `src/help.md`.
+
+## Conversion Markdown → HTML (lot R)
+
+Convertit un `.md` **de l'utilisateur** (pas du contenu modèle) en document
+autonome au même format que l'export de conversation. Point d'entrée : réglages
+» « Outils & extensions » » zone de dépôt (clic ou drag&drop). **Aucun passage
+par le modèle**, aucune ressource stockée.
+
+- **Fonctions pures** (`utils.js`, testées QuickJS) :
+  - `extractMdTitle(md)` → `{ title, body }`. Le titre est le `# …` **en tête**
+    de document (forme ATX seule ; Setext non reconnu, il reste rendu dans le
+    corps) ; il est **retiré du corps** pour ne pas apparaître deux fois. Un
+    front-matter YAML en ouverture est retiré au passage. `title: null` quand il
+    n'y a pas de h1 en tête — c'est ce `null` qui supprime le cartouche.
+  - `mdHtmlFileName(source)` → nom de sortie : seule l'extension finale
+    `.md`/`.markdown` est remplacée par `.html` (« notes v2.md » → « notes
+    v2.html »). Le titre h1 n'intervient **pas** (le nom suit le fichier
+    source). Séparateurs de chemin et caractères de contrôle neutralisés, points
+    de tête retirés — dans cet ordre (`../etc/passwd.md` → `_etc_passwd.html`).
+- **`renderMarkdownDocBody(md)`** (ui.js, async) : **troisième chemin
+  string→HTML** au sens du piège 21, assumé et documenté. Ni `renderMd` (qui
+  applique `resolveConvRefs` — des références de conversation n'ont aucun sens
+  dans un `.md` externe), ni `renderUserMd` (qui échappe les `<`, alors qu'un
+  `.md` peut légitimement porter du HTML inline) : `marked` est appelé
+  directement, **mais la sortie traverse `sanitizeHtml`/DOMPurify** comme les
+  deux autres — c'est ce qui rend ce chemin sûr, et toute évolution doit
+  conserver cette passe. Le conteneur **réutilise la classe `.body`** (toutes
+  les règles typographiques d'`EXPORT_CSS` y sont attachées sans dépendre de
+  `.msg.assistant`) + `.md-doc` pour le peu qui lui est propre ; inventer une
+  seconde classe la ferait dériver (piège 22).
+- **`highlightMarkdownDocCode(container)`** : les blocs d'un `.md` sont
+  **neufs**, leur grammaire Prism n'a jamais été chargée. Piège vérifié :
+  passer un callback à `Prism.highlightElement` **ne suffit pas** — l'autoloader
+  demande bien la grammaire (requête observée, HTTP 200) mais le callback est
+  rappelé **après** que le bloc a été rendu sans elle (résultat : zéro token).
+  On **précharge** donc les grammaires manquantes (`loadPrismGrammar`, une
+  promesse mémoïsée par langage, **réinitialisée en cas d'échec** — hygiène des
+  caches async) **puis** on colorise. Ce cas ne se pose pas pour l'export de
+  conversation, dont les blocs ont déjà été coloriés à l'écran.
+- **`buildExportHtml`** est partagé avec l'export de conversation, avec deux
+  paramètres qui les distinguent :
+  - `title` **null/vide → aucun cartouche** (ni logo, ni titre). Le cartouche
+    ne porte QUE logo + titre : **la date vit systématiquement dans le footer**
+    (décision Julien), avec ou sans cartouche — un seul endroit, pas de branche
+    conditionnelle. `.export-body:first-child` donne au corps sa respiration
+    haute quand il n'y a pas de cartouche.
+  - `kind` (`'export'` | `'convert'`) pilote le vocabulaire du footer via
+    `EXPORT_VERBS` : « Généré par MIAOU le … » pour une conversation,
+    « Converti par MIAOU le … » pour un `.md`. (`verbs.meta` ne sert plus qu'à
+    la description Open Graph depuis que la date a quitté le cartouche.)
+- **Câblage** (handlers globaux, attributs inline `index.html` — cf. CLAUDE.md) :
+  `onMdConvertPick` / `onMdConvertInput` / `onMdConvertDragOver` /
+  `onMdConvertDragLeave` / `onMdConvertDrop`. Le filtre de fichier réutilise
+  `isMarkdownFile` (drawer skills), pas un second prédicat. Verrou de réentrance
+  `_convertingMd` (la conversion est async : un second dépôt produirait deux
+  téléchargements concurrents). `onMdConvertInput` **réinitialise `input.value`**
+  — sans ça, re-choisir le même fichier ne déclenche aucun `change`.
+  Contrairement au drawer skills, un fichier non-`.md` déposé donne un **retour
+  visible** (`md-convert-status--error`) : l'utilisateur a visé une zone dédiée,
+  le silence passerait pour un bug.
+
+## Bouton « Convertir en page HTML » sur un bloc de code (lot R)
+
+Quatrième point du lot : le même geste que le convertisseur des réglages,
+appliqué au contenu d'un bloc markdown **affiché à l'écran** (sans passer par un
+fichier). Ajouté par `decoratePre` comme les autres actions de bloc.
+
+- **Gating** : `isMarkdownLang(lang)` (utils.js, pure, testée) — `markdown` et
+  `md` seulement. Même motif que `isPreviewableLang`/`isMermaidLang`.
+- **Un seul chemin de conversion** : le handler appelle
+  `convertMarkdownToHtmlFile`, exactement comme la zone de dépôt — pas de second
+  rendu à faire dériver.
+- **Nom de sortie** : `data-filename` du bloc s'il existe, sinon le titre h1 du
+  markdown (`extractMdTitle`), sinon repli neutre. `mdHtmlFileName` pose
+  l'extension.
+- Le bouton se **désactive** pendant la conversion (async) — `:disabled` stylé
+  dans `chat.css`.
+
+**Correctif de style au passage** : `.code-preview-btn` (lot E) n'était dans
+aucune règle de `chat.css` et se rendait en **4×19 px** — bouton quasi
+invisible, sans zone de clic. Il a été ajouté aux mêmes sélecteurs que
+`.code-copy`/`.code-dl`/`.code-mmd-toggle` en même temps que `.code-md-html`
+(tous en 26×26 désormais). Défaut préexistant, mesuré au box-model runtime.
+
+## Rendu mobile des pages exportées (lot R)
+
+Deux correctifs, indissociables :
+
+- **`<meta name="viewport">`** dans `buildExportHtml` — **il n'y en avait
+  aucun**. Sans lui un mobile rend la page à ~980px puis la réduit : le texte
+  paraît minuscule ET aucune media query mobile ne se déclenche. C'était la
+  cause principale du retour « texte trop petit sur mobile ».
+- **`@media (max-width: 767px)`** dans `EXPORT_CSS` (même point de rupture que
+  `responsive.css`) : `html { zoom: 1 }` — le `zoom: 0.9` global, confortable
+  sur grand écran, est trop petit au téléphone — et paddings resserrés.
+- **`@media (pointer: coarse)`** pour le bouton de thème : sans survol possible,
+  son `opacity: 0.55` de repos le laissait indéfiniment à demi-effacé (il
+  passait pour absent — retour Julien). Opacité pleine, couleur `--text-2`, et
+  cible portée à 40px.
+
+**Placement du bouton (deux correctifs successifs, tous deux mesurés).** Le
+label est en `position: fixed` — contrainte du sélecteur `:has()`, qui impose
+que la case reste en tête de `body` — donc **hors du flux** :
+
+- il ne réserve aucune place, et un titre long passait **dessous** en se faisant
+  amputer (constaté sur iPhone, chevauchement mesuré à 38px). D'où le
+  `padding-right` de `.export-topbar` (66px, 72px en tactile où le bouton est
+  plus gros) : c'est cette réserve, et rien d'autre, qui protège le titre. La
+  retirer ramènerait le bug.
+- calé sur `right: 16px`, il suivait le bord du **viewport** alors que le
+  cartouche est une colonne de 900px **centrée** : sur un écran de 1440px il
+  flottait à ~270px du cartouche, visuellement désolidarisé. Remplacé par
+  `left: min(100vw - 50px, 50% + 450px)` — bord droit de la colonne sur grand
+  écran, bord de l'écran quand le viewport est plus étroit qu'elle.
+
+`verify-export-mobile` mesure les deux (chevauchement titre/bouton en mobile ET
+desktop, écart bouton/colonne sur grand écran).
 
 ## Horodatages des messages
 

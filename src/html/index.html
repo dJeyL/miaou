@@ -490,6 +490,20 @@ if (window.requestAnimationFrame) {
           </label>
         </div>
       </div>
+      <div class="field">
+        <label>Conversion Markdown vers HTML</label>
+        <span class="hint">Convertit un fichier <code>.md</code> en page HTML autonome, au format des exports de conversation et au thème actif.</span>
+        <div class="md-convert-zone" id="md-convert-zone"
+             ondragover="onMdConvertDragOver(event)"
+             ondragleave="onMdConvertDragLeave(event)"
+             ondrop="onMdConvertDrop(event)"
+             onclick="onMdConvertPick()">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="md-convert-label">Choisir un fichier .md ou le déposer ici</span>
+        </div>
+        <input type="file" id="md-convert-input" accept=".md,.markdown,text/markdown" hidden onchange="onMdConvertInput(event)">
+        <span class="hint" id="md-convert-status"></span>
+      </div>
           </div>
         </div>
       </div>
