@@ -275,6 +275,22 @@ function extractMdTitle(md) {
   return { title, body: body.slice(m[0].length).replace(/^(?:[ \t]*\r?\n)+/, '') };
 }
 
+// Repli de rendu quand marked n'est pas chargé (CDN injoignable) : découpe en
+// paragraphes sur les lignes VIDES et réenroule les retours simples en espaces —
+// même convention CommonMark que le chemin nominal (`breaks: false`), pour que le
+// rendu ne dépende pas de la disponibilité du CDN. Échappe tout : l'entrée est un
+// fichier utilisateur, jamais interprétée comme du HTML sur ce chemin.
+function plainTextToParagraphs(text) {
+  const src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+  const blocks = src.split(/\n[ \t]*\n+/);
+  const html = blocks
+    .map(b => b.replace(/\n/g, ' ').trim())
+    .filter(b => b.length)
+    .map(b => '<p>' + escHtml(b) + '</p>')
+    .join('');
+  return html;
+}
+
 // Nom du fichier HTML produit à partir du nom du .md source : on remplace la
 // seule extension .md/.markdown finale, sans toucher au reste du nom (« notes
 // v2.md » → « notes v2.html »). Le titre h1 éventuel n'intervient PAS (spec

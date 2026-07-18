@@ -6872,7 +6872,14 @@ function decorateExportPre(scope) {
 // sanitizeHtml/DOMPurify comme les deux autres : c'est ce qui rend ce chemin
 // sûr, et toute évolution ici doit conserver cette passe.
 //
-// `breaks: true` comme les renderers de l'écran (cohérence de rendu).
+// `breaks: FALSE` ici, contrairement à renderMd/renderUserMd (écran). Ces deux-là
+// rendent des messages de CHAT, tapés au fil de l'eau, où « une ligne = une
+// ligne » est le bon comportement. Un fichier .md est un DOCUMENT : il est
+// presque toujours enroulé à ~80 colonnes, et ces retours ne sont pas
+// sémantiques — les rendre en <br> reproduit la largeur du fichier source au
+// lieu de laisser le texte se réenrouler (retour Julien). Comportement
+// CommonMark standard : un retour simple est un espace, une ligne vide sépare
+// deux paragraphes, deux espaces en fin de ligne forcent un <br>.
 // Colorise les blocs de code d'un fragment DÉTACHÉ, grammaires comprises.
 //
 // Piège vérifié au spike : passer un callback à Prism.highlightElement NE SUFFIT
@@ -6936,9 +6943,12 @@ async function renderMarkdownDocBody(md) {
   // dupliquerait et la ferait dériver (piège 22). `.md-doc` ne porte que le peu
   // qui est propre au document converti (taille de base, titre de niveau 1).
   container.className = 'body md-doc';
+  // Le fallback (marked absent, CDN injoignable) suit la MÊME convention que le
+  // chemin nominal : ligne vide = nouveau paragraphe, retour simple = espace.
+  // Sinon le rendu diverge selon que le CDN a répondu ou non.
   container.innerHTML = window.marked
-    ? sanitizeHtml(marked.parse(String(md || ''), { breaks: true }))
-    : escHtml(String(md || '')).replace(/\n/g, '<br>');
+    ? sanitizeHtml(marked.parse(String(md || ''), { breaks: false }))
+    : plainTextToParagraphs(String(md || ''));
   // Mêmes passes que renderExportBody, dans le même ordre : coloration, puis
   // en-têtes de blocs de code, puis Mermaid (qui déménage les <pre> concernés).
   // MAIS coloration ATTENDUE ici (highlightMarkdownDocCode), pas le

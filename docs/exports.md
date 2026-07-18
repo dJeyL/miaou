@@ -448,7 +448,19 @@ par le modèle**, aucune ressource stockée.
   `.md` peut légitimement porter du HTML inline) : `marked` est appelé
   directement, **mais la sortie traverse `sanitizeHtml`/DOMPurify** comme les
   deux autres — c'est ce qui rend ce chemin sûr, et toute évolution doit
-  conserver cette passe. Le conteneur **réutilise la classe `.body`** (toutes
+  conserver cette passe.
+
+  **`breaks: false`, contrairement aux renderers de l'écran.** `renderMd`/
+  `renderUserMd` utilisent `breaks: true` parce qu'ils rendent des messages de
+  **chat**, tapés au fil de l'eau, où « une ligne = une ligne » est le bon
+  comportement. Un fichier `.md` est un **document** : il est presque toujours
+  enroulé à ~80 colonnes, et ces retours ne sont pas sémantiques — les rendre en
+  `<br>` reproduisait la largeur du fichier source au lieu de laisser le texte se
+  réenrouler (retour Julien, corrigé après livraison). Convention CommonMark
+  standard : retour simple = espace, ligne vide = nouveau paragraphe, deux espaces
+  en fin de ligne = `<br>` explicite. Le repli sans `marked`
+  (`plainTextToParagraphs`, utils.js, pure et testée) suit la **même** convention,
+  pour que le rendu ne dépende pas de la disponibilité du CDN. Le conteneur **réutilise la classe `.body`** (toutes
   les règles typographiques d'`EXPORT_CSS` y sont attachées sans dépendre de
   `.msg.assistant`) + `.md-doc` pour le peu qui lui est propre ; inventer une
   seconde classe la ferait dériver (piège 22).

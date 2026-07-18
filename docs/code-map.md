@@ -32,79 +32,80 @@
   - `downloadFile()` — L237
 - **Conversion Markdown → HTML (lot R)** (L249)
   - `extractMdTitle()` — L264
-  - `mdHtmlFileName()` — L282
-  - `LANG_TO_EXT` — L292
-  - `langExt()` — L315
-  - `parseCodeFenceInfo()` — L327
-  - `sanitizeDownloadName()` — L344
-- **Rendu Mermaid (lot E) : helpers purs** (L355)
-  - `isMermaidLang()` — L359
-  - `mermaidThemeFor()` — L367
-  - `sanitizeMermaidSource()` — L385
-  - `diagramImageName()` — L397
-- **Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs** (L403)
-  - `isPreviewableLang()` — L407
-  - `isMarkdownLang()` — L416
-  - `buildPreviewSrcdoc()` — L426
-  - `b64ToBytes()` — L439
-- **js__eval : briques pures du sandbox de compute (lot L)** (L447)
-  - `splitLines()` — L455
-  - `checkOutputCap()` — L466
-- **Agrégation MCP : nommage, namespaces, filtres (fonctions pures)** (L471)
-  - `parseToolName()` — L476
-  - `resolveInternalToolName()` — L491
-  - `groupByNamespace()` — L503
-  - `guessMcpTransport()` — L521
-  - `validateMcpServerName()` — L531
-  - `filterMcpTools()` — L545
-  - `parseToolFilterList()` — L568
-- **Horodatages des messages** (L575)
-  - `SHOW_YEAR_AFTER_DAYS` — L577
-  - `FR_DAYS_ABBR` — L579
-  - `FR_DAYS_FULL` — L580
-  - `FR_MONTHS_FULL` — L581
-  - `_tsHHMM()` — L584
-  - `_startOfDay()` — L590
-  - `formatMessageTime()` — L601
-  - `formatDateRelative()` — L625
-  - `calendarBucket()` — L646
-  - `formatFullDateFr()` — L662
-  - `exportDateStamp()` — L671
-  - `exportDateTimeStamp()` — L681
-  - `exportDateDisplay()` — L690
-- **Reconstruction du payload API depuis currentThread** (L697)
-  - `stampTs()` — L703
-- **Export Markdown : traces d'appels d'outils** (L709)
-  - `EXPORT_ARGS_MAX` — L712
-  - `EXPORT_RESULT_MAX` — L713
-  - `EXPORT_RESNAME_MAX` — L714
-  - `_truncMd()` — L716
-  - `_formatToolCallMd()` — L732
-  - `formatToolAcksMd()` — L766
-  - `_formatToolCallHtml()` — L793
-  - `EXPORT_ACK_ICON` — L828
-  - `_formatToolCallPreviewHtml()` — L834
-  - `_toolTraceUid` — L844
-  - `formatToolAcksHtml()` — L862
-  - `exportableAckImageKey()` — L903
-  - `_hashId9()` — L917
-  - `messageTextForSummary()` — L931
-  - `formatCallMarker()` — L945
-  - `enrichedAckGroups()` — L953
-  - `findAckByCallId()` — L1000
-  - `expandThread()` — L1020
-- **Interjections mid-génération (lot Q) — helpers purs** (L1104)
-  - `joinInterjectionLiterals()` — L1109
-  - `buildInterjectionEntry()` — L1122
-- **Parsing défensif du JSON de résumé** (L1128)
-  - `parseSummaryJSON()` — L1131
-- **Context inspector (brief B)** (L1152)
-  - `estimateTokens()` — L1155
-  - `IMAGE_TOKENS_ESTIMATE` — L1163
-  - `CONTEXT_WINDOW_WARN_RATIO` — L1167
-  - `buildContextManifest()` — L1183
-  - `scaleManifestToUsage()` — L1274
-  - `usageDerived()` — L1315
+  - `plainTextToParagraphs()` — L283
+  - `mdHtmlFileName()` — L298
+  - `LANG_TO_EXT` — L308
+  - `langExt()` — L331
+  - `parseCodeFenceInfo()` — L343
+  - `sanitizeDownloadName()` — L360
+- **Rendu Mermaid (lot E) : helpers purs** (L371)
+  - `isMermaidLang()` — L375
+  - `mermaidThemeFor()` — L383
+  - `sanitizeMermaidSource()` — L401
+  - `diagramImageName()` — L413
+- **Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs** (L419)
+  - `isPreviewableLang()` — L423
+  - `isMarkdownLang()` — L432
+  - `buildPreviewSrcdoc()` — L442
+  - `b64ToBytes()` — L455
+- **js__eval : briques pures du sandbox de compute (lot L)** (L463)
+  - `splitLines()` — L471
+  - `checkOutputCap()` — L482
+- **Agrégation MCP : nommage, namespaces, filtres (fonctions pures)** (L487)
+  - `parseToolName()` — L492
+  - `resolveInternalToolName()` — L507
+  - `groupByNamespace()` — L519
+  - `guessMcpTransport()` — L537
+  - `validateMcpServerName()` — L547
+  - `filterMcpTools()` — L561
+  - `parseToolFilterList()` — L584
+- **Horodatages des messages** (L591)
+  - `SHOW_YEAR_AFTER_DAYS` — L593
+  - `FR_DAYS_ABBR` — L595
+  - `FR_DAYS_FULL` — L596
+  - `FR_MONTHS_FULL` — L597
+  - `_tsHHMM()` — L600
+  - `_startOfDay()` — L606
+  - `formatMessageTime()` — L617
+  - `formatDateRelative()` — L641
+  - `calendarBucket()` — L662
+  - `formatFullDateFr()` — L678
+  - `exportDateStamp()` — L687
+  - `exportDateTimeStamp()` — L697
+  - `exportDateDisplay()` — L706
+- **Reconstruction du payload API depuis currentThread** (L713)
+  - `stampTs()` — L719
+- **Export Markdown : traces d'appels d'outils** (L725)
+  - `EXPORT_ARGS_MAX` — L728
+  - `EXPORT_RESULT_MAX` — L729
+  - `EXPORT_RESNAME_MAX` — L730
+  - `_truncMd()` — L732
+  - `_formatToolCallMd()` — L748
+  - `formatToolAcksMd()` — L782
+  - `_formatToolCallHtml()` — L809
+  - `EXPORT_ACK_ICON` — L844
+  - `_formatToolCallPreviewHtml()` — L850
+  - `_toolTraceUid` — L860
+  - `formatToolAcksHtml()` — L878
+  - `exportableAckImageKey()` — L919
+  - `_hashId9()` — L933
+  - `messageTextForSummary()` — L947
+  - `formatCallMarker()` — L961
+  - `enrichedAckGroups()` — L969
+  - `findAckByCallId()` — L1016
+  - `expandThread()` — L1036
+- **Interjections mid-génération (lot Q) — helpers purs** (L1120)
+  - `joinInterjectionLiterals()` — L1125
+  - `buildInterjectionEntry()` — L1138
+- **Parsing défensif du JSON de résumé** (L1144)
+  - `parseSummaryJSON()` — L1147
+- **Context inspector (brief B)** (L1168)
+  - `estimateTokens()` — L1171
+  - `IMAGE_TOKENS_ESTIMATE` — L1179
+  - `CONTEXT_WINDOW_WARN_RATIO` — L1183
+  - `buildContextManifest()` — L1199
+  - `scaleManifestToUsage()` — L1290
+  - `usageDerived()` — L1331
 
 ## src/js/sync.js
 
@@ -947,24 +948,24 @@
   - `embedExportMermaid()` — L6804
   - `decorateExportPre()` — L6847
 - **Conversion Markdown → HTML (lot R)** (L6863)
-  - `MD_HIGHLIGHT_TIMEOUT_MS` — L6886
-  - `_prismGrammarLoads` — L6890
-  - `loadPrismGrammar()` — L6891
-  - `highlightMarkdownDocCode()` — L6913
-  - `renderMarkdownDocBody()` — L6931
-  - `convertMarkdownToHtmlFile()` — L6959
-- **Conversion Markdown : câblage UI (réglages » Outils & extensions)** (L6979)
-  - `setMdConvertStatus()` — L6984
-  - `_convertingMd` — L6993
-  - `runMdConversion()` — L6994
-  - `onMdConvertPick()` — L7008
-  - `onMdConvertInput()` — L7012
-  - `onMdConvertDragOver()` — L7020
-  - `onMdConvertDragLeave()` — L7025
-  - `onMdConvertDrop()` — L7029
-  - `EXPORT_HTML_SIZE_WARN` — L7042
-  - `_exportingHtml` — L7051
-  - `exportConvHtml()` — L7052
+  - `MD_HIGHLIGHT_TIMEOUT_MS` — L6893
+  - `_prismGrammarLoads` — L6897
+  - `loadPrismGrammar()` — L6898
+  - `highlightMarkdownDocCode()` — L6920
+  - `renderMarkdownDocBody()` — L6938
+  - `convertMarkdownToHtmlFile()` — L6969
+- **Conversion Markdown : câblage UI (réglages » Outils & extensions)** (L6989)
+  - `setMdConvertStatus()` — L6994
+  - `_convertingMd` — L7003
+  - `runMdConversion()` — L7004
+  - `onMdConvertPick()` — L7018
+  - `onMdConvertInput()` — L7022
+  - `onMdConvertDragOver()` — L7030
+  - `onMdConvertDragLeave()` — L7035
+  - `onMdConvertDrop()` — L7039
+  - `EXPORT_HTML_SIZE_WARN` — L7052
+  - `_exportingHtml` — L7061
+  - `exportConvHtml()` — L7062
 
 ## src/js/main.js
 

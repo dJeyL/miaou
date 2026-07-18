@@ -62,6 +62,21 @@ const MD_WITH_TITLE = [
   '',
 ].join('\n');
 
+// Paragraphe enroulé à ~80 colonnes, comme tout fichier .md réel : les retours
+// simples ne doivent PAS devenir des <br> (retour Julien — `breaks: true`, repris
+// des renderers de chat, reproduisait la largeur du fichier source).
+const MD_WRAPPED = [
+  'Un paragraphe enroulé sur plusieurs lignes',
+  'dans le fichier source, qui doit se rendre',
+  'comme un seul bloc de texte continu.',
+  '',
+  'Un second paragraphe, séparé par une ligne vide.',
+  '',
+  'Une ligne avec deux espaces en fin  ',
+  'force un retour à la ligne explicite.',
+  '',
+].join('\n');
+
 const MD_NO_TITLE = [
   'Directement du texte, sans titre de niveau 1.',
   '',
@@ -154,6 +169,40 @@ check('AUCUN cartouche quand le .md n\'a pas de h1', !plain.hasTopbar);
 check('bouton de thème en repli flottant sans cartouche', plain.floating);
 check('contenu rendu normalement (h2 + liste)', plain.h2 === 1 && plain.items === 2);
 await ex2.close();
+
+// ── 3bis. Retours à la ligne : convention document, pas convention chat ─────
+const htmlWrapped = await convert(MD_WRAPPED, 'enroule.md', true);
+fs.writeFileSync(path.join(outDir, 'enroule.html'), htmlWrapped);
+const exW = await browser.newPage();
+await exW.goto('file://' + path.join(outDir, 'enroule.html'));
+const wrapped = await exW.evaluate(() => {
+  const ps = Array.from(document.querySelectorAll('.export-body p'));
+  return {
+    count: ps.length,
+    firstText: ps[0] ? ps[0].textContent : '',
+    brsInFirst: ps[0] ? ps[0].querySelectorAll('br').length : -1,
+    brsInLast: ps[ps.length - 1] ? ps[ps.length - 1].querySelectorAll('br').length : -1,
+    // Preuve de RENDU (pas de source) : sur une colonne large, les 3 lignes du
+    // fichier source doivent se réenrouler en moins de 3 lignes visuelles.
+    // hauteur / line-height donne le nombre de lignes réellement occupées.
+    firstLineCount: ps[0]
+      ? Math.round(ps[0].getBoundingClientRect().height /
+                   parseFloat(getComputedStyle(ps[0]).lineHeight))
+      : -1,
+  };
+});
+await exW.close();
+check('un paragraphe enroulé reste UN paragraphe', wrapped.count === 3);
+check('aucun <br> parasite dans un paragraphe enroulé', wrapped.brsInFirst === 0);
+// `textContent` restitue le \n brut du HTML — c'est normal et conforme : en HTML
+// un retour dans le flux EST un espace au rendu. On normalise donc avant de
+// comparer, sinon on testerait la source plutôt que le rendu.
+check('les retours simples se rendent comme des espaces',
+      /plusieurs lignes dans le fichier source/.test(wrapped.firstText.replace(/\s+/g, ' ')));
+check('deux espaces en fin de ligne forcent quand même un <br>', wrapped.brsInLast === 1);
+// 3 lignes dans le source ; réenroulées sur 900px elles tiennent en 1 ou 2.
+check('le paragraphe se réenroule (rendu, pas source)',
+      wrapped.firstLineCount > 0 && wrapped.firstLineCount < 3);
 
 // ── 4. Export non interactif ────────────────────────────────────────────────
 const htmlStatic = await convert(MD_WITH_TITLE, 'statique.md', false);

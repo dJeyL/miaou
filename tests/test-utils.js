@@ -659,6 +659,36 @@ describe('extractMdTitle', function() {
   });
 });
 
+describe('plainTextToParagraphs', function() {
+  it('réenroule les retours simples en espaces (convention CommonMark)', function() {
+    expect(plainTextToParagraphs('une ligne\nsuite du paragraphe'))
+      .toBe('<p>une ligne suite du paragraphe</p>');
+  });
+  it('une ligne vide sépare deux paragraphes', function() {
+    expect(plainTextToParagraphs('para un\n\npara deux'))
+      .toBe('<p>para un</p><p>para deux</p>');
+  });
+  it('plusieurs lignes vides ne créent pas de paragraphes vides', function() {
+    expect(plainTextToParagraphs('a\n\n\n\nb')).toBe('<p>a</p><p>b</p>');
+  });
+  it('lignes blanches (espaces/tabs) traitées comme séparateurs', function() {
+    expect(plainTextToParagraphs('a\n   \nb')).toBe('<p>a</p><p>b</p>');
+  });
+  it('échappe le HTML (entrée = fichier utilisateur)', function() {
+    expect(plainTextToParagraphs('<script>alert(1)</script>'))
+      .toBe('<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>');
+  });
+  it('supporte CRLF', function() {
+    expect(plainTextToParagraphs('a\r\nb\r\n\r\nc')).toBe('<p>a b</p><p>c</p>');
+  });
+  it('entrée vide ou nulle → chaîne vide', function() {
+    expect(plainTextToParagraphs('')).toBe('');
+    expect(plainTextToParagraphs('   \n\n  ')).toBe('');
+    expect(plainTextToParagraphs(null)).toBe('');
+    expect(plainTextToParagraphs(undefined)).toBe('');
+  });
+});
+
 describe('isMarkdownLang', function() {
   it('reconnaît markdown et md', function() {
     expect(isMarkdownLang('markdown')).toBe(true);
