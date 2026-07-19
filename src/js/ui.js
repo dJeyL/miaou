@@ -1255,6 +1255,36 @@ const ACK_KINDS = {
       }
     },
   },
+  // Recherche de mots-clefs dans l'aide MIAOU (miaou__about_search) : même
+  // posture que about_read (lecture, pas d'undo) ; libellé porte la requête
+  // et le nombre de sujets trouvés (pattern pluriel de files_list).
+  about_search: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m =>
+      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
+        m.count === 0 ? 'aucun résultat'
+      : m.count === 1 ? '1 sujet trouvé'
+      : (m.count != null ? m.count : '?') + ' sujets trouvés'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'aucun résultat'
+        : m.count === 1 ? '1 sujet trouvé'
+        : (m.count != null ? m.count : '?') + ' sujets trouvés';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + countText));
+        });
+      } else {
+        el.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + countText));
+      }
+    },
+  },
   // ── Bibliothèque de fichiers d'espace (lot Cbis) ────────────────────────────
   // Énumération des fichiers de l'espace actif (miaou__files__list) : même
   // posture que skill_list/conversation_list (lecture, pas d'undo).

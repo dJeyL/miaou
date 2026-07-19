@@ -3444,7 +3444,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-18 23:09 UTC */
+/* miaou — built: 2026-07-19 13:21 UTC */
 
 /* ── utils.js ── */
 
@@ -3475,7 +3475,7 @@ const ACK_COPY_FIELDS = [
   'resourceName', 'mime', 'size',        
   'attId',                                
   'slug', 'created',                      
-  'topic',                               
+  'topic', 'query',                      
   'handle', 'ok', 'outLen', 'code',      
   'message',                             
   'args', 'result', 'ts', 'group', 'assistantText',   
@@ -4348,6 +4348,53 @@ function usageDerived(usage) {
   return { inTokens, outTokens, cachedTokens, cachedRatio };
 }
 
+const HELP_SEARCH_MAX_EXCERPTS = 5;
+
+function searchHelpContent(helpContent, query) {
+  const keywords = String(query || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!helpContent || keywords.length === 0) return [];
+
+  const EXCERPT_RADIUS = 100;
+  const results = [];
+  Object.keys(helpContent).forEach((topic) => {
+    const text = String(helpContent[topic] || '');
+    const lower = text.toLowerCase();
+    if (!keywords.every((kw) => lower.indexOf(kw) !== -1)) return;
+
+    const windows = [];
+    keywords.forEach((kw) => {
+      let from = 0;
+      let idx;
+      while ((idx = lower.indexOf(kw, from)) !== -1) {
+        windows.push([Math.max(0, idx - EXCERPT_RADIUS), Math.min(text.length, idx + kw.length + EXCERPT_RADIUS)]);
+        from = idx + kw.length;
+      }
+    });
+    windows.sort((a, b) => a[0] - b[0]);
+
+    const merged = [];
+    windows.forEach((w) => {
+      const last = merged[merged.length - 1];
+      if (last && w[0] <= last[1]) {
+        last[1] = Math.max(last[1], w[1]);
+      } else {
+        merged.push(w.slice());
+      }
+    });
+
+    const truncated = merged.length > HELP_SEARCH_MAX_EXCERPTS;
+    const kept = merged.slice(0, HELP_SEARCH_MAX_EXCERPTS);
+    const excerpts = kept.map(([start, end]) =>
+      (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : ''));
+
+    results.push({ topic, excerpts, truncated });
+  });
+  return results;
+}
+
 /* ── sync.js ── */
 
 const SYNC_PROTOCOL_VERSION = 1;
@@ -4492,7 +4539,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784416184}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784467282}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6706,6 +6753,40 @@ const TOOLS = [
   },
   {
     
+    name: 'about_search',
+    description:
+      "Cherche un ou plusieurs mots-clefs (séparés par des espaces) dans l'aide " +
+      "utilisateur de MIAOU et renvoie les sections (topics) qui contiennent TOUS " +
+      "ces mots-clefs, avec des extraits de chacune. Ces extraits sont indicatifs " +
+      "et PEUVENT NE PAS couvrir le passage pertinent (une section peut mentionner " +
+      "autre chose ailleurs). Ne conclus JAMAIS qu'une fonctionnalité n'existe pas " +
+      "sur la seule base des extraits : si un topic est trouvé et que la question " +
+      "porte sur un détail précis, appelle `about(topic)` pour lire la section " +
+      "entière avant de répondre.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Mots-clefs à chercher, séparés par des espaces (ET logique).',
+        },
+      },
+      required: ['query'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const query = String((args && args.query) || '').trim();
+      if (!query) return toolFail('about_search', 'query manquant.');
+      const results = searchHelpContent(HELP_CONTENT, query);
+      _pendingToolAcks.push({ kind: 'about_search', query, count: results.length });
+      if (results.length === 0) {
+        return 'Aucun sujet d\'aide ne contient tous ces mots-clefs : ' + query;
+      }
+      return JSON.stringify(results);
+    },
+  },
+  {
+    
     name: 'js__eval',
     description:
       "Exécute du JavaScript (que tu écris) dans un bac à sable isolé sur le contenu " +
@@ -8814,6 +8895,34 @@ const ACK_KINDS = {
         el.appendChild(document.createTextNode('Aide consultée '));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + topic));
+      }
+    },
+  },
+  
+  about_search: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m =>
+      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
+        m.count === 0 ? 'aucun résultat'
+      : m.count === 1 ? '1 sujet trouvé'
+      : (m.count != null ? m.count : '?') + ' sujets trouvés'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'aucun résultat'
+        : m.count === 1 ? '1 sujet trouvé'
+        : (m.count != null ? m.count : '?') + ' sujets trouvés';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + countText));
+        });
+      } else {
+        el.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + countText));
       }
     },
   },

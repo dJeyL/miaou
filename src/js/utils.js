@@ -44,7 +44,7 @@ const ACK_COPY_FIELDS = [
   'resourceName', 'mime', 'size',        // ressources IDB
   'attId',                                // pièces jointes (recall_attachment)
   'slug', 'created',                      // skills (created : write = création vs modification)
-  'topic',                               // aide (about_read)
+  'topic', 'query',                      // aide (about_read, about_search)
   'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
@@ -1336,4 +1336,68 @@ function usageDerived(usage) {
     ? usage.prompt_tokens_details.cached_tokens : null;
   const cachedRatio = (cachedTokens != null && inTokens) ? cachedTokens / inTokens : null;
   return { inTokens, outTokens, cachedTokens, cachedRatio };
+}
+
+// Nombre max d'extraits renvoyés par topic par searchHelpContent — un
+// mot-clef générique (« fichier », « conversation ») peut avoir 10+
+// occurrences dans une section ; sans plafond la réponse de l'outil about_search
+// explose. Au-delà, `truncated: true` signale au modèle qu'il reste des
+// occurrences non montrées (il doit alors lire la section entière via `about`).
+const HELP_SEARCH_MAX_EXCERPTS = 5;
+
+// Cherche des mots-clefs dans les sections d'aide (help.md → HELP_CONTENT).
+// Pure, testable QuickJS — ne lit aucun global, `helpContent` arrive en
+// argument. Matching en ET : un topic n'est retourné que si TOUS les mots-clefs
+// y apparaissent (insensible à la casse) — un OU noierait le résultat dès 2-3
+// mots courants. Un extrait par OCCURRENCE de mot-clef (pas juste la première
+// du premier mot-clef) : un extrait centré sur le 1er hit peut rater le
+// passage pertinent si un autre mot-clef de la requête apparaît plus loin dans
+// la section (payé en usage réel — Mistral concluant à tort à l'absence d'une
+// fonctionnalité documentée plus bas). Fenêtres qui se chevauchent fusionnées
+// en un seul extrait ; plafond HELP_SEARCH_MAX_EXCERPTS, au-delà `truncated: true`.
+function searchHelpContent(helpContent, query) {
+  const keywords = String(query || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!helpContent || keywords.length === 0) return [];
+
+  const EXCERPT_RADIUS = 100;
+  const results = [];
+  Object.keys(helpContent).forEach((topic) => {
+    const text = String(helpContent[topic] || '');
+    const lower = text.toLowerCase();
+    if (!keywords.every((kw) => lower.indexOf(kw) !== -1)) return;
+
+    // Toutes les occurrences de tous les mots-clefs, en fenêtres [start, end).
+    const windows = [];
+    keywords.forEach((kw) => {
+      let from = 0;
+      let idx;
+      while ((idx = lower.indexOf(kw, from)) !== -1) {
+        windows.push([Math.max(0, idx - EXCERPT_RADIUS), Math.min(text.length, idx + kw.length + EXCERPT_RADIUS)]);
+        from = idx + kw.length;
+      }
+    });
+    windows.sort((a, b) => a[0] - b[0]);
+
+    // Fusion des fenêtres qui se chevauchent ou se touchent.
+    const merged = [];
+    windows.forEach((w) => {
+      const last = merged[merged.length - 1];
+      if (last && w[0] <= last[1]) {
+        last[1] = Math.max(last[1], w[1]);
+      } else {
+        merged.push(w.slice());
+      }
+    });
+
+    const truncated = merged.length > HELP_SEARCH_MAX_EXCERPTS;
+    const kept = merged.slice(0, HELP_SEARCH_MAX_EXCERPTS);
+    const excerpts = kept.map(([start, end]) =>
+      (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : ''));
+
+    results.push({ topic, excerpts, truncated });
+  });
+  return results;
 }

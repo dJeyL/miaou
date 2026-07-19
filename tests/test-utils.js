@@ -1475,6 +1475,11 @@ describe('copyAckFields (whitelist unique des champs d\'ack)', function() {
     expect(out.convId).toBe('c1');
     expect(out.slug).toBe('s1');
   });
+  it('couvre query (about_search)', function() {
+    var out = copyAckFields({ kind: 'about_search', query: 'espaces mémoire', count: 2 }, {});
+    expect(out.query).toBe('espaces mémoire');
+    expect(out.count).toBe(2);
+  });
 });
 
 describe('parseCodeFenceInfo', function() {
@@ -1755,5 +1760,103 @@ describe('ackIsError (prédicat unique de rendu en erreur)', function() {
     var dst = copyAckFields({ kind: 'js_eval', handle: 'att-1', ok: true, outLen: 7 }, {});
     expect(dst.ok).toBe(true);
     expect(ackIsError(dst)).toBe(false);
+  });
+});
+
+describe('searchHelpContent', function() {
+  var HELP = {
+    apercu: 'MIAOU est un client de chat. Tu peux discuter avec le modèle.',
+    espaces: 'Les Espaces organisent tes conversations et tes fichiers.',
+    memoire: 'Le modèle garde des souvenirs durables entre les conversations.',
+  };
+
+  it('query vide → tableau vide', function() {
+    expect(searchHelpContent(HELP, '')).toEqual([]);
+    expect(searchHelpContent(HELP, '   ')).toEqual([]);
+  });
+
+  it('helpContent absent → tableau vide (jamais de throw)', function() {
+    expect(searchHelpContent(null, 'espaces')).toEqual([]);
+    expect(searchHelpContent(undefined, 'espaces')).toEqual([]);
+  });
+
+  it('aucun match → tableau vide', function() {
+    expect(searchHelpContent(HELP, 'xyzzy')).toEqual([]);
+  });
+
+  it('un mot-clef trouve le bon topic, insensible à la casse', function() {
+    var results = searchHelpContent(HELP, 'ESPACES');
+    expect(results.length).toBe(1);
+    expect(results[0].topic).toBe('espaces');
+    expect(results[0].excerpts.length).toBe(1);
+    expect(results[0].excerpts[0].toLowerCase().indexOf('espaces') !== -1).toBe(true);
+  });
+
+  it('plusieurs mots-clefs → ET logique, pas OU', function() {
+    var results = searchHelpContent(HELP, 'modèle conversations');
+    expect(results.length).toBe(1);
+    expect(results[0].topic).toBe('memoire');
+  });
+
+  it('mots-clefs présents dans des topics différents mais pas ensemble → aucun match', function() {
+    var results = searchHelpContent(HELP, 'discuter souvenirs');
+    expect(results).toEqual([]);
+  });
+
+  it('mot-clef commun à plusieurs topics → tous retournés', function() {
+    var results = searchHelpContent(HELP, 'conversations');
+    expect(results.length).toBe(2);
+  });
+
+  it('extrait tronqué porte les ellipses de bord', function() {
+    var longText = 'x'.repeat(300) + ' cible ' + 'y'.repeat(300);
+    var results = searchHelpContent({ long: longText }, 'cible');
+    expect(results.length).toBe(1);
+    expect(results[0].excerpts.length).toBe(1);
+    expect(results[0].excerpts[0].charAt(0)).toBe('…');
+    expect(results[0].excerpts[0].charAt(results[0].excerpts[0].length - 1)).toBe('…');
+  });
+
+  it('un extrait par occurrence d\'un mot-clef, pas seulement la première (régression Mistral/exports)', function() {
+    var text = 'Alpha près du début. '
+      + 'x'.repeat(400)
+      + ' cible ici au milieu du texte. '
+      + 'y'.repeat(400);
+    var results = searchHelpContent({ topic1: text }, 'alpha cible');
+    expect(results.length).toBe(1);
+    expect(results[0].excerpts.length).toBe(2);
+    expect(results[0].excerpts[0].toLowerCase().indexOf('alpha') !== -1).toBe(true);
+    expect(results[0].excerpts[1].toLowerCase().indexOf('cible') !== -1).toBe(true);
+  });
+
+  it('plusieurs occurrences d\'un même mot-clef → un extrait par occurrence, fenêtres non chevauchantes', function() {
+    var text = 'un ' + 'x'.repeat(400) + ' un ' + 'y'.repeat(400) + ' un fin';
+    var results = searchHelpContent({ topic1: text }, 'un');
+    expect(results.length).toBe(1);
+    expect(results[0].excerpts.length).toBe(3);
+  });
+
+  it('fenêtres qui se chevauchent sont fusionnées en un seul extrait', function() {
+    var text = 'alpha beta';
+    var results = searchHelpContent({ topic1: text }, 'alpha beta');
+    expect(results.length).toBe(1);
+    expect(results[0].excerpts.length).toBe(1);
+  });
+
+  it('au-delà du plafond, truncated: true et le nombre d\'extraits reste borné', function() {
+    var parts = [];
+    for (var i = 0; i < 8; i++) {
+      parts.push('mot' + 'x'.repeat(400));
+    }
+    var text = parts.join(' ');
+    var results = searchHelpContent({ topic1: text }, 'mot');
+    expect(results.length).toBe(1);
+    expect(results[0].truncated).toBe(true);
+    expect(results[0].excerpts.length).toBe(5);
+  });
+
+  it('sous le plafond, truncated: false', function() {
+    var results = searchHelpContent(HELP, 'conversations');
+    expect(results[0].truncated).toBe(false);
   });
 });

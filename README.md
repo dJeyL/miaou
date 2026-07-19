@@ -86,11 +86,12 @@ l'interface, JetBrains Mono pour le code.
   remplacé par un handle compact + un court résumé). Ces ressources sont ensuite
   interrogeables par `js__eval` sans repayer leur texte en tokens à chaque tour.
 - **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire. Un
-  court blurb d'identité dans le prompt système et un outil interne
+  court blurb d'identité dans le prompt système et deux outils internes
   (`miaou__about`, une aide utilisateur rédigée à la main servie section par
-  section) lui permettent de répondre juste aux questions « comment je joins un
-  fichier ? », « c'est quoi les Espaces ? », « où sont stockées mes données ? »
-  au lieu de confabuler.
+  section, et `miaou__about_search` pour retrouver la bonne section par
+  mots-clefs) lui permettent de répondre juste aux questions « comment je joins
+  un fichier ? », « c'est quoi les Espaces ? », « où sont stockées mes
+  données ? » au lieu de confabuler.
 - Écran d'accueil aléatoire (emoji + accroche) à chaque nouvelle conversation.
 - **Inspecteur de contexte** : compteur `≈ N tok` dans le composer, cliquable ;
   ouvre un drawer détaillant la composition du payload envoyé au modèle (prompt

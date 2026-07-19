@@ -137,6 +137,28 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
   parseur couvrent le découpage côté `build.py`, ceux du handler couvrent la
   mécanique (fallback apercu, ack) — le lookup positif est garanti par le build
   (dist/ contient les topics).
+- `about_search(query)` — cherche des mots-clefs (séparés par des espaces) dans
+  `HELP_CONTENT` et renvoie les topics qui les contiennent TOUS (ET logique,
+  pas OU — un OU noierait le résultat dès 2-3 mots courants), chacun avec un
+  tableau `excerpts` : **un extrait par occurrence** de chaque mot-clef (~100
+  caractères de rayon, ellipses `…` aux bords coupés), pas seulement la
+  première occurrence du premier mot-clef — correction post-lot suite à un cas
+  observé (Mistral, query « fichier Markdown HTML » sur `exports`) où centrer
+  sur le 1er hit ratait le paragraphe pertinent plus loin dans la section, et
+  le modèle concluait à tort à l'absence d'une fonctionnalité pourtant
+  documentée. Fenêtres qui se chevauchent fusionnées en un seul extrait ;
+  plafond `HELP_SEARCH_MAX_EXCERPTS` (5) par topic — au-delà, `truncated: true`
+  signale qu'il reste des occurrences non montrées. La description de l'outil
+  rend explicite que les extraits sont indicatifs et qu'il faut appeler
+  `about(topic)` pour lire la section entière avant de conclure à une absence.
+  Délègue à `searchHelpContent(helpContent, query)` (utils.js, **pure**, ne lit
+  aucun global — même garantie que `buildContextManifest`) : le handler ne fait
+  que lui passer `HELP_CONTENT` et sérialiser le résultat en JSON. `query` vide
+  → `toolFail`. Aucun résultat → message explicite plutôt qu'un tableau vide
+  silencieux. Pousse un ack `about_search` (informatif, sans undo, icône
+  `ICON_LIST`, champs `query`/`count` — `count` = nombre de topics matchés, pas
+  d'extraits) — pensé comme un préalable à `about` : trouver le bon `topic`
+  sans lister tous les sujets ni deviner.
 
 **Bibliothèque de fichiers d'espace (lot Cbis, read-only v1) :**
 - `files__list()` — entrées de la bibliothèque de l'**espace actif uniquement**

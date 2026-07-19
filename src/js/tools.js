@@ -1090,6 +1090,43 @@ const TOOLS = [
     },
   },
   {
+    // Recherche de mots-clefs dans les sections d'aide, pour trouver le bon
+    // `topic` sans deviner ou lister tous les sujets. Délègue à
+    // searchHelpContent (utils.js, pure) — même garantie que `about` : aucun
+    // drift possible, HELP_CONTENT est la seule source. Handler SYNCHRONE.
+    name: 'about_search',
+    description:
+      "Cherche un ou plusieurs mots-clefs (séparés par des espaces) dans l'aide " +
+      "utilisateur de MIAOU et renvoie les sections (topics) qui contiennent TOUS " +
+      "ces mots-clefs, avec des extraits de chacune. Ces extraits sont indicatifs " +
+      "et PEUVENT NE PAS couvrir le passage pertinent (une section peut mentionner " +
+      "autre chose ailleurs). Ne conclus JAMAIS qu'une fonctionnalité n'existe pas " +
+      "sur la seule base des extraits : si un topic est trouvé et que la question " +
+      "porte sur un détail précis, appelle `about(topic)` pour lire la section " +
+      "entière avant de répondre.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Mots-clefs à chercher, séparés par des espaces (ET logique).',
+        },
+      },
+      required: ['query'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args) => {
+      const query = String((args && args.query) || '').trim();
+      if (!query) return toolFail('about_search', 'query manquant.');
+      const results = searchHelpContent(HELP_CONTENT, query);
+      _pendingToolAcks.push({ kind: 'about_search', query, count: results.length });
+      if (results.length === 0) {
+        return 'Aucun sujet d\'aide ne contient tous ces mots-clefs : ' + query;
+      }
+      return JSON.stringify(results);
+    },
+  },
+  {
     // miaou__js__eval (lot L) : exécute du JS écrit par le modèle dans un bac à
     // sable QuickJS-WASM sur le contenu TEXTUEL d'un blob client référencé par
     // handle (att-N/file-<id>/res_<id>), sans jamais charger les octets bruts en
