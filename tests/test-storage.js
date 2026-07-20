@@ -267,13 +267,12 @@ describe('normalizeMcpServer (defaults et coercition)', function() {
     expect(s.timeout).toBe(30000);
     expect(s.toolAllowlist).toEqual([]);
     expect(s.toolDenylist).toEqual([]);
-    expect(s.showCalls).toBe(true);
   });
   it('objet complet → valeurs conservées', function() {
     var s = normalizeMcpServer({
       name: 'jira', url: 'https://h/mcp', transport: 'sse', enabled: false,
       authorization_token: 'tok', timeout: 5000,
-      toolAllowlist: ['a'], toolDenylist: ['b'], showCalls: false,
+      toolAllowlist: ['a'], toolDenylist: ['b'],
     });
     expect(s.name).toBe('jira');
     expect(s.transport).toBe('sse');
@@ -282,7 +281,6 @@ describe('normalizeMcpServer (defaults et coercition)', function() {
     expect(s.timeout).toBe(5000);
     expect(s.toolAllowlist).toEqual(['a']);
     expect(s.toolDenylist).toEqual(['b']);
-    expect(s.showCalls).toBe(false);
   });
   it('champs de type inattendu → coercition (transport inconnu, timeout non-positif, listes non-array)', function() {
     var s = normalizeMcpServer({ transport: 'websocket', timeout: -5, toolAllowlist: 'x', toolDenylist: null });
@@ -439,19 +437,13 @@ describe('Serveurs MCP : CRUD (miaou-mcp-servers)', function() {
     expect(arr.length).toBe(1);
     expect(arr[0].url).toBe('https://h2/mcp');
   });
-  it('normalise transport/timeout/enabled/showCalls par défaut', function() {
+  it('normalise transport/timeout/enabled par défaut', function() {
     localStorage.clear();
     upsertMcpServer({ name: 'x', url: 'https://h/mcp' });
     var s = getMcpServer('x');
     expect(s.transport).toBe('streamable-http');
     expect(s.timeout).toBe(30000);
     expect(s.enabled).toBe(true);
-    expect(s.showCalls).toBe(true);
-  });
-  it('showCalls false est préservé à la normalisation', function() {
-    localStorage.clear();
-    upsertMcpServer({ name: 'x', url: 'https://h/mcp', showCalls: false });
-    expect(getMcpServer('x').showCalls).toBe(false);
   });
   it('delete retire par name', function() {
     localStorage.clear();

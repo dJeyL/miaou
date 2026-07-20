@@ -178,13 +178,12 @@
   avec un tableau de scopes (ex. `['profile', activeSpaceId]`), filtre en plus
   sur `scope` (cf. Spaces ci-dessous). `forgetMemory(id)` supprime définitivement l'entrée du tableau.
 - `miaou-mcp-servers` : tableau de backends MCP distants `[{ name, url, transport,
-  enabled, authorization_token, timeout, toolAllowlist, toolDenylist, showCalls }]`
+  enabled, authorization_token, timeout, toolAllowlist, toolDenylist }]`
   (cf. `docs/mcp.md`). `name` est l'identité **et** le
   préfixe d'outil (unique, charset `[A-Za-z0-9_-]`, pas de `__`, `miaou` interdit).
   `authorization_token` est stocké **en clair** (posture assumée non-prod).
-  `showCalls` (booléen, défaut `true`) contrôle l'affichage des lignes d'appel
-  `mcp_call` dans le thread : `false` masque le rendu DOM mais **conserve les acks
-  dans l'historique** — toggle de rendu pur, sans effet sur le payload modèle. CRUD
+  Les lignes d'appel `mcp_call` sont **toujours affichées** dans le thread —
+  posture de transparence, aucun toggle de masquage. CRUD
   dans `storage.js` (`loadMcpServers`/`upsertMcpServer`/`deleteMcpServer`/
   `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en

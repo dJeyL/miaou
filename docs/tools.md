@@ -601,9 +601,7 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   de la bulle assistant (`.msg.assistant`, colonne flex), **entre l'en-tête**
   (`.meta` : icône + nom du modèle) **et le corps** (`.body` : patienteur puis
   réponse). Helper unique `placeToolAck(wrap, entry)` (ui.js) : `insertBefore(node,
-  wrap.querySelector('.body'))`. Pour `mcp_call`, si le serveur a `showCalls ===
-  false`, ne pose pas de nœud et retourne `null` — l'entrée reste en `currentThread`
-  (toggle de rendu pur). Ordre à l'écran : icône+modèle → acks (au fil des tours) →
+  wrap.querySelector('.body'))`. Ordre à l'écran : icône+modèle → acks (au fil des tours) →
   patienteur → réponse. `resetAssistant` ne touchant que `.body`, les acks survivent
   à la reprise d'attente entre tours. **Reload** :
   `renderThread` tamponne les acks (qui précèdent l'assistant dans `currentThread`,

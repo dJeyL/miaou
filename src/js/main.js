@@ -1029,7 +1029,6 @@ async function onSaveMcpCard(cardEl, originalName) {
   if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const enabledEl = cardEl.querySelector('.mcp-enabled');
   const tmoRaw = parseInt(get('.mcp-timeout'), 10);
-  const showCallsEl = cardEl.querySelector('.mcp-show-calls');
   const server = {
     name, url,
     transport: get('.mcp-transport') || 'streamable-http',
@@ -1038,7 +1037,6 @@ async function onSaveMcpCard(cardEl, originalName) {
     timeout: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : 30000,
     toolAllowlist: parseToolFilterList(get('.mcp-allow')),
     toolDenylist: parseToolFilterList(get('.mcp-deny')),
-    showCalls: showCallsEl ? showCallsEl.checked : true,
   };
   // Renommage : l'identité est le `name`, on retire l'ancienne entrée + cache.
   if (originalName && originalName !== name) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }

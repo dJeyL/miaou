@@ -271,9 +271,10 @@ const CODEBLOCK_DOCTRINE =
   "Quand tu génères un bloc de code destiné à être enregistré comme fichier (script, " +
   "config, module…), fournis un nom de fichier sur la ligne d'ouverture de la fence, " +
   "après le langage, séparé par un espace, au format filename=nom.ext (sans espace " +
-  "dans le nom, avec son extension). Exemple : ```python filename=fibonacci.py. " +
-  "L'application proposera ce nom au téléchargement. Fais-le aussi pour les blocs " +
-  "mermaid (ex. ```mermaid filename=flux-auth.mmd) : ce nom sert à nommer les exports " +
+  "dans le nom, avec son extension). Exemple : trois backticks suivis de " +
+  "`python filename=fibonacci.py`. L'application proposera ce nom au téléchargement. " +
+  "Fais-le aussi pour les blocs mermaid (trois backticks suivis de " +
+  "`mermaid filename=flux-auth.mmd`) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
   "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +

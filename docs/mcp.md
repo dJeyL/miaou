@@ -58,15 +58,15 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    `callRemoteTool` pousse un ack `{ kind:'mcp_call', server, name }` dans
    `_pendingToolAcks` **de manière synchrone** (avant le premier `await`), ce qui
    permet à `onEarlyAcks` de le peindre **pendant** le round-trip. Le champ `server`
-   (= premier segment, l'identité du serveur) sert de clé pour le filtre `showCalls`.
+   (= premier segment, l'identité du serveur) identifie le serveur d'origine.
    `name` est le nom complet `a__b__c`, découpé sur **chaque** `__` pour le breadcrumb
    (segments vides ignorés). Sur erreur, `callRemoteTool` pose `ackEntry.error = true`
    sur l'objet partagé ; `onToolAcks` rétro-applique `.ack-error` sur le nœud DOM
    déjà rendu. Ces acks sont persisted dans `currentThread` / localStorage (champs
    `server`, `name`, `error`) et restaurés au reload. Ils sont filtrés du payload
    modèle par le filtre rôle existant — aucune liste blanche par kind à maintenir.
-   Le toggle `showCalls` est éditable sur la **carte serveur en mode édition**
-   uniquement — pas en mode vue — pour éviter une modification accidentelle.
+   **Toujours affichés** dans le thread, sans toggle de masquage — posture de
+   transparence de MIAOU.
 8. **Blocs non-text = données persistées en IDB, rendu via IDB au reload (D8/D9).**
    `callRemoteTool` pousse tous les blocs non-text reçus du serveur dans
    `_pendingToolBlocks` (tools.js). `internResourcesFromResult` (api.js) intercepte

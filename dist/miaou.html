@@ -3444,7 +3444,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-19 13:21 UTC */
+/* miaou — built: 2026-07-20 21:35 UTC */
 
 /* ── utils.js ── */
 
@@ -4539,7 +4539,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784467282}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784583317}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -4726,7 +4726,6 @@ function normalizeMcpServer(s) {
     timeout: (typeof o.timeout === 'number' && o.timeout > 0) ? o.timeout : MCP_DEFAULT_TIMEOUT,
     toolAllowlist: Array.isArray(o.toolAllowlist) ? o.toolAllowlist : [],
     toolDenylist: Array.isArray(o.toolDenylist) ? o.toolDenylist : [],
-    showCalls: o.showCalls !== false,
   };
 }
 
@@ -6110,9 +6109,10 @@ const CODEBLOCK_DOCTRINE =
   "Quand tu génères un bloc de code destiné à être enregistré comme fichier (script, " +
   "config, module…), fournis un nom de fichier sur la ligne d'ouverture de la fence, " +
   "après le langage, séparé par un espace, au format filename=nom.ext (sans espace " +
-  "dans le nom, avec son extension). Exemple : ```python filename=fibonacci.py. " +
-  "L'application proposera ce nom au téléchargement. Fais-le aussi pour les blocs " +
-  "mermaid (ex. ```mermaid filename=flux-auth.mmd) : ce nom sert à nommer les exports " +
+  "dans le nom, avec son extension). Exemple : trois backticks suivis de " +
+  "`python filename=fibonacci.py`. L'application proposera ce nom au téléchargement. " +
+  "Fais-le aussi pour les blocs mermaid (trois backticks suivis de " +
+  "`mermaid filename=flux-auth.mmd`) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
   "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +
@@ -9309,10 +9309,6 @@ function ackGroupAddAck(group, entry, node, animate) {
 }
 
 function placeToolAck(wrap, entry, animate) {
-  if (ackKindOf(entry) === 'mcp_call' && entry.server) {
-    const srv = getMcpServer(entry.server);
-    if (srv && srv.showCalls === false) return null;
-  }
   const node = buildToolAck(entry);
   if (wrap) {
     const group = ensureAckGroup(wrap);
@@ -11974,9 +11970,6 @@ function buildMcpCard(server, isNew) {
 
   editSection.appendChild(cfgToggleRow('mcp-enabled', server.enabled !== false, 'Activé').row);
 
-  editSection.appendChild(cfgToggleRow('mcp-show-calls', server.showCalls !== false,
-    'Afficher les appels dans le thread').row);
-
   editSection.appendChild(cfgErrEl());
 
   const actions = document.createElement('div');
@@ -14448,7 +14441,6 @@ async function onSaveMcpCard(cardEl, originalName) {
   if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const enabledEl = cardEl.querySelector('.mcp-enabled');
   const tmoRaw = parseInt(get('.mcp-timeout'), 10);
-  const showCallsEl = cardEl.querySelector('.mcp-show-calls');
   const server = {
     name, url,
     transport: get('.mcp-transport') || 'streamable-http',
@@ -14457,7 +14449,6 @@ async function onSaveMcpCard(cardEl, originalName) {
     timeout: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : 30000,
     toolAllowlist: parseToolFilterList(get('.mcp-allow')),
     toolDenylist: parseToolFilterList(get('.mcp-deny')),
-    showCalls: showCallsEl ? showCallsEl.checked : true,
   };
   
   if (originalName && originalName !== name) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }

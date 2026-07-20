@@ -267,7 +267,6 @@ function normalizeMcpServer(s) {
     timeout: (typeof o.timeout === 'number' && o.timeout > 0) ? o.timeout : MCP_DEFAULT_TIMEOUT,
     toolAllowlist: Array.isArray(o.toolAllowlist) ? o.toolAllowlist : [],
     toolDenylist: Array.isArray(o.toolDenylist) ? o.toolDenylist : [],
-    showCalls: o.showCalls !== false,
   };
 }
 

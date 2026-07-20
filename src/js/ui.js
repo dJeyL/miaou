@@ -1489,8 +1489,6 @@ function buildToolAck(m) {
 // le corps (.body) : la provenance s'affiche après l'icône+nom du modèle et avant
 // le patienteur/la réponse. Si la bulle n'a pas de .body, on append en dernier
 // recours. Partagé par le rendu live (onToolAcks/onEarlyAcks) et le reload (renderThread).
-// Pour mcp_call : si le serveur a showCalls === false, n'insère pas dans le DOM mais
-// retourne null (l'entrée reste dans currentThread — le toggle est render-only).
 // ── Groupe d'acks (ticker) : réducteur d'état pur ──────────────────────────
 // Pont entrée d'ack → nœud DOM. WeakMap et NON une propriété `entry.__node` :
 // l'objet `entry` est le MÊME que celui poussé dans `currentThread` (main.js,
@@ -1778,10 +1776,6 @@ function ackGroupAddAck(group, entry, node, animate) {
 }
 
 function placeToolAck(wrap, entry, animate) {
-  if (ackKindOf(entry) === 'mcp_call' && entry.server) {
-    const srv = getMcpServer(entry.server);
-    if (srv && srv.showCalls === false) return null;
-  }
   const node = buildToolAck(entry);
   if (wrap) {
     const group = ensureAckGroup(wrap);
@@ -5009,10 +5003,6 @@ function buildMcpCard(server, isNew) {
 
   // Toggle en mode édition (.mcp-enabled lu par onSaveMcpCard)
   editSection.appendChild(cfgToggleRow('mcp-enabled', server.enabled !== false, 'Activé').row);
-
-  // Toggle showCalls — affiche les lignes d'appel MCP dans le thread
-  editSection.appendChild(cfgToggleRow('mcp-show-calls', server.showCalls !== false,
-    'Afficher les appels dans le thread').row);
 
   editSection.appendChild(cfgErrEl());
 
