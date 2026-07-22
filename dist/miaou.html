@@ -3444,7 +3444,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-07-20 21:35 UTC */
+/* miaou — built: 2026-07-22 20:01 UTC */
 
 /* ── utils.js ── */
 
@@ -4539,7 +4539,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1784583317}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1784750508}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6129,14 +6129,21 @@ const IDENTITY_BLURB =
   "Quand l'utilisateur pose une question sur MIAOU lui-même — comment joindre un " +
   "fichier, ce que sont les espaces, où sont stockées ses données, etc. — appelle " +
   "l'outil miaou__about (paramètre topic) plutôt que de deviner : il sert une aide " +
-  "utilisateur fiable, section par section.";
+  "utilisateur fiable, section par section.\n" +
+  "Les outils de découverte (miaou__about, skills) répondent à un besoin précis du " +
+  "moment ; ce ne sont PAS des étapes préalables à franchir avant d'agir. Ne les " +
+  "parcours pas de façon exhaustive ni par curiosité : lis seulement ce que la tâche " +
+  "ou la question en cours réclame réellement, puis avance.";
 
 const SKILL_DOCTRINE_BASE =
   "Doctrine de déclenchement pour les skills :\n\n" +
   "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
   "skills que l'utilisateur a choisi de rendre disponibles pour un usage proactif " +
   "— ce ne sont PAS des skills que tu es obligé d'utiliser, seulement des fragments " +
-  "d'instructions pertinents si la situation s'y prête.\n\n" +
+  "d'instructions pertinents si la situation s'y prête. N'en lis une que si elle " +
+  "correspond réellement à ce que tu es en train de faire ; ne les parcours pas " +
+  "toutes pour voir. D'autres skills, non listées ici, sont invoquées directement " +
+  "par l'utilisateur à sa discrétion : tu n'as pas à les découvrir ni à les charger.\n\n" +
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
   "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
 
@@ -6730,7 +6737,10 @@ const TOOLS = [
       "cet outil quand l'utilisateur demande comment faire quelque chose dans MIAOU, " +
       "ce qu'est une fonctionnalité (espaces, pièces jointes, mémoire, skills, MCP, " +
       "exports…), ou où sont ses données — plutôt que de deviner. Passe un topic ; " +
-      "sans topic, tu obtiens la vue d'ensemble.",
+      "sans topic, tu obtiens la vue d'ensemble. Consulte UN topic ciblé, celui qui " +
+      "répond à la question posée. Ne parcours JAMAIS tous les topics par principe ou " +
+      "par curiosité : c'est une perte de temps qui ne sert pas l'utilisateur. Si tu " +
+      "ne sais pas quel topic viser, utilise about_search plutôt que de tout lire.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -7751,7 +7761,8 @@ async function runConversation(messages, hooks) {
         
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
-          out = '(déjà fourni plus haut dans cet échange)';
+          out = '(déjà fourni plus haut dans cet échange — ne redemande pas ce contenu. ' +
+            'Utilise ce que tu as déjà, réponds à l\'utilisateur, ou reprends ta vraie tâche.)';
           
           if (typeof pushDuplicateCallAck === 'function') {
             pushDuplicateCallAck(tc.function.name, out);
@@ -13851,8 +13862,12 @@ function buildSkillsContextBlock() {
   if (!skills.length) return '';
   const lines = skills.map(s => '- [slug: ' + s.slug + '] ' + (s.name || s.slug) +
     (s.description ? ' — ' + s.description : ''));
-  return '<miaou_skills_context>\nSkills disponibles pour usage proactif (voir doctrine skills ' +
-    'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+  return '<miaou_skills_context>\nSkills que l\'utilisateur a rendues disponibles pour un usage ' +
+    'proactif : tu PEUX en lire une (miaou__skills__read) si la situation courante y correspond ' +
+    'vraiment, mais aucune n\'est obligatoire. N\'en lis pas par curiosité ni « au cas où » — une ' +
+    'skill hors sujet consomme un tour pour rien. D\'autres skills existent que l\'utilisateur ' +
+    'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
+    'chercher.\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
 function resolveUserSystemPrompt(globalSystemPrompt, space) {

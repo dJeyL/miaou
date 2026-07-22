@@ -247,7 +247,13 @@ frontières traversées par beaucoup de code.
 éphémère du dernier message user via `buildContextBlock()`, jamais dans le
 system message. Corollaire du piège 18 : changer de Space ou modifier la
 bibliothèque de fichiers casse ce préfixe — assumé, mais reste statique tant
-que ces états ne bougent pas.
+que ces états ne bougent pas. Ce qui compte est la **stabilité d'un tour à
+l'autre**, pas l'immuabilité absolue : modifier un contenu statique (prompt,
+doctrine, blurb) invalide le préfixe une fois, puis il se re-stabilise dès le
+tour suivant — indolore en usage réel, aucun budget de tokens à surveiller. Le
+piège vise les invalidations **récurrentes** (à chaque tour), pas une
+modification actée une fois. Ne pas transformer cette préservation en veto
+contre tout changement de contenu statique.
 
 **#18 — Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
 convs)` (storage.js, pure) est LA source de vérité pour « cette conversation

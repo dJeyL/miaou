@@ -283,11 +283,11 @@ const CODEBLOCK_DOCTRINE =
 
 // Blurb d'identité — constante build-time, INCONDITIONNELLE (même statut que
 // CODEBLOCK_DOCTRINE) : quelques phrases situant l'application et renvoyant vers
-// l'outil miaou__about pour les détails. STATIQUE (piège 16 KV cache) : aucun
-// contenu dynamique (date, état, config). Le contenu d'aide lourd vit derrière
-// l'outil, pas ici. Portée par systemMessageParts()/buildSystemMessage() (main.js)
-// via out.identity, placée EN TÊTE du join. v1 — une modification invalide le
-// préfixe KV cache sur toutes les conversations (même statut que ROOT_SYSTEM_PROMPT).
+// l'outil miaou__about pour les détails. STATIQUE : aucun contenu dynamique
+// (date, état, config). Le contenu d'aide lourd vit derrière l'outil, pas ici.
+// Portée par systemMessageParts()/buildSystemMessage() (main.js) via out.identity,
+// placée EN TÊTE du join. Une modification re-stabilise le préfixe au tour suivant :
+// pas de coût récurrent à surveiller (cf. piège 16).
 const IDENTITY_BLURB =
   "Tu opères dans MIAOU, un client de chat web pour dialoguer avec un modèle de " +
   "langage via une API compatible OpenAI. MIAOU tourne entièrement dans le " +
@@ -298,7 +298,11 @@ const IDENTITY_BLURB =
   "Quand l'utilisateur pose une question sur MIAOU lui-même — comment joindre un " +
   "fichier, ce que sont les espaces, où sont stockées ses données, etc. — appelle " +
   "l'outil miaou__about (paramètre topic) plutôt que de deviner : il sert une aide " +
-  "utilisateur fiable, section par section.";
+  "utilisateur fiable, section par section.\n" +
+  "Les outils de découverte (miaou__about, skills) répondent à un besoin précis du " +
+  "moment ; ce ne sont PAS des étapes préalables à franchir avant d'agir. Ne les " +
+  "parcours pas de façon exhaustive ni par curiosité : lis seulement ce que la tâche " +
+  "ou la question en cours réclame réellement, puis avance.";
 
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
@@ -310,7 +314,10 @@ const SKILL_DOCTRINE_BASE =
   "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
   "skills que l'utilisateur a choisi de rendre disponibles pour un usage proactif " +
   "— ce ne sont PAS des skills que tu es obligé d'utiliser, seulement des fragments " +
-  "d'instructions pertinents si la situation s'y prête.\n\n" +
+  "d'instructions pertinents si la situation s'y prête. N'en lis une que si elle " +
+  "correspond réellement à ce que tu es en train de faire ; ne les parcours pas " +
+  "toutes pour voir. D'autres skills, non listées ici, sont invoquées directement " +
+  "par l'utilisateur à sa discrétion : tu n'as pas à les découvrir ni à les charger.\n\n" +
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
   "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
 
@@ -1068,7 +1075,10 @@ const TOOLS = [
       "cet outil quand l'utilisateur demande comment faire quelque chose dans MIAOU, " +
       "ce qu'est une fonctionnalité (espaces, pièces jointes, mémoire, skills, MCP, " +
       "exports…), ou où sont ses données — plutôt que de deviner. Passe un topic ; " +
-      "sans topic, tu obtiens la vue d'ensemble.",
+      "sans topic, tu obtiens la vue d'ensemble. Consulte UN topic ciblé, celui qui " +
+      "répond à la question posée. Ne parcours JAMAIS tous les topics par principe ou " +
+      "par curiosité : c'est une perte de temps qui ne sert pas l'utilisateur. Si tu " +
+      "ne sais pas quel topic viser, utilise about_search plutôt que de tout lire.",
     inputSchema: {
       type: 'object',
       properties: {

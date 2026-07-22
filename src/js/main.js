@@ -214,8 +214,12 @@ function buildSkillsContextBlock() {
   if (!skills.length) return '';
   const lines = skills.map(s => '- [slug: ' + s.slug + '] ' + (s.name || s.slug) +
     (s.description ? ' — ' + s.description : ''));
-  return '<miaou_skills_context>\nSkills disponibles pour usage proactif (voir doctrine skills ' +
-    'pour la procédure d\'utilisation) :\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+  return '<miaou_skills_context>\nSkills que l\'utilisateur a rendues disponibles pour un usage ' +
+    'proactif : tu PEUX en lire une (miaou__skills__read) si la situation courante y correspond ' +
+    'vraiment, mais aucune n\'est obligatoire. N\'en lis pas par curiosité ni « au cas où » — une ' +
+    'skill hors sujet consomme un tour pour rien. D\'autres skills existent que l\'utilisateur ' +
+    'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
+    'chercher.\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
 // Résolution pure (testable QuickJS) : la description du Space actif est

@@ -548,7 +548,8 @@ async function runConversation(messages, hooks) {
         // rigoureusement identique (modèle qui boucle) est court-circuité.
         const key = tc.function.name + ':' + (tc.function.arguments || '');
         if (servedKeys.has(key)) {
-          out = '(déjà fourni plus haut dans cet échange)';
+          out = '(déjà fourni plus haut dans cet échange — ne redemande pas ce contenu. ' +
+            'Utilise ce que tu as déjà, réponds à l\'utilisateur, ou reprends ta vraie tâche.)';
           // Trace UI du court-circuit : sans elle, l'appel ne laissait AUCUN
           // ack dans le fil (aucun handler n'a tourné). Ack tool_failed rouge
           // + enrichissement standard (args/result/ts/group) pour la fidélité

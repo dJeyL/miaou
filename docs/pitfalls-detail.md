@@ -221,8 +221,8 @@ au KV cache, ou à la synchro multi-onglets.
     **string** = les parts texte concaténées + **une ligne de descripteur par
     attachment `kind:'image'`** du message (`collapseAttachedMessageContent`,
     resources.js). C'est une invalidation **délibérée et ponctuelle** du KV
-    cache (piège 16 interdit les invalidations *récurrentes*, pas une
-    réécriture actée une fois par message) : à partir de ce moment, plus aucun
+    cache (piège 16 vise les invalidations *récurrentes*, pas une
+    réécriture actée une fois par message — celle-ci se re-stabilise ensuite) : à partir de ce moment, plus aucun
     base64 ne repart jamais pour cet attachment.
 
     Format du descripteur, EXACT et BYTE-STABLE (`formatAttachmentDescriptor`) :
