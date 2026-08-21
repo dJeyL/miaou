@@ -89,6 +89,140 @@ describe('reasoningDelta (détection du raisonnement streamé)', function() {
   it('traite la chaîne vide comme une présence (capacité), pas une absence', function() {
     expect(reasoningDelta({ reasoning: '' })).toBe('');
   });
+  it('extrait une part thinking du tableau content (vLLM/Mistral)', function() {
+    expect(reasoningDelta({ content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'hmm' }] },
+    ] })).toBe('hmm');
+  });
+  it('concatène plusieurs segments de texte d\'une même part thinking', function() {
+    expect(reasoningDelta({ content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] },
+    ] })).toBe('ab');
+  });
+  it('ignore les parts de texte quand il cherche le raisonnement', function() {
+    expect(reasoningDelta({ content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'r' }] },
+      { type: 'text', text: 'réponse' },
+    ] })).toBe('r');
+  });
+  it('renvoie null sur un tableau content sans aucune part thinking', function() {
+    expect(reasoningDelta({ content: [{ type: 'text', text: 'salut' }] })).toBe(null);
+  });
+  it('part thinking sans texte exploitable → présence (chaîne vide), pas null', function() {
+    expect(reasoningDelta({ content: [{ type: 'thinking', thinking: [] }] })).toBe('');
+  });
+  it('champ thinking string (Ollama) et part thinking (vLLM) ne se confondent pas', function() {
+    // delta.thinking = string → branche champ dédié ; part.thinking = tableau
+    // imbriqué → branche parts. Le champ dédié prime quand les deux existent.
+    expect(reasoningDelta({ thinking: 'ollama', content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'vllm' }] },
+    ] })).toBe('ollama');
+  });
+});
+
+describe('contentDelta (normalisation du texte de réponse)', function() {
+  it('renvoie la chaîne telle quelle (OpenAI/Ollama)', function() {
+    expect(contentDelta({ content: 'salut' })).toBe('salut');
+  });
+  it('concatène les parts de texte d\'un tableau (vLLM/Mistral)', function() {
+    expect(contentDelta({ content: [
+      { type: 'text', text: 'Voici ' },
+      { type: 'text', text: 'la réponse.' },
+    ] })).toBe('Voici la réponse.');
+  });
+  it('exclut les parts thinking du texte de réponse', function() {
+    expect(contentDelta({ content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'raisonnement' }] },
+      { type: 'text', text: 'réponse' },
+    ] })).toBe('réponse');
+  });
+  it('accepte une part sans type explicite comme du texte', function() {
+    expect(contentDelta({ content: [{ text: 'nu' }] })).toBe('nu');
+  });
+  it('renvoie une chaîne vide quand il n\'y a pas de contenu', function() {
+    expect(contentDelta({})).toBe('');
+    expect(contentDelta(null)).toBe('');
+    expect(contentDelta({ content: [] })).toBe('');
+  });
+  it('ne renvoie jamais [object Object] sur un tableau de parts', function() {
+    // Symptôme d'origine : concaténation directe de delta.content en tableau.
+    const out = contentDelta({ content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'r' }] },
+    ] });
+    expect(out.indexOf('[object Object]')).toBe(-1);
+  });
+});
+
+describe('normalizeTitle (nettoyage du titre généré)', function() {
+  it('laisse intact un titre déjà propre', function() {
+    expect(normalizeTitle('Migration vers PostgreSQL')).toBe('Migration vers PostgreSQL');
+  });
+  it('retire le gras Markdown (symptôme devstral)', function() {
+    expect(normalizeTitle('**Sujet principal**')).toBe('Sujet principal');
+  });
+  it('retire italique, code et barré', function() {
+    expect(normalizeTitle('_Sujet_')).toBe('Sujet');
+    expect(normalizeTitle('`Sujet`')).toBe('Sujet');
+    expect(normalizeTitle('~~Sujet~~')).toBe('Sujet');
+  });
+  it('retire les guillemets même sous du gras', function() {
+    // Ordre des passes : le formatage part avant le rognage des guillemets.
+    expect(normalizeTitle('**"Sujet"**')).toBe('Sujet');
+  });
+  it('retire un préfixe de titre Markdown', function() {
+    expect(normalizeTitle('## Sujet du jour')).toBe('Sujet du jour');
+  });
+  it('retire une puce de liste, y compris en astérisque', function() {
+    expect(normalizeTitle('- Sujet')).toBe('Sujet');
+    expect(normalizeTitle('* Sujet')).toBe('Sujet');
+  });
+  it('ne touche JAMAIS à la casse : la majuscule relève du prompt seul', function() {
+    // Une graphie intentionnelle en minuscules (npm, nginx) n'est pas
+    // distinguable d'un mot ordinaire par la forme du mot : on ne capitalise
+    // rien plutôt que d'écrire "Npm".
+    expect(normalizeTitle('npm et Node')).toBe('npm et Node');
+    expect(normalizeTitle('nginx en production')).toBe('nginx en production');
+    expect(normalizeTitle('vLLM et le streaming')).toBe('vLLM et le streaming');
+    expect(normalizeTitle('iPhone en entreprise')).toBe('iPhone en entreprise');
+    expect(normalizeTitle('migration vers postgres')).toBe('migration vers postgres');
+  });
+  it('retire le formatage sans capitaliser pour autant', function() {
+    expect(normalizeTitle('**npm et Node**')).toBe('npm et Node');
+  });
+  it('conserve les accents intacts', function() {
+    expect(normalizeTitle('Études de cas')).toBe('Études de cas');
+  });
+  it('retire la ponctuation finale et les guillemets', function() {
+    expect(normalizeTitle('"Sujet du jour."')).toBe('Sujet du jour');
+  });
+  it('borne la longueur à 60 caractères', function() {
+    expect(normalizeTitle('a'.repeat(80)).length).toBe(60);
+  });
+  it('tolère une entrée vide ou nulle', function() {
+    expect(normalizeTitle('')).toBe('');
+    expect(normalizeTitle(null)).toBe('');
+  });
+});
+
+describe('exportConvFilename (nom de fichier d\'export, MD et HTML)', function() {
+  const now = new Date(2026, 7, 21).getTime();
+  it('produit miaou-<slug>-<date>.<ext>', function() {
+    expect(exportConvFilename('Migration PostgreSQL', now, 'md'))
+      .toBe('miaou-migration-postgresql-2026-08-21.md');
+  });
+  it('donne le MÊME gabarit pour les deux extensions', function() {
+    const md = exportConvFilename('Sujet', now, 'md');
+    const html = exportConvFilename('Sujet', now, 'html');
+    expect(md.slice(0, -2)).toBe(html.slice(0, -4));
+  });
+  it('translittère les accents via slugTitle', function() {
+    expect(exportConvFilename('Café et thé', now, 'md'))
+      .toBe('miaou-cafe-et-the-2026-08-21.md');
+  });
+  it('retombe sur le slug par défaut si le titre est vide', function() {
+    expect(exportConvFilename('', now, 'html'))
+      .toBe('miaou-miaou-conversation-2026-08-21.html');
+  });
 });
 
 describe('joinReasoning (accumulation entre tours)', function() {

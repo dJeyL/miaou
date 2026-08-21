@@ -139,6 +139,11 @@ function injectVisionDegradedNote(messages) {
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
   "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
+  "Commence par une majuscule, SAUF si le premier mot est un nom propre dont la " +
+  "graphie officielle commence par une minuscule (npm, nginx, vLLM, iPhone, " +
+  "macOS) : dans ce cas respecte scrupuleusement sa casse d'origine. " +
+  "Aucun formatage : pas d'astérisques, pas de gras, pas d'italique, pas de " +
+  "Markdown, pas de balises. Du texte brut uniquement. " +
   "Réponds uniquement par le titre.";
 
 const SUMMARY_PROMPT =
@@ -259,7 +264,55 @@ function parseSSELine(line) {
 function reasoningDelta(delta) {
   if (!delta) return null;
   const v = delta.reasoning ?? delta.reasoning_content ?? delta.thinking;
-  return typeof v === 'string' ? v : null;
+  if (typeof v === 'string') return v;
+  // Forme vLLM/Mistral : pas de champ dédié, le raisonnement est une *part*
+  // `{type:'thinking', thinking:[{type:'text', text}]}` DANS le tableau
+  // delta.content. Attention à la collision de nom : `delta.thinking` (string,
+  // relais Ollama, traité ci-dessus) et `part.thinking` (tableau imbriqué, ici)
+  // sont deux choses différentes — ne jamais fusionner les deux branches.
+  return thinkingPartsText(delta.content);
+}
+
+// thinkingPartsText : concatène le texte des parts de raisonnement d'un
+// delta.content en forme tableau (vLLM/Mistral). Renvoie null si `content`
+// n'est pas un tableau ou ne porte AUCUNE part thinking — préserve le contrat
+// de reasoningDelta (null = absent, '' = présent mais vide). Une part thinking
+// présente mais sans texte exploitable rend '' (présence).
+function thinkingPartsText(content) {
+  if (!Array.isArray(content)) return null;
+  let out = null;
+  for (const part of content) {
+    if (!part || part.type !== 'thinking') continue;
+    if (out === null) out = '';
+    const inner = part.thinking;
+    if (typeof inner === 'string') { out += inner; continue; }
+    if (!Array.isArray(inner)) continue;
+    for (const seg of inner) {
+      if (seg && typeof seg.text === 'string') out += seg.text;
+    }
+  }
+  return out;
+}
+
+// contentDelta : texte de réponse d'un delta, normalisé en chaîne. Deux formes
+// coexistent selon le backend :
+//  - string (OpenAI/Ollama classique) → renvoyée telle quelle ;
+//  - tableau de parts (vLLM/Mistral) → concaténation des `text` des parts NON
+//    thinking (celles-ci partent dans reasoningDelta, jamais dans la réponse).
+// Renvoie '' quand il n'y a rien à afficher : l'appelant ne teste que la
+// vérité de la chaîne, aucune sémantique de présence ici (contrairement au
+// raisonnement, dont la chaîne vide signale la capacité thinking).
+function contentDelta(delta) {
+  if (!delta) return '';
+  const c = delta.content;
+  if (typeof c === 'string') return c;
+  if (!Array.isArray(c)) return '';
+  let out = '';
+  for (const part of c) {
+    if (!part || part.type === 'thinking') continue;
+    if (typeof part.text === 'string') out += part.text;
+  }
+  return out;
 }
 
 // Concatène deux segments de raisonnement (entre tours d'un même échange) en
@@ -414,8 +467,9 @@ async function streamCompletion(messages, opts) {
           if (o.onReasoning) o.onReasoning(reasoningBuffer);
         }
 
-        if (delta.content) {
-          contentBuffer += delta.content;
+        const cd = contentDelta(delta);
+        if (cd) {
+          contentBuffer += cd;
           if (o.onDelta) o.onDelta(contentBuffer);
         }
 
@@ -677,6 +731,30 @@ async function runConversation(messages, hooks) {
 }
 
 // ── Titrage automatique ─────────────────────────────────────────────────────
+// Normalise la sortie brute du modèle de titrage : retire le formatage que le
+// prompt interdit déjà (devstral ajoutait des astérisques de gras), les
+// guillemets et la ponctuation finale, puis borne la longueur.
+// Ordre volontaire — le formatage part AVANT le rognage des guillemets, sinon
+// un titre `**"Sujet"**` garderait ses guillemets une fois les astérisques
+// retirés.
+// La MAJUSCULE INITIALE est demandée par le prompt et n'est JAMAIS forcée ici :
+// une graphie intentionnelle en minuscules (npm, nginx, macOS, ffmpeg) n'est
+// pas distinguable d'un mot ordinaire par la seule forme du mot — "npm" et
+// "migration" ont la même casse. Capitaliser massacrerait le premier cas, et
+// toute heuristique (majuscule interne) laisse passer npm. Le seul mécanisme
+// fiable serait une liste d'exceptions, forcément incomplète : on préfère ne
+// pas toucher à la casse plutôt que d'écrire "Npm".
+function normalizeTitle(raw) {
+  let t = String(raw || '');
+  // Préfixes de bloc AVANT les marqueurs inline : une puce « * Sujet » perdrait
+  // son astérisque au strip inline et ne serait plus reconnue comme puce.
+  t = t.replace(/^\s*#{1,6}\s*/, '').replace(/^\s*[-+*]\s+/, '');
+  // Formatage Markdown inline : gras/italique/code/barré. On retire les
+  // marqueurs, pas leur contenu.
+  t = t.replace(/[*_`~]+/g, '');
+  t = t.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim();
+  return t.slice(0, 60);
+}
 async function generateTitle(thread) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -686,7 +764,7 @@ async function generateTitle(thread) {
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
   ], { temperature: 0.2, timeout: 60000 });
-  return out.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim().slice(0, 60);
+  return normalizeTitle(out);
 }
 
 // ── Génération d'un résumé ──────────────────────────────────────────────────

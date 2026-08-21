@@ -29,85 +29,86 @@
   - `parseConvRefs()` — L210
 - **Téléchargement côté client** (L220)
   - `slugTitle()` — L226
-  - `downloadFile()` — L237
-- **Conversion Markdown → HTML (lot R)** (L249)
-  - `extractMdTitle()` — L264
-  - `plainTextToParagraphs()` — L283
-  - `mdHtmlFileName()` — L298
-  - `LANG_TO_EXT` — L308
-  - `langExt()` — L331
-  - `parseCodeFenceInfo()` — L343
-  - `sanitizeDownloadName()` — L360
-- **Rendu Mermaid (lot E) : helpers purs** (L371)
-  - `isMermaidLang()` — L375
-  - `mermaidThemeFor()` — L383
-  - `sanitizeMermaidSource()` — L401
-  - `diagramImageName()` — L413
-- **Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs** (L419)
-  - `isPreviewableLang()` — L423
-  - `isMarkdownLang()` — L432
-  - `buildPreviewSrcdoc()` — L442
-  - `b64ToBytes()` — L455
-- **js__eval : briques pures du sandbox de compute (lot L)** (L463)
-  - `splitLines()` — L471
-  - `checkOutputCap()` — L482
-- **Agrégation MCP : nommage, namespaces, filtres (fonctions pures)** (L487)
-  - `parseToolName()` — L492
-  - `resolveInternalToolName()` — L507
-  - `groupByNamespace()` — L519
-  - `guessMcpTransport()` — L537
-  - `validateMcpServerName()` — L547
-  - `filterMcpTools()` — L561
-  - `parseToolFilterList()` — L584
-- **Horodatages des messages** (L591)
-  - `SHOW_YEAR_AFTER_DAYS` — L593
-  - `FR_DAYS_ABBR` — L595
-  - `FR_DAYS_FULL` — L596
-  - `FR_MONTHS_FULL` — L597
-  - `_tsHHMM()` — L600
-  - `_startOfDay()` — L606
-  - `formatMessageTime()` — L617
-  - `formatDateRelative()` — L641
-  - `calendarBucket()` — L662
-  - `formatFullDateFr()` — L678
-  - `exportDateStamp()` — L687
-  - `exportDateTimeStamp()` — L697
-  - `exportDateDisplay()` — L706
-- **Reconstruction du payload API depuis currentThread** (L713)
-  - `stampTs()` — L719
-- **Export Markdown : traces d'appels d'outils** (L725)
-  - `EXPORT_ARGS_MAX` — L728
-  - `EXPORT_RESULT_MAX` — L729
-  - `EXPORT_RESNAME_MAX` — L730
-  - `_truncMd()` — L732
-  - `_formatToolCallMd()` — L748
-  - `formatToolAcksMd()` — L782
-  - `_formatToolCallHtml()` — L809
-  - `EXPORT_ACK_ICON` — L844
-  - `_formatToolCallPreviewHtml()` — L850
-  - `_toolTraceUid` — L860
-  - `formatToolAcksHtml()` — L878
-  - `exportableAckImageKey()` — L919
-  - `_hashId9()` — L933
-  - `messageTextForSummary()` — L947
-  - `formatCallMarker()` — L961
-  - `enrichedAckGroups()` — L969
-  - `findAckByCallId()` — L1016
-  - `expandThread()` — L1036
-- **Interjections mid-génération (lot Q) — helpers purs** (L1120)
-  - `joinInterjectionLiterals()` — L1125
-  - `buildInterjectionEntry()` — L1138
-- **Parsing défensif du JSON de résumé** (L1144)
-  - `parseSummaryJSON()` — L1147
-- **Context inspector (brief B)** (L1168)
-  - `estimateTokens()` — L1171
-  - `IMAGE_TOKENS_ESTIMATE` — L1179
-  - `CONTEXT_WINDOW_WARN_RATIO` — L1183
-  - `buildContextManifest()` — L1199
-  - `scaleManifestToUsage()` — L1290
-  - `usageDerived()` — L1331
-  - `HELP_SEARCH_MAX_EXCERPTS` — L1346
-  - `searchHelpContent()` — L1358
+  - `exportConvFilename()` — L238
+  - `downloadFile()` — L246
+- **Conversion Markdown → HTML (lot R)** (L258)
+  - `extractMdTitle()` — L273
+  - `plainTextToParagraphs()` — L292
+  - `mdHtmlFileName()` — L307
+  - `LANG_TO_EXT` — L317
+  - `langExt()` — L340
+  - `parseCodeFenceInfo()` — L352
+  - `sanitizeDownloadName()` — L369
+- **Rendu Mermaid (lot E) : helpers purs** (L380)
+  - `isMermaidLang()` — L384
+  - `mermaidThemeFor()` — L392
+  - `sanitizeMermaidSource()` — L410
+  - `diagramImageName()` — L422
+- **Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs** (L428)
+  - `isPreviewableLang()` — L432
+  - `isMarkdownLang()` — L441
+  - `buildPreviewSrcdoc()` — L451
+  - `b64ToBytes()` — L464
+- **js__eval : briques pures du sandbox de compute (lot L)** (L472)
+  - `splitLines()` — L480
+  - `checkOutputCap()` — L491
+- **Agrégation MCP : nommage, namespaces, filtres (fonctions pures)** (L496)
+  - `parseToolName()` — L501
+  - `resolveInternalToolName()` — L516
+  - `groupByNamespace()` — L528
+  - `guessMcpTransport()` — L546
+  - `validateMcpServerName()` — L556
+  - `filterMcpTools()` — L570
+  - `parseToolFilterList()` — L593
+- **Horodatages des messages** (L600)
+  - `SHOW_YEAR_AFTER_DAYS` — L602
+  - `FR_DAYS_ABBR` — L604
+  - `FR_DAYS_FULL` — L605
+  - `FR_MONTHS_FULL` — L606
+  - `_tsHHMM()` — L609
+  - `_startOfDay()` — L615
+  - `formatMessageTime()` — L626
+  - `formatDateRelative()` — L650
+  - `calendarBucket()` — L671
+  - `formatFullDateFr()` — L687
+  - `exportDateStamp()` — L696
+  - `exportDateTimeStamp()` — L706
+  - `exportDateDisplay()` — L715
+- **Reconstruction du payload API depuis currentThread** (L722)
+  - `stampTs()` — L728
+- **Export Markdown : traces d'appels d'outils** (L734)
+  - `EXPORT_ARGS_MAX` — L737
+  - `EXPORT_RESULT_MAX` — L738
+  - `EXPORT_RESNAME_MAX` — L739
+  - `_truncMd()` — L741
+  - `_formatToolCallMd()` — L757
+  - `formatToolAcksMd()` — L791
+  - `_formatToolCallHtml()` — L818
+  - `EXPORT_ACK_ICON` — L853
+  - `_formatToolCallPreviewHtml()` — L859
+  - `_toolTraceUid` — L869
+  - `formatToolAcksHtml()` — L887
+  - `exportableAckImageKey()` — L928
+  - `_hashId9()` — L942
+  - `messageTextForSummary()` — L956
+  - `formatCallMarker()` — L970
+  - `enrichedAckGroups()` — L978
+  - `findAckByCallId()` — L1025
+  - `expandThread()` — L1045
+- **Interjections mid-génération (lot Q) — helpers purs** (L1129)
+  - `joinInterjectionLiterals()` — L1134
+  - `buildInterjectionEntry()` — L1147
+- **Parsing défensif du JSON de résumé** (L1153)
+  - `parseSummaryJSON()` — L1156
+- **Context inspector (brief B)** (L1177)
+  - `estimateTokens()` — L1180
+  - `IMAGE_TOKENS_ESTIMATE` — L1188
+  - `CONTEXT_WINDOW_WARN_RATIO` — L1192
+  - `buildContextManifest()` — L1208
+  - `scaleManifestToUsage()` — L1299
+  - `usageDerived()` — L1340
+  - `HELP_SEARCH_MAX_EXCERPTS` — L1355
+  - `searchHelpContent()` — L1367
 
 ## src/js/sync.js
 
@@ -466,32 +467,35 @@
   - `degradeVisionMessages()` — L110
   - `injectVisionDegradedNote()` — L123
   - `TITLE_PROMPT` — L139
-  - `SUMMARY_PROMPT` — L144
-  - `FILE_DESCRIPTION_PROMPT` — L168
-- **Appel non streamé, résultat exploité en interne (jamais affiché)** (L183)
-  - `silentCompletion()` — L184
-- **Parsing SSE** (L232)
-  - `sseDataObject()` — L234
-  - `parseSSELine()` — L247
-  - `reasoningDelta()` — L259
-  - `joinReasoning()` — L267
-- **Température du chat : override console** (L273)
-  - `_chatTempOverride` — L280
-  - `setChatTemperature()` — L282
-  - `activeChatTemperature()` — L297
-- **Streaming d'une complétion (un tour)** (L301)
-  - `streamCompletion()` — L304
-  - `abortStream()` — L449
-- **Boucle complète d'un échange (injection + tool_calls)** (L453)
-  - `runConversation()` — L465
-- **Titrage automatique** (L679)
-  - `generateTitle()` — L680
-- **Génération d'un résumé** (L692)
-  - `generateSummary()` — L693
-- **Recherche / sélection des résumés pertinents** (L714)
-  - `searchSummaries()` — L718
-- **Liste des modèles exposés par l'API** (L736)
-  - `fetchModels()` — L737
+  - `SUMMARY_PROMPT` — L149
+  - `FILE_DESCRIPTION_PROMPT` — L173
+- **Appel non streamé, résultat exploité en interne (jamais affiché)** (L188)
+  - `silentCompletion()` — L189
+- **Parsing SSE** (L237)
+  - `sseDataObject()` — L239
+  - `parseSSELine()` — L252
+  - `reasoningDelta()` — L264
+  - `thinkingPartsText()` — L281
+  - `contentDelta()` — L305
+  - `joinReasoning()` — L320
+- **Température du chat : override console** (L326)
+  - `_chatTempOverride` — L333
+  - `setChatTemperature()` — L335
+  - `activeChatTemperature()` — L350
+- **Streaming d'une complétion (un tour)** (L354)
+  - `streamCompletion()` — L357
+  - `abortStream()` — L503
+- **Boucle complète d'un échange (injection + tool_calls)** (L507)
+  - `runConversation()` — L519
+- **Titrage automatique** (L733)
+  - `normalizeTitle()` — L747
+  - `generateTitle()` — L758
+- **Génération d'un résumé** (L770)
+  - `generateSummary()` — L771
+- **Recherche / sélection des résumés pertinents** (L792)
+  - `searchSummaries()` — L796
+- **Liste des modèles exposés par l'API** (L814)
+  - `fetchModels()` — L815
 
 ## src/js/ui.js
 

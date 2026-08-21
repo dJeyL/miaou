@@ -230,6 +230,15 @@ function slugTitle(title) {
     .replace(/^-+|-+$/g, '') || 'miaou-conversation';
 }
 
+// Nom de fichier d'export d'une conversation : miaou-<slug>-<AAAA-MM-JJ>.<ext>.
+// UNE seule formule pour les deux exports (Markdown et HTML standalone) — ils
+// ont divergé une fois (le MD sortait un `<slug>.md` nu, sans préfixe ni date),
+// écart né de la formule recopiée à un seul des deux endroits. Toute évolution
+// du gabarit se fait ici, jamais dans l'appelant.
+function exportConvFilename(title, now, ext) {
+  return 'miaou-' + slugTitle(title) + '-' + exportDateStamp(now) + '.' + ext;
+}
+
 // Crée un Blob, génère une URL objet éphémère, déclenche le téléchargement via
 // un <a download> invisible, puis révoque l'URL. Fonctionne sous file:// et derrière
 // un reverse-proxy (Caddy). N'est pas un outil LLM — appelé uniquement par des

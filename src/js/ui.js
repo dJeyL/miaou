@@ -7086,10 +7086,8 @@ async function exportConvHtml() {
   try {
     const conv = currentConvId ? loadConversation(currentConvId) : null;
     const title = (conv && conv.title) || 'miaou-conversation';
-    const slug = slugTitle(title);
     const theme = document.documentElement.getAttribute('data-theme') || 'dark';
     const now = Date.now();
-    const dateStamp = exportDateStamp(now);
     const dateDisplay = exportDateDisplay(now);
     const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport();
     const bodyHtml = await runBackgroundTask('export HTML…',
@@ -7108,7 +7106,7 @@ async function exportConvHtml() {
       const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
       if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
     }
-    downloadFile('miaou-' + slug + '-' + dateStamp + '.html', html, 'text/html');
+    downloadFile(exportConvFilename(title, now, 'html'), html, 'text/html');
   } finally {
     _exportingHtml = false;
   }

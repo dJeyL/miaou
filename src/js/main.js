@@ -502,7 +502,6 @@ function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
   const conv = currentConvId ? loadConversation(currentConvId) : null;
   const title = (conv && conv.title) || 'miaou-conversation';
-  const slug = slugTitle(title);
 
   const lines = [];
   let pendingAcks = [];
@@ -529,7 +528,8 @@ function downloadConvMd() {
     lines.push('---');
     lines.push('');
   }
-  downloadFile(slug + '.md', lines.join('\n').trimEnd() + '\n', 'text/markdown');
+  downloadFile(exportConvFilename(title, Date.now(), 'md'),
+    lines.join('\n').trimEnd() + '\n', 'text/markdown');
 }
 
 // Annulation d'un ack : dispatch via ACK_KINDS[kind].undo (forgetMemory pour
