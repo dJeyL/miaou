@@ -29,12 +29,20 @@ Un tableau d'entrées `{ id, key?, label, keywords[], hint?, enabled?, run() }`.
   inline-handler du projet — toutes les cibles sont des `function` globales) ou
   entre dans un sous-mode via `enterCmdkSubmode(mode)`.
 - `enabled()` (optionnel) : masque l'entrée hors contexte (liste courte). Ex.
-  export → `!!currentConvId` ; switch model → `_modelsCache` non vide ; invoke
+  export → `!!currentConvId` ; switch model → `cmdkModelItems('')` non vide ; invoke
   skill → `listEnabledSkills().length` ; switch space → `loadSpaces().length > 1`.
 - `key` (optionnel) : lettre de raccourci direct (cf. section « Raccourcis »).
   Affichée en badge à GAUCHE de la ligne (`.cmdk-item-key`). Doit être unique
   entre commandes.
-- `hint` (optionnel) : annotation à droite (`✓` dans les sous-modes).
+- `hint` (optionnel) : annotation à droite.
+- `current` (optionnel, sous-modes) : marque l'élément **en usage** (modèle du
+  serveur actif, Espace actif). Rendu en **coche orange à GAUCHE**, dans
+  l'emplacement de largeur fixe qu'occupe la touche de raccourci en mode racine
+  — les deux ne coexistent jamais (un sous-mode n'a pas de touches). Pas le
+  chrome de touche clavier (fond + bordure) : c'est un état, pas une touche à
+  presser. La règle de surlignage `.cmdk-item.selected .cmdk-item-key` **exclut**
+  explicitement `.cmdk-item-current` (`:not()`), sinon elle repeindrait la coche
+  en `--text` à spécificité égale.
 - `keywords[]` : matchés par `scoreCommand` en plus du label (synonymes fr/en).
 
 ## Raccourcis par commande (mode raccourci vs filtre)
@@ -75,16 +83,22 @@ Machine à états légère : `'root' | 'model' | 'skill' | 'conv' | 'space'`. En
 un sous-mode vide l'input, change le placeholder (`CMDK_PLACEHOLDERS`) et rend la
 liste dédiée. Échap (`closeCommandPaletteViaEscape`) revient à `root` avant de
 fermer. `cmdkModeItems(query)` route selon `_cmdkMode` et renvoie des items
-`{ label, note?, hint?, run() }` :
+`{ label, note?, hint?, current?, run() }` :
 
-- **model** : `_modelsCache` (peut être vide → l'entrée racine est `enabled`-gated).
-  Pick → `pickComposerModel` (override conversation, même chemin que le sélecteur
-  composer). `✓` sur le modèle actif (`activeModel`).
+- **model** : `cmdkModelItems(query)` — mêmes couples (serveur, modèle) que le
+  sélecteur composer, sur tous les serveurs non désactivés déjà en cache
+  (`_modelsByUrl`) ; la palette **ne déclenche aucun fetch**, elle liste ce qui
+  est connu (peut être vide → l'entrée racine est `enabled`-gated). Le nom du
+  serveur apparaît en `note` dès qu'il y a plus d'un serveur sélectionnable.
+  Pick → `pickComposerModel(m, serverId)` (bascule le serveur actif si besoin
+  puis override conversation, même chemin que le sélecteur composer). `current`
+  (coche orange à gauche) sur le **couple** (serveur actif, `activeModel()`).
 - **skill** : `matchSkillCompletions(query)`. Pick → `insertSkillIntoComposer`
   (insère `/slug ` dans le composer + focus + `onComposerInput`). **N'invoque
   jamais directement** : l'invocation reste au composer (chemin slash-skill
   unique, `docs/skills.md`).
-- **space** : `loadSpaces()`. Pick → `pickSpace`. `✓` sur le Space actif.
+- **space** : `loadSpaces()`. Pick → `pickSpace`. `current` (coche orange à
+  gauche) sur le Space actif.
 - **conv** : voir ci-dessous.
 
 ## Sous-mode « recherche de conversation » — percée cross-Space assumée

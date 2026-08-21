@@ -179,11 +179,38 @@ au KV cache, ou à la synchro multi-onglets.
     `currentConvModel` est remis à `''` par `resetToEmpty` (nouvelle conv →
     défaut), restauré par `openConversation`, persisté par `setConvModel` et
     `persistCurrent`. Liste des modèles **mise en cache pour la session**
-    (`loadModelsCached`, ui.js, invalidée si l'URL backend change) : **un seul
-    `/models` par session/backend**, pas de re-fetch à chaque ouverture du
-    dropdown. Fallback silencieux : si `/models` échoue, le sélecteur **n'appa-
-    raît pas** (visibilité = `showModelSelector` **ET** cache non vide, gérée par
-    `syncModelUI`) et le défaut reste utilisé. Aucun filtrage des modèles listés
+    (`_modelsByUrl`, ui.js — une entrée `{ url, models, error, pending }` par
+    **URL de serveur**) : **un seul `/models` par session et par serveur**, pas
+    de re-fetch à chaque ouverture du dropdown. Le sélecteur est **multi-serveurs**
+    (2026-08-21) : il liste les modèles de TOUS les serveurs non désactivés
+    (`listSelectableApiServers`, storage.js — prédicat unique `!disabled && url`),
+    regroupés par serveur (`.model-group`, en-tête affiché seulement s'il y a
+    plus d'un serveur — à un seul serveur, apparence historique inchangée). Le
+    serveur actif est prefetché au démarrage (`prefetchModels`) ; les AUTRES sont
+    interrogés **à l'ouverture du menu** (`loadAllServerModels`, en parallèle,
+    re-rendu à l'arrivée) — pas N requêtes au boot si le menu n'est jamais ouvert.
+    Choisir un modèle d'un autre serveur **bascule le serveur actif**
+    (`pickComposerModel(m, serverId)` : `setActiveApiServerId` PUIS `setConvModel`,
+    l'ordre compte) — décision Julien 2026-08-21, pas d'override de serveur par
+    conversation (`conv.model` reste un simple nom de modèle). Le `✓` porte sur le
+    **couple** (serveur actif, modèle courant) : un même nom de modèle exposé par
+    deux serveurs ne coche que celui en usage. Un serveur dont `/models` échoue
+    reste visible avec une ligne d'état `.model-group-note.is-error` cliquable
+    (`retryServerModels`, force le re-fetch). **Le menu est réécrit en entier à
+    chaque arrivée de liste** (et à chaque retry) : `renderComposerModelOptions`
+    est donc un **shell d'ancrage** autour de `renderComposerModelOptionsInner`
+    — il mémorise le décalage VISUEL de la ligne active (`offsetTop - scrollTop`)
+    avant réécriture et le restaure après, sinon `scrollTop` retombe à 0 et la
+    ligne active disparaît sous le pli pendant les chargements. Préserver le
+    décalage, pas seulement la visibilité : des groupes s'insèrent AVANT la ligne
+    active, un simple `scrollIntoView` ferait glisser la liste sous le curseur.
+    Repli sur le `scrollTop` brut sans ligne sélectionnée, `scrollIntoView({
+    block: 'nearest' })` au premier rendu. Mesurable dès avant `.show` :
+    `.model-menu` se cache en `visibility`/`opacity`, **jamais** `display: none`
+    — la boîte existe, donc `offsetTop`/`scrollTop` sont lisibles. Fallback silencieux : le sélecteur
+    n'apparaît que si `showModelSelector` **ET** (la liste du serveur actif est
+    non vide **OU** un autre serveur est sélectionnable — sinon un serveur actif
+    injoignable masquerait un sélecteur qui a pourtant des modèles ailleurs). Aucun filtrage des modèles listés
     (un modèle listé peut être non fonctionnel : pas de moyen de le savoir à
     l'avance) ; **pas de retry/fallback** à l'envoi en cas d'erreur — l'erreur
     s'affiche dans la bulle (catch existant de `dispatchSend`). Changer de modèle

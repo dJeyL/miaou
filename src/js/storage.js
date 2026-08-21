@@ -50,7 +50,7 @@ const DEFAULT_SETTINGS = {
   highlight: true,
   summaryInjectionMode: 'propose',   // 'auto' | 'propose' | 'never'
   theme: 'system',         // 'light' | 'dark' | 'system'
-  showModelSelector: false, // sélecteur de modèle dans le composer
+  showModelSelector: false, // sélecteur serveur/modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
@@ -159,8 +159,21 @@ function normalizeApiServer(s) {
     url: String(o.url || '').trim(),
     key: o.key ? String(o.key) : '',
     model: String(o.model || '').trim(),
+    // `disabled` (défaut false) : serveur mis de côté. Il n'est plus interrogé
+    // pour peupler le sélecteur serveur/modèle du composer, et n'est plus
+    // éligible comme repli d'`activeApiServer()`. Il reste sélectionnable
+    // explicitement depuis sa carte (« Utiliser ce serveur ») — sinon on ne
+    // pourrait plus le réactiver.
+    disabled: o.disabled === true,
     vision,
   };
+}
+
+// Serveurs candidats à la découverte de modèles (sélecteur composer) : tous les
+// serveurs non désactivés ayant une URL. Prédicat unique, à réutiliser partout
+// plutôt que de réécrire un filtre `!s.disabled` local.
+function listSelectableApiServers() {
+  return loadApiServers().filter(s => !s.disabled && (s.url || '').trim());
 }
 
 // Flag vision manuel (D5) pour un couple (serveur, modèle). Pur, testable.
@@ -210,7 +223,10 @@ function activeApiServer() {
   const servers = loadApiServers();
   if (!servers.length) return null;
   const byId = getApiServer(getActiveApiServerId());
-  return byId || servers[0];
+  // Le repli ignore les serveurs désactivés ; un serveur désactivé EXPLICITEMENT
+  // actif (via sa carte) reste actif — le flag exclut de la découverte et du
+  // repli automatique, jamais d'un choix délibéré de l'utilisateur.
+  return byId || servers.find(s => !s.disabled) || servers[0];
 }
 
 // Config url/key/model résolue pour les appels API (api.js). Seule source

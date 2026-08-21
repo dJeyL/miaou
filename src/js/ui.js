@@ -3188,13 +3188,39 @@ function cmdkRootPlaceholder() {
 // submode. `enabled()` (optionnel) : masque la commande hors contexte (liste
 // courte). `hint` (optionnel) : annotation à droite. `keywords` : matchés par
 // scoreCommand en plus du label.
+// Items du sous-mode « modèle » de la palette : mêmes couples serveur/modèle que
+// le sélecteur du composer (tous les serveurs non désactivés déjà en cache — la
+// palette ne déclenche pas de fetch, elle liste ce qui est connu). Le nom du
+// serveur apparaît en note dès qu'il y a plus d'un serveur sélectionnable.
+function cmdkModelItems(query) {
+  const q = (query || '').toLowerCase();
+  const cur = activeModel();
+  const activeId = (activeApiServer() || {}).id;
+  const servers = listSelectableApiServers();
+  const multi = servers.length > 1;
+  const items = [];
+  servers.forEach(s => {
+    const e = _modelsByUrl[(s.url || '').trim()] || {};
+    (e.models || []).forEach(m => {
+      if (q && m.toLowerCase().indexOf(q) < 0) return;
+      items.push({
+        label: m,
+        note: multi ? (s.name || s.url) : '',
+        current: (m === cur && s.id === activeId),
+        run: () => { closeCommandPalette(); pickComposerModel(m, s.id); },
+      });
+    });
+  });
+  return items;
+}
+
 const COMMANDS = [
   { id: 'new', key: 'n', label: 'Nouvelle conversation', keywords: ['new', 'conversation', 'nouveau'],
     run: () => { closeCommandPalette(); newConversation(); } },
   { id: 'search-conv', key: 'f', label: 'Rechercher une conversation', keywords: ['search', 'historique', 'find', 'chercher'],
     run: () => enterCmdkSubmode('conv') },
   { id: 'switch-model', key: 'm', label: 'Changer de modèle', keywords: ['model', 'modèle', 'switch'],
-    enabled: () => !!(_modelsCache && _modelsCache.length),
+    enabled: () => cmdkModelItems('').length > 0,
     run: () => enterCmdkSubmode('model') },
   { id: 'invoke-skill', key: 'k', label: 'Invoquer une skill', keywords: ['skill', 'slash', 'commande'],
     enabled: () => listEnabledSkills().length > 0,
@@ -3268,14 +3294,7 @@ function cmdkModeItems(query) {
       label: c.label, hint: c.hint || '', keyLabel: c.key ? c.key.toUpperCase() : '', run: c.run,
     }));
   }
-  if (_cmdkMode === 'model') {
-    const cur = activeModel();
-    const models = (_modelsCache || []).filter(m => !query || m.toLowerCase().indexOf(query.toLowerCase()) >= 0);
-    return models.map(m => ({
-      label: m, hint: m === cur ? '✓' : '',
-      run: () => { closeCommandPalette(); pickComposerModel(m); },
-    }));
-  }
+  if (_cmdkMode === 'model') return cmdkModelItems(query);
   if (_cmdkMode === 'skill') {
     return matchSkillCompletions(query).map(s => ({
       label: s.name || s.slug, note: s.name ? ('/' + s.slug) : '',
@@ -3286,7 +3305,7 @@ function cmdkModeItems(query) {
     const spaces = loadSpaces().filter(s => !query || (s.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0);
     const active = getActiveSpaceId();
     return spaces.map(s => ({
-      label: s.name || '(sans nom)', hint: s.id === active ? '✓' : '',
+      label: s.name || '(sans nom)', current: s.id === active,
       run: () => { closeCommandPalette(); pickSpace(s.id); },
     }));
   }
@@ -3371,12 +3390,20 @@ function renderCommandList(query) {
   _cmdkItems.forEach((it, i) => {
     const li = document.createElement('li');
     li.className = 'cmdk-item' + (i === _cmdkSel ? ' selected' : '');
-    // Touche de raccourci à GAUCHE (mode racine). Emplacement réservé (span
-    // vide) même sans touche, pour aligner les labels verticalement.
+    // Emplacement de GAUCHE, largeur fixe : il porte la touche de raccourci en
+    // mode racine, et la COCHE de l'élément courant dans les sous-modes (modèle,
+    // espace) — les deux ne coexistent jamais (un sous-mode n'a pas de touches).
+    // Span vide réservé sinon, pour aligner les labels verticalement.
     const keyEl = document.createElement('span');
     keyEl.className = 'cmdk-item-key';
-    if (it.keyLabel) keyEl.textContent = it.keyLabel;
-    else keyEl.classList.add('cmdk-item-key-empty');
+    if (it.keyLabel) {
+      keyEl.textContent = it.keyLabel;
+    } else if (it.current) {
+      keyEl.textContent = '✓';
+      keyEl.classList.add('cmdk-item-current');
+    } else {
+      keyEl.classList.add('cmdk-item-key-empty');
+    }
     li.appendChild(keyEl);
     const label = document.createElement('span');
     label.className = 'cmdk-item-label';
@@ -3547,33 +3574,84 @@ document.addEventListener('keydown', (e) => {
   if (backdrop) backdrop.addEventListener('mousedown', closeCommandPalette);
 })();
 
-// ── Sélecteur de modèle du composer ─────────────────────────────────────────
-// Liste mise en cache pour la session (pas de persistance), invalidée si l'URL
-// du backend change. Un seul fetch /models par session/backend.
-let _modelsCache = null;
-let _modelsCacheUrl = '';
+// ── Sélecteur serveur/modèle du composer ────────────────────────────────────
+// Le sélecteur liste les modèles de TOUS les serveurs API non désactivés, pas
+// seulement de l'actif. Cache de session (pas de persistance) indexé par URL de
+// serveur : un seul fetch /models par (session, URL). Une entrée porte
+// `{ url, models, error, pending }` — `error` mémorise l'échec pour l'afficher
+// dans le menu (en-tête de groupe cliquable pour réessayer, cf. brief).
+const _modelsByUrl = Object.create(null);
 
-async function loadModelsCached() {
-  const cfg = activeApiConfig();
-  const url = (cfg.url || '').trim();
-  if (!url) return [];
-  if (_modelsCache && _modelsCacheUrl === url) return _modelsCache;
-  const models = await fetchModels({ url, key: cfg.key });
-  _modelsCache = models;
-  _modelsCacheUrl = url;
-  return models;
+function _modelsEntry(url) {
+  let e = _modelsByUrl[url];
+  if (!e) { e = _modelsByUrl[url] = { url, models: null, error: null, pending: null }; }
+  return e;
+}
+
+// Charge (ou renvoie depuis le cache) la liste d'un serveur. `force` relance un
+// fetch même après échec (bouton « réessayer »). Ne rejette jamais : l'échec est
+// mémorisé dans l'entrée, à charge de l'appelant de re-rendre.
+function loadServerModels(server, force) {
+  const url = ((server && server.url) || '').trim();
+  if (!url) return Promise.resolve([]);
+  const e = _modelsEntry(url);
+  if (e.models && !force) return Promise.resolve(e.models);
+  if (e.pending && !force) return e.pending;
+  if (e.error && !force) return Promise.resolve([]);
+  e.error = null;
+  e.pending = fetchModels({ url, key: server.key })
+    .then(models => { e.models = models; e.error = null; return models; })
+    .catch(err => { e.models = null; e.error = String((err && err.message) || err || 'échec'); return []; })
+    .then(models => { e.pending = null; return models; });
+  return e.pending;
+}
+
+// Compat : liste du serveur ACTIF (utilisée par la visibilité du sélecteur et
+// par prefetchModels au démarrage).
+function loadModelsCached() {
+  const s = activeApiServer();
+  if (!s) return Promise.resolve([]);
+  return loadServerModels(s);
+}
+
+function activeServerModels() {
+  const s = activeApiServer();
+  const url = ((s && s.url) || '').trim();
+  const e = url ? _modelsByUrl[url] : null;
+  return (e && e.models) || null;
+}
+
+// Charge en parallèle les listes de tous les serveurs sélectionnables dont on
+// n'a pas encore de résultat. Appelé à l'ouverture du menu : le serveur actif
+// est déjà en cache (prefetchModels), les autres arrivent puis re-rendent.
+function loadAllServerModels(force) {
+  const servers = listSelectableApiServers();
+  const todo = servers.filter(s => {
+    const e = _modelsByUrl[(s.url || '').trim()];
+    return force || !e || (!e.models && !e.error && !e.pending);
+  });
+  if (!todo.length) return Promise.resolve(false);
+  return Promise.all(todo.map(s => loadServerModels(s, force))).then(() => true);
 }
 
 // Met à jour les libellés de modèle (pastille topbar + bouton composer) sur le
 // modèle effectif, et la visibilité du sélecteur composer (réglage activé ET
-// liste disponible — sinon fallback silencieux, le sélecteur n'apparaît pas).
+// liste disponible pour le serveur actif — sinon fallback silencieux, le
+// sélecteur n'apparaît pas).
 function syncModelUI() {
   const m = activeModel() || 'modèle';
   const top = $('model-label');           if (top) top.textContent = m;
   const compLabel = $('composer-model-label'); if (compLabel) compLabel.textContent = m;
   const box = $('composer-model');
   if (box) {
-    const show = !!(loadSettings().showModelSelector && _modelsCache && _modelsCache.length);
+    // Visible dès que le réglage est actif ET qu'il y a quelque chose à proposer :
+    // soit la liste du serveur actif est chargée, soit un autre serveur est
+    // sélectionnable (sa liste sera chargée à l'ouverture du menu). Sans ce
+    // second cas, un serveur actif injoignable masquerait un sélecteur qui a
+    // pourtant des modèles à offrir ailleurs.
+    const models = activeServerModels();
+    const others = listSelectableApiServers().filter(s => s.id !== (activeApiServer() || {}).id);
+    const show = !!(loadSettings().showModelSelector && ((models && models.length) || others.length));
     box.hidden = !show;
   }
 }
@@ -3582,26 +3660,126 @@ function toggleComposerModelMenu() {
   const menu = $('composer-model-menu');
   if (!menu) return;
   if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
-  renderComposerModelOptions();
+  renderComposerModelOptions();   // ancre déjà la ligne active dans la vue
   menu.classList.add('show');
-  const sel = menu.querySelector('.selected');
-  if (sel) sel.scrollIntoView({ block: 'nearest' });
-}
-
-function renderComposerModelOptions() {
-  const menu = $('composer-model-menu');
-  const cur = activeModel();
-  menu.innerHTML = '';
-  (_modelsCache || []).forEach(m => {
-    const o = document.createElement('div');
-    o.className = 'model-opt' + (m === cur ? ' selected' : '');
-    o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
-    o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m); };
-    menu.appendChild(o);
+  // Les serveurs non actifs sont interrogés à l'ouverture, pas au démarrage :
+  // re-rendu à l'arrivée des réponses, si le menu est toujours ouvert. Le
+  // re-rendu préserve la position visuelle de la ligne active (cf.
+  // renderComposerModelOptions) : la liste ne saute pas sous le curseur.
+  loadAllServerModels(false).then(changed => {
+    if (changed && menu.classList.contains('show')) renderComposerModelOptions();
   });
 }
 
-function pickComposerModel(m) {
+// Réessaie la liste d'un serveur depuis l'en-tête de groupe en erreur.
+function retryServerModels(serverId) {
+  const s = getApiServer(serverId);
+  if (!s) return;
+  renderComposerModelOptions();   // reflète l'état « en cours »
+  loadServerModels(s, true).then(() => {
+    const menu = $('composer-model-menu');
+    if (menu && menu.classList.contains('show')) renderComposerModelOptions();
+  });
+}
+
+// Re-rendu du menu SANS déplacer ce que l'utilisateur a sous les yeux. Le menu
+// est réécrit en entier à chaque arrivée de liste d'un serveur non actif (et à
+// chaque retry) : sans ancrage, `scrollTop` retombe à 0 et la ligne active
+// disparaît sous le pli. On ré-ancre sur l'élément sélectionné en préservant son
+// décalage VISUEL (distance au haut du menu), pas seulement sa visibilité : la
+// liste ne glisse pas sous le curseur quand des groupes s'insèrent AVANT lui.
+// Repli sur le `scrollTop` brut quand il n'y a pas de ligne sélectionnée (aucun
+// modèle actif dans la liste, ou premier rendu).
+function renderComposerModelOptions() {
+  const menu = $('composer-model-menu');
+  if (!menu) return;
+  const prevSel = menu.querySelector('.model-opt.selected');
+  // Décalage de la ligne active par rapport au haut de la zone scrollable, tel
+  // qu'il est perçu à l'écran juste avant réécriture.
+  const prevOffset = prevSel ? (prevSel.offsetTop - menu.scrollTop) : null;
+  const prevScroll = menu.scrollTop;
+  renderComposerModelOptionsInner();
+  const nextSel = menu.querySelector('.model-opt.selected');
+  if (nextSel && prevOffset !== null) {
+    menu.scrollTop = nextSel.offsetTop - prevOffset;
+  } else if (nextSel) {
+    // Premier rendu (ou apparition de la sélection) : amener la ligne active
+    // dans la vue, sans forcer si elle y est déjà (`block: 'nearest'`).
+    nextSel.scrollIntoView({ block: 'nearest' });
+  } else {
+    menu.scrollTop = prevScroll;
+  }
+}
+
+function renderComposerModelOptionsInner() {
+  const menu = $('composer-model-menu');
+  const cur = activeModel();
+  const activeId = (activeApiServer() || {}).id;
+  const servers = listSelectableApiServers();
+  menu.innerHTML = '';
+  // Groupes visuels seulement s'il y a plusieurs serveurs : à un seul serveur,
+  // l'en-tête n'apporte rien et le menu garde son apparence historique.
+  const grouped = servers.length > 1;
+  servers.forEach(s => {
+    const e = _modelsByUrl[(s.url || '').trim()] || {};
+    if (grouped) menu.appendChild(buildModelGroupHeader(s, e));
+    const models = e.models || [];
+    if (!models.length) {
+      if (e.error) menu.appendChild(buildModelGroupNote(s, 'Liste indisponible — réessayer'));
+      else if (e.pending) menu.appendChild(buildModelGroupNote(s, 'Interrogation…'));
+      else if (e.models) menu.appendChild(buildModelGroupNote(s, 'Aucun modèle exposé'));
+      return;
+    }
+    models.forEach(m => {
+      // « Sélectionné » = le couple (serveur actif, modèle courant) : le même nom
+      // de modèle exposé par deux serveurs ne doit cocher que celui en usage.
+      const isSel = m === cur && s.id === activeId;
+      const o = document.createElement('div');
+      o.className = 'model-opt' + (isSel ? ' selected' : '');
+      o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
+      o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m, s.id); };
+      menu.appendChild(o);
+    });
+  });
+}
+
+function buildModelGroupHeader(server, entry) {
+  const h = document.createElement('div');
+  h.className = 'model-group' + (entry && entry.error ? ' has-error' : '');
+  const n = document.createElement('span');
+  n.className = 'model-group-name';
+  n.textContent = server.name || server.url || 'Serveur';
+  h.appendChild(n);
+  return h;
+}
+
+// Ligne d'état sous un en-tête de groupe. En erreur, elle est cliquable et
+// relance le fetch pour ce serveur.
+function buildModelGroupNote(server, label) {
+  const d = document.createElement('div');
+  d.className = 'model-group-note';
+  d.textContent = label;
+  const e = _modelsByUrl[(server.url || '').trim()] || {};
+  if (e.error) {
+    d.classList.add('is-error');
+    d.onmousedown = (ev) => { ev.preventDefault(); retryServerModels(server.id); };
+  }
+  return d;
+}
+
+// Sélection d'un modèle dans le composer. Si le modèle appartient à un autre
+// serveur, on bascule le serveur ACTIF (décision Julien 2026-08-21 : pas
+// d'override de serveur par conversation) — l'ordre compte, le serveur d'abord
+// puis le modèle, sinon setConvModel persisterait un modèle sur l'ancien
+// endpoint le temps d'un rendu.
+function pickComposerModel(m, serverId) {
+  const activeId = (activeApiServer() || {}).id;
+  if (serverId && serverId !== activeId) {
+    setActiveApiServerId(serverId);
+    renderApiServersIfOpen();
+    syncActiveApiServerUI();
+    syncConfigured();
+  }
   setConvModel(m);   // override conv + persistance + syncModelUI
   $('composer-model-menu').classList.remove('show');
 }
@@ -4742,6 +4920,12 @@ function closeMcpServers() {
   $('mcp-drawer').classList.remove('show');
   $('mcp-backdrop').classList.remove('show');
 }
+// Drawer « Serveurs API » ouvert ? (bascule du serveur actif depuis le sélecteur
+// composer : la carte « Actif » doit suivre si le drawer est visible.)
+function renderApiServersIfOpen() {
+  if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
+}
+
 function renderMcpServersIfOpen() {
   if ($('mcp-drawer') && $('mcp-drawer').classList.contains('show')) renderMcpServers();
 }
@@ -4980,7 +5164,7 @@ function buildMcpCard(server, isNew) {
   // ne l'écrase jamais (D4) ; serveur existant → touché d'office.
   const transport = cfgPillSelect('mcp-transport', [
     { value: 'streamable-http', label: 'streamable-http' },
-    { value: 'sse', label: 'sse (différé)' },
+    { value: 'sse', label: 'sse' },
   ], server.transport || 'streamable-http',
     () => { transport.input.dataset.touched = '1'; });
   if (server.transport) transport.input.dataset.touched = '1';
@@ -4995,7 +5179,11 @@ function buildMcpCard(server, isNew) {
 
   editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
   editSection.appendChild(cfgField('URL', urlI));
-  editSection.appendChild(cfgField('Transport', transport.root));
+  // Le libellé « sse » reste nu dans la pilule (harmonisation des dropdowns) :
+  // l'avertissement « différé » vit dans le hint du champ, pas dans l'option —
+  // `sse` lève à l'usage (mcpRpc, tools.js), l'info ne doit pas disparaître.
+  editSection.appendChild(cfgField('Transport', transport.root,
+    'streamable-http seul est implémenté ; sse est différé.'));
   editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
   editSection.appendChild(cfgField('Timeout (ms)', tmoI));
   editSection.appendChild(cfgField('Outils autorisés', allowI));
@@ -5091,7 +5279,7 @@ function addApiServerCard() {
   if (!wrap) return;
   const empty = wrap.querySelector('.mem-empty');
   if (empty) empty.remove();
-  wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '' }, true, false), wrap.firstChild);
+  wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '', disabled: false }, true, false), wrap.firstChild);
 }
 
 function buildApiCard(server, isNew, isActive) {
@@ -5123,6 +5311,18 @@ function buildApiCard(server, isNew, isActive) {
     viewStatus.className = 'api-status active';
     viewStatus.textContent = '● Actif';
     viewRow.appendChild(viewStatus);
+  } else if (server.disabled) {
+    // Mis de côté : on dit l'état ET on garde la transition (c'est la seule voie
+    // pour réactiver un serveur sans passer par l'édition de la carte).
+    const viewStatus = document.createElement('div');
+    viewStatus.className = 'api-status disabled';
+    viewStatus.textContent = '○ Mis de côté';
+    viewRow.appendChild(viewStatus);
+    const useBtn = document.createElement('button');
+    useBtn.className = 'drawer-btn';
+    useBtn.textContent = 'Utiliser ce serveur';
+    useBtn.addEventListener('click', () => onUseApiServer(originalId));
+    viewRow.appendChild(useBtn);
   } else {
     const useBtn = document.createElement('button');
     useBtn.className = 'drawer-btn';
@@ -5181,8 +5381,8 @@ function buildApiCard(server, isNew, isActive) {
   // Valeur initiale sur le modèle actuellement saisi. `.api-vision` (hidden)
   // porte 'on'/'off', lu par onSaveApiCard. Pas de select natif (cfgPillSelect).
   const visionPill = cfgPillSelect('api-vision', [
-    { value: 'on', label: 'Images activées' },
-    { value: 'off', label: 'Sans vision (descripteur seul)' },
+    { value: 'on', label: 'Activée' },
+    { value: 'off', label: 'Sans vision' },
   ], serverModelVisionEnabled(server, server.model) ? 'on' : 'off');
   // Le flag suit le modèle : changer de modèle réévalue l'état affiché depuis la
   // map `vision` du serveur (un modèle non encore réglé retombe sur « activées »).
@@ -5191,6 +5391,17 @@ function buildApiCard(server, isNew, isActive) {
   });
   editSection.appendChild(cfgField('Vision (images)', visionPill.root,
     'Si ce modèle ne sait pas lire les images, choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.'));
+
+  // Flag `disabled` : un serveur mis de côté n'est plus interrogé pour peupler le
+  // sélecteur serveur/modèle du composer, ni retenu comme repli d'activeApiServer().
+  // Il reste activable explicitement depuis cette carte. `.api-disabled` (hidden)
+  // porte 'on'/'off', lu par onSaveApiCard.
+  const enabledPill = cfgPillSelect('api-disabled', [
+    { value: 'on', label: 'Actif' },
+    { value: 'off', label: 'De côté' },
+  ], server.disabled ? 'off' : 'on');
+  editSection.appendChild(cfgField('Disponibilité', enabledPill.root,
+    'Mis de côté : ce serveur n\'apparaît plus dans le sélecteur serveur/modèle du composer.'));
 
   editSection.appendChild(cfgErrEl());
 

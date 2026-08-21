@@ -244,6 +244,13 @@
 }
 #composer-reasoning-menu.show { transform: none; }
 .pill-select.is-compact { margin-left: 0; flex-shrink: 0; }
+/* Dropdowns de formulaire (cfgPillSelect : Vision, Disponibilité, Transport MCP,
+   destination du mode déplacement). Le sans-serif des OPTIONS vient désormais de
+   la base `.model-opt` (drawers.css) ; il reste ici à aligner le BOUTON pilule,
+   dont la base est en mono (partagée avec le sélecteur de raisonnement du
+   composer, où le mono est voulu) — sinon bouton mono / liste sans-serif. */
+.cfg-pill-select .pill-select-btn { font-family: var(--sans); }
+.cfg-pill-select .model-opt { padding: 5px 10px; }
 #set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
 /* bannière résumés (mode « proposer ») */

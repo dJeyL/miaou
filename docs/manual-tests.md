@@ -660,7 +660,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     message user porte le texte + le descripteur, et le bloc `<miaou_context>`
     la phrase de remplacement. Recharger la page : le réglage doit persister (le
     storage `miaou-api-servers[].vision` porte `{ "MODELE": false }`). Repasser
-    sur « Images activées » : le prochain envoi repart en content parts. Vérifier
+    sur « Activée » : le prochain envoi repart en content parts. Vérifier
     l'isolation : marquer un modèle A « sans vision » ne doit pas dégrader un
     modèle B vision-capable du même serveur (clé par nom de modèle).
 64. **Descripteur binaire générique + doctrine docs conditionnelle (brief H)** :

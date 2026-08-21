@@ -109,7 +109,20 @@
   background: transparent;
   border-color: transparent;
 }
-.cmdk-item.selected .cmdk-item-key { color: var(--text); }
+/* Coche de l'élément courant (sous-modes modèle/espace), dans l'emplacement de
+   gauche libéré par l'absence de touche. Pas le chrome de touche clavier (fond
+   + bordure) : ce n'est pas une touche à presser, c'est un état. Accent orange,
+   comme le ✓ des .model-opt du sélecteur composer — même signal, même couleur. */
+.cmdk-item-current {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+  font-size: 12px;
+}
+/* La règle de surlignage ci-dessous EXCLUT la coche : à spécificité égale elle
+   la suit dans le fichier et la repeindrait en --text (piège de cascade déjà
+   payé sur ce projet). La coche garde l'accent, sélectionnée ou non. */
+.cmdk-item.selected .cmdk-item-key:not(.cmdk-item-current) { color: var(--text); }
 
 /* Mode raccourci actif (le système attend une lettre-commande) : touches en
    orange terne (accent assourdi vers le texte atténué), pour signaler qu'elles

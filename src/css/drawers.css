@@ -292,9 +292,14 @@
   transition: opacity 140ms var(--ease), transform 140ms var(--ease), visibility 140ms var(--ease);
 }
 .model-menu.show { opacity: 1; transform: none; visibility: visible; }
+/* Sans-serif pour TOUTES les listes de ce composant, y compris celles qui
+   listent des identifiants de modèles (`gemma4:26b-nvfp4`) — le mono y était
+   l'historique, mais il alourdit la lecture (préférence Julien, 2026-08-21).
+   Les surcharges `font-family` des consommateurs (.cfg-pill-select, .space-menu,
+   .move-bar) ont été retirées à cette occasion : la base leur suffit. */
 .model-opt {
   padding: 6px 10px;
-  font-family: var(--mono);
+  font-family: var(--sans);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -305,6 +310,40 @@
 .model-opt:hover { background: var(--surface-3); }
 .model-opt .check { color: var(--accent); opacity: 0; }
 .model-opt.selected .check { opacity: 1; }
+/* En-tête de groupe du sélecteur serveur/modèle du composer : équivalent d'un
+   <optgroup>, affiché seulement quand plus d'un serveur API est sélectionnable.
+   Non cliquable (sticky pour rester lisible pendant le défilement de la liste) ;
+   la ligne d'état .model-group-note en dessous porte l'erreur et le retry. */
+.model-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 10px 4px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.model-group:not(:first-child) { margin-top: 4px; border-top: 1px solid var(--border-2); }
+.model-group.has-error { color: var(--err); }
+.model-group-note {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.model-group-note.is-error {
+  color: var(--err);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.model-group-note.is-error:hover { background: var(--surface-3); }
 .model-loading, .model-error {
   padding: 12px;
   font-size: 12px;
@@ -726,6 +765,7 @@
 /* ── Serveurs API : particularités ──────────────────────────────────────────── */
 .api-status { font-size: 11.5px; color: var(--text-3); }
 .api-status.active { color: var(--accent); }
+.api-status.disabled { color: var(--text-3); }
 /* Seul le dernier bouton (Modifier) est repoussé à droite : « Utiliser ce
    serveur » occupe la place du pill « Actif », tout à gauche. */
 .api-view-row .drawer-btn:last-child { margin-left: auto; }

@@ -230,6 +230,49 @@ describe('Serveurs API : CRUD (upsert/delete/get/activeApiServer/activeApiConfig
     setActiveApiServerId('id-inexistant');
     expect(activeApiServer().id).toBe('s1');
   });
+  it('normalizeApiServer : disabled false par défaut, true seulement si strictement true', function() {
+    expect(normalizeApiServer({ name: 'S', url: 'u' }).disabled).toBe(false);
+    expect(normalizeApiServer({ name: 'S', url: 'u', disabled: false }).disabled).toBe(false);
+    expect(normalizeApiServer({ name: 'S', url: 'u', disabled: 'oui' }).disabled).toBe(false);
+    expect(normalizeApiServer({ name: 'S', url: 'u', disabled: true }).disabled).toBe(true);
+  });
+  it('listSelectableApiServers : exclut les désactivés et ceux sans URL', function() {
+    localStorage.clear();
+    saveApiServersRaw([
+      normalizeApiServer({ id: 's1', name: 'A', url: 'http://a/v1' }),
+      normalizeApiServer({ id: 's2', name: 'B', url: 'http://b/v1', disabled: true }),
+      normalizeApiServer({ id: 's3', name: 'C', url: '' }),
+    ]);
+    var ids = listSelectableApiServers().map(function(s) { return s.id; });
+    expect(ids.join(',')).toBe('s1');
+  });
+  it('activeApiServer : repli ignore les serveurs désactivés', function() {
+    localStorage.clear();
+    saveApiServersRaw([
+      normalizeApiServer({ id: 's1', name: 'A', url: 'http://a/v1', disabled: true }),
+      normalizeApiServer({ id: 's2', name: 'B', url: 'http://b/v1' }),
+    ]);
+    setActiveApiServerId('id-inexistant');
+    expect(activeApiServer().id).toBe('s2');
+  });
+  it('activeApiServer : un serveur désactivé EXPLICITEMENT actif le reste', function() {
+    localStorage.clear();
+    saveApiServersRaw([
+      normalizeApiServer({ id: 's1', name: 'A', url: 'http://a/v1', disabled: true }),
+      normalizeApiServer({ id: 's2', name: 'B', url: 'http://b/v1' }),
+    ]);
+    setActiveApiServerId('s1');
+    expect(activeApiServer().id).toBe('s1');
+  });
+  it('activeApiServer : tous désactivés → premier du tableau (jamais null si un serveur existe)', function() {
+    localStorage.clear();
+    saveApiServersRaw([
+      normalizeApiServer({ id: 's1', name: 'A', url: 'http://a/v1', disabled: true }),
+      normalizeApiServer({ id: 's2', name: 'B', url: 'http://b/v1', disabled: true }),
+    ]);
+    setActiveApiServerId('');
+    expect(activeApiServer().id).toBe('s1');
+  });
   it('activeApiServer : aucun serveur → null', function() {
     localStorage.clear();
     saveApiServersRaw([]);

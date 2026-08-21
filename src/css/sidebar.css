@@ -102,8 +102,8 @@
   white-space: nowrap;
 }
 .space-menu { left: 0; right: 0; min-width: 0; }
-.space-menu .model-opt { font-family: var(--sans); gap: 6px; }
-.space-menu .model-opt .space-opt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-menu .model-opt { gap: 6px; }
+.space-menu .model-opt .space-opt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .space-menu .space-opt-edit {
   flex-shrink: 0;
   display: grid;
@@ -369,9 +369,6 @@
   transform: translateY(4px);
 }
 .move-bar .model-menu.show { transform: none; }
-.move-bar .model-menu .model-opt {
-  font-family: var(--sans);
-}
 .move-bar .model-menu .model-opt span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;

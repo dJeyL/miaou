@@ -355,8 +355,14 @@ Quelques repères pour te déplacer dans MIAOU :
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.
-- **Sélecteur de modèle par conversation** (optionnel) : change le modèle de la
-  conversation courante sans toucher à ton défaut.
+- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :
+  change le modèle de la conversation courante sans toucher à ton défaut. Si
+  plusieurs serveurs API sont configurés, il liste les modèles de chacun,
+  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le
+  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée
+  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour
+  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →
+  Serveurs API) pour ne plus être interrogé ni proposé.
 - **Thème clair / sombre** et coloration syntaxique se règlent dans les
   Paramètres.
 - **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,

@@ -17,7 +17,9 @@
   jamais aucun serveur n'existe encore.
   `summaryInjectionMode` ∈ `auto | propose | never`, défaut `propose`. `model` est
   le **modèle par défaut** (global). `showModelSelector` (défaut `false`) n'affecte
-  que la visibilité du sélecteur dans le composer. `reasoningEffort` (défaut `''`)
+  que la visibilité du **sélecteur serveur/modèle** dans le composer (libellé du
+  réglage depuis 2026-08-21 : le sélecteur liste les modèles de tous les serveurs
+  non désactivés, pas seulement de l'actif — cf. `docs/pitfalls-detail.md` §15). `reasoningEffort` (défaut `''`)
   est le **niveau de raisonnement par défaut** (global) ∈ `'' | none | low | medium
   | high` — `''` (défaut) n'ajoute **aucun** paramètre `reasoning_effort` à la
   requête API (comportement natif du modèle) ; toute autre valeur est posée telle
@@ -189,7 +191,7 @@
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en
   mémoire seule, reconstruit au démarrage.
 - `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,
-  url, key, model, vision }]`. Remplace les champs plats `url`/`key`/`model` de
+  url, key, model, disabled, vision }]`. Remplace les champs plats `url`/`key`/`model` de
   `miaou-settings` (cf. ci-dessus). **`id` est l'identité** (pas `name`, à la
   différence des serveurs MCP) : permet de renommer une carte sans perdre la
   référence de serveur actif ni casser un override en cours. `key` stocké en
@@ -203,7 +205,17 @@
   conversation sinon `activeApiConfig().model`. Changer de serveur actif
   (`onUseApiServer`, main.js) **lève l'override de modèle de la conversation
   courante** (`setConvModel('')`) : il pointait sur un modèle de l'ancien
-  serveur.
+  serveur. Depuis le sélecteur serveur/modèle du composer, choisir un modèle
+  appartenant à un AUTRE serveur bascule aussi le serveur actif
+  (`pickComposerModel(m, serverId)`, ui.js) — même effet global qu'« Utiliser ce
+  serveur », sans override de serveur par conversation.
+  `disabled` (défaut `false`) : serveur **mis de côté**. Il n'est plus interrogé
+  pour peupler le sélecteur (`listSelectableApiServers()`, storage.js — prédicat
+  unique `!disabled && url`, à réutiliser plutôt qu'un filtre local) et n'est plus
+  éligible comme **repli** d'`activeApiServer()` ; il reste activable
+  explicitement depuis sa carte (« Utiliser ce serveur »), sinon on ne pourrait
+  plus le réactiver. Si TOUS les serveurs sont désactivés, le repli retombe quand
+  même sur le premier : on ne veut jamais `null` tant qu'une carte existe.
   `vision` (D5, brief A2) : map `{ [nomModèle]: false }` — flag **manuel** « ce
   modèle sur ce serveur n'a pas la vision ». Seule la valeur `false` est
   persistée (`normalizeApiServer` filtre les `true`) ; absence d'entrée = inconnu

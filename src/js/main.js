@@ -826,7 +826,7 @@ function applySyncedSettings(keys) {
   // seulement : l'onglet émetteur a déjà fait `setConvModel('')` → saveConversation
   // → broadcast `conv-updated`, donc pas de re-persistance ni de rebroadcast ici
   // (évite l'écho). `prefetchModels()` refetch le cache modèles du nouveau serveur
-  // (comparaison `_modelsCacheUrl`) et rappelle `syncModelUI()`.
+  // (cache `_modelsByUrl` indexé par URL de serveur) et rappelle `syncModelUI()`.
   if (set.has('active-api-server')) {
     currentConvModel = '';
     prefetchModels();
@@ -1003,8 +1003,11 @@ function onSaveSettings() {
   closeSettings();
 }
 
-// Charge la liste des modèles (cache de session) puis met à jour l'UI. Échec
-// silencieux : le sélecteur reste masqué, le modèle par défaut reste utilisé.
+// Charge la liste des modèles du serveur ACTIF (cache de session) puis met à
+// jour l'UI. Échec silencieux : le sélecteur reste masqué, le modèle par défaut
+// reste utilisé. Les AUTRES serveurs ne sont pas interrogés ici : leur liste est
+// chargée à l'ouverture du sélecteur (loadAllServerModels), pour ne pas payer N
+// requêtes au démarrage si le menu n'est jamais ouvert.
 async function prefetchModels() {
   try { await loadModelsCached(); } catch (e) { /* sélecteur masqué */ }
   syncModelUI();
@@ -1084,6 +1087,7 @@ function onSaveApiCard(cardEl, originalId) {
     name, url,
     key: get('.api-key'),
     model,
+    disabled: get('.api-disabled') === 'off',
     vision,
   };
   const arr = upsertApiServer(server);
@@ -1124,7 +1128,7 @@ function onUseApiServer(id) {
   syncActiveApiServerUI();
   syncConfigured();
   syncModelUI();
-  prefetchModels();   // loadModelsCached() re-fetch si l'URL a changé (comparaison _modelsCacheUrl)
+  prefetchModels();   // cache par URL (_modelsByUrl) : re-fetch seulement si ce serveur est inconnu
 }
 
 // ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────
