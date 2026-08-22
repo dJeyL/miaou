@@ -671,6 +671,33 @@ describe('moveConversationsToSpace (brief Cter — déplacement entre Spaces)', 
   });
 });
 
+describe('memoryScopesForSpace / isMemoryInScope — portée mémoire du Space actif', function() {
+  it('la portée est le scope transverse profile PLUS le Space actif', function() {
+    expect(memoryScopesForSpace('sp1').join(',')).toBe('profile,sp1');
+  });
+  it('spaceId absent → default Space (jamais une portée vide)', function() {
+    expect(memoryScopesForSpace(null).join(',')).toBe('profile,' + DEFAULT_SPACE_ID);
+  });
+  it('souvenir du Space actif → dans la portée', function() {
+    expect(isMemoryInScope({ id: 'm', scope: 'sp1' }, 'sp1')).toBe(true);
+  });
+  it('souvenir de profil → dans la portée, depuis n\'importe quel Space', function() {
+    expect(isMemoryInScope({ id: 'm', scope: 'profile' }, 'sp1')).toBe(true);
+    expect(isMemoryInScope({ id: 'm', scope: 'profile' }, 'sp-autre')).toBe(true);
+  });
+  it('souvenir d\'un autre Space → hors portée (herméticité)', function() {
+    expect(isMemoryInScope({ id: 'm', scope: 'sp-other' }, 'sp1')).toBe(false);
+  });
+  it('entrée sans scope (pré-migration) vaut default Space', function() {
+    expect(isMemoryInScope({ id: 'm' }, DEFAULT_SPACE_ID)).toBe(true);
+    expect(isMemoryInScope({ id: 'm' }, 'sp1')).toBe(false);
+  });
+  it('entrée absente → hors portée, jamais de throw', function() {
+    expect(isMemoryInScope(null, 'sp1')).toBe(false);
+    expect(isMemoryInScope(undefined, 'sp1')).toBe(false);
+  });
+});
+
 describe('listMemoryEntries — filtrage par scope', function() {
   it('sans argument, retourne toutes les entrées actives (comportement historique)', function() {
     localStorage.clear();

@@ -659,6 +659,15 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   le résultat d'une date absolue immuable pour signaler l'ancienneté au modèle
   sans muter le préfixe d'historique (préserve le KV cache). **Ne jamais**
   recalculer ce stamp à chaque envoi — il est fixé à l'instant de l'appel.
+  Le format est **ISO 8601 en heure locale avec offset explicite**
+  (`[Résultat du 2026-06-26T14:30+02:00]`, via `isoLocalStamp`/`isoOffset`,
+  purs et testés) — **jamais** un horodatage sans zone : le corps du résultat
+  vient d'un outil quelconque et peut porter ses propres heures dans un autre
+  référentiel (cas payé : un MCP météo annonçant de l'UTC, préfixé d'une heure
+  locale muette → le modèle mélangeait les deux). Le préfixe est un canal
+  machine→machine, jamais affiché à l'utilisateur : sa lisibilité française n'a
+  aucune valeur, son absence d'ambiguïté en a. `isoOffset` **inverse le signe**
+  de `getTimezoneOffset()` (qui rend les minutes à soustraire pour obtenir UTC).
   `ask_confirmation` ne produit jamais d'ack (primitif halting) ; rien à exclure.
   Les acks enrichis ne sont jamais envoyés directement au modèle — c'est
   l'expansion qui génère les messages `role:'tool'` correspondants.

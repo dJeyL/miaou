@@ -475,20 +475,65 @@ describe('filterMcpTools (globs)', function() {
   });
 });
 
+describe('isoOffset', function() {
+  // getTimezoneOffset() rend les minutes à SOUSTRAIRE pour obtenir UTC : le
+  // signe ISO est l'inverse. On stube un objet Date-like pour tester les deux
+  // sens sans dépendre de la zone de la machine qui fait tourner les tests.
+  function fakeDate(offsetMinutes) {
+    return { getTimezoneOffset: function() { return offsetMinutes; } };
+  }
+  it('UTC → Z', function() {
+    expect(isoOffset(fakeDate(0))).toBe('Z');
+  });
+  it('zone en avance sur UTC (Paris été, offset -120) → +02:00', function() {
+    expect(isoOffset(fakeDate(-120))).toBe('+02:00');
+  });
+  it('zone en retard sur UTC (New York hiver, offset 300) → -05:00', function() {
+    expect(isoOffset(fakeDate(300))).toBe('-05:00');
+  });
+  it('offset non entier en heures (Kolkata, -330) → +05:30', function() {
+    expect(isoOffset(fakeDate(-330))).toBe('+05:30');
+  });
+  it('offset négatif non entier (Marquises, 570) → -09:30', function() {
+    expect(isoOffset(fakeDate(570))).toBe('-09:30');
+  });
+});
+
+describe('isoLocalStamp', function() {
+  it('heure du mur préservée, pas normalisée en UTC', function() {
+    var ts = new Date(2024, 2, 15, 14, 30, 0).getTime();
+    var r = isoLocalStamp(ts);
+    // L'heure locale est celle passée au constructeur, quelle que soit la zone.
+    expect(r.indexOf('2024-03-15T14:30')).toBe(0);
+  });
+  it('pad des composantes à un chiffre', function() {
+    var ts = new Date(2024, 0, 5, 9, 7, 0).getTime();
+    expect(isoLocalStamp(ts).indexOf('2024-01-05T09:07')).toBe(0);
+  });
+  it('se termine par un offset explicite (jamais nu)', function() {
+    var r = isoLocalStamp(new Date(2024, 5, 1, 12, 0, 0).getTime());
+    var tail = r.slice(16);
+    expect(tail === 'Z' || /^[+-]\d{2}:\d{2}$/.test(tail)).toBe(true);
+  });
+});
+
 describe('stampTs', function() {
   it('sans ts retourne le résultat tel quel', function() {
     expect(stampTs(null, 'hello')).toBe('hello');
     expect(stampTs(0, 'hello')).toBe('hello');
   });
-  it('avec ts préfixe la date en français', function() {
-    var ts = new Date(2024, 2, 15, 14, 30, 0).getTime(); // 15 mars 2024 vendredi
+  it('avec ts préfixe un horodatage ISO 8601 zoné', function() {
+    var ts = new Date(2024, 2, 15, 14, 30, 0).getTime(); // 15 mars 2024
     var r = stampTs(ts, 'résultat');
-    expect(r.indexOf('2024') >= 0).toBeTruthy();
-    expect(r.indexOf('mars') >= 0).toBeTruthy();
-    expect(r.indexOf('résultat') >= 0).toBeTruthy();
+    expect(r.indexOf('[Résultat du 2024-03-15T14:30')).toBe(0);
+    expect(r.indexOf('résultat') > 0).toBe(true);
     // la date précède le résultat
-    expect(r.indexOf('[Résultat du')).toBe(0);
-    expect(r.indexOf('résultat') > r.indexOf('2024')).toBeTruthy();
+    expect(r.indexOf('résultat') > r.indexOf('2024')).toBe(true);
+  });
+  it('le préfixe porte toujours une zone — un horodatage nu est le bug visé', function() {
+    var ts = new Date(2024, 2, 15, 14, 30, 0).getTime();
+    var head = stampTs(ts, 'x').split('\n')[0];
+    expect(/T\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})\]$/.test(head)).toBe(true);
   });
   it('result null ou undefined → chaîne vide (pas de crash)', function() {
     expect(stampTs(null, null)).toBe('');

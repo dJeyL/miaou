@@ -41,7 +41,22 @@ branchés en C2 :
   spaceId)` (api.js) exclut les résumés hors-Space.
 - Mémoire : `buildMemoryEntriesBlock()` injecte scope `'profile'` +
   `activeSpaceId` ; `memory__create` stampe le Space actif ; `memory__update`/
-  `memory__delete` refusent hors-Space (« Souvenir introuvable. »).
+  `memory__delete` refusent hors-**portée** (« Souvenir introuvable. »).
+  **La portée est `memoryScopesForSpace(activeSpaceId)`** (storage.js, pure) =
+  `['profile', activeSpaceId]`, et c'est la MÊME source pour ce qui est injecté
+  au modèle et pour ce qu'il peut modifier — prédicat `isMemoryInScope`, jamais
+  un filtre réécrit localement (même discipline que `spaceConvIds`, piège 18).
+  `'profile'` est un scope **transverse**, pas « un autre Space » : il est
+  au-dessus de la frontière que protège l'herméticité, pas de l'autre côté.
+  *Régression corrigée* : les deux handlers testaient `scope !== activeSpaceId`,
+  ce qui excluait `'profile'` — le modèle recevait « introuvable » sur une
+  entrée qu'on venait de lui injecter avec son id (mensonge, pas herméticité).
+  Un souvenir d'un autre Space, lui, reste bien invisible ET intouchable.
+- **Asymétrie assumée de `memory__create`** : le modèle peut corriger et
+  supprimer en profil, jamais y créer — `create` stampe toujours `activeSpaceId`,
+  la promotion Space → profil restant une action UI (`promoteMemoryEntry`).
+  Décision maintenue explicitement : corriger un fait déjà accepté en profil est
+  un geste moins engageant que d'en installer un nouveau.
 - Description de Space : `resolveUserSystemPrompt()` — la `description` du
   Space actif est **ajoutée après** le prompt système global (concaténation,
   jamais substitution — brief D4 corrigé). Changer de Space change donc le

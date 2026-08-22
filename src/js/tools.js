@@ -603,11 +603,15 @@ const TOOLS = [
       if (!args.id || !args.content || !args.content.trim()) return toolFail('memory__update', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
-      // Herméticité (brief D3, extension D2) : hors du Space actif (ou scope
-      // profile) = « introuvable », même posture sans-oracle que conv__get.
-      // Une entrée sans scope (pré-migration) vaut default Space.
+      // Herméticité (brief D3, extension D2) : hors de portée du Space actif =
+      // « introuvable », même posture sans-oracle que conv__get. La portée est
+      // celle de `isMemoryInScope` — Space actif ET scope transverse 'profile',
+      // soit exactement ce que `buildMemoryEntriesBlock()` injecte au modèle :
+      // refuser un souvenir de profil qu'on vient de lui montrer avec son id
+      // n'était pas de l'herméticité, juste un prédicat inter-Spaces recopié
+      // trop loin. `editMemory` mute en place sans toucher au scope.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('memory__update', 'Souvenir introuvable.');
+      if (!isMemoryInScope(existing, spaceId)) return toolFail('memory__update', 'Souvenir introuvable.');
       editMemory(args.id, content);
       _pendingToolAcks.push({
         kind: 'memory_update',
@@ -940,8 +944,10 @@ const TOOLS = [
     handler: (args) => {
       if (!args.id) return toolFail('memory__delete', 'Identifiant manquant.');
       const existing = loadMemories().find(e => e.id === args.id);
+      // Même portée que memory__update (cf. commentaire là-bas) : Space actif +
+      // 'profile'. `suppressMemory` pose un tombstone sans toucher au scope.
       const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-      if (!existing || (existing.scope || DEFAULT_SPACE_ID) !== spaceId) return toolFail('memory__delete', 'Souvenir introuvable.');
+      if (!isMemoryInScope(existing, spaceId)) return toolFail('memory__delete', 'Souvenir introuvable.');
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
       return 'Souvenir supprimé (réversible depuis les paramètres).';

@@ -501,13 +501,74 @@ describe('Herméticité des Spaces — outils modèle (brief D2/D3)', function()
       activeSpaceId = DEFAULT_SPACE_ID;
     }
   });
-  it('memory__update refuse un souvenir de scope profile (pas exposé aux outils Space)', function() {
+  // Le scope 'profile' est transverse, PAS « un autre Space » : il est injecté au
+  // modèle par buildMemoryEntriesBlock() avec son id, donc le refuser était un
+  // mensonge (« introuvable » sur une entrée qu'il venait de lire). L'ancien test
+  // verrouillait ce comportement au motif que le profil ne serait « pas exposé
+  // aux outils Space » — il l'est. La portée modifiable suit désormais la portée
+  // visible (memoryScopesForSpace).
+  it('memory__update accepte un souvenir de scope profile (transverse, visible du modèle)', function() {
     localStorage.clear();
     saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
     activeSpaceId = 'sp1';
     try {
       var r = ct('memory__update', { id: 'm1', content: 'y' });
-      expect(r).toContain('introuvable');
+      expect(r).toContain('mis à jour');
+      expect(loadMemories()[0].content).toBe('y');
+      expect(loadMemories()[0].scope).toBe('profile');   // scope préservé, pas re-stampé
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('memory__delete accepte un souvenir de scope profile (tombstone, scope préservé)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    activeSpaceId = 'sp1';
+    try {
+      var r = ct('memory__delete', { id: 'm1' });
+      expect(r).toContain('supprimé');
+      expect(loadMemories()[0].suppressed).toBe(true);
+      expect(loadMemories()[0].scope).toBe('profile');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('un souvenir de profil reste éditable depuis N\'IMPORTE quel Space (transverse)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    activeSpaceId = 'sp-tout-autre';
+    try {
+      expect(ct('memory__update', { id: 'm1', content: 'y' })).toContain('mis à jour');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('memory__delete refuse toujours un souvenir d\'un AUTRE Space (herméticité intacte)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'm1', content: 'x', created_at: 1, updated_at: 1, suppressed: false, scope: 'sp-other' });
+    activeSpaceId = 'sp1';
+    try {
+      expect(ct('memory__delete', { id: 'm1' })).toContain('introuvable');
+      expect(loadMemories()[0].suppressed).toBeFalsy();
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+    }
+  });
+  it('ce que le modèle VOIT est exactement ce qu\'il peut TOUCHER (pas de divergence)', function() {
+    localStorage.clear();
+    saveMemory({ id: 'mp', content: 'profil', created_at: 1, updated_at: 1, suppressed: false, scope: 'profile' });
+    saveMemory({ id: 'ms', content: 'space', created_at: 2, updated_at: 2, suppressed: false, scope: 'sp1' });
+    saveMemory({ id: 'mo', content: 'autre', created_at: 3, updated_at: 3, suppressed: false, scope: 'sp-other' });
+    activeSpaceId = 'sp1';
+    try {
+      var visibles = listMemoryEntries(memoryScopesForSpace(activeSpaceId)).map(function(e) { return e.id; });
+      expect(visibles.join(',')).toBe('mp,ms');
+      // chaque entrée visible est modifiable…
+      visibles.forEach(function(id) {
+        expect(ct('memory__update', { id: id, content: 'z' })).toContain('mis à jour');
+      });
+      // …et l'invisible ne l'est pas.
+      expect(ct('memory__update', { id: 'mo', content: 'z' })).toContain('introuvable');
     } finally {
       activeSpaceId = DEFAULT_SPACE_ID;
     }

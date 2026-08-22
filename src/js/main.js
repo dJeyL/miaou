@@ -156,7 +156,11 @@ function buildSummaryBlock(matches) {
 // profile (global) + Space actif uniquement (brief D3) — jamais les souvenirs
 // d'un autre Space.
 function buildMemoryEntriesBlock() {
-  const entries = listMemoryEntries(['profile', activeSpaceId]);
+  // Portée = `memoryScopesForSpace` (storage.js), la MÊME que celle qu'appliquent
+  // memory__update/memory__delete : ce qu'on montre au modèle et ce qu'il peut
+  // toucher doivent rester le même ensemble, jamais deux listes réécrites côte
+  // à côte (cf. le bug du profil inéditable).
+  const entries = listMemoryEntries(memoryScopesForSpace(activeSpaceId));
   if (!entries.length) return '';
   const lines = entries.map(e => `- [id: ${e.id}] ${e.content}`);
   return "Souvenirs de l'utilisateur (persistants, à respecter et prendre en compte) :\n" +

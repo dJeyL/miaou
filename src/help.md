@@ -122,6 +122,12 @@ suivent donc son étanchéité et sa suppression en cascade. Un souvenir qui doi
 rester valable partout peut être promu au **profil** (portée globale, présente
 dans tous les Espaces) depuis l'écran de l'Espace.
 
+Le modèle voit les souvenirs de l'Espace courant **et** ceux du profil, et il
+peut corriger ou supprimer les uns comme les autres : ce qu'il lit, il peut y
+toucher. En revanche il crée toujours dans l'Espace courant — promouvoir un
+souvenir au profil reste ton geste, jamais le sien. Les souvenirs des autres
+Espaces lui sont, eux, entièrement invisibles.
+
 Chaque écriture de souvenir par le modèle laisse une trace visible dans la
 conversation, annulable d'un clic. Il n'existe pas d'outil de lecture : un
 souvenir actif est simplement réinjecté dans le contexte à chaque message,

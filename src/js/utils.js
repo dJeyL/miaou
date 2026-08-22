@@ -721,14 +721,47 @@ function exportDateDisplay(now) {
 
 // ── Reconstruction du payload API depuis currentThread ───────────────────────
 
+// Offset de zone locale au format ISO 8601 (+HH:MM / -HH:MM / Z), sans Intl :
+// `getTimezoneOffset()` rend des MINUTES À SOUSTRAIRE de l'heure locale pour
+// obtenir UTC — le signe est donc INVERSÉ par rapport à la notation ISO
+// (Europe/Paris en été : offset -120, notation +02:00).
+function isoOffset(d) {
+  const off = -d.getTimezoneOffset();
+  if (off === 0) return 'Z';
+  const sign = off < 0 ? '-' : '+';
+  const abs = Math.abs(off);
+  const h = Math.floor(abs / 60), m = abs % 60;
+  return sign + (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+// Horodatage ISO 8601 en heure LOCALE avec offset explicite (2026-06-26T14:30+02:00).
+// Distinct de `Date#toISOString` (qui normalise en UTC) : on garde l'heure du
+// mur, celle que l'utilisateur a vécue, et l'offset dit dans quel référentiel
+// elle se lit.
+function isoLocalStamp(ts) {
+  const d = new Date(ts);
+  const p = n => (n < 10 ? '0' : '') + n;
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+    'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + isoOffset(d);
+}
+
 // Préfixe d'horodatage absolu pour les résultats d'outils réinjectés cross-turn.
 // La valeur est figée à l'instant de l'appel ; le modèle en infère l'ancienneté
 // via le "now" déjà présent dans <miaou_context>. NE PAS recalculer à chaque
 // envoi (mutation → busterait le KV cache de tout le préfixe history).
+//
+// Format ISO 8601 avec offset, PAS la date française de `formatFullDateFr` : ce
+// préfixe est un canal machine→machine (jamais affiché à l'utilisateur), et un
+// horodatage sans zone y est un piège actif. Le corps du résultat vient d'un
+// outil quelconque et peut porter ses propres heures dans un TOUT AUTRE
+// référentiel (cas payé : un MCP météo renvoyant de l'UTC, préfixé d'une heure
+// locale muette → le modèle mélangeait les deux). L'offset rend le préfixe
+// auto-descriptif, sans dépendre du `now` de <miaou_context> ni d'une doctrine
+// qui demanderait au modèle de deviner.
 function stampTs(ts, result) {
   var s = result != null ? String(result) : '';
   if (!ts) return s;
-  return '[Résultat du ' + formatFullDateFr(ts) + ']\n' + s;
+  return '[Résultat du ' + isoLocalStamp(ts) + ']\n' + s;
 }
 
 // ── Export Markdown : traces d'appels d'outils ───────────────────────────────

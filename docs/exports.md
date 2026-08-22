@@ -585,6 +585,14 @@ desktop, écart bouton/colonne sur grand écran).
 - `formatFullDateFr` (ex. « jeudi 26 juin 2026 à 14:30 ») est réservé aux
   **tooltips de la sidebar** (`:hover` = contexte de détail, l'année toujours
   présente). Pour les horodatages inline des messages, utiliser `formatMessageTime`.
+- `isoLocalStamp(ts)` / `isoOffset(d)` : horodatage **destiné au modèle**, pas à
+  l'écran — ISO 8601 en heure locale avec offset explicite
+  (`2026-06-26T14:30+02:00`). Seul consommateur : `stampTs`, le préfixe des tool
+  results réinjectés (cf. `docs/tools.md`). La règle qui les sépare des fonctions
+  ci-dessus est la **destination** : ce qu'un humain lit peut rester en français
+  et sous-entendre sa zone, ce qu'un modèle lit à côté d'heures d'origine
+  inconnue doit porter la sienne. `isoOffset` inverse le signe de
+  `getTimezoneOffset()` et rend `'Z'` à offset nul.
 - Le champ `ts` (epoch ms) est posé par `sendUserText` (user), `onFinal` et
   `onToolTour` (assistant). Absent sur les anciens messages → affichage sans
   horodatage, pas de crash.

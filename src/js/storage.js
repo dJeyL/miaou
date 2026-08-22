@@ -491,6 +491,28 @@ function persistMemories(arr) {
 // autorisés, ex. ['profile', activeSpaceId] — cf. D3) ; omis = toutes (usage
 // historique, ex. export/import). Migration garantit `scope` toujours posé
 // (default Space) donc pas de filet 'pas de scope = visible partout' ici.
+// Scopes de souvenirs visibles ET modifiables depuis le Space actif : le scope
+// transverse 'profile' PLUS le Space courant. Source unique partagée par
+// `buildMemoryEntriesBlock()` (ce qui est injecté au modèle) et par
+// `memory__update`/`memory__delete` (ce que le modèle peut toucher) — les deux
+// doivent coïncider, sinon on montre au modèle une entrée avec son id puis on
+// lui répond « introuvable » quand il la vise (bug payé au lot C : le prédicat
+// d'herméticité inter-Spaces avait été recopié tel quel dans les handlers, où
+// il excluait 'profile' — qui n'est pas « un autre Space » mais un scope
+// AU-DESSUS de la frontière que l'herméticité protège).
+// `create` reste volontairement asymétrique : il stampe toujours le Space actif,
+// la promotion vers 'profile' restant une action UI (décision lot C, maintenue).
+function memoryScopesForSpace(spaceId) {
+  return ['profile', spaceId || DEFAULT_SPACE_ID];
+}
+
+// Un souvenir est-il atteignable depuis `spaceId` ? Prédicat pur, partagé par
+// les handlers d'outils. Une entrée sans scope (pré-migration) vaut default Space.
+function isMemoryInScope(entry, spaceId) {
+  if (!entry) return false;
+  return memoryScopesForSpace(spaceId).indexOf(entry.scope || DEFAULT_SPACE_ID) !== -1;
+}
+
 function listMemoryEntries(scopes) {
   const all = loadMemories().filter(e => e && !e.suppressed);
   if (!Array.isArray(scopes)) return all;
