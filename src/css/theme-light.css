@@ -8,21 +8,44 @@
 /* UNE seule variante : html porte toujours data-theme=light|dark, « system »
    étant résolu en JS (script de boot du <head> + applyTheme/matchMedia, ui.js).
    Ne pas ré-introduire de bloc @media (prefers-color-scheme) dupliqué. */
+/* Thème clair : redéfinit la TEINTE (couple de la palette) et les PALIERS,
+   jamais les formules — celles-ci vivent dans base.css. Les saturations
+   décroissent avec la luminosité (accord d'origine, cf. base.css). */
 html[data-theme="light"] {
-  --bg:                    #f4efe5;
-  --surface:               #ede8de;
-  --surface-2:             #e5dfd4;
-  --surface-3:             #dbd4c7;
-  --border:                #cdc7b8;
-  --border-2:              #c1baa8;
-  --text:                  #1e1b18;
-  --text-2:                #5a5248;
-  --text-3:                #968a7a;
-  --accent:                #e05f1c;
-  --accent-2:              #cc5016;
+  --hue:        41;                      /* teinte claire d'Ambre (le sombre est en 219) */
+  --accent:     #e05f1c;
+  --accent-2:   #cc5016;
+  --accent-hue: 21;
+  --accent-sat: 77.8%;
+  --code-hue:   21;
+
+  --sat-bg:     40.5%;
+  --sat-s1:     29.5%;
+  --sat-s2:     24.5%;
+  --sat-s3:     21.5%;
+  --sat-s4:     21.5%;                   /* = s3 : le clair n'a pas de palier au-delà */
+  --sat-bd:     17.5%;
+  --sat-bd2:    17%;
+  --sat-t1:     11%;
+  --sat-t2:     11%;
+  --sat-t3:     12%;
+  --sat-code:   39.5%;
+  --sat-scroll: 0%;
+
+  --l-bg:       92.7%;
+  --l-s1:       90%;
+  --l-s2:       86.5%;
+  --l-s3:       82%;
+  --l-s4:       82%;                     /* = s3 (cf. ci-dessus) */
+  --l-bd:       76.3%;
+  --l-bd2:      70.8%;
+  --l-t1:       10.6%;
+  --l-t2:       31.8%;
+  --l-t3:       53.3%;
+  --l-code:     89%;
+  --l-scroll:   0%;
+
   --accent-ink:            #1a0c05;
-  --accent-dim:            rgba(224,95,28,.10);
-  --accent-bd:             rgba(224,95,28,.28);
   --ok:                    #267a4e;
   --err:                   #c42828;
   --err-soft:              #b04a4a;              /* label d'ack en échec — adouci (cf. base.css) */
@@ -33,13 +56,32 @@ html[data-theme="light"] {
   --ctx-over:              #b83232;              /* compteur — dépassement (fond clair) */
   --ctx-over-bd:           rgba(184,50,50,.38);  /* bordure over (fond clair) */
   --ctx-over-dim:          rgba(184,50,50,.12);  /* fond over (fond clair) */
-  --topbar-bg:             rgba(244,239,229,.88);
+  /* Le clair dérive sa topbar du FOND (pas de surface) et n'a pas de palier de
+     scrollbar teinté : valeurs neutres explicites, hors échelle de palette. */
+  --topbar-bg:             hsl(var(--hue) var(--sat-bg) var(--l-bg) / .88);
   --scrollbar-thumb-hover: rgba(0,0,0,.30);
   --table-stripe:          rgba(0,0,0,.04);
-  --code-bg:               #eee8d8;
-  --code-head-bg:          #e6dfc9;
-  --code-inline-color:     #c45010;
-  --surface-4:             #dbd4c7;   /* = surface-3 : le clair n'a pas de palier au-delà */
+  --code-head-bg:          hsl(var(--hue) 37% 84.5%);
+  --code-inline-color:     hsl(var(--code-hue) 84.9% 41.6%);
+  --brand:                 #e05f1c;   /* identité de marque, hors palette (cf. base.css) */
+}
+
+/* Pendant CLAIR de chaque palette : seules la teinte et les accents changent. */
+html[data-theme="light"][data-palette="encre"] {
+  --hue:        215;
+  --accent:     #2064cb;
+  --accent-2:   #1656b6;
+  --accent-hue: 216;
+  --accent-sat: 73%;
+  --code-hue:   216;
+}
+html[data-theme="light"][data-palette="foret"] {
+  --hue:        88;
+  --accent:     #1f8a5f;
+  --accent-2:   #177a52;
+  --accent-hue: 156;
+  --accent-sat: 63.3%;
+  --code-hue:   156;
 }
 html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 

@@ -357,6 +357,13 @@ appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
   ce qui doit être vérifié à la main (`docs/manual-tests.md`).
 - **`docs/exports.md`** — export Markdown et export HTML standalone des
   conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
+- **`docs/palettes.md`** — palettes de couleurs (lot S-a) : deux axes
+  orthogonaux (luminosité × palette), dérivation HSL des tokens, exceptions
+  hors palette (logotype, code inline, sémantiques), condition de gratuité à
+  l'export.
+- **`docs/fonts.md`** — lots de fontes appairés (lot S-b) : troisième axe de
+  présentation, `@import` unique préchargeant les six familles, contraintes
+  d'une mono (tabular-nums de l'inspecteur), export en statu quo.
 - **`docs/rendering.md`** — rendu enrichi des blocs de code : diagrammes
   Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité).
 - **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre

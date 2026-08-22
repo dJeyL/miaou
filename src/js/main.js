@@ -837,8 +837,17 @@ function applySyncedSettings(keys) {
   // Réglages généraux : ré-appliquer thème + surlignage + sélecteurs, sans
   // toucher au draft ni au thread. On relit l'état persisté à la source.
   const s = loadSettings();
-  if (set.has('theme')) applyTheme(s.theme || 'system');
-  if (set.has('motion')) applyMotion(s.motion || 'system');
+  // Réglages d'apparence auto-persistés (pas de bouton « Enregistrer ») : il
+  // faut ré-appliquer le RENDU *et* rafraîchir les boutons du drawer. Oublier
+  // le second laisse un drawer qui affiche l'ancien choix alors que l'écran a
+  // changé — désaccord entre ce que l'utilisateur voit et ce que les segments
+  // prétendent, et un clic sur le segment déjà « actif » qui semble sans effet.
+  // Les setXxxUI sont sans risque drawer fermé : ils ne font que toggler des
+  // classes sur des nœuds statiques et écrire un hint (no-op si absent).
+  if (set.has('theme')) { applyTheme(s.theme || 'system'); setThemeUI(s.theme || 'system'); }
+  if (set.has('palette')) { applyPalette(s.palette || 'ambre'); setPaletteUI(s.palette || 'ambre'); }
+  if (set.has('fonts')) { applyFonts(s.fonts || 'graphite'); setFontsUI(s.fonts || 'graphite'); }
+  if (set.has('motion')) { applyMotion(s.motion || 'system'); setMotionUI(s.motion || 'system'); }
   if (set.has('highlight')) highlightEnabled = s.highlight !== false;
   // Autres clés (systemPrompt, contextWindow, sélecteurs…) : effet au prochain
   // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
@@ -2692,6 +2701,11 @@ function init() {
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
+  setPaletteUI(s.palette || 'ambre');
+  applyPalette(s.palette || 'ambre');
+  setFontsUI(s.fonts || 'graphite');
+  applyFonts(s.fonts || 'graphite');
+  prefetchFontLots();   // lots inactifs, pendant que l'overlay de boot masque l'écran
   setMotionUI(s.motion || 'system');
   applyMotion(s.motion || 'system');
   syncActiveApiServerUI();

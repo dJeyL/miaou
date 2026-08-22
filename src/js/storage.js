@@ -50,6 +50,8 @@ const DEFAULT_SETTINGS = {
   highlight: true,
   summaryInjectionMode: 'propose',   // 'auto' | 'propose' | 'never'
   theme: 'system',         // 'light' | 'dark' | 'system'
+  palette: 'ambre',        // 'ambre' | 'encre' | 'foret' (axe orthogonal au thème, lot S-a)
+  fonts: 'graphite',      // 'graphite' | 'atelier' | 'chaleur' (lot de fontes, lot S-b)
   showModelSelector: false, // sélecteur serveur/modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel

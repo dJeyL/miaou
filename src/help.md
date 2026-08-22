@@ -365,6 +365,15 @@ Quelques repères pour te déplacer dans MIAOU :
   Serveurs API) pour ne plus être interrogé ni proposé.
 - **Thème clair / sombre** et coloration syntaxique se règlent dans les
   Paramètres.
+- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**
+  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une
+  police de texte et une police à chasse fixe (blocs de code) choisies pour
+  aller ensemble. Réglage indépendant du thème et de la palette.
+- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres
+  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur
+  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage
+  indépendant du thème clair/sombre : chaque palette a sa version claire et sa
+  version sombre, et changer l'un ne change pas l'autre.
 - **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,
   recherche, outils distants…) pour une même réponse, elles s'affichent en
   mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et

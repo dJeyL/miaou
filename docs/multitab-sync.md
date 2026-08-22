@@ -321,6 +321,56 @@ opaque) → adaptateur no-op, aucun changement de comportement. L'export HTML
 standalone (lot G/Gbis) ouvert via `file://` doit rester pleinement fonctionnel
 hors-ligne : il emprunte le même chemin no-op.
 
+## Réglages d'apparence : repeindre ET rafraîchir les boutons
+
+Les quatre réglages auto-persistés (`theme`, `palette`, `fonts`, `motion` —
+ceux qui s'appliquent sans clic sur « Enregistrer ») voyagent par
+`settings-updated`. À la réception, `main.js` doit appeler **la paire**
+`applyXxx` + `setXxxUI` pour chacun :
+
+- `applyXxx` repeint (attribut sur `<html>`, hooks Mermaid…) ;
+- `setXxxUI` remet les segments du drawer et leur hint d'accord avec l'état.
+
+N'appeler que le premier produit un onglet dont l'écran a changé mais dont les
+réglages affichent encore l'ancien choix ; cliquer sur le segment déjà marqué
+« actif » semble alors sans effet. Les `setXxxUI` sont sans risque drawer
+fermé : ils togglent des classes sur des nœuds statiques et écrivent un hint
+(no-op si absent).
+
+Défaut relevé par Julien après le lot S ; il préexistait pour `theme` et
+`motion`. Couvert par une assertion à deux onglets dans `verify-palettes.mjs`
+et `verify-fonts.mjs`.
+
+### Dette connue : propagation du thème intermittente
+
+**Symptôme** (Julien, 2026-08-22, après le correctif ci-dessus) : en usage réel,
+un pair reçoit parfois le changement de thème sans l'appliquer — les segments
+du drawer passent bien à « Sombre » et le hint suit, mais l'écran reste clair.
+**Non reproductible de façon consistante** : après de nombreux essais, « ça
+marche plus souvent que l'inverse ». Jamais reproduit sous Playwright (deux
+onglets même contexte, `file://`, palette Encre, drawer ouvert ou fermé,
+réseau bridé) — le message part, arrive, `applyTheme` s'exécute sans lever et
+l'attribut est bien posé.
+
+**Piste principale, non confirmée** : `serializeThemeTokens` (ui.js) bascule
+`data-theme` en direct pour capturer les deux jeux de tokens, sous `try/finally`
+qui restaure une valeur **capturée avant** la bascule. Un `settings-updated`
+traité pendant cette fenêtre verrait son attribut écrasé par le `finally`. La
+fenêtre est censée être entièrement synchrone (aucun `await` entre bascule et
+restauration), ce qui rendrait le scénario impossible — mais c'est la seule
+autre voie d'écriture de `data-theme` en dehors d'`applyTheme` et du script de
+boot, et l'intermittence colle à une fenêtre de course.
+
+Autres pistes non écartées : un onglet resté ouvert sur une version antérieure
+du bundle (le symptôme d'avant le correctif est différent — rien ne bougeait,
+segments compris — donc peu probable ici) ; une écriture concurrente du même
+attribut par le suivi `matchMedia` sur un réglage « système ».
+
+**À faire si ça remonte** : instrumenter `data-theme` par `MutationObserver`
+dans l'onglet récepteur (voir si l'attribut est posé puis ré-écrit, ou jamais
+posé) — c'est ce qui distinguera « le CSS ne suit pas » de « l'attribut est
+écrasé ».
+
 ## Tests
 
 - **QuickJS** (`tests/test-sync.js`) : noyau pur — enveloppe, validation

@@ -7,11 +7,20 @@
 <link rel="icon" id="favicon">
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+<!-- Fontes (lot S-b) : le <link> remplace l'@import de base.css, qui était
+     bloquant EN CASCADE — le navigateur ne découvrait les URLs de .woff2
+     qu'après avoir téléchargé la feuille Google (mesuré : +401 ms), d'où un
+     rendu en police système puis un saut. Ici la feuille part avec le HTML.
+     preconnect : ouvre la connexion à gstatic AVANT de connaître les URLs,
+     les .woff2 venant d'un autre domaine que la feuille CSS. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500&family=Figtree:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=block">
 <!-- Résolution du thème AVANT le premier paint, y compris « system » (via
      matchMedia) : html porte TOUJOURS data-theme=light|dark, le CSS n'a qu'une
      seule variante claire (pas de bloc @media dupliqué). Le suivi live d'un
      changement de préférence OS est câblé dans ui.js (applyTheme + listener). -->
-<script>(function(){var t='dark';try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');t=s.theme;}catch(e){}if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);})();</script>
+<script>(function(){var t='dark',p='',f='';try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');t=s.theme;p=s.palette;f=s.fonts;}catch(e){}if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);if(p==='foret'||p==='encre'){document.documentElement.setAttribute('data-palette',p);}if(f==='atelier'||f==='chaleur'){document.documentElement.setAttribute('data-fonts',f);}})();</script>
 <style>
 /* __CSS__ */
 </style>
@@ -377,6 +386,24 @@ if (window.requestAnimationFrame) {
           <button type="button" class="seg" data-mode="system" onclick="selectTheme('system')">Système</button>
         </div>
         <span class="hint" id="theme-hint"></span>
+      </div>
+      <div class="field">
+        <label>Palette</label>
+        <div class="seg-group" id="palette-mode">
+          <button type="button" class="seg" data-mode="ambre" onclick="selectPalette('ambre')">Ambre</button>
+          <button type="button" class="seg" data-mode="encre" onclick="selectPalette('encre')">Encre</button>
+          <button type="button" class="seg" data-mode="foret" onclick="selectPalette('foret')">Forêt</button>
+        </div>
+        <span class="hint" id="palette-hint"></span>
+      </div>
+      <div class="field">
+        <label>Fontes</label>
+        <div class="seg-group" id="fonts-mode">
+          <button type="button" class="seg" data-mode="graphite" onclick="selectFonts('graphite')">Graphite</button>
+          <button type="button" class="seg" data-mode="atelier" onclick="selectFonts('atelier')">Atelier</button>
+          <button type="button" class="seg" data-mode="chaleur" onclick="selectFonts('chaleur')">Chaleur</button>
+        </div>
+        <span class="hint" id="fonts-hint"></span>
       </div>
       <div class="field">
         <label>Animations</label>

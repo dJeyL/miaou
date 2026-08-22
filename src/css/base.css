@@ -1,29 +1,86 @@
 /* ── base.css ──────────────────────────────────────────────────────────────
-   Fondations : import des fontes, reset, tokens (:root), body, scrollbars,
-   coquille .app. Premier fichier de CSS_ORDER — l'@import doit rester en tête
-   de la feuille concaténée.
+   Fondations : reset, tokens (:root), body, scrollbars, coquille .app.
+   Premier fichier de CSS_ORDER. Les fontes sont chargées par un <link> du
+   <head> (index.html), plus par un @import ici — cf. commentaire ci-dessous.
    ────────────────────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Les fontes des trois lots (S-b) sont chargées par un <link> dans le <head>
+   d'index.html, PAS par un @import ici : un @import est bloquant en cascade
+   (le navigateur ne découvre les URLs de .woff2 qu'après avoir téléchargé la
+   feuille Google — mesuré à +401 ms), ce qui produisait un rendu en police
+   système suivi d'un saut. Avec le <link>, la feuille part en même temps que
+   le HTML, et `display=block` remplace `swap` pour ne jamais afficher de
+   repli. Ajouter un lot = ajouter ses familles à CE <link>. */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 
+/* ═══ Tokens ═══ */
+/* Deux axes de présentation ORTHOGONAUX (lot S-a, « Garde-robe ») :
+     - luminosité : clair | sombre, portée par html[data-theme] (theme-light.css) ;
+     - palette    : html[data-palette] (ambre par défaut), ci-dessous.
+   Les fonds/bordures/textes sont DÉRIVÉS d'une teinte (--hue) et d'un jeu de
+   saturations par palier (--sat-*), pas écrits en dur : une palette = deux
+   teintes (une par luminosité) + ses accents, soit ~6 lignes.
+   Les saturations décroissent avec la luminosité en thème CLAIR (accord
+   d'origine : une bordure foncée à saturation de fond vire au boueux) — c'est
+   pourquoi il y a un palier par famille et non une saturation unique.
+   Les valeurs reproduisent l'ancienne palette à 1/255 près (sombre) et 3/255
+   (clair) : Ambre n'est pas redessinée, elle est dérivée. */
 :root {
-  --bg:         #0b0c0e;
-  --surface:    #111316;
-  --surface-2:  #16181c;
-  --surface-3:  #1c1f24;
-  --border:     #232730;
-  --border-2:   #2c313b;
-  --text:       #e7e8ea;
-  --text-2:     #9a9ea8;
-  --text-3:     #5e636e;
+  /* Palette par défaut (Ambre) — surchargée par html[data-palette] plus bas.
+     --hue est la teinte du THÈME SOMBRE ; le clair a la sienne (theme-light.css). */
+  --hue:        219;
   --accent:     #ff7a45;
   --accent-2:   #ff6a2e;
   --accent-ink: #1a0c05;
-  --accent-dim: rgba(255,122,69,.12);
-  --accent-bd:  rgba(255,122,69,.28);
+  --accent-hue: 17;    /* teinte de l'accent, pour les dérivés alpha/clair */
+  --accent-sat: 100%;
+  /* Le code inline a sa PROPRE teinte : elle avait été accordée séparément de
+     l'accent (20 contre 17 dans Ambre), reproduire l'accent la décalerait. */
+  --code-hue:   20;
+
+  /* Paliers de saturation du thème sombre (le clair les redéfinit). */
+  --sat-bg:     12%;
+  --sat-s1:     13%;
+  --sat-s2:     12%;
+  --sat-s3:     12.5%;
+  --sat-s4:     14.5%;
+  --sat-bd:     15.5%;
+  --sat-bd2:    14.5%;
+  --sat-t1:     7%;
+  --sat-t2:     7.5%;
+  --sat-t3:     8%;
+  --sat-code:   15%;
+  --sat-scroll: 11.5%;
+
+  /* Échelle de luminosité du thème sombre (le clair la redéfinit). */
+  --l-bg:       4.9%;
+  --l-s1:       7.6%;
+  --l-s2:       9.8%;
+  --l-s3:       12.5%;
+  --l-s4:       17.5%;
+  --l-bd:       16.3%;
+  --l-bd2:      20.2%;
+  --l-t1:       91.2%;
+  --l-t2:       63.1%;
+  --l-t3:       40%;
+  --l-code:     6.5%;
+  --l-scroll:   25.7%;
+
+  /* Dérivés — identiques dans les deux thèmes, seuls les paliers changent. */
+  --bg:         hsl(var(--hue) var(--sat-bg) var(--l-bg));
+  --surface:    hsl(var(--hue) var(--sat-s1) var(--l-s1));
+  --surface-2:  hsl(var(--hue) var(--sat-s2) var(--l-s2));
+  --surface-3:  hsl(var(--hue) var(--sat-s3) var(--l-s3));
+  --surface-4:  hsl(var(--hue) var(--sat-s4) var(--l-s4));   /* palier hover au-dessus de surface-3 */
+  --border:     hsl(var(--hue) var(--sat-bd) var(--l-bd));
+  --border-2:   hsl(var(--hue) var(--sat-bd2) var(--l-bd2));
+  --text:       hsl(var(--hue) var(--sat-t1) var(--l-t1));
+  --text-2:     hsl(var(--hue) var(--sat-t2) var(--l-t2));
+  --text-3:     hsl(var(--hue) var(--sat-t3) var(--l-t3));
+  --accent-dim: hsl(var(--accent-hue) var(--accent-sat) 63.5% / .12);
+  --accent-bd:  hsl(var(--accent-hue) var(--accent-sat) 63.5% / .28);
   --ok:         #4ec98a;
   --err:        #ff5d5d;
   /* Rouge d'erreur DÉSATURÉ, réservé aux textes d'erreur longs affichés en
@@ -41,18 +98,72 @@
   --r:          7px;
   --r-sm:       5px;
   --ease:       cubic-bezier(.4, 0, .2, 1);
+  /* Lot de fontes par défaut (Graphite) — surchargé par html[data-fonts].
+     Sans et mono vont par PAIRE : elles sont choisies pour s'accorder
+     (proportions, hauteur d'x), comme les deux teintes d'une palette. */
   --sans: 'Hanken Grotesk', system-ui, sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
   --col: 720px;
   --sidebar-w: 264px;   /* largeur ouverte, redimensionnable (264 → 528) et persistée */
   /* valeurs dérivées, surchargées par le thème clair */
-  --topbar-bg:             rgba(17,19,22,.6);
-  --scrollbar-thumb-hover: #3a4049;
+  --topbar-bg:             hsl(var(--hue) var(--sat-s1) var(--l-s1) / .6);
+  --scrollbar-thumb-hover: hsl(var(--hue) var(--sat-scroll) var(--l-scroll));
   --table-stripe:          rgba(255,255,255,.012);
-  --code-bg:               #0e1013;
+  --code-bg:               hsl(var(--hue) var(--sat-code) var(--l-code));
   --code-head-bg:          var(--surface);
-  --code-inline-color:     #ffb894;
-  --surface-4:             #262b33;   /* palier hover au-dessus de surface-3 */
+  --code-inline-color:     hsl(var(--code-hue) var(--accent-sat) 79%);
+  /* Identité de marque : le nom « MIAOU » garde SA couleur quelle que soit la
+     palette (décision Julien, lot S-a) — c'est un logotype, pas un accent.
+     Il suit en revanche le thème clair/sombre, sinon l'orange sombre devient
+     illisible sur fond clair. Ne PAS le brancher sur --accent. */
+  --brand:                 #ff7a45;
+}
+
+/* ═══ Palettes (axe orthogonal au thème clair/sombre) ═══ */
+/* Une palette redéfinit UNIQUEMENT sa teinte et ses accents : tout le reste est
+   dérivé. Le pendant CLAIR de chaque palette vit dans theme-light.css (une
+   palette = un COUPLE de teintes, une par luminosité).
+   Contrainte dure : n'introduire AUCUN nouveau nom de token — THEME_TOKENS
+   (ui.js) est une liste figée, et l'export lit les valeurs résolues via
+   getComputedStyle. Redéfinir des tokens existants est gratuit à l'export ;
+   en ajouter un ne l'est pas. */
+:root[data-palette="encre"] {
+  --hue:        225;
+  --accent:     #4f92f8;
+  --accent-2:   #2d7ffb;
+  --accent-ink: #050f1f;
+  --accent-hue: 216;
+  --accent-sat: 92%;
+  --code-hue:   216;
+}
+
+/* ═══ Lots de fontes (axe orthogonal à la palette ET au thème, lot S-b) ═══ */
+/* « graphite » est le DÉFAUT : aucun attribut posé (le bloc :root le porte),
+   même logique que la palette Ambre. Un lot ne fait que réaffecter les deux
+   tokens : les six familles sont chargées par le <link> du <head> ET
+   préchargées par prefetchFontLots() (ui.js) au boot, donc la bascule ne
+   déclenche aucun fetch — sans ce préchargement, elle coûtait 2 requêtes et un
+   saut visuel (cf. docs/fonts.md).
+   --sans/--mono sont DÉJÀ dans THEME_TOKENS (ui.js) : l'export capture les
+   piles de polices sans travail supplémentaire. Il ne charge en revanche aucun
+   fichier de fonte (statu quo assumé, cf. docs/fonts.md) et retombe sur les
+   familles système — vrai avant ce lot comme après. */
+:root[data-fonts="atelier"] {
+  --sans: 'Source Sans 3', system-ui, sans-serif;
+  --mono: 'Source Code Pro', 'SF Mono', Consolas, monospace;
+}
+:root[data-fonts="chaleur"] {
+  --sans: 'Figtree', system-ui, sans-serif;
+  --mono: 'Fira Code', 'SF Mono', Consolas, monospace;
+}
+:root[data-palette="foret"] {
+  --hue:        185;
+  --accent:     #3fbf8f;
+  --accent-2:   #2fae7f;
+  --accent-ink: #04170f;
+  --accent-hue: 158;
+  --accent-sat: 50.4%;
+  --code-hue:   158;
 }
 
 html, body { height: 100%; }

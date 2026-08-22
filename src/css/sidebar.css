@@ -48,7 +48,7 @@
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.18em;
-  color: var(--accent);
+  color: var(--brand);   /* logotype : constant d'une palette à l'autre */
 }
 .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .brand-logo { width: 36px; height: 36px; border-radius: 8px; display: block; flex-shrink: 0; }

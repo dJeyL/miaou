@@ -34,7 +34,7 @@
 .topbar-brand { display: flex; align-items: center; gap: 8px; opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); }
 .app.booted:not(.sidebar-open) .topbar-brand { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-brand-logo { width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0; }
-.topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
+.topbar-brand-name { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--brand); }   /* logotype, hors palette */
 /* Badge du Space actif : même fondu que .topbar-brand (visible sidebar
    repliée), masqué en plus par [hidden] côté JS quand on est dans le default
    Space (syncSpaceUI, ui.js — deux conditions indépendantes qui se cumulent). */

@@ -3935,6 +3935,8 @@ function openSettings() {
   const s = loadSettings();
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
+  setPaletteUI(s.palette || 'ambre');
+  setFontsUI(s.fonts || 'graphite');
   setMotionUI(s.motion || 'system');
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-describe-files').checked = s.describeFiles !== false;
@@ -4069,6 +4071,109 @@ function selectTheme(theme) {
   setThemeUI(theme);
   applyTheme(theme);
   saveSettings({ theme });   // persisté immédiatement : préférence visuelle à effet direct
+}
+
+// ── Palettes (axe orthogonal au thème clair/sombre, lot S-a) ────────────────
+const PALETTES = ['ambre', 'encre', 'foret'];
+const PALETTE_HINTS = {
+  ambre: "Orange chaud sur gris froids (palette d'origine).",
+  encre: "Bleu franc sur bleu-nuit, gris-bleu en clair.",
+  foret: "Vert jade sur gris-vert profonds, lin en clair.",
+};
+
+let pendingPalette = 'ambre';
+// Ambre est le DÉFAUT : pas d'attribut posé (le bloc :root de base.css la
+// porte), même logique que « pas de classe pour l'état nominal ». Une valeur
+// inconnue (réglage corrompu, palette retirée) retombe sur ambre plutôt que de
+// laisser un data-palette orphelin qui ne matcherait aucune règle.
+function applyPalette(palette) {
+  const p = PALETTES.indexOf(palette) >= 0 ? palette : 'ambre';
+  if (p === 'ambre') document.documentElement.removeAttribute('data-palette');
+  else document.documentElement.setAttribute('data-palette', p);
+}
+
+function setPaletteUI(palette) {
+  pendingPalette = PALETTES.indexOf(palette) >= 0 ? palette : 'ambre';
+  document.querySelectorAll('#palette-mode .seg').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-mode') === pendingPalette);
+  });
+  const hint = $('palette-hint');
+  if (hint) hint.textContent = PALETTE_HINTS[pendingPalette] || '';
+}
+
+function selectPalette(palette) {
+  setPaletteUI(palette);
+  applyPalette(palette);
+  saveSettings({ palette });   // persistance immédiate, modèle selectTheme
+}
+
+// ── Lots de fontes (axe orthogonal à la palette et au thème, lot S-b) ───────
+// Sans et mono vont par PAIRE : elles sont choisies pour s'accorder, comme les
+// deux teintes d'une palette. Les six familles sont préchargées par l'@import
+// unique de base.css, donc la bascule ne déclenche aucun fetch ni FOUT.
+const FONT_LOTS = ['graphite', 'atelier', 'chaleur'];
+const FONT_HINTS = {
+  graphite: "Hanken Grotesk et JetBrains Mono — l'aspect d'origine.",
+  atelier:   "Source Sans 3 et Source Code Pro — dessinées comme une même famille.",
+  chaleur:   "Figtree et Fira Code — plus rond, mono à ligatures.",
+};
+
+// Familles par lot — utilisées par le préchargement. Doivent rester alignées
+// sur les blocs :root[data-fonts] de base.css ET sur le <link> du <head> :
+// une famille listée ici mais absente du <link> ne se chargerait jamais.
+const FONT_LOT_FAMILIES = {
+  graphite: { sans: 'Hanken Grotesk', mono: 'JetBrains Mono' },
+  atelier:  { sans: 'Source Sans 3',  mono: 'Source Code Pro' },
+  chaleur:  { sans: 'Figtree',        mono: 'Fira Code' },
+};
+
+let pendingFonts = 'graphite';
+// « graphite » est le DÉFAUT : pas d'attribut posé (le bloc :root le porte),
+// même doctrine que la palette ambre. Une valeur inconnue retombe dessus
+// plutôt que de laisser un data-fonts orphelin qui ne matcherait aucune règle.
+function applyFonts(fonts) {
+  const f = FONT_LOTS.indexOf(fonts) >= 0 ? fonts : 'graphite';
+  if (f === 'graphite') document.documentElement.removeAttribute('data-fonts');
+  else document.documentElement.setAttribute('data-fonts', f);
+}
+
+function setFontsUI(fonts) {
+  pendingFonts = FONT_LOTS.indexOf(fonts) >= 0 ? fonts : 'graphite';
+  document.querySelectorAll('#fonts-mode .seg').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-mode') === pendingFonts);
+  });
+  const hint = $('fonts-hint');
+  if (hint) hint.textContent = FONT_HINTS[pendingFonts] || '';
+}
+
+// Précharge les familles des lots NON actifs. Le <link> du <head> déclare les
+// six @font-face, mais un navigateur ne télécharge un .woff2 que lorsqu'un
+// glyphe le réclame : sans ça, basculer de lot déclenchait deux fetchs et un
+// saut visuel. document.fonts.load() force le téléchargement sans rien rendre.
+// Appelé après l'init, pendant que l'overlay de boot masque encore l'écran :
+// le coût est invisible, et toute bascule ultérieure est instantanée.
+// Silencieux par construction (préchargement opportuniste) : hors ligne ou
+// Google Fonts injoignable, on retombe sur le comportement d'avant.
+function prefetchFontLots() {
+  if (typeof document === 'undefined' || !document.fonts || !document.fonts.load) return;
+  const families = [];
+  for (const lot of FONT_LOTS) {
+    if (lot === pendingFonts) continue;   // le lot actif se charge tout seul
+    const spec = FONT_LOT_FAMILIES[lot];
+    if (spec) families.push(spec.sans, spec.mono);
+  }
+  for (const fam of families) {
+    // Les deux graisses réellement utilisées : charger « 400 » ne rapatrie pas
+    // le fichier du 600 (un poids = un fichier).
+    document.fonts.load(`400 1rem "${fam}"`).catch(() => {});
+    document.fonts.load(`600 1rem "${fam}"`).catch(() => {});
+  }
+}
+
+function selectFonts(fonts) {
+  setFontsUI(fonts);
+  applyFonts(fonts);
+  saveSettings({ fonts });   // persistance immédiate, modèle selectTheme
 }
 
 // ── Animations (reduced-motion) ─────────────────────────────────────────────
