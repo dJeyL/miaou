@@ -495,12 +495,23 @@ html[data-motion="reduced"] *::after {
 .conv-list.select-mode .conv-select { display: block; }
 
 .move-bar { margin: 8px; }
-.move-bar-count { font-size: 12.5px; color: var(--text); }
+
+.move-bar-count {
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .move-bar-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  
+  min-width: 0;
 }
 .move-bar-actions {
   display: flex;
@@ -531,7 +542,9 @@ html[data-motion="reduced"] *::after {
 .move-bar-cancel:hover { background: var(--surface-3); }
 
 .move-bar-row .pill-select { flex: 1 1 auto; min-width: 0; max-width: 100%; margin-left: 0; }
-.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 12px; }
+.move-bar-row .pill-select.is-compact { flex-shrink: 1; }
+
+.move-bar-row .pill-select-btn { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 12px; }
 .move-bar-row .pill-select-btn > span:first-child {
   flex: 1 1 auto;
   min-width: 0;
@@ -540,7 +553,8 @@ html[data-motion="reduced"] *::after {
   white-space: nowrap;
   text-align: left;
 }
-.move-bar-row .pill-select-btn .chev { margin-left: auto; }
+
+.move-bar-row .pill-select-btn .chev { margin-left: auto; flex-shrink: 0; }
 
 .move-bar .model-menu {
   top: auto;
@@ -548,11 +562,21 @@ html[data-motion="reduced"] *::after {
   transform: translateY(4px);
 }
 .move-bar .model-menu.show { transform: none; }
+
+.move-bar .model-menu {
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+  max-width: var(--sidebar-w);
+}
 .move-bar .model-menu .model-opt span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.move-bar .model-menu .model-opt .check {
+  flex-shrink: 0;
+  margin-left: 12px;
 }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
@@ -1323,7 +1347,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   margin-bottom: 8px;
 }
 
-.composer-model { position: relative; margin-bottom: 0; display: flex; }
+.composer-model { position: relative; margin-bottom: 0; display: flex; max-width: 55%; min-width: 0; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
   display: inline-flex;
@@ -1386,6 +1410,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 #composer-model-menu {
   top: auto;
@@ -1397,6 +1422,9 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   transform: translateY(4px);
 }
 #composer-model-menu.show { transform: none; }
+
+#composer-model-menu .model-opt { align-items: flex-start; }
+#composer-model-menu .model-opt span:first-child { overflow-wrap: anywhere; }
 
 .pill-select { position: relative; margin-left: auto; display: flex; }
 .pill-select[hidden] { display: none; }
@@ -3106,7 +3134,7 @@ if (window.requestAnimationFrame) {
           <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
-        <div class="composer-selectors">
+        <div class="composer-selectors" id="composer-selectors">
           <div class="composer-model" id="composer-model" hidden>
             <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
@@ -3606,7 +3634,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-22 21:56 UTC */
+/* miaou — built: 2026-08-23 10:31 UTC */
 
 /* ── utils.js ── */
 
@@ -4577,6 +4605,32 @@ function searchHelpContent(helpContent, query) {
   return results;
 }
 
+function shortenModelLabel(name, maxChars) {
+  const full = String(name == null ? '' : name);
+  const max = Math.floor(Number(maxChars));
+  
+  if (!isFinite(max) || max <= 0) return full;
+  if (full.length <= max) return full;
+
+  const slash = full.lastIndexOf('/');
+  const stripped = slash >= 0 ? full.slice(slash + 1) : full;
+  if (stripped.length <= max) return stripped;
+
+  if (max < 2) return '…';
+  return stripped.slice(0, max - 1) + '…';
+}
+
+const SPACE_MENU_GAP_PX = 16;
+const SPACE_MENU_MIN_H = 160;
+
+function spaceMenuMaxHeight(anchorBottom, viewportHeight) {
+  const bottom = Number(anchorBottom);
+  const vh = Number(viewportHeight);
+  
+  if (!isFinite(bottom) || !isFinite(vh) || vh <= 0) return 0;
+  return Math.max(SPACE_MENU_MIN_H, Math.floor(vh - bottom - SPACE_MENU_GAP_PX));
+}
+
 /* ── sync.js ── */
 
 const SYNC_PROTOCOL_VERSION = 1;
@@ -4721,7 +4775,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787435807}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787481098}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11061,10 +11115,44 @@ function loadAllServerModels(force) {
   return Promise.all(todo.map(s => loadServerModels(s, force))).then(() => true);
 }
 
+const COMPOSER_MODEL_MAX_RATIO = 0.55;
+const COMPOSER_MODEL_BTN_CHROME_PX = 52;
+const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
+
+function composerModelLabelBudget() {
+  const row = $('composer-selectors');
+  const rowWidth = row ? row.clientWidth : 0;
+  if (!rowWidth) return 0;
+  const textPx = rowWidth * COMPOSER_MODEL_MAX_RATIO - COMPOSER_MODEL_BTN_CHROME_PX;
+  if (textPx <= 0) return 0;
+  return Math.floor(textPx / COMPOSER_MODEL_CHAR_PX);
+}
+
+let _composerSelectorsRO = null;
+
+function initComposerModelLabelFit() {
+  const row = $('composer-selectors');
+  if (!row || typeof ResizeObserver === 'undefined' || _composerSelectorsRO) return;
+  _composerSelectorsRO = new ResizeObserver(() => {
+    const compLabel = $('composer-model-label');
+    if (!compLabel) return;
+    
+    const m = activeModel() || 'modèle';
+    compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
+    compLabel.title = m;
+  });
+  _composerSelectorsRO.observe(row);
+}
+
 function syncModelUI() {
   const m = activeModel() || 'modèle';
   const top = $('model-label');           if (top) top.textContent = m;
-  const compLabel = $('composer-model-label'); if (compLabel) compLabel.textContent = m;
+  
+  const compLabel = $('composer-model-label');
+  if (compLabel) {
+    compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
+    compLabel.title = m;
+  }
   const box = $('composer-model');
   if (box) {
     
@@ -11995,7 +12083,18 @@ function toggleSpaceMenu() {
   if (!menu) return;
   if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
   renderSpaceMenu();
+  fitSpaceMenuHeight();
   menu.classList.add('show');
+}
+
+function fitSpaceMenuHeight() {
+  const menu = $('space-menu');
+  const btn = $('space-select-btn');
+  if (!menu || !btn) return;
+  const vh = window.innerHeight || 0;
+  const h = spaceMenuMaxHeight(btn.getBoundingClientRect().bottom, vh);
+  
+  menu.style.maxHeight = h ? h + 'px' : '';
 }
 
 function renderSpaceMenu() {
@@ -16135,6 +16234,7 @@ function init() {
   
   $('app').classList.add('booted');
   initSidebarResize();
+  initComposerModelLabelFit();
   initVisualViewport();
   wireTitleEditing();
 

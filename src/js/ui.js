@@ -2469,8 +2469,9 @@ function renderMoveBar() {
     row.appendChild(pill.root);
   }
 
-  // Groupés pour que le retour à la ligne (manque de place) déplace les deux
-  // boutons ensemble plutôt que de les séparer l'un de l'autre.
+  // Groupés pour que les deux boutons restent solidaires face à la pilule de
+  // destination : le groupe est en flex-shrink: 0, c'est la pilule qui absorbe
+  // le manque de place en tronquant (la barre ne passe jamais à la ligne).
   const actions = document.createElement('div');
   actions.className = 'move-bar-actions';
 
@@ -3638,10 +3639,59 @@ function loadAllServerModels(force) {
 // modèle effectif, et la visibilité du sélecteur composer (réglage activé ET
 // liste disponible pour le serveur actif — sinon fallback silencieux, le
 // sélecteur n'apparaît pas).
+// Budget en caractères pour le libellé du bouton de modèle du composer.
+// Le sélecteur ne doit pas dépasser ~55% de la rangée : au-delà, il pousse les
+// pilules raisonnement et contexte hors de la ligne. La largeur disponible est
+// MESURÉE (pas devinée), puis convertie en caractères via la largeur d'un glyphe
+// mono à 11px (~0,6em) après déduction du chrome du bouton (icône, chevron,
+// gaps, paddings ≈ 52px). Renvoie 0 quand la mesure n'est pas exploitable
+// (élément absent, composer masqué, appel avant layout) : shortenModelLabel
+// laisse alors le nom intact.
+const COMPOSER_MODEL_MAX_RATIO = 0.55;
+const COMPOSER_MODEL_BTN_CHROME_PX = 52;
+const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
+
+function composerModelLabelBudget() {
+  const row = $('composer-selectors');
+  const rowWidth = row ? row.clientWidth : 0;
+  if (!rowWidth) return 0;
+  const textPx = rowWidth * COMPOSER_MODEL_MAX_RATIO - COMPOSER_MODEL_BTN_CHROME_PX;
+  if (textPx <= 0) return 0;
+  return Math.floor(textPx / COMPOSER_MODEL_CHAR_PX);
+}
+
+// Le budget dépend d'une LARGEUR : il faut le recalculer quand la rangée change
+// de taille (fenêtre redimensionnée, sidebar tirée, ouverture d'un drawer).
+// ResizeObserver couvre les trois d'un coup, sans se brancher sur le drag de la
+// sidebar ni sur un resize de fenêtre qui raterait le cas sidebar.
+let _composerSelectorsRO = null;
+
+function initComposerModelLabelFit() {
+  const row = $('composer-selectors');
+  if (!row || typeof ResizeObserver === 'undefined' || _composerSelectorsRO) return;
+  _composerSelectorsRO = new ResizeObserver(() => {
+    const compLabel = $('composer-model-label');
+    if (!compLabel) return;
+    // Recalcul du seul libellé : syncModelUI referait aussi le test de
+    // visibilité (lecture de réglages + listes de serveurs) à chaque frame de
+    // redimensionnement, pour rien.
+    const m = activeModel() || 'modèle';
+    compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
+    compLabel.title = m;
+  });
+  _composerSelectorsRO.observe(row);
+}
+
 function syncModelUI() {
   const m = activeModel() || 'modèle';
   const top = $('model-label');           if (top) top.textContent = m;
-  const compLabel = $('composer-model-label'); if (compLabel) compLabel.textContent = m;
+  // Bouton composer : nom ABRÉGÉ (auteur retiré, puis fin tronquée) — le nom
+  // complet reste dans la liste déroulée ET en title, pour rester récupérable.
+  const compLabel = $('composer-model-label');
+  if (compLabel) {
+    compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
+    compLabel.title = m;
+  }
   const box = $('composer-model');
   if (box) {
     // Visible dès que le réglage est actif ET qu'il y a quelque chose à proposer :
@@ -4749,7 +4799,24 @@ function toggleSpaceMenu() {
   if (!menu) return;
   if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
   renderSpaceMenu();
+  fitSpaceMenuHeight();
   menu.classList.add('show');
+}
+
+// Plafond de hauteur posé à CHAQUE ouverture, jamais une fois pour toutes : la
+// place sous le bouton dépend de la hauteur du viewport, qui bouge (fenêtre
+// redimensionnée, clavier mobile). Mesure prise sur le BOUTON, pas sur le menu
+// — le menu est encore invisible (visibility: hidden) et surtout on veut la
+// place disponible SOUS l'ancre, indépendamment du contenu déjà rendu.
+function fitSpaceMenuHeight() {
+  const menu = $('space-menu');
+  const btn = $('space-select-btn');
+  if (!menu || !btn) return;
+  const vh = window.innerHeight || 0;
+  const h = spaceMenuMaxHeight(btn.getBoundingClientRect().bottom, vh);
+  // 0 = mesure inexploitable : on retire toute surcharge et on laisse le
+  // plafond CSS de base reprendre la main plutôt que de poser une valeur fausse.
+  menu.style.maxHeight = h ? h + 'px' : '';
 }
 
 function renderSpaceMenu() {

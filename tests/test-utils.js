@@ -1905,3 +1905,71 @@ describe('searchHelpContent', function() {
     expect(results[0].truncated).toBe(false);
   });
 });
+
+describe('shortenModelLabel', function() {
+  it('nom qui tient dans le budget : intact', function() {
+    expect(shortenModelLabel('gemma3:4b', 40)).toBe('gemma3:4b');
+  });
+
+  it('palier 1 : le segment auteur saute quand le nom dépasse', function() {
+    expect(shortenModelLabel('hf.co/unsloth/gemma-3-4b-it-GGUF:Q4', 20))
+      .toBe('gemma-3-4b-it-GGUF:Q4'.slice(0, 19) + '…');
+  });
+
+  it('palier 1 suffisant : pas de troncature de fin', function() {
+    expect(shortenModelLabel('mistralai/Mistral-Small:24b', 24)).toBe('Mistral-Small:24b');
+  });
+
+  it('coupe au DERNIER slash (chemin à plusieurs segments)', function() {
+    expect(shortenModelLabel('hf.co/auteur/modele', 10)).toBe('modele');
+  });
+
+  it('palier 2 : troncature de fin avec ellipsis, longueur = budget', function() {
+    var out = shortenModelLabel('qwen2.5-coder-instruct:32b-q8', 12);
+    expect(out.length).toBe(12);
+    expect(out).toBe('qwen2.5-cod…');
+  });
+
+  it('sans slash, la troncature de fin s\'applique quand même', function() {
+    expect(shortenModelLabel('abcdefghij', 5)).toBe('abcd…');
+  });
+
+  it('budget nul ou absurde : nom intact (mesure impossible)', function() {
+    expect(shortenModelLabel('auteur/tres-long-nom-de-modele', 0)).toBe('auteur/tres-long-nom-de-modele');
+    expect(shortenModelLabel('auteur/tres-long-nom-de-modele', NaN)).toBe('auteur/tres-long-nom-de-modele');
+    expect(shortenModelLabel('auteur/tres-long-nom-de-modele', -5)).toBe('auteur/tres-long-nom-de-modele');
+  });
+
+  it('budget de 1 : ellipsis seule', function() {
+    expect(shortenModelLabel('abcdef', 1)).toBe('…');
+  });
+
+  it('entrée vide ou nulle : chaîne vide', function() {
+    expect(shortenModelLabel(null, 10)).toBe('');
+    expect(shortenModelLabel('', 10)).toBe('');
+  });
+});
+
+describe('spaceMenuMaxHeight', function() {
+  it('rend la place disponible sous l\'ancre, moins la marge', function() {
+    expect(spaceMenuMaxHeight(100, 800)).toBe(684);
+  });
+
+  it('plancher : viewport court, ne descend pas sous le minimum', function() {
+    expect(spaceMenuMaxHeight(700, 800)).toBe(160);
+  });
+
+  it('ancre sous le bas du viewport : plancher, jamais une valeur négative', function() {
+    expect(spaceMenuMaxHeight(900, 800)).toBe(160);
+  });
+
+  it('mesure inexploitable : 0 (l\'appelant laisse le plafond CSS)', function() {
+    expect(spaceMenuMaxHeight(100, 0)).toBe(0);
+    expect(spaceMenuMaxHeight(NaN, 800)).toBe(0);
+    expect(spaceMenuMaxHeight(100, NaN)).toBe(0);
+  });
+
+  it('dépasse largement les 220px de la base .model-menu sur un viewport normal', function() {
+    expect(spaceMenuMaxHeight(120, 1000) > 220).toBe(true);
+  });
+});

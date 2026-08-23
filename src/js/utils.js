@@ -1443,3 +1443,57 @@ function searchHelpContent(helpContent, query) {
   });
   return results;
 }
+
+// Abrège un nom de modèle pour l'affichage du bouton sélecteur du composer,
+// où un nom long ("<auteur>/<modèle>:<variante>") pousse les pilules effort et
+// tokens hors de la ligne. Deux paliers, dans cet ordre :
+//   1. retrait du segment d'auteur (tout ce qui précède le DERNIER '/') ;
+//   2. si ça ne suffit toujours pas, troncature de la FIN, remplacée par '…'.
+// `maxChars` est un budget en caractères (dérivé d'une mesure de largeur côté
+// appelant, cf. composerModelLabelBudget dans ui.js). Le nom complet reste
+// affiché tel quel dans la liste déroulée : cette fonction ne sert QUE au
+// libellé du bouton.
+// Pure : pas de DOM, testable sous QuickJS.
+function shortenModelLabel(name, maxChars) {
+  const full = String(name == null ? '' : name);
+  const max = Math.floor(Number(maxChars));
+  // Budget absent/absurde (mesure impossible, appel avant layout) → nom intact :
+  // mieux vaut une pilule large qu'un libellé mutilé au hasard.
+  if (!isFinite(max) || max <= 0) return full;
+  if (full.length <= max) return full;
+
+  // Palier 1 : l'auteur saute en entier. On coupe au DERNIER '/' pour absorber
+  // les chemins à plusieurs segments (hf.co/<auteur>/<modèle>).
+  const slash = full.lastIndexOf('/');
+  const stripped = slash >= 0 ? full.slice(slash + 1) : full;
+  if (stripped.length <= max) return stripped;
+
+  // Palier 2 : troncature de fin. Le '…' occupe une place dans le budget ; en
+  // dessous de 2 caractères il ne reste rien de signifiant, on renvoie le seul
+  // '…' plutôt qu'une chaîne vide.
+  if (max < 2) return '…';
+  return stripped.slice(0, max - 1) + '…';
+}
+
+// Plafond de hauteur du menu déroulant d'Espaces, en pixels. La base
+// `.model-menu` borne à 220px — justifié pour une liste de MODÈLES (un serveur
+// Ollama en expose des centaines), inutilement serré pour des Espaces, dont le
+// nombre reste humain : au-delà de ~7, un scroll apparaissait alors que la
+// sidebar avait de la place à revendre.
+// On rend ici la place réellement disponible sous le bouton : du bas de
+// l'ancre jusqu'au bas du viewport, moins une marge de respiration.
+// `SPACE_MENU_MIN_H` évite l'aberration d'un menu écrasé à quelques pixels
+// quand le bouton est bas dans un viewport très court (le scroll interne
+// reprend alors la main, ce qui est le comportement correct).
+// Pure : arithmétique seule, le DOM est lu par l'appelant.
+const SPACE_MENU_GAP_PX = 16;
+const SPACE_MENU_MIN_H = 160;
+
+function spaceMenuMaxHeight(anchorBottom, viewportHeight) {
+  const bottom = Number(anchorBottom);
+  const vh = Number(viewportHeight);
+  // Mesure inexploitable (menu jamais ouvert, appel avant layout) → 0, que
+  // l'appelant traduit en « ne pose rien », laissant le plafond CSS de base.
+  if (!isFinite(bottom) || !isFinite(vh) || vh <= 0) return 0;
+  return Math.max(SPACE_MENU_MIN_H, Math.floor(vh - bottom - SPACE_MENU_GAP_PX));
+}

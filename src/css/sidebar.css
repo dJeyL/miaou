@@ -312,12 +312,35 @@
    dès le mode déplacement actif (indépendamment du nombre de conversations
    cochées, correctif UX 2026-07-08). Ne porte ici que sa marge propre. */
 .move-bar { margin: 8px; }
-.move-bar-count { font-size: 12.5px; color: var(--text); }
+/* min-width: 0 : .banner est un flex COLONNE, donc cette ligne de compte est un
+   flex item, qui refuse par défaut (min-width: auto) de descendre sous la
+   largeur de son texte et élargit la barre au lieu de s'élider. */
+.move-bar-count {
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* PAS de flex-wrap : un nom d'espace long doit TRONQUER la pilule, pas pousser
+   les boutons d'action à la ligne suivante. Avec `wrap`, le flex renvoyait les
+   boutons en dessous avant même d'avoir comprimé la pilule jusqu'à son
+   `min-width: 0` — la troncature posée sur .move-bar-row .pill-select ne se
+   déclenchait donc jamais (signalé sur capture, nom « Code tous langages /
+   Développement »). La barre reste sur une ligne ; c'est la pilule qui cède. */
 .move-bar-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  /* min-width: 0 sur la LIGNE elle-même, et pas seulement sur ce qu'elle
+     contient : .banner est un flex colonne, donc cette ligne est un flex item
+     à `min-width: auto` — elle refusait de descendre sous la largeur de son
+     contenu, ce qui neutralisait toute la chaîne de rétrécissement posée en
+     dessous (pill-select → bouton → span). C'est l'étage qui bloquait
+     réellement l'élision du nom d'espace. */
+  min-width: 0;
 }
 .move-bar-actions {
   display: flex;
@@ -349,8 +372,22 @@
 /* Le sélecteur d'espace occupe l'espace restant de la ligne (boutons icônes à
    largeur fixe à côté) et tronque un nom trop long plutôt que de le faire
    passer à la ligne (moche, cf. capture d'écran signalée). */
+/* `flex-shrink: 1` explicite et re-déclaré APRÈS la classe utilitaire : la
+   pilule porte `.is-compact`, dont la règle `.pill-select.is-compact
+   { flex-shrink: 0 }` (composer.css) a la MÊME spécificité que celle-ci mais
+   gagne la cascade, composer.css étant chargé après sidebar.css dans CSS_ORDER.
+   La pilule refusait donc de rétrécir (mesuré : flex calculé `1 0 auto`) et
+   poussait les boutons d'action hors de la barre, quels que soient les
+   `min-width: 0` posés en dessous. On requalifie avec `.move-bar-row
+   .pill-select.is-compact` pour repasser devant. */
 .move-bar-row .pill-select { flex: 1 1 auto; min-width: 0; max-width: 100%; margin-left: 0; }
-.move-bar-row .pill-select-btn { width: 100%; max-width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 12px; }
+.move-bar-row .pill-select.is-compact { flex-shrink: 1; }
+/* min-width: 0 est indispensable ICI, pas seulement sur .pill-select : le bouton
+   est lui-même un conteneur flex, et un flex item a `min-width: auto` par défaut
+   — il refuse donc de descendre sous la largeur de son contenu, et le nom
+   débordait sous les boutons d'action au lieu de s'élider. La chaîne de
+   rétrécissement doit être continue de .pill-select jusqu'au span du label. */
+.move-bar-row .pill-select-btn { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 12px; }
 .move-bar-row .pill-select-btn > span:first-child {
   flex: 1 1 auto;
   min-width: 0;
@@ -359,7 +396,9 @@
   white-space: nowrap;
   text-align: left;
 }
-.move-bar-row .pill-select-btn .chev { margin-left: auto; }
+/* flex-shrink: 0 : sans lui le chevron se comprime (et se déforme) avant que le
+   label ne commence à s'élider — c'est le TEXTE qui doit céder, pas l'icône. */
+.move-bar-row .pill-select-btn .chev { margin-left: auto; flex-shrink: 0; }
 /* .move-bar est ancrée en bas de la sidebar : le menu générique (.model-menu,
    drawers.css) ouvre vers le bas par défaut et sortirait du viewport. Ici il
    doit s'ouvrir vers le haut, au-dessus du bouton pilule. */
@@ -369,9 +408,33 @@
   transform: translateY(4px);
 }
 .move-bar .model-menu.show { transform: none; }
+/* La PILULE fermée tronque (elle doit tenir dans la ligne, à côté des boutons
+   d'action) ; la LISTE ouverte, elle, montre les noms d'espace en ENTIER —
+   c'est le seul endroit où l'on peut lire une destination longue avant de la
+   choisir. Elle a donc le droit de déborder de la largeur de la barre, ce qui
+   est le comportement voulu : `width: max-content` la dimensionne sur son
+   contenu au lieu de la coller aux `left: 0; right: 0` de la base .model-menu,
+   et `max-width` la borne à la largeur de la sidebar pour qu'un nom
+   pathologique ne parte pas hors écran. */
+.move-bar .model-menu {
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+  max-width: var(--sidebar-w);
+}
 .move-bar .model-menu .model-opt span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Écart garanti entre le nom et la coche. Le menu se dimensionne sur son
+   contenu (width: max-content ci-dessus), donc sur la ligne LA PLUS LONGUE il
+   ne reste aucun espace à répartir : `justify-content: space-between` colle
+   alors le ✓ à la dernière lettre. Une marge explicite le tient à distance
+   quelle que soit la longueur du nom. `flex-shrink: 0` empêche la coche de se
+   comprimer quand le nom sature la largeur, et l'écart reste constant même
+   lorsque le ✓ est masqué (opacity: 0, il occupe sa place) : les noms restent
+   alignés d'une ligne à l'autre. */
+.move-bar .model-menu .model-opt .check {
+  flex-shrink: 0;
+  margin-left: 12px;
 }

@@ -2744,6 +2744,7 @@ function init() {
   // quand l'historique non vide va ouvrir la sidebar).
   $('app').classList.add('booted');
   initSidebarResize();
+  initComposerModelLabelFit();
   initVisualViewport();
   wireTitleEditing();
 

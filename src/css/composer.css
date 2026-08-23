@@ -113,8 +113,15 @@
   margin-bottom: 8px;
 }
 
-/* sélecteur de modèle du composer (optionnel) */
-.composer-model { position: relative; margin-bottom: 0; display: flex; }
+/* sélecteur de modèle du composer (optionnel).
+   max-width : un nom de modèle long ("<auteur>/<modèle>:<variante>", fréquent
+   sur Ollama) pousserait sinon les pilules raisonnement et contexte hors de la
+   ligne. Le libellé est déjà abrégé côté JS (shortenModelLabel + budget mesuré,
+   ui.js) ; ce plafond CSS est le FILET : il tient même si la mesure échoue ou
+   si la police rendue diverge de l'estimation, l'ellipsis natif du label prenant
+   alors le relais. min-width: 0 est indispensable pour que cette ellipsis
+   s'exerce à l'intérieur du flex (sinon le contenu impose sa largeur minimale). */
+.composer-model { position: relative; margin-bottom: 0; display: flex; max-width: 55%; min-width: 0; }
 .composer-model[hidden] { display: none; }
 .composer-model-btn {
   display: inline-flex;
@@ -186,6 +193,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 #composer-model-menu {
   top: auto;
@@ -197,6 +205,12 @@
   transform: translateY(4px);
 }
 #composer-model-menu.show { transform: none; }
+/* Le libellé du BOUTON est abrégé (shortenModelLabel), la liste déroulée garde
+   les noms COMPLETS : un identifiant plus large que les 360px du menu doit donc
+   revenir à la ligne plutôt que déborder. align-items: flex-start garde le ✓
+   aligné sur la PREMIÈRE ligne du nom, pas centré sur un bloc à deux lignes. */
+#composer-model-menu .model-opt { align-items: flex-start; }
+#composer-model-menu .model-opt span:first-child { overflow-wrap: anywhere; }
 
 /* pilule de sélection générique (bouton pilule + .model-menu) : sert le
    sélecteur de raisonnement du composer, celui des réglages globaux, et
