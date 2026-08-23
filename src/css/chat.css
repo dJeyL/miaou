@@ -176,6 +176,42 @@
 .bg-activity.active { display: flex; }
 .bg-activity #bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Compteur d'agents en vol (lot T-2bis). Même pilule que .bg-activity — c'est
+   la même zone (« ce qui se passe sans toi ») et inventer un troisième style
+   pour un voisin immédiat le ferait lire comme un objet d'une autre nature.
+   Les deux comptent pourtant des choses différentes : .bg-activity des tâches
+   techniques courtes (titrage, résumé, connexion MCP), celui-ci des GÉNÉRATIONS
+   en cours. Leur cohabitation est rare (les premières durent < 1 s) et lisible.
+   La pastille reprend .activity-dot des badges T-2 : même métaphore, même
+   --accent, et le kill-switch reduced-motion global s'y applique déjà. */
+.agent-count {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 3px 10px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.agent-count[hidden] { display: none; }
+/* La pastille est SEULE de son espèce dans cette pilule : aucune voisine pour
+   donner l'échelle du couple working/unread, mais un voisin immédiat très
+   présent — le point de connexion de .model-pill (7px, plein, halo). À 5px et
+   opacité .45, la nôtre paraissait maigre par comparaison (retour Julien sur
+   capture, 2026-08-23). On l'aligne donc sur ce voisin : même diamètre, même
+   halo, opacité pleine à la crête. Seule l'animation la distingue — et c'est
+   bien elle qui porte le sens ici (« ça travaille »), la distinction
+   working/unread n'ayant aucun objet sur cette surface : le compteur ne compte
+   que du working. Le kill-switch reduced-motion global s'applique déjà. */
+.agent-count .activity-dot {
+  width: 7px; height: 7px;
+  box-shadow: 0 0 7px var(--accent-bd);
+}
+
 /* ═══ Messages ═══ */
 .messages {
   flex: 1;
@@ -764,3 +800,36 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   max-height: 340px;
   overflow-y: auto;
 }
+
+/* Pastille d'activité du hamburger (lot T-2, surface 3) : seul indicateur
+   disponible quand la sidebar est repliée — elle dit « il y a quelque chose à
+   voir là-dedans » et agrège TOUT, Espace actif compris (B6).
+   Sidebar OUVERTE elle s'efface : l'information est alors lisible à sa source
+   (liste de gauche, sélecteur d'espaces), la redonder au point d'entrée ferait
+   clignoter deux objets pour un seul fait. Masquage porté ICI et pas en JS —
+   même mécanique que .topbar-brand et .topbar-space-badge juste au-dessus, et
+   surtout : aucun événement n'existe pour observer `sidebar-open`, la cascade
+   évite donc de câbler ce rafraîchissement dans les trois fonctions qui la
+   posent (toggleSidebar / closeSidebarMobile / closeSidebarViaEscape). */
+#sidebar-toggle { position: relative; overflow: visible; }
+/* Le bouton fait 32px mais son icône seulement 17px, centrée : caler la
+   pastille sur le coin du BOUTON la posait dans la marge, où elle flottait
+   sans se rattacher à rien (mesuré, pas déduit). Les décalages ci-dessous
+   l'accrochent au coin haut-droit de l'ICÔNE. */
+#sidebar-toggle .activity-dot {
+  position: absolute;
+  top: 6px; right: 6px;
+  margin: 0;
+  /* Taille imposée ici, indépendamment de l'état : sur cette surface la
+     pastille est seule (aucune voisine pour donner l'échelle) et la version
+     working, prise en plein scale(.55) de waiter-pulse, ne mesurait que 2,75px
+     de rendu — une poussière contre l'icône. La distinction working/unread
+     reste portée par le mouvement et l'opacité, comme partout ailleurs. */
+  width: 7px; height: 7px;
+  /* Liseré de la couleur du fond : la pastille chevauche l'icône, et sans
+     séparation elle se lit comme un trait de plus du hamburger. Même ressort
+     qu'un badge de notification — c'est le détourage qui la fait exister, pas
+     sa taille (l'agrandir la rendrait criarde). */
+  box-shadow: 0 0 0 2px var(--topbar-bg);
+}
+.app.sidebar-open #sidebar-toggle .activity-dot { display: none; }

@@ -1973,3 +1973,102 @@ describe('spaceMenuMaxHeight', function() {
     expect(spaceMenuMaxHeight(120, 1000) > 220).toBe(true);
   });
 });
+
+describe('resolveActivityBadge (lot T-2)', function() {
+  it('aucun état : pas de pastille', function() {
+    expect(resolveActivityBadge([]) === null).toBe(true);
+  });
+
+  it('working seul : pulsante', function() {
+    expect(resolveActivityBadge(['working'])).toBe('working');
+  });
+
+  it('unread seul : statique', function() {
+    expect(resolveActivityBadge(['unread'])).toBe('unread');
+  });
+
+  it('unread gagne sur working, quel que soit l\'ordre', function() {
+    expect(resolveActivityBadge(['working', 'unread'])).toBe('unread');
+    expect(resolveActivityBadge(['unread', 'working'])).toBe('unread');
+  });
+
+  it('unread gagne même noyé dans plusieurs working', function() {
+    expect(resolveActivityBadge(['working', 'working', 'unread', 'working'])).toBe('unread');
+  });
+
+  it('les nulls ne pèsent pas (surface sans état)', function() {
+    expect(resolveActivityBadge([null, null]) === null).toBe(true);
+    expect(resolveActivityBadge([null, 'working', null])).toBe('working');
+  });
+
+  it('valeurs inconnues ignorées, jamais propagées telles quelles', function() {
+    expect(resolveActivityBadge(['bogus']) === null).toBe(true);
+    expect(resolveActivityBadge(['bogus', 'working'])).toBe('working');
+  });
+
+  it('entrée absente ou nulle : pas de pastille, pas d\'exception', function() {
+    expect(resolveActivityBadge() === null).toBe(true);
+    expect(resolveActivityBadge(null) === null).toBe(true);
+  });
+
+  it('accepte un Set aussi bien qu\'un tableau (itérable)', function() {
+    expect(resolveActivityBadge(new Set(['working']))).toBe('working');
+    expect(resolveActivityBadge(new Set(['working', 'unread']))).toBe('unread');
+  });
+
+  it('PAS de troisième état : unread+working ne produit jamais autre chose qu\'unread', function() {
+    const r = resolveActivityBadge(['unread', 'working']);
+    expect(r === 'unread').toBe(true);
+    expect(r === 'unread-working').toBe(false);
+  });
+});
+
+describe('resolveAgentCount (lot T-2bis)', function() {
+  it('aucune génération : masqué', function() {
+    expect(resolveAgentCount(0, false)).toBe(0);
+    expect(resolveAgentCount(0, true)).toBe(0);
+  });
+
+  it('une seule, sous les yeux : masqué (redondant avec le composer)', function() {
+    expect(resolveAgentCount(1, true)).toBe(0);
+  });
+
+  it('une seule, hors écran : affichée', function() {
+    expect(resolveAgentCount(1, false)).toBe(1);
+  });
+
+  it('deux dont une sur écran : affiche le TOTAL, pas total-1', function() {
+    expect(resolveAgentCount(2, true)).toBe(2);
+  });
+
+  it('deux hors écran : affiche 2', function() {
+    expect(resolveAgentCount(2, false)).toBe(2);
+  });
+
+  it('N générations : affiche N quel que soit l\'écran', function() {
+    expect(resolveAgentCount(5, true)).toBe(5);
+    expect(resolveAgentCount(5, false)).toBe(5);
+  });
+
+  it('entrées aberrantes : masqué, pas d\'exception', function() {
+    expect(resolveAgentCount(-1, false)).toBe(0);
+    expect(resolveAgentCount(NaN, false)).toBe(0);
+    expect(resolveAgentCount(undefined, false)).toBe(0);
+  });
+});
+
+describe('formatAgentCountLabel (lot T-2bis)', function() {
+  it('singulier à 1', function() {
+    expect(formatAgentCountLabel(1)).toBe('1 agent');
+  });
+
+  it('pluriel au-delà', function() {
+    expect(formatAgentCountLabel(2)).toBe('2 agents');
+    expect(formatAgentCountLabel(12)).toBe('12 agents');
+  });
+
+  it('zéro ou négatif : chaîne vide (rien à afficher)', function() {
+    expect(formatAgentCountLabel(0)).toBe('');
+    expect(formatAgentCountLabel(-3)).toBe('');
+  });
+});

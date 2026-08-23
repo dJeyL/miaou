@@ -65,14 +65,28 @@ branchés en C2 :
 - `<miaou_context>` porte une ligne statique-par-Space « Espace : &lt;nom&gt; »
   (y compris pour le default Space).
 
-**Exception cross-Space assumée (lot F).** Le sous-mode « recherche de
-conversation » de la palette de commandes (`cmdkConvItems`, ui.js) est la SEULE
-voie qui perce délibérément cette herméticité : il cherche dans **tous** les
-Spaces (`listAllConversations()`, pas `spaceConvIds`), annote chaque résultat
+**Exception cross-Space assumée n°1 (lot F).** Le sous-mode « recherche de
+conversation » de la palette de commandes (`cmdkConvItems`, ui.js) perce
+délibérément cette herméticité : il cherche dans **tous** les Spaces (`listAllConversations()`, pas `spaceConvIds`), annote chaque résultat
 de son Space, priorise le Space actif en tête (`rankConvResults`, pur) et
 **suit** le Space cible (`followSpace`) avant d'ouvrir une conversation d'un
 autre Space. La recherche sidebar (`renderConvList`) reste scopée. Décision
 Julien 2026-07-11 — cf. `docs/command-palette.md` et piège n°18.
+
+**Exception cross-Space assumée n°2 (lot T-2, badges d'activité).** Les
+pastilles d'agrégation du sélecteur d'Espaces et du hamburger
+(`spaceBadgeState` / `aggregateBadgeState`, main.js) lisent l'activité de
+**tous** les Spaces. C'est le sens même de l'affordance : sans elle, une
+génération lancée dans un autre Space serait totalement silencieuse une fois
+qu'on l'a quitté (T-1 fait survivre la génération, encore faut-il pouvoir la
+retrouver). Portée strictement bornée — on expose l'**existence** d'une
+activité et le **nom de l'Espace**, jamais un titre de conversation ni un
+contenu : un Space reste hermétique quant à ce qu'il contient, on ne divulgue
+que le fait qu'il travaille. La source du working est `gen.spaceId` (figé au
+démarrage de la génération, T-1), jamais un filtre `c.spaceId === x` réécrit
+hors de ces deux fonctions. Cliquer une ligne d'Espace **bascule** dessus
+(`pickSpace`, comportement inchangé) : aller directement au fil concerné depuis
+un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
 
 ## UI (C3)
 

@@ -2397,6 +2397,13 @@ function convItemEl(c) {
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
        </button>
      </div>`;
+  // Pastille d'activité (lot T-2) posée en DOM plutôt qu'en template string :
+  // applyActivityBadge est LE seul point d'écriture, partagé par les quatre
+  // surfaces — concaténer des classes ici ferait un deuxième chemin, qui
+  // dériverait. renderConvList reconstruit tout à chaque appel, aucun état DOM
+  // à préserver (piège 11 : la fonction reste sans argument, elle dérive l'état
+  // du registre elle-même).
+  el.insertBefore(activityBadgeEl(convBadgeState(c.id)), el.querySelector('.conv-actions'));
   return el;
 }
 
@@ -2642,16 +2649,16 @@ function setSending(on) {
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   // le bouton régénérer disparaît pendant un stream
-  // Readonly relay (lot J, J5) : signaler aux autres onglets le début/fin de
-  // génération sur la conv affichée. Point de fin UNIQUE (couvre succès/erreur/
-  // abort) → appariement -started/-ended garanti. convId capturé = currentConvId
-  // au démarrage (on génère toujours sur la conv affichée).
-  if (on) { if (typeof startGenerationRelay === 'function') startGenerationRelay(currentConvId); }
-  else    { if (typeof stopGenerationRelay === 'function') stopGenerationRelay(); }
-  // Fin de génération locale : rejouer les actions de synchro multi-onglets
-  // différées pendant qu'une génération mutait currentThread (lot J, J3). Point
-  // de fin UNIQUE (couvre succès/erreur/abort), d'où le drain ici et pas ailleurs.
-  if (!on && typeof drainPendingSync === 'function') drainPendingSync();
+  // Readonly relay (lot J, J5) : PLUS piloté ici depuis T-1a. `sending` n'est
+  // qu'un reflet de l'écran (« la conv AFFICHÉE génère-t-elle ? ») et change
+  // aussi sur un simple changement de conversation — il ne peut donc plus
+  // servir de point d'appariement -started/-ended. Le relais suit désormais le
+  // cycle de vie de la génération (registerGeneration/unregisterGeneration,
+  // main.js), qui reste un point de fin unique par conversation.
+  // Le drain des actions de synchro différées (lot J, J3) n'est PLUS déclenché
+  // ici depuis T-1a : setSending change aussi sur un simple changement de
+  // conversation, ce qui drainerait alors qu'une génération mute encore un
+  // thread. Il suit désormais la fin d'une génération (unregisterGeneration).
 }
 
 // Readonly cross-onglets (lot J, J5) : un pair génère sur la conv affichée →
@@ -4291,7 +4298,7 @@ function selectMotion(motion) {
 
 function onToggleHighlight() {
   highlightEnabled = $('set-highlight').checked;
-  renderThread(currentThread);
+  rerenderCurrentThread();   // jamais renderThread nu : cf. lot T-1b (bulle vive)
 }
 
 // ── Bannière résumés (mode « proposer ») ────────────────────────────────────
@@ -4763,6 +4770,88 @@ function syncSpaceUI() {
     badge.textContent = space.name || '';
     badge.hidden = activeSpaceId === DEFAULT_SPACE_ID;
   }
+  syncActivityBadges();
+  syncAgentCount();
+}
+
+// Applique un état de badge ('working' | 'unread' | null) sur un porteur. Un
+// seul point d'écriture DOM pour les quatre surfaces (ligne de conversation,
+// ligne d'Espace, sélecteur replié, hamburger) : l'apparence est entièrement
+// portée par le CSS, ce qui garantit qu'aucune surface ne dérive.
+function applyActivityBadge(el, state) {
+  if (!el) return;
+  el.classList.toggle('working', state === 'working');
+  el.classList.toggle('unread', state === 'unread');
+  el.hidden = !state;
+}
+
+// Crée le porteur de pastille. La classe .waiter-dot est REPRISE telle quelle
+// (spec T-2) : ce n'est pas « le même genre de chose » que la pastille du
+// patienteur, c'est littéralement le même objet, même sémantique (« ça
+// travaille »), même token de couleur (--accent, qui suit palette ET thème sans
+// un octet de configuration). Une métaphore = un usage.
+function activityBadgeEl(state) {
+  const dot = document.createElement('span');
+  dot.className = 'waiter-dot activity-dot';
+  applyActivityBadge(dot, state);
+  return dot;
+}
+
+// Surfaces qui ne sont PAS reconstruites à chaque changement d'état (le
+// sélecteur replié et le hamburger vivent en permanence dans le DOM) : elles
+// ont besoin d'un point de synchronisation explicite.
+//
+// Il n'existe AUCUN événement à observer pour la visibilité de la sidebar
+// (classe `sidebar-open` sur #app, posée par toggleSidebar/closeSidebarMobile/
+// closeSidebarViaEscape) : la synchronisation est appelée depuis ces trois
+// fonctions, jamais depuis un observateur de classe.
+// Compteur d'agents en vol (lot T-2bis). Dérivé du REGISTRE, jamais de
+// `sending` : ce dernier est un reflet d'écran depuis T-1 et bascule sur un
+// simple changement de conversation (piège 28).
+//
+// La règle d'apparition vit dans resolveAgentCount (utils.js, pure et testée) :
+// le compteur ne parle que quand il apprend quelque chose — une génération
+// unique qu'on regarde arriver est déjà signalée par le composer en mode stop.
+function syncAgentCount() {
+  const el = $('agent-count');
+  if (!el) return;
+  const n = resolveAgentCount(_activeGenerations.size, isGenerating(currentConvId));
+  el.hidden = !n;
+  const label = $('agent-count-label');
+  if (label) label.textContent = formatAgentCountLabel(n);
+}
+
+function syncActivityBadges() {
+  // Sélecteur d'espaces replié : « y a-t-il de l'activité AILLEURS ? » — d'où
+  // l'exclusion de l'Espace actif. Le corollaire à ne pas rater est que cette
+  // pastille n'est PAS un porteur privilégié de l'Espace courant : au dépliage,
+  // elle ne reste à côté de son libellé que s'il a lui-même du working/unread.
+  const trigger = $('space-select-btn');
+  if (trigger) {
+    let dot = trigger.querySelector('.activity-dot');
+    // Insérée AVANT le chevron, pas appendée : le chevron ferme la ligne, une
+    // pastille après lui se lirait comme un second contrôle.
+    if (!dot) { dot = activityBadgeEl(null); trigger.insertBefore(dot, trigger.querySelector('.chev')); }
+    applyActivityBadge(dot, aggregateBadgeState(activeSpaceId));
+  }
+  // Hamburger : agrège TOUT, Espace actif compris (B6). Seul indicateur
+  // disponible sidebar repliée — il dit « il y a quelque chose à voir
+  // là-dedans ». Sidebar OUVERTE, il s'efface : l'information est alors lisible
+  // à sa source (liste de gauche, sélecteur), la redonder au point d'entrée
+  // ferait clignoter deux objets pour un seul fait.
+  //
+  // Ce masquage est porté par le CSS (`.app.sidebar-open` — même mécanique que
+  // .topbar-brand et .topbar-space-badge, déjà conditionnés à l'état replié),
+  // PAS par un test JS : sans quoi il faudrait rappeler cette fonction depuis
+  // toggleSidebar/closeSidebarMobile/closeSidebarViaEscape, alors qu'aucun
+  // événement n'existe pour l'observer. Laisser la cascade s'en charger supprime
+  // le besoin de ces trois câblages.
+  const burger = $('sidebar-toggle');
+  if (burger) {
+    let dot = burger.querySelector('.activity-dot');
+    if (!dot) { dot = activityBadgeEl(null); burger.appendChild(dot); }
+    applyActivityBadge(dot, aggregateBadgeState(null));
+  }
 }
 
 // ── Onglets sidebar « Conversations / Fichiers / Souvenirs » (remplace le
@@ -4833,6 +4922,12 @@ function renderSpaceMenu() {
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
+    // Pastille par ligne d'Espace : la RÈGLE EST UNIQUE (B5) — chaque Espace
+    // effectivement concerné la porte. « Déplacement » et « dédoublement » ne
+    // sont pas deux traitements au choix mais les deux apparences de cette même
+    // règle selon le nombre d'Espaces concernés.
+    opt.insertBefore(activityBadgeEl(spaceBadgeState(s.id)),
+                     opt.querySelector('.space-opt-edit'));
     // Toute la ligne cliquable (pas seulement le texte/check) : le padding de
     // .model-opt n'est couvert par aucun enfant, un clic dessus ne déclenchait
     // rien avant ce correctif (Julien, 2026-07-08 — « il faut cliquer 2 fois »).

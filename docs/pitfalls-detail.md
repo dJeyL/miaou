@@ -1,7 +1,7 @@
 # Pièges déjà payés — détail
 
-Développement complet des pièges 1-24 résumés dans CLAUDE.md (25 et 26 sont
-développés inline dans CLAUDE.md même, comme 16/18/21/24). À consulter avant
+Développement complet des pièges résumés dans CLAUDE.md, hors ceux qui y sont
+développés inline (25, 26, 27 et les invariants transverses 16/18/21/24/28). À consulter avant
 de toucher au flux de conversation, au streaming, aux résumés/titrage, à
 l'édition de message, au patienteur, au raisonnement, au sélecteur de modèle,
 au KV cache, ou à la synchro multi-onglets.

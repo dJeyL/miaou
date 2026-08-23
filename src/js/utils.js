@@ -1497,3 +1497,50 @@ function spaceMenuMaxHeight(anchorBottom, viewportHeight) {
   if (!isFinite(bottom) || !isFinite(vh) || vh <= 0) return 0;
   return Math.max(SPACE_MENU_MIN_H, Math.floor(vh - bottom - SPACE_MENU_GAP_PX));
 }
+
+// ── Badges d'activité (lot T-2) — résolution pure ───────────────────────────
+// Deux états mutuellement exclusifs dans le temps sur une même conversation :
+// 'working' (une génération est en vol) puis 'unread' (elle a fini pendant que
+// l'utilisateur regardait ailleurs). Sur les surfaces d'AGRÉGATION (sélecteur
+// d'espaces replié, hamburger), on n'affiche qu'UNE pastille, dans l'état
+// gagnant — jamais un troisième état visuel « unread + working » : ce serait un
+// vocabulaire supplémentaire, qui n'existerait qu'en agrégation. Le détail se
+// lit au dépliage, où chaque ligne porte son propre état.
+//
+// Pure exprès (spec T-2) : la règle de résolution est la seule chose qu'on
+// puisse se tromper à réécrire localement, elle est donc testable seule.
+// Tolère n'importe quel itérable de chaînes, y compris des valeurs nulles
+// (une surface sans état) — elles ne pèsent pas.
+function resolveActivityBadge(states) {
+  let working = false;
+  for (const s of (states || [])) {
+    if (s === 'unread') return 'unread';   // gagne toujours, inutile de continuer
+    if (s === 'working') working = true;
+  }
+  return working ? 'working' : null;
+}
+
+// Compteur d'agents en cours (lot T-2bis) — règle d'apparition pure.
+// Le compteur ne parle que quand il APPREND quelque chose : une génération
+// unique qu'on regarde arriver est déjà signalée par le composer en mode stop,
+// l'annoncer une seconde fois en haut à droite serait du bruit.
+//
+// `total` = nombre de générations en vol (_activeGenerations.size)
+// `screenOwned` = la conversation AFFICHÉE génère-t-elle ?
+//
+// Le nombre rendu est TOUJOURS le total, jamais « total - 1 » : afficher
+// « 2 agents » alors que trois tournent serait un piège à confusion. La règle
+// porte sur le seuil d'APPARITION, pas sur le comptage.
+function resolveAgentCount(total, screenOwned) {
+  const n = Number(total);
+  if (!isFinite(n) || n <= 0) return 0;
+  if (n === 1 && screenOwned) return 0;
+  return Math.floor(n);
+}
+
+// Libellé de la pilule. Séparé du calcul pour rester testable sans DOM, et
+// parce que le mot est un choix produit (Julien : « je tiens à Agent »).
+function formatAgentCountLabel(n) {
+  const c = Math.floor(Number(n) || 0);
+  return c <= 0 ? '' : c + (c > 1 ? ' agents' : ' agent');
+}

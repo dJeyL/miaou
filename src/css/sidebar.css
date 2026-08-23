@@ -438,3 +438,58 @@
   flex-shrink: 0;
   margin-left: 12px;
 }
+
+/* ── Pastilles d'activité (lot T-2) ──────────────────────────────────────────
+   La pastille EST le .waiter-dot du patienteur (chat.css) : même objet, même
+   sémantique (« ça travaille »), même token --accent — qui suit palette ET
+   thème sans un octet de configuration. .activity-dot n'ajoute que ce qui
+   diffère : les marges du patienteur (7.5px, calées sur .meta .glyph) sont
+   trop généreuses ici, et les deux états.
+
+   Deux états, distingués par le MOUVEMENT, pas par la couleur — la distinction
+   survit donc aux daltonismes et au contraste faible :
+     working = pulsant, 5px, opacité basse (une activité)
+     unread  = statique, 7px, opacité pleine (une notification en attente)
+
+   Reduced-motion : le kill-switch global (html[data-motion="reduced"],
+   base.css) fige animation-duration à 0.01ms — jamais `none`, doctrine lot N.
+   waiter-pulse ayant son état BAS à 0%/100%, la pastille working s'y fige
+   exactement sur l'état voulu par la spec. Aucune règle locale nécessaire :
+   working et unread restent distincts par taille ET opacité, le mouvement
+   n'est qu'un renfort. Aucune perte d'information animation OFF. */
+.activity-dot {
+  /* display explicite : .waiter-dot vit normalement en enfant flex (donc
+     blockifié d'office), mais la pastille d'activité est aussi posée dans des
+     contextes non-flex — un <span> inline ignorerait width/height et la
+     pastille disparaîtrait sans erreur. Ne pas retirer. */
+  display: inline-block;
+  margin-left: 0; margin-right: 0;
+  align-self: center;
+}
+.activity-dot[hidden] { display: none; }
+/* working : taille basse de la pulsation. L'OPACITÉ n'est volontairement pas
+   déclarée ici — waiter-pulse la pilote (état bas .45), et une déclaration
+   statique serait écrasée par l'animation : elle mentirait au lecteur du CSS
+   sans rien changer au rendu. La spec T-2 demande de réutiliser la keyframe
+   telle quelle plutôt que d'écrire une jumelle ; on hérite donc de son .45. */
+.activity-dot.working { width: 5px; height: 5px; }
+.activity-dot.unread {
+  width: 7px; height: 7px; opacity: 1;
+  animation: none;   /* seul état sans mouvement : une notification n'est pas une activité */
+}
+/* Ligne d'Espace : la pastille occupe la colonne du ✓, qui n'est visible que
+   sur l'Espace sélectionné — sans largeur réservée, elle se calerait à des
+   abscisses différentes d'une ligne à l'autre et la colonne paraîtrait bancale. */
+.space-menu .model-opt .activity-dot { margin-right: 4px; }
+
+/* Corollaire B5 : MENU OUVERT, la pastille du déclencheur s'efface. Replié, elle
+   répond « y a-t-il de l'activité ailleurs ? » ; déplié, la question devient
+   « où exactement ? » et chaque ligne d'Espace y répond pour elle-même. La
+   laisser à côté du libellé du courant la ferait lire comme SON état — alors
+   qu'elle n'y était que comme agrégat de ce qui se passe ailleurs.
+   Porté par le CSS et pas par un rappel de syncActivityBadges() : la fermeture
+   du menu a plusieurs points d'entrée (toggle, clic sur une ligne, clic
+   extérieur, Échap…) et il suffirait d'en oublier un pour figer la pastille
+   dans un état faux. La classe `.show` du menu est déjà la source de vérité —
+   même ressort que le masquage du hamburger sous `.app.sidebar-open`. */
+.space-select:has(.space-menu.show) .space-select-btn .activity-dot { display: none; }

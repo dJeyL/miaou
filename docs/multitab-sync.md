@@ -172,11 +172,20 @@ inoffensif, les pairs rechargent de toute façon.
 | `ignore` / `ignore-self` | rien. |
 
 **Queue pendant génération locale** (brief §4.3) : `rehydrate`/`conv-gone` sur la
-conv affichée pendant que `sending===true` ne s'appliquent pas immédiatement
-(écraseraient `currentThread` en mutation). Ils sont mis dans `_pendingSyncActions`
-(coalescés : la dernière re-hydratation gagne, l'état persisté est relu au drain),
-puis rejoués par `drainPendingSync()` appelé depuis `setSending(false)` (ui.js —
-point de fin **unique**, couvre succès/erreur/abort).
+conv affichée pendant qu'une génération locale est en vol ne s'appliquent pas
+immédiatement (écraseraient un thread en mutation). Ils sont mis dans
+`_pendingSyncActions` (coalescés : la dernière re-hydratation gagne, l'état
+persisté est relu au drain), puis rejoués par `drainPendingSync()`.
+
+**Depuis le lot T-1a**, le prédicat de garde ET le point de drain ont changé —
+`sending` ne dit plus « une génération tourne » mais seulement « la conversation
+AFFICHÉE génère » (il bascule aussi sur un simple changement de conversation) :
+- **Garde** : `_activeGenerations.size` (« une génération quelconque est en vol »),
+  jamais `sending`. Une génération détachée mute son propre thread, qui peut être
+  celui de la conv affichée.
+- **Drain** : `unregisterGeneration()` quand la **dernière** génération se
+  termine, plus `setSending(false)`. Point de fin unique par génération, couvrant
+  toujours succès/erreur/abort via le `finally` de `dispatchSend`.
 
 **Pas de boucle de broadcast** : `apply-settings` relit `loadSettings()` sans
 réécrire ; aucun récepteur ne persiste en réaction (donc aucune ré-émission).
@@ -228,14 +237,27 @@ factorisation `.banner` ne s'y refléterait pas automatiquement.
 Empêche deux générations concurrentes silencieuses sur la même conversation : un
 onglet qui génère verrouille en lecture seule la même conv dans les autres onglets.
 
-**Émission** (main.js, couplée à `setSending` — point de fin **unique**, ui.js) :
-- `startGenerationRelay(convId)` au `setSending(true)` : émet
+**Émission** (main.js, couplée au **cycle de vie de la génération** depuis T-1a —
+plus à `setSending`, qui n'est qu'un reflet d'écran) :
+- `startGenerationRelay(convId)` depuis `registerGeneration()` : émet
   `conv-generation-started` + arme un **heartbeat** (`setInterval`,
   `SYNC_HEARTBEAT_MS = 5000`) qui ré-émet `-started`.
-- `stopGenerationRelay()` au `setSending(false)` (couvre succès/erreur/abort via
-  le `finally` du flux) : coupe le heartbeat + émet `conv-generation-ended`.
-  Idempotent. Aussi appelé sur `pagehide`/`beforeunload` (best-effort).
-- Discipline **deux timers** (piège 13) : `_genHeartbeatTimer` est distinct des
+- `stopGenerationRelay(convId)` depuis `unregisterGeneration()` (couvre
+  succès/erreur/abort via le `finally` du flux) : coupe le heartbeat de CETTE
+  conversation + émet `conv-generation-ended`. Idempotent (la clé a disparu du
+  registre : aucun `-ended` n'est ré-émis).
+- `stopAllGenerationRelays()` sur `pagehide`/`beforeunload` (best-effort) :
+  libère **tous** les pairs, les générations mourant avec l'onglet. Idempotence
+  **écrite, pas supposée** — le handler est branché sur les deux événements et
+  peut tirer deux fois.
+- **Un heartbeat par conversation** (`_genRelayTimers`, `Map<convId, timerId>` —
+  arbitrage A3 du lot T-1a). Un onglet peut générer sur **N conversations** à la
+  fois : le scalaire `_genRelayConvId` d'avant T-1 ferait émettre le `-ended` de
+  la première sur la conv de la seconde, déverrouillant chez les pairs une conv
+  encore en génération. Le **format d'enveloppe est inchangé** (liste fermée de
+  types intacte) — c'est l'avantage décisif sur un heartbeat unique portant la
+  liste des convs, qui aurait imposé un nouveau format.
+- Discipline **deux timers** (piège 13) : les timers de relais sont distincts des
   timers du patienteur (`startWaiter`/`stopWaiter`) ; ne jamais les confondre.
 
 **Réception** (main.js) :

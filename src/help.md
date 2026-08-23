@@ -339,8 +339,10 @@ Quelques repères pour te déplacer dans MIAOU :
 - **Barre latérale** : le sélecteur d'Espace en haut, puis tes conversations
   rangées par période, avec la recherche. Elle est redimensionnable.
 - **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un
-  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. À
-  côté, le trombone pour joindre des fichiers.
+  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. Ce
+  stop ne concerne que la conversation **affichée** : si d'autres conversations
+  travaillent en arrière-plan, elles continuent. À côté, le trombone pour
+  joindre des fichiers.
 - **Ajouter en cours de route** : si le modèle travaille (surtout quand il
   enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée
   sans l'interrompre** — il se met en file au-dessus du composer et lui est
@@ -348,6 +350,33 @@ Quelques repères pour te déplacer dans MIAOU :
   qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour
   le récupérer dans le composer) ou annulable (la croix). Si tu en mets
   plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.
+- **Plusieurs réponses à la fois** : quitter une conversation ne l'interrompt
+  plus. Tu peux poser une question, partir vers une autre conversation — ou même
+  changer d'Espace — pendant que le modèle rédige : il continue, va au bout de
+  ses outils, et range sa réponse dans **sa** conversation. Tu la retrouves
+  complète en y revenant. Plusieurs conversations peuvent ainsi travailler en
+  même temps. Ça ne survit pas au rechargement de la page : recharger pendant
+  qu'une réponse arrive la perd (la question, elle, reste).
+- **Pastilles d'activité** : un petit point signale ce qui bouge sans que tu
+  aies à surveiller.
+  - **Point qui clignote** : cette conversation est en train de travailler.
+  - **Point fixe, un peu plus gros** : la réponse est terminée et tu ne l'as pas
+    encore vue. Ouvrir la conversation suffit à l'éteindre.
+  - Le point apparaît sur la conversation dans la barre latérale, et aussi sur
+    le **sélecteur d'Espace** quand l'activité se passe dans un autre Espace
+    (déplie-le : chaque Espace concerné porte alors son propre point). Barre
+    latérale masquée, il se replie sur l'**icône du menu** en haut à gauche.
+  - S'il y a à la fois du terminé-non-vu et du en-cours, le point fixe l'emporte
+    sur ces indicateurs de groupe — le détail se lit en dépliant.
+  - Ces points sont volatiles : ils disparaissent si tu recharges la page.
+- **Compteur d'agents** : en haut à droite, une pastille « 1 agent » / « 3
+  agents » indique combien de conversations travaillent en ce moment, tous
+  Espaces confondus. Un **agent**, ici, c'est une conversation en train de
+  produire une réponse : selon les outils dont il dispose, il peut enchaîner
+  plusieurs étapes de lui-même (chercher, lire un fichier, calculer) avant de
+  répondre. Le compteur n'apparaît que s'il t'apprend quelque chose : une seule
+  réponse en cours, que tu es en train de regarder arriver, ne l'affiche pas —
+  le bouton stop du composer le dit déjà.
 - **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une

@@ -579,6 +579,24 @@ html[data-motion="reduced"] *::after {
   margin-left: 12px;
 }
 
+.activity-dot {
+  
+  display: inline-block;
+  margin-left: 0; margin-right: 0;
+  align-self: center;
+}
+.activity-dot[hidden] { display: none; }
+
+.activity-dot.working { width: 5px; height: 5px; }
+.activity-dot.unread {
+  width: 7px; height: 7px; opacity: 1;
+  animation: none;   
+}
+
+.space-menu .model-opt .activity-dot { margin-right: 4px; }
+
+.space-select:has(.space-menu.show) .space-select-btn .activity-dot { display: none; }
+
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 
 .main.dragover::after {
@@ -733,6 +751,26 @@ html[data-motion="reduced"] *::after {
 }
 .bg-activity.active { display: flex; }
 .bg-activity #bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.agent-count {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 3px 10px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.agent-count[hidden] { display: none; }
+
+.agent-count .activity-dot {
+  width: 7px; height: 7px;
+  box-shadow: 0 0 7px var(--accent-bd);
+}
 
 .messages {
   flex: 1;
@@ -1249,6 +1287,19 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   max-height: 340px;
   overflow-y: auto;
 }
+
+#sidebar-toggle { position: relative; overflow: visible; }
+
+#sidebar-toggle .activity-dot {
+  position: absolute;
+  top: 6px; right: 6px;
+  margin: 0;
+  
+  width: 7px; height: 7px;
+  
+  box-shadow: 0 0 0 2px var(--topbar-bg);
+}
+.app.sidebar-open #sidebar-toggle .activity-dot { display: none; }
 
 .composer {
   flex-shrink: 0;
@@ -3069,7 +3120,7 @@ if (window.requestAnimationFrame) {
     ondragover="onMainDragOver(event)" ondragleave="onMainDragLeave(event)" ondrop="onMainDrop(event)">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="icon-btn" onclick="toggleSidebar()" title="Historique">
+        <button class="icon-btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Historique">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
         <div class="topbar-brand">
@@ -3097,6 +3148,8 @@ if (window.requestAnimationFrame) {
       </div>
       <div class="topbar-right">
         <span class="bg-activity" id="bg-activity"><span class="spin"></span><span id="bg-label"></span></span>
+        
+        <span class="agent-count" id="agent-count" hidden><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></span>
         <span class="model-pill"><span class="dot" id="conn-dot"></span><span id="model-label">modèle</span></span>
         <button class="icon-btn" onclick="openSettings()" title="Paramètres">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -3634,7 +3687,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-23 10:31 UTC */
+/* miaou — built: 2026-08-23 21:57 UTC */
 
 /* ── utils.js ── */
 
@@ -4631,6 +4684,27 @@ function spaceMenuMaxHeight(anchorBottom, viewportHeight) {
   return Math.max(SPACE_MENU_MIN_H, Math.floor(vh - bottom - SPACE_MENU_GAP_PX));
 }
 
+function resolveActivityBadge(states) {
+  let working = false;
+  for (const s of (states || [])) {
+    if (s === 'unread') return 'unread';   
+    if (s === 'working') working = true;
+  }
+  return working ? 'working' : null;
+}
+
+function resolveAgentCount(total, screenOwned) {
+  const n = Number(total);
+  if (!isFinite(n) || n <= 0) return 0;
+  if (n === 1 && screenOwned) return 0;
+  return Math.floor(n);
+}
+
+function formatAgentCountLabel(n) {
+  const c = Math.floor(Number(n) || 0);
+  return c <= 0 ? '' : c + (c > 1 ? ' agents' : ' agent');
+}
+
 /* ── sync.js ── */
 
 const SYNC_PROTOCOL_VERSION = 1;
@@ -4775,7 +4849,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787481098}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787522259}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6208,7 +6282,7 @@ async function ensureSystemSkills() {
 
 /* ── tools.js ── */
 
-const HELP_CONTENT = (function () { try { return {"apercu": "MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu\ndiscutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix\nhaute quand il en est capable, afficher du code coloré, dessiner des diagrammes,\net se servir d'outils pour retrouver des informations dans tes conversations\npassées, tes souvenirs ou tes fichiers.\n\nCe que tu peux faire ici :\n\n- **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un\n  de tes messages pour repartir de ce point.\n- **Joindre des fichiers** à un message : images et fichiers texte.\n- **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,\n  ses fichiers et ses souvenirs.\n- **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer\n  des souvenirs durables pour te reconnaître d'une conversation à l'autre.\n- **Étendre** le modèle avec des skills (instructions réutilisables) et des\n  outils distants (serveurs compagnons, si configurés).\n- **Analyser** un fichier volumineux (log, JSON, CSV, texte) : le modèle peut\n  exécuter du code sur son contenu pour compter, filtrer ou extraire, sans\n  charger le fichier entier dans le contexte.\n- **Exporter** une conversation en Markdown ou en page HTML autonome.\n\nPour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,\nmémoire, historique, skills, outils distants, exports, interface, contexte\nenvoyé au modèle, données personnelles, ou la genèse du projet.", "pieces-jointes": "Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le\ntrombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur\nla zone de conversation (pas seulement sur la barre de saisie), ou colle\ndirectement depuis le presse-papier — une image copiée, ou un fichier copié\ndepuis l'explorateur de fichiers. Deux types sont acceptés : **images** (le\nmodèle les voit réellement, s'il gère la vision) et **fichiers texte** (leur\ncontenu est transmis au modèle).\n\nUne fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton\nmessage. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,\net un bouton permet de la retélécharger. Le modèle peut aussi redemander une\npièce jointe d'un message précédent quand il en a besoin pour répondre.\n\nLes images ne sont envoyées en pleine résolution qu'au moment où tu les joins ;\nensuite le modèle en garde une trace légère plutôt que de recharger les pixels à\nchaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible\ndurablement (pas seulement le temps d'un message), promeus-le dans la\nbibliothèque de fichiers de ton Espace — voir le sujet `espaces`.\n\nPour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle\nn'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le\ncalcul** — compter des lignes, filtrer, agréger, extraire un extrait — en\nexécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile\npour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat\ndemandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt\nqu'à déverser le fichier brut.\n\nLe modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de\nrecomposer (une compilation, un résultat intermédiaire volumineux) sous forme\nde ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource\napparaît alors comme une pièce jointe et peut à son tour être interrogée par le\ncalcul, comme un fichier que tu aurais joint toi-même.\n\nDe la même façon, quand un résultat d'outil volumineux (une longue page web\nrécupérée, un fichier lu) encombre la conversation, le modèle peut le ranger en\nressource : le contenu lourd disparaît alors de l'historique, remplacé par une\npièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le\ncalcul. La conversation s'allège sans rien perdre d'exploitable.", "espaces": "Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun\na ses propres conversations, ses propres pièces jointes et ses propres\nsouvenirs. Le modèle ne voit et ne peut agir que sur le contenu de l'Espace\nactif : aucun outil ne peut lire ou modifier un autre Espace. C'est utile pour\nséparer des sujets qui ne doivent pas déborder l'un sur l'autre (travail,\nperso, un projet précis…).\n\nSeule exception : la recherche de conversation dans la palette de commandes\n(Ctrl/Cmd+K) porte sur tous tes Espaces, pas seulement l'actif — ouvrir un\nrésultat d'un autre Espace bascule automatiquement dessus (détails : sujet\n`interface`).\n\nLe sélecteur d'Espace est en haut de la barre latérale. L'historique « hors\nEspace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.\n\nChaque Espace peut porter une **description** libre : un contexte propre à\nl'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne\nles remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à\nchaque fois.\n\nChaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de\nl'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter\nà la demande, étanches comme le reste de l'Espace. Tu l'alimentes de trois\nfaçons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée, ou\nproposition du modèle lui-même (toujours confirmée par toi avant écriture).\n\nSupprimer un Espace supprime en cascade ses conversations, ses fichiers et ses\nsouvenirs propres (double confirmation) ; les souvenirs de profil, valables\npartout, restent intacts (détails : sujet `memoire`).\n\nTu peux **déplacer des conversations** d'un Espace à l'autre : sélecteur\nd'Espace en haut de la barre latérale → « Déplacer des conversations… »\n(visible dès qu'il existe au moins deux Espaces et que l'Espace actif contient\ndes conversations). Choisis les conversations puis l'Espace de destination.\nC'est le seul moyen de faire passer une conversation d'un Espace à l'autre —\nles exports (sujet `exports`) ne se réimportent pas.", "memoire": "Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton\ntravail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton\ninstruction explicite (« retiens que… »), ou te demande confirmation quand il\ninfère quelque chose de lui-même — rien n'est enregistré en douce.\n\nTu gardes la main : un panneau dédié te laisse consulter, modifier ou supprimer\ntes souvenirs directement. Les souvenirs actifs sont réinjectés dans le contexte\nà chaque message, pour que le modèle en tienne compte.\n\nLes souvenirs appartiennent à l'Espace où ils sont créés (sujet `espaces`) ; ils\nsuivent donc son étanchéité et sa suppression en cascade. Un souvenir qui doit\nrester valable partout peut être promu au **profil** (portée globale, présente\ndans tous les Espaces) depuis l'écran de l'Espace.\n\nLe modèle voit les souvenirs de l'Espace courant **et** ceux du profil, et il\npeut corriger ou supprimer les uns comme les autres : ce qu'il lit, il peut y\ntoucher. En revanche il crée toujours dans l'Espace courant — promouvoir un\nsouvenir au profil reste ton geste, jamais le sien. Les souvenirs des autres\nEspaces lui sont, eux, entièrement invisibles.\n\nChaque écriture de souvenir par le modèle laisse une trace visible dans la\nconversation, annulable d'un clic. Il n'existe pas d'outil de lecture : un\nsouvenir actif est simplement réinjecté dans le contexte à chaque message,\nsans trace dans la conversation (mécanisme détaillé au sujet `contexte`).\n\nLa mémoire des souvenirs est distincte de la continuité entre conversations\n(résumés automatiques) — voir le sujet `historique`.", "historique": "Tes conversations sont **conservées** et rangées dans la barre latérale par\npériode (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre\ngénéré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout\nmoment pour reprendre où tu en étais.\n\nUn champ de **recherche** filtre l'historique en temps réel, par titre ou par\nmots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même\nrecherche, elle étendue à tous tes espaces.\n\nPour la **continuité entre conversations**, MIAOU résume tes échanges en\narrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi\nun fil de ce que vous vous êtes déjà dit, sans que tu aies à tout recopier. Le\nmodèle peut aussi aller chercher lui-même dans ton historique — lister ou\nretrouver une conversation passée par mots-clés — quand ta demande le justifie.\nLa conversation en cours est toujours exclue de ces recherches.\n\nQuand le modèle cite une conversation passée, elle apparaît comme un lien\ncliquable affichant son titre ; cliquer dessus l'ouvre directement.\n\nNote : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas\nl'historique d'un autre.", "skills": "Les **skills** sont des fragments d'instructions réutilisables que tu écris une\nfois et rappelles à volonté. Chacune a un mot-clé d'invocation (son « slug »), un\nnom, une description et un corps en Markdown. Tu les gères dans un panneau dédié\n(Paramètres → Skills) : création, édition, suppression, et un interrupteur pour\nactiver ou désactiver chacune.\n\nDeux façons de s'en servir :\n\n- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps de\n  la skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de\n  la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté\n  reste en coulisse mais fait bien partie du message. La palette de commandes\n  (Ctrl/Cmd+K → « Invoquer une skill ») fait la même chose : elle insère `/slug `\n  dans le composer, prêt à envoyer.\n- **Découverte par le modèle** : si ta demande en langage naturel correspond à\n  une skill activée, le modèle peut décider seul de la consulter. Une trace\n  visible signale alors qu'il l'a lue.\n- **Création/modification par le modèle** : à ta demande, le modèle peut aussi\n  créer une nouvelle skill ou modifier le contenu d'une existante — une trace\n  visible signale la création ou la modification. Modifier une skill déjà\n  existante lui demande une confirmation explicite avant d'écraser son contenu.\n\nUne skill est utile pour un cadrage récurrent : un style de réponse, une\nprocédure, un gabarit — tout ce que tu répéterais sinon à la main.\n\n**Importer une skill existante** (par exemple une skill écrite pour Claude Code,\navec un cartouche `--- name: … description: … ---` en tête de fichier) :\n\n- **Coller** le texte dans le champ Contenu d'une skill en édition : slug, nom,\n  description sont extraits automatiquement du cartouche et pré-remplissent les\n  champs (ceux absents du cartouche restent inchangés) ; le cartouche lui-même\n  reste dans le contenu.\n- **Glisser-déposer** un fichier `.md` sur le panneau Skills, ou **coller un\n  fichier `.md` copié** depuis ton explorateur de fichiers : si son cartouche\n  correspond à une skill déjà existante (même nom), tu bascules directement en\n  édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et\n  enregistrer.\n\n**Skills système** : quelques skills sont fournies par l'application (par\nexemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le\nmode d'emploi de certains outils avancés). Elles apparaissent en tête du\npanneau Skills, dans une liste distincte, repérables à leur badge « Système ».\nToujours actives, non modifiables ni supprimables : un bouton « Consulter »\naffiche leur contenu en lecture seule.", "mcp": "Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs\ncompagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi\ncomme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'usage est\ntransparent, l'origine ne l'est pas. Les outils venus d'un serveur compagnon\nportent un **nom préfixé** par le serveur (par exemple `miaou-proxy__web__…`) ;\nle modèle peut donc constater, à la seule lecture de sa propre liste d'outils,\nquels serveurs sont branchés et ce qu'ils apportent — il n'a pas besoin d'un\noutil dédié pour « lister les serveurs », l'information est déjà sous ses yeux.\n\nCes serveurs sont **optionnels** : ils n'existent que si tu les as configurés\n(Paramètres → Serveurs MCP). Selon ceux que tu ajoutes, le modèle peut par\nexemple :\n\n- **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.\n- **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,\n  Excel, PowerPoint), archives Zip — utile pour interroger un document que tu\n  as joint ou déposé dans une bibliothèque d'Espace. Pour un fichier texte ou\n  JSON contenu dans une archive Zip, le modèle peut aussi en récupérer le\n  contenu intégral sans le recopier dans la conversation, puis l'analyser par\n  le calcul (voir pièces jointes) — pratique pour travailler sur un fichier\n  d'archive sans le rapatrier entièrement à l'écran.\n- Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs\n  disponibles.\n\nSi aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; le\nreste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans\nbloquer les autres.\n\nPour l'accès au web et la lecture de documents, le projet compagnon\n**miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et\nrecherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est\nla façon recommandée d'ajouter ces capacités à MIAOU. Il est open source :\nhttps://github.com/dJeyL/miaou-mcp-servers", "exports": "Tu peux sortir tes conversations de MIAOU de plusieurs manières :\n\n- **Une réponse seule** en Markdown : au survol d'un message du modèle, un\n  bouton la télécharge en `.md`.\n- **La conversation entière** en Markdown : une icône à droite du titre, en\n  haut. L'export inclut la trace des outils utilisés à chaque tour.\n- **La conversation en page HTML autonome** : une icône jumelle, au même\n  endroit. Le fichier obtenu est un instantané complet — coloration figée,\n  diagrammes inclus en image — lisible dans n'importe quel navigateur sans\n  MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images y\n  sont embarquées et restent cliquables.\n\nLes pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles\ns'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut\nà droite permet de basculer à la lecture ; le choix est retenu pour ce fichier.\nCette bascule fonctionne **sans JavaScript** : elle marche donc partout, y\ncompris dans les visionneuses de pièces jointes qui n'exécutent aucun script\n(l'aperçu de fichier d'iOS, par exemple). Le réglage **« Export HTML\ninteractif »** (réglages, section « Apparence ») ne la conditionne pas : activé\npar défaut, il ajoute seulement les boutons copier/télécharger sur les blocs de\ncode, et fait retenir ton choix de thème d'une ouverture à l'autre du même\nfichier. Décoché, la bascule reste disponible, mais le choix n'est plus\nmémorisé. Les diagrammes, eux, gardent dans tous les cas les couleurs qu'ils\navaient à l'export.\n\nCes exports sont à sens unique : ce sont des fichiers de lecture, il n'existe\naucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni\npour le remettre dans un Espace — voir le sujet `espaces` pour déplacer une\nconversation existante entre Espaces).\n\n**Convertir un fichier Markdown quelconque.** Indépendamment des conversations,\nMIAOU sait transformer n'importe quel fichier `.md` en page HTML au même format.\nC'est dans les réglages, section « Outils & extensions » : tu choisis un fichier\nou tu le déposes sur la zone prévue, et le `.html` correspondant se télécharge\n(même nom, extension changée). Si le document commence par un titre de niveau 1,\ncelui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête et la date\nfigure en pied. Cette conversion est purement locale : le modèle n'est pas\nsollicité et rien n'est envoyé nulle part.\n\nCôté blocs de code, chaque bloc a ses propres boutons pour **copier** ou\n**télécharger** son contenu (avec la bonne extension selon le langage), et les\ndiagrammes peuvent être exportés en image SVG ou PNG. Sur un bloc **Markdown**,\nun bouton supplémentaire le convertit directement en page HTML — même résultat\nque la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.", "contexte": "À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y\najoute automatiquement un **contexte** pour que le modèle réponde en connaissance\nde cause. Ce contexte comprend, selon le cas, tes instructions système, la\ndéfinition des outils disponibles (y compris ceux des serveurs compagnons), tes\nsouvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés\npertinents, la date du jour et le manifeste de la bibliothèque de fichiers de\nl'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus\nde ton message — donc oui, cela consomme des tokens en entrée, au-delà de ce\nque tu as tapé toi-même.\n\nDeux idées à ne pas confondre :\n\n- **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.\n  Clique-le pour voir la ventilation part par part.\n- **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**\n  un levier de réduction : c'est le dénominateur qui sert à afficher un taux de\n  remplissage (« combien sur le maximum du modèle »). La modifier ne change rien\n  à ce qui est envoyé — c'est une jauge, pas un robinet.\n\nLes **vrais leviers** pour alléger ce qui part à chaque tour :\n\n- **Résumés** : leur injection a un mode réglable (automatique, sur proposition,\n  ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.\n- **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en\n  supprimer ou en mettre en veille réduit d'autant le contexte.\n- **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la\n  joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est\n  déjà une optimisation intégrée.\n- **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses\n  outils au contexte. En débrancher un allège la liste d'outils envoyée.\n\nNote sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte\n(instructions système, définitions d'outils) reste **identique octet pour octet**\nd'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés) en\npréfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe\n(Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au\nlieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes\ninstructions système, casse volontairement ce préfixe stable (le contexte change\nvraiment) : c'est attendu.", "interface": "Quelques repères pour te déplacer dans MIAOU :\n\n- **Barre latérale** : le sélecteur d'Espace en haut, puis tes conversations\n  rangées par période, avec la recherche. Elle est redimensionnable.\n- **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un\n  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. À\n  côté, le trombone pour joindre des fichiers.\n- **Ajouter en cours de route** : si le modèle travaille (surtout quand il\n  enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée\n  sans l'interrompre** — il se met en file au-dessus du composer et lui est\n  transmis dès la prochaine étape, ce qui te permet de le **réorienter avant\n  qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour\n  le récupérer dans le composer) ou annulable (la croix). Si tu en mets\n  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.\n- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre\n  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les\n  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une\n  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le\n  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de\n  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce\n  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la\n  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part\n  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet\n  contexte.\n- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône\n  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,\n  gardé à part de la réponse.\n- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :\n  change le modèle de la conversation courante sans toucher à ton défaut. Si\n  plusieurs serveurs API sont configurés, il liste les modèles de chacun,\n  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le\n  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée\n  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour\n  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →\n  Serveurs API) pour ne plus être interrogé ni proposé.\n- **Thème clair / sombre** et coloration syntaxique se règlent dans les\n  Paramètres.\n- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**\n  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une\n  police de texte et une police à chasse fixe (blocs de code) choisies pour\n  aller ensemble. Réglage indépendant du thème et de la palette.\n- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres\n  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur\n  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage\n  indépendant du thème clair/sombre : chaque palette a sa version claire et sa\n  version sombre, et changer l'un ne change pas l'autre.\n- **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,\n  recherche, outils distants…) pour une même réponse, elles s'affichent en\n  mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et\n  se replier à nouveau.\n- **Animations** : un réglage dans les Paramètres\n  (Normales / Réduites / Suivre le système) coupe toutes les transitions et\n  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de\n  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la\n  préférence de réduction d'animations de ton OS.\n- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour\n  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,\n  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —\n  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,\n  inspecteur de contexte, bascule de thème et de coloration, export de la\n  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre\n  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou\n  rechercher une conversation — seule exception à l'étanchéité des Espaces\n  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en\n  arrière).\n  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule\n    touche lance la commande — la lettre est affichée à gauche de chaque ligne.\n    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une\n    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer\n    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les\n    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,\n    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.\n- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même\n  navigateur ; ils restent synchronisés. Une modification faite dans un onglet\n  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en\n  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.\n  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que\n  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux\n  Espaces différents dans deux onglets. Si la même conversation est ouverte à\n  deux endroits, un\n  bandeau discret le signale. Et si une réponse est en cours de génération dans\n  un onglet, la même conversation passe en **lecture seule** dans les autres le\n  temps de la réponse — pour éviter deux générations concurrentes qui\n  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale\n  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs\n  différents).", "donnees": "MIAOU s'exécute **entièrement dans ton navigateur**. Il n'y a pas de serveur\napplicatif MIAOU : tes conversations, tes souvenirs, tes skills, tes Espaces et\ntes fichiers sont stockés **localement**, sur ta machine, dans le stockage du\nnavigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as\nconfigurée (et vers les serveurs compagnons que tu aurais ajoutés).\n\nConséquences pratiques :\n\n- Tes données restent sur cet appareil et ce navigateur. Changer de navigateur\n  ou de machine ne les emporte pas automatiquement.\n- Vider les données de site du navigateur efface aussi MIAOU. Pense à exporter\n  ce qui compte.\n- La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à\n  un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès\n  protégé côté serveur.\n\nCe que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr\nvers l'API configurée pour être traité — c'est le principe même d'un client de\nchat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il\ncontient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas\nton navigateur.", "genese": "MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,\nfaute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans\ninterface digne de ce nom. Plutôt que de s'en contenter, il a décidé d'en faire\nun vrai chatbot : intelligent, agréable à utiliser, joli, et bardé de fonctions\nqui en jettent — mémoire, Espaces, skills, exports, diagrammes — épaulé par des\nserveurs MCP maison pour le web et les documents.\n\nIl ne l'a pas écrit seul : il l'a construit **en binôme avec Claude**\n(Anthropic), au fil des versions de modèles, de Sonnet à Fable en passant par\nOpus. Lui aux commandes — architecture, décisions, exigences, relectures —\nClaude au clavier sur sa dictée. Un projet de bout en bout mené à quatre mains,\ndont deux virtuelles.\n\nCôté technique, MIAOU est volontairement minimaliste : **un seul fichier HTML\nautonome**, sans framework, sans bundler, sans serveur applicatif — tout tourne\ndans le navigateur, en JavaScript pur, contre n'importe quelle API compatible\nOpenAI. Les capacités web et documents viennent de serveurs MCP distants\noptionnels (le projet compagnon miaou-mcp-servers).\n\nLes deux dépôts sont open source :\n\n- MIAOU (ce client) : https://github.com/dJeyL/miaou\n- Serveurs compagnons : https://github.com/dJeyL/miaou-mcp-servers"}; } catch (e) { return {}; } })();
+const HELP_CONTENT = (function () { try { return {"apercu": "MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu\ndiscutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix\nhaute quand il en est capable, afficher du code coloré, dessiner des diagrammes,\net se servir d'outils pour retrouver des informations dans tes conversations\npassées, tes souvenirs ou tes fichiers.\n\nCe que tu peux faire ici :\n\n- **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un\n  de tes messages pour repartir de ce point.\n- **Joindre des fichiers** à un message : images et fichiers texte.\n- **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,\n  ses fichiers et ses souvenirs.\n- **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer\n  des souvenirs durables pour te reconnaître d'une conversation à l'autre.\n- **Étendre** le modèle avec des skills (instructions réutilisables) et des\n  outils distants (serveurs compagnons, si configurés).\n- **Analyser** un fichier volumineux (log, JSON, CSV, texte) : le modèle peut\n  exécuter du code sur son contenu pour compter, filtrer ou extraire, sans\n  charger le fichier entier dans le contexte.\n- **Exporter** une conversation en Markdown ou en page HTML autonome.\n\nPour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,\nmémoire, historique, skills, outils distants, exports, interface, contexte\nenvoyé au modèle, données personnelles, ou la genèse du projet.", "pieces-jointes": "Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le\ntrombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur\nla zone de conversation (pas seulement sur la barre de saisie), ou colle\ndirectement depuis le presse-papier — une image copiée, ou un fichier copié\ndepuis l'explorateur de fichiers. Deux types sont acceptés : **images** (le\nmodèle les voit réellement, s'il gère la vision) et **fichiers texte** (leur\ncontenu est transmis au modèle).\n\nUne fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton\nmessage. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,\net un bouton permet de la retélécharger. Le modèle peut aussi redemander une\npièce jointe d'un message précédent quand il en a besoin pour répondre.\n\nLes images ne sont envoyées en pleine résolution qu'au moment où tu les joins ;\nensuite le modèle en garde une trace légère plutôt que de recharger les pixels à\nchaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible\ndurablement (pas seulement le temps d'un message), promeus-le dans la\nbibliothèque de fichiers de ton Espace — voir le sujet `espaces`.\n\nPour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle\nn'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le\ncalcul** — compter des lignes, filtrer, agréger, extraire un extrait — en\nexécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile\npour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat\ndemandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt\nqu'à déverser le fichier brut.\n\nLe modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de\nrecomposer (une compilation, un résultat intermédiaire volumineux) sous forme\nde ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource\napparaît alors comme une pièce jointe et peut à son tour être interrogée par le\ncalcul, comme un fichier que tu aurais joint toi-même.\n\nDe la même façon, quand un résultat d'outil volumineux (une longue page web\nrécupérée, un fichier lu) encombre la conversation, le modèle peut le ranger en\nressource : le contenu lourd disparaît alors de l'historique, remplacé par une\npièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le\ncalcul. La conversation s'allège sans rien perdre d'exploitable.", "espaces": "Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun\na ses propres conversations, ses propres pièces jointes et ses propres\nsouvenirs. Le modèle ne voit et ne peut agir que sur le contenu de l'Espace\nactif : aucun outil ne peut lire ou modifier un autre Espace. C'est utile pour\nséparer des sujets qui ne doivent pas déborder l'un sur l'autre (travail,\nperso, un projet précis…).\n\nSeule exception : la recherche de conversation dans la palette de commandes\n(Ctrl/Cmd+K) porte sur tous tes Espaces, pas seulement l'actif — ouvrir un\nrésultat d'un autre Espace bascule automatiquement dessus (détails : sujet\n`interface`).\n\nLe sélecteur d'Espace est en haut de la barre latérale. L'historique « hors\nEspace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.\n\nChaque Espace peut porter une **description** libre : un contexte propre à\nl'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne\nles remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à\nchaque fois.\n\nChaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de\nl'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter\nà la demande, étanches comme le reste de l'Espace. Tu l'alimentes de trois\nfaçons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée, ou\nproposition du modèle lui-même (toujours confirmée par toi avant écriture).\n\nSupprimer un Espace supprime en cascade ses conversations, ses fichiers et ses\nsouvenirs propres (double confirmation) ; les souvenirs de profil, valables\npartout, restent intacts (détails : sujet `memoire`).\n\nTu peux **déplacer des conversations** d'un Espace à l'autre : sélecteur\nd'Espace en haut de la barre latérale → « Déplacer des conversations… »\n(visible dès qu'il existe au moins deux Espaces et que l'Espace actif contient\ndes conversations). Choisis les conversations puis l'Espace de destination.\nC'est le seul moyen de faire passer une conversation d'un Espace à l'autre —\nles exports (sujet `exports`) ne se réimportent pas.", "memoire": "Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton\ntravail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton\ninstruction explicite (« retiens que… »), ou te demande confirmation quand il\ninfère quelque chose de lui-même — rien n'est enregistré en douce.\n\nTu gardes la main : un panneau dédié te laisse consulter, modifier ou supprimer\ntes souvenirs directement. Les souvenirs actifs sont réinjectés dans le contexte\nà chaque message, pour que le modèle en tienne compte.\n\nLes souvenirs appartiennent à l'Espace où ils sont créés (sujet `espaces`) ; ils\nsuivent donc son étanchéité et sa suppression en cascade. Un souvenir qui doit\nrester valable partout peut être promu au **profil** (portée globale, présente\ndans tous les Espaces) depuis l'écran de l'Espace.\n\nLe modèle voit les souvenirs de l'Espace courant **et** ceux du profil, et il\npeut corriger ou supprimer les uns comme les autres : ce qu'il lit, il peut y\ntoucher. En revanche il crée toujours dans l'Espace courant — promouvoir un\nsouvenir au profil reste ton geste, jamais le sien. Les souvenirs des autres\nEspaces lui sont, eux, entièrement invisibles.\n\nChaque écriture de souvenir par le modèle laisse une trace visible dans la\nconversation, annulable d'un clic. Il n'existe pas d'outil de lecture : un\nsouvenir actif est simplement réinjecté dans le contexte à chaque message,\nsans trace dans la conversation (mécanisme détaillé au sujet `contexte`).\n\nLa mémoire des souvenirs est distincte de la continuité entre conversations\n(résumés automatiques) — voir le sujet `historique`.", "historique": "Tes conversations sont **conservées** et rangées dans la barre latérale par\npériode (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre\ngénéré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout\nmoment pour reprendre où tu en étais.\n\nUn champ de **recherche** filtre l'historique en temps réel, par titre ou par\nmots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même\nrecherche, elle étendue à tous tes espaces.\n\nPour la **continuité entre conversations**, MIAOU résume tes échanges en\narrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi\nun fil de ce que vous vous êtes déjà dit, sans que tu aies à tout recopier. Le\nmodèle peut aussi aller chercher lui-même dans ton historique — lister ou\nretrouver une conversation passée par mots-clés — quand ta demande le justifie.\nLa conversation en cours est toujours exclue de ces recherches.\n\nQuand le modèle cite une conversation passée, elle apparaît comme un lien\ncliquable affichant son titre ; cliquer dessus l'ouvre directement.\n\nNote : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas\nl'historique d'un autre.", "skills": "Les **skills** sont des fragments d'instructions réutilisables que tu écris une\nfois et rappelles à volonté. Chacune a un mot-clé d'invocation (son « slug »), un\nnom, une description et un corps en Markdown. Tu les gères dans un panneau dédié\n(Paramètres → Skills) : création, édition, suppression, et un interrupteur pour\nactiver ou désactiver chacune.\n\nDeux façons de s'en servir :\n\n- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps de\n  la skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de\n  la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté\n  reste en coulisse mais fait bien partie du message. La palette de commandes\n  (Ctrl/Cmd+K → « Invoquer une skill ») fait la même chose : elle insère `/slug `\n  dans le composer, prêt à envoyer.\n- **Découverte par le modèle** : si ta demande en langage naturel correspond à\n  une skill activée, le modèle peut décider seul de la consulter. Une trace\n  visible signale alors qu'il l'a lue.\n- **Création/modification par le modèle** : à ta demande, le modèle peut aussi\n  créer une nouvelle skill ou modifier le contenu d'une existante — une trace\n  visible signale la création ou la modification. Modifier une skill déjà\n  existante lui demande une confirmation explicite avant d'écraser son contenu.\n\nUne skill est utile pour un cadrage récurrent : un style de réponse, une\nprocédure, un gabarit — tout ce que tu répéterais sinon à la main.\n\n**Importer une skill existante** (par exemple une skill écrite pour Claude Code,\navec un cartouche `--- name: … description: … ---` en tête de fichier) :\n\n- **Coller** le texte dans le champ Contenu d'une skill en édition : slug, nom,\n  description sont extraits automatiquement du cartouche et pré-remplissent les\n  champs (ceux absents du cartouche restent inchangés) ; le cartouche lui-même\n  reste dans le contenu.\n- **Glisser-déposer** un fichier `.md` sur le panneau Skills, ou **coller un\n  fichier `.md` copié** depuis ton explorateur de fichiers : si son cartouche\n  correspond à une skill déjà existante (même nom), tu bascules directement en\n  édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et\n  enregistrer.\n\n**Skills système** : quelques skills sont fournies par l'application (par\nexemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le\nmode d'emploi de certains outils avancés). Elles apparaissent en tête du\npanneau Skills, dans une liste distincte, repérables à leur badge « Système ».\nToujours actives, non modifiables ni supprimables : un bouton « Consulter »\naffiche leur contenu en lecture seule.", "mcp": "Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs\ncompagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi\ncomme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'usage est\ntransparent, l'origine ne l'est pas. Les outils venus d'un serveur compagnon\nportent un **nom préfixé** par le serveur (par exemple `miaou-proxy__web__…`) ;\nle modèle peut donc constater, à la seule lecture de sa propre liste d'outils,\nquels serveurs sont branchés et ce qu'ils apportent — il n'a pas besoin d'un\noutil dédié pour « lister les serveurs », l'information est déjà sous ses yeux.\n\nCes serveurs sont **optionnels** : ils n'existent que si tu les as configurés\n(Paramètres → Serveurs MCP). Selon ceux que tu ajoutes, le modèle peut par\nexemple :\n\n- **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.\n- **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,\n  Excel, PowerPoint), archives Zip — utile pour interroger un document que tu\n  as joint ou déposé dans une bibliothèque d'Espace. Pour un fichier texte ou\n  JSON contenu dans une archive Zip, le modèle peut aussi en récupérer le\n  contenu intégral sans le recopier dans la conversation, puis l'analyser par\n  le calcul (voir pièces jointes) — pratique pour travailler sur un fichier\n  d'archive sans le rapatrier entièrement à l'écran.\n- Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs\n  disponibles.\n\nSi aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; le\nreste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans\nbloquer les autres.\n\nPour l'accès au web et la lecture de documents, le projet compagnon\n**miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et\nrecherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est\nla façon recommandée d'ajouter ces capacités à MIAOU. Il est open source :\nhttps://github.com/dJeyL/miaou-mcp-servers", "exports": "Tu peux sortir tes conversations de MIAOU de plusieurs manières :\n\n- **Une réponse seule** en Markdown : au survol d'un message du modèle, un\n  bouton la télécharge en `.md`.\n- **La conversation entière** en Markdown : une icône à droite du titre, en\n  haut. L'export inclut la trace des outils utilisés à chaque tour.\n- **La conversation en page HTML autonome** : une icône jumelle, au même\n  endroit. Le fichier obtenu est un instantané complet — coloration figée,\n  diagrammes inclus en image — lisible dans n'importe quel navigateur sans\n  MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images y\n  sont embarquées et restent cliquables.\n\nLes pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles\ns'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut\nà droite permet de basculer à la lecture ; le choix est retenu pour ce fichier.\nCette bascule fonctionne **sans JavaScript** : elle marche donc partout, y\ncompris dans les visionneuses de pièces jointes qui n'exécutent aucun script\n(l'aperçu de fichier d'iOS, par exemple). Le réglage **« Export HTML\ninteractif »** (réglages, section « Apparence ») ne la conditionne pas : activé\npar défaut, il ajoute seulement les boutons copier/télécharger sur les blocs de\ncode, et fait retenir ton choix de thème d'une ouverture à l'autre du même\nfichier. Décoché, la bascule reste disponible, mais le choix n'est plus\nmémorisé. Les diagrammes, eux, gardent dans tous les cas les couleurs qu'ils\navaient à l'export.\n\nCes exports sont à sens unique : ce sont des fichiers de lecture, il n'existe\naucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni\npour le remettre dans un Espace — voir le sujet `espaces` pour déplacer une\nconversation existante entre Espaces).\n\n**Convertir un fichier Markdown quelconque.** Indépendamment des conversations,\nMIAOU sait transformer n'importe quel fichier `.md` en page HTML au même format.\nC'est dans les réglages, section « Outils & extensions » : tu choisis un fichier\nou tu le déposes sur la zone prévue, et le `.html` correspondant se télécharge\n(même nom, extension changée). Si le document commence par un titre de niveau 1,\ncelui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête et la date\nfigure en pied. Cette conversion est purement locale : le modèle n'est pas\nsollicité et rien n'est envoyé nulle part.\n\nCôté blocs de code, chaque bloc a ses propres boutons pour **copier** ou\n**télécharger** son contenu (avec la bonne extension selon le langage), et les\ndiagrammes peuvent être exportés en image SVG ou PNG. Sur un bloc **Markdown**,\nun bouton supplémentaire le convertit directement en page HTML — même résultat\nque la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.", "contexte": "À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y\najoute automatiquement un **contexte** pour que le modèle réponde en connaissance\nde cause. Ce contexte comprend, selon le cas, tes instructions système, la\ndéfinition des outils disponibles (y compris ceux des serveurs compagnons), tes\nsouvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés\npertinents, la date du jour et le manifeste de la bibliothèque de fichiers de\nl'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus\nde ton message — donc oui, cela consomme des tokens en entrée, au-delà de ce\nque tu as tapé toi-même.\n\nDeux idées à ne pas confondre :\n\n- **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.\n  Clique-le pour voir la ventilation part par part.\n- **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**\n  un levier de réduction : c'est le dénominateur qui sert à afficher un taux de\n  remplissage (« combien sur le maximum du modèle »). La modifier ne change rien\n  à ce qui est envoyé — c'est une jauge, pas un robinet.\n\nLes **vrais leviers** pour alléger ce qui part à chaque tour :\n\n- **Résumés** : leur injection a un mode réglable (automatique, sur proposition,\n  ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.\n- **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en\n  supprimer ou en mettre en veille réduit d'autant le contexte.\n- **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la\n  joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est\n  déjà une optimisation intégrée.\n- **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses\n  outils au contexte. En débrancher un allège la liste d'outils envoyée.\n\nNote sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte\n(instructions système, définitions d'outils) reste **identique octet pour octet**\nd'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés) en\npréfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe\n(Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au\nlieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes\ninstructions système, casse volontairement ce préfixe stable (le contexte change\nvraiment) : c'est attendu.", "interface": "Quelques repères pour te déplacer dans MIAOU :\n\n- **Barre latérale** : le sélecteur d'Espace en haut, puis tes conversations\n  rangées par période, avec la recherche. Elle est redimensionnable.\n- **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un\n  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. Ce\n  stop ne concerne que la conversation **affichée** : si d'autres conversations\n  travaillent en arrière-plan, elles continuent. À côté, le trombone pour\n  joindre des fichiers.\n- **Ajouter en cours de route** : si le modèle travaille (surtout quand il\n  enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée\n  sans l'interrompre** — il se met en file au-dessus du composer et lui est\n  transmis dès la prochaine étape, ce qui te permet de le **réorienter avant\n  qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour\n  le récupérer dans le composer) ou annulable (la croix). Si tu en mets\n  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.\n- **Plusieurs réponses à la fois** : quitter une conversation ne l'interrompt\n  plus. Tu peux poser une question, partir vers une autre conversation — ou même\n  changer d'Espace — pendant que le modèle rédige : il continue, va au bout de\n  ses outils, et range sa réponse dans **sa** conversation. Tu la retrouves\n  complète en y revenant. Plusieurs conversations peuvent ainsi travailler en\n  même temps. Ça ne survit pas au rechargement de la page : recharger pendant\n  qu'une réponse arrive la perd (la question, elle, reste).\n- **Pastilles d'activité** : un petit point signale ce qui bouge sans que tu\n  aies à surveiller.\n  - **Point qui clignote** : cette conversation est en train de travailler.\n  - **Point fixe, un peu plus gros** : la réponse est terminée et tu ne l'as pas\n    encore vue. Ouvrir la conversation suffit à l'éteindre.\n  - Le point apparaît sur la conversation dans la barre latérale, et aussi sur\n    le **sélecteur d'Espace** quand l'activité se passe dans un autre Espace\n    (déplie-le : chaque Espace concerné porte alors son propre point). Barre\n    latérale masquée, il se replie sur l'**icône du menu** en haut à gauche.\n  - S'il y a à la fois du terminé-non-vu et du en-cours, le point fixe l'emporte\n    sur ces indicateurs de groupe — le détail se lit en dépliant.\n  - Ces points sont volatiles : ils disparaissent si tu recharges la page.\n- **Compteur d'agents** : en haut à droite, une pastille « 1 agent » / « 3\n  agents » indique combien de conversations travaillent en ce moment, tous\n  Espaces confondus. Un **agent**, ici, c'est une conversation en train de\n  produire une réponse : selon les outils dont il dispose, il peut enchaîner\n  plusieurs étapes de lui-même (chercher, lire un fichier, calculer) avant de\n  répondre. Le compteur n'apparaît que s'il t'apprend quelque chose : une seule\n  réponse en cours, que tu es en train de regarder arriver, ne l'affiche pas —\n  le bouton stop du composer le dit déjà.\n- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre\n  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les\n  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une\n  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le\n  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de\n  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce\n  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la\n  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part\n  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet\n  contexte.\n- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône\n  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,\n  gardé à part de la réponse.\n- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :\n  change le modèle de la conversation courante sans toucher à ton défaut. Si\n  plusieurs serveurs API sont configurés, il liste les modèles de chacun,\n  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le\n  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée\n  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour\n  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →\n  Serveurs API) pour ne plus être interrogé ni proposé.\n- **Thème clair / sombre** et coloration syntaxique se règlent dans les\n  Paramètres.\n- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**\n  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une\n  police de texte et une police à chasse fixe (blocs de code) choisies pour\n  aller ensemble. Réglage indépendant du thème et de la palette.\n- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres\n  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur\n  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage\n  indépendant du thème clair/sombre : chaque palette a sa version claire et sa\n  version sombre, et changer l'un ne change pas l'autre.\n- **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,\n  recherche, outils distants…) pour une même réponse, elles s'affichent en\n  mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et\n  se replier à nouveau.\n- **Animations** : un réglage dans les Paramètres\n  (Normales / Réduites / Suivre le système) coupe toutes les transitions et\n  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de\n  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la\n  préférence de réduction d'animations de ton OS.\n- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour\n  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,\n  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —\n  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,\n  inspecteur de contexte, bascule de thème et de coloration, export de la\n  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre\n  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou\n  rechercher une conversation — seule exception à l'étanchéité des Espaces\n  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en\n  arrière).\n  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule\n    touche lance la commande — la lettre est affichée à gauche de chaque ligne.\n    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une\n    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer\n    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les\n    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,\n    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.\n- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même\n  navigateur ; ils restent synchronisés. Une modification faite dans un onglet\n  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en\n  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.\n  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que\n  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux\n  Espaces différents dans deux onglets. Si la même conversation est ouverte à\n  deux endroits, un\n  bandeau discret le signale. Et si une réponse est en cours de génération dans\n  un onglet, la même conversation passe en **lecture seule** dans les autres le\n  temps de la réponse — pour éviter deux générations concurrentes qui\n  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale\n  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs\n  différents).", "donnees": "MIAOU s'exécute **entièrement dans ton navigateur**. Il n'y a pas de serveur\napplicatif MIAOU : tes conversations, tes souvenirs, tes skills, tes Espaces et\ntes fichiers sont stockés **localement**, sur ta machine, dans le stockage du\nnavigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as\nconfigurée (et vers les serveurs compagnons que tu aurais ajoutés).\n\nConséquences pratiques :\n\n- Tes données restent sur cet appareil et ce navigateur. Changer de navigateur\n  ou de machine ne les emporte pas automatiquement.\n- Vider les données de site du navigateur efface aussi MIAOU. Pense à exporter\n  ce qui compte.\n- La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à\n  un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès\n  protégé côté serveur.\n\nCe que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr\nvers l'API configurée pour être traité — c'est le principe même d'un client de\nchat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il\ncontient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas\nton navigateur.", "genese": "MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,\nfaute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans\ninterface digne de ce nom. Plutôt que de s'en contenter, il a décidé d'en faire\nun vrai chatbot : intelligent, agréable à utiliser, joli, et bardé de fonctions\nqui en jettent — mémoire, Espaces, skills, exports, diagrammes — épaulé par des\nserveurs MCP maison pour le web et les documents.\n\nIl ne l'a pas écrit seul : il l'a construit **en binôme avec Claude**\n(Anthropic), au fil des versions de modèles, de Sonnet à Fable en passant par\nOpus. Lui aux commandes — architecture, décisions, exigences, relectures —\nClaude au clavier sur sa dictée. Un projet de bout en bout mené à quatre mains,\ndont deux virtuelles.\n\nCôté technique, MIAOU est volontairement minimaliste : **un seul fichier HTML\nautonome**, sans framework, sans bundler, sans serveur applicatif — tout tourne\ndans le navigateur, en JavaScript pur, contre n'importe quelle API compatible\nOpenAI. Les capacités web et documents viennent de serveurs MCP distants\noptionnels (le projet compagnon miaou-mcp-servers).\n\nLes deux dépôts sont open source :\n\n- MIAOU (ce client) : https://github.com/dJeyL/miaou\n- Serveurs compagnons : https://github.com/dJeyL/miaou-mcp-servers"}; } catch (e) { return {}; } })();
 
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -6485,12 +6559,12 @@ const TOOLS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       const entry = getSummaryEntry(args.id);   
       
       if (!entry || entry.suppressed) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
       
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       const conv = loadConversation(args.id);   
       const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
       if (convSpace !== spaceId) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
@@ -6523,16 +6597,16 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       let entries = listSummaryEntries();        
       
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       const allConvs = loadConversations();
       const idsInSpace = spaceConvIds(spaceId, allConvs);
       const convIds = new Set(allConvs.map(c => c.id));
       entries = entries.filter(e => idsInSpace.has(e.id) || (!convIds.has(e.id) && spaceId === DEFAULT_SPACE_ID));
       
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
@@ -6565,13 +6639,13 @@ const TOOLS = [
       required: ['content'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       if (!args.content || !args.content.trim()) return toolFail('memory__create', 'Contenu vide — souvenir ignoré.');
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
       
-      const scope = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const scope = ctx.spaceId;
       saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false, scope });
       _pendingToolAcks.push({ kind: 'memory_create', id, content });
       return 'Souvenir enregistré. Identifiant : ' + id;
@@ -6591,12 +6665,12 @@ const TOOLS = [
       required: ['id', 'content'],
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
-    handler: (args) => {
+    handler: (args, ctx) => {
       if (!args.id || !args.content || !args.content.trim()) return toolFail('memory__update', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   
       
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       if (!isMemoryInScope(existing, spaceId)) return toolFail('memory__update', 'Souvenir introuvable.');
       editMemory(args.id, content);
       _pendingToolAcks.push({
@@ -6651,11 +6725,11 @@ const TOOLS = [
       required: ['ref'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       const ref = String(args.ref || '');
       if (!ref) return toolFail('recall_attachment', 'Identifiant manquant.');
       
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const record = getCachedRecordByAttId(ref, activeId);
       if (!record) return toolFail('recall_attachment', 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).');
       _pendingToolAcks.push({ kind: 'attachment_recalled', attId: ref, resourceName: record.name, mime: record.mime, convId: activeId });
@@ -6684,9 +6758,9 @@ const TOOLS = [
       "d'un fichier (file-N).",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: () => {
+    handler: (args, ctx) => {
       
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       const entries = getCachedLibraryEntriesBySpace(spaceId);   
       const light = entries.map(e => ({
         id: libraryRefFromId(e.id), name: e.name, mime: e.mime, size: e.size,
@@ -6711,8 +6785,8 @@ const TOOLS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    handler: (args, ctx) => {
+      const spaceId = ctx.spaceId;
       const recordId = parseLibraryRef(String(args.id || ''));   
       if (!recordId) return toolFail('files__read', 'Fichier introuvable.');
       const record = getCachedRecord(recordId);   
@@ -6755,16 +6829,16 @@ const TOOLS = [
       required: ['ref', 'description'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       
       const invalid = validateFilesPromoteArgs(args);
       if (invalid) return toolFail('files__promote', invalid);
       const ref = String(args.ref || '');
       const description = String(args.description || '').trim();
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const record = getCachedRecordByAttId(ref, activeId);   
       if (!record) return toolFail('files__promote', 'Fichier introuvable.');   
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       const name = args.name ? String(args.name).trim() : record.name;
       const stored = await storeLibraryFile(   
         spaceId, record.mime, name, record.data, record.class, activeId, description, Date.now(), Math.random
@@ -6794,14 +6868,14 @@ const TOOLS = [
       required: ['content'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       
       const invalid = validateResourceCreateArgs(args);
       if (invalid) return toolFail('resource__create', invalid);
       const content = String(args.content || '');
       const mime = args.mime ? String(args.mime).trim() : 'text/plain';
       const name = args.name ? String(args.name).trim() : 'resource';
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const id = await _storeBlock(mime, name, utf8Encode(content), 'inline', activeId, Date.now(), Math.random);
       if (!id) return toolFail('resource__create', 'Échec de stockage.');
       
@@ -6829,7 +6903,7 @@ const TOOLS = [
       required: ['ref', 'description'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const invalid = validateResourceFromResultArgs(args);
       if (invalid) return toolFail('resource__from_result', invalid);
       const ref = String(args.ref || '').trim();
@@ -6846,7 +6920,7 @@ const TOOLS = [
       const text = targetAck.result != null ? String(targetAck.result) : '';
       if (!text) return toolFail('resource__from_result', 'Résultat vide, rien à convertir.');
       const mime = 'text/plain';
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const id = await _storeBlock(mime, name, utf8Encode(text), 'inline', activeId, Date.now(), Math.random);
       if (!id) return toolFail('resource__from_result', 'Échec de stockage.');
       
@@ -6875,11 +6949,11 @@ const TOOLS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
-    handler: (args) => {
+    handler: (args, ctx) => {
       if (!args.id) return toolFail('memory__delete', 'Identifiant manquant.');
       const existing = loadMemories().find(e => e.id === args.id);
       
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       if (!isMemoryInScope(existing, spaceId)) return toolFail('memory__delete', 'Souvenir introuvable.');
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
@@ -7073,7 +7147,7 @@ const TOOLS = [
       required: ['handle', 'code'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },   
-    handler: (args) => {
+    handler: (args, ctx) => {
       const handle = String((args && args.handle) || '').trim();
       const code = args && args.code != null ? String(args.code) : '';
       
@@ -7277,6 +7351,18 @@ function disconnectMcpServer(name) {
   delete _remoteStatus[name];
 }
 
+function toolCtx(ctx) {
+  if (ctx && ctx.convId !== undefined && ctx.spaceId !== undefined) return ctx;
+  return {
+    convId: (ctx && ctx.convId !== undefined)
+      ? ctx.convId
+      : (typeof currentConvId !== 'undefined' ? currentConvId : null),
+    spaceId: (ctx && ctx.spaceId !== undefined)
+      ? ctx.spaceId
+      : (typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID),
+  };
+}
+
 async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = reuseAckEntry || { kind: 'mcp_call', server: server.name, name: fullName };
@@ -7304,11 +7390,12 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   }
 }
 
-function callInternalTool(toolName, args) {
+function callInternalTool(toolName, args, ctx) {
   const tool = TOOLS.find(t => t.name === toolName);
   if (!tool) return { content: [{ type: 'text', text: toolFail(toolName, 'Outil inconnu : ' + toolName) }], isError: true };
   try {
-    const text = tool.handler(args || {});
+    
+    const text = tool.handler(args || {}, toolCtx(ctx));
     
     if (text && typeof text.then === 'function') {
       return text.then(
@@ -7322,7 +7409,7 @@ function callInternalTool(toolName, args) {
   }
 }
 
-function callTool(name, args) {
+function callTool(name, args, ctx) {
   const parsed = parseToolName(name);
   
   const internalName = resolveInternalToolName(name, TOOLS);
@@ -7332,7 +7419,7 @@ function callTool(name, args) {
     delete cleanArgs.miaou_intent;
     
     const baseAcks = _pendingToolAcks.length;
-    const result = callInternalTool(internalName, cleanArgs);
+    const result = callInternalTool(internalName, cleanArgs, ctx);
     
     if (intent != null) {
       if (result && typeof result.then === 'function') {
@@ -7346,7 +7433,7 @@ function callTool(name, args) {
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
-    return callInternalTool(parsed.toolName, cleanArgs);
+    return callInternalTool(parsed.toolName, cleanArgs, ctx);
   }
   const server = getMcpServer(parsed.serverPrefix);   
   if (!server || server.enabled === false) {
@@ -7355,7 +7442,7 @@ function callTool(name, args) {
   const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
   const serverArgs = args ? Object.assign({}, args) : {};
   delete serverArgs.miaou_intent;
-  return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent);
+  return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent, ctx);
 }
 
 let _attachmentPushState = {};
@@ -7455,17 +7542,16 @@ function classifyHandleRef(ref) {
   return null;
 }
 
-function resolveHandleRecord(ref) {
+function resolveHandleRecord(ref, ctx) {
+  const c = toolCtx(ctx);
   const family = classifyHandleRef(ref);
   if (family === 'att') {
-    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
-    return getCachedRecordByAttId(ref, activeId) || null;
+    return getCachedRecordByAttId(ref, c.convId) || null;
   }
   if (family === 'file') {
     const recordId = parseLibraryRef(ref);   
     const record = recordId ? getCachedRecord(recordId) : null;
-    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-    if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return null;
+    if (!record || record.kind !== 'library' || record.spaceId !== c.spaceId) return null;
     return record;
   }
   if (family === 'resource') {
@@ -7545,10 +7631,11 @@ function _jsEvalErrText(raw) {
   return s;
 }
 
-function _resolveInflationRef(ref) {
-  const record = resolveHandleRecord(ref);
+function _resolveInflationRef(ref, ctx) {
+  const c = toolCtx(ctx);
+  const record = resolveHandleRecord(ref, c);
   if (!record) return null;
-  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+  const activeId = c.convId;
   const family = classifyHandleRef(ref);
   if (family === 'att') {
     return {
@@ -7560,7 +7647,7 @@ function _resolveInflationRef(ref) {
   if (family === 'file') {
     
     const recordId = parseLibraryRef(ref);
-    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    const spaceId = c.spaceId;
     return {
       record, sessionId: activeId,
       isPushed: () => isFilePushed(spaceId, recordId),
@@ -7575,12 +7662,12 @@ function _resolveInflationRef(ref) {
   };
 }
 
-async function callDocsInflatedRemoteTool(server, toolName, args, intent) {
+async function callDocsInflatedRemoteTool(server, toolName, args, intent, ctx) {
   const ref = args && typeof args.ref === 'string' ? args.ref : null;
   const capable = ref && toolDeclaresAttachmentInflation(server, toolName);
   if (!capable) return callRemoteTool(server, toolName, args, intent);
 
-  const resolved = _resolveInflationRef(ref);
+  const resolved = _resolveInflationRef(ref, ctx);
   if (!resolved) return callRemoteTool(server, toolName, args, intent);   
 
   const { record, sessionId, isPushed, markPushed } = resolved;
@@ -7644,8 +7731,6 @@ function skillDoctrinePrompt() {
 
 const MAX_TOURS = 40;   
                         
-let _currentAbort = null;
-
 const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 
 const _noThinkRejected = {};
@@ -7899,7 +7984,8 @@ async function streamCompletion(messages, opts) {
     body.messages = injectVisionDegradedNote(degradeVisionMessages(body.messages, o.imageDescriptors));
   }
 
-  _currentAbort = new AbortController();
+  const ctrl = new AbortController();
+  if (o.gen) o.gen.abort = ctrl;
   let contentBuffer = '';
   let reasoningBuffer = '';
   let finishReason = null;
@@ -7915,7 +8001,7 @@ async function streamCompletion(messages, opts) {
         'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
       },
       body: JSON.stringify(body),
-      signal: _currentAbort.signal,
+      signal: ctrl.signal,
     });
     if (!res.ok || !res.body) {
       
@@ -7983,14 +8069,11 @@ async function streamCompletion(messages, opts) {
     if (e && e.name === 'AbortError') aborted = true;
     else throw e;
   } finally {
-    _currentAbort = null;
+    
+    if (o.gen && o.gen.abort === ctrl) o.gen.abort = null;
   }
 
   return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, usage };
-}
-
-function abortStream() {
-  if (_currentAbort) _currentAbort.abort();
 }
 
 async function runConversation(messages, hooks) {
@@ -7998,12 +8081,18 @@ async function runConversation(messages, hooks) {
   
   const servedKeys = new Set();
   
+  const toolExecContext = h.gen
+    ? { convId: h.gen.convId, spaceId: h.gen.spaceId }
+    : undefined;
+  
   if (typeof clearPendingImageInjections === 'function') clearPendingImageInjections();
   
   let reasoningAcc = '';
 
   for (let tour = 1; tour <= MAX_TOURS; tour++) {
     const result = await streamCompletion(messages, {
+      
+      gen: h.gen,
       model: h.model,
       reasoningEffort: h.reasoningEffort,
       
@@ -8072,7 +8161,7 @@ async function runConversation(messages, hooks) {
           bgActivityStart('outil…');
           try {
             
-            const toolPromise = callTool(tc.function.name, args);
+            const toolPromise = callTool(tc.function.name, args, toolExecContext);
             
             const isMcp = (function () {
               const p = parseToolName(tc.function.name).serverPrefix;
@@ -8082,9 +8171,7 @@ async function runConversation(messages, hooks) {
             const rawResult = await toolPromise;
             
             if (typeof internResourcesFromResult === 'function') {
-              await internResourcesFromResult(rawResult,
-                typeof currentConvId !== 'undefined' ? currentConvId : null,
-                Date.now, Math.random);
+              await internResourcesFromResult(rawResult, toolExecContext.convId, Date.now, Math.random);
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);
@@ -10109,6 +10196,8 @@ function convItemEl(c) {
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
        </button>
      </div>`;
+  
+  el.insertBefore(activityBadgeEl(convBadgeState(c.id)), el.querySelector('.conv-actions'));
   return el;
 }
 
@@ -10331,10 +10420,6 @@ function setSending(on) {
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   
   
-  if (on) { if (typeof startGenerationRelay === 'function') startGenerationRelay(currentConvId); }
-  else    { if (typeof stopGenerationRelay === 'function') stopGenerationRelay(); }
-  
-  if (!on && typeof drainPendingSync === 'function') drainPendingSync();
 }
 
 let _convReadonly = false;
@@ -11641,7 +11726,7 @@ function selectMotion(motion) {
 
 function onToggleHighlight() {
   highlightEnabled = $('set-highlight').checked;
-  renderThread(currentThread);
+  rerenderCurrentThread();   
 }
 
 let _bannerHandlers = null;
@@ -12056,6 +12141,49 @@ function syncSpaceUI() {
     badge.textContent = space.name || '';
     badge.hidden = activeSpaceId === DEFAULT_SPACE_ID;
   }
+  syncActivityBadges();
+  syncAgentCount();
+}
+
+function applyActivityBadge(el, state) {
+  if (!el) return;
+  el.classList.toggle('working', state === 'working');
+  el.classList.toggle('unread', state === 'unread');
+  el.hidden = !state;
+}
+
+function activityBadgeEl(state) {
+  const dot = document.createElement('span');
+  dot.className = 'waiter-dot activity-dot';
+  applyActivityBadge(dot, state);
+  return dot;
+}
+
+function syncAgentCount() {
+  const el = $('agent-count');
+  if (!el) return;
+  const n = resolveAgentCount(_activeGenerations.size, isGenerating(currentConvId));
+  el.hidden = !n;
+  const label = $('agent-count-label');
+  if (label) label.textContent = formatAgentCountLabel(n);
+}
+
+function syncActivityBadges() {
+  
+  const trigger = $('space-select-btn');
+  if (trigger) {
+    let dot = trigger.querySelector('.activity-dot');
+    
+    if (!dot) { dot = activityBadgeEl(null); trigger.insertBefore(dot, trigger.querySelector('.chev')); }
+    applyActivityBadge(dot, aggregateBadgeState(activeSpaceId));
+  }
+  
+  const burger = $('sidebar-toggle');
+  if (burger) {
+    let dot = burger.querySelector('.activity-dot');
+    if (!dot) { dot = activityBadgeEl(null); burger.appendChild(dot); }
+    applyActivityBadge(dot, aggregateBadgeState(null));
+  }
 }
 
 let _spaceTab = 'conversations';
@@ -12111,6 +12239,9 @@ function renderSpaceMenu() {
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
+    
+    opt.insertBefore(activityBadgeEl(spaceBadgeState(s.id)),
+                     opt.querySelector('.space-opt-edit'));
     
     opt.onmousedown = (ev) => {
       if (ev.target.closest('.space-opt-edit')) return;
@@ -14347,6 +14478,158 @@ let _sendResolving = false;
 let _lastContextManifest = null;   
 let _lastContextManifestMidTurn = false;   
 
+const _activeGenerations = new Map();   
+
+function createGeneration(convId, thread, opts) {
+  const o = opts || {};
+  return {
+    id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    convId,
+    spaceId: activeSpaceId,
+    thread,
+    model: o.model || '',
+    serverName: o.serverName || '',
+    reasoningEffort: o.reasoningEffort || '',
+    convModel: currentConvModel,                    
+    convReasoningEffort: currentConvReasoningEffort,
+    needTitle: needTitle,                           
+    abort: null,                                    
+    status: 'waiting',                              
+    startedAt: Date.now(),
+    
+    wrap: null,
+    
+    partialContent: '',
+    partialReasoning: '',
+  };
+}
+
+function genOwnsScreen(gen) {
+  return !!gen && gen.convId === currentConvId;
+}
+
+function registerGeneration(gen) {
+  _activeGenerations.set(gen.convId, gen);
+  startGenerationRelay(gen.convId);
+  
+  renderConvList();
+  syncSpaceUI();
+}
+
+function unregisterGeneration(gen) {
+  
+  if (_activeGenerations.get(gen.convId) === gen) _activeGenerations.delete(gen.convId);
+  stopGenerationRelay(gen.convId);
+  
+  if (!genOwnsScreen(gen)) markConvUnread(gen.convId);
+  renderConvList();
+  syncSpaceUI();
+  
+  if (!_activeGenerations.size) drainPendingSync();
+}
+
+function generationFor(convId) {
+  return convId == null ? null : (_activeGenerations.get(convId) || null);
+}
+
+function isGenerating(convId) {
+  return !!generationFor(convId);
+}
+
+const _unreadConvs = new Set();
+
+function markConvUnread(convId) {
+  if (convId == null) return;
+  _unreadConvs.add(convId);
+}
+
+function markConvRead(convId) {
+  if (convId == null) return false;
+  return _unreadConvs.delete(convId);
+}
+
+function convBadgeState(convId) {
+  if (isGenerating(convId)) return 'working';
+  return _unreadConvs.has(convId) ? 'unread' : null;
+}
+
+function spaceBadgeState(spaceId) {
+  const states = [];
+  for (const gen of _activeGenerations.values()) {
+    if (gen.spaceId === spaceId) states.push('working');
+  }
+  if (_unreadConvs.size) {
+    const convs = listAllConversations();
+    for (const c of convs) {
+      if (c.spaceId === spaceId && _unreadConvs.has(c.id)) states.push('unread');
+    }
+  }
+  return resolveActivityBadge(states);
+}
+
+function aggregateBadgeState(excludeSpaceId) {
+  const states = [];
+  for (const gen of _activeGenerations.values()) {
+    if (excludeSpaceId != null && gen.spaceId === excludeSpaceId) continue;
+    states.push('working');
+  }
+  if (_unreadConvs.size) {
+    for (const c of listAllConversations()) {
+      if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
+      if (_unreadConvs.has(c.id)) states.push('unread');
+    }
+  }
+  return resolveActivityBadge(states);
+}
+
+function splitTrailingAcks(thread) {
+  const t = thread || [];
+  let i = t.length;
+  while (i > 0 && isAckRole(t[i - 1].role)) i--;
+  return { body: t.slice(0, i), trailingAcks: t.slice(i) };
+}
+
+function rerenderCurrentThread() {
+  const gen = generationFor(currentConvId);
+  if (gen) attachGenerationToScreen(gen);
+  else renderThread(currentThread);
+}
+
+function attachGenerationToScreen(gen) {
+  if (!gen) return;
+  const split = splitTrailingAcks(gen.thread);
+  renderThread(split.body);
+  
+  const wrap = startAssistantMessage(gen.model, gen.serverName);
+  gen.wrap = wrap;
+  for (const a of split.trailingAcks) placeToolAck(wrap, a, false);
+  
+  if (gen.partialReasoning) flushReasoning(wrap, gen.partialReasoning);
+  if (gen.partialContent) streamInto(wrap, gen.partialContent);
+  scrollBottom(true);
+}
+
+function detachGenerationFromScreen(gen) {
+  if (!gen) return;
+  gen.wrap = null;
+  stopWaiter();
+  cancelStreamRender();
+  cancelReasoningRender();
+}
+
+function persistGeneration(gen) {
+  if (!gen || !gen.convId) return;
+  const conv = loadConversation(gen.convId);
+  if (!conv) return;   
+  conv.messages = projectThreadToMessages(gen.thread);
+  if (!conv.timestamp) conv.timestamp = Date.now();
+  conv.updatedAt = Date.now();
+  if (gen.convModel) conv.model = gen.convModel; else delete conv.model;
+  if (gen.convReasoningEffort) conv.reasoningEffort = gen.convReasoningEffort; else delete conv.reasoningEffort;
+  saveConversation(conv);
+  renderConvList();
+}
+
 const IDLE_SUMMARY_MS = 60000;
 let _idleSummaryTimer = null;
 
@@ -14354,7 +14637,7 @@ function armIdleSummaryTimer() {
   if (_idleSummaryTimer) clearTimeout(_idleSummaryTimer);
   _idleSummaryTimer = setTimeout(() => {
     _idleSummaryTimer = null;
-    if (sending) return;   
+    
     summarizeIfNeeded(currentConvId);
   }, IDLE_SUMMARY_MS);
 }
@@ -14543,6 +14826,8 @@ async function openConversation(id, reveal) {
   if (switching) {
     announceConvClosed(currentConvId);   
     resetPeerState();                    
+    
+    detachGenerationFromScreen(generationFor(currentConvId));
   }
   currentConvId = id;
   await loadConversationResources(id);   
@@ -14551,13 +14836,20 @@ async function openConversation(id, reveal) {
   
   const conv = loadConversation(id);
   if (!conv) return;   
-  currentThread = projectConvMessages(conv);
+  
+  const gen = generationFor(id);
+  currentThread = gen ? gen.thread : projectConvMessages(conv);
   currentConvModel = conv.model || '';
   currentConvReasoningEffort = conv.reasoningEffort || '';
   needTitle = !conv.title;   
   setTitle(conv.title || '');
-  renderThread(currentThread);
+  
+  markConvRead(id);
+  rerenderCurrentThread();
   renderConvList();
+  syncSpaceUI();
+  
+  setSending(!!gen);
   
   if (reveal) revealActiveConv('center');
   syncModelUI();
@@ -14571,7 +14863,11 @@ async function openConversation(id, reveal) {
 function resetToEmpty() {
   
   if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
+  
+  detachGenerationFromScreen(generationFor(currentConvId));
   currentConvId = null;
+  
+  setSending(false);
   currentThread = [];
   currentConvModel = '';   
   currentConvReasoningEffort = '';   
@@ -14584,6 +14880,8 @@ function resetToEmpty() {
   setTitle('');
   syncConvDownloadBtn();
   renderConvList();
+  
+  syncAgentCount();
   syncModelUI();
   syncReasoningUI();
   _lastContextManifest = null;
@@ -14763,7 +15061,7 @@ function applySyncDecision(d) {
 
     case 'rehydrate':
       
-      if (sending) { _queueSyncAction(d); return; }
+      if (_activeGenerations.size) { _queueSyncAction(d); return; }
       if (currentConvId) openConversation(currentConvId);
       return;
 
@@ -14774,7 +15072,7 @@ function applySyncDecision(d) {
 
     case 'conv-gone':
       
-      if (sending) { _queueSyncAction(d); return; }
+      if (_activeGenerations.size) { _queueSyncAction(d); return; }
       resetToEmpty();
       return;
 
@@ -14792,7 +15090,7 @@ function applySyncDecision(d) {
       
       invalidateResourceCache(d.ids);
       if (!sending && d.convId != null && d.convId === currentConvId) {
-        loadConversationResources(currentConvId).then(function() { renderThread(currentThread); });
+        loadConversationResources(currentConvId).then(function() { rerenderCurrentThread(); });
       }
       return;
 
@@ -14848,7 +15146,8 @@ function applySyncDecision(d) {
         applyReadonlyState();
         
         if (currentConvId && d.convId === currentConvId) {
-          if (sending) { _queueSyncAction({ action: 'rehydrate', convId: currentConvId }); }
+          
+          if (_activeGenerations.size) { _queueSyncAction({ action: 'rehydrate', convId: currentConvId }); }
           else openConversation(currentConvId);
         }
       }
@@ -14906,26 +15205,30 @@ function drainPendingSync() {
 const SYNC_HEARTBEAT_MS = 5000;        
 const SYNC_HEARTBEAT_TTL_MS = 10000;   
 
-let _genRelayConvId = null;   
-let _genHeartbeatTimer = null;
+const _genRelayTimers = new Map();   
 
 function startGenerationRelay(convId) {
   if (convId == null) return;
-  _genRelayConvId = convId;
+  if (_genRelayTimers.has(convId)) return;   
   syncPost('conv-generation-started', { convId: convId, tabId: syncTabId() });
-  if (_genHeartbeatTimer) { clearInterval(_genHeartbeatTimer); }
-  _genHeartbeatTimer = setInterval(function () {
-    if (_genRelayConvId == null) return;   
-    syncPost('conv-generation-started', { convId: _genRelayConvId, tabId: syncTabId() });
+  const timer = setInterval(function () {
+    if (!_genRelayTimers.has(convId)) return;   
+    syncPost('conv-generation-started', { convId: convId, tabId: syncTabId() });
   }, SYNC_HEARTBEAT_MS);
+  _genRelayTimers.set(convId, timer);
 }
 
-function stopGenerationRelay() {
-  if (_genHeartbeatTimer) { clearInterval(_genHeartbeatTimer); _genHeartbeatTimer = null; }
-  if (_genRelayConvId != null) {
-    syncPost('conv-generation-ended', { convId: _genRelayConvId, tabId: syncTabId() });
-    _genRelayConvId = null;
-  }
+function stopGenerationRelay(convId) {
+  if (convId == null) return;
+  const timer = _genRelayTimers.get(convId);
+  if (timer === undefined) return;   
+  clearInterval(timer);
+  _genRelayTimers.delete(convId);
+  syncPost('conv-generation-ended', { convId: convId, tabId: syncTabId() });
+}
+
+function stopAllGenerationRelays() {
+  for (const convId of Array.from(_genRelayTimers.keys())) stopGenerationRelay(convId);
 }
 
 function ensureConversation() {
@@ -14939,10 +15242,8 @@ function ensureConversation() {
   renderConvList();
 }
 
-function persistCurrent() {
-  if (!currentConvId) return;
-  const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
-  conv.messages = currentThread.map(m => {
+function projectThreadToMessages(thread) {
+  return (thread || []).map(m => {
     if (isAckRole(m.role)) {
       
       return copyAckFields(m, { role: m.role });
@@ -14957,6 +15258,12 @@ function persistCurrent() {
     if (m.attachments) o.attachments = m.attachments;   
     return o;
   });
+}
+
+function persistCurrent() {
+  if (!currentConvId) return;
+  const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
+  conv.messages = projectThreadToMessages(currentThread);
   if (!conv.timestamp) conv.timestamp = Date.now();
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
@@ -15018,7 +15325,7 @@ function onSaveSettings() {
   syncModelUI();        
   syncReasoningUI();     
   prefetchModels();     
-  renderThread(currentThread);   
+  rerenderCurrentThread();   
   syncContextCounter();   
   closeSettings();
 }
@@ -15457,8 +15764,14 @@ function removeComposerAttachment(attId) {
 }
 
 function onSendBtn() {
-  if (sending) abortStream();
+  
+  if (sending) abortStream(currentConvId);
   else sendMessage();
+}
+
+function abortStream(convId) {
+  const gen = generationFor(convId);
+  if (gen && gen.abort) gen.abort.abort();
 }
 
 async function resolveSend(literal) {
@@ -15735,9 +16048,9 @@ function continueTruncated(btn) {
   dispatchSend([], { continueIndex: idx, wrap });
 }
 
-function rewriteAttachedUserMessage(idx) {
-  if (idx < 0 || idx >= currentThread.length) return;
-  const m = currentThread[idx];
+function rewriteAttachedUserMessage(thread, idx) {
+  if (idx < 0 || idx >= thread.length) return;
+  const m = thread[idx];
   if (m.role !== 'user' || !Array.isArray(m.content)) return;
   m.content = collapseAttachedMessageContent(m.content, m.attachments);
 }
@@ -15745,19 +16058,22 @@ function rewriteAttachedUserMessage(idx) {
 async function dispatchSend(matches, continuation) {
   hideSummaryBanner();
   
-  {
-    const lastUserAt = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-    for (let i = 0; i < currentThread.length; i++) {
-      if (i !== lastUserAt) rewriteAttachedUserMessage(i);
-    }
-  }
   const model = activeModel();   
   const serverName = (activeApiServer() || {}).name || '';   
   const reasoningEffort = activeReasoningEffort();
+
+  const gen = createGeneration(currentConvId, currentThread, { model, serverName, reasoningEffort });
+  registerGeneration(gen);
+  {
+    const lastUserAt = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+    for (let i = 0; i < gen.thread.length; i++) {
+      if (i !== lastUserAt) rewriteAttachedUserMessage(gen.thread, i);
+    }
+  }
   const sysParts = systemMessageParts();
   const sys = buildSystemMessage(sysParts);
   
-  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(gen.thread)));
 
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   const dynParts = contextBlockParts(matches);
@@ -15786,7 +16102,7 @@ async function dispatchSend(matches, continuation) {
 
   let imageDescriptors;
   {
-    const lastUserMsg = currentThread.reduce((acc, m) => (m.role === 'user' ? m : acc), null);
+    const lastUserMsg = gen.thread.reduce((acc, m) => (m.role === 'user' ? m : acc), null);
     if (lastUserMsg && Array.isArray(lastUserMsg.content) && lastUserMsg.attachments) {
       imageDescriptors = lastUserMsg.attachments
         .filter(a => a && a.kind === 'image')
@@ -15797,18 +16113,17 @@ async function dispatchSend(matches, continuation) {
   const visionDisabled = !serverModelVisionEnabled(activeApiServer(), model);
 
   const isContinuation = !!continuation;
-  const prefix = isContinuation ? currentThread[continuation.continueIndex].content : '';
+  const prefix = isContinuation ? gen.thread[continuation.continueIndex].content : '';
 
-  let wrap;
   if (isContinuation) {
-    wrap = continuation.wrap;
+    gen.wrap = continuation.wrap;
     
-    const banner = wrap.querySelector('.msg-truncated');
+    const banner = gen.wrap.querySelector('.msg-truncated');
     if (banner) banner.remove();
-    startWaiter(wrap.querySelector('.body'));   
+    startWaiter(gen.wrap.querySelector('.body'));   
     scrollBottom(true);   
   } else {
-    wrap = startAssistantMessage(model, serverName);
+    gen.wrap = startAssistantMessage(model, serverName);
   }
   
   let earlyRendered = [];
@@ -15817,40 +16132,55 @@ async function dispatchSend(matches, continuation) {
   setSending(true);
   try {
     await runConversation(apiMessages, {
+      gen,   
       model,
       reasoningEffort,
       imageDescriptors,   
       visionDisabled,     
       
       noTools: isContinuation,
-      onDelta: (full) => streamInto(wrap, isContinuation ? prefix + full : full),
-      onReasoning: (full) => setReasoning(wrap, full),
+      
+      onDelta: (full) => {
+        gen.partialContent = isContinuation ? prefix + full : full;
+        if (genOwnsScreen(gen)) streamInto(gen.wrap, gen.partialContent);
+      },
+      onReasoning: (full) => {
+        gen.partialReasoning = full;
+        if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
+      },
       onToolTour: (content) => {
+        
+        gen.partialContent = '';
+        gen.partialReasoning = '';
         if (content && content.trim()) {
           
           const tourTs = Date.now();
           const tourMsg = { role: 'assistant', content, model, ts: tourTs };
           if (serverName) tourMsg.server = serverName;
-          currentThread.push(tourMsg);   
-          finalizeAssistant(wrap, content);
-          revealMsgTimestamp(wrap, tourTs);
-          persistCurrent();
-          wrap = startAssistantMessage(model, serverName);
-        } else {
-          resetAssistant(wrap);
+          gen.thread.push(tourMsg);   
+          if (genOwnsScreen(gen)) {
+            finalizeAssistant(gen.wrap, content);
+            revealMsgTimestamp(gen.wrap, tourTs);
+            gen.wrap = startAssistantMessage(model, serverName);
+          }
+          persistGeneration(gen);
+        } else if (genOwnsScreen(gen)) {
+          resetAssistant(gen.wrap);
         }
       },
       
       onEarlyAcks: () => {
+        const owns = genOwnsScreen(gen);
         
-        const follow = isAtBottom();
+        const follow = owns && isAtBottom();
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
           
           const entry = copyAckFields(ack, { role: 'tool-ack' });
-          currentThread.push(entry);
-          const node = placeToolAck(wrap, entry);
+          gen.thread.push(entry);
+          
+          const node = owns ? placeToolAck(gen.wrap, entry) : null;
           earlyRendered.push({ ack, entry, node });
         }
         if (follow) scrollBottom(true);
@@ -15873,24 +16203,28 @@ async function dispatchSend(matches, continuation) {
         }
         earlyRendered = [];
 
-        const follow = isAtBottom();
+        const owns = genOwnsScreen(gen);
+        
+        const follow = owns && isAtBottom();
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
           
           const entry = copyAckFields(ack, { role: 'tool-ack' });
-          currentThread.push(entry);
-          placeToolAck(wrap, entry);
+          gen.thread.push(entry);
+          if (owns) placeToolAck(gen.wrap, entry);
         }
         
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
-        if (blocks.length) placeToolBlocks(wrap, blocks);
+        if (owns && blocks.length) placeToolBlocks(gen.wrap, blocks);
         if (follow) scrollBottom(true);
 
-        recomputeLastContextManifest(matches, true);
-        applyUsageToLastManifest(usage);
-        syncContextCounter();
+        if (owns) {
+          recomputeLastContextManifest(matches, true);
+          applyUsageToLastManifest(usage);
+          syncContextCounter();
+        }
       },
       
       onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
@@ -15910,6 +16244,8 @@ async function dispatchSend(matches, continuation) {
       },
       
       onInterjections: async () => {
+        
+        if (!genOwnsScreen(gen)) return null;
         const batch = takePendingInterjections();
         if (!batch.length) return null;
         const literal = joinInterjectionLiterals(batch.map(b => b.literal));
@@ -15923,35 +16259,43 @@ async function dispatchSend(matches, continuation) {
         
         const tourMsg = { role: 'assistant', content: '', model, ts: tourTs, _acksOnly: true };
         if (serverName) tourMsg.server = serverName;
-        currentThread.push(tourMsg);
-        finalizeAssistant(wrap, '');
-        revealMsgTimestamp(wrap, tourTs);
+        gen.thread.push(tourMsg);
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, '');
+          revealMsgTimestamp(gen.wrap, tourTs);
+        }
 
         const userTs = Date.now();
-        currentThread.push(buildInterjectionEntry(literal, content, userTs));
+        gen.thread.push(buildInterjectionEntry(literal, content, userTs));
         batch.forEach(b => dismissInterjectionChip(b.id, 'up'));
-        appendUserMessage(literal, userTs);
-
-        wrap = startAssistantMessage(model, serverName);
+        
+        if (genOwnsScreen(gen)) {
+          appendUserMessage(literal, userTs);
+          gen.wrap = startAssistantMessage(model, serverName);
+        }
         return [{ role: 'user', content }];
       },
       onFinal: (content, reasoning, finishReason, { usage } = {}) => {
         if (finishReason === 'stop') endedNominal = true;
         if (isContinuation) {
           
-          const m = currentThread[continuation.continueIndex];
+          const m = gen.thread[continuation.continueIndex];
           m.content = prefix + content;
           if (finishReason === 'length' || finishReason === 'aborted') m.truncated = true;
           else delete m.truncated;
           if (reasoning && reasoning.trim()) m.reasoning = joinReasoning(m.reasoning, reasoning);
-          const body = wrap.querySelector('.body');
-          if (body) body.dataset.raw = m.content;
-          finalizeAssistant(wrap, m.content, m.truncated);
-          if (m.reasoning) flushReasoning(wrap, m.reasoning);
-          persistCurrent();
-          recomputeLastContextManifest(matches);
-          applyUsageToLastManifest(usage);
-          syncContextCounter();
+          if (genOwnsScreen(gen)) {
+            const body = gen.wrap.querySelector('.body');
+            if (body) body.dataset.raw = m.content;
+            finalizeAssistant(gen.wrap, m.content, m.truncated);
+            if (m.reasoning) flushReasoning(gen.wrap, m.reasoning);
+          }
+          persistGeneration(gen);
+          if (genOwnsScreen(gen)) {
+            recomputeLastContextManifest(matches);
+            applyUsageToLastManifest(usage);
+            syncContextCounter();
+          }
           setConnDot('ok');
           
           return;
@@ -15966,57 +16310,68 @@ async function dispatchSend(matches, continuation) {
         }
         
         {
-          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-          rewriteAttachedUserMessage(lastUserIdx);
+          const lastUserIdx = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(gen.thread, lastUserIdx);
         }
         
-        currentThread.push(msg);
-        finalizeAssistant(wrap, content, msg.truncated);
-        revealMsgTimestamp(wrap, ts);
-        if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   
-        persistCurrent();
-        recomputeLastContextManifest(matches);
-        applyUsageToLastManifest(usage);
-        syncContextCounter();
+        gen.thread.push(msg);
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, content, msg.truncated);
+          revealMsgTimestamp(gen.wrap, ts);
+          if (reasoning && reasoning.trim()) flushReasoning(gen.wrap, reasoning);   
+        }
+        persistGeneration(gen);
+        if (genOwnsScreen(gen)) {
+          recomputeLastContextManifest(matches);
+          applyUsageToLastManifest(usage);
+          syncContextCounter();
+        }
         setConnDot('ok');
-        maybeTitle();
+        maybeTitle(gen);
       },
       onHalt: (leadIn, question, { usage } = {}) => {
         
         {
-          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-          rewriteAttachedUserMessage(lastUserIdx);
+          const lastUserIdx = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(gen.thread, lastUserIdx);
         }
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const haltTs = Date.now();
         const haltMsg = { role: 'assistant', content: text, model, ts: haltTs };
         if (serverName) haltMsg.server = serverName;
-        currentThread.push(haltMsg);   
-        finalizeAssistant(wrap, text);
-        revealMsgTimestamp(wrap, haltTs);
-        persistCurrent();
-        recomputeLastContextManifest(matches);
-        applyUsageToLastManifest(usage);
-        syncContextCounter();
+        gen.thread.push(haltMsg);   
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, text);
+          revealMsgTimestamp(gen.wrap, haltTs);
+        }
+        persistGeneration(gen);
+        if (genOwnsScreen(gen)) {
+          recomputeLastContextManifest(matches);
+          applyUsageToLastManifest(usage);
+          syncContextCounter();
+          
+          showConfirmation('',
+            () => sendUserText('Oui'),
+            () => sendUserText('Non'));
+        }
         setConnDot('ok');
-        
-        showConfirmation('',
-          () => sendUserText('Oui'),
-          () => sendUserText('Non'));
       },
-      onError: (msg) => { finalizeAssistantError(wrap, msg); },
+      onError: (msg) => { if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, msg); },
     });
   } catch (e) {
     
     const detail = (e && e.message) || String(e);
-    finalizeAssistantError(wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
+    if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
     setConnDot('err');
   } finally {
-    setSending(false);
+    
+    const screenAtEnd = genOwnsScreen(gen);
+    unregisterGeneration(gen);
+    setSending(isGenerating(currentConvId));
     syncReasoningUI();       
     armIdleSummaryTimer();   
     
-    settleInterjectionQueue(endedNominal);
+    if (screenAtEnd) settleInterjectionQueue(endedNominal);
   }
 }
 
@@ -16039,12 +16394,14 @@ function applyGeneratedTitle(convId, title) {
   renderConvList();                                 
 }
 
-async function maybeTitle() {
-  if (!needTitle || !currentConvId) return;
-  if (!currentThread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
-  needTitle = false;
-  const convId = currentConvId;                     
-  const thread = currentThread.slice();
+async function maybeTitle(gen) {
+  if (!gen || !gen.needTitle || !gen.convId) return;
+  if (!gen.thread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
+  gen.needTitle = false;
+  
+  if (gen.convId === currentConvId) needTitle = false;
+  const convId = gen.convId;                        
+  const thread = gen.thread.slice();
   setTitleEditable(convId, false);
   const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
   if (title) applyGeneratedTitle(convId, title);    
@@ -16069,6 +16426,8 @@ function setTitleEditable(convId, editable) {
 
 async function summarizeIfNeeded(id) {
   if (!id) return;
+  
+  if (isGenerating(id)) return;
   const conv = loadConversation(id);
   if (!conv || !hasSubstance(conv.messages)) return;     
   const entry = getSummaryEntry(id);
@@ -16186,7 +16545,7 @@ function init() {
   
   const onTabLeaving = function () {
     
-    stopGenerationRelay();
+    stopAllGenerationRelays();
     if (currentConvId) announceConvClosed(currentConvId);
   };
   window.addEventListener('pagehide', onTabLeaving);

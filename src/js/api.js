@@ -8,9 +8,11 @@ const MAX_TOURS = 40;   // borne sur les tours de la boucle tool_calls
                         // (20 → 40 : js__eval sur un gros fichier peut demander
                         //  plusieurs passes exploratoires avant la synthèse)
 
-// Controller du stream courant (un seul à la fois). Permet à l'UI d'interrompre
-// la génération en cours via abortStream(). Réinitialisé à chaque streamCompletion.
-let _currentAbort = null;
+// L'AbortController d'un stream appartient à SA génération (lot T-1a), jamais au
+// module : avec N générations concurrentes, un singleton ferait écraser le
+// controller de la première par la seconde — stopper l'une stopperait l'autre,
+// ou rien. streamCompletion le pose sur l'objet passé en o.gen ; abortStream
+// (main.js) cible la génération d'une conversation donnée.
 
 // Param(s) mergés dans le body des appels silencieux pour désactiver le raisonnement.
 // À modifier ici uniquement si le backend utilise un autre knob (ex. think: false).
@@ -194,9 +196,9 @@ async function silentCompletion(messages, opts) {
 
   // Garde-fou : un endpoint qui accepte la connexion puis se tait laisserait le
   // fetch pendre indéfiniment, et avec lui l'indicateur d'activité (le finally de
-  // runBackgroundTask ne passerait jamais). Contrôleur LOCAL, indépendant de
-  // _currentAbort (le stream foreground) : abortStream() n'y touche pas, et
-  // inversement. L'AbortError remonte → runBackgroundTask le capte → null.
+  // runBackgroundTask ne passerait jamais). Contrôleur LOCAL, indépendant des
+  // controllers de génération (streams foreground) : abortStream() n'y touche
+  // pas, et inversement. L'AbortError remonte → runBackgroundTask le capte → null.
   const _attempt = async (extra) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), o.timeout || 30000);
@@ -393,7 +395,12 @@ async function streamCompletion(messages, opts) {
     body.messages = injectVisionDegradedNote(degradeVisionMessages(body.messages, o.imageDescriptors));
   }
 
-  _currentAbort = new AbortController();
+  // Controller de CE stream. Publié sur la génération (o.gen) pour qu'un abort
+  // ciblé puisse l'atteindre ; une génération n'a qu'un stream en vol à la fois
+  // (les tours de la boucle d'outils sont séquentiels), donc l'écrasement d'un
+  // tour au suivant est correct.
+  const ctrl = new AbortController();
+  if (o.gen) o.gen.abort = ctrl;
   let contentBuffer = '';
   let reasoningBuffer = '';
   let finishReason = null;
@@ -409,7 +416,7 @@ async function streamCompletion(messages, opts) {
         'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
       },
       body: JSON.stringify(body),
-      signal: _currentAbort.signal,
+      signal: ctrl.signal,
     });
     if (!res.ok || !res.body) {
       // Hypothèse directe (pas de retry de diagnostic) : si reasoning_effort était
@@ -492,16 +499,13 @@ async function streamCompletion(messages, opts) {
     if (e && e.name === 'AbortError') aborted = true;
     else throw e;
   } finally {
-    _currentAbort = null;
+    // Ne retirer le controller de la génération que s'il est encore le nôtre :
+    // un rejeu (reasoning_effort/vision rejetés, appels récursifs ci-dessus) en
+    // a déjà posé un plus récent qu'il ne faut pas effacer.
+    if (o.gen && o.gen.abort === ctrl) o.gen.abort = null;
   }
 
   return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, usage };
-}
-
-// Interrompt le stream en cours (s'il y en a un). Le contenu déjà reçu est
-// conservé ; aucune relance de tour côté boucle d'outils.
-function abortStream() {
-  if (_currentAbort) _currentAbort.abort();
 }
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
@@ -521,6 +525,13 @@ async function runConversation(messages, hooks) {
   // anti-redemande, par échange : clé nom + ':' + arguments bruts (voir plus
   // bas, pas 'nom:id'/'nom:since' — deux appels distincts doivent tous être servis)
   const servedKeys = new Set();
+  // Contexte d'exécution des outils de CET échange (lot T-1c) : dérivé de la
+  // génération propriétaire, donc figé pour toute la boucle — y compris après un
+  // changement de conversation ou d'Espace côté écran. Repli sur l'état d'écran
+  // hors génération (h.gen absent : drawer d'outils, tests).
+  const toolExecContext = h.gen
+    ? { convId: h.gen.convId, spaceId: h.gen.spaceId }
+    : undefined;
   // Filet : purge toute injection image résiduelle (brief A2/D3) d'un échange
   // précédent avorté avant le drain (le handler push et la boucle draine dans la
   // même itération synchrone, mais on ne laisse rien traîner entre échanges).
@@ -531,6 +542,9 @@ async function runConversation(messages, hooks) {
 
   for (let tour = 1; tour <= MAX_TOURS; tour++) {
     const result = await streamCompletion(messages, {
+      // Génération propriétaire de cet échange (lot T-1a) : porte l'AbortController
+      // du tour en cours, pour un abort ciblé conversation par conversation.
+      gen: h.gen,
       model: h.model,
       reasoningEffort: h.reasoningEffort,
       // Descripteurs byte-stables des images du tour courant (D5) : utilisés
@@ -631,7 +645,11 @@ async function runConversation(messages, hooks) {
             // On démarre l'appel, on vide immédiatement les acks en attente
             // (onEarlyAcks), puis on attend la réponse : l'ack s'affiche PENDANT
             // le round-trip réseau, pas seulement après.
-            const toolPromise = callTool(tc.function.name, args);
+            // Contexte d'exécution (lot T-1c) : la conversation et l'Espace de
+            // la GÉNÉRATION, figés à son démarrage — jamais l'état d'écran. Sans
+            // lui, un outil scopé lancé par une génération détachée répondrait
+            // dans le référentiel de la conversation AFFICHÉE (piège 18).
+            const toolPromise = callTool(tc.function.name, args, toolExecContext);
             // isMcp = appel d'un serveur MCP DISTANT — déterminé par le préfixe du
             // nom (serveur ≠ 'miaou'/''), pas par le type de retour : un outil
             // interne ASYNC (ex. miaou__skills__read) renvoie aussi une Promise mais
@@ -644,12 +662,10 @@ async function runConversation(messages, hooks) {
             if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
             const rawResult = await toolPromise;
             // Interception ressources : stocke les blocs non-textuels dans IDB,
-            // réécrit rawResult.content avec des références. currentConvId est
-            // accessible en runtime (global déclaré dans main.js, même scope build).
+            // réécrit rawResult.content avec des références. Même contexte que l'outil lui-même — la
+            // ressource appartient à la conversation de la génération.
             if (typeof internResourcesFromResult === 'function') {
-              await internResourcesFromResult(rawResult,
-                typeof currentConvId !== 'undefined' ? currentConvId : null,
-                Date.now, Math.random);
+              await internResourcesFromResult(rawResult, toolExecContext.convId, Date.now, Math.random);
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);

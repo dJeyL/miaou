@@ -78,6 +78,269 @@ let _sendResolving = false;    // verrou anti double-envoi pendant l'await resol
 let _lastContextManifest = null;   // manifeste du dernier envoi RÉEL (brief B, B4) — null si aucun envoi cette session
 let _lastContextManifestMidTurn = false;   // true si _lastContextManifest a été recalculé PENDANT une boucle d'outils (tour non terminé), cf. recomputeLastContextManifest
 
+// ── Registre des générations actives (lot T-1) ──────────────────────────────
+// Une « génération » = un échange en vol (stream SSE + boucle d'outils) qui
+// APPARTIENT à une conversation, pas à l'écran. Elle continue de recevoir, de
+// muter SON thread et de persister dans SA conversation même si l'utilisateur
+// navigue ailleurs — voire change d'Espace.
+//
+// Portée de survie : l'onglet ouvert seulement. Aucun état de stream partiel
+// n'est persisté ; un reload perd les générations en vol (décision de lot).
+//
+// Clé par convId, PAS par gen.id : tous les consommateurs (rebranchement ici,
+// badge T-2, drawer T-3) posent la même question — « cette conversation
+// génère-t-elle ? ». Corollaire voulu : deux générations concurrentes sur la
+// MÊME conversation sont impossibles par construction (un second envoi reste
+// refusé/mis en file par les interjections, lot Q).
+const _activeGenerations = new Map();   // Map<convId, gen>
+
+// Objet génération. `thread` est SON tableau de travail : les hooks le mutent
+// au lieu de currentThread, et persistGeneration l'écrit dans gen.convId.
+// `spaceId` est figé au démarrage : une génération lancée dans l'Espace X reste
+// dans le référentiel de X même si l'utilisateur bascule sur Y (herméticité,
+// piège 18 — exploité par T-1c pour le contexte d'exécution des outils).
+function createGeneration(convId, thread, opts) {
+  const o = opts || {};
+  return {
+    id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    convId,
+    spaceId: activeSpaceId,
+    thread,
+    model: o.model || '',
+    serverName: o.serverName || '',
+    reasoningEffort: o.reasoningEffort || '',
+    convModel: currentConvModel,                    // override de conv, figé (persistGeneration ne lit pas l'écran)
+    convReasoningEffort: currentConvReasoningEffort,
+    needTitle: needTitle,                           // besoin de titrage figé au démarrage (piège 9 : ne pas lire l'écran à la fin)
+    abort: null,                                    // AbortController du stream courant (posé par streamCompletion)
+    status: 'waiting',                              // waiting | streaming | tools | done | error | aborted
+    startedAt: Date.now(),
+    // ── Présentation (lot T-1b) ──────────────────────────────────────────
+    // `wrap` : bulle assistant en cours DANS LE DOM, ou null si la génération
+    // ne possède pas l'écran. Jamais lu pour construire une entrée de thread —
+    // les données ne dépendent jamais de l'affichage (invariant du lot).
+    wrap: null,
+    // Texte partiel du tour COURANT. Sans lui, il ne vivrait que dans le DOM
+    // (body.dataset.raw) : c'est la seule donnée réellement perdue par un
+    // détachement, et donc la seule chose que le rebranchement ne pourrait pas
+    // restituer. Remis à zéro à chaque frontière de tour.
+    partialContent: '',
+    partialReasoning: '',
+  };
+}
+
+// LE prédicat de possession d'écran (lot T-1b). Un seul, jamais réécrit
+// localement — même discipline que spaceConvIds (piège 18) et generationFor.
+// TOUS les effets d'écran des hooks passent par lui.
+//
+// Invariant du lot : les hooks se scindent en deux temps, dans cet ordre —
+//   (a) muter gen.thread            → TOUJOURS
+//   (b) refléter dans le DOM        → seulement si genOwnsScreen(gen)
+// et (a) ne doit JAMAIS dépendre de (b).
+function genOwnsScreen(gen) {
+  return !!gen && gen.convId === currentConvId;
+}
+
+function registerGeneration(gen) {
+  _activeGenerations.set(gen.convId, gen);
+  startGenerationRelay(gen.convId);
+  // Les deux surfaces à rafraîchir (lot T-2) : la liste de gauche (badge de
+  // conversation) et le sélecteur d'espaces + hamburger (agrégats).
+  renderConvList();
+  syncSpaceUI();
+}
+
+function unregisterGeneration(gen) {
+  // Ne retirer que SI c'est bien cette génération : une conversation supprimée
+  // puis recréée, ou un enchaînement rapide, ne doit pas faire sauter la
+  // génération d'une autre.
+  if (_activeGenerations.get(gen.convId) === gen) _activeGenerations.delete(gen.convId);
+  stopGenerationRelay(gen.convId);
+  // « Non lu » (lot T-2) : la génération se termine alors que l'utilisateur
+  // regarde AILLEURS. Le prédicat d'écran est genOwnsScreen, jamais un test
+  // réécrit ici — et il est évalué APRÈS le retrait du registre, pour que
+  // convBadgeState bascule bien sur 'unread' et pas sur un 'working' résiduel.
+  if (!genOwnsScreen(gen)) markConvUnread(gen.convId);
+  renderConvList();
+  syncSpaceUI();
+  // Actions de synchro multi-onglets différées (lot J, J3) : rejouées quand
+  // PLUS AUCUNE génération ne tourne. Le drain vivait dans setSending(false)
+  // avant T-1a ; il ne pouvait plus y rester, `sending` ne parlant que de
+  // l'écran (un simple changement de conversation le fait basculer alors qu'une
+  // génération mute encore son thread). La condition est bien « aucune
+  // génération », pas « pas celle-ci » : une action différée relit le storage.
+  if (!_activeGenerations.size) drainPendingSync();
+}
+
+// LE prédicat de génération en vol. Un seul, jamais réécrit localement (même
+// discipline que spaceConvIds, piège 18) : tous les call-sites qui demandent
+// « cette conv est-elle occupée ? » passent par ici.
+function generationFor(convId) {
+  return convId == null ? null : (_activeGenerations.get(convId) || null);
+}
+
+function isGenerating(convId) {
+  return !!generationFor(convId);
+}
+
+// ── Badges d'activité (lot T-2) ─────────────────────────────────────────────
+// « Non lu » = une génération s'est terminée pendant que l'utilisateur
+// regardait AILLEURS, et il n'est pas revenu depuis. VOLATILE par décision
+// (B1) : un Set en mémoire, vidé au reload — exactement la portée de survie des
+// générations elles-mêmes (T-1 décision 1). Aucune persistance, aucune clé
+// localStorage, aucun champ sur la conversation : une génération ne survit pas
+// au reload, son « non lu » non plus.
+const _unreadConvs = new Set();
+
+// Marquage à la FIN d'une génération, et seulement si l'écran ne la possédait
+// pas : une réponse qu'on a regardée arriver n'est pas « non lue ». Le prédicat
+// d'écran reste genOwnsScreen (T-1), jamais un test réécrit ici.
+function markConvUnread(convId) {
+  if (convId == null) return;
+  _unreadConvs.add(convId);
+}
+
+// B2 : l'ouverture de la conversation SUFFIT à marquer comme lu. Pas de
+// sémantique par message ni de « bas du fil atteint » — MIAOU n'en a nulle part
+// ailleurs, en introduire une ici serait disproportionné.
+function markConvRead(convId) {
+  if (convId == null) return false;
+  return _unreadConvs.delete(convId);
+}
+
+// LE prédicat d'état de badge d'une conversation. Un seul, jamais réécrit
+// localement (même discipline que spaceConvIds, piège 18) : liste de gauche,
+// agrégation par Espace et agrégation hamburger en dérivent toutes.
+// L'ordre compte : une conversation qui a du non-lu ET qui regénère affiche
+// 'working' — l'activité en cours est l'information la plus fraîche.
+function convBadgeState(convId) {
+  if (isGenerating(convId)) return 'working';
+  return _unreadConvs.has(convId) ? 'unread' : null;
+}
+
+// Agrégation par Espace — LECTURE CROSS-SPACE ASSUMÉE (deuxième exception
+// sanctionnée au piège 18, cf. CLAUDE.md et docs/spaces.md). Portée strictement
+// bornée : on expose l'EXISTENCE d'une activité et le NOM de l'Espace, jamais
+// un titre de conversation ni un contenu. Un Espace reste hermétique quant à ce
+// qu'il contient ; on ne divulgue que le fait qu'il travaille.
+//
+// La source de l'appartenance est `gen.spaceId` (figé au démarrage de la
+// génération, T-1) pour le working, et le spaceId de la conversation pour
+// l'unread — jamais un filtre `c.spaceId === x` réécrit localement.
+function spaceBadgeState(spaceId) {
+  const states = [];
+  for (const gen of _activeGenerations.values()) {
+    if (gen.spaceId === spaceId) states.push('working');
+  }
+  if (_unreadConvs.size) {
+    const convs = listAllConversations();
+    for (const c of convs) {
+      if (c.spaceId === spaceId && _unreadConvs.has(c.id)) states.push('unread');
+    }
+  }
+  return resolveActivityBadge(states);
+}
+
+// Agrégat de TOUS les Espaces sauf ceux exclus. Deux appelants, deux portées :
+//  - sélecteur d'espaces REPLIÉ → exclut l'Espace actif : il répond « y a-t-il
+//    de l'activité AILLEURS ? » (le détail par Espace se lit au dépliage).
+//  - hamburger → n'exclut RIEN (B6) : sidebar repliée, l'utilisateur ne voit ni
+//    la liste des conversations ni le sélecteur, c'est le SEUL indicateur
+//    disponible. Le restreindre à l'ailleurs laisserait muette une conversation
+//    active de l'Espace courant, précisément celle qu'il ne peut pas voir.
+function aggregateBadgeState(excludeSpaceId) {
+  const states = [];
+  for (const gen of _activeGenerations.values()) {
+    if (excludeSpaceId != null && gen.spaceId === excludeSpaceId) continue;
+    states.push('working');
+  }
+  if (_unreadConvs.size) {
+    for (const c of listAllConversations()) {
+      if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
+      if (_unreadConvs.has(c.id)) states.push('unread');
+    }
+  }
+  return resolveActivityBadge(states);
+}
+
+// ── Rebranchement / débranchement de l'écran (lot T-1b) ─────────────────────
+// Le fil d'une génération en vol se termine par les acks du tour courant SANS
+// l'assistant qui les clôt (il n'existe qu'à onFinal). renderThread les rendrait
+// donc en blocs autonomes (sa branche « acks orphelins »), c'est-à-dire nus,
+// hors bulle — divergence live/reload. On sépare donc le fil en deux :
+// tout ce qui précède la queue d'acks part au rendu normal, la queue est
+// replacée dans la bulle vive. Pur, testable QuickJS.
+function splitTrailingAcks(thread) {
+  const t = thread || [];
+  let i = t.length;
+  while (i > 0 && isAckRole(t[i - 1].role)) i--;
+  return { body: t.slice(0, i), trailingAcks: t.slice(i) };
+}
+
+// Re-rendu du fil AFFICHÉ, conscient d'une génération en vol (lot T-1b). Tout
+// appelant qui reconstruit `#thread` de fond en comble (bascule de coloration,
+// réglages, édition/troncature de message) DOIT passer par ici : un
+// renderThread(currentThread) nu détruirait la bulle vive et laisserait
+// gen.wrap pointer sur un nœud orphelin — le stream continuerait d'écrire dans
+// le vide jusqu'à la fin du tour, sans erreur visible.
+function rerenderCurrentThread() {
+  const gen = generationFor(currentConvId);
+  if (gen) attachGenerationToScreen(gen);
+  else renderThread(currentThread);
+}
+
+// Rebranche l'affichage sur une génération en vol. Appelé par openConversation
+// quand la conversation ouverte génère.
+//
+// Le rendu de l'historique déjà produit passe par renderThread — LE MÊME CHEMIN
+// QUE LE RELOAD, jamais une reconstruction dédiée : c'est l'invariant live=reload
+// du lot Q qui paie ici (la piste « chemin de rendu spécial » avait produit le
+// .ack-shell et une divergence à rustiner).
+function attachGenerationToScreen(gen) {
+  if (!gen) return;
+  const split = splitTrailingAcks(gen.thread);
+  renderThread(split.body);
+  // Bulle vive pour la suite : elle héberge les acks du tour courant puis
+  // recevra le stream. Même geste qu'au démarrage d'un échange.
+  const wrap = startAssistantMessage(gen.model, gen.serverName);
+  gen.wrap = wrap;
+  for (const a of split.trailingAcks) placeToolAck(wrap, a, false);
+  // Restitution de l'état courant du tour. Le patienteur (posé par
+  // startAssistantMessage) tient déjà l'état WAITING/TOOLS ; s'il y a du texte
+  // partiel, streamInto le remplace (il coupe le patienteur lui-même).
+  if (gen.partialReasoning) flushReasoning(wrap, gen.partialReasoning);
+  if (gen.partialContent) streamInto(wrap, gen.partialContent);
+  scrollBottom(true);
+}
+
+// Débranche une génération de l'écran (l'utilisateur la quitte). Ne coupe RIEN
+// de la génération elle-même : surtout pas d'abort. Le patienteur appartient à
+// l'écran (piège 13) et suit la bulle qui disparaît.
+function detachGenerationFromScreen(gen) {
+  if (!gen) return;
+  gen.wrap = null;
+  stopWaiter();
+  cancelStreamRender();
+  cancelReasoningRender();
+}
+
+// Persistance d'une génération : même corps que persistCurrent, mais lit
+// gen.thread et écrit dans gen.convId — jamais l'état d'écran. C'est LE point
+// qui rend une génération détachée inoffensive : sans lui, une génération sur A
+// écrirait le thread de A dans la conversation affichée B (corruption franche).
+function persistGeneration(gen) {
+  if (!gen || !gen.convId) return;
+  const conv = loadConversation(gen.convId);
+  if (!conv) return;   // conversation supprimée pendant la génération : ne pas la ressusciter
+  conv.messages = projectThreadToMessages(gen.thread);
+  if (!conv.timestamp) conv.timestamp = Date.now();
+  conv.updatedAt = Date.now();
+  if (gen.convModel) conv.model = gen.convModel; else delete conv.model;
+  if (gen.convReasoningEffort) conv.reasoningEffort = gen.convReasoningEffort; else delete conv.reasoningEffort;
+  saveConversation(conv);
+  renderConvList();
+}
+
 // ── Résumé sur inactivité ────────────────────────────────────────────────────
 // Durée d'inactivité utilisateur avant déclenchement d'un résumé de la
 // conversation courante (si substance). Réarmée à chaque activité (frappe
@@ -89,7 +352,9 @@ function armIdleSummaryTimer() {
   if (_idleSummaryTimer) clearTimeout(_idleSummaryTimer);
   _idleSummaryTimer = setTimeout(() => {
     _idleSummaryTimer = null;
-    if (sending) return;   // pas de résumé pendant un stream en cours
+    // Ne jamais résumer une conversation qui génère — y compris une génération
+    // DÉTACHÉE (`sending` ne parle plus que de l'écran depuis T-1a, il ne
+    // suffirait plus). summarizeIfNeeded re-vérifie de son côté.
     summarizeIfNeeded(currentConvId);
   }, IDLE_SUMMARY_MS);
 }
@@ -392,6 +657,11 @@ async function openConversation(id, reveal) {
   if (switching) {
     announceConvClosed(currentConvId);   // quitte l'ancienne (no-op si null)
     resetPeerState();                    // repart d'un set vide pour la nouvelle
+    // On quitte une conversation qui génère (lot T-1b) : la génération perd
+    // l'écran mais CONTINUE. Débranchement AVANT l'await : les hooks doivent
+    // cesser d'écrire dans un DOM qui va être vidé dès maintenant, pas
+    // seulement après le chargement des ressources de la conv d'arrivée.
+    detachGenerationFromScreen(generationFor(currentConvId));
   }
   currentConvId = id;
   await loadConversationResources(id);   // peuple le session cache avant renderThread
@@ -402,13 +672,37 @@ async function openConversation(id, reveal) {
   // entre-temps (réponse d'un pair persistée après -ended).
   const conv = loadConversation(id);
   if (!conv) return;   // supprimée pendant l'await
-  currentThread = projectConvMessages(conv);
+  // Rebranchement sur une génération en vol (lot T-1a) — lu APRÈS l'await, comme
+  // le reste (invariant read-after-await, piège 24) : une génération peut avoir
+  // démarré ou fini pendant loadConversationResources.
+  //
+  // Si cette conversation génère, son thread de travail (gen.thread) est en
+  // AVANCE sur le storage : l'unique écriture d'un échange a lieu dans
+  // onFinal/onHalt, donc les acks et bulles du tour courant n'y sont pas encore.
+  // Relire le storage effacerait visuellement le tour en cours. On adopte donc
+  // la MÊME référence de tableau, pas une copie : les mutations des hooks
+  // restent directement visibles par renderThread, exactement comme si la
+  // génération n'avait jamais quitté l'écran.
+  const gen = generationFor(id);
+  currentThread = gen ? gen.thread : projectConvMessages(conv);
   currentConvModel = conv.model || '';
   currentConvReasoningEffort = conv.reasoningEffort || '';
   needTitle = !conv.title;   // conversation rouverte sans titre (streaming arrêté, etc.) : retitrer à la reprise
   setTitle(conv.title || '');
-  renderThread(currentThread);
+  // Rebranchement de l'AFFICHAGE (lot T-1b) : attachGenerationToScreen rend
+  // l'historique par renderThread — le même chemin que le reload — puis rouvre
+  // une bulle vive pour la suite du tour en cours. Sans génération, rendu normal.
+  // B2 (lot T-2) : ouvrir la conversation SUFFIT à la marquer lue. Avant
+  // renderConvList, pour que la liste soit rendue une seule fois, déjà à jour.
+  markConvRead(id);
+  rerenderCurrentThread();
   renderConvList();
+  syncSpaceUI();
+  // L'écran passe d'une conv qui génère à une qui ne génère pas (ou l'inverse) :
+  // composer, bouton stop et mode file des interjections suivent la conv
+  // AFFICHÉE, pas « une génération tourne quelque part ». Sans cet appel, le
+  // composer resterait en mode « stop » sur une conversation inerte.
+  setSending(!!gen);
   // Ouverture depuis la palette (recherche de conversation) : ramener la conv
   // fraîchement chargée dans la liste visible, même sidebar masquée (reveal),
   // centrée pour ne pas la coller au bord.
@@ -425,7 +719,14 @@ async function openConversation(id, reveal) {
 function resetToEmpty() {
   // Soft-lock (J4) : on quitte la conv affichée (le cas échéant) vers l'accueil.
   if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
+  // L'écran part à l'accueil : une génération en vol sur la conv quittée perd
+  // sa bulle (vidée juste en dessous) mais continue (lot T-1b).
+  detachGenerationFromScreen(generationFor(currentConvId));
   currentConvId = null;
+  // L'accueil ne génère jamais : le composer doit sortir du mode « stop » même
+  // si la conversation qu'on quitte, elle, génère encore (symétrique du
+  // setSending d'openConversation — sans lui le bouton reste un stop inerte).
+  setSending(false);
   currentThread = [];
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
   currentConvReasoningEffort = '';   // nouvelle conversation → reasoning_effort par défaut
@@ -439,6 +740,11 @@ function resetToEmpty() {
   setTitle('');
   syncConvDownloadBtn();
   renderConvList();
+  // Le compteur d'agents dépend de « la conv affichée génère-t-elle ? »
+  // (lot T-2bis) : partir à l'accueil fait passer une génération unique hors
+  // écran, donc de masquée à affichée. syncSpaceUI n'est pas appelé ici (le
+  // Space ne change pas), d'où l'appel direct.
+  syncAgentCount();
   syncModelUI();
   syncReasoningUI();
   _lastContextManifest = null;
@@ -580,7 +886,8 @@ function deleteConv(id) {
 //
 // Queue pendant génération locale (brief §4.3, piège documenté) : re-hydrater la
 // conv affichée pendant qu'une génération locale mute currentThread l'écraserait.
-// On diffère alors l'action ; drainPendingSync() la rejoue après setSending(false).
+// On diffère alors l'action ; drainPendingSync() la rejoue à la fin de la
+// DERNIÈRE génération en vol (unregisterGeneration, T-1a — plus setSending).
 
 let _pendingSyncActions = [];   // actions différées (re-hydratation) pendant une génération locale
 
@@ -677,7 +984,10 @@ function applySyncDecision(d) {
       // différer (ne jamais écraser currentThread en pleine mutation). Sinon
       // re-hydrater par le chemin byte-stable (openConversation, piège 17). Le
       // draft du composer n'est pas touché (renderThread ne lit que #thread).
-      if (sending) { _queueSyncAction(d); return; }
+      // Depuis T-1a : « une génération quelconque », pas `sending` (qui ne parle
+      // que de l'écran) — une génération détachée mute son propre thread, qui
+      // peut être celui de la conv affichée.
+      if (_activeGenerations.size) { _queueSyncAction(d); return; }
       if (currentConvId) openConversation(currentConvId);
       return;
 
@@ -692,7 +1002,8 @@ function applySyncDecision(d) {
       // la suppression (J2) : ne rien re-supprimer, juste réagir côté UI, comme
       // le fait deleteConv local sur la conv courante. (Notice riche : reléguée
       // à l'infra bandeau de J4 ; ici retour à l'accueil, non destructif.)
-      if (sending) { _queueSyncAction(d); return; }
+      // Même prédicat que 'rehydrate' depuis T-1a (cf. ci-dessus).
+      if (_activeGenerations.size) { _queueSyncAction(d); return; }
       resetToEmpty();
       return;
 
@@ -715,7 +1026,7 @@ function applySyncDecision(d) {
       // recharger ses ressources et re-render (vignettes d'attachments à jour).
       invalidateResourceCache(d.ids);
       if (!sending && d.convId != null && d.convId === currentConvId) {
-        loadConversationResources(currentConvId).then(function() { renderThread(currentThread); });
+        loadConversationResources(currentConvId).then(function() { rerenderCurrentThread(); });
       }
       return;
 
@@ -796,7 +1107,11 @@ function applySyncDecision(d) {
         // le trou quel que soit l'ordre d'arrivée des messages. Différé si une
         // génération LOCALE est en vol (drainé par setSending(false), J3).
         if (currentConvId && d.convId === currentConvId) {
-          if (sending) { _queueSyncAction({ action: 'rehydrate', convId: currentConvId }); }
+          // Différer tant qu'une génération LOCALE quelconque est en vol : la
+          // rehydratation réassigne currentThread, ce qui débrancherait une
+          // génération détachée de son thread de travail si elle porte sur cette
+          // même conversation, et rejouerait un rendu obsolète sinon.
+          if (_activeGenerations.size) { _queueSyncAction({ action: 'rehydrate', convId: currentConvId }); }
           else openConversation(currentConvId);
         }
       }
@@ -869,8 +1184,9 @@ function _queueSyncAction(d) {
   _pendingSyncActions.push(d);
 }
 
-// Drain appelé après la fin d'une génération locale (setSending(false), ui.js).
-// Rejoue les actions différées maintenant que currentThread n'est plus muté.
+// Drain appelé quand la dernière génération locale se termine
+// (unregisterGeneration, T-1a). Rejoue les actions différées maintenant qu'aucun
+// thread n'est plus muté.
 function drainPendingSync() {
   if (!_pendingSyncActions.length) return;
   const actions = _pendingSyncActions;
@@ -880,39 +1196,59 @@ function drainPendingSync() {
 
 // ── Readonly relay + heartbeat (J5) ──────────────────────────────────────────
 // Un onglet qui génère sur la conv X émet conv-generation-started(X) au début et
-// conv-generation-ended(X) à la fin (tous chemins : succès/erreur/abort, via le
-// setSending(false) du finally). Un heartbeat ré-émet -started toutes les
+// conv-generation-ended(X) à la fin (tous chemins : succès/erreur/abort, via
+// register/unregisterGeneration — depuis T-1a un onglet peut générer sur
+// PLUSIEURS convs à la fois, chacune avec son propre cycle et son heartbeat). Un heartbeat ré-émet -started toutes les
 // SYNC_HEARTBEAT_MS ; les récepteurs auto-libèrent le readonly s'ils ne
 // reçoivent pas de heartbeat en SYNC_HEARTBEAT_TTL_MS (crash de l'émetteur).
 // Un onglet ouvert PENDANT une génération se verrouille au prochain heartbeat.
 const SYNC_HEARTBEAT_MS = 5000;        // ré-émission de -started (A5 : N = 5 s)
 const SYNC_HEARTBEAT_TTL_MS = 10000;   // auto-release récepteur sans heartbeat (2×N)
 
-let _genRelayConvId = null;   // conv sur laquelle CET onglet génère (null si aucune)
-let _genHeartbeatTimer = null;
+// Un heartbeat PAR CONVERSATION en génération (lot T-1a, arbitrage A3). Avant
+// T-1, un scalaire suffisait : un onglet ne générait que sur la conv affichée.
+// Avec N générations concurrentes, un scalaire ferait émettre le -ended de la
+// première sur la conv de la seconde — les pairs déverrouilleraient une conv
+// encore en génération. Une Map préserve le format d'enveloppe du lot J
+// inchangé (liste fermée de types de docs/multitab-sync.md non touchée), ce qui
+// est l'avantage décisif sur un heartbeat unique portant la liste des convs.
+const _genRelayTimers = new Map();   // Map<convId, timerId>
 
-// Démarre le relais : émet -started + arme le heartbeat. convId capturé =
-// currentConvId au moment du setSending(true) (on génère sur la conv affichée).
+// Démarre le relais pour UNE conversation : émet -started + arme son heartbeat.
+// Appelé depuis le cycle de vie de la génération (registerGeneration), plus
+// depuis setSending — qui n'est plus qu'un reflet d'écran.
 function startGenerationRelay(convId) {
   if (convId == null) return;
-  _genRelayConvId = convId;
+  if (_genRelayTimers.has(convId)) return;   // déjà relayée : ne pas doubler le ticker
   syncPost('conv-generation-started', { convId: convId, tabId: syncTabId() });
-  if (_genHeartbeatTimer) { clearInterval(_genHeartbeatTimer); }
-  _genHeartbeatTimer = setInterval(function () {
-    if (_genRelayConvId == null) return;   // course : arrêt entre deux ticks
-    syncPost('conv-generation-started', { convId: _genRelayConvId, tabId: syncTabId() });
+  const timer = setInterval(function () {
+    if (!_genRelayTimers.has(convId)) return;   // course : arrêt entre deux ticks
+    syncPost('conv-generation-started', { convId: convId, tabId: syncTabId() });
   }, SYNC_HEARTBEAT_MS);
+  _genRelayTimers.set(convId, timer);
 }
 
-// Arrête le relais : coupe le heartbeat + émet -ended. Idempotent (double appel
-// sans effet). Discipline deux-timers (piège 13) : ne touche QUE _genHeartbeatTimer,
-// jamais les timers du patienteur (startWaiter/stopWaiter).
-function stopGenerationRelay() {
-  if (_genHeartbeatTimer) { clearInterval(_genHeartbeatTimer); _genHeartbeatTimer = null; }
-  if (_genRelayConvId != null) {
-    syncPost('conv-generation-ended', { convId: _genRelayConvId, tabId: syncTabId() });
-    _genRelayConvId = null;
-  }
+// Arrête le relais d'UNE conversation : coupe son heartbeat + émet -ended.
+// Idempotent (second appel sans effet : la clé a disparu du registre, aucun
+// -ended n'est ré-émis). Discipline deux-timers (piège 13) : ne touche QUE les
+// timers de relais, jamais ceux du patienteur (startWaiter/stopWaiter).
+function stopGenerationRelay(convId) {
+  if (convId == null) return;
+  const timer = _genRelayTimers.get(convId);
+  if (timer === undefined) return;   // pas (ou plus) relayée : rien à émettre
+  clearInterval(timer);
+  _genRelayTimers.delete(convId);
+  syncPost('conv-generation-ended', { convId: convId, tabId: syncTabId() });
+}
+
+// Libère TOUS les pairs (lot T-1a, arbitrage A5) — appelé au départ de l'onglet
+// (pagehide/beforeunload), où les générations meurent de toute façon avec la
+// page (portée de survie). Idempotence EXPLICITE, pas supposée : le handler est
+// branché sur les deux événements et peut tirer deux fois ; on itère sur une
+// copie des clés et stopGenerationRelay vide le registre au passage, donc un
+// second appel trouve un registre vide et ne ré-émet aucun -ended.
+function stopAllGenerationRelays() {
+  for (const convId of Array.from(_genRelayTimers.keys())) stopGenerationRelay(convId);
 }
 
 // Crée la conversation à la volée au premier envoi (pas avant). Stampée dans
@@ -928,10 +1264,15 @@ function ensureConversation() {
   renderConvList();
 }
 
-function persistCurrent() {
-  if (!currentConvId) return;
-  const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
-  conv.messages = currentThread.map(m => {
+// Pur : projette un thread de travail (currentThread ou gen.thread) vers la
+// forme persistée (conv.messages). Réciproque de projectConvMessages. Extrait
+// du corps de persistCurrent (lot T-1a) pour être partagé avec
+// persistGeneration : les deux chemins d'écriture — écran et génération
+// détachée — doivent produire des messages STRICTEMENT identiques, sinon une
+// conversation persistée par une génération de fond divergerait de la même
+// conversation persistée depuis l'écran. Une seule formule, testable QuickJS.
+function projectThreadToMessages(thread) {
+  return (thread || []).map(m => {
     if (isAckRole(m.role)) {
       // Whitelist unique ACK_COPY_FIELDS (utils.js) — ne plus jamais énumérer
       // les champs à la main ici.
@@ -947,6 +1288,12 @@ function persistCurrent() {
     if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
     return o;
   });
+}
+
+function persistCurrent() {
+  if (!currentConvId) return;
+  const conv = loadConversation(currentConvId) || { id: currentConvId, timestamp: Date.now() };
+  conv.messages = projectThreadToMessages(currentThread);
   if (!conv.timestamp) conv.timestamp = Date.now();
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
@@ -1011,7 +1358,7 @@ function onSaveSettings() {
   syncModelUI();        // labels + visibilité du sélecteur (selon cache déjà chargé)
   syncReasoningUI();     // visibilité + valeur du sélecteur de raisonnement
   prefetchModels();     // (re)charge la liste si besoin, puis re-sync
-  renderThread(currentThread);   // ré-applique/retire la coloration
+  rerenderCurrentThread();   // ré-applique/retire la coloration
   syncContextCounter();   // fenêtre de contexte modifiée : recalcule occupation/jauge
   closeSettings();
 }
@@ -1579,8 +1926,20 @@ function removeComposerAttachment(attId) {
 // ── Flux d'envoi ────────────────────────────────────────────────────────────
 // Bouton unique du composer : envoie, ou interrompt si un stream est en cours.
 function onSendBtn() {
-  if (sending) abortStream();
+  // Abort CIBLÉ (lot T-1a) : le bouton stop du composer n'interrompt que la
+  // génération de la conversation AFFICHÉE. Les générations détachées (autres
+  // conversations, autres Espaces) continuent — c'est tout l'objet du lot.
+  if (sending) abortStream(currentConvId);
   else sendMessage();
+}
+
+// Interrompt la génération d'UNE conversation (si elle en a une). Le contenu
+// déjà reçu est conservé (pas de rollback) ; la boucle d'outils ne relance pas
+// de tour (piège 10). Vit dans main.js et non api.js : c'est le registre de
+// générations qui détient les controllers depuis T-1a.
+function abortStream(convId) {
+  const gen = generationFor(convId);
+  if (gen && gen.abort) gen.abort.abort();
 }
 
 // Résout une saisie utilisateur (littéral) en payload d'envoi. CHEMIN UNIQUE de
@@ -2013,9 +2372,13 @@ function continueTruncated(btn) {
 // SEULEMENT au tour d'attache »). Filet supplémentaire au tout début de
 // dispatchSend (voir plus bas) pour le cas plus rare d'une exception réseau
 // qui court-circuite onFinal.
-function rewriteAttachedUserMessage(idx) {
-  if (idx < 0 || idx >= currentThread.length) return;
-  const m = currentThread[idx];
+// `thread` explicite depuis T-1a : cette réécriture appartient à la génération
+// qui vient de terminer son tour, pas à l'écran. Lire currentThread ici ferait
+// collapser le message d'une AUTRE conversation dès que l'utilisateur navigue
+// pendant la génération.
+function rewriteAttachedUserMessage(thread, idx) {
+  if (idx < 0 || idx >= thread.length) return;
+  const m = thread[idx];
   if (m.role !== 'user' || !Array.isArray(m.content)) return;
   m.content = collapseAttachedMessageContent(m.content, m.attachments);
 }
@@ -2029,21 +2392,35 @@ async function dispatchSend(matches, continuation) {
   // base64. Le dernier message user (tour courant) n'est jamais concerné ici :
   // s'il porte des attachments fraîchement attachés, c'est lui qui doit partir
   // en parts CE tour-ci.
-  {
-    const lastUserAt = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-    for (let i = 0; i < currentThread.length; i++) {
-      if (i !== lastUserAt) rewriteAttachedUserMessage(i);
-    }
-  }
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const serverName = (activeApiServer() || {}).name || '';   // provenance, persistée sur chaque message assistant
   const reasoningEffort = activeReasoningEffort();
+
+  // Génération de cet échange (lot T-1a). À partir d'ici, TOUS les hooks mutent
+  // `gen.thread` et persistent via persistGeneration(gen) — jamais currentThread
+  // / persistCurrent, qui suivent l'ÉCRAN et pointeraient sur une autre
+  // conversation dès que l'utilisateur navigue. Le thread de la génération EST
+  // celui de l'écran (même référence, pas une copie) tant que la conversation
+  // reste affichée : les mutations des hooks restent donc directement visibles
+  // par renderThread, exactement comme avant le lot.
+  //
+  // Déclarée AVANT le filet de collapse ci-dessous, qui opère déjà sur
+  // `gen.thread` : l'ordre inverse touchait une TDZ (« Cannot access 'gen'
+  // before initialization ») qui avortait tout envoi.
+  const gen = createGeneration(currentConvId, currentThread, { model, serverName, reasoningEffort });
+  registerGeneration(gen);
+  {
+    const lastUserAt = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+    for (let i = 0; i < gen.thread.length; i++) {
+      if (i !== lastUserAt) rewriteAttachedUserMessage(gen.thread, i);
+    }
+  }
   const sysParts = systemMessageParts();
   const sys = buildSystemMessage(sysParts);
   // Résout les références de ressources ([resource_ref:…]) dans les entry.result
   // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
   // (byte-identique d'un tour à l'autre via session cache) ; binary → descripteur.
-  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
+  const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(gen.thread)));
 
   // Injection éphémère du contexte dynamique (date/heure, modèle, mémoire) +,
   // en sibling, le listing skills autotrigger — en préfixe du dernier message
@@ -2112,7 +2489,7 @@ async function dispatchSend(matches, continuation) {
   // tête de cette fonction a collapsé les messages antérieurs).
   let imageDescriptors;
   {
-    const lastUserMsg = currentThread.reduce((acc, m) => (m.role === 'user' ? m : acc), null);
+    const lastUserMsg = gen.thread.reduce((acc, m) => (m.role === 'user' ? m : acc), null);
     if (lastUserMsg && Array.isArray(lastUserMsg.content) && lastUserMsg.attachments) {
       imageDescriptors = lastUserMsg.attachments
         .filter(a => a && a.kind === 'image')
@@ -2134,19 +2511,22 @@ async function dispatchSend(matches, continuation) {
   // la continue. `prefix` = contenu déjà persisté de ce message ; la bulle
   // existante (`continuation.wrap`) est réutilisée, pas de nouvelle bulle.
   const isContinuation = !!continuation;
-  const prefix = isContinuation ? currentThread[continuation.continueIndex].content : '';
+  const prefix = isContinuation ? gen.thread[continuation.continueIndex].content : '';
 
-  let wrap;
+  // La bulle vive vit sur `gen` depuis T-1b (plus une variable en closure) :
+  // c'est ce qui permet à un détachement de la mettre à null et aux hooks de
+  // tester genOwnsScreen(gen) avant tout effet DOM. Un envoi part toujours de la
+  // conversation affichée, donc on possède l'écran ici.
   if (isContinuation) {
-    wrap = continuation.wrap;
+    gen.wrap = continuation.wrap;
     // Retire le bandeau de troncature au démarrage : la génération reprend,
     // le message n'est plus dans un état "en attente de continuation".
-    const banner = wrap.querySelector('.msg-truncated');
+    const banner = gen.wrap.querySelector('.msg-truncated');
     if (banner) banner.remove();
-    startWaiter(wrap.querySelector('.body'));   // état WAITING, comme startAssistantMessage
+    startWaiter(gen.wrap.querySelector('.body'));   // état WAITING, comme startAssistantMessage
     scrollBottom(true);   // clic "continuer" explicite : toujours suivre
   } else {
-    wrap = startAssistantMessage(model, serverName);
+    gen.wrap = startAssistantMessage(model, serverName);
   }
   // Acks MCP pré-rendus (avant await réseau) : { ack: descripteur brut, entry:
   // entrée currentThread, node: nœud DOM }. Stockés ici pour que onToolAcks
@@ -2159,6 +2539,7 @@ async function dispatchSend(matches, continuation) {
   setSending(true);
   try {
     await runConversation(apiMessages, {
+      gen,   // porteur de l'AbortController du tour (abort ciblé, lot T-1a)
       model,
       reasoningEffort,
       imageDescriptors,   // D5 : descripteurs du tour courant pour la dégradation vision-less
@@ -2168,22 +2549,42 @@ async function dispatchSend(matches, continuation) {
       // pousseraient de nouvelles bulles alors qu'on veut concaténer le texte
       // dans la bulle existante). Cf. h.noTools, api.js/runConversation.
       noTools: isContinuation,
-      onDelta: (full) => streamInto(wrap, isContinuation ? prefix + full : full),
-      onReasoning: (full) => setReasoning(wrap, full),
+      // (a) mémoriser le partiel du tour sur la génération — TOUJOURS : c'est
+      // la seule donnée qui ne vit nulle part ailleurs (le DOM ne survit pas au
+      // détachement), et sans elle le rebranchement mid-stream perdrait le texte
+      // déjà reçu. (b) peindre — seulement si on possède l'écran : sinon
+      // streamInto/setReasoning enfileraient un `wrap` détaché dans leur slot de
+      // throttle partagé, et le timer repeindrait un sous-arbre orphelin (voire
+      // écraserait le rendu de la génération qui, elle, possède l'écran).
+      onDelta: (full) => {
+        gen.partialContent = isContinuation ? prefix + full : full;
+        if (genOwnsScreen(gen)) streamInto(gen.wrap, gen.partialContent);
+      },
+      onReasoning: (full) => {
+        gen.partialReasoning = full;
+        if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
+      },
       onToolTour: (content) => {
+        // Frontière de tour : le partiel accumulé est consommé (soit finalisé
+        // en message, soit abandonné) — le remettre à zéro, sinon un
+        // rebranchement ultérieur ré-afficherait le texte du tour précédent.
+        gen.partialContent = '';
+        gen.partialReasoning = '';
         if (content && content.trim()) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
           const tourTs = Date.now();
           const tourMsg = { role: 'assistant', content, model, ts: tourTs };
           if (serverName) tourMsg.server = serverName;
-          currentThread.push(tourMsg);   // avant finalizeAssistant, cf. onFinal
-          finalizeAssistant(wrap, content);
-          revealMsgTimestamp(wrap, tourTs);
-          persistCurrent();
-          wrap = startAssistantMessage(model, serverName);
-        } else {
-          resetAssistant(wrap);
+          gen.thread.push(tourMsg);   // avant finalizeAssistant, cf. onFinal
+          if (genOwnsScreen(gen)) {
+            finalizeAssistant(gen.wrap, content);
+            revealMsgTimestamp(gen.wrap, tourTs);
+            gen.wrap = startAssistantMessage(model, serverName);
+          }
+          persistGeneration(gen);
+        } else if (genOwnsScreen(gen)) {
+          resetAssistant(gen.wrap);
         }
       },
       // Vidange ANTICIPÉE des acks MCP poussés de manière synchrone par
@@ -2192,10 +2593,11 @@ async function dispatchSend(matches, continuation) {
       // pendant le round-trip réseau (pas seulement après). Les acks des outils
       // internes (synchrones) ne sont jamais ici — ils arrivent dans onToolAcks.
       onEarlyAcks: () => {
+        const owns = genOwnsScreen(gen);
         // Lu avant les insertions DOM ci-dessous : cf. streamInto/finalizeAssistant,
         // sinon isAtBottom() verrait déjà le nouveau contenu et répondrait "faux"
         // même quand l'utilisateur suivait le fil.
-        const follow = isAtBottom();
+        const follow = owns && isAtBottom();
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -2203,8 +2605,11 @@ async function dispatchSend(matches, continuation) {
           // champs d'enrichissement cross-turn, déjà posés si un outil interne
           // précédent a été drainé ici en même temps qu'un MCP.
           const entry = copyAckFields(ack, { role: 'tool-ack' });
-          currentThread.push(entry);
-          const node = placeToolAck(wrap, entry);
+          gen.thread.push(entry);
+          // node null si détachée : earlyRendered garde l'entrée (la rétro-
+          // application d'erreur en onToolAcks porte sur la DONNÉE, elle doit
+          // avoir lieu dans les deux cas), seul le nœud DOM manque.
+          const node = owns ? placeToolAck(gen.wrap, entry) : null;
           earlyRendered.push({ ack, entry, node });
         }
         if (follow) scrollBottom(true);
@@ -2219,6 +2624,9 @@ async function dispatchSend(matches, continuation) {
         // Rétro-application de l'état d'erreur sur les acks MCP déjà rendus : après
         // l'await réseau, callRemoteTool a pu poser ack.error = true sur le descripteur
         // brut. On met à jour l'entrée currentThread et le nœud DOM si présent.
+        // La mutation de `entry` (donnée) a lieu dans TOUS les cas — c'est elle
+        // qui est persistée et rendue au reload. Le nœud DOM est null si la
+        // génération était détachée au moment de l'ack : rien à rétro-appliquer.
         for (const { ack, entry, node } of earlyRendered) {
           if (ack.error && !entry.error) {
             entry.error = true;
@@ -2234,8 +2642,9 @@ async function dispatchSend(matches, continuation) {
         }
         earlyRendered = [];
 
+        const owns = genOwnsScreen(gen);
         // Lu avant les insertions DOM ci-dessous, même raison que onEarlyAcks.
-        const follow = isAtBottom();
+        const follow = owns && isAtBottom();
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -2243,15 +2652,17 @@ async function dispatchSend(matches, continuation) {
           // champs d'enrichissement cross-turn (posés par updateLastPendingToolAck
           // via le hook onEnrichLastAck, après exécution de chaque outil interne).
           const entry = copyAckFields(ack, { role: 'tool-ack' });
-          currentThread.push(entry);
-          placeToolAck(wrap, entry);
+          gen.thread.push(entry);
+          if (owns) placeToolAck(gen.wrap, entry);
         }
         // Blocs NON-text renvoyés par un outil distant (image/resource/binaire) :
         // rendus DANS la bulle courante via la cascade D8, purement éphémères —
-        // jamais poussés dans currentThread ni persistés (cf. D8).
+        // jamais poussés dans currentThread ni persistés (cf. D8). Une génération
+        // détachée les PERD (ils ne sont ni persistés ni reconstructibles) : c'est
+        // la contrepartie assumée de leur nature éphémère, cohérente avec D8.
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
-        if (blocks.length) placeToolBlocks(wrap, blocks);
+        if (owns && blocks.length) placeToolBlocks(gen.wrap, blocks);
         if (follow) scrollBottom(true);
 
         // Recalcul MI-ÉCHANGE (pas seulement en fin de tour) : un tour d'outils
@@ -2264,9 +2675,15 @@ async function dispatchSend(matches, continuation) {
         // terminé — l'utilisateur ne pouvait pas réagir avant d'avoir déjà
         // saturé le contexte. midTurn=true : le drawer distingue ce total
         // encore provisoire d'un total de fin d'échange stable.
-        recomputeLastContextManifest(matches, true);
-        applyUsageToLastManifest(usage);
-        syncContextCounter();
+        // Effets d'ÉCRAN : le manifeste de contexte affiché décrit l'envoi de la
+        // conversation AFFICHÉE. Une génération détachée qui les déclencherait
+        // ferait afficher le contexte d'une autre conversation dans la pilule et
+        // le drawer.
+        if (owns) {
+          recomputeLastContextManifest(matches, true);
+          applyUsageToLastManifest(usage);
+          syncContextCounter();
+        }
       },
       // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
       // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
@@ -2299,6 +2716,12 @@ async function dispatchSend(matches, continuation) {
       // travail se matérialise SOUS l'interjection), la bulle user apparaît,
       // et un wrap NEUF s'ouvre — l'ancien ne reçoit plus jamais rien.
       onInterjections: async () => {
+        // La file d'interjections est un état d'ÉCRAN (le composer y écrit ce
+        // que l'utilisateur tape en REGARDANT une conversation). Une génération
+        // détachée ne doit donc jamais la drainer : elle injecterait dans SA
+        // conversation des messages destinés à celle qui est affichée — et les
+        // volerait au passage à la génération qui, elle, les attend.
+        if (!genOwnsScreen(gen)) return null;
         const batch = takePendingInterjections();
         if (!batch.length) return null;
         const literal = joinInterjectionLiterals(batch.map(b => b.literal));
@@ -2328,23 +2751,26 @@ async function dispatchSend(matches, continuation) {
         // toucher à un éventuel assistant final réellement vide venu d'ailleurs.
         const tourMsg = { role: 'assistant', content: '', model, ts: tourTs, _acksOnly: true };
         if (serverName) tourMsg.server = serverName;
-        currentThread.push(tourMsg);
-        finalizeAssistant(wrap, '');
-        revealMsgTimestamp(wrap, tourTs);
+        gen.thread.push(tourMsg);
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, '');
+          revealMsgTimestamp(gen.wrap, tourTs);
+        }
 
         // Message user de l'interjection : authentique (jamais _synthetic —
         // l'injection <miaou_context> doit pouvoir le viser), content = ce qui
         // part sur le fil, displayText = littéral. Bulle rendue comme n'importe
         // quel message user envoyé, horodatage compris (exigence du brief).
         const userTs = Date.now();
-        currentThread.push(buildInterjectionEntry(literal, content, userTs));
+        gen.thread.push(buildInterjectionEntry(literal, content, userTs));
         batch.forEach(b => dismissInterjectionChip(b.id, 'up'));
-        appendUserMessage(literal, userTs);
-
         // Wrap neuf : la suite (acks du tour suivant, réponse finale) s'y place ;
         // l'ancien ne reçoit plus jamais rien (invariant lot N préservé : un seul
         // groupe d'acks contigu par bulle assistant).
-        wrap = startAssistantMessage(model, serverName);
+        if (genOwnsScreen(gen)) {
+          appendUserMessage(literal, userTs);
+          gen.wrap = startAssistantMessage(model, serverName);
+        }
         return [{ role: 'user', content }];
       },
       onFinal: (content, reasoning, finishReason, { usage } = {}) => {
@@ -2356,19 +2782,23 @@ async function dispatchSend(matches, continuation) {
           // continuations). 'aborted' (stop manuel pendant la continuation) :
           // le raccord est resté partiel, le flag reste — le bandeau reste et
           // « Continuer » peut reprendre. Seule une fin normale le retire.
-          const m = currentThread[continuation.continueIndex];
+          const m = gen.thread[continuation.continueIndex];
           m.content = prefix + content;
           if (finishReason === 'length' || finishReason === 'aborted') m.truncated = true;
           else delete m.truncated;
           if (reasoning && reasoning.trim()) m.reasoning = joinReasoning(m.reasoning, reasoning);
-          const body = wrap.querySelector('.body');
-          if (body) body.dataset.raw = m.content;
-          finalizeAssistant(wrap, m.content, m.truncated);
-          if (m.reasoning) flushReasoning(wrap, m.reasoning);
-          persistCurrent();
-          recomputeLastContextManifest(matches);
-          applyUsageToLastManifest(usage);
-          syncContextCounter();
+          if (genOwnsScreen(gen)) {
+            const body = gen.wrap.querySelector('.body');
+            if (body) body.dataset.raw = m.content;
+            finalizeAssistant(gen.wrap, m.content, m.truncated);
+            if (m.reasoning) flushReasoning(gen.wrap, m.reasoning);
+          }
+          persistGeneration(gen);
+          if (genOwnsScreen(gen)) {
+            recomputeLastContextManifest(matches);
+            applyUsageToLastManifest(usage);
+            syncContextCounter();
+          }
           setConnDot('ok');
           // Ni maybeTitle() ni nouveau ts : le message garde son horodatage
           // d'origine, la conversation a déjà été titrée (ou pas) à sa création.
@@ -2392,23 +2822,27 @@ async function dispatchSend(matches, continuation) {
         // tour suivant. AVANT de pousser le message assistant : l'index du
         // dernier user est stable tant qu'on n'a rien ajouté après lui.
         {
-          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-          rewriteAttachedUserMessage(lastUserIdx);
+          const lastUserIdx = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(gen.thread, lastUserIdx);
         }
         // Poussé AVANT finalizeAssistant : ce dernier appelle syncConvDownloadBtn(),
         // qui teste currentThread.some(role==='assistant') — sur une conversation
         // fraîche (premier tour), un ordre inversé laisserait le bouton caché
         // malgré la réponse déjà affichée (bug payé : visible seulement après reload).
-        currentThread.push(msg);
-        finalizeAssistant(wrap, content, msg.truncated);
-        revealMsgTimestamp(wrap, ts);
-        if (reasoning && reasoning.trim()) flushReasoning(wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
-        persistCurrent();
-        recomputeLastContextManifest(matches);
-        applyUsageToLastManifest(usage);
-        syncContextCounter();
+        gen.thread.push(msg);
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, content, msg.truncated);
+          revealMsgTimestamp(gen.wrap, ts);
+          if (reasoning && reasoning.trim()) flushReasoning(gen.wrap, reasoning);   // écrit la valeur finale au live (le throttle a pu sauter les derniers tokens)
+        }
+        persistGeneration(gen);
+        if (genOwnsScreen(gen)) {
+          recomputeLastContextManifest(matches);
+          applyUsageToLastManifest(usage);
+          syncContextCounter();
+        }
         setConnDot('ok');
-        maybeTitle();
+        maybeTitle(gen);
       },
       onHalt: (leadIn, question, { usage } = {}) => {
         // Fork B (brief §4) : la question (+ lead-in éventuel) devient un message
@@ -2418,29 +2852,39 @@ async function dispatchSend(matches, continuation) {
         // Réécriture parts→descripteur (D2) : la halte termine aussi le tour
         // pour le message user qui a pu porter des attachments.
         {
-          const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-          rewriteAttachedUserMessage(lastUserIdx);
+          const lastUserIdx = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+          rewriteAttachedUserMessage(gen.thread, lastUserIdx);
         }
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const haltTs = Date.now();
         const haltMsg = { role: 'assistant', content: text, model, ts: haltTs };
         if (serverName) haltMsg.server = serverName;
-        currentThread.push(haltMsg);   // avant finalizeAssistant, cf. onFinal
-        finalizeAssistant(wrap, text);
-        revealMsgTimestamp(wrap, haltTs);
-        persistCurrent();
-        recomputeLastContextManifest(matches);
-        applyUsageToLastManifest(usage);
-        syncContextCounter();
+        gen.thread.push(haltMsg);   // avant finalizeAssistant, cf. onFinal
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, text);
+          revealMsgTimestamp(gen.wrap, haltTs);
+        }
+        persistGeneration(gen);
+        if (genOwnsScreen(gen)) {
+          recomputeLastContextManifest(matches);
+          applyUsageToLastManifest(usage);
+          syncContextCounter();
+          // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
+          // ne porte que les actions. Accepter/Rejeter envoient « Oui »/« Non » par
+          // le même chemin qu'une saisie ; l'overlay se lève à la résolution.
+          // Réservé à l'écran : la confirmation est un overlay MODAL, et
+          // sendUserText part sur la conversation AFFICHÉE — l'ouvrir depuis une
+          // génération détachée demanderait à l'utilisateur de répondre pour une
+          // conversation qu'il ne regarde pas, et sa réponse partirait ailleurs.
+          // La question reste dans le fil (message assistant persisté ci-dessus) :
+          // revenir sur la conversation la montre, et y répondre reprend le fil.
+          showConfirmation('',
+            () => sendUserText('Oui'),
+            () => sendUserText('Non'));
+        }
         setConnDot('ok');
-        // Widget inline : la question est déjà dans la bulle ci-dessus, la carte
-        // ne porte que les actions. Accepter/Rejeter envoient « Oui »/« Non » par
-        // le même chemin qu'une saisie ; l'overlay se lève à la résolution.
-        showConfirmation('',
-          () => sendUserText('Oui'),
-          () => sendUserText('Non'));
       },
-      onError: (msg) => { finalizeAssistantError(wrap, msg); },
+      onError: (msg) => { if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, msg); },
     });
   } catch (e) {
     // Message brut confié à finalizeAssistantError, qui l'échappe (textContent) —
@@ -2451,16 +2895,25 @@ async function dispatchSend(matches, continuation) {
     // réseau au sens strict — on ne re-préfixe « Erreur réseau » que le vrai
     // échec de transport (fetch rejeté : DNS, CORS, connexion refusée).
     const detail = (e && e.message) || String(e);
-    finalizeAssistantError(wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
+    if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
     setConnDot('err');
   } finally {
-    setSending(false);
+    // Désenregistrement AVANT setSending : ce dernier dérive `sending` du
+    // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un
+    // registre déjà à jour.
+    const screenAtEnd = genOwnsScreen(gen);
+    unregisterGeneration(gen);
+    setSending(isGenerating(currentConvId));
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
     // Interjections restantes (lot Q) : drain A si fin nominale, reflux
     // composer sinon. APRÈS setSending(false) — le drain A repart par le
     // chemin d'envoi normal (sendUserText → dispatchSend). Fire-and-forget.
-    settleInterjectionQueue(endedNominal);
+    // Réservé à la génération qui possède l'écran (même raison qu'onInterjections) :
+    // le reflux vise le composer, et le drain A repart sur la conv AFFICHÉE.
+    // Une génération détachée qui se termine laisse donc la file intacte pour
+    // celle qui la regarde.
+    if (screenAtEnd) settleInterjectionQueue(endedNominal);
   }
 }
 
@@ -2488,12 +2941,20 @@ function applyGeneratedTitle(convId, title) {
   renderConvList();                                 // liste de gauche
 }
 
-async function maybeTitle() {
-  if (!needTitle || !currentConvId) return;
-  if (!currentThread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
-  needTitle = false;
-  const convId = currentConvId;                     // figé : l'utilisateur peut naviguer
-  const thread = currentThread.slice();
+// `gen` (lot T-1a) : le besoin de titrage et le thread appartiennent à la
+// GÉNÉRATION, pas à l'écran — une génération détachée qui se termine doit
+// pouvoir titrer SA conversation. `needTitle` reste figé au démarrage de la
+// génération (createGeneration), ce qui préserve le piège 9 : la globale
+// d'écran ne gouverne plus rien ici, et un titrage ne peut plus atterrir sur la
+// conversation affichée par erreur.
+async function maybeTitle(gen) {
+  if (!gen || !gen.needTitle || !gen.convId) return;
+  if (!gen.thread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
+  gen.needTitle = false;
+  // L'écran ne doit plus réclamer ce titrage s'il affiche la même conversation.
+  if (gen.convId === currentConvId) needTitle = false;
+  const convId = gen.convId;                        // figé : l'utilisateur peut naviguer
+  const thread = gen.thread.slice();
   setTitleEditable(convId, false);
   const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
   if (title) applyGeneratedTitle(convId, title);    // sinon on garde le titre provisoire
@@ -2526,6 +2987,13 @@ function setTitleEditable(convId, editable) {
 // ── Résumé / mots-clés à la sortie d'une conversation ───────────────────────
 async function summarizeIfNeeded(id) {
   if (!id) return;
+  // Génération en vol sur cette conversation (lot T-1a) : son thread n'est pas
+  // stabilisé et la persistance n'a pas encore eu lieu pour le tour courant —
+  // résumer maintenant produirait un résumé d'un état intermédiaire, et le
+  // messageCount enregistré empêcherait le vrai résumé plus tard. Vaut aussi
+  // pour la conversation qu'on QUITTE (selectConv → summarizeIfNeeded(leaving)),
+  // qui est précisément le cas nouveau que ce lot rend possible.
+  if (isGenerating(id)) return;
   const conv = loadConversation(id);
   if (!conv || !hasSubstance(conv.messages)) return;     // pas de conversation fraîche
   const entry = getSummaryEntry(id);
@@ -2688,7 +3156,7 @@ function init() {
     // Best-effort : libérer le readonly des pairs si on générait (J5) AVANT de
     // lâcher la conv (J4). stopGenerationRelay est idempotent et émet -ended ;
     // le TTL reste le filet si l'onglet meurt sans que ces events partent.
-    stopGenerationRelay();
+    stopAllGenerationRelays();
     if (currentConvId) announceConvClosed(currentConvId);
   };
   window.addEventListener('pagehide', onTabLeaving);

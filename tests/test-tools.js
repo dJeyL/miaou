@@ -1532,3 +1532,165 @@ describe('pushDuplicateCallAck — ack du court-circuit anti-redemande', functio
     expect(getPendingToolAcks()[0].name).toBe('brave__web_search');
   });
 });
+
+// ── Contexte d'exécution des outils (lot T-1c) ──────────────────────────────
+// Un outil s'exécute POUR une conversation et DANS un Espace : ceux de la
+// GÉNÉRATION qui l'a demandé, jamais ceux de l'écran. Avec N générations
+// concurrentes (lot T), un outil scopé lancé par la génération de A pendant que
+// l'écran affiche B répondrait sinon dans le référentiel de B — mauvaise
+// réponse, silencieuse, herméticité des Spaces comprise (piège 18).
+//
+// Ces tests posent délibérément des globales d'écran CONTRADICTOIRES : ils
+// échouent si un handler relit la globale au lieu d'honorer son ctx. C'est le
+// filet du critère de complétude A1 (grep sans occurrence), côté comportement.
+
+describe('T-1c — ctx d\'exécution : le ctx explicite prime sur l\'écran', function() {
+
+  it('toolCtx : ctx complet honoré tel quel', function() {
+    var c = toolCtx({ convId: 'cX', spaceId: 'spX' });
+    expect(c.convId).toBe('cX');
+    expect(c.spaceId).toBe('spX');
+  });
+
+  it('toolCtx : sans ctx, repli sur l\'écran (appel hors génération)', function() {
+    activeSpaceId = 'sp-ecran';
+    try {
+      var c = toolCtx(undefined);
+      expect(c.spaceId).toBe('sp-ecran');
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('toolCtx : convId null explicite est une VALEUR, pas une absence', function() {
+    // Une génération sur une conversation non encore créée porte convId null ;
+    // retomber sur l'écran ici ferait répondre dans une autre conversation.
+    activeSpaceId = 'sp-ecran';
+    try {
+      var c = toolCtx({ convId: null, spaceId: 'spX' });
+      expect(c.convId).toBe(null);
+      expect(c.spaceId).toBe('spX');
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('conv__get : le ctx décide de l\'herméticité, pas l\'écran', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't', timestamp: 1000, spaceId: 'sp-gen', messages: [] });
+    // Écran sur un AUTRE Space que la génération : sans ctx honoré, la conv
+    // serait déclarée introuvable alors qu'elle est dans le Space de la génération.
+    activeSpaceId = 'sp-ecran';
+    try {
+      var r = JSON.parse(flattenToolResult(
+        callTool('conv__get', { id: 'c1' }, { convId: 'c9', spaceId: 'sp-gen' })));
+      expect(r.summary).toBe('s');
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('conv__get : une conv hors du Space de la GÉNÉRATION reste introuvable', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't', timestamp: 1000, summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't', timestamp: 1000, spaceId: 'sp-autre', messages: [] });
+    // L'écran, lui, EST dans le bon Space : un handler qui relirait la globale
+    // laisserait fuiter la conversation. Pas d'oracle : « introuvable ».
+    activeSpaceId = 'sp-autre';
+    try {
+      var r = flattenToolResult(
+        callTool('conv__get', { id: 'c1' }, { convId: 'c9', spaceId: 'sp-gen' }));
+      expect(r).toContain('introuvable');
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('conv__list : scope sur le Space de la génération', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't1', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't1', timestamp: 1000, spaceId: 'sp-gen', messages: [] });
+    saveSummary('c2', { title: 't2', timestamp: Date.parse('2026-03-02T00:00:00Z'), summary: 's', keywords: [] });
+    saveConversation({ id: 'c2', title: 't2', timestamp: 1000, spaceId: 'sp-ecran', messages: [] });
+    activeSpaceId = 'sp-ecran';
+    try {
+      var r = JSON.parse(flattenToolResult(
+        callTool('conv__list', {}, { convId: 'c9', spaceId: 'sp-gen' })));
+      expect(r.length).toBe(1);
+      expect(r[0].id).toBe('c1');
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('conv__list : exclut la conv de la GÉNÉRATION, pas celle affichée', function() {
+    localStorage.clear();
+    saveSummary('c1', { title: 't1', timestamp: Date.parse('2026-03-01T00:00:00Z'), summary: 's', keywords: [] });
+    saveConversation({ id: 'c1', title: 't1', timestamp: 1000, spaceId: 'sp-gen', messages: [] });
+    saveSummary('c2', { title: 't2', timestamp: Date.parse('2026-03-02T00:00:00Z'), summary: 's', keywords: [] });
+    saveConversation({ id: 'c2', title: 't2', timestamp: 1000, spaceId: 'sp-gen', messages: [] });
+    // « La conversation en cours » = celle de la génération (c1), pas l'affichée (c2).
+    currentConvId = 'c2';
+    activeSpaceId = 'sp-gen';
+    try {
+      var r = JSON.parse(flattenToolResult(
+        callTool('conv__list', {}, { convId: 'c1', spaceId: 'sp-gen' })));
+      expect(r.length).toBe(1);
+      expect(r[0].id).toBe('c2');
+    } finally { currentConvId = null; activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('files__list : bibliothèque du Space de la génération', function() {
+    localStorage.clear();
+    _resourceCache['file_g1'] = { id: 'file_g1', spaceId: 'sp-gen', kind: 'library',
+      class: 'inline', mime: 'text/plain', name: 'gen.txt', size: 5, createdAt: 1 };
+    _resourceCache['file_e1'] = { id: 'file_e1', spaceId: 'sp-ecran', kind: 'library',
+      class: 'inline', mime: 'text/plain', name: 'ecran.txt', size: 5, createdAt: 2 };
+    activeSpaceId = 'sp-ecran';
+    try {
+      var r = JSON.parse(flattenToolResult(
+        callTool('miaou__files__list', {}, { convId: 'c9', spaceId: 'sp-gen' })));
+      expect(r.length).toBe(1);
+      expect(r[0].name).toBe('gen.txt');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_g1'];
+      delete _resourceCache['file_e1'];
+    }
+  });
+
+  it('files__read : un fichier du Space AFFICHÉ est inconnu de la génération', function() {
+    localStorage.clear();
+    _resourceCache['file_e1'] = { id: 'file_e1', spaceId: 'sp-ecran', kind: 'library',
+      class: 'inline', mime: 'text/plain', name: 'ecran.txt', size: 5, createdAt: 2,
+      data: new ArrayBuffer(1) };
+    activeSpaceId = 'sp-ecran';
+    try {
+      var r = flattenToolResult(
+        callTool('miaou__files__read', { id: 'file-e1' }, { convId: 'c9', spaceId: 'sp-gen' }));
+      expect(r).toContain('introuvable');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_e1'];
+    }
+  });
+
+  it('memory__create : le souvenir est scopé au Space de la génération', function() {
+    localStorage.clear();
+    activeSpaceId = 'sp-ecran';
+    try {
+      callTool('memory__create', { content: 'fait de la génération' },
+        { convId: 'c9', spaceId: 'sp-gen' });
+      var mems = loadMemories();
+      expect(mems.length).toBe(1);
+      expect(mems[0].scope).toBe('sp-gen');
+    } finally { activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+
+  it('resolveHandleRecord : un file-<id> d\'un autre Space reste null', function() {
+    _resourceCache['file_e1'] = { id: 'file_e1', spaceId: 'sp-ecran', kind: 'library',
+      class: 'inline', mime: 'text/plain', name: 'ecran.txt', size: 5, createdAt: 2 };
+    activeSpaceId = 'sp-ecran';
+    try {
+      expect(resolveHandleRecord('file-e1', { convId: 'c9', spaceId: 'sp-gen' })).toBe(null);
+      // Contrôle positif : avec le bon Space, le record est bien résolu.
+      var ok = resolveHandleRecord('file-e1', { convId: 'c9', spaceId: 'sp-ecran' });
+      expect(!!ok).toBe(true);
+      expect(ok.name).toBe('ecran.txt');
+    } finally {
+      activeSpaceId = DEFAULT_SPACE_ID;
+      delete _resourceCache['file_e1'];
+    }
+  });
+});

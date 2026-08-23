@@ -236,10 +236,12 @@ inline sous la liste.
     `_synthetic` — l'injection `<miaou_context>` doit pouvoir la viser). Coût KV
     assumé : insertion mid-séquence, **volontaire et ponctuelle** (corollaire
     piège 16, comme la ré-injection image). Cf. `docs/interjections.md`.
+28. **Une génération écrit dans SA conversation, jamais dans l'écran (lot T-1).**
+    → invariant transverse, développé sous la liste.
 
 ### Invariants transverses (développés)
 
-Les quatre pièges les plus coûteux, gardés inline parce qu'ils gouvernent des
+Les cinq pièges les plus coûteux, gardés inline parce qu'ils gouvernent des
 frontières traversées par beaucoup de code.
 
 **#16 — Préservation du KV cache (Ollama).** `buildSystemMessage()` reste
@@ -283,9 +285,17 @@ Spaces), pas `spaceConvIds`, et annote chaque résultat de son Space. Les
 conversations du Space actif restent priorisées en tête (`rankConvResults`,
 utils.js, pure). Ouvrir un résultat d'un autre Space **suit** ce Space
 (`followSpace` avant `selectConv`) pour ne jamais afficher un fil hors du
-Space actif. C'est la SEULE voie cross-Space assumée ; la recherche sidebar
-(`renderConvList`) reste, elle, scopée au Space actif. Décision Julien
-2026-07-11, cf. `docs/command-palette.md`.
+Space actif. La recherche sidebar (`renderConvList`) reste, elle, scopée au Space actif.
+Décision Julien 2026-07-11, cf. `docs/command-palette.md`.
+**Deuxième exception sanctionnée (lot T-2, badges d'activité)** : les pastilles
+d'agrégation du sélecteur d'Espaces et du hamburger (`spaceBadgeState` /
+`aggregateBadgeState`, main.js) lisent l'activité de **tous** les Spaces —
+c'est le sens même de l'affordance (sans elle, une génération d'un autre Space
+serait totalement silencieuse). Portée strictement bornée : on expose
+l'**existence** d'une activité et le **nom de l'Espace**, jamais un titre de
+conversation ni un contenu. La source du working est `gen.spaceId` (figé au
+démarrage, T-1) ; jamais un filtre `c.spaceId === x` réécrit hors de ces deux
+fonctions. Cf. `docs/spaces.md` et `docs/badges.md`.
 
 **#21 — Export HTML standalone : un seul chemin string→HTML à risque.**
 L'export (`renderExportBody`, ui.js) hérite de la sûreté de l'écran
@@ -323,6 +333,35 @@ tour »). La lecture de `conv.messages` (`projectConvMessages`, pur, testé) se 
 appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
 `docs/multitab-sync.md`.
 
+**#28 — Une génération écrit dans SA conversation, jamais dans l'écran.**
+Depuis le lot T-1, un échange en vol (stream + boucle d'outils) **appartient à
+une conversation**, pas à l'affichage : il survit à une navigation, voire à un
+changement d'Espace, et **N générations** peuvent tourner en parallèle. Trois
+questions doivent donc être posées séparément, chacune avec SON prédicat unique
+— jamais réécrit localement (même discipline que `spaceConvIds`, piège 18) :
+
+- **« Où j'écris ? »** → `gen.thread` + `persistGeneration(gen)`, jamais
+  `currentThread`/`persistCurrent` (qui suivent l'écran). Les deux chemins
+  partagent la projection pure `projectThreadToMessages`.
+- **« Est-ce que je peins ? »** → `genOwnsScreen(gen)`. Les hooks se scindent en
+  (a) muter le thread — TOUJOURS ; (b) refléter dans le DOM — seulement si vrai.
+  (a) ne dépend jamais de (b). Tout re-rendu du fil passe par
+  `rerenderCurrentThread()`, jamais `renderThread` nu (il détruirait la bulle
+  vive). Le rebranchement rend par **le même chemin que le reload**.
+- **« Dans quel référentiel je réponds ? »** → `ctx` en **argument explicite**
+  jusqu'aux handlers d'outils (`toolCtx`), jamais une globale ni une variable de
+  module — trois handlers sont `async`, un état de module relu après un `await`
+  verrait une autre génération. Critère vérifiable par **grep** : aucune lecture
+  de `currentConvId`/`activeSpaceId` dans `tools.js` (hors `toolCtx`) ni dans
+  `api.js`.
+
+Corollaire : `sending` ne signifie plus « une génération tourne » mais « la
+conversation AFFICHÉE génère » — il bascule aussi sur un simple changement de
+conversation. Ne pas s'en servir comme point d'appariement d'un cycle (le relais
+multi-onglets et le drain de synchro suivent le cycle de vie de la génération),
+ni comme garde « une génération est en vol » (utiliser `_activeGenerations.size`).
+Cf. `docs/generations.md`.
+
 ## Domaines détaillés (`docs/`)
 
 À lire à la demande, selon la zone touchée — pas systématiquement :
@@ -334,8 +373,9 @@ appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
   marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
   points d'injection et gardes `try/catch`.
-- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
-  ci-dessus (25 et 26 sont développés inline ici même, comme 16/18/21/24).
+- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-15,
+  17, 19, 20, 22, 23 ci-dessus (25, 26 et 27 sont développés inline ici même,
+  comme les invariants transverses 16/18/21/24/28).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
   `miaou-mcp-servers`, `miaou-api-servers`, `miaou-active-api-server`,
@@ -377,6 +417,18 @@ appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
   tour (réaiguillage mid-boucle) ou en fin d'échange nominale ; composer en
   mode file, puces annulables/éditables, bulle assistant matérialisée
   (`_acksOnly`, piège 27), reflux sur fin non-nominale.
+- **`docs/badges.md`** — badges d'activité (lot T-2) : deux états (working
+  pulsant / unread statique), prédicat unique `convBadgeState`, agrégation
+  cross-Space assumée, quatre surfaces et leurs points de synchronisation,
+  volatilité du non-lu.
+- **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
+  génération et registre `_activeGenerations` (clé `convId`), deux chemins de
+  persistance (`persistCurrent` écran vs `persistGeneration`), projection pure
+  partagée `projectThreadToMessages`, rebranchement des données dans
+  `openConversation`, `sending` reflet d'écran, abort ciblé par conversation ;
+  prédicat unique `genOwnsScreen` et scission des hooks (muter le thread
+  toujours / refléter dans le DOM si l'écran est possédé), attache/détache et
+  `splitTrailingAcks`, `rerenderCurrentThread` obligatoire pour tout re-rendu.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)
 

@@ -482,17 +482,17 @@ const TOOLS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       const entry = getSummaryEntry(args.id);   // storage.js
       // Herméticité (brief D2, piège 18) : les DEUX sorties ci-dessous partagent le
       // même message ET le même ack — l'absence d'oracle vise le MODÈLE, et un ack
       // `tool_failed` identique dans les deux cas n'en crée aucun. (L'utilisateur,
       // lui, doit bien voir que le modèle a tenté la lecture : c'est le but.)
       if (!entry || entry.suppressed) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
-      // activeSpaceId est une global de main.js, accès défensif car tools.js est
-      // aussi évalué seul (test runner). Un résumé orphelin (conversation supprimée,
-      // index conservé) n'a pas de Space propre : traité comme default Space.
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      // Espace de la GÉNÉRATION qui exécute cet outil (ctx, lot T-1c) — jamais
+      // celui de l'écran. Un résumé orphelin (conversation supprimée, index
+      // conservé) n'a pas de Space propre : traité comme default Space.
+      const spaceId = ctx.spaceId;
       const conv = loadConversation(args.id);   // storage.js — un seul chargement (herméticité ET contenu)
       const convSpace = conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID;
       if (convSpace !== spaceId) return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
@@ -525,20 +525,21 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       let entries = listSummaryEntries();        // storage.js — entrées non-tombstone
       // Herméticité (brief D2) : ne jamais exposer une conversation d'un autre
-      // Space au modèle. Même accès défensif que currentConvId ci-dessous. Un
+      // Space au modèle. Espace de la GÉNÉRATION (ctx, lot T-1c). Un
       // résumé orphelin (conversation supprimée) est traité comme default Space.
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       const allConvs = loadConversations();
       const idsInSpace = spaceConvIds(spaceId, allConvs);
       const convIds = new Set(allConvs.map(c => c.id));
       entries = entries.filter(e => idsInSpace.has(e.id) || (!convIds.has(e.id) && spaceId === DEFAULT_SPACE_ID));
       // Exclut la conversation en cours : lister "les conversations passées" n'a
-      // de sens que pour les AUTRES ; currentConvId est une global de main.js
-      // (accès défensif car tools.js est aussi évalué seul par le test runner).
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      // Exclut la conversation en cours : lister "les conversations passées" n'a
+      // de sens que pour les AUTRES — et « en cours » est celle de la GÉNÉRATION
+      // (ctx, lot T-1c), pas celle affichée.
+      const activeId = ctx.convId;
       if (activeId) entries = entries.filter(e => e.id !== activeId);
       if (args.since != null && args.since !== '') {
         const sinceMs = Date.parse(args.since);
@@ -571,7 +572,7 @@ const TOOLS = [
       required: ['content'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       if (!args.content || !args.content.trim()) return toolFail('memory__create', 'Contenu vide — souvenir ignoré.');
       const id = genMemoryId();
       const now = Date.now();
@@ -579,7 +580,7 @@ const TOOLS = [
       // Stampe le Space actif (brief D3) : pas de paramètre scope exposé au
       // modèle, écriture toujours dans le Space courant ; promotion vers
       // 'profile' réservée à une action UI (jamais depuis cet outil).
-      const scope = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const scope = ctx.spaceId;
       saveMemory({ id, content, created_at: now, updated_at: now, suppressed: false, scope });
       _pendingToolAcks.push({ kind: 'memory_create', id, content });
       return 'Souvenir enregistré. Identifiant : ' + id;
@@ -599,7 +600,7 @@ const TOOLS = [
       required: ['id', 'content'],
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
-    handler: (args) => {
+    handler: (args, ctx) => {
       if (!args.id || !args.content || !args.content.trim()) return toolFail('memory__update', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
@@ -610,7 +611,7 @@ const TOOLS = [
       // refuser un souvenir de profil qu'on vient de lui montrer avec son id
       // n'était pas de l'herméticité, juste un prédicat inter-Spaces recopié
       // trop loin. `editMemory` mute en place sans toucher au scope.
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       if (!isMemoryInScope(existing, spaceId)) return toolFail('memory__update', 'Souvenir introuvable.');
       editMemory(args.id, content);
       _pendingToolAcks.push({
@@ -669,13 +670,13 @@ const TOOLS = [
       required: ['ref'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
+    handler: (args, ctx) => {
       const ref = String(args.ref || '');
       if (!ref) return toolFail('recall_attachment', 'Identifiant manquant.');
-      // getCachedRecordByAttId est dans resources.js (chargé avant). currentConvId
-      // est une global de main.js — accès défensif (tools.js évalué seul par le
-      // test runner), même pattern que conv__list ci-dessus.
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      // getCachedRecordByAttId est dans resources.js (chargé avant). La
+      // conversation de rattachement est celle de la GÉNÉRATION (ctx, lot
+      // T-1c), même pattern que conv__list ci-dessus.
+      const activeId = ctx.convId;
       const record = getCachedRecordByAttId(ref, activeId);
       if (!record) return toolFail('recall_attachment', 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).');
       _pendingToolAcks.push({ kind: 'attachment_recalled', attId: ref, resourceName: record.name, mime: record.mime, convId: activeId });
@@ -716,11 +717,11 @@ const TOOLS = [
       "d'un fichier (file-N).",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: () => {
+    handler: (args, ctx) => {
       // Herméticité (piège 18, lot Cbis) : bibliothèque du Space actif SEULEMENT.
-      // activeSpaceId est une global de main.js — accès défensif (tools.js aussi
-      // évalué seul par le test runner), même pattern que conv__get.
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      // Espace de la GÉNÉRATION (ctx, lot T-1c), jamais celui affiché —
+      // même pattern que conv__get.
+      const spaceId = ctx.spaceId;
       const entries = getCachedLibraryEntriesBySpace(spaceId);   // resources.js (chargé avant)
       const light = entries.map(e => ({
         id: libraryRefFromId(e.id), name: e.name, mime: e.mime, size: e.size,
@@ -745,8 +746,8 @@ const TOOLS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    handler: (args, ctx) => {
+      const spaceId = ctx.spaceId;
       const recordId = parseLibraryRef(String(args.id || ''));   // resources.js
       if (!recordId) return toolFail('files__read', 'Fichier introuvable.');
       const record = getCachedRecord(recordId);   // resources.js — cache session unifié
@@ -802,17 +803,17 @@ const TOOLS = [
       required: ['ref', 'description'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       // validateFilesPromoteArgs reste PURE (testée à part) : elle renvoie le
       // message, c'est le site de sortie qui pousse l'ack.
       const invalid = validateFilesPromoteArgs(args);
       if (invalid) return toolFail('files__promote', invalid);
       const ref = String(args.ref || '');
       const description = String(args.description || '').trim();
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const record = getCachedRecordByAttId(ref, activeId);   // resources.js — att-N du tour courant
       if (!record) return toolFail('files__promote', 'Fichier introuvable.');   // ref inconnue/périmée, même posture que files__read
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       const name = args.name ? String(args.name).trim() : record.name;
       const stored = await storeLibraryFile(   // resources.js — copie, l'attachment d'origine reste intact
         spaceId, record.mime, name, record.data, record.class, activeId, description, Date.now(), Math.random
@@ -846,7 +847,7 @@ const TOOLS = [
       required: ['content'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       // validateResourceCreateArgs reste PURE (testée à part) : elle renvoie le
       // message, c'est le site de sortie qui pousse l'ack (cf. toolFail).
       const invalid = validateResourceCreateArgs(args);
@@ -854,7 +855,7 @@ const TOOLS = [
       const content = String(args.content || '');
       const mime = args.mime ? String(args.mime).trim() : 'text/plain';
       const name = args.name ? String(args.name).trim() : 'resource';
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const id = await _storeBlock(mime, name, utf8Encode(content), 'inline', activeId, Date.now(), Math.random);
       if (!id) return toolFail('resource__create', 'Échec de stockage.');
       // JAMAIS _makeResourceRef ici (AUDIT-O §5) : un [resource_ref:…] vers un
@@ -888,7 +889,7 @@ const TOOLS = [
       required: ['ref', 'description'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const invalid = validateResourceFromResultArgs(args);
       if (invalid) return toolFail('resource__from_result', invalid);
       const ref = String(args.ref || '').trim();
@@ -907,7 +908,7 @@ const TOOLS = [
       const text = targetAck.result != null ? String(targetAck.result) : '';
       if (!text) return toolFail('resource__from_result', 'Résultat vide, rien à convertir.');
       const mime = 'text/plain';
-      const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+      const activeId = ctx.convId;
       const id = await _storeBlock(mime, name, utf8Encode(text), 'inline', activeId, Date.now(), Math.random);
       if (!id) return toolFail('resource__from_result', 'Échec de stockage.');
       // JAMAIS _makeResourceRef (AUDIT-O §5) — record 'inline', un ref
@@ -941,12 +942,12 @@ const TOOLS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
-    handler: (args) => {
+    handler: (args, ctx) => {
       if (!args.id) return toolFail('memory__delete', 'Identifiant manquant.');
       const existing = loadMemories().find(e => e.id === args.id);
       // Même portée que memory__update (cf. commentaire là-bas) : Space actif +
       // 'profile'. `suppressMemory` pose un tombstone sans toucher au scope.
-      const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+      const spaceId = ctx.spaceId;
       if (!isMemoryInScope(existing, spaceId)) return toolFail('memory__delete', 'Souvenir introuvable.');
       suppressMemory(args.id);
       _pendingToolAcks.push({ kind: 'memory_delete', id: args.id, content: existing ? existing.content : null });
@@ -1175,7 +1176,7 @@ const TOOLS = [
       required: ['handle', 'code'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },   // pur compute, aucune écriture d'état
-    handler: (args) => {
+    handler: (args, ctx) => {
       const handle = String((args && args.handle) || '').trim();
       const code = args && args.code != null ? String(args.code) : '';
       // Sorties PRÉCOCES (rien n'a été exécuté) → ack tool_failed. Les échecs de
@@ -1450,6 +1451,36 @@ function disconnectMcpServer(name) {
 // essai au lieu d'en pousser une seconde — même rendu qu'un rejeu staleSession
 // (dont le rejeu vit SOUS un seul callRemoteTool) : UNE ligne d'appel pour
 // l'échange complet, l'erreur transitoire est effacée si le rejeu réussit.
+// ── Contexte d'exécution d'un outil (lot T-1c) ──────────────────────────────
+// Un outil s'exécute POUR une conversation et DANS un Espace — ceux de la
+// génération qui l'a demandé, jamais ceux de l'écran. Avec N générations
+// concurrentes (lot T), un conv__get / files__list / recall_attachment lancé par
+// la génération de A pendant que l'écran affiche B répondrait dans le
+// référentiel de B : mauvaise réponse, silencieuse, herméticité des Spaces
+// comprise (piège 18).
+//
+// Le contexte transite en ARGUMENT EXPLICITE (arbitrage A1), jamais en variable
+// de module : trois handlers sont `async` (files__promote, resource__create,
+// resource__from_result) et tout état de module relu APRÈS leur premier `await`
+// verrait le contexte d'une AUTRE génération — le bug d'origine sous une forme
+// plus difficile à détecter.
+//
+// `toolCtx(ctx)` normalise et est LE seul point de lecture. Le repli sur les
+// globales d'écran couvre les appels hors génération (drawer d'outils, tests) ;
+// aucun site ne lit `currentConvId`/`activeSpaceId` directement — c'est
+// vérifiable par grep, cf. docs/generations.md.
+function toolCtx(ctx) {
+  if (ctx && ctx.convId !== undefined && ctx.spaceId !== undefined) return ctx;
+  return {
+    convId: (ctx && ctx.convId !== undefined)
+      ? ctx.convId
+      : (typeof currentConvId !== 'undefined' ? currentConvId : null),
+    spaceId: (ctx && ctx.spaceId !== undefined)
+      ? ctx.spaceId
+      : (typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID),
+  };
+}
+
 async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = reuseAckEntry || { kind: 'mcp_call', server: server.name, name: fullName };
@@ -1491,11 +1522,13 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
 // désormais un ack `tool_failed`, sinon un plantage JS ne laissait AUCUNE trace à
 // l'écran (le plus anormal était le plus invisible). toolFail renvoie le message,
 // ce qui évite de le dupliquer entre l'ack et le tool result.
-function callInternalTool(toolName, args) {
+function callInternalTool(toolName, args, ctx) {
   const tool = TOOLS.find(t => t.name === toolName);
   if (!tool) return { content: [{ type: 'text', text: toolFail(toolName, 'Outil inconnu : ' + toolName) }], isError: true };
   try {
-    const text = tool.handler(args || {});
+    // ctx normalisé UNE fois ici : chaque handler le reçoit déjà résolu et n'a
+    // plus aucune raison de lire une globale (ni de garde `typeof`).
+    const text = tool.handler(args || {}, toolCtx(ctx));
     // Handler ASYNC (ex. skills__read lit le contenu en IDB) : il renvoie une
     // Promise<string>. On la mappe vers la forme MCP. Les handlers synchrones
     // (tous les autres) restent synchrones → branche interne testable sans async.
@@ -1526,7 +1559,7 @@ function callInternalTool(toolName, args) {
 // est passé à callRemoteTool pour être stocké dans l'ack. Les args originaux
 // (avec miaou_intent) restent dans l'objet référencé par api.js → stockés dans
 // entry.args via onEnrichLastAck → réinjectés tels quels aux tours suivants.
-function callTool(name, args) {
+function callTool(name, args, ctx) {
   const parsed = parseToolName(name);
   // Le REGISTRE tranche, pas la forme du nom : depuis que des outils internes
   // portent un sous-namespace (`memory__`, `conv__`, `resource__`, lot P), le
@@ -1545,7 +1578,7 @@ function callTool(name, args) {
     // sans ce garde, l'intent se poserait sur l'ack d'un outil ANTÉRIEUR du même
     // tour multi-outils (cf. B5, campagne 2026-07-09).
     const baseAcks = _pendingToolAcks.length;
-    const result = callInternalTool(internalName, cleanArgs);
+    const result = callInternalTool(internalName, cleanArgs, ctx);
     // Attache l'intent au dernier ack en attente. La plupart des handlers poussent
     // leur ack de façon synchrone (avant le retour de callInternalTool) ; certains
     // (ex. skills__read) ne le poussent qu'après résolution de leur Promise — dans
@@ -1565,7 +1598,7 @@ function callTool(name, args) {
   if (parsed.serverPrefix === 'miaou' || parsed.serverPrefix === '') {
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
-    return callInternalTool(parsed.toolName, cleanArgs);
+    return callInternalTool(parsed.toolName, cleanArgs, ctx);
   }
   const server = getMcpServer(parsed.serverPrefix);   // storage.js
   if (!server || server.enabled === false) {
@@ -1574,7 +1607,7 @@ function callTool(name, args) {
   const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
   const serverArgs = args ? Object.assign({}, args) : {};
   delete serverArgs.miaou_intent;
-  return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent);
+  return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent, ctx);
 }
 
 // ── Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D) ───────
@@ -1769,17 +1802,16 @@ function classifyHandleRef(ref) {
 // la conversation/Space courant). Un handle d'une autre conversation/Space n'y
 // est pas → null → traité comme inexistant (pas d'oracle). AUCUN filtre de scope
 // réécrit : le cache EST le filtre (cf. AUDIT-K §2).
-function resolveHandleRecord(ref) {
+function resolveHandleRecord(ref, ctx) {
+  const c = toolCtx(ctx);
   const family = classifyHandleRef(ref);
   if (family === 'att') {
-    const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
-    return getCachedRecordByAttId(ref, activeId) || null;
+    return getCachedRecordByAttId(ref, c.convId) || null;
   }
   if (family === 'file') {
     const recordId = parseLibraryRef(ref);   // resources.js (chargé avant)
     const record = recordId ? getCachedRecord(recordId) : null;
-    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
-    if (!record || record.kind !== 'library' || record.spaceId !== spaceId) return null;
+    if (!record || record.kind !== 'library' || record.spaceId !== c.spaceId) return null;
     return record;
   }
   if (family === 'resource') {
@@ -1917,10 +1949,11 @@ function _jsEvalErrText(raw) {
 // cette fonction n'ajoute QUE le descripteur push-MCP (sessionId + tables d'état
 // poussé/non-poussé), spécifique au wire docs et distinct par famille de ref
 // (les deux tables _attachmentPushState / _filePushState restent séparées).
-function _resolveInflationRef(ref) {
-  const record = resolveHandleRecord(ref);
+function _resolveInflationRef(ref, ctx) {
+  const c = toolCtx(ctx);
+  const record = resolveHandleRecord(ref, c);
   if (!record) return null;
-  const activeId = typeof currentConvId !== 'undefined' ? currentConvId : null;
+  const activeId = c.convId;
   const family = classifyHandleRef(ref);
   if (family === 'att') {
     return {
@@ -1936,7 +1969,7 @@ function _resolveInflationRef(ref) {
     // partage de session inter-conversation pour un fichier (dette assumée,
     // le brief H ne le promet pas).
     const recordId = parseLibraryRef(ref);
-    const spaceId = typeof activeSpaceId !== 'undefined' ? activeSpaceId : DEFAULT_SPACE_ID;
+    const spaceId = c.spaceId;
     return {
       record, sessionId: activeId,
       isPushed: () => isFilePushed(spaceId, recordId),
@@ -1966,12 +1999,12 @@ function _resolveInflationRef(ref) {
 // Sur erreur REF_UNKNOWN (contenu pas encore matérialisé côté serveur malgré
 // notre état "pushed" — ex. session serveur TTL-expirée), UN seul rejeu avec le
 // contenu inliné, puis on marque poussé si ce rejeu réussit.
-async function callDocsInflatedRemoteTool(server, toolName, args, intent) {
+async function callDocsInflatedRemoteTool(server, toolName, args, intent, ctx) {
   const ref = args && typeof args.ref === 'string' ? args.ref : null;
   const capable = ref && toolDeclaresAttachmentInflation(server, toolName);
   if (!capable) return callRemoteTool(server, toolName, args, intent);
 
-  const resolved = _resolveInflationRef(ref);
+  const resolved = _resolveInflationRef(ref, ctx);
   if (!resolved) return callRemoteTool(server, toolName, args, intent);   // ref inconnue/hors scope localement, laisser le serveur répondre
 
   const { record, sessionId, isPushed, markPushed } = resolved;
