@@ -413,10 +413,14 @@ aperçus de mail). Première version : bouton construit par `EXPORT_SCRIPT`, don
 absent de ces visionneuses (constaté par Julien sur iPhone) — c'est ce qui a
 motivé le passage au markup statique.
 
-- **Rôle résiduel d'`EXPORT_SCRIPT`** : la **persistance** du choix seulement
-  (clé `localStorage` dérivée de `location.pathname`, pour qu'un export ne
-  contamine pas la préférence d'un autre ; lecture/écriture sous `try/catch`).
-  Sans lui, la bascule marche, le choix n'est simplement pas mémorisé d'une
+- **Rôle résiduel d'`EXPORT_SCRIPT`** : la **persistance** du choix seulement,
+  sous une clé `localStorage` **unique pour tous les exports**
+  (`miaou-export-theme`, lecture/écriture sous `try/catch`). Le clair/sombre est
+  une préférence de LECTURE, pas un attribut du document : le choix vaut pour
+  tous les exports, y compris ceux produits plus tard. La première version
+  suffixait la clé de `location.pathname` (une entrée par fichier) — refaire le
+  réglage à chaque nouvel export, pour encrasser le `localStorage` en prime.
+  Sans ce script, la bascule marche, le choix n'est simplement pas mémorisé d'une
   ouverture à l'autre. Il ne pose **aucun attribut de thème** (cf.
   `serializeThemeTokens()` : la case est seule source de vérité).
 - **Placement** : `position: fixed` — contrainte du sélecteur `:has()`, qui

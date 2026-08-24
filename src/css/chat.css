@@ -209,6 +209,10 @@
    que du working. Le kill-switch reduced-motion global s'applique déjà. */
 .agent-count .activity-dot {
   width: 7px; height: 7px;
+  /* PAS un no-op : .waiter-dot pose 7.5px de marge latérale pour se centrer
+     dans le slot de 20px du patienteur. Ici la pastille vit dans une pilule
+     compacte à gap 7px — sans cette remise à zéro elle s'écarte du label. */
+  margin: 0;
   box-shadow: 0 0 7px var(--accent-bd);
 }
 

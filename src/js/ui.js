@@ -3208,7 +3208,7 @@ function cmdkModelItems(query) {
   const multi = servers.length > 1;
   const items = [];
   servers.forEach(s => {
-    const e = _modelsByUrl[(s.url || '').trim()] || {};
+    const e = _modelsEntryOf(s);
     (e.models || []).forEach(m => {
       if (q && m.toLowerCase().indexOf(q) < 0) return;
       items.push({
@@ -3584,16 +3584,47 @@ document.addEventListener('keydown', (e) => {
 
 // ── Sélecteur serveur/modèle du composer ────────────────────────────────────
 // Le sélecteur liste les modèles de TOUS les serveurs API non désactivés, pas
-// seulement de l'actif. Cache de session (pas de persistance) indexé par URL de
-// serveur : un seul fetch /models par (session, URL). Une entrée porte
-// `{ url, models, error, pending }` — `error` mémorise l'échec pour l'afficher
-// dans le menu (en-tête de groupe cliquable pour réessayer, cf. brief).
-const _modelsByUrl = Object.create(null);
+// seulement de l'actif. Cache de session (pas de persistance) indexé par **id de
+// serveur**, jamais par URL : deux serveurs peuvent partager une URL et ne
+// différer que par la clef d'API (même endpoint, droits d'accès distincts, donc
+// listes de modèles distinctes) — une clef par URL ferait servir à l'un la liste
+// de l'autre. L'id est déjà l'identité partout ailleurs (`activeApiServer().id`,
+// `pickComposerModel`, `retryServerModels`) ; pas de clef composite (URL+clef ou
+// son hash), qui n'ajouterait rien et ferait transiter la clef d'API dans un nom
+// de propriété.
+// Une entrée porte `{ id, stamp, models, error, pending }` — `error` mémorise
+// l'échec pour l'afficher dans le menu (en-tête de groupe cliquable pour
+// réessayer, cf. brief). `stamp` = empreinte de l'endpoint (URL + clef) au
+// moment du fetch : l'id SURVIT à l'édition d'une carte, donc sans cette
+// vérification une modification d'URL ou de clef laisserait en place la liste de
+// l'ANCIEN endpoint.
+const _modelsById = Object.create(null);
 
-function _modelsEntry(url) {
-  let e = _modelsByUrl[url];
-  if (!e) { e = _modelsByUrl[url] = { url, models: null, error: null, pending: null }; }
+// Empreinte d'endpoint d'un serveur. Le séparateur `\n` n'apparaît ni dans une
+// URL ni dans une clef saisie sur une ligne d'input : pas de collision entre
+// (url `a`, clef `b`) et (url `a\nb`, clef vide).
+function _serverStamp(server) {
+  const o = server || {};
+  return ((o.url || '').trim()) + '\n' + (o.key || '');
+}
+
+// Entrée de cache d'un serveur, réinitialisée si son endpoint a changé depuis le
+// dernier fetch (édition de carte : même id, autre URL ou autre clef).
+function _modelsEntry(server) {
+  const id = (server && server.id) || '';
+  const stamp = _serverStamp(server);
+  let e = _modelsById[id];
+  if (e && e.stamp !== stamp) e = null;   // endpoint modifié : l'ancienne liste ne vaut plus
+  if (!e) { e = _modelsById[id] = { id, stamp, models: null, error: null, pending: null }; }
   return e;
+}
+
+// Lecture seule pour le rendu (menu, palette) : ne crée aucune entrée et ne
+// ressuscite pas une liste devenue obsolète. Renvoie toujours un objet, les
+// appelants lisent `.models`/`.error`/`.pending`.
+function _modelsEntryOf(server) {
+  const e = _modelsById[(server && server.id) || ''];
+  return (e && e.stamp === _serverStamp(server)) ? e : {};
 }
 
 // Charge (ou renvoie depuis le cache) la liste d'un serveur. `force` relance un
@@ -3602,7 +3633,7 @@ function _modelsEntry(url) {
 function loadServerModels(server, force) {
   const url = ((server && server.url) || '').trim();
   if (!url) return Promise.resolve([]);
-  const e = _modelsEntry(url);
+  const e = _modelsEntry(server);
   if (e.models && !force) return Promise.resolve(e.models);
   if (e.pending && !force) return e.pending;
   if (e.error && !force) return Promise.resolve([]);
@@ -3624,9 +3655,7 @@ function loadModelsCached() {
 
 function activeServerModels() {
   const s = activeApiServer();
-  const url = ((s && s.url) || '').trim();
-  const e = url ? _modelsByUrl[url] : null;
-  return (e && e.models) || null;
+  return (s && _modelsEntryOf(s).models) || null;
 }
 
 // Charge en parallèle les listes de tous les serveurs sélectionnables dont on
@@ -3635,8 +3664,8 @@ function activeServerModels() {
 function loadAllServerModels(force) {
   const servers = listSelectableApiServers();
   const todo = servers.filter(s => {
-    const e = _modelsByUrl[(s.url || '').trim()];
-    return force || !e || (!e.models && !e.error && !e.pending);
+    const e = _modelsEntryOf(s);
+    return force || (!e.models && !e.error && !e.pending);
   });
   if (!todo.length) return Promise.resolve(false);
   return Promise.all(todo.map(s => loadServerModels(s, force))).then(() => true);
@@ -3778,7 +3807,7 @@ function renderComposerModelOptionsInner() {
   // l'en-tête n'apporte rien et le menu garde son apparence historique.
   const grouped = servers.length > 1;
   servers.forEach(s => {
-    const e = _modelsByUrl[(s.url || '').trim()] || {};
+    const e = _modelsEntryOf(s);
     if (grouped) menu.appendChild(buildModelGroupHeader(s, e));
     const models = e.models || [];
     if (!models.length) {
@@ -3816,7 +3845,7 @@ function buildModelGroupNote(server, label) {
   const d = document.createElement('div');
   d.className = 'model-group-note';
   d.textContent = label;
-  const e = _modelsByUrl[(server.url || '').trim()] || {};
+  const e = _modelsEntryOf(server);
   if (e.error) {
     d.classList.add('is-error');
     d.onmousedown = (ev) => { ev.preventDefault(); retryServerModels(server.id); };
@@ -7098,7 +7127,11 @@ const EXPORT_SCRIPT = `
   // tokens et couleurs Prism sont gouvernés par le sélecteur :has() sur elle.
   // (Pas de backtick dans ce commentaire : EXPORT_SCRIPT est un template
   // literal, piège 22.)
-  var THEME_KEY = 'miaou-export-theme:' + location.pathname;
+  // UNE seule clef pour TOUS les exports (pas de suffixe de chemin) : le choix
+  // clair/sombre est une préférence de lecture, pas un attribut du document —
+  // la refaire à chaque nouvel export n'a pas de sens, et une entrée par fichier
+  // encrassait le localStorage sans rien apporter.
+  var THEME_KEY = 'miaou-export-theme';
   var sw = document.getElementById('theme-switch');
   if (sw) {
     try {

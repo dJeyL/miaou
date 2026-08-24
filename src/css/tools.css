@@ -66,10 +66,16 @@
 /* L'icône s'aligne en haut dès qu'un intent est présent (le label peut wrapper sur plusieurs lignes). */
 .tool-ack.has-intent { align-items: flex-start; }
 .tool-ack.has-intent .ack-icon { padding-top: 1px; align-self: flex-start; }
-.mcp-intent-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+/* flex-start, pas center : l'intent peut wrapper sur plusieurs lignes et un
+   chevron centré sur le bloc entier flotte alors au milieu de nulle part. Il
+   s'aligne sur la PREMIÈRE ligne, comme .ack-icon en face (has-intent). Le
+   padding-top du chevron rattrape l'écart entre la hauteur de ligne du texte et
+   celle du SVG, pour le centrer sur cette première ligne plutôt que de le coller
+   à son sommet. */
+.mcp-intent-row { display: flex; align-items: flex-start; gap: 4px; cursor: pointer; }
 .mcp-chevron {
   flex-shrink: 0;
-  background: none; border: none; padding: 1px; cursor: pointer;
+  background: none; border: none; padding: 4px 1px 1px; cursor: pointer;
   color: var(--accent); opacity: 0.75;
   display: inline-flex; align-items: center; line-height: 1;
 }

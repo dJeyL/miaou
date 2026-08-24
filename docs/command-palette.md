@@ -87,7 +87,7 @@ fermer. `cmdkModeItems(query)` route selon `_cmdkMode` et renvoie des items
 
 - **model** : `cmdkModelItems(query)` — mêmes couples (serveur, modèle) que le
   sélecteur composer, sur tous les serveurs non désactivés déjà en cache
-  (`_modelsByUrl`) ; la palette **ne déclenche aucun fetch**, elle liste ce qui
+  (`_modelsById`) ; la palette **ne déclenche aucun fetch**, elle liste ce qui
   est connu (peut être vide → l'entrée racine est `enabled`-gated). Le nom du
   serveur apparaît en `note` dès qu'il y a plus d'un serveur sélectionnable.
   Pick → `pickComposerModel(m, serverId)` (bascule le serveur actif si besoin

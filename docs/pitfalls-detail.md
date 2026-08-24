@@ -179,9 +179,16 @@ au KV cache, ou à la synchro multi-onglets.
     `currentConvModel` est remis à `''` par `resetToEmpty` (nouvelle conv →
     défaut), restauré par `openConversation`, persisté par `setConvModel` et
     `persistCurrent`. Liste des modèles **mise en cache pour la session**
-    (`_modelsByUrl`, ui.js — une entrée `{ url, models, error, pending }` par
-    **URL de serveur**) : **un seul `/models` par session et par serveur**, pas
-    de re-fetch à chaque ouverture du dropdown. Le sélecteur est **multi-serveurs**
+    (`_modelsById`, ui.js — une entrée `{ id, stamp, models, error, pending }`
+    par **id de serveur**, jamais par URL : deux serveurs peuvent partager une
+    URL et ne différer que par la clef d'API, avec des listes de modèles
+    distinctes ; `stamp` est l'empreinte `url + '\n' + key` au moment du fetch,
+    et une entrée dont le `stamp` a changé est invalidée — l'id survit à
+    l'édition d'une carte, la liste de l'ancien endpoint ne doit pas). **Un seul
+    `/models` par session et par serveur**, pas de re-fetch à chaque ouverture du
+    dropdown. Lecture de rendu via `_modelsEntryOf(server)` (ne crée pas
+    d'entrée, ne ressuscite pas une liste obsolète), création/actualisation via
+    `_modelsEntry(server)`. Le sélecteur est **multi-serveurs**
     (2026-08-21) : il liste les modèles de TOUS les serveurs non désactivés
     (`listSelectableApiServers`, storage.js — prédicat unique `!disabled && url`),
     regroupés par serveur (`.model-group`, en-tête affiché seulement s'il y a

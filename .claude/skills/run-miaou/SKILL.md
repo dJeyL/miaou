@@ -123,6 +123,34 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   not a bug: don't expect prior `node driver.mjs` runs to have left
   state behind.
 
+## Writing assertions in a verify script
+
+A verify is only worth its runtime if each assertion can *fail*. Two ways a
+green proves nothing:
+
+- **An assertion that accepts more than one outcome.** Real case (lot T-2bis):
+  `check('le compteur suit le registre', pill === null || pill === '1 agent')`
+  passed whichever way the counter behaved — the disjunction was written while
+  unsure which state was correct, and that uncertainty got frozen into the
+  test. Tightened to `pill === null` (the only correct outcome: the remaining
+  generation is the displayed one), it immediately caught a regression it had
+  been blind to. **Decide the expected value before writing the check**; if you
+  genuinely don't know it, find out — never encode the doubt as an `||`.
+- **A scenario where the two branches of a predicate can't diverge.** Also lot
+  T-2 : removing the active-Space exclusion from the collapsed selector
+  produced **0 FAILs**, because no fixture ever made "everything" and
+  "elsewhere" differ. A predicate is only tested by a state where a wrong
+  implementation would give a different answer.
+
+So: **challenge each green by injecting the regression it is supposed to
+catch** (edit the source, rebuild, re-run, confirm it goes red, revert). This
+is how both blind spots above were found. It complements — and does not replace
+— running the verify against the pre-change code (a script green from the very
+first run is a signal to re-play, not a licence to skip it).
+
+Assertions accumulate into a `failures` array via a `check(label, cond)` helper
+so one run reports every problem, rather than aborting on the first.
+
 ## Troubleshooting
 
 - **`Error: browserType.launch: Executable doesn't exist`**: Chromium

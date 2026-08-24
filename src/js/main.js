@@ -1145,7 +1145,7 @@ function applySyncedSettings(keys) {
   // seulement : l'onglet émetteur a déjà fait `setConvModel('')` → saveConversation
   // → broadcast `conv-updated`, donc pas de re-persistance ni de rebroadcast ici
   // (évite l'écho). `prefetchModels()` refetch le cache modèles du nouveau serveur
-  // (cache `_modelsByUrl` indexé par URL de serveur) et rappelle `syncModelUI()`.
+  // (cache `_modelsById` indexé par id de serveur) et rappelle `syncModelUI()`.
   if (set.has('active-api-server')) {
     currentConvModel = '';
     prefetchModels();
@@ -1488,7 +1488,7 @@ function onUseApiServer(id) {
   syncActiveApiServerUI();
   syncConfigured();
   syncModelUI();
-  prefetchModels();   // cache par URL (_modelsByUrl) : re-fetch seulement si ce serveur est inconnu
+  prefetchModels();   // cache par id (_modelsById) : re-fetch seulement si ce serveur est inconnu
 }
 
 // ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────

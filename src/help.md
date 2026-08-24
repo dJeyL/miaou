@@ -259,16 +259,16 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
 
 Les pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles
 s'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut
-à droite permet de basculer à la lecture ; le choix est retenu pour ce fichier.
-Cette bascule fonctionne **sans JavaScript** : elle marche donc partout, y
-compris dans les visionneuses de pièces jointes qui n'exécutent aucun script
+à droite permet de basculer à la lecture ; ton choix est retenu et s'applique à
+tous tes exports, y compris ceux que tu produiras plus tard. Cette bascule
+fonctionne **sans JavaScript** : elle marche donc partout, y compris dans les
+visionneuses de pièces jointes qui n'exécutent aucun script
 (l'aperçu de fichier d'iOS, par exemple). Le réglage **« Export HTML
 interactif »** (réglages, section « Apparence ») ne la conditionne pas : activé
 par défaut, il ajoute seulement les boutons copier/télécharger sur les blocs de
-code, et fait retenir ton choix de thème d'une ouverture à l'autre du même
-fichier. Décoché, la bascule reste disponible, mais le choix n'est plus
-mémorisé. Les diagrammes, eux, gardent dans tous les cas les couleurs qu'ils
-avaient à l'export.
+code, et fait retenir ton choix de thème d'une ouverture à l'autre. Décoché, la
+bascule reste disponible, mais le choix n'est plus mémorisé. Les diagrammes,
+eux, gardent dans tous les cas les couleurs qu'ils avaient à l'export.
 
 Ces exports sont à sens unique : ce sont des fichiers de lecture, il n'existe
 aucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni
