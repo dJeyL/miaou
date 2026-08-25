@@ -12,11 +12,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedAll } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = process.argv[2] || path.join(__dirname, 'shots-mermaid-lightbox');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -40,16 +40,8 @@ const shot = async (name) => {
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed : script de dev-seed.html évalué dans la page dist (même origine) ──
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const seedScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('skill(s)'), { timeout: 5000 });
+// ── Seed : fixtures du module seed-fixtures.js écrites dans la page dist ──
+await seedAll(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);

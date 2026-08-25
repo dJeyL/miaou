@@ -113,6 +113,19 @@ await page.click('#space-select-btn');
 await page.waitForSelector('#space-menu.show', { timeout: 3000 });
 await page.click('.space-move-trigger');
 await page.waitForTimeout(150);
+// `enterMoveMode` PRÉ-SÉLECTIONNE la conversation ouverte (ui.js) : entrer en
+// mode déplacement met toujours dans le lot ce qu'on regarde. Pour tester
+// l'ABSENCE de follow, il faut donc la décocher explicitement — sinon le lot la
+// contient et le follow est correct (c'est le scénario B, pas A). Ce script
+// datait d'avant cette affordance et supposait une sélection vide à l'entrée.
+const preselected = await page.evaluate(() => Array.from(_moveSelection));
+if (preselected.length === 1 && preselected[0] === 'c-default-3') {
+  ok('enterMoveMode pré-sélectionne la conversation ouverte');
+} else {
+  fail('Pré-sélection inattendue à l\'entrée du mode', JSON.stringify(preselected));
+}
+await page.evaluate(() => toggleConvSelection('c-default-3', false));
+await page.waitForTimeout(100);
 const rowIdBeforeMove = await page.evaluate(() => {
   const ids = Array.from(document.querySelectorAll('#conv-list .conv')).map(el => el.querySelector('.conv-title').textContent);
   return ids;
@@ -120,6 +133,12 @@ const rowIdBeforeMove = await page.evaluate(() => {
 console.log(`  (info) lignes visibles avant sélection : ${JSON.stringify(rowIdBeforeMove)}`);
 await page.locator('.conv-select').nth(0).click();   // coche la 1ère ligne (Conv default 1, la plus récente)
 await page.waitForTimeout(150);
+const selBeforeMove = await page.evaluate(() => Array.from(_moveSelection));
+if (selBeforeMove.length === 1 && selBeforeMove[0] === 'c-default-1') {
+  ok('Lot du scénario A : uniquement c-default-1 (conv ouverte décochée)');
+} else {
+  fail('Lot du scénario A incorrect', JSON.stringify(selBeforeMove));
+}
 const destLabel = await page.locator('.move-bar-row .pill-select-btn span').first().textContent().catch(() => null);
 if (destLabel && destLabel.trim() === 'Pro') ok(`Pilule destination pré-remplie avec l'unique autre Space ("${destLabel.trim()}")`);
 else fail('Pilule destination incorrecte', `label="${destLabel}"`);
@@ -133,13 +152,15 @@ const barGoneAfterMove = await page.locator('#move-bar.show').count();
 if (modeOffAfterMove === 0 && barGoneAfterMove === 0) ok('Le déplacement quitte le mode sélection et masque la barre');
 else fail('État résiduel après déplacement', `select-mode=${modeOffAfterMove}, bar.show=${barGoneAfterMove}`);
 
-// 10. Vérifier la persistance réelle : localStorage montre bien c-default-1 dans space-pro.
-const movedSpaceId = await page.evaluate(() => {
-  const convs = JSON.parse(localStorage.getItem('miaou-conversations') || '[]');
-  const c = convs.find(c => c.id === 'c-default-1');
-  return c ? c.spaceId : null;
+// 10. Vérifier la persistance réelle : la conversation est bien dans space-pro.
+// Lecture en IDB depuis le lot U — `miaou-conversations` n'existe plus (le seed
+// ci-dessus l'écrit encore, mais la migration U-2 le déplace et purge la clé au
+// boot, ce qui exerce au passage ce chemin).
+const movedSpaceId = await page.evaluate(async () => {
+  const c = await readConversationFromDB('c-default-1');
+  return c ? (c.spaceId || null) : null;
 });
-if (movedSpaceId === 'space-pro') ok('conv.spaceId réécrit en localStorage (persistance confirmée)');
+if (movedSpaceId === 'space-pro') ok('conv.spaceId réécrit en IDB (persistance confirmée)');
 else fail('conv.spaceId non réécrit', `spaceId=${movedSpaceId}`);
 
 // 11. Pas de follow attendu (la conv ouverte, Conv Pro 1, n'était pas dans le lot) :
@@ -165,9 +186,16 @@ await page.click('#space-select-btn');
 await page.waitForSelector('#space-menu.show', { timeout: 3000 });
 await page.click('.space-move-trigger');
 await page.waitForTimeout(150);
-// c-default-2 est la seule conv restante dans le Space default à ce stade.
-await page.locator('.conv-select').nth(0).click();
-await page.waitForTimeout(150);
+// `enterMoveMode` a déjà pré-sélectionné la conversation ouverte (c-default-2),
+// qui est justement le lot voulu ici : re-cliquer sa case la DÉCOCHERAIT, la
+// barre disparaîtrait et le scénario ne pourrait pas s'exécuter. On vérifie la
+// pré-sélection plutôt que de la refaire.
+const selB = await page.evaluate(() => Array.from(_moveSelection));
+if (selB.length === 1 && selB[0] === 'c-default-2') {
+  ok('Lot du scénario B : la conv ouverte est pré-sélectionnée, rien à cocher');
+} else {
+  fail('Lot du scénario B incorrect', JSON.stringify(selB));
+}
 await page.click('.move-bar-go');
 await page.waitForTimeout(300);
 

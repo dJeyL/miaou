@@ -16,11 +16,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedAll } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = process.argv[2] || path.join(__dirname, 'shots-confort');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -51,16 +51,8 @@ await page.addInitScript(() => {
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed : script de dev-seed.html évalué dans la page dist (même origine) ──
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const seedScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('skill(s)'), { timeout: 5000 });
+// ── Seed : fixtures du module seed-fixtures.js écrites dans la page dist ──
+await seedAll(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);   // loadSkillsCache + rendus initiaux
@@ -70,8 +62,8 @@ await page.waitForTimeout(400);   // loadSkillsCache + rendus initiaux
 // sont donc absentes de la sidebar/liste par défaut (Space "default" actif) —
 // deux compteurs distincts : la vue filtrée (sidebar) vs le brut (export/import,
 // non filtré par Space, cf. validateImportPayload/storage.js).
-const CONV_COUNT_SIDEBAR = 18;
-const CONV_COUNT_TOTAL = 23;
+const CONV_COUNT_SIDEBAR = 21;
+const CONV_COUNT_TOTAL = 26;
 
 // ── A. Boutons copier ────────────────────────────────────────────────────────
 await page.click('.conv-title:text("Cron — syntaxe et debugging")');
@@ -159,10 +151,14 @@ check('C : bouton Continuer actif (dernière bulle)', trunc.btnEnabled);
 await shot('03-truncated-banner.png');
 
 // ── D. Recherche plein texte ─────────────────────────────────────────────────
+// Depuis U-3, le scan de contenu des conversations FROIDES passe par une
+// lecture IDB : `onConvSearch` rend une première fois sur titre+résumé, puis
+// re-rend après son `await`. Attendre le seul debounce (150 ms) capturait donc
+// la liste intermédiaire, sans les résultats de contenu.
 const searchResults = async (q) => {
   await page.fill('#conv-search', q);
   await page.evaluate(() => onConvSearch());
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(600);   // debounce + lecture IDB + second rendu
   return page.evaluate(() => Array.from(document.querySelectorAll('#conv-list .conv-title')).map(t => t.textContent));
 };
 const r1 = await searchResults('ornithorynque');
@@ -194,13 +190,21 @@ const exportPath = path.join(outDir, download.suggestedFilename());
 await download.saveAs(exportPath);
 let payload = null;
 try { payload = JSON.parse(fs.readFileSync(exportPath, 'utf8')); } catch (e) { /* payload reste null */ }
-const EXPORT_KEYS = ['miaou-settings', 'miaou-conversations', 'miaou-summaries', 'miaou-memories',
-  'miaou-api-servers', 'miaou-active-api-server', 'miaou-mcp-servers'];
+// Format v2 (lot U-4) : conversations et résumés ont quitté la section
+// `localStorage` du payload pour la section `idb`, aux côtés de
+// skills/resources — leur support de stockage a changé (piège : un export v1
+// relu ici passerait pour vide sans erreur).
+const EXPORT_LS_KEYS = ['miaou-settings', 'miaou-memories', 'miaou-api-servers',
+  'miaou-active-api-server', 'miaou-mcp-servers', 'miaou-spaces', 'miaou-active-space'];
 check('E : nom de fichier miaou-export-….json', /^miaou-export-\d{4}-\d{2}-\d{2}-\d{4}\.json$/.test(download.suggestedFilename()));
-check('E : payload JSON valide, format/version', !!payload && payload.format === 'miaou-export' && payload.version === 1);
-check('E : les 7 clés localStorage présentes', !!payload && EXPORT_KEYS.every(k => k in payload.localStorage));
-check('E : conversations exportées au complet', !!payload && payload.localStorage['miaou-conversations'].length === CONV_COUNT_TOTAL);
-check('E : skills IDB embarquées (2 seedées)', !!payload && payload.idb.skills.length === 2);
+check('E : payload JSON valide, format/version 2', !!payload && payload.format === 'miaou-export' && payload.version === 2);
+check('E : les 7 clés localStorage présentes', !!payload && EXPORT_LS_KEYS.every(k => k in payload.localStorage));
+check('E : conversations et résumés sous idb, plus sous localStorage', !!payload &&
+  Array.isArray(payload.idb.conversations) && Array.isArray(payload.idb.summaries) &&
+  !('miaou-conversations' in payload.localStorage) && !('miaou-summaries' in payload.localStorage));
+check('E : conversations exportées au complet', !!payload && payload.idb.conversations.length === CONV_COUNT_TOTAL);
+// 2 skills seedées + 3 skills système (ensureSystemSkills au démarrage)
+check('E : skills IDB embarquées (2 seedées + 3 système)', !!payload && payload.idb.skills.length === 5);
 
 // import invalide : erreur inline, pas de récapitulatif
 await page.setInputFiles('#import-data-input', {

@@ -8,7 +8,14 @@ JS/CSS/HTML — strings, templates, regex, commentaire non terminé ;
 section ; `parse_system_skill_file`/`load_system_skills` — cartouche nominal,
 description absente, cartouche/`name`/corps manquant → `ValueError`, lecture
 réelle de `src/system-skills/*.md`, dossier absent → `{}` via un `SRC` de test
-temporaire), comptés dans le même total. Seules les **fonctions pures** sont
+temporaire), comptés dans le même total. S'y ajoutent deux **contrôles
+source-à-source** (QuickJS n'a ni système de fichiers ni IndexedDB) :
+`run_docs_index_check` (tout `docs/*.md` figure dans l'index de `CLAUDE.md`) et
+`run_idb_schema_check` (les deux points d'ouverture de la base `miaou` —
+`openConvDB`/`openResourceDB` — demandent la même version via
+`MIAOU_DB_VERSION` et portent des `onupgradeneeded` identiques ; la divergence
+laissée par U-1 a rendu muets skills système, bibliothèque d'espace et pièces
+jointes, chaque appelant avalant le `VersionError` en `console.warn`). Seules les **fonctions pures** sont
 couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
@@ -95,34 +102,62 @@ absent, lien conservé avec titre sur une entrée tombstone (conversation
 existante), texte barré `~~...(supprimée)~~` si `loadConversation` échoue —
 avec titre du marqueur, avec titre orphelin en résumé, ou repli sur l'ID si
 aucun titre connu —, encodage URL de l'id), et la **recherche plein texte de la
-sidebar** (`searchConversations` : le comportement existant — titre en
-substring, résumé via `tokenize`/`scoreSummary`, tombstone ignoré — reste
-couvert en non-régression ; le scan de contenu ajouté est testé sur un match
-message user, un match message assistant, la priorité `displayText` sur le
-`content` baké d'une slash-skill (un mot présent uniquement dans le corps
-injecté ne doit pas matcher), le seuil des 3 caractères — en dessous, aucun
-scan de contenu même si le mot existe — et l'exclusion des entrées ack, dont
-le `result` peut être volumineux et hors-sujet).
+sidebar** (`searchConversations` : titre en substring, résumé via
+`tokenize`/`scoreSummary`, tombstone ignoré, et — depuis U-3 — appartenance à
+l'ensemble `contentHits` fourni par l'appelant, ainsi que le comportement quand
+il est omis : titre et résumé seulement, jamais le contenu). Le scan de contenu
+lui-même est testé sur `convContentMatches` (utils.js, pure) : match message
+user, match message assistant, priorité `displayText` sur le `content` baké
+d'une slash-skill (un mot présent uniquement dans le corps injecté ne doit pas
+matcher), exclusion des entrées ack (dont le `result` peut être volumineux et
+hors-sujet), entrées dégénérées (conversation sans messages, requête vide,
+`null`), et la valeur du seuil `CONTENT_SCAN_MIN_CHARS`. Le seuil est **appliqué**
+par `collectContentSearchHits` (async, IDB) : son câblage relève du Playwright
+(`verify-conv-search.mjs`), pas de QuickJS.
 
-Couvert aussi : l'**export/import complet des données** (feature E) —
-`EXPORT_KEYS` (les 9 clés), `buildExportPayload` (structure `format`/`version`/
-`exportedAt`, les 9 clés localStorage reprises désérialisées, `miaou-active-api-server`
-et `miaou-active-space` qui restent des strings brutes, sections manquantes → défauts vides tableau/objet,
-skills/resources embarqués sous `idb`), `validateImportPayload` (payload valide
-avec compteurs `conversations`/`memories`/`skills`/`resources`/`servers`/`spaces`,
+Couvert aussi : l'**export/import complet des données** (feature E, format v2
+depuis le lot U-4) — `EXPORT_KEYS` (les **7** clés, et l'absence explicite de
+`miaou-conversations`/`miaou-summaries`), `buildExportPayload` (structure
+`format`/`version`/`exportedAt` avec `version` à 2, les 7 clés localStorage
+reprises désérialisées, `miaou-active-api-server` et `miaou-active-space` qui
+restent des strings brutes, sections manquantes → défauts vides tableau/objet,
+skills/resources **et conversations/résumés** embarqués sous `idb`, messages
+conservés intégralement), `validateImportPayload` (payload valide avec compteurs
+`conversations`/`summaries`/`memories`/`skills`/`resources`/`servers`/`spaces`,
 format inconnu, format absent, version future ou non-numérique, `null`/
 `undefined` sans crash, sections `localStorage`/`idb` manquantes → comptées
 vides sans erreur, types invalides — ex. un tableau attendu remplacé par un
-objet — comptés à 0 sans crash, version 1 exactement acceptée). Le round-trip
-base64 d'une ressource (`arrayBufferToBase64`/`base64ToArrayBuffer`) était déjà
-couvert par la suite existante, réutilisé tel quel pour l'export. `snapshotLocalStorageForExport`
-(main.js) est couvert : les 9 clés JSON valides désérialisées, `miaou-active-api-server`/
-`miaou-active-space` conservées en string brute, une clé au JSON corrompu → `null` sans crash.
-La plomberie
-IDB (`getAllResources`, `clearIdbStore`) et l'orchestration (`exportAllData`,
+objet — comptés à 0 sans crash, versions 1 et 2 acceptées).
+
+Les deux helpers purs du lot U-4 portent l'invariant de rétrocompatibilité :
+`normalizeLegacySummaryMap` (objet indexé → records, `id` réaffirmé depuis la
+clé, entrées non-objet ignorées, tableau/non-objet → `null` distinct du vide, et
+le fait que `parseLegacySummaries` **délègue** bien à elle — une seule formule de
+conversion pour la migration U-2 et l'import v1) et
+`extractImportedConvRecords` (routage v1 depuis `localStorage` / v2 depuis
+`idb`, messages intacts, records sans `id` écartés, une section fait autorité
+pour sa version dans les deux sens, sections absentes sans crash, aller-retour
+`buildExportPayload` → `extract` à l'identique, et la **cohérence entre le
+compte affiché par `validateImportPayload` et ce qu'`extract` rendra**).
+
+Le round-trip base64 d'une ressource
+(`arrayBufferToBase64`/`base64ToArrayBuffer`) était déjà couvert par la suite
+existante, réutilisé tel quel pour l'export. `snapshotLocalStorageForExport`
+(main.js) est couvert : les 7 clés JSON valides désérialisées,
+`miaou-active-api-server`/`miaou-active-space` conservées en string brute, une
+clé au JSON corrompu → `null` sans crash, et le fait qu'un résidu
+`miaou-conversations` en localStorage n'est **plus lu**.
+
+La plomberie IDB (`getAllResources`, `clearIdbStore`,
+`readAllConversationsFromDB`, `readAllSummariesFromDB`,
+`replaceConvRecordsFromImport`) et l'orchestration (`exportAllData`,
 `onImportFileSelected`, `applyImportedData` — lecture fichier, `FileReader`,
-`location.reload()`) ne sont pas QuickJS-testables : vérification manuelle
-(`docs/manual-tests.md`).
+`location.reload()`) ne sont pas QuickJS-testables : elles relèvent du Playwright
+(`verify-conv-export-import.mjs`, 26 contrôles) et de la vérification manuelle
+(`docs/manual-tests.md`). C'est là que se joue le vrai risque du palier :
+l'export ne se lit pas dans sa forme mais dans son **contenu** (une conversation
+froide doit sortir avec ses messages), et l'import d'un fichier v1 **est une
+migration**, donc doit être exercé sur une base déjà peuplée — jamais vierge.
 
 Couvert aussi : les **Spaces** (lot C, herméticité) — CRUD du registre
 (`upsertSpace`/`getSpace`/`deleteSpaceEntry` no-op sur le default Space/
@@ -226,3 +261,30 @@ Adapter un squelette est permis si le comportement testé est respecté (un cas 
 le chemin MCP distant** (fetch JSON-RPC, SSE réel, AbortController, cascade D8) se
 vérifient à la main (checklist dans `docs/manual-tests.md`). Le banc d'essai MCP
 (`mcp_bench.py`) a été extrait dans le projet `miaou-mcp-servers`.
+
+**Fixtures de développement (`.claude/skills/run-miaou/seed-fixtures.js`).**
+Jeu de données réaliste — 26 conversations (dont 5 dans un second Space
+« Pro »), leurs résumés, 4 souvenirs, 2 skills et les pièces jointes de
+`seed-10b` — utilisé par les scripts Playwright pour peupler la page dist avant
+vérification. C'était `tests/dev-seed.html` jusqu'au lot U-5 : une page qu'on
+ouvrait à la main, dont les verify extrayaient le `<script>` par regex pour
+l'évaluer dans la page. L'enveloppe HTML a disparu (Playwright avait remplacé
+l'usage manuel) et les fixtures vivent maintenant dans un module ES importé par
+les scripts : `seedAll(page)` sème tout, `seedConversations(page)` seulement
+l'historique. Chaque fonction résout **après `tx.oncomplete`**, donc l'appelant
+enchaîne `page.reload()` sans attente arbitraire.
+
+Deux points à ne pas redécouvrir :
+
+- Conversations et résumés sont écrits en **IndexedDB** depuis le lot U ; le
+  module ouvre la base sur sa constante `MIAOU_DB_VERSION`, qui **doit rester
+  alignée sur celle de `storage.js`** — un script qui ouvre `miaou` sur un
+  littéral périmé bloque l'ouverture (le cas s'est produit).
+- Plusieurs verify portent des **assertions chiffrées** sur ces fixtures
+  (nombre de conversations en sidebar, comptes d'acks, cartes de skills). Elles
+  se périment quand le fixture grandit ou quand une skill système s'ajoute :
+  les corriger avec le compte réel, jamais assouplir l'assertion.
+
+Les scripts verify **écrits depuis** construisent leurs propres fixtures en
+`page.evaluate` plutôt que de dépendre du module : c'est la pratique cible pour
+tout nouveau script, le module reste pour ceux qui en dépendent déjà.

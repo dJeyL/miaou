@@ -48,122 +48,270 @@
   la transition de largeur, et la valeur finale est persistée au `mouseup`.
   `ROOT_SYSTEM_PROMPT` (doctrines binaire et mémoire) est **toujours** injecté
   dès que des outils sont présents.
-- `miaou-conversations` : tableau `[{ id, title, timestamp, updatedAt?, messages, model?,
-  reasoningEffort?, pinned?, spaceId? }]`. `spaceId` (feature Spaces, lot C) :
-  id du Space propriétaire ; absent = `DEFAULT_SPACE_ID` (`listAllConversations()`
-  l'expose toujours résolu dans sa projection, jamais `undefined`). Backfillé par
-  `migrateSpacesIfNeeded()` sur toute conversation antérieure à la feature. `updatedAt` (optionnel) est le timestamp du dernier
-  `persistCurrent` ; absent sur les anciennes conversations (tri/affichage tombent
-  alors sur `timestamp`). `model` (optionnel) est l'**override de modèle de la
-  conversation** — à ne **jamais** confondre avec le champ `model` de chaque
-  message assistant (quel modèle a produit *cette* réponse, cf. backfill modèle).
-  `reasoningEffort` (optionnel) est l'**override de niveau de raisonnement de la
-  conversation**, même statut que `model` (résolu par `activeReasoningEffort()`).
-  `pinned`
-  (optionnel, bool) épingle la conversation : `renderConvList()` regroupe les
-  épinglées dans une section **Épinglé** (singulier assumé) en tête de liste,
-  retirées de leur tranche temporelle ; toggle via `toggleConversationPin(id)`
-  (storage) exposé par le handler global `togglePin(id)` (main.js).
-  `attSeq?` (optionnel, entier) : compteur monotone d'attId (pièces jointes,
-  brief A) de la conversation — **jamais décrémenté ni réinitialisé**, y
-  compris après troncature du thread par édition d'un message (`editUserMessage`) :
-  un `att-N` n'est jamais réattribué, même si les entrées IDB qu'il référençait
-  redeviennent orphelines (piège 12, non-goal assumé du brief A — GC différé
-  à la suppression de la conversation entière). Alloué par `allocateAttId(counter)`
-  (resources.js, fonction pure) à chaque fichier attaché, persisté immédiatement
-  par `persistAttSeq` (main.js), indépendamment de `persistCurrent`.
-  Chaque message du tableau `messages` porte les champs optionnels :
-  `model?` (assistant uniquement, quel modèle a produit ce message),
-  `server?` (assistant uniquement, nom du serveur API qui a produit ce
-  message ; absent sur les messages antérieurs au multi-serveurs — pas de
-  backfill possible, la provenance est inconnue), `ts?` (epoch ms de création,
-  absent sur les anciens messages — affichage sans
-  horodatage, pas de crash), `reasoning?` (texte de raisonnement, assistant
-  uniquement), `attachments?` (**user uniquement**, brief A/D1) : tableau
-  `[{attId, name, mime, size, kind, w?, h?}]` — `attId` conversation-scopé
-  (`att-1`, `att-2`, …, cf. `attSeq` ci-dessus), `kind ∈ {image, text, binary}`
-  (`classifyAttachmentKind`, resources.js, fonction pure — mime `image/*` →
-  `image`, extension d'une liste fermée ajustable `ATTACHMENT_TEXT_EXTENSIONS`
-  → `text`, sinon `binary`), `w`/`h` (dimensions finales en pixels, **image
-  uniquement**, figées à l'attache). Ces cinq champs sont
-  **sérialisés par `persistCurrent` et restaurés par `openConversation`** — ne
-  pas les omettre si on retouche ces fonctions.
-  `openConversation` filtre les entrées falsy (`null`/`undefined`) de
-  `messages` avant de les mapper (`.filter(Boolean)`) : une entrée corrompue
-  plantait silencieusement tout le rechargement de la conversation (accès à
-  `m.role` sur `null`), sans erreur visible à l'écran — juste un clic sidebar
-  sans effet.
+> **Lot U-1 — les conversations et les résumés ne sont PLUS dans localStorage.**
+> Ils vivent dans les stores IndexedDB `conversations` et `summaries` (base
+> `miaou`, **v4**), décrits plus bas. Le quota localStorage (~5-10 Mo) était
+> atteint en usage réel, avec perte silencieuse (un `setItem` qui jette laisse
+> la conversation courante non persistée). Les clés `miaou-conversations` et
+> `miaou-summaries` n'existent plus après migration (lot U-2, section
+> « Migration depuis localStorage » plus bas).
 
-  **Forme de `content` d'un message user porteur d'un attachment `kind:'image'`
-  (brief A lot 2, D2/D3 — envoi au modèle et politique de persistance)** :
-  DEUX formes successives, jamais les deux en même temps en storage.
-  - **Au tour d'attache** (juste après l'envoi, avant la réponse assistant) :
-    `content` est un **tableau de content parts OpenAI**
-    `[{type:'text',text:…},{type:'image_url',image_url:{url:'data:<mime>;base64,…'}}, …]`
-    — une part `image_url` par attachment `kind:'image'` du message
-    (`buildAttachedMessageContent`, resources.js). C'est la SEULE fenêtre où
-    le base64 de l'image transite (réseau + ce message, transitoirement).
-  - **Après la fin du tour** (réponse normale, tour avorté, ou halte
-    `ask_confirmation` — cf. piège 17, CLAUDE.md) : `rewriteAttachedUserMessage`
-    (main.js) réécrit `content` en **string** = les parts texte concaténées +
-    une ligne de descripteur byte-stable **par image jointe**
-    (`formatAttachmentDescriptor`, resources.js) :
-    ```
-    [attachment att-3: image "diagram.png", 1280x960, 214 kB — content available via miaou__recall_attachment]
-    ```
-    C'est la forme **persistée durablement**, celle qu'on retrouve dans
-    `localStorage['miaou-conversations']` pour toute conversation rouverte
-    après le premier tour — zéro base64 résiduel. Descripteur dérivé des
-    champs figés `name`/`w`/`h`/`size` de `message.attachments[]` (jamais
-    recalculé). Réécriture idempotente (no-op si `content` est déjà une
-    string) : peut être rejouée sans effet.
-  - Un attachment `kind:'text'` (D3) ne suit PAS ce cycle : son bloc fencé
-    avec en-tête nom de fichier (`formatTextAttachmentBlock`) est injecté au
-    tour d'attache et reste **tel quel** dans `content` pour toujours (pas de
-    descripteur, pas de réécriture — texte cheap, stabilité dès le 1ᵉʳ tour).
-  - `message.attachments[]` (schéma D1 ci-dessus) ne change jamais : seule la
-    représentation de `content` évolue selon la phase.
-  - **`displayText` est posé dès l'envoi** (sendUserText, main.js) sur tout
-    message porteur d'attachments dont le `content` final diverge du littéral
-    tapé — c'est le cas pour toute image (parts, puis descripteurs) et tout
-    fichier texte (bloc fencé persisté) ; pas pour un attachment `binary`
-    seul, où `content` reste le littéral. Doctrine displayText (invariant
-    n°1) : la bulle et la textarea d'édition sourcent TOUJOURS le littéral,
-    jamais les descripteurs ni le contenu fencé injecté. Même mécanisme que
-    les slash-skills — les deux causes se cumulent (message `/skill …` +
-    pièce jointe : displayText = littéral tapé, content = corps bakée + blocs
-    + parts).
+### Cache RAM à deux étages (lot U-1)
 
-  À l'affichage (`assistantHead`, ui.js), la provenance est rendue
-  « serveur › modèle » (séparateur `.inline-sep` coloré) **uniquement si
-  plusieurs serveurs API sont configurés** ; sinon, modèle seul. `server`
-  n'atteint jamais le payload API (`expandThread` projette en `{role, content}`).
-  `truncated?` (bool, assistant uniquement, feature C) : posé à `true` sur le
-  `onFinal` de `dispatchSend` (main.js) pour une réponse **incomplète** —
-  **absent** sinon, ce n'est pas un booléen toujours présent. Deux causes :
-  `finish_reason === 'length'` (backend coupé à la limite de tokens), ou stop
-  manuel (`runConversation` passe le sentinel `'aborted'` sur ce chemin —
-  `null` reste réservé au cas « backend sans finish_reason », traité comme une
-  fin normale) **à condition que du contenu ait été reçu** : stopper avant le
-  premier token laisse une bulle vide sans flag (« Régénérer » suffit).
-  Gouverne l'affichage du bandeau `.msg-truncated` (texte « Réponse
-  incomplète » + bouton « Continuer », ui.js) sous `.body` de
-  la bulle assistant : le **texte** persiste sur tout message qui porte le
-  flag, quelle que soit sa position dans le fil ; le **bouton** n'est
-  actif/visible que sur la dernière bulle assistant et hors stream (même
-  helper `syncLastAssistantActions` que le bouton régénérer, feature B). Une
-  continuation (`continueTruncated` → `dispatchSend(matches, continuation)`)
-  **mute** le message existant (même `ts`, pas de nouveau message) : `content`
-  devient `prefix + content`, `truncated` est **retiré** si la nouvelle
-  réponse se termine normalement, et **reposé/conservé** si elle est
-  re-tronquée (`'length'`, chaîne de continuations possible) ou de nouveau
-  stoppée à la main (`'aborted'`) — le raccord partiel reste reprenable.
-  Ce champ n'a pas besoin de backfill : sa
-  seule source est `dispatchSend`, pas de conversation antérieure à combler.
-- `miaou-summaries` : objet indexé par id de conversation. Trois états : résumé
+Le passage en IDB pose un problème d'API : `loadConversations()`,
+`loadConversation(id)`, `loadSummaries()` et consœurs sont **synchrones** et
+appelées depuis ~100 sites, dont trois catégories qui ne peuvent pas devenir
+async — le rendu (`renderConvList`, palette, tri, `spaceConvIds`), le chemin
+chaud du streaming (`persistCurrent`/`persistGeneration`, à chaque frontière de
+tour) et des handlers d'outils synchrones. Propager `await` rouvrirait des
+fenêtres de réentrance dans du code qui n'en a pas.
+
+**Décision : l'API publique reste synchrone**, adossée à un cache RAM ; seules
+les **écritures** sont async (fire-and-forget).
+
+- **Étage 1 — `_convMetaCache`** : `Map<id, meta>` des métadonnées de TOUTES les
+  conversations, **permanent**, jamais `messages`. Hydraté au boot. C'est lui
+  qui sert `listAllConversations`, `renderConvList`, la palette, le tri et
+  `spaceConvIds` : ces call-sites restent synchrones et inchangés.
+- **Étage 2 — `_convMessagesCache`** : `Map<id, messages>` **bornée en LRU**
+  (`CONV_MESSAGES_LRU_MAX`). Restent chaudes la conversation affichée, les
+  dernières ouvertes, et **obligatoirement** toute conversation portant une
+  génération en vol (piège 28 : `_activeGenerations` épingle ses entrées, jamais
+  évincées — sinon la génération perdrait ses messages sous les pieds).
+- **`_summariesCache`** : l'index des résumés en entier (taille bornée par
+  nature — une entrée courte par conversation, jamais de contenu de messages).
+  Comme les deux autres étages, il est **par onglet** : `refreshSummariesFromDB()`
+  le relit en entier à la réception d'un `conv-updated`, faute de quoi un onglet
+  injecterait au modèle des résumés périmés (cf. `docs/multitab-sync.md`).
+
+**Contrat à connaître** : `loadConversation(id)` d'une conversation **froide**
+rend `messages: []`, pas `null` — la conversation existe, ses messages ne sont
+simplement pas en RAM. Deux conséquences dures :
+
+1. **Ne jamais persister un record reconstruit depuis le cache pour modifier une
+   métadonnée.** Épingler ou renommer une conversation froide via
+   `saveConversation(conv)` l'écraserait **avec un tableau de messages vide**.
+   Toute écriture de métadonnée passe par `persistConversationField(id, fields)`,
+   qui fait son read-modify-write **dans la transaction IDB** et ne touche jamais
+   `messages`. Une valeur `undefined` y supprime le champ (sémantique de l'ancien
+   `delete conv.model`).
+2. **Un lecteur qui a besoin du contenu à froid, en masse, ne passe pas par le
+   cache** : il lit IDB via `readAllConversationsFromDB()` et vit en async. Trois
+   consommateurs sont dans ce cas — `backfillCandidates` et
+   `backfillMessageModels` (traités en U-1), et la recherche plein-texte
+   (`collectContentSearchHits`, U-3 — voir la section dédiée plus bas).
+   `warmConversation(id)` charge une conversation en étage 2 ; `openConversation`
+   l'appelle dans le même bloc `await` que `loadConversationResources`, donc
+   avant la relecture post-await du piège 24.
+
+**Écriture froide** : `persistConversationCold(conv)` écrit un record complet
+comme `persistConversation`, même transaction et même broadcast post-commit,
+mais **sans toucher l'étage 2** (les métadonnées, elles, sont rafraîchies —
+l'étage 1 porte toutes les conversations de toute façon). Réservé aux écritures
+en masse d'un consommateur froid : aujourd'hui `backfillMessageModels`, qui
+réécrit au boot toutes les conversations dont les réponses assistant n'ont pas
+de `model` — cas courant dans un historique ancien. Avec l'écriture chaude,
+l'étage 2 se retrouvait rempli de douze conversations arbitraires (les dernières
+backfillées) à chaque démarrage : borné et sans corruption, mais sans objet.
+
+**Relecture systématique à l'ouverture** : `warmConversation(id)` relit IDB à
+chaque appel, y compris quand la conversation est déjà en étage 2. La version
+U-1 court-circuitait dans ce cas — « en RAM » y valait « à jour », vrai dans un
+onglet seul, faux dès qu'il y en a deux : le cache du second ne se rafraîchissait
+jamais, ni au broadcast ni en rouvrant la conversation (cf. `docs/multitab-sync.md`,
+invariant (c)). **Exception impérative** : une conversation portant une
+génération en vol n'est jamais relue (piège 28 — son thread est en avance sur le
+storage, la relire lui retirerait le tour en cours) ; on ne rafraîchit que sa
+position LRU. `refreshConversationFromDB(id)` sert le cas symétrique : une
+conversation non affichée dont un pair a changé les métadonnées.
+
+**Fenêtre assumée** : entre la mutation du cache et `tx.oncomplete`, la RAM est
+en avance sur le disque ; un reload dans cet intervalle (quelques ms) perd la
+dernière écriture. C'était déjà le cas de facto pour les `resources`.
+
+**Échec d'écriture** : tracé en console, sans surface dédiée (décision Julien,
+lot U-1 — le brief exclut toute affordance visuelle nouvelle, et le quota IDB
+est très au-dessus de celui de localStorage). Même posture que `putResource`,
+dont le rejet n'a jamais eu d'auditeur.
+
+**Deux points d'ouverture, un seul schéma.** La base `miaou` est ouverte par
+`openConvDB` (storage.js) **ou** `openResourceDB` (resources.js) — l'un ou
+l'autre peut être premier, le schéma est donc déclaré deux fois. Deux règles, et
+un test qui les garde (`run_idb_schema_check`, runner.py — source-à-source, faute
+d'IndexedDB en QuickJS) :
+
+1. **La version vient de `MIAOU_DB_VERSION`** (storage.js), jamais d'un littéral.
+2. **Les deux `onupgradeneeded` restent identiques**, à la ligne près.
+
+Ces deux règles ont été écrites *après* la panne. Au lot U-1, le bump v3 → v4
+n'avait été fait que dans `openConvDB` ; `openResourceDB` demandait toujours `3`.
+Demander une version **inférieure** à celle de la base la fait rejeter
+(`VersionError`) — et comme les appelants de ce chemin (`loadSpaceLibrary`,
+`ensureSystemSkills`, `loadSkillsCache`, `loadConversationResources`) avalent
+l'erreur en `console.warn`, l'application **paraissait fonctionner** : plus de
+skills système upsertées, plus de bibliothèque d'espace, plus de pièces jointes,
+sans le moindre symptôme visible hors console. La leçon n'est pas « garder les
+upgrades synchrones » (ce que la dette U-1 disait déjà) mais que **le numéro de
+version était le vrai piège**, et qu'un `console.warn` sur un chemin
+d'infrastructure achète du silence, pas de la robustesse.
+
+**Tests** : QuickJS n'a pas IndexedDB. Le cache y EST la source de vérité
+observable (on ne stube pas IDB, cf. `project_extract_pure_helper_over_idb_stub`) ;
+`resetConvCacheForTests()` le remet à zéro, et le stub `localStorage.clear()` du
+runner l'appelle pour que la sémantique « je repars vierge » reste vraie. Ce que
+QuickJS ne couvre pas (schéma réel, hydratation, éviction, non-écrasement) est
+vérifié par `.claude/skills/run-miaou/verify-conv-idb.mjs`.
+
+### Migration depuis localStorage (lot U-2)
+
+`migrateConversationsToIdbIfNeeded()` (storage.js), appelée par `init()`
+**avant `hydrateConvCache()`** — le cache s'hydrate depuis IDB, les stores
+doivent donc déjà porter l'historique, sinon la sidebar s'affiche sans rien au
+premier boot post-migration.
+
+**Court-circuit sur l'ABSENCE des clés localStorage**, pas sur « le store IDB
+est peuplé ». Après une migration réussie les clés sont purgées, donc
+`getItem === null` court-circuite pour toujours. Le critère « store peuplé »
+aurait un défaut : un utilisateur qui supprime toutes ses conversations après
+une purge ratée verrait la migration rejouer et **ressusciter** son historique.
+La posture diffère donc de `migrateApiServersIfNeeded` (qui teste la présence
+de la clé qu'elle écrit) tout en suivant la même logique : tester la trace que
+la migration elle-même laisse.
+
+**Une seule transaction** pour les deux stores (`['conversations','summaries']`,
+`readwrite`) : l'atomicité est gratuite et le `oncomplete` — donc le feu vert à
+la purge — est unique.
+
+**La purge n'a lieu qu'après `tx.oncomplete`** (piège 24 dans sa forme la plus
+littérale : ici le commit gouverne une SUPPRESSION de la source, pas un simple
+broadcast). Un échec de transaction rejette : rien n'est purgé, localStorage
+reste intact, le prochain boot retentera.
+
+**Interruption : tout ou rien, et reprise sans doublon.** Tous les `put` sont
+émis dans **une seule** transaction — un onglet fermé en cours de migration
+l'avorte, rien n'est écrit (pas même les `put` déjà émis), et localStorage est
+intact puisque la purge est post-commit. Le boot suivant rejoue tout. Si la
+fermeture a lieu entre le commit et le `removeItem`, la clé survit mais
+`selectRecordsToMigrate` écarte les ids déjà présents : aucun doublon, et la
+purge aboutit cette fois. Un état **partiellement** migré est donc inatteignable
+par interruption ; il ne peut venir que d'un import ou d'un palier de version,
+et la reprise le complète sans rien dupliquer (le keyPath étant l'`id`, un `put`
+redondant écraserait de toute façon au lieu de dupliquer — deux protections
+superposées). **Si la migration était un jour découpée en lots** (pour ménager
+la mémoire sur un très gros historique), cette garantie d'atomicité tomberait :
+les contrôles « interruption » et « reprise partielle » de
+`verify-conv-migration.mjs` sont là pour le détecter.
+
+**Ce qui est déjà en IDB prime.** `selectRecordsToMigrate` (pure) écarte les ids
+déjà présents ; on lit les clés par `getAllKeys()` et non `getAll()`, pour ne
+pas rapatrier tout le volume juste pour décider de ne pas l'écraser. Cas visé :
+une migration antérieure a écrit puis échoué à purger.
+
+**Contenu présent mais illisible : conservé, jamais purgé.** `parseLegacyConversations`
+et `parseLegacySummaries` (pures) distinguent trois cas — clé absente (`[]`,
+rien à faire), contenu sain (les enregistrements exploitables), contenu présent
+mais impossible à parser (**`null`**). Sur `null`, la clé n'est pas purgée : ses
+octets restent récupérables à la main, et la purge, elle, est irréversible. Les
+deux clés sont indépendantes : l'une migre et se purge même si l'autre est
+abîmée. Contrepartie assumée : la migration est retentée à chaque boot tant
+qu'une clé abîmée est là, avec un `console.error` à chaque fois.
+
+**Changement de forme des résumés.** L'ancienne clé `miaou-summaries` portait un
+**objet indexé** `{ id: entry }` ; le store IDB veut des **records** à
+`keyPath: 'id'`. `parseLegacySummaries` fait la conversion et réaffirme `id`
+depuis la clé de l'objet — les entrées récentes le portent déjà (`saveSummary`
+le force), les anciennes pas forcément, et sans lui le `put` jette.
+
+**Tests** : les trois helpers sont purs et couverts en QuickJS. La migration
+réelle (écriture, ordre écriture→purge, non-écrasement, non-purge de l'illisible,
+idempotence) est vérifiée par
+`.claude/skills/run-miaou/verify-conv-migration.mjs`.
+
+### Recherche plein-texte sur conversations froides (lot U-3)
+
+Le passage en IDB a coupé la recherche de sa source : une conversation froide
+n'a pas ses `messages` en RAM, et le scan de contenu était fait **dans** le
+prédicat synchrone de rendu. Rendre le prédicat async aurait propagé `await`
+jusque dans `renderConvList` et le rendu de la palette.
+
+**Le scan de contenu est donc précalculé, le prédicat reste synchrone.**
+
+- `convContentMatches(conv, q)` (utils.js, **pure**, testée) — ce qui est
+  scanné dans UNE conversation. Deux exclusions héritées du prédicat d'avant
+  U-3 : les acks (`tool-ack`/`memory-ack`, dont le `result` est potentiellement
+  énorme et hors-sujet) et, côté user, le corps baké d'une slash-skill
+  (`displayText` prime sur `content`). C'est elle qui porte l'invariant —
+  sortie en pure exprès plutôt que noyée dans du code IDB non testable.
+- `collectContentSearchHits(query)` (storage.js, **async**) — lit IDB via
+  `readAllConversationsFromDB()` et rend un `Set` d'ids. Sous
+  `CONTENT_SCAN_MIN_CHARS` (= 3, utils.js), rend un Set vide **sans aucune
+  lecture** : le bruit d'un substring de 1-2 caractères domine le signal.
+- `searchConversations(query, contentHits)` (ui.js) — inchangé pour titre et
+  résumé ; le scan de contenu devient une consultation `contentHits.has(id)`.
+  **Argument omis = pas de scan de contenu**, ce qui est le comportement du
+  premier rendu, avant que la passe async ait rendu la main.
+
+**Option (a) du brief, tranchée après mesure** : relecture IDB complète par
+frappe débouncée, **pas** d'index RAM entretenu. ~14 ms pour 100 conversations /
+3,8 Mo, ~70 ms pour 500 / 20 Mo en régime chaud, derrière un debounce de 150 ms.
+Un index RAM garderait tout le texte en mémoire en permanence — exactement ce que
+l'étage 2 du cache évite — pour gagner des millisecondes invisibles. Ne pas le
+construire par anticipation.
+
+**Deux surfaces, même mécanique** (la palette n'était mentionnée ni par le brief
+ni par le HANDOVER — sans elle, sa recherche cross-Space aurait perdu le match
+contenu en silence) :
+
+| | sidebar (`onConvSearch`) | palette (`scheduleCmdkContentScan`) |
+|---|---|---|
+| debounce | déjà présent (`CONV_SEARCH_DEBOUNCE_MS`) | **ajouté** (même constante) |
+| état du résultat | `convSearchFilter` (closure sur le Set) | `_cmdkContentHits` = `{ query, hits }` |
+| jeton de séquence | `_convSearchSeq` | `_cmdkContentSeq` |
+
+**Rendu en deux temps, délibéré.** La liste est filtrée sur titre/résumé
+**immédiatement**, puis complétée quand la lecture IDB rend la main (re-rendu
+sauté si le Set est vide, pour ne pas rejouer l'animation d'entrée pour rien).
+Sans ce premier rendu, la liste resterait figée sur l'ancien filtre pendant
+toute la lecture — perceptible sur un gros historique.
+
+**Jetons de séquence, obligatoires.** Deux frappes rapprochées ont leurs passes
+en vol simultanément et rien ne garantit qu'elles rendent la main dans l'ordre :
+sans jeton, la plus lente écrase le résultat de la plus récente et la liste
+affiche le filtre d'une requête abandonnée
+(`project_await_reentrancy_guard`). Côté palette, le résultat est mémorisé
+**avec sa requête**, jamais seul — un Set arrivé en retard s'appliquerait sinon à
+une autre frappe. Les invalidations : effacement du champ
+(`cancelConvSearchDebounce`), changement de submode et fermeture de la palette
+(`cancelCmdkContentScan`).
+
+**Tests** : QuickJS couvre `convContentMatches` et la consultation du Set. Ni la
+lecture IDB, ni le débounce, ni les jetons — c'est-à-dire exactement ce qui peut
+faire afficher un résultat périmé : vérifiés par
+`.claude/skills/run-miaou/verify-conv-search.mjs` (14 contrôles). Son seed écrit
+**directement en IDB** sans ouvrir aucune conversation, et sans poser de `model`
+sur les réponses assistant : un seed passant par `saveConversation` les
+réchaufferait, et le script ne prouverait plus rien du chemin froid.
+
+### Schéma d'une conversation (store IDB `conversations`)
+
+Record `{ id, title, timestamp, updatedAt?, messages, model?, reasoningEffort?,
+pinned?, spaceId?, attSeq? }` (keyPath `id`, index `by_space`).
+`spaceId` (feature Spaces, lot C) : id du Space propriétaire ; absent =
+`DEFAULT_SPACE_ID` (`listAllConversations()` l'expose toujours résolu dans sa
+projection, jamais `undefined`). Backfillé par `migrateSpacesIfNeeded()` sur
+toute conversation antérieure à la feature. `updatedAt` (optionnel) est le
+timestamp du dernier `persistCurrent` ; absent sur les anciennes conversations
+(tri/affichage tombent alors sur `timestamp`). `model` (optionnel) est
+l'**override de modèle de la conversation** — à ne **jamais** confondre avec le
+champ `model` de chaque message assistant (quel modèle a produit *cette*
+réponse, cf. backfill modèle). `reasoningEffort` (optionnel) est l'**override de
+niveau de raisonnement de la conversation**.
+
+- **Store IDB `summaries`** (keyPath `id` = id de conversation ; lot U-1, était
+  la clé localStorage `miaou-summaries`). Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).
-  **Invariant visé (pas garanti à 100% en historique)** : toute clé de cet
-  objet correspond à un id présent dans `miaou-conversations`. `deleteConv`
+  **Invariant visé (pas garanti à 100% en historique)** : tout id de ce store
+  correspond à un id présent dans le store `conversations`. `deleteConv`
   (main.js) supprime l'entrée via `deleteSummaryEntry` ; les trois sites de
   génération async (`summarizeIfNeeded`, `restoreSummaryItem`, `runBackfill`,
   cf. piège 20 CLAUDE.md) re-vérifient `loadConversation(id)` avant d'écrire,
@@ -273,12 +421,16 @@
   `DEFAULT_SPACE_ID`. Tous les sites qui doivent respecter l'herméticité
   (sidebar, recherche, outils `conv__list`/`conv__get`,
   sélection d'injection de résumés) passent par ce prédicat — jamais par un
-  filtre `c.spaceId === x` réécrit localement. Les résumés (`miaou-summaries`)
+  filtre `c.spaceId === x` réécrit localement. Les résumés (store `summaries`)
   ne portent **pas** de `spaceId` dupliqué : ils scopent via leur conversation
   (jointure sur l'id), cf. `docs/spaces.md` pour le détail des sites branchés.
-- **IndexedDB `miaou`** (ouverte par `resources.js`, **version 3**) : deux object
-  stores. `onupgradeneeded` est idempotent (contains-check par store/index) →
-  migrations v1→v2→v3 transparentes, `resources` intact à chaque palier.
+- **IndexedDB `miaou`** (**version 4**) : quatre object stores.
+  `onupgradeneeded` est idempotent (contains-check par store/index) →
+  migrations v1→v2→v3→v4 transparentes, chaque store intact à chaque palier.
+  Deux points d'ouverture coexistent (`openResourceDB` dans `resources.js`,
+  `openConvDB` dans `storage.js`) : chacun déclare le schéma COMPLET dans son
+  `onupgradeneeded`, puisque l'un ou l'autre peut être le premier à ouvrir la
+  base. Ne jamais faire diverger les deux déclarations.
   - store `skills` (keyPath `slug`, géré par `skills.js`) : voir `docs/skills.md`.
   - store `resources`, index `by_conversation` **et** `by_space` (v3, lot Cbis —
     scoping des fichiers de bibliothèque d'espace, cf. ci-dessous). Chaque entrée :
@@ -366,22 +518,46 @@
 
 ## Export / import complet des données (feature E)
 
-Assurance-vie : tout l'état de MIAOU (les 9 clés localStorage ci-dessus + les
-deux stores IndexedDB `skills`/`resources`) tient dans un unique fichier JSON,
+Assurance-vie : tout l'état de MIAOU (les clés localStorage ci-dessus + les
+stores IndexedDB) tient dans un unique fichier JSON,
 téléchargeable et réimportable. **Remplacement intégral à l'import, pas de
 fusion** (décision actée pour la v1 — un import écrase tout l'état local).
+
+### Versions du format
+
+- **v1** — conversations et résumés sous `localStorage`, aux côtés des autres
+  clés du schéma. C'est là qu'ils vivaient avant le lot U.
+- **v2** (lot U-4) — ils passent sous `idb`, avec `skills` et `resources`,
+  puisque c'est là qu'ils vivent depuis la migration U-2.
+
+L'écriture est **toujours à la version courante** (`EXPORT_FORMAT_VERSION`) ; la
+lecture accepte **toutes les versions ≤ celle-ci**. Un fichier de version
+supérieure est refusé avec un message, sans rien détruire.
+
+> **Importer un fichier v1 EST une migration.** C'est, depuis U-2, le seul
+> chemin de migration qui reste dans l'application — et il n'est déclenché par
+> aucun boot, seulement par un fichier. Un scénario de test qui part d'une base
+> vierge ne l'exerce donc jamais : c'est exactement l'angle mort qui a laissé
+> passer trois bugs U-1 (cf. campagne, lot U). `verify-conv-export-import.mjs`
+> importe ses fichiers v1 sur une base **déjà peuplée**, pour que le
+> remplacement intégral ait quelque chose à remplacer.
+
+**L'export était cassé en silence entre U-2 et U-4** : `EXPORT_KEYS` contenait
+encore les deux clés purgées, `JSON.parse(null)` rendait `null`, normalisé en
+vide par `buildExportPayload`. Le fichier produit était parfaitement valide et
+vide de tout l'historique — aucune exception, aucun log. À garder en tête comme
+forme de panne : une clé retirée d'un support ne fait pas échouer son lecteur,
+elle le fait rendre du vide.
 
 ### Format
 
 ```json
 {
   "format": "miaou-export",
-  "version": 1,
+  "version": 2,
   "exportedAt": 1751600000000,
   "localStorage": {
     "miaou-settings": { "…": "…" },
-    "miaou-conversations": [ "…" ],
-    "miaou-summaries": { "…": "…" },
     "miaou-memories": [ "…" ],
     "miaou-api-servers": [ "…" ],
     "miaou-active-api-server": "srv_…",
@@ -391,7 +567,9 @@ fusion** (décision actée pour la v1 — un import écrase tout l'état local).
   },
   "idb": {
     "skills": [ { "slug": "…", "name": "…", "description": "…", "enabled": true, "content": "…", "autotrigger": false } ],
-    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "data": "<base64>", "originUrl": null } ]
+    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "data": "<base64>", "originUrl": null } ],
+    "conversations": [ { "id": "…", "title": "…", "timestamp": 0, "updatedAt": 0, "spaceId": "…", "messages": [ "…" ] } ],
+    "summaries": [ { "id": "…", "summary": "…", "keywords": [ "…" ], "messageCount": 0 } ]
   }
 }
 ```
@@ -400,6 +578,12 @@ fusion** (décision actée pour la v1 — un import écrase tout l'état local).
   JSON imbriquées) — sauf `miaou-active-api-server` et `miaou-active-space`,
   seules clés du schéma qui ne sont **pas** stockées en JSON (strings brutes,
   id du serveur / du Space actifs).
+- **Les résumés changent de forme entre v1 et v2** : v1 porte l'objet indexé
+  `{ id: entry }` de l'ancienne clé localStorage, v2 un **tableau de records**
+  à `keyPath: 'id'` (la forme du store). La conversion est faite par
+  `normalizeLegacySummaryMap`, **la même fonction** que la migration de boot
+  U-2 — une seule formule pour les deux chemins, jamais un second convertisseur
+  écrit sur place.
 - `resources[].data` (`ArrayBuffer` en IDB) devient une string base64 à
   l'export (`arrayBufferToBase64`, resources.js) et repasse en `ArrayBuffer` à
   l'import (`base64ToArrayBuffer`).
@@ -411,33 +595,75 @@ fusion** (décision actée pour la v1 — un import écrase tout l'état local).
 
 ### Helpers purs (storage.js, QuickJS-testables)
 
-- `EXPORT_KEYS` : les 9 clés du schéma (référencée uniquement en corps de
-  fonction depuis les autres fichiers, même contrainte que `MAX_SUMMARIES` —
-  cf. CLAUDE.md).
-- `buildExportPayload(lsSnapshot, skills, resources)` → objet complet
-  ci-dessus. Sections manquantes de `lsSnapshot` → défauts vides (tableau ou
-  objet selon la clé), jamais d'exception.
+- `EXPORT_FORMAT_VERSION` (= 2) : version écrite, et borne haute acceptée en
+  lecture. Un seul chiffre pour les deux, jamais un littéral dupliqué.
+- `EXPORT_KEYS` : les **7** clés localStorage du schéma (référencée uniquement
+  en corps de fonction depuis les autres fichiers, même contrainte que
+  `MAX_SUMMARIES` — cf. CLAUDE.md). `miaou-conversations` et `miaou-summaries`
+  en ont été **retirées** au lot U-4.
+- `buildExportPayload(lsSnapshot, skills, resources, conversations, summaries)`
+  → objet complet ci-dessus. Reste **pure** : l'appelant lit IDB et lui passe
+  les tableaux, comme il le faisait déjà pour `skills`/`resources`. Sections
+  manquantes → défauts vides (tableau ou objet selon la clé), jamais
+  d'exception.
+- `extractImportedConvRecords(payload)` → `{ conversations, summaries }`, sous
+  la forme des records IDB attendus par l'import. **C'est LE point unique où la
+  différence v1/v2 est traitée** : tout le reste de l'import ignore la version
+  du fichier. Les records sans `id` sont écartés (`id` est le keyPath, le `put`
+  jetterait). Une section a **autorité pour sa version** : un v2 dont `idb` est
+  vide n'est pas complété depuis `localStorage` (un export v2 légitime peut
+  n'avoir aucune conversation), et un v1 ignore une section `idb` qui traînerait.
+- `normalizeLegacySummaryMap(obj)` → conversion de forme seule, à partir d'un
+  objet **déjà parsé** : `{ id: entry }` → tableau de records portant leur `id`
+  (réaffirmé depuis la clé, qui fait foi). `null` sur un objet indexé
+  inexploitable — traité comme « présent mais illisible », jamais comme vide.
+  Deux appelants délibérés : `parseLegacySummaries` (migration U-2) et
+  `extractImportedConvRecords` (import v1).
 - `validateImportPayload(obj)` → `{ ok: true, counts: { conversations,
-  memories, skills, resources, servers, spaces } }` (compteurs bruts pour le
-  récapitulatif UI, `servers` = api-servers + mcp-servers) ou
+  summaries, memories, skills, resources, servers, spaces } }` (compteurs bruts
+  pour le récapitulatif UI, `servers` = api-servers + mcp-servers) ou
   `{ ok: false, error }`. Bloquant : `format !== 'miaou-export'`, `version`
-  absente/non-numérique/`> 1`. Tolérant : sections `localStorage`/`idb`
-  manquantes ou de type invalide → comptées comme vides, pas une erreur (le
-  format peut évoluer entre deux versions de MIAOU).
+  absente/non-numérique/`> EXPORT_FORMAT_VERSION`. Tolérant : sections
+  `localStorage`/`idb` manquantes ou de type invalide → comptées comme vides,
+  pas une erreur (le format peut évoluer entre deux versions de MIAOU).
+  Conversations et résumés sont comptés **via `extractImportedConvRecords`**,
+  celui-là même que l'import appliquera : un décompte qui divergerait de ce qui
+  est réellement écrit ferait mentir le récapitulatif de confirmation.
 
 ### IDB
 
 `getAllResources()` (resources.js) lit tout le store `resources`, sur le
 modèle de `getAllSkillRecords()` (skills.js). `clearIdbStore(storeName)`
-(resources.js) vide un store par son nom (générique skills/resources) — utilisé
-par l'import avant réinsertion complète.
+(resources.js) vide un store par son nom (générique) — utilisé par l'import
+avant réinsertion complète, sur les quatre stores.
+
+Côté conversations (storage.js) :
+
+- `readAllConversationsFromDB()` — toutes les conversations **complètes**, hors
+  cache. C'est le lecteur de l'export : `loadConversations()` servirait le
+  cache, où une conversation froide sort avec `messages: []` (contrat de
+  l'étage 2, U-1) — l'export y perdrait tout le contenu sauf celui des quelques
+  conversations chaudes.
+- `readAllSummariesFromDB()` — tous les records du store `summaries`, hors
+  cache. Deux appelants : la relecture de synchro (`refreshSummariesFromDB`) et
+  l'export, qui doit écrire ce qui est **en base** et non l'index RAM de cet
+  onglet.
+- `replaceConvRecordsFromImport(conversations, summaries)` — réinsertion en
+  masse, les deux stores dans **une seule transaction**, comme la migration
+  U-2 et pour la même raison : un état partiellement importé est inatteignable
+  par interruption. Contrairement au reste des écritures du fichier, la
+  promesse est **attendue** par l'appelant — un échec ne doit pas être masqué
+  par le reload. Aucune mutation de cache (le reload le réhydrate) et aucun
+  broadcast (`applyImportedData` émet un `full-reload` unique, plutôt qu'une
+  grêle de `conv-updated`).
 
 ### Orchestration (main.js)
 
-- `exportAllData()` : snapshot des 9 clés (`miaou-active-api-server` et
-  `miaou-active-space` lues en string brute, les 7 autres en `JSON.parse`),
-  lecture IDB (`getAllSkillRecords`
-  + `getAllResources`), encodage base64 des `data` de ressources, puis
+- `exportAllData()` : snapshot des 7 clés (`miaou-active-api-server` et
+  `miaou-active-space` lues en string brute, les 5 autres en `JSON.parse`),
+  lecture IDB (`getAllSkillRecords` + `getAllResources` +
+  `readAllConversationsFromDB` + `readAllSummariesFromDB`), encodage base64 des
+  `data` de ressources, puis
   `downloadFile('miaou-export-<YYYY-MM-DD-HHmm>.json', …)`.
 - `onImportDataClick()` / `onImportFileSelected(input)` : ouvrent un
   `<input type="file" accept=".json" hidden>`, lisent via `FileReader`,
@@ -446,9 +672,17 @@ par l'import avant réinsertion complète.
   d'`alert`). Payload valide → récapitulatif des compteurs + bouton
   d'application passé par `armThenRun` (remplacement intégral = destructif,
   même pattern « armer puis confirmer » que les suppressions).
-- `applyImportedData(payload)` : écrit les 9 clés localStorage (clé **absente**
+- `applyImportedData(payload)` : écrit les 7 clés localStorage (clé **absente**
   du fichier → `removeItem`, pour ne pas laisser d'état résiduel incohérent
-  mélangeant deux exports), vide puis réinsère les stores IDB `skills` et
-  `resources`, puis `location.reload()` — l'état de session (caches, thread
-  courant, statut MCP) se reconstruit proprement au boot, aucune
-  resynchronisation manuelle à écrire.
+  mélangeant deux exports), vide puis réinsère les **quatre** stores IDB
+  (`skills`, `resources`, `conversations`, `summaries`), puis
+  `location.reload()` — l'état de session (caches, thread courant, statut MCP)
+  se reconstruit proprement au boot, aucune resynchronisation manuelle à
+  écrire. C'est aussi ce reload qui rend le cache RAM des conversations (U-1)
+  cohérent : il est réhydraté depuis les stores fraîchement réécrits, sans
+  qu'aucune invalidation ait à être posée à la main.
+  **Les deux clés héritées ne sont jamais réécrites en localStorage**, même à
+  l'import d'un fichier v1 : elles ré-armeraient la migration de boot (dont le
+  court-circuit teste l'absence des clés), qui les reprendrait au tour suivant.
+  Ça fonctionnerait par ricochet ; on ne s'appuie pas dessus, l'import fait
+  lui-même le routage vers IDB.

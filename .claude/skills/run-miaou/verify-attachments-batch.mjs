@@ -20,11 +20,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedAll } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = process.argv[2] || path.join(__dirname, 'shots-attachments');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -53,19 +53,8 @@ const shot = async (name) => {
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed : script de dev-seed.html évalué dans la page dist (même origine) ──
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const seedScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('skill(s)'), { timeout: 5000 });
-// seedAttachmentResources() écrit en IDB APRÈS seedSkills() dans le même tick :
-// attendre spécifiquement sa ligne de log avant de recharger.
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('pièce(s) jointe(s)'), { timeout: 5000 });
+// ── Seed : fixtures du module seed-fixtures.js écrites dans la page dist ──
+await seedAll(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);   // loadSkillsCache + rendus initiaux
@@ -131,9 +120,16 @@ const recallUnknown = await page.evaluate(() => {
   return { text: flattenToolResult(r), isError: r.isError, acks: getPendingToolAcks() };
 });
 // Même posture que present_resource : message textuel clair, PAS isError
-// (le handler ne lève pas — cohérent avec le registre TOOLS existant).
-check('B : ref inconnu → message textuel clair, aucun ack poussé',
-  !recallUnknown.isError && recallUnknown.text.indexOf('introuvable') >= 0 && recallUnknown.acks.length === 0);
+// (le handler ne lève pas — cohérent avec le registre TOOLS existant). L'échec
+// métier laisse en revanche une trace VISIBLE sous forme d'ack `tool_failed` :
+// c'est la seule façon dont l'utilisateur le voit, `isError` restant faux
+// (doctrine « échec d'outil ≠ isError »). L'assertion d'origine attendait zéro
+// ack, avant que cette trace n'existe.
+check('B : ref inconnu → message textuel clair, pas isError',
+  !recallUnknown.isError && recallUnknown.text.indexOf('introuvable') >= 0);
+check('B : ref inconnu → ack tool_failed poussé (trace visible de l\'échec métier)',
+  recallUnknown.acks.length === 1 && recallUnknown.acks[0].kind === 'tool_failed' &&
+  recallUnknown.acks[0].error === true);
 
 // ── C. ATTACHMENT_DOCTRINE dans ROOT_SYSTEM_PROMPT (statique) ────────────────
 const doctrine = await page.evaluate(() => ({

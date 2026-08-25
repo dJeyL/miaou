@@ -164,11 +164,13 @@ un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
   v1 initial, **levé**). Seule mutation : `conv.spaceId` — résumés,
   souvenirs et pièces jointes suivent automatiquement (scopés par `convId`,
   jamais de copie côté Space).
-  - **Helper pur** : `moveConversationsToSpace(convs, ids, targetSpaceId)`
-    (storage.js, testé QuickJS) réécrit `spaceId` des conversations du lot,
-    laisse les autres inchangées (même référence). Persistance : un seul
-    `persistConversations` pour tout le lot (pas de `saveConversation` par
-    id), via `moveSelectedConversations(targetSpaceId)` (main.js).
+  - **Persistance (lot U-1)** : `moveSelectedConversations(targetSpaceId)`
+    (main.js) écrit `spaceId` par id déplacé via `persistConversationField`,
+    qui ne touche **jamais** `messages` — une conversation froide n'a pas les
+    siens en RAM (cache LRU d'étage 2), un `saveConversation` du record
+    reconstruit la viderait. L'ancien helper pur `moveConversationsToSpace`
+    est supprimé : il produisait un tableau complet destiné à un
+    `persistConversations` global, primitive qui n'existe plus.
   - **UX (rien de visible au repos, contrainte dure)** : déclenchée par
     l'item « Déplacer des conversations… » du menu Space (`renderSpaceMenu`,
     après « + Nouvel espace », masqué si `loadSpaces().length < 2`) →

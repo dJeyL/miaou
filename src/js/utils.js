@@ -133,6 +133,35 @@ function scoreSummary(queryTokens, summary) {
   return score;
 }
 
+// Seuil de longueur de requête sous lequel on NE scanne PAS le contenu des
+// messages : le bruit d'un substring de 1-2 caractères domine le signal (« ab »
+// matcherait la moitié de l'historique). Titre et résumé, eux, restent scannés
+// dès le premier caractère. Vit ici (pur) parce que le seuil gouverne à la fois
+// le prédicat de rendu et la passe de scan asynchrone (U-3) : une seule valeur.
+const CONTENT_SCAN_MIN_CHARS = 3;
+
+// Le contenu d'UNE conversation contient-il `q` (déjà en minuscules) ?
+// Pur et sans IDB : la passe async (`collectContentSearchHits`, storage.js) lit
+// les records, ce prédicat décide. C'est lui qui porte l'invariant de ce qui est
+// scanné — sorti en pur exprès plutôt que noyé dans du code IDB non testable
+// (cf. `project_extract_pure_helper_over_idb_stub`).
+//
+// Deux exclusions, héritées du prédicat synchrone d'avant U-3 :
+//   - les acks (tool-ack/memory-ack) portent des `result` potentiellement
+//     énormes et hors-sujet, ainsi que le champ `reasoning` (pas du contenu
+//     adressé à l'utilisateur) ;
+//   - côté user, on scanne le littéral tapé (`displayText`), jamais le corps
+//     baké d'une slash-skill (que `content` porte aussi).
+function convContentMatches(conv, q) {
+  if (!conv || !Array.isArray(conv.messages) || !q) return false;
+  for (const m of conv.messages) {
+    if (isAckRole(m.role)) continue;
+    const text = m.role === 'user' ? (m.displayText ?? m.content) : m.content;
+    if (typeof text === 'string' && text.toLowerCase().includes(q)) return true;
+  }
+  return false;
+}
+
 // ── Command palette : scoring / filtrage / tri (fonctions pures, lot F) ─────
 // La palette (Ctrl/Cmd+K) filtre une liste de commandes déclaratives
 // `{id, label, keywords[]}` à la frappe. Scoring distinct de scoreSummary

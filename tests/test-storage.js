@@ -144,32 +144,118 @@ describe('hasSubstance (piège 5 — seuil conversation avortée)', function() {
   });
 });
 
-describe('backfillCandidates (isSummaryCandidate + hasSubstance)', function() {
+describe('migration localStorage -> IDB (U-2, helpers purs)', function() {
+  it('parseLegacyConversations garde les conversations identifiables', function() {
+    var out = parseLegacyConversations(JSON.stringify([
+      { id: 'c1', title: 'A', messages: [] },
+      { id: 'c2', title: 'B', messages: [] }
+    ]));
+    expect(out.length).toBe(2);
+    expect(out[0].id).toBe('c1');
+  });
+
+  it('parseLegacyConversations ignore les entrees sans id exploitable', function() {
+    var out = parseLegacyConversations(JSON.stringify([
+      { id: 'c1' }, { title: 'sans id' }, null, { id: '' }, { id: 42 }
+    ]));
+    expect(out.length).toBe(1);
+    expect(out[0].id).toBe('c1');
+  });
+
+  it('parseLegacyConversations : cle absente = rien a migrer (tableau vide)', function() {
+    expect(parseLegacyConversations(null).length).toBe(0);
+    expect(parseLegacyConversations(undefined).length).toBe(0);
+  });
+
+  it('parseLegacyConversations : contenu illisible = null (ne pas purger)', function() {
+    expect(parseLegacyConversations('pas du json')).toBe(null);
+    expect(parseLegacyConversations('{"pas":"un tableau"}')).toBe(null);
+  });
+
+  it('parseLegacySummaries convertit l objet indexe en tableau de records', function() {
+    var out = parseLegacySummaries(JSON.stringify({
+      c1: { summary: 'x' },
+      c2: { summary: 'y', suppressed: true }
+    }));
+    expect(out.length).toBe(2);
+    var byId = {};
+    out.forEach(function(e) { byId[e.id] = e; });
+    expect(byId.c1.summary).toBe('x');
+    expect(byId.c2.suppressed).toBe(true);
+  });
+
+  it('parseLegacySummaries retablit id depuis la cle (keyPath du store)', function() {
+    var out = parseLegacySummaries(JSON.stringify({ c1: { summary: 'sans id interne' } }));
+    expect(out[0].id).toBe('c1');
+  });
+
+  it('parseLegacySummaries fait primer la cle sur un id interne divergent', function() {
+    var out = parseLegacySummaries(JSON.stringify({ c1: { id: 'autre', summary: 'x' } }));
+    expect(out[0].id).toBe('c1');
+  });
+
+  it('parseLegacySummaries : cle absente = rien a migrer (tableau vide)', function() {
+    expect(parseLegacySummaries(null).length).toBe(0);
+    expect(parseLegacySummaries(undefined).length).toBe(0);
+  });
+
+  it('parseLegacySummaries : contenu illisible ou de forme inattendue = null', function() {
+    expect(parseLegacySummaries('nope')).toBe(null);
+    expect(parseLegacySummaries('[]')).toBe(null);
+  });
+
+  it('selectRecordsToMigrate sur du null n ecrit rien', function() {
+    expect(selectRecordsToMigrate(null, new Set()).length).toBe(0);
+  });
+
+  it('selectRecordsToMigrate ecarte ce qui est deja en base', function() {
+    var todo = selectRecordsToMigrate(
+      [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }],
+      new Set(['c2'])
+    );
+    expect(todo.length).toBe(2);
+    expect(todo[0].id).toBe('c1');
+    expect(todo[1].id).toBe('c3');
+  });
+
+  it('selectRecordsToMigrate accepte un tableau d ids', function() {
+    var todo = selectRecordsToMigrate([{ id: 'c1' }, { id: 'c2' }], ['c1']);
+    expect(todo.length).toBe(1);
+    expect(todo[0].id).toBe('c2');
+  });
+
+  it('selectRecordsToMigrate sans base existante garde tout', function() {
+    expect(selectRecordsToMigrate([{ id: 'c1' }, { id: 'c2' }], null).length).toBe(2);
+  });
+});
+
+describe('selectBackfillCandidates (index + substance)', function() {
+  // Cœur pur du backfill (lot U-1) : la lecture des conversations est passée en
+  // IDB (async), l'invariant testable est le prédicat de sélection.
+  var SUBSTANTIAL = [
+    { role: 'user', content: 'une question assez longue' },
+    { role: 'assistant', content: 'une réponse assez longue' },
+  ];
   it('retient une conversation sans entrée de résumé et avec substance', function() {
-    localStorage.clear();
-    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
-      { role: 'user', content: 'une question assez longue' },
-      { role: 'assistant', content: 'une réponse assez longue' },
-    ]});
-    var cands = backfillCandidates();
+    var cands = selectBackfillCandidates([{ id: 'c1', messages: SUBSTANTIAL }], {});
     expect(cands.length).toBe(1);
     expect(cands[0].id).toBe('c1');
   });
-  it('exclut une conversation déjà indexée (résumé ou tombstone)', function() {
-    localStorage.clear();
-    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
-      { role: 'user', content: 'une question assez longue' },
-      { role: 'assistant', content: 'une réponse assez longue' },
-    ]});
-    saveSummary('c1', { suppressed: true });
-    expect(backfillCandidates().length).toBe(0);
+  it('exclut une conversation déjà indexée (résumé)', function() {
+    var cands = selectBackfillCandidates([{ id: 'c1', messages: SUBSTANTIAL }], { c1: { id: 'c1', summary: 'x' } });
+    expect(cands.length).toBe(0);
+  });
+  it('exclut une conversation tombstonée (compte comme présente)', function() {
+    var cands = selectBackfillCandidates([{ id: 'c1', messages: SUBSTANTIAL }], { c1: { id: 'c1', suppressed: true } });
+    expect(cands.length).toBe(0);
   });
   it('exclut une conversation sans substance', function() {
-    localStorage.clear();
-    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
-      { role: 'user', content: 'ok' },
-    ]});
-    expect(backfillCandidates().length).toBe(0);
+    var cands = selectBackfillCandidates([{ id: 'c1', messages: [{ role: 'user', content: 'ok' }] }], {});
+    expect(cands.length).toBe(0);
+  });
+  it('entrées nulles ignorées, pas d\'exception', function() {
+    expect(selectBackfillCandidates([null, undefined], {}).length).toBe(0);
+    expect(selectBackfillCandidates(null, null).length).toBe(0);
   });
 });
 
@@ -508,30 +594,37 @@ describe('Serveurs MCP : CRUD (miaou-mcp-servers)', function() {
   });
 });
 
-describe('backfillMessageModels (modèle du serveur API actif)', function() {
-  it('attribue le modèle du serveur actif aux réponses sans modèle, sans écraser', function() {
-    localStorage.clear();
-    saveSettings({ model: 'legacy-model' });
-    saveApiServers([{ id: 's1', name: 'A', url: 'http://a/v1', key: '', model: 'model-a' }]);
-    setActiveApiServerId('s1');
-    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
+describe('applyMessageModelBackfill (cœur pur du backfill modèle)', function() {
+  // La lecture/écriture est passée en IDB (async) au lot U-1 ; l'invariant
+  // testable est la mutation : remplir les assistants sans modèle, ne jamais
+  // écraser un modèle déjà posé, et signaler s'il faut réécrire.
+  it('attribue le modèle aux réponses sans modèle, sans écraser', function() {
+    var conv = { id: 'c1', messages: [
       { role: 'user', content: 'q' },
       { role: 'assistant', content: 'r' },
       { role: 'assistant', content: 'r2', model: 'kept' },
-    ]});
-    backfillMessageModels();
-    var conv = loadConversation('c1');
+    ]};
+    expect(applyMessageModelBackfill(conv, 'model-a')).toBe(true);
     expect(conv.messages[1].model).toBe('model-a');
     expect(conv.messages[2].model).toBe('kept');
   });
-  it('inerte si aucun modèle résolu (ni serveur, ni legacy)', function() {
-    localStorage.clear();
-    saveApiServersRaw([]);
-    saveConversation({ id: 'c1', title: 't', timestamp: 1, messages: [
-      { role: 'assistant', content: 'r' },
-    ]});
-    backfillMessageModels();
-    expect(loadConversation('c1').messages[0].model === undefined).toBeTruthy();
+  it('ne touche pas les messages user', function() {
+    var conv = { id: 'c1', messages: [{ role: 'user', content: 'q' }] };
+    expect(applyMessageModelBackfill(conv, 'model-a')).toBe(false);
+    expect(conv.messages[0].model === undefined).toBe(true);
+  });
+  it('inerte si aucun modèle résolu', function() {
+    var conv = { id: 'c1', messages: [{ role: 'assistant', content: 'r' }] };
+    expect(applyMessageModelBackfill(conv, '')).toBe(false);
+    expect(conv.messages[0].model === undefined).toBe(true);
+  });
+  it('rend false si rien à faire (tout déjà attribué)', function() {
+    var conv = { id: 'c1', messages: [{ role: 'assistant', content: 'r', model: 'x' }] };
+    expect(applyMessageModelBackfill(conv, 'model-a')).toBe(false);
+  });
+  it('conversation aberrante : false, pas d\'exception', function() {
+    expect(applyMessageModelBackfill(null, 'm')).toBe(false);
+    expect(applyMessageModelBackfill({ id: 'c1' }, 'm')).toBe(false);
   });
 });
 
@@ -643,34 +736,6 @@ describe('spaceConvIds — prédicat d\'herméticité', function() {
   });
 });
 
-describe('moveConversationsToSpace (brief Cter — déplacement entre Spaces)', function() {
-  it('réécrit spaceId des conversations sélectionnées', function() {
-    var convs = [
-      { id: 'c1', spaceId: 'a' },
-      { id: 'c2', spaceId: 'a' },
-      { id: 'c3', spaceId: 'b' },
-    ];
-    var out = moveConversationsToSpace(convs, ['c1', 'c2'], 'target');
-    expect(out.find(function(c) { return c.id === 'c1'; }).spaceId).toBe('target');
-    expect(out.find(function(c) { return c.id === 'c2'; }).spaceId).toBe('target');
-    expect(out.find(function(c) { return c.id === 'c3'; }).spaceId).toBe('b');
-  });
-  it('laisse les conversations non sélectionnées inchangées (même référence)', function() {
-    var untouched = { id: 'c3', spaceId: 'b' };
-    var out = moveConversationsToSpace([untouched], ['c1'], 'target');
-    expect(out[0]).toBe(untouched);
-  });
-  it('id absent du lot : aucune mutation, retourne le tableau tel quel', function() {
-    var convs = [{ id: 'c1', spaceId: 'a' }];
-    var out = moveConversationsToSpace(convs, ['inconnu'], 'target');
-    expect(out[0].spaceId).toBe('a');
-  });
-  it('convs vide ou ids vide : ne casse pas', function() {
-    expect(moveConversationsToSpace([], ['c1'], 'target')).toEqual([]);
-    expect(moveConversationsToSpace([{ id: 'c1', spaceId: 'a' }], [], 'target')[0].spaceId).toBe('a');
-  });
-});
-
 describe('memoryScopesForSpace / isMemoryInScope — portée mémoire du Space actif', function() {
   it('la portée est le scope transverse profile PLUS le Space actif', function() {
     expect(memoryScopesForSpace('sp1').join(',')).toBe('profile,sp1');
@@ -768,11 +833,9 @@ describe('resolveUserSystemPrompt — description du Space ajoutée après le pr
 // ── Export / import complet des données (feature E) ─────────────────────────
 
 describe('EXPORT_KEYS', function() {
-  it('liste les 9 clés localStorage du schéma', function() {
-    expect(EXPORT_KEYS.length).toBe(9);
+  it('liste les 7 clés localStorage du schéma', function() {
+    expect(EXPORT_KEYS.length).toBe(7);
     expect(EXPORT_KEYS.indexOf('miaou-settings') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-conversations') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-summaries') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-memories') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-api-servers') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-active-api-server') >= 0).toBeTruthy();
@@ -780,20 +843,25 @@ describe('EXPORT_KEYS', function() {
     expect(EXPORT_KEYS.indexOf('miaou-spaces') >= 0).toBeTruthy();
     expect(EXPORT_KEYS.indexOf('miaou-active-space') >= 0).toBeTruthy();
   });
+  // U-4 : sorties d'EXPORT_KEYS, elles n'existent plus en localStorage depuis la
+  // migration U-2. Les y laisser n'échouait sur rien — l'export produisait un
+  // fichier valide et vide d'historique.
+  it('ne contient PLUS miaou-conversations ni miaou-summaries (migrées en IDB, U-2)', function() {
+    expect(EXPORT_KEYS.indexOf('miaou-conversations') === -1).toBe(true);
+    expect(EXPORT_KEYS.indexOf('miaou-summaries') === -1).toBe(true);
+  });
 });
 
 describe('buildExportPayload', function() {
   it('produit la structure attendue avec format/version/exportedAt', function() {
     var payload = buildExportPayload({}, [], []);
     expect(payload.format).toBe('miaou-export');
-    expect(payload.version).toBe(1);
+    expect(payload.version).toBe(2);
     expect(typeof payload.exportedAt).toBe('number');
   });
-  it('reprend les 9 clés localStorage désérialisées', function() {
+  it('reprend les 7 clés localStorage désérialisées', function() {
     var ls = {
       'miaou-settings': { theme: 'dark' },
-      'miaou-conversations': [{ id: 'c1' }],
-      'miaou-summaries': { c1: { summary: 'x' } },
       'miaou-memories': [{ id: 'm1' }],
       'miaou-api-servers': [{ id: 's1' }],
       'miaou-active-api-server': 's1',
@@ -803,8 +871,6 @@ describe('buildExportPayload', function() {
     };
     var payload = buildExportPayload(ls, [], []);
     expect(payload.localStorage['miaou-settings']).toEqual({ theme: 'dark' });
-    expect(payload.localStorage['miaou-conversations']).toEqual([{ id: 'c1' }]);
-    expect(payload.localStorage['miaou-summaries']).toEqual({ c1: { summary: 'x' } });
     expect(payload.localStorage['miaou-memories']).toEqual([{ id: 'm1' }]);
     expect(payload.localStorage['miaou-api-servers']).toEqual([{ id: 's1' }]);
     expect(payload.localStorage['miaou-active-api-server']).toBe('s1');
@@ -820,8 +886,6 @@ describe('buildExportPayload', function() {
   it('sections manquantes → défauts vides (tableaux/objets), pas de crash', function() {
     var payload = buildExportPayload({}, [], []);
     expect(payload.localStorage['miaou-settings']).toEqual({});
-    expect(payload.localStorage['miaou-conversations']).toEqual([]);
-    expect(payload.localStorage['miaou-summaries']).toEqual({});
     expect(payload.localStorage['miaou-memories']).toEqual([]);
     expect(payload.localStorage['miaou-api-servers']).toEqual([]);
     expect(payload.localStorage['miaou-active-api-server']).toBe('');
@@ -834,16 +898,41 @@ describe('buildExportPayload', function() {
     expect(payload.idb.skills).toEqual([{ slug: 's1' }]);
     expect(payload.idb.resources).toEqual([{ id: 'res_1', data: 'QQ==' }]);
   });
+  it('embarque conversations et résumés dans idb, PAS dans localStorage (v2)', function() {
+    var convs = [{ id: 'c1', messages: [{ role: 'user', content: 'hop' }] }];
+    var sums = [{ id: 'c1', summary: 'x' }];
+    var payload = buildExportPayload({}, [], [], convs, sums);
+    expect(payload.idb.conversations).toEqual(convs);
+    expect(payload.idb.summaries).toEqual(sums);
+    expect(payload.localStorage['miaou-conversations'] === undefined).toBe(true);
+    expect(payload.localStorage['miaou-summaries'] === undefined).toBe(true);
+  });
+  it('conversations/résumés omis → tableaux vides dans idb, pas de crash', function() {
+    var payload = buildExportPayload({}, [], []);
+    expect(payload.idb.conversations).toEqual([]);
+    expect(payload.idb.summaries).toEqual([]);
+  });
+  it('les messages sont conservés intégralement (l\'export est une assurance-vie)', function() {
+    var msgs = [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }];
+    var payload = buildExportPayload({}, [], [], [{ id: 'c1', messages: msgs }], []);
+    expect(payload.idb.conversations[0].messages.length).toBe(2);
+  });
 });
 
-describe('snapshotLocalStorageForExport (lit les 9 clés, tolère le JSON corrompu)', function() {
+describe('snapshotLocalStorageForExport (lit les 7 clés, tolère le JSON corrompu)', function() {
   it('clés JSON valides → parsées', function() {
     localStorage.clear();
     localStorage.setItem('miaou-settings', JSON.stringify({ theme: 'dark' }));
-    localStorage.setItem('miaou-conversations', JSON.stringify([{ id: 'c1' }]));
+    localStorage.setItem('miaou-memories', JSON.stringify([{ id: 'm1' }]));
     var snap = snapshotLocalStorageForExport();
     expect(snap['miaou-settings']).toEqual({ theme: 'dark' });
-    expect(snap['miaou-conversations']).toEqual([{ id: 'c1' }]);
+    expect(snap['miaou-memories']).toEqual([{ id: 'm1' }]);
+  });
+  it('ne lit plus miaou-conversations, même si la clé traîne encore', function() {
+    localStorage.clear();
+    localStorage.setItem('miaou-conversations', JSON.stringify([{ id: 'residu' }]));
+    var snap = snapshotLocalStorageForExport();
+    expect(snap['miaou-conversations'] === undefined).toBe(true);
   });
   it('miaou-active-api-server / miaou-active-space restent des strings brutes', function() {
     localStorage.clear();
@@ -895,8 +984,8 @@ describe('validateImportPayload', function() {
     var res = validateImportPayload({ foo: 'bar' });
     expect(res.ok).toBeFalsy();
   });
-  it('version future (> 1) → erreur', function() {
-    var res = validateImportPayload(Object.assign(validPayload(), { version: 2 }));
+  it('version future (> 2) → erreur', function() {
+    var res = validateImportPayload(Object.assign(validPayload(), { version: 3 }));
     expect(res.ok).toBeFalsy();
   });
   it('version absente/non numérique → erreur', function() {
@@ -907,9 +996,16 @@ describe('validateImportPayload', function() {
     expect(validateImportPayload(null).ok).toBeFalsy();
     expect(validateImportPayload(undefined).ok).toBeFalsy();
   });
+  it('compte les résumés (v1 : objet indexé sous localStorage)', function() {
+    var p = validPayload();
+    p.localStorage['miaou-summaries'] = { c1: { summary: 'x' }, c2: { summary: 'y' } };
+    var res = validateImportPayload(p);
+    expect(res.counts.summaries).toBe(2);
+  });
   it('sections localStorage/idb manquantes → défauts vides, pas une erreur', function() {
     var res = validateImportPayload({ format: 'miaou-export', version: 1, exportedAt: 1 });
     expect(res.ok).toBeTruthy();
+    expect(res.counts.summaries).toBe(0);
     expect(res.counts.conversations).toBe(0);
     expect(res.counts.memories).toBe(0);
     expect(res.counts.skills).toBe(0);
@@ -966,5 +1062,177 @@ describe('genMemoryId', function() {
   });
   it('deux appels immédiats ne collisionnent pas (suffixe aléatoire — deux memory__create du même tour)', function() {
     expect(genMemoryId() === genMemoryId()).toBeFalsy();
+  });
+});
+
+// ── U-4 : format d'export v2 et rétrocompatibilité v1 ────────────────────────
+// Importer un fichier `version: 1` EST une migration (les conversations y sont
+// sous `localStorage`, purgé depuis U-2). C'est le seul chemin de migration qui
+// reste après U-2, et il est déclenché par un fichier — donc jamais exercé par
+// un scénario qui part d'une base neuve sans importer.
+
+describe('normalizeLegacySummaryMap (forme héritée { id: entry } → records)', function() {
+  it('objet indexé → tableau de records portant leur id', function() {
+    var out = normalizeLegacySummaryMap({ c1: { summary: 'x' }, c2: { summary: 'y' } });
+    expect(out.length).toBe(2);
+    expect(out[0].id).toBe('c1');
+    expect(out[0].summary).toBe('x');
+    expect(out[1].id).toBe('c2');
+  });
+  it('id réaffirmé depuis la clé, même si l\'entrée en porte un autre (la clé fait foi)', function() {
+    var out = normalizeLegacySummaryMap({ c1: { id: 'autre', summary: 'x' } });
+    expect(out[0].id).toBe('c1');
+  });
+  it('entrées non-objet ignorées, le reste passe', function() {
+    var out = normalizeLegacySummaryMap({ c1: { summary: 'x' }, c2: null, c3: 'nope' });
+    expect(out.length).toBe(1);
+    expect(out[0].id).toBe('c1');
+  });
+  it('objet vide → tableau vide', function() {
+    expect(normalizeLegacySummaryMap({})).toEqual([]);
+  });
+  it('tableau ou non-objet → null (présent mais illisible, jamais confondu avec vide)', function() {
+    expect(normalizeLegacySummaryMap([])).toBe(null);
+    expect(normalizeLegacySummaryMap('nope')).toBe(null);
+    expect(normalizeLegacySummaryMap(null)).toBe(null);
+  });
+  it('parseLegacySummaries délègue bien ici (une seule formule de conversion)', function() {
+    var viaRaw = parseLegacySummaries(JSON.stringify({ c1: { summary: 'x' } }));
+    var viaObj = normalizeLegacySummaryMap({ c1: { summary: 'x' } });
+    expect(viaRaw).toEqual(viaObj);
+  });
+});
+
+describe('extractImportedConvRecords (routage v1/v2 vers les records IDB)', function() {
+  function v2(conversations, summaries) {
+    return { format: 'miaou-export', version: 2, idb: { conversations: conversations, summaries: summaries } };
+  }
+  function v1(conversations, summariesMap) {
+    return { format: 'miaou-export', version: 1, localStorage: { 'miaou-conversations': conversations, 'miaou-summaries': summariesMap } };
+  }
+
+  it('v2 : lit la section idb telle quelle', function() {
+    var out = extractImportedConvRecords(v2([{ id: 'c1', messages: [] }], [{ id: 'c1', summary: 'x' }]));
+    expect(out.conversations.length).toBe(1);
+    expect(out.conversations[0].id).toBe('c1');
+    expect(out.summaries.length).toBe(1);
+    expect(out.summaries[0].id).toBe('c1');
+  });
+  it('v1 : lit la section localStorage et convertit les résumés en records', function() {
+    var out = extractImportedConvRecords(v1([{ id: 'c1', messages: [] }], { c1: { summary: 'x' } }));
+    expect(out.conversations.length).toBe(1);
+    expect(out.conversations[0].id).toBe('c1');
+    expect(out.summaries.length).toBe(1);
+    expect(out.summaries[0].id).toBe('c1');
+    expect(out.summaries[0].summary).toBe('x');
+  });
+  it('v1 : les messages traversent intacts (c\'est tout l\'enjeu de l\'import)', function() {
+    var msgs = [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }];
+    var out = extractImportedConvRecords(v1([{ id: 'c1', messages: msgs }], {}));
+    expect(out.conversations[0].messages.length).toBe(2);
+    expect(out.conversations[0].messages[1].content).toBe('b');
+  });
+  it('un record sans id est écarté (id = keyPath, le put jetterait)', function() {
+    var out = extractImportedConvRecords(v2([{ id: 'c1' }, { messages: [] }, null, { id: '' }], []));
+    expect(out.conversations.length).toBe(1);
+    expect(out.conversations[0].id).toBe('c1');
+  });
+  it('v2 : ne complète PAS depuis localStorage (la section a autorité pour sa version)', function() {
+    var p = v2([], []);
+    p.localStorage = { 'miaou-conversations': [{ id: 'vieux' }] };
+    expect(extractImportedConvRecords(p).conversations).toEqual([]);
+  });
+  it('v1 : ignore une section idb.conversations qui traînerait', function() {
+    var p = v1([{ id: 'c1' }], {});
+    p.idb = { conversations: [{ id: 'intrus' }] };
+    var out = extractImportedConvRecords(p);
+    expect(out.conversations.length).toBe(1);
+    expect(out.conversations[0].id).toBe('c1');
+  });
+  it('sections absentes → tableaux vides, pas de crash', function() {
+    expect(extractImportedConvRecords({ version: 2 }).conversations).toEqual([]);
+    expect(extractImportedConvRecords({ version: 1 }).summaries).toEqual([]);
+    expect(extractImportedConvRecords({}).conversations).toEqual([]);
+    expect(extractImportedConvRecords(null).conversations).toEqual([]);
+  });
+  it('v1 aux résumés illisibles (tableau au lieu d\'objet) → vide, pas de crash', function() {
+    var out = extractImportedConvRecords(v1([{ id: 'c1' }], [{ id: 'c1' }]));
+    expect(out.summaries).toEqual([]);
+    expect(out.conversations.length).toBe(1);
+  });
+  it('aller-retour v2 : ce que buildExportPayload écrit, extract le relit à l\'identique', function() {
+    var convs = [{ id: 'c1', title: 'T', messages: [{ role: 'user', content: 'a' }] }];
+    var sums = [{ id: 'c1', summary: 'x' }];
+    var payload = buildExportPayload({}, [], [], convs, sums);
+    var out = extractImportedConvRecords(payload);
+    expect(out.conversations).toEqual(convs);
+    expect(out.summaries).toEqual(sums);
+  });
+  it('le compte de validateImportPayload correspond à ce qu\'extract rendra (v1 comme v2)', function() {
+    var p1 = v1([{ id: 'c1' }, { id: 'c2' }], { c1: { summary: 'x' } });
+    p1.exportedAt = 1;
+    expect(validateImportPayload(p1).counts.conversations).toBe(extractImportedConvRecords(p1).conversations.length);
+    expect(validateImportPayload(p1).counts.summaries).toBe(extractImportedConvRecords(p1).summaries.length);
+    var p2 = v2([{ id: 'c1' }], [{ id: 'c1' }, { id: 'c2' }]);
+    p2.exportedAt = 1;
+    expect(validateImportPayload(p2).counts.conversations).toBe(extractImportedConvRecords(p2).conversations.length);
+    expect(validateImportPayload(p2).counts.summaries).toBe(extractImportedConvRecords(p2).summaries.length);
+  });
+});
+
+// splitConvRecord / joinConvRecord (lot U-1) : la frontière entre les deux
+// étages du cache RAM. L'invariant tenu ici — « jamais de messages en étage 1,
+// toujours un tableau en étage 2 » — n'est vérifiable que sur ces deux
+// fonctions pures : le cache lui-même est du câblage IDB, hors QuickJS.
+describe('splitConvRecord / joinConvRecord — frontière des deux étages du cache', function() {
+  it('sépare les métadonnées des messages', function() {
+    var out = splitConvRecord({ id: 'c1', title: 'T', timestamp: 5, messages: [{ role: 'user', content: 'a' }] });
+    expect(out.meta.id).toBe('c1');
+    expect(out.meta.title).toBe('T');
+    expect(out.meta.timestamp).toBe(5);
+    expect(out.messages.length).toBe(1);
+  });
+  it('l\'étage 1 ne porte JAMAIS de messages, même volumineux', function() {
+    var out = splitConvRecord({ id: 'c1', messages: [{ role: 'user', content: 'x' }] });
+    expect('messages' in out.meta).toBe(false);
+  });
+  it('conserve TOUS les champs de métadonnées, y compris ceux ajoutés plus tard', function() {
+    // Une liste blanche figée périmerait en silence à l'ajout d'un champ (pin,
+    // modèle, effort de raisonnement…) : le split copie tout sauf `messages`.
+    var out = splitConvRecord({
+      id: 'c1', title: 'T', timestamp: 1, updatedAt: 2, pinned: true,
+      spaceId: 'sp', model: 'm', reasoningEffort: 'high', champInedit: 42, messages: [],
+    });
+    expect(out.meta.pinned).toBe(true);
+    expect(out.meta.spaceId).toBe('sp');
+    expect(out.meta.model).toBe('m');
+    expect(out.meta.reasoningEffort).toBe('high');
+    expect(out.meta.champInedit).toBe(42);
+  });
+  it('messages absent ou non-tableau → tableau vide (jamais undefined)', function() {
+    expect(splitConvRecord({ id: 'c1' }).messages.length).toBe(0);
+    expect(splitConvRecord({ id: 'c1', messages: null }).messages.length).toBe(0);
+    expect(splitConvRecord({ id: 'c1', messages: 'oups' }).messages.length).toBe(0);
+  });
+  it('joinConvRecord recompose, et messages reste toujours un tableau', function() {
+    var conv = joinConvRecord({ id: 'c1', title: 'T' }, [{ role: 'user', content: 'a' }]);
+    expect(conv.id).toBe('c1');
+    expect(conv.title).toBe('T');
+    expect(conv.messages.length).toBe(1);
+    expect(joinConvRecord({ id: 'c1' }, null).messages.length).toBe(0);
+    expect(joinConvRecord({ id: 'c1' }, undefined).messages.length).toBe(0);
+  });
+  it('aller-retour split → join : conversation identique', function() {
+    var conv = { id: 'c1', title: 'T', timestamp: 3, pinned: true, spaceId: 'sp',
+      messages: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] };
+    var out = splitConvRecord(conv);
+    expect(joinConvRecord(out.meta, out.messages)).toEqual(conv);
+  });
+  it('joinConvRecord ne mute pas les métadonnées d\'étage 1', function() {
+    // L'étage 1 est PARTAGÉ : une mutation depuis la recomposition
+    // contaminerait la sidebar de toutes les conversations recomposées.
+    var meta = { id: 'c1', title: 'T' };
+    joinConvRecord(meta, [{ role: 'user', content: 'a' }]);
+    expect('messages' in meta).toBe(false);
   });
 });

@@ -384,10 +384,10 @@ function activeModel() {
 function setConvModel(m) {
   currentConvModel = m || '';
   if (currentConvId) {
-    const conv = loadConversation(currentConvId);
-    if (conv) {
-      if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
-      saveConversation(conv);
+    // Métadonnée seule → écriture ciblée (ne jamais réécrire `messages` depuis
+    // le cache : une conversation froide les a vides).
+    if (loadConversation(currentConvId)) {
+      persistConversationField(currentConvId, { model: currentConvModel || undefined });
     }
   }
   syncModelUI();
@@ -405,10 +405,8 @@ function activeReasoningEffort() {
 function setConvReasoningEffort(v) {
   currentConvReasoningEffort = v || '';
   if (currentConvId) {
-    const conv = loadConversation(currentConvId);
-    if (conv) {
-      if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
-      saveConversation(conv);
+    if (loadConversation(currentConvId)) {
+      persistConversationField(currentConvId, { reasoningEffort: currentConvReasoningEffort || undefined });
     }
   }
   syncReasoningUI();
@@ -674,7 +672,13 @@ async function openConversation(id, reveal) {
     detachGenerationFromScreen(generationFor(currentConvId));
   }
   currentConvId = id;
-  await loadConversationResources(id);   // peuple le session cache avant renderThread
+  // Réchauffe les messages en étage 2 (lot U-1) AVANT la relecture post-await :
+  // une conversation froide sort de loadConversation avec `messages: []`. Même
+  // bloc await que les ressources — le jeton _openConvSeq couvre les deux.
+  await Promise.all([
+    loadConversationResources(id),   // peuple le session cache avant renderThread
+    warmConversation(id),
+  ]);
   // Un openConversation plus récent a pris la main pendant l'await : abandonner
   // avant toute écriture d'état/DOM (invariant 2).
   if (mySeq !== _openConvSeq) return;
@@ -776,15 +780,17 @@ function selectConv(id, reveal) {
 }
 
 // Déplacement effectif du lot sélectionné (D4/D7, brief Cter). Mutation UNIQUE
-// de conv.spaceId via le helper pur (storage.js) + un seul persistConversations
-// pour tout le lot (pas N saveConversation successifs, cf. audit §5). Résumés,
+// de conv.spaceId via une écriture ciblée par id (persistConversationField :
+// jamais `messages`, absents en RAM pour une conversation froide). Résumés,
 // souvenirs et pièces jointes suivent automatiquement : ils scopent par convId,
 // jamais par une copie côté Space.
 function moveSelectedConversations(targetSpaceId) {
   if (!targetSpaceId || !_moveSelection.size) return;
   const ids = Array.from(_moveSelection);
-  const moved = moveConversationsToSpace(loadConversations(), ids, targetSpaceId);
-  persistConversations(moved);
+  // Écriture ciblée par id déplacé : seule la métadonnée `spaceId` bouge, et
+  // persistConversationField ne touche jamais `messages` (une conversation
+  // froide n'a pas les siens en RAM — les écraser la viderait).
+  for (const id of ids) persistConversationField(id, { spaceId: targetSpaceId });
   // Post-commit (piège 24) : un conv-updated par id déplacé (nouveau spaceId).
   // Le récepteur coalesce le re-render de liste via sa file (J3) ; l'herméticité
   // de Space est tranchée à la réception (spaceConvIds, piège 18).
@@ -984,6 +990,25 @@ function handleSyncMessage(env) {
 }
 
 function applySyncDecision(d) {
+  // Index des résumés : cache RAM PAR ONGLET depuis U-1, sans point
+  // d'invalidation (les résumés n'émettent aucun broadcast — arbitrage du lot J,
+  // « ne pas broadcaster l'invisible », pris quand `loadSummaries` relisait
+  // localStorage et était donc forcément frais). Ce n'est plus le cas : sans
+  // relecture, un onglet injecte au modèle un jeu de résumés périmé — manquant
+  // celui qu'un pair vient d'écrire, ou ressuscitant une tombstone posée
+  // ailleurs. Ce n'est plus « de l'invisible », c'est du contexte modèle.
+  //
+  // On ne crée pas de type de message pour autant : un résumé suit toujours une
+  // conversation qui vient d'être persistée, donc `conv-updated` (dont
+  // `rehydrate` et `render-list` sont les deux issues) est un porteur suffisant.
+  // Relecture en ARRIÈRE-PLAN, jamais dans le chemin d'envoi : `searchSummaries`
+  // est synchrone et appelé depuis `runGenerationFromCurrentThread`, que la
+  // décision structurante du lot U interdit de rendre async. Un résumé d'un pair
+  // arrive donc avec un léger différé — acceptable, il ne bloque aucun envoi.
+  if (d.action === 'rehydrate' || d.action === 'render-list') {
+    refreshSummariesFromDB()
+      .catch(function(e) { console.error('[miaou] refresh résumés:', e && e.message); });
+  }
   switch (d.action) {
     case 'ignore':
     case 'ignore-self':
@@ -1003,8 +1028,14 @@ function applySyncDecision(d) {
 
     case 'render-list':
       // Conv non affichée modifiée/supprimée ailleurs : rafraîchir la liste
-      // (scopée au Space actif par renderConvList). Pas de re-hydratation.
-      renderConvList();
+      // (scopée au Space actif par renderConvList). Pas de re-hydratation du
+      // fil, mais les MÉTADONNÉES (titre, updatedAt, épinglage) alimentent la
+      // liste et vivent dans le cache d'étage 1 : sans relecture, la sidebar
+      // afficherait un titre périmé jusqu'au prochain reload.
+      if (d.convId == null) { renderConvList(); return; }
+      refreshConversationFromDB(d.convId)
+        .then(function() { renderConvList(); })
+        .catch(function(e) { console.error('[miaou] render-list:', e && e.message); });
       return;
 
     case 'conv-gone':
@@ -1340,7 +1371,7 @@ function onTitleBlur(e) {
   if (currentConvId) {
     needTitle = false;   // titre fixé manuellement : on ne le régénère plus
     const conv = loadConversation(currentConvId);
-    if (conv) { conv.title = t; saveConversation(conv); renderConvList(); }
+    if (conv) { persistConversationField(currentConvId, { title: t }); renderConvList(); }
     const entry = getSummaryEntry(currentConvId);
     if (entry) { entry.title = t; saveSummary(currentConvId, entry); }
   }
@@ -1577,7 +1608,7 @@ async function onToggleSkill(slug) {
 // remplacement intégral à l'import (pas de fusion, décision actée). Format et
 // posture (clefs API en clair) documentés dans docs/storage.md.
 
-// Lit les 9 clés localStorage désérialisées (miaou-active-api-server et
+// Lit les 7 clés localStorage désérialisées (miaou-active-api-server et
 // miaou-active-space sont des strings brutes, seules exceptions du schéma)
 // pour buildExportPayload (storage.js).
 function snapshotLocalStorageForExport() {
@@ -1591,14 +1622,22 @@ function snapshotLocalStorageForExport() {
 }
 
 // Handler global (bouton « Exporter les données »). Snapshot localStorage +
-// lecture IDB (skills, resources), encodage base64 des données binaires des
-// ressources, puis téléchargement du fichier JSON.
+// lecture IDB (skills, resources, conversations, résumés), encodage base64 des
+// données binaires des ressources, puis téléchargement du fichier JSON.
+//
+// Les conversations sont lues par `readAllConversationsFromDB()`, JAMAIS par
+// `loadConversations()` : ce dernier sert le cache, où une conversation froide
+// sort avec `messages: []` (contrat de l'étage 2, U-1). L'export y aurait perdu
+// tout le contenu sauf celui des quelques conversations chaudes — le même
+// silence que celui qu'U-4 corrige, sous une autre forme.
 async function exportAllData() {
   const lsSnapshot = snapshotLocalStorageForExport();
   const skills = await getAllSkillRecords();
   const rawResources = await getAllResources();
   const resources = rawResources.map(r => Object.assign({}, r, { data: arrayBufferToBase64(r.data) }));
-  const payload = buildExportPayload(lsSnapshot, skills, resources);
+  const conversations = await readAllConversationsFromDB();
+  const summaries = await readAllSummariesFromDB();
+  const payload = buildExportPayload(lsSnapshot, skills, resources, conversations, summaries);
   const stamp = exportDateTimeStamp(Date.now());
   downloadFile('miaou-export-' + stamp + '.json', JSON.stringify(payload), 'application/json');
 }
@@ -1629,11 +1668,21 @@ function onImportFileSelected(input) {
   reader.readAsText(file);
 }
 
-// Applique un payload d'import validé : écrit les 9 clés localStorage (clé
+// Applique un payload d'import validé : écrit les 7 clés localStorage (clé
 // absente du fichier → removeItem, pour ne pas laisser d'état résiduel
-// incohérent), vide puis réinsère les stores IDB skills/resources, puis
-// recharge la page — l'état de session (caches, thread courant, statut MCP) se
-// reconstruit proprement au boot, aucune resynchronisation manuelle à écrire.
+// incohérent), vide puis réinsère les quatre stores IDB (skills, resources,
+// conversations, summaries), puis recharge la page — l'état de session (caches,
+// thread courant, statut MCP) se reconstruit proprement au boot, aucune
+// resynchronisation manuelle à écrire. C'est aussi ce reload qui rend le cache
+// RAM des conversations (U-1) cohérent : il est réhydraté depuis les stores
+// fraîchement réécrits, sans qu'aucune invalidation ait à être posée à la main.
+//
+// Un fichier `version: 1` porte ses conversations sous `localStorage` : elles
+// sont routées vers IDB comme les autres, par `extractImportedConvRecords`.
+// Elles ne sont JAMAIS réécrites dans localStorage — les deux clés ont été
+// purgées par U-2 et les y remettre ré-armerait la migration de boot, qui les
+// reprendrait au tour suivant. Ça marcherait par ricochet ; on ne s'appuie pas
+// dessus, l'import fait lui-même le travail.
 async function applyImportedData(payload) {
   const ls = payload.localStorage || {};
   for (const key of EXPORT_KEYS) {
@@ -1651,6 +1700,10 @@ async function applyImportedData(payload) {
   for (const rec of resources) {
     await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
   }
+  const convRecords = extractImportedConvRecords(payload);
+  await clearIdbStore('conversations');
+  await clearIdbStore('summaries');
+  await replaceConvRecordsFromImport(convRecords.conversations, convRecords.summaries);
   // Prévenir les autres onglets AVANT de recharger celui-ci : remplacement
   // intégral destructif → les pairs doivent repartir d'un état frais, pas
   // re-render par bribes sur les resources-updated émis pendant la réinsertion
@@ -1885,8 +1938,7 @@ function persistAttSeq(counter) {
   if (!currentConvId) return;
   const conv = loadConversation(currentConvId);
   if (!conv) return;
-  conv.attSeq = counter;
-  saveConversation(conv);
+  persistConversationField(currentConvId, { attSeq: counter });
 }
 
 // Traite une FileList (picker ou drop) : ingère chaque fichier séquentiellement
@@ -2945,8 +2997,10 @@ async function runBackgroundTask(label, taskFn) {
 
 // ── Titrage automatique (après la première réponse) ─────────────────────────
 function applyGeneratedTitle(convId, title) {
-  const conv = loadConversation(convId);
-  if (conv) { conv.title = title; saveConversation(conv); }
+  // Écriture ciblée : le titrage arrive APRÈS onFinal, donc potentiellement
+  // après le désenregistrement de la génération — la conversation peut être
+  // froide (messages évincés de l'étage 2), et un saveConversation la viderait.
+  if (loadConversation(convId)) persistConversationField(convId, { title: title });
   if (convId === currentConvId) setTitle(title);   // barre du haut + <title> de la page
   renderConvList();                                 // liste de gauche
 }
@@ -3081,25 +3135,45 @@ async function describeFileIfNeeded(fileId, onStatus, force) {
 // ceci couvre l'état déjà écrit par une race passée, ou une interruption avant
 // deleteSummaryEntry dans deleteConv). pruneOrphanSummaries (storage.js) est pure.
 function pruneOrphanSummariesOnInit() {
-  const pruned = pruneOrphanSummaries(loadSummaries(), listAllConversations());
-  persistSummaries(pruned);
+  const all = loadSummaries();
+  const pruned = pruneOrphanSummaries(all, listAllConversations());
+  // pruneOrphanSummaries est pure : elle rend l'index nettoyé. On en déduit les
+  // ids réellement retirés pour les supprimer un à un du store.
+  for (const id of Object.keys(all)) {
+    if (!Object.prototype.hasOwnProperty.call(pruned, id)) removeSummaryRecord(id);
+  }
 }
 
 // ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
-function backfillMessageModels() {
+// Cœur décisionnel, PUR et QuickJS-testable : mute les réponses assistant sans
+// modèle et rend true si quelque chose a bougé (donc s'il faut réécrire). La
+// coquille async ne fait que l'alimenter depuis IDB.
+function applyMessageModelBackfill(conv, model) {
+  if (!conv || !Array.isArray(conv.messages) || !model) return false;
+  let dirty = false;
+  for (const m of conv.messages) {
+    if (m && m.role === 'assistant' && !m.model) { m.model = model; dirty = true; }
+  }
+  return dirty;
+}
+
+async function backfillMessageModels() {
   // Modèle du serveur actif (activeApiConfig, filet legacy inclus) : sur une
   // install configurée uniquement via les cartes serveurs, loadSettings().model
   // est vide et le backfill serait inerte.
   const model = activeApiConfig().model;
   if (!model) return;
-  for (const c of listAllConversations()) {
-    const conv = loadConversation(c.id);
-    if (!conv || !conv.messages) continue;
-    let dirty = false;
-    for (const m of conv.messages) {
-      if (m.role === 'assistant' && !m.model) { m.model = model; dirty = true; }
+  // Lecture FROIDE en masse : les `messages` de toutes les conversations, dont
+  // la plupart ne sont pas en RAM (étage 2 borné). Passe par IDB, jamais par
+  // loadConversation qui rendrait `messages: []` sur une conversation froide et
+  // rendrait la migration silencieusement inopérante.
+  for (const conv of await readAllConversationsFromDB()) {
+    if (applyMessageModelBackfill(conv, model)) {
+      // Écriture FROIDE : le record complet relu d'IDB porte bien ses messages,
+      // mais les remettre au chaud remplirait l'étage 2 (borné à 12) de
+      // conversations que personne n'a ouvertes — cf. persistConversationCold.
+      persistConversationCold(conv);
     }
-    if (dirty) saveConversation(conv);
   }
 }
 
@@ -3108,7 +3182,7 @@ async function runBackfill() {
   // Le résumé n'a besoin que de l'URL (clef optionnelle) : ne pas dépendre de
   // `configured`, qui exige aussi une clef (utile pour un endpoint sans auth).
   if (!loadSettings().url) return;
-  const cands = backfillCandidates();
+  const cands = await backfillCandidates();
   if (!cands.length) return;
   const N = cands.length;
   await runBackgroundTask('résumés 0/' + N, async () => {
@@ -3132,9 +3206,28 @@ async function runBackfill() {
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
-function init() {
+async function init() {
   applyLogo();
   syncPaletteHintUI();   // libellé Cmd+K / Ctrl+K selon la plateforme (statique, une fois)
+
+  // Hydratation du cache conversations/résumés (lot U-1) AVANT tout rendu et
+  // avant migrateSpacesIfNeeded (qui lit loadConversations) : les lecteurs sont
+  // synchrones et serviraient un cache vide. L'attente est masquée par
+  // l'overlay de boot, qui ne s'estompe qu'à finishBoot().
+  // Migration localStorage → IDB (lot U-2) AVANT l'hydratation : le cache se
+  // remplit depuis les stores IDB, qui doivent donc déjà porter l'historique.
+  // Échec → on n'a rien purgé, localStorage reste intact, le prochain boot
+  // retentera ; on hydrate quand même (le cache servira ce qui est en base).
+  try {
+    await migrateConversationsToIdbIfNeeded();
+  } catch (e) {
+    console.error('[miaou] migration des conversations vers IndexedDB impossible (localStorage laissé intact)', e);
+  }
+  try {
+    await hydrateConvCache();
+  } catch (e) {
+    console.error('[miaou] hydratation du cache conversations impossible', e);
+  }
 
   migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
   activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space (A3) ; défaut DEFAULT_SPACE_ID
@@ -3149,7 +3242,7 @@ function init() {
   });
   syncSpaceUI();
   loadApiServers();   // déclenche la migration silencieuse url/key/model → serveur "Par défaut"
-  backfillMessageModels();   // migration : idem, doit tourner avant le branchement du canal
+  await backfillMessageModels();   // migration : idem, doit tourner avant le branchement du canal (désormais async : ses écritures émettraient sinon des conv-updated après branchement)
   // Synchro multi-onglets : branche le récepteur ET construit le canal, APRÈS
   // les migrations de boot (Spaces + serveurs API + backfill modèles). Tant
   // que _syncChannel était null, syncPost restait no-op — les migrations

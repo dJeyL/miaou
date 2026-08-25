@@ -1,34 +1,43 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<title>MIAOU — seed fixtures</title>
-<style>
-  body { font-family: monospace; background: #0b0c0e; color: #9a9ea8; padding: 32px; }
-  h1   { color: #e7e8ea; font-size: 16px; margin-bottom: 24px; }
-  .ok  { color: #4ec98a; }
-  .ski { color: #5e636e; }
-  .err { color: #ff5d5d; }
-  pre  { font-size: 12px; margin: 4px 0 4px 16px; }
-</style>
-</head>
-<body>
-<h1>MIAOU — seed fixtures</h1>
-<div id="log"></div>
-<script>
+// Fixtures de développement MIAOU — module ES, consommé par les scripts verify/shot.
+//
+// Remplace l'ancien `tests/dev-seed.html` (lot U-5). L'enveloppe HTML a disparu
+// — plus personne n'ouvrait le fichier à la main, Playwright a remplacé l'usage
+// manuel — et les consommateurs n'extraient plus le `<script>` par regex : ils
+// importent ce module et passent ses fonctions à `page.evaluate`.
+//
+// **Les fixtures sont portées à l'identique** depuis `dev-seed.html` : plusieurs
+// verify (au premier chef `verify-refactor`) portent des assertions chiffrées
+// dessus (nombre de conversations en sidebar, sections, comptes d'acks). Ne pas
+// les réécrire au jugé.
+//
+// Depuis le lot U, conversations et résumés vivent en **IndexedDB** (base
+// `miaou`, stores `conversations`/`summaries`), plus en localStorage : le seed
+// écrit donc en IDB pour ces deux-là. Souvenirs et Espaces restent en
+// localStorage, leur taille étant bornée.
+//
+// Usage typique dans un verify :
+//
+//   import { seedAll, SEED_DATA } from './seed-fixtures.js';
+//   await seedAll(page);            // conversations + résumés + souvenirs +
+//                                   // Espaces + skills + pièces jointes
+//   await page.reload();
+//
+// ou, pour ne semer que l'historique (pas d'IDB resources/skills) :
+//
+//   await seedConversations(page);
+//
+// Toutes les fonctions sont **idempotentes** (ids fixes, `put` IDB, garde de
+// présence côté localStorage) : un second appel ne duplique rien.
+
 const MODEL = 'gemma4:26b-nvfp4';
 const SERVER = 'Par défaut';   // provenance (champ server des messages assistant)
-const CONV_KEY = 'miaou-conversations';
-const SUMM_KEY = 'miaou-summaries';
-const MEM_KEY  = 'miaou-memories';
-const SPACES_KEY = 'miaou-spaces';
 
 // ── Spaces (lot C) : un second Space « Pro » pour exercer l'herméticité ──────
 // seed-01..seed-05 (réseau/backend) partent dans ce Space ; le reste (default
 // Space, implicite) sert de contrôle pour vérifier l'isolation bidirectionnelle
 // sidebar/recherche/outils. Id fixe → idempotent comme le reste des seeds.
 const SPACE_SEED_ID = 'space-seed-pro';
-const SPACE_SEED_CONV_IDS = new Set(['seed-01', 'seed-02', 'seed-03', 'seed-04', 'seed-05']);
+const SPACE_SEED_CONV_IDS = ['seed-01', 'seed-02', 'seed-03', 'seed-04', 'seed-05'];
 
 // IDs fixes → idempotent (re-run ne duplique pas)
 const SEEDS = [
@@ -460,14 +469,75 @@ const SKILL_SEEDS = [
     content: 'Structure : contexte, décisions, actions (porteur + échéance), risques.' },
 ];
 
-function log(cls, text) {
-  const el = document.createElement('div');
-  el.className = cls;
-  el.textContent = text;
-  document.getElementById('log').appendChild(el);
-}
 
-function seed() {
+// ── Données exportées ────────────────────────────────────────────────────────
+// Un verify qui a besoin de connaître une fixture (titre attendu, contenu d'un
+// message) lit ici plutôt que de recopier une chaîne.
+export const SEED_DATA = {
+  MODEL,
+  SERVER,
+  SPACE_SEED_ID,
+  SPACE_SEED_CONV_IDS,
+  SEEDS,
+  MEMORY_SEEDS,
+  SKILL_SEEDS,
+};
+
+// Version du schéma IDB `miaou`. **Doit rester alignée sur `MIAOU_DB_VERSION`
+// (storage.js)** : depuis le fix `3210886`, les deux points d'ouverture de
+// l'application partagent une seule version, et un script qui ouvre la base sur
+// un littéral périmé bloque l'ouverture (`verify-context-inspector-cache-bar`
+// portait un `2` en dur). Le `onupgradeneeded` ci-dessous recrée les quatre
+// stores à l'identique de l'application, avec la même garde contains-check :
+// si MIAOU n'a jamais ouvert la base, le seed la crée sans casser la migration.
+export const MIAOU_DB_VERSION = 4;
+
+// ── Corps exécuté DANS la page ───────────────────────────────────────────────
+// Ces fonctions sont sérialisées par Playwright (`page.evaluate(fn, arg)`) :
+// elles ne peuvent référencer aucune variable de ce module, tout passe par leur
+// argument. Chacune résout APRÈS le `tx.oncomplete` de son écriture : c'est ce
+// qui remplace le journal DOM de l'ancien fixture, sur lequel les consommateurs
+// attendaient par `waitForFunction`. Un appelant peut donc enchaîner
+// `page.reload()` directement, sans attente arbitraire.
+
+function pageSeedConversations(data) {
+  const { MODEL, SERVER, SPACE_SEED_ID, SPACE_SEED_CONV_IDS, SEEDS, MEMORY_SEEDS, DB_VERSION } = data;
+  const MEM_KEY = 'miaou-memories';
+  const SPACES_KEY = 'miaou-spaces';
+  const spaceConvIds = new Set(SPACE_SEED_CONV_IDS);
+
+  function openDb() {
+    return new Promise(function(resolve, reject) {
+      const req = indexedDB.open('miaou', DB_VERSION);
+      req.onupgradeneeded = function(e) {
+        const db = e.target.result;
+        const tx = e.target.transaction;
+        if (!db.objectStoreNames.contains('resources')) {
+          const store = db.createObjectStore('resources', { keyPath: 'id' });
+          store.createIndex('by_conversation', 'conversationId', { unique: false });
+          store.createIndex('by_space', 'spaceId', { unique: false });
+        } else {
+          const store = tx.objectStore('resources');
+          if (!store.indexNames.contains('by_space')) {
+            store.createIndex('by_space', 'spaceId', { unique: false });
+          }
+        }
+        if (!db.objectStoreNames.contains('skills')) {
+          db.createObjectStore('skills', { keyPath: 'slug' });
+        }
+        if (!db.objectStoreNames.contains('conversations')) {
+          const store = db.createObjectStore('conversations', { keyPath: 'id' });
+          store.createIndex('by_space', 'spaceId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('summaries')) {
+          db.createObjectStore('summaries', { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = function(e) { resolve(e.target.result); };
+      req.onerror = function(e) { reject(e.target.error); };
+    });
+  }
+
   const now = Date.now();
   const day = 86400000;
 
@@ -475,15 +545,14 @@ function seed() {
   const slots = SEEDS.map(() => now - Math.random() * 30 * day)
     .sort((a, b) => b - a);
 
-  // ── Conversations ────────────────────────────────────────────────────────
-  let convs = [];
-  try { convs = JSON.parse(localStorage.getItem(CONV_KEY) || '[]'); } catch {}
-  const existingIds = new Set(convs.map(c => c.id));
-
-  let addedConvs = 0;
+  // Conversations et résumés à écrire. La forme des enregistrements est celle
+  // des stores IDB : une conversation entière (`keyPath:'id'`), et un résumé
+  // par entrée portant son `id` (l'ancienne carte `{id: entrée}` de
+  // localStorage est devenue un store à clé, cf. la migration U-2).
+  const convRecords = [];
+  const summRecords = [];
   for (let i = 0; i < SEEDS.length; i++) {
     const s = SEEDS[i];
-    if (existingIds.has(s.id)) { log('ski', '⊘ ' + s.id + ' — déjà présent, ignoré'); continue; }
     const ts = slots[i];
 
     // Timestamps de messages : 30 s par message non-ack. Un ack ENRICHI (args
@@ -505,118 +574,97 @@ function seed() {
 
     const conv = { id: s.id, title: s.title, timestamp: ts, updatedAt: lastMsgTs, messages };
     if (s.pinned) conv.pinned = true;
-    if (SPACE_SEED_CONV_IDS.has(s.id)) conv.spaceId = SPACE_SEED_ID;
-    convs.push(conv);
-    addedConvs++;
-  }
-  // Tri desc par timestamp (attendu par listAllConversations)
-  convs.sort((a, b) => b.timestamp - a.timestamp);
-  localStorage.setItem(CONV_KEY, JSON.stringify(convs));
+    if (spaceConvIds.has(s.id)) conv.spaceId = SPACE_SEED_ID;
+    convRecords.push(conv);
 
-  // ── Résumés ──────────────────────────────────────────────────────────────
-  let summs = {};
-  try { summs = JSON.parse(localStorage.getItem(SUMM_KEY) || '{}'); } catch {}
-
-  let addedSumms = 0;
-  for (let i = 0; i < SEEDS.length; i++) {
-    const s = SEEDS[i];
-    if (summs[s.id] && !summs[s.id].suppressed) { continue; }
-    const ts = slots[i];
     // messageCount = messages user/assistant uniquement (pas les tool-acks)
     const msgCount = s.messages.filter(m => m.role === 'user' || m.role === 'assistant').length;
-    summs[s.id] = {
+    summRecords.push({
       id: s.id,
       title: s.title,
       timestamp: ts,
       summary: s.summary,
       keywords: s.keywords,
       messageCount: msgCount,
-    };
-    addedSumms++;
-  }
-  localStorage.setItem(SUMM_KEY, JSON.stringify(summs));
-
-  // ── Souvenirs (miaou-memories) ───────────────────────────────────────────
-  let mems = [];
-  try { mems = JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch {}
-  const memIds = new Set(mems.map(m => m.id));
-  let addedMems = 0;
-  for (const m of MEMORY_SEEDS) {
-    if (memIds.has(m.id)) continue;
-    mems.push({ ...m, created_at: now - 7 * day, updated_at: now - 7 * day });
-    addedMems++;
-  }
-  localStorage.setItem(MEM_KEY, JSON.stringify(mems));
-
-  // ── Espaces (miaou-spaces, lot C) ────────────────────────────────────────
-  // Le default Space lui-même n'est PAS seedé ici : migrateSpacesIfNeeded()
-  // (storage.js) le crée au premier chargement de MIAOU, avant tout rendu —
-  // le seed n'a besoin d'ajouter que le second Space.
-  let spaces = [];
-  try { spaces = JSON.parse(localStorage.getItem(SPACES_KEY) || '[]'); } catch {}
-  let addedSpaces = 0;
-  if (!spaces.some(s => s.id === SPACE_SEED_ID)) {
-    spaces.push({
-      id: SPACE_SEED_ID,
-      name: 'Pro',
-      description: 'Contexte infra/réseau à la maison : Pi-hole, Caddy, subnet 192.168.42.*.',
-      createdAt: now - 14 * day,
     });
-    addedSpaces++;
   }
-  localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
 
-  if (addedConvs) log('ok', '✓ ' + addedConvs + ' conversation(s) ajoutée(s)');
-  if (addedSumms) log('ok', '✓ ' + addedSumms + ' résumé(s) ajouté(s)');
-  if (addedMems)  log('ok', '✓ ' + addedMems + ' souvenir(s) ajouté(s)');
-  if (addedSpaces) log('ok', '✓ ' + addedSpaces + ' espace(s) ajouté(s) (« Pro », seed-01..05)');
-  if (!addedConvs && !addedSumms && !addedMems && !addedSpaces) log('ski', '⊘ Tout était déjà présent, rien à faire.');
-  log('', '');
-  log('', 'Recharge MIAOU pour voir les conversations dans la sidebar.');
+  return openDb().then(function(db) {
+    // Une seule transaction sur les deux stores : les ids sont fixes, donc
+    // `put` est idempotent et un re-seed ne duplique rien. On n'écrase que les
+    // ids seedés : une conversation créée à la main par le test survit.
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction(['conversations', 'summaries'], 'readwrite');
+      const convStore = tx.objectStore('conversations');
+      const summStore = tx.objectStore('summaries');
+      for (const rec of convRecords) convStore.put(rec);
+      for (const rec of summRecords) summStore.put(rec);
+      tx.oncomplete = function() { resolve(); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  }).then(function() {
+    // ── Souvenirs (miaou-memories) : taille bornée, restés en localStorage ──
+    let mems = [];
+    try { mems = JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch {}
+    const memIds = new Set(mems.map(m => m.id));
+    let addedMems = 0;
+    for (const m of MEMORY_SEEDS) {
+      if (memIds.has(m.id)) continue;
+      mems.push({ ...m, created_at: now - 7 * day, updated_at: now - 7 * day });
+      addedMems++;
+    }
+    localStorage.setItem(MEM_KEY, JSON.stringify(mems));
+
+    // ── Espaces (miaou-spaces, lot C) ────────────────────────────────────────
+    // Le default Space lui-même n'est PAS seedé ici : migrateSpacesIfNeeded()
+    // (storage.js) le crée au premier chargement de MIAOU, avant tout rendu —
+    // le seed n'a besoin d'ajouter que le second Space.
+    let spaces = [];
+    try { spaces = JSON.parse(localStorage.getItem(SPACES_KEY) || '[]'); } catch {}
+    let addedSpaces = 0;
+    if (!spaces.some(s => s.id === SPACE_SEED_ID)) {
+      spaces.push({
+        id: SPACE_SEED_ID,
+        name: 'Pro',
+        description: 'Contexte infra/réseau à la maison : Pi-hole, Caddy, subnet 192.168.42.*.',
+        createdAt: now - 14 * day,
+      });
+      addedSpaces++;
+    }
+    localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
+
+    return {
+      conversations: convRecords.length,
+      summaries: summRecords.length,
+      memories: addedMems,
+      spaces: addedSpaces,
+    };
+  });
 }
 
-// ── Skills : IndexedDB `miaou` v3, store `skills` (même schéma que skills.js).
-// Idempotent par nature (put remplace par slug). onupgradeneeded reprend la
-// création des DEUX stores + l'index `by_space` (lot Cbis, resources.js v3) :
-// si MIAOU n'a encore jamais ouvert la base, le seed la crée à l'identique
-// sans casser la migration ; si elle existe déjà en v2, l'index manquant est
-// ajouté (même garde contains-check que resources.js).
-function seedSkills() {
-  const req = indexedDB.open('miaou', 3);
-  req.onupgradeneeded = function(e) {
-    const db = e.target.result;
-    const tx = e.target.transaction;
-    if (!db.objectStoreNames.contains('resources')) {
-      const store = db.createObjectStore('resources', { keyPath: 'id' });
-      store.createIndex('by_conversation', 'conversationId', { unique: false });
-      store.createIndex('by_space', 'spaceId', { unique: false });
-    } else if (e.oldVersion < 3) {
-      const store = tx.objectStore('resources');
-      if (!store.indexNames.contains('by_space')) {
-        store.createIndex('by_space', 'spaceId', { unique: false });
-      }
-    }
-    if (!db.objectStoreNames.contains('skills')) {
-      db.createObjectStore('skills', { keyPath: 'slug' });
-    }
-  };
-  req.onsuccess = function(e) {
-    const db = e.target.result;
-    const tx = db.transaction('skills', 'readwrite');
-    const store = tx.objectStore('skills');
-    for (const s of SKILL_SEEDS) store.put(s);
-    tx.oncomplete = function() { log('ok', '✓ ' + SKILL_SEEDS.length + ' skill(s) écrites en IDB (put idempotent)'); };
-    tx.onerror = function(ev) { log('err', '✗ skills IDB : ' + (ev.target.error && ev.target.error.message)); };
-  };
-  req.onerror = function(e) { log('err', '✗ ouverture IDB : ' + (e.target.error && e.target.error.message)); };
+function pageSeedSkills(data) {
+  const { SKILL_SEEDS, DB_VERSION } = data;
+  return new Promise(function(resolve, reject) {
+    const req = indexedDB.open('miaou', DB_VERSION);
+    req.onsuccess = function(e) {
+      const db = e.target.result;
+      const tx = db.transaction('skills', 'readwrite');
+      const store = tx.objectStore('skills');
+      for (const s of SKILL_SEEDS) store.put(s);
+      tx.oncomplete = function() { resolve({ skills: SKILL_SEEDS.length }); };
+      tx.onerror = function(ev) { reject(ev.target.error); };
+    };
+    req.onerror = function(e) { reject(e.target.error); };
+  });
 }
 
-// ── Pièces jointes (brief A, lots 3-4) : blobs réels en IDB pour seed-10b, afin
+// Pièces jointes (brief A, lots 3-4) : blobs réels en IDB pour seed-10b, afin
 // que recall_attachment/getCachedRecordByAttId trouvent un enregistrement (le
-// commentaire de seed-10b ci-dessus décrit le cas SANS blob — celui-ci ajoute
-// le cas AVEC blob, sans dupliquer la conversation). Schéma exact de
-// storeAttachment (resources.js) : id `att_…` distinct de attId `att-N`.
-function seedAttachmentResources() {
+// commentaire de seed-10b décrit le cas SANS blob — celui-ci ajoute le cas AVEC
+// blob, sans dupliquer la conversation). Schéma exact de storeAttachment
+// (resources.js) : id `att_…` distinct de attId `att-N`.
+function pageSeedAttachments(data) {
+  const { DB_VERSION } = data;
   const enc = new TextEncoder();
   const RECORDS = [
     { id: 'att_seed10b_1', attId: 'att-1', conversationId: 'seed-10b', class: 'binary',
@@ -630,21 +678,60 @@ function seedAttachmentResources() {
       data: enc.encode('127.0.0.1 - - [05/Jul/2026:10:00:00] "GET /api/x HTTP/1.1" 503 0 "-" "-"\nupstream timed out (110: Connection timed out) while reading response header from upstream').buffer },
   ];
   RECORDS[1].size = RECORDS[1].data.byteLength;
-  const req = indexedDB.open('miaou', 3);
-  req.onsuccess = function(e) {
-    const db = e.target.result;
-    const tx = db.transaction('resources', 'readwrite');
-    const store = tx.objectStore('resources');
-    for (const r of RECORDS) store.put(r);
-    tx.oncomplete = function() { log('ok', '✓ ' + RECORDS.length + ' pièce(s) jointe(s) écrites en IDB (put idempotent, seed-10b)'); };
-    tx.onerror = function(ev) { log('err', '✗ resources IDB (attachments) : ' + (ev.target.error && ev.target.error.message)); };
-  };
-  req.onerror = function(e) { log('err', '✗ ouverture IDB (attachments) : ' + (e.target.error && e.target.error.message)); };
+  return new Promise(function(resolve, reject) {
+    const req = indexedDB.open('miaou', DB_VERSION);
+    req.onsuccess = function(e) {
+      const db = e.target.result;
+      const tx = db.transaction('resources', 'readwrite');
+      const store = tx.objectStore('resources');
+      for (const r of RECORDS) store.put(r);
+      tx.oncomplete = function() { resolve({ attachments: RECORDS.length }); };
+      tx.onerror = function(ev) { reject(ev.target.error); };
+    };
+    req.onerror = function(e) { reject(e.target.error); };
+  });
 }
 
-seed();
-seedSkills();
-seedAttachmentResources();
-</script>
-</body>
-</html>
+// ── API Node ─────────────────────────────────────────────────────────────────
+// Chaque fonction attend un objet `page` Playwright déjà navigué sur la page
+// dist (même origine que l'IDB visée) et **résout après `tx.oncomplete`** : le
+// consommateur peut enchaîner `page.reload()` sans attente arbitraire — c'est
+// ce qui remplace les `waitForFunction` sur le texte de `#log` de l'ancien
+// fixture HTML.
+
+const pageArgs = () => ({
+  MODEL: SEED_DATA.MODEL,
+  SERVER: SEED_DATA.SERVER,
+  SPACE_SEED_ID: SEED_DATA.SPACE_SEED_ID,
+  SPACE_SEED_CONV_IDS: SEED_DATA.SPACE_SEED_CONV_IDS,
+  SEEDS: SEED_DATA.SEEDS,
+  MEMORY_SEEDS: SEED_DATA.MEMORY_SEEDS,
+  SKILL_SEEDS: SEED_DATA.SKILL_SEEDS,
+  DB_VERSION: MIAOU_DB_VERSION,
+});
+
+/** Conversations, résumés, souvenirs et Espaces. N'ouvre pas les stores
+ *  `skills`/`resources` : suffisant pour un verify qui n'a besoin que d'un
+ *  historique (c'est ce que faisaient les consommateurs qui découpaient
+ *  l'ancien script pour n'en garder que `seed()`). */
+export async function seedConversations(page) {
+  return page.evaluate(pageSeedConversations, pageArgs());
+}
+
+/** Skills (`/revue` slash, `cr` autotrigger), cohérentes avec seed-19/seed-20. */
+export async function seedSkills(page) {
+  return page.evaluate(pageSeedSkills, pageArgs());
+}
+
+/** Pièces jointes de seed-10b (une image binaire, un log texte inline). */
+export async function seedAttachments(page) {
+  return page.evaluate(pageSeedAttachments, pageArgs());
+}
+
+/** Tout le fixture, dans l'ordre de l'ancien `dev-seed.html`. */
+export async function seedAll(page) {
+  const a = await seedConversations(page);
+  const b = await seedSkills(page);
+  const c = await seedAttachments(page);
+  return { ...a, ...b, ...c };
+}

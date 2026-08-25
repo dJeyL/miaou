@@ -13,11 +13,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedAll } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = process.argv[2] || path.join(__dirname, 'shots-command-palette');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -46,16 +46,8 @@ const openPalette = async () => { await page.keyboard.press(MOD + '+KeyK'); awai
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed ─────────────────────────────────────────────────────────────────────
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const seedScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('skill(s)'), { timeout: 5000 });
+// ── Seed : fixtures du module seed-fixtures.js écrites dans la page dist ──
+await seedAll(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);
@@ -187,7 +179,11 @@ check('cohérence : "Changer de modèle" présent SSI le cache modèles est non 
   await page.evaluate(() => {
     const hasCmd = Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label'))
       .some(e => e.textContent === 'Changer de modèle');
-    const hasModels = !!(_modelsCache && _modelsCache.length);
+    // Le cache modèles est indexé PAR SERVEUR depuis le passage à
+    // `_modelsById` (clef = id de serveur + empreinte d'endpoint) ;
+    // `activeServerModels()` est le point de lecture de la palette.
+    const models = activeServerModels();
+    const hasModels = !!(models && models.length);
     return hasCmd === hasModels;
   }));
 check('2 skills seedées : "Invoquer une skill" présent', rootLabels.includes('Invoquer une skill'));
@@ -251,7 +247,13 @@ const hlAfter = await page.evaluate(() => document.getElementById('set-highlight
 check('bascule coloration : checkbox Réglages inversée (pas de no-op DOM)', hlAfter === !hlBefore);
 
 // ── 7. Sous-mode modèle (cache injecté) ──────────────────────────────────────
-await page.evaluate(() => { _modelsCache = ['gpt-x', 'mistral-small3.2', 'llama3']; _modelsCacheUrl = 'x'; });
+// Injection du cache modèles du serveur ACTIF : `_modelsEntry` crée (ou
+// réinitialise) l'entrée avec l'empreinte d'endpoint courante, ce qui la rend
+// lisible par `activeServerModels()` — écrire une globale `_modelsCache` ne
+// marche plus depuis l'indexation par serveur.
+await page.evaluate(() => {
+  _modelsEntry(activeApiServer()).models = ['gpt-x', 'mistral-small3.2', 'llama3'];
+});
 await openPalette();
 await page.fill('#cmdk-input', 'modèle');
 await page.waitForTimeout(120);
@@ -295,7 +297,10 @@ await page.keyboard.press('Enter');   // sous-mode skill
 await page.waitForTimeout(120);
 const skillLabels = await page.evaluate(() =>
   Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label')).map(e => e.textContent));
-check('sous-mode skill : les 2 skills seedées listées', skillLabels.length === 2);
+// 2 skills seedées (`revue`, `cr`) + les 3 skills SYSTÈME upsertées au
+// démarrage (ensureSystemSkills) : la palette liste les skills invocables,
+// système comprises.
+check('sous-mode skill : 2 seedées + 3 système listées', skillLabels.length === 5);
 await shot('05-submode-skill.png');
 await page.fill('#cmdk-input', 'revue');
 await page.waitForTimeout(120);

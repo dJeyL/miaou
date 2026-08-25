@@ -6,11 +6,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedConversations } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = path.join(repoRoot, 'untracked/muscle');
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -21,18 +21,9 @@ const page = await context.newPage();
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const fullScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-const seedOnlyScript = fullScript
-  .replace(/\nseedSkills\(\);\nseedAttachmentResources\(\);\n$/, '')
-  .replace(/function seedSkills\(\)[\s\S]*$/, 'seed();');
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedOnlyScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('conversation(s)'), { timeout: 5000 });
+// ── Seed : conversations/résumés/souvenirs/Espaces uniquement (pas de
+// skills ni de pièces jointes : cette vérification n'en a pas besoin). ──
+await seedConversations(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);

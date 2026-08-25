@@ -191,7 +191,12 @@ await page.waitForTimeout(150);
 // tout le chemin callTool → handler → toolFail → _pendingToolAcks qui est exercé.
 const c1 = await page.evaluate(() => {
   clearPendingToolAcks();
-  const res = callTool('miaou__update_memory', { id: 'inexistant', content: 'x' });
+  // Nom canonique POST-lot P (réorg en sous-namespaces) : `miaou__update_memory`
+  // n'existe plus. Attention, l'ancien nom ne faisait pas échouer ce script de
+  // façon franche — un outil inconnu produit lui aussi un ack `tool_failed`,
+  // donc les contrôles de forme passaient et seul le TEXTE trahissait qu'on
+  // testait un échec de ROUTAGE au lieu d'un échec MÉTIER.
+  const res = callTool('miaou__memory__update', { id: 'inexistant', content: 'x' });
   const acks = getPendingToolAcks();
   return {
     text: flattenToolResult(res),
@@ -202,9 +207,11 @@ const c1 = await page.evaluate(() => {
     isErr: acks[0] ? ackIsError(acks[0]) : false,
   };
 });
-check('update_memory sur id inconnu → 1 ack tool_failed', c1.n === 1 && c1.kind === 'tool_failed');
-check('ack porte le nom canonique préfixé', c1.name === 'miaou__update_memory');
+check('memory__update sur id inconnu → 1 ack tool_failed', c1.n === 1 && c1.kind === 'tool_failed');
+check('ack porte le nom canonique préfixé', c1.name === 'miaou__memory__update');
 check('ack en erreur (ackIsError)', c1.error === true && c1.isErr === true);
+check('échec MÉTIER, pas un outil inconnu (garde de renommage)',
+  !/outil inconnu/i.test(c1.text));
 check('tool result inchangé pour le modèle', c1.text.includes('introuvable'));
 
 // Rendu de cet ack réel dans une bulle.

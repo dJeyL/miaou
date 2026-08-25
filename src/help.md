@@ -458,10 +458,30 @@ tes fichiers sont stockés **localement**, sur ta machine, dans le stockage du
 navigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as
 configurée (et vers les serveurs compagnons que tu aurais ajoutés).
 
+Le navigateur offre deux emplacements de stockage, et MIAOU se sert des deux
+selon la taille de ce qu'il range :
+
+- **Le stockage local** (`localStorage`), petit mais simple, garde ce qui est de
+  taille stable : tes réglages, ta clef d'API, tes serveurs API et compagnons,
+  la liste de tes Espaces et tes souvenirs.
+- **La base de données du navigateur** (`IndexedDB`, base `miaou`), sans limite
+  pratique, garde ce qui grossit avec l'usage : **tes conversations** et leurs
+  résumés, tes skills, et les fichiers de tes bibliothèques d'Espaces ainsi que
+  les pièces jointes de tes messages.
+
+Les conversations ont vécu dans le stockage local jusqu'à ce qu'elles en
+saturent la capacité (quelques mégaoctets) ; elles sont désormais dans la base,
+et le déménagement se fait tout seul au premier démarrage — il n'y a rien à
+faire, et rien ne se perd.
+
+Pour aller voir : dans les outils de développement du navigateur, onglet
+« Application » (Chrome) ou « Stockage » (Firefox).
+
 Conséquences pratiques :
 
 - Tes données restent sur cet appareil et ce navigateur. Changer de navigateur
-  ou de machine ne les emporte pas automatiquement.
+  ou de machine ne les emporte pas automatiquement. L'export (sujet `exports`)
+  est le seul moyen de les emporter.
 - Vider les données de site du navigateur efface aussi MIAOU. Pense à exporter
   ce qui compte.
 - La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à

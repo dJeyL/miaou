@@ -11,11 +11,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedAll } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = process.argv[2] || path.join(__dirname, 'shots-spaces');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -39,16 +39,8 @@ const shot = async (name) => {
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed : script de dev-seed.html évalué dans la page dist (même origine) ──
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const seedScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('skill(s)'), { timeout: 5000 });
+// ── Seed : fixtures du module seed-fixtures.js écrites dans la page dist ──
+await seedAll(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);
@@ -91,9 +83,13 @@ await shot('03-pro-space-badge-visible.png');
 await page.evaluate(() => toggleSidebar());
 await page.waitForTimeout(300);
 
-// ── 4. Herméticité outils modèle (list_conversations depuis "Pro") ───────────
-const toolList = await page.evaluate(() => JSON.parse(callTool('list_conversations', {}).content[0].text));
-check('list_conversations (Pro) : 5 résultats, aucun seed-06+', toolList.length === 5 &&
+// ── 4. Herméticité outils modèle (conv__list depuis "Pro") ───────────────────
+// Nom canonique depuis le lot P (`list_conversations` → `conv__list`, sous-
+// namespaces internes). L'appel sans `ctx` retombe sur les globales d'écran via
+// `toolCtx` — c'est ce qu'on veut ici : on teste le Space AFFICHÉ.
+const toolList = await page.evaluate(async () =>
+  JSON.parse((await callTool('conv__list', {})).content[0].text));
+check('conv__list (Pro) : 5 résultats, aucun seed-06+', toolList.length === 5 &&
   toolList.every(e => Number(e.id.replace('seed-', '')) <= 5));
 
 // ── 5. Recherche sidebar hermétique ──────────────────────────────────────────
@@ -129,6 +125,11 @@ await page.waitForTimeout(150);
 await page.locator('#space-menu .model-opt', { hasText: 'Pro' }).locator('.space-opt-edit').click();
 await page.waitForSelector('#space-drawer.show');
 await page.waitForTimeout(350);
+// Le drawer d'Espace s'ouvre sur l'onglet « Conversations » (resetSpaceTab) :
+// depuis le lot Cbis, les souvenirs vivent derrière l'onglet dédié et ne sont
+// rendus qu'à sa sélection (selectSpaceTab → renderMemoryList).
+await page.evaluate(() => selectSpaceTab('memories'));
+await page.waitForTimeout(250);
 const proMemCount = await page.evaluate(() => document.querySelectorAll('#space-memory-list .mem-item').length);
 check('écran Space Pro : souvenirs scopés listés (mem-seed-01/02/03)', proMemCount >= 2);
 await shot('04-space-screen-pro.png');

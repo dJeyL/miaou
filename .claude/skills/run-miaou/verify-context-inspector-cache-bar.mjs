@@ -11,11 +11,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedConversations } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = path.join(repoRoot, 'untracked/muscle');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -40,25 +40,10 @@ page.on('pageerror', (e) => consoleErrors.push(String(e)));
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed : uniquement conversations/résumés/mémoires (localStorage, fonction
-// seed() du fixture). seedSkills()/seedAttachmentResources() ouvrent IndexedDB
-// en version 2 (tests/dev-seed.html), périmée face à resources.js (version 3
-// actuelle) — dette pré-existante, hors scope ici. Pas besoin d'IDB pour cette
-// vérification : le tool-ack/outil est simulé directement sur currentThread. ──
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const fullScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-// Coupe avant seedSkills()/seedAttachmentResources() (IndexedDB v2, périmé
-// face à resources.js v3) : garde toutes les défs + seed() + son appel final.
-const seedOnlyScript = fullScript
-  .replace(/\nseedSkills\(\);\nseedAttachmentResources\(\);\n$/, '')
-  .replace(/function seedSkills\(\)[\s\S]*$/, 'seed();');
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedOnlyScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('conversation(s)'), { timeout: 5000 });
+// ── Seed : conversations/résumés/souvenirs/Espaces uniquement (ni skills ni
+// pièces jointes : cette vérification n'en a pas besoin — le tool-ack est
+// simulé directement sur currentThread). ──
+await seedConversations(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);

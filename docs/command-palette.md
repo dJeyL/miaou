@@ -110,9 +110,17 @@ Space actif, `spaceConvIds`), le sous-mode conversation de la palette est
 
 `cmdkConvItems(query)` (ui.js) :
 
-1. **Filtrage** : réutilise le prédicat de la sidebar `searchConversations(q)`
-   (titre / résumé / contenu ≥ 3 car.) appliqué à `listAllConversations()`
-   (**tous** les Spaces, pas `spaceConvIds`).
+1. **Filtrage** : réutilise le prédicat de la sidebar
+   `searchConversations(q, contentHits)` (titre / résumé / contenu ≥ 3 car.)
+   appliqué à `listAllConversations()` (**tous** les Spaces, pas
+   `spaceConvIds`). Depuis U-3, le scan de **contenu** n'est plus fait dans le
+   prédicat (les conversations froides n'ont pas leurs messages en RAM) : il est
+   précalculé en async par `scheduleCmdkContentScan`, qui débounce la frappe,
+   lit IDB et redemande un rendu. Le rendu de la palette, lui, reste synchrone.
+   `_cmdkContentHits` mémorise `{ query, hits }` — la requête AVEC son résultat,
+   jamais le résultat seul, sinon un Set arrivé en retard s'appliquerait à une
+   autre frappe. Détail complet dans `docs/storage.md` (« Recherche plein-texte
+   sur conversations froides »).
 2. **Score** local léger : titre inclut la requête → 3, sinon → 1. Suffisant
    pour départager dans un groupe de Space (le classement inter-Space est imposé
    par l'étape 3, pas par le score).

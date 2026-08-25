@@ -2234,41 +2234,29 @@ let convSearchFilter = null;
 
 // Prédicat de recherche : match direct (sous-chaîne) sur le titre, ou
 // recouvrement de mots-clés sur le résumé via le scoring existant (seuil bas,
-// plus permissif que l'injection automatique), ou enfin scan du contenu des
-// messages (à partir de 3 caractères, cf. plus bas). null si requête vide.
-function searchConversations(query) {
+// plus permissif que l'injection automatique), ou enfin appartenance à
+// `contentHits`. null si requête vide.
+//
+// `contentHits` (U-3) est l'ensemble des ids dont le CONTENU matche, précalculé
+// en async par `collectContentSearchHits` (storage.js) : depuis le passage des
+// conversations en IDB, une conversation froide n'a pas ses `messages` en RAM,
+// et le scan de contenu ne peut plus se faire ici. Le prédicat reste synchrone —
+// c'est ce qui permet à `renderConvList` et à la palette de ne pas changer.
+// Argument OMIS = pas de scan de contenu (titre et résumé seulement) ; c'est le
+// comportement des appelants qui ne veulent pas payer la lecture, et celui du
+// premier rendu avant que la passe async ait rendu la main.
+function searchConversations(query, contentHits) {
   const q = (query || '').trim().toLowerCase();
   if (!q) return null;
   const qTokens = tokenize(q);
-  // Un seul parse des résumés, capturé par la closure : le prédicat est appelé
-  // une fois par conversation, sans re-désérialiser tout le blob à chaque appel.
-  // Instantané pris à la frappe (rafraîchi à la frappe suivante) — cf. perf.
+  // Un seul instantané des résumés, capturé par la closure : le prédicat est
+  // appelé une fois par conversation, sans relire le cache à chaque appel.
   const summaries = loadSummaries();
-  // Idem pour les conversations complètes (avec messages) : `listAllConversations`
-  // ne renvoie que des métadonnées, il faut l'instantané brut pour scanner le
-  // contenu. Un seul parse par frappe, comme pour les résumés ci-dessus — pas
-  // de re-parse par conversation candidate. Map id → conversation pour un accès
-  // direct (évite un .find() linéaire répété).
-  const convById = q.length >= 3 ? new Map(loadConversations().map(c => [c.id, c])) : null;
   return c => {
     if ((c.title || '').toLowerCase().includes(q)) return true;
     const entry = summaries[c.id];
     if (entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1) return true;
-    // Sous 3 caractères, le bruit d'un scan substring domine : pas de scan contenu.
-    if (!convById) return false;
-    const full = convById.get(c.id);
-    if (!full || !Array.isArray(full.messages)) return false;
-    for (const m of full.messages) {
-      // Les acks (tool-ack/memory-ack) portent des `result` potentiellement
-      // énormes et hors-sujet : ignorés. Le champ `reasoning` aussi (pas du
-      // contenu adressé à l'utilisateur).
-      if (isAckRole(m.role)) continue;
-      // Côté user : le littéral tapé (displayText), jamais le corps baké d'une
-      // slash-skill (content contient aussi le corps de la skill injectée).
-      const text = m.role === 'user' ? (m.displayText ?? m.content) : m.content;
-      if (typeof text === 'string' && text.toLowerCase().includes(q)) return true;
-    }
-    return false;
+    return !!(contentHits && contentHits.has(c.id));
   };
 }
 
@@ -2282,21 +2270,43 @@ function searchConversations(query) {
 // verrait le timer en vol réappliquer l'ancien filtre APRÈS la remise à null.
 const CONV_SEARCH_DEBOUNCE_MS = 150;
 let _convSearchTimer = null;
+// Jeton de séquence de la passe de scan de contenu (U-3). Le scan est async
+// (lecture IDB) : deux frappes rapprochées peuvent avoir leurs passes en vol
+// simultanément, et rien ne garantit qu'elles rendent la main dans l'ordre.
+// Sans jeton, la plus lente écraserait le résultat de la plus récente et la
+// liste afficherait le filtre d'une requête abandonnée
+// (cf. `project_await_reentrancy_guard`). Même geste que `_openConvSeq`.
+let _convSearchSeq = 0;
 
 function cancelConvSearchDebounce() {
   if (_convSearchTimer !== null) { clearTimeout(_convSearchTimer); _convSearchTimer = null; }
+  // Invalide aussi toute passe de scan en vol : un effacement du champ ne doit
+  // pas voir un filtre réapparaître quand la lecture IDB rend la main.
+  _convSearchSeq++;
 }
 
 function onConvSearch() {
   const input = $('conv-search');
   $('search-clear').classList.toggle('show', !!input.value);
   cancelConvSearchDebounce();
-  _convSearchTimer = setTimeout(() => {
+  _convSearchTimer = setTimeout(async () => {
     _convSearchTimer = null;
     // Relecture du champ DANS le timer, jamais une valeur figée à l'armement :
     // la frappe a pu continuer (doctrine « relire l'état après l'attente »,
     // même esprit que le piège 24).
-    convSearchFilter = searchConversations($('conv-search').value);
+    const query = $('conv-search').value;
+    const seq = ++_convSearchSeq;
+    // Premier rendu SANS attendre la lecture IDB : titre et résumé suffisent à
+    // remplir la liste immédiatement. Le scan de contenu la complète ensuite.
+    // Sans ce rendu intermédiaire, la liste resterait figée sur l'ancien filtre
+    // pendant toute la lecture — perceptible sur un gros historique.
+    convSearchFilter = searchConversations(query);
+    animateNextConvList();
+    renderConvList();
+    const hits = await collectContentSearchHits(query);
+    if (seq !== _convSearchSeq) return;   // requête abandonnée entre-temps
+    if (!hits.size) return;               // rien à ajouter : pas de re-rendu
+    convSearchFilter = searchConversations(query, hits);
     animateNextConvList();
     renderConvList();
   }, CONV_SEARCH_DEBOUNCE_MS);
@@ -3237,6 +3247,44 @@ let _cmdkFocusBefore = null;   // élément à re-focus à la fermeture (compose
 // Julien 2026-07-11). Ambigu sinon : « r » lancerait « Résumés » au lieu de
 // filtrer « réglages ». En mode filtre armé, les touches à gauche sont teintées.
 let _cmdkFilterArmed = false;
+// Scan de contenu du submode « conversation » (U-3). Le rendu de la palette est
+// synchrone et rejoué à chaque frappe ; la lecture IDB, elle, ne l'est pas. On
+// mémorise donc `{ query, hits }` — la requête AVEC le résultat, jamais le
+// résultat seul : sans la requête, un Set arrivé en retard serait appliqué à une
+// autre frappe (cf. `project_cache_key_must_be_identity_not_handy_attribute`,
+// même esprit — l'identité du résultat est la requête qui l'a produit).
+let _cmdkContentHits = null;
+let _cmdkContentTimer = null;
+let _cmdkContentSeq = 0;
+
+// Débounce + passe de scan de contenu pour le submode conversation. Appelée à
+// chaque frappe ; le rendu immédiat (titre/résumé) a déjà eu lieu, celui-ci
+// n'arrive qu'en complément. Sans debounce, chaque frappe déclencherait une
+// lecture IDB complète — la palette n'en avait pas besoin tant que tout était
+// synchrone, elle en a besoin maintenant.
+function scheduleCmdkContentScan(query) {
+  if (_cmdkContentTimer !== null) { clearTimeout(_cmdkContentTimer); _cmdkContentTimer = null; }
+  _cmdkContentSeq++;
+  const q = (query || '').trim();
+  if (!q) { _cmdkContentHits = null; return; }
+  const seq = _cmdkContentSeq;
+  _cmdkContentTimer = setTimeout(async () => {
+    _cmdkContentTimer = null;
+    const hits = await collectContentSearchHits(q);
+    // Jeton de séquence : la palette a pu se fermer, changer de mode, ou la
+    // frappe continuer pendant la lecture (`project_await_reentrancy_guard`).
+    if (seq !== _cmdkContentSeq || !_cmdkOpen || _cmdkMode !== 'conv') return;
+    _cmdkContentHits = { query: q, hits: hits };
+    if (!hits.size) return;   // rien à ajouter : pas de re-rendu
+    renderCommandList($('cmdk-input').value);
+  }, CONV_SEARCH_DEBOUNCE_MS);
+}
+
+function cancelCmdkContentScan() {
+  if (_cmdkContentTimer !== null) { clearTimeout(_cmdkContentTimer); _cmdkContentTimer = null; }
+  _cmdkContentSeq++;
+  _cmdkContentHits = null;
+}
 
 // Placeholders par mode. En racine, deux variantes selon _cmdkFilterArmed.
 const CMDK_PLACEHOLDERS = {
@@ -3392,7 +3440,12 @@ function cmdkModeItems(query) {
 function cmdkConvItems(query) {
   const q = (query || '').trim();
   if (!q) return [];
-  const pred = searchConversations(q);
+  // `_cmdkContentHits` : résultat de la passe de scan de contenu pour CETTE
+  // requête (U-3), ou null tant qu'elle n'a pas rendu la main. Le rendu de la
+  // palette reste synchrone ; c'est la passe qui redemande un rendu quand elle
+  // aboutit (cf. scheduleCmdkContentScan).
+  const pred = searchConversations(q, _cmdkContentHits && _cmdkContentHits.query === q
+    ? _cmdkContentHits.hits : null);
   if (!pred) return [];
   const ql = q.toLowerCase();
   const spaceNames = new Map(loadSpaces().map(s => [s.id, s.name || '']));
@@ -3433,6 +3486,9 @@ function insertSkillIntoComposer(slug) {
 function enterCmdkSubmode(mode) {
   _cmdkMode = mode;
   _cmdkFilterArmed = false;   // les sous-modes filtrent nativement (pas de raccourcis)
+  // Changer de mode vide le champ : tout scan de contenu en vol devient sans
+  // objet, et son résultat ne doit pas s'appliquer au mode d'arrivée.
+  cancelCmdkContentScan();
   const input = $('cmdk-input');
   if (input) {
     input.value = '';
@@ -3529,6 +3585,7 @@ function closeCommandPalette() {
   _cmdkOpen = false;
   _cmdkMode = 'root';
   _cmdkItems = [];
+  cancelCmdkContentScan();
   const overlay = $('cmdk-overlay');
   if (overlay) overlay.hidden = true;
   // Restaure le focus au composer (brief D3). Fallback : élément focus avant.
@@ -3609,6 +3666,10 @@ document.addEventListener('keydown', (e) => {
         input.placeholder = cmdkRootPlaceholder();
       }
       renderCommandList(input.value);
+      // Complément asynchrone (U-3) : le scan de contenu ne peut plus se faire
+      // dans le rendu synchrone ci-dessus. Armé seulement dans le submode qui en
+      // dépend ; il redemande un rendu quand il aboutit.
+      if (_cmdkMode === 'conv') scheduleCmdkContentScan(input.value);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveCmdkSelection(1); return; }
@@ -4140,8 +4201,9 @@ function renderImportSummary(counts, onApply) {
   const sum = $('import-data-summary');
   if (!sum) return;
   sum.innerHTML =
-    `<div>${counts.conversations} conversation(s), ${counts.memories} souvenir(s), ` +
-    `${counts.skills} skill(s), ${counts.resources} ressource(s), ${counts.servers} serveur(s), ` +
+    `<div>${counts.conversations} conversation(s), ${counts.summaries} résumé(s), ` +
+    `${counts.memories} souvenir(s), ${counts.skills} skill(s), ` +
+    `${counts.resources} ressource(s), ${counts.servers} serveur(s), ` +
     `${counts.spaces} espace(s).</div>`;
   const btn = document.createElement('button');
   btn.className = 'drawer-btn danger';

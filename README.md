@@ -115,7 +115,7 @@ l'interface, JetBrains Mono pour le code.
 
 **Historique & mémoire**
 
-- Conversations persistantes (`localStorage`), sidebar à sections temporelles et
+- Conversations persistantes (IndexedDB), sidebar à sections temporelles et
   redimensionnable, titres auto-générés et éditables.
 - Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
@@ -312,7 +312,7 @@ src/
 └── js/
     ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif, expandThread
     ├── sync.js        synchro multi-onglets (BroadcastChannel) : enveloppe, soft-lock, relais lecture seule
-    ├── storage.js     localStorage : settings, conversations, résumés (tombstones), souvenirs persistants
+    ├── storage.js     localStorage (settings, serveurs, Espaces, souvenirs) + IndexedDB (conversations, résumés) et leur cache RAM
     ├── resources.js   IndexedDB (base `miaou`) : ressources MCP/model-side (`res_…`), bibliothèque de fichiers d'Espace
     ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, skills système seedées, triggers slash
     ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC, `js__eval` (QuickJS-WASM)

@@ -559,9 +559,17 @@ function openResourceDB() {
     // v2 : ajout du store `skills` (cf. skills.js). v3 (lot Cbis) : ajout de
     // l'index `by_space` sur `resources` existant, pour les fichiers de
     // bibliothèque d'espace (`spaceId` sur le record, `kind:'library'`).
+    // v4 (lot U-1) : stores `conversations` et `summaries`.
     // onupgradeneeded est idempotent (contains-check par store/index) → chaque
     // palier ne touche que ce qui manque.
-    const req = indexedDB.open('miaou', 3);
+    //
+    // La version vient de `MIAOU_DB_VERSION` (storage.js) : les DEUX points
+    // d'ouverture doivent demander la MÊME, l'un ou l'autre pouvant ouvrir la
+    // base en premier. Un littéral figé ici a coûté un lot : resté à `3` après
+    // le bump v4, il faisait rejeter toute ouverture par ce chemin sur une base
+    // déjà migrée. Référence dans un corps de fonction (jamais au top-level) :
+    // contrainte de portée du script concaténé, cf. CLAUDE.md.
+    const req = indexedDB.open('miaou', MIAOU_DB_VERSION);
     req.onupgradeneeded = function(e) {
       const db = e.target.result;
       const tx = e.target.transaction;
@@ -577,6 +585,13 @@ function openResourceDB() {
       }
       if (!db.objectStoreNames.contains('skills')) {
         db.createObjectStore('skills', { keyPath: 'slug' });
+      }
+      if (!db.objectStoreNames.contains('conversations')) {
+        const store = db.createObjectStore('conversations', { keyPath: 'id' });
+        store.createIndex('by_space', 'spaceId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('summaries')) {
+        db.createObjectStore('summaries', { keyPath: 'id' });
       }
     };
     req.onsuccess = function(e) { resolve(e.target.result); };

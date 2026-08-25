@@ -495,8 +495,8 @@ au KV cache, ou à la synchro multi-onglets.
     …)`. Si la conversation `id` est supprimée (`deleteConv`) **pendant**
     l'`await`, `deleteSummaryEntry(id)` a déjà tourné et nettoyé (rien à
     nettoyer, le résumé n'existait pas encore) — mais le `saveSummary` qui suit
-    la résolution de l'`await` **réécrit** une entrée dans `miaou-summaries`
-    pour un `id` absent de `miaou-conversations` : résumé orphelin ressuscité
+    la résolution de l'`await` **réécrit** une entrée dans l'index des résumés
+    pour un `id` absent des conversations : résumé orphelin ressuscité
     après coup. Fix, même pattern que le titrage (piège 9, `setTitleEditable`
     re-checke `convId === currentConvId`) mais orienté existence plutôt que
     navigation : chaque site re-vérifie `loadConversation(id)` juste avant

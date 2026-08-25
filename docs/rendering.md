@@ -276,7 +276,7 @@ la vignette/l'image ouvre la lightbox, ne télécharge jamais).
   `diagramImageName` — les seuls helpers purs. Le rendu, le toggle, le thème, l'iframe, la lightbox et le
   canvas PNG sont du **territoire manuel** : `docs/manual-tests.md` tests 71
   à 84.
-- Fixtures : `tests/dev-seed.html` seed-23 (bloc mermaid valide avec
+- Fixtures : `.claude/skills/run-miaou/seed-fixtures.js` seed-23 (bloc mermaid valide avec
   `filename=flux-oauth.mmd` — exercice du nommage d'export E3 — + bloc
   invalide + bloc bash de contrôle) et seed-24 (page HTML avec script sondant
   `localStorage`, SVG avec `<script>` embarqué, bloc xml de contrôle).

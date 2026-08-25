@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Vérification visuelle post-refactor (un seul lancement) :
-//   - seed des fixtures dev-seed.html injecté DANS la page dist (même origine),
+//   - seed des fixtures (seed-fixtures.js) écrit DANS la page dist (même origine),
 //   - sidebar (épinglé, sections), acks enrichis (intent 2 niveaux, erreur,
 //     multi-outils + conv_ref), displayText slash-skill, raisonnement,
 //   - suppression armée (sidebar + carte skill), cartes cfg (API/MCP/skills),
@@ -11,11 +11,11 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedAll } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const seedPath = path.join(repoRoot, 'tests/dev-seed.html');
 const outDir = process.argv[2] || path.join(__dirname, 'shots');
 const headed = process.argv.includes('--headed');
 fs.mkdirSync(outDir, { recursive: true });
@@ -39,16 +39,8 @@ const shot = async (name) => {
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 
-// ── Seed : script de dev-seed.html évalué dans la page dist (même origine) ──
-const seedHtml = fs.readFileSync(seedPath, 'utf8');
-const seedScript = seedHtml.match(/<script>\n([\s\S]*?)<\/script>/)[1];
-await page.evaluate(() => {
-  const d = document.createElement('div');
-  d.id = 'log'; d.hidden = true;
-  document.body.appendChild(d);
-});
-await page.evaluate(seedScript);
-await page.waitForFunction(() => document.getElementById('log').textContent.includes('skill(s)'), { timeout: 5000 });
+// ── Seed : fixtures du module seed-fixtures.js écrites dans la page dist ──
+await seedAll(page);
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);   // loadSkillsCache + rendus initiaux
@@ -58,14 +50,22 @@ const sidebar = await page.evaluate(() => ({
   convs: document.querySelectorAll('#conv-list .conv').length,
   sections: Array.from(document.querySelectorAll('#conv-list .conv-section')).map(s => s.textContent),
 }));
-check('sidebar : 20 conversations seedées', sidebar.convs === 20);
+// 26 conversations seedées, dont 5 dans le Space « Pro » : la sidebar est
+// scopée au Space actif (default), d'où 21. Le « 20 » historique datait
+// d'un fixture de 20 conversations toutes hors Space.
+check('sidebar : 21 conversations seedées visibles dans le Space par défaut', sidebar.convs === 21);
 check('sidebar : section « Épinglé » en tête', sidebar.sections[0] === 'Épinglé');
 
 // ── 2. seed-18 : deux acks enrichis + conv_ref cliquable ─────────────────────
 await page.click('.conv-title:text("Multi-outils : mémoire + historique")');
 await page.waitForTimeout(300);
+// Lot N : un groupe de 2+ acks est rendu en mode COMPACT (ticker) — un seul
+// `.tool-ack` est dans le DOM, les autres vivent dans la WeakMap `ackNodeOf`.
+// On bascule en mode liste (clic sur `.ack-badge`) avant de compter.
+await page.click('#thread .ack-badge');
+await page.waitForTimeout(400);   // animation de bascule compact → liste
 const s18 = await page.evaluate(() => ({
-  acks: document.querySelectorAll('#thread .tool-ack').length,
+  acks: document.querySelectorAll('#thread .ack-list .tool-ack').length,
   intents: document.querySelectorAll('#thread .mcp-intent-row').length,
   undo: document.querySelectorAll('#thread .ack-undo').length,
   convLink: !!document.querySelector('#thread a[href^="#miaou-conv:"]'),
@@ -119,7 +119,7 @@ const afterDisarm = await page.evaluate(() => ({
   armed: !!document.querySelector('#conv-list .conv-del.armed'),
   convs: document.querySelectorAll('#conv-list .conv').length,
 }));
-check('conv-del : désarmé après timeout, rien supprimé', !afterDisarm.armed && afterDisarm.convs === 20);
+check('conv-del : désarmé après timeout, rien supprimé', !afterDisarm.armed && afterDisarm.convs === 21);
 
 // ── 6. Réglages + serveurs API (cartes cfg) ──────────────────────────────────
 await page.evaluate(() => openSettings());
@@ -144,11 +144,11 @@ await page.waitForSelector('#mcp-drawer.show');
 await page.waitForTimeout(350);
 await page.evaluate(() => addMcpServerCard());
 const tLabel = () => page.evaluate(() =>
-  document.querySelector('#mcp-list .cfg-pill-select .composer-reasoning-btn span').textContent);
+  document.querySelector('#mcp-list .cfg-pill-select .pill-select-btn span').textContent);
 check('MCP : pilule transport par défaut streamable-http', (await tLabel()) === 'streamable-http');
 await page.fill('#mcp-list .mcp-url', 'https://host/sse');
-check('MCP : devinette d\'URL → sse (différé)', (await tLabel()) === 'sse (différé)');
-await page.click('#mcp-list .cfg-pill-select .composer-reasoning-btn');
+check('MCP : devinette d\'URL → sse', (await tLabel()) === 'sse');
+await page.click('#mcp-list .cfg-pill-select .pill-select-btn');
 await page.waitForTimeout(150);
 check('MCP : menu pilule ouvert avec coche', await page.evaluate(() =>
   !!document.querySelector('#mcp-list .cfg-pill-select .model-menu.show .model-opt.selected')));
@@ -165,7 +165,10 @@ await page.evaluate(() => { closeMcpServers(); openSkills(); });
 await page.waitForSelector('#skills-drawer.show');
 await page.waitForTimeout(350);
 const skills = await page.evaluate(() => document.querySelectorAll('#skill-list .cfg-card').length);
-check('skills : 2 cartes seedées (IDB)', skills === 2);
+// 5 cartes : les 2 skills seedées (`revue`, `cr`) + les 3 skills SYSTÈME
+// upsertées au démarrage par ensureSystemSkills() (js-eval, mermaid,
+// files-promote). Le « 2 » historique précédait ces dernières.
+check('skills : 2 seedées + 3 système (IDB)', skills === 5);
 await page.locator('#skill-list .drawer-btn:text("Modifier")').first().click();
 await page.waitForTimeout(200);
 await page.locator('#skill-list .skill-del').first().click();
@@ -177,7 +180,7 @@ await page.waitForTimeout(3000);
 check('skill-del : désarmé, libellé restauré, rien supprimé', await page.evaluate(() =>
   !document.querySelector('#skill-list .skill-del.armed') &&
   document.querySelector('#skill-list .skill-del').textContent === 'Supprimer' &&
-  document.querySelectorAll('#skill-list .cfg-card').length === 2));
+  document.querySelectorAll('#skill-list .cfg-card').length === 5));
 
 // ── 9. Thème clair (résolu en JS) ────────────────────────────────────────────
 await page.evaluate(() => { closeSkills(); selectTheme('light'); });

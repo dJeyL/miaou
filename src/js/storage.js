@@ -312,57 +312,670 @@ function listEnabledMcpServers() {
   return loadMcpServers().filter(s => s.enabled !== false && s.url);
 }
 
-// ── Conversations ───────────────────────────────────────────────────────────
-// Stockage simple : un tableau d'objets { id, title, timestamp, messages }.
+// ── Couche IDB conversations/résumés + cache RAM (lot U-1) ──────────────────
+// localStorage saturait (~5-10 Mo) : `miaou-conversations` et `miaou-summaries`
+// sont les deux seules clés qui grossissent sans borne. Elles vivent désormais
+// dans la base IDB `miaou` (v4), aux côtés de `resources`/`skills`.
+//
+// L'API publique reste SYNCHRONE (~100 call-sites, dont le rendu, le chemin
+// chaud du streaming et des handlers d'outils synchrones : propager `await`
+// rouvrirait des fenêtres de réentrance dans du code qui n'en a pas). Elle est
+// adossée à un cache RAM à deux étages ; seules les ÉCRITURES sont async.
+//
+// Étage 1 — métadonnées de TOUTES les conversations, permanent. Alimente tout
+//   le rendu (renderConvList, palette, tri, spaceConvIds) : ces call-sites
+//   restent synchrones et inchangés. Jamais `messages`.
+// Étage 2 — `messages`, borné en LRU. Seules restent chaudes la conversation
+//   affichée, les dernières ouvertes, et OBLIGATOIREMENT toute conversation
+//   portant une génération en vol (piège 28 : `_activeGenerations` épingle ses
+//   entrées, jamais évincées — sinon la génération perd ses messages sous les
+//   pieds).
+//
+// Fenêtre assumée : entre la mutation du cache et `tx.oncomplete`, la RAM est
+// en avance sur le disque ; un reload dans cet intervalle (quelques ms) perd la
+// dernière écriture. C'est déjà le cas de facto pour les resources.
 
-function loadConversations() {
-  try { return JSON.parse(localStorage.getItem(CONV_KEY)) || []; }
-  catch (e) { return []; }
+// Version du schéma de la base `miaou` — PARTAGÉE par les deux points
+// d'ouverture (`openConvDB` ici, `openResourceDB` dans resources.js), puisque
+// l'un ou l'autre peut ouvrir la base en premier. Une seule constante, jamais
+// deux littéraux : `openResourceDB` était resté en `3` après le bump v4 du lot
+// U-1, et demander une version INFÉRIEURE à celle de la base la fait rejeter
+// (`VersionError`) — tout ce qui passe par lui (bibliothèque d'espace, skills
+// système, pièces jointes) tombait en silence sur un historique déjà migré.
+// Bumper le schéma = changer CE nombre, et ajouter le palier aux DEUX
+// `onupgradeneeded`, qui doivent rester identiques.
+const MIAOU_DB_VERSION = 4;
+const CONV_MESSAGES_LRU_MAX = 12;
+
+let _convDbPromise = null;
+
+// Étage 1 : Map<id, meta> — meta = conversation SANS `messages`.
+let _convMetaCache = new Map();
+// Étage 2 : Map<id, messages> — ordre d'insertion = ordre LRU (Map le garantit).
+let _convMessagesCache = new Map();
+// Index des résumés, intégralement en RAM (taille bornée : une entrée courte
+// par conversation, pas de contenu de messages).
+let _summariesCache = {};
+let _convCacheHydrated = false;
+
+function openConvDB() {
+  if (_convDbPromise) return _convDbPromise;
+  _convDbPromise = new Promise(function(resolve, reject) {
+    // v4 (lot U) : ajout des stores `conversations` et `summaries`. Comme les
+    // paliers précédents, `onupgradeneeded` est idempotent (contains-check par
+    // store/index) → chaque palier ne touche que ce qui manque.
+    const req = indexedDB.open('miaou', MIAOU_DB_VERSION);
+    req.onupgradeneeded = function(e) {
+      const db = e.target.result;
+      const tx = e.target.transaction;
+      if (!db.objectStoreNames.contains('resources')) {
+        const store = db.createObjectStore('resources', { keyPath: 'id' });
+        store.createIndex('by_conversation', 'conversationId', { unique: false });
+        store.createIndex('by_space', 'spaceId', { unique: false });
+      } else if (e.oldVersion < 3) {
+        const store = tx.objectStore('resources');
+        if (!store.indexNames.contains('by_space')) {
+          store.createIndex('by_space', 'spaceId', { unique: false });
+        }
+      }
+      if (!db.objectStoreNames.contains('skills')) {
+        db.createObjectStore('skills', { keyPath: 'slug' });
+      }
+      if (!db.objectStoreNames.contains('conversations')) {
+        const store = db.createObjectStore('conversations', { keyPath: 'id' });
+        store.createIndex('by_space', 'spaceId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('summaries')) {
+        db.createObjectStore('summaries', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = function(e) { resolve(e.target.result); };
+    req.onerror = function(e) {
+      // Ne pas figer la promesse mémoïsée sur un échec (transitoire) : la
+      // remettre à null pour qu'un appel ultérieur retente l'ouverture.
+      _convDbPromise = null;
+      reject(e.target.error);
+    };
+  });
+  return _convDbPromise;
 }
 
-function persistConversations(arr) {
-  localStorage.setItem(CONV_KEY, JSON.stringify(arr));
+// Sépare une conversation en (métadonnées, messages). Pure, QuickJS-testable :
+// c'est la forme de l'étage 1 qui porte l'invariant « jamais de messages en
+// étage 1 ». Les champs listés sont exactement ceux que consomment
+// listAllConversations, renderConvList, la palette, le tri et spaceConvIds.
+function splitConvRecord(conv) {
+  const meta = {};
+  for (const k of Object.keys(conv)) {
+    if (k === 'messages') continue;
+    meta[k] = conv[k];
+  }
+  return { meta: meta, messages: Array.isArray(conv.messages) ? conv.messages : [] };
+}
+
+// Recompose une conversation complète depuis les deux étages. `messages` est
+// toujours un tableau (jamais undefined) : les consommateurs le supposent.
+function joinConvRecord(meta, messages) {
+  return Object.assign({}, meta, { messages: Array.isArray(messages) ? messages : [] });
+}
+
+// Éviction LRU de l'étage 2. Une conversation portant une génération en vol est
+// épinglée (piège 28) : `isConvPinnedInCache` est le SEUL prédicat d'épinglage.
+function isConvPinnedInCache(id) {
+  // _activeGenerations vit dans main.js (Map<convId, gen>) ; référencé ici en
+  // corps de fonction uniquement (un const ne franchit pas les frontières de
+  // fichier dans le test runner).
+  try { return _activeGenerations.has(id); }
+  catch (e) { return false; }
+}
+
+function touchConvMessages(id, messages) {
+  // Ré-insertion = passage en queue de Map → position LRU la plus récente.
+  _convMessagesCache.delete(id);
+  _convMessagesCache.set(id, messages);
+  evictConvMessages();
+}
+
+function evictConvMessages() {
+  if (_convMessagesCache.size <= CONV_MESSAGES_LRU_MAX) return;
+  for (const id of Array.from(_convMessagesCache.keys())) {
+    if (_convMessagesCache.size <= CONV_MESSAGES_LRU_MAX) break;
+    if (id === currentConvIdSafe()) continue;   // conversation affichée : jamais évincée
+    if (isConvPinnedInCache(id)) continue;      // génération en vol (piège 28)
+    _convMessagesCache.delete(id);
+  }
+}
+
+// `currentConvId` vit dans main.js ; lecture défensive (tests QuickJS, boot).
+function currentConvIdSafe() {
+  try { return currentConvId; } catch (e) { return null; }
+}
+
+// Réinitialise les deux étages et l'index des résumés. Point d'entrée unique
+// pour les tests (QuickJS n'a pas IndexedDB : le cache EST la source de vérité
+// observable, cf. project_extract_pure_helper_over_idb_stub — on ne stube pas
+// IDB, on repart d'un cache vide). Marque le cache comme hydraté : en test, il
+// n'y a rien à charger.
+function resetConvCacheForTests() {
+  _convMetaCache = new Map();
+  _convMessagesCache = new Map();
+  _summariesCache = {};
+  _convCacheHydrated = true;
+}
+
+// Hydratation au boot : étage 1 (métadonnées de TOUTES les conversations) +
+// index des résumés. `init()` l'attend avant le premier rendu, sinon la sidebar
+// s'affiche vide puis se remplit. Les `messages` ne sont PAS chargés ici.
+async function hydrateConvCache() {
+  const db = await openConvDB();
+  const [convs, summaries] = await Promise.all([
+    new Promise(function(resolve, reject) {
+      const tx = db.transaction('conversations', 'readonly');
+      const req = tx.objectStore('conversations').getAll();
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    }),
+    new Promise(function(resolve, reject) {
+      const tx = db.transaction('summaries', 'readonly');
+      const req = tx.objectStore('summaries').getAll();
+      req.onsuccess = function(e) { resolve(e.target.result || []); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    })
+  ]);
+  _convMetaCache = new Map();
+  for (const rec of convs) {
+    const split = splitConvRecord(rec);
+    _convMetaCache.set(rec.id, split.meta);
+  }
+  _summariesCache = {};
+  for (const e of summaries) _summariesCache[e.id] = e;
+  _convCacheHydrated = true;
+}
+
+// Charge les `messages` d'une conversation en étage 2 (appelé par
+// openConversation avant de projeter le thread).
+//
+// **Relit IDB même si la conversation est déjà chaude.** La version U-1 sortait
+// immédiatement dans ce cas — « en RAM » y valait « à jour », ce qui n'est vrai
+// que dans un onglet seul. Avec deux onglets sur la même conversation, le cache
+// du second ne se rafraîchissait JAMAIS : ni au broadcast, ni en sortant et
+// revenant sur la conversation (le seul chemin de relecture, `warmConversation`,
+// court-circuitait). L'onglet restait sur son instantané jusqu'au reload. Avant
+// U-1 le problème n'existait pas : `loadConversation` lisait localStorage,
+// partagé entre onglets.
+//
+// Coût : un `get` IDB par ouverture de conversation, sur un chemin déjà async et
+// déjà en attente des ressources (`Promise.all` dans `openConversation`).
+//
+// **Exception, impérative** : une conversation portant une génération en vol
+// n'est jamais relue (piège 28). Son thread de travail est en AVANCE sur le
+// storage — l'unique écriture d'un échange a lieu dans `onFinal`/`onHalt` —, et
+// écraser l'étage 2 avec les octets du disque lui retirerait le tour en cours
+// sous les pieds. On rafraîchit seulement sa position LRU.
+async function warmConversation(id) {
+  if (isConvPinnedInCache(id)) {
+    if (_convMessagesCache.has(id)) touchConvMessages(id, _convMessagesCache.get(id));
+    return;
+  }
+  const db = await openConvDB();
+  const rec = await new Promise(function(resolve, reject) {
+    const tx = db.transaction('conversations', 'readonly');
+    const req = tx.objectStore('conversations').get(id);
+    req.onsuccess = function(e) { resolve(e.target.result || null); };
+    tx.onerror = function(e) { reject(e.target.error); };
+  });
+  if (!rec) return;
+  const split = splitConvRecord(rec);
+  _convMetaCache.set(id, split.meta);
+  touchConvMessages(id, split.messages);
+}
+
+// Lecture complète d'UNE conversation depuis IDB, hors cache. Utilisé par les
+// consommateurs froids en masse (recherche U-3, backfill) qui ne doivent pas
+// polluer l'étage 2 ni en dépendre.
+async function readConversationFromDB(id) {
+  const db = await openConvDB();
+  return new Promise(function(resolve, reject) {
+    const tx = db.transaction('conversations', 'readonly');
+    const req = tx.objectStore('conversations').get(id);
+    req.onsuccess = function(e) { resolve(e.target.result || null); };
+    tx.onerror = function(e) { reject(e.target.error); };
+  });
+}
+
+// Toutes les conversations COMPLÈTES depuis IDB (messages inclus), hors cache.
+// Réservé aux consommateurs froids en masse : recherche plein-texte (U-3) et
+// backfill de résumés. Ne jamais l'appeler dans un chemin de rendu.
+async function readAllConversationsFromDB() {
+  const db = await openConvDB();
+  return new Promise(function(resolve, reject) {
+    const tx = db.transaction('conversations', 'readonly');
+    const req = tx.objectStore('conversations').getAll();
+    req.onsuccess = function(e) { resolve(e.target.result || []); };
+    tx.onerror = function(e) { reject(e.target.error); };
+  });
+}
+
+// Ensemble des ids dont le CONTENU matche `query` (recherche plein-texte, U-3).
+// Le prédicat de recherche (`searchConversations`, ui.js) reste synchrone pour
+// le titre et le résumé ; le scan de contenu, lui, a perdu sa source synchrone
+// avec le passage à IDB (une conversation froide n'a pas ses `messages` en RAM).
+// Il est donc PRÉCALCULÉ ici, en async, et le résultat — un simple `Set` d'ids —
+// est passé au prédicat qui redevient une consultation O(1).
+//
+// Option (a) du brief U : relecture IDB complète par frappe débouncée, pas
+// d'index RAM entretenu. Mesuré avant de trancher : ~14 ms pour 100
+// conversations / 3,8 Mo, ~70 ms pour 500 / 20 Mo en régime chaud, derrière un
+// debounce de 150 ms. Un index RAM garderait tout le texte en mémoire en
+// permanence — exactement ce que l'étage 2 du cache évite — pour gagner des
+// millisecondes invisibles. Ne pas le construire par anticipation.
+//
+// Sous le seuil de longueur (CONTENT_SCAN_MIN_CHARS), aucune lecture n'est faite
+// du tout : on rend un Set vide sans toucher à la base.
+async function collectContentSearchHits(query) {
+  const q = (query || '').trim().toLowerCase();
+  const hits = new Set();
+  if (q.length < CONTENT_SCAN_MIN_CHARS) return hits;
+  for (const conv of await readAllConversationsFromDB()) {
+    if (convContentMatches(conv, q)) hits.add(conv.id);
+  }
+  return hits;
+}
+
+// Écriture d'UNE conversation. Le cache est muté SYNCHRONEMENT (source de
+// vérité pour les lecteurs synchrones) puis le `put` est planifié. Le broadcast
+// part sur `tx.oncomplete` — POST-COMMIT, jamais `req.onsuccess` (piège 24) :
+// un pair qui relit le store sur onsuccess verrait l'ancien état.
+function persistConversation(conv) {
+  const split = splitConvRecord(conv);
+  _convMetaCache.set(conv.id, split.meta);
+  touchConvMessages(conv.id, split.messages);
+  const spaceId = conv.spaceId || DEFAULT_SPACE_ID;
+  openConvDB().then(function(db) {
+    const tx = db.transaction('conversations', 'readwrite');
+    tx.objectStore('conversations').put(conv);
+    tx.oncomplete = function() {
+      syncPost('conv-updated', { convId: conv.id, spaceId: spaceId });
+    };
+    tx.onerror = function(e) { reportStorageWriteError('conversation', conv.id, e.target.error); };
+  }).catch(function(err) { reportStorageWriteError('conversation', conv.id, err); });
+}
+
+// Écriture d'un record complet SANS le mettre au chaud. Même transaction et
+// même broadcast post-commit que `persistConversation`, mais le cache d'étage 2
+// n'est pas touché : la conversation reste froide si elle l'était.
+//
+// Réservé aux écritures en masse d'un consommateur froid — aujourd'hui le seul
+// est `backfillMessageModels`, qui relit TOUTES les conversations en IDB et
+// réécrit celles dont les réponses assistant n'ont pas de `model` (il y en a de
+// vieilles dans un historique réel). Passer par `persistConversation` y laissait
+// l'étage 2 rempli de 12 conversations arbitraires — les dernières backfillées,
+// que personne n'a demandées — au lieu de le laisser disponible pour ce que
+// l'utilisateur ouvre vraiment. Borné et sans corruption, mais sans objet.
+//
+// Les métadonnées, elles, sont bien rafraîchies : elles alimentent le rendu, et
+// l'étage 1 porte TOUTES les conversations de toute façon.
+function persistConversationCold(conv) {
+  const split = splitConvRecord(conv);
+  _convMetaCache.set(conv.id, split.meta);
+  const spaceId = conv.spaceId || DEFAULT_SPACE_ID;
+  openConvDB().then(function(db) {
+    const tx = db.transaction('conversations', 'readwrite');
+    tx.objectStore('conversations').put(conv);
+    tx.oncomplete = function() {
+      syncPost('conv-updated', { convId: conv.id, spaceId: spaceId });
+    };
+    tx.onerror = function(e) { reportStorageWriteError('conversation', conv.id, e.target.error); };
+  }).catch(function(err) { reportStorageWriteError('conversation', conv.id, err); });
+}
+
+function removeConversationRecord(id, spaceId) {
+  _convMetaCache.delete(id);
+  _convMessagesCache.delete(id);
+  openConvDB().then(function(db) {
+    const tx = db.transaction('conversations', 'readwrite');
+    tx.objectStore('conversations').delete(id);
+    tx.oncomplete = function() {
+      syncPost('conv-deleted', { convId: id, spaceId: spaceId });
+    };
+    tx.onerror = function(e) { reportStorageWriteError('conversation', id, e.target.error); };
+  }).catch(function(err) { reportStorageWriteError('conversation', id, err); });
+}
+
+// Recharge depuis IDB ce qu'un AUTRE onglet vient d'écrire.
+//
+// Le piège 24 dit « relire APRÈS l'await ». Depuis U-1, ça ne suffit plus : la
+// relecture passe par un cache RAM **par onglet**, que le broadcast n'invalide
+// pas. Utilisé par le récepteur de synchro pour les conversations NON affichées
+// (branche `render-list`) : leurs métadonnées — titre, updatedAt, épinglage —
+// alimentent la sidebar et vivent dans le cache d'étage 1. La conversation
+// affichée, elle, passe par `openConversation`/`warmConversation`.
+//
+// Il **relit**, il ne se contente pas de vider : un simple `delete` rendrait
+// `messages: []` sur une conversation chaude (contrat U-1). Une conversation
+// absente d'IDB (supprimée par le pair) est retirée des deux étages.
+async function refreshConversationFromDB(id) {
+  const rec = await readConversationFromDB(id);
+  if (!rec) {
+    _convMetaCache.delete(id);
+    _convMessagesCache.delete(id);
+    return null;
+  }
+  const split = splitConvRecord(rec);
+  _convMetaCache.set(id, split.meta);
+  // Étage 2 seulement si la conversation y était déjà : re-hydrater une
+  // conversation froide la réchaufferait sans que personne l'ait demandé.
+  if (_convMessagesCache.has(id)) touchConvMessages(id, split.messages);
+  return rec;
+}
+
+// Recharge l'index des résumés depuis IDB. Même raison que
+// `refreshConversationFromDB` : le cache est par onglet, et les résumés
+// n'émettent aucun broadcast propre (lot J). L'index est petit et intégralement
+// en RAM, donc on le relit en entier — pas de granularité par entrée à gérer.
+// Appelé en arrière-plan par le récepteur de synchro, jamais dans un chemin
+// d'envoi (cf. applySyncDecision, main.js).
+async function refreshSummariesFromDB() {
+  const entries = await readAllSummariesFromDB();
+  _summariesCache = {};
+  for (const e of entries) _summariesCache[e.id] = e;
+}
+
+// Tous les records du store `summaries`, hors cache. Deux appelants : la
+// relecture de synchro ci-dessus et l'export complet (U-4), qui doit écrire ce
+// qui est EN BASE et non l'index RAM de cet onglet.
+async function readAllSummariesFromDB() {
+  const db = await openConvDB();
+  return new Promise(function(resolve, reject) {
+    const tx = db.transaction('summaries', 'readonly');
+    const req = tx.objectStore('summaries').getAll();
+    req.onsuccess = function(e) { resolve(e.target.result || []); };
+    tx.onerror = function(e) { reject(e.target.error); };
+  });
+}
+
+// Réinsertion en masse des conversations et résumés d'un import (U-4). Les deux
+// stores sont écrits dans UNE SEULE transaction, comme la migration U-2 et pour
+// la même raison : c'est ce qui rend un état partiellement importé inatteignable
+// par interruption (onglet fermé pendant → transaction avortée, rien d'écrit).
+// L'appelant a vidé les stores juste avant ; il recharge la page juste après, ce
+// qui réhydrate le cache RAM — aucune mutation de cache ici, elle serait
+// aussitôt jetée. Pas de broadcast non plus : `applyImportedData` émet un
+// `full-reload` unique pour les pairs, plutôt qu'une grêle de `conv-updated`.
+// La promesse est ATTENDUE par l'appelant (au contraire des écritures
+// fire-and-forget du reste du fichier) : un échec doit empêcher le reload de
+// masquer un import à moitié fait.
+async function replaceConvRecordsFromImport(conversations, summaries) {
+  const db = await openConvDB();
+  return new Promise(function(resolve, reject) {
+    const tx = db.transaction(['conversations', 'summaries'], 'readwrite');
+    const convStore = tx.objectStore('conversations');
+    const sumStore = tx.objectStore('summaries');
+    for (const rec of (conversations || [])) convStore.put(rec);
+    for (const rec of (summaries || [])) sumStore.put(rec);
+    tx.oncomplete = function() { resolve({ conversations: (conversations || []).length, summaries: (summaries || []).length }); };
+    tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function(e) { reject(tx.error || (e.target && e.target.error)); };
+  });
+}
+
+function persistSummaryRecord(entry) {
+  _summariesCache[entry.id] = entry;
+  openConvDB().then(function(db) {
+    const tx = db.transaction('summaries', 'readwrite');
+    tx.objectStore('summaries').put(entry);
+    tx.onerror = function(e) { reportStorageWriteError('résumé', entry.id, e.target.error); };
+  }).catch(function(err) { reportStorageWriteError('résumé', entry.id, err); });
+}
+
+function removeSummaryRecord(id) {
+  delete _summariesCache[id];
+  openConvDB().then(function(db) {
+    const tx = db.transaction('summaries', 'readwrite');
+    tx.objectStore('summaries').delete(id);
+    tx.onerror = function(e) { reportStorageWriteError('résumé', id, e.target.error); };
+  }).catch(function(err) { reportStorageWriteError('résumé', id, err); });
+}
+
+// Les écritures sont fire-and-forget : plus personne n'attend la promesse. Un
+// échec est tracé en console et rien de plus — même posture que `putResource`
+// (dont le rejet n'a jamais eu d'auditeur). Décision Julien (lot U-1) : pas de
+// surface d'erreur dédiée, le brief exclut toute affordance visuelle nouvelle
+// et le quota IDB est de plusieurs ordres de grandeur au-dessus de celui de
+// localStorage — l'échec d'écriture qui motivait ce lot n'a plus la même
+// probabilité. À rouvrir si l'usage réel dément.
+function reportStorageWriteError(kind, id, err) {
+  console.error('[miaou] échec d\'écriture ' + kind + ' ' + id, err);
+}
+
+// Écriture CIBLÉE de quelques champs d'une conversation, sans jamais toucher
+// `messages`. Indispensable : `loadConversation` d'une conversation FROIDE rend
+// `messages: []` (contrat de l'étage 2), donc persister le record reconstruit
+// depuis le cache écraserait en base les messages d'une conversation ancienne —
+// épingler une vieille conversation depuis la sidebar suffirait à la vider.
+// Le read-modify-write a lieu DANS la transaction, seul endroit où le record
+// complet est disponible à coup sûr.
+// Une valeur `undefined` SUPPRIME le champ (Object.assign copierait la clé à
+// undefined) : c'est la sémantique attendue par les appelants qui faisaient
+// `delete conv.model` quand l'override repasse au défaut global.
+function applyConvFields(target, fields) {
+  for (const k of Object.keys(fields)) {
+    if (fields[k] === undefined) delete target[k];
+    else target[k] = fields[k];
+  }
+  return target;
+}
+
+function persistConversationField(id, fields) {
+  const meta = _convMetaCache.get(id);
+  if (!meta) return;
+  applyConvFields(meta, fields);
+  const spaceId = meta.spaceId || DEFAULT_SPACE_ID;
+  openConvDB().then(function(db) {
+    const tx = db.transaction('conversations', 'readwrite');
+    const store = tx.objectStore('conversations');
+    const req = store.get(id);
+    req.onsuccess = function(e) {
+      const rec = e.target.result;
+      if (!rec) return;   // supprimée entre-temps : ne pas ressusciter
+      store.put(applyConvFields(Object.assign({}, rec), fields));
+    };
+    tx.oncomplete = function() {
+      syncPost('conv-updated', { convId: id, spaceId: spaceId });
+    };
+    tx.onerror = function(e) { reportStorageWriteError('conversation', id, e.target.error); };
+  }).catch(function(err) { reportStorageWriteError('conversation', id, err); });
+}
+
+// ── Migration localStorage → IDB (lot U-2) ──────────────────────────────────
+// Motif du lot : le quota localStorage (~5-10 Mo) est atteint en usage réel et
+// l'échec de `setItem` est silencieux. La purge des deux clés est donc le BUT,
+// pas un nettoyage cosmétique — mais elle n'a lieu qu'après `tx.oncomplete`.
+
+// Parse le contenu historique de `miaou-conversations` : un tableau de
+// conversations complètes. Pure, QuickJS-testable — c'est elle qui porte
+// l'invariant « ne migrer que ce qui a une identité exploitable ».
+// Tolérante : une clé absente, un JSON illisible ou une entrée sans `id` ne
+// font pas échouer la migration, ils sont ignorés (le reste passe).
+function parseLegacyConversations(raw) {
+  if (raw === null || raw === undefined) return [];   // clé absente : rien à faire
+  let arr;
+  // `null` = contenu PRÉSENT mais inexploitable. Distinct de `[]` (rien à
+  // migrer) : l'appelant doit alors s'abstenir de purger, sous peine de
+  // détruire des octets encore récupérables à la main.
+  try { arr = JSON.parse(raw); } catch (e) { return null; }
+  if (!Array.isArray(arr)) return null;
+  return arr.filter(c => c && typeof c.id === 'string' && c.id);
+}
+
+// Parse le contenu historique de `miaou-summaries` : un OBJET { id: entry },
+// là où le store IDB veut un tableau de records à keyPath 'id'. La conversion
+// de forme est ici. `id` est réaffirmé depuis la clé : les entrées récentes le
+// portent déjà (saveSummary le force), les anciennes pas forcément, et c'est le
+// keyPath — sans lui le `put` jette.
+function parseLegacySummaries(raw) {
+  if (raw === null || raw === undefined) return [];   // clé absente : rien à faire
+  let obj;
+  try { obj = JSON.parse(raw); } catch (e) { return null; }   // présent mais illisible (cf. parseLegacyConversations)
+  return normalizeLegacySummaryMap(obj);
+}
+
+// Conversion de forme SEULE, à partir d'un objet DÉJÀ parsé : objet indexé
+// { id: entry } → tableau de records portant leur `id`. Pure, QuickJS-testable.
+// Deux appelants, délibérément : la migration localStorage (U-2, via
+// `parseLegacySummaries`) et l'import d'un fichier `version: 1` (U-4), qui porte
+// les résumés dans la MÊME forme héritée. Une seule formule pour les deux — un
+// second convertisseur écrit sur place divergerait en silence.
+// Rend `null` sur une entrée qui n'est pas un objet indexé exploitable ; les
+// appelants traitent `null` comme « présent mais illisible », jamais comme vide.
+function normalizeLegacySummaryMap(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const out = [];
+  for (const id of Object.keys(obj)) {
+    const e = obj[id];
+    if (!e || typeof e !== 'object') continue;
+    out.push(Object.assign({}, e, { id: id }));
+  }
+  return out;
+}
+
+// Décide ce qu'il reste à écrire, connaissant les ids DÉJÀ présents en IDB.
+// Pure. Une entrée déjà en base gagne toujours sur celle de localStorage : IDB
+// est le support courant, localStorage un résidu. Ce cas n'arrive que si une
+// migration précédente a écrit puis échoué à purger.
+// `legacy` à `null` (contenu illisible) donne un tableau vide : rien n'est
+// écrit pour cette clé, et l'appelant s'abstient par ailleurs de la purger.
+function selectRecordsToMigrate(legacy, existingIds) {
+  const set = existingIds instanceof Set ? existingIds : new Set(existingIds || []);
+  return (legacy || []).filter(r => r && !set.has(r.id));
+}
+
+// Migration one-shot au boot. Court-circuit sur l'ABSENCE des clés localStorage,
+// pas sur « le store IDB est peuplé » : après une migration réussie les clés
+// sont purgées, donc `getItem === null` court-circuite pour toujours — alors
+// qu'un critère « store peuplé » ressusciterait l'historique si l'utilisateur
+// supprimait toutes ses conversations après une purge ratée.
+// Appelée AVANT hydrateConvCache() : sans quoi le cache s'hydraterait depuis
+// des stores encore vides et la sidebar s'afficherait sans historique.
+// Contrat d'échec : on ne purge rien, localStorage reste intact, on trace. Le
+// prochain boot retentera.
+async function migrateConversationsToIdbIfNeeded() {
+  const rawConvs = localStorage.getItem(CONV_KEY);
+  const rawSummaries = localStorage.getItem(SUMMARIES_KEY);
+  if (rawConvs === null && rawSummaries === null) return null;
+
+  const legacyConvs = parseLegacyConversations(rawConvs);
+  const legacySummaries = parseLegacySummaries(rawSummaries);
+  // `null` = contenu présent mais inexploitable. On migre l'autre clé si elle
+  // est saine, mais on ne purge JAMAIS celle qu'on n'a pas su lire : ses octets
+  // restent récupérables à la main. Conséquence assumée : la migration sera
+  // retentée à chaque boot tant que la clé abîmée est là (trace en console).
+  if (legacyConvs === null) console.error('[miaou] ' + CONV_KEY + ' est présent mais illisible : conservé tel quel, non migré');
+  if (legacySummaries === null) console.error('[miaou] ' + SUMMARIES_KEY + ' est présent mais illisible : conservé tel quel, non migré');
+  const db = await openConvDB();
+
+  // Une seule transaction pour les deux stores : l'atomicité est gratuite et
+  // le `oncomplete` — donc le feu vert à la purge — est unique.
+  const written = await new Promise(function(resolve, reject) {
+    const tx = db.transaction(['conversations', 'summaries'], 'readwrite');
+    const convStore = tx.objectStore('conversations');
+    const sumStore = tx.objectStore('summaries');
+    const counts = { conversations: 0, summaries: 0 };
+
+    // getAllKeys plutôt que getAll : on ne veut que les ids, pas rapatrier
+    // tout le volume déjà en base pour décider de ne pas l'écraser.
+    convStore.getAllKeys().onsuccess = function(e) {
+      const todo = selectRecordsToMigrate(legacyConvs, new Set(e.target.result || []));
+      counts.conversations = todo.length;
+      for (const rec of todo) convStore.put(rec);
+    };
+    sumStore.getAllKeys().onsuccess = function(e) {
+      const todo = selectRecordsToMigrate(legacySummaries, new Set(e.target.result || []));
+      counts.summaries = todo.length;
+      for (const rec of todo) sumStore.put(rec);
+    };
+
+
+    tx.oncomplete = function() { resolve(counts); };
+    tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function(e) { reject(tx.error || (e.target && e.target.error)); };
+  });
+
+  // POST-COMMIT uniquement (piège 24 dans sa forme la plus littérale : ici
+  // « commit » gouverne une SUPPRESSION de la source, pas un simple broadcast).
+  if (legacyConvs !== null) localStorage.removeItem(CONV_KEY);
+  if (legacySummaries !== null) localStorage.removeItem(SUMMARIES_KEY);
+  console.info('[miaou] migration localStorage → IndexedDB : '
+    + written.conversations + ' conversation(s), '
+    + written.summaries + ' résumé(s)');
+  return written;
+}
+
+// ── Conversations ───────────────────────────────────────────────────────────
+// Stockage : un record par conversation dans le store IDB `conversations`
+// ({ id, title, timestamp, messages, … }), servi par le cache RAM ci-dessus.
+// Les signatures restent SYNCHRONES (cf. la note de la couche IDB).
+
+// Toutes les conversations, messages inclus POUR CELLES QUI SONT CHAUDES
+// (étage 2). Une conversation froide sort avec `messages: []` — c'est le
+// contrat : ce lecteur sert le rendu, le tri et l'herméticité (spaceConvIds),
+// qui ne lisent que des métadonnées. Les DEUX consommateurs qui ont besoin du
+// contenu à froid en masse (recherche plein-texte, backfill de résumés) passent
+// par `readAllConversationsFromDB()` et vivent en async.
+function loadConversations() {
+  const out = [];
+  for (const [id, meta] of _convMetaCache) {
+    out.push(joinConvRecord(meta, _convMessagesCache.get(id)));
+  }
+  return out;
 }
 
 function listAllConversations() {
-  return loadConversations()
-    .map(c => ({ id: c.id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID }))
-    .sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
+  const out = [];
+  for (const [id, c] of _convMetaCache) {
+    out.push({ id: id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID });
+  }
+  return out.sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }
 
+// Une conversation par id. `messages` est peuplé si la conversation est chaude
+// (affichée, récemment ouverte, ou portant une génération en vol) ; sinon vide.
+// Les appelants qui ont besoin du contenu appellent `warmConversation(id)`
+// avant (openConversation le fait, à côté de loadConversationResources).
 function loadConversation(id) {
-  return loadConversations().find(c => c.id === id) || null;
+  const meta = _convMetaCache.get(id);
+  if (!meta) return null;
+  return joinConvRecord(meta, _convMessagesCache.get(id));
 }
 
 function saveConversation(conv) {
-  const arr = loadConversations();
-  const i = arr.findIndex(c => c.id === conv.id);
-  if (i >= 0) arr[i] = conv; else arr.push(conv);
-  persistConversations(arr);
-  // Post-commit (piège 24) : les pairs re-hydratent si affichée, sinon rafraîchissent
-  // la liste (herméticité de Space tranchée côté récepteur via spaceConvIds, piège 18).
-  syncPost('conv-updated', { convId: conv.id, spaceId: conv.spaceId || DEFAULT_SPACE_ID });
+  // Mute le cache puis planifie le put ; broadcast post-commit côté primitive
+  // (piège 24). Les pairs re-hydratent si affichée, sinon rafraîchissent la
+  // liste (herméticité de Space tranchée côté récepteur via spaceConvIds,
+  // piège 18).
+  persistConversation(conv);
   return conv;
 }
 
 function deleteConversation(id) {
-  // Résoudre le spaceId AVANT filtrage (le payload en a besoin ; après, la conv
-  // a disparu). Émettre seulement si la conv existait réellement.
+  // Résoudre le spaceId AVANT suppression (le payload en a besoin ; après, la
+  // conv a disparu). Émettre seulement si la conv existait réellement.
   const existing = loadConversation(id);
-  persistConversations(loadConversations().filter(c => c.id !== id));
-  if (existing) syncPost('conv-deleted', { convId: id, spaceId: existing.spaceId || DEFAULT_SPACE_ID });  // post-commit (piège 24)
+  if (!existing) return;
+  removeConversationRecord(id, existing.spaceId || DEFAULT_SPACE_ID);
 }
 
 // Épingle/désépingle une conversation. Retourne le nouvel état (bool) ou null
 // si la conversation n'existe pas (création à la volée pas encore matérialisée).
 function toggleConversationPin(id) {
-  const arr = loadConversations();
-  const c = arr.find(x => x.id === id);
-  if (!c) return null;
-  c.pinned = !c.pinned;
-  persistConversations(arr);
-  syncPost('conv-updated', { convId: id, spaceId: c.spaceId || DEFAULT_SPACE_ID });  // post-commit (piège 24)
-  return c.pinned;
+  const meta = _convMetaCache.get(id);
+  if (!meta) return null;
+  const pinned = !meta.pinned;
+  // Écriture ciblée : on repart du record complet (métadonnées + messages
+  // chauds s'il y en a) pour ne pas écraser en base les messages d'une
+  // conversation froide par un tableau vide.
+  persistConversationField(id, { pinned: pinned });
+  return pinned;
 }
 
 // Substance réelle : au moins un échange complet (≥1 user ET ≥1 assistant) au
@@ -386,29 +999,25 @@ function hasSubstance(messages) {
 // Tombstone        : { id, suppressed: true }   ← compte comme « présente »
 // Absente          : candidate au backfill / à la génération en sortie.
 
+// Index des résumés : servi par le cache RAM `_summariesCache`, hydraté au
+// boot avec les métadonnées. Taille bornée (une entrée courte par conversation,
+// jamais de contenu de messages) → intégralement en mémoire, contrairement aux
+// messages qui sont en LRU.
 function loadSummaries() {
-  try { return JSON.parse(localStorage.getItem(SUMMARIES_KEY)) || {}; }
-  catch (e) { return {}; }
-}
-
-function persistSummaries(obj) {
-  localStorage.setItem(SUMMARIES_KEY, JSON.stringify(obj));
+  return _summariesCache;
 }
 
 function getSummaryEntry(id) {
-  const all = loadSummaries();
-  return Object.prototype.hasOwnProperty.call(all, id) ? all[id] : null;
+  return Object.prototype.hasOwnProperty.call(_summariesCache, id) ? _summariesCache[id] : null;
 }
 
 // Toutes les entrées de l'index NON tombstonées, sous forme de tableau.
 function listSummaryEntries() {
-  return Object.values(loadSummaries()).filter(e => e && !e.suppressed);
+  return Object.values(_summariesCache).filter(e => e && !e.suppressed);
 }
 
 function saveSummary(id, data) {
-  const all = loadSummaries();
-  all[id] = Object.assign({ id }, data);
-  persistSummaries(all);
+  persistSummaryRecord(Object.assign({ id }, data, { id }));
 }
 
 // Suppression volontaire : pose une tombstone (réversible). On CONSERVE les
@@ -416,29 +1025,28 @@ function saveSummary(id, data) {
 // une ré-autorisation instantanée sans régénérer. Le flag suspend l'usage :
 // recherche et outils ignorent les entrées `suppressed`.
 function suppressSummary(id) {
-  const all = loadSummaries();
-  const prev = all[id] || { id };
-  all[id] = Object.assign({}, prev, { id, suppressed: true });
-  persistSummaries(all);
+  const prev = _summariesCache[id] || { id };
+  persistSummaryRecord(Object.assign({}, prev, { id, suppressed: true }));
 }
 
 // Ré-autorisation : si le résumé a été conservé sous la tombstone, on retire
 // simplement le flag (retour instantané à l'état d'avant). Sinon (tombstone
 // sans données), on retire l'entrée → la conversation redevient candidate.
 function restoreSummary(id) {
-  const all = loadSummaries();
-  const e = all[id];
+  const e = _summariesCache[id];
   if (!e) return;
-  if (e.summary) { delete e.suppressed; all[id] = e; }
-  else { delete all[id]; }
-  persistSummaries(all);
+  if (e.summary) {
+    const next = Object.assign({}, e);
+    delete next.suppressed;
+    persistSummaryRecord(next);
+  } else {
+    removeSummaryRecord(id);
+  }
 }
 
 // Effacement dur (utilisé quand la conversation elle-même disparaît).
 function deleteSummaryEntry(id) {
-  const all = loadSummaries();
-  delete all[id];
-  persistSummaries(all);
+  removeSummaryRecord(id);
 }
 
 // Candidate = absente de l'index (ni résumé, ni tombstone).
@@ -461,9 +1069,21 @@ function pruneOrphanSummaries(summaries, convs) {
 }
 
 // Conversations à résumer au démarrage : absentes de l'index et substantielles.
-function backfillCandidates() {
-  return loadConversations().filter(c =>
-    isSummaryCandidate(c.id) && hasSubstance(c.messages));
+// `hasSubstance` porte sur les MESSAGES : lecture froide en masse (la plupart
+// des conversations ne sont pas en RAM), donc IDB et non loadConversations —
+// qui rendrait `messages: []` et ne trouverait jamais aucun candidat. Appelé une
+// seule fois, depuis runBackfill (déjà async).
+// Cœur décisionnel, PUR et QuickJS-testable : c'est lui qui porte l'invariant
+// (absente de l'index ET substantielle). La coquille async ne fait que lui
+// fournir les conversations lues d'IDB — on teste le prédicat, pas l'E/S
+// (cf. project_extract_pure_helper_over_idb_stub).
+function selectBackfillCandidates(convs, summaries) {
+  return (convs || []).filter(c =>
+    c && !Object.prototype.hasOwnProperty.call(summaries || {}, c.id) && hasSubstance(c.messages));
+}
+
+async function backfillCandidates() {
+  return selectBackfillCandidates(await readAllConversationsFromDB(), loadSummaries());
 }
 
 // ── Souvenirs utilisateur (miaou-memories) ───────────────────────────────────
@@ -636,12 +1256,12 @@ function migrateSpacesIfNeeded() {
     spaces.unshift(normalizeSpace({ id: DEFAULT_SPACE_ID, name: 'Général', createdAt: Date.now() }));
     saveSpaces(spaces);
   }
-  const convs = loadConversations();
-  let convsChanged = false;
-  for (const c of convs) {
-    if (!c.spaceId) { c.spaceId = DEFAULT_SPACE_ID; convsChanged = true; }
+  // Backfill spaceId : écriture CIBLÉE par conversation touchée
+  // (persistConversationField ne touche jamais `messages` — une conversation
+  // froide n'a pas les siens en RAM, cf. couche IDB).
+  for (const c of loadConversations()) {
+    if (!c.spaceId) persistConversationField(c.id, { spaceId: DEFAULT_SPACE_ID });
   }
-  if (convsChanged) persistConversations(convs);
   const memories = loadMemories();
   let memoriesChanged = false;
   for (const m of memories) {
@@ -663,30 +1283,29 @@ function spaceConvIds(spaceId, convs) {
   return set;
 }
 
-// Déplacement de conversations entre Spaces (brief Cter, lot 1). Pure :
-// convs in → convs out, nouvelles références pour les éléments mutés
-// seulement (mêmes objets pour les non concernés). L'appelant (storage,
-// couche impure) fait un unique persistConversations sur le résultat —
-// pas un saveConversation par id, pour éviter N réécritures localStorage
-// successives sur un déplacement multi-sélection.
-function moveConversationsToSpace(convs, ids, targetSpaceId) {
-  const idSet = new Set(ids || []);
-  return (convs || []).map(c => (c && idSet.has(c.id)) ? { ...c, spaceId: targetSpaceId } : c);
-}
-
 // ── Export / import complet des données (feature E) ─────────────────────────
 // Assurance-vie : tout l'état de MIAOU (localStorage + IndexedDB) tient dans un
 // unique fichier JSON, réimportable par REMPLACEMENT INTÉGRAL (pas de fusion,
 // décision actée). Format détaillé : docs/storage.md.
 //
-// Les 9 clés localStorage du schéma (miaou-spaces + miaou-active-space
-// ajoutées par la feature Spaces, lot C). Référencée uniquement en corps de
+// Version du format de fichier d'export. v1 : conversations et résumés sous
+// `localStorage`. v2 (lot U-4) : sous `idb`, comme skills et resources, puisque
+// c'est là qu'ils vivent depuis U-2. L'écriture est toujours à la version
+// courante ; la lecture accepte toutes les versions ≤ celle-ci.
+const EXPORT_FORMAT_VERSION = 2;
+
+// Les 7 clés localStorage du schéma. Référencée uniquement en corps de
 // fonction depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md)
 // — jamais au top-level d'un fichier tiers.
+//
+// `miaou-conversations` et `miaou-summaries` en sont SORTIES au lot U-4 : elles
+// n'existent plus en localStorage depuis la migration U-2. Les y laisser ne
+// cassait rien de visible — `JSON.parse(null)` donne `null`, normalisé en vide —
+// donc l'export continuait de se produire, silencieusement amputé de tout
+// l'historique. Elles vivent désormais sous la section `idb` du payload, aux
+// côtés de `skills`/`resources`.
 const EXPORT_KEYS = [
   'miaou-settings',
-  'miaou-conversations',
-  'miaou-summaries',
   'miaou-memories',
   'miaou-api-servers',
   'miaou-active-api-server',
@@ -702,16 +1321,14 @@ const EXPORT_KEYS = [
 // de getAllSkillRecords()/getAllResources() ; `resources[].data` (ArrayBuffer)
 // doit déjà avoir été converti en base64 par l'appelant (arrayBufferToBase64,
 // resources.js) — cette fonction reste pure, sans dépendance IDB.
-function buildExportPayload(lsSnapshot, skills, resources) {
+function buildExportPayload(lsSnapshot, skills, resources, conversations, summaries) {
   const ls = lsSnapshot || {};
   return {
     format: 'miaou-export',
-    version: 1,
+    version: EXPORT_FORMAT_VERSION,
     exportedAt: Date.now(),
     localStorage: {
       'miaou-settings': ls['miaou-settings'] || {},
-      'miaou-conversations': Array.isArray(ls['miaou-conversations']) ? ls['miaou-conversations'] : [],
-      'miaou-summaries': ls['miaou-summaries'] || {},
       'miaou-memories': Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [],
       'miaou-api-servers': Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [],
       'miaou-active-api-server': typeof ls['miaou-active-api-server'] === 'string' ? ls['miaou-active-api-server'] : '',
@@ -722,7 +1339,40 @@ function buildExportPayload(lsSnapshot, skills, resources) {
     idb: {
       skills: Array.isArray(skills) ? skills : [],
       resources: Array.isArray(resources) ? resources : [],
+      conversations: Array.isArray(conversations) ? conversations : [],
+      summaries: Array.isArray(summaries) ? summaries : [],
     },
+  };
+}
+
+// Extrait conversations et résumés d'un payload importé, QUELLE QUE SOIT sa
+// version, sous la forme des records IDB attendus par l'import. Pure,
+// QuickJS-testable. C'est LE point unique où la différence v1/v2 est traitée :
+// tout le reste de l'import ignore la version du fichier.
+//
+// v2 : section `idb`, déjà des tableaux de records → passés tels quels (filtrés
+//      sur la présence d'un `id`, seul champ dont dépend le `put` : keyPath).
+// v1 : section `localStorage`, sous les deux clés purgées depuis U-2 — les
+//      conversations y sont déjà un tableau, les résumés un OBJET indexé
+//      { id: entry } converti par `normalizeLegacySummaryMap`, la même fonction
+//      que la migration U-2. Importer un fichier v1 EST une migration : ne pas
+//      en écrire une seconde formule.
+//
+// Un fichier v2 dont la section `idb` est vide n'est PAS complété depuis
+// `localStorage` : la section a autorité pour sa version, et un export v2
+// légitime peut n'avoir aucune conversation.
+function extractImportedConvRecords(payload) {
+  const obj = payload || {};
+  const idb = (obj.idb && typeof obj.idb === 'object') ? obj.idb : {};
+  const ls = (obj.localStorage && typeof obj.localStorage === 'object') ? obj.localStorage : {};
+  const withId = arr => (Array.isArray(arr) ? arr : []).filter(r => r && typeof r.id === 'string' && r.id);
+
+  if (obj.version >= 2) {
+    return { conversations: withId(idb.conversations), summaries: withId(idb.summaries) };
+  }
+  return {
+    conversations: withId(ls['miaou-conversations']),
+    summaries: withId(normalizeLegacySummaryMap(ls['miaou-summaries'])),
   };
 }
 
@@ -736,12 +1386,16 @@ function buildExportPayload(lsSnapshot, skills, resources) {
 function validateImportPayload(obj) {
   if (!obj || typeof obj !== 'object') return { ok: false, error: 'Fichier illisible : contenu invalide.' };
   if (obj.format !== 'miaou-export') return { ok: false, error: 'Format inconnu : ce n\'est pas un export MIAOU.' };
-  if (typeof obj.version !== 'number' || obj.version > 1) {
+  if (typeof obj.version !== 'number' || obj.version > EXPORT_FORMAT_VERSION) {
     return { ok: false, error: 'Version d\'export non supportée (' + obj.version + ').' };
   }
   const ls = (obj.localStorage && typeof obj.localStorage === 'object') ? obj.localStorage : {};
   const idb = (obj.idb && typeof obj.idb === 'object') ? obj.idb : {};
-  const conversations = Array.isArray(ls['miaou-conversations']) ? ls['miaou-conversations'] : [];
+  // Conversations et résumés sont comptés via le MÊME extracteur que l'import
+  // applique ensuite : un décompte qui divergerait de ce qui est réellement
+  // écrit ferait mentir le récapitulatif de confirmation.
+  const extracted = extractImportedConvRecords(obj);
+  const conversations = extracted.conversations;
   const memories = Array.isArray(ls['miaou-memories']) ? ls['miaou-memories'] : [];
   const apiServers = Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [];
   const mcpServers = Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [];
@@ -752,6 +1406,7 @@ function validateImportPayload(obj) {
     ok: true,
     counts: {
       conversations: conversations.length,
+      summaries: extracted.summaries.length,
       memories: memories.length,
       skills: skills.length,
       resources: resources.length,

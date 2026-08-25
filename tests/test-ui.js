@@ -231,63 +231,70 @@ describe('searchConversations (recherche sidebar : titre, résumé, contenu)', f
     expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
   });
 
-  it('scan du contenu : match sur un message user (displayText absent → content)', function() {
+  // Depuis U-3, le scan de CONTENU ne se fait plus dans le prédicat (une
+  // conversation froide n'a pas ses messages en RAM) : il est précalculé en
+  // async et remis sous forme d'un Set d'ids. Le prédicat n'en fait plus qu'une
+  // consultation ; ce que le scan retient est testé sur convContentMatches.
+  it('appartenance à contentHits : la conversation matche', function() {
+    localStorage.clear();
+    var f = searchConversations('ornithorynque', new Set(['c1']));
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(true);
+    expect(f(candidate('c2', 'Titre neutre'))).toBe(false);
+  });
+
+  it('contentHits omis : titre et résumé seulement, jamais le contenu', function() {
     localStorage.clear();
     saveConversation({
       id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
       messages: [{ role: 'user', content: 'Un mot rarissime : ornithorynque' }],
     });
     var f = searchConversations('ornithorynque');
-    expect(f(candidate('c1', 'Titre neutre'))).toBe(true);
+    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  });
+});
+
+describe('convContentMatches (scan de contenu, U-3)', function() {
+  it('match sur un message user (displayText absent → content)', function() {
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'Un mot rarissime : ornithorynque' }] };
+    expect(convContentMatches(c, 'ornithorynque')).toBe(true);
   });
 
-  it('scan du contenu : match sur un message assistant', function() {
-    localStorage.clear();
-    saveConversation({
-      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
-      messages: [{ role: 'assistant', content: 'Réponse avec un mot rarissime : ornithorynque' }],
-    });
-    var f = searchConversations('ornithorynque');
-    expect(f(candidate('c1', 'Titre neutre'))).toBe(true);
+  it('match sur un message assistant', function() {
+    var c = { id: 'c1', messages: [{ role: 'assistant', content: 'Réponse avec ornithorynque' }] };
+    expect(convContentMatches(c, 'ornithorynque')).toBe(true);
   });
 
-  it('scan du contenu : displayText prioritaire sur le content baké (slash-skill)', function() {
-    localStorage.clear();
-    saveConversation({
-      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
-      messages: [{
-        role: 'user',
-        displayText: 'Regarde ce texte',
-        content: 'Regarde ce texte\n\n--- skill: x ---\nCorpsSkillRarissime\n--- /skill: x ---',
-      }],
-    });
+  it('displayText prioritaire sur le content baké (slash-skill)', function() {
     // Le mot n'existe que dans le corps baké de la skill : ne doit PAS matcher,
     // seul le littéral tapé (displayText) est scanné côté user.
-    var f = searchConversations('corpsskillrarissime');
-    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+    var c = { id: 'c1', messages: [{
+      role: 'user',
+      displayText: 'Regarde ce texte',
+      content: 'Regarde ce texte\n\n--- skill: x ---\nCorpsSkillRarissime\n--- /skill: x ---',
+    }] };
+    expect(convContentMatches(c, 'corpsskillrarissime')).toBe(false);
   });
 
-  it('requête de 2 caractères : pas de scan contenu (mot présent uniquement dans le contenu)', function() {
-    localStorage.clear();
-    saveConversation({
-      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
-      messages: [{ role: 'user', content: 'ab mot present seulement ici' }],
-    });
-    var f = searchConversations('ab');
-    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  it('entrées ack ignorées (result potentiellement énorme et hors-sujet)', function() {
+    var c = { id: 'c1', messages: [
+      { role: 'tool-ack', kind: 'mcp_call', result: 'ornithorynque dans le result' },
+      { role: 'assistant', content: 'Réponse neutre' },
+    ] };
+    expect(convContentMatches(c, 'ornithorynque')).toBe(false);
   });
 
-  it('entrées ack ignorées dans le scan de contenu', function() {
-    localStorage.clear();
-    saveConversation({
-      id: 'c1', title: 'Titre neutre', timestamp: Date.now(),
-      messages: [
-        { role: 'tool-ack', kind: 'mcp_call', result: 'ornithorynque dans le result' },
-        { role: 'assistant', content: 'Réponse neutre' },
-      ],
-    });
-    var f = searchConversations('ornithorynque');
-    expect(f(candidate('c1', 'Titre neutre'))).toBe(false);
+  it('conversation sans messages ou requête vide : pas de match, pas d\'exception', function() {
+    expect(convContentMatches({ id: 'c1' }, 'x')).toBe(false);
+    expect(convContentMatches({ id: 'c1', messages: [] }, 'x')).toBe(false);
+    expect(convContentMatches(null, 'x')).toBe(false);
+    expect(convContentMatches({ id: 'c1', messages: [{ role: 'user', content: 'abc' }] }, '')).toBe(false);
+  });
+
+  it('seuil de scan : CONTENT_SCAN_MIN_CHARS vaut 3 (le prédicat ne scanne pas sous ce seuil)', function() {
+    // Le seuil est appliqué par collectContentSearchHits (storage.js, async) :
+    // sous 3 caractères, aucune lecture IDB n'est faite et le Set reste vide.
+    // Seule la valeur est testable ici ; le câblage l'est en Playwright.
+    expect(CONTENT_SCAN_MIN_CHARS).toBe(3);
   });
 });
 

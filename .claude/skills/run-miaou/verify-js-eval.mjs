@@ -48,14 +48,42 @@ await page.waitForFunction(() =>
 const lazyBefore = await page.evaluate(() => typeof _quickjsPromise === 'undefined' || _quickjsPromise === null);
 check('engine QuickJS non chargé avant le 1er appel (lazy)', lazyBefore);
 
-// ── Point 9b : doctrine COMPUTE_SANDBOX statique dans le system message ──────
+// ── Point 9b : doctrine js__eval — répartition QUAND / COMMENT ──────────────
+// Le prompt système ne porte plus que le DÉCLENCHEUR (quand y penser) ; la
+// signature d'appel, les primitives et les contraintes de sortie vivent dans la
+// skill système `js-eval`, que le modèle lit avant son premier appel. Ce
+// découpage est délibéré (extraction doctrine→skill) : il rend au prompt racine
+// la plus grosse doctrine qu'il portait. Tester la présence de « jsonLines »
+// dans le system message reviendrait donc à tester l'ANCIEN contrat.
 const doctrine = await page.evaluate(() => {
   const sys = buildSystemMessage();
   const txt = typeof sys === 'string' ? sys : (sys && sys.content) || JSON.stringify(sys);
-  return { hasBlock: txt.indexOf('COMPUTE_SANDBOX') !== -1, hasPrim: txt.indexOf('jsonLines') !== -1 };
+  return {
+    // QUAND : le réflexe d'appel reste en dur dans le prompt.
+    hasTrigger: txt.indexOf('miaou__js__eval') !== -1,
+    hasFallback: txt.indexOf('docs__read') !== -1,
+    // Renvoi explicite vers la skill qui porte le COMMENT.
+    pointsToSkill: txt.indexOf('js-eval') !== -1 && txt.indexOf('miaou__skills__read') !== -1,
+    // COMMENT : ne doit PLUS être dans le prompt système.
+    noPrimitives: txt.indexOf('jsonLines') === -1,
+  };
 });
-check('doctrine COMPUTE_SANDBOX présente dans le system message', doctrine.hasBlock);
-check('doctrine énumère les primitives (jsonLines)', doctrine.hasPrim);
+check('le prompt système garde le déclencheur js__eval', doctrine.hasTrigger);
+check('le prompt système garde le fallback docs__read → js__eval', doctrine.hasFallback);
+check('le prompt système renvoie vers la skill système js-eval', doctrine.pointsToSkill);
+check('les primitives ne sont PLUS dans le prompt système (extraites en skill)', doctrine.noPrimitives);
+
+// Contrepartie : le COMMENT doit bien être dans la skill système, sinon
+// l'extraction aurait simplement perdu l'information.
+const skillHasHowTo = await page.evaluate(async () => {
+  try {
+    const rec = await getSkillRecord('js-eval');
+    const body = rec ? (rec.content || '') : '';
+    return { found: !!rec, hasPrim: body.indexOf('jsonLines') !== -1 };
+  } catch (e) { return { found: false, hasPrim: false, err: e && e.message }; }
+});
+check('la skill système js-eval existe', skillHasHowTo.found);
+check('la skill système js-eval porte les primitives (jsonLines)', skillHasHowTo.hasPrim);
 
 // ── Peuple le cache session avec les trois familles de handle ────────────────
 // res_… : id = handle. file-<id> : record id = file_<id>, kind library, spaceId

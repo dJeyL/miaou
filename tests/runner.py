@@ -6,6 +6,7 @@ Usage :
   python tests/runner.py test-api.js  # un fichier précis
 Dépendance : pip install quickjs
 """
+import re
 import sys
 from pathlib import Path
 
@@ -63,7 +64,12 @@ var localStorage = (function() {
     getItem:    function(k)    { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
     setItem:    function(k, v) { store[k] = String(v); },
     removeItem: function(k)    { delete store[k]; },
-    clear:      function()     { store = {}; },
+    // Le cache RAM conversations/résumés (lot U-1) est désormais la source de
+    // vérité des lecteurs synchrones : un clear() qui ne viderait que
+    // localStorage laisserait les conversations d'un test fuiter dans le
+    // suivant. resetConvCacheForTests est défini dans storage.js (absent tant
+    // que ce fichier n'est pas chargé, d'où le typeof).
+    clear:      function()     { store = {}; if (typeof resetConvCacheForTests === 'function') resetConvCacheForTests(); },
   };
 })();
 
@@ -341,6 +347,78 @@ def run_docs_index_check() -> tuple[int, int]:
     return passed, failed
 
 
+def run_idb_schema_check() -> tuple[int, int]:
+    """Vérifie que les DEUX points d'ouverture de la base `miaou` restent
+    d'accord : même version demandée, et `onupgradeneeded` identiques.
+
+    Le schéma est déclaré deux fois (`openConvDB` dans storage.js,
+    `openResourceDB` dans resources.js) parce que l'un ou l'autre peut ouvrir la
+    base en premier. Dette assumée au lot U-1 — mais elle s'est payée au boot
+    suivant : `openResourceDB` était resté sur le littéral `3` après le bump v4,
+    et demander une version INFÉRIEURE à celle de la base la fait rejeter
+    (`VersionError`). Tout ce qui passe par ce chemin (bibliothèque d'espace,
+    skills système, pièces jointes) tombait en silence sur un historique migré.
+
+    QuickJS n'a pas IndexedDB : ce contrôle est donc source-à-source, comme
+    l'index docs. Grossier mais suffisant — il attrape exactement la divergence
+    qui a coûté le bug."""
+    passed = failed = 0
+    print('\nschéma IDB — accord entre les deux points d\'ouverture')
+
+    src = ROOT.parent / 'src' / 'js'
+    storage = (src / 'storage.js').read_text(encoding='utf-8')
+    resources = (src / 'resources.js').read_text(encoding='utf-8')
+
+    def upgrade_body(text: str) -> str | None:
+        """Corps du onupgradeneeded, commentaires et blancs retirés."""
+        i = text.find('req.onupgradeneeded')
+        if i < 0:
+            return None
+        j = text.index('{', i)
+        depth, k = 0, j
+        while k < len(text):
+            if text[k] == '{':
+                depth += 1
+            elif text[k] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            k += 1
+        body = re.sub(r'//.*', '', text[j:k + 1])
+        return re.sub(r'\s+', '', body)
+
+    # 1. Une seule constante de version, et aucun littéral d'ouverture en dur.
+    if 'const MIAOU_DB_VERSION' in storage:
+        passed += 1
+        print('  PASS  MIAOU_DB_VERSION déclarée (storage.js)')
+    else:
+        failed += 1
+        print('  FAIL  MIAOU_DB_VERSION introuvable dans storage.js')
+
+    opens = re.findall(r"indexedDB\.open\(\s*'miaou'\s*,\s*([^)]+?)\s*\)",
+                       storage + resources)
+    if opens and all(o.strip() == 'MIAOU_DB_VERSION' for o in opens):
+        passed += 1
+        print(f'  PASS  les {len(opens)} ouvertures passent par la constante')
+    else:
+        failed += 1
+        print(f'  FAIL  ouverture(s) avec une version en dur : {opens}')
+
+    # 2. Les deux onupgradeneeded sont identiques.
+    a, b = upgrade_body(storage), upgrade_body(resources)
+    if a is None or b is None:
+        failed += 1
+        print('  FAIL  onupgradeneeded introuvable dans storage.js ou resources.js')
+    elif a == b:
+        passed += 1
+        print('  PASS  les deux onupgradeneeded sont identiques')
+    else:
+        failed += 1
+        print('  FAIL  les deux onupgradeneeded ont divergé')
+
+    return passed, failed
+
+
 def main(args: list[str]) -> int:
     if args:
         files = [ROOT / a if not Path(a).is_absolute() else Path(a) for a in args]
@@ -353,6 +431,9 @@ def main(args: list[str]) -> int:
 
     total_passed, total_failed = run_build_unit_tests()
     p, fa = run_docs_index_check()
+    total_passed += p
+    total_failed += fa
+    p, fa = run_idb_schema_check()
     total_passed += p
     total_failed += fa
     for f in files:

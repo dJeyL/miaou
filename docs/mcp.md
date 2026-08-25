@@ -62,7 +62,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    `name` est le nom complet `a__b__c`, découpé sur **chaque** `__` pour le breadcrumb
    (segments vides ignorés). Sur erreur, `callRemoteTool` pose `ackEntry.error = true`
    sur l'objet partagé ; `onToolAcks` rétro-applique `.ack-error` sur le nœud DOM
-   déjà rendu. Ces acks sont persisted dans `currentThread` / localStorage (champs
+   déjà rendu. Ces acks sont persistés dans `currentThread` / IndexedDB (champs
    `server`, `name`, `error`) et restaurés au reload. Ils sont filtrés du payload
    modèle par le filtre rôle existant — aucune liste blanche par kind à maintenir.
    **Toujours affichés** dans le thread, sans toggle de masquage — posture de

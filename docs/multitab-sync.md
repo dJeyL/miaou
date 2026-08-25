@@ -13,9 +13,14 @@ venir — voir `untracked/muscle/PLAN-J.md`.
 
 - **Invalidation de cache** : un onglet qui écrit (localStorage ou IndexedDB)
   notifie les autres ; ils rafraîchissent l'UI affectée. Nuance issue de l'audit
-  (`AUDIT-J.md §0`) : **aucune lecture de localStorage n'est mémoïsée** dans
-  MIAOU — pour ces stores il n'y a rien à « invalider », c'est un signal de
-  **re-render**. Les seuls vrais caches RAM périmables sont `_resourceCache`
+  (`AUDIT-J.md §0`) : à l'époque du lot J, **aucune lecture de localStorage
+  n'était mémoïsée** dans MIAOU — pour ces stores il n'y avait rien à
+  « invalider », c'était un signal de **re-render**. **Révisé au lot U-1** : les
+  conversations et les résumés vivent en IDB derrière un cache RAM à deux étages
+  (`_convMetaCache`/`_convMessagesCache`/`_summariesCache`, cf.
+  `docs/storage.md`), donc pour eux le broadcast redevient une vraie
+  invalidation — un récepteur qui rehydrate doit relire le store, pas se fier à
+  son cache. Les autres caches RAM périmables sont `_resourceCache`
   (resources IndexedDB) et `_skillsCache` (skills IndexedDB).
 - **Soft-lock (awareness, pas enforcement)** : ouvrir une conversation déjà
   ouverte ailleurs informe l'utilisateur, sans bloquer.
@@ -107,10 +112,10 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `saveApiServersRaw` (storage.js) | localStorage | `settings-updated` | `{ keys: ['api-servers'] }` |
 | `setActiveApiServerId` (storage.js) | localStorage | `settings-updated` | `{ keys: ['active-api-server'] }` |
 | `saveMcpServers` (storage.js) | localStorage | `settings-updated` | `{ keys: ['mcp-servers'] }` |
-| `saveConversation` (storage.js) | localStorage | `conv-updated` | `{ convId, spaceId }` |
-| `deleteConversation` (storage.js) | localStorage | `conv-deleted` | `{ convId, spaceId }` (si existait) |
-| `toggleConversationPin` (storage.js) | localStorage | `conv-updated` | `{ convId, spaceId }` |
-| `moveSelectedConversations` (main.js) | localStorage | `conv-updated` × N | un par id déplacé, `{ convId, spaceId: cible }` |
+| `persistConversation` (storage.js) | IDB `tx.oncomplete` | `conv-updated` | `{ convId, spaceId }` |
+| `removeConversationRecord` (storage.js) | IDB `tx.oncomplete` | `conv-deleted` | `{ convId, spaceId }` (si existait) |
+| `persistConversationField` (storage.js) | IDB `tx.oncomplete` | `conv-updated` | `{ convId, spaceId }` — écriture de métadonnée (pin, titre, modèle, spaceId…) |
+| `moveSelectedConversations` (main.js) | IDB `tx.oncomplete` | `conv-updated` × N | un par id déplacé, `{ convId, spaceId: cible }` |
 | `saveSpaces` (storage.js) | localStorage | `space-changed` | `{}` (liste rechargée en entier) |
 | `putResource` (resources.js) | IndexedDB | `resources-updated` | `{ ids: [id], convId }` (sur `tx.oncomplete`) |
 | `deleteResource` (resources.js) | IndexedDB | `resources-updated` | `{ ids: [id], convId: null }` (sur `tx.oncomplete`) |
@@ -122,8 +127,22 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 **Ne diffusent PAS** (décidés, pas des oublis) :
 - `miaou-active-space` (`setActiveSpaceId`) — état **par onglet** ; deux onglets
   peuvent légitimement être sur des Espaces différents.
-- Résumés (`saveSummary`, tombstones, `deleteSummaryEntry`) — aucune surface UI
-  cross-onglet à rafraîchir en V1 (l'index des résumés n'est pas rendu en direct).
+- Résumés (`saveSummary`, tombstones, `deleteSummaryEntry`) — toujours aucun
+  broadcast propre : aucune surface UI cross-onglet à rafraîchir en direct.
+  **Mais depuis le lot U, le RÉCEPTEUR relit l'index** (`refreshSummariesFromDB`,
+  déclenché par `conv-updated` dans `applySyncDecision`). L'arbitrage d'origine
+  supposait que `loadSummaries` relisait localStorage, donc forcément frais ;
+  l'index vit désormais dans un cache RAM par onglet. Sans relecture, un onglet
+  injecte au modèle un jeu de résumés périmé — manquant celui qu'un pair vient
+  d'écrire, ou ressuscitant une tombstone posée ailleurs. Ce n'est plus « de
+  l'invisible », c'est du **contexte modèle**. Aucun type de message n'a été
+  ajouté pour autant : un résumé suit toujours une conversation qui vient d'être
+  persistée, donc `conv-updated` est un porteur suffisant. La relecture est faite
+  en **arrière-plan**, jamais dans le chemin d'envoi — `searchSummaries` est
+  synchrone et appelé depuis `runGenerationFromCurrentThread`, que la décision
+  structurante du lot U interdit de rendre async ; un résumé d'un pair arrive donc
+  avec un léger différé, sans bloquer aucun envoi. Vérifié par
+  `.claude/skills/run-miaou/verify-summary-sync.mjs`.
 - **File d'interjections** (`_pendingInterjections`, lot Q) — messages tapés
   pendant une génération, en attente de drain. État **par onglet** et éphémère :
   il ne vit que dans l'onglet qui génère (les pairs sont déjà en readonly sur
@@ -301,7 +320,8 @@ dans `docs/pitfalls-detail.md`).
 
 Un émetteur ne diffuse **jamais** avant que l'écriture soit durable :
 
-- **localStorage** : après `setItem` (synchrone, immédiatement durable).
+- **localStorage** : après `setItem` (synchrone, immédiatement durable) — pour
+  les clés qui y restent (réglages, serveurs, Espaces, souvenirs).
 - **IndexedDB** : sur `tx.oncomplete`, **pas** `req.onsuccess` — `onsuccess`
   signale que la requête a réussi dans la transaction, pas que la transaction
   est validée sur disque. Un pair qui relirait le store sur un broadcast
@@ -335,6 +355,41 @@ Trois mesures concordantes (main.js) :
 Règle générale : **tout `await` entre la réception d'un signal de synchro et le
 commit du rendu est une fenêtre où le store peut avancer — relire après l'await,
 jamais figer avant.**
+
+### (c) Relire le STORE, pas un cache local (lot U)
+
+Troisième condition, révélée par le lot U : « relire après l'await » ne suffit
+plus si la relecture passe par un **cache RAM propre à l'onglet**.
+
+Avant U-1, `loadConversation` lisait `localStorage` — un support **partagé**
+entre onglets. Un pair qui recevait `conv-updated` et rappelait
+`openConversation` relisait donc forcément l'état neuf : l'invariant (b) suffisait.
+Depuis U-1, la même lecture est servie par le cache à deux étages, **par
+onglet**, que rien n'invalide à la réception d'un broadcast. La relecture avait
+toujours lieu au bon moment, mais sur la mauvaise couche.
+
+Symptôme observé : deux onglets sur la même conversation, on poursuit dans le
+premier ; le second affiche bien les bannières (le signal passe, le routage est
+correct), mais **le contenu n'arrive jamais** — ni au broadcast, ni en sortant et
+revenant sur la conversation. Seul un reload le rétablissait.
+
+Cause précise : `warmConversation(id)` — l'unique chemin de chargement des
+messages dans `openConversation` — sortait immédiatement quand la conversation
+était déjà en étage 2, traitant « en RAM » comme « à jour ». C'est vrai dans un
+onglet seul, faux dès qu'il y en a deux. La conversation affichée étant par
+définition chaude, la relecture ne se faisait **jamais**.
+
+Correctif : `warmConversation` **relit IDB à chaque ouverture**, avec une
+exception impérative — une conversation portant une génération en vol n'est
+jamais relue (piège 28 : son thread est en avance sur le storage, l'écriture
+n'ayant lieu qu'en fin d'échange ; la relire lui retirerait le tour en cours).
+Les conversations NON affichées passent, elles, par `refreshConversationFromDB`
+dans la branche `render-list` : leurs métadonnées alimentent la sidebar.
+
+Règle générale, à ajouter aux deux précédentes : **un récepteur qui rehydrate
+doit relire la source durable, pas une couche mémoire que le broadcast
+n'invalide pas.** Toute mise en cache introduite entre le store et un lecteur de
+synchro doit s'accompagner de son point d'invalidation.
 
 ## Dégradation
 

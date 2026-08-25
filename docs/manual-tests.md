@@ -6,7 +6,8 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
 `dist/miaou.html` et passer la liste ci-dessous.
 
 1. **Backfill** : avec des conversations dans l'historique, l'indicateur
-   d'activité affiche `résumés n/N` et `miaou-summaries` se remplit.
+   d'activité affiche `résumés n/N` et le store IDB `summaries` se remplit
+   (DevTools » Application » IndexedDB » `miaou` » `summaries`).
 2. **Mode proposer** : poser une question liée à une conversation passée → la
    bannière mémoire apparaît avec la liste des titres pertinents et leurs dates
    relatives ; « Injecter » fait que la réponse en tient compte ; le fil défile
@@ -53,7 +54,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     (`hasSubstance`, cf. piège #5 de CLAUDE.md). Cliquer pendant un streaming en
     cours (`sending`) → aucune navigation.
 4d. **Lien `conv_ref` vers une conversation supprimée** : noter l'id d'une
-    conversation résumée (visible dans `localStorage['miaou-summaries']`),
+    conversation résumée (visible dans le store IDB `summaries`),
     la supprimer via la sidebar (icône corbeille), puis dans une autre
     conversation demander au modèle de la citer — ou, plus simple, injecter
     directement une réponse assistant contenant `[conv_ref:ID_SUPPRIMÉ|Titre]`.
@@ -259,7 +260,7 @@ Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
     affiché, ils sont reconstruits par `expandThread` à l'envoi. Recharger la page
     puis renvoyer un message dans la même conversation → la réinjection fonctionne
     aussi après rechargement (les champs `args`/`result`/`ts`/`group` sont persistés
-    dans `localStorage['miaou-conversations']`).
+    dans le store IDB `conversations`).
 
 ## Stockage de ressources (IndexedDB)
 
@@ -271,7 +272,7 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     `resource_stored`) — **sans bloc de code** (les ressources texte/JSON sont
     stockées mais non affichées automatiquement). Dans IndexedDB, une entrée
     `class: "inline"` est présente avec `mime: "application/json"`. Le champ `result`
-    de l'ack (dans `localStorage['miaou-conversations']`) contient le **texte brut
+    de l'ack (dans le store IDB `conversations`) contient le **texte brut
     JSON suivi de la note de non-présentation** (`[Ce contenu ne t'est communiqué
     qu'à toi : l'utilisateur ne le voit PAS dans l'interface. …]`) — pas de base64,
     pas de `[resource_ref:…]`. Dans le payload réseau du tour suivant, le
@@ -316,7 +317,7 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     ~2,6 s ; second clic → suppression ; sans second clic, désarmement
     automatique et rien n'est supprimé). Supprimer ainsi une conversation
     contenant des ressources. Dans IndexedDB, toutes les entrées liées à cet `id` de
-    conversation ont disparu (vérifier dans DevTools). `localStorage['miaou-summaries']`
+    conversation ont disparu (vérifier dans DevTools). Le store IDB `summaries`
     continue de fonctionner normalement pour les autres conversations. Même
     mécanique d'armement sur les boutons « Supprimer » des cartes MCP/API/skills.
 
@@ -441,7 +442,9 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     ils sont masqués en dur tant que `init()` n'a pas posé `.booted` sur `#app`.
 
 45. **Recherche plein texte dans les messages** : avec le seed chargé
-    (`tests/dev-seed.html`), taper « ornithorynque » dans la recherche de la
+    (`.claude/skills/run-miaou/seed-fixtures.js`, écrit dans la page par un
+    script Playwright — l'ancien `tests/dev-seed.html`, qui s'ouvrait à la
+    main, a disparu au lot U-5), taper « ornithorynque » dans la recherche de la
     sidebar (ce mot n'apparaît que dans le contenu d'un message assistant de la
     conversation « Cron — syntaxe et debugging », absent du titre et du résumé)
     → la conversation apparaît dans les résultats. Retirer un caractère pour
@@ -458,7 +461,8 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     fenêtre de navigation privée (ou vider localStorage + IndexedDB du profil),
     charger MIAOU à vide, ouvrir la même catégorie → « Importer les données » →
     sélectionner le fichier → le récapitulatif affiche les bons comptes
-    (conversations, souvenirs, skills, ressources, serveurs). Cliquer
+    (conversations, résumés, souvenirs, skills, ressources, serveurs, espaces).
+    Cliquer
     « Appliquer » (armé, un premier clic arme, le second dans la fenêtre de
     2,6 s confirme) → rechargement de la page → conversations, souvenirs,
     skills, ressources et serveurs API/MCP sont tous restaurés à l'identique
@@ -477,6 +481,26 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     « Exporter les données » → le bouton « Enregistrer » du drawer reste
     désactivé (aucun champ de formulaire n'a été modifié) — l'export n'active
     pas la mécanique dirty.
+49bis. **Import d'un fichier v1 sur une base peuplée** (lot U-4). Un export
+    produit par une version de MIAOU antérieure au lot U porte `"version": 1` et
+    ses conversations sous `localStorage`, ses résumés en objet indexé. Le
+    réimporter **est une migration** : partir d'une session qui a déjà des
+    conversations (pas d'un profil vierge — c'est ce qui rend le remplacement
+    observable), importer le fichier v1 → le récapitulatif compte les
+    conversations et les résumés, l'application recharge, la sidebar affiche
+    **les conversations du fichier et elles seules** (aucun résidu de l'état
+    précédent), et ouvrir l'une d'elles montre ses messages. Vérifier ensuite
+    dans DevTools que `localStorage` ne contient **ni** `miaou-conversations`
+    **ni** `miaou-summaries` : l'import route vers IndexedDB et ne réécrit
+    jamais les clés héritées. Couvert automatiquement par
+    `verify-conv-export-import.mjs`, gardé ici parce que c'est le seul chemin de
+    migration que l'utilisateur peut déclencher lui-même.
+49ter. **Export sur historique froid** (lot U-4). Après un redémarrage de MIAOU
+    et **sans ouvrir aucune conversation**, exporter les données → ouvrir le
+    JSON produit : les conversations sont sous `idb.conversations`, chacune avec
+    ses `messages` non vides. Un `"messages": []` généralisé signalerait que
+    l'export lit le cache RAM au lieu de la base (contrat de l'étage 2 : une
+    conversation froide n'a pas ses messages en RAM).
 
 ## Pièces jointes — envoi au modèle et persistance (brief A lot 2)
 
@@ -496,8 +520,8 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     `[attachment att-N: image "nom.ext", LxH, TAILLE — content available via miaou__recall_attachment]`
     — **aucun** `data:image` ni base64 dans tout le payload pour ce message.
     Recharger la page et rouvrir la conversation : la forme persistée
-    (`localStorage['miaou-conversations']`) est déjà la string avec descripteur
-    (vérifiable directement dans DevTools → Application → Local Storage).
+    (store IDB `conversations`) est déjà la string avec descripteur
+    (vérifiable directement dans DevTools → Application → IndexedDB → `miaou`).
 52. **Fichier texte joint → injection directe** : joindre un `.txt`/`.md`/`.py`
     (liste `ATTACHMENT_TEXT_EXTENSIONS`), envoyer. Dans Network, le message user
     de ce tour contient le texte tapé **et** un bloc fencé avec en-tête
@@ -786,7 +810,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
 
 ## Rendu Mermaid (lot E1)
 
-Fixture : `tests/dev-seed.html` seed-23 (« Diagrammes Mermaid — rendu et
+Fixture : `seed-fixtures.js` seed-23 (« Diagrammes Mermaid — rendu et
 fallback ») — un bloc mermaid valide, un bloc mermaid invalide, un bloc bash
 de contrôle.
 
@@ -831,7 +855,7 @@ de contrôle.
 
 ## Préviz sandboxée HTML/SVG (lot E2)
 
-Fixture : `tests/dev-seed.html` seed-24 (« Préviz sandboxée — HTML et SVG »)
+Fixture : `seed-fixtures.js` seed-24 (« Préviz sandboxée — HTML et SVG »)
 — page HTML dont le script sonde `localStorage`, SVG animé avec `<script>`
 embarqué, bloc xml de contrôle.
 
@@ -861,7 +885,7 @@ embarqué, bloc xml de contrôle.
 
 ## Lightbox & exports d'image Mermaid (lot E3)
 
-Fixture : `tests/dev-seed.html` seed-23 — le diagramme de séquence valide
+Fixture : `seed-fixtures.js` seed-23 — le diagramme de séquence valide
 porte `filename=flux-oauth.mmd` (exercice du nommage d'export).
 
 80. **Exports SVG et PNG depuis la vue** : sur le diagramme rendu de seed-23,
@@ -895,7 +919,7 @@ porte `filename=flux-oauth.mmd` (exercice du nommage d'export).
 
 ## Export HTML avec SVG Mermaid embarqué (lot E4)
 
-Fixture : `tests/dev-seed.html` seed-23 (un diagramme valide + un bloc mermaid
+Fixture : `seed-fixtures.js` seed-23 (un diagramme valide + un bloc mermaid
 invalide).
 
 84. **Export en ligne** : sur seed-23 (diagramme rendu à l'écran), exporter la
