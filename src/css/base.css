@@ -179,7 +179,14 @@ body {
 
 ::selection { background: var(--accent-dim); }
 
-/* scrollbars */
+/* scrollbars.
+   Deux syntaxes non interchangeables : les pseudo-éléments ::-webkit-scrollbar
+   (WebKit/Blink) donnent la main sur l'état :hover ; scrollbar-color/-width
+   (standard, seule voie Firefox) ne l'a pas — le pouce y reste donc figé sur
+   l'état de repos (--border-2), sans palier survolé. Firefox ignore les règles
+   webkit et WebKit ignore scrollbar-color quand ::-webkit-scrollbar est posé :
+   les deux blocs cohabitent sans se recouvrir. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
 ::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }

@@ -260,8 +260,15 @@ const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
 // d'outils, donc PAS dans ROOT_SYSTEM_PROMPT. Portée
 // directement par systemMessageParts()/buildSystemMessage() (main.js) via out.codeblock.
-// v4 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
-// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v4 : les règles de syntaxe mermaid-only
+// v5 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
+// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v5 : ajout de la règle des fences
+// imbriquées. Constat d'usage : le modèle produit trois backticks pour la fence
+// externe ET pour la fence interne — markdown RÉELLEMENT ambigu, pas un défaut de
+// parseur : en CommonMark trois backticks seuls ferment la fence ouverte, marked a
+// donc raison de couper là. Avec quatre backticks en fence externe l'imbrication
+// est rendue correctement (vérifié sur marked 12.0.0), d'où un correctif côté
+// génération et rien à changer au rendu — aucune heuristique de re-balancement,
+// elle casserait les cas légitimes.) (v4 : les règles de syntaxe mermaid-only
 // — ex-v2/v3 — sont retirées d'ici et déplacées dans la skill système `mermaid`
 // (src/system-skills/mermaid.md, cf. docs/skills.md) : le modèle l'appelle via
 // miaou__skills__read avant de générer un diagramme, autotrigger listant sa
@@ -277,6 +284,14 @@ const CODEBLOCK_DOCTRINE =
   "`mermaid filename=flux-auth.mmd`) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
+  "Si le contenu d'un bloc de code contient lui-même une fence (par exemple un " +
+  "bloc markdown qui montre un extrait de code, ou un bloc qui cite du markdown), " +
+  "ouvre et ferme le bloc ENGLOBANT avec QUATRE backticks au lieu de trois, en " +
+  "gardant trois backticks pour la fence intérieure. Une fence se ferme uniquement " +
+  "sur une ligne d'au moins autant de backticks que son ouverture : avec trois " +
+  "backticks des deux côtés, la fermeture du bloc intérieur ferme aussi le bloc " +
+  "englobant et la mise en page est cassée. Ajoute un backtick de plus par niveau " +
+  "d'imbrication supplémentaire.\n\n" +
   "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +
   "avec le slug « mermaid » (skill système, listée dans <miaou_skills_context> si " +
   "présente) : elle donne les règles de syntaxe à respecter.";

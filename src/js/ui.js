@@ -6824,6 +6824,19 @@ html { zoom: 0.9; }
   .export-footer { padding: 16px 14px; }
 }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
+/* Scrollbars : copie des règles de base.css (EXPORT_CSS est une feuille figée,
+   rien ne s'y propage — cf. piège 22). Utile surtout aux blocs de code, dont le
+   <code> scrolle horizontalement quand une ligne déborde ; sans ça WebKit y
+   pose sa barre par défaut, épaisse et hors palette. Les deux tokens employés
+   (--border-2, --scrollbar-thumb-hover) sont déjà dans THEME_TOKENS, donc
+   sérialisés pour les DEUX thèmes : la barre suit la bascule claire/sombre.
+   scrollbar-color/-width est la voie standard (seule que Firefox comprenne) ;
+   elle n'a pas d'état :hover, d'où le pouce figé sur --border-2 côté Firefox. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 .export-topbar-wrap { border-bottom: 1px solid var(--border); }
 /* Le padding droit RÉSERVE la place du bouton de thème : celui-ci est en
    position:fixed (contrainte du sélecteur :has(), cf. serializeThemeTokens) donc

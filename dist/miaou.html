@@ -138,6 +138,7 @@ body {
 
 ::selection { background: var(--accent-dim); }
 
+* { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
 ::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
@@ -3690,7 +3691,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-24 19:39 UTC */
+/* miaou — built: 2026-08-25 10:34 UTC */
 
 /* ── utils.js ── */
 
@@ -4852,7 +4853,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787600386}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787654063}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6446,6 +6447,14 @@ const CODEBLOCK_DOCTRINE =
   "`mermaid filename=flux-auth.mmd`) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
+  "Si le contenu d'un bloc de code contient lui-même une fence (par exemple un " +
+  "bloc markdown qui montre un extrait de code, ou un bloc qui cite du markdown), " +
+  "ouvre et ferme le bloc ENGLOBANT avec QUATRE backticks au lieu de trois, en " +
+  "gardant trois backticks pour la fence intérieure. Une fence se ferme uniquement " +
+  "sur une ligne d'au moins autant de backticks que son ouverture : avec trois " +
+  "backticks des deux côtés, la fermeture du bloc intérieur ferme aussi le bloc " +
+  "englobant et la mise en page est cassée. Ajoute un backtick de plus par niveau " +
+  "d'imbrication supplémentaire.\n\n" +
   "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +
   "avec le slug « mermaid » (skill système, listée dans <miaou_skills_context> si " +
   "présente) : elle donne les règles de syntaxe à respecter.";
@@ -13805,6 +13814,19 @@ html { zoom: 0.9; }
   .export-footer { padding: 16px 14px; }
 }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
+/* Scrollbars : copie des règles de base.css (EXPORT_CSS est une feuille figée,
+   rien ne s'y propage — cf. piège 22). Utile surtout aux blocs de code, dont le
+   <code> scrolle horizontalement quand une ligne déborde ; sans ça WebKit y
+   pose sa barre par défaut, épaisse et hors palette. Les deux tokens employés
+   (--border-2, --scrollbar-thumb-hover) sont déjà dans THEME_TOKENS, donc
+   sérialisés pour les DEUX thèmes : la barre suit la bascule claire/sombre.
+   scrollbar-color/-width est la voie standard (seule que Firefox comprenne) ;
+   elle n'a pas d'état :hover, d'où le pouce figé sur --border-2 côté Firefox. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 .export-topbar-wrap { border-bottom: 1px solid var(--border); }
 /* Le padding droit RÉSERVE la place du bouton de thème : celui-ci est en
    position:fixed (contrainte du sélecteur :has(), cf. serializeThemeTokens) donc

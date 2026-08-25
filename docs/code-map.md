@@ -374,91 +374,91 @@
   - `JS_EVAL_DOCTRINE` — L216
   - `RESOURCE_DOCTRINE` — L240
   - `ROOT_SYSTEM_PROMPT` — L255
-  - `CODEBLOCK_DOCTRINE` — L270
-  - `IDENTITY_BLURB` — L291
-  - `SKILL_DOCTRINE_BASE` — L312
-  - `SKILL_DOCTRINE_CONFIRM_OFF` — L327
-  - `SKILL_DOCTRINE_TAIL` — L331
-  - `INTENT_DOCTRINE` — L337
-  - `_pendingToolAcks` — L348
-  - `getPendingToolAcks()` — L349
-  - `clearPendingToolAcks()` — L350
-  - `_pendingImageInjections` — L361
-  - `getPendingImageInjections()` — L362
-  - `clearPendingImageInjections()` — L363
-  - `updateLastPendingToolAck()` — L371
-  - `toolFail()` — L395
-  - `pushDuplicateCallAck()` — L409
-  - `_pendingToolBlocks` — L419
-  - `getPendingToolBlocks()` — L420
-  - `clearPendingToolBlocks()` — L421
-  - `retainPendingToolBlocks()` — L424
-  - `validateFilesPromoteArgs()` — L431
-  - `validateResourceCreateArgs()` — L441
-  - `validateResourceFromResultArgs()` — L451
-  - `isInlineHandleResult()` — L462
-- **Registre MCP interne** (L466)
-  - `TOOLS` — L469
-- **ask_confirmation : primitif halting hors registre MCP** (L1219)
-  - `ASK_CONFIRMATION_DEF` — L1226
-- **Agrégation distante : cache de session + client MCP** (L1251)
-  - `MCP_PROTOCOL_VERSION` — L1256
-  - `REF_UNKNOWN_ERROR_CODE` — L1262
-  - `_remoteTools` — L1264
-  - `_remoteStatus` — L1265
-  - `getMcpStatus()` — L1267
-  - `remoteToolDefs()` — L1270
-  - `exposedTools()` — L1282
-- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L1289)
-  - `_mcpRpcId` — L1290
-  - `mcpRpcAttempt()` — L1297
-  - `mcpReinitialize()` — L1346
-  - `mcpRpc()` — L1360
-  - `readSseJsonRpc()` — L1377
-  - `connectMcpServer()` — L1407
-  - `disconnectMcpServer()` — L1437
-- **Contexte d'exécution d'un outil (lot T-1c)** (L1454)
-  - `toolCtx()` — L1472
-  - `callRemoteTool()` — L1484
-- **Dispatcher MCP** (L1515)
-  - `callInternalTool()` — L1525
-  - `callTool()` — L1562
-- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1613)
-  - `_attachmentPushState` — L1619
-  - `_conversationScopedPushKey()` — L1620
-  - `isAttachmentPushed()` — L1621
-  - `markAttachmentPushed()` — L1622
-  - `clearAttachmentPushState()` — L1626
-  - `_filePushState` — L1637
-  - `_filePushStateKey()` — L1638
-  - `isFilePushed()` — L1639
-  - `markFilePushed()` — L1640
-  - `_resourcePushState` — L1648
-  - `isResourcePushed()` — L1649
-  - `markResourcePushed()` — L1650
-  - `clearResourcePushState()` — L1651
-  - `toolDeclaresAttachmentInflation()` — L1663
-  - `ATTACHMENT_REF_RE` — L1673
-  - `FILE_REF_RE` — L1678
-  - `RESOURCE_REF_RE` — L1685
-  - `anyToolDeclaresAttachmentInflation()` — L1693
-  - `_declaresContentReadSignature()` — L1718
-  - `findDocsInflationTool()` — L1731
-  - `extractBinaryFileTextForDescription()` — L1756
-  - `classifyHandleRef()` — L1784
-  - `resolveHandleRecord()` — L1805
-  - `JS_EVAL_GUEST_PRELUDE` — L1837
-  - `runInQuickJs()` — L1857
-  - `_jsEvalStringify()` — L1910
-  - `_jsEvalErrText()` — L1920
-  - `_resolveInflationRef()` — L1952
-  - `callDocsInflatedRemoteTool()` — L2002
-  - `_isRefUnknownError()` — L2033
-  - `flattenToolResult()` — L2044
-  - `toolIsHalting()` — L2057
-  - `toolDefinitions()` — L2067
-  - `intentDoctrinePrompt()` — L2081
-  - `skillDoctrinePrompt()` — L2100
+  - `CODEBLOCK_DOCTRINE` — L277
+  - `IDENTITY_BLURB` — L306
+  - `SKILL_DOCTRINE_BASE` — L327
+  - `SKILL_DOCTRINE_CONFIRM_OFF` — L342
+  - `SKILL_DOCTRINE_TAIL` — L346
+  - `INTENT_DOCTRINE` — L352
+  - `_pendingToolAcks` — L363
+  - `getPendingToolAcks()` — L364
+  - `clearPendingToolAcks()` — L365
+  - `_pendingImageInjections` — L376
+  - `getPendingImageInjections()` — L377
+  - `clearPendingImageInjections()` — L378
+  - `updateLastPendingToolAck()` — L386
+  - `toolFail()` — L410
+  - `pushDuplicateCallAck()` — L424
+  - `_pendingToolBlocks` — L434
+  - `getPendingToolBlocks()` — L435
+  - `clearPendingToolBlocks()` — L436
+  - `retainPendingToolBlocks()` — L439
+  - `validateFilesPromoteArgs()` — L446
+  - `validateResourceCreateArgs()` — L456
+  - `validateResourceFromResultArgs()` — L466
+  - `isInlineHandleResult()` — L477
+- **Registre MCP interne** (L481)
+  - `TOOLS` — L484
+- **ask_confirmation : primitif halting hors registre MCP** (L1234)
+  - `ASK_CONFIRMATION_DEF` — L1241
+- **Agrégation distante : cache de session + client MCP** (L1266)
+  - `MCP_PROTOCOL_VERSION` — L1271
+  - `REF_UNKNOWN_ERROR_CODE` — L1277
+  - `_remoteTools` — L1279
+  - `_remoteStatus` — L1280
+  - `getMcpStatus()` — L1282
+  - `remoteToolDefs()` — L1285
+  - `exposedTools()` — L1297
+- **Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10)** (L1304)
+  - `_mcpRpcId` — L1305
+  - `mcpRpcAttempt()` — L1312
+  - `mcpReinitialize()` — L1361
+  - `mcpRpc()` — L1375
+  - `readSseJsonRpc()` — L1392
+  - `connectMcpServer()` — L1422
+  - `disconnectMcpServer()` — L1452
+- **Contexte d'exécution d'un outil (lot T-1c)** (L1469)
+  - `toolCtx()` — L1487
+  - `callRemoteTool()` — L1499
+- **Dispatcher MCP** (L1530)
+  - `callInternalTool()` — L1540
+  - `callTool()` — L1577
+- **Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D)** (L1628)
+  - `_attachmentPushState` — L1634
+  - `_conversationScopedPushKey()` — L1635
+  - `isAttachmentPushed()` — L1636
+  - `markAttachmentPushed()` — L1637
+  - `clearAttachmentPushState()` — L1641
+  - `_filePushState` — L1652
+  - `_filePushStateKey()` — L1653
+  - `isFilePushed()` — L1654
+  - `markFilePushed()` — L1655
+  - `_resourcePushState` — L1663
+  - `isResourcePushed()` — L1664
+  - `markResourcePushed()` — L1665
+  - `clearResourcePushState()` — L1666
+  - `toolDeclaresAttachmentInflation()` — L1678
+  - `ATTACHMENT_REF_RE` — L1688
+  - `FILE_REF_RE` — L1693
+  - `RESOURCE_REF_RE` — L1700
+  - `anyToolDeclaresAttachmentInflation()` — L1708
+  - `_declaresContentReadSignature()` — L1733
+  - `findDocsInflationTool()` — L1746
+  - `extractBinaryFileTextForDescription()` — L1771
+  - `classifyHandleRef()` — L1799
+  - `resolveHandleRecord()` — L1820
+  - `JS_EVAL_GUEST_PRELUDE` — L1852
+  - `runInQuickJs()` — L1872
+  - `_jsEvalStringify()` — L1925
+  - `_jsEvalErrText()` — L1935
+  - `_resolveInflationRef()` — L1967
+  - `callDocsInflatedRemoteTool()` — L2017
+  - `_isRefUnknownError()` — L2048
+  - `flattenToolResult()` — L2059
+  - `toolIsHalting()` — L2072
+  - `toolDefinitions()` — L2082
+  - `intentDoctrinePrompt()` — L2096
+  - `skillDoctrinePrompt()` — L2115
 
 ## src/js/api.js
 
@@ -996,33 +996,33 @@
   - `serializeThemeTokens()` — L6708
   - `PRISM_THEME_CSS` — L6750
   - `EXPORT_CSS` — L6813
-  - `EXPORT_SCRIPT` — L7023
-  - `THEME_SWITCH_SUN_SVG` — L7159
-  - `THEME_SWITCH_MOON_SVG` — L7160
-  - `EXPORT_VERBS` — L7170
-  - `buildExportHtml()` — L7174
-  - `renderExportBody()` — L7251
-  - `embedExportMermaid()` — L7335
-  - `decorateExportPre()` — L7378
-- **Conversion Markdown → HTML (lot R)** (L7394)
-  - `MD_HIGHLIGHT_TIMEOUT_MS` — L7424
-  - `_prismGrammarLoads` — L7428
-  - `loadPrismGrammar()` — L7429
-  - `highlightMarkdownDocCode()` — L7451
-  - `renderMarkdownDocBody()` — L7469
-  - `convertMarkdownToHtmlFile()` — L7500
-- **Conversion Markdown : câblage UI (réglages » Outils & extensions)** (L7520)
-  - `setMdConvertStatus()` — L7525
-  - `_convertingMd` — L7534
-  - `runMdConversion()` — L7535
-  - `onMdConvertPick()` — L7549
-  - `onMdConvertInput()` — L7553
-  - `onMdConvertDragOver()` — L7561
-  - `onMdConvertDragLeave()` — L7566
-  - `onMdConvertDrop()` — L7570
-  - `EXPORT_HTML_SIZE_WARN` — L7583
-  - `_exportingHtml` — L7592
-  - `exportConvHtml()` — L7593
+  - `EXPORT_SCRIPT` — L7036
+  - `THEME_SWITCH_SUN_SVG` — L7172
+  - `THEME_SWITCH_MOON_SVG` — L7173
+  - `EXPORT_VERBS` — L7183
+  - `buildExportHtml()` — L7187
+  - `renderExportBody()` — L7264
+  - `embedExportMermaid()` — L7348
+  - `decorateExportPre()` — L7391
+- **Conversion Markdown → HTML (lot R)** (L7407)
+  - `MD_HIGHLIGHT_TIMEOUT_MS` — L7437
+  - `_prismGrammarLoads` — L7441
+  - `loadPrismGrammar()` — L7442
+  - `highlightMarkdownDocCode()` — L7464
+  - `renderMarkdownDocBody()` — L7482
+  - `convertMarkdownToHtmlFile()` — L7513
+- **Conversion Markdown : câblage UI (réglages » Outils & extensions)** (L7533)
+  - `setMdConvertStatus()` — L7538
+  - `_convertingMd` — L7547
+  - `runMdConversion()` — L7548
+  - `onMdConvertPick()` — L7562
+  - `onMdConvertInput()` — L7566
+  - `onMdConvertDragOver()` — L7574
+  - `onMdConvertDragLeave()` — L7579
+  - `onMdConvertDrop()` — L7583
+  - `EXPORT_HTML_SIZE_WARN` — L7596
+  - `_exportingHtml` — L7605
+  - `exportConvHtml()` — L7606
 
 ## src/js/main.js
 
@@ -1225,9 +1225,9 @@
 - **Tokens** (L18)
 - **Palettes (axe orthogonal au thème clair/sombre)** (L122)
 - **Lots de fontes (axe orthogonal à la palette ET au thème, lot S-b)** (L140)
-- **Overlay de préchargement (boot)** (L193)
-- **Reduced-motion : kill-switch global** (L255)
-- **App shell** (L282)
+- **Overlay de préchargement (boot)** (L200)
+- **Reduced-motion : kill-switch global** (L262)
+- **App shell** (L289)
 
 ## src/css/sidebar.css
 
