@@ -406,6 +406,16 @@ html[data-motion="reduced"] *::after {
   flex-direction: column;
   gap: 2px;
 }
+
+.conv-list.enter > * {
+  animation: conv-enter 110ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 9ms);
+}
+@keyframes conv-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
 .conv-section {
   font-size: 10.5px;
   font-weight: 600;
@@ -3691,7 +3701,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-25 10:34 UTC */
+/* miaou — built: 2026-08-25 16:59 UTC */
 
 /* ── utils.js ── */
 
@@ -4853,7 +4863,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787654063}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787677147}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -6447,17 +6457,18 @@ const CODEBLOCK_DOCTRINE =
   "`mermaid filename=flux-auth.mmd`) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
-  "Si le contenu d'un bloc de code contient lui-même une fence (par exemple un " +
-  "bloc markdown qui montre un extrait de code, ou un bloc qui cite du markdown), " +
-  "ouvre et ferme le bloc ENGLOBANT avec QUATRE backticks au lieu de trois, en " +
-  "gardant trois backticks pour la fence intérieure. Une fence se ferme uniquement " +
-  "sur une ligne d'au moins autant de backticks que son ouverture : avec trois " +
-  "backticks des deux côtés, la fermeture du bloc intérieur ferme aussi le bloc " +
-  "englobant et la mise en page est cassée. Ajoute un backtick de plus par niveau " +
-  "d'imbrication supplémentaire.\n\n" +
   "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +
   "avec le slug « mermaid » (skill système, listée dans <miaou_skills_context> si " +
-  "présente) : elle donne les règles de syntaxe à respecter.";
+  "présente) : elle donne les règles de syntaxe à respecter.\n\n" +
+  "Un bloc de code qui contient lui-même une fence s'ouvre et se ferme avec QUATRE " +
+  "backticks ; les fences à l'intérieur gardent leurs trois backticks, inchangées. " +
+  "C'est TOUJOURS le bloc ENGLOBANT qui en porte le plus, jamais celui qu'il " +
+  "contient.\n\n" +
+  "Raison : une fence se ferme sur toute ligne portant au moins autant de backticks " +
+  "que son ouverture. Avec trois backticks des deux côtés, la fermeture du bloc " +
+  "intérieur ferme aussi le bloc englobant et la mise en page est cassée.\n\n" +
+  "Si ce bloc englobant en contient lui-même un autre déjà imbriqué, monte à cinq " +
+  "backticks, et ainsi de suite : chaque niveau vers l'EXTÉRIEUR ajoute un backtick.";
 
 const IDENTITY_BLURB =
   "Tu opères dans MIAOU, un client de chat web pour dialoguer avec un modèle de " +
@@ -10115,11 +10126,24 @@ function searchConversations(query) {
   };
 }
 
+const CONV_SEARCH_DEBOUNCE_MS = 150;
+let _convSearchTimer = null;
+
+function cancelConvSearchDebounce() {
+  if (_convSearchTimer !== null) { clearTimeout(_convSearchTimer); _convSearchTimer = null; }
+}
+
 function onConvSearch() {
   const input = $('conv-search');
   $('search-clear').classList.toggle('show', !!input.value);
-  convSearchFilter = searchConversations(input.value);
-  renderConvList();
+  cancelConvSearchDebounce();
+  _convSearchTimer = setTimeout(() => {
+    _convSearchTimer = null;
+    
+    convSearchFilter = searchConversations($('conv-search').value);
+    animateNextConvList();
+    renderConvList();
+  }, CONV_SEARCH_DEBOUNCE_MS);
 }
 
 function revealActiveConv(block) {
@@ -10131,7 +10155,9 @@ function clearConvSearch() {
   const input = $('conv-search');
   input.value = '';
   $('search-clear').classList.remove('show');
+  cancelConvSearchDebounce();
   convSearchFilter = null;
+  animateNextConvList();
   renderConvList();
   
   revealActiveConv();
@@ -10220,8 +10246,16 @@ function sectionEl(label) {
   return s;
 }
 
+const CONV_ENTER_STAGGER_MAX = 12;
+let _convListAnim = false;
+
+function animateNextConvList() { _convListAnim = true; }
+
 function renderConvList() {
   const list = $('conv-list');
+  const animate = _convListAnim;
+  _convListAnim = false;
+  list.classList.remove('enter');
   list.innerHTML = '';
   list.classList.toggle('select-mode', _moveMode);
   const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
@@ -10244,6 +10278,17 @@ function renderConvList() {
       lastSection = section;
     }
     list.appendChild(convItemEl(c));
+  }
+
+  if (animate) {
+    
+    const items = list.children;
+    for (let i = 0; i < items.length; i++) {
+      items[i].style.setProperty('--i', Math.min(i, CONV_ENTER_STAGGER_MAX));
+    }
+    
+    void list.offsetWidth;
+    list.classList.add('enter');
   }
 }
 
@@ -12309,6 +12354,8 @@ function pickSpace(id) {
     _lastContextManifest = null;
     syncContextCounter();
   });
+  
+  animateNextConvList();
   resetToEmpty();
   syncSpaceUI();
   resetSpaceTab();
@@ -12327,6 +12374,7 @@ function followSpace(id) {
   });
   syncSpaceUI();
   resetSpaceTab();
+  animateNextConvList();
   renderConvList();
   _lastContextManifest = null;   
   syncContextCounter();
@@ -14479,7 +14527,12 @@ function finishBoot() {
   if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
   const since = Date.now() - _bootReadyAt;
   const wait = Math.max(0, BOOT_MIN_AFTER_READY_MS - since);
-  setTimeout(() => { el.classList.add('boot-done'); }, wait);
+  setTimeout(() => {
+    el.classList.add('boot-done');
+    
+    animateNextConvList();
+    renderConvList();
+  }, wait);
 }
 
 const LOGO_SRC =

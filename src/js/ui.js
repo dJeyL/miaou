@@ -2272,11 +2272,34 @@ function searchConversations(query) {
   };
 }
 
+// Debounce de la recherche (CONV_SEARCH_DEBOUNCE_MS) : le filtre reconstruit
+// toute la liste ET joue son animation d'entrée, deux gestes qu'on ne veut pas
+// à chaque frappe. Ce qui est temporisé est le RÉSULTAT (filtre + render) ; le
+// bouton d'effacement, lui, reflète la présence de texte dans le champ, pas le
+// résultat — il reste donc immédiat, sinon il traînerait derrière la frappe.
+// Le timer est un état de module annulable : clearConvSearch DOIT l'annuler,
+// sans quoi une frappe suivie d'un effacement dans la fenêtre de debounce
+// verrait le timer en vol réappliquer l'ancien filtre APRÈS la remise à null.
+const CONV_SEARCH_DEBOUNCE_MS = 150;
+let _convSearchTimer = null;
+
+function cancelConvSearchDebounce() {
+  if (_convSearchTimer !== null) { clearTimeout(_convSearchTimer); _convSearchTimer = null; }
+}
+
 function onConvSearch() {
   const input = $('conv-search');
   $('search-clear').classList.toggle('show', !!input.value);
-  convSearchFilter = searchConversations(input.value);
-  renderConvList();
+  cancelConvSearchDebounce();
+  _convSearchTimer = setTimeout(() => {
+    _convSearchTimer = null;
+    // Relecture du champ DANS le timer, jamais une valeur figée à l'armement :
+    // la frappe a pu continuer (doctrine « relire l'état après l'attente »,
+    // même esprit que le piège 24).
+    convSearchFilter = searchConversations($('conv-search').value);
+    animateNextConvList();
+    renderConvList();
+  }, CONV_SEARCH_DEBOUNCE_MS);
 }
 
 // Ramène l'élément de conversation actif dans la partie visible de la liste.
@@ -2293,7 +2316,9 @@ function clearConvSearch() {
   const input = $('conv-search');
   input.value = '';
   $('search-clear').classList.remove('show');
+  cancelConvSearchDebounce();
   convSearchFilter = null;
+  animateNextConvList();
   renderConvList();
   // La sélection courante (potentiellement très ancienne) peut être hors écran
   // une fois la liste complète restaurée : on la ramène dans le champ visible.
@@ -2414,8 +2439,26 @@ function sectionEl(label) {
   return s;
 }
 
+// Animation d'entrée de la liste (opt-in explicite, one-shot). renderConvList
+// est appelée très souvent pour des raisons qui ne changent PAS le contenu
+// visible de la liste (titrage async, pastille d'activité, épinglage, mode
+// sélection) : animer à chaque appel ferait clignoter la sidebar en permanence.
+// Seuls les gestes qui remplacent réellement le jeu d'items arment le flag
+// (bascule de Space, recherche). Il est consommé — et remis à false — par le
+// render suivant, quel qu'il soit : un flag armé ne peut pas survivre pour être
+// joué au mauvais moment. L'anim elle-même est du CSS pur (.conv-list.enter),
+// donc déjà neutralisée par le kill-switch reduced-motion (base.css) sans gate
+// JS supplémentaire.
+const CONV_ENTER_STAGGER_MAX = 12;
+let _convListAnim = false;
+
+function animateNextConvList() { _convListAnim = true; }
+
 function renderConvList() {
   const list = $('conv-list');
+  const animate = _convListAnim;
+  _convListAnim = false;
+  list.classList.remove('enter');
   list.innerHTML = '';
   list.classList.toggle('select-mode', _moveMode);
   const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
@@ -2440,6 +2483,22 @@ function renderConvList() {
       lastSection = section;
     }
     list.appendChild(convItemEl(c));
+  }
+
+  if (animate) {
+    // `--i` porte le rang pour l'échelonnement, plafonné (ANIM_STAGGER_MAX) :
+    // sans plafond, une liste de 200 conversations donnerait plusieurs secondes
+    // de cascade — au-delà du plafond tout le reste démarre ensemble, et comme
+    // ces items sont hors écran, la coupure ne se voit pas.
+    const items = list.children;
+    for (let i = 0; i < items.length; i++) {
+      items[i].style.setProperty('--i', Math.min(i, CONV_ENTER_STAGGER_MAX));
+    }
+    // Reflow forcé avant la pose de la classe : sans lui, le navigateur peut
+    // regrouper le remove/add du même frame et l'animation ne rejouerait pas
+    // sur deux renders animés consécutifs (deux recherches à la suite).
+    void list.offsetWidth;
+    list.classList.add('enter');
   }
 }
 
@@ -5013,6 +5072,9 @@ function pickSpace(id) {
     _lastContextManifest = null;
     syncContextCounter();
   });
+  // Armé AVANT resetToEmpty : c'est lui qui appelle renderConvList sur ce
+  // chemin (pas d'appel direct ici), et c'est ce render-là qu'on veut animer.
+  animateNextConvList();
   resetToEmpty();
   syncSpaceUI();
   resetSpaceTab();
@@ -5036,6 +5098,7 @@ function followSpace(id) {
   });
   syncSpaceUI();
   resetSpaceTab();
+  animateNextConvList();
   renderConvList();
   _lastContextManifest = null;   // la conv suivie change de Space : contexte affiché périmé (piège 16/18)
   syncContextCounter();

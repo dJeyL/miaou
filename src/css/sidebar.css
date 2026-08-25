@@ -214,6 +214,22 @@
   flex-direction: column;
   gap: 2px;
 }
+/* ── Animation d'entrée de la liste (armée par animateNextConvList, ui.js) ──
+   Portée par la classe .enter sur le conteneur, posée pour UN render seulement :
+   les items n'ont aucune classe propre, la cascade suffit. `--i` (rang, posé en
+   JS et plafonné) échelonne le départ. `both` : l'item est invisible avant son
+   delay (sinon il apparaîtrait d'un coup puis se ré-animerait). Aucun gate
+   reduced-motion ici — le kill-switch global (base.css) neutralise
+   animation-duration/delay, l'item se pose immédiatement à son état final. */
+.conv-list.enter > * {
+  animation: conv-enter 110ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 9ms);
+}
+@keyframes conv-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
 .conv-section {
   font-size: 10.5px;
   font-weight: 600;

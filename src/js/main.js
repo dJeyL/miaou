@@ -35,7 +35,17 @@ function finishBoot() {
   if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
   const since = Date.now() - _bootReadyAt;
   const wait = Math.max(0, BOOT_MIN_AFTER_READY_MS - since);
-  setTimeout(() => { el.classList.add('boot-done'); }, wait);
+  setTimeout(() => {
+    el.classList.add('boot-done');
+    // Animation d'entrée de la liste jouée PENDANT l'estompage de l'overlay
+    // (320ms), pas après : accrochée à la fin du fade, la sidebar resterait
+    // figée le temps qu'il se termine, puis s'animerait — décalage visible.
+    // Ici la liste se met en place au moment même où l'app se découvre. Le
+    // re-render est le seul du démarrage à ce titre (celui d'init() a déjà eu
+    // lieu, sous l'overlay opaque, donc invisible).
+    animateNextConvList();
+    renderConvList();
+  }, wait);
 }
 
 // ── Logo : source unique (favicon + sidebar) ────────────────────────────────

@@ -260,9 +260,19 @@ const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
 // d'outils, donc PAS dans ROOT_SYSTEM_PROMPT. Portée
 // directement par systemMessageParts()/buildSystemMessage() (main.js) via out.codeblock.
-// v5 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
-// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v5 : ajout de la règle des fences
-// imbriquées. Constat d'usage : le modèle produit trois backticks pour la fence
+// v6 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
+// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v6 : la règle des fences imbriquées
+// de v5 est REFORMULÉE et DÉPLACÉE en fin de doctrine. Retour d'usage Julien, trois
+// défauts de la v5 : (a) elle était insérée entre la convention filename= et le renvoi
+// vers la skill mermaid, coupant en deux le fil mermaid alors qu'elle n'a aucun rapport
+// avec lui ; (b) « un backtick de plus par niveau d'imbrication supplémentaire » ne
+// disait pas À QUI l'ajouter et se lisait naturellement comme « aux enfants » — l'exact
+// inverse de la règle ; (c) elle exposait le pourquoi (CommonMark) avant le quoi. D'où
+// une consigne impérative en tête, la raison ensuite, et le sens de l'imbrication nommé
+// explicitement (vers l'EXTÉRIEUR). Ne règle PAS à soi seul le cas observé d'un modèle
+// qui ignore la règle : aucun lien de causalité établi entre ces défauts de forme et ce
+// refus, cf. la limite d'obéissance des modèles faibles. (v5 : ajout de la règle des
+// fences imbriquées. Constat d'usage : le modèle produit trois backticks pour la fence
 // externe ET pour la fence interne — markdown RÉELLEMENT ambigu, pas un défaut de
 // parseur : en CommonMark trois backticks seuls ferment la fence ouverte, marked a
 // donc raison de couper là. Avec quatre backticks en fence externe l'imbrication
@@ -284,17 +294,18 @@ const CODEBLOCK_DOCTRINE =
   "`mermaid filename=flux-auth.mmd`) : ce nom sert à nommer les exports " +
   "d'image du diagramme, l'extension est ajustée automatiquement. Pour un extrait " +
   "illustratif court sans vocation de fichier, tu peux l'omettre.\n\n" +
-  "Si le contenu d'un bloc de code contient lui-même une fence (par exemple un " +
-  "bloc markdown qui montre un extrait de code, ou un bloc qui cite du markdown), " +
-  "ouvre et ferme le bloc ENGLOBANT avec QUATRE backticks au lieu de trois, en " +
-  "gardant trois backticks pour la fence intérieure. Une fence se ferme uniquement " +
-  "sur une ligne d'au moins autant de backticks que son ouverture : avec trois " +
-  "backticks des deux côtés, la fermeture du bloc intérieur ferme aussi le bloc " +
-  "englobant et la mise en page est cassée. Ajoute un backtick de plus par niveau " +
-  "d'imbrication supplémentaire.\n\n" +
   "Pour générer un diagramme mermaid valide, appelle d'abord miaou__skills__read " +
   "avec le slug « mermaid » (skill système, listée dans <miaou_skills_context> si " +
-  "présente) : elle donne les règles de syntaxe à respecter.";
+  "présente) : elle donne les règles de syntaxe à respecter.\n\n" +
+  "Un bloc de code qui contient lui-même une fence s'ouvre et se ferme avec QUATRE " +
+  "backticks ; les fences à l'intérieur gardent leurs trois backticks, inchangées. " +
+  "C'est TOUJOURS le bloc ENGLOBANT qui en porte le plus, jamais celui qu'il " +
+  "contient.\n\n" +
+  "Raison : une fence se ferme sur toute ligne portant au moins autant de backticks " +
+  "que son ouverture. Avec trois backticks des deux côtés, la fermeture du bloc " +
+  "intérieur ferme aussi le bloc englobant et la mise en page est cassée.\n\n" +
+  "Si ce bloc englobant en contient lui-même un autre déjà imbriqué, monte à cinq " +
+  "backticks, et ainsi de suite : chaque niveau vers l'EXTÉRIEUR ajoute un backtick.";
 
 // Blurb d'identité — constante build-time, INCONDITIONNELLE (même statut que
 // CODEBLOCK_DOCTRINE) : quelques phrases situant l'application et renvoyant vers
