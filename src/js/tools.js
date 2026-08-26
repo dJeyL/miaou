@@ -160,8 +160,10 @@ const MEMORY_DOCTRINE =
 // cf. docs/skills.md) : usage assez rare pour ne pas justifier sa présence
 // permanente dans ROOT_SYSTEM_PROMPT. Ne reste ici qu'un pointeur court.
 const FILES_DOCTRINE =
-  "Si une pièce jointe du tour courant (att-N) mériterait d'être conservée dans " +
-  "la bibliothèque persistante de l'espace, appelle d'abord miaou__skills__read " +
+  "Si une pièce jointe du tour courant (att-N) ou une ressource de session (res_…, " +
+  "y compris une ressource que tu viens de créer toi-même) mériterait d'être " +
+  "conservée dans la bibliothèque persistante de l'espace — ou si l'utilisateur te " +
+  "demande d'y déposer un fichier — appelle d'abord miaou__skills__read " +
   "avec le slug « files-promote » (skill système, listée dans <miaou_skills_context> " +
   "si présente) : elle donne la doctrine de déclenchement complète (confirmation " +
   "préalable, format d'appel) avant tout appel à miaou__files__promote.";
@@ -454,10 +456,24 @@ function retainPendingToolBlocks(keepFn) { _pendingToolBlocks = _pendingToolBloc
 // callInternalTool : un handler async renvoie TOUJOURS un thenable, même sur
 // un retour anticipé avant le premier await) pour rester couverte par les
 // tests QuickJS. Retourne un message d'erreur si invalide, '' sinon.
+//
+// Depuis le lot V, `ref` accepte DEUX familles de handle (pas seulement att-N) :
+// une pièce jointe du tour courant, ou une ressource de session res_… — ce qui
+// ouvre le chemin « le modèle produit un contenu → resource__create → promotion »,
+// absent jusque-là (le modèle ne pouvait déposer aucun fichier qu'il avait
+// lui-même fabriqué). `file-<id>` est REFUSÉ explicitement : promouvoir un
+// fichier de bibliothèque dans la bibliothèque n'a pas de sens, et le silence
+// laisserait le modèle croire à une copie. La décision de famille reste ici
+// (pure, testée) ; le lookup du record est délégué à resolveHandleRecord.
 function validateFilesPromoteArgs(args) {
   const ref = String((args && args.ref) || '');
   const description = String((args && args.description) || '').trim();
   if (!ref || !description) return 'Paramètres invalides (ref et description requis).';
+  const family = classifyHandleRef(ref);
+  if (family === 'file') return 'Ce fichier est déjà dans la bibliothèque de l\'espace.';
+  if (family !== 'att' && family !== 'resource') {
+    return 'Handle invalide : ' + ref + ' (attendu att-N ou res_<id>).';
+  }
   return '';
 }
 
@@ -810,21 +826,25 @@ const TOOLS = [
   },
   {
     name: 'files__promote',
-    // Description v2 (dégraissage 2026-07-10) : le protocole de consentement
-    // (question ask_confirmation littérale, mêmes ref/description à l'appel,
-    // jamais d'appel direct) vit dans FILES_DOCTRINE, toujours injectée — la
-    // description garde le QUOI + un rappel court du gate.
+    // Description v3 (lot V) : deux familles de source (att-N et res_…), pour
+    // ouvrir le dépôt d'un contenu produit par le modèle lui-même. Le protocole
+    // de consentement (question ask_confirmation littérale, mêmes ref/description
+    // à l'appel, jamais d'appel direct) vit dans FILES_DOCTRINE / la skill
+    // système files-promote — la description garde le QUOI + un rappel court du gate.
     description:
-      "Copie une pièce jointe du tour courant (ref att-N) dans la bibliothèque " +
-      "persistante de l'espace actif, avec une description de ce que le fichier EST " +
-      "(pas un résumé de son contenu). Consentement préalable de l'utilisateur REQUIS " +
-      "via ask_confirmation (voir doctrine bibliothèque).",
+      "Copie un contenu dans la bibliothèque persistante de l'espace actif, avec une " +
+      "description de ce que le fichier EST (pas un résumé de son contenu). La source " +
+      "est soit une pièce jointe du tour courant (att-N), soit une ressource de session " +
+      "res_… — y compris une ressource que TU as toi-même créée via " +
+      "miaou__resource__create, ce qui te permet de déposer dans la bibliothèque un " +
+      "fichier que tu as produit. Consentement de l'utilisateur REQUIS, sauf s'il " +
+      "vient de te le demander explicitement (voir doctrine bibliothèque).",
     inputSchema: {
       type: 'object',
       properties: {
-        ref: { type: 'string', description: 'Identifiant de la pièce jointe du tour courant (att-N)' },
-        description: { type: 'string', description: 'Description factuelle de ce que contient le fichier (≤ 2 phrases), pas un résumé de son contenu' },
-        name: { type: 'string', description: 'Nom optionnel (défaut : nom du fichier d\'origine)' },
+        ref: { type: 'string', description: 'Source à déposer : pièce jointe du tour courant (att-N) ou ressource de session (res_<id>)' },
+        description: { type: 'string', description: 'Description factuelle de ce que le fichier EST, pas un résumé de son contenu. Phrase complète : majuscule initiale, point final, ≤ 2 phrases' },
+        name: { type: 'string', description: 'Nom optionnel (défaut : nom du fichier d\'origine ; à fournir pour une ressource créée sans nom)' },
       },
       required: ['ref', 'description'],
     },
@@ -837,7 +857,12 @@ const TOOLS = [
       const ref = String(args.ref || '');
       const description = String(args.description || '').trim();
       const activeId = ctx.convId;
-      const record = getCachedRecordByAttId(ref, activeId);   // resources.js — att-N du tour courant
+      // resolveHandleRecord (source de vérité unique handle → record, lot L) au
+      // lieu d'un getCachedRecordByAttId direct : couvre att-N ET res_… d'un
+      // seul geste, et hérite gratuitement de l'herméticité (piège 18 — le cache
+      // session EST le filtre, aucun scope réécrit ici). La famille file-<id> a
+      // déjà été refusée par le validateur pur.
+      const record = resolveHandleRecord(ref, ctx);
       if (!record) return toolFail('files__promote', 'Fichier introuvable.');   // ref inconnue/périmée, même posture que files__read
       const spaceId = ctx.spaceId;
       const name = args.name ? String(args.name).trim() : record.name;

@@ -1090,6 +1090,20 @@ describe('validateFilesPromoteArgs (lot Cbis) — extrait du handler async pour 
   it('args absent → invalide, pas de crash', function() {
     expect(validateFilesPromoteArgs(undefined)).toContain('invalides');
   });
+  // Lot V : la famille de handle est tranchée dans le validateur pur.
+  it('ref res_… (ressource de session) → valide, deuxième source acceptée', function() {
+    expect(validateFilesPromoteArgs({ ref: 'res_4ekl9b53', description: 'Un CSV de test.' })).toBe('');
+  });
+  it('ref file-<id> → refus explicite (déjà dans la bibliothèque)', function() {
+    const msg = validateFilesPromoteArgs({ ref: 'file-a1', description: 'Une description.' });
+    expect(msg).toContain('déjà dans la bibliothèque');
+  });
+  it('ref d\'une famille inconnue → handle invalide', function() {
+    expect(validateFilesPromoteArgs({ ref: 'call:abc', description: 'x' })).toContain('Handle invalide');
+  });
+  it('un handle mal formé n\'est pas confondu avec une ressource', function() {
+    expect(validateFilesPromoteArgs({ ref: 'res-4ekl', description: 'x' })).toContain('Handle invalide');
+  });
 });
 
 describe('files__promote — définition d\'outil et doctrine (lot Cbis, voie B)', function() {

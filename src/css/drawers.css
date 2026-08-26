@@ -910,3 +910,25 @@ textarea.skill-content {
   border-top: 1px solid var(--border);
   margin: 12px 0;
 }
+
+/* Téléchargement d'un fichier de bibliothèque (lot V) : glyphe dans l'en-tête de
+   carte, pas un bouton texte — la colonne latérale (~210 px utiles) ne tient pas
+   trois boutons texte sans wrapper la rangée. Même glyphe et même vocabulaire
+   d'états que `.ack-dl` (tools.css), l'autre surface de téléchargement.
+   `align-self: start` : l'icône s'aligne sur la première ligne de méta, pas sur
+   la hauteur totale d'un en-tête qui grandirait. */
+.mem-dl {
+  flex-shrink: 0;
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 0;
+}
+.mem-dl:hover { color: var(--accent); }
+.mem-dl.unavailable { opacity: 0.35; cursor: default; }
+.mem-dl.unavailable:hover { color: var(--text-3); }

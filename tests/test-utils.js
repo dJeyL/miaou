@@ -1589,6 +1589,83 @@ describe('sanitizeDownloadName', function() {
   });
 });
 
+describe('mimeExt (lot V)', function() {
+  it('table exacte', function() {
+    expect(mimeExt('text/csv')).toBe('csv');
+    expect(mimeExt('application/pdf')).toBe('pdf');
+    expect(mimeExt('image/jpeg')).toBe('jpg');
+    expect(mimeExt('text/markdown')).toBe('md');
+  });
+  it('parametres de charset ignores', function() {
+    expect(mimeExt('text/csv; charset=utf-8')).toBe('csv');
+    expect(mimeExt('TEXT/CSV')).toBe('csv');
+  });
+  it('image/<x> generique sans enumeration', function() {
+    expect(mimeExt('image/webp')).toBe('webp');
+    expect(mimeExt('image/avif')).toBe('avif');
+  });
+  it('suffixe +xml / +json reduit a sa base', function() {
+    expect(mimeExt('image/svg+xml')).toBe('svg');       // table exacte, prioritaire
+    expect(mimeExt('application/ld+json')).toBe('json');
+  });
+  it('inconnu ou vide → repli', function() {
+    expect(mimeExt('')).toBe('bin');
+    expect(mimeExt(null)).toBe('bin');
+    expect(mimeExt('application/octet-stream')).toBe('octet-stream');
+  });
+});
+
+describe('resourceDownloadName (lot V)', function() {
+  it('nom deja extensionne : inchange', function() {
+    expect(resourceDownloadName('export.csv', 'text/csv')).toBe('export.csv');
+  });
+  it('nom sans extension : suffixe depuis le mime, pas depuis un langage', function() {
+    expect(resourceDownloadName('export', 'text/csv')).toBe('export.csv');
+    expect(resourceDownloadName('rapport', 'application/pdf')).toBe('rapport.pdf');
+  });
+  it('mime text/plain sur un csv : on suit le mime declare (limite assumee)', function() {
+    expect(resourceDownloadName('export', 'text/plain')).toBe('export.txt');
+  });
+  it('nom vide → repli generique extensionne', function() {
+    expect(resourceDownloadName('', 'text/csv')).toBe('ressource.csv');
+    expect(resourceDownloadName(null, '')).toBe('ressource.bin');
+  });
+  it('nom hostile assaini (traversal, caracteres de controle)', function() {
+    expect(resourceDownloadName('../etc/passwd', 'text/plain')).toBe('_etc_passwd.txt');
+    expect(resourceDownloadName('a/b.csv', 'text/csv')).toBe('a_b.csv');
+  });
+  it('nom reduit a du bruit → repli generique', function() {
+    expect(resourceDownloadName('...', 'text/csv')).toBe('ressource.csv');
+  });
+});
+
+describe('ackDownloadTarget (lot V)', function() {
+  it('resource_stored → cible par id de ressource', function() {
+    var t = ackDownloadTarget({ kind: 'resource_stored', id: 'res_1', resourceName: 'a.csv', mime: 'text/csv' });
+    expect(t.by).toBe('resource');
+    expect(t.id).toBe('res_1');
+    expect(t.name).toBe('a.csv');
+  });
+  it('resource_presented → meme famille', function() {
+    expect(ackDownloadTarget({ kind: 'resource_presented', id: 'res_2' }).by).toBe('resource');
+  });
+  it('attachment_recalled → cible par attId, scopee conversation', function() {
+    var t = ackDownloadTarget({ kind: 'attachment_recalled', attId: 'att_1', convId: 'c1' });
+    expect(t.by).toBe('attachment');
+    expect(t.attId).toBe('att_1');
+    expect(t.convId).toBe('c1');
+  });
+  it('cle manquante → null (ack legacy)', function() {
+    expect(ackDownloadTarget({ kind: 'resource_stored' })).toBe(null);
+    expect(ackDownloadTarget({ kind: 'attachment_recalled' })).toBe(null);
+  });
+  it('kinds hors perimetre → null', function() {
+    expect(ackDownloadTarget({ kind: 'memory_create', id: 'm1' })).toBe(null);
+    expect(ackDownloadTarget({ kind: 'mcp_call', name: 'x__y' })).toBe(null);
+    expect(ackDownloadTarget(null)).toBe(null);
+  });
+});
+
 describe('isMermaidLang', function() {
   it('mermaid → true', function() {
     expect(isMermaidLang('mermaid')).toBeTruthy();

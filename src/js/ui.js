@@ -1409,6 +1409,49 @@ function ackLabel(kind, m) {
   return spec ? spec.label(m) : 'Action effectuée';
 }
 
+// Téléchargement de la ressource désignée par un ack (lot V). Cible produite
+// par `ackDownloadTarget` (utils.js, prédicat unique). Deux résolutions selon
+// `by`, jamais fusionnées : une ressource IDB se relit par id — cache session
+// d'abord, puis `getResource` (IDB) pour survivre à un cache froid après reload
+// — tandis qu'un attachment ne se résout QUE par le cache session
+// (getCachedRecordByAttId n'a pas d'équivalent IDB indexé par attId ; le cache
+// est peuplé à l'ouverture de la conversation par loadConversationResources).
+// Échec = feedback visuel discret sur le bouton, jamais d'alert ni de throw :
+// une ressource peut légitimement avoir été évincée ou supprimée.
+async function downloadAckResource(target, btn) {
+  if (!target || (btn && btn.disabled)) return;
+  if (btn) btn.disabled = true;
+  try {
+    let record = null;
+    if (target.by === 'resource') {
+      record = (typeof getCachedRecord === 'function' && getCachedRecord(target.id)) || null;
+      if (!record) { try { record = await getResource(target.id); } catch (e) { record = null; } }
+    } else if (target.by === 'attachment') {
+      record = (typeof getCachedRecordByAttId === 'function'
+        ? getCachedRecordByAttId(target.attId, target.convId) : null);
+    }
+    if (!record || !record.data) { markAckDlUnavailable(btn); return; }
+    // Nom au mieux : celui du record (figé au stockage) prioritaire sur celui de
+    // l'ack (copie, potentiellement plus ancienne), extension dérivée du mime.
+    downloadFile(
+      resourceDownloadName(record.name || target.name, record.mime || target.mime),
+      record.data, record.mime || 'application/octet-stream');
+  } finally {
+    if (btn && !btn.classList.contains('unavailable')) btn.disabled = false;
+  }
+}
+
+// Feedback d'indisponibilité : le bouton reste en place (l'ack, lui, est
+// toujours vrai — la ressource A été enregistrée) mais devient inerte et le dit
+// au survol. Pas de retrait du DOM : ferait disparaître une affordance sous le
+// curseur, et le record peut redevenir disponible après réouverture de la conv.
+function markAckDlUnavailable(btn) {
+  if (!btn) return;
+  btn.classList.add('unavailable');
+  btn.disabled = true;
+  btn.title = 'Ressource non disponible';
+}
+
 function buildToolAck(m) {
   const kind = ackKindOf(m);
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
@@ -1438,6 +1481,25 @@ function buildToolAck(m) {
   }
   wrap.appendChild(label);
 
+  // Téléchargement de la ressource désignée par l'ack (lot V). Placé APRÈS le
+  // label et AVANT `undo` : c'est une action sur la cible de l'ack, pas sur
+  // l'ack lui-même. Les trois kinds concernés sont énumérés par
+  // `ackDownloadTarget` (utils.js) — prédicat UNIQUE, partagé avec le rendu de
+  // la liste de fichiers d'espace ; ne jamais tester `kind` en dur ici.
+  // Toujours affiché quand l'ack désigne une ressource : les bytes vivent en
+  // IDB, pas dans l'ack, et le cache session peut être froid après un reload —
+  // la disponibilité réelle n'est connue qu'au clic (résolution async).
+  // Ce bouton est délibérément ABSENT des exports (piège 21) : un HTML
+  // standalone n'a ni IDB ni globals MIAOU. Cf. docs/tools.md.
+  const dlTarget = ackDownloadTarget(m);
+  if (dlTarget) {
+    const dl = document.createElement('button');
+    dl.className = 'ack-dl';
+    dl.title = 'Télécharger';
+    dl.innerHTML = ICON_DOWNLOAD;   // SVG statique author-controlled uniquement
+    dl.addEventListener('click', () => downloadAckResource(dlTarget, dl));
+    wrap.appendChild(dl);
+  }
   if (spec.undo) {
     if (m.resolved) {
       const s = document.createElement('span');
@@ -6646,7 +6708,16 @@ async function renderSpaceFilesList(spaceId) {
     item.innerHTML =
       `<div class="mem-header"><div class="mem-meta">` +
       `<div class="mem-sub">${escHtml(e.mime)} · ${escHtml(humanSize(e.size))}${provenanceBadge}</div>` +
-      `</div></div>` +
+      `</div>` +
+      // Téléchargement en GLYPHE dans l'en-tête (pas un bouton texte) : la
+      // colonne latérale fait ~210 px utiles, un troisième bouton texte faisait
+      // wrapper la rangée sur deux lignes. L'en-tête est déjà le porteur
+      // d'actions des cartes (cf. les cartes de résumé) et surplombe
+      // directement le nom ; on ne le pose PAS dans `.mem-content`, qui est en
+      // `word-break: break-word` — un nom long y ferait flotter l'icône à une
+      // position imprévisible. Même glyphe que l'ack (ICON_DOWNLOAD).
+      `<button class="mem-dl" title="Télécharger" onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
+      `</div>` +
       `<div class="mem-content">${escHtml(e.name)}</div>` +
       descriptionLine +
       `<div class="drawer-btns" id="file-btns-${e.id}">` +
@@ -6687,6 +6758,36 @@ async function onRegenerateFileDescription(btn, fileId, spaceId) {
       setFileDescriptionStatus(fileId, status);
     }
   }, true);
+}
+
+// Téléchargement d'un fichier de bibliothèque (lot V). L'entrée listée porte la
+// méta, pas forcément les bytes : `getResource` (IDB) est la source, le cache
+// session n'est qu'un raccourci — même posture que downloadAckResource, dont on
+// réutilise le nommage (`resourceDownloadName`) pour ne pas avoir deux règles
+// de nom de fichier. Pas de vérification de Space ici : l'id vient de la liste
+// déjà scopée par `getResourcesBySpace` (piège 18, herméticité).
+async function onDownloadSpaceFile(btn, fileId) {
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
+    let record = (typeof getCachedRecord === 'function' && getCachedRecord(fileId)) || null;
+    if (!record) { try { record = await getResource(fileId); } catch (e) { record = null; } }
+    if (!record || !record.data) {
+      // Bouton icône : l'indisponibilité passe par la même classe `unavailable`
+      // que l'ack (markAckDlUnavailable) — pas de libellé à réécrire, et un
+      // seul vocabulaire visuel entre les deux surfaces.
+      if (btn) {
+        btn.classList.add('unavailable');
+        btn.title = 'Fichier non disponible';
+      }
+      return;
+    }
+    downloadFile(
+      resourceDownloadName(record.name, record.mime),
+      record.data, record.mime || 'application/octet-stream');
+  } finally {
+    if (btn && !btn.classList.contains('unavailable')) btn.disabled = false;
+  }
 }
 
 function onSpaceFilesUploadClick() {

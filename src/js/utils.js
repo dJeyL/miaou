@@ -79,6 +79,30 @@ function ackIsError(m) {
   return false;
 }
 
+// Prédicat UNIQUE « cet ack désigne-t-il une ressource téléchargeable ? »
+// (lot V). Source de vérité du bouton de téléchargement des acks
+// (`buildToolAck`, ui.js) — ne jamais réécrire une liste de kinds ailleurs.
+// Renvoie une CIBLE typée, pas un id nu : les deux familles ne se résolvent pas
+// par la même clé (`resource_*` par id de ressource IDB, `attachment_recalled`
+// par attId scopé à une conversation — cf. getCachedRecordByAttId), et
+// aplatir les deux dans un seul champ ferait résoudre le mauvais store.
+// `null` quand l'ack ne désigne rien de téléchargeable, ou qu'il lui manque sa
+// clé (ack legacy, champ absent de ACK_COPY_FIELDS à l'époque de l'écriture).
+// Pure, testable en QuickJS.
+function ackDownloadTarget(m) {
+  if (!m) return null;
+  const kind = ackKindOf(m);
+  const name = m.resourceName || '';
+  const mime = m.mime || '';
+  if (kind === 'resource_stored' || kind === 'resource_presented') {
+    return m.id ? { by: 'resource', id: m.id, name, mime } : null;
+  }
+  if (kind === 'attachment_recalled') {
+    return m.attId ? { by: 'attachment', attId: m.attId, convId: m.convId || null, name, mime } : null;
+  }
+  return null;
+}
+
 // Place le caret en fin de contenu d'un élément contenteditable.
 function placeCaretEnd(el) {
   const range = document.createRange();
@@ -396,14 +420,88 @@ function parseCodeFenceInfo(info) {
 // demande au modèle de la fournir, ce suffixe est un filet de sécurité. '' si le
 // nom assaini est vide (fallback à l'appelant : nom générique miaou-snippet.<ext>).
 function sanitizeDownloadName(name, lang) {
-  let n = String(name || '')
+  const n = sanitizeFileStem(name);
+  if (!n) return '';
+  if (hasFileExt(n)) return n;
+  return n + '.' + langExt(lang);
+}
+
+// Coeur d'assainissement, SANS suffixage d'extension — extrait de
+// sanitizeDownloadName (lot V) pour être partagé avec resourceDownloadName, qui
+// dérive son extension d'un mime et non d'un langage. Sépare les deux
+// responsabilités : nettoyer un nom hostile / choisir une extension. Le strip
+// des points de tête vient APRÈS celui des séparateurs, pour que '../x' ne
+// laisse pas de fichier caché. Pure, testable en QuickJS.
+function sanitizeFileStem(name) {
+  return String(name || '')
     .replace(/[\/\\]/g, '_')
     .replace(/[\x00-\x1f\x7f]/g, '')
     .replace(/^\.+/, '')
     .trim();
-  if (!n) return '';
-  if (!/\.[^.\/\\]+$/.test(n)) n += '.' + langExt(lang);
-  return n;
+}
+
+// « Ce nom porte-t-il déjà une extension ? » — prédicat unique, partagé par les
+// deux nommeurs de téléchargement pour qu'ils ne divergent jamais.
+function hasFileExt(n) {
+  return /\.[^.\/\\]+$/.test(String(n || ''));
+}
+
+// Correspondance type MIME → extension de fichier (lot V, téléchargement de
+// ressources). Complément de LANG_TO_EXT, qui part d'un langage de fence : ici
+// la source est le `mime` figé sur le record IDB. Table volontairement courte
+// (les cas courants), avec deux replis génériques avant le défaut :
+// `image/<x>` → `<x>` (couvre png/gif/webp/avif… sans les énumérer) et un
+// suffixe `+xml`/`+json` réduit à sa base. Pure, testable en QuickJS.
+const MIME_TO_EXT = {
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'text/html': 'html',
+  'text/css': 'css',
+  'text/csv': 'csv',
+  'application/json': 'json',
+  'application/javascript': 'js',
+  'text/javascript': 'js',
+  'application/xml': 'xml',
+  'text/xml': 'xml',
+  'application/pdf': 'pdf',
+  'application/zip': 'zip',
+  'image/jpeg': 'jpg',
+  'image/svg+xml': 'svg',
+  'audio/mpeg': 'mp3',
+  'video/mp4': 'mp4',
+};
+
+function mimeExt(mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0].trim();
+  if (!m) return 'bin';
+  if (MIME_TO_EXT[m]) return MIME_TO_EXT[m];
+  const slash = m.indexOf('/');
+  if (slash < 0) return 'bin';
+  let sub = m.slice(slash + 1);
+  const plus = sub.lastIndexOf('+');
+  if (plus > 0) sub = sub.slice(plus + 1);          // application/foo+json → json
+  if (m.slice(0, slash) === 'image') return sub;    // image/webp → webp
+  return MIME_TO_EXT[m.slice(0, slash) + '/' + sub] || sub || 'bin';
+}
+
+// Nom de fichier proposé au téléchargement d'une ressource IDB (lot V). Le nom
+// stocké est d'origine MODÈLE ou OUTIL : il peut être vide, absurde, ou sans
+// extension (contrairement à un attachment utilisateur, qui vient d'un vrai
+// fichier). D'où l'assainissement `sanitizeDownloadName` — mais son extension
+// de repli dérive d'un LANGAGE, hors sujet ici : on la court-circuite en
+// suffixant nous-mêmes depuis le mime AVANT de l'appeler. Repli générique
+// `ressource.<ext>` si le nom est vide ou ne survit pas à l'assainissement.
+// Pure, testable en QuickJS.
+function resourceDownloadName(name, mime) {
+  const ext = mimeExt(mime);
+  // Assainir AVANT de suffixer, jamais l'inverse : sur un nom réduit à des
+  // points ('...'), suffixer d'abord produirait '....csv', que le strip de
+  // points de tête ramène à '.csv' — un fichier CACHÉ, sans nom. Et on passe
+  // par sanitizeFileStem plutôt que sanitizeDownloadName : cette dernière
+  // suffixerait '.txt' (langExt) avant qu'on ait pu placer l'extension du mime.
+  const n = sanitizeFileStem(name);
+  if (!n) return 'ressource.' + ext;
+  return hasFileExt(n) ? n : n + '.' + ext;
 }
 
 // ── Rendu Mermaid (lot E) : helpers purs ─────────────────────────────────────

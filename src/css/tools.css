@@ -176,3 +176,23 @@
   cursor: pointer;
 }
 .tool-block-dl:hover { background: var(--surface-3); border-color: var(--border-2); }
+
+/* Téléchargement de la ressource désignée par un ack (lot V). Bouton icône, pas
+   texte : il coexiste avec `annuler` (.ack-undo, souligné) sur certains acks —
+   deux affordances textuelles côte à côte se liraient comme une seule paire.
+   Teinte de repos alignée sur .ack-undo (--text-3), pleine teinte au survol. */
+.tool-ack .ack-dl {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 0;
+}
+.tool-ack .ack-dl:hover { color: var(--accent); }
+/* Ressource évincée du cache / supprimée : l'ack reste vrai, le bouton devient inerte. */
+.tool-ack .ack-dl.unavailable { opacity: 0.35; cursor: default; }
+.tool-ack .ack-dl.unavailable:hover { color: var(--text-3); }

@@ -226,8 +226,18 @@ il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
 
 **Promotion vers la bibliothèque d'espace (lot Cbis, D2 path 3, écriture
 model-side unique sur la bibliothèque) :**
-- `files__promote(ref, description, name?)` — copie une pièce jointe du tour
-  courant (`ref` = `att-N`) dans la bibliothèque du Space actif. `description`
+- `files__promote(ref, description, name?)` — copie un contenu dans la
+  bibliothèque du Space actif. **Deux familles de `ref` acceptées (lot V)** :
+  `att-N` (pièce jointe du tour courant) et `res_<id>` (ressource de session).
+  La seconde ouvre le **dépôt d'un contenu produit par le modèle** :
+  `resource__create` puis `files__promote` sur le handle renvoyé — le chemin
+  qui manquait pour qu'un CSV/script généré en réponse puisse atterrir dans la
+  bibliothèque sans aller-retour manuel par la machine de l'utilisateur.
+  `file-<id>` est **refusé explicitement** (« déjà dans la bibliothèque »),
+  pas traité en introuvable : aucune question d'herméticité ici, et un refus
+  muet laisserait le modèle croire à une copie. Pour une ressource créée sans
+  nom (défaut `resource`), passer un `name` explicite avec extension — la
+  skill système le prescrit. `description`
   **obligatoire** (le point de la promotion depuis le contexte est que le
   contenu est déjà lu — pas de résumé de ce contenu, une description de ce
   que le fichier EST, cf. `docs/spaces.md`) ; `name` optionnel
@@ -236,12 +246,18 @@ model-side unique sur la bibliothèque) :**
   en fonction PURE `validateFilesPromoteArgs` (tools.js) car un handler async
   renvoie toujours un thenable — même sur un retour anticipé avant tout
   `await` — donc jamais résolu synchrone par `callTool` sous QuickJS ; la
-  validation doit être testée séparément (cf. `tests/test-tools.js`).
+  validation doit être testée séparément (cf. `tests/test-tools.js`). C'est
+  elle qui porte la **décision de famille** (`classifyHandleRef`), le handler
+  ne faisant plus que le lookup.
+  Résolution du record par `resolveHandleRecord` (source de vérité unique
+  handle → record, partagée avec `js__eval` et l'inflation docs), **jamais**
+  un `getCachedRecordByAttId` réécrit sur place : l'herméticité (piège 18)
+  est héritée gratuitement, le cache session étant lui-même le filtre.
   `ref` inconnu/périmé → « Fichier introuvable. » (même posture no-oracle que
   `files__read`). Copie = nouveau record `kind:'library'`, `source =
-  currentConvId` (provenance) ; l'attachment d'origine reste intact (D2
-  semantics). Pousse un ack `file_promote` (informatif, **pas d'undo** —
-  la promotion est déjà consent-gated en amont, un undo confondrait
+  currentConvId` (provenance) ; l'attachment ou la ressource d'origine reste
+  intact (D2 semantics). Pousse un ack `file_promote` (informatif, **pas
+  d'undo** — la promotion est déjà consent-gated en amont, un undo confondrait
   consentement et réversibilité).
 - **Consentement — voie B, PAS de généralisation du halting (décision Cbis-4,
   revient sur l'audit §5 après relecture du mécanisme réel).** `files__promote`
@@ -258,6 +274,11 @@ model-side unique sur la bibliothèque) :**
   (tools.js, toujours partie inconditionnelle de `ROOT_SYSTEM_PROMPT`, comme
   `MEMORY_DOCTRINE`) ne garde plus qu'un pointeur court vers
   `miaou__skills__read('files-promote')`.
+  **Consentement conditionnel (lot V)** : le gate ne couvre que les promotions
+  dont le modèle prend l'initiative. Si l'utilisateur vient de demander le
+  dépôt explicitement, la demande vaut consentement et le modèle appelle
+  directement `files__promote` — la skill système distingue les deux cas.
+  Voir `docs/spaces.md`.
   Pourquoi la voie A (généraliser `toolIsHalting`, `files__promote` lui-même
   halting-puis-exécutant) a été écartée : elle aurait introduit un patron
   inédit — aucun outil existant ne s'auto-rappelle en mode
@@ -496,6 +517,58 @@ conversation sous forme de lien cliquable (`.ack-conv-link`, `onclick =>
 openConversation(m.convId)`), donc `convId` doit être renseigné par le
 handler (`conv__get`, tools.js) et préservé dans toutes les whitelists
 de champs (voir avertissement ci-dessus).
+
+### Téléchargement de la ressource désignée par un ack (lot V)
+
+Trois kinds d'ack désignent un fichier récupérable : `resource_stored`,
+`resource_presented`, `attachment_recalled`. Chacun porte un bouton icône
+`.ack-dl` placé après le label et avant `undo` (c'est une action sur la **cible**
+de l'ack, pas sur l'ack).
+
+**Prédicat unique : `ackDownloadTarget(m)`** (utils.js, pur, testé). Seule source
+de vérité de « cet ack désigne-t-il une ressource téléchargeable ? » — ne jamais
+réécrire une liste de kinds ailleurs. Il renvoie une **cible typée**, pas un id
+nu, parce que les deux familles ne se résolvent pas par la même clé :
+
+| `by` | clé | résolution |
+|---|---|---|
+| `'resource'` | `id` | cache session, **puis** `getResource` (IDB) |
+| `'attachment'` | `attId` + `convId` | `getCachedRecordByAttId` — cache session **seul** |
+
+L'asymétrie est structurelle : il n'existe pas d'accès IDB indexé par `attId`.
+Le cache étant peuplé par `loadConversationResources` à l'ouverture de la
+conversation, le cas nominal est couvert ; sinon dégradation gracieuse
+(`markAckDlUnavailable` : bouton inerte, jamais retiré du DOM — l'ack reste vrai,
+la ressource *a* été enregistrée).
+
+**Pourquoi sur l'ack et pas seulement sur le bloc.** Les blocs rendus sous un ack
+portaient déjà des affordances de téléchargement (`renderBinaryBlock`, le chrome
+de `decoratePre`, la lightbox), mais seulement **quand un bloc est rendu** — ce
+qui laissait trois trous : `resource_stored` de classe `inline` (aucun bloc),
+`resource_stored` binaire en live (bloc délégué à `placeToolBlocks`), et
+`attachment_recalled` non-image. Cas le plus visible : un CSV produit par un
+outil part en `store_inline_from_bytes`, dont le bloc est **délibérément retiré**
+de la file d'affichage (`retainPendingToolBlocks`, resources.js — on ne veut pas
+afficher un blob destiné à `js__eval`). L'ack était alors le seul témoin, sans
+aucun moyen de récupérer le fichier. Le bouton sur la ligne d'ack comble ce trou
+sans revenir sur cette décision.
+
+**Nommage : `resourceDownloadName(name, mime)`** (utils.js, pur, testé). Le nom
+d'une ressource est d'origine **modèle ou outil** — potentiellement vide, absurde
+ou sans extension, contrairement à un attachment utilisateur issu d'un vrai
+fichier. D'où une extension dérivée du **mime** (`mimeExt`, table `MIME_TO_EXT` +
+replis génériques `image/<x>` et `+xml`/`+json`), et non d'un langage de fence
+comme `sanitizeDownloadName`/`langExt`. Les deux nommeurs partagent désormais
+`sanitizeFileStem` (assainissement sans suffixage) et `hasFileExt` : l'ordre
+compte, assainir **avant** de suffixer — sur un nom réduit à des points (`'...'`),
+suffixer d'abord produit `'....csv'`, que le strip de points de tête ramène à
+`'.csv'`, un fichier caché. Limite assumée : on suit le mime déclaré, donc un CSV
+annoncé `text/plain` par le modèle se télécharge en `.txt` (le nom du record
+prime s'il porte déjà l'extension).
+
+**Absent des exports** (piège 21) : un HTML standalone n'a ni IDB ni globals
+MIAOU. Le bouton est construit dans `buildToolAck` (chemin DOM live) uniquement ;
+`formatToolAcksHtml` est inchangée.
 
 ### Échecs d'outils : `tool_failed` et `toolFail()`
 

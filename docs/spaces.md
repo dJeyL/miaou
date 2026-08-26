@@ -220,7 +220,23 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
      `promoteAttachmentToLibrary`, ui.js) — copie immédiate, pas de gate (déjà
      une action utilisateur explicite), l'attachment d'origine reste intact.
   3. **Promotion modèle** via l'outil `miaou__files__promote(ref, description,
-     name?)` — **consent-gated en amont**, voie B (voir ci-dessous).
+     name?)` — **consent-gated en amont**, voie B (voir ci-dessous). Depuis le
+     lot V, `ref` accepte **deux familles de handle** : `att-N` (pièce jointe du
+     tour courant) et `res_<id>` (ressource de session). Cette seconde famille
+     ouvre le **dépôt d'un contenu produit par le modèle lui-même** :
+     `resource__create` puis `files__promote` sur le handle renvoyé. Avant, un
+     contenu généré en réponse (un CSV, un script) n'avait **aucun** chemin vers
+     la bibliothèque — le modèle ne pouvait que proposer à l'utilisateur de le
+     copier, l'enregistrer sur sa machine, puis le rejoindre. `file-<id>` est
+     **refusé explicitement** (déjà dans la bibliothèque) plutôt que traité en
+     « introuvable » : ce n'est pas une question d'herméticité, et le silence
+     laisserait le modèle croire à une copie effectuée.
+     La résolution passe par `resolveHandleRecord` (tools.js, source de vérité
+     unique handle → record, partagée avec `js__eval` et le chemin d'inflation
+     docs), **pas** par un `getCachedRecordByAttId` direct : l'herméticité
+     (piège 18) est héritée gratuitement — le cache session EST le filtre,
+     aucun scope réécrit dans le handler. La décision de famille vit dans
+     `validateFilesPromoteArgs` (pure, testée QuickJS).
 - **Accès modèle (lecture)** : `miaou__files__list` / `miaou__files__read`,
   read-only, scopés au Space actif (`getCachedLibraryEntriesBySpace`), même
   posture no-oracle que `conv__get` sur id étranger/inconnu. Lecture
@@ -250,12 +266,22 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   sur la discipline du modèle, pas sur un verrou technique côté handler —
   exactement le même modèle de confiance que pour `memory__create` sur le
   chemin inféré, pas une régression de posture.
+  **Consentement conditionnel (lot V, décision Julien 2026-08-26)** : le gate
+  ne s'applique qu'aux promotions dont le modèle prend l'**initiative**. Quand
+  l'utilisateur vient de demander explicitement le dépôt (« ajoute ça à la
+  bibliothèque »), la demande EST le consentement et le modèle appelle
+  directement `files__promote` — repasser par `ask_confirmation` reviendrait à
+  redemander à l'utilisateur s'il veut ce qu'il vient de demander. La
+  distinction est portée par la skill système `files-promote` (deux cas
+  explicites), pas par le handler : même posture doctrinale que le reste du
+  gate.
 - **Suppression** : cascade de suppression de Space purge aussi ses fichiers
   (`getResourcesBySpace` + `deleteResource` par entrée) ; suppression d'une
   conversation ne touche jamais les fichiers d'espace, y compris ceux promus
   depuis elle (copiés, provenance informationnelle via `source`).
 - **Non-goals v1 (bibliothèque)** : pas de suppression/mise à jour de fichier
-  par le modèle (seule la promotion est un write model-side), pas de partage
+  par le modèle (les deux écritures model-side sont la promotion d'une pièce
+  jointe et le dépôt d'une ressource, cf. lot V), pas de partage
   inter-Space, pas de versioning/dédup/dossiers/tags/renommage, pas de
   pagination de `files__list`.
 
@@ -327,6 +353,25 @@ aide à la décision de lecture).
   pendant le calcul, puis contenu (`done`) ou retour à l'état neutre avec
   bouton « Générer une description » (`failed`) — pas de message d'erreur
   intrusif, cohérent avec la posture « dégradé, jamais bloquant ».
+
+- **Téléchargement** (`onDownloadSpaceFile`, ui.js, lot V) : **glyphe**
+  (`.mem-dl`, `ICON_DOWNLOAD`) dans l'**en-tête** de carte, pas un bouton texte
+  dans la rangée. La colonne latérale n'offre que ~210 px utiles : un troisième
+  bouton texte faisait wrapper la rangée (mesuré). L'en-tête est déjà le porteur
+  d'actions des cartes (cf. cartes de résumé) et surplombe directement le nom ;
+  ne PAS le poser dans `.mem-content`, en `word-break: break-word` — un nom long
+  y ferait flotter l'icône à une position imprévisible. Même glyphe et même
+  classe d'état `unavailable` que `.ack-dl` : un seul vocabulaire visuel entre
+  les deux surfaces de téléchargement. À noter : la carte **sans** description
+  wrappe toujours (« Générer une description » ~148 px + « Supprimer » ~76 px),
+  ce qui était déjà le cas avant ce lot — sans rapport avec le glyphe.
+  Les bytes ne sont pas dans
+  l'entrée listée — `getResource` (IDB) est la source, le cache session n'étant
+  qu'un raccourci ; même posture et même nommage (`resourceDownloadName`) que le
+  téléchargement depuis un ack (cf. `docs/tools.md`), pour qu'il n'existe pas
+  deux règles de nom de fichier. Aucune vérification de Space au clic : l'id
+  vient d'une liste déjà scopée par `getResourcesBySpace` (piège 18).
+  Indisponibilité → le bouton passe à « Indisponible » et reste inerte.
 
 ## Non-goals v1
 

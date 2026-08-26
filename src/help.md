@@ -91,9 +91,15 @@ chaque fois.
 
 Chaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de
 l'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter
-à la demande, étanches comme le reste de l'Espace. Tu l'alimentes de trois
-façons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée, ou
-proposition du modèle lui-même (toujours confirmée par toi avant écriture).
+à la demande, étanches comme le reste de l'Espace. Tu l'alimentes de quatre
+façons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée,
+proposition du modèle lui-même, ou dépôt par le modèle d'un fichier qu'il vient
+de produire — demande-lui d'enregistrer dans la bibliothèque un CSV, un script
+ou un document qu'il a généré, et il le fera sans que tu aies à le récupérer
+puis le rejoindre à la main. Quand c'est lui qui en prend l'initiative, il te
+demande confirmation avant d'écrire ; quand c'est toi qui le demandes, il
+s'exécute directement. Chaque fichier de la liste porte une **icône de
+téléchargement** en haut à droite de sa carte, pour le récupérer sur ta machine.
 
 Supprimer un Espace supprime en cascade ses conversations, ses fichiers et ses
 souvenirs propres (double confirmation) ; les souvenirs de profil, valables
@@ -419,6 +425,12 @@ Quelques repères pour te déplacer dans MIAOU :
   recherche, outils distants…) pour une même réponse, elles s'affichent en
   mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et
   se replier à nouveau.
+- **Récupérer un fichier produit par un outil** : chaque trace d'outil qui porte
+  sur un fichier — « Ressource enregistrée », « Ressource présentée », « Pièce
+  jointe rappelée » — a une icône de téléchargement à son extrémité. Ça vaut
+  aussi pour les fichiers qui ne s'affichent pas dans la conversation (un CSV,
+  un JSON produit pour un calcul) : la trace est parfois le seul endroit d'où
+  les récupérer. Si le fichier n'est plus disponible, l'icône devient inerte.
 - **Animations** : un réglage dans les Paramètres
   (Normales / Réduites / Suivre le système) coupe toutes les transitions et
   animations visuelles de l'interface — utile en cas de gêne au mouvement ou de
