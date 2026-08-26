@@ -481,12 +481,23 @@ et le déménagement se fait tout seul au premier démarrage — il n'y a rien �
 faire, et rien ne se perd.
 
 Pour savoir ce que tout cela pèse : **Réglages › Données** affiche l'espace
-occupé — le total mesuré par le navigateur, la part du quota qu'il représente,
-et une ventilation par catégorie (conversations, résumés, fichiers, skills,
-réglages). Le détail est un peu inférieur au total : le navigateur compte aussi
-ses index et sa propre surcharge. Pour aller voir dans le menu du navigateur :
-outils de développement, onglet « Application » (Chrome) ou « Stockage »
-(Firefox).
+occupé, la part du quota qu'il représente, et une ventilation par catégorie
+(conversations, résumés, fichiers, skills, réglages). Le chiffre est mesuré par
+MIAOU en pesant ses propres données ; l'occupation réelle de l'origine est
+légèrement supérieure, le navigateur ajoutant ses index et sa propre surcharge.
+Pour aller voir dans le menu du navigateur : outils de développement, onglet
+« Application » (Chrome) ou « Stockage » (Firefox).
+
+Il existe une seconde façon de perdre ces données, plus rare que l'effacement
+manuel. Par défaut le navigateur range le stockage d'un site en mode
+« best-effort » : il le conserve normalement, mais s'autorise à le supprimer
+sous forte pression disque, sans prévenir. Le mode « persistant », lui, met le
+site à l'abri de ce ménage automatique. MIAOU demande ce mode dès qu'il écrit un
+fichier, et c'est le navigateur qui tranche selon ses propres critères —
+généralement favorables à un site visité régulièrement, installé comme
+application ou mis en favori. Le risque reste faible, et sans commune mesure
+avec celui d'un effacement des données de site ; l'export reste la seule vraie
+sauvegarde.
 
 Conséquences pratiques :
 

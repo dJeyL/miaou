@@ -1417,16 +1417,24 @@ function validateImportPayload(obj) {
 }
 
 // ── État des lieux du stockage (drawer Paramètres › Données) ─────────────────
-// Deux chiffres de nature différente, volontairement affichés ensemble :
+// L'occupation affichée est MESURÉE par MIAOU (somme exacte, ventilable par
+// catégorie), pas lue dans `navigator.storage.estimate()`. De cette API on ne
+// garde QUE `quota`.
 //
-//   1. `navigator.storage.estimate()` — total occupé par l'ORIGINE (IDB +
-//      localStorage + caches + overhead moteur) et quota accordé. C'est le
-//      chiffre qui compte pour « suis-je près de la limite ? », mais il est
-//      arrondi/anonymisé par le navigateur et n'est pas ventilable.
-//   2. Une mesure interne, exacte et ventilée par catégorie, obtenue en
-//      pesant les données MIAOU elles-mêmes. Elle est nécessairement PLUS
-//      BASSE que (1) : elle ignore index, overhead de sérialisation et
-//      fragmentation. L'écart est normal, ne pas chercher à le réconcilier.
+// 🚨 Ne pas « rétablir » estimate().usage comme chiffre principal : c'est une
+// régression déjà payée (2026-08-26). Cette valeur est délibérément quantifiée
+// par le navigateur (anti-fingerprinting) et, sur un stockage best-effort, elle
+// plafonne : mesuré sur une base réelle de 44,2 Mo, `usage` annonçait 30,4 Mo,
+// et l'écriture d'une sonde d'1 Mo ne la faisait pas bouger (delta 0,0 Mo).
+// Affichée comme total au-dessus d'un détail exact, elle produisait un rapport
+// visiblement incohérent (détail > total). Le sens de l'écart avait d'ailleurs
+// été supposé à l'envers : c'est le chiffre du navigateur qui est approximatif,
+// la somme interne qui est exacte.
+//
+// Corollaire : le pourcentage se calcule sur la mesure interne rapportée au
+// quota. Il minore légèrement l'occupation réelle de l'origine (index, overhead
+// de sérialisation, caches hors MIAOU ne sont pas comptés) — assumé, et sans
+// commune mesure avec l'erreur d'estimate().
 //
 // Coût : la mesure interne relit conversations, résumés et ressources. Le
 // parcours des ressources se fait au CURSEUR (un record à la fois, GC-able)
@@ -1466,11 +1474,9 @@ function sumRecordBytes(records) {
   return n;
 }
 
-// Assemble le rapport final à partir des mesures brutes. Pure : c'est elle qui
-// porte la règle « le détail ne doit jamais prétendre dépasser le total
-// rapporté par le navigateur » (on garde les deux chiffres tels quels, mais on
-// expose l'information de façon à ce que l'UI n'ait aucune arithmétique à
-// faire).
+// Assemble le rapport final à partir des mesures brutes. Pure : toute
+// l'arithmétique à risque est ici, donc testable. `estimate` n'est consulté que
+// pour son `quota` — cf. la note en tête de section sur le rejet de son `usage`.
 function buildStorageReport(parts, estimate) {
   const detail = {
     settings: parts.settings || 0,
@@ -1481,16 +1487,16 @@ function buildStorageReport(parts, estimate) {
   };
   let total = 0;
   for (const k of Object.keys(detail)) total += detail[k];
-  const usage = (estimate && typeof estimate.usage === 'number') ? estimate.usage : null;
   const quota = (estimate && typeof estimate.quota === 'number') ? estimate.quota : null;
   return {
     detail: detail,
     measured: total,
-    usage: usage,
     quota: quota,
-    // Pourcentage du quota consommé, arrondi à l'entier. null si le navigateur
-    // ne fournit pas l'estimation (Safari ancien, contexte non sécurisé).
-    percent: (usage != null && quota) ? Math.round((usage / quota) * 100) : null,
+    // Part du quota occupée par les données MIAOU, arrondie à l'entier. Assise
+    // sur `measured` (exact), jamais sur estimate().usage. null si le
+    // navigateur ne fournit pas de quota (Safari ancien, contexte non sécurisé)
+    // ou s'il est nul — pas de division par zéro.
+    percent: quota ? Math.round((total / quota) * 100) : null,
   };
 }
 
@@ -1555,6 +1561,8 @@ async function collectStorageReport() {
   try { summaries = sumRecordBytes(await readAllSummariesFromDB()); } catch (e) {}
   try { resources = await measureResourcesBytes(); } catch (e) {}
   try { skills = await measureSkillsBytes(); } catch (e) {}
+  // Appelé pour son `quota` UNIQUEMENT (son `usage` est écarté, cf. la note en
+  // tête de section) : l'appel n'est donc pas superflu, ne pas le retirer.
   let estimate = null;
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
     try { estimate = await navigator.storage.estimate(); } catch (e) {}

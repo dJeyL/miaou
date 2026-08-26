@@ -695,27 +695,59 @@ une pesée de ce qui est occupé. Une entrée de renvoi le signale aussi depuis 
 catégorie **Mémoire** (c'est de là que la demande est partie), sans dupliquer
 les chiffres — un seul point d'affichage.
 
-### Deux chiffres de nature différente
+### Un seul chiffre d'occupation : la mesure interne
 
-Le bloc affiche volontairement les deux, et ils ne coïncident pas :
+L'occupation affichée est **mesurée par MIAOU** (somme exacte, ventilable par
+catégorie). De `navigator.storage.estimate()` on ne retient que **`quota`**.
 
-1. **`navigator.storage.estimate()`** — total occupé par l'origine (IndexedDB +
-   localStorage + caches + surcharge du moteur) et quota accordé. C'est le
-   chiffre qui répond à « suis-je près de la limite ? », mais il est
-   arrondi/anonymisé par le navigateur et ne se ventile pas.
-2. **Une mesure interne**, exacte et ventilée par catégorie, obtenue en pesant
-   les données MIAOU elles-mêmes.
+🚨 **Ne pas rétablir `estimate().usage` comme chiffre principal** — régression
+payée le 2026-08-26. La première version affichait `usage` en ligne principale
+au-dessus du détail mesuré, en documentant que le détail serait « nécessairement
+plus bas » (index, sérialisation, fragmentation). **C'était faux, et dans les
+deux sens** : c'est le chiffre du navigateur qui est approximatif, la somme
+interne qui est exacte. Constaté sur deux bases réelles — 44,2 Mo mesurés
+affichés sous un total de 30,4 Mo, et 179 Mo sous 34 Mo : un rapport dont le
+détail dépasse visiblement le total.
 
-La seconde est nécessairement **plus basse** que la première : elle ignore les
-index, la surcharge de sérialisation et la fragmentation. **L'écart est
-structurel, ne pas chercher à le réconcilier** — c'est précisément pourquoi
-l'UI présente le total du navigateur en ligne principale et la ventilation
-comme un détail approché, plutôt que d'afficher une somme qui prétendrait être
-le total.
+Diagnostic (sonde d'1 Mo écrite puis relue) :
 
-Si `estimate()` est indisponible (navigateur ancien, contexte non sécurisé), la
-ligne principale retombe sur `measured` en le disant ; `usage`/`quota`/`percent`
-valent alors `null` et l'UI ne fait aucune arithmétique dessus.
+| Mesure | Valeur |
+| --- | --- |
+| `size` déclaré (somme) | 44,2 Mo |
+| octets `data` réellement présents | 44,2 Mo |
+| records sans `data` / `size` ≠ réel | 0 / 0 |
+| `estimate().usage` | 30,4 Mo |
+| `usage` après écriture de +1 Mo | **delta 0,0 Mo** |
+| `navigator.storage.persisted()` | `false` |
+
+`size` est donc fiable (et il n'y avait **aucun record orphelin**) : c'est
+`usage` qui plafonne. Cette valeur est délibérément **quantifiée** par le
+navigateur (anti-fingerprinting) et l'est davantage sur un stockage
+*best-effort*. Un chiffre qui ne bouge pas d'un octet après l'écriture d'1 Mo ne
+mesure pas ce qu'on croit.
+
+Corollaire : `percent` se calcule sur `measured` rapporté à `quota`. Il minore
+légèrement l'occupation réelle de l'origine (index, surcharge de sérialisation,
+caches hors MIAOU non comptés) — assumé, et sans commune mesure avec l'erreur
+d'`usage`.
+
+Si `estimate()` est indisponible (navigateur ancien, contexte non sécurisé),
+`quota` et `percent` valent `null` et la ligne principale affiche `measured`
+seul. `collectStorageReport` continue d'appeler `estimate()` **pour son quota** :
+l'appel n'est pas superflu, ne pas le retirer.
+
+### Éviction best-effort
+
+`navigator.storage.persisted()` vaut `false` en usage réel : le stockage est en
+mode *best-effort*, que le navigateur s'autorise à évincer sous pression disque.
+`requestPersistence()` (resources.js) demande le mode persistant à chaque
+écriture de ressource ; l'octroi dépend de critères propres au navigateur
+(engagement utilisateur, installation PWA, favori) et le refus est silencieux.
+
+Décision : **rien dans l'UI**, une phrase dans `src/help.md` (topic `donnees`).
+L'utilisateur n'a pas de levier direct dessus, le risque est faible, et une
+ligne d'état dans le rapport inquiéterait sans action possible. Ne pas
+transformer ce constat en alerte visuelle sans nouvelle décision.
 
 ### Découpage des fonctions (storage.js)
 
@@ -724,7 +756,7 @@ valent alors `null` et l'UI ne fait aucune arithmétique dessus.
 | `utf8ByteLength(str)` | pure | Poids en octets **UTF-8** (pas UTF-16) — cohérent avec la façon dont IDB et le navigateur comptent. Gère les paires de substitution (un emoji hors BMP = 4 octets, pas 6). |
 | `recordByteLength(rec)` | pure | Poids JSON d'un enregistrement structuré. Approximation du *structured clone* d'IDB, pas une mesure exacte. Rend `0` plutôt que de lever (structure circulaire). |
 | `sumRecordBytes(records)` | pure | Somme sur un lot. |
-| `buildStorageReport(parts, estimate)` | pure | Assemble le rapport final (`detail`, `measured`, `usage`, `quota`, `percent`). Toute l'arithmétique à risque est ici, donc testée. |
+| `buildStorageReport(parts, estimate)` | pure | Assemble le rapport final (`detail`, `measured`, `quota`, `percent`). Ne lit d'`estimate` que son `quota`. Toute l'arithmétique à risque est ici, donc testée. |
 | `measureLocalStorageBytes()` | impure | Somme des clefs `miaou-*` (clef **et** valeur pèsent), **hors** `CONV_KEY`/`SUMMARIES_KEY` — reliquats non purgés de l'avant-lot U, à ne pas compter deux fois. |
 | `measureResourcesBytes()` | impure | Store `resources`, **au curseur**. |
 | `measureSkillsBytes()` | impure | Store `skills`, via `getAll` (volume borné). |

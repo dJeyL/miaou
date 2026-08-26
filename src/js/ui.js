@@ -4138,11 +4138,11 @@ function updateSettingsDirty() {
 }
 
 // ── État des lieux du stockage (drawer Paramètres › Données) ────────────────
-// Rendu du rapport produit par collectStorageReport(). Deux lignes de nature
-// distincte : le total rapporté par le navigateur (celui qui compte face au
-// quota) et la ventilation interne, explicitement présentée comme un détail
-// approché — l'écart entre les deux est structurel (index, overhead), pas un
-// bug à réconcilier. Tout est du texte construit ici, jamais d'origine modèle.
+// Rendu du rapport produit par collectStorageReport(). Le chiffre principal est
+// la somme MESURÉE par MIAOU (exacte), rapportée au quota du navigateur ;
+// estimate().usage n'est pas utilisé (cf. la note en tête de la section « État
+// des lieux du stockage », storage.js). Tout est du texte construit ici, jamais
+// d'origine modèle.
 const STORAGE_REPORT_LABELS = {
   conversations: 'Conversations',
   summaries: 'Résumés',
@@ -4155,18 +4155,11 @@ function renderStorageReport(report) {
   const totalEl = $('storage-report-total');
   const detailEl = $('storage-report-detail');
   if (!totalEl || !detailEl) return;
-  if (report.usage != null) {
-    totalEl.innerHTML = 'Environ <strong>' + escHtml(humanSize(report.usage)) + '</strong> utilisés' +
-      (report.quota
-        ? ' <span class="storage-quota">sur ' + escHtml(humanSize(report.quota)) +
-          ' disponibles' + (report.percent != null ? ' (' + report.percent + '\u00a0%)' : '') + '</span>'
-        : '');
-  } else {
-    // Estimation indisponible (navigateur ancien, contexte non sécurisé) : on
-    // retombe sur la mesure interne, en le disant.
-    totalEl.innerHTML = 'Environ <strong>' + escHtml(humanSize(report.measured)) +
-      '</strong> de données MIAOU <span class="storage-quota">(quota du navigateur inconnu)</span>';
-  }
+  totalEl.innerHTML = '<strong>' + escHtml(humanSize(report.measured)) + '</strong> utilisés' +
+    (report.quota
+      ? ' <span class="storage-quota">sur ' + escHtml(humanSize(report.quota)) +
+        ' disponibles' + (report.percent != null ? ' (' + report.percent + '\u00a0%)' : '') + '</span>'
+      : '');
   let html = '';
   for (const key of Object.keys(STORAGE_REPORT_LABELS)) {
     const bytes = report.detail[key] || 0;

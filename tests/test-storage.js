@@ -1281,21 +1281,30 @@ describe('buildStorageReport', function() {
       { settings: 100, conversations: 200, summaries: 50, resources: 400, skills: 250 },
       { usage: 2000, quota: 10000 });
     expect(r.measured).toBe(1000);
-    expect(r.usage).toBe(2000);
     expect(r.quota).toBe(10000);
-    expect(r.percent).toBe(20);
+    // 1000/10000 : le pourcentage est assis sur la MESURE, pas sur usage
+    // (qui vaudrait 20 % ici) — cf. régression du 2026-08-26.
+    expect(r.percent).toBe(10);
   });
-  it('rend usage/quota/percent à null quand estimate() est indisponible', function() {
-    // Navigateur sans navigator.storage.estimate : l'UI doit pouvoir retomber
-    // sur `measured` sans arithmétique sur du null.
+  it('ignore estimate().usage, y compris quand il contredit la mesure', function() {
+    // Cas réel observé : usage plafonné à 30,4 Mo pour 44,2 Mo réellement
+    // stockés. Le rapport doit rendre la mesure, jamais l'estimation basse —
+    // sinon le détail dépasse le total affiché.
+    var r = buildStorageReport({ resources: 44200000 }, { usage: 30400000, quota: 100000000 });
+    expect(r.measured).toBe(44200000);
+    expect(r.percent).toBe(44);
+    expect(r.usage === undefined).toBe(true);
+  });
+  it('rend quota/percent à null quand estimate() est indisponible', function() {
+    // Navigateur sans navigator.storage.estimate : `measured` reste exploitable
+    // seul, sans arithmétique sur du null.
     var r = buildStorageReport({ conversations: 42 }, null);
     expect(r.measured).toBe(42);
-    expect(r.usage).toBe(null);
     expect(r.quota).toBe(null);
     expect(r.percent).toBe(null);
   });
   it('pas de division par zéro si le quota est nul', function() {
-    var r = buildStorageReport({}, { usage: 5, quota: 0 });
+    var r = buildStorageReport({ conversations: 5 }, { usage: 5, quota: 0 });
     expect(r.percent).toBe(null);
   });
   it('normalise les catégories absentes à 0', function() {
