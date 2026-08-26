@@ -4691,28 +4691,32 @@ function switchMemoryTab(tab) {
   else renderMemoryList();
 }
 
+// Scopée au Space actif (piège 18) : la liste raconte la MÊME histoire que
+// l'injection, qui filtre déjà par `spaceConvIds` (searchSummaries, api.js).
+// Afficher un résumé d'un autre Space ferait miroiter une entrée qui n'entrera
+// jamais dans le contexte et dont la conversation n'est pas atteignable d'ici.
+// Corollaire : le Space de chaque entrée n'a plus à être affiché (il est
+// constant), et « Ouvrir » peut appeler `selectConv` sans `followSpace`.
 function renderSummaryList() {
   const wrap = $('summary-list');
   wrap.innerHTML = '';
   const all = loadSummaries();
-  const ids = Object.keys(all);
+  const convs = loadConversations();
+  const idsInSpace = spaceConvIds(activeSpaceId, convs);
+  const ids = Object.keys(all).filter(id => idsInSpace.has(id));
   if (!ids.length) {
     wrap.innerHTML = '<div class="mem-empty">Aucun résumé pour l\'instant.</div>';
     return;
   }
   ids.sort((a, b) => (all[b].timestamp || 0) - (all[a].timestamp || 0));
-  const convs = loadConversations();
   for (const id of ids) {
     const e = all[id];
     const item = document.createElement('div');
     item.dataset.id = id;
     const date = e.timestamp ? new Date(e.timestamp).toLocaleDateString('fr-FR') : '';
-    const conv = convs.find(c => c.id === id);
-    const space = getSpace(conv ? (conv.spaceId || DEFAULT_SPACE_ID) : DEFAULT_SPACE_ID);
-    const spaceLabel = space ? space.name : '';
     if (e.suppressed) {
       item.className = 'mem-item suppressed';
-      const sub = ['supprimé', date, spaceLabel].filter(Boolean).join(' · ');
+      const sub = ['supprimé', date].filter(Boolean).join(' · ');
       item.innerHTML =
         `<div class="mem-header"><div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Souvenir supprimé')}</div>` +
         `<div class="mem-sub">${escHtml(sub)}</div></div>` +
@@ -4723,13 +4727,14 @@ function renderSummaryList() {
       const kws = Array.isArray(e.keywords) && e.keywords.length
         ? `<div class="mem-keywords"><strong>Mots-clefs</strong> — ${escHtml(e.keywords.join(', '))}</div>`
         : '';
-      const sub = [date, spaceLabel].filter(Boolean).join(' · ');
+      const sub = date;
       item.className = 'mem-item';
       item.onclick = () => toggleSummaryExpand(id);
       item.innerHTML =
         `<div class="mem-header">` +
         `<div class="mem-meta"><div class="mem-title">${escHtml(e.title || 'Nouvelle conversation')}</div>` +
         `<div class="mem-sub">${escHtml(sub)}</div></div>` +
+        `<button class="drawer-btn" onclick="event.stopPropagation();openSummaryConv('${id}')">Ouvrir</button>` +
         `<button class="drawer-btn danger" onclick="event.stopPropagation();deleteSummaryItem('${id}')">Supprimer</button>` +
         `</div>` +
         `<div class="mem-excerpt">${escHtml(extrait)}${full.length > 150 ? '…' : ''}</div>` +
@@ -4740,6 +4745,16 @@ function renderSummaryList() {
 }
 
 function deleteSummaryItem(id) { suppressSummary(id); renderSummaryList(); }
+
+// Ouvre la conversation d'un résumé depuis le drawer. La liste étant scopée au
+// Space actif, la conversation y est par construction : pas de `followSpace`.
+// Ne ferme AUCUN drawer (décision Julien) : ce drawer s'empile volontiers sur
+// Paramètres (`_drawerStack`), donc n'en fermer qu'un déboucherait sur celui du
+// dessous — le fil resterait masqué. C'est tout ou rien ; on choisit rien, et
+// l'utilisateur ferme au backdrop ou à Escape quand il veut voir la conversation.
+function openSummaryConv(id) {
+  selectConv(id, true);
+}
 
 function toggleSummaryExpand(id) {
   const list = $('summary-list');

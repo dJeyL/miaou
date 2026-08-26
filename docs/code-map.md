@@ -913,169 +913,170 @@
   - `closeContextInspector()` — L4609
   - `renderContextInspector()` — L4614
   - `switchMemoryTab()` — L4682
-  - `renderSummaryList()` — L4694
-  - `deleteSummaryItem()` — L4742
-  - `toggleSummaryExpand()` — L4744
-  - `restoreSummaryItem()` — L4755
-- **Panneau des outils** (L4787)
-  - `openTools()` — L4788
-  - `closeTools()` — L4793
-  - `renderToolsList()` — L4802
-  - `buildToolItem()` — L4874
-- **Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5)** (L4906)
-  - `syncSpaceUI()` — L4914
-  - `applyActivityBadge()` — L4931
-  - `activityBadgeEl()` — L4943
-  - `syncAgentCount()` — L4965
-  - `syncActivityBadges()` — L4974
-- **Onglets sidebar « Conversations / Fichiers / Souvenirs » (remplace le** (L5007)
-  - `_spaceTab` — L5013
-  - `selectSpaceTab()` — L5015
-  - `resetSpaceTab()` — L5032
-  - `toggleSpaceMenu()` — L5036
-  - `fitSpaceMenuHeight()` — L5050
-  - `renderSpaceMenu()` — L5061
-  - `pickSpace()` — L5122
-  - `followSpace()` — L5154
-  - `_spaceDraftId` — L5182
-  - `createSpaceAndOpen()` — L5184
-  - `_spaceDraftPrevSpaceId` — L5199
-  - `discardSpaceDraftIfAny()` — L5205
-- **Écran Space (sous-drawer, pattern MCP)** (L5217)
-  - `_spaceScreenId` — L5218
-  - `openSpaceScreen()` — L5220
-  - `closeSpaceScreen()` — L5242
-  - `onSpaceFormInput()` — L5249
-  - `onSaveSpaceScreen()` — L5254
-  - `spaceDeleteLabel()` — L5279
-  - `syncSpaceDeleteLabel()` — L5291
-  - `onDeleteSpaceScreen()` — L5302
-- **Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3)** (L5334)
-  - `openMcpServers()` — L5335
-  - `closeMcpServers()` — L5340
-  - `renderApiServersIfOpen()` — L5346
-  - `renderMcpServersIfOpen()` — L5350
-  - `isSkillsDrawerOpen()` — L5356
-  - `renderMcpServers()` — L5361
-  - `addMcpServerCard()` — L5378
-- **Helpers partagés des cartes de configuration (MCP / API / skills)** (L5389)
-  - `showCardError()` — L5395
-  - `cfgField()` — L5400
-  - `cfgToggle()` — L5417
-  - `cfgToggleRow()` — L5431
-  - `cfgErrEl()` — L5443
-  - `cfgPillSelect()` — L5457
-  - `buildMcpCard()` — L5504
-- **SECTION VUE** (L5509)
-- **SECTION ÉDITION** (L5568)
-- **Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP)** (L5641)
-  - `openApiServers()` — L5644
-  - `closeApiServers()` — L5649
-  - `syncActiveApiServerUI()` — L5656
-  - `renderApiServers()` — L5682
-  - `addApiServerCard()` — L5698
-  - `buildApiCard()` — L5706
-- **SECTION VUE** (L5711)
-- **SECTION ÉDITION** (L5764)
-- **Skills : drawer de gestion** (L5852)
-- **Import de fichier .md dans le drawer skills : drag&drop + paste Finder** (L5853)
-  - `isMarkdownFile()` — L5858
-  - `onSkillsDragOver()` — L5863
-  - `onSkillsDragLeave()` — L5868
-  - `onSkillsDrop()` — L5872
-  - `onSkillsDrawerPaste()` — L5885
-  - `openSkills()` — L5899
-  - `closeSkills()` — L5904
-  - `syncSkillHintUI()` — L5911
-  - `syncPaletteHintUI()` — L5918
-  - `renderSkills()` — L5925
-  - `buildSystemSkillCard()` — L5958
-  - `toggleSystemSkillContent()` — L6018
-  - `addSkillCard()` — L6032
-  - `applySkillFrontmatterToCard()` — L6046
-  - `buildSkillCard()` — L6063
-- **SECTION VUE** (L6069)
-- **SECTION ÉDITION** (L6103)
-  - `enterSkillEdit()` — L6184
-- **Autocomplétion des skills (slash-commande)** (L6192)
-  - `_composerAc` — L6200
-  - `onComposerInput()` — L6202
-  - `updateSkillAutocomplete()` — L6216
-  - `renderSkillAutocomplete()` — L6230
-  - `hideSkillAutocomplete()` — L6255
-  - `skillAutocompleteOpen()` — L6263
-  - `moveSkillAcSelection()` — L6268
-  - `acceptSkillAcSelection()` — L6285
-  - `pickSkillCompletion()` — L6298
-  - `showComposerSkillError()` — L6312
-  - `clearComposerSkillError()` — L6316
-- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L6321)
-  - `placeToolBlocks()` — L6325
-  - `renderToolBlock()` — L6335
-  - `renderResourceText()` — L6371
-  - `renderBinaryBlock()` — L6389
-  - `presentResourceFromChip()` — L6415
-  - `mimeToLang()` — L6432
-  - `setMemItemLoading()` — L6445
-- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L6453)
-  - `renderMemoryList()` — L6461
-  - `addMemoryEntry()` — L6524
-  - `deleteMemoryEntry()` — L6536
-  - `restoreMemoryEntry()` — L6537
-  - `forgetMemoryEntry()` — L6538
-  - `promoteMemoryEntry()` — L6543
-- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L6552)
-  - `renderSpaceFilesList()` — L6558
-  - `setFileDescriptionStatus()` — L6595
-  - `onRegenerateFileDescription()` — L6613
-  - `onSpaceFilesUploadClick()` — L6623
-  - `onSpaceFilesSelected()` — L6632
-  - `onDeleteSpaceFile()` — L6660
-  - `startEditMemoryEntry()` — L6668
-  - `cancelMemoryEntryEdit()` — L6679
-  - `saveMemoryEntryEdit()` — L6688
-- **Confirmation inline (cartes dans le thread)** (L6697)
-  - `_proposalMap` — L6701
-  - `clearMemoryProposals()` — L6705
-  - `showConfirmation()` — L6714
-  - `acceptProposal()` — L6738
-  - `rejectProposal()` — L6746
-  - `_removeProposalCard()` — L6754
-- **Export HTML standalone (brief `untracked/muscle/G-html-export.md`)** (L6763)
-  - `THEME_TOKENS` — L6773
-  - `readThemeTokens()` — L6789
-  - `exportLightSelector()` — L6816
-  - `prismThemeCssForExport()` — L6828
-  - `serializeThemeTokens()` — L6833
-  - `PRISM_THEME_CSS` — L6875
-  - `EXPORT_CSS` — L6938
-  - `EXPORT_SCRIPT` — L7161
-  - `THEME_SWITCH_SUN_SVG` — L7297
-  - `THEME_SWITCH_MOON_SVG` — L7298
-  - `EXPORT_VERBS` — L7308
-  - `buildExportHtml()` — L7312
-  - `renderExportBody()` — L7389
-  - `embedExportMermaid()` — L7473
-  - `decorateExportPre()` — L7516
-- **Conversion Markdown → HTML (lot R)** (L7532)
-  - `MD_HIGHLIGHT_TIMEOUT_MS` — L7562
-  - `_prismGrammarLoads` — L7566
-  - `loadPrismGrammar()` — L7567
-  - `highlightMarkdownDocCode()` — L7589
-  - `renderMarkdownDocBody()` — L7607
-  - `convertMarkdownToHtmlFile()` — L7638
-- **Conversion Markdown : câblage UI (réglages » Outils & extensions)** (L7658)
-  - `setMdConvertStatus()` — L7663
-  - `_convertingMd` — L7672
-  - `runMdConversion()` — L7673
-  - `onMdConvertPick()` — L7687
-  - `onMdConvertInput()` — L7691
-  - `onMdConvertDragOver()` — L7699
-  - `onMdConvertDragLeave()` — L7704
-  - `onMdConvertDrop()` — L7708
-  - `EXPORT_HTML_SIZE_WARN` — L7721
-  - `_exportingHtml` — L7730
-  - `exportConvHtml()` — L7731
+  - `renderSummaryList()` — L4700
+  - `deleteSummaryItem()` — L4747
+  - `openSummaryConv()` — L4755
+  - `toggleSummaryExpand()` — L4759
+  - `restoreSummaryItem()` — L4770
+- **Panneau des outils** (L4802)
+  - `openTools()` — L4803
+  - `closeTools()` — L4808
+  - `renderToolsList()` — L4817
+  - `buildToolItem()` — L4889
+- **Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5)** (L4921)
+  - `syncSpaceUI()` — L4929
+  - `applyActivityBadge()` — L4946
+  - `activityBadgeEl()` — L4958
+  - `syncAgentCount()` — L4980
+  - `syncActivityBadges()` — L4989
+- **Onglets sidebar « Conversations / Fichiers / Souvenirs » (remplace le** (L5022)
+  - `_spaceTab` — L5028
+  - `selectSpaceTab()` — L5030
+  - `resetSpaceTab()` — L5047
+  - `toggleSpaceMenu()` — L5051
+  - `fitSpaceMenuHeight()` — L5065
+  - `renderSpaceMenu()` — L5076
+  - `pickSpace()` — L5137
+  - `followSpace()` — L5169
+  - `_spaceDraftId` — L5197
+  - `createSpaceAndOpen()` — L5199
+  - `_spaceDraftPrevSpaceId` — L5214
+  - `discardSpaceDraftIfAny()` — L5220
+- **Écran Space (sous-drawer, pattern MCP)** (L5232)
+  - `_spaceScreenId` — L5233
+  - `openSpaceScreen()` — L5235
+  - `closeSpaceScreen()` — L5257
+  - `onSpaceFormInput()` — L5264
+  - `onSaveSpaceScreen()` — L5269
+  - `spaceDeleteLabel()` — L5294
+  - `syncSpaceDeleteLabel()` — L5306
+  - `onDeleteSpaceScreen()` — L5317
+- **Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3)** (L5349)
+  - `openMcpServers()` — L5350
+  - `closeMcpServers()` — L5355
+  - `renderApiServersIfOpen()` — L5361
+  - `renderMcpServersIfOpen()` — L5365
+  - `isSkillsDrawerOpen()` — L5371
+  - `renderMcpServers()` — L5376
+  - `addMcpServerCard()` — L5393
+- **Helpers partagés des cartes de configuration (MCP / API / skills)** (L5404)
+  - `showCardError()` — L5410
+  - `cfgField()` — L5415
+  - `cfgToggle()` — L5432
+  - `cfgToggleRow()` — L5446
+  - `cfgErrEl()` — L5458
+  - `cfgPillSelect()` — L5472
+  - `buildMcpCard()` — L5519
+- **SECTION VUE** (L5524)
+- **SECTION ÉDITION** (L5583)
+- **Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP)** (L5656)
+  - `openApiServers()` — L5659
+  - `closeApiServers()` — L5664
+  - `syncActiveApiServerUI()` — L5671
+  - `renderApiServers()` — L5697
+  - `addApiServerCard()` — L5713
+  - `buildApiCard()` — L5721
+- **SECTION VUE** (L5726)
+- **SECTION ÉDITION** (L5779)
+- **Skills : drawer de gestion** (L5867)
+- **Import de fichier .md dans le drawer skills : drag&drop + paste Finder** (L5868)
+  - `isMarkdownFile()` — L5873
+  - `onSkillsDragOver()` — L5878
+  - `onSkillsDragLeave()` — L5883
+  - `onSkillsDrop()` — L5887
+  - `onSkillsDrawerPaste()` — L5900
+  - `openSkills()` — L5914
+  - `closeSkills()` — L5919
+  - `syncSkillHintUI()` — L5926
+  - `syncPaletteHintUI()` — L5933
+  - `renderSkills()` — L5940
+  - `buildSystemSkillCard()` — L5973
+  - `toggleSystemSkillContent()` — L6033
+  - `addSkillCard()` — L6047
+  - `applySkillFrontmatterToCard()` — L6061
+  - `buildSkillCard()` — L6078
+- **SECTION VUE** (L6084)
+- **SECTION ÉDITION** (L6118)
+  - `enterSkillEdit()` — L6199
+- **Autocomplétion des skills (slash-commande)** (L6207)
+  - `_composerAc` — L6215
+  - `onComposerInput()` — L6217
+  - `updateSkillAutocomplete()` — L6231
+  - `renderSkillAutocomplete()` — L6245
+  - `hideSkillAutocomplete()` — L6270
+  - `skillAutocompleteOpen()` — L6278
+  - `moveSkillAcSelection()` — L6283
+  - `acceptSkillAcSelection()` — L6300
+  - `pickSkillCompletion()` — L6313
+  - `showComposerSkillError()` — L6327
+  - `clearComposerSkillError()` — L6331
+- **Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8)** (L6336)
+  - `placeToolBlocks()` — L6340
+  - `renderToolBlock()` — L6350
+  - `renderResourceText()` — L6386
+  - `renderBinaryBlock()` — L6404
+  - `presentResourceFromChip()` — L6430
+  - `mimeToLang()` — L6447
+  - `setMemItemLoading()` — L6460
+- **Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;** (L6468)
+  - `renderMemoryList()` — L6476
+  - `addMemoryEntry()` — L6539
+  - `deleteMemoryEntry()` — L6551
+  - `restoreMemoryEntry()` — L6552
+  - `forgetMemoryEntry()` — L6553
+  - `promoteMemoryEntry()` — L6558
+- **Bibliothèque de fichiers d'espace (D6, lot Cbis)** (L6567)
+  - `renderSpaceFilesList()` — L6573
+  - `setFileDescriptionStatus()` — L6610
+  - `onRegenerateFileDescription()` — L6628
+  - `onSpaceFilesUploadClick()` — L6638
+  - `onSpaceFilesSelected()` — L6647
+  - `onDeleteSpaceFile()` — L6675
+  - `startEditMemoryEntry()` — L6683
+  - `cancelMemoryEntryEdit()` — L6694
+  - `saveMemoryEntryEdit()` — L6703
+- **Confirmation inline (cartes dans le thread)** (L6712)
+  - `_proposalMap` — L6716
+  - `clearMemoryProposals()` — L6720
+  - `showConfirmation()` — L6729
+  - `acceptProposal()` — L6753
+  - `rejectProposal()` — L6761
+  - `_removeProposalCard()` — L6769
+- **Export HTML standalone (brief `untracked/muscle/G-html-export.md`)** (L6778)
+  - `THEME_TOKENS` — L6788
+  - `readThemeTokens()` — L6804
+  - `exportLightSelector()` — L6831
+  - `prismThemeCssForExport()` — L6843
+  - `serializeThemeTokens()` — L6848
+  - `PRISM_THEME_CSS` — L6890
+  - `EXPORT_CSS` — L6953
+  - `EXPORT_SCRIPT` — L7176
+  - `THEME_SWITCH_SUN_SVG` — L7312
+  - `THEME_SWITCH_MOON_SVG` — L7313
+  - `EXPORT_VERBS` — L7323
+  - `buildExportHtml()` — L7327
+  - `renderExportBody()` — L7404
+  - `embedExportMermaid()` — L7488
+  - `decorateExportPre()` — L7531
+- **Conversion Markdown → HTML (lot R)** (L7547)
+  - `MD_HIGHLIGHT_TIMEOUT_MS` — L7577
+  - `_prismGrammarLoads` — L7581
+  - `loadPrismGrammar()` — L7582
+  - `highlightMarkdownDocCode()` — L7604
+  - `renderMarkdownDocBody()` — L7622
+  - `convertMarkdownToHtmlFile()` — L7653
+- **Conversion Markdown : câblage UI (réglages » Outils & extensions)** (L7673)
+  - `setMdConvertStatus()` — L7678
+  - `_convertingMd` — L7687
+  - `runMdConversion()` — L7688
+  - `onMdConvertPick()` — L7702
+  - `onMdConvertInput()` — L7706
+  - `onMdConvertDragOver()` — L7714
+  - `onMdConvertDragLeave()` — L7719
+  - `onMdConvertDrop()` — L7723
+  - `EXPORT_HTML_SIZE_WARN` — L7736
+  - `_exportingHtml` — L7745
+  - `exportConvHtml()` — L7746
 
 ## src/js/main.js
 

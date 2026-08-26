@@ -157,6 +157,12 @@ La conversation en cours est toujours exclue de ces recherches.
 Quand le modèle cite une conversation passée, elle apparaît comme un lien
 cliquable affichant son titre ; cliquer dessus l'ouvre directement.
 
+Tu gardes la main sur ces résumés : un panneau dédié te laisse les consulter,
+ouvrir la conversation dont chacun provient, ou les supprimer — supprimer un
+résumé ne touche jamais à la conversation elle-même, et reste réversible. Il
+liste les résumés de l'Espace courant ; ceux des autres Espaces se consultent
+depuis chacun d'eux.
+
 Note : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas
 l'historique d'un autre.
 
