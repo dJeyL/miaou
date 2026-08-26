@@ -1415,3 +1415,152 @@ function validateImportPayload(obj) {
     },
   };
 }
+
+// ── État des lieux du stockage (drawer Paramètres › Données) ─────────────────
+// Deux chiffres de nature différente, volontairement affichés ensemble :
+//
+//   1. `navigator.storage.estimate()` — total occupé par l'ORIGINE (IDB +
+//      localStorage + caches + overhead moteur) et quota accordé. C'est le
+//      chiffre qui compte pour « suis-je près de la limite ? », mais il est
+//      arrondi/anonymisé par le navigateur et n'est pas ventilable.
+//   2. Une mesure interne, exacte et ventilée par catégorie, obtenue en
+//      pesant les données MIAOU elles-mêmes. Elle est nécessairement PLUS
+//      BASSE que (1) : elle ignore index, overhead de sérialisation et
+//      fragmentation. L'écart est normal, ne pas chercher à le réconcilier.
+//
+// Coût : la mesure interne relit conversations, résumés et ressources. Le
+// parcours des ressources se fait au CURSEUR (un record à la fois, GC-able)
+// et non via `getAll()` qui matérialiserait tous les binaires en RAM d'un coup.
+// Elle n'est déclenchée qu'à l'ouverture du drawer, jamais en fond.
+
+// Poids d'une valeur localStorage. Pur : les chaînes JS sont UTF-16, mais ce
+// qui est persisté est de l'UTF-8 — on mesure donc en octets UTF-8, cohérent
+// avec la façon dont IDB et l'estimation du navigateur comptent.
+function utf8ByteLength(str) {
+  const s = String(str == null ? '' : str);
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {
+      const next = s.charCodeAt(i + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) { n += 4; i++; continue; }
+      n += 3;
+    } else n += 3;
+  }
+  return n;
+}
+
+// Poids d'un enregistrement structuré (conversation, résumé, skill). La
+// sérialisation JSON est une approximation du format interne d'IDB (structured
+// clone), pas une mesure exacte — assumé, cf. l'écart documenté ci-dessus.
+function recordByteLength(rec) {
+  try { return utf8ByteLength(JSON.stringify(rec)); } catch (e) { return 0; }
+}
+
+// Somme des poids d'un lot d'enregistrements. Pure, testable.
+function sumRecordBytes(records) {
+  let n = 0;
+  for (const r of (records || [])) n += recordByteLength(r);
+  return n;
+}
+
+// Assemble le rapport final à partir des mesures brutes. Pure : c'est elle qui
+// porte la règle « le détail ne doit jamais prétendre dépasser le total
+// rapporté par le navigateur » (on garde les deux chiffres tels quels, mais on
+// expose l'information de façon à ce que l'UI n'ait aucune arithmétique à
+// faire).
+function buildStorageReport(parts, estimate) {
+  const detail = {
+    settings: parts.settings || 0,
+    conversations: parts.conversations || 0,
+    summaries: parts.summaries || 0,
+    resources: parts.resources || 0,
+    skills: parts.skills || 0,
+  };
+  let total = 0;
+  for (const k of Object.keys(detail)) total += detail[k];
+  const usage = (estimate && typeof estimate.usage === 'number') ? estimate.usage : null;
+  const quota = (estimate && typeof estimate.quota === 'number') ? estimate.quota : null;
+  return {
+    detail: detail,
+    measured: total,
+    usage: usage,
+    quota: quota,
+    // Pourcentage du quota consommé, arrondi à l'entier. null si le navigateur
+    // ne fournit pas l'estimation (Safari ancien, contexte non sécurisé).
+    percent: (usage != null && quota) ? Math.round((usage / quota) * 100) : null,
+  };
+}
+
+// Poids cumulé des clefs `miaou-*` de localStorage HORS conversations et
+// résumés (migrés en IDB au lot U ; d'éventuels reliquats non purgés ne sont
+// pas comptés deux fois). Clef ET valeur pèsent dans le quota.
+function measureLocalStorageBytes() {
+  if (typeof localStorage === 'undefined') return 0;
+  let n = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || k.indexOf('miaou-') !== 0) continue;
+    if (k === CONV_KEY || k === SUMMARIES_KEY) continue;
+    n += utf8ByteLength(k) + utf8ByteLength(localStorage.getItem(k) || '');
+  }
+  return n;
+}
+
+// Poids du store `resources`, mesuré au curseur : `size` porte déjà les octets
+// utiles du blob (champ figé à l'écriture), on n'ajoute que la métadonnée.
+// Aucun `getAll()` ici — cf. la note de coût en tête de section.
+function measureResourcesBytes() {
+  return openConvDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('resources', 'readonly');
+      const req = tx.objectStore('resources').openCursor();
+      let n = 0;
+      req.onsuccess = function(e) {
+        const cursor = e.target.result;
+        if (!cursor) return;
+        const rec = cursor.value;
+        n += Number(rec && rec.size) || 0;
+        n += utf8ByteLength(rec && rec.name || '') + utf8ByteLength(rec && rec.id || '');
+        cursor.continue();
+      };
+      tx.oncomplete = function() { resolve(n); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+function measureSkillsBytes() {
+  return openConvDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('skills', 'readonly');
+      const req = tx.objectStore('skills').getAll();
+      let n = 0;
+      req.onsuccess = function(e) { n = sumRecordBytes(e.target.result || []); };
+      tx.oncomplete = function() { resolve(n); };
+      tx.onerror = function(e) { reject(e.target.error); };
+    });
+  });
+}
+
+// Point d'entrée unique de l'état des lieux. Jamais de rejet : une mesure
+// partiellement indisponible (IDB inaccessible, estimate() absent) doit
+// dégrader l'affichage, pas le casser.
+async function collectStorageReport() {
+  const settings = measureLocalStorageBytes();
+  let conversations = 0, summaries = 0, resources = 0, skills = 0;
+  try { conversations = sumRecordBytes(await readAllConversationsFromDB()); } catch (e) {}
+  try { summaries = sumRecordBytes(await readAllSummariesFromDB()); } catch (e) {}
+  try { resources = await measureResourcesBytes(); } catch (e) {}
+  try { skills = await measureSkillsBytes(); } catch (e) {}
+  let estimate = null;
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+    try { estimate = await navigator.storage.estimate(); } catch (e) {}
+  }
+  return buildStorageReport(
+    { settings, conversations, summaries, resources, skills },
+    estimate
+  );
+}

@@ -686,3 +686,65 @@ Côté conversations (storage.js) :
   court-circuit teste l'absence des clés), qui les reprendrait au tour suivant.
   Ça fonctionnerait par ricochet ; on ne s'appuie pas dessus, l'import fait
   lui-même le routage vers IDB.
+
+## État des lieux du stockage (drawer Paramètres › Données)
+
+Bloc informatif en tête de la catégorie **Données**, au-dessus de
+l'export/import : un avertissement sur la volatilité du stockage navigateur, et
+une pesée de ce qui est occupé. Une entrée de renvoi le signale aussi depuis la
+catégorie **Mémoire** (c'est de là que la demande est partie), sans dupliquer
+les chiffres — un seul point d'affichage.
+
+### Deux chiffres de nature différente
+
+Le bloc affiche volontairement les deux, et ils ne coïncident pas :
+
+1. **`navigator.storage.estimate()`** — total occupé par l'origine (IndexedDB +
+   localStorage + caches + surcharge du moteur) et quota accordé. C'est le
+   chiffre qui répond à « suis-je près de la limite ? », mais il est
+   arrondi/anonymisé par le navigateur et ne se ventile pas.
+2. **Une mesure interne**, exacte et ventilée par catégorie, obtenue en pesant
+   les données MIAOU elles-mêmes.
+
+La seconde est nécessairement **plus basse** que la première : elle ignore les
+index, la surcharge de sérialisation et la fragmentation. **L'écart est
+structurel, ne pas chercher à le réconcilier** — c'est précisément pourquoi
+l'UI présente le total du navigateur en ligne principale et la ventilation
+comme un détail approché, plutôt que d'afficher une somme qui prétendrait être
+le total.
+
+Si `estimate()` est indisponible (navigateur ancien, contexte non sécurisé), la
+ligne principale retombe sur `measured` en le disant ; `usage`/`quota`/`percent`
+valent alors `null` et l'UI ne fait aucune arithmétique dessus.
+
+### Découpage des fonctions (storage.js)
+
+| Fonction | Nature | Rôle |
+| --- | --- | --- |
+| `utf8ByteLength(str)` | pure | Poids en octets **UTF-8** (pas UTF-16) — cohérent avec la façon dont IDB et le navigateur comptent. Gère les paires de substitution (un emoji hors BMP = 4 octets, pas 6). |
+| `recordByteLength(rec)` | pure | Poids JSON d'un enregistrement structuré. Approximation du *structured clone* d'IDB, pas une mesure exacte. Rend `0` plutôt que de lever (structure circulaire). |
+| `sumRecordBytes(records)` | pure | Somme sur un lot. |
+| `buildStorageReport(parts, estimate)` | pure | Assemble le rapport final (`detail`, `measured`, `usage`, `quota`, `percent`). Toute l'arithmétique à risque est ici, donc testée. |
+| `measureLocalStorageBytes()` | impure | Somme des clefs `miaou-*` (clef **et** valeur pèsent), **hors** `CONV_KEY`/`SUMMARIES_KEY` — reliquats non purgés de l'avant-lot U, à ne pas compter deux fois. |
+| `measureResourcesBytes()` | impure | Store `resources`, **au curseur**. |
+| `measureSkillsBytes()` | impure | Store `skills`, via `getAll` (volume borné). |
+| `collectStorageReport()` | impure | Point d'entrée unique. **Ne rejette jamais** : chaque mesure est gardée individuellement, une source indisponible dégrade l'affichage sans le casser. |
+
+### Coût et curseur
+
+La mesure relit conversations, résumés et ressources — elle n'est déclenchée
+qu'à **l'ouverture du drawer**, jamais en fond. Le parcours des ressources se
+fait **au curseur** (`openCursor`, un record à la fois, GC-able) et non via
+`getAll()`, qui matérialiserait tous les binaires en RAM d'un coup : c'est
+exactement ce que le cache à deux étages des conversations (U-1) s'emploie à
+éviter. Le poids d'une ressource est lu dans son champ `size` (figé à
+l'écriture), pas recalculé depuis les octets.
+
+### Rendu (ui.js)
+
+`refreshStorageReport()` est appelée par `openSettings()` et porte un **jeton de
+séquence** (`_storageReportSeq`) : un drawer refermé puis rouvert pendant la
+mesure fait abandonner le rendu devenu obsolète — même discipline que
+`_openConvSeq` (piège 24, relire l'état après l'`await`). `renderStorageReport()`
+ne construit que du texte d'origine locale, passé à `escHtml` ; les libellés
+vivent dans `STORAGE_REPORT_LABELS`.

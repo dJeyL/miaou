@@ -470,6 +470,9 @@ if (window.requestAnimationFrame) {
         </div>
         <span class="hint" id="summary-injection-hint"></span>
       </div>
+      <div class="field">
+        <span class="hint">Résumés, souvenirs et conversations vivent dans le navigateur&nbsp;: voir <strong>Données</strong> pour l'espace occupé et la sauvegarde.</span>
+      </div>
           </div>
         </div>
       </div>
@@ -546,6 +549,14 @@ if (window.requestAnimationFrame) {
         </div>
         <div class="set-cat-body">
           <div class="set-cat-body-inner">
+      <div class="field">
+        <label>Stockage local</label>
+        <span class="hint">Tout est stocké dans ce navigateur, sur cette machine&nbsp;: conversations, résumés, souvenirs, fichiers, skills et réglages. Rien n'est envoyé ailleurs — mais rien n'est sauvegardé ailleurs non plus. Effacer les données de navigation du site efface tout définitivement, et l'export ci-dessous est la seule parade. En navigation privée, MIAOU démarre à vide et ne garde rien à la fermeture de la fenêtre&nbsp;: les données habituelles ne sont ni visibles ni menacées.</span>
+        <div class="storage-report" id="storage-report">
+          <div class="storage-report-total" id="storage-report-total">Mesure en cours…</div>
+          <div class="storage-report-detail" id="storage-report-detail"></div>
+        </div>
+      </div>
       <div class="field">
         <label>Export / import complet</label>
         <span class="hint">Le fichier inclut les clefs API et tokens en clair.</span>

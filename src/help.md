@@ -480,8 +480,13 @@ saturent la capacité (quelques mégaoctets) ; elles sont désormais dans la bas
 et le déménagement se fait tout seul au premier démarrage — il n'y a rien à
 faire, et rien ne se perd.
 
-Pour aller voir : dans les outils de développement du navigateur, onglet
-« Application » (Chrome) ou « Stockage » (Firefox).
+Pour savoir ce que tout cela pèse : **Réglages › Données** affiche l'espace
+occupé — le total mesuré par le navigateur, la part du quota qu'il représente,
+et une ventilation par catégorie (conversations, résumés, fichiers, skills,
+réglages). Le détail est un peu inférieur au total : le navigateur compte aussi
+ses index et sa propre surcharge. Pour aller voir dans le menu du navigateur :
+outils de développement, onglet « Application » (Chrome) ou « Stockage »
+(Firefox).
 
 Conséquences pratiques :
 

@@ -1236,3 +1236,72 @@ describe('splitConvRecord / joinConvRecord — frontière des deux étages du ca
     expect('messages' in meta).toBe(false);
   });
 });
+
+describe('utf8ByteLength (mesure du stockage)', function() {
+  it('compte 1 octet par caractère ASCII', function() {
+    expect(utf8ByteLength('abc')).toBe(3);
+    expect(utf8ByteLength('')).toBe(0);
+  });
+  it('compte 2 octets pour un accent latin', function() {
+    expect(utf8ByteLength('é')).toBe(2);
+    expect(utf8ByteLength('résumé')).toBe(8);
+  });
+  it('compte 3 octets pour un caractère hors latin', function() {
+    expect(utf8ByteLength('☺')).toBe(3);
+  });
+  it('compte 4 octets pour une paire de substitution (emoji)', function() {
+    // Un emoji hors BMP est une paire surrogate en UTF-16 : 4 octets en UTF-8,
+    // pas 6 — c'est le cas que rate un comptage naïf par charCodeAt.
+    expect(utf8ByteLength('😺')).toBe(4);
+  });
+  it('tolère null et undefined', function() {
+    expect(utf8ByteLength(null)).toBe(0);
+    expect(utf8ByteLength(undefined)).toBe(0);
+  });
+});
+
+describe('sumRecordBytes / recordByteLength', function() {
+  it('somme le poids JSON des enregistrements', function() {
+    var recs = [{ a: 1 }, { b: 2 }];
+    expect(sumRecordBytes(recs)).toBe(recordByteLength(recs[0]) + recordByteLength(recs[1]));
+  });
+  it('rend 0 sur une liste vide ou absente', function() {
+    expect(sumRecordBytes([])).toBe(0);
+    expect(sumRecordBytes(null)).toBe(0);
+  });
+  it('rend 0 plutôt que de lever sur une structure circulaire', function() {
+    var a = {}; a.self = a;
+    expect(recordByteLength(a)).toBe(0);
+  });
+});
+
+describe('buildStorageReport', function() {
+  it('totalise le détail et calcule le pourcentage de quota', function() {
+    var r = buildStorageReport(
+      { settings: 100, conversations: 200, summaries: 50, resources: 400, skills: 250 },
+      { usage: 2000, quota: 10000 });
+    expect(r.measured).toBe(1000);
+    expect(r.usage).toBe(2000);
+    expect(r.quota).toBe(10000);
+    expect(r.percent).toBe(20);
+  });
+  it('rend usage/quota/percent à null quand estimate() est indisponible', function() {
+    // Navigateur sans navigator.storage.estimate : l'UI doit pouvoir retomber
+    // sur `measured` sans arithmétique sur du null.
+    var r = buildStorageReport({ conversations: 42 }, null);
+    expect(r.measured).toBe(42);
+    expect(r.usage).toBe(null);
+    expect(r.quota).toBe(null);
+    expect(r.percent).toBe(null);
+  });
+  it('pas de division par zéro si le quota est nul', function() {
+    var r = buildStorageReport({}, { usage: 5, quota: 0 });
+    expect(r.percent).toBe(null);
+  });
+  it('normalise les catégories absentes à 0', function() {
+    var r = buildStorageReport({ conversations: 10 }, null);
+    expect(r.detail.resources).toBe(0);
+    expect(r.detail.skills).toBe(0);
+    expect(r.detail.settings).toBe(0);
+  });
+});

@@ -4137,6 +4137,66 @@ function updateSettingsDirty() {
   if (btn) btn.disabled = !settingsFormDirty();
 }
 
+// ── État des lieux du stockage (drawer Paramètres › Données) ────────────────
+// Rendu du rapport produit par collectStorageReport(). Deux lignes de nature
+// distincte : le total rapporté par le navigateur (celui qui compte face au
+// quota) et la ventilation interne, explicitement présentée comme un détail
+// approché — l'écart entre les deux est structurel (index, overhead), pas un
+// bug à réconcilier. Tout est du texte construit ici, jamais d'origine modèle.
+const STORAGE_REPORT_LABELS = {
+  conversations: 'Conversations',
+  summaries: 'Résumés',
+  resources: 'Fichiers et pièces jointes',
+  skills: 'Skills',
+  settings: 'Réglages, souvenirs, espaces',
+};
+
+function renderStorageReport(report) {
+  const totalEl = $('storage-report-total');
+  const detailEl = $('storage-report-detail');
+  if (!totalEl || !detailEl) return;
+  if (report.usage != null) {
+    totalEl.innerHTML = 'Environ <strong>' + escHtml(humanSize(report.usage)) + '</strong> utilisés' +
+      (report.quota
+        ? ' <span class="storage-quota">sur ' + escHtml(humanSize(report.quota)) +
+          ' disponibles' + (report.percent != null ? ' (' + report.percent + '\u00a0%)' : '') + '</span>'
+        : '');
+  } else {
+    // Estimation indisponible (navigateur ancien, contexte non sécurisé) : on
+    // retombe sur la mesure interne, en le disant.
+    totalEl.innerHTML = 'Environ <strong>' + escHtml(humanSize(report.measured)) +
+      '</strong> de données MIAOU <span class="storage-quota">(quota du navigateur inconnu)</span>';
+  }
+  let html = '';
+  for (const key of Object.keys(STORAGE_REPORT_LABELS)) {
+    const bytes = report.detail[key] || 0;
+    html += '<span>' + escHtml(STORAGE_REPORT_LABELS[key]) + '</span>' +
+      '<span class="storage-bytes">' + escHtml(humanSize(bytes)) + '</span>';
+  }
+  detailEl.innerHTML = html;
+}
+
+// Déclenché à chaque ouverture du drawer (les chiffres bougent entre deux
+// ouvertures). Un jeton de séquence fait abandonner un rendu devenu obsolète si
+// le drawer est refermé puis rouvert pendant la mesure (même discipline que
+// _openConvSeq, cf. piège 24 : l'état est relu APRÈS l'await).
+let _storageReportSeq = 0;
+function refreshStorageReport() {
+  const totalEl = $('storage-report-total');
+  const detailEl = $('storage-report-detail');
+  if (!totalEl || !detailEl) return;
+  const seq = ++_storageReportSeq;
+  totalEl.textContent = 'Mesure en cours…';
+  detailEl.innerHTML = '';
+  collectStorageReport().then(function(report) {
+    if (seq !== _storageReportSeq) return;
+    renderStorageReport(report);
+  }).catch(function() {
+    if (seq !== _storageReportSeq) return;
+    totalEl.textContent = 'Mesure indisponible.';
+  });
+}
+
 function openSettings() {
   const s = loadSettings();
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
@@ -4158,6 +4218,7 @@ function openSettings() {
       ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
       : '';
   }
+  refreshStorageReport();  // asynchrone : le bloc se remplit après ouverture
   updateSettingsDirty();   // des saisies non enregistrées peuvent survivre à une fermeture
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
