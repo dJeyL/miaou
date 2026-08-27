@@ -3769,7 +3769,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-27 09:55 UTC */
+/* miaou — built: 2026-08-27 14:58 UTC */
 
 /* ── utils.js ── */
 
@@ -5005,7 +5005,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787824502}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787842682}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14693,18 +14693,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .export-body:first-child { padding-top: 40px; }
 .export-footer-wrap { border-top: 1px solid var(--border); }
 .export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
-/* Le lien du dépôt reste discret : couleur héritée du footer plutôt que le bleu
-   des liens de contenu, qui jurerait dans un footer gris de 11px. Le
-   soulignement POINTILLÉ le signale comme lien SANS survol (une couleur seule
-   ne suffirait pas : elle est ici volontairement identique au texte voisin) ;
-   il passe en plein au survol pour accuser le ciblage.
-   L'espacement des points n'est PAS réglable ici : il est dérivé par le
-   navigateur de l'épaisseur du trait, et aucune propriété standard ne le
-   contrôle. Une tentative de pointillé plus aéré via background-image
-   (dégradé radial en repeat-x) a été essayée puis ABANDONNÉE — rendu
-   invisible à l'usage. Ne pas y revenir sans un contrôle visuel réel. */
-.export-brand { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
-.export-brand:hover { text-decoration: underline solid; }
+/* Le lien du dépôt se signale par la couleur d'accent, sans soulignement de
+   base : dans un footer gris de 11px, l'orange tranche assez pour être lu
+   comme lien. Le soulignement n'apparaît qu'au survol, pour accuser le
+   ciblage. (Une variante « couleur héritée + pointillé permanent » a été
+   essayée puis abandonnée : le pointillé était visuellement bruyant et son
+   espacement n'est pas réglable en CSS standard.) */
+.export-brand { color: var(--accent); text-decoration: none; }
+.export-brand:hover { text-decoration: underline; text-underline-offset: 2px; }
 .msg { display: flex; flex-direction: column; }
 .msg.user { align-items: flex-end; margin: 24px 0 10px; }
 .msg.user .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 13px; max-width: 80%; word-break: break-word; text-align: left; }
