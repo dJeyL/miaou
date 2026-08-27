@@ -29,6 +29,14 @@ const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+// URL du dépôt, liée sur le mot « MIAOU » du footer des exports HTML. Trois
+// états DISTINCTS, d'où le typeof plutôt qu'un `||` : clé absente ou null →
+// dépôt public par défaut ; chaîne vide → pas de lien du tout (le mot reste du
+// texte, cas d'un fork interne qu'on ne veut pas exposer) ; chaîne non vide →
+// lien vers cette URL. Lue en corps de fonction seulement (portée inter-fichier,
+// cf. CLAUDE.md).
+const DEFAULT_REPO_URL = 'https://github.com/dJeyL/miaou';
+const BUILD_REPO_URL   = (typeof BUILD_CONFIG.repo_url === 'string') ? BUILD_CONFIG.repo_url : DEFAULT_REPO_URL;
 // Température des envois de chat (streamCompletion uniquement — les appels
 // silencieux gardent la valeur explicite de leur site d'appel). Le typeof
 // rejette une clé absente, une chaîne ou null : tous retombent sur 0.7 plutôt

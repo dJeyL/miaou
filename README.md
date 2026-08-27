@@ -257,7 +257,8 @@ build.
   "max_summaries":           3,
   "require_api_key":         true,
   "chat_temperature":        0.7,
-  "default_context_window":  32768
+  "default_context_window":  32768,
+  "repo_url":                "https://github.com/dJeyL/miaou"
 }
 ```
 
@@ -277,6 +278,13 @@ build.
 - `default_context_window` : taille de fenêtre de contexte (en tokens) utilisée
   par défaut tant que l'utilisateur n'a rien saisi dans les réglages. `0` ou
   absent = inconnue (aucune valeur par défaut appliquée).
+- `repo_url` : URL liée sur le mot « MIAOU » dans le footer des exports HTML
+  (conversations et Markdown convertis). **Trois états distincts** : clef
+  **absente ou `null`** → lien vers le dépôt public
+  (`https://github.com/dJeyL/miaou`) ; chaîne **vide** → « MIAOU » reste du
+  simple texte, sans lien (cas d'un fork interne qu'on ne veut pas exposer) ;
+  chaîne **non vide** → lien vers cette URL. Figée au build : rien ne permet de
+  la changer depuis l'UI.
 
 ## Tests
 

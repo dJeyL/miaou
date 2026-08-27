@@ -1941,8 +1941,6 @@ function syncConvDownloadBtn() {
   const hasAssistant = currentThread.some(m => m.role === 'assistant');
   const btn = document.querySelector('.conv-dl-btn');
   if (btn) btn.hidden = !hasAssistant;
-  const htmlBtn = document.querySelector('.conv-dl-html-btn');
-  if (htmlBtn) htmlBtn.hidden = !hasAssistant;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.hidden = !hasAssistant;
 }
@@ -2775,8 +2773,6 @@ function setSending(on) {
   // Export de conversation masqué pendant le streaming (contenu incomplet).
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
-  const convDlHtml = document.querySelector('.conv-dl-html-btn');
-  if (convDlHtml) convDlHtml.disabled = on;
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   // le bouton régénérer disparaît pendant un stream
@@ -7150,6 +7146,18 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .export-body:first-child { padding-top: 40px; }
 .export-footer-wrap { border-top: 1px solid var(--border); }
 .export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
+/* Le lien du dépôt reste discret : couleur héritée du footer plutôt que le bleu
+   des liens de contenu, qui jurerait dans un footer gris de 11px. Le
+   soulignement POINTILLÉ le signale comme lien SANS survol (une couleur seule
+   ne suffirait pas : elle est ici volontairement identique au texte voisin) ;
+   il passe en plein au survol pour accuser le ciblage.
+   L'espacement des points n'est PAS réglable ici : il est dérivé par le
+   navigateur de l'épaisseur du trait, et aucune propriété standard ne le
+   contrôle. Une tentative de pointillé plus aéré via background-image
+   (dégradé radial en repeat-x) a été essayée puis ABANDONNÉE — rendu
+   invisible à l'usage. Ne pas y revenir sans un contrôle visuel réel. */
+.export-brand { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+.export-brand:hover { text-decoration: underline solid; }
 .msg { display: flex; flex-direction: column; }
 .msg.user { align-items: flex-end; margin: 24px 0 10px; }
 .msg.user .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 13px; max-width: 80%; word-break: break-word; text-align: left; }
@@ -7475,10 +7483,26 @@ const THEME_SWITCH_MOON_SVG = '<svg class="ts-moon" viewBox="0 0 24 24" fill="no
 // conversation dit « Exporté le … » / « Généré par MIAOU », le convertisseur
 // Markdown dit « Converti le … » / « Converti par MIAOU ». Un seul paramètre
 // pilote les deux endroits pour qu'ils ne puissent pas diverger.
+// `footer` est SCINDÉ (préfixe + nom) parce que seul le mot « MIAOU » porte le
+// lien vers le dépôt : une chaîne d'un bloc obligerait à la redécouper au rendu.
 const EXPORT_VERBS = {
-  export:  { meta: 'Exporté',  footer: 'Généré par MIAOU' },
-  convert: { meta: 'Converti', footer: 'Converti par MIAOU' },
+  export:  { meta: 'Exporté',  footerPrefix: 'Généré par ' },
+  convert: { meta: 'Converti', footerPrefix: 'Converti par ' },
 };
+
+// Le mot « MIAOU » du footer d'export : lien vers le dépôt si BUILD_REPO_URL
+// est non vide (défaut : dépôt public — cf. storage.js), simple texte sinon.
+// `escHtml` sur l'URL bien qu'elle soit d'origine BUILD et jamais modèle : le
+// chemin string→HTML de l'export ne souffre pas d'exception gratuite (piège 21).
+// Partie PURE (testable) : la décision lien/texte à partir d'une URL déjà
+// résolue. `exportBrandHtml` n'est que le point de lecture de la constante de
+// build, qui, elle, est figée au chargement et donc intestable telle quelle.
+function brandHtmlFor(url) {
+  if (typeof url !== 'string' || !url) return 'MIAOU';
+  return '<a class="export-brand" href="' + escHtml(url) +
+    '" target="_blank" rel="noopener">MIAOU</a>';
+}
+function exportBrandHtml() { return brandHtmlFor(BUILD_REPO_URL); }
 function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind }) {
   const hasHeader = !!(title && String(title).trim());
   const docTitle = hasHeader ? title : 'Document';
@@ -7541,7 +7565,8 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     // Footer systématique, et SEUL porteur de la date (décision Julien) : le
     // cartouche ne garde que logo + titre. Un seul endroit, quel que soit le
     // type de document et qu'il y ait un cartouche ou non.
-    '<div class="export-footer-wrap"><div class="export-footer">' + escHtml(verbs.footer) +
+    '<div class="export-footer-wrap"><div class="export-footer">' +
+    escHtml(verbs.footerPrefix) + exportBrandHtml() +
     ' le ' + escHtml(dateDisplay) +
     '</div></div>\n' +
     (scriptTag || '') +

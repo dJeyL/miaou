@@ -366,10 +366,6 @@ Cf. `docs/generations.md`.
 
 À lire à la demande, selon la zone touchée — pas systématiquement :
 
-- **`docs/code-map.md`** — index « où se trouve quoi » (fonctions/const JS,
-  sections JS/CSS, avec lignes). **Généré par `build.py` à chaque build, ne
-  jamais l'éditer** — s'en servir pour cibler les lectures dans les gros
-  fichiers (`ui.js`, `chat.css`).
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
   marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
   points d'injection et gardes `try/catch`.

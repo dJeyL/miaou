@@ -122,12 +122,21 @@ describe('buildExportHtml', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<div class="msg">hello</div>') >= 0).toBeTruthy();
   });
-  it('contient la topbar (titre + date) et le footer "Généré par MIAOU"', function() {
+  it('contient la topbar (titre + date) et le footer "Généré par ... MIAOU"', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('Ma conversation') >= 0).toBeTruthy();
     expect(r.indexOf('09/07/2026') >= 0).toBeTruthy();
-    expect(r.indexOf('Généré par MIAOU') >= 0).toBeTruthy();
+    // Le mot MIAOU peut être enveloppé d'un <a> (cf. brandHtmlFor) : on vérifie
+    // le préfixe et le nom séparément, jamais la chaîne d'un bloc.
+    expect(r.indexOf('Généré par ') >= 0).toBeTruthy();
+    expect(r.indexOf('MIAOU') >= 0).toBeTruthy();
   });
+  it('le footer porte le nom MIAOU une seule fois', function() {
+    var r = buildExportHtml(base);
+    var body = r.slice(r.indexOf('export-footer\">'));
+    expect(body.split('MIAOU').length - 1).toBe(1);
+  });
+
   it('zéro <script> sans scriptTag ; un seul <link> (favicon)', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<script') >= 0).toBeFalsy();
@@ -422,5 +431,28 @@ describe('resolveMotionReduced (réglage Animations — brief N §8)', function(
   });
   it('"system" → reflète la préférence système injectée (false)', function() {
     expect(resolveMotionReduced('system', false)).toBe(false);
+  });
+});
+
+
+describe('brandHtmlFor — lien du dépôt sur le mot MIAOU (footer d\'export)', function() {
+  it('URL non vide : lien vers cette URL, cible et rel posés', function() {
+    var h = brandHtmlFor('https://example.org/repo');
+    expect(h.indexOf('href=\"https://example.org/repo\"') >= 0).toBeTruthy();
+    expect(h.indexOf('target=\"_blank\"') >= 0).toBeTruthy();
+    expect(h.indexOf('rel=\"noopener\"') >= 0).toBeTruthy();
+    expect(h.indexOf('>MIAOU</a>') >= 0).toBeTruthy();
+  });
+  it('chaîne vide : simple texte, aucun <a>', function() {
+    expect(brandHtmlFor('')).toBe('MIAOU');
+  });
+  it('valeur non-chaîne (null/undefined) : simple texte, pas d\'exception', function() {
+    expect(brandHtmlFor(null)).toBe('MIAOU');
+    expect(brandHtmlFor(undefined)).toBe('MIAOU');
+  });
+  it('URL échappée (chemin string→HTML de l\'export, piège 21)', function() {
+    var h = brandHtmlFor('https://x/\"><script>alert(1)</script>');
+    expect(h.indexOf('<script') >= 0).toBeFalsy();
+    expect(h.indexOf('&quot;') >= 0).toBeTruthy();
   });
 });

@@ -6,6 +6,7 @@ Usage : python build.py
 import argparse
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -367,7 +368,17 @@ def load_config(use_config: bool = True) -> dict:
               'renseigner. Le marqueur __MIAOU_CONFIG__ restera tel quel dans le '
               'JS produit (sources non buildées : valeurs par défaut au runtime).')
         return {}
-    return json.loads(p.read_text(encoding='utf-8'))
+    # Un config.json présent mais malformé reste une ERREUR (un fallback
+    # silencieux sur {} produirait un build aux valeurs par défaut sans le
+    # dire), mais nommée : la JSONDecodeError brute pointe sur json/decoder.py
+    # et ne mentionne jamais config.json. Piège classique : les guillemets
+    # simples, que JSON n'accepte pas.
+    try:
+        return json.loads(p.read_text(encoding='utf-8'))
+    except json.JSONDecodeError as e:
+        sys.exit(f'[erreur] config.json : JSON invalide ligne {e.lineno}, '
+                 f'colonne {e.colno} — {e.msg}. Rappel : JSON exige des '
+                 f'guillemets DOUBLES (\"...\"), jamais simples.')
 
 
 def assemble_css() -> str:
@@ -415,63 +426,6 @@ def assemble_js(cfg_data: dict, help_data: dict, system_skills_data: dict) -> st
     return js
 
 
-# Bannières de section : `// ── Titre ──…` (JS) / `/* ── Titre ──… */` et
-# `/* ═══ Titre ═══ */` (CSS). On capture le titre, débarrassé des filets.
-_JS_SECTION_RE  = re.compile(r'^\s*(?://|/\*)\s*[─═]+\s*(.*?)\s*[─═]*\s*(?:\*/)?\s*$')
-_JS_FUNC_RE     = re.compile(r'^(?:async\s+)?function\s+(\w+)')
-_JS_TOPCONST_RE = re.compile(r'^(?:const|let)\s+(\w+)\s*=')
-
-
-def generate_code_map() -> None:
-    """Génère docs/code-map.md : index « où se trouve quoi » — fonctions et
-    const/let top-level des fichiers JS, bannières de section JS et CSS, avec
-    numéros de ligne. Fichier GÉNÉRÉ à chaque build, ne jamais l'éditer :
-    toute correction se fait dans les sources ou dans ce générateur."""
-    lines = [
-        '# Code map — MIAOU',
-        '',
-        '> **Généré par `build.py` à chaque build — ne pas éditer.**',
-        '> Index de repérage : fonctions/const top-level (JS) et sections (JS/CSS),',
-        '> avec numéros de ligne dans `src/`.',
-    ]
-
-    for name in JS_ORDER:
-        path = SRC / 'js' / name
-        if not path.exists():
-            continue
-        lines.append('')
-        lines.append(f'## src/js/{name}')
-        lines.append('')
-        for no, raw in enumerate(read(path).split('\n'), 1):
-            m = _JS_SECTION_RE.match(raw)
-            if m and m.group(1):
-                lines.append(f'- **{m.group(1)}** (L{no})')
-                continue
-            m = _JS_FUNC_RE.match(raw)
-            if m:
-                lines.append(f'  - `{m.group(1)}()` — L{no}')
-                continue
-            m = _JS_TOPCONST_RE.match(raw)
-            if m:
-                lines.append(f'  - `{m.group(1)}` — L{no}')
-
-    for name in CSS_ORDER:
-        path = SRC / 'css' / name
-        if not path.exists():
-            continue
-        lines.append('')
-        lines.append(f'## src/css/{name}')
-        lines.append('')
-        for no, raw in enumerate(read(path).split('\n'), 1):
-            m = _JS_SECTION_RE.match(raw)
-            if m and m.group(1):
-                lines.append(f'- **{m.group(1)}** (L{no})')
-
-    out = ROOT / 'docs' / 'code-map.md'
-    out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    print(f'Code map → {out}')
-
-
 def build(use_config: bool = True):
     DIST.mkdir(exist_ok=True)
 
@@ -498,7 +452,6 @@ def build(use_config: bool = True):
     out_path.write_text(output, encoding='utf-8')
     print(f'Build OK → {out_path}')
 
-    generate_code_map()
 
 
 if __name__ == '__main__':

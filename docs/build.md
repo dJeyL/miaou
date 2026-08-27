@@ -48,7 +48,8 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   (Un `typeof … !== 'undefined'` ne convient pas : la garde elle-même contient
   le marqueur, qui serait substitué → objet dupliqué.)
 - Les valeurs dérivées (`REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
-  `BUILD_API_MODEL`, `BUILD_CHAT_TEMPERATURE`, plus `BUILD_TS` ci-dessous) sont
+  `BUILD_API_MODEL`, `BUILD_CHAT_TEMPERATURE`, `BUILD_REPO_URL`, plus `BUILD_TS`
+  ci-dessous) sont
   **toutes déclarées dans `storage.js`**, juste sous `BUILD_CONFIG`, avec leurs
   défauts. Elles ne sont **référencées ailleurs qu'en corps de fonction**
   (cf. contrainte `const`/test runner dans `CLAUDE.md`) : ne pas les redéclarer
@@ -59,6 +60,11 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   défaut `0` côté `storage.js` signifie donc « sources non buildées » (tests
   QuickJS), jamais « config incomplète ». Les autres clefs, elles, viennent
   toutes de `config.json` et sont documentées dans le README.
+- `BUILD_REPO_URL` (défaut `DEFAULT_REPO_URL`, le dépôt public) est le seul
+  dérivé qui distingue **trois** états et non deux : d'où un `typeof === 'string'`
+  et surtout **pas** un `||`, qui écraserait la chaîne vide — laquelle veut dire
+  « pas de lien du tout », pas « valeur manquante ». Lu uniquement par le footer
+  des exports (`brandHtmlFor`, ui.js), cf. `docs/exports.md`.
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).

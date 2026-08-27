@@ -261,13 +261,15 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
 
 - **Une réponse seule** en Markdown : au survol d'un message du modèle, un
   bouton la télécharge en `.md`.
-- **La conversation entière** en Markdown : une icône à droite du titre, en
-  haut. L'export inclut la trace des outils utilisés à chaque tour.
-- **La conversation en page HTML autonome** : une icône jumelle, au même
-  endroit. Le fichier obtenu est un instantané complet — coloration figée,
-  diagrammes inclus en image — lisible dans n'importe quel navigateur sans
-  MIAOU ni connexion. Idéal pour archiver ou partager par mail. Les images y
-  sont embarquées et restent cliquables.
+- **La conversation entière en page HTML autonome** : l'icône de téléchargement
+  à droite du titre, en haut. Le fichier obtenu est un instantané complet —
+  coloration figée, diagrammes inclus en image — lisible dans n'importe quel
+  navigateur sans MIAOU ni connexion. Idéal pour archiver ou partager par mail.
+  Les images y sont embarquées et restent cliquables.
+- **La conversation entière en Markdown** : la même icône, cliquée en gardant
+  **Shift** enfoncé. L'export inclut la trace des outils utilisés à chaque tour.
+  Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de
+  commandes fait la même chose.
 
 Les pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles
 s'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut

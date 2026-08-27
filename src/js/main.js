@@ -819,11 +819,25 @@ function togglePin(id) {
   renderConvList();
 }
 
+// Bouton d'export unique de la topbar (onclick="onExportConv(event)").
+// Un seul bouton pour deux formats : HTML par défaut (autonome, embarque les
+// traces d'outils), Markdown avec Shift. L'affordance vit dans le `title`
+// STATIQUE du bouton — pas de mise à jour au keydown : une tooltip native déjà
+// affichée ne se rafraîchit pas tant que le curseur n'a pas quitté l'élément,
+// le feedback serait donc trompeur une fois sur deux. Corollaire assumé : sans
+// clavier (tactile), seul l'export HTML est atteignable depuis la topbar, le
+// Markdown restant accessible par la palette de commandes.
+function onExportConv(ev) {
+  if (ev && ev.shiftKey) downloadConvMd();
+  else exportConvHtml();
+}
+
 // Exporte la conversation courante en Markdown. Messages visibles (user +
 // assistant) ; les acks d'outils ENRICHIS (args+result présents) précédant un
 // message assistant sont rendus en trace (formatToolAcksMd) juste avant le
 // texte de ce tour — acks legacy (sans args) silencieusement omis, comme avant.
-// Appelé depuis le bouton topbar (onclick="downloadConvMd()").
+// Appelé depuis la palette de commandes, et depuis le bouton topbar via
+// onExportConv() quand Shift est enfoncé.
 function downloadConvMd() {
   if (!currentThread || !currentThread.length) return;
   const conv = currentConvId ? loadConversation(currentConvId) : null;

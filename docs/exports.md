@@ -30,8 +30,9 @@
   Le contenu brut à télécharger est stocké dans `body.dataset.raw`, posé par
   `finalizeAssistant` et `buildMsg` (chemin reload). Si on retouche l'un ou
   l'autre, s'assurer que `dataset.raw` est bien mis à jour.
-- **`.conv-dl-btn` (export de la conversation) est désactivé (`disabled`) pendant
-  le streaming** via `setSending` (ui.js). CSS : `.conv-dl-btn:disabled` masque
+- **`.conv-dl-btn` (export de la conversation, les deux formats via
+  `onExportConv`) est désactivé (`disabled`) pendant le streaming** via
+  `setSending` (ui.js). CSS : `.conv-dl-btn:disabled` masque
   le bouton. `downloadConvMd()` (main.js) ne garde que les rôles `user`/`assistant`
   pour le texte, et inclut l'horodatage par message si `ts` est défini.
 - **Traces d'appels d'outils dans l'export.** `formatToolAcksMd(acks)` (utils.js,
@@ -134,7 +135,8 @@ ultérieures du même lot).
   mention historique contraire : `tests/runner.py` ne l'appelle pas ; référencer
   `LOGO_SRC` — global de main.js — y est donc sans danger) : assemble le
   squelette `<!doctype html><html data-theme="…"><head>…</head><body>` (topbar
-  titre+date, `bodyHtml`, footer « Généré par MIAOU », `scriptTag` avant
+  titre+date, `bodyHtml`, footer « Généré par MIAOU » — le nom pouvant porter un
+  lien vers le dépôt, cf. plus bas —, `scriptTag` avant
   `</body>`). Un seul `<link>` (favicon, cf. ci-dessous) ; pas de CDN/CSS externe
   (Prism inliné). Le `<script>` n'est plus interdit (**D1 révisé**, cf.
   ci-dessous) : il est composé par l'appelant dans `scriptTag` (vide → export
@@ -376,7 +378,7 @@ ultérieures du même lot).
     zoom global scale fidèlement l'ensemble sans recalcul de chaque valeur.
 - **Bouton retitle-btn (fix collatéral, pas lié à G)** : `.topbar-mid:hover
   .conv-retitle-btn` révélait le bouton de retitrage au survol de **tout**
-  `.topbar-mid` (titre ET boutons de download, jumeaux), contredisant le
+  `.topbar-mid` (titre ET boutons de download, alors jumeaux), contredisant le
   commentaire du CSS (« retitrage au survol du titre seulement ») — bug
   pré-existant, révélé par l'ajout du second bouton jumeau. Corrigé en
   `:has(#conv-title:hover, .conv-retitle-btn:hover)` (chat.css) : la
@@ -395,12 +397,27 @@ ultérieures du même lot).
   `runBackgroundTask('export HTML…')` (indicateur d'activité pendant le
   chargement CDN ; un échec — improbable, tous les await internes sont
   gardés — rend `null` → abandon silencieux).
-- **Câblage topbar (livré, commit `106245c`)** : bouton `.conv-dl-html-btn`
-  jumeau de `.conv-dl-btn` (index.html), `onclick="exportConvHtml()"` (ui.js).
-  `syncConvDownloadBtn()` gère les DEUX boutons ensemble : même condition
-  d'affichage (`hidden` levé quand une conversation a du contenu), désactivés
-  pendant l'envoi (`setSending`). Pas d'entrée palette (gatée sur le lot F,
-  absent) — le point d'entrée est le bouton topbar seul.
+- **Câblage topbar : un seul bouton pour les deux formats.** Le bouton jumeau
+  `.conv-dl-html-btn` a été retiré : la topbar ne porte plus que `.conv-dl-btn`
+  (icône de téléchargement), `onclick="onExportConv(event)"`. `onExportConv`
+  (main.js) est un pur dispatcher — `exportConvHtml()` par défaut,
+  `downloadConvMd()` si `ev.shiftKey`. HTML au défaut parce que c'est le format
+  autonome (traces d'outils, images, diagrammes embarqués) ; le Markdown est le
+  repli pour réintégrer le texte ailleurs. `syncConvDownloadBtn()` et
+  `setSending` ne gèrent plus qu'un bouton (affichage conditionné au contenu,
+  désactivation pendant l'envoi).
+  **L'affordance Shift vit dans le `title` STATIQUE** (« Exporter la
+  conversation en HTML — Shift : Markdown ») : pas de mise à jour au
+  `keydown`/`keyup`, parce qu'une tooltip native déjà affichée ne se rafraîchit
+  pas tant que le curseur n'a pas quitté l'élément — un `title` dynamique
+  mentirait une fois sur deux. Pas non plus de swap d'icône sous Shift : à 14px
+  c'est plus perturbant qu'informatif, et « document `<>` » porte la métaphore
+  HTML, pas Markdown (une métaphore = un usage).
+  **Corollaire assumé** : sans clavier (tactile), la topbar n'atteint que
+  l'export HTML. Le Markdown reste accessible par la palette de commandes, qui
+  garde ses DEUX entrées distinctes (`export-md`, touche `d`, et l'entrée HTML,
+  touche `w`) — la palette est le chemin explicite, elle n'a pas la contrainte
+  de place qui motivait la fusion.
 
 ## Bascule de thème dans l'export (lot R)
 
@@ -497,6 +514,31 @@ par le modèle**, aucune ressource stockée.
     `EXPORT_VERBS` : « Généré par MIAOU le … » pour une conversation,
     « Converti par MIAOU le … » pour un `.md`. (`verbs.meta` ne sert plus qu'à
     la description Open Graph depuis que la date a quitté le cartouche.)
+    Le libellé y est **scindé** (`footerPrefix` + le nom rendu à part) parce
+    que seul le mot « MIAOU » porte le lien du dépôt : une chaîne d'un bloc
+    obligerait à la redécouper au rendu.
+
+- **Lien du dépôt sur le mot « MIAOU » (footer).** `brandHtmlFor(url)` (ui.js,
+  **pure et testée**) décide lien ou texte ; `exportBrandHtml()` n'est que son
+  point de lecture de `BUILD_REPO_URL` (constante de build, `storage.js`, figée
+  au chargement — d'où la scission : la partie décisionnelle reste testable).
+  Trois états, gouvernés côté `config.json` (`repo_url`, cf. README) : absent ou
+  `null` → dépôt public par défaut ; chaîne vide → **pas de `<a>` du tout**, le
+  mot reste du texte ; non vide → lien vers cette URL. Le lien est
+  `target="_blank" rel="noopener"`, et l'URL passe par **`escHtml`** bien
+  qu'elle soit d'origine build et jamais modèle : le chemin string→HTML de
+  l'export ne souffre pas d'exception gratuite (piège 21). Style : `.export-brand`
+  dans `EXPORT_CSS` — `color: inherit`, pour que le lien ne prenne pas le bleu
+  des liens de contenu qui jurerait dans un footer gris de 11px, et
+  **soulignement pointillé permanent** (plein au survol) : la couleur étant
+  délibérément identique au texte voisin, elle ne peut pas porter seule
+  l'affordance de lien — sans le pointillé, rien ne le distinguerait avant le
+  survol (et rien du tout au doigt, sur mobile). **L'espacement des
+  points n'est pas réglable** : `text-decoration` le dérive de l'épaisseur du
+  trait et aucune propriété standard ne le contrôle. Un pointillé plus aéré via
+  `background-image` (dégradé radial en `repeat-x`) a été **essayé puis
+  abandonné** — invisible à l'usage. Ne pas y revenir sans contrôle visuel
+  réel.
 - **Câblage** (handlers globaux, attributs inline `index.html` — cf. CLAUDE.md) :
   `onMdConvertPick` / `onMdConvertInput` / `onMdConvertDragOver` /
   `onMdConvertDragLeave` / `onMdConvertDrop`. Le filtre de fichier réutilise
