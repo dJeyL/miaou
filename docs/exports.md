@@ -188,6 +188,24 @@ ultérieures du même lot).
   même parade défensive que `build.py` sur `__MIAOU_CONFIG__` (EXPORT_SCRIPT
   n'en contient pas aujourd'hui, mais la garde évite qu'un futur ajout casse
   silencieusement le `</script>`).
+  - **Commentaires : `//` en pleine ligne UNIQUEMENT (règle dure).** Le build
+    retire les commentaires d'`EXPORT_SCRIPT` (`strip_export_script_comments`,
+    build.py) pour qu'ils ne partent pas dans chaque export interactif — mais
+    avec une passe volontairement bête (`strip_line_comments_only`) : elle
+    supprime les lignes dont le premier caractère non-blanc est `//`, et ne
+    regarde **jamais** l'intérieur d'une ligne de code. Raison : le corps
+    d'`EXPORT_SCRIPT` est du JS vivant **dans un template literal**, où les
+    échappements sont doublés (un `\\` en source produit un `\` à
+    l'exécution) — un scanner JS complet (`strip_js_comments`) n'y lit donc pas
+    la même chaîne que le moteur, et son arbitrage division/regex literal n'est
+    plus fiable. Conséquence à respecter : **jamais de bloc `/* */`, jamais de
+    `//` en fin de ligne de code** dans `EXPORT_SCRIPT` — ils survivraient au
+    strip et partiraient en silence dans tous les exports. Deux tests de
+    `run_build_unit_tests` gardent la règle sur la source réelle (« aucun bloc
+    `/* */` », « aucun `//` en fin de ligne de code ») : elle échoue à
+    l'écriture, pas à la relecture de cette doc. Même posture pour `EXPORT_CSS`,
+    nettoyé lui par `strip_css_comments` (scanner CSS à deux contextes, sûr) via
+    `strip_export_css_comments`.
   - **Images cliquables → nouvel onglet (lot Gb2, décision A.4).** Le même
     script pose au chargement un handler de clic sur les images ouvrables :
     images modèle (`img.tool-block-img`, lot Gbis) et vignettes de chips user

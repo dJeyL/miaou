@@ -3769,7 +3769,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-27 14:58 UTC */
+/* miaou — built: 2026-08-27 15:22 UTC */
 
 /* ── utils.js ── */
 
@@ -5005,7 +5005,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787842682}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787844155}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14650,11 +14650,7 @@ const PRISM_THEME_CSS =
 
 const EXPORT_CSS = `
 html { zoom: 0.9; }
-/* Sur mobile, le zoom 0.9 (confortable sur grand écran, où il donne de l'air à
-   une colonne de 900px) rend le texte trop petit : on revient à 100 % sous le
-   point de rupture 767px, le même que responsive.css. Retour Julien après test
-   sur mobile. Indissociable du <meta viewport> ajouté au même lot dans
-   buildExportHtml : sans lui cette media query ne se déclencherait jamais. */
+
 @media (max-width: 767px) {
   html { zoom: 1; }
   .export-body { padding: 16px 14px; }
@@ -14662,43 +14658,24 @@ html { zoom: 0.9; }
   .export-footer { padding: 16px 14px; }
 }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
-/* Scrollbars : copie des règles de base.css (EXPORT_CSS est une feuille figée,
-   rien ne s'y propage — cf. piège 22). Utile surtout aux blocs de code, dont le
-   <code> scrolle horizontalement quand une ligne déborde ; sans ça WebKit y
-   pose sa barre par défaut, épaisse et hors palette. Les deux tokens employés
-   (--border-2, --scrollbar-thumb-hover) sont déjà dans THEME_TOKENS, donc
-   sérialisés pour les DEUX thèmes : la barre suit la bascule claire/sombre.
-   scrollbar-color/-width est la voie standard (seule que Firefox comprenne) ;
-   elle n'a pas d'état :hover, d'où le pouce figé sur --border-2 côté Firefox. */
+
 * { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
 ::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 .export-topbar-wrap { border-bottom: 1px solid var(--border); }
-/* Le padding droit RÉSERVE la place du bouton de thème : celui-ci est en
-   position:fixed (contrainte du sélecteur :has(), cf. serializeThemeTokens) donc
-   hors du flux — sans cette réserve, un titre long passe DESSOUS et se fait
-   amputer (constaté sur iPhone). 34px de bouton + 16px de marge + respiration.
-   La variante tactile (bouton 40px) ajoute sa propre réserve plus bas. */
+
 .export-topbar { max-width: 900px; margin: 0 auto; padding: 14px 20px; padding-right: 66px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
 .export-logo { width: 44px; height: 44px; flex-shrink: 0; }
-/* Le cartouche ne porte plus que logo + titre (la date est passée au footer,
-   décision Julien) : plus de marge basse, plus de règle .export-meta. */
+
 .export-title { font-size: 16px; font-weight: 600; margin: 0; }
 .export-body { max-width: 900px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
-/* Sans cartouche (Markdown sans titre h1), le corps est le premier élément de
-   la page : il lui faut sa propre respiration en haut, celle que la barre de
-   séparation du cartouche apporte sinon. */
+
 .export-body:first-child { padding-top: 40px; }
 .export-footer-wrap { border-top: 1px solid var(--border); }
 .export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
-/* Le lien du dépôt se signale par la couleur d'accent, sans soulignement de
-   base : dans un footer gris de 11px, l'orange tranche assez pour être lu
-   comme lien. Le soulignement n'apparaît qu'au survol, pour accuser le
-   ciblage. (Une variante « couleur héritée + pointillé permanent » a été
-   essayée puis abandonnée : le pointillé était visuellement bruyant et son
-   espacement n'est pas réglable en CSS standard.) */
+
 .export-brand { color: var(--accent); text-decoration: none; }
 .export-brand:hover { text-decoration: underline; text-underline-offset: 2px; }
 .msg { display: flex; flex-direction: column; }
@@ -14743,9 +14720,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .code-copy--checked { color: var(--accent) !important; }
 .body pre code { display: block; padding: 13px 14px !important; font-family: var(--mono) !important; font-size: 11.5px !important; line-height: 1.6 !important; overflow-x: auto; background: transparent !important; text-shadow: none !important; }
 .reasoning { margin: 0 0 8px; padding: 8px 11px; border-left: 2px solid var(--border-2); background: var(--surface-2); border-radius: 0 6px 6px 0; }
-/* Contenu imbriqué DANS le <summary> (pas en frère) : tout le bloc — en-tête
-   ET texte du raisonnement — est une seule zone de clic pliable, nativement,
-   sans JS (cf. piège <details>/<summary>). Marqueur natif retiré. */
+
 .reasoning summary { cursor: pointer; list-style: none; display: block; }
 .reasoning summary::-webkit-details-marker { display: none; }
 .reasoning summary::marker { content: ''; }
@@ -14762,28 +14737,15 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .tool-trace li:first-child { padding-top: 0; border-top: none; }
 .tool-trace li + li { border-top: 1px solid var(--border); }
 .tool-trace code { font-family: var(--mono); font-size: 11.5px; }
-/* Code exécuté par js__eval (lot L) : bloc <pre> COMPLET dans la trace d'outil,
-   seule trace du code (absent du thread live). EXPORT_CSS est une feuille figée
-   qui ne suit PAS chat/tools/composer.css (piège 22) — règle dédiée ici. */
+
 .tool-ack-code { margin: 4px 0 2px; padding: 8px 10px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; overflow-x: auto; white-space: pre; }
 .tool-ack-code code { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-2); }
-/* Trois paliers (lot N) : replié, .tool-trace ne montre QUE le compteur
-   (summary externe) ; ouvert, .tool-trace-toggle apparaît sur la liste
-   d'intents (état par défaut du groupe de radios) ; cliquer dessus bascule
-   au détail JSON, cliquer sur le détail JSON revient aux intents — cycle
-   piloté par une paire de radios masqués + labels cliquables, PAS par un
-   second <details> (un <details> imbriqué ne serait pas réinitialisé par le
-   DOM à la fermeture du parent, cul-de-sac sur JSON — cf. formatToolAcksHtml,
-   utils.js). Zéro JS, fonctionne même en export statique. */
+
 .tool-trace-toggle { margin-top: 4px; }
 .tt-radio { position: absolute; opacity: 0; pointer-events: none; }
 .tt-view { display: block; cursor: pointer; }
 .tt-view-json { display: none; }
-/* 2ᵉ radio (id="ttj…", label for="tti…" = clic pour REVENIR aux intents)
-   coché → son frère immédiat .tt-view-intents disparaît, .tt-view-json
-   (frère suivant) apparaît. Ordre DOM figé par formatToolAcksHtml : radio
-   intents, radio json, label intents, label json — ne pas réordonner sans
-   ajuster ce sélecteur. */
+
 .tt-radio + .tt-radio:checked ~ .tt-view-intents { display: none; }
 .tt-radio + .tt-radio:checked ~ .tt-view-json { display: block; }
 .tool-ack-preview-list { display: flex; flex-direction: column; gap: 3px; }
@@ -14800,18 +14762,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .att-icon svg { width: 13px; height: 13px; }
 .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; color: var(--text); }
 .att-size { color: var(--text-3); flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; }
-/* Images modèle embarquées (lot Gbis) : parité reload — resource_presented /
-   resource_stored non-inline / attachment_recalled images. Inspiré de
-   .tool-block/.tool-block-img de tools.css (bordure, rayon, max-width) sans le
-   copier (piège 22). Pas de cursor:pointer ici : en export statique l'image
-   n'est pas cliquable (décision A.4) ; EXPORT_SCRIPT posera le lien + curseur
-   en mode interactif (lot Gb2). */
+
 .tool-block { margin: 6px 0; max-width: 100%; }
 .tool-block-img { max-width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: var(--r-sm); }
-/* Diagrammes Mermaid embarqués (lot E4). Né synchronisé avec .mermaid-view de
-   chat.css (padding, fond, centrage svg) — dérive ensuite comme le reste de
-   cette feuille (piège 22). Pas de display:none/toggle ici : dans l'export le
-   SVG est TOUJOURS visible, la source vit repliée dans .mermaid-src. */
+
 .mermaid-view { margin: 12px 0; padding: 14px; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r); overflow-x: auto; }
 .mermaid-view svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .mermaid-src { margin: -6px 0 12px; }
@@ -14820,52 +14774,27 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .mermaid-src summary::marker { content: ''; }
 .mermaid-src summary:hover { color: var(--text); }
 .mermaid-src[open] summary { margin-bottom: 2px; }
-/* Document Markdown converti (lot R) : réutilise la classe .body pour toute la
-   typographie, n'ajoute que ce qui lui est propre. Les h1 restants dans le
-   corps (le premier est consommé par le cartouche, cf. extractMdTitle) sont
-   remontés en taille : dans un document autonome ils structurent la lecture,
-   là où dans une bulle de chat ils restaient discrets.
-   ATTENTION : EXPORT_CSS est un template literal — jamais de backtick dans
-   ces commentaires, il clôt la chaîne et casse le chargement du fichier. */
+
 .md-doc { font-size: 14px; line-height: 1.68; color: var(--text); }
 .md-doc h1 { font-size: 21px; margin: 24px 0 10px; }
 .md-doc h2 { font-size: 17px; margin: 22px 0 9px; }
 .md-doc > *:first-child { margin-top: 0; }
-/* Bascule de thème (export interactif uniquement) : le bouton est créé par
-   EXPORT_SCRIPT, ces règles restent inertes en export statique. Fixe en coin
-   bas-droite, discret au repos, révélé au survol — l'export est un document de
-   lecture, pas une app. */
-/* Bascule de thème SANS JavaScript (lot R révisé) : case masquée + label.
-   La case doit rester focusable au clavier — d'où opacity/position plutôt que
-   display:none, qui la sortirait de l'ordre de tabulation. */
+
 #theme-switch { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
-/* Le label est en tête de body (contrainte du sélecteur :has / frère) mais doit
-   s'afficher dans le cartouche : on le cale en fixed sur la même ligne que la
-   topbar. Sans cartouche il occupe la même place, en haut à droite du document
-   — dans les deux cas il reste accessible au scroll. */
-/* Aligné sur la COLONNE de lecture (900px centrés), pas sur le bord du
-   viewport : sur grand écran, un right:16px le laissait flotter à ~270px du
-   cartouche, visuellement désolidarisé. left:50% + une demi-colonne le cale au
-   bord droit de la colonne ; min() le ramène au bord de l'écran quand le
-   viewport est plus étroit que la colonne (mobile).
-   Pas de backtick ici : EXPORT_CSS est un template literal (piège 22). */
+
 .theme-switch-label { position: fixed; top: 16px; left: min(100vw - 50px, 50% + 450px); z-index: 10; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 50%; background: var(--surface-2); color: var(--text-3); cursor: pointer; opacity: 0.55; transition: opacity var(--ease), color var(--ease), border-color var(--ease); }
 .theme-switch-label:hover { opacity: 1; color: var(--text); border-color: var(--accent-bd); }
 #theme-switch:focus-visible + .theme-switch-label { opacity: 1; color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .theme-switch-label svg { width: 17px; height: 17px; }
-/* Une seule icône visible : elle montre la DESTINATION. Décochée = sombre →
-   soleil ; cochée = clair → lune. */
+
 .theme-switch-label .ts-moon { display: none; }
 #theme-switch:checked + .theme-switch-label .ts-sun { display: none; }
 #theme-switch:checked + .theme-switch-label .ts-moon { display: block; }
-/* Sur écran tactile il n'y a PAS de survol : le bouton resterait indéfiniment à
-   demi-effacé et passe pour absent (retour Julien après test sur mobile). On le
-   rend pleinement visible d'emblée, et un peu plus grand pour la cible tactile
-   (34px est en dessous des 44px recommandés au doigt). */
+
 @media (pointer: coarse) {
   .theme-switch-label { opacity: 1; color: var(--text-2); width: 40px; height: 40px; }
   .theme-switch-label svg { width: 19px; height: 19px; }
-  /* Bouton plus gros → réserve plus large dans le cartouche. */
+  
   .export-topbar { padding-right: 72px; }
 }
 @media print { .theme-switch-label { display: none; } }
@@ -14918,15 +14847,6 @@ const EXPORT_SCRIPT = `
       head.appendChild(actions);
     })(pres[i]);
   }
-  // Images cliquables (lot Gb2) : nouvel onglet. La navigation top-level vers un
-  // data: est bloquée par les navigateurs → on convertit le data URL en Blob et
-  // on window.open l'URL d'objet. AUCUNE donnée modèle/outil interpolée ici
-  // (piège 21) : les data URL sont LUS depuis le DOM (img.src déjà posé par
-  // renderExportBody), jamais injectés dans ce script. Cibles : images modèle
-  // (.tool-block-img) et vignettes de chips user image (.att-chip > img.att-thumb,
-  // clic sur le chip ENTIER). Échec de conversion → rien (pas de fallback data:
-  // top-level, interdit) ; en export STATIQUE (ce script absent) les images
-  // restent visibles mais non cliquables (décision A.4).
   function dataUrlToBlob(u) {
     var comma = u.indexOf(',');
     if (comma < 0 || u.slice(0, 5) !== 'data:') return null;
@@ -14962,26 +14882,6 @@ const EXPORT_SCRIPT = `
     var thumb = chips[ci].querySelector('img.att-thumb');
     if (thumb) bindImageOpen(chips[ci], thumb.src);
   }
-  // Bascule de thème : les DEUX jeux de tokens sont embarqués par
-  // serializeThemeTokens (:root sombre + html[data-theme="light"]), il suffit
-  // donc de basculer l'attribut. LIMITE CONNUE : les SVG Mermaid embarqués
-  // (embedExportMermaid) portent un <style> interne aux couleurs RÉSOLUES à
-  // l'export — ils ne suivent pas la bascule et gardent leur thème d'origine.
-  // Les recolorer imposerait d'embarquer Mermaid dans l'export (hors sujet) ;
-  // limite assumée, cf. docs/exports.md.
-  //
-  // Le bouton est du HTML STATIQUE (case + label, cf. buildExportHtml) et la
-  // bascule fonctionne SANS ce script — c'est le point du lot R révisé (les
-  // visionneuses type Quick Look iOS n'exécutent aucun script). Ce bloc n'ajoute
-  // que ce qui exige du JS : la PERSISTANCE du choix d'un chargement à l'autre.
-  // Il ne pose AUCUN attribut de thème : la case est seule source de vérité,
-  // tokens et couleurs Prism sont gouvernés par le sélecteur :has() sur elle.
-  // (Pas de backtick dans ce commentaire : EXPORT_SCRIPT est un template
-  // literal, piège 22.)
-  // UNE seule clef pour TOUS les exports (pas de suffixe de chemin) : le choix
-  // clair/sombre est une préférence de lecture, pas un attribut du document —
-  // la refaire à chaque nouvel export n'a pas de sens, et une entrée par fichier
-  // encrassait le localStorage sans rien apporter.
   var THEME_KEY = 'miaou-export-theme';
   var sw = document.getElementById('theme-switch');
   if (sw) {

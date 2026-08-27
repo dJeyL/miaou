@@ -224,6 +224,79 @@ def strip_css_comments(src: str) -> str:
     return ''.join(out)
 
 
+EXPORT_CSS_ANCHOR = 'const EXPORT_CSS = `'
+EXPORT_SCRIPT_ANCHOR = 'const EXPORT_SCRIPT = `'
+
+
+def _rewrite_export_literal(src: str, anchor: str, transform) -> str:
+    """Applique `transform` au CORPS d'un littéral d'export de ui.js.
+
+    Facteur commun de strip_export_css_comments / strip_export_script_comments :
+    même repérage, même posture de prudence, seul le nettoyage diffère.
+
+    Ciblage volontairement rigide : littéral ancré en colonne 0, terminé par une
+    ligne '`;'. Toute forme hors gabarit (renommage, ré-indentation) rend la
+    source INCHANGÉE plutôt que de risquer une découpe fausse dans un template
+    literal. Le contrôle 'ni backtick ni ${ dans le corps candidat' est le
+    garde-fou de dernier recours du piège 22 ; il porte sur l'ENTRÉE : un
+    backtick y signale que la recherche du '\n`;' s'est arrêtée au mauvais
+    endroit. Contrôler la SORTIE ne servirait à rien — le strip aurait
+    justement effacé le commentaire fautif, donc le signal."""
+    start = src.find(anchor)
+    if start == -1:
+        return src
+    if start != 0 and src[start - 1] != '\n':
+        return src
+    i = start + len(anchor)
+    end = src.find('\n`;', i)
+    if end == -1:
+        return src
+    body = src[i:end]
+    if '`' in body or '${' in body:
+        return src
+    return src[:i] + transform(body) + src[end:]
+
+
+def strip_line_comments_only(src: str) -> str:
+    """Retire les lignes ENTIÈREMENT commentées (premier caractère non-blanc
+    '//'), et rien d'autre.
+
+    Délibérément plus bête que strip_js_comments : on ne scanne JAMAIS
+    l'intérieur d'une ligne de code, donc aucun arbitrage division / regex
+    literal / string. C'est ce qui rend la passe sûre sur EXPORT_SCRIPT, dont
+    le corps est du JS vivant à l'intérieur d'un template literal — les
+    échappements y sont doublés (un '\\\\' en source produit un '\\' à
+    l'exécution),
+    si bien qu'un scanner JS complet ne lit PAS la même chaîne que le moteur.
+    Corollaire : EXPORT_SCRIPT ne tolère que des commentaires '//' en pleine
+    ligne (cf. docs/exports.md) — un bloc /* */ ou un '//' en fin de ligne de
+    code survivrait ici, silencieusement."""
+    return '\n'.join(l for l in src.split('\n') if not l.lstrip().startswith('//'))
+
+
+def strip_export_script_comments(src: str) -> str:
+    """Retire les commentaires de ligne du littéral EXPORT_SCRIPT (ui.js).
+
+    Même motivation que strip_export_css_comments : ce JS statique part dans
+    chaque export INTERACTIF (~2 Ko de commentaires sur 7). Le nettoyage est
+    volontairement limité aux lignes '//' — voir strip_line_comments_only pour
+    la raison, et la garde run_build_unit_tests qui interdit les blocs."""
+    return _rewrite_export_literal(src, EXPORT_SCRIPT_ANCHOR, strip_line_comments_only)
+
+
+def strip_export_css_comments(src: str) -> str:
+    """Retire les commentaires du littéral EXPORT_CSS (ui.js).
+
+    strip_js_comments laisse intact le CONTENU des template literals — c'est
+    voulu (une chaîne JS n'est pas du code). Mais EXPORT_CSS est une feuille de
+    style figée (piège 22) : ses commentaires partaient dans dist/miaou.html ET
+    dans CHAQUE fichier exporté (~6,5 Ko sur 17 Ko de feuille). On les retire
+    donc explicitement, en réutilisant strip_css_comments.
+
+    Repérage et gardes : cf. _rewrite_export_literal."""
+    return _rewrite_export_literal(src, EXPORT_CSS_ANCHOR, strip_css_comments)
+
+
 def strip_html_comments(src: str) -> str:
     """Retire les commentaires <!-- … --> du TEMPLATE HTML. Appelé AVANT la
     substitution des placeholders : le JS/CSS injectés ne sont jamais
@@ -403,7 +476,9 @@ def assemble_js(cfg_data: dict, help_data: dict, system_skills_data: dict) -> st
             print(f'  [warn] fichier manquant : {path}')
             continue
         parts.append(f'\n/* ── {name} ── */\n')
-        parts.append(strip_js_comments(read(path)))
+        src_js = strip_export_css_comments(read(path))
+        src_js = strip_export_script_comments(src_js)
+        parts.append(strip_js_comments(src_js))
     js = collapse_blank_code_lines('\n'.join(parts))
 
     # Injection de config : un seul marqueur, l'objet entier sérialisé en JSON

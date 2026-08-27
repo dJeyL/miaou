@@ -256,6 +256,130 @@ def run_build_unit_tests() -> tuple[int, int]:
     check('help : fichier sans section → dict vide',
           build.parse_help_sections('juste du texte, pas de titre\n') == {})
 
+    # strip_export_css_comments : EXPORT_CSS est une feuille CSS figée qui vit
+    # dans un template literal de ui.js. strip_js_comments laisse le contenu
+    # des literals intact (c'est voulu), donc ses commentaires partaient dans
+    # dist/miaou.html ET dans chaque fichier exporté. Ces cas visent le
+    # CÂBLAGE (quel stripper s'applique à quoi), pas la découpe elle-même :
+    # c'est le câblage qui manquait, strip_css_comments était déjà correct.
+    ecc = build.strip_export_css_comments
+
+    check('export-css : commentaire du littéral retiré',
+          ecc('const EXPORT_CSS = `\na { /* x */ color: red; }\n`;\n')
+          == 'const EXPORT_CSS = `\na {  color: red; }\n`;\n')
+
+    check('export-css : le code JS autour est intact',
+          ecc('var before = 1;\nconst EXPORT_CSS = `\na { /* x */ }\n`;\nvar after = 2;\n')
+          == 'var before = 1;\nconst EXPORT_CSS = `\na {  }\n`;\nvar after = 2;\n')
+
+    check('export-css : un fichier sans EXPORT_CSS est rendu inchangé',
+          ecc('var t = `a /* pas touche */ b`;\n') == 'var t = `a /* pas touche */ b`;\n')
+
+    check('export-css : idempotente (rejouable sans dégât)',
+          ecc(ecc('const EXPORT_CSS = `\na { /* x */ }\n`;\n'))
+          == ecc('const EXPORT_CSS = `\na { /* x */ }\n`;\n'))
+
+    # Ciblage rigide : toute forme hors gabarit doit être un no-op explicite,
+    # jamais une découpe approximative dans un template literal (piège 22).
+    check('export-css : littéral non terminé → no-op',
+          ecc('const EXPORT_CSS = `\na { /* x */ }\n') == 'const EXPORT_CSS = `\na { /* x */ }\n')
+
+    check('export-css : ancre indentée (non colonne 0) → no-op',
+          ecc('  const EXPORT_CSS = `\na { /* x */ }\n`;\n')
+          == '  const EXPORT_CSS = `\na { /* x */ }\n`;\n')
+
+    check('export-css : content: "/*" dans la feuille préservé',
+          ecc('const EXPORT_CSS = `\na::before { content: "/*"; }\n`;\n')
+          == 'const EXPORT_CSS = `\na::before { content: "/*"; }\n`;\n')
+
+    # Garde-fou de dernier recours du piège 22 : si la découpe produisait un
+    # backtick ou un ${, on préfère ne rien faire que casser le literal.
+    # Un backtick ne peut se trouver dans le corps QUE dans un commentaire (le
+    # piège 22 l'interdit ailleurs) : le retirer rouvrirait le literal. Cas
+    # censé être impossible en vrai — d'où la ceinture, testée ici quand même.
+    backtick_case = 'const EXPORT_CSS = `\na { /* ` */ }\n`;\n'
+    check('export-css : backtick dans le corps → no-op (piège 22)',
+          ecc(backtick_case) == backtick_case)
+
+    interp_case = 'const EXPORT_CSS = `\na { /* ${x} */ }\n`;\n'
+    check('export-css : ${ dans le corps → no-op (piège 22)',
+          ecc(interp_case) == interp_case)
+
+    # Test d'ANCRAGE sur la source réelle : c'est lui qui hurlera si le
+    # littéral est un jour renommé ou ré-indenté — sans quoi la fonction
+    # redeviendrait un no-op silencieux et les commentaires repartiraient
+    # dans les exports sans que rien ne l'annonce.
+    ui_src = (ROOT.parent / 'src' / 'js' / 'ui.js').read_text(encoding='utf-8')
+    check('export-css : EXPORT_CSS est bien reconnu dans src/js/ui.js',
+          ecc(ui_src) != ui_src)
+    def literal_body(text, anchor):
+        """Corps du littéral `anchor` dans `text` (même découpe que le build)."""
+        i = text.index(anchor) + len(anchor)
+        return text[i:text.index('\n`;', i)]
+
+    check('export-css : plus aucun /* dans EXPORT_CSS après strip (source réelle)',
+          '/*' not in literal_body(ecc(ui_src), build.EXPORT_CSS_ANCHOR))
+
+    # strip_export_script_comments : EXPORT_SCRIPT est du JS statique embarqué
+    # dans les exports INTERACTIFS. On n'y retire QUE les lignes '//' — un
+    # scanner JS complet lirait mal ce corps, dont les échappements sont
+    # doublés par le template literal (cf. strip_line_comments_only).
+    esc = build.strip_export_script_comments
+
+    check('export-script : ligne // retirée',
+          esc('const EXPORT_SCRIPT = `\nvar a = 1;\n// com\nvar b = 2;\n`;\n')
+          == 'const EXPORT_SCRIPT = `\nvar a = 1;\nvar b = 2;\n`;\n')
+
+    check('export-script : ligne // indentée retirée',
+          esc('const EXPORT_SCRIPT = `\n  // com\nvar b = 2;\n`;\n')
+          == 'const EXPORT_SCRIPT = `\nvar b = 2;\n`;\n')
+
+    # Le point de la passe « bête » : ne JAMAIS toucher à l'intérieur d'une
+    # ligne de code. Une URL, une regex ou une string contenant '//' survit.
+    check('export-script : // en milieu de ligne de code préservé',
+          esc("const EXPORT_SCRIPT = `\nvar u = 'http://x';\n`;\n")
+          == "const EXPORT_SCRIPT = `\nvar u = 'http://x';\n`;\n")
+
+    check('export-script : regex échappée du literal préservée',
+          esc('const EXPORT_SCRIPT = `\nvar n = s.replace(/[\\\\/]/g, "_");\n`;\n')
+          == 'const EXPORT_SCRIPT = `\nvar n = s.replace(/[\\\\/]/g, "_");\n`;\n')
+
+    check('export-script : un fichier sans EXPORT_SCRIPT est rendu inchangé',
+          esc('var t = 1;\n') == 'var t = 1;\n')
+
+    check('export-script : idempotente',
+          esc(esc('const EXPORT_SCRIPT = `\n// com\nvar b = 2;\n`;\n'))
+          == esc('const EXPORT_SCRIPT = `\n// com\nvar b = 2;\n`;\n'))
+
+    check('export-script : EXPORT_SCRIPT est bien reconnu dans src/js/ui.js',
+          esc(ui_src) != ui_src)
+
+    # GARDE DE DOCTRINE (décision Julien) : EXPORT_SCRIPT ne tolère QUE des
+    # commentaires '//' en pleine ligne. Un bloc /* */ ou un '//' en fin de
+    # ligne de code ne serait PAS retiré — il partirait silencieusement dans
+    # chaque export interactif. Ce test est la seule chose qui empêche la
+    # règle de dériver : il échoue à l'écriture, pas à la lecture de la doc.
+    script_body = literal_body(ui_src, build.EXPORT_SCRIPT_ANCHOR)
+    check('export-script : aucun bloc /* */ dans EXPORT_SCRIPT (doctrine)',
+          '/*' not in script_body)
+
+    def code_line_has_trailing_comment(line):
+        stripped = line.lstrip()
+        if stripped.startswith('//') or '//' not in line:
+            return False
+        # '//' présent hors d'une ligne entièrement commentée : suspect. On
+        # tolère les cas où il vit dans une string/regex (http://, [\\/]),
+        # que la passe laisse volontairement en place.
+        head = line.split('//')[0]
+        return head.strip().endswith((';', '{', '}', ')'))
+
+    check('export-script : aucun // en fin de ligne de code (doctrine)',
+          not [l for l in script_body.split('\n') if code_line_has_trailing_comment(l)])
+
+    check('export-script : plus aucune ligne // après strip (source réelle)',
+          not [l for l in literal_body(esc(ui_src), build.EXPORT_SCRIPT_ANCHOR).split('\n')
+               if l.lstrip().startswith('//')])
+
     # parse_system_skill_file / load_system_skills (skills système, src/system-skills/*.md)
     fake_path = Path('src/system-skills/fake.md')
 

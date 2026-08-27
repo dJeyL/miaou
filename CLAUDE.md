@@ -172,7 +172,15 @@ inline sous la liste.
     `EXPORT_SCRIPT` sont des template literals** : jamais de backtick dans leur
     contenu, commentaires compris (un `` `.body` `` dans un commentaire CSS clôt
     la chaîne — le build passe, mais le chargement du fichier casse en
-    `TypeError: not a function`, erreur payée au lot R).
+    `TypeError: not a function`, erreur payée au lot R). Leurs commentaires sont
+    retirés au build (ils partaient sinon dans **chaque fichier exporté**) :
+    `strip_export_css_comments` / `strip_export_script_comments`. Corollaire pour
+    `EXPORT_SCRIPT` : **commentaires `//` en pleine ligne UNIQUEMENT** — sa passe
+    ne regarde jamais l'intérieur d'une ligne de code (les échappements y sont
+    doublés par le literal, un scanner JS complet n'y lit pas la même chaîne que
+    le moteur), donc un bloc `/* */` ou un `//` en fin de ligne survivrait en
+    silence. Deux tests de `run_build_unit_tests` gardent la règle sur la source
+    réelle (cf. `docs/exports.md`).
 23. **Préviz HTML/SVG : la frontière est l'iframe sandbox, aucune autre voie.**
     Markup modèle rendu **uniquement** dans un `<iframe sandbox="allow-scripts">`
     **sans `allow-same-origin`** (`decoratePre`) ; `srcdoc` posé par propriété
