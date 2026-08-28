@@ -1987,3 +1987,148 @@ function decideZipMemberExtraction(entries, path, maxBytes) {
   }
   return { ok: true, entry: entry };
 }
+
+// ── Archives zip : création (lot V-2) ────────────────────────────────────────
+// Part PURE du chemin de création (docs__pack, tools.js) : le nom de membre et
+// la validation du plan. Même discipline qu'en V-1 — les gardes vivent dans le
+// pur pour être testables sans stub IDB ni lib CDN.
+
+// Extension canonique par mime. Table SÉPARÉE de ZIP_MEMBER_MIME_BY_EXT, pas
+// une inversion : celle-ci n'est PAS injective (douze extensions rendent
+// text/plain), donc l'inverser programmatiquement donnerait le dernier
+// représentant itéré — text/plain → rst, absurde. Deux tables écrites à la main
+// sont plus honnêtes qu'une dérivation qui n'en est pas une ; leur accord est
+// gardé par un test croisé (tests/test-zip.js), sur le modèle exact du contrat
+// zipMemberMime × _isTextualMime livré en clôture V-1. Ajouter une extension
+// d'un côté sans l'autre casse ce test — c'est son seul rôle.
+const ZIP_EXT_BY_MIME = {
+  'text/plain': 'txt', 'text/markdown': 'md', 'text/csv': 'csv',
+  'text/tab-separated-values': 'tsv', 'application/json': 'json',
+  'application/x-ndjson': 'jsonl', 'text/xml': 'xml', 'text/html': 'html',
+  'text/css': 'css', 'text/javascript': 'js', 'image/png': 'png',
+  'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+  'image/svg+xml': 'svg', 'application/pdf': 'pdf', 'application/zip': 'zip',
+};
+
+// Nom de membre d'archive dérivé d'un record, dédupliqué contre `taken` (Set).
+//
+// La déduplication N'EST PAS cosmétique : zipSync prend un objet { nom: octets },
+// donc deux membres homonymes s'écrasent SILENCIEUSEMENT — propriété de l'objet
+// JS, pas de fflate. Or deux ressources produites dans la même conversation
+// portent très souvent le même nom (rapport.md, sortie.txt).
+//
+// Le nom produit est un IDENTIFIANT : c'est par lui que docs__list puis
+// docs__extract reciblent le membre (comparaison stricte e.name === path). Il
+// doit donc faire l'ALLER-RETOUR par _zipDecodeName — leçon payée en clôture V-1
+// sur les noms non-UTF-8, où un nom qui ne revient pas à l'identique rend le
+// membre inatteignable. zipSync encode en UTF-8 et pose le bit 11, donc la
+// branche UTF-8 est prise et l'aller-retour est structurellement sûr ; on s'en
+// tient malgré tout à ce que le nom d'origine porte, sans jamais le ré-encoder.
+function buildZipMemberName(record, taken) {
+  const rec = record || {};
+  const set = taken && typeof taken.has === 'function' ? taken : null;
+
+  // Base : le nom du record, sinon son id. Le chemin est retiré par la fonction
+  // qui le fait déjà (V-1), jamais une seconde découpe écrite ici.
+  let base = String(rec.name == null ? '' : rec.name).trim();
+  if (!base) base = String(rec.id == null ? '' : rec.id).trim();
+  base = base ? zipMemberBaseName(base) : '';
+  if (!base || base === '.' || base === '..') base = 'membre';
+
+  // Extension : déduite du mime seulement si la base n'en porte pas déjà.
+  const dot = base.lastIndexOf('.');
+  const hasExt = dot > 0 && dot < base.length - 1;
+  let stem = base, ext = '';
+  if (hasExt) {
+    stem = base.slice(0, dot);
+    ext = base.slice(dot + 1);
+  } else {
+    const mime = String(rec.mime == null ? '' : rec.mime).toLowerCase().split(';')[0].trim();
+    ext = ZIP_EXT_BY_MIME[mime] || 'bin';
+  }
+
+  // Déduplication : l'incrément s'insère AVANT l'extension (rapport-2.md), jamais
+  // après — rapport.md-2 perdrait l'association d'extension et serait illisible.
+  // La casse n'est PAS normalisée : le zip est sensible à la casse, et Rapport.md
+  // face à rapport.md sont deux membres distincts.
+  const join = function(s) { return ext ? s + '.' + ext : s; };
+  let candidate = join(stem);
+  if (!set) return candidate;
+  let n = 2;
+  while (set.has(candidate)) {
+    candidate = join(stem + '-' + n);
+    n++;
+  }
+  return candidate;
+}
+
+// Nom du FICHIER d'archive produit (pas d'un membre), rédigé par le modèle donc
+// jamais pris tel quel. Trois garanties, dans cet ordre :
+//   - le chemin est retiré (zipMemberBaseName) : le nom finit dans un record et
+//     dans un téléchargement, un `../` ou un `/etc/` n'y a aucun sens ;
+//   - l'extension .zip est garantie, sans jamais la doubler (« a.zip » reste
+//     « a.zip », jamais « a.zip.zip ») : le record porte le mime application/zip,
+//     un nom qui le contredirait tromperait l'utilisateur au téléchargement ;
+//   - un nom vide ou réduit à néant par le nettoyage retombe sur archive.zip.
+// La casse n'est pas normalisée (« Rapport.ZIP » garde la sienne) — jamais
+// normaliser la casse d'un champ rédigé par le modèle.
+function normalizeArchiveName(name) {
+  let s = String(name == null ? '' : name).trim();
+  s = s ? zipMemberBaseName(s) : '';
+  if (!s || s === '.' || s === '..') return 'archive.zip';
+  if (/\.zip$/i.test(s)) {
+    // « .zip » nu : le stem est vide, le nom serait invisible dans une liste.
+    return s.length > 4 ? s : 'archive.zip';
+  }
+  return s + '.zip';
+}
+
+// Garde de dernier ressort sur le plan d'archive — [{ name, size }], pas les
+// octets. Retourne { ok:true } ou { ok:false, reason, message }, même forme que
+// decideZipMemberExtraction : `message` est le texte rendu au modèle, cadré pour
+// qu'il se re-cible dans le même tour.
+//
+// Le doublon est refusé ICI bien que buildZipMemberName soit censé l'avoir
+// évité : les deux fonctions composent, et une composition non gardée est
+// exactement ce qui a coûté le contrat zipMemberMime × _isTextualMime en V-1.
+// L'écrasement silencieux étant le mode de défaillance visé, la garde reste.
+//
+// Le cap porte sur le total NON COMPRESSÉ, en AMONT : c'est le pic RAM (les
+// entrées sont déjà en mémoire, zipSync construit la sortie par-dessus). Refuser
+// APRÈS compression aurait déjà payé le coût mémoire qu'on prétend éviter —
+// inverse exact de la garde préventive de V-1.
+function validateZipPlan(entries) {
+  const list = Array.isArray(entries) ? entries : null;
+  if (!list || !list.length) {
+    return { ok: false, reason: 'empty',
+      message: 'Aucune ressource à archiver : passe au moins un handle.' };
+  }
+
+  const seen = {};
+  let total = 0;
+  for (const e of list) {
+    const name = String(e && e.name != null ? e.name : '');
+    if (!name) {
+      return { ok: false, reason: 'unsafe', message: 'Nom de membre vide, refusé.' };
+    }
+    if (isZipSlipPath(name)) {
+      return { ok: false, reason: 'unsafe',
+        message: 'Nom de membre non sûr (absolu ou remontant), refusé : ' + name + '.' };
+    }
+    if (Object.prototype.hasOwnProperty.call(seen, name)) {
+      return { ok: false, reason: 'duplicate',
+        message: 'Deux membres porteraient le même nom dans l\'archive : ' + name +
+          '. Un nom en écraserait l\'autre silencieusement.' };
+    }
+    seen[name] = true;
+    total += Number(e && e.size) || 0;
+  }
+
+  const cap = MAX_INLINE_BYTES;
+  if (total > cap) {
+    return { ok: false, reason: 'cap',
+      message: 'Archive trop volumineuse : ' + humanSize(total) + ' à compresser, ' +
+        'au-delà de la limite de ' + humanSize(cap) + '. Archive moins de ressources à la fois.' };
+  }
+  return { ok: true };
+}

@@ -7,8 +7,8 @@ compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
 unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts, et — chargés à la
 demande seulement — Mermaid pour les diagrammes, QuickJS-WASM pour le calcul
-sandboxé et fflate pour l'ouverture des archives zip). On l'ouvre dans un
-navigateur, ou on le sert via n'importe quel serveur web statique.
+sandboxé et fflate pour les archives zip). On l'ouvre dans un navigateur, ou on
+le sert via n'importe quel serveur web statique.
 
 Thème sombre et thème clair, palette ambre/corail, Hanken Grotesk pour
 l'interface, JetBrains Mono pour le code.
@@ -19,109 +19,55 @@ l'interface, JetBrains Mono pour le code.
 
 - Streaming SSE contre un endpoint OpenAI-compatible ; le bouton d'envoi devient
   un **stop** pendant la génération (le texte déjà reçu est conservé).
-- **Interjections en cours de génération** : taper un message + Entrée pendant
-  que le modèle travaille ne l'interrompt pas — il se met en file au-dessus du
-  composer et lui est transmis à la prochaine étape d'outils, permettant de le
-  **réorienter avant qu'il ait fini** une longue boucle d'outils. Message en
-  attente modifiable (clic → retour au composer) ou annulable ; plusieurs en
-  file partent fusionnés. Un arrêt (stop, halte) refait descendre les messages
-  en attente dans le composer plutôt que de les envoyer — cf.
-  `docs/interjections.md`.
-- Patienteur animé pendant l'attente, effacé net au premier fragment de réponse.
-- Affichage du raisonnement des modèles thinking-capable : icône dans l'en-tête,
-  bloc dépliable alimenté en live, persisté à part du contenu.
-- Rendu Markdown + coloration syntaxique (toggle), tables, blocs de code avec
-  boutons « copier » et « télécharger » (extension auto selon le langage).
-- **Diagrammes Mermaid rendus en place** : un bloc ` ```mermaid ` s'affiche en
-  diagramme à la fin du message (jamais pendant le streaming) ; bouton de
-  bascule diagramme ↔ source dans l'en-tête du bloc, thème du diagramme suivant
-  le thème MIAOU (re-rendu au changement), erreur de syntaxe → source affichée
-  avec une notice discrète. Mermaid n'est chargé (CDN) qu'au premier diagramme
-  rencontré. Sur le diagramme rendu : lightbox plein écran pan/zoom (molette,
-  drag, double-clic pour recentrer, Esc pour fermer) et export en image SVG ou
-  PNG (fond opaque du thème actif) — cf. `docs/rendering.md`.
-- **Aperçu sandboxé des blocs HTML et SVG** : bouton « œil » dans l'en-tête du
-  bloc (clic explicite, jamais automatique) → rendu dans une iframe
-  `sandbox="allow-scripts"` sans `allow-same-origin` — le contenu prévisualisé
-  ne peut toucher ni localStorage, ni IndexedDB, ni la page. Bouton fermer
-  pour revenir à la source ; re-clic = re-rendu depuis la source courante.
-- Téléchargement d'une réponse individuelle en `.md` (bouton dans l'en-tête,
-  au survol) ; export de la conversation entière en Markdown (icône à droite
-  du titre dans la topbar, au survol). Les deux exports incluent une trace
-  des appels d'outils du tour (outil, intention, arguments, résultat) juste
-  avant la réponse — sans données binaires embarquées pour les ressources
-  présentées automatiquement (juste le nom et le type).
-- Export de la conversation en **fichier HTML autonome** (icône jumelle, même
-  emplacement) : coloration de code figée, diagrammes Mermaid embarqués en SVG
-  statique (source repliée en dessous), lisible sans JavaScript, ouvrable hors
-  MIAOU (mail, partage) sans infrastructure — cf. `docs/exports.md`. Les **deux
-  thèmes** sont embarqués : la page s'ouvre sur celui qui était actif à l'export
-  et un bouton bascule à la lecture. Cette bascule est du markup piloté par CSS,
-  donc opérante **même sans JavaScript** (visionneuses de pièces jointes type
-  Quick Look iOS) ; le réglage « Export HTML interactif » n'ajoute que la
-  mémorisation du choix et les boutons copier/télécharger. Les diagrammes
-  gardent leurs couleurs d'origine.
-- **Conversion Markdown → HTML** : n'importe quel fichier `.md` peut être
-  transformé en page HTML au même format (réglages » Outils & extensions, clic
-  ou drag&drop), et un bouton dédié fait de même depuis un bloc de code
-  Markdown affiché à l'écran. Purement local, sans passer par le modèle. Un
-  titre de niveau 1 en tête devient l'en-tête de la page ; sans lui, pas de
-  cartouche et la date passe en pied.
-- Horodatage de chaque message : heure seule (même jour), « hier à HH:MM »,
-  date courte ou complète selon l'ancienneté ; tooltip complet dans la sidebar.
+- **Interjections en cours de génération** : taper un message pendant que le
+  modèle travaille ne l'interrompt pas — il se met en file et lui est transmis à
+  la prochaine étape d'outils, pour le réorienter avant qu'il ait fini. Message
+  en attente modifiable ou annulable — cf. [docs/interjections.md](docs/interjections.md).
+- **Générations en parallèle** : une réponse en cours appartient à sa
+  conversation, pas à l'écran. Naviguer ailleurs (ou changer d'Espace) ne
+  l'interrompt pas, et plusieurs peuvent tourner de front ; des pastilles
+  signalent l'activité et les réponses non lues — cf.
+  [docs/generations.md](docs/generations.md) et [docs/badges.md](docs/badges.md).
+- Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
+  alimenté en direct.
+- Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et
+  « télécharger ».
+- **Diagrammes Mermaid** rendus en place, avec bascule diagramme ↔ source,
+  lightbox pan/zoom et export SVG/PNG — cf. [docs/rendering.md](docs/rendering.md).
+- **Aperçu des blocs HTML et SVG** dans une iframe isolée, sur clic explicite —
+  cf. [docs/rendering.md](docs/rendering.md).
+- Export d'une réponse ou d'une conversation entière en **Markdown**, ou en
+  **fichier HTML autonome** lisible sans JavaScript et partageable hors MIAOU.
+  Les traces d'appels d'outils sont incluses — cf. [docs/exports.md](docs/exports.md).
+- **Conversion Markdown → HTML** de n'importe quel fichier `.md` au même format,
+  purement locale, sans passer par le modèle.
+- Horodatage de chaque message, relatif puis absolu selon l'ancienneté.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
   ce point.
-- **Calcul sandboxé sur un fichier (`js__eval`)** : le modèle peut exécuter du
-  JavaScript sur le contenu textuel d'un blob client (pièce jointe, fichier de
-  bibliothèque, ou ressource `res_…`) dans un bac à sable **QuickJS-WASM** — pour
-  compter, filtrer, agréger, extraire — sans jamais charger le fichier entier
-  dans le contexte, et ne ramener que le résultat. Monde guest clos (une seule
-  fonction hôte, aucun accès réseau/DOM), garde de temps/mémoire, refus explicite
-  si la sortie dépasse le plafond. QuickJS-WASM n'est chargé (CDN) qu'au premier
-  appel. Cf. `docs/tools.md`.
-- **Ouverture native d'archives zip (`docs__list` / `docs__extract`)** : le
-  modèle liste les membres d'un zip (pièce jointe, fichier de bibliothèque ou
-  ressource `res_…`) **sans rien décompresser** — le *central directory* suffit —
-  puis matérialise **un** membre en ressource `res_…` interrogeable par
-  `js__eval`. Aucun serveur compagnon requis. Gardes prises avant toute
-  allocation : membre chiffré (fflate ne détecte pas le chiffrement et rendrait
-  des octets bruts sans erreur), zip-slip, dépassement du cap. fflate n'est
-  chargé (CDN) qu'à la première extraction. Un `.docx`/`.xlsx`/`.pptx` étant un
-  zip, il s'ouvre aussi, mais n'expose que ses membres XML bruts. Cf.
-  `docs/tools.md`.
-- **Ressources adressables model-side** : le modèle peut ranger un texte en
-  ressource `res_…` — soit un texte qu'il produit lui-même (`resource__create`),
-  soit un gros résultat d'outil déjà présent qu'il convertit pour **alléger la
-  conversation** (`resource__from_result` : le contenu lourd quitte l'historique,
-  remplacé par un handle compact + un court résumé). Ces ressources sont ensuite
-  interrogeables par `js__eval` sans repayer leur texte en tokens à chaque tour.
-- **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire. Un
-  court blurb d'identité dans le prompt système et deux outils internes
-  (`miaou__about`, une aide utilisateur rédigée à la main servie section par
-  section, et `miaou__about_search` pour retrouver la bonne section par
-  mots-clefs) lui permettent de répondre juste aux questions « comment je joins
-  un fichier ? », « c'est quoi les Espaces ? », « où sont stockées mes
-  données ? » au lieu de confabuler.
-- Écran d'accueil aléatoire (emoji + accroche) à chaque nouvelle conversation.
-- **Inspecteur de contexte** : compteur `≈ N tok` dans le composer, cliquable ;
-  ouvre un drawer détaillant la composition du payload envoyé au modèle (prompt
-  racine, outils, prompt utilisateur, mémoire, résumés, historique, pièces
-  jointes…) avec une barre empilée et une table chars/tokens/%. Estimation
-  chars/4 par défaut, remplacée par les **tokens réels rapportés par l'API**
-  (`stream_options.include_usage`) dès qu'un envoi a répondu — tolère les
-  backends qui ne le renvoient pas (fallback estimé, sans erreur). Réglage
-  optionnel de la fenêtre de contexte (jauge d'occupation) ; 2e barre indiquant
-  la part de l'entrée servie par le cache quand le backend la rapporte.
-- **Synchronisation multi-onglets** (BroadcastChannel, local au navigateur) :
-  plusieurs onglets MIAOU restent synchronisés sans rechargement — un nouveau
-  message, un titre, un réglage, un fichier ou la liste des Espaces
-  (création/renommage/suppression) se répercute partout. L'Espace **actif**, lui,
-  reste propre à chaque onglet (c'est un état de vue, pas une donnée partagée).
-  Une conversation ouverte à deux endroits affiche un bandeau
-  discret ; si une réponse s'y génère dans un onglet, la même conversation passe
-  en **lecture seule** dans les autres le temps de la réponse (pas de générations
-  concurrentes qui s'écraseraient). Diffusion **post-commit**, relecture d'état
-  **après** l'await — cf. `docs/multitab-sync.md`.
+- **Calcul sandboxé sur un fichier** : le modèle exécute du JavaScript sur le
+  contenu d'une pièce jointe, d'un fichier de bibliothèque ou d'une ressource
+  pour compter, filtrer ou agréger — sans charger le fichier dans le contexte, et
+  en ne ramenant que le résultat — cf. [docs/tools.md](docs/tools.md).
+- **Archives zip** : le modèle ouvre un zip pour en lister les membres et en
+  extraire un, ou regroupe plusieurs fichiers produits au fil de l'échange en une
+  archive téléchargeable depuis le fil. Un `.docx`/`.xlsx`/`.pptx` étant un zip,
+  il s'ouvre aussi — cf. [docs/tools.md](docs/tools.md).
+- **Ressources adressables** : le modèle range un texte de côté — qu'il l'ait
+  produit ou qu'il convertisse un gros résultat d'outil pour alléger la
+  conversation — et le réinterroge ensuite sans repayer son contenu en tokens à
+  chaque tour.
+- **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire, et
+  consulte une aide utilisateur rédigée à la main plutôt que de confabuler sur
+  « comment je joins un fichier ? » ou « c'est quoi les Espaces ? ».
+- Écran d'accueil aléatoire à chaque nouvelle conversation.
+- **Inspecteur de contexte** : compteur de tokens dans le composer, cliquable,
+  détaillant la composition du payload envoyé au modèle avec une jauge
+  d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).
+- **Synchronisation multi-onglets** (locale au navigateur) : messages, titres,
+  réglages, fichiers et Espaces se répercutent partout sans rechargement. Une
+  conversation ouverte à deux endroits passe en lecture seule le temps d'une
+  réponse, pour éviter deux générations concurrentes — cf.
+  [docs/multitab-sync.md](docs/multitab-sync.md).
 
 **Historique & mémoire**
 
@@ -129,120 +75,83 @@ l'interface, JetBrains Mono pour le code.
   redimensionnable, titres auto-générés et éditables.
 - Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
-  contextuelle, et deux outils pour que le modèle aille chercher lui-même —
-  `conv__get(id, with_contents=false)` et
-  `conv__list(since?, query?, with_contents=false)` (recherche par
-  mots-clés/résumé, même moteur que la recherche sidebar ; exclut toujours la
-  conversation en cours).
-- Quand le modèle cite une conversation passée dans sa réponse, elle apparaît
-  comme un **lien cliquable affichant son titre** (jamais l'ID technique) ;
-  cliquer dessus l'ouvre directement, comme depuis la sidebar.
-- Souvenirs persistants : le modèle écrit directement (`memory__create`,
-  `memory__update`, `memory__delete`) sur instruction explicite, ou demande
-  confirmation (`ask_confirmation`) pour un fait inféré. Gestion directe
-  possible dans le drawer ; les souvenirs actifs sont réinjectés dans le
-  contexte à chaque envoi.
+  contextuelle, et deux outils pour que le modèle aille chercher lui-même dans
+  les conversations passées.
+- Quand le modèle cite une conversation passée, elle apparaît comme un **lien
+  cliquable affichant son titre** (jamais l'ID technique) ; cliquer dessus
+  l'ouvre directement.
+- Souvenirs persistants : le modèle écrit sur instruction explicite, ou demande
+  confirmation pour un fait inféré. Gestion directe possible dans le drawer ; les
+  souvenirs actifs sont réinjectés dans le contexte à chaque envoi.
 - Chaque appel d'outil produit une ligne d'ack visible dans le thread :
-  annulable pour les écritures mémoire, informative pour les lectures
-  d'historique.
+  annulable pour les écritures mémoire, informative pour les lectures.
 
 **Espaces**
 
-- Espaces de travail mutuellement hermétiques (sélecteur en tête de sidebar) :
-  chaque Space a ses propres conversations, pièces jointes et souvenirs. La
-  zone historique hors-Space est elle-même un Space (« Général »), sans cas
-  particulier. Le modèle ne voit et ne peut agir que sur le contenu du Space
-  actif — aucun outil ne peut lire ou modifier un autre Space.
-  Un scope **profil** existe au-dessus des Spaces pour les souvenirs qui
-  doivent rester valables partout (promotion manuelle depuis l'écran d'un
-  Space).
-- Chaque Space peut porter une **description** libre, ajoutée après le
-  prompt système utilisateur (jamais en remplacement) — pour un contexte
-  propre au Space sans dupliquer les réglages globaux.
-- Suppression d'un Space : cascade explicite à double confirmation
-  (conversations, pièces jointes et souvenirs scopés supprimés ; les
-  souvenirs profil restent intacts).
-- **Bibliothèque de fichiers par Space** (écran Space → « Fichiers ») :
-  fichiers persistants, hermétiques comme le reste du Space, accessibles au
-  modèle via des outils dédiés (lecture seule, herméticité identique aux
-  conversations/souvenirs). Trois façons d'alimenter la bibliothèque : upload
-  direct, promotion en un clic d'une pièce jointe déjà envoyée, ou promotion
-  proposée par le modèle lui-même (toujours soumise à confirmation explicite
-  avant écriture). Une description automatique (désactivable) accompagne
-  chaque fichier — pas un résumé de son contenu, mais un indice de ce qu'il
-  contient pour que le modèle décide s'il vaut la peine de l'ouvrir.
+- Espaces de travail mutuellement hermétiques : chaque Space a ses propres
+  conversations, pièces jointes et souvenirs. Le modèle ne voit et ne peut agir
+  que sur le contenu du Space actif. Un scope **profil** existe au-dessus, pour
+  les souvenirs qui doivent rester valables partout.
+- Chaque Space peut porter une **description** libre, qui vient compléter le
+  prompt système sans le remplacer.
+- Suppression d'un Space : cascade explicite à double confirmation.
+- **Bibliothèque de fichiers par Space** : fichiers persistants et hermétiques,
+  accessibles au modèle en lecture seule. Trois façons de l'alimenter — upload
+  direct, promotion d'une pièce jointe déjà envoyée, ou promotion proposée par le
+  modèle (toujours soumise à confirmation).
+
+Détail : [docs/spaces.md](docs/spaces.md).
 
 **Skills**
 
-- Fragments d'instructions Markdown réutilisables, gérés dans un drawer dédié
-  (Paramètres → Skills) : chaque skill a un `slug` (clé d'invocation), un nom, une
-  description et un corps Markdown. Stockés en IndexedDB ; un toggle `enabled` par
-  skill. Création/édition/suppression directes (action administrative explicite,
-  sans tombstone).
+- Fragments d'instructions Markdown réutilisables, gérés dans un drawer dédié :
+  slug, nom, description et corps Markdown, avec un toggle d'activation.
 - **Invocation par slash** : taper `/slug` dans le composer injecte le corps du
-  skill dans le message envoyé — injection **déterministe et figée** au moment de
-  l'envoi (distincte du bloc `<miaou_context>`, recalculé à chaque tour). La bulle
-  n'affiche que le texte tapé ; le corps injecté reste invisible côté UI mais fait
-  partie du message stocké/envoyé. Autocomplétion au fil de la frappe (skills
-  activés uniquement).
-- **Découverte par le modèle** : deux outils sous le sous-namespace
-  `miaou__skills__` — `miaou__skills__list` (slug + nom + description des skills
-  activés) et `miaou__skills__read(slug)` (corps complet). Le modèle décide seul de
-  les appeler quand la demande en langage naturel correspond à un skill ; une ligne
-  d'ack informative signale la lecture.
-- **Création/édition par le modèle** : `miaou__skills__write` permet au modèle de
-  créer une skill ou de mettre à jour le corps d'une existante à ta demande ; une
-  modification de skill existante passe par une confirmation explicite avant
-  écrasement.
-- **Import d'une skill Claude Code** : coller un corps portant un cartouche
-  `--- name: … description: … ---` en édition pré-remplit slug/nom/description
-  depuis le frontmatter ; glisser-déposer (ou coller) un fichier `.md` bascule en
-  édition de la skill homonyme si elle existe, sinon en crée une nouvelle.
-- **Skills système** : quelques skills sont fournies par l'application, seedées au
-  build depuis `src/system-skills/*.md` (règles de syntaxe Mermaid, mode d'emploi
-  d'outils avancés). Toujours actives, non éditables/supprimables, listées à part
-  avec un badge « Système » et consultables en lecture seule.
+  skill dans le message envoyé, avec autocomplétion au fil de la frappe.
+- **Découverte et écriture par le modèle** : il liste et lit seul les skills
+  activées quand la demande y correspond, et peut en créer ou en modifier à ta
+  demande (une modification passe par une confirmation explicite).
+- **Import d'une skill Claude Code** : coller ou déposer un `.md` portant un
+  cartouche `--- name: … description: … ---` pré-remplit l'édition.
+- **Skills système** fournies par l'application : toujours actives, non
+  éditables, consultables en lecture seule.
+
+Détail : [docs/skills.md](docs/skills.md).
 
 **Outils distants (MCP)**
 
 - MIAOU est un **client/agrégateur MCP** : en plus de ses outils internes, il
   délègue les appels qu'il ne sait pas servir à un ou plusieurs serveurs MCP
-  distants (HTTP). Pour le modèle il n'y a qu'**un seul registre** ; l'origine de
-  chaque outil (interne `miaou__…` vs distant `serveur__…`) est invisible.
-- Configuration dans un sous-écran dédié (Paramètres → Serveurs MCP) : cartes
-  éditables avec nom (= préfixe), URL, transport (`streamable-http`), jeton bearer
-  optionnel, timeout, et listes blanche/noire d'outils. Un serveur injoignable est
-  simplement ignoré, le reste continue de fonctionner.
-- Les résultats non-textuels d'un outil distant (image, ressource, binaire) sont
-  stockés en IndexedDB (persistance locale, sans bloquer `localStorage`) et rendus
-  dans la réponse : image inline, code surligné, ou téléchargement éphémère. Les
-  ressources texte/JSON sont réinjectées au modèle à chaque tour ; les binaires
-  sont représentés par un descripteur statique.
-- Les octets récupérés du web (`web__fetch_resource`) et le texte d'un membre
-  d'archive (`docs__extract`, natif ou distant) atterrissent comme ressources
-  `res_…` de première classe : le modèle les passe en entrée aux autres outils
-  `docs__*` ou les analyse par le calcul (`js__eval`) sans jamais recopier leur
-  contenu dans la conversation.
+  distants. Pour le modèle il n'y a qu'un seul registre.
+- Configuration dans un sous-écran dédié : nom (= préfixe), URL, transport, jeton
+  bearer optionnel, timeout, listes blanche/noire d'outils. Un serveur
+  injoignable est simplement ignoré, le reste continue de fonctionner.
+- Les résultats non-textuels (image, ressource, binaire) sont stockés localement
+  et rendus dans la réponse ; les octets récupérés du web ou extraits d'une
+  archive deviennent des ressources de première classe, analysables par le calcul
+  sandboxé.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur.
+
+Détail : [docs/mcp.md](docs/mcp.md).
 
 **Réglages**
 
 - URL, clef, modèle (liste via l'API), prompt système, thème, coloration, mode
   d'injection des résumés, panneau descriptif des outils exposés au modèle.
+- Apparence à trois axes indépendants : luminosité, palette de couleurs et lot de
+  fontes — cf. [docs/palettes.md](docs/palettes.md) et [docs/fonts.md](docs/fonts.md).
 - Sélecteur de modèle par conversation (optionnel, masqué par défaut) : change le
-  modèle de la conversation courante sans toucher au défaut ni à l'historique.
+  modèle de la conversation courante sans toucher au défaut.
 - État configuré / non configuré explicite : le composer se verrouille tant que
   l'API n'est pas renseignée (voir `require_api_key` pour les endpoints sans
   authentification).
 - Date/heure et nom du modèle injectés automatiquement dans le contexte.
-- **Palette de commandes** (Ctrl/Cmd+K) : overlay type Spotlight, filtrage à la
-  frappe, navigation clavier (↑/↓/Entrée/Échap). Registre déclaratif : nouvelle
-  conversation, réglages, drawers (souvenirs, résumés, skills, MCP, contexte),
-  bascule thème/coloration, export .md/HTML. Sous-modes filtrants pour choisir un
-  modèle, invoquer une skill, changer d'espace, ou rechercher une conversation
-  (cross-Space, Space actif en tête). Détail : `docs/command-palette.md`.
+- **Palette de commandes** (Ctrl/Cmd+K) : filtrage à la frappe et navigation
+  clavier sur toutes les actions, avec des sous-modes pour choisir un modèle,
+  invoquer une skill, changer d'Espace ou rechercher une conversation — cf.
+  [docs/command-palette.md](docs/command-palette.md).
 
 ## Build
 
@@ -298,50 +207,26 @@ build.
 
 ## Tests
 
-Fonctions pures testées via QuickJS (pas de `fetch` réel : le réseau se vérifie
-à la main, cf. [docs/manual-tests.md](docs/manual-tests.md)). La seule dépendance de
-développement est `quickjs`.
-
-Avec `uv` (recommandé) :
+Fonctions pures testées via QuickJS ; la seule dépendance de développement est
+`quickjs`.
 
 ```bash
-uv run --with quickjs python tests/runner.py
+uv run --with quickjs python tests/runner.py     # avec uv (recommandé)
+pip install -r requirements-dev.txt && python tests/runner.py
 ```
 
-Sans `uv` :
-
-```bash
-pip install -r requirements-dev.txt
-python tests/runner.py
-```
-
-Pour exercer la délégation MCP distante (chemin réseau, non couvert par QuickJS),
-utiliser le serveur de banc d'essai du projet `miaou-mcp-servers` puis l'ajouter
-dans Paramètres → Serveurs MCP. Procédure détaillée dans
+Le réseau (envois réels, délégation MCP distante) n'est pas couvert par QuickJS
+et se vérifie à la main : procédures dans
 [docs/manual-tests.md](docs/manual-tests.md).
 
 ## Architecture
 
-```
-src/
-├── html/index.html    squelette + placeholders /* __CSS__ */ et /* __JS__ */
-├── css/*.css          8 feuilles concaténées dans l'ordre CSS_ORDER (base, sidebar,
-│                      chat, composer, drawers, tools, responsive, theme-light)
-└── js/
-    ├── utils.js       fonctions pures : escHtml, tokenize, scoring, parsing défensif, expandThread
-    ├── sync.js        synchro multi-onglets (BroadcastChannel) : enveloppe, soft-lock, relais lecture seule
-    ├── storage.js     localStorage (settings, serveurs, Espaces, souvenirs) + IndexedDB (conversations, résumés) et leur cache RAM
-    ├── resources.js   IndexedDB (base `miaou`) : ressources MCP/model-side (`res_…`), bibliothèque de fichiers d'Espace
-    ├── skills.js      IndexedDB (store `skills`) : cache mémoire, validation slug, CRUD, skills système seedées, triggers slash
-    ├── tools.js       registre d'outils (interne + agrégation MCP distante), dispatcher, client JSON-RPC, `js__eval` (QuickJS-WASM)
-    ├── api.js         fetch, SSE, silentCompletion, boucle tool_calls, résumés, recherche
-    ├── ui.js          rendu DOM : sidebar, messages, drawers, bannière, indicateur, souvenirs
-    └── main.js        init, backfill, câblage, construction du contexte d'appel
-```
+Pas de modules ES : `build.py` concatène `src/css/*.css` et `src/js/*.js` dans
+un ordre fixe, en un seul `<script>` où toutes les fonctions sont globales.
 
-Pas de modules ES : `build.py` concatène les fichiers dans l'ordre des
-dépendances en un seul `<script>` (toutes les fonctions sont globales). Détails
-de conception, pièges connus et vocabulaire dans [CLAUDE.md](CLAUDE.md).
+Conception, découpage des fichiers, pièges connus et vocabulaire :
+[CLAUDE.md](CLAUDE.md), qui indexe les documents de domaine de
+[docs/](docs/).
 
 ## Genèse
 

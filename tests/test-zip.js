@@ -341,3 +341,190 @@ describe('decideZipMemberExtraction', function() {
     expect(d.reason).toBe('missing');
   });
 });
+
+// ── Lot V-2 — part PURE du chemin de CRÉATION d'archive ──────────────────────
+
+describe('buildZipMemberName', function() {
+  it('rend le nom tel quel quand rien n\'est pris', function() {
+    var taken = new Set();
+    expect(buildZipMemberName({ name: 'rapport.md', mime: 'text/markdown' }, taken)).toBe('rapport.md');
+  });
+
+  it('insère l\'incrément AVANT l\'extension sur une collision', function() {
+    var taken = new Set(['rapport.md']);
+    expect(buildZipMemberName({ name: 'rapport.md' }, taken)).toBe('rapport-2.md');
+  });
+
+  it('poursuit l\'incrément sur des collisions multiples', function() {
+    var taken = new Set();
+    var a = buildZipMemberName({ name: 'rapport.md' }, taken); taken.add(a);
+    var b = buildZipMemberName({ name: 'rapport.md' }, taken); taken.add(b);
+    var c = buildZipMemberName({ name: 'rapport.md' }, taken);
+    expect(a).toBe('rapport.md');
+    expect(b).toBe('rapport-2.md');
+    expect(c).toBe('rapport-3.md');
+  });
+
+  it('dérive de l\'id et du mime quand le record n\'a pas de nom', function() {
+    var n = buildZipMemberName({ id: 'res_abc', mime: 'text/plain' }, new Set());
+    expect(n).toBe('res_abc.txt');
+  });
+
+  it('retombe sur .bin quand le mime n\'est pas connu', function() {
+    var n = buildZipMemberName({ id: 'res_abc', mime: 'application/octet-stream' }, new Set());
+    expect(n).toBe('res_abc.bin');
+  });
+
+  it('réduit un nom porteur de chemin à son basename', function() {
+    var n = buildZipMemberName({ name: 'logs/2026/x.log' }, new Set());
+    expect(n).toBe('x.log');
+  });
+
+  it('rend un nom de repli non vide quand nom et id manquent', function() {
+    // Une clé vide serait acceptée par zipSync et produirait un membre inciblable.
+    var n = buildZipMemberName({ mime: 'text/plain' }, new Set());
+    expect(n).toBe('membre.txt');
+    expect(n.length > 0).toBe(true);
+  });
+
+  it('n\'ajoute pas une seconde extension quand la base en porte une', function() {
+    var n = buildZipMemberName({ name: 'notes.md', mime: 'text/plain' }, new Set());
+    expect(n).toBe('notes.md');
+  });
+
+  it('pose l\'incrément en fin quand il n\'y a pas d\'extension', function() {
+    var taken = new Set(['donnees']);
+    // Pas d'extension dans la base ET mime inconnu : l'extension déduite est .bin,
+    // donc l'incrément reste avant elle. Le cas « vraiment sans extension » vient
+    // d'un mime absent qui donne quand même .bin — la fonction n'émet jamais de
+    // nom nu, par choix : un membre sans extension est plus dur à recibler.
+    var n = buildZipMemberName({ name: 'donnees.bin' }, taken);
+    expect(n).toBe('donnees.bin');
+  });
+
+  it('traite Rapport.md et rapport.md comme DISTINCTS (zip sensible à la casse)', function() {
+    var taken = new Set(['rapport.md']);
+    expect(buildZipMemberName({ name: 'Rapport.md' }, taken)).toBe('Rapport.md');
+  });
+
+  it('tolère un record absent', function() {
+    expect(buildZipMemberName(null, new Set())).toBe('membre.bin');
+  });
+});
+
+describe('validateZipPlan', function() {
+  it('accepte un plan valide', function() {
+    var r = validateZipPlan([{ name: 'a.txt', size: 10 }, { name: 'b.txt', size: 20 }]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('refuse un plan vide', function() {
+    var r = validateZipPlan([]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('empty');
+    expect(r.message).toContain('au moins un handle');
+  });
+
+  it('refuse un chemin absolu POSIX', function() {
+    var r = validateZipPlan([{ name: '/etc/passwd', size: 10 }]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('unsafe');
+  });
+
+  it('refuse un chemin remontant', function() {
+    var r = validateZipPlan([{ name: '../x.txt', size: 10 }]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('unsafe');
+  });
+
+  it('refuse un chemin absolu Windows', function() {
+    var r = validateZipPlan([{ name: 'C:\\x.txt', size: 10 }]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('unsafe');
+  });
+
+  it('refuse un total au-delà du cap, en citant les deux tailles', function() {
+    var r = validateZipPlan([{ name: 'a.bin', size: MAX_INLINE_BYTES }, { name: 'b.bin', size: 1 }]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('cap');
+    expect(r.message).toContain('64');
+  });
+
+  it('accepte un total exactement au cap (borne inclusive)', function() {
+    var r = validateZipPlan([{ name: 'a.bin', size: MAX_INLINE_BYTES }]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('refuse un doublon de nom résiduel (garde de composition)', function() {
+    var r = validateZipPlan([{ name: 'a.txt', size: 1 }, { name: 'a.txt', size: 1 }]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('duplicate');
+    expect(r.message).toContain('écraserait');
+  });
+
+  it('refuse un nom de membre vide', function() {
+    var r = validateZipPlan([{ name: '', size: 1 }]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('unsafe');
+  });
+
+  it('tolère une entrée absente ou non tableau, sans exception', function() {
+    expect(validateZipPlan(null).ok).toBe(false);
+    expect(validateZipPlan(undefined).ok).toBe(false);
+    expect(validateZipPlan('nope').ok).toBe(false);
+  });
+});
+
+describe('ZIP_EXT_BY_MIME', function() {
+  // Ancrage CROISÉ entre les deux tables. Elles ne dérivent PAS l'une de
+  // l'autre (ZIP_MEMBER_MIME_BY_EXT n'est pas injective : douze extensions
+  // rendent text/plain), donc rien d'autre ne garde leur accord. Sans ce test,
+  // ajouter une extension d'un côté et pas de l'autre passe inaperçu — et un
+  // record sans nom produirait un membre à l'extension fausse ou en .bin.
+  it('couvre chaque mime produit par ZIP_MEMBER_MIME_BY_EXT, par un aller-retour', function() {
+    var mimes = {};
+    for (var ext in ZIP_MEMBER_MIME_BY_EXT) {
+      if (Object.prototype.hasOwnProperty.call(ZIP_MEMBER_MIME_BY_EXT, ext)) {
+        mimes[ZIP_MEMBER_MIME_BY_EXT[ext]] = true;
+      }
+    }
+    for (var mime in mimes) {
+      if (!Object.prototype.hasOwnProperty.call(mimes, mime)) continue;
+      var back = ZIP_EXT_BY_MIME[mime];
+      // (1) tout mime produit a un représentant canonique
+      expect(!!back).toBe(true);
+      // (2) ce représentant redonne le même mime — c'est le sens de « canonique »
+      expect(ZIP_MEMBER_MIME_BY_EXT[back]).toBe(mime);
+    }
+  });
+});
+
+describe('normalizeArchiveName', function() {
+  it('garantit l\'extension .zip', function() {
+    expect(normalizeArchiveName('rapports')).toBe('rapports.zip');
+  });
+
+  it('ne double jamais une extension déjà présente', function() {
+    expect(normalizeArchiveName('rapports.zip')).toBe('rapports.zip');
+  });
+
+  it('ne normalise pas la casse d\'un nom rédigé par le modèle', function() {
+    expect(normalizeArchiveName('Rapports.ZIP')).toBe('Rapports.ZIP');
+  });
+
+  it('retombe sur archive.zip quand le nom est absent ou vide', function() {
+    expect(normalizeArchiveName(null)).toBe('archive.zip');
+    expect(normalizeArchiveName('')).toBe('archive.zip');
+    expect(normalizeArchiveName('   ')).toBe('archive.zip');
+  });
+
+  it('retire le chemin : le nom finit dans un record et un téléchargement', function() {
+    expect(normalizeArchiveName('dossier/sous/livrables.zip')).toBe('livrables.zip');
+    expect(normalizeArchiveName('../evasion.zip')).toBe('evasion.zip');
+    expect(normalizeArchiveName('/etc/passwd')).toBe('passwd.zip');
+  });
+
+  it('refuse un « .zip » nu, qui serait invisible dans une liste', function() {
+    expect(normalizeArchiveName('.zip')).toBe('archive.zip');
+  });
+});

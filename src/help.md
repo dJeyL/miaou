@@ -68,6 +68,13 @@ Un fichier `.docx`, `.xlsx` ou `.pptx` étant techniquement une archive, MIAOU
 sait l'ouvrir aussi, mais n'y voit que sa mécanique interne : pour en tirer le
 texte, mieux vaut un serveur d'extraction documentaire (voir le sujet `mcp`).
 
+Dans l'autre sens, le modèle peut **fabriquer une archive** : quand plusieurs
+fichiers se sont accumulés au fil de l'échange — des scripts, des rapports, des
+extraits qu'il a produits ou sortis d'une autre archive — il peut les regrouper
+en un seul zip que tu récupères d'un clic, plutôt que de te les faire
+télécharger un par un. Le bouton de téléchargement apparaît directement dans le
+fil, sous la trace de l'outil.
+
 Le modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de
 recomposer (une compilation, un résultat intermédiaire volumineux) sous forme
 de ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource

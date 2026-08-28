@@ -551,6 +551,94 @@ model-side unique sur la bibliothèque) :**
   ses archives : le `console.warn` du dégradé ne doit pas masquer un format que
   le natif sait traiter.
 
+**Création d'archives (lot V-2, `docs__pack`) :**
+- `docs__pack(handles[], name?)` — agrège **N** ressources déjà stockées en
+  **une** archive zip téléchargeable. Premier outil du namespace `docs__` à
+  **écrire** un format plutôt qu'à le lire : le namespace suit le **format**, pas
+  le sens de l'opération (décision 1 du lot — nom identique au serveur, pour que
+  la disparition de `mcp_docs` reste invisible au modèle). Handler
+  **asynchrone** (`ensureFflate` + `_storeBlock`). Ne crée **aucun** contenu :
+  les ressources doivent déjà exister, et la description vue par le modèle porte
+  cette borne négative explicitement.
+- Chaîne : pour chaque handle `classifyHandleRef` → `resolveHandleRecord(ref,
+  ctx)` (**`ctx` explicite**, piège 28) → `buildZipMemberName` →
+  `validateZipPlan` (utils.js, purs) → `zipSync` → `_storeBlock` en classe
+  **`'binary'` explicite** → `formatResourceDescriptor`. Les records sont
+  **gelés avant le premier `await`** : le handler est `async`, un état relu
+  après un `await` pourrait appartenir à une autre génération (piège 26b).
+- **`formatResourceDescriptor`, surtout pas `formatInlineHandleForModel`.** Cette
+  dernière ajoute « texte adressable par `js__eval` » — note qui serait **fausse**
+  sur un `application/zip` : `js__eval` y décoderait les octets compressés en
+  UTF-8 et rendrait du bruit. Et jamais `_makeResourceRef` (piège 26c) : le
+  raisonnement « c'est sûr parce que la classe est `binary` » est exactement
+  celui qui a coûté le bug du lot M sous une autre classe.
+- **La déduplication des noms n'est pas cosmétique.** `zipSync` prend un objet
+  `{ nom: octets }` : deux membres homonymes **s'écrasent silencieusement** —
+  propriété de l'objet JS, pas de fflate. Or deux ressources d'une même
+  conversation portent très souvent le même nom (`rapport.md`, `sortie.txt`).
+  `buildZipMemberName` déduplique contre un `Set`, en insérant l'incrément
+  **avant** l'extension (`rapport-2.md`, jamais `rapport.md-2`). La casse n'est
+  **pas** normalisée : le zip y est sensible, et `Rapport.md` face à `rapport.md`
+  sont deux membres distincts.
+- **Le nom de membre est un IDENTIFIANT et doit faire l'aller-retour.** C'est par
+  lui que `docs__list` puis `docs__extract` reciblent le membre (comparaison
+  stricte `e.name === path`). Même exigence que les noms non-UTF-8 payés en
+  clôture V-1 : un nom qui ne revient pas à l'identique par `_zipDecodeName`
+  rend le membre **inatteignable**. `zipSync` encode en UTF-8 et pose le bit 11,
+  donc la branche UTF-8 est prise — structurellement sûr, mais **figé par un test
+  d'aller-retour complet** dans le verify plutôt que supposé.
+- **Deux tables d'extensions, pas une inversion.** `ZIP_MEMBER_MIME_BY_EXT`
+  (ext → mime, V-1) n'est **pas injective** — douze extensions rendent
+  `text/plain`. L'inverser programmatiquement donnerait le dernier représentant
+  itéré (`text/plain` → `rst`, absurde). `ZIP_EXT_BY_MIME` (mime → ext, V-2) est
+  donc écrite **à la main**, avec le représentant canonique de chaque mime, et
+  leur accord est gardé par un **test croisé** (`tests/test-zip.js`) qui vérifie
+  les deux sens. Même forme que le contrat `zipMemberMime` × `_isTextualMime`
+  livré en clôture V-1 : deux fonctions pures qui composent forment un contrat
+  que rien ne garde autrement.
+- **Les refus vivent dans `validateZipPlan`** (pure, testée) : plan vide, nom
+  vide, zip-slip (`isZipSlipPath`, réutilisée, jamais réécrite), doublon
+  résiduel, total au-delà de `MAX_INLINE_BYTES`. Comme en V-1, un refus métier
+  est un `result` texte **non-`isError`** avec un ack `ok:false` (rouge par
+  `ackIsError`) — le modèle re-cible dans le même tour.
+- **Le doublon est refusé bien que `buildZipMemberName` l'ait déjà évité.** Ce
+  n'est pas redondant : les deux fonctions **composent**, et l'écrasement
+  silencieux est précisément le mode de défaillance visé. `validateZipPlan` est
+  la garde de dernier ressort.
+- **Le cap porte sur le total NON COMPRESSÉ, en amont.** C'est le pic RAM réel :
+  les entrées sont déjà en mémoire, `zipSync` construit la sortie par-dessus.
+  Aucun second cap sur la sortie compressée — un refus *après* compression aurait
+  déjà payé le coût mémoire qu'il prétend éviter, l'inverse exact de la garde
+  préventive de V-1 (« on ne décompresse jamais pour découvrir que c'était trop
+  gros »).
+- **Nom de l'archive** : `normalizeArchiveName` (utils.js, pure) garantit
+  l'extension `.zip` sans jamais la doubler, retire le chemin (le nom finit dans
+  un record et dans un téléchargement) et retombe sur `archive.zip` si le
+  nettoyage ne laisse rien. La casse n'est pas normalisée — c'est un champ rédigé
+  par le modèle.
+- **Deux acks par appel réussi**, comme `docs__extract` : `_storeBlock` pousse
+  `resource_stored`, `docs__pack` ajoute le sien.
+- **Le bouton de téléchargement ne vient PAS d'un chemin propre à `docs__pack`.**
+  Il vient de l'ack `resource_stored` via `ackDownloadTarget` → `.ack-dl` →
+  `downloadAckResource`, déjà câblé (cf. « Téléchargement de la ressource
+  désignée par un ack »). C'est ce qui a fait écarter `resource__present`, qui
+  coûterait un tour de modèle **et** un `arrayBufferToBase64` sur toute l'archive
+  (`makeResourcePresentBlock`) — contradictoire avec ce que V-3 attaque par
+  ailleurs. Le modèle reste libre de l'appeler ; on ne l'y **oriente** pas.
+- **Le retour au modèle mentionne le téléchargement** (« déjà proposée au
+  téléchargement dans le fil »). Délibéré : sans marqueur, un modèle peut
+  annoncer à l'utilisateur qu'il doit demander autre chose alors que le bouton
+  est déjà là. Précédent exact et documenté : `NOT_PRESENTED_NOTE`
+  (`resources.js`).
+- **`ensureFflate` garde désormais `unzipSync` ET `zipSync`.** La garde ne
+  testait que la première alors que son propre commentaire annonçait que
+  l'artefact couvre la seconde « pour V-2 ». Un build CDN partiel aurait échoué
+  **tardivement**, dans un handler `async`, au lieu d'échouer au chargement —
+  exactement le mode de défaillance que cette garde existe pour empêcher.
+- **Le libellé « zip » de la description est daté V-2**, au même titre que celui
+  de `docs__list`/`docs__extract` (V-1) : à élargir si la création d'autres
+  formats devient native.
+
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 
 Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique

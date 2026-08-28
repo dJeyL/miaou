@@ -219,6 +219,8 @@ const DOCS_DOCTRINE =
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
   "suis-la, ne suppose jamais le contenu du fichier.\n" +
+  "Dans l'autre sens, pour regrouper plusieurs ressources déjà stockées en un " +
+  "seul fichier téléchargeable : miaou__docs__pack.\n" +
   "</OUVERTURE_DE_DOCUMENTS>\n\n" +
   "<SANS_OUVERTURE_DE_DOCUMENTS>\n" +
   "Si aucun outil disponible ne sait ouvrir le format d'un fichier joint, dis-le à " +
@@ -1470,6 +1472,121 @@ const TOOLS = [
       // ré-inlinerait le membre ENTIER dans le contexte (bug lot M : ~5,6M
       // tokens fantômes puis 400). Le handle transporte l'id, jamais le texte.
       return formatInlineHandleForModel(id, mime, getCachedRecord(id));
+    },
+  },
+  {
+    // miaou__docs__pack (lot V-2) : agrège N ressources déjà stockées en UNE
+    // archive zip téléchargeable. Premier outil du namespace docs__ à ÉCRIRE un
+    // format plutôt qu'à le lire — le namespace suit le format, pas le sens de
+    // l'opération (décision 1 du lot : nom identique au serveur pour que la
+    // disparition de mcp_docs reste invisible au modèle).
+    // Handler ASYNC (lazy-load fflate + _storeBlock). Le PUR — nom de membre et
+    // validation du plan — vit dans utils.js et est testé en QuickJS.
+    // Herméticité (piège 18) : resolveHandleRecord lit le cache session, un
+    // handle hors-scope → null → « introuvable » (no-oracle, comme docs__list).
+    name: 'docs__pack',
+    description:
+      "Regroupe plusieurs ressources déjà stockées (handles att-N, file-<id> ou res_<id>) " +
+      "en une seule archive zip que l'utilisateur peut télécharger depuis le fil. " +
+      "À utiliser quand tu as produit ou rassemblé plusieurs fichiers au cours de " +
+      "l'échange et que l'utilisateur veut le tout d'un bloc, parce qu'un téléchargement " +
+      "unique lui évite de récupérer les pièces une par une. Ne crée aucun contenu : les " +
+      "ressources doivent déjà exister. Le contenu des membres n'entre jamais dans ton contexte.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        handles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Handles des ressources à archiver : att-N, file-<id> ou res_<id>. Au moins un.',
+        },
+        name: {
+          type: 'string',
+          description: 'Nom du fichier d\'archive produit, extension .zip incluse (défaut : archive.zip)',
+        },
+      },
+      required: ['handles'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },   // écrit un record IDB
+    handler: async (args, ctx) => {
+      const handles = args && Array.isArray(args.handles) ? args.handles : null;
+      if (!handles || !handles.length) {
+        return toolFail('docs__pack', 'Aucun handle fourni : passe au moins une ressource à archiver.');
+      }
+
+      // Résolution de CHAQUE handle AVANT le premier await, ctx EXPLICITE
+      // (piège 28). Les records sont GELÉS ici : le handler est async, et un
+      // état relu après un await appartiendrait peut-être à une autre
+      // génération (piège 26b). Échec NOMINATIF — le modèle doit savoir lequel.
+      const resolved = [];
+      const taken = new Set();
+      for (const raw of handles) {
+        const ref = String(raw == null ? '' : raw).trim();
+        if (!ref) return toolFail('docs__pack', 'Handle vide dans la liste.');
+        if (classifyHandleRef(ref) === null) {
+          return toolFail('docs__pack', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
+        }
+        const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
+        if (!record || !record.data) return toolFail('docs__pack', 'Handle introuvable : ' + ref + '.');
+        const memberName = buildZipMemberName(record, taken);   // utils.js, pur
+        taken.add(memberName);
+        resolved.push({ ref, record, name: memberName, size: record.data.byteLength });
+      }
+
+      const plan = validateZipPlan(resolved.map(r => ({ name: r.name, size: r.size })));   // utils.js, pur
+      if (!plan.ok) {
+        // REFUS métier : ack rouge (ok:false) mais result TEXTE non-isError —
+        // le modèle re-cible dans le même tour (même posture que docs__extract).
+        _pendingToolAcks.push({ kind: 'docs_pack', ok: false, message: plan.message, count: resolved.length });
+        return plan.message;
+      }
+
+      let ff;
+      try { ff = await ensureFflate(); }   // ui.js — échec PROPAGÉ, pas dégradé
+      catch (e) {
+        return toolFail('docs__pack', 'Moteur de compression indisponible : ' +
+          (e && e.message ? e.message : 'échec de chargement') + '.');
+      }
+
+      let data;
+      try {
+        // zipSync prend un objet { nom: octets } : c'est PRÉCISÉMENT pourquoi la
+        // déduplication de buildZipMemberName n'est pas cosmétique — deux clés
+        // homonymes s'écraseraient ici en silence, sans que fflate y soit pour
+        // quoi que ce soit. validateZipPlan a déjà refusé ce cas.
+        const files = {};
+        for (const r of resolved) files[r.name] = new Uint8Array(r.record.data);
+        data = ff.zipSync(files, { level: 6 });
+      } catch (e) {
+        return toolFail('docs__pack', 'Échec de compression : ' +
+          (e && e.message ? e.message : 'inconnu') + '.');
+      }
+
+      // Classe 'binary' EXPLICITE : un application/zip n'est pas textuel, et son
+      // contenu ne doit jamais pouvoir être inliné dans le contexte.
+      const archiveName = normalizeArchiveName(args && args.name);   // utils.js, pur
+      const id = await _storeBlock('application/zip', archiveName, data, 'binary',
+                                   ctx.convId, Date.now(), Math.random);
+      if (!id) return toolFail('docs__pack', 'Échec de stockage de l\'archive.');
+
+      _pendingToolAcks.push({
+        kind: 'docs_pack', ok: true, resourceName: archiveName,
+        mime: 'application/zip', size: data.byteLength, count: resolved.length, id,
+      });
+
+      // DESCRIPTEUR, jamais le contenu, et JAMAIS _makeResourceRef (piège 26c).
+      // formatInlineHandleForModel ne conviendrait PAS ici : sa note « texte
+      // adressable par js__eval » serait FAUSSE sur un binaire — js__eval y
+      // décoderait les octets compressés en UTF-8 et rendrait du bruit.
+      // La mention du téléchargement est délibérée : sans elle, le modèle peut
+      // annoncer à l'utilisateur qu'il doit demander autre chose alors que le
+      // bouton est déjà dans le fil (précédent NOT_PRESENTED_NOTE, resources.js).
+      const rec = getCachedRecord(id);
+      const desc = rec ? formatResourceDescriptor(rec)
+                       : '[resource id=' + id + ' mime=application/zip name="' + archiveName + '"]';
+      return desc + ' — archive de ' +
+        (resolved.length === 1 ? '1 membre' : resolved.length + ' membres') +
+        ', déjà proposée au téléchargement dans le fil : l\'utilisateur n\'a rien d\'autre à demander.';
     },
   },
 ];

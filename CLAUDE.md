@@ -33,17 +33,33 @@ la section concernée (souvent `interface`, sinon le topic dédié). L'oublier f
 confabuler le modèle sur les fonctionnalités de l'appli. Le contenu est
 maintenu à la main, jamais généré depuis `docs/`.
 
+**Nouvelle feature utilisateur → deuxième question : « faut-il toucher au
+`README.md` ? »** Le README est la doc d'**accueil** du dépôt (Forgejo/GitHub) :
+ce qu'est MIAOU, comment l'ouvrir, ce qu'on peut en faire. **Une capacité
+nouvelle y vaut une ligne, pas un paragraphe** — le mécanisme, les gardes
+internes et les compromis vont dans `docs/<domaine>.md`, avec un `cf.` depuis le
+README. Test décisif : si la phrase explique *comment c'est fait* plutôt que *ce
+que ça permet*, elle n'est pas au bon endroit. Deux exceptions assumées, qui
+restent au README parce qu'elles s'adressent à qui arrive sur le dépôt : les
+clefs de `config.json` (`docs/build.md` y renvoie explicitement) et
+l'avertissement de sécurité non-prod sur le jeton MCP. Piège déjà payé deux fois
+(ventilation initiale, puis re-dérive pendant la campagne muscle) : le README
+regonfle parce que chaque lot y verse le niveau de détail de son propre brief.
+
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
-**Messages de commit en anglais** (le reste des échanges reste en français),
+**Messages de commit en anglais** (le reste des échanges reste en français) —
+**intégralement : sujet ET corps**, y compris un corps long et développé,
 au format **Conventional Commits** : `type(scope): sujet à l'impératif`.
 Types en usage dans le dépôt : `feat`, `fix`, `refactor`, `docs`, `test`,
 `style`, `build`, `chore`. Le **scope est facultatif** — le mettre quand il
 situe utilement le changement (domaine fonctionnel : `spaces`, `export`,
 `tools`, `sync`, `ui`…, ou namespace d'outil pour un lot qui en livre un),
-l'omettre quand le changement est transverse. Le corps du message, lui, reste
-libre et développé : il explique le pourquoi, pas le quoi.
+l'omettre quand le changement est transverse. Le corps du message, lui, est
+libre **de forme** (pas de langue) et développé : il explique le pourquoi, pas
+le quoi. Piège déjà payé : un corps rédigé en français parce que la session se
+déroule en français — la règle de langue couvre le message entier.
 
 ## Pipeline de build (ne pas le réécrire — détail : `docs/build.md`)
 

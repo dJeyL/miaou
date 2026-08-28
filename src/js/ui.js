@@ -270,8 +270,14 @@ function ensureFflate() {
     const s = document.createElement('script');
     s.src = FFLATE_CDN;
     s.onload = () => {
-      if (!window.fflate || typeof window.fflate.unzipSync !== 'function') {
-        reject(new Error('fflate absent après chargement')); return;
+      // Les DEUX fonctions, pas seulement celle du premier consommateur :
+      // docs__extract lit (unzipSync), docs__pack écrit (zipSync, lot V-2). Un
+      // build CDN partiel échouerait sinon tardivement, dans un handler async,
+      // au lieu d'échouer au chargement — exactement le mode de défaillance
+      // tardif que cette garde existe pour empêcher.
+      if (!window.fflate || typeof window.fflate.unzipSync !== 'function'
+          || typeof window.fflate.zipSync !== 'function') {
+        reject(new Error('fflate absent ou incomplet après chargement')); return;
       }
       resolve(window.fflate);
     };
@@ -1462,6 +1468,42 @@ const ACK_KINDS = {
         el.appendChild(document.createTextNode('Membre extrait '));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + (m.path || '?') + tail));
+      }
+    },
+  },
+  // Création d'archive (miaou__docs__pack, lot V-2) : même posture que
+  // docs_extract — informatif, pas d'undo, et un refus métier (plan vide,
+  // doublon, cap, nom non sûr) arrive avec ok:false → rouge par ackIsError,
+  // alors que le result modèle reste un texte non-isError.
+  // ICÔNE : ICON_PACKAGE, déjà la métaphore de « des octets deviennent une
+  // ressource » (resource_stored, docs_extract, file_promote) — docs__pack en
+  // est le cas exact, aucune métaphore à inventer.
+  // Le BOUTON DE TÉLÉCHARGEMENT du zip n'est PAS ici : il vient de l'ack
+  // resource_stored que _storeBlock pousse en plus (ackDownloadTarget →
+  // .ack-dl). Deux acks par appel réussi, comme docs__extract.
+  docs_pack: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_PACKAGE,
+    label: m => 'Archive créée : ' + (m.resourceName || '?') +
+      (m.ok === false ? ' (refusée)'
+        : ' — ' + (m.count === 1 ? '1 membre' : (m.count != null ? m.count : '?') + ' membres') +
+          (m.size != null ? ', ' + humanSize(m.size) : '')),
+    renderLabel: (m, el) => {
+      const tail = m.ok === false ? ' (refusée)'
+        : ' — ' + (m.count === 1 ? '1 membre' : (m.count != null ? m.count : '?') + ' membres') +
+          (m.size != null ? ', ' + humanSize(m.size) : '');
+      const name = m.resourceName || '?';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Archive créée '));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + name + tail));
+        });
+      } else {
+        el.appendChild(document.createTextNode('Archive créée '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + name + tail));
       }
     },
   },
