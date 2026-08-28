@@ -10,7 +10,7 @@ Ce que tu peux faire ici :
 
 - **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un
   de tes messages pour repartir de ce point.
-- **Joindre des fichiers** à un message : images et fichiers texte.
+- **Joindre des fichiers** à un message : images, fichiers texte et archives zip.
 - **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,
   ses fichiers et ses souvenirs.
 - **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer
@@ -32,9 +32,13 @@ Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le
 trombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur
 la zone de conversation (pas seulement sur la barre de saisie), ou colle
 directement depuis le presse-papier — une image copiée, ou un fichier copié
-depuis l'explorateur de fichiers. Deux types sont acceptés : **images** (le
-modèle les voit réellement, s'il gère la vision) et **fichiers texte** (leur
-contenu est transmis au modèle).
+depuis l'explorateur de fichiers. Trois types sont exploitables : **images** (le
+modèle les voit réellement, s'il gère la vision), **fichiers texte** (leur
+contenu est transmis au modèle) et **archives zip** (le modèle en liste le
+contenu et en sort le fichier qui l'intéresse — voir plus bas). Les autres
+fichiers binaires sont acceptés et conservés, mais le modèle n'en voit que le
+nom, le type et la taille tant qu'aucun outil ne sait les ouvrir (voir le sujet
+`mcp`).
 
 Une fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton
 message. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,
@@ -54,6 +58,15 @@ exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. 
 pour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat
 demandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt
 qu'à déverser le fichier brut.
+
+Les **archives zip** sont ouvertes par MIAOU lui-même, sans aucun serveur
+compagnon : le modèle peut lister les fichiers contenus dans une archive que tu
+as jointe ou déposée dans la bibliothèque d'un Espace, puis en sortir celui qui
+l'intéresse pour l'analyser — typiquement une archive de logs. Les membres
+protégés par mot de passe sont refusés explicitement plutôt que lus de travers.
+Un fichier `.docx`, `.xlsx` ou `.pptx` étant techniquement une archive, MIAOU
+sait l'ouvrir aussi, mais n'y voit que sa mécanique interne : pour en tirer le
+texte, mieux vaut un serveur d'extraction documentaire (voir le sujet `mcp`).
 
 Le modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de
 recomposer (une compilation, un résultat intermédiaire volumineux) sous forme
@@ -236,12 +249,10 @@ exemple :
 
 - **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.
 - **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,
-  Excel, PowerPoint), archives Zip — utile pour interroger un document que tu
-  as joint ou déposé dans une bibliothèque d'Espace. Pour un fichier texte ou
-  JSON contenu dans une archive Zip, le modèle peut aussi en récupérer le
-  contenu intégral sans le recopier dans la conversation, puis l'analyser par
-  le calcul (voir pièces jointes) — pratique pour travailler sur un fichier
-  d'archive sans le rapatrier entièrement à l'écran.
+  Excel, PowerPoint) — utile pour interroger un document que tu as joint ou
+  déposé dans une bibliothèque d'Espace. Les **archives zip**, elles, n'ont
+  plus besoin de serveur : MIAOU les ouvre nativement (voir le sujet
+  `pieces-jointes`).
 - Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs
   disponibles.
 

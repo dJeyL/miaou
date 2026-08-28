@@ -95,15 +95,25 @@ async function convert(md, name, interactive) {
   }, { md, name, interactive });
 }
 
+// Depuis `493799d`, le mot « MIAOU » du footer porte le lien vers le dépôt : le
+// libellé est SCINDÉ (EXPORT_VERBS.footerPrefix + exportBrandHtml), donc
+// « Converti par MIAOU » n'existe plus d'un bloc dans le HTML. Motif unique
+// ci-dessous, réutilisé par les quatre assertions de footer : on teste la
+// structure réelle, pas un littéral qui re-casserait au prochain habillage.
+const BRAND = '<a class="export-brand"[^>]*>MIAOU<\\/a>';
+const convertedBy = new RegExp('Converti par ' + BRAND);
+const convertedByDated = new RegExp('Converti par ' + BRAND + ' le ');
+
 // ── 1. Avec titre ───────────────────────────────────────────────────────────
 const htmlTitled = await convert(MD_WITH_TITLE, 'guide de démarrage.md', true);
 fs.writeFileSync(path.join(outDir, 'avec-titre.html'), htmlTitled);
 check('titre du h1 dans le cartouche', htmlTitled.includes('Guide de démarrage'));
-check('date dans le footer, PAS dans le cartouche', /Converti par MIAOU le /.test(htmlTitled));
-check('footer « Converti par MIAOU »', htmlTitled.includes('Converti par MIAOU'));
+check('date dans le footer, PAS dans le cartouche', convertedByDated.test(htmlTitled));
+check('footer « Converti par MIAOU »', convertedBy.test(htmlTitled));
 // La date est désormais TOUJOURS dans le footer (décision Julien), avec ou
 // sans cartouche : un seul endroit, pas de branche conditionnelle.
-check('footer daté même avec cartouche', /Converti par MIAOU le [^<]+<\/div>/.test(htmlTitled));
+check('footer daté même avec cartouche',
+      new RegExp('Converti par ' + BRAND + ' le [^<]+<\\/div>').test(htmlTitled));
 check('les deux jeux de tokens sont embarqués',
       htmlTitled.includes('body{') && htmlTitled.includes('body:has(#theme-switch:checked){'));
 await waitForDownload(1);
@@ -152,8 +162,8 @@ await ex.close();
 // ── 3. Sans titre ───────────────────────────────────────────────────────────
 const htmlPlain = await convert(MD_NO_TITLE, 'notes.md', true);
 fs.writeFileSync(path.join(outDir, 'sans-titre.html'), htmlPlain);
-check('footer présent quand même', htmlPlain.includes('Converti par MIAOU'));
-check('date reportée dans le footer sans cartouche', /Converti par MIAOU le /.test(htmlPlain));
+check('footer présent quand même', convertedBy.test(htmlPlain));
+check('date reportée dans le footer sans cartouche', convertedByDated.test(htmlPlain));
 await waitForDownload(2);
 check('nom de fichier sans titre = nom du .md', downloads.includes('notes.html'));
 

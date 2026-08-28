@@ -173,7 +173,14 @@ const t0 = Date.now();
 const rLoop = await evalTool('res_bigtest1', 'while(true){}');
 const elapsed = Date.now() - t0;
 check('boucle infinie → erreur (guard timeout)', /erreur/i.test(rLoop.text) && !rLoop.isError, rLoop.text.slice(0, 60));
-check('boucle infinie tuée dans un délai borné (< 10s)', elapsed < 10000, elapsed + 'ms');
+// Borne DÉRIVÉE de la constante réelle, jamais réécrite en dur : elle a déjà
+// suivi trois paliers (2 → 5 → 10 s, le dernier en V-1 étape 1 parce que le cap
+// d'entrée doublait). Une borne littérale re-casse à chaque palier en donnant
+// l'illusion d'une régression du guard, alors que seul le seuil a bougé. La
+// marge couvre le démarrage de la VM et la remontée de l'interruption.
+const timeoutMs = await page.evaluate(() => JS_EVAL_TIMEOUT_MS);
+check('boucle infinie tuée dans un délai borné (timeout + marge)',
+  elapsed < timeoutMs + 3000, elapsed + 'ms (JS_EVAL_TIMEOUT_MS=' + timeoutMs + ')');
 
 // ── Point 3 : OOM catchable (erreur, pas de crash de page) ───────────────────
 const rOom = await evalTool('res_bigtest1', 'var a=[]; while(true){ a.push(new Array(100000).fill(0)); }');

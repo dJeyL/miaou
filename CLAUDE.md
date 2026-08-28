@@ -36,7 +36,14 @@ maintenu à la main, jamais généré depuis `docs/`.
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
-**Messages de commit en anglais** (le reste des échanges reste en français).
+**Messages de commit en anglais** (le reste des échanges reste en français),
+au format **Conventional Commits** : `type(scope): sujet à l'impératif`.
+Types en usage dans le dépôt : `feat`, `fix`, `refactor`, `docs`, `test`,
+`style`, `build`, `chore`. Le **scope est facultatif** — le mettre quand il
+situe utilement le changement (domaine fonctionnel : `spaces`, `export`,
+`tools`, `sync`, `ui`…, ou namespace d'outil pour un lot qui en livre un),
+l'omettre quand le changement est transverse. Le corps du message, lui, reste
+libre et développé : il explique le pourquoi, pas le quoi.
 
 ## Pipeline de build (ne pas le réécrire — détail : `docs/build.md`)
 

@@ -168,39 +168,87 @@ const FILES_DOCTRINE =
   "si présente) : elle donne la doctrine de déclenchement complète (confirmation " +
   "préalable, format d'appel) avant tout appel à miaou__files__promote.";
 
-// Doctrine docs (brief H) : injectée SEULEMENT si un outil du registre distant
-// déclare le contrat ref+content_b64 (anyToolDeclaresAttachmentInflation) —
-// zéro pollution des setups sans serveur d'extraction. Nommage par CRITÈRE
-// (« un outil déclarant ref et content_b64 ») + EXEMPLE (docs__read) : robuste
-// au renommage du serveur MCP par l'utilisateur, cohérent avec la discipline
-// no-hardcode du lot A. PAS dans ROOT_SYSTEM_PROMPT (dépend de l'état runtime
-// du registre distant), même mécanisme que skillDoctrinePrompt/intentDoctrinePrompt.
+// Doctrine docs (brief H, v2 lot V-1) : STATIQUE et INCONDITIONNELLE, dans
+// ROOT_SYSTEM_PROMPT. La v1 était injectée conditionnellement par
+// docsDoctrinePrompt() selon anyToolDeclaresAttachmentInflation() (présence d'un
+// outil serveur déclarant ref+content_b64) : les deux ont disparu avec V-1. Deux
+// raisons. (a) Avec des outils d'ouverture NATIFS (docs__list/docs__extract,
+// toujours présents), la condition est devenue partiellement fausse. (b) Surtout,
+// la faire dépendre de l'état de branchement MCP ferait bouger le prompt système
+// à chaque connexion/déconnexion de serveur — invalidation KV RÉCURRENTE, ce que
+// vise précisément le piège 16.
+//
+// Motif exact de WEB_DOCTRINE : deux blocs balisés dont la conditionnalité est
+// LUE PAR LE MODÈLE (« si le registre te propose… »), jamais calculée par le
+// code. Le cas dégradé (format sans ouvreur) est rattrapé par l'OUTIL, pas par
+// la doctrine : docsUnsupportedFormatMessage() lit findDocsInflationTool() au
+// moment de l'appel et nomme l'outil serveur réellement branché, ou dit qu'il
+// n'y en a aucun. La doctrine se contente de dire au modèle de SUIVRE ce
+// message — elle n'en redonde jamais le contenu.
+//
+// Cas .docx (tranché Julien 2026-08-28) : un document Office EST un zip, le
+// natif sait donc l'ouvrir mécaniquement — mais il n'en livre que du XML brut
+// là où l'outil serveur en extrait le texte utile. La doctrine oriente vers le
+// serveur tant qu'il existe, le natif reste un filet (et le sniff Office du
+// listing sert à l'ANNONCER, jamais à refuser). À rouvrir en V-5, quand Word
+// deviendra natif.
+//
+// Une modification ici invalide le préfixe KV cache sur toutes les conversations
+// (ponctuel, assumé : la doctrine change une fois puis se re-stabilise).
 const DOCS_DOCTRINE =
-  "Un fichier binaire joint par l'utilisateur (descripteur [attachment att-N: file " +
-  "\"...\", <mime>, <taille> — binary content, not inlined]) n'est pas lisible " +
-  "directement, mais si un outil du registre déclare dans son schéma d'entrée à la " +
-  "fois un paramètre `ref` et un paramètre `content_b64` (par exemple docs__read), " +
-  "cet outil sait ouvrir la pièce jointe : appelle-le avec ref=\"att-N\" pour en " +
-  "extraire et lire le contenu, sans attendre que l'utilisateur te le demande " +
-  "explicitement si la conversation porte sur ce fichier.";
-
-function docsDoctrinePrompt() {
-  return anyToolDeclaresAttachmentInflation() ? DOCS_DOCTRINE : '';
-}
+  "<OUVERTURE_DE_DOCUMENTS>\n" +
+  "Un fichier binaire joint par l'utilisateur ou déposé dans la bibliothèque de " +
+  "l'espace (descripteur [attachment att-N: file \"...\", <mime>, <taille> — binary " +
+  "content, not inlined]) n'est pas lisible directement : son contenu n'est jamais " +
+  "dans ton contexte, seul son handle l'est. Pour l'ouvrir, choisis l'outil selon " +
+  "le format :\n" +
+  "- ARCHIVE ZIP (.zip, et tout fichier dont le mime ou l'extension annonce une " +
+  "archive) : miaou__docs__list puis miaou__docs__extract. Ils sont natifs, " +
+  "toujours disponibles, et ne dépendent d'aucun serveur. Liste d'abord, extrais " +
+  "ensuite le membre qui t'intéresse : tu obtiens une ressource res_… que tu " +
+  "passes à miaou__js__eval pour la compter, la filtrer ou l'agréger, sans jamais " +
+  "charger son contenu dans ton contexte.\n" +
+  "- PDF, WORD, EXCEL, POWERPOINT : si le registre te propose un outil déclarant " +
+  "dans son schéma d'entrée à la fois un paramètre `ref` et un paramètre " +
+  "`content_b64` (par exemple docs__read), c'est lui qui sait ouvrir ces formats " +
+  "et en extraire le texte utile. Appelle-le avec ref=\"att-N\". Un document Office " +
+  "est techniquement une archive zip, et les outils natifs savent donc l'ouvrir : " +
+  "ils n'en livreront que du XML brut, ce qui ne vaut qu'en dernier recours ou " +
+  "si l'utilisateur demande explicitement à en voir la structure interne.\n" +
+  "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
+  "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
+  "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
+  "suis-la, ne suppose jamais le contenu du fichier.\n" +
+  "</OUVERTURE_DE_DOCUMENTS>\n\n" +
+  "<SANS_OUVERTURE_DE_DOCUMENTS>\n" +
+  "Si aucun outil disponible ne sait ouvrir le format d'un fichier joint, dis-le à " +
+  "l'utilisateur plutôt que de supposer ou de fabriquer son contenu. Tu connais son " +
+  "nom, son type et sa taille par son descripteur : c'est tout ce dont tu disposes.\n" +
+  "</SANS_OUVERTURE_DE_DOCUMENTS>\n";
 
 // ── js__eval : compute sandboxé sur un blob client (lot L) ────────────────────
 // Paramètres du sandbox (constantes MIAOU dédiées, tranchées à l'audit AL2 sur
 // mesure du spike L0). Le cap suit la convention docs__*/fetch_* (20000). La
-// mémoire 128 Mo couvre « 32 Mo texte injecté + working set streamé » ; un
-// débordement (parse() d'un JSON monstre) meurt en OOM catchable — comportement
-// VOULU, pas un bug. Le timeout 5 s laisse respirer une passe sur 32 Mo
-// (injection seule ~158 ms au spike ; mais un split('\n') + regex + agrégation
-// sur 21 Mo réel a dépassé 2 s en usage — remonté à 5 s, une vraie boucle
-// infinie meurt toujours proprement). Référencés UNIQUEMENT dans des corps de
-// fonction (runtime), jamais au top-level d'un autre fichier (contrainte de
-// portée du test runner, cf. CLAUDE.md).
-const JS_EVAL_TIMEOUT_MS = 5000;
-const JS_EVAL_MEM_BYTES = 128 * 1024 * 1024;
+// mémoire couvre « texte injecté + working set streamé » ; un débordement
+// (parse() d'un JSON monstre) meurt en OOM catchable — comportement VOULU, pas
+// un bug. Référencés UNIQUEMENT dans des corps de fonction (runtime), jamais au
+// top-level d'un autre fichier (contrainte de portée du test runner, CLAUDE.md).
+//
+// JS_EVAL_MEM_BYTES est la CONTREPARTIE AVAL de MAX_INLINE_BYTES (utils.js) :
+// elle doit rester largement supérieure au plus gros blob adressable, car un
+// text() sur ce blob plus une copie dans le code du modèle vivent tous deux
+// dans la VM. Les deux ont été portées ENSEMBLE au lot V-1 (32→64 Mo d'entrée,
+// 128→256 Mo de VM) : les désynchroniser recréerait la contradiction garde
+// d'entrée / capacité aval déjà payée. Un test d'ancrage lit la source réelle
+// et garde le rapport (run_build_unit_tests).
+//
+// Le timeout suit le même mouvement (5 s → 10 s, décision Julien). Historique :
+// 2 s à l'origine, remonté à 5 s après qu'un split('\n') + regex + agrégation
+// sur un log de 21 Mo réel les a dépassées (l'injection seule tenait en ~158 ms
+// au spike L0). Le cap d'entrée ayant doublé, 5 s redevenaient serrées sur un
+// blob proche du plafond. Une vraie boucle infinie meurt toujours proprement.
+const JS_EVAL_TIMEOUT_MS = 10000;
+const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
 
 // Doctrine js__eval — INCONDITIONNELLE (AL4, décision Julien) : l'outil est natif,
@@ -254,7 +302,11 @@ const RESOURCE_DOCTRINE =
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 // (v2, lot L : JS_EVAL_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
 // (v3, lot O : RESOURCE_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
+// (v4, lot V-1 : DOCS_DOCTRINE entre ici, juste après ATTACHMENT_DOCTRINE dont
+//  elle prolonge le sujet — elle était jusque-là injectée conditionnellement
+//  hors racine par docsDoctrinePrompt(), supprimée avec V-1.)
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
+  DOCS_DOCTRINE + "\n\n---\n\n" +
   WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
   "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE;
 
@@ -480,6 +532,27 @@ function validateFilesPromoteArgs(args) {
 // Validation pure des arguments de resource__create (lot O) — même motif que
 // validateFilesPromoteArgs : extraite pour rester testable QuickJS malgré le
 // handler async. Retourne un message d'erreur si invalide, '' sinon.
+// Message d'erreur d'un docs__* natif appelé sur un format qu'il ne sait pas
+// ouvrir (lot V-1). C'est ICI que vit le rattrapage du cas dégradé, PAS dans la
+// doctrine : DOCS_DOCTRINE est statique et ne connaît jamais l'état de
+// branchement MCP (piège 16 — sinon le prompt système bougerait à chaque
+// connexion/déconnexion de serveur). L'outil, lui, tourne au moment de l'appel :
+// il peut donc regarder ce qui est RÉELLEMENT branché et nommer l'outil serveur
+// disponible, ou dire qu'il n'y en a aucun. Impure par nature (lit _remoteTools).
+function docsUnsupportedFormatMessage(record) {
+  const what = record && record.name ? '« ' + record.name + ' »' : 'ce fichier';
+  const mime = record && record.mime ? ' (' + record.mime + ')' : '';
+  const head = what + mime + " n'est pas une archive zip : l'ouverture native de MIAOU " +
+    'ne gère à ce jour que le zip.';
+  const inflation = findDocsInflationTool();
+  if (inflation) {
+    return head + ' Un serveur d\'extraction documentaire est branché : utilise ' +
+      inflation.server.name + '__' + inflation.toolName + ' pour ce format.';
+  }
+  return head + " Aucun outil branché ne sait ouvrir ce format — dis-le plutôt que " +
+    'de supposer son contenu.';
+}
+
 function validateResourceCreateArgs(args) {
   const content = String((args && args.content) || '');
   if (!content) return 'Contenu vide.';
@@ -1240,7 +1313,7 @@ const TOOLS = [
       if (classifyHandleRef(handle) === null) {
         return toolFail('js__eval', 'Handle invalide : ' + handle + ' (attendu att-N, file-<id> ou res_<id>).');
       }
-      const record = resolveHandleRecord(handle);   // impur : cache session (herméticité)
+      const record = resolveHandleRecord(handle, ctx);   // ctx EXPLICITE (piège 28) ; impur : cache session (herméticité)
       if (!record || !record.data) return toolFail('js__eval', 'Handle introuvable : ' + handle + '.');
       const text = utf8Decode(record.data);   // resources.js — AL3 : contenu textuel
       return runInQuickJs(text, code).then(r => {   // ui.js/tools.js — async, lazy-load + VM
@@ -1263,6 +1336,140 @@ const TOOLS = [
         return 'Erreur d\'exécution dans le bac à sable : ' + r.message +
           '. Vérifie ton code (syntaxe, borne mémoire/temps).';
       });
+    },
+  },
+  {
+    // miaou__docs__list (lot V-1) : liste les membres d'une archive zip
+    // référencée par handle, SANS RIEN DÉCOMPRESSER. Le central directory suffit
+    // (AUDIT §2) : on ne charge donc même pas fflate ici — le listing est un
+    // parsing d'en-têtes, pur, déjà testé en QuickJS. Handler SYNCHRONE, seul du
+    // couple docs__* à l'être ; docs__extract est async (lazy-load fflate).
+    // Herméticité (piège 18) : resolveHandleRecord lit le cache session, un
+    // handle hors-scope → null → « introuvable » (no-oracle, comme conv__get).
+    name: 'docs__list',
+    description:
+      "Liste les membres d'une archive zip référencée par son handle (att-N, file-<id> " +
+      "ou res_<id>), sans rien décompresser : nom et taille décompressée de chaque " +
+      "membre, nature de l'archive (zip brut ou document Office), et mention explicite " +
+      "des membres non extractibles (chiffrés, chemin non sûr). Appelle-le avant " +
+      "miaou__docs__extract pour choisir le membre à matérialiser. Ne renvoie jamais " +
+      "le contenu des membres.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Handle de l\'archive : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
+      },
+      required: ['ref'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },   // lecture seule, aucune écriture d'état
+    handler: (args, ctx) => {
+      const ref = String((args && args.ref) || '').trim();
+      if (!ref) return toolFail('docs__list', 'Handle manquant.');
+      if (classifyHandleRef(ref) === null) {
+        return toolFail('docs__list', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
+      }
+      const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
+      if (!record || !record.data) return toolFail('docs__list', 'Handle introuvable : ' + ref + '.');
+      const entries = parseZipCentralDirectory(new Uint8Array(record.data));   // utils.js, pur
+      if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
+      _pendingToolAcks.push({
+        kind: 'docs_list', handle: ref, resourceName: record.name,
+        count: entries.filter(e => !e.directory).length,
+      });
+      return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   // utils.js, pur
+    },
+  },
+  {
+    // miaou__docs__extract (lot V-1) : matérialise UN membre d'archive en
+    // ressource res_… adressable par js__eval. Handler ASYNC (lazy-load fflate +
+    // _storeBlock) → Promise<string>, mappée par callInternalTool comme js__eval.
+    // Les quatre refus (membre introuvable, répertoire, chiffré, zip-slip, cap)
+    // vivent dans decideZipMemberExtraction (utils.js, PUR et testé) : ils sont
+    // pris sur le seul central directory, donc AVANT toute allocation — on ne
+    // décompresse jamais pour découvrir après coup que c'était trop gros.
+    name: 'docs__extract',
+    description:
+      "Extrait UN membre d'une archive zip (handle + chemin exact du membre, tel que " +
+      "donné par miaou__docs__list) et le matérialise en ressource res_… adressable, " +
+      "sans charger son contenu dans ton contexte. Le handle renvoyé se passe ensuite " +
+      "à miaou__js__eval(handle, code) pour compter/filtrer/agréger/extraire. Un seul " +
+      "membre par appel : pour en analyser plusieurs, rejoue l'extraction puis le même " +
+      "script sur chaque handle.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Handle de l\'archive : att-N, file-<id> ou res_<id>' },
+        path: { type: 'string', description: 'Chemin exact du membre dans l\'archive, tel que listé par miaou__docs__list' },
+      },
+      required: ['ref', 'path'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },   // écrit un record IDB
+    handler: async (args, ctx) => {
+      const ref = String((args && args.ref) || '').trim();
+      const path = String((args && args.path) || '').trim();
+      if (!ref) return toolFail('docs__extract', 'Handle manquant.');
+      if (!path) return toolFail('docs__extract', 'Chemin de membre manquant.');
+      if (classifyHandleRef(ref) === null) {
+        return toolFail('docs__extract', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
+      }
+      const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
+      if (!record || !record.data) return toolFail('docs__extract', 'Handle introuvable : ' + ref + '.');
+      const u8 = new Uint8Array(record.data);
+      const entries = parseZipCentralDirectory(u8);
+      if (!entries) return toolFail('docs__extract', docsUnsupportedFormatMessage(record));
+
+      const decision = decideZipMemberExtraction(entries, path, MAX_INLINE_BYTES);   // utils.js, pur
+      if (!decision.ok) {
+        // REFUS métier : ack rouge (ok:false, lu par ackIsError) mais result
+        // TEXTE non-isError — le modèle doit pouvoir re-cibler dans le même tour
+        // sans que la boucle d'outils soit coupée (doctrine js__eval, piège 25).
+        _pendingToolAcks.push({ kind: 'docs_extract', handle: ref, path, ok: false, message: decision.message });
+        return decision.message;
+      }
+
+      let ff;
+      try { ff = await ensureFflate(); }   // ui.js — échec PROPAGÉ, pas dégradé
+      catch (e) {
+        return toolFail('docs__extract', 'Moteur de décompression indisponible : ' +
+          (e && e.message ? e.message : 'échec de chargement') + '.');
+      }
+
+      let data;
+      try {
+        // Le filtre borne la décompression au SEUL membre visé : fflate ne
+        // décompresse rien d'autre (AUDIT §2). La garde de taille est déjà
+        // passée (decideZipMemberExtraction), elle est ici redondante par
+        // prudence — `size` du central directory est déclaratif donc
+        // falsifiable, et originalSize vu par fflate en est une seconde lecture.
+        const out = ff.unzipSync(u8, {
+          filter: f => f.name === decision.entry.name && Number(f.originalSize) <= MAX_INLINE_BYTES,
+        });
+        data = out && out[decision.entry.name];
+      } catch (e) {
+        return toolFail('docs__extract', 'Échec de décompression du membre ' + path + ' : ' +
+          (e && e.message ? e.message : 'archive illisible') + '.');
+      }
+      if (!data) return toolFail('docs__extract', 'Le membre ' + path + ' n\'a pas pu être décompressé.');
+
+      // Classement inline/binary par la fonction EXISTANTE (resources.js) : un
+      // membre image ou PDF imbriqué suit la règle commune, on ne force jamais
+      // 'inline' (brief §3). Le mime vient de l'extension du membre : c'est la
+      // seule information disponible dans un zip.
+      const mime = zipMemberMime(decision.entry.name);   // utils.js, pur
+      const cls = _isTextualMime(mime) ? 'inline' : 'binary';
+      const name = zipMemberBaseName(decision.entry.name);   // utils.js, pur
+      const id = await _storeBlock(mime, name, data, cls, ctx.convId, Date.now(), Math.random);
+      if (!id) return toolFail('docs__extract', 'Échec de stockage du membre extrait.');
+
+      _pendingToolAcks.push({
+        kind: 'docs_extract', handle: ref, path, ok: true,
+        resourceName: name, mime, size: data.byteLength,
+      });
+      // JAMAIS _makeResourceRef ici (piège 26c) : un [resource_ref:…] vers un
+      // record 'inline' serait résolu en utf8Decode(data) au tour suivant et
+      // ré-inlinerait le membre ENTIER dans le contexte (bug lot M : ~5,6M
+      // tokens fantômes puis 400). Le handle transporte l'id, jamais le texte.
+      return formatInlineHandleForModel(id, mime, getCachedRecord(id));
     },
   },
 ];
@@ -1735,22 +1942,6 @@ const FILE_REF_RE = /^file-[a-z0-9]+$/;
 // binaire, résultat d'outil, ou octets web via web__fetch_resource, lot K §4.1).
 const RESOURCE_REF_RE = /^res_[a-z0-9]+$/;
 
-// Généralisation de toolDeclaresAttachmentInflation (brief H) : balaye TOUT le
-// registre _remoteTools (tous serveurs confondus), sans nom de serveur/outil en
-// dur — même discipline no-hardcode que le prédicat par-outil. Sert à décider
-// SI docsDoctrinePrompt() doit être injecté, indépendamment de quel(s) serveur(s)
-// exposent le contrat ref+content_b64 (brief D). Renvoie true dès qu'AU MOINS
-// un outil déclare la signature, quel que soit son nom.
-function anyToolDeclaresAttachmentInflation() {
-  for (const serverName of Object.keys(_remoteTools)) {
-    for (const t of _remoteTools[serverName]) {
-      const props = t && t.inputSchema && t.inputSchema.properties;
-      if (props && props.ref && props.content_b64) return true;
-    }
-  }
-  return false;
-}
-
 // Un serveur d'extraction documentaire (brief D/H) expose typiquement PLUSIEURS
 // outils qui déclarent tous `ref`+`content_b64` (structure/lecture/recherche —
 // ex. mcp_docs list/read/search), car les trois partagent le même mécanisme de
@@ -1774,7 +1965,7 @@ function _declaresContentReadSignature(props) {
 // signal de lecture de contenu ci-dessus (lot Cbis, D7) — utilisé pour
 // l'extraction binaire d'un résumé de fichier, un appel APPLICATIF direct
 // (pas un tool_call du modèle, aucune conversation en cours). Même discipline
-// no-hardcode que anyToolDeclaresAttachmentInflation : aucun nom de serveur ni
+// no-hardcode que DOCS_DOCTRINE (nommage par contrat) : aucun nom de serveur ni
 // d'outil en dur, seulement des signatures de schéma. `getMcpServer`
 // (storage.js) résout l'objet serveur complet depuis son nom ; un serveur peut
 // avoir disparu du registre localStorage entre la connexion et cet appel
@@ -1794,8 +1985,10 @@ function findDocsInflationTool() {
   return null;
 }
 
-// Extrait le texte d'un fichier binaire de bibliothèque pour la description D7,
-// via le même contrat d'inflation que le hook dispatcher (§4), mais en appel
+// Extrait le texte d'un fichier binaire de bibliothèque pour la description D7.
+// Deux chemins depuis V-1 : archive zip → listing natif (voir la bifurcation en
+// tête de corps), sinon le contrat d'inflation serveur ci-dessous.
+// Chemin serveur : même contrat d'inflation que le hook dispatcher (§4), en appel
 // APPLICATIF direct (mcpRpc, pas callRemoteTool) : aucun ack ne doit apparaître
 // dans un thread (l'ingestion peut survenir hors de toute conversation
 // ouverte, ex. upload direct depuis l'écran Space). `session_id` synthétique
@@ -1805,6 +1998,20 @@ function findDocsInflationTool() {
 // le texte extrait (tronqué au cap fourni) ou null si aucun outil ne qualifie
 // ou si l'appel échoue (dégradé, jamais bloquant — cf. D7 "pas de queue/retry").
 async function extractBinaryFileTextForDescription(record, maxChars) {
+  // Bifurcation par type EN AMONT du chemin serveur (lot V-1, §6 du brief) :
+  // une archive zip se décrit par la LISTE de son contenu (noms + tailles
+  // décompressées indicatives), jamais par le contenu d'un membre — décision
+  // Julien. Le listing natif produit exactement ça sans rien décompresser (le
+  // central directory suffit), donc sans charger fflate. Placé avant
+  // findDocsInflationTool() pour que MIAOU seul, sans serveur compagnon,
+  // décrive quand même ses archives : le dégradé du chemin serveur ne doit pas
+  // masquer un format que le natif SAIT traiter (leçon U-1 — un console.warn
+  // sur un chemin d'infrastructure achète du silence, pas de la robustesse).
+  // Posture du chemin préservée : aucun ack (l'ingestion peut survenir hors
+  // conversation), jamais bloquant.
+  const zipEntries = record && record.data ? parseZipCentralDirectory(new Uint8Array(record.data)) : null;
+  if (zipEntries) return formatZipListing(zipEntries, { maxBytes: MAX_INLINE_BYTES }).slice(0, maxChars);
+
   const found = findDocsInflationTool();
   if (!found) return null;
   try {

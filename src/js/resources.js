@@ -188,9 +188,9 @@ function formatTextAttachmentBlock(att, text) {
 // dérivé des champs FIGÉS du schéma (attId, name, mime, size) — jamais des
 // octets, aucun timestamp (invariant #2, piège #17 CLAUDE.md) → byte-stable
 // tour d'attache == tours suivants. Note NEUTRE (ne mentionne aucun outil) :
-// c'est docsDoctrinePrompt() (tools.js), conditionnelle, qui porte le « comment »
-// — un binaire non-docx et un serveur docs absent doivent produire un
-// descripteur STRICTEMENT identique, aucune branche ici.
+// c'est DOCS_DOCTRINE (tools.js), statique et inconditionnelle depuis V-1, qui
+// porte le « comment » — un binaire non-docx et un serveur docs absent doivent
+// produire un descripteur STRICTEMENT identique, aucune branche ici.
 function formatBinaryAttachmentDescriptor(att) {
   return '[attachment ' + att.attId + ': file "' + (att.name || '') + '", ' +
     (att.mime || 'application/octet-stream') + ', ' + humanSize(att.size) +

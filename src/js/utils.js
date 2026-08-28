@@ -46,6 +46,7 @@ const ACK_COPY_FIELDS = [
   'slug', 'created',                      // skills (created : write = création vs modification)
   'topic', 'query',                      // aide (about_read, about_search)
   'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
+  'path',                                 // docs__extract (lot V-1) — chemin du membre extrait dans l'archive
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
@@ -1377,11 +1378,10 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   };
 
   pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
-  pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
+  pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);   // DOCS_DOCTRINE y est comptée depuis V-1 (plus de part `docs` séparée)
   pushEntry('tools_system', 'Liste des outils (system)', sp.toolsSystem);
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
-  pushEntry('docs_doctrine', 'Doctrine docs', sp.docs);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
   pushEntry('user_prompt', 'Prompt utilisateur (+ Space)', sp.user);
 
@@ -1670,4 +1670,320 @@ function resolveAgentCount(total, screenOwned) {
 function formatAgentCountLabel(n) {
   const c = Math.floor(Number(n) || 0);
   return c <= 0 ? '' : c + (c > 1 ? ' agents' : ' agent');
+}
+
+// ── Cap d'octets tenus en RAM (lot V-1) ──────────────────────────────────────
+// Famille « octets tenus en RAM et adressables par un handle » : blob
+// texte/binary d'un attachment, fichier de bibliothèque d'espace, et membre
+// d'archive décompressé par docs__extract. Nom générique VOULU — la constante a
+// remplacé l'ancien cap propre aux attachments quand le zip natif est devenu un
+// troisième producteur d'octets soumis au même plafond.
+//
+// Déclarée ici (premier fichier du build) et non dans main.js : elle est lue
+// depuis tools.js, qui est chargé AVANT main.js. Référencée UNIQUEMENT dans des
+// corps de fonction (contrainte de portée inter-fichiers du test runner, cf.
+// CLAUDE.md).
+//
+// Sa contrepartie aval est JS_EVAL_MEM_BYTES (tools.js), qui doit rester
+// largement supérieure : un text() sur un blob de cette taille, plus une copie
+// dans le code du modèle, vit dans la VM. Les désynchroniser recréerait la
+// contradiction garde d'entrée / capacité aval déjà payée — un test d'ancrage
+// sur la source réelle garde le rapport (run_build_unit_tests).
+const MAX_INLINE_BYTES = 64 * 1024 * 1024;   // 64 Mo
+
+// ── Archives zip : helpers purs (lot V-1) ────────────────────────────────────
+// Le chemin d'extraction natif (fflate, ui.js/tools.js) n'est pas testable en
+// QuickJS : il charge une lib CDN et lit IndexedDB. Ces quatre fonctions sont
+// la part PURE de ce chemin — et c'est là que vivent les gardes, précisément
+// pour qu'elles soient testables (mémoire project_extract_pure_helper_over_idb_stub).
+
+// Signatures little-endian du format zip.
+const ZIP_EOCD_SIG = 0x06054b50;   // End Of Central Directory
+const ZIP_CDFH_SIG = 0x02014b50;   // Central Directory File Header
+
+// Lectures little-endian sur un Uint8Array (pas de DataView : évite de dépendre
+// du byteOffset d'une vue sur un buffer partagé).
+function _zipU16(u8, p) { return u8[p] | (u8[p + 1] << 8); }
+function _zipU32(u8, p) {
+  return (u8[p] | (u8[p + 1] << 8) | (u8[p + 2] << 16)) + u8[p + 3] * 16777216;
+}
+
+// Décodage d'un nom de membre, sans TextDecoder (absent de QuickJS).
+//
+// Le format zip connaît DEUX encodages de nom, discriminés par le bit 11 du
+// general purpose flag (« language encoding flag », APPNOTE 6.3.2) :
+//   - bit 11 posé → UTF-8 (tout zip moderne : Info-ZIP, macOS, 7-Zip récents) ;
+//   - bit 11 absent → jeu historique CP437 (archives Windows anciennes).
+// Décoder un nom CP437 comme de l'UTF-8 rend du mojibake ou des U+FFFD, et le
+// chemin devient INEXPLOITABLE : docs__extract compare `e.name === path` à
+// l'identique, un nom mal décodé ne peut plus être ciblé. D'où la bifurcation.
+//
+// Le repli « latin-ish » (octet → même point de code) n'est pas CP437 exact —
+// la vraie table diverge au-dessus de 0x7F (0x82 y vaut « é », pas « ‚ »). Il
+// est retenu quand même parce qu'il est TOTAL et STABLE : chaque octet donne un
+// caractère, distinct, et le nom reste un identifiant fidèle à comparer à
+// lui-même. C'est ce qui compte ici — le nom sert à cibler un membre, pas à
+// être joli. Une vraie table CP437 n'améliorerait que l'affichage.
+function _zipDecodeName(u8, start, len, utf8) {
+  let s = '';
+  let i = start;
+  const end = start + len;
+  if (!utf8) {
+    // Repli octet-à-octet : total, jamais de perte, jamais de U+FFFD.
+    for (; i < end; i++) s += String.fromCharCode(u8[i]);
+    return s;
+  }
+  while (i < end) {
+    const c = u8[i];
+    if (c < 0x80) { s += String.fromCharCode(c); i += 1; }
+    else if (c < 0xe0 && i + 1 < end) {
+      s += String.fromCharCode(((c & 0x1f) << 6) | (u8[i + 1] & 0x3f)); i += 2;
+    } else if (c < 0xf0 && i + 2 < end) {
+      s += String.fromCharCode(((c & 0x0f) << 12) | ((u8[i + 1] & 0x3f) << 6) | (u8[i + 2] & 0x3f));
+      i += 3;
+    } else if (i + 3 < end) {
+      const cp = ((c & 0x07) << 18) | ((u8[i + 1] & 0x3f) << 12) |
+                 ((u8[i + 2] & 0x3f) << 6) | (u8[i + 3] & 0x3f);
+      const v = cp - 0x10000;
+      s += String.fromCharCode(0xd800 + (v >> 10), 0xdc00 + (v & 0x3ff));
+      i += 4;
+    } else { s += '�'; i += 1; }
+  }
+  return s;
+}
+
+// Parse le CENTRAL DIRECTORY d'une archive zip → [{name, encrypted, size,
+// compressedSize, directory}, …], ou `null` si l'EOCD est introuvable (pas un
+// zip, ou tronqué).
+//
+// RAISON D'ÊTRE — la garde de chiffrement. fflate ne détecte PAS les membres
+// protégés par mot de passe : vérifié par exécution sur un `zip -P`, il rend des
+// octets chiffrés en prétendant avoir extrait du texte, SANS lever d'exception
+// (AUDIT lot V §3). Le modèle recevrait du bruit binaire présenté comme du
+// contenu de log. `filter` (le seul hook fflate avant décompression) n'expose
+// que name/size/originalSize/compression — jamais le general purpose flag.
+// Le lire nous-mêmes dans le central directory est le seul chemin.
+//
+// `size` (taille décompressée) est un champ DÉCLARATIF, donc falsifiable :
+// il sert de garde PRÉVENTIVE (refuser avant d'allouer), jamais de vérité
+// unique — le serveur mcp_docs avait la même prudence.
+function parseZipCentralDirectory(u8) {
+  if (!u8 || typeof u8.length !== 'number' || u8.length < 22) return null;
+
+  // L'EOCD fait 22 octets + un commentaire de 0 à 65535 : balayer depuis la fin.
+  let eocd = -1;
+  const floor = Math.max(0, u8.length - 22 - 65535);
+  for (let p = u8.length - 22; p >= floor; p--) {
+    if (_zipU32(u8, p) === ZIP_EOCD_SIG) { eocd = p; break; }
+  }
+  if (eocd < 0) return null;
+
+  const count = _zipU16(u8, eocd + 10);
+  const cdOff = _zipU32(u8, eocd + 16);
+  if (cdOff >= u8.length) return null;
+
+  const entries = [];
+  let p = cdOff;
+  for (let k = 0; k < count; k++) {
+    if (p + 46 > u8.length || _zipU32(u8, p) !== ZIP_CDFH_SIG) break;
+    const gp = _zipU16(u8, p + 8);
+    const csize = _zipU32(u8, p + 20);
+    const size = _zipU32(u8, p + 24);
+    const nlen = _zipU16(u8, p + 28);
+    const elen = _zipU16(u8, p + 30);
+    const clen = _zipU16(u8, p + 32);
+    if (p + 46 + nlen > u8.length) break;
+    const name = _zipDecodeName(u8, p + 46, nlen, (gp & 0x800) !== 0);   // bit 11 = nom UTF-8
+    entries.push({
+      name: name,
+      encrypted: (gp & 1) === 1,   // bit 0 du general purpose flag
+      size: size,
+      compressedSize: csize,
+      directory: name.charAt(name.length - 1) === '/',
+    });
+    p += 46 + nlen + elen + clen;
+  }
+  return entries;
+}
+
+// Garde zip-slip. Côté client il n'y a AUCUNE écriture disque (tout reste en
+// mémoire, adressé par handle) : le risque n'est donc pas l'écrasement de
+// fichier mais le ciblage ambigu d'un membre et la confusion d'affichage.
+// La garde reste, et un membre rejeté est SIGNALÉ dans le listing, jamais
+// silencieusement omis (un trou sans explication fait halluciner le modèle).
+function isZipSlipPath(name) {
+  const s = String(name == null ? '' : name).replace(/\\/g, '/');
+  if (!s) return true;
+  if (s.charAt(0) === '/') return true;              // absolu POSIX
+  if (/^[a-zA-Z]:/.test(s)) return true;             // absolu Windows (C:…)
+  const parts = s.split('/');
+  for (const seg of parts) {
+    if (seg === '..') return true;
+  }
+  return false;
+}
+
+// Sniff Office : un .docx/.xlsx/.pptx EST un zip. Sert à ANNONCER la nature de
+// l'archive dans le listing, JAMAIS à refuser l'ouverture (décision lot V).
+function sniffZipOfficeKind(names) {
+  const list = names || [];
+  let hasWord = false, hasXl = false, hasPpt = false;
+  for (const n of list) {
+    const s = String(n || '');
+    if (s.indexOf('word/') === 0) hasWord = true;
+    else if (s.indexOf('xl/') === 0) hasXl = true;
+    else if (s.indexOf('ppt/') === 0) hasPpt = true;
+  }
+  if (hasWord) return 'docx';
+  if (hasXl) return 'xlsx';
+  if (hasPpt) return 'pptx';
+  return null;
+}
+
+// Texte du listing rendu au modèle. `opts.maxBytes` (cap d'inline) sert
+// uniquement à ANNONCER qu'un membre dépasse : le listing ne refuse rien, il
+// décrit — c'est docs__extract qui refuse. Un total décompressé au-delà du cap
+// est signalé sans empêcher l'extraction membre par membre.
+function formatZipListing(entries, opts) {
+  const o = opts || {};
+  const list = entries || [];
+  const maxBytes = Number(o.maxBytes) || 0;
+  const lines = [];
+  const rejected = [];
+  let total = 0, files = 0, dirs = 0;
+
+  for (const e of list) {
+    if (e.directory) { dirs++; continue; }
+    files++;
+    total += Number(e.size) || 0;
+    if (e.encrypted) {
+      rejected.push(e.name + ' — chiffré (protégé par mot de passe), non extractible');
+      continue;
+    }
+    if (isZipSlipPath(e.name)) {
+      rejected.push(e.name + ' — chemin non sûr (absolu ou remontant), refusé');
+      continue;
+    }
+    let line = e.name + '  ' + humanSize(e.size);
+    if (maxBytes && Number(e.size) > maxBytes) {
+      line += '  [au-delà du cap d\'extraction]';
+    }
+    lines.push(line);
+  }
+
+  const out = [];
+  const kind = sniffZipOfficeKind(list.map(function(e) { return e.name; }));
+  out.push('Archive zip' + (kind ? ' — document Office (' + kind + '), membres XML bruts' : '') +
+    ' : ' + files + (files > 1 ? ' membres' : ' membre') +
+    (dirs ? ', ' + dirs + (dirs > 1 ? ' répertoires' : ' répertoire') : '') +
+    ', ' + humanSize(total) + ' décompressés au total.');
+  if (maxBytes && total > maxBytes) {
+    out.push('Le total dépasse le cap d\'extraction, mais chaque membre reste extractible individuellement s\'il tient sous le cap.');
+  }
+  out.push('');
+  if (lines.length) out.push(lines.join('\n'));
+  else out.push('(aucun membre extractible)');
+  if (rejected.length) {
+    out.push('');
+    out.push('Membres écartés :');
+    out.push(rejected.join('\n'));
+  }
+  return out.join('\n');
+}
+
+// Type MIME d'un membre d'archive, déduit de son extension. Aucun mapping de ce
+// genre n'existait dans le dépôt (vérifié) : les autres producteurs d'octets
+// reçoivent leur mime du serveur MCP ou du File API du navigateur, un membre de
+// zip n'a que son nom. Le mime décide ensuite de la CLASSE de stockage via
+// _isTextualMime (resources.js) — d'où l'allowlist volontairement resserrée :
+// dans le doute, application/octet-stream, donc classe 'binary', donc descripteur
+// au lieu d'un inline. Se tromper vers le binaire est réversible (le modèle
+// re-cible) ; se tromper vers l'inline injecterait des octets bruts.
+//
+// L'accord de cette table avec _isTextualMime (resources.js) — le consommateur
+// qui traduit le mime en CLASSE de stockage — est gardé par un test croisé
+// (tests/test-zip.js) : les deux vivent dans des fichiers différents, et
+// élargir l'une sans regarder l'autre changerait en silence ce que le modèle
+// reçoit. Un cas contre-intuitif y est figé : le .svg est du XML mais son mime
+// image/svg+xml le range du côté BINAIRE, donc descripteur et non texte inline.
+const ZIP_MEMBER_MIME_BY_EXT = {
+  txt: 'text/plain', log: 'text/plain', md: 'text/markdown', csv: 'text/csv',
+  tsv: 'text/tab-separated-values', json: 'application/json', ndjson: 'application/x-ndjson',
+  jsonl: 'application/x-ndjson', xml: 'text/xml', html: 'text/html', htm: 'text/html',
+  css: 'text/css', js: 'text/javascript', ts: 'text/plain', py: 'text/plain',
+  sh: 'text/plain', yml: 'text/plain', yaml: 'text/plain', ini: 'text/plain',
+  conf: 'text/plain', cfg: 'text/plain', sql: 'text/plain', rst: 'text/plain',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml', pdf: 'application/pdf', zip: 'application/zip',
+};
+function zipMemberMime(name) {
+  const s = String(name == null ? '' : name);
+  const dot = s.lastIndexOf('.');
+  const slash = s.lastIndexOf('/');
+  if (dot <= slash || dot === s.length - 1) return 'application/octet-stream';
+  const ext = s.slice(dot + 1).toLowerCase();
+  return ZIP_MEMBER_MIME_BY_EXT[ext] || 'application/octet-stream';
+}
+
+// Nom court d'un membre pour le record stocké : `logs/2026/pihole.log` →
+// `pihole.log`. Le chemin complet reste dans l'ack (champ `path`) ; le record,
+// lui, porte un nom lisible côté interface (bibliothèque, téléchargement).
+function zipMemberBaseName(name) {
+  const s = String(name == null ? '' : name).replace(/\\/g, '/');
+  const parts = s.split('/');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i]) return parts[i];
+  }
+  return 'membre';
+}
+
+// Décide du sort d'un membre visé par docs__extract, à partir des SEULES données
+// du central directory. Pure et testable : c'est ici que vivent les quatre refus
+// du chemin d'extraction, avant toute allocation (garde préventive, AUDIT §2 —
+// on ne décompresse jamais pour découvrir après coup que c'était trop gros).
+// Retourne { ok:true, entry } ou { ok:false, reason, message } — `message` est le
+// texte rendu au modèle, cadré pour qu'il se re-cible dans le même tour.
+function decideZipMemberExtraction(entries, path, maxBytes) {
+  const list = entries || [];
+  const want = String(path == null ? '' : path);
+  if (!want) return { ok: false, reason: 'path', message: 'Chemin de membre manquant.' };
+
+  let entry = null;
+  for (const e of list) {
+    if (e && e.name === want) { entry = e; break; }
+  }
+  if (!entry) {
+    // Membre introuvable : lister les noms si peu nombreux (le modèle se
+    // re-cible dans le tour), sinon renvoyer vers docs__list — recopier 400
+    // noms dans un tool result coûterait plus que l'appel qu'on veut éviter.
+    const names = [];
+    for (const e of list) { if (e && !e.directory) names.push(e.name); }
+    const tail = names.length && names.length <= 20
+      ? ' Membres disponibles : ' + names.join(', ') + '.'
+      : ' Appelle miaou__docs__list sur cette archive pour obtenir les chemins exacts.';
+    return { ok: false, reason: 'missing', message: 'Membre introuvable : ' + want + '.' + tail };
+  }
+  if (entry.directory) {
+    return { ok: false, reason: 'directory',
+      message: 'Ce chemin désigne un répertoire, pas un fichier : ' + want + '.' };
+  }
+  // Garde du lot (AUDIT §3) : fflate extrait un membre chiffré SANS lever
+  // d'erreur, en rendant des octets bruts que le modèle lirait comme du texte.
+  if (entry.encrypted) {
+    return { ok: false, reason: 'encrypted',
+      message: 'Membre chiffré (archive protégée par mot de passe) : ' + want +
+        '. MIAOU ne peut pas le déchiffrer — son contenu extrait serait du bruit binaire.' };
+  }
+  if (isZipSlipPath(entry.name)) {
+    return { ok: false, reason: 'unsafe',
+      message: 'Chemin de membre non sûr (absolu ou remontant), refusé : ' + want + '.' };
+  }
+  const cap = Number(maxBytes) || 0;
+  if (cap && Number(entry.size) > cap) {
+    // REFUS explicite, jamais troncature (doctrine du cap js__eval, piège 25).
+    return { ok: false, reason: 'cap',
+      message: 'Membre trop volumineux : ' + humanSize(entry.size) + ' décompressés, ' +
+        'au-delà de la limite de ' + humanSize(cap) + '. Cible un membre plus petit.' };
+  }
+  return { ok: true, entry: entry };
 }

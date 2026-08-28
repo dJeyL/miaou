@@ -526,23 +526,25 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 // sous-bloc absent/désactivé.
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { identity: '', root: '', intent: '', skills: '', docs: '', codeblock: '', user: '' };
+  const out = { identity: '', root: '', intent: '', skills: '', codeblock: '', user: '' };
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
   // Les gardes RÉELLES restent internes à chaque helper : intentTracing (intent),
-  // skills autotrigger (skills), inflation d'attachement (docs). Zéro changement
-  // de comportement (gate toujours vrai).
+  // skills autotrigger (skills). Zéro changement de comportement (gate toujours
+  // vrai). La part `docs` a disparu au lot V-1 : DOCS_DOCTRINE est désormais
+  // statique et intégrée à ROOT_SYSTEM_PROMPT (piège 16 — elle ne dépend plus de
+  // l'état de branchement MCP).
   out.identity = IDENTITY_BLURB;
   out.root = ROOT_SYSTEM_PROMPT;
   out.intent = intentDoctrinePrompt();
   out.skills = skillDoctrinePrompt();
-  out.docs = docsDoctrinePrompt();
   out.codeblock = CODEBLOCK_DOCTRINE;
   out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
   return out;
 }
 
-// Ordre : identité (toujours, EN TÊTE) → racine → doctrine intent (si ON) →
+// Ordre : identité (toujours, EN TÊTE) → racine (DOCS_DOCTRINE y est incluse
+// depuis V-1) → doctrine intent (si ON) →
 // doctrine skills (si skills autotrigger) → doctrine codeblock (toujours) →
 // utilisateur → description du Space actif (concaténée, jamais substituée —
 // D4 corrigé). Piège 18 (CLAUDE.md) : cette dernière part varie d'un Space à
@@ -553,7 +555,7 @@ function systemMessageParts() {
 // une deuxième fois — un seul point de concaténation malgré tout (audit §6).
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
-  const parts = [sp.identity, sp.root, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user].filter(Boolean);
+  const parts = [sp.identity, sp.root, sp.intent, sp.skills, sp.codeblock, sp.user].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -561,7 +563,7 @@ function buildSystemMessage(sp) {
 // (openSettings, ui.js). Reconstitue les SEULES parts INCONDITIONNELLES du message
 // système — identity, root, codeblock — dans l'ordre exact du join de
 // buildSystemMessage() (identity EN TÊTE, codeblock juste avant la part user).
-// PAS les parts conditionnelles (intent/skills/docs) : elles dépendent de
+// PAS les parts conditionnelles (intent/skills) : elles dépendent de
 // réglages runtime, donc ni « racine » ni « non modifiable ». Même séparateur
 // que le message réel : ce que voit l'utilisateur est byte-identique au préfixe
 // statique effectivement envoyé au modèle. Constante build-time, jamais mutée.
@@ -1739,11 +1741,10 @@ async function applyImportedData(payload) {
 // Constantes ajustables, regroupées ici :
 // Deux caps distincts, appliqués APRÈS classifyAttachmentKind (le seuil dépend
 // du kind) : une image est plafonnée avant resize/base64 canvas ; un fichier
-// texte/binary sert de blob source à js__eval, dimensionné pour 32 Mo (cf.
-// tools.js : mémoire VM 128 Mo = « 32 Mo texte injecté »). Un log de 22 Mo doit
+// texte/binary sert de blob source à js__eval et est borné par MAX_INLINE_BYTES
+// (utils.js, 64 Mo — cf. tools.js : mémoire VM 256 Mo). Un log de 22 Mo doit
 // passer côté texte/binary sans être bloqué par la borne image.
 const ATTACHMENT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;   // 10 Mo, rejet pré-resize (image)
-const ATTACHMENT_BLOB_MAX_BYTES = 32 * 1024 * 1024;    // 32 Mo, blob texte/binary (aligné js__eval)
 const ATTACHMENT_IMAGE_MAX_EDGE = 1536;                // plus grand côté après downscale
 const ATTACHMENT_IMAGE_JPEG_QUALITY = 0.85;            // ré-encodage JPEG
 const ATTACHMENT_TEXT_MAX_BYTES = 200 * 1024;          // 200 kB, au-delà → binary
@@ -1756,7 +1757,7 @@ const ATTACHMENT_MAX_IMAGES = 4;                       // cap images par message
 function attachmentCapForKind(kind) {
   return kind === 'image'
     ? { bytes: ATTACHMENT_IMAGE_MAX_BYTES, label: '10 Mo' }
-    : { bytes: ATTACHMENT_BLOB_MAX_BYTES, label: '32 Mo' };
+    : { bytes: MAX_INLINE_BYTES, label: '64 Mo' };
 }
 
 // Downscale une image (File/Blob) via canvas : plus grand côté ≤
@@ -2258,7 +2259,7 @@ async function buildOutgoingContentForAttachments(baseText, attachments) {
     } else if (att.kind === 'binary') {
       // Brief H : aucun octet à envoyer, seulement son descripteur générique
       // (formatBinaryAttachmentDescriptor, resources.js) — le modèle l'ouvre
-      // ensuite via un outil déclarant le contrat ref+content_b64 (docsDoctrinePrompt).
+      // ensuite via un outil d'ouverture de documents, natif ou serveur (DOCS_DOCTRINE).
       binaryAttachments.push(att);
     }
   }

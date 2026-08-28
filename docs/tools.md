@@ -327,9 +327,12 @@ model-side unique sur la bibliothèque) :**
   manuel de tableaux/objets (coûteux, source de fuites de handles).
 - **Trois guards** (`runInQuickJs`, tools.js, dispose de tous les handles en
   `try/finally`) : `setInterruptHandler` wall-time (timeout `JS_EVAL_TIMEOUT_MS`
-  = 5 s → boucle infinie tuée ; 2 s à l'origine, remonté après qu'un `split('\n')`
-  + regex + agrégation sur un log de 21 Mo réel a dépassé 2 s), `setMemoryLimit`
-  (`JS_EVAL_MEM_BYTES` = 128 Mo →
+  = 10 s → boucle infinie tuée ; 2 s à l'origine, puis 5 s après qu'un
+  `split('\n')` + regex + agrégation sur un log de 21 Mo réel a dépassé 2 s,
+  puis 10 s au lot V-1 quand le cap d'entrée a doublé), `setMemoryLimit`
+  (`JS_EVAL_MEM_BYTES` = 256 Mo, contrepartie aval de `MAX_INLINE_BYTES`
+  (utils.js) = 64 Mo — les deux portées ensemble au lot V-1, un test d'ancrage
+  sur la source réelle garde le rapport ≥ 4× →
   OOM catchable, tab intact), et cap de sortie `JS_EVAL_OUTPUT_CAP` = 20000 chars
   appliqué **après** dump via `checkOutputCap` (utils.js, pure).
 - **Refus, pas troncature (§3).** Sortie > cap → **message de refus explicite**
@@ -462,6 +465,91 @@ model-side unique sur la bibliothèque) :**
   cache (piège 16) à l'arrivée de `resource__from_result`. Le QUOI de chaque
   outil (dont le renvoi vers `js__eval` pour l'exploitation du handle) reste
   dans sa propre description, pas dans la doctrine — pas de duplication.
+
+**Ouverture native d'archives (lot V-1, `docs__*`) :**
+- `docs__list(ref)` — liste les membres d'une archive zip désignée par handle
+  (`att-N` / `file-<id>` / `res_<id>`) **sans rien décompresser** : le *central
+  directory* suffit, donc fflate n'est même pas chargé sur ce chemin. Handler
+  **synchrone**, seul du couple à l'être. Rendu par `formatZipListing`
+  (utils.js, pur) : nom et taille décompressée par membre, nature de l'archive
+  (zip brut ou document Office, via `sniffZipOfficeKind`), total décompressé, et
+  **mention explicite des membres écartés avec leur motif** (chiffré, chemin non
+  sûr) — un membre manquant sans explication fait halluciner le modèle. Un
+  membre au-delà du cap est marqué, pas retiré : le listing **décrit**, il ne
+  refuse rien.
+- `docs__extract(ref, path)` — matérialise **UN** membre en ressource `res_…`
+  adressable, consommable par `js__eval`. Handler **asynchrone** (lazy-load
+  fflate via `ensureFflate`, ui.js — patron `ensureQuickJs`, échec **propagé**).
+  Chaîne : `resolveHandleRecord(ref, ctx)` (**`ctx` explicite**, piège 28) →
+  `parseZipCentralDirectory` → `decideZipMemberExtraction` (utils.js, pure) →
+  `unzipSync` avec filtre ciblé → `_storeBlock` → **`formatInlineHandleForModel`**.
+  Jamais `_makeResourceRef` : un `[resource_ref:…]` vers un record classe
+  `'inline'` ré-inlinerait le membre entier au tour suivant (piège 26c).
+- **Les cinq refus vivent dans `decideZipMemberExtraction`** (pure, testée),
+  prononcés sur le SEUL central directory donc **avant toute allocation** :
+  membre introuvable, répertoire, **chiffré**, zip-slip, au-delà de
+  `MAX_INLINE_BYTES`. Le refus de cap est un `result` texte **non-`isError`**
+  cadré pour que le modèle re-cible dans le tour (doctrine du cap `js__eval`,
+  piège 25) — jamais une troncature.
+- **La garde de chiffrement est la garde du lot.** fflate **ne détecte pas** les
+  membres protégés par mot de passe : il rend des ordures binaires *sans lever
+  d'erreur*, que le modèle lirait comme du contenu valide. D'où la lecture
+  manuelle du **bit 0 du general purpose flag** dans le central directory
+  (`parseZipCentralDirectory`). Ne jamais la retirer au motif que « fflate
+  n'a pas planté ».
+- **Encodage des noms de membres.** Le format zip en connaît deux, discriminés
+  par le **bit 11** du general purpose flag (le même champ que le bit 0 de
+  chiffrement, lu une fois) : posé → UTF-8, absent → jeu historique CP437.
+  `_zipDecodeName` bifurque dessus. Le repli non-UTF-8 est un décodage
+  **octet-à-octet** (« latin-ish »), pas une vraie table CP437 : il est retenu
+  parce qu'il est **total et stable** — jamais de U+FFFD. C'est l'enjeu réel,
+  et il n'est pas cosmétique : `docs__extract` compare `e.name === path` à
+  l'identique, donc un nom décodé en caractère de remplacement serait affiché au
+  modèle puis **rejeté au ciblage**, rendant le membre inatteignable. Un accent
+  d'archive Windows ancienne s'affiche donc de travers, mais reste extractible.
+- **Zip64 non géré, délibérément.** Le nombre d'entrées est lu sur 16 bits et
+  l'offset du central directory sur 32 : une archive de plus de 65535 membres
+  ou dépassant 4 Go sortirait un listing tronqué. Le cap d'entrée à
+  `MAX_INLINE_BYTES` (64 Mo) rend le cas « trop gros » inatteignable ; seul
+  « beaucoup de petits membres » le serait, jugé assez improbable pour ne pas
+  payer l'EOCD64 (décision Julien, relecture V-1). À rouvrir si un cas réel
+  apparaît.
+- **Double garde de taille assumée** : `decideZipMemberExtraction` refuse sur le
+  `size` du central directory (champ **déclaratif, donc falsifiable**), puis le
+  `filter` fflate re-teste `originalSize` avant décompression. Jamais confiance à
+  un seul des deux — ce n'est pas un oubli de dédoublonnage.
+- **Deux acks par extraction réussie** : `_storeBlock` pousse déjà
+  `resource_stored`, `docs__extract` ajoute le sien (précédent `fetch_url`, lot
+  Gbis). Signalé, laissé tel quel — « on verra à l'usage ».
+- **Le libellé « archive zip » des deux descriptions est daté V-1** (décision
+  Julien, consignée dans `00-META.md`) : les descriptions vues par le modèle
+  disent explicitement « zip » **tant que c'est le seul format ouvert
+  nativement**. À élargir en V-4/V-5, quand PDF et Office deviendront natifs —
+  invalidation ponctuelle du préfixe KV assumée à ce moment-là, comme toute
+  retouche de description d'outil (piège 16).
+- **Cohabitation natif / serveur.** `DOCS_DOCTRINE` est **statique et
+  inconditionnelle** : elle ne connaît jamais l'état de branchement MCP (piège
+  16 — sinon le prompt système bougerait à chaque connexion/déconnexion). Elle
+  aiguille par type (archive → natif ; PDF/Office → outil serveur *s'il est
+  fourni*), sur le motif à deux blocs de `WEB_DOCTRINE`, la conditionnalité
+  étant **lue par le modèle**. Le cas dégradé est rattrapé par l'outil :
+  `docsUnsupportedFormatMessage(record)` (tools.js, impure par nature) lit
+  `findDocsInflationTool()` **au moment de l'appel** et nomme l'outil serveur
+  réellement branché, ou dit qu'il n'y en a aucun.
+- **Un `.docx` EST un zip** et le natif sait mécaniquement l'ouvrir : il l'ouvre
+  donc si on le lui demande, et le sniff Office sert à l'**annoncer** dans le
+  listing (« membres XML bruts »). La doctrine oriente malgré tout vers l'outil
+  serveur tant qu'il existe, parce qu'il en extrait le texte utile là où le natif
+  ne livre que du XML. Filet avant V-5, pas un remplacement.
+- **Description automatique d'un fichier de bibliothèque** (D7) : pour une
+  archive, `extractBinaryFileTextForDescription` (tools.js) bifurque **en amont**
+  de `findDocsInflationTool()` et renvoie le listing natif comme texte de
+  description — noms et tailles décompressées indicatives, jamais le contenu d'un
+  membre. Le chemin garde sa posture : **aucun ack** (l'ingestion peut survenir
+  hors conversation, d'où `mcpRpc` et non `callRemoteTool`), dégradé, jamais
+  bloquant. Placée avant le chemin serveur pour que MIAOU seul décrive quand même
+  ses archives : le `console.warn` du dégradé ne doit pas masquer un format que
+  le natif sait traiter.
 
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 

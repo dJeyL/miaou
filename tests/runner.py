@@ -432,6 +432,46 @@ def run_build_unit_tests() -> tuple[int, int]:
         finally:
             build.SRC = orig_src
 
+    # ── Caps d'octets (lot V-1) : ancrage sur la SOURCE RÉELLE ────────────────
+    # Le cap d'entrée (MAX_INLINE_BYTES, utils.js) et la borne de VM aval
+    # (JS_EVAL_MEM_BYTES, tools.js) ont été portées ensemble : 32→64 Mo et
+    # 128→256 Mo. Les désynchroniser recrée la contradiction garde d'entrée /
+    # capacité aval déjà payée — un text() sur le plus gros blob adressable,
+    # plus une copie dans le code du modèle, vivent tous deux dans la VM.
+    #
+    # Le test lit les SOURCES, pas des valeurs recopiées ici : le précédent qui
+    # justifie cette précaution est celui des strippers EXPORT_*, corrects et
+    # testés mais jamais câblés — une constante juste dans un test et fausse
+    # dans le code passerait inaperçue.
+    def read_const(src_name: str, const_name: str):
+        src = (SRC_JS / src_name).read_text(encoding='utf-8')
+        m = re.search(r'^const\s+' + const_name + r'\s*=\s*([0-9*\s]+);', src, re.M)
+        if not m:
+            return None
+        return eval(m.group(1).strip(), {'__builtins__': {}}, {})
+
+    max_inline = read_const('utils.js', 'MAX_INLINE_BYTES')
+    js_eval_mem = read_const('tools.js', 'JS_EVAL_MEM_BYTES')
+
+    check('caps : MAX_INLINE_BYTES est déclarée dans src/js/utils.js',
+          max_inline is not None)
+    check('caps : JS_EVAL_MEM_BYTES est déclarée dans src/js/tools.js',
+          js_eval_mem is not None)
+    check('caps : MAX_INLINE_BYTES vaut 64 Mo',
+          max_inline == 64 * 1024 * 1024)
+    check('caps : la borne de VM aval vaut au moins 4x le cap d\'entrée',
+          max_inline is not None and js_eval_mem is not None
+          and js_eval_mem >= 4 * max_inline)
+
+    # L'ancienne constante ne doit plus subsister nulle part : deux caps
+    # d'entrée concurrents, c'est le bug qu'on vient de retirer.
+    all_js = '\n'.join((SRC_JS / n).read_text(encoding='utf-8') for n in JS_ORDER
+                       if (SRC_JS / n).exists())
+    check('caps : ATTACHMENT_BLOB_MAX_BYTES a totalement disparu des sources',
+          'ATTACHMENT_BLOB_MAX_BYTES' not in all_js)
+    check('caps : plus aucun libellé « 32 Mo » dans les sources JS',
+          '32 Mo' not in all_js)
+
     return passed, failed
 
 

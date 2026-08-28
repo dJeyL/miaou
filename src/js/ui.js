@@ -246,6 +246,42 @@ function ensureQuickJs() {
   return _quickjsPromise;
 }
 
+// ── fflate : décodage zip natif pour docs__list / docs__extract (lot V-1) ─────
+// Artefact tranché à l'audit V (AUDIT §1) : build UMD 32 ko, posant `self.fflate`
+// quand ni `module` ni `define` ne sont présents → compatible « pas de modules ES »
+// (contrainte dure MIAOU). Hébergé sur jsdelivr et non cdnjs comme marked/Prism :
+// cdnjs ne sert PAS fflate (api.cdnjs.com → 404 « Library not found », vérifié) ;
+// le précédent QuickJS rend jsdelivr non exceptionnel ici. Le même fichier couvre
+// unzip ET zip (`unzipSync`, `zipSync`, `strFromU8`) : V-2 (création d'archive)
+// n'aura ni second script ni changement d'artefact. Version épinglée comme
+// mermaid@11.12.0 et quickjs-emscripten@0.32.0.
+const FFLATE_CDN = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
+let _fflatePromise = null;
+
+// Lazy-load calqué sur ensureQuickJs — PAS sur ensureMermaid : ici l'échec se
+// PROPAGE (rejet) au lieu de se dégrader en silence. Une extraction demandée qui
+// ne peut pas tourner doit le dire ; le handler docs__* la remonte en erreur
+// d'outil propre. Promesse mémoïsée, reset-on-reject (hygiène des caches async).
+// Garde post-onload symétrique de celle de QuickJS : le global ET la fonction
+// attendue, pas seulement le script chargé.
+function ensureFflate() {
+  if (_fflatePromise) return _fflatePromise;
+  _fflatePromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = FFLATE_CDN;
+    s.onload = () => {
+      if (!window.fflate || typeof window.fflate.unzipSync !== 'function') {
+        reject(new Error('fflate absent après chargement')); return;
+      }
+      resolve(window.fflate);
+    };
+    s.onerror = () => reject(new Error('échec de chargement fflate (CDN)'));
+    document.head.appendChild(s);
+  });
+  _fflatePromise.catch(() => { _fflatePromise = null; });   // reset sur rejet → retry possible
+  return _fflatePromise;
+}
+
 // Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.
 // Appelée à la FINALISATION uniquement — finalizeAssistant et buildMsg, JAMAIS
 // streamInto (source partielle = flicker + erreurs de parse en cascade, D1).
@@ -1370,6 +1406,62 @@ const ACK_KINDS = {
         el.appendChild(document.createTextNode('Code exécuté sur '));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + (m.handle || '?') + tail));
+      }
+    },
+  },
+  // Listing d'une archive zip (miaou__docs__list, lot V-1) : lecture pure, pas
+  // d'undo — rien n'est décompressé ni stocké. Pattern de pluriel de files_list.
+  docs_list: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m => 'Archive listée : ' + (m.resourceName || m.handle || '?') + ' — ' + (
+        m.count === 0 ? 'aucun membre'
+      : m.count === 1 ? '1 membre'
+      : (m.count != null ? m.count : '?') + ' membres'),
+    renderLabel: (m, el) => {
+      const countText =
+          m.count === 0 ? 'aucun membre'
+        : m.count === 1 ? '1 membre'
+        : (m.count != null ? m.count : '?') + ' membres';
+      const name = m.resourceName || m.handle || '?';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Archive listée '));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + name + ' — ' + countText));
+        });
+      } else {
+        el.appendChild(document.createTextNode('Archive listée '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + name + ' — ' + countText));
+      }
+    },
+  },
+  // Extraction d'un membre d'archive (miaou__docs__extract, lot V-1) : informatif,
+  // pas d'undo (la ressource créée est un artefact de travail, comme un
+  // resource__create — l'ack resource_stored de _storeBlock la trace déjà). Un
+  // refus métier (membre chiffré, trop gros, introuvable) arrive ici avec
+  // ok:false → rendu rouge par ackIsError, alors que le result modèle reste un
+  // texte non-isError : l'échec n'existe QUE dans l'ack (même posture que js_eval).
+  docs_extract: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_PACKAGE,
+    label: m => 'Membre extrait : ' + (m.path || '?') +
+      (m.ok === false ? ' (refusé)' : (m.size != null ? ' — ' + humanSize(m.size) : '')),
+    renderLabel: (m, el) => {
+      const tail = m.ok === false ? ' (refusé)' : (m.size != null ? ' — ' + humanSize(m.size) : '');
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode('Membre extrait '));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + (m.path || '?') + tail));
+        });
+      } else {
+        el.appendChild(document.createTextNode('Membre extrait '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + (m.path || '?') + tail));
       }
     },
   },
@@ -4645,7 +4737,7 @@ function closeSummaryDrawer() {
 // plus variables).
 const CTX_PALETTE = {
   identity_blurb: '#e0d45a', root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
-  intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a', docs_doctrine: '#c98bf2',
+  intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a',
   codeblock_doctrine: '#e05ac9', user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
   summaries: '#e0955a', skills_context: '#8bc98b', space_library: '#3ea8d9',
   thread: '#4a90d9', attachment_images: '#d9974a',

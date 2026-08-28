@@ -16,7 +16,7 @@ bloc logique, plus les totaux. Domaine assez distinct pour ne pas polluer
 
 Une entrée par sous-bloc non vide :
 - `root_prompt`, `tools_system`, `intent_doctrine`, `skills_doctrine`,
-  `docs_doctrine`, `user_prompt` — sous-parts du system message
+  `user_prompt` — sous-parts du system message
   (`systemMessageParts()`, main.js), dans le même ordre que
   `buildSystemMessage()` les concatène.
 - `context_date_model`, `memories`, `summaries`, `skills_context` — sous-parts

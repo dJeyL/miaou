@@ -7,9 +7,10 @@
 //   B. formatBinaryAttachmentDescriptor : format exact, byte-stable, câblé
 //      dans buildAttachedMessageContent (retourne bien une string, pas un
 //      tableau, pour un binaire seul),
-//   C. docsDoctrinePrompt : vide sans serveur qualifiant, non vide dès qu'un
-//      outil du registre déclare ref+content_b64, mentionne le critère et
-//      l'exemple docs__read sans nommer le serveur en dur,
+//   C. DOCS_DOCTRINE v2 (lot V-1) : STATIQUE et inconditionnelle, incluse dans
+//      ROOT_SYSTEM_PROMPT donc dans buildSystemMessage(), byte-identique avec
+//      ou sans serveur qualifiant branché (piège 16). La v1 conditionnelle
+//      (docsDoctrinePrompt / anyToolDeclaresAttachmentInflation) a disparu.
 //   D. ATTACHMENT_DOCTRINE nuancée (phrase binaire renvoie vers la doctrine
 //      docs, jamais catégorique).
 // Round-trip réseau complet avec un vrai serveur mcp_docs : manuel
@@ -84,31 +85,42 @@ check('B : byte-stable entre deux appels identiques', descriptor.byteStable);
 check('B : buildAttachedMessageContent avec binaire seul → string (pas de content parts)', descriptor.isString);
 check('B : le descripteur est bien inclus dans le contenu construit', descriptor.content.indexOf(descriptor.d1) >= 0);
 
-// ── C. docsDoctrinePrompt conditionnel ──────────────────────────────────────
-const docsPromptBefore = await page.evaluate(() => docsDoctrinePrompt());
-check('C : docsDoctrinePrompt vide sans serveur qualifiant', docsPromptBefore === '');
-
-const docsPromptAfter = await page.evaluate(() => {
+// ── C. DOCS_DOCTRINE v2 statique ────────────────────────────────────────────
+const docsDoc = await page.evaluate(() => {
+  const sysBefore = buildSystemMessage().content;
   _remoteTools['docs'] = [{
     name: 'docs__read', description: '',
-    inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } },
+    inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, char_start: {} } },
   }];
-  const p = docsDoctrinePrompt();
-  const sysMsg = buildSystemMessage();
+  const sysAfter = buildSystemMessage().content;
   delete _remoteTools['docs'];
-  return { p, inSystemMessage: sysMsg.content.indexOf(p) >= 0 && p.length > 0 };
+  return {
+    doctrine: DOCS_DOCTRINE,
+    inRoot: ROOT_SYSTEM_PROMPT.indexOf(DOCS_DOCTRINE) >= 0,
+    inSystemMessage: sysBefore.indexOf(DOCS_DOCTRINE) >= 0,
+    stable: sysBefore === sysAfter,
+    gone: typeof docsDoctrinePrompt === 'undefined' &&
+          typeof anyToolDeclaresAttachmentInflation === 'undefined',
+  };
 });
-check('C : non vide dès qu\'un outil déclare ref+content_b64', docsPromptAfter.p.length > 0);
-check('C : mentionne content_b64 (critère) et docs__read (exemple)',
-  docsPromptAfter.p.indexOf('content_b64') >= 0 && docsPromptAfter.p.indexOf('docs__read') >= 0);
-check('C : docsDoctrinePrompt bien inclus dans buildSystemMessage() quand qualifiant', docsPromptAfter.inSystemMessage);
+check('C : DOCS_DOCTRINE incluse dans ROOT_SYSTEM_PROMPT', docsDoc.inRoot);
+check('C : présente dans buildSystemMessage() SANS aucun serveur branché', docsDoc.inSystemMessage);
+check('C : message système byte-identique avec/sans serveur qualifiant (piège 16)', docsDoc.stable);
+check('C : deux blocs balisés (motif WEB_DOCTRINE)',
+  docsDoc.doctrine.indexOf('<OUVERTURE_DE_DOCUMENTS>') >= 0 &&
+  docsDoc.doctrine.indexOf('<SANS_OUVERTURE_DE_DOCUMENTS>') >= 0);
+check('C : aiguillage zip natif + critère ref/content_b64 (exemple docs__read)',
+  docsDoc.doctrine.indexOf('miaou__docs__list') >= 0 &&
+  docsDoc.doctrine.indexOf('content_b64') >= 0 &&
+  docsDoc.doctrine.indexOf('docs__read') >= 0);
+check('C : helpers conditionnels v1 supprimés du bundle', docsDoc.gone);
 
 // ── D. ATTACHMENT_DOCTRINE nuancée ──────────────────────────────────────────
 const attDoctrine = await page.evaluate(() => ({
   nuanced: ATTACHMENT_DOCTRINE.indexOf('sauf si un outil') >= 0,
   notCategorical: ATTACHMENT_DOCTRINE.indexOf('le résultat renvoie le') < 0,
 }));
-check('D : phrase binaire nuancée (renvoie vers la doctrine docs conditionnelle)', attDoctrine.nuanced);
+check('D : phrase binaire nuancée (renvoie vers DOCS_DOCTRINE)', attDoctrine.nuanced);
 check('D : ancienne formulation catégorique disparue', attDoctrine.notCategorical);
 
 await browser.close();

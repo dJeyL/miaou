@@ -853,54 +853,35 @@ describe('_jsEvalErrText (normalisation des erreurs guest, lot L)', function() {
   });
 });
 
-describe('anyToolDeclaresAttachmentInflation (brief H — balayage générique du registre)', function() {
-  it('false si _remoteTools vide', function() {
-    expect(anyToolDeclaresAttachmentInflation()).toBe(false);
+describe('DOCS_DOCTRINE v2 (lot V-1 — statique, inconditionnelle, motif WEB_DOCTRINE)', function() {
+  it('est intégrée au prompt racine (plus de part conditionnelle)', function() {
+    expect(ROOT_SYSTEM_PROMPT.indexOf(DOCS_DOCTRINE) >= 0).toBe(true);
   });
-  it('true dès qu\'un serveur, quel qu\'il soit, expose ref+content_b64', function() {
-    _remoteTools['whatevername'] = [{
-      name: 'whatevername__read',
+  it('porte les deux blocs balisés, comme WEB_DOCTRINE', function() {
+    expect(DOCS_DOCTRINE.indexOf('<OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('</OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('<SANS_OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('</SANS_OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
+  });
+  it('aiguille le zip vers les outils natifs et les formats bureautiques vers le contrat ref+content_b64', function() {
+    expect(DOCS_DOCTRINE.indexOf('miaou__docs__list') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('miaou__docs__extract') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('content_b64') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('docs__read') >= 0).toBe(true);
+  });
+  it('ne dépend d\'aucun état de registre : identique avec ou sans serveur branché (piège 16)', function() {
+    var before = ROOT_SYSTEM_PROMPT;
+    _remoteTools['monserveurperso'] = [{
+      name: 'monserveurperso__read',
       description: '',
-      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } },
+      inputSchema: { type: 'object', properties: { ref: {}, content_b64: {}, char_start: {} } },
     }];
-    expect(anyToolDeclaresAttachmentInflation()).toBe(true);
-    delete _remoteTools['whatevername'];
-  });
-  it('false si un serveur existe mais ne déclare que ref (pas content_b64)', function() {
-    _remoteTools['partial'] = [{
-      name: 'partial__search',
-      description: '',
-      inputSchema: { type: 'object', properties: { ref: {} } },
-    }];
-    expect(anyToolDeclaresAttachmentInflation()).toBe(false);
-    delete _remoteTools['partial'];
-  });
-  it('plusieurs serveurs, un seul qualifiant → true', function() {
-    _remoteTools['noop'] = [{ name: 'noop__x', description: '', inputSchema: { type: 'object', properties: {} } }];
-    _remoteTools['docs'] = [{ name: 'docs__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } } }];
-    expect(anyToolDeclaresAttachmentInflation()).toBe(true);
-    delete _remoteTools['noop'];
-    delete _remoteTools['docs'];
-  });
-});
-
-describe('docsDoctrinePrompt (brief H — conditionnel, pattern skillDoctrinePrompt)', function() {
-  it('chaîne vide si aucun outil ne déclare le contrat', function() {
-    expect(docsDoctrinePrompt()).toBe('');
-  });
-  it('non vide dès qu\'un outil déclare ref+content_b64, mentionne ref et content_b64 par CRITÈRE + docs__read en EXEMPLE', function() {
-    _remoteTools['docs'] = [{ name: 'docs__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } } }];
-    var p = docsDoctrinePrompt();
-    expect(p.length > 0).toBeTruthy();
-    expect(p.indexOf('content_b64') >= 0).toBeTruthy();
-    expect(p.indexOf('docs__read') >= 0).toBeTruthy();
-    delete _remoteTools['docs'];
+    expect(ROOT_SYSTEM_PROMPT === before).toBe(true);
+    delete _remoteTools['monserveurperso'];
   });
   it('ne mentionne aucun nom de serveur en dur (renommable par l\'utilisateur)', function() {
-    _remoteTools['monserveurperso'] = [{ name: 'monserveurperso__read', description: '', inputSchema: { type: 'object', properties: { ref: {}, content_b64: {} } } }];
-    var p = docsDoctrinePrompt();
-    expect(p.indexOf('monserveurperso') >= 0).toBeFalsy();
-    delete _remoteTools['monserveurperso'];
+    expect(DOCS_DOCTRINE.indexOf('mcp_docs') >= 0).toBe(false);
+    expect(DOCS_DOCTRINE.indexOf('miaou-proxy') >= 0).toBe(false);
   });
 });
 

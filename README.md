@@ -6,9 +6,9 @@ Client de chat web minimaliste pour dialoguer avec un LLM via une API
 compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
 unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts, et — chargés à la
-demande seulement — Mermaid pour les diagrammes et QuickJS-WASM pour le calcul
-sandboxé). On l'ouvre dans un navigateur, ou on le sert via n'importe quel
-serveur web statique.
+demande seulement — Mermaid pour les diagrammes, QuickJS-WASM pour le calcul
+sandboxé et fflate pour l'ouverture des archives zip). On l'ouvre dans un
+navigateur, ou on le sert via n'importe quel serveur web statique.
 
 Thème sombre et thème clair, palette ambre/corail, Hanken Grotesk pour
 l'interface, JetBrains Mono pour le code.
@@ -79,6 +79,16 @@ l'interface, JetBrains Mono pour le code.
   fonction hôte, aucun accès réseau/DOM), garde de temps/mémoire, refus explicite
   si la sortie dépasse le plafond. QuickJS-WASM n'est chargé (CDN) qu'au premier
   appel. Cf. `docs/tools.md`.
+- **Ouverture native d'archives zip (`docs__list` / `docs__extract`)** : le
+  modèle liste les membres d'un zip (pièce jointe, fichier de bibliothèque ou
+  ressource `res_…`) **sans rien décompresser** — le *central directory* suffit —
+  puis matérialise **un** membre en ressource `res_…` interrogeable par
+  `js__eval`. Aucun serveur compagnon requis. Gardes prises avant toute
+  allocation : membre chiffré (fflate ne détecte pas le chiffrement et rendrait
+  des octets bruts sans erreur), zip-slip, dépassement du cap. fflate n'est
+  chargé (CDN) qu'à la première extraction. Un `.docx`/`.xlsx`/`.pptx` étant un
+  zip, il s'ouvre aussi, mais n'expose que ses membres XML bruts. Cf.
+  `docs/tools.md`.
 - **Ressources adressables model-side** : le modèle peut ranger un texte en
   ressource `res_…` — soit un texte qu'il produit lui-même (`resource__create`),
   soit un gros résultat d'outil déjà présent qu'il convertit pour **alléger la
@@ -209,10 +219,10 @@ l'interface, JetBrains Mono pour le code.
   ressources texte/JSON sont réinjectées au modèle à chaque tour ; les binaires
   sont représentés par un descripteur statique.
 - Les octets récupérés du web (`web__fetch_resource`) et le texte d'un membre
-  d'archive (`docs__extract`) atterrissent comme ressources `res_…` de première
-  classe : le modèle les passe en entrée aux autres outils `docs__*` ou les
-  analyse par le calcul (`js__eval`) sans jamais recopier leur contenu dans la
-  conversation.
+  d'archive (`docs__extract`, natif ou distant) atterrissent comme ressources
+  `res_…` de première classe : le modèle les passe en entrée aux autres outils
+  `docs__*` ou les analyse par le calcul (`js__eval`) sans jamais recopier leur
+  contenu dans la conversation.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur.

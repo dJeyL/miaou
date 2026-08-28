@@ -213,14 +213,22 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       fichier et indépendamment de la présence d'un serveur `mcp_docs` —
       c'est délibéré (nommage par capability, pas par type en dur).
     - Le **guidage** (« comment » ouvrir la pièce) est porté séparément par
-      `docsDoctrinePrompt()` (tools.js), injectée dans `buildSystemMessage()`
-      **seulement** si `anyToolDeclaresAttachmentInflation()` détecte au moins
-      un outil du registre distant déclarant `ref`+`content_b64` — même
-      mécanisme conditionnel que `skillDoctrinePrompt`/`intentDoctrinePrompt`.
-      Nommage par **critère** (« un outil déclarant `ref` et `content_b64` »)
-      **et exemple** (`docs__read`) : le prompt reste correct si l'utilisateur
-      renomme son serveur MCP docs. Sans serveur qualifiant, la doctrine est
-      une chaîne vide — zéro pollution des setups sans extraction documentaire.
+      `DOCS_DOCTRINE` (tools.js). Elle était conditionnelle au lot H
+      (`docsDoctrinePrompt()` / `anyToolDeclaresAttachmentInflation()`, injectée
+      seulement si un outil du registre distant déclarait `ref`+`content_b64`) ;
+      **le lot V-1 l'a rendue statique et inconditionnelle**, intégrée à
+      `ROOT_SYSTEM_PROMPT`, et les deux helpers ont disparu. Motif : des outils
+      d'ouverture **natifs** (`docs__list`/`docs__extract`) sont désormais
+      toujours présents, et surtout un prompt système indexé sur l'état de
+      branchement MCP bougerait à chaque connexion/déconnexion de serveur —
+      invalidation KV récurrente, précisément ce que vise le piège 16.
+      La conditionnalité est **lue par le modèle** (motif `WEB_DOCTRINE`, deux
+      blocs balisés) et le cas dégradé est rattrapé par l'outil :
+      `docsUnsupportedFormatMessage()` (tools.js) lit `findDocsInflationTool()`
+      **au moment de l'appel** et nomme le serveur réellement branché, ou dit
+      qu'il n'y en a aucun. Nommage toujours par **critère** (« un outil
+      déclarant `ref` et `content_b64` ») **et exemple** (`docs__read`) : le
+      prompt reste correct si l'utilisateur renomme son serveur MCP docs.
       La phrase binaire d'`ATTACHMENT_DOCTRINE` (inconditionnelle) est nuancée
       en conséquence (« pas lisible directement, sauf si un outil d'extraction
       est disponible ») plutôt que de rester catégorique comme avant le lot D.

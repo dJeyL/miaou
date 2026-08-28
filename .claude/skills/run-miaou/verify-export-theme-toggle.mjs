@@ -85,8 +85,15 @@ await ex.click('.theme-switch-label');
 const s2 = await readState();
 // L'export de CONVERSATION garde « Exporté / Généré par MIAOU » : le lot R a
 // rendu ces libellés variables (kind), une régression y serait silencieuse.
-check('export de conv : footer « Généré par MIAOU »', htmlInteractive.includes('Généré par MIAOU'));
-check('export de conv : footer « Généré par MIAOU le … »', /Généré par MIAOU le /.test(htmlInteractive));
+// Depuis `493799d`, le mot « MIAOU » du footer porte le lien vers le dépôt : le
+// libellé est SCINDÉ (EXPORT_VERBS.footerPrefix + exportBrandHtml), donc la
+// chaîne « Généré par MIAOU » n'existe plus d'un bloc dans le HTML. On teste la
+// structure réelle — préfixe, nom lié, date — plutôt qu'un littéral qui
+// re-casserait au prochain habillage du nom.
+check('export de conv : footer « Généré par » + nom lié',
+  /Généré par <a class="export-brand"[^>]*>MIAOU<\/a>/.test(htmlInteractive));
+check('export de conv : footer « Généré par MIAOU le … »',
+  /Généré par <a class="export-brand"[^>]*>MIAOU<\/a> le /.test(htmlInteractive));
 check('export de conv : pas de vocabulaire de conversion', !/Converti/.test(htmlInteractive));
 check('bouton présent en export interactif', true);
 check('la bascule change l\'état de la case', s1.theme !== s2.theme);

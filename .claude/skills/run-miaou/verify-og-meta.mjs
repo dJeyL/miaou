@@ -33,7 +33,11 @@ check('description = titre + exporté depuis MIAOU', html.includes('exporté dep
 check('guillemets du titre échappés (&quot;)', html.includes('Ma conv &quot;spéciale&quot; &lt;x&gt;'));
 check('pas de " brut cassant un attribut content', !/content="[^"]*"spéciale"/.test(html));
 // Le footer visible reste (on n'a pas touché au corps).
-check('footer "Généré par MIAOU" toujours dans le body', html.includes('Généré par MIAOU'));
+// Depuis `493799d`, le mot « MIAOU » du footer porte le lien vers le dépôt :
+// libellé SCINDÉ (EXPORT_VERBS.footerPrefix + exportBrandHtml), donc la chaîne
+// n'existe plus d'un bloc. On teste la structure réelle, pas le littéral.
+check('footer "Généré par MIAOU" toujours dans le body',
+  /Généré par <a class="export-brand"[^>]*>MIAOU<\/a>/.test(html));
 
 let ok = true;
 for (const r of results) { console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.n); if (!r.ok) ok = false; }
