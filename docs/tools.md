@@ -470,7 +470,10 @@ model-side unique sur la bibliothèque) :**
 - `docs__list(ref)` — liste les membres d'une archive zip désignée par handle
   (`att-N` / `file-<id>` / `res_<id>`) **sans rien décompresser** : le *central
   directory* suffit, donc fflate n'est même pas chargé sur ce chemin. Handler
-  **synchrone**, seul du couple à l'être. Rendu par `formatZipListing`
+  **asynchrone depuis V-4** (il était le seul du couple à être synchrone : le
+  lazy-load d'un lecteur PDF l'a fait basculer ; `callInternalTool` mappe déjà
+  les handlers thenables, la branche zip reste synchrone dans les faits). Rendu
+  par `formatZipListing`
   (utils.js, pur) : nom et taille décompressée par membre, nature de l'archive
   (zip brut ou document Office, via `sniffZipOfficeKind`), total décompressé, et
   **mention explicite des membres écartés avec leur motif** (chiffré, chemin non
@@ -521,17 +524,18 @@ model-side unique sur la bibliothèque) :**
 - **Deux acks par extraction réussie** : `_storeBlock` pousse déjà
   `resource_stored`, `docs__extract` ajoute le sien (précédent `fetch_url`, lot
   Gbis). Signalé, laissé tel quel — « on verra à l'usage ».
-- **Le libellé « archive zip » des deux descriptions est daté V-1** (décision
-  Julien, consignée dans `00-META.md`) : les descriptions vues par le modèle
-  disent explicitement « zip » **tant que c'est le seul format ouvert
-  nativement**. À élargir en V-4/V-5, quand PDF et Office deviendront natifs —
-  invalidation ponctuelle du préfixe KV assumée à ce moment-là, comme toute
-  retouche de description d'outil (piège 16).
+- **Le libellé « archive zip » des deux descriptions était daté V-1** (décision
+  Julien, consignée dans `00-META.md`). **V-4 l'a élargi** : `docs__list` parle
+  désormais de « document » et `docs__read` est né multi-format. `docs__extract`
+  garde son libellé « archive », lui : il ne sert qu'aux conteneurs zip (un PDF
+  n'a pas de membre à extraire — c'est `docs__read(as_resource)` qui joue ce
+  rôle). Invalidation ponctuelle du préfixe KV assumée (piège 16).
 - **Cohabitation natif / serveur.** `DOCS_DOCTRINE` est **statique et
   inconditionnelle** : elle ne connaît jamais l'état de branchement MCP (piège
   16 — sinon le prompt système bougerait à chaque connexion/déconnexion). Elle
-  aiguille par type (archive → natif ; PDF/Office → outil serveur *s'il est
-  fourni*), sur le motif à deux blocs de `WEB_DOCTRINE`, la conditionnalité
+  aiguille par type (archive et **PDF depuis V-4** → natif ; Office → outil
+  serveur *s'il est fourni*), sur le motif à deux blocs de `WEB_DOCTRINE`, la
+  conditionnalité
   étant **lue par le modèle**. Le cas dégradé est rattrapé par l'outil :
   `docsUnsupportedFormatMessage(record)` (tools.js, impure par nature) lit
   `findDocsInflationTool()` **au moment de l'appel** et nomme l'outil serveur
@@ -550,6 +554,120 @@ model-side unique sur la bibliothèque) :**
   bloquant. Placée avant le chemin serveur pour que MIAOU seul décrive quand même
   ses archives : le `console.warn` du dégradé ne doit pas masquer un format que
   le natif sait traiter.
+
+**Lecture native de PDF (lot V-4, `docs__read`) :**
+- **Le type est reconnu AUX OCTETS**, jamais au mime ni à l'extension.
+  `sniffDocumentKind(u8, name)` (utils.js, pur) rend `'pdf' | 'zip' | 'docx' |
+  'xlsx' | 'pptx' | null` — `%PDF` en tête, sinon `PK\x03\x04` puis délégation à
+  `sniffZipOfficeKind`. Le paramètre `name` est en signature mais **ne décide
+  rien** : le mime d'un attachment vient du navigateur, celui d'un membre de zip
+  d'une table d'extensions, tous deux déclaratifs. Précédent suivi :
+  `sniffBackupFormat` (V-3).
+- **`DOC_READERS` (tools.js) est la table de dispatch ET la source unique de
+  « quels formats MIAOU ouvre-t-il seul ? »**. `docsUnsupportedFormatMessage`
+  en dérive son libellé via `nativeDocKinds()` + `formatNativeDocKindsLabel`
+  (utils.js, pur) au lieu de le recopier : la formule « ne gère à ce jour que le
+  zip » était en dur depuis V-1 et aurait menti au premier format ajouté — or
+  c'est le message sur lequel le modèle décide s'il doit chercher un serveur.
+- **Le zip est une entrée de la table comme les autres** (`listZipDocument`),
+  et les quatre types Office y sont inscrits **explicitement** plutôt que
+  laissés en retombée : sans ça, `nativeDocKinds()` ne les annoncerait pas et le
+  message de refus mentirait par omission. Le zip n'a l'air d'une exception que
+  vu du listing (qui ne charge rien) ; son extraction lazy-load fflate exactement
+  comme un PDF charge pdf.js. Ce sont `list` et `read` qui ont des besoins
+  différents, pas le zip qui serait d'une autre nature.
+- `docs__read(ref, selector, as_resource?)` — lecture **par unité** : `'N'` ou
+  `'N-M'`, 1-indexé inclusif, clampé à `[1, total]` **avec notice** quand le
+  clamp a lieu (portage du FMT4 serveur : un `'5-100'` sur 10 pages servait
+  silencieusement 5-10, et le modèle concluait que le document s'arrêtait là).
+  Parsing dans `parsePageSelector` (utils.js, **pur**), qui rend
+  `{ok, start, end, notice}` ou `{ok:false, message}` — le serveur *lève*, ici
+  on retourne : facture de `decideZipMemberExtraction`, et un pur qui ne jette
+  pas reste testable en QuickJS. **Chaque message d'erreur rappelle la forme
+  attendue** (le modèle écrit `'page 3'` et se fait refuser — un refus muet
+  coûte un tour de plus).
+- **Écart assumé au principe « aucune perte de capacité »** (décision 2, le seul
+  du lot) : la fenêtre `char_start`/`line_start` du serveur n'est **pas** portée.
+  Ce qui est perdu : « lis les lignes 500-800 de la page 3 » en un appel. La
+  raison : MIAOU a déjà une pagination fine et plus puissante — `js__eval` — et
+  en faire naître une seconde, concurrente, coûterait le portage de
+  `_apply_range` (69 lignes denses, quatre notices, le cas « la ligne unique
+  dépasse le cap » déjà payé côté serveur en F7). La contrepartie est
+  `as_resource` + `js__eval`, en deux appels, sur n'importe quelle taille.
+- **`as_resource: true`** range la lecture dans un `res_…` (`text/plain`,
+  classe `'inline'`) au lieu de la renvoyer en contexte, nommé par
+  `pdfReadResourceName` (utils.js, pur — `rapport.pdf` + pages 2-5 →
+  `rapport-p2-5.txt`). Sans lui, la sortie est plafonnée à `JS_EVAL_OUTPUT_CAP`
+  et un dépassement est un **REFUS explicite renvoyant vers `as_resource`**,
+  jamais une troncature (doctrine du cap `js__eval`, piège 25). Comme
+  `docs__extract`, le retour passe par `formatInlineHandleForModel` et
+  **jamais** `_makeResourceRef` (piège 26c).
+- **Le texte d'une page est reconstitué, pas concaténé.** `getTextContent()` de
+  pdf.js ne met **aucun séparateur** entre ses items : un `items.map(it =>
+  it.str).join('')` rend deux phrases collées, là où pymupdf rend des sauts de
+  ligne — sans traitement, le natif serait **moins lisible** que le serveur.
+  `joinPdfTextItems` (utils.js, pur) s'appuie sur `item.hasEOL` (présent en 3.x,
+  confirmé sur un PDF réel de 8 pages), avec repli par comparaison d'ordonnée
+  (`transform[5]`) dont le seuil se dérive de la hauteur de l'item — une police
+  de 6 pt et une de 24 pt ne sautent pas de la même distance.
+- **Les pages sans texte sont SIGNALÉES**, jamais rendues comme un blanc
+  (`formatPdfRead`, utils.js, pur). Une page vide est presque toujours une page
+  **scannée** ; sans notice, le modèle reçoit du vide et conclut que le document
+  ne dit rien — le mode de défaillance du zip chiffré de V-1, du silence pris
+  pour une réponse. La notice nomme la cause probable, dit que MIAOU ne fait pas
+  d'OCR, et demande au modèle de le **dire**. Le rendu des pages en images pour
+  les modèles à vision est esquissé en V-8, pas livré ici.
+- **PDF protégé : refus métier, pas erreur technique.** `getDocument` rejette
+  avec `PasswordException` — contrairement à fflate sur un zip chiffré, qui rend
+  des octets bruts sans rien dire (AUDIT §3, le piège majeur de V-1). C'est
+  pdf.js qui nous l'épargne, pas notre vigilance. Posture : ack rouge
+  (`ok:false`, lu par `ackIsError`) mais result texte **non-`isError`**, pour que
+  le modèle puisse le dire sans que la boucle d'outils soit coupée (piège 25).
+- **`ensurePdfJs` (ui.js) résout « pdf.js PRÊT, worker compris »**, jamais « le
+  script est chargé » — aucun appelant ne pose `workerSrc` lui-même (même
+  contrat qu'`ensureQuickJs`, qui résout le module WASM compilé). Le **worker
+  réel en `blob:`** est une décision (1), pas un raffinement : le *fake worker*
+  parse en **thread principal** (1 106 ms pour 3 pages au spike), donc des
+  dizaines de secondes de gel sur un rapport de 200 pages — pendant lesquelles
+  une génération en vol (piège 28) se figerait avec l'UI. Le détour par `blob:`
+  est obligatoire (un worker ne se charge pas cross-origin depuis un CDN) et
+  reste compatible d'une page `file://`. Coût : +1,09 Mo au premier PDF ouvert.
+- **Dépendance GELÉE à `pdfjs-dist@3.11.174`** : pdf.js 4.x et 5.x n'existent
+  plus qu'en modules ES (`legacy/` compris, vérifié au spike). La contrainte dure
+  MIAOU « pas de modules ES » fige la version sur la dernière UMD publiée. Cette
+  branche ne suivra pas l'amont.
+- **`data` est passé en COPIE à pdf.js** (`u8.slice()`) : pdf.js **transfère** le
+  buffer, et sans copie le record du cache session ressortirait détaché pour tout
+  appel ultérieur.
+- **Description automatique d'un fichier de bibliothèque : le PDF rejoint la
+  bifurcation** (décision 3, `describePdfForLibrary`). Un fichier décrit par son
+  **contenu** vaut mieux qu'un mime et une taille, et la version serveur savait
+  déjà le faire — ne pas suivre ferait *régresser* la description en rapatriant.
+  Ce chemin tourne **hors conversation**, au dépôt d'un fichier : il déclenche
+  donc le lazy-load de pdf.js sans qu'aucune conversation ne l'ait demandé. La
+  variante « seulement si pdf.js est déjà chargé » a été **écartée** — elle
+  rendait la description non déterministe, pire qu'un téléchargement. Trois
+  gardes : **bornée** (métadonnées + sommaire + première page, plafonné —
+  jamais le document entier), **dégradée jamais bloquante** (échec → `null`,
+  retombée sur le chemin serveur, et en dernier ressort description vide : un
+  fichier doit toujours pouvoir être déposé), et **sans `console.warn`** (leçon
+  U-1 : un warn sur un chemin d'infrastructure achète du silence, pas de la
+  robustesse — l'échec se voit à la description absente).
+- **Ack `docs_read` distinct de `docs_list`** : l'utilisateur doit lire « Pages
+  2-5 lues », pas « Document listé ». Le `selector` de l'ack porte les bornes
+  **effectivement servies**, pas la demande brute — ce qui s'affiche est ce qui a
+  été lu, y compris après un clamp. `ACK_COPY_FIELDS` gagne `selector` (une
+  ligne, jamais une copie manuelle dans `main.js`).
+- **Le libellé de `docs_list` suit le format** : « Archive listée … 3 membres »
+  pour un zip, « Document listé … 12 pages » pour un PDF. Un ack qui dirait
+  « archive » sur un PDF apprendrait faux à l'utilisateur, et c'est la seule
+  trace qu'il ait de ce que le modèle a ouvert. Les quatre helpers de libellé
+  (`docsListAckHead`/`Count`, `docsReadAckHead`/`Label`) sont **purs et dans
+  utils.js**, hors du registre d'acks : chaque `kind` y duplique sa logique entre
+  `label` (chaîne) et `renderLabel` (DOM), et c'est structurellement là qu'un
+  libellé dérive. L'unité est déduite du **nom** du record — heuristique
+  d'affichage assumée, jamais de routage (le routage se fait aux octets) : s'y
+  tromper coûte un mot inexact dans une trace, pas une mauvaise lecture.
 
 **Création d'archives (lot V-2, `docs__pack`) :**
 - `docs__pack(handles[], name?)` — agrège **N** ressources déjà stockées en

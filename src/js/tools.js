@@ -193,6 +193,19 @@ const FILES_DOCTRINE =
 // listing sert à l'ANNONCER, jamais à refuser). À rouvrir en V-5, quand Word
 // deviendra natif.
 //
+// v3 (lot V-4) : le PDF quitte la puce serveur et rejoint la ligne native, avec
+// miaou__docs__read. Le serveur n'y est plus la voie du PDF — il reste le
+// FALLBACK, et la doctrine dit désormais de préférer le natif : un modèle qui
+// voit miaou__docs__read ET miaou-proxy__docs__read tirerait au sort sinon
+// (décision 6 du cadrage — le serveur survit en fallback offline).
+//
+// VOLONTAIREMENT COURTE. Le mode d'emploi détaillé (formes de selector, quand
+// passer as_resource, ce que signifie une page sans texte) n'est PAS ici : il
+// vit dans la description des outils, que le modèle lit au moment d'appeler.
+// Le sous-lot V-7 déplacera ces spécificités vers une skill système en gardant
+// le déclencheur ici (split QUAND/COMMENT) ; y verser du détail maintenant
+// serait à ressortir ensuite.
+//
 // Une modification ici invalide le préfixe KV cache sur toutes les conversations
 // (ponctuel, assumé : la doctrine change une fois puis se re-stabilise).
 const DOCS_DOCTRINE =
@@ -208,13 +221,19 @@ const DOCS_DOCTRINE =
   "ensuite le membre qui t'intéresse : tu obtiens une ressource res_… que tu " +
   "passes à miaou__js__eval pour la compter, la filtrer ou l'agréger, sans jamais " +
   "charger son contenu dans ton contexte.\n" +
-  "- PDF, WORD, EXCEL, POWERPOINT : si le registre te propose un outil déclarant " +
+  "- PDF : miaou__docs__list pour en voir la structure (pages, sommaire), puis " +
+  "miaou__docs__read pour en lire une page ou une plage. Natifs eux aussi, sans " +
+  "serveur.\n" +
+  "- WORD, EXCEL, POWERPOINT : si le registre te propose un outil déclarant " +
   "dans son schéma d'entrée à la fois un paramètre `ref` et un paramètre " +
   "`content_b64` (par exemple docs__read), c'est lui qui sait ouvrir ces formats " +
   "et en extraire le texte utile. Appelle-le avec ref=\"att-N\". Un document Office " +
   "est techniquement une archive zip, et les outils natifs savent donc l'ouvrir : " +
   "ils n'en livreront que du XML brut, ce qui ne vaut qu'en dernier recours ou " +
   "si l'utilisateur demande explicitement à en voir la structure interne.\n" +
+  "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
+  "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
+  "sans réseau.\n" +
   "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
@@ -252,6 +271,43 @@ const DOCS_DOCTRINE =
 const JS_EVAL_TIMEOUT_MS = 10000;
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
+
+// Table de dispatch des lecteurs de documents NATIFS (lot V-4). La STRUCTURE est
+// le sujet, pas le contenu : docs__list ne peut plus se contenter de « le parsing
+// zip a rendu null, donc ce n'est pas une archive » dès qu'il y a deux familles
+// de format. Chaque clé est un type rendu par sniffDocumentKind (utils.js, pur).
+//
+// Elle est aussi la SOURCE UNIQUE de « quels formats MIAOU ouvre-t-il seul ? » :
+// docsUnsupportedFormatMessage en dérive son libellé au lieu de le recopier —
+// sinon le message ment au premier format ajouté, et c'est lui que le modèle lit
+// pour décider s'il doit se rabattre sur un serveur.
+//
+// LE ZIP Y FIGURE, comme tous les autres. Il n'a l'air d'une exception que
+// vu du listing, qui parse le central directory à la main sans rien charger —
+// mais son extraction, elle, lazy-load fflate exactement comme un PDF chargera
+// pdf.js. C'est donc `list` et `read` qui ont des besoins différents, pas le
+// zip qui serait d'une autre nature : le sortir de la table réintroduirait
+// l'exception que la table existe pour supprimer.
+//
+// Les quatre types Office pointent aujourd'hui vers le lecteur zip : un .docx
+// EST une archive, et ses membres XML bruts sont exploitables en js__eval en
+// attendant mieux. Ils sont inscrits EXPLICITEMENT plutôt que laissés en
+// retombée — sinon nativeDocKinds() ne les annoncerait pas, et le message de
+// refus mentirait par omission. V-5 remplacera ces entrées une à une.
+const DOC_READERS = {
+  zip:  { list: listZipDocument },
+  docx: { list: listZipDocument },
+  xlsx: { list: listZipDocument },
+  pptx: { list: listZipDocument },
+  pdf:  { list: listPdfDocument, read: readPdfDocument },
+};
+
+// Les formats que MIAOU ouvre sans serveur, dans l'ordre de déclaration de la
+// table — aucune liste tenue en parallèle, sinon elle dérive (c'est tout
+// l'objet de la dérivation du message de refus).
+function nativeDocKinds() {
+  return Object.keys(DOC_READERS);
+}
 
 // Doctrine js__eval — INCONDITIONNELLE (AL4, décision Julien) : l'outil est natif,
 // toujours présent (pas de MCP, pas de toggle), donc dans ROOT_SYSTEM_PROMPT
@@ -531,9 +587,146 @@ function validateFilesPromoteArgs(args) {
   return '';
 }
 
-// Validation pure des arguments de resource__create (lot O) — même motif que
-// validateFilesPromoteArgs : extraite pour rester testable QuickJS malgré le
-// handler async. Retourne un message d'erreur si invalide, '' sinon.
+// Lecteur `list` du conteneur zip — entrée zip/docx/xlsx/pptx de DOC_READERS.
+// Extrait du handler docs__list lors de l'homogénéisation de la table : le
+// chemin est celui de V-1, inchangé, il a seulement changé d'adresse.
+//
+// Ne charge RIEN : le central directory suffit à nommer et dimensionner les
+// membres (AUDIT §2). C'est docs__extract qui lazy-load fflate, au moment où on
+// décompresse vraiment.
+//
+// Pousse son ack lui-même : chaque lecteur est responsable de la trace qu'il
+// laisse, parce que ce qu'il y a d'intéressant à tracer dépend du format (un
+// nombre de membres ici, un nombre de pages pour un PDF).
+function listZipDocument(u8, record, ref) {
+  const entries = parseZipCentralDirectory(u8);   // utils.js, pur
+  if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name,
+    count: entries.filter(e => !e.directory).length,
+  });
+  return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   // utils.js, pur
+}
+
+// Ouverture d'un PDF par pdf.js. Facteur commun de listPdfDocument et
+// readPdfDocument : le lazy-load, l'ouverture, et le seul refus MÉTIER du
+// format — le mot de passe.
+//
+// Contrairement à fflate sur un zip chiffré (qui rend des octets bruts en
+// prétendant avoir extrait, AUDIT §3 — le piège majeur de V-1), pdf.js DIT
+// qu'un document est protégé : il rejette avec `name === 'PasswordException'`.
+// Le piège de V-1 ne se reproduit donc pas ici, et c'est pdf.js qui nous
+// l'épargne, pas notre vigilance.
+//
+// Rend { doc } ou { fail } — jamais d'exception : les appelants sont des
+// lecteurs de DOC_READERS, et un throw y remonterait en « erreur outil »
+// technique alors qu'un PDF protégé est un refus métier ordinaire.
+async function openPdfDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensurePdfJs();   // ui.js — résout « pdf.js prêt, worker compris »
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture PDF indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de PDF.') };
+  }
+  try {
+    // `data` est consommé (transféré) par pdf.js : on lui passe une COPIE, sinon
+    // le record du cache session ressortirait détaché pour tout appel ultérieur.
+    const doc = await lib.getDocument({ data: u8.slice() }).promise;
+    return { doc };
+  } catch (e) {
+    if (e && e.name === 'PasswordException') {
+      // Refus MÉTIER : result texte non-isError (le modèle doit pouvoir le dire
+      // à l'utilisateur sans que la boucle d'outils soit coupée), ack rouge via
+      // ok:false — même posture que decideZipMemberExtraction (piège 25).
+      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
+        resourceName: record && record.name,
+        message: 'PDF protégé par mot de passe' });
+      return { fail: 'PDF protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
+        'Demande à l\'utilisateur une version non protégée.' };
+    }
+    return { fail: toolFail(toolName, 'PDF illisible : ' +
+      ((e && e.message) || 'structure invalide') + '.') };
+  }
+}
+
+// Lecteur `list` du PDF — entrée pdf de DOC_READERS (lot V-4).
+// Rend le compte de pages, les métadonnées et le sommaire. getOutline() est
+// l'équivalent exact de doc.get_toc() de pymupdf : rien n'est perdu face au
+// serveur. Les métadonnées sont un GAIN (le serveur n'en rend aucune) — le
+// producteur en particulier oriente la lecture, un PDF sorti de PowerPoint ne
+// se lit pas comme un rapport LaTeX.
+async function listPdfDocument(u8, record, ref) {
+  const opened = await openPdfDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  const doc = opened.doc;
+  try {
+    const pages = doc.numPages;
+    let meta = null, outline = null;
+    // Métadonnées et sommaire sont FACULTATIFS : un PDF sans l'un ni l'autre est
+    // parfaitement valide. Leur échec ne doit jamais faire échouer le listing —
+    // le compte de pages, lui, est toujours là.
+    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
+    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
+    const info = (meta && meta.info) || {};
+    const flat = [];
+    // getOutline() rend un arbre (chaque entrée a ses `items`) là où
+    // formatPdfListing attend une liste plate portant son niveau. L'aplatissage
+    // est ITÉRATIF : un sommaire profond ne doit pas faire sauter la pile.
+    const stack = [];
+    for (let i = (outline || []).length - 1; i >= 0; i--) stack.push({ node: outline[i], level: 1 });
+    while (stack.length) {
+      const cur = stack.pop();
+      const n = cur.node;
+      if (!n) continue;
+      flat.push({ level: cur.level, title: n.title, page: 0 });
+      const kids = n.items || [];
+      for (let i = kids.length - 1; i >= 0; i--) stack.push({ node: kids[i], level: cur.level + 1 });
+    }
+    _pendingToolAcks.push({
+      kind: 'docs_list', handle: ref, resourceName: record.name, count: pages,
+    });
+    return formatPdfListing({          // utils.js, pur
+      pages, outline: flat,
+      title: info.Title, author: info.Author, producer: info.Producer,
+    });
+  } finally {
+    // pdf.js garde un worker et des buffers vivants tant que le document ne l'est
+    // plus : le libérer est obligatoire, et dans un finally pour que l'échec
+    // d'une des lectures facultatives ne fuie pas le document.
+    try { doc.destroy(); } catch (e) { /* rien à rattraper */ }
+  }
+}
+
+// Lecteur `read` du PDF — la lecture paginée (V-4 décision 2, option (c)).
+// Le selector est parsé AVANT l'ouverture ? Non : il faut le total de pages pour
+// le borner, donc l'ouverture précède. C'est le seul ordre possible, et il fait
+// qu'un selector invalide coûte un chargement de pdf.js — accepté, parce que
+// l'inverse (refuser sans connaître le document) empêcherait le clamp.
+async function readPdfDocument(u8, record, ref, selector) {
+  const opened = await openPdfDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const doc = opened.doc;
+  try {
+    const range = parsePageSelector(selector, doc.numPages);   // utils.js, pur
+    if (!range.ok) return toolFail('docs__read', range.message);
+    const pages = [];
+    for (let n = range.start; n <= range.end; n++) {
+      const page = await doc.getPage(n);
+      try {
+        const tc = await page.getTextContent();
+        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   // utils.js, pur
+      } finally {
+        try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
+      }
+    }
+    return { text: formatPdfRead(pages, { notice: range.notice }), range };   // utils.js, pur
+  } finally {
+    try { doc.destroy(); } catch (e) { /* rien à rattraper */ }
+  }
+}
+
 // Message d'erreur d'un docs__* natif appelé sur un format qu'il ne sait pas
 // ouvrir (lot V-1). C'est ICI que vit le rattrapage du cas dégradé, PAS dans la
 // doctrine : DOCS_DOCTRINE est statique et ne connaît jamais l'état de
@@ -544,8 +737,8 @@ function validateFilesPromoteArgs(args) {
 function docsUnsupportedFormatMessage(record) {
   const what = record && record.name ? '« ' + record.name + ' »' : 'ce fichier';
   const mime = record && record.mime ? ' (' + record.mime + ')' : '';
-  const head = what + mime + " n'est pas une archive zip : l'ouverture native de MIAOU " +
-    'ne gère à ce jour que le zip.';
+  const head = what + mime + " n'est pas un format que MIAOU sait ouvrir seul : " +
+    'son ouverture native ne gère à ce jour que ' + formatNativeDocKindsLabel(nativeDocKinds()) + '.';
   const inflation = findDocsInflationTool();
   if (inflation) {
     return head + ' Un serveur d\'extraction documentaire est branché : utilise ' +
@@ -555,6 +748,9 @@ function docsUnsupportedFormatMessage(record) {
     'de supposer son contenu.';
 }
 
+// Validation pure des arguments de resource__create (lot O) — même motif que
+// validateFilesPromoteArgs : extraite pour rester testable QuickJS malgré le
+// handler async. Retourne un message d'erreur si invalide, '' sinon.
 function validateResourceCreateArgs(args) {
   const content = String((args && args.content) || '');
   if (!content) return 'Contenu vide.';
@@ -1341,11 +1537,20 @@ const TOOLS = [
     },
   },
   {
-    // miaou__docs__list (lot V-1) : liste les membres d'une archive zip
-    // référencée par handle, SANS RIEN DÉCOMPRESSER. Le central directory suffit
-    // (AUDIT §2) : on ne charge donc même pas fflate ici — le listing est un
-    // parsing d'en-têtes, pur, déjà testé en QuickJS. Handler SYNCHRONE, seul du
-    // couple docs__* à l'être ; docs__extract est async (lazy-load fflate).
+    // miaou__docs__list (lot V-1, élargi V-4) : décrit la structure d'un document
+    // référencé par handle, SANS EN RENDRE LE CONTENU. Le type est reconnu AUX
+    // OCTETS par sniffDocumentKind (utils.js, pur), jamais au mime ni à
+    // l'extension — tous deux déclaratifs.
+    //
+    // Sur un zip, le central directory suffit (AUDIT §2) : on ne charge même pas
+    // fflate, le listing est un parsing d'en-têtes, pur et testé en QuickJS. Les
+    // autres formats passent par DOC_READERS, dont les lecteurs sont lazy-loadés.
+    //
+    // Handler ASYNC depuis V-4 (il était le seul du couple à être synchrone, et
+    // ce commentaire l'affirmait — le lazy-load d'un lecteur l'a rendu faux).
+    // callInternalTool mappe déjà les handlers thenables, rien à changer côté
+    // plomberie ; la branche zip reste synchrone dans les faits.
+    //
     // Herméticité (piège 18) : resolveHandleRecord lit le cache session, un
     // handle hors-scope → null → « introuvable » (no-oracle, comme conv__get).
     name: 'docs__list',
@@ -1364,7 +1569,7 @@ const TOOLS = [
       required: ['ref'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },   // lecture seule, aucune écriture d'état
-    handler: (args, ctx) => {
+    handler: async (args, ctx) => {
       const ref = String((args && args.ref) || '').trim();
       if (!ref) return toolFail('docs__list', 'Handle manquant.');
       if (classifyHandleRef(ref) === null) {
@@ -1372,13 +1577,17 @@ const TOOLS = [
       }
       const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
       if (!record || !record.data) return toolFail('docs__list', 'Handle introuvable : ' + ref + '.');
-      const entries = parseZipCentralDirectory(new Uint8Array(record.data));   // utils.js, pur
-      if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
-      _pendingToolAcks.push({
-        kind: 'docs_list', handle: ref, resourceName: record.name,
-        count: entries.filter(e => !e.directory).length,
-      });
-      return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   // utils.js, pur
+      const u8 = new Uint8Array(record.data);
+      const kind = sniffDocumentKind(u8, record.name);   // utils.js, pur — aux octets
+
+      // Le handler ne fait plus que router : tout ce qui sait lire un format
+      // vit dans DOC_READERS, y compris le zip. Un type sans lecteur est refusé
+      // par un message qui nomme ce que MIAOU ouvre réellement et l'outil
+      // serveur branché s'il y en a un — le cas dégradé est rattrapé par
+      // l'outil, jamais par la doctrine (décision 6 du cadrage).
+      const reader = DOC_READERS[kind];
+      if (!reader || !reader.list) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
+      return reader.list(u8, record, ref);
     },
   },
   {
@@ -1472,6 +1681,107 @@ const TOOLS = [
       // ré-inlinerait le membre ENTIER dans le contexte (bug lot M : ~5,6M
       // tokens fantômes puis 400). Le handle transporte l'id, jamais le texte.
       return formatInlineHandleForModel(id, mime, getCachedRecord(id));
+    },
+  },
+  {
+    // miaou__docs__read (lot V-4) : lecture PAGINÉE d'un document, par UNITÉ
+    // (page pour un PDF ; V-5 étendra aux feuilles et aux slides). Handler ASYNC.
+    //
+    // FORME TRANCHÉE (décision 2) : selector 'N' ou 'N-M', et RIEN d'autre. Le
+    // serveur mcp_docs offre en plus une fenêtre char_start/line_start ; elle
+    // n'est PAS portée, et c'est le seul écart assumé du lot au principe
+    // « aucune perte de capacité ». La raison : MIAOU a déjà une pagination fine
+    // et plus puissante — js__eval — et en faire naître une seconde, concurrente,
+    // coûterait le portage de _apply_range (69 lignes denses, quatre notices, le
+    // cas « la ligne unique dépasse le cap » déjà payé côté serveur en F7).
+    // Ce qui est perdu : « lis les lignes 500-800 de la page 3 » en un appel.
+    // La contrepartie : as_resource + js__eval, en deux appels, sur n'importe
+    // quelle taille de document.
+    name: 'docs__read',
+    description:
+      "Lit une ou plusieurs pages d'un document référencé par handle (att-N, file-<id> " +
+      "ou res_<id>) : PDF aujourd'hui. Le selector désigne des unités, '3' pour une " +
+      "page, '2-5' pour une plage. Renvoie le texte des pages demandées, en signalant " +
+      "celles qui n'en portent pas (pages scannées). Pour un zip, ce n'est pas cet " +
+      "outil : liste avec miaou__docs__list puis matérialise un membre avec " +
+      "miaou__docs__extract.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Handle du document : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
+        selector: { type: 'string', description: "Unités à lire : 'N' pour une seule (ex. '3'), 'N-M' pour une plage inclusive (ex. '2-5'). Pas de mot ni de préfixe : '3', jamais 'page 3'." },
+        // Le « parce que » est OBLIGATOIRE dans la description d'un booléen
+        // (mémoire project_model_written_field_shape_two_levels) : un modèle
+        // faible à qui on donne « si true, alors X » choisit au hasard. Ici il
+        // doit comprendre le CRITÈRE — le volume — pas la mécanique.
+        as_resource: { type: 'boolean', description: "Range le texte lu dans une ressource res_… au lieu de le renvoyer dans ton contexte, parce qu'une plage large (des dizaines de pages) le saturerait. Le handle rendu se passe ensuite à miaou__js__eval pour chercher, compter ou filtrer dedans. Par défaut false : une ou deux pages se lisent directement." },
+      },
+      required: ['ref', 'selector'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },   // as_resource écrit un record IDB
+    handler: async (args, ctx) => {
+      const ref = String((args && args.ref) || '').trim();
+      const selector = String((args && args.selector) || '').trim();
+      const asResource = !!(args && args.as_resource);
+      if (!ref) return toolFail('docs__read', 'Handle manquant.');
+      if (!selector) return toolFail('docs__read', "Selector manquant (attendu 'N' ou 'N-M', par exemple '3' ou '2-5').");
+      if (classifyHandleRef(ref) === null) {
+        return toolFail('docs__read', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
+      }
+      const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
+      if (!record || !record.data) return toolFail('docs__read', 'Handle introuvable : ' + ref + '.');
+      const u8 = new Uint8Array(record.data);
+      const kind = sniffDocumentKind(u8, record.name);   // utils.js, pur — aux octets
+
+      // Même routage que docs__list, mais sur la capacité `read` : un format
+      // peut être listable sans être lisible page à page (le zip l'est — ses
+      // « unités » sont des membres, et c'est docs__extract qui les sert).
+      const reader = DOC_READERS[kind];
+      if (!reader || !reader.read) {
+        if (reader && reader.list) {
+          return toolFail('docs__read', 'Ce document (' + kind + ') ne se lit pas par pages : ' +
+            'appelle miaou__docs__list pour en voir la structure, puis miaou__docs__extract ' +
+            'sur le membre qui t\'intéresse.');
+        }
+        return toolFail('docs__read', docsUnsupportedFormatMessage(record));
+      }
+
+      const out = await reader.read(u8, record, ref, selector);
+      if (typeof out === 'string') return out;   // refus déjà formaté par le lecteur
+      const text = out.text;
+      const range = out.range;
+
+      if (!asResource) {
+        _pendingToolAcks.push({
+          kind: 'docs_read', handle: ref, resourceName: record.name,
+          selector: range ? range.start + '-' + range.end : selector,
+          size: text.length,
+        });
+        // Cap de contexte : REFUS explicite plutôt que troncature (doctrine du
+        // cap js__eval, piège 25). La notice renvoie vers as_resource, qui est
+        // la réponse — pas vers une pagination char/ligne, qui n'existe pas.
+        if (text.length > JS_EVAL_OUTPUT_CAP) {
+          return 'Lecture trop volumineuse pour le contexte : ' + text.length +
+            ' caractères, au-delà de la limite de ' + JS_EVAL_OUTPUT_CAP + '. ' +
+            'Relance le même appel avec as_resource: true (le texte ira dans une ' +
+            'ressource res_… interrogeable par miaou__js__eval), ou demande une ' +
+            'plage plus courte.';
+        }
+        return text;
+      }
+
+      const name = pdfReadResourceName(record.name, range ? range.start : 0, range ? range.end : 0);   // utils.js, pur
+      const id = await _storeBlock('text/plain', name, utf8Encode(text), 'inline',
+        ctx.convId, Date.now(), Math.random);
+      if (!id) return toolFail('docs__read', 'Échec de stockage du texte lu.');
+      _pendingToolAcks.push({
+        kind: 'docs_read', handle: ref, ok: true, resourceName: name,
+        selector: range ? range.start + '-' + range.end : selector,
+        mime: 'text/plain', size: text.length,
+      });
+      // JAMAIS _makeResourceRef (piège 26c) : un [resource_ref:…] vers un record
+      // 'inline' ré-inlinerait le texte ENTIER au tour suivant.
+      return formatInlineHandleForModel(id, 'text/plain', getCachedRecord(id));
     },
   },
   {
@@ -2114,6 +2424,55 @@ function findDocsInflationTool() {
 // isolé, une valeur stable par fichier suffit à ne pas collisionner. Retourne
 // le texte extrait (tronqué au cap fourni) ou null si aucun outil ne qualifie
 // ou si l'appel échoue (dégradé, jamais bloquant — cf. D7 "pas de queue/retry").
+// Description d'un PDF pour la bibliothèque (lot V-4, décision 3). BORNÉE par
+// construction : métadonnées + sommaire + PREMIÈRE PAGE, rien de plus. C'est une
+// description, pas une lecture — ouvrir un rapport de 400 pages pour décrire une
+// entrée de bibliothèque serait absurde.
+//
+// Rend null sur échec, JAMAIS d'exception : l'appelant retombe alors sur le
+// chemin serveur, et en dernier ressort sur une description vide. Un fichier
+// doit toujours pouvoir être déposé, même si on n'arrive pas à le décrire.
+//
+// Pas de console.warn ici (leçon U-1) : un warn sur un chemin d'infrastructure
+// achète du silence, pas de la robustesse. L'échec se voit à la description
+// absente, qui est l'information utile.
+async function describePdfForLibrary(u8, maxChars) {
+  let doc = null;
+  try {
+    const lib = await ensurePdfJs();   // ui.js
+    doc = await lib.getDocument({ data: u8.slice() }).promise;
+    let meta = null, outline = null;
+    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
+    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
+    const info = (meta && meta.info) || {};
+    const flat = [];
+    for (const n of (outline || [])) {
+      if (n && n.title) flat.push({ level: 1, title: n.title, page: 0 });
+    }
+    const head = formatPdfListing({          // utils.js, pur
+      pages: doc.numPages, outline: flat,
+      title: info.Title, author: info.Author, producer: info.Producer,
+    });
+
+    let first = '';
+    if (doc.numPages > 0) {
+      const page = await doc.getPage(1);
+      try {
+        const tc = await page.getTextContent();
+        first = joinPdfTextItems(tc && tc.items).trim();   // utils.js, pur
+      } finally {
+        try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
+      }
+    }
+    const out = first ? head + '\n\nPremière page :\n' + first : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;   // dégradé, jamais bloquant
+  } finally {
+    if (doc) { try { doc.destroy(); } catch (e) { /* rien à rattraper */ } }
+  }
+}
+
 async function extractBinaryFileTextForDescription(record, maxChars) {
   // Bifurcation par type EN AMONT du chemin serveur (lot V-1, §6 du brief) :
   // une archive zip se décrit par la LISTE de son contenu (noms + tailles
@@ -2126,8 +2485,32 @@ async function extractBinaryFileTextForDescription(record, maxChars) {
   // sur un chemin d'infrastructure achète du silence, pas de la robustesse).
   // Posture du chemin préservée : aucun ack (l'ingestion peut survenir hors
   // conversation), jamais bloquant.
-  const zipEntries = record && record.data ? parseZipCentralDirectory(new Uint8Array(record.data)) : null;
-  if (zipEntries) return formatZipListing(zipEntries, { maxBytes: MAX_INLINE_BYTES }).slice(0, maxChars);
+  //
+  // V-4 : le PDF rejoint cette bifurcation (décision 3). Un fichier de
+  // bibliothèque décrit par son CONTENU vaut infiniment mieux qu'un mime et une
+  // taille, et la version serveur savait déjà le faire — le natif doit suivre,
+  // sinon rapatrier le PDF ferait RÉGRESSER la description.
+  //
+  // Ce que ça implique et qu'on assume : ce chemin tourne hors conversation, au
+  // dépôt d'un fichier, et déclenchera donc le lazy-load de 1,4 Mo de pdf.js
+  // sans qu'aucune conversation ne l'ait demandé. La variante « seulement si
+  // pdf.js est déjà chargé » a été ÉCARTÉE : elle rendait la description non
+  // déterministe, ce qui est pire qu'un téléchargement.
+  const u8 = record && record.data ? new Uint8Array(record.data) : null;
+  const kind = u8 ? sniffDocumentKind(u8, record.name) : null;   // utils.js, pur
+
+  if (kind && kind !== 'pdf') {
+    const zipEntries = parseZipCentralDirectory(u8);
+    if (zipEntries) return formatZipListing(zipEntries, { maxBytes: MAX_INLINE_BYTES }).slice(0, maxChars);
+  }
+
+  if (kind === 'pdf') {
+    const text = await describePdfForLibrary(u8, maxChars);
+    if (text) return text;
+    // Échec de lazy-load ou PDF illisible : on RETOMBE sur le chemin serveur
+    // plutôt que d'abandonner. Un serveur branché sait peut-être le lire, et le
+    // dégradé de ce chemin est « description vide », jamais « dépôt refusé ».
+  }
 
   const found = findDocsInflationTool();
   if (!found) return null;

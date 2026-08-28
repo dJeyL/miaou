@@ -10,7 +10,8 @@ Ce que tu peux faire ici :
 
 - **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un
   de tes messages pour repartir de ce point.
-- **Joindre des fichiers** à un message : images, fichiers texte et archives zip.
+- **Joindre des fichiers** à un message : images, fichiers texte, archives zip
+  et PDF.
 - **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,
   ses fichiers et ses souvenirs.
 - **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer
@@ -67,6 +68,22 @@ protégés par mot de passe sont refusés explicitement plutôt que lus de trave
 Un fichier `.docx`, `.xlsx` ou `.pptx` étant techniquement une archive, MIAOU
 sait l'ouvrir aussi, mais n'y voit que sa mécanique interne : pour en tirer le
 texte, mieux vaut un serveur d'extraction documentaire (voir le sujet `mcp`).
+
+Les **PDF** sont lus nativement eux aussi. Le modèle peut en donner la structure
+— nombre de pages, sommaire, titre et logiciel d'origine quand le document les
+porte — puis en lire une page précise ou une plage, sans jamais avaler le
+document entier. Sur un document long, il peut ranger sa lecture dans une
+ressource et l'interroger par code plutôt que de la faire défiler.
+
+Deux limites à connaître. Un PDF **protégé par mot de passe** est refusé
+franchement, MIAOU ne cherche pas à le déchiffrer. Et une page **scannée** (une
+image de page, sans texte dessous) ne donne rien à lire : MIAOU ne fait pas de
+reconnaissance de caractères, et le signale au modèle pour qu'il te le dise
+plutôt que de conclure que le document est vide.
+
+Ces ouvertures natives — zip comme PDF — chargent au premier usage un composant
+depuis Internet. **Sans connexion, MIAOU ne peut ouvrir aucun document** ; c'est
+le cas où un serveur compagnon reste utile (voir le sujet `mcp`).
 
 Dans l'autre sens, le modèle peut **fabriquer une archive** : quand plusieurs
 fichiers se sont accumulés au fil de l'échange — des scripts, des rapports, des
@@ -255,11 +272,14 @@ Ces serveurs sont **optionnels** : ils n'existent que si tu les as configurés
 exemple :
 
 - **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.
-- **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,
-  Excel, PowerPoint) — utile pour interroger un document que tu as joint ou
-  déposé dans une bibliothèque d'Espace. Les **archives zip**, elles, n'ont
-  plus besoin de serveur : MIAOU les ouvre nativement (voir le sujet
-  `pieces-jointes`).
+- **Extraire le contenu de documents bureautiques** : Word, Excel, PowerPoint —
+  utile pour interroger un document que tu as joint ou déposé dans une
+  bibliothèque d'Espace. Les **archives zip** et les **PDF**, eux, n'ont plus
+  besoin de serveur : MIAOU les ouvre nativement (voir le sujet
+  `pieces-jointes`). Un serveur d'extraction documentaire garde deux usages :
+  les formats bureautiques, et le travail **hors connexion** — l'ouverture
+  native télécharge son moteur au premier usage, un serveur local n'en a pas
+  besoin.
 - Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs
   disponibles.
 

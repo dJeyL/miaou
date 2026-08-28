@@ -457,7 +457,9 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
 46. **Export puis import dans un profil vierge** : avec le seed chargé (ou une
     session comportant plusieurs conversations, souvenirs, skills, ressources et
     serveurs API/MCP), Réglages → catégorie « Données » → « Exporter les
-    données » → un fichier `miaou-export-<date>.json` est téléchargé. Ouvrir une
+    données » → un fichier `miaou-export-<date>.zip` est téléchargé (format v3,
+    lot V-3 : une archive dont `manifest.json` porte l'état et `resources/<id>`
+    les octets bruts). Ouvrir une
     fenêtre de navigation privée (ou vider localStorage + IndexedDB du profil),
     charger MIAOU à vide, ouvrir la même catégorie → « Importer les données » →
     sélectionner le fichier → le récapitulatif affiche les bons comptes
@@ -468,9 +470,32 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     skills, ressources et serveurs API/MCP sont tous restaurés à l'identique
     (y compris les données binaires d'une ressource image, cf. test 28).
 47. **Fichier invalide** : sélectionner un fichier qui n'est pas un export MIAOU
-    (JSON quelconque, ou fichier non-JSON) → message d'erreur affiché sous le
-    bouton « Importer les données » (pas d'`alert`, pas de recharge de page), le
-    récapitulatif ne s'affiche pas.
+    → message d'erreur affiché sous le bouton « Importer les données »
+    (pas d'`alert`, pas de recharge de page), le récapitulatif ne s'affiche pas.
+    Trois formes à distinguer, puisque le conteneur est reconnu aux **octets**
+    (`sniffBackupFormat`) et non à l'extension : un JSON quelconque → « JSON
+    invalide » ; un zip quelconque sans `manifest.json` → « Ce zip n'est pas une
+    sauvegarde MIAOU » ; un zip protégé par mot de passe portant un
+    `manifest.json` (fixture `untracked/muscle/enc-backup.zip`) → « Archive
+    protégée par mot de passe », **jamais** « JSON invalide » (fflate extrait un
+    membre chiffré sans lever d'erreur, cf. lot V-1).
+47bis. **Sauvegarde `.json` héritée (v1/v2)** : réimporter une sauvegarde
+    antérieure à V-3 → elle passe telle quelle, récapitulatif et application
+    identiques. C'est le seul chemin de migration restant dans l'application, et
+    il n'est déclenché que par un fichier, jamais par un démarrage.
+47ter. **Archive amputée d'un membre** : retirer un membre `resources/<id>`
+    d'une sauvegarde v3 (sans toucher au manifeste) → l'import **n'échoue pas** ;
+    le récapitulatif porte, **avant** le clic d'application, la ligne « N
+    ressource(s) sans données dans l'archive : elles seront importées vides ».
+47quater. **Export hors-ligne** : couper le réseau (ou bloquer
+    `cdn.jsdelivr.net` dans les outils de développement) sur un onglet où
+    fflate n'a **pas** encore été chargé, puis « Exporter les données » → un
+    message s'affiche sous le bouton (« Moteur de compression indisponible…
+    Réessaie une fois en ligne. »), **aucun fichier n'est téléchargé**. Le
+    repli silencieux vers un `.json` non compressé est explicitement refusé :
+    il livrerait un fichier différent de ce que l'utilisateur croit avoir.
+    Seul chemin nouveau de V-3 qu'aucun verify ne couvre — il exige de couper
+    le réseau.
 48. **Arm-confirm** : sur un import valide, cliquer une seule fois sur
     « Appliquer » → le bouton passe en état armé (libellé « Confirmer le
     remplacement ») sans effet ; attendre l'expiration du délai (~2,6 s) → le

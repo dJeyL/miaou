@@ -9,8 +9,10 @@
 //      #attach-file-input → att-N classifié 'binary' (22,5 Mo décompressés :
 //      au-delà de l'ancien cap 32 Mo, sous le nouveau MAX_INLINE_BYTES = 64 Mo,
 //      ce qui valide concrètement l'étape 1 du lot).
-//   2. miaou__docs__list(ref=att-N) — handler SYNCHRONE, ne charge PAS fflate :
-//      le listing se lit dans le seul central directory (AUDIT §2).
+//   2. miaou__docs__list(ref=att-N) — ne charge PAS fflate : le listing se lit
+//      dans le seul central directory (AUDIT §2). Le handler était SYNCHRONE
+//      jusqu'à V-4, qui l'a rendu async (lazy-load d'un lecteur PDF) ; la
+//      branche zip, elle, reste synchrone dans les faits.
 //   3. miaou__docs__extract(ref=att-N, path=pihole.log) — handler async,
 //      lazy-load fflate depuis le CDN → _storeBlock → res_… classe 'inline'
 //      rendu par formatInlineHandleForModel (JAMAIS [resource_ref:…], piège 26c).
@@ -329,16 +331,27 @@ try {
   // ── Format non géré : erreur ACTIONNABLE, sans serveur branché ─────────────
   // Rattrapage du cas dégradé côté OUTIL (docsUnsupportedFormatMessage), jamais
   // côté doctrine : DOCS_DOCTRINE est statique et ignore l'état de branchement.
+  //
+  // La fixture était `%PDF-1.4` tronqué jusqu'à V-4 : elle a cessé d'être un
+  // « format non géré » le jour où sniffDocumentKind a reconnu la signature PDF
+  // et routé vers pdf.js (qui répond « PDF illisible : Invalid PDF structure »,
+  // message plus précis — le test était périmé, pas cassé). Il faut désormais
+  // des octets qu'AUCUN lecteur de DOC_READERS ne revendique : un RTF, dont ni
+  // `%PDF` ni `PK\x03\x04` ne sont en tête.
   const notZip = await page.evaluate(async () => {
     try {
-      const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x00]);   // %PDF-1.4
-      const id = await _storeBlock('application/pdf', 'faux.pdf', bytes.buffer, 'binary', currentConvId);
+      const bytes = new Uint8Array([0x7B, 0x5C, 0x72, 0x74, 0x66, 0x31, 0x0A, 0x00]);   // {\rtf1
+      const id = await _storeBlock('application/rtf', 'faux.rtf', bytes.buffer, 'binary', currentConvId);
       const r = await callTool('miaou__docs__list', { ref: id });
       return { id, text: typeof r === 'string' ? r : ((r.content && r.content[0] && r.content[0].text) || '') };
     } catch (e) { return { id: '', text: 'throw:' + (e && e.message) }; }
   });
-  check('docs__list sur un non-zip renvoie une erreur actionnable',
-    /n'est pas une archive zip/i.test(notZip.text), notZip.text.slice(0, 200));
+  check('docs__list sur un format inconnu renvoie une erreur actionnable',
+    /n'est pas un format que MIAOU sait ouvrir/i.test(notZip.text), notZip.text.slice(0, 200));
+  // Le libellé des formats natifs est DÉRIVÉ de DOC_READERS (V-4) : il doit
+  // énumérer ce qui est réellement ouvrable, pas une chaîne recopiée.
+  check('le message énumère les formats réellement natifs (dérivés de DOC_READERS)',
+    /zip/.test(notZip.text) && /pdf/.test(notZip.text), notZip.text.slice(0, 200));
   check('sans serveur branché, le message le DIT au lieu de nommer un outil absent',
     /aucun outil branch/i.test(notZip.text), notZip.text.slice(0, 200));
 

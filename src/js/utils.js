@@ -47,6 +47,7 @@ const ACK_COPY_FIELDS = [
   'topic', 'query',                      // aide (about_read, about_search)
   'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
   'path',                                 // docs__extract (lot V-1) — chemin du membre extrait dans l'archive
+  'selector',                             // docs__read (lot V-4) — plage d'unités lue (« 2-5 »)
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
@@ -1838,6 +1839,279 @@ function sniffZipOfficeKind(names) {
   if (hasXl) return 'xlsx';
   if (hasPpt) return 'pptx';
   return null;
+}
+
+// ── Lot V-4 — le pur du chemin « document natif » ───────────────────────────
+
+// Type de document reconnu AUX OCTETS. Rend 'pdf' | 'zip' | 'docx' | 'xlsx' |
+// 'pptx' | null. C'est le point d'unification annoncé par le PLAN V-4 §2.1 :
+// docs__list ne peut plus se contenter de « parseZipCentralDirectory rend null
+// donc ce n'est pas une archive » dès qu'il y a deux familles de format.
+//
+// Précédent suivi : sniffBackupFormat (V-3) — un conteneur se reconnaît à ses
+// octets, un point unique par axe de variation, et le sniff ne fait qu'orienter
+// (c'est le parseur en aval qui dit « c'en est vraiment un »).
+//
+// Ni le mime du record ni l'extension ne sont consultés : le mime d'un
+// attachment vient du navigateur, celui d'un membre de zip d'une table
+// d'extensions (ZIP_MEMBER_MIME_BY_EXT) — tous deux DÉCLARATIFS, donc
+// falsifiables. `name` n'est accepté qu'en paramètre pour garder la signature
+// stable si un départage à égalité devenait nécessaire ; il ne décide rien
+// aujourd'hui, et ce silence est délibéré (même prudence que « jamais
+// file_size seul » du central directory, V-1).
+//
+// Un zip Office rend son type Office ('docx'/'xlsx'/'pptx'), jamais 'zip' :
+// c'est ce qui permettra à DOC_READERS de router un .docx vers son lecteur
+// dédié en V-5, alors qu'il reste ouvrable comme archive aujourd'hui.
+function sniffDocumentKind(u8, name) {
+  if (!u8 || typeof u8.length !== 'number' || u8.length < 4) return null;
+  if (u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46) return 'pdf';   // %PDF
+  if (u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04) {               // PK\x03\x04
+    const entries = parseZipCentralDirectory(u8);
+    if (!entries) return null;   // signature de zip mais central directory illisible
+    const names = [];
+    for (const e of entries) { if (e && e.name) names.push(e.name); }
+    return sniffZipOfficeKind(names) || 'zip';
+  }
+  return null;
+}
+
+// Selector d'unité 'N' ou 'N-M', 1-indexé INCLUSIF, borné à [1, total].
+// Portage de _parse_range (mcp_docs/formats.py) avec un seul écart de forme :
+// le serveur LÈVE sur selector invalide, ici on rend { ok:false, message } —
+// facture de decideZipMemberExtraction, et un pur qui ne jette pas reste
+// testable en QuickJS sans harnais d'exception.
+//
+// La `notice` de clamp est le FMT4 déjà payé côté serveur : un '5-100' sur un
+// document de 10 pages servait silencieusement 5-10, et le modèle concluait que
+// le document s'arrêtait là. Le clamp reste (refuser serait pire), mais il se
+// dit.
+//
+// Le format attendu est répété dans CHAQUE message d'erreur : le modèle écrit
+// 'page 3' et se fait refuser (mémoire project_docs_read_selector_format) — un
+// refus qui ne rappelle pas la forme attendue coûte un tour de plus.
+function parsePageSelector(selector, total) {
+  const n = Math.max(0, Math.floor(Number(total) || 0));
+  if (!n) return { ok: false, message: 'Document sans aucune unité lisible.' };
+  const raw = String(selector == null ? '' : selector).trim();
+  if (!raw) return { ok: false, message: "Selector manquant (attendu 'N' ou 'N-M', par exemple '3' ou '2-5')." };
+
+  const m = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(raw);
+  if (!m) {
+    return { ok: false, message: "Selector invalide : '" + raw +
+      "' (attendu 'N' ou 'N-M', par exemple '3' ou '2-5' — pas de mot, pas de préfixe)." };
+  }
+  const wantStart = parseInt(m[1], 10);
+  const wantEnd = m[2] === undefined ? wantStart : parseInt(m[2], 10);
+
+  const start = Math.max(1, wantStart);
+  const end = Math.min(n, wantEnd);
+  if (start > end) {
+    return { ok: false, message: "Selector invalide : '" + raw + "' (document de " + n +
+      ' unité(s) — la plage demandée est hors document ou inversée).' };
+  }
+  const notice = (start !== wantStart || end !== wantEnd)
+    ? '\n\n[Plage ramenée à ' + start + '-' + end + ' (demandé : ' + raw + ', document de ' + n + ' unité(s))]'
+    : '';
+  return { ok: true, start: start, end: end, notice: notice, total: n };
+}
+
+// Texte du listing PDF rendu au modèle. Calqué sur pdf_list (formats.py) mais
+// homogène avec formatZipListing, qui est la référence de forme côté MIAOU :
+// une ligne d'en-tête qui dit la nature et le volume, puis le détail.
+//
+// Les métadonnées sont un GAIN net sur le serveur (qui ne rend que le compte de
+// pages et le sommaire) : le producteur en particulier oriente la lecture — un
+// PDF sorti de PowerPoint ne se lit pas comme un rapport LaTeX. Elles ne sont
+// annoncées que si elles portent quelque chose, jamais en champs vides.
+//
+// Le « (pas de sommaire) » du serveur est conservé : une absence dite vaut mieux
+// qu'une absence silencieuse, que le modèle lirait comme un oubli de l'outil.
+// Reconstitution du texte d'une page PDF depuis les items de getTextContent().
+// PUR : prend le tableau d'items, rend une chaîne — pdf.js n'entre pas ici.
+//
+// LE PIÈGE, vérifié au spike : pdf.js ne met AUCUN séparateur entre les items.
+// La sortie brute d'un `items.map(it => it.str).join('')` était « …ZEBRE0.Deuxieme
+// ligne… », deux phrases collées. pymupdf, lui, rend des retours à la ligne :
+// sans traitement, le texte natif serait MOINS lisible que celui du serveur —
+// une régression de capacité, pas un détail cosmétique.
+//
+// `hasEOL` (présent en 3.x) porte l'information et a été confirmé sur un PDF
+// réel de 8 pages. Le repli par comparaison d'ordonnée (`transform[5]`) reste
+// là pour les items qui ne le portent pas : un changement de ligne se voit à un
+// saut vertical, et le seuil se dérive de la hauteur de l'item plutôt que d'être
+// une constante en dur (une police de 6 pt et une de 24 pt ne sautent pas de la
+// même distance).
+function joinPdfTextItems(items) {
+  const list = items || [];
+  let out = '';
+  let prevY = null;
+  for (const it of list) {
+    if (!it) continue;
+    const str = String(it.str == null ? '' : it.str);
+    const tr = it.transform;
+    const y = (tr && typeof tr[5] === 'number') ? tr[5] : null;
+    const h = Math.abs(Number(it.height) || 0);
+
+    if (it.hasEOL === undefined && prevY !== null && y !== null) {
+      // Repli : saut vertical supérieur à la moitié de la hauteur de ligne.
+      const seuil = (h || 10) * 0.5;
+      if (Math.abs(prevY - y) > seuil) out += '\n';
+    }
+    out += str;
+    if (it.hasEOL) out += '\n';
+    if (y !== null) prevY = y;
+  }
+  return out;
+}
+
+// Texte rendu au modèle pour une lecture de pages PDF. PUR : reçoit les pages
+// DÉJÀ extraites, jamais un objet pdf.js.
+//
+// Les en-têtes « --- Page N --- » sont ceux du serveur, et ils comptent :
+// sans eux, un modèle qui lit une plage ne sait pas où passe la frontière et
+// attribue une phrase à la mauvaise page.
+//
+// LES PAGES VIDES SONT SIGNALÉES, jamais rendues comme un blanc. Une page sans
+// texte extractible est presque toujours une page SCANNÉE (image sans couche
+// texte) : sans notice, le modèle reçoit du vide et conclut que le document ne
+// dit rien — exactement le mode de défaillance du zip chiffré de V-1, du
+// silence pris pour une réponse. La notice dit ce qui se passe ET ce qu'il
+// reste possible de faire, sans promettre ce que MIAOU ne sait pas faire.
+function formatPdfRead(pages, opts) {
+  const o = opts || {};
+  const list = pages || [];
+  const parts = [];
+  const empty = [];
+  for (const p of list) {
+    const num = Math.floor(Number(p && p.page) || 0);
+    const text = String((p && p.text) || '').trim();
+    if (!text) empty.push(num);
+    parts.push('--- Page ' + num + ' ---\n' + text);
+  }
+  let out = parts.join('\n\n');
+  if (empty.length) {
+    const quoi = empty.length === list.length
+      ? 'Aucune page de cette plage ne porte de texte extractible'
+      : 'Page(s) sans texte extractible : ' + empty.join(', ');
+    out += '\n\n[' + quoi + '. Ces pages sont probablement SCANNÉES (image sans ' +
+      "couche texte) : MIAOU ne fait pas d'OCR. Dis-le plutôt que de conclure que le " +
+      'document est vide.]';
+  }
+  if (o.notice) out += String(o.notice);
+  return out;
+}
+
+// Libellés des acks docs__list / docs__read. PURS et sortis du registre d'acks
+// (ui.js) pour une raison précise : chaque kind y duplique sa logique entre
+// `label` (chaîne) et `renderLabel` (DOM), et c'est exactement là qu'un libellé
+// dérive — la version texte et la version DOM finissent par ne plus dire la
+// même chose. Une seule source, appelée deux fois.
+//
+// L'ack ne porte pas le TYPE du document (il n'a jamais eu à le porter) : on le
+// déduit du nom du record, qui est ce que l'utilisateur voit de toute façon.
+// C'est une heuristique d'AFFICHAGE, jamais de routage — le routage, lui, se
+// fait aux octets (sniffDocumentKind). Se tromper ici coûte un mot inexact dans
+// une trace, pas une mauvaise lecture.
+function docsListAckHead(m) {
+  const name = String((m && m.resourceName) || '');
+  return /\.pdf$/i.test(name) ? 'Document listé' : 'Archive listée';
+}
+
+function docsListAckCount(m) {
+  const n = m ? m.count : null;
+  const name = String((m && m.resourceName) || '');
+  // « page » est féminin, « membre » masculin : l'accord de « aucun/aucune »
+  // suit l'unité. Détail, mais un ack se lit à chaque appel d'outil.
+  const isPage = /\.pdf$/i.test(name);
+  const unit = isPage ? 'page' : 'membre';
+  if (n === 0) return (isPage ? 'aucune ' : 'aucun ') + unit;
+  if (n === 1) return '1 ' + unit;
+  return (n != null ? n : '?') + ' ' + unit + 's';
+}
+
+// « Pages 2-5 lues » / « Page 3 lue ». Le selector de l'ack est déjà normalisé
+// par le handler (bornes effectivement servies, pas la demande brute) : ce qui
+// s'affiche est ce qui a été lu, y compris après un clamp.
+function docsReadAckHead(m) {
+  const sel = String((m && m.selector) || '').trim();
+  const parts = sel.split('-');
+  const plural = parts.length > 1 && parts[0] !== parts[1];
+  if (!sel) return 'Document lu';
+  return 'Page' + (plural ? 's ' : ' ') + (plural ? sel : parts[0]) + (plural ? ' lues' : ' lue');
+}
+
+function docsReadAckLabel(m) {
+  return docsReadAckHead(m) + ' : ' + ((m && (m.resourceName || m.handle)) || '?');
+}
+
+// Nom du record produit par docs__read(as_resource: true) : « rapport.pdf » +
+// pages 2-5 → « rapport-p2-5.txt ». Le nom est ce que l'utilisateur voit dans la
+// bibliothèque et au téléchargement, et ce par quoi il reconnaît DE QUOI vient
+// un extrait — d'où la plage dans le nom plutôt qu'un compteur anonyme.
+// L'extension devient .txt : le record est du texte, quel que soit le format
+// d'origine (même geste que zipMemberBaseName, qui nomme pour l'interface).
+function pdfReadResourceName(sourceName, start, end) {
+  let base = String(sourceName == null ? '' : sourceName).replace(/\\/g, '/');
+  const parts = base.split('/');
+  base = '';
+  for (let i = parts.length - 1; i >= 0; i--) { if (parts[i]) { base = parts[i]; break; } }
+  base = base.replace(/\.[A-Za-z0-9]{1,8}$/, '') || 'document';
+  const a = Math.floor(Number(start) || 0);
+  const b = Math.floor(Number(end) || 0);
+  const suffix = (a && b) ? (a === b ? '-p' + a : '-p' + a + '-' + b) : '';
+  return base + suffix + '.txt';
+}
+
+// Libellé des formats ouverts NATIVEMENT, rendu au modèle dans le message de
+// refus. Dérivé de la table de dispatch (DOC_READERS, tools.js) et jamais d'une
+// chaîne recopiée : la formule « ne gère à ce jour que le zip » était en dur
+// depuis V-1 et aurait menti dès le premier format ajouté — or c'est le message
+// sur lequel le modèle décide s'il doit chercher un outil serveur (mémoire
+// project_help_md_confabulation_move_and_memory_read : une doctrine périmée est
+// le mode de défaillance le plus cher du projet).
+//
+// Pur pour rester testable : docsUnsupportedFormatMessage, elle, lit
+// _remoteTools et ne l'est pas.
+function formatNativeDocKindsLabel(kinds) {
+  const list = [];
+  for (const k of (kinds || [])) {
+    const s = String(k || '').trim();
+    if (s && list.indexOf(s) < 0) list.push(s);
+  }
+  if (!list.length) return 'aucun format';
+  if (list.length === 1) return 'le ' + list[0];
+  return 'les ' + list.slice(0, -1).join(', ') + ' et ' + list[list.length - 1];
+}
+
+function formatPdfListing(info) {
+  const o = info || {};
+  const pages = Math.max(0, Math.floor(Number(o.pages) || 0));
+  const title = String(o.title == null ? '' : o.title).trim();
+  const author = String(o.author == null ? '' : o.author).trim();
+  const producer = String(o.producer == null ? '' : o.producer).trim();
+  const outline = o.outline || [];
+
+  let head = 'PDF — ' + pages + (pages > 1 ? ' pages' : ' page');
+  if (title) head += ', « ' + title + ' »';
+  if (author) head += (title ? ' (' + author + ')' : ', ' + author);
+  const out = [head];
+  if (producer) out.push('Produit par : ' + producer);
+
+  if (outline.length) {
+    out.push('Sommaire :');
+    for (const it of outline) {
+      if (!it) continue;
+      const lvl = Math.max(1, Math.floor(Number(it.level) || 1));
+      const page = Math.floor(Number(it.page) || 0);
+      const label = String(it.title == null ? '' : it.title).trim();
+      if (!label) continue;
+      out.push(new Array(lvl).join('  ') + '- ' + (page ? 'p.' + page + ' ' : '') + label);
+    }
+  } else {
+    out.push('(pas de sommaire)');
+  }
+  return out.join('\n');
 }
 
 // Texte du listing rendu au modèle. `opts.maxBytes` (cap d'inline) sert

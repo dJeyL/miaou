@@ -291,6 +291,70 @@ function ensureFflate() {
   return _fflatePromise;
 }
 
+// ── pdf.js : lecture PDF native pour docs__list / docs__read (lot V-4) ───────
+// VERSION GELÉE à 3.11.174, et ce n'est pas un choix de confort : pdf.js 4.x et
+// 5.x n'existent plus qu'en modules ES (vérifié au spike — `pdf.min.mjs` est le
+// seul build proposé, la variante `legacy/` comprise). La contrainte dure MIAOU
+// « pas de modules ES » fige donc la dépendance sur la dernière UMD publiée.
+// Cette branche ne suivra pas l'amont ; le jour où MIAOU accepterait un module
+// ES, la question se rouvre. Épinglée comme mermaid@11.12.0, fflate@0.8.2 et
+// quickjs-emscripten@0.32.0.
+const PDFJS_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+let _pdfjsPromise = null;
+
+// Lazy-load calqué sur ensureFflate (échec PROPAGÉ, promesse mémoïsée,
+// reset-on-reject, garde post-onload sur TOUTES les fonctions consommées), avec
+// une différence de CONTRAT : cette fonction résout « pdf.js PRÊT, worker
+// compris », jamais « le script est chargé ». Aucun appelant ne pose workerSrc
+// lui-même — même discipline qu'ensureQuickJs, qui résout le module WASM
+// compilé et pas le script.
+//
+// Le worker RÉEL est une décision du lot (V-4 décision 1), pas un raffinement.
+// L'alternative — le « fake worker » (workerSrc = '') — parse dans le THREAD
+// PRINCIPAL : 1 106 ms pour 3 pages au spike, donc des dizaines de secondes de
+// gel sur un rapport de 200 pages. Pendant ce gel, une génération en vol
+// (piège 28) se figerait avec l'UI. Le lot T a passé beaucoup d'énergie à rendre
+// les générations non bloquantes ; réintroduire un gel par le côté serait une
+// régression architecturale, pas un désagrément.
+//
+// Le détour par blob: est obligatoire : un worker ne peut pas être chargé
+// cross-origin depuis un CDN via workerSrc direct. Le fetch + createObjectURL
+// contourne, et c'est aussi la seule voie qui reste compatible d'une page
+// file:// — MIAOU est un fichier HTML unique, souvent ouvert en local.
+// Coût assumé : +1,09 Mo et une requête de plus au PREMIER PDF ouvert.
+function ensurePdfJs() {
+  if (_pdfjsPromise) return _pdfjsPromise;
+  _pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_CDN;
+    s.onload = () => {
+      const lib = window.pdfjsLib;
+      // Le global ET tout ce qu'on consomme : getDocument pour ouvrir,
+      // GlobalWorkerOptions pour poser le worker. Un build CDN partiel doit
+      // échouer ICI, pas plus tard dans un handler async (leçon V-3, où strToU8
+      // manquait à la garde de fflate).
+      if (!lib || typeof lib.getDocument !== 'function' || !lib.GlobalWorkerOptions) {
+        reject(new Error('pdf.js absent ou incomplet après chargement')); return;
+      }
+      // Worker en blob:. L'échec se propage comme le reste : un PDF qu'on ne
+      // peut pas ouvrir doit le dire, jamais retomber en silence sur un parsing
+      // main thread qui gèlerait l'onglet.
+      fetch(PDFJS_WORKER_CDN)
+        .then(r => (r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status))))
+        .then(b => {
+          lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(b);
+          resolve(lib);
+        })
+        .catch(e => reject(new Error('échec de chargement du worker pdf.js : ' + ((e && e.message) || e))));
+    };
+    s.onerror = () => reject(new Error('échec de chargement pdf.js (CDN)'));
+    document.head.appendChild(s);
+  });
+  _pdfjsPromise.catch(() => { _pdfjsPromise = null; });   // reset sur rejet → retry possible
+  return _pdfjsPromise;
+}
+
 // Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.
 // Appelée à la FINALISATION uniquement — finalizeAssistant et buildMsg, JAMAIS
 // streamInto (source partielle = flicker + erreurs de parse en cascade, D1).
@@ -1418,32 +1482,59 @@ const ACK_KINDS = {
       }
     },
   },
-  // Listing d'une archive zip (miaou__docs__list, lot V-1) : lecture pure, pas
-  // d'undo — rien n'est décompressé ni stocké. Pattern de pluriel de files_list.
+  // Listing d'un document (miaou__docs__list, lot V-1, élargi V-4) : lecture
+  // pure, pas d'undo — rien n'est décompressé ni stocké. Pattern de pluriel de
+  // files_list. Le verbe et l'unité suivent le FORMAT : « Archive listée … 3
+  // membres » pour un zip, « Document listé … 12 pages » pour un PDF. Un ack
+  // qui dirait « Archive » sur un PDF apprendrait faux à l'utilisateur — et
+  // c'est la seule trace qu'il ait de ce que le modèle a ouvert.
   docs_list: {
     destination: 'user',
     undo: null,
     icon: ICON_LIST,
-    label: m => 'Archive listée : ' + (m.resourceName || m.handle || '?') + ' — ' + (
-        m.count === 0 ? 'aucun membre'
-      : m.count === 1 ? '1 membre'
-      : (m.count != null ? m.count : '?') + ' membres'),
+    label: m => docsListAckHead(m) + ' : ' + (m.resourceName || m.handle || '?') +
+      ' — ' + docsListAckCount(m),
     renderLabel: (m, el) => {
-      const countText =
-          m.count === 0 ? 'aucun membre'
-        : m.count === 1 ? '1 membre'
-        : (m.count != null ? m.count : '?') + ' membres';
+      const countText = docsListAckCount(m);
       const name = m.resourceName || m.handle || '?';
+      const head = docsListAckHead(m) + ' ';
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Archive listée '));
+          detail.appendChild(document.createTextNode(head));
           appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + name + ' — ' + countText));
         });
       } else {
-        el.appendChild(document.createTextNode('Archive listée '));
+        el.appendChild(document.createTextNode(head));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + name + ' — ' + countText));
+      }
+    },
+  },
+  // Lecture paginée (miaou__docs__read, lot V-4). Kind DISTINCT de docs_list :
+  // l'utilisateur doit lire « Pages 2-5 lues », pas « Document listé » — ce
+  // n'est pas la même opération et la trace est ce qu'il en voit.
+  // Sans as_resource, rien n'est stocké (lecture pure) ; avec, la ressource
+  // créée est tracée par l'ack resource_stored de _storeBlock, comme
+  // docs_extract. Pas d'undo dans les deux cas.
+  docs_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m => docsReadAckLabel(m),
+    renderLabel: (m, el) => {
+      const name = m.resourceName || m.handle || '?';
+      const head = docsReadAckHead(m) + ' ';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode(head));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + name));
+        });
+      } else {
+        el.appendChild(document.createTextNode(head));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + name));
       }
     },
   },

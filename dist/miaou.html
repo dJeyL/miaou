@@ -3772,7 +3772,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-28 16:52 UTC */
+/* miaou — built: 2026-08-28 20:43 UTC */
 
 /* ── utils.js ── */
 
@@ -3806,6 +3806,7 @@ const ACK_COPY_FIELDS = [
   'topic', 'query',                      
   'handle', 'ok', 'outLen', 'code',      
   'path',                                 
+  'selector',                             
   'message',                             
   'args', 'result', 'ts', 'group', 'assistantText',   
 ];
@@ -4967,6 +4968,173 @@ function sniffZipOfficeKind(names) {
   return null;
 }
 
+function sniffDocumentKind(u8, name) {
+  if (!u8 || typeof u8.length !== 'number' || u8.length < 4) return null;
+  if (u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46) return 'pdf';   
+  if (u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04) {               
+    const entries = parseZipCentralDirectory(u8);
+    if (!entries) return null;   
+    const names = [];
+    for (const e of entries) { if (e && e.name) names.push(e.name); }
+    return sniffZipOfficeKind(names) || 'zip';
+  }
+  return null;
+}
+
+function parsePageSelector(selector, total) {
+  const n = Math.max(0, Math.floor(Number(total) || 0));
+  if (!n) return { ok: false, message: 'Document sans aucune unité lisible.' };
+  const raw = String(selector == null ? '' : selector).trim();
+  if (!raw) return { ok: false, message: "Selector manquant (attendu 'N' ou 'N-M', par exemple '3' ou '2-5')." };
+
+  const m = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(raw);
+  if (!m) {
+    return { ok: false, message: "Selector invalide : '" + raw +
+      "' (attendu 'N' ou 'N-M', par exemple '3' ou '2-5' — pas de mot, pas de préfixe)." };
+  }
+  const wantStart = parseInt(m[1], 10);
+  const wantEnd = m[2] === undefined ? wantStart : parseInt(m[2], 10);
+
+  const start = Math.max(1, wantStart);
+  const end = Math.min(n, wantEnd);
+  if (start > end) {
+    return { ok: false, message: "Selector invalide : '" + raw + "' (document de " + n +
+      ' unité(s) — la plage demandée est hors document ou inversée).' };
+  }
+  const notice = (start !== wantStart || end !== wantEnd)
+    ? '\n\n[Plage ramenée à ' + start + '-' + end + ' (demandé : ' + raw + ', document de ' + n + ' unité(s))]'
+    : '';
+  return { ok: true, start: start, end: end, notice: notice, total: n };
+}
+
+function joinPdfTextItems(items) {
+  const list = items || [];
+  let out = '';
+  let prevY = null;
+  for (const it of list) {
+    if (!it) continue;
+    const str = String(it.str == null ? '' : it.str);
+    const tr = it.transform;
+    const y = (tr && typeof tr[5] === 'number') ? tr[5] : null;
+    const h = Math.abs(Number(it.height) || 0);
+
+    if (it.hasEOL === undefined && prevY !== null && y !== null) {
+      
+      const seuil = (h || 10) * 0.5;
+      if (Math.abs(prevY - y) > seuil) out += '\n';
+    }
+    out += str;
+    if (it.hasEOL) out += '\n';
+    if (y !== null) prevY = y;
+  }
+  return out;
+}
+
+function formatPdfRead(pages, opts) {
+  const o = opts || {};
+  const list = pages || [];
+  const parts = [];
+  const empty = [];
+  for (const p of list) {
+    const num = Math.floor(Number(p && p.page) || 0);
+    const text = String((p && p.text) || '').trim();
+    if (!text) empty.push(num);
+    parts.push('--- Page ' + num + ' ---\n' + text);
+  }
+  let out = parts.join('\n\n');
+  if (empty.length) {
+    const quoi = empty.length === list.length
+      ? 'Aucune page de cette plage ne porte de texte extractible'
+      : 'Page(s) sans texte extractible : ' + empty.join(', ');
+    out += '\n\n[' + quoi + '. Ces pages sont probablement SCANNÉES (image sans ' +
+      "couche texte) : MIAOU ne fait pas d'OCR. Dis-le plutôt que de conclure que le " +
+      'document est vide.]';
+  }
+  if (o.notice) out += String(o.notice);
+  return out;
+}
+
+function docsListAckHead(m) {
+  const name = String((m && m.resourceName) || '');
+  return /\.pdf$/i.test(name) ? 'Document listé' : 'Archive listée';
+}
+
+function docsListAckCount(m) {
+  const n = m ? m.count : null;
+  const name = String((m && m.resourceName) || '');
+  
+  const isPage = /\.pdf$/i.test(name);
+  const unit = isPage ? 'page' : 'membre';
+  if (n === 0) return (isPage ? 'aucune ' : 'aucun ') + unit;
+  if (n === 1) return '1 ' + unit;
+  return (n != null ? n : '?') + ' ' + unit + 's';
+}
+
+function docsReadAckHead(m) {
+  const sel = String((m && m.selector) || '').trim();
+  const parts = sel.split('-');
+  const plural = parts.length > 1 && parts[0] !== parts[1];
+  if (!sel) return 'Document lu';
+  return 'Page' + (plural ? 's ' : ' ') + (plural ? sel : parts[0]) + (plural ? ' lues' : ' lue');
+}
+
+function docsReadAckLabel(m) {
+  return docsReadAckHead(m) + ' : ' + ((m && (m.resourceName || m.handle)) || '?');
+}
+
+function pdfReadResourceName(sourceName, start, end) {
+  let base = String(sourceName == null ? '' : sourceName).replace(/\\/g, '/');
+  const parts = base.split('/');
+  base = '';
+  for (let i = parts.length - 1; i >= 0; i--) { if (parts[i]) { base = parts[i]; break; } }
+  base = base.replace(/\.[A-Za-z0-9]{1,8}$/, '') || 'document';
+  const a = Math.floor(Number(start) || 0);
+  const b = Math.floor(Number(end) || 0);
+  const suffix = (a && b) ? (a === b ? '-p' + a : '-p' + a + '-' + b) : '';
+  return base + suffix + '.txt';
+}
+
+function formatNativeDocKindsLabel(kinds) {
+  const list = [];
+  for (const k of (kinds || [])) {
+    const s = String(k || '').trim();
+    if (s && list.indexOf(s) < 0) list.push(s);
+  }
+  if (!list.length) return 'aucun format';
+  if (list.length === 1) return 'le ' + list[0];
+  return 'les ' + list.slice(0, -1).join(', ') + ' et ' + list[list.length - 1];
+}
+
+function formatPdfListing(info) {
+  const o = info || {};
+  const pages = Math.max(0, Math.floor(Number(o.pages) || 0));
+  const title = String(o.title == null ? '' : o.title).trim();
+  const author = String(o.author == null ? '' : o.author).trim();
+  const producer = String(o.producer == null ? '' : o.producer).trim();
+  const outline = o.outline || [];
+
+  let head = 'PDF — ' + pages + (pages > 1 ? ' pages' : ' page');
+  if (title) head += ', « ' + title + ' »';
+  if (author) head += (title ? ' (' + author + ')' : ', ' + author);
+  const out = [head];
+  if (producer) out.push('Produit par : ' + producer);
+
+  if (outline.length) {
+    out.push('Sommaire :');
+    for (const it of outline) {
+      if (!it) continue;
+      const lvl = Math.max(1, Math.floor(Number(it.level) || 1));
+      const page = Math.floor(Number(it.page) || 0);
+      const label = String(it.title == null ? '' : it.title).trim();
+      if (!label) continue;
+      out.push(new Array(lvl).join('  ') + '- ' + (page ? 'p.' + page + ' ' : '') + label);
+    }
+  } else {
+    out.push('(pas de sommaire)');
+  }
+  return out.join('\n');
+}
+
 function formatZipListing(entries, opts) {
   const o = opts || {};
   const list = entries || [];
@@ -5321,7 +5489,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787935977}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787949798}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7292,7 +7460,7 @@ async function ensureSystemSkills() {
 
 /* ── tools.js ── */
 
-const HELP_CONTENT = (function () { try { return {"apercu": "MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu\ndiscutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix\nhaute quand il en est capable, afficher du code coloré, dessiner des diagrammes,\net se servir d'outils pour retrouver des informations dans tes conversations\npassées, tes souvenirs ou tes fichiers.\n\nCe que tu peux faire ici :\n\n- **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un\n  de tes messages pour repartir de ce point.\n- **Joindre des fichiers** à un message : images, fichiers texte et archives zip.\n- **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,\n  ses fichiers et ses souvenirs.\n- **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer\n  des souvenirs durables pour te reconnaître d'une conversation à l'autre.\n- **Étendre** le modèle avec des skills (instructions réutilisables) et des\n  outils distants (serveurs compagnons, si configurés).\n- **Analyser** un fichier volumineux (log, JSON, CSV, texte) : le modèle peut\n  exécuter du code sur son contenu pour compter, filtrer ou extraire, sans\n  charger le fichier entier dans le contexte.\n- **Exporter** une conversation en Markdown ou en page HTML autonome.\n\nPour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,\nmémoire, historique, skills, outils distants, exports, interface, contexte\nenvoyé au modèle, données personnelles, ou la genèse du projet.", "pieces-jointes": "Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le\ntrombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur\nla zone de conversation (pas seulement sur la barre de saisie), ou colle\ndirectement depuis le presse-papier — une image copiée, ou un fichier copié\ndepuis l'explorateur de fichiers. Trois types sont exploitables : **images** (le\nmodèle les voit réellement, s'il gère la vision), **fichiers texte** (leur\ncontenu est transmis au modèle) et **archives zip** (le modèle en liste le\ncontenu et en sort le fichier qui l'intéresse — voir plus bas). Les autres\nfichiers binaires sont acceptés et conservés, mais le modèle n'en voit que le\nnom, le type et la taille tant qu'aucun outil ne sait les ouvrir (voir le sujet\n`mcp`).\n\nUne fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton\nmessage. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,\net un bouton permet de la retélécharger. Le modèle peut aussi redemander une\npièce jointe d'un message précédent quand il en a besoin pour répondre.\n\nLes images ne sont envoyées en pleine résolution qu'au moment où tu les joins ;\nensuite le modèle en garde une trace légère plutôt que de recharger les pixels à\nchaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible\ndurablement (pas seulement le temps d'un message), promeus-le dans la\nbibliothèque de fichiers de ton Espace — voir le sujet `espaces`.\n\nPour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle\nn'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le\ncalcul** — compter des lignes, filtrer, agréger, extraire un extrait — en\nexécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile\npour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat\ndemandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt\nqu'à déverser le fichier brut.\n\nLes **archives zip** sont ouvertes par MIAOU lui-même, sans aucun serveur\ncompagnon : le modèle peut lister les fichiers contenus dans une archive que tu\nas jointe ou déposée dans la bibliothèque d'un Espace, puis en sortir celui qui\nl'intéresse pour l'analyser — typiquement une archive de logs. Les membres\nprotégés par mot de passe sont refusés explicitement plutôt que lus de travers.\nUn fichier `.docx`, `.xlsx` ou `.pptx` étant techniquement une archive, MIAOU\nsait l'ouvrir aussi, mais n'y voit que sa mécanique interne : pour en tirer le\ntexte, mieux vaut un serveur d'extraction documentaire (voir le sujet `mcp`).\n\nDans l'autre sens, le modèle peut **fabriquer une archive** : quand plusieurs\nfichiers se sont accumulés au fil de l'échange — des scripts, des rapports, des\nextraits qu'il a produits ou sortis d'une autre archive — il peut les regrouper\nen un seul zip que tu récupères d'un clic, plutôt que de te les faire\ntélécharger un par un. Le bouton de téléchargement apparaît directement dans le\nfil, sous la trace de l'outil.\n\nLe modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de\nrecomposer (une compilation, un résultat intermédiaire volumineux) sous forme\nde ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource\napparaît alors comme une pièce jointe et peut à son tour être interrogée par le\ncalcul, comme un fichier que tu aurais joint toi-même.\n\nDe la même façon, quand un résultat d'outil volumineux (une longue page web\nrécupérée, un fichier lu) encombre la conversation, le modèle peut le ranger en\nressource : le contenu lourd disparaît alors de l'historique, remplacé par une\npièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le\ncalcul. La conversation s'allège sans rien perdre d'exploitable.", "espaces": "Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun\na ses propres conversations, ses propres pièces jointes et ses propres\nsouvenirs. Le modèle ne voit et ne peut agir que sur le contenu de l'Espace\nactif : aucun outil ne peut lire ou modifier un autre Espace. C'est utile pour\nséparer des sujets qui ne doivent pas déborder l'un sur l'autre (travail,\nperso, un projet précis…).\n\nSeule exception : la recherche de conversation dans la palette de commandes\n(Ctrl/Cmd+K) porte sur tous tes Espaces, pas seulement l'actif — ouvrir un\nrésultat d'un autre Espace bascule automatiquement dessus (détails : sujet\n`interface`).\n\nLe sélecteur d'Espace est en haut de la barre latérale. L'historique « hors\nEspace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.\n\nChaque Espace peut porter une **description** libre : un contexte propre à\nl'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne\nles remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à\nchaque fois.\n\nChaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de\nl'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter\nà la demande, étanches comme le reste de l'Espace. Tu l'alimentes de quatre\nfaçons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée,\nproposition du modèle lui-même, ou dépôt par le modèle d'un fichier qu'il vient\nde produire — demande-lui d'enregistrer dans la bibliothèque un CSV, un script\nou un document qu'il a généré, et il le fera sans que tu aies à le récupérer\npuis le rejoindre à la main. Quand c'est lui qui en prend l'initiative, il te\ndemande confirmation avant d'écrire ; quand c'est toi qui le demandes, il\ns'exécute directement. Chaque fichier de la liste porte une **icône de\ntéléchargement** en haut à droite de sa carte, pour le récupérer sur ta machine.\n\nSupprimer un Espace supprime en cascade ses conversations, ses fichiers et ses\nsouvenirs propres (double confirmation) ; les souvenirs de profil, valables\npartout, restent intacts (détails : sujet `memoire`).\n\nTu peux **déplacer des conversations** d'un Espace à l'autre : sélecteur\nd'Espace en haut de la barre latérale → « Déplacer des conversations… »\n(visible dès qu'il existe au moins deux Espaces et que l'Espace actif contient\ndes conversations). Choisis les conversations puis l'Espace de destination.\nC'est le seul moyen de faire passer une conversation d'un Espace à l'autre —\nles exports (sujet `exports`) ne se réimportent pas.", "memoire": "Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton\ntravail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton\ninstruction explicite (« retiens que… »), ou te demande confirmation quand il\ninfère quelque chose de lui-même — rien n'est enregistré en douce.\n\nTu gardes la main : un panneau dédié te laisse consulter, modifier ou supprimer\ntes souvenirs directement. Les souvenirs actifs sont réinjectés dans le contexte\nà chaque message, pour que le modèle en tienne compte.\n\nLes souvenirs appartiennent à l'Espace où ils sont créés (sujet `espaces`) ; ils\nsuivent donc son étanchéité et sa suppression en cascade. Un souvenir qui doit\nrester valable partout peut être promu au **profil** (portée globale, présente\ndans tous les Espaces) depuis l'écran de l'Espace.\n\nLe modèle voit les souvenirs de l'Espace courant **et** ceux du profil, et il\npeut corriger ou supprimer les uns comme les autres : ce qu'il lit, il peut y\ntoucher. En revanche il crée toujours dans l'Espace courant — promouvoir un\nsouvenir au profil reste ton geste, jamais le sien. Les souvenirs des autres\nEspaces lui sont, eux, entièrement invisibles.\n\nChaque écriture de souvenir par le modèle laisse une trace visible dans la\nconversation, annulable d'un clic. Il n'existe pas d'outil de lecture : un\nsouvenir actif est simplement réinjecté dans le contexte à chaque message,\nsans trace dans la conversation (mécanisme détaillé au sujet `contexte`).\n\nLa mémoire des souvenirs est distincte de la continuité entre conversations\n(résumés automatiques) — voir le sujet `historique`.", "historique": "Tes conversations sont **conservées** et rangées dans la barre latérale par\npériode (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre\ngénéré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout\nmoment pour reprendre où tu en étais.\n\nUn champ de **recherche** filtre l'historique en temps réel, par titre ou par\nmots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même\nrecherche, elle étendue à tous tes espaces.\n\nPour la **continuité entre conversations**, MIAOU résume tes échanges en\narrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi\nun fil de ce que vous vous êtes déjà dit, sans que tu aies à tout recopier. Le\nmodèle peut aussi aller chercher lui-même dans ton historique — lister ou\nretrouver une conversation passée par mots-clés — quand ta demande le justifie.\nLa conversation en cours est toujours exclue de ces recherches.\n\nQuand le modèle cite une conversation passée, elle apparaît comme un lien\ncliquable affichant son titre ; cliquer dessus l'ouvre directement.\n\nTu gardes la main sur ces résumés : un panneau dédié te laisse les consulter,\nouvrir la conversation dont chacun provient, ou les supprimer — supprimer un\nrésumé ne touche jamais à la conversation elle-même, et reste réversible. Il\nliste les résumés de l'Espace courant ; ceux des autres Espaces se consultent\ndepuis chacun d'eux.\n\nNote : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas\nl'historique d'un autre.", "skills": "Les **skills** sont des fragments d'instructions réutilisables que tu écris une\nfois et rappelles à volonté. Chacune a un mot-clé d'invocation (son « slug »), un\nnom, une description et un corps en Markdown. Tu les gères dans un panneau dédié\n(Paramètres → Skills) : création, édition, suppression, et un interrupteur pour\nactiver ou désactiver chacune.\n\nDeux façons de s'en servir :\n\n- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps de\n  la skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de\n  la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté\n  reste en coulisse mais fait bien partie du message. La palette de commandes\n  (Ctrl/Cmd+K → « Invoquer une skill ») fait la même chose : elle insère `/slug `\n  dans le composer, prêt à envoyer.\n- **Découverte par le modèle** : si ta demande en langage naturel correspond à\n  une skill activée, le modèle peut décider seul de la consulter. Une trace\n  visible signale alors qu'il l'a lue.\n- **Création/modification par le modèle** : à ta demande, le modèle peut aussi\n  créer une nouvelle skill ou modifier le contenu d'une existante — une trace\n  visible signale la création ou la modification. Modifier une skill déjà\n  existante lui demande une confirmation explicite avant d'écraser son contenu.\n\nUne skill est utile pour un cadrage récurrent : un style de réponse, une\nprocédure, un gabarit — tout ce que tu répéterais sinon à la main.\n\n**Importer une skill existante** (par exemple une skill écrite pour Claude Code,\navec un cartouche `--- name: … description: … ---` en tête de fichier) :\n\n- **Coller** le texte dans le champ Contenu d'une skill en édition : slug, nom,\n  description sont extraits automatiquement du cartouche et pré-remplissent les\n  champs (ceux absents du cartouche restent inchangés) ; le cartouche lui-même\n  reste dans le contenu.\n- **Glisser-déposer** un fichier `.md` sur le panneau Skills, ou **coller un\n  fichier `.md` copié** depuis ton explorateur de fichiers : si son cartouche\n  correspond à une skill déjà existante (même nom), tu bascules directement en\n  édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et\n  enregistrer.\n\n**Skills système** : quelques skills sont fournies par l'application (par\nexemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le\nmode d'emploi de certains outils avancés). Elles apparaissent en tête du\npanneau Skills, dans une liste distincte, repérables à leur badge « Système ».\nToujours actives, non modifiables ni supprimables : un bouton « Consulter »\naffiche leur contenu en lecture seule.", "mcp": "Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs\ncompagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi\ncomme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'usage est\ntransparent, l'origine ne l'est pas. Les outils venus d'un serveur compagnon\nportent un **nom préfixé** par le serveur (par exemple `miaou-proxy__web__…`) ;\nle modèle peut donc constater, à la seule lecture de sa propre liste d'outils,\nquels serveurs sont branchés et ce qu'ils apportent — il n'a pas besoin d'un\noutil dédié pour « lister les serveurs », l'information est déjà sous ses yeux.\n\nCes serveurs sont **optionnels** : ils n'existent que si tu les as configurés\n(Paramètres → Serveurs MCP). Selon ceux que tu ajoutes, le modèle peut par\nexemple :\n\n- **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.\n- **Extraire le contenu de documents** : PDF, fichiers bureautiques (Word,\n  Excel, PowerPoint) — utile pour interroger un document que tu as joint ou\n  déposé dans une bibliothèque d'Espace. Les **archives zip**, elles, n'ont\n  plus besoin de serveur : MIAOU les ouvre nativement (voir le sujet\n  `pieces-jointes`).\n- Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs\n  disponibles.\n\nSi aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; le\nreste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans\nbloquer les autres.\n\nPour l'accès au web et la lecture de documents, le projet compagnon\n**miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et\nrecherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est\nla façon recommandée d'ajouter ces capacités à MIAOU. Il est open source :\nhttps://github.com/dJeyL/miaou-mcp-servers", "exports": "Tu peux sortir tes conversations de MIAOU de plusieurs manières :\n\n- **Une réponse seule** en Markdown : au survol d'un message du modèle, un\n  bouton la télécharge en `.md`.\n- **La conversation entière en page HTML autonome** : l'icône de téléchargement\n  à droite du titre, en haut. Le fichier obtenu est un instantané complet —\n  coloration figée, diagrammes inclus en image — lisible dans n'importe quel\n  navigateur sans MIAOU ni connexion. Idéal pour archiver ou partager par mail.\n  Les images y sont embarquées et restent cliquables.\n- **La conversation entière en Markdown** : la même icône, cliquée en gardant\n  **Shift** enfoncé. L'export inclut la trace des outils utilisés à chaque tour.\n  Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de\n  commandes fait la même chose.\n\nLes pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles\ns'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut\nà droite permet de basculer à la lecture ; ton choix est retenu et s'applique à\ntous tes exports, y compris ceux que tu produiras plus tard. Cette bascule\nfonctionne **sans JavaScript** : elle marche donc partout, y compris dans les\nvisionneuses de pièces jointes qui n'exécutent aucun script\n(l'aperçu de fichier d'iOS, par exemple). Le réglage **« Export HTML\ninteractif »** (réglages, section « Apparence ») ne la conditionne pas : activé\npar défaut, il ajoute seulement les boutons copier/télécharger sur les blocs de\ncode, et fait retenir ton choix de thème d'une ouverture à l'autre. Décoché, la\nbascule reste disponible, mais le choix n'est plus mémorisé. Les diagrammes,\neux, gardent dans tous les cas les couleurs qu'ils avaient à l'export.\n\nCes exports sont à sens unique : ce sont des fichiers de lecture, il n'existe\naucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni\npour le remettre dans un Espace — voir le sujet `espaces` pour déplacer une\nconversation existante entre Espaces).\n\n**Convertir un fichier Markdown quelconque.** Indépendamment des conversations,\nMIAOU sait transformer n'importe quel fichier `.md` en page HTML au même format.\nC'est dans les réglages, section « Outils & extensions » : tu choisis un fichier\nou tu le déposes sur la zone prévue, et le `.html` correspondant se télécharge\n(même nom, extension changée). Si le document commence par un titre de niveau 1,\ncelui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête et la date\nfigure en pied. Cette conversion est purement locale : le modèle n'est pas\nsollicité et rien n'est envoyé nulle part.\n\nCôté blocs de code, chaque bloc a ses propres boutons pour **copier** ou\n**télécharger** son contenu (avec la bonne extension selon le langage), et les\ndiagrammes peuvent être exportés en image SVG ou PNG. Sur un bloc **Markdown**,\nun bouton supplémentaire le convertit directement en page HTML — même résultat\nque la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.", "contexte": "À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y\najoute automatiquement un **contexte** pour que le modèle réponde en connaissance\nde cause. Ce contexte comprend, selon le cas, tes instructions système, la\ndéfinition des outils disponibles (y compris ceux des serveurs compagnons), tes\nsouvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés\npertinents, la date du jour et le manifeste de la bibliothèque de fichiers de\nl'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus\nde ton message — donc oui, cela consomme des tokens en entrée, au-delà de ce\nque tu as tapé toi-même.\n\nDeux idées à ne pas confondre :\n\n- **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.\n  Clique-le pour voir la ventilation part par part.\n- **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**\n  un levier de réduction : c'est le dénominateur qui sert à afficher un taux de\n  remplissage (« combien sur le maximum du modèle »). La modifier ne change rien\n  à ce qui est envoyé — c'est une jauge, pas un robinet.\n\nLes **vrais leviers** pour alléger ce qui part à chaque tour :\n\n- **Résumés** : leur injection a un mode réglable (automatique, sur proposition,\n  ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.\n- **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en\n  supprimer ou en mettre en veille réduit d'autant le contexte.\n- **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la\n  joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est\n  déjà une optimisation intégrée.\n- **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses\n  outils au contexte. En débrancher un allège la liste d'outils envoyée.\n\nNote sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte\n(instructions système, définitions d'outils) reste **identique octet pour octet**\nd'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés) en\npréfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe\n(Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au\nlieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes\ninstructions système, casse volontairement ce préfixe stable (le contexte change\nvraiment) : c'est attendu.", "interface": "Quelques repères pour te déplacer dans MIAOU :\n\n- **Barre latérale** : le sélecteur d'Espace en haut, puis tes conversations\n  rangées par période, avec la recherche. Elle est redimensionnable.\n- **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un\n  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. Ce\n  stop ne concerne que la conversation **affichée** : si d'autres conversations\n  travaillent en arrière-plan, elles continuent. À côté, le trombone pour\n  joindre des fichiers.\n- **Ajouter en cours de route** : si le modèle travaille (surtout quand il\n  enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée\n  sans l'interrompre** — il se met en file au-dessus du composer et lui est\n  transmis dès la prochaine étape, ce qui te permet de le **réorienter avant\n  qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour\n  le récupérer dans le composer) ou annulable (la croix). Si tu en mets\n  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.\n- **Plusieurs réponses à la fois** : quitter une conversation ne l'interrompt\n  plus. Tu peux poser une question, partir vers une autre conversation — ou même\n  changer d'Espace — pendant que le modèle rédige : il continue, va au bout de\n  ses outils, et range sa réponse dans **sa** conversation. Tu la retrouves\n  complète en y revenant. Plusieurs conversations peuvent ainsi travailler en\n  même temps. Ça ne survit pas au rechargement de la page : recharger pendant\n  qu'une réponse arrive la perd (la question, elle, reste).\n- **Pastilles d'activité** : un petit point signale ce qui bouge sans que tu\n  aies à surveiller.\n  - **Point qui clignote** : cette conversation est en train de travailler.\n  - **Point fixe, un peu plus gros** : la réponse est terminée et tu ne l'as pas\n    encore vue. Ouvrir la conversation suffit à l'éteindre.\n  - Le point apparaît sur la conversation dans la barre latérale, et aussi sur\n    le **sélecteur d'Espace** quand l'activité se passe dans un autre Espace\n    (déplie-le : chaque Espace concerné porte alors son propre point). Barre\n    latérale masquée, il se replie sur l'**icône du menu** en haut à gauche.\n  - S'il y a à la fois du terminé-non-vu et du en-cours, le point fixe l'emporte\n    sur ces indicateurs de groupe — le détail se lit en dépliant.\n  - Ces points sont volatiles : ils disparaissent si tu recharges la page.\n- **Compteur d'agents** : en haut à droite, une pastille « 1 agent » / « 3\n  agents » indique combien de conversations travaillent en ce moment, tous\n  Espaces confondus. Un **agent**, ici, c'est une conversation en train de\n  produire une réponse : selon les outils dont il dispose, il peut enchaîner\n  plusieurs étapes de lui-même (chercher, lire un fichier, calculer) avant de\n  répondre. Le compteur n'apparaît que s'il t'apprend quelque chose : une seule\n  réponse en cours, que tu es en train de regarder arriver, ne l'affiche pas —\n  le bouton stop du composer le dit déjà.\n- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre\n  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les\n  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une\n  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le\n  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de\n  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce\n  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la\n  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part\n  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet\n  contexte.\n- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône\n  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,\n  gardé à part de la réponse.\n- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :\n  change le modèle de la conversation courante sans toucher à ton défaut. Si\n  plusieurs serveurs API sont configurés, il liste les modèles de chacun,\n  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le\n  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée\n  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour\n  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →\n  Serveurs API) pour ne plus être interrogé ni proposé.\n- **Thème clair / sombre** et coloration syntaxique se règlent dans les\n  Paramètres.\n- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**\n  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une\n  police de texte et une police à chasse fixe (blocs de code) choisies pour\n  aller ensemble. Réglage indépendant du thème et de la palette.\n- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres\n  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur\n  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage\n  indépendant du thème clair/sombre : chaque palette a sa version claire et sa\n  version sombre, et changer l'un ne change pas l'autre.\n- **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,\n  recherche, outils distants…) pour une même réponse, elles s'affichent en\n  mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et\n  se replier à nouveau.\n- **Récupérer un fichier produit par un outil** : chaque trace d'outil qui porte\n  sur un fichier — « Ressource enregistrée », « Ressource présentée », « Pièce\n  jointe rappelée » — a une icône de téléchargement à son extrémité. Ça vaut\n  aussi pour les fichiers qui ne s'affichent pas dans la conversation (un CSV,\n  un JSON produit pour un calcul) : la trace est parfois le seul endroit d'où\n  les récupérer. Si le fichier n'est plus disponible, l'icône devient inerte.\n- **Animations** : un réglage dans les Paramètres\n  (Normales / Réduites / Suivre le système) coupe toutes les transitions et\n  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de\n  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la\n  préférence de réduction d'animations de ton OS.\n- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour\n  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,\n  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —\n  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,\n  inspecteur de contexte, bascule de thème et de coloration, export de la\n  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre\n  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou\n  rechercher une conversation — seule exception à l'étanchéité des Espaces\n  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en\n  arrière).\n  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule\n    touche lance la commande — la lettre est affichée à gauche de chaque ligne.\n    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une\n    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer\n    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les\n    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,\n    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.\n- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même\n  navigateur ; ils restent synchronisés. Une modification faite dans un onglet\n  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en\n  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.\n  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que\n  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux\n  Espaces différents dans deux onglets. Si la même conversation est ouverte à\n  deux endroits, un\n  bandeau discret le signale. Et si une réponse est en cours de génération dans\n  un onglet, la même conversation passe en **lecture seule** dans les autres le\n  temps de la réponse — pour éviter deux générations concurrentes qui\n  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale\n  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs\n  différents).", "donnees": "MIAOU s'exécute **entièrement dans ton navigateur**. Il n'y a pas de serveur\napplicatif MIAOU : tes conversations, tes souvenirs, tes skills, tes Espaces et\ntes fichiers sont stockés **localement**, sur ta machine, dans le stockage du\nnavigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as\nconfigurée (et vers les serveurs compagnons que tu aurais ajoutés).\n\nLe navigateur offre deux emplacements de stockage, et MIAOU se sert des deux\nselon la taille de ce qu'il range :\n\n- **Le stockage local** (`localStorage`), petit mais simple, garde ce qui est de\n  taille stable : tes réglages, ta clef d'API, tes serveurs API et compagnons,\n  la liste de tes Espaces et tes souvenirs.\n- **La base de données du navigateur** (`IndexedDB`, base `miaou`), sans limite\n  pratique, garde ce qui grossit avec l'usage : **tes conversations** et leurs\n  résumés, tes skills, et les fichiers de tes bibliothèques d'Espaces ainsi que\n  les pièces jointes de tes messages.\n\nLes conversations ont vécu dans le stockage local jusqu'à ce qu'elles en\nsaturent la capacité (quelques mégaoctets) ; elles sont désormais dans la base,\net le déménagement se fait tout seul au premier démarrage — il n'y a rien à\nfaire, et rien ne se perd.\n\nPour savoir ce que tout cela pèse : **Réglages › Données** affiche l'espace\noccupé, la part du quota qu'il représente, et une ventilation par catégorie\n(conversations, résumés, fichiers, skills, réglages). Le chiffre est mesuré par\nMIAOU en pesant ses propres données ; l'occupation réelle de l'origine est\nlégèrement supérieure, le navigateur ajoutant ses index et sa propre surcharge.\nPour aller voir dans le menu du navigateur : outils de développement, onglet\n« Application » (Chrome) ou « Stockage » (Firefox).\n\n**Sauvegarder et restaurer tout MIAOU.** Réglages › Données propose « Exporter\nles données » : un fichier `.zip` qui contient absolument tout — conversations,\nrésumés, souvenirs, skills, fichiers, Espaces, serveurs et réglages. C'est la\nseule vraie sauvegarde, et c'est aussi le seul moyen d'emporter ton MIAOU vers\nun autre navigateur ou une autre machine. « Importer les données » le relit et\n**remplace l'intégralité** de ce qui est en place (un récapitulatif s'affiche,\navec une confirmation à donner deux fois). Les anciennes sauvegardes `.json`\nrestent acceptées telles quelles.\n\nAttention à un malentendu que l'archive invite : **compresser n'est pas\nchiffrer**. Un `.zip` s'ouvre avec n'importe quel outil, et il contient tes\nclefs d'API et tes tokens en clair, exactement comme le `.json` d'avant.\nRange-le comme un fichier sensible.\n\nNe pas confondre avec l'export d'une **conversation** en Markdown ou en HTML\n(sujet `exports`) : celui-là produit un document de lecture, qui ne se\nréimporte pas.\n\nIl existe une seconde façon de perdre ces données, plus rare que l'effacement\nmanuel. Par défaut le navigateur range le stockage d'un site en mode\n« best-effort » : il le conserve normalement, mais s'autorise à le supprimer\nsous forte pression disque, sans prévenir. Le mode « persistant », lui, met le\nsite à l'abri de ce ménage automatique. MIAOU demande ce mode dès qu'il écrit un\nfichier, et c'est le navigateur qui tranche selon ses propres critères —\ngénéralement favorables à un site visité régulièrement, installé comme\napplication ou mis en favori. Le risque reste faible, et sans commune mesure\navec celui d'un effacement des données de site ; la sauvegarde complète\nci-dessus reste la seule vraie parade.\n\nConséquences pratiques :\n\n- Tes données restent sur cet appareil et ce navigateur. Changer de navigateur\n  ou de machine ne les emporte pas automatiquement. La sauvegarde complète\n  (Réglages › Données) est le seul moyen de les emporter.\n- Vider les données de site du navigateur efface aussi MIAOU. Pense à\n  sauvegarder ce qui compte.\n- La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à\n  un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès\n  protégé côté serveur.\n\nCe que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr\nvers l'API configurée pour être traité — c'est le principe même d'un client de\nchat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il\ncontient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas\nton navigateur.", "genese": "MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,\nfaute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans\ninterface digne de ce nom. Plutôt que de s'en contenter, il a décidé d'en faire\nun vrai chatbot : intelligent, agréable à utiliser, joli, et bardé de fonctions\nqui en jettent — mémoire, Espaces, skills, exports, diagrammes — épaulé par des\nserveurs MCP maison pour le web et les documents.\n\nIl ne l'a pas écrit seul : il l'a construit **en binôme avec Claude**\n(Anthropic), au fil des versions de modèles, de Sonnet à Fable en passant par\nOpus. Lui aux commandes — architecture, décisions, exigences, relectures —\nClaude au clavier sur sa dictée. Un projet de bout en bout mené à quatre mains,\ndont deux virtuelles.\n\nCôté technique, MIAOU est volontairement minimaliste : **un seul fichier HTML\nautonome**, sans framework, sans bundler, sans serveur applicatif — tout tourne\ndans le navigateur, en JavaScript pur, contre n'importe quelle API compatible\nOpenAI. Les capacités web et documents viennent de serveurs MCP distants\noptionnels (le projet compagnon miaou-mcp-servers).\n\nLes deux dépôts sont open source :\n\n- MIAOU (ce client) : https://github.com/dJeyL/miaou\n- Serveurs compagnons : https://github.com/dJeyL/miaou-mcp-servers"}; } catch (e) { return {}; } })();
+const HELP_CONTENT = (function () { try { return {"apercu": "MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu\ndiscutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix\nhaute quand il en est capable, afficher du code coloré, dessiner des diagrammes,\net se servir d'outils pour retrouver des informations dans tes conversations\npassées, tes souvenirs ou tes fichiers.\n\nCe que tu peux faire ici :\n\n- **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un\n  de tes messages pour repartir de ce point.\n- **Joindre des fichiers** à un message : images, fichiers texte, archives zip\n  et PDF.\n- **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,\n  ses fichiers et ses souvenirs.\n- **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer\n  des souvenirs durables pour te reconnaître d'une conversation à l'autre.\n- **Étendre** le modèle avec des skills (instructions réutilisables) et des\n  outils distants (serveurs compagnons, si configurés).\n- **Analyser** un fichier volumineux (log, JSON, CSV, texte) : le modèle peut\n  exécuter du code sur son contenu pour compter, filtrer ou extraire, sans\n  charger le fichier entier dans le contexte.\n- **Exporter** une conversation en Markdown ou en page HTML autonome.\n\nPour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,\nmémoire, historique, skills, outils distants, exports, interface, contexte\nenvoyé au modèle, données personnelles, ou la genèse du projet.", "pieces-jointes": "Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le\ntrombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur\nla zone de conversation (pas seulement sur la barre de saisie), ou colle\ndirectement depuis le presse-papier — une image copiée, ou un fichier copié\ndepuis l'explorateur de fichiers. Trois types sont exploitables : **images** (le\nmodèle les voit réellement, s'il gère la vision), **fichiers texte** (leur\ncontenu est transmis au modèle) et **archives zip** (le modèle en liste le\ncontenu et en sort le fichier qui l'intéresse — voir plus bas). Les autres\nfichiers binaires sont acceptés et conservés, mais le modèle n'en voit que le\nnom, le type et la taille tant qu'aucun outil ne sait les ouvrir (voir le sujet\n`mcp`).\n\nUne fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton\nmessage. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,\net un bouton permet de la retélécharger. Le modèle peut aussi redemander une\npièce jointe d'un message précédent quand il en a besoin pour répondre.\n\nLes images ne sont envoyées en pleine résolution qu'au moment où tu les joins ;\nensuite le modèle en garde une trace légère plutôt que de recharger les pixels à\nchaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible\ndurablement (pas seulement le temps d'un message), promeus-le dans la\nbibliothèque de fichiers de ton Espace — voir le sujet `espaces`.\n\nPour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle\nn'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le\ncalcul** — compter des lignes, filtrer, agréger, extraire un extrait — en\nexécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile\npour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat\ndemandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt\nqu'à déverser le fichier brut.\n\nLes **archives zip** sont ouvertes par MIAOU lui-même, sans aucun serveur\ncompagnon : le modèle peut lister les fichiers contenus dans une archive que tu\nas jointe ou déposée dans la bibliothèque d'un Espace, puis en sortir celui qui\nl'intéresse pour l'analyser — typiquement une archive de logs. Les membres\nprotégés par mot de passe sont refusés explicitement plutôt que lus de travers.\nUn fichier `.docx`, `.xlsx` ou `.pptx` étant techniquement une archive, MIAOU\nsait l'ouvrir aussi, mais n'y voit que sa mécanique interne : pour en tirer le\ntexte, mieux vaut un serveur d'extraction documentaire (voir le sujet `mcp`).\n\nLes **PDF** sont lus nativement eux aussi. Le modèle peut en donner la structure\n— nombre de pages, sommaire, titre et logiciel d'origine quand le document les\nporte — puis en lire une page précise ou une plage, sans jamais avaler le\ndocument entier. Sur un document long, il peut ranger sa lecture dans une\nressource et l'interroger par code plutôt que de la faire défiler.\n\nDeux limites à connaître. Un PDF **protégé par mot de passe** est refusé\nfranchement, MIAOU ne cherche pas à le déchiffrer. Et une page **scannée** (une\nimage de page, sans texte dessous) ne donne rien à lire : MIAOU ne fait pas de\nreconnaissance de caractères, et le signale au modèle pour qu'il te le dise\nplutôt que de conclure que le document est vide.\n\nCes ouvertures natives — zip comme PDF — chargent au premier usage un composant\ndepuis Internet. **Sans connexion, MIAOU ne peut ouvrir aucun document** ; c'est\nle cas où un serveur compagnon reste utile (voir le sujet `mcp`).\n\nDans l'autre sens, le modèle peut **fabriquer une archive** : quand plusieurs\nfichiers se sont accumulés au fil de l'échange — des scripts, des rapports, des\nextraits qu'il a produits ou sortis d'une autre archive — il peut les regrouper\nen un seul zip que tu récupères d'un clic, plutôt que de te les faire\ntélécharger un par un. Le bouton de téléchargement apparaît directement dans le\nfil, sous la trace de l'outil.\n\nLe modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de\nrecomposer (une compilation, un résultat intermédiaire volumineux) sous forme\nde ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource\napparaît alors comme une pièce jointe et peut à son tour être interrogée par le\ncalcul, comme un fichier que tu aurais joint toi-même.\n\nDe la même façon, quand un résultat d'outil volumineux (une longue page web\nrécupérée, un fichier lu) encombre la conversation, le modèle peut le ranger en\nressource : le contenu lourd disparaît alors de l'historique, remplacé par une\npièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le\ncalcul. La conversation s'allège sans rien perdre d'exploitable.", "espaces": "Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun\na ses propres conversations, ses propres pièces jointes et ses propres\nsouvenirs. Le modèle ne voit et ne peut agir que sur le contenu de l'Espace\nactif : aucun outil ne peut lire ou modifier un autre Espace. C'est utile pour\nséparer des sujets qui ne doivent pas déborder l'un sur l'autre (travail,\nperso, un projet précis…).\n\nSeule exception : la recherche de conversation dans la palette de commandes\n(Ctrl/Cmd+K) porte sur tous tes Espaces, pas seulement l'actif — ouvrir un\nrésultat d'un autre Espace bascule automatiquement dessus (détails : sujet\n`interface`).\n\nLe sélecteur d'Espace est en haut de la barre latérale. L'historique « hors\nEspace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.\n\nChaque Espace peut porter une **description** libre : un contexte propre à\nl'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne\nles remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à\nchaque fois.\n\nChaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de\nl'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter\nà la demande, étanches comme le reste de l'Espace. Tu l'alimentes de quatre\nfaçons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée,\nproposition du modèle lui-même, ou dépôt par le modèle d'un fichier qu'il vient\nde produire — demande-lui d'enregistrer dans la bibliothèque un CSV, un script\nou un document qu'il a généré, et il le fera sans que tu aies à le récupérer\npuis le rejoindre à la main. Quand c'est lui qui en prend l'initiative, il te\ndemande confirmation avant d'écrire ; quand c'est toi qui le demandes, il\ns'exécute directement. Chaque fichier de la liste porte une **icône de\ntéléchargement** en haut à droite de sa carte, pour le récupérer sur ta machine.\n\nSupprimer un Espace supprime en cascade ses conversations, ses fichiers et ses\nsouvenirs propres (double confirmation) ; les souvenirs de profil, valables\npartout, restent intacts (détails : sujet `memoire`).\n\nTu peux **déplacer des conversations** d'un Espace à l'autre : sélecteur\nd'Espace en haut de la barre latérale → « Déplacer des conversations… »\n(visible dès qu'il existe au moins deux Espaces et que l'Espace actif contient\ndes conversations). Choisis les conversations puis l'Espace de destination.\nC'est le seul moyen de faire passer une conversation d'un Espace à l'autre —\nles exports (sujet `exports`) ne se réimportent pas.", "memoire": "Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton\ntravail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton\ninstruction explicite (« retiens que… »), ou te demande confirmation quand il\ninfère quelque chose de lui-même — rien n'est enregistré en douce.\n\nTu gardes la main : un panneau dédié te laisse consulter, modifier ou supprimer\ntes souvenirs directement. Les souvenirs actifs sont réinjectés dans le contexte\nà chaque message, pour que le modèle en tienne compte.\n\nLes souvenirs appartiennent à l'Espace où ils sont créés (sujet `espaces`) ; ils\nsuivent donc son étanchéité et sa suppression en cascade. Un souvenir qui doit\nrester valable partout peut être promu au **profil** (portée globale, présente\ndans tous les Espaces) depuis l'écran de l'Espace.\n\nLe modèle voit les souvenirs de l'Espace courant **et** ceux du profil, et il\npeut corriger ou supprimer les uns comme les autres : ce qu'il lit, il peut y\ntoucher. En revanche il crée toujours dans l'Espace courant — promouvoir un\nsouvenir au profil reste ton geste, jamais le sien. Les souvenirs des autres\nEspaces lui sont, eux, entièrement invisibles.\n\nChaque écriture de souvenir par le modèle laisse une trace visible dans la\nconversation, annulable d'un clic. Il n'existe pas d'outil de lecture : un\nsouvenir actif est simplement réinjecté dans le contexte à chaque message,\nsans trace dans la conversation (mécanisme détaillé au sujet `contexte`).\n\nLa mémoire des souvenirs est distincte de la continuité entre conversations\n(résumés automatiques) — voir le sujet `historique`.", "historique": "Tes conversations sont **conservées** et rangées dans la barre latérale par\npériode (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre\ngénéré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout\nmoment pour reprendre où tu en étais.\n\nUn champ de **recherche** filtre l'historique en temps réel, par titre ou par\nmots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même\nrecherche, elle étendue à tous tes espaces.\n\nPour la **continuité entre conversations**, MIAOU résume tes échanges en\narrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi\nun fil de ce que vous vous êtes déjà dit, sans que tu aies à tout recopier. Le\nmodèle peut aussi aller chercher lui-même dans ton historique — lister ou\nretrouver une conversation passée par mots-clés — quand ta demande le justifie.\nLa conversation en cours est toujours exclue de ces recherches.\n\nQuand le modèle cite une conversation passée, elle apparaît comme un lien\ncliquable affichant son titre ; cliquer dessus l'ouvre directement.\n\nTu gardes la main sur ces résumés : un panneau dédié te laisse les consulter,\nouvrir la conversation dont chacun provient, ou les supprimer — supprimer un\nrésumé ne touche jamais à la conversation elle-même, et reste réversible. Il\nliste les résumés de l'Espace courant ; ceux des autres Espaces se consultent\ndepuis chacun d'eux.\n\nNote : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas\nl'historique d'un autre.", "skills": "Les **skills** sont des fragments d'instructions réutilisables que tu écris une\nfois et rappelles à volonté. Chacune a un mot-clé d'invocation (son « slug »), un\nnom, une description et un corps en Markdown. Tu les gères dans un panneau dédié\n(Paramètres → Skills) : création, édition, suppression, et un interrupteur pour\nactiver ou désactiver chacune.\n\nDeux façons de s'en servir :\n\n- **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps de\n  la skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de\n  la frappe). Ta bulle n'affiche que ce que tu as tapé ; le contenu injecté\n  reste en coulisse mais fait bien partie du message. La palette de commandes\n  (Ctrl/Cmd+K → « Invoquer une skill ») fait la même chose : elle insère `/slug `\n  dans le composer, prêt à envoyer.\n- **Découverte par le modèle** : si ta demande en langage naturel correspond à\n  une skill activée, le modèle peut décider seul de la consulter. Une trace\n  visible signale alors qu'il l'a lue.\n- **Création/modification par le modèle** : à ta demande, le modèle peut aussi\n  créer une nouvelle skill ou modifier le contenu d'une existante — une trace\n  visible signale la création ou la modification. Modifier une skill déjà\n  existante lui demande une confirmation explicite avant d'écraser son contenu.\n\nUne skill est utile pour un cadrage récurrent : un style de réponse, une\nprocédure, un gabarit — tout ce que tu répéterais sinon à la main.\n\n**Importer une skill existante** (par exemple une skill écrite pour Claude Code,\navec un cartouche `--- name: … description: … ---` en tête de fichier) :\n\n- **Coller** le texte dans le champ Contenu d'une skill en édition : slug, nom,\n  description sont extraits automatiquement du cartouche et pré-remplissent les\n  champs (ceux absents du cartouche restent inchangés) ; le cartouche lui-même\n  reste dans le contenu.\n- **Glisser-déposer** un fichier `.md` sur le panneau Skills, ou **coller un\n  fichier `.md` copié** depuis ton explorateur de fichiers : si son cartouche\n  correspond à une skill déjà existante (même nom), tu bascules directement en\n  édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et\n  enregistrer.\n\n**Skills système** : quelques skills sont fournies par l'application (par\nexemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le\nmode d'emploi de certains outils avancés). Elles apparaissent en tête du\npanneau Skills, dans une liste distincte, repérables à leur badge « Système ».\nToujours actives, non modifiables ni supprimables : un bouton « Consulter »\naffiche leur contenu en lecture seule.", "mcp": "Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs\ncompagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi\ncomme pour le modèle, tout apparaît dans un seul ensemble d'outils : l'usage est\ntransparent, l'origine ne l'est pas. Les outils venus d'un serveur compagnon\nportent un **nom préfixé** par le serveur (par exemple `miaou-proxy__web__…`) ;\nle modèle peut donc constater, à la seule lecture de sa propre liste d'outils,\nquels serveurs sont branchés et ce qu'ils apportent — il n'a pas besoin d'un\noutil dédié pour « lister les serveurs », l'information est déjà sous ses yeux.\n\nCes serveurs sont **optionnels** : ils n'existent que si tu les as configurés\n(Paramètres → Serveurs MCP). Selon ceux que tu ajoutes, le modèle peut par\nexemple :\n\n- **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.\n- **Extraire le contenu de documents bureautiques** : Word, Excel, PowerPoint —\n  utile pour interroger un document que tu as joint ou déposé dans une\n  bibliothèque d'Espace. Les **archives zip** et les **PDF**, eux, n'ont plus\n  besoin de serveur : MIAOU les ouvre nativement (voir le sujet\n  `pieces-jointes`). Un serveur d'extraction documentaire garde deux usages :\n  les formats bureautiques, et le travail **hors connexion** — l'ouverture\n  native télécharge son moteur au premier usage, un serveur local n'en a pas\n  besoin.\n- Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs\n  disponibles.\n\nSi aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; le\nreste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans\nbloquer les autres.\n\nPour l'accès au web et la lecture de documents, le projet compagnon\n**miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et\nrecherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est\nla façon recommandée d'ajouter ces capacités à MIAOU. Il est open source :\nhttps://github.com/dJeyL/miaou-mcp-servers", "exports": "Tu peux sortir tes conversations de MIAOU de plusieurs manières :\n\n- **Une réponse seule** en Markdown : au survol d'un message du modèle, un\n  bouton la télécharge en `.md`.\n- **La conversation entière en page HTML autonome** : l'icône de téléchargement\n  à droite du titre, en haut. Le fichier obtenu est un instantané complet —\n  coloration figée, diagrammes inclus en image — lisible dans n'importe quel\n  navigateur sans MIAOU ni connexion. Idéal pour archiver ou partager par mail.\n  Les images y sont embarquées et restent cliquables.\n- **La conversation entière en Markdown** : la même icône, cliquée en gardant\n  **Shift** enfoncé. L'export inclut la trace des outils utilisés à chaque tour.\n  Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de\n  commandes fait la même chose.\n\nLes pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles\ns'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut\nà droite permet de basculer à la lecture ; ton choix est retenu et s'applique à\ntous tes exports, y compris ceux que tu produiras plus tard. Cette bascule\nfonctionne **sans JavaScript** : elle marche donc partout, y compris dans les\nvisionneuses de pièces jointes qui n'exécutent aucun script\n(l'aperçu de fichier d'iOS, par exemple). Le réglage **« Export HTML\ninteractif »** (réglages, section « Apparence ») ne la conditionne pas : activé\npar défaut, il ajoute seulement les boutons copier/télécharger sur les blocs de\ncode, et fait retenir ton choix de thème d'une ouverture à l'autre. Décoché, la\nbascule reste disponible, mais le choix n'est plus mémorisé. Les diagrammes,\neux, gardent dans tous les cas les couleurs qu'ils avaient à l'export.\n\nCes exports sont à sens unique : ce sont des fichiers de lecture, il n'existe\naucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni\npour le remettre dans un Espace — voir le sujet `espaces` pour déplacer une\nconversation existante entre Espaces).\n\n**Convertir un fichier Markdown quelconque.** Indépendamment des conversations,\nMIAOU sait transformer n'importe quel fichier `.md` en page HTML au même format.\nC'est dans les réglages, section « Outils & extensions » : tu choisis un fichier\nou tu le déposes sur la zone prévue, et le `.html` correspondant se télécharge\n(même nom, extension changée). Si le document commence par un titre de niveau 1,\ncelui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête et la date\nfigure en pied. Cette conversion est purement locale : le modèle n'est pas\nsollicité et rien n'est envoyé nulle part.\n\nCôté blocs de code, chaque bloc a ses propres boutons pour **copier** ou\n**télécharger** son contenu (avec la bonne extension selon le langage), et les\ndiagrammes peuvent être exportés en image SVG ou PNG. Sur un bloc **Markdown**,\nun bouton supplémentaire le convertit directement en page HTML — même résultat\nque la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.", "contexte": "À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y\najoute automatiquement un **contexte** pour que le modèle réponde en connaissance\nde cause. Ce contexte comprend, selon le cas, tes instructions système, la\ndéfinition des outils disponibles (y compris ceux des serveurs compagnons), tes\nsouvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés\npertinents, la date du jour et le manifeste de la bibliothèque de fichiers de\nl'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus\nde ton message — donc oui, cela consomme des tokens en entrée, au-delà de ce\nque tu as tapé toi-même.\n\nDeux idées à ne pas confondre :\n\n- **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.\n  Clique-le pour voir la ventilation part par part.\n- **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**\n  un levier de réduction : c'est le dénominateur qui sert à afficher un taux de\n  remplissage (« combien sur le maximum du modèle »). La modifier ne change rien\n  à ce qui est envoyé — c'est une jauge, pas un robinet.\n\nLes **vrais leviers** pour alléger ce qui part à chaque tour :\n\n- **Résumés** : leur injection a un mode réglable (automatique, sur proposition,\n  ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.\n- **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en\n  supprimer ou en mettre en veille réduit d'autant le contexte.\n- **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la\n  joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est\n  déjà une optimisation intégrée.\n- **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses\n  outils au contexte. En débrancher un allège la liste d'outils envoyée.\n\nNote sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte\n(instructions système, définitions d'outils) reste **identique octet pour octet**\nd'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés) en\npréfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe\n(Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au\nlieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes\ninstructions système, casse volontairement ce préfixe stable (le contexte change\nvraiment) : c'est attendu.", "interface": "Quelques repères pour te déplacer dans MIAOU :\n\n- **Barre latérale** : le sélecteur d'Espace en haut, puis tes conversations\n  rangées par période, avec la recherche. Elle est redimensionnable.\n- **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un\n  **stop** pendant que le modèle répond — le texte déjà reçu est conservé. Ce\n  stop ne concerne que la conversation **affichée** : si d'autres conversations\n  travaillent en arrière-plan, elles continuent. À côté, le trombone pour\n  joindre des fichiers.\n- **Ajouter en cours de route** : si le modèle travaille (surtout quand il\n  enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée\n  sans l'interrompre** — il se met en file au-dessus du composer et lui est\n  transmis dès la prochaine étape, ce qui te permet de le **réorienter avant\n  qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour\n  le récupérer dans le composer) ou annulable (la croix). Si tu en mets\n  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.\n- **Plusieurs réponses à la fois** : quitter une conversation ne l'interrompt\n  plus. Tu peux poser une question, partir vers une autre conversation — ou même\n  changer d'Espace — pendant que le modèle rédige : il continue, va au bout de\n  ses outils, et range sa réponse dans **sa** conversation. Tu la retrouves\n  complète en y revenant. Plusieurs conversations peuvent ainsi travailler en\n  même temps. Ça ne survit pas au rechargement de la page : recharger pendant\n  qu'une réponse arrive la perd (la question, elle, reste).\n- **Pastilles d'activité** : un petit point signale ce qui bouge sans que tu\n  aies à surveiller.\n  - **Point qui clignote** : cette conversation est en train de travailler.\n  - **Point fixe, un peu plus gros** : la réponse est terminée et tu ne l'as pas\n    encore vue. Ouvrir la conversation suffit à l'éteindre.\n  - Le point apparaît sur la conversation dans la barre latérale, et aussi sur\n    le **sélecteur d'Espace** quand l'activité se passe dans un autre Espace\n    (déplie-le : chaque Espace concerné porte alors son propre point). Barre\n    latérale masquée, il se replie sur l'**icône du menu** en haut à gauche.\n  - S'il y a à la fois du terminé-non-vu et du en-cours, le point fixe l'emporte\n    sur ces indicateurs de groupe — le détail se lit en dépliant.\n  - Ces points sont volatiles : ils disparaissent si tu recharges la page.\n- **Compteur d'agents** : en haut à droite, une pastille « 1 agent » / « 3\n  agents » indique combien de conversations travaillent en ce moment, tous\n  Espaces confondus. Un **agent**, ici, c'est une conversation en train de\n  produire une réponse : selon les outils dont il dispose, il peut enchaîner\n  plusieurs étapes de lui-même (chercher, lire un fichier, calculer) avant de\n  répondre. Le compteur n'apparaît que s'il t'apprend quelque chose : une seule\n  réponse en cours, que tu es en train de regarder arriver, ne l'affiche pas —\n  le bouton stop du composer le dit déjà.\n- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre\n  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les\n  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une\n  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le\n  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de\n  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce\n  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la\n  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part\n  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet\n  contexte.\n- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône\n  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,\n  gardé à part de la réponse.\n- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :\n  change le modèle de la conversation courante sans toucher à ton défaut. Si\n  plusieurs serveurs API sont configurés, il liste les modèles de chacun,\n  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le\n  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée\n  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour\n  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →\n  Serveurs API) pour ne plus être interrogé ni proposé.\n- **Thème clair / sombre** et coloration syntaxique se règlent dans les\n  Paramètres.\n- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**\n  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une\n  police de texte et une police à chasse fixe (blocs de code) choisies pour\n  aller ensemble. Réglage indépendant du thème et de la palette.\n- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres\n  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur\n  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage\n  indépendant du thème clair/sombre : chaque palette a sa version claire et sa\n  version sombre, et changer l'un ne change pas l'autre.\n- **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,\n  recherche, outils distants…) pour une même réponse, elles s'affichent en\n  mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et\n  se replier à nouveau.\n- **Récupérer un fichier produit par un outil** : chaque trace d'outil qui porte\n  sur un fichier — « Ressource enregistrée », « Ressource présentée », « Pièce\n  jointe rappelée » — a une icône de téléchargement à son extrémité. Ça vaut\n  aussi pour les fichiers qui ne s'affichent pas dans la conversation (un CSV,\n  un JSON produit pour un calcul) : la trace est parfois le seul endroit d'où\n  les récupérer. Si le fichier n'est plus disponible, l'icône devient inerte.\n- **Animations** : un réglage dans les Paramètres\n  (Normales / Réduites / Suivre le système) coupe toutes les transitions et\n  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de\n  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la\n  préférence de réduction d'animations de ton OS.\n- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour\n  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,\n  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —\n  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,\n  inspecteur de contexte, bascule de thème et de coloration, export de la\n  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre\n  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou\n  rechercher une conversation — seule exception à l'étanchéité des Espaces\n  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en\n  arrière).\n  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule\n    touche lance la commande — la lettre est affichée à gauche de chaque ligne.\n    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une\n    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer\n    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les\n    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,\n    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.\n- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même\n  navigateur ; ils restent synchronisés. Une modification faite dans un onglet\n  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en\n  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.\n  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que\n  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux\n  Espaces différents dans deux onglets. Si la même conversation est ouverte à\n  deux endroits, un\n  bandeau discret le signale. Et si une réponse est en cours de génération dans\n  un onglet, la même conversation passe en **lecture seule** dans les autres le\n  temps de la réponse — pour éviter deux générations concurrentes qui\n  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale\n  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs\n  différents).", "donnees": "MIAOU s'exécute **entièrement dans ton navigateur**. Il n'y a pas de serveur\napplicatif MIAOU : tes conversations, tes souvenirs, tes skills, tes Espaces et\ntes fichiers sont stockés **localement**, sur ta machine, dans le stockage du\nnavigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as\nconfigurée (et vers les serveurs compagnons que tu aurais ajoutés).\n\nLe navigateur offre deux emplacements de stockage, et MIAOU se sert des deux\nselon la taille de ce qu'il range :\n\n- **Le stockage local** (`localStorage`), petit mais simple, garde ce qui est de\n  taille stable : tes réglages, ta clef d'API, tes serveurs API et compagnons,\n  la liste de tes Espaces et tes souvenirs.\n- **La base de données du navigateur** (`IndexedDB`, base `miaou`), sans limite\n  pratique, garde ce qui grossit avec l'usage : **tes conversations** et leurs\n  résumés, tes skills, et les fichiers de tes bibliothèques d'Espaces ainsi que\n  les pièces jointes de tes messages.\n\nLes conversations ont vécu dans le stockage local jusqu'à ce qu'elles en\nsaturent la capacité (quelques mégaoctets) ; elles sont désormais dans la base,\net le déménagement se fait tout seul au premier démarrage — il n'y a rien à\nfaire, et rien ne se perd.\n\nPour savoir ce que tout cela pèse : **Réglages › Données** affiche l'espace\noccupé, la part du quota qu'il représente, et une ventilation par catégorie\n(conversations, résumés, fichiers, skills, réglages). Le chiffre est mesuré par\nMIAOU en pesant ses propres données ; l'occupation réelle de l'origine est\nlégèrement supérieure, le navigateur ajoutant ses index et sa propre surcharge.\nPour aller voir dans le menu du navigateur : outils de développement, onglet\n« Application » (Chrome) ou « Stockage » (Firefox).\n\n**Sauvegarder et restaurer tout MIAOU.** Réglages › Données propose « Exporter\nles données » : un fichier `.zip` qui contient absolument tout — conversations,\nrésumés, souvenirs, skills, fichiers, Espaces, serveurs et réglages. C'est la\nseule vraie sauvegarde, et c'est aussi le seul moyen d'emporter ton MIAOU vers\nun autre navigateur ou une autre machine. « Importer les données » le relit et\n**remplace l'intégralité** de ce qui est en place (un récapitulatif s'affiche,\navec une confirmation à donner deux fois). Les anciennes sauvegardes `.json`\nrestent acceptées telles quelles.\n\nAttention à un malentendu que l'archive invite : **compresser n'est pas\nchiffrer**. Un `.zip` s'ouvre avec n'importe quel outil, et il contient tes\nclefs d'API et tes tokens en clair, exactement comme le `.json` d'avant.\nRange-le comme un fichier sensible.\n\nNe pas confondre avec l'export d'une **conversation** en Markdown ou en HTML\n(sujet `exports`) : celui-là produit un document de lecture, qui ne se\nréimporte pas.\n\nIl existe une seconde façon de perdre ces données, plus rare que l'effacement\nmanuel. Par défaut le navigateur range le stockage d'un site en mode\n« best-effort » : il le conserve normalement, mais s'autorise à le supprimer\nsous forte pression disque, sans prévenir. Le mode « persistant », lui, met le\nsite à l'abri de ce ménage automatique. MIAOU demande ce mode dès qu'il écrit un\nfichier, et c'est le navigateur qui tranche selon ses propres critères —\ngénéralement favorables à un site visité régulièrement, installé comme\napplication ou mis en favori. Le risque reste faible, et sans commune mesure\navec celui d'un effacement des données de site ; la sauvegarde complète\nci-dessus reste la seule vraie parade.\n\nConséquences pratiques :\n\n- Tes données restent sur cet appareil et ce navigateur. Changer de navigateur\n  ou de machine ne les emporte pas automatiquement. La sauvegarde complète\n  (Réglages › Données) est le seul moyen de les emporter.\n- Vider les données de site du navigateur efface aussi MIAOU. Pense à\n  sauvegarder ce qui compte.\n- La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à\n  un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès\n  protégé côté serveur.\n\nCe que tu envoies au modèle (tes messages, le contexte injecté) part bien sûr\nvers l'API configurée pour être traité — c'est le principe même d'un client de\nchat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il\ncontient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas\nton navigateur.", "genese": "MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,\nfaute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans\ninterface digne de ce nom. Plutôt que de s'en contenter, il a décidé d'en faire\nun vrai chatbot : intelligent, agréable à utiliser, joli, et bardé de fonctions\nqui en jettent — mémoire, Espaces, skills, exports, diagrammes — épaulé par des\nserveurs MCP maison pour le web et les documents.\n\nIl ne l'a pas écrit seul : il l'a construit **en binôme avec Claude**\n(Anthropic), au fil des versions de modèles, de Sonnet à Fable en passant par\nOpus. Lui aux commandes — architecture, décisions, exigences, relectures —\nClaude au clavier sur sa dictée. Un projet de bout en bout mené à quatre mains,\ndont deux virtuelles.\n\nCôté technique, MIAOU est volontairement minimaliste : **un seul fichier HTML\nautonome**, sans framework, sans bundler, sans serveur applicatif — tout tourne\ndans le navigateur, en JavaScript pur, contre n'importe quelle API compatible\nOpenAI. Les capacités web et documents viennent de serveurs MCP distants\noptionnels (le projet compagnon miaou-mcp-servers).\n\nLes deux dépôts sont open source :\n\n- MIAOU (ce client) : https://github.com/dJeyL/miaou\n- Serveurs compagnons : https://github.com/dJeyL/miaou-mcp-servers"}; } catch (e) { return {}; } })();
 
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -7410,13 +7578,19 @@ const DOCS_DOCTRINE =
   "ensuite le membre qui t'intéresse : tu obtiens une ressource res_… que tu " +
   "passes à miaou__js__eval pour la compter, la filtrer ou l'agréger, sans jamais " +
   "charger son contenu dans ton contexte.\n" +
-  "- PDF, WORD, EXCEL, POWERPOINT : si le registre te propose un outil déclarant " +
+  "- PDF : miaou__docs__list pour en voir la structure (pages, sommaire), puis " +
+  "miaou__docs__read pour en lire une page ou une plage. Natifs eux aussi, sans " +
+  "serveur.\n" +
+  "- WORD, EXCEL, POWERPOINT : si le registre te propose un outil déclarant " +
   "dans son schéma d'entrée à la fois un paramètre `ref` et un paramètre " +
   "`content_b64` (par exemple docs__read), c'est lui qui sait ouvrir ces formats " +
   "et en extraire le texte utile. Appelle-le avec ref=\"att-N\". Un document Office " +
   "est techniquement une archive zip, et les outils natifs savent donc l'ouvrir : " +
   "ils n'en livreront que du XML brut, ce qui ne vaut qu'en dernier recours ou " +
   "si l'utilisateur demande explicitement à en voir la structure interne.\n" +
+  "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
+  "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
+  "sans réseau.\n" +
   "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
@@ -7433,6 +7607,18 @@ const DOCS_DOCTRINE =
 const JS_EVAL_TIMEOUT_MS = 10000;
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
+
+const DOC_READERS = {
+  zip:  { list: listZipDocument },
+  docx: { list: listZipDocument },
+  xlsx: { list: listZipDocument },
+  pptx: { list: listZipDocument },
+  pdf:  { list: listPdfDocument, read: readPdfDocument },
+};
+
+function nativeDocKinds() {
+  return Object.keys(DOC_READERS);
+}
 
 const JS_EVAL_DOCTRINE =
   "L'outil miaou__js__eval exécute du JavaScript que TU écris dans un bac à sable " +
@@ -7573,11 +7759,107 @@ function validateFilesPromoteArgs(args) {
   return '';
 }
 
+function listZipDocument(u8, record, ref) {
+  const entries = parseZipCentralDirectory(u8);   
+  if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name,
+    count: entries.filter(e => !e.directory).length,
+  });
+  return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   
+}
+
+async function openPdfDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensurePdfJs();   
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture PDF indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de PDF.') };
+  }
+  try {
+    
+    const doc = await lib.getDocument({ data: u8.slice() }).promise;
+    return { doc };
+  } catch (e) {
+    if (e && e.name === 'PasswordException') {
+      
+      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
+        resourceName: record && record.name,
+        message: 'PDF protégé par mot de passe' });
+      return { fail: 'PDF protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
+        'Demande à l\'utilisateur une version non protégée.' };
+    }
+    return { fail: toolFail(toolName, 'PDF illisible : ' +
+      ((e && e.message) || 'structure invalide') + '.') };
+  }
+}
+
+async function listPdfDocument(u8, record, ref) {
+  const opened = await openPdfDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  const doc = opened.doc;
+  try {
+    const pages = doc.numPages;
+    let meta = null, outline = null;
+    
+    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
+    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
+    const info = (meta && meta.info) || {};
+    const flat = [];
+    
+    const stack = [];
+    for (let i = (outline || []).length - 1; i >= 0; i--) stack.push({ node: outline[i], level: 1 });
+    while (stack.length) {
+      const cur = stack.pop();
+      const n = cur.node;
+      if (!n) continue;
+      flat.push({ level: cur.level, title: n.title, page: 0 });
+      const kids = n.items || [];
+      for (let i = kids.length - 1; i >= 0; i--) stack.push({ node: kids[i], level: cur.level + 1 });
+    }
+    _pendingToolAcks.push({
+      kind: 'docs_list', handle: ref, resourceName: record.name, count: pages,
+    });
+    return formatPdfListing({          
+      pages, outline: flat,
+      title: info.Title, author: info.Author, producer: info.Producer,
+    });
+  } finally {
+    
+    try { doc.destroy(); } catch (e) {  }
+  }
+}
+
+async function readPdfDocument(u8, record, ref, selector) {
+  const opened = await openPdfDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const doc = opened.doc;
+  try {
+    const range = parsePageSelector(selector, doc.numPages);   
+    if (!range.ok) return toolFail('docs__read', range.message);
+    const pages = [];
+    for (let n = range.start; n <= range.end; n++) {
+      const page = await doc.getPage(n);
+      try {
+        const tc = await page.getTextContent();
+        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   
+      } finally {
+        try { page.cleanup(); } catch (e) {  }
+      }
+    }
+    return { text: formatPdfRead(pages, { notice: range.notice }), range };   
+  } finally {
+    try { doc.destroy(); } catch (e) {  }
+  }
+}
+
 function docsUnsupportedFormatMessage(record) {
   const what = record && record.name ? '« ' + record.name + ' »' : 'ce fichier';
   const mime = record && record.mime ? ' (' + record.mime + ')' : '';
-  const head = what + mime + " n'est pas une archive zip : l'ouverture native de MIAOU " +
-    'ne gère à ce jour que le zip.';
+  const head = what + mime + " n'est pas un format que MIAOU sait ouvrir seul : " +
+    'son ouverture native ne gère à ce jour que ' + formatNativeDocKindsLabel(nativeDocKinds()) + '.';
   const inflation = findDocsInflationTool();
   if (inflation) {
     return head + ' Un serveur d\'extraction documentaire est branché : utilise ' +
@@ -8261,7 +8543,7 @@ const TOOLS = [
       required: ['ref'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },   
-    handler: (args, ctx) => {
+    handler: async (args, ctx) => {
       const ref = String((args && args.ref) || '').trim();
       if (!ref) return toolFail('docs__list', 'Handle manquant.');
       if (classifyHandleRef(ref) === null) {
@@ -8269,13 +8551,12 @@ const TOOLS = [
       }
       const record = resolveHandleRecord(ref, ctx);   
       if (!record || !record.data) return toolFail('docs__list', 'Handle introuvable : ' + ref + '.');
-      const entries = parseZipCentralDirectory(new Uint8Array(record.data));   
-      if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
-      _pendingToolAcks.push({
-        kind: 'docs_list', handle: ref, resourceName: record.name,
-        count: entries.filter(e => !e.directory).length,
-      });
-      return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   
+      const u8 = new Uint8Array(record.data);
+      const kind = sniffDocumentKind(u8, record.name);   
+
+      const reader = DOC_READERS[kind];
+      if (!reader || !reader.list) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
+      return reader.list(u8, record, ref);
     },
   },
   {
@@ -8350,6 +8631,86 @@ const TOOLS = [
       });
       
       return formatInlineHandleForModel(id, mime, getCachedRecord(id));
+    },
+  },
+  {
+    
+    name: 'docs__read',
+    description:
+      "Lit une ou plusieurs pages d'un document référencé par handle (att-N, file-<id> " +
+      "ou res_<id>) : PDF aujourd'hui. Le selector désigne des unités, '3' pour une " +
+      "page, '2-5' pour une plage. Renvoie le texte des pages demandées, en signalant " +
+      "celles qui n'en portent pas (pages scannées). Pour un zip, ce n'est pas cet " +
+      "outil : liste avec miaou__docs__list puis matérialise un membre avec " +
+      "miaou__docs__extract.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Handle du document : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
+        selector: { type: 'string', description: "Unités à lire : 'N' pour une seule (ex. '3'), 'N-M' pour une plage inclusive (ex. '2-5'). Pas de mot ni de préfixe : '3', jamais 'page 3'." },
+        
+        as_resource: { type: 'boolean', description: "Range le texte lu dans une ressource res_… au lieu de le renvoyer dans ton contexte, parce qu'une plage large (des dizaines de pages) le saturerait. Le handle rendu se passe ensuite à miaou__js__eval pour chercher, compter ou filtrer dedans. Par défaut false : une ou deux pages se lisent directement." },
+      },
+      required: ['ref', 'selector'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },   
+    handler: async (args, ctx) => {
+      const ref = String((args && args.ref) || '').trim();
+      const selector = String((args && args.selector) || '').trim();
+      const asResource = !!(args && args.as_resource);
+      if (!ref) return toolFail('docs__read', 'Handle manquant.');
+      if (!selector) return toolFail('docs__read', "Selector manquant (attendu 'N' ou 'N-M', par exemple '3' ou '2-5').");
+      if (classifyHandleRef(ref) === null) {
+        return toolFail('docs__read', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
+      }
+      const record = resolveHandleRecord(ref, ctx);   
+      if (!record || !record.data) return toolFail('docs__read', 'Handle introuvable : ' + ref + '.');
+      const u8 = new Uint8Array(record.data);
+      const kind = sniffDocumentKind(u8, record.name);   
+
+      const reader = DOC_READERS[kind];
+      if (!reader || !reader.read) {
+        if (reader && reader.list) {
+          return toolFail('docs__read', 'Ce document (' + kind + ') ne se lit pas par pages : ' +
+            'appelle miaou__docs__list pour en voir la structure, puis miaou__docs__extract ' +
+            'sur le membre qui t\'intéresse.');
+        }
+        return toolFail('docs__read', docsUnsupportedFormatMessage(record));
+      }
+
+      const out = await reader.read(u8, record, ref, selector);
+      if (typeof out === 'string') return out;   
+      const text = out.text;
+      const range = out.range;
+
+      if (!asResource) {
+        _pendingToolAcks.push({
+          kind: 'docs_read', handle: ref, resourceName: record.name,
+          selector: range ? range.start + '-' + range.end : selector,
+          size: text.length,
+        });
+        
+        if (text.length > JS_EVAL_OUTPUT_CAP) {
+          return 'Lecture trop volumineuse pour le contexte : ' + text.length +
+            ' caractères, au-delà de la limite de ' + JS_EVAL_OUTPUT_CAP + '. ' +
+            'Relance le même appel avec as_resource: true (le texte ira dans une ' +
+            'ressource res_… interrogeable par miaou__js__eval), ou demande une ' +
+            'plage plus courte.';
+        }
+        return text;
+      }
+
+      const name = pdfReadResourceName(record.name, range ? range.start : 0, range ? range.end : 0);   
+      const id = await _storeBlock('text/plain', name, utf8Encode(text), 'inline',
+        ctx.convId, Date.now(), Math.random);
+      if (!id) return toolFail('docs__read', 'Échec de stockage du texte lu.');
+      _pendingToolAcks.push({
+        kind: 'docs_read', handle: ref, ok: true, resourceName: name,
+        selector: range ? range.start + '-' + range.end : selector,
+        mime: 'text/plain', size: text.length,
+      });
+      
+      return formatInlineHandleForModel(id, 'text/plain', getCachedRecord(id));
     },
   },
   {
@@ -8767,10 +9128,58 @@ function findDocsInflationTool() {
   return null;
 }
 
+async function describePdfForLibrary(u8, maxChars) {
+  let doc = null;
+  try {
+    const lib = await ensurePdfJs();   
+    doc = await lib.getDocument({ data: u8.slice() }).promise;
+    let meta = null, outline = null;
+    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
+    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
+    const info = (meta && meta.info) || {};
+    const flat = [];
+    for (const n of (outline || [])) {
+      if (n && n.title) flat.push({ level: 1, title: n.title, page: 0 });
+    }
+    const head = formatPdfListing({          
+      pages: doc.numPages, outline: flat,
+      title: info.Title, author: info.Author, producer: info.Producer,
+    });
+
+    let first = '';
+    if (doc.numPages > 0) {
+      const page = await doc.getPage(1);
+      try {
+        const tc = await page.getTextContent();
+        first = joinPdfTextItems(tc && tc.items).trim();   
+      } finally {
+        try { page.cleanup(); } catch (e) {  }
+      }
+    }
+    const out = first ? head + '\n\nPremière page :\n' + first : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;   
+  } finally {
+    if (doc) { try { doc.destroy(); } catch (e) {  } }
+  }
+}
+
 async function extractBinaryFileTextForDescription(record, maxChars) {
   
-  const zipEntries = record && record.data ? parseZipCentralDirectory(new Uint8Array(record.data)) : null;
-  if (zipEntries) return formatZipListing(zipEntries, { maxBytes: MAX_INLINE_BYTES }).slice(0, maxChars);
+  const u8 = record && record.data ? new Uint8Array(record.data) : null;
+  const kind = u8 ? sniffDocumentKind(u8, record.name) : null;   
+
+  if (kind && kind !== 'pdf') {
+    const zipEntries = parseZipCentralDirectory(u8);
+    if (zipEntries) return formatZipListing(zipEntries, { maxBytes: MAX_INLINE_BYTES }).slice(0, maxChars);
+  }
+
+  if (kind === 'pdf') {
+    const text = await describePdfForLibrary(u8, maxChars);
+    if (text) return text;
+    
+  }
 
   const found = findDocsInflationTool();
   if (!found) return null;
@@ -9756,6 +10165,37 @@ function ensureFflate() {
   return _fflatePromise;
 }
 
+const PDFJS_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+let _pdfjsPromise = null;
+
+function ensurePdfJs() {
+  if (_pdfjsPromise) return _pdfjsPromise;
+  _pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_CDN;
+    s.onload = () => {
+      const lib = window.pdfjsLib;
+      
+      if (!lib || typeof lib.getDocument !== 'function' || !lib.GlobalWorkerOptions) {
+        reject(new Error('pdf.js absent ou incomplet après chargement')); return;
+      }
+      
+      fetch(PDFJS_WORKER_CDN)
+        .then(r => (r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status))))
+        .then(b => {
+          lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(b);
+          resolve(lib);
+        })
+        .catch(e => reject(new Error('échec de chargement du worker pdf.js : ' + ((e && e.message) || e))));
+    };
+    s.onerror = () => reject(new Error('échec de chargement pdf.js (CDN)'));
+    document.head.appendChild(s);
+  });
+  _pdfjsPromise.catch(() => { _pdfjsPromise = null; });   
+  return _pdfjsPromise;
+}
+
 async function renderMermaidUnder(scope) {
   const codes = scope.querySelectorAll('code.language-mermaid');
   if (!codes.length) return;
@@ -10689,26 +11129,44 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_LIST,
-    label: m => 'Archive listée : ' + (m.resourceName || m.handle || '?') + ' — ' + (
-        m.count === 0 ? 'aucun membre'
-      : m.count === 1 ? '1 membre'
-      : (m.count != null ? m.count : '?') + ' membres'),
+    label: m => docsListAckHead(m) + ' : ' + (m.resourceName || m.handle || '?') +
+      ' — ' + docsListAckCount(m),
     renderLabel: (m, el) => {
-      const countText =
-          m.count === 0 ? 'aucun membre'
-        : m.count === 1 ? '1 membre'
-        : (m.count != null ? m.count : '?') + ' membres';
+      const countText = docsListAckCount(m);
       const name = m.resourceName || m.handle || '?';
+      const head = docsListAckHead(m) + ' ';
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Archive listée '));
+          detail.appendChild(document.createTextNode(head));
           appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + name + ' — ' + countText));
         });
       } else {
-        el.appendChild(document.createTextNode('Archive listée '));
+        el.appendChild(document.createTextNode(head));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + name + ' — ' + countText));
+      }
+    },
+  },
+  
+  docs_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_LIST,
+    label: m => docsReadAckLabel(m),
+    renderLabel: (m, el) => {
+      const name = m.resourceName || m.handle || '?';
+      const head = docsReadAckHead(m) + ' ';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, null, detail => {
+          detail.appendChild(document.createTextNode(head));
+          appendAckSep(detail);
+          detail.appendChild(document.createTextNode(' ' + name));
+        });
+      } else {
+        el.appendChild(document.createTextNode(head));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + name));
       }
     },
   },

@@ -597,7 +597,7 @@ En v3, le fichier est une archive dont **`manifest.json` est obligatoire**, à l
 racine et sous ce nom exact (absent ⇒ refus actionnable) :
 
 ```
-miaou-export-2026-08-28_14-32-10.zip
+miaou-export-2026-08-28-1432.zip
 ├── manifest.json          ← tout l'état sauf les octets binaires
 ├── resources/res_k3j9x2   ← octets BRUTS d'une ressource, un membre par record
 ├── resources/att_9zc4v0

@@ -255,6 +255,39 @@ lazy-load CDN de l'engine, la création VM, l'injection de globals, l'exécution
 guest et les guards timeout/mémoire — tout l'embedding QuickJS-WASM chargé en
 browser, autre embedding que le `qjs` du runner.
 
+**Ouverture de documents — `tests/test-zip.js` et `tests/test-docs.js`
+(lots V-1 à V-4, cf. `docs/tools.md`)** : les deux fichiers construisent leurs
+fixtures en **tableaux d'octets littéraux** plutôt que de lire des fichiers —
+QuickJS n'a pas d'accès disque, et le test doit rester hermétique. Un central
+directory zip synthétique et un en-tête `%PDF` suffisent.
+
+`test-zip.js` couvre le chemin zip : `parseZipCentralDirectory` (dont le bit 11
+d'encodage de nom, seul discriminant UTF-8/CP437 du format), `isZipSlipPath`,
+`sniffZipOfficeKind`, `formatZipListing`, `zipMemberMime`, `zipMemberBaseName`,
+`decideZipMemberExtraction` (les cinq refus, pris sur le seul central directory
+donc avant toute allocation), les helpers de création de V-2
+(`buildZipMemberName`, `validateZipPlan`, `ZIP_EXT_BY_MIME`,
+`normalizeArchiveName`) et `sniffBackupFormat` de V-3.
+
+`test-docs.js` (V-4) couvre le pur du chemin « document natif » :
+`sniffDocumentKind` (reconnaissance **aux octets** — dont deux cas qui figent
+l'invariant : des octets PDF sous un nom `.zip` restent `'pdf'`, un docx nommé
+`.zip` reste `'docx'` ; le nom ne décide jamais), `parsePageSelector`
+(`'N'`/`'N-M'`, clamp **avec notice**, refus d'une plage hors document, `'page 3'`
+refusé **en rappelant la forme attendue**), `formatPdfListing`,
+`formatNativeDocKindsLabel` (le libellé dérivé de `DOC_READERS`),
+`joinPdfTextItems` (le piège des phrases collées : `hasEOL`, et le repli par
+ordonnée dont le seuil suit la hauteur de l'item), `formatPdfRead` (la notice de
+page scannée, qui doit dire la cause **sans promettre d'OCR**),
+`pdfReadResourceName`, et les quatre helpers de libellé d'ack — dont l'accord de
+genre, qui a **effectivement attrapé un bug** (« aucun page »).
+
+Impurs, NON QuickJS-testables : `ensurePdfJs` (lazy-load CDN + worker `blob:`),
+l'ouverture pdf.js, `describePdfForLibrary`, et le routage `DOC_READERS` dans les
+handlers — c'est le rôle des `verify-*.mjs`. Rappel du trou structurel : deux
+fonctions pures correctes dont la **composition** n'est pas gardée passent les
+tests sans que le câblage soit vérifié.
+
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout

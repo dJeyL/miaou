@@ -229,6 +229,14 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       qu'il n'y en a aucun. Nommage toujours par **critère** (« un outil
       déclarant `ref` et `content_b64` ») **et exemple** (`docs__read`) : le
       prompt reste correct si l'utilisateur renomme son serveur MCP docs.
+      **Attention à l'homonymie depuis V-4** : le `docs__read` cité ici est
+      l'outil **serveur** (celui qui déclare `content_b64`) ; MIAOU en a
+      désormais un **natif** du même nom, sans `content_b64`. Les préfixes
+      racines les séparent (`miaou__docs__read` face à
+      `miaou-proxy__docs__read`) — c'est la décision 1 du lot V, qui reprend
+      délibérément les noms du serveur pour que la bascule natif/serveur reste
+      invisible au modèle. Le critère `ref`+`content_b64` reste donc le seul
+      discriminant fiable côté code.
       La phrase binaire d'`ATTACHMENT_DOCTRINE` (inconditionnelle) est nuancée
       en conséquence (« pas lisible directement, sauf si un outil d'extraction
       est disponible ») plutôt que de rester catégorique comme avant le lot D.
@@ -370,6 +378,39 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       continue de vérifier seulement `ref`+`content_b64` sur l'outil que le
       modèle a explicitement nommé — aucune ambiguïté à lever côté modèle,
       qui voit le nom réel de l'outil.
+
+## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
+
+Le lot V a rapatrié dans le navigateur ce que `mcp_docs` savait faire — le zip
+(V-1), le PDF (V-4), l'Office (V-5). La trajectoire **n'est pas** la disparition
+du serveur : elle a été corrigée le 2026-08-28 (décision 6 de `V-4-PLAN.md`).
+
+**Le serveur reste intact et devient un fallback offline désactivé par défaut.**
+La raison est une limite que le rapatriement ne peut pas franchir : les
+artefacts natifs (pdf.js, mammoth, SheetJS, fflate, QuickJS) sont des
+**requêtes CDN**. Hors ligne, MIAOU n'ouvre aucun document — là où `mcp_docs`,
+serveur local, le fait très bien. Le serveur n'est donc pas un héritage à
+retirer une fois le travail fini : c'est **la réponse au cas sans réseau**, et
+elle n'a pas d'équivalent client.
+
+Ce que ça implique, et qui n'est **pas** de la cosmétique de documentation :
+
+- **Le natif est le chemin nominal.** `DOCS_DOCTRINE` (v3 depuis V-4) dit
+  explicitement de **préférer le natif** quand un même outil existe des deux
+  côtés. Sans cette phrase, un modèle qui voit `miaou__docs__read` **et**
+  `miaou-proxy__docs__read` tire au sort — les deux répondent au même nom, seul
+  le préfixe racine change (décision 1 du lot, délibérée).
+- **Rien n'est supprimé côté serveur.** Aucune ligne retirée de
+  `servers/mcp_docs/`, `pymupdf` reste déclarée. Un sous-lot qui rapatrie une
+  capacité ne la retire jamais du serveur.
+- **La dépendance réseau est une information utilisateur**, pas seulement
+  développeur : `src/help.md` la porte (sections `pieces-jointes` et `mcp`),
+  parce qu'un utilisateur hors connexion doit comprendre pourquoi son PDF ne
+  s'ouvre plus et quoi faire.
+- **Le dépôt voisin doit le présenter comme tel** — un fallback à activer
+  manuellement, jamais un serveur disponible plus ou moins de base. Où vit ce
+  défaut (config d'exemple, README, script de lancement) reste **à instruire**
+  dans `miaou-mcp-servers` : ce n'est pas fait à ce jour.
 
 Le banc d'essai MCP (`mcp_bench.py`) a été extrait dans le projet
 `miaou-mcp-servers`. Procédure de test manuel : `docs/manual-tests.md`.
