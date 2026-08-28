@@ -520,6 +520,24 @@ légèrement supérieure, le navigateur ajoutant ses index et sa propre surcharg
 Pour aller voir dans le menu du navigateur : outils de développement, onglet
 « Application » (Chrome) ou « Stockage » (Firefox).
 
+**Sauvegarder et restaurer tout MIAOU.** Réglages › Données propose « Exporter
+les données » : un fichier `.zip` qui contient absolument tout — conversations,
+résumés, souvenirs, skills, fichiers, Espaces, serveurs et réglages. C'est la
+seule vraie sauvegarde, et c'est aussi le seul moyen d'emporter ton MIAOU vers
+un autre navigateur ou une autre machine. « Importer les données » le relit et
+**remplace l'intégralité** de ce qui est en place (un récapitulatif s'affiche,
+avec une confirmation à donner deux fois). Les anciennes sauvegardes `.json`
+restent acceptées telles quelles.
+
+Attention à un malentendu que l'archive invite : **compresser n'est pas
+chiffrer**. Un `.zip` s'ouvre avec n'importe quel outil, et il contient tes
+clefs d'API et tes tokens en clair, exactement comme le `.json` d'avant.
+Range-le comme un fichier sensible.
+
+Ne pas confondre avec l'export d'une **conversation** en Markdown ou en HTML
+(sujet `exports`) : celui-là produit un document de lecture, qui ne se
+réimporte pas.
+
 Il existe une seconde façon de perdre ces données, plus rare que l'effacement
 manuel. Par défaut le navigateur range le stockage d'un site en mode
 « best-effort » : il le conserve normalement, mais s'autorise à le supprimer
@@ -528,16 +546,16 @@ site à l'abri de ce ménage automatique. MIAOU demande ce mode dès qu'il écri
 fichier, et c'est le navigateur qui tranche selon ses propres critères —
 généralement favorables à un site visité régulièrement, installé comme
 application ou mis en favori. Le risque reste faible, et sans commune mesure
-avec celui d'un effacement des données de site ; l'export reste la seule vraie
-sauvegarde.
+avec celui d'un effacement des données de site ; la sauvegarde complète
+ci-dessus reste la seule vraie parade.
 
 Conséquences pratiques :
 
 - Tes données restent sur cet appareil et ce navigateur. Changer de navigateur
-  ou de machine ne les emporte pas automatiquement. L'export (sujet `exports`)
-  est le seul moyen de les emporter.
-- Vider les données de site du navigateur efface aussi MIAOU. Pense à exporter
-  ce qui compte.
+  ou de machine ne les emporte pas automatiquement. La sauvegarde complète
+  (Réglages › Données) est le seul moyen de les emporter.
+- Vider les données de site du navigateur efface aussi MIAOU. Pense à
+  sauvegarder ce qui compte.
 - La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à
   un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès
   protégé côté serveur.

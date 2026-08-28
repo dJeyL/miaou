@@ -1638,24 +1638,68 @@ function snapshotLocalStorageForExport() {
 }
 
 // Handler global (bouton « Exporter les données »). Snapshot localStorage +
-// lecture IDB (skills, resources, conversations, résumés), encodage base64 des
-// données binaires des ressources, puis téléchargement du fichier JSON.
+// lecture IDB (skills, resources, conversations, résumés), puis téléchargement
+// d'une archive zip : `manifest.json` porte tout l'état SAUF les octets
+// binaires, qui vivent chacun dans un membre `resources/<id>`.
 //
 // Les conversations sont lues par `readAllConversationsFromDB()`, JAMAIS par
 // `loadConversations()` : ce dernier sert le cache, où une conversation froide
 // sort avec `messages: []` (contrat de l'étage 2, U-1). L'export y aurait perdu
 // tout le contenu sauf celui des quelques conversations chaudes — le même
 // silence que celui qu'U-4 corrige, sous une autre forme.
+//
+// POURQUOI le zip multi-membres et pas simplement un .json compressé (lot V-3) :
+// le base64 n'était pas qu'un surcoût de 33 %. À l'instant du JSON.stringify
+// coexistaient en RAM les ArrayBuffer d'origine, TOUTES les strings base64, et
+// la string JSON finale qui les recontient — sur 40 Mo de binaires, ~148 Mo. Et
+// `JSON.stringify` produisait une string UNIQUE, dont l'échec est brutal et
+// survient au pire moment : quand l'utilisateur essaie de sauvegarder.
+// Le format v3 supprime le base64 des deux chemins (export ET import) et fait
+// disparaître la string géante.
+//
+// Le pic n'est pas éliminé, il est DIVISÉ : `zipSync` construit sa sortie en
+// mémoire, donc les ArrayBuffer d'origine et le buffer de sortie coexistent
+// (~78 Mo contre ~148). fflate expose bien une API streaming (`Zip`,
+// `ZipDeflate`), qui descendrait à ~40 Mo — écartée en V-3 : une API à
+// callbacks et une agrégation manuelle de chunks sur un chemin
+// destructif-adjacent, pour un gain marginal face à celui déjà acquis.
+// Le format s'y prête déjà si un profil réel le demande, sans nouvelle version.
 async function exportAllData() {
+  showExportDataError('');
   const lsSnapshot = snapshotLocalStorageForExport();
   const skills = await getAllSkillRecords();
   const rawResources = await getAllResources();
-  const resources = rawResources.map(r => Object.assign({}, r, { data: arrayBufferToBase64(r.data) }));
   const conversations = await readAllConversationsFromDB();
   const summaries = await readAllSummariesFromDB();
-  const payload = buildExportPayload(lsSnapshot, skills, resources, conversations, summaries);
+
+  // Séparation métadonnées / octets : `entries` va dans le manifeste (sans
+  // `data`, avec un `member`), `members` devient les membres du zip.
+  const index = buildResourceMemberIndex(rawResources);
+  const manifest = buildExportPayload(lsSnapshot, skills, index.entries, conversations, summaries);
+
+  let ff;
+  try { ff = await ensureFflate(); }
+  catch (e) {
+    showExportDataError('Moteur de compression indisponible (' +
+      (e && e.message ? e.message : 'erreur inconnue') +
+      '). Réessaie une fois en ligne.');
+    return;
+  }
+
+  const files = { 'manifest.json': ff.strToU8(JSON.stringify(manifest)) };
+  for (const it of index.members) {
+    files[it.member] = it.data instanceof Uint8Array ? it.data : new Uint8Array(it.data);
+  }
+
+  let data;
+  try { data = ff.zipSync(files, { level: 6 }); }
+  catch (e) {
+    showExportDataError('Échec de la compression : ' + (e && e.message ? e.message : 'erreur inconnue') + '.');
+    return;
+  }
+
   const stamp = exportDateTimeStamp(Date.now());
-  downloadFile('miaou-export-' + stamp + '.json', JSON.stringify(payload), 'application/json');
+  downloadFile('miaou-export-' + stamp + '.zip', data, 'application/zip');
 }
 
 // Handler global (bouton « Importer les données ») : déclenche l'input file caché.
@@ -1664,24 +1708,124 @@ function onImportDataClick() {
   if (input) { input.value = ''; input.click(); }
 }
 
-// Handler global (onchange de l'input file) : lit + parse + valide. Une erreur
-// s'affiche inline (registre showCardError/hint, jamais d'alert) ; un payload
-// valide affiche un récapitulatif dont le bouton d'application est arm-then-run
-// (remplacement intégral = destructif).
+// Lit une sauvegarde v3 (conteneur zip) et rend un payload de la MÊME FORME
+// qu'un v2 — à ceci près que `resources[].data` porte des octets bruts et non
+// une string base64. C'est `resourceDataShape` (storage.js) qui absorbe cette
+// différence à l'application ; tout le reste de l'import ignore le conteneur.
+//
+// Lève une Error au message actionnable : l'appelant l'affiche inline.
+async function readBackupFromZip(u8) {
+  // Le sniff a dit « ça ressemble à un zip » ; le central directory tranche.
+  // Un fichier tronqué passe le sniff et doit produire ce message-là, pas une
+  // exception fflate ni un « JSON invalide » qui enverrait chercher ailleurs.
+  const entries = parseZipCentralDirectory(u8);
+  if (!entries || !entries.length) throw new Error('Archive illisible ou tronquée.');
+
+  // Garde du lot V-1, qui vaut ici aussi : fflate extrait un membre chiffré SANS
+  // lever d'erreur, en rendant des octets bruts. Un JSON.parse sur ce bruit
+  // dirait « JSON invalide » — un message qui envoie l'utilisateur au mauvais
+  // endroit. Le prédicat est unique (decideZipMemberExtraction), jamais un
+  // second test d'`entry.encrypted` écrit à la main.
+  const manifestPick = decideZipMemberExtraction(entries, 'manifest.json', 0);
+  if (!manifestPick.ok) {
+    if (manifestPick.reason === 'encrypted') {
+      throw new Error('Archive protégée par mot de passe : MIAOU ne peut pas la déchiffrer.');
+    }
+    throw new Error('Ce zip n\'est pas une sauvegarde MIAOU : aucun manifest.json à la racine.');
+  }
+
+  const ff = await ensureFflate();
+  let files;
+  try { files = ff.unzipSync(u8); }
+  catch (e) { throw new Error('Archive illisible : ' + (e && e.message ? e.message : 'décompression impossible')); }
+
+  const raw = files['manifest.json'];
+  if (!raw) throw new Error('Ce zip n\'est pas une sauvegarde MIAOU : aucun manifest.json à la racine.');
+  let obj;
+  try { obj = JSON.parse(new TextDecoder('utf-8').decode(raw)); }
+  catch (e) { throw new Error('Manifeste illisible : JSON invalide.'); }
+
+  // Réassemblage AVANT validation : `validateImportPayload` compte
+  // `idb.resources.length` pour le récapitulatif affiché avant confirmation.
+  // Valider d'abord ferait mentir ce décompte.
+  //
+  // Un membre manquant (transfert interrompu, zip retouché à la main) importe la
+  // ressource avec des octets VIDES — jamais un refus global : un binaire perdu
+  // ne doit pas coûter conversations, souvenirs et réglages (décision Julien,
+  // 2026-08-28). Mais il est SIGNALÉ, et signalé AVANT le clic d'application :
+  // le récapitulatif de confirmation est l'endroit naturel, `renderImportSummary`
+  // porte la ligne. Le compte voyage dans le payload sous `_missingResourceData`,
+  // clé transitoire lue par `validateImportPayload` — préfixée d'un souligné
+  // parce qu'elle ne fait PAS partie du format v3 (elle naît du réassemblage,
+  // pas du fichier) et qu'elle ne doit jamais être confondue avec une section
+  // de manifeste.
+  const idb = (obj && obj.idb && typeof obj.idb === 'object') ? obj.idb : null;
+  let missing = 0;
+  if (idb && Array.isArray(idb.resources)) {
+    idb.resources = idb.resources.map(rec => {
+      if (!rec || typeof rec.member !== 'string' || !rec.member) return rec;
+      const bytes = files[rec.member];
+      if (!bytes) missing++;
+      const out = Object.assign({}, rec, { data: bytes || new Uint8Array(0) });
+      delete out.member;
+      return out;
+    });
+  }
+  if (missing) obj._missingResourceData = missing;
+  return obj;
+}
+
+// Jeton de séquence de l'import (motif `_openConvSeq`, piège 24b). Le chemin
+// d'import est devenu ASYNCHRONE en V-3 (ensureFflate + décompression) : entre
+// la sélection du fichier et le rendu du récapitulatif, l'utilisateur peut en
+// sélectionner un second. Deux récapitulatifs se disputeraient
+// `#import-data-summary`, et le bouton armé pourrait appliquer le PREMIER
+// payload alors que l'écran affiche le second — sur un chemin destructif.
+let _importSeq = 0;
+
+// Handler global (onchange de l'input file) : lit + détecte le conteneur +
+// parse + valide. Une erreur s'affiche inline (registre showCardError/hint,
+// jamais d'alert) ; un payload valide affiche un récapitulatif dont le bouton
+// d'application est arm-then-run (remplacement intégral = destructif).
+//
+// Le conteneur est reconnu aux OCTETS (`sniffBackupFormat`, utils.js), pas à
+// l'extension : d'où `readAsArrayBuffer` là où V-2 lisait encore du texte. Le
+// chemin JSON reste STRICTEMENT inchangé dans son comportement — les
+// sauvegardes v1 et v2 non compressées doivent continuer de passer.
 function onImportFileSelected(input) {
   const file = input.files && input.files[0];
   if (!file) return;
+  const seq = ++_importSeq;
   const reader = new FileReader();
-  reader.onload = () => {
+  // `onload` est async depuis V-3 : un throw non capturé y partirait en rejet
+  // silencieux et l'interface resterait muette — l'utilisateur verrait un import
+  // qui ne fait rien. D'où le try/catch, obligatoire.
+  reader.onload = async () => {
+    const u8 = new Uint8Array(reader.result);
     let obj;
-    try { obj = JSON.parse(reader.result); }
-    catch (e) { showImportDataError('Fichier illisible : JSON invalide.'); return; }
+    if (sniffBackupFormat(u8) === 'zip') {
+      try { obj = await readBackupFromZip(u8); }
+      catch (e) {
+        if (seq !== _importSeq) return;
+        showImportDataError(e && e.message ? e.message : 'Archive illisible.');
+        return;
+      }
+      if (seq !== _importSeq) return;   // relu APRÈS l'await, jamais avant
+    } else {
+      // TextDecoder est légitime ici (chemin navigateur, pas QuickJS) — ne pas
+      // réutiliser `_zipDecodeName`, qui décode des NOMS de membres.
+      let text;
+      try { text = new TextDecoder('utf-8').decode(u8); }
+      catch (e) { showImportDataError('Fichier illisible : encodage invalide.'); return; }
+      try { obj = JSON.parse(text); }
+      catch (e) { showImportDataError('Fichier illisible : JSON invalide.'); return; }
+    }
     const res = validateImportPayload(obj);
     if (!res.ok) { showImportDataError(res.error); return; }
     renderImportSummary(res.counts, () => applyImportedData(obj));
   };
   reader.onerror = () => showImportDataError('Échec de lecture du fichier.');
-  reader.readAsText(file);
+  reader.readAsArrayBuffer(file);
 }
 
 // Applique un payload d'import validé : écrit les 7 clés localStorage (clé
@@ -1692,6 +1836,11 @@ function onImportFileSelected(input) {
 // resynchronisation manuelle à écrire. C'est aussi ce reload qui rend le cache
 // RAM des conversations (U-1) cohérent : il est réhydraté depuis les stores
 // fraîchement réécrits, sans qu'aucune invalidation ait à être posée à la main.
+//
+// Le CONTENEUR (zip v3 ou JSON nu v1/v2) a déjà été absorbé par
+// `onImportFileSelected`/`readBackupFromZip` : ce qui arrive ici est un payload
+// de forme uniforme, à ceci près que `resources[].data` porte du base64 (v1/v2)
+// ou des octets bruts (v3). `resourceDataShape` tranche, en un point unique.
 //
 // Un fichier `version: 1` porte ses conversations sous `localStorage` : elles
 // sont routées vers IDB comme les autres, par `extractImportedConvRecords`.
@@ -1714,7 +1863,23 @@ async function applyImportedData(payload) {
   for (const rec of skills) await putSkill(rec);
   await clearIdbStore('resources');
   for (const rec of resources) {
-    await putResource(Object.assign({}, rec, { data: base64ToArrayBuffer(rec.data) }));
+    // `resourceDataShape` (storage.js, pur) est LE point unique où la forme des
+    // octets est traitée — base64 en v1/v2, octets bruts en v3 — exactement
+    // comme `extractImportedConvRecords` l'est pour la version des
+    // conversations. Ne pas réintroduire un second test de forme ailleurs.
+    const shape = resourceDataShape(rec.data);
+    const data = shape === 'base64' ? base64ToArrayBuffer(rec.data)
+               : shape === 'bytes'  ? rec.data
+               : new ArrayBuffer(0);
+    const out = Object.assign({}, rec, { data: data });
+    // `member` est un détail de TRANSPORT : il n'a rien à faire dans le store.
+    // Un champ parasite ne casserait rien (IDB stocke des objets libres) mais il
+    // se propagerait au prochain export et polluerait le schéma documenté.
+    // `readBackupFromZip` le retire déjà ; la garde reste parce que les deux
+    // fonctions composent, et une composition non gardée est précisément ce qui
+    // a coûté le contrat zipMemberMime × _isTextualMime en V-1.
+    delete out.member;
+    await putResource(out);
   }
   const convRecords = extractImportedConvRecords(payload);
   await clearIdbStore('conversations');

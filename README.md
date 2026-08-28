@@ -10,8 +10,10 @@ demande seulement — Mermaid pour les diagrammes, QuickJS-WASM pour le calcul
 sandboxé et fflate pour les archives zip). On l'ouvre dans un navigateur, ou on
 le sert via n'importe quel serveur web statique.
 
-Thème sombre et thème clair, palette ambre/corail, Hanken Grotesk pour
-l'interface, JetBrains Mono pour le code.
+L'apparence se règle sur trois axes indépendants : luminosité (sombre, clair ou
+selon le système), palette de couleurs (ambre, encre ou forêt) et lot de fontes
+appairées (Hanken Grotesk/JetBrains Mono, Source Sans 3/Source Code Pro, ou
+Figtree/Fira Code).
 
 ## Fonctionnalités
 
@@ -148,6 +150,9 @@ Détail : [docs/mcp.md](docs/mcp.md).
   l'API n'est pas renseignée (voir `require_api_key` pour les endpoints sans
   authentification).
 - Date/heure et nom du modèle injectés automatiquement dans le contexte.
+- **Sauvegarde complète** de tout l'état (conversations, souvenirs, skills,
+  fichiers, Espaces, réglages) en une archive `.zip`, réimportable — cf.
+  [docs/storage.md](docs/storage.md).
 - **Palette de commandes** (Ctrl/Cmd+K) : filtrage à la frappe et navigation
   clavier sur toutes les actions, avec des sous-modes pour choisir un modèle,
   invoquer une skill, changer d'Espace ou rechercher une conversation — cf.

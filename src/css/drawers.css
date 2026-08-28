@@ -157,6 +157,11 @@
   flex-direction: column;
   gap: 6px;
 }
+/* Sauvegarde v3 partiellement abîmée (lot V-3) : ressources dont le membre
+   d'archive manque, importées vides. Ce n'est PAS une erreur — l'import se
+   poursuit — donc pas --err : le contraste avec le --text-2 du récapitulatif
+   suffit à faire remarquer la ligne sans la faire lire comme un refus. */
+.import-summary-warn { color: var(--text); }
 
 .field textarea {
   background: var(--bg);

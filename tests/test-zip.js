@@ -528,3 +528,35 @@ describe('normalizeArchiveName', function() {
     expect(normalizeArchiveName('.zip')).toBe('archive.zip');
   });
 });
+
+// ── Sauvegarde compressée : sniff de conteneur (lot V-3) ─────────────────────
+
+describe('sniffBackupFormat', function() {
+  function u8(bytes) { return new Uint8Array(bytes); }
+
+  it('signature d\'en-tête local PK\\x03\\x04 → zip', function() {
+    expect(sniffBackupFormat(u8([0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]))).toBe('zip');
+  });
+
+  it('un JSON nu → json', function() {
+    expect(sniffBackupFormat(u8([0x7B, 0x22, 0x66, 0x22]))).toBe('json');
+  });
+
+  it('des espaces avant l\'accolade → json', function() {
+    expect(sniffBackupFormat(u8([0x20, 0x20, 0x0A, 0x7B]))).toBe('json');
+  });
+
+  it('un buffer trop court pour porter la signature → json, jamais d\'exception', function() {
+    expect(sniffBackupFormat(u8([0x50, 0x4B, 0x03]))).toBe('json');
+    expect(sniffBackupFormat(u8([]))).toBe('json');
+  });
+
+  it('null / undefined → json (dégradation vers le chemin historique)', function() {
+    expect(sniffBackupFormat(null)).toBe('json');
+    expect(sniffBackupFormat(undefined)).toBe('json');
+  });
+
+  it('PK\\x05\\x06 (EOCD nu, archive vide) → json : ce n\'est pas un en-tête local', function() {
+    expect(sniffBackupFormat(u8([0x50, 0x4B, 0x05, 0x06, 0x00, 0x00]))).toBe('json');
+  });
+});

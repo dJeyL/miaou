@@ -519,9 +519,10 @@ niveau de raisonnement de la conversation**.
 ## Export / import complet des données (feature E)
 
 Assurance-vie : tout l'état de MIAOU (les clés localStorage ci-dessus + les
-stores IndexedDB) tient dans un unique fichier JSON,
-téléchargeable et réimportable. **Remplacement intégral à l'import, pas de
-fusion** (décision actée pour la v1 — un import écrase tout l'état local).
+stores IndexedDB) tient dans un unique fichier téléchargeable et réimportable —
+une **archive `.zip`** depuis le lot V-3, un `.json` nu avant. **Remplacement
+intégral à l'import, pas de fusion** (décision actée pour la v1 — un import
+écrase tout l'état local).
 
 ### Versions du format
 
@@ -529,6 +530,47 @@ fusion** (décision actée pour la v1 — un import écrase tout l'état local).
   clés du schéma. C'est là qu'ils vivaient avant le lot U.
 - **v2** (lot U-4) — ils passent sous `idb`, avec `skills` et `resources`,
   puisque c'est là qu'ils vivent depuis la migration U-2.
+- **v3** (lot V-3) — le **conteneur** change : le fichier devient un `.zip`.
+  `manifest.json` porte tout l'état sauf les octets binaires, qui vivent chacun
+  dans un membre `resources/<id>`. **Plus de base64 nulle part**, ni à l'export
+  ni à l'import. Le contenu du manifeste est par ailleurs identique à un
+  payload v2, `idb.resources[]` mis à part.
+
+| Version | Lot | Conteneur | Conversations & résumés | Ressources binaires | Écriture | Lecture |
+|---------|-----|-----------|--------------------------|---------------------|----------|---------|
+| **v1** | pré-U | `.json` nu | sous `localStorage` (résumés = objet indexé `{id: entry}`) | base64 dans `idb.resources[].data` | non | **oui** |
+| **v2** | U-4 | `.json` nu | sous `idb` (résumés = tableau de records) | base64 dans `idb.resources[].data` | non | **oui** |
+| **v3** | **V-3** | **`.zip`** | sous `idb`, dans `manifest.json` | **octets bruts**, un membre `resources/<id>` par record | **oui** | **oui** |
+
+**Pourquoi le zip multi-membres et pas un `.json` simplement compressé.** Le
+base64 n'était pas qu'un surcoût de 33 % : à l'instant du `JSON.stringify`
+coexistaient en RAM les `ArrayBuffer` d'origine, **toutes** les strings base64,
+et la string JSON finale qui les recontient — sur 40 Mo de binaires, ~148 Mo.
+Et `JSON.stringify` produisait une string **unique**, dont l'échec est brutal
+et survient au pire moment : quand l'utilisateur essaie de sauvegarder.
+Enrober le même monolithe dans un zip aurait laissé ce mode de défaillance
+intact et n'aurait acheté qu'un gain de taille de fichier — or ce n'était pas
+le problème.
+
+**Le pic n'est pas éliminé, il est divisé.** `zipSync` construit sa sortie en
+mémoire : les `ArrayBuffer` d'origine et le buffer de sortie coexistent, soit
+~78 Mo contre ~148. C'est ~2× mieux et, surtout, la string géante disparaît.
+fflate expose bien une API streaming (`Zip`, `ZipDeflate`), qui descendrait à
+~40 Mo — **écartée en V-3** (décision Julien) : une API à callbacks et une
+agrégation manuelle de chunks sur un chemin destructif-adjacent, pour un gain
+marginal face à celui déjà acquis. Le format s'y prête déjà si un profil réel le
+demande, **sans nouvelle version** : les membres sont séparés.
+
+**Le conteneur se reconnaît aux octets, pas à l'extension.**
+`sniffBackupFormat` (utils.js, pur) teste la signature d'en-tête local
+`PK\x03\x04` et dégrade **systématiquement** vers `'json'` — buffer trop court,
+vide, `null`, signature partielle : jamais d'exception. Le chemin JSON est le
+chemin historique, y retomber rend la même erreur qu'avant V-3. Le sniff dit
+« ça ressemble à » ; c'est `parseZipCentralDirectory` (V-1) qui dit « c'en est
+un ». Corollaire : un `.zip` contenant un manifeste `version: 2` serait
+techniquement lisible — **ni interdit, ni produit** : la tolérance ne coûte
+rien, et refuser demanderait une règle croisée conteneur↔version que rien ne
+justifie.
 
 L'écriture est **toujours à la version courante** (`EXPORT_FORMAT_VERSION`) ; la
 lecture accepte **toutes les versions ≤ celle-ci**. Un fichier de version
@@ -551,10 +593,24 @@ elle le fait rendre du vide.
 
 ### Format
 
+En v3, le fichier est une archive dont **`manifest.json` est obligatoire**, à la
+racine et sous ce nom exact (absent ⇒ refus actionnable) :
+
+```
+miaou-export-2026-08-28_14-32-10.zip
+├── manifest.json          ← tout l'état sauf les octets binaires
+├── resources/res_k3j9x2   ← octets BRUTS d'une ressource, un membre par record
+├── resources/att_9zc4v0
+└── resources/file_2n6h8s
+```
+
+Le manifeste, identique à un payload v2 **sauf** `idb.resources[]`, où `data`
+est remplacé par `member` :
+
 ```json
 {
   "format": "miaou-export",
-  "version": 2,
+  "version": 3,
   "exportedAt": 1751600000000,
   "localStorage": {
     "miaou-settings": { "…": "…" },
@@ -567,7 +623,7 @@ elle le fait rendre du vide.
   },
   "idb": {
     "skills": [ { "slug": "…", "name": "…", "description": "…", "enabled": true, "content": "…", "autotrigger": false } ],
-    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "data": "<base64>", "originUrl": null } ],
+    "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "member": "resources/res_…", "originUrl": null } ],
     "conversations": [ { "id": "…", "title": "…", "timestamp": 0, "updatedAt": 0, "spaceId": "…", "messages": [ "…" ] } ],
     "summaries": [ { "id": "…", "summary": "…", "keywords": [ "…" ], "messageCount": 0 } ]
   }
@@ -584,18 +640,50 @@ elle le fait rendre du vide.
   `normalizeLegacySummaryMap`, **la même fonction** que la migration de boot
   U-2 — une seule formule pour les deux chemins, jamais un second convertisseur
   écrit sur place.
-- `resources[].data` (`ArrayBuffer` en IDB) devient une string base64 à
-  l'export (`arrayBufferToBase64`, resources.js) et repasse en `ArrayBuffer` à
-  l'import (`base64ToArrayBuffer`).
+- **`resources[].data` selon la version.** En v1/v2, l'`ArrayBuffer` du store
+  devient une string base64 à l'export (`arrayBufferToBase64`, resources.js) et
+  repasse en `ArrayBuffer` à l'import (`base64ToArrayBuffer`). En **v3**, il n'y
+  a plus de `data` dans le manifeste du tout : les octets bruts vivent dans le
+  membre désigné par `member`. À l'import, `resourceDataShape` (pur) tranche
+  entre les deux formes — c'est LE point unique, jumeau
+  d'`extractImportedConvRecords` pour la forme des octets.
+- **Champ `member` — contrat.** Dérivé de l'`id`, **jamais** du `name` : c'est
+  un IDENTIFIANT, lui seul rattache les octets à leur entrée de manifeste, et
+  s'il ne fait pas l'aller-retour à travers `zipSync`/`parseZipCentralDirectory`
+  la ressource devient **inatteignable** à l'import (mode de défaillance des
+  noms non-UTF-8 payé en clôture V-1). L'`id` est unique par construction
+  (suffixe aléatoire) et en ASCII imprimable ; `rec.name` est rédigé par
+  l'utilisateur ou le modèle, unicode arbitraire, et collisionne régulièrement.
+  Aucune déduplication n'est donc nécessaire, contrairement à
+  `buildZipMemberName` (V-2). C'est un **détail de transport** : retiré avant le
+  `putResource`, il n'atteint jamais le store — la garde est doublée
+  (`readBackupFromZip` **et** `applyImportedData`), parce que les deux fonctions
+  composent.
+- **Un membre `resources/<id>` manquant n'est pas un refus.** La ressource est
+  importée avec des octets **vides** et le fait est **signalé dans le
+  récapitulatif de confirmation**, donc **avant** le clic d'application
+  (`counts.missingResourceData`, ligne `.import-summary-warn`). Une sauvegarde
+  partiellement abîmée doit rendre ce qui est récupérable : refuser en bloc
+  ferait perdre conversations, souvenirs et réglages pour un binaire manquant.
+  Le compte voyage sous la clé transitoire `_missingResourceData`, posée par
+  `readBackupFromZip` — elle naît du **réassemblage**, jamais du fichier, d'où
+  le souligné qui la distingue d'une section de manifeste.
+- Un record **sans octets** (`data` absent) n'a **pas** de `member` : cas
+  licite, traité sans exception.
 - **Posture assumée (clefs en clair)** : les clefs API (`miaou-api-servers[].key`)
   et tokens MCP (`miaou-mcp-servers[].authorization_token`) sont exportés **tels
   quels, en clair**, même posture non-prod que leur stockage (cf. D6, plus haut
   dans ce document). Le hint UI de la catégorie « Données » du settings drawer
   le rappelle explicitement avant l'export.
+  **Le passage au `.zip` rend ce rappel plus nécessaire, pas moins** : une
+  archive *paraît* plus opaque qu'un JSON alors qu'elle ne protège rien —
+  **compresser n'est pas chiffrer**, et n'importe quel outil ouvre
+  `manifest.json`. Le hint a été renforcé en ce sens au lot V-3 ; ne pas le
+  raccourcir.
 
 ### Helpers purs (storage.js, QuickJS-testables)
 
-- `EXPORT_FORMAT_VERSION` (= 2) : version écrite, et borne haute acceptée en
+- `EXPORT_FORMAT_VERSION` (= **3**) : version écrite, et borne haute acceptée en
   lecture. Un seul chiffre pour les deux, jamais un littéral dupliqué.
 - `EXPORT_KEYS` : les **7** clés localStorage du schéma (référencée uniquement
   en corps de fonction depuis les autres fichiers, même contrainte que
@@ -606,9 +694,24 @@ elle le fait rendre du vide.
   les tableaux, comme il le faisait déjà pour `skills`/`resources`. Sections
   manquantes → défauts vides (tableau ou objet selon la clé), jamais
   d'exception.
+- `sniffBackupFormat(u8)` → `'zip' | 'json'` (**utils.js**, pas storage.js : il
+  vit avec les autres primitives zip du lot V). Reconnaît le conteneur aux
+  octets, dégrade systématiquement vers `'json'`, jamais d'exception.
+- `resourceDataShape(data)` → `'base64' | 'bytes' | 'absent'`. **LE point unique
+  où la forme des octets est traitée** (base64 v1/v2 vs octets bruts v3), jumeau
+  d'`extractImportedConvRecords` : tout le reste de l'import ignore la
+  compression — ne pas réintroduire un second test de forme ailleurs. Une string
+  **vide** rend `'base64'` et non `'absent'` : un binaire de zéro octet est
+  légitime, `base64ToArrayBuffer('')` rend un buffer vide, et les distinguer
+  évite un cas particulier chez l'appelant.
+- `buildResourceMemberIndex(resources)` → `{ entries, members, skipped }`.
+  Sépare métadonnées (pour le manifeste, `data` retiré, `member` ajouté) et
+  octets (pour les membres du zip). Ne mute pas les records d'origine. Un record
+  **sans `id`** est écarté et **compté** (`skipped`), jamais passé sans membre :
+  `id` est le keyPath du store, un tel record ne pourrait pas être réimporté.
 - `extractImportedConvRecords(payload)` → `{ conversations, summaries }`, sous
   la forme des records IDB attendus par l'import. **C'est LE point unique où la
-  différence v1/v2 est traitée** : tout le reste de l'import ignore la version
+  différence v1/v2/v3 est traitée** : tout le reste de l'import ignore la version
   du fichier. Les records sans `id` sont écartés (`id` est le keyPath, le `put`
   jetterait). Une section a **autorité pour sa version** : un v2 dont `idb` est
   vide n'est pas complété depuis `localStorage` (un export v2 légitime peut
@@ -620,8 +723,11 @@ elle le fait rendre du vide.
   Deux appelants délibérés : `parseLegacySummaries` (migration U-2) et
   `extractImportedConvRecords` (import v1).
 - `validateImportPayload(obj)` → `{ ok: true, counts: { conversations,
-  summaries, memories, skills, resources, servers, spaces } }` (compteurs bruts
-  pour le récapitulatif UI, `servers` = api-servers + mcp-servers) ou
+  summaries, memories, skills, resources, servers, spaces,
+  missingResourceData } }` (compteurs bruts pour le récapitulatif UI, `servers`
+  = api-servers + mcp-servers ; `missingResourceData` = ressources dont le
+  membre d'archive manquait, remonté depuis `_missingResourceData`, normalisé à
+  0 si absent ou non numérique) ou
   `{ ok: false, error }`. Bloquant : `format !== 'miaou-export'`, `version`
   absente/non-numérique/`> EXPORT_FORMAT_VERSION`. Tolérant : sections
   `localStorage`/`idb` manquantes ou de type invalide → comptées comme vides,
@@ -662,16 +768,49 @@ Côté conversations (storage.js) :
 - `exportAllData()` : snapshot des 7 clés (`miaou-active-api-server` et
   `miaou-active-space` lues en string brute, les 5 autres en `JSON.parse`),
   lecture IDB (`getAllSkillRecords` + `getAllResources` +
-  `readAllConversationsFromDB` + `readAllSummariesFromDB`), encodage base64 des
-  `data` de ressources, puis
-  `downloadFile('miaou-export-<YYYY-MM-DD-HHmm>.json', …)`.
+  `readAllConversationsFromDB` + `readAllSummariesFromDB`), séparation
+  métadonnées/octets par `buildResourceMemberIndex`, `ensureFflate()` puis
+  `zipSync` et `downloadFile('miaou-export-<YYYY-MM-DD-HHmm>.zip', …)`.
+  `downloadFile` accepte l'`Uint8Array` tel quel (`new Blob([content])`,
+  `BlobPart` accepte un `BufferSource`) — rien à y modifier.
+  **`exportAllData` n'avait aucun chemin d'erreur avant V-3** : tout y était
+  synchrone-après-await. `ensureFflate` peut légitimement échouer (CDN
+  indisponible, hors-ligne), d'où `showExportDataError` (ui.js, jumeau de
+  `showImportDataError`, zone `#export-data-err`). **Pas de repli silencieux**
+  vers le `.json` non compressé (décision Julien) : il produirait un fichier
+  différent de ce que l'utilisateur croit avoir — extension, format, taille —
+  sans le dire. Un bouton muet sur l'assurance-vie de l'application est le pire
+  silence possible ; un message honnête vaut mieux qu'un fichier trompeur.
+- `readBackupFromZip(u8)` (main.js, impur) : `parseZipCentralDirectory` →
+  `decideZipMemberExtraction('manifest.json')` (le prédicat de refus est
+  **unique**, jamais un second test d'`entry.encrypted` écrit à la main — un
+  membre chiffré serait extrait par fflate **sans erreur**, en rendant du bruit
+  binaire dont le `JSON.parse` dirait « JSON invalide », message qui envoie
+  chercher au mauvais endroit) → `ensureFflate` → `unzipSync` → manifeste →
+  **réassemblage**. L'ordre compte : réassembler **puis** valider, sinon le
+  décompte de `validateImportPayload` mentirait au récapitulatif. Contrairement
+  à `docs__extract` (V-1), on décompresse **tout** : manifeste et ressources
+  sont tous nécessaires, le filtre sélectif n'a pas d'objet.
 - `onImportDataClick()` / `onImportFileSelected(input)` : ouvrent un
-  `<input type="file" accept=".json" hidden>`, lisent via `FileReader`,
-  `JSON.parse` puis `validateImportPayload`. Erreur → message inline sous les
-  boutons (`showImportDataError`, registre hint/`showCardError`, jamais
-  d'`alert`). Payload valide → récapitulatif des compteurs + bouton
-  d'application passé par `armThenRun` (remplacement intégral = destructif,
-  même pattern « armer puis confirmer » que les suppressions).
+  `<input type="file" accept=".zip,.json" hidden>`, lisent via `FileReader` en
+  **`readAsArrayBuffer`** (le conteneur se reconnaît aux octets), aiguillent sur
+  `sniffBackupFormat`, puis `validateImportPayload`. Le chemin JSON reste
+  **strictement inchangé dans son comportement** — v1 et v2 non compressés
+  doivent continuer de passer. Erreur → message inline sous les boutons
+  (`showImportDataError`, registre hint/`showCardError`, jamais d'`alert`).
+  Payload valide → récapitulatif des compteurs + bouton d'application passé par
+  `armThenRun` (remplacement intégral = destructif, même pattern « armer puis
+  confirmer » que les suppressions).
+  **Jeton de séquence `_importSeq`** (motif `_openConvSeq`, piège 24b) : le
+  chemin d'import est devenu **asynchrone** en V-3 (`ensureFflate` +
+  décompression), et l'utilisateur peut sélectionner un second fichier pendant.
+  Deux récapitulatifs se disputeraient `#import-data-summary`, et le bouton armé
+  pourrait appliquer le **premier** payload alors que l'écran affiche le second
+  — sur un chemin destructif. Le jeton est relu **après** l'`await`, jamais figé
+  avant. Ce risque n'existait pas avant V-3 : `readAsText` + `JSON.parse` sont
+  synchrones après le `onload`. `reader.onload` étant devenu `async`, le
+  `try/catch` autour de `readBackupFromZip` est **obligatoire** — un `throw` non
+  capturé y partirait en rejet silencieux et l'interface resterait muette.
 - `applyImportedData(payload)` : écrit les 7 clés localStorage (clé **absente**
   du fichier → `removeItem`, pour ne pas laisser d'état résiduel incohérent
   mélangeant deux exports), vide puis réinsère les **quatre** stores IDB
@@ -686,6 +825,10 @@ Côté conversations (storage.js) :
   court-circuit teste l'absence des clés), qui les reprendrait au tour suivant.
   Ça fonctionnerait par ricochet ; on ne s'appuie pas dessus, l'import fait
   lui-même le routage vers IDB.
+  Le **conteneur** a déjà été absorbé en amont : ce qui arrive ici est un
+  payload de forme uniforme, `resources[].data` mis à part, que
+  `resourceDataShape` tranche en un point unique. Le champ `member` est retiré
+  avant le `putResource`.
 
 ## État des lieux du stockage (drawer Paramètres › Données)
 

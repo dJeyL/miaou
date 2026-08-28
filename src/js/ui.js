@@ -252,7 +252,7 @@ function ensureQuickJs() {
 // (contrainte dure MIAOU). Hébergé sur jsdelivr et non cdnjs comme marked/Prism :
 // cdnjs ne sert PAS fflate (api.cdnjs.com → 404 « Library not found », vérifié) ;
 // le précédent QuickJS rend jsdelivr non exceptionnel ici. Le même fichier couvre
-// unzip ET zip (`unzipSync`, `zipSync`, `strFromU8`) : V-2 (création d'archive)
+// unzip ET zip (`unzipSync`, `zipSync`, `strToU8`) : V-2 (création d'archive)
 // n'aura ni second script ni changement d'artefact. Version épinglée comme
 // mermaid@11.12.0 et quickjs-emscripten@0.32.0.
 const FFLATE_CDN = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
@@ -270,13 +270,16 @@ function ensureFflate() {
     const s = document.createElement('script');
     s.src = FFLATE_CDN;
     s.onload = () => {
-      // Les DEUX fonctions, pas seulement celle du premier consommateur :
-      // docs__extract lit (unzipSync), docs__pack écrit (zipSync, lot V-2). Un
-      // build CDN partiel échouerait sinon tardivement, dans un handler async,
-      // au lieu d'échouer au chargement — exactement le mode de défaillance
-      // tardif que cette garde existe pour empêcher.
+      // TOUTES les fonctions consommées, pas seulement celle du premier
+      // appelant : docs__extract lit (unzipSync), docs__pack écrit (zipSync,
+      // lot V-2), l'export de sauvegarde encode son manifeste (strToU8, lot
+      // V-3). Un build CDN partiel échouerait sinon tardivement, dans un
+      // handler async, au lieu d'échouer au chargement — exactement le mode de
+      // défaillance tardif que cette garde existe pour empêcher. Ajouter un
+      // consommateur d'une nouvelle fonction fflate = ajouter sa ligne ici.
       if (!window.fflate || typeof window.fflate.unzipSync !== 'function'
-          || typeof window.fflate.zipSync !== 'function') {
+          || typeof window.fflate.zipSync !== 'function'
+          || typeof window.fflate.strToU8 !== 'function') {
         reject(new Error('fflate absent ou incomplet après chargement')); return;
       }
       resolve(window.fflate);
@@ -4439,6 +4442,21 @@ function showImportDataError(msg) {
   if (err) { err.textContent = msg; err.removeAttribute('hidden'); }
 }
 
+// Jumeau côté export (lot V-3). `exportAllData` n'avait AUCUN chemin d'erreur
+// avant V-3 : tout y était synchrone-après-await. Le passage au conteneur zip
+// introduit `ensureFflate`, qui peut légitimement échouer (CDN indisponible,
+// hors-ligne). Un bouton « Exporter les données » muet — sur l'assurance-vie de
+// l'application — est le pire silence possible. Décision Julien : un message,
+// jamais un repli silencieux vers le .json non compressé, qui produirait un
+// fichier différent de ce que l'utilisateur croit avoir.
+function showExportDataError(msg) {
+  const err = $('export-data-err');
+  if (!err) return;
+  if (!msg) { err.setAttribute('hidden', ''); err.textContent = ''; return; }
+  err.textContent = msg;
+  err.removeAttribute('hidden');
+}
+
 // Affiche le récapitulatif d'un import valide (counts de validateImportPayload)
 // et câble le bouton d'application sur armThenRun. `onApply` est appelé au
 // second clic (confirmation) — l'appelant (main.js) porte l'effet de bord.
@@ -4451,6 +4469,16 @@ function renderImportSummary(counts, onApply) {
     `${counts.memories} souvenir(s), ${counts.skills} skill(s), ` +
     `${counts.resources} ressource(s), ${counts.servers} serveur(s), ` +
     `${counts.spaces} espace(s).</div>`;
+  // Sauvegarde v3 partiellement abîmée : les ressources dont le membre manque
+  // sont importées vides plutôt que de faire échouer tout l'import. Le dire ICI,
+  // avant le clic d'application — après, il serait trop tard pour renoncer.
+  if (counts.missingResourceData) {
+    const warn = document.createElement('div');
+    warn.className = 'import-summary-warn';
+    warn.textContent = counts.missingResourceData + ' ressource(s) sans données dans l\'archive : ' +
+      'elles seront importées vides.';
+    sum.appendChild(warn);
+  }
   const btn = document.createElement('button');
   btn.className = 'drawer-btn danger';
   btn.textContent = 'Appliquer (remplace tout)';

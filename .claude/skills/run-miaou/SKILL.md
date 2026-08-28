@@ -116,6 +116,16 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   ship a build for `github-main`/public consumption without
   `build.py --no-config` first (see project `CLAUDE.md` →
   "Synchronisation main → github-main").
+- **The `miaou-mcp-servers` proxy listens on port 8765** (moved from 8767,
+  definitive as of 2026-08-28). Two scripts talk to a proxy, and they do
+  *opposite* things despite sharing the `VERIFY_PROXY_PORT` override:
+  `verify-docs-extract.mjs` **reuses** the proxy already running on 8765,
+  while `verify-res-docs-wiring.mjs` **spawns its own** on a dedicated
+  8799 precisely so it never collides with it. When a verify fails with
+  "Le proxy MCP ne répond pas", read it as an environment fact before
+  suspecting the app or a stale assertion: check what port the proxy is
+  actually on (`lsof -nP -iTCP -sTCP:LISTEN | grep -i python`) rather
+  than patching the script.
 - **There is no localStorage state across driver runs** — Playwright
   launches a fresh, empty profile each time (`chromium.launch()` with no
   persistent context), so the app always boots to "Nouvelle

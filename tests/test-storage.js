@@ -856,7 +856,7 @@ describe('buildExportPayload', function() {
   it('produit la structure attendue avec format/version/exportedAt', function() {
     var payload = buildExportPayload({}, [], []);
     expect(payload.format).toBe('miaou-export');
-    expect(payload.version).toBe(2);
+    expect(payload.version).toBe(3);
     expect(typeof payload.exportedAt).toBe('number');
   });
   it('reprend les 7 clés localStorage désérialisées', function() {
@@ -984,9 +984,17 @@ describe('validateImportPayload', function() {
     var res = validateImportPayload({ foo: 'bar' });
     expect(res.ok).toBeFalsy();
   });
-  it('version future (> 2) → erreur', function() {
-    var res = validateImportPayload(Object.assign(validPayload(), { version: 3 }));
+  it('version future (> 3) → erreur', function() {
+    // Le chiffre suit EXPORT_FORMAT_VERSION : v3 est désormais acceptée (lot
+    // V-3), c'est v4 qui doit être refusée. Sans cette mise à jour le test
+    // accuserait l'application d'accepter une version future, alors que c'est
+    // le test qui serait périmé.
+    var res = validateImportPayload(Object.assign(validPayload(), { version: 4 }));
     expect(res.ok).toBeFalsy();
+  });
+  it('version 3 (sauvegarde compressée) → acceptée', function() {
+    var res = validateImportPayload(Object.assign(validPayload(), { version: 3 }));
+    expect(res.ok).toBeTruthy();
   });
   it('version absente/non numérique → erreur', function() {
     var res = validateImportPayload(Object.assign(validPayload(), { version: '1' }));
@@ -1312,5 +1320,133 @@ describe('buildStorageReport', function() {
     expect(r.detail.resources).toBe(0);
     expect(r.detail.skills).toBe(0);
     expect(r.detail.settings).toBe(0);
+  });
+});
+
+// ── Sauvegarde v3 : forme des octets et index de membres (lot V-3) ───────────
+
+describe('resourceDataShape (jumeau d\'extractImportedConvRecords, côté octets)', function() {
+  it('une string base64 (v1/v2) → base64', function() {
+    expect(resourceDataShape('QUJD')).toBe('base64');
+  });
+  it('un ArrayBuffer (v3 réassemblé) → bytes', function() {
+    expect(resourceDataShape(new ArrayBuffer(8))).toBe('bytes');
+  });
+  it('un Uint8Array (ce que rend fflate) → bytes', function() {
+    expect(resourceDataShape(new Uint8Array([1, 2, 3]))).toBe('bytes');
+  });
+  it('null / absent → absent', function() {
+    expect(resourceDataShape(null)).toBe('absent');
+    expect(resourceDataShape(undefined)).toBe('absent');
+  });
+  it('string vide → base64 : un binaire de zéro octet est légitime', function() {
+    // base64ToArrayBuffer('') rend un buffer vide ; le distinguer de l'absence
+    // éviterait d'écrire un cas particulier chez l'appelant.
+    expect(resourceDataShape('')).toBe('base64');
+  });
+});
+
+describe('buildResourceMemberIndex (métadonnées vs octets)', function() {
+  it('sépare les octets des métadonnées : plus de data dans les entries', function() {
+    var out = buildResourceMemberIndex([
+      { id: 'res_a1', name: 'capture.png', mime: 'image/png', data: new Uint8Array([1, 2]) },
+    ]);
+    expect(out.entries.length).toBe(1);
+    expect(out.entries[0].data === undefined).toBe(true);
+    expect(out.entries[0].name).toBe('capture.png');
+    expect(out.members.length).toBe(1);
+  });
+
+  it('le nom de membre est dérivé de l\'id, JAMAIS du name', function() {
+    // Le name peut être unicode arbitraire et collisionner ; l'id est unique
+    // par construction et en ASCII imprimable. C'est un IDENTIFIANT : lui seul
+    // rattache les octets à leur entrée de manifeste.
+    var out = buildResourceMemberIndex([
+      { id: 'res_a1', name: 'rapport é.md', data: new Uint8Array([1]) },
+    ]);
+    expect(out.entries[0].member).toBe('resources/res_a1');
+    expect(out.members[0].member).toBe('resources/res_a1');
+  });
+
+  it('deux records de même name ne collisionnent pas (pas de déduplication à écrire)', function() {
+    var out = buildResourceMemberIndex([
+      { id: 'res_a1', name: 'rapport.md', data: new Uint8Array([1]) },
+      { id: 'res_b2', name: 'rapport.md', data: new Uint8Array([2]) },
+    ]);
+    expect(out.members[0].member).toBe('resources/res_a1');
+    expect(out.members[1].member).toBe('resources/res_b2');
+  });
+
+  it('une ressource de zéro octet a bien un membre (pas d\'entrée manquante)', function() {
+    var out = buildResourceMemberIndex([{ id: 'res_z', data: new Uint8Array(0) }]);
+    expect(out.members.length).toBe(1);
+    expect(out.entries[0].member).toBe('resources/res_z');
+  });
+
+  it('un record sans octets n\'a pas de member : cas licite, sans exception', function() {
+    var out = buildResourceMemberIndex([{ id: 'res_n', name: 'vide' }]);
+    expect(out.entries.length).toBe(1);
+    expect(out.entries[0].member === undefined).toBe(true);
+    expect(out.members.length).toBe(0);
+  });
+
+  it('un record sans id est écarté et compté (id = keyPath, le put jetterait)', function() {
+    var out = buildResourceMemberIndex([
+      { id: 'res_ok', data: new Uint8Array([1]) },
+      { name: 'orphelin', data: new Uint8Array([2]) },
+      null,
+      { id: '', data: new Uint8Array([3]) },
+    ]);
+    expect(out.entries.length).toBe(1);
+    expect(out.skipped).toBe(3);
+  });
+
+  it('entrée non-tableau → index vide, pas de crash', function() {
+    var out = buildResourceMemberIndex(null);
+    expect(out.entries).toEqual([]);
+    expect(out.members).toEqual([]);
+  });
+
+  it('ne mute pas les records d\'origine', function() {
+    var rec = { id: 'res_a1', data: new Uint8Array([1]) };
+    buildResourceMemberIndex([rec]);
+    expect(!!rec.data).toBe(true);
+    expect(rec.member === undefined).toBe(true);
+  });
+});
+
+describe('extractImportedConvRecords : v3 prend la branche idb (le >= 2 tenait)', function() {
+  it('v3 : lit la section idb, comme v2 — aucune modification n\'a été nécessaire', function() {
+    var p = {
+      format: 'miaou-export', version: 3,
+      idb: { conversations: [{ id: 'c1', messages: [] }], summaries: [{ id: 'c1', summary: 'x' }] },
+      localStorage: { 'miaou-conversations': [{ id: 'vieux' }] },
+    };
+    var out = extractImportedConvRecords(p);
+    expect(out.conversations.length).toBe(1);
+    expect(out.conversations[0].id).toBe('c1');
+    expect(out.summaries.length).toBe(1);
+  });
+});
+
+describe('validateImportPayload : ressources sans données (archive v3 abîmée)', function() {
+  function v3(extra) {
+    return Object.assign({
+      format: 'miaou-export', version: 3, exportedAt: 1,
+      localStorage: {}, idb: { skills: [], resources: [{ id: 'r1' }, { id: 'r2' }] },
+    }, extra || {});
+  }
+  it('sans membre manquant → compteur à zéro', function() {
+    expect(validateImportPayload(v3()).counts.missingResourceData).toBe(0);
+  });
+  it('remonte le compte posé par le réassemblage, pour le dire AVANT le clic', function() {
+    var res = validateImportPayload(v3({ _missingResourceData: 2 }));
+    expect(res.ok).toBeTruthy();
+    expect(res.counts.missingResourceData).toBe(2);
+    // Un binaire perdu ne coûte pas l'import : les ressources restent comptées.
+    expect(res.counts.resources).toBe(2);
+  });
+  it('une valeur non numérique est normalisée à zéro, jamais propagée telle quelle', function() {
+    expect(validateImportPayload(v3({ _missingResourceData: 'deux' })).counts.missingResourceData).toBe(0);
   });
 });

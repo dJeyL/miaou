@@ -556,11 +556,12 @@ if (window.requestAnimationFrame) {
       </div>
       <div class="field">
         <label>Export / import complet</label>
-        <span class="hint">Le fichier inclut les clefs API et tokens en clair.</span>
+        <span class="hint">La sauvegarde est une archive&nbsp;.zip. Compresser n'est pas chiffrer&nbsp;: le fichier s'ouvre avec n'importe quel outil et inclut les clefs API et les tokens MCP en clair.</span>
         <button class="btn-ghost" onclick="exportAllData()">Exporter les données</button>
-        <span class="hint">L'import remplace l'intégralité des données locales.</span>
+        <div class="cfg-err" id="export-data-err" hidden></div>
+        <span class="hint">L'import remplace l'intégralité des données locales. Les anciennes sauvegardes&nbsp;.json restent acceptées.</span>
         <button class="btn-ghost" id="import-data-btn" onclick="onImportDataClick()">Importer les données</button>
-        <input type="file" id="import-data-input" accept=".json" hidden onchange="onImportFileSelected(this)">
+        <input type="file" id="import-data-input" accept=".zip,.json" hidden onchange="onImportFileSelected(this)">
         <div class="cfg-err" id="import-data-err" hidden></div>
         <div class="import-summary" id="import-data-summary" hidden></div>
       </div>

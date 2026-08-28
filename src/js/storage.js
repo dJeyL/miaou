@@ -1298,9 +1298,12 @@ function spaceConvIds(spaceId, convs) {
 //
 // Version du format de fichier d'export. v1 : conversations et résumés sous
 // `localStorage`. v2 (lot U-4) : sous `idb`, comme skills et resources, puisque
-// c'est là qu'ils vivent depuis U-2. L'écriture est toujours à la version
+// c'est là qu'ils vivent depuis U-2. v3 (lot V-3) : le conteneur devient un
+// `.zip` — `manifest.json` porte tout l'état SAUF les octets binaires, qui
+// vivent dans un membre `resources/<id>` par ressource. Plus de base64 nulle
+// part : ni à l'export, ni à l'import. L'écriture est toujours à la version
 // courante ; la lecture accepte toutes les versions ≤ celle-ci.
-const EXPORT_FORMAT_VERSION = 2;
+const EXPORT_FORMAT_VERSION = 3;
 
 // Les 7 clés localStorage du schéma. Référencée uniquement en corps de
 // fonction depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md)
@@ -1323,12 +1326,16 @@ const EXPORT_KEYS = [
 ];
 
 // Construit le payload d'export complet. `lsSnapshot` : objet { clé: valeur
-// DÉSÉRIALISÉE } pour les 9 clés (l'appelant lit localStorage + JSON.parse, ou
+// DÉSÉRIALISÉE } pour les 7 clés (l'appelant lit localStorage + JSON.parse, ou
 // fournit la string brute pour miaou-active-api-server / miaou-active-space —
-// seules clés non-JSON du schéma). `skills`/`resources` : tableaux bruts issus
-// de getAllSkillRecords()/getAllResources() ; `resources[].data` (ArrayBuffer)
-// doit déjà avoir été converti en base64 par l'appelant (arrayBufferToBase64,
-// resources.js) — cette fonction reste pure, sans dépendance IDB.
+// seules clés non-JSON du schéma). `skills` : tableau brut issu de
+// getAllSkillRecords().
+//
+// `resources` : depuis v3 (lot V-3), les MÉTADONNÉES des ressources, sans
+// octets — `buildResourceMemberIndex` les a séparées, `data` est remplacé par
+// `member` (le nom du membre du zip qui porte les octets bruts). C'est ce qui
+// supprime le base64 du chemin d'export. Cette fonction reste pure et ne
+// connaît pas le conteneur : elle reçoit ce qu'on lui donne.
 function buildExportPayload(lsSnapshot, skills, resources, conversations, summaries) {
   const ls = lsSnapshot || {};
   return {
@@ -1420,8 +1427,87 @@ function validateImportPayload(obj) {
       resources: resources.length,
       servers: apiServers.length + mcpServers.length,
       spaces: spaces.length,
+      // Ressources dont les octets manquaient à la lecture d'une archive v3
+      // (membre absent : transfert interrompu, zip retouché à la main). Elles
+      // sont importées VIDES plutôt que de faire échouer tout l'import — un
+      // binaire perdu ne doit pas coûter conversations, souvenirs et réglages.
+      // Le compteur remonte jusqu'au récapitulatif de confirmation, pour que
+      // ce soit dit AVANT le clic d'application, pas découvert après.
+      // Clé transitoire posée par `readBackupFromZip` : elle naît du
+      // réassemblage, jamais du fichier, d'où le souligné.
+      missingResourceData: typeof obj._missingResourceData === 'number' ? obj._missingResourceData : 0,
     },
   };
+}
+
+// ── Sauvegarde v3 : forme des données binaires et index de membres (lot V-3) ─
+
+// Forme du champ `data` d'un record de ressource importé. Retourne
+// 'base64' | 'bytes' | 'absent'.
+//
+// C'est le JUMEAU d'`extractImportedConvRecords` : là où celui-ci est LE point
+// unique où la différence de version est traitée pour les conversations,
+// celui-ci est LE point unique où la différence de FORME des octets est traitée
+// (base64 en v1/v2, octets bruts en v3). Tout le reste de l'import ignore la
+// compression — ne pas réintroduire un second test de forme ailleurs.
+//
+// Une string vide rend 'base64' et non 'absent' : un binaire de zéro octet est
+// légitime, et `base64ToArrayBuffer('')` rend un buffer vide. Le distinguer de
+// l'absence évite d'écrire un cas particulier chez l'appelant.
+function resourceDataShape(data) {
+  if (typeof data === 'string') return 'base64';
+  if (data == null) return 'absent';
+  if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) return 'bytes';
+  // Uint8Array et vues typées : `buffer` + `byteLength` suffisent à les
+  // reconnaître sans dépendre d'`ArrayBuffer.isView` (absent de QuickJS).
+  if (typeof data === 'object' && data.buffer && typeof data.byteLength === 'number') return 'bytes';
+  return 'absent';
+}
+
+// Sépare les records de ressources en MÉTADONNÉES (pour le manifeste) et OCTETS
+// (pour les membres du zip). Retourne { entries, members, skipped } :
+//   - `entries` : les records sans `data`, avec un champ `member` en plus →
+//     ce qui va dans `manifest.idb.resources` ;
+//   - `members` : [{ member, data }] → ce qui va dans le zip ;
+//   - `skipped` : nombre de records écartés faute d'`id`.
+//
+// Le nom de membre est `'resources/' + rec.id`, et rien d'autre. C'est un
+// IDENTIFIANT : lui seul rattache les octets à leur entrée de manifeste, et
+// s'il ne fait pas l'aller-retour à travers zipSync/parseZipCentralDirectory la
+// ressource devient INATTEIGNABLE à l'import — le mode de défaillance des noms
+// non-UTF-8 payé en clôture V-1. L'`id` est unique par construction (suffixe
+// aléatoire) et en ASCII imprimable : structurellement sûr, contrairement à
+// `rec.name`, rédigé par l'utilisateur ou le modèle, unicode arbitraire et
+// collisionnant régulièrement. NE JAMAIS dériver le nom de membre de `rec.name` :
+// le `member` est un détail de transport, le nom lisible continue de vivre dans
+// `rec.name`, à l'intérieur du manifeste.
+//
+// Aucune déduplication n'est nécessaire ici, contrairement à `buildZipMemberName`
+// (lot V-2) où les noms viennent du record : deux `id` ne collisionnent pas.
+//
+// Un record SANS `id` est écarté et compté, jamais passé sans membre : `id` est
+// le keyPath du store, un tel record ne pourrait pas être réimporté (`put`
+// jetterait), et l'import v1/v2 les filtre déjà.
+// Un record sans octets (`data` absent) n'a PAS de `member` : cas licite.
+function buildResourceMemberIndex(resources) {
+  const list = Array.isArray(resources) ? resources : [];
+  const entries = [];
+  const members = [];
+  let skipped = 0;
+  for (const rec of list) {
+    if (!rec || typeof rec.id !== 'string' || !rec.id) { skipped++; continue; }
+    const meta = Object.assign({}, rec);
+    delete meta.data;
+    if (resourceDataShape(rec.data) === 'absent') {
+      entries.push(meta);
+      continue;
+    }
+    const member = 'resources/' + rec.id;
+    meta.member = member;
+    entries.push(meta);
+    members.push({ member: member, data: rec.data });
+  }
+  return { entries: entries, members: members, skipped: skipped };
 }
 
 // ── État des lieux du stockage (drawer Paramètres › Données) ─────────────────

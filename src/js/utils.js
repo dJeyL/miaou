@@ -2132,3 +2132,31 @@ function validateZipPlan(entries) {
   }
   return { ok: true };
 }
+
+// ── Sauvegarde compressée : sniff de conteneur (lot V-3) ─────────────────────
+// Un fichier de sauvegarde arrive désormais sous DEUX conteneurs : le `.zip`
+// v3 (manifeste + un membre d'octets bruts par ressource) et le `.json` nu des
+// versions v1/v2, toujours acceptées — un utilisateur a des sauvegardes
+// anciennes, et importer un fichier d'une version antérieure EST le seul chemin
+// de migration qui reste dans l'application.
+//
+// Le conteneur se reconnaît aux OCTETS (signature d'en-tête local `PK\x03\x04`),
+// jamais à l'extension ni au type MIME annoncé par le navigateur : les deux sont
+// fournis par l'environnement et un fichier renommé passerait à côté.
+//
+// Dégradation systématique vers 'json' — jamais d'exception, y compris sur
+// `null`, un buffer vide ou une signature partielle. Le chemin JSON est le
+// chemin HISTORIQUE : y retomber rend la même erreur qu'avant V-3 (« JSON
+// invalide »), alors qu'une exception ici laisserait l'interface muette.
+//
+// Le sniff dit « ça ressemble à un zip » ; c'est `parseZipCentralDirectory` qui
+// dit « c'en est un ». Un fichier tronqué passe le sniff et doit échouer plus
+// loin, avec un message actionnable — pas ici.
+//
+// Cas frontière figé par test : `PK\x05\x06` (EOCD nu, archive vide) n'est PAS
+// un en-tête local, donc pas notre format.
+function sniffBackupFormat(u8) {
+  if (!u8 || typeof u8.length !== 'number' || u8.length < 4) return 'json';
+  if (u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04) return 'zip';
+  return 'json';
+}

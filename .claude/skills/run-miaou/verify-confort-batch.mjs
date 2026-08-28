@@ -188,16 +188,29 @@ const [download] = await Promise.all([
 ]);
 const exportPath = path.join(outDir, download.suggestedFilename());
 await download.saveAs(exportPath);
+// Format v3 (lot V-3) : le conteneur est un `.zip`, le payload vit dans son
+// membre `manifest.json`. On le décompresse DANS LA PAGE, qui a déjà chargé
+// fflate — plutôt que d'ajouter une dépendance Node à ce script.
+// Le fichier lui-même reste réinjecté tel quel plus bas : c'est l'aller-retour
+// d'un export RÉEL qui fait la valeur de ce bloc.
 let payload = null;
-try { payload = JSON.parse(fs.readFileSync(exportPath, 'utf8')); } catch (e) { /* payload reste null */ }
+try {
+  const bytes = Array.from(fs.readFileSync(exportPath));
+  payload = await page.evaluate(async (arr) => {
+    const ff = await ensureFflate();
+    const files = ff.unzipSync(new Uint8Array(arr));
+    if (!files['manifest.json']) return null;
+    return JSON.parse(new TextDecoder('utf-8').decode(files['manifest.json']));
+  }, bytes);
+} catch (e) { /* payload reste null */ }
 // Format v2 (lot U-4) : conversations et résumés ont quitté la section
 // `localStorage` du payload pour la section `idb`, aux côtés de
 // skills/resources — leur support de stockage a changé (piège : un export v1
 // relu ici passerait pour vide sans erreur).
 const EXPORT_LS_KEYS = ['miaou-settings', 'miaou-memories', 'miaou-api-servers',
   'miaou-active-api-server', 'miaou-mcp-servers', 'miaou-spaces', 'miaou-active-space'];
-check('E : nom de fichier miaou-export-….json', /^miaou-export-\d{4}-\d{2}-\d{2}-\d{4}\.json$/.test(download.suggestedFilename()));
-check('E : payload JSON valide, format/version 2', !!payload && payload.format === 'miaou-export' && payload.version === 2);
+check('E : nom de fichier miaou-export-….zip', /^miaou-export-\d{4}-\d{2}-\d{2}-\d{4}\.zip$/.test(download.suggestedFilename()));
+check('E : manifeste valide, format/version 3', !!payload && payload.format === 'miaou-export' && payload.version === 3);
 check('E : les 7 clés localStorage présentes', !!payload && EXPORT_LS_KEYS.every(k => k in payload.localStorage));
 check('E : conversations et résumés sous idb, plus sous localStorage', !!payload &&
   Array.isArray(payload.idb.conversations) && Array.isArray(payload.idb.summaries) &&
