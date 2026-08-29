@@ -382,8 +382,12 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
 Le lot V a rapatrié dans le navigateur ce que `mcp_docs` savait faire — le zip
-(V-1), le PDF (V-4), l'Office (V-5). La trajectoire **n'est pas** la disparition
-du serveur : elle a été corrigée le 2026-08-28 (décision 6 de `V-4-PLAN.md`).
+(V-1), le PDF (V-4), l'Office (V-5 : Excel, Word, PowerPoint). **La parité est
+atteinte depuis la clôture de V-5** : plus aucun format connu ne dépend du
+serveur, et sur deux points le natif le dépasse (les headings multi-locale de
+mammoth, le texte des shapes groupées d'un `.pptx`). La trajectoire **n'est pas**
+pour autant la disparition du serveur : elle a été corrigée le 2026-08-28
+(décision 6 de `V-4-PLAN.md`).
 
 **Le serveur reste intact et devient un fallback offline désactivé par défaut.**
 La raison est une limite que le rapatriement ne peut pas franchir : les
@@ -395,9 +399,10 @@ elle n'a pas d'équivalent client.
 
 Ce que ça implique, et qui n'est **pas** de la cosmétique de documentation :
 
-- **Le natif est le chemin nominal.** `DOCS_DOCTRINE` (v3 depuis V-4) dit
-  explicitement de **préférer le natif** quand un même outil existe des deux
-  côtés. Sans cette phrase, un modèle qui voit `miaou__docs__read` **et**
+- **Le natif est le chemin nominal.** `DOCS_DOCTRINE` (v6 depuis V-5 étape 3, où
+  sa puce « voir du côté serveur » a **entièrement disparu**, le PowerPoint en
+  étant le dernier occupant) dit explicitement de **préférer le natif** quand un
+  même outil existe des deux côtés. Sans cette phrase, un modèle qui voit `miaou__docs__read` **et**
   `miaou-proxy__docs__read` tire au sort — les deux répondent au même nom, seul
   le préfixe racine change (décision 1 du lot, délibérée).
 - **Rien n'est supprimé côté serveur.** Aucune ligne retirée de
@@ -406,11 +411,21 @@ Ce que ça implique, et qui n'est **pas** de la cosmétique de documentation :
 - **La dépendance réseau est une information utilisateur**, pas seulement
   développeur : `src/help.md` la porte (sections `pieces-jointes` et `mcp`),
   parce qu'un utilisateur hors connexion doit comprendre pourquoi son PDF ne
-  s'ouvre plus et quoi faire.
-- **Le dépôt voisin doit le présenter comme tel** — un fallback à activer
-  manuellement, jamais un serveur disponible plus ou moins de base. Où vit ce
-  défaut (config d'exemple, README, script de lancement) reste **à instruire**
-  dans `miaou-mcp-servers` : ce n'est pas fait à ce jour.
+  s'ouvre plus et quoi faire. Depuis V-5 étape 3, la section `mcp` de `help.md`
+  ne présente plus l'extraction documentaire comme une capacité qu'un serveur
+  apporte, mais comme un **recours hors connexion** : c'est le seul usage qui lui
+  reste, et le taire ferait de la rétrogradation un enterrement silencieux.
+- **Le dépôt voisin le présente comme tel — fait à la clôture de V-5**
+  (2026-08-29). Le défaut vivait dans **`config.sample.json`** (et nulle part
+  ailleurs : ni script de lancement, ni valeur en dur) : son entrée `docs` porte
+  désormais `_disabled: true`, avec le commentaire qui dit *pourquoi* et comment
+  la réveiller. Le `README.md` du dépôt gagne une section
+  « `mcp_docs` : obsolète, mais conservé pour le hors-connexion » (liée depuis le
+  tableau des serveurs), et son `CLAUDE.md` un encadré au-dessus de la section du
+  serveur — celui-là visant une session future, à qui il dit explicitement de
+  **ne pas faire le ménage** dans un package qui ne sert plus par défaut. Rien
+  n'a été supprimé côté serveur : code, tests et dépendances sont intacts
+  (369 tests passent).
 
 Le banc d'essai MCP (`mcp_bench.py`) a été extrait dans le projet
 `miaou-mcp-servers`. Procédure de test manuel : `docs/manual-tests.md`.

@@ -186,12 +186,30 @@ const FILES_DOCTRINE =
 // n'y en a aucun. La doctrine se contente de dire au modèle de SUIVRE ce
 // message — elle n'en redonde jamais le contenu.
 //
-// Cas .docx (tranché Julien 2026-08-28) : un document Office EST un zip, le
-// natif sait donc l'ouvrir mécaniquement — mais il n'en livre que du XML brut
-// là où l'outil serveur en extrait le texte utile. La doctrine oriente vers le
-// serveur tant qu'il existe, le natif reste un filet (et le sniff Office du
-// listing sert à l'ANNONCER, jamais à refuser). À rouvrir en V-5, quand Word
-// deviendra natif.
+// Cas Office (tranché Julien 2026-08-28) : un document Office EST un zip, le
+// natif savait donc l'ouvrir mécaniquement — mais il n'en livrait que du XML
+// brut là où l'outil serveur en extrayait le texte utile. La doctrine orientait
+// vers le serveur tant qu'il existait, le natif restant un filet. Rouvert en
+// V-5 format par format : ce qui restait sur la puce serveur était ce qui
+// n'avait pas encore son lecteur natif, et la puce s'est vidée au fil des
+// étapes.
+//
+// v6 (lot V-5, étape 3) : le POWERPOINT quitte la puce serveur, qui était son
+// dernier occupant — ELLE DISPARAÎT DONC ENTIÈREMENT. Plus aucun format connu
+// n'est renvoyé vers un outil serveur : les cinq (zip, PDF, Excel, Word,
+// PowerPoint) ont leur lecteur natif, et le cas d'un format inconnu reste
+// rattrapé par docsUnsupportedFormatMessage, qui nomme au moment de l'appel le
+// serveur réellement branché. La doctrine décrit ce qui est vrai quand elle est
+// lue : il n'y a plus rien à orienter ailleurs.
+//
+// v5 (lot V-5, étape 2) : le WORD quitte la puce serveur. PowerPoint y reste
+// seul, jusqu'à l'étape 3.
+//
+// v4 (lot V-5, étape 1) : l'EXCEL quitte la puce serveur à son tour. Word et
+// PowerPoint y restent jusqu'aux étapes 2 et 3 — la doctrine décrit ce qui est
+// vrai au moment où elle est lue, jamais ce qui est prévu. Une puce qui
+// annoncerait un lecteur pas encore écrit serait pire qu'une puce périmée : le
+// modèle appellerait un outil qui refuse.
 //
 // v3 (lot V-4) : le PDF quitte la puce serveur et rejoint la ligne native, avec
 // miaou__docs__read. Le serveur n'y est plus la voie du PDF — il reste le
@@ -224,13 +242,20 @@ const DOCS_DOCTRINE =
   "- PDF : miaou__docs__list pour en voir la structure (pages, sommaire), puis " +
   "miaou__docs__read pour en lire une page ou une plage. Natifs eux aussi, sans " +
   "serveur.\n" +
-  "- WORD, EXCEL, POWERPOINT : si le registre te propose un outil déclarant " +
-  "dans son schéma d'entrée à la fois un paramètre `ref` et un paramètre " +
-  "`content_b64` (par exemple docs__read), c'est lui qui sait ouvrir ces formats " +
-  "et en extraire le texte utile. Appelle-le avec ref=\"att-N\". Un document Office " +
-  "est techniquement une archive zip, et les outils natifs savent donc l'ouvrir : " +
-  "ils n'en livreront que du XML brut, ce qui ne vaut qu'en dernier recours ou " +
-  "si l'utilisateur demande explicitement à en voir la structure interne.\n" +
+  "- EXCEL (.xlsx) : miaou__docs__list pour voir les feuilles et leurs " +
+  "dimensions, puis miaou__docs__read avec un selector « NomDeFeuille » ou " +
+  "« NomDeFeuille!A1:C10 ». Natifs eux aussi, sans serveur.\n" +
+  "- WORD (.docx) : miaou__docs__list pour voir les sections du document, puis " +
+  "miaou__docs__read avec un selector reprenant exactement le titre d'une " +
+  "section. Natifs eux aussi, sans serveur.\n" +
+  "- POWERPOINT (.pptx) : miaou__docs__list pour voir les slides dans l'ordre de " +
+  "la présentation, puis miaou__docs__read avec le NUMÉRO d'une slide ou une " +
+  "plage. Les notes de présentateur sont servies avec la slide. Natifs eux " +
+  "aussi, sans serveur.\n" +
+  "Un document Office est aussi, techniquement, une archive zip : miaou__docs__extract " +
+  "sait donc en sortir un membre XML brut ou une image embarquée. Ce n'est pas " +
+  "la voie normale — n'y recours que si l'utilisateur demande explicitement la " +
+  "structure interne du fichier.\n" +
   "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
   "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
   "sans réseau.\n" +
@@ -272,6 +297,21 @@ const JS_EVAL_TIMEOUT_MS = 10000;
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
 
+// Portage de MAX_XLSX_ROWS_DEFAULT (mcp_docs, formats.py) — lot V-5. Ne
+// s'applique QU'À une feuille lue SANS plage explicite : un modèle qui écrit
+// 'Feuille!A1:C10000' a exprimé une intention, un modèle qui écrit 'Feuille' ne
+// sait pas encore qu'elle fait 50 000 lignes. Le cap de CONTEXTE reste
+// JS_EVAL_OUTPUT_CAP, appliqué après coup par docs__read : celui-ci est une
+// borne de LECTURE, pas de sortie.
+const MAX_XLSX_ROWS_DEFAULT = 200;
+
+// Cap de la lecture d'UNE section docx (lot V-5, étape 2). Volontairement SOUS
+// JS_EVAL_OUTPUT_CAP, et la marge est fonctionnelle : le texte tronqué emporte
+// une notice qui explique la troncature, et la somme doit rester sous le cap du
+// handler, sinon celui-ci refuserait la sortie que la troncature venait de
+// rendre acceptable.
+const MAX_DOCX_SECTION_CHARS = 18000;
+
 // Table de dispatch des lecteurs de documents NATIFS (lot V-4). La STRUCTURE est
 // le sujet, pas le contenu : docs__list ne peut plus se contenter de « le parsing
 // zip a rendu null, donc ce n'est pas une archive » dès qu'il y a deux familles
@@ -289,16 +329,21 @@ const JS_EVAL_OUTPUT_CAP = 20000;
 // zip qui serait d'une autre nature : le sortir de la table réintroduirait
 // l'exception que la table existe pour supprimer.
 //
-// Les quatre types Office pointent aujourd'hui vers le lecteur zip : un .docx
-// EST une archive, et ses membres XML bruts sont exploitables en js__eval en
-// attendant mieux. Ils sont inscrits EXPLICITEMENT plutôt que laissés en
-// retombée — sinon nativeDocKinds() ne les annoncerait pas, et le message de
-// refus mentirait par omission. V-5 remplacera ces entrées une à une.
+// Les trois types Office ont désormais leur lecteur (V-5 : xlsx à l'étape 1,
+// docx à l'étape 2, pptx à l'étape 3) : plus aucun ne retombe sur le lecteur
+// zip. Chacun reste inscrit EXPLICITEMENT plutôt que laissé en retombée — sinon
+// nativeDocKinds() ne l'annoncerait pas, et le message de refus mentirait par
+// omission.
+//
+// Noter que le listing zip d'un Office ne DISPARAÎT pas quand son lecteur
+// arrive : il reste accessible par docs__extract, et c'est voulu (inspecter
+// word/document.xml, sortir une image embarquée). C'est l'ORIENTATION qui change
+// — le lecteur devient le chemin nominal — pas la capacité (V-5-PLAN §4.2).
 const DOC_READERS = {
   zip:  { list: listZipDocument },
-  docx: { list: listZipDocument },
-  xlsx: { list: listZipDocument },
-  pptx: { list: listZipDocument },
+  docx: { list: listDocxDocument, read: readDocxDocument },
+  xlsx: { list: listXlsxDocument, read: readXlsxDocument },
+  pptx: { list: listPptxDocument, read: readPptxDocument },
   pdf:  { list: listPdfDocument, read: readPdfDocument },
 };
 
@@ -587,7 +632,9 @@ function validateFilesPromoteArgs(args) {
   return '';
 }
 
-// Lecteur `list` du conteneur zip — entrée zip/docx/xlsx/pptx de DOC_READERS.
+// Lecteur `list` du conteneur zip — entrée zip de DOC_READERS. Il ne sert plus
+// qu'au zip depuis V-5 étape 3 : les trois formats Office qui l'empruntaient en
+// attendant leur lecteur les ont tous reçus.
 // Extrait du handler docs__list lors de l'homogénéisation de la table : le
 // chemin est celui de V-1, inchangé, il a seulement changé d'adresse.
 //
@@ -721,10 +768,489 @@ async function readPdfDocument(u8, record, ref, selector) {
         try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
       }
     }
-    return { text: formatPdfRead(pages, { notice: range.notice }), range };   // utils.js, pur
+    // `label` (selector normalisé, ce qui a EFFECTIVEMENT été servi après clamp)
+    // et `resourceName` sont fournis PAR LE LECTEUR depuis V-5 : le handler ne
+    // sait pas ce qu'est une unité de ce format-ci, et une feuille Excel ne se
+    // nomme ni ne se dénombre comme une page. Un lecteur qui ne les fournirait
+    // pas laisserait le handler inventer un libellé faux.
+    return {   // utils.js, purs
+      text: formatPdfRead(pages, { notice: range.notice }),
+      label: range.start + '-' + range.end,
+      resourceName: pdfReadResourceName(record.name, range.start, range.end),
+    };
   } finally {
     try { doc.destroy(); } catch (e) { /* rien à rattraper */ }
   }
+}
+
+// Ouverture d'un classeur par SheetJS. Facteur commun de listXlsxDocument et
+// readXlsxDocument — même forme qu'openPdfDocument : rend { wb } ou { fail },
+// JAMAIS d'exception (un throw remonterait en erreur technique là où un fichier
+// illisible est un refus ordinaire dont le modèle doit pouvoir parler).
+//
+// Différence avec pdf.js, mesurée et non supposée : SheetJS ne détache pas le
+// buffer (spike V-5), donc pas de u8.slice() ici. Et il n'a rien à libérer — pas
+// de worker, pas de handle natif : aucun équivalent de doc.destroy() n'existe,
+// vérifié avant de conclure plutôt que déduit de l'absence de doc.
+//
+// Un classeur protégé n'a PAS l'équivalent du PasswordException de pdf.js :
+// SheetJS lève une erreur ordinaire. On la reconnaît sur son message pour rendre
+// un refus métier lisible, avec repli sur l'erreur générique — reconnaître un
+// message est fragile, d'où le repli, mais le silence serait pire.
+async function openXlsxDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensureSheetJs();   // ui.js
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture Excel indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de classeur.') };
+  }
+  try {
+    const wb = lib.read(u8, { type: 'array' });
+    if (!wb || !wb.SheetNames || !wb.SheetNames.length) {
+      return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
+    }
+    return { wb: wb, lib: lib };
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/password|encrypt/i.test(msg)) {
+      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
+        resourceName: record && record.name,
+        message: 'Classeur protégé par mot de passe' });
+      return { fail: 'Classeur Excel protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
+        'Demande à l\'utilisateur une version non protégée.' };
+    }
+    return { fail: toolFail(toolName, 'Classeur illisible : ' + (msg || 'structure invalide') + '.') };
+  }
+}
+
+// Lecteur `list` du xlsx — entrée xlsx de DOC_READERS (lot V-5).
+// Rend une feuille par ligne AVEC sa dimension : c'est ce dont le modèle a
+// besoin pour écrire son selector. Sans la dimension il demande 'A1:Z100' au
+// jugé, et tombe dans le cas que restrictSheetRange doit rattraper.
+async function listXlsxDocument(u8, record, ref) {
+  const opened = await openXlsxDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  const wb = opened.wb;
+  const sheets = [];
+  for (const name of wb.SheetNames) {
+    const sh = wb.Sheets[name];
+    const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
+    const r = refA1 ? parseA1Range(refA1) : null;   // utils.js, pur
+    sheets.push({
+      name: name,
+      ref: refA1,
+      rows: r ? (r.e.r - r.s.r + 1) : 0,
+      cols: r ? (r.e.c - r.s.c + 1) : 0,
+    });
+  }
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name, count: sheets.length,
+  });
+  return formatXlsxListing(sheets);   // utils.js, pur
+}
+
+// Lecteur `read` du xlsx (lot V-5). Le selector est 'Feuille' ou
+// 'Feuille!A1:C10' — PAS le 'N'/'N-M' du PDF : une feuille se désigne par son
+// nom, et forcer un index serait demander au modèle de compter des feuilles
+// qu'il a sous les yeux nommées.
+//
+// Le rendu passe par le CLONE À !ref RESTREINT et jamais par l'option `range` de
+// sheet_to_csv, qui est SILENCIEUSEMENT IGNORÉE en 0.18.5 (spike V-5, figé par
+// un contrôle) : elle rendrait la feuille entière en ayant l'air d'avoir servi
+// la plage. Ne pas « simplifier » vers l'option native sans rejouer le spike.
+async function readXlsxDocument(u8, record, ref, selector) {
+  const opened = await openXlsxDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const wb = opened.wb, lib = opened.lib;
+
+  const sel = parseSheetSelector(selector, wb.SheetNames);   // utils.js, pur
+  if (!sel.ok) return toolFail('docs__read', sel.message);
+
+  const sheet = wb.Sheets[sel.sheet];
+  const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';
+  if (!sheetRef) {
+    // Feuille présente mais vide : ce n'est pas une erreur, et le dire vaut
+    // mieux que rendre une chaîne vide dont le modèle conclurait n'importe quoi.
+    return {
+      text: formatXlsxRead('', { sheet: sel.sheet, ref: '' }),
+      label: sel.sheet,
+      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(sel.sheet)),
+    };
+  }
+
+  const restricted = restrictSheetRange(sheetRef, sel.range);   // utils.js, pur
+  if (restricted.fail) return toolFail('docs__read', restricted.fail);
+
+  // Le clone est SUPERFICIEL et volontairement : les cellules sont partagées,
+  // seule la clé '!ref' est réécrite. Copier les cellules d'une feuille de
+  // 50 000 lignes pour n'en lire que dix serait absurde.
+  const view = Object.assign({}, sheet, { '!ref': restricted.ref });
+  const csv = lib.utils.sheet_to_csv(view);
+
+  return {
+    text: formatXlsxRead(csv, {          // utils.js, pur
+      sheet: sel.sheet, ref: restricted.ref,
+      // Le cap de lignes ne mord QUE sans plage explicite (cf. la constante).
+      maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
+      notice: restricted.notice,
+    }),
+    // Le label porte la plage EFFECTIVEMENT servie, pas celle demandée : c'est
+    // ce qui s'affiche dans l'ack, et un ack qui annonce la demande plutôt que
+    // le service ment dès qu'un clamp a mordu.
+    label: sel.sheet + '!' + restricted.ref,
+    resourceName: docReadResourceName(record.name,
+      slugifyResourceSuffix(sel.sheet + ' ' + restricted.ref)),
+  };
+}
+
+// Ouverture d'un .docx par mammoth. Même forme qu'openPdfDocument et
+// openXlsxDocument : rend { blocks, sections, tables } ou { fail }, JAMAIS
+// d'exception.
+//
+// Le facteur commun va PLUS LOIN ici que pour les deux autres formats : il ne
+// s'arrête pas à l'objet de la bibliothèque mais va jusqu'aux sections. La
+// raison est que `list` et `read` ont besoin EXACTEMENT de la même chose — la
+// découpe — et que les faire diverger ferait afficher au listing des titres que
+// le selector ne saurait pas viser. Le listing montre ce que le read sait
+// atteindre parce que les deux dérivent d'un seul appel (mémoire
+// project_what_model_sees_equals_what_it_can_touch).
+//
+// mammoth ne connaît pas de document « protégé » à la façon d'un PDF ou d'un
+// classeur : un .docx chiffré n'est plus un zip OOXML lisible, et il échoue à
+// l'ouverture. Le message le dit sans promettre de distinguer les deux cas.
+async function openDocxDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensureMammoth();   // ui.js
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture Word indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
+  }
+
+  let html;
+  try {
+    // mammoth veut un ArrayBuffer. u8.buffer est passé TEL QUEL (pas de slice) :
+    // mesuré au spike, mammoth ne détache pas. Mais u8 peut être une VUE
+    // partielle d'un buffer plus grand — d'où byteOffset/byteLength, qui coûtent
+    // une copie seulement dans ce cas-là.
+    const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
+      ? u8.buffer
+      : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    const res = await lib.convertToHtml({ arrayBuffer: ab });
+    html = (res && res.value) || '';
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Document Word illisible : ' +
+      ((e && e.message) || 'structure invalide') + '. Un .docx protégé par mot de passe ' +
+      "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
+      'une version non protégée si c\'est le cas.') };
+  }
+
+  const blocks = docxHtmlToBlocks(html);        // utils.js, pur
+  const sections = docxSections(blocks);        // utils.js, pur
+  let tables = 0;
+  for (const b of blocks) { if (b && b.type === 'table') tables++; }
+  return { blocks: blocks, sections: sections, tables: tables };
+}
+
+// Lecteur `list` du docx — entrée docx de DOC_READERS (lot V-5, étape 2).
+// Remplace listZipDocument, qui rendait jusqu'ici la mécanique interne du
+// conteneur OOXML (word/document.xml, [Content_Types].xml…) : exact, et sans
+// aucun intérêt pour qui veut lire le document. Le listing d'un .docx par ses
+// membres zip reste atteignable, mais il n'est plus ce qu'on sert par défaut.
+async function listDocxDocument(u8, record, ref) {
+  const opened = await openDocxDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.sections.length,
+  });
+  return formatDocxListing(opened.sections, { tables: opened.tables });   // utils.js, pur
+}
+
+// Lecteur `read` du docx (lot V-5, étape 2). Le selector est le TITRE d'une
+// section, tel que le listing l'a rendu — ni un numéro (le modèle aurait à
+// compter des titres qu'il a sous les yeux nommés), ni un chemin.
+//
+// Le cap de sortie est appliqué ICI plutôt que laissé au handler, et c'est le
+// seul lecteur du lot dans ce cas. Le handler REFUSE au-delà de
+// JS_EVAL_OUTPUT_CAP, ce qui est juste pour une plage de pages ou de cellules
+// demandée explicitement — le modèle n'a qu'à en demander moins. Mais une
+// section est la plus PETITE unité qu'un docx offre : un document dont une
+// section dépasse à elle seule le cap n'aurait alors aucun selector lisible, et
+// le refus serait un cul-de-sac. On tronque donc en le disant, et la notice
+// propose as_resource, qui n'a pas de cap.
+//
+// La marge (MAX_DOCX_SECTION_CHARS < JS_EVAL_OUTPUT_CAP) est ce qui rend cette
+// troncature effective : sans elle, le texte tronqué PLUS sa notice repasserait
+// au-dessus du cap et le handler refuserait quand même — la garde se serait
+// annulée elle-même.
+async function readDocxDocument(u8, record, ref, selector) {
+  const opened = await openDocxDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+
+  const res = resolveDocxSection(selector, opened.sections);   // utils.js, pur
+  if (!res.ok) return toolFail('docs__read', res.message);
+
+  return {
+    text: formatDocxRead(res.section, { maxChars: MAX_DOCX_SECTION_CHARS }),   // utils.js, pur
+    // Le label est le titre CANONIQUE de la section (celui du listing), pas le
+    // selector brut : un modèle qui a visé par préfixe ou à la casse près doit
+    // lire dans l'ack ce qui a RÉELLEMENT été servi.
+    label: res.section.label,
+    resourceName: docReadResourceName(record.name, slugifyResourceSuffix(res.section.label)),
+  };
+}
+
+// Ouverture d'une présentation PowerPoint (lot V-5, étape 3). Même forme
+// qu'openPdfDocument / openXlsxDocument / openDocxDocument : rend
+// { slides, untitled } ou { fail }, JAMAIS d'exception.
+//
+// SEUL FORMAT DU LOT SANS BIBLIOTHÈQUE : aucune n'existe côté JS pour lire un
+// .pptx (décision de cadrage), on décortique le zip avec fflate — déjà chargé
+// pour le chemin zip, donc AUCUN artefact nouveau — et on parse le XML avec
+// DOMParser, présent nativement dans le navigateur.
+//
+// Le facteur commun va jusqu'aux slides complètes, comme openDocxDocument va
+// jusqu'aux sections, et pour la même raison : `list` et `read` ont besoin de
+// la MÊME découpe. Les faire diverger ferait afficher au listing un extrait que
+// la lecture ne rendrait pas (mémoire project_what_model_sees_equals_what_it_can_touch).
+//
+// unzipSync est FILTRÉ : on ne décompresse que les slides, leurs rels, les
+// notes et presentation.xml — pas les médias, qui sont l'essentiel du poids
+// d'un deck (551 ko pour 71 slides dans la fixture réelle, dont presque tout en
+// images et objets OLE).
+async function openPptxDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensureFflate();   // ui.js — AUCUN artefact nouveau, cf. supra
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de décompression indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de présentation.') };
+  }
+
+  let files;
+  try {
+    files = lib.unzipSync(u8, {
+      filter: (f) => /^ppt\/slides\/slide\d+\.xml$/.test(f.name)
+        || /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(f.name)
+        || /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(f.name)
+        || f.name === 'ppt/presentation.xml'
+        || f.name === 'ppt/_rels/presentation.xml.rels',
+    });
+  } catch (e) {
+    // Un .pptx protégé n'est plus une archive OOXML lisible (même situation que
+    // le .docx chiffré) : fflate échoue à l'ouverture. Le message le dit sans
+    // promettre de distinguer les deux cas.
+    return { fail: toolFail(toolName, 'Présentation illisible : ' +
+      ((e && e.message) || 'structure invalide') + '. Un .pptx protégé par mot de passe ' +
+      "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
+      'une version non protégée si c\'est le cas.') };
+  }
+
+  const dec = new TextDecoder();
+  const txt = (name) => (files[name] ? dec.decode(files[name]) : '');
+
+  // Ordre RÉEL, jamais l'ordre des fichiers (pptxSlideOrder, utils.js, pur et
+  // testé) — la garde critique du format. Le fallback est le tri NUMÉRIQUE des
+  // pièces : 'slide10.xml' < 'slide9.xml' en tri lexical, et un deck de plus de
+  // neuf slides sortirait mélangé sans que rien ne le signale.
+  const present = Object.keys(files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+  present.sort((a, b) => (parseInt(a.replace(/\D+/g, ''), 10) || 0) - (parseInt(b.replace(/\D+/g, ''), 10) || 0));
+  const ordered = pptxSlideOrder(txt('ppt/presentation.xml'),   // utils.js, pur
+    txt('ppt/_rels/presentation.xml.rels'), present)
+    .filter((n) => !!files[n]);   // un sldId pointant une pièce absente du zip
+
+  let parser;
+  try {
+    parser = new DOMParser();
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Analyseur XML indisponible dans ce navigateur.') };
+  }
+
+  const slides = [];
+  let untitled = 0;
+  for (const name of ordered) {
+    const doc = parser.parseFromString(txt(name), 'application/xml');
+    const blocks = pptxShapeBlocks(doc);
+    const title = pptxSlideTitle(doc);
+    if (!title) untitled++;
+
+    // La note se trouve par les RELS de la slide, jamais par son numéro
+    // (pptxNotesTarget, utils.js, pur) : notesSlide3.xml n'est pas
+    // nécessairement la note de la troisième slide affichée.
+    const relsName = name.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
+    const notesPath = pptxNotesTarget(txt(relsName));   // utils.js, pur
+    let notes = '';
+    if (notesPath && files[notesPath]) {
+      const nd = parser.parseFromString(txt(notesPath), 'application/xml');
+      notes = pptxShapeBlocks(nd, { skipPlaceholders: PPTX_NOTES_SKIP_PH }).join('\n').trim();
+    }
+
+    slides.push({ name: name, title: title, blocks: blocks, notes: notes, hasNotes: !!notes });
+  }
+  return { slides: slides, untitled: untitled };
+}
+
+// Placeholders d'une pièce de notes qui ne PORTENT PAS de propos : l'image de
+// la diapositive et le numéro de slide. Ce dernier est le piège concret —
+// mesuré sur la fixture réelle, dont les quatre notesSlides sont VIDES mais
+// contiennent un champ `a:fld` de numérotation : un balayage naïf rendrait « 1 »
+// comme note de présentateur, ce qui est du bruit présenté comme du propos.
+const PPTX_NOTES_SKIP_PH = ['sldNum', 'sldImg', 'ftr', 'dt'];
+
+// Découpe d'une slide en blocs de texte : shape → paragraphe (a:p) → runs.
+// C'EST la décision d'implémentation du format, et elle a été MESURÉE sur le
+// deck réel (V-5-PLAN §3.1 bis), pas devinée :
+//   - balayage plat des a:t  → 160 fragments « Centre », « », « de  »… illisible,
+//     les runs étant coupés par les changements de mise en forme ;
+//   - par shape, runs collés  → « Risques ITMarc GUIDAT », libellé et personne collés ;
+//   - shape → a:p → runs      → « Risques IT\nMarc GUIDAT », le bon niveau.
+// Un balayage plat produirait la bouillie de fragments qu'on reproche au
+// serveur, à l'envers : lui perd du texte, elle en rend trop peu structuré.
+//
+// Le parcours descend DANS les p:grpSp (shapes groupées), et c'est le gain net
+// du format : python-pptx n'itère pas dans les groupes, donc le serveur perd
+// 83 des 160 fragments de l'organigramme de la fixture — soit exactement les
+// noms et rattachements pour lesquels on ouvre ce fichier.
+//
+// Les tableaux (a:tbl d'un p:graphicFrame) sont rendus en lignes « a | b | c »,
+// même forme que htmlTableToText côté docx : un deck de format différent ne doit
+// pas se lire d'une autre façon.
+function pptxShapeBlocks(doc, opts) {
+  const o = opts || {};
+  const skip = o.skipPlaceholders || null;
+  const out = [];
+  const root = doc && doc.documentElement;
+  if (!root) return out;
+
+  const paragraphsOf = (el) => {
+    const paras = [];
+    const ps = el.getElementsByTagName('a:p');
+    for (let i = 0; i < ps.length; i++) {
+      const ts = ps[i].getElementsByTagName('a:t');
+      let line = '';
+      for (let j = 0; j < ts.length; j++) line += (ts[j].textContent || '');
+      if (line.trim()) paras.push(line);
+    }
+    return paras;
+  };
+
+  const walk = (el) => {
+    for (let i = 0; i < el.childNodes.length; i++) {
+      const ch = el.childNodes[i];
+      if (!ch || ch.nodeType !== 1) continue;
+      const tag = ch.nodeName;
+      if (tag === 'p:sp') {
+        if (skip) {
+          const ph = ch.getElementsByTagName('p:ph')[0];
+          const ty = ph && ph.getAttribute('type');
+          if (ty && skip.indexOf(ty) >= 0) continue;
+        }
+        const paras = paragraphsOf(ch);
+        if (paras.length) out.push(paras.join('\n'));
+      } else if (tag === 'p:grpSp') {
+        walk(ch);   // le sous-arbre d'un groupe porte des p:sp ordinaires
+      } else if (tag === 'p:graphicFrame') {
+        const tbls = ch.getElementsByTagName('a:tbl');
+        for (let t = 0; t < tbls.length; t++) {
+          const rows = [];
+          const trs = tbls[t].getElementsByTagName('a:tr');
+          for (let r = 0; r < trs.length; r++) {
+            const cells = [];
+            const tcs = trs[r].getElementsByTagName('a:tc');
+            for (let c = 0; c < tcs.length; c++) cells.push(paragraphsOf(tcs[c]).join(' ').trim());
+            rows.push(cells.join(' | '));
+          }
+          if (rows.length) out.push(rows.join('\n'));
+        }
+      } else {
+        walk(ch);
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+// Titre d'une slide : le p:sp dont le p:ph porte type="title" ou "ctrTitle" —
+// la règle EXACTE de slide.shapes.title de python-pptx, donc la parité stricte
+// avec le serveur sur ce point. Rend '' quand la slide n'en a pas, et c'est le
+// cas le plus fréquent : 6 slides titrées sur 71 dans la fixture réelle, d'où
+// le repli sur un extrait au listing (décision 6).
+function pptxSlideTitle(doc) {
+  const root = doc && doc.documentElement;
+  if (!root) return '';
+  const sps = root.getElementsByTagName('p:sp');
+  for (let i = 0; i < sps.length; i++) {
+    const ph = sps[i].getElementsByTagName('p:ph')[0];
+    const ty = ph && ph.getAttribute('type');
+    if (ph && (ty === 'title' || ty === 'ctrTitle')) {
+      const ts = sps[i].getElementsByTagName('a:t');
+      let s = '';
+      for (let j = 0; j < ts.length; j++) s += (ts[j].textContent || '');
+      if (s.trim()) return s.trim();
+    }
+  }
+  return '';
+}
+
+// Lecteur `list` du pptx — entrée pptx de DOC_READERS (lot V-5, étape 3).
+// Remplace listZipDocument, qui rendait la mécanique interne du conteneur
+// OOXML. Le listing zip d'un .pptx reste atteignable par docs__extract, il
+// n'est simplement plus ce qu'on sert par défaut (V-5-PLAN §4.2).
+async function listPptxDocument(u8, record, ref) {
+  const opened = await openPptxDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.slides.length,
+  });
+  return formatPptxListing(opened.slides, { untitled: opened.untitled });   // utils.js, pur
+}
+
+// Lecteur `read` du pptx (lot V-5, étape 3). Le selector est le NUMÉRO d'une
+// slide ('3') ou une plage ('2-5') — le même parsePageSelector que le PDF, et
+// réutilisé tel quel : une slide n'a pas de nom stable à viser (six sur
+// soixante-onze portent un titre), contrairement à une feuille Excel ou à une
+// section Word. Le numéro est celui de l'ORDRE DE PRÉSENTATION, résolu à
+// l'ouverture.
+//
+// Les notes de présentateur partent AVEC la slide (décision 5) : dans une
+// présentation, les slides portent des mots-clés et les notes portent le propos
+// — servir les slides seules donnerait au modèle le squelette en lui cachant le
+// contenu. formatPptxRead les sépare par un intertitre explicite, sans quoi le
+// modèle attribuerait au public ce qui était destiné au présentateur.
+async function readPptxDocument(u8, record, ref, selector) {
+  const opened = await openPptxDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const all = opened.slides;
+  if (!all.length) return toolFail('docs__read', 'Cette présentation ne contient aucune slide lisible.');
+
+  const sel = parsePageSelector(selector, all.length);   // utils.js, pur
+  if (!sel.ok) return toolFail('docs__read', sel.message);
+
+  const picked = [];
+  for (let n = sel.start; n <= sel.end; n++) {
+    const s = all[n - 1];
+    picked.push({
+      number: n, title: s.title,
+      text: (s.blocks || []).join('\n\n').trim(),
+      notes: s.notes,
+    });
+  }
+
+  return {
+    // La notice de clamp part AVEC le texte (comme pour le PDF) : une plage
+    // ramenée en silence ferait conclure au modèle que le deck s'arrête là.
+    text: formatPptxRead(picked, { notice: sel.notice }),   // utils.js, pur
+    // Le label porte les bornes EFFECTIVEMENT servies (parsePageSelector clampe),
+    // pas la demande brute : un ack qui annonce la demande ment dès qu'un clamp
+    // a mordu — même règle que pour la plage de cellules d'une feuille.
+    label: sel.start + '-' + sel.end,
+    resourceName: pptxReadResourceName(record.name, sel.start, sel.end),   // utils.js, pur
+  };
 }
 
 // Message d'erreur d'un docs__* natif appelé sur un format qu'il ne sait pas
@@ -1555,16 +2081,19 @@ const TOOLS = [
     // handle hors-scope → null → « introuvable » (no-oracle, comme conv__get).
     name: 'docs__list',
     description:
-      "Liste les membres d'une archive zip référencée par son handle (att-N, file-<id> " +
-      "ou res_<id>), sans rien décompresser : nom et taille décompressée de chaque " +
-      "membre, nature de l'archive (zip brut ou document Office), et mention explicite " +
-      "des membres non extractibles (chiffrés, chemin non sûr). Appelle-le avant " +
-      "miaou__docs__extract pour choisir le membre à matérialiser. Ne renvoie jamais " +
-      "le contenu des membres.",
+      "Donne la STRUCTURE d'un document référencé par son handle (att-N, file-<id> " +
+      "ou res_<id>), sans en renvoyer le contenu : les pages et le sommaire d'un " +
+      "PDF, les feuilles et leurs dimensions d'un classeur Excel, les sections " +
+      "d'un document Word, les slides d'une présentation PowerPoint, ou les " +
+      "membres d'une archive zip (nom et taille, avec " +
+      "mention explicite de ceux qui ne sont pas extractibles — chiffrés, chemin " +
+      "non sûr). Appelle-le TOUJOURS en premier : ce qu'il rend est exactement ce " +
+      "que tu peux ensuite demander à miaou__docs__read (par un selector) ou à " +
+      "miaou__docs__extract (par un chemin de membre).",
     inputSchema: {
       type: 'object',
       properties: {
-        ref: { type: 'string', description: 'Handle de l\'archive : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
+        ref: { type: 'string', description: 'Handle du document : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
       },
       required: ['ref'],
     },
@@ -1699,22 +2228,27 @@ const TOOLS = [
     // quelle taille de document.
     name: 'docs__read',
     description:
-      "Lit une ou plusieurs pages d'un document référencé par handle (att-N, file-<id> " +
-      "ou res_<id>) : PDF aujourd'hui. Le selector désigne des unités, '3' pour une " +
-      "page, '2-5' pour une plage. Renvoie le texte des pages demandées, en signalant " +
-      "celles qui n'en portent pas (pages scannées). Pour un zip, ce n'est pas cet " +
-      "outil : liste avec miaou__docs__list puis matérialise un membre avec " +
-      "miaou__docs__extract.",
+      "Lit une partie d'un document référencé par handle (att-N, file-<id> ou " +
+      "res_<id>) : PDF, classeur Excel, document Word et présentation PowerPoint. " +
+      "Le selector désigne " +
+      "l'unité du format — pour un PDF une page ('3') ou une plage ('2-5'), pour " +
+      "un classeur une feuille ('Synthèse') éventuellement suivie d'une plage de " +
+      "cellules ('Synthèse!A1:C10'), pour un document Word le titre exact d'une " +
+      "section ('2. Developer Portal'), pour une présentation le numéro d'une " +
+      "slide ('3') ou une plage ('2-5'). Appelle miaou__docs__list d'abord : il te " +
+      "donne les unités disponibles, donc ce que tu peux écrire ici. Pour un zip, " +
+      "ce n'est pas cet outil : liste avec miaou__docs__list puis matérialise un " +
+      "membre avec miaou__docs__extract.",
     inputSchema: {
       type: 'object',
       properties: {
         ref: { type: 'string', description: 'Handle du document : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
-        selector: { type: 'string', description: "Unités à lire : 'N' pour une seule (ex. '3'), 'N-M' pour une plage inclusive (ex. '2-5'). Pas de mot ni de préfixe : '3', jamais 'page 3'." },
+        selector: { type: 'string', description: "L'unité à lire, dans la forme du format. PDF : 'N' pour une page (ex. '3'), 'N-M' pour une plage inclusive (ex. '2-5') — pas de mot ni de préfixe, '3' et jamais 'page 3'. Classeur Excel : le nom exact d'une feuille tel que docs__list l'a rendu (ex. 'Synthèse'), éventuellement suivi de '!' et d'une plage de cellules (ex. 'Synthèse!A1:C10'). Document Word : le titre exact d'une section tel que docs__list l'a rendu (ex. '2. Developer Portal'), ou '(préambule)' / '(corps)' pour le texte qui ne relève d'aucun titre — lire une section rend aussi ses sous-sections. Présentation PowerPoint : le numéro d'une slide dans l'ordre de la présentation (ex. '3') ou une plage (ex. '2-5'), comme un PDF — les notes de présentateur partent avec la slide." },
         // Le « parce que » est OBLIGATOIRE dans la description d'un booléen
         // (mémoire project_model_written_field_shape_two_levels) : un modèle
         // faible à qui on donne « si true, alors X » choisit au hasard. Ici il
         // doit comprendre le CRITÈRE — le volume — pas la mécanique.
-        as_resource: { type: 'boolean', description: "Range le texte lu dans une ressource res_… au lieu de le renvoyer dans ton contexte, parce qu'une plage large (des dizaines de pages) le saturerait. Le handle rendu se passe ensuite à miaou__js__eval pour chercher, compter ou filtrer dedans. Par défaut false : une ou deux pages se lisent directement." },
+        as_resource: { type: 'boolean', description: "Range le texte lu dans une ressource res_… au lieu de le renvoyer dans ton contexte, parce qu'une lecture large (des dizaines de pages, une feuille de plusieurs milliers de lignes, une section de document longue, des dizaines de slides) le saturerait. Le handle rendu se passe ensuite à miaou__js__eval pour chercher, compter ou filtrer dedans. Par défaut false : une ou deux pages, une petite plage de cellules, ou une section ordinaire, se lisent directement." },
       },
       required: ['ref', 'selector'],
     },
@@ -1739,7 +2273,7 @@ const TOOLS = [
       const reader = DOC_READERS[kind];
       if (!reader || !reader.read) {
         if (reader && reader.list) {
-          return toolFail('docs__read', 'Ce document (' + kind + ') ne se lit pas par pages : ' +
+          return toolFail('docs__read', 'Ce document (' + kind + ') ne se lit pas par unités : ' +
             'appelle miaou__docs__list pour en voir la structure, puis miaou__docs__extract ' +
             'sur le membre qui t\'intéresse.');
         }
@@ -1749,12 +2283,17 @@ const TOOLS = [
       const out = await reader.read(u8, record, ref, selector);
       if (typeof out === 'string') return out;   // refus déjà formaté par le lecteur
       const text = out.text;
-      const range = out.range;
+      // Ce qui a été EFFECTIVEMENT servi (après clamp), et sous quel nom le
+      // ranger : les deux viennent du lecteur, seul à savoir ce qu'est une unité
+      // de son format (une page se dit '2-5', une feuille se dit
+      // 'Synthèse!B2:E31'). Repli sur le selector brut pour un lecteur qui ne
+      // les fournirait pas — mais tous les lecteurs de la table les fournissent.
+      const label = out.label || selector;
 
       if (!asResource) {
         _pendingToolAcks.push({
           kind: 'docs_read', handle: ref, resourceName: record.name,
-          selector: range ? range.start + '-' + range.end : selector,
+          selector: label, sourceName: record.name,
           size: text.length,
         });
         // Cap de contexte : REFUS explicite plutôt que troncature (doctrine du
@@ -1770,13 +2309,16 @@ const TOOLS = [
         return text;
       }
 
-      const name = pdfReadResourceName(record.name, range ? range.start : 0, range ? range.end : 0);   // utils.js, pur
+      const name = out.resourceName || docReadResourceName(record.name, '');   // utils.js, pur
       const id = await _storeBlock('text/plain', name, utf8Encode(text), 'inline',
         ctx.convId, Date.now(), Math.random);
       if (!id) return toolFail('docs__read', 'Échec de stockage du texte lu.');
       _pendingToolAcks.push({
         kind: 'docs_read', handle: ref, ok: true, resourceName: name,
-        selector: range ? range.start + '-' + range.end : selector,
+        // sourceName = le document LU, resourceName = l'extrait PRODUIT : c'est
+        // du premier que se déduit le mot d'unité de l'ack (« Section … lue »),
+        // le second étant ici un .txt qui ne dit plus rien du format d'origine.
+        selector: label, sourceName: record.name,
         mime: 'text/plain', size: text.length,
       });
       // JAMAIS _makeResourceRef (piège 26c) : un [resource_ref:…] vers un record
@@ -2424,6 +2966,58 @@ function findDocsInflationTool() {
 // isolé, une valeur stable par fichier suffit à ne pas collisionner. Retourne
 // le texte extrait (tronqué au cap fourni) ou null si aucun outil ne qualifie
 // ou si l'appel échoue (dégradé, jamais bloquant — cf. D7 "pas de queue/retry").
+// Description d'un classeur Excel pour la bibliothèque (lot V-5, étape 1).
+// Même raisonnement que describePdfForLibrary, et il vaut ici encore plus fort :
+// décrire un .xlsx par son listing de MEMBRES ZIP donnerait
+// « [Content_Types].xml, xl/workbook.xml, xl/worksheets/sheet1.xml… », soit une
+// description qui ne dit rien du classeur. Les noms des feuilles et leurs
+// dimensions, eux, disent de quoi il s'agit.
+//
+// BORNÉE par construction : le listing des feuilles, plus les premières lignes
+// de la PREMIÈRE feuille seulement. C'est une description, pas une lecture.
+//
+// Rend null sur échec, JAMAIS d'exception (l'appelant retombe sur le chemin
+// serveur, puis sur une description vide : un fichier doit toujours pouvoir
+// être déposé). Pas de console.warn — leçon U-1.
+async function describeXlsxForLibrary(u8, maxChars) {
+  try {
+    const lib = await ensureSheetJs();   // ui.js
+    const wb = lib.read(u8, { type: 'array' });
+    if (!wb || !wb.SheetNames || !wb.SheetNames.length) return null;
+
+    const sheets = [];
+    for (const name of wb.SheetNames) {
+      const sh = wb.Sheets[name];
+      const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
+      const r = refA1 ? parseA1Range(refA1) : null;   // utils.js, pur
+      sheets.push({ name: name, ref: refA1,
+        rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 });
+    }
+    const head = formatXlsxListing(sheets);   // utils.js, pur
+
+    // Aperçu : les premières lignes de la première feuille NON VIDE. Le clone à
+    // !ref restreint est le même geste que readXlsxDocument — et pour la même
+    // raison : l'option `range` de sheet_to_csv est silencieusement ignorée.
+    let preview = '';
+    for (const sh of sheets) {
+      if (!sh.ref) continue;
+      const full = parseA1Range(sh.ref);
+      if (!full) continue;
+      const end = Math.min(full.e.r, full.s.r + 9);   // 10 lignes au plus
+      const view = Object.assign({}, wb.Sheets[sh.name], {
+        '!ref': formatA1Range({ s: full.s, e: { r: end, c: full.e.c } }),   // utils.js, pur
+      });
+      const csv = String(lib.utils.sheet_to_csv(view) || '').replace(/\n+$/, '');
+      if (csv) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + csv; }
+      break;
+    }
+    const out = preview ? head + '\n\n' + preview : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;
+  }
+}
+
 // Description d'un PDF pour la bibliothèque (lot V-4, décision 3). BORNÉE par
 // construction : métadonnées + sommaire + PREMIÈRE PAGE, rien de plus. C'est une
 // description, pas une lecture — ouvrir un rapport de 400 pages pour décrire une
@@ -2473,6 +3067,61 @@ async function describePdfForLibrary(u8, maxChars) {
   }
 }
 
+// Description d'un document Word pour la bibliothèque (lot V-5, étape 2).
+// Même raisonnement que pour le PDF et le classeur : le listing zip d'un .docx
+// ne montrerait que word/document.xml et [Content_Types].xml.
+//
+// BORNÉE par construction : la liste des sections, plus le début de la première
+// qui porte du texte. C'est une description, pas une lecture.
+async function describeDocxForLibrary(u8, maxChars) {
+  try {
+    const opened = await openDocxDocument(u8, { name: '' }, 'library');
+    if (opened.fail || !opened.sections.length) return null;
+    const head = formatDocxListing(opened.sections, { tables: opened.tables });   // utils.js, pur
+    let preview = '';
+    for (const sec of opened.sections) {
+      const body = String(sec.text || '').trim();
+      if (!body) continue;
+      preview = 'Début de « ' + sec.label + ' » :\n' + body.slice(0, 600);
+      break;
+    }
+    const out = preview ? head + '\n\n' + preview : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;   // dégradé, jamais bloquant
+  }
+}
+
+// Description d'une présentation pour la bibliothèque (lot V-5, étape 3). Même
+// raisonnement que pour les trois autres formats : le listing zip d'un .pptx ne
+// montrerait que ppt/slides/slide1.xml et [Content_Types].xml.
+//
+// BORNÉE par construction : le listing des slides (donc leurs titres ou leurs
+// extraits, qui sont déjà une description en soi) et rien de plus. Contrairement
+// au PDF et au docx, aucun aperçu supplémentaire n'est ajouté : le listing d'une
+// présentation PORTE déjà le texte, puisque le repli d'extrait (décision 6) le
+// met dans chaque ligne. En rajouter ferait de la description une lecture.
+async function describePptxForLibrary(u8, maxChars) {
+  try {
+    const opened = await openPptxDocument(u8, { name: '' }, 'library');
+    if (opened.fail || !opened.slides.length) return null;
+    return formatPptxListing(opened.slides, { untitled: opened.untitled }).slice(0, maxChars);   // utils.js, pur
+  } catch (e) {
+    return null;   // dégradé, jamais bloquant
+  }
+}
+
+// Quel format se décrit par son CONTENU, et par quelle fonction. Source unique,
+// dérivée d'aucune autre : un format peut être lisible sans être descriptible
+// (le zip l'est — sa description EST son listing de membres), donc cette table
+// n'est pas DOC_READERS et ne doit pas s'y adosser.
+const DOC_DESCRIBERS = {
+  pdf:  describePdfForLibrary,
+  xlsx: describeXlsxForLibrary,
+  docx: describeDocxForLibrary,
+  pptx: describePptxForLibrary,
+};
+
 async function extractBinaryFileTextForDescription(record, maxChars) {
   // Bifurcation par type EN AMONT du chemin serveur (lot V-1, §6 du brief) :
   // une archive zip se décrit par la LISTE de son contenu (noms + tailles
@@ -2499,17 +3148,28 @@ async function extractBinaryFileTextForDescription(record, maxChars) {
   const u8 = record && record.data ? new Uint8Array(record.data) : null;
   const kind = u8 ? sniffDocumentKind(u8, record.name) : null;   // utils.js, pur
 
-  if (kind && kind !== 'pdf') {
+  // V-5 : l'Excel puis le Word rejoignent la bifurcation, pour la même raison
+  // que le PDF en V-4 (décrire par le CONTENU plutôt que par le mime) — et de
+  // façon plus tranchée encore : le listing zip d'un .xlsx ou d'un .docx ne
+  // montre que sa plomberie XML.
+  //
+  // Table plutôt que cascade de `kind !== 'x' && kind !== 'y'` : c'est le même
+  // motif que DOC_READERS, et pour la même raison. La cascade s'allonge d'un
+  // terme par format, et chaque terme oublié fait silencieusement retomber un
+  // format sur son listing zip — l'exact défaut qu'on vient de corriger.
+  const describer = DOC_DESCRIBERS[kind];
+  if (kind && !describer) {
     const zipEntries = parseZipCentralDirectory(u8);
     if (zipEntries) return formatZipListing(zipEntries, { maxBytes: MAX_INLINE_BYTES }).slice(0, maxChars);
   }
 
-  if (kind === 'pdf') {
-    const text = await describePdfForLibrary(u8, maxChars);
+  if (describer) {
+    const text = await describer(u8, maxChars);
     if (text) return text;
-    // Échec de lazy-load ou PDF illisible : on RETOMBE sur le chemin serveur
-    // plutôt que d'abandonner. Un serveur branché sait peut-être le lire, et le
-    // dégradé de ce chemin est « description vide », jamais « dépôt refusé ».
+    // Échec de lazy-load ou document illisible : on RETOMBE sur le chemin
+    // serveur plutôt que d'abandonner. Un serveur branché sait peut-être le
+    // lire, et le dégradé de ce chemin est « description vide », jamais
+    // « dépôt refusé ».
   }
 
   const found = findDocsInflationTool();

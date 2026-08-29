@@ -7,7 +7,9 @@ compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
 unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts, et — chargés à la
 demande seulement — Mermaid pour les diagrammes, QuickJS-WASM pour le calcul
-sandboxé, fflate pour les archives zip et pdf.js pour les PDF). On l'ouvre dans
+sandboxé, fflate pour les archives zip et les présentations PowerPoint, pdf.js
+pour les PDF, SheetJS pour les classeurs Excel et mammoth pour les documents
+Word). On l'ouvre dans
 un navigateur, ou on le sert via n'importe quel serveur web statique.
 
 L'apparence se règle sur trois axes indépendants : luminosité (sombre, clair ou
@@ -52,10 +54,16 @@ Figtree/Fira Code).
   en ne ramenant que le résultat — cf. [docs/tools.md](docs/tools.md).
 - **Archives zip** : le modèle ouvre un zip pour en lister les membres et en
   extraire un, ou regroupe plusieurs fichiers produits au fil de l'échange en une
-  archive téléchargeable depuis le fil. Un `.docx`/`.xlsx`/`.pptx` étant un zip,
-  il s'ouvre aussi — cf. [docs/tools.md](docs/tools.md).
+  archive téléchargeable depuis le fil — cf. [docs/tools.md](docs/tools.md).
 - **PDF** : le modèle en lit la structure et les pages, sans serveur — cf.
   [docs/tools.md](docs/tools.md).
+- **Classeurs Excel** : le modèle en liste les feuilles et en lit une plage de
+  cellules, sans serveur — cf. [docs/tools.md](docs/tools.md).
+- **Documents Word** : le modèle en liste les sections et en lit une, tableaux
+  compris, sans serveur — cf. [docs/tools.md](docs/tools.md).
+- **Présentations PowerPoint** : le modèle en liste les slides dans l'ordre de la
+  présentation et en lit une, notes de présentateur comprises, sans serveur —
+  cf. [docs/tools.md](docs/tools.md).
 - **Ressources adressables** : le modèle range un texte de côté — qu'il l'ait
   produit ou qu'il convertisse un gros résultat d'outil pour alléger la
   conversation — et le réinterroge ensuite sans repayer son contenu en tokens à

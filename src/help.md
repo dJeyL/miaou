@@ -10,8 +10,8 @@ Ce que tu peux faire ici :
 
 - **Discuter** avec streaming en direct, arrêter une réponse en cours, éditer un
   de tes messages pour repartir de ce point.
-- **Joindre des fichiers** à un message : images, fichiers texte, archives zip
-  et PDF.
+- **Joindre des fichiers** à un message : images, fichiers texte, archives zip,
+  PDF, classeurs Excel, documents Word et présentations PowerPoint.
 - **Organiser** ton travail en Espaces étanches, chacun avec ses conversations,
   ses fichiers et ses souvenirs.
 - **Garder de la mémoire** : le modèle résume tes échanges et peut enregistrer
@@ -33,13 +33,14 @@ Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le
 trombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur
 la zone de conversation (pas seulement sur la barre de saisie), ou colle
 directement depuis le presse-papier — une image copiée, ou un fichier copié
-depuis l'explorateur de fichiers. Trois types sont exploitables : **images** (le
-modèle les voit réellement, s'il gère la vision), **fichiers texte** (leur
-contenu est transmis au modèle) et **archives zip** (le modèle en liste le
-contenu et en sort le fichier qui l'intéresse — voir plus bas). Les autres
-fichiers binaires sont acceptés et conservés, mais le modèle n'en voit que le
-nom, le type et la taille tant qu'aucun outil ne sait les ouvrir (voir le sujet
-`mcp`).
+depuis l'explorateur de fichiers. Sont exploitables : **images** (le modèle les
+voit réellement, s'il gère la vision), **fichiers texte** (leur contenu est
+transmis au modèle), **archives zip** (le modèle en liste le contenu et en sort
+le fichier qui l'intéresse) et **documents** — PDF, classeurs Excel, documents
+Word — que MIAOU ouvre lui-même, structure d'abord puis lecture ciblée (voir
+plus bas). Les autres fichiers binaires sont acceptés et conservés, mais le
+modèle n'en voit que le nom, le type et la taille tant qu'aucun outil ne sait
+les ouvrir (voir le sujet `mcp`).
 
 Une fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton
 message. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,
@@ -65,9 +66,10 @@ compagnon : le modèle peut lister les fichiers contenus dans une archive que tu
 as jointe ou déposée dans la bibliothèque d'un Espace, puis en sortir celui qui
 l'intéresse pour l'analyser — typiquement une archive de logs. Les membres
 protégés par mot de passe sont refusés explicitement plutôt que lus de travers.
-Un fichier `.docx`, `.xlsx` ou `.pptx` étant techniquement une archive, MIAOU
-sait l'ouvrir aussi, mais n'y voit que sa mécanique interne : pour en tirer le
-texte, mieux vaut un serveur d'extraction documentaire (voir le sujet `mcp`).
+Un document Office (`.docx`, `.xlsx`, `.pptx`) étant lui aussi une archive,
+MIAOU sait l'ouvrir de cette façon — il n'y voit alors que sa mécanique interne,
+ce qui ne sert qu'à qui veut justement la voir. Pour en tirer le texte, c'est
+l'ouverture par format décrite plus bas qui s'applique, et elle est automatique.
 
 Les **PDF** sont lus nativement eux aussi. Le modèle peut en donner la structure
 — nombre de pages, sommaire, titre et logiciel d'origine quand le document les
@@ -75,13 +77,46 @@ porte — puis en lire une page précise ou une plage, sans jamais avaler le
 document entier. Sur un document long, il peut ranger sa lecture dans une
 ressource et l'interroger par code plutôt que de la faire défiler.
 
-Deux limites à connaître. Un PDF **protégé par mot de passe** est refusé
-franchement, MIAOU ne cherche pas à le déchiffrer. Et une page **scannée** (une
+Les **classeurs Excel** (`.xlsx`) s'ouvrent nativement également. Le modèle
+commence par en lister les feuilles avec leurs dimensions, puis lit celle qui
+l'intéresse — entièrement, ou sur une plage de cellules précise comme
+`Synthèse!A1:C10`. Sur une feuille volumineuse, il ne reçoit d'office que les
+premières lignes et sait qu'il doit demander une plage ou ranger la lecture dans
+une ressource. Un classeur déposé dans la bibliothèque d'un Espace est décrit par
+ses feuilles et un aperçu, plutôt que par son nom seul.
+
+Les **documents Word** (`.docx`) s'ouvrent nativement aussi. Le modèle en liste
+d'abord les sections — les titres du document — puis lit celle que tu lui
+désignes, ou celle qui lui paraît utile ; lire une section lui donne aussi ses
+sous-parties. Les **tableaux sont préservés** et rendus à leur place dans la
+section qui les porte, ce qui compte pour un document dont la substance est
+souvent tabulaire. Un document déposé dans la bibliothèque d'un Espace est décrit
+par ses sections et un aperçu.
+
+Les **présentations PowerPoint** (`.pptx`) s'ouvrent nativement elles aussi, et
+c'est le format où MIAOU en voit le plus. Le modèle en liste les slides **dans
+l'ordre de la présentation** — pas dans l'ordre des fichiers internes, qui
+diffère dès qu'une slide a été déplacée — puis lit celle que tu lui désignes par
+son numéro, ou une plage. Chaque slide du listing porte son titre, ou à défaut un
+extrait de son texte : sur un deck où presque aucune slide n'est titrée, une
+liste de « (sans titre) » ne t'aiderait pas plus qu'elle n'aide le modèle.
+
+Deux choses valent d'être sues sur ce format. Le texte des **formes groupées**
+est lu — c'est le cas des organigrammes, où les noms et les rattachements vivent
+justement dans des groupes, et où un outil qui ne descend pas dedans perd la
+moitié du contenu. Et les **notes de présentateur** sont lues avec leur slide,
+clairement séparées d'elle : dans une présentation, les slides portent souvent
+des mots-clés et les notes portent le propos.
+
+Deux limites à connaître. Un PDF, un classeur, un document Word ou une
+présentation **protégé par
+mot de passe** est
+refusé franchement, MIAOU ne cherche pas à le déchiffrer. Et une page **scannée** (une
 image de page, sans texte dessous) ne donne rien à lire : MIAOU ne fait pas de
 reconnaissance de caractères, et le signale au modèle pour qu'il te le dise
 plutôt que de conclure que le document est vide.
 
-Ces ouvertures natives — zip comme PDF — chargent au premier usage un composant
+Ces ouvertures natives — zip, PDF, Excel, Word — chargent au premier usage un composant
 depuis Internet. **Sans connexion, MIAOU ne peut ouvrir aucun document** ; c'est
 le cas où un serveur compagnon reste utile (voir le sujet `mcp`).
 
@@ -272,14 +307,15 @@ Ces serveurs sont **optionnels** : ils n'existent que si tu les as configurés
 exemple :
 
 - **Lire une page web** à partir de son adresse, ou **rechercher sur le web**.
-- **Extraire le contenu de documents bureautiques** : Word, Excel, PowerPoint —
-  utile pour interroger un document que tu as joint ou déposé dans une
-  bibliothèque d'Espace. Les **archives zip** et les **PDF**, eux, n'ont plus
-  besoin de serveur : MIAOU les ouvre nativement (voir le sujet
-  `pieces-jointes`). Un serveur d'extraction documentaire garde deux usages :
-  les formats bureautiques, et le travail **hors connexion** — l'ouverture
-  native télécharge son moteur au premier usage, un serveur local n'en a pas
-  besoin.
+- **Extraire le contenu de documents** — mais ce n'est plus nécessaire : les
+  archives zip, les PDF, les classeurs Excel, les documents Word et les
+  présentations PowerPoint sont désormais tous ouverts par MIAOU lui-même (voir
+  le sujet `pieces-jointes`). Un serveur d'extraction documentaire garde un seul
+  usage, qui reste réel : le travail **hors connexion**. L'ouverture native
+  télécharge son moteur depuis internet au premier document d'un format donné ;
+  sans réseau, elle ne peut pas s'amorcer, là où un serveur local tourne chez
+  toi. Si tu travailles souvent déconnecté, c'est la raison de garder ce serveur
+  configuré.
 - Répondre à des besoins ponctuels (météo, calculs, etc.) selon les serveurs
   disponibles.
 
@@ -287,10 +323,11 @@ Si aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; l
 reste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans
 bloquer les autres.
 
-Pour l'accès au web et la lecture de documents, le projet compagnon
-**miaou-mcp-servers** fournit des serveurs prêts à l'emploi (téléchargement et
-recherche de pages web, extraction de PDF et de fichiers bureautiques) : c'est
-la façon recommandée d'ajouter ces capacités à MIAOU. Il est open source :
+Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
+serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
+façon recommandée d'ajouter cette capacité à MIAOU. Il fournit aussi un serveur
+d'extraction documentaire, qui n'est plus la voie normale d'ouverture d'un
+document mais reste le recours hors connexion. Il est open source :
 https://github.com/dJeyL/miaou-mcp-servers
 
 ## exports

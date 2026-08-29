@@ -669,6 +669,311 @@ model-side unique sur la bibliothèque) :**
   d'affichage assumée, jamais de routage (le routage se fait aux octets) : s'y
   tromper coûte un mot inexact dans une trace, pas une mauvaise lecture.
 
+**Lecture native de classeurs Excel (lot V-5 étape 1, `docs__list` / `docs__read`) :**
+- **`DOC_READERS.xlsx` gagne `{ list, read }`** (`listXlsxDocument` /
+  `readXlsxDocument`) à la place du lecteur zip. Le listing zip d'un `.xlsx`
+  **ne disparaît pas** pour autant : il reste accessible par `docs__extract`
+  (inspecter `xl/workbook.xml`, sortir une image embarquée), c'est
+  l'**orientation** qui change, pas la capacité. `docx` et `pptx` restent sur
+  `listZipDocument` jusqu'aux étapes 2 et 3.
+- **LE PIÈGE DU FORMAT, mesuré : `sheet_to_csv` ignore SILENCIEUSEMENT son
+  option `range`** en 0.18.5 — les trois formes (chaîne, objet, entier) rendent
+  la feuille **entière** (figé par un contrôle du spike). Porté naïvement, un
+  selector `'Feuille!A1:C10'` dumperait toute la feuille en prétendant avoir
+  servi la plage : « plausible et faux », le mode de défaillance du zip chiffré
+  de V-1. Le rendu passe donc par un **clone à `!ref` restreint**
+  (`Object.assign({}, sheet, {'!ref': …})`), clone **superficiel** à dessein
+  (les cellules sont partagées ; les copier pour lire dix lignes d'une feuille
+  de 50 000 serait absurde). Ne pas « simplifier » vers l'option native sans
+  rejouer le spike.
+- **Le second piège, mesuré aussi : un `!ref` élargi DÉROULE du vide.** Sur une
+  feuille réelle dont le `!ref` est `B2:E31`, poser `A1:Z999` fait rendre à
+  SheetJS **999 lignes**, dont ~970 vides — il ne borne pas, il déroule ce qu'on
+  lui dit. D'où `restrictSheetRange` (utils.js, **pur**), qui **intersecte** la
+  plage demandée avec le `!ref` réel, **dit** le clamp par une notice (même
+  raison que le FMT4 de `parsePageSelector`), et traite l'intersection **vide**
+  comme un **échec** — rendre une chaîne vide ferait conclure « la feuille est
+  vide » à tort.
+- **Le `!ref` ne commence pas forcément en A1** (`B2:E31` sur le classeur réel) :
+  toute arithmétique de plage qui suppose une origine A1 se décale. Couvert par
+  `parseA1Range`/`formatA1Range` (utils.js, purs), en indices 0-based comme
+  `decode_range` de SheetJS pour que les deux se composent sans conversion.
+  `colLetterToIndex` est en **base 26 bijective** (pas de « colonne zéro ») :
+  une base 26 ordinaire ferait de `AA` la 28e colonne au lieu de la 27e,
+  décalage invisible en deçà de la colonne Z — donc sur toute fixture jouet.
+- **`parseA1Range` borne les colonnes à trois lettres**, et ce n'est pas de la
+  coquetterie : sans borne, `'FEUILLE1'` est une référence de cellule
+  syntaxiquement valide (colonne « FEUILLE », ligne 1) et le parseur rendrait une
+  plage à la colonne 1 922 664 644 au lieu de `null`. La borne est celle du
+  format (Excel s'arrête à XFD, 16 384 colonnes), pas une valeur choisie.
+- **Le selector est `'Feuille'` ou `'Feuille!A1:C10'`** — pas le `'N'`/`'N-M'`
+  du PDF : une feuille se désigne par son nom, et forcer un index reviendrait à
+  faire compter au modèle des feuilles qu'il a sous les yeux nommées.
+  `parseSheetSelector` (utils.js, pur) porte le `split("!", 1)` du serveur, avec
+  **un repli** que le serveur n'a pas : si le selector entier EST un nom de
+  feuille, il est pris tel quel. Sans lui, une feuille nommée `« Alerte! »` ne
+  serait adressable par **aucun** selector (le split chercherait `« Alerte »`).
+  La plage reste inaccessible sur une telle feuille — le `!` y est ambigu par
+  construction. Feuille inconnue → message **nommant les feuilles disponibles**,
+  et rattrapage de casse quand une seule correspond.
+- **`MAX_XLSX_ROWS_DEFAULT` (200) ne mord QUE sans plage explicite** (portage du
+  cap serveur) : un modèle qui écrit `'Feuille!A1:C10000'` a exprimé une
+  intention, un modèle qui écrit `'Feuille'` ne sait pas encore qu'elle fait
+  50 000 lignes. La troncature **se dit** et propose les deux suites (une plage
+  explicite, ou `as_resource`). C'est une borne de **lecture** ;
+  `JS_EVAL_OUTPUT_CAP` reste la borne de **sortie**, appliquée après coup.
+- **Le contrat de retour d'un lecteur `read` s'élargit** : `{ text, label,
+  resourceName }` au lieu de `{ text, range }`. `label` est le selector
+  **effectivement servi** (après clamp), `resourceName` le nom du record
+  `as_resource` — les deux viennent du **lecteur**, seul à savoir ce qu'est une
+  unité de son format : une page se dit `'2-5'`, une feuille se dit
+  `'Synthèse!B2:E31'`, et une feuille ne se nomme pas `-p2-5`. Le handler ne
+  devine plus. `pdfReadResourceName` est conservé mais dérive désormais de
+  `docReadResourceName(source, suffixe)` + `slugifyResourceSuffix` (utils.js,
+  purs) : seul le suffixe varie par format.
+- **Classeur protégé : refus métier**, comme le PDF — mais SheetJS n'a pas
+  l'équivalent de `PasswordException`, il lève une erreur ordinaire. On la
+  reconnaît **sur son message** (`/password|encrypt/i`) avec repli sur l'erreur
+  générique : reconnaître un message est fragile, d'où le repli, mais le silence
+  serait pire.
+- **`ensureSheetJs` (ui.js)** suit `ensureFflate`/`ensurePdfJs` (échec propagé,
+  promesse mémoïsée, reset-on-reject, garde post-`onload` sur `read` ET
+  `utils.sheet_to_csv`), en plus simple : **pas de worker**, donc « script
+  chargé » et « bibliothèque prête » coïncident ici — ce qui n'était pas le cas
+  de pdf.js.
+- **Ni SheetJS ni mammoth ne DÉTACHENT le buffer qu'on leur passe** — vérifié par
+  exécution (deux lectures enchaînées du même buffer, `byteLength` intact ;
+  contrôles ajoutés au spike). Le `u8.slice()` défensif d'`openPdfDocument` est
+  **spécifique à pdf.js** et n'a pas à être reproduit « par symétrie ».
+- **Dépendance GELÉE à `xlsx@0.18.5`**, pour une raison différente de pdf.js :
+  **SheetJS a quitté npm**. 0.18.5 est la dernière version publiée sur le
+  registre ; le projet distribue depuis sur son propre CDN. Épingler via
+  jsdelivr reste stable (npm ne réécrit pas une version publiée) et garde le
+  patron des autres artefacts, mais **cette branche ne recevra aucun correctif**.
+  Si un `.xlsx` réel refuse de s'ouvrir, la question se rouvre — et le fallback
+  `mcp_docs` existe pour que ce ne soit pas bloquant.
+- **Description de bibliothèque : l'Excel rejoint la bifurcation**
+  (`describeXlsxForLibrary`), et plus nettement encore que le PDF — décrire un
+  `.xlsx` par son listing de membres zip donnerait
+  « `[Content_Types].xml`, `xl/workbook.xml`, `xl/worksheets/sheet1.xml`… »,
+  soit une description qui ne dit rien du classeur. On rend les feuilles avec
+  leurs dimensions plus un aperçu de **dix lignes** de la première feuille non
+  vide. Mêmes trois gardes que le PDF : bornée, dégradée jamais bloquante
+  (échec → `null` → chemin serveur), sans `console.warn`.
+- **Les libellés d'ack passent par une TABLE** (`DOC_ACK_UNITS`, utils.js) au
+  lieu d'une cascade de ternaires : chaque format ajouté est **une ligne**, et le
+  **genre voyage avec l'unité** au lieu d'être recalculé à chaque usage — c'est
+  ainsi qu'on a écrit « aucun page » en V-4. « feuille » est féminin. Pour
+  `docs_read`, la **forme du selector** décide s'il s'agit d'une unité numérotée
+  (pages) ou nommée ; le **mot** de l'unité nommée, lui, vient de la table
+  (étape 2 — avec un seul format nommé, tout selector non numérique s'annonçait
+  « Feuille … lue », y compris une section de document Word).
+
+**Lecture native de documents Word (lot V-5 étape 2, `docs__list` / `docs__read`) :**
+- **`DOC_READERS.docx` gagne `{ list, read }`** (`listDocxDocument` /
+  `readDocxDocument`) à la place du lecteur zip. Comme pour l'Excel, le listing
+  zip d'un `.docx` reste atteignable par `docs__extract` (inspecter
+  `word/document.xml`, sortir une image embarquée) : c'est l'**orientation** qui
+  change, pas la capacité.
+- **`mammoth@1.11.0`** via `ensureMammoth` (ui.js), même contrat que les trois
+  autres lazy-loads. Deux différences avec pdf.js, **mesurées et non supposées**
+  (spike V-5) : pas de worker (« script chargé » = « lib prête »), et **le buffer
+  n'est pas détaché** — donc pas de `u8.slice()` défensif à recopier « par
+  symétrie ». Contrairement à SheetJS, mammoth est toujours publié sur npm :
+  l'épinglage est du conservatisme ordinaire, pas une branche gelée.
+- **`convertToHtml`, et elle seule.** Les deux autres API ont été écartées au
+  spike sur sortie observée : `extractRawText` **perd les tableaux** (la fixture
+  réelle en porte 10, et ils sont la substance du fichier — le serveur a payé ce
+  piège, cf. le commentaire de `docx_read`), et `convertToMarkdown` les aplatit
+  cellule par cellule tout en sur-échappant (`Sous\-section`). La garde
+  post-`onload` ne vérifie **que** `convertToHtml` : vérifier les deux autres
+  laisserait croire qu'on peut s'en servir.
+- **Ce HTML ne passe PAS par `sanitizeHtml`/DOMPurify**, et c'est délibéré : il
+  ne va **jamais au DOM**, il va dans un tool result puis en texte. Le piège 21
+  gouverne le chemin string→HTML **affiché** ; il n'y en a pas ici. Le jour où un
+  docx converti s'afficherait dans le fil, `sanitizeHtml` redeviendrait
+  obligatoire — c'est exactement le troisième chemin de `renderMarkdownDocBody`
+  (lot R), qui, lui, affiche.
+- **Le parsing du HTML est à la regex, pas au `DOMParser`** : le pur doit tourner
+  sous QuickJS, qui n'a pas de DOM. Acceptable **ici et nulle part ailleurs**,
+  parce que l'entrée n'est pas du HTML arbitraire mais la sortie d'un générateur
+  connu, au vocabulaire fermé (mesuré sur la fixture réelle : `h1`-`h6`, `p`,
+  `table`/`thead`/`tbody`/`tr`/`th`/`td`, `strong`, `em`, `ul`/`ol`/`li`).
+- **Le décodage d'entités est une garde de round-trip, pas du cosmétique.**
+  `decodeHtmlEntities` (utils.js) est appliqué au texte **comme aux labels de
+  section**. La fixture réelle porte un heading « 3. Gateway `&amp;` styles
+  d'API » : non décodé — ou décodé au listing mais pas à la comparaison —
+  **aucun selector ne pourrait jamais viser cette section**, puisque le modèle
+  recopie ce que le listing lui a montré.
+- **Un `<table>` est DANS sa section**, et c'est le gain structurel sur le
+  serveur. `python-docx` expose paragraphes et tables en deux collections
+  séparées, d'où son label spécial `(tableaux)` qui rassemblait à la fin ce que
+  le document avait dispersé. Le HTML de mammoth est **en séquence** : le label
+  `(tableaux)` n'a plus d'objet et n'est **pas** porté. `(préambule)` et
+  `(corps)`, eux, le sont — ce sont des selectors valides que le modèle recopie.
+- **Le bornage d'une section est celui du serveur, porté tel quel** : un heading
+  et tout ce qui suit jusqu'au prochain de niveau **inférieur ou égal**. Un `h2`
+  ne ferme pas un `h1`, il s'y imbrique — lire « 1. Bloquants » rend donc aussi
+  ses sous-parties. C'est ce qu'un humain attend d'un titre.
+- **Le gain le plus concret du lot : la limite multi-locale disparaît.** Le
+  serveur détecte les headings par **nom d'affichage** du style, avec une regex
+  codant cinq locales en dur (`Heading|Titre|Überschrift|Título|Titolo`,
+  formats.py) — un docx polonais, néerlandais ou aux styles renommés y est traité
+  « sans structure ». mammoth lit le `styleId` OOXML, **invariant par locale**
+  (vérifié au spike : un style « Heading 1 » renommé « Titre 1 » ressort bien en
+  `<h1>`).
+- **Trois tolérances de selector, chacune répondant à un échec observé** et non à
+  une élégance (`resolveDocxSection`, pure) : exact ; insensible à la casse et
+  aux espaces répétés (un titre recopié traverse une tokenisation) ; préfixe
+  **non ambigu** (un titre long se recopie tronqué). Le repêchage par préfixe
+  n'agit que s'il désigne **une seule** section — deux candidats, c'est une
+  ambiguïté qu'on rend au modèle, jamais qu'on tranche à sa place. L'échec
+  **nomme les sections disponibles**, même posture que `parseSheetSelector` et
+  `decideZipMemberExtraction` : c'est ce qui permet de se re-cibler **dans** le
+  tour.
+- **Le cap de sortie est appliqué DANS le lecteur** (`MAX_DOCX_SECTION_CHARS =
+  18000`), seul lecteur du lot dans ce cas. Le handler **refuse** au-delà de
+  `JS_EVAL_OUTPUT_CAP`, ce qui est juste pour une plage de pages ou de cellules
+  demandée explicitement — le modèle n'a qu'à en demander moins. Mais une section
+  est la **plus petite** unité qu'un docx offre : un document dont une section
+  dépasse à elle seule le cap n'aurait alors aucun selector lisible, et le refus
+  serait un cul-de-sac. On tronque en le disant, et la notice propose
+  `as_resource`. **La marge sous le cap du handler est fonctionnelle** : sans
+  elle, le texte tronqué **plus sa notice** repasserait au-dessus et le handler
+  refuserait quand même — la garde se serait annulée elle-même.
+- **Description de bibliothèque : le Word rejoint la bifurcation**
+  (`describeDocxForLibrary`) — liste des sections plus le début de la première
+  qui porte du texte. La cascade `kind !== 'pdf' && kind !== 'xlsx'` est
+  remplacée par une **table** (`DOC_DESCRIBERS`) : même motif que `DOC_READERS`,
+  et pour la même raison — la cascade s'allongeait d'un terme par format, et
+  chaque terme oublié faisait silencieusement retomber un format sur son listing
+  zip. Cette table n'est **pas** `DOC_READERS` et ne s'y adosse pas : un format
+  peut être lisible sans être descriptible (le zip l'est, sa description **est**
+  son listing de membres).
+- **L'ack d'une lecture porte `sourceName`**, nouveau champ d'`ACK_COPY_FIELDS`,
+  distinct de `resourceName`. Le mot d'unité (« Section … lue ») se déduit du
+  document **lu**, alors qu'en `as_resource` `resourceName` est l'extrait
+  **produit** — un `.txt`, qui ne matche aucune ligne de `DOC_ACK_UNITS`. Le
+  défaut préexistait à l'étape 2 (une lecture Excel `as_resource` retombait déjà
+  sur le mot par défaut) ; il ne devenait visible qu'avec un deuxième format à
+  unité nommée.
+
+**Lecture native de présentations PowerPoint (lot V-5 étape 3, `docs__list` / `docs__read`) :**
+- **`DOC_READERS.pptx` gagne `{ list, read }`** (`listPptxDocument` /
+  `readPptxDocument`) à la place du lecteur zip. C'était le dernier des trois
+  types Office à y retomber : `listZipDocument` ne sert plus qu'au zip. Le
+  listing zip d'un `.pptx` reste atteignable par `docs__extract`, comme pour les
+  deux autres — l'**orientation** change, pas la capacité.
+- **Aucun artefact nouveau.** Seule étape du lot dans ce cas : il n'existe pas de
+  bibliothèque JS satisfaisante pour lire un `.pptx` (décision de cadrage), donc
+  on décortique le zip avec **fflate**, déjà chargé pour le chemin zip, et on
+  parse le XML avec **`DOMParser`**, natif au navigateur. Pas de `ensureX` à
+  écrire, et le poids cumulé du lot n'augmente pas d'un octet.
+- **`unzipSync` est FILTRÉ** aux slides, à leurs rels, aux notes et à
+  `presentation.xml` — jamais aux médias, qui sont l'essentiel du poids d'un deck
+  (551 ko pour 71 slides dans la fixture réelle, presque tout en images et objets
+  OLE). Même geste que `docs__extract` : on ne décompresse que ce qu'on lit.
+- **L'ordre des slides n'est PAS l'ordre des fichiers — garde critique.**
+  `slide1.xml`, `slide2.xml` sont des noms de **pièces** OOXML ; l'ordre de
+  présentation vit dans `ppt/presentation.xml` (`<p:sldIdLst>`), résolu via
+  `ppt/_rels/presentation.xml.rels`. Trier par numéro de fichier marche sur une
+  présentation jamais réordonnée et **casse en silence** dès qu'une slide est
+  déplacée dans PowerPoint : le modèle lirait « slide 3 » en croyant lire la
+  troisième. **Silence + plausible** est le mode de défaillance que ce lot refuse
+  depuis V-1 (le zip chiffré, AUDIT §3). `pptxSlideOrder` (utils.js) est **pure et
+  testée**, et c'est l'**exception assumée** de la décision 3 : elle travaille au
+  **regex** sur le XML brut, précisément pour être testable sous QuickJS, qui n'a
+  pas de `DOMParser`. Une regex un peu fragile qui est testée vaut mieux qu'un
+  parsing correct qui ne l'est pas.
+- **L'ordre des attributs d'un `.rels` n'est pas garanti** (mesuré : le deck réel
+  écrit `Id`, `Type`, `Target`, un autre outil peut écrire autrement).
+  `pptxRelationshipMap` lit donc chaque `<Relationship>` **en bloc** puis y
+  cherche chaque attribut séparément, au lieu de supposer une séquence. Une
+  relation sans `Target` est ignorée, jamais rendue à moitié.
+- **La liaison slide ↔ notes passe par les rels de la SLIDE**
+  (`ppt/slides/_rels/slideN.xml.rels`, relation de type `notesSlide`), jamais par
+  le numéro : `notesSlide3.xml` n'est pas nécessairement la note de la troisième
+  slide affichée — **mesuré sur le deck réel, où `notesSlide2.xml` est la note de
+  la slide 17**. Même piège que l'ordre, même garde (`pptxNotesTarget`, pure) : il
+  serait absurde de résoudre soigneusement l'ordre pour apparier les notes au
+  jugé.
+- **La découpe est shape → paragraphe (`a:p`) → runs**, et c'est LA décision
+  d'implémentation du format. Elle a été **mesurée** sur la slide 2 du deck réel,
+  pas devinée : le balayage plat des `a:t` rend 160 fragments (`"Centre "`, `" "`,
+  `"de  "`, `"Cyberdéfense"`) — illisible, les runs étant coupés par les
+  changements de mise en forme ; par shape avec runs concaténés, 30 blocs mais
+  libellé et personne **collés** (`"Risques ITMarc GUIDAT"`) ; shape → `a:p` →
+  runs, 30 blocs au bon niveau (`"Risques IT\nMarc GUIDAT"`). Un balayage plat
+  produirait la bouillie qu'on reproche au serveur, à l'envers.
+- **Le parcours descend DANS les `p:grpSp`, et c'est le gain net du format.**
+  `slide.shapes` de `python-pptx` **n'itère pas dans les groupes** : sur la
+  slide 2 du deck réel, **83 des 160 fragments** sont imbriqués dans des shapes
+  groupées, et ce sont les noms et les rattachements de l'organigramme — soit
+  exactement l'information pour laquelle on ouvre ce fichier. Le serveur en voit
+  77, le natif les voit tous. Corollaire de méthode : le balayage `a:t`, qui
+  pouvait passer pour une approximation grossière face à une API objet, est en
+  réalité **plus fidèle** en volume — et la vérification a été faite avant de le
+  dire.
+- **Les tableaux (`a:tbl` d'un `p:graphicFrame`) sortent en lignes « a | b | c »**,
+  même forme que `htmlTableToText` côté docx : deux documents de formats
+  différents ne doivent pas se lire de deux façons.
+- **Le listing retombe sur un EXTRAIT quand le titre manque** (décision 6, et
+  **ajout de périmètre assumé** — `mcp_docs` ne le fait pas). Le titre est extrait
+  par la règle exacte de `slide.shapes.title` (le `p:sp` dont le `p:ph` porte
+  `type="title"` ou `"ctrTitle"`), donc parité stricte sur ce point — mais **6
+  slides titrées sur 71** dans le deck réel : `pptx_list` du serveur produit
+  soixante-cinq lignes « (sans titre) », ce qui ne permet pas au modèle de
+  choisir une slide, seulement d'en lire au hasard. **Porter le format à
+  l'identique aurait été porter un défaut** : c'est le seul endroit du lot où la
+  parité stricte est le mauvais objectif. L'extrait vient des **blocs** (jamais du
+  balayage plat, qui donnerait du bruit à la place d'un repère) et il est **borné**
+  (`PPTX_EXCERPT_CHARS = 90`, coupe sur un mot entier) — 71 slides × un extrait,
+  c'est un listing qui compte dans le contexte.
+- **Les notes de présentateur sont dans le périmètre** (décision 5), et c'est un
+  **dépassement volontaire de la parité** : `python-pptx` les expose, le serveur
+  ne s'en sert pas. C'est le bon endroit pour dépasser — dans une présentation,
+  les slides portent des mots-clés et les notes portent le propos ; servir les
+  slides seules donnerait au modèle le squelette en lui cachant le contenu. Elles
+  sont **séparées du corps par un intertitre explicite** (`--- Notes de
+  présentateur (slide N) ---`), sans quoi le modèle attribuerait au public ce qui
+  visait le présentateur.
+- **Le filtre de placeholders des notes n'est pas cosmétique**
+  (`PPTX_NOTES_SKIP_PH = ['sldNum', 'sldImg', 'ftr', 'dt']`). Les quatre
+  `notesSlides` du deck réel sont **vides** de propos mais portent un champ de
+  numérotation : un balayage naïf rendrait `"Notes view: 17"` comme note de
+  présentateur — du chrome de gabarit présenté comme du contenu, exactement le
+  plausible-et-faux que le lot refuse.
+- **Le selector est un NUMÉRO** (`'3'` ou `'2-5'`), et `parsePageSelector` est
+  réutilisée **telle quelle** : c'est le même `N`/`N-M` que le PDF. Une slide n'a
+  pas de nom stable à viser (six sur soixante-onze portent un titre), contrairement
+  à une feuille Excel ou à une section Word. Le numéro est celui de l'**ordre de
+  présentation**, résolu à l'ouverture. La notice de clamp part **avec le texte**,
+  comme pour le PDF : une plage ramenée en silence ferait conclure que le deck
+  s'arrête là.
+- **`docsReadAckHead` : le mot d'unité vient de la table dans les DEUX branches.**
+  La branche numérique codait « Page » **en dur** depuis V-4, l'unique format à
+  selector numérique d'alors — la ligne `pptx` de `DOC_ACK_UNITS` portait déjà
+  `read: 'Slide'` sans que rien ne l'atteigne. Défaut **préexistant** révélé par le
+  troisième format, exactement comme `sourceName` l'avait été par le deuxième :
+  **un deuxième (puis un troisième) occupant d'une abstraction est ce qui révèle
+  ce que le premier laissait passer.** L'accord de genre suit l'unité (« Slides
+  2-5 lues », « Membre 3 lu »).
+- **`pptxReadResourceName` suffixe en `-sN`**, pas `-pN` : dérivée de
+  `docReadResourceName` comme `pdfReadResourceName`, dont elle ne diffère que par
+  la lettre — deux extraits du même deck ne doivent pas se recouvrir dans la
+  bibliothèque.
+- **Description de bibliothèque** (`describePptxForLibrary`, quatrième entrée de
+  `DOC_DESCRIBERS`) : le **listing seul**, sans aperçu supplémentaire. C'est le
+  seul describer dans ce cas, et pour une raison : le listing d'une présentation
+  **porte déjà le texte**, puisque le repli d'extrait le met dans chaque ligne. En
+  rajouter ferait de la description une lecture.
+- **`DOCS_DOCTRINE` passe en v6, et la puce serveur DISPARAÎT** : le PowerPoint en
+  était le dernier occupant. Plus aucun format connu n'est renvoyé vers un outil
+  serveur — les cinq (zip, PDF, Excel, Word, PowerPoint) ont leur lecteur natif, et
+  le cas d'un format inconnu reste rattrapé par `docsUnsupportedFormatMessage`, qui
+  nomme au moment de l'appel le serveur réellement branché. La doctrine décrit ce
+  qui est vrai quand elle est lue, jamais ce qui est prévu.
+
 **Création d'archives (lot V-2, `docs__pack`) :**
 - `docs__pack(handles[], name?)` — agrège **N** ressources déjà stockées en
   **une** archive zip téléchargeable. Premier outil du namespace `docs__` à

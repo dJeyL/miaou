@@ -256,7 +256,7 @@ guest et les guards timeout/mémoire — tout l'embedding QuickJS-WASM chargé e
 browser, autre embedding que le `qjs` du runner.
 
 **Ouverture de documents — `tests/test-zip.js` et `tests/test-docs.js`
-(lots V-1 à V-4, cf. `docs/tools.md`)** : les deux fichiers construisent leurs
+(lots V-1 à V-5, cf. `docs/tools.md`)** : les deux fichiers construisent leurs
 fixtures en **tableaux d'octets littéraux** plutôt que de lire des fichiers —
 QuickJS n'a pas d'accès disque, et le test doit rester hermétique. Un central
 directory zip synthétique et un en-tête `%PDF` suffisent.
@@ -282,9 +282,67 @@ page scannée, qui doit dire la cause **sans promettre d'OCR**),
 `pdfReadResourceName`, et les quatre helpers de libellé d'ack — dont l'accord de
 genre, qui a **effectivement attrapé un bug** (« aucun page »).
 
-Impurs, NON QuickJS-testables : `ensurePdfJs` (lazy-load CDN + worker `blob:`),
-l'ouverture pdf.js, `describePdfForLibrary`, et le routage `DOC_READERS` dans les
-handlers — c'est le rôle des `verify-*.mjs`. Rappel du trou structurel : deux
+`test-docs.js` gagne en **V-5 (étape 1)** le pur du chemin Excel :
+`colLetterToIndex`/`colIndexToLetter` (base 26 **bijective** — le décalage de
+`AA` ne se voit qu'au-delà de la colonne Z, donc jamais sur une fixture jouet ;
+gardé par un aller-retour sur 800 colonnes), `parseA1Range`/`formatA1Range`
+(dont une origine qui n'est **pas** A1, le cas du classeur réel, et le refus de
+`'FEUILLE1'` — une référence de cellule syntaxiquement valide sans la borne à
+trois lettres), `parseSheetSelector` (le `split("!", 1)` du serveur, son repli
+sur le nom exact, le rattrapage de casse et son refus quand elle est ambiguë,
+et le message qui **nomme les feuilles disponibles**), `restrictSheetRange`
+(la garde du format : `A1:Z999` sur une feuille `B2:E31` est **ramené**, pas
+déroulé en 999 lignes de vide ; l'intersection vide est un **échec**, pas un
+rendu blanc), `formatXlsxListing`, `formatXlsxRead` (le cap qui ne mord que
+sans plage explicite, la troncature qui **se dit**), et
+`docReadResourceName`/`slugifyResourceSuffix`. Les libellés d'ack gagnent leurs
+unités « feuille » (féminin — même piège d'accord qu'en V-4) et la distinction
+par **forme du selector** plutôt que par extension.
+
+L'**étape 2** ajoute le pur du chemin Word : `decodeHtmlEntities` (dont le cas
+`&amp;lt;`, qui ne doit **pas** se décoder deux fois — sinon un `<` littéral du
+document deviendrait une balise), `htmlFragmentToInlineText` (une cellule à
+plusieurs `<p>`, cas **majoritaire** sur la fixture réelle, se joint par un
+espace : un `\n` casserait la ligne « a | b | c » qui l'entoure),
+`htmlTableToText` (`thead`/`tbody` traversés sans distinction, cellule vide
+préservée comme colonne vide), `docxHtmlToBlocks` (l'ordre du document, tableaux
+compris — c'est le gain sur le serveur ; et le titre **décodé**, sans quoi aucun
+selector ne viserait « 3. Gateway `&amp;` styles »), `docxSections` (un `h2` ne
+ferme pas un `h1` ; `(préambule)` et `(corps)`), `resolveDocxSection` (les trois
+tolérances, dont le préfixe **ambigu rendu au modèle** plutôt que tranché) et
+`formatDocxListing`/`formatDocxRead`. Les libellés d'ack gagnent « section »
+(féminin) et la déduction du mot depuis `sourceName` — `resourceName` étant, en
+`as_resource`, l'extrait `.txt` produit et non le document lu.
+
+L'**étape 3** ajoute le pur du chemin PowerPoint, dont la particularité est que
+la part testable y est **plus étroite qu'ailleurs** : QuickJS n'a pas de
+`DOMParser`, donc les purs prennent des structures déjà parsées (décision 3) et
+tout le parsing XML (`pptxShapeBlocks`, `pptxSlideTitle`) n'est exercé que par le
+verify. Ce qui est couvert est ce qui **décide** : `pptxRelationshipMap` (l'ordre
+des attributs d'un `.rels` n'étant pas garanti, `Id`/`Target` sont cherchés
+séparément — et une relation sans `Target` est ignorée, pas rendue à moitié),
+`pptxResolveTarget` (les `..` relatifs, et le `/` de tête d'un target **absolu au
+package**, qui produirait sinon `ppt/ppt/slides/…`), `pptxSlideOrder` — **la
+garde critique du format, et l'exception regex assumée de la décision 3** : un
+`sldIdLst` réordonné doit primer sur le numéro de fichier, une pièce hors
+`sldIdLst` n'est pas de la présentation, un `r:id` non résolu est sauté, et
+l'absence de source retombe sur le fallback plutôt que sur rien —,
+`pptxNotesTarget` (la liaison par **type de relation**, qui ne confond pas
+`notesSlide` avec `notesMaster`), `pptxSlideExcerpt`/`pptxSlideLabel` (le repli
+d'extrait borné, coupé sur un mot entier, et le titre **préféré** quand il
+existe), `formatPptxListing`/`formatPptxRead` (la numérotation, le marquage des
+slides à notes, l'intertitre qui sépare les notes du corps, et le fait qu'une
+slide muette **mais porteuse de notes** ne compte pas comme vide) et
+`pptxReadResourceName` (`-sN`, pas `-pN`). Les libellés d'ack gagnent « slide »
+(féminin) **et la dérivation du mot sur la branche numérique** : elle codait
+« Page » en dur, et deux tests figent désormais que le PDF et le PowerPoint
+prennent tous deux leur mot dans la même table.
+
+Impurs, NON QuickJS-testables : `ensurePdfJs`/`ensureSheetJs`/`ensureMammoth`
+(lazy-load CDN, worker `blob:` pour le premier), l'ouverture pdf.js, SheetJS et
+mammoth, **tout le parsing XML du pptx** (`DOMParser`), les quatre
+`describe*ForLibrary`, et le routage `DOC_READERS`
+dans les handlers — c'est le rôle des `verify-*.mjs`. Rappel du trou structurel : deux
 fonctions pures correctes dont la **composition** n'est pas gardée passent les
 tests sans que le câblage soit vérifié.
 

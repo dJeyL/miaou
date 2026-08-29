@@ -355,6 +355,83 @@ function ensurePdfJs() {
   return _pdfjsPromise;
 }
 
+// ── SheetJS : lecture Excel native pour docs__list / docs__read (lot V-5) ────
+// VERSION GELÉE à 0.18.5, et pour une raison différente de pdf.js : SheetJS a
+// QUITTÉ npm. 0.18.5 est la dernière version publiée sur le registre ; le projet
+// distribue depuis sur son propre CDN. Épingler 0.18.5 via jsdelivr est stable
+// (npm ne réécrit pas une version publiée) et garde le patron des cinq autres
+// artefacts — mais cette branche ne recevra aucun correctif. Si un .xlsx réel
+// refuse de s'ouvrir, la question se rouvre, et le fallback mcp_docs existe
+// précisément pour que ce ne soit pas bloquant.
+const SHEETJS_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let _sheetjsPromise = null;
+
+// Même contrat qu'ensureFflate et ensurePdfJs (échec PROPAGÉ, promesse mémoïsée,
+// reset-on-reject, garde post-onload sur TOUTES les fonctions consommées), en
+// plus simple : SheetJS n'a pas de worker à câbler, donc « le script chargé » et
+// « la bibliothèque prête » coïncident ici — ce qui n'était PAS le cas de pdf.js.
+//
+// Vérifié au spike plutôt que supposé : SheetJS ne DÉTACHE PAS le buffer qu'on
+// lui passe (byteLength intact après read, deuxième lecture du même buffer OK).
+// Le u8.slice() défensif d'openPdfDocument n'a donc pas à être reproduit ici —
+// et cette phrase existe pour que le prochain ne le rajoute pas « par symétrie ».
+function ensureSheetJs() {
+  if (_sheetjsPromise) return _sheetjsPromise;
+  _sheetjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = SHEETJS_CDN;
+    s.onload = () => {
+      const lib = window.XLSX;
+      // Le global ET tout ce qu'on consomme : read pour ouvrir, utils.sheet_to_csv
+      // pour rendre. Un build CDN partiel doit échouer ICI (leçon V-3).
+      if (!lib || typeof lib.read !== 'function' || !lib.utils
+          || typeof lib.utils.sheet_to_csv !== 'function') {
+        reject(new Error('SheetJS absent ou incomplet après chargement')); return;
+      }
+      resolve(lib);
+    };
+    s.onerror = () => reject(new Error('échec de chargement SheetJS (CDN)'));
+    document.head.appendChild(s);
+  });
+  _sheetjsPromise.catch(() => { _sheetjsPromise = null; });   // reset sur rejet → retry possible
+  return _sheetjsPromise;
+}
+
+// mammoth (lot V-5, étape 2) — lecture des .docx. Contrairement à SheetJS,
+// mammoth est toujours publié sur npm : 1.11.0 est une version courante et non
+// une branche gelée, l'épinglage est ici du conservatisme ordinaire.
+const MAMMOTH_CDN = 'https://cdn.jsdelivr.net/npm/mammoth@1.11.0/mammoth.browser.min.js';
+let _mammothPromise = null;
+
+// Même contrat que les trois précédents. Comme SheetJS et à la différence de
+// pdf.js : pas de worker (« script chargé » = « lib prête »), et le buffer n'est
+// PAS détaché — mesuré au spike (byteLength intact, deuxième conversion du même
+// buffer OK), donc pas de u8.slice() défensif à recopier « par symétrie ».
+//
+// La garde post-onload porte sur convertToHtml, et sur elle seule : c'est la
+// seule API consommée. extractRawText et convertToMarkdown ont été ÉCARTÉES au
+// spike — la première perd les tableaux, la seconde les aplatit cellule par
+// cellule tout en sur-échappant. Les vérifier ici laisserait croire qu'on peut
+// s'en servir.
+function ensureMammoth() {
+  if (_mammothPromise) return _mammothPromise;
+  _mammothPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = MAMMOTH_CDN;
+    s.onload = () => {
+      const lib = window.mammoth;
+      if (!lib || typeof lib.convertToHtml !== 'function') {
+        reject(new Error('mammoth absent ou incomplet après chargement')); return;
+      }
+      resolve(lib);
+    };
+    s.onerror = () => reject(new Error('échec de chargement mammoth (CDN)'));
+    document.head.appendChild(s);
+  });
+  _mammothPromise.catch(() => { _mammothPromise = null; });   // reset sur rejet → retry possible
+  return _mammothPromise;
+}
+
 // Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.
 // Appelée à la FINALISATION uniquement — finalizeAssistant et buildMsg, JAMAIS
 // streamInto (source partielle = flicker + erreurs de parse en cascade, D1).

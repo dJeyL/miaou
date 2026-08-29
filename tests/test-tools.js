@@ -863,11 +863,26 @@ describe('DOCS_DOCTRINE v2 (lot V-1 — statique, inconditionnelle, motif WEB_DO
     expect(DOCS_DOCTRINE.indexOf('<SANS_OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
     expect(DOCS_DOCTRINE.indexOf('</SANS_OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
   });
-  it('aiguille le zip vers les outils natifs et les formats bureautiques vers le contrat ref+content_b64', function() {
+  it('aiguille les CINQ formats vers les outils natifs (v6 : la puce serveur a disparu)', function() {
     expect(DOCS_DOCTRINE.indexOf('miaou__docs__list') >= 0).toBe(true);
     expect(DOCS_DOCTRINE.indexOf('miaou__docs__extract') >= 0).toBe(true);
-    expect(DOCS_DOCTRINE.indexOf('content_b64') >= 0).toBe(true);
-    expect(DOCS_DOCTRINE.indexOf('docs__read') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('miaou__docs__read') >= 0).toBe(true);
+    // Les quatre formats à lecteur natif y sont nommés, avec le zip.
+    expect(DOCS_DOCTRINE.indexOf('PDF') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('EXCEL') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('WORD') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('POWERPOINT') >= 0).toBe(true);
+    expect(DOCS_DOCTRINE.indexOf('ARCHIVE ZIP') >= 0).toBe(true);
+  });
+  it('ne renvoie PLUS aucun format vers le contrat serveur ref+content_b64 (V-5 étape 3)', function() {
+    // La puce serveur avait un occupant de moins à chaque étape de V-5 ; le
+    // PowerPoint était le dernier. Une doctrine qui continuerait d'aiguiller un
+    // format vers un outil serveur enverrait le modèle chercher un outil qui
+    // peut ne pas être branché, alors que le natif sait le lire.
+    expect(DOCS_DOCTRINE.indexOf('content_b64') >= 0).toBe(false);
+  });
+  it('dit de PRÉFÉRER le natif quand les deux existent — sans quoi le modèle tire au sort', function() {
+    expect(DOCS_DOCTRINE.indexOf('PRÉFÈRE LE NATIF') >= 0).toBe(true);
   });
   it('ne dépend d\'aucun état de registre : identique avec ou sans serveur branché (piège 16)', function() {
     var before = ROOT_SYSTEM_PROMPT;
