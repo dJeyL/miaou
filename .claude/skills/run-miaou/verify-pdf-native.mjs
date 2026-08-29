@@ -239,7 +239,10 @@ try {
       !zlist.isError && /Archive zip/.test(zlist.text), zlist.text.split('\n')[0]);
 
     const zread = await callTool('docs__read', { ref: 'att-2', selector: '1' });
-    check('docs__read sur un zip est refusé', zread.isError || /ne se lit pas par pages/.test(zread.text));
+    // Wording : « par unités » depuis V-5 étape 2 (12982ba), qui a généralisé
+    // docs__read au-delà des pages PDF. Le test disait encore « par pages » et
+    // échouait sur un progrès, pas sur une régression.
+    check('docs__read sur un zip est refusé', zread.isError || /ne se lit pas par unités/.test(zread.text));
     check('et le refus ORIENTE vers list+extract (pas un refus nu)',
       /docs__list/.test(zread.text) && /docs__extract/.test(zread.text),
       zread.text.slice(0, 110));

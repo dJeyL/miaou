@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+// ═══════════════════════════════════════════════════════════════════════════
+// ⚠ SCRIPT OBSOLÈTE (déclaré au lot V-7, 2026-08-29) — NE PLUS LE LANCER TEL QUEL
+//
+// Ce script exerce le chemin SERVEUR de mcp_docs. Or ce serveur a été RÉTROGRADÉ
+// en fallback offline au lot V-5 : il est DÉSACTIVÉ PAR DÉFAUT (« _disabled »
+// sur l'entrée « docs » de config.json, dépôt miaou-mcp-servers), et ce n'est
+// plus la voie normale — MIAOU ouvre seul zip, PDF, Excel, Word et PowerPoint.
+//
+// Conséquence : lancé sur une configuration NORMALE, ce script échoue (« Outil
+// inconnu », « docs__extract exposé par le proxy »). L'échec ne dit RIEN du code
+// client — c'est un faux négatif qui envoie chercher un bug là où il n'y en a
+// pas. Vérifié au lot V-7 : serveur réveillé, tous ses contrôles passent.
+//
+// Ce qu'il teste garde une valeur — le contrat d'inflation serveur n'a pas
+// d'équivalent natif — mais il ne fait plus partie de la campagne de
+// non-régression du lot V. Pour l'exécuter délibérément : retirer « _disabled »
+// de l'entrée docs, lancer le proxy, puis RESTAURER la config (c'est le réglage
+// voulu au quotidien).
+// ═══════════════════════════════════════════════════════════════════════════
 // Vérif e2e du lot M (MIAOU) : docs__extract transfère le texte intégral d'un
 // membre de zip (JSON) sans jamais le faire transiter par le contexte modèle,
 // matérialisé côté client en res_… de classe 'inline', exploitable par js__eval.
@@ -59,6 +78,20 @@ const check = (label, cond, detail) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── Prérequis fichiers ───────────────────────────────────────────────────────
+// Garde d'obsolescence (V-7) : le script ne démarre pas sans intention explicite.
+// Sans elle, il s'exécuterait et échouerait sur une configuration NORMALE — soit
+// exactement le faux négatif que la déclaration d'obsolescence vise à supprimer.
+if (!process.argv.includes('--obsolete-ok')) {
+  console.error('Ce verify est OBSOLÈTE depuis le lot V-5 : il exerce le chemin serveur');
+  console.error('de mcp_docs, désactivé par défaut (fallback offline). Lancé sur une');
+  console.error('configuration normale il échoue sans rien dire du code client.');
+  console.error('');
+  console.error('Pour l\'exécuter délibérément : retirer « _disabled » de l\'entrée « docs »');
+  console.error('de config.json (miaou-mcp-servers), lancer le proxy, relancer avec');
+  console.error('--obsolete-ok, puis RESTAURER la config.');
+  process.exit(3);
+}
+
 if (!fs.existsSync(distPath)) { console.error('dist/miaou.html manquant — lance build.py'); process.exit(2); }
 if (!fs.existsSync(zipPath)) { console.error('oracle manquant : ' + zipPath); process.exit(2); }
 

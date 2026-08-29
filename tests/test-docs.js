@@ -1,6 +1,7 @@
 // tests/test-docs.js
-// Lot V-4 — part PURE du chemin « document natif » (utils.js) : reconnaissance
-// de type aux octets, selector d'unité, mise en forme du listing PDF.
+// Lot V-4 — part PURE du chemin « document natif » (docs.js depuis V-7, où le
+// domaine a reçu son fichier) : reconnaissance de type aux octets, selector
+// d'unité, mise en forme du listing PDF.
 //
 // Même posture de fixture que test-zip.js : les archives sont des central
 // directories SYNTHÉTIQUES construits octet par octet (QuickJS n'a pas d'accès
@@ -1208,5 +1209,92 @@ describe('libellés d\'ack — la slide (V-5 étape 3)', function() {
 
   it('le défaut masculin s\'accorde aussi : un membre se lit « lu »', function() {
     expect(docsReadAckHead({ selector: '3', sourceName: 'archive.zip' })).toBe('Membre 3 lu');
+  });
+});
+
+
+// ── Lot V-7 : rapatriés depuis test-zip.js ──────────────────────────────────
+// sniffZipOfficeKind et formatZipListing ont suivi leur code dans docs.js — un
+// test du domaine « documents » n'a plus sa place dans le fichier de la
+// mécanique zip. Les trois fixtures ci-dessous sont reprises de test-zip.js
+// (chaque fichier de test est évalué SÉPARÉMENT par le runner : rien n'y est
+// partagé, la duplication est structurelle, pas un oubli).
+var DOC_ZIP_ENC = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,1,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,17,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,115,101,99,114,101,116,46,116,120,116,80,75,5,6,0,0,0,0,1,0,1,0,56,0,0,0,30,0,0,0,0,0];
+var DOC_ZIP_MULTI = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,97,46,116,120,116,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,115,117,98,47,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,115,117,98,47,98,46,116,120,116,80,75,5,6,0,0,0,0,3,0,3,0,156,0,0,0,30,0,0,0,0,0];
+var DOC_ZIP_SLIP = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,46,46,47,101,118,105,108,46,116,120,116,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,111,107,46,116,120,116,80,75,5,6,0,0,0,0,2,0,2,0,109,0,0,0,30,0,0,0,0,0];
+
+describe('sniffZipOfficeKind', function() {
+  it('reconnaît un docx', function() {
+    expect(sniffZipOfficeKind(['[Content_Types].xml', 'word/document.xml'])).toBe('docx');
+  });
+  it('reconnaît un xlsx', function() {
+    expect(sniffZipOfficeKind(['xl/workbook.xml'])).toBe('xlsx');
+  });
+  it('reconnaît un pptx', function() {
+    expect(sniffZipOfficeKind(['ppt/presentation.xml'])).toBe('pptx');
+  });
+  it('rend null sur une archive quelconque', function() {
+    expect(sniffZipOfficeKind(['a.txt', 'sub/b.txt'])).toBe(null);
+  });
+  it('n\'est pas trompé par un membre dont le nom CONTIENT word/ sans commencer par', function() {
+    expect(sniffZipOfficeKind(['docs/word/notes.txt'])).toBe(null);
+  });
+  it('tolère une liste vide ou absente', function() {
+    expect(sniffZipOfficeKind([])).toBe(null);
+    expect(sniffZipOfficeKind(null)).toBe(null);
+  });
+});
+
+describe('formatZipListing', function() {
+  it('liste les membres avec leur taille lisible', function() {
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_MULTI)), {});
+    expect(out).toContain('a.txt');
+    expect(out).toContain('sub/b.txt');
+    expect(out).toContain('2 membres');
+    expect(out).toContain('1 répertoire');
+  });
+
+  it('SIGNALE un membre chiffré au lieu de l\'omettre', function() {
+    // Un membre absent sans explication fait halluciner le modèle : il doit
+    // savoir que le membre existe ET pourquoi il ne l\'aura pas.
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_ENC)), {});
+    expect(out).toContain('Membres écartés');
+    expect(out).toContain('secret.txt');
+    expect(out).toContain('chiffré');
+  });
+
+  it('SIGNALE un membre au chemin non sûr au lieu de l\'omettre', function() {
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_SLIP)), {});
+    expect(out).toContain('Membres écartés');
+    expect(out).toContain('evil.txt');
+    expect(out).toContain('chemin non sûr');
+    expect(out).toContain('ok.txt');   // le membre sain reste listé
+  });
+
+  it('annonce la nature Office d\'une archive docx', function() {
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_DOCX)), {});
+    expect(out).toContain('docx');
+    expect(out).toContain('word/document.xml');
+  });
+
+  it('marque un membre au-delà du cap sans le retirer de la liste', function() {
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_DOCX)), { maxBytes: 1000 });
+    expect(out).toContain('word/document.xml');
+    expect(out).toContain('au-delà du cap');
+  });
+
+  it('annonce un total au-delà du cap tout en gardant l\'extraction possible', function() {
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_DOCX)), { maxBytes: 3000 });
+    expect(out).toContain('Le total dépasse le cap');
+    expect(out).toContain('individuellement');
+  });
+
+  it('ne casse pas sur une archive sans membre extractible', function() {
+    var out = formatZipListing(parseZipCentralDirectory(du8(DOC_ZIP_ENC)), {});
+    expect(out).toContain('aucun membre extractible');
+  });
+
+  it('tolère une liste absente', function() {
+    expect(formatZipListing(null, {})).toContain('0 membre');
   });
 });

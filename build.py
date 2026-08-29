@@ -17,6 +17,7 @@ DIST = ROOT / 'dist'
 # Ordre de concaténation — les dépendances d'abord
 JS_ORDER = [
     'utils.js',
+    'docs.js',
     'sync.js',
     'storage.js',
     'resources.js',

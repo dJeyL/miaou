@@ -73,7 +73,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   theme-light` — l'ordre EST la cascade ; `base` porte l'@import des fontes,
   `theme-light` reste dernier).
 - **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER`
-  (`utils, sync, storage, resources, skills, tools, api, ui, main`).
+  (`utils, docs, sync, storage, resources, skills, tools, api, ui, main` —
+  `docs` porte le domaine « ouvrir un document » du lot V, cf. `docs/documents.md`
+  pour la ligne de partage avec `utils`).
 - **`__MIAOU_CONFIG__`** ← `config.json` sérialisé (injecté dans `storage.js`,
   d'où dérivent `REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
   `BUILD_API_MODEL`).
@@ -410,6 +412,10 @@ Cf. `docs/generations.md`.
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), et références de conversation dans le texte du modèle
   (`conv_ref`).
+- **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
+  formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
+  CDN et versions gelées, selectors par format, caps de lecture, et la ligne de
+  partage `docs.js` / `utils.js` (lot V-7).
 - **`docs/context-inspector.md`** — inspecteur de contexte (brief B) : manifeste
   par bloc logique du contexte envoyé au modèle (`buildContextManifest`, pur) et
   totaux chars/tokens, rendu dans le drawer (`renderContextInspector`).

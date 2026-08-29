@@ -244,8 +244,8 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      doctrine statique.
 
 8. **Skills système extraites de `ROOT_SYSTEM_PROMPT` (`files-promote`,
-   `js-eval`)** — même mécanisme que `mermaid`, appliqué à deux des sept
-   doctrines statiques de `tools.js` (cf. `docs/tools.md` pour la composition
+   `js-eval`, `docs`)** — même mécanisme que `mermaid`, appliqué à trois des
+   sept doctrines statiques de `tools.js` (cf. `docs/tools.md` pour la composition
    complète de `ROOT_SYSTEM_PROMPT`), avec un traitement différent selon la
    fréquence d'usage attendue :
    - **`files-promote`** (`src/system-skills/files-promote.md`) : doctrine de
@@ -270,3 +270,30 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      réduisant `JS_EVAL_DOCTRINE` : c'était la plus grosse des sept doctrines du
      prompt racine, le gain de contexte par tour l'emporte sur le coût
      ponctuel.
+   - **`docs`** (`src/system-skills/docs.md`, lot V-7) : même partage que
+     `js-eval` — seul le **COMMENT** part (forme du selector format par format,
+     quand passer `as_resource`, comment lire chaque refus, le cas
+     Office-vu-comme-zip, `docs__pack`). Le **QUAND** reste dans
+     `DOCS_DOCTRINE` : qu'un fichier binaire joint n'est pas lisible
+     directement, que MIAOU ouvre seul cinq formats (zip, PDF, Excel, Word,
+     PowerPoint), que le geste est `docs__list` d'abord, et que le natif prime
+     sur le serveur. **La liste des cinq formats reste en doctrine
+     délibérément** : sans elle, un modèle ne sait pas qu'un `.pptx` s'ouvre, et
+     la skill qu'il ne lirait jamais ne le lui apprendrait pas.
+     `DOCS_DOCTRINE` passe de 2 769 à 1 869 caractères, et le schéma
+     `docs__read` de 1 966 à 1 421 — total `docs__*` en contexte permanent :
+     6 723 → 5 278.
+     Comme pour `js-eval`, **aucune constante chiffrée dans le `.md`** (cap de
+     sortie, borne de lignes Excel, cap de section Word) : la skill dit que le
+     message de refus donne le chiffre, ce qui est vrai de tous les refus.
+     Même arbitrage KV cache que `js-eval` : `DOCS_DOCTRINE` était devenue la
+     plus grosse doctrine du prompt racine, l'invalidation ponctuelle est
+     assumée contre un gain récurrent.
+     Deux descriptions d'outils n'ont **pas** été allégées, et c'est un choix :
+     `docs__list` (721 car.) et `docs__pack` (684 car.) sont du QUAND —
+     l'énumération de ce que rend un listing est ce qui fait qu'un modèle sait
+     quoi en attendre.
+     **Point d'attention pour la suite** : le sous-lot V-8 (rendu image des
+     pages PDF) doit **mettre à jour cette skill**, pas en créer une autre ni
+     ajouter à la doctrine — c'est le critère qui a fait choisir une skill
+     unique plutôt qu'une par format.

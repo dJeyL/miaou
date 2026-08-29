@@ -3772,7 +3772,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-29 07:01 UTC */
+/* miaou — built: 2026-08-29 07:41 UTC */
 
 /* ── utils.js ── */
 
@@ -4954,6 +4954,171 @@ function isZipSlipPath(name) {
   return false;
 }
 
+const ZIP_MEMBER_MIME_BY_EXT = {
+  txt: 'text/plain', log: 'text/plain', md: 'text/markdown', csv: 'text/csv',
+  tsv: 'text/tab-separated-values', json: 'application/json', ndjson: 'application/x-ndjson',
+  jsonl: 'application/x-ndjson', xml: 'text/xml', html: 'text/html', htm: 'text/html',
+  css: 'text/css', js: 'text/javascript', ts: 'text/plain', py: 'text/plain',
+  sh: 'text/plain', yml: 'text/plain', yaml: 'text/plain', ini: 'text/plain',
+  conf: 'text/plain', cfg: 'text/plain', sql: 'text/plain', rst: 'text/plain',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml', pdf: 'application/pdf', zip: 'application/zip',
+};
+function zipMemberMime(name) {
+  const s = String(name == null ? '' : name);
+  const dot = s.lastIndexOf('.');
+  const slash = s.lastIndexOf('/');
+  if (dot <= slash || dot === s.length - 1) return 'application/octet-stream';
+  const ext = s.slice(dot + 1).toLowerCase();
+  return ZIP_MEMBER_MIME_BY_EXT[ext] || 'application/octet-stream';
+}
+
+function zipMemberBaseName(name) {
+  const s = String(name == null ? '' : name).replace(/\\/g, '/');
+  const parts = s.split('/');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i]) return parts[i];
+  }
+  return 'membre';
+}
+
+function decideZipMemberExtraction(entries, path, maxBytes) {
+  const list = entries || [];
+  const want = String(path == null ? '' : path);
+  if (!want) return { ok: false, reason: 'path', message: 'Chemin de membre manquant.' };
+
+  let entry = null;
+  for (const e of list) {
+    if (e && e.name === want) { entry = e; break; }
+  }
+  if (!entry) {
+    
+    const names = [];
+    for (const e of list) { if (e && !e.directory) names.push(e.name); }
+    const tail = names.length && names.length <= 20
+      ? ' Membres disponibles : ' + names.join(', ') + '.'
+      : ' Appelle miaou__docs__list sur cette archive pour obtenir les chemins exacts.';
+    return { ok: false, reason: 'missing', message: 'Membre introuvable : ' + want + '.' + tail };
+  }
+  if (entry.directory) {
+    return { ok: false, reason: 'directory',
+      message: 'Ce chemin désigne un répertoire, pas un fichier : ' + want + '.' };
+  }
+  
+  if (entry.encrypted) {
+    return { ok: false, reason: 'encrypted',
+      message: 'Membre chiffré (archive protégée par mot de passe) : ' + want +
+        '. MIAOU ne peut pas le déchiffrer — son contenu extrait serait du bruit binaire.' };
+  }
+  if (isZipSlipPath(entry.name)) {
+    return { ok: false, reason: 'unsafe',
+      message: 'Chemin de membre non sûr (absolu ou remontant), refusé : ' + want + '.' };
+  }
+  const cap = Number(maxBytes) || 0;
+  if (cap && Number(entry.size) > cap) {
+    
+    return { ok: false, reason: 'cap',
+      message: 'Membre trop volumineux : ' + humanSize(entry.size) + ' décompressés, ' +
+        'au-delà de la limite de ' + humanSize(cap) + '. Cible un membre plus petit.' };
+  }
+  return { ok: true, entry: entry };
+}
+
+const ZIP_EXT_BY_MIME = {
+  'text/plain': 'txt', 'text/markdown': 'md', 'text/csv': 'csv',
+  'text/tab-separated-values': 'tsv', 'application/json': 'json',
+  'application/x-ndjson': 'jsonl', 'text/xml': 'xml', 'text/html': 'html',
+  'text/css': 'css', 'text/javascript': 'js', 'image/png': 'png',
+  'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+  'image/svg+xml': 'svg', 'application/pdf': 'pdf', 'application/zip': 'zip',
+};
+
+function buildZipMemberName(record, taken) {
+  const rec = record || {};
+  const set = taken && typeof taken.has === 'function' ? taken : null;
+
+  let base = String(rec.name == null ? '' : rec.name).trim();
+  if (!base) base = String(rec.id == null ? '' : rec.id).trim();
+  base = base ? zipMemberBaseName(base) : '';
+  if (!base || base === '.' || base === '..') base = 'membre';
+
+  const dot = base.lastIndexOf('.');
+  const hasExt = dot > 0 && dot < base.length - 1;
+  let stem = base, ext = '';
+  if (hasExt) {
+    stem = base.slice(0, dot);
+    ext = base.slice(dot + 1);
+  } else {
+    const mime = String(rec.mime == null ? '' : rec.mime).toLowerCase().split(';')[0].trim();
+    ext = ZIP_EXT_BY_MIME[mime] || 'bin';
+  }
+
+  const join = function(s) { return ext ? s + '.' + ext : s; };
+  let candidate = join(stem);
+  if (!set) return candidate;
+  let n = 2;
+  while (set.has(candidate)) {
+    candidate = join(stem + '-' + n);
+    n++;
+  }
+  return candidate;
+}
+
+function normalizeArchiveName(name) {
+  let s = String(name == null ? '' : name).trim();
+  s = s ? zipMemberBaseName(s) : '';
+  if (!s || s === '.' || s === '..') return 'archive.zip';
+  if (/\.zip$/i.test(s)) {
+    
+    return s.length > 4 ? s : 'archive.zip';
+  }
+  return s + '.zip';
+}
+
+function validateZipPlan(entries) {
+  const list = Array.isArray(entries) ? entries : null;
+  if (!list || !list.length) {
+    return { ok: false, reason: 'empty',
+      message: 'Aucune ressource à archiver : passe au moins un handle.' };
+  }
+
+  const seen = {};
+  let total = 0;
+  for (const e of list) {
+    const name = String(e && e.name != null ? e.name : '');
+    if (!name) {
+      return { ok: false, reason: 'unsafe', message: 'Nom de membre vide, refusé.' };
+    }
+    if (isZipSlipPath(name)) {
+      return { ok: false, reason: 'unsafe',
+        message: 'Nom de membre non sûr (absolu ou remontant), refusé : ' + name + '.' };
+    }
+    if (Object.prototype.hasOwnProperty.call(seen, name)) {
+      return { ok: false, reason: 'duplicate',
+        message: 'Deux membres porteraient le même nom dans l\'archive : ' + name +
+          '. Un nom en écraserait l\'autre silencieusement.' };
+    }
+    seen[name] = true;
+    total += Number(e && e.size) || 0;
+  }
+
+  const cap = MAX_INLINE_BYTES;
+  if (total > cap) {
+    return { ok: false, reason: 'cap',
+      message: 'Archive trop volumineuse : ' + humanSize(total) + ' à compresser, ' +
+        'au-delà de la limite de ' + humanSize(cap) + '. Archive moins de ressources à la fois.' };
+  }
+  return { ok: true };
+}
+
+function sniffBackupFormat(u8) {
+  if (!u8 || typeof u8.length !== 'number' || u8.length < 4) return 'json';
+  if (u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04) return 'zip';
+  return 'json';
+}
+
+/* ── docs.js ── */
+
 function sniffZipOfficeKind(names) {
   const list = names || [];
   let hasWord = false, hasXl = false, hasPpt = false;
@@ -5713,168 +5878,552 @@ function formatZipListing(entries, opts) {
   return out.join('\n');
 }
 
-const ZIP_MEMBER_MIME_BY_EXT = {
-  txt: 'text/plain', log: 'text/plain', md: 'text/markdown', csv: 'text/csv',
-  tsv: 'text/tab-separated-values', json: 'application/json', ndjson: 'application/x-ndjson',
-  jsonl: 'application/x-ndjson', xml: 'text/xml', html: 'text/html', htm: 'text/html',
-  css: 'text/css', js: 'text/javascript', ts: 'text/plain', py: 'text/plain',
-  sh: 'text/plain', yml: 'text/plain', yaml: 'text/plain', ini: 'text/plain',
-  conf: 'text/plain', cfg: 'text/plain', sql: 'text/plain', rst: 'text/plain',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-  webp: 'image/webp', svg: 'image/svg+xml', pdf: 'application/pdf', zip: 'application/zip',
-};
-function zipMemberMime(name) {
-  const s = String(name == null ? '' : name);
-  const dot = s.lastIndexOf('.');
-  const slash = s.lastIndexOf('/');
-  if (dot <= slash || dot === s.length - 1) return 'application/octet-stream';
-  const ext = s.slice(dot + 1).toLowerCase();
-  return ZIP_MEMBER_MIME_BY_EXT[ext] || 'application/octet-stream';
-}
+const MAX_XLSX_ROWS_DEFAULT = 200;
 
-function zipMemberBaseName(name) {
-  const s = String(name == null ? '' : name).replace(/\\/g, '/');
-  const parts = s.split('/');
-  for (let i = parts.length - 1; i >= 0; i--) {
-    if (parts[i]) return parts[i];
-  }
-  return 'membre';
-}
+const MAX_DOCX_SECTION_CHARS = 18000;
 
-function decideZipMemberExtraction(entries, path, maxBytes) {
-  const list = entries || [];
-  const want = String(path == null ? '' : path);
-  if (!want) return { ok: false, reason: 'path', message: 'Chemin de membre manquant.' };
-
-  let entry = null;
-  for (const e of list) {
-    if (e && e.name === want) { entry = e; break; }
-  }
-  if (!entry) {
-    
-    const names = [];
-    for (const e of list) { if (e && !e.directory) names.push(e.name); }
-    const tail = names.length && names.length <= 20
-      ? ' Membres disponibles : ' + names.join(', ') + '.'
-      : ' Appelle miaou__docs__list sur cette archive pour obtenir les chemins exacts.';
-    return { ok: false, reason: 'missing', message: 'Membre introuvable : ' + want + '.' + tail };
-  }
-  if (entry.directory) {
-    return { ok: false, reason: 'directory',
-      message: 'Ce chemin désigne un répertoire, pas un fichier : ' + want + '.' };
-  }
-  
-  if (entry.encrypted) {
-    return { ok: false, reason: 'encrypted',
-      message: 'Membre chiffré (archive protégée par mot de passe) : ' + want +
-        '. MIAOU ne peut pas le déchiffrer — son contenu extrait serait du bruit binaire.' };
-  }
-  if (isZipSlipPath(entry.name)) {
-    return { ok: false, reason: 'unsafe',
-      message: 'Chemin de membre non sûr (absolu ou remontant), refusé : ' + want + '.' };
-  }
-  const cap = Number(maxBytes) || 0;
-  if (cap && Number(entry.size) > cap) {
-    
-    return { ok: false, reason: 'cap',
-      message: 'Membre trop volumineux : ' + humanSize(entry.size) + ' décompressés, ' +
-        'au-delà de la limite de ' + humanSize(cap) + '. Cible un membre plus petit.' };
-  }
-  return { ok: true, entry: entry };
-}
-
-const ZIP_EXT_BY_MIME = {
-  'text/plain': 'txt', 'text/markdown': 'md', 'text/csv': 'csv',
-  'text/tab-separated-values': 'tsv', 'application/json': 'json',
-  'application/x-ndjson': 'jsonl', 'text/xml': 'xml', 'text/html': 'html',
-  'text/css': 'css', 'text/javascript': 'js', 'image/png': 'png',
-  'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
-  'image/svg+xml': 'svg', 'application/pdf': 'pdf', 'application/zip': 'zip',
+const DOC_READERS = {
+  zip:  { list: listZipDocument },
+  docx: { list: listDocxDocument, read: readDocxDocument },
+  xlsx: { list: listXlsxDocument, read: readXlsxDocument },
+  pptx: { list: listPptxDocument, read: readPptxDocument },
+  pdf:  { list: listPdfDocument, read: readPdfDocument },
 };
 
-function buildZipMemberName(record, taken) {
-  const rec = record || {};
-  const set = taken && typeof taken.has === 'function' ? taken : null;
-
-  let base = String(rec.name == null ? '' : rec.name).trim();
-  if (!base) base = String(rec.id == null ? '' : rec.id).trim();
-  base = base ? zipMemberBaseName(base) : '';
-  if (!base || base === '.' || base === '..') base = 'membre';
-
-  const dot = base.lastIndexOf('.');
-  const hasExt = dot > 0 && dot < base.length - 1;
-  let stem = base, ext = '';
-  if (hasExt) {
-    stem = base.slice(0, dot);
-    ext = base.slice(dot + 1);
-  } else {
-    const mime = String(rec.mime == null ? '' : rec.mime).toLowerCase().split(';')[0].trim();
-    ext = ZIP_EXT_BY_MIME[mime] || 'bin';
-  }
-
-  const join = function(s) { return ext ? s + '.' + ext : s; };
-  let candidate = join(stem);
-  if (!set) return candidate;
-  let n = 2;
-  while (set.has(candidate)) {
-    candidate = join(stem + '-' + n);
-    n++;
-  }
-  return candidate;
+function nativeDocKinds() {
+  return Object.keys(DOC_READERS);
 }
 
-function normalizeArchiveName(name) {
-  let s = String(name == null ? '' : name).trim();
-  s = s ? zipMemberBaseName(s) : '';
-  if (!s || s === '.' || s === '..') return 'archive.zip';
-  if (/\.zip$/i.test(s)) {
+function listZipDocument(u8, record, ref) {
+  const entries = parseZipCentralDirectory(u8);   
+  if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name,
+    count: entries.filter(e => !e.directory).length,
+  });
+  return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   
+}
+
+async function openPdfDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensurePdfJs();   
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture PDF indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de PDF.') };
+  }
+  try {
     
-    return s.length > 4 ? s : 'archive.zip';
+    const doc = await lib.getDocument({ data: u8.slice() }).promise;
+    return { doc };
+  } catch (e) {
+    if (e && e.name === 'PasswordException') {
+      
+      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
+        resourceName: record && record.name,
+        message: 'PDF protégé par mot de passe' });
+      return { fail: 'PDF protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
+        'Demande à l\'utilisateur une version non protégée.' };
+    }
+    return { fail: toolFail(toolName, 'PDF illisible : ' +
+      ((e && e.message) || 'structure invalide') + '.') };
   }
-  return s + '.zip';
 }
 
-function validateZipPlan(entries) {
-  const list = Array.isArray(entries) ? entries : null;
-  if (!list || !list.length) {
-    return { ok: false, reason: 'empty',
-      message: 'Aucune ressource à archiver : passe au moins un handle.' };
-  }
-
-  const seen = {};
-  let total = 0;
-  for (const e of list) {
-    const name = String(e && e.name != null ? e.name : '');
-    if (!name) {
-      return { ok: false, reason: 'unsafe', message: 'Nom de membre vide, refusé.' };
+async function listPdfDocument(u8, record, ref) {
+  const opened = await openPdfDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  const doc = opened.doc;
+  try {
+    const pages = doc.numPages;
+    let meta = null, outline = null;
+    
+    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
+    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
+    const info = (meta && meta.info) || {};
+    const flat = [];
+    
+    const stack = [];
+    for (let i = (outline || []).length - 1; i >= 0; i--) stack.push({ node: outline[i], level: 1 });
+    while (stack.length) {
+      const cur = stack.pop();
+      const n = cur.node;
+      if (!n) continue;
+      flat.push({ level: cur.level, title: n.title, page: 0 });
+      const kids = n.items || [];
+      for (let i = kids.length - 1; i >= 0; i--) stack.push({ node: kids[i], level: cur.level + 1 });
     }
-    if (isZipSlipPath(name)) {
-      return { ok: false, reason: 'unsafe',
-        message: 'Nom de membre non sûr (absolu ou remontant), refusé : ' + name + '.' };
-    }
-    if (Object.prototype.hasOwnProperty.call(seen, name)) {
-      return { ok: false, reason: 'duplicate',
-        message: 'Deux membres porteraient le même nom dans l\'archive : ' + name +
-          '. Un nom en écraserait l\'autre silencieusement.' };
-    }
-    seen[name] = true;
-    total += Number(e && e.size) || 0;
+    _pendingToolAcks.push({
+      kind: 'docs_list', handle: ref, resourceName: record.name, count: pages,
+    });
+    return formatPdfListing({          
+      pages, outline: flat,
+      title: info.Title, author: info.Author, producer: info.Producer,
+    });
+  } finally {
+    
+    try { doc.destroy(); } catch (e) {  }
   }
-
-  const cap = MAX_INLINE_BYTES;
-  if (total > cap) {
-    return { ok: false, reason: 'cap',
-      message: 'Archive trop volumineuse : ' + humanSize(total) + ' à compresser, ' +
-        'au-delà de la limite de ' + humanSize(cap) + '. Archive moins de ressources à la fois.' };
-  }
-  return { ok: true };
 }
 
-function sniffBackupFormat(u8) {
-  if (!u8 || typeof u8.length !== 'number' || u8.length < 4) return 'json';
-  if (u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04) return 'zip';
-  return 'json';
+async function readPdfDocument(u8, record, ref, selector) {
+  const opened = await openPdfDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const doc = opened.doc;
+  try {
+    const range = parsePageSelector(selector, doc.numPages);   
+    if (!range.ok) return toolFail('docs__read', range.message);
+    const pages = [];
+    for (let n = range.start; n <= range.end; n++) {
+      const page = await doc.getPage(n);
+      try {
+        const tc = await page.getTextContent();
+        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   
+      } finally {
+        try { page.cleanup(); } catch (e) {  }
+      }
+    }
+    
+    return {   
+      text: formatPdfRead(pages, { notice: range.notice }),
+      label: range.start + '-' + range.end,
+      resourceName: pdfReadResourceName(record.name, range.start, range.end),
+    };
+  } finally {
+    try { doc.destroy(); } catch (e) {  }
+  }
 }
+
+async function openXlsxDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensureSheetJs();   
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture Excel indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de classeur.') };
+  }
+  try {
+    const wb = lib.read(u8, { type: 'array' });
+    if (!wb || !wb.SheetNames || !wb.SheetNames.length) {
+      return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
+    }
+    return { wb: wb, lib: lib };
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/password|encrypt/i.test(msg)) {
+      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
+        resourceName: record && record.name,
+        message: 'Classeur protégé par mot de passe' });
+      return { fail: 'Classeur Excel protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
+        'Demande à l\'utilisateur une version non protégée.' };
+    }
+    return { fail: toolFail(toolName, 'Classeur illisible : ' + (msg || 'structure invalide') + '.') };
+  }
+}
+
+async function listXlsxDocument(u8, record, ref) {
+  const opened = await openXlsxDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  const wb = opened.wb;
+  const sheets = [];
+  for (const name of wb.SheetNames) {
+    const sh = wb.Sheets[name];
+    const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
+    const r = refA1 ? parseA1Range(refA1) : null;   
+    sheets.push({
+      name: name,
+      ref: refA1,
+      rows: r ? (r.e.r - r.s.r + 1) : 0,
+      cols: r ? (r.e.c - r.s.c + 1) : 0,
+    });
+  }
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name, count: sheets.length,
+  });
+  return formatXlsxListing(sheets);   
+}
+
+async function readXlsxDocument(u8, record, ref, selector) {
+  const opened = await openXlsxDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const wb = opened.wb, lib = opened.lib;
+
+  const sel = parseSheetSelector(selector, wb.SheetNames);   
+  if (!sel.ok) return toolFail('docs__read', sel.message);
+
+  const sheet = wb.Sheets[sel.sheet];
+  const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';
+  if (!sheetRef) {
+    
+    return {
+      text: formatXlsxRead('', { sheet: sel.sheet, ref: '' }),
+      label: sel.sheet,
+      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(sel.sheet)),
+    };
+  }
+
+  const restricted = restrictSheetRange(sheetRef, sel.range);   
+  if (restricted.fail) return toolFail('docs__read', restricted.fail);
+
+  const view = Object.assign({}, sheet, { '!ref': restricted.ref });
+  const csv = lib.utils.sheet_to_csv(view);
+
+  return {
+    text: formatXlsxRead(csv, {          
+      sheet: sel.sheet, ref: restricted.ref,
+      
+      maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
+      notice: restricted.notice,
+    }),
+    
+    label: sel.sheet + '!' + restricted.ref,
+    resourceName: docReadResourceName(record.name,
+      slugifyResourceSuffix(sel.sheet + ' ' + restricted.ref)),
+  };
+}
+
+async function openDocxDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensureMammoth();   
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de lecture Word indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
+  }
+
+  let html;
+  try {
+    
+    const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
+      ? u8.buffer
+      : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    const res = await lib.convertToHtml({ arrayBuffer: ab });
+    html = (res && res.value) || '';
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Document Word illisible : ' +
+      ((e && e.message) || 'structure invalide') + '. Un .docx protégé par mot de passe ' +
+      "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
+      'une version non protégée si c\'est le cas.') };
+  }
+
+  const blocks = docxHtmlToBlocks(html);        
+  const sections = docxSections(blocks);        
+  let tables = 0;
+  for (const b of blocks) { if (b && b.type === 'table') tables++; }
+  return { blocks: blocks, sections: sections, tables: tables };
+}
+
+async function listDocxDocument(u8, record, ref) {
+  const opened = await openDocxDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.sections.length,
+  });
+  return formatDocxListing(opened.sections, { tables: opened.tables });   
+}
+
+async function readDocxDocument(u8, record, ref, selector) {
+  const opened = await openDocxDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+
+  const res = resolveDocxSection(selector, opened.sections);   
+  if (!res.ok) return toolFail('docs__read', res.message);
+
+  return {
+    text: formatDocxRead(res.section, { maxChars: MAX_DOCX_SECTION_CHARS }),   
+    
+    label: res.section.label,
+    resourceName: docReadResourceName(record.name, slugifyResourceSuffix(res.section.label)),
+  };
+}
+
+async function openPptxDocument(u8, record, toolName) {
+  let lib;
+  try {
+    lib = await ensureFflate();   
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Moteur de décompression indisponible : ' +
+      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de présentation.') };
+  }
+
+  let files;
+  try {
+    files = lib.unzipSync(u8, {
+      filter: (f) => /^ppt\/slides\/slide\d+\.xml$/.test(f.name)
+        || /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(f.name)
+        || /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(f.name)
+        || f.name === 'ppt/presentation.xml'
+        || f.name === 'ppt/_rels/presentation.xml.rels',
+    });
+  } catch (e) {
+    
+    return { fail: toolFail(toolName, 'Présentation illisible : ' +
+      ((e && e.message) || 'structure invalide') + '. Un .pptx protégé par mot de passe ' +
+      "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
+      'une version non protégée si c\'est le cas.') };
+  }
+
+  const dec = new TextDecoder();
+  const txt = (name) => (files[name] ? dec.decode(files[name]) : '');
+
+  const present = Object.keys(files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+  present.sort((a, b) => (parseInt(a.replace(/\D+/g, ''), 10) || 0) - (parseInt(b.replace(/\D+/g, ''), 10) || 0));
+  const ordered = pptxSlideOrder(txt('ppt/presentation.xml'),   
+    txt('ppt/_rels/presentation.xml.rels'), present)
+    .filter((n) => !!files[n]);   
+
+  let parser;
+  try {
+    parser = new DOMParser();
+  } catch (e) {
+    return { fail: toolFail(toolName, 'Analyseur XML indisponible dans ce navigateur.') };
+  }
+
+  const slides = [];
+  let untitled = 0;
+  for (const name of ordered) {
+    const doc = parser.parseFromString(txt(name), 'application/xml');
+    const blocks = pptxShapeBlocks(doc);
+    const title = pptxSlideTitle(doc);
+    if (!title) untitled++;
+
+    const relsName = name.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
+    const notesPath = pptxNotesTarget(txt(relsName));   
+    let notes = '';
+    if (notesPath && files[notesPath]) {
+      const nd = parser.parseFromString(txt(notesPath), 'application/xml');
+      notes = pptxShapeBlocks(nd, { skipPlaceholders: PPTX_NOTES_SKIP_PH }).join('\n').trim();
+    }
+
+    slides.push({ name: name, title: title, blocks: blocks, notes: notes, hasNotes: !!notes });
+  }
+  return { slides: slides, untitled: untitled };
+}
+
+const PPTX_NOTES_SKIP_PH = ['sldNum', 'sldImg', 'ftr', 'dt'];
+
+function pptxShapeBlocks(doc, opts) {
+  const o = opts || {};
+  const skip = o.skipPlaceholders || null;
+  const out = [];
+  const root = doc && doc.documentElement;
+  if (!root) return out;
+
+  const paragraphsOf = (el) => {
+    const paras = [];
+    const ps = el.getElementsByTagName('a:p');
+    for (let i = 0; i < ps.length; i++) {
+      const ts = ps[i].getElementsByTagName('a:t');
+      let line = '';
+      for (let j = 0; j < ts.length; j++) line += (ts[j].textContent || '');
+      if (line.trim()) paras.push(line);
+    }
+    return paras;
+  };
+
+  const walk = (el) => {
+    for (let i = 0; i < el.childNodes.length; i++) {
+      const ch = el.childNodes[i];
+      if (!ch || ch.nodeType !== 1) continue;
+      const tag = ch.nodeName;
+      if (tag === 'p:sp') {
+        if (skip) {
+          const ph = ch.getElementsByTagName('p:ph')[0];
+          const ty = ph && ph.getAttribute('type');
+          if (ty && skip.indexOf(ty) >= 0) continue;
+        }
+        const paras = paragraphsOf(ch);
+        if (paras.length) out.push(paras.join('\n'));
+      } else if (tag === 'p:grpSp') {
+        walk(ch);   
+      } else if (tag === 'p:graphicFrame') {
+        const tbls = ch.getElementsByTagName('a:tbl');
+        for (let t = 0; t < tbls.length; t++) {
+          const rows = [];
+          const trs = tbls[t].getElementsByTagName('a:tr');
+          for (let r = 0; r < trs.length; r++) {
+            const cells = [];
+            const tcs = trs[r].getElementsByTagName('a:tc');
+            for (let c = 0; c < tcs.length; c++) cells.push(paragraphsOf(tcs[c]).join(' ').trim());
+            rows.push(cells.join(' | '));
+          }
+          if (rows.length) out.push(rows.join('\n'));
+        }
+      } else {
+        walk(ch);
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+function pptxSlideTitle(doc) {
+  const root = doc && doc.documentElement;
+  if (!root) return '';
+  const sps = root.getElementsByTagName('p:sp');
+  for (let i = 0; i < sps.length; i++) {
+    const ph = sps[i].getElementsByTagName('p:ph')[0];
+    const ty = ph && ph.getAttribute('type');
+    if (ph && (ty === 'title' || ty === 'ctrTitle')) {
+      const ts = sps[i].getElementsByTagName('a:t');
+      let s = '';
+      for (let j = 0; j < ts.length; j++) s += (ts[j].textContent || '');
+      if (s.trim()) return s.trim();
+    }
+  }
+  return '';
+}
+
+async function listPptxDocument(u8, record, ref) {
+  const opened = await openPptxDocument(u8, record, 'docs__list');
+  if (opened.fail) return opened.fail;
+  _pendingToolAcks.push({
+    kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.slides.length,
+  });
+  return formatPptxListing(opened.slides, { untitled: opened.untitled });   
+}
+
+async function readPptxDocument(u8, record, ref, selector) {
+  const opened = await openPptxDocument(u8, record, 'docs__read');
+  if (opened.fail) return opened.fail;
+  const all = opened.slides;
+  if (!all.length) return toolFail('docs__read', 'Cette présentation ne contient aucune slide lisible.');
+
+  const sel = parsePageSelector(selector, all.length);   
+  if (!sel.ok) return toolFail('docs__read', sel.message);
+
+  const picked = [];
+  for (let n = sel.start; n <= sel.end; n++) {
+    const s = all[n - 1];
+    picked.push({
+      number: n, title: s.title,
+      text: (s.blocks || []).join('\n\n').trim(),
+      notes: s.notes,
+    });
+  }
+
+  return {
+    
+    text: formatPptxRead(picked, { notice: sel.notice }),   
+    
+    label: sel.start + '-' + sel.end,
+    resourceName: pptxReadResourceName(record.name, sel.start, sel.end),   
+  };
+}
+
+async function describeXlsxForLibrary(u8, maxChars) {
+  try {
+    const lib = await ensureSheetJs();   
+    const wb = lib.read(u8, { type: 'array' });
+    if (!wb || !wb.SheetNames || !wb.SheetNames.length) return null;
+
+    const sheets = [];
+    for (const name of wb.SheetNames) {
+      const sh = wb.Sheets[name];
+      const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
+      const r = refA1 ? parseA1Range(refA1) : null;   
+      sheets.push({ name: name, ref: refA1,
+        rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 });
+    }
+    const head = formatXlsxListing(sheets);   
+
+    let preview = '';
+    for (const sh of sheets) {
+      if (!sh.ref) continue;
+      const full = parseA1Range(sh.ref);
+      if (!full) continue;
+      const end = Math.min(full.e.r, full.s.r + 9);   
+      const view = Object.assign({}, wb.Sheets[sh.name], {
+        '!ref': formatA1Range({ s: full.s, e: { r: end, c: full.e.c } }),   
+      });
+      const csv = String(lib.utils.sheet_to_csv(view) || '').replace(/\n+$/, '');
+      if (csv) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + csv; }
+      break;
+    }
+    const out = preview ? head + '\n\n' + preview : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function describePdfForLibrary(u8, maxChars) {
+  let doc = null;
+  try {
+    const lib = await ensurePdfJs();   
+    doc = await lib.getDocument({ data: u8.slice() }).promise;
+    let meta = null, outline = null;
+    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
+    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
+    const info = (meta && meta.info) || {};
+    const flat = [];
+    for (const n of (outline || [])) {
+      if (n && n.title) flat.push({ level: 1, title: n.title, page: 0 });
+    }
+    const head = formatPdfListing({          
+      pages: doc.numPages, outline: flat,
+      title: info.Title, author: info.Author, producer: info.Producer,
+    });
+
+    let first = '';
+    if (doc.numPages > 0) {
+      const page = await doc.getPage(1);
+      try {
+        const tc = await page.getTextContent();
+        first = joinPdfTextItems(tc && tc.items).trim();   
+      } finally {
+        try { page.cleanup(); } catch (e) {  }
+      }
+    }
+    const out = first ? head + '\n\nPremière page :\n' + first : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;   
+  } finally {
+    if (doc) { try { doc.destroy(); } catch (e) {  } }
+  }
+}
+
+async function describeDocxForLibrary(u8, maxChars) {
+  try {
+    const opened = await openDocxDocument(u8, { name: '' }, 'library');
+    if (opened.fail || !opened.sections.length) return null;
+    const head = formatDocxListing(opened.sections, { tables: opened.tables });   
+    let preview = '';
+    for (const sec of opened.sections) {
+      const body = String(sec.text || '').trim();
+      if (!body) continue;
+      preview = 'Début de « ' + sec.label + ' » :\n' + body.slice(0, 600);
+      break;
+    }
+    const out = preview ? head + '\n\n' + preview : head;
+    return out.slice(0, maxChars);
+  } catch (e) {
+    return null;   
+  }
+}
+
+async function describePptxForLibrary(u8, maxChars) {
+  try {
+    const opened = await openPptxDocument(u8, { name: '' }, 'library');
+    if (opened.fail || !opened.slides.length) return null;
+    return formatPptxListing(opened.slides, { untitled: opened.untitled }).slice(0, maxChars);   
+  } catch (e) {
+    return null;   
+  }
+}
+
+const DOC_DESCRIBERS = {
+  pdf:  describePdfForLibrary,
+  xlsx: describeXlsxForLibrary,
+  docx: describeDocxForLibrary,
+  pptx: describePptxForLibrary,
+};
 
 /* ── sync.js ── */
 
@@ -6020,7 +6569,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1787986897}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1787989264}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -7767,7 +8316,7 @@ function makeResourcePresentBlock(record) {
 
 /* ── skills.js ── */
 
-const SYSTEM_SKILLS_CONTENT = (function () { try { return {"files-promote": {"name": "Bibliothèque de fichiers", "description": "Doctrine de déclenchement pour déposer un fichier dans la bibliothèque persistante de l'espace", "content": "Doctrine de déclenchement pour miaou__files__promote (bibliothèque de fichiers\nde l'espace) :\n\nN'appelle JAMAIS miaou__files__promote de ta propre initiative sans le\nconsentement décrit plus bas.\n\nDEUX SOURCES POSSIBLES pour le paramètre `ref` :\n\n1. Une pièce jointe du tour courant (att-N) — un fichier que l'utilisateur a\n   joint à la conversation.\n2. Une ressource de session (res_…) — y compris une ressource que TU as\n   toi-même créée avec miaou__resource__create. C'est le chemin pour déposer\n   dans la bibliothèque un contenu que tu as produit : crée d'abord la\n   ressource, puis promeus le handle res_… qu'elle te renvoie. Passe alors un\n   `name` explicite, avec l'extension attendue (une ressource créée sans nom\n   s'appelle « resource », ce qui fait un mauvais nom de fichier).\n\nUn handle file-<id> est refusé : le fichier est déjà dans la bibliothèque.\n\nFORME DE LA DESCRIPTION — elle est affichée telle quelle sur la carte du\nfichier dans l'interface, et relue à chaque tour dans le manifeste de la\nbibliothèque : c'est une phrase, pas une étiquette. Écris-la comme telle,\ncommençant par une MAJUSCULE et terminée par un point, en une ou deux phrases\nmaximum. Elle dit ce que le fichier EST et à quoi il sert, jamais un résumé de\nson contenu.\n\n- Bien : « Jeu de données de test pour la validation du parseur CSV. »\n- Mal : « jeu de données de test » (pas de majuscule, pas de point).\n- Mal : « Contient 10 lignes dont Julien, Anne-Sophie, Samuel… » (résumé du\n  contenu, pas description du fichier).\n\nCONSENTEMENT — deux cas, à distinguer avant d'agir :\n\n- L'utilisateur vient de te demander explicitement de déposer ce contenu dans\n  la bibliothèque de l'espace (« ajoute ça à la bibliothèque », « promeus ce\n  fichier », « garde-le dans l'espace ») : la demande EST le consentement.\n  Appelle directement miaou__files__promote, sans repasser par\n  ask_confirmation — reposer la question serait une friction inutile.\n- Tu identifies de toi-même qu'un contenu mériterait d'être conservé (contenu\n  de référence, réutilisable au-delà de cette conversation), sans que\n  l'utilisateur l'ait demandé : appelle d'abord ask_confirmation avec une\n  question qui inclut LITTÉRALEMENT le nom du fichier, son type, sa taille\n  approximative, et la description que tu proposes de stocker (ce que le\n  fichier EST, pas son contenu) : « Tu veux que j'ajoute « nom_fichier » à la\n  bibliothèque de l'espace, avec cette description : « … » ? ». SEULEMENT si\n  l'utilisateur confirme positivement au tour suivant, appelle\n  miaou__files__promote avec les MÊMES ref, description et name (si fourni) que\n  ceux annoncés dans la question — ne reformule pas la description entre la\n  question et l'appel. Si l'utilisateur décline, n'appelle pas l'outil et\n  n'insiste pas.\n\nDans les deux cas : ne JAMAIS affirmer avoir ajouté un fichier à la\nbibliothèque si tu n'as pas appelé miaou__files__promote avec succès dans ce\nmême tour."}, "js-eval": {"name": "Consignes d'utilisation de la sandbox js__eval", "description": "Comment écrire l'appel miaou__js__eval (signature, primitives disponibles, méthode, contraintes de sortie)", "content": "Tu as décidé d'utiliser miaou__js__eval. Voici comment l'appeler correctement.\n\n## Appel\n\nmiaou__js__eval(handle, code). `handle` = le handle du fichier (jamais son\ncontenu ni un chemin). `code` = une expression ou une suite d'instructions\nJavaScript dont la DERNIÈRE valeur évaluée est le résultat renvoyé. Le code\ns'exécute au niveau global (PAS dans une fonction) : pour renvoyer un objet,\nenveloppe-le dans un appel — `JSON.stringify({ a: 1, b: 2 })` — ou parenthèse-le\n— `({ a: 1, b: 2 })`. Un objet nu en dernière ligne (`{ a: 1 }`) est lu comme un\nBLOC, pas comme une valeur, et échoue : préfère la forme JSON.stringify(…).\nTermine tes instructions par des points-virgules. N'inclus JAMAIS le contenu du\nfichier dans `code` : il est déjà disponible via les primitives ci-dessous.\n\n## Primitives disponibles (liste FERMÉE)\n\nRien d'autre du monde hôte n'est accessible : ni fetch, ni réseau, ni DOM, ni\nsystème de fichiers.\n\n- text() → le contenu textuel entier du fichier (string).\n- lines() → un tableau des lignes du fichier (découpe sur les sauts de ligne).\n- jsonLines() → un tableau d'objets, une ligne JSON parsée par élément (les\n  lignes vides ou non parsables sont ignorées) ; pour un fichier JSON-lines/NDJSON.\n- parse() → le fichier entier parsé comme un unique document JSON.\n\nCes quatre noms (text, lines, jsonLines, parse) sont RÉSERVÉS : ne les réutilise\npas comme noms de variable. `const lines = lines()` échoue (redéclaration d'un\nidentifiant global) — nomme ta variable autrement, ex. `const rows = lines();`.\nLes globals JavaScript standard (JSON, Math, Array, String, RegExp, Date…) sont\ndisponibles. Aucun déterminisme n'est requis (Date/Math.random autorisés).\n\n## Méthode\n\nProcède par petits appels successifs plutôt que de viser un seul gros script\nparfait. Un premier appel pour inspecter la forme du fichier (quelques lignes\nde tête/queue, un décompte), puis un ou des appels ciblés selon ce que tu as\nvu. Un script clair de plusieurs lignes, avec des variables intermédiaires\nnommées, réussit mieux qu'un one-liner condensé — n'essaie pas de tout\nraccourcir. Tu peux enchaîner de nombreux appels : c'est l'usage attendu.\n\n## Sortie et limites\n\nLe résultat est ramené en texte (les objets/tableaux sont sérialisés en JSON).\nLe cap de longueur et la règle de refus (pas de troncature) sont rappelés dans\nla doctrine qui t'a orienté vers cette skill — vise toujours une synthèse (un\ncompte, un top-N, un échantillon), jamais le fichier brut. Le bac à sable a\naussi une limite de temps et de mémoire : une boucle infinie ou une\naccumulation démesurée échoue proprement — écris du code borné."}, "mermaid": {"name": "Génération de diagrammes Mermaid", "description": "Règles obligatoires pour générer un diagramme mermaid valide dans MIAOU", "content": "Tu vas générer un bloc de code mermaid. Applique CES RÈGLES EXACTEMENT, sans\nexception. Un diagramme qui viole une seule de ces règles ne s'affiche pas\n(erreur de parse) ou affiche des caractères parasites à l'écran. Ce n'est pas\nune question de style : c'est une syntaxe stricte.\n\n## Règle 0 — Le type de diagramme (premier mot) doit exister. N'en invente JAMAIS un\n\nAvant tout label, le premier mot non-commentaire du bloc DÉCLARE le type de\ndiagramme. Si ce mot-clé n'existe pas dans Mermaid, RIEN ne s'affiche : le parse\néchoue immédiatement, avant même de regarder un seul nœud. C'est l'erreur la plus\ncoûteuse et la plus fréquente — un modèle croit qu'un type « logique » existe et\nplaque dessus une syntaxe plausible mais entièrement fantôme.\n\nN'utilise QUE l'un de ces types (liste FERMÉE — tout autre mot-clé est invalide) :\n\n- `flowchart` (ou `graph`) — organigrammes, flux, arbres de décision\n- `sequenceDiagram` — échanges chronologiques entre acteurs\n- `stateDiagram-v2` — machines à états\n- `classDiagram` — classes / relations objet\n- `erDiagram` — entités-relations (modèle de données)\n- `pie` — camembert (répartition en pourcentages)\n- `xychart-beta` — **le SEUL** graphe à axes X/Y : barres ET courbes\n- `gantt` — planning temporel\n- `mindmap` — carte mentale\n\nTout mot-clé hors de cette liste est à considérer comme inexistant, même s'il\n« sonne juste ». En particulier ces mots-clés n'existent PAS et cassent le\nparse : `bar`, `barChart`, `barchart`, `histogram`, `lineChart`, `scatter`,\n`plot`, `chart`, `graphBar`. Il n'y a **aucun** type dédié aux barres : les\ngraphes en barres passent obligatoirement par `xychart-beta` (voir Règle 0bis).\n\nSi le type de données que tu veux représenter n'entre dans aucun de ces neuf\ntypes, ne fabrique pas un type : choisis le plus proche, ou renonce au diagramme\net présente les données en tableau Markdown.\n\n## Règle 0bis — Données quantitatives (barres / courbes) → `xychart-beta`, jamais autre chose\n\nPour tout graphe de valeurs numériques par catégorie (barres) ou par progression\n(courbe), le seul type valide est `xychart-beta`. Sa syntaxe est stricte et ne\nressemble à aucune paire `clé: valeur` : les catégories forment un tableau sur\n`x-axis`, les valeurs un tableau sur la même position, dans l'ordre.\n\n- INVALIDE (types et syntaxe inventés) : `bar`, `barChart`, lignes `web: 11`,\n  déclarations `x Lignes` / `y Domaine`, `barColor #1e90ff`.\n- VALIDE :\n\n```\nxychart-beta\n    title \"Nombre de lignes par domaine\"\n    x-axis [\"web-server\", \"db-pool\", \"auth\", \"cache\", \"security\"]\n    y-axis \"Lignes\"\n    bar [11, 6, 6, 5, 3]\n```\n\nLe tableau de `x-axis` et le tableau de `bar` (ou `line`) doivent avoir le MÊME\nnombre d'éléments, dans le MÊME ordre. Le titre et le libellé d'axe qui\ncontiennent un espace vont entre guillemets doubles. Pas de couleur en ligne\nnue : la couleur relève du thème, pas de la syntaxe du diagramme.\n\n## Règle 1 — Saut de ligne dans un label : `<br/>` UNIQUEMENT\n\nINTERDIT d'écrire les deux caractères `\\` puis `n` (backslash-n) dans un\nlabel, même si tu penses que ça produit un saut de ligne. Mermaid ne\nl'interprète PAS comme un saut de ligne. Ça reste affiché tel quel, ou ça\ncasse le parse.\n\n- INVALIDE : `A[Ligne un\\nLigne deux]`\n- VALIDE : `A[\"Ligne un<br/>Ligne deux\"]`\n\nAucune autre balise HTML n'est reconnue pour un saut de ligne. `<br>` sans\nslash fermant : à éviter, utilise `<br/>`.\n\n## Règle 2 — Un label avec caractère spécial → guillemets doubles autour de TOUT le label\n\nSi un label contient une parenthèse `( )`, une accolade `{ }`, un deux-points\n`:`, un point d'interrogation `?`, un point-virgule `;`, une esperluette `&`,\nou tout autre caractère qui n'est pas une lettre/chiffre/espace/tiret, entoure\nla totalité du texte du label de guillemets doubles `\"...\"`.\n\n- INVALIDE : `A[France vs Maroc (2-0)]`\n- VALIDE : `A[\"France vs Maroc (2-0)\"]`\n- INVALIDE : `F{Type de fichier?}`\n- VALIDE : `F{\"Type de fichier ?\"}`\n\nCeci s'applique À TOUS les types de nœuds : rectangles `[ ]`, losanges de\ndécision `{ }`, arrondis `( )`, cercles `(( ))`.\n\n## Règle 3 — Jamais de crochets `[` `]` À L'INTÉRIEUR d'un label\n\nMême si le label est entouré de guillemets doubles, un crochet interne casse\nle parse : il ferme la forme du nœud prématurément, les guillemets ne le\nneutralisent PAS. Reformule sans crochets — utilise des parenthèses ou un\ntiret à la place.\n\n- INVALIDE : `B[\"Message [attachment att-N]\"]`\n- VALIDE : `B[\"Message (attachment att-N)\"]`\n- VALIDE : `B[\"Message - attachment att-N\"]`\n\n## Règle 4 — Jamais de guillemets doubles À L'INTÉRIEUR d'un label déjà quoté\n\nDeux guillemets doubles imbriqués cassent le parse, même si l'un des deux\nouvre/ferme le label. Reformule sans guillemets internes, ou utilise\nl'entité `#quot;` à leur place.\n\n- INVALIDE : `C[\"Demande : \"Analyse les logs\"\"]`\n- VALIDE : `C[\"Demande : Analyse les logs\"]`\n- VALIDE (si tu dois vraiment garder les guillemets) : `C[\"Demande : #quot;Analyse les logs#quot;\"]`\n\n## Règle 5 — Pas de mise en forme HTML inline\n\n`<b>`, `<i>`, `<em>`, `<strong>`, `<u>`, `<mark>`, `<small>` ne sont PAS\ninterprétés dans un label : ils s'affichent littéralement comme texte\n(`<b>x<\/b>` apparaît tel quel dans le diagramme). Seul `<br/>` est reconnu\n(règle 1). N'utilise aucune de ces balises. MIAOU rend les diagrammes avec\n`htmlLabels: false` (labels en `<text>` SVG pur) : c'est pour ça qu'aucune\nmise en forme HTML n'a d'effet, quelle que soit la version de mermaid.\n\n## Règle 6 — Nom de fichier sur la fence\n\nPour un diagramme destiné à être identifiable/téléchargeable, ajoute\n`filename=nom.mmd` sur la ligne d'ouverture de la fence, après le langage\nmermaid et un espace : `mermaid filename=flux-auth.mmd`. Optionnel pour un\nextrait illustratif court sans vocation de fichier. Ce nom sert aussi à\nnommer les exports d'image (SVG/PNG) du diagramme dans MIAOU, extension\najustée automatiquement.\n\n## Checklist avant de produire le bloc final\n\nAvant d'émettre le bloc mermaid, commence par le premier mot, puis relis CHAQUE\nlabel que tu as écrit et vérifie dans l'ordre :\n\n0. Le premier mot est-il un type de la liste fermée de la Règle 0 ? → sinon,\n   c'est invalide : corrige le type (pour des barres/valeurs, `xychart-beta`).\n1. Est-ce qu'il contient `\\n` (backslash-n littéral) ? → remplace par `<br/>`.\n2. Est-ce qu'il contient un caractère spécial (`( ) { } : ? ; &`) ? → entoure\n   tout le label de guillemets doubles.\n3. Est-ce qu'il contient un crochet `[` ou `]` ? → reformule sans crochets.\n4. Est-ce qu'il contient un guillemet double interne ? → reformule sans\n   guillemets, ou utilise `#quot;`.\n5. Est-ce qu'il contient une balise HTML autre que `<br/>` ? → retire-la,\n   garde le texte brut.\n\nSi tu n'es pas sûr qu'un label respecte ces 5 points, simplifie le texte du\nlabel plutôt que de prendre le risque : un diagramme qui s'affiche avec un\ntexte plus court vaut mieux qu'un diagramme cassé."}}; } catch (e) { return {}; } })();
+const SYSTEM_SKILLS_CONTENT = (function () { try { return {"docs": {"name": "Ouverture de documents", "description": "Comment lire un document joint (PDF, Excel, Word, PowerPoint, archive zip) — quel outil, quel selector, quand sortir en ressource", "content": "Tu as décidé d'ouvrir un document joint. Voici comment t'y prendre, format par\nformat.\n\n## Le geste, dans tous les cas\n\n`miaou__docs__list` **d'abord**, quel que soit le format. Ce qu'il rend est\nexactement ce que tu peux demander ensuite : les unités qu'il nomme sont celles\nque `miaou__docs__read` accepte en selector, et les chemins de membres qu'il\nliste sont ceux que `miaou__docs__extract` accepte. N'invente jamais un selector\nni un chemin — lis-le dans le listing.\n\nTu n'as pas à connaître le format à l'avance : `docs__list` reconnaît le\ndocument **à ses octets**, pas à son nom ni à son type déclaré. Un fichier mal\nnommé sera quand même ouvert correctement.\n\n## PDF\n\n`docs__list` rend le nombre de pages, le sommaire s'il y en a un, et les\nmétadonnées (titre, auteur, producteur). Le producteur oriente utilement la\nlecture : un PDF sorti d'un logiciel de présentation ne se lit pas comme un\nrapport.\n\n`docs__read` prend un **numéro de page** ou une **plage** : `3`, ou `2-5`\n(inclusive). Rien d'autre — pas de mot, pas de préfixe. Écris `3`, jamais\n`page 3`.\n\n**Une page peut revenir vide.** Cela veut dire qu'elle n'a pas de couche texte,\ntypiquement parce que le document est un scan. MIAOU ne fait pas de\nreconnaissance de caractères. Dans ce cas, **dis-le** — nomme les pages\nconcernées et pose l'hypothèse du scan. Ne conclus pas que le document est vide\nou sans intérêt : tu n'as pas lu son contenu, tu as constaté qu'il n'est pas\naccessible par cette voie.\n\n## Classeur Excel\n\n`docs__list` rend les feuilles avec leurs dimensions. Le selector de\n`docs__read` est le **nom exact d'une feuille**, tel que le listing l'a rendu :\n`Synthèse`. Tu peux le restreindre à une plage de cellules en le suivant d'un\npoint d'exclamation : `Synthèse!A1:C10`.\n\nUne feuille lue sans plage explicite est **bornée en nombre de lignes** : le\nrésultat te dit alors où la lecture s'est arrêtée. C'est délibéré — tu ne sais\npas encore, au moment de demander une feuille, si elle en fait trente ou\ncinquante mille. Pour aller au-delà, demande une plage, ou passe par une\nressource (voir plus bas).\n\n## Document Word\n\n`docs__list` rend les sections du document, dans l'ordre. Le selector de\n`docs__read` est le **titre exact d'une section**, tel que le listing l'a rendu :\n`2. Developer Portal`.\n\nDeux selectors particuliers existent pour le texte qui ne relève d'aucun titre :\n`(préambule)` pour ce qui précède le premier titre, `(corps)` pour un document\nsans titre du tout. Le listing te dit lequel s'applique.\n\nLire une section rend **aussi ses sous-sections** — demander un chapitre te\ndonne le chapitre entier, pas seulement son chapeau.\n\n## Présentation PowerPoint\n\n`docs__list` rend les slides **dans l'ordre de la présentation**, avec leur\ntitre — ou un court extrait de leur texte quand elles n'en ont pas.\n\nLe selector de `docs__read` est le **numéro d'une slide** ou une **plage**,\ncomme pour un PDF : `3`, ou `2-5`. Ce numéro est celui de l'ordre de\nprésentation, pas celui d'un nom de fichier interne.\n\n**Les notes de présentateur sont servies avec la slide**, séparées par un\nintertitre explicite. Elles portent souvent le propos réel là où la slide ne\nporte que des mots-clés : ne les ignore pas, et ne les attribue pas au public —\nelles étaient destinées à celui qui présentait.\n\n## Archive zip\n\nC'est le seul format qui ne se lit pas avec `docs__read`. `docs__list` rend les\nmembres — nom et taille — en signalant explicitement ceux qui ne sont pas\nextractibles (chiffrés, chemin non sûr). Puis `miaou__docs__extract` prend le\n**chemin exact d'un membre** et le matérialise en ressource `res_…`, sans jamais\ncharger son contenu dans ton contexte.\n\nLe handle rendu se passe ensuite à `miaou__js__eval` pour compter, filtrer,\nagréger ou extraire. C'est le geste normal sur une archive de logs ou de données.\n\n**Un membre par appel.** Pour en analyser plusieurs, rejoue l'extraction puis le\nmême script sur chaque handle : c'est l'usage attendu, pas un contournement.\n\nSi un membre est annoncé chiffré, **ne l'extrais pas et dis-le**. Un zip protégé\npar mot de passe se décompresse en octets illisibles sans lever d'erreur : tu\nrecevrais du bruit binaire présenté comme du texte, et tu pourrais le prendre\npour du contenu.\n\n## Quand sortir en ressource plutôt qu'en contexte\n\n`docs__read` accepte `as_resource`. Passe-le à vrai quand ce que tu demandes est\n**volumineux** — des dizaines de pages, une feuille de plusieurs milliers de\nlignes, une longue section, des dizaines de slides. Le texte va alors dans une\nressource `res_…` que tu interroges avec `miaou__js__eval`, au lieu de saturer\nton contexte.\n\nPar défaut, laisse-le faux : une ou deux pages, une petite plage de cellules,\nune section ordinaire se lisent directement, et faire un détour par une\nressource pour trois paragraphes coûte un appel pour rien.\n\n## Quand un appel est refusé\n\nLes refus sont **explicites et actionnables** : ils disent ce qui n'allait pas et\nce qu'il faut faire à la place. Lis-les plutôt que de réessayer à l'identique.\n\n- **Lecture trop volumineuse pour le contexte** — le résultat dépassait le cap.\n  Relance le même appel avec `as_resource` à vrai, ou demande une plage plus\n  courte. Le message te donne le chiffre exact.\n- **Selector invalide** — la forme attendue est rappelée dans le message. Le cas\n  le plus fréquent est d'avoir écrit un mot là où un nombre était attendu.\n- **Plage ramenée** — tu as demandé au-delà de la fin du document ; la lecture a\n  été servie, bornée, et le résultat te dit à quoi elle a été ramenée. Ne conclus\n  pas que le document s'arrête là où tu avais demandé.\n- **Format que MIAOU ne sait pas ouvrir seul** — le message nomme les formats\n  natifs et, s'il y en a un de branché, l'outil serveur à utiliser à la place.\n  Suis-le. S'il dit qu'aucun outil ne convient, dis-le à l'utilisateur : tu ne\n  disposes alors que du nom, du type et de la taille du fichier.\n\nDans tous les cas : **ne suppose jamais le contenu d'un fichier que tu n'as pas\nréussi à ouvrir.** Un fichier illisible est un fait à rapporter, pas un blanc à\ncombler.\n\n## Le cas Office-vu-comme-zip\n\nUn `.docx`, un `.xlsx` ou un `.pptx` **est** techniquement une archive zip.\n`docs__extract` sait donc en sortir un membre XML brut ou une image embarquée.\n\nCe n'est **pas** la voie normale : elle te donne la mécanique interne du fichier\nlà où `docs__read` t'en donne le texte. N'y recours que si l'utilisateur demande\nexplicitement la structure interne du document, ou pour en tirer une image.\n\n## Regrouper des ressources en une archive\n\n`miaou__docs__pack` fait le chemin inverse : il agrège plusieurs ressources déjà\nstockées en **une** archive zip téléchargeable. C'est le geste à proposer quand\ntu as produit plusieurs fichiers au fil de la conversation et que l'utilisateur\nveut les récupérer d'un coup."}, "files-promote": {"name": "Bibliothèque de fichiers", "description": "Doctrine de déclenchement pour déposer un fichier dans la bibliothèque persistante de l'espace", "content": "Doctrine de déclenchement pour miaou__files__promote (bibliothèque de fichiers\nde l'espace) :\n\nN'appelle JAMAIS miaou__files__promote de ta propre initiative sans le\nconsentement décrit plus bas.\n\nDEUX SOURCES POSSIBLES pour le paramètre `ref` :\n\n1. Une pièce jointe du tour courant (att-N) — un fichier que l'utilisateur a\n   joint à la conversation.\n2. Une ressource de session (res_…) — y compris une ressource que TU as\n   toi-même créée avec miaou__resource__create. C'est le chemin pour déposer\n   dans la bibliothèque un contenu que tu as produit : crée d'abord la\n   ressource, puis promeus le handle res_… qu'elle te renvoie. Passe alors un\n   `name` explicite, avec l'extension attendue (une ressource créée sans nom\n   s'appelle « resource », ce qui fait un mauvais nom de fichier).\n\nUn handle file-<id> est refusé : le fichier est déjà dans la bibliothèque.\n\nFORME DE LA DESCRIPTION — elle est affichée telle quelle sur la carte du\nfichier dans l'interface, et relue à chaque tour dans le manifeste de la\nbibliothèque : c'est une phrase, pas une étiquette. Écris-la comme telle,\ncommençant par une MAJUSCULE et terminée par un point, en une ou deux phrases\nmaximum. Elle dit ce que le fichier EST et à quoi il sert, jamais un résumé de\nson contenu.\n\n- Bien : « Jeu de données de test pour la validation du parseur CSV. »\n- Mal : « jeu de données de test » (pas de majuscule, pas de point).\n- Mal : « Contient 10 lignes dont Julien, Anne-Sophie, Samuel… » (résumé du\n  contenu, pas description du fichier).\n\nCONSENTEMENT — deux cas, à distinguer avant d'agir :\n\n- L'utilisateur vient de te demander explicitement de déposer ce contenu dans\n  la bibliothèque de l'espace (« ajoute ça à la bibliothèque », « promeus ce\n  fichier », « garde-le dans l'espace ») : la demande EST le consentement.\n  Appelle directement miaou__files__promote, sans repasser par\n  ask_confirmation — reposer la question serait une friction inutile.\n- Tu identifies de toi-même qu'un contenu mériterait d'être conservé (contenu\n  de référence, réutilisable au-delà de cette conversation), sans que\n  l'utilisateur l'ait demandé : appelle d'abord ask_confirmation avec une\n  question qui inclut LITTÉRALEMENT le nom du fichier, son type, sa taille\n  approximative, et la description que tu proposes de stocker (ce que le\n  fichier EST, pas son contenu) : « Tu veux que j'ajoute « nom_fichier » à la\n  bibliothèque de l'espace, avec cette description : « … » ? ». SEULEMENT si\n  l'utilisateur confirme positivement au tour suivant, appelle\n  miaou__files__promote avec les MÊMES ref, description et name (si fourni) que\n  ceux annoncés dans la question — ne reformule pas la description entre la\n  question et l'appel. Si l'utilisateur décline, n'appelle pas l'outil et\n  n'insiste pas.\n\nDans les deux cas : ne JAMAIS affirmer avoir ajouté un fichier à la\nbibliothèque si tu n'as pas appelé miaou__files__promote avec succès dans ce\nmême tour."}, "js-eval": {"name": "Consignes d'utilisation de la sandbox js__eval", "description": "Comment écrire l'appel miaou__js__eval (signature, primitives disponibles, méthode, contraintes de sortie)", "content": "Tu as décidé d'utiliser miaou__js__eval. Voici comment l'appeler correctement.\n\n## Appel\n\nmiaou__js__eval(handle, code). `handle` = le handle du fichier (jamais son\ncontenu ni un chemin). `code` = une expression ou une suite d'instructions\nJavaScript dont la DERNIÈRE valeur évaluée est le résultat renvoyé. Le code\ns'exécute au niveau global (PAS dans une fonction) : pour renvoyer un objet,\nenveloppe-le dans un appel — `JSON.stringify({ a: 1, b: 2 })` — ou parenthèse-le\n— `({ a: 1, b: 2 })`. Un objet nu en dernière ligne (`{ a: 1 }`) est lu comme un\nBLOC, pas comme une valeur, et échoue : préfère la forme JSON.stringify(…).\nTermine tes instructions par des points-virgules. N'inclus JAMAIS le contenu du\nfichier dans `code` : il est déjà disponible via les primitives ci-dessous.\n\n## Primitives disponibles (liste FERMÉE)\n\nRien d'autre du monde hôte n'est accessible : ni fetch, ni réseau, ni DOM, ni\nsystème de fichiers.\n\n- text() → le contenu textuel entier du fichier (string).\n- lines() → un tableau des lignes du fichier (découpe sur les sauts de ligne).\n- jsonLines() → un tableau d'objets, une ligne JSON parsée par élément (les\n  lignes vides ou non parsables sont ignorées) ; pour un fichier JSON-lines/NDJSON.\n- parse() → le fichier entier parsé comme un unique document JSON.\n\nCes quatre noms (text, lines, jsonLines, parse) sont RÉSERVÉS : ne les réutilise\npas comme noms de variable. `const lines = lines()` échoue (redéclaration d'un\nidentifiant global) — nomme ta variable autrement, ex. `const rows = lines();`.\nLes globals JavaScript standard (JSON, Math, Array, String, RegExp, Date…) sont\ndisponibles. Aucun déterminisme n'est requis (Date/Math.random autorisés).\n\n## Méthode\n\nProcède par petits appels successifs plutôt que de viser un seul gros script\nparfait. Un premier appel pour inspecter la forme du fichier (quelques lignes\nde tête/queue, un décompte), puis un ou des appels ciblés selon ce que tu as\nvu. Un script clair de plusieurs lignes, avec des variables intermédiaires\nnommées, réussit mieux qu'un one-liner condensé — n'essaie pas de tout\nraccourcir. Tu peux enchaîner de nombreux appels : c'est l'usage attendu.\n\n## Sortie et limites\n\nLe résultat est ramené en texte (les objets/tableaux sont sérialisés en JSON).\nLe cap de longueur et la règle de refus (pas de troncature) sont rappelés dans\nla doctrine qui t'a orienté vers cette skill — vise toujours une synthèse (un\ncompte, un top-N, un échantillon), jamais le fichier brut. Le bac à sable a\naussi une limite de temps et de mémoire : une boucle infinie ou une\naccumulation démesurée échoue proprement — écris du code borné."}, "mermaid": {"name": "Génération de diagrammes Mermaid", "description": "Règles obligatoires pour générer un diagramme mermaid valide dans MIAOU", "content": "Tu vas générer un bloc de code mermaid. Applique CES RÈGLES EXACTEMENT, sans\nexception. Un diagramme qui viole une seule de ces règles ne s'affiche pas\n(erreur de parse) ou affiche des caractères parasites à l'écran. Ce n'est pas\nune question de style : c'est une syntaxe stricte.\n\n## Règle 0 — Le type de diagramme (premier mot) doit exister. N'en invente JAMAIS un\n\nAvant tout label, le premier mot non-commentaire du bloc DÉCLARE le type de\ndiagramme. Si ce mot-clé n'existe pas dans Mermaid, RIEN ne s'affiche : le parse\néchoue immédiatement, avant même de regarder un seul nœud. C'est l'erreur la plus\ncoûteuse et la plus fréquente — un modèle croit qu'un type « logique » existe et\nplaque dessus une syntaxe plausible mais entièrement fantôme.\n\nN'utilise QUE l'un de ces types (liste FERMÉE — tout autre mot-clé est invalide) :\n\n- `flowchart` (ou `graph`) — organigrammes, flux, arbres de décision\n- `sequenceDiagram` — échanges chronologiques entre acteurs\n- `stateDiagram-v2` — machines à états\n- `classDiagram` — classes / relations objet\n- `erDiagram` — entités-relations (modèle de données)\n- `pie` — camembert (répartition en pourcentages)\n- `xychart-beta` — **le SEUL** graphe à axes X/Y : barres ET courbes\n- `gantt` — planning temporel\n- `mindmap` — carte mentale\n\nTout mot-clé hors de cette liste est à considérer comme inexistant, même s'il\n« sonne juste ». En particulier ces mots-clés n'existent PAS et cassent le\nparse : `bar`, `barChart`, `barchart`, `histogram`, `lineChart`, `scatter`,\n`plot`, `chart`, `graphBar`. Il n'y a **aucun** type dédié aux barres : les\ngraphes en barres passent obligatoirement par `xychart-beta` (voir Règle 0bis).\n\nSi le type de données que tu veux représenter n'entre dans aucun de ces neuf\ntypes, ne fabrique pas un type : choisis le plus proche, ou renonce au diagramme\net présente les données en tableau Markdown.\n\n## Règle 0bis — Données quantitatives (barres / courbes) → `xychart-beta`, jamais autre chose\n\nPour tout graphe de valeurs numériques par catégorie (barres) ou par progression\n(courbe), le seul type valide est `xychart-beta`. Sa syntaxe est stricte et ne\nressemble à aucune paire `clé: valeur` : les catégories forment un tableau sur\n`x-axis`, les valeurs un tableau sur la même position, dans l'ordre.\n\n- INVALIDE (types et syntaxe inventés) : `bar`, `barChart`, lignes `web: 11`,\n  déclarations `x Lignes` / `y Domaine`, `barColor #1e90ff`.\n- VALIDE :\n\n```\nxychart-beta\n    title \"Nombre de lignes par domaine\"\n    x-axis [\"web-server\", \"db-pool\", \"auth\", \"cache\", \"security\"]\n    y-axis \"Lignes\"\n    bar [11, 6, 6, 5, 3]\n```\n\nLe tableau de `x-axis` et le tableau de `bar` (ou `line`) doivent avoir le MÊME\nnombre d'éléments, dans le MÊME ordre. Le titre et le libellé d'axe qui\ncontiennent un espace vont entre guillemets doubles. Pas de couleur en ligne\nnue : la couleur relève du thème, pas de la syntaxe du diagramme.\n\n## Règle 1 — Saut de ligne dans un label : `<br/>` UNIQUEMENT\n\nINTERDIT d'écrire les deux caractères `\\` puis `n` (backslash-n) dans un\nlabel, même si tu penses que ça produit un saut de ligne. Mermaid ne\nl'interprète PAS comme un saut de ligne. Ça reste affiché tel quel, ou ça\ncasse le parse.\n\n- INVALIDE : `A[Ligne un\\nLigne deux]`\n- VALIDE : `A[\"Ligne un<br/>Ligne deux\"]`\n\nAucune autre balise HTML n'est reconnue pour un saut de ligne. `<br>` sans\nslash fermant : à éviter, utilise `<br/>`.\n\n## Règle 2 — Un label avec caractère spécial → guillemets doubles autour de TOUT le label\n\nSi un label contient une parenthèse `( )`, une accolade `{ }`, un deux-points\n`:`, un point d'interrogation `?`, un point-virgule `;`, une esperluette `&`,\nou tout autre caractère qui n'est pas une lettre/chiffre/espace/tiret, entoure\nla totalité du texte du label de guillemets doubles `\"...\"`.\n\n- INVALIDE : `A[France vs Maroc (2-0)]`\n- VALIDE : `A[\"France vs Maroc (2-0)\"]`\n- INVALIDE : `F{Type de fichier?}`\n- VALIDE : `F{\"Type de fichier ?\"}`\n\nCeci s'applique À TOUS les types de nœuds : rectangles `[ ]`, losanges de\ndécision `{ }`, arrondis `( )`, cercles `(( ))`.\n\n## Règle 3 — Jamais de crochets `[` `]` À L'INTÉRIEUR d'un label\n\nMême si le label est entouré de guillemets doubles, un crochet interne casse\nle parse : il ferme la forme du nœud prématurément, les guillemets ne le\nneutralisent PAS. Reformule sans crochets — utilise des parenthèses ou un\ntiret à la place.\n\n- INVALIDE : `B[\"Message [attachment att-N]\"]`\n- VALIDE : `B[\"Message (attachment att-N)\"]`\n- VALIDE : `B[\"Message - attachment att-N\"]`\n\n## Règle 4 — Jamais de guillemets doubles À L'INTÉRIEUR d'un label déjà quoté\n\nDeux guillemets doubles imbriqués cassent le parse, même si l'un des deux\nouvre/ferme le label. Reformule sans guillemets internes, ou utilise\nl'entité `#quot;` à leur place.\n\n- INVALIDE : `C[\"Demande : \"Analyse les logs\"\"]`\n- VALIDE : `C[\"Demande : Analyse les logs\"]`\n- VALIDE (si tu dois vraiment garder les guillemets) : `C[\"Demande : #quot;Analyse les logs#quot;\"]`\n\n## Règle 5 — Pas de mise en forme HTML inline\n\n`<b>`, `<i>`, `<em>`, `<strong>`, `<u>`, `<mark>`, `<small>` ne sont PAS\ninterprétés dans un label : ils s'affichent littéralement comme texte\n(`<b>x<\/b>` apparaît tel quel dans le diagramme). Seul `<br/>` est reconnu\n(règle 1). N'utilise aucune de ces balises. MIAOU rend les diagrammes avec\n`htmlLabels: false` (labels en `<text>` SVG pur) : c'est pour ça qu'aucune\nmise en forme HTML n'a d'effet, quelle que soit la version de mermaid.\n\n## Règle 6 — Nom de fichier sur la fence\n\nPour un diagramme destiné à être identifiable/téléchargeable, ajoute\n`filename=nom.mmd` sur la ligne d'ouverture de la fence, après le langage\nmermaid et un espace : `mermaid filename=flux-auth.mmd`. Optionnel pour un\nextrait illustratif court sans vocation de fichier. Ce nom sert aussi à\nnommer les exports d'image (SVG/PNG) du diagramme dans MIAOU, extension\najustée automatiquement.\n\n## Checklist avant de produire le bloc final\n\nAvant d'émettre le bloc mermaid, commence par le premier mot, puis relis CHAQUE\nlabel que tu as écrit et vérifie dans l'ordre :\n\n0. Le premier mot est-il un type de la liste fermée de la Règle 0 ? → sinon,\n   c'est invalide : corrige le type (pour des barres/valeurs, `xychart-beta`).\n1. Est-ce qu'il contient `\\n` (backslash-n littéral) ? → remplace par `<br/>`.\n2. Est-ce qu'il contient un caractère spécial (`( ) { } : ? ; &`) ? → entoure\n   tout le label de guillemets doubles.\n3. Est-ce qu'il contient un crochet `[` ou `]` ? → reformule sans crochets.\n4. Est-ce qu'il contient un guillemet double interne ? → reformule sans\n   guillemets, ou utilise `#quot;`.\n5. Est-ce qu'il contient une balise HTML autre que `<br/>` ? → retire-la,\n   garde le texte brut.\n\nSi tu n'es pas sûr qu'un label respecte ces 5 points, simplifie le texte du\nlabel plutôt que de prendre le risque : un diagramme qui s'affiche avec un\ntexte plus court vaut mieux qu'un diagramme cassé."}}; } catch (e) { return {}; } })();
 
 const SKILL_SLUG_MAX = 48;
 
@@ -8101,40 +8650,25 @@ const DOCS_DOCTRINE =
   "Un fichier binaire joint par l'utilisateur ou déposé dans la bibliothèque de " +
   "l'espace (descripteur [attachment att-N: file \"...\", <mime>, <taille> — binary " +
   "content, not inlined]) n'est pas lisible directement : son contenu n'est jamais " +
-  "dans ton contexte, seul son handle l'est. Pour l'ouvrir, choisis l'outil selon " +
-  "le format :\n" +
-  "- ARCHIVE ZIP (.zip, et tout fichier dont le mime ou l'extension annonce une " +
-  "archive) : miaou__docs__list puis miaou__docs__extract. Ils sont natifs, " +
-  "toujours disponibles, et ne dépendent d'aucun serveur. Liste d'abord, extrais " +
-  "ensuite le membre qui t'intéresse : tu obtiens une ressource res_… que tu " +
-  "passes à miaou__js__eval pour la compter, la filtrer ou l'agréger, sans jamais " +
-  "charger son contenu dans ton contexte.\n" +
-  "- PDF : miaou__docs__list pour en voir la structure (pages, sommaire), puis " +
-  "miaou__docs__read pour en lire une page ou une plage. Natifs eux aussi, sans " +
-  "serveur.\n" +
-  "- EXCEL (.xlsx) : miaou__docs__list pour voir les feuilles et leurs " +
-  "dimensions, puis miaou__docs__read avec un selector « NomDeFeuille » ou " +
-  "« NomDeFeuille!A1:C10 ». Natifs eux aussi, sans serveur.\n" +
-  "- WORD (.docx) : miaou__docs__list pour voir les sections du document, puis " +
-  "miaou__docs__read avec un selector reprenant exactement le titre d'une " +
-  "section. Natifs eux aussi, sans serveur.\n" +
-  "- POWERPOINT (.pptx) : miaou__docs__list pour voir les slides dans l'ordre de " +
-  "la présentation, puis miaou__docs__read avec le NUMÉRO d'une slide ou une " +
-  "plage. Les notes de présentateur sont servies avec la slide. Natifs eux " +
-  "aussi, sans serveur.\n" +
-  "Un document Office est aussi, techniquement, une archive zip : miaou__docs__extract " +
-  "sait donc en sortir un membre XML brut ou une image embarquée. Ce n'est pas " +
-  "la voie normale — n'y recours que si l'utilisateur demande explicitement la " +
-  "structure interne du fichier.\n" +
-  "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
-  "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
-  "sans réseau.\n" +
+  "dans ton contexte, seul son handle l'est.\n" +
+  "MIAOU ouvre SEUL cinq formats, sans aucun serveur : ARCHIVE ZIP, PDF, EXCEL " +
+  "(.xlsx), WORD (.docx) et POWERPOINT (.pptx). Le geste est toujours le même : " +
+  "miaou__docs__list d'abord, qui rend la structure du document sans en charger " +
+  "le contenu — puis miaou__docs__read pour en lire une unité (page, feuille, " +
+  "section, slide), ou miaou__docs__extract pour matérialiser un membre " +
+  "d'archive en ressource res_… que tu passes ensuite à miaou__js__eval.\n" +
   "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
   "suis-la, ne suppose jamais le contenu du fichier.\n" +
-  "Dans l'autre sens, pour regrouper plusieurs ressources déjà stockées en un " +
-  "seul fichier téléchargeable : miaou__docs__pack.\n" +
+  "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
+  "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
+  "sans réseau.\n" +
+  "Avant ton PREMIER appel à un outil miaou__docs__* dans cette conversation, " +
+  "appelle miaou__skills__read avec le slug « docs » (skill système, listée dans " +
+  "<miaou_skills_context> si présente) : elle donne la forme exacte du selector " +
+  "de chaque format, quand sortir une lecture en ressource, et comment lire les " +
+  "refus.\n" +
   "</OUVERTURE_DE_DOCUMENTS>\n\n" +
   "<SANS_OUVERTURE_DE_DOCUMENTS>\n" +
   "Si aucun outil disponible ne sait ouvrir le format d'un fichier joint, dis-le à " +
@@ -8145,22 +8679,6 @@ const DOCS_DOCTRINE =
 const JS_EVAL_TIMEOUT_MS = 10000;
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
-
-const MAX_XLSX_ROWS_DEFAULT = 200;
-
-const MAX_DOCX_SECTION_CHARS = 18000;
-
-const DOC_READERS = {
-  zip:  { list: listZipDocument },
-  docx: { list: listDocxDocument, read: readDocxDocument },
-  xlsx: { list: listXlsxDocument, read: readXlsxDocument },
-  pptx: { list: listPptxDocument, read: readPptxDocument },
-  pdf:  { list: listPdfDocument, read: readPdfDocument },
-};
-
-function nativeDocKinds() {
-  return Object.keys(DOC_READERS);
-}
 
 const JS_EVAL_DOCTRINE =
   "L'outil miaou__js__eval exécute du JavaScript que TU écris dans un bac à sable " +
@@ -8299,428 +8817,6 @@ function validateFilesPromoteArgs(args) {
     return 'Handle invalide : ' + ref + ' (attendu att-N ou res_<id>).';
   }
   return '';
-}
-
-function listZipDocument(u8, record, ref) {
-  const entries = parseZipCentralDirectory(u8);   
-  if (!entries) return toolFail('docs__list', docsUnsupportedFormatMessage(record));
-  _pendingToolAcks.push({
-    kind: 'docs_list', handle: ref, resourceName: record.name,
-    count: entries.filter(e => !e.directory).length,
-  });
-  return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   
-}
-
-async function openPdfDocument(u8, record, toolName) {
-  let lib;
-  try {
-    lib = await ensurePdfJs();   
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture PDF indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de PDF.') };
-  }
-  try {
-    
-    const doc = await lib.getDocument({ data: u8.slice() }).promise;
-    return { doc };
-  } catch (e) {
-    if (e && e.name === 'PasswordException') {
-      
-      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
-        resourceName: record && record.name,
-        message: 'PDF protégé par mot de passe' });
-      return { fail: 'PDF protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
-        'Demande à l\'utilisateur une version non protégée.' };
-    }
-    return { fail: toolFail(toolName, 'PDF illisible : ' +
-      ((e && e.message) || 'structure invalide') + '.') };
-  }
-}
-
-async function listPdfDocument(u8, record, ref) {
-  const opened = await openPdfDocument(u8, record, 'docs__list');
-  if (opened.fail) return opened.fail;
-  const doc = opened.doc;
-  try {
-    const pages = doc.numPages;
-    let meta = null, outline = null;
-    
-    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
-    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
-    const info = (meta && meta.info) || {};
-    const flat = [];
-    
-    const stack = [];
-    for (let i = (outline || []).length - 1; i >= 0; i--) stack.push({ node: outline[i], level: 1 });
-    while (stack.length) {
-      const cur = stack.pop();
-      const n = cur.node;
-      if (!n) continue;
-      flat.push({ level: cur.level, title: n.title, page: 0 });
-      const kids = n.items || [];
-      for (let i = kids.length - 1; i >= 0; i--) stack.push({ node: kids[i], level: cur.level + 1 });
-    }
-    _pendingToolAcks.push({
-      kind: 'docs_list', handle: ref, resourceName: record.name, count: pages,
-    });
-    return formatPdfListing({          
-      pages, outline: flat,
-      title: info.Title, author: info.Author, producer: info.Producer,
-    });
-  } finally {
-    
-    try { doc.destroy(); } catch (e) {  }
-  }
-}
-
-async function readPdfDocument(u8, record, ref, selector) {
-  const opened = await openPdfDocument(u8, record, 'docs__read');
-  if (opened.fail) return opened.fail;
-  const doc = opened.doc;
-  try {
-    const range = parsePageSelector(selector, doc.numPages);   
-    if (!range.ok) return toolFail('docs__read', range.message);
-    const pages = [];
-    for (let n = range.start; n <= range.end; n++) {
-      const page = await doc.getPage(n);
-      try {
-        const tc = await page.getTextContent();
-        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   
-      } finally {
-        try { page.cleanup(); } catch (e) {  }
-      }
-    }
-    
-    return {   
-      text: formatPdfRead(pages, { notice: range.notice }),
-      label: range.start + '-' + range.end,
-      resourceName: pdfReadResourceName(record.name, range.start, range.end),
-    };
-  } finally {
-    try { doc.destroy(); } catch (e) {  }
-  }
-}
-
-async function openXlsxDocument(u8, record, toolName) {
-  let lib;
-  try {
-    lib = await ensureSheetJs();   
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture Excel indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de classeur.') };
-  }
-  try {
-    const wb = lib.read(u8, { type: 'array' });
-    if (!wb || !wb.SheetNames || !wb.SheetNames.length) {
-      return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
-    }
-    return { wb: wb, lib: lib };
-  } catch (e) {
-    const msg = (e && e.message) || '';
-    if (/password|encrypt/i.test(msg)) {
-      _pendingToolAcks.push({ kind: 'docs_list', handle: record && record.id, ok: false,
-        resourceName: record && record.name,
-        message: 'Classeur protégé par mot de passe' });
-      return { fail: 'Classeur Excel protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
-        'Demande à l\'utilisateur une version non protégée.' };
-    }
-    return { fail: toolFail(toolName, 'Classeur illisible : ' + (msg || 'structure invalide') + '.') };
-  }
-}
-
-async function listXlsxDocument(u8, record, ref) {
-  const opened = await openXlsxDocument(u8, record, 'docs__list');
-  if (opened.fail) return opened.fail;
-  const wb = opened.wb;
-  const sheets = [];
-  for (const name of wb.SheetNames) {
-    const sh = wb.Sheets[name];
-    const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-    const r = refA1 ? parseA1Range(refA1) : null;   
-    sheets.push({
-      name: name,
-      ref: refA1,
-      rows: r ? (r.e.r - r.s.r + 1) : 0,
-      cols: r ? (r.e.c - r.s.c + 1) : 0,
-    });
-  }
-  _pendingToolAcks.push({
-    kind: 'docs_list', handle: ref, resourceName: record.name, count: sheets.length,
-  });
-  return formatXlsxListing(sheets);   
-}
-
-async function readXlsxDocument(u8, record, ref, selector) {
-  const opened = await openXlsxDocument(u8, record, 'docs__read');
-  if (opened.fail) return opened.fail;
-  const wb = opened.wb, lib = opened.lib;
-
-  const sel = parseSheetSelector(selector, wb.SheetNames);   
-  if (!sel.ok) return toolFail('docs__read', sel.message);
-
-  const sheet = wb.Sheets[sel.sheet];
-  const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';
-  if (!sheetRef) {
-    
-    return {
-      text: formatXlsxRead('', { sheet: sel.sheet, ref: '' }),
-      label: sel.sheet,
-      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(sel.sheet)),
-    };
-  }
-
-  const restricted = restrictSheetRange(sheetRef, sel.range);   
-  if (restricted.fail) return toolFail('docs__read', restricted.fail);
-
-  const view = Object.assign({}, sheet, { '!ref': restricted.ref });
-  const csv = lib.utils.sheet_to_csv(view);
-
-  return {
-    text: formatXlsxRead(csv, {          
-      sheet: sel.sheet, ref: restricted.ref,
-      
-      maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
-      notice: restricted.notice,
-    }),
-    
-    label: sel.sheet + '!' + restricted.ref,
-    resourceName: docReadResourceName(record.name,
-      slugifyResourceSuffix(sel.sheet + ' ' + restricted.ref)),
-  };
-}
-
-async function openDocxDocument(u8, record, toolName) {
-  let lib;
-  try {
-    lib = await ensureMammoth();   
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture Word indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
-  }
-
-  let html;
-  try {
-    
-    const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
-      ? u8.buffer
-      : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-    const res = await lib.convertToHtml({ arrayBuffer: ab });
-    html = (res && res.value) || '';
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Document Word illisible : ' +
-      ((e && e.message) || 'structure invalide') + '. Un .docx protégé par mot de passe ' +
-      "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
-      'une version non protégée si c\'est le cas.') };
-  }
-
-  const blocks = docxHtmlToBlocks(html);        
-  const sections = docxSections(blocks);        
-  let tables = 0;
-  for (const b of blocks) { if (b && b.type === 'table') tables++; }
-  return { blocks: blocks, sections: sections, tables: tables };
-}
-
-async function listDocxDocument(u8, record, ref) {
-  const opened = await openDocxDocument(u8, record, 'docs__list');
-  if (opened.fail) return opened.fail;
-  _pendingToolAcks.push({
-    kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.sections.length,
-  });
-  return formatDocxListing(opened.sections, { tables: opened.tables });   
-}
-
-async function readDocxDocument(u8, record, ref, selector) {
-  const opened = await openDocxDocument(u8, record, 'docs__read');
-  if (opened.fail) return opened.fail;
-
-  const res = resolveDocxSection(selector, opened.sections);   
-  if (!res.ok) return toolFail('docs__read', res.message);
-
-  return {
-    text: formatDocxRead(res.section, { maxChars: MAX_DOCX_SECTION_CHARS }),   
-    
-    label: res.section.label,
-    resourceName: docReadResourceName(record.name, slugifyResourceSuffix(res.section.label)),
-  };
-}
-
-async function openPptxDocument(u8, record, toolName) {
-  let lib;
-  try {
-    lib = await ensureFflate();   
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de décompression indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de présentation.') };
-  }
-
-  let files;
-  try {
-    files = lib.unzipSync(u8, {
-      filter: (f) => /^ppt\/slides\/slide\d+\.xml$/.test(f.name)
-        || /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(f.name)
-        || /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(f.name)
-        || f.name === 'ppt/presentation.xml'
-        || f.name === 'ppt/_rels/presentation.xml.rels',
-    });
-  } catch (e) {
-    
-    return { fail: toolFail(toolName, 'Présentation illisible : ' +
-      ((e && e.message) || 'structure invalide') + '. Un .pptx protégé par mot de passe ' +
-      "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
-      'une version non protégée si c\'est le cas.') };
-  }
-
-  const dec = new TextDecoder();
-  const txt = (name) => (files[name] ? dec.decode(files[name]) : '');
-
-  const present = Object.keys(files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
-  present.sort((a, b) => (parseInt(a.replace(/\D+/g, ''), 10) || 0) - (parseInt(b.replace(/\D+/g, ''), 10) || 0));
-  const ordered = pptxSlideOrder(txt('ppt/presentation.xml'),   
-    txt('ppt/_rels/presentation.xml.rels'), present)
-    .filter((n) => !!files[n]);   
-
-  let parser;
-  try {
-    parser = new DOMParser();
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Analyseur XML indisponible dans ce navigateur.') };
-  }
-
-  const slides = [];
-  let untitled = 0;
-  for (const name of ordered) {
-    const doc = parser.parseFromString(txt(name), 'application/xml');
-    const blocks = pptxShapeBlocks(doc);
-    const title = pptxSlideTitle(doc);
-    if (!title) untitled++;
-
-    const relsName = name.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
-    const notesPath = pptxNotesTarget(txt(relsName));   
-    let notes = '';
-    if (notesPath && files[notesPath]) {
-      const nd = parser.parseFromString(txt(notesPath), 'application/xml');
-      notes = pptxShapeBlocks(nd, { skipPlaceholders: PPTX_NOTES_SKIP_PH }).join('\n').trim();
-    }
-
-    slides.push({ name: name, title: title, blocks: blocks, notes: notes, hasNotes: !!notes });
-  }
-  return { slides: slides, untitled: untitled };
-}
-
-const PPTX_NOTES_SKIP_PH = ['sldNum', 'sldImg', 'ftr', 'dt'];
-
-function pptxShapeBlocks(doc, opts) {
-  const o = opts || {};
-  const skip = o.skipPlaceholders || null;
-  const out = [];
-  const root = doc && doc.documentElement;
-  if (!root) return out;
-
-  const paragraphsOf = (el) => {
-    const paras = [];
-    const ps = el.getElementsByTagName('a:p');
-    for (let i = 0; i < ps.length; i++) {
-      const ts = ps[i].getElementsByTagName('a:t');
-      let line = '';
-      for (let j = 0; j < ts.length; j++) line += (ts[j].textContent || '');
-      if (line.trim()) paras.push(line);
-    }
-    return paras;
-  };
-
-  const walk = (el) => {
-    for (let i = 0; i < el.childNodes.length; i++) {
-      const ch = el.childNodes[i];
-      if (!ch || ch.nodeType !== 1) continue;
-      const tag = ch.nodeName;
-      if (tag === 'p:sp') {
-        if (skip) {
-          const ph = ch.getElementsByTagName('p:ph')[0];
-          const ty = ph && ph.getAttribute('type');
-          if (ty && skip.indexOf(ty) >= 0) continue;
-        }
-        const paras = paragraphsOf(ch);
-        if (paras.length) out.push(paras.join('\n'));
-      } else if (tag === 'p:grpSp') {
-        walk(ch);   
-      } else if (tag === 'p:graphicFrame') {
-        const tbls = ch.getElementsByTagName('a:tbl');
-        for (let t = 0; t < tbls.length; t++) {
-          const rows = [];
-          const trs = tbls[t].getElementsByTagName('a:tr');
-          for (let r = 0; r < trs.length; r++) {
-            const cells = [];
-            const tcs = trs[r].getElementsByTagName('a:tc');
-            for (let c = 0; c < tcs.length; c++) cells.push(paragraphsOf(tcs[c]).join(' ').trim());
-            rows.push(cells.join(' | '));
-          }
-          if (rows.length) out.push(rows.join('\n'));
-        }
-      } else {
-        walk(ch);
-      }
-    }
-  };
-  walk(root);
-  return out;
-}
-
-function pptxSlideTitle(doc) {
-  const root = doc && doc.documentElement;
-  if (!root) return '';
-  const sps = root.getElementsByTagName('p:sp');
-  for (let i = 0; i < sps.length; i++) {
-    const ph = sps[i].getElementsByTagName('p:ph')[0];
-    const ty = ph && ph.getAttribute('type');
-    if (ph && (ty === 'title' || ty === 'ctrTitle')) {
-      const ts = sps[i].getElementsByTagName('a:t');
-      let s = '';
-      for (let j = 0; j < ts.length; j++) s += (ts[j].textContent || '');
-      if (s.trim()) return s.trim();
-    }
-  }
-  return '';
-}
-
-async function listPptxDocument(u8, record, ref) {
-  const opened = await openPptxDocument(u8, record, 'docs__list');
-  if (opened.fail) return opened.fail;
-  _pendingToolAcks.push({
-    kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.slides.length,
-  });
-  return formatPptxListing(opened.slides, { untitled: opened.untitled });   
-}
-
-async function readPptxDocument(u8, record, ref, selector) {
-  const opened = await openPptxDocument(u8, record, 'docs__read');
-  if (opened.fail) return opened.fail;
-  const all = opened.slides;
-  if (!all.length) return toolFail('docs__read', 'Cette présentation ne contient aucune slide lisible.');
-
-  const sel = parsePageSelector(selector, all.length);   
-  if (!sel.ok) return toolFail('docs__read', sel.message);
-
-  const picked = [];
-  for (let n = sel.start; n <= sel.end; n++) {
-    const s = all[n - 1];
-    picked.push({
-      number: n, title: s.title,
-      text: (s.blocks || []).join('\n\n').trim(),
-      notes: s.notes,
-    });
-  }
-
-  return {
-    
-    text: formatPptxRead(picked, { notice: sel.notice }),   
-    
-    label: sel.start + '-' + sel.end,
-    resourceName: pptxReadResourceName(record.name, sel.start, sel.end),   
-  };
 }
 
 function docsUnsupportedFormatMessage(record) {
@@ -9510,20 +9606,16 @@ const TOOLS = [
     description:
       "Lit une partie d'un document référencé par handle (att-N, file-<id> ou " +
       "res_<id>) : PDF, classeur Excel, document Word et présentation PowerPoint. " +
-      "Le selector désigne " +
-      "l'unité du format — pour un PDF une page ('3') ou une plage ('2-5'), pour " +
-      "un classeur une feuille ('Synthèse') éventuellement suivie d'une plage de " +
-      "cellules ('Synthèse!A1:C10'), pour un document Word le titre exact d'une " +
-      "section ('2. Developer Portal'), pour une présentation le numéro d'une " +
-      "slide ('3') ou une plage ('2-5'). Appelle miaou__docs__list d'abord : il te " +
-      "donne les unités disponibles, donc ce que tu peux écrire ici. Pour un zip, " +
-      "ce n'est pas cet outil : liste avec miaou__docs__list puis matérialise un " +
-      "membre avec miaou__docs__extract.",
+      "Appelle miaou__docs__list d'abord : il te donne les unités disponibles, " +
+      "donc ce que tu peux écrire en selector. Pour un zip, ce n'est pas cet " +
+      "outil : liste avec miaou__docs__list puis matérialise un membre avec " +
+      "miaou__docs__extract.",
     inputSchema: {
       type: 'object',
       properties: {
         ref: { type: 'string', description: 'Handle du document : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
-        selector: { type: 'string', description: "L'unité à lire, dans la forme du format. PDF : 'N' pour une page (ex. '3'), 'N-M' pour une plage inclusive (ex. '2-5') — pas de mot ni de préfixe, '3' et jamais 'page 3'. Classeur Excel : le nom exact d'une feuille tel que docs__list l'a rendu (ex. 'Synthèse'), éventuellement suivi de '!' et d'une plage de cellules (ex. 'Synthèse!A1:C10'). Document Word : le titre exact d'une section tel que docs__list l'a rendu (ex. '2. Developer Portal'), ou '(préambule)' / '(corps)' pour le texte qui ne relève d'aucun titre — lire une section rend aussi ses sous-sections. Présentation PowerPoint : le numéro d'une slide dans l'ordre de la présentation (ex. '3') ou une plage (ex. '2-5'), comme un PDF — les notes de présentateur partent avec la slide." },
+        
+        selector: { type: 'string', description: "L'unité à lire, dans la forme propre au format : une page ou une plage de pages pour un PDF, une feuille (éventuellement restreinte à une plage de cellules) pour un classeur, un titre de section pour un document Word, un numéro de slide ou une plage pour une présentation. Reprends-la telle que miaou__docs__list vient de la rendre — c'est lui qui te donne les unités disponibles. La skill système « docs » donne la forme exacte de chaque format." },
         
         as_resource: { type: 'boolean', description: "Range le texte lu dans une ressource res_… au lieu de le renvoyer dans ton contexte, parce qu'une lecture large (des dizaines de pages, une feuille de plusieurs milliers de lignes, une section de document longue, des dizaines de slides) le saturerait. Le handle rendu se passe ensuite à miaou__js__eval pour chercher, compter ou filtrer dedans. Par défaut false : une ou deux pages, une petite plage de cellules, ou une section ordinaire, se lisent directement." },
       },
@@ -10005,115 +10097,6 @@ function findDocsInflationTool() {
   }
   return null;
 }
-
-async function describeXlsxForLibrary(u8, maxChars) {
-  try {
-    const lib = await ensureSheetJs();   
-    const wb = lib.read(u8, { type: 'array' });
-    if (!wb || !wb.SheetNames || !wb.SheetNames.length) return null;
-
-    const sheets = [];
-    for (const name of wb.SheetNames) {
-      const sh = wb.Sheets[name];
-      const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-      const r = refA1 ? parseA1Range(refA1) : null;   
-      sheets.push({ name: name, ref: refA1,
-        rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 });
-    }
-    const head = formatXlsxListing(sheets);   
-
-    let preview = '';
-    for (const sh of sheets) {
-      if (!sh.ref) continue;
-      const full = parseA1Range(sh.ref);
-      if (!full) continue;
-      const end = Math.min(full.e.r, full.s.r + 9);   
-      const view = Object.assign({}, wb.Sheets[sh.name], {
-        '!ref': formatA1Range({ s: full.s, e: { r: end, c: full.e.c } }),   
-      });
-      const csv = String(lib.utils.sheet_to_csv(view) || '').replace(/\n+$/, '');
-      if (csv) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + csv; }
-      break;
-    }
-    const out = preview ? head + '\n\n' + preview : head;
-    return out.slice(0, maxChars);
-  } catch (e) {
-    return null;
-  }
-}
-
-async function describePdfForLibrary(u8, maxChars) {
-  let doc = null;
-  try {
-    const lib = await ensurePdfJs();   
-    doc = await lib.getDocument({ data: u8.slice() }).promise;
-    let meta = null, outline = null;
-    try { meta = await doc.getMetadata(); } catch (e) { meta = null; }
-    try { outline = await doc.getOutline(); } catch (e) { outline = null; }
-    const info = (meta && meta.info) || {};
-    const flat = [];
-    for (const n of (outline || [])) {
-      if (n && n.title) flat.push({ level: 1, title: n.title, page: 0 });
-    }
-    const head = formatPdfListing({          
-      pages: doc.numPages, outline: flat,
-      title: info.Title, author: info.Author, producer: info.Producer,
-    });
-
-    let first = '';
-    if (doc.numPages > 0) {
-      const page = await doc.getPage(1);
-      try {
-        const tc = await page.getTextContent();
-        first = joinPdfTextItems(tc && tc.items).trim();   
-      } finally {
-        try { page.cleanup(); } catch (e) {  }
-      }
-    }
-    const out = first ? head + '\n\nPremière page :\n' + first : head;
-    return out.slice(0, maxChars);
-  } catch (e) {
-    return null;   
-  } finally {
-    if (doc) { try { doc.destroy(); } catch (e) {  } }
-  }
-}
-
-async function describeDocxForLibrary(u8, maxChars) {
-  try {
-    const opened = await openDocxDocument(u8, { name: '' }, 'library');
-    if (opened.fail || !opened.sections.length) return null;
-    const head = formatDocxListing(opened.sections, { tables: opened.tables });   
-    let preview = '';
-    for (const sec of opened.sections) {
-      const body = String(sec.text || '').trim();
-      if (!body) continue;
-      preview = 'Début de « ' + sec.label + ' » :\n' + body.slice(0, 600);
-      break;
-    }
-    const out = preview ? head + '\n\n' + preview : head;
-    return out.slice(0, maxChars);
-  } catch (e) {
-    return null;   
-  }
-}
-
-async function describePptxForLibrary(u8, maxChars) {
-  try {
-    const opened = await openPptxDocument(u8, { name: '' }, 'library');
-    if (opened.fail || !opened.slides.length) return null;
-    return formatPptxListing(opened.slides, { untitled: opened.untitled }).slice(0, maxChars);   
-  } catch (e) {
-    return null;   
-  }
-}
-
-const DOC_DESCRIBERS = {
-  pdf:  describePdfForLibrary,
-  xlsx: describeXlsxForLibrary,
-  docx: describeDocxForLibrary,
-  pptx: describePptxForLibrary,
-};
 
 async function extractBinaryFileTextForDescription(record, maxChars) {
   

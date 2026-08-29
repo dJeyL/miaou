@@ -10,7 +10,6 @@ var ZIP_PLAIN = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8
 var ZIP_ENC = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,1,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,17,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,115,101,99,114,101,116,46,116,120,116,80,75,5,6,0,0,0,0,1,0,1,0,56,0,0,0,30,0,0,0,0,0];
 var ZIP_MULTI = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,97,46,116,120,116,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,115,117,98,47,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,115,117,98,47,98,46,116,120,116,80,75,5,6,0,0,0,0,3,0,3,0,156,0,0,0,30,0,0,0,0,0];
 var ZIP_SLIP = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,46,46,47,101,118,105,108,46,116,120,116,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,111,107,46,116,120,116,80,75,5,6,0,0,0,0,2,0,2,0,109,0,0,0,30,0,0,0,0,0];
-var ZIP_DOCX = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,100,0,0,0,19,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,91,67,111,110,116,101,110,116,95,84,121,112,101,115,93,46,120,109,108,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,104,16,0,0,17,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,119,111,114,100,47,100,111,99,117,109,101,110,116,46,120,109,108,80,75,5,6,0,0,0,0,2,0,2,0,128,0,0,0,30,0,0,0,0,0];
 var ZIP_COMMENT = [80,75,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,75,1,2,20,0,20,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,99,46,116,120,116,80,75,5,6,0,0,0,0,1,0,1,0,51,0,0,0,30,0,0,0,23,0,117,110,32,99,111,109,109,101,110,116,97,105,114,101,32,100,97,114,99,104,105,118,101];
 
 // Deux archives portant le MÊME nom encodé en UTF-8 (« café.txt » → 63 61 66 C3
@@ -126,82 +125,6 @@ describe('isZipSlipPath', function() {
   it('accepte un nom contenant deux points sans être un segment', function() {
     expect(isZipSlipPath('fichier..txt')).toBe(false);
     expect(isZipSlipPath('a/..b/c')).toBe(false);
-  });
-});
-
-describe('sniffZipOfficeKind', function() {
-  it('reconnaît un docx', function() {
-    expect(sniffZipOfficeKind(['[Content_Types].xml', 'word/document.xml'])).toBe('docx');
-  });
-  it('reconnaît un xlsx', function() {
-    expect(sniffZipOfficeKind(['xl/workbook.xml'])).toBe('xlsx');
-  });
-  it('reconnaît un pptx', function() {
-    expect(sniffZipOfficeKind(['ppt/presentation.xml'])).toBe('pptx');
-  });
-  it('rend null sur une archive quelconque', function() {
-    expect(sniffZipOfficeKind(['a.txt', 'sub/b.txt'])).toBe(null);
-  });
-  it('n\'est pas trompé par un membre dont le nom CONTIENT word/ sans commencer par', function() {
-    expect(sniffZipOfficeKind(['docs/word/notes.txt'])).toBe(null);
-  });
-  it('tolère une liste vide ou absente', function() {
-    expect(sniffZipOfficeKind([])).toBe(null);
-    expect(sniffZipOfficeKind(null)).toBe(null);
-  });
-});
-
-describe('formatZipListing', function() {
-  it('liste les membres avec leur taille lisible', function() {
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_MULTI)), {});
-    expect(out).toContain('a.txt');
-    expect(out).toContain('sub/b.txt');
-    expect(out).toContain('2 membres');
-    expect(out).toContain('1 répertoire');
-  });
-
-  it('SIGNALE un membre chiffré au lieu de l\'omettre', function() {
-    // Un membre absent sans explication fait halluciner le modèle : il doit
-    // savoir que le membre existe ET pourquoi il ne l\'aura pas.
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_ENC)), {});
-    expect(out).toContain('Membres écartés');
-    expect(out).toContain('secret.txt');
-    expect(out).toContain('chiffré');
-  });
-
-  it('SIGNALE un membre au chemin non sûr au lieu de l\'omettre', function() {
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_SLIP)), {});
-    expect(out).toContain('Membres écartés');
-    expect(out).toContain('evil.txt');
-    expect(out).toContain('chemin non sûr');
-    expect(out).toContain('ok.txt');   // le membre sain reste listé
-  });
-
-  it('annonce la nature Office d\'une archive docx', function() {
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_DOCX)), {});
-    expect(out).toContain('docx');
-    expect(out).toContain('word/document.xml');
-  });
-
-  it('marque un membre au-delà du cap sans le retirer de la liste', function() {
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_DOCX)), { maxBytes: 1000 });
-    expect(out).toContain('word/document.xml');
-    expect(out).toContain('au-delà du cap');
-  });
-
-  it('annonce un total au-delà du cap tout en gardant l\'extraction possible', function() {
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_DOCX)), { maxBytes: 3000 });
-    expect(out).toContain('Le total dépasse le cap');
-    expect(out).toContain('individuellement');
-  });
-
-  it('ne casse pas sur une archive sans membre extractible', function() {
-    var out = formatZipListing(parseZipCentralDirectory(u8(ZIP_ENC)), {});
-    expect(out).toContain('aucun membre extractible');
-  });
-
-  it('tolère une liste absente', function() {
-    expect(formatZipListing(null, {})).toContain('0 membre');
   });
 });
 

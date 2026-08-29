@@ -19,7 +19,7 @@ except ImportError:
 ROOT = Path(__file__).parent
 SRC_JS = ROOT.parent / 'src' / 'js'
 
-JS_ORDER = ['utils.js', 'sync.js', 'storage.js', 'resources.js', 'skills.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
+JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'resources.js', 'skills.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
 
 # ── Stubs navigateur ──────────────────────────────────────────────────────────
 # On simule juste ce qu'il faut pour que le code source charge sans exploser.
@@ -471,6 +471,24 @@ def run_build_unit_tests() -> tuple[int, int]:
           'ATTACHMENT_BLOB_MAX_BYTES' not in all_js)
     check('caps : plus aucun libellé « 32 Mo » dans les sources JS',
           '32 Mo' not in all_js)
+
+    # ── JS_ORDER : les deux listes doivent rester identiques (lot V-7) ────────
+    # build.py et ce runner tiennent chacun leur copie de l'ordre de
+    # concaténation. Un fichier ajouté au build mais pas au runner ne serait PAS
+    # chargé par les tests : toutes ses fonctions deviendraient introuvables, et
+    # les tests qui en dépendent échoueraient en ReferenceError en cascade —
+    # load_sources les compte comme erreur, mais la CAUSE serait obscure. Dans
+    # l'autre sens (runner à jour, build en retard), les tests passeraient au
+    # vert sur un dist/ amputé, ce qui est pire.
+    #
+    # Ancrage sur les deux SOURCES, jamais sur une liste recopiée ici — même
+    # raison que pour les caps ci-dessus.
+    check('JS_ORDER : build.py et tests/runner.py listent les mêmes fichiers, dans le même ordre',
+          build.JS_ORDER == JS_ORDER)
+    check('JS_ORDER : chaque fichier listé existe dans src/js/',
+          all((SRC_JS / n).exists() for n in JS_ORDER))
+    check('JS_ORDER : aucun .js de src/js/ n\'est absent de la liste',
+          sorted(p.name for p in SRC_JS.glob('*.js')) == sorted(JS_ORDER))
 
     return passed, failed
 
