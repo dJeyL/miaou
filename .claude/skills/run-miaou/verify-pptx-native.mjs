@@ -228,12 +228,17 @@ try {
   // 6 slides titrées sur 71 : porter pptx_list à l'identique produirait
   // soixante-cinq lignes « (sans titre) », qui ne permettent pas de choisir.
   const lines = listed.text.split('\n').filter(l => /^\d+\. /.test(l));
+  // Les deux contrôles qui suivent portent sur l'ENSEMBLE des lignes numérotées :
+  // sans l'exigence de cardinalité, un listing qui n'en produit aucune (le
+  // listing zip d'avant le lecteur natif) les satisferait par vacuité.
   const untitledMarkers = lines.filter(l => /\(sans titre\)/.test(l)).length;
   check('AUCUNE ligne « (sans titre) » : le repli d\'extrait a remplacé le défaut du serveur',
-    untitledMarkers === 0, untitledMarkers + ' ligne(s) « (sans titre) »');
+    lines.length === 71 && untitledMarkers === 0,
+    lines.length + ' ligne(s) numérotée(s), dont ' + untitledMarkers + ' « (sans titre) »');
   const emptyish = lines.filter(l => l.replace(/^\d+\.\s*/, '').trim().length < 3).length;
   check('chaque ligne du listing porte un repère lisible (titre ou extrait)',
-    emptyish === 0, emptyish + ' ligne(s) sans repère sur ' + lines.length);
+    lines.length === 71 && emptyish === 0,
+    emptyish + ' ligne(s) sans repère sur ' + lines.length);
   check('le listing annonce combien de slides sont sans titre',
     /Slides sans titre : \d+/.test(listed.text),
     (listed.text.match(/Slides sans titre[^\n]*/) || ['non annoncé'])[0]);
@@ -244,7 +249,11 @@ try {
   // en perd la moitié, et ce sont les noms et rattachements — exactement
   // l'information pour laquelle on ouvre ce fichier.
   const s2 = await callTool('docs__read', { ref: pref, selector: '2' });
-  check('docs__read d\'une slide rend son texte', !s2.isError, s2.text.split('\n')[0].slice(0, 80));
+  // Un refus de lecture par unités est un result NON-isError délibéré : le seul
+  // !s2.isError ne discrimine donc rien. On exige la forme d'une vraie lecture.
+  check('docs__read d\'une slide rend son texte',
+    !s2.isError && /^--- Slide /.test(s2.text) && s2.text.length > 200,
+    s2.text.split('\n')[0].slice(0, 80));
   check('l\'en-tête nomme la slide servie', /--- Slide 2/.test(s2.text), s2.text.split('\n')[0]);
   check('LE GAIN : le texte des shapes GROUPÉES est là (le serveur le perd)',
     /GUIDAT/.test(s2.text) && /MARTINEZ/.test(s2.text),
@@ -255,7 +264,7 @@ try {
     /Risques IT\nMarc GUIDAT/.test(s2.text),
     (s2.text.match(/Risques IT.{0,20}/s) || ['motif absent'])[0].replace(/\n/g, '⏎'));
   check('ce n\'est pas un balayage plat : aucun fragment isolé d\'un seul espace',
-    !/\n \n/.test(s2.text));
+    /^--- Slide /.test(s2.text) && !/\n \n/.test(s2.text));
 
   // ── 5. Plage, clamp et refus ──────────────────────────────────────────────
   const range = await callTool('docs__read', { ref: pref, selector: '2-5' });
@@ -280,8 +289,10 @@ try {
 
   // ── 7. Buffer non détaché : deuxième lecture du même handle ───────────────
   const second = await callTool('docs__read', { ref: pref, selector: '2' });
+  // Comparer deux longueurs égales est satisfait par deux refus identiques :
+  // on exige que la seconde lecture soit une lecture, et byte-à-byte la même.
   check('DEUXIÈME lecture du même handle : fflate ne détache pas le buffer',
-    !second.isError && second.text.length === s2.text.length,
+    !second.isError && /^--- Slide /.test(second.text) && second.text === s2.text,
     second.text.length + ' vs ' + s2.text.length + ' caractères');
 
   // ── 8. as_resource → js__eval ─────────────────────────────────────────────

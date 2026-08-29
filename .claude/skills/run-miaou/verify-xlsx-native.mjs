@@ -220,15 +220,20 @@ try {
   const ranged = await callTool('docs__read', { ref: xref, selector: 'Synthèse!B2:C5' });
   check('docs__read avec plage rend la plage', !ranged.isError && /\(B2:C5\)/.test(ranged.text));
   const rangedRows = ranged.text.split('\n').filter(l => l && !/^---/.test(l) && !/^\[/.test(l)).length;
+  // Borne HAUTE : un refus de lecture (texte court, monoligne, non-isError) la
+  // satisfait par le bas. On exige donc aussi le plancher d'une vraie plage.
   check('LA PREUVE du clone à !ref : 4 lignes servies, pas les 30 de la feuille',
-    rangedRows <= 5, rangedRows + ' lignes rendues');
+    rangedRows >= 3 && rangedRows <= 5, rangedRows + ' lignes rendues');
   check('la plage restreinte est bien un SOUS-ensemble de la feuille entière',
     ranged.text.length < whole.text.length,
     ranged.text.length + ' vs ' + whole.text.length + ' caractères');
 
   // ── 5. Le second piège : un !ref élargi DÉROULE du vide ───────────────────
   const over = await callTool('docs__read', { ref: xref, selector: 'Synthèse!A1:Z999' });
-  check('une plage débordante est servie, pas refusée', !over.isError);
+  // !isError ne discrimine pas : le refus de lecture par pages est lui aussi
+  // un result non-isError délibéré. On exige la forme d'une lecture.
+  check('une plage débordante est servie, pas refusée',
+    !over.isError && /^--- /.test(over.text), over.text.split('\n')[0].slice(0, 70));
   check('elle est RAMENÉE au !ref réel (sans ça : 999 lignes dont ~970 vides)',
     /\(B2:E31\)/.test(over.text), (over.text.match(/--- [^\n]*/) || [''])[0]);
   check('le clamp est SIGNALÉ par une notice',
@@ -236,7 +241,7 @@ try {
     (over.text.match(/\[Plage[^\]]*\]/) || ['pas de notice'])[0].slice(0, 90));
   const overRows = over.text.split('\n').length;
   check('la sortie ne déroule pas des centaines de lignes vides',
-    overRows < 60, overRows + ' lignes');
+    overRows >= 5 && overRows < 60, overRows + ' lignes');
 
   // ── 6. Plage entièrement hors feuille : échec explicite, pas un vide ───────
   const outside = await callTool('docs__read', { ref: xref, selector: 'Synthèse!ZZ1:ZZ9' });
@@ -265,9 +270,12 @@ try {
 
   // ── 9. Le cap de lignes sans plage explicite ──────────────────────────────
   const bigSheet = await callTool('docs__read', { ref: xref, selector: 'Tri 75 correctifs' });
-  check('une feuille lue sans plage passe', !bigSheet.isError);
+  check('une feuille lue sans plage passe',
+    !bigSheet.isError && /^--- /.test(bigSheet.text),
+    bigSheet.text.split('\n')[0].slice(0, 70));
   const bigRows = bigSheet.text.split('\n').filter(l => l && !/^---/.test(l) && !/^\[/.test(l)).length;
-  check('le cap de 200 lignes borne la lecture sans plage', bigRows <= 201, bigRows + ' lignes');
+  check('le cap de 200 lignes borne la lecture sans plage',
+    bigRows > 10 && bigRows <= 201, bigRows + ' lignes');
   // 76 lignes ici : le cap ne mord pas sur cette fixture, et c'est correct.
   check('la feuille de 76 lignes passe entière (le cap ne mord qu\'au-delà)',
     bigRows > 10, bigRows + ' lignes');

@@ -211,7 +211,11 @@ try {
   // C'est ce que extractRawText aurait perdu (décision 2) — et les tableaux
   // sont la substance de cette fixture.
   const sec0 = await callTool('docs__read', { ref: dref, selector: '0. Déjà établi — à confirmer' });
-  check('docs__read d\'une section rend son texte', !sec0.isError, sec0.text.split('\n')[0].slice(0, 80));
+  // Un refus de lecture par pages est un result NON-isError délibéré : le seul
+  // !isError ne distingue pas une lecture d'un refus de lire.
+  check('docs__read d\'une section rend son texte',
+    !sec0.isError && /^--- Section /.test(sec0.text) && sec0.text.length > 200,
+    sec0.text.split('\n')[0].slice(0, 80));
   check('les TABLEAUX sont préservés, en lignes « a | b | c »',
     /\|/.test(sec0.text) && / \| /.test(sec0.text),
     (sec0.text.split('\n').find(l => / \| /.test(l)) || 'AUCUNE LIGNE TABULAIRE').slice(0, 90));
@@ -231,7 +235,10 @@ try {
   check('un préfixe NON AMBIGU résout (un titre long se recopie tronqué)',
     !byPrefix.isError && /--- Section/.test(byPrefix.text),
     byPrefix.text.split('\n')[0].slice(0, 80));
+  // Négation PURE : un refus de lecture ne contient pas non plus le préfixe
+  // tapé, donc elle passe sans rien exercer. On affirme le titre canonique.
   check('l\'en-tête annonce le titre CANONIQUE, pas le préfixe tapé',
+    /^--- Section /.test(byPrefix.text) && /Developer Portal/.test(byPrefix.text) &&
     !/« 2\. Developer »/.test(byPrefix.text), byPrefix.text.split('\n')[0].slice(0, 80));
 
   const unknown = await callTool('docs__read', { ref: dref, selector: 'Chapitre inexistant' });
@@ -241,8 +248,9 @@ try {
 
   // ── 7. Buffer non détaché : deuxième lecture du même handle ────────────────
   const second = await callTool('docs__read', { ref: dref, selector: '0. Déjà établi — à confirmer' });
+  // Comparer deux longueurs égales est satisfait par deux refus identiques.
   check('DEUXIÈME lecture du même handle : mammoth ne détache pas le buffer',
-    !second.isError && second.text.length === sec0.text.length,
+    !second.isError && /^--- Section /.test(second.text) && second.text === sec0.text,
     second.text.length + ' vs ' + sec0.text.length + ' caractères');
 
   // ── 8. as_resource → js__eval ─────────────────────────────────────────────
