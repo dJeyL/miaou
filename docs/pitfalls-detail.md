@@ -489,6 +489,21 @@ au KV cache, ou à la synchro multi-onglets.
     (`rewriteAttachedUserMessage`) n'a lieu qu'en `onFinal`/`onHalt`, donc après
     la fin de l'échange — jamais au milieu d'un groupe de tool calls.
 
+    **Corollaire de généralité (lot V-8) : une image PRODUITE par un outil entre
+    par ce même chemin, en portant un `attId` — il n'y a jamais un second
+    chemin.** `docs__render_page` rend une page de PDF en PNG : le record est
+    créé par `storeAttachment` (pas `_storeBlock`), l'ack porte
+    `kind: 'attachment_recalled'`, les pixels partent par
+    `_pendingImageInjections`. Le chemin est adressé **par `attId`**
+    (`resolveRecallImages` cherche `getCachedRecordByAttId`), donc un record de
+    ressource `res_…` — qui n'en a pas — verrait ses pixels rester hors du
+    contexte. Faire autrement aurait demandé un **second prédicat de
+    ré-injection** à maintenir en parallèle du premier : deux filtres corrects
+    séparément qui divergent en silence, et qu'aucun test unitaire ne voit.
+    Un champ `origin` distingue les deux producteurs **pour l'affichage
+    seulement** (libellé et icône de l'ack), jamais pour le routage. Toute
+    future source d'image côté outil doit suivre le même geste.
+
 20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`
     (main.js), `restoreSummaryItem` (ui.js) et la boucle de `runBackfill`
     (main.js) appellent tous `generateSummary` (LLM, async) puis `saveSummary(id,

@@ -152,6 +152,35 @@ green proves nothing:
   "elsewhere" differ. A predicate is only tested by a state where a wrong
   implementation would give a different answer.
 
+A third way a verify misleads, and the hardest to read: **a fixture that
+manufactures the very defect the check is looking for.** Here the assertion is
+sound and the code is correct — the setup collides with itself.
+
+Real case (lot V-8 review): checks around `attId` allocation stored their source
+PDFs under `att-1`, `att-7`, `att-9`, while every section shares one conversation
+whose counter climbs past those numbers as renders accumulate. Two records ended
+up under the same `attId`, and `getCachedRecordByAttId` — first match wins —
+started depending on cache iteration order. One check in three failed, reporting
+an "unknown format" that read as an accusation against the handler. The fixtures
+now sit at `att-90`+, out of the counter's path.
+
+Two things to take from it:
+
+- **An intermittent failure in a verify is a fixture smell before it is a code
+  smell.** The app is deterministic here; what varies between runs is iteration
+  order over accumulated state. Diagnose by dumping the state the failing lookup
+  reads (the whole cache, not the one key you expect), rather than re-reading
+  the handler.
+- **When a script allocates from a counter that its own fixtures also occupy,
+  put the fixtures out of that counter's reach** — and say so in a comment, or
+  the next person reads `att-90` as an arbitrary number and "tidies" it back to
+  `att-1`. The same holds for any shared sequence: ids, ports, sequence numbers.
+
+Note the sequence: the check added last was *stable*; it merely pushed the
+counter two numbers higher, which surfaced a latent flaw that had been sitting
+in the script since it was written. A new check that makes an old one flaky is
+usually revealing it, not breaking it.
+
 So: **challenge each green by injecting the regression it is supposed to
 catch** (edit the source, rebuild, re-run, confirm it goes red, revert). This
 is how both blind spots above were found. It complements — and does not replace

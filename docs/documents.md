@@ -115,11 +115,12 @@ rebuild depuis le JS, un cap recopié y dériverait en silence. Les caps se cite
 par renvoi — « le message de refus te donne le chiffre », ce qui est vrai de
 tous les refus.
 
-**Pour V-8** : le rendu image des pages PDF devra **mettre à jour cette skill**
-(section PDF), pas en créer une autre ni ajouter à la doctrine. C'est le critère
-qui a fait choisir une skill unique plutôt qu'une par format, et la section PDF
-est écrite en prose pour pouvoir accueillir la consigne sur l'OCR de mauvaise
-qualité sans être restructurée.
+**Ce que V-8 y a ajouté** (livré) : le §PDF de la skill a bien été **mis à jour**
+plutôt que doublé d'une skill nouvelle — c'était le critère qui avait fait
+choisir une skill unique plutôt qu'une par format. Il porte désormais le sommaire
+numéroté, `docs__render_page` (une page à la fois, ses trois motifs), et la
+consigne sur l'**OCR de mauvaise qualité**. La doctrine, elle, n'a gagné que le
+QUAND (trois lignes) : le COMMENT reste dans la skill, le split V-7 tient.
 
 ## Ce que chaque outil rend
 
@@ -272,23 +273,40 @@ qualité sans être restructurée.
   **scannée** ; sans notice, le modèle reçoit du vide et conclut que le document
   ne dit rien — le mode de défaillance du zip chiffré de V-1, du silence pris
   pour une réponse. La notice nomme la cause probable, dit que MIAOU ne fait pas
-  d'OCR, et demande au modèle de le **dire**. Le rendu des pages en images pour
-  les modèles à vision est esquissé en V-8, pas livré ici.
-- **Le sommaire natif n'a PAS les numéros de page — écart de parité connu,
-  ouvert.** Relevé à la relecture du 2026-08-29, à instruire en **V-8**. Le
-  serveur rend `- p.42 Titre` (`get_toc()` de pymupdf donne des triplets
-  `(level, title, page)`, cf. `mcp_docs/formats.py`) ; le natif rend `- Titre`.
+  d'OCR, et demande au modèle de le **dire**. **Depuis V-8 la notice porte une
+  ISSUE** et pas seulement un constat : elle renvoie vers `docs__render_page`.
+  **Formulée à l'indicatif, jamais « si tu as la vision »** (cf. la section sur
+  le rendu image, plus bas) : un modèle n'a pas d'introspection fiable sur ses
+  propres modalités, et une condition qu'il ne peut pas évaluer le pousse vers
+  la branche prudente. Le repli reste offert, mais sur un fait constatable
+  **après coup** (« si tu ne parviens pas à la lire »).
+- **Le sommaire porte ses numéros de page (parité rétablie, lot V-8).**
   `getOutline()` de pdf.js rend un arbre dont chaque nœud porte une
-  **destination** (`dest`), pas un numéro : le résoudre demande un
-  `doc.getPageIndex(dest)` **par entrée**. `listPdfDocument` pose donc `page: 0`,
-  et `formatPdfListing` traite 0 comme « pas de numéro » et omet le préfixe.
-  Ce n'est **ni un bug** (le rendu est correct, le champ est câblé et le préfixe
-  s'imprimerait dès qu'une valeur arrive) **ni un choix documenté** : un trou,
-  masqué jusqu'ici par un commentaire de `listPdfDocument` qui affirmait
-  l'équivalence exacte avec `get_toc()`. Il coûte : c'est le numéro qui permet
-  d'enchaîner du sommaire vers le bon `docs__read`, et sans lui le modèle doit
-  chercher. Ne pas le refermer à la volée — le coût des N `getPageIndex` sur un
-  gros sommaire n'est pas mesuré, et c'est ce que V-8 doit trancher.
+  **destination** (`dest`), pas un numéro ; `resolveOutlinePage` (docs.js) la
+  résout par `doc.getPageIndex()`, et le listing rend `- p.42 Titre` comme
+  `get_toc()` de pymupdf (`mcp_docs/formats.py`). C'était le **seul écart de
+  parité du lot V**, resté ouvert de V-4 à V-8 parce qu'un commentaire de
+  `listPdfDocument` affirmait l'équivalence exacte avec `get_toc()` — le lecteur
+  suivant faisait confiance et passait.
+  - **Deux formes de `dest`**, et la seconde n'est pas théorique : un **tableau**
+    déjà résolu (le cas courant — 372/372 entrées de `big-toc.pdf`), ou une
+    **chaîne** (destination *nommée*) qu'il faut passer par `getDestination()`.
+    La fixture `named-dest-toc.pdf` n'a que des nommées, dont deux pointant vers
+    un nom absent de l'arbre `/Names`.
+  - **Dégradation PAR ENTRÉE, jamais globale** : une destination non résoluble
+    laisse `page: 0` sur SON entrée — le titre reste, le préfixe est omis — et
+    n'affecte ni les autres ni le listing. `resolveOutlinePage` ne jette jamais.
+  - **Aucune borne, et c'est mesuré** : les résolutions partent en un seul
+    `Promise.all`, soit **1,4 ms pour 372 entrées** sur trois niveaux
+    (`spike-v8-pdf.mjs`, 2026-08-29 ; le séquentiel mesuré à 6,5 ms serait lui
+    aussi indolore). Une borne « les N premières entrées » avait été envisagée
+    puis abandonnée : elle aurait coûté un message de troncature et un sommaire
+    hétérogène pour économiser une milliseconde.
+  - **Le piège de la coercition**, payé à l'écriture et gardé par un test :
+    `Number(null)` vaut `0`, donc un `Math.floor(Number(idx))` naïf transforme une
+    destination non résoluble en **page 1**. `outlinePageFromIndex` (pur, testé)
+    teste le TYPE d'abord. C'est la raison d'être de son extraction : la fonction
+    async n'est pas testable en QuickJS, l'arithmétique l'est.
 - **PDF protégé : refus métier, pas erreur technique.** `getDocument` rejette
   avec `PasswordException` — contrairement à fflate sur un zip chiffré, qui rend
   des octets bruts sans rien dire (AUDIT §3, le piège majeur de V-1). C'est
@@ -311,6 +329,137 @@ qualité sans être restructurée.
 - **`data` est passé en COPIE à pdf.js** (`u8.slice()`) : pdf.js **transfère** le
   buffer, et sans copie le record du cache session ressortirait détaché pour tout
   appel ultérieur.
+
+### Le rendu image d'une page (`docs__render_page`, lot V-8)
+
+Un modèle à vision peut lire une page que l'extraction de texte ne donne pas —
+page scannée, schéma, graphique, tableau mis en forme, ou texte issu d'un OCR
+trop abîmé pour être exploitable. `docs__render_page` rend **une** page en PNG et
+la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
+élargissement de périmètre, pas de la parité — `mcp_docs` ne le fait pas non plus.
+
+- **Une page rendue EMPRUNTE LE CHEMIN DES PIÈCES JOINTES, et c'est ce qui fait
+  tout tenir.** Le record est créé par `storeAttachment` (donc porteur d'un
+  `attId`), l'ack porte `kind: 'attachment_recalled'`, et les pixels partent par
+  `_pendingImageInjections` — exactement comme `recall_attachment`. Il n'y a
+  qu'**un seul** chemin d'entrée d'image dans le contexte (piège 19), et il est
+  adressé par `attId` : `resolveRecallImages` cherche
+  `getCachedRecordByAttId(m.attId, m.convId)`. Un `res_…` de classe `binary`
+  (`_storeBlock`) n'a pas d'`attId` — ses pixels n'entreraient jamais dans le
+  contexte, et l'y faire entrer aurait demandé un **second prédicat de
+  ré-injection** à maintenir en parallèle du premier.
+- **Ce que ça donne gratuitement** : la persistance byte-stable (piège 17 — le
+  message user est réécrit une fois en descripteur figé), la ré-injection aux
+  envois ultérieurs, le téléchargement depuis l'ack, la dégradation vision-less
+  (`imageDescriptors`), et surtout la **purge de contexte** — au tour suivant il
+  ne reste qu'un descripteur léger, pas 1,5 Mo de base64. Sans ce chemin, un
+  examen de dix pages laisserait dix images pleine résolution jusqu'à la fin de
+  la conversation. (La **vignette et le lightbox** faisaient partie de cet
+  héritage jusqu'à la décision d'affichage ci-dessous : le bloc image n'est plus
+  posé pour ce producteur, seul l'ack reste.)
+- **`origin: 'docs_render'` distingue les deux producteurs du même kind**, et ne
+  gouverne **que l'affichage** — libellé (`docsRenderAckHead`, docs.js, pur),
+  icône (`ICON_IMAGE` vs `ICON_EYE`) et **présence à l'export** (ci-dessous),
+  jamais le routage. Le kind reste commun parce que c'est lui que
+  `resolveRecallImages` reconnaît. Champ ajouté à `ACK_COPY_FIELDS`.
+- **L'image n'est affichée NI à l'écran NI dans l'export.** Une page rendue est
+  une **donnée de travail du modèle** : l'utilisateur a déjà le document source,
+  et l'image n'existait que pour donner à lire ce que l'extraction de texte ne
+  rendait pas. Ce qui reste dans le fil, c'est l'**ack** — son libellé et son
+  **bouton de téléchargement** (`ackDownloadTarget` couvrait déjà ce kind, rien à
+  ajouter). Poids : une seule page pesait **plus que tout le reste d'un export**
+  (1,6 Mo mesuré pour une conversation de quatre messages, ramené à 1 329
+  caractères). Décision Julien, 2026-08-29.
+- **Un seul prédicat pour les deux surfaces : `ackImageIsDisplayable(ack)`**
+  (utils.js, pur), consulté par `placeToolAck` (écran) **et** par
+  `exportableAckImageKey` (export). Deux filtres écrits séparément divergeraient
+  en silence au premier changement — c'est exactement ce qui s'était produit au
+  lot Gbis (une image visible en live, absente de l'export). Une seule exclusion
+  aujourd'hui : `origin === 'docs_render'`.
+- **Ce que le changement ne touche PAS** : une image que le modèle est allé
+  **chercher** (`fetch_url` et son sous-produit `resource_stored`,
+  `resource__present`) reste affichée et exportée — c'est un contenu demandé, pas
+  un intermédiaire de lecture. Idem pour le **rappel d'une pièce jointe** fournie
+  par l'utilisateur. Deux tests purs et deux contrôles du verify gardent cette
+  voie.
+- **L'échappatoire explicite, et c'est pourquoi l'exclusion porte sur l'ORIGINE
+  et non sur le record** : l'utilisateur peut demander à voir la page, et
+  `resource__present` sur l'id du record (`att_…`, présent au cache session comme
+  n'importe quelle ressource) la **réaffiche** — l'ack est alors
+  `resource_presented`, qu'aucune règle n'exclut. Ce n'est pas un trou : c'est la
+  distinction entre un intermédiaire de lecture (masqué par défaut) et un
+  affichage **explicitement demandé** — quand l'utilisateur demande la chose, sa
+  demande fait foi. Vérifié par sonde puis figé en contrôle du verify.
+- **Le tool result désigne le MODÈLE comme destinataire de l'image.** Il disait
+  « rendue en image et **affichée à l'utilisateur** » ; c'est le dernier texte
+  que le modèle lit avant de recevoir les pixels, et un modèle à vision en a
+  conclu — raisonnement à l'appui — que c'était *l'utilisateur* qui avait la
+  vision, et a failli s'abstenir. Il dit désormais « MIAOU **te** la montre ».
+  L'image apparaît aussi dans le fil, mais ce n'est pas ce que ce message a à
+  dire au modèle. Un contrôle du verify garde la formulation.
+- **Le libellé dérive de `DOC_ACK_UNITS`, jamais d'un littéral** : « Page 3 rendue
+  en image › rapport.pdf ». Le rendu est PDF-only aujourd'hui, donc `'Page '` en
+  dur serait *juste* — et c'est exactement le piège que `docsReadAckHead` a payé
+  **deux fois** (« Page » en dur révélé par la slide en V-5, `sourceName` révélé
+  par le docx). Un test garde la dérivation.
+- **`icon` d'`ACK_KINDS` accepte désormais une FONCTION** (comme `label` le
+  faisait déjà), résolue au seul point de consommation (`buildToolAck`, ui.js).
+  La garde de sécurité est intacte : la fonction **choisit parmi les constantes
+  `ICON_*`**, elle n'en fabrique aucune — rien d'origine modèle n'entre là.
+- **UNE PAGE PAR APPEL, structurellement** : le paramètre est un entier, pas une
+  plage. Ce n'est pas une valeur à surveiller mais une **forme d'API** — c'est
+  elle qui applique le « jamais de rendu en lot », chaque page coûtant du
+  contexte.
+- **Outil séparé plutôt qu'un booléen `as_image` sur `docs__read`** : `as_resource`
+  existe déjà, deux booléens sur un même outil font trébucher les modèles faibles,
+  les deux ne sont pas orthogonaux (`as_image + as_resource` n'a aucun sens), et
+  surtout le **contrat de sortie change de nature** — un texte d'un côté, une
+  annonce plus une injection d'image de l'autre. Coût assumé : un schéma de plus
+  à chaque tour, borné par une description courte (le COMMENT est dans la skill).
+- **Échelle et cap, MESURÉS** (`spike-v8-pdf.mjs`) : `scale: 2` (≈144 dpi, le
+  viewport pdf.js étant à 72), cap de **4 Mo sur la dataUrl base64** — c'est elle
+  qui part dans le contexte, pas les octets bruts. Dégradation à `1.5` puis `1`
+  avant abandon, pour qu'une page hors norme (plan A0) reste lisible plutôt que
+  de fermer la porte. Le pire cas mesuré (A4 scannée pleine page) pèse **1,50 Mo,
+  soit 37 % du cap** : aucune fixture ne déclenche la dégradation. Débordement
+  final = **refus explicite**, jamais une troncature (doctrine du cap js__eval,
+  piège 25).
+- **PNG et pas JPEG**, alors que le ratio mesuré est de ×3,6 à ×4,7 en faveur du
+  JPEG : ses artefacts de compression dégradent exactement le matériau qu'on
+  demande au modèle de déchiffrer (texte fin d'un scan). La condition qui aurait
+  fait basculer — « PNG déborde régulièrement le cap » — ne se réalise pas.
+- **`<canvas>` détaché, pas `OffscreenCanvas`.** Les deux fonctionnent avec
+  pdf.js 3.11.174 (vérifié), mais `OffscreenCanvas` n'a pas `toDataURL` : il
+  faudrait `convertToBlob()` + `FileReader`, soit un `await` de plus pour rien.
+  Chaque tour de dégradation rend sur un canvas **neuf** — réutiliser le
+  précédent laisserait les pixels de l'échelle supérieure sous une page
+  transparente.
+- **L'`attId` est RÉSERVÉ avant tout `await`** (`reserveAttIdFor`, resources.js) :
+  lecture, incrément et persistance dans la même passe synchrone.
+  `persistConversationField` mutant le cache mémoire de façon synchrone, un
+  second appel relit un compteur déjà incrémenté même si l'écriture IDB est
+  encore en vol. Conséquence assumée : un stockage qui échoue après l'allocation
+  consomme son numéro — `allocateAttId` est documenté monotone, un trou dans la
+  séquence n'a aucun sens fonctionnel.
+- **`reserveAttIdFor` est le SEUL allocateur d'`attId`, et le composer y a été
+  aligné.** Il faisait l'inverse — allouer, stocker, persister après l'`await` —
+  et cet ordre tenait tant qu'il était seul : sa fenêtre était fermée par la
+  **sérialisation** de l'ingestion d'une `FileList` (`attachIngestInFlight`).
+  Deux générations parallèles (piège 28) ne sont sérialisées ni entre elles ni
+  avec le composer : la même séparation leur donnerait le même `att-N`, et
+  `getCachedRecordByAttId` rend le **premier** record trouvé — la ré-injection
+  cross-turn et le bouton de téléchargement serviraient la mauvaise image. Un
+  allocateur, un ordre, plutôt que deux qui se contredisent.
+- **La conversation ciblée est celle de la GÉNÉRATION** (`ctx.convId`, piège 28),
+  jamais celle affichée — d'où le `convId` **explicite** en argument plutôt
+  qu'une lecture de `currentConvId` : une génération d'un autre Space ne doit pas
+  poser son compteur sur l'écran.
+- **`dataUrlBase64Payload` (docs.js, pur) découpe le préfixe** avant
+  `base64ToArrayBuffer`. Passer la dataUrl entière « marcherait » en apparence —
+  le filtre de caractères de `base64ToArrayBuffer` mange le préfixe — mais
+  `data:image/png;base64` contient des lettres **valides en base64**
+  (`dataimagepngbase`), qui décaleraient tout le flux d'octets. Un octet de
+  décalage sur un PNG, et l'image est illisible.
 - **Description automatique d'un fichier de bibliothèque : le PDF rejoint la
   bifurcation** (décision 3, `describePdfForLibrary`). Un fichier décrit par son
   **contenu** vaut mieux qu'un mime et une taille, et la version serveur savait

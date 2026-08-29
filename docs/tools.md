@@ -474,6 +474,9 @@ model-side unique sur la bibliothèque) :**
   `res_…` adressable par `js__eval`.
 - `docs__read(ref, selector, as_resource?)` — lecture **par unité** d'un PDF,
   d'un classeur, d'un document Word ou d'une présentation.
+- `docs__render_page(ref, page)` — rend **une** page de PDF en image et la montre
+  au modèle, pour qu'il la lise avec sa vision (page scannée, OCR trop abîmé,
+  schéma ou graphique). Ce n'est pas de l'OCR : MIAOU rend, le modèle lit.
 - `docs__pack(refs, name?)` — agrège N ressources en **une** archive zip
   téléchargeable.
 

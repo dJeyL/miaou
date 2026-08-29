@@ -33,6 +33,27 @@ la section concernée (souvent `interface`, sinon le topic dédié). L'oublier f
 confabuler le modèle sur les fonctionnalités de l'appli. Le contenu est
 maintenu à la main, jamais généré depuis `docs/`.
 
+**La question complète n'est pas « ai-je mis à jour `help.md` ? » mais « ai-je
+mis à jour `help.md` ET ce qui le contredit maintenant ? »** Écrire le
+paragraphe de la nouvelle capacité ne suffit pas : une **énumération fermée**
+posée ailleurs dans le fichier (« deux types sont acceptés », « les trois
+modes », « seuls X et Y », « uniquement ») devient fausse par le seul ajout d'un
+cas, sans que rien ne la touche — le diff du lot ne la montre pas, et relire le
+paragraphe ajouté ne la révèle pas non plus. Un modèle qui lit le topic en
+entier rencontre le compte fermé AVANT la capacité, et conclut que la capacité
+n'existe pas. Après l'ajout, relire la **section entière** et le topic `apercu`,
+puis :
+
+```bash
+grep -nE "[Dd]eux |[Tt]rois |[Qq]uatre |[Cc]inq |seuls? |uniquement " src/help.md
+```
+
+Piège payé **six fois** (déplacement de conversation, bascule de thème d'export,
+droits sur les souvenirs de profil, clef de thème, « deux types » du lot V-1, et
+les énumérations qui ont oublié PowerPoint au lot V-5). `run_help_enumerations_check`
+(runner.py) est le filet automatique sur les compteurs explicites — il ne
+remplace pas la relecture, il attrape le cas le plus mécanique.
+
 **Nouvelle feature utilisateur → deuxième question : « faut-il toucher au
 `README.md` ? »** Le README est la doc d'**accueil** du dépôt (Forgejo/GitHub) :
 ce qu'est MIAOU, comment l'ouvrir, ce qu'on peut en faire. **Une capacité
@@ -184,7 +205,13 @@ inline sous la liste.
     `role:'tool'`.** Le handler renvoie un tool result annonciateur ; l'image
     revient via un message user synthétique émis par `expandThread`, sa dataUrl
     reconstruite à chaque envoi par `resolveRecallImages` (champ `recallImage`,
-    **jamais persisté**) → byte-stable, KV-safe (brief A2/D3).
+    **jamais persisté**) → byte-stable, KV-safe (brief A2/D3). **Corollaire
+    V-8 : une image PRODUITE par un outil emprunte ce MÊME chemin**, en portant
+    un `attId` (`storeAttachment`, jamais `_storeBlock`) et le même
+    `kind:'attachment_recalled'` — le chemin est adressé par `attId`, et en
+    ouvrir un second signifierait deux prédicats de ré-injection qui divergent
+    en silence. Un champ `origin` distingue les producteurs **pour l'affichage
+    seulement** (cf. `docs__render_page`, `docs/documents.md`).
 20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`/
     `restoreSummaryItem`/`runBackfill` re-vérifient `loadConversation(id)` juste
     avant `saveSummary` ; `pruneOrphanSummariesOnInit()` nettoie au démarrage.

@@ -529,6 +529,99 @@ def run_docs_index_check() -> tuple[int, int]:
     return passed, failed
 
 
+def run_help_enumerations_check() -> tuple[int, int]:
+    """Vérifie que les compteurs explicites de `src/help.md` correspondent
+    toujours à l'ensemble qu'ils annoncent, quand cet ensemble est déclaré dans
+    les sources.
+
+    Angle mort payé SIX fois (cf. CLAUDE.md, question `help.md`). Le dernier en
+    date : l'étape PowerPoint du lot V-5 a ajouté un cinquième format ouvert
+    nativement, et deux énumérations en sont restées à quatre. Le mécanisme est
+    toujours le même — le paragraphe de la nouvelle capacité est bien écrit, et
+    c'est une phrase ailleurs dans le fichier, que le diff du lot ne montre pas,
+    qui devient fausse. Un modèle lisant le topic en entier rencontre le compte
+    fermé AVANT la capacité et conclut qu'elle n'existe pas.
+
+    Portée VOLONTAIREMENT ÉTROITE : on ne compte que ce dont l'ensemble a une
+    source de vérité dans le code (les lecteurs de DOC_READERS, les palettes,
+    les lots de fontes). Une heuristique qui compterait les items en aval de
+    tout « Deux… » serait bruyante et fausse — `help.md` emploie beaucoup de
+    tournures narratives (« Deux choses valent d'être sues ») qui ne sont pas
+    des énumérations de capacités. Ce test attrape le cas mécanique ; la
+    relecture de la section entière reste à la charge de qui écrit."""
+    passed = failed = 0
+    print('\nhelp.md ↔ compteurs de capacités')
+
+    help_md = (ROOT.parent / 'src' / 'help.md').read_text(encoding='utf-8')
+    docs_js = (SRC_JS / 'docs.js').read_text(encoding='utf-8')
+
+    def check(label: str, ok: bool) -> None:
+        nonlocal passed, failed
+        if ok:
+            passed += 1
+            print(f'  PASS  {label}')
+        else:
+            failed += 1
+            print(f'  FAIL  {label}')
+
+    # DOC_READERS est la source unique des formats ouverts nativement
+    # (nativeDocKinds en dérive déjà le message de refus — même principe ici).
+    m = re.search(r'const DOC_READERS = \{(.*?)\n\};', docs_js, re.S)
+    if not m:
+        check('DOC_READERS introuvable dans docs.js', False)
+        return passed, failed
+    kinds = re.findall(r'^\s*(\w+)\s*:', m.group(1), re.M)
+
+    # Le mot par lequel help.md nomme chaque format (il s'adresse à
+    # l'utilisateur : « classeurs Excel », pas « xlsx »).
+    labels = {'zip': 'zip', 'pdf': 'pdf', 'xlsx': 'excel',
+              'docx': 'word', 'pptx': 'powerpoint'}
+
+    # (1) Chaque format est nommé quelque part. Garde de base : un format
+    # rapatrié dont help.md ne parle nulle part est invisible pour le modèle.
+    low = help_md.lower()
+    missing = [k for k in kinds if labels.get(k, k) not in low]
+    check('help.md : chaque format de DOC_READERS y est nommé'
+          + (f' — manquants : {missing}' if missing else ''),
+          not missing)
+
+    # (2) LE VRAI CAS PAYÉ : les ÉNUMÉRATIONS. Une ligne qui cite plusieurs
+    # formats en liste doit les citer TOUS — c'est là que PowerPoint a été
+    # oublié deux fois à l'étape 3 de V-5, sans qu'aucun compteur ne le dise
+    # (help.md n'en porte aucun : un test cherchant « cinq formats » passerait
+    # à vide, satisfait par l'absence — précisément le défaut relevé dans les
+    # verify de V-5). Seuil à 3 : en deçà, c'est une mention ciblée
+    # (« un PDF ou un classeur »), pas une énumération de l'offre.
+    #
+    # L'unité d'analyse est le PARAGRAPHE, pas la ligne : help.md est du markdown
+    # reflué, et ses énumérations sont coupées par le retour à la ligne. Un
+    # premier jet ligne à ligne signalait deux faux positifs (l.14 et l.310) dont
+    # l'énumération était complète mais à cheval sur deux lignes.
+    SEUIL = 3
+    incomplete = []
+    para, start = [], 1
+    blocks = []
+    for ln_no, ln in enumerate(help_md.splitlines() + [''], 1):
+        if ln.strip():
+            if not para:
+                start = ln_no
+            para.append(ln)
+        elif para:
+            blocks.append((start, ' '.join(para)))
+            para = []
+    for start, text in blocks:
+        low_p = text.lower()
+        present = [k for k in kinds if labels.get(k, k) in low_p]
+        if len(present) >= SEUIL and len(present) < len(kinds):
+            absent = [labels.get(k, k) for k in kinds if labels.get(k, k) not in low_p]
+            incomplete.append(f'§l.{start} cite {len(present)}/{len(kinds)} (manque {", ".join(absent)})')
+    check(f'help.md : toute énumération d\'au moins {SEUIL} formats les cite tous'
+          + (' — ' + ' ; '.join(incomplete) if incomplete else ''),
+          not incomplete)
+
+    return passed, failed
+
+
 def run_idb_schema_check() -> tuple[int, int]:
     """Vérifie que les DEUX points d'ouverture de la base `miaou` restent
     d'accord : même version demandée, et `onupgradeneeded` identiques.
@@ -613,6 +706,9 @@ def main(args: list[str]) -> int:
 
     total_passed, total_failed = run_build_unit_tests()
     p, fa = run_docs_index_check()
+    total_passed += p
+    total_failed += fa
+    p, fa = run_help_enumerations_check()
     total_passed += p
     total_failed += fa
     p, fa = run_idb_schema_check()

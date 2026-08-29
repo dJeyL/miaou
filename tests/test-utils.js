@@ -960,6 +960,54 @@ describe('exportableAckImageKey', function() {
   it('attachment_recalled sans attId → null', function() {
     expect(exportableAckImageKey({ kind: 'attachment_recalled' })).toBe(null);
   });
+  // Lot V-8 : une page de PDF rendue est une donnée de travail du modèle — elle
+  // n'est affichée sur AUCUNE des deux surfaces (l'ack et son bouton de
+  // téléchargement suffisent). L'export hérite de `ackImageIsDisplayable`.
+  it('une page rendue (origin docs_render) est exclue de l\'export', function() {
+    expect(exportableAckImageKey({
+      kind: 'attachment_recalled', attId: 'att-1', origin: 'docs_render',
+    })).toBe(null);
+  });
+  // Pas d'`origin` : c'est la forme RÉELLE de l'ack que pousse recall_attachment
+  // (tools.js), qui n'en pose aucun — `docs_render` est le seul producteur à en
+  // porter un. Tester une valeur 'recall' inventée ici ne prouverait rien du cas
+  // de production.
+  it('mais un rappel de pièce jointe UTILISATEUR reste exporté', function() {
+    expect(exportableAckImageKey({
+      kind: 'attachment_recalled', attId: 'att-2',
+    })).toEqual({ by: 'attId' });
+  });
+});
+
+// Prédicat UNIQUE d'affichage d'une image d'ack, partagé par l'écran
+// (placeToolAck) et l'export (exportableAckImageKey) — deux filtres séparés
+// divergeraient en silence.
+describe('ackImageIsDisplayable', function() {
+  it('exclut une page de PDF rendue pour le modèle', function() {
+    expect(ackImageIsDisplayable({
+      kind: 'attachment_recalled', attId: 'att-1', origin: 'docs_render',
+    })).toBe(false);
+  });
+  it('garde le rappel d\'une pièce jointe fournie par l\'utilisateur', function() {
+    expect(ackImageIsDisplayable({
+      kind: 'attachment_recalled', attId: 'att-2',
+    })).toBe(true);
+  });
+  // La voie que ce changement ne doit PAS toucher : une image que le modèle est
+  // allé chercher sur le web à la demande de l'utilisateur (fetch_url et son
+  // sous-produit resource_stored) reste affichée — c'est un contenu demandé,
+  // pas un intermédiaire de lecture.
+  it('garde une image rapportée du web (resource_stored)', function() {
+    expect(ackImageIsDisplayable({
+      kind: 'resource_stored', id: 'res_1', mime: 'image/png',
+    })).toBe(true);
+  });
+  it('garde une ressource présentée par le modèle', function() {
+    expect(ackImageIsDisplayable({ kind: 'resource_presented', id: 'res_2' })).toBe(true);
+  });
+  it('tolère un ack absent', function() {
+    expect(ackImageIsDisplayable(null)).toBe(true);
+  });
   it('kind non porteur d\'image → null', function() {
     expect(exportableAckImageKey({ kind: 'memory_create', id: 'x' })).toBe(null);
     expect(exportableAckImageKey({ kind: 'mcp_call', id: 'x' })).toBe(null);

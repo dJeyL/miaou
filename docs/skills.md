@@ -154,6 +154,22 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    jamais stocké. `miaou__skills__read` (stage 1, inchangé) reste le seul moyen
    d'en charger le contenu, que la skill soit découverte via ce listing ou via
    `skills__list`.
+   - **« Aucune n'est obligatoire » comporte une EXCEPTION NOMMÉE, et elle n'est
+     pas cosmétique.** Le texte du bloc dissuade de lire une skill « au cas où »
+     (mémoire `project_weak_model_discovery_tool_oversweep` : Devstral balayait
+     tous les topics). Mais deux doctrines du prompt système **exigent** une
+     lecture avant un geste précis — `DOCS_DOCTRINE` (« avant ton PREMIER appel à
+     un outil `miaou__docs__*` ») et `FILES_PROMOTE_DOCTRINE`. Les deux textes se
+     contredisaient frontalement, et **ce bloc gagnait** : recalculé à chaque
+     tour, il est plus proche du dernier message user que le prompt système.
+     Payé en test réel (gemma-4-e4b, 2026-08-29) — le modèle a listé la skill
+     `docs` dans son raisonnement, a statué « the available skills context
+     includes docs », ne l'a pas lue, puis a inventé le selector `'scanned2'` (le
+     titre du document) là où la skill dit « un numéro, jamais un mot ». Un tour
+     perdu sur exactement ce que la lecture aurait évité. Le bloc réserve donc
+     désormais le cas d'une doctrine qui nomme la skill ; la dissuasion générale
+     reste **entière**. Ne pas la généraliser en « lis ce qui te semble utile » :
+     le balayage reviendrait. Deux tests gardent les deux moitiés.
    - **Doctrine de déclenchement** (tools.js) : injectée par `skillDoctrinePrompt()`
      dans `buildSystemMessage()` (main.js) — gating **vivant**, sur le modèle de
      `intentDoctrinePrompt()`/`INTENT_DOCTRINE` (≠ `MEMORY_DOCTRINE`/

@@ -224,6 +224,141 @@ describe('formatPdfListing', function() {
   it('info absent → pas d\'exception', function() {
     expect(formatPdfListing(null).indexOf('PDF — 0 page') > -1).toBe(true);
   });
+
+  // Lot V-8 : le sommaire porte ses numéros. Le cas MIXTE est le seul nouveau
+  // — une destination non résoluble laisse son entrée sans numéro, à côté
+  // d'entrées qui en ont. Avant V-8 toutes les entrées étaient à 0 ; ce test
+  // garde la dégradation PAR ENTRÉE (jamais pour le sommaire entier).
+  it('une entrée sans numéro garde son titre à côté d\'entrées numérotées', function() {
+    var s = formatPdfListing({ pages: 20, outline: [
+      { level: 1, title: 'Résolue', page: 3 },
+      { level: 1, title: 'Non résoluble', page: 0 },
+      { level: 2, title: 'Fille résolue', page: 7 }
+    ] });
+    expect(s.indexOf('- p.3 Résolue') > -1).toBe(true);
+    expect(s.indexOf('- Non résoluble') > -1).toBe(true);
+    expect(s.indexOf('  - p.7 Fille résolue') > -1).toBe(true);
+    // Le titre non résolu ne doit PAS hériter d'un « p.0 » ni d'un « p.NaN ».
+    expect(s.indexOf('p.0') > -1).toBe(false);
+    expect(s.indexOf('NaN') > -1).toBe(false);
+  });
+});
+
+// Lot V-8 — les deux décisions pures extraites de resolveOutlinePage (async,
+// donc hors QuickJS : c'est l'arithmétique et les cas limites qui sont testés
+// ici, pas l'enchaînement d'awaits).
+describe('destIsResolvable', function() {
+  it('un tableau non vide dont le premier élément existe est résoluble', function() {
+    expect(destIsResolvable([{ num: 12, gen: 0 }, 'XYZ', 0, 780, 0])).toBe(true);
+  });
+
+  it('une destination NOMMÉE absente rend null → non résoluble', function() {
+    expect(destIsResolvable(null)).toBe(false);
+    expect(destIsResolvable(undefined)).toBe(false);
+  });
+
+  it('un tableau vide (lien externe) n\'est pas résoluble', function() {
+    expect(destIsResolvable([])).toBe(false);
+  });
+
+  it('une chaîne non résolue n\'est pas une destination exploitable', function() {
+    expect(destIsResolvable('sect3')).toBe(false);
+  });
+
+  it('un tableau dont la référence est nulle n\'est pas résoluble', function() {
+    expect(destIsResolvable([null, 'XYZ'])).toBe(false);
+  });
+});
+
+describe('docsRenderAckHead / docsRenderAckLabel', function() {
+  it('« Page 3 rendue en image » sur un PDF', function() {
+    expect(docsRenderAckHead({ sourceName: 'rapport.pdf', selector: '3' }))
+      .toBe('Page 3 rendue en image');
+  });
+
+  it('le label porte le document SOURCE, pas le PNG produit', function() {
+    var l = docsRenderAckLabel({ sourceName: 'rapport.pdf', resourceName: 'rapport-p3.png', selector: '3' });
+    expect(l).toBe('Page 3 rendue en image : rapport.pdf');
+  });
+
+  // LE test qui empêche le littéral 'Page ' de revenir : le mot vient de
+  // DOC_ACK_UNITS, donc un nom hors table retombe sur le défaut (mémoire
+  // project_hardcoded_value_survives_until_second_occupant).
+  it('le mot d\'unité vient de la table, jamais d\'un littéral', function() {
+    // .pptx → « Slide » dans DOC_ACK_UNITS.
+    expect(docsRenderAckHead({ sourceName: 'deck.pptx', selector: '2' }))
+      .toBe('Slide 2 rendue en image');
+    // nom hors table → défaut (« Membre », masculin) : l'accord suit.
+    expect(docsRenderAckHead({ sourceName: 'archive.zip', selector: '1' }))
+      .toBe('Membre 1 rendu en image');
+  });
+
+  it('sans selector, l\'en-tête reste lisible', function() {
+    expect(docsRenderAckHead({ sourceName: 'rapport.pdf' }))
+      .toBe('Page rendue en image');
+  });
+
+  it('un ack vide ne jette pas', function() {
+    expect(typeof docsRenderAckLabel({})).toBe('string');
+    expect(typeof docsRenderAckLabel(null)).toBe('string');
+  });
+});
+
+describe('dataUrlBase64Payload', function() {
+  it('extrait la charge après le préfixe', function() {
+    expect(dataUrlBase64Payload('data:image/png;base64,AAECAw==')).toBe('AAECAw==');
+  });
+
+  // Le préfixe contient des lettres valides en base64 (« dataimagepngbase ») :
+  // le passer à base64ToArrayBuffer décalerait tout le flux d'octets.
+  it('une chaîne sans préfixe base64 rend une charge VIDE, jamais la chaîne entière', function() {
+    expect(dataUrlBase64Payload('data:image/png,AAECAw')).toBe('');
+    expect(dataUrlBase64Payload('AAECAw==')).toBe('');
+    expect(dataUrlBase64Payload('')).toBe('');
+    expect(dataUrlBase64Payload(null)).toBe('');
+  });
+});
+
+describe('pdfRenderResourceName', function() {
+  it('remplace l\'extension, jamais ne l\'accole', function() {
+    expect(pdfRenderResourceName('rapport.pdf', 3)).toBe('rapport-p3.png');
+  });
+
+  it('un nom sans extension reste propre', function() {
+    expect(pdfRenderResourceName('rapport', 12)).toBe('rapport-p12.png');
+  });
+
+  it('un nom absent ne produit pas « undefined »', function() {
+    expect(pdfRenderResourceName(null, 1)).toBe('document-p1.png');
+  });
+});
+
+describe('outlinePageFromIndex', function() {
+  it('l\'index 0-based devient un numéro 1-based', function() {
+    expect(outlinePageFromIndex(0)).toBe(1);
+    expect(outlinePageFromIndex(41)).toBe(42);
+  });
+
+  it('un index non numérique retombe sur 0, jamais « p.NaN »', function() {
+    expect(outlinePageFromIndex(null)).toBe(0);
+    expect(outlinePageFromIndex(undefined)).toBe(0);
+    expect(outlinePageFromIndex('douze')).toBe(0);
+  });
+
+  it('un index négatif retombe sur 0', function() {
+    expect(outlinePageFromIndex(-1)).toBe(0);
+  });
+
+  // 0 est la valeur « pas de numéro » de formatPdfListing : le contrat des deux
+  // fonctions doit rester lisible ensemble (mémoire
+  // project_pure_functions_compose_unguarded_contract).
+  it('la valeur de repli est celle que formatPdfListing traite comme absente', function() {
+    var s = formatPdfListing({ pages: 3, outline: [
+      { level: 1, title: 'X', page: outlinePageFromIndex(null) }
+    ] });
+    expect(s.indexOf('- X') > -1).toBe(true);
+    expect(s.indexOf('p.') > -1).toBe(false);
+  });
 });
 
 describe('joinPdfTextItems', function() {
@@ -305,6 +440,23 @@ describe('formatPdfRead', function() {
     var s = formatPdfRead([{ page: 1, text: '' }]);
     expect(s.indexOf("MIAOU ne fait pas d'OCR") > -1).toBe(true);
     expect(s.indexOf('plutôt que de conclure que le document est vide') > -1).toBe(true);
+  });
+
+  // Lot V-8 : la notice ne s'arrête plus au constat, elle porte l'ISSUE.
+  it('la notice offre le rendu image comme suite', function() {
+    var s = formatPdfRead([{ page: 1, text: '' }]);
+    expect(s.indexOf('miaou__docs__render_page') > -1).toBe(true);
+  });
+
+  // La suite est offerte À L'INDICATIF. Ce test garde le RETOUR de la condition
+  // « si tu as la vision », qui a fait refuser l'outil à un modèle qui l'avait :
+  // un modèle n'a pas d'introspection fiable sur ses modalités, et une condition
+  // qu'il ne peut pas évaluer le pousse à la branche prudente.
+  it('la notice ne conditionne pas la suite à une auto-évaluation de la vision', function() {
+    var s = formatPdfRead([{ page: 1, text: '' }]);
+    expect(/[Ss]i tu as la vision/.test(s)).toBe(false);
+    // Le repli reste offert, mais sur un fait constatable APRÈS coup.
+    expect(s.indexOf('Si tu ne parviens pas à la lire') > -1).toBe(true);
   });
 
   it('aucune page vide → aucune notice de page vide', function() {

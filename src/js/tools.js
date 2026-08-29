@@ -237,6 +237,10 @@ const DOCS_DOCTRINE =
   "le contenu — puis miaou__docs__read pour en lire une unité (page, feuille, " +
   "section, slide), ou miaou__docs__extract pour matérialiser un membre " +
   "d'archive en ressource res_… que tu passes ensuite à miaou__js__eval.\n" +
+  "Si une page de PDF n'a pas de texte extractible (document scanné), ou si son " +
+  "texte est visiblement le produit d'un mauvais OCR, ou encore si l'information " +
+  "est dans un schéma ou un graphique : miaou__docs__render_page en rend UNE page " +
+  "en image et te la met sous les yeux, pour que tu la lises toi-même.\n" +
   "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
@@ -1630,6 +1634,115 @@ const TOOLS = [
       // JAMAIS _makeResourceRef (piège 26c) : un [resource_ref:…] vers un record
       // 'inline' ré-inlinerait le texte ENTIER au tour suivant.
       return formatInlineHandleForModel(id, 'text/plain', getCachedRecord(id));
+    },
+  },
+  {
+    // miaou__docs__render_page (lot V-8) : rend UNE page de PDF en image, pour
+    // qu'un modèle à vision la lise lui-même. Ce n'est PAS de l'OCR — MIAOU rend,
+    // le modèle lit.
+    //
+    // OUTIL SÉPARÉ, et pas un booléen as_image sur docs__read (arbitrage V-8) :
+    // un second booléen sur le même outil est ce qui fait trébucher les modèles
+    // faibles (mémoire project_weak_model_discovery_tool_oversweep), les deux ne
+    // sont pas orthogonaux (as_image + as_resource n'a aucun sens et demanderait
+    // un refus de plus), et surtout le CONTRAT DE SORTIE change de nature : un
+    // texte d'un côté, une annonce + une injection d'image de l'autre. Le coût
+    // (un schéma de plus à chaque tour) est assumé, borné par une description
+    // courte — le COMMENT vit dans la skill système « docs », comme le reste du
+    // namespace depuis V-7.
+    //
+    // UNE PAGE PAR APPEL, structurellement : le selector est un entier, pas une
+    // plage. C'est la garde qui applique le « jamais de rendu en lot » (chaque
+    // page coûte du contexte) — pas une valeur à surveiller, une forme d'API.
+    name: 'docs__render_page',
+    description:
+      "Rend UNE page d'un PDF (handle att-N, file-<id> ou res_<id>) en image et te la " +
+      "met sous les yeux, pour que tu la lises toi-même. À utiliser quand la " +
+      "page n'a pas de texte extractible (document scanné), quand son texte est " +
+      "visiblement issu d'un OCR de mauvaise qualité, ou quand l'information est dans " +
+      "un schéma, un graphique ou un tableau mis en forme que l'extraction de texte " +
+      "perd. Une page par appel : demande la suivante seulement si tu en as besoin. " +
+      "Si l'image te revient illisible, dis-le et lis le texte avec miaou__docs__read.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Handle du PDF : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin disque)' },
+        page: { type: 'integer', description: "Numéro de la page à rendre, tel que miaou__docs__list l'a annoncé (le sommaire donne la page de chaque section). Une seule page par appel — pas de plage." },
+      },
+      required: ['ref', 'page'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },   // stocke un attachment IDB
+    handler: async (args, ctx) => {
+      const ref = String((args && args.ref) || '').trim();
+      if (!ref) return toolFail('docs__render_page', 'Handle manquant.');
+      const pageNum = Math.floor(Number(args && args.page));
+      if (!(pageNum >= 1)) {
+        return toolFail('docs__render_page', "Numéro de page invalide (attendu un entier ≥ 1, par exemple 3).");
+      }
+      if (classifyHandleRef(ref) === null) {
+        return toolFail('docs__render_page', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
+      }
+      const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
+      if (!record || !record.data) return toolFail('docs__render_page', 'Handle introuvable : ' + ref + '.');
+      const u8 = new Uint8Array(record.data);
+      const kind = sniffDocumentKind(u8, record.name);   // utils.js, pur — aux octets
+      if (kind !== 'pdf') {
+        // Refus MÉTIER : seul le PDF se rend en image aujourd'hui. Le message
+        // nomme la voie qui existe pour ce document plutôt que de constater.
+        return toolFail('docs__render_page', 'Seul un PDF peut être rendu en image ; ' +
+          'ce document est ' + (kind ? 'de type ' + kind : 'de format inconnu') + '. ' +
+          'Utilise miaou__docs__list pour voir sa structure.');
+      }
+
+      // L'attId est RÉSERVÉ avant tout await (réentrance — cf. reserveAttIdFor,
+      // resources.js) et dans la conversation de LA GÉNÉRATION, jamais celle
+      // affichée (piège 28).
+      const attId = reserveAttIdFor(ctx.convId);   // resources.js
+      if (!attId) return toolFail('docs__render_page', 'Conversation introuvable pour rattacher l\'image.');
+
+      const out = await renderPdfPageImage(u8, record, pageNum);   // docs.js
+      if (out.fail) return out.fail;   // ack d'échec déjà poussé par toolFail
+
+      const name = pdfRenderResourceName(record.name, pageNum);   // docs.js, pur
+      const b64 = dataUrlBase64Payload(out.dataUrl);              // docs.js, pur
+      if (!b64) return toolFail('docs__render_page', 'Image illisible après rendu.');
+      const bytes = base64ToArrayBuffer(b64);                      // resources.js
+      const stored = await storeAttachment(attId, 'image/png', name, bytes, 'binary',
+        ctx.convId, Date.now(), Math.random, { w: out.w, h: out.h });   // resources.js
+      if (!stored) return toolFail('docs__render_page', 'Échec du stockage de l\'image rendue.');
+
+      // MÊME kind que recall_attachment, DÉLIBÉRÉMENT : c'est lui qui fait que
+      // resolveRecallImages (resources.js) reprend l'image aux envois ultérieurs,
+      // sans un second prédicat de ré-injection à maintenir en parallèle (le
+      // chemin image est unique, piège 19). `origin` ne sert qu'à l'AFFICHAGE de
+      // l'ack — libellé et icône (ui.js) —, jamais au routage.
+      _pendingToolAcks.push({
+        kind: 'attachment_recalled', origin: 'docs_render',
+        attId, resourceName: name, sourceName: record.name,
+        selector: String(pageNum), mime: 'image/png', convId: ctx.convId,
+      });
+      // Tour COURANT : les pixels partent par le registre d'injections, drainé
+      // par runConversation (api.js) après les tool results. Le result ci-dessous
+      // ne fait qu'annoncer l'image qui suit — un contenu image dans un
+      // role:'tool' confabule (probe A2/D3).
+      _pendingImageInjections.push({ attId, dataUrl: out.dataUrl });
+      // « te la montre » et pas « affichée à l'utilisateur » : c'est le DERNIER
+      // texte que le modèle lit avant de recevoir les pixels, et la version
+      // précédente lui désignait l'utilisateur comme destinataire — un modèle de
+      // test en a conclu « Julien a la vision » et a failli s'abstenir. Le
+      // destinataire de l'image, ici, c'est LUI et lui seul : l'image n'est PAS
+      // affichée dans le fil (matière de travail — ackImageIsDisplayable,
+      // utils.js), seul l'ack y paraît avec son bouton de téléchargement.
+      //
+      // L'ID DU RECORD EST DONNÉ, et c'est la contrepartie du masquage : sans
+      // lui, le modèle n'aurait aucun moyen de montrer la page à l'utilisateur
+      // qui la demande. C'est le handle qu'il passe à miaou__resource__present.
+      return 'Page ' + pageNum + ' de « ' + record.name + ' » rendue en image (' +
+        out.w + 'x' + out.h + ') ; MIAOU te la montre, ' +
+        'son contenu suit dans le message suivant. ' +
+        "Elle n'est pas affichée dans la conversation : si l'utilisateur demande à " +
+        'la voir, montre-la-lui avec miaou__resource__present (identifiant : ' +
+        stored.id + ').';
     },
   },
   {

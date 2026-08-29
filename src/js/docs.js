@@ -208,6 +208,18 @@ function joinPdfTextItems(items) {
 // dit rien — exactement le mode de défaillance du zip chiffré de V-1, du
 // silence pris pour une réponse. La notice dit ce qui se passe ET ce qu'il
 // reste possible de faire, sans promettre ce que MIAOU ne sait pas faire.
+//
+// DEPUIS V-8 elle porte une ISSUE, pas seulement un constat : le rendu image de
+// la page (docs__render_page). Jusque-là le modèle apprenait qu'il n'y avait
+// rien à lire sans qu'aucune suite ne lui soit offerte.
+//
+// FORMULÉE À L'INDICATIF, jamais « si tu as la vision » (corrigé après un test
+// réel où un modèle À VISION a refusé l'outil) : un modèle n'a pas d'introspection
+// fiable sur ses propres modalités, et une condition qu'il ne peut pas évaluer le
+// pousse vers la branche prudente — l'inverse du but. Le repli reste offert, mais
+// sur un fait VÉRIFIABLE APRÈS COUP (« si tu ne parviens pas à la lire »), pas sur
+// une auto-évaluation préalable. Un modèle sans vision reçoit de toute façon un
+// descripteur (visionDisabled, api.js) : il constate, il ne devine pas.
 function formatPdfRead(pages, opts) {
   const o = opts || {};
   const list = pages || [];
@@ -225,8 +237,9 @@ function formatPdfRead(pages, opts) {
       ? 'Aucune page de cette plage ne porte de texte extractible'
       : 'Page(s) sans texte extractible : ' + empty.join(', ');
     out += '\n\n[' + quoi + '. Ces pages sont probablement SCANNÉES (image sans ' +
-      "couche texte) : MIAOU ne fait pas d'OCR. Dis-le plutôt que de conclure que le " +
-      'document est vide.]';
+      "couche texte) : MIAOU ne fait pas d'OCR. Appelle miaou__docs__render_page " +
+      'pour te mettre la page sous les yeux et la lire toi-même. Si tu ne parviens ' +
+      "pas à la lire, dis-le plutôt que de conclure que le document est vide.]";
   }
   if (o.notice) out += String(o.notice);
   return out;
@@ -307,6 +320,28 @@ function docsReadAckHead(m) {
   const plural = parts.length > 1 && parts[0] !== parts[1];
   return word + (plural ? 's ' : ' ') + (plural ? sel : parts[0]) +
     (plural ? (unit.feminin ? ' lues' : ' lus') : (unit.feminin ? ' lue' : ' lu'));
+}
+
+// « Page 3 rendue en image » (lot V-8). Sœur de docsReadAckHead, et pour la même
+// raison : le MOT d'unité et son accord viennent de DOC_ACK_UNITS, jamais d'un
+// littéral. Le rendu image est PDF-only aujourd'hui, donc « Page » serait juste
+// — et c'est exactement le piège déjà payé DEUX FOIS par docsReadAckHead
+// (« Page » en dur révélé par la slide en V-5, sourceName révélé par le docx) :
+// une valeur en dur survit jusqu'au deuxième occupant. La table porte déjà le
+// mot et le genre, il n'y a qu'à les lire.
+//
+// « rendue » et pas « lue » : MIAOU REND la page, il n'en fait pas l'OCR — c'est
+// le modèle qui lit. Et sans « en image », l'ack serait ambigu à côté du
+// « Page 3 lue » de docs_read, son voisin immédiat dans le fil.
+function docsRenderAckHead(m) {
+  const unit = docAckUnit(m && (m.sourceName || m.resourceName));
+  const word = unit.read || 'Unité';
+  const sel = String((m && m.selector) || '').trim();
+  return word + (sel ? ' ' + sel : '') + (unit.feminin ? ' rendue' : ' rendu') + ' en image';
+}
+
+function docsRenderAckLabel(m) {
+  return docsRenderAckHead(m) + ' : ' + ((m && (m.sourceName || m.resourceName)) || '?');
 }
 
 function docsReadAckLabel(m) {
@@ -1327,24 +1362,81 @@ async function openPdfDocument(u8, record, toolName) {
   }
 }
 
+// Résout UNE destination d'entrée de sommaire en numéro de page 1-based, ou 0
+// si elle n'est pas résoluble (lot V-8). Jamais d'exception : le sommaire est
+// facultatif et sa résolution l'est encore plus — une entrée qui échoue garde
+// son titre et perd son numéro, elle ne fait pas tomber les autres ni le
+// listing (posture du lot depuis V-4, où le sommaire entier est déjà enveloppé).
+//
+// DEUX FORMES DE `dest`, et la seconde n'est pas une hypothèse : elle est
+// exercée par la fixture named-dest-toc.pdf (spike V-8).
+//   - un TABLEAU [ref, /XYZ, …] déjà résolu — le cas de la plupart des
+//     producteurs (vérifié : 372/372 entrées de big-toc.pdf) ;
+//   - une CHAÎNE, destination NOMMÉE, qu'il faut passer par getDestination()
+//     pour obtenir le tableau. Un nom absent de l'arbre /Names rend null → 0.
+// getPageIndex prend la RÉFÉRENCE (dest[0]), jamais le tableau entier.
+async function resolveOutlinePage(doc, dest) {
+  try {
+    const d = (typeof dest === 'string') ? await doc.getDestination(dest) : dest;
+    if (!destIsResolvable(d)) return 0;   // pur, juste en dessous
+    return outlinePageFromIndex(await doc.getPageIndex(d[0]));   // pur, juste en dessous
+  } catch (e) {
+    return 0;   // lien externe, destination absente, structure inattendue
+  }
+}
+
+// Les deux décisions de resolveOutlinePage, sorties en PURES pour être testables
+// (le runner QuickJS n'exécute pas d'async, et un stub de `doc` ne prouverait
+// que le stub — mémoire project_extract_pure_helper_over_idb_stub). Ce qui reste
+// dans la fonction async ci-dessus est le seul enchaînement d'awaits, sans
+// arithmétique ni cas limite.
+
+// Une destination exploitable est un TABLEAU non vide dont le premier élément
+// est la référence de page. Tout le reste (null d'un nom absent, chaîne non
+// résolue, tableau vide d'un lien externe) n'en est pas une.
+function destIsResolvable(d) {
+  return Array.isArray(d) && d.length > 0 && d[0] != null;
+}
+
+// getPageIndex rend un index 0-based ; formatPdfListing veut un numéro 1-based
+// et traite 0 comme « pas de numéro ». Un index non numérique ou négatif
+// (producteur exotique) retombe donc sur 0 plutôt que de produire « p.NaN ».
+//
+// LE TEST DE TYPE EST EN PREMIER, ET IL EST OBLIGATOIRE : Number(null) vaut 0
+// (comme Number(''), Number(false), Number([])), donc un simple Math.floor(Number(idx))
+// laisse passer null en 0 → l'entrée non résoluble ressortirait « p.1 », un
+// numéro FAUX là où on voulait pas de numéro. Piège attrapé par le test dédié
+// au premier lancement — c'est précisément pourquoi ces cas limites sont sortis
+// en fonction pure.
+function outlinePageFromIndex(idx) {
+  if (typeof idx !== 'number' || !isFinite(idx)) return 0;
+  const n = Math.floor(idx);
+  return n >= 0 ? n + 1 : 0;
+}
+
 // Lecteur `list` du PDF — entrée pdf de DOC_READERS (lot V-4).
 // Rend le compte de pages, les métadonnées et le sommaire. Les métadonnées sont
 // un GAIN (le serveur n'en rend aucune) — le producteur en particulier oriente
 // la lecture, un PDF sorti de PowerPoint ne se lit pas comme un rapport LaTeX.
 //
-// ÉCART DE PARITÉ CONNU, à instruire en V-8 (relevé à la relecture 2026-08-29).
-// Le commentaire disait ici « getOutline() est l'équivalent exact de get_toc()
-// de pymupdf, rien n'est perdu » — c'est FAUX sur un point : get_toc() rend des
-// triplets (level, title, PAGE) et le serveur imprime « - p.42 Titre »
-// (mcp_docs/formats.py, pdf_list). getOutline() rend un arbre dont chaque nœud
-// porte une DESTINATION (`dest`), pas un numéro : le résoudre demande un
-// doc.getPageIndex(dest) par entrée. Le champ `page` est donc posé à 0 plus
-// bas, et formatPdfListing traite 0 comme « pas de numéro » et omet le préfixe.
-// Conséquence : le sommaire natif donne la hiérarchie et les titres, PAS les
-// pages — or c'est le numéro qui permet d'enchaîner sur le bon docs__read.
-// Ni un bug (le rendu est correct et le champ câblé), ni un choix documenté :
-// un trou. Ne pas le « corriger » à la volée sans mesurer le coût des N
-// getPageIndex sur un gros sommaire — c'est ce que V-8 doit trancher.
+// LE SOMMAIRE PORTE SES NUMÉROS DE PAGE (lot V-8, parité rétablie). getOutline()
+// rend un arbre dont chaque nœud porte une DESTINATION (`dest`), pas un numéro :
+// c'est resolveOutlinePage (ci-dessous) qui le résout. Jusqu'à V-8 le champ
+// `page` était posé à 0 et formatPdfListing omettait le préfixe — le sommaire
+// donnait la hiérarchie et les titres mais PAS les pages, là où get_toc() de
+// pymupdf rend des triplets (level, title, page) et où le serveur imprime
+// « - p.42 Titre » (mcp_docs/formats.py, pdf_list). C'était le seul écart de
+// parité du lot V, et il avait survécu à V-4 parce qu'un commentaire ici
+// affirmait l'équivalence exacte avec get_toc().
+//
+// AUCUNE BORNE, et c'est MESURÉ, pas supposé (spike-v8-pdf.mjs, 2026-08-29) :
+// les résolutions partent en UN Promise.all, ce qui coûte 1,4 ms pour 372
+// entrées sur trois niveaux (fixture big-toc.pdf). Le repli séquentiel mesuré à
+// 6,5 ms serait lui aussi indolore — l'ouverture du document et le lazy-load
+// CDN de pdf.js dominent de plusieurs ordres de grandeur. Une borne
+// (« résoudre les N premières ») avait été envisagée puis abandonnée : elle
+// aurait coûté un message de troncature et un sommaire hétérogène pour
+// économiser une milliseconde.
 async function listPdfDocument(u8, record, ref) {
   const opened = await openPdfDocument(u8, record, 'docs__list');
   if (opened.fail) return opened.fail;
@@ -1368,12 +1460,22 @@ async function listPdfDocument(u8, record, ref) {
       const cur = stack.pop();
       const n = cur.node;
       if (!n) continue;
-      // page: 0 → formatPdfListing omet le préfixe « p.N ». Le numéro n'est
-      // pas dans le nœud (il porte `dest`, à résoudre par getPageIndex) : c'est
-      // l'écart de parité décrit en tête de cette fonction, à instruire en V-8.
-      flat.push({ level: cur.level, title: n.title, page: 0 });
+      // `dest` est gardée telle quelle ici : la résolution en numéro de page se
+      // fait APRÈS l'aplatissage, en un seul Promise.all (cf. en-tête).
+      flat.push({ level: cur.level, title: n.title, page: 0, dest: n.dest });
       const kids = n.items || [];
       for (let i = kids.length - 1; i >= 0; i--) stack.push({ node: kids[i], level: cur.level + 1 });
+    }
+    // Résolution des numéros de page, toutes entrées en parallèle. Chaque
+    // entrée est indépendante : une destination non résoluble laisse SON page à
+    // 0 (titre conservé, préfixe omis) sans affecter les autres — cf.
+    // resolveOutlinePage.
+    const resolved = await Promise.all(flat.map(function (e) {
+      return resolveOutlinePage(doc, e.dest);
+    }));
+    for (let i = 0; i < flat.length; i++) {
+      flat[i].page = resolved[i];
+      delete flat[i].dest;   // formatPdfListing ne lit que level/title/page
     }
     _pendingToolAcks.push({
       kind: 'docs_list', handle: ref, resourceName: record.name, count: pages,
@@ -1386,6 +1488,108 @@ async function listPdfDocument(u8, record, ref) {
     // pdf.js garde un worker et des buffers vivants tant que le document ne l'est
     // plus : le libérer est obligatoire, et dans un finally pour que l'échec
     // d'une des lectures facultatives ne fuie pas le document.
+    try { doc.destroy(); } catch (e) { /* rien à rattraper */ }
+  }
+}
+
+// ── Rendu image d'une page PDF (lot V-8) ─────────────────────────────────────
+// Paramètres du rendu, TOUS mesurés au spike (spike-v8-pdf.mjs, 2026-08-29) et
+// non estimés.
+//
+// PDF_RENDER_SCALES : le viewport pdf.js est à 72 dpi, donc scale 2 ≈ 144 dpi —
+// l'ordre de grandeur visé (« 150 dpi », décision Julien). Les deux échelles
+// suivantes sont un FILET pour les pages hors normes (plan A0, poster scanné) :
+// une page moins définie reste lisible là où un abandon sec fermerait la porte.
+// Aucune fixture ne les déclenche : le pire cas mesuré (A4 scannée pleine page)
+// pèse 1,50 Mo, soit 37 % du cap.
+//
+// PDF_RENDER_MAX_B64 : le cap porte sur la dataUrl BASE64, parce que c'est elle
+// qui part dans le contexte du modèle — pas les octets bruts (~×1,33 de moins).
+// Il est très en dessous de MAX_INLINE_BYTES (64 Mo) et de JS_EVAL_MEM_BYTES
+// (256 Mo) : aucune contradiction garde d'entrée / capacité aval (mémoire
+// feedback_entry_guard_vs_downstream_capacity). La borne réelle n'est pas la
+// mémoire, c'est le contexte — d'où sa petitesse.
+//
+// PNG et pas JPEG, CONFIRMÉ par la mesure : le ratio est de ×3,6 à ×4,7 en
+// faveur du JPEG, mais ses artefacts de compression dégradent exactement le
+// matériau qu'on demande au modèle de déchiffrer (texte fin d'un scan). La
+// condition qui aurait fait basculer (« PNG déborde régulièrement le cap ») ne
+// se réalise pas.
+const PDF_RENDER_SCALES = [2, 1.5, 1];
+const PDF_RENDER_MAX_B64 = 4 * 1024 * 1024;
+
+// Nom du record d'une page rendue : « rapport.pdf » + page 3 → « rapport-p3.png ».
+// Même esprit que pdfReadResourceName (extension remplacée, pas accolée), pour
+// que l'utilisateur reconnaisse le document dans la vignette et le lightbox.
+function pdfRenderResourceName(sourceName, pageNum) {
+  const base = String(sourceName || 'document').replace(/\.[^.]*$/, '');
+  return base + '-p' + Math.floor(Number(pageNum) || 0) + '.png';
+}
+
+// Extrait la charge base64 d'une dataUrl (« data:image/png;base64,AAA… » → « AAA… »).
+// PUR. Rend '' si la chaîne n'est pas une dataUrl base64 — l'appelant traite ce
+// cas comme un échec plutôt que de stocker un record vide.
+//
+// Séparé de base64ToArrayBuffer (resources.js), qui attend du base64 NU : lui
+// passer la dataUrl entière « marcherait » en apparence, son filtre de
+// caractères mangeant le préfixe — mais « data:image/png;base64 » contient des
+// lettres valides en base64 (« dataimagepngbase »), qui décaleraient tout le
+// flux d'octets. Un octet de décalage sur un PNG, et l'image est illisible.
+function dataUrlBase64Payload(dataUrl) {
+  const s = String(dataUrl || '');
+  const i = s.indexOf(';base64,');
+  return i < 0 ? '' : s.slice(i + 8);
+}
+
+// Rend UNE page en PNG. Rend { dataUrl, w, h, scale } ou { fail } — jamais
+// d'exception, même forme que les lecteurs de DOC_READERS.
+//
+// Le <canvas> est DÉTACHÉ (document.createElement, jamais inséré) et non un
+// OffscreenCanvas : les deux marchent avec pdf.js 3.11.174 (vérifié au spike),
+// mais OffscreenCanvas n'a pas toDataURL — il faut convertToBlob() + FileReader,
+// soit un await de plus pour rien.
+//
+// La dégradation d'échelle re-rend sur un canvas NEUF à chaque tour : réutiliser
+// le précédent laisserait les pixels de l'échelle supérieure sous une page
+// transparente.
+async function renderPdfPageImage(u8, record, pageNum) {
+  const opened = await openPdfDocument(u8, record, 'docs__render_page');
+  if (opened.fail) return { fail: opened.fail };
+  const doc = opened.doc;
+  try {
+    const total = doc.numPages;
+    const n = Math.floor(Number(pageNum) || 0);
+    if (!(n >= 1 && n <= total)) {
+      return { fail: toolFail('docs__render_page', 'Page ' + (pageNum == null ? '?' : pageNum) +
+        ' hors document (' + total + (total > 1 ? ' pages).' : ' page).')) };
+    }
+    const page = await doc.getPage(n);
+    try {
+      let last = null;
+      for (const scale of PDF_RENDER_SCALES) {
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const dataUrl = canvas.toDataURL('image/png');
+        last = { dataUrl, w: canvas.width, h: canvas.height, scale };
+        if (dataUrl.length <= PDF_RENDER_MAX_B64) return last;
+      }
+      // Toutes les échelles débordent : REFUS explicite plutôt que de pousser
+      // 4 Mo+ dans le contexte (doctrine du cap js__eval, piège 25 — refuser,
+      // jamais tronquer). Le message dit le poids ET la sortie.
+      return { fail: toolFail('docs__render_page', 'Page ' + n + ' trop lourde à rendre : ' +
+        Math.round(last.dataUrl.length / 1024 / 1024) + ' Mo même à la plus basse résolution, ' +
+        'au-delà de la limite de ' + Math.round(PDF_RENDER_MAX_B64 / 1024 / 1024) + ' Mo. ' +
+        'Essaie une autre page, ou lis son texte avec miaou__docs__read.') };
+    } finally {
+      try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
+    }
+  } catch (e) {
+    return { fail: toolFail('docs__render_page', 'Rendu impossible : ' +
+      ((e && e.message) || 'erreur de rendu') + '.') };
+  } finally {
     try { doc.destroy(); } catch (e) { /* rien à rattraper */ }
   }
 }

@@ -25,16 +25,68 @@ métadonnées (titre, auteur, producteur). Le producteur oriente utilement la
 lecture : un PDF sorti d'un logiciel de présentation ne se lit pas comme un
 rapport.
 
+**Chaque titre du sommaire vient avec sa page** : `- p.42 Méthodologie`. C'est ce
+numéro que tu passes à `docs__read` — le sommaire est fait pour ça, aller droit à
+la bonne page sans balayer le document. Une entrée peut occasionnellement
+apparaître sans numéro (sa destination interne n'était pas résoluble) : son titre
+reste juste, mais pour celle-là tu devras lire quelques pages pour situer la
+section, plutôt que de supposer où elle commence.
+
 `docs__read` prend un **numéro de page** ou une **plage** : `3`, ou `2-5`
 (inclusive). Rien d'autre — pas de mot, pas de préfixe. Écris `3`, jamais
 `page 3`.
 
-**Une page peut revenir vide.** Cela veut dire qu'elle n'a pas de couche texte,
-typiquement parce que le document est un scan. MIAOU ne fait pas de
-reconnaissance de caractères. Dans ce cas, **dis-le** — nomme les pages
-concernées et pose l'hypothèse du scan. Ne conclus pas que le document est vide
-ou sans intérêt : tu n'as pas lu son contenu, tu as constaté qu'il n'est pas
-accessible par cette voie.
+### Lire une page toi-même
+
+`miaou__docs__render_page` rend **une** page en image et te la met sous les yeux.
+Ce n'est pas de la reconnaissance de caractères : MIAOU rend la page, c'est
+**toi** qui la lis. Si l'image te revient illisible ou ne t'apprend rien, dis-le
+et reviens au texte avec `docs__read`.
+
+Une page par appel, à la demande. Demande la suivante seulement si tu en as
+besoin : chaque page rendue occupe une place importante dans ton contexte, et
+rendre un document entier « pour voir » le sature pour rien.
+
+**La page t'est montrée à toi, pas à l'utilisateur** : elle n'apparaît pas dans
+la conversation (il a déjà le document, et l'appel y laisse une trace d'où il
+peut la télécharger). Si l'utilisateur demande explicitement à la voir, tu peux
+la lui afficher avec `miaou__resource__present` — l'identifiant de ressource de
+l'image rendue te revient dans le résultat de l'appel.
+
+Trois situations le justifient :
+
+- **La page n'a pas de texte extractible.** `docs__read` te l'a dit explicitement ;
+  la page est un scan. C'est le cas le plus évident.
+- **Le visuel porte l'information.** Un schéma, un graphique, un plan, un tableau
+  mis en forme : l'extraction de texte en tire des étiquettes dans le désordre,
+  ou rien du tout. Si la page a du texte mais qu'il ne rend pas compte de ce dont
+  l'utilisateur parle, regarde-la.
+- **Le texte est visiblement issu d'un mauvais OCR** — voir ci-dessous.
+
+### Quand le texte extrait est de la bouillie
+
+Un document scanné n'est pas toujours sans texte. Il arrive qu'il ait été passé à
+la reconnaissance de caractères avant de t'arriver, et que le résultat soit
+mauvais : mots coupés au milieu, lettres remplacées par des chiffres ou des
+symboles, majuscules erratiques. Quelque chose comme
+`CrNTRE HOSPIT AUER UNl'l RSITAIR[`.
+
+Aucun avertissement ne se déclenchera : il *y a* du texte, et MIAOU n'a aucun
+moyen de décider à ta place qu'il est trop abîmé — le seuil n'existe pas, et se
+tromper reviendrait à masquer un document simplement mal numérisé mais lisible.
+C'est donc à toi de le remarquer.
+
+Si tu vois cette signature, **ne raisonne pas sur cette matière** et n'essaie pas
+de deviner les mots manquants : tu fabriquerais du contenu. Redemande la page
+avec `docs__render_page` et lis-la toi-même. Si l'image ne te la rend pas plus
+lisible, dis à l'utilisateur que le document est mal océrisé plutôt que de lui
+rendre une synthèse bâtie sur du bruit.
+
+**Une page peut aussi revenir complètement vide.** Cela veut dire qu'elle n'a
+aucune couche texte. Dans ce cas, **dis-le** — nomme les pages concernées et pose
+l'hypothèse du scan — puis rends la page en image pour la lire. Ne conclus
+jamais que le document est vide ou sans intérêt : tu n'as pas lu son contenu, tu
+as constaté qu'il n'est pas accessible par cette voie.
 
 ## Classeur Excel
 

@@ -8,9 +8,15 @@ JS/CSS/HTML — strings, templates, regex, commentaire non terminé ;
 section ; `parse_system_skill_file`/`load_system_skills` — cartouche nominal,
 description absente, cartouche/`name`/corps manquant → `ValueError`, lecture
 réelle de `src/system-skills/*.md`, dossier absent → `{}` via un `SRC` de test
-temporaire), comptés dans le même total. S'y ajoutent deux **contrôles
+temporaire), comptés dans le même total. S'y ajoutent trois **contrôles
 source-à-source** (QuickJS n'a ni système de fichiers ni IndexedDB) :
-`run_docs_index_check` (tout `docs/*.md` figure dans l'index de `CLAUDE.md`) et
+`run_docs_index_check` (tout `docs/*.md` figure dans l'index de `CLAUDE.md`),
+`run_help_enumerations_check` (les énumérations de formats de `src/help.md`
+citent tous les lecteurs de `DOC_READERS`, et chacun y est nommé — angle mort
+payé **six fois**, cf. la question `help.md` de `CLAUDE.md` : le paragraphe de
+la nouvelle capacité est écrit, et c'est une phrase ailleurs dans le fichier,
+que le diff du lot ne montre pas, qui devient fausse ; l'unité d'analyse est le
+**paragraphe**, pas la ligne, parce que `help.md` est reflué) et
 `run_idb_schema_check` (les deux points d'ouverture de la base `miaou` —
 `openConvDB`/`openResourceDB` — demandent la même version via
 `MIAOU_DB_VERSION` et portent des `onupgradeneeded` identiques ; la divergence
@@ -338,10 +344,38 @@ slide muette **mais porteuse de notes** ne compte pas comme vide) et
 « Page » en dur, et deux tests figent désormais que le PDF et le PowerPoint
 prennent tous deux leur mot dans la même table.
 
+Le **lot V-8** ajoute le pur de ses deux chantiers. Côté sommaire :
+`destIsResolvable` et `outlinePageFromIndex`, extraites de `resolveOutlinePage`
+(async, donc hors QuickJS) parce que **c'est là que sont les cas limites** — et
+ça a payé immédiatement : `Number(null)` valant `0`, un `Math.floor(Number(idx))`
+naïf transformait une destination non résoluble en **page 1**, un numéro faux là
+où on voulait aucun numéro. Le test l'a attrapé au premier lancement. S'y ajoute
+le cas **mixte** de `formatPdfListing` (des entrées numérotées à côté d'une qui
+ne l'est pas), qu'aucun test ne couvrait puisque `page` valait toujours `0`.
+Côté rendu image : `docsRenderAckHead`/`docsRenderAckLabel` (dont **le test qui
+empêche le littéral `'Page '` de revenir** : le mot vient de `DOC_ACK_UNITS`, un
+nom hors table retombe sur le défaut avec son accord), `pdfRenderResourceName`,
+et `dataUrlBase64Payload` — dont le contrôle décisif est qu'une chaîne sans
+préfixe rende une charge **vide** plutôt que la chaîne entière, le préfixe
+`data:image/png;base64` contenant des lettres valides en base64 qui décaleraient
+tout le flux d'octets. La notice de `formatPdfRead` gagne un test sur son
+**issue** (le renvoi vers `docs__render_page`) et un **test négatif** qui garde
+le retour de « si tu as la vision » : cette condition, qu'un modèle ne peut pas
+évaluer sur lui-même, l'a fait s'abstenir alors qu'il avait la vision (cf.
+`docs/documents.md`). S'ajoute enfin `ackImageIsDisplayable`, **prédicat unique
+d'affichage d'une image d'ack** partagé par l'écran et l'export : une page rendue
+(`origin: 'docs_render'`) est exclue des deux surfaces, tandis qu'une image
+rapportée du web (`resource_stored`, `resource_presented`) et le rappel d'une
+pièce jointe utilisateur restent affichés — ces **contre-exemples** sont l'essentiel
+du test, ils gardent la voie que le changement ne devait pas toucher.
+`exportableAckImageKey` garde ses propres tests, qui vérifient qu'il **hérite**
+bien de ce prédicat plutôt que d'en réécrire un.
+
 Impurs, NON QuickJS-testables : `ensurePdfJs`/`ensureSheetJs`/`ensureMammoth`
 (lazy-load CDN, worker `blob:` pour le premier), l'ouverture pdf.js, SheetJS et
 mammoth, **tout le parsing XML du pptx** (`DOMParser`), les quatre
-`describe*ForLibrary`, et le routage `DOC_READERS`
+`describe*ForLibrary`, le rendu `page.render()` et la réservation d'`attId`
+(`reserveAttIdFor`, V-8), et le routage `DOC_READERS`
 dans les handlers — c'est le rôle des `verify-*.mjs`. Rappel du trou structurel : deux
 fonctions pures correctes dont la **composition** n'est pas gardée passent les
 tests sans que le câblage soit vérifié.

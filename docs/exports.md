@@ -122,6 +122,17 @@ ultérieures du même lot).
   manquant). Ne fait **que** la sélection — le lookup cache et le filtre
   `image/`/`class !== 'inline'` restent dans `renderExportBody` (voir ci-dessous),
   seul à avoir accès au cache resources.
+- **`ackImageIsDisplayable(ack)`** (utils.js, pur, lot V-8) — **prédicat UNIQUE
+  d'affichage d'une image d'ack**, consulté par `placeToolAck` (écran) ET par
+  `exportableAckImageKey` (export). L'export reste donc bien un **miroir** de
+  l'écran : la règle n'est pas dupliquée de part et d'autre, elle est partagée.
+  Deux filtres écrits séparément divergeraient en silence au premier changement —
+  c'est le bug du lot Gbis lui-même (image visible en live, absente de l'export).
+  Une seule exclusion aujourd'hui : la page de PDF rendue pour le modèle
+  (`origin: 'docs_render'`), matière de travail dont seul l'ack — libellé et
+  bouton de téléchargement — reste dans le fil. Les images **rapportées** par le
+  modèle (`fetch_url`, `resource__present`) et les **rappels de pièce jointe**
+  utilisateur sont inchangés (cf. `docs/documents.md`).
 - **`resolveConvRefs(text, opts)`** (ui.js) gagne un paramètre optionnel
   `opts.asPlainText` (défaut `false`, comportement écran **inchangé**). En
   mode `asPlainText`, une référence de conversation vivante est rendue en

@@ -1182,6 +1182,12 @@ const ICON_ALERT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 // Même tracé que `.code-dl` (decoratePre) — vocabulaire d'icônes, flèche vers
 // le bas = télécharger, réservée à cet usage (A3-2, bouton lightbox mode image).
 const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+// Métaphore image (cadre + montagne) — RÉSERVÉE à une image PRODUITE par MIAOU
+// (page PDF rendue, lot V-8). Vocabulaire d'icônes : une métaphore = un usage.
+// NE PAS la confondre avec ICON_EYE, qui porte la CONSULTATION (conversation_read,
+// resource_presented, recall d'une pièce jointe) : l'œil dit « on te remontre »,
+// là où le rendu FABRIQUE une image qui n'existait pas.
+const ICON_IMAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
 
 // Séparateur › coloré (teinte accent) partagé par tous les acks à deux segments
 // (breadcrumb MCP, détail replié, ou simple label "Action › cible") — générique,
@@ -1321,10 +1327,19 @@ const ACK_KINDS = {
     label: m => 'Ressource enregistrée : ' + (m.resourceName || m.id || '?') +
       (m.size != null ? ' (' + humanSize(m.size) + ')' : ''),
     renderLabel: (m, el) => {
-      el.appendChild(document.createTextNode('Ressource enregistrée '));
-      appendAckSep(el);
-      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?') +
-        (m.size != null ? ' (' + humanSize(m.size) + ')' : '')));
+      const build = target => {
+        target.appendChild(document.createTextNode('Ressource enregistrée '));
+        appendAckSep(target);
+        target.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?') +
+          (m.size != null ? ' (' + humanSize(m.size) + ')' : '')));
+      };
+      // DEUX POSTURES pour ce kind, distinguées par la seule présence d'`intent`
+      // (mesuré, pas déduit) : ack UNIQUE d'un outil que le modèle a appelé
+      // (resource__create) → il le porte ; SOUS-PRODUIT de _storeBlock derrière
+      // un autre outil (docs__pack, docs__read as_resource, fetch_url) → il ne le
+      // porte pas, l'intent est allé à l'ack principal poussé après lui.
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
     },
   },
   resource_presented: {
@@ -1333,23 +1348,52 @@ const ACK_KINDS = {
     icon: ICON_EYE,
     label: m => 'Ressource présentée : ' + (m.resourceName || m.id || '?'),
     renderLabel: (m, el) => {
-      el.appendChild(document.createTextNode('Ressource présentée '));
-      appendAckSep(el);
-      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
+      const build = target => {
+        target.appendChild(document.createTextNode('Ressource présentée '));
+        appendAckSep(target);
+        target.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
+      };
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
     },
   },
   // Rappel d'une pièce jointe de message (miaou__recall_attachment, D4 brief A).
   // Même posture que resource_presented (lecture, pas d'undo) mais lookup par
   // attId (conversation-scoped), pas id de ressource — cf. placeToolAck.
+  // DEUX PRODUCTEURS pour ce kind, distingués par `origin` (lot V-8) :
+  //   - recall_attachment : l'utilisateur avait joint le fichier, le modèle le
+  //     RAPPELLE (métaphore œil, « on te remontre ») ;
+  //   - docs__render_page (origin: 'docs_render') : MIAOU PRODUIT l'image d'une
+  //     page de PDF, elle n'existait pas avant (métaphore image).
+  // Le kind est commun DÉLIBÉRÉMENT : c'est lui que resolveRecallImages
+  // (resources.js) reconnaît pour ré-injecter les pixels aux envois ultérieurs,
+  // et un second kind obligerait à maintenir deux prédicats de ré-injection en
+  // parallèle. `origin` ne gouverne QUE l'affichage — jamais le routage.
   attachment_recalled: {
     destination: 'user',
     undo: null,
-    icon: ICON_EYE,
-    label: m => 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
+    icon: m => (m && m.origin === 'docs_render') ? ICON_IMAGE : ICON_EYE,
+    label: m => (m && m.origin === 'docs_render')
+      ? docsRenderAckLabel(m)                                  // docs.js, pur
+      : 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
     renderLabel: (m, el) => {
-      el.appendChild(document.createTextNode('Pièce jointe rappelée '));
-      appendAckSep(el);
-      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.attId || '?')));
+      const render = m && m.origin === 'docs_render';
+      const head = (render ? docsRenderAckHead(m) : 'Pièce jointe rappelée') + ' ';
+      const cible = render
+        ? (m.sourceName || m.resourceName || '?')
+        : (m.resourceName || m.attId || '?');
+      const build = target => {
+        target.appendChild(document.createTextNode(head));
+        appendAckSep(target);
+        target.appendChild(document.createTextNode(' ' + cible));
+      };
+      // Intention du modèle au niveau 1, libellé dérivé replié au niveau 2 —
+      // patron des 19 autres lignes de la table (cf. docs_read juste au-dessus).
+      // Cette ligne en était la SEULE exception, antérieurement à V-8 : le
+      // `miaou_intent` arrivait bien sur l'ack (callTool + ACK_COPY_FIELDS) mais
+      // n'était jamais affiché, alors qu'il l'était dans l'export.
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
     },
   },
   // Énumération des skills par le modèle (miaou__skills__list) : informatif, pas
@@ -1527,9 +1571,13 @@ const ACK_KINDS = {
     icon: ICON_PACKAGE,
     label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
     renderLabel: (m, el) => {
-      el.appendChild(document.createTextNode('Fichier ajouté à la bibliothèque '));
-      appendAckSep(el);
-      el.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
+      const build = target => {
+        target.appendChild(document.createTextNode('Fichier ajouté à la bibliothèque '));
+        appendAckSep(target);
+        target.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?')));
+      };
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
     },
   },
   // Compute sandboxé sur un blob client (miaou__js__eval, lot L) : informatif,
@@ -1769,10 +1817,18 @@ function buildToolAck(m) {
   if (m.id) wrap.dataset.ackId = m.id;
 
   if (spec.icon) {
-    const iconEl = document.createElement('span');
-    iconEl.className = 'ack-icon';
-    iconEl.innerHTML = spec.icon;   // SVG statique author-controlled uniquement
-    wrap.appendChild(iconEl);
+    // `icon` accepte une FONCTION depuis V-8 (comme `label` le fait déjà) : un
+    // kind dont deux producteurs méritent deux métaphores l'aiguille sur l'ack
+    // (attachment_recalled : rappel vs page rendue). La garde de sécurité est
+    // intacte — la fonction CHOISIT parmi les constantes ICON_* de ce fichier,
+    // elle n'en fabrique aucune : rien d'origine modèle n'entre jamais ici.
+    const svg = (typeof spec.icon === 'function') ? spec.icon(m) : spec.icon;
+    if (svg) {
+      const iconEl = document.createElement('span');
+      iconEl.className = 'ack-icon';
+      iconEl.innerHTML = svg;   // SVG statique author-controlled uniquement
+      wrap.appendChild(iconEl);
+    }
   }
 
   const label = document.createElement('span');
@@ -2171,7 +2227,12 @@ function placeToolAck(wrap, entry, animate) {
   // attachment_recalled : idem resource_presented mais lookup par attId
   // (conversation-scoped) — seules les images ont un bloc visuel à rendre ;
   // texte/binaire sont déjà retournés en clair/descripteur au modèle (rien à afficher ici).
-  if (kindNow === 'attachment_recalled' && entry.attId && wrap) {
+  // `ackImageIsDisplayable` (utils.js, pur) est le prédicat PARTAGÉ avec
+  // l'export (exportableAckImageKey) : une page de PDF rendue pour le modèle
+  // (origin 'docs_render') n'est affichée sur AUCUNE des deux surfaces — l'ack
+  // et son bouton de téléchargement suffisent. Jamais un filtre réécrit ici.
+  if (kindNow === 'attachment_recalled' && entry.attId && wrap &&
+      ackImageIsDisplayable(entry)) {
     const record = typeof getCachedRecordByAttId === 'function' ? getCachedRecordByAttId(entry.attId, entry.convId) : null;
     if (record && record.mime && record.mime.startsWith('image/')) {
       const block = makeResourcePresentBlock(record);

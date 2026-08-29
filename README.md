@@ -55,8 +55,10 @@ Figtree/Fira Code).
 - **Archives zip** : le modèle ouvre un zip pour en lister les membres et en
   extraire un, ou regroupe plusieurs fichiers produits au fil de l'échange en une
   archive téléchargeable depuis le fil — cf. [docs/tools.md](docs/tools.md).
-- **PDF** : le modèle en lit la structure et les pages, sans serveur — cf.
-  [docs/tools.md](docs/tools.md).
+- **PDF** : le modèle en lit la structure (sommaire avec ses numéros de page) et
+  les pages, ou s'en fait rendre une en image pour la lire avec sa vision — page
+  scannée, schéma, graphique —, sans serveur — cf.
+  [docs/documents.md](docs/documents.md).
 - **Classeurs Excel** : le modèle en liste les feuilles et en lit une plage de
   cellules, sans serveur — cf. [docs/tools.md](docs/tools.md).
 - **Documents Word** : le modèle en liste les sections et en lit une, tableaux

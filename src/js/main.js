@@ -486,6 +486,24 @@ function buildContextBlock(matches) {
 // vide). JAMAIS construit via resolveSend/bakeSkillMessage (chemin slash, stage 1,
 // figé au moment de l'envoi) — ce bloc-ci est éphémère et n'entre jamais dans
 // currentThread/localStorage.
+//
+// L'EXCEPTION « une doctrine te le demande nommément » N'EST PAS COSMÉTIQUE.
+// Deux textes parlaient de la même skill au modèle : DOCS_DOCTRINE (prompt
+// système) « avant ton PREMIER appel à un outil miaou__docs__*, appelle
+// skills__read avec le slug docs », et ce bloc-ci « aucune n'est obligatoire,
+// n'en lis pas au cas où ». Contradiction pure — et ce bloc gagne, parce qu'il
+// est recalculé à chaque tour donc plus proche du dernier message user que le
+// prompt système. Payé en test réel (gemma-4-e4b, 2026-08-29) : le modèle a
+// listé la skill `docs` dans son raisonnement, a explicitement statué « the
+// available skills context includes docs », ne l'a pas lue, et a inventé le
+// selector `'scanned2'` (le titre du document) là où la skill dit en toutes
+// lettres « un numéro, jamais un mot ». Un tour perdu sur exactement ce que la
+// lecture aurait évité.
+// La formulation dissuasive reste — elle corrige un vrai défaut (mémoire
+// project_weak_model_discovery_tool_oversweep : Devstral balayait toutes les
+// skills). C'est une EXCEPTION NOMMÉE, pas un assouplissement : ne pas la
+// généraliser en « lis ce qui te semble utile », le balayage reviendrait.
+// Couvre aussi FILES_PROMOTE_DOCTRINE, qui pose la même obligation.
 function buildSkillsContextBlock() {
   const skills = getAutotriggerSkillsMeta();
   if (!skills.length) return '';
@@ -493,8 +511,11 @@ function buildSkillsContextBlock() {
     (s.description ? ' — ' + s.description : ''));
   return '<miaou_skills_context>\nSkills que l\'utilisateur a rendues disponibles pour un usage ' +
     'proactif : tu PEUX en lire une (miaou__skills__read) si la situation courante y correspond ' +
-    'vraiment, mais aucune n\'est obligatoire. N\'en lis pas par curiosité ni « au cas où » — une ' +
-    'skill hors sujet consomme un tour pour rien. D\'autres skills existent que l\'utilisateur ' +
+    'vraiment, mais aucune n\'est obligatoire de ce seul fait. N\'en lis pas par curiosité ni ' +
+    '« au cas où » — une skill hors sujet consomme un tour pour rien. EXCEPTION : quand une ' +
+    'doctrine de tes instructions te demande NOMMÉMENT de lire une skill avant un geste précis ' +
+    '(« avant ton premier appel à … »), cette lecture-là est obligatoire — ce « tu peux » ne la ' +
+    'lève pas. D\'autres skills existent que l\'utilisateur ' +
     'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
     'chercher.\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
@@ -2013,18 +2034,28 @@ async function ingestAttachmentFile(file) {
   }
 
   ensureConversation();   // conversationId stable pour le rattachement IDB
-  const conv = loadConversation(currentConvId);
-  const alloc = allocateAttId(conv && conv.attSeq);
+  // Le numéro est RÉSERVÉ ici — lecture, incrément et persistance dans la même
+  // passe synchrone, AVANT tout await (reserveAttIdFor, resources.js). L'ordre
+  // inverse (allouer, stocker, persister après l'await) a tenu tant que le
+  // composer était le seul allocateur : sa fenêtre était fermée par la
+  // sérialisation de l'ingestion d'une FileList (attachIngestInFlight). Depuis
+  // V-8, docs__render_page alloue sur LE MÊME compteur depuis une génération —
+  // que rien ne sérialise avec le composer. Persister après l'await écraserait
+  // alors un numéro déjà réservé par un rendu, et deux records porteraient le
+  // même att-N : getCachedRecordByAttId rend le PREMIER trouvé, donc la
+  // ré-injection cross-turn et le bouton de téléchargement serviraient la
+  // mauvaise image. Un seul allocateur, un seul ordre.
+  const attId = reserveAttIdFor(currentConvId);   // resources.js
+  if (!attId) { showComposerAttachError('Échec du traitement de « ' + file.name + ' ».'); return null; }
   const now = Date.now();
 
   try {
     if (kind0 === 'image') {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
-      const rec = await storeAttachment(alloc.id, mime, file.name, buf, 'binary', currentConvId, now, Math.random, { w, h });
+      const rec = await storeAttachment(attId, mime, file.name, buf, 'binary', currentConvId, now, Math.random, { w, h });
       if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
-      persistAttSeq(alloc.counter);
-      return { attId: alloc.id, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
+      return { attId, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
     }
 
     if (kind0 === 'text') {
@@ -2032,23 +2063,20 @@ async function ingestAttachmentFile(file) {
       const buf = utf8Encode(text);
       if (buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES) {
         // Rétrogradé à binary : trop volumineux pour une injection texte (D3).
-        const rec = await storeAttachment(alloc.id, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+        const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
         if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
-        persistAttSeq(alloc.counter);
-        return { attId: alloc.id, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+        return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
       }
-      const rec = await storeAttachment(alloc.id, file.type || 'text/plain', file.name, buf, 'inline', currentConvId, now, Math.random);
+      const rec = await storeAttachment(attId, file.type || 'text/plain', file.name, buf, 'inline', currentConvId, now, Math.random);
       if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
-      persistAttSeq(alloc.counter);
-      return { attId: alloc.id, name: file.name, mime: file.type || 'text/plain', size: buf.byteLength, kind: 'text' };
+      return { attId, name: file.name, mime: file.type || 'text/plain', size: buf.byteLength, kind: 'text' };
     }
 
     // binary
     const buf = await readFileAsArrayBuffer(file);
-    const rec = await storeAttachment(alloc.id, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+    const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
     if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
-    persistAttSeq(alloc.counter);
-    return { attId: alloc.id, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+    return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
     showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
@@ -2109,16 +2137,6 @@ async function ingestLibraryFile(spaceId, file) {
     showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
-}
-
-// Persiste le compteur d'attId de la conversation courante (monotone, jamais
-// décrémenté — cf. allocateAttId). Écriture immédiate, indépendante de
-// persistCurrent (peut survenir avant tout envoi de message).
-function persistAttSeq(counter) {
-  if (!currentConvId) return;
-  const conv = loadConversation(currentConvId);
-  if (!conv) return;
-  persistConversationField(currentConvId, { attSeq: counter });
 }
 
 // Traite une FileList (picker ou drop) : ingère chaque fichier séquentiellement

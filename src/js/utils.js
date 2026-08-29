@@ -50,6 +50,7 @@ const ACK_COPY_FIELDS = [
   'selector',                             // docs__read (V-4) — unité lue : « 2-5 » (pages) ou « Synthèse!B2:E31 » (feuille, V-5)
   'sourceName',                           // docs__read (V-5) — nom du document LU, dont se déduit le mot d'unité ; distinct de resourceName, qui est l'extrait PRODUIT en as_resource (un .txt)
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
+  'origin',                               // docs__render_page (V-8) — 'docs_render' : distingue une image PRODUITE d'une pièce jointe RAPPELÉE, sur le même kind (libellé + icône, jamais le routage)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
 ];
 
@@ -1083,7 +1084,9 @@ function formatToolAcksHtml(acks) {
 //   resource_stored    → idem (le filtre class !== 'inline' se fait APRÈS le
 //                        lookup dans renderExportBody, on ne connaît pas la
 //                        classe ici — comme en live) ;
-//   attachment_recalled → lookup par attId (conversation-scoped).
+//   attachment_recalled → lookup par attId (conversation-scoped), sous réserve
+//                        d'`ackImageIsDisplayable` (prédicat partagé avec
+//                        l'écran, cf. sa doc juste dessous).
 // Le gate anti-doublon D8 du live (getPendingToolBlocks().length === 0) n'a pas
 // de sens à l'export (aucune file pendante) : non transposé (cf. AUDIT-Gbis §3).
 // Retourne { by: 'id' } | { by: 'attId' } | null ; le lookup cache + filtre
@@ -1094,9 +1097,43 @@ function exportableAckImageKey(ack) {
     return ack.id ? { by: 'id' } : null;
   }
   if (kind === 'attachment_recalled') {
+    if (!ackImageIsDisplayable(ack)) return null;
     return ack.attId ? { by: 'attId' } : null;
   }
   return null;
+}
+
+// « Cette image d'ack a-t-elle sa place DANS LE FIL ? » — prédicat UNIQUE,
+// partagé par les deux surfaces qui affichent une image portée par un ack :
+// placeToolAck (écran, ui.js) et exportableAckImageKey (export, ci-dessus).
+// Un seul prédicat exprès : deux filtres écrits séparément — l'un pour l'écran,
+// l'autre pour l'export — divergeraient en silence au premier changement, et
+// c'est précisément le motif des acks image du lot Gbis (une image visible en
+// live, absente de l'export).
+//
+// Une SEULE exclusion aujourd'hui : la page de PDF rendue par docs__render_page
+// (origin 'docs_render', lot V-8). C'est une DONNÉE DE TRAVAIL du modèle, pas un
+// contenu de la conversation — l'utilisateur a déjà le document source, et
+// l'image n'existait que pour donner à lire au modèle ce que l'extraction de
+// texte ne rendait pas. L'ack reste dans le fil, avec son libellé et son bouton
+// de téléchargement (ackDownloadTarget couvre déjà ce kind) : qui veut la voir
+// la récupère de là. Décision Julien, 2026-08-29.
+//
+// DEUXIÈME ÉCHAPPATOIRE, et c'est pour ça que l'exclusion porte sur l'ORIGINE et
+// pas sur le record : l'utilisateur peut demander au modèle de montrer la page,
+// et `resource__present` sur l'id du record (`att_…`) la RÉAFFICHE — l'ack est
+// alors `resource_presented`, qu'aucune règle n'exclut. Ce n'est pas un trou :
+// c'est la distinction entre un intermédiaire de lecture (masqué par défaut) et
+// un affichage explicitement demandé (mémoire
+// `project_consent_gate_only_for_model_initiative` — quand l'utilisateur demande
+// la chose, sa demande fait foi). Vérifié par sonde, et gardé par le verify.
+//
+// Ce qui reste affiché, et doit le rester : une image que le modèle est allé
+// CHERCHER (fetch_url et son sous-produit resource_stored, resource__present) —
+// c'est un contenu qu'on a demandé, pas un intermédiaire de lecture — et le
+// rappel d'une pièce jointe que l'utilisateur avait lui-même fournie.
+function ackImageIsDisplayable(ack) {
+  return !(ack && ack.origin === 'docs_render');
 }
 
 // DJB2 → base36, tronqué/paddé à exactement 9 chars [0-9a-z].

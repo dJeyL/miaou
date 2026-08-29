@@ -74,8 +74,23 @@ l'ouverture par format décrite plus bas qui s'applique, et elle est automatique
 Les **PDF** sont lus nativement eux aussi. Le modèle peut en donner la structure
 — nombre de pages, sommaire, titre et logiciel d'origine quand le document les
 porte — puis en lire une page précise ou une plage, sans jamais avaler le
-document entier. Sur un document long, il peut ranger sa lecture dans une
-ressource et l'interroger par code plutôt que de la faire défiler.
+document entier. Chaque titre du sommaire vient **avec son numéro de page**, ce
+qui permet au modèle d'aller droit à la bonne section au lieu de balayer. Sur un
+document long, il peut ranger sa lecture dans une ressource et l'interroger par
+code plutôt que de la faire défiler.
+
+Une page de PDF peut aussi être **rendue en image** pour que le modèle la regarde
+avec sa vision, page par page à sa demande. C'est la réponse aux pages scannées,
+mais pas seulement : un schéma, un graphique ou un tableau mis en forme se lisent
+souvent mieux à l'œil que dans le texte qu'on en extrait. Ce n'est pas de la
+reconnaissance de caractères : MIAOU rend la page, c'est le modèle qui la lit —
+un modèle sans vision n'en tire donc rien.
+
+L'image n'est **pas affichée dans le fil** : c'est une matière de travail du
+modèle, et tu as déjà le document d'origine. Seule la trace de l'appel apparaît,
+avec un bouton pour télécharger la page si tu veux la voir. Et si tu veux
+vraiment l'avoir sous les yeux dans la conversation, demande-le au modèle : il
+sait la ré-afficher.
 
 Les **classeurs Excel** (`.xlsx`) s'ouvrent nativement également. Le modèle
 commence par en lister les feuilles avec leurs dimensions, puis lit celle qui
@@ -108,12 +123,19 @@ moitié du contenu. Et les **notes de présentateur** sont lues avec leur slide,
 clairement séparées d'elle : dans une présentation, les slides portent souvent
 des mots-clés et les notes portent le propos.
 
-Deux limites à connaître. Un PDF, un classeur, un document Word ou une
+Une limite à connaître : un PDF, un classeur, un document Word ou une
 présentation **protégé par mot de passe** est refusé franchement, MIAOU ne
-cherche pas à le déchiffrer. Et une page **scannée** (une
-image de page, sans texte dessous) ne donne rien à lire : MIAOU ne fait pas de
-reconnaissance de caractères, et le signale au modèle pour qu'il te le dise
-plutôt que de conclure que le document est vide.
+cherche pas à le déchiffrer.
+
+Le cas de la page **scannée** (une image de page, sans texte dessous), lui, n'est
+plus une impasse. MIAOU ne fait toujours pas de reconnaissance de caractères,
+mais il signale au modèle que la page est probablement scannée **et** lui propose
+de la lui montrer en image — à charge pour lui de la lire, s'il a la vision. Un
+modèle qui n'en a pas te dira que la page n'est pas lisible par cette voie,
+plutôt que de conclure que le document est vide. Même chose quand un document a
+déjà été océrisé avant de t'arriver et que le résultat est mauvais : le modèle
+est invité à regarder la page plutôt qu'à raisonner sur un texte truffé
+d'erreurs.
 
 Ces ouvertures natives — zip, PDF, Excel, Word, PowerPoint — chargent au premier
 usage un composant depuis Internet. **Sans connexion, MIAOU ne peut ouvrir aucun document** ; c'est
@@ -339,7 +361,9 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   à droite du titre, en haut. Le fichier obtenu est un instantané complet —
   coloration figée, diagrammes inclus en image — lisible dans n'importe quel
   navigateur sans MIAOU ni connexion. Idéal pour archiver ou partager par mail.
-  Les images y sont embarquées et restent cliquables.
+  Les images y sont embarquées et restent cliquables — celles qui apparaissent
+  dans le fil, donc pas les pages de PDF rendues pour le modèle
+  (cf. `pieces-jointes`).
 - **La conversation entière en Markdown** : la même icône, cliquée en gardant
   **Shift** enfoncé. L'export inclut la trace des outils utilisés à chaque tour.
   Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de

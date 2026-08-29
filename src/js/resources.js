@@ -156,6 +156,44 @@ function allocateAttId(counter) {
   return { id: 'att-' + n, counter: n };
 }
 
+// Alloue un attId POUR UNE CONVERSATION DONNÉE et persiste le compteur dans le
+// même tour synchrone (lot V-8). Rend l'id, ou null si la conversation n'existe
+// plus. SEUL allocateur d'attId de l'application — composer (ingestAttachmentFile,
+// main.js) comme outil (docs__render_page) passent par ici.
+//
+// 1. LE RÉFÉRENTIEL EST EXPLICITE. Le composer alloue pour la conversation
+//    AFFICHÉE, un outil pour celle de SA génération (piège 28) — une génération
+//    d'un autre Space ne doit pas poser son compteur sur l'écran. D'où le convId
+//    en argument plutôt qu'une lecture de `currentConvId`.
+//
+// 2. LA RÉSERVATION EST SYNCHRONE, et c'est tout l'intérêt : lecture, incrément
+//    et persistance dans la même passe, AVANT tout await de l'appelant.
+//    persistConversationField mute le cache mémoire synchroniquement
+//    (storage.js), donc un second appel relit un compteur déjà incrémenté même
+//    si l'écriture IDB est encore en vol.
+//
+//    L'ordre INVERSE (allouer, stocker, persister après l'await) était celui du
+//    composer, et il tenait tant qu'il était le seul allocateur : sa fenêtre
+//    était fermée par la sérialisation de l'ingestion d'une FileList
+//    (attachIngestInFlight). Deux générations parallèles ne sont sérialisées ni
+//    entre elles ni avec le composer — la même séparation leur attribuerait le
+//    même att-N, et getCachedRecordByAttId rend le PREMIER record trouvé : la
+//    ré-injection cross-turn et le bouton de téléchargement serviraient la
+//    mauvaise image. Le composer a donc été aligné sur cet ordre (V-8), ce qui
+//    laisse UN allocateur et UN ordre plutôt que deux qui se contredisent.
+//
+// Conséquence assumée : un stockage qui échoue APRÈS l'allocation consomme son
+// numéro. C'est sans effet — allocateAttId est documenté monotone et jamais
+// décrémenté, et un trou dans la séquence n'a aucun sens fonctionnel.
+function reserveAttIdFor(convId) {
+  if (!convId) return null;
+  const conv = loadConversation(convId);   // storage.js
+  if (!conv) return null;
+  const alloc = allocateAttId(conv.attSeq);   // pur, juste au-dessus
+  persistConversationField(convId, { attSeq: alloc.counter });   // storage.js, cache muté sync
+  return alloc.id;
+}
+
 // ── Pièces jointes (composer) — envoi au modèle et politique de persistance
 // (LOT 2, brief A / D2-D3-D5) ────────────────────────────────────────────────
 // Descripteur BYTE-STABLE d'une image jointe, calculé UNE FOIS depuis les

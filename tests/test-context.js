@@ -268,6 +268,24 @@ describe('buildSkillsContextBlock (skills autotrigger, stage 2)', function() {
     expect(b).toContain('fait un truc');
     expect(b).toContain('miaou_skills_context');
   });
+  // Le « tu PEUX / aucune n'est obligatoire » de ce bloc contredisait
+  // frontalement les doctrines du prompt système qui EXIGENT la lecture d'une
+  // skill avant un geste (DOCS_DOCTRINE, FILES_PROMOTE_DOCTRINE). Comme ce bloc
+  // est recalculé à chaque tour, il est plus proche du dernier message user que
+  // le prompt système — et c'est lui que le modèle suivait (gemma-4-e4b : skill
+  // `docs` listée, jamais lue, selector inventé). L'exception nommée doit rester.
+  it('réserve explicitement le cas des skills exigées par une doctrine', function() {
+    setSkillsCache([{ slug: 'docs', name: 'Docs', autotrigger: true }]);
+    var b = buildSkillsContextBlock();
+    expect(b).toContain('EXCEPTION');
+    expect(b).toContain('obligatoire');
+  });
+  // Le garde-fou anti-balayage reste : l'exception ne doit pas se généraliser en
+  // « lis ce qui te semble utile » (mémoire weak_model_discovery_tool_oversweep).
+  it('sans lever la dissuasion générale contre le balayage', function() {
+    setSkillsCache([{ slug: 'docs', name: 'Docs', autotrigger: true }]);
+    expect(buildSkillsContextBlock()).toContain('au cas où');
+  });
 });
 
 // NOTE : contextBlockParts()/buildContextBlock() appellent Intl.DateTimeFormat
