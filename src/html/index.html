@@ -108,7 +108,8 @@ if (window.requestAnimationFrame) {
       </div>
       <div class="conv-list" id="conv-list"></div>
 
-      <div class="space-side-panel" id="space-files-panel" hidden>
+      <div class="space-side-panel" id="space-files-panel" hidden
+           ondragover="onSpaceFilesDragOver(event)" ondragleave="onSpaceFilesDragLeave(event)" ondrop="onSpaceFilesDrop(event)">
         <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
         <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
         <div class="cfg-err" id="space-files-error" hidden></div>

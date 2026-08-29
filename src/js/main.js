@@ -3292,8 +3292,8 @@ const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
 // no-op silencieux si OFF (pas de statut "désactivé" par carte, juste
 // l'absence de description, comme un échec ordinaire). Image : skip v1 (pas
 // de modèle vision dédié, décision D7). `force` (action manuelle
-// "(re)générer" d'une carte, cf. renderSpaceFilesList) : ignore le toggle ET
-// une description déjà présente — sinon (trigger d'ingestion), les deux
+// « Régénérer la description » d'une carte, cf. renderSpaceFilesList) : ignore
+// le toggle ET une description déjà présente — sinon (trigger d'ingestion), les deux
 // court-circuitent silencieusement (pas un échec, juste un no-op).
 async function describeFileIfNeeded(fileId, onStatus, force) {
   if (!force && !loadSettings().describeFiles) return;

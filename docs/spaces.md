@@ -215,6 +215,18 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
      main.js) — mêmes caps que les pièces jointes (image 1536px q0.85, texte
      ≤200 kB inline, binaire tel quel). Cible `activeSpaceId` (pas
      `_spaceScreenId` — indépendant du drawer, cf. section UI ci-dessus).
+     **Deux gestes, un seul chemin** : le bouton « Ajouter un fichier »
+     (`<input type=file>` masqué) et le **drag&drop sur le panneau**
+     (`#space-files-panel`, `onSpaceFilesDrop`) convergent tous deux vers
+     `ingestLibraryFiles` (ui.js) — ingestion séquentielle, re-render, puis
+     déclenchement D7 par fichier. La restriction « seulement en mode
+     bibliothèque » est **structurelle** : le panneau porte `hidden` sur les
+     deux autres onglets et ne reçoit alors aucun événement de drag, donc rien
+     à resynchroniser depuis `selectSpaceTab`. Pas de filtre de type au drop
+     (contrairement au drawer skills, restreint au `.md`) : le tri par caps est
+     celui d'`ingestLibraryFile`. Retour visuel `.dragover` sur
+     `.space-side-panel` (sidebar.css), même vocabulaire que `.main.dragover`
+     et `.drawer.dragover`.
   2. **Promotion utilisateur** : action « Ajouter à la bibliothèque de
      l'espace » sur un attachment de message déjà envoyé (chip, `.att-promote`,
      `promoteAttachmentToLibrary`, ui.js) — copie immédiate, pas de gate (déjà
@@ -308,7 +320,7 @@ aide à la décision de lecture).
     `description` y est déjà fournie par le modèle et stockée telle quelle (A3
     confirmé), une génération D7 supplémentaire serait un doublon.
   Pas de queue, pas de retry : un échec laisse le fichier sans description,
-  plus une action manuelle « (re)générer » sur la carte
+  plus une action manuelle « Régénérer la description » sur la carte
   (`onRegenerateFileDescription`, paramètre `force=true` — ignore le toggle ET
   une description déjà présente).
 - **Extraction** : texte (`class:'inline'`) → contenu déchiffré, tronqué à

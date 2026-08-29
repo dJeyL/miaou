@@ -182,10 +182,11 @@ l'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne
 les remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à
 chaque fois.
 
-Chaque Espace dispose aussi d'une **bibliothèque de fichiers** (écran de
-l'Espace → « Fichiers ») : des fichiers persistants que le modèle peut consulter
-à la demande, étanches comme le reste de l'Espace. Tu l'alimentes de quatre
-façons : envoi direct, promotion en un clic d'une pièce jointe déjà envoyée,
+Chaque Espace dispose aussi d'une **bibliothèque de fichiers** (onglet
+« Fichiers » de la barre latérale) : des fichiers persistants que le modèle peut
+consulter à la demande, étanches comme le reste de l'Espace. Tu l'alimentes de
+quatre façons : envoi direct — au bouton « Ajouter un fichier » ou en glissant
+des fichiers sur le panneau —, promotion en un clic d'une pièce jointe déjà envoyée,
 proposition du modèle lui-même, ou dépôt par le modèle d'un fichier qu'il vient
 de produire — demande-lui d'enregistrer dans la bibliothèque un CSV, un script
 ou un document qu'il a généré, et il le fera sans que tu aies à le récupérer

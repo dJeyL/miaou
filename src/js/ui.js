@@ -7108,7 +7108,7 @@ async function renderSpaceFilesList(spaceId) {
       `<div class="mem-content">${escHtml(e.name)}</div>` +
       descriptionLine +
       `<div class="drawer-btns" id="file-btns-${e.id}">` +
-      `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? '(re)générer' : 'Générer une description'}</button>` +
+      `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? 'Régénérer la description' : 'Générer une description'}</button>` +
       `<button class="drawer-btn danger" onclick="onDeleteSpaceFile(this,'${e.id}','${spaceId}')">Supprimer</button>` +
       `</div>`;
     wrap.appendChild(item);
@@ -7128,15 +7128,16 @@ function setFileDescriptionStatus(fileId, status, description) {
     if (btn) { btn.disabled = true; btn.classList.add('loading'); }
   } else if (status === 'done') {
     if (line) line.textContent = description || '';
-    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '(re)générer'; }
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Régénérer la description'; }
   } else if (status === 'failed') {
     if (line) line.textContent = '';
     if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Générer une description'; }
   }
 }
 
-// Action manuelle "(re)générer" — force le calcul même si le toggle est OFF
-// ou qu'une description existe déjà (contrairement au trigger d'ingestion).
+// Action manuelle « Régénérer la description » — force le calcul même si le
+// toggle est OFF ou qu'une description existe déjà (contrairement au trigger
+// d'ingestion).
 async function onRegenerateFileDescription(btn, fileId, spaceId) {
   await describeFileIfNeeded(fileId, (status) => {
     if (status === 'done') {
@@ -7185,9 +7186,11 @@ function onSpaceFilesUploadClick() {
 // Upload direct (D2 path 1) : mêmes caps que le composer (ingestLibraryFile,
 // main.js), mais aucune notion d'attId/conversation ici — chaque fichier
 // rejoint directement la bibliothèque du Space actif (onglet sidebar,
-// indépendant de l'écran Space qui peut être fermé).
-async function onSpaceFilesSelected(input) {
-  const files = Array.from(input.files || []);
+// indépendant de l'écran Space qui peut être fermé). Chemin d'ingestion UNIQUE
+// des deux entrées utilisateur (bouton « Ajouter un fichier » et drag&drop sur
+// le panneau) : une seule séquence ingestion → re-render → trigger D7.
+async function ingestLibraryFiles(fileList) {
+  const files = Array.from(fileList || []);
   if (!files.length) return;
   clearSpaceFilesError();
   const spaceId = activeSpaceId;
@@ -7209,6 +7212,36 @@ async function onSpaceFilesSelected(input) {
       }
     });
   }
+}
+
+async function onSpaceFilesSelected(input) {
+  await ingestLibraryFiles(input.files);
+}
+
+// Drag&drop de fichiers vers la bibliothèque de l'espace (onglet « Fichiers »
+// de la sidebar). La zone est le panneau entier (#space-files-panel, `flex: 1`
+// — toute la hauteur sous les onglets), pattern .dragover identique au composer
+// et au drawer skills. La condition « seulement en mode bibliothèque » est
+// STRUCTURELLE, pas un test JS : le panneau porte `hidden` sur les deux autres
+// onglets, il ne reçoit alors aucun événement de drag — rien à resynchroniser
+// depuis selectSpaceTab. Aucun filtre de type ici (contrairement au drawer
+// skills, restreint au .md) : la bibliothèque accepte les mêmes familles que le
+// composer, et le tri par caps est déjà celui d'ingestLibraryFile.
+function onSpaceFilesDragOver(e) {
+  e.preventDefault();
+  const dz = $('space-files-panel');
+  if (dz) dz.classList.add('dragover');
+}
+function onSpaceFilesDragLeave(e) {
+  const dz = $('space-files-panel');
+  if (dz && (!e.relatedTarget || !dz.contains(e.relatedTarget))) dz.classList.remove('dragover');
+}
+function onSpaceFilesDrop(e) {
+  e.preventDefault();
+  const dz = $('space-files-panel');
+  if (dz) dz.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) ingestLibraryFiles(files);
 }
 
 // Suppression d'un fichier de bibliothèque : arm-then-run (même pattern que
