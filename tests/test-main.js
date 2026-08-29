@@ -315,3 +315,31 @@ describe('splitTrailingAcks — corps / queue d\'acks du tour en cours', functio
     expect(JSON.stringify(t)).toBe(snapshot);
   });
 });
+
+describe('formatLibraryFileHeadline / formatDescriptionImageDescriptor (lot V-9)', function() {
+  it('en-tête dérivé des seuls champs figés (name, mime, size) — aucun octet, aucune date', function() {
+    var h = formatLibraryFileHeadline({ name: 'scan.jpg', mime: 'image/jpeg', size: 219136 });
+    expect(h.indexOf('scan.jpg') >= 0).toBeTruthy();
+    expect(h.indexOf('image/jpeg') >= 0).toBeTruthy();
+    expect(h.indexOf(humanSize(219136)) >= 0).toBeTruthy();
+  });
+  it('byte-stable : deux appels sur le même record rendent la même chaîne (le manifeste <miaou_context> en dépend)', function() {
+    var rec = { name: 'a.png', mime: 'image/png', size: 1024 };
+    expect(formatLibraryFileHeadline(rec)).toBe(formatLibraryFileHeadline(rec));
+  });
+  it('record sans nom/mime → dégradé lisible, jamais undefined dans la chaîne', function() {
+    var h = formatLibraryFileHeadline({ size: 0 });
+    expect(h.indexOf('undefined') < 0).toBeTruthy();
+  });
+  it('descripteur de page PDF : dit que le document est scanné, sans promettre de handle de rappel', function() {
+    var d = formatDescriptionImageDescriptor('pdf-page');
+    expect(d.indexOf('scanné') >= 0).toBeTruthy();
+    expect(d.indexOf('recall_attachment') < 0).toBeTruthy();   // aucune capacité annoncée sans handle
+    expect(d.indexOf('attachment att-') < 0).toBeTruthy();
+  });
+  it('descripteur de fichier image : distinct de celui de la page PDF, sans handle non plus', function() {
+    var d = formatDescriptionImageDescriptor('file');
+    expect(d !== formatDescriptionImageDescriptor('pdf-page')).toBeTruthy();
+    expect(d.indexOf('recall_attachment') < 0).toBeTruthy();
+  });
+});

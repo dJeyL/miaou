@@ -396,6 +396,70 @@ describe('injectVisionDegradedNote', function() {
   });
 });
 
+describe('silentCompletion : choix du modèle (lot V-9, retour utilisateur)', function() {
+  // La fonction est async et fait du réseau : on ne teste ici que la RÉSOLUTION
+  // du modèle, extraite telle quelle de son corps (`(o.model && o.model.trim()) || cfg.model`).
+  // Le câblage réel (describeFileIfNeeded passe activeModel()) relève du runtime.
+  var resolve = function(oModel, cfgModel) { return (oModel && oModel.trim()) || cfgModel; };
+
+  it('o.model fourni → il prime sur le modèle du serveur (la pilule fait foi)', function() {
+    expect(resolve('qwen-vl', 'mistral-small')).toBe('qwen-vl');
+  });
+  it('o.model absent → modèle du serveur (titrage, résumé : comportement inchangé)', function() {
+    expect(resolve(undefined, 'mistral-small')).toBe('mistral-small');
+  });
+  it('o.model vide ou blanc → modèle du serveur, jamais une chaîne vide envoyée au backend', function() {
+    expect(resolve('', 'mistral-small')).toBe('mistral-small');
+    expect(resolve('   ', 'mistral-small')).toBe('mistral-small');
+  });
+});
+
+describe('shouldDegradeVision / applyVisionDegradation / claimVisionRetry (lot V-9) — prédicat et geste uniques', function() {
+  var withImage = function() {
+    return [{ role: 'system', content: 'sys' },
+      { role: 'user', content: [{ type: 'text', text: 'décris' }, { type: 'image_url', image_url: { url: 'data:x' } }] }];
+  };
+
+  it('pas de part image → jamais de dégradation, même sur un modèle marqué sans vision', function() {
+    var msgs = [{ role: 'user', content: 'texte seul' }];
+    expect(shouldDegradeVision(msgs, 'http://w1/v1', 'm', true)).toBeFalsy();
+  });
+  it('parts image + modèle non marqué et vision activée → pas de dégradation (on tente)', function() {
+    expect(shouldDegradeVision(withImage(), 'http://w2/v1', 'm', false)).toBeFalsy();
+  });
+  it('parts image + visionDisabled manuel → dégradation proactive', function() {
+    expect(shouldDegradeVision(withImage(), 'http://w3/v1', 'm', true)).toBeTruthy();
+  });
+  it('parts image + rejet déjà essuyé cette session → dégradation proactive', function() {
+    markVisionRejected('http://w4/v1', 'm');
+    expect(shouldDegradeVision(withImage(), 'http://w4/v1', 'm', false)).toBeTruthy();
+  });
+
+  it('applyVisionDegradation : remplace les parts image ET pose la note (le geste complet, pas la moitié)', function() {
+    var out = applyVisionDegradation(withImage(), ['[image : rendu de page]']);
+    expect(typeof out[1].content).toBe('string');
+    expect(out[1].content.indexOf('data:x') < 0).toBeTruthy();
+    expect(out[1].content.indexOf('[image : rendu de page]') >= 0).toBeTruthy();
+    expect(out[1].content.indexOf(VISION_DEGRADED_NOTE) >= 0).toBeTruthy();
+    expect(out[0].content).toBe('sys');   // system message intact (piège 16)
+  });
+
+  it('claimVisionRetry : premier échec avec images → réclame le rejeu et marque le couple', function() {
+    expect(isVisionRejected('http://w5/v1', 'm')).toBeFalsy();
+    expect(claimVisionRetry(withImage(), 'http://w5/v1', 'm')).toBeTruthy();
+    expect(isVisionRejected('http://w5/v1', 'm')).toBeTruthy();
+  });
+  it('claimVisionRetry : deuxième échec sur le même couple → refuse (pas de boucle infinie)', function() {
+    claimVisionRetry(withImage(), 'http://w6/v1', 'm');
+    expect(claimVisionRetry(withImage(), 'http://w6/v1', 'm')).toBeFalsy();
+  });
+  it('claimVisionRetry : échec sans images → ne réclame rien et ne marque RIEN (un 400 non-vision ne doit pas rendre un modèle aveugle)', function() {
+    var msgs = [{ role: 'user', content: 'texte seul' }];
+    expect(claimVisionRetry(msgs, 'http://w7/v1', 'm')).toBeFalsy();
+    expect(isVisionRejected('http://w7/v1', 'm')).toBeFalsy();
+  });
+});
+
 describe('FILE_DESCRIPTION_PROMPT (D7, lot Cbis) — distinct de SUMMARY_PROMPT, no-volatile', function() {
   it('distinct de SUMMARY_PROMPT (pas le même prompt réutilisé)', function() {
     expect(FILE_DESCRIPTION_PROMPT === SUMMARY_PROMPT).toBeFalsy();

@@ -335,9 +335,7 @@ aide à la décision de lecture).
   nom en dur (`ref`+`content_b64` déclarés) mais retourne `(server, toolName)`
   pour un appel `mcpRpc(server, 'tools/call', …)` direct ; `session_id`
   synthétique `'lib-description-' + fileId` (pas un id de conversation —
-  l'ingestion n'en a pas forcément une). Image → skip v1 systématique (pas de
-  modèle vision dédié, décision D7 actée) — pas d'erreur, juste l'absence de
-  description.
+  l'ingestion n'en a pas forcément une).
   **Bug corrigé après retour utilisateur** : un serveur d'extraction expose
   souvent plusieurs outils déclarant `ref`+`content_b64` (mcp_docs :
   `list`/`read`/`search`) — le premier trouvé n'est pas forcément celui qui
@@ -354,12 +352,78 @@ aide à la décision de lecture).
   byte-stable tant qu'elle ne change pas — piège 18/16). Stockée dans
   `record.description` via `capFileDescription` (cap dur 240 car., cf.
   `docs/storage.md`).
+- **Description par l'image (lot V-9)** — deux fichiers dont l'extraction texte
+  ne donne RIEN par nature sont décrits en donnant l'image à voir au modèle,
+  plutôt que d'échouer. C'est le même principe qu'au lot V-8 côté conversation
+  (`docs__render_page`, cf. `docs/documents.md`) : quand le texte manque, on
+  rend la page.
+  - **PDF scanné** : `describePdfForLibrary` (docs.js) pose `scanned: true` sur
+    l'objet `out` que lui passe l'appelant quand la page 1 ne rend aucun texte
+    alors que le document a bien une page. Canal de retour **annexe** (objet
+    muté) plutôt qu'un type de retour élargi : `DOC_DESCRIBERS` est une table
+    dont toutes les entrées rendent `string|null`, et faire diverger le PDF seul
+    obligerait chaque consommateur de la table à connaître l'exception.
+    `extractBinaryFileTextForDescription` (tools.js) ne fait que le propager.
+    L'image est alors rendue par `renderPdfPageImage` — **la même fonction que
+    `docs__render_page`**, jamais un second chemin de rendu (il divergerait en
+    silence sur les caps et les échelles de dégradation). **Page 1 seulement** :
+    c'est une description, pas une lecture, même borne que
+    `describePdfForLibrary` lui-même.
+  - **Image de bibliothèque** : le skip « v1, pas de modèle vision dédié » de D7
+    est **levé**. Le modèle actif est celui-là même qui lit une page rendue en
+    conversation depuis V-8 : le tenir pour aveugle a priori n'avait plus de
+    raison d'être. Base64 direct depuis les octets du record (`arrayBufferToBase64`),
+    aucun ré-encodage canvas — le modèle n'a pas besoin d'un PNG de ce qui est
+    déjà un JPEG. Le texte d'accompagnement est `formatLibraryFileHeadline`
+    (main.js, **pure**, dérivée des seuls champs figés `name`/`mime`/`size` :
+    aucun octet, aucune date — la description atterrit dans le manifeste
+    `<miaou_context>`, qui doit rester byte-stable, piège 16).
+  - **Fallback si le backend refuse l'image** : `silentCompletion` dégrade et
+    rejoue **sans elle** (cf. juste en dessous). Le modèle rédige alors une
+    description à partir de ce qui reste — en-tête PDF, ou identité du fichier —
+    fût-ce pour dire qu'il n'a pas de matière. Ce n'est PAS un échec de
+    description : d'où le choix de joindre l'en-tête PDF **en plus** de l'image
+    plutôt que l'image seule, sans quoi le rejeu dégradé n'aurait plus rien du
+    tout à décrire.
+  - **Un échec de rendu** (cap `PDF_RENDER_MAX_B64` dépassé, pdf.js indisponible)
+    retombe sur le chemin texte seul (`libraryDescriptionImage` rend `null`) —
+    dégradé, jamais bloquant, comme tout ce chemin d'ingestion.
+- **Dégradation vision-less de `silentCompletion` (lot V-9)** : ce chemin envoie
+  désormais des content parts image, donc il lui faut la même dégradation que le
+  chemin de génération — via les **mêmes helpers** (`shouldDegradeVision` /
+  `applyVisionDegradation` / `claimVisionRetry`, api.js), extraits à cette
+  occasion et partagés avec `streamCompletion`. Deux formules séparées
+  divergeraient en silence : un endpoint marqué non-vision par une génération
+  continuerait de recevoir des images depuis l'ingestion, et re-essuierait le
+  même 400 à chaque dépôt de fichier. Trois points de vigilance :
+  - **Volatile uniquement.** `markVisionRejected` est une mémoire de **session**
+    (`_visionRejected`, api.js). Le flag **persistant** `server.vision[model]`
+    reste piloté à la main par l'utilisateur dans les réglages : ce chemin ne
+    l'écrit jamais. Il le **lit** en revanche, via `serverModelVisionEnabled`,
+    pour la dégradation proactive.
+  - **Le modèle est `activeModel()`, override du composer inclus**, passé
+    explicitement via `o.model` (paramètre ajouté à `silentCompletion` pour ça ;
+    titrage et résumé ne le passent pas et restent sur le modèle du serveur).
+    Première version : `activeApiConfig().model`, au motif qu'une ingestion n'a
+    pas de conversation — **corrigé après retour utilisateur**. L'override du
+    composer est reflété dans la pilule en haut à droite : c'est le modèle que
+    l'écran annonce comme actif, donc celui qu'on attend au travail, y compris
+    pour un fichier déposé depuis cet écran. Le flag vision est interrogé sur ce
+    MÊME modèle (`descModel`, figé avant l'appel) — un flag lu sur une autre
+    ligne que le modèle appelé dégraderait sur la mauvaise base.
+  - **Le rejeu vision se place APRÈS la cascade NOTHINK**, jamais dans
+    `_attempt`. Un endpoint qui rejette `reasoning_effort` échoue dès le premier
+    essai ; imputer cet échec aux images marquerait le (endpoint, modèle)
+    non-vision **à tort**, pour toute la session et pour tous les chemins,
+    générations comprises. On ne suspecte les images qu'après l'échec du dernier
+    essai, celui qui ne porte plus aucun paramètre exotique.
 - **Réglage** : `describeFiles` (storage.js `DEFAULT_SETTINGS`, **défaut
   `true`**, décidé), case dans le drawer réglages (« Descriptions de
   fichiers »), rejoint `settingsFormDirty`. **Pas de model picker** (décidé) :
-  la génération de description utilise le modèle de chat actif
-  (`activeApiConfig`) — le coût de contention multi-modèle est accepté (YAGNI,
-  revisiter seulement si ça gêne en usage réel).
+  la génération de description utilise le modèle de chat actif — `activeModel()`,
+  donc l'override du composer s'il y en a un (cf. ci-dessus ; c'était
+  `activeApiConfig().model` jusqu'au correctif V-9). Le coût de contention
+  multi-modèle est accepté (YAGNI, revisiter seulement si ça gêne en usage réel).
 - **Statut par carte** (`renderSpaceFilesList`/`setFileDescriptionStatus`,
   ui.js) : « description en cours… » sur la ligne d'excerpt + bouton désactivé
   pendant le calcul, puis contenu (`done`) ou retour à l'état neutre avec

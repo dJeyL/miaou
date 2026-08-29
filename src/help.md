@@ -86,6 +86,15 @@ souvent mieux à l'œil que dans le texte qu'on en extrait. Ce n'est pas de la
 reconnaissance de caractères : MIAOU rend la page, c'est le modèle qui la lit —
 un modèle sans vision n'en tire donc rien.
 
+Le même principe joue à l'entrée de la bibliothèque d'un Espace. Quand tu y
+déposes un PDF scanné, dont il n'y a par nature aucun texte à extraire, MIAOU
+en rend la première page et la donne au modèle pour qu'il en écrive la
+description — au lieu de laisser la carte du fichier sans rien. Les **images**
+déposées dans une bibliothèque sont décrites de la même façon, en les donnant à
+voir. Si le modèle actif s'avère ne pas avoir la vision, la description est
+quand même rédigée à partir de ce qui reste (nom, type, structure du document),
+et son modèle est noté comme sans vision pour le reste de la session.
+
 L'image n'est **pas affichée dans le fil** : c'est une matière de travail du
 modèle, et tu as déjà le document d'origine. Seule la trace de l'appel apparaît,
 avec un bouton pour télécharger la page si tu veux la voir. Et si tu veux

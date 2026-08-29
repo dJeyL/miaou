@@ -138,6 +138,39 @@ function injectVisionDegradedNote(messages) {
   return out;
 }
 
+// ── Dégradation vision-less : prédicat et geste UNIQUES (lot V-9) ───────────
+// Les deux chemins qui envoient des content parts image au backend —
+// `streamCompletion` (génération) et `silentCompletion` (appels applicatifs :
+// description de fichier de bibliothèque) — doivent décider de dégrader
+// EXACTEMENT de la même façon. Deux formules séparées divergeraient en
+// silence : un endpoint marqué non-vision par une génération continuerait à
+// recevoir des images depuis l'ingestion d'un PDF scanné, et re-essuierait le
+// même 400 à chaque dépôt de fichier. Un seul prédicat, un seul geste — même
+// discipline que `spaceConvIds` (piège 18) ou `genOwnsScreen` (piège 28).
+//
+// `shouldDegradeVision` répond « faut-il dégrader AVANT tout appel réseau ? »
+// (dégradation proactive : rejet déjà essuyé cette session, ou modèle marqué
+// sans vision à la main). `applyVisionDegradation` applique le geste complet :
+// parts image → descripteurs textuels, plus la note dans <miaou_context>.
+function shouldDegradeVision(messages, url, model, visionDisabled) {
+  return messagesHaveImageParts(messages) && (isVisionRejected(url, model) || !!visionDisabled);
+}
+
+function applyVisionDegradation(messages, descriptors) {
+  return injectVisionDegradedNote(degradeVisionMessages(messages, descriptors));
+}
+
+// Répond « ce 400 est-il imputable aux images, et peut-on tenter UN rejeu
+// dégradé ? ». Marque le (endpoint, modèle) au passage — le flag posé garantit
+// que l'appel récursif prendra la branche proactive plutôt que de re-tenter
+// avec images et reboucler indéfiniment sur un 400 persistant pour une autre
+// raison. Rend true si l'appelant doit rejouer.
+function claimVisionRetry(messages, url, model) {
+  if (!messagesHaveImageParts(messages) || isVisionRejected(url, model)) return false;
+  markVisionRejected(url, model);
+  return true;
+}
+
 const TITLE_PROMPT =
   "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
   "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
@@ -188,11 +221,34 @@ const FILE_DESCRIPTION_PROMPT =
   "préambule, sans guillemets, sans balises Markdown.";
 
 // ── Appel non streamé, résultat exploité en interne (jamais affiché) ────────
+// `messages` peut porter des content parts image (lot V-9 : page rendue d'un PDF
+// scanné, image de bibliothèque) exactement comme le chemin de génération. Les
+// deux dégradations vision-less s'appliquent donc ici aussi, via les MÊMES
+// helpers (shouldDegradeVision / applyVisionDegradation / claimVisionRetry) :
+// proactive quand ce (endpoint, modèle) est déjà connu non-vision ou marqué à la
+// main, réactive sur un 400 essuyé. `o.imageDescriptors` remplace alors les parts
+// image par un équivalent textuel — pour la description de fichier, la matière
+// restante (en-tête PDF, nom, mime) suffit à produire une description honnête,
+// fût-elle « document scanné sans couche texte ». Volatile en mémoire de session
+// uniquement : le flag persistant `server.vision[model]` reste piloté à la main
+// par l'utilisateur, ce chemin ne l'écrit jamais.
 async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
   const cfg = Object.assign({}, loadSettings(), activeApiConfig());
   const url = cfg.url;
+  // `o.model` : modèle EXPLICITE choisi par l'appelant, sinon celui du serveur
+  // actif. Sert aux appels applicatifs qui doivent suivre le modèle que
+  // l'utilisateur voit comme actif — l'override du composer est reflété dans la
+  // pilule, donc décrire un fichier avec le modèle par défaut du serveur
+  // contredirait ce que l'écran annonce (retour utilisateur, lot V-9). Titrage
+  // et résumé ne le passent pas : ils restent sur le modèle du serveur.
+  const model = (o.model && o.model.trim()) || cfg.model;
+
+  let payload = messages;
+  if (shouldDegradeVision(payload, url, model, o.visionDisabled)) {
+    payload = applyVisionDegradation(payload, o.imageDescriptors);
+  }
 
   // Garde-fou : un endpoint qui accepte la connexion puis se tait laisserait le
   // fetch pendre indéfiniment, et avec lui l'indicateur d'activité (le finally de
@@ -209,7 +265,7 @@ async function silentCompletion(messages, opts) {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + (cfg.key || 'no-key'),
         },
-        body: JSON.stringify({ model: cfg.model, messages, stream: false, temperature, ...extra }),
+        body: JSON.stringify({ model, messages: payload, stream: false, temperature, ...extra }),
         signal: ctrl.signal,
       });
       if (!res.ok) throw new Error('silentCompletion ' + res.status);
@@ -220,20 +276,37 @@ async function silentCompletion(messages, opts) {
     }
   };
 
-  if (!_noThinkRejected[url]) {
-    try {
-      return await _attempt(NOTHINK_PARAMS);
-    } catch (_) {
-      // Assumé : ce catch marque l'endpoint rejetant même sur un timeout/panne
-      // réseau transitoire (pas seulement un vrai rejet du param), perdant le
-      // no-think pour la session par excès de prudence. Dégradation douce
-      // (retry direct juste après, se réactive sur les appels suivants) —
-      // pas affiné tant qu'aucun cas réel n'a montré le besoin.
-      _noThinkRejected[url] = true;
+  // Cascade NOTHINK, puis — SEULEMENT une fois celle-ci épuisée — l'hypothèse
+  // vision. L'ordre est impératif : un endpoint qui rejette reasoning_effort
+  // échoue dès le PREMIER _attempt, et imputer cet échec aux images marquerait
+  // le (endpoint, modèle) non-vision à tort, définitivement pour la session et
+  // pour TOUS les chemins, générations comprises. On ne suspecte donc les images
+  // qu'après un échec du dernier essai, celui qui ne porte plus aucun paramètre
+  // exotique.
+  const _cascade = async () => {
+    if (!_noThinkRejected[url]) {
+      try {
+        return await _attempt(NOTHINK_PARAMS);
+      } catch (_) {
+        // Assumé : ce catch marque l'endpoint rejetant même sur un timeout/panne
+        // réseau transitoire (pas seulement un vrai rejet du param), perdant le
+        // no-think pour la session par excès de prudence. Dégradation douce
+        // (retry direct juste après, se réactive sur les appels suivants) —
+        // pas affiné tant qu'aucun cas réel n'a montré le besoin.
+        _noThinkRejected[url] = true;
+      }
     }
     return await _attempt({});
+  };
+
+  try {
+    return await _cascade();
+  } catch (e) {
+    // UN seul rejeu dégradé — le flag posé par claimVisionRetry fait prendre la
+    // branche proactive à l'appel récursif, qui ne peut donc pas reboucler.
+    if (claimVisionRetry(payload, url, model)) return silentCompletion(messages, opts);
+    throw e;
   }
-  return await _attempt({});
 }
 
 // ── Parsing SSE ─────────────────────────────────────────────────────────────
@@ -391,8 +464,8 @@ async function streamCompletion(messages, opts) {
   //    serverModelVisionEnabled). Nécessaire car Ollama ne renvoie AUCUN 400
   //    sur un modèle sans projecteur vision (F1) : le chemin réactif ne peut pas
   //    l'attraper, seul le réglage manuel le déclenche.
-  if (messagesHaveImageParts(body.messages) && (isVisionRejected(cfg.url, model) || o.visionDisabled)) {
-    body.messages = injectVisionDegradedNote(degradeVisionMessages(body.messages, o.imageDescriptors));
+  if (shouldDegradeVision(body.messages, cfg.url, model, o.visionDisabled)) {
+    body.messages = applyVisionDegradation(body.messages, o.imageDescriptors);
   }
 
   // Controller de CE stream. Publié sur la génération (o.gen) pour qu'un abort
@@ -435,8 +508,7 @@ async function streamCompletion(messages, opts) {
       // rejeu : le flag posé AVANT l'appel récursif garantit que celui-ci
       // prend la branche proactive plutôt que de re-tenter avec images et
       // reboucler indéfiniment sur un 400 persistant pour une autre raison.
-      if (messagesHaveImageParts(body.messages) && !isVisionRejected(cfg.url, model)) {
-        markVisionRejected(cfg.url, model);
+      if (claimVisionRetry(body.messages, cfg.url, model)) {
         return streamCompletion(messages, opts);
       }
       throw new Error('HTTP ' + res.status + await readErrorDetail(res));

@@ -2164,7 +2164,15 @@ async function describeXlsxForLibrary(u8, maxChars) {
 // Pas de console.warn ici (leçon U-1) : un warn sur un chemin d'infrastructure
 // achète du silence, pas de la robustesse. L'échec se voit à la description
 // absente, qui est l'information utile.
-async function describePdfForLibrary(u8, maxChars) {
+// `out` (objet optionnel fourni par l'appelant) est le canal de retour ANNEXE du
+// lot V-9 : la fonction y pose `scanned: true` quand la première page ne rend
+// AUCUN texte alors que le document a bien une page — signature d'un PDF scanné,
+// dont l'extraction texte ne donnera jamais rien. Un objet muté plutôt qu'un type
+// de retour élargi : `DOC_DESCRIBERS` (tools.js) est une table dont toutes les
+// entrées rendent `string|null`, et faire diverger le PDF seul obligerait chaque
+// consommateur de la table à connaître l'exception. L'appelant qui veut le signal
+// passe l'objet ; les autres ne changent pas d'une ligne.
+async function describePdfForLibrary(u8, maxChars, out) {
   let doc = null;
   try {
     const lib = await ensurePdfJs();   // ui.js
@@ -2192,8 +2200,9 @@ async function describePdfForLibrary(u8, maxChars) {
         try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
       }
     }
-    const out = first ? head + '\n\nPremière page :\n' + first : head;
-    return out.slice(0, maxChars);
+    if (!first && doc.numPages > 0 && out) out.scanned = true;
+    const text = first ? head + '\n\nPremière page :\n' + first : head;
+    return text.slice(0, maxChars);
   } catch (e) {
     return null;   // dégradé, jamais bloquant
   } finally {

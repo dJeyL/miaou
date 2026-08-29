@@ -3283,6 +3283,61 @@ async function summarizeIfNeeded(id) {
 // solliciter excessivement le modèle actif sur un document volumineux.
 const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
 
+// Identité textuelle d'un fichier de bibliothèque, pour accompagner une image
+// envoyée au modèle (lot V-9). PURE et testable : dérivée des seuls champs figés
+// du record (name, mime, size), aucun octet lu, aucune date — la description
+// atterrit dans le manifeste <miaou_context>, qui doit rester byte-stable
+// (piège 16). Sert de matière RESTANTE quand le backend refuse l'image : sans
+// elle, le rejeu dégradé n'aurait plus rien à décrire du tout.
+function formatLibraryFileHeadline(record) {
+  const r = record || {};
+  return 'Fichier image « ' + (r.name || 'sans nom') + ' », ' +
+    (r.mime || 'image') + ', ' + humanSize(r.size || (r.data && r.data.byteLength) || 0) + '.';
+}
+
+// Descripteur textuel de l'image jointe à une demande de description (lot V-9),
+// substitué à la part image_url sur un rejeu vision-less. DISTINCT de
+// formatAttachmentDescriptor / formatBinaryAttachmentDescriptor (resources.js) :
+// ceux-là portent un `attId` et promettent un rappel via
+// miaou__recall_attachment — or un fichier de bibliothèque décrit à l'ingestion
+// n'a aucun attachment de conversation, et promettre un handle inexistant ferait
+// exactement l'erreur « capacité annoncée sans handle ». Ici on décrit ce que
+// l'image ÉTAIT, sans rien promettre.
+function formatDescriptionImageDescriptor(kind) {
+  return kind === 'pdf-page'
+    ? "[image : rendu de la première page du document, non transmissible à ce " +
+      "modèle/endpoint — le document est scanné, il n'a aucune couche texte exploitable]"
+    : "[image : contenu du fichier, non transmissible à ce modèle/endpoint]";
+}
+
+// Produit l'image à joindre à la demande de description, ou null s'il n'y en a
+// pas lieu (fichier texte, PDF portant une couche texte…) ou si son rendu échoue.
+// Deux sources, une seule forme de retour : l'image de bibliothèque est déjà des
+// octets d'image (base64 direct, aucun canvas — le modèle n'a pas besoin d'un
+// ré-encodage PNG de ce qui est déjà un JPEG) ; le PDF scanné passe par
+// renderPdfPageImage (docs.js), la MÊME fonction que docs__render_page du lot
+// V-8 — un second chemin de rendu divergerait en silence sur les caps et les
+// échelles de dégradation.
+async function libraryDescriptionImage(record, isImage, scanned) {
+  try {
+    if (isImage) {
+      return {
+        dataUrl: 'data:' + (record.mime || 'image/png') + ';base64,' + arrayBufferToBase64(record.data),
+        descriptor: formatDescriptionImageDescriptor('file'),
+      };
+    }
+    if (!scanned) return null;
+    // Page 1 seulement : c'est une description, pas une lecture — même borne que
+    // describePdfForLibrary, qui ne regarde jamais au-delà de la première page.
+    const out = await renderPdfPageImage(new Uint8Array(record.data), record, 1);
+    if (!out || out.fail || !out.dataUrl) return null;   // cap dépassé, moteur absent : texte seul
+    return { dataUrl: out.dataUrl, descriptor: formatDescriptionImageDescriptor('pdf-page') };
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] libraryDescriptionImage:', e && e.message);
+    return null;
+  }
+}
+
 // Trigger à l'INGESTION (upload direct D2 path 1, promotion utilisateur D2
 // path 2), jamais un daemon — pas de queue/retry (D7 : dégradé, jamais
 // bloquant). PAS appelé pour la promotion modèle (D2 path 3, files__promote) :
@@ -3290,31 +3345,72 @@ const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
 // confirmé), cette fonction ne s'applique qu'aux deux chemins SANS
 // description d'origine. Gouverné par le toggle describeFiles (défaut ON) —
 // no-op silencieux si OFF (pas de statut "désactivé" par carte, juste
-// l'absence de description, comme un échec ordinaire). Image : skip v1 (pas
-// de modèle vision dédié, décision D7). `force` (action manuelle
+// l'absence de description, comme un échec ordinaire). `force` (action manuelle
 // « Régénérer la description » d'une carte, cf. renderSpaceFilesList) : ignore
 // le toggle ET une description déjà présente — sinon (trigger d'ingestion), les deux
 // court-circuitent silencieusement (pas un échec, juste un no-op).
+//
+// Lot V-9 — deux fichiers dont l'extraction texte ne donne RIEN par nature sont
+// désormais décrits par l'image plutôt que d'échouer : le PDF scanné (aucune
+// couche texte, `out.scanned` remonté par describePdfForLibrary) et l'image de
+// bibliothèque (le skip « v1, pas de modèle vision dédié » de D7 est levé — le
+// modèle actif est le même que celui qui décrit une page rendue en conversation
+// depuis V-8, il n'y a plus de raison de le tenir pour aveugle a priori).
+// C'est le MÊME principe qu'au lot V-8 (docs__render_page) : quand le texte
+// manque, on donne la page à voir. Si le backend refuse l'image, silentCompletion
+// dégrade et rejoue sans elle (helpers partagés d'api.js) — le modèle décrit
+// alors ce qui reste, fût-ce pour dire qu'il n'a pas de matière ; ce n'est pas un
+// échec de description.
 async function describeFileIfNeeded(fileId, onStatus, force) {
   if (!force && !loadSettings().describeFiles) return;
   const record = await getResource(fileId);
   if (!record || record.kind !== 'library') return;
   if (!force && record.description) return;
-  if (record.mime && record.mime.startsWith('image/')) return;   // skip v1, pas d'erreur
 
   if (onStatus) onStatus('loading');
+  const isImage = !!(record.mime && record.mime.startsWith('image/'));
+  const probe = {};
   let text = null;
-  if (record.class === 'inline') {
+  if (isImage) {
+    // Rien à extraire : l'image EST le contenu. Le texte d'accompagnement se
+    // limite à son identité, comme l'en-tête d'un PDF.
+    text = formatLibraryFileHeadline(record);
+  } else if (record.class === 'inline') {
     text = utf8Decode(record.data).slice(0, FILE_DESCRIPTION_EXTRACT_MAX_CHARS);
   } else {
-    text = await extractBinaryFileTextForDescription(record, FILE_DESCRIPTION_EXTRACT_MAX_CHARS);
+    text = await extractBinaryFileTextForDescription(record, FILE_DESCRIPTION_EXTRACT_MAX_CHARS, probe);
   }
   if (!text) { if (onStatus) onStatus('failed'); return; }   // pas d'outil qualifiant, ou extraction vide
 
+  // Image à joindre, s'il y en a une à produire. Un échec de rendu (page trop
+  // lourde, pdf.js indisponible) retombe sur le chemin texte seul plutôt que
+  // d'abandonner : dégradé, jamais bloquant, comme tout ce chemin d'ingestion.
+  const image = await libraryDescriptionImage(record, isImage, probe.scanned);
+  const content = image
+    ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: image.dataUrl } }]
+    : text;
+
+  const descModel = activeModel();
   const description = await runBackgroundTask('description de fichier…', () => silentCompletion([
     { role: 'system', content: FILE_DESCRIPTION_PROMPT },
-    { role: 'user', content: text },
-  ], { temperature: 0.2, timeout: 60000 }));
+    { role: 'user', content },
+  ], {
+    temperature: 0.2,
+    timeout: 60000,
+    // Le modèle COURANT (`activeModel()`, override du composer inclus), pas le
+    // modèle par défaut du serveur : c'est celui que la pilule annonce comme
+    // actif, et l'utilisateur attend que ce soit lui qui décrive (retour
+    // utilisateur, lot V-9). Il faut donc le passer explicitement —
+    // silentCompletion retomberait sinon sur activeApiConfig().model.
+    model: descModel,
+    // Dégradation vision-less : le descripteur remplace la part image sur le
+    // rejeu. Volatile — `visionDisabled` vient du réglage manuel du serveur
+    // actif (serverModelVisionEnabled), jamais réécrit par ce chemin. Interrogé
+    // sur le MÊME modèle que celui qui répondra : un flag vision lu sur une
+    // autre ligne que le modèle appelé dégraderait sur la mauvaise base.
+    imageDescriptors: image ? [image.descriptor] : null,
+    visionDisabled: !serverModelVisionEnabled(activeApiServer(), descModel),
+  }));
   if (!description) { if (onStatus) onStatus('failed'); return; }
 
   record.description = capFileDescription(description);

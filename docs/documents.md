@@ -357,6 +357,15 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   la conversation. (La **vignette et le lightbox** faisaient partie de cet
   héritage jusqu'à la décision d'affichage ci-dessous : le bloc image n'est plus
   posé pour ce producteur, seul l'ack reste.)
+- **Deuxième consommateur de `renderPdfPageImage` (lot V-9)** : la description
+  d'un PDF **scanné déposé dans la bibliothèque d'un Espace** appelle la même
+  fonction, hors de toute conversation et sans passer par le chemin des pièces
+  jointes (il n'y a ni `attId`, ni thread, ni ack — l'image ne sert qu'à un
+  `silentCompletion` applicatif, jamais au contexte d'une conversation). Ce qui
+  reste partagé est le **rendu** : caps, échelles de dégradation, refus explicite
+  au-delà de `PDF_RENDER_MAX_B64`. Un second chemin de rendu aurait divergé en
+  silence sur ces trois points. Détail du chemin de description :
+  `docs/spaces.md`, section « Descriptions de fichiers ».
 - **`origin: 'docs_render'` distingue les deux producteurs du même kind**, et ne
   gouverne **que l'affichage** — libellé (`docsRenderAckHead`, docs.js, pur),
   icône (`ICON_IMAGE` vs `ICON_EYE`) et **présence à l'export** (ci-dessous),

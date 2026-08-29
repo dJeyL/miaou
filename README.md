@@ -110,9 +110,14 @@ Figtree/Fira Code).
   prompt système sans le remplacer.
 - Suppression d'un Space : cascade explicite à double confirmation.
 - **Bibliothèque de fichiers par Space** : fichiers persistants et hermétiques,
-  accessibles au modèle en lecture seule. Trois façons de l'alimenter — upload
-  direct, promotion d'une pièce jointe déjà envoyée, ou promotion proposée par le
-  modèle (toujours soumise à confirmation).
+  accessibles au modèle en lecture seule. On l'alimente par upload direct,
+  promotion d'une pièce jointe déjà envoyée, promotion proposée par le modèle
+  (toujours soumise à confirmation), ou dépôt par le modèle d'un fichier qu'il
+  vient de produire.
+- Un fichier déposé est **décrit automatiquement** pour que le modèle sache s'il
+  vaut la peine d'être ouvert. Quand il n'y a pas de texte à extraire — PDF
+  scanné, image —, l'image est donnée à voir au modèle, avec repli sur une
+  description sans image si le modèle s'avère sans vision.
 
 Détail : [docs/spaces.md](docs/spaces.md).
 

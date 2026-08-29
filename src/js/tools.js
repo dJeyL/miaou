@@ -2385,7 +2385,11 @@ function findDocsInflationTool() {
 // isolé, une valeur stable par fichier suffit à ne pas collisionner. Retourne
 // le texte extrait (tronqué au cap fourni) ou null si aucun outil ne qualifie
 // ou si l'appel échoue (dégradé, jamais bloquant — cf. D7 "pas de queue/retry").
-async function extractBinaryFileTextForDescription(record, maxChars) {
+// `out` (objet optionnel) : canal de retour annexe traversant, lot V-9. Passé tel
+// quel au describer de la table ; seul le PDF y écrit aujourd'hui (`scanned`),
+// et un describer qui l'ignore ne change rien. L'appelant (describeFileIfNeeded)
+// s'en sert pour décider s'il vaut la peine de rendre une image de la page 1.
+async function extractBinaryFileTextForDescription(record, maxChars, out) {
   // Bifurcation par type EN AMONT du chemin serveur (lot V-1, §6 du brief) :
   // une archive zip se décrit par la LISTE de son contenu (noms + tailles
   // décompressées indicatives), jamais par le contenu d'un membre — décision
@@ -2427,7 +2431,7 @@ async function extractBinaryFileTextForDescription(record, maxChars) {
   }
 
   if (describer) {
-    const text = await describer(u8, maxChars);
+    const text = await describer(u8, maxChars, out);
     if (text) return text;
     // Échec de lazy-load ou document illisible : on RETOMBE sur le chemin
     // serveur plutôt que d'abandonner. Un serveur branché sait peut-être le
