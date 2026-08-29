@@ -20,16 +20,30 @@
 // Test décisif pour toute fonction future : « si le lot V n'existait pas, cette
 // fonction aurait-elle encore une raison d'être ? » Oui → utils.js. Non → ici.
 //
-// LA DÉPENDANCE EST À SENS UNIQUE : docs.js appelle utils.js, jamais l'inverse.
-// Un cycle serait le découpage bâclé que V-5-PLAN redoutait — deux fichiers qui
-// se référencent mutuellement, pire que l'état d'avant. C'est ce qui justifie
-// que docsUnsupportedFormatMessage soit RESTÉE dans tools.js : elle lit le
-// registre MCP (findDocsInflationTool), et répond à « quel outil serveur est
-// branché ? », pas à « comment lire ce document ? ».
+// L'INVARIANT DE DÉPENDANCE, formulé exactement (relecture 2026-08-29) :
+// AUCUNE fonction restée dans utils.js n'appelle une fonction de docs.js.
+// C'est CE sens-là qui est gardé, et c'est lui qui empêche le découpage bâclé
+// que V-5-PLAN redoutait — deux fichiers en amont l'un de l'autre, pire que
+// l'état d'avant. Vérifiable par grep, et vérifié : zéro occurrence.
+//
+// Ce n'est PAS « docs.js n'appelle que utils.js ». Le domaine s'appuie sur des
+// fonctions déclarées PLUS BAS dans JS_ORDER, toutes depuis des corps de
+// fonction (runtime, après chargement complet) — c'est légal et voulu :
+//   - tools.js : toolFail, _pendingToolAcks, docsUnsupportedFormatMessage ;
+//   - resources.js : humanSize ;
+//   - ui.js : ensureFflate / ensurePdfJs / ensureSheetJs / ensureMammoth.
+// Un grep « docs.js ne cite aucun symbole aval » sortirait donc rouge sans
+// qu'il y ait la moindre régression : ne pas le lire comme tel.
+//
+// C'est aussi ce qui justifie que docsUnsupportedFormatMessage soit RESTÉE
+// dans tools.js : elle lit le registre MCP (findDocsInflationTool), et répond
+// à « quel outil serveur est branché ? », pas à « comment lire ce document ? ».
+// La raison est le DOMAINE, pas un interdit d'appel — docs.js l'appelle bien.
 //
 // Position dans JS_ORDER : juste après utils.js, avant tous ses consommateurs
 // (tools.js, ui.js, main.js). L'ordre n'a pas d'effet fonctionnel — tout est
-// global et hoisté — mais il documente la couche.
+// global et hoisté — mais il documente la couche : ce qui est EN AMONT de
+// docs.js se limite à utils.js, et c'est ça que l'invariant protège.
 //
 // Ce que ce fichier ne porte PAS, délibérément :
 //   - les schémas d'outils docs__* (registre TOOLS, tools.js — une liste unique
@@ -1209,7 +1223,7 @@ const MAX_DOCX_SECTION_CHARS = 18000;
 // Table de dispatch des lecteurs de documents NATIFS (lot V-4). La STRUCTURE est
 // le sujet, pas le contenu : docs__list ne peut plus se contenter de « le parsing
 // zip a rendu null, donc ce n'est pas une archive » dès qu'il y a deux familles
-// de format. Chaque clé est un type rendu par sniffDocumentKind (utils.js, pur).
+// de format. Chaque clé est un type rendu par sniffDocumentKind (pur).
 //
 // Elle est aussi la SOURCE UNIQUE de « quels formats MIAOU ouvre-t-il seul ? » :
 // docsUnsupportedFormatMessage en dérive son libellé au lieu de le recopier —
@@ -1267,7 +1281,7 @@ function listZipDocument(u8, record, ref) {
     kind: 'docs_list', handle: ref, resourceName: record.name,
     count: entries.filter(e => !e.directory).length,
   });
-  return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   // utils.js, pur
+  return formatZipListing(entries, { maxBytes: MAX_INLINE_BYTES });   // pur, plus haut dans ce fichier
 }
 
 // Ouverture d'un PDF par pdf.js. Facteur commun de listPdfDocument et
@@ -1314,11 +1328,23 @@ async function openPdfDocument(u8, record, toolName) {
 }
 
 // Lecteur `list` du PDF — entrée pdf de DOC_READERS (lot V-4).
-// Rend le compte de pages, les métadonnées et le sommaire. getOutline() est
-// l'équivalent exact de doc.get_toc() de pymupdf : rien n'est perdu face au
-// serveur. Les métadonnées sont un GAIN (le serveur n'en rend aucune) — le
-// producteur en particulier oriente la lecture, un PDF sorti de PowerPoint ne
-// se lit pas comme un rapport LaTeX.
+// Rend le compte de pages, les métadonnées et le sommaire. Les métadonnées sont
+// un GAIN (le serveur n'en rend aucune) — le producteur en particulier oriente
+// la lecture, un PDF sorti de PowerPoint ne se lit pas comme un rapport LaTeX.
+//
+// ÉCART DE PARITÉ CONNU, à instruire en V-8 (relevé à la relecture 2026-08-29).
+// Le commentaire disait ici « getOutline() est l'équivalent exact de get_toc()
+// de pymupdf, rien n'est perdu » — c'est FAUX sur un point : get_toc() rend des
+// triplets (level, title, PAGE) et le serveur imprime « - p.42 Titre »
+// (mcp_docs/formats.py, pdf_list). getOutline() rend un arbre dont chaque nœud
+// porte une DESTINATION (`dest`), pas un numéro : le résoudre demande un
+// doc.getPageIndex(dest) par entrée. Le champ `page` est donc posé à 0 plus
+// bas, et formatPdfListing traite 0 comme « pas de numéro » et omet le préfixe.
+// Conséquence : le sommaire natif donne la hiérarchie et les titres, PAS les
+// pages — or c'est le numéro qui permet d'enchaîner sur le bon docs__read.
+// Ni un bug (le rendu est correct et le champ câblé), ni un choix documenté :
+// un trou. Ne pas le « corriger » à la volée sans mesurer le coût des N
+// getPageIndex sur un gros sommaire — c'est ce que V-8 doit trancher.
 async function listPdfDocument(u8, record, ref) {
   const opened = await openPdfDocument(u8, record, 'docs__list');
   if (opened.fail) return opened.fail;
@@ -1342,6 +1368,9 @@ async function listPdfDocument(u8, record, ref) {
       const cur = stack.pop();
       const n = cur.node;
       if (!n) continue;
+      // page: 0 → formatPdfListing omet le préfixe « p.N ». Le numéro n'est
+      // pas dans le nœud (il porte `dest`, à résoudre par getPageIndex) : c'est
+      // l'écart de parité décrit en tête de cette fonction, à instruire en V-8.
       flat.push({ level: cur.level, title: n.title, page: 0 });
       const kids = n.items || [];
       for (let i = kids.length - 1; i >= 0; i--) stack.push({ node: kids[i], level: cur.level + 1 });
@@ -1349,7 +1378,7 @@ async function listPdfDocument(u8, record, ref) {
     _pendingToolAcks.push({
       kind: 'docs_list', handle: ref, resourceName: record.name, count: pages,
     });
-    return formatPdfListing({          // utils.js, pur
+    return formatPdfListing({          // pur, plus haut dans ce fichier
       pages, outline: flat,
       title: info.Title, author: info.Author, producer: info.Producer,
     });
@@ -1371,14 +1400,14 @@ async function readPdfDocument(u8, record, ref, selector) {
   if (opened.fail) return opened.fail;
   const doc = opened.doc;
   try {
-    const range = parsePageSelector(selector, doc.numPages);   // utils.js, pur
+    const range = parsePageSelector(selector, doc.numPages);   // pur, plus haut dans ce fichier
     if (!range.ok) return toolFail('docs__read', range.message);
     const pages = [];
     for (let n = range.start; n <= range.end; n++) {
       const page = await doc.getPage(n);
       try {
         const tc = await page.getTextContent();
-        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   // utils.js, pur
+        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   // pur, plus haut dans ce fichier
       } finally {
         try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
       }
@@ -1388,7 +1417,7 @@ async function readPdfDocument(u8, record, ref, selector) {
     // sait pas ce qu'est une unité de ce format-ci, et une feuille Excel ne se
     // nomme ni ne se dénombre comme une page. Un lecteur qui ne les fournirait
     // pas laisserait le handler inventer un libellé faux.
-    return {   // utils.js, purs
+    return {   // purs, plus haut dans ce fichier
       text: formatPdfRead(pages, { notice: range.notice }),
       label: range.start + '-' + range.end,
       resourceName: pdfReadResourceName(record.name, range.start, range.end),
@@ -1452,7 +1481,7 @@ async function listXlsxDocument(u8, record, ref) {
   for (const name of wb.SheetNames) {
     const sh = wb.Sheets[name];
     const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-    const r = refA1 ? parseA1Range(refA1) : null;   // utils.js, pur
+    const r = refA1 ? parseA1Range(refA1) : null;   // pur, plus haut dans ce fichier
     sheets.push({
       name: name,
       ref: refA1,
@@ -1463,7 +1492,7 @@ async function listXlsxDocument(u8, record, ref) {
   _pendingToolAcks.push({
     kind: 'docs_list', handle: ref, resourceName: record.name, count: sheets.length,
   });
-  return formatXlsxListing(sheets);   // utils.js, pur
+  return formatXlsxListing(sheets);   // pur, plus haut dans ce fichier
 }
 
 // Lecteur `read` du xlsx (lot V-5). Le selector est 'Feuille' ou
@@ -1480,7 +1509,7 @@ async function readXlsxDocument(u8, record, ref, selector) {
   if (opened.fail) return opened.fail;
   const wb = opened.wb, lib = opened.lib;
 
-  const sel = parseSheetSelector(selector, wb.SheetNames);   // utils.js, pur
+  const sel = parseSheetSelector(selector, wb.SheetNames);   // pur, plus haut dans ce fichier
   if (!sel.ok) return toolFail('docs__read', sel.message);
 
   const sheet = wb.Sheets[sel.sheet];
@@ -1495,7 +1524,7 @@ async function readXlsxDocument(u8, record, ref, selector) {
     };
   }
 
-  const restricted = restrictSheetRange(sheetRef, sel.range);   // utils.js, pur
+  const restricted = restrictSheetRange(sheetRef, sel.range);   // pur, plus haut dans ce fichier
   if (restricted.fail) return toolFail('docs__read', restricted.fail);
 
   // Le clone est SUPERFICIEL et volontairement : les cellules sont partagées,
@@ -1505,7 +1534,7 @@ async function readXlsxDocument(u8, record, ref, selector) {
   const csv = lib.utils.sheet_to_csv(view);
 
   return {
-    text: formatXlsxRead(csv, {          // utils.js, pur
+    text: formatXlsxRead(csv, {          // pur, plus haut dans ce fichier
       sheet: sel.sheet, ref: restricted.ref,
       // Le cap de lignes ne mord QUE sans plage explicite (cf. la constante).
       maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
@@ -1563,8 +1592,8 @@ async function openDocxDocument(u8, record, toolName) {
       'une version non protégée si c\'est le cas.') };
   }
 
-  const blocks = docxHtmlToBlocks(html);        // utils.js, pur
-  const sections = docxSections(blocks);        // utils.js, pur
+  const blocks = docxHtmlToBlocks(html);        // pur, plus haut dans ce fichier
+  const sections = docxSections(blocks);        // pur, plus haut dans ce fichier
   let tables = 0;
   for (const b of blocks) { if (b && b.type === 'table') tables++; }
   return { blocks: blocks, sections: sections, tables: tables };
@@ -1581,7 +1610,7 @@ async function listDocxDocument(u8, record, ref) {
   _pendingToolAcks.push({
     kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.sections.length,
   });
-  return formatDocxListing(opened.sections, { tables: opened.tables });   // utils.js, pur
+  return formatDocxListing(opened.sections, { tables: opened.tables });   // pur, plus haut dans ce fichier
 }
 
 // Lecteur `read` du docx (lot V-5, étape 2). Le selector est le TITRE d'une
@@ -1605,11 +1634,11 @@ async function readDocxDocument(u8, record, ref, selector) {
   const opened = await openDocxDocument(u8, record, 'docs__read');
   if (opened.fail) return opened.fail;
 
-  const res = resolveDocxSection(selector, opened.sections);   // utils.js, pur
+  const res = resolveDocxSection(selector, opened.sections);   // pur, plus haut dans ce fichier
   if (!res.ok) return toolFail('docs__read', res.message);
 
   return {
-    text: formatDocxRead(res.section, { maxChars: MAX_DOCX_SECTION_CHARS }),   // utils.js, pur
+    text: formatDocxRead(res.section, { maxChars: MAX_DOCX_SECTION_CHARS }),   // pur, plus haut dans ce fichier
     // Le label est le titre CANONIQUE de la section (celui du listing), pas le
     // selector brut : un modèle qui a visé par préfixe ou à la casse près doit
     // lire dans l'ack ce qui a RÉELLEMENT été servi.
@@ -1668,13 +1697,13 @@ async function openPptxDocument(u8, record, toolName) {
   const dec = new TextDecoder();
   const txt = (name) => (files[name] ? dec.decode(files[name]) : '');
 
-  // Ordre RÉEL, jamais l'ordre des fichiers (pptxSlideOrder, utils.js, pur et
+  // Ordre RÉEL, jamais l'ordre des fichiers (pptxSlideOrder, pur et
   // testé) — la garde critique du format. Le fallback est le tri NUMÉRIQUE des
   // pièces : 'slide10.xml' < 'slide9.xml' en tri lexical, et un deck de plus de
   // neuf slides sortirait mélangé sans que rien ne le signale.
   const present = Object.keys(files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
   present.sort((a, b) => (parseInt(a.replace(/\D+/g, ''), 10) || 0) - (parseInt(b.replace(/\D+/g, ''), 10) || 0));
-  const ordered = pptxSlideOrder(txt('ppt/presentation.xml'),   // utils.js, pur
+  const ordered = pptxSlideOrder(txt('ppt/presentation.xml'),   // pur, plus haut dans ce fichier
     txt('ppt/_rels/presentation.xml.rels'), present)
     .filter((n) => !!files[n]);   // un sldId pointant une pièce absente du zip
 
@@ -1694,10 +1723,10 @@ async function openPptxDocument(u8, record, toolName) {
     if (!title) untitled++;
 
     // La note se trouve par les RELS de la slide, jamais par son numéro
-    // (pptxNotesTarget, utils.js, pur) : notesSlide3.xml n'est pas
+    // (pptxNotesTarget, pur) : notesSlide3.xml n'est pas
     // nécessairement la note de la troisième slide affichée.
     const relsName = name.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
-    const notesPath = pptxNotesTarget(txt(relsName));   // utils.js, pur
+    const notesPath = pptxNotesTarget(txt(relsName));   // pur, plus haut dans ce fichier
     let notes = '';
     if (notesPath && files[notesPath]) {
       const nd = parser.parseFromString(txt(notesPath), 'application/xml');
@@ -1822,7 +1851,7 @@ async function listPptxDocument(u8, record, ref) {
   _pendingToolAcks.push({
     kind: 'docs_list', handle: ref, resourceName: record.name, count: opened.slides.length,
   });
-  return formatPptxListing(opened.slides, { untitled: opened.untitled });   // utils.js, pur
+  return formatPptxListing(opened.slides, { untitled: opened.untitled });   // pur, plus haut dans ce fichier
 }
 
 // Lecteur `read` du pptx (lot V-5, étape 3). Le selector est le NUMÉRO d'une
@@ -1843,7 +1872,7 @@ async function readPptxDocument(u8, record, ref, selector) {
   const all = opened.slides;
   if (!all.length) return toolFail('docs__read', 'Cette présentation ne contient aucune slide lisible.');
 
-  const sel = parsePageSelector(selector, all.length);   // utils.js, pur
+  const sel = parsePageSelector(selector, all.length);   // pur, plus haut dans ce fichier
   if (!sel.ok) return toolFail('docs__read', sel.message);
 
   const picked = [];
@@ -1859,12 +1888,12 @@ async function readPptxDocument(u8, record, ref, selector) {
   return {
     // La notice de clamp part AVEC le texte (comme pour le PDF) : une plage
     // ramenée en silence ferait conclure au modèle que le deck s'arrête là.
-    text: formatPptxRead(picked, { notice: sel.notice }),   // utils.js, pur
+    text: formatPptxRead(picked, { notice: sel.notice }),   // pur, plus haut dans ce fichier
     // Le label porte les bornes EFFECTIVEMENT servies (parsePageSelector clampe),
     // pas la demande brute : un ack qui annonce la demande ment dès qu'un clamp
     // a mordu — même règle que pour la plage de cellules d'une feuille.
     label: sel.start + '-' + sel.end,
-    resourceName: pptxReadResourceName(record.name, sel.start, sel.end),   // utils.js, pur
+    resourceName: pptxReadResourceName(record.name, sel.start, sel.end),   // pur, plus haut dans ce fichier
   };
 }
 // Description d'un classeur Excel pour la bibliothèque (lot V-5, étape 1).
@@ -1890,11 +1919,11 @@ async function describeXlsxForLibrary(u8, maxChars) {
     for (const name of wb.SheetNames) {
       const sh = wb.Sheets[name];
       const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-      const r = refA1 ? parseA1Range(refA1) : null;   // utils.js, pur
+      const r = refA1 ? parseA1Range(refA1) : null;   // pur, plus haut dans ce fichier
       sheets.push({ name: name, ref: refA1,
         rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 });
     }
-    const head = formatXlsxListing(sheets);   // utils.js, pur
+    const head = formatXlsxListing(sheets);   // pur, plus haut dans ce fichier
 
     // Aperçu : les premières lignes de la première feuille NON VIDE. Le clone à
     // !ref restreint est le même geste que readXlsxDocument — et pour la même
@@ -1906,7 +1935,7 @@ async function describeXlsxForLibrary(u8, maxChars) {
       if (!full) continue;
       const end = Math.min(full.e.r, full.s.r + 9);   // 10 lignes au plus
       const view = Object.assign({}, wb.Sheets[sh.name], {
-        '!ref': formatA1Range({ s: full.s, e: { r: end, c: full.e.c } }),   // utils.js, pur
+        '!ref': formatA1Range({ s: full.s, e: { r: end, c: full.e.c } }),   // pur, plus haut dans ce fichier
       });
       const csv = String(lib.utils.sheet_to_csv(view) || '').replace(/\n+$/, '');
       if (csv) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + csv; }
@@ -1944,7 +1973,7 @@ async function describePdfForLibrary(u8, maxChars) {
     for (const n of (outline || [])) {
       if (n && n.title) flat.push({ level: 1, title: n.title, page: 0 });
     }
-    const head = formatPdfListing({          // utils.js, pur
+    const head = formatPdfListing({          // pur, plus haut dans ce fichier
       pages: doc.numPages, outline: flat,
       title: info.Title, author: info.Author, producer: info.Producer,
     });
@@ -1954,7 +1983,7 @@ async function describePdfForLibrary(u8, maxChars) {
       const page = await doc.getPage(1);
       try {
         const tc = await page.getTextContent();
-        first = joinPdfTextItems(tc && tc.items).trim();   // utils.js, pur
+        first = joinPdfTextItems(tc && tc.items).trim();   // pur, plus haut dans ce fichier
       } finally {
         try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
       }
@@ -1978,7 +2007,7 @@ async function describeDocxForLibrary(u8, maxChars) {
   try {
     const opened = await openDocxDocument(u8, { name: '' }, 'library');
     if (opened.fail || !opened.sections.length) return null;
-    const head = formatDocxListing(opened.sections, { tables: opened.tables });   // utils.js, pur
+    const head = formatDocxListing(opened.sections, { tables: opened.tables });   // pur, plus haut dans ce fichier
     let preview = '';
     for (const sec of opened.sections) {
       const body = String(sec.text || '').trim();
@@ -2006,7 +2035,7 @@ async function describePptxForLibrary(u8, maxChars) {
   try {
     const opened = await openPptxDocument(u8, { name: '' }, 'library');
     if (opened.fail || !opened.slides.length) return null;
-    return formatPptxListing(opened.slides, { untitled: opened.untitled }).slice(0, maxChars);   // utils.js, pur
+    return formatPptxListing(opened.slides, { untitled: opened.untitled }).slice(0, maxChars);   // pur, plus haut dans ce fichier
   } catch (e) {
     return null;   // dégradé, jamais bloquant
   }

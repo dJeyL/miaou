@@ -218,11 +218,10 @@ const FILES_DOCTRINE =
 // (décision 6 du cadrage — le serveur survit en fallback offline).
 //
 // VOLONTAIREMENT COURTE. Le mode d'emploi détaillé (formes de selector, quand
-// passer as_resource, ce que signifie une page sans texte) n'est PAS ici : il
-// vit dans la description des outils, que le modèle lit au moment d'appeler.
-// Le sous-lot V-7 déplacera ces spécificités vers une skill système en gardant
-// le déclencheur ici (split QUAND/COMMENT) ; y verser du détail maintenant
-// serait à ressortir ensuite.
+// passer as_resource, comment lire chaque refus) n'est PAS ici : depuis le lot
+// V-7 il vit dans la skill système « docs » (src/system-skills/docs.md), que le
+// modèle lit avant son premier appel docs__*. Ce qui reste ici est le QUAND — le
+// déclencheur. Ne pas y reverser du COMMENT : ce serait défaire le split.
 //
 // Une modification ici invalide le préfixe KV cache sur toutes les conversations
 // (ponctuel, assumé : la doctrine change une fois puis se re-stabilise).
@@ -1372,7 +1371,7 @@ const TOOLS = [
   {
     // miaou__docs__list (lot V-1, élargi V-4) : décrit la structure d'un document
     // référencé par handle, SANS EN RENDRE LE CONTENU. Le type est reconnu AUX
-    // OCTETS par sniffDocumentKind (utils.js, pur), jamais au mime ni à
+    // OCTETS par sniffDocumentKind (docs.js, pur), jamais au mime ni à
     // l'extension — tous deux déclaratifs.
     //
     // Sur un zip, le central directory suffit (AUDIT §2) : on ne charge même pas

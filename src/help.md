@@ -37,8 +37,8 @@ depuis l'explorateur de fichiers. Sont exploitables : **images** (le modèle les
 voit réellement, s'il gère la vision), **fichiers texte** (leur contenu est
 transmis au modèle), **archives zip** (le modèle en liste le contenu et en sort
 le fichier qui l'intéresse) et **documents** — PDF, classeurs Excel, documents
-Word — que MIAOU ouvre lui-même, structure d'abord puis lecture ciblée (voir
-plus bas). Les autres fichiers binaires sont acceptés et conservés, mais le
+Word et présentations PowerPoint — que MIAOU ouvre lui-même, structure d'abord
+puis lecture ciblée (voir plus bas). Les autres fichiers binaires sont acceptés et conservés, mais le
 modèle n'en voit que le nom, le type et la taille tant qu'aucun outil ne sait
 les ouvrir (voir le sujet `mcp`).
 
@@ -109,15 +109,14 @@ clairement séparées d'elle : dans une présentation, les slides portent souven
 des mots-clés et les notes portent le propos.
 
 Deux limites à connaître. Un PDF, un classeur, un document Word ou une
-présentation **protégé par
-mot de passe** est
-refusé franchement, MIAOU ne cherche pas à le déchiffrer. Et une page **scannée** (une
+présentation **protégé par mot de passe** est refusé franchement, MIAOU ne
+cherche pas à le déchiffrer. Et une page **scannée** (une
 image de page, sans texte dessous) ne donne rien à lire : MIAOU ne fait pas de
 reconnaissance de caractères, et le signale au modèle pour qu'il te le dise
 plutôt que de conclure que le document est vide.
 
-Ces ouvertures natives — zip, PDF, Excel, Word — chargent au premier usage un composant
-depuis Internet. **Sans connexion, MIAOU ne peut ouvrir aucun document** ; c'est
+Ces ouvertures natives — zip, PDF, Excel, Word, PowerPoint — chargent au premier
+usage un composant depuis Internet. **Sans connexion, MIAOU ne peut ouvrir aucun document** ; c'est
 le cas où un serveur compagnon reste utile (voir le sujet `mcp`).
 
 Dans l'autre sens, le modèle peut **fabriquer une archive** : quand plusieurs

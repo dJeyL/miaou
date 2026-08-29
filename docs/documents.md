@@ -33,13 +33,25 @@ a établi.
 cette fonction aurait-elle encore une raison d'être ? »* Oui → `utils.js`.
 Non → `docs.js`.
 
-**La dépendance est à sens unique** : `docs.js` appelle `utils.js`, jamais
-l'inverse. Un cycle serait le découpage bâclé que le PLAN V-5 redoutait — deux
-fichiers qui se référencent mutuellement, pire que l'état d'avant. C'est ce qui
-justifie que `docsUnsupportedFormatMessage` soit **restée dans `tools.js`** :
-elle lit le registre MCP (`findDocsInflationTool`) et répond à « quel outil
-serveur est branché ? », pas à « comment lire ce document ? ». Un contrôle de
-non-cycle est à refaire par grep à chaque ajout.
+**L'invariant de dépendance, formulé exactement** (relecture 2026-08-29) :
+**aucune fonction restée dans `utils.js` n'appelle une fonction de `docs.js`.**
+C'est ce sens-là qui est gardé, et c'est lui qui empêche le découpage bâclé que
+le PLAN V-5 redoutait — deux fichiers en amont l'un de l'autre, pire que l'état
+d'avant. Il se vérifie par grep, et il est vérifié : zéro occurrence. **Refaire
+ce contrôle à chaque ajout.**
+
+Ce n'est **pas** « `docs.js` n'appelle que `utils.js` ». Le domaine s'appuie sur
+des fonctions déclarées **plus bas** dans `JS_ORDER`, toutes depuis des corps de
+fonction (runtime, après chargement complet) — c'est légal et voulu :
+`toolFail`, `_pendingToolAcks` et `docsUnsupportedFormatMessage` (`tools.js`),
+`humanSize` (`resources.js`), les quatre `ensure*` (`ui.js`). Un grep
+« `docs.js` ne cite aucun symbole aval » sortirait donc **rouge sans qu'il y ait
+la moindre régression** : ne pas le lire comme tel.
+
+C'est aussi ce qui justifie que `docsUnsupportedFormatMessage` soit **restée
+dans `tools.js`** : elle lit le registre MCP (`findDocsInflationTool`) et répond
+à « quel outil serveur est branché ? », pas à « comment lire ce document ? ». La
+raison est le **domaine**, pas un interdit d'appel — `docs.js` l'appelle bien.
 
 Ce que `docs.js` **ne porte pas**, délibérément : les schémas d'outils `docs__*`
 (le registre `TOOLS` est une liste unique, elle ne se fragmente pas par
@@ -202,13 +214,13 @@ qualité sans être restructurée.
 
 **Lecture native de PDF (lot V-4, `docs__read`) :**
 - **Le type est reconnu AUX OCTETS**, jamais au mime ni à l'extension.
-  `sniffDocumentKind(u8, name)` (utils.js, pur) rend `'pdf' | 'zip' | 'docx' |
+  `sniffDocumentKind(u8, name)` (docs.js, pur) rend `'pdf' | 'zip' | 'docx' |
   'xlsx' | 'pptx' | null` — `%PDF` en tête, sinon `PK\x03\x04` puis délégation à
   `sniffZipOfficeKind`. Le paramètre `name` est en signature mais **ne décide
   rien** : le mime d'un attachment vient du navigateur, celui d'un membre de zip
   d'une table d'extensions, tous deux déclaratifs. Précédent suivi :
   `sniffBackupFormat` (V-3).
-- **`DOC_READERS` (tools.js) est la table de dispatch ET la source unique de
+- **`DOC_READERS` (docs.js) est la table de dispatch ET la source unique de
   « quels formats MIAOU ouvre-t-il seul ? »**. `docsUnsupportedFormatMessage`
   en dérive son libellé via `nativeDocKinds()` + `formatNativeDocKindsLabel`
   (utils.js, pur) au lieu de le recopier : la formule « ne gère à ce jour que le
@@ -225,7 +237,7 @@ qualité sans être restructurée.
   `'N-M'`, 1-indexé inclusif, clampé à `[1, total]` **avec notice** quand le
   clamp a lieu (portage du FMT4 serveur : un `'5-100'` sur 10 pages servait
   silencieusement 5-10, et le modèle concluait que le document s'arrêtait là).
-  Parsing dans `parsePageSelector` (utils.js, **pur**), qui rend
+  Parsing dans `parsePageSelector` (docs.js, **pur**), qui rend
   `{ok, start, end, notice}` ou `{ok:false, message}` — le serveur *lève*, ici
   on retourne : facture de `decideZipMemberExtraction`, et un pur qui ne jette
   pas reste testable en QuickJS. **Chaque message d'erreur rappelle la forme
@@ -241,7 +253,7 @@ qualité sans être restructurée.
   `as_resource` + `js__eval`, en deux appels, sur n'importe quelle taille.
 - **`as_resource: true`** range la lecture dans un `res_…` (`text/plain`,
   classe `'inline'`) au lieu de la renvoyer en contexte, nommé par
-  `pdfReadResourceName` (utils.js, pur — `rapport.pdf` + pages 2-5 →
+  `pdfReadResourceName` (docs.js, pur — `rapport.pdf` + pages 2-5 →
   `rapport-p2-5.txt`). Sans lui, la sortie est plafonnée à `JS_EVAL_OUTPUT_CAP`
   et un dépassement est un **REFUS explicite renvoyant vers `as_resource`**,
   jamais une troncature (doctrine du cap `js__eval`, piège 25). Comme
@@ -251,17 +263,32 @@ qualité sans être restructurée.
   pdf.js ne met **aucun séparateur** entre ses items : un `items.map(it =>
   it.str).join('')` rend deux phrases collées, là où pymupdf rend des sauts de
   ligne — sans traitement, le natif serait **moins lisible** que le serveur.
-  `joinPdfTextItems` (utils.js, pur) s'appuie sur `item.hasEOL` (présent en 3.x,
+  `joinPdfTextItems` (docs.js, pur) s'appuie sur `item.hasEOL` (présent en 3.x,
   confirmé sur un PDF réel de 8 pages), avec repli par comparaison d'ordonnée
   (`transform[5]`) dont le seuil se dérive de la hauteur de l'item — une police
   de 6 pt et une de 24 pt ne sautent pas de la même distance.
 - **Les pages sans texte sont SIGNALÉES**, jamais rendues comme un blanc
-  (`formatPdfRead`, utils.js, pur). Une page vide est presque toujours une page
+  (`formatPdfRead`, docs.js, pur). Une page vide est presque toujours une page
   **scannée** ; sans notice, le modèle reçoit du vide et conclut que le document
   ne dit rien — le mode de défaillance du zip chiffré de V-1, du silence pris
   pour une réponse. La notice nomme la cause probable, dit que MIAOU ne fait pas
   d'OCR, et demande au modèle de le **dire**. Le rendu des pages en images pour
   les modèles à vision est esquissé en V-8, pas livré ici.
+- **Le sommaire natif n'a PAS les numéros de page — écart de parité connu,
+  ouvert.** Relevé à la relecture du 2026-08-29, à instruire en **V-8**. Le
+  serveur rend `- p.42 Titre` (`get_toc()` de pymupdf donne des triplets
+  `(level, title, page)`, cf. `mcp_docs/formats.py`) ; le natif rend `- Titre`.
+  `getOutline()` de pdf.js rend un arbre dont chaque nœud porte une
+  **destination** (`dest`), pas un numéro : le résoudre demande un
+  `doc.getPageIndex(dest)` **par entrée**. `listPdfDocument` pose donc `page: 0`,
+  et `formatPdfListing` traite 0 comme « pas de numéro » et omet le préfixe.
+  Ce n'est **ni un bug** (le rendu est correct, le champ est câblé et le préfixe
+  s'imprimerait dès qu'une valeur arrive) **ni un choix documenté** : un trou,
+  masqué jusqu'ici par un commentaire de `listPdfDocument` qui affirmait
+  l'équivalence exacte avec `get_toc()`. Il coûte : c'est le numéro qui permet
+  d'enchaîner du sommaire vers le bon `docs__read`, et sans lui le modèle doit
+  chercher. Ne pas le refermer à la volée — le coût des N `getPageIndex` sur un
+  gros sommaire n'est pas mesuré, et c'est ce que V-8 doit trancher.
 - **PDF protégé : refus métier, pas erreur technique.** `getDocument` rejette
   avec `PasswordException` — contrairement à fflate sur un zip chiffré, qui rend
   des octets bruts sans rien dire (AUDIT §3, le piège majeur de V-1). C'est
@@ -334,14 +361,14 @@ qualité sans être restructurée.
 - **Le second piège, mesuré aussi : un `!ref` élargi DÉROULE du vide.** Sur une
   feuille réelle dont le `!ref` est `B2:E31`, poser `A1:Z999` fait rendre à
   SheetJS **999 lignes**, dont ~970 vides — il ne borne pas, il déroule ce qu'on
-  lui dit. D'où `restrictSheetRange` (utils.js, **pur**), qui **intersecte** la
+  lui dit. D'où `restrictSheetRange` (docs.js, **pur**), qui **intersecte** la
   plage demandée avec le `!ref` réel, **dit** le clamp par une notice (même
   raison que le FMT4 de `parsePageSelector`), et traite l'intersection **vide**
   comme un **échec** — rendre une chaîne vide ferait conclure « la feuille est
   vide » à tort.
 - **Le `!ref` ne commence pas forcément en A1** (`B2:E31` sur le classeur réel) :
   toute arithmétique de plage qui suppose une origine A1 se décale. Couvert par
-  `parseA1Range`/`formatA1Range` (utils.js, purs), en indices 0-based comme
+  `parseA1Range`/`formatA1Range` (docs.js, purs), en indices 0-based comme
   `decode_range` de SheetJS pour que les deux se composent sans conversion.
   `colLetterToIndex` est en **base 26 bijective** (pas de « colonne zéro ») :
   une base 26 ordinaire ferait de `AA` la 28e colonne au lieu de la 27e,
@@ -354,7 +381,7 @@ qualité sans être restructurée.
 - **Le selector est `'Feuille'` ou `'Feuille!A1:C10'`** — pas le `'N'`/`'N-M'`
   du PDF : une feuille se désigne par son nom, et forcer un index reviendrait à
   faire compter au modèle des feuilles qu'il a sous les yeux nommées.
-  `parseSheetSelector` (utils.js, pur) porte le `split("!", 1)` du serveur, avec
+  `parseSheetSelector` (docs.js, pur) porte le `split("!", 1)` du serveur, avec
   **un repli** que le serveur n'a pas : si le selector entier EST un nom de
   feuille, il est pris tel quel. Sans lui, une feuille nommée `« Alerte! »` ne
   serait adressable par **aucun** selector (le split chercherait `« Alerte »`).
@@ -374,7 +401,7 @@ qualité sans être restructurée.
   unité de son format : une page se dit `'2-5'`, une feuille se dit
   `'Synthèse!B2:E31'`, et une feuille ne se nomme pas `-p2-5`. Le handler ne
   devine plus. `pdfReadResourceName` est conservé mais dérive désormais de
-  `docReadResourceName(source, suffixe)` + `slugifyResourceSuffix` (utils.js,
+  `docReadResourceName(source, suffixe)` + `slugifyResourceSuffix` (docs.js,
   purs) : seul le suffixe varie par format.
 - **Classeur protégé : refus métier**, comme le PDF — mais SheetJS n'a pas
   l'équivalent de `PasswordException`, il lève une erreur ordinaire. On la
@@ -405,7 +432,7 @@ qualité sans être restructurée.
   leurs dimensions plus un aperçu de **dix lignes** de la première feuille non
   vide. Mêmes trois gardes que le PDF : bornée, dégradée jamais bloquante
   (échec → `null` → chemin serveur), sans `console.warn`.
-- **Les libellés d'ack passent par une TABLE** (`DOC_ACK_UNITS`, utils.js) au
+- **Les libellés d'ack passent par une TABLE** (`DOC_ACK_UNITS`, docs.js) au
   lieu d'une cascade de ternaires : chaque format ajouté est **une ligne**, et le
   **genre voyage avec l'unité** au lieu d'être recalculé à chaque usage — c'est
   ainsi qu'on a écrit « aucun page » en V-4. « feuille » est féminin. Pour
@@ -445,7 +472,7 @@ qualité sans être restructurée.
   connu, au vocabulaire fermé (mesuré sur la fixture réelle : `h1`-`h6`, `p`,
   `table`/`thead`/`tbody`/`tr`/`th`/`td`, `strong`, `em`, `ul`/`ol`/`li`).
 - **Le décodage d'entités est une garde de round-trip, pas du cosmétique.**
-  `decodeHtmlEntities` (utils.js) est appliqué au texte **comme aux labels de
+  `decodeHtmlEntities` (docs.js) est appliqué au texte **comme aux labels de
   section**. La fixture réelle porte un heading « 3. Gateway `&amp;` styles
   d'API » : non décodé — ou décodé au listing mais pas à la comparaison —
   **aucun selector ne pourrait jamais viser cette section**, puisque le modèle
@@ -525,7 +552,7 @@ qualité sans être restructurée.
   présentation jamais réordonnée et **casse en silence** dès qu'une slide est
   déplacée dans PowerPoint : le modèle lirait « slide 3 » en croyant lire la
   troisième. **Silence + plausible** est le mode de défaillance que ce lot refuse
-  depuis V-1 (le zip chiffré, AUDIT §3). `pptxSlideOrder` (utils.js) est **pure et
+  depuis V-1 (le zip chiffré, AUDIT §3). `pptxSlideOrder` (docs.js) est **pure et
   testée**, et c'est l'**exception assumée** de la décision 3 : elle travaille au
   **regex** sur le XML brut, précisément pour être testable sous QuickJS, qui n'a
   pas de `DOMParser`. Une regex un peu fragile qui est testée vaut mieux qu'un
