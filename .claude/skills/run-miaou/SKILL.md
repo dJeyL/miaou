@@ -226,6 +226,26 @@ none of them were visible by inspection — the script looked right in each case
 Prefix the probe `_` and delete it when done (see the Gotchas rule on throwaway
 scripts).
 
+## Re-run the PREVIOUS lot's verify, not only the new one
+
+When a lot touches code an earlier lot already covered, run that earlier lot's
+verify script too, unchanged. It is the cheapest check available (no writing,
+no maintenance) and it measures something the new script structurally cannot:
+a fresh verify asserts what the current lot aims at, the previous lot's verify
+asserts what the current lot broke.
+
+Paid on 2026-08-30 (X-1e): the new verify was green on all 43 checks while the
+cross-run of `verify-agents.mjs` failed on two scenarios. One was a real
+pre-existing CSS defect; the other was a regression introduced in that very
+session, in a code path the new verify had no reason to visit — it would have
+shipped. Neither was reachable by inspection, and neither belonged in the new
+script's scope, so no amount of care writing it would have caught them.
+
+Practical form: at the end of a lot, before committing, run every verify whose
+domain the diff touches. A failure there is not noise to be silenced — decide
+case by case whether it is a genuine regression (fix the code) or a legitimately
+changed premise (fix the script, and say so in the commit).
+
 ## Troubleshooting
 
 - **`Error: browserType.launch: Executable doesn't exist`**: Chromium

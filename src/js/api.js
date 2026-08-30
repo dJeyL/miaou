@@ -240,9 +240,9 @@ async function silentCompletion(messages, opts) {
   // `o.model` : modèle EXPLICITE choisi par l'appelant, sinon celui du serveur
   // actif. Sert aux appels applicatifs qui doivent suivre le modèle que
   // l'utilisateur voit comme actif — l'override du composer est reflété dans la
-  // pilule, donc décrire un fichier avec le modèle par défaut du serveur
-  // contredirait ce que l'écran annonce (retour utilisateur, lot V-9). Titrage
-  // et résumé ne le passent pas : ils restent sur le modèle du serveur.
+  // pilule, donc décrire un fichier (ou résumer/titrer, cf. generateSummary,
+  // maybeTitle) avec le modèle par défaut du serveur contredirait ce que
+  // l'écran annonce (retour utilisateur, lot V-9 ; étendu au résumé ensuite).
   const model = (o.model && o.model.trim()) || cfg.model;
 
   let payload = messages;
@@ -884,7 +884,7 @@ async function generateSummary(thread) {
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.3, timeout: 60000 });
+  ], { temperature: 0.3, timeout: 60000, model: activeModel() });
 
   const parsed = parseSummaryJSON(out);
   if (!parsed || typeof parsed.summary !== 'string') {

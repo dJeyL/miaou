@@ -3849,7 +3849,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-30 15:53 UTC */
+/* miaou — built: 2026-08-30 22:28 UTC */
 
 /* ── utils.js ── */
 
@@ -6750,7 +6750,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788105229}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788128939}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12111,7 +12111,7 @@ async function generateSummary(thread) {
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.3, timeout: 60000 });
+  ], { temperature: 0.3, timeout: 60000, model: activeModel() });
 
   const parsed = parseSummaryJSON(out);
   if (!parsed || typeof parsed.summary !== 'string') {
