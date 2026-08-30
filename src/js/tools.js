@@ -38,6 +38,12 @@ const BINARY_DOCTRINE =
   "n'encode pas, ne simule pas et ne décris pas le contenu binaire — pas de base64, pas " +
   "d'image Markdown, pas de placeholder inventé. N'appelle pas resource__present pour " +
   "une image sans demande explicite : l'application l'a déjà présentée à l'utilisateur.\n\n" +
+  "Cette présentation est faite à L'UTILISATEUR, pas à toi : d'une image ainsi " +
+  "enregistrée tu ne détiens que le handle, jamais les pixels. Pour la REGARDER — la " +
+  "décrire, l'analyser, y lire quelque chose — appelle miaou__recall_attachment avec " +
+  "son handle : elle t'est alors ré-injectée et tu la vois réellement. Son contenu " +
+  "n'est pas du texte : ne tente jamais de le lire avec un outil de calcul ou " +
+  "d'extraction, tu n'y trouverais que des octets illisibles.\n\n" +
   "Cette présentation automatique vaut UNIQUEMENT pour les binaires affichables ci-dessus. " +
   "Un résultat d'outil TEXTUEL (texte, JSON, XML, CSV…), même rangé en ressource et même " +
   "si une trace « Ressource enregistrée » apparaît dans la conversation, n'est PAS montré " +
@@ -70,7 +76,10 @@ const ATTACHMENT_DOCTRINE =
   "Ce n'est qu'aux tours SUIVANTS, quand seul le descripteur subsiste et que tu dois de " +
   "nouveau examiner l'image, que tu appelles miaou__recall_attachment(ref=\"att-N\") : son " +
   "contenu t'est alors ré-injecté juste après le résultat de l'outil et tu peux l'analyser " +
-  "normalement. Ne décris jamais une image de mémoire sans l'avoir rappelée. Pour un " +
+  "normalement. Ce même outil accepte AUSSI un handle de bibliothèque (file-<id>) ou de " +
+  "ressource (res_<id>) : c'est par lui que tu regardes n'importe quelle image, y compris " +
+  "celle que tu viens de télécharger ou de produire, et pas seulement une pièce jointe. " +
+  "Ne décris jamais une image de mémoire sans l'avoir rappelée. Pour un " +
   "fichier binaire, le contenu n'est pas lisible directement, sauf si un outil " +
   "d'extraction est disponible (cf. ci-dessous).";
 
@@ -331,18 +340,77 @@ const RESOURCE_DOCTRINE =
   "exploitable sans le traîner à chaque tour. N'utilise ni l'un ni l'autre pour " +
   "un texte court que tu peux simplement écrire dans ta réponse.";
 
+// Doctrine de déclenchement des agents (lot X-1, question structurante 5).
+// Split QUAND / COMMENT (project_doctrine_extraction_quand_comment_split) : le
+// DÉCLENCHEUR est ici, court, inconditionnel, KV-safe ; le MODE D'EMPLOI (rédiger
+// un prompt autosuffisant, choisir la trousse, exploiter un résultat, lire un
+// `exhausted` ou un outil manquant) est en skill système « agents ».
+//
+// Quatre éléments, dans cet ordre : la borne négative, son MOTIF vérifiable, la
+// disqualification des faux signaux, l'interdiction de confabuler.
+//
+// LE CALIBRAGE EST LE VRAI TRAVAIL, entre deux bornes documentées :
+//  - trop insistant → le modèle n'en lance JAMAIS, y compris sur demande
+//    explicite (motif payé en V-8 : une borne générique écrase une obligation
+//    spécifique posée ailleurs) ;
+//  - trop discret → il n'ose pas, parce que rien ne lui dit qu'il peut
+//    (project_model_facing_text_indicative_and_reachable).
+// D'où : INDICATIF, jamais une condition à évaluer sur soi-même (« si tu penses
+// que c'est trop long pour toi » ferait s'abstenir) ; la permission est énoncée
+// AVANT l'interdiction, pour que le texte ne se lise pas comme un veto ; et la
+// capacité annoncée (« tu seras prévenu ») a bien son handle — le réveil du
+// parent existe (deliverAgentResult, agents.js), sinon on mentirait au modèle.
+//
+// AUCUNE CONSTANTE CHIFFRÉE ici ni dans la skill : les bornes vivent dans le JS
+// (MAX_AGENTS_PER_CONV, MAX_AGENTS_TOTAL, MAX_AGENT_TURNS) et se font connaître
+// par leur message de refus, qui les nomme.
+//
+// Assumé d'avance : ce texte rendra un modèle correct discipliné, pas un modèle
+// faible. Pour les autres la garde est TECHNIQUE (borne de tours, borne d'agents
+// simultanés). Ne pas durcir le texte pour compenser : c'est ce durcissement qui
+// produit le modèle qui n'ose plus.
+const AGENT_DOCTRINE =
+  "miaou__agent__spawn lance un agent : une sous-conversation autonome qui traite " +
+  "une tâche pendant que tu continues la tienne. Lance-en un quand l'utilisateur " +
+  "te le demande, ou quand une tâche est réellement indépendante de ce que tu es " +
+  "en train de faire et assez longue pour valoir d'être menée en parallèle.\n\n" +
+  "En dehors de ces deux cas, fais le travail toi-même. Le motif est vérifiable : " +
+  "un agent REDÉMARRE À FROID. Il n'a rien de cette conversation — ni le fichier " +
+  "que tu viens d'ouvrir, ni ce que l'utilisateur t'a expliqué, ni ce que tu as " +
+  "déjà déduit. Tout cela devrait être re-dérivé, ou réécrit dans son prompt. " +
+  "Déléguer ce que tu as déjà en main coûte plus que de le faire.\n\n" +
+  "Une tâche « à plusieurs angles », « approfondie » ou « en plusieurs parties » " +
+  "n'est pas une demande d'agent : c'est une tâche que tu traites toi-même, en " +
+  "plusieurs temps.\n\n" +
+  "Tu es prévenu automatiquement quand un agent termine, et son résultat arrive " +
+  "dans la conversation. N'attends pas en appelant miaou__agent__status en boucle. " +
+  "Tant qu'un agent n'a pas rendu son résultat, le seul état que tu peux annoncer " +
+  "est qu'il travaille encore — ne prétends jamais savoir ce qu'il a trouvé.\n\n" +
+  "Avant ton PREMIER appel à miaou__agent__spawn dans cette conversation, appelle " +
+  "miaou__skills__read avec le slug « agents » : elle dit comment écrire un prompt " +
+  "qu'un agent sans contexte peut suivre, comment choisir les outils à lui confier, " +
+  "et quoi faire d'un résultat incomplet.";
+
 // Prompt racine — constante build-time, non modifiable depuis les paramètres.
 // Compose les doctrines ; référencé par buildSystemMessage() (main.js).
 // v1 — une modification ici invalide le préfixe KV cache sur toutes les conversations.
 // (v2, lot L : JS_EVAL_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
 // (v3, lot O : RESOURCE_DOCTRINE ajoutée en fin — inconditionnelle, statique.)
+// (v5, lot X-1 : AGENT_DOCTRINE ajoutée en fin — inconditionnelle, statique.
+//  Un AGENT la lit aussi, alors qu'il n'a jamais agent__spawn dans son payload :
+//  c'est la conséquence assumée de X-d (prompt système strictement identique à
+//  celui du parent, pour le partage de préfixe KV). Ce qui l'empêche d'annoncer
+//  un lancement impossible n'est pas un gate de prompt — ce serait rouvrir la
+//  divergence que X-d ferme — mais la phrase de cadrage de son premier message
+//  user, en position de dernier texte lu (AGENT_SCOPE_NOTICE, agents.js).)
 // (v4, lot V-1 : DOCS_DOCTRINE entre ici, juste après ATTACHMENT_DOCTRINE dont
 //  elle prolonge le sujet — elle était jusque-là injectée conditionnellement
 //  hors racine par docsDoctrinePrompt(), supprimée avec V-1.)
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   DOCS_DOCTRINE + "\n\n---\n\n" +
   WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
-  "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE;
+  "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE +
+  "\n\n---\n\n" + AGENT_DOCTRINE;
 
 // Doctrine de nommage des blocs de code. Injectée INCONDITIONNELLEMENT (comme
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
@@ -632,6 +700,31 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args, ctx) => {
+      // Branche AGENT (lot X-1, 3bis) : le parent atteint ses enfants PAR ID —
+      // « pas trouvable » n'est pas « pas atteignable ». Elle est nécessaire et
+      // pas seulement permissive : un agent n'est jamais résumé, donc
+      // getSummaryEntry ne rendrait rien et la lecture échouerait alors que la
+      // décision 3bis l'autorise explicitement.
+      // Garde de parenté UNIQUE (resolveOwnedAgent, agents.js), partagée avec
+      // les quatre handlers agent__* : un agent d'une autre conversation répond
+      // comme inexistant, sans oracle (même posture que le hors-Space juste
+      // en dessous). `ctx` explicite, jamais currentConvId (piège 28).
+      const owned = resolveOwnedAgent(args.id, ctx);
+      if (owned) {
+        const label = owned.agentIntent || 'Agent sans libellé';
+        _pendingToolAcks.push({ kind: 'conversation_read', title: label, convId: args.id });
+        const head = { id: owned.id, intent: owned.agentIntent || '', status: agentStatus(owned.id) };
+        if (!args.with_contents) return JSON.stringify(head);
+        return JSON.stringify(Object.assign({}, head, { messages: owned.messages || [] }));
+      }
+      // Un agent qui n'est PAS le sien (ou une conversation d'agent atteinte
+      // depuis ailleurs) doit répondre comme inexistant, pas retomber sur la
+      // branche résumé ci-dessous : sans ce court-circuit, la réponse
+      // différerait selon que l'agent a ou non un résumé — donc un oracle.
+      const targetConv = loadConversation(args.id);
+      if (targetConv && isAgentConversation(targetConv)) {
+        return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
+      }
       const entry = getSummaryEntry(args.id);   // storage.js
       // Herméticité (brief D2, piège 18) : les DEUX sorties ci-dessous partagent le
       // même message ET le même ack — l'absence d'oracle vise le MODÈLE, et un ack
@@ -682,6 +775,13 @@ const TOOLS = [
       const spaceId = ctx.spaceId;
       const allConvs = loadConversations();
       const idsInSpace = spaceConvIds(spaceId, allConvs);
+      // Agents (lot X-1, exclusion 4 de 3ter) : jamais trouvables par le modèle.
+      // Garde EXPLICITE et non déduite — un agent n'étant jamais résumé, il
+      // n'atteindrait déjà pas cette liste, mais s'appuyer sur cette propriété
+      // d'une autre couche ferait dépendre l'exclusion d'un invariant qu'aucun
+      // test ne relie ici. Deux filtres qui composent (piège 18), jamais fusionnés.
+      const agentIds = new Set(allConvs.filter(isAgentConversation).map(c => c.id));
+      entries = entries.filter(e => !agentIds.has(e.id));
       const convIds = new Set(allConvs.map(c => c.id));
       entries = entries.filter(e => idsInSpace.has(e.id) || (!convIds.has(e.id) && spaceId === DEFAULT_SPACE_ID));
       // Exclut la conversation en cours : lister "les conversations passées" n'a
@@ -806,29 +906,67 @@ const TOOLS = [
     // le QUOI par type de contenu. La mention « tu la revois réellement » est
     // conservée : patch comportemental payé (probe A2), pas du verbiage.
     description:
-      "Ramène le contenu d'une pièce jointe de l'utilisateur (ref att-N, vu dans un " +
-      "descripteur [attachment att-N: ...] du fil) dans ton contexte pour l'examiner de " +
-      "nouveau. Image : ré-injectée juste après le résultat de l'outil (tu la revois " +
-      "réellement) et ré-affichée à l'utilisateur. Texte : contenu en clair. Binaire : " +
-      "descripteur seul.",
+      "Ramène le contenu d'un fichier dans ton contexte pour l'examiner : une pièce " +
+      "jointe de l'utilisateur (att-N, vue dans un descripteur [attachment att-N: ...] " +
+      "du fil), un fichier de la bibliothèque (file-<id>) ou une ressource (res_<id>) — " +
+      "y compris une IMAGE que tu as toi-même téléchargée ou produite. Image : " +
+      "ré-injectée juste après le résultat de l'outil, tu en vois réellement les pixels. " +
+      "C'est le SEUL moyen de regarder une image : son handle seul ne te la montre pas, " +
+      "et son contenu binaire n'est pas lisible comme du texte. Texte : contenu en " +
+      "clair. Binaire non-image : descripteur seul.",
     inputSchema: {
       type: 'object',
       properties: {
-        ref: { type: 'string', description: 'Identifiant de la pièce jointe (att-N)' },
+        ref: { type: 'string', description: 'Handle du fichier : att-N, file-<id> ou res_<id>' },
       },
       required: ['ref'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args, ctx) => {
+    // Handler ASYNC depuis X-1d : élargi aux handles de RESSOURCE, une image
+    // stockée par _storeBlock (fetch_url, docs__extract) n'ayant aucun attId —
+    // or c'est l'attId, et lui seul, qui adresse le chemin de ré-injection des
+    // pixels (piège 19). Il faut donc pouvoir en allouer un à la volée, ce qui
+    // impose une écriture IDB, donc l'asynchronie.
+    handler: async (args, ctx) => {
       const ref = String(args.ref || '');
       if (!ref) return toolFail('recall_attachment', 'Identifiant manquant.');
       // getCachedRecordByAttId est dans resources.js (chargé avant). La
       // conversation de rattachement est celle de la GÉNÉRATION (ctx, lot
       // T-1c), même pattern que conv__list ci-dessus.
       const activeId = ctx.convId;
-      const record = getCachedRecordByAttId(ref, activeId);
-      if (!record) return toolFail('recall_attachment', 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).');
-      _pendingToolAcks.push({ kind: 'attachment_recalled', attId: ref, resourceName: record.name, mime: record.mime, convId: activeId });
+      // DEUX familles de ref (X-1d). `att-N` garde son lookup conversation-scopé
+      // historique ; tout autre handle passe par resolveHandleRecord — LE
+      // résolveur unique, donc la délégation d'agent (X-1b) s'applique
+      // gratuitement. Sans cette branche, un agent à qui son parent a confié une
+      // image ne pouvait pas en voir les pixels : il tenait un handle, et aucun
+      // outil de sa trousse ne le convertissait en image (il finissait par
+      // tenter de lire le PNG avec js__eval).
+      const family = classifyHandleRef(ref);
+      let record = (family === 'att')
+        ? getCachedRecordByAttId(ref, activeId)
+        : resolveHandleRecord(ref, ctx);
+      const invalid = recallableImageError(record);
+      if (invalid) return toolFail('recall_attachment', invalid);
+      // L'attId est la CLEF du chemin de ré-injection, pas un attribut décoratif :
+      // l'ack le porte, resolveRecallImages le relit à chaque envoi ultérieur.
+      // Un record qui n'en a pas (tout ce qui vient de _storeBlock) s'en voit
+      // donc attribuer un ici, UNE fois — idempotent, puisqu'on ne le fait que
+      // s'il est absent, et le record muté est celui du cache session comme du
+      // store. reserveAttIdFor reste le SEUL allocateur (resources.js).
+      let attRef = record.attId || '';
+      if (!attRef) {
+        attRef = reserveAttIdFor(activeId);
+        if (!attRef) return toolFail('recall_attachment', 'Conversation introuvable pour rattacher l\'image.');
+        record.attId = attRef;
+        // `conversationId` n'est JAMAIS réécrit : le record appartient à la
+        // conversation qui l'a stocké. Le réaffecter à l'agent volerait le
+        // fichier à son parent — et c'est précisément pour cela que le rappel
+        // s'adresse désormais par `recordId` plutôt que par le couple
+        // (attId, convId), qui ment dès que les deux diffèrent.
+        try { await putResource(record); } catch (e) { /* cache session déjà à jour */ }
+      }
+      _pendingToolAcks.push({ kind: 'attachment_recalled', attId: attRef, recordId: record.id,
+        resourceName: record.name, mime: record.mime, convId: activeId });
       if (record.mime && record.mime.startsWith('image/')) {
         // Brief A2 / D3 (probe validée 2026-07-05, voie (b)) : les pixels SONT
         // ré-injectés au modèle, non pas dans ce résultat role:'tool' (textuel,
@@ -845,11 +983,11 @@ const TOOLS = [
         // ne fait qu'annoncer l'image qui suit.
         if (record.data) {
           _pendingImageInjections.push({
-            attId: ref,
+            attId: attRef,
             dataUrl: 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data),
           });
         }
-        return 'Image att-' + ref.replace(/^att-/, '') + ' ré-affichée à l\'utilisateur ; son contenu suit dans le message suivant.';
+        return 'Image ' + attRef + ' ré-affichée à l\'utilisateur ; son contenu suit dans le message suivant.';
       }
       if (record.class === 'inline') {
         return utf8Decode(record.data);
@@ -1860,7 +1998,272 @@ const TOOLS = [
         ', déjà proposée au téléchargement dans le fil : l\'utilisateur n\'a rien d\'autre à demander.';
     },
   },
+
+  // ── Agents (lot X-1) ──────────────────────────────────────────────────────
+  // Quatre outils, tous passés à l'examen de la décision 6 (« ne pas
+  // multiplier ») : spawn (lancer), status (consulter), result (relire), abort
+  // (interrompre). `agent__status` a été conservé pour une raison PRÉCISE et
+  // pas pour le polling — cf. sa description.
+  //
+  // GARDE DE PARENTÉ commune aux quatre (3bis) : un agent n'est adressable que
+  // par SON parent. Prédicat UNIQUE resolveOwnedAgent (agents.js), partagé avec
+  // l'extension de conv__get. Un agent d'une autre conversation répond comme
+  // inexistant — MÊME message, pas d'oracle (posture du piège 18).
+  // `ctx` en argument explicite partout (piège 28) : jamais currentConvId.
+  {
+    name: 'agent__spawn',
+    // Description construite DYNAMIQUEMENT (agentSpawnToolDef, plus bas) : le
+    // défaut annoncé de reasoning_effort est le niveau COURANT de la
+    // conversation, sans dire que c'est le sien (astuce X-h). Ce qui suit est le
+    // gabarit statique ; la partie variable est injectée à la construction.
+    description: '',
+    inputSchema: { type: 'object', properties: {}, required: ['prompt', 'intent'] },
+    annotations: { readOnlyHint: false, destructiveHint: false },   // crée une conversation et démarre une génération
+    handler: (args, ctx) => {
+      const prompt = String((args && args.prompt) || '').trim();
+      const intent = String((args && args.intent) || '').trim();
+      if (!prompt) return toolFail('agent__spawn', 'Paramètre « prompt » manquant : décris la tâche à confier.');
+      if (!intent) return toolFail('agent__spawn', 'Paramètre « intent » manquant : décris en une phrase ce que tu demandes à l\'agent.');
+      const c = toolCtx(ctx);
+      if (!c.convId) return toolFail('agent__spawn', 'Aucune conversation active : impossible de lancer un agent.');
+      // Un agent ne lance pas d'agent (X-b) : la garde est ici EN PLUS du filtre
+      // de liste d'outils, parce qu'un agent qui recevrait agent__spawn par un
+      // autre chemin doit être arrêté au handler, pas seulement à la validation.
+      const self = loadConversation(c.convId);
+      if (self && isAgentConversation(self)) {
+        return toolFail('agent__spawn', 'Un agent ne peut pas en lancer un autre : la profondeur est bornée à un niveau.');
+      }
+      // Deux bornes, et le refus NOMME celle qui est atteinte (Q3). Les
+      // constantes vivent dans storage.js (dérivation BUILD_CONFIG) et ne sont
+      // lues qu'ici, en corps de fonction (contrainte de portée inter-fichier).
+      const limitError = agentSpawnLimitError(
+        countWorkingAgentsOf(c.convId), countWorkingAgentsTotal(),
+        MAX_AGENTS_PER_CONV, MAX_AGENTS_TOTAL);
+      if (limitError) return toolFail('agent__spawn', limitError);
+      // Validation de la liste d'outils déléguée : nom inconnu → refus listant
+      // les noms valides (referme la découverte sans outil dédié).
+      const v = validateAgentToolList(args && args.tools, agentDelegatableToolNames());
+      if (!v.ok) return toolFail('agent__spawn', v.error);
+      // Fichiers délégués (X-1b) : résolus ICI, dans le référentiel du PARENT
+      // (`c`), parce que c'est le seul instant et le seul ctx où les handles du
+      // parent résolvent quelque chose. Ce qui est figé est l'ID DE RECORD, pas
+      // le handle : l'agent recevra un alias res_… (agents.js). Le lookup
+      // (impur) reste ici, la décision (pure, testée) est dans
+      // buildAgentDelegatedFiles — même partage que validateAgentToolList.
+      const refs = (args && args.attachments != null) ? args.attachments : null;
+      let files = [];
+      if (refs != null) {
+        if (!Array.isArray(refs)) {
+          return toolFail('agent__spawn', 'Le paramètre « attachments » doit être un tableau de handles.');
+        }
+        const resolved = refs.map(r => {
+          const ref = (typeof r === 'string') ? r.trim() : '';
+          return { ref: ref, record: ref ? resolveHandleRecord(ref, c) : null };
+        });
+        const fv = buildAgentDelegatedFiles(resolved);
+        if (!fv.ok) return toolFail('agent__spawn', fv.error);
+        files = fv.files;
+      }
+      // Le défaut de reasoning_effort DOIT être réellement appliqué ici : un
+      // schéma qui annonce un niveau pendant que le code retombe sur '' est
+      // project_doc_promises_intent_code_never_confronted — ça n'échoue jamais,
+      // et un lot suivant le fossilise. C'est agentDefaultReasoningEffort(ctx)
+      // qui répond, la MÊME fonction que celle qui construit la description.
+      const effort = (args && typeof args.reasoning_effort === 'string' && args.reasoning_effort.trim())
+        ? args.reasoning_effort.trim()
+        : agentDefaultReasoningEffort(c);
+      const id = spawnAgent({
+        parentConvId: c.convId,
+        spaceId: c.spaceId,
+        prompt: prompt,
+        intent: intent,   // JAMAIS de normalisation de casse : c'est le libellé rédigé par le modèle
+        tools: v.tools,
+        files: files,
+        reasoningEffort: effort,
+      });
+      if (!id) return toolFail('agent__spawn', 'Lancement impossible.');
+      _pendingToolAcks.push({ kind: 'agent_spawn', convId: id, title: intent });
+      // Le retour NOMME les fichiers délégués avec l'alias vu par l'agent : le
+      // parent doit pouvoir en reparler dans un prompt de relance, et sans cette
+      // ligne il ne connaîtrait que ses propres handles (que l'agent, lui,
+      // n'accepte pas).
+      const filesLine = files.length
+        ? files.map(f => f.ref + ' → ' + f.alias + ' (« ' + f.name + ' »)').join(', ')
+        : 'aucun';
+      return 'Agent lancé — identifiant : ' + id + '.\n' +
+        'Ton tour continue : ne l\'attends pas. Tu seras prévenu automatiquement quand il aura terminé.\n' +
+        'Outils qui lui ont été délégués : ' + (v.tools.length ? v.tools.join(', ') : 'aucun') + '.\n' +
+        'Fichiers qui lui ont été délégués : ' + filesLine + '.';
+    },
+  },
+  {
+    name: 'agent__status',
+    // La DEUXIÈME phrase est ce qui transforme un outil de polling en outil de
+    // consultation. Sans elle, le modèle appelle en boucle pour « attendre » et
+    // brûle des tours pour rien — alors qu'un parent dont le tour est fini ne
+    // peut rien appeler du tout, et qu'un parent dont le tour est en cours sera
+    // de toute façon réveillé.
+    description:
+      "Renvoie l'état d'un agent que tu as lancé, À L'INSTANT DE L'APPEL. Tu seras " +
+      "prévenu automatiquement quand un agent termine — n'appelle donc pas cet outil " +
+      "pour attendre, il ne t'apprendra rien de plus. Sers-t'en pour jeter un œil " +
+      "pendant que tu fais autre chose. Pour voir comment il travaille (son fil " +
+      "complet, plus coûteux), utilise miaou__conv__get avec son identifiant.",
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Identifiant de l\'agent, rendu par agent__spawn' } },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args, ctx) => {
+      const conv = resolveOwnedAgent(args && args.id, toolCtx(ctx));
+      if (!conv) return toolFail('agent__status', AGENT_NOT_FOUND);
+      const st = agentStatus(conv.id);
+      _pendingToolAcks.push({ kind: 'agent_status', convId: conv.id, title: conv.agentIntent || '' });
+      return JSON.stringify({
+        id: conv.id,
+        intent: conv.agentIntent || '',
+        status: st,
+        status_label: AGENT_STATUS_LABELS[st] || st,
+        turns: conv.agentTurns || 0,
+        messages: (conv.messages || []).length,
+      });
+    },
+  },
+  {
+    name: 'agent__result',
+    // Reste utile MALGRÉ le réveil : un parent peut vouloir RELIRE un résultat
+    // plusieurs tours plus tard sans l'avoir gardé en contexte.
+    description:
+      "Renvoie le résultat d'un agent terminé, ou l'indication qu'il travaille encore. " +
+      "Utile pour relire un résultat que tu n'as plus sous les yeux — tu n'as pas " +
+      "besoin de l'appeler pour recevoir un résultat, il t'est transmis " +
+      "automatiquement quand l'agent termine.",
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Identifiant de l\'agent, rendu par agent__spawn' } },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    handler: (args, ctx) => {
+      const conv = resolveOwnedAgent(args && args.id, toolCtx(ctx));
+      if (!conv) return toolFail('agent__result', AGENT_NOT_FOUND);
+      const st = agentStatus(conv.id);
+      _pendingToolAcks.push({ kind: 'agent_result', convId: conv.id, title: conv.agentIntent || '' });
+      if (st === 'running') {
+        return 'Agent ' + conv.id + ' : toujours en cours. Tu seras prévenu quand il aura terminé.';
+      }
+      // Même formatage que la délivrance automatique : une seule formule, sinon
+      // relire un résultat ne dirait pas la même chose que le recevoir.
+      return formatAgentResultForParent({
+        id: conv.id,
+        status: st,
+        intent: conv.agentIntent || '',
+        text: lastAgentText(conv.messages),
+        toolFailures: collectAgentToolFailures(conv.messages),
+      });
+    },
+  },
+  {
+    name: 'agent__abort',
+    description:
+      "Interrompt un agent que tu as lancé et qui travaille encore. Son travail " +
+      "partiel reste consultable. Utilise-le quand tu constates qu'il part dans une " +
+      "mauvaise direction ou que sa tâche n'a plus lieu d'être.",
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Identifiant de l\'agent, rendu par agent__spawn' } },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true },
+    handler: (args, ctx) => {
+      const conv = resolveOwnedAgent(args && args.id, toolCtx(ctx));
+      if (!conv) return toolFail('agent__abort', AGENT_NOT_FOUND);
+      if (agentStatus(conv.id) !== 'running') {
+        return 'Agent ' + conv.id + ' : déjà terminé, rien à interrompre.';
+      }
+      // Statut posé AVANT l'abort : deliverAgentResult, appelé depuis le finally
+      // du cycle de vie, relit le statut terminal du record. Le poser après
+      // laisserait la délivrance retomber sur le défaut « aborted » du reload —
+      // qui se trouve être la bonne valeur ici, mais par coïncidence.
+      setAgentTerminalStatus(conv.id, 'aborted');
+      abortStream(conv.id);
+      _pendingToolAcks.push({ kind: 'agent_abort', convId: conv.id, title: conv.agentIntent || '' });
+      return 'Agent ' + conv.id + ' interrompu.';
+    },
+  },
 ];
+
+// ── Liste des outils délégables à un agent (X-e + X-i) ──────────────────────
+// UN paramètre, une liste de noms d'outils : le modèle ne distingue pas les
+// outils natifs des MCP, il voit une liste de noms préfixés. Jamais un second
+// axe « serveurs » à tenir en phase avec le premier.
+//
+// Les quatre agent__* en sont exclus : agent__spawn par la borne de profondeur
+// (X-b), les trois autres parce qu'un agent n'a pas d'enfants à consulter — les
+// lui donner serait annoncer une capacité sans handle atteignable
+// (project_model_facing_text_indicative_and_reachable).
+function agentDelegatableToolNames() {
+  return exposedTools().map(t => t.name).filter(n => n.indexOf('miaou__agent__') !== 0);
+}
+
+// Défaut de reasoning_effort annoncé ET appliqué (X-h). UNE fonction pour les
+// deux usages : la description d'outil et le handler. Deux formules
+// divergentes, c'est exactement le schéma qui promet ce que le code ne fait pas.
+//
+// `ctx` optionnel : hors génération (drawer d'outils, inspecteur de contexte),
+// on retombe sur l'état d'écran via toolCtx — c'est le repli documenté, pas une
+// lecture de globale déguisée.
+function agentDefaultReasoningEffort(ctx) {
+  const c = toolCtx(ctx);
+  const conv = c.convId ? loadConversation(c.convId) : null;
+  const convLevel = conv && conv.reasoningEffort;
+  if (convLevel) return String(convLevel);
+  try { return loadSettings().reasoningEffort || ''; } catch (e) { return ''; }
+}
+
+// Description dynamique d'agent__spawn. Appelée par toolDefinitions() : la
+// description CHANGE avec le réglage de raisonnement de la conversation —
+// invalidation KV PONCTUELLE au geste utilisateur, cas explicitement autorisé
+// par le piège 16 (et déjà le régime d'intentTracing, qui modifie
+// toolDefinitions() de la même façon).
+//
+// Le défaut est annoncé SANS dire que c'est le niveau courant du parent : le
+// modèle lit une valeur par défaut comme dans n'importe quel schéma, et n'a
+// aucune raison de se demander d'où elle sort. C'est ce qui évite d'ajouter au
+// contexte une information sur LUI-MÊME, dont il tirerait des conclusions
+// (motif payé en V-8).
+function agentSpawnToolDef(ctx) {
+  const effort = agentDefaultReasoningEffort(ctx);
+  return {
+    description:
+      "Lance un agent : une sous-conversation autonome à qui tu confies une tâche " +
+      "précise, et qui travaille en parallèle pendant que tu continues. Rend son " +
+      "identifiant IMMÉDIATEMENT — ton tour continue, tu ne l'attends pas. Tu seras " +
+      "prévenu automatiquement quand il aura terminé, avec son résultat. L'agent " +
+      "démarre À FROID : il n'a ni ton historique ni ton contexte, seulement le " +
+      "prompt que tu lui écris — celui-ci doit donc être autosuffisant. Il ne voit " +
+      "aucun de tes fichiers non plus : pour qu'il travaille sur l'un d'eux, nomme " +
+      "son handle dans `attachments`. Voir la " +
+      "skill 'agents' pour rédiger un prompt d'agent et choisir sa trousse d'outils.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string',
+          description: 'La tâche confiée, rédigée pour quelqu\'un qui n\'a AUCUN contexte : rappelle tout ce qui est nécessaire, y compris la forme de sortie attendue.' },
+        intent: { type: 'string',
+          description: 'Ce que tu demandes à l\'agent, en une phrase, tel que tu l\'expliquerais à l\'utilisateur — c\'est ce libellé qui s\'affichera dans la conversation à la place d\'un titre, parce qu\'un agent n\'est jamais titré.' },
+        tools: { type: 'array', items: { type: 'string' },
+          description: 'Noms des outils délégués à l\'agent (ex. "miaou__js__eval"). Par défaut AUCUN : nomme ce dont la tâche a besoin, et rien de plus. Un nom invalide te sera renvoyé avec la liste des noms valides.' },
+        attachments: { type: 'array', items: { type: 'string' },
+          description: 'Handles des fichiers mis à la disposition de l\'agent : att-N, file-<id> ou res_<id>, tels que TU les adresses. Par défaut AUCUN — un agent ne voit aucun de tes fichiers si tu ne les nommes pas ici, et tu ne peux pas non plus lui en recopier le contenu. Il les recevra sous des handles réécrits, listés dans ma réponse.' },
+        reasoning_effort: { type: 'string',
+          description: 'Effort de raisonnement de l\'agent' + (effort ? ' (par défaut : ' + effort + ')' : ' (par défaut : celui de l\'application)') + '. Une tâche mécanique se traite bien à un niveau bas.' },
+      },
+      required: ['prompt', 'intent'],
+    },
+  };
+}
 
 // ── ask_confirmation : primitif halting hors registre MCP ────────────────────
 // Outil HALTING : runConversation (api.js) l'intercepte AVANT le dispatch et
@@ -1925,10 +2328,27 @@ function remoteToolDefs() {
 // `miaou__` + outils distants (déjà préfixés). Le préfixe interne est ajouté ICI,
 // à l'exposition seulement — TOOLS reste stocké en noms NUS (le préfixe est une
 // vue, pas un stockage). ask_confirmation reste HORS de ce registre (halting).
-function exposedTools() {
-  const internal = TOOLS.map(t => ({
-    name: 'miaou__' + t.name, description: t.description, inputSchema: t.inputSchema,
-  }));
+//
+// Les définitions DYNAMIQUES sont résolues ici (X-1e), pas chez l'appelant.
+// `agent__spawn` porte `description: ''` et un `inputSchema` vide dans TOOLS :
+// sa vraie définition est construite par `agentSpawnToolDef` (le défaut annoncé
+// de `reasoning_effort` est le niveau courant de la conversation). Tant que
+// cette résolution vivait dans `toolDefinitions`, le SEUL consommateur qui la
+// voyait était le payload modèle — le drawer « Voir les outils exposés », qui
+// lit `exposedTools()`, affichait donc `agent__spawn` sans description ni
+// paramètre, comme un outil vide. La fonction s'appelle « exposedTools » : ce
+// qu'elle rend doit être ce qui est réellement exposé, pour tous ses lecteurs.
+// `ctx` optionnel : repli documenté de `toolCtx` quand l'appelant n'en a pas
+// (le drawer n'en a pas — il décrit l'outil, il ne l'appelle pas).
+function exposedTools(ctx) {
+  const internal = TOOLS.map(t => {
+    const dyn = t.name === 'agent__spawn' ? agentSpawnToolDef(ctx) : null;
+    return {
+      name: 'miaou__' + t.name,
+      description: dyn ? dyn.description : t.description,
+      inputSchema: dyn ? dyn.inputSchema : t.inputSchema,
+    };
+  });
   return internal.concat(remoteToolDefs());
 }
 
@@ -2466,6 +2886,24 @@ async function extractBinaryFileTextForDescription(record, maxChars, out) {
 // c'est le cœur de décision « quelle famille de handle », isolé du lookup record
 // (impur, lit le cache session). Consommée par resolveHandleRecord et par le
 // handler js__eval.
+// Décision pure : ce record peut-il être ramené en PIXELS dans le contexte ?
+// (lot X-1d). Extraite du handler (async, non testable en QuickJS via callTool)
+// pour rester couverte — même motif que validateFilesPromoteArgs.
+//
+// Le seul chemin qui met des pixels dans un contexte est celui du piège 19
+// (ack `attachment_recalled` + `attId` → resolveRecallImages → message user
+// synthétique). Il est adressé par `attId`, jamais par id de record : une image
+// stockée par `_storeBlock` (fetch_url, docs__extract) n'en a donc AUCUN et
+// reste hors du chemin, alors que le modèle en détient le handle et lit une
+// doctrine qui lui dit qu'il sait examiner des images. Capacité annoncée sans
+// prise (project_model_facing_text_indicative_and_reachable).
+// Retourne '' si le rappel est possible, sinon le message de refus.
+function recallableImageError(record) {
+  if (!record) return 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).';
+  if (!record.data) return 'Contenu indisponible en session pour ce handle.';
+  return '';
+}
+
 function classifyHandleRef(ref) {
   if (typeof ref !== 'string') return null;
   if (ATTACHMENT_REF_RE.test(ref)) return 'att';
@@ -2490,6 +2928,19 @@ function classifyHandleRef(ref) {
 function resolveHandleRecord(ref, ctx) {
   const c = toolCtx(ctx);
   const family = classifyHandleRef(ref);
+  // DÉROGATION D'AGENT (X-1b), AVANT tout lookup de famille. Un agent démarre
+  // dans SA conversation : les handles du parent n'y résolvent rien, et le
+  // partage passe donc par une table FIGÉE au spawn (alias res_… → id de record
+  // réel). Placée en tête parce qu'un alias a la forme d'un res_… : sans cela,
+  // le lookup `resource` répondrait le premier — et il répondrait null (l'alias
+  // n'est l'id d'aucun record), donc l'ordre n'est pas une commodité, il décide.
+  //
+  // Ce n'est PAS un élargissement de scope : agentDelegatedFilesOf rend [] pour
+  // toute conversation racine, et la table ne contient que ce que le parent a
+  // NOMMÉ. Un agent n'atteint rien de plus — même posture que la trousse
+  // d'outils, où le non-délégué est absent plutôt que refusé.
+  const delegatedId = resolveDelegatedRecordId(ref, agentDelegatedFilesOf(c.convId));
+  if (delegatedId) return getCachedRecord(delegatedId) || null;
   if (family === 'att') {
     return getCachedRecordByAttId(ref, c.convId) || null;
   }
@@ -2749,18 +3200,36 @@ function toolIsHalting(name) { return name === 'ask_confirmation'; }
 // outil (hors ask_confirmation) pour que le modèle décrive son intention.
 // Nom sans underscore initial : évite les traitements spéciaux des parsers de
 // grammar (Ollama/llama.cpp) qui peuvent interpréter `_xxx` comme un champ privé.
-function toolDefinitions() {
+// `allow` (lot X-1) : liste BLANCHE de noms d'outils exposés à CET envoi, ou
+// null/undefined pour tout exposer (le cas de toute conversation ordinaire).
+// C'est ce paramètre qui restreint le payload d'un agent — les outils non
+// délégués ne sont pas « appelables et refusés », ils sont ABSENTS du payload.
+// `ask_confirmation` suit la même règle : un agent n'a pas d'utilisateur à qui
+// poser une question, l'exposer serait annoncer un handle inatteignable.
+//
+// `ctx` (lot X-1) : contexte d'exécution pour les descriptions dynamiques
+// (agent__spawn annonce le niveau de raisonnement courant, X-h). Optionnel — le
+// repli sur l'écran est celui de toolCtx, documenté.
+function toolDefinitions(allow, ctx) {
   const intentEnabled = !!loadSettings().intentTracing;
   const intentProp = { type: 'string', title: 'Intention', description: 'Phrase courte décrivant le but de l\'appel, pour l\'utilisateur.' };
-  const mcpDefs = exposedTools().map(t => {
+  const allowSet = Array.isArray(allow) ? new Set(allow) : null;
+  // Les définitions dynamiques (agent__spawn) sont déjà résolues par
+  // exposedTools(ctx) — d'où le ctx passé ici. UNE source pour la description
+  // et pour le handler (agentDefaultReasoningEffort) : deux formules
+  // divergentes seraient le schéma qui promet ce que le code ne fait pas.
+  const mcpDefs = exposedTools(ctx)
+    .filter(t => !allowSet || allowSet.has(t.name))
+    .map(t => {
+    const schema = t.inputSchema;
     const params = intentEnabled
-      ? Object.assign({}, t.inputSchema, {
-          properties: Object.assign({}, t.inputSchema.properties || {}, { miaou_intent: intentProp }),
+      ? Object.assign({}, schema, {
+          properties: Object.assign({}, schema.properties || {}, { miaou_intent: intentProp }),
         })
-      : t.inputSchema;
+      : schema;
     return { type: 'function', function: { name: t.name, description: t.description, parameters: params } };
   });
-  return mcpDefs.concat([ASK_CONFIRMATION_DEF]);
+  return allowSet ? mcpDefs : mcpDefs.concat([ASK_CONFIRMATION_DEF]);
 }
 
 function intentDoctrinePrompt() {

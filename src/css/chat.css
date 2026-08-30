@@ -69,6 +69,15 @@
    disparaître sous le curseur). Ne pas « harmoniser ». */
 .topbar:hover .conv-dl-btn { opacity: 1; }
 .topbar-mid:has(#conv-title:hover, .conv-retitle-btn:hover) .conv-retitle-btn { opacity: 1; }
+/* Retour au parent (lot X-1c) : TOUJOURS visible, à la différence de ses deux
+   voisins révélés au survol. Ce n'est pas une incohérence à « harmoniser » —
+   c'est le SEUL chemin de retour permanent depuis le fil d'un agent, qui
+   n'apparaît ni en sidebar ni dans la recherche (les huit exclusions, X-1). Le
+   bandeau de parenté, lui, défile avec le fil et disparaît dès qu'on descend :
+   une affordance de navigation qu'il faut découvrir au survol pour sortir d'un
+   écran sans autre issue serait un piège, pas une discrétion. */
+.conv-parent-btn { opacity: 1; width: 26px; height: 26px; flex-shrink: 0; transition: background 130ms var(--ease), color 130ms var(--ease); }
+.conv-parent-btn svg { width: 14px; height: 14px; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {
@@ -256,6 +265,62 @@
 /* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
    plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
+
+/* ── Réponse d'agent repliée (X-1e) ─────────────────────────────────────
+   Une réponse d'agent est un message `user` par construction (elle rentre dans
+   le fil du parent comme un tour utilisateur, cf. buildAgentResultEntry), mais
+   elle ne se lit pas comme tel : c'est un compte rendu, pas une réplique. D'où
+   la sortie du gabarit de bulle — pleine largeur, aligné à gauche comme les
+   réponses assistant, fond de surface plutôt que bulle. Sans ça, un rapport de
+   plusieurs paragraphes s'entasserait dans 80% de colonne collés à droite.
+   La règle est plus spécifique que `.msg.user .bubble` (deux classes contre
+   une) : elle gagne sans !important, quel que soit l'ordre de CSS_ORDER. */
+.msg.user.agent-result { align-items: stretch; }
+/* Le bloc s'étire, mais son footer (copie + horodatage) reste aligné à droite
+   comme sur n'importe quel message user : c'est `align-items: flex-end` du
+   parent qui l'y poussait, et l'étirement ci-dessus le neutralise. On rétablit
+   donc au niveau du footer lui-même, sans réintroduire l'alignement du parent
+   (qui re-rétrécirait le bloc). */
+.msg.user.agent-result .msg-user-footer { justify-content: flex-end; }
+.msg.user.agent-result .bubble {
+  max-width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.agent-result-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+/* Contenu imbriqué DANS le <summary> : tout le bandeau est zone de clic, repli
+   comme dépli, sans JS. Marqueur natif retiré (le chevron le remplace). */
+.agent-result-box > summary { cursor: pointer; list-style: none; display: block; }
+.agent-result-box > summary::-webkit-details-marker { display: none; }
+.agent-result-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.agent-result-box[open] > summary .agent-result-head { border-bottom: 1px solid var(--border); }
+.agent-result-box > summary:hover .agent-result-head { background: var(--surface-2); border-radius: var(--r); }
+.agent-result-box[open] > summary:hover .agent-result-head { border-radius: var(--r) var(--r) 0 0; }
+.agent-result-chevron { flex: 0 0 auto; opacity: .7; transition: transform .15s ease; }
+.agent-result-box[open] .agent-result-chevron { transform: rotate(90deg); }
+.agent-result-icon { flex: 0 0 auto; opacity: .8; }
+/* L'intent peut être long : il tronque plutôt que de pousser le statut hors du
+   bandeau — replié, le statut est l'autre moitié de l'information utile. */
+.agent-result-intent {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-result-status { flex: 0 0 auto; color: var(--text-2); font-size: 12px; }
+.msg.user.agent-result .body { padding: 10px 12px; }
 
 /* Chips de pièces jointes dans la bulle utilisateur — rendues DEPUIS le tableau
    `attachments` du message, jamais reconstruites depuis content (cf. brief A).
@@ -783,6 +848,9 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
    du .msg.user gère l'alignement à droite du footer entier) */
 .msg.user .msg-ts { font-size: 11px; color: var(--text-3); }
 .conv-dl-btn:disabled, .conv-retitle-btn:disabled { opacity: 0 !important; pointer-events: none; }
+/* Le retour au parent n'est JAMAIS masqué par le streaming : quitter le fil
+   d'un agent qui travaille est précisément ce qu'on veut pouvoir faire (la
+   génération appartient à sa conversation, pas à l'écran — piège 28). */
 
 /* Bloc de raisonnement (thinking) : panneau collapsible (atténué) au-dessus du
    corps du message, révélé par .reasoning-toggle de la barre méta. */

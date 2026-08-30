@@ -900,43 +900,70 @@ describe('DOCS_DOCTRINE v2 (lot V-1 — statique, inconditionnelle, motif WEB_DO
   });
 });
 
-describe('recall_attachment (D4) — outil registre', function() {
-  it('ref manquant → message d\'erreur explicite, pas de crash', function() {
-    var r = ct('recall_attachment', {});
-    expect(r).toContain('manquant');
+// recall_attachment est ASYNC depuis X-1d (allocation d'attId → écriture IDB) :
+// callTool renvoie donc TOUJOURS un thenable, y compris sur un retour anticipé,
+// et le runner QuickJS n'a pas d'await. Les quatre tests synchrones d'origine
+// mesuraient le message de refus et la branche de contenu ; la partie décidable
+// est extraite en helper pur (recallableImageError), motif déjà appliqué à
+// validateFilesPromoteArgs / validateResourceCreateArgs
+// (project_extract_pure_helper_over_idb_stub). Le câblage complet — pixels
+// réellement ré-injectés, agent compris — est couvert par verify-agents.mjs.
+describe('recallableImageError (X-1d) — décision pure du rappel', function() {
+  it('record absent → message « introuvable »', function() {
+    expect(recallableImageError(null)).toContain('introuvable');
   });
-  it('ref inconnu du cache session → message explicite', function() {
-    var r = ct('recall_attachment', { ref: 'att-999' });
-    expect(r).toContain('introuvable');
+  it('record sans octets en session → refus explicite, pas un crash', function() {
+    expect(recallableImageError({ id: 'res_x', mime: 'image/png' })).toContain('indisponible');
   });
-  it('image → tool result annonciateur + injection empilée (A2/D3, tour courant)', function() {
+  it('record image complet → aucun refus', function() {
     var ab = new ArrayBuffer(3);
-    new Uint8Array(ab).set([1, 2, 3]);
-    _resourceCache['res_i'] = { id: 'res_i', attId: 'att-7', conversationId: 'cX',
-      class: 'binary', mime: 'image/png', name: 'x.png', data: ab };
-    currentConvId = 'cX';
-    clearPendingImageInjections();
-    var r = ct('recall_attachment', { ref: 'att-7' });
-    expect(r).toContain('suit dans le message suivant');
-    var inj = getPendingImageInjections();
-    expect(inj.length).toBe(1);
-    expect(inj[0].attId).toBe('att-7');
-    expect(inj[0].dataUrl.indexOf('data:image/png;base64,')).toBe(0);
-    clearPendingImageInjections();
-    delete _resourceCache['res_i'];
-    currentConvId = null;
+    expect(recallableImageError({ id: 'res_x', mime: 'image/png', data: ab })).toBe('');
   });
-  it('texte inline → contenu en clair, aucune injection image empilée', function() {
-    var buf = utf8Encode('coucou');
-    _resourceCache['res_t'] = { id: 'res_t', attId: 'att-8', conversationId: 'cX',
-      class: 'inline', mime: 'text/plain', name: 't.txt', data: buf };
-    currentConvId = 'cX';
-    clearPendingImageInjections();
-    var r = ct('recall_attachment', { ref: 'att-8' });
-    expect(r).toBe('coucou');
-    expect(getPendingImageInjections().length).toBe(0);
-    delete _resourceCache['res_t'];
-    currentConvId = null;
+  it('un record NON-image complet passe aussi : l\'outil sert les deux', function() {
+    // Le refus porte sur la disponibilité, JAMAIS sur le type : recall_attachment
+    // rend le texte en clair pour un inline et un descripteur pour un binaire.
+    expect(recallableImageError({ id: 'res_t', mime: 'text/plain', data: utf8Encode('x') })).toBe('');
+  });
+});
+
+describe('recall_attachment (X-1d) — les deux familles de handle', function() {
+  it('un handle de ressource est reconnu comme tel par le classifieur', function() {
+    // PRÉMISSE de l'élargissement : c'est classifyHandleRef qui aiguille le
+    // handler vers resolveHandleRecord (donc vers la délégation d'agent) plutôt
+    // que vers le lookup conversation-scopé.
+    expect(classifyHandleRef('att-3')).toBe('att');
+    expect(classifyHandleRef('res_abc123')).toBe('resource');
+    expect(classifyHandleRef('file-abc123')).toBe('file');
+  });
+  it('le schéma annonce les trois familles, pas seulement att-N', function() {
+    // Une capacité qui n'est pas annoncée n'existe pas pour le modèle : c'est
+    // exactement ce qui faisait patiner un agent tenant un handle d'image.
+    var def = TOOLS.find(function(t) { return t.name === 'recall_attachment'; });
+    var d = def.inputSchema.properties.ref.description;
+    expect(d).toContain('att-N');
+    expect(d).toContain('res_');
+    expect(d).toContain('file-');
+  });
+  it('la description dit que c\'est le SEUL moyen de voir une image', function() {
+    var def = TOOLS.find(function(t) { return t.name === 'recall_attachment'; });
+    expect(def.description).toContain('SEUL moyen');
+  });
+});
+
+describe('BINARY_DOCTRINE (X-1d) — l\'affichage n\'est pas la vision', function() {
+  it('dit explicitement que la présentation vise l\'utilisateur, pas le modèle', function() {
+    // Sans cette phrase, « les images sont affichées directement dans
+    // l'interface » se lit comme « tu les vois » — et le modèle ne rappelle
+    // jamais l'image dont il détient pourtant le handle.
+    expect(BINARY_DOCTRINE).toContain("L'UTILISATEUR");
+    expect(BINARY_DOCTRINE).toContain('jamais les pixels');
+  });
+  it('nomme l\'outil qui donne accès aux pixels', function() {
+    expect(BINARY_DOCTRINE).toContain('miaou__recall_attachment');
+  });
+  it('interdit explicitement de lire une image comme du texte', function() {
+    // Le comportement observé : l'agent tentait de lire un PNG avec js__eval.
+    expect(BINARY_DOCTRINE).toContain('octets illisibles');
   });
 });
 

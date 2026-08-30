@@ -19,7 +19,7 @@ except ImportError:
 ROOT = Path(__file__).parent
 SRC_JS = ROOT.parent / 'src' / 'js'
 
-JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'resources.js', 'skills.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
+JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
 
 # ── Stubs navigateur ──────────────────────────────────────────────────────────
 # On simule juste ce qu'il faut pour que le code source charge sans exploser.
@@ -48,6 +48,13 @@ function _fakeEl() {
     value: '', textContent: '', innerHTML: '', style: {}, className: '',
     classList: { add: function(){}, remove: function(){}, toggle: function(){}, contains: function(){ return false; } },
     appendChild: function() {},
+    // Ajouté au lot X-1 : deleteConv (cascade d'agents) atteint renderConvList
+    // avec des conversations en base, donc convItemEl — qui insère la pastille
+    // d'activité par insertBefore. Le stub s'arrêtait à appendChild parce
+    // qu'aucun test n'avait encore emprunté ce chemin.
+    insertBefore: function() {},
+    removeChild: function() {},
+    remove: function() {},
     querySelector: function() { return _fakeEl(); },
     querySelectorAll: function() { return []; },
     scrollTop: 0, scrollHeight: 0,
@@ -72,6 +79,25 @@ var localStorage = (function() {
     clear:      function()     { store = {}; if (typeof resetConvCacheForTests === 'function') resetConvCacheForTests(); },
   };
 })();
+
+// Intl (lot X-1) : QuickJS ne l'implémente pas (project_quickjs_no_intl).
+// contextBlockParts s'en sert pour le fuseau du bloc <miaou_context>, et le
+// lancement effectif d'un agent construit son payload — donc l'atteint. Stub
+// minimal : les tests ne vérifient jamais le contenu du fuseau, seulement que
+// la chaîne se construit.
+var Intl = { DateTimeFormat: function() {
+  return { resolvedOptions: function() { return { timeZone: 'UTC' }; } };
+} };
+
+// Timers (lot X-1) : registerGeneration arme le relais multi-onglets par
+// setInterval. Les tests qui lancent réellement un agent l'atteignent — les
+// précédents ne créaient jamais de génération. Compteurs inertes : rien ne doit
+// s'exécuter en différé dans un test synchrone.
+var _timerSeq = 0;
+function setTimeout(fn, ms) { return ++_timerSeq; }
+function clearTimeout(id) {}
+function setInterval(fn, ms) { return ++_timerSeq; }
+function clearInterval(id) {}
 
 var fetch = function() { return { then: function() { return this; }, catch: function() { return this; } }; };
 """

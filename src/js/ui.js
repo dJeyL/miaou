@@ -877,21 +877,70 @@ function truncatedBannerHtml() {
   );
 }
 
-function buildMsg(role, content, model, reasoning, ts, server, truncated, attachments) {
+// Corps replié d'une réponse d'agent (X-1e). `<details>` NATIF, fermé par
+// défaut : un compte rendu d'agent est long (tâche confiée, identifiant, outils
+// en échec, puis la réponse entière) et il arrive au milieu du fil du parent,
+// entre deux messages qui, eux, sont la conversation. Le laisser déplié noie
+// l'échange dans le rapport d'un travail déjà fait.
+//
+// L'en-tête est imbriqué DANS le <summary> (pas en frère) : c'est ce qui donne
+// une zone de clic couvrant tout le bandeau, repli comme dépli, SANS JS
+// (project_details_summary_collapse_click_zone). Marqueur natif retiré en CSS,
+// remplacé par un chevron qui pivote.
+//
+// Le libellé porte l'intent — ce que le modèle avait confié à l'agent — plutôt
+// qu'un « Réponse d'agent » générique : replié, c'est la seule chose lisible,
+// et c'est la question à laquelle le bloc répond. Statut à côté, depuis la même
+// table que le bandeau (AGENT_STATUS_UI_LABELS) : un résultat partiel ou en
+// erreur doit se voir sans déplier.
+function agentResultBodyHtml(content, agentResult) {
+  const a = agentResult || {};
+  const intent = a.intent || 'Agent';
+  const label = AGENT_STATUS_UI_LABELS[a.status] || '';
+  return (
+    `<details class="agent-result-box">` +
+    `<summary>` +
+    `<div class="agent-result-head">` +
+    `<svg class="agent-result-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>` +
+    `<svg class="agent-result-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><path d="M9 13h.01M15 13h.01M9 17h6"/></svg>` +
+    `<span class="agent-result-intent">${escHtml(intent)}</span>` +
+    (label ? `<span class="agent-result-status">${escHtml(label)}</span>` : '') +
+    `</div>` +
+    `</summary>` +
+    `<div class="body">${renderUserMd(content)}</div>` +
+    `</details>`
+  );
+}
+
+// `agentResult` (X-1e) : le message user porte une réponse d'agent
+// (buildAgentResultEntry, agents.js) plutôt qu'une saisie humaine. Il n'est pas
+// éditable — son texte est le compte rendu d'un travail qui a réellement eu
+// lieu, dans une conversation qui existe encore et que le bouton de retour
+// permet d'aller lire. Le réécrire ferait diverger le fil du parent de ce que
+// l'agent a effectivement produit, sans que rien ne le signale : deux versions
+// d'un même résultat, celle du parent et celle de l'agent, et aucun moyen de
+// savoir laquelle est la vraie. On retire donc le bouton ici ET on ferme
+// enterEditMode (les deux voies ensemble — fermer la seule affordance visible
+// laisserait passer un appel direct, et le clavier).
+function buildMsg(role, content, model, reasoning, ts, server, truncated, attachments, agentResult) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   if (role === 'user') {
     if (ts) wrap.dataset.ts = ts;
+    if (agentResult) wrap.classList.add('agent-result');
     wrap.innerHTML =
       `<div class="bubble">` +
       renderMsgAttachments(attachments, currentConvId) +
-      `<div class="body">${renderUserMd(content)}</div>` +
+      (agentResult
+        ? agentResultBodyHtml(content, agentResult)
+        : `<div class="body">${renderUserMd(content)}</div>`) +
       `</div>` +
       `<div class="msg-user-footer">` +
       `<div class="msg-user-actions">` +
+      (agentResult ? '' :
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
-      `</button>` +
+      `</button>`) +
       `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
       `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
       `</button>` +
@@ -1174,6 +1223,11 @@ const ICON_BOOK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 // Métaphore code (chevrons < >) — réservée au compute js__eval (lot L), une
 // métaphore = un usage (cf. CLAUDE.md, vocabulaire d'icônes).
 const ICON_CODE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
+// Silhouette de robot (tête carrée + antenne) — métaphore RÉSERVÉE aux agents
+// (lot X-1) : une métaphore = un usage. Distincte de la clé à molette (outil
+// MCP) et de l'œil (lecture de conversation) : un agent n'est ni l'un ni
+// l'autre, c'est un tiers à qui on confie une tâche.
+const ICON_AGENT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><path d="M9 13h.01M15 13h.01M9 17h6"/></svg>';
 // Triangle d'alerte — métaphore RÉSERVÉE à l'échec d'outil (kind tool_failed) :
 // ne pas la réemployer ailleurs (vocabulaire d'icônes : une métaphore = un usage).
 // L'outil MCP en échec garde SON icône (clé à molette) + la couleur d'erreur ;
@@ -1753,7 +1807,77 @@ const ACK_KINDS = {
       }
     },
   },
+  // ── Agents (lot X-1) ────────────────────────────────────────────────────
+  // Quatre kinds, un par outil agent__*. L'ack est FIGÉ au moment de l'appel
+  // (nature d'un ack) : celui du spawn dit « lancé », pas « en cours » — le
+  // suivi live d'un agent qui travaille est porté par la pastille du parent
+  // (badges, étape 7), pas par cet ack. L'enrichir pour qu'il reflète l'état
+  // courant est l'objet de X-3, avec sa spec ; ne pas l'anticiper ici.
+  //
+  // `title` porte l'`intent` rédigé par le modèle — un agent n'étant jamais
+  // titré, c'est le seul libellé disponible. Il est rendu tel quel, JAMAIS
+  // normalisé (la casse appartient au modèle).
+  // `convId` rend le libellé cliquable : ouvrir le fil de l'agent est un geste
+  // de débogage rare mais légitime (décision 8, capacité sans publicité).
+  agent_spawn: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_AGENT,
+    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
+    renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent lancé'),
+  },
+  agent_status: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_AGENT,
+    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
+    renderLabel: (m, el) => renderAgentAckLabel(m, el, 'État d\'agent consulté'),
+  },
+  agent_result: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_AGENT,
+    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
+    renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Résultat d\'agent relu'),
+  },
+  agent_abort: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_AGENT,
+    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
+    renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent interrompu'),
+  },
 };
+
+// Rendu partagé des quatre acks agent (lot X-1) : verbe + libellé cliquable
+// vers le fil de l'agent. Une seule formule — quatre copies divergeraient sur
+// le point exact (la cliquabilité) qui fait la valeur de l'affordance.
+// Même motif que conversation_read, dont il reprend `.ack-conv-link`.
+function renderAgentAckLabel(m, el, verb) {
+  const text = m.title || 'sans libellé';
+  const node = m.convId
+    ? Object.assign(document.createElement('a'), {
+        className: 'ack-conv-link',
+        href: 'javascript:void(0)',
+        textContent: text,
+        onclick: () => openConversation(m.convId),
+      })
+    : document.createTextNode(text);
+  if (m.intent) {
+    renderIntentTwoLevel(el, m.intent, null, detail => {
+      detail.appendChild(document.createTextNode(verb + ' '));
+      appendAckSep(detail);
+      detail.appendChild(document.createTextNode(' '));
+      detail.appendChild(node);
+    });
+  } else {
+    el.appendChild(document.createTextNode(verb + ' '));
+    appendAckSep(el);
+    el.appendChild(document.createTextNode(' « '));
+    el.appendChild(node);
+    el.appendChild(document.createTextNode(' »'));
+  }
+}
 
 // Wrapper exposé pour les tests (aucun call-site app — buildToolAck utilise
 // spec.label directement) : résout le label depuis ACK_KINDS.
@@ -2265,7 +2389,7 @@ function renderThread(msgs) {
     // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
     // commande skill, où content embarque le corps de la skill injectée (invisible à l'UI).
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
-    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated, m.attachments);
+    const wrap = buildMsg(m.role, shown, m.model, m.reasoning, m.ts, m.server, m.truncated, m.attachments, m.agentResult);
     if (m.role === 'assistant') {
       for (const a of pendingAcks) placeToolAck(wrap, a, false);
     } else {
@@ -2307,8 +2431,15 @@ function syncConvDownloadBtn() {
   const hasAssistant = currentThread.some(m => m.role === 'assistant');
   const btn = document.querySelector('.conv-dl-btn');
   if (btn) btn.hidden = !hasAssistant;
+  // Un agent n'est jamais titré (lot X-1) : offrir « Régénérer le titre » y
+  // écrirait un `title` que convLabel préférerait ensuite à l'agentIntent —
+  // deux libellés concurrents pour la même conversation, celui des acks et
+  // celui de la topbar, qui divergeraient en silence. Même raison que
+  // l'éditabilité fermée (setTitleEditableForConv) : les deux voies d'écriture
+  // du titre se ferment ensemble, sinon fermer l'une déplace juste le problème.
+  const isAgent = isAgentConversation(loadConversation(currentConvId));
   const retitleBtn = document.querySelector('.conv-retitle-btn');
-  if (retitleBtn) retitleBtn.hidden = !hasAssistant;
+  if (retitleBtn) retitleBtn.hidden = !hasAssistant || isAgent;
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
@@ -2529,6 +2660,9 @@ function enterEditMode(wrap) {
   // tapé) si présent, sinon content. Jamais le content baké d'une slash-commande
   // skill — sinon la textarea et la bulle (après annulation) fuiteraient le corps injecté.
   const m = currentThread[index];
+  // Réponse d'agent : non éditable (cf. buildMsg). Deuxième voie fermée, pas un
+  // doublon de la première — le bouton absent ne protège que le clic.
+  if (m && m.agentResult) return;
   const original = m ? (m.displayText != null ? m.displayText : m.content) : '';
 
   wrap.classList.add('editing');
@@ -2814,7 +2948,17 @@ let _moveSelection = new Set();
 // Space actif) : geste le plus probable en entrant en mode déplacement.
 function enterMoveMode() {
   _moveMode = true;
-  _moveSelection = currentConvId ? new Set([currentConvId]) : new Set();
+  // EXCLURE DE LA PRÉSÉLECTION, PUIS GRISER — dans cet ordre (lot X-1, Q6).
+  // Une conversation dont un agent tourne ne peut pas être déplacée : son
+  // enfant resterait dans l'ancien Espace, ce qui est exactement la violation
+  // d'herméticité que le piège 18 interdit (un agent orphelin de référentiel).
+  // Sans l'exclusion, la conversation affichée — présélectionnée par défaut —
+  // apparaîtrait COCHÉE ET GRISÉE : une sélection que l'utilisateur ne peut pas
+  // retirer, dans une barre annonçant « 1 conversation » et un bouton qui
+  // échouerait. `renderMoveBar` compte `_moveSelection.size`, donc l'ensemble
+  // vide y retombe naturellement sur le cas ordinaire « rien de sélectionné ».
+  _moveSelection = (currentConvId && !hasWorkingAgent(currentConvId))
+    ? new Set([currentConvId]) : new Set();
   renderConvList();
   renderMoveBar();
 }
@@ -2841,13 +2985,24 @@ function toggleConvSelection(id, checked) {
   renderMoveBar();
 }
 
-function convItemEl(c) {
+function convItemEl(c, convs) {
   const el = document.createElement('div');
   el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
   el.onclick = () => selectConv(c.id);
   const checked = _moveSelection.has(c.id) ? ' checked' : '';
+  // Case GRISÉE si un agent de cette conversation tourne (lot X-1, Q6) :
+  // la déplacer laisserait son enfant dans l'ancien Espace — l'agent orphelin
+  // de référentiel que le piège 18 interdit. `hasWorkingAgent` est LE prédicat,
+  // le même que celui de l'exclusion de présélection (enterMoveMode) et de la
+  // pastille : pas un second balayage.
+  // Le titre porte la RAISON : une case inerte sans explication se lit comme un
+  // bug (« pourquoi je ne peux pas cocher celle-là ? »).
+  const agentBusy = hasWorkingAgent(c.id, convs);
+  const lockAttrs = agentBusy
+    ? ' disabled title="Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant."'
+    : '';
   el.innerHTML =
-    `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}>
+    `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}${lockAttrs}>
      <div class="conv-body">
        <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
        <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
@@ -2864,7 +3019,7 @@ function convItemEl(c) {
   // dériverait. renderConvList reconstruit tout à chaque appel, aucun état DOM
   // à préserver (piège 11 : la fonction reste sans argument, elle dérive l'état
   // du registre elle-même).
-  el.insertBefore(activityBadgeEl(convBadgeState(c.id)), el.querySelector('.conv-actions'));
+  el.insertBefore(activityBadgeEl(convBadgeState(c.id, convs)), el.querySelector('.conv-actions'));
   return el;
 }
 
@@ -2897,7 +3052,19 @@ function renderConvList() {
   list.classList.remove('enter');
   list.innerHTML = '';
   list.classList.toggle('select-mode', _moveMode);
-  const all = listAllConversations().filter(c => c.spaceId === activeSpaceId);
+  // Deux filtres qui COMPOSENT, jamais un prédicat qui répond aux deux questions
+  // (piège 18) : l'appartenance au Space actif, et « est-ce une racine ? ».
+  // L'exclusion des agents (lot X-1, exclusion 3 de 3ter) est ORTHOGONALE à
+  // l'herméticité — les mélanger donnerait le prédicat à double sens que le
+  // piège 18 interdit. La recherche (convSearchFilter, plein texte comprise)
+  // s'applique ensuite : elle ne peut donc jamais ramener un agent.
+  // `everyConv` porte AUSSI les agents : c'est la liste que convBadgeState
+  // propage à hasWorkingAgent pour retrouver les enfants d'un parent. La liste
+  // affichée (`all`), elle, en est expurgée — passer `all` ferait chercher les
+  // enfants dans une liste dont ils sont exclus par construction, et aucun
+  // parent ne porterait jamais la pastille de son agent.
+  const everyConv = listAllConversations();
+  const all = everyConv.filter(c => c.spaceId === activeSpaceId && isRootConversation(c));
   $('conv-search').disabled = all.length === 0;
   let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
@@ -2906,7 +3073,7 @@ function renderConvList() {
   const pinned = convs.filter(c => c.pinned);
   if (pinned.length) {
     list.appendChild(sectionEl('Épinglé'));
-    for (const c of pinned) list.appendChild(convItemEl(c));
+    for (const c of pinned) list.appendChild(convItemEl(c, everyConv));
   }
 
   // Le reste, regroupé par tranches temporelles.
@@ -2918,7 +3085,7 @@ function renderConvList() {
       list.appendChild(sectionEl(section));
       lastSection = section;
     }
-    list.appendChild(convItemEl(c));
+    list.appendChild(convItemEl(c, everyConv));
   }
 
   if (animate) {
@@ -3093,6 +3260,86 @@ function setTitle(t) {
   document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
 }
 
+// Éditabilité DURABLE du titre, gouvernée par la nature de la conversation
+// (lot X-1) : un agent n'est jamais renommé à la main. À ne pas confondre avec
+// setTitleEditable (main.js), verrou TRANSITOIRE le temps d'un titrage async —
+// les deux écrivent sur le même attribut, mais celui-ci est reposé à chaque
+// ouverture de conversation, donc il gagne au switch, ce qui est le bon ordre :
+// un agent n'est de toute façon jamais titré, donc jamais verrouillé par
+// l'autre chemin.
+function setTitleEditableForConv(conv) {
+  const el = $('conv-title');
+  if (!el) return;
+  el.contentEditable = isAgentConversation(conv) ? 'false' : 'true';
+}
+
+// Bandeau de parenté d'agent : la voie de RETOUR vers la conversation qui a
+// lancé l'agent (l'aller étant les acks agent__*, renderAgentAckLabel).
+// Masqué sur toute conversation racine — c'est-à-dire presque toujours.
+//
+// Le parent est relu à CHAQUE appel plutôt que mémorisé : il peut avoir été
+// renommé (ou supprimé) depuis le spawn. S'il a disparu, on affiche quand même
+// le bandeau, sans lien : l'information « ceci est un agent » reste vraie et
+// utile, et un lien mort serait pire qu'une absence de lien.
+function syncAgentBanner(conv) {
+  const el = $('agent-banner');
+  if (!el) return;
+  // Le bouton de topbar est piloté depuis ICI, par le MÊME appel et le MÊME
+  // parent relu (lot X-1c) : deux surfaces qui répondent à la même question
+  // (« d'où vient ce fil, et où revient-on ? ») ne doivent pas dériver leur
+  // réponse de deux formules — c'est la discipline de `convLabel` et de
+  // `spaceConvIds`. En particulier, un parent supprimé doit fermer les DEUX
+  // affordances, sinon le bouton mènerait à une conversation inexistante
+  // pendant que le bandeau dit « conversation supprimée ».
+  const btn = document.querySelector('.conv-parent-btn');
+  if (!isAgentConversation(conv)) {
+    el.classList.remove('show');
+    if (btn) { btn.hidden = true; btn.onclick = null; }
+    return;
+  }
+  const link = $('agent-banner-link');
+  // Statut (X-1e) : le bandeau explique pourquoi le composer est fermé quand
+  // l'agent a fini. Sans lui, la lecture seule serait un composer grisé sans
+  // cause lisible — l'utilisateur croirait à une panne. `running` ne s'affiche
+  // pas : un agent au travail a son composer ouvert, il n'y a rien à expliquer,
+  // et la pastille d'activité le dit déjà.
+  const statusEl = $('agent-banner-status');
+  if (statusEl) {
+    const st = agentStatus(conv.id);
+    const label = (st !== 'running' && AGENT_STATUS_UI_LABELS[st]) || '';
+    statusEl.textContent = label ? ' — ' + label : '';
+  }
+  const parent = loadConversation(conv.parentConvId);
+  if (parent) {
+    const label = convLabel(parent) || 'Nouvelle conversation';
+    link.textContent = label;
+    link.onclick = () => openConversation(parent.id, true);
+    link.style.pointerEvents = '';
+    if (btn) {
+      btn.hidden = false;
+      // `title` porte le NOM du parent : le bouton est une icône seule, et le
+      // bandeau qui porte ce nom en clair défile hors de vue dès qu'on descend
+      // dans le fil. Sans lui, l'affordance permanente serait muette sur sa
+      // destination.
+      btn.title = 'Retour à « ' + label + ' »';
+      btn.setAttribute('aria-label', btn.title);
+      // Cible relue à CHAQUE appel, jamais figée : un agent peut être réouvert
+      // après que son parent a été renommé, et syncAgentBanner est rappelée à
+      // chaque ouverture de conversation.
+      btn.onclick = () => openConversation(parent.id, true);
+    }
+  } else {
+    link.textContent = 'conversation supprimée';
+    link.onclick = null;
+    link.style.pointerEvents = 'none';
+    // Parent supprimé : le bouton disparaît plutôt que de rester inerte. Une
+    // affordance permanente qui ne fait rien au clic est pire qu'absente ; le
+    // bandeau, lui, reste pour EXPLIQUER pourquoi (il porte le texte).
+    if (btn) { btn.hidden = true; btn.onclick = null; }
+  }
+  el.classList.add('show');
+}
+
 // Placeholder + hint du champ clef d'une carte serveur API, selon
 // REQUIRE_API_KEY (figé au build). Appelé à la construction de chaque carte
 // (buildApiCard) plutôt qu'une fois à l'init : la cible n'est plus un champ
@@ -3245,23 +3492,39 @@ function onComposerKey(e) {
   }
 }
 
-// ── Rail d'interjections (lot Q) ────────────────────────────────────────────
+// ── Rail d'interjections (lot Q, clefé par conversation depuis X-1e) ─────────
 // Rendu DOM du rail des messages en file pendant une génération. L'état vit
-// dans main.js (_pendingInterjections) ; ces fonctions ne font que refléter/
-// animer. SVG statiques author-controlled (innerHTML sûr) ; le texte des puces
-// passe par textContent (frontière XSS). Câblage des clics : editInterjection/
-// cancelInterjection (main.js), retrouvés par l'id porté en dataset.
+// dans main.js (_pendingInterjections, Map<convId, items[]>) ; ces fonctions ne
+// font que refléter/animer. SVG statiques author-controlled (innerHTML sûr) ;
+// le texte des puces passe par textContent (frontière XSS). Câblage des clics :
+// editInterjection/cancelInterjection (main.js), retrouvés par l'id en dataset.
+//
+// Le rail montre la file de la conversation AFFICHÉE, et elle seule — c'est la
+// réponse visible à « qui va recevoir ça ? ». Appelé à chaque changement de
+// conversation (openConversation/resetToEmpty) : sans cet appel, les puces
+// d'un fil restaient à l'écran sur le suivant, sur une conversation qui ne
+// générait pas et n'avait aucun drain à venir (constat de test X-1).
 function renderInterjectionRail() {
   const rail = $('ij-rail');
   const chips = $('ij-chips');
   if (!rail || !chips) return;
-  const items = (typeof _pendingInterjections !== 'undefined') ? _pendingInterjections : [];
+  const items = (typeof interjectionsFor === 'function') ? interjectionsFor(currentConvId) : [];
   rail.hidden = items.length === 0;
   const cap = $('ij-caption-text');
   if (cap) {
     cap.textContent = items.length <= 1
       ? 'sera transmise au prochain point d’étape'
       : items.length + ' interjections, fusionnées et transmises au prochain point d’étape';
+  }
+  // Purge des puces qui ne sont plus dans la file rendue — d'abord, avant tout
+  // ajout. La réconciliation d'origine n'ajoutait que les manquantes : avec une
+  // file par conversation, celles du fil précédent s'accumuleraient sans que
+  // rien ne les retire (elles n'ont pas d'animation de sortie à jouer, elles
+  // changent simplement de destinataire). Retrait SEC, pas dismissInterjectionChip :
+  // ces puces ne partent pas, elles cessent d'être à l'écran.
+  const keep = new Set(items.map(it => it.id));
+  for (const el of Array.from(chips.children)) {
+    if (!keep.has(el.dataset.ijId)) el.remove();
   }
   // Réconciliation minimale : n'ajoute que les puces manquantes (par id), pour
   // ne pas rejouer l'animation d'entrée des puces déjà présentes à chaque appel.
@@ -3874,7 +4137,12 @@ function cmdkConvItems(query) {
   const ql = q.toLowerCase();
   const spaceNames = new Map(loadSpaces().map(s => [s.id, s.name || '']));
   const active = getActiveSpaceId();
+  // La recherche de la palette est cross-Space (exception sanctionnée, lot F),
+  // mais elle ne remonte JAMAIS un agent (lot X-1, exclusion 3 de 3ter) :
+  // « pas trouvable » et « pas atteignable » sont deux choses distinctes — le
+  // parent, lui, court-circuite par id (conv__get / agent__*).
   const scored = listAllConversations()
+    .filter(isRootConversation)
     .filter(pred)
     .map(c => ({
       id: c.id, spaceId: c.spaceId,
@@ -7582,6 +7850,25 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .msg.user { align-items: flex-end; margin: 24px 0 10px; }
 .msg.user .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 13px; max-width: 80%; word-break: break-word; text-align: left; }
 .msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
+/* Reponse d'agent repliee (X-1e). details natif : le repli fonctionne dans un
+   export NON interactif, aucun JS requis. Meme markup qu'a l'ecran
+   (agentResultBodyHtml partagee), mais feuille distincte — piege 22. */
+.msg.user.agent-result { align-items: stretch; }
+.msg.user.agent-result .msg-user-footer { justify-content: flex-end; }
+.msg.user.agent-result .bubble { max-width: 100%; background: transparent; border: none; padding: 0; }
+.agent-result-box { border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
+.agent-result-box > summary { cursor: pointer; list-style: none; display: block; }
+.agent-result-box > summary::-webkit-details-marker { display: none; }
+.agent-result-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; }
+.agent-result-box[open] > summary .agent-result-head { border-bottom: 1px solid var(--border); }
+.agent-result-box > summary:hover .agent-result-head { background: var(--surface-2); border-radius: var(--r); }
+.agent-result-box[open] > summary:hover .agent-result-head { border-radius: var(--r) var(--r) 0 0; }
+.agent-result-chevron { flex: 0 0 auto; opacity: .7; transition: transform .15s ease; }
+.agent-result-box[open] .agent-result-chevron { transform: rotate(90deg); }
+.agent-result-icon { flex: 0 0 auto; opacity: .8; }
+.agent-result-intent { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-result-status { flex: 0 0 auto; color: var(--text-2); font-size: 12px; }
+.msg.user.agent-result .body { padding: 10px 12px; font-size: 13.5px; line-height: 1.6; }
 .msg.assistant { align-items: stretch; margin: 4px 0 14px; }
 .msg.assistant .meta { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-3); margin-bottom: 7px; }
 .msg.assistant .body { font-size: 14px; line-height: 1.68; color: var(--text); }
@@ -8027,7 +8314,19 @@ async function renderExportBody(thread, convId) {
             attChipHtml(att, resolveAttachmentThumb(att, convId), false, null)).join('') + '</div>'
         : '';
       const tsHtml = m.ts ? '<div class="msg-ts">' + escHtml(formatMessageTime(m.ts, Date.now())) + '</div>' : '';
-      msgEl.innerHTML = '<div class="bubble">' + attHtml + '<div class="body">' + renderUserMd(shown || '') + '</div></div>' + tsHtml;
+      // Réponse d'agent (X-1e) : même repli qu'à l'écran, et il fonctionne dans
+      // l'export SANS JS — <details> est natif, l'export interactif n'est pas
+      // requis. Le HTML est produit par la MÊME fonction que le live
+      // (agentResultBodyHtml) : deux formules donneraient deux structures, donc
+      // deux CSS à maintenir en parallèle, et c'est exactement la dérive que le
+      // piège 22 décrit (EXPORT_CSS ne suit pas chat.css — raison de plus pour
+      // que le MARKUP, lui, soit partagé). Son escHtml sur intent/statut est
+      // impératif ici : ces chaînes sont d'origine MODÈLE (piège 21).
+      const bodyHtml = m.agentResult
+        ? agentResultBodyHtml(shown || '', m.agentResult)
+        : '<div class="body">' + renderUserMd(shown || '') + '</div>';
+      if (m.agentResult) msgEl.className += ' agent-result';
+      msgEl.innerHTML = '<div class="bubble">' + attHtml + bodyHtml + '</div>' + tsHtml;
       pendingAcks = [];
     } else {
       // Trace textuelle : seuls les acks enrichis (`args != null`) — les acks

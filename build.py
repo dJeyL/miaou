@@ -20,6 +20,7 @@ JS_ORDER = [
     'docs.js',
     'sync.js',
     'storage.js',
+    'agents.js',
     'resources.js',
     'skills.js',
     'tools.js',

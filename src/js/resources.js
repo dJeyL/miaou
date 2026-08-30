@@ -577,7 +577,16 @@ function resolveRecallImages(thread) {
   return thread.map(function(m) {
     if (!isAckRole(m.role) || m.kind !== 'attachment_recalled' || !m.attId) return m;
     if (!m.mime || m.mime.indexOf('image/') !== 0) return m;
-    const rec = getCachedRecordByAttId(m.attId, m.convId || null);
+    // `recordId` d'abord (X-1d) : c'est une IDENTITÉ, quand (attId, convId) est
+    // un couple qui MENT dès qu'un agent rappelle un fichier délégué — le record
+    // appartient toujours au parent (son conversationId ne doit surtout pas être
+    // réécrit, ce serait voler l'image au parent), tandis que l'ack est posé
+    // dans le fil de l'agent. Le filtre par couple répondait donc `null`, et
+    // l'image disparaissait du fil au rechargement sans que rien ne le signale.
+    // Repli sur l'ancien lookup pour les acks ANTÉRIEURS à X-1d, qui n'ont pas
+    // le champ (project_cache_key_must_be_identity_not_handy_attribute).
+    const rec = (m.recordId && getCachedRecord(m.recordId)) ||
+      getCachedRecordByAttId(m.attId, m.convId || null);
     if (!rec || !rec.data) return m;
     const dataUrl = 'data:' + rec.mime + ';base64,' + arrayBufferToBase64(rec.data);
     return Object.assign({}, m, { recallImage: dataUrl });

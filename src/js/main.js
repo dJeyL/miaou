@@ -223,8 +223,20 @@ function markConvRead(convId) {
 // agrégation par Espace et agrégation hamburger en dérivent toutes.
 // L'ordre compte : une conversation qui a du non-lu ET qui regénère affiche
 // 'working' — l'activité en cours est l'information la plus fraîche.
-function convBadgeState(convId) {
-  if (isGenerating(convId)) return 'working';
+// Depuis le lot X-1, `working` couvre AUSSI « au moins un de mes agents
+// travaille » : une conversation parente qui ne génère pas elle-même mais dont
+// un enfant tourne EST en train de travailler du point de vue de l'utilisateur.
+// Le fait que le calcul se passe dans une sous-conversation est un détail
+// d'implémentation qu'il n'a pas à connaître — et les agents n'ayant AUCUNE
+// surface propre (exclus de la sidebar), sans cette extension lancer un agent
+// rendrait la conversation parente totalement muette.
+// `hasWorkingAgent` vit dans agents.js : jamais un balayage de
+// _activeGenerations réécrit ici.
+// `convs` optionnel : propagé jusqu'à hasWorkingAgent pour que les agrégats,
+// qui balaient déjà toutes les conversations, ne relisent pas la liste à chaque
+// ligne (le balayage deviendrait quadratique).
+function convBadgeState(convId, convs) {
+  if (isGenerating(convId) || hasWorkingAgent(convId, convs)) return 'working';
   return _unreadConvs.has(convId) ? 'unread' : null;
 }
 
@@ -237,16 +249,42 @@ function convBadgeState(convId) {
 // La source de l'appartenance est `gen.spaceId` (figé au démarrage de la
 // génération, T-1) pour le working, et le spaceId de la conversation pour
 // l'unread — jamais un filtre `c.spaceId === x` réécrit localement.
+// ALIGNEMENT (lot X-1, étape 7) — décision explicite, pas subie.
+// Jusqu'au lot X, les deux agrégats itéraient `_activeGenerations` DIRECTEMENT
+// et ne passaient jamais par `convBadgeState`, alors que le commentaire de
+// celui-ci affirmait que « liste de gauche, agrégation par Espace et agrégation
+// hamburger en dérivent toutes » : vrai au sens de la SÉMANTIQUE, faux au sens
+// de l'APPEL. Un commentaire qui affirme un invariant tient lieu de
+// vérification et empêche de la faire (project_comment_asserting_invariant_ages_like_test).
+//
+// Ils dérivent désormais RÉELLEMENT de `convBadgeState`, et le commentaire est
+// devenu vrai. Deux raisons de trancher pour l'alignement plutôt que pour
+// « nommer l'écart » :
+//  1. Le coût, mesuré et non supposé : les deux agrégats appelaient DÉJÀ
+//     `listAllConversations()` pour la branche `unread`. Balayer les mêmes
+//     conversations pour le `working` ne change pas l'ordre de grandeur — la
+//     raison qui aurait justifié l'écart (« itérer le registre est moins cher »)
+//     ne tient pas.
+//  2. Sans alignement, le working d'un PARENT à enfant actif serait invisible
+//     des deux agrégats. Le résultat aurait été fortuitement correct — l'enfant
+//     étant lui-même une entrée du registre, dans le même Espace que son parent
+//     (X-a) — mais pour une raison qui n'est pas la bonne, et un jour où la
+//     règle X-a bougerait, l'écart deviendrait un bug silencieux.
+//
+// La source de l'appartenance reste `gen.spaceId` pour une génération en vol
+// (figé au démarrage, T-1) ; pour un parent sans génération propre dont l'enfant
+// travaille, c'est le spaceId du RECORD — ils coïncident par X-a.
 function spaceBadgeState(spaceId) {
   const states = [];
+  const seen = new Set();
   for (const gen of _activeGenerations.values()) {
-    if (gen.spaceId === spaceId) states.push('working');
+    if (gen.spaceId === spaceId) { states.push('working'); seen.add(gen.convId); }
   }
-  if (_unreadConvs.size) {
-    const convs = listAllConversations();
-    for (const c of convs) {
-      if (c.spaceId === spaceId && _unreadConvs.has(c.id)) states.push('unread');
-    }
+  const convs = listAllConversations();
+  for (const c of convs) {
+    if (c.spaceId !== spaceId || seen.has(c.id)) continue;
+    const st = convBadgeState(c.id, convs);
+    if (st) states.push(st);
   }
   return resolveActivityBadge(states);
 }
@@ -258,17 +296,22 @@ function spaceBadgeState(spaceId) {
 //    la liste des conversations ni le sélecteur, c'est le SEUL indicateur
 //    disponible. Le restreindre à l'ailleurs laisserait muette une conversation
 //    active de l'Espace courant, précisément celle qu'il ne peut pas voir.
+// Aligné sur convBadgeState comme spaceBadgeState (lot X-1, étape 7) : même
+// décision, même motif — cf. le commentaire ci-dessus.
 function aggregateBadgeState(excludeSpaceId) {
   const states = [];
+  const seen = new Set();
   for (const gen of _activeGenerations.values()) {
     if (excludeSpaceId != null && gen.spaceId === excludeSpaceId) continue;
     states.push('working');
+    seen.add(gen.convId);
   }
-  if (_unreadConvs.size) {
-    for (const c of listAllConversations()) {
-      if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
-      if (_unreadConvs.has(c.id)) states.push('unread');
-    }
+  const convs = listAllConversations();
+  for (const c of convs) {
+    if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
+    if (seen.has(c.id)) continue;
+    const st = convBadgeState(c.id, convs);
+    if (st) states.push(st);
   }
   return resolveActivityBadge(states);
 }
@@ -660,6 +703,14 @@ function projectConvMessages(conv) {
     if (m.displayText != null) o.displayText = m.displayText;
     else if (m.display != null) o.displayText = m.display;
     if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
+    // Message de réveil d'agent (lot X-1, Q1) : le discriminant d'AFFICHAGE
+    // porté par la bulle user authentique. Cette projection est une WHITELIST —
+    // un champ absent d'ici ne survit pas à la persistance, donc pas au reload.
+    // Sans cette ligne, le message se relit comme une bulle user ordinaire :
+    // rien ne casse, aucun test pur ne le voyait, et X-3 stylerait un champ qui
+    // n'existe plus au rechargement (project_ack_field_whitelists, même motif
+    // que la projection méta de listAllConversations).
+    if (m.agentResult) o.agentResult = m.agentResult;
     return o;
   });
 }
@@ -725,7 +776,16 @@ async function openConversation(id, reveal) {
   currentConvModel = conv.model || '';
   currentConvReasoningEffort = conv.reasoningEffort || '';
   needTitle = !conv.title;   // conversation rouverte sans titre (streaming arrêté, etc.) : retitrer à la reprise
-  setTitle(conv.title || '');
+  // convLabel, pas `conv.title` nu (lot X-1) : un agent n'est jamais titré, son
+  // libellé EST son agentIntent. Prédicat unique, partagé avec le bandeau.
+  setTitle(convLabel(conv));
+  // Un agent n'est pas renommable à la main : son libellé appartient au modèle
+  // qui l'a lancé, et le rendre éditable laisserait l'utilisateur écrire dans un
+  // champ `title` que rien ne relit (convLabel préfère `title` s'il existe — la
+  // saisie « prendrait » visuellement, puis figerait un libellé concurrent de
+  // l'intent affiché partout ailleurs dans les acks).
+  setTitleEditableForConv(conv);
+  syncAgentBanner(conv);
   // Rebranchement de l'AFFICHAGE (lot T-1b) : attachGenerationToScreen rend
   // l'historique par renderThread — le même chemin que le reload — puis rouvre
   // une bulle vive pour la suite du tour en cours. Sans génération, rendu normal.
@@ -740,6 +800,14 @@ async function openConversation(id, reveal) {
   // AFFICHÉE, pas « une génération tourne quelque part ». Sans cet appel, le
   // composer resterait en mode « stop » sur une conversation inerte.
   setSending(!!gen);
+  // File d'interjections (X-1e) : le rail montre celle de la conversation qu'on
+  // vient d'afficher — vide si elle n'en a pas. APRÈS setSending, qui remet le
+  // composer dans le mode de CETTE conversation.
+  renderInterjectionRail();
+  // Lecture seule (X-1e) : un agent dont le travail est terminé ne reçoit plus
+  // de message. Recalculé ici parce que la cause dépend de la conversation
+  // AFFICHÉE, contrairement au readonly cross-onglets qui dépend des pairs.
+  applyReadonlyState();
   // Ouverture depuis la palette (recherche de conversation) : ramener la conv
   // fraîchement chargée dans la liste visible, même sidebar masquée (reveal),
   // centrée pour ne pas la coller au bord.
@@ -764,6 +832,16 @@ function resetToEmpty() {
   // si la conversation qu'on quitte, elle, génère encore (symétrique du
   // setSending d'openConversation — sans lui le bouton reste un stop inerte).
   setSending(false);
+  // L'accueil n'a pas de file (X-1e) : le rail se vide, les puces éventuelles de
+  // la conversation quittée restent dans sa file, pas à l'écran.
+  renderInterjectionRail();
+  // Lecture seule (X-1e) : recalcul APRÈS `currentConvId = null`, jamais avant.
+  // `resetPeerState()` plus haut appelle déjà `applyReadonlyState`, mais il
+  // s'exécute alors que `currentConvId` désigne ENCORE la conversation qu'on
+  // quitte — quitter un agent terminé pour l'accueil y laissait donc le verrou
+  // posé, et plus rien ne le levait : composer mort sur l'écran d'accueil.
+  // L'ordre est la garde ; ce second appel est celui qui voit l'état final.
+  applyReadonlyState();
   currentThread = [];
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
   currentConvReasoningEffort = '';   // nouvelle conversation → reasoning_effort par défaut
@@ -775,6 +853,12 @@ function resetToEmpty() {
   clearMemoryProposals();   // cartes de proposition détruites avec le thread
   showWelcome(prevWelcome || undefined);
   setTitle('');
+  // L'accueil n'est pas un agent : bandeau masqué, titre réouvert à l'édition.
+  // Sans ces deux lignes, quitter un agent par « Nouvelle conversation »
+  // laisserait son bandeau et son titre verrouillé sur un écran vide — le
+  // chemin ne passe pas par openConversation, qui les repose.
+  setTitleEditableForConv(null);
+  syncAgentBanner(null);
   syncConvDownloadBtn();
   renderConvList();
   // Le compteur d'agents dépend de « la conv affichée génère-t-elle ? »
@@ -809,7 +893,24 @@ function selectConv(id, reveal) {
 // jamais par une copie côté Space.
 function moveSelectedConversations(targetSpaceId) {
   if (!targetSpaceId || !_moveSelection.size) return;
-  const ids = Array.from(_moveSelection);
+  // RE-VÉRIFICATION au commit (lot X-1, Q6) : la case grisée est posée au rendu
+  // de la liste, mais un agent peut DÉMARRER pendant que le mode sélection est
+  // ouvert — la fenêtre de réentrance signalée par X-a. Sans cette relecture, la
+  // garde tiendrait sur l'état au moment du rendu, pas sur l'état au moment de
+  // l'écriture (project_await_reentrancy_guard, même famille).
+  const selected = Array.from(_moveSelection).filter(id => !hasWorkingAgent(id));
+  if (!selected.length) { exitMoveMode(); return; }
+  // Les enfants INERTES suivent leur parent (X-a) : un agent dont le spaceId ne
+  // correspondrait plus à celui de son parent continuerait de répondre dans
+  // l'ancien référentiel — précisément la violation d'herméticité du piège 18.
+  // La combinaison refus (enfant actif) + emport (enfant inerte) supprime la
+  // fenêtre au lieu de la garder sous une garde subtile.
+  const allConvs = listAllConversations();
+  const ids = [];
+  for (const id of selected) {
+    ids.push(id);
+    for (const child of agentChildrenOf(id, allConvs)) ids.push(child.id);
+  }
   // Écriture ciblée par id déplacé : seule la métadonnée `spaceId` bouge, et
   // persistConversationField ne touche jamais `messages` (une conversation
   // froide n'a pas les siens en RAM — les écraser la viderait).
@@ -916,11 +1017,28 @@ function undoToolAck(entry, wrap) {
 }
 
 function deleteConv(id) {
+  // Agents enfants (lot X-1, X-c) : résolus AVANT la suppression du parent —
+  // après, `parentConvId` pointerait sur un record disparu. Ils sont récupérables
+  // dans l'autre ordre, mais celui-ci est le seul qui n'ait pas à l'être.
+  const children = agentChildrenOf(id, listAllConversations());
+  for (const child of children) {
+    // ABORT ACTIF, pas passif. `persistGeneration` ne ressuscite pas une
+    // conversation supprimée (piège 20) donc rien ne se corromprait — mais
+    // l'agent CONTINUERAIT à tourner et à consommer, en silence, pour un parent
+    // qui n'existe plus. Laisser la persistance échouer sans bruit n'est pas une
+    // garde, c'est une fuite.
+    abortStream(child.id);
+  }
   deleteConversation(id);
   deleteSummaryEntry(id);   // l'index de résumé devient orphelin sinon
   deleteResourcesByConversation(id).catch(function() {});   // cascade IDB (hard-delete)
   clearAttachmentPushState(id);   // libère l'état de push MCP scopé à la conversation
   clearResourcePushState(id);     // idem pour les res_… (lot K, même scope conversation)
+  // Cascade : un agent est supprimé AVEC son parent (X-c). Récursion volontaire
+  // par le même point d'entrée — la profondeur est bornée à 1 (X-b), et passer
+  // par deleteConv garantit que ses ressources et son index suivent le même
+  // chemin que ceux d'une conversation ordinaire.
+  for (const child of children) deleteConv(child.id);
   if (id === currentConvId) resetToEmpty();
   else renderConvList();
 }
@@ -986,13 +1104,38 @@ function refreshTabBanner() {
   }
 }
 
-// Active/désactive le readonly de l'UI selon _peersGenerating. Readonly = un pair
-// génère sur la conv qu'on affiche : on désactive les entrées et mutations
-// locales (composer, édition/suppression/régénération) pour éviter une seconde
-// génération concurrente silencieuse. Lecture/scroll restent permis (A6). Le
-// résultat persisté revient via le conv-updated qui suit la fin (J3, re-hydrate).
+// Active/désactive le readonly de l'UI. DEUX causes, composées ici et nulle part
+// ailleurs (X-1e) — c'est la discipline de refreshTabBanner juste au-dessus, et
+// pour la même raison : `setConvReadonly` est un setter booléen, deux appelants
+// qui poseraient chacun leur cause se marcheraient dessus (le sweeper TTL qui
+// libère un pair rouvrirait le composer d'un agent terminé).
+//
+//  (a) Un pair génère sur la conv affichée (J5) : on désactive les entrées et
+//      mutations locales pour éviter une seconde génération concurrente
+//      silencieuse. Cause TEMPORAIRE, levée à la fin de la génération du pair.
+//  (b) La conv affichée est un agent qui a fini (X-1e) : son résultat est déjà
+//      remonté au parent, et le parent a repris sa route. Un message envoyé ici
+//      partirait dans un fil que plus personne ne lit — ni le parent, qui a
+//      déjà reçu son compte rendu, ni l'utilisateur, qui croirait relancer
+//      l'agent. Cause DÉFINITIVE : un agent ne repart jamais.
+//
+// Lecture, scroll et retour au parent restent permis dans les deux cas (A6, et
+// le readonly ne neutralise que les MUTATIONS — cf. .conv-parent-btn, composer.css).
 function applyReadonlyState() {
-  setConvReadonly(_peersGenerating.size > 0);   // ui.js
+  setConvReadonly(_peersGenerating.size > 0 || isFinishedAgentConv(currentConvId));   // ui.js
+}
+
+// Cause (b) du readonly : conversation d'agent dont le travail est terminé.
+// UN prédicat, dérivé de `agentStatus` (agents.js) qui est lui-même LA source
+// de vérité du statut — `running` dérivé du registre de générations, sinon un
+// des cinq statuts terminaux. Aucune exception parmi eux : `done`, `exhausted`,
+// `aborted`, `stopped` et `error` ont tous en commun que deliverAgentResult a
+// notifié le parent et que la génération est finie. Distinguer ici ferait un
+// deuxième prédicat de statut d'agent, concurrent du premier.
+function isFinishedAgentConv(convId) {
+  if (!convId) return false;
+  if (!isAgentConversation(loadConversation(convId))) return false;
+  return agentStatus(convId) !== 'running';
 }
 
 // Balayage TTL : auto-release des pairs générateurs dont le heartbeat a expiré
@@ -1364,6 +1507,14 @@ function projectThreadToMessages(thread) {
     if (m.truncated) o.truncated = true;   // réponse incomplète (feature C)
     if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
     if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
+    // Message de réveil d'agent (lot X-1, Q1) : le discriminant d'AFFICHAGE
+    // porté par la bulle user authentique. Cette projection est une WHITELIST —
+    // un champ absent d'ici ne survit pas à la persistance, donc pas au reload.
+    // Sans cette ligne, le message se relit comme une bulle user ordinaire :
+    // rien ne casse, aucun test pur ne le voyait, et X-3 stylerait un champ qui
+    // n'existe plus au rechargement (project_ack_field_whitelists, même motif
+    // que la projection méta de listAllConversations).
+    if (m.agentResult) o.agentResult = m.agentResult;
     return o;
   });
 }
@@ -2246,29 +2397,57 @@ async function resolveSend(literal) {
 // ── Interjections mid-génération (lot Q) ────────────────────────────────────
 // File des messages tapés PENDANT une génération (Entrée en mode file, cf.
 // onComposerKey, ui.js). Mémoire seulement, locale à l'onglet : jamais
-// persistée ni broadcastée (lot J non concerné — état jamais affiché ailleurs,
-// meurt avec l'onglet). Chaque entrée : { id, literal } — LITTÉRAL uniquement,
-// jamais de contenu baké : les slash-skills sont re-résolues au drain (contenu
-// COURANT, même doctrine que editUserMessage). Deux points de vidange, une
-// seule mécanique :
-//   drain B (nominal)  — hook onInterjections (dispatchSend → runConversation) :
-//     à la frontière de tour de la boucle d'outils, le modèle voit
-//     l'interjection AVANT son prochain geste (réaiguillage mid-boucle) ;
+// persistée ni broadcastée (lot J non concerné — meurt avec l'onglet, comme la
+// génération qu'elle attend : un reload ne laisse ni l'une ni l'autre).
+// Chaque entrée : { id, literal } — LITTÉRAL uniquement, jamais de contenu
+// baké : les slash-skills sont re-résolues au drain (contenu COURANT, même
+// doctrine que editUserMessage).
+//
+// CLEFÉE PAR CONVERSATION (Map<convId, items[]>, révision X-1e). Le lot Q en
+// avait fait un état d'ÉCRAN — un tableau unique, drainé par la génération qui
+// possédait l'écran. Avec le multitâche (lot T) cette forme ne pouvait plus
+// répondre à la question « qui va recevoir cette interjection ? » : les puces
+// restaient affichées en changeant de conversation, sur un fil qui ne générait
+// pas, sans destinataire lisible (constat de test X-1). La file appartient
+// désormais à la conversation où elle a été tapée, comme _pendingAgentResults,
+// et les deux drains la ciblent par `gen.convId` — jamais par l'écran.
+//
+// Deux points de vidange, une seule mécanique :
+//   drain B (nominal)  — hook onInterjections (runConversation) : à la
+//     frontière de tour de la boucle d'outils, le modèle voit l'interjection
+//     AVANT son prochain geste (réaiguillage mid-boucle) ;
 //   drain A (résiduel) — settleInterjectionQueue : fin d'échange nominale
-//     (finish 'stop'), la file part comme NOUVEL échange par le chemin d'envoi
-//     normal ; toute fin NON-nominale (stop manuel, halte ask_confirmation,
-//     erreur, MAX_TOURS) REFOULE les littéraux dans le composer — jamais
-//     d'envoi auto après un arrêt (arbitrages lot Q).
-let _pendingInterjections = [];
+//     (finish 'stop'), la file part comme NOUVEL échange — par le composer si
+//     la conversation est affichée, par le chemin détaché du réveil de parent
+//     sinon. Toute fin NON-nominale (stop manuel, halte ask_confirmation,
+//     erreur, MAX_TOURS) REFOULE les littéraux dans le composer quand la
+//     conversation est à l'écran — jamais d'envoi auto après un arrêt
+//     (arbitrages lot Q) — et laisse la file en place sinon (le reflux vise un
+//     composer qui affiche autre chose ; l'utilisateur retrouve ses puces en
+//     revenant).
+const _pendingInterjections = new Map();
 let _ijResolving = false;   // garde B7 : double-Entrée pendant l'await resolveSend de l'enqueue
+
+// Lecture de la file d'une conversation. Jamais un `.get()` nu au point
+// d'usage : sans conv (accueil) la réponse est une liste vide, pas undefined.
+function interjectionsFor(convId) {
+  return (convId && _pendingInterjections.get(convId)) || [];
+}
 
 // Splice SYNCHRONE du snapshot (invariant réentrance, mémoire projet) : les
 // éléments sortent du registre AVANT tout await du drain — un clic éditer/
 // annuler pendant la résolution ne peut plus saisir un élément en vol. Les
-// puces correspondantes passent en état « draining » (non interactif).
-function takePendingInterjections() {
-  const batch = _pendingInterjections.splice(0, _pendingInterjections.length);
-  if (batch.length) markInterjectionChipsDraining(batch.map(b => b.id));
+// puces correspondantes passent en état « draining » (non interactif) —
+// seulement si la conversation drainée est celle affichée : les puces d'une
+// file détachée ne sont pas dans le DOM (markInterjectionChipsDraining est
+// alors un no-op, mais l'appel resterait un mensonge sur l'intention).
+function takePendingInterjections(convId) {
+  if (!convId) return [];
+  const q = _pendingInterjections.get(convId);
+  if (!q || !q.length) return [];
+  const batch = q.splice(0, q.length);
+  _pendingInterjections.delete(convId);
+  if (convId === currentConvId) markInterjectionChipsDraining(batch.map(b => b.id));
   return batch;
 }
 
@@ -2279,6 +2458,23 @@ function takePendingInterjections() {
 // garde que le littéral, re-résolu à frais au drain.
 async function enqueueInterjection() {
   if (!sending || _ijResolving) return;
+  // La file appartient à la conversation où l'on tape (X-1e), pas à l'écran :
+  // `convId` est figé ICI, avant l'await de résolution, et c'est lui qui clefe
+  // le push plus bas — naviguer pendant la résolution ne doit pas ranger
+  // l'interjection dans le fil d'arrivée.
+  const convId = currentConvId;
+  if (!convId) return;
+  // Conversation d'agent : la file y serait sans issue — un agent câble
+  // `onInterjections: () => null` (agents.js), son drain B ne tire jamais, et
+  // son drain A n'existe pas davantage. Refus visible plutôt qu'une puce qui
+  // attend un point d'étape qui ne viendra pas. En pratique la lecture seule
+  // d'un agent terminé (setConvReadonly) couvre déjà l'après-coup : ce refus-ci
+  // vise la fenêtre où l'agent travaille encore, seul moment où `sending` est
+  // vrai sur son fil.
+  if (isAgentConversation(loadConversation(convId))) {
+    showComposerSkillError('Cette conversation est celle d\u2019un agent — elle ne re\u00e7oit pas de message pendant son travail.');
+    return;
+  }
   // Texte seul (arbitrage lot Q) : une pièce jointe en attente ne rejoint pas
   // la file — refus visible, jamais de détachement silencieux.
   if (pendingAttachments.length) {
@@ -2303,19 +2499,25 @@ async function enqueueInterjection() {
   clearComposerSkillError();
   hideSkillAutocomplete();
   // Id : jamais Date.now() seul (mémoire projet B1) — suffixe aléatoire.
-  _pendingInterjections.push({
+  const q = _pendingInterjections.get(convId) || [];
+  q.push({
     id: 'ij-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
     literal: text,
   });
+  _pendingInterjections.set(convId, q);
   renderInterjectionRail();
 }
 
 // Annulation (croix d'une puce) : retire du registre, la puce plonge.
 // Introuvable = déjà drainée pendant la fenêtre de clic : no-op.
 function cancelInterjection(id) {
-  const idx = _pendingInterjections.findIndex(q => q.id === id);
+  // Les puces affichées sont celles de la conversation à l'écran (X-1e) : c'est
+  // donc sa file, et elle seule, qu'un clic peut atteindre.
+  const q = interjectionsFor(currentConvId);
+  const idx = q.findIndex(it => it.id === id);
   if (idx < 0) return;
-  _pendingInterjections.splice(idx, 1);
+  q.splice(idx, 1);
+  if (!q.length) _pendingInterjections.delete(currentConvId);
   dismissInterjectionChip(id, 'down');
 }
 
@@ -2323,9 +2525,11 @@ function cancelInterjection(id) {
 // composer, préfixé à un brouillon éventuel. Ré-appuyer Entrée RE-MET EN FILE
 // (le mode file reste actif tant que `sending`) — jamais d'envoi direct.
 function editInterjection(id) {
-  const idx = _pendingInterjections.findIndex(q => q.id === id);
+  const q = interjectionsFor(currentConvId);
+  const idx = q.findIndex(it => it.id === id);
   if (idx < 0) return;
-  const item = _pendingInterjections.splice(idx, 1)[0];
+  const item = q.splice(idx, 1)[0];
+  if (!q.length) _pendingInterjections.delete(currentConvId);
   dismissInterjectionChip(id, 'down');
   const ta = $('composer-text');
   ta.value = item.literal + (ta.value.trim() ? '\n\n' + ta.value : '');
@@ -2334,15 +2538,31 @@ function editInterjection(id) {
 }
 
 // Fin d'échange (finally de dispatchSend, APRÈS setSending(false) — appel
-// fire-and-forget). nominal (finish 'stop') → drain A : la file part comme
-// nouvel échange par le chemin d'envoi normal. Non-nominal → reflux : les
-// littéraux reviennent au composer, préfixés au brouillon (« stop veut dire
-// stop » : rien ne part tout seul après un arrêt, rien n'est perdu).
-async function settleInterjectionQueue(nominal) {
-  const batch = takePendingInterjections();
+// fire-and-forget). `convId` est celui de la GÉNÉRATION qui se termine (X-1e),
+// jamais l'écran : c'est sa file qu'on solde, et elle peut appartenir à une
+// conversation qu'on ne regarde plus.
+//
+// Quatre cas, deux axes (fin nominale ou non × conversation affichée ou non) :
+//  - nominal + affiché  → drain A par le chemin d'envoi normal (composer).
+//  - nominal + détaché  → drain A par le chemin DÉTACHÉ du réveil de parent
+//    (parentThreadFor + startParentWakeGeneration, agents.js). Le même geste
+//    exactement : pousser une entrée user dans le thread d'une conversation
+//    puis démarrer une génération dessus. On ne rouvre pas un second chemin
+//    pour ça — `sendUserText` écrit dans `currentThread`/`persistCurrent`,
+//    il rangerait l'interjection dans le fil AFFICHÉ (piège 28).
+//  - non-nominal + affiché → reflux composer (« stop veut dire stop »).
+//  - non-nominal + détaché → la file RESTE en place. Le reflux vise un composer
+//    qui affiche autre chose ; y déverser les littéraux les perdrait de vue et
+//    les mélangerait au brouillon d'un autre fil. L'utilisateur retrouve ses
+//    puces intactes en revenant sur la conversation.
+async function settleInterjectionQueue(convId, nominal) {
+  const onScreen = convId === currentConvId;
+  // Non-nominal détaché : ne rien prendre — la file reste pour le retour.
+  if (!nominal && !onScreen) return;
+  const batch = takePendingInterjections(convId);
   if (!batch.length) return;
   const literal = joinInterjectionLiterals(batch.map(b => b.literal));
-  batch.forEach(b => dismissInterjectionChip(b.id, nominal ? 'up' : 'down'));
+  if (onScreen) batch.forEach(b => dismissInterjectionChip(b.id, nominal ? 'up' : 'down'));
   if (!literal) return;
   if (!nominal) {
     const ta = $('composer-text');
@@ -2363,8 +2583,19 @@ async function settleInterjectionQueue(nominal) {
   } finally {
     _sendResolving = false;
   }
-  if (r && r.ok) await sendUserText(r.literal, r.isSkill ? r.content : undefined);
-  else await sendUserText(literal);
+  const text = (r && r.ok) ? r.literal : literal;
+  const baked = (r && r.ok && r.isSkill) ? r.content : undefined;
+  if (onScreen) { await sendUserText(text, baked); return; }
+  // Chemin détaché. Relecture APRÈS l'await de résolution (piège 24 b) : la
+  // conversation a pu être supprimée, ou l'écran être revenu dessus pendant
+  // qu'on résolvait.
+  if (!loadConversation(convId)) return;
+  if (convId === currentConvId) { await sendUserText(text, baked); return; }
+  const thread = parentThreadFor(convId);
+  const msg = { role: 'user', content: baked != null ? baked : text, ts: Date.now() };
+  if (baked != null) msg.displayText = text;   // doctrine displayText (invariant n°1)
+  thread.push(msg);
+  startParentWakeGeneration(convId, thread);
 }
 
 async function sendMessage() {
@@ -2533,6 +2764,12 @@ async function editUserMessage(index, newText) {
   if (!t) return null;
   if (index < 0 || index >= currentThread.length) return null;
   if (currentThread[index].role !== 'user') return null;
+  // Réponse d'agent (X-1e) : jamais éditable — le message est le compte rendu
+  // d'un travail réel, réécrire le ferait diverger de ce que l'agent a produit.
+  // Troisième et DERNIÈRE voie fermée, celle qui compte : l'UI a retiré le
+  // bouton et fermé enterEditMode (ui.js), mais c'est ici que le thread est
+  // muté — une garde d'affichage ne protège pas un thread.
+  if (currentThread[index].agentResult) return null;
 
   // Pièces jointes du message édité (c20) : figées AVANT tout await. Éditer le
   // texte ne touche jamais à la liste (ni ajout ni retrait) — elle est reportée
@@ -2976,13 +3213,16 @@ async function dispatchSend(matches, continuation) {
       // travail se matérialise SOUS l'interjection), la bulle user apparaît,
       // et un wrap NEUF s'ouvre — l'ancien ne reçoit plus jamais rien.
       onInterjections: async () => {
-        // La file d'interjections est un état d'ÉCRAN (le composer y écrit ce
-        // que l'utilisateur tape en REGARDANT une conversation). Une génération
-        // détachée ne doit donc jamais la drainer : elle injecterait dans SA
-        // conversation des messages destinés à celle qui est affichée — et les
-        // volerait au passage à la génération qui, elle, les attend.
-        if (!genOwnsScreen(gen)) return null;
-        const batch = takePendingInterjections();
+        // La file appartient à la CONVERSATION où l'interjection a été tapée
+        // (X-1e), plus à l'écran : cette génération draine la sienne, qu'on la
+        // regarde ou non. C'est ce qui donne une réponse stable à « qui va
+        // recevoir ce message ? » — sous la forme précédente (un tableau unique
+        // gardé par genOwnsScreen), la même file suivait l'écran d'une
+        // conversation à l'autre et son destinataire changeait avec lui.
+        // Les effets DOM plus bas restent gardés par genOwnsScreen, un par un :
+        // muter le thread TOUJOURS, peindre seulement si l'écran est possédé
+        // (piège 28).
+        const batch = takePendingInterjections(gen.convId);
         if (!batch.length) return null;
         const literal = joinInterjectionLiterals(batch.map(b => b.literal));
         if (!literal) return null;
@@ -3032,6 +3272,27 @@ async function dispatchSend(matches, continuation) {
           gen.wrap = startAssistantMessage(model, serverName);
         }
         return [{ role: 'user', content }];
+      },
+      // Résultats d'agent (lot X-1, Q2) : drainés à la frontière de tour d'une
+      // génération EN COURS. Contrairement aux interjections juste au-dessus,
+      // AUCUNE garde genOwnsScreen — un résultat d'agent appartient à la
+      // CONVERSATION, pas à l'écran : le parent peut très bien générer en
+      // arrière-plan pendant qu'on regarde ailleurs (piège 28). Le mutera de
+      // gen.thread a lieu TOUJOURS ; seul le reflet DOM est conditionnel.
+      onAgentResults: () => {
+        const batch = takePendingAgentResults(gen.convId);
+        if (!batch.length) return null;
+        const out = [];
+        for (const entry of batch) {
+          gen.thread.push(entry);
+          if (genOwnsScreen(gen)) {
+            appendUserMessage(entry.content, entry.ts);
+            gen.wrap = startAssistantMessage(model, serverName);
+          }
+          out.push({ role: 'user', content: entry.content });
+        }
+        persistGeneration(gen);
+        return out;
       },
       onFinal: (content, reasoning, finishReason, { usage } = {}) => {
         if (finishReason === 'stop') endedNominal = true;
@@ -3161,20 +3422,45 @@ async function dispatchSend(matches, continuation) {
     // Désenregistrement AVANT setSending : ce dernier dérive `sending` du
     // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un
     // registre déjà à jour.
-    const screenAtEnd = genOwnsScreen(gen);
     unregisterGeneration(gen);
     setSending(isGenerating(currentConvId));
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
-    // Interjections restantes (lot Q) : drain A si fin nominale, reflux
-    // composer sinon. APRÈS setSending(false) — le drain A repart par le
-    // chemin d'envoi normal (sendUserText → dispatchSend). Fire-and-forget.
-    // Réservé à la génération qui possède l'écran (même raison qu'onInterjections) :
-    // le reflux vise le composer, et le drain A repart sur la conv AFFICHÉE.
-    // Une génération détachée qui se termine laisse donc la file intacte pour
-    // celle qui la regarde.
-    if (screenAtEnd) settleInterjectionQueue(endedNominal);
+    // Interjections restantes (lot Q, révisé X-1e) : drain A si fin nominale,
+    // reflux composer sinon. APRÈS setSending(false) — le drain A repart par le
+    // chemin d'envoi normal quand la conversation est affichée. Fire-and-forget.
+    // Ciblé par `gen.convId`, plus par l'écran : une génération détachée solde
+    // SA file (drain A par le chemin détaché du réveil de parent), et laisse
+    // intacte celle de la conversation qu'on regarde.
+    settleInterjectionQueue(gen.convId, endedNominal);
+    // Résultats d'agent arrivés APRÈS la dernière frontière de tour (lot X-1) :
+    // la génération se termine, plus aucun drain n'aura lieu — le résultat
+    // resterait dans la file pour toujours et le parent attendrait un réveil
+    // qui ne vient jamais. C'est la fenêtre de course que le drain à la
+    // frontière de tour ne peut structurellement pas couvrir : deliverAgentResult
+    // teste `generationFor(parent)` APRÈS son await, et cette génération-ci est
+    // encore enregistrée à ce moment-là — elle est désenregistrée juste au-dessus.
+    // Réveil différé, jamais un drain silencieux : la conversation redémarre.
+    // Fire-and-forget, comme le drain A des interjections.
+    if (hasPendingAgentResults(gen.convId)) wakeParentWithPendingAgentResults(gen.convId);
   }
+}
+
+// Démarre un tour du parent avec les résultats d'agent en attente (lot X-1,
+// étape 6). Deux appelants, un seul chemin : deliverAgentResult sur un parent
+// INERTE, et le filet de fin de génération ci-dessus (résultat arrivé après la
+// dernière frontière de tour).
+//
+// `parentThreadFor` (agents.js) tranche LA question dangereuse du lot : deux
+// sources possibles pour le thread du parent selon qu'il est affiché ou non, et
+// un choix erroné écrase des messages.
+function wakeParentWithPendingAgentResults(parentConvId) {
+  const batch = takePendingAgentResults(parentConvId);
+  if (!batch.length) return;
+  if (!loadConversation(parentConvId)) return;   // supprimée entre-temps (piège 20)
+  const thread = parentThreadFor(parentConvId);
+  for (const entry of batch) thread.push(entry);
+  startParentWakeGeneration(parentConvId, thread);
 }
 
 // ── Mécanique réutilisable : tâche LLM « en arrière-plan » ───────────────────
@@ -3258,6 +3544,11 @@ async function summarizeIfNeeded(id) {
   if (isGenerating(id)) return;
   const conv = loadConversation(id);
   if (!conv || !hasSubstance(conv.messages)) return;     // pas de conversation fraîche
+  // Agent (lot X-1, exclusion 1 de 3ter) : une sous-conversation lancée par le
+  // modèle n'est jamais résumée. Le prédicat est UNIQUE (isRootConversation,
+  // agents.js) — jamais un `conv.parentConvId` réécrit ici. L'exclusion en vol
+  // ne suffit pas : selectBackfillCandidates porte la même garde au démarrage.
+  if (!isRootConversation(conv)) return;
   const entry = getSummaryEntry(id);
   if (entry && entry.suppressed) return;                  // tombstone : exclu
   if (entry && entry.messageCount === conv.messages.length) return;  // inchangé

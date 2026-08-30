@@ -67,6 +67,24 @@ l'avertissement de sécurité non-prod sur le jeton MCP. Piège déjà payé deu
 (ventilation initiale, puis re-dérive pendant la campagne muscle) : le README
 regonfle parce que chaque lot y verse le niveau de détail de son propre brief.
 
+**Le contrôle des énumérations fermées vaut aussi pour le README.** La règle
+posée plus haut pour `src/help.md` (« deux types », « les trois modes », « seuls
+X et Y ») s'y applique à l'identique, et pour la même raison : un compte fermé
+devient faux par le seul ajout d'un cas, sans que rien ne le touche. Le README y
+est même plus exposé — il condense en une ligne ce que `help.md` développe en un
+paragraphe, donc il énumère plus souvent. Passer le même grep sur les deux
+fichiers après tout ajout de capacité :
+
+```bash
+grep -nE "[Dd]eux |[Tt]rois |[Qq]uatre |[Cc]inq |seuls? |uniquement " src/help.md README.md
+```
+
+Piège payé le 2026-08-29 : « Trois façons de l'alimenter » pour la bibliothèque
+d'Espace, périmé depuis que le modèle peut y déposer un fichier qu'il vient de
+produire (une quatrième). `help.md` disait bien « quatre », le README était resté
+à trois — l'écart a survécu à plusieurs lots parce que le grep de la règle ne
+visait qu'un seul des deux fichiers.
+
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 
@@ -481,6 +499,10 @@ Cf. `docs/generations.md`.
   pulsant / unread statique), prédicat unique `convBadgeState`, agrégation
   cross-Space assumée, quatre surfaces et leurs points de synchronisation,
   volatilité du non-lu.
+- **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
+  modèle, prédicat de racine `isRootConversation` et les huit exclusions,
+  outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
+  parent accroché au `finally`, extension et alignement des badges.
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

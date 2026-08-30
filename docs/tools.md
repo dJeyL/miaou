@@ -485,6 +485,38 @@ gelées, forme des selectors par format, caps de lecture, table `DOC_READERS`,
 descripteurs de bibliothèque, et la ligne de partage `docs.js` / `utils.js`
 (lot V-7).
 
+## Agents (`agent__*`, lot X-1)
+
+Quatre outils — `agent__spawn`, `agent__status`, `agent__result`, `agent__abort`
+— qui permettent au modèle de confier une tâche à une sous-conversation
+autonome. Ils partagent une **garde de parenté unique** (`resolveOwnedAgent`,
+agents.js), également consommée par la branche agent de `conv__get` : un agent
+d'une autre conversation répond **exactement** comme un id inexistant, sans
+oracle.
+
+`toolDefinitions(allow, ctx)` a gagné deux paramètres à cette occasion : une
+**liste blanche** qui restreint le payload d'un agent aux seuls outils délégués
+(ils sont **absents** de `body.tools`, pas « appelables et refusés » —
+`ask_confirmation` compris), et un `ctx` pour les descriptions dynamiques. La
+description d'`agent__spawn` est construite à chaque appel parce qu'elle annonce
+le niveau de raisonnement courant comme défaut ; ce défaut et son application
+côté handler viennent d'**une seule fonction**, `agentDefaultReasoningEffort`.
+
+**La résolution de cette définition dynamique vit dans `exposedTools(ctx)`, pas
+dans `toolDefinitions`** (déplacée en X-1e). Dans `TOOLS`, `agent__spawn` porte
+`description: ''` et un `inputSchema` vide — sa vraie définition est
+`agentSpawnToolDef`. Tant que la substitution se faisait chez l'appelant, le seul
+consommateur qui la voyait était le payload modèle : le drawer « Voir les outils
+exposés », qui lit `exposedTools()`, affichait `agent__spawn` **sans description
+ni paramètre**, comme un outil vide (constat de test Julien, X-1). La fonction
+s'appelle `exposedTools` : ce qu'elle rend doit être ce qui est réellement
+exposé, pour **tous** ses lecteurs — un consommateur qui doit connaître une
+exception pour obtenir la vraie valeur est un consommateur qui l'oubliera.
+
+Doctrine de déclenchement : `AGENT_DOCTRINE`, statique et inconditionnelle dans
+`ROOT_SYSTEM_PROMPT` ; mode d'emploi en skill système `agents`. Détail complet :
+`docs/agents.md`.
+
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 
 Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique

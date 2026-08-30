@@ -29,6 +29,22 @@ const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+// Bornes d'agents (lot X-1, Q3). Deux bornes, pas une — un refus doit pouvoir
+// NOMMER laquelle est atteinte : « 3 agents déjà sur cette conversation » et
+// « 5 agents au total » appellent des gestes différents du parent (attendre l'un
+// des siens, ou constater que la machine est saturée). Motif exact de
+// MAX_SUMMARIES ci-dessus : valeur en l'absence de clé de config, surchargeable
+// par config.json (les clés sont documentées dans config.sample.json et au
+// README). BUILD_CONFIG étant injecté DANS ce fichier, elles y vivent — et
+// agents.js/tools.js ne les référencent qu'en corps de fonction (contrainte
+// structurelle dure : un const ne franchit pas la frontière dans le test runner).
+const MAX_AGENTS_PER_CONV = (typeof BUILD_CONFIG.max_agents_per_conv === 'number') ? BUILD_CONFIG.max_agents_per_conv : 3;
+const MAX_AGENTS_TOTAL    = (typeof BUILD_CONFIG.max_agents_total    === 'number') ? BUILD_CONFIG.max_agents_total    : 5;
+// Borne de TOURS d'un agent (décision 9) : une borne sur les échanges enchaînés,
+// pas un budget de tokens — le problème est le temps et l'agent zombie qui tient
+// un slot, pas le coût. Atteinte → arrêt d'office, statut `exhausted`, et le
+// résultat PARTIEL est quand même délivré au parent (avec la mention explicite).
+const MAX_AGENT_TURNS     = (typeof BUILD_CONFIG.max_agent_turns     === 'number') ? BUILD_CONFIG.max_agent_turns     : 12;
 // URL du dépôt, liée sur le mot « MIAOU » du footer des exports HTML. Trois
 // états DISTINCTS, d'où le typeof plutôt qu'un `||` : clé absente ou null →
 // dépôt public par défaut ; chaîne vide → pas de lien du tout (le mot reste du
@@ -941,7 +957,14 @@ function loadConversations() {
 function listAllConversations() {
   const out = [];
   for (const [id, c] of _convMetaCache) {
-    out.push({ id: id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID });
+    // `parentConvId` / `agentIntent` (lot X-1) : cette projection est la SEULE
+    // source de agentChildrenOf/isRootConversation (agents.js), qui balaient
+    // l'étage 1 permanent. Les omettre ici rendrait tout agent invisible comme
+    // agent — donc jamais exclu de la sidebar, du backfill ni de la recherche,
+    // sans qu'aucun test ne le voie. `agentIntent` tient lieu de titre : un agent
+    // n'est jamais titré (exclusion 3ter), le libellé doit voyager avec la méta.
+    out.push({ id: id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID,
+      parentConvId: c.parentConvId, agentIntent: c.agentIntent });
   }
   return out.sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }
@@ -1067,8 +1090,14 @@ function isSummaryCandidate(id) {
 // `deleteSummaryEntry` — ceci couvre les résidus (interruption avant ce point,
 // résumé généré/sauvegardé après une suppression concurrente, ancien état
 // pré-fix). Renvoie l'objet résumés nettoyé ; ne touche pas à `localStorage`.
+// Exclusion des agents (lot X-1, étape 2, exclusion 5 de 3ter) : une
+// conversation d'agent n'est jamais résumée, donc l'index ne doit JAMAIS porter
+// d'entrée pour elle. Sans cette ligne, un résumé créé avant que l'exclusion
+// n'existe (ou par un chemin qu'on aurait manqué) survivrait indéfiniment.
+// `isRootConversation` vit dans agents.js et n'est référencé qu'ici, en corps de
+// fonction (contrainte de portée inter-fichier, CLAUDE.md).
 function pruneOrphanSummaries(summaries, convs) {
-  const ids = new Set(convs.map(c => c.id));
+  const ids = new Set((convs || []).filter(isRootConversation).map(c => c.id));
   const out = {};
   for (const id of Object.keys(summaries)) {
     if (ids.has(id)) out[id] = summaries[id];
@@ -1085,9 +1114,15 @@ function pruneOrphanSummaries(summaries, convs) {
 // (absente de l'index ET substantielle). La coquille async ne fait que lui
 // fournir les conversations lues d'IDB — on teste le prédicat, pas l'E/S
 // (cf. project_extract_pure_helper_over_idb_stub).
+// Exclusion des agents (lot X-1, étape 2) : c'est LA ligne qui empêche
+// l'exclusion de « tenir tant que la page est ouverte et sauter au reload ».
+// Un agent n'est jamais résumé en vol (summarizeIfNeeded le refuse) ; sans ce
+// filtre, il redeviendrait candidat au prochain démarrage, et le lot serait vert
+// et faux (project_second_writer_must_realign_the_first).
 function selectBackfillCandidates(convs, summaries) {
   return (convs || []).filter(c =>
-    c && !Object.prototype.hasOwnProperty.call(summaries || {}, c.id) && hasSubstance(c.messages));
+    c && isRootConversation(c) &&
+    !Object.prototype.hasOwnProperty.call(summaries || {}, c.id) && hasSubstance(c.messages));
 }
 
 async function backfillCandidates() {

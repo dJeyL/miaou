@@ -175,6 +175,23 @@ describe('projectThreadToMessages — projection vers la forme persistée', func
     expect(out[0].group).toBe('g1');
   });
 
+  it('agentResult (lot X-1) survit à la projection : sinon X-3 stylerait un champ disparu au reload', function () {
+    const out = projectThreadToMessages([{
+      role: 'user', content: '[Résultat d\'agent — terminé]', ts: 9,
+      agentResult: { id: 'c123', status: 'stopped', intent: 'Rédiger la note' },
+    }]);
+    expect(out.length).toBe(1);
+    expect(!!out[0].agentResult).toBe(true);
+    expect(out[0].agentResult.id).toBe('c123');
+    expect(out[0].agentResult.status).toBe('stopped');
+    expect(out[0].agentResult.intent).toBe('Rédiger la note');
+  });
+
+  it('un message user ordinaire ne gagne pas de champ agentResult', function () {
+    const out = projectThreadToMessages([{ role: 'user', content: 'salut' }]);
+    expect(out[0].agentResult === undefined).toBe(true);
+  });
+
   it('bulle _acksOnly (piège 27) : content vide préservé, hôte des acks au reload', function () {
     const out = projectThreadToMessages([{ role: 'assistant', content: '', model: 'm', ts: 3 }]);
     expect(out.length).toBe(1);

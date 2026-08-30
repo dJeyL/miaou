@@ -307,6 +307,25 @@ champ `model` de chaque message assistant (quel modèle a produit *cette*
 réponse, cf. backfill modèle). `reasoningEffort` (optionnel) est l'**override de
 niveau de raisonnement de la conversation**.
 
+**Champs d'agent (lot X-1)**, tous optionnels et absents d'une conversation
+racine : `parentConvId` (id du parent — sa présence EST la définition d'un
+agent), `parentCallId` (id du tool_call d'origine, traçabilité), `agentIntent`
+(libellé rédigé par le modèle, qui tient lieu de titre — un agent n'est jamais
+titré), `agentStatus` (état **terminal** seulement : `done` | `exhausted` |
+`aborted` | `stopped` | `error` — `running` est toujours DÉRIVÉ du registre de
+générations, jamais persisté), `agentTurns` (tours consommés, pour la borne) et
+`agentFiles` (lot X-1b : fichiers délégués par le parent, `[{alias, recordId,
+name, mime, size, ref}]` — la table est la SEULE autorité de résolution des
+handles de l'agent, d'où sa persistance : un agent doit rester lisible après un
+reload ; absente quand rien n'est délégué, jamais un tableau vide qui ferait
+croire à une capacité).
+Le prédicat unique est `isRootConversation` (agents.js) : jamais un
+`c.parentConvId == null` réécrit localement. **`listAllConversations()` expose
+`parentConvId` et `agentIntent` dans sa projection méta** — les omettre rendrait
+tout agent invisible en tant qu'agent, donc jamais exclu de la sidebar, du
+backfill ni de la recherche. `splitConvRecord`, lui, n'a rien demandé : il copie
+tous les champs sauf `messages`. Détail : `docs/agents.md`.
+
 - **Store IDB `summaries`** (keyPath `id` = id de conversation ; lot U-1, était
   la clé localStorage `miaou-summaries`). Trois états : résumé
   présent / tombstone (`suppressed: true`) / absent (candidat au backfill).

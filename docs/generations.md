@@ -202,14 +202,23 @@ de génération, c'est un état d'**écran**. Règle : **seule la génération q
 possède l'écran pilote le patienteur.** On ne les multiplie pas, on ne les scope
 pas par génération.
 
-### La file d'interjections est un état d'écran
+### La file d'interjections appartient à sa conversation (révisé X-1e)
 
-`_pendingInterjections` est un registre de module, mais `onInterjections` et
-`settleInterjectionQueue` appartiennent à une génération. **Seule celle qui
-possède l'écran draine la file** — sinon une génération détachée injecterait dans
-SA conversation des messages tapés en regardant une autre, et les volerait à la
-génération qui les attend. Une génération détachée qui se termine laisse la file
-intacte.
+`_pendingInterjections` est une **`Map<convId, items[]>`**, et `onInterjections`
+comme `settleInterjectionQueue` la ciblent par **`gen.convId`** — jamais par
+l'écran. Une génération détachée draine donc SA file, et laisse intacte celle de
+la conversation affichée.
+
+Ce fut d'abord un **état d'écran** (lot Q) : un tableau unique, gardé par
+`genOwnsScreen`. Cohérent tant qu'une génération appartenait à l'affichage, ce
+qui a cessé au lot T — et la question « qui va recevoir ce message ? » n'avait
+plus de réponse stable, le destinataire changeant avec l'écran. Cf.
+`docs/interjections.md` pour le constat de test et la table des quatre cas du
+drain A.
+
+Ce qui reste gardé par `genOwnsScreen` dans `onInterjections`, ligne par ligne :
+les effets **DOM** (la bulle close, la bulle user peinte, le `wrap` neuf). Muter
+le thread a lieu toujours — c'est la scission habituelle.
 
 ### Ce qu'une génération détachée perd, délibérément
 
@@ -223,6 +232,27 @@ intacte.
   conversation qu'on ne regarde pas, et enverrait la réponse ailleurs. La
   question, elle, **reste dans le fil** (message assistant persisté) : revenir
   sur la conversation la montre, et y répondre reprend le fil.
+
+## Générations sans écran : agents et réveil de parent (lot X-1)
+
+Le lot X-1 ajoute deux générations qui ne possèdent **jamais** l'écran par
+construction : celle d'un **agent** (`runAgentGeneration`, agents.js) et celle
+d'un **parent réveillé en arrière-plan** (`runDetachedGeneration`). Elles
+réutilisent tout ce qui précède — registre, abort ciblé, `persistGeneration`,
+`projectThreadToMessages` — et n'ont que la moitié « données » des hooks : aucun
+`startAssistantMessage`, aucun `setSending`, aucun `streamInto`.
+
+**Le point neuf, et il viole une prémisse de ce document** : `dispatchSend` part
+toujours de l'écran (« un envoi part toujours de la conversation affichée, donc
+on possède l'écran ici »). Le réveil d'un parent non affiché ne le peut pas.
+D'où deux branches explicites dans `startParentWakeGeneration`, et un prédicat
+nommé `parentThreadFor` pour la question dangereuse — `currentThread` (même
+référence) si le parent est affiché, `projectConvMessages` sinon. Détail complet
+dans `docs/agents.md`.
+
+Un troisième hook rejoint `onInterjections` à la frontière de tour :
+`onAgentResults`, sans garde `genOwnsScreen` — un résultat d'agent appartient à
+la conversation, pas à l'écran.
 
 ## Contexte d'exécution des outils (T-1c)
 

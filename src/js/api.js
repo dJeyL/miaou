@@ -625,7 +625,12 @@ async function runConversation(messages, hooks) {
       // Flag vision manuel (D5, brief A2) : ce modèle est marqué « sans vision »
       // sur le serveur actif → dégradation proactive même sans 400.
       visionDisabled: h.visionDisabled,
-      tools: h.noTools ? undefined : toolDefinitions(),
+      // `h.agentTools` (lot X-1) : liste blanche d'outils délégués à un agent.
+      // Le payload est RESTREINT — les outils non délégués sont ABSENTS de
+      // body.tools, pas « appelables et refusés ». Recalculé à chaque tour comme
+      // pour une conversation ordinaire, donc la restriction tient sur toute la
+      // boucle et pas seulement au premier appel.
+      tools: h.noTools ? undefined : toolDefinitions(h.agentTools, toolExecContext),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
     });
@@ -799,6 +804,21 @@ async function runConversation(messages, hooks) {
       // nature que la ré-injection image ci-dessus (corollaire du piège 16).
       if (h.onInterjections) {
         const extra = await h.onInterjections();
+        if (extra && extra.length) {
+          for (const em of extra) messages.push(em);
+        }
+      }
+
+      // Résultats d'agent (lot X-1, Q2) — drain à la frontière de tour, APRÈS
+      // les interjections. Hook DISTINCT de onInterjections, et file distincte :
+      // leurs conditions de drain sont OPPOSÉES (une interjection est un état
+      // d'ÉCRAN, gardé par genOwnsScreen ; un résultat d'agent ne dépend pas de
+      // l'écran — le parent peut être en arrière-plan). Les fusionner serait le
+      // motif « deux prédicats corrects séparément qui divergent ».
+      // Coût KV assumé : insertion mid-séquence, volontaire et ponctuelle —
+      // corollaire du piège 16, précédent exact du piège 27.
+      if (h.onAgentResults) {
+        const extra = h.onAgentResults();
         if (extra && extra.length) {
           for (const em of extra) messages.push(em);
         }

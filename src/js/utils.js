@@ -43,6 +43,10 @@ const ACK_COPY_FIELDS = [
   'server', 'name', 'intent',            // MCP / traçage d'intention
   'resourceName', 'mime', 'size',        // ressources IDB
   'attId',                                // pièces jointes (recall_attachment)
+  'recordId',                             // X-1d — id de record d'un rappel : IDENTITÉ, là où (attId, convId)
+                                          // est un couple ambigu dès qu'un agent rappelle un fichier de son
+                                          // parent (le record garde le convId du parent, l'ack porte celui
+                                          // de l'agent) ; cf. resolveRecallImages
   'slug', 'created',                      // skills (created : write = création vs modification)
   'topic', 'query',                      // aide (about_read, about_search)
   'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté

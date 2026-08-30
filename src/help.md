@@ -22,10 +22,13 @@ Ce que tu peux faire ici :
   exécuter du code sur son contenu pour compter, filtrer ou extraire, sans
   charger le fichier entier dans le contexte.
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
+- **Déléguer** : le modèle peut confier une tâche à un agent — une
+  sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
+  et récupérer son résultat.
 
 Pour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,
-mémoire, historique, skills, outils distants, exports, interface, contexte
-envoyé au modèle, données personnelles, ou la genèse du projet.
+mémoire, historique, skills, agents, outils distants, exports, interface,
+contexte envoyé au modèle, données personnelles, ou la genèse du projet.
 
 ## pieces-jointes
 
@@ -45,7 +48,11 @@ les ouvrir (voir le sujet `mcp`).
 Une fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton
 message. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,
 et un bouton permet de la retélécharger. Le modèle peut aussi redemander une
-pièce jointe d'un message précédent quand il en a besoin pour répondre.
+pièce jointe d'un message précédent quand il en a besoin pour répondre — et,
+plus généralement, se faire remontrer n'importe quelle image dont il dispose,
+y compris une qu'il vient de télécharger ou de produire lui-même : afficher une
+image dans la conversation ne la lui met pas sous les yeux, il doit la
+redemander explicitement.
 
 Les images ne sont envoyées en pleine résolution qu'au moment où tu les joins ;
 ensuite le modèle en garde une trace légère plutôt que de recharger les pixels à
@@ -213,7 +220,10 @@ d'Espace en haut de la barre latérale → « Déplacer des conversations… »
 (visible dès qu'il existe au moins deux Espaces et que l'Espace actif contient
 des conversations). Choisis les conversations puis l'Espace de destination.
 C'est le seul moyen de faire passer une conversation d'un Espace à l'autre —
-les exports (sujet `exports`) ne se réimportent pas.
+les exports (sujet `exports`) ne se réimportent pas. Une conversation dont un
+agent travaille en ce moment ne peut pas être déplacée : sa case est grisée le
+temps qu'il finisse (sujet `agents`). Les agents inertes, eux, suivent leur
+conversation.
 
 ## memoire
 
@@ -321,6 +331,95 @@ mode d'emploi de certains outils avancés). Elles apparaissent en tête du
 panneau Skills, dans une liste distincte, repérables à leur badge « Système ».
 Toujours actives, non modifiables ni supprimables : un bouton « Consulter »
 affiche leur contenu en lecture seule.
+
+## agents
+
+Le modèle peut lancer un **agent** : une sous-conversation autonome à qui il
+confie une tâche précise, et qui travaille en parallèle pendant qu'il continue
+de te répondre. Quand l'agent a fini, son résultat revient dans votre
+conversation et le modèle enchaîne dessus.
+
+Tu n'as rien à configurer : c'est le modèle qui décide, et tu peux aussi le lui
+demander (« lance un agent pour analyser ce log pendant qu'on continue »).
+
+**Ce qu'un agent est, concrètement.** Une conversation comme les autres, mais
+qui démarre à froid : elle ne connaît rien de votre échange, seulement la tâche
+que le modèle lui a écrite. C'est voulu — c'est ce qui lui permet de travailler
+sur un gros sujet sans encombrer votre conversation. En contrepartie, le modèle
+doit lui rédiger une consigne qui tient toute seule, et il ne délègue donc pas
+n'importe quoi : refaire à froid ce qu'il a déjà sous la main lui coûterait plus
+cher que de le faire lui-même.
+
+**Les outils.** Le modèle choisit ce qu'il confie à son agent : par défaut, un
+agent n'a aucun outil (il peut quand même rédiger, résumer, reformuler,
+analyser un texte qu'on lui donne). S'il a besoin de lire un fichier ou de
+calculer, le modèle doit le lui accorder explicitement. Un agent ne peut jamais
+en lancer un autre.
+
+**Les fichiers.** Un agent ne voit aucun de tes fichiers par défaut — ni ce que
+tu as joint à un message, ni la bibliothèque de l'espace. C'est la même logique
+que les outils : le modèle nomme ce qu'il confie, fichier par fichier. Donc si
+tu joins un document et que tu demandes de le faire analyser par un agent, le
+modèle a bien de quoi le lui transmettre — il te le dira s'il ne le fait pas.
+L'agent le lit sans le modifier.
+
+**Ce que tu vois.** Une ligne apparaît dans le fil au lancement, avec en clair
+ce qui a été demandé à l'agent. Pendant qu'il travaille, la conversation porte
+une pastille qui clignote, comme si elle rédigeait elle-même — parce que c'est
+bien elle qui travaille, à travers lui. Le compteur d'agents en haut à droite
+le compte aussi (voir le sujet `interface`). Quand il a fini, son résultat
+apparaît dans le fil comme un message, et le modèle repart de là.
+
+Ce message-là arrive **replié** : tu vois la tâche qui avait été confiée et
+l'état dans lequel l'agent s'est arrêté, et tu déplies d'un clic si tu veux lire
+le compte rendu entier. Un rapport d'agent est souvent long, et il tombe au
+milieu de votre échange — le laisser déplié noierait la conversation. Il n'est
+pas modifiable, contrairement à tes propres messages : c'est le compte rendu
+d'un travail qui a réellement eu lieu, le réécrire le ferait diverger de ce que
+l'agent a produit. Tu peux le copier, et ouvrir le fil de l'agent pour voir le
+détail.
+
+**Ouvrir un agent.** Le libellé de la ligne est cliquable : il ouvre le fil de
+l'agent, où tu vois tout son travail — ce qu'il a cherché, les outils qu'il a
+appelés, ce qu'il a répondu. C'est un geste de curiosité ou de débogage, pas
+quelque chose que tu as besoin de faire au quotidien. Les agents n'apparaissent
+volontairement **pas** dans ta barre latérale ni dans tes recherches : ils
+encombreraient ton historique alors qu'ils appartiennent à la conversation qui
+les a lancés.
+
+Une fois dans le fil d'un agent, un bandeau en tête te rappelle de quelle
+conversation il vient, et te ramène à elle d'un clic — c'est le chemin du
+retour, puisque l'agent n'est nulle part dans ta barre latérale. En haut, à la
+place du titre, tu lis ce qui a été demandé à l'agent : un agent n'a pas de
+titre à lui, et ne se renomme pas.
+
+Dans ce fil, tu peux **arrêter** un agent avec le bouton stop, comme n'importe
+quelle réponse. Le modèle en est prévenu et sait que c'est toi qui l'as arrêté.
+
+Tant qu'il travaille, tu peux lui écrire comme dans n'importe quelle
+conversation. **Une fois son travail fini, son fil passe en lecture seule** :
+son résultat est déjà remonté à la conversation qui l'a lancé, et celle-ci a
+repris sa route — un message envoyé là n'arriverait à personne. Le bandeau du
+haut te dit dans quel état il s'est arrêté (terminé, interrompu, en erreur…).
+Tu peux toujours le lire, le parcourir et revenir à sa conversation d'origine.
+Si tu veux poursuivre le travail, c'est à cette conversation-là qu'il faut le
+demander : elle relancera un agent.
+
+**Ce qui les borne.** Trois garde-fous, pour éviter qu'un agent parte
+indéfiniment ou qu'ils s'accumulent : un nombre maximum d'agents simultanés par
+conversation, un maximum global toutes conversations confondues, et un nombre
+maximum d'étapes qu'un agent peut enchaîner avant d'être arrêté d'office. Dans
+ce dernier cas son travail partiel est quand même transmis, en étant signalé
+comme incomplet — le modèle sait qu'il ne doit pas le prendre pour un résultat
+fini. Ces valeurs sont fixées à l'installation.
+
+**Suppression.** Un agent vit avec la conversation qui l'a lancé : supprimer
+celle-ci supprime ses agents, et arrête ceux qui tournaient encore. Déplacer une
+conversation vers un autre Espace emmène ses agents avec elle ; tant que l'un
+d'eux travaille, le déplacement est refusé (sa case est grisée), le temps qu'il
+finisse.
+
+Comme les réponses en cours, un agent ne survit pas au rechargement de la page.
 
 ## mcp
 
@@ -472,6 +571,10 @@ Quelques repères pour te déplacer dans MIAOU :
   qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour
   le récupérer dans le composer) ou annulable (la croix). Si tu en mets
   plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.
+  Ce message appartient à **la conversation où tu l'as tapé** : si tu pars
+  ailleurs, il ne te suit pas — tu le retrouves en revenant, et il part bien
+  dans cette conversation-là, même si tu regardes autre chose au moment où elle
+  le reçoit. Chaque conversation a donc sa propre file.
 - **Plusieurs réponses à la fois** : quitter une conversation ne l'interrompt
   plus. Tu peux poser une question, partir vers une autre conversation — ou même
   changer d'Espace — pendant que le modèle rédige : il continue, va au bout de
@@ -481,7 +584,9 @@ Quelques repères pour te déplacer dans MIAOU :
   qu'une réponse arrive la perd (la question, elle, reste).
 - **Pastilles d'activité** : un petit point signale ce qui bouge sans que tu
   aies à surveiller.
-  - **Point qui clignote** : cette conversation est en train de travailler.
+  - **Point qui clignote** : cette conversation est en train de travailler — soit
+    qu'elle rédige une réponse, soit qu'un agent qu'elle a lancé travaille pour
+    elle (voir le sujet `agents`).
   - **Point fixe, un peu plus gros** : la réponse est terminée et tu ne l'as pas
     encore vue. Ouvrir la conversation suffit à l'éteindre.
   - Le point apparaît sur la conversation dans la barre latérale, et aussi sur
@@ -492,13 +597,16 @@ Quelques repères pour te déplacer dans MIAOU :
     sur ces indicateurs de groupe — le détail se lit en dépliant.
   - Ces points sont volatiles : ils disparaissent si tu recharges la page.
 - **Compteur d'agents** : en haut à droite, une pastille « 1 agent » / « 3
-  agents » indique combien de conversations travaillent en ce moment, tous
-  Espaces confondus. Un **agent**, ici, c'est une conversation en train de
-  produire une réponse : selon les outils dont il dispose, il peut enchaîner
-  plusieurs étapes de lui-même (chercher, lire un fichier, calculer) avant de
-  répondre. Le compteur n'apparaît que s'il t'apprend quelque chose : une seule
-  réponse en cours, que tu es en train de regarder arriver, ne l'affiche pas —
-  le bouton stop du composer le dit déjà.
+  agents » indique combien de choses travaillent en ce moment, tous Espaces
+  confondus. Un **agent**, ici, c'est toute conversation en train de produire une
+  réponse : selon les outils dont il dispose, il peut enchaîner plusieurs étapes
+  de lui-même (chercher, lire un fichier, calculer) avant de répondre. Cela
+  inclut les **sous-conversations que le modèle lance lui-même** pour une tâche
+  précise (voir le sujet `agents`) : si le modèle en lance une pendant qu'il te
+  répond, le compteur en indique deux, parce que deux choses travaillent. Le
+  compteur n'apparaît que s'il t'apprend quelque chose : une seule réponse en
+  cours, que tu es en train de regarder arriver, ne l'affiche pas — le bouton
+  stop du composer le dit déjà.
 - **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une

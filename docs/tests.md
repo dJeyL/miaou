@@ -261,6 +261,33 @@ lazy-load CDN de l'engine, la création VM, l'injection de globals, l'exécution
 guest et les guards timeout/mémoire — tout l'embedding QuickJS-WASM chargé en
 browser, autre embedding que le `qjs` du runner.
 
+**Agents — `tests/test-agents.js` (lot X-1, cf. `docs/agents.md`)** : le prédicat
+de racine et ses cas limites (chaîne vide = racine), `agentChildrenOf`, la
+**composition** `spaceConvIds ∘ isRootConversation` — le joint entre deux
+fonctions pures étant précisément ce qui n'est jamais testé —, les exclusions de
+backfill et d'orphelins, `validateAgentToolList`, les deux bornes d'agents
+simultanés **et leur câblage** dans le handler, `shouldStopAgent`, les cinq
+statuts terminaux distincts dans le message délivré (dont `exhausted` disant
+« PARTIEL », et `stopped` ≠ `aborted`), la trace d'échecs d'outils dérivée via
+`ackIsError`, `parentThreadFor` dans ses deux branches, la file dédiée,
+`convBadgeState` étendu et l'**équivalence des trois prédicats de badge**, le
+défaut de `reasoning_effort` **réellement appliqué** par le handler et pas
+seulement annoncé par le schéma, la garde de parenté (agent étranger et agent
+inexistant → **message identique**), la restriction de payload par liste blanche,
+la cascade de suppression avec abort actif, et le déplacement (exclusion de
+présélection, emport des inertes, re-lecture de la garde au commit).
+
+Le lancement **effectif** d'un agent est couvert — conversation créée, thread
+initial cadré, Space hérité du `ctx` et non de l'écran, libellé non normalisé :
+tester qu'une fonction de borne existe sans tester que le handler l'appelle est
+exactement le trou d'orchestration déjà payé
+(`project_quickjs_tests_dont_cover_orchestration_scope`). Le harnais a gagné
+trois stubs à cette occasion — `insertBefore`, `Intl`, les timers — parce que ces
+chemins n'avaient jamais été empruntés par un test.
+
+Non couvrable en QuickJS : le câblage bout-en-bout spawn → exécution → réveil →
+badge, objet du verify e2e (non encore écrit).
+
 **Ouverture de documents — `tests/test-zip.js` et `tests/test-docs.js`
 (lots V-1 à V-5, cf. `docs/tools.md`)** : les deux fichiers construisent leurs
 fixtures en **tableaux d'octets littéraux** plutôt que de lire des fichiers —

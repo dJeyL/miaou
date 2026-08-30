@@ -190,6 +190,42 @@ first run is a signal to re-play, not a licence to skip it).
 Assertions accumulate into a `failures` array via a `check(label, cond)` helper
 so one run reports every problem, rather than aborting on the first.
 
+## Driving a stubbed model: rig constraints that are not code constraints
+
+Scenario-driven verifies (`verify-agents.mjs`, `verify-generations.mjs`,
+`verify-interjections.mjs`) stub `/chat/completions` and gate scripted tool calls
+on a per-conversation tag. Three properties of *that rig* have cost real
+debugging time. They share a signature that makes them hard to read: **the run
+hangs or times out instead of reporting a red assertion**, because the gate
+never opens, so the code under test is never reached and has nothing to say.
+
+When a scenario times out with no failed check, suspect the rig in this order
+before touching the app:
+
+- **The stub reads its state at request entry, so arming after `send()` is too
+  late.** Materialise the conversation and its fixtures, arm the stub, *then*
+  send. When the value to arm with is only known after a first turn (a minted
+  `res_…`), exploit determinism instead of ordering: `agentDelegatedAlias` is a
+  pure function of the record id, so the alias can be computed up front rather
+  than captured at runtime.
+- **A conversation that already carries a `role:'tool'` message will not fire a
+  second tool call** — the stub's `hasToolResult` guard ends the turn instead.
+  Consecutive tool-calling scenarios therefore need a **fresh parent
+  conversation each**, not one reused across blocks. This is a limit of the
+  montage, not of the app: MIAOU chains tool calls fine. Say so in a comment,
+  or a later reader will "fix" the app for it.
+- **The tag regex is `[A-Z0-9]+` — lowercase is silently truncated.** A tag
+  `P10a` matches as `P10`, so the gate keys on the wrong scenario and never
+  opens. Keep every tag uppercase (`P10A`, `A10A`). The failure mode is a
+  timeout with no diagnostic whatsoever.
+
+General lesson for this rig: when a scenario hangs, **add a temporary DBG
+`page.evaluate` dumping what the stub actually saw** (its tag, its armed state)
+rather than re-reading the scenario. All three above were found that way, and
+none of them were visible by inspection — the script looked right in each case.
+Prefix the probe `_` and delete it when done (see the Gotchas rule on throwaway
+scripts).
+
 ## Troubleshooting
 
 - **`Error: browserType.launch: Executable doesn't exist`**: Chromium

@@ -149,6 +149,18 @@ if (window.requestAnimationFrame) {
         </button>
       </div>
       <div class="topbar-mid">
+        <!-- Retour au parent depuis le fil d'un agent (lot X-1c). Occupe la
+             MÊME place que le bouton de retitrage, avec lequel il ne coexiste
+             jamais : un agent n'est jamais titré, donc .conv-retitle-btn y est
+             masqué (syncLastAssistantActions). Chevron gauche SEUL — distinct
+             de la paire `< >` réservée au code (js__eval) et du chevron bas du
+             repli (vocabulaire d'icônes, CLAUDE.md). Pas d'attribut onclick
+             littéral : la cible dépend du parent, relue à chaque appel de
+             syncAgentBanner (ui.js) qui pose .onclick — un seul mécanisme de
+             câblage, jamais les deux. -->
+        <button class="icon-btn conv-parent-btn" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
         <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
@@ -170,6 +182,17 @@ if (window.requestAnimationFrame) {
     </header>
 
     <div class="messages" id="messages">
+      <!-- Bandeau de parenté d'agent (lot X-1) : seule voie de RETOUR d'un agent
+           vers la conversation qui l'a lancé — l'aller existe depuis les acks
+           agent__* (renderAgentAckLabel). Dans .messages et AVANT .thread : il
+           scrolle avec le fil plutôt que de voler de la hauteur en permanence.
+           Texte et cible posés en JS (syncAgentBanner), jamais en template. -->
+      <div class="banner agent-banner" id="agent-banner">
+        <div class="agent-banner-body">
+          <svg class="agent-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><path d="M9 13h.01M15 13h.01M9 17h6"/></svg>
+          <span>Agent de&nbsp;: <a class="agent-banner-link" id="agent-banner-link" href="javascript:void(0)"></a><span class="agent-banner-status" id="agent-banner-status"></span></span>
+        </div>
+      </div>
       <div class="thread" id="thread"></div>
     </div>
 

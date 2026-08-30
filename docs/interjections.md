@@ -6,28 +6,75 @@ notamment au milieu d'une longue boucle d'outils. Inspiré du comportement de
 Claude Code (message mis en file, pris en compte au prochain point de
 respiration).
 
-## Modèle mental : une file, deux drains, une mécanique
+## Modèle mental : une file PAR CONVERSATION, deux drains, une mécanique
 
-Il n'y a pas de « mode mid-boucle » séparé. Un seul registre, deux points de
-vidange, un seul chemin de résolution.
+Il n'y a pas de « mode mid-boucle » séparé. Un registre par conversation, deux
+points de vidange, un seul chemin de résolution.
 
-- **Registre** : `_pendingInterjections` (main.js), tableau `{ id, literal }`,
-  **en mémoire, local à l'onglet**. Jamais persisté, jamais broadcasté (lot J
-  non concerné — état jamais affiché ailleurs, meurt avec l'onglet). Chaque
-  entrée ne garde que le **littéral** : les slash-skills sont re-résolues au
-  drain (contenu COURANT), jamais un contenu baké figé — même doctrine que
-  `editUserMessage`.
+- **Registre** : `_pendingInterjections` (main.js), **`Map<convId, items[]>`**
+  d'entrées `{ id, literal }`, **en mémoire, local à l'onglet**. Jamais
+  persisté, jamais broadcasté (lot J non concerné — meurt avec l'onglet, comme
+  la génération qu'il attend : un reload ne laisse ni l'un ni l'autre, décision
+  Julien X-1e). Chaque entrée ne garde que le **littéral** : les slash-skills
+  sont re-résolues au drain (contenu COURANT), jamais un contenu baké figé —
+  même doctrine que `editUserMessage`. Lecture par `interjectionsFor(convId)`,
+  jamais un `.get()` nu (sans conversation — accueil — la réponse est une liste
+  vide, pas `undefined`).
+
+### Pourquoi la clef par conversation (révision X-1e)
+
+Le lot Q en avait fait un **état d'écran** : un tableau unique, drainé par la
+génération qui possédait l'écran (`genOwnsScreen`). Cohérent tant qu'une
+génération appartenait à l'affichage — ce qui a cessé d'être vrai au lot T.
+
+Le défaut constaté en test (Julien, X-1) : une interjection tapée dans une
+conversation restait affichée au-dessus du composer **après un changement de
+conversation**, sur un fil qui ne générait pas et n'avait donc aucun point
+d'étape à venir. La question « qui va recevoir ce message ? » n'avait pas de
+réponse stable — le destinataire changeait avec l'écran, sans que rien ne le
+signale. Le seul geste sûr était de supprimer la puce.
+
+Depuis X-1e, la file appartient à la **conversation où l'on a tapé**, comme
+`_pendingAgentResults`. Les deux drains la ciblent par `gen.convId`, jamais par
+l'écran ; le rail (`renderInterjectionRail`) montre la file de la conversation
+AFFICHÉE, et elle seule — c'est la réponse visible à la question. Il est appelé
+à chaque changement de conversation (`openConversation`, `resetToEmpty`) :
+c'est cet appel qui manquait.
+
+**Les deux files restent distinctes** (`_pendingInterjections` /
+`_pendingAgentResults`), mais plus pour la raison écrite au lot Q (« leurs
+conditions de drain sont OPPOSÉES » — elles ne le sont plus). Ce qui les sépare
+désormais est ce qu'elles portent : une interjection est annulable, éditable, et
+reflue dans le composer à un arrêt ; un résultat d'agent est un fait acquis que
+personne ne retire. Les fusionner ferait qu'un stop utilisateur refoulerait dans
+le composer le compte rendu d'un agent.
 - **Drain B (nominal, le cœur)** : hook `onInterjections` appelé par
   `runConversation` (api.js) à la **frontière de tour** de la boucle d'outils,
   APRÈS `onToolAcks`, AVANT la relance. Le modèle voit l'interjection après les
   tool results du tour courant, avant son prochain geste d'outil → réaiguillage
   mid-boucle. Granularité = la frontière de tour (un tour est un seul appel
   réseau streamé, non interruptible en son milieu).
-- **Drain A (résiduel)** : `settleInterjectionQueue(nominal)` dans le `finally`
-  de `dispatchSend`, APRÈS `setSending(false)`. Si l'échange s'est terminé
-  nominalement (`finish_reason: 'stop'`, flag `endedNominal`) avec une file non
-  vide (message tapé trop tard pour B), elle part comme **nouvel échange** par
-  le chemin d'envoi normal (`sendUserText` → `dispatchSend`).
+- **Drain A (résiduel)** : `settleInterjectionQueue(convId, nominal)` dans le
+  `finally` de `dispatchSend`, APRÈS `setSending(false)`. `convId` est celui de
+  la GÉNÉRATION qui se termine, jamais l'écran. Quatre cas, deux axes :
+
+  | | conversation AFFICHÉE | conversation DÉTACHÉE |
+  |---|---|---|
+  | fin **nominale** | drain A par le chemin d'envoi normal (`sendUserText` → `dispatchSend`) | drain A par le chemin **détaché** : `parentThreadFor` + `startParentWakeGeneration` (agents.js) |
+  | fin **non nominale** | reflux composer (« stop veut dire stop ») | la file **reste en place** |
+
+  Le drain A détaché réutilise le chemin du **réveil de parent** (lot X-1) plutôt
+  que d'en ouvrir un second : c'est le même geste — pousser une entrée user dans
+  le thread d'une conversation, puis démarrer une génération dessus.
+  `sendUserText` ne convient pas, il écrit dans `currentThread`/`persistCurrent`
+  et rangerait l'interjection dans le fil AFFICHÉ (piège 28). Relecture APRÈS
+  l'await de résolution (piège 24 b) : la conversation a pu être supprimée, ou
+  l'écran être revenu dessus.
+
+  Le reflux non-nominal détaché n'a **pas** lieu : il vise le composer, qui
+  affiche autre chose — y déverser les littéraux les perdrait de vue et les
+  mélangerait au brouillon d'un autre fil. L'utilisateur retrouve ses puces
+  intactes en revenant sur la conversation.
 
 ## Composer en mode file
 

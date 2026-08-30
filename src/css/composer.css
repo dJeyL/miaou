@@ -287,6 +287,30 @@
 }
 .banner.show { display: flex; }
 
+/* Bandeau de parenté d'agent (lot X-1). Vit en tête de .messages, pas dans le
+   composer comme ses deux voisins — d'où la contrainte de colonne (var(--col),
+   comme .thread) : sans elle, il occuperait toute la largeur de .messages et
+   se désolidariserait du fil sur grand écran. margin-bottom seul : le
+   padding-top de .messages fait déjà l'espace au-dessus. */
+.agent-banner {
+  max-width: var(--col);
+  width: 100%;
+  margin: 0 auto 12px;
+  flex: 0 0 auto;
+}
+.agent-banner-body { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.agent-banner-icon { width: 16px; height: 16px; flex: 0 0 auto; opacity: .8; }
+/* Couleur d'accent : elle porte seule l'affordance de lien, sans soulignement
+   permanent (le survol accuse le ciblage). Cf. .ack-conv-link, qui hérite sa
+   couleur et doit donc, lui, se souligner. */
+.agent-banner-link { color: var(--accent); text-decoration: none; cursor: pointer; }
+.agent-banner-link:hover { text-decoration: underline; }
+/* Statut (X-1e) : information secondaire, en retrait du nom du parent qui reste
+   l'élément actionnable du bandeau. Pas de couleur propre — un statut d'échec
+   n'est pas une erreur de l'application, et le teinter en rouge en ferait une
+   alarme là où c'est un compte rendu. */
+.agent-banner-status { color: var(--text-2); }
+
 .summary-banner { margin: 12px 0; }
 .summary-banner-head {
   display: flex;
@@ -370,11 +394,25 @@
 body.conv-readonly .composer-inner { opacity: 0.55; }
 body.conv-readonly .msg-edit,
 body.conv-readonly .msg-regen,
-body.conv-readonly .msg-continue,
-body.conv-readonly .conv-retitle-btn {
+body.conv-readonly .msg-continue {
   pointer-events: none;
   opacity: 0.4;
 }
+/* .conv-retitle-btn : règle SÉPARÉE, et sans `opacity: 0.4`. Contrairement aux
+   trois boutons ci-dessus (opacité 0 hors survol de LEUR bulle, que 0.4 grise
+   correctement au survol), celui-ci est à `opacity: 0` EN PERMANENCE et ne
+   monte qu'au survol du titre (chat.css). Le passer à 0.4 le rendait donc plus
+   VISIBLE en lecture seule qu'en état normal — une règle censée neutraliser qui
+   révélait. On se borne à couper le clic ; l'apparence reste gouvernée par la
+   règle de survol, et `:disabled` (chat.css) continue de primer. Défaut
+   préexistant au lot J, révélé par la lecture seule des agents (X-1e) : sans
+   elle, aucune conversation affichant ce bouton n'était jamais readonly assez
+   longtemps pour qu'on le remarque. */
+body.conv-readonly .conv-retitle-btn { pointer-events: none; }
+/* .conv-parent-btn n'est VOLONTAIREMENT pas dans la liste ci-dessus : le
+   readonly neutralise les MUTATIONS, or le retour au parent est de la
+   navigation. Un pair qui génère sur ce fil ne doit pas y enfermer
+   l'utilisateur (lot X-1c). */
 
 /* ═══ Pièces jointes (composer) ═══ */
 /* Chips en attente, au-dessus de l'input-wrap. Structure partagée avec les

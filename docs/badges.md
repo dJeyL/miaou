@@ -148,6 +148,26 @@ supprime le besoin de câbler la synchro dans `toggleSidebar` /
 **`topbar-space-badge` n'est PAS concerné** : il reste ce qu'il est (nom du
 Space actif, masqué en default Space, brief D5).
 
+## Extension du lot X-1 : un parent dont un agent travaille
+
+`convBadgeState` répond `working` si la conversation génère **ou** si l'un de ses
+agents génère (`hasWorkingAgent`, agents.js). Les agents n'ayant aucune surface
+propre — ils sont exclus de la sidebar — la pastille de l'enfant est portée par
+le parent, ce qui rend l'extension nécessaire et non redondante.
+
+**Les deux agrégats dérivent désormais RÉELLEMENT de `convBadgeState`**, ce que
+le commentaire de celui-ci affirmait depuis T-2 tout en itérant
+`_activeGenerations` directement : vrai au sens de la sémantique, faux au sens de
+l'appel. L'alignement a été tranché sur mesure et non sur principe — les deux
+agrégats appelaient déjà `listAllConversations()` pour leur branche `unread`,
+donc l'argument de coût qui aurait justifié l'écart ne tenait pas. Sans lui, le
+`working` d'un parent aurait été invisible des agrégats, avec un résultat
+fortuitement correct (l'enfant est lui-même dans le registre, dans le Space de
+son parent) mais pour la mauvaise raison. Détail : `docs/agents.md`.
+
+`unread` n'est **pas** étendu au parent : l'enfant qui finit le réveille, donc il
+regénère et son `working` reprend seul.
+
 ## Compteur d'agents (lot T-2bis)
 
 Les pastilles répondent **surface par surface** ; aucune ne répond « combien au

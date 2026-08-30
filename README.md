@@ -26,12 +26,18 @@ Figtree/Fira Code).
 - **Interjections en cours de génération** : taper un message pendant que le
   modèle travaille ne l'interrompt pas — il se met en file et lui est transmis à
   la prochaine étape d'outils, pour le réorienter avant qu'il ait fini. Message
-  en attente modifiable ou annulable — cf. [docs/interjections.md](docs/interjections.md).
+  en attente modifiable ou annulable, et rattaché à sa conversation (chacune a
+  sa file) — cf. [docs/interjections.md](docs/interjections.md).
 - **Générations en parallèle** : une réponse en cours appartient à sa
   conversation, pas à l'écran. Naviguer ailleurs (ou changer d'Espace) ne
   l'interrompt pas, et plusieurs peuvent tourner de front ; des pastilles
   signalent l'activité et les réponses non lues — cf.
   [docs/generations.md](docs/generations.md) et [docs/badges.md](docs/badges.md).
+- **Agents** : le modèle confie une tâche délimitée à une sous-conversation
+  autonome, qui travaille en parallèle avec les seuls outils et fichiers qu'il
+  lui délègue, et dont le résultat lui revient dans le fil — replié, et non
+  modifiable. Le fil d'un agent passe en lecture seule une fois son travail
+  rendu — cf. [docs/agents.md](docs/agents.md).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
   alimenté en direct.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et
@@ -199,6 +205,9 @@ build.
   "require_api_key":         true,
   "chat_temperature":        0.7,
   "default_context_window":  32768,
+  "max_agents_per_conv":     3,
+  "max_agents_total":        5,
+  "max_agent_turns":         12,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }
 ```
@@ -219,6 +228,11 @@ build.
 - `default_context_window` : taille de fenêtre de contexte (en tokens) utilisée
   par défaut tant que l'utilisateur n'a rien saisi dans les réglages. `0` ou
   absent = inconnue (aucune valeur par défaut appliquée).
+- `max_agents_per_conv` / `max_agents_total` : bornes d'agents simultanés —
+  par conversation (défaut 3) et toutes conversations confondues (défaut 5).
+  Un refus nomme celle qui est atteinte.
+- `max_agent_turns` : nombre d'échanges qu'un agent peut enchaîner avant d'être
+  arrêté d'office (défaut 12). Son travail partiel est quand même transmis.
 - `repo_url` : URL liée sur le mot « MIAOU » dans le footer des exports HTML
   (conversations et Markdown convertis). **Trois états distincts** : clef
   **absente ou `null`** → lien vers le dépôt public
