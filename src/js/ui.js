@@ -4140,7 +4140,8 @@ function cmdkModeItems(query) {
     }));
   }
   if (_cmdkMode === 'space') {
-    const spaces = loadSpaces().filter(s => !query || (s.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0);
+    const spaces = sortedSpacesByName(loadSpaces())
+      .filter(s => !query || (s.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0);
     const active = getActiveSpaceId();
     return spaces.map(s => ({
       label: s.name || '(sans nom)', current: s.id === active,
@@ -5884,7 +5885,7 @@ function renderSpaceMenu() {
   const menu = $('space-menu');
   if (!menu) return;
   menu.innerHTML = '';
-  const spaces = loadSpaces();
+  const spaces = sortedSpacesByName(loadSpaces());
   for (const s of spaces) {
     const opt = document.createElement('div');
     opt.className = 'model-opt' + (s.id === activeSpaceId ? ' selected' : '');

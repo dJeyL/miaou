@@ -1678,6 +1678,14 @@ function spaceMenuMaxHeight(anchorBottom, viewportHeight) {
   return Math.max(SPACE_MENU_MIN_H, Math.floor(vh - bottom - SPACE_MENU_GAP_PX));
 }
 
+function sortedSpacesByName(spaces) {
+  const arr = Array.isArray(spaces) ? spaces : [];
+  const def = arr.filter(s => s.id === DEFAULT_SPACE_ID);
+  const rest = arr.filter(s => s.id !== DEFAULT_SPACE_ID)
+    .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return def.concat(rest);
+}
+
 // ── Badges d'activité (lot T-2) — résolution pure ───────────────────────────
 // Deux états mutuellement exclusifs dans le temps sur une même conversation :
 // 'working' (une génération est en vol) puis 'unread' (elle a fini pendant que

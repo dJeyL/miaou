@@ -3849,7 +3849,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-08-31 18:24 UTC */
+/* miaou — built: 2026-08-31 20:22 UTC */
 
 /* ── utils.js ── */
 
@@ -4934,6 +4934,14 @@ function spaceMenuMaxHeight(anchorBottom, viewportHeight) {
 
   if (!isFinite(bottom) || !isFinite(vh) || vh <= 0) return 0;
   return Math.max(SPACE_MENU_MIN_H, Math.floor(vh - bottom - SPACE_MENU_GAP_PX));
+}
+
+function sortedSpacesByName(spaces) {
+  const arr = Array.isArray(spaces) ? spaces : [];
+  const def = arr.filter(s => s.id === DEFAULT_SPACE_ID);
+  const rest = arr.filter(s => s.id !== DEFAULT_SPACE_ID)
+    .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return def.concat(rest);
 }
 
 function resolveActivityBadge(states) {
@@ -6756,7 +6764,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788200682}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788207777}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -15413,7 +15421,8 @@ function cmdkModeItems(query) {
     }));
   }
   if (_cmdkMode === 'space') {
-    const spaces = loadSpaces().filter(s => !query || (s.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0);
+    const spaces = sortedSpacesByName(loadSpaces())
+      .filter(s => !query || (s.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0);
     const active = getActiveSpaceId();
     return spaces.map(s => ({
       label: s.name || '(sans nom)', current: s.id === active,
@@ -16813,7 +16822,7 @@ function renderSpaceMenu() {
   const menu = $('space-menu');
   if (!menu) return;
   menu.innerHTML = '';
-  const spaces = loadSpaces();
+  const spaces = sortedSpacesByName(loadSpaces());
   for (const s of spaces) {
     const opt = document.createElement('div');
     opt.className = 'model-opt' + (s.id === activeSpaceId ? ' selected' : '');
