@@ -64,9 +64,11 @@ Pour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle
 n'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le
 calcul** — compter des lignes, filtrer, agréger, extraire un extrait — en
 exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile
-pour interroger un fichier trop gros pour tenir dans le contexte. Si le résultat
-demandé est lui-même trop volumineux, le modèle est invité à le resserrer plutôt
-qu'à déverser le fichier brut.
+pour interroger un fichier trop gros pour tenir dans le contexte. Si la réponse
+ramenée est elle-même trop volumineuse, le modèle est invité à la resserrer
+plutôt qu'à déverser le fichier brut — ou, quand il s'agit justement de
+**produire** un gros contenu, à l'écrire au fil du calcul dans une ressource,
+qui n'a pas cette limite (voir plus bas).
 
 Les **archives zip** sont ouvertes par MIAOU lui-même, sans aucun serveur
 compagnon : le modèle peut lister les fichiers contenus dans une archive que tu
@@ -175,6 +177,18 @@ récupérée, un fichier lu) encombre la conversation, le modèle peut le ranger
 ressource : le contenu lourd disparaît alors de l'historique, remplacé par une
 pièce jointe accompagnée d'un court résumé, tout en restant interrogeable par le
 calcul. La conversation s'allège sans rien perdre d'exploitable.
+
+Une ressource n'est pas figée une fois créée : le modèle peut la **compléter au
+fil de l'eau**, en plusieurs fois. C'est ce qui lui permet de construire un gros
+résultat — un CSV assemblé depuis plusieurs sources, un rapport écrit section
+par section — sans jamais devoir tout réécrire à chaque étape, et sans buter sur
+la taille d'une seule réponse. Il peut y ajouter du texte qu'il rédige, ou faire
+écrire directement le code qu'il exécute dans le bac à sable, ligne après ligne.
+Ce qui a déjà été écrit reste acquis, y compris si le calcul s'interrompt en
+cours de route : tu récupères le travail partiel plutôt que rien. Dans ce cas la
+trace de l'outil le dit — elle apparaît en rouge et porte la mention
+« interrompu », pour que tu ne prennes pas un fichier arrêté au milieu pour un
+fichier fini.
 
 ## espaces
 

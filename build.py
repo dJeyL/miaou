@@ -309,15 +309,30 @@ def strip_html_comments(src: str) -> str:
 
 def collapse_blank_code_lines(src: str) -> str:
     """Réduit les runs de lignes entièrement vides à une seule (le strip des
-    commentaires en laisse souvent plusieurs à la suite). Opère au niveau
-    ligne, après strip_js_comments : à ce stade il ne reste plus de
-    commentaires, donc plus besoin de distinguer regex/division/template —
-    seul un examen ligne par ligne est nécessaire."""
+    commentaires en laisse souvent plusieurs à la suite) ET retire le blanc de
+    fin de ligne. Opère au niveau ligne, après strip_js_comments : à ce stade
+    il ne reste plus de commentaires, donc plus besoin de distinguer
+    regex/division/template — seul un examen ligne par ligne est nécessaire.
+
+    Le rstrip vit ICI et non dans les strippers, qui traversent strings et
+    template literals : y toucher au blanc modifierait le CONTENU d'une chaîne.
+    À ce stade la passe est sûre — mais elle traverse quand même les templates
+    (EXPORT_CSS/EXPORT_SCRIPT), donc l'invariant à tenir est qu'aucune ligne de
+    src/js ne porte d'espace final SIGNIFICATIF. Il est vérifié : aucune n'en
+    porte du tout, et ni CSS ni JS n'y sont sensibles. Une template literal de
+    données textuelles serait le seul cas contraire — il n'y en a pas.
+
+    Sans le rstrip, un commentaire retiré laissait son indentation (ligne de
+    blanc pur, que le test `line.strip() == ''` détectait déjà sans la nettoyer)
+    ou ses espaces d'alignement (commentaire de fin de ligne). ~1100 lignes du
+    dist en portaient, ce qui rendait `git diff --check` inutilisable comme
+    garde-fou sur le dépôt."""
     lines = src.split('\n')
     out_lines = []
     blank_run = 0
     for line in lines:
-        if line.strip() == '':
+        line = line.rstrip()
+        if line == '':
             blank_run += 1
             if blank_run > 1:
                 continue

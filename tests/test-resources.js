@@ -1029,3 +1029,93 @@ describe('makeResourcePresentBlock', function() {
     expect(block.type).toBe('image');
   });
 });
+
+// ── appendTextToRecord (lot Y — noyau pur de l'écriture incrémentale) ─────────
+
+describe('appendTextToRecord (lot Y)', function() {
+  it('concatène le texte à la fin et met la taille à jour', function() {
+    var rec = { id: 'res_a', name: 'r', mime: 'text/plain', data: utf8Encode('abc') };
+    var out = appendTextToRecord(rec, 'def');
+    expect(out.ok).toBe(true);
+    expect(utf8Decode(out.record.data)).toBe('abcdef');
+    expect(out.record.size).toBe(6);
+    expect(out.appendedLen).toBe(3);
+  });
+
+  it('ne mute PAS le record d\'origine (nouvel objet retourné)', function() {
+    var rec = { id: 'res_a', name: 'r', mime: 'text/plain', data: utf8Encode('abc'), size: 3 };
+    var out = appendTextToRecord(rec, 'def');
+    expect(utf8Decode(rec.data)).toBe('abc');
+    expect(rec.size).toBe(3);
+    expect(out.record === rec).toBe(false);
+  });
+
+  it('préserve les autres champs du record (id, name, mime, class)', function() {
+    var rec = { id: 'res_a', name: 'sortie.csv', mime: 'text/csv', class: 'inline',
+                conversationId: 'c1', data: utf8Encode('x') };
+    var out = appendTextToRecord(rec, 'y');
+    expect(out.record.id).toBe('res_a');
+    expect(out.record.name).toBe('sortie.csv');
+    expect(out.record.mime).toBe('text/csv');
+    expect(out.record.class).toBe('inline');
+    expect(out.record.conversationId).toBe('c1');
+  });
+
+  it('append successifs : la taille suit le cumul (pas de perte du déjà-écrit)', function() {
+    var rec = { id: 'res_a', mime: 'text/plain', data: utf8Encode('') };
+    var a = appendTextToRecord(rec, 'ligne1\n');
+    var b = appendTextToRecord(a.record, 'ligne2\n');
+    var c = appendTextToRecord(b.record, 'ligne3\n');
+    expect(utf8Decode(c.record.data)).toBe('ligne1\nligne2\nligne3\n');
+    expect(c.record.size).toBe(21);
+  });
+
+  it('UTF-8 multi-octets : la taille est en OCTETS, appendedLen en caractères', function() {
+    var rec = { id: 'res_a', mime: 'text/plain', data: utf8Encode('') };
+    var out = appendTextToRecord(rec, 'éé');
+    expect(out.appendedLen).toBe(2);
+    expect(out.record.size).toBe(4);
+    expect(utf8Decode(out.record.data)).toBe('éé');
+  });
+
+  it('contenu vide → refus explicite, jamais un no-op silencieux', function() {
+    var rec = { id: 'res_a', mime: 'text/plain', data: utf8Encode('abc') };
+    var out = appendTextToRecord(rec, '');
+    expect(out.ok).toBe(false);
+    expect(out.message.indexOf('vide') >= 0).toBe(true);
+  });
+
+  it('record absent ou sans data → refus, pas de throw', function() {
+    expect(appendTextToRecord(null, 'x').ok).toBe(false);
+    expect(appendTextToRecord({ id: 'res_a' }, 'x').ok).toBe(false);
+  });
+
+  it('dépassement du plafond → REFUS explicite, jamais une troncature', function() {
+    // Garde d'entrée vs capacité aval : une ressource au-delà du plafond de blob
+    // adressable (MAX_INLINE_BYTES en production) serait illisible par js__eval —
+    // l'append doit refuser AVANT. Le cap est injecté ici pour ne pas allouer
+    // 64 Mo dans QuickJS ; le défaut de production est vérifié juste après.
+    var rec = { id: 'res_a', mime: 'text/plain', data: utf8Encode('abcde') };
+    var out = appendTextToRecord(rec, 'xyz', 6);
+    expect(out.ok).toBe(false);
+    expect(out.message.indexOf('volumineuse') >= 0).toBe(true);
+    // Contrôle de prémisse : sans la garde, ce MÊME append aboutirait.
+    expect(appendTextToRecord(rec, 'xyz', 100).ok).toBe(true);
+  });
+
+  it('cap compté en OCTETS, pas en caractères (UTF-8 multi-octets)', function() {
+    var rec = { id: 'res_a', mime: 'text/plain', data: utf8Encode('') };
+    // 'ééé' = 3 caractères mais 6 octets : un cap de 5 doit refuser.
+    expect(appendTextToRecord(rec, 'ééé', 5).ok).toBe(false);
+    expect(appendTextToRecord(rec, 'ééé', 6).ok).toBe(true);
+  });
+
+  it('le plafond par défaut est MAX_INLINE_BYTES (garde d\'entrée js__eval)', function() {
+    var rec = { id: 'res_a', mime: 'text/plain', data: { byteLength: MAX_INLINE_BYTES } };
+    // data factice (byteLength seul) : le contrôle de taille est fait AVANT tout
+    // décodage, donc il tombe sans qu'on ait à allouer le buffer.
+    var out = appendTextToRecord(rec, 'x');
+    expect(out.ok).toBe(false);
+    expect(out.message.indexOf('volumineuse') >= 0).toBe(true);
+  });
+});

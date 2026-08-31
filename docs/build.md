@@ -25,6 +25,23 @@ Les commentaires sont retirés au passage — `src/` reste la référence commen
 - HTML : `strip_html_comments` (sur le template, avant substitution des
   placeholders).
 
+Puis une passe **au niveau ligne**, `collapse_blank_code_lines`, appliquée après
+chacun des trois : elle écrase les runs de lignes vides (le strip en laisse
+souvent plusieurs à la suite) **et retire le blanc de fin de ligne**. Ce second
+nettoyage vit là et **pas dans les strippers**, qui traversent strings et
+template literals — y toucher au blanc modifierait le contenu d'une chaîne.
+Après strip, l'examen ligne par ligne est sûr. L'invariant à tenir est qu'aucune
+ligne de `src/js` ne porte d'espace final **significatif** : c'est vérifié
+(aucune n'en porte du tout), et ni CSS ni JS n'y sont sensibles — seule une
+template literal de données textuelles le serait, il n'y en a pas.
+
+Sans ce `rstrip`, un commentaire retiré laissait derrière lui son indentation
+(ligne de blanc pur) ou ses espaces d'alignement (commentaire de fin de ligne) :
+~1100 lignes du `dist` en portaient, ce qui rendait `git diff --check`
+inutilisable comme garde-fou sur le dépôt. Corrigé au lot Y ; le passage a
+produit un diff cosmétique unique sur `dist/miaou.html`, sans aucun changement
+de substance (`git diff -w` le montre : seul le lot Y y apparaît).
+
 Tests unitaires de ces transformations dans `tests/runner.py`
 (`run_build_unit_tests`).
 

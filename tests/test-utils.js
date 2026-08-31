@@ -2197,3 +2197,23 @@ describe('formatAgentCountLabel (lot T-2bis)', function() {
     expect(formatAgentCountLabel(-3)).toBe('');
   });
 });
+
+// ── ackIsError sur resource_appended (lot Y — écriture partielle) ─────────────
+
+describe('ackIsError — écriture partielle d\'une ressource (lot Y)', function() {
+  it('un resource_appended nominal n\'est PAS en erreur', function() {
+    expect(ackIsError({ kind: 'resource_appended', appendedLen: 12, size: 40 })).toBe(false);
+  });
+  it('ok:false (calcul interrompu) rend l\'ack rouge', function() {
+    // Le rouge ne dit pas « l'écriture a échoué » (_appendBlock est atomique)
+    // mais « le calcul qui l'a produite s'est arrêté » — la ressource est
+    // incomplète, et c'est ce que l'utilisateur doit voir.
+    expect(ackIsError({ kind: 'resource_appended', appendedLen: 840, ok: false })).toBe(true);
+  });
+  it('le prédicat reste le MÊME que pour les autres producteurs de ok:false', function() {
+    // Contrôle de prémisse : aucun branchement par kind dans ackIsError — si
+    // quelqu'un en ajoutait un, ce test le verrait.
+    expect(ackIsError({ kind: 'js_eval', ok: false })).toBe(true);
+    expect(ackIsError({ kind: 'docs_pack', ok: false })).toBe(true);
+  });
+});

@@ -1731,3 +1731,113 @@ describe('T-1c — ctx d\'exécution : le ctx explicite prime sur l\'écran', fu
     }
   });
 });
+
+// ── Lot Y — resource__append + output_handle/emit ────────────────────────────
+
+describe('validateResourceAppendArgs (lot Y) — extrait du handler async', function() {
+  it('id res_… + content présents → chaîne vide (valide)', function() {
+    expect(validateResourceAppendArgs({ id: 'res_abc', content: 'du texte' })).toBe('');
+  });
+  it('id manquant → invalide', function() {
+    expect(validateResourceAppendArgs({ content: 'x' })).toContain('Handle manquant');
+  });
+  it('content vide → refus explicite, pas un no-op', function() {
+    expect(validateResourceAppendArgs({ id: 'res_abc', content: '' })).toContain('vide');
+  });
+  it('args absent → invalide, pas de crash', function() {
+    expect(validateResourceAppendArgs(undefined)).toContain('Handle manquant');
+  });
+  it('GARDE DE FAMILLE : att-N refusé au niveau du schéma', function() {
+    const msg = validateResourceAppendArgs({ id: 'att-1', content: 'x' });
+    expect(msg.indexOf('res_<id>') >= 0).toBe(true);
+  });
+  it('GARDE DE FAMILLE : file-<id> refusé au niveau du schéma', function() {
+    const msg = validateResourceAppendArgs({ id: 'file-deadbeef', content: 'x' });
+    expect(msg.indexOf('res_<id>') >= 0).toBe(true);
+  });
+  it('handle d\'aucune famille connue → refus', function() {
+    expect(validateResourceAppendArgs({ id: 'bogus', content: 'x' }).length > 0).toBe(true);
+  });
+  it('content à espaces seuls reste VALIDE (un saut de ligne est du contenu)', function() {
+    // Contrôle de prémisse du refus « vide » : c'est la chaîne VIDE qui est
+    // refusée, pas le blanc — un '\n' entre deux blocs est un ajout légitime.
+    expect(validateResourceAppendArgs({ id: 'res_abc', content: '\n' })).toBe('');
+  });
+});
+
+describe('resource__append — définition d\'outil et doctrine (lot Y)', function() {
+  it('est dans TOOLS avec id et content requis', function() {
+    const def = TOOLS.find(t => t.name === 'resource__append');
+    expect(def).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('id') >= 0).toBe(true);
+    expect(def.inputSchema.required.indexOf('content') >= 0).toBe(true);
+  });
+  it('n\'expose ni mime ni name (contrairement à resource__create)', function() {
+    const def = TOOLS.find(t => t.name === 'resource__append');
+    expect(def.inputSchema.properties.mime).toBe(undefined);
+    expect(def.inputSchema.properties.name).toBe(undefined);
+  });
+  it('annotations : écriture d\'état (readOnlyHint false)', function() {
+    const def = TOOLS.find(t => t.name === 'resource__append');
+    expect(def.annotations.readOnlyHint).toBe(false);
+  });
+  it('RESOURCE_DOCTRINE nomme les TROIS outils, dans ROOT_SYSTEM_PROMPT', function() {
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource__create') >= 0).toBe(true);
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource__from_result') >= 0).toBe(true);
+    expect(ROOT_SYSTEM_PROMPT.indexOf('miaou__resource__append') >= 0).toBe(true);
+  });
+  it('RESOURCE_DOCTRINE ne dit plus « Deux outils » (énumération fermée)', function() {
+    expect(RESOURCE_DOCTRINE.indexOf('Deux outils') >= 0).toBe(false);
+    expect(RESOURCE_DOCTRINE.indexOf('Trois outils') >= 0).toBe(true);
+  });
+  it('toolIsHalting reste exclusivement câblé sur ask_confirmation', function() {
+    expect(toolIsHalting('resource__append')).toBe(false);
+    expect(toolIsHalting('miaou__resource__append')).toBe(false);
+  });
+});
+
+describe('js__eval + output_handle / emit (lot Y)', function() {
+  it('output_handle est un paramètre OPTIONNEL (absent de required)', function() {
+    const def = TOOLS.find(t => t.name === 'js__eval');
+    expect(def.inputSchema.properties.output_handle).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('output_handle') >= 0).toBe(false);
+    // Contrôle de prémisse : les deux autres, eux, SONT requis.
+    expect(def.inputSchema.required.indexOf('handle') >= 0).toBe(true);
+    expect(def.inputSchema.required.indexOf('code') >= 0).toBe(true);
+  });
+  it('readOnlyHint est false : l\'outil écrit dès qu\'un output_handle est fourni', function() {
+    const def = TOOLS.find(t => t.name === 'js__eval');
+    expect(def.annotations.readOnlyHint).toBe(false);
+  });
+  it('la description mentionne output_handle et emit', function() {
+    const def = TOOLS.find(t => t.name === 'js__eval');
+    expect(def.description.indexOf('output_handle') >= 0).toBe(true);
+    expect(def.description.indexOf('emit()') >= 0).toBe(true);
+  });
+  it('SURFACE GUEST FERMÉE : le prélude de base ne définit QUE les quatre lectures', function() {
+    // Piège 25 — emit ne doit PAS être dans le prélude de base : sans
+    // output_handle, la primitive n'existe pas (ReferenceError au lieu d'un
+    // no-op silencieux).
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function text(') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function lines(') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function jsonLines(') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function parse(') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('emit') >= 0).toBe(false);
+  });
+  it('le prélude emit est SÉPARÉ et pose la cinquième primitive', function() {
+    expect(JS_EVAL_EMIT_PRELUDE.indexOf('function emit(') >= 0).toBe(true);
+  });
+  it('PONT DÉDIÉ : emit passe par __miaou_emit, jamais par __miaou_text', function() {
+    // Le pont d'entrée reste ce qu'il était ; la sortie en ouvre un second,
+    // explicitement (brief §3, piège 25).
+    expect(JS_EVAL_EMIT_PRELUDE.indexOf('__miaou_emit') >= 0).toBe(true);
+    expect(JS_EVAL_EMIT_PRELUDE.indexOf('__miaou_text') >= 0).toBe(false);
+  });
+  it('AUCUN autre pont host→guest que les deux énumérés', function() {
+    // Toute host function est posée par ctx.newFunction dans runInQuickJs : le
+    // compte des occurrences borne la surface. Deux, pas trois.
+    const src = String(runInQuickJs);
+    const bridges = src.match(/ctx\.newFunction\(/g) || [];
+    expect(bridges.length).toBe(2);
+  });
+});

@@ -859,6 +859,89 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
   }
 }
 
+// ── Écriture incrémentale d'une ressource (lot Y) ────────────────────────────
+
+// NOYAU PUR de l'append (lot Y), extrait exprès du wrapper IDB pour rester
+// testable en QuickJS (mémoire project_extract_pure_helper_over_idb_stub) :
+// c'est ici que vivent le décodage/concaténation/réencodage ET la garde de
+// taille, pas dans la partie impure.
+//
+// Le store `resources` n'offre AUCUN append en place : putResource fait un `put`
+// intégral et `record.data` est un ArrayBuffer entier (AUDIT-Y §1). La seule
+// voie est read-concat-rewrite — O(taille totale) par appel, assumé : le gain
+// visé est le contexte modèle (ne pas repayer le déjà-écrit en tokens), pas le
+// coût de stockage local.
+//
+// Garde de taille : MAX_INLINE_BYTES (utils.js) est le plafond du blob
+// adressable par js__eval. Sans elle, un append répété fabriquerait une
+// ressource que l'outil aval refuserait de lire — exactement la contradiction
+// « garde d'entrée vs capacité aval » déjà payée (mémoire éponyme). Le refus est
+// EXPLICITE (message), jamais une troncature silencieuse.
+//
+// Retourne { ok: true, record } (NOUVEL objet record, l'original n'est pas muté)
+// ou { ok: false, message } — le site appelant traduit en toolFail.
+// `cap` est injectable (défaut MAX_INLINE_BYTES) pour que le refus de plafond
+// soit testable sans allouer 64 Mo dans QuickJS ; aucun appelant de production
+// ne le passe.
+function appendTextToRecord(record, extraText, cap) {
+  if (!record || !record.data) return { ok: false, message: 'Ressource introuvable.' };
+  const extra = String(extraText == null ? '' : extraText);
+  if (!extra) return { ok: false, message: 'Contenu vide, rien à ajouter.' };
+  const limit = cap != null ? cap : MAX_INLINE_BYTES;
+  // Le plafond est vérifié AVANT de matérialiser les octets : sur une ressource
+  // déjà proche de la limite, encoder puis refuser ferait passer par un
+  // ArrayBuffer inutile (le contrôle porte sur des tailles, pas sur le contenu).
+  const currentBytes = record.data.byteLength != null ? record.data.byteLength : 0;
+  if (currentBytes + utf8ByteLength(extra) > limit) {
+    return { ok: false, message: 'Ressource trop volumineuse après ajout : ' +
+      humanSize(currentBytes + utf8ByteLength(extra)) + ', au-delà de la limite de ' +
+      humanSize(limit) + '. Range la suite dans une autre ressource.' };
+  }
+  const merged = utf8Decode(record.data) + extra;
+  const data = utf8Encode(merged);
+  const next = Object.assign({}, record, { data, size: data.byteLength });
+  return { ok: true, record: next, appendedLen: extra.length };
+}
+
+// Wrapper IMPUR de appendTextToRecord : lit le cache session (même source de
+// vérité que resolveHandleRecord — un record hors-scope y est absent, donc
+// « introuvable », pas d'oracle, piège 18), délègue la transformation au noyau
+// pur, réécrit, recache, pousse l'ack `resource_appended`.
+//
+// `partial` (lot Y) : l'écriture elle-même a RÉUSSI — _appendBlock est atomique,
+// il écrit tout le buffer ou rien — mais le CALCUL qui l'a produite s'est
+// interrompu (throw guest, timeout, OOM). La ressource est donc cohérente et
+// incomplète au regard de l'intention. On le porte sur l'ack en `ok: false`,
+// convention déjà en place pour les échecs métier non-`isError` (js_eval,
+// docs_extract, docs_pack) : ackIsError le rend rouge, sans mécanisme neuf.
+// SEUL l'appelant sait si le calcul a abouti — d'où le paramètre plutôt qu'une
+// déduction locale ; et il ne vaut QUE pour `reason: 'error'` : un refus de cap
+// (`reason: 'cap'`) laisse l'écriture complète, le calcul étant allé au bout.
+// Retourne { ok: true, record } ou { ok: false, message }.
+async function _appendBlock(id, extraText, partial) {
+  const current = getCachedRecord(id);
+  if (!current) return { ok: false, message: 'Ressource introuvable : ' + id + '.' };
+  const out = appendTextToRecord(current, extraText);
+  if (!out.ok) return out;
+  try {
+    await putResource(out.record);
+    _cacheRecord(out.record);
+    requestPersistence();
+    // _pendingToolAcks est déclaré dans tools.js ; accessible en runtime (même scope).
+    const ack = { kind: 'resource_appended', id, resourceName: out.record.name,
+      mime: out.record.mime, size: out.record.size, appendedLen: out.appendedLen };
+    // `ok` posé UNIQUEMENT dans le cas partiel : copyAckFields ne recopie que les
+    // champs non-null, et `ok: true` sur tous les autres acks n'apporterait rien
+    // (ackIsError teste `ok === false`, jamais l'absence).
+    if (partial) ack.ok = false;
+    _pendingToolAcks.push(ack);
+    return { ok: true, record: out.record, appendedLen: out.appendedLen };
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] _appendBlock:', e && e.message);
+    return { ok: false, message: 'Échec d\'écriture de la ressource.' };
+  }
+}
+
 const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
 
 // Symétrique de PRESENTED_NOTE, pour la branche store_inline (resource texte/JSON).

@@ -1166,3 +1166,36 @@ réelle et l'export restent manuels.
     (acks du tour interrompu dans une bulle assistant avec en-tête + horodatage,
     puis la bulle user d'interjection, puis la suite), sans acks nus flottants ni
     bulle assistant vide parasite.
+
+## Écriture incrémentale de ressources (lot Y)
+
+Script de non-régression : `.claude/skills/run-miaou/verify-resource-append.mjs`
+(couvre append nominal, gardes de famille, `emit` vers un `output_handle`, flush
+sur échec guest, cas moteur multi-tours, append d'un agent sur une ressource
+déléguée). Il appelle les handlers natifs directement — le lot ne touche ni au
+streaming ni à la boucle d'outils.
+
+Ce qui reste à l'œil, avec un vrai modèle :
+
+1. **Le modèle trouve l'outil seul.** Sur une tâche « récupère ces N JSON et
+   fais-m'en un CSV », vérifier qu'il enchaîne `resource__create` puis des
+   `resource__append` (ou un `js__eval` + `output_handle`), plutôt que de
+   déléguer à un agent ou de tout réécrire à chaque tour — c'est le cas réel qui
+   a motivé le lot. Un modèle qui recrée une ressource par étape a mal lu la
+   doctrine, pas mal utilisé l'outil.
+2. **Rendu de l'ack.** « Ressource complétée : nom (+N car., X ko au total) »,
+   icône colis, bouton de téléchargement présent et fonctionnel (c'est le seul
+   ack de l'appel : sans lui, aucune affordance).
+3. **Reload.** Après plusieurs appends puis rechargement, la ressource se
+   retélécharge complète depuis l'ack du fil.
+4. **Travail partiel.** Faire écrire au modèle une boucle `emit` volontairement
+   trop longue (dépassement du timeout) : la ressource doit contenir ce qui a été
+   émis avant l'interruption, le modèle doit dire qu'il a été coupé, et l'ack
+   « Ressource complétée » doit apparaître **en rouge** avec la mention
+   « interrompu » — tout en gardant le décompte de ce qui a été sauvé. Vérifier
+   aussi qu'il reste rouge **après rechargement** (le champ `ok` est persisté).
+5. **Faux positif à ne pas voir.** Faire renvoyer au modèle une valeur au-dessus
+   du cap de sortie tout en émettant normalement : le retour est refusé, mais
+   l'écriture est complète — l'ack `resource_appended` doit rester **neutre**
+   (seul l'ack `js_eval` est rouge). C'est la distinction que le code fait entre
+   « calcul interrompu » et « retour refusé ».

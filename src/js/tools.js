@@ -323,22 +323,29 @@ const JS_EVAL_DOCTRINE =
   "<miaou_skills_context> si présente) : elle donne la signature d'appel exacte, " +
   "les primitives disponibles dans le bac à sable et le détail des contraintes de sortie.";
 
-// Doctrine de déclenchement resource__create / resource__from_result (lot O).
-// INCONDITIONNELLE comme JS_EVAL_DOCTRINE (les deux outils sont natifs, toujours
+// Doctrine de déclenchement resource__create / resource__from_result (lot O),
+// étendue à resource__append (lot Y).
+// INCONDITIONNELLE comme JS_EVAL_DOCTRINE (les trois outils sont natifs, toujours
 // présents) : posée dès O-1 en couvrant DÉJÀ le réflexe resource__from_result
 // (livré en O-2) pour éviter une 2ᵉ invalidation KV cache (piège 16, assumé une
-// fois — mémoire project_kv_cache_invalidation_accepted_once). QUAND seulement :
-// le QUOI de chaque outil vit dans sa description (pas de duplication de la
-// mention js__eval, portée par les deux descriptions d'outils).
+// fois — mémoire project_kv_cache_invalidation_accepted_once). L'ajout de la
+// clause resource__append (lot Y) est la SECONDE invalidation ponctuelle de ce
+// bloc, et pour la même raison : une clause de plus dans le bloc existant, pas
+// un deuxième bloc doctrinal. QUAND seulement : le QUOI de chaque outil vit dans
+// sa description (pas de duplication de la mention js__eval, portée par les
+// descriptions d'outils).
 const RESOURCE_DOCTRINE =
-  "Deux outils permettent de ranger du texte en ressource adressable (res_…), " +
+  "Trois outils permettent de ranger du texte en ressource adressable (res_…), " +
   "exploitable ensuite par miaou__js__eval sans repayer ce texte en tokens : " +
   "miaou__resource__create quand TU as produit ou recomposé un texte volumineux " +
   "que tu voudras interroger plus tard (au lieu de l'écrire en clair dans ta " +
   "réponse) ; miaou__resource__from_result quand un résultat d'outil déjà présent " +
   "plus haut dans la conversation encombre le contexte et que tu veux le garder " +
-  "exploitable sans le traîner à chaque tour. N'utilise ni l'un ni l'autre pour " +
-  "un texte court que tu peux simplement écrire dans ta réponse.";
+  "exploitable sans le traîner à chaque tour ; miaou__resource__append quand tu " +
+  "as déjà une ressource res_… et du contenu à y ajouter, en plusieurs appels ou " +
+  "plusieurs tours — tu n'écris que le morceau nouveau, jamais ce qui est déjà " +
+  "stocké. N'utilise aucun des trois pour un texte court que tu peux simplement " +
+  "écrire dans ta réponse.";
 
 // Doctrine de déclenchement des agents (lot X-1, question structurante 5).
 // Split QUAND / COMMENT (project_doctrine_extraction_quand_comment_split) : le
@@ -669,6 +676,25 @@ function validateResourceFromResultArgs(args) {
   const ref = String((args && args.ref) || '').trim();
   const description = String((args && args.description) || '').trim();
   if (!ref || !description) return 'Paramètres invalides (ref et description requis).';
+  return '';
+}
+
+// Validation pure des arguments de resource__append (lot Y) — même motif que
+// ses siblings, testable QuickJS malgré le handler async. La GARDE DE FAMILLE
+// est ici, au niveau du schéma, pas plus bas : `att-N` et `file-<id>` ne sont
+// pas des records appendables (cycle de vie différent — une pièce jointe est
+// figée, un fichier de bibliothèque est un dépôt utilisateur), et les accepter
+// pour échouer plus profond serait moins clair qu'un refus nommant le format
+// attendu. Retourne un message d'erreur si invalide, '' sinon.
+function validateResourceAppendArgs(args) {
+  const id = String((args && args.id) || '').trim();
+  const content = args && args.content != null ? String(args.content) : '';
+  if (!id) return 'Handle manquant.';
+  if (!content) return 'Contenu vide, rien à ajouter.';
+  if (classifyHandleRef(id) !== 'resource') {
+    return 'Handle invalide : ' + id + ' (attendu res_<id> — seule une ressource ' +
+      'peut être prolongée).';
+  }
   return '';
 }
 
@@ -1226,6 +1252,50 @@ const TOOLS = [
     },
   },
   {
+    name: 'resource__append',
+    // Lot Y — écriture INCRÉMENTALE. Outil séparé plutôt qu'un mode de
+    // resource__create (précédent lot O : deux outils plutôt qu'un bimodal, les
+    // formes de paramètres divergent — ici `id` requis, ni `mime` ni `name`).
+    // Le QUAND vit en doctrine (RESOURCE_DOCTRINE), le QUOI dans cette
+    // description.
+    description:
+      "Ajoute du texte À LA FIN d'une ressource res_… existante, sans jamais " +
+      "retransmettre ce qu'elle contient déjà. Sers-t'en pour construire un gros " +
+      "contenu (CSV, rapport, agrégat) en plusieurs appels ou plusieurs tours : tu " +
+      "n'écris à chaque fois que le morceau nouveau. Le handle reste le même et " +
+      "s'utilise ensuite avec miaou__js__eval. Ne fonctionne que sur une ressource " +
+      "res_… (pas sur une pièce jointe att-N ni un fichier de bibliothèque file-<id>).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Handle res_<id> de la ressource existante à prolonger' },
+        content: { type: 'string', description: 'Texte à ajouter à la fin du contenu actuel (le morceau NOUVEAU seulement)' },
+      },
+      required: ['id', 'content'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    handler: async (args, ctx) => {
+      const invalid = validateResourceAppendArgs(args);
+      if (invalid) return toolFail('resource__append', invalid);
+      const id = String(args.id || '').trim();
+      // Cache session (herméticité, piège 18) : un res_… hors-scope y est absent
+      // → « introuvable », jamais un oracle d'existence.
+      const record = resolveHandleRecord(id, ctx);   // ctx EXPLICITE (piège 28)
+      if (!record) return toolFail('resource__append', 'Ressource introuvable : ' + id + '.');
+      // _appendBlock est adressé par l'ID DE RECORD (record.id), JAMAIS par le
+      // handle : pour un agent, un res_… peut être un ALIAS délégué au spawn
+      // (resolveDelegatedRecordId, lot X-1b) qui n'est l'id d'aucun record — le
+      // relire par handle échouerait silencieusement. resolveHandleRecord est le
+      // seul résolveur, et c'est SON résultat qui adresse l'écriture.
+      const out = await _appendBlock(record.id, String(args.content));
+      if (!out.ok) return toolFail('resource__append', out.message);
+      // JAMAIS _makeResourceRef (record 'inline' → ré-inlinerait tout au tour
+      // suivant, piège du lot M) : handle compact, comme resource__create.
+      return formatInlineHandleForModel(id, out.record.mime, out.record) +
+        ' Ajout de ' + out.appendedLen + ' caractères.';
+    },
+  },
+  {
     name: 'memory__delete',
     description:
       "Supprime un souvenir (tombstone réversible depuis l'interface). Utiliser " +
@@ -1460,7 +1530,9 @@ const TOOLS = [
       "Primitives disponibles dans le bac à sable : text(), lines(), jsonLines(), " +
       "parse() (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
-      "grosse → refus explicite (réécris pour synthétiser). N'inclus jamais le " +
+      "grosse → refus explicite (réécris pour synthétiser) ; pour PRODUIRE un gros " +
+      "contenu sans buter sur cette limite, passe output_handle et écris au fil de " +
+      "l'eau avec emit(). N'inclus jamais le " +
       "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
       "de la skill 'js-eval' avant utilisation dans une conversation.",
     inputSchema: {
@@ -1468,10 +1540,15 @@ const TOOLS = [
       properties: {
         handle: { type: 'string', description: 'Handle du fichier : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin)' },
         code: { type: 'string', description: 'Code JavaScript à exécuter ; sa dernière valeur évaluée est le résultat renvoyé' },
+        output_handle: { type: 'string', description: 'Optionnel — handle res_<id> d\'une ressource existante (créée via miaou__resource__create) où écrire au fil de l\'eau. Sans ce paramètre, la primitive emit() n\'existe pas dans le bac à sable' },
       },
       required: ['handle', 'code'],
     },
-    annotations: { readOnlyHint: true, destructiveHint: false },   // pur compute, aucune écriture d'état
+    // readOnlyHint: false INCONDITIONNEL (lot Y). L'outil ÉCRIT dès qu'un
+    // output_handle est fourni ; JSON Schema ne sait pas conditionner une
+    // annotation à la présence d'un paramètre optionnel, et un hint qui MENT dans
+    // un mode d'usage réel est pire qu'un hint légèrement pessimiste dans l'autre.
+    annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args, ctx) => {
       const handle = String((args && args.handle) || '').trim();
       const code = args && args.code != null ? String(args.code) : '';
@@ -1487,26 +1564,73 @@ const TOOLS = [
       }
       const record = resolveHandleRecord(handle, ctx);   // ctx EXPLICITE (piège 28) ; impur : cache session (herméticité)
       if (!record || !record.data) return toolFail('js__eval', 'Handle introuvable : ' + handle + '.');
+      // output_handle (lot Y) — validé AVANT d'exécuter quoi que ce soit : un
+      // handle de sortie invalide doit échouer sans faire calculer la VM pour
+      // rien, et sans exposer un emit() qui n'aurait nulle part où écrire.
+      // Même garde de famille que resource__append : SEULE la famille res_…
+      // (les records _storeBlock) est appendable.
+      const outHandle = String((args && args.output_handle) || '').trim();
+      let outRecordId = null;
+      if (outHandle) {
+        if (classifyHandleRef(outHandle) !== 'resource') {
+          return toolFail('js__eval', 'output_handle invalide : ' + outHandle +
+            ' (attendu res_<id> — seule une ressource peut recevoir emit()).');
+        }
+        const outRec = resolveHandleRecord(outHandle, ctx);   // ctx EXPLICITE (piège 28)
+        if (!outRec) return toolFail('js__eval', 'output_handle introuvable : ' + outHandle + '.');
+        // Même raison qu'en resource__append : c'est l'id de RECORD résolu qui
+        // adresse l'écriture, pas le handle (qui peut être un alias d'agent).
+        outRecordId = outRec.id;
+      }
       const text = utf8Decode(record.data);   // resources.js — AL3 : contenu textuel
-      return runInQuickJs(text, code).then(r => {   // ui.js/tools.js — async, lazy-load + VM
+      return runInQuickJs(text, code, { emit: !!outHandle }).then(async r => {   // ui.js/tools.js — async, lazy-load + VM
+        // FLUSH INCONDITIONNEL (tranché, PLAN-Y étape 2) : le buffer part en un
+        // SEUL _appendBlock, y compris quand l'exécution guest a échoué (throw,
+        // timeout, OOM) ou que le retour texte a été refusé au cap. Ce n'est pas
+        // une troncature déguisée (doctrine « refus explicite, pas troncature »,
+        // qui porte sur le CANAL DE RETOUR) mais l'inverse : ne pas jeter un
+        // travail déjà committé par le guest — 900 lignes émises avant un timeout
+        // valent mieux que rien, et le modèle apprend l'échec par le result texte,
+        // donc sait que l'écriture est partielle.
+        let appendedLen = null;
+        let appendError = '';
+        // « Le calcul s'est-il interrompu ? » — VRAI seulement pour reason
+        // 'error' (throw guest / timeout / OOM). Un refus de cap laisse
+        // l'écriture COMPLÈTE : le code est allé au bout, seul le retour texte
+        // a été refusé. Confondre les deux peindrait en rouge une ressource
+        // parfaitement finie.
+        const partial = !r.ok && r.reason === 'error';
+        if (outHandle && r.emitted) {
+          const out = await _appendBlock(outRecordId, r.emitted, partial);
+          if (out.ok) appendedLen = out.appendedLen;
+          else appendError = ' (échec d\'écriture dans ' + outHandle + ' : ' + out.message + ')';
+        }
+        const emitNote = appendedLen != null
+          ? ' ' + appendedLen + ' caractères ont été ajoutés à ' + outHandle +
+            (partial ? ' AVANT l\'interruption : cette ressource est incomplète, ' +
+              'relis-la avant de reprendre pour ne pas réécrire ce qui y est déjà.' : '.')
+          : (appendError || '');
         if (r.ok) {
-          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: true, outLen: r.output.length, code });
-          return r.output;
+          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: true, outLen: r.output.length, code,
+            outputHandle: outHandle || null, appendedLen });
+          return r.output + (emitNote ? '\n' + emitNote : '');
         }
         if (r.reason === 'cap') {
-          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, outLen: r.len, code });
+          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, outLen: r.len, code,
+            outputHandle: outHandle || null, appendedLen });
           // REFUS explicite (§3), PAS un isError : result texte cadré pour que le
           // modèle re-cible dans le même tour (borné par MAX_TOURS). isError
           // pourrait couper la boucle.
           return 'Sortie refusée : ' + r.len + ' caractères dépassent la limite de ' +
             r.cap + '. Réécris ton code pour renvoyer une synthèse plus petite ' +
-            '(un compte, un top-N, un échantillon), jamais le fichier brut.';
+            '(un compte, un top-N, un échantillon), jamais le fichier brut.' + emitNote;
         }
         // reason === 'error' : throw guest / timeout / OOM. result texte (pas
         // isError) pour laisser le modèle corriger son code au tour suivant.
-        _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, code });
+        _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, code,
+          outputHandle: outHandle || null, appendedLen });
         return 'Erreur d\'exécution dans le bac à sable : ' + r.message +
-          '. Vérifie ton code (syntaxe, borne mémoire/temps).';
+          '. Vérifie ton code (syntaxe, borne mémoire/temps).' + emitNote;
       });
     },
   },
@@ -2977,6 +3101,21 @@ const JS_EVAL_GUEST_PRELUDE =
   "function jsonLines(){ var out=[]; var ls=lines(); for(var i=0;i<ls.length;i++){ var s=ls[i]; if(!s) continue; try{ out.push(JSON.parse(s)); }catch(e){} } return out; }\n" +
   "function parse(){ return JSON.parse(text()); }\n";
 
+// Cinquième primitive (lot Y), AJOUTÉE AU PRÉLUDE UNIQUEMENT quand l'appel porte
+// un `output_handle`. C'est la seule primitive d'ÉCRITURE de la surface guest, et
+// la seule addition à la liste fermée du piège 25 — au-dessus d'un host bridge
+// DÉDIÉ (`__miaou_emit`), jamais d'une extension de `__miaou_text` : le pont
+// d'entrée reste ce qu'il était, on en ouvre un second, explicitement, pour la
+// sortie. Aucun autre pont.
+//
+// TRANCHÉ (PLAN-Y étape 2, recommandation suivie) : `emit` n'est PAS défini quand
+// `output_handle` est absent. Un `ReferenceError: emit is not defined` remonte au
+// modèle par le chemin d'erreur guest normal et lui dit exactement ce qui manque ;
+// une primitive toujours présente mais no-op documenterait un comportement muet
+// qui inviterait à l'appeler sans handle, et perdrait le travail en silence.
+const JS_EVAL_EMIT_PRELUDE =
+  "function emit(chunk){ __miaou_emit(String(chunk)); }\n";
+
 // Exécute le code modèle dans un bac à sable QuickJS-WASM sur le texte fourni
 // (lot L, cœur impur — NON testable QuickJS, vérif runtime L3). Discipline VM
 // stricte : tous les handles créés côté host sont disposés en try/finally, le
@@ -2987,18 +3126,37 @@ const JS_EVAL_GUEST_PRELUDE =
 //   { ok:false, reason:'error', message }  — throw guest / timeout / OOM
 // L'appelant (handler js__eval) transforme chaque cas en tool result texte.
 // Sécurité (parenté piège 23) : le monde guest est CLOS — on n'injecte QUE
-// __miaou_text (host) + le prélude JS ; jamais fetch, DOM, globalThis hôte, ni
-// aucun autre pont. Équivalent QuickJS du « jamais allow-same-origin » de
-// l'iframe. Ne JAMAIS élargir cette surface sans repenser la posture.
+// __miaou_text (host) et, SI et seulement si un `emit` est demandé (lot Y),
+// __miaou_emit ; jamais fetch, DOM, globalThis hôte, ni aucun autre pont.
+// Équivalent QuickJS du « jamais allow-same-origin » de l'iframe. Ne JAMAIS
+// élargir cette surface sans repenser la posture.
+//
+// Lot Y — `opts.emit` (booléen) active la primitive de sortie. Ce qui est émis
+// est BUFFERISÉ CÔTÉ HOST (jamais accumulé dans le guest : la mémoire VM est
+// bornée par JS_EVAL_MEM_BYTES et déjà partagée avec le texte d'entrée — y
+// accumuler la sortie recréerait exactement le plafond que cette feature existe
+// pour lever), puis retourné TEL QUEL à l'appelant dans `emitted`. Cette
+// fonction NE TOUCHE PAS au stockage : c'est le handler js__eval qui décide
+// d'écrire, en un seul _appendBlock. Séparation voulue — la VM reste de la
+// plomberie sans dépendance IDB.
+//
+// `emitted` est renseigné dans TOUS les cas de retour, succès comme échec :
+// cf. la doctrine de flush, côté handler.
 async function runInQuickJs(text, code, opts) {
   const timeoutMs = opts && opts.timeoutMs != null ? opts.timeoutMs : JS_EVAL_TIMEOUT_MS;
   const memBytes = opts && opts.memBytes != null ? opts.memBytes : JS_EVAL_MEM_BYTES;
   const cap = opts && opts.cap != null ? opts.cap : JS_EVAL_OUTPUT_CAP;
+  const wantEmit = !!(opts && opts.emit);
 
   const QuickJS = await ensureQuickJs();   // ui.js — lazy-load, rejet propagé en erreur d'outil
   const ctx = QuickJS.newContext();
   const rt = ctx.runtime;
   let textFn = null;
+  let emitFn = null;
+  // Buffer LOCAL À L'APPEL (jamais un état de module — deux générations
+  // concurrentes peuvent exécuter du js__eval en parallèle, piège 28).
+  const buffered = [];
+  const emittedSoFar = () => buffered.join('');
   try {
     rt.setMemoryLimit(memBytes);
     const start = Date.now();
@@ -3009,6 +3167,18 @@ async function runInQuickJs(text, code, opts) {
     textFn = ctx.newFunction('__miaou_text', () => ctx.newString(text));
     ctx.setProp(ctx.global, '__miaou_text', textFn);
 
+    // SECOND pont (lot Y), présent seulement sur demande : sortie guest→host.
+    // Le chunk est marshalé immédiatement (ctx.getString) et empilé côté host ;
+    // rien n'est conservé côté guest. Retourne undefined au guest (ctx.undefined
+    // est une valeur constante du contexte, pas un handle à disposer).
+    if (wantEmit) {
+      emitFn = ctx.newFunction('__miaou_emit', chunkHandle => {
+        buffered.push(ctx.getString(chunkHandle));
+        return ctx.undefined;
+      });
+      ctx.setProp(ctx.global, '__miaou_emit', emitFn);
+    }
+
     // Prélude (définit text/lines/jsonLines/parse) puis code modèle : évalués
     // ensemble en mode GLOBAL, la dernière valeur du code est le retour. Le
     // prélude est neutre (déclarations, completion-value undefined), le résultat
@@ -3017,11 +3187,12 @@ async function runInQuickJs(text, code, opts) {
     // PAS retourné sans `return` explicite — l'IIFE forçait donc undefined et
     // contredisait la doctrine « dernière valeur évaluée ». En mode global d'une
     // VM jetable, isoler les `var` du modèle n'apporte rien (aucun état ne survit).
-    const res = ctx.evalCode(JS_EVAL_GUEST_PRELUDE + '\n' + code);
+    const prelude = JS_EVAL_GUEST_PRELUDE + (wantEmit ? JS_EVAL_EMIT_PRELUDE : '');
+    const res = ctx.evalCode(prelude + '\n' + code);
     if (res.error) {
       const errObj = ctx.dump(res.error);   // { name, message, stack } — objet, pas string
       res.error.dispose();
-      return { ok: false, reason: 'error', message: _jsEvalErrText(errObj) };
+      return { ok: false, reason: 'error', message: _jsEvalErrText(errObj), emitted: emittedSoFar() };
     }
     // Marshale le retour ; sérialise en JSON si ce n'est pas déjà une string
     // (un objet/tableau doit sortir en texte lisible, cf. doctrine SORTIE).
@@ -3029,14 +3200,18 @@ async function runInQuickJs(text, code, opts) {
     res.value.dispose();
     const output = typeof val === 'string' ? val : _jsEvalStringify(val);
     const capped = checkOutputCap(output, cap);   // utils.js — REFUS, pas troncature
-    if (!capped.ok) return { ok: false, reason: 'cap', len: capped.len, cap: capped.cap };
-    return { ok: true, output };
+    if (!capped.ok) return { ok: false, reason: 'cap', len: capped.len, cap: capped.cap, emitted: emittedSoFar() };
+    return { ok: true, output, emitted: emittedSoFar() };
   } catch (e) {
     // Interruption (timeout) et OOM se manifestent soit en res.error ci-dessus,
-    // soit en throw host selon l'engine — filet ici pour les deux.
-    return { ok: false, reason: 'error', message: _jsEvalErrText((e && e.message) || String(e)) };
+    // soit en throw host selon l'engine — filet ici pour les deux. `emitted` est
+    // renseigné ici AUSSI : c'est précisément le cas (timeout après 900 lignes
+    // sur 1000) où le travail partiel a le plus de valeur.
+    return { ok: false, reason: 'error', message: _jsEvalErrText((e && e.message) || String(e)),
+      emitted: emittedSoFar() };
   } finally {
     if (textFn) textFn.dispose();
+    if (emitFn) emitFn.dispose();
     ctx.dispose();   // dispose le runtime lié
   }
 }

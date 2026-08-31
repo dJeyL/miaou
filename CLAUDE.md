@@ -72,11 +72,13 @@ posée plus haut pour `src/help.md` (« deux types », « les trois modes », «
 X et Y ») s'y applique à l'identique, et pour la même raison : un compte fermé
 devient faux par le seul ajout d'un cas, sans que rien ne le touche. Le README y
 est même plus exposé — il condense en une ligne ce que `help.md` développe en un
-paragraphe, donc il énumère plus souvent. Passer le même grep sur les deux
-fichiers après tout ajout de capacité :
+paragraphe, donc il énumère plus souvent. Passer le même grep sur les trois
+fichiers après tout ajout de capacité **ou toute migration structurelle**
+(déplacement de données entre stockages, renommage, fusion — pas seulement une
+feature utilisateur visible) :
 
 ```bash
-grep -nE "[Dd]eux |[Tt]rois |[Qq]uatre |[Cc]inq |seuls? |uniquement " src/help.md README.md
+grep -nE "[Dd]eux |[Tt]rois |[Qq]uatre |[Cc]inq |seuls? |uniquement " src/help.md README.md CLAUDE.md
 ```
 
 Piège payé le 2026-08-29 : « Trois façons de l'alimenter » pour la bibliothèque
@@ -84,6 +86,13 @@ d'Espace, périmé depuis que le modèle peut y déposer un fichier qu'il vient 
 produire (une quatrième). `help.md` disait bien « quatre », le README était resté
 à trois — l'écart a survécu à plusieurs lots parce que le grep de la règle ne
 visait qu'un seul des deux fichiers.
+
+Piège payé le 2026-08-31 : la ligne d'index `docs/storage.md` (section
+« Domaines détaillés » plus bas) énumérait encore `miaou-conversations`/
+`miaou-summaries` comme clés `localStorage`, alors qu'elles avaient migré vers
+IndexedDB au lot U — une migration structurelle, sans feature utilisateur
+visible, donc sans déclencheur évident pour relire cette ligne. Le grep ne
+visait alors que `help.md`/`README.md` : étendu à `CLAUDE.md` depuis.
 
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
@@ -258,13 +267,26 @@ inline sous la liste.
     ni une autre voie d'injection (cf. `docs/rendering.md`).
 24. **Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
     → invariant transverse, développé sous la liste.
-25. **Monde guest `js__eval` clos : une seule host function, jamais plus.**
+25. **Monde guest `js__eval` clos : deux host functions, énumérées, jamais plus.**
     L'outil natif `js__eval` (lot L) exécute du JS modèle dans un bac à sable
     QuickJS-WASM (`runInQuickJs`, tools.js) sur le contenu textuel d'UN blob
-    client. Surface guest FERMÉE : on n'injecte QUE `__miaou_text()` (unique pont
-    host→guest) + un prélude JS pur (`text`/`lines`/`jsonLines`/`parse`) ; **jamais
-    `fetch`, DOM, `globalThis` hôte, ni aucun autre pont** — symétrique du « jamais
-    `allow-same-origin` » de l'iframe (piège 23). Trois guards obligatoires
+    client. Surface guest FERMÉE : on n'injecte QUE `__miaou_text()` (pont
+    host→guest d'ENTRÉE) et, **seulement si un `output_handle` est fourni**,
+    `__miaou_emit()` (pont de SORTIE, lot Y) — plus un prélude JS pur
+    (`text`/`lines`/`jsonLines`/`parse`, et `emit` sur ce même conditionnel) ;
+    **jamais `fetch`, DOM, `globalThis` hôte, ni aucun autre pont** — symétrique
+    du « jamais `allow-same-origin` » de l'iframe (piège 23). Un troisième pont
+    se rajouterait sans bruit : un test compte les `ctx.newFunction` de
+    `runInQuickJs` (deux) pour que l'élargissement soit une décision, pas un
+    effet de bord. Corollaires du lot Y, tous trois structurels : la sortie est
+    **bufferisée host-side** (jamais accumulée dans le guest, dont la mémoire est
+    déjà bornée et partagée avec l'entrée) et part en **un seul** `_appendBlock`
+    (un append par `emit()` redonnerait le O(n²) qu'on corrige, déplacé côté
+    host) ; `runInQuickJs` **ne touche pas au stockage** (elle rend le buffer,
+    c'est le handler qui écrit) ; le flush est **inconditionnel**, y compris sur
+    throw/timeout/OOM — ne pas jeter un travail déjà produit n'est pas une
+    troncature, la doctrine du refus porte sur le canal de RETOUR. Trois guards
+    obligatoires
     (`setInterruptHandler` timeout, `setMemoryLimit`, cap de sortie via
     `checkOutputCap`), tous les handles VM disposés en `try/finally`. Overflow de
     sortie = **REFUS explicite, pas troncature** (result texte non-`isError`, pour
@@ -442,7 +464,16 @@ Cf. `docs/generations.md`.
 
 ## Domaines détaillés (`docs/`)
 
-À lire à la demande, selon la zone touchée — pas systématiquement :
+À lire à la demande, selon la zone touchée — pas systématiquement.
+
+**Toute modification d'un `docs/*.md` déclenche la question : « la ligne
+d'index ci-dessous le décrit-elle encore correctement ? »** La ligne résume en
+quelques mots-clés/décomptes/noms de fonctions le contenu du fichier ; si le
+lot change un fait qu'elle cite (clé renommée/déplacée, décompte fermé,
+fonction renommée), la relire et la corriger dans le même lot. Piège payé le
+2026-08-31, cf. plus haut (§ énumérations fermées) : une migration
+structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
+`docs/storage.md` fausse pendant plusieurs lots, faute de déclencheur évident.
 
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
   marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
@@ -451,9 +482,11 @@ Cf. `docs/generations.md`.
   17, 19, 20, 22, 23 ci-dessus (25, 26 et 27 sont développés inline ici même,
   comme les invariants transverses 16/18/21/24/28).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
-  `miaou-conversations`, `miaou-summaries`, `miaou-memories`,
-  `miaou-mcp-servers`, `miaou-api-servers`, `miaou-active-api-server`,
-  `miaou-spaces`, `miaou-active-space`) et IndexedDB (`skills`, `resources`).
+  `miaou-memories`, `miaou-mcp-servers`, `miaou-api-servers`,
+  `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
+  IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
+  derniers migrés depuis localStorage au lot U), plus le format d'export/import
+  complet (`.zip` depuis le lot V-3).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), et références de conversation dans le texte du modèle
   (`conv_ref`).
@@ -500,7 +533,7 @@ Cf. `docs/generations.md`.
   cross-Space assumée, quatre surfaces et leurs points de synchronisation,
   volatilité du non-lu.
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
-  modèle, prédicat de racine `isRootConversation` et les huit exclusions,
+  modèle, prédicat de racine `isRootConversation` et les sept exclusions,
   outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
   parent accroché au `finally`, extension et alignement des badges.
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet

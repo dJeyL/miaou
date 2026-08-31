@@ -261,6 +261,35 @@ lazy-load CDN de l'engine, la création VM, l'injection de globals, l'exécution
 guest et les guards timeout/mémoire — tout l'embedding QuickJS-WASM chargé en
 browser, autre embedding que le `qjs` du runner.
 
+**Écriture incrémentale — lot Y (cf. `docs/tools.md` § « Écriture incrémentale
+d'une ressource »)**. Le noyau pur `appendTextToRecord` (`tests/test-resources.js`)
+porte tout ce qui peut casser sans IDB : concaténation et `size` recalculé,
+**non-mutation** du record d'origine, préservation des autres champs, cumul sur
+appends successifs, distinction octets/caractères en UTF-8 multi-octets, refus
+sur contenu vide et sur record absent, et la garde de plafond — dont le `cap`
+est **injectable** précisément pour que ce refus soit testable sans allouer
+64 Mo dans QuickJS (le défaut `MAX_INLINE_BYTES` est vérifié à part, sur un
+`data` factice qui ne porte que son `byteLength`, le contrôle de taille ayant
+lieu avant tout décodage). Chaque refus est doublé d'un **contrôle de prémisse**
+(« sans la garde, ce même append aboutirait ») pour qu'un test ne puisse pas
+passer en étant vide. `tests/test-tools.js` couvre `validateResourceAppendArgs`
+(garde de famille sur `att-N`/`file-<id>`, refus du contenu vide, et le cas
+inverse — un `\n` seul reste un ajout légitime), la forme des deux outils
+(`resource__append` requiert `id`+`content` et n'expose ni `mime` ni `name` ;
+`output_handle` est optionnel sur `js__eval`, `readOnlyHint` est `false` sur les
+deux), la doctrine (« Trois outils », les trois noms dans `ROOT_SYSTEM_PROMPT`)
+et **la surface guest** : le prélude de base ne contient pas `emit`, le prélude
+`emit` est séparé et passe par `__miaou_emit` et non `__miaou_text`, et un test
+**compte les `ctx.newFunction` de `runInQuickJs`** (deux) — un troisième pont ne
+peut pas apparaître en silence. `tests/test-utils.js` couvre le signalement de
+l'écriture partielle par `ackIsError` (ack nominal neutre, `ok: false` rouge) et
+**pin l'absence de branchement par `kind`** dans ce prédicat. Impurs, couverts
+par `verify-resource-append.mjs` (cf. `docs/manual-tests.md`) : l'atterrissage
+réel en IDB, l'exécution guest de `emit`, le flush sur échec, l'append d'un agent
+sur une ressource déléguée, et la **distinction cap / error** — un refus de cap
+laisse l'écriture complète et l'ack neutre, c'est le contrôle qui casserait en
+silence si `partial` était déduit de `!r.ok`.
+
 **Agents — `tests/test-agents.js` (lot X-1, cf. `docs/agents.md`)** : le prédicat
 de racine et ses cas limites (chaîne vide = racine), `agentChildrenOf`, la
 **composition** `spaceConvIds ∘ isRootConversation` — le joint entre deux

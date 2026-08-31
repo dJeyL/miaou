@@ -221,6 +221,25 @@ def run_build_unit_tests() -> tuple[int, int]:
          "a::before { content: 'l\\'astuce /*x*/'; }"),
         ('CSS : commentaire non terminé → coupé jusqu\'à EOF, sans crash',
          build.strip_css_comments, 'a {}\n/* ouvert', 'a {}\n'),
+        # collapse_blank_code_lines : passe post-strip, au niveau ligne. Elle
+        # porte DEUX nettoyages — l'écrasement des runs de lignes vides, et le
+        # rstrip. Le second existe parce que le strip d'un commentaire laisse
+        # derrière lui soit l'indentation d'une ligne entière, soit les espaces
+        # d'alignement d'un commentaire de fin de ligne : ~1100 lignes du dist
+        # en portaient, ce qui rendait `git diff --check` inutilisable.
+        ('collapse : blanc de fin de ligne retiré (commentaire de fin de ligne)',
+         build.collapse_blank_code_lines, 'var a = 1;   \nvar b = 2;',
+         'var a = 1;\nvar b = 2;'),
+        ('collapse : indentation nue (commentaire pleine ligne retiré) -> vraiment vide',
+         build.collapse_blank_code_lines, 'a\n    \nb', 'a\n\nb'),
+        ('collapse : tabulation de fin retirée aussi',
+         build.collapse_blank_code_lines, 'a\tb\t\nc', 'a\tb\nc'),
+        ('collapse : runs de lignes vides écrasés à une seule (comportement historique)',
+         build.collapse_blank_code_lines, 'a\n\n\n\nb', 'a\n\nb'),
+        ('collapse : run de lignes BLANCHES (non vides) écrasé aussi',
+         build.collapse_blank_code_lines, 'a\n  \n\t\n   \nb', 'a\n\nb'),
+        ('collapse : indentation de DÉBUT de ligne préservée',
+         build.collapse_blank_code_lines, '    var a = 1;   ', '    var a = 1;'),
         ('HTML : commentaire retiré (y compris multi-lignes)',
          build.strip_html_comments, '<div>a</div>\n<!-- com\n   long -->\n<div>b</div>',
          '<div>a</div>\n\n<div>b</div>'),

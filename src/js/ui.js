@@ -1396,6 +1396,42 @@ const ACK_KINDS = {
       else build(el);
     },
   },
+  // Lot Y — écriture incrémentale. MÊME icône que resource_stored (ICON_PACKAGE) :
+  // c'est la même métaphore « ranger dans une ressource », l'action se distingue
+  // par le libellé, pas par une deuxième métaphore de la même famille
+  // (project_icon_metaphor_vocabulary). Pas d'undo, comme resource_stored.
+  // `appendedLen` (ajouté) et `size` (total après ajout) sont TOUS DEUX affichés :
+  // seul le couple dit ce qui vient de se passer.
+  //
+  // `ok === false` (lot Y) ne veut PAS dire « l'écriture a échoué » — _appendBlock
+  // est atomique — mais « le calcul qui l'a produite s'est interrompu », donc la
+  // ressource est incomplète. D'où un suffixe qui S'AJOUTE au décompte au lieu de
+  // le remplacer, contrairement au « (refusé) » de js_eval/docs_pack : ce qui a
+  // été écrit avant l'interruption est précisément ce qui a été SAUVÉ, l'effacer
+  // de l'affichage cacherait l'information utile. ackIsError fait le rouge.
+  resource_appended: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_PACKAGE,
+    label: m => 'Ressource complétée : ' + (m.resourceName || m.id || '?') +
+      (m.appendedLen != null ? ' (+' + m.appendedLen + ' car.' +
+        (m.size != null ? ', ' + humanSize(m.size) + ' au total' : '') +
+        (m.ok === false ? ', interrompu' : '') + ')'
+        : (m.ok === false ? ' (interrompu)' : '')),
+    renderLabel: (m, el) => {
+      const tail = (m.appendedLen != null ? ' (+' + m.appendedLen + ' car.' +
+        (m.size != null ? ', ' + humanSize(m.size) + ' au total' : '') +
+        (m.ok === false ? ', interrompu' : '') + ')'
+        : (m.ok === false ? ' (interrompu)' : ''));
+      const build = target => {
+        target.appendChild(document.createTextNode('Ressource complétée '));
+        appendAckSep(target);
+        target.appendChild(document.createTextNode(' ' + (m.resourceName || m.id || '?') + tail));
+      };
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
+    },
+  },
   resource_presented: {
     destination: 'user',
     undo: null,

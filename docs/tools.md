@@ -2,10 +2,11 @@
 
 ## Registre d'outils
 
-Treize outils dans le tableau `TOOLS` ; leur description au modèle dérive **du
-registre** (`toolDefinitions()`) — ne jamais la coder en dur. `ask_confirmation`
-(primitif halting, cf. plus bas) est exposé au modèle mais **hors registre** :
-il ne figure pas dans `TOOLS` et ne compte pas dans ces treize.
+Vingt-huit outils dans le tableau `TOOLS` ; leur description au modèle dérive
+**du registre** (`toolDefinitions()`) — ne jamais la coder en dur.
+`ask_confirmation` (primitif halting, cf. plus bas) est exposé au modèle mais
+**hors registre** : il ne figure pas dans `TOOLS` et ne compte pas dans ces
+vingt-huit.
 
 **Lecture de l'historique :**
 - `conv__get(id, with_contents=false)` — lit l'**index des résumés**
@@ -297,7 +298,7 @@ model-side unique sur la bibliothèque) :**
   (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
 
 **Compute sandboxé sur un blob client (lot L, `js__eval`) :**
-- `js__eval(handle, code)` — exécute du JavaScript **écrit par le modèle** dans
+- `js__eval(handle, code, output_handle?)` — exécute du JavaScript **écrit par le modèle** dans
   un bac à sable **QuickJS-WASM** sur le contenu **textuel** d'UN fichier
   référencé par handle (`att-N` / `file-<id>` / `res_<id>`), **sans jamais
   charger les octets bruts dans le contexte du modèle**. Cas d'usage : interroger
@@ -314,17 +315,23 @@ model-side unique sur la bibliothèque) :**
   handle hors-scope = « introuvable », pas d'oracle), `utf8Decode(record.data)`
   (contenu textuel, AL3), et `runInQuickJs(text, code)`.
 - **Entrée : handle only.** L'`inputSchema` déclare `handle` et `code` requis, un
-  seul handle (YAGNI multi-blob, brief §5). Le modèle ne fournit **jamais** le
-  contenu ni un chemin : le contenu vient des primitives guest.
+  seul handle d'**entrée** (YAGNI multi-blob, réaffirmé au lot Y : le modèle
+  itère, c'est tolérable). Le modèle ne fournit **jamais** le contenu ni un
+  chemin : le contenu vient des primitives guest. Le lot Y ajoute un paramètre
+  **optionnel** `output_handle` — une ressource de **sortie**, sans rapport avec
+  la contrainte de handle unique en entrée (cf. « Écriture incrémentale »).
 - **Surface guest FERMÉE** (`JS_EVAL_GUEST_PRELUDE`, tools.js) : quatre primitives
-  définies en **JS pur côté guest** au-dessus d'UNE seule host function
-  `__miaou_text()` (le seul pont host→guest) — `text()` (contenu entier),
-  `lines()` (découpe sur `\n`, miroir de `splitLines`), `jsonLines()` (une ligne
-  JSON parsée par élément, lignes vides/invalides ignorées), `parse()` (document
-  JSON entier). Plus les globals JS standard. **RIEN d'autre** : ni `fetch`, ni
-  réseau, ni DOM, ni `globalThis` hôte. Discipline de marshaling : une seule
-  valeur traverse (la string), tout le reste est du JS guest — pas de marshaling
-  manuel de tableaux/objets (coûteux, source de fuites de handles).
+  de **lecture** définies en **JS pur côté guest** au-dessus d'UNE seule host
+  function `__miaou_text()` (le seul pont host→guest d'entrée) — `text()` (contenu
+  entier), `lines()` (découpe sur `\n`, miroir de `splitLines`), `jsonLines()` (une
+  ligne JSON parsée par élément, lignes vides/invalides ignorées), `parse()`
+  (document JSON entier). Plus les globals JS standard. **RIEN d'autre** : ni
+  `fetch`, ni réseau, ni DOM, ni `globalThis` hôte. Discipline de marshaling : une
+  seule valeur traverse (la string), tout le reste est du JS guest — pas de
+  marshaling manuel de tableaux/objets (coûteux, source de fuites de handles).
+  Depuis le lot Y, une **cinquième** primitive, `emit(chunk)`, s'ajoute à cette
+  liste — la seule d'**écriture**, et la seule addition à la surface fermée du
+  piège 25 (cf. « Écriture incrémentale » plus bas).
 - **Trois guards** (`runInQuickJs`, tools.js, dispose de tous les handles en
   `try/finally`) : `setInterruptHandler` wall-time (timeout `JS_EVAL_TIMEOUT_MS`
   = 10 s → boucle infinie tuée ; 2 s à l'origine, puis 5 s après qu'un
@@ -390,7 +397,7 @@ model-side unique sur la bibliothèque) :**
   cette doctrine, la plus grosse des sept de `ROOT_SYSTEM_PROMPT`, jugée plus
   coûteuse à garder entière sur chaque tour qu'à payer une fois l'invalidation.
 
-**Matérialisation de ressource model-side (lot O) :**
+**Matérialisation de ressource model-side (lot O, étendue au lot Y) :**
 - `resource__create(content, name?, mime?)` — le modèle range un texte qu'il
   fournit **directement dans l'appel** en ressource `res_…` classe `'inline'`,
   via `_storeBlock` (brique existante depuis les lots K/L/M, rien de neuf côté
@@ -457,14 +464,154 @@ model-side unique sur la bibliothèque) :**
     `entry.result`, donc la conversion ne rencontre que du **texte aplati** (le
     cas visé : gros `fetch_url`/`docs__read`). Aucune garde de type à ajouter.
 - **Doctrine `RESOURCE_DOCTRINE`** (tools.js, inconditionnelle comme
-  `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux deux outils — `resource__create`
-  pour un texte que le modèle vient de produire/recomposer, `resource__from_result`
-  pour un tool result déjà en contexte qui l'encombre. Posée dès le commit de
-  `resource__create` en couvrant DÉJÀ le second outil (pas encore livré) : le
-  texte de doctrine est stable, évite une deuxième invalidation du préfixe KV
-  cache (piège 16) à l'arrivée de `resource__from_result`. Le QUOI de chaque
-  outil (dont le renvoi vers `js__eval` pour l'exploitation du handle) reste
-  dans sa propre description, pas dans la doctrine — pas de duplication.
+  `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux **trois** outils —
+  `resource__create` pour un texte que le modèle vient de produire/recomposer,
+  `resource__from_result` pour un tool result déjà en contexte qui l'encombre,
+  `resource__append` (lot Y) pour prolonger une ressource déjà créée. Posée dès
+  le commit de `resource__create` en couvrant DÉJÀ le second outil (pas encore
+  livré) : le texte de doctrine est stable, évite une deuxième invalidation du
+  préfixe KV cache (piège 16) à l'arrivée de `resource__from_result`. La clause
+  `resource__append` est la **seconde** invalidation ponctuelle de ce bloc,
+  assumée pour la même raison qu'à l'origine : une clause de plus dans le bloc
+  existant, jamais un deuxième bloc doctrinal. Le QUOI de chaque outil (dont le
+  renvoi vers `js__eval` pour l'exploitation du handle) reste dans sa propre
+  description, pas dans la doctrine — pas de duplication.
+
+### Écriture incrémentale d'une ressource (lot Y)
+
+`resource__create` est *create-only* (tout le contenu en un appel) et le seul
+retour de `js__eval` est une string bornée par `JS_EVAL_OUTPUT_CAP`. Un modèle
+qui devait **produire** un gros contenu par morceaux n'avait donc qu'une voie :
+relire et réécrire l'intégralité à chaque étape — O(n²) caractères transmis sur
+n étapes. Le lot Y ouvre la voie manquante, sous deux formes qui partagent la
+même primitive de stockage.
+
+- `resource__append(id, content)` — ajoute `content` **à la fin** d'une ressource
+  `res_…` existante. `id` et `content` requis, ni `mime` ni `name` (le record
+  existe déjà) : outil séparé plutôt qu'un mode de `resource__create`, pour la
+  même raison qu'au lot O — les formes de paramètres divergent, et deux
+  `inputSchema` pleinement contraints valent mieux qu'une exclusivité que JSON
+  Schema ne sait pas exprimer. Retourne le handle **inchangé** (via
+  `formatInlineHandleForModel`, jamais `_makeResourceRef` — piège du lot M) suivi
+  du nombre de caractères ajoutés.
+- **Garde de famille** — `resource__append` n'accepte que la famille `resource`
+  (`classifyHandleRef(id) !== 'resource'` → refus). `att-N` et `file-<id>` sont
+  refusés **au niveau du schéma** (`validateResourceAppendArgs`, pure, testée) :
+  ce ne sont pas des records `_storeBlock`, leur cycle de vie diffère (une pièce
+  jointe est figée, un fichier de bibliothèque est un dépôt utilisateur), et les
+  accepter pour échouer plus profond serait moins clair qu'un refus nommant le
+  format attendu.
+- **Shape de stockage : read-concat-rewrite, pas d'append en place.** Le store
+  IDB `resources` n'offre aucun patch partiel (`putResource` fait un `put`
+  intégral, `record.data` est un `ArrayBuffer` entier) — le coût est donc
+  O(taille totale) par appel, **assumé** : le gain visé est le contexte du modèle
+  (ne pas repayer le déjà-écrit en tokens), pas le coût de stockage local.
+- **Noyau pur / wrapper impur** (`resources.js`) : `appendTextToRecord(record,
+  extraText, cap?)` porte le décodage/concaténation/réencodage ET la garde de
+  taille, sans IDB, donc testable en QuickJS (motif
+  `project_extract_pure_helper_over_idb_stub`) ; elle rend un **nouvel** objet
+  record, sans muter l'entrée. `_appendBlock(id, extraText)` en est le wrapper
+  impur (lecture du cache session, `putResource`, `_cacheRecord`,
+  `requestPersistence`, ack `resource_appended`). Le `cap` injectable n'existe
+  que pour les tests ; aucun appelant de production ne le passe.
+- **Garde d'entrée vs capacité aval** : le plafond de l'append est
+  `MAX_INLINE_BYTES` — le même que celui du blob adressable par `js__eval`. Sans
+  lui, des appends répétés fabriqueraient une ressource que l'outil aval
+  refuserait de lire. Le dépassement est un **refus explicite**, jamais une
+  troncature, et il est vérifié **avant** de matérialiser les octets (le contrôle
+  porte sur des tailles).
+- **`js__eval(handle, code, output_handle?)` + `emit(chunk)`** — quand
+  `output_handle` (un `res_…` créé au préalable par `resource__create`) est
+  fourni, la cinquième primitive guest devient disponible et écrit dans cette
+  ressource au fil du calcul. La cible est **explicite**, jamais créée
+  implicitement par le guest : les décisions de cycle de vie (`mime`, `name`)
+  n'ont pas leur place dans du code modèle, et l'entrée suit déjà cette forme
+  (un handle, pas « crée-moi quelque chose à lire »).
+- **Pont dédié, jamais une extension de `__miaou_text`** (piège 25) : `emit` est
+  bâti sur une **seconde** host function, `__miaou_emit`, posée par un
+  `ctx.newFunction` distinct et disposée dans le même `try/finally`. Le pont
+  d'entrée reste ce qu'il était ; on en ouvre un second, explicitement, pour la
+  sortie. Aucun autre pont — un test compte les `ctx.newFunction` de
+  `runInQuickJs` pour que l'ajout d'un troisième ne passe pas inaperçu.
+- **Bufferisation HOST-side, jamais guest-side.** Chaque `emit(chunk)` marshale
+  immédiatement le chunk vers un tableau JS **local à l'appel** (jamais un état
+  de module : deux générations concurrentes peuvent exécuter du `js__eval` en
+  parallèle, piège 28) ; rien ne s'accumule dans la VM, dont la mémoire est
+  bornée par `JS_EVAL_MEM_BYTES` et déjà partagée avec le texte d'entrée — y
+  accumuler la sortie recréerait le plafond que la feature existe pour lever. Le
+  buffer part ensuite en **un seul** `_appendBlock` : un append par `emit()`
+  redonnerait le O(n²) qu'on corrige, simplement déplacé côté host.
+- **`runInQuickJs` ne touche pas au stockage.** Elle rend le buffer tel quel dans
+  `emitted` ; c'est le handler `js__eval` qui décide d'écrire. La VM reste de la
+  plomberie sans dépendance IDB.
+- **Flush INCONDITIONNEL** : `emitted` est renseigné sur **tous** les chemins de
+  retour — succès, refus de cap, throw guest, timeout, OOM — et le handler écrit
+  dans tous les cas. Ce n'est pas une troncature déguisée : la doctrine « refus
+  explicite, pas troncature » porte sur le **canal de retour**, pas sur du
+  travail déjà produit. 900 lignes émises avant un timeout valent mieux que rien.
+- **Écriture partielle : dite au modèle ET à l'utilisateur.** Le flush crée un
+  état qu'il faut signaler des deux côtés, sinon on livre en silence un fichier
+  qui s'arrête au milieu. Côté modèle, le result texte dit que la ressource est
+  **incomplète** et l'invite à la relire avant de reprendre (pas seulement « N
+  caractères ajoutés », qui se lit comme un succès). Côté utilisateur, l'ack
+  `resource_appended` porte `ok: false` → `ackIsError` le rend rouge, et son
+  libellé ajoute « interrompu » **sans retirer** le décompte — contrairement au
+  « (refusé) » de `js_eval`/`docs_pack` qui remplace la queue informative : ici
+  ce qui a été écrit avant l'interruption est précisément ce qui a été **sauvé**,
+  l'effacer cacherait l'information utile. Aucun mécanisme neuf : `ok` était déjà
+  dans `ACK_COPY_FIELDS` et `ackIsError` ne branche jamais par `kind`.
+- **`ok: false` ne veut pas dire « l'écriture a échoué ».** `_appendBlock` est
+  atomique — il écrit tout le buffer ou rien. Ce qui est partiel est le **calcul**
+  qui l'a produit. D'où la garde qui compte : `partial` vaut
+  `!r.ok && r.reason === 'error'`, **jamais** `!r.ok`. Un refus de cap
+  (`reason: 'cap'`) signifie que le code est allé au bout et que seul le retour
+  texte a été refusé : l'écriture est **complète**, et la peindre en rouge serait
+  un faux positif. Seul l'appelant connaît cette distinction, d'où le paramètre
+  passé à `_appendBlock` plutôt qu'une déduction locale.
+- **`emit` absent quand `output_handle` l'est.** La primitive n'est PAS définie
+  dans le prélude sans handle de sortie : un `ReferenceError: 'emit' is not
+  defined` remonte au modèle par le chemin d'erreur guest normal et lui dit
+  exactement ce qui manque. Une primitive toujours présente mais no-op
+  documenterait un comportement muet qui inviterait à l'appeler sans handle, et
+  perdrait le travail en silence. Le prélude `emit` vit donc dans une constante
+  **séparée** (`JS_EVAL_EMIT_PRELUDE`), concaténée conditionnellement.
+- **`readOnlyHint: false` inconditionnel sur `js__eval`** — l'outil écrit dès
+  qu'un `output_handle` est fourni. JSON Schema ne sait pas conditionner une
+  annotation à la présence d'un paramètre optionnel, et un hint qui **ment** dans
+  un mode d'usage réel est pire qu'un hint légèrement pessimiste dans l'autre.
+  L'annotation était `true` depuis le lot L ; c'est une correction, pas un choix
+  nouveau.
+- **`output_handle` validé AVANT l'exécution** : famille + existence, mêmes
+  gardes que `resource__append`. Un handle de sortie invalide échoue sans faire
+  calculer la VM pour rien, et sans exposer un `emit()` qui n'aurait nulle part
+  où écrire.
+- **Adressage par ID DE RECORD, jamais par le handle.** `_appendBlock` reçoit
+  `record.id` (le résultat de `resolveHandleRecord`), pas la chaîne fournie par
+  le modèle : dans un agent, un `res_…` peut être un **alias** délégué au spawn
+  (`resolveDelegatedRecordId`, lot X-1b) qui n'est l'id d'aucun record — le
+  relire par handle échouerait. `resolveHandleRecord` reste le résolveur unique
+  et c'est **son résultat** qui adresse l'écriture.
+- **Agents : déléguer, c'est confier** (décision Julien, 2026-08-31). La table de
+  délégation figée au spawn ouvrait un droit de **lecture** sur les ressources
+  que le parent a nommées ; depuis le lot Y elle ouvre du même geste un droit
+  d'**écriture** — un agent peut `resource__append`/`emit` dans une ressource
+  déléguée, et l'écriture atterrit dans le record du parent. Ce n'est pas un
+  élargissement de scope : `agentDelegatedFilesOf` rend `[]` pour toute
+  conversation racine, et la table ne contient que ce que le parent a
+  explicitement nommé — un alias non délégué reste « introuvable ». Aucun code
+  de délégation n'a été modifié par le lot Y ; le comportement est celui dont
+  l'append hérite en passant par `resolveHandleRecord`.
+- **Ack `resource_appended`** (poussé par `_appendBlock`) : parallèle à
+  `resource_stored`, informatif, sans undo, même icône (`ICON_PACKAGE` — c'est la
+  même métaphore « ranger dans une ressource », l'action se distingue par le
+  libellé). Porte `appendedLen` (caractères **ajoutés**) ET `size` (total après
+  ajout) : seul le couple dit ce qui vient de se passer. C'est le **seul** ack de
+  l'appel — d'où son entrée dans `ackDownloadTarget`, sans laquelle la ressource
+  complétée n'aurait aucune affordance de téléchargement (contrairement à
+  `docs__pack`/`docs__extract`, qui laissent `_storeBlock` pousser un
+  `resource_stored` porteur du bouton). L'ack `js_eval` d'un run avec
+  `output_handle` gagne `outputHandle` et `appendedLen` ; les trois champs sont
+  dans `ACK_COPY_FIELDS`, jamais recopiés à la main.
 
 **Ouverture native de documents (lot V, `docs__*`) :**
 - `docs__list(ref)` — structure d'un document (membres d'archive, pages et
@@ -574,8 +721,10 @@ de champs (voir avertissement ci-dessus).
 
 ### Téléchargement de la ressource désignée par un ack (lot V)
 
-Trois kinds d'ack désignent un fichier récupérable : `resource_stored`,
-`resource_presented`, `attachment_recalled`. Chacun porte un bouton icône
+Quatre kinds d'ack désignent un fichier récupérable : `resource_stored`,
+`resource_presented`, `attachment_recalled`, et `resource_appended` (lot Y —
+seul ack de son appel, donc porteur du bouton, cf. « Écriture incrémentale »).
+Chacun porte un bouton icône
 `.ack-dl` placé après le label et avant `undo` (c'est une action sur la **cible**
 de l'ack, pas sur l'ack).
 

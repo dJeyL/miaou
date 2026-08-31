@@ -42,6 +42,9 @@ const ACK_COPY_FIELDS = [
   'title', 'count', 'convId',            // lectures d'historique
   'server', 'name', 'intent',            // MCP / traçage d'intention
   'resourceName', 'mime', 'size',        // ressources IDB
+  'appendedLen',                          // lot Y — caractères AJOUTÉS, distincts de `size` (total après ajout) ;
+                                          // porté par resource_appended ET par l'ack js_eval d'un run avec output_handle
+  'outputHandle',                         // js__eval + output_handle (lot Y) — ressource res_… qu'un emit() a alimentée
   'attId',                                // pièces jointes (recall_attachment)
   'recordId',                             // X-1d — id de record d'un rappel : IDENTITÉ, là où (attId, convId)
                                           // est un couple ambigu dès qu'un agent rappelle un fichier de son
@@ -49,7 +52,10 @@ const ACK_COPY_FIELDS = [
                                           // de l'agent) ; cf. resolveRecallImages
   'slug', 'created',                      // skills (created : write = création vs modification)
   'topic', 'query',                      // aide (about_read, about_search)
-  'handle', 'ok', 'outLen', 'code',      // js__eval (lot L) — handle, succès, taille sortie, code exécuté
+  'handle', 'outLen', 'code',            // js__eval (lot L) — handle, taille sortie, code exécuté
+  'ok',                                   // issue d'un échec MÉTIER non-isError, PLUSIEURS producteurs : js_eval (lot L),
+                                          // docs_extract/docs_pack, et resource_appended (lot Y, où ok:false = calcul
+                                          // interrompu, pas écriture ratée). Lu par ackIsError, jamais par kind.
   'path',                                 // docs__extract (lot V-1) — chemin du membre extrait dans l'archive
   'selector',                             // docs__read (V-4) — unité lue : « 2-5 » (pages) ou « Synthèse!B2:E31 » (feuille, V-5)
   'sourceName',                           // docs__read (V-5) — nom du document LU, dont se déduit le mot d'unité ; distinct de resourceName, qui est l'extrait PRODUIT en as_resource (un .txt)
@@ -102,7 +108,11 @@ function ackDownloadTarget(m) {
   const kind = ackKindOf(m);
   const name = m.resourceName || '';
   const mime = m.mime || '';
-  if (kind === 'resource_stored' || kind === 'resource_presented') {
+  // resource_appended (lot Y) rejoint les deux autres : c'est le SEUL ack de
+  // l'appel (contrairement à docs__pack/docs__extract, qui laissent _storeBlock
+  // pousser un resource_stored porteur du bouton), donc sans lui la ressource
+  // complétée n'aurait aucune affordance de téléchargement.
+  if (kind === 'resource_stored' || kind === 'resource_presented' || kind === 'resource_appended') {
     return m.id ? { by: 'resource', id: m.id, name, mime } : null;
   }
   if (kind === 'attachment_recalled') {

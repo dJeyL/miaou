@@ -58,6 +58,11 @@ Figtree/Fira Code).
   contenu d'une pièce jointe, d'un fichier de bibliothèque ou d'une ressource
   pour compter, filtrer ou agréger — sans charger le fichier dans le contexte, et
   en ne ramenant que le résultat — cf. [docs/tools.md](docs/tools.md).
+- **Écriture incrémentale d'une ressource** : le modèle complète une ressource
+  existante au fil de plusieurs tours, ou la fait écrire ligne à ligne par le
+  code du bac à sable, pour produire un gros contenu sans le réécrire à chaque
+  étape ni buter sur la taille d'une réponse — cf.
+  [docs/tools.md](docs/tools.md).
 - **Archives zip** : le modèle ouvre un zip pour en lister les membres et en
   extraire un, ou regroupe plusieurs fichiers produits au fil de l'échange en une
   archive téléchargeable depuis le fil — cf. [docs/tools.md](docs/tools.md).

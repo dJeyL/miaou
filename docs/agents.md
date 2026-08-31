@@ -61,7 +61,7 @@ Une **chaîne vide n'est pas un parent** : `{ parentConvId: '' }` est une racine
 C'est le cas d'un record legacy ou d'une désérialisation qui pose le champ sans
 valeur ; le traiter comme un agent le rendrait invisible partout, en silence.
 
-### Les huit sites d'exclusion
+### Les sept sites d'exclusion
 
 | Site | Fonction | Fichier |
 |---|---|---|
@@ -722,7 +722,7 @@ Non-goals tranchés à l'esquisse :
 
 ## Navigation parent ↔ agent (élargissement X-1)
 
-Un agent n'apparaît nulle part (huit sites d'exclusion) : sans affordance
+Un agent n'apparaît nulle part (sept sites d'exclusion) : sans affordance
 dédiée, il est donc *inatteignable* depuis l'interface, et une fois atteint on
 n'en revient pas. La boucle est fermée par deux gestes symétriques, plus un
 libellé.
