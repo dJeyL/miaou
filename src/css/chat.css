@@ -529,12 +529,17 @@
   border-radius: 4px;
   color: var(--code-inline-color);
 }
-/* Bloc de code, chrome partagé : les messages assistant (`.body pre`) ET les
+/* Bloc de code, chrome partagé : les messages assistant (`.body pre`), les
    ressources texte renvoyées par un outil MCP (`.tool-block pre`, insérées entre
-   .meta et .body, donc HORS de .body). Même fond/bordure/padding — aucun style
-   réinventé pour le second chemin. */
+   .meta et .body, donc HORS de .body), et l'inspecteur d'appel d'outil
+   (`.inspect-body pre`, lot Z — dans un drawer, hors du fil). Même
+   fond/bordure/padding — aucun style réinventé par chemin. Un bloc qui manque à
+   cette liste hérite de la couleur de texte de SON conteneur sur le fond sombre
+   du code : illisible tant que Prism ne recolore pas, donc invisible sur
+   `language-text` et vu seulement sur les langues colorisées. */
 .body pre,
-.tool-block pre {
+.tool-block pre,
+.inspect-body pre {
   margin: 12px 0;
   border: 1px solid var(--border);
   border-radius: var(--r);
@@ -545,7 +550,8 @@
    highlight ; prism-tomorrow injecte alors padding/margin/radius sur le <pre>.
    On neutralise pour garder exactement la même compacité que Prism inactif. */
 .body pre[class*="language-"],
-.tool-block pre[class*="language-"] {
+.tool-block pre[class*="language-"],
+.inspect-body pre[class*="language-"] {
   padding: 0;
   margin: 12px 0;
   border-radius: var(--r);
@@ -714,7 +720,8 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 }
 .mermaid-lb-btn:hover { background: rgba(255, 255, 255, .24); }
 .body pre code,
-.tool-block pre code {
+.tool-block pre code,
+.inspect-body pre code {
   display: block;
   padding: 13px 14px !important;
   font-family: var(--mono) !important;

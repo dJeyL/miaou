@@ -496,6 +496,10 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   (cf. `pieces-jointes`).
 - **La conversation entière en Markdown** : la même icône, cliquée en gardant
   **Shift** enfoncé. L'export inclut la trace des outils utilisés à chaque tour.
+  Dans un export, les paramètres et résultats de ces appels sont **abrégés** :
+  ils sont là pour situer ce qui s'est passé, pas pour rejouer l'appel. Pour le
+  détail complet, la loupe de chaque trace ouvre l'inspecteur d'appel dans
+  l'application (sujet `interface`).
   Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de
   commandes fait la même chose.
 
@@ -678,6 +682,21 @@ Quelques repères pour te déplacer dans MIAOU :
   aussi pour les fichiers qui ne s'affichent pas dans la conversation (un CSV,
   un JSON produit pour un calcul) : la trace est parfois le seul endroit d'où
   les récupérer. Si le fichier n'est plus disponible, l'icône devient inerte.
+- **Voir le détail d'un appel d'outil** : chaque trace d'outil porte une petite
+  **loupe** qui ouvre un panneau de détail — ce que le modèle a réellement
+  envoyé (les paramètres de l'appel), ce que l'outil a réellement répondu, et de
+  quel outil et de quel serveur il s'agit, avec l'heure et l'issue (succès ou
+  échec). Rien n'est tronqué, contrairement aux exports. Le contenu est présenté
+  selon sa nature plutôt que brut : un code exécuté s'affiche comme du code
+  coloré, un JSON est remis en forme et indenté, un paramètre long tenant sur
+  plusieurs lignes garde ses retours à la ligne. Si l'appel a produit un
+  fichier, le panneau le décrit (nom, identifiant, type, taille), propose de le
+  télécharger, et selon ce qu'il est : affiche une image en vignette (clique
+  pour l'agrandir), montre le contenu d'un fichier texte, et pour un SVG te
+  laisse voir **soit sa source, soit le dessin** (l'icône en forme d'œil).
+  Un fichier trop volumineux n'est pas prévisualisé — il reste téléchargeable.
+  La loupe n'apparaît que sur les traces dont le détail a été conservé : les
+  conversations les plus anciennes peuvent en être dépourvues.
 - **Animations** : un réglage dans les Paramètres
   (Normales / Réduites / Suivre le système) coupe toutes les transitions et
   animations visuelles de l'interface — utile en cas de gêne au mouvement ou de

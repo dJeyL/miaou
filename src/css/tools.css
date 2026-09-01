@@ -196,3 +196,22 @@
 /* Ressource évincée du cache / supprimée : l'ack reste vrai, le bouton devient inerte. */
 .tool-ack .ack-dl.unavailable { opacity: 0.35; cursor: default; }
 .tool-ack .ack-dl.unavailable:hover { color: var(--text-3); }
+
+/* Inspection du détail d'un appel (lot Z). Même gabarit que .ack-dl — bouton
+   icône, jamais texte, pour la raison déjà posée plus haut : sur un ack qui
+   porte `annuler`, une troisième affordance textuelle se lirait comme un
+   groupe. Toujours visible plutôt que révélé au survol : le groupe compact
+   épingle des hauteurs mesurées (ticker), un bouton qui apparaît au survol y
+   changerait la géométrie sous le curseur. */
+.tool-ack .ack-inspect {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 0;
+}
+.tool-ack .ack-inspect:hover { color: var(--accent); }

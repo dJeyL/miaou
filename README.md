@@ -112,6 +112,9 @@ Figtree/Fira Code).
   souvenirs actifs sont réinjectés dans le contexte à chaque envoi.
 - Chaque appel d'outil produit une ligne d'ack visible dans le thread :
   annulable pour les écritures mémoire, informative pour les lectures.
+- Inspecteur d'appel : une loupe sur chaque ack ouvre le détail complet et non
+  tronqué de l'appel — paramètres, résultat, méta, et la ressource produite
+  (aperçu selon son type, téléchargement) — cf. [docs/tools.md](docs/tools.md).
 
 **Espaces**
 

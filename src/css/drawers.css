@@ -937,3 +937,123 @@ textarea.skill-content {
 .mem-dl:hover { color: var(--accent); }
 .mem-dl.unavailable { opacity: 0.35; cursor: default; }
 .mem-dl.unavailable:hover { color: var(--text-3); }
+
+/* ── Inspecteur d'appel d'outil (lot Z) ───────────────────────────────────────
+   Fiche d'UN appel : volets empilés verticalement (Requête / Réponse / Méta),
+   jamais des onglets — on lit de haut en bas. Densité VOLONTAIREMENT plus forte
+   que le fil : c'est une surface d'inspection, pas de lecture, et un payload
+   MCP se parcourt mieux serré. Le drawer est en .drawer-wide (620px), comme
+   Outils et Skills. */
+.inspect-body { gap: 14px; font-size: 12px; }
+
+.inspect-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.inspect-crumb { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.inspect-crumb code {
+  font-family: inherit;
+  background: none;
+  padding: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+/* Le chevron `›` est teinté accent dans le fil, mais tools.css scope cette
+   teinte sous `.tool-ack` : hors du fil, il retomberait en gris. On la
+   redonne ici — même token, pas une seconde couleur. */
+.inspect-crumb .ack-sep { color: var(--accent); margin: 0 3px; }
+/* Le dernier segment est le nom d'outil réel ; les précédents sont le chemin
+   de namespace. Le distinguer évite de lire quatre mots de même poids. */
+.inspect-crumb code:last-of-type { color: var(--accent); }
+/* L'échec vit dans l'ack (ackIsError), pas dans un champ du résultat : on le
+   redit ici parce qu'un résultat d'échec est souvent un texte d'apparence
+   normale. */
+.inspect-badge-error {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--err-soft);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.inspect-intent { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.45; }
+
+.inspect-section { display: flex; flex-direction: column; gap: 6px; }
+.inspect-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.inspect-field { display: flex; gap: 8px; align-items: baseline; line-height: 1.5; }
+.inspect-key {
+  flex-shrink: 0;
+  min-width: 92px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+/* Une valeur d'argument peut être une clé d'API ou un id sans espace : sans
+   break-word elle repousserait la largeur du drawer. */
+.inspect-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.inspect-empty { margin: 0; color: var(--text-3); font-style: italic; font-size: 11px; }
+
+/* Blocs de code du drawer : le chrome (fond, bordure, padding, couleur, scroll
+   horizontal) vient de la règle PARTAGÉE de chat.css, à laquelle `.inspect-body`
+   est joint — on n'en réinvente aucun morceau ici. Ne restent que les écarts
+   assumés : hauteur bornée et densité.
+   La hauteur borne le volet — un résultat Splunk de 5000 lignes doit scroller
+   DANS sa section, sinon les volets suivants (dont Méta) deviennent
+   inatteignables. Mais la borne est posée sur le <code>, PAS sur le <pre> :
+   `.code-head` (langue + copier/télécharger/aperçu) vit À L'INTÉRIEUR du <pre>,
+   donc un <pre> scrollable emporte l'en-tête hors de vue dès la première ligne
+   défilée — on perd les boutons juste au moment où le contenu est assez long
+   pour qu'on en ait besoin. Sur le <code>, l'en-tête reste épinglé et seul le
+   contenu défile, sur les deux axes.
+   Le `!important` sur la police n'est pas décoratif : la règle partagée en pose
+   un, et la simple postériorité de drawers.css dans CSS_ORDER ne suffit pas à
+   le battre. */
+.inspect-body pre {
+  margin: 0;
+}
+.inspect-body pre code {
+  max-height: 300px;
+  overflow: auto;
+  font-size: 10.5px !important;
+  line-height: 1.55 !important;
+  padding: 10px 12px !important;
+}
+
+.inspect-dl { align-self: flex-start; margin-top: 2px; }
+.inspect-preview { display: flex; flex-direction: column; gap: 6px; }
+/* Vignette : ratio préservé, cliquable vers la lightbox plein écran.
+   Bornée EN HAUT (une capture d'écran ne doit pas pousser le volet Méta hors de
+   vue) et EN BAS : une image de quelques pixels — favicon, sprite, pastille de
+   statut — s'afficherait à sa taille native, soit un point illisible qu'on ne
+   penserait même pas à cliquer. `object-fit: contain` fait tenir le contenu
+   dans ce plancher sans le déformer ni le rogner, contrairement au `cover` des
+   pastilles du composer, qui n'ont à montrer qu'une amorce.
+   Le damier dit la transparence : sans lui, un PNG à fond transparent se lit
+   comme un PNG à fond clair, et on croit à un rendu raté. */
+.inspect-thumb {
+  max-width: 100%;
+  max-height: 240px;
+  min-width: 48px;
+  min-height: 48px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+  align-self: flex-start;
+  background-color: var(--surface-2);
+  background-image:
+    linear-gradient(45deg, var(--border) 25%, transparent 25%, transparent 75%, var(--border) 75%),
+    linear-gradient(45deg, var(--border) 25%, transparent 25%, transparent 75%, var(--border) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 6px 6px;
+}

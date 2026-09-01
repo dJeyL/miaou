@@ -1687,6 +1687,146 @@ describe('resourceDownloadName (lot V)', function() {
   });
 });
 
+describe('ackHasInspectableDetail (lot Z)', function() {
+  it('args seuls suffisent', function() {
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', args: { q: 1 } })).toBe(true);
+  });
+  it('result seul suffit', function() {
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', result: 'ok' })).toBe(true);
+  });
+  it('code seul suffit (js_eval sans args enrichis)', function() {
+    expect(ackHasInspectableDetail({ kind: 'js_eval', code: '1+1' })).toBe(true);
+  });
+  it('ack legacy sans aucun des trois champs → false', function() {
+    expect(ackHasInspectableDetail({ kind: 'resource_presented', id: 'res_1' })).toBe(false);
+    expect(ackHasInspectableDetail(null)).toBe(false);
+  });
+  it('valeurs falsy mais PRESENTES → true (result vide est un resultat)', function() {
+    expect(ackHasInspectableDetail({ result: '' })).toBe(true);
+    expect(ackHasInspectableDetail({ args: {} })).toBe(true);
+  });
+});
+
+describe('inspectValueShape (lot Z)', function() {
+  it('string monoligne → inline', function() {
+    var r = inspectValueShape('index=main');
+    expect(r.mode).toBe('inline');
+    expect(r.text).toBe('index=main');
+  });
+  it('string multiligne → block (requete SPL collee en argument)', function() {
+    var r = inspectValueShape('index=main\n| stats count');
+    expect(r.mode).toBe('block');
+    expect(r.lang).toBe('text');
+  });
+  it('objet → JSON indente, donc block', function() {
+    var r = inspectValueShape({ a: 1, b: [2, 3] });
+    expect(r.mode).toBe('block');
+    expect(r.lang).toBe('json');
+    expect(r.text.indexOf('\n') >= 0).toBe(true);
+  });
+  it('objet vide → inline (pas de saut de ligne a afficher)', function() {
+    expect(inspectValueShape({}).mode).toBe('inline');
+  });
+  it('scalaires non-string', function() {
+    expect(inspectValueShape(42).text).toBe('42');
+    expect(inspectValueShape(true).text).toBe('true');
+    expect(inspectValueShape(null).text).toBe('null');
+  });
+  it('objet cyclique → pas d exception, repli sur String()', function() {
+    var a = {}; a.self = a;
+    expect(typeof inspectValueShape(a).text).toBe('string');
+  });
+});
+
+describe('inspectResultShape (lot Z)', function() {
+  it('JSON objet → reindente', function() {
+    var r = inspectResultShape('{"a":1}');
+    expect(r.lang).toBe('json');
+    expect(r.text.indexOf('\n') >= 0).toBe(true);
+  });
+  it('JSON tableau → reindente', function() {
+    expect(inspectResultShape('[1,2]').lang).toBe('json');
+  });
+  it('texte libre → brut, cas nominal sans erreur', function() {
+    var r = inspectResultShape('Souvenir introuvable.');
+    expect(r.lang).toBe('text');
+    expect(r.text).toBe('Souvenir introuvable.');
+  });
+  it('JSON malforme commencant par { → texte brut, pas d exception', function() {
+    var r = inspectResultShape('{oops');
+    expect(r.lang).toBe('text');
+    expect(r.text).toBe('{oops');
+  });
+  it('scalaire JSON valide → laisse en texte (rien a reindenter)', function() {
+    expect(inspectResultShape('42').lang).toBe('text');
+  });
+  it('null/undefined → chaine vide', function() {
+    expect(inspectResultShape(null).text).toBe('');
+  });
+});
+
+describe('inspectLangForMime (lot Z)', function() {
+  it('mimes courants', function() {
+    expect(inspectLangForMime('application/json')).toBe('json');
+    expect(inspectLangForMime('text/csv')).toBe('csv');
+    expect(inspectLangForMime('image/svg+xml')).toBe('svg');
+  });
+  it('text/plain → text (extension txt renommee)', function() {
+    expect(inspectLangForMime('text/plain')).toBe('text');
+  });
+  it('suffixe +json → json (via mimeExt, pas une 2e table)', function() {
+    expect(inspectLangForMime('application/vnd.api+json')).toBe('json');
+  });
+  it('mime inconnu → text, jamais d echec', function() {
+    expect(inspectLangForMime('application/x-inconnu')).toBe('x-inconnu');
+    expect(inspectLangForMime('')).toBe('text');
+  });
+});
+
+describe('inspectResourcePresentation (lot Z)', function() {
+  // Prédicat textuel injecté : sous QuickJS, _isTextualMime (resources.js)
+  // n'est pas chargé — sans injection la branche textuelle serait morte et un
+  // test vert ne prouverait rien d'elle.
+  var textual = function(m) {
+    return m.indexOf('text/') === 0 || m === 'application/json';
+  };
+  it('image bitmap → vignette', function() {
+    expect(inspectResourcePresentation('image/png', 1000, textual).mode).toBe('thumbnail');
+  });
+  it('SVG → markup (source ET rendu), pas vignette', function() {
+    var r = inspectResourcePresentation('image/svg+xml', 1000, textual);
+    expect(r.mode).toBe('markup');
+    expect(r.lang).toBe('svg');
+  });
+  it('JSON → bloc colorise', function() {
+    var r = inspectResourcePresentation('application/json', 1000, textual);
+    expect(r.mode).toBe('text');
+    expect(r.lang).toBe('json');
+  });
+  it('binaire opaque → descripteur seul', function() {
+    var r = inspectResourcePresentation('application/pdf', 1000, textual);
+    expect(r.mode).toBe('descriptor');
+    expect(r.reason).toBe('binary');
+  });
+  it('textuel trop volumineux → refus explicite, jamais de troncature', function() {
+    var r = inspectResourcePresentation('application/json', INSPECT_PREVIEW_MAX_BYTES + 1, textual);
+    expect(r.mode).toBe('descriptor');
+    expect(r.reason).toBe('too-big');
+  });
+  it('SVG trop volumineux → refus explicite aussi', function() {
+    expect(inspectResourcePresentation('image/svg+xml', INSPECT_PREVIEW_MAX_BYTES + 1, textual).reason).toBe('too-big');
+  });
+  it('vignette non soumise au cap (bitmap redimensionne par le navigateur)', function() {
+    expect(inspectResourcePresentation('image/png', INSPECT_PREVIEW_MAX_BYTES + 1, textual).mode).toBe('thumbnail');
+  });
+  it('taille inconnue → on tente la previsualisation', function() {
+    expect(inspectResourcePresentation('text/csv', null, textual).mode).toBe('text');
+  });
+  it('charset dans le mime tolere', function() {
+    expect(inspectResourcePresentation('text/csv; charset=utf-8', 10, textual).mode).toBe('text');
+  });
+});
+
 describe('ackDownloadTarget (lot V)', function() {
   it('resource_stored → cible par id de ressource', function() {
     var t = ackDownloadTarget({ kind: 'resource_stored', id: 'res_1', resourceName: 'a.csv', mime: 'text/csv' });

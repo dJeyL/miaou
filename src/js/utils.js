@@ -128,6 +128,131 @@ function ackDownloadTarget(m) {
   return null;
 }
 
+// Prédicat UNIQUE « cet ack a-t-il un détail d'appel à inspecter ? » (lot Z).
+// Source de vérité du bouton d'inspection des acks (`buildToolAck`, ui.js) —
+// ne jamais réécrire une liste de kinds ailleurs, exactement comme
+// `ackDownloadTarget` juste au-dessus.
+//
+// Le prédicat porte sur la PRÉSENCE DES CHAMPS, jamais sur le `kind` : ce qui
+// rend un ack inspectable n'est pas la famille d'outil, c'est le fait qu'on ait
+// gardé de quoi montrer l'appel. Les trois champs sont persistés
+// (ACK_COPY_FIELDS) — `args`/`result` par l'enrichissement cross-turn
+// (onEnrichLastAck), `code` par le handler js__eval.
+//
+// Un ack LEGACY (antérieur à l'enrichissement, ou poussé hors d'un tool_call —
+// resource_presented émis par un handler, par exemple) répond `false` et
+// n'affiche aucun bouton : dégradation propre, jamais un drawer vide qui
+// prétendrait avoir quelque chose à montrer.
+// Pure, testable en QuickJS.
+function ackHasInspectableDetail(m) {
+  if (!m) return false;
+  return m.args != null || m.result != null || m.code != null;
+}
+
+// ── Inspecteur d'appel d'outil : helpers purs (lot Z) ────────────────────────
+
+// Cap de prévisualisation d'une ressource dans l'inspecteur. Au-delà, on REFUSE
+// explicitement (message + téléchargement), on ne tronque pas : un extrait qui
+// se fait passer pour le tout est exactement ce que l'inspecteur existe pour
+// éviter (cf. l'export tronqué à 300 caractères, qui a motivé le lot). Un
+// retour Splunk de plusieurs Mo figerait l'onglet à l'ouverture du drawer.
+const INSPECT_PREVIEW_MAX_BYTES = 512 * 1024;
+
+// Rendu d'une valeur d'argument : « inline » (une ligne, à côté de sa clé) ou
+// « block » (un <pre> pleine largeur). Une string MULTILIGNE va toujours en
+// bloc — c'est ce qui rend lisible une requête SPL ou un JSON collé en
+// argument, illisible replié sur une ligne. Les objets/tableaux y vont aussi :
+// ils seront sérialisés indentés, donc multilignes par construction.
+// Renvoie une DESCRIPTION (mode + texte), pas du HTML : la mise en forme est
+// un problème de ui.js, l'échappement se fait là-bas.
+// Pure, testable en QuickJS.
+function inspectValueShape(v) {
+  if (v == null) return { mode: 'inline', text: String(v) };
+  if (typeof v === 'string') {
+    return { mode: v.indexOf('\n') >= 0 ? 'block' : 'inline', text: v, lang: 'text' };
+  }
+  if (typeof v === 'object') {
+    let text;
+    try { text = JSON.stringify(v, null, 2); }
+    catch (e) { text = String(v); }        // cycle / getter qui jette
+    if (text == null) text = String(v);    // JSON.stringify(undefined) → undefined
+    return { mode: text.indexOf('\n') >= 0 ? 'block' : 'inline', text, lang: 'json' };
+  }
+  return { mode: 'inline', text: String(v) };
+}
+
+// Sortie d'outil : JSON ré-indenté s'il parse, texte brut sinon. Le `result`
+// est une chaîne aplatie (flattenToolResult) dont RIEN ne garantit la forme —
+// un échec de parse est le cas nominal, jamais une erreur à signaler.
+// Pure, testable en QuickJS.
+function inspectResultShape(result) {
+  const s = result == null ? '' : String(result);
+  const t = s.trim();
+  // Court-circuit avant JSON.parse : un scalaire JSON valide ('42', '"x"',
+  // 'null') n'a aucun intérêt à être re-sérialisé, et parser toute la chaîne
+  // pour la rejeter ensuite serait du travail jeté sur un gros résultat.
+  if (t.charAt(0) === '{' || t.charAt(0) === '[') {
+    try {
+      return { text: JSON.stringify(JSON.parse(t), null, 2), lang: 'json' };
+    } catch (e) { /* pas du JSON : texte brut, cas nominal */ }
+  }
+  return { text: s, lang: 'text' };
+}
+
+// Langage Prism d'une ressource, déduit de son mime. Passe par `mimeExt`
+// (source unique mime→extension, qui gère déjà `application/foo+json` et
+// `image/webp`) plutôt que par une seconde table qui divergerait. Repli
+// 'text' : une grammaire inconnue ne doit jamais faire échouer l'affichage.
+// Pure, testable en QuickJS.
+function inspectLangForMime(mime) {
+  const ext = mimeExt(mime);
+  if (ext === 'bin') return 'text';
+  return INSPECT_EXT_TO_LANG[ext] || ext;
+}
+
+// Extensions dont le nom diffère de la langue Prism attendue. Les autres
+// (json, css, xml, js, html, svg, md…) coïncident déjà.
+const INSPECT_EXT_TO_LANG = { txt: 'text', htm: 'html' };
+
+// Décide comment présenter la ressource désignée par un ack : vignette (image
+// bitmap), source + aperçu sandboxé (SVG), bloc colorisé (autre textuel), ou
+// descripteur seul (binaire opaque). UN seul endroit décide — sinon le volet
+// et le cap de prévisualisation divergeraient sur ce qu'est « textuel ».
+//
+// Le SVG est traité AVANT la famille image : c'est un `image/*`, mais on veut
+// pouvoir en lire la source autant que le voir, d'où les deux façons.
+// `size` absent/inconnu ne bloque pas : on tente, la troncature n'existe pas
+// (c'est tout ou rien) et un décodage raté dégrade en descripteur.
+//
+// `isTextual` est INJECTABLE (3e paramètre, défaut = le prédicat du projet)
+// uniquement pour que les tests couvrent réellement la branche textuelle : le
+// runner évalue utils.js seul, donc sans injection cette branche serait
+// morte sous QuickJS et un test « vert » ne prouverait rien d'elle. Aucun
+// appelant applicatif ne passe ce paramètre.
+// Pure, testable en QuickJS.
+function inspectResourcePresentation(mime, size, isTextual) {
+  const m = String(mime || '').toLowerCase().split(';')[0].trim();
+  const tooBig = Number(size) > INSPECT_PREVIEW_MAX_BYTES;
+  if (m === 'image/svg+xml') {
+    return tooBig ? { mode: 'descriptor', reason: 'too-big' }
+                  : { mode: 'markup', lang: 'svg' };
+  }
+  if (m.indexOf('image/') === 0) return { mode: 'thumbnail' };
+  // `_isTextualMime` vit dans resources.js (chargé APRÈS utils.js) : c'est LE
+  // prédicat « ce mime est-il textuel ? » du projet, celui qui décide déjà du
+  // stockage inline vs binary. En écrire un second ici les ferait diverger —
+  // une ressource stockée inline mais jugée binaire par l'inspecteur. La garde
+  // `typeof` couvre le test runner, qui évalue utils.js SEUL : sans elle, un
+  // ReferenceError au lieu d'un repli. Hors runtime navigateur on retombe donc
+  // sur 'descriptor' (téléchargement offert), jamais sur une exception.
+  const textual = isTextual || (typeof _isTextualMime === 'function' ? _isTextualMime : null);
+  if (textual && textual(m)) {
+    return tooBig ? { mode: 'descriptor', reason: 'too-big' }
+                  : { mode: 'text', lang: inspectLangForMime(m) };
+  }
+  return { mode: 'descriptor', reason: 'binary' };
+}
+
 // Place le caret en fin de contenu d'un élément contenteditable.
 function placeCaretEnd(el) {
   const range = document.createRange();

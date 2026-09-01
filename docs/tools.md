@@ -1002,6 +1002,114 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   miroir de l'état mémoire. Helpers purs `isAckRole` / `ackKindOf` dans utils.js,
   `ackLabel` dans ui.js (testés QuickJS).
 
+### Inspecteur d'appel d'outil (lot Z)
+
+Surface de **consultation** du détail d'un appel : arguments envoyés, résultat
+reçu, code exécuté, méta, et la ressource produite. Ouvert par une **loupe**
+(`.ack-inspect`, `ICON_INSPECT`) posée sur chaque ack éligible, dans un drawer
+`#inspect-drawer` (`.drawer-wide`, 620px).
+
+**Rien n'est collecté par ce lot.** `args`, `result`, `code`, `ts`, `server`,
+`intent` sont déjà persistés sur l'entrée par `ACK_COPY_FIELDS` — l'inspecteur
+ne fait que présenter ce qui était déjà là, y compris sur des conversations
+anciennes. Aucun changement de schéma, aucun effet sur le contexte modèle ni sur
+le KV cache. Corollaire : ce que l'inspecteur peut montrer est exactement ce que
+la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
+
+- **Éligibilité** : `ackHasInspectableDetail(m)` (utils.js, pure) — prédicat
+  UNIQUE, jamais un test de `kind` dans ui.js. Porte sur la PRÉSENCE des champs,
+  pas sur la famille d'outil : ce qui rend un ack inspectable n'est pas ce qu'il
+  a fait, c'est qu'on ait gardé de quoi le montrer. Un ack legacy (poussé hors
+  d'un tool_call, ou antérieur à l'enrichissement) répond faux et n'affiche
+  aucune loupe — pas de drawer vide.
+- **Listener sur le NŒUD, jamais en délégation.** En mode compact, un seul
+  `.tool-ack` est dans le DOM ; les autres sont **détachés** et ne vivent que
+  comme valeurs de `ackNodeOf` (WeakMap). Une délégation au niveau du groupe ne
+  verrait jamais les acks masqués — c'est-à-dire précisément les appels
+  intermédiaires d'un enchaînement, le besoin qui a motivé le lot. Les nœuds
+  détachés survivent intacts, listeners compris.
+- **Identité par l'objet.** La closure capture l'ENTRÉE, jamais `m.id` (non
+  unique : un create et un delete du même souvenir le partagent). Idem pour la
+  garde de fenêtre d'await du volet ressource (`_inspectEntry !== m`).
+- **Ordre des icônes** : `.ack-dl` PUIS `.ack-inspect`. La loupe est en dernière
+  position, donc à la même abscisse d'un ack à l'autre ; l'ordre inverse la
+  décalait sur les seules lignes porteuses d'un téléchargement, cassant
+  l'alignement de la colonne dans un groupe déplié.
+- **Frontière string→HTML (piège 21)** : tout ce qui est affiché est d'origine
+  modèle ou serveur distant. `textContent` ou `escHtml` dans un `<pre>`, jamais
+  `renderMd`, jamais d'interpolation en template string. C'est le SECOND chemin
+  à risque du projet après `formatToolAcksHtml` — toute extension de
+  l'inspecteur hérite de cette contrainte.
+- **Frontière de rendu (piège 23)** : un SVG est affiché en **source**, et son
+  aperçu passe par le bouton `decoratePre` existant, donc par l'iframe
+  `sandbox="allow-scripts"` sans `allow-same-origin`. Aucune seconde voie de
+  rendu n'est ouverte ; jamais de SVG d'origine modèle injecté dans le DOM du
+  drawer.
+- **Présentation par nature, pas brute** : `inspectValueShape` (multiligne →
+  bloc), `inspectResultShape` (JSON ré-indenté s'il parse, texte brut sinon),
+  `inspectLangForMime` (langue Prism dérivée de `mimeExt`, source unique).
+  Toutes pures, testées QuickJS.
+- **Volet ressource** : désigné par `ackDownloadTarget` (prédicat unique partagé
+  avec le bouton de téléchargement de l'ack). Quatre présentations décidées par
+  `inspectResourcePresentation(mime, size)` — vignette (image bitmap), source +
+  aperçu sandboxé (SVG), bloc colorisé (autre textuel), descripteur seul
+  (binaire opaque) — le téléchargement étant offert dans les quatre cas, via
+  `downloadAckResource` (donc `resourceDownloadName` : assainissement PUIS
+  extension depuis le mime). Le record résolu **prime** sur les champs de l'ack
+  (celui-ci en est une copie potentiellement plus ancienne).
+- **`_isTextualMime` (resources.js) est LE prédicat de textualité**, celui qui
+  décide déjà du stockage inline vs binary : `inspectResourcePresentation` s'y
+  branche plutôt que d'en écrire un second, qui divergerait (ressource stockée
+  inline mais jugée binaire à l'affichage). Il est injectable en 3e paramètre
+  **pour les tests seulement** — utils.js est évalué seul par le runner, donc
+  sans injection cette branche serait morte sous QuickJS et un test vert ne
+  prouverait rien d'elle.
+- **Nommage des téléchargements de blocs** : chaque bloc pose un
+  `data-filename` sur son `<code>`, que `decoratePre` lit déjà — sans lui, tout
+  snippet sort en « miaou-snippet.<ext> » alors que l'information est sous les
+  yeux. Le nom est `<préfixe>-<quoi>`, composé par `_inspectBlockName(m, what)`
+  — **jamais** concaténé sur un site d'appel, sinon la formule diverge entre les
+  quatre blocs. Le préfixe (`_inspectNamePrefix`) est le **dernier segment du
+  nom d'outil** (`splunk__search` → `search`, `miaou__js__eval` → `eval`),
+  replié sur le kind pour un ack sans nom. Il est **systématique**, et c'est là
+  qu'il gagne son coût : deux outils exposant tous deux un paramètre `query`
+  produiraient sinon deux `query.txt` qui s'écrasent dans le dossier de
+  téléchargements — on obtient `search-query.txt` et `list-query.txt`. D'où :
+  `<outil>-<clé>` pour un argument multiligne, `<outil>-code` pour le code
+  `js__eval`, `<outil>-resultat` pour la réponse. **Seule exception** : une
+  ressource garde le nom de son **record** (figé au stockage, déjà spécifique et
+  portant son extension) ; seul son repli est préfixé. Le nom traverse
+  `sanitizeDownloadName` chez `decoratePre` : une valeur d'origine modèle n'a
+  pas besoin d'une précaution supplémentaire au point de pose.
+- **Cap de prévisualisation** (`INSPECT_PREVIEW_MAX_BYTES`) : au-delà, **refus
+  explicite** + téléchargement, jamais de troncature silencieuse — un extrait
+  qui se ferait passer pour le tout est exactement le défaut de l'export que
+  cet inspecteur existe pour corriger.
+- **Résolution asynchrone** : le descripteur et le bouton sont peints
+  immédiatement depuis l'ack ; la prévisualisation arrive après résolution
+  cache→IDB. L'ouverture du drawer ne dépend d'aucun `await`.
+- **Exports NON touchés** (décision d'ouverture). `_formatToolCallMd` /
+  `_formatToolCallHtml` gardent leur troncature à 300 caractères, et la loupe
+  est absente des exports comme l'est `.ack-dl` (un HTML standalone n'a ni IDB
+  ni globals MIAOU). Un export byte-identique avant/après est un contrôle de
+  non-régression du lot.
+- **Chrome des blocs de code partagé** : `.inspect-body pre` est joint aux
+  sélecteurs `.body pre` / `.tool-block pre` de `chat.css` (fond, bordure,
+  padding, couleur, `overflow-x`), plutôt que restylé. Un bloc absent de cette
+  liste hérite de la couleur de texte de son conteneur sur le fond de code :
+  illisible tant que Prism ne recolore pas, donc invisible sur `language-text`
+  et vu seulement sur les langues colorisées — défaut effectivement observé et
+  corrigé au lot.
+- **Enregistré dans `_drawerStack`** via `trackDrawer` (qui transmet les
+  arguments, donc `openToolInspector(entry)` garde sa signature) : sans quoi
+  Escape fermerait le drawer du dessous.
+
+Vérification : `.claude/skills/run-miaou/verify-tool-inspector.mjs` (45
+contrôles — poignée présente/absente, groupe compact et liste, alignement des
+icônes, volets empilés, densité, multiligne, `js__eval`, quatre présentations
+de ressource, propriété du scroll et en-tête de bloc épinglé, nommage préfixé
+des téléchargements, Escape).
+
 ## Références de conversation dans le texte du modèle (`conv_ref`)
 
 Le modèle peut citer une conversation passée (obtenue via `conv__get`/

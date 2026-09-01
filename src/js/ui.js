@@ -1243,6 +1243,13 @@ const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="non
 // là où le rendu FABRIQUE une image qui n'existait pas.
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
 
+// Métaphore « loupe » — RÉSERVÉE à l'inspection du détail d'un appel d'outil
+// (lot Z). Vocabulaire d'icônes : une métaphore = un usage. Distincte
+// d'ICON_EYE, qui dit « on te remontre un contenu » (conversation_read,
+// resource_presented) : la loupe dit « on décortique ce qui s'est passé » —
+// arguments envoyés, résultat reçu, méta d'appel.
+const ICON_INSPECT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>';
+
 // Séparateur › coloré (teinte accent) partagé par tous les acks à deux segments
 // (breadcrumb MCP, détail replié, ou simple label "Action › cible") — générique,
 // pas réservé aux outils MCP — classe CSS générique `.ack-sep`.
@@ -2005,7 +2012,11 @@ function buildToolAck(m) {
 
   // Téléchargement de la ressource désignée par l'ack (lot V). Placé APRÈS le
   // label et AVANT `undo` : c'est une action sur la cible de l'ack, pas sur
-  // l'ack lui-même. Les trois kinds concernés sont énumérés par
+  // l'ack lui-même. Il précède aussi la loupe d'inspection (lot Z) : quand les
+  // deux sont là, l'ordre fixe met la loupe en DERNIÈRE position, donc à la
+  // même abscisse d'un ack à l'autre — une colonne d'icônes alignée dans un
+  // groupe déplié, là où l'ordre inverse la décalait sur les seules lignes
+  // porteuses d'un téléchargement. Les trois kinds concernés sont énumérés par
   // `ackDownloadTarget` (utils.js) — prédicat UNIQUE, partagé avec le rendu de
   // la liste de fichiers d'espace ; ne jamais tester `kind` en dur ici.
   // Toujours affiché quand l'ack désigne une ressource : les bytes vivent en
@@ -2021,6 +2032,40 @@ function buildToolAck(m) {
     dl.innerHTML = ICON_DOWNLOAD;   // SVG statique author-controlled uniquement
     dl.addEventListener('click', () => downloadAckResource(dlTarget, dl));
     wrap.appendChild(dl);
+  }
+  // Inspection du détail de l'appel (lot Z) : arguments, résultat, code. Gated
+  // par le prédicat UNIQUE `ackHasInspectableDetail` (utils.js) — jamais un
+  // test de kind ici, même doctrine que `ackDownloadTarget` juste en dessous.
+  // Un ack legacy (sans args/result/code) n'affiche pas le bouton : rien à
+  // montrer, donc pas d'affordance qui ouvrirait un panneau vide.
+  //
+  // Le listener est posé SUR LE NŒUD, jamais en délégation au niveau du groupe :
+  // en mode compact un seul .tool-ack est dans le DOM, les autres sont DÉTACHÉS
+  // et ne vivent que comme valeurs de `ackNodeOf` (WeakMap). Une délégation ne
+  // verrait jamais les acks masqués — c'est-à-dire précisément les appels
+  // intermédiaires d'un enchaînement, le cas d'usage qui a motivé le lot. Les
+  // nœuds détachés survivent intacts, listeners compris.
+  //
+  // La closure capture l'ENTRÉE elle-même, jamais `m.id` : cet id n'est pas
+  // unique (un create et un delete du même souvenir le partagent, cf. plus bas).
+  // Comme `.ack-dl`, ce bouton est délibérément ABSENT des exports (piège 21) :
+  // _formatToolCallHtml construit son markup indépendamment et ne l'émet pas.
+  if (ackHasInspectableDetail(m)) {
+    const insp = document.createElement('button');
+    insp.className = 'ack-inspect';
+    insp.title = 'Inspecter l\'appel';
+    insp.innerHTML = ICON_INSPECT;   // SVG statique author-controlled uniquement
+    insp.addEventListener('click', ev => {
+      // Le bouton est un frère de `.ack-label`, pas un descendant de
+      // `.mcp-intent-row` : le listener de groupe (ensureAckGroup) filtre sur
+      // cette row et ne verrait pas ce clic. stopPropagation est là comme
+      // garde de frontière — pour qu'ajouter demain un écouteur en bulle sur
+      // `.ack-panels` ou `.tool-ack` ne fasse pas basculer le groupe au
+      // passage, alors que le geste demandé est « inspecter », pas « replier ».
+      ev.stopPropagation();
+      openToolInspector(m);
+    });
+    wrap.appendChild(insp);
   }
   if (spec.undo) {
     if (m.resolved) {
@@ -4034,6 +4079,11 @@ const _tApi = trackDrawer(openApiServers, closeApiServers);
 openApiServers = _tApi.open; closeApiServers = _tApi.close;
 const _tSkills = trackDrawer(openSkills, closeSkills);
 openSkills = _tSkills.open; closeSkills = _tSkills.close;
+// Inspecteur d'appel d'outil (lot Z). `trackDrawer` transmet les arguments,
+// donc `openToolInspector(entry)` garde sa signature. Sans cette registration,
+// Escape fermerait le drawer du dessous et laisserait celui-ci ouvert.
+const _tInspect = trackDrawer(openToolInspector, closeToolInspector);
+openToolInspector = _tInspect.open; closeToolInspector = _tInspect.close;
 
 // ── Command palette (Ctrl/Cmd+K, lot F) ─────────────────────────────────────
 // Overlay type Spotlight : input de filtrage + liste navigable au clavier. Le
@@ -5502,6 +5552,354 @@ function syncContextCounter() {
   // réouverture manuelle.
   const drawer = $('ctx-drawer');
   if (drawer && drawer.classList.contains('show')) renderContextInspector();
+}
+
+// ── Inspecteur d'appel d'outil (lot Z) ───────────────────────────────────────
+// Détail complet d'UN appel, ouvert depuis la loupe d'un ack. Les données sont
+// déjà persistées sur l'entrée (`args`/`result`/`code`/`ts`/`server`/`intent`,
+// ACK_COPY_FIELDS) : rien n'est collecté ici, on ne fait que présenter.
+//
+// FRONTIÈRE DE SÛRETÉ (piège 21) : tout ce qu'on affiche est d'origine MODÈLE
+// ou SERVEUR DISTANT. Ce fichier devient le second chemin string→HTML à risque
+// du projet après formatToolAcksHtml. Règle sans exception ici : `textContent`,
+// ou `escHtml` dans un <pre>. JAMAIS `renderMd` (qui laisse passer le HTML
+// d'origine modèle), jamais d'interpolation en template string.
+
+// Ack couramment affiché — l'ENTRÉE elle-même, jamais un id (non unique).
+// Sert au rafraîchissement asynchrone du volet ressource : quand la résolution
+// IDB revient, on ne peint que si l'utilisateur regarde toujours le même appel.
+let _inspectEntry = null;
+
+function openToolInspector(entry) {
+  _inspectEntry = entry || null;
+  renderToolInspector(entry);
+  $('inspect-drawer').classList.add('show');
+  $('inspect-backdrop').classList.add('show');
+}
+
+function closeToolInspector() {
+  $('inspect-drawer').classList.remove('show');
+  $('inspect-backdrop').classList.remove('show');
+  _inspectEntry = null;
+}
+
+// Titre de section d'un volet. Les volets sont EMPILÉS verticalement, jamais
+// des onglets (décision d'ouverture) : on lit une fiche d'appel de haut en bas.
+function _inspectSection(parent, title) {
+  const sec = document.createElement('section');
+  sec.className = 'inspect-section';
+  const h = document.createElement('h4');
+  h.className = 'inspect-section-title';
+  h.textContent = title;
+  sec.appendChild(h);
+  parent.appendChild(sec);
+  return sec;
+}
+
+// Préfixe de nommage des téléchargements de CE panneau : dernier segment du nom
+// d'outil (`splunk__search` → `search`, `miaou__js__eval` → `eval`). UNE seule
+// formule, appelée par tous les blocs — sans elle, deux appels d'outils
+// différents proposeraient tous deux `query.txt` et se marcheraient dessus dans
+// le dossier de téléchargements. Le segment final suffit à discriminer : le
+// préfixe de serveur alourdirait le nom sans lever d'ambiguïté réelle.
+// Repli sur le kind quand l'ack n'a pas de nom (ack legacy) ; '' si rien.
+function _inspectNamePrefix(m) {
+  const seg = String((m && m.name) || '').split('__').filter(Boolean).pop();
+  return seg || ackKindOf(m) || '';
+}
+
+// Compose le nom d'un bloc : `<préfixe>-<quoi>`, ou `<quoi>` nu si l'ack ne
+// donne aucun préfixe. Jamais de concaténation à la main sur un site d'appel.
+function _inspectBlockName(m, what) {
+  const p = _inspectNamePrefix(m);
+  return p ? p + '-' + what : what;
+}
+
+// Bloc de code : <pre><code class="language-…">. `textContent` pose le texte —
+// donc AUCUN parsing HTML, la frontière la plus stricte possible. Prism
+// réécrit ensuite le contenu en spans à partir de ce texte déjà neutralisé.
+// `decoratePre` ajoute copier/télécharger, et pour html/svg le bouton d'aperçu
+// sandboxé (iframe sans allow-same-origin, piège 23 — chemin existant, aucune
+// seconde voie de rendu ouverte ici).
+// `name` (optionnel) alimente le `data-filename` que `decoratePre` lit pour
+// nommer le téléchargement du bloc : sans lui, tout snippet sort en
+// « miaou-snippet.<ext> », y compris quand on sait très bien ce qu'il est (le
+// paramètre `query` d'un appel, le fichier `resultat.json` d'une ressource).
+// Le nom traverse `sanitizeDownloadName` chez decoratePre — il peut donc venir
+// du modèle sans précaution supplémentaire ici.
+function _inspectCodeBlock(parent, text, lang, name) {
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.className = 'language-' + (lang || 'text');
+  if (name) code.setAttribute('data-filename', name);
+  code.textContent = text == null ? '' : String(text);
+  pre.appendChild(code);
+  parent.appendChild(pre);
+  decoratePre(parent);
+  // Grammaire chargée à la demande PUIS colorisation : un callback sur
+  // highlightElement ne suffit pas (cf. ensurePrismGrammar).
+  if (typeof ensurePrismGrammar === 'function') {
+    ensurePrismGrammar(lang).then(() => highlightUnder(parent)).catch(() => {});
+  } else {
+    highlightUnder(parent);
+  }
+  return pre;
+}
+
+// Ligne « clé : valeur » d'un volet. Une valeur MULTILIGNE passe en bloc plein
+// format (inspectValueShape) : une requête SPL ou un JSON collé en argument est
+// illisible replié sur une ligne.
+function _inspectField(parent, key, value, m) {
+  const shape = inspectValueShape(value);
+  const row = document.createElement('div');
+  row.className = 'inspect-field';
+  const k = document.createElement('span');
+  k.className = 'inspect-key';
+  k.textContent = key;
+  row.appendChild(k);
+  if (shape.mode === 'inline') {
+    const v = document.createElement('span');
+    v.className = 'inspect-val';
+    v.textContent = shape.text;
+    row.appendChild(v);
+    parent.appendChild(row);
+  } else {
+    parent.appendChild(row);
+    // Nom du bloc = clé du paramètre, préfixée de l'outil (`search-query.txt`) :
+    // la clé dit ce que c'est, le préfixe dit d'où ça vient. L'extension est
+    // dérivée de la langue par decoratePre.
+    _inspectCodeBlock(parent, shape.text, shape.lang, _inspectBlockName(m, key));
+  }
+}
+
+// Volet « ressource » : ce qu'un ack désigne au-delà de son texte aplati. Le
+// `result` ne porte que le texte (flattenToolResult) ; les blocs non-texte ont
+// été internés en ressource IDB, et c'est `ackDownloadTarget` qui sait laquelle.
+//
+// Deux temps, délibérément : on peint TOUT DE SUITE ce que l'ack sait déjà
+// (nom, id, mime, taille) puis on enrichit quand le record est résolu. Les
+// octets vivent en IDB et le cache session peut être froid après un reload :
+// bloquer l'ouverture du drawer sur un await ferait payer la latence à chaque
+// consultation, y compris celles qui ne regardent que les arguments.
+function _inspectResourcePanel(parent, m, target) {
+  const sec = _inspectSection(parent, 'Ressource');
+  // Valeurs de l'ack : disponibles sans I/O, mais ce sont des COPIES, prises au
+  // moment de l'ack. Le record fait foi dès qu'il arrive (cf. plus bas).
+  const name = m.resourceName || target.name || '';
+  if (name) _inspectField(sec, 'nom', name, m);
+  _inspectField(sec, 'identifiant', target.by === 'resource' ? target.id : target.attId, m);
+  if (m.mime) _inspectField(sec, 'type', m.mime, m);
+  if (m.size != null) _inspectField(sec, 'taille', humanSize(m.size), m);
+
+  const dl = document.createElement('button');
+  dl.className = 'drawer-btn inspect-dl';
+  dl.textContent = 'Télécharger';
+  // Réutilise le chemin de téléchargement des acks : cache→IDB, nommage par
+  // `resourceDownloadName` (assainissement PUIS extension depuis le mime), et
+  // `markAckDlUnavailable` si le record a disparu. Rien de dupliqué ici.
+  dl.addEventListener('click', () => downloadAckResource(target, dl));
+  sec.appendChild(dl);
+
+  const preview = document.createElement('div');
+  preview.className = 'inspect-preview';
+  sec.appendChild(preview);
+
+  _inspectResolveRecord(target).then(record => {
+    // Fenêtre d'await : l'utilisateur a pu fermer le drawer ou ouvrir un AUTRE
+    // appel pendant la résolution. On compare l'ENTRÉE (identité d'objet), pas
+    // un id — deux acks peuvent partager le même `m.id`.
+    if (_inspectEntry !== m) return;
+    if (!record || !record.data) {
+      const gone = document.createElement('p');
+      gone.className = 'inspect-empty';
+      gone.textContent = 'Contenu non disponible dans ce navigateur (ressource purgée ou produite ailleurs).';
+      preview.appendChild(gone);
+      return;
+    }
+    // Le record est figé au stockage ; l'ack en est une copie potentiellement
+    // plus ancienne. Même doctrine que downloadAckResource : le record prime.
+    const mime = record.mime || m.mime || '';
+    const size = record.size != null ? record.size
+      : (record.data && record.data.byteLength != null ? record.data.byteLength : m.size);
+    const p = inspectResourcePresentation(mime, size);
+    if (p.mode === 'thumbnail') {
+      _inspectThumbnail(preview, record);
+      return;
+    }
+    if (p.mode === 'descriptor') {
+      const note = document.createElement('p');
+      note.className = 'inspect-empty';
+      // Refus EXPLICITE au-delà du cap, jamais un extrait qui se ferait passer
+      // pour le tout : c'est exactement le défaut de l'export tronqué que cet
+      // inspecteur existe pour corriger.
+      note.textContent = (p.reason === 'too-big')
+        ? 'Ressource trop volumineuse pour être prévisualisée (' + humanSize(size) +
+          ') — utilise le téléchargement.'
+        : 'Contenu binaire : pas de prévisualisation, téléchargement disponible.';
+      preview.appendChild(note);
+      return;
+    }
+    // Textuel (JSON, CSV, texte…) ou SVG. Le SVG passe par le MÊME chemin : sa
+    // source est colorisée, et `decoratePre` y ajoute de lui-même le bouton
+    // d'aperçu (langue `svg`), qui rend dans l'iframe sandbox — les deux
+    // façons demandées, sans seconde voie de rendu.
+    let text;
+    try { text = utf8Decode(record.data); }
+    catch (e) { text = null; }
+    if (text == null) {
+      const bad = document.createElement('p');
+      bad.className = 'inspect-empty';
+      bad.textContent = 'Contenu illisible en texte — téléchargement disponible.';
+      preview.appendChild(bad);
+      return;
+    }
+    // Un JSON stocké en ressource mérite la même mise en forme qu'un résultat
+    // JSON : ré-indenté s'il parse, brut sinon.
+    const shaped = (p.lang === 'json') ? inspectResultShape(text) : { text, lang: p.lang };
+    // Une ressource a un vrai nom (figé au stockage) : c'est LUI qu'on propose,
+    // pas un nom dérivé de l'appel — il est déjà spécifique et porte son
+    // extension, le préfixer n'ajouterait rien. Le repli, lui, se préfixe comme
+    // les autres blocs.
+    _inspectCodeBlock(preview, shaped.text, shaped.lang,
+      record.name || name || _inspectBlockName(m, 'ressource'));
+  }).catch(() => { /* résolution ratée : le descripteur et le bouton restent */ });
+}
+
+// Résolution du record désigné, par la clé de SA famille : un id de ressource
+// IDB et un attId scopé conversation ne se résolvent pas dans le même store —
+// les aplatir ferait interroger le mauvais.
+function _inspectResolveRecord(target) {
+  if (target.by === 'attachment') {
+    return Promise.resolve(
+      typeof getCachedRecordByAttId === 'function'
+        ? getCachedRecordByAttId(target.attId, target.convId) : null);
+  }
+  const cached = (typeof getCachedRecord === 'function' && getCachedRecord(target.id)) || null;
+  if (cached) return Promise.resolve(cached);
+  return getResource(target.id).catch(() => null);
+}
+
+// Vignette d'une image bitmap, cliquable vers la lightbox plein écran (même
+// chemin que les images du fil : openLightboxWith, singleton à init paresseuse).
+function _inspectThumbnail(parent, record) {
+  const img = document.createElement('img');
+  img.className = 'inspect-thumb';
+  img.src = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
+  img.alt = record.name || 'ressource image';
+  img.title = 'Agrandir';
+  img.addEventListener('click', () => {
+    const full = document.createElement('img');
+    full.src = img.src;
+    openLightboxWith(full, record.w || 800, record.h || 600, record.name || '', 'image');
+  });
+  parent.appendChild(img);
+}
+
+function renderToolInspector(m) {
+  const body = $('inspect-body');
+  if (!body) return;
+  body.textContent = '';
+  if (!m) return;
+
+  // ── En-tête : breadcrumb du nom d'outil + intention déclarée ──────────────
+  // `appendAckSep` est le séparateur › du projet, explicitement générique et
+  // non réservé au MCP : on le réutilise plutôt que de recoder un chevron.
+  const head = document.createElement('div');
+  head.className = 'inspect-head';
+  const crumb = document.createElement('div');
+  crumb.className = 'inspect-crumb';
+  const segs = String(m.name || '').split('__').filter(Boolean);
+  if (segs.length) {
+    segs.forEach((seg, i) => {
+      if (i > 0) appendAckSep(crumb);
+      const c = document.createElement('code');
+      c.textContent = seg;
+      crumb.appendChild(c);
+    });
+  } else {
+    crumb.textContent = ackKindOf(m) || 'appel';
+  }
+  head.appendChild(crumb);
+  if (ackIsError(m)) {
+    const bad = document.createElement('span');
+    bad.className = 'inspect-badge-error';
+    bad.textContent = 'en échec';
+    head.appendChild(bad);
+  }
+  body.appendChild(head);
+  if (m.intent) {
+    const it = document.createElement('p');
+    it.className = 'inspect-intent';
+    it.textContent = m.intent;
+    body.appendChild(it);
+  }
+
+  // ── Requête ───────────────────────────────────────────────────────────────
+  const req = _inspectSection(body, 'Requête');
+  // Le code js__eval en JavaScript colorisé, jamais en string JSON : c'est le
+  // cas qui a motivé le lot.
+  if (m.code != null) _inspectCodeBlock(req, m.code, 'javascript', _inspectBlockName(m, 'code'));
+  if (m.args != null && typeof m.args === 'object') {
+    const keys = Object.keys(m.args);
+    if (!keys.length) {
+      const none = document.createElement('p');
+      none.className = 'inspect-empty';
+      none.textContent = 'Aucun argument.';
+      req.appendChild(none);
+    }
+    // `miaou_intent` est déjà affiché en tête (il est strippé des args envoyés
+    // au serveur, mais reste dans l'objet enrichi) : ne pas le répéter ici.
+    // `code` non plus, déjà rendu en bloc juste au-dessus.
+    keys.forEach(k => {
+      if (k === 'miaou_intent' && m.intent) return;
+      if (k === 'code' && m.code != null) return;
+      _inspectField(req, k, m.args[k], m);
+    });
+  } else if (m.args != null) {
+    _inspectField(req, 'arguments', m.args, m);
+  } else if (m.code == null) {
+    const none = document.createElement('p');
+    none.className = 'inspect-empty';
+    none.textContent = 'Aucun argument enregistré pour cet appel.';
+    req.appendChild(none);
+  }
+
+  // ── Réponse ───────────────────────────────────────────────────────────────
+  const res = _inspectSection(body, 'Réponse');
+  if (m.result != null) {
+    const shape = inspectResultShape(m.result);
+    if (shape.text === '') {
+      const empty = document.createElement('p');
+      empty.className = 'inspect-empty';
+      empty.textContent = 'Réponse vide.';
+      res.appendChild(empty);
+    } else {
+      _inspectCodeBlock(res, shape.text, shape.lang, _inspectBlockName(m, 'resultat'));
+    }
+  } else {
+    const none = document.createElement('p');
+    none.className = 'inspect-empty';
+    none.textContent = 'Aucun résultat enregistré pour cet appel.';
+    res.appendChild(none);
+  }
+
+  // ── Ressource (si l'ack en désigne une) ───────────────────────────────────
+  // Désignation par `ackDownloadTarget`, prédicat UNIQUE partagé avec le bouton
+  // de téléchargement de l'ack — jamais une liste de kinds réécrite ici.
+  const target = ackDownloadTarget(m);
+  if (target) _inspectResourcePanel(body, m, target);
+
+  // ── Méta ──────────────────────────────────────────────────────────────────
+  const meta = _inspectSection(body, 'Méta');
+  if (m.name) _inspectField(meta, 'outil', m.name, m);
+  if (m.server) _inspectField(meta, 'serveur', m.server, m);
+  const kind = ackKindOf(m);
+  if (kind) _inspectField(meta, 'type', kind, m);
+  if (m.ts) {
+    _inspectField(meta, 'horodatage',
+      new Date(m.ts).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' }), m);
+  }
+  _inspectField(meta, 'issue', ackIsError(m) ? 'échec' : 'succès', m);
 }
 
 function openContextInspector() {

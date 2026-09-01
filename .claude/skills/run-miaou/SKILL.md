@@ -240,6 +240,37 @@ none of them were visible by inspection — the script looked right in each case
 Prefix the probe `_` and delete it when done (see the Gotchas rule on throwaway
 scripts).
 
+### A stub that is never solicited makes the whole check vacuous
+
+The rig failures above hang. This class does the opposite and is nastier: the
+run **passes**, quickly, having tested nothing — the stub was never reached, so
+the app took some other path and every assertion held for the wrong reason.
+Three ways it happened while reproducing the stalled-stream bug (2026-09-01):
+
+- **The route pattern does not match the URL actually called.** Settings written
+  to `miaou-settings` are NOT necessarily what the app uses: a registered API
+  server card (`miaou-api-servers` / `miaou-active-api-server`) wins over them,
+  so the app kept calling the real backend (`macmini:11434`) while the stub sat
+  on `stub.local`. Clear both keys when stubbing, and prefer a regex
+  (`/chat\/completions/`) over a glob tied to a host.
+- **A `page.route` handler that neither fulfills nor continues aborts the
+  request.** To simulate a connection that hangs, the handler must stay alive on
+  a never-settling promise (`await new Promise(() => {})`); doing nothing makes
+  Playwright cancel it, `fetch` rejects at once, and the app takes its error
+  path — the opposite of what was being tested.
+- **The discriminant matched the wrong requests.** Telling a summary call from a
+  chat call by grepping the system prompt for « résumé » matched *everything*:
+  MIAOU's own system message contains the word. Discriminate on a structural
+  property instead — `body.stream` is true for chat, absent for summary and
+  titling.
+
+**Always make the stub prove it was solicited.** A counter incremented in the
+handler and printed at the end (`hangs`, `calls`) is what exposed all three; each
+time the checklist looked plausible and the counter read `0`. An assertion that
+the stub was hit at least once belongs in the checklist itself, next to the
+behavioural ones — a green run with a cold stub is indistinguishable from a real
+pass (form 1 of the "green check proves nothing" taxonomy).
+
 ## Re-run the PREVIOUS lot's verify, not only the new one
 
 When a lot touches code an earlier lot already covered, run that earlier lot's

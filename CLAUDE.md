@@ -378,8 +378,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   derniers migrés depuis localStorage au lot U), plus le format d'export/import
   complet (`.zip` depuis le lot V-3).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
-  (`tool-ack`), et références de conversation dans le texte du modèle
-  (`conv_ref`).
+  (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
+  `ackHasInspectableDetail`, drawer de détail non tronqué), et références de
+  conversation dans le texte du modèle (`conv_ref`).
 - **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
   formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
   CDN et versions gelées, selectors par format, caps de lecture, et la ligne de

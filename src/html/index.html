@@ -726,6 +726,23 @@ if (window.requestAnimationFrame) {
     </div>
   </div>
 
+  <!-- Inspecteur d'appel d'outil (lot Z) : détail complet d'UN appel, ouvert
+       depuis la loupe d'un ack. `drawer-wide` comme les drawers Outils et
+       Skills — un payload MCP a besoin de largeur. Corps rempli par
+       renderToolInspector (ui.js) ; volets empilés, jamais des onglets. -->
+  <div class="backdrop" id="inspect-backdrop" onclick="closeToolInspector()"></div>
+  <div class="drawer drawer-wide" id="inspect-drawer">
+    <div class="drawer-head">
+      <div class="drawer-tabs">
+        <span class="drawer-title">Détail de l'appel</span>
+      </div>
+      <button class="icon-btn" onclick="closeToolInspector()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body inspect-body" id="inspect-body"></div>
+  </div>
+
   <div class="backdrop" id="ctx-backdrop" onclick="closeContextInspector()"></div>
   <div class="drawer drawer-mid" id="ctx-drawer">
     <div class="drawer-head">
