@@ -294,6 +294,13 @@ const JS_EVAL_TIMEOUT_MS = 10000;
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
 
+// Cap sur le NOMBRE de ressources en entrée (lot L-2). Garde-fou anti-abus sur le
+// nombre de clés, indépendant du volume : setMemoryLimit (JS_EVAL_MEM_BYTES) reste
+// la seule garde sur le volume cumulé, inchangée par ce lot. Quatre suffit au cas
+// qui a motivé le lot (croiser deux résultats d'outils) avec de la marge, sans
+// ouvrir la porte à un appel qui décoderait dix blobs pour n'en lire qu'un.
+const JS_EVAL_MAX_INPUTS = 4;
+
 // Doctrine js__eval — INCONDITIONNELLE (AL4, décision Julien) : l'outil est natif,
 // toujours présent (pas de MCP, pas de toggle), donc dans ROOT_SYSTEM_PROMPT
 // comme BINARY_DOCTRINE. Constante STATIQUE (aucune donnée dynamique/modèle) →
@@ -308,13 +315,17 @@ const JS_EVAL_OUTPUT_CAP = 20000;
 // l'appelle via miaou__skills__read avant d'écrire son premier appel.
 const JS_EVAL_DOCTRINE =
   "L'outil miaou__js__eval exécute du JavaScript que TU écris dans un bac à sable " +
-  "isolé (QuickJS), sur le contenu TEXTUEL d'UN fichier référencé par son handle " +
-  "(att-N, file-<id> ou res_<id>), sans jamais charger ce contenu dans ta fenêtre " +
-  "de contexte. Sers-t'en pour interroger un gros fichier joint (log, JSON-lines, " +
-  "CSV, texte volumineux) — compter, filtrer, agréger, extraire un sous-ensemble — " +
-  "quand le lire en entier serait inutile ou impossible. C'est aussi la voie à " +
-  "prendre quand docs__read refuse un fichier trop volumineux : n'insiste pas avec " +
-  "docs__read, passe directement à miaou__js__eval sur le même handle.\n\n" +
+  "isolé (QuickJS), sur le contenu TEXTUEL d'une à " + JS_EVAL_MAX_INPUTS + " ressources " +
+  "référencées par handle (att-N, file-<id> ou res_<id>), sans jamais charger ce " +
+  "contenu dans ta fenêtre de contexte. Sers-t'en pour interroger un gros fichier " +
+  "joint (log, JSON-lines, CSV, texte volumineux) — compter, filtrer, agréger, " +
+  "extraire un sous-ensemble — quand le lire en entier serait inutile ou impossible. " +
+  "Sers-t'en AUSSI pour CROISER plusieurs ressources en un seul appel (rapprocher " +
+  "deux résultats d'outils par une clé commune, comparer deux versions) : chaque " +
+  "ressource reçoit une clé que tu choisis, et le croisement se fait dans le bac à " +
+  "sable — jamais en faisant transiter leur contenu par ton contexte. C'est aussi la " +
+  "voie à prendre quand docs__read refuse un fichier trop volumineux : n'insiste pas " +
+  "avec docs__read, passe directement à miaou__js__eval sur le même handle.\n\n" +
   "Le résultat est ramené en texte : au-delà de " + JS_EVAL_OUTPUT_CAP + " caractères, " +
   "l'appel est REFUSÉ (pas tronqué) — vise toujours une synthèse (compte, top-N, " +
   "échantillon), jamais le fichier brut.\n\n" +
@@ -1512,23 +1523,28 @@ const TOOLS = [
   },
   {
     // miaou__js__eval (lot L) : exécute du JS écrit par le modèle dans un bac à
-    // sable QuickJS-WASM sur le contenu TEXTUEL d'un blob client référencé par
-    // handle (att-N/file-<id>/res_<id>), sans jamais charger les octets bruts en
+    // sable QuickJS-WASM sur le contenu TEXTUEL d'une à JS_EVAL_MAX_INPUTS ressources
+    // clientes, chacune référencée par handle (att-N/file-<id>/res_<id>) sous une clé
+    // que le modèle choisit (lot L-2), sans jamais charger les octets bruts en
     // contexte. Handler ASYNC (lazy-load engine + exécution VM) → renvoie une
     // Promise<string> ; callInternalTool la mappe (précédent skills__read). Les
-    // contrôles d'args (handle/code manquants) sont synchrones ; la résolution de
-    // handle et l'exécution sont async. L'ack est poussé APRÈS résolution (le
+    // contrôles d'args (forme d'input_handles, code manquant) sont synchrones ; la
+    // résolution des handles et l'exécution sont async. Résolution en REFUS TOTAL :
+    // la PREMIÈRE clé fautive arrête tout, aucune exécution partielle sur des
+    // entrées incomplètes (même doctrine que le refus de cap : refuser, pas dégrader). L'ack est poussé APRÈS résolution (le
     // résultat — ok/refus/erreur — n'est connu qu'à ce moment), pattern
     // skills__read. Herméticité (piège 18) : resolveHandleRecord lit le cache
     // session, un handle hors-scope → null → « handle introuvable » (pas d'oracle).
     name: 'js__eval',
     description:
       "Exécute du JavaScript (que tu écris) dans un bac à sable isolé sur le contenu " +
-      "TEXTUEL d'UN fichier référencé par son handle (att-N, file-<id> ou res_<id>), " +
-      "sans charger ce contenu dans ton contexte. Sers-t'en pour interroger un gros " +
-      "fichier (log, JSON-lines, CSV, texte) — compter, filtrer, agréger, extraire. " +
-      "Primitives disponibles dans le bac à sable : text(), lines(), jsonLines(), " +
-      "parse() (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
+      "TEXTUEL d'une à " + JS_EVAL_MAX_INPUTS + " ressources référencées par handle " +
+      "(att-N, file-<id> ou res_<id>), sans charger ce contenu dans ton contexte. " +
+      "Sers-t'en pour interroger un gros fichier (log, JSON-lines, CSV, texte) — " +
+      "compter, filtrer, agréger, extraire — ou pour CROISER plusieurs ressources en " +
+      "un seul appel. Primitives disponibles dans le bac à sable, toutes prenant la " +
+      "clé de la ressource à lire : text(cle), lines(cle), jsonLines(cle), " +
+      "parse(cle) (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
       "grosse → refus explicite (réécris pour synthétiser) ; pour PRODUIRE un gros " +
       "contenu sans buter sur cette limite, passe output_handle et écris au fil de " +
@@ -1538,11 +1554,17 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        handle: { type: 'string', description: 'Handle du fichier : att-N, file-<id> ou res_<id> (jamais son contenu ni un chemin)' },
+        input_handles: {
+          type: 'object',
+          description: 'Ressources en entrée, sous la forme {"cle": "handle"} — de une à ' +
+            JS_EVAL_MAX_INPUTS + ' clés (handles att-N, file-<id> ou res_<id> ; jamais le ' +
+            'contenu ni un chemin). Tu choisis chaque clé : elle nomme la ressource dans ' +
+            'ton code, où text("cle") la lit',
+        },
         code: { type: 'string', description: 'Code JavaScript à exécuter ; sa dernière valeur évaluée est le résultat renvoyé' },
         output_handle: { type: 'string', description: 'Optionnel — handle res_<id> d\'une ressource existante (créée via miaou__resource__create) où écrire au fil de l\'eau. Sans ce paramètre, la primitive emit() n\'existe pas dans le bac à sable' },
       },
-      required: ['handle', 'code'],
+      required: ['input_handles', 'code'],
     },
     // readOnlyHint: false INCONDITIONNEL (lot Y). L'outil ÉCRIT dès qu'un
     // output_handle est fourni ; JSON Schema ne sait pas conditionner une
@@ -1550,20 +1572,50 @@ const TOOLS = [
     // un mode d'usage réel est pire qu'un hint légèrement pessimiste dans l'autre.
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args, ctx) => {
-      const handle = String((args && args.handle) || '').trim();
+      const rawInputs = args && args.input_handles;
       const code = args && args.code != null ? String(args.code) : '';
       // Sorties PRÉCOCES (rien n'a été exécuté) → ack tool_failed. Les échecs de
       // l'exécution elle-même (cap, throw guest) gardent leur ack js_eval propre,
       // porteur du code et de ok:false — également rouge (ackIsError), mais avec
       // sa trace complète. Les deux ne se cumulent jamais : une sortie précoce
       // n'atteint pas le .then.
-      if (!handle) return toolFail('js__eval', 'Handle manquant.');
-      if (!code) return toolFail('js__eval', 'Code manquant.');
-      if (classifyHandleRef(handle) === null) {
-        return toolFail('js__eval', 'Handle invalide : ' + handle + ' (attendu att-N, file-<id> ou res_<id>).');
+      //
+      // Array.isArray est indispensable en plus du typeof : un tableau JSON est un
+      // `typeof === 'object'`, et Object.keys y rendrait des indices numériques —
+      // on accepterait silencieusement une forme positionnelle que le schéma ne
+      // déclare pas, et dont les « clés » (0, 1, 2) ne porteraient aucune intention.
+      if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
+        return toolFail('js__eval', 'input_handles manquant ou invalide (attendu un objet {"cle": "handle"}).');
       }
-      const record = resolveHandleRecord(handle, ctx);   // ctx EXPLICITE (piège 28) ; impur : cache session (herméticité)
-      if (!record || !record.data) return toolFail('js__eval', 'Handle introuvable : ' + handle + '.');
+      const inputKeys = Object.keys(rawInputs);
+      if (inputKeys.length === 0) {
+        return toolFail('js__eval', 'input_handles est vide : au moins une ressource est requise.');
+      }
+      if (inputKeys.length > JS_EVAL_MAX_INPUTS) {
+        return toolFail('js__eval', 'input_handles porte ' + inputKeys.length + ' clés, maximum ' +
+          JS_EVAL_MAX_INPUTS + '.');
+      }
+      if (!code) return toolFail('js__eval', 'Code manquant.');
+      // REFUS TOTAL (décision 4 du brief) : la PREMIÈRE clé fautive arrête tout,
+      // avant le moindre runInQuickJs. Pas d'exécution partielle sur des entrées
+      // incomplètes — un code qui croise deux ressources et n'en reçoit qu'une
+      // produirait un résultat faux d'apparence valide, bien pire qu'un refus.
+      // Le message nomme la clé ET le handle : la clé est ce que le modèle a écrit
+      // lui-même dans son code, la retrouver dans l'erreur lui dit quoi corriger.
+      const texts = {};
+      for (const key of inputKeys) {
+        const handle = String(rawInputs[key] || '').trim();
+        if (!handle) return toolFail('js__eval', 'Handle manquant pour la clé "' + key + '".');
+        if (classifyHandleRef(handle) === null) {
+          return toolFail('js__eval', 'Handle invalide pour la clé "' + key + '" : ' + handle +
+            ' (attendu att-N, file-<id> ou res_<id>).');
+        }
+        const record = resolveHandleRecord(handle, ctx);   // ctx EXPLICITE (piège 28) ; impur : cache session (herméticité)
+        if (!record || !record.data) {
+          return toolFail('js__eval', 'Handle introuvable pour la clé "' + key + '" : ' + handle + '.');
+        }
+        texts[key] = utf8Decode(record.data);   // resources.js — AL3 : contenu textuel
+      }
       // output_handle (lot Y) — validé AVANT d'exécuter quoi que ce soit : un
       // handle de sortie invalide doit échouer sans faire calculer la VM pour
       // rien, et sans exposer un emit() qui n'aurait nulle part où écrire.
@@ -1582,8 +1634,7 @@ const TOOLS = [
         // adresse l'écriture, pas le handle (qui peut être un alias d'agent).
         outRecordId = outRec.id;
       }
-      const text = utf8Decode(record.data);   // resources.js — AL3 : contenu textuel
-      return runInQuickJs(text, code, { emit: !!outHandle }).then(async r => {   // ui.js/tools.js — async, lazy-load + VM
+      return runInQuickJs(texts, code, { emit: !!outHandle }).then(async r => {   // ui.js/tools.js — async, lazy-load + VM
         // FLUSH INCONDITIONNEL (tranché, PLAN-Y étape 2) : le buffer part en un
         // SEUL _appendBlock, y compris quand l'exécution guest a échoué (throw,
         // timeout, OOM) ou que le retour texte a été refusé au cap. Ce n'est pas
@@ -1611,12 +1662,12 @@ const TOOLS = [
               'relis-la avant de reprendre pour ne pas réécrire ce qui y est déjà.' : '.')
           : (appendError || '');
         if (r.ok) {
-          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: true, outLen: r.output.length, code,
+          _pendingToolAcks.push({ kind: 'js_eval', inputHandles: rawInputs, ok: true, outLen: r.output.length, code,
             outputHandle: outHandle || null, appendedLen });
           return r.output + (emitNote ? '\n' + emitNote : '');
         }
         if (r.reason === 'cap') {
-          _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, outLen: r.len, code,
+          _pendingToolAcks.push({ kind: 'js_eval', inputHandles: rawInputs, ok: false, outLen: r.len, code,
             outputHandle: outHandle || null, appendedLen });
           // REFUS explicite (§3), PAS un isError : result texte cadré pour que le
           // modèle re-cible dans le même tour (borné par MAX_TOURS). isError
@@ -1627,7 +1678,7 @@ const TOOLS = [
         }
         // reason === 'error' : throw guest / timeout / OOM. result texte (pas
         // isError) pour laisser le modèle corriger son code au tour suivant.
-        _pendingToolAcks.push({ kind: 'js_eval', handle, ok: false, code,
+        _pendingToolAcks.push({ kind: 'js_eval', inputHandles: rawInputs, ok: false, code,
           outputHandle: outHandle || null, appendedLen });
         return 'Erreur d\'exécution dans le bac à sable : ' + r.message +
           '. Vérifie ton code (syntaxe, borne mémoire/temps).' + emitNote;
@@ -3094,12 +3145,18 @@ function resolveHandleRecord(ref, ctx) {
 // séquence d'échappement JS classique (ce prélude est une string source JS
 // normale de tools.js, PAS un template imbriqué — le piège d'échappement du
 // spike ne s'applique pas, cf. AUDIT-L §Spike note harnais).
+// Lot L-2 : les quatre primitives prennent désormais une clé OBLIGATOIRE — celle
+// sous laquelle le modèle a rangé la ressource dans input_handles. Pas de forme
+// sans argument conservée en raccourci : une seule syntaxe à documenter, et un
+// text() nu sur un appel à deux ressources serait une ambiguïté silencieuse.
+// La mémoïsation passe du scalaire à un objet indexé par clé (chaque ressource
+// n'est marshalée du host qu'une fois, même relue plusieurs fois dans le code).
 const JS_EVAL_GUEST_PRELUDE =
-  "var __t = null;\n" +
-  "function text(){ if(__t===null){__t=__miaou_text();} return __t; }\n" +
-  "function lines(){ return text().replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n').split('\\n'); }\n" +
-  "function jsonLines(){ var out=[]; var ls=lines(); for(var i=0;i<ls.length;i++){ var s=ls[i]; if(!s) continue; try{ out.push(JSON.parse(s)); }catch(e){} } return out; }\n" +
-  "function parse(){ return JSON.parse(text()); }\n";
+  "var __t = {};\n" +
+  "function text(key){ if(!(key in __t)){__t[key]=__miaou_text(key);} return __t[key]; }\n" +
+  "function lines(key){ return text(key).replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n').split('\\n'); }\n" +
+  "function jsonLines(key){ var out=[]; var ls=lines(key); for(var i=0;i<ls.length;i++){ var s=ls[i]; if(!s) continue; try{ out.push(JSON.parse(s)); }catch(e){} } return out; }\n" +
+  "function parse(key){ return JSON.parse(text(key)); }\n";
 
 // Cinquième primitive (lot Y), AJOUTÉE AU PRÉLUDE UNIQUEMENT quand l'appel porte
 // un `output_handle`. C'est la seule primitive d'ÉCRITURE de la surface guest, et
@@ -3116,8 +3173,9 @@ const JS_EVAL_GUEST_PRELUDE =
 const JS_EVAL_EMIT_PRELUDE =
   "function emit(chunk){ __miaou_emit(String(chunk)); }\n";
 
-// Exécute le code modèle dans un bac à sable QuickJS-WASM sur le texte fourni
-// (lot L, cœur impur — NON testable QuickJS, vérif runtime L3). Discipline VM
+// Exécute le code modèle dans un bac à sable QuickJS-WASM sur les textes fournis
+// (`texts` : objet {clé: string}, une à JS_EVAL_MAX_INPUTS entrées depuis le lot
+// L-2 ; le handler a déjà résolu et décodé chaque handle) (lot L, cœur impur — NON testable QuickJS, vérif runtime L3). Discipline VM
 // stricte : tous les handles créés côté host sont disposés en try/finally, le
 // runtime porte les guards (setInterruptHandler wall-time, setMemoryLimit), la
 // sortie est bornée APRÈS dump (checkOutputCap). Retourne un objet discriminé :
@@ -3126,7 +3184,8 @@ const JS_EVAL_EMIT_PRELUDE =
 //   { ok:false, reason:'error', message }  — throw guest / timeout / OOM
 // L'appelant (handler js__eval) transforme chaque cas en tool result texte.
 // Sécurité (parenté piège 23) : le monde guest est CLOS — on n'injecte QUE
-// __miaou_text (host) et, SI et seulement si un `emit` est demandé (lot Y),
+// __miaou_text (host, élargi à un argument `key` au lot L-2 — élargi, PAS
+// dédoublé) et, SI et seulement si un `emit` est demandé (lot Y),
 // __miaou_emit ; jamais fetch, DOM, globalThis hôte, ni aucun autre pont.
 // Équivalent QuickJS du « jamais allow-same-origin » de l'iframe. Ne JAMAIS
 // élargir cette surface sans repenser la posture.
@@ -3142,7 +3201,7 @@ const JS_EVAL_EMIT_PRELUDE =
 //
 // `emitted` est renseigné dans TOUS les cas de retour, succès comme échec :
 // cf. la doctrine de flush, côté handler.
-async function runInQuickJs(text, code, opts) {
+async function runInQuickJs(texts, code, opts) {
   const timeoutMs = opts && opts.timeoutMs != null ? opts.timeoutMs : JS_EVAL_TIMEOUT_MS;
   const memBytes = opts && opts.memBytes != null ? opts.memBytes : JS_EVAL_MEM_BYTES;
   const cap = opts && opts.cap != null ? opts.cap : JS_EVAL_OUTPUT_CAP;
@@ -3162,9 +3221,25 @@ async function runInQuickJs(text, code, opts) {
     const start = Date.now();
     rt.setInterruptHandler(() => Date.now() - start > timeoutMs);
 
-    // UNIQUE pont host→guest : renvoie le contenu textuel décodé. newString crée
-    // un handle host qu'il FAUT disposer (retourné au guest qui en prend copie).
-    textFn = ctx.newFunction('__miaou_text', () => ctx.newString(text));
+    // UNIQUE pont host→guest d'ENTRÉE : renvoie le contenu textuel décodé de la
+    // ressource rangée sous `key`. newString crée un handle host qu'il FAUT
+    // disposer (retourné au guest qui en prend copie).
+    //
+    // Lot L-2 : la signature est ÉLARGIE (un argument `key`), PAS doublée d'un
+    // second pont — le compte de ctx.newFunction reste à deux, et un test le
+    // vérifie (piège 25). Une clé absente lève une exception CATCHABLE côté guest
+    // via le protocole { error: handle } de quickjs-emscripten (`ctx.throwError`
+    // n'existe pas en 0.32.0, vérifié en spike sur la version gelée) : le modèle
+    // reçoit un vrai throw JS qu'il peut corriger, jamais un undefined silencieux
+    // qui produirait un résultat faux d'apparence valide.
+    textFn = ctx.newFunction('__miaou_text', keyHandle => {
+      const key = ctx.getString(keyHandle);
+      if (!Object.prototype.hasOwnProperty.call(texts, key)) {
+        return { error: ctx.newError('Clé "' + key + '" absente de input_handles (clés fournies : ' +
+          Object.keys(texts).join(', ') + ').') };
+      }
+      return ctx.newString(texts[key]);
+    });
     ctx.setProp(ctx.global, '__miaou_text', textFn);
 
     // SECOND pont (lot Y), présent seulement sur demande : sortie guest→host.

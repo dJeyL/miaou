@@ -298,34 +298,65 @@ model-side unique sur la bibliothèque) :**
   (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
 
 **Compute sandboxé sur un blob client (lot L, `js__eval`) :**
-- `js__eval(handle, code, output_handle?)` — exécute du JavaScript **écrit par le modèle** dans
-  un bac à sable **QuickJS-WASM** sur le contenu **textuel** d'UN fichier
-  référencé par handle (`att-N` / `file-<id>` / `res_<id>`), **sans jamais
-  charger les octets bruts dans le contexte du modèle**. Cas d'usage : interroger
-  un gros fichier (log, JSON-lines, CSV, texte volumineux) — compter, filtrer,
-  agréger, extraire un sous-ensemble — quand le lire en entier serait inutile ou
-  impossible. Un `res_<id>` peut désormais provenir de `docs__extract` (lot M,
+- `js__eval(input_handles, code, output_handle?)` — exécute du JavaScript **écrit par le modèle** dans
+  un bac à sable **QuickJS-WASM** sur le contenu **textuel** d'**une à
+  `JS_EVAL_MAX_INPUTS` ressources** (lot L-2), chacune référencée par handle
+  (`att-N` / `file-<id>` / `res_<id>`) sous une **clé choisie par le modèle**,
+  **sans jamais charger les octets bruts dans le contexte du modèle**. Cas
+  d'usage : interroger un gros fichier (log, JSON-lines, CSV, texte volumineux) —
+  compter, filtrer, agréger, extraire un sous-ensemble — quand le lire en entier
+  serait inutile ou impossible ; et, depuis L-2, **croiser plusieurs ressources**
+  dans une même exécution (jointure de deux résultats d'outils, comparaison de
+  deux versions). Un `res_<id>` peut désormais provenir de `docs__extract` (lot M,
   cf. `docs/mcp.md` point 13bis) : le texte complet d'un membre de zip, transféré
   par le canal binaire mais stocké en classe `'inline'` — `js__eval` ne
   distingue pas cette provenance de `web__fetch_resource`, la décode identique. Handler **asynchrone** (lazy-load de l'engine + exécution VM) →
   renvoie une `Promise<string>` mappée par `callInternalTool` (précédent
-  `skills__read`). Contrôles synchrones d'abord (`handle`/`code` manquants,
-  `classifyHandleRef(handle) === null` → messages d'erreur testables QuickJS) ;
-  puis `resolveHandleRecord(handle)` (impur, cache session → herméticité piège 18,
-  handle hors-scope = « introuvable », pas d'oracle), `utf8Decode(record.data)`
-  (contenu textuel, AL3), et `runInQuickJs(text, code)`.
-- **Entrée : handle only.** L'`inputSchema` déclare `handle` et `code` requis, un
-  seul handle d'**entrée** (YAGNI multi-blob, réaffirmé au lot Y : le modèle
-  itère, c'est tolérable). Le modèle ne fournit **jamais** le contenu ni un
-  chemin : le contenu vient des primitives guest. Le lot Y ajoute un paramètre
-  **optionnel** `output_handle` — une ressource de **sortie**, sans rapport avec
-  la contrainte de handle unique en entrée (cf. « Écriture incrémentale »).
+  `skills__read`). Contrôles synchrones d'abord (forme de
+  `input_handles` — objet non vide, non tableau, ≤ `JS_EVAL_MAX_INPUTS` clés —,
+  `code` manquant → messages d'erreur testables QuickJS) ; puis, **par clé** et
+  dans l'ordre d'insertion, `classifyHandleRef` / `resolveHandleRecord` (impur,
+  cache session → herméticité piège 18, handle hors-scope = « introuvable », pas
+  d'oracle) / `utf8Decode(record.data)` (contenu textuel, AL3), agrégés dans un
+  objet `texts` passé à `runInQuickJs(texts, code)`.
+- **Entrée : `input_handles`, objet de handles nommés (lot L-2).** L'`inputSchema`
+  déclare `input_handles` et `code` requis. `input_handles` est un **objet**
+  `{clé: handle}` de **1 à `JS_EVAL_MAX_INPUTS`** (= 4) entrées ; la clé porte
+  l'intention du modèle (« quelle ressource je croise avec quelle autre ») et
+  c'est elle qu'il réutilise dans son code (`text("clé")`), pas le handle.
+  Renversement **assumé** du YAGNI posé au lot L et réaffirmé au lot Y (« un seul
+  handle d'entrée, le modèle itère ») : le cas qui l'invalide est arrivé — deux
+  gros JSON obtenus par deux outils différents, impossibles à **croiser** sans
+  faire transiter l'un des deux par le contexte, c'est-à-dire exactement ce que
+  `js__eval` existe pour éviter. Pas de forme scalaire conservée en parallèle
+  (breaking change assumé) : deux syntaxes seraient deux choses à documenter au
+  modèle, et une clé obligatoire même à une seule ressource garde une seule
+  grammaire d'appel. Le modèle ne fournit **jamais** le contenu ni un chemin : le
+  contenu vient des primitives guest. Le paramètre **optionnel** `output_handle`
+  (lot Y) est une ressource de **sortie**, indépendante des entrées — rien
+  n'interdit qu'un handle soit à la fois lu en entrée et écrit en sortie (relire
+  un CSV commencé pour savoir où reprendre est un usage légitime).
+- **Refus TOTAL sur clé fautive.** La **première** clé dont le handle est vide,
+  malformé (`classifyHandleRef` → `null`) ou non résoluble arrête l'appel **avant
+  tout `runInQuickJs`** ; le message **nomme la clé** (et le handle qu'elle
+  portait). Pas d'exécution partielle : un code écrit pour croiser deux
+  ressources et n'en recevant qu'une produirait un résultat faux d'apparence
+  valide — bien pire qu'un refus. Même doctrine que le refus de cap en sortie.
 - **Surface guest FERMÉE** (`JS_EVAL_GUEST_PRELUDE`, tools.js) : quatre primitives
   de **lecture** définies en **JS pur côté guest** au-dessus d'UNE seule host
-  function `__miaou_text()` (le seul pont host→guest d'entrée) — `text()` (contenu
-  entier), `lines()` (découpe sur `\n`, miroir de `splitLines`), `jsonLines()` (une
-  ligne JSON parsée par élément, lignes vides/invalides ignorées), `parse()`
-  (document JSON entier). Plus les globals JS standard. **RIEN d'autre** : ni
+  function `__miaou_text(key)` (le seul pont host→guest d'entrée) — `text(key)`
+  (contenu entier), `lines(key)` (découpe sur `\n`, miroir de `splitLines`),
+  `jsonLines(key)` (une ligne JSON parsée par élément, lignes vides/invalides
+  ignorées), `parse(key)` (document JSON entier). Le lot L-2 a **élargi la
+  signature** de cette host function (un argument `key`), **jamais ajouté une
+  seconde** : le compte de `ctx.newFunction` dans `runInQuickJs` reste à **deux**,
+  et un test le garde (piège 25). La clé est **obligatoire**, y compris à une
+  seule ressource ; la mémoïsation guest passe du scalaire `__t` à un objet
+  indexé par clé (chaque ressource n'est marshalée qu'une fois, même relue
+  plusieurs fois). Une clé absente de `input_handles` lève une **exception
+  catchable côté guest** — protocole `{ error: ctx.newError(...) }` de
+  quickjs-emscripten (`ctx.throwError` n'existe pas en 0.32.0, vérifié en spike
+  sur la version gelée) — jamais un `undefined` silencieux. Plus les globals JS standard. **RIEN d'autre** : ni
   `fetch`, ni réseau, ni DOM, ni `globalThis` hôte. Discipline de marshaling : une
   seule valeur traverse (la string), tout le reste est du JS guest — pas de
   marshaling manuel de tableaux/objets (coûteux, source de fuites de handles).
@@ -349,20 +380,31 @@ model-side unique sur la bibliothèque) :**
   OOM → également un result texte cadré (« erreur d'exécution … vérifie ton
   code »), pas `isError`.
 - **Ack `js_eval`** poussé **après résolution** (pattern `skills__read`) :
-  `{ kind:'js_eval', handle, ok, outLen, code }`. Informatif, **pas d'undo** (pur
-  compute, aucune écriture d'état). La ligne de thread annonce seulement le handle
-  et l'issue (`ICON_CODE`) — **le code exécuté n'est PAS rendu dans le thread**
+  `{ kind:'js_eval', inputHandles, ok, outLen, code }` — `inputHandles` est l'objet
+  `{clé: handle}` **brut** (lot L-2, remplace le `handle` scalaire du lot L) : la
+  mise en forme est un problème d'affichage, pas de collecte. Informatif, **pas
+  d'undo** (pur compute, aucune écriture d'état). La ligne de thread annonce
+  seulement les entrées **résumées** par `jsEvalHandlesSummary` (utils.js, pure —
+  handle nu à une clé, « N ressources (clés…) » au-delà ; partagée avec les
+  exports, jamais réécrite localement) et l'issue (`ICON_CODE`) — **le code exécuté n'est PAS rendu dans le thread**
   (brief §3 : la doctrine no-silent-action vise les écritures d'état inférées, pas
   le compute pur). Le `code` n'est capté que **dans l'ack, pour l'export**
   (`formatToolAcksHtml`/`_formatToolCallMd`, champ `code` rendu COMPLET, non
-  tronqué contrairement aux args). Champs ajoutés à `ACK_COPY_FIELDS` (utils.js).
+  tronqué contrairement aux args). Les **deux** formats d'export énumèrent en
+  revanche les entrées **clé par clé** (`clé=handle`) là où le thread live les
+  résume : un export est une archive, son lecteur doit pouvoir rattacher chaque
+  clé du code à son handle. Champs dans `ACK_COPY_FIELDS` (utils.js) :
+  `inputHandles` y a été **ajouté** sans retirer `handle`, toujours porté par les
+  acks `docs_list`/`docs_read` — la whitelist est partagée entre kinds.
 - **Sécurité — parenté piège 23 (iframe sandbox), nouveau piège CLAUDE.md.** Le
   monde guest est **clos** : surface vide par défaut, on n'injecte QUE
-  `__miaou_text` + le prélude. **Ne JAMAIS** y injecter `fetch`, un accès DOM, un
+  `__miaou_text` (élargi à un argument au lot L-2, pas dédoublé) + le prélude. **Ne JAMAIS** y injecter `fetch`, un accès DOM, un
   pont vers le host au-delà des primitives énumérées, ni ré-exposer `globalThis`
   hôte — l'équivalent QuickJS du « jamais `allow-same-origin` ». Le `code` est
   d'origine **modèle** : dans l'export (`_formatToolCallHtml`), `escHtml` est
-  impératif (exception piège 21). L'engine est chargé en lazy-load calqué sur
+  impératif (exception piège 21). Depuis L-2, les **clés** de `input_handles` le
+  sont aussi (le modèle les écrit) : chaque fragment clé et handle passe par
+  `escHtml` **individuellement**, jamais une concaténation échappée après coup. L'engine est chargé en lazy-load calqué sur
   Mermaid (`ensureQuickJs`, ui.js — promesse mémoïsée, reset-on-reject) mais
   l'échec CDN **ne se dégrade PAS en silence** : il se propage en erreur d'outil
   propre (un compute demandé qui ne peut tourner doit le dire). Artefact figé :
@@ -387,8 +429,11 @@ model-side unique sur la bibliothèque) :**
   La skill incite aussi à **enchaîner plusieurs petits appels** (inspecter puis
   cibler) plutôt qu'un gros script unique, et à ne PAS raccourcir vers un one-liner
   (contre-productif : le problème n'est jamais la longueur mais la forme du retour).
-  C'est pourquoi `MAX_TOURS` (api.js) est passé de 20 à 40 : un usage sain de
-  `js__eval` consomme légitimement beaucoup de tours.
+  C'est pourquoi `MAX_TOURS` (api.js) est passé de 20 à 40, puis **de 40 à 100**
+  (2026-09) : un usage sain de `js__eval` consomme légitimement beaucoup de
+  tours, et le plafond de 40 était atteint **fréquemment** en usage quotidien
+  intensif — à ce stade la borne ne protège plus d'une boucle folle, elle coupe
+  du travail en cours.
   Depuis l'extraction en skill système (cf. `docs/skills.md` §8), ce guidage
   (le COMMENT) vit dans `src/system-skills/js-eval.md` ; `JS_EVAL_DOCTRINE`
   (tools.js) ne garde que le QUAND (cas d'usage, fallback `docs__read`, cap de
@@ -1064,6 +1109,19 @@ Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
    sécurité, la doctrine demande l'extension au modèle). Chaîne vide en sortie
    → repli sur `miaou-snippet.<ext>`. Si `data-filename` absent : comportement
    inchangé.
+5bis. **Bloc de ressource présenté par MIAOU** (`renderResourceText`, ui.js) :
+   ce `<pre>` n'est pas issu d'une fence du modèle, donc **aucun `filename=`
+   n'existe** pour l'alimenter — il retombait sur `miaou-snippet.txt`, perdant
+   à la fois le nom choisi par le modèle à la création de la ressource et
+   l'extension du mime. `renderResourceText` pose donc lui-même le
+   `data-filename` que `decoratePre` lira, calculé par le nommeur **partagé**
+   `resourceDownloadName(uri, mimeType)` (cf. section « Nommage » plus haut) —
+   pas une seconde règle de nommage. Le nom transite par `resource.uri`, que
+   `makeResourcePresentBlock` (resources.js) renseigne désormais pour la classe
+   `inline` comme il le faisait déjà pour la classe `binary`. Le nom étant déjà
+   extensionné, `sanitizeDownloadName` de l'étape 5 le laisse intact.
+   L'étiquette de langage du même bloc vient de `mimeToLang` (ui.js), qui
+   connaît `csv` : un `text/csv` s'affiche `csv` et non plus `text`.
 6. **Pas d'affichage du filename dans le header `.code-head`** dans ce lot
    (décision explicite, cf. « Composants UI provisoires » dans
    `CLAUDE.md` : ne pas redessiner un composant visuel sans spec) — le nom n'est utilisé que pour le

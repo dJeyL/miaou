@@ -218,7 +218,8 @@ try {
     !!rec && /-p1-8\.txt$/.test(rec.name || ''), rec && rec.name);
 
   if (resId) {
-    const ev = await callTool('js__eval', { handle: resId, code: 'text().split("--- Page").length - 1' });
+    const ev = await callTool('js__eval', { input_handles: { doc: resId },
+      code: 'text("doc").split("--- Page").length - 1' });
     check('js__eval exploite la ressource : 8 en-têtes de page retrouvés',
       !ev.isError && /\b8\b/.test(ev.text), ev.text.slice(0, 60).replace(/\n/g, ' '));
   }

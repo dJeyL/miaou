@@ -294,7 +294,7 @@ try {
   check('le nom porte la FEUILLE, pas un « -p2-5 » de PDF',
     !!rec && /Tri/.test(rec.name || '') && /\.txt$/.test(rec.name || ''), rec && rec.name);
   if (resId) {
-    const ev = await callTool('js__eval', { handle: resId, code: 'lines().length' });
+    const ev = await callTool('js__eval', { input_handles: { doc: resId }, code: 'lines("doc").length' });
     check('js__eval exploite la ressource',
       !ev.isError && /\d/.test(ev.text), ev.text.slice(0, 60).replace(/\n/g, ' '));
   }
@@ -435,8 +435,14 @@ try {
       (s2read.text.match(/\[[^\]]*\]/) || ['PAS DE NOTICE'])[0].slice(0, 130));
     check('la notice pose l\'hypothèse du scan et dit que MIAOU ne fait pas d\'OCR',
       /SCANN/i.test(s2read.text) && /OCR/.test(s2read.text));
+    // La consigne est écrite « dis-le » en milieu de phrase (docs.js, notice de
+    // page sans couche texte) : chercher « Dis-le » capitalisé ne matchait rien.
+    // Test faux depuis toujours, pas capacité perdue — on vise la phrase entière
+    // plutôt que le seul verbe, pour que l'assertion échoue si c'est bien la
+    // CONSIGNE qui disparaît, et non sa casse qui change.
     check('et elle demande au modèle de le DIRE plutôt que de conclure au vide',
-      /Dis-le/.test(s2read.text));
+      /dis-le plutôt que de conclure que le document est vide/i.test(s2read.text),
+      (s2read.text.match(/dis-le[^\]]*/i) || ['PAS DE CONSIGNE'])[0].slice(0, 80));
   } else {
     console.log('  ..  scanned2.pdf absent : garde des pages vides non exercée.');
   }

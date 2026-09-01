@@ -52,7 +52,14 @@ const ACK_COPY_FIELDS = [
                                           // de l'agent) ; cf. resolveRecallImages
   'slug', 'created',                      // skills (created : write = création vs modification)
   'topic', 'query',                      // aide (about_read, about_search)
-  'handle', 'outLen', 'code',            // js__eval (lot L) — handle, taille sortie, code exécuté
+  'handle',                               // handle SCALAIRE — docs__list / docs__read (le document décrit/lu).
+                                          // N'est PLUS porté par js_eval depuis le lot L-2 (multi-entrées), mais
+                                          // reste requis par ces deux kinds : ne pas le retirer avec l'autre.
+  'inputHandles',                         // js__eval (lot L-2) — objet {clé: handle} des ressources en ENTRÉE,
+                                          // remplace le `handle` scalaire du lot L. Objet et non string déjà
+                                          // formatée : la mise en forme est un problème d'affichage (ui.js,
+                                          // formatToolAcks*), pas de collecte — on garde l'ack riche.
+  'outLen', 'code',                      // js__eval (lot L) — taille sortie, code exécuté
   'ok',                                   // issue d'un échec MÉTIER non-isError, PLUSIEURS producteurs : js_eval (lot L),
                                           // docs_extract/docs_pack, et resource_appended (lot Y, où ok:false = calcul
                                           // interrompu, pas écriture ratée). Lu par ackIsError, jamais par kind.
@@ -916,6 +923,24 @@ const EXPORT_ARGS_MAX = 300;
 const EXPORT_RESULT_MAX = 300;
 const EXPORT_RESNAME_MAX = 60;
 
+// Résumé lisible des ressources d'entrée d'un ack js_eval (lot L-2). PUR (testé
+// QuickJS), partagé par le libellé live du thread (ACK_KINDS.js_eval, ui.js) et
+// par les deux formats d'export — une seule formule, jamais réécrite localement.
+//
+// À UNE clé, on rend le handle NU : c'est le cas majoritaire (interroger un seul
+// gros fichier reste l'usage dominant), et l'y noyer sous une énumération
+// « 1 ressource (a) » alourdirait la ligne sans rien apprendre. Au-delà, c'est le
+// NOMBRE et les CLÉS qui informent — les handles bruts (res_a1b2c3…) n'ont aucune
+// valeur de lecture pour un humain, alors que les clés portent l'intention du
+// modèle. Le détail clé=handle reste disponible dans les exports, qui l'énumèrent.
+function jsEvalHandlesSummary(inputHandles) {
+  if (!inputHandles || typeof inputHandles !== 'object') return '?';
+  const keys = Object.keys(inputHandles);
+  if (keys.length === 0) return '?';
+  if (keys.length === 1) return String(inputHandles[keys[0]] || '?');
+  return keys.length + ' ressources (' + keys.join(', ') + ')';
+}
+
 function _truncMd(s, max) {
   s = s == null ? '' : String(s);
   // Un contenu multiligne dans un code span `...` inline casse le rendu
@@ -949,10 +974,22 @@ function _formatToolCallMd(m) {
   }
   // js__eval (lot L) : le code exécuté est capté dans l'ack (champ `code`),
   // rendu ici COMPLET (non tronqué comme les args) dans un fence — c'est la
-  // seule trace du code, invisible dans le thread live (brief §3). `handle` et
-  // `outLen` donnent le contexte (sur quoi, taille du résultat).
+  // seule trace du code, invisible dans le thread live (brief §3). `inputHandles`
+  // et `outLen` donnent le contexte (sur quoi, taille du résultat).
+  //
+  // Lot L-2 : les entrées sont ÉNUMÉRÉES clé par clé (et non résumées comme dans
+  // le thread live) — un export est une archive, le lecteur doit pouvoir savoir
+  // quel handle portait quelle clé du code qui suit. Clé et handle sont tronqués
+  // SÉPARÉMENT : le modèle contrôle les deux textes, une clé absurdement longue
+  // ne doit pas manger la ligne.
   if (m.kind === 'js_eval' && m.code != null) {
-    lines.push('   Handle : `' + _truncMd(m.handle || '?', EXPORT_RESNAME_MAX) + '`' +
+    const inH = m.inputHandles;
+    const entries = inH && typeof inH === 'object' ? Object.keys(inH) : [];
+    const handlesTxt = entries.length
+      ? entries.map(k => _truncMd(k, EXPORT_RESNAME_MAX) + '=' +
+          _truncMd(String(inH[k] || '?'), EXPORT_RESNAME_MAX)).join(', ')
+      : '?';
+    lines.push('   Entrées : `' + handlesTxt + '`' +
       (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : ''));
     lines.push('   Code exécuté :');
     lines.push('   ```js');
@@ -1012,12 +1049,23 @@ function _formatToolCallHtml(m) {
     lines.push('<br>Ressource présentée automatiquement : <code>' + name + '</code>' +
       (m.mime ? ' (' + escHtml(m.mime) + ')' : '') + ' — non incluse dans cet export');
   }
-  // js__eval (lot L) : `code` et `handle` sont d'origine MODÈLE → escHtml
+  // js__eval (lot L) : `code` et les entrées sont d'origine MODÈLE → escHtml
   // impératif (piège 21, cette fonction est l'unique chemin string→HTML à
   // risque de l'export). Code rendu COMPLET dans un <pre> (seule trace du code,
   // absent du thread live, brief §3), pas tronqué contrairement aux args.
+  //
+  // Lot L-2 : l'énumération des entrées ouvre un chemin d'échappement de PLUS —
+  // les CLÉS aussi sont écrites par le modèle, pas seulement les handles. Chaque
+  // fragment passe par escHtml INDIVIDUELLEMENT (jamais une concaténation
+  // échappée après coup, qui laisserait passer un séparateur injecté).
   if (m.kind === 'js_eval' && m.code != null) {
-    lines.push('<br>Handle : <code>' + escHtml(_truncMd(m.handle || '?', EXPORT_RESNAME_MAX)) + '</code>' +
+    const inH = m.inputHandles;
+    const entries = inH && typeof inH === 'object' ? Object.keys(inH) : [];
+    const handlesTxt = entries.length
+      ? entries.map(k => escHtml(_truncMd(k, EXPORT_RESNAME_MAX)) + '=' +
+          escHtml(_truncMd(String(inH[k] || '?'), EXPORT_RESNAME_MAX))).join(', ')
+      : '?';
+    lines.push('<br>Entrées : <code>' + handlesTxt + '</code>' +
       (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : ''));
     lines.push('<br>Code exécuté :<pre class="tool-ack-code"><code>' + escHtml(String(m.code)) + '</code></pre>');
   }

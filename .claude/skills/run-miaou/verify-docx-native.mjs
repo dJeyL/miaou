@@ -273,8 +273,8 @@ try {
     // rendrait son arité (0) et le contrôle passerait sans rien prouver.
     // On compte les lignes ET on cherche un motif du document, pour vérifier
     // que le texte a bien traversé _storeBlock → utf8 → guest.
-    const evaled = await callTool('js__eval', { handle: resId,
-      code: 'lines().filter(function(l){ return l.indexOf("|") >= 0; }).length' });
+    const evaled = await callTool('js__eval', { input_handles: { doc: resId },
+      code: 'lines("doc").filter(function(l){ return l.indexOf("|") >= 0; }).length' });
     check('la ressource est exploitable par js__eval, et porte les lignes tabulaires',
       !evaled.isError && /[1-9]/.test(evaled.text), evaled.text.slice(0, 60));
   }

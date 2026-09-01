@@ -1675,12 +1675,13 @@ const ACK_KINDS = {
   // rendu dans le thread (brief §3 : la doctrine no-silent-action vise les
   // écritures d'état inférées, pas le compute pur) — il n'est capté que dans
   // l'ack pour l'export (champ `code`, cf. formatToolAcksHtml). La ligne de
-  // thread annonce seulement le handle et l'issue.
+  // thread annonce seulement les entrées (résumées par jsEvalHandlesSummary,
+  // utils.js — pur et partagé avec l'export) et l'issue.
   js_eval: {
     destination: 'user',
     undo: null,
     icon: ICON_CODE,
-    label: m => 'Code exécuté sur ' + (m.handle || '?') +
+    label: m => 'Code exécuté sur ' + jsEvalHandlesSummary(m.inputHandles) +
       (m.ok === false ? ' (refusé)' : (m.outLen != null ? ' → ' + m.outLen + ' car.' : '')),
     renderLabel: (m, el) => {
       const tail = m.ok === false ? ' (refusé)' : (m.outLen != null ? ' → ' + m.outLen + ' car.' : '');
@@ -1688,12 +1689,12 @@ const ACK_KINDS = {
         renderIntentTwoLevel(el, m.intent, null, detail => {
           detail.appendChild(document.createTextNode('Code exécuté sur '));
           appendAckSep(detail);
-          detail.appendChild(document.createTextNode(' ' + (m.handle || '?') + tail));
+          detail.appendChild(document.createTextNode(' ' + jsEvalHandlesSummary(m.inputHandles) + tail));
         });
       } else {
         el.appendChild(document.createTextNode('Code exécuté sur '));
         appendAckSep(el);
-        el.appendChild(document.createTextNode(' ' + (m.handle || '?') + tail));
+        el.appendChild(document.createTextNode(' ' + jsEvalHandlesSummary(m.inputHandles) + tail));
       }
     },
   },
@@ -7198,6 +7199,15 @@ function renderResourceText(box, resource) {
   const code = document.createElement('code');
   if (lang) code.className = 'language-' + lang;
   code.textContent = String(resource.text);   // frontière XSS : jamais innerHTML
+  // Nom proposé au téléchargement : le bloc est construit par MIAOU (pas une
+  // fence du modèle), donc `filename=` n'existe pas — on pose nous-mêmes le
+  // data-filename que decoratePre lira, dérivé du nom de la ressource et de son
+  // mime via le nommeur PARTAGÉ resourceDownloadName (mêmes règles que le
+  // téléchargement d'une ressource depuis son ack : un seul jeu de règles de
+  // nommage, jamais deux). Sans lui, decoratePre retombait sur
+  // « miaou-snippet.txt », qui perd et le nom et l'extension.
+  const dlName = resourceDownloadName(resource.uri, resource.mimeType);
+  if (dlName) code.setAttribute('data-filename', dlName);
   pre.appendChild(code);
   box.appendChild(pre);
   // Même chrome que les blocs de code des messages assistant : on construit le
@@ -7262,6 +7272,7 @@ function mimeToLang(mime) {
   if (m.indexOf('yaml') >= 0 || m.indexOf('yml') >= 0) return 'yaml';
   if (m.indexOf('markdown') >= 0) return 'markdown';
   if (m.indexOf('python') >= 0) return 'python';
+  if (m.indexOf('csv') >= 0) return 'csv';
   return '';
 }
 

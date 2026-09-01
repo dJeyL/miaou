@@ -308,8 +308,8 @@ try {
     // `lines` est une FONCTION du prélude : `lines.length` rendrait son arité (0)
     // et le contrôle passerait sans rien prouver (leçon de l'étape 2). On compte
     // les en-têtes de slide effectivement retrouvés dans le texte stocké.
-    const evaled = await callTool('js__eval', { handle: resId,
-      code: 'lines().filter(function(l){ return l.indexOf("--- Slide ") === 0; }).length' });
+    const evaled = await callTool('js__eval', { input_handles: { doc: resId },
+      code: 'lines("doc").filter(function(l){ return l.indexOf("--- Slide ") === 0; }).length' });
     check('la ressource est exploitable par js__eval et porte les 10 en-têtes de slide',
       !evaled.isError && /\b10\b/.test(evaled.text), evaled.text.slice(0, 60));
   }

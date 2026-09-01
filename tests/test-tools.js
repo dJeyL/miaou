@@ -785,25 +785,85 @@ describe('JS_EVAL_DOCTRINE (constante inconditionnelle de ROOT_SYSTEM_PROMPT, lo
   });
 });
 
-describe('js__eval exposé au modèle (registre TOOLS, lot L)', function() {
-  it('miaou__js__eval est dans exposedTools avec handle+code requis', function() {
+describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2)', function() {
+  it('miaou__js__eval est dans exposedTools avec input_handles+code requis', function() {
     var def = exposedTools().find(function(t) { return t.name === 'miaou__js__eval'; });
     expect(!!def).toBe(true);
     var props = def.inputSchema.properties;
-    expect(!!props.handle).toBe(true);
+    expect(!!props.input_handles).toBe(true);
+    expect(props.input_handles.type).toBe('object');
     expect(!!props.code).toBe(true);
-    expect(def.inputSchema.required.indexOf('handle') >= 0).toBeTruthy();
+    expect(def.inputSchema.required.indexOf('input_handles') >= 0).toBeTruthy();
     expect(def.inputSchema.required.indexOf('code') >= 0).toBeTruthy();
+    // Le paramètre scalaire du lot L a DISPARU (décision 3 du brief L-2 : une
+    // seule forme d'appel, pas de compat parallèle qui ferait deux syntaxes à
+    // documenter au modèle).
+    expect(!!props.handle).toBe(false);
+    expect(def.inputSchema.required.indexOf('handle') >= 0).toBe(false);
   });
-  it('rejette un handle vide/manquant en erreur synchrone (avant tout async)', function() {
-    expect(flattenToolResult(callTool('miaou__js__eval', { code: '1' }))).toBe('Handle manquant.');
+  it('rejette input_handles manquant en erreur synchrone (avant tout async)', function() {
+    var r = flattenToolResult(callTool('miaou__js__eval', { code: '1' }));
+    expect(r.indexOf('input_handles manquant ou invalide') >= 0).toBeTruthy();
+  });
+  it('rejette un input_handles qui n\'est pas un objet (string)', function() {
+    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: 'att-1', code: '1' }));
+    expect(r.indexOf('input_handles manquant ou invalide') >= 0).toBeTruthy();
+  });
+  it('rejette un TABLEAU : typeof object ne suffit pas, la garde Array.isArray est nécessaire', function() {
+    // Contrôle de prémisse du test : un tableau EST bien un typeof 'object' en JS,
+    // donc sans Array.isArray il passerait la première garde et Object.keys en
+    // ferait des clés numériques — une forme positionnelle acceptée en douce.
+    expect(typeof []).toBe('object');
+    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: ['att-1'], code: '1' }));
+    expect(r.indexOf('input_handles manquant ou invalide') >= 0).toBeTruthy();
+  });
+  it('rejette un input_handles vide', function() {
+    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: {}, code: '1' }));
+    expect(r.indexOf('input_handles est vide') >= 0).toBeTruthy();
+  });
+  it('rejette au-delà de JS_EVAL_MAX_INPUTS clés, en nommant le compte et la limite', function() {
+    var many = {};
+    for (var i = 0; i <= JS_EVAL_MAX_INPUTS; i++) many['k' + i] = 'att-1';
+    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: many, code: '1' }));
+    expect(r.indexOf(String(JS_EVAL_MAX_INPUTS + 1) + ' clés') >= 0).toBeTruthy();
+    expect(r.indexOf('maximum ' + JS_EVAL_MAX_INPUTS) >= 0).toBeTruthy();
+    // Contrôle de prémisse : le MÊME appel à la limite exacte ne bute PAS sur ce
+    // message (sinon le test passerait pour une raison sans rapport).
+    var ok = {};
+    for (var j = 0; j < JS_EVAL_MAX_INPUTS; j++) ok['k' + j] = 'att-1';
+    var r2 = flattenToolResult(callTool('miaou__js__eval', { input_handles: ok, code: '1' }));
+    expect(r2.indexOf('maximum') >= 0).toBe(false);
   });
   it('rejette un code manquant en erreur synchrone', function() {
-    expect(flattenToolResult(callTool('miaou__js__eval', { handle: 'att-1' }))).toBe('Code manquant.');
+    expect(flattenToolResult(callTool('miaou__js__eval', { input_handles: { a: 'att-1' } })))
+      .toBe('Code manquant.');
   });
-  it('rejette un handle de forme invalide en erreur synchrone', function() {
-    var r = flattenToolResult(callTool('miaou__js__eval', { handle: 'res-x', code: '1' }));
-    expect(r.indexOf('Handle invalide') >= 0).toBeTruthy();
+  it('rejette un handle de forme invalide en NOMMANT la clé fautive', function() {
+    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: { src: 'res-x' }, code: '1' }));
+    expect(r.indexOf('Handle invalide pour la clé "src"') >= 0).toBeTruthy();
+  });
+  it('REFUS TOTAL : c\'est la PREMIÈRE clé fautive qui arrête tout, pas la dernière lue', function() {
+    // Deux clés fautives : le message doit nommer la PREMIÈRE (ordre d'insertion
+    // de Object.keys), preuve que la boucle s'arrête net au lieu de poursuivre la
+    // résolution et de rendre l'erreur de la dernière. Hors environnement de test
+    // aucun handle n'est résoluble, donc on éprouve la garde de FORME, atteinte
+    // avant toute résolution — d'où deux handles malformés plutôt qu'un valide.
+    var r = flattenToolResult(callTool('miaou__js__eval',
+      { input_handles: { premiere: 'pas-un-handle', seconde: 'pas-non-plus' }, code: '1' }));
+    expect(r.indexOf('Handle invalide pour la clé "premiere"') >= 0).toBeTruthy();
+    expect(r.indexOf('"seconde"') >= 0).toBe(false);
+  });
+  it('un handle de forme VALIDE mais non résoluble est refusé en nommant sa clé', function() {
+    // Cas distinct du précédent : la forme passe, c'est resolveHandleRecord qui
+    // rend null (herméticité piège 18 — un handle hors-scope répond « introuvable »,
+    // sans oracle). La clé doit être nommée là aussi.
+    var r = flattenToolResult(callTool('miaou__js__eval',
+      { input_handles: { absente: 'att-1' }, code: '1' }));
+    expect(r.indexOf('Handle introuvable pour la clé "absente"') >= 0).toBeTruthy();
+  });
+  it('rejette une clé dont le handle est une string vide, en la nommant', function() {
+    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: { vide: '   ' }, code: '1' }));
+    expect(r.indexOf('Handle manquant pour la clé "vide"') >= 0).toBeTruthy();
   });
 });
 
@@ -1802,7 +1862,7 @@ describe('js__eval + output_handle / emit (lot Y)', function() {
     expect(def.inputSchema.properties.output_handle).toBeTruthy();
     expect(def.inputSchema.required.indexOf('output_handle') >= 0).toBe(false);
     // Contrôle de prémisse : les deux autres, eux, SONT requis.
-    expect(def.inputSchema.required.indexOf('handle') >= 0).toBe(true);
+    expect(def.inputSchema.required.indexOf('input_handles') >= 0).toBe(true);
     expect(def.inputSchema.required.indexOf('code') >= 0).toBe(true);
   });
   it('readOnlyHint est false : l\'outil écrit dès qu\'un output_handle est fourni', function() {
@@ -1813,6 +1873,16 @@ describe('js__eval + output_handle / emit (lot Y)', function() {
     const def = TOOLS.find(t => t.name === 'js__eval');
     expect(def.description.indexOf('output_handle') >= 0).toBe(true);
     expect(def.description.indexOf('emit()') >= 0).toBe(true);
+  });
+  it('les quatre primitives de lecture prennent une clé (lot L-2), pas zéro argument', function() {
+    // La clé est OBLIGATOIRE (décision 3 du brief L-2) : plus aucune forme sans
+    // argument, y compris à une seule ressource — une seule syntaxe à documenter.
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function text(key)') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function lines(key)') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function jsonLines(key)') >= 0).toBe(true);
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('function parse(key)') >= 0).toBe(true);
+    // Le pont host est appelé AVEC la clé (une signature élargie, pas un second pont).
+    expect(JS_EVAL_GUEST_PRELUDE.indexOf('__miaou_text(key)') >= 0).toBe(true);
   });
   it('SURFACE GUEST FERMÉE : le prélude de base ne définit QUE les quatre lectures', function() {
     // Piège 25 — emit ne doit PAS être dans le prélude de base : sans

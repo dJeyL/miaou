@@ -4,9 +4,14 @@
    recherche/scoring des résumés.
    ────────────────────────────────────────────────────────────────────────── */
 
-const MAX_TOURS = 40;   // borne sur les tours de la boucle tool_calls
+const MAX_TOURS = 100;  // borne sur les tours de la boucle tool_calls
                         // (20 → 40 : js__eval sur un gros fichier peut demander
-                        //  plusieurs passes exploratoires avant la synthèse)
+                        //  plusieurs passes exploratoires avant la synthèse ;
+                        //  40 → 100 : plafond atteint FRÉQUEMMENT en usage réel
+                        //  intensif — ce n'est plus un garde-fou contre une
+                        //  boucle folle, c'est un couperet sur du travail
+                        //  légitime, et un échange coupé au milieu coûte plus
+                        //  cher que quelques tours de trop)
 
 // L'AbortController d'un stream appartient à SA génération (lot T-1a), jamais au
 // module : avec N générations concurrentes, un singleton ferait écraser le

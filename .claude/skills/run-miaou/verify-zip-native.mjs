@@ -16,7 +16,7 @@
 //   3. miaou__docs__extract(ref=att-N, path=pihole.log) — handler async,
 //      lazy-load fflate depuis le CDN → _storeBlock → res_… classe 'inline'
 //      rendu par formatInlineHandleForModel (JAMAIS [resource_ref:…], piège 26c).
-//   4. miaou__js__eval(handle=res_…, code) sur ce handle : preuve que le membre
+//   4. miaou__js__eval(input_handles={membre:res_…}, code) : preuve que le membre
 //      décompressé a bien traversé jusqu'à l'IDB et se relit intégralement.
 //   5. untracked/muscle/enc.zip (zip chiffré) : REFUS EXPLICITE à l'extraction.
 //      C'est LE test qui garde le piège de l'AUDIT §3 — fflate ne détecte pas le
@@ -266,8 +266,8 @@ try {
 
   // ── js__eval : le contenu est réellement relisible de bout en bout ─────────
   const evalRes = await callTool_('miaou__js__eval', {
-    handle,
-    code: 'const n = lines().length; JSON.stringify({ lignes: n });',
+    input_handles: { membre: handle },
+    code: 'const n = lines("membre").length; JSON.stringify({ lignes: n });',
   });
   check('js__eval lit le membre extrait et compte ses lignes',
     evalRes.ok && /"lignes":\s*\d{4,}/.test(evalRes.text), evalRes.text.slice(0, 160));

@@ -1878,6 +1878,32 @@ describe('splitLines (substrat guest lines(), lot L)', function() {
   });
 });
 
+describe('jsEvalHandlesSummary (résumé des entrées d\'un ack js_eval, lot L-2)', function() {
+  it('à UNE clé, rend le handle NU (cas majoritaire, pas d\'énumération)', function() {
+    expect(jsEvalHandlesSummary({ src: 'res_abc' })).toBe('res_abc');
+  });
+  it('à DEUX clés ou plus, rend le compte et les clés — jamais les handles bruts', function() {
+    var out = jsEvalHandlesSummary({ gauche: 'res_a', droite: 'res_b' });
+    expect(out).toBe('2 ressources (gauche, droite)');
+    // Les handles n'ont aucune valeur de lecture ici : ils sont volontairement
+    // absents du résumé live (le détail clé=handle vit dans les exports).
+    expect(out.indexOf('res_a') >= 0).toBe(false);
+  });
+  it('rend le compte exact au-delà de deux', function() {
+    expect(jsEvalHandlesSummary({ a: 'res_1', b: 'res_2', c: 'res_3' }))
+      .toBe('3 ressources (a, b, c)');
+  });
+  it('dégrade en ? sur objet vide, null, ou non-objet (ack ancien ou tronqué)', function() {
+    expect(jsEvalHandlesSummary({})).toBe('?');
+    expect(jsEvalHandlesSummary(null)).toBe('?');
+    expect(jsEvalHandlesSummary(undefined)).toBe('?');
+    expect(jsEvalHandlesSummary('res_abc')).toBe('?');
+  });
+  it('dégrade en ? le handle d\'une clé unique vide, sans rendre "undefined"', function() {
+    expect(jsEvalHandlesSummary({ a: '' })).toBe('?');
+  });
+});
+
 describe('checkOutputCap (garde de refus, lot L §3)', function() {
   it('sous le cap → ok true', function() {
     var r = checkOutputCap('abc', 10);
@@ -1922,12 +1948,12 @@ describe('ackIsError (prédicat unique de rendu en erreur)', function() {
     expect(ackIsError(undefined)).toBe(false);
   });
   it('survit à copyAckFields (ok: false est copié, présence != null)', function() {
-    var dst = copyAckFields({ kind: 'js_eval', handle: 'att-1', ok: false, code: 'x' }, {});
+    var dst = copyAckFields({ kind: 'js_eval', inputHandles: { a: 'att-1' }, ok: false, code: 'x' }, {});
     expect(dst.ok).toBe(false);
     expect(ackIsError(dst)).toBe(true);
   });
   it('copyAckFields conserve ok: true sans le muer en erreur', function() {
-    var dst = copyAckFields({ kind: 'js_eval', handle: 'att-1', ok: true, outLen: 7 }, {});
+    var dst = copyAckFields({ kind: 'js_eval', inputHandles: { a: 'att-1' }, ok: true, outLen: 7 }, {});
     expect(dst.ok).toBe(true);
     expect(ackIsError(dst)).toBe(false);
   });

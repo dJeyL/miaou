@@ -54,10 +54,11 @@ Figtree/Fira Code).
 - Horodatage de chaque message, relatif puis absolu selon l'ancienneté.
 - Édition d'un message utilisateur : tronque la suite du fil et régénère depuis
   ce point.
-- **Calcul sandboxé sur un fichier** : le modèle exécute du JavaScript sur le
-  contenu d'une pièce jointe, d'un fichier de bibliothèque ou d'une ressource
-  pour compter, filtrer ou agréger — sans charger le fichier dans le contexte, et
-  en ne ramenant que le résultat — cf. [docs/tools.md](docs/tools.md).
+- **Calcul sandboxé sur des fichiers** : le modèle exécute du JavaScript sur le
+  contenu de pièces jointes, de fichiers de bibliothèque ou de ressources pour
+  compter, filtrer, agréger — ou croiser plusieurs d'entre eux dans un même
+  calcul — sans les charger dans le contexte, et en ne ramenant que le résultat —
+  cf. [docs/tools.md](docs/tools.md).
 - **Écriture incrémentale d'une ressource** : le modèle complète une ressource
   existante au fil de plusieurs tours, ou la fait écrire ligne à ligne par le
   code du bac à sable, pour produire un gros contenu sans le réécrire à chaque

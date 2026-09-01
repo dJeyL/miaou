@@ -96,7 +96,7 @@ check('record.size suit le cumul en octets', sizeNow === after2.length);
 
 // Le handle est INCHANGÉ après append : le modèle continue de l'utiliser.
 const evalAfter = await page.evaluate((id) =>
-  window.__call('js__eval', { handle: id, code: 'lines().length;' }), resId);
+  window.__call('js__eval', { input_handles: { src: id }, code: 'lines("src").length;' }), resId);
 check('le même handle reste lisible par js__eval après append', evalAfter.text.trim().startsWith('4'));
 
 // ── 2. Gardes de famille et handles inconnus ─────────────────────────────────
@@ -134,10 +134,10 @@ const dstSeeded = await page.evaluate(() =>
 const dstSeededId = (dstSeeded.text.match(/blob=(res_[a-z0-9]+)/) || [])[1];
 
 const emitRun = await page.evaluate(({ s, d }) => window.__call('js__eval', {
-  handle: s,
+  input_handles: { src: s },
   output_handle: d,
   // emit au fil de l'eau, une fois par ligne : rien n'est accumulé côté guest.
-  code: 'var n=0; lines().forEach(function(l){ if(l){ emit("["+l+"]\\n"); n++; } }); n;',
+  code: 'var n=0; lines("src").forEach(function(l){ if(l){ emit("["+l+"]\\n"); n++; } }); n;',
 }), { s: srcId, d: dstSeededId });
 check('js__eval avec output_handle réussit', !emitRun.isError && /^5/.test(emitRun.text.trim()));
 
@@ -151,8 +151,8 @@ check('le résultat annonce le nombre de caractères ajoutés', /caractères ont
 
 // ── 4. emit() sans output_handle : ReferenceError, pas un no-op ──────────────
 
-const noHandle = await page.evaluate((s) => window.__call('js__eval', {
-  handle: s, code: 'emit("perdu"); 1;',
+const noEmitHandle = await page.evaluate((s) => window.__call('js__eval', {
+  input_handles: { src: s }, code: 'emit("perdu"); 1;',
 }), srcId);
 // L'erreur doit nommer `emit` LUI-MÊME, pas le pont host `__miaou_emit` : si le
 // prélude définissait emit() inconditionnellement, l'appel échouerait AUSSI —
@@ -160,9 +160,9 @@ const noHandle = await page.evaluate((s) => window.__call('js__eval', {
 // que le modèle ne peut pas corriger. Distinguer les deux est tout l'objet du
 // choix « primitive absente plutôt que no-op ».
 check('emit() sans output_handle échoue en nommant emit (la primitive), pas le pont interne',
-  /'emit' is not defined/.test(noHandle.text) && !/__miaou_emit/.test(noHandle.text));
+  /'emit' is not defined/.test(noEmitHandle.text) && !/__miaou_emit/.test(noEmitHandle.text));
 check('cet échec passe par le chemin d\'erreur guest normal, pas un crash host',
-  /bac à sable/.test(noHandle.text) && !/Erreur outil/.test(noHandle.text));
+  /bac à sable/.test(noEmitHandle.text) && !/Erreur outil/.test(noEmitHandle.text));
 // Contrôle de non-vacuité : sans cette assertion, un emit() devenu no-op
 // silencieux passerait — on vérifie donc que RIEN n'a été écrit nulle part.
 const untouched = await page.evaluate((id) => window.__read(id), dstSeededId);
@@ -176,7 +176,7 @@ const partial = await page.evaluate(() =>
 const partialId = (partial.text.match(/blob=(res_[a-z0-9]+)/) || [])[1];
 
 const crashed = await page.evaluate(({ s, d }) => window.__call('js__eval', {
-  handle: s,
+  input_handles: { src: s },
   output_handle: d,
   // Émet trois morceaux PUIS lève : le travail déjà émis doit survivre.
   code: 'emit("un\\n"); emit("deux\\n"); emit("trois\\n"); throw new Error("boum");',
@@ -208,7 +208,7 @@ const capped = await page.evaluate(async () => {
   const d = (r.text.match(/blob=(res_[a-z0-9]+)/) || [])[1];
   // emit() borné et complet, MAIS un retour texte volontairement au-dessus du cap.
   const run = await window.__call('js__eval', {
-    handle: d, output_handle: d,
+    input_handles: { src: d }, output_handle: d,
     code: 'emit("complet\\n"); var s=""; while(s.length < ' + window.__capProbe + ') { s += "x"; } s;',
   });
   const a = _pendingToolAcks.filter(x => x.kind === 'resource_appended').pop();
@@ -222,13 +222,13 @@ check('sur un refus de cap, l\'écriture est COMPLÈTE et l\'ack reste neutre',
 // ── 6. output_handle invalide : refus AVANT exécution ────────────────────────
 
 const badOut = await page.evaluate((s) => window.__call('js__eval', {
-  handle: s, output_handle: 'att-1', code: 'emit("x"); 1;',
+  input_handles: { src: s }, output_handle: 'att-1', code: 'emit("x"); 1;',
 }), srcId);
 check('output_handle hors famille refusé (garde symétrique de resource__append)',
   /output_handle invalide/.test(badOut.text));
 
 const missingOut = await page.evaluate((s) => window.__call('js__eval', {
-  handle: s, output_handle: 'res_zzzzzzzz', code: 'emit("x"); 1;',
+  input_handles: { src: s }, output_handle: 'res_zzzzzzzz', code: 'emit("x"); 1;',
 }), srcId);
 check('output_handle inconnu → introuvable, refusé avant d\'exécuter le code',
   /output_handle introuvable/.test(missingOut.text));
@@ -252,8 +252,8 @@ const motor = await page.evaluate(async ({ cap }) => {
   for (const s of sources) {
     // Un tour js__eval par fichier : extraction, écriture directe par emit.
     const r = await window.__call('js__eval', {
-      handle: s, output_handle: dst,
-      code: 'var o = parse(); emit(o.id+","+o.nom+","+o.valeur+"\\n"); "ok";',
+      input_handles: { src: s }, output_handle: dst,
+      code: 'var o = parse("src"); emit(o.id+","+o.nom+","+o.valeur+"\\n"); "ok";',
     });
     resultLengths.push(r.text.length);
   }
@@ -293,7 +293,7 @@ const delegated = await page.evaluate(async () => {
   };
   const appended = await call('resource__append', { id: alias, content: 'AGENT\n' });
   const emitted = await call('js__eval', {
-    handle: alias, output_handle: alias, code: 'emit("EMIT\\n"); "ok";',
+    input_handles: { src: alias }, output_handle: alias, code: 'emit("EMIT\\n"); "ok";',
   });
   // Un alias NON délégué doit rester introuvable : la dérogation est bornée à
   // ce que le parent a nommé, le lot Y ne l'élargit pas.

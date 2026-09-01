@@ -1014,6 +1014,15 @@ describe('makeResourcePresentBlock', function() {
     expect(block.resource.mimeType).toBe('text/plain');
   });
 
+  it('class inline → uri = name, dont renderResourceText tire le nom de téléchargement', function() {
+    var buf = utf8Encode('a,b\n1,2');
+    var block = makeResourcePresentBlock({ class: 'inline', mime: 'text/csv', name: 'ventes-2026', data: buf });
+    expect(block.resource.uri).toBe('ventes-2026');
+    // Le nommeur partagé pose l'extension depuis le mime : c'est ce nom-là qui
+    // atterrit en data-filename, et non le générique « miaou-snippet.txt ».
+    expect(resourceDownloadName(block.resource.uri, block.resource.mimeType)).toBe('ventes-2026.csv');
+  });
+
   it('binary non-image → bloc "resource" avec blob base64 + uri = name', function() {
     var ab = new ArrayBuffer(8);
     var block = makeResourcePresentBlock({ class: 'binary', mime: 'application/pdf', name: 'doc.pdf', data: ab });

@@ -269,9 +269,11 @@ inline sous la liste.
     → invariant transverse, développé sous la liste.
 25. **Monde guest `js__eval` clos : deux host functions, énumérées, jamais plus.**
     L'outil natif `js__eval` (lot L) exécute du JS modèle dans un bac à sable
-    QuickJS-WASM (`runInQuickJs`, tools.js) sur le contenu textuel d'UN blob
-    client. Surface guest FERMÉE : on n'injecte QUE `__miaou_text()` (pont
-    host→guest d'ENTRÉE) et, **seulement si un `output_handle` est fourni**,
+    QuickJS-WASM (`runInQuickJs`, tools.js) sur le contenu textuel d'**une à
+    `JS_EVAL_MAX_INPUTS` ressources** clientes (lot L-2), chacune adressée par une
+    clé choisie par le modèle. Surface guest FERMÉE : on n'injecte QUE
+    `__miaou_text(key)` (pont host→guest d'ENTRÉE) et, **seulement si un
+    `output_handle` est fourni**,
     `__miaou_emit()` (pont de SORTIE, lot Y) — plus un prélude JS pur
     (`text`/`lines`/`jsonLines`/`parse`, et `emit` sur ce même conditionnel) ;
     **jamais `fetch`, DOM, `globalThis` hôte, ni aucun autre pont** — symétrique
@@ -293,6 +295,13 @@ inline sous la liste.
     re-cibler dans le tour). Le `code` est d'origine **modèle** : `escHtml`
     impératif à l'export (exception piège 21). Doctrine `JS_EVAL_DOCTRINE`
     statique, inconditionnelle dans `ROOT_SYSTEM_PROMPT` (KV-safe, piège 16). Cf.
+    **Corollaire L-2, exactement le cas que ce piège anticipait :** passer d'une à
+    N ressources d'entrée s'est fait en **élargissant** la host function existante
+    (`__miaou_text` prend un `key`), **jamais** en ouvrant un troisième pont — le
+    compte reste à deux, et le test qui l'affirme est resté vert sans qu'on touche
+    à sa valeur attendue. Une clé absente lève une exception catchable côté guest
+    par le protocole `{ error: ctx.newError(...) }` (`ctx.throwError` n'existe pas
+    en quickjs-emscripten 0.32.0, la version gelée — vérifié en spike). Cf.
     `docs/tools.md` (section `js__eval`).
 26. **Réécriture d'historique model-triggered : matérialisation d'un tool result
     passé (lot O-2).** `resource__from_result` (tools.js) mute **en place** le

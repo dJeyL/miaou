@@ -38,7 +38,7 @@
 //     internResourcesFromResult stocke en classe 'inline' via le tail de
 //     store_binary — handle seul au modèle, jamais le texte (M1b).
 //   Tour 2 : le script lit le res_… matérialisé, l'injecte comme handle de
-//     js__eval(handle, code) avec un code qui parse() et somme les .value →
+//     js__eval(input_handles, code) avec un code qui parse(clé) et somme les .value →
 //     vérifie que le calcul retombe sur 8925 (preuve que le texte complet du
 //     membre a bien traversé le canal binaire jusqu'à l'IDB, décodable par
 //     utf8Decode sans branche par classe).
@@ -48,7 +48,7 @@
 //   - res_… matérialisé en IDB, class 'inline', mime textuel (text/plain ou JSON)
 //   - aucun contenu du membre JSON (ex. "item-1") dans currentThread/contexte modèle
 //   - docs__extract produit un ack résolu (resource_stored / mcp_call), pas d'erreur
-//   - js__eval(handle=res_…, code) calcule la somme exacte (8925) → le texte
+//   - js__eval(input_handles={membre:res_…}, code) calcule la somme exacte (8925) → le texte
 //     intégral est bien décodable depuis le stockage 'inline'
 //   - le bloc resource n'apparaît pas dans la queue de rendu D8 (pas de bouton
 //     téléchargement parasite) — retainPendingToolBlocks a fait son travail
@@ -266,12 +266,12 @@ try {
 
   await page.screenshot({ path: path.join(outDir, '1-docs_extract.png'), fullPage: true }).catch(() => {});
 
-  // ── TOUR 2 : js__eval(handle=res_…, code) → somme des .value == 8925 ───────
+  // ── TOUR 2 : js__eval(input_handles={membre:res_…}, code) → somme des .value == 8925 ──
   await page.evaluate(() => { window.__scriptedToolCalls = []; });
-  const sumCode = 'const rows = parse(); JSON.stringify(rows.reduce((s, r) => s + r.value, 0));';
+  const sumCode = 'const rows = parse("membre"); JSON.stringify(rows.reduce((s, r) => s + r.value, 0));';
   const evalResult = await page.evaluate(async ({ handle, code }) => {
     try {
-      const r = await callTool('miaou__js__eval', { handle, code });
+      const r = await callTool('miaou__js__eval', { input_handles: { membre: handle }, code });
       return { ok: !r.isError, content: (r.content && r.content[0] && r.content[0].text) || '' };
     } catch (e) { return { ok: false, content: 'throw:' + e.message }; }
   }, { handle: rec.id, code: sumCode });

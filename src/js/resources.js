@@ -1063,7 +1063,12 @@ function makeResourcePresentBlock(record) {
     return { type: 'image', data: arrayBufferToBase64(record.data), mimeType: record.mime };
   }
   if (record.class === 'inline') {
-    return { type: 'resource', resource: { text: utf8Decode(record.data), mimeType: record.mime } };
+    // `uri` porte le nom du record — même champ que la branche binaire ci-dessous,
+    // pour que le rendu (renderResourceText) puisse nommer le téléchargement
+    // d'après la ressource plutôt que de retomber sur « miaou-snippet.txt ».
+    return { type: 'resource', resource: {
+      text: utf8Decode(record.data), mimeType: record.mime, uri: record.name,
+    }};
   }
   // binary non-image → téléchargement
   return { type: 'resource', resource: {

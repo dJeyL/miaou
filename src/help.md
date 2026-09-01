@@ -18,9 +18,9 @@ Ce que tu peux faire ici :
   des souvenirs durables pour te reconnaître d'une conversation à l'autre.
 - **Étendre** le modèle avec des skills (instructions réutilisables) et des
   outils distants (serveurs compagnons, si configurés).
-- **Analyser** un fichier volumineux (log, JSON, CSV, texte) : le modèle peut
-  exécuter du code sur son contenu pour compter, filtrer ou extraire, sans
-  charger le fichier entier dans le contexte.
+- **Analyser** un ou plusieurs fichiers volumineux (log, JSON, CSV, texte) : le
+  modèle peut exécuter du code sur leur contenu pour compter, filtrer, extraire
+  ou les croiser entre eux, sans les charger dans le contexte.
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
 - **Déléguer** : le modèle peut confier une tâche à un agent — une
   sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
@@ -64,7 +64,9 @@ Pour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle
 n'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le
 calcul** — compter des lignes, filtrer, agréger, extraire un extrait — en
 exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile
-pour interroger un fichier trop gros pour tenir dans le contexte. Si la réponse
+pour interroger un fichier trop gros pour tenir dans le contexte. Il peut même
+croiser plusieurs fichiers dans un même calcul — pour rapprocher deux résultats
+obtenus séparément sans avoir à les faire repasser par la conversation. Si la réponse
 ramenée est elle-même trop volumineuse, le modèle est invité à la resserrer
 plutôt qu'à déverser le fichier brut — ou, quand il s'agit justement de
 **produire** un gros contenu, à l'écrire au fil du calcul dans une ressource,
