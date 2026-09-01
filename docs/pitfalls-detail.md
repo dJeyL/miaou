@@ -1,10 +1,43 @@
 # Pièges déjà payés — détail
 
-Développement complet des pièges résumés dans CLAUDE.md, hors ceux qui y sont
-développés inline (25, 26, 27 et les invariants transverses 16/18/21/24/28). À consulter avant
-de toucher au flux de conversation, au streaming, aux résumés/titrage, à
-l'édition de message, au patienteur, au raisonnement, au sélecteur de modèle,
-au KV cache, ou à la synchro multi-onglets.
+Développement complet des pièges 1 à 24 résumés dans `CLAUDE.md`, invariants
+transverses 16/18/21/24 compris. Les pièges **25 à 28** n'ont pas d'entrée ici :
+ils vivent dans leur doc de domaine (`docs/tools.md` pour `js__eval` et la
+matérialisation de ressource, `docs/interjections.md`, `docs/generations.md`).
+
+À consulter avant de toucher au flux de conversation, au streaming, aux
+résumés/titrage, à l'édition de message, au patienteur, au raisonnement, au
+sélecteur de modèle, au KV cache, à l'herméticité des Spaces, à l'export
+HTML, ou à la synchro multi-onglets.
+
+## Sommaire
+
+1. [Un seul message `role: 'system'`](#p1)
+2. [Injection ≠ appel d'outil](#p2)
+3. [Le résultat d'un outil n'est jamais affiché](#p3)
+4. [Agrégation SSE par `index`](#p4)
+5. [Pas de résumé sur conversation fraîche/avortée](#p5)
+6. [Tombstones](#p6)
+7. [Parsing défensif des résumés](#p7)
+8. [Indicateur d'activité](#p8)
+9. [Titrage robuste à la navigation](#p9)
+10. [Arrêt du streaming, immédiat ou différé](#p10)
+11. [Recherche historique](#p11)
+12. [Édition d'un message utilisateur](#p12)
+13. [Patienteur animé](#p13)
+14. [Affichage du raisonnement (thinking)](#p14)
+15. [Sélecteur de modèle (composer)](#p15)
+16. [**Préservation du KV cache (Ollama)** — invariant transverse](#p16)
+17. [Persistance des images jointes (content parts → descripteur)](#p17)
+18. [**Herméticité des Spaces : un seul prédicat, partout** — invariant transverse](#p18)
+19. [Recall d'image : ré-injection via message user synthétique](#p19)
+20. [Résumé orphelin après suppression concurrente](#p20)
+21. [**Export HTML standalone : un seul chemin string→HTML à risque** — invariant transverse](#p21)
+22. [`EXPORT_CSS` ne suit PAS les évolutions de `chat.css`/`tools.css`/`composer.css`](#p22)
+23. [Préviz HTML/SVG : la frontière est l'iframe sandbox](#p23)
+24. [**Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await** — invariant transverse](#p24)
+
+<a id="p1"></a>
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
@@ -13,9 +46,13 @@ au KV cache, ou à la synchro multi-onglets.
    `CONV_REF_DOCTRINE`, `MEMORY_DOCTRINE`, `FILES_DOCTRINE`, `JS_EVAL_DOCTRINE`,
    `RESOURCE_DOCTRINE` — injectée inconditionnellement) ; puis le prompt
    système utilisateur (persona/préférences, éditable en paramètres).
+<a id="p2"></a>
+
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du *texte* mis dans
    le message système par MIAOU (recherche locale). Les `tool_calls` sont
    déclenchés par le **modèle**. MIAOU n'appelle jamais d'outil de lui-même.
+<a id="p3"></a>
+
 3. **Le résultat d'un outil n'est jamais affiché.** C'est une donnée
    intermédiaire (`role: 'tool'`, `tool_call_id` exact) renvoyée au modèle. La
    boucle `runConversation` (`api.js`) va **toujours jusqu'au `finish_reason:
@@ -28,6 +65,8 @@ au KV cache, ou à la synchro multi-onglets.
    Le court-circuit laisse une trace dans le fil : ack `tool_failed` rouge poussé
    par `pushDuplicateCallAck` (tools.js) + enrichissement standard — sans lui,
    aucun handler ne tournant, l'appel était totalement invisible.
+<a id="p4"></a>
+
 4. **Agrégation SSE par `index`.** Les `tool_calls` arrivent fragmentés :
    agréger strictement par `tcDelta.index`, ne jamais parser
    `function.arguments` avant la fin du stream, reprendre le `tool_call_id` exact.
@@ -36,6 +75,8 @@ au KV cache, ou à la synchro multi-onglets.
    ouvre une nouvelle bulle pour le tour suivant ; s'il est vide, elle efface
    le live et repose le patienteur (`resetAssistant`). `wrap` est déclaré
    `let` dans `dispatchSend` pour permettre cette réaffectation.
+<a id="p5"></a>
+
 5. **Pas de résumé sur conversation fraîche/avortée.** Ne résumer (en sortie ou
    au backfill) que si `hasSubstance()` : **≥1 message user ET ≥1 assistant** au
    contenu non trivial (≥8 car.). Le but est d'écarter une conversation à peine
@@ -45,6 +86,8 @@ au KV cache, ou à la synchro multi-onglets.
    miaou-summaries »). Pas de `beforeunload` (non fiable). Le backfill
    (`runBackfill`) s'auto-garde sur la **présence d'URL** seulement (pas sur
    `configured`, qui exige une clef), pour couvrir les endpoints sans auth.
+<a id="p6"></a>
+
 6. **Tombstones.** Supprimer un souvenir pose `suppressed: true` **en conservant
    les données du résumé** (titre, texte, mots-clés, messageCount) — ça ne
    supprime pas la conversation. Une tombstone **compte comme une entrée
@@ -54,9 +97,13 @@ au KV cache, ou à la synchro multi-onglets.
    données, ou résumé jamais généré) l'UI régénère avec un loader inline sur
    l'item (`restoreSummaryItem`, ui.js) et ne retombe sur la suppression de l'entrée
    (→ candidate au backfill) qu'en cas d'échec.
+<a id="p7"></a>
+
 7. **Parsing défensif des résumés.** Le modèle enrobe parfois son JSON de fences
    ```` ```json ````. `parseSummaryJSON` nettoie puis `JSON.parse` ; en cas
    d'échec → `null`, abandon silencieux, aucune erreur affichée.
+<a id="p8"></a>
+
 8. **Indicateur d'activité** via `bgActivityStart/End` (compteur, gère les
    chevauchements). **Toujours encadrer par `try/finally`** pour que
    `bgActivityEnd()` passe même en cas d'erreur. En pratique, passer par la
@@ -66,6 +113,8 @@ au KV cache, ou à la synchro multi-onglets.
    (`summarizeIfNeeded`) en sont deux clients. Le backfill l'enveloppe une fois
    et met à jour le libellé via `bgActivityLabel('résumés n/N')` sans toucher au
    compteur.
+<a id="p9"></a>
+
 9. **Titrage robuste à la navigation.** `maybeTitle` fige `convId`/`thread`
    avant l'appel asynchrone ; au retour, `applyGeneratedTitle` écrit toujours en
    storage + liste, mais ne touche la barre du haut / le `<title>` que si on est
@@ -98,6 +147,8 @@ au KV cache, ou à la synchro multi-onglets.
    seulement si la conversation était encore sans titre (cas très rare une
    fois la régénération manuelle appliquée, puisqu'elle pose toujours un titre
    si l'appel réussit).
+<a id="p10"></a>
+
 10. **Arrêt du streaming, immédiat ou différé.** `streamCompletion` ouvre un
     `AbortController` posé sur `gen.abort` (T-1a, un seul à la fois — écrasé
     sans risque d'un tour au suivant) **seulement pendant la durée de son
@@ -117,6 +168,8 @@ au KV cache, ou à la synchro multi-onglets.
     `.ic-stop`) ; pendant l'attente d'un stop différé, `setStopping(true)`
     **désactive** le bouton et pulse `.ic-stop` (`title` : « Arrêt en cours… »)
     — un reclic ne doit pas sembler sans effet, il doit être impossible.
+<a id="p11"></a>
+
 11. **Recherche historique.** Filtre persistant module-level `convSearchFilter`
     (ui.js), appliqué par `renderConvList()` — dont la **signature reste sans
     argument** exprès, pour que tous les appelants existants (sélection, maj
@@ -126,6 +179,8 @@ au KV cache, ou à la synchro multi-onglets.
     car émis à la volée sur la liste déjà filtrée. Après `clearConvSearch`, on
     `scrollIntoView` la `.conv.active` (elle peut être très ancienne et hors
     écran une fois la liste complète restaurée).
+<a id="p12"></a>
+
 12. **Édition d'un message utilisateur.** `sendMessage` et `editUserMessage`
     partagent **un seul cœur** : `runGenerationFromCurrentThread()` (recherche
     mémoire sur le dernier message user + bannière + dispatch). Ne pas dupliquer
@@ -147,6 +202,8 @@ au KV cache, ou à la synchro multi-onglets.
     dans `sendUserText`). La textarea d'édition et la bulle restaurée par
     `cancelEdit` sourcent **`displayText`** (littéral), jamais le `content` baké —
     sinon fuite du corps de skill (issue corrigée).
+<a id="p13"></a>
+
 13. **Patienteur animé.** Remplace le caret pendant l'attente : un point qui
     pulse (`.waiter-dot`, demeure) + un mot court tiré au hasard sans répéter le
     précédent (`pickWaiterWord`, fondu via `.waiter-word.fade`). `startWaiter`
@@ -159,6 +216,8 @@ au KV cache, ou à la synchro multi-onglets.
     simultanés**. Le `cursor-blink` reste, lui, le caret de frappe **pendant** le
     streaming — ne pas confondre les deux. La transition CSS `.waiter-word`
     (.28s) doit matcher le délai du `_waiterFade` (280 ms).
+<a id="p14"></a>
+
 14. **Affichage du raisonnement (thinking).** Détection **par observation
     directe** du delta, jamais via `reasoning_effort` : `reasoningDelta(delta)`
     (api.js) lit `reasoning` / `reasoning_content` / `thinking` et renvoie la
@@ -177,6 +236,8 @@ au KV cache, ou à la synchro multi-onglets.
     **Écart assumé au brief §3** : l'icône est dans l'en-tête du message (au-
     dessus du patienteur), pas littéralement « à côté », pour un seul mécanisme
     de pliage valable en live comme au reload.
+<a id="p15"></a>
+
 15. **Sélecteur de modèle (composer).** Deux notions **strictement séparées** :
     le *modèle par défaut* (`settings.model`, global) et l'*override de
     conversation* (`conv.model`, par conversation, en mémoire via
@@ -234,6 +295,8 @@ au KV cache, ou à la synchro multi-onglets.
     ialise pas** les overrides déjà posés (`syncModelUI` masque, l'override
     persiste et reste actif). La pastille topbar reflète aussi `activeModel()`
     (identique au défaut quand pas d'override).
+<a id="p16"></a>
+
 16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` ne contient
     que du contenu **statique** : `ROOT_SYSTEM_PROMPT` (toujours, si outils
     présents) + prompt système utilisateur. Aucune dépendance à `Date.now()`
@@ -252,6 +315,20 @@ au KV cache, ou à la synchro multi-onglets.
     `buildContextBlock()` dans `buildSystemMessage()` : le point de divergence
     serait avant tout l'historique, le cache ne profiterait plus à partir du 2ᵉ
     tour.
+
+    **Ce qui compte est la stabilité d'un tour à l'autre, pas l'immuabilité
+    absolue.** Modifier un contenu statique (prompt système, doctrine, blurb
+    d'identité) invalide le préfixe **une fois**, puis il se re-stabilise dès le
+    tour suivant : indolore en usage réel, aucun budget de tokens à surveiller.
+    Le piège vise les invalidations **récurrentes** (à chaque tour), pas une
+    modification actée une fois. Ne pas transformer cette préservation en veto
+    contre tout changement de contenu statique — c'est le contresens à éviter.
+    Relèvent de la même invalidation ponctuelle assumée : le changement de Space
+    actif et le manifeste de bibliothèque (piège 18), la ré-injection d'image
+    (piège 19), la matérialisation d'un tool result passé (piège 26) et
+    l'insertion mid-séquence d'une interjection (piège 27).
+<a id="p17"></a>
+
 17. **Persistance des images jointes (content parts → descripteur, brief A
     lot 2).** Un message user portant un attachment `kind:'image'` (composer,
     trombone/drag&drop) est envoyé au modèle en **content parts OpenAI**
@@ -322,6 +399,8 @@ au KV cache, ou à la synchro multi-onglets.
     await rouvre une fenêtre de double-tir avant la mutation du thread). Sans ce
     report, l'édition détachait silencieusement l'image et le modèle régénérait
     sa réponse sans la voir.
+<a id="p18"></a>
+
 18. **Herméticité des Spaces : un seul prédicat, partout (lot C, brief D2).**
     `spaceConvIds(spaceId, convs)` (storage.js, pure — `convs` déjà chargé par
     l'appelant, pas de rechargement caché) est LA seule source de vérité pour
@@ -471,6 +550,30 @@ au KV cache, ou à la synchro multi-onglets.
     posé), la dégradation est faite PROACTIVEMENT avant même le premier appel
     réseau, pour ne pas reproduire le même rejet à chaque tour.
 
+    **Deux exceptions sanctionnées à l'herméticité**, toutes deux décidées
+    explicitement — aucune autre ne doit s'ajouter sans décision équivalente :
+
+    - **Lot F, palette de commandes.** Le submode « recherche de conversation »
+      (`cmdkConvItems`, ui.js) est **volontairement cross-Space** : il itère
+      `listAllConversations()` (TOUS les Spaces), pas `spaceConvIds`, et annote
+      chaque résultat de son Space. Les conversations du Space actif restent
+      priorisées en tête (`rankConvResults`, utils.js, pure). Ouvrir un résultat
+      d'un autre Space **suit** ce Space (`followSpace` avant `selectConv`) pour
+      ne jamais afficher un fil hors du Space actif. La recherche sidebar
+      (`renderConvList`) reste, elle, scopée. Décision Julien 2026-07-11, cf.
+      `docs/command-palette.md`.
+    - **Lot T-2, badges d'activité.** Les pastilles d'agrégation du sélecteur
+      d'Espaces et du hamburger (`spaceBadgeState` / `aggregateBadgeState`,
+      main.js) lisent l'activité de **tous** les Spaces — c'est le sens même de
+      l'affordance : sans elle, une génération d'un autre Space serait totalement
+      silencieuse. Portée strictement bornée : on expose l'**existence** d'une
+      activité et le **nom de l'Espace**, jamais un titre de conversation ni un
+      contenu. La source du working est `gen.spaceId` (figé au démarrage, T-1) ;
+      jamais un filtre `c.spaceId === x` réécrit hors de ces deux fonctions. Cf.
+      `docs/badges.md`.
+
+<a id="p19"></a>
+
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
     `role:'tool'` (brief A2, D3).** Un `recall_attachment` portant sur une image
     ne remet PAS les pixels dans le résultat de l'outil : un tool result est
@@ -513,6 +616,8 @@ au KV cache, ou à la synchro multi-onglets.
     seulement** (libellé et icône de l'ack), jamais pour le routage. Toute
     future source d'image côté outil doit suivre le même geste.
 
+<a id="p20"></a>
+
 20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`
     (main.js), `restoreSummaryItem` (ui.js) et la boucle de `runBackfill`
     (main.js) appellent tous `generateSummary` (LLM, async) puis `saveSummary(id,
@@ -532,6 +637,8 @@ au KV cache, ou à la synchro multi-onglets.
     `backfillCandidates()` verrait une liste faussée par des entrées
     orphelines).
 
+<a id="p21"></a>
+
 21. **Export HTML standalone : un seul chemin string→HTML à risque.** L'export
     (`renderExportBody`, ui.js) hérite de la sûreté de l'écran UNIQUEMENT parce
     qu'il re-rend le contenu via `renderMd`/`renderUserMd` — les mêmes renderers
@@ -549,6 +656,28 @@ au KV cache, ou à la synchro multi-onglets.
     `escHtml` de la même façon — c'est la contrepartie de ne pas re-rendre via
     marked (cf. `docs/exports.md`).
 
+    **Trois élargissements sanctionnés depuis**, chacun avec sa contrepartie :
+
+    - **D1 révisé** (export interactif optionnel, réglage `exportInteractive`) :
+      l'export peut porter un `<script>` inline (`EXPORT_SCRIPT`). C'est du JS
+      **statique build-time**, aucune donnée modèle/outil dedans, mais
+      `exportConvHtml` échappe quand même `</` avant insertion. Ne jamais y
+      interpoler de contenu modèle sans repenser cette sûreté.
+    - **E4** : `embedExportMermaid` injecte `out.svg` via `innerHTML` (Mermaid en
+      mode `strict`, cf. piège 23) — couvert par la sanitisation interne de
+      Mermaid.
+    - **Lot R** : `renderMarkdownDocBody` (conversion d'un `.md` **utilisateur**,
+      pas du contenu modèle) appelle `marked` directement — ni `renderMd`
+      (`resolveConvRefs` n'a pas de sens sur un fichier externe), ni
+      `renderUserMd` (qui échapperait le HTML inline légitime d'un `.md`) —
+      **mais passe sa sortie dans `sanitizeHtml`/DOMPurify** comme les deux
+      autres. C'est cette passe qui rend le chemin sûr : ne jamais la retirer.
+
+    Quatrième cas, à l'inverse : le `code` d'origine **modèle** de `js__eval`
+    (piège 25) rend `escHtml` impératif à l'export.
+
+<a id="p22"></a>
+
 22. **`EXPORT_CSS` ne suit PAS les évolutions de `chat.css`/`tools.css`/
     `composer.css`.** C'est une feuille dédiée écrite à la main (audit lot G),
     pas un miroir vivant de l'écran — assumé : un export est un instantané figé.
@@ -559,6 +688,8 @@ au KV cache, ou à la synchro multi-onglets.
     (`THEME_TOKENS`/`serializeThemeTokens`, voie `getComputedStyle`) restent
     synchronisés automatiquement. Revue manuelle à la charge de qui touche ce CSS :
     vérifier si `EXPORT_CSS` doit suivre (cf. `docs/exports.md`).
+
+<a id="p23"></a>
 
 23. **Préviz HTML/SVG : la frontière est l'iframe sandbox, aucune autre voie.**
     Le bouton « œil » (`decoratePre`, ui.js) sur les blocs `html`/`svg`
@@ -586,6 +717,8 @@ au KV cache, ou à la synchro multi-onglets.
     L'aperçu est déclenché par un clic explicite uniquement (jamais
     automatique — posture de sécurité ET de coût du brief), et l'export HTML
     standalone n'embarque aucune iframe de préviz.
+
+<a id="p24"></a>
 
 24. **Synchro multi-onglets : broadcast POST-commit, et relecture APRÈS l'await.**
 

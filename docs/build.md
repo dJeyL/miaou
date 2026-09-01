@@ -10,12 +10,20 @@ d'injection côté source (`storage.js`, `tools.js`).
 
 Deux placeholders dans le template :
 
-- `/* __CSS__ */` ← les `src/css/*.css` concaténés dans l'ordre `CSS_ORDER` :
-  `base, sidebar, chat, composer, drawers, tools, responsive, theme-light`.
+- `/* __CSS__ */` ← les `src/css/*.css` concaténés dans l'ordre `CSS_ORDER`.
   **L'ordre EST la cascade** : `base` porte l'`@import` des fontes,
   `theme-light` doit rester dernier.
-- `/* __JS__ */` ← les `src/js/*.js` concaténés dans l'ordre `JS_ORDER` :
-  `utils, storage, resources, skills, tools, api, ui, main`.
+- `/* __JS__ */` ← les `src/js/*.js` concaténés dans l'ordre `JS_ORDER`.
+
+**Les deux listes ne sont recopiées nulle part** — ni ici, ni dans `CLAUDE.md` :
+la seule énumération est celle de `build.py` (constantes `JS_ORDER` et
+`CSS_ORDER`, en tête de fichier), à lire là-bas. Elles l'ont été un temps aux
+deux endroits, et ont dérivé exactement comme le décrit la règle des
+énumérations fermées de `CLAUDE.md` — chaque copie mise à jour indépendamment,
+donc aucune complète : il a manqué `palette` au CSS, puis `docs`, `sync` et
+`agents` au JS, sur plusieurs lots. Une liste de fichiers n'annonce pas son
+propre compte, donc le `grep` des compteurs explicites ne peut pas l'attraper :
+seule la non-duplication protège.
 
 Les commentaires sont retirés au passage — `src/` reste la référence commentée,
 `dist/` est compact :

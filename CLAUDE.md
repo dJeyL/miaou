@@ -81,6 +81,13 @@ feature utilisateur visible) :
 grep -nE "[Dd]eux |[Tt]rois |[Qq]uatre |[Cc]inq |seuls? |uniquement " src/help.md README.md CLAUDE.md
 ```
 
+**Ce grep ne couvre que les compteurs explicites** — il ne voit pas une liste
+recopiée en prose (les fichiers de `CSS_ORDER`, les clés d'un store), qui
+n'annonce pas son propre compte. Contre celle-là il n'existe pas de grep :
+pointer la constante source, ne jamais la recopier. Même réflexe pour un compte
+posé loin de ce qu'il compte (« les quatre marqueurs », deux paragraphes plus
+bas) : nommer plutôt que compter.
+
 Piège payé le 2026-08-29 : « Trois façons de l'alimenter » pour la bibliothèque
 d'Espace, périmé depuis que le modèle peut y déposer un fichier qu'il vient de
 produire (une quatrième). `help.md` disait bien « quatre », le README était resté
@@ -116,14 +123,20 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
 (échappement `</`, `try/catch` vs `typeof`, valeurs dérivées) est dans
 `docs/build.md` — le lire avant de toucher au build ou aux points d'injection.
 
-- **`/* __CSS__ */`** ← `src/css/*.css` dans l'ordre `CSS_ORDER`
-  (`base, sidebar, chat, composer, drawers, tools, palette, responsive,
-  theme-light` — l'ordre EST la cascade ; `base` porte l'@import des fontes,
-  `theme-light` reste dernier).
-- **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER`
-  (`utils, docs, sync, storage, resources, skills, tools, api, ui, main` —
-  `docs` porte le domaine « ouvrir un document » du lot V, cf. `docs/documents.md`
-  pour la ligne de partage avec `utils`).
+- **`/* __CSS__ */`** ← `src/css/*.css` dans l'ordre `CSS_ORDER` — **l'ordre EST
+  la cascade** ; `base` porte l'@import des fontes, `theme-light` reste dernier.
+- **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER` (`docs.js` porte le
+  domaine « ouvrir un document » du lot V, cf. `docs/documents.md` pour la ligne
+  de partage avec `utils`).
+
+  **Les deux listes ne sont recopiées nulle part** — la seule énumération est
+  celle de `build.py` (constantes en tête de fichier), à lire là-bas. Elles
+  l'ont été un temps ici ET dans `docs/build.md`, et ont dérivé exactement comme
+  le décrit la règle des énumérations fermées : chaque copie mise à jour
+  indépendamment, donc aucune complète (`palette` manquant au CSS ; `docs`,
+  `sync`, `agents` au JS). Une liste de fichiers n'annonce pas son propre
+  compte : le `grep` des compteurs explicites ne peut pas l'attraper, seule la
+  non-duplication protège.
 - **`__MIAOU_CONFIG__`** ← `config.json` sérialisé (injecté dans `storage.js`,
   d'où dérivent `REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
   `BUILD_API_MODEL`).
@@ -137,9 +150,10 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
 
 Les commentaires sont retirés au passage (`strip_js_comments`/`strip_css_comments`/
 `strip_html_comments`, testés dans `run_build_unit_tests`) : `src/` reste la
-référence commentée, `dist/` est compact. Les quatre marqueurs sont à **occurrence
-unique en position de valeur**, avec une garde `try/catch` côté source pour que
-les tests QuickJS (sources non buildées) retombent sur `{}`. **`HELP_CONTENT`
+référence commentée, `dist/` est compact. Les marqueurs `__MIAOU_*` ci-dessus
+sont à **occurrence unique en position de valeur**, avec une garde `try/catch`
+côté source pour que les tests QuickJS (sources non buildées) retombent sur
+`{}`. **`HELP_CONTENT`
 n'entre jamais dans le contexte du modèle** : seul le blurb d'identité et l'enum
 de slugs y vont, le contenu des sections arrive en tool result à la demande.
 
@@ -182,8 +196,11 @@ Une ligne par piège ci-dessous — **développement complet, exemples et noms d
 fonctions dans `docs/pitfalls-detail.md`** (le lire avant de toucher au flux de
 conversation, au streaming, aux résumés/titrage, à l'édition de message, au
 patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache). Les pièges
-16, 18, 21 et 24 — invariants transverses les plus coûteux — restent développés
-inline sous la liste.
+16, 18, 21, 24 et 28 sont les **invariants transverses** : ils gouvernent des
+frontières traversées par beaucoup de code, donc on peut les enfreindre sans
+savoir qu'on entre dans leur domaine. Leur ligne ci-dessous porte pour cette
+raison le prédicat et l'interdit, pas seulement l'intitulé — de quoi arrêter le
+geste ; le développement est dans la doc pointée.
 
 1. **Un seul message `role: 'system'`.** `buildSystemMessage()` concatène tout
    dans l'ordre (`IDENTITY_BLURB` en tête, … `CODEBLOCK_DOCTRINE`, prompt
@@ -220,16 +237,27 @@ inline sous la liste.
 15. **Sélecteur de modèle (composer).** `settings.model` (défaut global) vs
     `conv.model`/`currentConvModel` (override) séparés ; résolus par
     `activeModel()`.
-16. **Préservation du KV cache (Ollama).** → invariant transverse, développé
-    sous la liste.
+16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` reste
+    **statique** ; tout contenu dynamique (date, mémoire) est injecté en préfixe
+    éphémère du dernier message user via `buildContextBlock()`, jamais dans le
+    system message. Ce qui compte est la **stabilité d'un tour à l'autre**, pas
+    l'immuabilité : modifier un contenu statique invalide le préfixe une fois,
+    puis il se re-stabilise — le piège vise les invalidations **récurrentes**.
+    Ne pas en faire un veto contre tout changement de contenu statique.
+    Cf. `docs/pitfalls-detail.md`.
 17. **Persistance des images jointes (content parts → descripteur).** Image en
     content parts OpenAI (`image_url` base64) **seulement au tour d'attache** ;
     ensuite le message user est réécrit **une fois** en string = texte + ligne(s)
     de descripteur byte-stable (`collapseAttachedMessageContent`, idempotente,
     calculée depuis les champs FIGÉS `name`/`w`/`h`/`size`, jamais recalculée
     depuis les octets).
-18. **Herméticité des Spaces : un seul prédicat, partout.** → invariant
-    transverse, développé sous la liste.
+18. **Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
+    convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
+    appartient-elle au Space actif ? » — jamais un filtre `c.spaceId === x`
+    réécrit localement. Un id hors-Space répond comme **inexistant** (pas
+    d'oracle). Deux exceptions sanctionnées seulement (palette de commandes,
+    badges d'activité), toutes deux décidées explicitement.
+    Cf. `docs/pitfalls-detail.md` et `docs/spaces.md`.
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
     `role:'tool'`.** Le handler renvoie un tool result annonciateur ; l'image
     revient via un message user synthétique émis par `expandThread`, sa dataUrl
@@ -244,8 +272,13 @@ inline sous la liste.
 20. **Résumé orphelin après suppression concurrente.** `summarizeIfNeeded`/
     `restoreSummaryItem`/`runBackfill` re-vérifient `loadConversation(id)` juste
     avant `saveSummary` ; `pruneOrphanSummariesOnInit()` nettoie au démarrage.
-21. **Export HTML standalone : un seul chemin string→HTML à risque.** →
-    invariant transverse, développé sous la liste.
+21. **Export HTML standalone : un seul chemin string→HTML à risque.** L'export
+    hérite de la sûreté de l'écran UNIQUEMENT parce qu'il re-rend via
+    `renderMd`/`renderUserMd` (sortie passée à `sanitizeHtml`/DOMPurify), jamais
+    un clone/strip du `#thread` live. `formatToolAcksHtml` est l'EXCEPTION —
+    seule fonction concaténant des chaînes d'origine modèle/outil en HTML :
+    `escHtml` y est systématique, et toute extension similaire doit faire de
+    même. Cf. `docs/pitfalls-detail.md` et `docs/exports.md`.
 22. **`EXPORT_CSS` ne suit PAS `chat.css`/`tools.css`/`composer.css`.** Feuille
     dédiée figée (lot G) : retoucher une classe réutilisée par l'export ne
     propage rien (sauf tokens de couleur via `getComputedStyle`). Revue manuelle
@@ -268,210 +301,50 @@ inline sous la liste.
     JS, jamais interpolé en template string. Ne jamais ajouter `allow-same-origin`
     ni une autre voie d'injection (cf. `docs/rendering.md`).
 24. **Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
-    → invariant transverse, développé sous la liste.
+    (a) Tout `syncPost` de mutation suit le `setItem`/`tx.oncomplete`
+    correspondant — jamais avant, et en IDB sur `tx.oncomplete`, **jamais**
+    `req.onsuccess`. (b) Un récepteur qui rehydrate relit l'état **après** son
+    `await`, jamais un instantané figé avant (bug « toujours en retard d'un
+    tour »). Règle générale : tout `await` entre la réception d'un signal et le
+    commit du rendu est une fenêtre où le store peut avancer.
+    Cf. `docs/pitfalls-detail.md` et `docs/multitab-sync.md`.
 25. **Monde guest `js__eval` clos : deux host functions, énumérées, jamais plus.**
-    L'outil natif `js__eval` (lot L) exécute du JS modèle dans un bac à sable
-    QuickJS-WASM (`runInQuickJs`, tools.js) sur le contenu textuel d'**une à
-    `JS_EVAL_MAX_INPUTS` ressources** clientes (lot L-2), chacune adressée par une
-    clé choisie par le modèle. Surface guest FERMÉE : on n'injecte QUE
-    `__miaou_text(key)` (pont host→guest d'ENTRÉE) et, **seulement si un
-    `output_handle` est fourni**,
-    `__miaou_emit()` (pont de SORTIE, lot Y) — plus un prélude JS pur
-    (`text`/`lines`/`jsonLines`/`parse`, et `emit` sur ce même conditionnel) ;
-    **jamais `fetch`, DOM, `globalThis` hôte, ni aucun autre pont** — symétrique
-    du « jamais `allow-same-origin` » de l'iframe (piège 23). Un troisième pont
-    se rajouterait sans bruit : un test compte les `ctx.newFunction` de
-    `runInQuickJs` (deux) pour que l'élargissement soit une décision, pas un
-    effet de bord. Corollaires du lot Y, tous trois structurels : la sortie est
-    **bufferisée host-side** (jamais accumulée dans le guest, dont la mémoire est
-    déjà bornée et partagée avec l'entrée) et part en **un seul** `_appendBlock`
-    (un append par `emit()` redonnerait le O(n²) qu'on corrige, déplacé côté
-    host) ; `runInQuickJs` **ne touche pas au stockage** (elle rend le buffer,
-    c'est le handler qui écrit) ; le flush est **inconditionnel**, y compris sur
-    throw/timeout/OOM — ne pas jeter un travail déjà produit n'est pas une
-    troncature, la doctrine du refus porte sur le canal de RETOUR. Trois guards
-    obligatoires
-    (`setInterruptHandler` timeout, `setMemoryLimit`, cap de sortie via
-    `checkOutputCap`), tous les handles VM disposés en `try/finally`. Overflow de
-    sortie = **REFUS explicite, pas troncature** (result texte non-`isError`, pour
-    re-cibler dans le tour). Le `code` est d'origine **modèle** : `escHtml`
-    impératif à l'export (exception piège 21). Doctrine `JS_EVAL_DOCTRINE`
-    statique, inconditionnelle dans `ROOT_SYSTEM_PROMPT` (KV-safe, piège 16). Cf.
-    **Corollaire L-2, exactement le cas que ce piège anticipait :** passer d'une à
-    N ressources d'entrée s'est fait en **élargissant** la host function existante
-    (`__miaou_text` prend un `key`), **jamais** en ouvrant un troisième pont — le
-    compte reste à deux, et le test qui l'affirme est resté vert sans qu'on touche
-    à sa valeur attendue. Une clé absente lève une exception catchable côté guest
-    par le protocole `{ error: ctx.newError(...) }` (`ctx.throwError` n'existe pas
-    en quickjs-emscripten 0.32.0, la version gelée — vérifié en spike). Cf.
-    `docs/tools.md` (section `js__eval`).
-26. **Réécriture d'historique model-triggered : matérialisation d'un tool result
-    passé (lot O-2).** `resource__from_result` (tools.js) mute **en place** le
-    `entry.result` d'un ack passé (gros contenu → handle compact + résumé modèle)
-    sur décision du modèle — première réécriture d'historique DÉCLENCHÉE par le
-    modèle (l'image→descripteur du piège 17 est automatique, pas model-triggered).
-    Trois gardes obligatoires : (a) **source unique de dérivation d'id**
-    `enrichedAckGroups` (utils.js, pure), partagée par `expandThread` (émission du
-    marqueur `[call:<id>]`) ET `findAckByCallId` (résolution) — jamais deux
-    formules, sinon ciblage muet. (b) **réentrance** (mémoire
-    `await_reentrancy_guard`) : cible gelée avant l'`await _storeBlock`,
-    **re-résolue après** ; disparue ou déjà convertie → pas de réécriture, on
-    renvoie quand même le handle valide. (c) **jamais `_makeResourceRef`**
-    (record `'inline'` → ré-inline tout, piège du lot M) : toujours
-    `formatInlineHandleForModel`, idempotence via `isInlineHandleResult`. Le
-    **rendu UI** de l'ack ne lit pas `result` → inchangé. Double coût KV assumé :
-    marqueur `[call:…]` **permanent et constant** (tous les tool results), et
-    invalidation **ponctuelle** à chaque conversion (réécriture d'un ack passé).
-    Cf. `docs/tools.md` (section « Matérialisation de ressource model-side »).
+    Le JS d'origine modèle tourne dans un bac à sable QuickJS-WASM
+    (`runInQuickJs`, tools.js). Surface guest FERMÉE : `__miaou_text(key)`
+    (entrée) et, seulement si un `output_handle` est fourni, `__miaou_emit()`
+    (sortie) — **jamais `fetch`, DOM, `globalThis` hôte, ni aucun autre pont**,
+    symétrique du « jamais `allow-same-origin` » du piège 23. Un test compte les
+    `ctx.newFunction` (deux) pour qu'un élargissement soit une décision, pas un
+    effet de bord. Trois guards obligatoires (timeout, mémoire, cap de sortie),
+    handles VM disposés en `try/finally`, overflow = **refus explicite, pas
+    troncature**. `escHtml` impératif à l'export (le `code` vient du modèle,
+    exception au piège 21). Cf. `docs/tools.md` (section `js__eval`).
+26. **Réécriture d'historique model-triggered (lot O-2).**
+    `resource__from_result` mute **en place** le `entry.result` d'un ack passé,
+    sur décision du modèle. Trois gardes : source unique de dérivation d'id
+    (`enrichedAckGroups`, partagée par l'émission et la résolution — jamais deux
+    formules) ; réentrance (cible gelée avant l'`await`, **re-résolue après**) ;
+    jamais `_makeResourceRef` (ré-inline tout — piège du lot M), toujours
+    `formatInlineHandleForModel`. Cf. `docs/tools.md` (section
+    « Matérialisation de ressource model-side »).
 27. **Interjection mid-génération : bulle assistant `_acksOnly` matérialisée,
-    élaguée à l'émission (lot Q).** Un message user tapé pendant la génération
-    (`onInterjections`, dispatchSend) est drainé à la frontière de tour, APRÈS
-    les acks du tour. Ces acks (entrées `tool-ack` autonomes dans `currentThread`,
-    pas de paire assistant+tool avant `onFinal`) n'ont **pas d'assistant hôte** :
-    sans lui, `renderThread` les rendrait **nus** au reload (branche orpheline,
-    sans en-tête ni horodatage). On matérialise donc un `assistant`
-    `{ content:'', _acksOnly:true }` — même geste que `onToolTour` — pour héberger
-    les acks : live ET reload passent par le MÊME chemin (`placeToolAck` dans la
-    bulle), **jamais** une classe DOM `.ack-shell` hors-thread (piste abandonnée :
-    artefact DOM sans contrepartie données → divergence live/reload + mappings à
-    rustiner). `content` toujours vide (le texte du tour est déjà consommé par
-    `onToolTour`, appelé AVANT les acks). `expandThread` **élague à l'émission
-    tout assistant à content blanc** (null/vide/blancs purs) : bruit KV, et 400
-    sur les backends stricts (« must have either content or tool_calls ») —
-    couvre cette bulle `_acksOnly` ET la bulle vide d'un stop sans contenu reçu
-    (`onFinal 'aborted'`) ; le flag reste comme documentation d'origine,
-    l'élagage n'en dépend plus. L'entrée reste dans le thread (rendu,
-    « Régénérer », fidélité live/reload), elle ne part juste jamais sur le fil.
-    La bulle user de
-    l'interjection est **authentique** (`buildInterjectionEntry`, jamais
-    `_synthetic` — l'injection `<miaou_context>` doit pouvoir la viser). Coût KV
-    assumé : insertion mid-séquence, **volontaire et ponctuelle** (corollaire
-    piège 16, comme la ré-injection image). Cf. `docs/interjections.md`.
+    élaguée à l'émission (lot Q).** Les acks d'un tour interrompu n'ont pas
+    d'assistant hôte : on en matérialise un à `content` vide pour que live et
+    reload passent par le MÊME chemin, **jamais** une classe DOM hors-thread.
+    `expandThread` élague à l'émission tout assistant à content blanc (bruit KV,
+    et 400 sur les backends stricts). La bulle user de l'interjection est
+    **authentique**, jamais `_synthetic`. Cf. `docs/interjections.md`.
 28. **Une génération écrit dans SA conversation, jamais dans l'écran (lot T-1).**
-    → invariant transverse, développé sous la liste.
-
-### Invariants transverses (développés)
-
-Les cinq pièges les plus coûteux, gardés inline parce qu'ils gouvernent des
-frontières traversées par beaucoup de code.
-
-**#16 — Préservation du KV cache (Ollama).** `buildSystemMessage()` reste
-**statique** ; tout contenu dynamique (date, mémoire) est injecté en préfixe
-éphémère du dernier message user via `buildContextBlock()`, jamais dans le
-system message. Corollaire du piège 18 : changer de Space ou modifier la
-bibliothèque de fichiers casse ce préfixe — assumé, mais reste statique tant
-que ces états ne bougent pas. Ce qui compte est la **stabilité d'un tour à
-l'autre**, pas l'immuabilité absolue : modifier un contenu statique (prompt,
-doctrine, blurb) invalide le préfixe une fois, puis il se re-stabilise dès le
-tour suivant — indolore en usage réel, aucun budget de tokens à surveiller. Le
-piège vise les invalidations **récurrentes** (à chaque tour), pas une
-modification actée une fois. Ne pas transformer cette préservation en veto
-contre tout changement de contenu statique.
-
-**#18 — Herméticité des Spaces : un seul prédicat, partout.** `spaceConvIds(spaceId,
-convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
-appartient-elle au Space actif ? » — sidebar, recherche, `conv__list`/
-`conv__get`, sélection d'injection de résumés, `buildMemoryEntriesBlock`
-(via `scope`), **fichiers de bibliothèque d'espace** (`getResourcesBySpace`/
-`getCachedLibraryEntriesBySpace`, filtre `spaceId === activeSpaceId`, lot Cbis).
-Jamais un filtre `c.spaceId === x` réécrit localement.
-`conv__get`/`memory__update`/`memory__delete` sur un id hors-Space
-répondent comme **inexistant** (pas d'oracle) ; même posture pour
-`files__list`/`files__read` sur un `file-<id>` étranger ou inconnu (lot Cbis).
-Changer de Space actif change le prompt système effectif : `description` du
-Space (pas un system prompt) est **ajoutée après** le prompt système
-utilisateur global (`resolveUserSystemPrompt`, brief D4 — concaténation,
-jamais substitution) — **assumé** : ça casse le préfixe KV cache (piège 16),
-mais reste statique tant qu'on ne change pas de Space. Le **manifeste de
-bibliothèque de fichiers** (`buildLibraryManifestBlock`, injecté dans
-`<miaou_context>` via `contextBlockParts().library`, lot Cbis) est de même
-nature : byte-stable tant que la bibliothèque du Space actif ne change pas
-(tri `createdAt`→`id` déterministe), casse le prefix KV cache à chaque
-ajout/suppression/atterrissage de description de fichier (PAS un résumé
-du contenu — cf. `docs/spaces.md`) — assumé, comme un changement de Space.
-**Exception sanctionnée (lot F, palette de commandes)** : le submode
-« recherche de conversation » de la palette (`cmdkConvItems`, ui.js) est
-**volontairement cross-Space** — il itère `listAllConversations()` (TOUS les
-Spaces), pas `spaceConvIds`, et annote chaque résultat de son Space. Les
-conversations du Space actif restent priorisées en tête (`rankConvResults`,
-utils.js, pure). Ouvrir un résultat d'un autre Space **suit** ce Space
-(`followSpace` avant `selectConv`) pour ne jamais afficher un fil hors du
-Space actif. La recherche sidebar (`renderConvList`) reste, elle, scopée au Space actif.
-Décision Julien 2026-07-11, cf. `docs/command-palette.md`.
-**Deuxième exception sanctionnée (lot T-2, badges d'activité)** : les pastilles
-d'agrégation du sélecteur d'Espaces et du hamburger (`spaceBadgeState` /
-`aggregateBadgeState`, main.js) lisent l'activité de **tous** les Spaces —
-c'est le sens même de l'affordance (sans elle, une génération d'un autre Space
-serait totalement silencieuse). Portée strictement bornée : on expose
-l'**existence** d'une activité et le **nom de l'Espace**, jamais un titre de
-conversation ni un contenu. La source du working est `gen.spaceId` (figé au
-démarrage, T-1) ; jamais un filtre `c.spaceId === x` réécrit hors de ces deux
-fonctions. Cf. `docs/spaces.md` et `docs/badges.md`.
-
-**#21 — Export HTML standalone : un seul chemin string→HTML à risque.**
-L'export (`renderExportBody`, ui.js) hérite de la sûreté de l'écran
-UNIQUEMENT parce qu'il re-rend via `renderMd`/`renderUserMd` (marked, sortie
-passée à `sanitizeHtml`/DOMPurify) — les mêmes renderers que le DOM live, jamais
-un clone/strip du `#thread` live. `formatToolAcksHtml` (utils.js) est
-l'EXCEPTION : seule fonction qui concatène directement des chaînes d'origine
-modèle/outil (`name`, `intent`, args JSON, result) en HTML — `escHtml` y est
-systématique, et toute future extension similaire doit faire de même (cf.
-`docs/exports.md`). **Depuis D1 révisé** (export interactif optionnel, réglage
-`exportInteractive`), l'export peut porter un `<script>` inline (`EXPORT_SCRIPT`) :
-JS statique **build-time** (aucune donnée modèle/outil dedans), mais
-`exportConvHtml` échappe quand même `</` avant insertion — ne jamais y interpoler
-de contenu modèle sans repenser cette sûreté. **Depuis E4**, deuxième exception :
-`embedExportMermaid` injecte `out.svg` (Mermaid `strict`, piège 23) via
-`innerHTML`, couverte par la sanitisation interne de Mermaid. **Depuis le lot R**,
-troisième chemin : `renderMarkdownDocBody` (conversion d'un `.md` **utilisateur**,
-pas du contenu modèle) appelle `marked` directement — ni `renderMd`
-(`resolveConvRefs` n'a pas de sens sur un fichier externe) ni `renderUserMd`
-(qui échapperait le HTML inline légitime d'un `.md`) — **mais passe sa sortie
-dans `sanitizeHtml`/DOMPurify** comme les deux autres : c'est cette passe qui
-rend le chemin sûr, ne jamais la retirer (cf. `docs/exports.md`).
-
-**#24 — Synchro multi-onglets : broadcast POST-commit, relecture APRÈS l'await.**
-Deux invariants jumeaux (lot J). **(a) Émettre après la persistance durable,
-jamais avant** : tout `syncPost` de mutation (`conv-updated`, `settings-updated`,
-`resources-updated`…) suit le `setItem`/`tx.oncomplete` correspondant — un pair
-qui rehydrate lit le store (IDB : sur `tx.oncomplete`, **jamais** `req.onsuccess`).
-**(b) Un récepteur qui rehydrate relit l'état APRÈS son `await`, jamais un
-instantané figé avant.** `openConversation` contient un `await`
-(`loadConversationResources`) : figer `currentThread` **avant** cet await perd un
-`saveConversation` d'un pair survenu pendant (bug « toujours en retard d'un
-tour »). La lecture de `conv.messages` (`projectConvMessages`, pur, testé) se fait
-**après** l'await ; un **jeton de séquence** (`_openConvSeq`) fait abandonner tout
-appel devenu obsolète. Filet : `readonly-off` relance une rehydratation. Cf.
-`docs/multitab-sync.md`.
-
-**#28 — Une génération écrit dans SA conversation, jamais dans l'écran.**
-Depuis le lot T-1, un échange en vol (stream + boucle d'outils) **appartient à
-une conversation**, pas à l'affichage : il survit à une navigation, voire à un
-changement d'Espace, et **N générations** peuvent tourner en parallèle. Trois
-questions doivent donc être posées séparément, chacune avec SON prédicat unique
-— jamais réécrit localement (même discipline que `spaceConvIds`, piège 18) :
-
-- **« Où j'écris ? »** → `gen.thread` + `persistGeneration(gen)`, jamais
-  `currentThread`/`persistCurrent` (qui suivent l'écran). Les deux chemins
-  partagent la projection pure `projectThreadToMessages`.
-- **« Est-ce que je peins ? »** → `genOwnsScreen(gen)`. Les hooks se scindent en
-  (a) muter le thread — TOUJOURS ; (b) refléter dans le DOM — seulement si vrai.
-  (a) ne dépend jamais de (b). Tout re-rendu du fil passe par
-  `rerenderCurrentThread()`, jamais `renderThread` nu (il détruirait la bulle
-  vive). Le rebranchement rend par **le même chemin que le reload**.
-- **« Dans quel référentiel je réponds ? »** → `ctx` en **argument explicite**
-  jusqu'aux handlers d'outils (`toolCtx`), jamais une globale ni une variable de
-  module — trois handlers sont `async`, un état de module relu après un `await`
-  verrait une autre génération. Critère vérifiable par **grep** : aucune lecture
-  de `currentConvId`/`activeSpaceId` dans `tools.js` (hors `toolCtx`) ni dans
-  `api.js`.
-
-Corollaire : `sending` ne signifie plus « une génération tourne » mais « la
-conversation AFFICHÉE génère » — il bascule aussi sur un simple changement de
-conversation. Ne pas s'en servir comme point d'appariement d'un cycle (le relais
-multi-onglets et le drain de synchro suivent le cycle de vie de la génération),
-ni comme garde « une génération est en vol » (utiliser `_activeGenerations.size`).
-Cf. `docs/generations.md`.
+    Trois questions distinctes, chacune avec SON prédicat unique, jamais réécrit
+    localement : « où j'écris ? » → `gen.thread`/`persistGeneration`, jamais
+    `currentThread`/`persistCurrent` (qui suivent l'écran) ; « est-ce que je
+    peins ? » → `genOwnsScreen(gen)`, qui sépare muter le thread (TOUJOURS) de
+    refléter dans le DOM (si vrai) ; « dans quel référentiel je réponds ? » →
+    `ctx` en argument explicite jusqu'aux handlers (`toolCtx`), jamais une
+    globale. Corollaire : `sending` veut dire « la conversation AFFICHÉE
+    génère », pas « une génération tourne » (pour ça, `_activeGenerations.size`).
+    Tout re-rendu du fil passe par `rerenderCurrentThread()`, jamais
+    `renderThread` nu. Cf. `docs/generations.md`.
 
 ## Domaines détaillés (`docs/`)
 
@@ -489,9 +362,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
   marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
   points d'injection et gardes `try/catch`.
-- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-15,
-  17, 19, 20, 22, 23 ci-dessus (25, 26 et 27 sont développés inline ici même,
-  comme les invariants transverses 16/18/21/24/28).
+- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
+  ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 28 sont
+  développés dans leur doc de domaine (`docs/tools.md` pour 25 et 26,
+  `docs/interjections.md` pour 27, `docs/generations.md` pour 28).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-memories`, `miaou-mcp-servers`, `miaou-api-servers`,
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
