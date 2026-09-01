@@ -254,8 +254,10 @@ async function silentCompletion(messages, opts) {
   // actif. Sert aux appels applicatifs qui doivent suivre le modèle que
   // l'utilisateur voit comme actif — l'override du composer est reflété dans la
   // pilule, donc décrire un fichier (ou résumer/titrer, cf. generateSummary,
-  // maybeTitle) avec le modèle par défaut du serveur contredirait ce que
-  // l'écran annonce (retour utilisateur, lot V-9 ; étendu au résumé ensuite).
+  // generateTitle) avec le modèle par défaut du serveur contredirait ce que
+  // l'écran annonce (retour utilisateur, lot V-9 ; étendu au résumé, puis au
+  // titrage — qui citait cette règle en commentaire sans jamais passer `model`,
+  // donc titrait toujours avec le défaut du serveur).
   const model = (o.model && o.model.trim()) || cfg.model;
 
   let payload = messages;
@@ -937,7 +939,14 @@ function normalizeTitle(raw) {
   t = t.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim();
   return t.slice(0, 60);
 }
-async function generateTitle(thread) {
+// `model` explicite (lot V-9, étendu au titrage) : l'appelant impose le modèle
+// que l'utilisateur voit comme actif, sinon silentCompletion retombe sur le
+// défaut du serveur — ce qui contredit la pilule du composer. Les deux
+// appelants ne lisent PAS la même source : maybeTitle passe `gen.model` (le
+// modèle de LA génération qui vient de finir, piège 28 — un titrage détaché ne
+// doit pas suivre l'écran), regenerateTitle passe `activeModel()` (action
+// d'écran, donc l'écran est le bon référentiel).
+async function generateTitle(thread, model) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .map(m => m.role + ': ' + messageTextForSummary(m))
@@ -945,7 +954,7 @@ async function generateTitle(thread) {
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.2, timeout: 60000 });
+  ], { temperature: 0.2, timeout: 60000, model: model });
   return normalizeTitle(out);
 }
 

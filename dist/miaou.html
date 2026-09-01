@@ -3993,7 +3993,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-01 22:18 UTC */
+/* miaou — built: 2026-09-01 22:59 UTC */
 
 /* ── utils.js ── */
 
@@ -6991,7 +6991,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788301088}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788303584}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12586,7 +12586,8 @@ function normalizeTitle(raw) {
   t = t.replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim();
   return t.slice(0, 60);
 }
-async function generateTitle(thread) {
+
+async function generateTitle(thread, model) {
   const convo = thread
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .map(m => m.role + ': ' + messageTextForSummary(m))
@@ -12594,7 +12595,7 @@ async function generateTitle(thread) {
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.2, timeout: 60000 });
+  ], { temperature: 0.2, timeout: 60000, model: model });
   return normalizeTitle(out);
 }
 
@@ -16136,6 +16137,10 @@ const COMPOSER_MODEL_MAX_RATIO = 0.55;
 const COMPOSER_MODEL_BTN_CHROME_PX = 52;
 const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
 
+const TOPBAR_MODEL_TEXT_PX = 210 - 34;
+const TOPBAR_MODEL_CHAR_PX = 10.5 * 0.6;
+const TOPBAR_MODEL_MAX_CHARS = Math.floor(TOPBAR_MODEL_TEXT_PX / TOPBAR_MODEL_CHAR_PX);
+
 function composerModelLabelBudget() {
   const row = $('composer-selectors');
   const rowWidth = row ? row.clientWidth : 0;
@@ -16163,7 +16168,12 @@ function initComposerModelLabelFit() {
 
 function syncModelUI() {
   const m = activeModel() || 'modèle';
-  const top = $('model-label');           if (top) top.textContent = m;
+
+  const top = $('model-label');
+  if (top) {
+    top.textContent = shortenModelLabel(m, TOPBAR_MODEL_MAX_CHARS);
+    top.title = m;
+  }
 
   const compLabel = $('composer-model-label');
   if (compLabel) {
@@ -21922,7 +21932,7 @@ async function maybeTitle(gen) {
   const convId = gen.convId;
   const thread = gen.thread.slice();
   setTitleEditable(convId, false);
-  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread, gen.model));
   if (title) applyGeneratedTitle(convId, title);
   setTitleEditable(convId, true);
 }
@@ -21932,7 +21942,7 @@ async function regenerateTitle() {
   const convId = currentConvId;
   const thread = currentThread.slice();
   setTitleEditable(convId, false);
-  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread, activeModel()));
   if (title) applyGeneratedTitle(convId, title);
   setTitleEditable(convId, true);
 }

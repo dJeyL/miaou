@@ -4674,6 +4674,27 @@ const COMPOSER_MODEL_MAX_RATIO = 0.55;
 const COMPOSER_MODEL_BTN_CHROME_PX = 52;
 const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
 
+// Budget du libellé de la pilule topbar (`.model-pill`, chat.css). Même besoin
+// que le composer — un nom long doit perdre son AUTEUR avant sa fin — mais pas
+// la même mécanique de mesure : la pilule a une `max-width` FIXE (210px), elle
+// ne suit aucune rangée redimensionnable. Le budget est donc constant, et un
+// ResizeObserver n'aurait rien à observer.
+//
+// Sans cette abréviation, `text-overflow: ellipsis` coupait bien le libellé
+// mais par la FIN, en gardant l'auteur : `hf.co/unsloth/gemma-3-4b…` montrait
+// l'hébergeur et masquait le modèle, soit exactement l'information utile.
+// Le CSS reste en place — il rattrape le cas où l'abréviation ne suffit pas —
+// mais il n'est plus le seul recours.
+//
+// 210px de pilule moins son chrome (paddings 10+10, gap 7, point 7) ≈ 176px de
+// texte, convertis en caractères par la largeur d'un glyphe mono à 10.5px
+// (~0,6em), comme au composer. Ces valeurs sont RECOPIÉES du CSS : les changer
+// là-bas sans les changer ici ne casse rien de visible (le CSS tronque encore),
+// ça déplace juste le seuil d'abréviation.
+const TOPBAR_MODEL_TEXT_PX = 210 - 34;
+const TOPBAR_MODEL_CHAR_PX = 10.5 * 0.6;
+const TOPBAR_MODEL_MAX_CHARS = Math.floor(TOPBAR_MODEL_TEXT_PX / TOPBAR_MODEL_CHAR_PX);
+
 function composerModelLabelBudget() {
   const row = $('composer-selectors');
   const rowWidth = row ? row.clientWidth : 0;
@@ -4707,7 +4728,13 @@ function initComposerModelLabelFit() {
 
 function syncModelUI() {
   const m = activeModel() || 'modèle';
-  const top = $('model-label');           if (top) top.textContent = m;
+  // Pilule topbar : même abréviation que le bouton composer (auteur retiré,
+  // puis fin tronquée), avec le nom complet en title pour rester récupérable.
+  const top = $('model-label');
+  if (top) {
+    top.textContent = shortenModelLabel(m, TOPBAR_MODEL_MAX_CHARS);
+    top.title = m;
+  }
   // Bouton composer : nom ABRÉGÉ (auteur retiré, puis fin tronquée) — le nom
   // complet reste dans la liste déroulée ET en title, pour rester récupérable.
   const compLabel = $('composer-model-label');

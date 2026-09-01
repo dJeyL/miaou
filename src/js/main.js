@@ -3607,7 +3607,7 @@ async function maybeTitle(gen) {
   const convId = gen.convId;                        // figé : l'utilisateur peut naviguer
   const thread = gen.thread.slice();
   setTitleEditable(convId, false);
-  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread, gen.model));
   if (title) applyGeneratedTitle(convId, title);    // sinon on garde le titre provisoire
   setTitleEditable(convId, true);
 }
@@ -3621,7 +3621,7 @@ async function regenerateTitle() {
   const convId = currentConvId;
   const thread = currentThread.slice();
   setTitleEditable(convId, false);
-  const title = await runBackgroundTask('titrage…', () => generateTitle(thread));
+  const title = await runBackgroundTask('titrage…', () => generateTitle(thread, activeModel()));
   if (title) applyGeneratedTitle(convId, title);
   setTitleEditable(convId, true);
 }
