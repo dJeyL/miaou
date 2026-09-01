@@ -13,6 +13,14 @@ const MAX_TOURS = 100;  // borne sur les tours de la boucle tool_calls
                         //  légitime, et un échange coupé au milieu coûte plus
                         //  cher que quelques tours de trop)
 
+// Silence maximal toléré ENTRE DEUX CHUNKS d'un stream avant de le tenir pour
+// mort (cf. le chien de garde de streamCompletion). Ce n'est pas une durée
+// totale : un échange légitime peut streamer bien plus longtemps, le borner
+// couperait du travail en cours. Large à dessein — un backend chargé peut
+// mettre longtemps à produire son premier token (prompt volumineux, modèle qui
+// se charge, file d'attente) ; on vise la connexion morte, pas la lenteur.
+const STREAM_IDLE_TIMEOUT_MS = 180000;
+
 // L'AbortController d'un stream appartient à SA génération (lot T-1a), jamais au
 // module : avec N générations concurrentes, un singleton ferait écraser le
 // controller de la première par la seconde — stopper l'une stopperait l'autre,
@@ -479,6 +487,34 @@ async function streamCompletion(messages, opts) {
   // tour au suivant est correct.
   const ctrl = new AbortController();
   if (o.gen) o.gen.abort = ctrl;
+
+  // Chien de garde d'INACTIVITÉ (pas de durée totale : une génération légitime
+  // peut streamer très longtemps, la borner serait la tuer en plein travail).
+  // Réarmé à chaque octet reçu ; ne se déclenche que si le flux se tait pendant
+  // STREAM_IDLE_TIMEOUT_MS d'affilée.
+  //
+  // Sans lui, une connexion perdue SANS FIN TCP propre (bascule Wi-Fi, VPN qui
+  // tombe, backend tué, machine qui retrouve le réseau après coupure) laisse
+  // `reader.read()` en attente pour toujours : la génération n'est jamais
+  // désenregistrée, `isGenerating()` reste vrai indéfiniment, et tout ce qui en
+  // dépend reste bloqué en silence — dont `summarizeIfNeeded`, qui sortait à sa
+  // première garde à chaque cycle. Symptôme payé en prod : une conversation
+  // jamais résumée pendant des heures, sur un onglet au premier plan et une
+  // machine qui ne dort pas.
+  //
+  // `silentCompletion` (plus haut) bornait déjà son fetch, `fetchModels` et
+  // l'appel MCP aussi ; le stream foreground était le seul appel réseau non
+  // borné de la base. L'abort passe par le MÊME controller que Stop : le tour se
+  // termine en `aborted: true`, contenu partiel conservé, sans rollback
+  // (piège 10) — la même issue qu'une interruption manuelle.
+  let stalled = false;
+  let idleTimer = null;
+  const clearIdleWatchdog = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+  const armIdleWatchdog = () => {
+    clearIdleWatchdog();
+    idleTimer = setTimeout(() => { stalled = true; ctrl.abort(); }, STREAM_IDLE_TIMEOUT_MS);
+  };
+
   let contentBuffer = '';
   let reasoningBuffer = '';
   let finishReason = null;
@@ -487,6 +523,13 @@ async function streamCompletion(messages, opts) {
   let usage = null;
 
   try {
+    // Le chien de garde couvre AUSSI la connexion, pas seulement le flux : un
+    // endpoint qui accepte le SYN puis ne répond jamais (proxy qui retient la
+    // requête, backend saturé, route morte) laisse ce `fetch` en attente pour
+    // toujours — la génération n'est jamais désenregistrée, exactement comme
+    // pour un flux mort. L'armer seulement après `res.body` laissait ce
+    // trou-là ouvert.
+    armIdleWatchdog();
     const res = await fetch(cfg.url + '/chat/completions', {
       method: 'POST',
       headers: {
@@ -523,9 +566,11 @@ async function streamCompletion(messages, opts) {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    armIdleWatchdog();   // réponse reçue : on repart d'un cycle plein pour le flux
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      armIdleWatchdog();   // du trafic : le flux est vivant, on repart pour un tour
       buffer += decoder.decode(value, { stream: true });
 
       let nl;
@@ -571,18 +616,25 @@ async function streamCompletion(messages, opts) {
       }
     }
   } catch (e) {
-    // AbortError : interruption volontaire (abortStream). On garde le contenu
-    // déjà reçu et on le signale via `aborted` ; pas une erreur réseau.
+    // AbortError : interruption volontaire (abortStream) OU coupure par le chien
+    // de garde d'inactivité. Dans les deux cas on garde le contenu déjà reçu et
+    // on le signale via `aborted` ; pas une erreur réseau.
+    //
+    // `stalled` distingue les deux pour l'appelant : un Stop utilisateur est une
+    // fin normale, un flux mort est un incident qu'il faut pouvoir dire. Le tour
+    // se termine identiquement (pas de rollback, piège 10) — seule l'étiquette
+    // change.
     if (e && e.name === 'AbortError') aborted = true;
     else throw e;
   } finally {
+    clearIdleWatchdog();
     // Ne retirer le controller de la génération que s'il est encore le nôtre :
     // un rejeu (reasoning_effort/vision rejetés, appels récursifs ci-dessus) en
     // a déjà posé un plus récent qu'il ne faut pas effacer.
     if (o.gen && o.gen.abort === ctrl) o.gen.abort = null;
   }
 
-  return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, usage };
+  return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, stalled, usage };
 }
 
 // ── Boucle complète d'un échange (injection + tool_calls) ───────────────────
@@ -646,7 +698,11 @@ async function runConversation(messages, hooks) {
     // finish_reason ») : main.js pose `truncated` dessus si du contenu a été
     // reçu, pour offrir « Continuer » sur une réponse stoppée à la main.
     if (result.aborted) {
-      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), 'aborted', { usage: result.usage });
+      // `stalled` voyage dans le meta, pas dans le sentinel : la fin reste
+      // 'aborted' pour tous les consommateurs existants (reflux d'interjections,
+      // `truncated`, statut d'agent), seul l'affichage s'en sert pour dire que
+      // la coupure vient du réseau et non d'un Stop.
+      if (h.onFinal) h.onFinal(result.content, joinReasoning(reasoningAcc, result.reasoning), 'aborted', { usage: result.usage, stalled: result.stalled });
       return result.content;
     }
 

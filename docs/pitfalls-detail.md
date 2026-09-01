@@ -168,6 +168,34 @@ HTML, ou à la synchro multi-onglets.
     `.ic-stop`) ; pendant l'attente d'un stop différé, `setStopping(true)`
     **désactive** le bouton et pulse `.ic-stop` (`title` : « Arrêt en cours… »)
     — un reclic ne doit pas sembler sans effet, il doit être impossible.
+
+    **Chien de garde d'inactivité (2026-09-01).** Le même `AbortController`
+    porte une seconde cause d'arrêt : `STREAM_IDLE_TIMEOUT_MS` (api.js, 180 s)
+    coupe un flux qui se tait trop longtemps. C'est un timeout d'**inactivité**,
+    pas de durée totale — armé avant le `fetch`, réarmé à **chaque chunk reçu** :
+    une génération légitime peut streamer indéfiniment tant qu'elle produit
+    quelque chose. Il couvre les DEUX phases (connexion et flux) ; l'armer
+    seulement après `res.body` laissait ouvert le cas d'un endpoint qui accepte
+    la connexion puis ne répond jamais.
+
+    Sans lui, une connexion perdue **sans FIN TCP propre** (bascule Wi-Fi, VPN,
+    backend tué) laisse `reader.read()` en attente pour toujours : le `finally`
+    de `runGenerationFromCurrentThread` n'est jamais atteint, donc
+    `unregisterGeneration` non plus — la génération reste dans
+    `_activeGenerations` indéfiniment et `isGenerating()` reste vrai. Tout ce
+    qui en dépend se bloque en silence ; le symptôme payé en prod était une
+    conversation **jamais résumée pendant des heures** (`summarizeIfNeeded`
+    sortait à sa garde `isGenerating` à chaque cycle), sur un onglet au premier
+    plan et une machine qui ne dort pas. `streamCompletion` était le seul appel
+    réseau non borné de la base — `silentCompletion`, `fetchModels` et l'appel
+    MCP bornaient déjà le leur.
+
+    La coupure emprunte le chemin d'un Stop (`aborted: true`, contenu partiel
+    conservé, pas de rollback) et se distingue par `stalled`, propagé dans le
+    **meta** de `onFinal` — jamais dans le sentinel, qui reste `'aborted'` pour
+    tous les consommateurs existants. Seul l'affichage s'en sert
+    (`showComposerError`) : sans ce signal, un flux mort serait indiscernable
+    d'un arrêt volontaire, et l'utilisateur croirait le modèle fautif.
 <a id="p11"></a>
 
 11. **Recherche historique.** Filtre persistant module-level `convSearchFilter`

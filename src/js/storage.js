@@ -484,6 +484,7 @@ function resetConvCacheForTests() {
   _convMetaCache = new Map();
   _convMessagesCache = new Map();
   _summariesCache = {};
+  _summariesInFlight = new Map();   // sinon une écriture en vol fuit d'un cas de test au suivant
   _convCacheHydrated = true;
 }
 
@@ -700,9 +701,14 @@ async function refreshConversationFromDB(id) {
 // Appelé en arrière-plan par le récepteur de synchro, jamais dans un chemin
 // d'envoi (cf. applySyncDecision, main.js).
 async function refreshSummariesFromDB() {
+  // Attendre les écritures locales en vol AVANT de lire, puis FUSIONNER plutôt
+  // qu'écraser (cf. _summariesInFlight / mergeSummaryIndex) : les deux
+  // ensemble ferment la fenêtre où un résumé fraîchement calculé disparaissait
+  // du cache parce qu'un `conv-updated` d'un pair avait déclenché la relecture
+  // entre la mutation du cache et le commit IDB.
+  await awaitPendingSummaryWrites();
   const entries = await readAllSummariesFromDB();
-  _summariesCache = {};
-  for (const e of entries) _summariesCache[e.id] = e;
+  _summariesCache = mergeSummaryIndex(_summariesCache, entries);
 }
 
 // Tous les records du store `summaries`, hors cache. Deux appelants : la
@@ -743,22 +749,92 @@ async function replaceConvRecordsFromImport(conversations, summaries) {
   });
 }
 
-function persistSummaryRecord(entry) {
-  _summariesCache[entry.id] = entry;
-  openConvDB().then(function(db) {
-    const tx = db.transaction('summaries', 'readwrite');
-    tx.objectStore('summaries').put(entry);
-    tx.onerror = function(e) { reportStorageWriteError('résumé', entry.id, e.target.error); };
-  }).catch(function(err) { reportStorageWriteError('résumé', entry.id, err); });
+// Écritures de résumé dont la transaction IDB n'a pas encore commité. Le cache
+// RAM est muté immédiatement (synchrone) mais le `put` part dans un `.then()` :
+// entre les deux, `refreshSummariesFromDB` pouvait lire un IDB qui ne portait
+// pas encore l'entrée, puis écraser le cache avec ce snapshot — le résumé
+// fraîchement calculé disparaissait, et la conversation redevenait candidate au
+// backfill (« pas enregistré, refait au reload »).
+//
+// C'est le piège 24 pris par l'autre bout : la doctrine y couvre « broadcast
+// APRÈS commit », le trou ici était une RELECTURE sans commit. Les résumés
+// n'émettant aucun broadcast propre (choix du lot J : état invisible), rien ne
+// recollait après coup. Ce registre rend la fenêtre observable ; la fusion de
+// `mergeSummaryIndex` la referme même si une écriture arrive pendant la lecture.
+let _summariesInFlight = new Map();
+
+function trackSummaryWrite(id, promise) {
+  const done = promise.catch(function() {}).then(function() {
+    if (_summariesInFlight.get(id) === done) _summariesInFlight.delete(id);
+  });
+  _summariesInFlight.set(id, done);
+  return done;
 }
 
+// Rend la promesse du COMMIT (`tx.oncomplete`), pas celle du `put`. Les
+// appelants restent libres de l'ignorer — l'écriture demeure fire-and-forget du
+// point de vue de l'UI (décision U-1 : pas de surface d'erreur dédiée) ; seul
+// `refreshSummariesFromDB` l'attend, pour ne pas lire par-dessus.
+function persistSummaryRecord(entry) {
+  _summariesCache[entry.id] = entry;
+  return trackSummaryWrite(entry.id, openConvDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('summaries', 'readwrite');
+      tx.objectStore('summaries').put(entry);
+      tx.oncomplete = function() { resolve(); };
+      tx.onerror = function(e) { reportStorageWriteError('résumé', entry.id, e.target.error); reject(e.target.error); };
+    });
+  }).catch(function(err) { reportStorageWriteError('résumé', entry.id, err); }));
+}
+
+// Symétrique : une suppression en vol doit être attendue elle aussi, sinon la
+// fusion ressusciterait l'entrée depuis le snapshot IDB pré-suppression.
 function removeSummaryRecord(id) {
   delete _summariesCache[id];
-  openConvDB().then(function(db) {
-    const tx = db.transaction('summaries', 'readwrite');
-    tx.objectStore('summaries').delete(id);
-    tx.onerror = function(e) { reportStorageWriteError('résumé', id, e.target.error); };
-  }).catch(function(err) { reportStorageWriteError('résumé', id, err); });
+  return trackSummaryWrite(id, openConvDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      const tx = db.transaction('summaries', 'readwrite');
+      tx.objectStore('summaries').delete(id);
+      tx.oncomplete = function() { resolve(); };
+      tx.onerror = function(e) { reportStorageWriteError('résumé', id, e.target.error); reject(e.target.error); };
+    });
+  }).catch(function(err) { reportStorageWriteError('résumé', id, err); }));
+}
+
+// Attend les écritures de résumé en vol. Le set est relu APRÈS l'attente et
+// l'attente rejouée tant qu'il en reste : une écriture peut en déclencher une
+// autre, et se contenter d'un instantané laisserait la dernière hors du filet.
+// Borné par `rounds` — un flux d'écritures continu ne doit pas retarder
+// indéfiniment la relecture, qui n'est de toute façon qu'un rafraîchissement.
+async function awaitPendingSummaryWrites(rounds) {
+  let left = rounds == null ? 3 : rounds;
+  while (_summariesInFlight.size && left-- > 0) {
+    await Promise.all(Array.from(_summariesInFlight.values()));
+  }
+}
+
+// Fusion d'un snapshot IDB dans l'index en mémoire. PURE et QuickJS-testable :
+// c'est elle qui porte l'invariant, la coquille async ne fait que lui fournir
+// les entrées lues (cf. project_extract_pure_helper_over_idb_stub).
+//
+// Le snapshot fait autorité sur ce qu'il contient — c'est le point de la
+// relecture : capter ce qu'un pair a écrit. Mais il ne fait PAS autorité sur ce
+// qu'il ne contient pas : une entrée locale absente du snapshot est une écriture
+// plus récente que la lecture, pas une suppression par un pair. La version
+// précédente repartait d'un objet vide et perdait donc exactement ces entrées-là.
+//
+// Corollaire assumé : une suppression faite par un PAIR n'est plus propagée par
+// cette relecture (l'entrée locale survit). C'est le bon compromis — la
+// suppression d'une conversation émet `conv-deleted`, qui passe par
+// `deleteSummaryEntry` chez le récepteur, et `pruneOrphanSummariesOnInit`
+// rattrape au démarrage. Perdre un résumé fraîchement calculé, à l'inverse,
+// n'avait aucun filet.
+function mergeSummaryIndex(local, snapshot) {
+  const out = Object.assign({}, local || {});
+  for (const e of (snapshot || [])) {
+    if (e && e.id != null) out[e.id] = e;
+  }
+  return out;
 }
 
 // Les écritures sont fire-and-forget : plus personne n'attend la promesse. Un

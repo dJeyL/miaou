@@ -404,9 +404,18 @@ function persistGeneration(gen) {
 }
 
 // ── Résumé sur inactivité ────────────────────────────────────────────────────
-// Durée d'inactivité utilisateur avant déclenchement d'un résumé de la
-// conversation courante (si substance). Réarmée à chaque activité (frappe
-// composer, envoi, changement de conversation, fin de réponse assistant).
+// Durée d'inactivité avant déclenchement d'un résumé de la conversation
+// courante (si substance). Réarmée par l'activité SUR CETTE CONVERSATION :
+// frappe composer, envoi, édition d'un message ou du titre, changement de
+// conversation, fin de réponse assistant.
+//
+// Le réarmement est délibérément ÉTROIT (cf. wireIdleSummaryActivity). Il l'a
+// été document-wide jusqu'ici — trois listeners sur `document` — et le timer
+// devenait alors inatteignable : il résume `currentConvId`, mais n'importe quel
+// clic ailleurs dans l'app (réglages, recherche d'historique, carte MCP, onglet
+// de Space, repli d'un ack) le repoussait de 60 s. Une session où l'on travaille
+// dans l'UI périphérique avec une conversation ouverte derrière ne produisait
+// jamais son résumé. Portée du réarmement = portée de ce qui est résumé.
 const IDLE_SUMMARY_MS = 60000;
 let _idleSummaryTimer = null;
 
@@ -419,6 +428,45 @@ function armIdleSummaryTimer() {
     // suffirait plus). summarizeIfNeeded re-vérifie de son côté.
     summarizeIfNeeded(currentConvId);
   }, IDLE_SUMMARY_MS);
+}
+
+// Câblage du réarmement, appelé une fois depuis init(). Trois surfaces, et
+// elles seules : le composer, le fil de messages (délégation — les zones
+// éditables d'un message en cours d'édition sont créées dynamiquement, sans
+// listener propre), et le titre de la conversation. Tout ce qui vit ailleurs
+// (drawers, sidebar, palette, écrans de Space) n'est PAS de l'activité sur la
+// conversation courante et ne doit rien repousser.
+//
+// Les changements de conversation ne passent pas par ici : selectConv,
+// newConversation et pickSpace appellent armIdleSummaryTimer directement, après
+// avoir résumé celle qu'ils quittent.
+function wireIdleSummaryActivity() {
+  const composer = $('composer-text');
+  if (composer) {
+    composer.addEventListener('input', armIdleSummaryTimer);
+    composer.addEventListener('keydown', armIdleSummaryTimer);
+  }
+  const messages = $('messages');
+  if (messages) {
+    messages.addEventListener('input', armIdleSummaryTimer);
+    messages.addEventListener('keydown', armIdleSummaryTimer);
+    messages.addEventListener('click', armIdleSummaryTimer);
+  }
+  const title = $('conv-title');
+  if (title) title.addEventListener('input', armIdleSummaryTimer);
+
+  // Départ de l'onglet : le seul moment où l'on sait que l'utilisateur cesse de
+  // regarder cette conversation, et le seul qui échappe au throttling des
+  // timers d'arrière-plan (un onglet caché voit ses setTimeout ramenés à ~1/min
+  // par le navigateur, puis bien au-delà une fois son budget épuisé — le cycle
+  // de 60 s pouvait dériver de plusieurs heures).
+  //
+  // `visibilitychange` et non pagehide/beforeunload : la génération du résumé
+  // est asynchrone et n'aboutirait pas sur une page qui se décharge. Ici la page
+  // reste vivante, seul l'onglet passe au second plan.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) summarizeIfNeeded(currentConvId);
+  });
 }
 
 // Modèle effectif pour l'échange courant : override de conversation s'il existe,
@@ -881,6 +929,17 @@ function resetToEmpty() {
   syncContextCounter();
 }
 
+// POINT D'ENTRÉE UNIQUE d'un changement de conversation déclenché par
+// l'utilisateur — sidebar, palette, lien d'ack `conv_ref`, lien d'ack d'agent,
+// bandeau d'agent vers son parent. Il porte trois choses qu'`openConversation`
+// n'a pas à connaître : le résumé de la conversation quittée, le réarmement du
+// timer d'inactivité, et la fermeture de la sidebar mobile.
+//
+// Appeler `openConversation` directement depuis un point de navigation laisse
+// donc tomber la conversation qu'on quitte, silencieusement — c'était le cas des
+// liens d'ack et du bandeau d'agent, quatre chemins qui contournaient tout ceci.
+// `openConversation` reste réservé aux ré-hydratations (récepteur de synchro),
+// qui ne quittent aucune conversation.
 function selectConv(id, reveal) {
   if (id === currentConvId) {
     // Déjà ouverte : rien à charger, mais un appel « reveal » (palette) doit
@@ -3327,7 +3386,7 @@ async function dispatchSend(matches, continuation) {
         persistGeneration(gen);
         return out;
       },
-      onFinal: (content, reasoning, finishReason, { usage } = {}) => {
+      onFinal: (content, reasoning, finishReason, { usage, stalled } = {}) => {
         if (finishReason === 'stop') endedNominal = true;
         if (isContinuation) {
           // Mute le message existant au lieu d'en pousser un nouveau : même
@@ -3362,12 +3421,22 @@ async function dispatchSend(matches, continuation) {
         const msg = { role: 'assistant', content, model, ts };
         if (serverName) msg.server = serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;   // champ séparé, persisté
-        // Réponse incomplète : champ optionnel, absent sinon. Deux causes —
-        // coupe backend ('length', limite de tokens) ou stop manuel ('aborted',
-        // seulement si du contenu a été reçu : stopper avant le premier token
-        // laisse une bulle vide, « Régénérer » suffit). Permet « Continuer ».
+        // Réponse incomplète : champ optionnel, absent sinon. Trois causes —
+        // coupe backend ('length', limite de tokens), stop manuel, ou flux mort
+        // coupé par le chien de garde d'inactivité (les deux derniers arrivent
+        // en 'aborted', et seulement si du contenu a été reçu : couper avant le
+        // premier token laisse une bulle vide, « Régénérer » suffit). Permet
+        // « Continuer ».
         if (finishReason === 'length' || (finishReason === 'aborted' && content && content.trim())) {
           msg.truncated = true;
+        }
+        // Coupure SUBIE, pas demandée : sans ce signal, un stream mort est
+        // indiscernable d'un Stop volontaire — l'utilisateur voit une réponse
+        // tronquée sans savoir que sa connexion a lâché, et croit le modèle
+        // fautif. Le bandeau « Continuer » reste disponible par ailleurs.
+        if (stalled && genOwnsScreen(gen)) {
+          setConnDot('err');
+          showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
         }
         // Réécriture UNIQUE parts→descripteur (D2) : le tour vient de se
         // terminer (normalement OU avorté, cf. commentaire de
@@ -3588,7 +3657,19 @@ async function summarizeIfNeeded(id) {
   if (entry && entry.messageCount === conv.messages.length) return;  // inchangé
 
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
-  if (!s) return;
+  // Échec : réseau tombé (avalé par runBackgroundTask), timeout, ou JSON non
+  // parsable rendu par le modèle (generateSummary rend null, cf. piège 7). Rien
+  // n'est écrit, et sans ce réarmement plus RIEN ne réessaierait avant un
+  // changement de conversation ou un reload — un modèle qui sort du JSON une
+  // fois sur dix produisait alors « parfois pas de résumé, refait au reload ».
+  //
+  // Réarmement UNIQUEMENT ici, jamais sur les sorties précoces ci-dessus
+  // (génération en vol, pas de substance, agent, tombstone, messageCount
+  // inchangé) : celles-ci sont des états stables, les réarmer entretiendrait un
+  // timer perpétuel sur une conversation inerte. Pas de compteur ni de backoff
+  // non plus — le cycle est déjà d'une minute, et la garde `messageCount` rend
+  // la tentative suivante gratuite dès qu'une a réussi.
+  if (!s) { armIdleSummaryTimer(); return; }
   if (!loadConversation(id)) return;   // supprimée pendant la génération (async) : ne pas ressusciter l'entrée
   saveSummary(id, {
     title: conv.title,
@@ -3938,13 +4019,9 @@ async function init() {
   initVisualViewport();
   wireTitleEditing();
 
-  // Résumé sur inactivité : toute frappe/clic n'importe où dans l'app (composer,
-  // édition d'un message passé, titre de conversation, réglages, cartes MCP/skills…)
-  // réarme le timer. Délégation globale plutôt qu'un handler par point de saisie
-  // (plusieurs zones éditables sont créées dynamiquement, sans oninput= dédié).
-  document.addEventListener('input', armIdleSummaryTimer);
-  document.addEventListener('keydown', armIdleSummaryTimer);
-  document.addEventListener('click', armIdleSummaryTimer);
+  // Résumé sur inactivité : réarmement scopé à la conversation courante, plus
+  // départ d'onglet (cf. wireIdleSummaryActivity).
+  wireIdleSummaryActivity();
 
   // Délégation unique pour les liens [conv_ref:ID] résolus par resolveConvRefs
   // (ui.js) en <a href="#miaou-conv:ID">. Un seul listener, posé une fois, plutôt

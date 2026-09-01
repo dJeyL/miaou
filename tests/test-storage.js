@@ -1063,6 +1063,43 @@ describe('pruneOrphanSummaries', function() {
   });
 });
 
+describe('mergeSummaryIndex', function() {
+  it('le snapshot IDB fait autorite sur ce qu\'il contient', function() {
+    var local = { c1: { id: 'c1', summary: 'vieux' } };
+    var out = mergeSummaryIndex(local, [{ id: 'c1', summary: 'ecrit par un pair' }]);
+    expect(out.c1.summary).toBe('ecrit par un pair');
+  });
+  it('conserve une entree locale absente du snapshot (ecriture en vol)', function() {
+    // Le coeur du fix : le resume vient d'etre calcule, son put IDB n'a pas
+    // encore commite, un pair declenche la relecture. L'ecraser rendrait la
+    // conversation candidate au backfill au prochain reload.
+    var local = { c1: { id: 'c1', summary: 'frais' } };
+    var out = mergeSummaryIndex(local, []);
+    expect(out.c1.summary).toBe('frais');
+  });
+  it('ajoute une entree presente seulement dans le snapshot', function() {
+    var out = mergeSummaryIndex({}, [{ id: 'c2', summary: 'du pair' }]);
+    expect(out.c2.summary).toBe('du pair');
+  });
+  it('ne mute pas l\'index local passe en argument', function() {
+    var local = { c1: { id: 'c1', summary: 'a' } };
+    mergeSummaryIndex(local, [{ id: 'c2', summary: 'b' }]);
+    expect(Object.keys(local).length).toBe(1);
+  });
+  it('preserve une tombstone locale que le snapshot ignore', function() {
+    var local = { c1: { id: 'c1', suppressed: true } };
+    var out = mergeSummaryIndex(local, []);
+    expect(out.c1.suppressed).toBe(true);
+  });
+  it('ignore une entree de snapshot sans id, sans exception', function() {
+    var out = mergeSummaryIndex({ c1: { id: 'c1' } }, [null, {}, { id: 'c2' }]);
+    expect(Object.keys(out).length).toBe(2);
+  });
+  it('arguments absents : rend un objet vide plutot que de lever', function() {
+    expect(Object.keys(mergeSummaryIndex(null, null)).length).toBe(0);
+  });
+});
+
 describe('genMemoryId', function() {
   it('préfixe m + base36', function() {
     var id = genMemoryId();

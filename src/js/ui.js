@@ -1306,7 +1306,7 @@ const ACK_KINDS = {
             className: 'ack-conv-link',
             href: 'javascript:void(0)',
             textContent: m.title || 'sans titre',
-            onclick: () => openConversation(m.convId),
+            onclick: () => selectConv(m.convId),
           })
         : document.createTextNode(m.title || 'sans titre');
       if (m.intent) {
@@ -1897,7 +1897,7 @@ function renderAgentAckLabel(m, el, verb) {
         className: 'ack-conv-link',
         href: 'javascript:void(0)',
         textContent: text,
-        onclick: () => openConversation(m.convId),
+        onclick: () => selectConv(m.convId),
       })
     : document.createTextNode(text);
   if (m.intent) {
@@ -3350,7 +3350,7 @@ function syncAgentBanner(conv) {
   if (parent) {
     const label = convLabel(parent) || 'Nouvelle conversation';
     link.textContent = label;
-    link.onclick = () => openConversation(parent.id, true);
+    link.onclick = () => selectConv(parent.id, true);
     link.style.pointerEvents = '';
     if (btn) {
       btn.hidden = false;
@@ -3363,7 +3363,7 @@ function syncAgentBanner(conv) {
       // Cible relue à CHAQUE appel, jamais figée : un agent peut être réouvert
       // après que son parent a été renommé, et syncAgentBanner est rappelée à
       // chaque ouverture de conversation.
-      btn.onclick = () => openConversation(parent.id, true);
+      btn.onclick = () => selectConv(parent.id, true);
     }
   } else {
     link.textContent = 'conversation supprimée';
@@ -5678,6 +5678,11 @@ async function restoreSummaryItem(id) {
     return;
   }
 
+  // Réchauffage AVANT lecture (lot U-1) : une conversation évincée de l'étage 2
+  // sort de loadConversation avec `messages: []`, donc sans substance — la
+  // tombstone était levée sans rien régénérer, en silence. Même précaution
+  // qu'openConversation, qui warm avant de projeter son thread.
+  await warmConversation(id);
   const conv = loadConversation(id);
   if (!conv || !hasSubstance(conv.messages)) {   // rien à régénérer
     restoreSummary(id);

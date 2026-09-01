@@ -225,7 +225,12 @@ geste ; le développement est dans la doc pointée.
 10. **Arrêt du streaming** via `AbortController` unique ; `aborted: true` sans
     rollback, court-circuite le tour suivant. Pendant un tour d'outils
     (`gen.abort` momentanément null), Stop pose `gen.stopRequested` : honoré à
-    la frontière de tour suivante, jamais un outil en vol interrompu.
+    la frontière de tour suivante, jamais un outil en vol interrompu. Le même
+    controller porte le **chien de garde d'inactivité** (`STREAM_IDLE_TIMEOUT_MS`,
+    api.js) : réarmé à chaque chunk, il couvre connexion ET flux — sans lui une
+    connexion morte sans FIN laisse la génération enregistrée à jamais et
+    `isGenerating()` vrai (conversation jamais résumée, payé en prod). Tout
+    appel réseau reste borné, sans exception.
 11. **Recherche historique.** Filtre persistant `convSearchFilter` ;
     `renderConvList()` reste sans argument exprès.
 12. **Édition d'un message utilisateur.** `sendMessage`/`editUserMessage`
