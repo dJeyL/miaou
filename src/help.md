@@ -413,7 +413,12 @@ Dans ce fil, tu peux **arrêter** un agent avec le bouton stop, comme n'importe
 quelle réponse. Le modèle en est prévenu et sait que c'est toi qui l'as arrêté.
 
 Tant qu'il travaille, tu peux lui écrire comme dans n'importe quelle
-conversation. **Une fois son travail fini, son fil passe en lecture seule** :
+conversation : ton message se met en file et lui est transmis à sa prochaine
+étape, ce qui te permet de le réorienter sans attendre — utile quand tu vois
+qu'il part de travers, alors que la conversation qui l'a lancé, elle, ne verra
+que son compte rendu final. S'il finit avant d'avoir atteint cette étape, ton
+message reste visible au-dessus du composer sans avoir été envoyé.
+**Une fois son travail fini, son fil passe en lecture seule** :
 son résultat est déjà remonté à la conversation qui l'a lancé, et celle-ci a
 repris sa route — un message envoyé là n'arriverait à personne. Le bandeau du
 haut te dit dans quel état il s'est arrêté (terminé, interrompu, en erreur…).
@@ -593,7 +598,12 @@ Quelques repères pour te déplacer dans MIAOU :
   Ce message appartient à **la conversation où tu l'as tapé** : si tu pars
   ailleurs, il ne te suit pas — tu le retrouves en revenant, et il part bien
   dans cette conversation-là, même si tu regardes autre chose au moment où elle
-  le reçoit. Chaque conversation a donc sa propre file.
+  le reçoit. Chaque conversation a donc sa propre file. Cela vaut aussi dans le
+  fil d'un **agent** au travail : tu peux le réorienter pendant qu'il enchaîne
+  ses outils, sans passer par la conversation qui l'a lancé (sujet `agents`).
+  S'il termine avant d'avoir atteint son prochain point d'étape, ton message
+  reste affiché au-dessus du composer, sans être parti : tu peux le copier ou
+  l'écarter.
 - **Plusieurs réponses à la fois** : quitter une conversation ne l'interrompt
   plus. Tu peux poser une question, partir vers une autre conversation — ou même
   changer d'Espace — pendant que le modèle rédige : il continue, va au bout de

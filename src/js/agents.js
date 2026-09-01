@@ -727,11 +727,35 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         if (assistantText != null) fields.assistantText = assistantText;
         updateLastPendingToolAck(fields);
       },
-      // Un agent n'a PAS d'interjections : la file est un état d'ÉCRAN (le
-      // composer y écrit ce que l'utilisateur tape en regardant une
-      // conversation). Retourner null la laisse intacte pour la génération qui
-      // la regarde — même règle qu'une génération détachée (docs/generations.md).
-      onInterjections: () => null,
+      // Interjections DANS le fil d'un agent (X-1f). Le lot X-1e câblait ici
+      // `() => null`, au motif que la file était un état d'ÉCRAN — prémisse
+      // devenue fausse dans le lot MÊME qui l'écrivait : X-1e a clefé la file
+      // par conversation et fait cibler les deux drains sur `gen.convId`. Le
+      // `null` restait donc en travers d'un mécanisme qui, lui, savait déjà à
+      // qui appartenait la file. Un agent qui enchaîne des tool calls est
+      // précisément le cas où réorienter a de la valeur : c'est le seul moment
+      // où l'utilisateur voit passer un travail qui part de travers, alors que
+      // le parent, lui, ne verra que le compte rendu final.
+      //
+      // Même corps que le drain d'écran (main.js) MOINS tout le DOM : un agent
+      // n'a pas de bulle à clore, pas de wrap à rouvrir, pas de puce à animer
+      // (le rail montre la file de la conversation AFFICHÉE — si c'est ce fil,
+      // takePendingInterjections s'en charge ; sinon il n'y a rien à l'écran).
+      // Structure alignée sur `onAgentResults` du chemin détaché, ci-dessous.
+      onInterjections: async () => {
+        const batch = takePendingInterjections(gen.convId);
+        if (!batch.length) return null;
+        const literal = joinInterjectionLiterals(batch.map(b => b.literal));
+        if (!literal) return null;
+        // Échec résiduel de résolution (skill désactivée pendant la génération) :
+        // littéral tel quel — chaque élément a déjà passé la garde à l'enqueue.
+        let r = null;
+        try { r = await resolveSend(literal); } catch (e) { r = null; }
+        const content = (r && r.ok) ? r.content : literal;
+        gen.thread.push(buildInterjectionEntry(literal, content, Date.now()));
+        persistGeneration(gen);
+        return [{ role: 'user', content: content }];
+      },
       onFinal: (content, reasoning, finishReason) => {
         sawFinal = true;
         const ts = Date.now();

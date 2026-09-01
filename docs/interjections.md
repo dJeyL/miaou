@@ -63,6 +63,14 @@ le composer le compte rendu d'un agent.
   | fin **nominale** | drain A par le chemin d'envoi normal (`sendUserText` → `dispatchSend`) | drain A par le chemin **détaché** : `parentThreadFor` + `startParentWakeGeneration` (agents.js) |
   | fin **non nominale** | reflux composer (« stop veut dire stop ») | la file **reste en place** |
 
+  **Cas de l'agent (X-1f)** : son drain B est le même que partout (hook
+  `onInterjections` de `driveAgentConversation`, agents.js — corps de l'écran
+  moins le DOM). Il n'a en revanche **pas de drain A** : à la fin de son cycle
+  de vie, `deliverAgentResult` a déjà notifié le parent et le fil passe en
+  lecture seule. Une file non drainée y **échoue visiblement** plutôt que de
+  refluer ou de disparaître (cf. « File échouée » plus bas, et
+  `docs/agents.md`).
+
   Le drain A détaché réutilise le chemin du **réveil de parent** (lot X-1) plutôt
   que d'en ouvrir un second : c'est le même geste — pousser une entrée user dans
   le thread d'une conversation, puis démarrer une génération dessus.
@@ -93,6 +101,11 @@ double-Entrée pendant l'`await resolveSend`. Texte seul (arbitrage lot Q) : une
 pièce jointe en attente refuse la mise en file (erreur visible, jamais de
 détachement silencieux).
 
+**Aucune garde par type de conversation** : un fil d'agent met en file comme les
+autres (X-1f). X-1e y opposait un refus visible, dérivé d'un
+`onInterjections: () => null` dont la justification était déjà périmée — cf.
+`docs/agents.md` pour le détail et le motif à retenir.
+
 ## Puces : rail visible, annulable, éditable
 
 Rail `#ij-rail` au-dessus du composer (`index.html`), rendu par
@@ -103,7 +116,13 @@ puce (`buildInterjectionChip`) :
   plonge (`dismissInterjectionChip(id, 'down')`).
 - **Édition** (clic sur le corps) → `editInterjection` : retire du registre,
   re-remplit le composer (préfixé à un brouillon éventuel). Ré-appuyer Entrée
-  RE-MET EN FILE (le mode file reste actif tant que `sending`).
+  RE-MET EN FILE (le mode file reste actif tant que `sending`). **Refusée sous
+  `isComposerReadonly()`** (X-1f) : le composer où elle refluerait est
+  verrouillé, la puce serait détruite en échange d'un texte non modifiable et
+  non envoyable.
+- **Copie** (X-1f) → écrit le littéral dans le presse-papiers, avec le retour
+  visuel de `copyMsg`. Offerte en permanence, mais c'est en lecture seule
+  qu'elle devient la seule voie de récupération.
 - **Drain en cours** : `markInterjectionChipsDraining` fige les puces du batch
   (classe `.ij-draining`, non interactives) DANS le splice synchrone de
   `takePendingInterjections`, AVANT tout `await` — l'invariant de réentrance
@@ -184,6 +203,26 @@ puces vidées. « Stop veut dire stop » : rien ne part tout seul après un arr�
 rien n'est perdu. Seul `finish_reason: 'stop'` (`endedNominal = true`, posé dans
 `onFinal`) déclenche le drain A.
 
+### File échouée : quand ni le drain ni le reflux ne s'appliquent (X-1f)
+
+Le reflux ci-dessus suppose un composer qui peut recevoir. Dans le fil d'un
+**agent**, cette hypothèse tombe : quelle que soit l'issue, `deliverAgentResult`
+a notifié le parent et le fil passe en lecture seule. Une file encore pleine à ce
+moment-là (typiquement : l'agent rédigeait sa conclusion, hors de portée du drain
+B) ne peut donc ni partir ni refluer.
+
+Elle **échoue visiblement**, troisième issue à côté du drain et du reflux :
+
+- le rail SURVIT au verrou — `applyReadonlyState` rappelle
+  `renderInterjectionRail`, dont l'apparence et les affordances dérivent
+  d'`isComposerReadonly()` ;
+- la légende cesse de promettre un envoi (« jamais transmise — la conversation
+  s'est terminée avant ») et la balise s'éteint (`.ij-rail-stranded`) ;
+- l'édition est refusée, la **copie** et l'annulation restent.
+
+Le principe est celui du reflux, pas une exception : rien ne part tout seul,
+rien ne disparaît en silence. Seule la destination change, faute de composer.
+
 ## Réentrance
 
 `takePendingInterjections` **splice le snapshot du registre synchroniquement
@@ -207,3 +246,11 @@ de tout assistant à content blanc — null/vide/blancs purs — les non-vides
 restant émis). Le câblage orchestration (timing du hook, branche
 composer, drains, rendu des puces) relève de la vérification manuelle /
 Playwright — voir `docs/manual-tests.md`.
+
+`tests/test-agents.js` couvre la file clefée par conversation (indépendance,
+vidage de clef) et, depuis X-1f, le fait qu'un fil d'agent n'y est pas un cas
+particulier, plus l'entrée que son drain construit (`buildInterjectionEntry`).
+Bout en bout : `verify-x1e.mjs` section F — mise en file acceptée dans un agent,
+drain B observé dans SON payload, non-fuite vers le parent, file échouée sous
+lecture seule (rail survivant, édition refusée, annulation possible), et
+sélecteurs de modèle/raisonnement bloqués.

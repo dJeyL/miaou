@@ -1251,6 +1251,53 @@ describe('File d\'interjections clefée par conversation (X-1e)', function() {
     expect(interjectionsFor(null).length).toBe(0);
     expect(interjectionsFor('').length).toBe(0);
   });
+  it('une conversation d\'AGENT a une file comme les autres (X-1f)', function() {
+    // X-1e refusait la mise en file dans un fil d'agent, parce qu'un agent
+    // câblait `onInterjections: () => null`. Les deux sont tombés ensemble : le
+    // registre n'a jamais eu de notion de type de conversation, et c'est ce qui
+    // rend la levée mécanique — rien ici ne distinguait le cas.
+    reset();
+    localStorage.clear();
+    saveConversation({ id: 'p9', title: 'parent', timestamp: 1, messages: [] });
+    saveConversation({ id: 'a9', title: '', timestamp: 2, messages: [], parentConvId: 'p9' });
+    _pendingInterjections.set('a9', [{ id: 'i9', literal: 'corrige le tir' }]);
+    expect(isAgentConversation(loadConversation('a9'))).toBe(true);
+    expect(interjectionsFor('a9').length).toBe(1);
+    var batch = takePendingInterjections('a9');
+    expect(batch.length).toBe(1);
+    expect(batch[0].literal).toBe('corrige le tir');
+  });
+});
+
+describe('Entrée d\'interjection drainée par un agent (X-1f)', function() {
+  // Le drain d'un agent (agents.js) et celui de l'écran (main.js) construisent
+  // leur entrée de thread par la MÊME fonction pure. Ce qui est testable ici est
+  // cette entrée ; le câblage des deux hooks, lui, relève du verify e2e (les
+  // tests QuickJS ne couvrent pas l'orchestration).
+  it('un littéral sans skill donne une entrée user sans displayText', function() {
+    var e = buildInterjectionEntry('corrige le tir', 'corrige le tir', 1234);
+    expect(e.role).toBe('user');
+    expect(e.content).toBe('corrige le tir');
+    expect(e.ts).toBe(1234);
+    expect('displayText' in e).toBe(false);
+  });
+  it('une skill bakée garde le littéral en displayText', function() {
+    // Doctrine displayText : content = ce qui part sur le fil, displayText = ce
+    // que l'utilisateur a tapé. C'est aussi ce qui rend l'entrée byte-stable au
+    // rejeu (expandThread relit content tel quel).
+    var e = buildInterjectionEntry('/relire le brief', '<skill>…</skill>\nrelire le brief', 5);
+    expect(e.content).toBe('<skill>…</skill>\nrelire le brief');
+    expect(e.displayText).toBe('/relire le brief');
+  });
+  it('plusieurs littéraux fusionnent en UN message, jamais N', function() {
+    // Arbitrage lot Q, inchangé : le fil d'un agent ne doit pas plus recevoir
+    // deux messages user consécutifs que celui d'une conversation racine.
+    var lit = joinInterjectionLiterals(['d\'abord ceci', 'puis cela']);
+    expect(lit).toBe('d\'abord ceci\n\npuis cela');
+    var e = buildInterjectionEntry(lit, lit, 7);
+    expect(e.role).toBe('user');
+    expect(e.content).toContain('puis cela');
+  });
 });
 
 describe('agentResultBodyHtml — repli du compte rendu (X-1e)', function() {

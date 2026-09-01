@@ -27,7 +27,8 @@ Figtree/Fira Code).
   modèle travaille ne l'interrompt pas — il se met en file et lui est transmis à
   la prochaine étape d'outils, pour le réorienter avant qu'il ait fini. Message
   en attente modifiable ou annulable, et rattaché à sa conversation (chacune a
-  sa file) — cf. [docs/interjections.md](docs/interjections.md).
+  sa file, y compris le fil d'un agent au travail) — cf.
+  [docs/interjections.md](docs/interjections.md).
 - **Générations en parallèle** : une réponse en cours appartient à sa
   conversation, pas à l'écran. Naviguer ailleurs (ou changer d'Espace) ne
   l'interrompt pas, et plusieurs peuvent tourner de front ; des pastilles

@@ -402,6 +402,24 @@
    continuation/copie de conv). pointer-events:none suffit à bloquer le clic ;
    opacity signale l'état. Ne touche PAS au contenu du thread (lecture intacte). */
 body.conv-readonly .composer-inner { opacity: 0.55; }
+/* Sélecteurs de modèle et de raisonnement : le clic est coupé en lecture seule
+   (X-1f). Ils choisissent le modèle du PROCHAIN envoi — sur un fil qui n'en
+   acceptera plus aucun, ils ne décident de rien. Le blocage est d'abord en JS
+   (toggleComposerModelMenu / toggleComposerReasoningMenu refusent d'ouvrir) ;
+   cette règle est la moitié visible : curseur et survol cessent de promettre un
+   menu. Défaut constaté en usage sur le fil d'un agent terminé, où le menu
+   s'ouvrait ET héritait de l'`opacity` ci-dessus — une `opacity` < 1 crée un
+   contexte d'empilement dont aucun descendant ne sort, donc le déroulant se
+   rendait translucide sur le fil. Le fermer au clic traite la cause ; sans lui,
+   il aurait fallu déplacer l'opacité sur les enfants pour la contourner. */
+body.conv-readonly .composer-model-btn,
+body.conv-readonly .pill-select-btn {
+  pointer-events: none;
+}
+/* `.ctx-counter` n'est VOLONTAIREMENT pas dans la liste ci-dessus, même raison
+   que `.conv-parent-btn` : l'inspecteur de contexte est de la LECTURE. Lire ce
+   qui a été envoyé au modèle garde tout son sens sur un fil clos — c'est même
+   là qu'on vient le consulter. Ne pas l'y ajouter par symétrie. */
 body.conv-readonly .msg-edit,
 body.conv-readonly .msg-regen,
 body.conv-readonly .msg-continue {
@@ -519,7 +537,7 @@ body.conv-readonly .conv-retitle-btn { pointer-events: none; }
 .skill-ac-opt.active { background: var(--accent-dim); }
 .skill-ac-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); font-weight: 600; }
 .skill-ac-name { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-skill-error, .composer-attach-error { font-size: 12px; color: var(--err); margin-top: 6px; }
+.composer-error, .composer-attach-error { font-size: 12px; color: var(--err); margin-top: 6px; }
 
 /* ═══ Rail d'interjections (lot Q) ═══
    Messages tapés PENDANT une génération, en attente de drain à la frontière de
@@ -588,6 +606,33 @@ body.conv-readonly .conv-retitle-btn { pointer-events: none; }
   transition: opacity 150ms var(--ease), color 150ms var(--ease), background 150ms var(--ease);
 }
 .ij-x:hover { color: var(--err); background: var(--surface-4); }
+
+/* Copie : même gabarit que .ij-x, teinte d'accent au survol (récupérer n'est
+   pas détruire). Offerte en permanence, mais c'est en lecture seule qu'elle
+   devient la SEULE voie de récupération — l'édition y est fermée. */
+.ij-copy {
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  width: 22px; height: 22px;
+  background: none; border: none; color: var(--text-3);
+  border-radius: 6px; cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms var(--ease), color 150ms var(--ease), background 150ms var(--ease);
+}
+.ij-chip:hover .ij-copy { opacity: .45; }
+.ij-copy:hover { opacity: 1; color: var(--accent); background: var(--surface-4); }
+.ij-chip.ij-draining .ij-copy { visibility: hidden; }
+
+/* File ÉCHOUÉE (X-1f) : la génération s'est terminée avant que le drain ne
+   passe (typiquement un agent qui finit sa rédaction pendant qu'on tape), et le
+   composer est en lecture seule. Le rail reste pour que le texte ne disparaisse
+   pas en silence, mais il cesse d'annoncer un envoi : balise éteinte (plus rien
+   n'est en route), liséré neutre, et l'affordance d'édition retirée — seules
+   restent la copie et l'annulation. */
+.ij-rail-stranded .ij-beacon { animation: none; opacity: .3; background: var(--text-3); box-shadow: none; }
+.ij-rail-stranded .ij-chip { cursor: default; border-left-color: var(--border-2); }
+.ij-rail-stranded .ij-chip:hover { border-color: var(--border-2); background: var(--surface-2); }
+.ij-rail-stranded .ij-hint { display: none; }
 
 /* Drain en cours : puce figée (plus d'édition/annulation), liséré lumineux qui
    balaie la carte — « embarquement » (l'invariant de réentrance, visible). */

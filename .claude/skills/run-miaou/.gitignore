@@ -1,3 +1,16 @@
 node_modules/
 *.png
 tmp/
+
+# Artefacts de vérification produits par les scripts (captures, exports,
+# téléchargements, fixtures de spike). Jamais versionnés : ils sont volumineux,
+# binaires pour la plupart, et re-générés à chaque exécution. `tmp/` couvrait
+# déjà le répertoire nu, pas les préfixés — un `git add -A` les a happés une
+# fois (2026-09-01), au point de les emporter vers le dépôt public.
+# `spike-v45-fixtures/` est nommé explicitement plutôt que par un motif
+# `spike-*-fixtures/` : `spike-v8-fixtures/`, lui, EST versionné (générateurs
+# de PDF, pas des binaires produits) et un motif large le masquerait au premier
+# fichier qu'on y ajouterait.
+tmp-*/
+shots-*/
+spike-v45-fixtures/

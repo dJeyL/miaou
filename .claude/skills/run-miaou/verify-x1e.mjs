@@ -10,6 +10,18 @@
 //   B. LECTURE SEULE d'un agent dont le travail est terminé.
 //   C. Réponses d'agent NON ÉDITABLES et REPLIÉES par défaut dans le parent.
 //
+// Étendu au complément X-1f (section F), qui rouvre ce que X-1e avait fermé
+// sans le décider :
+//
+//   F. INTERJECTIONS DANS LE FIL D'UN AGENT. X-1e refusait la mise en file
+//      (« Cette conversation est celle d'un agent… ») parce qu'un agent câblait
+//      `onInterjections: () => null` — justification déjà périmée dans le lot
+//      qui l'écrivait, puisque X-1e venait de clefer la file par conversation.
+//      Un agent draine désormais la sienne à la frontière de tour. Restent
+//      couverts ici : la fenêtre NON drainable (l'agent finit sa rédaction
+//      avant le drain — la file « échoue » et le rail survit au verrou), et le
+//      blocage des sélecteurs de modèle/raisonnement en lecture seule.
+//
 // Montage repris de verify-agents.mjs : stub SSE gaté par conversation, mêmes
 // marqueurs MARK-/AGENT-, mêmes deux pièges (filtrer les appels silencieux,
 // gater AVANT finish_reason).
@@ -642,6 +654,199 @@ check('E6. et la liste de ses PARAMÈTRES',
   drawerItem && drawerItem.params.indexOf('prompt') >= 0 &&
   drawerItem.params.indexOf('intent') >= 0);
 await shot('08-drawer-agent-spawn.png');
+
+// ═══ F. Interjection DANS le fil d'un agent (X-1f) ═════════════════════════
+console.log('\n— F. Interjection dans le fil d\'un agent');
+
+// X-1e refusait la mise en file dans une conversation d'agent (« Cette
+// conversation est celle d'un agent… »), au motif qu'un agent câblait
+// `onInterjections: () => null`. Cette justification était périmée dans le lot
+// même qui l'écrivait : X-1e venait de clefer la file par conversation. On
+// vérifie ici les deux moitiés — la mise en file est acceptée, ET le drain tire
+// pour de bon à la frontière de tour de l'agent.
+
+// La section E laisse le drawer des outils OUVERT : il recouvre le composer,
+// et `send()` (fill + Enter) taperait dans le vide.
+await page.evaluate(() => { if (typeof closeTools === 'function') closeTools(); });
+await page.waitForTimeout(250);
+await newConv();
+await page.evaluate(() => { window.__gates = {}; window.__released = {}; window.__sent = []; });
+// Nom QUALIFIÉ obligatoire : agent__spawn valide `tools` contre les noms
+// exposés (« miaou__conv__list »), et un nom nu est refusé avec la liste des
+// valides — l'agent n'est alors jamais créé.
+await armSpawn('EEE', 'FFF', { intent: 'Compiler le rapport', tools: ['miaou__conv__list'] });
+// L'agent fait un TOUR D'OUTILS : c'est ce qui lui donne une frontière de tour,
+// donc un point de drain. Sans lui, il rédigerait sa réponse d'un trait et
+// l'interjection arriverait après coup (le cas F5, plus bas).
+await page.evaluate(() => { window.__toolTags['A:FFF'] = true; });
+await gate('A:FFF');
+await send('MARK-EEE lance un agent qui outille');
+await page.waitForTimeout(700);
+const parentE = await page.evaluate(() => currentConvId);
+const agentF = await childOf(parentE);
+check('F0. l\'agent est créé et retenu sur son tour d\'outils', !!agentF);
+
+// On ouvre son fil pendant qu'il travaille, et on tape.
+await page.evaluate((id) => openConversation(id), agentF);
+await page.waitForTimeout(300);
+const composerOpenOnAgent = await page.evaluate(() => !document.getElementById('composer-text').disabled);
+check('F1. le composer d\'un agent AU TRAVAIL est ouvert', composerOpenOnAgent);
+
+await page.fill('#composer-text', 'désobéis un peu : donne aussi l\'identifiant');
+await page.press('#composer-text', 'Enter');
+await page.waitForTimeout(300);
+
+// LA RÉGRESSION DU LOT : sous X-1e, ce chemin affichait une erreur composer et
+// la file restait vide.
+const railOnAgent = await railIds();
+check('F2. LE POINT DU LOT : la mise en file est ACCEPTÉE dans un fil d\'agent',
+  railOnAgent.length === 1);
+const errShown = await page.evaluate(() => {
+  const el = document.getElementById('composer-error');
+  return !!el && !el.hidden;
+});
+check('F2bis. et aucune erreur composer n\'est affichée', errShown === false);
+const queuedOnAgent = await page.evaluate((id) => interjectionsFor(id).length, agentF);
+check('F2ter. la file est bien celle de l\'AGENT, pas de son parent', queuedOnAgent === 1);
+check('F2quater. et le parent n\'a rien reçu',
+  (await page.evaluate((id) => interjectionsFor(id).length, parentE)) === 0);
+await shot('09-interjection-dans-fil-agent.png');
+
+// Drain : on libère le tour d'outils. L'interjection doit partir DANS le
+// payload de l'agent, à la frontière de tour, avant sa relance.
+await page.evaluate(() => { window.__sent = []; });
+await release('A:FFF');
+await page.waitForTimeout(1200);
+
+const agentPayloads = await page.evaluate(() =>
+  window.__sent.filter(x => x.tag === 'A:FFF').map(x => (x.body.messages || [])
+    .filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content : '')));
+const sawInterjection = agentPayloads.some(msgs =>
+  msgs.some(t => t.indexOf('désobéis un peu') >= 0));
+check('F3. DRAIN B : l\'interjection part dans le payload DE L\'AGENT', sawInterjection);
+
+const agentThreadTexts = await page.evaluate((id) => {
+  const c = loadConversation(id);
+  return (c.messages || []).filter(m => m.role === 'user').map(m => m.displayText || m.content);
+}, agentF);
+check('F3bis. et elle est PERSISTÉE dans le fil de l\'agent',
+  agentThreadTexts.some(t => String(t).indexOf('désobéis un peu') >= 0));
+check('F3ter. la file de l\'agent est vidée après le drain',
+  (await page.evaluate((id) => interjectionsFor(id).length, agentF)) === 0);
+
+// Elle n'a PAS fui dans le parent : c'est la garde du piège 28 (une génération
+// écrit dans SA conversation).
+const parentTexts = await page.evaluate((id) => {
+  const c = loadConversation(id);
+  return (c.messages || []).map(m => String(m.content || ''));
+}, parentE);
+check('F4. et elle n\'a pas fui dans le fil du PARENT',
+  !parentTexts.some(t => t.indexOf('désobéis un peu') >= 0));
+await shot('10-agent-a-recu-interjection.png');
+
+// ── F5. File ÉCHOUÉE : l'agent finit avant que le drain ne passe ───────────
+// La fenêtre que le drain B ne couvre pas : l'agent a fini ses outils et rédige
+// sa réponse de clôture. `runConversation` ne rappelle plus onInterjections sur
+// un `stop`, et le fil passe en lecture seule — le reflux composer du lot Q est
+// donc fermé. Le rail SURVIT au verrou : rien ne disparaît en silence.
+await newConv();
+await page.evaluate(() => { window.__gates = {}; window.__released = {}; window.__sent = []; });
+await armSpawn('GGG', 'HHH', { intent: 'Rédiger la synthèse' });
+await gate('A:HHH');   // retenu pendant sa RÉDACTION (pas de tour d'outils)
+await send('MARK-GGG lance un agent qui rédige');
+await page.waitForTimeout(700);
+const parentG = await page.evaluate(() => currentConvId);
+const agentH = await childOf(parentG);
+await page.evaluate((id) => openConversation(id), agentH);
+await page.waitForTimeout(300);
+await page.fill('#composer-text', 'trop tard mais quand même');
+await page.press('#composer-text', 'Enter');
+await page.waitForTimeout(250);
+check('F5. l\'interjection est en file pendant la rédaction',
+  (await railIds()).length === 1);
+
+await release('A:HHH');
+await page.waitForTimeout(1000);
+
+const stranded = await page.evaluate(() => ({
+  locked: document.getElementById('composer-text').disabled,
+  railShown: !!document.getElementById('ij-rail') && !document.getElementById('ij-rail').hidden,
+  chips: document.querySelectorAll('#ij-chips .ij-chip').length,
+  caption: (document.getElementById('ij-caption-text') || {}).textContent || '',
+  strandedClass: document.getElementById('ij-rail').classList.contains('ij-rail-stranded'),
+}));
+check('F6. l\'agent fini verrouille le composer', stranded.locked === true);
+check('F6bis. mais le rail SURVIT : le texte tapé ne disparaît pas en silence',
+  stranded.railShown === true && stranded.chips === 1);
+check('F6ter. et la légende cesse de promettre un envoi',
+  stranded.caption.indexOf('jamais transmise') >= 0 && stranded.strandedClass === true);
+await shot('11-file-echouee-lecture-seule.png');
+
+// Édition REFUSÉE : elle refluerait vers une textarea disabled, détruisant la
+// puce en échange d'un texte non modifiable. Mesuré sur les DONNÉES.
+const editRefusedRo = await page.evaluate(() => {
+  const before = interjectionsFor(currentConvId).length;
+  const id = (interjectionsFor(currentConvId)[0] || {}).id;
+  editInterjection(id);
+  return { before, after: interjectionsFor(currentConvId).length,
+           ta: document.getElementById('composer-text').value };
+});
+check('F7. éditer est REFUSÉ en lecture seule : la puce reste, le composer reste vide',
+  editRefusedRo.before === 1 && editRefusedRo.after === 1 && editRefusedRo.ta === '');
+
+// Annuler reste possible : c'est la sortie offerte à l'utilisateur.
+const cancelWorks = await page.evaluate(() => {
+  const id = (interjectionsFor(currentConvId)[0] || {}).id;
+  cancelInterjection(id);
+  return interjectionsFor(currentConvId).length;
+});
+check('F8. annuler reste possible (la sortie offerte)', cancelWorks === 0);
+
+// ── F9. Sélecteurs de modèle/raisonnement en lecture seule ────────────────
+// Défaut constaté en usage : sur un fil d'agent terminé, les dropdowns
+// s'ouvraient et se rendaient TRANSLUCIDES (l'`opacity` de .composer-inner crée
+// un contexte d'empilement dont aucun descendant ne sort). La cause traitée est
+// l'ouverture : ces pilules choisissent le modèle du prochain envoi, or il n'y
+// en aura plus.
+await page.evaluate((id) => openConversation(id), agentH);
+await page.waitForTimeout(300);
+const menusRo = await page.evaluate(() => {
+  toggleComposerModelMenu();
+  toggleComposerReasoningMenu();
+  return {
+    model: document.getElementById('composer-model-menu').classList.contains('show'),
+    reasoning: document.getElementById('composer-reasoning-menu').classList.contains('show'),
+  };
+});
+check('F9. les sélecteurs n\'ouvrent PLUS de menu en lecture seule',
+  menusRo.model === false && menusRo.reasoning === false);
+
+// Menu DÉJÀ ouvert quand le verrou tombe : il doit se fermer.
+const menuClosedOnLock = await page.evaluate((pid) => {
+  openConversation(pid);
+  return new Promise(r => setTimeout(() => {
+    toggleComposerModelMenu();
+    const openedOnParent = document.getElementById('composer-model-menu').classList.contains('show');
+    setConvReadonly(true);
+    const afterLock = document.getElementById('composer-model-menu').classList.contains('show');
+    setConvReadonly(false);
+    r({ openedOnParent, afterLock });
+  }, 300));
+}, parentG);
+check('F9bis. (contrôle) sur le PARENT, le menu s\'ouvre normalement',
+  menuClosedOnLock.openedOnParent === true);
+check('F9ter. et un menu ouvert se FERME quand le verrou tombe',
+  menuClosedOnLock.afterLock === false);
+
+// L'inspecteur de contexte, lui, reste cliquable : c'est de la LECTURE.
+await page.evaluate((id) => openConversation(id), agentH);
+await page.waitForTimeout(300);
+const ctxUsable = await page.evaluate(() => {
+  const b = document.getElementById('ctx-counter');
+  return !!b && getComputedStyle(b).pointerEvents !== 'none';
+});
+check('F10. l\'inspecteur de contexte reste ACTIF (lecture, pas mutation)', ctxUsable);
+await shot('12-selecteurs-lecture-seule.png');
 
 console.log('\n────────────────────────────────');
 if (errors.length) {

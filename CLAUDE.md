@@ -409,10 +409,12 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
   broadcast post-commit + relecture post-await (piège 24).
 - **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
-  locale de messages tapés pendant une génération, drainée à la frontière de
-  tour (réaiguillage mid-boucle) ou en fin d'échange nominale ; composer en
-  mode file, puces annulables/éditables, bulle assistant matérialisée
-  (`_acksOnly`, piège 27), reflux sur fin non-nominale.
+  locale de messages tapés pendant une génération, clefée PAR CONVERSATION
+  (X-1e) et drainée à la frontière de tour (réaiguillage mid-boucle) ou en fin
+  d'échange nominale ; composer en mode file, puces annulables/éditables/
+  copiables, bulle assistant matérialisée (`_acksOnly`, piège 27), reflux sur
+  fin non-nominale, file échouée quand ni drain ni reflux ne s'appliquent
+  (fil d'agent en lecture seule, X-1f).
 - **`docs/badges.md`** — badges d'activité (lot T-2) : deux états (working
   pulsant / unread statique), prédicat unique `convBadgeState`, agrégation
   cross-Space assumée, quatre surfaces et leurs points de synchronisation,
@@ -420,7 +422,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
   modèle, prédicat de racine `isRootConversation` et les sept exclusions,
   outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
-  parent accroché au `finally`, extension et alignement des badges.
+  parent accroché au `finally`, extension et alignement des badges, lecture
+  seule d'un agent terminé (`isFinishedAgentConv`) et interjections reçues
+  pendant son travail (X-1f).
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

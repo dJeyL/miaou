@@ -41,7 +41,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    (`syncSkillHintUI`, ui.js — synchronisée après `loadSkillsCache` au démarrage
    et à chaque CRUD via `renderSkills`). `findSlashTriggers` (pur) repère les
    `/<slug>` du texte ; pour chacun, lookup cache : slug absent/désactivé →
-   `{ ok:false, error }` → erreur composer locale (`showComposerSkillError`),
+   `{ ok:false, error }` → erreur composer locale (`showComposerError`),
    **aucun envoi, aucun tour modèle, thread inchangé** ; sinon `getSkillContent`
    (IDB) puis `bakeSkillMessage(littéral, resolved)` encadre chaque corps résolu
    de marqueurs `--- skill: slug --- ... --- /skill: slug ---` →

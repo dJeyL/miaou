@@ -198,7 +198,7 @@ HTML, ou à la synchro multi-onglets.
     le message d'erreur (au lieu de l'afficher) → `commitEdit` l'affiche **sous la
     zone d'édition** (`.msg-edit-error`), pas sous le composer ; l'erreur s'efface
     à la frappe et la validation réussie reconstruit la bulle. Côté composer,
-    l'erreur skill est levée par tout envoi effectif (`clearComposerSkillError`
+    l'erreur du composer est levée par tout envoi effectif (`clearComposerError`
     dans `sendUserText`). La textarea d'édition et la bulle restaurée par
     `cancelEdit` sourcent **`displayText`** (littéral), jamais le `content` baké —
     sinon fuite du corps de skill (issue corrigée).

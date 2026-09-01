@@ -1132,6 +1132,12 @@ function refreshTabBanner() {
 // le readonly ne neutralise que les MUTATIONS — cf. .conv-parent-btn, composer.css).
 function applyReadonlyState() {
   setConvReadonly(_peersGenerating.size > 0 || isFinishedAgentConv(currentConvId));   // ui.js
+  // Le rail d'interjections change d'apparence ET d'affordances avec le verrou
+  // (X-1f) : légende (« sera transmise » vs « jamais transmise »), édition
+  // retirée, balise éteinte. Re-rendu ici, à côté du seul écrivain du verrou —
+  // sinon un agent qui finit sous les yeux laisserait son rail promettre un
+  // point d'étape qui ne viendra plus.
+  renderInterjectionRail();   // ui.js
 }
 
 // Cause (b) du readonly : conversation d'agent dont le travail est terminé.
@@ -2159,8 +2165,10 @@ function readFileAsArrayBuffer(file) {
 }
 
 // Affiche un message d'erreur d'attache visible (jamais silencieux, cf. brief
-// D2/cap images). Zone dédiée du composer, distincte de composer-skill-error
-// (préoccupation différente).
+// D2/cap images). Zone dédiée du composer, distincte du canal générique
+// `composer-error` : préoccupation différente ET cycle de vie différent — ce
+// canal-ci survit à la frappe (son objet est la pile d'attachements), l'autre
+// est purgé à chaque caractère tapé. Cf. `showComposerError` (ui.js).
 function showComposerAttachError(msg) {
   const el = $('composer-attach-error');
   if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
@@ -2488,17 +2496,11 @@ async function enqueueInterjection() {
   // l'interjection dans le fil d'arrivée.
   const convId = currentConvId;
   if (!convId) return;
-  // Conversation d'agent : la file y serait sans issue — un agent câble
-  // `onInterjections: () => null` (agents.js), son drain B ne tire jamais, et
-  // son drain A n'existe pas davantage. Refus visible plutôt qu'une puce qui
-  // attend un point d'étape qui ne viendra pas. En pratique la lecture seule
-  // d'un agent terminé (setConvReadonly) couvre déjà l'après-coup : ce refus-ci
-  // vise la fenêtre où l'agent travaille encore, seul moment où `sending` est
-  // vrai sur son fil.
-  if (isAgentConversation(loadConversation(convId))) {
-    showComposerSkillError('Cette conversation est celle d\u2019un agent — elle ne re\u00e7oit pas de message pendant son travail.');
-    return;
-  }
+  // Pas de garde « conversation d'agent » ici (retirée en X-1f) : un agent
+  // draine désormais sa file à la frontière de tour, comme toute autre
+  // génération (`onInterjections`, agents.js). Le refus posé en X-1e découlait
+  // d'un `onInterjections: () => null` dont la justification (« la file est un
+  // état d'écran ») était déjà périmée quand elle a été écrite.
   // Texte seul (arbitrage lot Q) : une pièce jointe en attente ne rejoint pas
   // la file — refus visible, jamais de détachement silencieux.
   if (pendingAttachments.length) {
@@ -2515,12 +2517,12 @@ async function enqueueInterjection() {
   } finally {
     _ijResolving = false;
   }
-  if (!r.ok) { showComposerSkillError(r.error); return; }
+  if (!r.ok) { showComposerError(r.error); return; }
   // La génération s'est terminée PENDANT l'await : plus de mode file — la
   // saisie (intacte dans la textarea) part en envoi normal, jamais en file morte.
   if (!sending) { sendMessage(); return; }
   ta.value = ''; ta.style.height = 'auto';
-  clearComposerSkillError();
+  clearComposerError();
   hideSkillAutocomplete();
   // Id : jamais Date.now() seul (mémoire projet B1) — suffixe aléatoire.
   const q = _pendingInterjections.get(convId) || [];
@@ -2548,7 +2550,14 @@ function cancelInterjection(id) {
 // Édition (clic sur le corps d'une puce) : retire du registre et re-remplit le
 // composer, préfixé à un brouillon éventuel. Ré-appuyer Entrée RE-MET EN FILE
 // (le mode file reste actif tant que `sending`) — jamais d'envoi direct.
+//
+// REFUS en lecture seule (X-1f) : le composer d'un agent terminé est verrouillé,
+// et y déverser le littéral produirait une textarea remplie ET `disabled` — le
+// texte serait visible, non modifiable, non envoyable, et la puce détruite en
+// échange. Pire que ne rien faire. La puce reste donc en place ; annuler et
+// copier restent offerts (cf. rail en lecture seule).
 function editInterjection(id) {
+  if (isComposerReadonly()) return;
   const q = interjectionsFor(currentConvId);
   const idx = q.findIndex(it => it.id === id);
   if (idx < 0) return;
@@ -2652,10 +2661,10 @@ async function sendMessage() {
   } finally {
     _sendResolving = false;
   }
-  if (!r.ok) { showComposerSkillError(r.error); return; }
+  if (!r.ok) { showComposerError(r.error); return; }
 
   ta.value = ''; ta.style.height = 'auto';
-  clearComposerSkillError();
+  clearComposerError();
   clearComposerAttachError();   // l'envoi effectif lève le message « en cours de traitement » d'un essai précédent
   hideSkillAutocomplete();
 
@@ -2717,7 +2726,7 @@ async function buildOutgoingContentForAttachments(baseText, attachments) {
 // réécriture parts→descripteur a lieu une fois le tour terminé (onFinal de
 // dispatchSend, cf. rewriteAttachedUserMessage).
 async function sendUserText(text, bakedContent, attachments) {
-  clearComposerSkillError();   // tout envoi effectif lève l'erreur skill du composer
+  clearComposerError();   // tout envoi effectif lève l'erreur affichée sous le composer
   ensureConversation();
   const ts = Date.now();
   appendUserMessage(text, ts, attachments);

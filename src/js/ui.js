@@ -3465,6 +3465,16 @@ function setConvReadonly(on) {
   if (on) {
     if (ta) ta.disabled = true;
     if (send) send.disabled = true;
+    // Menus de modèle/raisonnement DÉJÀ ouverts quand le verrou tombe (X-1f) :
+    // le cas arrive pour de bon — on regarde un agent finir, menu déployé. La
+    // garde d'ouverture ne les concerne plus une fois ouverts ; sans cette
+    // fermeture ils resteraient déployés et cliquables au-dessus d'un composer
+    // mort. Le rail d'interjections est re-rendu pour la même raison : sa
+    // légende et ses affordances dépendent du verrou.
+    for (const id of ['composer-model-menu', 'composer-reasoning-menu']) {
+      const m = $(id);
+      if (m) m.classList.remove('show');
+    }
   } else {
     // Ne pas ré-activer si une génération LOCALE est en cours (le composer sert
     // alors de « stop ») ni si l'app n'est pas configurée. Ni si un stop est en
@@ -3475,6 +3485,15 @@ function setConvReadonly(on) {
     if (ta) ta.disabled = sending ? false : !configured;
     if (send) send.disabled = _stopping ? true : (sending ? false : !configured);
   }
+}
+
+// Lecture du verrou, pour les appelants qui doivent REFUSER une action plutôt
+// que la tenter sur un composer inerte (X-1f : l'édition d'une puce
+// d'interjection reflue vers la textarea — verrouillée, elle détruirait la puce
+// en échange d'un texte non modifiable). `_convReadonly` reste privé : un seul
+// écrivain (setConvReadonly), des lecteurs par cette fonction.
+function isComposerReadonly() {
+  return _convReadonly;
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
@@ -3587,11 +3606,25 @@ function renderInterjectionRail() {
   if (!rail || !chips) return;
   const items = (typeof interjectionsFor === 'function') ? interjectionsFor(currentConvId) : [];
   rail.hidden = items.length === 0;
+  // Lecture seule (X-1f) : la file d'un agent qui a fini son travail avant le
+  // drain reste là, sans destinataire. Le rail SURVIT — c'est ce qui empêche le
+  // texte de disparaître sans que l'utilisateur le voie — mais il cesse de
+  // promettre un point d'étape qui ne viendra pas, et l'édition n'est plus
+  // offerte (le composer où elle refluerait est verrouillé, cf.
+  // editInterjection). Restent lire, copier, annuler.
+  const ro = isComposerReadonly();
+  rail.classList.toggle('ij-rail-stranded', ro);
   const cap = $('ij-caption-text');
   if (cap) {
-    cap.textContent = items.length <= 1
-      ? 'sera transmise au prochain point d’étape'
-      : items.length + ' interjections, fusionnées et transmises au prochain point d’étape';
+    if (ro) {
+      cap.textContent = items.length <= 1
+        ? 'jamais transmise — la conversation s’est terminée avant'
+        : items.length + ' interjections jamais transmises — la conversation s’est terminée avant';
+    } else {
+      cap.textContent = items.length <= 1
+        ? 'sera transmise au prochain point d’étape'
+        : items.length + ' interjections, fusionnées et transmises au prochain point d’étape';
+    }
   }
   // Purge des puces qui ne sont plus dans la file rendue — d'abord, avant tout
   // ajout. La réconciliation d'origine n'ajoutait que les manquantes : avec une
@@ -3620,8 +3653,22 @@ function buildInterjectionChip(item) {
     '<span class="ij-glyph"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 20l1.1-4.1a8.3 8.3 0 0 1-1-4A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z"/><path d="M12 8v4l2.5 1.5"/></svg></span>' +
     '<span class="ij-text"></span>' +
     '<span class="ij-hint">cliquer pour éditer</span>' +
+    '<button class="ij-copy" title="Copier" aria-label="Copier cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>' +
     '<button class="ij-x" title="Annuler" aria-label="Annuler cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
   el.querySelector('.ij-text').textContent = item.literal;
+  // Copie : la seule voie de récupération quand l'édition est fermée (composer
+  // verrouillé d'un agent terminé). Offerte en permanence — un texte tapé se
+  // récupère aussi quand tout va bien.
+  el.querySelector('.ij-copy').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (el.classList.contains('ij-draining')) return;
+    const btn = e.currentTarget;
+    const svgCopy = btn.innerHTML;
+    navigator.clipboard.writeText(item.literal).then(() => {
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      setTimeout(() => { btn.innerHTML = svgCopy; }, 1400);
+    });
+  });
   el.querySelector('.ij-x').addEventListener('click', (e) => {
     e.stopPropagation();
     if (el.classList.contains('ij-draining')) return;   // en vol de drain : figée
@@ -4636,6 +4683,12 @@ function toggleComposerModelMenu() {
   const menu = $('composer-model-menu');
   if (!menu) return;
   if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  // Lecture seule (X-1f) : ce sélecteur choisit le modèle du PROCHAIN envoi —
+  // sur un fil qui n'en acceptera plus aucun, il ne décide de rien. Refus à
+  // l'OUVERTURE, pas seulement en CSS : `pointer-events: none` ne couvre ni le
+  // clavier ni un appel programmatique. La fermeture (menu déjà ouvert) reste
+  // permise inconditionnellement — au-dessus de cette ligne, exprès.
+  if (isComposerReadonly()) return;
   renderComposerModelOptions();   // ancre déjà la ligne active dans la vue
   menu.classList.add('show');
   // Les serveurs non actifs sont interrogés à l'ouverture, pas au démarrage :
@@ -4797,6 +4850,7 @@ function toggleComposerReasoningMenu() {
   const menu = $('composer-reasoning-menu');
   if (!menu) return;
   if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+  if (isComposerReadonly()) return;   // cf. toggleComposerModelMenu (X-1f)
   renderComposerReasoningOptions();
   menu.classList.add('show');
 }
@@ -7064,7 +7118,7 @@ function enterSkillEdit(card, slug) {
 const _composerAc = { ta: null, box: null, index: -1, trigger: null };
 
 function onComposerInput() {
-  clearComposerSkillError();
+  clearComposerError();
   const ta = $('composer-text');
   const box = $('skill-ac');
   if (!ta || !box) return;
@@ -7173,12 +7227,26 @@ function pickSkillCompletion(state, slug) {
   autoGrow(ta);
 }
 
-function showComposerSkillError(msg) {
-  const el = $('composer-skill-error');
+// Canal d'erreur GÉNÉRIQUE du composer : une ligne sous la zone de saisie, pour
+// tout refus qui doit rester visible sans modale ni toast. Nommé d'après la
+// SURFACE, pas d'après le premier appelant — il s'est appelé
+// `showComposerSkillError` jusqu'au lot X-1f, hérité de la validation de slash-
+// skills, alors qu'il portait déjà des refus sans rapport (dont, brièvement, le
+// « cette conversation est celle d'un agent » que X-1f a retiré). Un canal
+// nommé d'après un de ses usages invite chaque nouvel appelant à se demander
+// s'il a le droit de s'en servir, ou à en ouvrir un deuxième.
+//
+// Distinct de `showComposerAttachError` (main.js), et ce n'est pas un oubli :
+// leurs cycles de vie diffèrent. Celui-ci est purgé à chaque frappe
+// (`onComposerInput`) parce que ses refus portent sur le TEXTE en cours ; celui
+// des pièces jointes survit à la frappe, son objet étant la pile d'attachements.
+// Les fusionner ferait qu'écrire une lettre efface un refus d'attache.
+function showComposerError(msg) {
+  const el = $('composer-error');
   if (el) { el.textContent = msg; el.removeAttribute('hidden'); }
 }
-function clearComposerSkillError() {
-  const el = $('composer-skill-error');
+function clearComposerError() {
+  const el = $('composer-error');
   if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 

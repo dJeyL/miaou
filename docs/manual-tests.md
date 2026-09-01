@@ -381,7 +381,7 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
 
 39d. **Effacement de l'erreur composer à l'envoi** : taper `/inconnu`, envoyer →
     erreur sous le composer. Corriger en message valide et envoyer → l'erreur
-    disparaît (tout envoi effectif lève l'erreur skill du composer).
+    disparaît (tout envoi effectif lève l'erreur affichée sous le composer).
 
 39e. **Pas de double-envoi pendant la résolution d'une slash-skill (B7)** : avec
     une skill activée dont le contenu est en IDB, taper `/slug ...` puis presser

@@ -966,11 +966,82 @@ travaille — Entrée ajoute à la file… » et son bouton stop. Invisible jusq
 la lecture seule le rendait criant (composer verrouillé ET annonçant un travail
 en cours). Corrigé au même endroit et de la même façon que le chemin détaché.
 
-**Corollaire sur les interjections** : `enqueueInterjection` refuse la mise en
-file dans une conversation d'agent — un agent câble `onInterjections: () => null`
-(son drain B ne tire jamais) et n'a pas de drain A. La file y serait sans issue.
-Le refus vise la fenêtre où l'agent **travaille encore**, seul moment où
-`sending` est vrai sur son fil ; l'après-coup est couvert par la lecture seule.
+**Corollaire sur les interjections (révisé X-1f)** : un agent au travail
+**reçoit** les interjections tapées dans son fil, drainées à la frontière de tour
+comme dans n'importe quelle conversation. Cf. la section suivante — X-1e les
+refusait, sur une prémisse qui était déjà fausse quand elle a été écrite.
+
+## Interjections dans le fil d'un agent (X-1f)
+
+Un agent au travail reçoit les messages tapés dans son fil : ils se mettent en
+file et partent à sa **frontière de tour** suivante, exactement comme dans une
+conversation racine. Le hook `onInterjections` de `driveAgentConversation`
+(agents.js) est le même corps que celui de l'écran (main.js) moins tout le DOM —
+un agent n'a ni bulle à clore, ni wrap à rouvrir, ni puce à animer. L'entrée de
+thread est construite par la fonction pure partagée `buildInterjectionEntry`,
+donc la doctrine `displayText` et la byte-stabilité valent ici aussi.
+
+**Pourquoi c'est le cas qui compte.** L'utilisateur qui regarde un agent
+enchaîner ses outils est le seul à voir un travail partir de travers : le parent,
+lui, ne verra que le compte rendu final. Le cas d'usage qui a motivé la
+réouverture est exactement celui-là — un parent avait demandé à son agent de
+conclure par un simple nom de fichier, en oubliant l'identifiant de ressource ;
+la correction devait atteindre l'agent avant sa conclusion, pas le parent après.
+
+**Ce que X-1e avait fermé, et pourquoi c'était une erreur.** X-1e câblait
+`onInterjections: () => null` côté agent, au motif que la file était un état
+d'ÉCRAN qu'il fallait laisser intacte pour la génération qui la regarde. Cette
+prémisse était périmée **dans le lot même qui l'écrivait** : X-1e venait de
+clefer la file par conversation et de faire cibler les deux drains sur
+`gen.convId`. Le `null` restait donc en travers d'un mécanisme qui savait déjà à
+qui appartenait la file. La garde du composer (`enqueueInterjection` refusait
+avec « Cette conversation est celle d'un agent… ») a ensuite été écrite pour
+rendre ce `null` visible plutôt que pour le corriger : une garde **conséquence**,
+jamais une garde **décision**. Motif à retenir — un lot qui change une forme doit
+repasser sur les consommateurs qui justifiaient leur comportement par l'ancienne.
+
+Il n'y avait pas non plus de raison de fond de fermer : une interjection dans un
+agent n'est pas une contamination du résultat rendu au parent. Le parent n'a pas
+droit à un résultat *pur*, il a droit à un résultat *correct*, et c'est parfois
+l'utilisateur qui sait lequel c'est.
+
+**La fenêtre non couverte, et ce qu'on en fait.** `runConversation` n'appelle
+`onInterjections` que dans la branche `tool_calls` : sur un `finish_reason:
+'stop'`, la boucle sort. Une interjection tapée pendant que l'agent **rédige sa
+conclusion** n'a donc aucun point d'insertion, et le `finally` enchaîne
+(`deliverAgentResult` a notifié le parent, la lecture seule tombe). Le reflux
+composer du lot Q est fermé du même coup : y déverser le littéral produirait une
+textarea remplie ET `disabled`, et détruirait la puce en échange.
+
+Choix retenu : la file **échoue visiblement** plutôt que de disparaître. Le rail
+survit au verrou (`renderInterjectionRail` est rappelé depuis
+`applyReadonlyState`), sa légende cesse de promettre un envoi (« jamais
+transmise — la conversation s'est terminée avant »), la balise s'éteint, et
+l'édition est refusée (`editInterjection` teste `isComposerReadonly`). Restent
+lire, **copier** et annuler. Rien ne part, rien ne se perd en silence.
+
+Non-goal assumé : faire de la file une **condition de continuation de boucle**
+(un tour de plus tant qu'elle n'est pas vide, comme un `tool_calls` en
+déclenche un). Ce serait le seul moyen de couvrir cette fenêtre, mais ça touche
+`runConversation` — chemin partagé par TOUTES les générations — et ça créerait
+deux comportements pour la même situation selon le type de conversation (une
+racine, elle, part en nouvel échange par le drain A). À rouvrir si la fenêtre
+gêne en usage réel ; elle est étroite, un agent passant l'essentiel de son temps
+dans des tours d'outils.
+
+**Sélecteurs de modèle et de raisonnement en lecture seule.** Ils choisissent le
+modèle du PROCHAIN envoi : sur un fil qui n'en acceptera plus, ils ne décident de
+rien. `toggleComposerModelMenu` / `toggleComposerReasoningMenu` refusent donc
+d'ouvrir sous `isComposerReadonly()` (la garde est APRÈS la branche de fermeture,
+exprès : refermer un menu ouvert reste inconditionnel), `setConvReadonly` ferme
+ceux qui l'étaient déjà, et le CSS coupe `pointer-events` sur les deux pilules.
+Défaut d'origine, constaté en usage : le menu s'ouvrait ET se rendait
+**translucide**, l'`opacity` de `.composer-inner` créant un contexte d'empilement
+dont aucun descendant ne peut sortir. Fermer l'ouverture traite la cause ; sans
+ça il aurait fallu déplacer l'opacité sur les enfants pour la contourner.
+`.ctx-counter` reste actif, même raison que `.conv-parent-btn` : l'inspecteur de
+contexte est de la **lecture**, et un fil clos est justement là où on vient le
+consulter.
 
 ## La réponse d'agent dans le fil du parent (X-1e)
 
@@ -1064,10 +1135,18 @@ tableau vide), `agentResultBodyHtml` (fermé par défaut, en-tête DANS le
 celui du modèle), et `exposedTools` (définition dynamique résolue, égalité avec
 le payload modèle, outil statique inchangé en contrôle).
 
+**X-1f** ajoute : qu'un fil d'agent n'est pas un cas particulier de la file
+(mise en file et drain du registre identiques), et l'entrée de thread que son
+drain construit (`buildInterjectionEntry` — displayText conditionnel, fusion de
+plusieurs littéraux en UN message).
+
 Ce qui reste **non couvrable en QuickJS** : le câblage bout-en-bout
 spawn → exécution → réveil → badge, et pour X-1e le rail d'interjections, le
-verrou de composer, le repli au clic et le rendu d'export. C'est l'objet du
-verify e2e (`verify-agents.mjs` pour X-1, `verify-x1e.mjs` pour X-1e).
+verrou de composer, le repli au clic et le rendu d'export. Pour X-1f, tout ce qui
+compte est du câblage — le hook `onInterjections` d'un agent, le drain observé
+dans son payload, la file échouée sous lecture seule, les sélecteurs bloqués.
+C'est l'objet du verify e2e (`verify-agents.mjs` pour X-1, `verify-x1e.mjs` pour
+X-1e, étendu d'une section F pour X-1f).
 
 ## La vérification e2e
 
