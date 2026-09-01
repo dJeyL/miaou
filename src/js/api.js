@@ -829,6 +829,19 @@ async function runConversation(messages, hooks) {
         }
       }
 
+      // Stop demandé PENDANT ce tour d'outils (main.js/abortStream) : gen.abort
+      // était null tout du long (streamCompletion ne le porte que pendant SON
+      // fetch), donc le clic n'a pu que poser gen.stopRequested. On l'honore
+      // ICI, à la frontière de tour — même traitement que result.aborted
+      // (contenu déjà produit conservé, pas de rollback, pas de nouveau tour,
+      // piège 10). Le flag est consommé tout de suite pour ne pas geler un
+      // échange ultérieur sur la même génération (continuation, régénération).
+      if (h.gen && h.gen.stopRequested) {
+        h.gen.stopRequested = false;
+        if (h.onFinal) h.onFinal(result.content, reasoningAcc, 'aborted', { usage: result.usage });
+        return result.content;
+      }
+
       continue;   // on relance toujours un appel
     }
 

@@ -578,8 +578,11 @@ Quelques repères pour te déplacer dans MIAOU :
 - **Composer** (en bas) : ta zone de saisie. Le bouton d'envoi devient un
   **stop** pendant que le modèle répond — le texte déjà reçu est conservé. Ce
   stop ne concerne que la conversation **affichée** : si d'autres conversations
-  travaillent en arrière-plan, elles continuent. À côté, le trombone pour
-  joindre des fichiers.
+  travaillent en arrière-plan, elles continuent. Si le modèle est en plein
+  appel d'outil au moment du clic, l'arrêt est pris en compte tout de suite
+  mais se concrétise à la fin de cet appel (pas de coupure en plein milieu) —
+  le bouton se fige le temps d'y arriver, pour t'éviter de recliquer pour rien.
+  À côté, le trombone pour joindre des fichiers.
 - **Ajouter en cours de route** : si le modèle travaille (surtout quand il
   enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée
   sans l'interrompre** — il se met en file au-dessus du composer et lui est

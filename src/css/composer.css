@@ -85,6 +85,16 @@
 .send-btn.streaming .ic-send { display: none; }
 .send-btn.streaming .ic-stop { display: block; color: var(--accent); }
 
+/* arrêt demandé mais pas encore honoré (tour d'outils en vol) : le bouton
+   reste en apparence « stop » mais se désactive (disabled côté JS) et son
+   icône pulse pour signaler l'attente — un second clic doit être visiblement
+   impossible, pas juste sans effet. */
+.send-btn.stopping .ic-stop { animation: send-btn-stopping-pulse 1s ease-in-out infinite; }
+@keyframes send-btn-stopping-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
 .composer-hint {
   text-align: center;
   font-size: 11px;

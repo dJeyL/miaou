@@ -98,16 +98,25 @@ au KV cache, ou à la synchro multi-onglets.
    seulement si la conversation était encore sans titre (cas très rare une
    fois la régénération manuelle appliquée, puisqu'elle pose toujours un titre
    si l'appel réussit).
-10. **Arrêt du streaming.** `streamCompletion` ouvre un `AbortController`
-    (`_currentAbort`, un seul à la fois) ; `abortStream()` l'annule. Sur
-    `AbortError`, on **avale** l'erreur et on retourne le contenu déjà reçu avec
-    `aborted: true` (pas de rollback). `runConversation` court-circuite sur
-    `result.aborted` **avant** de traiter ou relancer un tour — donc stop coupe
-    aussi au milieu d'une boucle d'outils, sans relance. Côté UI, le bouton du
-    composer fait office de stop pendant le stream : il **n'est jamais désactivé**
-    quand `sending` est vrai (cf. `setSending`/`syncConfigured`), `onSendBtn()`
-    route vers `abortStream()`, et `setComposerStreaming(on)` bascule l'apparence
-    (`.streaming`, icônes `.ic-send`/`.ic-stop`).
+10. **Arrêt du streaming, immédiat ou différé.** `streamCompletion` ouvre un
+    `AbortController` posé sur `gen.abort` (T-1a, un seul à la fois — écrasé
+    sans risque d'un tour au suivant) **seulement pendant la durée de son
+    `fetch`** : remis à `null` dans son `finally`. `abortStream(convId)`
+    (main.js) distingue donc deux cas : `gen.abort` présent → `.abort()`
+    immédiat, `AbortError` **avalé** côté `streamCompletion`, contenu déjà reçu
+    retourné avec `aborted: true` (pas de rollback) ; `gen.abort` absent (tour
+    d'outils en vol — MCP distant, `js__eval`…, cf. piège 25) → rien à annuler
+    dans l'instant, on pose `gen.stopRequested = true`. `runConversation`
+    court-circuite sur `result.aborted` **avant** de traiter/relancer un tour ;
+    il consulte aussi `gen.stopRequested` à la **frontière de tour** (après les
+    tool results du tour courant, avant la relance) et sort par le même chemin
+    — l'outil déjà en vol va jusqu'au bout (jamais interrompu en plein appel),
+    seul le tour suivant ne part pas. Côté UI, le bouton du composer fait
+    office de stop pendant le stream (`onSendBtn()` → `abortStream()`,
+    `setComposerStreaming(on)` bascule `.streaming`/icônes `.ic-send`/
+    `.ic-stop`) ; pendant l'attente d'un stop différé, `setStopping(true)`
+    **désactive** le bouton et pulse `.ic-stop` (`title` : « Arrêt en cours… »)
+    — un reclic ne doit pas sembler sans effet, il doit être impossible.
 11. **Recherche historique.** Filtre persistant module-level `convSearchFilter`
     (ui.js), appliqué par `renderConvList()` — dont la **signature reste sans
     argument** exprès, pour que tous les appelants existants (sélection, maj

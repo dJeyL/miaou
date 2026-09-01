@@ -3168,7 +3168,7 @@ function renderMoveBar() {
 
   const row = document.createElement('div');
   row.className = 'move-bar-row';
-  const destinations = loadSpaces().filter(s => s.id !== activeSpaceId).map(s => ({ value: s.id, label: s.name || '' }));
+  const destinations = sortedSpacesByName(loadSpaces()).filter(s => s.id !== activeSpaceId).map(s => ({ value: s.id, label: s.name || '' }));
   let pill = null;
   if (destinations.length) {
     pill = cfgPillSelect('move-bar-dest', destinations, destinations[0].value, null);
@@ -3412,7 +3412,12 @@ function syncConfigured() {
   }
 }
 
-function setSending(on) {
+// `stopping` (optionnel) : la génération qu'on affiche (s'il y en a une) a
+// déjà reçu un Stop pas encore honoré (gen.stopRequested, cf. main.js). ui.js
+// ne lit pas le registre de générations lui-même (pas de dépendance inverse
+// vers main.js) : c'est à l'appelant de le porter. Absent/false → pas d'attente
+// en cours, comportement historique.
+function setSending(on, stopping) {
   sending = on;
   setComposerStreaming(on);
   const send = $('send-btn');
@@ -3420,6 +3425,11 @@ function setSending(on) {
   // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
   // saisie libre vaut réponse/correction et lève le widget (dismiss-on-send).
   if (send) send.disabled = on ? false : !configured;
+  // APRÈS la ligne ci-dessus : un stop différé rebranché (retour sur une
+  // conversation dont gen.stopRequested est déjà vrai) doit garder le bouton
+  // désactivé — setStopping doit avoir le dernier mot sur `disabled`, sinon la
+  // ligne ci-dessus le réactive juste après l'avoir désactivé.
+  setStopping(on && !!stopping);
   // Export de conversation masqué pendant le streaming (contenu incomplet).
   const convDl = document.querySelector('.conv-dl-btn');
   if (convDl) convDl.disabled = on;
@@ -3457,9 +3467,13 @@ function setConvReadonly(on) {
     if (send) send.disabled = true;
   } else {
     // Ne pas ré-activer si une génération LOCALE est en cours (le composer sert
-    // alors de « stop ») ni si l'app n'est pas configurée.
+    // alors de « stop ») ni si l'app n'est pas configurée. Ni si un stop est en
+    // attente (_stopping) : sinon ce chemin (ex. openConversation →
+    // applyReadonlyState, APRÈS setSending) réactive le bouton juste après que
+    // setStopping l'ait désactivé — même bug que celui corrigé dans setSending,
+    // trouvé ici par la vérif bout-en-bout (verify-stop-deferred.mjs).
     if (ta) ta.disabled = sending ? false : !configured;
-    if (send) send.disabled = sending ? false : !configured;
+    if (send) send.disabled = _stopping ? true : (sending ? false : !configured);
   }
 }
 
@@ -3473,6 +3487,32 @@ function setComposerStreaming(on) {
   // génération — l'affordance principale du mécanisme, avec le rail de puces.
   const ta = $('composer-text');
   if (ta) ta.placeholder = on ? 'Le modèle travaille — Entrée ajoute à la file…' : 'Message…';
+}
+
+// Stop cliqué pendant un tour d'outils (gen.abort momentanément null, cf.
+// abortStream/main.js) : l'arrêt est pris en compte mais différé jusqu'à la
+// frontière de tour suivante. Le bouton se désactive et change d'apparence —
+// pas seulement de title — pour qu'un second clic soit IMPOSSIBLE plutôt que
+// simplement sans effet (l'utilisateur ne doit pas pouvoir croire qu'il n'a
+// pas cliqué assez fort). Levé par setSending(false) (fin de génération) ou
+// par le rebranchement d'écran sur une génération qui a déjà fini d'honorer
+// la demande. `_stopping` (variable de module, même statut que `sending`/
+// `_convReadonly`) est consultée par tout autre chemin qui recalcule
+// `send.disabled` après coup (setConvReadonly) — sans elle, ce chemin
+// réactiverait le bouton juste après que setStopping l'ait désactivé.
+let _stopping = false;
+function setStopping(on) {
+  _stopping = !!on;
+  const send = $('send-btn');
+  if (!send) return;
+  send.classList.toggle('stopping', on);
+  if (on) {
+    send.disabled = true;
+    send.title = 'Arrêt en cours…';
+  } else if (send.classList.contains('streaming')) {
+    send.disabled = false;
+    send.title = 'Arrêter';
+  }
 }
 function setConnDot(state) {
   const dot = $('conn-dot');

@@ -206,7 +206,9 @@ inline sous la liste.
    l'async ; gouverné par `needTitle` (réarmé par `openConversation` si
    `!conv.title`) ; `regenerateTitle` l'ignore et retitre à la demande.
 10. **Arrêt du streaming** via `AbortController` unique ; `aborted: true` sans
-    rollback, court-circuite le tour suivant.
+    rollback, court-circuite le tour suivant. Pendant un tour d'outils
+    (`gen.abort` momentanément null), Stop pose `gen.stopRequested` : honoré à
+    la frontière de tour suivante, jamais un outil en vol interrompu.
 11. **Recherche historique.** Filtre persistant `convSearchFilter` ;
     `renderConvList()` reste sans argument exprès.
 12. **Édition d'un message utilisateur.** `sendMessage`/`editUserMessage`

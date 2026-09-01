@@ -218,6 +218,20 @@ before touching the app:
   `P10a` matches as `P10`, so the gate keys on the wrong scenario and never
   opens. Keep every tag uppercase (`P10A`, `A10A`). The failure mode is a
   timeout with no diagnostic whatsoever.
+- **Patching a global function (not `window.fetch`) must happen AFTER the app
+  script has loaded, never in `addInitScript`.** `addInitScript` runs before
+  any page script, so `window.callTool = ...` there captures `undefined` as
+  the "real" function, and — worse — is silently overwritten right back: the
+  build concatenates every file into one script under `'use strict'`, so
+  `function callTool(...) {...}` at top level is a function *declaration*,
+  hoisted and (re)assigned to the global the moment that script runs — after
+  your init script, wiping your patch with zero error. `window.fetch` survives
+  in `addInitScript` because nothing in the app ever reassigns `window.fetch`
+  itself. For anything else exported as a bare top-level `function`, arm the
+  patch with a `page.evaluate` call placed after `page.goto`/boot-wait,
+  keeping a reference to the original to delegate to (cf.
+  `verify-stop-deferred.mjs`, gating `callTool` to reproduce the exact window
+  where `gen.abort` is null between tool-call tours).
 
 General lesson for this rig: when a scenario hangs, **add a temporary DBG
 `page.evaluate` dumping what the stub actually saw** (its tag, its armed state)

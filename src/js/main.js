@@ -123,6 +123,7 @@ function createGeneration(convId, thread, opts) {
     convReasoningEffort: currentConvReasoningEffort,
     needTitle: needTitle,                           // besoin de titrage figé au démarrage (piège 9 : ne pas lire l'écran à la fin)
     abort: null,                                    // AbortController du stream courant (posé par streamCompletion)
+    stopRequested: false,                           // Stop cliqué pendant un tour d'outils (gen.abort momentanément null) : honoré à la frontière de tour suivante (runConversation)
     status: 'waiting',                              // waiting | streaming | tools | done | error | aborted
     startedAt: Date.now(),
     // ── Présentation (lot T-1b) ──────────────────────────────────────────
@@ -191,6 +192,14 @@ function generationFor(convId) {
 
 function isGenerating(convId) {
   return !!generationFor(convId);
+}
+
+// Stop déjà demandé sur CETTE conversation, pas encore honoré (tour d'outils
+// en vol). Distinct de isGenerating : sert à bloquer les clics répétés sur le
+// bouton composer pendant l'attente (cf. abortStream).
+function isStopRequested(convId) {
+  const gen = generationFor(convId);
+  return !!gen && gen.stopRequested;
 }
 
 // ── Badges d'activité (lot T-2) ─────────────────────────────────────────────
@@ -799,7 +808,7 @@ async function openConversation(id, reveal) {
   // composer, bouton stop et mode file des interjections suivent la conv
   // AFFICHÉE, pas « une génération tourne quelque part ». Sans cet appel, le
   // composer resterait en mode « stop » sur une conversation inerte.
-  setSending(!!gen);
+  setSending(!!gen, gen && gen.stopRequested);
   // File d'interjections (X-1e) : le rail montre celle de la conversation qu'on
   // vient d'afficher — vide si elle n'en a pas. APRÈS setSending, qui remet le
   // composer dans le mode de CETTE conversation.
@@ -2340,17 +2349,32 @@ function onSendBtn() {
   // Abort CIBLÉ (lot T-1a) : le bouton stop du composer n'interrompt que la
   // génération de la conversation AFFICHÉE. Les générations détachées (autres
   // conversations, autres Espaces) continuent — c'est tout l'objet du lot.
-  if (sending) abortStream(currentConvId);
+  // Un stop déjà demandé (gen.stopRequested) ne se reclique pas : le bouton
+  // est désactivé côté UI (setStopping) le temps que la frontière de tour le
+  // honore, pour ne pas laisser croire à des clics supplémentaires un effet
+  // qu'ils n'ont pas (cf. échange sur le Stop inopérant pendant un tour d'outils).
+  if (sending) { if (!isStopRequested(currentConvId)) abortStream(currentConvId); }
   else sendMessage();
 }
 
-// Interrompt la génération d'UNE conversation (si elle en a une). Le contenu
-// déjà reçu est conservé (pas de rollback) ; la boucle d'outils ne relance pas
-// de tour (piège 10). Vit dans main.js et non api.js : c'est le registre de
-// générations qui détient les controllers depuis T-1a.
+// Interrompt la génération d'UNE conversation (si elle en a une). Deux cas :
+// - un stream de complétion est en vol (gen.abort posé) → abort immédiat,
+//   comportement historique.
+// - un tour d'outils est en vol (MCP distant, js__eval…) : gen.abort est
+//   momentanément null (streamCompletion ne le porte QUE pendant son fetch,
+//   cf. api.js) — rien à annuler dans l'instant. On pose gen.stopRequested :
+//   runConversation le consulte à la frontière de tour suivante (juste avant
+//   de relancer un appel) et sort comme un abort classique, sans rollback ni
+//   nouveau tour (piège 10). L'écran reflète l'attente (setStopping) pour que
+//   l'utilisateur comprenne que c'est pris en compte, en différé.
+// Vit dans main.js et non api.js : c'est le registre de générations qui
+// détient les controllers/flags depuis T-1a.
 function abortStream(convId) {
   const gen = generationFor(convId);
-  if (gen && gen.abort) gen.abort.abort();
+  if (!gen) return;
+  if (gen.abort) { gen.abort.abort(); return; }
+  gen.stopRequested = true;
+  if (genOwnsScreen(gen)) setStopping(true);
 }
 
 // Résout une saisie utilisateur (littéral) en payload d'envoi. CHEMIN UNIQUE de
@@ -3423,7 +3447,8 @@ async function dispatchSend(matches, continuation) {
     // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un
     // registre déjà à jour.
     unregisterGeneration(gen);
-    setSending(isGenerating(currentConvId));
+    const stillGen = generationFor(currentConvId);
+    setSending(!!stillGen, stillGen && stillGen.stopRequested);
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
     // Interjections restantes (lot Q, révisé X-1e) : drain A si fin nominale,

@@ -126,6 +126,15 @@ controllers) cible **une** conversation. Le bouton stop du composer passe
 `currentConvId` : il n'interrompt que la génération affichée, les détachées
 continuent. Le contenu déjà reçu est conservé, aucun tour n'est relancé (piège 10).
 
+`gen.abort` ne vit que le temps du `fetch` de `streamCompletion` : pendant un
+tour d'outils (MCP distant, `js__eval`…), il vaut `null` — rien à annuler dans
+l'instant. `abortStream` pose alors `gen.stopRequested = true` ; `runConversation`
+(api.js) le consulte à la frontière de tour suivante et sort par le même chemin
+que `result.aborted` (l'outil déjà en vol n'est jamais coupé, seul le tour
+suivant ne part pas). `setStopping(true)` (ui.js) désactive le bouton composer
+et pulse son icône pendant cette attente, pour qu'un reclic soit impossible
+plutôt que silencieusement sans effet.
+
 ## Présentation : un prédicat, deux temps (T-1b)
 
 Le couplage à l'écran est direct : les hooks appellent `streamInto`,
