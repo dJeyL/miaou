@@ -29,6 +29,11 @@ const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+// Titrage précoce (lot AA) : défaut de build, surchargeable par l'utilisateur
+// dans le panneau. Booléen, donc « absent » ne se distingue pas de « false » à
+// la lecture des réglages : le défaut se résout dans DEFAULT_SETTINGS et non
+// dans loadSettings, contrairement à `url`/`model`.
+const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;   // défaut true
 // Bornes d'agents (lot X-1, Q3). Deux bornes, pas une — un refus doit pouvoir
 // NOMMER laquelle est atteinte : « 3 agents déjà sur cette conversation » et
 // « 5 agents au total » appellent des gestes différents du parent (attendre l'un
@@ -83,6 +88,7 @@ const DEFAULT_SETTINGS = {
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (D7, lot Cbis)
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (D1 révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
+  earlyTitle: BUILD_EARLY_TITLE, // titrer dès l'envoi, sans attendre la fin de l'échange (lot AA)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -1039,8 +1045,13 @@ function listAllConversations() {
     // agent — donc jamais exclu de la sidebar, du backfill ni de la recherche,
     // sans qu'aucun test ne le voie. `agentIntent` tient lieu de titre : un agent
     // n'est jamais titré (exclusion 3ter), le libellé doit voyager avec la méta.
+    // `snippet` (lot AA) y est pour LA MÊME raison, et c'est le point unique
+    // d'échec du lot : c'est un libellé, il doit voyager avec la méta. L'omettre
+    // donnerait un extrait correct sur la conversation CHAUDE et muet sur toutes
+    // les lignes froides de la sidebar, de façon intermittente, sans qu'aucun
+    // test de fonction pure ne le voie.
     out.push({ id: id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID,
-      parentConvId: c.parentConvId, agentIntent: c.agentIntent });
+      parentConvId: c.parentConvId, agentIntent: c.agentIntent, snippet: c.snippet });
   }
   return out.sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }

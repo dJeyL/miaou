@@ -516,3 +516,44 @@ describe('activeChatTemperature / setChatTemperature (override console, lot temp
     setChatTemperature(null);
   });
 });
+
+describe('TITLE_PROMPT à texte CONSTANT après extraction de TITLE_RULES (lot AA)', function() {
+  it('reste byte-identique au littéral historique', function() {
+    // Le SEUL cas du dépôt où recopier un littéral dans un test est correct :
+    // ce test EST l'oracle qui atteste que le rangement (extraction de la
+    // racine commune TITLE_RULES, partagée avec EARLY_TITLE_PROMPT) n'a rien
+    // changé au prompt affûté. Sans lui, on aurait modifié le comportement du
+    // titrage en croyant seulement réorganiser du code — l'espace en tête de
+    // TITLE_RULES suffirait à faire diverger la chaîne sans que rien n'échoue.
+    var HISTORIQUE =
+      "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
+      "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
+      "Commence par une majuscule, SAUF si le premier mot est un nom propre dont la " +
+      "graphie officielle commence par une minuscule (npm, nginx, vLLM, iPhone, " +
+      "macOS) : dans ce cas respecte scrupuleusement sa casse d'origine. " +
+      "Aucun formatage : pas d'astérisques, pas de gras, pas d'italique, pas de " +
+      "Markdown, pas de balises. Du texte brut uniquement. " +
+      "Réponds uniquement par le titre.";
+    expect(TITLE_PROMPT).toBe(HISTORIQUE);
+  });
+  it('EARLY_TITLE_PROMPT partage la MÊME racine de règles, sans la recopier', function() {
+    // Ce qui garantit que les deux prompts ne divergeront pas au premier
+    // ajustement de forme : une liste de contraintes en prose n'annonce pas son
+    // propre compte, aucun grep de compteur ne verrait la dérive.
+    expect(EARLY_TITLE_PROMPT).toContain(TITLE_RULES);
+    expect(TITLE_PROMPT).toContain(TITLE_RULES);
+  });
+  it('EARLY_TITLE_PROMPT dit explicitement que l\'assistant n\'a pas répondu', function() {
+    // La raison d'être du prompt dédié : donné TITLE_PROMPT, le modèle
+    // chercherait à résumer « la conversation » dont il ne voit qu'une moitié.
+    expect(EARLY_TITLE_PROMPT).toContain('pas encore répondu');
+  });
+  it('EARLY_TITLE_PROMPT demande de RETENIR le spécifique, jamais de résumer (AA-2)', function() {
+    // Retour d'usage : « résumant le sujet » faisait monter en généralité — un
+    // seul message porte moins de matière qu'un échange, et résumer produit la
+    // catégorie de la demande au lieu de son objet. Le verbe est l'invariant :
+    // le remettre à « résume » rouvrirait exactement le défaut corrigé.
+    expect(EARLY_TITLE_PROMPT).toContain('les termes les plus spécifiques');
+    expect(EARLY_TITLE_PROMPT).toContain('monter en généralité');
+  });
+});

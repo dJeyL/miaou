@@ -1478,6 +1478,27 @@ function messageTextForSummary(m) {
   return c || '';
 }
 
+// Extrait de secours affiché à la place d'un titre, le temps que le titrage
+// aboutisse (lot AA, niveau 1). PUR. Prend le texte DÉJÀ extrait par
+// messageTextForSummary : ne jamais reparser un message ici, ce serait la
+// deuxième formule que le point d'écriture unique cherche à éviter.
+//
+// N'emprunte PAS normalizeTitle : celui-ci nettoie une sortie de MODÈLE
+// (Markdown inline, guillemets de politesse) et n'a rien à retirer d'une saisie
+// utilisateur, dont il abîmerait au contraire le texte (un `*` tapé exprès, un
+// « … » cité). L'extrait doit RESSEMBLER à ce qui a été tapé : c'est ce qui le
+// fait lire comme un tenant-lieu et non comme un titre. Même plafond (60),
+// rien d'autre en commun.
+function conversationSnippet(text) {
+  const flat = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  if (flat.length <= 60) return flat;
+  const head = flat.slice(0, 60);
+  const sp = head.lastIndexOf(' ');
+  // Aucun espace dans les 60 premiers caractères (URL, jeton long) : coupe sec.
+  return (sp > 0 ? head.slice(0, sp) : head) + '…';
+}
+
 // Marqueur d'id public d'un tool result, exposé au modèle en tête du content
 // réinjecté par expandThread (lot O, décision B1). Dérivé UNIQUEMENT de l'id de
 // tool_call (`_hashId9(prefix + '\x00' + k)`) → byte-stable d'un tour à l'autre :

@@ -757,12 +757,31 @@ conversation » sur tout agent (`project_doc_promises_intent_code_never_confront
 — la doc ne mentait sur rien et n'échouait jamais).
 
 `convLabel(conv)` (agents.js, pure) est LE prédicat : `title`, sinon `agentIntent`
-si c'est un agent, sinon `''`. Il rend `''` et **jamais le placeholder**, parce
-que le fallback appartient à chaque surface — la topbar veut `''` pour laisser
-parler son `:empty::before`, `document.title` veut « Nouvelle conversation ».
-Les mélanger ferait remonter un placeholder là où un champ vide est attendu. Et
-il ne lit `agentIntent` que sur un agent : sur une racine, ce champ résiduel
-ferait apparaître un libellé fantôme.
+si c'est un agent, sinon `snippet` (extrait de secours, lot AA), sinon `''`. Il
+rend `''` et **jamais le placeholder**, parce que le fallback appartient à chaque
+surface — la topbar veut `''` pour laisser parler son `:empty::before`,
+`document.title` veut « Nouvelle conversation ». Les mélanger ferait remonter un
+placeholder là où un champ vide est attendu. Et il ne lit `agentIntent` que sur
+un agent : sur une racine, ce champ résiduel ferait apparaître un libellé
+fantôme.
+
+**Retour `{text, provisional}` (lot AA).** `provisional` vaut vrai pour le seul
+cas du `snippet`, que les surfaces italisent pour dire « ceci n'est pas un
+titre ». `agentIntent` n'est **pas** provisoire bien qu'il ne soit pas un titre
+non plus : c'est le libellé **définitif** d'un agent, rien ne viendra le
+remplacer, alors qu'un `snippet` attend le titrage. Ne pas « harmoniser » les
+deux cas sans titre — ils diffèrent par ce qui va leur arriver, pas par leur
+forme. L'ordre de priorité (`title` > `agentIntent` > `snippet`) est ce qui rend
+un `snippet` inerte dès qu'un titre existe, sans écriture supplémentaire.
+
+Les trois consommateurs : `openConversation` (main.js, → `setTitle`),
+`syncAgentBanner` (ui.js, qui prend `.text` seul — le bandeau de parent n'italise
+pas, ce libellé y est une information d'orientation) et `convItemEl`
+(renderConvList, rallié au lot AA — c'était la dernière surface de libellé restée
+hors du prédicat). La branche `agentIntent` y est morte par construction
+(`renderConvList` filtre sur `isRootConversation`), ce qui ne dispense pas le
+prédicat de la porter : c'est `convLabel` qui doit rester complet, pas chacun de
+ses appelants.
 
 ### Les deux voies d'écriture du titre se ferment ensemble
 

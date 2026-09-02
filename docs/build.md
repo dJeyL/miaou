@@ -72,13 +72,15 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   `__MIAOU_CONFIG__` est un identifiant nu → `ReferenceError` attrapée → `{}`.
   (Un `typeof … !== 'undefined'` ne convient pas : la garde elle-même contient
   le marqueur, qui serait substitué → objet dupliqué.)
-- Les valeurs dérivées (`REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
-  `BUILD_API_MODEL`, `BUILD_CHAT_TEMPERATURE`, `BUILD_REPO_URL`, plus `BUILD_TS`
-  ci-dessous) sont
-  **toutes déclarées dans `storage.js`**, juste sous `BUILD_CONFIG`, avec leurs
-  défauts. Elles ne sont **référencées ailleurs qu'en corps de fonction**
-  (cf. contrainte `const`/test runner dans `CLAUDE.md`) : ne pas les redéclarer
-  dans un autre fichier au top-level.
+- Les valeurs dérivées sont **toutes déclarées dans `storage.js`**, juste sous
+  `BUILD_CONFIG`, avec leurs défauts — **la liste ne se lit qu'à cet endroit, et
+  n'est recopiée nulle part** : elle l'était ici, et avait déjà dérivé (trois
+  dérivés manquants) exactement comme le décrit la règle des énumérations
+  recopiées de `CLAUDE.md`, qu'aucun grep de compteur ne peut attraper. Elles ne
+  sont **référencées ailleurs qu'en corps de fonction** (cf. contrainte
+  `const`/test runner dans `CLAUDE.md`) : ne pas les redéclarer dans un autre
+  fichier au top-level. Quelques-unes ont un raisonnement propre, développé
+  ci-dessous ; les autres suivent le patron `BUILD_CONFIG.<clef> || <défaut>`.
 - **`build_ts` n'est pas une clef de `config.json`** : `build.py` l'écrase dans
   `cfg_data` juste avant sérialisation (epoch Unix en secondes). En écrire une
   dans `config.json` ne sert à rien — elle serait remplacée en silence. Son
@@ -93,6 +95,12 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).
+- `BUILD_EARLY_TITLE` (clef `early_title`, défaut `true`, lot AA) est le seul
+  dérivé qui alimente **`DEFAULT_SETTINGS` et non un test direct** : le réglage
+  est utilisateur, le build n'en pose que le défaut. Résolu **dans
+  `DEFAULT_SETTINGS`** et pas dans `loadSettings` comme `url`/`model`, parce
+  qu'il est booléen : « absent » n'y serait pas distinguable de « false ».
+  Contrainte d'ordre : sa déclaration précède `DEFAULT_SETTINGS` dans le fichier.
 
 ## Marqueur d'aide : `__MIAOU_HELP__`
 

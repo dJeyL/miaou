@@ -100,6 +100,10 @@ Figtree/Fira Code).
 
 - Conversations persistantes (IndexedDB), sidebar à sections temporelles et
   redimensionnable, titres auto-générés et éditables.
+- **Libellé disponible dès l'envoi** : un extrait du premier message tient lieu
+  de titre (en italique) le temps que le titrage aboutisse, et le titre est
+  généré dès l'envoi plutôt qu'en fin d'échange — désactivable
+  (`early_title`) ; cf. `docs/storage.md`.
 - Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
   contextuelle, et deux outils pour que le modèle aille chercher lui-même dans
@@ -213,6 +217,7 @@ build.
   "api_model":               "gemma4:26b-nvfp4",
   "max_summaries":           3,
   "require_api_key":         true,
+  "early_title":             true,
   "chat_temperature":        0.7,
   "default_context_window":  32768,
   "max_agents_per_conv":     3,
@@ -231,6 +236,9 @@ build.
 - `require_api_key` : gouverne l'état « configuré ». Par défaut (`true`), le
   composer exige URL **et** clef. À `false`, l'URL seule suffit — pour un
   endpoint sans authentification.
+- `early_title` : titrage dès l'envoi (défaut `true`). Valeur **par défaut** du
+  réglage utilisateur, qui prime une fois modifié. À `false`, le titre n'est
+  généré qu'en fin d'échange, comme avant le lot AA.
 - `chat_temperature` : température des envois de chat (défaut `0.7`). Ne
   concerne que la conversation : les appels internes (titrage, résumé,
   description de fichier) gardent leur propre valeur, plus basse. Une valeur

@@ -3127,10 +3127,17 @@ function convItemEl(c, convs) {
   const lockAttrs = agentBusy
     ? ' disabled title="Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant."'
     : '';
+  // convLabel, pas `c.title` nu (lot AA) : c'était la dernière des surfaces de
+  // libellé restée hors du prédicat. Elle y gagne l'extrait provisoire — la
+  // branche `agentIntent` y est morte par construction (renderConvList filtre
+  // sur isRootConversation, un agent n'atteint jamais cette ligne), ce qui ne
+  // dispense pas le prédicat de la porter : elle sert aux deux autres surfaces.
+  const lbl = convLabel(c);
+  const titleCls = 'conv-title' + (lbl.provisional ? ' provisional' : '');
   el.innerHTML =
     `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}${lockAttrs}>
      <div class="conv-body">
-       <div class="conv-title">${escHtml(c.title || 'Nouvelle conversation')}</div>
+       <div class="${titleCls}">${escHtml(lbl.text || 'Nouvelle conversation')}</div>
        <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
      <div class="conv-actions">
@@ -3381,9 +3388,20 @@ function initSidebarResize() {
   document.addEventListener('mouseup', onUp);
 }
 
-function setTitle(t) {
-  $('conv-title').textContent = t || '';
-  document.title = (t || 'Nouvelle conversation') + ' — MIAOU';
+// `label` : soit une chaîne (titre définitif — applyGeneratedTitle), soit
+// l'objet {text, provisional} de convLabel (lot AA). Les deux formes sont
+// admises parce que les deux appelants ont des besoins différents : un titrage
+// qui vient d'aboutir SAIT qu'il n'est pas provisoire, l'ouverture d'une
+// conversation doit le demander au prédicat.
+function setTitle(label) {
+  const o = (label && typeof label === 'object') ? label : { text: label || '', provisional: false };
+  const el = $('conv-title');
+  el.textContent = o.text || '';
+  el.classList.toggle('provisional', !!o.provisional);
+  // L'onglet reçoit l'extrait BRUT, sans marque de provisoire : il n'a pas
+  // d'italique, et distinguer les conversations entre plusieurs onglets prime
+  // sur signaler le statut du titre.
+  document.title = (o.text || 'Nouvelle conversation') + ' — MIAOU';
 }
 
 // Éditabilité DURABLE du titre, gouvernée par la nature de la conversation
@@ -3437,7 +3455,10 @@ function syncAgentBanner(conv) {
   }
   const parent = loadConversation(conv.parentConvId);
   if (parent) {
-    const label = convLabel(parent) || 'Nouvelle conversation';
+    // `.text` seul : le bandeau n'italise pas le provisoire — le libellé du
+    // parent y est une information d'orientation, pas un titre en attente, et
+    // le `title` d'attribut qui en dérive est du texte brut.
+    const label = convLabel(parent).text || 'Nouvelle conversation';
     link.textContent = label;
     link.onclick = () => selectConv(parent.id, true);
     link.style.pointerEvents = '';
@@ -5068,6 +5089,7 @@ function settingsFormDirty() {
     || $('set-reasoning-effort').value !== (s.reasoningEffort || '')
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
     || $('set-intent-tracing').checked !== !!s.intentTracing
+    || $('set-early-title').checked !== !!s.earlyTitle
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
@@ -5143,6 +5165,7 @@ function openSettings() {
   setFontsUI(s.fonts || 'graphite');
   setMotionUI(s.motion || 'system');
   $('set-intent-tracing').checked = !!s.intentTracing;
+  $('set-early-title').checked = !!s.earlyTitle;
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');

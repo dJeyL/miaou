@@ -28,34 +28,58 @@ describe('isRootConversation / isAgentConversation (X-1, étape 1)', function() 
   });
 });
 
-describe('convLabel (X-1, navigation) — le libellé d\'une conversation', function() {
-  it('une racine titrée rend son titre', function() {
-    expect(convLabel({ id: 'c1', title: 'Refonte export' })).toBe('Refonte export');
+describe('convLabel (X-1, navigation ; AA, extrait provisoire) — le libellé d\'une conversation', function() {
+  it('une racine titrée rend son titre, non provisoire', function() {
+    expect(convLabel({ id: 'c1', title: 'Refonte export' })).toEqual({ text: 'Refonte export', provisional: false });
   });
   it('un AGENT non titré retombe sur agentIntent — sinon la topbar affiche « Nouvelle conversation »', function() {
     // Le cas qui motive le prédicat : title est figé à '' au spawn (exclusion
     // 3ter), et la description d'agent__spawn PROMET au modèle que l'intent
     // tient lieu de titre. Sans consommateur, cette promesse est un mensonge.
     expect(convLabel({ id: 'a1', parentConvId: 'p1', title: '', agentIntent: 'Rédiger la note' }))
-      .toBe('Rédiger la note');
+      .toEqual({ text: 'Rédiger la note', provisional: false });
+  });
+  it('agentIntent n\'est PAS provisoire — c\'est un libellé définitif, pas une attente', function() {
+    // La distinction qui empêche un futur lot d'« harmoniser » les deux cas
+    // sans titre : un agent n'est jamais titré, rien ne remplacera son intent,
+    // alors qu'un snippet attend le titrage. L'italique dirait le contraire.
+    expect(convLabel({ id: 'a4', parentConvId: 'p1', title: '', agentIntent: 'Trier' }).provisional).toBe(false);
   });
   it('une RACINE non titrée ne récupère PAS un agentIntent résiduel', function() {
     // Défense contre un record hybride : agentIntent n'a de sens que porté par
     // un agent. Le lire sur une racine ferait apparaître un libellé fantôme.
-    expect(convLabel({ id: 'c2', title: '', agentIntent: 'résidu' })).toBe('');
+    expect(convLabel({ id: 'c2', title: '', agentIntent: 'résidu' })).toEqual({ text: '', provisional: false });
   });
   it('un agent titré préfère son titre (le champ existe, on ne l\'ignore pas)', function() {
-    expect(convLabel({ id: 'a2', parentConvId: 'p1', title: 'posé', agentIntent: 'intent' })).toBe('posé');
+    expect(convLabel({ id: 'a2', parentConvId: 'p1', title: 'posé', agentIntent: 'intent' }))
+      .toEqual({ text: 'posé', provisional: false });
+  });
+  it('une racine sans titre rend son snippet, marqué provisoire (AA)', function() {
+    expect(convLabel({ id: 'c4', snippet: 'Comment configurer Caddy…' }))
+      .toEqual({ text: 'Comment configurer Caddy…', provisional: true });
+  });
+  it('un TITRE bat le snippet — un extrait ne peut jamais écraser un titre (AA)', function() {
+    // Le snippet n'est pas effacé quand le titre arrive (écriture inutile) :
+    // c'est l'ORDRE du prédicat qui le rend inerte. Inverser les deux tests
+    // ferait réapparaître l'extrait sur une conversation titrée.
+    expect(convLabel({ id: 'c5', title: 'Reverse proxy Caddy', snippet: 'Comment configurer…' }))
+      .toEqual({ text: 'Reverse proxy Caddy', provisional: false });
+  });
+  it('un agent portant un snippet résiduel rend quand même son agentIntent (AA)', function() {
+    // maybeWriteSnippet s'abstient sur un agent, donc le cas ne se produit pas
+    // ; l'ordre du prédicat le garantit en défense.
+    expect(convLabel({ id: 'a5', parentConvId: 'p1', title: '', agentIntent: 'Trier', snippet: 'résidu' }))
+      .toEqual({ text: 'Trier', provisional: false });
   });
   it('rend \'\' et jamais le placeholder — le fallback appartient à la surface', function() {
     // La topbar veut '' (son :empty::before parle), le document.title veut
     // « Nouvelle conversation ». Mélanger les deux ferait remonter un
     // placeholder là où un champ vide est attendu.
-    expect(convLabel({ id: 'c3' })).toBe('');
-    expect(convLabel(null)).toBe('');
+    expect(convLabel({ id: 'c3' })).toEqual({ text: '', provisional: false });
+    expect(convLabel(null)).toEqual({ text: '', provisional: false });
   });
   it('un agent sans agentIntent rend \'\' plutôt que undefined', function() {
-    expect(convLabel({ id: 'a3', parentConvId: 'p1' })).toBe('');
+    expect(convLabel({ id: 'a3', parentConvId: 'p1' })).toEqual({ text: '', provisional: false });
   });
 });
 

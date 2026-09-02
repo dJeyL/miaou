@@ -2534,3 +2534,39 @@ describe('ackIsError — écriture partielle d\'une ressource (lot Y)', function
     expect(ackIsError({ kind: 'docs_pack', ok: false })).toBe(true);
   });
 });
+
+describe('conversationSnippet (AA, niveau 1) — extrait de secours d\'une conversation', function() {
+  it('rend \'\' sur vide, null et blancs seuls — l\'appelant s\'abstient alors d\'écrire', function() {
+    expect(conversationSnippet('')).toBe('');
+    expect(conversationSnippet(null)).toBe('');
+    expect(conversationSnippet(undefined)).toBe('');
+    expect(conversationSnippet('   \n\t  ')).toBe('');
+  });
+  it('rend un texte court tel quel', function() {
+    expect(conversationSnippet('Configurer Caddy')).toBe('Configurer Caddy');
+  });
+  it('aplatit les sauts de ligne — une ligne de sidebar, pas un paragraphe', function() {
+    expect(conversationSnippet('Salut\n\nJ\'ai   un souci')).toBe('Salut J\'ai un souci');
+  });
+  it('garde intact un texte de 60 caractères exactement (pas de … superflu)', function() {
+    var s60 = '123456789 123456789 123456789 123456789 123456789 123456789x';
+    expect(s60.length).toBe(60);   // la borne exacte, celle qui décide entre <= et >
+    expect(conversationSnippet(s60)).toBe(s60);
+  });
+  it('coupe sur une frontière de mot au-delà de 60, avec un … (caractère unique)', function() {
+    var out = conversationSnippet('Comment configurer un reverse proxy Caddy avec un certificat wildcard Let\'s Encrypt');
+    expect(out).toBe('Comment configurer un reverse proxy Caddy avec un…');
+  });
+  it('coupe sec quand les 60 premiers caractères ne portent aucun espace (URL, jeton long)', function() {
+    // Sans ce cas, lastIndexOf(' ') vaut -1 et une coupe naïve rendrait ''.
+    var url = 'https://example.invalid/' + new Array(80).join('a');
+    var out = conversationSnippet(url);
+    expect(out.length).toBe(61);
+    expect(out).toBe(url.slice(0, 60) + '…');
+  });
+  it('ne nettoie PAS le Markdown, contrairement à normalizeTitle', function() {
+    // normalizeTitle traite une sortie de MODÈLE ; ici c'est une saisie
+    // utilisateur, dont les astérisques et guillemets sont intentionnels.
+    expect(conversationSnippet('**important** : « lire ceci »')).toBe('**important** : « lire ceci »');
+  });
+});

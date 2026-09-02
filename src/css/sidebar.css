@@ -278,6 +278,11 @@
   text-overflow: ellipsis;
   color: var(--text);
 }
+/* Extrait provisoire (lot AA) : l'italique dit « ceci n'est pas un titre »,
+   sans icône ni couleur supplémentaire. Règle posée dans le fichier de SON
+   composant, jamais regroupée ailleurs — un `.provisional` tiers dépendrait de
+   l'ordre de CSS_ORDER pour gagner. */
+.conv-title.provisional { font-style: italic; }
 .conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; }
 .conv-actions {
   display: flex;

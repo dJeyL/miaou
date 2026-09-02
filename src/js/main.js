@@ -1601,8 +1601,12 @@ function persistCurrent() {
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
   if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
-  // Pas de titre provisoire : « Nouvelle conversation » (placeholder topbar +
-  // fallback liste) jusqu'au titrage en arrière-plan.
+  // N'écrit AUCUN titre, et ne doit jamais en écrire. Le libellé d'attente
+  // existe depuis le lot AA (`snippet`), mais il vit sur la MÉTA — écrit une
+  // fois par maybeWriteSnippet via persistConversationField, jamais par cette
+  // fonction, qui persiste les messages. Y ajouter une écriture de titre
+  // ouvrirait un second écrivain du libellé, concurrent des trois niveaux de
+  // titrage.
   saveConversation(conv);
   renderConvList();
 }
@@ -1650,6 +1654,7 @@ function onSaveSettings() {
     reasoningEffort: $('set-reasoning-effort').value,
     showReasoningSelector: $('set-reasoningselector').checked,
     intentTracing: $('set-intent-tracing').checked,
+    earlyTitle: $('set-early-title').checked,
     describeFiles: $('set-describe-files').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,
@@ -2806,10 +2811,62 @@ async function sendUserText(text, bakedContent, attachments) {
   }
   if (attachments && attachments.length) msg.attachments = attachments;
   currentThread.push(msg);
+  maybeWriteSnippet(currentConvId, msg);
   persistCurrent();
   armIdleSummaryTimer();
 
   runGenerationFromCurrentThread();
+}
+
+// Extrait de secours (lot AA, niveau 1) : écrit UNE SEULE FOIS, au premier
+// message user authentique d'une conversation, jamais recalculé ni invalidé
+// ensuite — même discipline figée que le descripteur d'image (piège 17).
+//
+// Ancré dans sendUserText et non dans sendMessage : sendUserText est le cœur
+// d'envoi PARTAGÉ (composer + reprise « fork B » d'ask_confirmation), donc le
+// seul point d'écriture qui ne manque aucun chemin.
+//
+// Persisté sur la MÉTA, et c'est le point dur du lot : depuis le lot U,
+// `messages` n'est peuplé que pour les conversations CHAUDES, donc un extrait
+// dérivé à la volée serait correct sur la conversation affichée et muet sur
+// toutes les lignes FROIDES de la sidebar, sans qu'aucun test pur ne le voie.
+// Même raisonnement, mot pour mot, que celui qui a fait monter `agentIntent`
+// à la méta (listAllConversations, storage.js).
+//
+// Passe OBLIGATOIREMENT par persistConversationField : c'est lui qui émet
+// `conv-updated` sur tx.oncomplete (piège 24 a), donc la propagation
+// multi-onglets. Une voie parallèle la perdrait en silence, sans rien casser
+// de visible en mono-onglet.
+//
+// Cinq gardes, chacune pour une raison DISTINCTE — les énumérer ici pour
+// qu'une simplification future n'en fusionne pas deux :
+//   conv.title           titre manuel saisi avant l'envoi (ensureConversation le
+//                        lit dans la topbar) : ne jamais le concurrencer ;
+//   conv.snippet         écriture unique — le 2e message user ne réécrit rien ;
+//   isAgentConversation  abstention EXPLICITE : un agent a déjà son libellé
+//                        définitif (agentIntent), un snippet y serait une donnée
+//                        morte que convLabel n'atteindrait jamais ;
+//   msg._synthetic       message user non authentique (recall d'image) ;
+//   !text                message sans texte (image seule) : rien à afficher, on
+//                        laisse le placeholder et le niveau 2 titrera.
+function maybeWriteSnippet(convId, msg) {
+  if (!convId || !msg) return;
+  const conv = loadConversation(convId);
+  if (!conv) return;
+  if (conv.title || conv.snippet) return;
+  if (isAgentConversation(conv)) return;
+  if (msg._synthetic) return;
+  const text = conversationSnippet(messageTextForSummary(msg));
+  if (!text) return;
+  persistConversationField(convId, { snippet: text });
+  // Les DEUX surfaces d'écran, comme applyGeneratedTitle : persister ne peint
+  // rien. La sidebar serait rafraîchie de toute façon par le renderConvList de
+  // persistCurrent juste après, mais s'appuyer là-dessus lierait l'affichage du
+  // libellé à l'ordre de deux appels indépendants — la topbar, elle, n'a AUCUN
+  // rafraîchisseur sur ce chemin (défaut relevé au premier passage du script de
+  // vérification : l'extrait apparaissait en sidebar et pas en topbar).
+  if (convId === currentConvId) setTitle(convLabel(loadConversation(convId)));
+  renderConvList();
 }
 
 // Cœur de l'envoi : recherche mémoire (sur le dernier message utilisateur),
@@ -2998,6 +3055,10 @@ async function dispatchSend(matches, continuation) {
   // before initialization ») qui avortait tout envoi.
   const gen = createGeneration(currentConvId, currentThread, { model, serverName, reasoningEffort });
   registerGeneration(gen);
+  // Titrage précoce (lot AA, niveau 2). Émis ICI, sans être attendu : c'est le
+  // seul point où le modèle est résolu, où `gen` existe, et où le fetch de
+  // titrage peut partir AVANT celui de la génération — un await l'inverserait.
+  maybeEarlyTitle(gen);
   {
     const lastUserAt = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
     for (let i = 0; i < gen.thread.length; i++) {
@@ -3602,6 +3663,52 @@ function applyGeneratedTitle(convId, title) {
   if (loadConversation(convId)) persistConversationField(convId, { title: title });
   if (convId === currentConvId) setTitle(title);   // barre du haut + <title> de la page
   renderConvList();                                 // liste de gauche
+}
+
+// Titrage précoce (lot AA, niveau 2), lancé sans être attendu depuis
+// dispatchSend, juste avant l'appel de génération.
+//
+// Le PRIX est assumé, ce n'est pas un défaut à corriger : l'ordre d'ÉMISSION ne
+// détermine pas l'ordre de SERVICE. Ollama sérialise par modèle, donc le
+// titrage arrivé premier dans la file fait attendre la génération principale et
+// retarde son premier token d'autant. C'est la conséquence directe de la
+// priorité choisie (avoir le titre tôt prime sur démarrer la réponse tôt), et
+// c'est ce que le réglage `earlyTitle` permet d'inverser.
+//
+// Pas de setTitleEditable ici, contrairement à maybeTitle : le verrou
+// transitoire se justifiait sur un titrage de fin d'échange, où l'utilisateur
+// regarde une conversation posée. Surtout, le poser depuis DEUX chemins qui
+// peuvent se chevaucher (précoce et fin d'échange) ferait déverrouiller le
+// premier fini pendant que l'autre tourne. Un seul chemin pose ce verrou :
+// celui qui l'avait.
+//
+// Course bénigne assumée : si ce titrage revient APRÈS onFinal, maybeTitle aura
+// déjà tourné (gen.needTitle était encore vrai) et deux titrages auront eu lieu,
+// le dernier arrivé écrasant l'autre. Fenêtre étroite (titrer un seul message
+// sans raisonnement est structurellement plus court qu'un échange complet à
+// tours d'outils — le cas motivant du lot) et préjudice nul, les deux titres
+// étant plausibles. Un verrou coûterait un état de plus pour rien.
+async function maybeEarlyTitle(gen) {
+  if (!gen || !gen.needTitle || !gen.convId) return;
+  if (!loadSettings().earlyTitle) return;
+  const conv = loadConversation(gen.convId);
+  if (!conv || conv.title || isAgentConversation(conv)) return;
+  // Dernier message user AUTHENTIQUE : un recall d'image est un message user
+  // synthétique émis par expandThread, pas une demande de l'utilisateur.
+  const lastUser = gen.thread.slice().reverse().find(m => m.role === 'user' && !m._synthetic);
+  if (!lastUser) return;
+  const text = messageTextForSummary(lastUser);
+  if (!text.trim()) return;   // image seule : rien à titrer, le niveau 3 fera le travail
+  const convId = gen.convId;  // figé avant l'async (piège 9), comme maybeTitle
+  const title = await runBackgroundTask('titrage…', () => generateEarlyTitle(text, gen.model));
+  if (!title) return;         // échec : gen.needTitle reste armé, le niveau 3 sert de filet
+  // Désarmer le niveau 3 sur les DEUX porteurs. `gen.needTitle` est une COPIE
+  // figée au démarrage de la génération (createGeneration, piège 9) et c'est la
+  // SEULE que maybeTitle lit : éteindre la globale d'écran seule ne désarmerait
+  // rien du tout.
+  gen.needTitle = false;
+  if (convId === currentConvId) needTitle = false;
+  applyGeneratedTitle(convId, title);
 }
 
 // `gen` (lot T-1a) : le besoin de titrage et le thread appartiennent à la

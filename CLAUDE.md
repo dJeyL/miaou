@@ -375,8 +375,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `miaou-memories`, `miaou-mcp-servers`, `miaou-api-servers`,
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
-  derniers migrés depuis localStorage au lot U), plus le format d'export/import
-  complet (`.zip` depuis le lot V-3).
+  derniers migrés depuis localStorage au lot U), champ de méta `snippet`
+  (extrait de secours, lot AA), plus le format d'export/import complet
+  (`.zip` depuis le lot V-3).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
@@ -433,7 +434,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
   parent accroché au `finally`, extension et alignement des badges, lecture
   seule d'un agent terminé (`isFinishedAgentConv`) et interjections reçues
-  pendant son travail (X-1f).
+  pendant son travail (X-1f) ; prédicat de libellé `convLabel`, qui rend
+  `{text, provisional}` depuis le lot AA (`title` > `agentIntent` > `snippet`).
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

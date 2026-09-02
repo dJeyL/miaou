@@ -130,6 +130,8 @@
   cursor: text;
   transition: background 130ms var(--ease), border-color 130ms var(--ease);
 }
+/* Extrait provisoire (lot AA), cf. .conv-title.provisional (sidebar.css). */
+.conv-title-edit.provisional { font-style: italic; }
 .conv-title-edit:hover { background: var(--surface-2); }
 .conv-title-edit:focus { background: var(--surface-2); border-color: var(--border-2); }
 .conv-title-edit[contenteditable="false"] { cursor: default; }

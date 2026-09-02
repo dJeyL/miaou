@@ -61,11 +61,24 @@ function agentChildrenOf(convId, convs) {
 // chaque surface (la topbar veut '' pour laisser parler son :empty::before, le
 // document.title veut « Nouvelle conversation »). Mélanger les deux ferait
 // remonter un placeholder là où un champ vide était attendu.
+//
+// Retourne {text, provisional} depuis le lot AA : `provisional` vaut vrai pour
+// le SEUL cas de l'extrait de secours (`snippet`), que les surfaces italisent
+// pour dire « ceci n'est pas un titre ». `agentIntent` n'est PAS provisoire
+// bien qu'il ne soit pas un titre non plus : il est le libellé DÉFINITIF d'un
+// agent (jamais titré, exclusion 3ter), rien ne viendra le remplacer — alors
+// qu'un `snippet` est en attente du titrage. Ne pas « harmoniser » les deux
+// cas sans titre : ils diffèrent par ce qui va leur arriver, pas par leur forme.
+//
+// Ordre de priorité à ne pas inverser : title > agentIntent > snippet. Un agent
+// n'écrit jamais de `snippet` (maybeWriteSnippet s'en abstient), donc le
+// troisième test ne peut pas le capturer — l'ordre le garantit en défense.
 function convLabel(conv) {
-  if (!conv) return '';
-  if (conv.title) return conv.title;
-  if (isAgentConversation(conv)) return conv.agentIntent || '';
-  return '';
+  if (!conv) return { text: '', provisional: false };
+  if (conv.title) return { text: conv.title, provisional: false };
+  if (isAgentConversation(conv)) return { text: conv.agentIntent || '', provisional: false };
+  if (conv.snippet) return { text: conv.snippet, provisional: true };
+  return { text: '', provisional: false };
 }
 
 // ── Statut ──────────────────────────────────────────────────────────────────

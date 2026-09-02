@@ -295,7 +295,7 @@ réchaufferait, et le script ne prouverait plus rien du chemin froid.
 ### Schéma d'une conversation (store IDB `conversations`)
 
 Record `{ id, title, timestamp, updatedAt?, messages, model?, reasoningEffort?,
-pinned?, spaceId?, attSeq? }` (keyPath `id`, index `by_space`).
+pinned?, spaceId?, attSeq?, snippet? }` (keyPath `id`, index `by_space`).
 `spaceId` (feature Spaces, lot C) : id du Space propriétaire ; absent =
 `DEFAULT_SPACE_ID` (`listAllConversations()` l'expose toujours résolu dans sa
 projection, jamais `undefined`). Backfillé par `migrateSpacesIfNeeded()` sur
@@ -306,6 +306,19 @@ l'**override de modèle de la conversation** — à ne **jamais** confondre avec
 champ `model` de chaque message assistant (quel modèle a produit *cette*
 réponse, cf. backfill modèle). `reasoningEffort` (optionnel) est l'**override de
 niveau de raisonnement de la conversation**.
+
+`snippet` (optionnel, lot AA) est l'**extrait de secours** : le début du premier
+message user, écrit **une seule fois** par `maybeWriteSnippet` (main.js) via
+`persistConversationField`, jamais recalculé ni effacé ensuite (même discipline
+figée que le descripteur d'image, piège 17). Il tient lieu de libellé tant
+qu'aucun titre n'existe — `convLabel` le rend avec `provisional: true`, et les
+surfaces l'italisent. Un agent n'en porte jamais (abstention explicite : son
+`agentIntent` est déjà son libellé définitif). Il devient inerte, sans être
+supprimé, dès qu'un titre arrive : c'est l'ORDRE de `convLabel` qui le neutralise
+(`title` > `agentIntent` > `snippet`), pas une écriture supplémentaire.
+**`listAllConversations()` le projette**, pour la même raison qu'`agentIntent`
+ci-dessous : un libellé doit voyager avec la méta, sans quoi il serait correct
+sur la conversation chaude et muet sur les lignes froides de la sidebar.
 
 **Champs d'agent (lot X-1)**, tous optionnels et absents d'une conversation
 racine : `parentConvId` (id du parent — sa présence EST la définition d'un

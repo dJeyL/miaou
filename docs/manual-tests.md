@@ -1199,3 +1199,51 @@ Ce qui reste à l'œil, avec un vrai modèle :
    l'écriture est complète — l'ack `resource_appended` doit rester **neutre**
    (seul l'ack `js_eval` est rouge). C'est la distinction que le code fait entre
    « calcul interrompu » et « retour refusé ».
+
+## Titre disponible tôt (lot AA)
+
+La cascade des trois niveaux — extrait instantané, titrage précoce, titrage de
+fin d'échange — n'est pas testable en pur : les deux premiers touchent la
+projection de méta, la propagation multi-onglets et l'ordre d'émission de deux
+requêtes. Un script de vérification runtime couvre les points 1 à 8 ci-dessous
+(`verify-early-title.mjs`, modèle stubé, 23 contrôles) ; les points 9 et 10
+demandent un vrai backend. Deux pièges de harnais y ont été payés, notés dans le
+script : le **chat doit être servi en SSE** (un stub JSON laisse le message
+assistant à `content` vide, `maybeTitle` s'abstient alors à raison et le script
+lit « le niveau 3 ne titre pas » sur un défaut de son propre montage), et la
+retenue des réponses doit passer par un **flag lu dans le handler unique**,
+jamais par un second `page.route` posé par-dessus.
+
+1. **Extrait à la seconde zéro.** Envoyer un premier message : la sidebar **et**
+   la topbar affichent le début du message **en italique**, immédiatement. Le
+   titre de l'onglet l'affiche **sans** italique (il n'en a pas, et distinguer
+   les conversations entre onglets prime sur signaler le statut du titre).
+2. **Le titre remplace l'extrait.** Quand le titrage précoce aboutit, l'italique
+   disparaît des deux surfaces.
+3. **Ligne froide** (le point dur du lot). Forcer l'éviction du cache de
+   messages de la conversation, puis re-rendre la liste : la ligne affiche
+   toujours son libellé. Sans la projection de `snippet` dans
+   `listAllConversations`, elle retomberait sur « Nouvelle conversation » —
+   correct sur la conversation chaude, muet ailleurs, et invisible en test pur.
+4. **Agent.** Un agent affiche son `agentIntent`, **sans italique** (c'est un
+   libellé définitif, pas une attente), et ne porte **aucun** `snippet` en base
+   (à lire en IDB, pas à l'écran : l'absence est l'invariant, l'affichage
+   correct ne la prouve pas).
+5. **Bandeau de parent.** Pendant qu'un échange parent tourne, le bandeau d'un
+   agent affiche le libellé du parent — c'est le cas qui a motivé le lot (un
+   agent annonçait « lancé par Nouvelle conversation »).
+6. **Titre manuel.** Nommer la conversation avant d'envoyer : ni le niveau 2 ni
+   le niveau 3 ne l'écrasent, et aucun extrait n'est écrit.
+7. **Réglage désactivé.** `Titre dès l'envoi` décoché : aucun appel de titrage à
+   l'envoi, `onFinal` titre comme avant le lot.
+8. **Second onglet.** Une conversation **listée sans être ouverte** dans un autre
+   onglet reçoit le titre : le récepteur `render-list` relit la méta **après**
+   son `await` (piège 24 b). Couvert par le script en injectant l'enveloppe dans
+   `_onSyncRawMessage` — BroadcastChannel ne traverse pas deux pages `file://`,
+   et le transport n'est de toute façon pas ce qu'on teste ici.
+9. **Message sans texte.** Envoyer une image seule : aucun extrait (rien à
+   afficher), aucun titrage précoce, le niveau 3 titre normalement.
+10. **Latence du premier token.** Sur un backend qui sérialise par modèle
+    (Ollama), constater le décalage assumé : le titrage part en premier et
+    retarde le début de la réponse. C'est la contrepartie du lot, pas un bug —
+    c'est ce que le réglage permet d'inverser.

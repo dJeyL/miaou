@@ -184,15 +184,53 @@ function claimVisionRetry(messages, url, model) {
   return true;
 }
 
-const TITLE_PROMPT =
-  "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
-  "conversation. Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
+// Racine commune des deux prompts de titrage (lot AA) : SOURCE UNIQUE des
+// règles de forme, jamais recopiée — seulement concaténée. Deux littéraux
+// complets côte à côte feraient dériver ces règles au premier ajustement de
+// l'un des deux, et c'est exactement le motif d'énumération recopiée qu'aucun
+// grep de compteur ne peut attraper : une liste de contraintes en prose
+// n'annonce pas son propre compte.
+//
+// Le découpage n'est PAS « TITLE_PROMPT moins sa dernière phrase » : la seule
+// mention de situation du prompt d'origine est le mot « conversation »,
+// ENCHÂSSÉ dans sa première phrase. La situation est donc en TÊTE et la racine
+// en QUEUE. L'espace en tête de TITLE_RULES est ce qui rend l'assemblage
+// byte-identique à l'ancien littéral : c'est fragile, et c'est précisément
+// pourquoi run_title_prompt_constant_test est obligatoire, pas optionnel.
+const TITLE_RULES =
+  " Pas de ponctuation finale, pas de guillemets, pas de préfixe. " +
   "Commence par une majuscule, SAUF si le premier mot est un nom propre dont la " +
   "graphie officielle commence par une minuscule (npm, nginx, vLLM, iPhone, " +
   "macOS) : dans ce cas respecte scrupuleusement sa casse d'origine. " +
   "Aucun formatage : pas d'astérisques, pas de gras, pas d'italique, pas de " +
   "Markdown, pas de balises. Du texte brut uniquement. " +
   "Réponds uniquement par le titre.";
+
+// Titrage de fin d'échange — chaîne finalement envoyée INCHANGÉE (lot AA).
+const TITLE_PROMPT =
+  "Génère un titre court (3 à 6 mots) résumant le sujet principal de la " +
+  "conversation." + TITLE_RULES;
+
+// Titrage précoce (lot AA) : l'assistant n'a pas encore répondu, on ne dispose
+// que de la demande initiale. Le dire explicitement, sinon le modèle cherche à
+// résumer un échange dont il ne voit qu'une moitié.
+//
+// « RETIENS les termes les plus spécifiques » et non « résume le sujet »
+// (formulation d'origine, retour d'usage AA-2) : un seul message porte moins
+// de matière qu'un échange complet, et lui demander de RÉSUMER pousse à monter
+// en généralité — on obtient la CATÉGORIE de la demande (« Configuration
+// serveur web ») là où le titre de fin d'échange, qui voyait la réponse,
+// retenait son objet (« Wildcard Caddy Let's Encrypt »). Le contre-exemple
+// nommé fait plus que la consigne seule : il montre l'écart au lieu de le
+// décrire.
+const EARLY_TITLE_PROMPT =
+  "Génère un titre court (3 à 6 mots) pour la demande ci-dessous. L'assistant " +
+  "n'a pas encore répondu : titre la demande, pas une réponse imaginée. " +
+  "RETIENS les termes les plus spécifiques de la demande — noms de " +
+  "technologies, de fichiers, d'erreurs, de concepts précis — plutôt que de " +
+  "monter en généralité. Un titre qui pourrait coiffer dix autres demandes " +
+  "est raté : « Configuration serveur web » ne vaut rien face à « Wildcard " +
+  "Caddy Let's Encrypt »." + TITLE_RULES;
 
 const SUMMARY_PROMPT =
 `Tu es un module de résumé. On te fournit une conversation entre un utilisateur
@@ -954,6 +992,20 @@ async function generateTitle(thread, model) {
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
+  ], { temperature: 0.2, timeout: 60000, model: model });
+  return normalizeTitle(out);
+}
+
+// Titrage précoce (lot AA, niveau 2) : titre depuis le SEUL message user, avant
+// toute réponse. Ne passe PAS par generateTitle : celui-ci projette un thread en
+// « role: texte », ce qui donnerait « user: … » seul — un préfixe de rôle qui
+// n'a plus de sens sans interlocuteur, et que le prompt dédié ne mentionne pas.
+// `model` explicite pour la même raison que generateTitle ci-dessus : le modèle
+// de la génération qui démarre, jamais le défaut du serveur.
+async function generateEarlyTitle(userText, model) {
+  const out = await silentCompletion([
+    { role: 'system', content: EARLY_TITLE_PROMPT },
+    { role: 'user', content: String(userText == null ? '' : userText) },
   ], { temperature: 0.2, timeout: 60000, model: model });
   return normalizeTitle(out);
 }

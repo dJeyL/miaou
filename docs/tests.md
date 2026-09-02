@@ -317,6 +317,35 @@ chemins n'avaient jamais été empruntés par un test.
 Non couvrable en QuickJS : le câblage bout-en-bout spawn → exécution → réveil →
 badge, objet du verify e2e (non encore écrit).
 
+**Titre disponible tôt — lot AA (cf. `docs/storage.md`, `docs/agents.md`)** :
+`conversationSnippet` (`test-utils.js`) sur ses sept cas, dont la **borne exacte
+à 60**, la coupe sur frontière de mot, la coupe sèche quand les soixante premiers
+caractères ne portent aucun espace (sans quoi un `lastIndexOf` à `-1` rendrait la
+chaîne vide sur une URL), et le **non**-nettoyage du Markdown — l'invariant qui
+le distingue de `normalizeTitle`, lequel traite une sortie de modèle et non une
+saisie. `convLabel` (`test-agents.js`) sur ses cinq retours, avec deux cas qui
+sont l'invariant du lot plus que des cas limites : un **titre bat un snippet**
+(l'extrait n'est pas effacé quand le titre arrive, c'est l'ORDRE du prédicat qui
+le neutralise — inverser deux lignes le ferait réapparaître), et `agentIntent`
+rendu **non provisoire** (un libellé définitif, pas une attente : c'est la seule
+chose qui empêchera un futur lot d'« harmoniser » les deux cas sans titre).
+
+`TITLE_PROMPT` (`test-api.js`) est comparé en **égalité stricte au littéral
+historique recopié en dur dans le test** — le seul endroit du dépôt où recopier
+un littéral est correct, parce que le test EST l'oracle attestant que
+l'extraction de la racine commune `TITLE_RULES` (partagée avec
+`EARLY_TITLE_PROMPT`) n'a rien changé au prompt affûté. L'espace en tête de
+`TITLE_RULES` suffirait sinon à faire diverger la chaîne sans que rien n'échoue.
+
+Ce que ces tests **ne** couvrent pas, et qui serait vert en test tout en étant
+cassé en usage (`project_quickjs_tests_dont_cover_orchestration_scope`) : la
+projection de `snippet` dans `listAllConversations` (correct sur la conversation
+chaude, muet sur les lignes froides), le passage obligatoire par
+`persistConversationField` (une voie parallèle perd la propagation multi-onglets
+sans rien casser en mono-onglet), et l'extinction de `gen.needTitle` **en plus**
+de la globale d'écran (n'éteindre que la seconde laisse le niveau 3 retitrer, ce
+qui ne se voit qu'en fin d'échange). Les trois sont dans `docs/manual-tests.md`.
+
 **Ouverture de documents — `tests/test-zip.js` et `tests/test-docs.js`
 (lots V-1 à V-5, cf. `docs/tools.md`)** : les deux fichiers construisent leurs
 fixtures en **tableaux d'octets littéraux** plutôt que de lire des fichiers —

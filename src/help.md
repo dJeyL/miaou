@@ -278,6 +278,18 @@ période (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un tit
 généré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout
 moment pour reprendre où tu en étais.
 
+Un **libellé apparaît dès ton premier message**, sans attendre : le début de ce
+que tu viens d'écrire s'affiche en italique, le temps que le vrai titre arrive.
+L'italique signale que ce n'est pas encore un titre. Le titre, lui, est généré
+dès l'envoi plutôt qu'à la fin de l'échange — utile quand la réponse prend du
+temps (appels d'outils, agents lancés en parallèle), puisque tu retrouves la
+conversation par son titre sans attendre. En contrepartie, sur un serveur qui
+traite une requête à la fois, ce titrage peut retarder de quelques instants
+l'apparition du début de la réponse : le réglage **Titre dès l'envoi**
+(Paramètres → Mémoire) permet de le désactiver, auquel cas le titre arrive à la
+fin de l'échange comme avant. Si tu as toi-même nommé la conversation, rien ne
+vient l'écraser.
+
 Un champ de **recherche** filtre l'historique en temps réel, par titre ou par
 mots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même
 recherche, elle étendue à tous tes espaces.
