@@ -238,7 +238,8 @@ build.
   endpoint sans authentification.
 - `early_title` : titrage dès l'envoi (défaut `true`). Valeur **par défaut** du
   réglage utilisateur, qui prime une fois modifié. À `false`, le titre n'est
-  généré qu'en fin d'échange, comme avant le lot AA.
+  généré qu'une fois l'échange terminé — ce qui évite de retarder le premier
+  token sur un serveur qui traite une requête à la fois.
 - `chat_temperature` : température des envois de chat (défaut `0.7`). Ne
   concerne que la conversation : les appels internes (titrage, résumé,
   description de fichier) gardent leur propre valeur, plus basse. Une valeur

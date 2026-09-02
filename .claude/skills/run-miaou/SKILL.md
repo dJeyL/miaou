@@ -318,6 +318,35 @@ the stub was hit at least once belongs in the checklist itself, next to the
 behavioural ones — a green run with a cold stub is indistinguishable from a real
 pass (form 1 of the "green check proves nothing" taxonomy).
 
+### A red check may be accusing the app of a rig defect
+
+The two classes above hang or pass vacuously. This one **fails loudly, with a
+plausible-looking message**, and the message names the app. Twice in a row while
+verifying early titling (2026-09-02):
+
+- **A chat stub served as JSON leaves the assistant message with empty
+  `content`.** Everything downstream that reads it then abstains *correctly*:
+  `maybeTitle` has an 8-character guard (pitfall 5, do not title an aborted
+  exchange), so the checklist read "the end-of-exchange pass does not title" —
+  a true observation about a message the rig had emptied. **Chat must be served
+  as SSE**; only the titling/summary calls go through `silentCompletion` and are
+  legitimately stubbed as plain JSON. Both live in the same handler, so
+  discriminate before responding (`body.stream`, or the system prompt).
+- **Counters reset before earlier generations have finished** attribute their
+  late titling call to the block being measured. Reset *after* the reload and a
+  settle delay, not before.
+
+**What settles it is replaying on the revision from before the change**, not
+re-reading the code: `git worktree add /tmp/<name> HEAD --detach`, point the
+script at that `dist/miaou.html`, run it. If the same red appears there, the rig
+is lying — the behaviour predates the work in progress. This costs a minute and
+is the only thing that distinguishes "I broke it" from "the rig cannot see it",
+which reading the source cannot do: the code looks correct in both cases.
+
+Corollary for the checklist: a red assertion about an **absence** (does not
+title, does not call, does not write) deserves this treatment before any other,
+since a rig that silently disables the trigger produces exactly that shape.
+
 ## Re-run the PREVIOUS lot's verify, not only the new one
 
 When a lot touches code an earlier lot already covered, run that earlier lot's
