@@ -3288,7 +3288,19 @@ async function dispatchSend(matches, continuation) {
         if (assistantText != null) fields.assistantText = assistantText;
         if (isMcp) {
           const last = earlyRendered[earlyRendered.length - 1];
-          if (last) Object.assign(last.entry, fields);
+          if (last) {
+            Object.assign(last.entry, fields);
+            // L'ack MCP a été PEINT par onEarlyAcks, avant le round-trip
+            // réseau — donc avant que `args`/`result` n'existent, donc sans
+            // loupe (`ackHasInspectableDetail` répondait faux à ce moment-là).
+            // Sans cette rétro-application, l'affordance n'apparaissait qu'après
+            // avoir quitté et rouvert la conversation, le reload relisant
+            // l'entrée enrichie. Même motif que la rétro-application d'erreur de
+            // `onToolAcks` : muter la donnée TOUJOURS, peindre si le nœud
+            // existe (null quand la génération est détachée — le rendu à
+            // l'attache lira alors le prédicat à jour).
+            refreshAckInspectAffordance(last.node, last.entry);
+          }
         } else {
           updateLastPendingToolAck(fields);
         }

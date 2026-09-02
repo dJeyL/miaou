@@ -126,6 +126,40 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   suspecting the app or a stale assertion: check what port the proxy is
   actually on (`lsof -nP -iTCP -sTCP:LISTEN | grep -i python`) rather
   than patching the script.
+- **Wait for `.boot-done` as a STATE, never with `waitForSelector`.** The boot
+  overlay hides the app until it is ready, and the class marking the end of
+  boot is put on that overlay *as it becomes invisible*. `waitForSelector`
+  waits for **visibility**, so once the overlay is gone the call can only time
+  out: it keeps resolving the element, reporting it hidden, and retrying until
+  the timeout fires — the whole budget spent, and not one word of diagnostic
+  (`locator resolved to hidden <div class="boot-overlay boot-ready boot-done">`
+  repeated N times). Use
+  `page.waitForFunction(() => document.querySelector('.boot-done') !== null)`.
+  Waiting on `#composer-text` alone is not equivalent: it exists *under* the
+  overlay, so a screenshot taken then is a full-page shot of the splash cat
+  (the DOM measurements around it are still valid — only the pixels are
+  wrong). Both waits together is the safe form: composer for the app, class
+  for the overlay.
+  **It is a race, which is why it looks like a working idiom.** The overlay is
+  visible for a while *after* it gets the class, so an early
+  `waitForSelector('.boot-done')` resolves (measured ~1.3s — it is waiting for
+  the app, then catching the overlay still on screen). Called later — after
+  `#composer-text` has already resolved, i.e. once the overlay is gone — the
+  same line can only time out. That is why the ~17 scripts already in this
+  folder get away with it: they all append `.catch(() => {})`, so whichever way
+  the race falls, the failure is swallowed and something downstream does the
+  real synchronising. `waitForFunction` is 4ms and deterministic in both
+  positions. Don't copy those call sites as an idiom, and above all don't copy
+  one *without* its `.catch`.
+  **The overlay is never removed from the DOM** — `finishBoot` (main.js) only
+  adds the class, and not before a floor of `BOOT_MIN_AFTER_READY_MS` (1.8s).
+  So `waitForFunction(() => !document.getElementById('boot-overlay'))` waits
+  forever. **After a `page.reload()` this matters most**: `waitForSelector('#composer-text')`
+  releases well before boot ends, so every DOM assertion passes (they query the
+  DOM, not pixels) while the screenshot shows the MIAOU splash. It reads exactly
+  like an app bug ("the thread doesn't render after reload") and is expensive to
+  diagnose precisely because everything else is green. Add ~400ms after the class
+  for the fade before screenshotting. Model in place: `verify-ack-errors.mjs`.
 - **There is no localStorage state across driver runs** — Playwright
   launches a fresh, empty profile each time (`chromium.launch()` with no
   persistent context), so the app always boots to "Nouvelle
@@ -232,6 +266,19 @@ before touching the app:
   keeping a reference to the original to delegate to (cf.
   `verify-stop-deferred.mjs`, gating `callTool` to reproduce the exact window
   where `gen.abort` is null between tool-call tours).
+
+- **A protocol stub must serve the handshake, not only the call.** Replacing
+  `mcpRpc` wholesale to suspend a tool call (to hold open the window where an
+  ack is painted but not yet enriched) also suspends `initialize` and
+  `tools/list`, which `connectMcpServer` issues first: the connection never
+  completes, the tool is never registered, the model's `tool_call` has no
+  target, and the scenario being measured cannot occur. Answer `initialize` /
+  `notifications/initialized` / `tools/list` normally and gate **only**
+  `tools/call`. Same signature as the entries above — it hangs rather than
+  failing a check. Then assert the premise you now depend on (« the tool IS in
+  the registry ») as the *first* check of the script: without it, every check
+  after it would pass while measuring nothing (cf. the vacuous-stub section
+  below).
 
 General lesson for this rig: when a scenario hangs, **add a temporary DBG
 `page.evaluate` dumping what the stub actually saw** (its tag, its armed state)

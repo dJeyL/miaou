@@ -2802,6 +2802,25 @@ textarea.skill-content {
 }
 .inspect-empty { margin: 0; color: var(--text-3); font-style: italic; font-size: 11px; }
 
+.inspect-ref {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.inspect-section pre:has(+ .inspect-note) { margin-bottom: 0; }
+
+.inspect-note {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .inspect-body pre {
   margin: 0;
 }
@@ -3993,7 +4012,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-01 22:59 UTC */
+/* miaou — built: 2026-09-02 18:37 UTC */
 
 /* ── utils.js ── */
 
@@ -4076,6 +4095,31 @@ function ackDownloadTarget(m) {
   return null;
 }
 
+function ackInspectResourceTargets(m) {
+  if (!m) return [];
+  const direct = ackDownloadTarget(m);
+  if (direct) return [direct];
+  if (m.result == null) return [];
+  const out = [];
+  const seen = {};
+  const re = /\[resource_ref:([^\]]+)\]/g;
+  let match;
+  while ((match = re.exec(String(m.result))) !== null) {
+    const id = match[1];
+    if (seen[id]) continue;
+    seen[id] = true;
+    out.push({ by: 'resource', id: id, name: '', mime: '' });
+  }
+  return out;
+}
+
+function resultIsOnlyResourceRefs(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (!s) return false;
+  if (s.indexOf('[resource_ref:') < 0) return false;
+  return s.replace(/\[resource_ref:[^\]]+\]/g, '').trim() === '';
+}
+
 function ackHasInspectableDetail(m) {
   if (!m) return false;
   return m.args != null || m.result != null || m.code != null;
@@ -4096,6 +4140,28 @@ function inspectValueShape(v) {
     return { mode: text.indexOf('\n') >= 0 ? 'block' : 'inline', text, lang: 'json' };
   }
   return { mode: 'inline', text: String(v) };
+}
+
+const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
+
+const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
+  'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
+  'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+
+function splitToolResultNote(result) {
+  const s = result == null ? '' : String(result);
+  const notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i];
+    if (s.length > n.length && s.slice(-n.length) === n) {
+
+      return {
+        text: s.slice(0, s.length - n.length),
+        note: n.replace(/^\n/, '').replace(/^\[/, '').replace(/\]$/, ''),
+      };
+    }
+  }
+  return { text: s, note: '' };
 }
 
 function inspectResultShape(result) {
@@ -4348,6 +4414,8 @@ function sanitizeDownloadName(name, lang) {
 
 function sanitizeFileStem(name) {
   return String(name || '')
+
+    .replace(/[?#].*$/, '')
     .replace(/[\/\\]/g, '_')
     .replace(/[\x00-\x1f\x7f]/g, '')
     .replace(/^\.+/, '')
@@ -6991,7 +7059,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788303584}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788374267}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -9066,7 +9134,8 @@ function extractResultParts(mcpResult) {
         mime: block.mimeType || 'audio/mpeg', name: 'audio', fromBase64: block.data });
     } else if (block.type === 'resource') {
       const r = block.resource || {};
-      const name = (r.uri && r.uri.split('/').pop()) || 'resource';
+
+      const name = (r.uri && r.uri.split('/').pop().split(/[?#]/)[0]) || 'resource';
       if (r.blob != null && _isTextualMime(r.mimeType)) {
 
         parts.push({ action: 'store_inline_from_bytes', block,
@@ -9415,12 +9484,6 @@ async function _appendBlock(id, extraText, partial) {
     return { ok: false, message: 'Échec d\'écriture de la ressource.' };
   }
 }
-
-const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
-
-const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
-  'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
-  'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
 
 function formatInlineTextForModel(text) {
   return String(text == null ? '' : text) + NOT_PRESENTED_NOTE;
@@ -14139,6 +14202,30 @@ function markAckDlUnavailable(btn) {
   btn.title = 'Ressource non disponible';
 }
 
+function _appendAckInspectBtn(wrap, m) {
+  const insp = document.createElement('button');
+  insp.className = 'ack-inspect';
+  insp.title = 'Inspecter l\'appel';
+  insp.innerHTML = ICON_INSPECT;
+  insp.addEventListener('click', ev => {
+
+    ev.stopPropagation();
+    openToolInspector(m);
+  });
+
+  const after = wrap.querySelector('.ack-undo, .ack-resolved');
+  if (after) wrap.insertBefore(insp, after);
+  else wrap.appendChild(insp);
+  return insp;
+}
+
+function refreshAckInspectAffordance(node, entry) {
+  if (!node || !entry) return;
+  if (!ackHasInspectableDetail(entry)) return;
+  if (node.querySelector('.ack-inspect')) return;
+  _appendAckInspectBtn(node, entry);
+}
+
 function buildToolAck(m) {
   const kind = ackKindOf(m);
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
@@ -14181,18 +14268,7 @@ function buildToolAck(m) {
     wrap.appendChild(dl);
   }
 
-  if (ackHasInspectableDetail(m)) {
-    const insp = document.createElement('button');
-    insp.className = 'ack-inspect';
-    insp.title = 'Inspecter l\'appel';
-    insp.innerHTML = ICON_INSPECT;
-    insp.addEventListener('click', ev => {
-
-      ev.stopPropagation();
-      openToolInspector(m);
-    });
-    wrap.appendChild(insp);
-  }
+  if (ackHasInspectableDetail(m)) _appendAckInspectBtn(wrap, m);
   if (spec.undo) {
     if (m.resolved) {
       const s = document.createElement('span');
@@ -16927,16 +17003,27 @@ function _inspectField(parent, key, value, m) {
 
     _inspectCodeBlock(parent, shape.text, shape.lang, _inspectBlockName(m, key));
   }
+
+  return row;
+}
+
+function _inspectFieldSetValue(row, text) {
+  const v = row && row.querySelector('.inspect-val');
+  if (v) v.textContent = String(text);
 }
 
 function _inspectResourcePanel(parent, m, target) {
   const sec = _inspectSection(parent, 'Ressource');
 
+  const late = {};
   const name = m.resourceName || target.name || '';
   if (name) _inspectField(sec, 'nom', name, m);
+  else late.nom = _inspectField(sec, 'nom', '…', m);
   _inspectField(sec, 'identifiant', target.by === 'resource' ? target.id : target.attId, m);
   if (m.mime) _inspectField(sec, 'type', m.mime, m);
+  else late.type = _inspectField(sec, 'type', '…', m);
   if (m.size != null) _inspectField(sec, 'taille', humanSize(m.size), m);
+  else late.taille = _inspectField(sec, 'taille', '…', m);
 
   const dl = document.createElement('button');
   dl.className = 'drawer-btn inspect-dl';
@@ -16963,6 +17050,10 @@ function _inspectResourcePanel(parent, m, target) {
     const mime = record.mime || m.mime || '';
     const size = record.size != null ? record.size
       : (record.data && record.data.byteLength != null ? record.data.byteLength : m.size);
+
+    if (late.nom) _inspectFieldSetValue(late.nom, record.name || '(sans nom)');
+    if (late.type) _inspectFieldSetValue(late.type, mime || '(inconnu)');
+    if (late.taille) _inspectFieldSetValue(late.taille, size != null ? humanSize(size) : '(inconnue)');
     const p = inspectResourcePresentation(mime, size);
     if (p.mode === 'thumbnail') {
       _inspectThumbnail(preview, record);
@@ -17018,7 +17109,10 @@ function _inspectThumbnail(parent, record) {
   img.addEventListener('click', () => {
     const full = document.createElement('img');
     full.src = img.src;
-    openLightboxWith(full, record.w || 800, record.h || 600, record.name || '', 'image');
+
+    const w = img.naturalWidth || record.w || 800;
+    const h = img.naturalHeight || record.h || 600;
+    openLightboxWith(full, w, h, record.name || '', 'image');
   });
   parent.appendChild(img);
 }
@@ -17087,14 +17181,29 @@ function renderToolInspector(m) {
 
   const res = _inspectSection(body, 'Réponse');
   if (m.result != null) {
-    const shape = inspectResultShape(m.result);
+
+    const split = splitToolResultNote(m.result);
+    const shape = inspectResultShape(split.text);
     if (shape.text === '') {
       const empty = document.createElement('p');
       empty.className = 'inspect-empty';
       empty.textContent = 'Réponse vide.';
       res.appendChild(empty);
+    } else if (resultIsOnlyResourceRefs(shape.text)) {
+
+      const ref = document.createElement('p');
+      ref.className = 'inspect-ref';
+      ref.textContent = shape.text;
+      res.appendChild(ref);
     } else {
       _inspectCodeBlock(res, shape.text, shape.lang, _inspectBlockName(m, 'resultat'));
+    }
+
+    if (split.note) {
+      const n = document.createElement('p');
+      n.className = 'inspect-note';
+      n.textContent = split.note;
+      res.appendChild(n);
     }
   } else {
     const none = document.createElement('p');
@@ -17103,8 +17212,7 @@ function renderToolInspector(m) {
     res.appendChild(none);
   }
 
-  const target = ackDownloadTarget(m);
-  if (target) _inspectResourcePanel(body, m, target);
+  ackInspectResourceTargets(m).forEach(t => _inspectResourcePanel(body, m, t));
 
   const meta = _inspectSection(body, 'Méta');
   if (m.name) _inspectField(meta, 'outil', m.name, m);
@@ -21735,7 +21843,11 @@ async function dispatchSend(matches, continuation) {
         if (assistantText != null) fields.assistantText = assistantText;
         if (isMcp) {
           const last = earlyRendered[earlyRendered.length - 1];
-          if (last) Object.assign(last.entry, fields);
+          if (last) {
+            Object.assign(last.entry, fields);
+
+            refreshAckInspectAffordance(last.node, last.entry);
+          }
         } else {
           updateLastPendingToolAck(fields);
         }

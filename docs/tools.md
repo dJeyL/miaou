@@ -814,6 +814,23 @@ suffixer d'abord produit `'....csv'`, que le strip de points de tête ramène à
 annoncé `text/plain` par le modèle se télécharge en `.txt` (le nom du record
 prime s'il porte déjà l'extension).
 
+**`sanitizeFileStem` coupe la query string et le fragment** (`?…`, `#…`) avant
+tout le reste. Le nom d'une ressource web est le dernier segment de son URL
+(`r.uri.split('/').pop()`, `extractResultParts`) : pour une image Unsplash, cela
+donne `photo-1537…?fm=jpg&q=60&…&ixlib=rb-4.1.0&ixid=…`. Sans la coupe, deux
+défauts — la query part dans le nom du fichier téléchargé, et surtout le `.1.0`
+d'un `ixlib=rb-4.1.0` fait répondre **vrai** à `hasFileExt`, donc l'extension du
+mime n'est jamais ajoutée : l'image se télécharge sans `.jpg` (observé en prod).
+La coupe est dans le cœur d'assainissement **partagé**, donc les deux nommeurs
+et les deux boutons (fil et inspecteur, qui appellent tous deux
+`downloadAckResource`) en bénéficient par construction. Elle vaut aussi pour les
+ressources **déjà stockées**, dont le `name` porte l'URL entière — c'est
+précisément pourquoi elle est au nommage et pas seulement à la dérivation.
+`extractResultParts` coupe **aussi** à la source, pour que le nom affiché dans le
+fil et l'inspecteur soit propre lui aussi ; `originUrl` conserve l'URL complète,
+la traçabilité n'est pas perdue. Un chemin finissant par `/` retombe sur le repli
+`'resource'`, jamais un nom vide.
+
 **Absent des exports** (piège 21) : un HTML standalone n'a ni IDB ni globals
 MIAOU. Le bouton est construit dans `buildToolAck` (chemin DOM live) uniquement ;
 `formatToolAcksHtml` est inchangée.
@@ -1049,6 +1066,88 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
   bloc), `inspectResultShape` (JSON ré-indenté s'il parse, texte brut sinon),
   `inspectLangForMime` (langue Prism dérivée de `mimeExt`, source unique).
   Toutes pures, testées QuickJS.
+- **L'affordance est RÉÉVALUÉE quand l'ack est enrichi** (lot Z-2).
+  `buildToolAck` décide de la loupe au moment où l'ack est **créé** ; or un ack
+  MCP est peint par `onEarlyAcks` AVANT le round-trip réseau — donc avant que
+  `onEnrichLastAck` ne pose `args`/`result`, donc sans loupe. Le prédicat était
+  juste, il n'était simplement jamais relu : l'affordance n'apparaissait qu'après
+  avoir quitté et rouvert la conversation, le reload relisant l'entrée enrichie.
+  `refreshAckInspectAffordance(node, entry)` (ui.js) la pose après coup, appelée
+  depuis `onEnrichLastAck` — donc **par outil**, dès que celui-ci répond, et non
+  en fin de tour. Même doctrine que la rétro-application d'erreur de
+  `onToolAcks` : muter la donnée TOUJOURS, peindre si le nœud existe (`node` est
+  `null` quand la génération est détachée — le rendu à l'attache lira alors le
+  prédicat à jour). Idempotente. Le bouton lui-même est construit par
+  `_appendAckInspectBtn`, extrait exprès parce qu'il a désormais **deux** sites
+  d'appel : le dupliquer ferait diverger la classe, l'icône ou le
+  `stopPropagation`. Il s'insère AVANT `.ack-undo`/`.ack-resolved` (et non par
+  `appendChild`, qui le mettrait derrière « annuler » en rétro-application).
+  La closure capture la **référence** de l'entrée, donc l'enrichissement par
+  `Object.assign` sur ce même objet est vu à l'ouverture du drawer sans qu'il
+  faille re-poser de listener.
+- **La note de présentation est détachée du résultat avant affichage**
+  (`splitToolResultNote`, utils.js, pure). L'ack persiste UN champ `result` qui
+  sert deux destinataires : le modèle, à qui `internResourcesFromResult`
+  concatène `NOT_PRESENTED_NOTE`/`PRESENTED_NOTE` en queue, et l'inspecteur, qui
+  montre ce que l'**outil** a répondu. Sans séparation la note s'affiche comme
+  si le serveur l'avait renvoyée, et surtout elle empêche `inspectResultShape`
+  de reconnaître un JSON — plus de ré-indentation ni de coloration, tout le
+  retour sur une ligne (observé sur un MCP météo renvoyant du JSON en resource).
+  Le strip est fait à l'**affichage**, pas à l'écriture : les acks déjà
+  persistés portent la note fusionnée, et un champ séparé posé maintenant ne les
+  réparerait pas. Reconnaissance par **suffixe** seulement — les notes sont
+  ajoutées en queue par construction, et un résultat qui les citerait ne doit
+  pas être amputé. Les deux constantes vivent dans `utils.js` (et non dans
+  `resources.js` qui les émet) parce qu'un second consommateur doit les
+  reconnaître : deux littéraux dériveraient au premier reformulage, et le
+  reconnaisseur cesserait de reconnaître sans rien casser de visible. La note
+  est rendue **sous** le bloc, en `.inspect-note` — c'est une glose de ce qui
+  précède ; son `margin-top` est **négatif** parce que `.inspect-section` est un
+  flex à `row-gap` (les marges ne fusionnent pas : celle du `<pre>`, le gap et
+  la sienne s'additionnaient, l'éloignant du bloc au point de la rapprocher du
+  titre de la section suivante).
+- **Un appel qui produit une ressource la MONTRE, il n'en montre pas la
+  référence** (lot Z-2). `ackDownloadTarget` désigne par le `kind` de l'ack
+  (`resource_*`) plus un champ `id` — un `mcp_call` n'a ni l'un ni l'autre : la
+  ressource n'y est désignée que par le `[resource_ref:res_…]` que
+  `internResourcesFromResult` laisse dans le texte aplati. L'inspecteur passe
+  donc par `ackInspectResourceTargets` (utils.js, pure), qui **appelle**
+  `ackDownloadTarget` pour le cas qu'il couvre déjà et n'ajoute que la lecture
+  des marqueurs — deux prédicats, jamais deux formules. Toutes les références,
+  dans l'ordre du texte, dédoublonnées : un appel peut en produire plusieurs, et
+  n'en montrer qu'une serait la troncature muette que ce lot existe pour
+  supprimer. Le volet lui-même n'a pas bougé : `inspectResourcePresentation`
+  décidait déjà vignette / descripteur+téléchargement / bloc colorisé.
+  **Pourquoi un prédicat DÉDIÉ et non un élargissement de `ackDownloadTarget`** :
+  celui-ci est partagé avec le bouton de téléchargement du fil, où l'élargir
+  ferait doublon — un appel MCP produisant une ressource pousse déjà, une ligne
+  plus bas dans le même groupe, un ack `resource_stored` porteur de son propre
+  bouton et de son nom de fichier (constaté en capture, décision Julien
+  2026-09-02).
+- **Nom / type / taille du volet viennent du RECORD quand l'ack ne les porte
+  pas.** Ces champs ne sont copiés dans l'ack que pour les kinds `resource_*` ;
+  un `mcp_call` n'en a aucun et le volet n'afficherait qu'un identifiant nu, là
+  où le fil annonce « photo-labrador.png (1.5 MB) ». Les lignes manquantes sont
+  **réservées à leur place définitive** (nom, identifiant, type, taille) puis
+  remplies à la résolution — les créer dans le `.then` les rejetterait en fin de
+  volet, derrière l'identifiant, alors que le nom se lit en premier.
+- **La lightbox se dimensionne sur l'image, pas sur le record.**
+  `openLightboxWith` pose une boîte de taille FIXE que le contenu remplit : un
+  `w`/`h` faux **étire** l'image. Or `record.w`/`record.h` ne sont pas
+  universels — figés au stockage pour une pièce jointe, absents d'un binaire
+  interné depuis un résultat d'outil — et le repli `800×600` imposait alors un
+  ratio arbitraire (mesuré 1.333 contre 1.5 réel). `_inspectThumbnail` passe donc
+  `naturalWidth`/`naturalHeight` de la vignette, disponibles sans attente
+  puisque c'est son clic qui ouvre la lightbox. La vignette, elle, n'imposant
+  aucune dimension, restait juste — d'où un défaut visible au clic seulement.
+- **`[resource_ref:…]` seul n'est pas rendu en bloc de code**
+  (`resultIsOnlyResourceRefs`, pure). Le marqueur reste affiché — l'inspecteur
+  montre ce que l'outil a littéralement renvoyé — mais en ligne discrète
+  (`.inspect-ref`) : un `<pre>` à en-tête de langue et boutons
+  copier/télécharger donnerait à un identifiant de 26 caractères le poids visuel
+  d'un contenu, quand le contenu est peint juste en dessous. Prédicat
+  conservateur : dès qu'il reste autre chose que des marqueurs, on retombe sur
+  le bloc complet et rien n'est perdu.
 - **Volet ressource** : désigné par `ackDownloadTarget` (prédicat unique partagé
   avec le bouton de téléchargement de l'ack). Quatre présentations décidées par
   `inspectResourcePresentation(mime, size)` — vignette (image bitmap), source +
@@ -1108,7 +1207,12 @@ Vérification : `.claude/skills/run-miaou/verify-tool-inspector.mjs` (45
 contrôles — poignée présente/absente, groupe compact et liste, alignement des
 icônes, volets empilés, densité, multiligne, `js__eval`, quatre présentations
 de ressource, propriété du scroll et en-tête de bloc épinglé, nommage préfixé
-des téléchargements, Escape).
+des téléchargements, Escape). Deux scripts frères couvrent le lot Z-2 :
+`verify-tool-inspector-note.mjs` (note de présentation détachée, ressource
+désignée par un `[resource_ref:…]`, proportions de la lightbox) et
+`verify-tool-inspector-live-ack.mjs` (apparition de la loupe PENDANT la
+génération — un stub MCP suspendu sur `tools/call` seul y ouvre la fenêtre
+« ack peint, pas encore enrichi », que rien d'autre ne peut reproduire).
 
 ## Références de conversation dans le texte du modèle (`conv_ref`)
 

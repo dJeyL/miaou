@@ -333,6 +333,30 @@ describe('formatInlineTextForModel', function() {
 
 // ── extractResultParts ────────────────────────────────────────────────────────
 
+describe('extractResultParts : nom derive d une URI (lot Z-2)', function() {
+  function blobPart(uri) {
+    return extractResultParts({ content: [{ type: 'resource',
+      resource: { uri: uri, mimeType: 'image/jpeg', blob: 'AAAA' } }] })[0];
+  }
+  it('query string coupee du nom', function() {
+    var p = blobPart('https://images.unsplash.com/photo-1537204696486-967f1b7198c8?fm=jpg&q=60&ixlib=rb-4.1.0');
+    expect(p.name).toBe('photo-1537204696486-967f1b7198c8');
+  });
+  it('fragment coupe du nom', function() {
+    expect(blobPart('https://x/y/rapport.pdf#page=3').name).toBe('rapport.pdf');
+  });
+  it('URL sans query : inchangee', function() {
+    expect(blobPart('https://x/y/photo.png').name).toBe('photo.png');
+  });
+  it('URL finissant par / avec query → repli, jamais un nom vide', function() {
+    expect(blobPart('https://x/dossier/?a=1').name).toBe('resource');
+  });
+  it('l URL complete reste dans originUrl (tracabilite)', function() {
+    var u = 'https://x/y/photo.png?w=3000';
+    expect(blobPart(u).originUrl).toBe(u);
+  });
+});
+
 describe('extractResultParts', function() {
   it('résultat vide → liste vide', function() {
     var p = extractResultParts({});

@@ -1003,6 +1003,44 @@ textarea.skill-content {
 }
 .inspect-empty { margin: 0; color: var(--text-3); font-style: italic; font-size: 11px; }
 
+/* Marqueur `[resource_ref:…]` rendu SANS bloc de code (resultIsOnlyResourceRefs) :
+   c'est un identifiant qui désigne le contenu peint juste en dessous, pas un
+   contenu. Monospace parce que c'en est un, discret parce qu'il ne porte pas
+   l'information — le volet Ressource la porte. */
+.inspect-ref {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+/* Note de présentation détachée du résultat (splitToolResultNote) : elle
+   COMMENTE le bloc qui la précède, d'où le placement sous lui et le registre
+   discret — c'est une glose, pas un contenu à inspecter. Le liseré à gauche la
+   rattache visuellement au bloc plutôt que de la faire lire comme un
+   paragraphe autonome. */
+/* L'écart au-dessus de la note se règle sur le FRÈRE QUI PRÉCÈDE, pas depuis la
+   note : `.inspect-section` est un flex à row-gap, donc rien ne fusionne — la
+   marge basse du <pre> (12px), le gap (6px) et toute marge posée sur la note
+   s'ADDITIONNENT. Mesuré à l'origine : 24px au-dessus contre 14px sous la note,
+   qui se rattachait donc au titre de la section SUIVANTE plutôt qu'au bloc
+   qu'elle commente.
+   Une marge négative sur la note corrigeait le cas du <pre> et CASSAIT l'autre :
+   quand la Réponse est un simple `.inspect-ref` (marqueur seul, sans marge
+   basse), les -12px faisaient chevaucher les deux lignes (mesuré -6px). D'où la
+   règle posée ici, sur le seul frère qui porte cette marge. */
+.inspect-section pre:has(+ .inspect-note) { margin-bottom: 0; }
+
+.inspect-note {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 /* Blocs de code du drawer : le chrome (fond, bordure, padding, couleur, scroll
    horizontal) vient de la règle PARTAGÉE de chat.css, à laquelle `.inspect-body`
    est joint — on n'en réinvente aucun morceau ici. Ne restent que les écarts

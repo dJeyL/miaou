@@ -440,7 +440,15 @@ function extractResultParts(mcpResult) {
         mime: block.mimeType || 'audio/mpeg', name: 'audio', fromBase64: block.data });
     } else if (block.type === 'resource') {
       const r = block.resource || {};
-      const name = (r.uri && r.uri.split('/').pop()) || 'resource';
+      // Nom = dernier segment de l'URI, DÉBARRASSÉ de sa query et de son
+      // fragment : `…/photo-1537…?fm=jpg&q=60&…` doit donner
+      // `photo-1537…`, pas l'URL entière. Sans ça, le nom à rallonge part dans
+      // le fil, dans l'inspecteur et dans le nom du fichier téléchargé — et le
+      // `.1.0` d'un `ixlib=rb-4.1.0` fait même passer la query pour une
+      // extension (cf. `sanitizeFileStem`, qui coupe pareil au nommage du
+      // téléchargement pour réparer les ressources DÉJÀ stockées).
+      // L'URL complète n'est pas perdue : `originUrl` la conserve.
+      const name = (r.uri && r.uri.split('/').pop().split(/[?#]/)[0]) || 'resource';
       if (r.blob != null && _isTextualMime(r.mimeType)) {
         // Bloc blob textuel (ex. docs__extract, lot M) : octets base64 mais mime
         // texte/JSON/XML/NDJSON/CSV → classe de stockage 'inline' (M1b), tout en
@@ -942,20 +950,11 @@ async function _appendBlock(id, extraText, partial) {
   }
 }
 
-const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
-
-// Symétrique de PRESENTED_NOTE, pour la branche store_inline (resource texte/JSON).
-// Fait STABLE, pas une heuristique : cette branche retire inconditionnellement le
-// bloc de _pendingToolBlocks (aucun rendu, quel que soit le réglage) et le seul
-// signal visible reste l'ack « Ressource enregistrée » — qui trace l'appel, pas le
-// contenu. Sans cette note le modèle ne reçoit AUCUN marqueur (contrairement au
-// '[ressource rendue dans l'interface]' de flattenToolResult, réservé aux blocs
-// SANS texte) et conclut, en suivant BINARY_DOCTRINE, que l'application a déjà
-// présenté le contenu — il répond alors comme si l'utilisateur l'avait sous les
-// yeux. Observé en prod (serveur MCP maison renvoyant du JSON en resource).
-const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
-  'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
-  'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+// PRESENTED_NOTE / NOT_PRESENTED_NOTE vivent dans utils.js (premier fichier du
+// build, donc visibles ici) : l'inspecteur d'appel d'outil doit les RECONNAÎTRE
+// pour les détacher du résultat affiché (splitToolResultNote, lot Z-2), et un
+// littéral recopié des deux côtés dériverait au premier reformulage — le
+// reconnaisseur cesserait alors de reconnaître en silence.
 
 // Compose le texte modèle d'un part store_inline. Helper PUR (extrait exprès de
 // internResourcesFromResult, async + IDB donc hors QuickJS) : l'invariant à tenir

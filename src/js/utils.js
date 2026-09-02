@@ -128,6 +128,66 @@ function ackDownloadTarget(m) {
   return null;
 }
 
+// Ressources désignées par un ack POUR L'INSPECTEUR (lot Z-2). Étend
+// `ackDownloadTarget` sans le modifier : celui-ci est partagé avec le bouton de
+// téléchargement du fil, où l'élargir ferait DOUBLON — un appel MCP qui produit
+// une ressource pousse déjà, une ligne plus bas dans le même groupe, un ack
+// `resource_stored` porteur de son propre bouton (constaté en capture). Deux
+// prédicats donc, mais pas deux formules : celui-ci APPELLE l'autre pour le cas
+// qu'il couvre déjà, et n'y ajoute que ce que l'autre ignore.
+//
+// Ce qu'il ajoute : les `[resource_ref:res_…]` du RÉSULTAT. Un ack `mcp_call`
+// n'a ni kind `resource_*` ni champ `id` — la ressource n'y est désignée que
+// par ce marqueur, laissé dans le texte aplati par `internResourcesFromResult`
+// (resources.js, qui le pose via `_makeResourceRef`). Sans lecture de ce
+// marqueur, l'inspecteur d'un appel ayant produit une image n'affiche que la
+// référence, jamais l'image.
+//
+// TOUTES les références, dans l'ordre du texte, dédoublonnées : un appel peut
+// en produire plusieurs, et n'en montrer qu'une masquerait les suivantes en
+// silence — la troncature muette est exactement ce que cet inspecteur existe
+// pour supprimer. Le `name`/`mime` sont laissés vides : contrairement aux acks
+// `resource_*`, un `mcp_call` n'en porte pas de copie, et le record résolu les
+// donnera (il prime de toute façon, cf. `_inspectResourcePanel`).
+//
+// Regex alignée sur `_makeResourceRef` : l'id est en base36, jamais de `]`.
+// Pure, testable en QuickJS.
+function ackInspectResourceTargets(m) {
+  if (!m) return [];
+  const direct = ackDownloadTarget(m);
+  if (direct) return [direct];
+  if (m.result == null) return [];
+  const out = [];
+  const seen = {};
+  const re = /\[resource_ref:([^\]]+)\]/g;
+  let match;
+  while ((match = re.exec(String(m.result))) !== null) {
+    const id = match[1];
+    if (seen[id]) continue;
+    seen[id] = true;
+    out.push({ by: 'resource', id: id, name: '', mime: '' });
+  }
+  return out;
+}
+
+// « Ce résultat ne contient-il RIEN d'autre que des `[resource_ref:…]` ? »
+// Décide, dans l'inspecteur, si la section Réponse rend le texte en bloc de
+// code ou en simple ligne : un marqueur seul n'est pas un contenu, et lui
+// donner un <pre> à en-tête de langue et boutons copier/télécharger lui donne
+// le poids visuel de ce qu'il ne fait que désigner — le contenu, lui, est
+// peint juste en dessous par le volet ressource.
+//
+// Conservateur par construction : DÈS QU'il reste autre chose (une phrase, un
+// JSON, un second marqueur entouré de texte), on retombe sur le bloc de code et
+// rien n'est perdu. Le doute profite toujours à l'affichage complet.
+// Pure, testable en QuickJS.
+function resultIsOnlyResourceRefs(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (!s) return false;
+  if (s.indexOf('[resource_ref:') < 0) return false;
+  return s.replace(/\[resource_ref:[^\]]+\]/g, '').trim() === '';
+}
+
 // Prédicat UNIQUE « cet ack a-t-il un détail d'appel à inspecter ? » (lot Z).
 // Source de vérité du bouton d'inspection des acks (`buildToolAck`, ui.js) —
 // ne jamais réécrire une liste de kinds ailleurs, exactement comme
@@ -179,6 +239,65 @@ function inspectValueShape(v) {
     return { mode: text.indexOf('\n') >= 0 ? 'block' : 'inline', text, lang: 'json' };
   }
   return { mode: 'inline', text: String(v) };
+}
+
+// ── Notes de présentation ajoutées au texte modèle ──────────────────────────
+// Ces deux notes sont concaténées au résultat d'un outil AVANT de le donner au
+// modèle (internResourcesFromResult, resources.js) : elles lui disent si le
+// contenu a été affiché à l'utilisateur ou non. Elles vivent ICI, et pas dans
+// resources.js qui les émet, parce qu'un SECOND consommateur doit les
+// reconnaître : l'inspecteur les détache du résultat avant de l'afficher
+// (splitToolResultNote). Deux littéraux, un par côté, dériveraient au premier
+// reformulage — et le reconnaisseur cesserait de reconnaître sans rien casser
+// de visible (project_duplicated_doc_content_drifts_both_ways).
+
+const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dans l\'interface.';
+
+// Symétrique de PRESENTED_NOTE, pour la branche store_inline (resource texte/JSON).
+// Fait STABLE, pas une heuristique : cette branche retire inconditionnellement le
+// bloc de _pendingToolBlocks (aucun rendu, quel que soit le réglage) et le seul
+// signal visible reste l'ack « Ressource enregistrée » — qui trace l'appel, pas le
+// contenu. Sans cette note le modèle ne reçoit AUCUN marqueur (contrairement au
+// '[ressource rendue dans l'interface]' de flattenToolResult, réservé aux blocs
+// SANS texte) et conclut, en suivant BINARY_DOCTRINE, que l'application a déjà
+// présenté le contenu — il répond alors comme si l'utilisateur l'avait sous les
+// yeux. Observé en prod (serveur MCP maison renvoyant du JSON en resource).
+const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
+  'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
+  'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+
+// Sépare un résultat d'outil de la note de présentation que MIAOU y a
+// concaténée pour le modèle. L'ack persiste UN champ `result` servant deux
+// destinataires — le modèle (qui a besoin de la note) et l'inspecteur (qui
+// montre ce que l'OUTIL a répondu) : sans cette séparation la note s'affiche
+// comme si le serveur l'avait renvoyée, et surtout elle empêche
+// inspectResultShape de reconnaître le JSON (plus de ré-indentation ni de
+// coloration — le résultat s'affiche en une longue ligne `text`).
+//
+// Strip à l'AFFICHAGE, pas à l'écriture : les acks déjà persistés portent la
+// note fusionnée, et un champ séparé posé désormais ne les réparerait pas.
+// Suffixe seulement (`endsWith`), jamais une recherche au milieu : les notes
+// sont ajoutées en queue par construction, et un texte d'outil qui les
+// CITERAIT ne doit pas être amputé.
+// Pure, testable en QuickJS.
+function splitToolResultNote(result) {
+  const s = result == null ? '' : String(result);
+  const notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i];
+    if (s.length > n.length && s.slice(-n.length) === n) {
+      // La note commence par le \n de séparation : le retirer aussi du texte
+      // rendu, sinon le bloc de code garde une ligne vide finale. Les crochets
+      // encadrants sont un marqueur destiné au MODÈLE (comme le
+      // '[ressource rendue dans l'interface]' de flattenToolResult) : dans le
+      // drawer c'est une phrase d'interface, on les retire.
+      return {
+        text: s.slice(0, s.length - n.length),
+        note: n.replace(/^\n/, '').replace(/^\[/, '').replace(/\]$/, ''),
+      };
+    }
+  }
+  return { text: s, note: '' };
 }
 
 // Sortie d'outil : JSON ré-indenté s'il parse, texte brut sinon. Le `result`
@@ -584,6 +703,17 @@ function sanitizeDownloadName(name, lang) {
 // laisse pas de fichier caché. Pure, testable en QuickJS.
 function sanitizeFileStem(name) {
   return String(name || '')
+    // Query string et fragment coupés EN PREMIER : le nom d'une ressource web
+    // est le dernier segment de son URL (`r.uri.split('/').pop()`,
+    // extractResultParts), donc `photo-1537…?fm=jpg&…&ixlib=rb-4.1.0&ixid=…`
+    // pour une image Unsplash. Sans cette coupe, tout ce qui suit est traité
+    // comme faisant partie du nom, avec deux conséquences : la query part dans
+    // le fichier téléchargé, et surtout `hasFileExt` répond VRAI sur le `.1.0&…`
+    // de la query — donc `resourceDownloadName` n'ajoute pas l'extension du
+    // mime et le fichier sort sans `.jpg`. Coupé ici plutôt qu'à la dérivation
+    // du nom (resources.js) pour que les ressources DÉJÀ stockées se
+    // téléchargent correctement, sans migration.
+    .replace(/[?#].*$/, '')
     .replace(/[\/\\]/g, '_')
     .replace(/[\x00-\x1f\x7f]/g, '')
     .replace(/^\.+/, '')

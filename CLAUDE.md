@@ -379,7 +379,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   complet (`.zip` depuis le lot V-3).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
-  `ackHasInspectableDetail`, drawer de détail non tronqué), et références de
+  `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
+  présentation détachée du résultat par `splitToolResultNote`, ressources
+  désignées par `ackInspectResourceTargets` — y compris les `[resource_ref:…]`
+  d'un `mcp_call`, que `ackDownloadTarget` ne voit pas), et références de
   conversation dans le texte du modèle (`conv_ref`).
 - **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
   formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts

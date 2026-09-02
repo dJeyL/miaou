@@ -1663,6 +1663,44 @@ describe('mimeExt (lot V)', function() {
   });
 });
 
+describe('nom de telechargement d une ressource web (query string, lot Z-2)', function() {
+  // Cas REEL : le nom d'une ressource web est le dernier segment de son URL
+  // (extractResultParts), donc query comprise. Le `.1.0&ixid=…` de la query
+  // faisait repondre VRAI a hasFileExt, donc aucune extension n'etait ajoutee
+  // et l'image se telechargeait sans .jpg (observe sur une image Unsplash).
+  var UNSPLASH = 'photo-1537204696486-967f1b7198c8?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3';
+
+  it('la query string est coupee, l extension du mime est ajoutee', function() {
+    expect(resourceDownloadName(UNSPLASH, 'image/jpeg'))
+      .toBe('photo-1537204696486-967f1b7198c8.jpg');
+  });
+  it('sans la coupe, la query portait un faux positif d extension', function() {
+    // Preuve de la PREMISSE : le point de `rb-4.1.0` est bien en position
+    // d'extension au sens de hasFileExt. Sans ce test, le correctif pourrait
+    // etre vert pour une raison qui n a rien a voir.
+    expect(hasFileExt('x?ixlib=rb-4.1.0&ixid=M3wx')).toBe(true);
+  });
+  it('une vraie extension SUIVIE d une query est conservee', function() {
+    expect(resourceDownloadName('index.html?v=2', 'text/html')).toBe('index.html');
+  });
+  it('query sans extension dans le stem → extension du mime', function() {
+    expect(resourceDownloadName('donnees?format=csv', 'text/csv')).toBe('donnees.csv');
+  });
+  it('le fragment est coupe comme la query', function() {
+    expect(resourceDownloadName('page#section', 'text/html')).toBe('page.html');
+  });
+  it('un nom reduit a une query ne laisse pas de fichier cache', function() {
+    expect(resourceDownloadName('?a=1', 'image/png')).toBe('ressource.png');
+  });
+  it('sanitizeDownloadName partage la coupe (meme coeur d assainissement)', function() {
+    expect(sanitizeDownloadName('script?v=1', 'javascript')).toBe('script.js');
+  });
+  it('un nom de fichier ordinaire n est pas touche', function() {
+    expect(resourceDownloadName('photo.png', 'image/png')).toBe('photo.png');
+    expect(resourceDownloadName('archive.tar.gz', 'application/gzip')).toBe('archive.tar.gz');
+  });
+});
+
 describe('resourceDownloadName (lot V)', function() {
   it('nom deja extensionne : inchange', function() {
     expect(resourceDownloadName('export.csv', 'text/csv')).toBe('export.csv');
@@ -1735,6 +1773,119 @@ describe('inspectValueShape (lot Z)', function() {
   it('objet cyclique → pas d exception, repli sur String()', function() {
     var a = {}; a.self = a;
     expect(typeof inspectValueShape(a).text).toBe('string');
+  });
+});
+
+describe('ackInspectResourceTargets (lot Z-2)', function() {
+  it('ack resource_stored → delegue a ackDownloadTarget', function() {
+    var t = ackInspectResourceTargets({ kind: 'resource_stored', id: 'res_1', resourceName: 'a.png', mime: 'image/png' });
+    expect(t.length).toBe(1);
+    expect(t[0].id).toBe('res_1');
+    expect(t[0].name).toBe('a.png');
+  });
+  it('mcp_call avec un [resource_ref:] → une cible', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call', result: '[resource_ref:res_cmsrg0cq]' });
+    expect(t.length).toBe(1);
+    expect(t[0].id).toBe('res_cmsrg0cq');
+    expect(t[0].by).toBe('resource');
+  });
+  it('plusieurs refs → toutes, dans l ordre du texte', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: 'a [resource_ref:res_a] b [resource_ref:res_b] c' });
+    expect(t.length).toBe(2);
+    expect(t[0].id).toBe('res_a');
+    expect(t[1].id).toBe('res_b');
+  });
+  it('meme ref repetee → dedoublonnee', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: '[resource_ref:res_a] [resource_ref:res_a]' });
+    expect(t.length).toBe(1);
+  });
+  it('ref SUIVIE de la note de presentation → toujours detectee', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: '[resource_ref:res_x]' + PRESENTED_NOTE });
+    expect(t.length).toBe(1);
+    expect(t[0].id).toBe('res_x');
+  });
+  it('resultat sans ref → aucune cible', function() {
+    expect(ackInspectResourceTargets({ kind: 'mcp_call', result: '{"a":1}' }).length).toBe(0);
+  });
+  it('ack sans result → aucune cible, pas d exception', function() {
+    expect(ackInspectResourceTargets({ kind: 'mcp_call' }).length).toBe(0);
+    expect(ackInspectResourceTargets(null).length).toBe(0);
+  });
+  it('un kind resource_* prime : pas de double comptage via son propre result', function() {
+    // L'ack porte les DEUX : son id de kind, et un marqueur dans le result.
+    // Sans la delegation en tete, on afficherait deux fois la meme ressource.
+    var t = ackInspectResourceTargets({ kind: 'resource_stored', id: 'res_1',
+      result: '[resource_ref:res_1]' });
+    expect(t.length).toBe(1);
+  });
+});
+
+describe('resultIsOnlyResourceRefs (lot Z-2)', function() {
+  it('un marqueur seul → true', function() {
+    expect(resultIsOnlyResourceRefs('[resource_ref:res_a]')).toBe(true);
+  });
+  it('deux marqueurs et des espaces → true', function() {
+    expect(resultIsOnlyResourceRefs(' [resource_ref:res_a]\n[resource_ref:res_b] ')).toBe(true);
+  });
+  it('marqueur AVEC du texte autour → false (rien ne doit etre perdu)', function() {
+    expect(resultIsOnlyResourceRefs('Voici : [resource_ref:res_a]')).toBe(false);
+  });
+  it('texte sans marqueur → false', function() {
+    expect(resultIsOnlyResourceRefs('{"a":1}')).toBe(false);
+  });
+  it('chaine vide → false', function() {
+    expect(resultIsOnlyResourceRefs('')).toBe(false);
+    expect(resultIsOnlyResourceRefs(null)).toBe(false);
+  });
+});
+
+describe('splitToolResultNote (lot Z-2)', function() {
+  it('detache NOT_PRESENTED_NOTE en suffixe', function() {
+    var r = splitToolResultNote('{"a":1}' + NOT_PRESENTED_NOTE);
+    expect(r.text).toBe('{"a":1}');
+    expect(r.note.indexOf('ne le voit PAS') >= 0).toBe(true);
+  });
+  it('detache PRESENTED_NOTE en suffixe', function() {
+    var r = splitToolResultNote('ref' + PRESENTED_NOTE);
+    expect(r.text).toBe('ref');
+    expect(r.note.indexOf('presentee') >= 0 || r.note.indexOf('présentée') >= 0).toBe(true);
+  });
+  it('la note detachee perd le \\n et les crochets (marqueurs modele)', function() {
+    var r = splitToolResultNote('x' + NOT_PRESENTED_NOTE);
+    expect(r.note.charAt(0)).toBe('C');
+    expect(r.note.charAt(r.note.length - 1)).toBe('.');
+  });
+  it('resultat sans note → texte intact, note vide', function() {
+    var r = splitToolResultNote('Souvenir introuvable.');
+    expect(r.text).toBe('Souvenir introuvable.');
+    expect(r.note).toBe('');
+  });
+  it('note au MILIEU du texte → pas amputee (suffixe seulement)', function() {
+    var s = 'avant' + NOT_PRESENTED_NOTE + ' apres';
+    var r = splitToolResultNote(s);
+    expect(r.text).toBe(s);
+    expect(r.note).toBe('');
+  });
+  it('resultat REDUIT a la note seule → laisse tel quel (pas de texte vide)', function() {
+    var r = splitToolResultNote(NOT_PRESENTED_NOTE);
+    expect(r.text).toBe(NOT_PRESENTED_NOTE);
+    expect(r.note).toBe('');
+  });
+  it('null/undefined → chaine vide, pas d exception', function() {
+    expect(splitToolResultNote(null).text).toBe('');
+    expect(splitToolResultNote(undefined).note).toBe('');
+  });
+  it('JSON + note → redevient reconnaissable par inspectResultShape', function() {
+    // C'est LE bug du lot : la note faisait echouer JSON.parse, donc lang text
+    // et plus aucune reindentation.
+    var raw = '{"current_condition":[{"temp_C":"32"}]}' + NOT_PRESENTED_NOTE;
+    expect(inspectResultShape(raw).lang).toBe('text');
+    var r = inspectResultShape(splitToolResultNote(raw).text);
+    expect(r.lang).toBe('json');
+    expect(r.text.indexOf('\n') >= 0).toBe(true);
   });
 });
 

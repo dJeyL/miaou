@@ -1973,6 +1973,66 @@ function markAckDlUnavailable(btn) {
   btn.title = 'Ressource non disponible';
 }
 
+// Bouton loupe d'un ack. Extrait de `buildToolAck` (lot Z-2) parce qu'il a un
+// SECOND site d'appel : la rétro-application au DOM quand l'ack a été peint
+// AVANT d'être enrichi (cf. `refreshAckInspectAffordance`). Le dupliquer ferait
+// diverger la classe, le titre, l'icône ou — plus grave — le stopPropagation.
+//
+// Le listener est posé SUR LE NŒUD, jamais en délégation au niveau du groupe :
+// en mode compact un seul .tool-ack est dans le DOM, les autres sont DÉTACHÉS
+// et ne vivent que comme valeurs de `ackNodeOf` (WeakMap). Une délégation ne
+// verrait jamais les acks masqués — c'est-à-dire précisément les appels
+// intermédiaires d'un enchaînement, le cas d'usage qui a motivé le lot. Les
+// nœuds détachés survivent intacts, listeners compris.
+//
+// La closure capture l'ENTRÉE elle-même, jamais `m.id` : cet id n'est pas
+// unique (un create et un delete du même souvenir le partagent). Elle capture
+// la RÉFÉRENCE, donc un enrichissement ultérieur par `Object.assign` sur cette
+// même entrée est vu par l'inspecteur à l'ouverture — c'est ce qui rend la
+// rétro-application correcte sans re-poser de listener.
+// Comme `.ack-dl`, ce bouton est délibérément ABSENT des exports (piège 21) :
+// _formatToolCallHtml construit son markup indépendamment et ne l'émet pas.
+function _appendAckInspectBtn(wrap, m) {
+  const insp = document.createElement('button');
+  insp.className = 'ack-inspect';
+  insp.title = 'Inspecter l\'appel';
+  insp.innerHTML = ICON_INSPECT;   // SVG statique author-controlled uniquement
+  insp.addEventListener('click', ev => {
+    // Le bouton est un frère de `.ack-label`, pas un descendant de
+    // `.mcp-intent-row` : le listener de groupe (ensureAckGroup) filtre sur
+    // cette row et ne verrait pas ce clic. stopPropagation est là comme
+    // garde de frontière — pour qu'ajouter demain un écouteur en bulle sur
+    // `.ack-panels` ou `.tool-ack` ne fasse pas basculer le groupe au
+    // passage, alors que le geste demandé est « inspecter », pas « replier ».
+    ev.stopPropagation();
+    openToolInspector(m);
+  });
+  // Ordre des icônes : la loupe vient APRÈS le téléchargement mais AVANT
+  // `.ack-undo`/`.ack-resolved`, pour que la colonne d'icônes reste alignée
+  // d'un ack à l'autre dans un groupe déplié. En rétro-application le wrap est
+  // déjà complet : `appendChild` la mettrait derrière « annuler ». D'où
+  // l'insertion AVANT le premier de ces deux-là quand il existe.
+  const after = wrap.querySelector('.ack-undo, .ack-resolved');
+  if (after) wrap.insertBefore(insp, after);
+  else wrap.appendChild(insp);
+  return insp;
+}
+
+// Fait apparaître la loupe sur un ack DÉJÀ PEINT qui vient d'être enrichi.
+// `buildToolAck` décide de l'affordance au moment où l'ack est créé ; or un ack
+// MCP est rendu par `onEarlyAcks` AVANT le round-trip réseau, donc avant que
+// `onEnrichLastAck` ne pose `args`/`result` — la loupe n'apparaissait qu'après
+// avoir quitté et rouvert la conversation (le reload relit l'entrée enrichie).
+// Idempotente : ne repose rien si le bouton est déjà là. Sans effet si le nœud
+// est absent (génération détachée : l'entrée est enrichie quand même, et le
+// rendu à l'attache lira le prédicat à jour).
+function refreshAckInspectAffordance(node, entry) {
+  if (!node || !entry) return;
+  if (!ackHasInspectableDetail(entry)) return;
+  if (node.querySelector('.ack-inspect')) return;
+  _appendAckInspectBtn(node, entry);
+}
+
 function buildToolAck(m) {
   const kind = ackKindOf(m);
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
@@ -2050,23 +2110,7 @@ function buildToolAck(m) {
   // unique (un create et un delete du même souvenir le partagent, cf. plus bas).
   // Comme `.ack-dl`, ce bouton est délibérément ABSENT des exports (piège 21) :
   // _formatToolCallHtml construit son markup indépendamment et ne l'émet pas.
-  if (ackHasInspectableDetail(m)) {
-    const insp = document.createElement('button');
-    insp.className = 'ack-inspect';
-    insp.title = 'Inspecter l\'appel';
-    insp.innerHTML = ICON_INSPECT;   // SVG statique author-controlled uniquement
-    insp.addEventListener('click', ev => {
-      // Le bouton est un frère de `.ack-label`, pas un descendant de
-      // `.mcp-intent-row` : le listener de groupe (ensureAckGroup) filtre sur
-      // cette row et ne verrait pas ce clic. stopPropagation est là comme
-      // garde de frontière — pour qu'ajouter demain un écouteur en bulle sur
-      // `.ack-panels` ou `.tool-ack` ne fasse pas basculer le groupe au
-      // passage, alors que le geste demandé est « inspecter », pas « replier ».
-      ev.stopPropagation();
-      openToolInspector(m);
-    });
-    wrap.appendChild(insp);
-  }
+  if (ackHasInspectableDetail(m)) _appendAckInspectBtn(wrap, m);
   if (spec.undo) {
     if (m.resolved) {
       const s = document.createElement('span');
@@ -5697,6 +5741,17 @@ function _inspectField(parent, key, value, m) {
     // dérivée de la langue par decoratePre.
     _inspectCodeBlock(parent, shape.text, shape.lang, _inspectBlockName(m, key));
   }
+  // Renvoie la ligne : `_inspectResourcePanel` en réserve certaines pour les
+  // remplir après résolution du record (lot Z-2).
+  return row;
+}
+
+// Réécrit la valeur d'une ligne posée par `_inspectField`. `textContent`, jamais
+// d'HTML : la valeur vient d'un record d'origine modèle/serveur (piège 21).
+// Sans effet si la ligne n'a pas de valeur inline (cas bloc).
+function _inspectFieldSetValue(row, text) {
+  const v = row && row.querySelector('.inspect-val');
+  if (v) v.textContent = String(text);
 }
 
 // Volet « ressource » : ce qu'un ack désigne au-delà de son texte aplati. Le
@@ -5712,11 +5767,23 @@ function _inspectResourcePanel(parent, m, target) {
   const sec = _inspectSection(parent, 'Ressource');
   // Valeurs de l'ack : disponibles sans I/O, mais ce sont des COPIES, prises au
   // moment de l'ack. Le record fait foi dès qu'il arrive (cf. plus bas).
+  // Les champs de l'ACK ne sont une copie que pour les kinds `resource_*`. Un
+  // `mcp_call` désignant une ressource par `[resource_ref:…]` (lot Z-2) n'a ni
+  // nom, ni mime, ni taille : le volet n'afficherait qu'un identifiant nu, là
+  // où le fil annonce « photo-labrador.png (1.5 MB) ». Les lignes manquantes
+  // sont donc RÉSERVÉES ici, à leur place définitive, et remplies à la
+  // résolution du record — qui les a, et qui fait foi de toute façon. Les créer
+  // dans le `.then` les rejetterait toutes en fin de volet, derrière
+  // l'identifiant, alors que le nom est ce qu'on lit en premier.
+  const late = {};
   const name = m.resourceName || target.name || '';
   if (name) _inspectField(sec, 'nom', name, m);
+  else late.nom = _inspectField(sec, 'nom', '…', m);
   _inspectField(sec, 'identifiant', target.by === 'resource' ? target.id : target.attId, m);
   if (m.mime) _inspectField(sec, 'type', m.mime, m);
+  else late.type = _inspectField(sec, 'type', '…', m);
   if (m.size != null) _inspectField(sec, 'taille', humanSize(m.size), m);
+  else late.taille = _inspectField(sec, 'taille', '…', m);
 
   const dl = document.createElement('button');
   dl.className = 'drawer-btn inspect-dl';
@@ -5748,6 +5815,10 @@ function _inspectResourcePanel(parent, m, target) {
     const mime = record.mime || m.mime || '';
     const size = record.size != null ? record.size
       : (record.data && record.data.byteLength != null ? record.data.byteLength : m.size);
+    // Remplissage des lignes réservées : le record fait foi.
+    if (late.nom) _inspectFieldSetValue(late.nom, record.name || '(sans nom)');
+    if (late.type) _inspectFieldSetValue(late.type, mime || '(inconnu)');
+    if (late.taille) _inspectFieldSetValue(late.taille, size != null ? humanSize(size) : '(inconnue)');
     const p = inspectResourcePresentation(mime, size);
     if (p.mode === 'thumbnail') {
       _inspectThumbnail(preview, record);
@@ -5817,7 +5888,20 @@ function _inspectThumbnail(parent, record) {
   img.addEventListener('click', () => {
     const full = document.createElement('img');
     full.src = img.src;
-    openLightboxWith(full, record.w || 800, record.h || 600, record.name || '', 'image');
+    // Dimensions RÉELLES de l'image avant celles du record : `openLightboxWith`
+    // pose une boîte de taille fixe que le contenu remplit, donc un w/h faux
+    // ÉTIRE l'image (la vignette, elle, n'impose rien et reste juste — c'est ce
+    // qui rend l'écart visible au clic seulement).
+    // Les champs `w`/`h` ne sont pas universels : ils sont figés au stockage
+    // pour une pièce jointe, mais un binaire interné depuis un résultat d'outil
+    // (`_storeBlock` via `[resource_ref:…]`, lot Z-2) n'en a pas — on retombait
+    // alors sur le repli 800×600, un ratio arbitraire.
+    // `naturalWidth`/`naturalHeight` sont disponibles sans attendre : la
+    // vignette est chargée, c'est ce clic qui le prouve. Le repli du record
+    // reste derrière pour un cas où l'image ne serait pas décodable.
+    const w = img.naturalWidth || record.w || 800;
+    const h = img.naturalHeight || record.h || 600;
+    openLightboxWith(full, w, h, record.name || '', 'image');
   });
   parent.appendChild(img);
 }
@@ -5894,14 +5978,38 @@ function renderToolInspector(m) {
   // ── Réponse ───────────────────────────────────────────────────────────────
   const res = _inspectSection(body, 'Réponse');
   if (m.result != null) {
-    const shape = inspectResultShape(m.result);
+    // Détacher d'abord la note de présentation que MIAOU a concaténée pour le
+    // modèle : elle n'est pas la réponse de l'outil, et la laisser empêcherait
+    // inspectResultShape de reconnaître un JSON (cf. splitToolResultNote).
+    const split = splitToolResultNote(m.result);
+    const shape = inspectResultShape(split.text);
     if (shape.text === '') {
       const empty = document.createElement('p');
       empty.className = 'inspect-empty';
       empty.textContent = 'Réponse vide.';
       res.appendChild(empty);
+    } else if (resultIsOnlyResourceRefs(shape.text)) {
+      // Résultat réduit à des `[resource_ref:…]` : le marqueur est CONSERVÉ
+      // (l'inspecteur montre ce que l'outil a littéralement renvoyé), mais pas
+      // en <pre> — un bloc de code avec en-tête de langue et boutons
+      // copier/télécharger pour 26 caractères d'identifiant donne à un
+      // marqueur le poids visuel d'un contenu, alors que le contenu est juste
+      // en dessous, dans son volet. Registre du fil, qui affiche « Ressource
+      // enregistrée › nom » et non le marqueur.
+      const ref = document.createElement('p');
+      ref.className = 'inspect-ref';
+      ref.textContent = shape.text;
+      res.appendChild(ref);
     } else {
       _inspectCodeBlock(res, shape.text, shape.lang, _inspectBlockName(m, 'resultat'));
+    }
+    // Note SOUS le bloc : elle commente ce qui précède, et la placer au-dessus
+    // repousserait le contenu — qui est ce qu'on vient inspecter.
+    if (split.note) {
+      const n = document.createElement('p');
+      n.className = 'inspect-note';
+      n.textContent = split.note;
+      res.appendChild(n);
     }
   } else {
     const none = document.createElement('p');
@@ -5910,11 +6018,14 @@ function renderToolInspector(m) {
     res.appendChild(none);
   }
 
-  // ── Ressource (si l'ack en désigne une) ───────────────────────────────────
-  // Désignation par `ackDownloadTarget`, prédicat UNIQUE partagé avec le bouton
-  // de téléchargement de l'ack — jamais une liste de kinds réécrite ici.
-  const target = ackDownloadTarget(m);
-  if (target) _inspectResourcePanel(body, m, target);
+  // ── Ressource(s) désignée(s) par l'ack ────────────────────────────────────
+  // Désignation par `ackInspectResourceTargets` (utils.js) : les kinds
+  // `resource_*` via `ackDownloadTarget`, ET les `[resource_ref:…]` du résultat
+  // d'un `mcp_call` — sans quoi l'inspecteur d'un appel ayant produit une image
+  // n'en montrait que la référence. Jamais une liste de kinds réécrite ici.
+  // Toutes les cibles, dans l'ordre : n'en peindre qu'une masquerait les
+  // suivantes en silence.
+  ackInspectResourceTargets(m).forEach(t => _inspectResourcePanel(body, m, t));
 
   // ── Méta ──────────────────────────────────────────────────────────────────
   const meta = _inspectSection(body, 'Méta');
