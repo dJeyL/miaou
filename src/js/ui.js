@@ -1250,6 +1250,14 @@ const ICON_IMAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 // arguments envoyés, résultat reçu, méta d'appel.
 const ICON_INSPECT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>';
 
+// Métaphore « clé » — RÉSERVÉE au refus d'autorisation d'un serveur MCP
+// (campagne AB). Vocabulaire d'icônes : une métaphore = un usage. Une clé, pas
+// un cadenas : le cadenas dit « c'est fermé » (un état), la clé dit « voici de
+// quoi ouvrir » (une action) — et c'est bien une action qu'on propose ici.
+// Distincte d'ICON_ALERT, qui signale une anomalie subie : un refus
+// d'autorisation n'est pas une panne, c'est une étape prévue du parcours.
+const ICON_KEY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.8 12.2 21 2"/><path d="m17 6 3 3"/><path d="m14 9 3 3"/></svg>';
+
 // Séparateur › coloré (teinte accent) partagé par tous les acks à deux segments
 // (breadcrumb MCP, détail replié, ou simple label "Action › cible") — générique,
 // pas réservé aux outils MCP — classe CSS générique `.ack-sep`.
@@ -2033,6 +2041,77 @@ function refreshAckInspectAffordance(node, entry) {
   _appendAckInspectBtn(node, entry);
 }
 
+// Lien « Autoriser » d'un ack portant un refus d'autorisation (campagne AB).
+//
+// S'écarte du gabarit icône-seule de `.ack-dl`/`.ack-inspect`, et c'est
+// délibéré : ces deux-là agissent SUR l'ack (télécharger sa ressource,
+// inspecter son détail) et se lisent d'un pictogramme. Ici l'action est
+// SORTANTE — elle quitte MIAOU pour un tiers — et l'utilisateur doit lire vers
+// où il part avant de cliquer. Une icône seule ne peut pas porter cette
+// information ; l'origine en clair, si.
+//
+// Construction par API DOM, `href` posé par PROPRIÉTÉ : cette URL vient du
+// réseau, et la passer par une template string la mettrait sur un chemin
+// string→HTML, c'est-à-dire précisément la voie que le piège 21 réserve à
+// `formatToolAcksHtml`. Ici il n'y a aucune raison d'en ouvrir une seconde.
+//
+// `rel="noopener noreferrer"` : `noopener` coupe l'accès à `window.opener`
+// depuis la page ouverte ; `noreferrer` évite en plus de lui annoncer d'où
+// vient le clic — un serveur d'autorisation légitime n'en a pas besoin, et un
+// serveur hostile n'a pas à l'apprendre.
+function _appendAckAuthorizeLink(wrap, target) {
+  const box = document.createElement('span');
+  box.className = 'ack-authorize';
+
+  // La clé précède le libellé : dans une ligne rouge, le mot « Autoriser » seul
+  // se noie dans le texte d'erreur, alors que le pictogramme accroche l'œil.
+  // Elle est DANS le lien, pas à côté : c'est la même cible de clic, et deux
+  // éléments cliquables voisins pour une seule action se manquent au pointeur.
+  const icon = document.createElement('span');
+  icon.className = 'ack-authorize-icon';
+  icon.innerHTML = ICON_KEY;   // SVG statique author-controlled uniquement
+
+  const link = document.createElement('a');
+  link.className = 'ack-authorize-link';
+  link.appendChild(icon);
+  link.href = target.url;              // propriété, jamais interpolation
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  // appendChild, PAS textContent : celui-ci écraserait l'icône insérée juste
+  // au-dessus. Nœud texte, donc frontière XSS identique.
+  link.appendChild(document.createTextNode('Autoriser'));
+  link.title = target.upstream
+    ? 'Autoriser l\'accès à ' + target.upstream + ' sur ' + target.origin
+    : 'Autoriser l\'accès sur ' + target.origin;
+  box.appendChild(link);
+
+  const origin = document.createElement('span');
+  origin.className = 'ack-authorize-origin';
+  origin.textContent = target.origin;   // textContent : frontière XSS standard
+  box.appendChild(origin);
+
+  // Même position que la loupe dans la colonne d'icônes, et pour la même
+  // raison : rester alignée d'un ack à l'autre dans un groupe déplié.
+  const after = wrap.querySelector('.ack-undo, .ack-resolved');
+  if (after) wrap.insertBefore(box, after);
+  else wrap.appendChild(box);
+  return box;
+}
+
+// Fait apparaître le lien sur un ack DÉJÀ PEINT qui vient d'être enrichi —
+// même différé que `refreshAckInspectAffordance`, et pour la même cause : un
+// ack MCP est peint par `onEarlyAcks` AVANT le round-trip, donc avant que le
+// refus n'existe. Idempotente ; sans effet si le nœud est absent (génération
+// détachée — l'entrée est mutée quand même, le rendu à l'attache lira le
+// prédicat à jour).
+function refreshAckAuthorizationAffordance(node, entry) {
+  if (!node || !entry) return;
+  const target = ackAuthorizationTarget(entry);
+  if (!target) return;
+  if (node.querySelector('.ack-authorize')) return;
+  _appendAckAuthorizeLink(node, target);
+}
+
 function buildToolAck(m) {
   const kind = ackKindOf(m);
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
@@ -2111,6 +2190,20 @@ function buildToolAck(m) {
   // Comme `.ack-dl`, ce bouton est délibérément ABSENT des exports (piège 21) :
   // _formatToolCallHtml construit son markup indépendamment et ne l'émet pas.
   if (ackHasInspectableDetail(m)) _appendAckInspectBtn(wrap, m);
+  // Lien d'autorisation (campagne AB) : gated par le prédicat UNIQUE
+  // `ackAuthorizationTarget` (utils.js), jamais un test de kind ni de code ici —
+  // même doctrine que ses deux voisines au-dessus. Le prédicat re-valide l'URL
+  // À CHAQUE AFFICHAGE, ce qui couvre aussi les acks relus depuis le stockage
+  // (ou écrits par une version antérieure) : la garde ne serait pas une garde
+  // si elle ne s'appliquait qu'aux acks de la session courante.
+  //
+  // Comme `.ack-dl` et `.ack-inspect`, ABSENT des exports (piège 21) : un HTML
+  // standalone n'a ni la fraîcheur ni le contexte pour qu'un lien d'autorisation
+  // y ait un sens, et ce serait un lien externe cliquable dans un fichier qui
+  // circule. _formatToolCallHtml construit son markup indépendamment et ne
+  // l'émet pas — vérifié, pas supposé (cf. tests d'export).
+  const authTarget = ackAuthorizationTarget(m);
+  if (authTarget) _appendAckAuthorizeLink(wrap, authTarget);
   if (spec.undo) {
     if (m.resolved) {
       const s = document.createElement('span');

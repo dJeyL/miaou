@@ -1911,3 +1911,121 @@ describe('js__eval + output_handle / emit (lot Y)', function() {
     expect(bridges.length).toBe(2);
   });
 });
+
+describe('marqueurs de refus d\'autorisation sur un ack (campagne AB)', function() {
+  var CODE = 'AUTHORIZATION_REQUIRED';
+  function refusal() {
+    return { code: CODE, upstream: 'notion', authorization_url: 'http://127.0.0.1:8765/authorize/notion' };
+  }
+
+  it('pose les trois champs, en camelCase (le snake_case est la convention du fil)', function() {
+    var ack = { kind: 'mcp_call', name: 'proxy__notion__search', error: true };
+    applyAuthorizationRefusal(ack, CODE, refusal());
+    expect(ack.errorCode).toBe(CODE);
+    expect(ack.authorizationUrl).toBe('http://127.0.0.1:8765/authorize/notion');
+    expect(ack.upstream).toBe('notion');
+  });
+  it('ne pose RIEN sur un autre code machine (REF_UNKNOWN reste ephemere)', function() {
+    var ack = { kind: 'mcp_call', error: true };
+    applyAuthorizationRefusal(ack, 'REF_UNKNOWN', { code: 'REF_UNKNOWN' });
+    expect(ack.errorCode).toBe(undefined);
+    expect(ack.authorizationUrl).toBe(undefined);
+  });
+  it('ne pose rien quand il n\'y a aucun code', function() {
+    var ack = { kind: 'mcp_call', error: true };
+    applyAuthorizationRefusal(ack, undefined, undefined);
+    expect(ack.errorCode).toBe(undefined);
+  });
+  it('pose le code meme sans url : le proxy peut n\'avoir aucun parcours a proposer', function() {
+    // ackAuthorizationTarget refusera d'afficher un lien, et c'est le
+    // comportement voulu — mais le code, lui, est l'information vraie.
+    var ack = { kind: 'mcp_call', error: true };
+    applyAuthorizationRefusal(ack, CODE, { code: CODE, authorization_url: null });
+    expect(ack.errorCode).toBe(CODE);
+    expect(ack.authorizationUrl).toBe(undefined);
+  });
+  it('retire les TROIS champs ensemble au rejeu reussi', function() {
+    // L'invariant : poses ensemble, retires ensemble. En laisser un derriere
+    // afficherait un lien perime sous un appel qui a fini par reussir.
+    var ack = { kind: 'mcp_call', error: true };
+    applyAuthorizationRefusal(ack, CODE, refusal());
+    clearAuthorizationRefusal(ack);
+    expect(ack.errorCode).toBe(undefined);
+    expect(ack.authorizationUrl).toBe(undefined);
+    expect(ack.upstream).toBe(undefined);
+  });
+  it('le nettoyage ne touche pas au reste de l\'ack', function() {
+    var ack = { kind: 'mcp_call', name: 'proxy__x', intent: 'chercher', error: true };
+    applyAuthorizationRefusal(ack, CODE, refusal());
+    clearAuthorizationRefusal(ack);
+    expect(ack.name).toBe('proxy__x');
+    expect(ack.intent).toBe('chercher');
+    expect(ack.error).toBe(true);
+  });
+  it('un ack nettoye n\'est plus une cible presentable', function() {
+    // Le joint entre les deux fonctions pures et le predicat de rendu.
+    var ack = { kind: 'mcp_call', error: true };
+    applyAuthorizationRefusal(ack, CODE, refusal());
+    expect(ackAuthorizationTarget(ack).origin).toBe('127.0.0.1:8765');
+    clearAuthorizationRefusal(ack);
+    expect(ackAuthorizationTarget(ack)).toBe(null);
+  });
+  it('tolere un ack absent', function() {
+    expect(applyAuthorizationRefusal(null, CODE, refusal())).toBe(null);
+    expect(clearAuthorizationRefusal(null)).toBe(null);
+  });
+});
+
+describe('refus d\'autorisation : la whitelist d\'ack laisse passer les trois champs', function() {
+  it('copyAckFields propage errorCode, authorizationUrl et upstream', function() {
+    // Sans ces trois lignes dans ACK_COPY_FIELDS, les champs seraient poses par
+    // callRemoteTool puis perdus au premier passage par la whitelist : ni
+    // persistes, ni rendus au reload.
+    var src = {
+      kind: 'mcp_call', name: 'proxy__notion__search', error: true,
+      errorCode: 'AUTHORIZATION_REQUIRED',
+      authorizationUrl: 'http://127.0.0.1:8765/authorize/notion',
+      upstream: 'notion',
+    };
+    var out = copyAckFields(src, { role: 'tool-ack' });
+    expect(out.errorCode).toBe('AUTHORIZATION_REQUIRED');
+    expect(out.authorizationUrl).toBe('http://127.0.0.1:8765/authorize/notion');
+    expect(out.upstream).toBe('notion');
+    expect(ackAuthorizationTarget(out).origin).toBe('127.0.0.1:8765');
+  });
+});
+
+describe('texte du refus d\'autorisation adresse au MODELE (campagne AB)', function() {
+  var SRV = "Le serveur 'notion' exige une autorisation OAuth qui n'a pas encore ete accordee. Ouvrir ce lien pour l'accorder : http://127.0.0.1:8765/authorize/notion";
+  var out = formatAuthorizationRefusalForModel('proxy__notion__search', SRV);
+
+  it('conserve le message serveur (prose humaine, affichable, jamais parsee)', function() {
+    expect(out).toContain("exige une autorisation OAuth");
+  });
+  it('nomme QUI agit : l\'utilisateur, pas le modele', function() {
+    expect(out).toContain('seul l\'utilisateur peut accorder');
+  });
+  it('dit explicitement que le modele n\'a pas d\'outil pour ca', function() {
+    // Sans cette phrase, un modele lit l'imperatif du message serveur comme une
+    // consigne pour lui, cherche l'outil, et conclut de travers.
+    expect(out).toContain("tu n'as pas d'outil");
+  });
+  it('dit que le lien est DEJA affiche — rien a transmettre', function() {
+    expect(out).toContain('lui est déjà affiché dans la conversation');
+  });
+  it('dit que l\'echec est temporaire, pour que la capacite ne soit pas rayee', function() {
+    expect(out).toContain('le même appel fonctionnera');
+  });
+  it('ne REPETE pas l\'url : elle est deja dans le message serveur', function() {
+    // La repeter la mettrait deux fois dans le contexte, dont une dans une
+    // phrase que le modele pourrait recopier en reponse — remettant un lien
+    // d'origine reseau sur un chemin de rendu sans la garde du predicat.
+    var n = out.split('http://127.0.0.1:8765/authorize/notion').length - 1;
+    expect(n).toBe(1);
+  });
+  it('tolere un message serveur absent', function() {
+    var o = formatAuthorizationRefusalForModel('proxy__x', null);
+    expect(o).toContain('proxy__x');
+    expect(o).toContain('seul l\'utilisateur peut accorder');
+  });
+});

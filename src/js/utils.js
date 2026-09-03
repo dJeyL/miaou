@@ -69,6 +69,14 @@ const ACK_COPY_FIELDS = [
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'origin',                               // docs__render_page (V-8) — 'docs_render' : distingue une image PRODUITE d'une pièce jointe RAPPELÉE, sur le même kind (libellé + icône, jamais le routage)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
+  'errorCode', 'authorizationUrl', 'upstream',
+                                          // campagne AB — refus d'autorisation d'un serveur MCP. Persistés
+                                          // (contrairement au `result.errorCode` éphémère de callRemoteTool) :
+                                          // ils appellent une action de l'UTILISATEUR, qui peut quitter la
+                                          // conversation et y revenir. `errorCode` + `authorizationUrl` sont
+                                          // requis TOUS DEUX pour un lien (cf. ackAuthorizationTarget) ;
+                                          // `upstream` ne sert qu'à NOMMER ce qui a refusé dans un libellé —
+                                          // MIAOU ne modélise nulle part la notion d'upstream.
 ];
 
 function copyAckFields(src, dst) {
@@ -126,6 +134,111 @@ function ackDownloadTarget(m) {
     return m.attId ? { by: 'attachment', attId: m.attId, convId: m.convId || null, name, mime } : null;
   }
   return null;
+}
+
+// Code d'erreur machine partagé avec `mcp_proxy` (campagne AB) : l'appel visait
+// un serveur amont dont le proxy ne détient pas (ou plus) d'autorisation OAuth.
+// Porté dans `error.data.code`, même slot applicatif que REF_UNKNOWN_ERROR_CODE
+// (tools.js) — UNE seule constante, jamais dupliquée en dur.
+//
+// Ici et non dans tools.js parce que le PRÉDICAT vit ici (il est pur, il est lu
+// par le rendu) : garder la constante à côté de son unique consommateur direct
+// évite la paire « constante d'un côté, test de l'autre » qui dérive.
+const AUTHORIZATION_REQUIRED_ERROR_CODE = 'AUTHORIZATION_REQUIRED';
+
+// Origine d'une URL d'autorisation, SI elle est recevable — `null` sinon.
+// Renvoie l'origine plutôt qu'un booléen : l'appelant doit l'AFFICHER en clair
+// (l'utilisateur voit vers où il part avant de cliquer), et un prédicat booléen
+// l'aurait obligé à re-parser l'URL pour l'obtenir, donc à écrire une seconde
+// formule d'analyse à côté de celle qui décide. Un seul parsing, un seul verdict.
+//
+// Cette URL vient du RÉSEAU : c'est la seule de MIAOU dans ce cas (le lien du
+// footer d'export vient du build). Un serveur MCP compromis peut renvoyer
+// `AUTHORIZATION_REQUIRED` avec une URL vers un faux formulaire de login — au
+// pire moment, puisque l'utilisateur S'ATTEND alors à devoir s'authentifier.
+// D'où une liste FERMÉE de ce qui est accepté, et un refus explicite pour tout
+// le reste : jamais de dégradation silencieuse vers un lien nu.
+//
+// Accepté : `https:` vers n'importe quel hôte (l'AS tiers légitime), et `http:`
+// vers le loopback LITTÉRAL seul (le cas nominal — le proxy tourne en local et
+// l'URL pointe vers son propre `/authorize/{name}`). `localhost` est inclus :
+// il ne se résout pas ailleurs qu'en loopback dans un navigateur.
+// Refusé, entre autres : `javascript:`, `data:`, `file:`, `http:` vers un hôte
+// quelconque (interceptable en clair), et toute chaîne non parsable.
+//
+// Le verdict est rendu à l'AFFICHAGE, jamais seulement à l'écriture : un ack
+// relu depuis le stockage (ou écrit par une version antérieure de MIAOU)
+// repasse par ce même prédicat, sans quoi la garde ne couvrirait que les acks
+// de la session courante.
+//
+// Pure — pas d'`URL` global en QuickJS, donc parsing à la main plutôt que
+// `new URL()`. Le format visé est étroit et connu ; ce qui n'y entre pas est
+// refusé, ce qui est le comportement voulu.
+const _LOOPBACK_HOSTS = ['127.0.0.1', '[::1]', 'localhost'];
+
+function authorizationUrlOrigin(url) {
+  if (typeof url !== 'string') return null;
+  const raw = url.trim();
+  if (!raw) return null;
+  // Un caractère de contrôle (dont \n, \t) permettrait de masquer le vrai
+  // schéma à l'oeil sans changer ce que le navigateur exécute.
+  for (let i = 0; i < raw.length; i++) {
+    if (raw.charCodeAt(i) <= 0x20) return null;
+  }
+  const sep = raw.indexOf('://');
+  if (sep < 0) return null;
+  const scheme = raw.slice(0, sep).toLowerCase();
+  if (scheme !== 'https' && scheme !== 'http') return null;
+  // L'autorité s'arrête au premier `/`, `?` ou `#`. La chercher explicitement
+  // évite qu'un `@` plus loin dans le chemin (`https://vrai.site/x@faux.site`)
+  // ne soit pris pour un userinfo.
+  const rest = raw.slice(sep + 3);
+  let end = rest.length;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest.charAt(i);
+    if (c === '/' || c === '?' || c === '#') { end = i; break; }
+  }
+  const authority = rest.slice(0, end);
+  if (!authority) return null;
+  // `user@host` : refusé sans exception. Un userinfo n'a aucun usage légitime
+  // dans une URL d'autorisation, et c'est le vecteur classique pour faire lire
+  // `https://accounts.google.com` là où l'hôte réel est ce qui suit le `@`.
+  if (authority.indexOf('@') >= 0) return null;
+  // Hôte et port : le `:` du port est le DERNIER, pour ne pas couper une
+  // adresse IPv6 littérale (`[::1]:8765`).
+  const colon = authority.lastIndexOf(':');
+  const bracket = authority.lastIndexOf(']');
+  const hasPort = colon > bracket;
+  const host = (hasPort ? authority.slice(0, colon) : authority).toLowerCase();
+  const port = hasPort ? authority.slice(colon + 1) : '';
+  if (!host) return null;
+  if (hasPort && !/^[0-9]+$/.test(port)) return null;
+  if (scheme === 'http' && _LOOPBACK_HOSTS.indexOf(host) < 0) return null;
+  return host + (port ? ':' + port : '');
+}
+
+// Prédicat UNIQUE « cet ack porte-t-il un refus d'autorisation présentable ? »
+// (campagne AB). Même patron que `ackDownloadTarget` juste au-dessus : renvoie
+// une CIBLE typée ou `null`, jamais un booléen — l'appelant a besoin de l'URL
+// ET de l'origine à afficher, et un booléen l'aurait forcé à re-dériver les deux.
+//
+// Les DEUX champs sont requis pour rendre un lien. Le code seul dit qu'il faut
+// autoriser mais pas où aller (le proxy renvoie `authorization_url: null` quand
+// il n'a pas de parcours à proposer) ; l'URL seule ne distingue pas un refus
+// d'autorisation d'une erreur ordinaire. `upstream` est facultatif et sert
+// UNIQUEMENT à nommer ce qui a refusé dans un libellé — MIAOU n'apprend pas la
+// notion d'upstream, il ne la modélise nulle part.
+//
+// Un code présent sans URL recevable renvoie `null` : pas de lien. C'est voulu
+// et c'est le cas de refus de la garde d'URL — l'ack reste rouge et son message
+// d'erreur, lui, s'affiche toujours.
+// Pure, testable en QuickJS.
+function ackAuthorizationTarget(m) {
+  if (!m) return null;
+  if (m.errorCode !== AUTHORIZATION_REQUIRED_ERROR_CODE) return null;
+  const origin = authorizationUrlOrigin(m.authorizationUrl);
+  if (!origin) return null;
+  return { url: String(m.authorizationUrl).trim(), origin: origin, upstream: m.upstream || null };
 }
 
 // Ressources désignées par un ack POUR L'INSPECTEUR (lot Z-2). Étend

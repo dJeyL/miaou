@@ -2570,3 +2570,136 @@ describe('conversationSnippet (AA, niveau 1) — extrait de secours d\'une conve
     expect(conversationSnippet('**important** : « lire ceci »')).toBe('**important** : « lire ceci »');
   });
 });
+
+describe('authorizationUrlOrigin (campagne AB) — recevabilité de l\'URL', function() {
+  it('accepte https vers un hote quelconque, et rend l\'origine', function() {
+    expect(authorizationUrlOrigin('https://auth.notion.so/oauth/authorize?x=1')).toBe('auth.notion.so');
+  });
+  it('conserve le port dans l\'origine rendue', function() {
+    // C'est ce que l'utilisateur doit LIRE avant de cliquer : un port inattendu
+    // sur un hote connu est precisement ce qu'il faut voir.
+    expect(authorizationUrlOrigin('https://example.test:8443/authorize')).toBe('example.test:8443');
+  });
+  it('accepte http vers le loopback litteral (cas nominal du proxy local)', function() {
+    expect(authorizationUrlOrigin('http://127.0.0.1:8765/authorize/remote')).toBe('127.0.0.1:8765');
+    expect(authorizationUrlOrigin('http://localhost:8765/authorize/remote')).toBe('localhost:8765');
+    expect(authorizationUrlOrigin('http://[::1]:8765/authorize/remote')).toBe('[::1]:8765');
+  });
+  it('REFUSE http vers un hote quelconque (interceptable en clair)', function() {
+    expect(authorizationUrlOrigin('http://auth.example.test/authorize')).toBe(null);
+  });
+  it('REFUSE javascript:, data: et file:', function() {
+    expect(authorizationUrlOrigin('javascript://x/%0aalert(1)')).toBe(null);
+    expect(authorizationUrlOrigin('data://text/html,<script>')).toBe(null);
+    expect(authorizationUrlOrigin('file:///etc/passwd')).toBe(null);
+  });
+  it('REFUSE un userinfo (l\'hote lu n\'est pas l\'hote joint)', function() {
+    // Vecteur classique : l'oeil lit accounts.google.com, le navigateur joint
+    // faux.test.
+    expect(authorizationUrlOrigin('https://accounts.google.com@faux.test/login')).toBe(null);
+  });
+  it('ne prend PAS un @ du chemin pour un userinfo', function() {
+    // L'autorite s'arrete au premier /, donc ce @ est hors sujet : accepter.
+    expect(authorizationUrlOrigin('https://vrai.test/callback@autre.test')).toBe('vrai.test');
+  });
+  it('REFUSE un caractere de controle (schema masque a l\'oeil)', function() {
+    expect(authorizationUrlOrigin('java\nscript://x/%0aalert(1)')).toBe(null);
+    expect(authorizationUrlOrigin('https://vrai.test\t/x')).toBe(null);
+  });
+  it('REFUSE une chaine non parsable, vide, ou d\'un autre type', function() {
+    expect(authorizationUrlOrigin('pas une url')).toBe(null);
+    expect(authorizationUrlOrigin('')).toBe(null);
+    expect(authorizationUrlOrigin('   ')).toBe(null);
+    expect(authorizationUrlOrigin(null)).toBe(null);
+    expect(authorizationUrlOrigin(undefined)).toBe(null);
+    expect(authorizationUrlOrigin(42)).toBe(null);
+    expect(authorizationUrlOrigin('https://')).toBe(null);
+  });
+  it('REFUSE un port non numerique', function() {
+    expect(authorizationUrlOrigin('https://vrai.test:80x/x')).toBe(null);
+  });
+  it('normalise le schema et l\'hote en minuscules', function() {
+    expect(authorizationUrlOrigin('HTTPS://Auth.Example.TEST/x')).toBe('auth.example.test');
+    expect(authorizationUrlOrigin('HTTP://127.0.0.1:8765/x')).toBe('127.0.0.1:8765');
+  });
+  it('tolere les espaces autour, jamais dedans', function() {
+    expect(authorizationUrlOrigin('  https://vrai.test/x  ')).toBe('vrai.test');
+  });
+});
+
+describe('ackAuthorizationTarget (campagne AB) — refus presentable', function() {
+  var CODE = 'AUTHORIZATION_REQUIRED';
+  it('rend une cible complete quand code ET url recevable sont presents', function() {
+    var t = ackAuthorizationTarget({
+      kind: 'mcp_call', error: true, errorCode: CODE,
+      authorizationUrl: 'http://127.0.0.1:8765/authorize/notion', upstream: 'notion',
+    });
+    expect(t.url).toBe('http://127.0.0.1:8765/authorize/notion');
+    expect(t.origin).toBe('127.0.0.1:8765');
+    expect(t.upstream).toBe('notion');
+  });
+  it('rend upstream a null quand le serveur ne le nomme pas', function() {
+    var t = ackAuthorizationTarget({ errorCode: CODE, authorizationUrl: 'https://a.test/x' });
+    expect(t.upstream).toBe(null);
+  });
+  it('null sur un ack en erreur ORDINAIRE (pas de code)', function() {
+    expect(ackAuthorizationTarget({ kind: 'mcp_call', error: true })).toBe(null);
+  });
+  it('null sur un autre code machine (REF_UNKNOWN)', function() {
+    expect(ackAuthorizationTarget({ errorCode: 'REF_UNKNOWN', authorizationUrl: 'https://a.test/x' })).toBe(null);
+  });
+  it('null quand le proxy n\'a pas de parcours a proposer (url absente ou null)', function() {
+    expect(ackAuthorizationTarget({ errorCode: CODE })).toBe(null);
+    expect(ackAuthorizationTarget({ errorCode: CODE, authorizationUrl: null })).toBe(null);
+  });
+  it('null quand l\'url est presente mais IRRECEVABLE — pas de lien, jamais de repli', function() {
+    // Le cas d'attaque : le code est authentique (ou imite), l'url ne l'est pas.
+    expect(ackAuthorizationTarget({ errorCode: CODE, authorizationUrl: 'javascript:alert(1)' })).toBe(null);
+    expect(ackAuthorizationTarget({ errorCode: CODE, authorizationUrl: 'http://faux.test/login' })).toBe(null);
+  });
+  it('null sur un ack absent', function() {
+    expect(ackAuthorizationTarget(null)).toBe(null);
+    expect(ackAuthorizationTarget(undefined)).toBe(null);
+  });
+  it('lit le code par EGALITE, jamais par sous-chaine du message', function() {
+    // Un message serveur qui CITE le code ne doit pas declencher le lien.
+    var t = ackAuthorizationTarget({
+      result: 'Erreur : AUTHORIZATION_REQUIRED sur cet upstream',
+      authorizationUrl: 'https://a.test/x',
+    });
+    expect(t).toBe(null);
+  });
+});
+
+describe('refus d\'autorisation : ABSENT des exports (piege 21)', function() {
+  var ack = {
+    kind: 'mcp_call', name: 'proxy__notion__search', error: true,
+    args: { q: 'x' }, result: 'Erreur outil distant : autorisation requise',
+    errorCode: 'AUTHORIZATION_REQUIRED',
+    authorizationUrl: 'http://127.0.0.1:8765/authorize/notion',
+    upstream: 'notion',
+  };
+  it('l\'export HTML n\'emet ni l\'url ni le libelle du lien', function() {
+    // Un HTML standalone circule : un lien d'autorisation externe cliquable y
+    // serait sans contexte et sans fraicheur. L'exclusion est structurelle
+    // (_formatToolCallHtml enumere ce qu'il emet), ce test l'epingle.
+    var html = formatToolAcksHtml([ack]);
+    expect(html.indexOf('127.0.0.1:8765') < 0).toBe(true);
+    expect(html.indexOf('authorize/notion') < 0).toBe(true);
+    expect(html.indexOf('ack-authorize') < 0).toBe(true);
+    expect(html.indexOf('Autoriser') < 0).toBe(true);
+  });
+  it('l\'export Markdown non plus', function() {
+    var md = formatToolAcksMd([ack]);
+    expect(md.indexOf('127.0.0.1:8765') < 0).toBe(true);
+    expect(md.indexOf('authorize/notion') < 0).toBe(true);
+    expect(md.indexOf('Autoriser') < 0).toBe(true);
+  });
+  it('mais l\'export rend bien l\'ack, en erreur — seul le LIEN est retire', function() {
+    // Sans ce cas, les trois assertions ci-dessus passeraient aussi si l'export
+    // n'emettait rien du tout : une premisse fausse rendrait le test vert.
+    var html = formatToolAcksHtml([ack]);
+    expect(html).toContain('proxy__notion__search');
+    expect(html).toContain('ack-head-error');
+  });
+});

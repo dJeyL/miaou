@@ -835,6 +835,59 @@ la traçabilité n'est pas perdue. Un chemin finissant par `/` retombe sur le re
 MIAOU. Le bouton est construit dans `buildToolAck` (chemin DOM live) uniquement ;
 `formatToolAcksHtml` est inchangée.
 
+### Lien d'autorisation sur un ack refusé (campagne AB)
+
+**Troisième affordance conditionnelle d'un ack**, après le téléchargement et la
+loupe, et bâtie sur le même patron : un prédicat unique et pur dans `utils.js`,
+jamais un test de `kind` ni de code dans `buildToolAck`. Le contrat serveur
+(`error.data.code === "AUTHORIZATION_REQUIRED"`) est décrit dans `docs/mcp.md`
+point 15 ; ce qui suit ne couvre que le rendu.
+
+**Prédicat : `ackAuthorizationTarget(m)`** → `{url, origin, upstream}` ou `null`.
+Cible typée et non booléen, pour la même raison que `ackDownloadTarget` : le
+consommateur a besoin de l'origine à afficher, et un booléen l'aurait forcé à
+re-parser l'URL — deux formules d'analyse là où il en faut une. **Les deux**
+champs `errorCode` et `authorizationUrl` sont requis : le code seul dit qu'il
+faut autoriser sans dire où, l'URL seule ne distingue pas un refus d'une erreur
+ordinaire.
+
+**Seule affordance d'ack rendue en TEXTE et non en icône.** `.ack-dl` et
+`.ack-inspect` agissent *sur* l'ack et se lisent d'un pictogramme ; celle-ci
+**sort de MIAOU** vers un tiers, et l'origine doit être lisible avant le clic —
+ce qu'aucune icône ne porte. La clé (`ICON_KEY`, métaphore réservée) est **dans**
+le lien et non à côté : une seule cible de clic. L'origine, elle, n'est pas
+cliquable (information, pas seconde cible) et n'est **jamais tronquée par
+ellipse** — un nom d'hôte coupé en son milieu est ce qu'une adresse trompeuse
+exploiterait.
+
+**Couleur** : `--accent` alors que l'ack est en erreur (`--err-soft`). C'est la
+sortie de l'impasse, pas une aggravation du constat ; le teinter comme l'erreur
+le ferait lire comme une partie du verdict. Souligné **au repos**, contrairement
+à `.ack-conv-link` qui peut s'en remettre au survol parce qu'il hérite sa
+couleur : ici c'est le seul élément cliquable d'une ligne rouge.
+
+**Construction DOM stricte** : `href` posé par **propriété**, jamais par template
+string — cette URL vient du réseau, et l'interpoler la mettrait sur un chemin
+string→HTML, c'est-à-dire la voie que le piège 21 réserve à `formatToolAcksHtml`.
+`rel="noopener noreferrer"` (couper `window.opener`, et ne pas annoncer au
+serveur d'où vient le clic). `appendChild(createTextNode(...))` pour le libellé,
+car `textContent` effacerait l'icône insérée juste avant.
+
+**Rétro-application, comme la loupe.** Un ack MCP est peint par `onEarlyAcks`
+**avant** le round-trip, donc avant que le refus n'existe :
+`refreshAckAuthorizationAffordance(node, entry)` le fait apparaître depuis
+`onToolAcks`, en même temps que l'état d'erreur. Doctrine du piège 28 respectée :
+la donnée est mutée **toujours** (via `copyAckFields`, whitelist unique), le nœud
+n'est peint que s'il existe — une génération détachée verra l'affordance au
+rendu à l'attache, le prédicat étant relu à ce moment-là.
+
+**Absent des deux exports** (piège 21), comme ses deux voisines : un HTML
+standalone circule, et un lien d'autorisation externe cliquable y serait sans
+contexte ni fraîcheur. `_formatToolCallHtml`/`_formatToolCallMd` énumèrent ce
+qu'ils émettent et n'en font rien — épinglé par un test qui vérifie **aussi** que
+l'ack lui-même est bien rendu, sans quoi les assertions négatives passeraient sur
+un export vide.
+
 ### Échecs d'outils : `tool_failed` et `toolFail()`
 
 **Tout échec d'un outil natif pousse un ack.** Un handler qui sort en erreur ne

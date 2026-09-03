@@ -73,6 +73,25 @@ round-trip réseau complet + le rejeu `REF_UNKNOWN`) reste manuel — nécessite
 serveur `mcp_docs` réel, cf. `docs/manual-tests.md` (test 57) ; le stub `fetch`
 du runner QuickJS (`tests/runner.py`) ne résout ni ne rejette jamais, un test
 qui l'exercerait resterait bloqué silencieusement.
+**Refus d'autorisation MCP (campagne AB)** : `authorizationUrlOrigin` (schémas
+acceptés/refusés, loopback littéral, userinfo, caractères de contrôle, port non
+numérique, normalisation de casse), `ackAuthorizationTarget` (les deux champs
+requis, autre code machine, URL irrecevable, lecture par égalité et non par
+sous-chaîne du message), `applyAuthorizationRefusal`/`clearAuthorizationRefusal`
+(pose et retrait des trois champs **ensemble** — l'invariant qui empêche un lien
+périmé de subsister sur un ack redevenu vert au rejeu), la traversée de
+`ACK_COPY_FIELDS`, le texte modèle (`formatAuthorizationRefusalForModel` : qui
+agit, lien déjà affiché, échec temporaire, URL non répétée) et l'absence des
+**deux** exports — ce dernier avec le cas témoin qui vérifie que l'ack *est*
+rendu, sans quoi les assertions négatives passeraient sur un export vide. Le
+round-trip, le rendu du lien, la survie au rechargement et la génération
+détachée relèvent du Playwright : `verify-authorization-required.mjs`
+(62 contrôles, MCP stubé au niveau de `mcpRpc` — pas de proxy à lancer), qui
+couvre aussi la matrice complète de la garde d'URL sur le chemin réel et le
+rejeu effaçant les marqueurs sur la **même** entrée d'ack (un appel neuf qui
+réussit ne teste pas cet invariant : il n'a rien à nettoyer). Restent hors de
+portée depuis MIAOU, cf. `docs/manual-tests.md` : le callback OAuth réel et la
+distinction d'un 403 de scope, qui vit dans `mcp_proxy`.
 **ressources — cache session** (`getCachedRecordByAttId` : match exact attId+conversationId,
 conversationId omis, conversationId différent, attId absent ; `getCachedLibraryEntriesBySpace` :
 filtre `kind==='library'` et `spaceId`, spaceId sans fichier), **doctrines conditionnelles**

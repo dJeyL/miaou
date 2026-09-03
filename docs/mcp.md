@@ -132,6 +132,10 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
     chiffrement client a besoin d'une clef client → ne protège rien. Le correctif
     prod est un **proxy** (token côté serveur) — mentionné comme la voie, **non
     implémenté en V2**. Caveat sobre affiché dans la carte serveur.
+    **Suite donnée (campagne AB, point 14 ci-dessous)** : `mcp_proxy` détient
+    désormais les jetons OAuth des serveurs tiers sur disque, et MIAOU ne
+    manipule plus qu'un bearer opaque vers ce proxy local. Le caveat reste
+    valable pour ce bearer-là.
 11. **Le sous-écran « Serveurs MCP » est un drawer à part** (`#mcp-drawer`, cartes
     éditables construites en `createElement`/`textContent`), pas une ligne de plus
     dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
@@ -378,6 +382,57 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       continue de vérifier seulement `ref`+`content_b64` sur l'outil que le
       modèle a explicitement nommé — aucune ambiguïté à lever côté modèle,
       qui voit le nom réel de l'outil.
+
+15. **Contrat d'erreur `AUTHORIZATION_REQUIRED` (campagne AB).** Deuxième code
+    machine du même slot applicatif que `REF_UNKNOWN` (point 12), et détecté par
+    la même discipline : **égalité de constante** sur `error.data.code`, jamais
+    une sous-chaîne du message. `AUTHORIZATION_REQUIRED_ERROR_CODE` vit dans
+    `utils.js`, à côté du prédicat qui la lit.
+    - **Ce que porte `error.data`** : `code`, `upstream` (nom du serveur amont
+      qui a refusé) et `authorization_url` (le lien à présenter, **éventuellement
+      `null`** — le proxy peut n'avoir aucun parcours à proposer).
+      `error.message` est de la prose destinée à l'humain : affichable, **jamais
+      parsée**.
+    - **MIAOU n'apprend PAS la notion d'upstream.** `mcp_proxy` aplatit : MIAOU
+      voit UN serveur exposant une liste plate d'outils préfixés, et ne sait pas
+      que deux d'entre eux viennent d'amonts distincts. Le champ `upstream` sert
+      à **nommer** ce qui a refusé dans un libellé, jamais à modéliser une
+      structure — aucune surface ne liste d'upstreams.
+    - **Persistance, contrairement à `REF_UNKNOWN`.** Ce dernier reste sur
+      `result.errorCode`, éphémère par construction : son unique consommateur
+      (le hook §12) le lit en synchrone pour décider d'un rejeu. Un refus
+      d'autorisation, lui, appelle une action de l'**utilisateur**, qui peut
+      quitter la conversation et y revenir : `errorCode`, `authorizationUrl` et
+      `upstream` passent donc par l'**ack**, via `ACK_COPY_FIELDS`
+      (`applyAuthorizationRefusal` / `clearAuthorizationRefusal`, tools.js —
+      posés ensemble, retirés ensemble ; le rejeu qui réussit les efface comme
+      il efface `error`, sans quoi un lien périmé subsisterait sous un appel
+      redevenu vert).
+    - **Garde d'URL, appliquée à l'AFFICHAGE.** `authorizationUrlOrigin`
+      (utils.js, pure) n'accepte que `https:` vers un hôte quelconque, ou
+      `http:` vers un loopback **littéral** (`127.0.0.1`, `[::1]`,
+      `localhost`) ; refuse userinfo, caractères de contrôle, port non
+      numérique, et tout le reste. Refus = **aucun lien affiché**, jamais de
+      repli sur un lien nu. Le verdict est rendu à chaque affichage et non à
+      l'écriture : un ack relu du stockage (ou écrit par une version antérieure)
+      repasse par la même garde. C'est la seule URL d'origine **réseau** que
+      MIAOU rende cliquable, d'où la liste fermée.
+    - **Rendu** : `ackAuthorizationTarget` (prédicat unique, utils.js) gate un
+      lien « Autoriser » sur l'ack, avec l'origine en clair à côté — construit
+      par API DOM, `href` posé par **propriété** (aucun chemin string→HTML, cf.
+      piège 21), `rel="noopener noreferrer"`. **Absent des deux exports**, comme
+      le bouton de téléchargement et la loupe. Cf. `docs/tools.md`.
+    - **Texte au modèle** : `formatAuthorizationRefusalForModel` (tools.js,
+      pure) complète le message serveur. Celui-ci est à l'impératif sans
+      destinataire (« Ouvrir ce lien… ») et se lit comme une consigne AU MODÈLE,
+      qui n'a aucun outil pour autoriser — et n'en aura pas, ce serait une
+      initiative modèle là où seul l'utilisateur consent. Le complément dit donc
+      explicitement qui agit, que le lien est **déjà affiché** (rien à
+      transmettre), et que l'échec est **temporaire**. L'URL n'y est **pas
+      répétée** : elle serait alors deux fois dans le contexte, dont une dans une
+      phrase que le modèle pourrait recopier en réponse — remettant un lien
+      d'origine réseau sur un chemin de rendu dépourvu de la garde ci-dessus.
+    - **Pas de rejeu automatique** : la génération se termine normalement.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 

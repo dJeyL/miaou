@@ -3280,6 +3280,13 @@ async function dispatchSend(matches, continuation) {
         for (const { ack, entry, node } of earlyRendered) {
           if (ack.error && !entry.error) {
             entry.error = true;
+            // Refus d'autorisation (campagne AB) : posé par callRemoteTool sur
+            // le descripteur brut dans le même `catch` que `error`, donc APRÈS
+            // que onEarlyAcks a copié l'entrée. Sans cette reprise, les champs
+            // resteraient sur `ack` et ne seraient ni persistés ni rendus — le
+            // lien n'existerait que dans un objet que personne ne relit.
+            // Whitelist unique : copyAckFields, jamais une copie champ par champ.
+            copyAckFields(ack, entry);
             if (node) {
               node.classList.add('ack-error');
               const lbl = node.querySelector('.ack-label');
@@ -3287,6 +3294,10 @@ async function dispatchSend(matches, continuation) {
                 lbl.textContent = '';
                 ACK_KINDS.mcp_call.renderLabel(entry, lbl);
               }
+              // Même différé que la loupe (cf. onEnrichLastAck) : l'ack a été
+              // peint avant le round-trip, l'entrée ne portait alors rien qui
+              // permette de décider de cette affordance.
+              refreshAckAuthorizationAffordance(node, entry);
             }
           }
         }

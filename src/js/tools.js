@@ -2722,6 +2722,65 @@ function toolCtx(ctx) {
   };
 }
 
+// Pose / retire les marqueurs de refus d'autorisation sur un ack (campagne AB).
+// Extraits de callRemoteTool — qui est async et réseau, donc intestable en
+// QuickJS — pour que l'invariant qui les lie soit vérifié plutôt que commenté :
+// ces champs sont posés ENSEMBLE et retirés ENSEMBLE. En laisser un derrière au
+// rejeu afficherait un lien « Autoriser » périmé sous un appel qui a réussi ;
+// en oublier un à la pose donnerait un ack qu'`ackAuthorizationTarget` refuse
+// sans rien dire.
+//
+// `data` est l'objet applicatif d'`error.data` (cf. mcpRpcAttempt), en
+// snake_case comme tout ce qui vient du fil ; les champs d'ack sont en
+// camelCase. Le renommage a lieu ICI, à la frontière, et nulle part ailleurs.
+// Pures, testables en QuickJS.
+function applyAuthorizationRefusal(ackEntry, errorCode, data) {
+  if (!ackEntry) return ackEntry;
+  if (errorCode !== AUTHORIZATION_REQUIRED_ERROR_CODE) return ackEntry;
+  ackEntry.errorCode = errorCode;
+  if (data && data.authorization_url != null) ackEntry.authorizationUrl = data.authorization_url;
+  if (data && data.upstream != null) ackEntry.upstream = data.upstream;
+  return ackEntry;
+}
+
+// Texte du tool result quand un serveur MCP refuse faute d'autorisation.
+//
+// Le message serveur dit déjà l'essentiel (« exige une autorisation OAuth qui
+// n'a pas encore été accordée »), mais il est rédigé à l'impératif sans nommer
+// son destinataire : « Ouvrir ce lien pour l'accorder » se lit comme une
+// consigne AU MODÈLE, qui n'a aucun moyen d'ouvrir quoi que ce soit — il n'y a
+// aucun outil d'autorisation, et il n'y en aura pas (ce serait une initiative
+// modèle là où seul l'utilisateur peut consentir). Un modèle qui prend cette
+// phrase pour lui cherche l'outil, ne le trouve pas, et conclut de travers.
+//
+// D'où trois choses dites explicitement, qu'aucune ne soit à déduire :
+// qui agit (l'utilisateur, pas le modèle), que le lien est DÉJÀ affiché (donc
+// rien à transmettre ni à recopier), et que l'échec est temporaire (sinon le
+// modèle raye la capacité de ses options et n'y revient plus).
+//
+// L'URL n'est PAS reprise ici : elle est dans le message serveur, qui suit, et
+// la répéter la ferait apparaître deux fois dans le contexte — dont une dans
+// une phrase que le modèle pourrait recopier dans sa réponse, remettant un lien
+// d'origine réseau sur un chemin de rendu qui, lui, n'a pas la garde de
+// `ackAuthorizationTarget`.
+// Pure, testable en QuickJS.
+function formatAuthorizationRefusalForModel(fullName, serverMessage) {
+  return 'Erreur outil distant ' + fullName + ' : ' + (serverMessage || '') +
+    '\n\nCet appel est en attente d\'une autorisation que seul l\'utilisateur peut ' +
+    'accorder ; tu n\'as pas d\'outil pour le faire toi-même. Le lien nécessaire lui ' +
+    'est déjà affiché dans la conversation — inutile de le lui transmettre. Signale-lui ' +
+    'simplement que cette action requiert son autorisation, et poursuis avec ce que tu ' +
+    'peux faire sans elle. Une fois l\'autorisation accordée, le même appel fonctionnera.';
+}
+
+function clearAuthorizationRefusal(ackEntry) {
+  if (!ackEntry) return ackEntry;
+  delete ackEntry.errorCode;
+  delete ackEntry.authorizationUrl;
+  delete ackEntry.upstream;
+  return ackEntry;
+}
+
 async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = reuseAckEntry || { kind: 'mcp_call', server: server.name, name: fullName };
@@ -2734,18 +2793,38 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
     const nonText = content.filter(b => b && b.type !== 'text');
     if (nonText.length) _pendingToolBlocks.push.apply(_pendingToolBlocks, nonText);
     if (result && result.isError) ackEntry.error = true;
-    else if (reuseAckEntry) delete ackEntry.error;   // rejeu réussi : échec transitoire effacé
+    else if (reuseAckEntry) {
+      delete ackEntry.error;              // rejeu réussi : échec transitoire effacé
+      clearAuthorizationRefusal(ackEntry);   // les marqueurs d'autorisation suivent `error`
+    }
     return { content, isError: !!(result && result.isError), ackEntry };
   } catch (e) {
     ackEntry.error = true;
-    // errorCode et ackEntry (pas dans ACK_COPY_FIELDS : jamais persistés, lus
-    // synchrones par l'appelant immédiat callDocsInflatedRemoteTool, cf. D6) :
     // errorCode porte le code machine brut (ex. REF_UNKNOWN) depuis err.data.code
     // (mcpRpcAttempt) — évite de dépendre du texte libre du message pour une
     // décision de rejeu ; ackEntry permet au rejeu de réutiliser la même ligne.
+    // Ce champ du RÉSULTAT reste hors ACK_COPY_FIELDS : lu en synchrone par
+    // l'appelant immédiat callDocsInflatedRemoteTool (hook d'inflation, brief A).
     const errorCode = e && e.data && e.data.code;
+    // Refus d'autorisation (campagne AB) : le seul code qui doive SURVIVRE au
+    // tour, parce qu'il n'appelle pas une décision de rejeu mais une action de
+    // l'utilisateur — qui peut fort bien quitter la conversation et y revenir.
+    // Il passe donc par l'ACK (persisté via ACK_COPY_FIELDS), là où le chemin
+    // `result.errorCode` ci-dessus est éphémère par construction.
+    //
+    // `err.data` porte l'objet applicatif COMPLET (cf. mcpRpcAttempt), pas
+    // seulement `code` : `authorization_url` et `upstream` sont déjà là, rien à
+    // ajouter au transport.
+    applyAuthorizationRefusal(ackEntry, errorCode, e && e.data);
+    const serverMessage = (e && e.message) || e;
+    // Le refus d'autorisation reçoit un texte propre (cf. sa fonction) : le
+    // message serveur seul s'adresse mal au modèle. Tout autre échec garde la
+    // forme historique.
+    const text = errorCode === AUTHORIZATION_REQUIRED_ERROR_CODE
+      ? formatAuthorizationRefusalForModel(fullName, serverMessage)
+      : 'Erreur outil distant ' + fullName + ' : ' + serverMessage;
     return {
-      content: [{ type: 'text', text: 'Erreur outil distant ' + fullName + ' : ' + ((e && e.message) || e) }],
+      content: [{ type: 'text', text }],
       isError: true,
       errorCode,
       ackEntry,

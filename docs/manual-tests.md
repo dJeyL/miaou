@@ -1247,3 +1247,54 @@ jamais par un second `page.route` posé par-dessus.
     (Ollama), constater le décalage assumé : le titrage part en premier et
     retarde le début de la réponse. C'est la contrepartie du lot, pas un bug —
     c'est ce que le réglage permet d'inverser.
+
+## Autorisation OAuth d'un serveur MCP (campagne AB-3)
+
+Le contrat côté serveur est livré par `mcp_proxy` (dépôt `miaou-mcp-servers`,
+sous-lots AB-1 et AB-2). Rien de ce qui suit n'est couvert par QuickJS : les
+prédicats le sont, le round-trip réseau et le rendu ne le sont pas.
+
+**Montage.** Deux proxys, celui d'AB-1 servant de serveur tiers exigeant OAuth à
+celui d'AB-2 (procédure détaillée dans le `HANDOVER-AB-2.md` de ce dépôt) :
+
+```bash
+# amont : sert mcp_bench derrière l'auth entrante + son AS de développement
+uv run mcp_proxy.py --config /tmp/ab2-upstream.json --with-dev-auth 8797 --dev-auth-auto-approve
+# aval : le consomme en HttpUpstream OAuth
+uv run mcp_proxy.py --config /tmp/ab2-consumer.json
+```
+
+Le port **8765 est celui du proxy permanent de Julien** : utiliser 8797/8798/8799
+et des configs hors dépôt (`/tmp`). Vérifier avec
+`lsof -nP -iTCP:<port> -sTCP:LISTEN` avant ET après, tuer par PID.
+Configurer le proxy aval comme serveur MCP dans MIAOU, puis :
+
+1. **Refus nominal.** Demander au modèle d'appeler un outil de l'upstream non
+   autorisé. La ligne d'appel devient rouge et porte un lien **Autoriser** suivi
+   de l'origine en clair (`127.0.0.1:8799`). Le modèle **termine sa réponse** en
+   signalant que l'action attend une autorisation — il ne réessaie pas, et ne
+   prétend pas pouvoir autoriser lui-même.
+2. **Survie au rechargement.** Recharger la page (F5), rouvrir la conversation :
+   le lien est **toujours là**. C'est ce que la persistance via
+   `ACK_COPY_FIELDS` achète — sans elle, le lien disparaîtrait et il faudrait
+   relancer un appel pour le retrouver.
+3. **Parcours complet.** Cliquer : la page d'autorisation s'ouvre dans un nouvel
+   onglet, le proxy reçoit son callback. Redemander la même chose au modèle :
+   l'appel passe.
+4. **Absence des exports.** Exporter la conversation en HTML **et** en Markdown :
+   ni le lien, ni l'URL, ni le mot « Autoriser » n'y figurent, mais l'appel
+   échoué **est** présent, marqué en erreur.
+5. **URL irrecevable.** Forcer le proxy à renvoyer une `authorization_url` en
+   `http://` vers un hôte non-loopback (éditer sa config, ou intercepter) :
+   **aucun lien** ne doit apparaître, la ligne reste rouge avec son message.
+   C'est le cas de refus de la garde, celui qui compte le plus et le seul
+   qu'aucune manipulation nominale ne produit.
+6. **`upstream` sans URL.** Un refus dont `authorization_url` vaut `null` : ack
+   rouge, message affiché, aucun lien — le proxy n'a rien à proposer.
+7. **Génération détachée.** Lancer l'appel dans une conversation, basculer sur
+   une autre pendant le round-trip, revenir : le lien est là. C'est le chemin
+   « muter la donnée toujours, peindre si le nœud existe » (piège 28).
+8. **Outil `status`.** Appeler `<carte>__status` : il rend l'état de tous les
+   upstreams du proxy. Vérifier qu'un 403 par scope insuffisant y est rapporté
+   **comme tel**, et non comme une autorisation manquante — relancer le parcours
+   ne répare pas une config de scopes.

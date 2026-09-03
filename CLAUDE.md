@@ -383,8 +383,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
   présentation détachée du résultat par `splitToolResultNote`, ressources
   désignées par `ackInspectResourceTargets` — y compris les `[resource_ref:…]`
-  d'un `mcp_call`, que `ackDownloadTarget` ne voit pas), et références de
-  conversation dans le texte du modèle (`conv_ref`).
+  d'un `mcp_call`, que `ackDownloadTarget` ne voit pas), références de
+  conversation dans le texte du modèle (`conv_ref`), et lien d'autorisation
+  d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
+  d'ack rendue en texte, absente des exports).
 - **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
   formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
   CDN et versions gelées, selectors par format, caps de lecture, et la ligne de
@@ -396,7 +398,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `spaceConvIds`), default Space, scope `profile` des souvenirs, description de
   Space concaténée au prompt système, bibliothèque de fichiers par Space.
 - **`docs/mcp.md`** — agrégation MCP distante (V2) : préfixage, routage,
-  transport, timeout, dégradation gracieuse, D5–D10.
+  transport, timeout, dégradation gracieuse, D5–D10, et les deux contrats
+  d'erreur machine portés par `error.data.code` — `REF_UNKNOWN` (éphémère,
+  décide d'un rejeu) et `AUTHORIZATION_REQUIRED` (campagne AB : persisté sur
+  l'ack, garde d'URL `authorizationUrlOrigin` appliquée à l'affichage).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et

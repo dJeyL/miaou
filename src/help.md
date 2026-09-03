@@ -486,6 +486,26 @@ Si aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; l
 reste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans
 bloquer les autres.
 
+**Quand un serveur demande une autorisation.** Certains serveurs compagnons
+donnent accès à des services qui exigent que tu t'identifies — un espace de
+notes, un agenda, une messagerie. Dans ce cas, le premier appel d'un tel outil
+échoue proprement : la ligne d'appel devient rouge dans la conversation et porte
+un lien **Autoriser**, suivi de l'adresse vers laquelle il mène, affichée en
+clair pour que tu voies où tu vas avant de cliquer. Le lien ouvre la page
+d'autorisation dans un nouvel onglet ; une fois l'accès accordé, il suffit de
+redemander la même chose au modèle, et l'appel passe.
+
+Le modèle, lui, ne peut rien faire de cette étape : il n'a aucun moyen
+d'autoriser un accès à ta place, et c'est délibéré. Il se contente de te
+signaler que l'action attend ton feu vert, puis continue avec ce qu'il peut
+faire sans. Le lien reste attaché à la conversation : tu peux fermer MIAOU, y
+revenir plus tard et cliquer à ce moment-là.
+
+Un détail de sûreté qui vaut d'être connu : cette adresse est fournie par le
+serveur lui-même, donc MIAOU ne l'affiche que si elle est sécurisée (`https`) ou
+qu'elle pointe vers ta propre machine. Dans tout autre cas, aucun lien
+n'apparaît — la ligne reste rouge avec son message, et rien de cliquable.
+
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
 façon recommandée d'ajouter cette capacité à MIAOU. Il fournit aussi un serveur
