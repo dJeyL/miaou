@@ -27,7 +27,7 @@ Une entrée par sous-bloc non vide :
 - `thread` — agrégat du fil (`expandThread(...)`), plus `byRole` (sous-comptes
   par rôle). Les parts `image_url` d'un content-part array ne sont **jamais**
   comptées en chars (le base64 exploserait le total).
-- `attachment_images` — `imageCount × IMAGE_TOKENS_ESTIMATE` (constante, D3).
+- `attachment_images` — `imageCount × IMAGE_TOKENS_ESTIMATE` (constante ; cf. le traitement des images).
   `entry.label` reste `'Images jointes'` (texte fonctionnel, pas de mention
   d'approximation) : la note « très approximatif » n'est ajoutée qu'à
   l'affichage, une seule fois, par `renderContextInspector()` (ui.js) — ne pas
@@ -40,10 +40,10 @@ Une entrée par sous-bloc non vide :
   (`stream_options.include_usage`, absent sur certains backends dont Ollama).
 
 `estimateTokens(str)` = `Math.ceil(str.length / 4)`, seule et unique
-définition (D2) — remplaçable plus tard par un vrai tokenizer ou un total
+définition (estimation de tokens) — remplaçable plus tard par un vrai tokenizer ou un total
 API sans toucher les call-sites.
 
-## Deux manifestes (B4)
+## Deux manifestes
 
 - **Dernier envoi réel** : `_lastContextManifest` (global de session, main.js),
   posé par `dispatchSend` juste après construction de `apiMessages`, à partir
@@ -113,7 +113,7 @@ points remettent `_lastContextManifest` à `null` (cf. plus bas), qui fait
 retomber `effectiveContextManifest()` sur la simulation — le hint mi-échange
 ne peut apparaître que si `_lastContextManifest` est non-null.
 
-## Fenêtre de contexte (D5, B1-a)
+## Fenêtre de contexte
 
 `contextWindowFor(model)` (storage.js) lit `loadSettings().contextWindow` (champ
 global unique, `''` = inconnu) ; `model` est ignoré en v1 mais fait partie de la
@@ -129,7 +129,7 @@ que `MAX_SUMMARIES`/`BUILD_API_URL`), `0` = pas de défaut de build (comportemen
 d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
 `config.sample.json` : `32768`.
 
-## UI (B3)
+## UI
 
 - **Compteur compact** : `#ctx-counter` dans `.composer-selectors` (à droite des
   pills modèle/raisonnement), `≈ N tok` (+ `%` si `contextWindowFor` connu,
@@ -142,7 +142,7 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
   Câblé à `openConversation`, `resetToEmpty` (donc `newConversation`,
   `pickSpace`), `onSaveSettings`, à CHAQUE tour d'outils (`onToolAcks` dans
   `dispatchSend`, midTurn=true) et en fin de tour (`onFinal`/`onHalt` dans
-  `dispatchSend`, midTurn=false). PAS sur `oninput` du textarea (D4/B3 : draft
+  `dispatchSend`, midTurn=false). PAS sur `oninput` du textarea (décision d'UI : draft
   exclu v1). `openConversation`/`resetToEmpty` remettent aussi
   `_lastContextManifest` à `null` (le dernier envoi réel appartenait à
   l'ancienne conversation) — ce qui fait retomber le hint mi-échange aussi,
@@ -206,7 +206,7 @@ calibre un manifeste ESTIMÉ (chars/4) sur l'`usage.prompt_tokens` réel :
 
 **Ligne `attachment_images` volontairement exclue** du facteur ET du scaling
 (décision actée, PLAN-Bbis §Bbis-2) : c'est une constante conventionnelle
-« très approximatif » (D3), pas une estimation chars/4 — la mélanger au
+« très approximatif », pas une estimation chars/4 — la mélanger au
 calibrage la ferait paraître doublement fausse. Le `prompt_tokens` réel
 inclut déjà le coût vision réel côté backend, non ventilable côté client ;
 la ligne reste affichée à part, toujours en estimé.
@@ -232,7 +232,7 @@ même valeur sans recalcul.
   reste toujours l'estimé pur (rejoue le thread), le scaling est une passe
   optionnelle appliquée après, jamais fusionnée dedans (elle est aussi appelée
   sans usage disponible). `computeContextManifestNow()` (simulation à froid)
-  reste inchangée : `apiUsage` toujours `null`, jamais calibrée (A5). Aucun
+  reste inchangée : `apiUsage` toujours `null`, jamais calibrée (arbitrage confirmé). Aucun
   reset explicite de l'usage n'est nécessaire au switch de conv : `_lastContextManifest
   = null` (déjà fait) suffit à retomber sur la simulation estimée.
 - **Pilule** (`syncContextCounter`, ui.js) : `≈` retiré si `m.real`, gardé
@@ -268,6 +268,7 @@ même valeur sans recalcul.
 
 ## État
 
-B1, B2, B3 livrés. Bbis-1 (capture usage côté stream), Bbis-2 (prorata pur) et
-Bbis-3 (câblage + UI) livrés. Vérification manuelle restante : voir
+Intégralement livré : noyau pur (estimation, manifeste, accesseur de fenêtre),
+câblage à l'assemblage, UI (compteur compact et drawer), puis la capture de
+l'usage côté stream et son prorata. Vérification manuelle restante : voir
 `docs/manual-tests.md` (#67).

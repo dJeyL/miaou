@@ -199,9 +199,18 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    sans dupliquer ce contenu à la main dans une constante JS ni le rendre
    éditable par erreur. Elle **réutilise tout le mécanisme stage 1+2 existant**
    (invocation slash, `skills__list`/`skills__read`, autotrigger, listing
-   `<miaou_skills_context>`) : aucune de ces fonctions ne traite `system`
-   spécifiquement, elles lisent seulement `enabled`/`autotrigger`/`slug`/
-   `name`/`description`.
+   `<miaou_skills_context>`) : le **filtrage** de ces fonctions ne traite pas
+   `system` — elles sélectionnent sur `enabled`/`autotrigger` seuls, une skill
+   système est listée et lue comme les autres. En revanche les deux surfaces
+   d'**énumération** le *signalent* au modèle, parce que l'immuabilité est
+   sinon invisible avant l'échec de `skills__write` (ou pire, promise à
+   l'utilisateur) : `skills__list` rend un champ `system: true` (annoncé dans
+   sa description d'outil), et `<miaou_skills_context>` préfixe la ligne d'un
+   marqueur `[système]` + une phrase d'explication ajoutée **seulement si** au
+   moins une skill système figure dans le bloc (`buildSkillsContextBlock`,
+   `main.js` ; `getAutotriggerSkillsMeta` propage le champ). La description de
+   `skills__write` énonce le refus en amont plutôt que de le laisser découvrir
+   par l'erreur.
    - **Fichiers source** : un fichier par skill système dans
      `src/system-skills/<slug>.md` — le **nom de fichier (sans extension) est
      le slug**, la clé IDB. Cartouche frontmatter en tête (`name`,

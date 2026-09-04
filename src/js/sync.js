@@ -18,7 +18,7 @@
    Doctrine « broadcast post-commit » (candidat piège 24) : un émetteur ne
    diffuse JAMAIS avant que l'écriture soit durable — après `setItem` pour
    localStorage, sur `tx.oncomplete` pour une transaction IndexedDB (pas
-   `req.onsuccess`). Câblé en J2, documenté ici pour mémoire.
+   `req.onsuccess`). Câblé à l'émission, documenté ici pour mémoire.
    ──────────────────────────────────────────────────────────────────────────── */
 
 // ── Noyau pur ────────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ const SYNC_MESSAGE_TYPES = [
   'space-changed',            // { spaceId } — création/renommage/suppression d'Espace
   'settings-updated',         // { keys } — réglages globaux modifiés
   'resources-updated',        // { ids, convId? } — écriture/suppression IndexedDB resources
-  'skills-updated',           // { } — écriture/suppression IndexedDB skills (A4)
+  'skills-updated',           // { } — écriture/suppression IndexedDB skills
   'full-reload',              // { } — import/reset : rechargement franc
   'conv-opened',              // { convId, tabId } — soft-lock awareness
   'conv-closed',              // { convId, tabId } — fin de soft-lock / release
@@ -79,7 +79,7 @@ function validateEnvelope(obj) {
 // Décide, sans effet de bord, ce que le récepteur doit faire d'une enveloppe
 // VALIDE, étant donné un contexte `ctx` = { tabId, currentConvId, activeSpaceId }.
 // Renvoie un objet-décision déclaratif `{ action, ... }` — l'exécution (re-render,
-// invalidation, bandeau…) est faite par le câblage impur en J3+, à partir de
+// invalidation, bandeau…) est faite par le câblage impur à la réception, à partir de
 // cette décision. Cette séparation rend le routage testable sous QuickJS.
 //
 //   action:
@@ -149,7 +149,7 @@ function routeMessage(env, ctx) {
 }
 
 // Génère un identifiant d'onglet depuis un `rand` injecté (testable, frère de
-// generateResourceId/generateFileId). Jamais `Date.now()` seul (piège B1) :
+// generateResourceId/generateFileId). Jamais `Date.now()` seul (collision d'id) :
 // deux onglets ouverts dans la même milliseconde collisionneraient. Le préfixe
 // distingue des ids de ressources.
 function generateTabId(rand) {

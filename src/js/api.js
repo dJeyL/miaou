@@ -85,7 +85,7 @@ function isReasoningEffortRejected(url, model) { return !!_reasoningEffortReject
 function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
 
 // Cache session : (endpoint, modèle) ayant rejeté des content parts image_url
-// (D5, brief A lot 2). Même gabarit que _reasoningEffortRejected — clé
+// (brief A lot 2). Même gabarit que _reasoningEffortRejected — clé
 // composite endpoint+modèle, PAS juste l'URL (_noThinkRejected) : un même
 // endpoint peut exposer un modèle vision-capable et un autre qui ne l'est pas,
 // on ne veut pas dégrader tous les modèles d'un endpoint sur le rejet d'un seul.
@@ -101,7 +101,7 @@ function messagesHaveImageParts(messages) {
   return messages.some(m => Array.isArray(m.content) && m.content.some(p => p && p.type === 'image_url'));
 }
 
-// Dégrade un tableau de messages OpenAI pour un rejeu vision-less (D5) :
+// Dégrade un tableau de messages OpenAI pour un rejeu vision-less :
 // chaque message dont `content` est un tableau de parts redevient une string =
 // la concaténation des parts texte + les descripteurs byte-stables des images
 // jointes (brief A : « send text + descriptor instead » — les parts image sont
@@ -250,7 +250,7 @@ Markdown, sans commentaire :
 keywords : 5 à 12 termes saillants (sujets techniques, noms propres,
 technologies, concepts), en minuscules, sans doublons.`;
 
-// Prompt dédié à la description de fichier de bibliothèque (D7, lot Cbis) —
+// Prompt dédié à la description de fichier de bibliothèque (lot Cbis) —
 // DISTINCT de SUMMARY_PROMPT (qui vise une conversation, format JSON
 // summary+keywords) : ici une sortie texte libre, cap strict, aucune donnée
 // volatile (la description atterrit dans le manifeste <miaou_context>,
@@ -258,7 +258,7 @@ technologies, concepts), en minuscules, sans doublons.`;
 // « aujourd'hui » romprait cette invariance à chaque relecture). PAS un
 // résumé du contenu : décrit ce que le fichier EST (nature, sujets, structure)
 // pour que le modèle juge s'il doit l'ouvrir, pas ce qu'il contient en détail.
-// Constante, non éditable en v1 (décision D7).
+// Constante, non éditable en v1.
 const FILE_DESCRIPTION_PROMPT =
   "Tu es un module de description de document. On te fournit le contenu (ou " +
   "un extrait) d'un fichier. Décris en au plus DEUX phrases factuelles ce " +
@@ -512,13 +512,13 @@ async function streamCompletion(messages, opts) {
   // parts image par leur descripteur textuel (o.imageDescriptors, fournis par
   // dispatchSend) + note dans <miaou_context> (jamais le system message, piège
   // 16). Deux déclencheurs :
-  //  - D5 lot A (réactif) : (endpoint, modèle) déjà connu non-vision CETTE
+  //  - Lot A (réactif) : (endpoint, modèle) déjà connu non-vision CETTE
   //    session (rejet 400 essuyé sur un tour antérieur, isVisionRejected) — pour
   //    ne pas reproduire le même rejet à chaque tour ;
-  //  - D5 brief A2 (manuel) : l'utilisateur a marqué ce modèle « sans vision »
+  //  - Brief A2 (manuel) : l'utilisateur a marqué ce modèle « sans vision »
   //    sur le serveur actif (o.visionDisabled, calculé par dispatchSend depuis
   //    serverModelVisionEnabled). Nécessaire car Ollama ne renvoie AUCUN 400
-  //    sur un modèle sans projecteur vision (F1) : le chemin réactif ne peut pas
+  //    sur un modèle sans projecteur vision : le chemin réactif ne peut pas
   //    l'attraper, seul le réglage manuel le déclenche.
   if (shouldDegradeVision(body.messages, cfg.url, model, o.visionDisabled)) {
     body.messages = applyVisionDegradation(body.messages, o.imageDescriptors);
@@ -593,7 +593,7 @@ async function streamCompletion(messages, opts) {
         markReasoningEffortRejected(cfg.url, model);
         return streamCompletion(messages, opts);
       }
-      // D5 : rejet probable des content parts image (400 avec image_url dans
+      // Rejet probable des content parts image (400 avec image_url dans
       // le payload, pas encore flaggé pour ce (endpoint, modèle) — sinon on
       // serait déjà passé par la dégradation proactive ci-dessus). Un SEUL
       // rejeu : le flag posé AVANT l'appel récursif garantit que celui-ci
@@ -704,7 +704,7 @@ async function runConversation(messages, hooks) {
   const toolExecContext = h.gen
     ? { convId: h.gen.convId, spaceId: h.gen.spaceId }
     : undefined;
-  // Filet : purge toute injection image résiduelle (brief A2/D3) d'un échange
+  // Filet : purge toute injection image résiduelle (brief A2) d'un échange
   // précédent avorté avant le drain (le handler push et la boucle draine dans la
   // même itération synchrone, mais on ne laisse rien traîner entre échanges).
   if (typeof clearPendingImageInjections === 'function') clearPendingImageInjections();
@@ -719,10 +719,10 @@ async function runConversation(messages, hooks) {
       gen: h.gen,
       model: h.model,
       reasoningEffort: h.reasoningEffort,
-      // Descripteurs byte-stables des images du tour courant (D5) : utilisés
+      // Descripteurs byte-stables des images du tour courant : utilisés
       // uniquement si la dégradation vision-less doit remplacer les parts image.
       imageDescriptors: h.imageDescriptors,
-      // Flag vision manuel (D5, brief A2) : ce modèle est marqué « sans vision »
+      // Flag vision manuel (brief A2) : ce modèle est marqué « sans vision »
       // sur le serveur actif → dégradation proactive même sans 400.
       visionDisabled: h.visionDisabled,
       // `h.agentTools` (lot X-1) : liste blanche d'outils délégués à un agent.
@@ -871,7 +871,7 @@ async function runConversation(messages, hooks) {
         messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
 
-      // Brief A2 / D3 — ré-injection image intra-échange. Un recall_attachment
+      // Brief A2 — ré-injection image intra-échange. Un recall_attachment
       // sur une image a empilé { dataUrl, attId } dans _pendingImageInjections
       // (tools.js) ; on pousse pour chacune un message user SYNTHÉTIQUE porteur
       // de la part image, APRÈS tous les tool results du tour, pour que la
@@ -913,7 +913,7 @@ async function runConversation(messages, hooks) {
         }
       }
 
-      // Résultats d'agent (lot X-1, Q2) — drain à la frontière de tour, APRÈS
+      // Résultats d'agent (lot X-1) — drain à la frontière de tour, APRÈS
       // les interjections. Hook DISTINCT de onInterjections, et file distincte :
       // leurs conditions de drain sont OPPOSÉES (une interjection est un état
       // d'ÉCRAN, gardé par genOwnsScreen ; un résultat d'agent ne dépend pas de
@@ -1036,7 +1036,7 @@ async function generateSummary(thread) {
 }
 
 // ── Recherche / sélection des résumés pertinents ────────────────────────────
-// `spaceId` optionnel (brief D2) : si fourni, exclut aussi les résumés dont la
+// `spaceId` optionnel (brief C) : si fourni, exclut aussi les résumés dont la
 // conversation n'appartient pas à ce Space (les résumés ne portent pas de
 // spaceId propre — jointure via spaceConvIds/loadConversations, storage.js).
 function searchSummaries(queryText, excludeId, spaceId) {

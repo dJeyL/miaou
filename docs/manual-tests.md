@@ -224,7 +224,7 @@ Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
     appelle `bench__echo`, on va jusqu'à la réponse finale. Seul le bloc **text**
     est réinjecté au modèle (`add`/`dns_lookup` renvoient du texte exploité dans
     la réponse).
-20. **Cascade non-text (D8)** : demander `bench__get_image` → l'image PNG s'affiche
+20. **Cascade non-text** : demander `bench__get_image` → l'image PNG s'affiche
     inline dans la bulle (pas de markup injecté) et **réapparaît au rechargement**
     (persistée en IDB). Demander `bench__get_json_resource` → aucun bloc de code
     n'apparaît (les réponses JSON sont passées au modèle mais non affichées) ; seul
@@ -383,7 +383,7 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     erreur sous le composer. Corriger en message valide et envoyer → l'erreur
     disparaît (tout envoi effectif lève l'erreur affichée sous le composer).
 
-39e. **Pas de double-envoi pendant la résolution d'une slash-skill (B7)** : avec
+39e. **Pas de double-envoi pendant la résolution d'une slash-skill** : avec
     une skill activée dont le contenu est en IDB, taper `/slug ...` puis presser
     **Entrée deux fois très rapidement** (ou Entrée + clic bouton d'envoi dans la
     foulée). Un SEUL message user doit être poussé, un seul tour modèle lancé —
@@ -581,7 +581,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     - variantes : même scénario avec un **fichier texte** joint (le bloc fencé
       reste, pas de descripteur — cf. 53) et avec une édition en `/slug …`
       (corps de skill baké **et** pièce jointe conservés).
-54. **Dégradation vision-less (D5)** : avec un backend/modèle qui rejette les
+54. **Dégradation vision-less** : avec un backend/modèle qui rejette les
     `image_url` (400), joindre une image et envoyer. Vérifier dans Network
     qu'un premier POST échoue (400) puis qu'un second POST part automatiquement
     SANS `image_url` (texte + descripteur à la place) et que la réponse arrive
@@ -594,13 +594,13 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     endpoint (si disponible) et joindre une image → doit repartir normalement
     en content parts (le flag de rejet ne doit pas avoir contaminé l'autre
     modèle).
-55. **`recall_attachment` round-trip (D4 + A2/D3)** : dans une conversation avec
+55. **`recall_attachment` round-trip (brief A2, canal de retour)** : dans une conversation avec
     une image jointe déjà réécrite en descripteur (tour suivant, cf. test 51),
     demander explicitement au modèle de **décrire** l'image (par son `att-N` ou
     en langage naturel — p. ex. « quel texte est écrit sur att-1 ? »). Le modèle
     doit appeler `miaou__recall_attachment`, un ack « Pièce jointe rappelée : … »
     doit apparaître dans le fil avec le bloc image affiché (même rendu que
-    `resource__present`). **Point clé A2/D3** : la réponse du modèle doit décrire
+    `resource__present`). **Point clé du canal de retour** : la réponse du modèle doit décrire
     l'image **fidèlement** (pas de confabulation) — la ré-injection (message user
     synthétique porteur de la part image, généré par `expandThread`) fonctionne.
     Vérifier dans l'onglet Network que la requête `/completions` qui suit le
@@ -613,7 +613,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     bloc image ni message synthétique) et, si possible, un binaire non-image (le
     contenu retourné doit être le descripteur + la note « non lisible
     directement », jamais les octets).
-56. **Hook d'inflation dispatcher (D6, nécessite un serveur `mcp_docs` — lot D
+56. **Hook d'inflation dispatcher (nécessite un serveur `mcp_docs` — lot D
     miaou-mcp-servers — configuré et activé)** : joindre un fichier binaire
     (ex. PDF), demander au modèle de l'explorer via un outil `docs__*`
     (ex. lister ses pages). Dans Network, le premier appel `tools/call` vers
@@ -643,7 +643,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     Space : la sidebar se vide (aucune conversation), le fil se réinitialise
     (écran d'accueil), le badge topbar (sidebar repliée) affiche le nom du
     nouveau Space. Revenir au default Space (« Général ») → le badge
-    disparaît (exception assumée, brief D5).
+    disparaît (exception assumée, brief C, UI).
 58. **Spaces — herméticité bidirectionnelle.** Dans « Général », créer une
     conversation « Test A ». Basculer vers « Perso », créer « Test B ».
     Vérifier : la sidebar de « Perso » ne montre que « Test B » ; la
@@ -664,7 +664,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     disparaît de la liste de « Perso »
     et apparaît dans Paramètres → Profil (drawer réglages, onglet renommé).
     Vérifier qu'il est désormais injecté quel que soit le Space actif.
-60. **Spaces — description ajoutée, pas substituée (D4 corrigé).** Dans
+60. **Spaces — description ajoutée, pas substituée (brief C corrigé).** Dans
     Paramètres, renseigner un prompt système global non vide. Ouvrir l'écran
     d'un Space, renseigner une description, Enregistrer. Envoyer un message
     dans ce Space et inspecter la requête réseau (payload du message
@@ -672,7 +672,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     deux être présents (concaténés, séparateur `---`), jamais l'un à la place
     de l'autre. Basculer vers un Space sans description → seul le prompt
     global apparaît.
-61. **Spaces — suppression avec cascade (D6).** Créer un Space de test avec
+61. **Spaces — suppression avec cascade.** Créer un Space de test avec
     au moins une conversation et un souvenir. Ouvrir son écran → bouton
     « Supprimer cet espace » affiche les comptes (ex. « Supprimer (1 conv.,
     1 souvenir) »). Premier clic arme le bouton, second clic dans la fenêtre
@@ -687,8 +687,8 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     ses souvenirs scopés reviennent identiques, et que le Space actif
     persisté (`miaou-active-space`) est cohérent après le `location.reload()`
     de fin d'import.
-63. **Flag vision MANUEL par (serveur, modèle) — D5 brief A2** : ce test couvre
-    le silent-failure Ollama (F1), que le test 54 (réactif sur 400) ne peut PAS
+63. **Flag vision MANUEL par (serveur, modèle) — brief A2** : ce test couvre
+    le silent-failure Ollama, que le test 54 (réactif sur 400) ne peut PAS
     attraper. **Diagnostic préalable** — repérer un modèle sans vision : joindre
     une image à un modèle suspect et l'interroger ; si la réponse (ou le
     raisonnement streamé) mentionne un placeholder brut du type `[img-0]` lu
@@ -713,7 +713,7 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     l'isolation : marquer un modèle A « sans vision » ne doit pas dégrader un
     modèle B vision-capable du même serveur (clé par nom de modèle).
 64. **Descripteur binaire générique + doctrine docs conditionnelle (brief H)** :
-    ce test couvre le déclencheur en AMONT du hook D6 (test 56 couvre l'aval,
+    ce test couvre le déclencheur en AMONT du hook d'inflation (test 56 couvre l'aval,
     une fois l'outil déjà appelé) — le modèle doit choisir d'appeler l'outil
     docs **spontanément**, sans qu'on le lui demande. Nécessite un serveur
     `mcp_docs` (miaou-mcp-servers) configuré et activé.

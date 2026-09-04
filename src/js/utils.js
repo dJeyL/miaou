@@ -764,7 +764,7 @@ function convContentMatches(conv, q) {
 // ── Command palette : scoring / filtrage / tri (fonctions pures, lot F) ─────
 // La palette (Ctrl/Cmd+K) filtre une liste de commandes déclaratives
 // `{id, label, keywords[]}` à la frappe. Scoring distinct de scoreSummary
-// (résumés) : ici substring + word-boundary sur label + keywords (brief F, D3 —
+// (résumés) : ici substring + word-boundary sur label + keywords (brief F —
 // pas de lib fuzzy). Tout ce bloc est pur → testé QuickJS ; le registre lui-même
 // (run()/enabled(), effets de bord DOM) vit dans ui.js.
 
@@ -807,7 +807,7 @@ function filterCommands(commands, query) {
     .map(x => x.cmd);
 }
 
-// Tri des résultats du submode « recherche de conversation » (brief F, D2 —
+// Tri des résultats du submode « recherche de conversation » (brief F —
 // décision Julien 2026-07-11 : recherche CROSS-Space, mais les conversations du
 // Space actif passent EN TÊTE même si elles scorent moins). Clef à deux niveaux :
 // (1) Space actif d'abord, (2) score décroissant, (3) ordre d'origine stable.
@@ -1138,7 +1138,7 @@ function diagramImageName(rawName, ext) {
   return n.replace(/\.[^.]+$/, '') + '.' + ext;
 }
 
-// ── Préviz sandboxée HTML/SVG (lot E, D2) : helpers purs ─────────────────────
+// ── Préviz sandboxée HTML/SVG (lot E) : helpers purs ─────────────────────
 // Langues éligibles au bouton « Aperçu » : html et svg SEULEMENT (pas de
 // runner JS, pas de transpile — non-goals du brief). xml/xhtml exclus
 // volontairement : trop ambigus pour promettre un rendu.
@@ -1160,7 +1160,7 @@ function isMarkdownLang(lang) {
 // (le contenu est déjà un document ou fragment HTML, le navigateur complète) ;
 // svg → enveloppé dans un document HTML minimal (un SVG nu n'est pas un
 // document HTML valide pour srcdoc, et il peut porter <script> : il s'exécute,
-// mais confiné dans la sandbox — c'est le contrat D2). Pure, déterministe.
+// mais confiné dans la sandbox — c'est le contrat de la sandbox). Pure, déterministe.
 function buildPreviewSrcdoc(lang, code) {
   const src = String(code == null ? '' : code);
   if (String(lang || '').toLowerCase() === 'svg') {
@@ -1171,7 +1171,7 @@ function buildPreviewSrcdoc(lang, code) {
 }
 
 // Décode une chaîne base64 en Uint8Array (octets bruts) pour matérialiser un
-// Blob binaire côté client (cf. cascade de rendu D8.3 : téléchargement éphémère
+// Blob binaire côté client (cf. cascade de rendu des blocs non-text : téléchargement éphémère
 // d'un bloc binaire renvoyé par un outil distant). atob existe en navigateur ;
 // fonction pure, pas de dépendance DOM.
 function b64ToBytes(b64) {
@@ -1225,7 +1225,7 @@ function parseToolName(name) {
 // `memory__update` (interne) de `server__tool` (distant) — les deux ont un `__`.
 // On accepte le nom NU (`memory__create`) comme le nom préfixé (`miaou__memory__create`) :
 // dans les deux cas, on cherche le nom nu dans `tools` (registre TOOLS, entrées `{name}`).
-// Pur (cf. D1) : aucune dépendance à l'état, testable sans stub.
+// Pur : aucune dépendance à l'état, testable sans stub.
 function resolveInternalToolName(name, tools) {
   const s = String(name || '');
   const bare = s.indexOf('miaou__') === 0 ? s.slice('miaou__'.length) : s;
@@ -1236,7 +1236,7 @@ function resolveInternalToolName(name, tools) {
 // Regroupe une liste d'outils canoniques par namespace. Le namespace est formé de
 // TOUS les segments sauf le dernier ; le bareName est uniquement le dernier segment.
 // Ex : `bench__djeyl__echo` → namespace=`bench__djeyl`, bareName=`echo`.
-// Projection pure (cf. D2) : rien n'est stocké, le sous-drawer dérive l'affichage.
+// Projection pure : rien n'est stocké, le sous-drawer dérive l'affichage.
 // Retourne [{ namespace, tools: [{ bareName, def }] }] dans l'ordre d'apparition.
 function groupByNamespace(tools) {
   const order = [];
@@ -1252,7 +1252,7 @@ function groupByNamespace(tools) {
   return order.map(ns => ({ namespace: ns, tools: map[ns] }));
 }
 
-// Devine le transport MCP d'après le chemin d'URL (cf. D4). PRÉ-REMPLISSAGE
+// Devine le transport MCP d'après le chemin d'URL. PRÉ-REMPLISSAGE
 // uniquement, jamais un override : l'appelant ne s'en sert que si le champ
 // transport n'est pas explicitement renseigné. `/sse` → 'sse', sinon (dont
 // `/mcp`) → 'streamable-http' par défaut.
@@ -1276,7 +1276,7 @@ function validateMcpServerName(name, existingNames) {
   return null;
 }
 
-// Filtre les outils d'un serveur au moment du merge (cf. D7). allowlist/denylist
+// Filtre les outils d'un serveur au moment du merge. allowlist/denylist
 // portent sur le nom NU de l'outil (tel que renvoyé par tools/list, avant préfixe).
 // denylist gagne en cas de conflit ; allowlist vide → tout passe ; denylist retire.
 // Fonction pure : reçoit les listes déjà normalisées en tableaux de noms nus.
@@ -1329,7 +1329,7 @@ function _startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-// Horodatage court par tiers calendaires (cf. brief D5). `now` est injecté (epoch ms)
+// Horodatage court par tiers calendaires (brief C). `now` est injecté (epoch ms)
 // pour être testable de façon déterministe sous QuickJS. Renvoie '' si ts est absent.
 // - même jour calendaire → "08:54"
 // - veille               → "hier à 17:28"
@@ -1395,7 +1395,7 @@ function calendarBucket(ts, now) {
   return { bucket, startOfToday, day, daysAgo };
 }
 
-// Horodatage complet en français pour les tooltips de la sidebar (cf. brief D6).
+// Horodatage complet en français pour les tooltips de la sidebar (brief Cter).
 // Ex : "jeudi 26 juin 2026 à 14:30". Toujours avec l'année.
 function formatFullDateFr(ts) {
   if (!ts) return '';
@@ -1405,7 +1405,7 @@ function formatFullDateFr(ts) {
 }
 
 // Horodatage déterministe YYYY-MM-DD (heure locale), sans Intl/toLocale, pour
-// les noms de fichiers d'export (brief G, D5).
+// les noms de fichiers d'export (brief G).
 function exportDateStamp(now) {
   const d = new Date(now);
   const mm = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
@@ -1587,7 +1587,7 @@ function formatToolAcksMd(acks) {
 }
 
 // Représentation HTML d'un appel d'outil pour l'export standalone (brief G,
-// D3). Même politique que _formatToolCallMd (troncature, resource_presented
+// Même politique que _formatToolCallMd (troncature, resource_presented
 // nom+mime sans binaire) mais en <li> HTML. escHtml systématique : m.name,
 // m.intent, args JSON et result sont des chaînes d'origine modèle/outil —
 // seul chemin string→HTML de l'export (cf. CLAUDE.md, piège dédié).
@@ -1657,7 +1657,7 @@ let _toolTraceUid = 0;
 
 // Bloc HTML pour un groupe d'acks enrichis d'un même tour — sœur HTML de
 // formatToolAcksMd, même seuils/politique. Fermé par défaut (cohérent avec le
-// reasoning, cf. brief G D1/§10). Trois paliers (lot N, écran dégonflé en
+// reasoning, cf. brief G §10). Trois paliers (lot N, écran dégonflé en
 // usage agentique → export allégé à son tour) :
 //   1. replié : SEUL le compteur est visible ("n outil(s) appelé(s)").
 //   2. 1er clic (<details class="tool-trace">) : liste des intents (previews).
@@ -1710,7 +1710,7 @@ function formatToolAcksHtml(acks) {
 //   attachment_recalled → lookup par attId (conversation-scoped), sous réserve
 //                        d'`ackImageIsDisplayable` (prédicat partagé avec
 //                        l'écran, cf. sa doc juste dessous).
-// Le gate anti-doublon D8 du live (getPendingToolBlocks().length === 0) n'a pas
+// Le gate anti-doublon des blocs non-text du live (getPendingToolBlocks().length === 0) n'a pas
 // de sens à l'export (aucune file pendante) : non transposé (cf. AUDIT-Gbis §3).
 // Retourne { by: 'id' } | { by: 'attId' } | null ; le lookup cache + filtre
 // image/classe reste dans renderExportBody (seul à avoir getCachedRecord*).
@@ -1806,7 +1806,7 @@ function conversationSnippet(text) {
 }
 
 // Marqueur d'id public d'un tool result, exposé au modèle en tête du content
-// réinjecté par expandThread (lot O, décision B1). Dérivé UNIQUEMENT de l'id de
+// réinjecté par expandThread (lot O). Dérivé UNIQUEMENT de l'id de
 // tool_call (`_hashId9(prefix + '\x00' + k)`) → byte-stable d'un tour à l'autre :
 // il agrandit le préfixe KV d'un montant constant sans l'invalider. Source
 // unique côté émission (expandThread) ET côté résolution (findAckByCallId) —
@@ -1926,16 +1926,16 @@ function expandThread(thread) {
           out.push({ role: 'tool', tool_call_id: ids[k],
                      content: formatCallMarker(ids[k]) + stampTs(groupAcks[k].ts, groupAcks[k].result) });
         }
-        // Brief A2 / D3, voie (b) : un recall d'IMAGE ré-injecte les pixels via
+        // Brief A2, voie (b) : un recall d'IMAGE ré-injecte les pixels via
         // un message user SYNTHÉTIQUE inséré APRÈS tous les tool results du
         // groupe (séquence assistant→tools→user bien formée). La dataUrl est
         // posée par le pré-pass resolveRecallImages (resources.js) — absente si
         // le record n'est plus en cache, auquel cas rien n'est émis. Content
-        // parts OpenAI, même forme que le tour d'attache (voie F2-prouvée).
+        // parts OpenAI, même forme que le tour d'attache (voie prouvée par probe).
         for (var r = 0; r < groupAcks.length; r++) {
           if (groupAcks[r].recallImage) {
             // `_synthetic` : marque ce message user comme NON authentique (ni
-            // saisi ni édité par l'utilisateur). Suspect S1 (brief A2) : le
+            // saisi ni édité par l'utilisateur). Marqueur interne (brief A2) : le
             // calcul de lastUserIdx (dispatchSend, main.js) doit l'exclure, sinon
             // l'injection <miaou_context> se poserait dessus au lieu du vrai
             // dernier message user (cas d'un thread finissant sur un recall).
@@ -2019,23 +2019,23 @@ function parseSummaryJSON(raw) {
 }
 
 // ── Context inspector (brief B) ─────────────────────────────────────────────
-// Heuristique unique, source unique (D2) : un vrai tokenizer ou un total
+// Heuristique unique, source unique : un vrai tokenizer ou un total
 // rapporté par l'API pourra remplacer ce calcul sans toucher les call-sites.
 function estimateTokens(str) {
   return Math.ceil((str || '').length / 4);
 }
 
-// Estimation conventionnelle, volontairement grossière (D3) : la vision est
+// Estimation conventionnelle, volontairement grossière : la vision est
 // dépendante du modèle et inconnaissable côté client ; on affiche une ligne
 // séparée labellisée "très approximatif" plutôt que de compter le base64 en
 // chars/4 (qui exploserait le total sans rapport avec le coût réel).
 const IMAGE_TOKENS_ESTIMATE = 768;
 
-// Seuil d'alerte (D5) : au-delà de ce ratio d'occupation de la fenêtre de
+// Seuil d'alerte : au-delà de ce ratio d'occupation de la fenêtre de
 // contexte connue, la jauge passe ambre.
 const CONTEXT_WINDOW_WARN_RATIO = 0.8;
 
-// Construit le manifeste de contexte (D1) : une entrée par bloc logique, plus
+// Construit le manifeste de contexte : une entrée par bloc logique, plus
 // les totaux. Pure, testable QuickJS — ne lit AUCUN global (settings, TOOLS,
 // currentThread…), tout arrive en arguments. Les deux call-sites (assemblage
 // réel dans dispatchSend, simulation à froid via computeContextManifestNow)
@@ -2081,9 +2081,9 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     });
   }
 
-  // Thread : agrégat + sous-comptes par rôle (brief D1). Les parts image ne
+  // Thread : agrégat + sous-comptes par rôle. Les parts image ne
   // sont JAMAIS comptées en chars (le base64 exploserait le total) : une seule
-  // ligne agrégée `attachment_images` = imageCount × IMAGE_TOKENS_ESTIMATE (D3).
+  // ligne agrégée `attachment_images` = imageCount × IMAGE_TOKENS_ESTIMATE.
   let threadChars = 0, threadTokens = 0, imageCount = 0;
   const byRole = {};
   (threadMsgs || []).forEach(m => {

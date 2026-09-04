@@ -41,17 +41,17 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    l'UI ne l'applique que si le champ n'a pas été touché (`dataset.touched`).
    Côté UI, le choix passe par le dropdown pilule custom `cfgPillSelect`
    (ui.js — valeur dans l'input hidden `.mcp-transport`), pas un select natif.
-5. **Timeout via `AbortController` (D5).** Chaque appel `mcpRpc` arme un
+5. **Timeout via `AbortController`.** Chaque appel `mcpRpc` arme un
    `setTimeout(timeout)` → `abort()` ; sur abort, résultat `{ isError: true }` au
    message clair. Sans ça le champ `timeout` serait décoratif. `Mcp-Session-Id`
    capturé sur l'`initialize` et renvoyé sur les appels suivants.
-6. **Dégradation gracieuse (D10).** `connectMcpServer` (initialize → notification
+6. **Dégradation gracieuse.** `connectMcpServer` (initialize → notification
    initialized → tools/list → préfixe + filtre + cache) **ne lève jamais** vers
    l'appelant : tout échec marque le serveur en erreur et **n'expose aucun** de
    ses outils ; le reste du registre (interne + autres serveurs) tient. Un mauvais
    backend ne gèle pas MIAOU. Connexion au démarrage via `reconnectMcpServers`
    (fire-and-forget dans `init`), et à chaque save de carte.
-7. **Filtres `toolAllowlist`/`toolDenylist` (D7) au merge** (`filterMcpTools`,
+7. **Filtres `toolAllowlist`/`toolDenylist` au merge** (`filterMcpTools`,
    pur, appliqué dans `connectMcpServer` après `tools/list`). **Denylist gagne**
    en conflit ; allowlist vide → tout passe. Portent sur le nom **nu**.
 7b. **Acks `mcp_call` (visibilité des appels dans le thread).** Chaque appel
@@ -67,19 +67,19 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    modèle par le filtre rôle existant — aucune liste blanche par kind à maintenir.
    **Toujours affichés** dans le thread, sans toggle de masquage — posture de
    transparence de MIAOU.
-8. **Blocs non-text = données persistées en IDB, rendu via IDB au reload (D8/D9).**
+8. **Blocs non-text = données persistées en IDB, rendu via IDB au reload.**
    `callRemoteTool` pousse tous les blocs non-text reçus du serveur dans
    `_pendingToolBlocks` (tools.js). `internResourcesFromResult` (api.js) intercepte
    le résultat **avant** `flattenToolResult` :
    - Blocs **inline** (`resource.text`) → stocke en IDB (persistance, accès via
      `resource__present`) ; appelle `retainPendingToolBlocks` pour retirer le bloc de
-     la queue D8 (pas d'affichage automatique côté UI) ; pousse dans le résultat le
+     la queue de rendu (pas d'affichage automatique côté UI) ; pousse dans le résultat le
      texte brut **suivi de `NOT_PRESENTED_NOTE`** (composition par
      `formatInlineTextForModel`, resources.js, pure et testée) — le modèle reçoit le
      contenu, et l'information qu'il est **le seul** à l'avoir sous les yeux.
      - **Pourquoi la note.** Cette branche est la seule où un contenu **substantiel**
-       part au modèle sans que rien ne soit affiché : le bloc est retiré de la queue
-       D8, et le seul signal visible est le chip `resource_stored` (« Ressource
+       part au modèle sans que rien ne soit affiché : le bloc est retiré de la queue de rendu,
+       et le seul signal visible est le chip `resource_stored` (« Ressource
        enregistrée »), qui trace **l'appel d'outil, jamais son contenu**. Sans note, le
        modèle ne reçoit aucun marqueur — contrairement au `[ressource rendue dans
        l'interface]` de `flattenToolResult`, réservé aux blocs **sans** texte — et
@@ -123,11 +123,11 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
    **404**. `mcpRpcAttempt` tague l'erreur `staleSession` **uniquement si on détenait
    une session** (sinon un 404 est un vrai mauvais endpoint) ; `mcpRpc` refait alors
    `initialize` (`mcpReinitialize`, sans re-`tools/list`) et **rejoue l'appel une
-   seule fois**. Échec du ré-handshake ou du rejeu → propagé → dégradation D10. Jamais
+   seule fois**. Échec du ré-handshake ou du rejeu → propagé → dégradation gracieuse. Jamais
    de re-sonde préventive, jamais plus d'une tentative (pas de boucle sur un serveur
    mort). `initialize`/notifications passent par `mcpRpcAttempt` directement → pas de
    récursion.
-10. **Auth : posture ASSUME (D6).** `authorization_token` en clair dans
+10. **Auth : posture ASSUME (non-prod).** `authorization_token` en clair dans
     localStorage. Décision consciente : tout ce que JS lit, un XSS le lit ; un
     chiffrement client a besoin d'une clef client → ne protège rien. Le correctif
     prod est un **proxy** (token côté serveur) — mentionné comme la voie, **non
@@ -141,7 +141,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
     dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
     espace, `__`, `miaou`, et les doublons.
 
-12. **Hook d'inflation dispatcher pour les pièces jointes (brief A, D6 — moitié
+12. **Hook d'inflation dispatcher pour les pièces jointes (brief A — moitié
     client du lot D `mcp_docs`).** `callTool` route désormais les appels
     distants via `callDocsInflatedRemoteTool(server, toolName, args, intent)`
     (tools.js), point d'accroche juste avant `callRemoteTool`. But : injecter
@@ -173,7 +173,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       pour un `(conversationId, attId)` non encore poussé ; succès →
       `markAttachmentPushed`, les appels suivants repartent sans le contenu
       (le serveur a déjà matérialisé le fichier dans sa session).
-    - **Contrat d'erreur partagé `REF_UNKNOWN`** (brief D D1) : porté par le
+    - **Contrat d'erreur partagé `REF_UNKNOWN`** (brief D, transport et ingestion) : porté par le
       serveur dans `error.data.code` (JSON-RPC 2.0, `code` reste l'entier
       protocolaire, `data` est le slot applicatif). `mcpRpcAttempt` attache
       `err.data = msg.error.data` ; `callRemoteTool` le recopie dans
@@ -188,7 +188,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       client) : **un seul rejeu** avec le contenu inliné, même discipline
       « un seul rejeu » que le ré-handshake `staleSession` (point 9
       ci-dessus), mais implémentée à un niveau **au-dessus** de `mcpRpc` (le
-      hook D6 vit dans `callDocsInflatedRemoteTool`, pas dans `mcpRpc` lui-même
+      le hook d'inflation vit dans `callDocsInflatedRemoteTool`, pas dans `mcpRpc` lui-même
       — cf. audit lot A, section 4). Le rejeu passe `result.ackEntry` en 5ᵉ
       argument de `callRemoteTool` (`reuseAckEntry`) : il **réutilise la ligne
       d'ack du premier essai** au lieu d'en pousser une seconde, et l'erreur
@@ -211,7 +211,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       file "...", <mime>, <taille> — binary content, not inlined]`, dérivé
       des champs figés du schéma, byte-stable, câblé dans
       `buildAttachedMessageContent`/`buildOutgoingContentForAttachments`
-      (même famille que le bloc texte D3 : pas de content part, pas de
+      (même famille que le bloc texte des fichiers texte : pas de content part, pas de
       rewrite ultérieur nécessaire — un binaire n'a aucun octet à envoyer).
       Le modèle voit systématiquement la pièce, quel que soit le type de
       fichier et indépendamment de la présence d'un serveur `mcp_docs` —
@@ -312,7 +312,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       tokens). Côté client, `extractResultParts` (resources.js) route ce cas via
       `_isTextualMime(r.mimeType)` (mime `text/*` ou allowlist
       `application/{json,xml,x-ndjson,csv}`) en action `store_inline_from_bytes`
-      (M1a, pure) ; `internResourcesFromResult` (M1b) stocke le record en classe
+      (pure) ; `internResourcesFromResult` stocke le record en classe
       `'inline'` (via `_storeBlock`, octets décodés de `r.blob` par le canal
       binaire — jamais le texte dans le message `role:'tool'`), puis construit le
       handle modèle avec **`formatInlineHandleForModel`** (resources.js, pur) :
@@ -322,7 +322,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       (`utf8Decode(record.data)` sans branche par classe) et non rendu
       automatiquement à l'écran (`placeToolAck` ignore le rendu bloc pour
       `class === 'inline'`), alors que ses octets ont transité par le canal
-      binaire. Le bloc `resource` correspondant est retiré de la queue de rendu D8
+      binaire. Le bloc `resource` correspondant est retiré de la queue de rendu
       (`retainPendingToolBlocks`) pour éviter un bouton de téléchargement parasite
       sur un handle destiné à `js__eval`.
       - **Piège fermé — jamais de `[resource_ref:…]` pour ce handle.** Contrairement
@@ -347,7 +347,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       serveur reste ref-opaque (type par magic bytes, matérialisation idempotente),
       il ne fait qu'accepter le préfixe. Contrat miroir à tenir synchronisé.
 
-14. **Sélection de l'outil de LECTURE de contenu, sans nom en dur (D7, lot
+14. **Sélection de l'outil de LECTURE de contenu, sans nom en dur (lot
     Cbis-5 — bug corrigé après retour utilisateur).** Un serveur d'extraction
     documentaire expose typiquement PLUSIEURS outils déclarant tous
     `ref`+`content_b64` (structure/lecture/recherche — mcp_docs :
@@ -355,7 +355,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
     matérialisation `resolve_ref`). Quand c'est le **modèle** qui choisit
     l'outil (hook §4/12, `toolDeclaresAttachmentInflation`), il voit les vrais
     noms et descriptions — aucune ambiguïté, le dispatcher vérifie seulement
-    que l'outil CHOISI PAR LE MODÈLE qualifie. Mais l'extraction D7
+    que l'outil CHOISI PAR LE MODÈLE qualifie. Mais l'extraction de contenu
     (description de fichier de bibliothèque, appel **applicatif direct** sans
     modèle) doit
     choisir tout seul lequel appeler — bug observé : `findDocsInflationTool()`

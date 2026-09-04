@@ -1,7 +1,7 @@
 /* ── tools.css ─────────────────────────────────────────────────────────────
    Traces d'outils DANS LE THREAD uniquement : acks (+ rendu intent à deux
    niveaux, breadcrumb MCP) et blocs non-text d'un résultat d'outil distant
-   (cascade D8). Le panneau « Outils exposés » et les cartes de configuration
+   (cascade de blocs non-text). Le panneau « Outils exposés » et les cartes de configuration
    MCP/API/skills vivent dans drawers.css (ce sont des drawers) ; l'écran
    d'accueil, le patienteur, le raisonnement et les actions de message dans
    chat.css ; l'autocomplétion slash dans composer.css.
@@ -135,13 +135,13 @@
 }
 .ack-badge:hover { color: var(--accent); border-color: var(--accent-bd); }
 
-/* ── Blocs non-text d'un résultat d'outil distant (cascade D8) ─────────────── */
+/* ── Blocs non-text d'un résultat d'outil distant (cascade non-text) ─────────────── */
 .tool-block {
   align-self: flex-start;
   max-width: 100%;
   margin: 4px 0;
 }
-/* Variante bloc-code (ressource texte D8.2) : le conteneur s'efface (pleine
+/* Variante bloc-code (ressource texte) : le conteneur s'efface (pleine
    largeur, pas de marge propre) pour que le <pre> à l'intérieur rende exactement
    comme un bloc de code de message assistant — le spacing vient du <pre> lui-même. */
 .tool-block-code {

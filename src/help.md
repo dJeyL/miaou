@@ -359,6 +359,8 @@ Deux façons de s'en servir :
   créer une nouvelle skill ou modifier le contenu d'une existante — une trace
   visible signale la création ou la modification. Modifier une skill déjà
   existante lui demande une confirmation explicite avant d'écraser son contenu.
+  Les skills système (voir plus bas) échappent à cela : il les voit signalées
+  comme telles et ne peut pas les modifier.
 
 Une skill est utile pour un cadrage récurrent : un style de réponse, une
 procédure, un gabarit — tout ce que tu répéterais sinon à la main.

@@ -6,8 +6,8 @@ ouverts sur la même origine ne divergent plus silencieusement (écriture d'un
 onglet invisible ailleurs jusqu'au reload ; deux générations concurrentes sur la
 même conversation qui s'écrasent).
 
-**État d'avancement** : J1 livré (noyau pur + adaptateur, non branché). J2–J6 à
-venir — voir `untracked/muscle/PLAN-J.md`.
+**État d'avancement** : noyau pur, émission, réception, soft-lock et relais
+readonly sont livrés. Restent les scénarios de vérification deux-onglets.
 
 ## Portée (V1)
 
@@ -54,10 +54,10 @@ Aucun effet de bord, aucune référence à `BroadcastChannel`/`window`. Testé d
 - `routeMessage(env, ctx)` — décision **déclarative** `{ action, … }` sans effet
   de bord, à partir de `ctx = { tabId, currentConvId, activeSpaceId }`.
   L'exécution (re-render, bandeau, readonly…) est faite par le câblage impur
-  (J3+). `routeMessage` présélectionne « conv affichée ? » ; l'herméticité de
+  (à la réception). `routeMessage` présélectionne « conv affichée ? » ; l'herméticité de
   Space (piège 18, via `spaceConvIds`) reste à la charge du câblage impur.
 - `generateTabId(rand)` — id d'onglet, `rand` injecté, préfixe `tab_`, jamais
-  `Date.now()` seul (piège B1).
+  `Date.now()` seul (collision d'id sur deux onglets ouverts dans la même ms).
 
 ### Adaptateur impur (navigateur uniquement)
 
@@ -102,7 +102,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `conv-generation-started` | `{ convId, tabId }` | affichée → `readonly-on` ; sinon `ignore` |
 | `conv-generation-ended` | `{ convId, tabId }` | affichée → `readonly-off` ; sinon `ignore` |
 
-### Émetteurs (J2 — livré)
+### Émetteurs (livrés)
 
 Émission au plus près de l'écriture, **post-commit** (voir doctrine plus bas).
 
@@ -146,7 +146,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 - **File d'interjections** (`_pendingInterjections`, lot Q) — messages tapés
   pendant une génération, en attente de drain. État **par onglet** et éphémère :
   il ne vit que dans l'onglet qui génère (les pairs sont déjà en readonly sur
-  cette conv, J5), et meurt avec l'onglet. Rien à broadcaster ; cf.
+  cette conv, cf. le relais readonly), et meurt avec l'onglet. Rien à broadcaster ; cf.
   `docs/interjections.md`.
 - `migrateSpacesIfNeeded` / `migrateApiServersIfNeeded` / `backfillMessageModels`
   au boot — le canal est construit (`initSyncChannel`) **après** ces migrations
@@ -169,7 +169,7 @@ aucun broadcast de démarrage parasite.
 `resources-updated`/`skills-updated` en rafale avant le `full-reload` final —
 inoffensif, les pairs rechargent de toute façon.
 
-### Récepteurs (J3 — livré)
+### Récepteurs (livrés)
 
 `handleSyncMessage(env)` (main.js) reçoit l'enveloppe **déjà validée**, appelle
 `routeMessage` (pur) avec `{ tabId, currentConvId, activeSpaceId }`, puis
@@ -181,13 +181,13 @@ inoffensif, les pairs rechargent de toute façon.
 | `render-list` | `renderConvList()` (scopé Space actif, piège 18). |
 | `conv-gone` | conv affichée supprimée ailleurs → `resetToEmpty()` (émetteur a déjà persisté ; pas de re-suppression). Différé si `sending`. |
 | `space-list` | `syncSpaceUI()` + `renderConvList()`. Le Space actif local ne change pas. |
-| `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés, **sans toucher au draft ni au thread** (A1). Sur `active-api-server` (bascule de serveur) : lève l'override de modèle de la conv affichée (`currentConvModel=''`, **en mémoire seul** — l'émetteur a déjà persisté/broadcasté via son `setConvModel('')`) et `prefetchModels()` (refetch cache modèles du nouveau serveur), sinon `activeModel()` resterait collé sur l'ancien modèle (piège 15). |
+| `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés, **sans toucher au draft ni au thread**. Sur `active-api-server` (bascule de serveur) : lève l'override de modèle de la conv affichée (`currentConvModel=''`, **en mémoire seul** — l'émetteur a déjà persisté/broadcasté via son `setConvModel('')`) et `prefetchModels()` (refetch cache modèles du nouveau serveur), sinon `activeModel()` resterait collé sur l'ancien modèle (piège 15). |
 | `invalidate-resources` | `invalidateResourceCache(ids)` ; si conv affichée concernée et `!sending` → `loadConversationResources` + `renderThread`. |
 | `reload-skills` | `loadSkillsCache()` ; `renderSkills()` si drawer ouvert (`isSkillsDrawerOpen`), sinon `syncSkillHintUI`. |
 | `full-reload` | `location.reload()`. |
-| `soft-lock` | pair affiche la même conv → l'ajouter à `_peersOnConv`, afficher le bandeau, **re-signaler** si pair nouveau (handshake borné). J4. |
-| `soft-unlock` | pair a fermé/quitté → retirer de `_peersOnConv`/`_peersGenerating` ; bandeau masqué si plus aucun pair. J4. |
-| `readonly-on` / `readonly-off` | J5 (no-op en J4). |
+| `soft-lock` | pair affiche la même conv → l'ajouter à `_peersOnConv`, afficher le bandeau, **re-signaler** si pair nouveau (handshake borné). Soft-lock. |
+| `soft-unlock` | pair a fermé/quitté → retirer de `_peersOnConv`/`_peersGenerating` ; bandeau masqué si plus aucun pair. Soft-lock. |
+| `readonly-on` / `readonly-off` | Relais readonly (no-op tant que seul le soft-lock est branché). |
 | `ignore` / `ignore-self` | rien. |
 
 **Queue pendant génération locale** (brief §4.3) : `rehydrate`/`conv-gone` sur la
@@ -216,9 +216,9 @@ plus `ignore-self` (défense en profondeur, jamais atteint en pratique).
   jusqu'à une action locale (pas de réconciliation forcée — `miaou-active-space`
   n'est pas diffusé).
 - Notice riche sur `conv-gone` (« supprimée ailleurs ») : reléguée à l'infra
-  bandeau de J4 ; J3 fait un retour à l'accueil non destructif.
+  bandeau du soft-lock ; la réception fait un retour à l'accueil non destructif.
 
-## Soft-lock (J4 — livré)
+## Soft-lock (livré)
 
 Awareness non-bloquante : quand la même conversation est ouverte dans ≥2 onglets,
 chacun affiche un bandeau informatif (« aussi ouverte dans un autre onglet »).
@@ -230,11 +230,11 @@ chacun affiche un bandeau informatif (« aussi ouverte dans un autre onglet »).
   `openConversation` sur la même conv) n'émet pas.
 - `announceConvClosed(convId)` → `conv-closed { convId, tabId }` à l'entrée
   d'`openConversation` (switch), dans `resetToEmpty`, et sur `pagehide`/
-  `beforeunload` (best-effort ; le vrai filet anti-crash est le TTL de J5).
+  `beforeunload` (best-effort ; le vrai filet anti-crash est le TTL du relais readonly).
 
 **État récepteur** : `_peersOnConv` (Set de tabIds tenant la conv **affichée**),
 vidé à chaque changement de conv (`resetPeerState`). Le bandeau (`refreshTabBanner`)
-est visible tant que le set est non vide ; le readonly (J5) prime via
+est visible tant que le set est non vide ; le readonly prime via
 `_peersGenerating`.
 
 **Handshake borné** : sur `conv-opened` d'un pair **inconnu** pour la conv
@@ -251,7 +251,7 @@ interne. **`EXPORT_CSS` (ui.js) ne contient aucun bandeau** → rien à propager
 (piège 22 respecté nativement), mais si un bandeau y était ajouté un jour, la
 factorisation `.banner` ne s'y refléterait pas automatiquement.
 
-## Readonly relay + heartbeat (J5 — livré)
+## Readonly relay + heartbeat (livré)
 
 Empêche deux générations concurrentes silencieuses sur la même conversation : un
 onglet qui génère verrouille en lecture seule la même conv dans les autres onglets.
@@ -270,7 +270,7 @@ plus à `setSending`, qui n'est qu'un reflet d'écran) :
   **écrite, pas supposée** — le handler est branché sur les deux événements et
   peut tirer deux fois.
 - **Un heartbeat par conversation** (`_genRelayTimers`, `Map<convId, timerId>` —
-  arbitrage A3 du lot T-1a). Un onglet peut générer sur **N conversations** à la
+  arbitrage du lot T-1a). Un onglet peut générer sur **N conversations** à la
   fois : le scalaire `_genRelayConvId` d'avant T-1 ferait émettre le `-ended` de
   la première sur la conv de la seconde, déverrouillant chez les pairs une conv
   encore en génération. Le **format d'enveloppe est inchangé** (liste fermée de
@@ -292,7 +292,7 @@ plus à `setSending`, qui n'est qu'un reflet d'écran) :
   persistance, car son arrivée peut précéder l'écriture effective de la réponse
   côté pair (piège 24(b) — voir plus bas). Idempotent, byte-stable (piège 17).
 
-**TTL anti-crash** (`SYNC_HEARTBEAT_TTL_MS = 10000`, soit 2×N — A5) : le balayage
+**TTL anti-crash** (`SYNC_HEARTBEAT_TTL_MS = 10000`, soit 2× l'intervalle de heartbeat) : le balayage
 (`armTtlSweeper`, `setInterval`) retire tout pair dont le dernier heartbeat date
 de plus de 10 s (émetteur crashé sans `-ended`), lève le readonly, s'auto-arrête
 quand `_peersGenerating` est vide.
@@ -300,7 +300,7 @@ quand `_peersGenerating` est vide.
 **Readonly UI** (`setConvReadonly`, ui.js) : classe `body.conv-readonly` +
 désactivation composer. Le CSS (composer.css) grise le composer et neutralise
 (`pointer-events:none`) les boutons de mutation (`.msg-edit`, `.msg-regen`,
-`.msg-continue`, `.conv-retitle-btn`). **Lecture + scroll intacts** (A6). Le
+`.msg-continue`, `.conv-retitle-btn`). **Lecture + scroll intacts**. Le
 readonly est **indépendant de `sending`** (état de génération LOCALE) : à la
 levée, le composer est restauré selon `configured`, jamais sur `sending` seul.
 
@@ -308,7 +308,7 @@ levée, le composer est restauré selon `configured`, jamais sur `sending` seul.
 cours dans un autre onglet — lecture seule ») sur le soft-lock (« aussi ouverte
 dans un autre onglet »).
 
-**`help.md`** : passe unique à J5 (décision Julien 2026-07-11) — topic `interface`,
+**`help.md`** : passe unique en fin de lot (décision Julien 2026-07-11) — topic `interface`,
 entrée « Plusieurs onglets » décrivant toute la synchro d'un bloc.
 
 ## Doctrine du piège 24 : broadcast post-commit **et** relecture post-await
@@ -325,7 +325,7 @@ Un émetteur ne diffuse **jamais** avant que l'écriture soit durable :
 - **IndexedDB** : sur `tx.oncomplete`, **pas** `req.onsuccess` — `onsuccess`
   signale que la requête a réussi dans la transaction, pas que la transaction
   est validée sur disque. Un pair qui relirait le store sur un broadcast
-  prématuré verrait l'ancien état (audit A7). En J2 : ajouter un `tx.oncomplete`
+  prématuré verrait l'ancien état (audit du lot). À l'émission : ajouter un `tx.oncomplete`
   dédié **sans toucher** au `resolve(req.onsuccess)` existant.
 
 Le payload ne porte que des **identifiants** ; le récepteur relit le store. D'où
@@ -454,5 +454,5 @@ posé) — c'est ce qui distinguera « le CSS ne suit pas » de « l'attribut es
   (v/type/tabId, payload manquant), routage par type, self-loopback, génération
   d'id. L'adaptateur impur (BroadcastChannel absent sous QuickJS) n'est pas
   couvert ici.
-- **Manuel / Playwright** (à venir, J6) : scénarios deux-onglets de la checklist
+- **Manuel / Playwright** (à venir) : scénarios deux-onglets de la checklist
   §7 du brief — voir `docs/manual-tests.md`.

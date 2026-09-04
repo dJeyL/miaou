@@ -132,14 +132,14 @@ const BINARY_DOCTRINE =
   "voir, ni qu'il lui a été affiché, ni « comme tu peux le constater ci-dessus » : s'il " +
   "en a besoin, cite, extrais ou résume toi-même dans ta réponse ce qui lui est utile.";
 
-// Doctrine comportementale : pièces jointes de message (brief A, D4 ; corrigée
-// brief A2 / D3-D4). Toujours injectée quand des outils existent — même statut
+// Doctrine comportementale : pièces jointes de message (brief A ; corrigée
+// brief A2). Toujours injectée quand des outils existent — même statut
 // que BINARY_DOCTRINE, mais distincte : BINARY_DOCTRINE couvre les ressources
 // PRODUITES par un outil, celle-ci couvre les fichiers ATTACHÉS par l'utilisateur
 // à un message (descripteurs [attachment att-N: ...] visibles dans le fil après
 // le tour d'attache, cf. piège n°17 CLAUDE.md). Distinctions VÉRIFIÉES contre
 // l'implémentation, ne pas les « simplifier » : un fichier TEXTE garde son
-// contenu inline à jamais (D3, pas de rewrite) — le rappeler serait redondant ;
+// contenu inline à jamais (pas de rewrite) — le rappeler serait redondant ;
 // une IMAGE rappelée est RÉ-INJECTÉE dans le contexte (probe A2 : message user
 // synthétique porteur de la part image, inséré après le tool result — tu la
 // revois réellement) et aussi ré-affichée à l'utilisateur. Partie de
@@ -238,7 +238,7 @@ const MEMORY_DOCTRINE =
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
 // Doctrine de déclenchement pour la bibliothèque de fichiers d'espace (lot Cbis,
-// D2 path 3). Voie B (décision Cbis-4, revient sur A0.2 après relecture du
+// voie 3). Voie B (décision Cbis-4, revient sur la proposition d'origine après relecture du
 // primitif halting existant) : PAS de généralisation du halting — ask_confirmation
 // est réutilisé tel quel, comme pour le chemin inféré mémoire ou les skills.
 // Le gate repose donc sur la discipline du modèle (cette doctrine), pas sur un
@@ -629,7 +629,7 @@ const INTENT_DOCTRINE =
 let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
-// Brief A2 / D3 — injections image du tour COURANT. Un recall_attachment sur une
+// Brief A2 — injections image du tour COURANT. Un recall_attachment sur une
 // image ne peut pas remettre les pixels dans son résultat role:'tool' (textuel) :
 // il annonce l'image et pousse ici { dataUrl, attId }. La boucle runConversation
 // (api.js) draine ce registre APRÈS avoir poussé les tool results du tour et,
@@ -694,14 +694,14 @@ function pushDuplicateCallAck(name, message) {
 // File des blocs NON-text renvoyés par un outil distant (image / resource /
 // binaire). Vidée par le hook UI au même moment que les acks (après l'exécution
 // des outils d'un tour) et rendue dans la bulle assistant courante via la cascade
-// D8 — purement éphémère, RIEN n'est persisté (cf. brief D8, persistance des
+// Purement éphémère, RIEN n'est persisté (cf. la cascade de blocs non-text, persistance des
 // pièces jointes explicitement reportée). Les blocs `text` ne passent JAMAIS par
 // ici : ils sont aplatis pour le modèle (flattenToolResult), pas affichés.
 let _pendingToolBlocks = [];
 function getPendingToolBlocks() { return _pendingToolBlocks.slice(); }
 function clearPendingToolBlocks() { _pendingToolBlocks = []; }
 // Filtre in-place _pendingToolBlocks (appelé par internResourcesFromResult pour
-// retirer les blocs D8 dont le stockage IDB prend le relais).
+// retirer les blocs non-text dont le stockage IDB prend le relais).
 function retainPendingToolBlocks(keepFn) { _pendingToolBlocks = _pendingToolBlocks.filter(keepFn); }
 
 // Validation pure des arguments de files__promote (lot Cbis) — extraite du
@@ -844,7 +844,7 @@ const TOOLS = [
         return toolFail('conv__get', 'Conversation introuvable ou souvenir supprimé.');
       }
       const entry = getSummaryEntry(args.id);   // storage.js
-      // Herméticité (brief D2, piège 18) : les DEUX sorties ci-dessous partagent le
+      // Herméticité (brief C, piège 18) : les DEUX sorties ci-dessous partagent le
       // même message ET le même ack — l'absence d'oracle vise le MODÈLE, et un ack
       // `tool_failed` identique dans les deux cas n'en crée aucun. (L'utilisateur,
       // lui, doit bien voir que le modèle a tenté la lecture : c'est le but.)
@@ -887,7 +887,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args, ctx) => {
       let entries = listSummaryEntries();        // storage.js — entrées non-tombstone
-      // Herméticité (brief D2) : ne jamais exposer une conversation d'un autre
+      // Herméticité (brief C) : ne jamais exposer une conversation d'un autre
       // Space au modèle. Espace de la GÉNÉRATION (ctx, lot T-1c). Un
       // résumé orphelin (conversation supprimée) est traité comme default Space.
       const spaceId = ctx.spaceId;
@@ -944,7 +944,7 @@ const TOOLS = [
       const id = genMemoryId();
       const now = Date.now();
       const content = args.content.trim();
-      // Stampe le Space actif (brief D3) : pas de paramètre scope exposé au
+      // Stampe le Space actif (brief C) : pas de paramètre scope exposé au
       // modèle, écriture toujours dans le Space courant ; promotion vers
       // 'profile' réservée à une action UI (jamais depuis cet outil).
       const scope = ctx.spaceId;
@@ -971,7 +971,7 @@ const TOOLS = [
       if (!args.id || !args.content || !args.content.trim()) return toolFail('memory__update', 'Paramètres invalides.');
       const content = args.content.trim();
       const existing = loadMemories().find(e => e.id === args.id);   // avant écrasement
-      // Herméticité (brief D3, extension D2) : hors de portée du Space actif =
+      // Herméticité (brief C) : hors de portée du Space actif =
       // « introuvable », même posture sans-oracle que conv__get. La portée est
       // celle de `isMemoryInScope` — Space actif ET scope transverse 'profile',
       // soit exactement ce que `buildMemoryEntriesBlock()` injecte au modèle :
@@ -1086,7 +1086,7 @@ const TOOLS = [
       _pendingToolAcks.push({ kind: 'attachment_recalled', attId: attRef, recordId: record.id,
         resourceName: record.name, mime: record.mime, convId: activeId });
       if (record.mime && record.mime.startsWith('image/')) {
-        // Brief A2 / D3 (probe validée 2026-07-05, voie (b)) : les pixels SONT
+        // Brief A2 (probe validée 2026-07-05, voie (b)) : les pixels SONT
         // ré-injectés au modèle, non pas dans ce résultat role:'tool' (textuel,
         // et un contenu image y confabule quand il est strippé — cf. contrôle
         // de probe), mais via un message user SYNTHÉTIQUE porteur de la part
@@ -1181,7 +1181,7 @@ const TOOLS = [
       }
       if (record.class === 'inline') return utf8Decode(record.data);
       // Binaire (PDF/Office/zip…) : routé via le hook d'inflation généralisé
-      // (callDocsInflatedRemoteTool, §4/D3) — le modèle lit via les outils
+      // (callDocsInflatedRemoteTool, accès modèle en lecture) — le modèle lit via les outils
       // mcp_docs list/read, comme pour un attachment de message.
       return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
         ' — contenu binaire, non inlinable directement ; utiliser les outils de lecture de documents (mcp_docs).';
@@ -1414,19 +1414,24 @@ const TOOLS = [
   },
   {
     // Sous-namespace miaou__skills__ : énumère les skills ACTIVÉES (slug + name +
-    // description) pour que le modèle découvre ce qu'il peut lire via skills__read.
+    // description + system) pour que le modèle découvre ce qu'il peut lire via
+    // skills__read. `system` est exposé pour qu'il sache d'avance lesquelles
+    // skills__write refusera (sinon il l'apprend par l'échec, ou promet à
+    // l'utilisateur une modification impossible).
     // Les skills désactivées n'apparaissent JAMAIS (l'utilisateur les a coupées).
     name: 'skills__list',
     description:
-      "Liste les skills disponibles (méta : slug, nom, description). Une skill est " +
+      "Liste les skills disponibles (méta : slug, nom, description, system). Une skill est " +
       "un fragment d'instructions réutilisable. Appelle cet outil quand la demande " +
       "de l'utilisateur pourrait correspondre à une skill ; lis ensuite son contenu " +
-      "avec miaou__skills__read en passant le slug. Ne liste que les skills activées.",
+      "avec miaou__skills__read en passant le slug. Ne liste que les skills activées. " +
+      "Une skill dont `system` vaut true est fournie par l'application : lisible, mais " +
+      "ni modifiable ni supprimable — miaou__skills__write la refuse.",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: () => {
       // listEnabledSkills (skills.js) lit le cache mémoire — synchrone.
-      const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description }));
+      const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description, system: s.system === true }));
       _pendingToolAcks.push({ kind: 'skill_list', count: list.length });
       return JSON.stringify(list);
     },
@@ -1483,7 +1488,9 @@ const TOOLS = [
       "Crée ou modifie une skill (fragment d'instructions Markdown réutilisable). " +
       "Si le slug existe déjà, passe overwrite:true pour la modifier (sinon erreur, " +
       "aucune écriture) ; les champs omis conservent leur valeur actuelle. Une " +
-      "nouvelle skill est activée par défaut.",
+      "nouvelle skill est activée par défaut. Les skills système (marquées `system` " +
+      "par miaou__skills__list, ou [système] dans le contexte) sont fournies par " +
+      "l'application et refusées ici : ne tente pas de les modifier.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1929,7 +1936,7 @@ const TOOLS = [
     // « aucune perte de capacité ». La raison : MIAOU a déjà une pagination fine
     // et plus puissante — js__eval — et en faire naître une seconde, concurrente,
     // coûterait le portage de _apply_range (69 lignes denses, quatre notices, le
-    // cas « la ligne unique dépasse le cap » déjà payé côté serveur en F7).
+    // cas « la ligne unique dépasse le cap » déjà payé côté serveur).
     // Ce qui est perdu : « lis les lignes 500-800 de la page 3 » en un appel.
     // La contrepartie : as_resource + js__eval, en deux appels, sur n'importe
     // quelle taille de document.
@@ -2121,7 +2128,7 @@ const TOOLS = [
       // Tour COURANT : les pixels partent par le registre d'injections, drainé
       // par runConversation (api.js) après les tool results. Le result ci-dessous
       // ne fait qu'annoncer l'image qui suit — un contenu image dans un
-      // role:'tool' confabule (probe A2/D3).
+      // role:'tool' confabule (probe du brief A2).
       _pendingImageInjections.push({ attId, dataUrl: out.dataUrl });
       // « te la montre » et pas « affichée à l'utilisateur » : c'est le DERNIER
       // texte que le modèle lit avant de recevoir les pixels, et la version
@@ -2292,7 +2299,7 @@ const TOOLS = [
       if (self && isAgentConversation(self)) {
         return toolFail('agent__spawn', 'Un agent ne peut pas en lancer un autre : la profondeur est bornée à un niveau.');
       }
-      // Deux bornes, et le refus NOMME celle qui est atteinte (Q3). Les
+      // Deux bornes, et le refus NOMME celle qui est atteinte. Les
       // constantes vivent dans storage.js (dérivation BUILD_CONFIG) et ne sont
       // lues qu'ici, en corps de fonction (contrainte de portée inter-fichier).
       const limitError = agentSpawnLimitError(
@@ -2563,7 +2570,7 @@ const ASK_CONFIRMATION_DEF = {
 // par connectMcpServer pour chaque serveur activé (cf. main.js init).
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 
-// Code d'erreur machine partagé avec le serveur mcp_docs (brief D, D1) : un
+// Code d'erreur machine partagé avec le serveur mcp_docs (brief D) : un
 // `ref` inconnu sans `content_b64` fourni. Porté dans `error.data.code` (slot
 // applicatif standard JSON-RPC 2.0, cf. mcpRpcAttempt) — UNE seule constante,
 // ne pas la dupliquer en dur ailleurs.
@@ -2581,7 +2588,7 @@ function getMcpStatus(name) { return _remoteStatus[name] || null; }
 // chaque fichier séparément.
 function mcpStatusSnapshot() { return _remoteStatus; }
 
-// Outils distants exposables : déjà préfixés `servername__` et filtrés (D7).
+// Outils distants exposables : déjà préfixés `servername__` et filtrés (allowlist/denylist).
 function remoteToolDefs() {
   const out = [];
   for (const name of Object.keys(_remoteTools)) {
@@ -2618,11 +2625,11 @@ function exposedTools(ctx) {
   return internal.concat(remoteToolDefs());
 }
 
-// ── Client JSON-RPC 2.0 sur transport streamable-http (cf. D4/D10) ───────────
+// ── Client JSON-RPC 2.0 sur transport streamable-http ───────────
 let _mcpRpcId = 0;
 
 // UNE tentative d'appel JSON-RPC (un seul POST ; réponse JSON OU flux SSE). Timeout
-// via AbortController (cf. D5). Lève sur erreur ; sur HTTP 404 ALORS qu'on détenait
+// via AbortController. Lève sur erreur ; sur HTTP 404 ALORS qu'on détenait
 // un Mcp-Session-Id, tague l'erreur `staleSession = true` (le serveur a redémarré
 // et ne reconnaît plus la session → déclenche le ré-handshake dans mcpRpc). Un 404
 // SANS session détenue est un vrai 404 (mauvais endpoint), non tagué.
@@ -2687,7 +2694,7 @@ async function mcpReinitialize(server) {
 // si l'appel échoue par session invalidée (404 avec session détenue, ou erreur
 // JSON-RPC « session »), refait initialize pour capturer un nouvel id et REJOUE
 // l'appel UNE seule fois. Un nouvel échec (ré-handshake ou rejeu) est propagé → la
-// dégradation gracieuse D10 prend le relais côté appelant. On ne re-sonde JAMAIS la
+// dégradation gracieuse prend le relais côté appelant. On ne re-sonde JAMAIS la
 // session préventivement — on ne réagit qu'à sa mort avérée, et au plus une fois.
 async function mcpRpc(server, method, params, opts) {
   const o = opts || {};
@@ -2732,8 +2739,8 @@ async function readSseJsonRpc(res, wantId) {
   return found;
 }
 
-// Handshake d'activation (cf. D10) : initialize → notification initialized →
-// tools/list ; préfixe, filtre (D7), met en cache. DÉGRADE GRACIEUSEMENT : tout
+// Handshake d'activation : initialize → notification initialized →
+// tools/list ; préfixe, filtre (allowlist/denylist), met en cache. DÉGRADE GRACIEUSEMENT : tout
 // échec marque le serveur en erreur et n'expose AUCUN de ses outils, sans jamais
 // lever vers l'appelant — un mauvais backend ne gèle jamais MIAOU.
 async function connectMcpServer(server) {
@@ -2783,14 +2790,14 @@ function disconnectMcpServer(name) {
 }
 
 // Route un appel vers un serveur distant : tools/call → { content, isError }.
-// Pousse les blocs NON-text dans _pendingToolBlocks (rendu UI éphémère D8). Le
+// Pousse les blocs NON-text dans _pendingToolBlocks (rendu UI éphémère). Le
 // retour conserve TOUS les blocs ; flattenToolResult ne gardera que le text pour
-// le modèle (D9). Échec/timeout → résultat isError textuel, jamais de throw.
+// le modèle. Échec/timeout → résultat isError textuel, jamais de throw.
 // L'ack mcp_call est poussé dans _pendingToolAcks de manière SYNCHRONE, avant le
 // premier await, pour permettre le rendu pendant le round-trip (cf. onEarlyAcks).
 // `intent` : description en langage naturel extraite de miaou_intent par callTool
 // (déjà strippée des args envoyés au serveur). Stockée dans l'ack pour l'UI.
-// `reuseAckEntry` (D6, rejeu REF_UNKNOWN) : réutilise la ligne d'ack du premier
+// `reuseAckEntry` (rejeu REF_UNKNOWN) : réutilise la ligne d'ack du premier
 // essai au lieu d'en pousser une seconde — même rendu qu'un rejeu staleSession
 // (dont le rejeu vit SOUS un seul callRemoteTool) : UNE ligne d'appel pour
 // l'échange complet, l'erreur transitoire est effacée si le rejeu réussit.
@@ -2802,7 +2809,7 @@ function disconnectMcpServer(name) {
 // référentiel de B : mauvaise réponse, silencieuse, herméticité des Spaces
 // comprise (piège 18).
 //
-// Le contexte transite en ARGUMENT EXPLICITE (arbitrage A1), jamais en variable
+// Le contexte transite en ARGUMENT EXPLICITE (arbitrage du lot T-1), jamais en variable
 // de module : trois handlers sont `async` (files__promote, resource__create,
 // resource__from_result) et tout état de module relu APRÈS leur premier `await`
 // verrait le contexte d'une AUTRE génération — le bug d'origine sous une forme
@@ -2971,7 +2978,7 @@ function callInternalTool(toolName, args, ctx) {
   }
 }
 
-// Point d'entrée unique de dispatch (cf. brief D1). Splitte le nom canonique sur
+// Point d'entrée unique de dispatch. Splitte le nom canonique sur
 // le PREMIER `__` : préfixe `miaou` (ou absent) → dispatch interne SYNCHRONE ;
 // sinon → serveur distant activé portant ce nom → appel ASYNCHRONE (fetch).
 // Préfixe inconnu / serveur désactivé → erreur propre. Résultat :
@@ -3003,7 +3010,7 @@ function callTool(name, args, ctx) {
     // CE handler en a poussé un nouveau (length > baseAcks). Un handler qui sort
     // en erreur précoce (souvenir introuvable, id manquant…) ne pousse pas d'ack ;
     // sans ce garde, l'intent se poserait sur l'ack d'un outil ANTÉRIEUR du même
-    // tour multi-outils (cf. B5, campagne 2026-07-09).
+    // tour multi-outils (campagne 2026-07-09).
     const baseAcks = _pendingToolAcks.length;
     const result = callInternalTool(internalName, cleanArgs, ctx);
     // Attache l'intent au dernier ack en attente. La plupart des handlers poussent
@@ -3037,12 +3044,12 @@ function callTool(name, args, ctx) {
   return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent, ctx);
 }
 
-// ── Hook d'inflation dispatcher (brief A, D6 — moitié client du lot D) ───────
+// ── Hook d'inflation dispatcher (brief A — moitié client du lot D) ───────
 // Table d'état poussé/non-poussé par (conversationId, attId) : évite de
 // réinjecter le contenu à chaque appel une fois le serveur docs l'a matérialisé
 // en session. En mémoire uniquement (comme _remoteStatus/_remoteTools), pas de
 // persistance — un rechargement de page revient à "non poussé", cohérent avec
-// la session serveur elle-même éphémère (TTL sweep, brief D D2).
+// la session serveur elle-même éphémère (TTL sweep, brief D).
 let _attachmentPushState = {};
 function _conversationScopedPushKey(conversationId, attId) { return (conversationId || '') + '|' + attId; }
 function isAttachmentPushed(conversationId, attId) { return !!_attachmentPushState[_conversationScopedPushKey(conversationId, attId)]; }
@@ -3117,7 +3124,7 @@ const RESOURCE_REF_RE = /^res_[a-z0-9]+$/;
 // matérialisation de fichier. Quand c'est le MODÈLE qui choisit l'outil (hook
 // §4, toolDeclaresAttachmentInflation), il voit les vrais noms et description
 // et choisit lui-même — aucune ambiguïté à lever côté client. Mais un appel
-// APPLICATIF direct (D7, ci-dessous) doit choisir tout seul : il lui faut un
+// APPLICATIF direct (description de fichier, ci-dessous) doit choisir tout seul : il lui faut un
 // signal qui distingue « renvoie du contenu texte lisible en continu » de
 // « renvoie une structure » ou « cherche un motif ». Convention de contrat
 // (brief D/H, documentée pour tout futur serveur d'extraction) : l'outil de
@@ -3131,7 +3138,7 @@ function _declaresContentReadSignature(props) {
 }
 
 // Trouve le (server, toolName nu) qui déclare le contrat d'inflation ET le
-// signal de lecture de contenu ci-dessus (lot Cbis, D7) — utilisé pour
+// signal de lecture de contenu ci-dessus (lot Cbis) — utilisé pour
 // l'extraction binaire d'un résumé de fichier, un appel APPLICATIF direct
 // (pas un tool_call du modèle, aucune conversation en cours). Même discipline
 // no-hardcode que DOCS_DOCTRINE (nommage par contrat) : aucun nom de serveur ni
@@ -3154,7 +3161,7 @@ function findDocsInflationTool() {
   return null;
 }
 
-// Extrait le texte d'un fichier binaire de bibliothèque pour la description D7.
+// Extrait le texte d'un fichier binaire de bibliothèque pour la description de fichier.
 // Deux chemins depuis V-1 : archive zip → listing natif (voir la bifurcation en
 // tête de corps), sinon le contrat d'inflation serveur ci-dessous.
 // Chemin serveur : même contrat d'inflation que le hook dispatcher (§4), en appel
@@ -3165,7 +3172,7 @@ function findDocsInflationTool() {
 // le serveur mcp_docs traite chaque session comme un répertoire de travail
 // isolé, une valeur stable par fichier suffit à ne pas collisionner. Retourne
 // le texte extrait (tronqué au cap fourni) ou null si aucun outil ne qualifie
-// ou si l'appel échoue (dégradé, jamais bloquant — cf. D7 "pas de queue/retry").
+// ou si l'appel échoue (dégradé, jamais bloquant — cf. « pas de queue/retry »).
 // `out` (objet optionnel) : canal de retour annexe traversant, lot V-9. Passé tel
 // quel au describer de la table ; seul le PDF y écrit aujourd'hui (`scanned`),
 // et un describer qui l'ignore ne change rien. L'appelant (describeFileIfNeeded)
@@ -3361,7 +3368,7 @@ const JS_EVAL_EMIT_PRELUDE =
 
 // Exécute le code modèle dans un bac à sable QuickJS-WASM sur les textes fournis
 // (`texts` : objet {clé: string}, une à JS_EVAL_MAX_INPUTS entrées depuis le lot
-// L-2 ; le handler a déjà résolu et décodé chaque handle) (lot L, cœur impur — NON testable QuickJS, vérif runtime L3). Discipline VM
+// L-2 ; le handler a déjà résolu et décodé chaque handle) (lot L, cœur impur — NON testable QuickJS, vérif runtime manuelle). Discipline VM
 // stricte : tous les handles créés côté host sont disposés en try/finally, le
 // runtime porte les guards (setInterruptHandler wall-time, setMemoryLimit), la
 // sortie est bornée APRÈS dump (checkOutputCap). Retourne un objet discriminé :
@@ -3556,7 +3563,7 @@ function _resolveInflationRef(ref, ctx) {
   };
 }
 
-// Point d'accroche D6 : juste avant callRemoteTool. Si l'outil ciblé déclare le
+// Point d'accroche du hook d'inflation : juste avant callRemoteTool. Si l'outil ciblé déclare le
 // contrat d'inflation ET que args.ref référence un att-N ou un file-<id> connu
 // (lot Cbis, §4 — généralisation, PAS de duplication du hook), injecte SUR LE
 // WIRE UNIQUEMENT — les `args` déjà capturés par l'appelant (callTool) pour la
@@ -3610,7 +3617,7 @@ function _isRefUnknownError(result) {
 // Blocs `text` → passés tels quels. Blocs `resource` avec `resource.text` → passés
 // tels quels (JSON ou texte structuré renvoyé par le serveur, utile au LLM).
 // Blocs non-text sans contenu textuel (image, audio, resource binaire) → MARQUEUR
-// NEUTRE (jamais le base64). Cf. D8 : ces blocs sont rendus par l'UI ; le marqueur
+// NEUTRE (jamais le base64). Ces blocs sont rendus par l'UI ; le marqueur
 // évite qu'un résultat image/resource-only laisse un message `tool` vide, ce qui
 // pousserait le modèle à simuler/encoder le contenu. Fonction pure, unit-testable.
 function flattenToolResult(result) {

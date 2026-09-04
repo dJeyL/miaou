@@ -349,7 +349,7 @@
 }
 .conv-list.select-mode .conv-select { display: block; }
 
-/* Barre contextuelle (D4) : variante de .banner (base partagée dans
+/* Barre contextuelle de destination : variante de .banner (base partagée dans
    composer.css, lot J) — masquée par défaut, .banner.show l'affiche ; visible
    dès le mode déplacement actif (indépendamment du nombre de conversations
    cochées, correctif UX 2026-07-08). Ne porte ici que sa marge propre. */
@@ -524,7 +524,7 @@
    abscisses différentes d'une ligne à l'autre et la colonne paraîtrait bancale. */
 .space-menu .model-opt .activity-dot { margin-right: 4px; }
 
-/* Corollaire B5 : MENU OUVERT, la pastille du déclencheur s'efface. Replié, elle
+/* Corollaire du dépliage : MENU OUVERT, la pastille du déclencheur s'efface. Replié, elle
    répond « y a-t-il de l'activité ailleurs ? » ; déplié, la question devient
    « où exactement ? » et chaque ligne d'Espace y répond pour elle-même. La
    laisser à côté du libellé du courant la ferait lire comme SON état — alors

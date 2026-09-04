@@ -1,7 +1,7 @@
 /* ── chat.css ──────────────────────────────────────────────────────────────
    Zone principale : topbar (titre éditable, pills), fil de messages, bulles
    user/assistant, rendu markdown, blocs de code (chrome partagé avec les
-   ressources D8 de tools.css), tables.
+   ressources non-text de tools.css), tables.
    ────────────────────────────────────────────────────────────────────────── */
 
 /* ═══ Main ═══ */
@@ -387,7 +387,7 @@
 }
 .msg-attachments:empty { display: none; }
 
-/* Action de promotion vers la bibliothèque d'espace (D2 path 2, lot Cbis) —
+/* Action de promotion vers la bibliothèque d'espace (voie 2, lot Cbis) —
    même gabarit que .att-remove (composer.css), icône ICON_PACKAGE au lieu de
    la croix. Pas d'arm-then-run : action explicite non destructive, en un clic. */
 .att-promote {
@@ -667,7 +667,7 @@ pre.mermaid-rendered > code { display: none !important; }
   white-space: normal;
 }
 
-/* ── Préviz sandboxée HTML/SVG (lot E, D2) ──
+/* ── Préviz sandboxée HTML/SVG (lot E) ──
    L'aperçu vit DANS le <pre> (même motif que .mermaid-view) ; .preview-open
    sur le <pre> masque la source, le bouton fermer restaure. Fond blanc forcé :
    le contenu prévisualisé suppose un fond clair par défaut, quel que soit le
@@ -1024,7 +1024,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 
 /* Pastille d'activité du hamburger (lot T-2, surface 3) : seul indicateur
    disponible quand la sidebar est repliée — elle dit « il y a quelque chose à
-   voir là-dedans » et agrège TOUT, Espace actif compris (B6).
+   voir là-dedans » et agrège TOUT, Espace actif compris.
    Sidebar OUVERTE elle s'efface : l'information est alors lisible à sa source
    (liste de gauche, sélecteur d'espaces), la redonder au point d'entrée ferait
    clignoter deux objets pour un seul fait. Masquage porté ICI et pas en JS —

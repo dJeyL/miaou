@@ -198,14 +198,17 @@ function listEnabledSkills() {
   return _skillsCache.filter(x => x.enabled !== false);
 }
 
-// Skills enabled ET autotrigger (méta {slug, name, description}, même forme que
-// miaou__skills__list, mais fonction DISTINCTE — ne touche pas à ce tool ni à son
-// filtre). Pour l'injection dynamique <miaou_skills_context> (main.js), recalculée
-// à chaque tour depuis le cache courant. [] si aucun match (l'appelant omet le bloc).
+// Skills enabled ET autotrigger (méta {slug, name, description, system}, même
+// forme que miaou__skills__list, mais fonction DISTINCTE — ne touche pas à ce tool
+// ni à son filtre). Pour l'injection dynamique <miaou_skills_context> (main.js),
+// recalculée à chaque tour depuis le cache courant. [] si aucun match (l'appelant
+// omet le bloc). `system` est propagé pour que l'énumération dise au modèle
+// lesquelles il ne peut pas modifier (sinon il croit pouvoir écrire dessus et
+// découvre le refus de skills__write après coup).
 function getAutotriggerSkillsMeta() {
   return listEnabledSkills()
     .filter(s => s.autotrigger === true)
-    .map(s => ({ slug: s.slug, name: s.name, description: s.description }));
+    .map(s => ({ slug: s.slug, name: s.name, description: s.description, system: s.system === true }));
 }
 
 // Filtre les skills activées dont le slug (ou le name) matche un préfixe de saisie.

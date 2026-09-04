@@ -69,7 +69,7 @@ manuels (pas de `fetch`/IDB sous QuickJS) — cf. `docs/manual-tests.md`.
 `ATTACHMENT_DOCTRINE` (présence dans `ROOT_SYSTEM_PROMPT`), `recall_attachment`
 (chemins d'erreur synchrones : ref manquant, ref inconnu du cache session — le
 round-trip complet image/texte/binaire reste manuel, IDB non disponible sous
-QuickJS), et le hook D6 : `toolDeclaresAttachmentInflation` (capability via
+QuickJS), et le hook d'inflation : `toolDeclaresAttachmentInflation` (capability via
 `ref`+`content_b64` déclarés dans l'`inputSchema` distant, sans nom de serveur
 en dur), `ATTACHMENT_REF_RE`, la table d'état poussé/non-poussé
 (`isAttachmentPushed`/`markAttachmentPushed`/`clearAttachmentPushState`, scopée
@@ -222,7 +222,7 @@ default), `listMemoryEntries(scopes?)` (comportement historique sans argument,
 filtrage par liste de scopes, tombstones toujours respectées), et
 `listAllConversations` qui expose `spaceId` résolu. La couche UI (sélecteur de
 Space, écran Space, switch avec `resetToEmpty`) et le branchement herméticité
-sur `renderConvList`/`searchConversations`/les outils modèle arrivent en C2/C3
+sur `renderConvList`/`searchConversations`/les outils modèle arrivent avec l'herméticité et l'UI du lot C
 — non couverts ici.
 
 Couvert aussi : la **résolution multi-serveurs des chemins legacy**
@@ -237,7 +237,7 @@ Le contenu skill lu en IDB (`getSkillContent`/`getSkillRecord`, chemin async)
 se vérifie à la main, comme la garde « aucune skill activée » de `resolveSend`
 (async — le harness QuickJS n'exécute pas les microtâches, un `.then` ne se
 résout jamais dans le corps synchrone d'un `it`). IDB, `internResourcesFromResult`, `loadConversationResources`
-et la cascade D8 (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans
+et la cascade de blocs non-text (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans
 `docs/manual-tests.md`).
 
 Couvert aussi : le **nom de fichier proposé par le modèle pour un bloc de code**
@@ -514,7 +514,7 @@ tests sans que le câblage soit vérifié.
 Adapter un squelette est permis si le comportement testé est respecté (un cas l'a
 été : `indexOf` vaut 0 pour le premier élément, donc tester la présence avec
 `>= 0`, pas `toBeTruthy`). La boucle `tool_calls`, `silentCompletion` et **tout
-le chemin MCP distant** (fetch JSON-RPC, SSE réel, AbortController, cascade D8) se
+le chemin MCP distant** (fetch JSON-RPC, SSE réel, AbortController, cascade de blocs non-text) se
 vérifient à la main (checklist dans `docs/manual-tests.md`). Le banc d'essai MCP
 (`mcp_bench.py`) a été extrait dans le projet `miaou-mcp-servers`.
 

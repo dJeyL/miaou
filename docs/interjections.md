@@ -96,7 +96,7 @@ placeholder passe en « Le modèle travaille — Entrée ajoute à la file… »
 lot Q, pas au drain) : même chemin que `sendMessage` — `resolveSend` sur le
 littéral, un `/slug` inconnu/désactivé en position 0 bloque ici avec l'erreur
 composer habituelle, saisie préservée. Le contenu baké est **jeté** ; la file ne
-garde que le littéral. Garde `_ijResolving` (motif B7) : ferme la fenêtre de
+garde que le littéral. Garde `_ijResolving` (même motif que `_sendResolving`) : ferme la fenêtre de
 double-Entrée pendant l'`await resolveSend`. Texte seul (arbitrage lot Q) : une
 pièce jointe en attente refuse la mise en file (erreur visible, jamais de
 détachement silencieux).
@@ -191,7 +191,7 @@ l'identique aux envois suivants (byte-stable, KV-safe côté préfixe historique
 Le coût KV assumé : l'insertion d'un message user au milieu de la séquence
 **invalide le préfixe KV à partir de ce point** pour les tours suivants.
 **Volontaire, déclenché par l'utilisateur, ponctuel** — même nature que la
-ré-injection d'image (brief A2/D3), corollaire du piège 16. Documenté comme
+ré-injection d'image (brief A2, canal de retour du rappel), corollaire du piège 16. Documenté comme
 choix, pas régression.
 
 ## Fins non-nominales : reflux, jamais d'envoi auto

@@ -11,6 +11,38 @@ skill directory: `.claude/skills/run-miaou/driver.mjs`.
 
 All paths below are relative to the repo root.
 
+## Ask before running — and ask again before capturing
+
+**Never launch anything from this skill on your own initiative.** Scripts,
+screenshots, box-model measurements, ad-hoc checks: all of it costs generated
+tokens — the script, its output, the captures read back. Julien has a browser
+and eyes; a visual check costs him nothing and costs the session a lot.
+
+**The decision point is before writing the script, not before running it.**
+Producing eighty lines of `.mjs` and then asking "shall I run it?" has already
+spent what the rule exists to save. Ask when the idea appears: "a Playwright
+script would help here to measure X — shall I write it?" Say *Playwright
+script*; "the verification script" means nothing to him.
+
+- *Visual check* ("does it look right?", "is the toggle greyed out?") → do not
+  offer a script at all. Build, run the tests, then say what to look at and
+  where.
+- *Fine measurement or awkward case* (pixel-level CSS, a JS behaviour in an
+  extreme case, a value nobody can guess) → offer it; he will likely accept,
+  but wants to say so first.
+
+**An authorisation is never transitive.** It does not carry to the next script,
+and — the variant paid on 2026-09-05 — it does not carry to *screenshots slipped
+inside an authorised one*. Measuring computed opacity to assert a disabled
+control is greyed out is a legitimate measurement; adding `page.screenshot` next
+to that assertion is a separate decision, and one he had already answered by
+looking at his own screen. The tell: the capture proves nothing the assertions
+do not already prove, and exists only so *I* can look. If a capture is genuinely
+the artefact being asked for, it was in the request; otherwise leave it out.
+
+Once authorised, batch everything into **one checklist script** (PASS/FAIL
+assertions plus targeted captures) rather than multiplying exploratory runs.
+
 ## Prerequisites
 
 Node + npm (used only to install the Playwright driver, not the app

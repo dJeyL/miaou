@@ -43,7 +43,7 @@ Trois champs méritent une justification :
 tous les consommateurs posent la même question — « cette conversation
 génère-t-elle ? ». Corollaire **voulu** : deux générations concurrentes sur la
 même conversation sont impossibles par construction (un second envoi reste
-refusé/mis en file par les interjections, lot Q — arbitrage A4).
+refusé/mis en file par les interjections, lot Q — arbitrage du brief).
 
 Accesseurs : `generationFor(convId)` et `isGenerating(convId)`. **Un seul
 prédicat, jamais réécrit localement** — même discipline que `spaceConvIds`
@@ -232,7 +232,7 @@ le thread a lieu toujours — c'est la scission habituelle.
 ### Ce qu'une génération détachée perd, délibérément
 
 - Les **blocs d'outils non-textuels** (`placeToolBlocks` : image/ressource
-  renvoyée par un MCP). Ils sont éphémères par conception (D8) — jamais poussés
+  renvoyée par un MCP). Ils sont éphémères par conception — jamais poussés
   dans le thread ni persistés — donc ni reconstructibles ni rendus au reload.
   Cohérent avec leur nature ; ce n'est pas une régression de T-1b.
 - La **carte de confirmation** d'un outil halting (`showConfirmation`). C'est un
@@ -335,7 +335,7 @@ conversation** (chaque requête est étiquetée par le `CONV-X` de son dernier
 message user), ce qui rend N générations concurrentes pilotables : on tient A
 ouverte, on navigue, on en lance une sur B, on libère dans l'ordre voulu.
 
-Couvre les scénarios 1, 2, 3, 3bis (A2), 4, 5 et 6 du brief.
+Couvre les scénarios 1, 2, 3, 3bis, 4, 5 et 6 du brief.
 
 Le **scénario 7** (relais lot J) vit dans `verify-multitab-sync.mjs`, qui a déjà
 le montage à deux onglets : deux générations en vol sur deux conversations,
@@ -380,7 +380,7 @@ un trou de doc se lit comme « impossible ». La section `interface` de
   unitaire, mais **pas** le câblage bout-en-bout. Le relay multi-onglets est
   couvert à part (scénario 7 de `verify-multitab-sync.mjs`).
 
-**A2 est tranché** (mesuré, pas raisonné) : les registres pendants
+**Le scoping des registres pendants est tranché** (mesuré, pas raisonné) : les registres pendants
 (`_pendingToolAcks` / `_pendingImageInjections` / `_pendingToolBlocks`) restent
 des **singletons de module, sans scoping**. Le scénario 3bis du verify construit
 le cas redouté — deux générations bloquées ensemble dans leur tour d'outils,

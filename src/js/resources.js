@@ -72,7 +72,7 @@ function generateResourceId(rand) {
 
 // ── Bibliothèque de fichiers d'espace (lot Cbis) — helpers purs ──────────────
 // Réutilise le store `resources` (discriminant `kind:'library'` + `spaceId`),
-// PAS de store dédié ni de clé localStorage (audit Cbis §1, D1 tranché).
+// PAS de store dédié ni de clé localStorage (audit Cbis §1, tranché).
 
 // Id de record library, préfixe distinct de `att_`/`res_` (frère de generateResourceId).
 function generateFileId(rand) {
@@ -93,7 +93,7 @@ function parseLibraryRef(ref) {
   return m ? 'file_' + m[1] : null;
 }
 
-// Cap la description de fichier (D7) : longueur max, pas de troncature en
+// Cap la description de fichier : longueur max, pas de troncature en
 // plein mot. Nommée « description », PAS « résumé » : le texte ne condense
 // pas le contenu (ce n'est pas un résumé exploitable directement par le
 // modèle) mais décrit ce que le fichier EST — nature, sujets couverts,
@@ -106,7 +106,7 @@ function capFileDescription(str) {
   return s.slice(0, FILE_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
 }
 
-// Normalise un record library aux champs figés du schéma (D1) : présent dès le
+// Normalise un record library aux champs figés du schéma : présent dès le
 // jour un pour éviter une migration ultérieure de `source`/`description`.
 function normalizeLibraryRecord(rec) {
   const out = {
@@ -119,12 +119,12 @@ function normalizeLibraryRecord(rec) {
   return out;
 }
 
-// Manifeste compact de la bibliothèque de fichiers du Space actif (D4, lot
+// Manifeste compact de la bibliothèque de fichiers du Space actif (manifeste, lot
 // Cbis) : une ligne d'intro nommant le Space, puis une ligne par fichier,
 // triée `createdAt` puis `id` (déterministe, byte-stable — même nature que le
 // manifeste de résumés de conversation, piège 18/16). '' si la bibliothèque
-// est vide (pas de bloc, pas d'en-tête creux). La description (D7), si elle
-// existe, est ajoutée sur la MÊME ligne (format A4 confirmé) — jamais de
+// est vide (pas de bloc, pas d'en-tête creux). La description, si elle
+// existe, est ajoutée sur la MÊME ligne (format confirmé) — jamais de
 // contenu image, seulement métadonnées + description texte. `spaceName`
 // optionnel (Space sans nom résolu, cas limite) : l'intro reste générique.
 function buildLibraryManifestBlock(entries, spaceName) {
@@ -145,7 +145,7 @@ function buildLibraryManifestBlock(entries, spaceName) {
 }
 
 // ── Pièces jointes (composer) — helpers purs (QuickJS-testables) ────────────
-// D1 (brief A) : classification kind + allocation d'id conversation-scopée.
+// Brief A : classification kind + allocation d'id conversation-scopée.
 // Constantes ajustables regroupées ici, en un seul endroit.
 
 // Extensions → 'text' (contenu lisible, injectable tel quel). Liste fermée,
@@ -159,7 +159,7 @@ const ATTACHMENT_TEXT_EXTENSIONS = [
 // Classe une pièce jointe selon son mime et/ou son extension de fichier.
 // Priorité : mime image/* → 'image' ; sinon extension dans la liste texte →
 // 'text' ; sinon 'binary'. Pure, ne dépend pas du contenu du fichier (le cap
-// 200 kB texte→binary est appliqué séparément, après lecture — cf. D3).
+// 200 kB texte→binary est appliqué séparément, après lecture).
 function classifyAttachmentKind(name, mime) {
   const m = String(mime || '').toLowerCase().split(';')[0].trim();
   if (m.startsWith('image/')) return 'image';
@@ -218,7 +218,7 @@ function reserveAttIdFor(convId) {
 }
 
 // ── Pièces jointes (composer) — envoi au modèle et politique de persistance
-// (LOT 2, brief A / D2-D3-D5) ────────────────────────────────────────────────
+// (LOT 2, brief A) ────────────────────────────────────────────────
 // Descripteur BYTE-STABLE d'une image jointe, calculé UNE FOIS depuis les
 // champs FIGÉS du schéma attachment (name, w, h, size) — jamais recalculé
 // depuis les octets. Format exact acté (le brief écrit `resource__present`,
@@ -235,7 +235,7 @@ function formatAttachmentDescriptor(att) {
     ' — content available via miaou__recall_attachment]';
 }
 
-// Bloc texte injecté pour un attachment kind:'text' (D3) : fence avec en-tête
+// Bloc texte injecté pour un attachment kind:'text' : fence avec en-tête
 // nom de fichier, PERSISTÉ TEL QUEL (pas de descripteur, pas de rewrite
 // ultérieur — texte cheap, KV cache préservé). `text` = contenu déjà décodé
 // (UTF-8) du fichier.
@@ -258,16 +258,16 @@ function formatBinaryAttachmentDescriptor(att) {
     ' — binary content, not inlined]';
 }
 
-// Construit le CONTENU du message user au tour d'attache (D2/D3/H) : texte
-// tapé + blocs texte injectés (fence, D3) + descripteurs binaires (H) forment
+// Construit le CONTENU du message user au tour d'attache (briefs A et H) : texte
+// tapé + blocs texte injectés (fence) + descripteurs binaires (brief H) forment
 // la partie 'text' ; chaque attachment kind:'image' devient une part
 // 'image_url' distincte (content parts OpenAI). `textAttachments` :
-// [{att, text}] déjà lus (D3, appelant fournit le texte décodé).
+// [{att, text}] déjà lus (l'appelant fournit le texte décodé).
 // `imageAttachments` : [{att, dataUrl}] — dataUrl déjà préparée par l'appelant
 // (base64 + mime, cf. arrayBufferToBase64) : pure, ne touche à aucun
 // stockage/cache ici. `binaryAttachments` (brief H) : [att] — pas de contenu à
 // lire (aucun octet envoyé), un binaire n'a pas de phase content-parts : son
-// descripteur est stable dès ce tour, comme le texte D3 (pas de rewrite
+// descripteur est stable dès ce tour, comme le texte injecté (pas de rewrite
 // ultérieur pour lui, cf. collapseAttachedMessageContent qui le régénère à
 // l'identique par idempotence de format, pas par rewrite réel).
 // Retourne soit une string (aucune image jointe : pas de content parts inutiles,
@@ -307,7 +307,7 @@ function prefixTextInContentParts(parts, prefix) {
   return out;
 }
 
-// Réécriture UNIQUE parts→descripteur (D2, politique de persistance) : un
+// Réécriture UNIQUE parts→descripteur (politique de persistance) : un
 // message user dont `content` est un tableau de content parts (tour d'attache)
 // est collapsé en une string finale = la ou les parts texte concaténées + une
 // ligne de descripteur PAR image attachment (dans l'ordre des attachments
@@ -474,9 +474,9 @@ function extractResultParts(mcpResult) {
       const name = (r.uri && r.uri.split('/').pop().split(/[?#]/)[0]) || 'resource';
       if (r.blob != null && _isTextualMime(r.mimeType)) {
         // Bloc blob textuel (ex. docs__extract, lot M) : octets base64 mais mime
-        // texte/JSON/XML/NDJSON/CSV → classe de stockage 'inline' (M1b), tout en
-        // transitant par le canal binaire (jamais de texte en contexte ici, M1a
-        // ne fait que router — l'invariant context-safety est tenu par M1b).
+        // texte/JSON/XML/NDJSON/CSV → classe de stockage 'inline', tout en
+        // transitant par le canal binaire (jamais de texte en contexte ici, le routage
+        // ne fait que router — l'invariant context-safety est tenu par l'interning).
         parts.push({ action: 'store_inline_from_bytes', block,
           mime: r.mimeType || 'text/plain', name, fromBase64: r.blob });
       } else if (r.blob != null) {
@@ -536,7 +536,7 @@ function getCachedRecordByAttId(attId, conversationId) {
 }
 
 // Entrées de bibliothèque du Space donné, depuis le cache session (même cache
-// unifié que les attachments — pas de second cache, cf. lot Cbis D1). Scan
+// unifié que les attachments — pas de second cache, cf. lot Cbis). Scan
 // linéaire : nombre de fichiers par Space attendu faible (même hypothèse que
 // getCachedRecordByAttId pour les attachments).
 function getCachedLibraryEntriesBySpace(spaceId) {
@@ -595,7 +595,7 @@ function resolveResourceRefs(thread) {
   });
 }
 
-// Pre-pass (brief A2 / D3, voie (b)) : pour chaque ack attachment_recalled dont
+// Pre-pass (brief A2, voie (b)) : pour chaque ack attachment_recalled dont
 // le record est une IMAGE, reconstruit la dataUrl base64 depuis le cache session
 // et la pose sur une COPIE de l'ack (champ `recallImage`), à charge d'expandThread
 // (utils.js, pur) d'émettre le message user synthétique porteur de la part image.
@@ -816,7 +816,7 @@ function clearIdbStore(storeName) {
 // _storeBlock : PAS d'ack `resource_stored` — un attachment n'est pas un
 // résultat d'outil, rien à annoncer dans le fil. `class` (cls) est décidé par
 // l'appelant (inline pour un texte, binary pour image/binaire) ; `dims` (optionnel,
-// {w,h}) pour une image, figées à l'attache (cf. D2, byte-stable au lot 2).
+// {w,h}) pour une image, figées à l'attache (byte-stable au lot 2).
 // Retourne l'enregistrement stocké en cas de succès, null sinon.
 async function storeAttachment(attId, mime, name, data, cls, conversationId, now, rand, dims) {
   const id = 'att_' + generateResourceId(rand).slice(4);
@@ -843,7 +843,7 @@ async function storeAttachment(attId, mime, name, data, cls, conversationId, now
 // `kind:'library'` (discriminant vs attachment). `source` optionnel : id de la
 // conversation d'origine si le fichier vient d'une promotion d'attachment
 // (path 2/3), absent pour un upload direct (path 1). `description` optionnel
-// (D7 ou fourni par `files__promote`), toujours passé par `capFileDescription`.
+// (générée ou fournie par `files__promote`), toujours passé par `capFileDescription`.
 // Retourne l'enregistrement stocké en cas de succès, null sinon.
 async function storeLibraryFile(spaceId, mime, name, data, cls, source, description, now, rand, dims) {
   const id = generateFileId(rand);
@@ -993,7 +993,7 @@ function formatInlineTextForModel(text) {
 //   (le contenu n'est affiché nulle part : le modèle est le seul à le voir).
 // - binaires (image, audio, blob) → stocke en IDB, remplace par une ref + note
 //   "présentée" pour que le modèle sache que la ressource est déjà affichée.
-// Les blocs D8 des binaires restent dans _pendingToolBlocks pour le rendu visuel
+// Les blocs non-text des binaires restent dans _pendingToolBlocks pour le rendu visuel
 // immédiat ; les blocs inline en sont retirés (retainPendingToolBlocks).
 // Appelé depuis api.js après await callTool, avant flattenToolResult.
 async function internResourcesFromResult(result, conversationId, now, rand) {
@@ -1022,7 +1022,7 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
       // store_binary (rien du contenu au modèle) + classe de stockage 'inline'.
       // Les octets viennent de fromBase64 (canal binaire), pas de utf8Encode(text)
       // — aucun texte n'a transité par le part.
-      // Retirer le bloc du queue D8 : un resource blob textuel non-image tomberait
+      // Retirer le bloc de la queue de rendu : un resource blob textuel non-image tomberait
       // sinon dans renderBinaryBlock (bouton de téléchargement), affichage non voulu
       // pour un handle js__eval — même posture que store_inline sur son bloc text.
       if (typeof retainPendingToolBlocks === 'function') {
@@ -1046,7 +1046,7 @@ async function internResourcesFromResult(result, conversationId, now, rand) {
         newContent.push(part.block);
       }
     } else if (part.action === 'store_inline') {
-      // Texte/JSON : retire le bloc du queue D8 — pas d'affichage automatique
+      // Texte/JSON : retire le bloc de la queue de rendu — pas d'affichage automatique
       // côté UI (vrai quel que soit le réglage).
       if (typeof retainPendingToolBlocks === 'function') {
         retainPendingToolBlocks(b =>
@@ -1076,7 +1076,7 @@ async function loadConversationResources(convId) {
   }
 }
 
-// Construit un bloc D8 (format _pendingToolBlocks) depuis un enregistrement en
+// Construit un bloc non-text (format _pendingToolBlocks) depuis un enregistrement en
 // session cache. Réutilise les chemins de rendu existants (renderToolBlock).
 // Retourne null si le type n'est pas présentable.
 function makeResourcePresentBlock(record) {

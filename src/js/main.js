@@ -84,8 +84,8 @@ let currentConvModel = '';  // override de modèle de la conversation courante (
 let currentConvReasoningEffort = '';  // override de reasoning_effort de la conversation courante ('' = défaut, pas de paramètre)
 let pendingAttachments = [];   // pièces jointes du composer, en attente d'envoi (cf. §Pièces jointes)
 let attachIngestInFlight = 0;  // ingestions en cours (garde anti-course : envoi refusé tant que ≠ 0)
-let _sendResolving = false;    // verrou anti double-envoi pendant l'await resolveSend (B7) — cf. sendMessage
-let _lastContextManifest = null;   // manifeste du dernier envoi RÉEL (brief B, B4) — null si aucun envoi cette session
+let _sendResolving = false;    // verrou anti double-envoi pendant l'await resolveSend — cf. sendMessage
+let _lastContextManifest = null;   // manifeste du dernier envoi RÉEL (brief B) — null si aucun envoi cette session
 let _lastContextManifestMidTurn = false;   // true si _lastContextManifest a été recalculé PENDANT une boucle d'outils (tour non terminé), cf. recomputeLastContextManifest
 
 // ── Registre des générations actives (lot T-1) ──────────────────────────────
@@ -174,7 +174,7 @@ function unregisterGeneration(gen) {
   if (!genOwnsScreen(gen)) markConvUnread(gen.convId);
   renderConvList();
   syncSpaceUI();
-  // Actions de synchro multi-onglets différées (lot J, J3) : rejouées quand
+  // Actions de synchro multi-onglets différées (lot J, réception) : rejouées quand
   // PLUS AUCUNE génération ne tourne. Le drain vivait dans setSending(false)
   // avant T-1a ; il ne pouvait plus y rester, `sending` ne parlant que de
   // l'écran (un simple changement de conversation le fait basculer alors qu'une
@@ -205,7 +205,7 @@ function isStopRequested(convId) {
 // ── Badges d'activité (lot T-2) ─────────────────────────────────────────────
 // « Non lu » = une génération s'est terminée pendant que l'utilisateur
 // regardait AILLEURS, et il n'est pas revenu depuis. VOLATILE par décision
-// (B1) : un Set en mémoire, vidé au reload — exactement la portée de survie des
+// Un Set en mémoire, vidé au reload — exactement la portée de survie des
 // générations elles-mêmes (T-1 décision 1). Aucune persistance, aucune clé
 // localStorage, aucun champ sur la conversation : une génération ne survit pas
 // au reload, son « non lu » non plus.
@@ -219,7 +219,7 @@ function markConvUnread(convId) {
   _unreadConvs.add(convId);
 }
 
-// B2 : l'ouverture de la conversation SUFFIT à marquer comme lu. Pas de
+// L'ouverture de la conversation SUFFIT à marquer comme lu. Pas de
 // sémantique par message ni de « bas du fil atteint » — MIAOU n'en a nulle part
 // ailleurs, en introduire une ici serait disproportionné.
 function markConvRead(convId) {
@@ -301,7 +301,7 @@ function spaceBadgeState(spaceId) {
 // Agrégat de TOUS les Espaces sauf ceux exclus. Deux appelants, deux portées :
 //  - sélecteur d'espaces REPLIÉ → exclut l'Espace actif : il répond « y a-t-il
 //    de l'activité AILLEURS ? » (le détail par Espace se lit au dépliage).
-//  - hamburger → n'exclut RIEN (B6) : sidebar repliée, l'utilisateur ne voit ni
+//  - hamburger → n'exclut RIEN : sidebar repliée, l'utilisateur ne voit ni
 //    la liste des conversations ni le sélecteur, c'est le SEUL indicateur
 //    disponible. Le restreindre à l'ailleurs laisserait muette une conversation
 //    active de l'Espace courant, précisément celle qu'il ne peut pas voir.
@@ -550,7 +550,7 @@ function buildSummaryBlock(matches) {
 
 // Souvenirs utilisateur actifs injectés en contexte (injection complète, pas de
 // filtrage/ranking : volume faible attendu pour un usage personnel). Scope
-// profile (global) + Space actif uniquement (brief D3) — jamais les souvenirs
+// profile (global) + Space actif uniquement (brief C, souvenirs) — jamais les souvenirs
 // d'un autre Space.
 function buildMemoryEntriesBlock() {
   // Portée = `memoryScopesForSpace` (storage.js), la MÊME que celle qu'appliquent
@@ -564,7 +564,7 @@ function buildMemoryEntriesBlock() {
          lines.join('\n');
 }
 
-// Sous-blocs du contexte dynamique, AVANT concaténation (brief B, D1) — même
+// Sous-blocs du contexte dynamique, AVANT concaténation (brief B) — même
 // principe que systemMessageParts() : source unique pour buildContextBlock()
 // ET pour le manifeste de contexte.
 function contextBlockParts(matches) {
@@ -586,7 +586,7 @@ function contextBlockParts(matches) {
 }
 
 // Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs,
-// manifeste de la bibliothèque de fichiers d'espace (D4, lot Cbis).
+// manifeste de la bibliothèque de fichiers d'espace (manifeste, lot Cbis).
 // Injecté en préfixe du dernier message utilisateur, pas dans le system message,
 // pour préserver le préfixe stable et permettre le KV cache prefix matching.
 function buildContextBlock(matches) {
@@ -631,8 +631,15 @@ function buildContextBlock(matches) {
 function buildSkillsContextBlock() {
   const skills = getAutotriggerSkillsMeta();
   if (!skills.length) return '';
-  const lines = skills.map(s => '- [slug: ' + s.slug + '] ' + (s.name || s.slug) +
-    (s.description ? ' — ' + s.description : ''));
+  const lines = skills.map(s => '- [slug: ' + s.slug + ']' + (s.system ? ' [système]' : '') + ' ' +
+    (s.name || s.slug) + (s.description ? ' — ' + s.description : ''));
+  // Mention des skills système AJOUTÉE seulement s'il y en a dans cette liste :
+  // sans elle le modèle tente de les réécrire (miaou__skills__write refuse, un
+  // tour perdu) ou promet à l'utilisateur de les modifier.
+  const systemNote = skills.some(s => s.system)
+    ? ' Celles marquées [système] sont fournies par l\'application : tu peux les lire, ' +
+      'mais ni les modifier ni les supprimer — ne propose pas de le faire.'
+    : '';
   return '<miaou_skills_context>\nSkills que l\'utilisateur a rendues disponibles pour un usage ' +
     'proactif : tu PEUX en lire une (miaou__skills__read) si la situation courante y correspond ' +
     'vraiment, mais aucune n\'est obligatoire de ce seul fait. N\'en lis pas par curiosité ni ' +
@@ -641,11 +648,11 @@ function buildSkillsContextBlock() {
     '(« avant ton premier appel à … »), cette lecture-là est obligatoire — ce « tu peux » ne la ' +
     'lève pas. D\'autres skills existent que l\'utilisateur ' +
     'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
-    'chercher.\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+    'chercher.' + systemNote + '\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
 // Résolution pure (testable QuickJS) : la description du Space actif est
-// AJOUTÉE après le prompt système utilisateur global (brief D4, corrigé — la
+// AJOUTÉE après le prompt système utilisateur global (brief C, corrigé — la
 // version d'origine proposait un remplacement, inversée par décision
 // explicite : un Space porte une description, pas un system prompt de
 // substitution). `space` peut être null (Space introuvable/default sans
@@ -665,7 +672,7 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
   return parts.join('\n\n---\n\n');
 }
 
-// Sous-blocs du system message, AVANT concaténation (brief B, D1) : source
+// Sous-blocs du system message, AVANT concaténation (brief B) : source
 // unique pour buildSystemMessage() ET pour le manifeste de contexte — jamais
 // de re-split du séparateur '\n\n---\n\n' (fragile, audit §6). '' pour un
 // sous-bloc absent/désactivé.
@@ -692,7 +699,7 @@ function systemMessageParts() {
 // depuis V-1) → doctrine intent (si ON) →
 // doctrine skills (si skills autotrigger) → doctrine codeblock (toujours) →
 // utilisateur → description du Space actif (concaténée, jamais substituée —
-// D4 corrigé). Piège 18 (CLAUDE.md) : cette dernière part varie d'un Space à
+// description de Space corrigée). Piège 18 (CLAUDE.md) : cette dernière part varie d'un Space à
 // l'autre — changer de Space change donc le system message (assumé, documenté),
 // mais il reste statique tant qu'on reste dans le même Space (KV cache, piège 16).
 // `sp` optionnel : réutilise des parts déjà calculées (dispatchSend en a déjà
@@ -716,7 +723,7 @@ function rootSystemPromptDisplay() {
   return [IDENTITY_BLURB, ROOT_SYSTEM_PROMPT, CODEBLOCK_DOCTRINE].join('\n\n---\n\n');
 }
 
-// Simulation « prochain envoi » au repos (brief B, B4) : mêmes fonctions pures
+// Simulation « prochain envoi » au repos (brief B) : mêmes fonctions pures
 // que dispatchSend (systemMessageParts, contextBlockParts, expandThread,
 // toolDefinitions), jamais rejouée avec des résumés (matches=[] — non
 // simulables hors déclenchement d'envoi réel, audit §9). Purement lecture :
@@ -756,7 +763,7 @@ function recomputeLastContextManifest(matches, midTurn) {
 // jamais avant : la séparation reste nette entre « rejeu du thread » (estimé)
 // et « calibrage sur l'API » (passe optionnelle). `usage` null (backend sans
 // stream_options, ex. beaucoup de configs Ollama) → no-op, scaleManifestToUsage
-// renvoie déjà le manifeste inchangé dans ce cas. Dernier tour reçu (A6) :
+// renvoie déjà le manifeste inchangé dans ce cas. Dernier tour reçu :
 // chaque appel écrase, jamais de somme entre tours.
 function applyUsageToLastManifest(usage) {
   if (!usage || !_lastContextManifest) return;
@@ -784,7 +791,7 @@ function projectConvMessages(conv) {
     if (m.displayText != null) o.displayText = m.displayText;
     else if (m.display != null) o.displayText = m.display;
     if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
-    // Message de réveil d'agent (lot X-1, Q1) : le discriminant d'AFFICHAGE
+    // Message de réveil d'agent (lot X-1) : le discriminant d'AFFICHAGE
     // porté par la bulle user authentique. Cette projection est une WHITELIST —
     // un champ absent d'ici ne survit pas à la persistance, donc pas au reload.
     // Sans cette ligne, le message se relit comme une bulle user ordinaire :
@@ -812,7 +819,7 @@ let _openConvSeq = 0;
 async function openConversation(id, reveal) {
   if (!loadConversation(id)) return;   // existence seulement ; le contenu est relu après l'await
   const mySeq = ++_openConvSeq;
-  // Soft-lock (J4) : signaler le changement de conv affichée aux autres onglets,
+  // Soft-lock : signaler le changement de conv affichée aux autres onglets,
   // SEULEMENT sur un vrai switch. Une re-hydratation (récepteur `rehydrate`
   // rappelle openConversation sur la MÊME conv) ne doit pas émettre closed/opened
   // ni vider le peer state — d'où le garde `id !== currentConvId`.
@@ -870,7 +877,7 @@ async function openConversation(id, reveal) {
   // Rebranchement de l'AFFICHAGE (lot T-1b) : attachGenerationToScreen rend
   // l'historique par renderThread — le même chemin que le reload — puis rouvre
   // une bulle vive pour la suite du tour en cours. Sans génération, rendu normal.
-  // B2 (lot T-2) : ouvrir la conversation SUFFIT à la marquer lue. Avant
+  // Lot T-2 : ouvrir la conversation SUFFIT à la marquer lue. Avant
   // renderConvList, pour que la liste soit rendue une seule fois, déjà à jour.
   markConvRead(id);
   rerenderCurrentThread();
@@ -897,13 +904,13 @@ async function openConversation(id, reveal) {
   syncReasoningUI();
   _lastContextManifest = null;   // switch de conv : le dernier envoi réel ne s'applique plus, retombe sur simulation
   syncContextCounter();
-  // Soft-lock (J4) : annoncer la conv nouvellement affichée (déclenche le
+  // Soft-lock : annoncer la conv nouvellement affichée (déclenche le
   // handshake côté pairs qui l'affichent déjà). Seulement sur un vrai switch.
   if (switching) announceConvOpened(id);
 }
 
 function resetToEmpty() {
-  // Soft-lock (J4) : on quitte la conv affichée (le cas échéant) vers l'accueil.
+  // Soft-lock : on quitte la conv affichée (le cas échéant) vers l'accueil.
   if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
   // L'écran part à l'accueil : une génération en vol sur la conv quittée perd
   // sa bulle (vidée juste en dessous) mais continue (lot T-1b).
@@ -978,14 +985,14 @@ function selectConv(id, reveal) {
   if (isMobileLayout()) closeSidebarMobile();
 }
 
-// Déplacement effectif du lot sélectionné (D4/D7, brief Cter). Mutation UNIQUE
+// Déplacement effectif du lot sélectionné (brief Cter). Mutation UNIQUE
 // de conv.spaceId via une écriture ciblée par id (persistConversationField :
 // jamais `messages`, absents en RAM pour une conversation froide). Résumés,
 // souvenirs et pièces jointes suivent automatiquement : ils scopent par convId,
 // jamais par une copie côté Space.
 function moveSelectedConversations(targetSpaceId) {
   if (!targetSpaceId || !_moveSelection.size) return;
-  // RE-VÉRIFICATION au commit (lot X-1, Q6) : la case grisée est posée au rendu
+  // RE-VÉRIFICATION au commit (lot X-1) : la case grisée est posée au rendu
   // de la liste, mais un agent peut DÉMARRER pendant que le mode sélection est
   // ouvert — la fenêtre de réentrance signalée par X-a. Sans cette relecture, la
   // garde tiendrait sur l'état au moment du rendu, pas sur l'état au moment de
@@ -1008,11 +1015,11 @@ function moveSelectedConversations(targetSpaceId) {
   // froide n'a pas les siens en RAM — les écraser la viderait).
   for (const id of ids) persistConversationField(id, { spaceId: targetSpaceId });
   // Post-commit (piège 24) : un conv-updated par id déplacé (nouveau spaceId).
-  // Le récepteur coalesce le re-render de liste via sa file (J3) ; l'herméticité
+  // Le récepteur coalesce le re-render de liste via sa file (réception) ; l'herméticité
   // de Space est tranchée à la réception (spaceConvIds, piège 18).
   for (const id of ids) syncPost('conv-updated', { convId: id, spaceId: targetSpaceId });
 
-  // Follow (D6) : seulement si la conversation ouverte fait partie du lot
+  // Follow post-déplacement : seulement si la conversation ouverte fait partie du lot
   // déplacé — sinon rien ne bouge pour elle (audit §3, décision Julien
   // 2026-07-07 : pas de cas ambigu, le follow est borné à son propre cas).
   const shouldFollow = currentConvId && ids.includes(currentConvId);
@@ -1135,7 +1142,7 @@ function deleteConv(id) {
   else renderConvList();
 }
 
-// ── Réception synchro multi-onglets (lot J, J3) ──────────────────────────────
+// ── Réception synchro multi-onglets (lot J, réception) ──────────────────────────────
 // Câblé via syncOnMessage(handleSyncMessage) dans init(). L'enveloppe est déjà
 // VALIDÉE (validateEnvelope, sync.js) ; on décide l'effet via routeMessage (pur)
 // puis on l'applique ici (couche impure : DOM, caches, re-render).
@@ -1154,15 +1161,15 @@ function deleteConv(id) {
 
 let _pendingSyncActions = [];   // actions différées (re-hydratation) pendant une génération locale
 
-// ── Soft-lock (J4) : awareness « même conv ouverte ailleurs » ────────────────
+// ── Soft-lock : awareness « même conv ouverte ailleurs » ────────────────
 // _peersOnConv = tabIds des AUTRES onglets tenant la conv actuellement affichée.
-// _peersGenerating = sous-ensemble en train de générer (readonly, J5). Le bandeau
-// soft-lock est visible tant que _peersOnConv est non vide ; le readonly (J5)
+// _peersGenerating = sous-ensemble en train de générer (readonly). Le bandeau
+// soft-lock est visible tant que _peersOnConv est non vide ; le readonly
 // prime sur le soft-lock quand _peersGenerating est non vide. Les deux sets sont
 // vidés à chaque changement de conv affichée (openConversation/resetToEmpty).
 let _peersOnConv = new Set();
-let _peersGenerating = new Set();   // tabIds générant sur la conv affichée (readonly, J5)
-let _peerHeartbeatAt = {};          // tabId → epoch ms du dernier heartbeat reçu (TTL, J5)
+let _peersGenerating = new Set();   // tabIds générant sur la conv affichée (readonly)
+let _peerHeartbeatAt = {};          // tabId → epoch ms du dernier heartbeat reçu (TTL)
 let _peerTtlSweeper = null;         // timer de balayage TTL (auto-release si crash émetteur)
 
 // Émet conv-opened pour la conv que cet onglet vient d'afficher. Les pairs qui
@@ -1185,7 +1192,7 @@ function resetPeerState() {
   refreshTabBanner();
   applyReadonlyState();
 }
-// Recalcule le bandeau à partir des deux sets. Readonly (J5) prime sur soft-lock.
+// Recalcule le bandeau à partir des deux sets. Readonly prime sur soft-lock.
 function refreshTabBanner() {
   if (_peersGenerating.size > 0) {
     setTabBanner('Réponse en cours dans un autre onglet — lecture seule.');
@@ -1202,7 +1209,7 @@ function refreshTabBanner() {
 // qui poseraient chacun leur cause se marcheraient dessus (le sweeper TTL qui
 // libère un pair rouvrirait le composer d'un agent terminé).
 //
-//  (a) Un pair génère sur la conv affichée (J5) : on désactive les entrées et
+//  (a) Un pair génère sur la conv affichée (readonly) : on désactive les entrées et
 //      mutations locales pour éviter une seconde génération concurrente
 //      silencieuse. Cause TEMPORAIRE, levée à la fin de la génération du pair.
 //  (b) La conv affichée est un agent qui a fini (X-1e) : son résultat est déjà
@@ -1211,7 +1218,7 @@ function refreshTabBanner() {
 //      déjà reçu son compte rendu, ni l'utilisateur, qui croirait relancer
 //      l'agent. Cause DÉFINITIVE : un agent ne repart jamais.
 //
-// Lecture, scroll et retour au parent restent permis dans les deux cas (A6, et
+// Lecture, scroll et retour au parent restent permis dans les deux cas (et
 // le readonly ne neutralise que les MUTATIONS — cf. .conv-parent-btn, composer.css).
 function applyReadonlyState() {
   setConvReadonly(_peersGenerating.size > 0 || isFinishedAgentConv(currentConvId));   // ui.js
@@ -1318,9 +1325,9 @@ function applySyncDecision(d) {
 
     case 'conv-gone':
       // Conv AFFICHÉE supprimée dans un autre onglet. L'émetteur a déjà persisté
-      // la suppression (J2) : ne rien re-supprimer, juste réagir côté UI, comme
+      // la suppression : ne rien re-supprimer, juste réagir côté UI, comme
       // le fait deleteConv local sur la conv courante. (Notice riche : reléguée
-      // à l'infra bandeau de J4 ; ici retour à l'accueil, non destructif.)
+      // à l'infra bandeau du soft-lock ; ici retour à l'accueil, non destructif.)
       // Même prédicat que 'rehydrate' depuis T-1a (cf. ci-dessus).
       if (_activeGenerations.size) { _queueSyncAction(d); return; }
       resetToEmpty();
@@ -1416,7 +1423,7 @@ function applySyncDecision(d) {
         refreshTabBanner();
         applyReadonlyState();
         // Re-hydratation à la fin de génération d'un pair. On NE se repose PAS
-        // sur le seul conv-updated de la persistance finale (J2) : lorsqu'il est
+        // sur le seul conv-updated de la persistance finale : lorsqu'il est
         // émis juste avant conv-generation-ended, il peut arriver pendant l'await
         // interne d'un openConversation() déclenché par un conv-updated ANTÉRIEUR
         // (message user du même tour), et le rendu final retombe alors sur l'état
@@ -1424,7 +1431,7 @@ function applySyncDecision(d) {
         // (visible seulement après navigation/reload). Relire le storage frais
         // ici est idempotent (openConversation est byte-stable, piège 17) et ferme
         // le trou quel que soit l'ordre d'arrivée des messages. Différé si une
-        // génération LOCALE est en vol (drainé par setSending(false), J3).
+        // génération LOCALE est en vol (drainé par setSending(false)).
         if (currentConvId && d.convId === currentConvId) {
           // Différer tant qu'une génération LOCALE quelconque est en vol : la
           // rehydratation réassigne currentThread, ce qui débrancherait une
@@ -1445,7 +1452,7 @@ function applySyncDecision(d) {
 // Ré-application des réglages modifiés dans un autre onglet. `keys` = clés de
 // settings modifiées, ou sentinelles de sous-domaine ('api-servers',
 // 'active-api-server', 'mcp-servers'). On ré-applique de façon ciblée pour ne
-// pas perturber inutilement l'UI (A1 : ne jamais vider un draft ni interrompre
+// pas perturber inutilement l'UI (ne jamais vider un draft ni interrompre
 // une génération — on ne touche qu'aux surfaces de réglage/serveur).
 function applySyncedSettings(keys) {
   const set = new Set(keys || []);
@@ -1514,7 +1521,7 @@ function drainPendingSync() {
   for (const d of actions) applySyncDecision(d);
 }
 
-// ── Readonly relay + heartbeat (J5) ──────────────────────────────────────────
+// ── Readonly relay + heartbeat ──────────────────────────────────────────
 // Un onglet qui génère sur la conv X émet conv-generation-started(X) au début et
 // conv-generation-ended(X) à la fin (tous chemins : succès/erreur/abort, via
 // register/unregisterGeneration — depuis T-1a un onglet peut générer sur
@@ -1522,10 +1529,10 @@ function drainPendingSync() {
 // SYNC_HEARTBEAT_MS ; les récepteurs auto-libèrent le readonly s'ils ne
 // reçoivent pas de heartbeat en SYNC_HEARTBEAT_TTL_MS (crash de l'émetteur).
 // Un onglet ouvert PENDANT une génération se verrouille au prochain heartbeat.
-const SYNC_HEARTBEAT_MS = 5000;        // ré-émission de -started (A5 : N = 5 s)
+const SYNC_HEARTBEAT_MS = 5000;        // ré-émission de -started (N = 5 s)
 const SYNC_HEARTBEAT_TTL_MS = 10000;   // auto-release récepteur sans heartbeat (2×N)
 
-// Un heartbeat PAR CONVERSATION en génération (lot T-1a, arbitrage A3). Avant
+// Un heartbeat PAR CONVERSATION en génération (lot T-1a). Avant
 // T-1, un scalaire suffisait : un onglet ne générait que sur la conv affichée.
 // Avec N générations concurrentes, un scalaire ferait émettre le -ended de la
 // première sur la conv de la seconde — les pairs déverrouilleraient une conv
@@ -1561,7 +1568,7 @@ function stopGenerationRelay(convId) {
   syncPost('conv-generation-ended', { convId: convId, tabId: syncTabId() });
 }
 
-// Libère TOUS les pairs (lot T-1a, arbitrage A5) — appelé au départ de l'onglet
+// Libère TOUS les pairs (lot T-1a) — appelé au départ de l'onglet
 // (pagehide/beforeunload), où les générations meurent de toute façon avec la
 // page (portée de survie). Idempotence EXPLICITE, pas supposée : le handler est
 // branché sur les deux événements et peut tirer deux fois ; on itère sur une
@@ -1572,7 +1579,7 @@ function stopAllGenerationRelays() {
 }
 
 // Crée la conversation à la volée au premier envoi (pas avant). Stampée dans
-// le Space actif (seul point de création — brief D5, lot C).
+// le Space actif (seul point de création — brief C, UI).
 function ensureConversation() {
   if (currentConvId) return;
   const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -1606,7 +1613,7 @@ function projectThreadToMessages(thread) {
     if (m.truncated) o.truncated = true;   // réponse incomplète (feature C)
     if (m.displayText != null) o.displayText = m.displayText;   // littéral (slash-commande skill)
     if (m.attachments) o.attachments = m.attachments;   // pièces jointes (user uniquement, brief A)
-    // Message de réveil d'agent (lot X-1, Q1) : le discriminant d'AFFICHAGE
+    // Message de réveil d'agent (lot X-1) : le discriminant d'AFFICHAGE
     // porté par la bulle user authentique. Cette projection est une WHITELIST —
     // un champ absent d'ici ne survit pas à la persistance, donc pas au reload.
     // Sans cette ligne, le message se relit comme une bulle user ordinaire :
@@ -1718,7 +1725,7 @@ async function prefetchModels() {
 // ── Serveurs MCP distants : orchestration ────────────────────────────────────
 // Connecte (handshake + tools/list) tous les serveurs activés. Fire-and-forget,
 // encadré par l'indicateur d'activité. Échec d'un serveur = dégradation gracieuse
-// (ses outils n'apparaissent pas), les autres tiennent (cf. D10).
+// (ses outils n'apparaissent pas), les autres tiennent (dégradation gracieuse).
 async function reconnectMcpServers() {
   const servers = listEnabledMcpServers();   // storage.js
   if (!servers.length) return;
@@ -1775,7 +1782,7 @@ function onSaveApiCard(cardEl, originalId) {
   if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const wasEmpty = !loadApiServers().length;
   const model = get('.api-model').trim();
-  // Flag vision manuel (D5) : on préserve la map `vision` du serveur existant
+  // Flag vision manuel : on préserve la map `vision` du serveur existant
   // (autres modèles déjà réglés) et on met à jour la seule entrée du modèle
   // courant. 'off' → `false` explicite (dégradation proactive) ; 'on' → on
   // RETIRE l'entrée (retour au défaut « inconnu = envoyer »), pas de `true`
@@ -2173,7 +2180,7 @@ async function applyImportedData(payload) {
   // Prévenir les autres onglets AVANT de recharger celui-ci : remplacement
   // intégral destructif → les pairs doivent repartir d'un état frais, pas
   // re-render par bribes sur les resources-updated émis pendant la réinsertion
-  // (un seul full-reload, cf. PLAN-J J2 / doctrine post-commit). Cet onglet-ci
+  // (un seul full-reload, cf. PLAN-J / doctrine post-commit). Cet onglet-ci
   // recharge juste après ; les pairs rechargent sur réception.
   syncPost('full-reload', {});
   location.reload();
@@ -2182,8 +2189,8 @@ async function applyImportedData(payload) {
 // ── Pièces jointes (composer) ────────────────────────────────────────────────
 // Attache de fichiers au message en cours de saisie : trombone + drag&drop,
 // downscale image côté client, lecture texte plafonnée, stockage IDB (store
-// `resources` existant, cf. resources.js). LOT 1 (brief A, D1) : ingestion,
-// downscale, stockage IDB, chips. LOT 2 (D2/D3/D5, ici) : construction du
+// `resources` existant, cf. resources.js). LOT 1 (brief A) : ingestion,
+// downscale, stockage IDB, chips. LOT 2 (ici) : construction du
 // contenu envoyé au modèle au tour d'attache (content parts image + injection
 // texte) et politique de persistance (réécriture unique parts→descripteur
 // après le tour, cf. rewriteAttachedUserMessage/onFinal de dispatchSend).
@@ -2264,7 +2271,7 @@ function readFileAsArrayBuffer(file) {
 }
 
 // Affiche un message d'erreur d'attache visible (jamais silencieux, cf. brief
-// D2/cap images). Zone dédiée du composer, distincte du canal générique
+// cap images). Zone dédiée du composer, distincte du canal générique
 // `composer-error` : préoccupation différente ET cycle de vie différent — ce
 // canal-ci survit à la frappe (son objet est la pile d'attachements), l'autre
 // est purgé à chaque caractère tapé. Cf. `showComposerError` (ui.js).
@@ -2329,7 +2336,7 @@ async function ingestAttachmentFile(file) {
       const text = await readFileAsText(file);
       const buf = utf8Encode(text);
       if (buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES) {
-        // Rétrogradé à binary : trop volumineux pour une injection texte (D3).
+        // Rétrogradé à binary : trop volumineux pour une injection texte.
         const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
         if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
         return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
@@ -2351,7 +2358,7 @@ async function ingestAttachmentFile(file) {
   }
 }
 
-// Erreur d'upload direct dans la bibliothèque d'espace (D2 path 1, lot Cbis) —
+// Erreur d'upload direct dans la bibliothèque d'espace (voie 1, lot Cbis) —
 // zone dédiée du drawer Space, distincte de composer-attach-error (préoccupation
 // différente, cf. showComposerAttachError).
 function showSpaceFilesError(msg) {
@@ -2363,13 +2370,13 @@ function clearSpaceFilesError() {
   if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
-// Ingestion d'un fichier de bibliothèque d'espace (D2 path 1, lot Cbis) :
+// Ingestion d'un fichier de bibliothèque d'espace (voie 1, lot Cbis) :
 // mêmes caps/downscale que ingestAttachmentFile (image 1536px q0.85, texte
 // ≤200kB inline-able), mais stocke via storeLibraryFile (kind:'library',
 // spaceId) au lieu de storeAttachment (attId, conversationId) — pas d'attId,
 // pas de conversation, pas de pendingAttachments : chemins distincts,
 // mêmes helpers de traitement bas niveau réutilisés. Pas de résumé à
-// l'ingestion (D7, séparé). Retourne le record stocké ou null (message
+// l'ingestion (séparé). Retourne le record stocké ou null (message
 // d'erreur déjà affiché).
 async function ingestLibraryFile(spaceId, file) {
   const kind0 = classifyAttachmentKind(file.name, file.type);
@@ -2557,7 +2564,7 @@ async function resolveSend(literal) {
 //     composer qui affiche autre chose ; l'utilisateur retrouve ses puces en
 //     revenant).
 const _pendingInterjections = new Map();
-let _ijResolving = false;   // garde B7 : double-Entrée pendant l'await resolveSend de l'enqueue
+let _ijResolving = false;   // garde de réentrance : double-Entrée pendant l'await resolveSend de l'enqueue
 
 // Lecture de la file d'une conversation. Jamais un `.get()` nu au point
 // d'usage : sans conv (accueil) la réponse est une liste vide, pas undefined.
@@ -2623,7 +2630,7 @@ async function enqueueInterjection() {
   ta.value = ''; ta.style.height = 'auto';
   clearComposerError();
   hideSkillAutocomplete();
-  // Id : jamais Date.now() seul (mémoire projet B1) — suffixe aléatoire.
+  // Id : jamais Date.now() seul (mémoire projet) — suffixe aléatoire.
   const q = _pendingInterjections.get(convId) || [];
   q.push({
     id: 'ij-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
@@ -2734,7 +2741,7 @@ async function sendMessage() {
   // `sending` ne passe à true que dans dispatchSend, APRÈS l'await resolveSend
   // ci-dessous ; ce dernier peut attendre IDB (getSkillContent d'une slash-skill),
   // laissant une fenêtre où deux Entrée rapides franchiraient toutes deux la garde
-  // et pousseraient deux messages. `_sendResolving` ferme cette fenêtre (B7).
+  // et pousseraient deux messages. `_sendResolving` ferme cette fenêtre.
   if (!configured || sending || _sendResolving) return;
   // Garde anti-course : une ingestion de pièce jointe encore en vol (drop puis
   // Entrée immédiat) — refuser l'envoi avec un message visible, sinon le
@@ -2778,14 +2785,14 @@ async function sendMessage() {
 }
 
 // Construit le `content` d'un message porteur d'attachments au tour d'attache
-// (D2/D3) : lit chaque attachment depuis le cache session (déjà peuplé par
+// Lit chaque attachment depuis le cache session (déjà peuplé par
 // storeAttachment à l'ingestion — cf. ingestAttachmentFile) et délègue à
 // buildAttachedMessageContent (resources.js, fonction pure) la construction
 // finale (string si aucune image, sinon tableau de content parts OpenAI).
 // `baseText` : littéral ou contenu baké (slash-skill) déjà résolu par
 // l'appelant — les DEUX doctrines (attachments + skill) composent : le texte
-// baké (skill) reste la partie 'text' de base, les blocs texte-attachment (D3)
-// et les parts image (D2) s'y ajoutent, sans interférence entre les deux
+// baké (skill) reste la partie 'text' de base, les blocs texte-attachment
+// et les parts image s'y ajoutent, sans interférence entre les deux
 // mécanismes (bakeSkillMessage ignore tout ce qui concerne les attachments).
 // Attachment introuvable en cache (rare : cache vidé sans reload) → dégradé
 // silencieusement en descripteur direct plutôt que de bloquer l'envoi.
@@ -2821,7 +2828,7 @@ async function buildOutgoingContentForAttachments(baseText, attachments) {
 // brief A) : tableau de descripteurs {attId,name,mime,size,kind,w?,h?} déjà
 // stockés en IDB par ingestAttachmentFile. LOT 2 : si des attachments
 // image/text sont présents, `content` devient les content parts OpenAI (image)
-// et/ou les blocs texte injectés (D3) — SEULEMENT au tour d'attache ; la
+// et/ou les blocs texte injectés — SEULEMENT au tour d'attache ; la
 // réécriture parts→descripteur a lieu une fois le tour terminé (onFinal de
 // dispatchSend, cf. rewriteAttachedUserMessage).
 async function sendUserText(text, bakedContent, attachments) {
@@ -2909,7 +2916,7 @@ function maybeWriteSnippet(convId, msg) {
 // après édition d'un message — pour ne pas dupliquer la logique mémoire+outils.
 // Pré-requis : le dernier message utilisateur est déjà dans currentThread.
 function runGenerationFromCurrentThread() {
-  // Sortie du mode sélection (D5, brief Cter) : point de convergence réel de
+  // Sortie du mode sélection (brief Cter) : point de convergence réel de
   // sendMessage/editUserMessage/regenerateResponse (piège 12) — un seul call
   // site plutôt que dispersé dans les 3 points d'entrée (décision Cter §2).
   exitMoveModeIfActive();
@@ -2943,7 +2950,7 @@ function runGenerationFromCurrentThread() {
 // Retourne le message d'erreur (slug invalide) pour que l'appelant l'affiche SOUS
 // LA ZONE D'ÉDITION (pas le composer) ; null en cas de succès.
 async function editUserMessage(index, newText) {
-  if (sending || _sendResolving) return null;   // pas d'édition pendant un stream ni une résolution en vol (B7)
+  if (sending || _sendResolving) return null;   // pas d'édition pendant un stream ni une résolution en vol
   const t = (newText || '').trim();
   if (!t) return null;
   if (index < 0 || index >= currentThread.length) return null;
@@ -2971,7 +2978,7 @@ async function editUserMessage(index, newText) {
   // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
   // Même verrou que sendMessage : l'await resolveSend peut attendre IDB.
   // buildOutgoingContentForAttachments est async lui aussi : il rentre dans le
-  // MÊME bloc _sendResolving/finally (garde B7) — sinon ce second await rouvre
+  // MÊME bloc _sendResolving/finally (garde de réentrance) — sinon ce second await rouvre
   // une fenêtre de double-tir entre la résolution et la mutation du thread. Il
   // ne touche pas au thread, il peut donc précéder la troncature.
   let r, content;
@@ -3042,7 +3049,7 @@ function continueTruncated(btn) {
   dispatchSend([], { continueIndex: idx, wrap });
 }
 
-// Réécriture UNIQUE parts→descripteur (D2, politique de persistance) : mute en
+// Réécriture UNIQUE parts→descripteur (politique de persistance) : mute en
 // place le message user à `idx` de currentThread si son `content` est encore
 // un tableau de content parts (collapseAttachedMessageContent, resources.js,
 // IDEMPOTENTE — no-op si déjà une string). Appelée depuis onFinal de
@@ -3114,7 +3121,7 @@ async function dispatchSend(matches, continuation) {
   // côte à côte (skills puis contexte), pas fusionnés en un seul appel.
   // Exclut les messages user SYNTHÉTIQUES (recall image, expandThread — flag
   // _synthetic) : l'injection <miaou_context> doit viser le dernier message user
-  // AUTHENTIQUE, pas une ré-injection d'image (suspect S1, brief A2).
+  // AUTHENTIQUE, pas une ré-injection d'image (brief A2).
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   const dynParts = contextBlockParts(matches);
   // Photo du thread AVANT injection du préfixe dynamique, pour le manifeste de
@@ -3130,7 +3137,7 @@ async function dispatchSend(matches, continuation) {
     const ctx = buildContextBlock(matches);
     const prefix = skillsCtx + ctx + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
-    // Tour d'attache (D2, brief A lot 2) : `content` peut être un tableau de
+    // Tour d'attache (brief A lot 2) : `content` peut être un tableau de
     // content parts OpenAI (image jointe) — le préfixe dynamique s'insère alors
     // DANS la première part texte (créée si absente), jamais par concaténation
     // de chaîne sur le tableau (produirait "[object Object]…").
@@ -3142,13 +3149,13 @@ async function dispatchSend(matches, continuation) {
     };
   }
 
-  // `_synthetic` est un marqueur interne (suspect S1) : on le retire du payload
+  // `_synthetic` est un marqueur interne : on le retire du payload
   // réseau — chaque message ne porte que {role, content} comme le reste.
   const apiMessages = [sys].concat(threadMsgs.map(m =>
     m && m._synthetic ? { role: m.role, content: m.content } : m
   )).filter(Boolean);
 
-  // Manifeste du DERNIER ENVOI RÉEL (brief B, B4) : dérivé des mêmes sous-parts
+  // Manifeste du DERNIER ENVOI RÉEL (brief B) : dérivé des mêmes sous-parts
   // que le payload qui part sur le fil, jamais re-parsé depuis les strings déjà
   // concaténées (audit §6). Thread SANS le préfixe dynamique (photo
   // manifestThreadMsgs prise avant l'injection ci-dessus) : les blocs
@@ -3163,7 +3170,7 @@ async function dispatchSend(matches, continuation) {
   _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null);
   syncContextCounter();
 
-  // Descripteurs byte-stables des images du TOUR COURANT (D5, brief A lot 2) :
+  // Descripteurs byte-stables des images du TOUR COURANT (brief A lot 2) :
   // si le dernier message user part en content parts (tour d'attache), on
   // pré-calcule les mêmes lignes de descripteur que la réécriture définitive
   // post-tour (formatAttachmentDescriptor, depuis les champs FIGÉS de
@@ -3182,7 +3189,7 @@ async function dispatchSend(matches, continuation) {
     }
   }
 
-  // Flag vision manuel (D5, brief A2) : le modèle qui va produire cette réponse
+  // Flag vision manuel (brief A2) : le modèle qui va produire cette réponse
   // (`model` = activeModel(), override conv inclus) est-il marqué « sans vision »
   // sur le serveur actif ? Si oui, streamCompletion dégrade proactivement les
   // parts image en descripteur, sans attendre un 400 qu'Ollama ne renvoie pas.
@@ -3227,8 +3234,8 @@ async function dispatchSend(matches, continuation) {
       gen,   // porteur de l'AbortController du tour (abort ciblé, lot T-1a)
       model,
       reasoningEffort,
-      imageDescriptors,   // D5 : descripteurs du tour courant pour la dégradation vision-less
-      visionDisabled,     // D5 (A2) : modèle marqué sans vision → dégradation proactive
+      imageDescriptors,   // descripteurs du tour courant pour la dégradation vision-less
+      visionDisabled,     // brief A2 : modèle marqué sans vision → dégradation proactive
       // Une continuation ne relance JAMAIS d'outils : autoriser des tool_calls
       // ici ouvrirait des cas de raccord ingérables (tours intermédiaires qui
       // pousseraient de nouvelles bulles alors qu'on veut concaténer le texte
@@ -3352,10 +3359,10 @@ async function dispatchSend(matches, continuation) {
           if (owns) placeToolAck(gen.wrap, entry);
         }
         // Blocs NON-text renvoyés par un outil distant (image/resource/binaire) :
-        // rendus DANS la bulle courante via la cascade D8, purement éphémères —
-        // jamais poussés dans currentThread ni persistés (cf. D8). Une génération
+        // rendus DANS la bulle courante via la cascade de blocs non-text, purement éphémères —
+        // jamais poussés dans currentThread ni persistés. Une génération
         // détachée les PERD (ils ne sont ni persistés ni reconstructibles) : c'est
-        // la contrepartie assumée de leur nature éphémère, cohérente avec D8.
+        // la contrepartie assumée de leur nature éphémère.
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
         if (owns && blocks.length) placeToolBlocks(gen.wrap, blocks);
@@ -3484,7 +3491,7 @@ async function dispatchSend(matches, continuation) {
         }
         return [{ role: 'user', content }];
       },
-      // Résultats d'agent (lot X-1, Q2) : drainés à la frontière de tour d'une
+      // Résultats d'agent (lot X-1) : drainés à la frontière de tour d'une
       // génération EN COURS. Contrairement aux interjections juste au-dessus,
       // AUCUNE garde genOwnsScreen — un résultat d'agent appartient à la
       // CONVERSATION, pas à l'écran : le parent peut très bien générer en
@@ -3557,7 +3564,7 @@ async function dispatchSend(matches, continuation) {
           setConnDot('err');
           showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
         }
-        // Réécriture UNIQUE parts→descripteur (D2) : le tour vient de se
+        // Réécriture UNIQUE parts→descripteur : le tour vient de se
         // terminer (normalement OU avorté, cf. commentaire de
         // rewriteAttachedUserMessage) — le message user qui portait les
         // attachments de CE tour ne doit plus repartir en content parts au
@@ -3591,7 +3598,7 @@ async function dispatchSend(matches, continuation) {
         // assistant en TEXTE CLAIR, persisté — aucun tool_call/tool_result natif ne
         // subsiste. Au tour suivant le modèle relit l'échange en clair et agit
         // (« Oui » → memory__create + narration ; « Non » → rien).
-        // Réécriture parts→descripteur (D2) : la halte termine aussi le tour
+        // Réécriture parts→descripteur : la halte termine aussi le tour
         // pour le message user qui a pu porter des attachments.
         {
           const lastUserIdx = gen.thread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
@@ -3879,11 +3886,11 @@ async function summarizeIfNeeded(id) {
   });
 }
 
-// ── Description de fichier de bibliothèque d'espace (D7, lot Cbis) ─────────
+// ── Description de fichier de bibliothèque d'espace (lot Cbis) ─────────
 // Nommée « description », PAS « résumé » : le texte ne condense pas le
 // contenu, il décrit ce que le fichier EST (nature, sujets, structure) pour
 // que le modèle juge s'il doit l'ouvrir (files__read) — cf. FILE_DESCRIPTION_PROMPT.
-// Budget d'extraction pour un binaire routé via mcp_docs (proposition A5,
+// Budget d'extraction pour un binaire routé via mcp_docs (proposition confirmée,
 // confirmée) : suffisant pour une description ≤2 phrases via NOTHINK, sans
 // solliciter excessivement le modèle actif sur un document volumineux.
 const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
@@ -3943,10 +3950,10 @@ async function libraryDescriptionImage(record, isImage, scanned) {
   }
 }
 
-// Trigger à l'INGESTION (upload direct D2 path 1, promotion utilisateur D2
-// path 2), jamais un daemon — pas de queue/retry (D7 : dégradé, jamais
-// bloquant). PAS appelé pour la promotion modèle (D2 path 3, files__promote) :
-// la description y est déjà fournie par le modèle et stockée telle quelle (A3
+// Trigger à l'INGESTION (upload direct voie 1, promotion utilisateur
+// voie 2), jamais un daemon — pas de queue/retry (dégradé, jamais
+// bloquant). PAS appelé pour la promotion modèle (voie 3, files__promote) :
+// la description y est déjà fournie par le modèle et stockée telle quelle (arbitrage
 // confirmé), cette fonction ne s'applique qu'aux deux chemins SANS
 // description d'origine. Gouverné par le toggle describeFiles (défaut ON) —
 // no-op silencieux si OFF (pas de statut "désactivé" par carte, juste
@@ -3958,7 +3965,7 @@ async function libraryDescriptionImage(record, isImage, scanned) {
 // Lot V-9 — deux fichiers dont l'extraction texte ne donne RIEN par nature sont
 // désormais décrits par l'image plutôt que d'échouer : le PDF scanné (aucune
 // couche texte, `out.scanned` remonté par describePdfForLibrary) et l'image de
-// bibliothèque (le skip « v1, pas de modèle vision dédié » de D7 est levé — le
+// bibliothèque (le skip « v1, pas de modèle vision dédié » est levé — le
 // modèle actif est le même que celui qui décrit une page rendue en conversation
 // depuis V-8, il n'y a plus de raison de le tenir pour aveugle a priori).
 // C'est le MÊME principe qu'au lot V-8 (docs__render_page) : quand le texte
@@ -4129,7 +4136,7 @@ async function init() {
   }
 
   migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
-  activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space (A3) ; défaut DEFAULT_SPACE_ID
+  activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space ; défaut DEFAULT_SPACE_ID
   // Fire-and-forget (résolution après le premier rendu) : la pilule/l'inspecteur
   // calculés avant résolution ignorent la bibliothèque du Space, sous-évaluant le
   // total tant que ce .then() n'a pas rafraîchi le compteur (cf. commentaire de
@@ -4149,14 +4156,14 @@ async function init() {
   // (post-commit) ET écoute (handleSyncMessage → routeMessage →
   // applySyncDecision).
   syncOnMessage(handleSyncMessage);
-  // Soft-lock (J4) : à la fermeture/masquage de l'onglet, signaler best-effort
+  // Soft-lock : à la fermeture/masquage de l'onglet, signaler best-effort
   // qu'on lâche la conv affichée (les pairs retirent le bandeau). pagehide couvre
   // le cas mobile/bfcache où beforeunload ne tire pas ; les deux sont tolérés en
-  // double (le pair déduplique par tabId dans son set). Le TTL de J5 est le vrai
+  // double (le pair déduplique par tabId dans son set). Le TTL du relais readonly est le vrai
   // filet contre un crash sans événement ; ceci est l'accélérateur du cas propre.
   const onTabLeaving = function () {
-    // Best-effort : libérer le readonly des pairs si on générait (J5) AVANT de
-    // lâcher la conv (J4). stopGenerationRelay est idempotent et émet -ended ;
+    // Best-effort : libérer le readonly des pairs si on générait AVANT de
+    // lâcher la conv (soft-lock). stopGenerationRelay est idempotent et émet -ended ;
     // le TTL reste le filet si l'onglet meurt sans que ces events partent.
     stopAllGenerationRelays();
     if (currentConvId) announceConvClosed(currentConvId);

@@ -119,7 +119,7 @@ if (window.marked) {
 // rendu en texte barré NON cliquable plutôt qu'un lien mort — pas de
 // post-traitement DOM, juste du Markdown ~~...~~.
 // `opts.asPlainText` (défaut false, écran inchangé) : pour l'export standalone
-// (brief G, D3) où le lien `#miaou-conv:` ne résout jamais hors MIAOU — rend
+// (brief G, règles de contenu) où le lien `#miaou-conv:` ne résout jamais hors MIAOU — rend
 // le label nu au lieu d'un lien mort. Le tombstone `~~…~~` reste inchangé
 // (c'est du texte, pas un lien).
 function resolveConvRefs(text, opts) {
@@ -136,7 +136,7 @@ function resolveConvRefs(text, opts) {
   });
 }
 
-// Sanitisation du HTML issu de marked (campagne relecture 2026-07, A1) : le
+// Sanitisation du HTML issu de marked (campagne relecture 2026-07) : le
 // markdown du MODÈLE peut contenir du HTML inline (marked le laisse passer tel
 // quel) — sans sanitisation, un payload reproduit par le modèle depuis une
 // source hostile (page web lue par outil) s'exécuterait dans le DOM, avec
@@ -162,7 +162,7 @@ function renderUserMd(text) {
 }
 function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highlightAllUnder(el); }
 
-// ── Rendu Mermaid (lot E, D1) ────────────────────────────────────────────────
+// ── Rendu Mermaid (lot E) ────────────────────────────────────────────────
 // Lazy-load réel : Mermaid (~2,5 Mo minifié) n'est chargé qu'au premier bloc
 // ```mermaid rencontré, par injection dynamique de <script> — pattern DIFFÉRENT
 // de Prism (dont le cœur est un <script src> statique dans index.html), assumé :
@@ -216,7 +216,7 @@ function ensureMermaid() {
 // le global `window.QJS`, WASM RELEASE_SYNC (synchrone, Model 2) INLINÉ dans ce
 // fichier unique → un seul <script src>, 2 requêtes réseau totales, aucun fetch
 // .wasm séparé, aucun module ES au niveau source (contrainte dure MIAOU). Version
-// épinglée @0.32.0 comme Mermaid @11.12.0. Détail : AUDIT-L §Spike L0.
+// épinglée @0.32.0 comme Mermaid @11.12.0. Détail : AUDIT-L, section spike.
 const QUICKJS_CDN = 'https://cdn.jsdelivr.net/npm/quickjs-emscripten@0.32.0/dist/index.global.min.js';
 let _quickjsPromise = null;
 
@@ -434,7 +434,7 @@ function ensureMammoth() {
 
 // Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.
 // Appelée à la FINALISATION uniquement — finalizeAssistant et buildMsg, JAMAIS
-// streamInto (source partielle = flicker + erreurs de parse en cascade, D1).
+// streamInto (source partielle = flicker + erreurs de parse en cascade).
 // Fire-and-forget : les appelants n'attendent pas.
 // Architecture : le <pre> n'est JAMAIS détruit ; la vue rendue (.mermaid-view)
 // vit DANS le <pre> (précédent .code-head, div déjà insérée là par decoratePre)
@@ -1053,7 +1053,7 @@ function decoratePre(scope) {
   // Pictogramme « diagramme » (3 nœuds reliés) — toggle rendu ↔ source des
   // blocs mermaid. Métaphore réservée à cet usage (vocabulaire d'icônes).
   const svgDiagram = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M7.5 8.7 10.5 15.4"/><path d="M16.5 8.7 13.5 15.4"/><path d="M9 6h6"/></svg>`;
-  // Pictogramme « œil » — aperçu sandboxé des blocs html/svg (lot E, D2).
+  // Pictogramme « œil » — aperçu sandboxé des blocs html/svg (lot E, préviz sandboxée).
   // Métaphore réservée à cet usage (vocabulaire d'icônes).
   const svgEye = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
   // Pictogramme « page » — conversion d'un bloc markdown en page HTML (lot R).
@@ -1077,7 +1077,7 @@ function decoratePre(scope) {
       // Toggle mermaid : présent dès le décor (y compris pendant le streaming)
       // mais caché — révélé par renderMermaidUnder au premier rendu réussi.
       (isMermaidLang(lang) ? `<button class="code-mmd-toggle" title="Diagramme / source" hidden>${svgDiagram}</button>` : '') +
-      // Aperçu sandboxé (D2) : clic EXPLICITE uniquement, jamais automatique.
+      // Aperçu sandboxé : clic EXPLICITE uniquement, jamais automatique.
       (isPreviewableLang(lang) ? `<button class="code-preview-btn" title="Aperçu">${svgEye}</button>` : '') +
       // Conversion en page HTML (lot R) : même geste que le convertisseur des
       // réglages, appliqué au contenu du bloc. Markdown seulement.
@@ -1494,7 +1494,7 @@ const ACK_KINDS = {
       else build(el);
     },
   },
-  // Rappel d'une pièce jointe de message (miaou__recall_attachment, D4 brief A).
+  // Rappel d'une pièce jointe de message (miaou__recall_attachment, brief A).
   // Même posture que resource_presented (lecture, pas d'undo) mais lookup par
   // attId (conversation-scoped), pas id de ressource — cf. placeToolAck.
   // DEUX PRODUCTEURS pour ce kind, distingués par `origin` (lot V-8) :
@@ -1701,7 +1701,7 @@ const ACK_KINDS = {
   // Promotion d'une pièce jointe vers la bibliothèque (miaou__files__promote) :
   // informatif seulement, PAS d'undo — la promotion est déjà consent-gated en
   // amont (ask_confirmation, voie B), un undo ici confondrait consentement et
-  // réversibilité (brief D2 : « undo n'est pas consentement »).
+  // réversibilité (« undo n'est pas consentement »).
   file_promote: {
     destination: 'user',
     undo: null,
@@ -3206,14 +3206,14 @@ const PIN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 let _moveMode = false;
 let _moveSelection = new Set();
 
-// Déclenché par l'item du menu Space (D1). Pas de vérification ici sur le
+// Déclenché par l'item du menu Space. Pas de vérification ici sur le
 // nombre de Spaces disponibles : renderSpaceMenu masque déjà l'item si
 // loadSpaces().length < 2 (aucune destination possible).
 // Préselectionne la conversation actuellement affichée (si présente dans le
 // Space actif) : geste le plus probable en entrant en mode déplacement.
 function enterMoveMode() {
   _moveMode = true;
-  // EXCLURE DE LA PRÉSÉLECTION, PUIS GRISER — dans cet ordre (lot X-1, Q6).
+  // EXCLURE DE LA PRÉSÉLECTION, PUIS GRISER — dans cet ordre (lot X-1).
   // Une conversation dont un agent tourne ne peut pas être déplacée : son
   // enfant resterait dans l'ancien Espace, ce qui est exactement la violation
   // d'herméticité que le piège 18 interdit (un agent orphelin de référentiel).
@@ -3229,7 +3229,7 @@ function enterMoveMode() {
 }
 
 // Sortie du mode, quelle qu'en soit la cause (Cancel, move effectué, envoi
-// d'un message — D5). Un seul point de sortie, ré-utilisé partout : évite
+// d'un message). Un seul point de sortie, ré-utilisé partout : évite
 // la logique éparpillée que le brief proscrit explicitement.
 function exitMoveMode() {
   if (!_moveMode) return;
@@ -3255,7 +3255,7 @@ function convItemEl(c, convs) {
   el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
   el.onclick = () => selectConv(c.id);
   const checked = _moveSelection.has(c.id) ? ' checked' : '';
-  // Case GRISÉE si un agent de cette conversation tourne (lot X-1, Q6) :
+  // Case GRISÉE si un agent de cette conversation tourne (lot X-1) :
   // la déplacer laisserait son enfant dans l'ancien Espace — l'agent orphelin
   // de référentiel que le piège 18 interdit. `hasWorkingAgent` est LE prédicat,
   // le même que celui de l'exclusion de présélection (enterMoveMode) et de la
@@ -3377,7 +3377,7 @@ function renderConvList() {
   }
 }
 
-// Barre contextuelle (D4) : n'apparaît qu'à ≥1 conversation cochée, en mode
+// Barre contextuelle de destination : n'apparaît qu'à ≥1 conversation cochée, en mode
 // sélection. Reconstruite à chaque changement de sélection (toggleConvSelection)
 // ou de mode (enterMoveMode/exitMoveMode) — coût négligeable, pas d'état DOM
 // à préserver entre deux renders (cfgPillSelect est reconstruit avec la même
@@ -3747,22 +3747,22 @@ function setSending(on, stopping) {
   const retitleBtn = document.querySelector('.conv-retitle-btn');
   if (retitleBtn) retitleBtn.disabled = on;
   syncLastAssistantActions();   // le bouton régénérer disparaît pendant un stream
-  // Readonly relay (lot J, J5) : PLUS piloté ici depuis T-1a. `sending` n'est
+  // Readonly relay (lot J) : PLUS piloté ici depuis T-1a. `sending` n'est
   // qu'un reflet de l'écran (« la conv AFFICHÉE génère-t-elle ? ») et change
   // aussi sur un simple changement de conversation — il ne peut donc plus
   // servir de point d'appariement -started/-ended. Le relais suit désormais le
   // cycle de vie de la génération (registerGeneration/unregisterGeneration,
   // main.js), qui reste un point de fin unique par conversation.
-  // Le drain des actions de synchro différées (lot J, J3) n'est PLUS déclenché
+  // Le drain des actions de synchro différées (lot J) n'est PLUS déclenché
   // ici depuis T-1a : setSending change aussi sur un simple changement de
   // conversation, ce qui drainerait alors qu'une génération mute encore un
   // thread. Il suit désormais la fin d'une génération (unregisterGeneration).
 }
 
-// Readonly cross-onglets (lot J, J5) : un pair génère sur la conv affichée →
+// Readonly cross-onglets (lot J) : un pair génère sur la conv affichée →
 // verrouiller les entrées et mutations LOCALES (composer, édition, suppression,
 // régénération) pour empêcher une seconde génération concurrente silencieuse.
-// Lecture + scroll restent permis (A6). Piloté par une classe sur <body>
+// Lecture + scroll restent permis. Piloté par une classe sur <body>
 // (.conv-readonly, CSS dans composer.css) + désactivation directe du composer.
 // Indépendant de `sending` (état local de génération) : ne PAS s'appuyer sur lui.
 // À la levée, on restaure l'état du composer via son seul déterminant hors
@@ -4077,7 +4077,7 @@ function attIconSvg() {
 
 // Construit le markup d'un chip d'attachment. `removable` (composer, pré-envoi)
 // ajoute le bouton de retrait ; sinon (bulle envoyée) chip en lecture seule
-// SAUF pour l'action de promotion (D2 path 2, lot Cbis), qui n'est pertinente
+// SAUF pour l'action de promotion (voie 2, lot Cbis), qui n'est pertinente
 // que pour un attachment déjà envoyé (a un conversationId stable) — d'où
 // `conversationId` optionnel en dernier paramètre, absent pour le composer.
 // `thumbSrc` (optionnel) : data URL de vignette déjà résolue par l'appelant
@@ -4161,10 +4161,10 @@ function openAttachmentInTab(record) {
 }
 
 // Promotion utilisateur d'un attachment de message vers la bibliothèque de
-// l'espace actif (D2 path 2, lot Cbis) : action explicite en un clic, PAS de
+// l'espace actif (voie 2, lot Cbis) : action explicite en un clic, PAS de
 // gate (contrairement à la promotion modèle — c'est déjà un consentement).
 // Copie bytes+méta ; l'attachment d'origine reste intact (mêmes sémantiques
-// que la promotion modèle, storeLibraryFile). Description absente (D7 la
+// que la promotion modèle, storeLibraryFile). Description absente (le trigger la
 // génère séparément si le toggle est actif) ; `source` = conversationId
 // d'origine.
 async function promoteAttachmentToLibrary(btn, attId, conversationId) {
@@ -4179,7 +4179,7 @@ async function promoteAttachmentToLibrary(btn, attId, conversationId) {
   if (stored) {
     btn.classList.add('done');
     btn.title = 'Ajouté à la bibliothèque de l\'espace';
-    // Trigger D7 fire-and-forget : aucun écran Space ouvert ici pour afficher un
+    // Trigger de description fire-and-forget : aucun écran Space ouvert ici pour afficher un
     // statut par carte (l'utilisateur est dans une conversation) — la
     // description, si elle aboutit, sera visible à la prochaine ouverture de
     // l'écran Space.
@@ -4558,7 +4558,7 @@ function cmdkModeItems(query) {
   return [];
 }
 
-// Submode « recherche conversation » : CROSS-Space (décision Julien D2), mais
+// Submode « recherche conversation » : CROSS-Space (décision Julien), mais
 // les conversations du Space actif passent en tête même à score inférieur
 // (rankConvResults). Réutilise le prédicat de la sidebar (searchConversations)
 // pour la logique de match (titre/résumé/contenu) ; score léger local (titre =
@@ -4721,7 +4721,7 @@ function closeCommandPalette() {
   cancelCmdkContentScan();
   const overlay = $('cmdk-overlay');
   if (overlay) overlay.hidden = true;
-  // Restaure le focus au composer (brief D3). Fallback : élément focus avant.
+  // Restaure le focus au composer. Fallback : élément focus avant.
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
   else if (_cmdkFocusBefore && typeof _cmdkFocusBefore.focus === 'function') _cmdkFocusBefore.focus();
@@ -5825,7 +5825,7 @@ const CTX_PALETTE = {
   thread: '#4a90d9', attachment_images: '#d9974a',
 };
 
-// Manifeste effectif (B4) : dernier envoi réel s'il existe, sinon simulation
+// Manifeste effectif : dernier envoi réel s'il existe, sinon simulation
 // à froid. Ne recalcule PAS depuis zéro à chaque appel du compteur : la
 // simulation est bon marché (fonctions pures déjà utilisées à l'envoi), mais
 // PAS de polling — appelée seulement aux points de l'audit (send, switch conv,
@@ -5834,14 +5834,14 @@ function effectiveContextManifest() {
   return _lastContextManifest || computeContextManifestNow();
 }
 
-// Compteur compact du composer (D4). Câblé aux points send-relevant (audit
-// §5b), jamais à l'oninput du textarea (brief B3, draft exclu v1).
+// Compteur compact du composer. Câblé aux points send-relevant (audit
+// §5b), jamais à l'oninput du textarea (draft exclu v1).
 function syncContextCounter() {
   const el = $('ctx-counter-label');
   if (!el) return;
   const m = effectiveContextManifest();
   const win = contextWindowFor(activeModel());
-  // Pilule = photo du dernier envoi réel (Bbis, décision A5) : sans `≈` quand
+  // Pilule = photo du dernier envoi réel (lot Bbis) : sans `≈` quand
   // l'usage API a calibré le manifeste (m.real), avec `≈` sinon (estimé
   // chars/4 — simulation à froid TOUJOURS estimée, apiUsage y est null).
   let label = (m.real ? '' : '≈ ') + m.totalTokens + ' tok';
@@ -6362,7 +6362,7 @@ function renderContextInspector() {
   const body = $('ctx-table-body');
   if (body) {
     // Lignes toujours `≈` (ventilation par bloc jamais mesurée par l'API,
-    // même proratisée) ; seul le TOTAL perd le `≈` quand m.real (Bbis A2).
+    // même proratisée) ; seul le TOTAL perd le `≈` quand m.real (lot Bbis).
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
@@ -6516,7 +6516,7 @@ function closeTools() {
   $('tools-backdrop').classList.remove('show');
 }
 
-// Sous-drawer « Voir les outils exposés » : groupé par namespace (cf. D2), nom NU
+// Sous-drawer « Voir les outils exposés » : groupé par namespace, nom NU
 // affiché sous l'en-tête du préfixe. Projection pure du nom canonique — rien n'est
 // stocké : groupByNamespace splitte sur le 1er `__`. ask_confirmation (hors
 // registre mais déclaré au modèle) est ajouté sous le namespace miaou pour info.
@@ -6624,13 +6624,13 @@ function buildToolItem(bareName, def) {
   return item;
 }
 
-// ── Spaces / « Espaces » (sélecteur sidebar + écran, lot C, brief D5) ────────
+// ── Spaces / « Espaces » (sélecteur sidebar + écran, lot C) ────────
 // Sélecteur pilule + .model-menu générique (règle projet : jamais de <select>
 // natif), pattern le plus proche du sélecteur de modèle composer. Chaque ligne
 // bascule le Space actif au clic ; un petit bouton crayon ouvre l'écran Space
 // (renommage, description, souvenirs, suppression) sans changer de Space.
 
-// Libellé pilule + badge topbar (masqué en default Space, brief D5) — à
+// Libellé pilule + badge topbar (masqué en default Space) — à
 // appeler après tout changement de Space actif ou de nom de Space.
 function syncSpaceUI() {
   const space = getSpace(activeSpaceId) || { name: 'Général' };
@@ -6705,7 +6705,7 @@ function syncActivityBadges() {
     if (!dot) { dot = activityBadgeEl(null); trigger.insertBefore(dot, trigger.querySelector('.chev')); }
     applyActivityBadge(dot, aggregateBadgeState(activeSpaceId));
   }
-  // Hamburger : agrège TOUT, Espace actif compris (B6). Seul indicateur
+  // Hamburger : agrège TOUT, Espace actif compris. Seul indicateur
   // disponible sidebar repliée — il dit « il y a quelque chose à voir
   // là-dedans ». Sidebar OUVERTE, il s'efface : l'information est alors lisible
   // à sa source (liste de gauche, sélecteur), la redonder au point d'entrée
@@ -6793,7 +6793,7 @@ function renderSpaceMenu() {
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
-    // Pastille par ligne d'Espace : la RÈGLE EST UNIQUE (B5) — chaque Espace
+    // Pastille par ligne d'Espace : la RÈGLE EST UNIQUE — chaque Espace
     // effectivement concerné la porte. « Déplacement » et « dédoublement » ne
     // sont pas deux traitements au choix mais les deux apparences de cette même
     // règle selon le nombre d'Espaces concernés.
@@ -6822,7 +6822,7 @@ function renderSpaceMenu() {
   newOpt.onmousedown = (ev) => { ev.preventDefault(); menu.classList.remove('show'); createSpaceAndOpen(); };
   menu.appendChild(newOpt);
 
-  // Déclencheur du mode déplacement (D1, brief Cter) : masqué sans destination
+  // Déclencheur du mode déplacement (brief Cter) : masqué sans destination
   // possible (un seul Space = rien à déplacer vers) ou sans rien à déplacer
   // (Space actif vide — spec Julien, 2026-07-09). Après « + Nouvel espace »
   // (décision Julien, 2026-07-07), pour ne pas perturber le geste de création.
@@ -6844,7 +6844,7 @@ function pickSpace(id) {
   if (id === activeSpaceId) { $('space-menu').classList.remove('show'); return; }
   // Changer de Space actif pendant une sélection en cours vide la sélection
   // (décision Cter, 2026-07-07) : sortir du mode est le geste le plus sûr,
-  // symétrique à D5 (changer d'intention met fin au mode sélection).
+  // symétrique à la sortie du mode sélection (changer d'intention met fin au mode sélection).
   exitMoveModeIfActive();
   const leaving = currentConvId;
   activeSpaceId = id;
@@ -6867,7 +6867,7 @@ function pickSpace(id) {
   if (isMobileLayout()) closeSidebarMobile();
 }
 
-// Variante de pickSpace pour le « follow » post-déplacement (D6, brief Cter) :
+// Variante de pickSpace pour le « follow » post-déplacement (brief Cter) :
 // bascule la vue vers le Space destination SANS vider le fil affiché — utilisée
 // uniquement quand la conversation ouverte fait partie du lot déplacé (sinon
 // aucun follow n'a lieu, cf. audit §3). Pas de summarizeIfNeeded(leaving) : on
@@ -7015,9 +7015,9 @@ async function syncSpaceDeleteLabel(id) {
   btn.textContent = await spaceDeleteLabel(id);
 }
 
-// Suppression D6 : arm-then-run (même pattern que la poubelle sidebar),
+// Suppression d'un Space : arm-then-run (même pattern que la poubelle sidebar),
 // cascade = boucle deleteConv sur les conversations du Space + purge des
-// souvenirs scopés + purge des fichiers de bibliothèque (lot Cbis, D5) ; les
+// souvenirs scopés + purge des fichiers de bibliothèque (lot Cbis) ; les
 // souvenirs profile restent intacts. Le default Space n'a pas de bouton
 // (masqué dans openSpaceScreen) — rien à protéger ici.
 async function onDeleteSpaceScreen() {
@@ -7052,7 +7052,7 @@ async function onDeleteSpaceScreen() {
   }, label);
 }
 
-// ── Sous-drawer « Serveurs MCP » (cartes éditables, cf. D3) ───────────────────
+// ── Sous-drawer « Serveurs MCP » (cartes éditables) ───────────────────
 function openMcpServers() {
   renderMcpServers();
   $('mcp-drawer').classList.add('show');
@@ -7126,7 +7126,7 @@ function renderMcpServers() {
 }
 
 // Ajoute une carte vierge (nouveau serveur) en tête de liste, transport deviné
-// au fil de la saisie d'URL (pré-remplissage, jamais override — cf. D4).
+// au fil de la saisie d'URL (pré-remplissage, jamais override).
 function addMcpServerCard() {
   const wrap = $('mcp-list');
   if (!wrap) return;
@@ -7375,7 +7375,7 @@ function buildMcpCard(server, isNew) {
   // Transport : dropdown pilule custom (cfgPillSelect — pas de <select> natif).
   // La valeur vit dans l'input hidden .mcp-transport, lu tel quel par
   // onSaveMcpCard. Choix explicite → marqué « touché » : la devinette d'URL
-  // ne l'écrase jamais (D4) ; serveur existant → touché d'office.
+  // ne l'écrase jamais ; serveur existant → touché d'office.
   const transport = cfgPillSelect('mcp-transport', [
     { value: 'streamable-http', label: 'streamable-http' },
     { value: 'sse', label: 'sse' },
@@ -7588,7 +7588,7 @@ function buildApiCard(server, isNew, isActive) {
   editSection.appendChild(cfgField('Modèle par défaut', modelAnchor,
     'Choisissez parmi les modèles exposés par l\'API.'));
 
-  // Flag vision manuel (D5, brief A2) : mitigation du silent-failure Ollama
+  // Flag vision manuel (brief A2) : mitigation du silent-failure Ollama
   // (un modèle sans projecteur vision accepte l'image sans erreur puis lit le
   // placeholder [img-0] comme du texte). Réglé par (serveur, modèle courant) ;
   // « Sans vision » remplace proactivement les parts image par un descripteur.
@@ -8125,9 +8125,9 @@ function clearComposerError() {
   if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
-// ── Cascade de rendu des blocs NON-text d'un résultat d'outil distant (D8) ────
+// ── Cascade de rendu des blocs NON-text d'un résultat d'outil distant ────
 // Placés DANS la bulle assistant, avant le corps (comme les acks). Éphémères :
-// jamais persistés (cf. D8), disparaissent au reload. DOM-safe : textContent ou
+// jamais persistés, disparaissent au reload. DOM-safe : textContent ou
 // attributs (img src en data-URI) ; aucun markup modèle injecté en innerHTML.
 function placeToolBlocks(wrap, blocks) {
   const body = wrap && wrap.querySelector('.body');
@@ -8268,7 +8268,7 @@ function setMemItemLoading(item, label) {
 }
 
 // ── Souvenirs utilisateur (onglet Souvenirs du drawer combiné = profile ;
-//    écran Space = scope de ce Space, brief D5 lot C) ────────────────────────
+//    écran Space = scope de ce Space, lot C) ────────────────────────
 // Paramétrée conteneur + scope (au lieu de dupliquer, cf. audit §7) :
 // `containerId` = id de l'élément conteneur ; `scope` = 'profile' (défaut,
 // drawer réglages) ou un spaceId (écran Space, promotion disponible en plus).
@@ -8354,7 +8354,7 @@ function deleteMemoryEntry(id, containerId, scope) { suppressMemory(id); renderM
 function restoreMemoryEntry(id, containerId, scope) { restoreMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
 function forgetMemoryEntry(id, containerId, scope) { forgetMemory(id); renderMemoryList(containerId, scope); if (_spaceScreenId === scope) syncSpaceDeleteLabel(scope); }
 
-// Promotion Space → profile (UI-only, brief D3/D5) : réécrit le scope en
+// Promotion Space → profile (UI-only, lot C) : réécrit le scope en
 // place, pas de nouvelle entrée. Démotion volontairement absente en v1 (cf.
 // docs/spaces.md, non-goal) — décision à revalider avec Julien si demandée.
 function promoteMemoryEntry(id, containerId, scope) {
@@ -8366,7 +8366,7 @@ function promoteMemoryEntry(id, containerId, scope) {
   renderMemoryList(containerId, scope);
 }
 
-// ── Bibliothèque de fichiers d'espace (D6, lot Cbis) ─────────────────────────
+// ── Bibliothèque de fichiers d'espace (lot Cbis) ─────────────────────────
 // Frère de renderMemoryList : composants de carte réutilisés (mem-item/
 // mem-header/mem-sub/mem-excerpt, drawers.css), pas de duplication de style.
 // Async (getResourcesBySpace lit IDB) — appelée fire-and-forget par
@@ -8414,7 +8414,7 @@ async function renderSpaceFilesList(spaceId) {
   }
 }
 
-// Statut de description par carte (D7) : « description en cours… » pendant le
+// Statut de description par carte : « description en cours… » pendant le
 // calcul, puis contenu (done) ou message d'échec discret (failed) — précédent
 // setMemItemLoading, mais ciblé sur les deux zones (excerpt + bouton) plutôt
 // qu'un seul bouton, pour afficher le résultat sans re-render complet.
@@ -8482,12 +8482,12 @@ function onSpaceFilesUploadClick() {
   if (input) { input.value = ''; input.click(); }
 }
 
-// Upload direct (D2 path 1) : mêmes caps que le composer (ingestLibraryFile,
+// Upload direct (voie 1) : mêmes caps que le composer (ingestLibraryFile,
 // main.js), mais aucune notion d'attId/conversation ici — chaque fichier
 // rejoint directement la bibliothèque du Space actif (onglet sidebar,
 // indépendant de l'écran Space qui peut être fermé). Chemin d'ingestion UNIQUE
 // des deux entrées utilisateur (bouton « Ajouter un fichier » et drag&drop sur
-// le panneau) : une seule séquence ingestion → re-render → trigger D7.
+// le panneau) : une seule séquence ingestion → re-render → trigger de description.
 async function ingestLibraryFiles(fileList) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
@@ -8500,7 +8500,7 @@ async function ingestLibraryFiles(fileList) {
   }
   await renderSpaceFilesList(spaceId);
   if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
-  // Trigger D7 après le re-render (statut par carte visible dès le premier tick) :
+  // Trigger de description après le re-render (statut par carte visible dès le premier tick) :
   // fire-and-forget, chaque fichier indépendant (pas de blocage séquentiel).
   for (const rec of stored) {
     describeFileIfNeeded(rec.id, (status) => {
@@ -8544,7 +8544,7 @@ function onSpaceFilesDrop(e) {
 }
 
 // Suppression d'un fichier de bibliothèque : arm-then-run (même pattern que
-// la poubelle sidebar/mémoire), pas de tombstone — le brief D6 ne prévoit pas
+// la poubelle sidebar/mémoire), pas de tombstone — le brief ne prévoit pas
 // de restauration (non-goal v1, mirror de C).
 function onDeleteSpaceFile(btn, id, spaceId) {
   armThenRun(btn, async () => {
@@ -8758,7 +8758,7 @@ function serializeThemeTokens() {
 // Copie figée de prism-tomorrow.min.css (thème Prism dark chargé depuis le
 // CDN, cf. index.html) + les overrides Prism clair de theme-light.css.
 // Dette assumée (docs/exports.md) : à resynchroniser si le thème Prism CDN
-// change. Pas de <link> CDN dans l'export (D1, zéro-JS) : les <span> de
+// change. Pas de <link> CDN dans l'export (zéro-JS) : les <span> de
 // tokens sont pré-générés par Prism.highlightAllUnder à l'export (voie B),
 // ce CSS leur donne juste leurs couleurs.
 const PRISM_THEME_CSS =
@@ -9077,7 +9077,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 @media print { .theme-switch-label { display: none; } }
 `;
 
-// Script inline OPTIONNEL de l'export (progressive enhancement, D1 révisé —
+// Script inline OPTIONNEL de l'export (progressive enhancement, zéro-JS révisé —
 // brief G). Injecté seulement si settings.exportInteractive (défaut true) via
 // scriptTag ; absent, l'export reste strictement statique. Autonome : l'export
 // n'a AUCUN global MIAOU (downloadFile, sanitizeDownloadName, LANG_TO_EXT
@@ -9214,7 +9214,7 @@ const EXPORT_SCRIPT = `
 // composé par l'appelant (tokens runtime non purs), buildExportHtml se
 // contente de l'insérer. scriptTag est composé par l'appelant (vide si
 // settings.exportInteractive est false → export strictement statique, ou
-// <script>EXPORT_SCRIPT</script> sinon — progressive enhancement, D1 révisé
+// <script>EXPORT_SCRIPT</script> sinon — progressive enhancement, zéro-JS révisé
 // brief G). Zéro <link> (Prism inliné, pas de CDN).
 // Icônes de la bascule de thème des exports. Les DEUX sont dans le markup ;
 // le CSS n'en montre qu'une selon l'état de la case (soleil quand on est en
@@ -9703,7 +9703,7 @@ async function exportConvHtml() {
     const bodyHtml = await runBackgroundTask('export HTML…',
       () => renderExportBody(currentThread, currentConvId));
     if (bodyHtml == null) return;
-    // Script optionnel (progressive enhancement, D1 révisé). Échappement défensif
+    // Script optionnel (progressive enhancement, zéro-JS révisé). Échappement défensif
     // de </ pour ne pas clore prématurément le <script> porteur (même parade que
     // build.py sur __MIAOU_CONFIG__), même si EXPORT_SCRIPT n'en contient pas.
     const s = loadSettings();

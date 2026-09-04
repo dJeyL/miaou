@@ -488,7 +488,7 @@ Accroché au chemin nominal, ce chemin ne notifierait **personne** : le parent
 attendrait indéfiniment un réveil qui ne vient pas, pastille pulsante à l'appui —
 précisément ce que la section badges déclare « pire que pas de pastille ».
 
-### La forme du message (Q1)
+### La forme du message
 
 Un **message user authentique** (persisté, visible), portant un champ
 `agentResult` qui gouverne **l'affichage seulement** — jamais le routage (ligne
@@ -951,7 +951,7 @@ Un agent rechargé (aucun statut, aucune génération) retombe sur `aborted` : l
 fil est fermé, ce qui est correct — il ne repartira jamais.
 
 **Deux causes composées, un seul setter.** `applyReadonlyState()` (main.js)
-compose `_peersGenerating.size > 0` (readonly cross-onglets, J5 — cause
+compose `_peersGenerating.size > 0` (readonly cross-onglets — cause
 TEMPORAIRE) et `isFinishedAgentConv(currentConvId)` (cause DÉFINITIVE). C'est la
 discipline de `refreshTabBanner` juste à côté, et pour la même raison :
 `setConvReadonly` est un setter booléen, deux appelants qui poseraient chacun
@@ -961,7 +961,7 @@ le composer d'un agent terminé.
 **Trois points de synchronisation** : `openConversation` (on affiche un agent
 déjà fini), `refreshAgentBadges` (l'agent finit **sous les yeux** de
 l'utilisateur, qui le regardait travailler) et `resetPeerState` (déjà câblé pour
-la cause J5). Le premier et le deuxième sont ceux que X-1e ajoute.
+la cause readonly cross-onglets). Le premier et le deuxième sont ceux que X-1e ajoute.
 
 **Ce qui reste permis** : lecture, scroll, et le **retour au parent** — le
 readonly ne neutralise que les MUTATIONS, et `.conv-parent-btn` est

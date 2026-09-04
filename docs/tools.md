@@ -11,7 +11,7 @@ vingt-huit.
 **Lecture de l'historique :**
 - `conv__get(id, with_contents=false)` — lit l'**index des résumés**
   (`getSummaryEntry`). Introuvable si pas d'entrée ou tombstone. **Herméticité
-  des Spaces (brief D2, lot C)** : une conversation d'un autre Space que
+  des Spaces (brief C, herméticité)** : une conversation d'un autre Space que
   `activeSpaceId` répond le même message « Conversation introuvable ou
   souvenir supprimé. » — pas d'oracle qui distinguerait « hors-Space » de
   « n'existe pas ». Un résumé orphelin (conversation supprimée) vaut default
@@ -31,7 +31,7 @@ vingt-huit.
 **Écriture directe de souvenirs (chemin direct — instruction explicite) :**
 - `memory__create(content)` — écrit immédiatement dans `miaou-memories`, retourne
   l'identifiant généré (utile pour un `memory__update` ultérieur dans le même
-  échange). **Stampe `scope = activeSpaceId`** (brief D3) : aucun paramètre
+  échange). **Stampe `scope = activeSpaceId`** (brief C, souvenirs) : aucun paramètre
   `scope` exposé au modèle, toujours le Space actif — jamais `'profile'`
   (promotion réservée à une action UI).
 - `memory__update(id, content)` — correction in-place, pas de tombstone.
@@ -47,7 +47,7 @@ vingt-huit.
   délégué à `placeToolAck` (même chemin live et reload via IDB). Renvoie une erreur
   textuelle si l'id est inconnu du cache session.
 
-**Rappel de pièce jointe (brief A, lot 3, D4) :**
+**Rappel de pièce jointe (brief A, lot 3) :**
 - `recall_attachment(ref)` — `ref` = `att-N` (id conversation-scopé d'une pièce
   jointe de message, cf. `docs/storage.md`). Handler **synchrone**, lookup
   `getCachedRecordByAttId(ref, currentConvId)` (resources.js — même session
@@ -56,7 +56,7 @@ vingt-huit.
   vs `res_...`), paramètre `ref` (pas `id`) — collision de nom évitée
   volontairement (décision actée lot 2, cf. handover). Comportement par
   `kind` du record : **image** → **les pixels SONT ré-injectés au modèle**
-  (brief A2 / D3, voie (b) validée par probe le 2026-07-05 : la voie (a) — part
+  (brief A2, canal de retour — voie (b) validée par probe le 2026-07-05 : la voie (a) — part
   image dans le message `role:'tool'` — transmet bien les pixels sur Ollama mais
   **confabule silencieusement** quand la part est strippée ; la voie (b) échoue
   honnêtement « AUCUNE IMAGE », d'où le choix). Le handler renvoie un tool result
@@ -89,7 +89,7 @@ vingt-huit.
   `ATTACHMENT_DOCTRINE` (tools.js, partie de `ROOT_SYSTEM_PROMPT`) : distincte de
   `BINARY_DOCTRINE` (qui couvre les ressources produites par un outil, pas les
   fichiers attachés par l'utilisateur). Elle est calée sur l'implémentation
-  réelle : fichier texte → contenu toujours inline (D3, ne jamais rappeler) ;
+  réelle : fichier texte → contenu toujours inline (ne jamais rappeler) ;
   image → rappel qui **ré-injecte les pixels** dans le contexte (et ré-affiche à
   l'utilisateur), interdiction de décrire une image « de mémoire » sans l'avoir
   rappelée ; binaire → descripteur seul.
@@ -225,7 +225,7 @@ vingt-huit.
     `res_…` binaire (lot K §4.1) — mais tout `res_…` binaire est injectable, pas
     seulement web. Détail complet : `docs/mcp.md` point 13bis.
 
-**Promotion vers la bibliothèque d'espace (lot Cbis, D2 path 3, écriture
+**Promotion vers la bibliothèque d'espace (lot Cbis, voie 3 d'ingestion, écriture
 model-side unique sur la bibliothèque) :**
 - `files__promote(ref, description, name?)` — copie un contenu dans la
   bibliothèque du Space actif. **Deux familles de `ref` acceptées (lot V)** :
@@ -257,7 +257,7 @@ model-side unique sur la bibliothèque) :**
   `ref` inconnu/périmé → « Fichier introuvable. » (même posture no-oracle que
   `files__read`). Copie = nouveau record `kind:'library'`, `source =
   currentConvId` (provenance) ; l'attachment ou la ressource d'origine reste
-  intact (D2 semantics). Pousse un ack `file_promote` (informatif, **pas
+  intact (sémantique d'ingestion). Pousse un ack `file_promote` (informatif, **pas
   d'undo** — la promotion est déjà consent-gated en amont, un undo confondrait
   consentement et réversibilité).
 - **Consentement — voie B, PAS de généralisation du halting (décision Cbis-4,
@@ -924,7 +924,7 @@ cross-turn** (`expandThread` ne réinjecte que les acks porteurs d'`args`) : au 
 suivant le modèle ne voyait plus qu'il avait essayé et raté, ce qui l'invitait à
 retenter à l'identique. Corollaire réglé au passage : `onEnrichLastAck`
 (sans `minLength`) enrichissait alors l'ack de l'outil **précédent** du même tour
-avec les `name`/`args`/`result` de l'outil échoué — même famille que le piège B5.
+avec les `name`/`args`/`result` de l'outil échoué — même famille que la garde de réentrance.
 
 Deux nuances à connaître avant d'ajouter un site d'échec :
 
@@ -1051,7 +1051,7 @@ Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au re
   l'`await`, si `isError`, `callRemoteTool` pose `ackEntry.error = true` sur le même
   objet ; `onToolAcks()` le détecte et rétro-applique la classe `.ack-error` + remet
   à jour le label DOM. En pratique : `onEarlyAcks` pour les pré-acks MCP ;
-  `onToolAcks` pour les acks internes + la mise à jour d'erreur MCP + les blocs D8
+  `onToolAcks` pour les acks internes + la mise à jour d'erreur MCP + les blocs non-text
   (cf. `docs/mcp.md`).
 - **Payload API — `expandThread(currentThread)`** (utils.js, pur, testé QuickJS).
   Remplace l'ancien filtre `!isAckRole`. Acks **enrichis** (champs `args` +

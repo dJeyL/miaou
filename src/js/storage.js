@@ -34,7 +34,7 @@ const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si s
 // la lecture des réglages : le défaut se résout dans DEFAULT_SETTINGS et non
 // dans loadSettings, contrairement à `url`/`model`.
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;   // défaut true
-// Bornes d'agents (lot X-1, Q3). Deux bornes, pas une — un refus doit pouvoir
+// Bornes d'agents (lot X-1). Deux bornes, pas une — un refus doit pouvoir
 // NOMMER laquelle est atteinte : « 3 agents déjà sur cette conversation » et
 // « 5 agents au total » appellent des gestes différents du parent (attendre l'un
 // des siens, ou constater que la machine est saturée). Motif exact de
@@ -73,7 +73,7 @@ const BUILD_CHAT_TEMPERATURE = (typeof BUILD_CONFIG.chat_temperature === 'number
 // Fenêtre de contexte par défaut (tokens) si l'utilisateur n'a rien saisi dans
 // les réglages (`contextWindow` reste '' — cf. DEFAULT_SETTINGS ci-dessous) :
 // permet de fournir une valeur d'installation sans forcer chaque utilisateur à
-// la ressaisir (brief B, D5 complété). 0 = pas de défaut de build (comportement
+// la ressaisir (brief B, complété). 0 = pas de défaut de build (comportement
 // v1 inchangé, `contextWindowFor` renvoie null).
 const BUILD_DEFAULT_CONTEXT_WINDOW =
   (typeof BUILD_CONFIG.default_context_window === 'number') ? BUILD_CONFIG.default_context_window : 0;
@@ -99,7 +99,7 @@ const BUILD_DEFAULT_CONTEXT_WINDOW =
 // valeur calibrée pour un Ollama local — sans cette clé, la tentation face à un
 // faux positif serait de retirer la garde, ce que le piège 10 interdit.
 const STREAM_IDLE_TIMEOUT_MS = (typeof BUILD_CONFIG.stream_idle_timeout_s === 'number') ? BUILD_CONFIG.stream_idle_timeout_s * 1000 : 180000;
-// Timeout par défaut d'un appel MCP distant (cf. D3/D5). Reste surchargeable
+// Timeout par défaut d'un appel MCP distant. Reste surchargeable
 // PAR SERVEUR dans l'UI : cette clé ne fixe que le défaut proposé, qui dépend
 // du parc MCP déployé.
 const MCP_DEFAULT_TIMEOUT = (typeof BUILD_CONFIG.mcp_default_timeout_s === 'number') ? BUILD_CONFIG.mcp_default_timeout_s * 1000 : 30000;
@@ -134,9 +134,9 @@ const DEFAULT_SETTINGS = {
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   colWidth: 0,             // largeur de la colonne centrale : index dans COL_WIDTH_STEPS (ui.js), 0 = la plus étroite
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
-  contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
-  describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (D7, lot Cbis)
-  exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (D1 révisé, brief G)
+  contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B)
+  describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (lot Cbis)
+  exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (zéro-JS révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
   earlyTitle: BUILD_EARLY_TITLE, // titrer dès l'envoi, sans attendre la fin de l'échange (lot AA)
   // Retitrer en fin d'échange (niveau 3) même quand le titrage précoce a
@@ -183,7 +183,7 @@ function saveSettings(obj) {
   return next;
 }
 
-// Accesseur isolé (brief B, D5) : champ global unique en v1 (`model` ignoré),
+// Accesseur isolé (brief B) : champ global unique en v1 (`model` ignoré),
 // signature prête pour une future map (serveur, modèle) sans toucher les
 // call-sites. `null`/vide = inconnu.
 function contextWindowFor(model) {
@@ -198,7 +198,7 @@ function contextWindowFor(model) {
 //   { id, name, url, key, model }
 // `id` (pas `name`) est la clé d'identité : contrairement aux serveurs MCP, on
 // veut pouvoir renommer une carte sans perdre la référence "actif" persistée
-// séparément. Le token est stocké EN CLAIR, même posture assumée qu'en D6 (MCP).
+// séparément. Le token est stocké EN CLAIR, même posture non-prod assumée que pour MCP.
 const API_SERVERS_KEY = 'miaou-api-servers';
 const ACTIVE_API_SERVER_KEY = 'miaou-active-api-server';
 
@@ -242,9 +242,9 @@ function saveApiServers(arr) {
 
 function normalizeApiServer(s) {
   const o = s || {};
-  // `vision` : map { [nomModèle]: false } — flag MANUEL D5 (brief A2). Seule la
+  // `vision` : map { [nomModèle]: false } — flag MANUEL (brief A2). Seule la
   // valeur `false` est signifiante (« ce modèle sur ce serveur n'a pas la
-  // vision » — mitigation du silent-failure Ollama F1, aucun 400 renvoyé).
+  // vision » — mitigation du silent-failure Ollama, aucun 400 renvoyé).
   // Absence d'entrée = inconnu = on envoie les parts image (comportement par
   // défaut). Distinct du cache SESSION _visionRejected (api.js, réactif sur 400,
   // non persisté) : ici c'est un réglage utilisateur persisté. On ne conserve
@@ -276,7 +276,7 @@ function listSelectableApiServers() {
   return loadApiServers().filter(s => !s.disabled && (s.url || '').trim());
 }
 
-// Flag vision manuel (D5) pour un couple (serveur, modèle). Pur, testable.
+// Flag vision manuel pour un couple (serveur, modèle). Pur, testable.
 // Retourne `false` SEULEMENT si l'utilisateur a explicitement marqué ce modèle
 // sans vision sur ce serveur ; sinon `true` (défaut : on envoie les images).
 // N.B. « true » ici = « envoyer les parts », pas « vision confirmée » : l'état
@@ -345,17 +345,17 @@ function activeApiConfig() {
 }
 
 // ── Serveurs MCP distants ─────────────────────────────────────────────────────
-// Configuration des backends MCP délégués (cf. brief D3). Tableau d'objets :
+// Configuration des backends MCP délégués (brief de délégation MCP). Tableau d'objets :
 //   { name, url, transport, enabled, authorization_token?, timeout,
 //     toolAllowlist?, toolDenylist? }
 // `name` est le préfixe d'outil (unique, charset contraint, `miaou` interdit).
-// Le token est stocké EN CLAIR (posture assumée non-prod, cf. D6) : tout ce que
+// Le token est stocké EN CLAIR (posture assumée non-prod) : tout ce que
 // JS peut lire, un XSS le peut ; un chiffrement client a besoin d'une clef
 // client, donc ne protège pas le secret. Le correctif prod est un proxy
 // (token côté serveur), hors périmètre V2.
 const MCP_SERVERS_KEY = 'miaou-mcp-servers';
 
-// MCP_DEFAULT_TIMEOUT (défaut, éditable par serveur — cf. D3/D5) est déclaré
+// MCP_DEFAULT_TIMEOUT (défaut, éditable par serveur) est déclaré
 // plus haut avec les autres bornes configurables.
 
 function loadMcpServers() {
@@ -1307,7 +1307,7 @@ function persistMemories(arr) {
 }
 
 // Entrées actives : non-supprimées. `scopes` optionnel (tableau de scopes
-// autorisés, ex. ['profile', activeSpaceId] — cf. D3) ; omis = toutes (usage
+// autorisés, ex. ['profile', activeSpaceId]) ; omis = toutes (usage
 // historique, ex. export/import). Migration garantit `scope` toujours posé
 // (default Space) donc pas de filet 'pas de scope = visible partout' ici.
 // Scopes de souvenirs visibles ET modifiables depuis le Space actif : le scope
@@ -1375,7 +1375,7 @@ function forgetMemory(id) {
 // Registre : { id, name, description?, createdAt }. `description` (texte
 // libre du Space) est CONCATÉNÉE après le prompt système utilisateur global
 // dans buildSystemMessage() — ce n'est PAS un system prompt de substitution
-// (correction actée : le brief D4 d'origine, qui proposait un remplacement,
+// (correction actée : le brief C d'origine, qui proposait un remplacement,
 // est inversé). Le default Space (id fixe
 // DEFAULT_SPACE_ID) est l'espace hors-Space historique : non supprimable,
 // renommable, toujours présent en tête après migration (cf.
@@ -1425,7 +1425,7 @@ function upsertSpace(space) {
 }
 
 // Le default Space n'est jamais supprimable par ce chemin (l'appelant doit de
-// toute façon garder l'UI de suppression désactivée dessus, cf. brief D1).
+// toute façon garder l'UI de suppression désactivée dessus).
 function deleteSpaceEntry(id) {
   if (id === DEFAULT_SPACE_ID) return loadSpaces();
   const arr = loadSpaces().filter(s => s.id !== id);
@@ -1469,7 +1469,7 @@ function migrateSpacesIfNeeded() {
   if (memoriesChanged) persistMemories(memories);
 }
 
-// Prédicat d'herméticité UNIQUE (audit §4, brief D2) : ids des conversations
+// Prédicat d'herméticité UNIQUE (audit §4, brief C) : ids des conversations
 // appartenant à `spaceId` parmi `convs` (déjà chargées par l'appelant — pas de
 // rechargement caché). Pure, testable QuickJS ; tous les sites listés dans
 // l'audit (sidebar, recherche, outils, injection résumés) doivent passer par

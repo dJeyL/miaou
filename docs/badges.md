@@ -82,7 +82,7 @@ une génération ne survit pas au reload, son « non lu » non plus.
   évalué **après** le retrait du registre, pour que `convBadgeState` bascule sur
   `unread` et pas sur un `working` résiduel.
 - **Effacement** : `markConvRead(id)` dans `openConversation`. **Ouvrir la
-  conversation suffit** (décision B2) — pas de sémantique de lecture par message
+  conversation suffit** (décision de lot) — pas de sémantique de lecture par message
   ni de « bas du fil atteint » : MIAOU n'en a nulle part ailleurs, en introduire
   une ici serait disproportionné.
 
@@ -108,7 +108,7 @@ quatre surfaces : l'apparence est entièrement portée par le CSS, ce qui garant
 qu'aucune surface ne dérive. Ne jamais concaténer les classes dans une template
 string — ce serait un deuxième chemin.
 
-### Le corollaire du dépliage (décision B5)
+### Le corollaire du dépliage
 
 **Une seule règle** : la pastille apparaît sur chaque ligne d'Espace
 effectivement concernée. « Déplacement » et « dédoublement » ne sont pas deux
@@ -130,7 +130,7 @@ d'en oublier un pour figer la pastille dans un état faux. La classe `.show` du
 menu est déjà la source de vérité — même ressort que le masquage du hamburger
 sous `.app.sidebar-open`.
 
-### Le hamburger agrège tout (décision B6)
+### Le hamburger agrège tout
 
 Sidebar repliée, l'utilisateur ne voit ni la liste des conversations ni le
 sélecteur : c'est le **seul** indicateur disponible. Le restreindre à l'ailleurs
@@ -146,7 +146,7 @@ supprime le besoin de câbler la synchro dans `toggleSidebar` /
 `closeSidebarMobile` / `closeSidebarViaEscape`.
 
 **`topbar-space-badge` n'est PAS concerné** : il reste ce qu'il est (nom du
-Space actif, masqué en default Space, brief D5).
+Space actif, masqué en default Space, brief C, UI).
 
 ## Extension du lot X-1 : un parent dont un agent travaille
 
@@ -216,7 +216,7 @@ Appelée depuis `syncSpaceUI()` (donc `registerGeneration`,
 écran — donc de masquée à affichée — sans que le Space change, `syncSpaceUI`
 n'y étant pas appelé.
 
-Le compte est **cross-Space** (comme le hamburger, B6) : relève de l'exception
+Le compte est **cross-Space** (comme le hamburger) : relève de l'exception
 d'herméticité ci-dessous, mais n'expose qu'un **nombre** — strictement moins que
 les pastilles, qui donnent le nom de l'Espace.
 
@@ -249,7 +249,7 @@ jamais un filtre `c.spaceId === x` réécrit hors de `spaceBadgeState` /
 
 `aggregateBadgeState` dérive du **registre** et de `listAllConversations()`, pas
 d'une itération sur `loadSpaces()` : une conversation dont l'Espace a été
-supprimé resterait sinon invisible du hamburger, qui doit être exhaustif (B6).
+supprimé resterait sinon invisible du hamburger, qui doit être exhaustif.
 
 ## Pièges rencontrés
 
@@ -289,8 +289,9 @@ supprimé resterait sinon invisible du hamburger, qui doit être exhaustif (B6).
   « affiche le total, jamais total-1 » et le singulier.
 - **Playwright** — `.claude/skills/run-miaou/verify-badges.mjs`, stub SSE gaté
   par conversation (repris de `verify-generations.mjs`) : working sur la ligne,
-  unread hors écran, absence d'unread sous les yeux, B2, agrégation cross-Space
-  repliée et dépliée, corollaire B5, B6 et masquage CSS, apparence mesurée
+  unread hors écran, absence d'unread sous les yeux, non-lu au niveau
+  conversation, agrégation cross-Space repliée et dépliée, corollaire du
+  dépliage, agrégation du hamburger et masquage CSS, apparence mesurée
   (tailles, opacités, keyframe, couleur commune), reduced-motion, zone morte.
 
 Deux points de méthode payés en écrivant ce verify :
@@ -302,7 +303,7 @@ Deux points de méthode payés en écrivant ce verify :
    `genOwnsScreen` vrai, donc aucun unread : le scénario ne teste rien.
 2. **Vérifier le déclencheur PENDANT que le menu est ouvert**, pas seulement les
    lignes du menu. La première version du verify lisait l'état des lignes et en
-   concluait que le corollaire B5 tenait — alors que la pastille d'agrégat
+   concluait que le corollaire du dépliage tenait — alors que la pastille d'agrégat
    restait affichée à côté du libellé du courant, où elle se lit à tort comme
    SON état. Trou signalé par Julien sur capture (2026-08-23) ; deux assertions
    ajoutées (déclencheur masqué menu ouvert, revenu menu fermé), régression
@@ -314,7 +315,7 @@ Deux points de méthode payés en écrivant ce verify :
    régression.
 
 Toutes les régressions injectées (unread ignorant l'écran, priorité inversée
-dans `resolveActivityBadge`, B2 retiré, exclusion supprimée) sont bien vues.
+dans `resolveActivityBadge`, non-lu retiré, exclusion supprimée) sont bien vues.
 
 ## Non-goals (T-2)
 

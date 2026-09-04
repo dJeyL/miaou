@@ -484,7 +484,7 @@
 .tab-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
 
 /* Readonly cross-onglets (lot J : génération en cours dans un autre onglet).
-   Verrouille les mutations LOCALES sans empêcher lecture/scroll (A6). Le composer
+   Verrouille les mutations LOCALES sans empêcher lecture/scroll. Le composer
    est aussi désactivé en JS (setConvReadonly) ; ici on grise et on neutralise les
    boutons d'action au survol des bulles (édition/suppression/régénération/
    continuation/copie de conv). pointer-events:none suffit à bloquer le clic ;

@@ -45,7 +45,7 @@
   `m.ok === false` (`js__eval`, refus de cap ou plantage guest)), et pour
   `resource_presented` une note `Ressource présentée
   automatiquement : nom (mime) — non incluse dans cet export` (**jamais de
-  data-URI/base64 embarqué**, cohérent avec D8/D9 (`docs/mcp.md`) — le binaire
+  data-URI/base64 embarqué**, cohérent avec la cascade de blocs non-text (`docs/mcp.md`) — le binaire
   reste en IDB). Un seul appel → « Outil appelé : » ; plusieurs (même `group`) →
   « n outils appelés : » en liste numérotée (compteur **en toutes lettres, jamais
   entre parenthèses** — même formule que le summary de l'export HTML). Troncature pour la lisibilité du
@@ -137,7 +137,7 @@ ultérieures du même lot).
   `opts.asPlainText` (défaut `false`, comportement écran **inchangé**). En
   mode `asPlainText`, une référence de conversation vivante est rendue en
   **label nu échappé** (pas de `[label](#miaou-conv:…)`) car le lien
-  `#miaou-conv:` ne résout jamais hors MIAOU (D3 du brief G — « no dead
+  `#miaou-conv:` ne résout jamais hors MIAOU (brief G, règles de contenu — « no dead
   links »). Le tombstone `~~label (supprimée)~~` reste inchangé dans les deux
   modes (c'est déjà du texte, pas un lien). `renderMd(text, opts)` transmet
   `opts` à `resolveConvRefs` en passe-plat.
@@ -149,7 +149,7 @@ ultérieures du même lot).
   titre+date, `bodyHtml`, footer « Généré par MIAOU » — le nom pouvant porter un
   lien vers le dépôt, cf. plus bas —, `scriptTag` avant
   `</body>`). Un seul `<link>` (favicon, cf. ci-dessous) ; pas de CDN/CSS externe
-  (Prism inliné). Le `<script>` n'est plus interdit (**D1 révisé**, cf.
+  (Prism inliné). Le `<script>` n'est plus interdit (**décision zéro-JS révisée**, cf.
   ci-dessous) : il est composé par l'appelant dans `scriptTag` (vide → export
   strictement statique, ou `<script>…</script>` → progressive enhancement). Le
   `styleCss` (tokens + `EXPORT_CSS` + `PRISM_THEME_CSS`) est de même composé par
@@ -176,14 +176,14 @@ ultérieures du même lot).
   ne pas s'afficher. La seule voie vers une preview riche complète (image
   comprise) est d'héberger l'export derrière une URL publique, hors du modèle
   « fichier autonome ».
-- **D1 révisé (progressive enhancement, réglage `exportInteractive`).** D1
+- **Zéro-JS révisé (progressive enhancement, réglage `exportInteractive`).** La décision d'origine
   d'origine posait l'export comme strictement zéro-JS, abandonnant les boutons
   copier/télécharger. Révisé : le réglage `exportInteractive` (défaut `true`,
   `storage.js`) gouverne l'ajout d'un `<script>` inline (`EXPORT_SCRIPT`) qui
   **révèle** au chargement les boutons copier (`navigator.clipboard`) et
   télécharger (`Blob`) sur chaque bloc de code. Décoché → `scriptTag` vide →
   export identique à l'ancien zéro-JS (barre de langage comprise, cf.
-  `decorateExportPre`). Les bénéfices D1 d'origine (sûr à ouvrir, pas de CSP,
+  `decorateExportPre`). Les bénéfices du zéro-JS d'origine (sûr à ouvrir, pas de CSP,
   pas de dérive de re-parsing) restent atteignables **sur option**. La barre
   de langage, elle, est **toujours statique** — indépendante du réglage.
   **Depuis le lot R**, `EXPORT_SCRIPT` porte un second rôle : la mémorisation du
@@ -297,9 +297,9 @@ ultérieures du même lot).
     théorique : export déclenché juste après ouverture, avant que
     `loadConversationResources` fire-and-forget ait peuplé le cache) — **pas
     d'`await` IDB dans ce chemin**, dégradation identique à aujourd'hui.
-    **Non-parité assumée** : les blocs D8 éphémères en échec de stockage (jamais
+    **Non-parité assumée** : les blocs non-text éphémères en échec de stockage (jamais
     internés en IDB) ne sont pas exportés — hors périmètre (décision Gbis §0.3),
-    comme ils sont absents au reload live. Le gate anti-doublon D8 du live
+    comme ils sont absents au reload live. Le gate anti-doublon des blocs non-text du live
     (`getPendingToolBlocks().length === 0` sur `resource_stored`) n'est **pas**
     transposé : aucune file pendante à l'export. Affichage **pleine largeur**
     (décision A.2), curseur/lien de clic posés uniquement en interactif (Gb2).
@@ -422,7 +422,7 @@ ultérieures du même lot).
   `miaou-<slug>-<dateStamp>.html` via `downloadFile`. **Async depuis le lot
   E4** (la passe Mermaid attend le CDN et les rendus) : verrou de réentrance
   `_exportingHtml` (l'await ouvre une fenêtre de double-clic → double
-  téléchargement, cf. mémoire B5/B7), et `renderExportBody` est encadré par
+  téléchargement, cf. mémoire sur les gardes de réentrance), et `renderExportBody` est encadré par
   `runBackgroundTask('export HTML…')` (indicateur d'activité pendant le
   chargement CDN ; un échec — improbable, tous les await internes sont
   gardés — rend `null` → abandon silencieux).

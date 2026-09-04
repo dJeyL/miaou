@@ -158,7 +158,7 @@ describe('getAutotriggerSkillsMeta (stage 2)', function() {
     setSkillsCache([{ slug: 'a', enabled: false, autotrigger: true }]);
     expect(getAutotriggerSkillsMeta()).toEqual([]);
   });
-  it('inclut seulement enabled ET autotrigger, forme {slug, name, description}', function() {
+  it('inclut seulement enabled ET autotrigger, forme {slug, name, description, system}', function() {
     setSkillsCache([
       { slug: 'a', name: 'A', description: 'desc-a', autotrigger: true },
       { slug: 'b', name: 'B', description: 'desc-b' },                       // pas autotrigger
@@ -166,12 +166,42 @@ describe('getAutotriggerSkillsMeta (stage 2)', function() {
     ]);
     var out = getAutotriggerSkillsMeta();
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual({ slug: 'a', name: 'A', description: 'desc-a' });
+    expect(out[0]).toEqual({ slug: 'a', name: 'A', description: 'desc-a', system: false });
+  });
+  it('propage system: true (l\'énumération doit pouvoir le signaler au modèle)', function() {
+    setSkillsCache([{ slug: 'mermaid', name: 'Mermaid', description: 'd', autotrigger: true, system: true }]);
+    expect(getAutotriggerSkillsMeta()[0].system).toBe(true);
+  });
+});
+
+describe('buildSkillsContextBlock — marquage des skills système', function() {
+  it('marque [système] la ligne d\'une skill système et pas celle d\'une skill utilisateur', function() {
+    setSkillsCache([
+      { slug: 'mermaid', name: 'Mermaid', description: 'd1', autotrigger: true, system: true },
+      { slug: 'revue', name: 'Revue', description: 'd2', autotrigger: true },
+    ]);
+    var block = buildSkillsContextBlock();
+    expect(block.indexOf('- [slug: mermaid] [système] Mermaid') >= 0).toBe(true);
+    expect(block.indexOf('- [slug: revue] Revue') >= 0).toBe(true);
+  });
+  it('ajoute la phrase d\'immuabilité quand au moins une skill système est listée', function() {
+    setSkillsCache([{ slug: 'mermaid', name: 'Mermaid', description: 'd', autotrigger: true, system: true }]);
+    expect(buildSkillsContextBlock().indexOf('ni les modifier ni les supprimer') >= 0).toBe(true);
+  });
+  it('omet la phrase quand aucune skill système n\'est listée', function() {
+    setSkillsCache([{ slug: 'revue', name: 'Revue', description: 'd', autotrigger: true }]);
+    var block = buildSkillsContextBlock();
+    expect(block.indexOf('[système]') >= 0).toBe(false);
+    expect(block.indexOf('ni les modifier ni les supprimer') >= 0).toBe(false);
+  });
+  it('bloc vide si aucune skill autotrigger', function() {
+    setSkillsCache([{ slug: 'revue', name: 'Revue' }]);
+    expect(buildSkillsContextBlock()).toBe('');
   });
 });
 
 describe('miaou__skills__list — outil', function() {
-  it('renvoie uniquement les skills activés (slug, name, description)', function() {
+  it('renvoie uniquement les skills activés (slug, name, description, system)', function() {
     setSkillsCache([
       { slug: 'on', name: 'On', description: 'desc', content: 'X' },
       { slug: 'off', name: 'Off', enabled: false },
@@ -181,7 +211,12 @@ describe('miaou__skills__list — outil', function() {
     expect(parsed.length).toBe(1);
     expect(parsed[0].slug).toBe('on');
     expect(parsed[0].description).toBe('desc');
+    expect(parsed[0].system).toBe(false);
     expect(out.indexOf('off')).toBe(-1);   // désactivé jamais exposé
+  });
+  it('expose system: true pour une skill système (le modèle sait avant d\'écrire)', function() {
+    setSkillsCache([{ slug: 'mermaid', name: 'Mermaid', description: 'd', system: true }]);
+    expect(JSON.parse(ct('miaou__skills__list', {}))[0].system).toBe(true);
   });
   it('liste vide → tableau JSON vide', function() {
     setSkillsCache([]);

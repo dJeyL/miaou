@@ -385,7 +385,7 @@ HTML, ou à la synchro multi-onglets.
     est un choix acté : le brief d'origine écrivait `miaou__resource__present`,
     mais un outil de ce nom existe déjà dans le registre (`res_…`, id-space
     distinct) — collision signalée à l'audit, résolue par un nom d'outil
-    différent (cet outil de rappel lui-même est un lot ultérieur, D4, non
+    différent (cet outil de rappel lui-même est un lot ultérieur, non
     couvert ici : seul son NOM figure dans le descripteur).
 
     **Réécriture idempotente** (`collapseAttachedMessageContent` : si `content`
@@ -400,7 +400,7 @@ HTML, ou à la synchro multi-onglets.
     content parts — cas plus rare d'une exception réseau qui aurait
     court-circuité `onFinal` sans passer par le catch de plus haut niveau.
 
-    **Injection texte (D3, attachments `kind:'text'`)** : traitement volontairement
+    **Injection texte (attachments `kind:'text'`)** : traitement volontairement
     différent — le texte est injecté au tour d'attache dans un bloc fencé avec
     en-tête nom de fichier (`formatTextAttachmentBlock`) et **persisté tel
     quel, sans réécriture ultérieure** (contrairement aux images) : le texte
@@ -424,13 +424,13 @@ HTML, ou à la synchro multi-onglets.
     (descripteurs re-générés depuis les champs FIGÉS de `att`, jamais depuis les
     octets) ; pas de coût KV nouveau (la troncature invalide déjà à partir de ce
     point). Le `await` de la reconstruction vit dans le **même bloc
-    `_sendResolving`/`finally`** que `resolveSend` (garde B7 : sans ça, ce second
+    `_sendResolving`/`finally`** que `resolveSend` (garde de réentrance : sans ça, ce second
     await rouvre une fenêtre de double-tir avant la mutation du thread). Sans ce
     report, l'édition détachait silencieusement l'image et le modèle régénérait
     sa réponse sans la voir.
 <a id="p18"></a>
 
-18. **Herméticité des Spaces : un seul prédicat, partout (lot C, brief D2).**
+18. **Herméticité des Spaces : un seul prédicat, partout (lot C).**
     `spaceConvIds(spaceId, convs)` (storage.js, pure — `convs` déjà chargé par
     l'appelant, pas de rechargement caché) est LA seule source de vérité pour
     « cette conversation appartient-elle au Space donné ? ». Tous les sites qui
@@ -451,7 +451,7 @@ HTML, ou à la synchro multi-onglets.
       spaceId)` (api.js) accepte un 3ᵉ paramètre optionnel qui exclut aussi les
       résumés hors-Space — les résumés (`miaou-summaries`) ne portent PAS de
       `spaceId` dupliqué, la jointure se fait via la conversation.
-    - Mémoire (brief D3) : `buildMemoryEntriesBlock()` (main.js) injecte
+    - Mémoire (brief C, souvenirs) : `buildMemoryEntriesBlock()` (main.js) injecte
       `listMemoryEntries(['profile', activeSpaceId])` — profile (global) + Space
       actif, jamais les souvenirs d'un autre Space. `memory__create` stampe
       `scope = activeSpaceId` sans exposer de paramètre scope au modèle ;
@@ -487,13 +487,13 @@ HTML, ou à la synchro multi-onglets.
     a été supprimée : `conv.spaceId || DEFAULT_SPACE_ID` si `conv` existe,
     sinon `DEFAULT_SPACE_ID` directement — jamais absent de tout Space.
 
-    **Description de Space, pas un system prompt (brief D4, CORRIGÉ).** Le
+    **Description de Space, pas un system prompt (brief C, CORRIGÉ).** Le
     champ s'appelle `description` (pas `systemPrompt`) et n'est **JAMAIS un
     remplacement** : `resolveUserSystemPrompt(globalSystemPrompt, space)`
     (main.js, pure) **concatène** la description du Space actif APRÈS le
     prompt système utilisateur global (séparateur `\n\n---\n\n`, si les deux
     sont non vides), exactement comme les autres parts de `buildSystemMessage()`.
-    (Le brief D4 d'origine proposait un remplacement — décision inversée
+    (Le brief C d'origine proposait un remplacement — décision inversée
     explicitement par l'utilisateur après implémentation initiale : un Space
     porte une description contextuelle, pas un system prompt de substitution.)
     C'est la SEULE part de `buildSystemMessage()` qui varie d'un Space à
@@ -505,7 +505,7 @@ HTML, ou à la synchro multi-onglets.
     message redevient statique tant qu'on reste dans le Space nouvellement
     actif, donc le cache se reconstruit normalement dès le tour suivant.
 
-    **`<miaou_context>` (brief D4, ambiguïté confirmée OUI)** : une ligne
+    **`<miaou_context>` (brief C, ambiguïté confirmée OUI)** : une ligne
     statique-par-Space « Espace : &lt;nom&gt; » est ajoutée par
     `buildContextBlock()` à côté de Date/Modèle, dès que `getSpace(activeSpaceId)`
     résout un nom — y compris pour le default Space (« Espace : Général »),
@@ -513,7 +513,7 @@ HTML, ou à la synchro multi-onglets.
     UI topbar, qui lui masque le default Space — deux décisions indépendantes,
     ne pas les confondre).
 
-    **Manifeste de bibliothèque de fichiers (D4, lot Cbis)** : `contextBlockParts()`
+    **Manifeste de bibliothèque de fichiers (lot Cbis)** : `contextBlockParts()`
     gagne un champ `library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name)`
     (main.js), consommé à la fois par `buildContextBlock()` (injection réelle,
     ajouté après `memories` dans `<miaou_context>`) et par `buildContextManifest()`
@@ -533,7 +533,7 @@ HTML, ou à la synchro multi-onglets.
     « description » qualifie le contenu d'un fichier, plus haut le contexte
     d'un Space — qui gagne elle aussi une intro nommant le Space, même
     retour), ce bloc casse le préfixe KV cache à chaque changement (ajout, suppression, ou atterrissage
-    d'une description de fichier D7) — assumé, de même nature qu'un switch de
+    d'une description de fichier) — assumé, de même nature qu'un switch de
     Space : statique tant que la bibliothèque du Space actif est inchangée.
 
     **Synchronicité `contextBlockParts()` (lecture IDB en amont)** : la fonction
@@ -563,7 +563,7 @@ HTML, ou à la synchro multi-onglets.
     sinon extraction des SEULES parts `text` d'un tableau de content parts,
     sinon `content` tel quel.
 
-    **Dégradation vision-less (D5)** : si l'endpoint/modèle rejette les content
+    **Dégradation vision-less** : si l'endpoint/modèle rejette les content
     parts image (HTTP 400) ou est déjà connu non-vision cette session, MIAOU
     envoie texte + descripteurs à la place et ajoute une ligne dans
     `<miaou_context>` (jamais le system message, piège 16) signalant la
@@ -604,7 +604,7 @@ HTML, ou à la synchro multi-onglets.
 <a id="p19"></a>
 
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
-    `role:'tool'` (brief A2, D3).** Un `recall_attachment` portant sur une image
+    `role:'tool'` (brief A2, canal de retour).** Un `recall_attachment` portant sur une image
     ne remet PAS les pixels dans le résultat de l'outil : un tool result est
     `role:'tool'` textuel, et une part image n'y a pas sa place fiable. Le
     handler renvoie donc un tool result *annonciateur* (texte), et l'image
@@ -623,7 +623,7 @@ HTML, ou à la synchro multi-onglets.
     plus. Le message user, lui, échoue *honnêtement* (« AUCUNE IMAGE ») : on
     préfère un échec visible à une hallucination crédible.
 
-    Corollaire du collapse-timing (piège 17, D2) : la transformation
+    Corollaire du collapse-timing (piège 17) : la transformation
     image→descripteur ne se fait **jamais entre deux appels d'une même boucle
     d'outils**. Le payload `apiMessages` est construit UNE fois avant la boucle
     `runConversation`, puis seulement complété par push ; le collapse
@@ -687,7 +687,7 @@ HTML, ou à la synchro multi-onglets.
 
     **Trois élargissements sanctionnés depuis**, chacun avec sa contrepartie :
 
-    - **D1 révisé** (export interactif optionnel, réglage `exportInteractive`) :
+    - **Zéro-JS révisé** (export interactif optionnel, réglage `exportInteractive`) :
       l'export peut porter un `<script>` inline (`EXPORT_SCRIPT`). C'est du JS
       **statique build-time**, aucune donnée modèle/outil dedans, mais
       `exportConvHtml` échappe quand même `</` avant insertion. Ne jamais y
@@ -728,7 +728,7 @@ HTML, ou à la synchro multi-onglets.
     parent — un `<script>` embarqué dans le contenu prévisualisé s'exécute,
     mais confiné. C'est l'exception SANCTIONNÉE à la doctrine `textContent`
     (le seul endroit où du markup d'origine modèle atteint une surface de
-    rendu sans sanitisation) ; le brief E (D2) l'a actée. Trois règles en
+    rendu sans sanitisation) ; le brief E (préviz sandboxée) l'a actée. Trois règles en
     découlent :
 
     - cette iframe ne doit **jamais** gagner `allow-same-origin` (la

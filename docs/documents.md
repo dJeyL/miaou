@@ -203,7 +203,7 @@ QUAND (trois lignes) : le COMMENT reste dans la skill, le split V-7 tient.
   listing (« membres XML bruts »). La doctrine oriente malgré tout vers l'outil
   serveur tant qu'il existe, parce qu'il en extrait le texte utile là où le natif
   ne livre que du XML. Filet avant V-5, pas un remplacement.
-- **Description automatique d'un fichier de bibliothèque** (D7) : pour une
+- **Description automatique d'un fichier de bibliothèque** : pour une
   archive, `extractBinaryFileTextForDescription` (tools.js) bifurque **en amont**
   de `findDocsInflationTool()` et renvoie le listing natif comme texte de
   description — noms et tailles décompressées indicatives, jamais le contenu d'un

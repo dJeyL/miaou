@@ -13,9 +13,9 @@ décisions reprises ici) :
 - Nom d'affichage du default Space : « Général ».
 - Ligne « Espace : &lt;nom&gt; » dans `<miaou_context>` (visible au modèle).
 - Space actif persisté entre sessions (`miaou-active-space`, string brute).
-- Badge topbar masqué dans le default Space (posé en C3).
+- Badge topbar masqué dans le default Space (posé avec l'UI du lot C).
 
-## Schéma (C1 — voir `docs/storage.md` pour le détail complet)
+## Schéma (voir `docs/storage.md` pour le détail complet)
 
 - `miaou-spaces` : `[{ id, name, description?, createdAt }]`. `description`
   (texte libre) est **ajoutée après** le prompt système utilisateur global —
@@ -27,10 +27,10 @@ décisions reprises ici) :
 - Migration idempotente `migrateSpacesIfNeeded()` (storage.js), rejouée à
   chaque chargement (`init()`, avant tout rendu) — pas un one-shot.
 
-## Herméticité (C2 — voir piège n°18, `CLAUDE.md`, et `docs/pitfalls-detail.md`)
+## Herméticité (voir piège n°18, `CLAUDE.md`, et `docs/pitfalls-detail.md`)
 
 Prédicat unique `spaceConvIds(spaceId, convs)` (storage.js, pur). Sites
-branchés en C2 :
+branchés avec l'herméticité :
 - `renderConvList()` (ui.js) : filtre `listAllConversations()` sur
   `c.spaceId === activeSpaceId`.
 - `conv__list` / `conv__get` (tools.js) : réponse
@@ -59,7 +59,7 @@ branchés en C2 :
   un geste moins engageant que d'en installer un nouveau.
 - Description de Space : `resolveUserSystemPrompt()` — la `description` du
   Space actif est **ajoutée après** le prompt système global (concaténation,
-  jamais substitution — brief D4 corrigé). Changer de Space change donc le
+  jamais substitution — brief C, description de Space — corrigé). Changer de Space change donc le
   system message (assumé, casse le préfixe KV cache le temps du switch —
   piège 16).
 - `<miaou_context>` porte une ligne statique-par-Space « Espace : &lt;nom&gt; »
@@ -88,7 +88,7 @@ hors de ces deux fonctions. Cliquer une ligne d'Espace **bascule** dessus
 (`pickSpace`, comportement inchangé) : aller directement au fil concerné depuis
 un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
 
-## UI (C3)
+## UI
 
 - **Sélecteur de Space** (`#space-select`, tête de sidebar, au-dessus de la
   recherche) : bouton pilule (`toggleSpaceMenu`) + menu `.model-menu`
@@ -118,7 +118,7 @@ un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
   fichiers en ont été retirés (ne s'y rendent plus à l'ouverture).
   `onSaveSpaceScreen()` valide un nom non vide (sauf default, dont le
   nom est laissé intact si le champ est vidé par erreur) et persiste via
-  `upsertSpace`. **Suppression D6** (`onDeleteSpaceScreen`) : arm-then-run
+  `upsertSpace`. **Suppression d'un Space** (`onDeleteSpaceScreen`) : arm-then-run
   (`armThenRun`, même pattern que la poubelle sidebar) avec le libellé du
   bouton portant les comptes (« Supprimer (N conv., M souvenirs) ») ; la
   confirmation exécute la cascade = boucle `deleteConv` sur chaque conversation
@@ -180,7 +180,7 @@ un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
     une barre contextuelle (`#move-bar`, `renderMoveBar`) apparaît sous la
     liste : compteur, destination via `cfgPillSelect` (jamais de `<select>`
     natif), bouton Déplacer, bouton Annuler.
-  - **Sortie du mode** (D5) — un point de sortie unique,
+  - **Sortie du mode sélection** — un point de sortie unique,
     `exitMoveModeIfActive()`, appelé depuis `runGenerationFromCurrentThread()`
     (main.js) : ce point couvre `sendMessage`, `editUserMessage` ET
     `regenerateResponse` (piège 12 — les trois partagent ce même point de
@@ -188,8 +188,8 @@ un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
     nommait que `sendMessage`). Sortie aussi sur Cancel (`exitMoveMode()`)
     et sur move effectué. Changer de Space actif (`pickSpace`) pendant une
     sélection en cours vide aussi la sélection (décision : le switch
-    équivaut à un changement d'intention, symétrique à D5).
-  - **Follow post-move (D6)** : si la conversation ouverte fait partie du
+    équivaut à un changement d'intention, symétrique à la sortie du mode sélection).
+  - **Follow post-déplacement** : si la conversation ouverte fait partie du
     lot déplacé, la vue bascule vers le Space destination SANS vider le fil
     (`followSpace(id)`, variante de `pickSpace` sans `resetToEmpty()` ni
     `summarizeIfNeeded` — on ne quitte rien, on suit). Si la conversation
@@ -219,7 +219,7 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
      (`<input type=file>` masqué) et le **drag&drop sur le panneau**
      (`#space-files-panel`, `onSpaceFilesDrop`) convergent tous deux vers
      `ingestLibraryFiles` (ui.js) — ingestion séquentielle, re-render, puis
-     déclenchement D7 par fichier. La restriction « seulement en mode
+     déclenchement d'une description par fichier. La restriction « seulement en mode
      bibliothèque » est **structurelle** : le panneau porte `hidden` sur les
      deux autres onglets et ne reçoit alors aucun événement de drag, donc rien
      à resynchroniser depuis `selectSpaceTab`. Pas de filtre de type au drop
@@ -297,7 +297,7 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   inter-Space, pas de versioning/dédup/dossiers/tags/renommage, pas de
   pagination de `files__list`.
 
-### Descriptions de fichiers (D7, lot Cbis-5)
+### Descriptions de fichiers (lot Cbis-5)
 
 Transforme le manifeste de métadonnées froides en index sémantique — même
 posture que les résumés de conversation (`summarizeIfNeeded`/
@@ -311,25 +311,24 @@ aide à la décision de lecture).
 
 - **Trigger à l'ingestion, jamais un daemon.** `describeFileIfNeeded(fileId,
   onStatus, force?)` (main.js) est appelée une fois par fichier :
-  - upload direct (D2 path 1, `onSpaceFilesSelected`) — fire-and-forget après
+  - upload direct (voie 1, `onSpaceFilesSelected`) — fire-and-forget après
     le re-render de la liste, un appel par fichier, indépendants entre eux ;
-  - promotion utilisateur (D2 path 2, `promoteAttachmentToLibrary`) —
+  - promotion utilisateur (voie 2, `promoteAttachmentToLibrary`) —
     fire-and-forget, aucun statut par carte affiché immédiatement (pas d'écran
     Space ouvert à cet instant), visible à la prochaine ouverture ;
-  - **jamais** pour la promotion modèle (D2 path 3, `files__promote`) : la
-    `description` y est déjà fournie par le modèle et stockée telle quelle (A3
-    confirmé), une génération D7 supplémentaire serait un doublon.
+  - **jamais** pour la promotion modèle (voie 3, `files__promote`) : la
+    `description` y est déjà fournie par le modèle et stockée telle quelle (arbitrage confirmé), une génération de description supplémentaire serait un doublon.
   Pas de queue, pas de retry : un échec laisse le fichier sans description,
   plus une action manuelle « Régénérer la description » sur la carte
   (`onRegenerateFileDescription`, paramètre `force=true` — ignore le toggle ET
   une description déjà présente).
 - **Extraction** : texte (`class:'inline'`) → contenu déchiffré, tronqué à
-  `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` (8 kB, proposition A5 confirmée) ;
+  `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` (8 kB, proposition confirmée) ;
   binaire → **appel direct** à `mcpRpc` via `findDocsInflationTool()` +
   `extractBinaryFileTextForDescription()` (tools.js) — **PAS** le hook
-  dispatcher `callDocsInflatedRemoteTool` du §4/D3 : celui-ci est conçu pour un
+  dispatcher `callDocsInflatedRemoteTool` du §4 (accès modèle en lecture) : celui-ci est conçu pour un
   tool_call du **modèle** (pousse un ack visible, dépend d'une conversation en
-  cours), alors qu'une description D7 est une opération applicative en
+  cours), alors qu'une description de fichier est une opération applicative en
   arrière-plan, sans ack, potentiellement hors de toute conversation ouverte
   (upload direct). `findDocsInflationTool()` reproduit la même détection sans
   nom en dur (`ref`+`content_b64` déclarés) mais retourne `(server, toolName)`
@@ -369,7 +368,7 @@ aide à la décision de lecture).
     silence sur les caps et les échelles de dégradation). **Page 1 seulement** :
     c'est une description, pas une lecture, même borne que
     `describePdfForLibrary` lui-même.
-  - **Image de bibliothèque** : le skip « v1, pas de modèle vision dédié » de D7
+  - **Image de bibliothèque** : le skip « v1, pas de modèle vision dédié » des descriptions
     est **levé**. Le modèle actif est celui-là même qui lit une page rendue en
     conversation depuis V-8 : le tenir pour aveugle a priori n'avait plus de
     raison d'être. Base64 direct depuis les octets du record (`arrayBufferToBase64`),

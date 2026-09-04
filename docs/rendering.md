@@ -150,7 +150,7 @@ DOM live. Posture :
 
 La préviz HTML/SVG relève d'une posture différente : voir ci-dessous.
 
-## Préviz sandboxée HTML/SVG (lot E2, D2)
+## Préviz sandboxée HTML/SVG (lot E2)
 
 Bouton « œil » (`.code-preview-btn`) dans `.code-actions`, posé par
 `decoratePre` sur les blocs dont la langue est éligible (`isPreviewableLang`,
@@ -169,7 +169,7 @@ Fonctionnement (closure dans `decoratePre`, pas de handler global) :
 - Le srcdoc est construit par `buildPreviewSrcdoc(lang, code)` (utils.js,
   pure) : `html` → passthrough byte-identique ; `svg` → enveloppé dans un
   document HTML minimal (un SVG nu n'est pas un document srcdoc valide, et il
-  peut porter `<script>` : il s'exécute, confiné — contrat D2).
+  peut porter `<script>` : il s'exécute, confiné — contrat de la préviz sandboxée).
 - CSS (`chat.css`) : iframe `width: 100%`, hauteur fixe 420px (décision
   Julien 2026-07-10 : pas de resize, pas d'auto-height postMessage), fond
   blanc forcé quel que soit le thème (le contenu prévisualisé suppose un fond

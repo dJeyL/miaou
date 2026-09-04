@@ -83,12 +83,12 @@ function convLabel(conv) {
 
 // ── Statut ──────────────────────────────────────────────────────────────────
 // `running` est TOUJOURS DÉRIVÉ du registre de générations, jamais persisté
-// (Q5) : un agent interrompu par un reload retombe naturellement sur son statut
+// Un agent interrompu par un reload retombe naturellement sur son statut
 // terminal, sans champ supplémentaire ni zombie persisté. Seuls les états
 // TERMINAUX vivent sur le record.
 //
 // Cinq statuts terminaux, et les cinq sont distincts dans ce qui remonte au
-// parent (Q8) : il ne réagit pas pareil à « j'ai arrêté cet agent » et
+// parent : il ne réagit pas pareil à « j'ai arrêté cet agent » et
 // « l'utilisateur a arrêté cet agent ».
 const AGENT_TERMINAL_STATUSES = ['done', 'exhausted', 'aborted', 'stopped', 'error'];
 
@@ -158,7 +158,7 @@ function hasWorkingAgent(convId, convs) {
   return false;
 }
 
-// ── Bornes d'agents simultanés (Q3) ─────────────────────────────────────────
+// ── Bornes d'agents simultanés ─────────────────────────────────────────
 // Deux bornes, pas une, et le refus NOMME laquelle est atteinte : « 3 agents
 // déjà en cours sur cette conversation » et « 5 agents en cours au total »
 // appellent des gestes différents du parent (attendre l'un des siens, ou
@@ -499,7 +499,7 @@ function formatAgentResultForParent(payload) {
   return lines.join('\n');
 }
 
-// Entrée de thread poussée dans le fil du PARENT (Q1) : message user
+// Entrée de thread poussée dans le fil du PARENT : message user
 // AUTHENTIQUE (persisté, visible), portant un champ discriminant qui gouverne
 // L'AFFICHAGE SEULEMENT — jamais le routage (ligne posée au piège 19,
 // corollaire V-8). X-3 stylera `agentResult` ; X-1 le pose et le rend lisible.
@@ -609,7 +609,7 @@ function runAgentGeneration(convId, thread, opts) {
   // outil, donc restreindre la trousse de l'agent ne fait pas diverger son
   // prompt système. Le préfixe KV reste partagé avec le parent.
   const sys = buildSystemMessage();
-  // matches = [] (Q4) : un agent n'a pas de passé, lui injecter les résumés
+  // matches = [] : un agent n'a pas de passé, lui injecter les résumés
   // d'autres conversations serait un gonflement gratuit. Le reste du bloc
   // <miaou_context> est identique (date, souvenirs, manifeste de bibliothèque).
   const apiMessages = buildAgentApiMessages(sys, gen);
@@ -658,7 +658,7 @@ function createAgentGeneration(convId, thread, opts) {
 // Payload messages d'un agent : système + son fil, avec le préfixe dynamique
 // <miaou_context> sur le dernier message user — MÊME géométrie que dispatchSend
 // (piège 16 : le contenu dynamique reste hors du message système).
-// matches = [] (Q4).
+// matches = [].
 function buildAgentApiMessages(sys, gen) {
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(gen.thread)));
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
@@ -684,7 +684,7 @@ function buildAgentApiMessages(sys, gen) {
 // une bulle dans le DOM d'une AUTRE conversation.
 //
 // Le point d'accroche de la délivrance au parent est le FINALLY, seul endroit
-// que TOUS les cas de sortie traversent (Q8) — nominale, avortée par le modèle,
+// que TOUS les cas de sortie traversent — nominale, avortée par le modèle,
 // avortée par l'utilisateur, épuisée, en erreur. Jamais le chemin nominal :
 // c'est ce qui rend l'invariant vérifiable au lieu d'être une liste de
 // call-sites à maintenir.
@@ -725,7 +725,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
       onToolAcks: () => {
         for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
         clearPendingToolAcks();
-        // Blocs non-texte d'un outil distant : éphémères par conception (D8),
+        // Blocs non-texte d'un outil distant : éphémères par conception,
         // jamais persistés. Un agent n'a pas d'écran où les rendre — on les
         // draine pour ne pas les laisser fuiter dans la génération suivante.
         clearPendingToolBlocks();
@@ -831,7 +831,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     // visible : composer verrouillé ET libellé de travail en cours.
     if (gen.convId === currentConvId) setSending(isGenerating(currentConvId));
     // LE point d'entrée unique de la délivrance, sur TOUTE sortie sans
-    // exception (Q8). Fire-and-forget : rien n'attend le réveil du parent.
+    // exception. Fire-and-forget : rien n'attend le réveil du parent.
     deliverAgentResult(gen.convId, status, gen.thread);
   }
 }
@@ -887,7 +887,7 @@ async function deliverAgentResult(agentConvId, status, thread) {
 
   if (parentGen) {
     // Parent OCCUPÉ : mise en file dédiée, drainée à la frontière de tour de sa
-    // génération. File DISTINCTE de _pendingInterjections (Q2) : leurs
+    // génération. File DISTINCTE de _pendingInterjections : leurs
     // conditions de drain sont OPPOSÉES — une interjection est un état d'écran
     // gardé par genOwnsScreen, un résultat d'agent ne dépend pas de l'écran.
     // Les fusionner serait exactement le motif « deux prédicats corrects
@@ -921,7 +921,7 @@ function parentThreadFor(parentConvId) {
   return projectConvMessages(loadConversation(parentConvId));
 }
 
-// ── File des résultats d'agent (Q2) ─────────────────────────────────────────
+// ── File des résultats d'agent ─────────────────────────────────────────
 // Map<convId, entry[]>. DÉDIÉE, jamais fusionnée avec _pendingInterjections.
 const _pendingAgentResults = new Map();
 

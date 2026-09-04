@@ -1,6 +1,6 @@
 # Stockage (localStorage / IndexedDB)
 
-> **Synchro multi-onglets (lot J)** : depuis J2, la plupart des écritures
+> **Synchro multi-onglets (lot J)** : depuis l'émission sur écritures, la plupart des écritures
 > émettent un broadcast `BroadcastChannel` **post-commit** (après `setItem` pour
 > localStorage, sur `tx.oncomplete` pour IndexedDB — jamais `req.onsuccess`) pour
 > notifier les autres onglets. Table des émetteurs et exceptions (`miaou-active-space`,
@@ -391,7 +391,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   `miaou-settings` (cf. ci-dessus). **`id` est l'identité** (pas `name`, à la
   différence des serveurs MCP) : permet de renommer une carte sans perdre la
   référence de serveur actif ni casser un override en cours. `key` stocké en
-  clair (même posture D6 que `authorization_token` MCP). `model` est le modèle
+  clair (même posture non-prod que `authorization_token` MCP). `model` est le modèle
   par défaut de ce serveur, résolu par `activeApiConfig()` (avec
   `settings.model` legacy en filet) — c'est cette fonction, et **pas**
   `loadSettings()`, qui fournit url/key/model à **tous** les appels API
@@ -412,7 +412,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   explicitement depuis sa carte (« Utiliser ce serveur »), sinon on ne pourrait
   plus le réactiver. Si TOUS les serveurs sont désactivés, le repli retombe quand
   même sur le premier : on ne veut jamais `null` tant qu'une carte existe.
-  `vision` (D5, brief A2) : map `{ [nomModèle]: false }` — flag **manuel** « ce
+  `vision` (brief A2, flag manuel) : map `{ [nomModèle]: false }` — flag **manuel** « ce
   modèle sur ce serveur n'a pas la vision ». Seule la valeur `false` est
   persistée (`normalizeApiServer` filtre les `true`) ; absence d'entrée = inconnu
   = on envoie les parts image (défaut). Lu par le prédicat pur
@@ -439,7 +439,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
 - `miaou-spaces` : tableau `[{ id, name, description?, createdAt }]` (feature
   Spaces, lot C). `description` (texte libre) est **ajoutée après** le prompt
   système utilisateur global dans `buildSystemMessage()` — ce n'est PAS un
-  system prompt de substitution (le brief D4 d'origine proposait un
+  system prompt de substitution (le brief C d'origine proposait un
   remplacement ; décision inversée, cf. `docs/pitfalls-detail.md` piège 18).
   Espaces mutuellement hermétiques : une conversation
   (`spaceId`) et un souvenir (`scope`) appartiennent à exactement un Space (ou
@@ -497,7 +497,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   par conversation via `deleteResourcesByConversation` (appelé dans `deleteConv`,
   main.js). `requestPersistence()` sollicite `navigator.storage.persist()` au
   premier stockage (silencieux si refusé).
-  - **Pièces jointes de message (brief A/D1)** : mêmes store `resources` et
+  - **Pièces jointes de message (brief A, schéma)** : mêmes store `resources` et
     mécanismes de cycle de vie que ci-dessus (GC gratuit à la suppression de
     conversation, chargement en cache à la réouverture, jamais dans
     `localStorage`) — pas de store séparé (décision actée). Enregistrement :
@@ -539,7 +539,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
     les navigateurs). Record absent du cache (pas encore peuplé par
     `loadConversationResources`, fire-and-forget) → no-op silencieux, même
     posture que `resolveAttachmentThumb`.
-  - **Bibliothèque de fichiers d'espace (lot Cbis, D1)** : mêmes store
+  - **Bibliothèque de fichiers d'espace (lot Cbis, modèle de données)** : mêmes store
     `resources` et IDB (pas de store dédié, pas de clé localStorage
     `miaou-space-files` — décision actée, smallest diff). Discriminant
     `kind: 'library'` sur le record (absent/`'attachment'` = pièce jointe,
@@ -550,7 +550,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
     }`. `id` (`file_<base36>`, `generateFileId`, resources.js) — préfixe
     distinct de `res_`/`att_`. `source` (optionnel) = id de la conversation
     d'origine si le fichier vient d'une promotion d'attachment (path 2/3),
-    absent pour un upload direct (path 1). `description` (optionnel, D7 ou
+    absent pour un upload direct (voie 1). `description` (optionnel, généré ou
     fournie par `files__promote`) — **PAS un résumé du contenu** : décrit ce
     que le fichier EST (nature, sujets, structure) pour que le modèle juge
     s'il doit l'ouvrir (`files__read`), pas ce qu'il contient en détail.
@@ -562,9 +562,9 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
     fichiers sont Space-stables, la ref exposée est directement l'id du
     record. `getResourcesBySpace(spaceId)` (résultats non filtrés par ordre —
     le tri `createdAt`→`id` byte-stable, si requis, est à la charge de
-    l'appelant, cf. manifeste D4) lit via l'index `by_space`. `storeLibraryFile`
+    l'appelant, cf. manifeste de bibliothèque) lit via l'index `by_space`. `storeLibraryFile`
     (opération haut-niveau, frère de `storeAttachment`) construit le record et
-    persiste. Cascade de suppression : purge Space (D5) → boucle
+    persiste. Cascade de suppression : purge Space → boucle
     `getResourcesBySpace` + `deleteResource` par entrée ; suppression de
     conversation ne touche **jamais** les fichiers d'espace, y compris promus
     (ils ont été copiés, provenance informationnelle).
@@ -725,7 +725,7 @@ est remplacé par `member` :
   licite, traité sans exception.
 - **Posture assumée (clefs en clair)** : les clefs API (`miaou-api-servers[].key`)
   et tokens MCP (`miaou-mcp-servers[].authorization_token`) sont exportés **tels
-  quels, en clair**, même posture non-prod que leur stockage (cf. D6, plus haut
+  quels, en clair**, même posture non-prod que leur stockage (cf. la posture non-prod, plus haut
   dans ce document). Le hint UI de la catégorie « Données » du settings drawer
   le rappelle explicitement avant l'export.
   **Le passage au `.zip` rend ce rappel plus nécessaire, pas moins** : une
