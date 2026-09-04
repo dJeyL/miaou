@@ -1150,6 +1150,38 @@ function decoratePre(scope) {
     };
     pre.insertBefore(head, pre.firstChild);
   });
+
+  // Dans decoratePre et non chez ses appelants : c'est déjà LE point de passage
+  // du markdown rendu, donc tout nouveau site de rendu hérite du porteur sans
+  // qu'on ait à y penser. No-op sur les scopes qui construisent un <pre> à la
+  // main (bloc de code d'une ressource, aperçu de prompt) : aucun `.body table`
+  // à y trouver.
+  wrapWideTables(scope);
+}
+
+// Enveloppe chaque tableau rendu dans un porteur, seul moyen de le laisser
+// déborder de la colonne de lecture EN RESTANT CENTRÉ : le débordement veut une
+// marge horizontale négative, le centrage veut `margin-inline: auto`, et un même
+// élément ne peut pas porter les deux — la seconde écrase la première. Le
+// porteur prend l'élargissement, le tableau se centre dedans (cf. .table-bleed,
+// chat.css).
+//
+// Aucune mesure, aucun seuil : le CSS décide seul si le tableau consomme le
+// débordement offert, donc rien à ré-exécuter au redimensionnement de la fenêtre
+// ni au changement de largeur de colonne.
+//
+// Idempotent : les chemins de rendu repassent sur un même scope (finalize après
+// streaming, re-rendu de fil) — un tableau déjà enveloppé est laissé tel quel.
+function wrapWideTables(scope) {
+  if (!scope) return;
+  scope.querySelectorAll('.body table').forEach(function(table) {
+    const parent = table.parentNode;
+    if (!parent || (parent.classList && parent.classList.contains('table-bleed'))) return;
+    const holder = document.createElement('div');
+    holder.className = 'table-bleed';
+    parent.insertBefore(holder, table);
+    holder.appendChild(table);
+  });
 }
 
 // Télécharge le contenu brut (markdown source) d'un message assistant, précédé
@@ -3493,6 +3525,68 @@ function initSidebarResize() {
   });
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
+}
+
+// ── Largeur de la colonne centrale (thread + composer) ──────────────────────
+// Trois crans multiplicateurs appliqués à la largeur de lecture d'origine, que
+// le CSS porte comme --col. Le cran 0 EST la largeur historique : c'est le
+// plancher, jamais un réglage « réduit » — d'où un « – » désactivé au repos
+// plutôt qu'un cran plus étroit qui n'a jamais existé.
+// Le pas est stocké en INDEX, pas en pixels : le jour où la largeur de base
+// bouge dans base.css, les crans suivent sans migration de réglage — un
+// sidebarWidth en pixels, lui, resterait figé sur l'ancienne base.
+const COL_WIDTH_STEPS = [1, 1.25, 1.5];
+const COL_WIDTH_FALLBACK_BASE = 720;   // filet si --col est illisible (jamais en usage nominal)
+
+// La largeur de base est LUE sur :root, jamais recopiée : base.css en est la
+// seule source. On la lit avant toute surcharge et on la mémorise — surcharger
+// --col sur #app la rendrait ensuite indistinguable de la base au prochain
+// appel, et chaque cran se multiplierait par le précédent.
+let _colWidthBase = 0;
+function colWidthBase() {
+  if (!_colWidthBase) {
+    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+    _colWidthBase = Number.isFinite(v) && v > 0 ? v : COL_WIDTH_FALLBACK_BASE;
+  }
+  return _colWidthBase;
+}
+
+// Pur : borne un index de cran, quelle que soit la saleté du réglage persisté
+// (chaîne, négatif, cran retiré depuis). Number.isFinite et non `||` : 0 est
+// l'index NOMINAL ici, un `||` le remplacerait silencieusement par le défaut.
+function clampColWidthStep(step, count) {
+  const n = (typeof count === 'number' && count > 0) ? count : COL_WIDTH_STEPS.length;
+  const i = Math.round(Number(step));
+  if (!Number.isFinite(i)) return 0;
+  return Math.max(0, Math.min(n - 1, i));
+}
+
+let _colWidthStep = 0;
+
+// Applique le cran : surcharge --col sur #app (et non :root) pour rester
+// homogène avec --sidebar-w, et pour que l'export — qui lit des tokens sur
+// :root — ne voie jamais cette largeur d'écran (cf. THEME_TOKENS, --col exclu).
+function applyColWidth(step) {
+  _colWidthStep = clampColWidthStep(step);
+  const app = $('app');
+  if (app) app.style.setProperty('--col', Math.round(colWidthBase() * COL_WIDTH_STEPS[_colWidthStep]) + 'px');
+  syncColWidthUI();
+  return _colWidthStep;
+}
+
+// Les deux boutons sont désactivés en butée : le contrôle dit alors de
+// lui-même où on se trouve dans la course, sans compteur ni libellé.
+function syncColWidthUI() {
+  const dec = $('col-width-dec'), inc = $('col-width-inc');
+  if (dec) dec.disabled = _colWidthStep <= 0;
+  if (inc) inc.disabled = _colWidthStep >= COL_WIDTH_STEPS.length - 1;
+}
+
+function nudgeColWidth(delta) {
+  const next = clampColWidthStep(_colWidthStep + delta);
+  if (next === _colWidthStep) return;   // butée : rien à persister ni à diffuser
+  applyColWidth(next);
+  saveSettings({ colWidth: next });   // persistance immédiate, modèle selectTheme
 }
 
 // `label` : soit une chaîne (titre définitif — applyGeneratedTitle), soit
@@ -8790,7 +8884,18 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .body blockquote { border-left: 2px solid var(--border-2); padding: 2px 0 2px 14px; margin: 10px 0; color: var(--text-2); }
 .body hr { border: none; border-top: 1px solid var(--border-2); margin: 18px 0; }
 .body code:not([class*="language-"]) { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; color: var(--code-inline-color); }
-.body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+/* Débordement centré des grands tableaux — portage de chat.css (.table-bleed),
+   PAS une propagation : EXPORT_CSS est figée, les deux jeux de règles évoluent
+   séparément. Le porteur est posé par wrapWideTables, partagée avec l'écran.
+   Bornes différentes ici, et c'est tout ce qui change : pas de sidebar ni de
+   --col, la colonne est .export-body et la place disponible se lit directement
+   sur le viewport, sans container query. Les 860px sont sa largeur de CONTENU
+   (900 de box moins 2x20 de padding, box-sizing: border-box) : prendre 900
+   décalerait tout de 20px de chaque côté et ferait déborder même un tableau qui
+   tient dans la colonne. Les 40px retranchés du viewport sont la gouttière qui
+   empêche le tableau de coller au bord de la fenêtre. */
+.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); }
+.body table { display: block; width: fit-content; min-width: calc(100% - var(--table-bleed, 0px)); max-width: 100%; margin: 0 auto; overflow-x: auto; border-collapse: collapse; font-size: 13px; }
 .body th, .body td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
 .body th { background: var(--surface); font-weight: 600; color: var(--text); }
 .body td { color: var(--text-2); }
@@ -9264,6 +9369,11 @@ async function renderExportBody(thread, convId) {
   }
   if (highlightEnabled && window.Prism) Prism.highlightAllUnder(container);
   decorateExportPre(container);
+  // Même porteur qu'à l'écran, posé par la MÊME fonction : le débordement
+  // centré des grands tableaux est une décision de présentation qui vaut aussi
+  // pour un export lu sur grand écran. Seules les bornes changent (EXPORT_CSS
+  // les calcule sur .export-body et le viewport, faute de sidebar et de --col).
+  wrapWideTables(container);
   await embedExportMermaid(container);
   return container.innerHTML;
 }

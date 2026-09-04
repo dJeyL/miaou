@@ -134,9 +134,16 @@
    Conversations seul à garder recherche + mode déplacement. */
 .space-tabs {
   display: flex;
-  gap: 4px;
   margin: 0 14px 10px;
 }
+/* Segmented control : bordures fusionnées (marge négative pour ne pas doubler
+   le trait), coins arrondis aux seules extrémités ; l'actif/survolé passe
+   au-dessus de ses voisins pour que sa bordure accentuée soit entière.
+   Le cadre bordé est la seule divergence assumée avec .drawer-tab
+   (drawers.css), qui remplit la même fonction de navigation : ici les onglets
+   sont des icônes seules dans une sidebar étroite, sans cadre elles n'offrent
+   aucune cible lisible. Tous les autres états sont volontairement les mêmes
+   des deux côtés — les garder alignés. */
 .space-tab-btn {
   flex: 1;
   display: flex;
@@ -145,13 +152,17 @@
   padding: 7px 0;
   background: var(--surface-2);
   border: 1px solid var(--border-2);
-  border-radius: var(--r-sm);
+  border-radius: 0;
   color: var(--text-3);
   cursor: pointer;
+  position: relative;
   transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
 }
-.space-tab-btn:hover { background: var(--surface-3); color: var(--text-2); }
-.space-tab-btn.active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); }
+.space-tab-btn + .space-tab-btn { margin-left: -1px; }
+.space-tab-btn:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.space-tab-btn:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.space-tab-btn:hover { background: var(--surface-3); color: var(--text-2); z-index: 1; }
+.space-tab-btn.active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); z-index: 2; }
 .space-tab-btn svg { width: 15px; height: 15px; }
 
 /* panneaux Fichiers / Souvenirs : mêmes composants que l'ancien écran Space

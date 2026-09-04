@@ -487,7 +487,14 @@
 .btn-row { display: flex; gap: 8px; }
 .btn-row .btn-ghost { flex: 1; }
 
-/* onglets du drawer combiné Résumés / Souvenirs */
+/* onglets du drawer combiné Résumés / Souvenirs.
+   Même fonction que .space-tab-btn (sidebar.css) : naviguer entre panneaux,
+   pas choisir une valeur de réglage (ça, c'est .seg-group plus haut). Les deux
+   partagent délibérément leurs états — --text-3 au repos, --text-2 +
+   --surface-3 au survol, --accent + --accent-dim à l'actif, --r-sm, 140ms.
+   Retoucher un état ici demande de le répercuter là-bas, et inversement : la
+   divergence de forme (cadre bordé, segments fusionnés) n'est due qu'aux
+   icônes seules dans une sidebar étroite, qui ont besoin d'une cible visible. */
 .drawer-tabs { display: flex; gap: 2px; flex: 1; margin-right: 8px; }
 .drawer-tab {
   background: none;

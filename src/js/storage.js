@@ -83,6 +83,7 @@ const DEFAULT_SETTINGS = {
   fonts: 'graphite',      // 'graphite' | 'atelier' | 'chaleur' (lot de fontes, lot S-b)
   showModelSelector: false, // sélecteur serveur/modèle dans le composer
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
+  colWidth: 0,             // largeur de la colonne centrale : index dans COL_WIDTH_STEPS (ui.js), 0 = la plus étroite
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B, D5/B1-a)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (D7, lot Cbis)

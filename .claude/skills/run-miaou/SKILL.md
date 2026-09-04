@@ -167,6 +167,36 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   not a bug: don't expect prior `node driver.mjs` runs to have left
   state behind.
 
+### Screenshots: wait for `.boot-done`, or capture the boot overlay instead
+
+`#boot-overlay` covers the whole application while `init()` fades it out. The
+trap is that **the DOM is already correct underneath**: `getBoundingClientRect`
+returns the real coordinates, `el.hidden` is `false`, computed styles are right —
+every DOM assertion passes. Only the pixels are wrong, and a clip computed from
+those correct coordinates frames the overlay.
+
+Cost here (AB-5): three empty topbar captures in a row, each blamed on the clip.
+The clip was recomputed from `getBoundingClientRect` — the documented remedy for
+a mis-framed capture — then zoomed, and stayed empty, because the cause was not
+framing at all. What broke the loop was capturing the **full page** and looking
+at it: the logo, unmistakably.
+
+Wait on the application's own signal rather than a guessed delay, right after
+the `waitForFunction` on app globals:
+
+```js
+await page.waitForFunction(() => {
+  const o = document.getElementById('boot-overlay');
+  return !o || o.classList.contains('boot-done') || getComputedStyle(o).opacity === '0';
+}, { timeout: 10000 });
+await page.waitForTimeout(900);   // couvre la transition d'opacité
+```
+
+Generalises to any full-surface overlay: **when a capture is empty but every DOM
+measurement agrees, the question is not "where did I frame?" but "what is painted
+on top?"** — and one `fullPage` screenshot answers it immediately, where another
+round of clip arithmetic cannot.
+
 ## Writing assertions in a verify script
 
 A verify is only worth its runtime if each assertion can *fail*. Two ways a
@@ -285,6 +315,21 @@ before touching the app:
   keeping a reference to the original to delegate to (cf.
   `verify-stop-deferred.mjs`, gating `callTool` to reproduce the exact window
   where `gen.abort` is null between tool-call tours).
+
+- **A stub that does not discriminate destroys its own control.** A verify that
+  proves "the degraded card looks degraded" needs a healthy card beside it,
+  otherwise the assertion passes on a page where every card looks the same. But
+  a stub keyed only on the method — `mcpRpc = (server, method) => …` ignoring
+  `server` — serves the same degraded payload to every configured server, so the
+  control *becomes a second degraded server*. The failure mode is worse than a
+  vacuous green: the run goes **red**, and the failing checks point at the
+  application ("the count says 2, expected 1"), which is the correct answer to
+  what the rig actually said. Cost here: a diagnostic session on healthy code
+  before reading the stub. When a scenario has a control, the stub must branch on
+  whatever distinguishes it — `if (server.name !== 'miaou-proxy') return …` —
+  and the control assertion must be phrased as a control ("témoin : le serveur
+  sain reste vert"), so a red on that line reads as "the fixture lost its
+  control" rather than "the code regressed".
 
 - **A protocol stub must serve the handshake, not only the call.** Replacing
   `mcpRpc` wholesale to suspend a tool call (to hold open the window where an

@@ -259,6 +259,13 @@
   padding: 28px 24px 16px;
   display: flex;
   flex-direction: column;
+  /* Plafond de débordement des tableaux (cf. .body table) : la largeur utile du
+     fil moins une gouttière de chaque côté. Posé ICI et non sur le tableau
+     parce que c'est .messages qui connaît la place disponible — un 100vw sur
+     le tableau compterait la sidebar, dont la largeur varie (redimensionnable,
+     et nulle quand elle est repliée). Les 24px retranchés sont le padding
+     horizontal ci-dessus, que 100cqw inclut. */
+  container-type: inline-size;
 }
 .thread {
   max-width: var(--col);
@@ -440,6 +447,13 @@
   padding: 8px 10px;
   resize: none;
   outline: none;
+  /* Bornes lues par autoGrow (utils.js), comme pour #composer-text. Elles sont
+     explicites ici parce que cette zone ne partage PAS celles du composer :
+     pas de plancher (une ligne suffit pour corriger un mot), et le plafond
+     reste celui d'avant l'agrandissement du composer. */
+  --composer-min-h: 0px;
+  --composer-max-h: 168px;
+  max-height: var(--composer-max-h);
   max-height: 240px;
 }
 .msg-edit-area:focus { border-color: var(--accent-bd); }
@@ -759,11 +773,60 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   text-shadow: none !important;
 }
 /* tables */
+/* Débordement centré (« planche ») : un tableau de synthèse a souvent plus de
+   colonnes que la largeur de lecture n'en accepte, et le rétrécir jusqu'à
+   l'illisible sert moins que de le laisser sortir de la colonne. Il prend donc
+   la largeur dont il a besoin (max-content) et se recentre sur la colonne par
+   des marges auto, en s'arrêtant à une gouttière de chaque côté de la fenêtre.
+   Au-delà, il se fige à cette largeur et défile en interne.
+
+   Le débordement est SYMÉTRIQUE et sans seuil : un tableau à peine plus large
+   que la colonne dépasse donc d'un rien de chaque côté. C'est assumé — le seuil
+   demanderait de mesurer au rendu, donc du JS à ré-exécuter à chaque
+   changement de largeur de colonne et de fenêtre, pour un défaut visuel qu'on
+   n'a pas encore constaté à l'usage.
+
+   Deux conditions portées ailleurs, à ne pas casser : la bulle assistant n'a ni
+   fond ni bordure ni overflow (elle clipperait), et .messages porte overflow-y
+   (son bloc de formatage borne le débordement à la zone de fil, jamais sous la
+   sidebar). Non reflété dans EXPORT_CSS (feuille figée, piège 22) : l'export
+   garde le tableau dans la colonne, décidé avec Julien. */
+/* Étage 1 — le PORTEUR (.table-bleed, posé par wrapWideTables/ui.js) : élargit
+   la boîte de part et d'autre par des marges négatives égales. Il faut bien deux
+   éléments — la marge négative (déborder) et `margin-inline: auto` (centrer) se
+   contredisent sur un même nœud, la seconde écrasant la première. */
+.table-bleed {
+  /* Débordement disponible = largeur utile du fil (le conteneur .messages, dont
+     100cqw inclut les 24px de padding de chaque côté) moins la colonne de
+     lecture. Calculé ICI et non hérité depuis .thread : une custom property
+     hérite comme du TEXTE non résolu, et `100cqw` évalué chez un ancêtre hors
+     conteneur ne donne rien. max(0px, …) : sur écran étroit la colonne occupe
+     tout, il n'y a rien à offrir et le tableau reste dans ses bornes. */
+  --table-bleed: max(0px, calc(100cqw - 48px - var(--col)));
+  margin: 12px calc(var(--table-bleed, 0px) / -2);
+  /* La marge négative déplace les bords mais ne change PAS la largeur de
+     référence des pourcentages des enfants : sans ce `width`, le `max-width:
+     100%` du tableau se calculerait encore sur la colonne et aucun tableau ne
+     déborderait jamais. */
+  width: calc(100% + var(--table-bleed, 0px));
+}
+/* Étage 2 — le TABLEAU dans la boîte élargie. `fit-content` l'arrête à sa
+   largeur naturelle : un petit tableau n'utilise rien du débordement offert et
+   reste aligné sur la colonne, un grand va jusqu'à la butée puis défile en
+   interne. C'est ce couple qui rend inutile tout seuil mesuré en JS. */
 .body table {
+  display: block;
+  width: fit-content;
+  /* Plancher = la COLONNE, pas la boîte élargie : un `100%` se calculerait sur
+     le porteur et étirerait jusqu'au débordement même un tableau à deux
+     colonnes. Le tableau remplit donc la largeur de lecture au minimum, et ne
+     va au-delà que si son contenu l'exige. */
+  min-width: calc(100% - var(--table-bleed, 0px));
+  max-width: 100%;
+  margin: 0 auto;
   border-collapse: collapse;
-  width: 100%;
-  margin: 12px 0;
   font-size: 13px;
+  overflow-x: auto;
 }
 .body th, .body td {
   border: 1px solid var(--border);

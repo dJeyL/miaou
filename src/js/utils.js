@@ -675,15 +675,28 @@ function placeCaretEnd(el) {
   sel.addRange(range);
 }
 
-// Auto-grandissement d'un <textarea> jusqu'à une hauteur max. 168px DOIT
-// rester synchronisé avec `max-height` de #composer-text (composer.css) —
-// deux constantes en dur, aucune source unique côté build.
-function autoGrow(el) {
+// Auto-grandissement d'un <textarea> entre deux bornes. Les bornes viennent du
+// CSS (--composer-min-h / --composer-max-h sur l'élément, cf. composer.css) :
+// elles y sont déclarées une seule fois, au lieu des deux constantes en dur
+// qui se faisaient face ici et là-bas. Repli sur les valeurs par défaut si les
+// variables sont absentes (élément hors composer, ou test sans CSS chargé).
+function autoGrow(el, fallbackMin = 53, fallbackMax = 227) {
+  const cs = getComputedStyle(el);
+  // Number.isFinite et non `||` : une borne à 0px est légitime (zone d'édition
+  // de message, qui ne veut pas de plancher) et `||` la prendrait pour absente.
+  const readBound = (name, fallback) => {
+    const v = parseFloat(cs.getPropertyValue(name));
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const min = readBound('--composer-min-h', fallbackMin);
+  const max = readBound('--composer-max-h', fallbackMax);
   el.style.height = 'auto';
   el.style.overflowY = 'hidden';
-  const h = Math.min(el.scrollHeight, 168);
+  // min-height tient le plancher visuellement, mais scrollHeight le franchit
+  // vers le bas : sans ce clamp, height repasserait sous les deux lignes.
+  const h = Math.min(Math.max(el.scrollHeight, min), max);
   el.style.height = h + 'px';
-  el.style.overflowY = h >= 168 ? 'auto' : 'hidden';
+  el.style.overflowY = h >= max ? 'auto' : 'hidden';
 }
 
 // ── Tokenisation / scoring (recherche mémoire) ──────────────────────────────

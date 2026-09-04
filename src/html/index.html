@@ -267,20 +267,40 @@ if (window.requestAnimationFrame) {
                Positionnée en absolu au-dessus de l'input : recouvre les pilules
                (axe z) au lieu de les décaler. -->
           <div class="skill-ac" id="skill-ac" hidden></div>
-          <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-          </button>
           <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
-          <textarea id="composer-text" rows="1" placeholder="Message…"
+          <textarea id="composer-text" rows="2" placeholder="Message…"
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
-          <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
-            <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-            <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
-          </button>
+          <!-- Colonne des deux boutons, à droite du champ : trombone au-dessus
+               du bouton d'envoi/stop. Ordre DOM = ordre visuel et ordre de
+               tabulation. -->
+          <div class="composer-btn-col">
+            <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
+              <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            </button>
+          </div>
         </div>
         <div class="composer-error" id="composer-error" hidden></div>
         <div class="composer-attach-error" id="composer-attach-error" hidden></div>
-        <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer<span class="inline-sep">·</span><kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden><span class="inline-sep">·</span><kbd>/</kbd> pour une skill</span><span class="inline-sep">·</span><kbd id="composer-hint-cmdk-key">Ctrl+K</kbd> palette de commandes</div>
+        <!-- Ligne de bas de composer : le hint reste centré sur la colonne
+             (grille à trois pistes, les deux latérales de même largeur), le
+             contrôle de largeur occupe la piste de droite. -->
+        <div class="composer-foot">
+          <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer<span class="inline-sep">·</span><kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden><span class="inline-sep">·</span><kbd>/</kbd> pour une skill</span><span class="inline-sep">·</span><kbd id="composer-hint-cmdk-key">Ctrl+K</kbd> palette de commandes</div>
+          <!-- Segmented control « – / + » : même gabarit que les onglets
+               d'espace (sidebar.css), en plus petit. -->
+          <div class="col-width-ctl">
+            <button class="col-width-btn" id="col-width-dec" onclick="nudgeColWidth(-1)" title="Resserrer la colonne" aria-label="Resserrer la colonne">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>
+            </button>
+            <button class="col-width-btn" id="col-width-inc" onclick="nudgeColWidth(1)" title="Élargir la colonne" aria-label="Élargir la colonne">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

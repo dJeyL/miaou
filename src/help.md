@@ -635,6 +635,11 @@ Quelques repères pour te déplacer dans MIAOU :
   mais se concrétise à la fin de cet appel (pas de coupure en plein milieu) —
   le bouton se fige le temps d'y arriver, pour t'éviter de recliquer pour rien.
   À côté, le trombone pour joindre des fichiers.
+- **Largeur de lecture** : sous le composer, à droite, deux petits boutons
+  « – » et « + » élargissent ou resserrent la zone centrale (le fil et le
+  composer ensemble). La largeur d'origine est la plus étroite : le « – » est
+  éteint tant que tu n'as pas élargi. Ton choix est conservé d'une session à
+  l'autre et s'applique à tes autres onglets ouverts.
 - **Ajouter en cours de route** : si le modèle travaille (surtout quand il
   enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée
   sans l'interrompre** — il se met en file au-dessus du composer et lui est

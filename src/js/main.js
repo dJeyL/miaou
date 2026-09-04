@@ -1486,6 +1486,7 @@ function applySyncedSettings(keys) {
   if (set.has('palette')) { applyPalette(s.palette || 'ambre'); setPaletteUI(s.palette || 'ambre'); }
   if (set.has('fonts')) { applyFonts(s.fonts || 'graphite'); setFontsUI(s.fonts || 'graphite'); }
   if (set.has('motion')) { applyMotion(s.motion || 'system'); setMotionUI(s.motion || 'system'); }
+  if (set.has('colWidth')) applyColWidth(s.colWidth);   // applyColWidth resynchronise déjà les boutons
   if (set.has('highlight')) highlightEnabled = s.highlight !== false;
   // Autres clés (systemPrompt, contextWindow, sélecteurs…) : effet au prochain
   // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
@@ -4169,6 +4170,7 @@ async function init() {
   // quand l'historique non vide va ouvrir la sidebar).
   $('app').classList.add('booted');
   initSidebarResize();
+  applyColWidth(loadSettings().colWidth);   // largeur de colonne persistée (cran)
   initComposerModelLabelFit();
   initVisualViewport();
   wireTitleEditing();
