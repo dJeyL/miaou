@@ -277,7 +277,7 @@ def run_build_unit_tests() -> tuple[int, int]:
             failed += 1
             print(f'  FAIL  {label}')
 
-    nominal = build.parse_help_sections(
+    nominal, nominal_labels = build.parse_help_sections(
         'préambule ignoré\n## apercu\ncorps A\n\n## espaces\ncorps B\n')
     check('help : sections nominales → {slug: corps}',
           nominal == {'apercu': 'corps A', 'espaces': 'corps B'})
@@ -285,8 +285,22 @@ def run_build_unit_tests() -> tuple[int, int]:
           list(nominal.keys()) == ['apercu', 'espaces'])
     check('help : texte avant la 1re section ignoré',
           'préambule' not in ''.join(nominal.values()))
+    check('help : sans tiret cadratin, aucun libellé (le slug reste entier)',
+          nominal_labels == {})
 
-    fence = build.parse_help_sections(
+    # Libellés : `## slug — libellé`. Le libellé sert la phrase d'orientation
+    # d'apercu, composée au runtime ; il ne doit JAMAIS entrer dans le slug (dont
+    # dérive l'enum de l'outil), ni le tiret rester collé au corps.
+    labelled, labels = build.parse_help_sections(
+        '## pieces-jointes — pièces jointes\ncorps A\n## mcp — serveurs compagnons MCP\ncorps B\n')
+    check('help : le libellé après « — » sort du slug',
+          list(labelled.keys()) == ['pieces-jointes', 'mcp'])
+    check('help : les libellés sont collectés à part',
+          labels == {'pieces-jointes': 'pièces jointes', 'mcp': 'serveurs compagnons MCP'})
+    check('help : le corps d\'une section libellée est intact',
+          labelled['pieces-jointes'] == 'corps A')
+
+    fence, _ = build.parse_help_sections(
         '## apercu\navant\n```\n## pas une section\n```\naprès\n## espaces\nx\n')
     check('help : ## dans un fence ne démarre pas de section',
           set(fence.keys()) == {'apercu', 'espaces'}
@@ -298,8 +312,22 @@ def run_build_unit_tests() -> tuple[int, int]:
     except ValueError:
         check('help : slug dupliqué → ValueError', True)
 
+    # Un slug dupliqué doit être vu comme tel même si les libellés diffèrent :
+    # c'est la clef qui collisionne dans l'enum, pas le texte affiché.
+    try:
+        build.parse_help_sections('## a — un\nx\n## a — deux\ny\n')
+        check('help : slug dupliqué sous deux libellés → ValueError', False)
+    except ValueError:
+        check('help : slug dupliqué sous deux libellés → ValueError', True)
+
+    try:
+        build.parse_help_sections('## — orphelin\nx\n')
+        check('help : titre sans slug → ValueError', False)
+    except ValueError:
+        check('help : titre sans slug → ValueError', True)
+
     check('help : fichier sans section → dict vide',
-          build.parse_help_sections('juste du texte, pas de titre\n') == {})
+          build.parse_help_sections('juste du texte, pas de titre\n') == ({}, {}))
 
     # strip_export_css_comments : EXPORT_CSS est une feuille CSS figée qui vit
     # dans un template literal de ui.js. strip_js_comments laisse le contenu
@@ -574,6 +602,61 @@ def run_docs_index_check() -> tuple[int, int]:
     return passed, failed
 
 
+def run_help_placeholders_check() -> tuple[int, int]:
+    """Vérifie que les jetons `{{NOM}}` de `src/help.md` sont tous résolus.
+
+    L'aide est rédigée sans chiffre en dur partout où la prose qualitative
+    suffit ; quand un chiffre est plus clair, il s'écrit `{{NOM}}` et
+    `resolveHelpPlaceholders` (tools.js) le remplace par la constante vivante,
+    de sorte qu'une valeur changée en config.json ne laisse pas l'aide mentir.
+
+    Le défaut que ce test attrape est le jeton ORPHELIN : un `{{TRUC}}` écrit
+    dans help.md sans entrée correspondante dans helpPlaceholderValues part tel
+    quel au modèle, qui le sert à l'utilisateur comme du texte. La table JS est
+    la SEULE énumération — on la lit ici plutôt que de recopier les noms, sans
+    quoi ce test serait lui-même une énumération fermée à maintenir."""
+    passed = failed = 0
+    print('\njetons {{…}} de help.md')
+
+    def check(label: str, cond: bool) -> None:
+        nonlocal passed, failed
+        if cond:
+            passed += 1
+            print(f'  PASS  {label}')
+        else:
+            failed += 1
+            print(f'  FAIL  {label}')
+
+    help_md = (ROOT.parent / 'src' / 'help.md').read_text(encoding='utf-8')
+    tools_js = (SRC_JS / 'tools.js').read_text(encoding='utf-8')
+
+    m = re.search(r'function helpPlaceholderValues\(\)\s*\{(.*?)\n\}', tools_js, re.S)
+    check('helpPlaceholderValues est déclarée dans tools.js', m is not None)
+    if not m:
+        return passed, failed
+
+    known = set(re.findall(r'^\s*([A-Z0-9_]+):', m.group(1), re.M))
+    check('la table de jetons est non vide', bool(known))
+
+    used = set(re.findall(r'\{\{([A-Z0-9_]+)\}\}', help_md))
+    unknown = sorted(used - known)
+    check(
+        'aucun jeton de help.md n\'est absent de helpPlaceholderValues'
+        + (f' (orphelins : {", ".join(unknown)})' if unknown else ''),
+        not unknown,
+    )
+
+    # Un jeton défini mais jamais employé n'est pas un bug d'affichage ; c'est
+    # du code mort qui suggère à tort que help.md cite cette valeur. Signalé.
+    unused = sorted(known - used)
+    check(
+        'aucune entrée de la table n\'est inutilisée dans help.md'
+        + (f' (mortes : {", ".join(unused)})' if unused else ''),
+        not unused,
+    )
+    return passed, failed
+
+
 def run_help_enumerations_check() -> tuple[int, int]:
     """Vérifie que les compteurs explicites de `src/help.md` correspondent
     toujours à l'ensemble qu'ils annoncent, quand cet ensemble est déclaré dans
@@ -754,6 +837,9 @@ def main(args: list[str]) -> int:
     total_passed += p
     total_failed += fa
     p, fa = run_help_enumerations_check()
+    total_passed += p
+    total_failed += fa
+    p, fa = run_help_placeholders_check()
     total_passed += p
     total_failed += fa
     p, fa = run_idb_schema_check()

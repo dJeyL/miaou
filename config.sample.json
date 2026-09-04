@@ -10,5 +10,11 @@
   "max_agents_total":        5,
   "max_agent_turns":         20,
   "js_eval_max_inputs":      10,
+  "js_eval_timeout_s":       10,
+  "stream_idle_timeout_s":   180,
+  "mcp_default_timeout_s":   30,
+  "attachment_image_max_bytes": 10485760,
+  "attachment_max_images":   4,
+  "max_turns":               100,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }

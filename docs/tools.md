@@ -365,10 +365,12 @@ model-side unique sur la bibliothèque) :**
   liste — la seule d'**écriture**, et la seule addition à la surface fermée du
   piège 25 (cf. « Écriture incrémentale » plus bas).
 - **Trois guards** (`runInQuickJs`, tools.js, dispose de tous les handles en
-  `try/finally`) : `setInterruptHandler` wall-time (timeout `JS_EVAL_TIMEOUT_MS`
-  = 10 s → boucle infinie tuée ; 2 s à l'origine, puis 5 s après qu'un
+  `try/finally`) : `setInterruptHandler` wall-time (timeout `JS_EVAL_TIMEOUT_MS`,
+  défaut 10 s → boucle infinie tuée ; 2 s à l'origine, puis 5 s après qu'un
   `split('\n')` + regex + agrégation sur un log de 21 Mo réel a dépassé 2 s,
-  puis 10 s au lot V-1 quand le cap d'entrée a doublé), `setMemoryLimit`
+  puis 10 s au lot V-1 quand le cap d'entrée a doublé — configurable depuis via
+  `js_eval_timeout_s`, la garde elle-même restant non désactivable),
+  `setMemoryLimit`
   (`JS_EVAL_MEM_BYTES` = 256 Mo, contrepartie aval de `MAX_INLINE_BYTES`
   (utils.js) = 64 Mo — les deux portées ensemble au lot V-1, un test d'ancrage
   sur la source réelle garde le rapport ≥ 4× →
@@ -376,7 +378,7 @@ model-side unique sur la bibliothèque) :**
   appliqué **après** dump via `checkOutputCap` (utils.js, pure).
 - **Refus, pas troncature (§3).** Sortie > cap → **message de refus explicite**
   renvoyé comme tool result texte **non-erreur** (pas `isError`, pour que le
-  modèle re-cible dans le même tour, borné par `MAX_TOURS`) : « ta sortie fait N
+  modèle re-cible dans le même tour, borné par `MAX_TURNS`) : « ta sortie fait N
   chars > cap M, réduis-la (compte/top-N/échantillon) ». Throw guest / timeout /
   OOM → également un result texte cadré (« erreur d'exécution … vérifie ton
   code »), pas `isError`.
@@ -430,7 +432,7 @@ model-side unique sur la bibliothèque) :**
   La skill incite aussi à **enchaîner plusieurs petits appels** (inspecter puis
   cibler) plutôt qu'un gros script unique, et à ne PAS raccourcir vers un one-liner
   (contre-productif : le problème n'est jamais la longueur mais la forme du retour).
-  C'est pourquoi `MAX_TOURS` (api.js) est passé de 20 à 40, puis **de 40 à 100**
+  C'est pourquoi `MAX_TURNS` (api.js) est passé de 20 à 40, puis **de 40 à 100**
   (2026-09) : un usage sain de `js__eval` consomme légitimement beaucoup de
   tours, et le plafond de 40 était atteint **fréquemment** en usage quotidien
   intensif — à ce stade la borne ne protège plus d'une boucle folle, elle coupe

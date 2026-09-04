@@ -86,7 +86,7 @@ volatile `_lastContextManifest`, pas la présence réelle de messages.
 Bug payé, distinct du précédent : même avec la recapture en fin de tour
 (`onFinal`/`onHalt`), un échange qui enchaîne PLUSIEURS tours d'outils
 (`runConversation`, api.js, boucle tant que `finish_reason === 'tool_calls'`,
-jusqu'à `MAX_TOURS`) ne recalculait jamais le manifeste entre deux tours. Si un
+jusqu'à `MAX_TURNS`) ne recalculait jamais le manifeste entre deux tours. Si un
 outil renvoyait beaucoup de volume (ex. lecture de fichier volumineuse),
 l'utilisateur ne le voyait dans la pilule/le drawer qu'une fois l'échange
 ENTIER terminé — potentiellement après plusieurs allers-retours ayant déjà

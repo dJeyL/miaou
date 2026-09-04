@@ -78,6 +78,48 @@ const BUILD_CHAT_TEMPERATURE = (typeof BUILD_CONFIG.chat_temperature === 'number
 const BUILD_DEFAULT_CONTEXT_WINDOW =
   (typeof BUILD_CONFIG.default_context_window === 'number') ? BUILD_CONFIG.default_context_window : 0;
 
+// ── Bornes de déploiement (dépendent de l'infra, pas de MIAOU) ───────────────
+// Même motif que ci-dessus. Ces cinq-là ont en commun de ne PAS être des choix
+// d'UX arbitrés une fois pour toutes : leur bonne valeur dépend du backend
+// servi, du parc MCP et de la machine hôte, donc d'un déploiement à l'autre.
+// Elles vivent ici (BUILD_CONFIG est injecté dans ce fichier) et sont lues
+// UNIQUEMENT en corps de fonction par api.js/tools.js/main.js — contrainte
+// structurelle dure, cf. CLAUDE.md.
+//
+// CONVENTION : toute durée s'exprime en SECONDES dans config.json (suffixe
+// `_s`), et la conversion en millisecondes se fait ici, au seul point de
+// lecture. Mélanger les deux unités dans le fichier de config obligerait
+// celui qui l'édite à retenir laquelle s'applique à quelle clé — et une
+// erreur d'un facteur 1000 sur un timeout ne se voit pas à la lecture.
+// Les constantes gardent le suffixe `_MS` : c'est leur unité réelle.
+
+// Chien de garde d'inactivité du streaming (piège 10) : réarmé à chaque chunk,
+// il couvre connexion ET flux. Configurable parce qu'un backend lent ou un
+// modèle à long raisonnement avant premier token peut légitimement dépasser la
+// valeur calibrée pour un Ollama local — sans cette clé, la tentation face à un
+// faux positif serait de retirer la garde, ce que le piège 10 interdit.
+const STREAM_IDLE_TIMEOUT_MS = (typeof BUILD_CONFIG.stream_idle_timeout_s === 'number') ? BUILD_CONFIG.stream_idle_timeout_s * 1000 : 180000;
+// Timeout par défaut d'un appel MCP distant (cf. D3/D5). Reste surchargeable
+// PAR SERVEUR dans l'UI : cette clé ne fixe que le défaut proposé, qui dépend
+// du parc MCP déployé.
+const MCP_DEFAULT_TIMEOUT = (typeof BUILD_CONFIG.mcp_default_timeout_s === 'number') ? BUILD_CONFIG.mcp_default_timeout_s * 1000 : 30000;
+// Temps d'exécution max d'un js__eval dans la VM QuickJS-WASM (garde obligatoire
+// du piège 25, avec la mémoire et le cap de sortie). Configurable comme fonction
+// de la machine hôte ; la garde elle-même n'est pas désactivable (0 ou négatif
+// retombe sur le défaut).
+const JS_EVAL_TIMEOUT_MS = (typeof BUILD_CONFIG.js_eval_timeout_s === 'number' && BUILD_CONFIG.js_eval_timeout_s > 0) ? BUILD_CONFIG.js_eval_timeout_s * 1000 : 10000;
+// Plafond de taille d'une IMAGE jointe, appliqué avant resize/base64 (le cap
+// texte/binary est MAX_INLINE_BYTES, utils.js). Dépend du modèle vision servi et
+// de son num_ctx : une image trop lourde se paie en troncature silencieuse côté
+// backend. Le LIBELLÉ du refus est dérivé de cette valeur, jamais écrit en dur.
+const ATTACHMENT_IMAGE_MAX_BYTES = (typeof BUILD_CONFIG.attachment_image_max_bytes === 'number') ? BUILD_CONFIG.attachment_image_max_bytes : 10 * 1024 * 1024;
+// Nombre max d'images par message. Même motif : c'est le modèle vision servi qui
+// décide de la valeur tenable, pas MIAOU.
+const ATTACHMENT_MAX_IMAGES = (typeof BUILD_CONFIG.attachment_max_images === 'number') ? BUILD_CONFIG.attachment_max_images : 4;
+// Borne sur les tours de la boucle tool_calls (piège 3). Pendant non-agent de
+// MAX_AGENT_TURNS ci-dessus, exposée pour la même raison.
+const MAX_TURNS = (typeof BUILD_CONFIG.max_turns === 'number') ? BUILD_CONFIG.max_turns : 100;
+
 const DEFAULT_SETTINGS = {
   url: '',
   key: '',
@@ -295,7 +337,8 @@ function activeApiConfig() {
 // (token côté serveur), hors périmètre V2.
 const MCP_SERVERS_KEY = 'miaou-mcp-servers';
 
-const MCP_DEFAULT_TIMEOUT = 30000;   // ms (cf. D3/D5) ; éditable par serveur
+// MCP_DEFAULT_TIMEOUT (défaut, éditable par serveur — cf. D3/D5) est déclaré
+// plus haut avec les autres bornes configurables.
 
 function loadMcpServers() {
   try {

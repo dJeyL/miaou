@@ -338,7 +338,7 @@ describe('formatLibraryFileHeadline / formatDescriptionImageDescriptor (lot V-9)
     var h = formatLibraryFileHeadline({ name: 'scan.jpg', mime: 'image/jpeg', size: 219136 });
     expect(h.indexOf('scan.jpg') >= 0).toBeTruthy();
     expect(h.indexOf('image/jpeg') >= 0).toBeTruthy();
-    expect(h.indexOf(humanSize(219136)) >= 0).toBeTruthy();
+    expect(h.indexOf(modelSize(219136)) >= 0).toBeTruthy();
   });
   it('byte-stable : deux appels sur le même record rendent la même chaîne (le manifeste <miaou_context> en dépend)', function() {
     var rec = { name: 'a.png', mime: 'image/png', size: 1024 };

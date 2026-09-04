@@ -119,7 +119,7 @@ describe('buildLibraryManifestBlock', function() {
   });
   it('une entrée sans description → intro générique + une ligne file-<id> — name (mime, size)', function() {
     var out = buildLibraryManifestBlock([{ id: 'file_a1', name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1 }]);
-    expect(out).toBe('Fichiers disponibles dans cet espace :\nfile-a1 — doc.txt (text/plain, ' + humanSize(1024) + ')');
+    expect(out).toBe('Fichiers disponibles dans cet espace :\nfile-a1 — doc.txt (text/plain, ' + modelSize(1024) + ')');
   });
   it('nom d\'espace fourni → intro le nomme', function() {
     var out = buildLibraryManifestBlock([{ id: 'file_a1', name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1 }], 'Projet X');
@@ -127,7 +127,7 @@ describe('buildLibraryManifestBlock', function() {
   });
   it('une entrée avec description → même ligne (format A4)', function() {
     var out = buildLibraryManifestBlock([{ id: 'file_b2', name: 'rapport.pdf', mime: 'application/pdf', size: 5000, createdAt: 1, description: 'Description du rapport.' }]);
-    expect(out.split('\n')[1]).toBe('file-b2 — rapport.pdf (application/pdf, ' + humanSize(5000) + ') — Description du rapport.');
+    expect(out.split('\n')[1]).toBe('file-b2 — rapport.pdf (application/pdf, ' + modelSize(5000) + ') — Description du rapport.');
   });
   it('tri déterministe par createdAt puis id', function() {
     var entries = [
@@ -157,15 +157,38 @@ describe('buildLibraryManifestBlock', function() {
 
 // ── humanSize ─────────────────────────────────────────────────────────────────
 
-describe('humanSize', function() {
-  it('0 → "0 B"', function() { expect(humanSize(0)).toBe('0 B'); });
-  it('512 → "512 B"', function() { expect(humanSize(512)).toBe('512 B'); });
-  it('1023 → "1023 B"', function() { expect(humanSize(1023)).toBe('1023 B'); });
-  it('1024 → "1.0 KB"', function() { expect(humanSize(1024)).toBe('1.0 KB'); });
-  it('1536 → "1.5 KB"', function() { expect(humanSize(1536)).toBe('1.5 KB'); });
-  it('1048576 → "1.0 MB"', function() { expect(humanSize(1048576)).toBe('1.0 MB'); });
-  it('2415919104 → "2.3 GB"', function() {
-    expect(humanSize(2415919104)).toBe('2.3 GB');
+describe('humanSize (interface, français)', function() {
+  it('0 → "0 o"', function() { expect(humanSize(0)).toBe('0 o'); });
+  it('512 → "512 o"', function() { expect(humanSize(512)).toBe('512 o'); });
+  it('1023 → "1023 o"', function() { expect(humanSize(1023)).toBe('1023 o'); });
+  it('1024 → "1.0 Ko"', function() { expect(humanSize(1024)).toBe('1.0 Ko'); });
+  it('1536 → "1.5 Ko"', function() { expect(humanSize(1536)).toBe('1.5 Ko'); });
+  it('1048576 → "1.0 Mo"', function() { expect(humanSize(1048576)).toBe('1.0 Mo'); });
+  it('2415919104 → "2.3 Go"', function() {
+    expect(humanSize(2415919104)).toBe('2.3 Go');
+  });
+});
+
+// modelSize : format ANGLAIS figé des descripteurs adressés au modèle. Ces
+// chaînes sont persistées telles quelles dans les messages (piège 17), donc
+// figer les valeurs attendues ici est le but, pas une redite de l'implémentation.
+describe('modelSize (descripteurs modèle, anglais figé)', function() {
+  it('0 → "0 B"', function() { expect(modelSize(0)).toBe('0 B'); });
+  it('1023 → "1023 B"', function() { expect(modelSize(1023)).toBe('1023 B'); });
+  it('1024 → "1.0 KB"', function() { expect(modelSize(1024)).toBe('1.0 KB'); });
+  it('1048576 → "1.0 MB"', function() { expect(modelSize(1048576)).toBe('1.0 MB'); });
+  it('2415919104 → "2.3 GB"', function() { expect(modelSize(2415919104)).toBe('2.3 GB'); });
+});
+
+// Assertion CONJOINTE : deux tests séparés ci-dessus passeraient encore si les
+// deux formateurs refusionnaient en un seul. Ce qu'on garde ici, c'est qu'ils
+// restent DISTINCTS — l'interface a basculé au français sans emporter les
+// descripteurs persistés avec elle.
+describe('humanSize / modelSize : deux publics, deux rendus', function() {
+  it('la même taille rend une unité française à l\'écran et anglaise au modèle', function() {
+    expect(humanSize(1048576)).toBe('1.0 Mo');
+    expect(modelSize(1048576)).toBe('1.0 MB');
+    expect(humanSize(1048576) === modelSize(1048576)).toBe(false);
   });
 });
 
@@ -540,7 +563,7 @@ describe('formatInlineHandleForModel', function() {
     var rec = { id: 'res_x', class: 'inline', mime: 'text/csv', name: 'rows.csv', size: 1048576 };
     var h = formatInlineHandleForModel('res_x', 'text/csv', rec);
     expect(h.indexOf('blob=res_x') >= 0).toBeTruthy();
-    expect(h.indexOf('1.0 MB') >= 0).toBeTruthy();   // humanSize, pas les octets
+    expect(h.indexOf('1.0 MB') >= 0).toBeTruthy();   // modelSize, pas les octets
   });
 
   it('fallback sans rec en cache : descripteur minimal sur id + mime, toujours sans ref', function() {
@@ -782,7 +805,7 @@ describe('allocateAttId', function() {
 describe('formatAttachmentDescriptor', function() {
   it('format exact, avec miaou__recall_attachment', function() {
     var d = formatAttachmentDescriptor({ attId: 'att-3', name: 'diagram.png', w: 1280, h: 960, size: 219136 });
-    expect(d).toBe('[attachment att-3: image "diagram.png", 1280x960, ' + humanSize(219136) +
+    expect(d).toBe('[attachment att-3: image "diagram.png", 1280x960, ' + modelSize(219136) +
       ' — content available via miaou__recall_attachment]');
   });
   it('dérivé uniquement des champs figés (name/w/h/size) — jamais des octets', function() {
@@ -812,7 +835,7 @@ describe('formatBinaryAttachmentDescriptor', function() {
   it('format exact, note neutre (aucun outil mentionné)', function() {
     var d = formatBinaryAttachmentDescriptor({ attId: 'att-4', name: 'rapport.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 219136 });
     expect(d).toBe('[attachment att-4: file "rapport.docx", application/vnd.openxmlformats-officedocument.wordprocessingml.document, ' +
-      humanSize(219136) + ' — binary content, not inlined]');
+      modelSize(219136) + ' — binary content, not inlined]');
   });
   it('mime absent → fallback application/octet-stream', function() {
     var d = formatBinaryAttachmentDescriptor({ attId: 'att-1', name: 'x.bin', size: 10 });

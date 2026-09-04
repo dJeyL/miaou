@@ -56,7 +56,7 @@ HTML, ou à la synchro multi-onglets.
 3. **Le résultat d'un outil n'est jamais affiché.** C'est une donnée
    intermédiaire (`role: 'tool'`, `tool_call_id` exact) renvoyée au modèle. La
    boucle `runConversation` (`api.js`) va **toujours jusqu'au `finish_reason:
-   'stop'`** avant d'afficher quoi que ce soit. Borne : `MAX_TOURS` tours (pas
+   'stop'`** avant d'afficher quoi que ce soit. Borne : `MAX_TURNS` tours (pas
    une borne sur le nombre d'outils — tous les `tool_calls` d'un tour sont
    exécutés dans ce tour). **Anti-redemande par échange** : `servedKeys`
    (clé `nom + ':' + arguments bruts`) court-circuite un appel rigoureusement
@@ -170,7 +170,8 @@ HTML, ou à la synchro multi-onglets.
     — un reclic ne doit pas sembler sans effet, il doit être impossible.
 
     **Chien de garde d'inactivité (2026-09-01).** Le même `AbortController`
-    porte une seconde cause d'arrêt : `STREAM_IDLE_TIMEOUT_MS` (api.js, 180 s)
+    porte une seconde cause d'arrêt : `STREAM_IDLE_TIMEOUT_MS` (storage.js, défaut 180 s, configurable par
+    `stream_idle_timeout_s`)
     coupe un flux qui se tait trop longtemps. C'est un timeout d'**inactivité**,
     pas de durée totale — armé avant le `fetch`, réarmé à **chaque chunk reçu** :
     une génération légitime peut streamer indéfiniment tant qu'elle produit

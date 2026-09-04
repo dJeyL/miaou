@@ -8,7 +8,7 @@ JS/CSS/HTML — strings, templates, regex, commentaire non terminé ;
 section ; `parse_system_skill_file`/`load_system_skills` — cartouche nominal,
 description absente, cartouche/`name`/corps manquant → `ValueError`, lecture
 réelle de `src/system-skills/*.md`, dossier absent → `{}` via un `SRC` de test
-temporaire), comptés dans le même total. S'y ajoutent trois **contrôles
+temporaire), comptés dans le même total. S'y ajoutent les **contrôles
 source-à-source** (QuickJS n'a ni système de fichiers ni IndexedDB) :
 `run_docs_index_check` (tout `docs/*.md` figure dans l'index de `CLAUDE.md`),
 `run_help_enumerations_check` (les énumérations de formats de `src/help.md`
@@ -21,7 +21,11 @@ que le diff du lot ne montre pas, qui devient fausse ; l'unité d'analyse est le
 `openConvDB`/`openResourceDB` — demandent la même version via
 `MIAOU_DB_VERSION` et portent des `onupgradeneeded` identiques ; la divergence
 laissée par U-1 a rendu muets skills système, bibliothèque d'espace et pièces
-jointes, chaque appelant avalant le `VersionError` en `console.warn`). Seules les **fonctions pures** sont
+jointes, chaque appelant avalant le `VersionError` en `console.warn`) et
+`run_help_placeholders_check` (les jetons `{{NOM}}` de `src/help.md` sont tous
+connus de `helpPlaceholderValues`, et aucune entrée de cette table n'est
+inemployée — la table JS est lue dans la source, jamais recopiée ici, sans quoi
+le contrôle serait lui-même une énumération fermée à maintenir). Seules les **fonctions pures** sont
 couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
@@ -35,7 +39,9 @@ one-shot gardé sur la présence de clé, CRUD `upsertApiServer`/`deleteApiServe
 est périmé, `activeApiConfig` avec filet `loadSettings().model`), **`hasSubstance`**
 (piège 5 — seuil `trim().length >= 8`, comptage user/assistant distinct, garde
 `Array.isArray`) et `backfillCandidates`,
-**ressources** (`humanSize`, `formatResourceDescriptor`,
+**ressources** (`humanSize` et `modelSize` — dont une assertion conjointe que
+les deux restent distincts, l'interface en français et les descripteurs modèle
+en anglais figé —, `formatResourceDescriptor`,
 `generateResourceId`, `arrayBufferToBase64`/`base64ToArrayBuffer`,
 `utf8Encode`/`utf8Decode`, `extractResultParts`, `assembleToolResultForModel`),
 **pièces jointes — envoi et persistance (brief A lot 2)** :

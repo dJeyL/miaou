@@ -231,9 +231,18 @@ build.
   "max_agents_total":        5,
   "max_agent_turns":         20,
   "js_eval_max_inputs":      10,
+  "js_eval_timeout_s":       10,
+  "stream_idle_timeout_s":   180,
+  "mcp_default_timeout_s":   30,
+  "attachment_image_max_bytes": 10485760,
+  "attachment_max_images":   4,
+  "max_turns":               100,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }
 ```
+
+Toute durée s'exprime en **secondes** (suffixe `_s`) ; la conversion interne
+est faite au seul point de lecture.
 
 - `api_url` / `api_model` : valeurs **par défaut** injectées dans le HTML. Elles
   ne sont qu'un point de départ ; les réglages saisis dans l'UI (stockés en
@@ -262,6 +271,22 @@ build.
   arrêté d'office (défaut 20). Son travail partiel est quand même transmis.
 - `js_eval_max_inputs` : nombre de ressources qu'un même appel `js__eval` peut
   croiser (défaut 10). Cap sur le nombre de handles, pas sur leur volume.
+- `js_eval_timeout_s` : temps d'exécution maximum d'un `js__eval` (défaut 10 s).
+  La garde n'est pas désactivable : une valeur nulle ou négative retombe sur le
+  défaut.
+- `stream_idle_timeout_s` : silence maximum toléré **entre deux fragments** d'un
+  flux avant de le tenir pour mort (défaut 180 s). Ce n'est pas une durée totale
+  — un échange légitime peut streamer bien plus longtemps. À relever derrière un
+  backend lent à produire son premier token.
+- `mcp_default_timeout_s` : délai d'attente **par défaut** d'un appel à un
+  serveur MCP (défaut 30 s). Reste modifiable serveur par serveur dans l'UI.
+- `attachment_image_max_bytes` / `attachment_max_images` : plafond de taille
+  d'une image jointe, appliqué avant redimensionnement (défaut 10 Mo), et
+  nombre d'images par message (défaut 4). Les fichiers non-image relèvent d'un
+  autre plafond, non configurable. Le message de refus reprend la valeur
+  effective.
+- `max_turns` : nombre de tours d'appels d'outils qu'un échange peut enchaîner
+  avant d'être arrêté (défaut 100). Pendant non-agent de `max_agent_turns`.
 - `repo_url` : URL liée sur le mot « MIAOU » dans le footer des exports HTML
   (conversations et Markdown convertis). **Trois états distincts** : clef
   **absente ou `null`** → lien vers le dépôt public

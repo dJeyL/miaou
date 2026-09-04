@@ -129,6 +129,88 @@ jamais dans le contexte du modèle** : seul le blurb d'identité (statique, cour
 et l'enum de slugs y vont ; le contenu des sections n'arrive qu'en tool result,
 une section à la fois, sur appel du modèle.
 
+### Jetons `{{NOM}}` : valeurs configurables dans l'aide
+
+`src/help.md` est rédigé **sans valeur chiffrée** partout où une formulation
+qualitative suffit (« un fichier trop volumineux » plutôt qu'un plafond) : une
+prose qui ne cite pas de nombre ne périme pas. Là où un chiffre aide réellement
+l'utilisateur — comprendre pourquoi une pièce jointe a été refusée, savoir
+combien d'agents peuvent tourner —, il s'écrit `{{NOM}}` et n'est résolu qu'à
+la lecture, depuis la constante vivante.
+
+La raison est que ces valeurs sont **configurables au build** : un chiffre
+littéral dans `help.md` serait juste pour le déploiement de référence et faux
+pour tout autre, et le modèle le servirait avec assurance — le mode de
+confabulation que `help.md` a déjà provoqué plusieurs fois. Le jeton déplace la
+valeur du texte vers sa source.
+
+Trois fonctions, dans `tools.js` :
+
+- `helpPlaceholderValues()` — la table `{NOM: valeur}`, **seule énumération**
+  des jetons connus. En fonction et non en objet top-level : les constantes
+  viennent de `storage.js`, et un `const` ne franchit pas la frontière de
+  fichier au top-level dans le test runner.
+- `resolveHelpPlaceholders(markdown, values)` — pure, testable. Un jeton inconnu
+  est laissé **tel quel** plutôt que remplacé par du vide : un `{{TRUC}}` visible
+  se remarque, un trou silencieux non.
+- `helpContentResolved()` — l'aide entière résolue.
+
+**Les deux consommateurs partagent la même source résolue** : `about` substitue
+la section servie, `about_search` cherche dans `helpContentResolved()`. Résoudre
+d'un seul côté ferait qu'une recherche portant sur un chiffre ne trouverait
+rien, alors que la lecture de la section l'affiche — le défaut classique du
+prédicat non appliqué à toutes ses sources.
+
+`run_help_placeholders_check` (runner.py) lit la table dans `tools.js` plutôt
+que d'en recopier les noms, et refuse aussi bien un jeton orphelin dans
+`help.md` qu'une entrée de table jamais employée.
+
+### Libellés de section et `{{TOPIC_LIST}}`
+
+Un titre de section peut porter un libellé lisible après un tiret cadratin :
+
+```markdown
+## pieces-jointes — pièces jointes
+## traces-outils — traces d'outils et inspection
+```
+
+`parse_help_sections` rend désormais un **couple** `({slug: markdown},
+{slug: libellé})` ; le libellé est facultatif et n'entre jamais dans le slug,
+dont dérive l'enum `topic` de l'outil. Les libellés partent dans
+`__MIAOU_HELP_LABELS__`, marqueur distinct de `__MIAOU_HELP__` pour ne pas
+changer la forme de `HELP_CONTENT` (consommée par `about`, l'enum et
+`about_search`).
+
+Ils servent `{{TOPIC_LIST}}`, la liste des sujets d'`apercu`, composée par
+`formatHelpTopicList` depuis les sections **réellement présentes** — une puce
+par sujet, `apercu` s'excluant lui-même, un slug sans libellé se rabattant sur
+son slug plutôt que de disparaître.
+
+C'est la raison d'être du mécanisme : cette phrase était le dernier endroit du
+fichier où ajouter ou scinder une section rendait un texte faux **en silence**.
+Une liste rédigée en prose n'annonce pas son propre nombre, donc le grep des
+compteurs explicites (« deux types », « les trois modes ») ne pouvait rien
+contre elle — le seul remède est de ne pas la rédiger. Ajouter une section
+suffit maintenant à l'annoncer ; la seule chose à ne pas oublier est son
+libellé, et son absence dégrade proprement.
+
+### Découper une section
+
+Les slugs ne vivent que dans `help.md` (seul `apercu` est codé en dur, comme
+défaut de `about`) : renommer ou scinder ne casse donc rien mécaniquement,
+l'enum se recalcule. Le coût est **éditorial**, et deux choses sont à reprendre
+dans le même lot :
+
+- les **renvois entre sujets** (`voir le sujet \`x\``) qui pointaient vers la
+  section d'origine et visent en fait la moitié partie ailleurs ;
+- les **renvois relatifs** (« voir plus bas », « décrite plus bas ») qui
+  franchissent désormais une frontière de section — un lecteur qui ne reçoit
+  qu'une section ne les résout plus.
+
+Les deux ont été payés au découpage de `pieces-jointes` et `interface` : un
+renvoi vers `interface` désignait le compteur d'agents (parti dans
+`multitache`) et un autre l'inspecteur d'appel (parti dans `traces-outils`).
+
 ## Marqueur des skills système : `__MIAOU_SYSTEM_SKILLS__`
 
 Substitué par le contenu des skills système (`src/system-skills/*.md`, cf.
@@ -141,7 +223,7 @@ vide (contrairement à `config.json`, ces fichiers sont censés être valides d�
 qu'ils existent). `load_system_skills()` agrège tous les fichiers du dossier
 en objet ordonné `{slug: {name, description, content}}` ; dossier absent ou
 vide → `{}` (additif, pas un prérequis de build). Sérialisé par `json.dumps` +
-échappement `</`, mêmes contraintes que les deux marqueurs précédents.
+échappement `</`, mêmes contraintes que les marqueurs précédents.
 
 Côté source (`skills.js`), unique point d'injection :
 

@@ -14,6 +14,86 @@
 // le contenu, pas de drift possible.
 const HELP_CONTENT = (function () { try { return __MIAOU_HELP__; } catch (e) { return {}; } })();
 
+// Libellés lisibles des sections ({slug: libellé}), injectés depuis les titres
+// de src/help.md (`## slug — libellé`). Marqueur DISTINCT de __MIAOU_HELP__ pour
+// ne pas changer la forme de HELP_CONTENT, consommée par about, l'enum `topic`
+// et about_search. Même forme try/catch : {} sous QuickJS non buildé.
+const HELP_LABELS = (function () { try { return __MIAOU_HELP_LABELS__; } catch (e) { return {}; } })();
+
+// Placeholders de valeurs configurables dans src/help.md. L'aide est rédigée
+// SANS chiffre en dur partout où c'est possible (« un fichier trop volumineux »
+// plutôt qu'un plafond chiffré) : c'est la meilleure défense, puisqu'une prose
+// qualitative ne périme pas. Mais quand un chiffre est réellement plus clair
+// pour l'utilisateur, l'écrire littéralement le rendrait FAUX dès qu'un
+// déploiement change la clé de config correspondante — et le modèle servirait
+// cette valeur périmée avec assurance (c'est le mode de confabulation que
+// help.md a déjà provoqué plusieurs fois). D'où ces jetons, résolus à la
+// lecture depuis les constantes vivantes.
+//
+// La table est la SEULE énumération : le test qui vérifie qu'aucun jeton
+// inconnu ne traîne dans help.md la lit, plutôt que de recopier les noms.
+// Valeurs en fonction (et non en objet littéral top-level) parce que les
+// constantes viennent de storage.js : un const ne franchit pas la frontière de
+// fichier au top-level dans le test runner (contrainte structurelle, CLAUDE.md).
+// Liste lisible des sujets d'aide, pour la phrase d'orientation d'`apercu`.
+// Composée depuis HELP_CONTENT (les sections réellement présentes) et non depuis
+// une énumération rédigée : c'était le dernier endroit du fichier où ajouter ou
+// scinder une section rendait une phrase fausse en silence — le grep des
+// compteurs explicites ne peut rien contre une liste en prose, qui n'annonce pas
+// son propre nombre. `apercu` s'exclut lui-même (on y est déjà). Un slug sans
+// libellé se rabat sur son slug plutôt que de disparaître de la liste.
+// Pure sur ses entrées → testable QuickJS.
+function formatHelpTopicList(content, labels, exclude) {
+  // Une puce par sujet plutôt qu'une phrase à rallonge : la liste a passé les
+  // quinze entrées au redécoupage, et une énumération de cette longueur en
+  // prose est illisible autant pour l'utilisateur que pour le modèle qui doit y
+  // choisir un topic. Le slug est donné entre backticks, sous la forme même que
+  // l'outil attend.
+  return Object.keys(content || {})
+    .filter(function (s) { return s !== exclude; })
+    .map(function (s) { return '- `' + s + '` — ' + ((labels || {})[s] || s); })
+    .join('\n');
+}
+
+function helpPlaceholderValues() {
+  return {
+    TOPIC_LIST: formatHelpTopicList(HELP_CONTENT, HELP_LABELS, 'apercu'),
+    ATTACHMENT_IMAGE_MAX: capLabel(ATTACHMENT_IMAGE_MAX_BYTES),
+    ATTACHMENT_MAX_IMAGES: String(ATTACHMENT_MAX_IMAGES),
+    INLINE_MAX: capLabel(MAX_INLINE_BYTES),
+    JS_EVAL_MAX_INPUTS: String(JS_EVAL_MAX_INPUTS),
+    JS_EVAL_TIMEOUT_S: String(Math.round(JS_EVAL_TIMEOUT_MS / 1000)),
+    MAX_AGENTS_PER_CONV: String(MAX_AGENTS_PER_CONV),
+    MAX_AGENTS_TOTAL: String(MAX_AGENTS_TOTAL),
+  };
+}
+
+// Substitue les jetons {{NOM}} d'une section d'aide par leur valeur vivante.
+// PURE (valeurs injectées) → testable QuickJS. Un jeton inconnu est laissé TEL
+// QUEL plutôt que remplacé par du vide : un trou silencieux dans l'aide se
+// remarque moins qu'un `{{TRUC}}` visible, et l'aide reste lisible.
+function resolveHelpPlaceholders(markdown, values) {
+  const vals = values || {};
+  return String(markdown == null ? '' : markdown)
+    .replace(/\{\{([A-Z0-9_]+)\}\}/g, function (whole, name) {
+      return Object.prototype.hasOwnProperty.call(vals, name) ? vals[name] : whole;
+    });
+}
+
+// Aide résolue, SEULE source servie aux deux consommateurs (about et
+// about_search). Passer par un point unique est ce qui garantit qu'une
+// recherche portant sur un chiffre trouve la même chose que la lecture de la
+// section : substituer côté `about` seulement laisserait about_search chercher
+// dans le texte à jetons.
+function helpContentResolved() {
+  const vals = helpPlaceholderValues();
+  const out = {};
+  for (const slug of Object.keys(HELP_CONTENT)) {
+    out[slug] = resolveHelpPlaceholders(HELP_CONTENT[slug], vals);
+  }
+  return out;
+}
+
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
 function summaryLight(e) {
   return { id: e.id, title: e.title, timestamp: e.timestamp,
@@ -290,7 +370,9 @@ const DOCS_DOCTRINE =
 // sur un log de 21 Mo réel les a dépassées (l'injection seule tenait en ~158 ms
 // au spike L0). Le cap d'entrée ayant doublé, 5 s redevenaient serrées sur un
 // blob proche du plafond. Une vraie boucle infinie meurt toujours proprement.
-const JS_EVAL_TIMEOUT_MS = 10000;
+// JS_EVAL_TIMEOUT_MS a rejoint storage.js (borne configurable : sa bonne valeur
+// dépend de la machine hôte). La garde elle-même reste obligatoire — une valeur
+// nulle ou négative en config retombe sur le défaut.
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
 
@@ -1480,7 +1562,10 @@ const TOOLS = [
       const topic = HELP_CONTENT[requested] != null ? requested : 'apercu';
       const content = HELP_CONTENT[topic];
       _pendingToolAcks.push({ kind: 'about_read', topic });
-      return content != null ? content : 'Aide indisponible.';
+      // Jetons {{…}} résolus depuis les constantes vivantes (cf.
+      // resolveHelpPlaceholders) : l'aide ne cite jamais une valeur figée au
+      // build alors que la config du déploiement en dit une autre.
+      return content != null ? resolveHelpPlaceholders(content, helpPlaceholderValues()) : 'Aide indisponible.';
     },
   },
   {
@@ -1512,7 +1597,7 @@ const TOOLS = [
     handler: (args) => {
       const query = String((args && args.query) || '').trim();
       if (!query) return toolFail('about_search', 'query manquant.');
-      const results = searchHelpContent(HELP_CONTENT, query);
+      const results = searchHelpContent(helpContentResolved(), query);
       _pendingToolAcks.push({ kind: 'about_search', query, count: results.length });
       if (results.length === 0) {
         return 'Aucun sujet d\'aide ne contient tous ces mots-clefs : ' + query;
@@ -1669,7 +1754,7 @@ const TOOLS = [
           _pendingToolAcks.push({ kind: 'js_eval', inputHandles: rawInputs, ok: false, outLen: r.len, code,
             outputHandle: outHandle || null, appendedLen });
           // REFUS explicite (§3), PAS un isError : result texte cadré pour que le
-          // modèle re-cible dans le même tour (borné par MAX_TOURS). isError
+          // modèle re-cible dans le même tour (borné par MAX_TURNS). isError
           // pourrait couper la boucle.
           return 'Sortie refusée : ' + r.len + ' caractères dépassent la limite de ' +
             r.cap + '. Réécris ton code pour renvoyer une synthèse plus petite ' +

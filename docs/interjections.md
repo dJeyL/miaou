@@ -197,7 +197,7 @@ choix, pas régression.
 ## Fins non-nominales : reflux, jamais d'envoi auto
 
 Toute fin NON-nominale — stop manuel (`aborted`), halte `ask_confirmation`,
-erreur réseau, `MAX_TOURS` — REFOULE les littéraux dans le composer
+erreur réseau, `MAX_TURNS` — REFOULE les littéraux dans le composer
 (`settleInterjectionQueue(false)`, joints par `\n\n`, préfixés au brouillon),
 puces vidées. « Stop veut dire stop » : rien ne part tout seul après un arrêt,
 rien n'est perdu. Seul `finish_reason: 'stop'` (`endedNominal = true`, posé dans

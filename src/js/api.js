@@ -4,22 +4,25 @@
    recherche/scoring des résumés.
    ────────────────────────────────────────────────────────────────────────── */
 
-const MAX_TOURS = 100;  // borne sur les tours de la boucle tool_calls
-                        // (20 → 40 : js__eval sur un gros fichier peut demander
-                        //  plusieurs passes exploratoires avant la synthèse ;
-                        //  40 → 100 : plafond atteint FRÉQUEMMENT en usage réel
-                        //  intensif — ce n'est plus un garde-fou contre une
-                        //  boucle folle, c'est un couperet sur du travail
-                        //  légitime, et un échange coupé au milieu coûte plus
-                        //  cher que quelques tours de trop)
-
-// Silence maximal toléré ENTRE DEUX CHUNKS d'un stream avant de le tenir pour
-// mort (cf. le chien de garde de streamCompletion). Ce n'est pas une durée
-// totale : un échange légitime peut streamer bien plus longtemps, le borner
-// couperait du travail en cours. Large à dessein — un backend chargé peut
-// mettre longtemps à produire son premier token (prompt volumineux, modèle qui
-// se charge, file d'attente) ; on vise la connexion morte, pas la lenteur.
-const STREAM_IDLE_TIMEOUT_MS = 180000;
+// MAX_TURNS (borne des tours de la boucle tool_calls) et STREAM_IDLE_TIMEOUT_MS
+// (chien de garde d'inactivité du stream) vivent désormais dans storage.js avec
+// les autres bornes configurables : BUILD_CONFIG y est injecté au build. Elles ne
+// sont donc lisibles ici qu'en corps de fonction (contrainte structurelle : un
+// const ne franchit pas la frontière de fichier dans le test runner, CLAUDE.md).
+//
+// Historique de MAX_TURNS, qui explique le défaut de 100 : 20 → 40 parce qu'un
+// js__eval sur un gros fichier demande plusieurs passes exploratoires avant la
+// synthèse ; 40 → 100 parce que le plafond était atteint FRÉQUEMMENT en usage
+// réel intensif — ce n'est plus un garde-fou contre une boucle folle, c'est un
+// couperet sur du travail légitime, et un échange coupé au milieu coûte plus
+// cher que quelques tours de trop.
+//
+// Le défaut de STREAM_IDLE_TIMEOUT_MS (180 s) est un silence maximal ENTRE DEUX
+// CHUNKS, pas une durée totale : un échange légitime peut streamer bien plus
+// longtemps, le borner couperait du travail en cours. Large à dessein — un
+// backend chargé peut mettre longtemps à produire son premier token (prompt
+// volumineux, modèle qui se charge, file d'attente) ; on vise la connexion
+// morte, pas la lenteur.
 
 // L'AbortController d'un stream appartient à SA génération (lot T-1a), jamais au
 // module : avec N générations concurrentes, un singleton ferait écraser le
@@ -709,7 +712,7 @@ async function runConversation(messages, hooks) {
   // produire avant l'appel d'outil) ; relayé en live avec ce préfixe.
   let reasoningAcc = '';
 
-  for (let tour = 1; tour <= MAX_TOURS; tour++) {
+  for (let tour = 1; tour <= MAX_TURNS; tour++) {
     const result = await streamCompletion(messages, {
       // Génération propriétaire de cet échange (lot T-1a) : porte l'AbortController
       // du tour en cours, pour un abort ciblé conversation par conversation.

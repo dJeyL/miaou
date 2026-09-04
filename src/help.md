@@ -1,4 +1,4 @@
-## apercu
+## apercu — vue d'ensemble
 
 MIAOU est un client de chat web pour dialoguer avec un modèle de langage. Tu
 discutes avec le modèle en langage naturel ; il peut répondre, raisonner à voix
@@ -26,11 +26,12 @@ Ce que tu peux faire ici :
   sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
   et récupérer son résultat.
 
-Pour en savoir plus sur un sujet précis, demande-moi : pièces jointes, Espaces,
-mémoire, historique, skills, agents, outils distants, exports, interface,
-contexte envoyé au modèle, données personnelles, ou la genèse du projet.
+Pour en savoir plus sur un sujet précis, demande-moi. Les sujets disponibles :
 
-## pieces-jointes
+{{TOPIC_LIST}}
+
+
+## pieces-jointes — pièces jointes
 
 Tu peux joindre des fichiers à un message avant de l'envoyer : clique sur le
 trombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur
@@ -41,9 +42,15 @@ voit réellement, s'il gère la vision), **fichiers texte** (leur contenu est
 transmis au modèle), **archives zip** (le modèle en liste le contenu et en sort
 le fichier qui l'intéresse) et **documents** — PDF, classeurs Excel, documents
 Word et présentations PowerPoint — que MIAOU ouvre lui-même, structure d'abord
-puis lecture ciblée (voir plus bas). Les autres fichiers binaires sont acceptés et conservés, mais le
-modèle n'en voit que le nom, le type et la taille tant qu'aucun outil ne sait
-les ouvrir (voir le sujet `mcp`).
+puis lecture ciblée (voir le sujet `documents`). Les autres fichiers binaires
+sont acceptés et conservés, mais le modèle n'en voit que le nom, le type et la
+taille tant qu'aucun outil ne sait les ouvrir (voir le sujet `mcp`).
+
+Quelques plafonds, fixés à l'installation : une image ne doit pas dépasser
+{{ATTACHMENT_IMAGE_MAX}}, et tu peux en joindre au plus
+{{ATTACHMENT_MAX_IMAGES}} par message ; les autres fichiers sont acceptés
+jusqu'à {{INLINE_MAX}}. Un fichier au-delà est refusé avec un message qui le
+dit, il n'est jamais tronqué en silence.
 
 Une fois envoyées, les pièces jointes apparaissent comme des vignettes sous ton
 message. Tu peux les rouvrir : cliquer sur une image l'affiche en plein écran,
@@ -60,17 +67,7 @@ chaque tour, pour rester économe. Si tu veux qu'un fichier reste disponible
 durablement (pas seulement le temps d'un message), promeus-le dans la
 bibliothèque de fichiers de ton Espace — voir le sujet `espaces`.
 
-Pour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle
-n'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le
-calcul** — compter des lignes, filtrer, agréger, extraire un extrait — en
-exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile
-pour interroger un fichier trop gros pour tenir dans le contexte. Il peut même
-croiser plusieurs fichiers dans un même calcul — pour rapprocher deux résultats
-obtenus séparément sans avoir à les faire repasser par la conversation. Si la réponse
-ramenée est elle-même trop volumineuse, le modèle est invité à la resserrer
-plutôt qu'à déverser le fichier brut — ou, quand il s'agit justement de
-**produire** un gros contenu, à l'écrire au fil du calcul dans une ressource,
-qui n'a pas cette limite (voir plus bas).
+## documents — documents : PDF, Excel, Word, PowerPoint, zip
 
 Les **archives zip** sont ouvertes par MIAOU lui-même, sans aucun serveur
 compagnon : le modèle peut lister les fichiers contenus dans une archive que tu
@@ -80,7 +77,7 @@ protégés par mot de passe sont refusés explicitement plutôt que lus de trave
 Un document Office (`.docx`, `.xlsx`, `.pptx`) étant lui aussi une archive,
 MIAOU sait l'ouvrir de cette façon — il n'y voit alors que sa mécanique interne,
 ce qui ne sert qu'à qui veut justement la voir. Pour en tirer le texte, c'est
-l'ouverture par format décrite plus bas qui s'applique, et elle est automatique.
+l'ouverture par format décrite ci-dessous qui s'applique, et elle est automatique.
 
 Les **PDF** sont lus nativement eux aussi. Le modèle peut en donner la structure
 — nombre de pages, sommaire, titre et logiciel d'origine quand le document les
@@ -168,6 +165,22 @@ en un seul zip que tu récupères d'un clic, plutôt que de te les faire
 télécharger un par un. Le bouton de téléchargement apparaît directement dans le
 fil, sous la trace de l'outil.
 
+## ressources — analyse par le calcul et ressources
+
+Pour un fichier texte volumineux (un log, un gros JSON, un CSV), le modèle
+n'est pas obligé d'en charger tout le contenu : il peut l'**analyser par le
+calcul** — compter des lignes, filtrer, agréger, extraire un extrait — en
+exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. Utile
+pour interroger un fichier trop gros pour tenir dans le contexte. Il peut même
+croiser jusqu'à {{JS_EVAL_MAX_INPUTS}} fichiers dans un même calcul — pour
+rapprocher deux résultats obtenus séparément sans avoir à les faire repasser par
+la conversation. Le calcul est borné dans le temps ({{JS_EVAL_TIMEOUT_S}}
+secondes) : une analyse qui n'aboutit pas dans ce délai est interrompue. Si la réponse
+ramenée est elle-même trop volumineuse, le modèle est invité à la resserrer
+plutôt qu'à déverser le fichier brut — ou, quand il s'agit justement de
+**produire** un gros contenu, à l'écrire au fil du calcul dans une ressource,
+qui n'a pas cette limite (voir plus bas dans ce sujet).
+
 Le modèle peut aussi ranger lui-même un texte qu'il vient de produire ou de
 recomposer (une compilation, un résultat intermédiaire volumineux) sous forme
 de ressource, plutôt que de l'écrire en clair dans sa réponse — cette ressource
@@ -192,7 +205,7 @@ trace de l'outil le dit — elle apparaît en rouge et porte la mention
 « interrompu », pour que tu ne prennes pas un fichier arrêté au milieu pour un
 fichier fini.
 
-## espaces
+## espaces — Espaces
 
 Les **Espaces** sont des espaces de travail étanches les uns aux autres. Chacun
 a ses propres conversations, ses propres pièces jointes et ses propres
@@ -241,7 +254,7 @@ agent travaille en ce moment ne peut pas être déplacée : sa case est grisée 
 temps qu'il finisse (sujet `agents`). Les agents inertes, eux, suivent leur
 conversation.
 
-## memoire
+## memoire — mémoire et souvenirs
 
 Le modèle peut garder des **souvenirs** durables : des faits sur toi ou sur ton
 travail qu'il réutilise d'une conversation à l'autre. Il les écrit sur ton
@@ -271,7 +284,7 @@ sans trace dans la conversation (mécanisme détaillé au sujet `contexte`).
 La mémoire des souvenirs est distincte de la continuité entre conversations
 (résumés automatiques) — voir le sujet `historique`.
 
-## historique
+## historique — historique et recherche
 
 Tes conversations sont **conservées** et rangées dans la barre latérale par
 période (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre
@@ -313,7 +326,7 @@ depuis chacun d'eux.
 Note : cette continuité vaut à l'intérieur d'un Espace ; un Espace ne voit pas
 l'historique d'un autre.
 
-## skills
+## skills — skills
 
 Les **skills** sont des fragments d'instructions réutilisables que tu écris une
 fois et rappelles à volonté. Chacune a un mot-clé d'invocation (son « slug »), un
@@ -360,7 +373,7 @@ panneau Skills, dans une liste distincte, repérables à leur badge « Système 
 Toujours actives, non modifiables ni supprimables : un bouton « Consulter »
 affiche leur contenu en lecture seule.
 
-## agents
+## agents — agents
 
 Le modèle peut lancer un **agent** : une sous-conversation autonome à qui il
 confie une tâche précise, et qui travaille en parallèle pendant qu'il continue
@@ -395,7 +408,7 @@ L'agent le lit sans le modifier.
 ce qui a été demandé à l'agent. Pendant qu'il travaille, la conversation porte
 une pastille qui clignote, comme si elle rédigeait elle-même — parce que c'est
 bien elle qui travaille, à travers lui. Le compteur d'agents en haut à droite
-le compte aussi (voir le sujet `interface`). Quand il a fini, son résultat
+le compte aussi (voir le sujet `multitache`). Quand il a fini, son résultat
 apparaît dans le fil comme un message, et le modèle repart de là.
 
 Ce message-là arrive **replié** : tu vois la tâche qui avait été confiée et
@@ -439,12 +452,13 @@ Si tu veux poursuivre le travail, c'est à cette conversation-là qu'il faut le
 demander : elle relancera un agent.
 
 **Ce qui les borne.** Trois garde-fous, pour éviter qu'un agent parte
-indéfiniment ou qu'ils s'accumulent : un nombre maximum d'agents simultanés par
-conversation, un maximum global toutes conversations confondues, et un nombre
-maximum d'étapes qu'un agent peut enchaîner avant d'être arrêté d'office. Dans
-ce dernier cas son travail partiel est quand même transmis, en étant signalé
-comme incomplet — le modèle sait qu'il ne doit pas le prendre pour un résultat
-fini. Ces valeurs sont fixées à l'installation.
+indéfiniment ou qu'ils s'accumulent : au plus {{MAX_AGENTS_PER_CONV}} agents
+simultanés par conversation, {{MAX_AGENTS_TOTAL}} toutes conversations
+confondues, et un nombre maximum d'étapes qu'un agent peut enchaîner avant
+d'être arrêté d'office. Dans ce dernier cas son travail partiel est quand même
+transmis, en étant signalé comme incomplet — le modèle sait qu'il ne doit pas le
+prendre pour un résultat fini. Ces valeurs sont fixées à l'installation et
+peuvent donc différer d'un déploiement à l'autre.
 
 **Suppression.** Un agent vit avec la conversation qui l'a lancé : supprimer
 celle-ci supprime ses agents, et arrête ceux qui tournaient encore. Déplacer une
@@ -454,7 +468,7 @@ finisse.
 
 Comme les réponses en cours, un agent ne survit pas au rechargement de la page.
 
-## mcp
+## mcp — serveurs compagnons MCP
 
 Au-delà de ses fonctions intégrées, MIAOU peut se connecter à des **serveurs
 compagnons** (serveurs MCP distants) qui ajoutent des outils au modèle. Pour toi
@@ -473,7 +487,7 @@ exemple :
 - **Extraire le contenu de documents** — mais ce n'est plus nécessaire : les
   archives zip, les PDF, les classeurs Excel, les documents Word et les
   présentations PowerPoint sont désormais tous ouverts par MIAOU lui-même (voir
-  le sujet `pieces-jointes`). Un serveur d'extraction documentaire garde un seul
+  le sujet `documents`). Un serveur d'extraction documentaire garde un seul
   usage, qui reste réel : le travail **hors connexion**. L'ouverture native
   télécharge son moteur depuis internet au premier document d'un format donné ;
   sans réseau, elle ne peut pas s'amorcer, là où un serveur local tourne chez
@@ -524,7 +538,7 @@ d'extraction documentaire, qui n'est plus la voie normale d'ouverture d'un
 document mais reste le recours hors connexion. Il est open source :
 https://github.com/dJeyL/miaou-mcp-servers
 
-## exports
+## exports — exports et sauvegardes
 
 Tu peux sortir tes conversations de MIAOU de plusieurs manières :
 
@@ -536,13 +550,13 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   navigateur sans MIAOU ni connexion. Idéal pour archiver ou partager par mail.
   Les images y sont embarquées et restent cliquables — celles qui apparaissent
   dans le fil, donc pas les pages de PDF rendues pour le modèle
-  (cf. `pieces-jointes`).
+  (cf. `documents`).
 - **La conversation entière en Markdown** : la même icône, cliquée en gardant
   **Shift** enfoncé. L'export inclut la trace des outils utilisés à chaque tour.
   Dans un export, les paramètres et résultats de ces appels sont **abrégés** :
   ils sont là pour situer ce qui s'est passé, pas pour rejouer l'appel. Pour le
   détail complet, la loupe de chaque trace ouvre l'inspecteur d'appel dans
-  l'application (sujet `interface`).
+  l'application (sujet `traces-outils`).
   Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de
   commandes fait la même chose.
 
@@ -579,7 +593,7 @@ diagrammes peuvent être exportés en image SVG ou PNG. Sur un bloc **Markdown**
 un bouton supplémentaire le convertit directement en page HTML — même résultat
 que la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.
 
-## contexte
+## contexte — contexte envoyé au modèle
 
 À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y
 ajoute automatiquement un **contexte** pour que le modèle réponde en connaissance
@@ -621,7 +635,7 @@ lieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes
 instructions système, casse volontairement ce préfixe stable (le contexte change
 vraiment) : c'est attendu.
 
-## interface
+## interface — repères à l'écran
 
 Quelques repères pour te déplacer dans MIAOU :
 
@@ -646,6 +660,63 @@ Quelques repères pour te déplacer dans MIAOU :
   (langage, copier, télécharger) restant visible pendant que tu le parcours.
   Le fichier obtenu par le bouton « télécharger », lui, contient toujours le
   bloc entier, et les pages HTML exportées ne coupent rien.
+- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
+  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
+  gardé à part de la réponse.
+- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :
+  change le modèle de la conversation courante sans toucher à ton défaut. Si
+  plusieurs serveurs API sont configurés, il liste les modèles de chacun,
+  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le
+  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée
+  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour
+  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →
+  Serveurs API) pour ne plus être interrogé ni proposé.
+- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour
+  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
+  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —
+  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,
+  inspecteur de contexte, bascule de thème et de coloration, export de la
+  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
+  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou
+  rechercher une conversation — seule exception à l'étanchéité des Espaces
+  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en
+  arrière).
+  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule
+    touche lance la commande — la lettre est affichée à gauche de chaque ligne.
+    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une
+    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer
+    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les
+    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,
+    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.
+
+## apparence — apparence : thème, fontes, couleurs
+
+Ces réglages sont indépendants les uns des autres : ils se combinent librement,
+et ton choix est conservé d'une session à l'autre.
+
+- **Thème clair / sombre** et coloration syntaxique se règlent dans les
+  Paramètres.
+- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**
+  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une
+  police de texte et une police à chasse fixe (blocs de code) choisies pour
+  aller ensemble. Réglage indépendant du thème et de la palette.
+- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres
+  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur
+  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage
+  indépendant du thème clair/sombre : chaque palette a sa version claire et sa
+  version sombre, et changer l'un ne change pas l'autre.
+- **Animations** : un réglage dans les Paramètres
+  (Normales / Réduites / Suivre le système) coupe toutes les transitions et
+  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de
+  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la
+  préférence de réduction d'animations de ton OS.
+
+## multitache — travailler en parallèle
+
+MIAOU ne t'oblige pas à attendre : tu peux écrire pendant que le modèle
+travaille, lancer plusieurs réponses de front, et suivre ce qui bouge ailleurs
+sans perdre ta place.
+
 - **Ajouter en cours de route** : si le modèle travaille (surtout quand il
   enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée
   sans l'interrompre** — il se met en file au-dessus du composer et lui est
@@ -699,38 +770,27 @@ Quelques repères pour te déplacer dans MIAOU :
   service qui attend que tu t'identifies. Elle ouvre la liste des serveurs, où
   chaque accès en attente porte son bouton. Elle n'existe que dans ce cas :
   quand tout est autorisé, rien ne s'affiche. Voir le sujet `mcp`.
-- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
-  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
-  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une
-  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le
-  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de
-  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce
-  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la
-  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part
-  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet
-  contexte.
-- **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
-  dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
-  gardé à part de la réponse.
-- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :
-  change le modèle de la conversation courante sans toucher à ton défaut. Si
-  plusieurs serveurs API sont configurés, il liste les modèles de chacun,
-  regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le
-  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée
-  apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour
-  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →
-  Serveurs API) pour ne plus être interrogé ni proposé.
-- **Thème clair / sombre** et coloration syntaxique se règlent dans les
-  Paramètres.
-- **Fontes** : trois lots de polices au choix dans les Paramètres — **Graphite**
-  (l'aspect d'origine), **Atelier** et **Chaleur**. Chaque lot associe une
-  police de texte et une police à chasse fixe (blocs de code) choisies pour
-  aller ensemble. Réglage indépendant du thème et de la palette.
-- **Palette de couleurs** : trois jeux de couleurs au choix dans les Paramètres
-  — **Ambre** (orange sur gris froids, l'aspect d'origine), **Encre** (bleu sur
-  bleu-nuit) et **Forêt** (vert jade sur gris-vert). C'est un réglage
-  indépendant du thème clair/sombre : chaque palette a sa version claire et sa
-  version sombre, et changer l'un ne change pas l'autre.
+- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
+  navigateur ; ils restent synchronisés. Une modification faite dans un onglet
+  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en
+  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.
+  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que
+  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux
+  Espaces différents dans deux onglets. Si la même conversation est ouverte à
+  deux endroits, un
+  bandeau discret le signale. Et si une réponse est en cours de génération dans
+  un onglet, la même conversation passe en **lecture seule** dans les autres le
+  temps de la réponse — pour éviter deux générations concurrentes qui
+  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale
+  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs
+  différents).
+
+## traces-outils — traces d'outils et inspection
+
+Quand le modèle se sert d'outils, chaque action laisse une trace dans le fil.
+Voici ce que tu peux en faire, et comment voir ce qui est réellement envoyé au
+modèle.
+
 - **Étapes d'outils** : quand le modèle enchaîne plusieurs actions (mémoire,
   recherche, outils distants…) pour une même réponse, elles s'affichent en
   mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et
@@ -756,44 +816,18 @@ Quelques repères pour te déplacer dans MIAOU :
   Un fichier trop volumineux n'est pas prévisualisé — il reste téléchargeable.
   La loupe n'apparaît que sur les traces dont le détail a été conservé : les
   conversations les plus anciennes peuvent en être dépourvues.
-- **Animations** : un réglage dans les Paramètres
-  (Normales / Réduites / Suivre le système) coupe toutes les transitions et
-  animations visuelles de l'interface — utile en cas de gêne au mouvement ou de
-  préférence pour un affichage instantané. « Suivre le système » s'aligne sur la
-  préférence de réduction d'animations de ton OS.
-- **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour
-  ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
-  Échap pour fermer. Elle donne accès aux actions courantes sans la souris —
-  nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,
-  inspecteur de contexte, bascule de thème et de coloration, export de la
-  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
-  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou
-  rechercher une conversation — seule exception à l'étanchéité des Espaces
-  (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en
-  arrière).
-  - **Raccourcis directs** : la palette une fois ouverte (champ vide), une seule
-    touche lance la commande — la lettre est affichée à gauche de chaque ligne.
-    En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une
-    conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer
-    d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les
-    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,
-    `H` coloration syntaxique, `D` export Markdown, `W` export HTML.
-- **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
-  navigateur ; ils restent synchronisés. Une modification faite dans un onglet
-  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en
-  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.
-  L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que
-  tu regardes, pas une donnée partagée — tu peux donc travailler dans deux
-  Espaces différents dans deux onglets. Si la même conversation est ouverte à
-  deux endroits, un
-  bandeau discret le signale. Et si une réponse est en cours de génération dans
-  un onglet, la même conversation passe en **lecture seule** dans les autres le
-  temps de la réponse — pour éviter deux générations concurrentes qui
-  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale
-  à ton navigateur (elle ne relie pas deux machines ni deux navigateurs
-  différents).
+- **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
+  un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
+  outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une
+  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le
+  modèle et surveiller le remplissage de la fenêtre de contexte. La taille de
+  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce
+  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la
+  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part
+  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet
+  contexte.
 
-## donnees
+## donnees — tes données et leur stockage
 
 MIAOU s'exécute **entièrement dans ton navigateur**. Il n'y a pas de serveur
 applicatif MIAOU : tes conversations, tes souvenirs, tes skills, tes Espaces et
@@ -871,7 +905,7 @@ chat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il
 contient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas
 ton navigateur.
 
-## genese
+## genese — genèse du projet
 
 MIAOU est né d'un besoin concret. Julien L. (alias **dJeyL**) avait au travail,
 faute d'accès à mieux, un endpoint « dev only » exposant un modèle — brut, sans

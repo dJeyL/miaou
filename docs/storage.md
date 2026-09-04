@@ -498,10 +498,15 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
     `formatAttachmentDescriptor` (resources.js, brief A lot 2) est un
     formateur **distinct** de `formatResourceDescriptor` (format différent :
     `att-N`, dimensions, texte anglais, mention `miaou__recall_attachment`) —
-    ne pas les confondre, les deux coexistent. Réutilise `humanSize` pour la
-    taille lisible ; son rendu (`"1.5 KB"`, majuscules) diverge du style de
-    l'exemple du brief (`"214 kB"`) — écart assumé, pas de second formateur de
-    taille ad hoc.
+    ne pas les confondre, les deux coexistent. Réutilise **`modelSize`** pour la
+    taille — le formateur des chaînes adressées au modèle, distinct de
+    `humanSize` qui sert l'interface en français (« Ko/Mo/Go »). La séparation
+    est structurelle : un descripteur d'attachment est persisté en string après
+    le tour d'attache (piège 17), donc changer son format ne réécrit pas
+    l'historique et laisserait deux unités coexister dans une même conversation.
+    Le rendu de `modelSize` (`"1.5 KB"`, majuscules) diverge du style de
+    l'exemple du brief (`"214 kB"`) — écart assumé, pas de troisième formateur
+    de taille ad hoc.
   - **Récupération depuis la bulle (lot A3-1)** : un chip d'attachment en
     bulle envoyée (`attChipHtml`, ui.js — gate `conversationId` truthy,
     exclut composer ET export/Gbis) porte un handler global unique

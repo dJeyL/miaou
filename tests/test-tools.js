@@ -2029,3 +2029,54 @@ describe('texte du refus d\'autorisation adresse au MODELE (campagne AB)', funct
     expect(o).toContain('seul l\'utilisateur peut accorder');
   });
 });
+
+// ── Aide : jetons {{…}} et liste des sujets ──────────────────────────────────
+// Deux fonctions pures, testées ici sur des entrées injectées : sous QuickJS
+// HELP_CONTENT vaut {} (sources non buildées), donc on ne dépend pas du contenu
+// réel de help.md — ce que garde le contrôle Python run_help_placeholders_check.
+
+describe('resolveHelpPlaceholders — substitution des valeurs configurables', function() {
+  it('remplace un jeton connu par sa valeur', function() {
+    expect(resolveHelpPlaceholders('au plus {{N}} images', { N: '4' }))
+      .toBe('au plus 4 images');
+  });
+  it('remplace toutes les occurrences d\'un même jeton', function() {
+    expect(resolveHelpPlaceholders('{{A}} puis {{A}}', { A: 'x' })).toBe('x puis x');
+  });
+  it('laisse un jeton INCONNU tel quel : un trou silencieux se remarque moins', function() {
+    expect(resolveHelpPlaceholders('{{ABSENT}} ici', { N: '4' })).toBe('{{ABSENT}} ici');
+  });
+  it('tolère un markdown vide ou nul sans exception', function() {
+    expect(resolveHelpPlaceholders(null, {})).toBe('');
+    expect(resolveHelpPlaceholders('', {})).toBe('');
+  });
+  it('tolère une table de valeurs absente', function() {
+    expect(resolveHelpPlaceholders('{{N}}', null)).toBe('{{N}}');
+  });
+  it('ne touche pas à un texte sans jeton', function() {
+    expect(resolveHelpPlaceholders('rien à faire ici', { N: '4' })).toBe('rien à faire ici');
+  });
+});
+
+describe('formatHelpTopicList — liste des sujets composée, jamais rédigée', function() {
+  var content = { apercu: 'a', espaces: 'b', mcp: 'c' };
+  var labels = { apercu: 'vue d\'ensemble', espaces: 'Espaces', mcp: 'serveurs compagnons MCP' };
+
+  it('une puce par sujet, slug entre backticks puis libellé', function() {
+    expect(formatHelpTopicList(content, labels, 'apercu'))
+      .toBe('- `espaces` — Espaces\n- `mcp` — serveurs compagnons MCP');
+  });
+  it('exclut le sujet demandé (apercu ne s\'annonce pas lui-même)', function() {
+    expect(formatHelpTopicList(content, labels, 'apercu').indexOf('`apercu`') < 0).toBeTruthy();
+  });
+  it('un slug SANS libellé se rabat sur le slug, plutôt que de disparaître', function() {
+    expect(formatHelpTopicList({ x: 'c' }, {}, 'apercu')).toBe('- `x` — x');
+  });
+  it('suit le contenu réel : une section ajoutée est annoncée sans rien rédiger', function() {
+    var grown = { apercu: 'a', espaces: 'b', mcp: 'c', nouvelle: 'd' };
+    expect(formatHelpTopicList(grown, labels, 'apercu').indexOf('`nouvelle`') >= 0).toBeTruthy();
+  });
+  it('tolère un contenu ou des libellés absents', function() {
+    expect(formatHelpTopicList(null, null, 'apercu')).toBe('');
+  });
+});

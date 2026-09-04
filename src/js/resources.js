@@ -8,8 +8,31 @@
 
 // ── Helpers purs (QuickJS-testables) ─────────────────────────────────────────
 
-// Taille lisible en anglais. Aucune dépendance Intl (testable sous QuickJS).
+// Taille lisible pour un HUMAIN (l'interface), en français : « Ko/Mo/Go ».
+// Aucune dépendance Intl (testable sous QuickJS). Le nom porte le destinataire :
+// ce qui part au modèle passe par modelSize, jamais par ici.
+//
+// Deux publics, deux formateurs, et la séparation n'est pas cosmétique : un
+// descripteur d'attachment est persisté EN STRING après le tour d'attache
+// (collapseAttachedMessageContent est un no-op sur une string, piège 17). Un
+// changement de format ne réécrit donc PAS l'historique — les anciens messages
+// garderaient l'ancienne unité et les nouveaux la nouvelle, écart permanent au
+// sein d'une même conversation, qu'aucune migration ne rattrape.
 function humanSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return n + ' o';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' Ko';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' Mo';
+  return (n / 1073741824).toFixed(1) + ' Go';
+}
+
+// Taille pour les descripteurs ADRESSÉS AU MODÈLE : format anglais figé,
+// identique à ce que humanSize produisait avant de passer au français — les
+// descripteurs déjà persistés restent donc byte-identiques, aucune invalidation
+// de KV cache et aucun écart dans l'historique. Figé VOLONTAIREMENT, pas par
+// inertie (cf. humanSize). Le reste du descripteur est déjà en anglais
+// (« binary content, not inlined ») : l'unité anglaise y est cohérente.
+function modelSize(bytes) {
   const n = Number(bytes) || 0;
   if (n < 1024) return n + ' B';
   if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
@@ -22,7 +45,7 @@ function humanSize(bytes) {
 // le prefixe stampTs, et on ne veut pas casser le KV cache).
 function formatResourceDescriptor(rec) {
   return '[resource id=' + rec.id + ' mime=' + rec.mime +
-    ' name="' + (rec.name || '') + '" size=' + humanSize(rec.size) + ']';
+    ' name="' + (rec.name || '') + '" size=' + modelSize(rec.size) + ']';
 }
 
 // Handle envoyé au modèle pour un blob inline `res_…` matérialisé depuis un
@@ -114,7 +137,7 @@ function buildLibraryManifestBlock(entries, spaceName) {
     ? 'Fichiers disponibles dans l\'espace ' + spaceName + ' :'
     : 'Fichiers disponibles dans cet espace :';
   const lines = sorted.map(function(e) {
-    let line = libraryRefFromId(e.id) + ' — ' + e.name + ' (' + e.mime + ', ' + humanSize(e.size) + ')';
+    let line = libraryRefFromId(e.id) + ' — ' + e.name + ' (' + e.mime + ', ' + modelSize(e.size) + ')';
     if (e.description) line += ' — ' + e.description;
     return line;
   });
@@ -202,13 +225,13 @@ function reserveAttIdFor(convId) {
 // collision de nom avec l'outil existant res_… — décision : nom distinct
 // `miaou__recall_attachment`, cf. audit/brief lot 2) :
 //   [attachment att-3: image "diagram.png", 1280x960, 214 kB — content available via miaou__recall_attachment]
-// Réutilise humanSize (déjà en usage pour les ressources) plutôt que d'ajouter
-// un second formateur de taille : son rendu ("1.5 KB", majuscules, un point)
-// diverge du style de l'exemple du brief ("214 kB", k minuscule) — écart
+// Réutilise modelSize (le formateur des descripteurs, cf. son commentaire)
+// plutôt que d'en ajouter un troisième : son rendu ("1.5 KB", majuscules, un
+// point) diverge du style de l'exemple du brief ("214 kB", k minuscule) — écart
 // assumé et signalé (cf. rapport de lot), pas de reformattage ad hoc ici.
 function formatAttachmentDescriptor(att) {
   return '[attachment ' + att.attId + ': image "' + (att.name || '') + '", ' +
-    att.w + 'x' + att.h + ', ' + humanSize(att.size) +
+    att.w + 'x' + att.h + ', ' + modelSize(att.size) +
     ' — content available via miaou__recall_attachment]';
 }
 
@@ -231,7 +254,7 @@ function formatTextAttachmentBlock(att, text) {
 // produire un descripteur STRICTEMENT identique, aucune branche ici.
 function formatBinaryAttachmentDescriptor(att) {
   return '[attachment ' + att.attId + ': file "' + (att.name || '') + '", ' +
-    (att.mime || 'application/octet-stream') + ', ' + humanSize(att.size) +
+    (att.mime || 'application/octet-stream') + ', ' + modelSize(att.size) +
     ' — binary content, not inlined]';
 }
 

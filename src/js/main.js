@@ -2185,20 +2185,21 @@ async function applyImportedData(payload) {
 // texte/binary sert de blob source à js__eval et est borné par MAX_INLINE_BYTES
 // (utils.js, 64 Mo — cf. tools.js : mémoire VM 256 Mo). Un log de 22 Mo doit
 // passer côté texte/binary sans être bloqué par la borne image.
-const ATTACHMENT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;   // 10 Mo, rejet pré-resize (image)
+//
+// ATTACHMENT_IMAGE_MAX_BYTES et ATTACHMENT_MAX_IMAGES vivent dans storage.js
+// (bornes configurables : leur bonne valeur dépend du modèle vision servi et de
+// son num_ctx), lues ici en corps de fonction seulement.
 const ATTACHMENT_IMAGE_MAX_EDGE = 1536;                // plus grand côté après downscale
 const ATTACHMENT_IMAGE_JPEG_QUALITY = 0.85;            // ré-encodage JPEG
 const ATTACHMENT_TEXT_MAX_BYTES = 200 * 1024;          // 200 kB, au-delà → binary
-const ATTACHMENT_MAX_IMAGES = 4;                       // cap images par message
 
 // Cap de taille selon le kind classifié (pure) : image → borne pré-resize,
 // texte/binary → borne blob js__eval. Retourne { bytes, label } (label pour le
 // message d'erreur, ex. « 10 Mo »). Une seule source pour les deux ingesteurs
 // (message + bibliothèque de Space).
 function attachmentCapForKind(kind) {
-  return kind === 'image'
-    ? { bytes: ATTACHMENT_IMAGE_MAX_BYTES, label: '10 Mo' }
-    : { bytes: MAX_INLINE_BYTES, label: '64 Mo' };
+  const bytes = kind === 'image' ? ATTACHMENT_IMAGE_MAX_BYTES : MAX_INLINE_BYTES;
+  return { bytes: bytes, label: capLabel(bytes) };
 }
 
 // Downscale une image (File/Blob) via canvas : plus grand côté ≤
@@ -2541,7 +2542,7 @@ async function resolveSend(literal) {
 //     (finish 'stop'), la file part comme NOUVEL échange — par le composer si
 //     la conversation est affichée, par le chemin détaché du réveil de parent
 //     sinon. Toute fin NON-nominale (stop manuel, halte ask_confirmation,
-//     erreur, MAX_TOURS) REFOULE les littéraux dans le composer quand la
+//     erreur, MAX_TURNS) REFOULE les littéraux dans le composer quand la
 //     conversation est à l'écran — jamais d'envoi auto après un arrêt
 //     (arbitrages lot Q) — et laisse la file en place sinon (le reflux vise un
 //     composer qui affiche autre chose ; l'utilisateur retrouve ses puces en
@@ -3354,7 +3355,7 @@ async function dispatchSend(matches, continuation) {
         // Recalcul MI-ÉCHANGE (pas seulement en fin de tour) : un tour d'outils
         // vient de se clore (tool-acks poussés dans currentThread ci-dessus),
         // potentiellement pas le dernier de la boucle (api.js relance tant que
-        // finish_reason === 'tool_calls', jusqu'à MAX_TOURS). Sans ce recalcul,
+        // finish_reason === 'tool_calls', jusqu'à MAX_TURNS). Sans ce recalcul,
         // un outil qui renvoie beaucoup de volume (ex. lecture de fichier
         // volumineuse) restait invisible dans la pilule/le drawer tant que
         // l'échange entier (potentiellement plusieurs tours) n'était pas
@@ -3853,7 +3854,7 @@ const FILE_DESCRIPTION_EXTRACT_MAX_CHARS = 8 * 1024;
 function formatLibraryFileHeadline(record) {
   const r = record || {};
   return 'Fichier image « ' + (r.name || 'sans nom') + ' », ' +
-    (r.mime || 'image') + ', ' + humanSize(r.size || (r.data && r.data.byteLength) || 0) + '.';
+    (r.mime || 'image') + ', ' + modelSize(r.size || (r.data && r.data.byteLength) || 0) + '.';
 }
 
 // Descripteur textuel de l'image jointe à une demande de description (lot V-9),

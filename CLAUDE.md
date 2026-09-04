@@ -142,6 +142,12 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   `BUILD_API_MODEL`).
 - **`__MIAOU_HELP__`** ← `src/help.md` parsé en `{slug: markdown}` (injecté
   dans `tools.js`, alimente `miaou__about` et l'enum `topic`).
+- **`__MIAOU_HELP_LABELS__`** ← les libellés lisibles des titres de `src/help.md`
+  (`## slug — libellé`), parsés en `{slug: libellé}` par la MÊME passe
+  (`parse_help_sections`, qui rend un couple). Injectés dans `tools.js` ; ils
+  composent au runtime la liste des sujets d'`apercu` via le jeton
+  `{{TOPIC_LIST}}` — ajouter ou scinder une section suffit à l'y annoncer, là où
+  la liste rédigée en prose devenait fausse en silence (cf. `docs/build.md`).
 - **`__MIAOU_SYSTEM_SKILLS__`** ← `src/system-skills/*.md` (un fichier par
   skill, nom de fichier = slug) parsés en `{slug: {name, description,
   content}}` (injecté dans `skills.js`, upserté en IDB à chaque démarrage par
@@ -366,7 +372,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 
 - **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
   marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
-  points d'injection et gardes `try/catch`.
+  points d'injection et gardes `try/catch`, et les jetons `{{NOM}}` de
+  `help.md` résolus au runtime depuis les constantes vivantes
+  (`helpPlaceholderValues`/`resolveHelpPlaceholders`, servis à `about` ET
+  `about_search`) — dont `{{TOPIC_LIST}}`, la liste des sujets composée depuis
+  les sections présentes et leurs libellés (`formatHelpTopicList`).
 - **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
   ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 28 sont
   développés dans leur doc de domaine (`docs/tools.md` pour 25 et 26,

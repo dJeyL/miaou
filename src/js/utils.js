@@ -2382,6 +2382,18 @@ function formatAgentCountLabel(n) {
 // sur la source réelle garde le rapport (run_build_unit_tests).
 const MAX_INLINE_BYTES = 64 * 1024 * 1024;   // 64 Mo
 
+// Libellé en mégaoctets d'une borne, pour un message d'interface (« 10 Mo »).
+// DÉRIVÉ de la valeur, jamais écrit en dur : plusieurs de ces bornes sont
+// configurables au build (storage.js), et un libellé littéral mentirait dès
+// qu'un déploiement change la clé — le piège de la valeur en dur qui survit à
+// côté de sa constante. Entier si la division tombe juste, une décimale sinon.
+// Vit ici (et non près de ses appelants) parce que utils.js est le premier
+// fichier chargé : main.js et tools.js l'appellent tous deux.
+function capLabel(bytes) {
+  const mo = (Number(bytes) || 0) / 1048576;
+  return (Number.isInteger(mo) ? String(mo) : mo.toFixed(1)) + ' Mo';
+}
+
 // ── Archives zip : helpers purs (lot V-1) ────────────────────────────────────
 // Le chemin d'extraction natif (fflate, ui.js/tools.js) n'est pas testable en
 // QuickJS : il charge une lib CDN et lit IndexedDB. Ces quatre fonctions sont

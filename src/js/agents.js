@@ -420,7 +420,7 @@ function formatAgentDelegatedFilesBlock(files) {
   if (!list.length) return '';
   const lines = ['--- Fichiers mis à ta disposition ---', ''];
   for (const f of list) {
-    lines.push('« ' + f.name + ' » (' + f.mime + (f.size ? ', ' + humanSize(f.size) : '') +
+    lines.push('« ' + f.name + ' » (' + f.mime + (f.size ? ', ' + modelSize(f.size) : '') +
       ') → ' + f.alias);
   }
   lines.push('');

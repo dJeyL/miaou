@@ -342,20 +342,31 @@ def collapse_blank_code_lines(src: str) -> str:
     return '\n'.join(out_lines)
 
 
+# Un titre de section porte le slug, et FACULTATIVEMENT un libellé lisible après
+# un tiret cadratin : `## pieces-jointes — pièces jointes`. Le libellé sert la
+# phrase d'orientation d'`apercu`, composée au runtime : sans lui, cette phrase
+# devrait recopier la liste des sujets en prose, et une telle énumération devient
+# fausse au premier découpage sans qu'aucun grep de compteur ne la voie (elle
+# n'annonce pas son propre nombre). Le libellé vit sur le titre pour qu'ajouter
+# une section suffise à l'annoncer.
 _HELP_SECTION_RE = re.compile(r'^##\s+(\S.*?)\s*$')
+_HELP_LABEL_SEP = '—'
 
 
-def parse_help_sections(text: str) -> dict:
-    """Parse `src/help.md` en dict ordonné {slug: markdown}.
+def parse_help_sections(text: str) -> tuple[dict, dict]:
+    """Parse `src/help.md` en ({slug: markdown}, {slug: libellé}), tous deux ordonnés.
 
-    Une section démarre sur une ligne `## <slug>` en début de ligne. Le contenu
-    d'une section court jusqu'au prochain `## ` ou la fin. Le texte avant la
-    première section est ignoré (le fichier commence par `## apercu`). Un slug
-    dupliqué est une erreur (l'enum de l'outil dérive de ces clefs : pas de
-    collision silencieuse). Les `## ` à l'intérieur d'un fence ``` ... ``` ne
-    démarrent PAS de section.
+    Une section démarre sur une ligne `## <slug>` en début de ligne, le slug
+    pouvant être suivi d'un tiret cadratin et d'un libellé lisible
+    (`## pieces-jointes — pièces jointes`) ; le libellé est facultatif et n'entre
+    pas dans le slug. Le contenu d'une section court jusqu'au prochain `## ` ou
+    la fin. Le texte avant la première section est ignoré (le fichier commence
+    par `## apercu`). Un slug dupliqué est une erreur (l'enum de l'outil dérive
+    de ces clefs : pas de collision silencieuse). Les `## ` à l'intérieur d'un
+    fence ``` ... ``` ne démarrent PAS de section.
     """
     sections = {}
+    labels = {}
     current = None
     buf = []
     in_fence = False
@@ -374,18 +385,25 @@ def parse_help_sections(text: str) -> dict:
         m = None if in_fence else _HELP_SECTION_RE.match(line)
         if m:
             flush()
-            slug = m.group(1)
+            title = m.group(1)
+            slug, _, label = title.partition(_HELP_LABEL_SEP)
+            slug = slug.strip()
+            label = label.strip()
+            if not slug:
+                raise ValueError(f'help.md : titre « {title} » sans slug')
             if slug in sections:
                 raise ValueError(f'help.md : section « {slug} » dupliquée')
             current = slug
+            if label:
+                labels[slug] = label
             buf = []
         elif current is not None:
             buf.append(line)
     flush()
-    return sections
+    return sections, labels
 
 
-def load_help() -> dict:
+def load_help() -> tuple[dict, dict]:
     """Lit et parse `src/help.md`. Absent → échec bruyant (fichier versionné,
     son absence est une erreur, contrairement à config.json qui warn)."""
     p = SRC / 'help.md'
@@ -393,10 +411,10 @@ def load_help() -> dict:
         raise FileNotFoundError(
             f'{p} introuvable — contenu d\'aide requis (outil miaou__about). '
             'Ce fichier est versionné : son absence est une erreur de build.')
-    sections = parse_help_sections(p.read_text(encoding='utf-8'))
+    sections, labels = parse_help_sections(p.read_text(encoding='utf-8'))
     if not sections:
         raise ValueError(f'{p} ne contient aucune section « ## <slug> ».')
-    return sections
+    return sections, labels
 
 
 _SKILL_FRONTMATTER_RE = re.compile(r'^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)')
@@ -482,7 +500,8 @@ def assemble_css() -> str:
     return collapse_blank_code_lines(strip_css_comments('\n'.join(parts)))
 
 
-def assemble_js(cfg_data: dict, help_data: dict, system_skills_data: dict) -> str:
+def assemble_js(cfg_data: dict, help_data: dict, help_labels: dict,
+                system_skills_data: dict) -> str:
     now = datetime.now(timezone.utc)
     build_date = now.strftime('%Y-%m-%d %H:%M UTC')
     cfg_data['build_ts'] = int(now.timestamp())
@@ -510,6 +529,14 @@ def assemble_js(cfg_data: dict, help_data: dict, system_skills_data: dict) -> st
     help_literal = json.dumps(help_data, ensure_ascii=False).replace('</', '<\\/')
     js = js.replace('__MIAOU_HELP__', help_literal)
 
+    # Libellés lisibles des sections ({slug: libellé}), marqueur distinct pour
+    # ne pas changer la forme de HELP_CONTENT (consommée par about, l'enum de
+    # topic et about_search). Ils composent au runtime la phrase d'orientation
+    # d'`apercu` : ajouter une section suffit à l'y annoncer, là où une liste
+    # rédigée en prose serait devenue fausse en silence.
+    labels_literal = json.dumps(help_labels, ensure_ascii=False).replace('</', '<\\/')
+    js = js.replace('__MIAOU_HELP_LABELS__', labels_literal)
+
     # Injection des skills système : même mécanisme, dict {slug: {name,
     # description, autotrigger, content}} sérialisé en JSON (skills.js les
     # upsert en IDB à l'init, cf. docs/skills.md).
@@ -533,10 +560,10 @@ def build(use_config: bool = True):
         raise ValueError(f'Placeholder JS absent du template : {JS_PLACEHOLDER!r}')
 
     cfg_data = load_config(use_config)
-    help_data = load_help()
+    help_data, help_labels = load_help()
     system_skills_data = load_system_skills()
     css = assemble_css()
-    js = assemble_js(cfg_data, help_data, system_skills_data)
+    js = assemble_js(cfg_data, help_data, help_labels, system_skills_data)
 
     output = template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, js)
 
