@@ -285,6 +285,21 @@
 .toggle input:checked ~ .track { background: var(--accent-dim); border-color: var(--accent-bd); }
 .toggle input:checked ~ .thumb { transform: translateX(16px); background: var(--accent); }
 
+/* Interrupteur figé (réglage subordonné dont l'état ne se discute pas, ex.
+   « Titre après la première réponse » quand le titrage précoce est éteint).
+   L'input étant en opacity:0, `disabled` ne se voit sur RIEN sans ces règles :
+   la case refuserait le clic tout en paraissant active. Même convention que
+   .drawer-btn:disabled — opacité .45 et curseur par défaut. Le curseur est
+   annulé depuis l'input parce que `cursor: pointer` est porté par le label
+   .toggle, pas par lui. */
+.toggle:has(input:disabled) { cursor: default; }
+/* Le libellé suit l'interrupteur : grisé d'un côté et à pleine opacité de
+   l'autre, la ligne se lirait comme modifiable. Classe posée par le JS qui
+   pose `disabled`, pas déduite du voisinage en CSS. */
+.check-row.is-locked .label-col { opacity: .45; }
+.toggle input:disabled ~ .track,
+.toggle input:disabled ~ .thumb { opacity: .45; }
+
 /* segmented control (mode mémoire) */
 .seg-group {
   display: flex;

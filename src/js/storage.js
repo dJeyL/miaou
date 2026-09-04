@@ -139,9 +139,27 @@ const DEFAULT_SETTINGS = {
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (D1 révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
   earlyTitle: BUILD_EARLY_TITLE, // titrer dès l'envoi, sans attendre la fin de l'échange (lot AA)
+  // Retitrer en fin d'échange (niveau 3) même quand le titrage précoce a
+  // abouti. Défaut EN DUR à true, sans clef config.json : `early_title` en a
+  // une parce qu'il arbitre la LATENCE DU PREMIER TOKEN (Ollama sérialise,
+  // le titrage précoce fait attendre la génération) ; ce réglage-ci ne coûte
+  // qu'un appel de fin d'échange, hors du chemin de latence perçue.
+  retitleAfterReply: true, // (complément lot AA)
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────
+
+// Valeur EFFECTIVE du retitrage de fin d'échange, prédicat unique — lu par
+// l'UI (case + comparaison dirty), par la persistance et par maybeEarlyTitle.
+// Sans titrage précoce il n'y a rien à régénérer : le niveau 3 est le SEUL
+// titrage, donc toujours armé quoi que porte le storage. Une valeur `false`
+// laissée en base par un passage antérieur ne doit jamais transparaître ici —
+// c'est aussi pourquoi onSaveSettings la remet à true à la bascule, plutôt que
+// de la laisser dormir et ressurgir au ré-activage du précoce.
+function effectiveRetitleAfterReply(s) {
+  if (!s || !s.earlyTitle) return true;
+  return s.retitleAfterReply !== false;
+}
 
 function loadSettingsRaw() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }

@@ -146,17 +146,20 @@ await page.evaluate((t) => { sendUserText(t); }, LONG);
 await page.waitForTimeout(2500);
 const conv2 = await page.evaluate(() => currentConvId);
 const s2 = await surfaces(conv2);
-check('2a. le titre du niveau 2 a remplacé l\'extrait',
-  s2.rowText === 'Titre precoce' && s2.topText === 'Titre precoce', JSON.stringify(s2));
+// Défaut du complément : le retitrage est ARMÉ, donc l'état d'arrivée est le
+// titre de FIN d'échange. C'est le titre précoce qui n'est que transitoire.
+check('2a. le titre de fin d\'échange a remplacé l\'extrait',
+  s2.rowText === 'Titre tardif' && s2.topText === 'Titre tardif', JSON.stringify(s2));
 check('2b. l\'italique a disparu des deux surfaces',
   !s2.rowItalic && !s2.topItalic && !s2.rowComputedItalic && !s2.topComputedItalic, JSON.stringify(s2));
 
-// ── 7. le niveau 3 est désarmé quand le niveau 2 a réussi ───────────────────
-// Sur les DEUX porteurs : gen.needTitle (copie figée, la seule que maybeTitle
-// lit) et la globale d'écran. N'éteindre que la seconde laisserait ce compteur
-// à 1 — le défaut ne se voit qu'ici, en fin d'échange.
-check('7. un seul titrage sur l\'échange (niveau 3 désarmé)',
-  calls.early === 1 && calls.late === 0, JSON.stringify(calls));
+// ── 7. les DEUX titrages tournent (retitrage armé par défaut) ───────────────
+// Contrôle inversé par le complément au lot AA : le niveau 3 n'est plus désarmé
+// par défaut. Le désarmement conditionnel porte sur les DEUX porteurs —
+// gen.needTitle (copie figée, la seule que maybeTitle lit) et la globale
+// d'écran — et le contrôle 10 vérifie le cas décoché.
+check('7. les deux titrages tournent, le tardif écrase le précoce',
+  calls.early === 1 && calls.late === 1, JSON.stringify(calls));
 
 // ── 3. LIGNE FROIDE (le point dur du lot) ───────────────────────────────────
 // Conversation sans titre, évincée du cache de messages : son libellé ne peut
@@ -293,6 +296,155 @@ check('6b. et le niveau 3 titre comme avant le lot', calls.late === 1, JSON.stri
 const s6 = await surfaces(await page.evaluate(() => currentConvId));
 check('6c. l\'extrait reste affiché en attendant (niveau 1 indépendant du réglage)',
   s6.topText === 'Titre tardif' || s6.topText === 'Une question posée réglage décoché.', JSON.stringify(s6));
+
+// ══ Complément au lot AA — « titre après la première réponse » ═════════════
+
+// ── 10. retitrage DÉCOCHÉ : on retombe sur le comportement d'origine ────────
+await page.evaluate(() => {
+  const s = JSON.parse(localStorage.getItem('miaou-settings'));
+  s.earlyTitle = true; s.retitleAfterReply = false;
+  localStorage.setItem('miaou-settings', JSON.stringify(s));
+});
+await page.reload();
+await page.waitForSelector('#composer-text', { timeout: 15000 });
+await page.evaluate(() => { newConversation(); });
+await page.waitForTimeout(1500);
+resetCalls();
+await page.evaluate((t) => { sendUserText(t); }, 'Une question avec retitrage decoche.');
+await page.waitForTimeout(2500);
+check('10a. décoché : le niveau 3 est désarmé, un seul titrage',
+  calls.early === 1 && calls.late === 0, JSON.stringify(calls));
+const s10 = await surfaces(await page.evaluate(() => currentConvId));
+check('10b. et le titre précoce reste en place',
+  s10.topText === 'Titre precoce', JSON.stringify(s10));
+
+// ── 11. titre MANUEL saisi PENDANT la génération ────────────────────────────
+// Le défaut trouvé en implémentant : onTitleBlur éteint la globale d'écran,
+// jamais la copie figée dans `gen` — la seule que maybeTitle lit. La fenêtre
+// couvre désormais tout l'échange (gen.needTitle reste armé jusqu'à onFinal),
+// donc un titre tapé pendant une longue réponse serait écrasé en fin d'échange.
+// On passe par le VRAI chemin (le contentEditable de la topbar), pas par un
+// appel direct : c'est le câblage qu'on vérifie autant que la garde.
+await page.evaluate(() => {
+  const s = JSON.parse(localStorage.getItem('miaou-settings'));
+  s.earlyTitle = true; s.retitleAfterReply = true;
+  localStorage.setItem('miaou-settings', JSON.stringify(s));
+});
+await page.reload();
+await page.waitForSelector('#composer-text', { timeout: 15000 });
+await page.evaluate(() => { newConversation(); });
+await page.waitForTimeout(1500);
+resetCalls();
+holdMs = 3500;   // l'échange dure : c'est la fenêtre où l'utilisateur peut renommer
+await page.evaluate((t) => { sendUserText(t); }, 'Une question longue pendant laquelle je renomme.');
+await page.waitForTimeout(500);
+const manualConvId = await page.evaluate(() => currentConvId);
+await page.evaluate(() => {
+  const el = document.getElementById('conv-title');
+  el.focus();
+  el.textContent = 'Nom tapé pendant la génération';
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+});
+holdMs = 0;
+await page.waitForTimeout(4000);
+const manualDuring = await page.evaluate((id) => {
+  const c = loadConversation(id);
+  return { title: c.title, autoTitled: c.autoTitled === true, top: document.getElementById('conv-title').textContent };
+}, manualConvId);
+check('11a. le titre manuel survit à la fin de l\'échange (jamais écrasé)',
+  manualDuring.title === 'Nom tapé pendant la génération', JSON.stringify(manualDuring));
+check('11b. et il n\'est PAS marqué autoTitled (le marqueur distingue les deux)',
+  manualDuring.autoTitled === false, JSON.stringify(manualDuring));
+check('11c. la topbar affiche bien le titre choisi',
+  manualDuring.top === 'Nom tapé pendant la génération', JSON.stringify(manualDuring));
+
+// ── 12. dépendance UI du réglage : libellé, état, éditabilité ───────────────
+const ui = await page.evaluate(() => {
+  const read = () => {
+    const cb = document.getElementById('set-retitle-after-reply');
+    const row = cb.closest('.check-row');
+    const lblEl = document.getElementById('set-retitle-label');
+    const track = cb.parentElement.querySelector('.track');
+    return {
+      checked: cb.checked, disabled: cb.disabled,
+      label: lblEl.textContent,
+      locked: row.classList.contains('is-locked'),
+      labelOpacity: getComputedStyle(row.querySelector('.label-col')).opacity,
+      trackOpacity: getComputedStyle(track).opacity,
+      cursor: getComputedStyle(cb.closest('.toggle')).cursor,
+    };
+  };
+  openSettings();
+  const early = document.getElementById('set-early-title');
+  early.checked = true;  updateSettingsDirty();
+  const on = read();
+  early.checked = false; updateSettingsDirty();
+  const off = read();
+  return { on, off };
+});
+check('12a. précoce ON : libellé « régénéré », case modifiable',
+  ui.on.label === 'Titre régénéré après la première réponse' && ui.on.disabled === false,
+  JSON.stringify(ui.on));
+check('12b. précoce OFF : libellé sans « régénéré », cochée et FIGÉE',
+  ui.off.label === 'Titre après la première réponse' && ui.off.checked === true && ui.off.disabled === true,
+  JSON.stringify(ui.off));
+check('12c. figée = grisée : libellé ET interrupteur à opacité réduite',
+  ui.off.locked === true && ui.off.labelOpacity === '0.45' && ui.off.trackOpacity === '0.45',
+  JSON.stringify(ui.off));
+check('12d. et le curseur cesse d\'annoncer un clic possible',
+  ui.off.cursor === 'default' && ui.on.cursor === 'pointer', JSON.stringify(ui));
+check('12e. précoce ON : pleine opacité (la ligne n\'est pas grisée à tort)',
+  ui.on.locked === false && ui.on.labelOpacity === '1' && ui.on.trackOpacity === '1',
+  JSON.stringify(ui.on));
+
+// Capture des DEUX états côte à côte, drawer ouvert et déroulé sur la catégorie
+// « Mémoire » — prise AVANT le contrôle 13, qui referme le drawer en
+// enregistrant. Cadrée sur la ligne, pas sur la page : un plein écran ne
+// montrerait pas l'écart d'opacité.
+for (const early of [true, false]) {
+  await page.evaluate((e) => {
+    openSettings();
+    const cb = document.getElementById('set-retitle-after-reply');
+    const cat = cb.closest('.set-cat');
+    if (cat && !cat.classList.contains('open')) cat.querySelector('.set-cat-head').click();
+    document.getElementById('set-early-title').checked = e;
+    updateSettingsDirty();
+  }, early);
+  await page.waitForTimeout(400);
+  const row = await page.$('#set-retitle-after-reply');
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('set-early-title').closest('.field').getBoundingClientRect();
+    const r2 = document.getElementById('set-retitle-after-reply').closest('.field').getBoundingClientRect();
+    return { x: r.x - 12, y: r.y - 10, width: r.width + 24, height: (r2.bottom - r.top) + 20 };
+  });
+  if (row && box.height > 0) {
+    await page.screenshot({ path: path.join(__dirname, `shots-retitle/toggle-early-${early ? 'on' : 'off'}.png`), clip: box });
+  }
+}
+
+// ── 13. la valeur est REMISE à true en storage à la bascule (E2) ────────────
+// Le point que « forcer à la lecture » ne tiendrait pas : un false dormant en
+// base ressurgirait au ré-activage du précoce.
+const persisted = await page.evaluate(() => {
+  const setBoth = (early, retitle) => {
+    document.getElementById('set-early-title').checked = early;
+    document.getElementById('set-retitle-after-reply').checked = retitle;
+    updateSettingsDirty();
+    onSaveSettings();
+    return JSON.parse(localStorage.getItem('miaou-settings')).retitleAfterReply;
+  };
+  const off = setBoth(true, false);          // décoché pendant que le précoce est actif
+  const afterEarlyOff = setBoth(false, false); // puis on éteint le précoce
+  document.getElementById('set-early-title').checked = true;  // et on le rallume
+  updateSettingsDirty();
+  const uiOnRelight = document.getElementById('set-retitle-after-reply').checked;
+  return { off, afterEarlyOff, uiOnRelight };
+});
+check('13a. décoché avec précoce actif : false bien persisté', persisted.off === false, JSON.stringify(persisted));
+check('13b. précoce éteint : la valeur est REMISE à true en base',
+  persisted.afterEarlyOff === true, JSON.stringify(persisted));
+check('13c. au ré-activage, la case repart armée (aucun false dormant)',
+  persisted.uiOnRelight === true, JSON.stringify(persisted));
 
 await browser.close();
 

@@ -385,8 +385,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `miaou-memories`, `miaou-mcp-servers`, `miaou-api-servers`,
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
-  derniers migrés depuis localStorage au lot U), champ de méta `snippet`
-  (extrait de secours, lot AA), plus le format d'export/import complet
+  derniers migrés depuis localStorage au lot U), champs de méta `snippet`
+  (extrait de secours, lot AA) et `autoTitled` (titre écrit par la machine, qui
+  autorise le retitrage de fin d'échange), plus le format d'export/import complet
   (`.zip` depuis le lot V-3).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,

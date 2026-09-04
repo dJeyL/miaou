@@ -1487,3 +1487,39 @@ describe('validateImportPayload : ressources sans données (archive v3 abîmée)
     expect(validateImportPayload(v3({ _missingResourceData: 'deux' })).counts.missingResourceData).toBe(0);
   });
 });
+
+describe('effectiveRetitleAfterReply (complément lot AA)', function() {
+  it('sans titrage précoce, toujours armé : le niveau 3 est le SEUL titrage', function() {
+    expect(effectiveRetitleAfterReply({ earlyTitle: false, retitleAfterReply: false })).toBe(true);
+  });
+  it('avec titrage précoce, la valeur du réglage fait foi', function() {
+    expect(effectiveRetitleAfterReply({ earlyTitle: true, retitleAfterReply: false })).toBe(false);
+    expect(effectiveRetitleAfterReply({ earlyTitle: true, retitleAfterReply: true })).toBe(true);
+  });
+  it('absent du storage → armé (défaut en dur, sans clef config.json)', function() {
+    expect(effectiveRetitleAfterReply({ earlyTitle: true })).toBe(true);
+  });
+  it('un false dormant ne transparaît jamais tant que le précoce est éteint', function() {
+    // Le cas que E2 refuse de laisser ressurgir : la valeur reste en base, mais
+    // aucune lecture ne la sert tant qu'elle n'a pas de sens.
+    var dormant = { earlyTitle: false, retitleAfterReply: false };
+    expect(effectiveRetitleAfterReply(dormant)).toBe(true);
+    expect(effectiveRetitleAfterReply({ earlyTitle: true, retitleAfterReply: false })).toBe(false);
+  });
+  it('réglages absents ou nuls → armé, jamais d exception', function() {
+    expect(effectiveRetitleAfterReply(null)).toBe(true);
+    expect(effectiveRetitleAfterReply({})).toBe(true);
+  });
+});
+
+describe('loadSettings : retitleAfterReply (complément lot AA)', function() {
+  it('par défaut à true', function() {
+    localStorage.clear();
+    expect(loadSettings().retitleAfterReply).toBe(true);
+  });
+  it('persiste à false quand explicitement désactivé', function() {
+    localStorage.clear();
+    saveSettings({ retitleAfterReply: false });
+    expect(loadSettings().retitleAfterReply).toBe(false);
+  });
+});

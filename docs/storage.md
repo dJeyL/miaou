@@ -295,7 +295,8 @@ réchaufferait, et le script ne prouverait plus rien du chemin froid.
 ### Schéma d'une conversation (store IDB `conversations`)
 
 Record `{ id, title, timestamp, updatedAt?, messages, model?, reasoningEffort?,
-pinned?, spaceId?, attSeq?, snippet? }` (keyPath `id`, index `by_space`).
+pinned?, spaceId?, attSeq?, snippet?, autoTitled? }` (keyPath `id`, index
+`by_space`).
 `spaceId` (feature Spaces, lot C) : id du Space propriétaire ; absent =
 `DEFAULT_SPACE_ID` (`listAllConversations()` l'expose toujours résolu dans sa
 projection, jamais `undefined`). Backfillé par `migrateSpacesIfNeeded()` sur
@@ -319,6 +320,21 @@ supprimé, dès qu'un titre arrive : c'est l'ORDRE de `convLabel` qui le neutral
 **`listAllConversations()` le projette**, pour la même raison qu'`agentIntent`
 ci-dessous : un libellé doit voyager avec la méta, sans quoi il serait correct
 sur la conversation chaude et muet sur les lignes froides de la sidebar.
+
+`autoTitled` (optionnel, complément lot AA) marque un titre écrit par la
+**machine**. Posé à `true` par `applyGeneratedTitle` — point d'écriture unique
+des trois titrages (précoce, fin d'échange, régénération) — et à `false`
+**explicitement** par `onTitleBlur`, jamais par omission : une conversation
+peut porter le marqueur d'un titrage antérieur que la saisie doit effacer.
+
+Il n'existe que pour le retitrage de fin d'échange, qui doit distinguer un titre
+précoce (à régénérer) d'un titre choisi (jamais écrasé) — les deux étant un
+`title` non vide. `maybeTitle` le relit par `loadConversation` **au moment
+d'écrire**, pas au démarrage de la génération : `onTitleBlur` éteint la globale
+d'écran `needTitle`, jamais la copie figée dans `gen`, et la fenêtre entre les
+deux couvre désormais tout l'échange depuis que le retitrage laisse
+`gen.needTitle` armé jusqu'à `onFinal`. Non projeté par
+`listAllConversations()` : aucune surface d'affichage ne le lit.
 
 **Champs d'agent (lot X-1)**, tous optionnels et absents d'une conversation
 racine : `parentConvId` (id du parent — sa présence EST la définition d'un

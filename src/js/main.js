@@ -1662,7 +1662,10 @@ function onTitleBlur(e) {
   if (currentConvId) {
     needTitle = false;   // titre fixé manuellement : on ne le régénère plus
     const conv = loadConversation(currentConvId);
-    if (conv) { persistConversationField(currentConvId, { title: t }); renderConvList(); }
+    // `autoTitled: false` explicite, jamais l'omission : la conversation peut
+    // porter le marqueur d'un titrage automatique antérieur, que cette saisie
+    // doit effacer — sinon un retitrage de fin d'échange écraserait ce titre-ci.
+    if (conv) { persistConversationField(currentConvId, { title: t, autoTitled: false }); renderConvList(); }
     const entry = getSummaryEntry(currentConvId);
     if (entry) { entry.title = t; saveSummary(currentConvId, entry); }
   }
@@ -1680,6 +1683,12 @@ function onSaveSettings() {
     showReasoningSelector: $('set-reasoningselector').checked,
     intentTracing: $('set-intent-tracing').checked,
     earlyTitle: $('set-early-title').checked,
+    // REMISE à true quand le titrage précoce est désactivé, pas seulement
+    // forcée à la lecture : sinon un `false` réglé du temps où le précoce était
+    // actif dort en base et RESSURGIT au ré-activage, alors que le réglage doit
+    // repartir armé. Deux porteurs d'état, celui qu'on lit et celui qui dort —
+    // c'est le défaut qu'on refuse ici.
+    retitleAfterReply: $('set-early-title').checked ? $('set-retitle-after-reply').checked : true,
     describeFiles: $('set-describe-files').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,
@@ -3693,11 +3702,27 @@ async function runBackgroundTask(label, taskFn) {
 }
 
 // ── Titrage automatique (après la première réponse) ─────────────────────────
-function applyGeneratedTitle(convId, title) {
+// `force` : seul regenerateTitle (bouton topbar) l'arme — un renommage DEMANDÉ
+// écrase tout, y compris un titre manuel. Les titrages automatiques ne le
+// passent jamais.
+function applyGeneratedTitle(convId, title, force) {
   // Écriture ciblée : le titrage arrive APRÈS onFinal, donc potentiellement
   // après le désenregistrement de la génération — la conversation peut être
   // froide (messages évincés de l'étage 2), et un saveConversation la viderait.
-  if (loadConversation(convId)) persistConversationField(convId, { title: title });
+  const conv = loadConversation(convId);
+  if (!conv) return;
+  // GARDE DU TITRE MANUEL, ici et pas chez les appelants : c'est le point
+  // d'écriture unique des trois titrages (précoce, fin d'échange, régénération),
+  // et chacun a sa propre fenêtre d'await pendant laquelle l'utilisateur peut
+  // renommer. La poser chez un seul appelant laisserait les autres écraser —
+  // défaut mesuré : le titrage précoce revenant APRÈS un renommage effaçait le
+  // titre choisi ET son marqueur, ce qui rouvrait la garde du niveau 3.
+  //
+  // `autoTitled` marque un titre écrit par la MACHINE : sans lui, un titre
+  // précoce (qu'on doit pouvoir régénérer) et un titre choisi (jamais écrasé)
+  // sont tous deux un `title` non vide. onTitleBlur écrit `autoTitled: false`.
+  if (!force && conv.title && conv.autoTitled === false) return;
+  persistConversationField(convId, { title: title, autoTitled: !force });
   if (convId === currentConvId) setTitle(title);   // barre du haut + <title> de la page
   renderConvList();                                 // liste de gauche
 }
@@ -3719,12 +3744,20 @@ function applyGeneratedTitle(convId, title) {
 // premier fini pendant que l'autre tourne. Un seul chemin pose ce verrou :
 // celui qui l'avait.
 //
-// Course bénigne assumée : si ce titrage revient APRÈS onFinal, maybeTitle aura
-// déjà tourné (gen.needTitle était encore vrai) et deux titrages auront eu lieu,
-// le dernier arrivé écrasant l'autre. Fenêtre étroite (titrer un seul message
-// sans raisonnement est structurellement plus court qu'un échange complet à
-// tours d'outils — le cas motivant du lot) et préjudice nul, les deux titres
-// étant plausibles. Un verrou coûterait un état de plus pour rien.
+// Deux titrages peuvent avoir lieu, et leur STATUT dépend du réglage
+// `retitleAfterReply` :
+//
+// - retitrage ARMÉ (défaut) : le niveau 3 n'est pas désarmé, les deux titrages
+//   sont NOMINAUX ET ORDONNÉS. Le second écrase le premier, et c'est la
+//   fonction demandée — le titre de fin d'échange voit ce que la réponse a
+//   traité, là où le précoce ne titre qu'une demande.
+// - retitrage DÉSARMÉ : on retombe sur le comportement d'origine du lot AA, un
+//   seul titrage par conversation. Subsiste alors une course bénigne : si ce
+//   titrage-ci revient APRÈS onFinal, maybeTitle aura déjà tourné (gen.needTitle
+//   était encore vrai) et le dernier arrivé écrase l'autre. Fenêtre étroite
+//   (titrer un seul message sans raisonnement est structurellement plus court
+//   qu'un échange complet à tours d'outils) et préjudice nul, les deux titres
+//   étant plausibles. Un verrou coûterait un état de plus pour rien.
 async function maybeEarlyTitle(gen) {
   if (!gen || !gen.needTitle || !gen.convId) return;
   if (!loadSettings().earlyTitle) return;
@@ -3739,12 +3772,17 @@ async function maybeEarlyTitle(gen) {
   const convId = gen.convId;  // figé avant l'async (piège 9), comme maybeTitle
   const title = await runBackgroundTask('titrage…', () => generateEarlyTitle(text, gen.model));
   if (!title) return;         // échec : gen.needTitle reste armé, le niveau 3 sert de filet
-  // Désarmer le niveau 3 sur les DEUX porteurs. `gen.needTitle` est une COPIE
-  // figée au démarrage de la génération (createGeneration, piège 9) et c'est la
-  // SEULE que maybeTitle lit : éteindre la globale d'écran seule ne désarmerait
-  // rien du tout.
-  gen.needTitle = false;
-  if (convId === currentConvId) needTitle = false;
+  // Désarmer le niveau 3 sur les DEUX porteurs, ou sur AUCUN. `gen.needTitle`
+  // est une COPIE figée au démarrage de la génération (createGeneration,
+  // piège 9) et c'est la SEULE que maybeTitle lit : éteindre la globale d'écran
+  // seule ne désarmerait rien du tout. Symétriquement, n'en conditionner qu'une
+  // au réglage produirait un désarmement dont l'effet dépendrait de la
+  // conversation AFFICHÉE — un défaut d'aiguillage au sens du piège 28, qu'aucun
+  // test pur ne verrait. Les deux sautent ensemble.
+  if (!effectiveRetitleAfterReply(loadSettings())) {
+    gen.needTitle = false;
+    if (convId === currentConvId) needTitle = false;
+  }
   applyGeneratedTitle(convId, title);
 }
 
@@ -3757,6 +3795,11 @@ async function maybeEarlyTitle(gen) {
 async function maybeTitle(gen) {
   if (!gen || !gen.needTitle || !gen.convId) return;
   if (!gen.thread.some(m => m.role === 'assistant' && m.content && m.content.trim().length >= 8)) return;
+  // Le titre manuel posé PENDANT la génération est gardé par
+  // applyGeneratedTitle, pas ici : onTitleBlur éteint la globale d'écran, jamais
+  // la copie figée dans `gen`, et la fenêtre couvre tout l'échange depuis que le
+  // retitrage laisse `gen.needTitle` armé jusqu'à onFinal. La garde est au point
+  // d'écriture parce que le titrage précoce a la MÊME fenêtre.
   gen.needTitle = false;
   // L'écran ne doit plus réclamer ce titrage s'il affiche la même conversation.
   if (gen.convId === currentConvId) needTitle = false;
@@ -3778,7 +3821,7 @@ async function regenerateTitle() {
   const thread = currentThread.slice();
   setTitleEditable(convId, false);
   const title = await runBackgroundTask('titrage…', () => generateTitle(thread, activeModel()));
-  if (title) applyGeneratedTitle(convId, title);
+  if (title) applyGeneratedTitle(convId, title, true);   // renommage DEMANDÉ : écrase même un titre manuel
   setTitleEditable(convId, true);
 }
 

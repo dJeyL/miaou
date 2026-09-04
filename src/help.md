@@ -300,8 +300,18 @@ conversation par son titre sans attendre. En contrepartie, sur un serveur qui
 traite une requête à la fois, ce titrage peut retarder de quelques instants
 l'apparition du début de la réponse : le réglage **Titre dès l'envoi**
 (Paramètres → Mémoire) permet de le désactiver, auquel cas le titre arrive à la
-fin de l'échange comme avant. Si tu as toi-même nommé la conversation, rien ne
-vient l'écraser.
+fin de l'échange comme avant.
+
+Un titre écrit dès l'envoi ne connaît que ta demande, pas la réponse. Il est
+donc **repris une fois l'échange terminé**, quand le contenu traité est connu :
+le titre définitif est souvent plus précis. Le réglage **Titre régénéré après la
+première réponse** (Paramètres → Mémoire) gouverne cette reprise ; désactive-le
+si tu préfères garder le premier titre. Quand le titrage dès l'envoi est éteint,
+il n'y a rien à reprendre — le titre est alors simplement écrit en fin
+d'échange.
+
+Si tu as toi-même nommé la conversation, rien ne vient l'écraser, à aucun
+moment.
 
 Un champ de **recherche** filtre l'historique en temps réel, par titre ou par
 mots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même

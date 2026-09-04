@@ -5291,6 +5291,7 @@ function settingsFormDirty() {
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-early-title').checked !== !!s.earlyTitle
+    || $('set-retitle-after-reply').checked !== effectiveRetitleAfterReply(s)
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
@@ -5301,8 +5302,44 @@ function settingsFormDirty() {
 // par les chemins programmatiques qui n'émettent pas d'événement
 // (pickSettingsReasoningEffort, selectSummaryInjectionMode, onSaveSettings).
 function updateSettingsDirty() {
+  syncRetitleUI();   // libellé/éditabilité du retitrage AVANT la comparaison (il peut forcer la case)
   const btn = $('save-settings-btn');
   if (btn) btn.disabled = !settingsFormDirty();
+}
+
+// Le réglage « titre après la première réponse » est SUBORDONNÉ au titrage
+// précoce, et sa présentation change avec lui — pas seulement son état :
+//
+// - précoce OFF : la case décrit l'EXISTANT (le niveau 3 titre en fin
+//   d'échange, il l'a toujours fait). Cochée et NON MODIFIABLE : la décocher
+//   ouvrirait un cas « aucun titrage du tout » que personne n'a demandé et qui
+//   ramènerait « Nouvelle conversation » à demeure.
+// - précoce ON : la case gouverne un vrai choix, celui de RÉGÉNÉRER un titre
+//   déjà écrit. D'où le changement de libellé — « régénéré » dit qu'un titre
+//   sera écrasé, ce que « Titre après la première réponse » ne dit pas.
+//
+// Appelée depuis updateSettingsDirty, donc sur le MÊME chemin que la délégation
+// input/change du drawer : la bascule de `set-early-title` la déclenche sans
+// handler dédié, et openSettings en hérite aussi.
+const RETITLE_LABEL_ALONE = 'Titre après la première réponse';
+const RETITLE_LABEL_AFTER_EARLY = 'Titre régénéré après la première réponse';
+const RETITLE_HINT_ALONE = "Le titre est généré en fin d'échange, quand la réponse est connue.";
+const RETITLE_HINT_AFTER_EARLY = "Remplace le titre écrit à l'envoi par un titre tenant compte de la réponse.";
+
+function syncRetitleUI() {
+  const cb = $('set-retitle-after-reply');
+  if (!cb) return;
+  const early = $('set-early-title').checked;
+  if (!early) cb.checked = true;   // sans titrage précoce, le niveau 3 titre toujours
+  cb.disabled = !early;
+  // Le grisage porte sur la LIGNE entière (libellé compris), pas sur le seul
+  // interrupteur : cf. .check-row.is-locked, drawers.css.
+  const row = cb.closest('.check-row');
+  if (row) row.classList.toggle('is-locked', !early);
+  const lbl = $('set-retitle-label');
+  if (lbl) lbl.textContent = early ? RETITLE_LABEL_AFTER_EARLY : RETITLE_LABEL_ALONE;
+  const hint = $('set-retitle-hint');
+  if (hint) hint.textContent = early ? RETITLE_HINT_AFTER_EARLY : RETITLE_HINT_ALONE;
 }
 
 // ── État des lieux du stockage (drawer Paramètres › Données) ────────────────
@@ -5367,6 +5404,7 @@ function openSettings() {
   setMotionUI(s.motion || 'system');
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-early-title').checked = !!s.earlyTitle;
+  $('set-retitle-after-reply').checked = effectiveRetitleAfterReply(s);
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   const pre = $('root-prompt-pre');

@@ -104,6 +104,8 @@ Figtree/Fira Code).
   de titre (en italique) le temps que le titrage aboutisse, et le titre est
   généré dès l'envoi plutôt qu'en fin d'échange — désactivable
   (`early_title`) ; cf. `docs/storage.md`.
+- Le titre écrit à l'envoi est **repris en fin d'échange**, quand la réponse est
+  connue : réglage utilisateur, sans effet sur un titre saisi à la main.
 - Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
   contextuelle, et deux outils pour que le modèle aille chercher lui-même dans
