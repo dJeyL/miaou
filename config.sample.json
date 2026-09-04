@@ -8,6 +8,7 @@
   "default_context_window":  32768,
   "max_agents_per_conv":     3,
   "max_agents_total":        5,
-  "max_agent_turns":         12,
+  "max_agent_turns":         20,
+  "js_eval_max_inputs":      10,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }

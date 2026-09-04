@@ -640,6 +640,12 @@ Quelques repères pour te déplacer dans MIAOU :
   composer ensemble). La largeur d'origine est la plus étroite : le « – » est
   éteint tant que tu n'as pas élargi. Ton choix est conservé d'une session à
   l'autre et s'applique à tes autres onglets ouverts.
+- **Blocs de code très longs** : un bloc plus haut que l'écran ne pousse plus
+  la suite de la conversation hors de portée — il s'arrête à environ 80% de la
+  hauteur de lecture et défile à l'intérieur de son propre cadre, son en-tête
+  (langage, copier, télécharger) restant visible pendant que tu le parcours.
+  Le fichier obtenu par le bouton « télécharger », lui, contient toujours le
+  bloc entier, et les pages HTML exportées ne coupent rien.
 - **Ajouter en cours de route** : si le modèle travaille (surtout quand il
   enchaîne plusieurs outils), tu peux **taper un message et appuyer sur Entrée
   sans l'interrompre** — il se met en file au-dessus du composer et lui est

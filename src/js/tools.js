@@ -294,12 +294,11 @@ const JS_EVAL_TIMEOUT_MS = 10000;
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
 
-// Cap sur le NOMBRE de ressources en entrée (lot L-2). Garde-fou anti-abus sur le
-// nombre de clés, indépendant du volume : setMemoryLimit (JS_EVAL_MEM_BYTES) reste
-// la seule garde sur le volume cumulé, inchangée par ce lot. Quatre suffit au cas
-// qui a motivé le lot (croiser deux résultats d'outils) avec de la marge, sans
-// ouvrir la porte à un appel qui décoderait dix blobs pour n'en lire qu'un.
-const JS_EVAL_MAX_INPUTS = 4;
+// Le cap sur le NOMBRE de ressources en entrée (JS_EVAL_MAX_INPUTS) vit dans
+// storage.js avec les autres bornes configurables : BUILD_CONFIG y est injecté au
+// build. Il n'est donc lisible ici qu'en corps de fonction (contrainte
+// structurelle : un const ne franchit pas la frontière de fichier dans le test
+// runner) — d'où les descriptions d'outil construites à l'appel, pas au top-level.
 
 // Doctrine js__eval — INCONDITIONNELLE (AL4, décision Julien) : l'outil est natif,
 // toujours présent (pas de MCP, pas de toggle), donc dans ROOT_SYSTEM_PROMPT

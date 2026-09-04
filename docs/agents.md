@@ -317,7 +317,7 @@ saturée). `agentSpawnLimitError` est pure et testée ; le **câblage** l'est au
 parce qu'une borne qui existe sans être appelée est le trou d'orchestration
 habituel.
 
-`MAX_AGENTS_PER_CONV` (3), `MAX_AGENTS_TOTAL` (5) et `MAX_AGENT_TURNS` (12)
+`MAX_AGENTS_PER_CONV` (3), `MAX_AGENTS_TOTAL` (5) et `MAX_AGENT_TURNS` (20)
 vivent dans `storage.js` (là où `BUILD_CONFIG` est injecté), dérivées sur le
 motif de `MAX_SUMMARIES`, surchargeables par `config.json` — clés documentées
 dans `config.sample.json` et au README. Elles ne sont référencées qu'en **corps

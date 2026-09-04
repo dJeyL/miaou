@@ -419,7 +419,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   présentation, `@import` unique préchargeant les six familles, contraintes
   d'une mono (tabular-nums de l'inspecteur), export en statu quo.
 - **`docs/rendering.md`** — rendu enrichi des blocs de code : diagrammes
-  Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité).
+  Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité) et
+  hauteur bornée des blocs du fil (borne sur le `<code>` pour épingler
+  `.code-head`, export non borné).
 - **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
   déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée.
 - **`docs/multitab-sync.md`** — synchro multi-onglets (lot J, BroadcastChannel) :

@@ -275,9 +275,28 @@
   flex-direction: column;
   gap: 6px;
   flex: 1;
+  /* Glissement du changement de cran de largeur (nudgeColWidth, ui.js). C'est
+     `max-width` qu'on anime, jamais `--col` : une custom property non typée
+     n'est pas interpolable et basculerait d'un coup à mi-course. Le kill-switch
+     reduced-motion global (base.css) la neutralise déjà. */
+  transition: max-width var(--col-resize) var(--ease);
 }
 
-.msg { display: flex; flex-direction: column; animation: rise 260ms var(--ease) both; }
+.msg {
+  display: flex;
+  flex-direction: column;
+  animation: rise 260ms var(--ease) both;
+  /* Le fil ne peint que ce qui est à l'écran. Décisif pendant le glissement de
+     largeur (--col-resize) : `max-width` n'est pas une propriété composited, donc
+     chaque frame REPEINT les messages — et un bloc de code colorisé par Prism,
+     c'est des milliers de spans. Mesuré sur un fil de 120 messages de code :
+     210ms de Paint pour 63ms de Layout, soit 9 fps ; le contenu hors écran
+     payait la quasi-totalité de la facture sans que personne ne le voie.
+     `contain-intrinsic-size` réserve une hauteur plausible aux messages sautés
+     pour que la barre de défilement ne tressaute pas en les traversant. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* user: compact, right */
@@ -768,9 +787,36 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   font-family: var(--mono) !important;
   font-size: 11.5px !important;
   line-height: 1.6 !important;
-  overflow-x: auto;
+  overflow: auto;
   background: transparent !important;
   text-shadow: none !important;
+}
+/* Hauteur bornée des blocs de code DU FIL, alignée sur ce que l'inspecteur
+   d'appel d'outil fait déjà (`.inspect-body pre code`, drawers.css) : un dump
+   de 5000 lignes ne doit pas repousser le reste de la conversation hors de
+   portée du scroll.
+   Borne posée sur le <code> et PAS sur le <pre>, pour la même raison qu'au
+   drawer : `.code-head` (langue + copier/télécharger/aperçu) vit À L'INTÉRIEUR
+   du <pre>, donc un <pre> scrollable emporte l'en-tête hors de vue dès la
+   première ligne défilée — on perd les boutons juste au moment où le contenu
+   est assez long pour qu'on en ait besoin. Sur le <code>, l'en-tête reste
+   épinglée et seul le contenu défile, sur les deux axes.
+   La cible est « 80% de la hauteur de lecture ». Cette hauteur n'est PAS une
+   fraction de vh : `.messages` est un flex-1 entre la topbar (52px, fixe) et le
+   composer, donc sa part du viewport mesure 64% à 84% selon la taille de
+   fenêtre — d'où le retrait explicite du chrome plutôt qu'un `80vh` qui
+   déborderait sur les petites fenêtres. Le composer, lui, est VARIABLE (53 à
+   227px selon la saisie) : on se cale sur sa hauteur AU REPOS, délibérément.
+   Son agrandissement est éphémère — il dure le temps d'une frappe, c'est-à-dire
+   le moment précis où l'utilisateur ne lit pas le bloc de code. Le suivre
+   demanderait un ResizeObserver réévalué à chaque caractère pour ajuster une
+   hauteur que personne ne regarde alors. Quand il grandit, le bloc occupe un peu
+   plus de 80% de la zone rétrécie, jamais la totalité.
+   `.inspect-body` est exclu : le drawer garde sa propre borne (300px), sa
+   hauteur disponible n'étant pas celle du fil. */
+.body pre code,
+.tool-block pre code {
+  max-height: calc(0.8 * (100vh - 218px));
 }
 /* tables */
 /* Débordement centré (« planche ») : un tableau de synthèse a souvent plus de
@@ -809,6 +855,12 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
      100%` du tableau se calculerait encore sur la colonne et aucun tableau ne
      déborderait jamais. */
   width: calc(100% + var(--table-bleed, 0px));
+  /* --table-bleed dérive de --col dans un calc() et n'est PAS interpolable
+     (custom property non typée) : sa valeur calculée saute d'un coup au
+     changement de cran. Animer margin/width — qui, eux, le sont — convertit ce
+     saut en glissement, et la table débordante suit la colonne au lieu de
+     claquer en milieu de course. */
+  transition: margin var(--col-resize) var(--ease), width var(--col-resize) var(--ease);
 }
 /* Étage 2 — le TABLEAU dans la boîte élargie. `fit-content` l'arrête à sa
    largeur naturelle : un petit tableau n'utilise rien du débordement offert et

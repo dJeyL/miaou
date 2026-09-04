@@ -663,6 +663,7 @@
   max-width: var(--col);
   margin: 14px auto;
   padding: 0 24px;
+  transition: max-width var(--col-resize) var(--ease);
 }
 .proposal-card {
   background: var(--surface-2);

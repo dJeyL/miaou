@@ -9,7 +9,9 @@
   padding: 8px 24px 18px;
   background: linear-gradient(to top, var(--bg) 60%, transparent);
 }
-.composer-inner { max-width: var(--col); margin: 0 auto; }
+.composer-inner { max-width: var(--col); margin: 0 auto;
+  /* Glisse avec le fil au changement de cran (cf. .thread, chat.css). */
+  transition: max-width var(--col-resize) var(--ease); }
 .input-wrap {
   position: relative;   /* ancre du dropdown skill du composer (#skill-ac) */
   display: flex;
@@ -136,6 +138,9 @@
      vaut pour les deux pistes occupées, sinon les boutons se colleraient à la
      bordure du champ pendant que le hint, lui, respirerait. */
   margin: 8px auto 0;
+  /* Même durée que le fil : le contrôle qu'on vient de cliquer doit rester
+     collé au bord de la colonne pendant tout le trajet, pas le rattraper. */
+  transition: max-width var(--col-resize) var(--ease);
 }
 .composer-foot .composer-hint { grid-column: 2; margin-top: 0; }
 .composer-foot .col-width-ctl { grid-column: 3; justify-self: end; }
@@ -389,6 +394,7 @@
   width: 100%;
   margin: 0 auto 12px;
   flex: 0 0 auto;
+  transition: max-width var(--col-resize) var(--ease);
 }
 .agent-banner-body { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .agent-banner-icon { width: 16px; height: 16px; flex: 0 0 auto; opacity: .8; }

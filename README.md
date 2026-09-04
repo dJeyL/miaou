@@ -229,7 +229,8 @@ build.
   "default_context_window":  32768,
   "max_agents_per_conv":     3,
   "max_agents_total":        5,
-  "max_agent_turns":         12,
+  "max_agent_turns":         20,
+  "js_eval_max_inputs":      10,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }
 ```
@@ -258,7 +259,9 @@ build.
   par conversation (défaut 3) et toutes conversations confondues (défaut 5).
   Un refus nomme celle qui est atteinte.
 - `max_agent_turns` : nombre d'échanges qu'un agent peut enchaîner avant d'être
-  arrêté d'office (défaut 12). Son travail partiel est quand même transmis.
+  arrêté d'office (défaut 20). Son travail partiel est quand même transmis.
+- `js_eval_max_inputs` : nombre de ressources qu'un même appel `js__eval` peut
+  croiser (défaut 10). Cap sur le nombre de handles, pas sur leur volume.
 - `repo_url` : URL liée sur le mot « MIAOU » dans le footer des exports HTML
   (conversations et Markdown convertis). **Trois états distincts** : clef
   **absente ou `null`** → lien vers le dépôt public

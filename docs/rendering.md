@@ -269,6 +269,48 @@ le record ou reconstruit depuis le `src` data-URI pour le mode outil).
 Téléchargement d'une image = **exclusivement** ce bouton (le clic simple sur
 la vignette/l'image ouvre la lightbox, ne télécharge jamais).
 
+## Hauteur bornée des blocs de code
+
+Un bloc de code du fil ne dépasse jamais **80% de la hauteur de lecture** : au
+delà, il défile en interne. Sans cette borne, un dump de plusieurs milliers de
+lignes repousse la suite de la conversation si loin qu'il faut traverser tout le
+bloc au scroll pour la rejoindre. C'est le même parti que l'inspecteur d'appel
+d'outil, qui bornait déjà les siens (`.inspect-body pre code`, 300px, cf.
+`docs/tools.md`) — le fil s'aligne dessus.
+
+Trois points à connaître avant d'y toucher (règle dans `chat.css`, avec le même
+raisonnement en commentaire) :
+
+- **La borne est sur le `<code>`, pas sur le `<pre>`.** `.code-head` (langue,
+  copier, télécharger, toggle mermaid, aperçu) vit *à l'intérieur* du `<pre>` —
+  un `<pre>` scrollable emporterait l'en-tête hors de vue dès la première ligne
+  défilée, c'est-à-dire précisément quand le contenu est assez long pour qu'on
+  ait besoin de ses boutons. Sur le `<code>`, l'en-tête reste épinglée et seul
+  le contenu défile. Même contrainte, mêmes conséquences que pour la vue
+  mermaid, logée dans le `<pre>` pour la même raison (cf. « Cycle de rendu »).
+- **`overflow: auto`, pas `overflow-x`.** La règle partagée n'ouvrait que l'axe
+  horizontal ; une hauteur bornée sans scroll vertical couperait le contenu.
+- **La hauteur de lecture n'est pas une fraction de `vh`.** `.messages` est un
+  flex-1 entre la topbar (52px, fixe) et le composer, donc sa part du viewport
+  mesure de 64% à 84% selon la taille de fenêtre — d'où
+  `calc(0.8 * (100vh - 218px))`, qui retranche le chrome, plutôt qu'un `80vh`
+  qui déborderait sur les petites fenêtres. Le composer étant *variable* (53 à
+  227px selon la saisie), on se cale sur sa hauteur **au repos**, délibérément :
+  son agrandissement est éphémère, il dure le temps d'une frappe — le moment
+  précis où l'utilisateur ne lit pas le bloc de code. Le suivre demanderait un
+  ResizeObserver réévalué à chaque caractère pour ajuster une hauteur que
+  personne ne regarde alors. Quand il grandit, le bloc occupe un peu plus de 80%
+  de la zone rétrécie, jamais la totalité.
+- **Rien n'est ajouté pour signaler la coupure** (pas de dégradé de bas) : la
+  barre de défilement verticale du bloc est déjà ce signal, et c'est
+  l'affordance que le navigateur fournit pour exactement ça.
+
+**L'export HTML standalone ne borne pas**, et c'est délibéré : un fichier
+exporté est un document qu'on lit en défilant la page entière et qu'on imprime,
+sans composer à préserver — une boîte à scroll interne y couperait le code au
+lieu de le rendre atteignable. `EXPORT_CSS` porte donc sa propre copie de la
+règle partagée, sans `max-height` (feuille figée, cf. `docs/exports.md`).
+
 ## Tests
 
 - QuickJS (`tests/test-utils.js`) : `isMermaidLang`, `mermaidThemeFor`,

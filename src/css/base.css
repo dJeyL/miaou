@@ -107,6 +107,12 @@
   --r:          7px;
   --r-sm:       5px;
   --ease:       cubic-bezier(.4, 0, .2, 1);
+  /* Durée du glissement de la colonne de lecture d'un cran à l'autre
+     (.thread, .composer-inner, .composer-foot, .agent-banner, .memory-proposals
+     — tous consommateurs de --col). Token plutôt que valeur répétée : les
+     surfaces doivent bouger ENSEMBLE, une durée qui diverge se lit comme un
+     décalage entre le fil et le composer. */
+  --col-resize: 180ms;
   /* Lot de fontes par défaut (Graphite) — surchargé par html[data-fonts].
      Sans et mono vont par PAIRE : elles sont choisies pour s'accorder
      (proportions, hauteur d'x), comme les deux teintes d'une palette. */

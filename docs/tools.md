@@ -321,8 +321,9 @@ model-side unique sur la bibliothèque) :**
   objet `texts` passé à `runInQuickJs(texts, code)`.
 - **Entrée : `input_handles`, objet de handles nommés (lot L-2).** L'`inputSchema`
   déclare `input_handles` et `code` requis. `input_handles` est un **objet**
-  `{clé: handle}` de **1 à `JS_EVAL_MAX_INPUTS`** (= 4) entrées ; la clé porte
-  l'intention du modèle (« quelle ressource je croise avec quelle autre ») et
+  `{clé: handle}` de **1 à `JS_EVAL_MAX_INPUTS`** (défaut 10, surchargeable par la
+  clé de config `js_eval_max_inputs` — déclarée dans `storage.js` avec les autres
+  bornes configurables, cf. README) entrées ; la clé porte l'intention du modèle (« quelle ressource je croise avec quelle autre ») et
   c'est elle qu'il réutilise dans son code (`text("clé")`), pas le handle.
   Renversement **assumé** du YAGNI posé au lot L et réaffirmé au lot Y (« un seul
   handle d'entrée, le modèle itère ») : le cas qui l'invalide est arrivé — deux

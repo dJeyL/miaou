@@ -49,7 +49,14 @@ const MAX_AGENTS_TOTAL    = (typeof BUILD_CONFIG.max_agents_total    === 'number
 // pas un budget de tokens — le problème est le temps et l'agent zombie qui tient
 // un slot, pas le coût. Atteinte → arrêt d'office, statut `exhausted`, et le
 // résultat PARTIEL est quand même délivré au parent (avec la mention explicite).
-const MAX_AGENT_TURNS     = (typeof BUILD_CONFIG.max_agent_turns     === 'number') ? BUILD_CONFIG.max_agent_turns     : 12;
+const MAX_AGENT_TURNS     = (typeof BUILD_CONFIG.max_agent_turns     === 'number') ? BUILD_CONFIG.max_agent_turns     : 20;
+// Cap sur le NOMBRE de ressources en entrée de js__eval (lot L-2). Garde-fou
+// anti-abus sur le nombre de clés, indépendant du volume : setMemoryLimit
+// (JS_EVAL_MEM_BYTES, tools.js) reste la seule garde sur le volume cumulé. La
+// valeur vivait en dur dans tools.js ; elle rejoint les bornes configurables ici
+// parce que le plafond a été atteint en usage réel (un prompt croisant plus de
+// quatre ressources), et que la bonne valeur dépend du déploiement.
+const JS_EVAL_MAX_INPUTS  = (typeof BUILD_CONFIG.js_eval_max_inputs  === 'number') ? BUILD_CONFIG.js_eval_max_inputs  : 10;
 // URL du dépôt, liée sur le mot « MIAOU » du footer des exports HTML. Trois
 // états DISTINCTS, d'où le typeof plutôt qu'un `||` : clé absente ou null →
 // dépôt public par défaut ; chaîne vide → pas de lien du tout (le mot reste du
