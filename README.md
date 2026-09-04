@@ -169,10 +169,11 @@ Détail : [docs/skills.md](docs/skills.md).
   et rendus dans la réponse ; les octets récupérés du web ou extraits d'une
   archive deviennent des ressources de première classe, analysables par le calcul
   sandboxé.
-- Un serveur peut exiger une autorisation (OAuth) pour l'un de ses outils :
-  l'appel échoue proprement et la ligne d'appel porte un lien **Autoriser**,
-  avec l'adresse de destination en clair. Seul l'utilisateur peut l'accorder ;
-  le modèle n'a aucun outil pour le faire.
+- Un serveur peut exiger une autorisation (OAuth) pour l'un de ses outils. Elle
+  est signalée **dès la connexion** — pastille en topbar, bouton **Autoriser**
+  sur la carte du serveur concerné — sans attendre qu'un appel échoue ; si
+  l'appel a lieu avant, la ligne d'appel porte elle aussi le lien. Seul
+  l'utilisateur peut l'accorder ; le modèle n'a aucun outil pour le faire.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur — c'est ce que fait le proxy du projet

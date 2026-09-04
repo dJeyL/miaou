@@ -2486,9 +2486,16 @@ const MCP_PROTOCOL_VERSION = '2025-06-18';
 const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
-let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId? } }
+let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, unauthorizedUpstreams? } }
 
 function getMcpStatus(name) { return _remoteStatus[name] || null; }
+
+// La table entière, pour les consommateurs qui raisonnent sur TOUS les serveurs
+// (pastille d'autorisation, revérification au retour de focus) plutôt que sur
+// un seul. Fonction et non lecture directe de `_remoteStatus` : un `let` de
+// portée fichier ne franchit pas la frontière dans le test runner, qui évalue
+// chaque fichier séparément.
+function mcpStatusSnapshot() { return _remoteStatus; }
 
 // Outils distants exposables : déjà préfixés `servername__` et filtrés (D7).
 function remoteToolDefs() {
@@ -2664,8 +2671,19 @@ async function connectMcpServer(server) {
       description: t.description || '',
       inputSchema: t.inputSchema || { type: 'object', properties: {} },
     }));
+    // Surface FACULTATIVE (lot AB-5) : `listed._meta` arrive dans le même objet
+    // que `listed.tools`, donc sans requête ni changement de transport. Son
+    // extraction est défensive par contrat — cette fonction dégrade
+    // gracieusement, et une surface optionnelle ne doit jamais y déclencher la
+    // branche d'erreur, qui masquerait TOUS les outils du serveur.
+    //
+    // Posée sur `_remoteStatus`, dont elle partage exactement la durée de vie et
+    // l'origine : état de session, reconstruit à chaque connexion. La branche
+    // d'erreur ci-dessous réécrit l'objet en entier, donc l'information
+    // disparaît à la déconnexion — c'est le comportement voulu.
     _remoteStatus[s.name] = Object.assign(_remoteStatus[s.name] || {}, {
       state: 'ok', count: _remoteTools[s.name].length, error: null,
+      unauthorizedUpstreams: unauthorizedUpstreamsFromList(listed),
     });
     return true;
   } catch (e) {
@@ -2734,12 +2752,16 @@ function toolCtx(ctx) {
 // snake_case comme tout ce qui vient du fil ; les champs d'ack sont en
 // camelCase. Le renommage a lieu ICI, à la frontière, et nulle part ailleurs.
 // Pures, testables en QuickJS.
-function applyAuthorizationRefusal(ackEntry, errorCode, data) {
+function applyAuthorizationRefusal(ackEntry, errorCode, data, mcpServerName) {
   if (!ackEntry) return ackEntry;
   if (errorCode !== AUTHORIZATION_REQUIRED_ERROR_CODE) return ackEntry;
   ackEntry.errorCode = errorCode;
   if (data && data.authorization_url != null) ackEntry.authorizationUrl = data.authorization_url;
   if (data && data.upstream != null) ackEntry.upstream = data.upstream;
+  // Le nom du serveur MCP configuré, pas son URL : celle-ci est résolue à
+  // l'AFFICHAGE depuis la config (cf. _ackMcpServerUrl, ui.js). Figer l'URL ici
+  // ferait pointer un ack relu vers l'adresse d'hier.
+  if (mcpServerName) ackEntry.mcpServer = mcpServerName;
   return ackEntry;
 }
 
@@ -2778,6 +2800,7 @@ function clearAuthorizationRefusal(ackEntry) {
   delete ackEntry.errorCode;
   delete ackEntry.authorizationUrl;
   delete ackEntry.upstream;
+  delete ackEntry.mcpServer;
   return ackEntry;
 }
 
@@ -2815,7 +2838,7 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
     // `err.data` porte l'objet applicatif COMPLET (cf. mcpRpcAttempt), pas
     // seulement `code` : `authorization_url` et `upstream` sont déjà là, rien à
     // ajouter au transport.
-    applyAuthorizationRefusal(ackEntry, errorCode, e && e.data);
+    applyAuthorizationRefusal(ackEntry, errorCode, e && e.data, server && server.name);
     const serverMessage = (e && e.message) || e;
     // Le refus d'autorisation reçoit un texte propre (cf. sa fonction) : le
     // message serveur seul s'adresse mal au modèle. Tout autre échec garde la

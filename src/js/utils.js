@@ -69,14 +69,16 @@ const ACK_COPY_FIELDS = [
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'origin',                               // docs__render_page (V-8) — 'docs_render' : distingue une image PRODUITE d'une pièce jointe RAPPELÉE, sur le même kind (libellé + icône, jamais le routage)
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
-  'errorCode', 'authorizationUrl', 'upstream',
+  'errorCode', 'authorizationUrl', 'upstream', 'mcpServer',
                                           // campagne AB — refus d'autorisation d'un serveur MCP. Persistés
                                           // (contrairement au `result.errorCode` éphémère de callRemoteTool) :
                                           // ils appellent une action de l'UTILISATEUR, qui peut quitter la
                                           // conversation et y revenir. `errorCode` + `authorizationUrl` sont
                                           // requis TOUS DEUX pour un lien (cf. ackAuthorizationTarget) ;
-                                          // `upstream` ne sert qu'à NOMMER ce qui a refusé dans un libellé —
-                                          // MIAOU ne modélise nulle part la notion d'upstream.
+                                          // `upstream` NOMME ce qui a refusé. `mcpServer` (lot AB-5) porte le
+                                          // nom du serveur MCP configuré : depuis que le proxy publie un
+                                          // CHEMIN relatif, l'origine doit être retrouvée dans la config à
+                                          // l'affichage, et sans ce champ l'ack ne sait pas d'où il vient.
 ];
 
 function copyAckFields(src, dst) {
@@ -217,6 +219,160 @@ function authorizationUrlOrigin(url) {
   return host + (port ? ':' + port : '');
 }
 
+// ── Upstreams en attente d'autorisation (campagne AB-5) ─────────────────────
+//
+// MIAOU MODÉLISE désormais la notion d'upstream. C'est un renversement assumé
+// de ce que disait la campagne AB-3 (« MIAOU n'apprend pas la notion
+// d'upstream, il ne la modélise nulle part »), et la raison du changement est
+// la granularité : MIAOU raisonne en SERVEUR CONFIGURÉ (une carte, une URL, une
+// entrée de `_remoteStatus`), le proxy raisonne en UPSTREAMS AGRÉGÉS (N derrière
+// une seule URL). Tant que l'upstream ne servait qu'à nommer un refus dans un
+// libellé, l'ignorer était gratuit. Dès qu'il faut dire « ce serveur marche,
+// mais deux des choses qu'il agrège attendent une autorisation », il faut le
+// nommer, le compter et l'adresser — donc le modéliser.
+
+// Clé du `_meta` de `tools/list` par laquelle un proxy énumère ses upstreams
+// non autorisés (contrat publié par miaou-mcp-servers, lot AB-4). Préfixée :
+// `_meta` est un espace partagé, une clé nue collisionnerait.
+const UNAUTHORIZED_UPSTREAMS_META_KEY = 'miaou/unauthorized_upstreams';
+
+// Extrait les upstreams à autoriser d'un résultat `tools/list` quelconque.
+//
+// DÉFENSIF sans exception : cette surface est FACULTATIVE, et `connectMcpServer`
+// dégrade gracieusement par contrat — tout échec y marque le serveur en erreur
+// et n'expose aucun de ses outils. Une clé absente, un type inattendu, une
+// entrée incomplète ne doivent donc jamais rien faire échouer : ce qui n'est pas
+// exploitable est ignoré, et le reste passe.
+//
+// Rend toujours un tableau (vide si rien), jamais `null` : l'appelant compte et
+// itère, et un `null` l'obligerait à garder les deux cas.
+// Pure, testable en QuickJS.
+function unauthorizedUpstreamsFromList(listed) {
+  if (!listed || typeof listed !== 'object') return [];
+  const meta = listed._meta;
+  if (!meta || typeof meta !== 'object') return [];
+  const raw = meta[UNAUTHORIZED_UPSTREAMS_META_KEY];
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+    if (!name) continue;   // sans nom, rien à afficher ni à adresser
+    const path = typeof entry.authorize_path === 'string' ? entry.authorize_path.trim() : '';
+    out.push({ name: name, authorizePath: path || null });
+  }
+  return out;
+}
+
+// Compose l'URL d'autorisation depuis l'URL du serveur MCP et le chemin relatif
+// publié par le proxy. Rend `null` si la composition n'est pas sûre.
+//
+// L'ORIGINE VIENT DE `server.url`, jamais du proxy. C'est la seule valeur qui
+// décrive comment MIAOU joint RÉELLEMENT le proxy : celui-ci ne connaît que son
+// adresse d'écoute (il replie même `0.0.0.0` sur `127.0.0.1`), donc derrière un
+// reverse proxy il publierait une origine injoignable. D'où le chemin relatif
+// dans le contrat, et cette composition ici.
+//
+// Ce n'est PAS `authorizationUrlOrigin` et il ne faut pas l'y renvoyer. Cette
+// garde-là protège contre une URL DICTÉE PAR UN TIERS dans un message d'erreur
+// (modèle de menace d'AB-3 : un serveur compromis pointant un faux formulaire
+// de login). Ici l'origine est celle que l'UTILISATEUR a saisie dans le drawer :
+// lui appliquer la garde de l'ack sous-entendrait qu'elle vient d'ailleurs.
+//
+// Ce qui reste à garder, et qui est plus étroit : le CHEMIN vient du réseau. Il
+// doit commencer par `/` et ne peut pas être protocol-relative (`//autre.hote/x`
+// changerait d'hôte en gardant l'air d'un chemin) ni porter un schéma.
+// Pure, testable en QuickJS.
+function composeAuthorizationUrl(serverUrl, authorizePath) {
+  if (typeof serverUrl !== 'string' || typeof authorizePath !== 'string') return null;
+  const path = authorizePath.trim();
+  if (path.charAt(0) !== '/') return null;      // relatif au serveur, jamais au document
+  if (path.charAt(1) === '/') return null;      // protocol-relative : change d'hôte
+  if (path.indexOf(':') >= 0) return null;      // aucun schéma n'a sa place dans un chemin
+  for (let i = 0; i < path.length; i++) {
+    if (path.charCodeAt(i) <= 0x20) return null;
+  }
+  // L'origine se lit sur l'URL saisie par l'utilisateur. `authorizationUrlOrigin`
+  // rend host[:port] et rien d'autre : on récupère le schéma séparément, puisque
+  // c'est la même valeur qui a été validée.
+  const raw = serverUrl.trim();
+  const sep = raw.indexOf('://');
+  if (sep < 0) return null;
+  const scheme = raw.slice(0, sep).toLowerCase();
+  if (scheme !== 'https' && scheme !== 'http') return null;
+  const origin = authorizationUrlOrigin(raw);
+  if (!origin) return null;
+  return scheme + '://' + origin + path;
+}
+
+// Serveurs MCP ayant au moins un upstream à autoriser, et le libellé de la
+// pastille de topbar. Prédicat d'APPARITION et libellé au même endroit, purs et
+// testés — même séparation que `resolveAgentCount` : la synchro DOM ne fait
+// qu'appliquer, elle ne décide de rien.
+//
+// `statuses` est la table `_remoteStatus` telle quelle. On compte des SERVEURS,
+// pas des upstreams : la pastille dit combien de cartes ouvrir, et le détail par
+// upstream vit dans la carte. Un serveur à trois upstreams en attente compte
+// pour un.
+// Pure, testable en QuickJS.
+function resolveAuthorizationPending(statuses) {
+  const names = [];
+  if (statuses && typeof statuses === 'object') {
+    for (const name of Object.keys(statuses)) {
+      const st = statuses[name];
+      const pending = st && Array.isArray(st.unauthorizedUpstreams) ? st.unauthorizedUpstreams : [];
+      if (pending.length) names.push(name);
+    }
+  }
+  names.sort();
+  const n = names.length;
+  if (!n) return { visible: false, count: 0, servers: [], label: '' };
+  return {
+    visible: true,
+    count: n,
+    servers: names,
+    label: n + ' serveur' + (n > 1 ? 's' : '') + ' à autoriser',
+  };
+}
+
+// Pill de statut d'une carte de serveur MCP : état visuel et libellé.
+//
+// Pur et testé, là où ce libellé était composé inline dans `renderMcpCard` : le
+// quatrième état introduit ici (« connecté, mais des upstreams attendent ») est
+// précisément celui qu'on se trompe à rendre, parce qu'il n'est ni un succès ni
+// une panne. Un serveur dont un upstream n'est pas autorisé est CONNECTÉ : ses
+// outils sont bien listés (le proxy les expose délibérément plutôt que de les
+// masquer), et seuls certains refuseront. Le dire « injoignable » serait faux ;
+// le dire « connecté » tout court cache le seul fait actionnable.
+//
+// Rend `null` quand il n'y a rien à afficher (carte neuve, serveur désactivé) —
+// l'appelant n'a alors pas de pill à peindre.
+// Pure, testable en QuickJS.
+function mcpStatusPill(status) {
+  if (!status) return null;
+  if (status.state === 'connecting') return { tone: 'connecting', text: '● connexion…' };
+  if (status.state !== 'ok') {
+    return {
+      tone: 'err',
+      text: '● injoignable' + (status.error ? ' : ' + status.error : ''),
+    };
+  }
+  const count = status.count || 0;
+  let text = '● Connecté — ' + count + ' outil' + (count > 1 ? 's' : '');
+  const pending = Array.isArray(status.unauthorizedUpstreams) ? status.unauthorizedUpstreams : [];
+  if (!pending.length) return { tone: 'ok', text: text };
+  // « service » et non « serveur » : ce compte-ci porte sur les UPSTREAMS d'une
+  // carte, quand celui de la pastille de topbar porte sur les SERVEURS
+  // configurés. Le même mot aux deux endroits désignerait deux niveaux
+  // différents à quelques pixels l'un de l'autre. « service » est le mot que
+  // `help.md` emploie déjà pour ce qu'un serveur compagnon donne accès à — pas
+  // un terme inventé pour l'occasion.
+  return {
+    tone: 'pending',
+    text: text + ', ' + pending.length + ' service' + (pending.length > 1 ? 's' : '') + ' à autoriser',
+  };
+}
+
 // Prédicat UNIQUE « cet ack porte-t-il un refus d'autorisation présentable ? »
 // (campagne AB). Même patron que `ackDownloadTarget` juste au-dessus : renvoie
 // une CIBLE typée ou `null`, jamais un booléen — l'appelant a besoin de l'URL
@@ -225,20 +381,44 @@ function authorizationUrlOrigin(url) {
 // Les DEUX champs sont requis pour rendre un lien. Le code seul dit qu'il faut
 // autoriser mais pas où aller (le proxy renvoie `authorization_url: null` quand
 // il n'a pas de parcours à proposer) ; l'URL seule ne distingue pas un refus
-// d'autorisation d'une erreur ordinaire. `upstream` est facultatif et sert
-// UNIQUEMENT à nommer ce qui a refusé dans un libellé — MIAOU n'apprend pas la
-// notion d'upstream, il ne la modélise nulle part.
+// d'autorisation d'une erreur ordinaire. `upstream` NOMME l'upstream qui a
+// refusé — et depuis le lot AB-5, MIAOU le modélise pour de bon (cf. le bloc
+// « Upstreams en attente d'autorisation » plus haut) ; ce commentaire a
+// longtemps affirmé le contraire, ne pas le restaurer.
 //
-// Un code présent sans URL recevable renvoie `null` : pas de lien. C'est voulu
-// et c'est le cas de refus de la garde d'URL — l'ack reste rouge et son message
+// DEUX FORMES de `authorizationUrl` coexistent, et il faut les deux :
+//   - un CHEMIN relatif (`/authorize/jira`), ce que publie le proxy depuis le
+//     lot AB-4 — composé ici avec l'origine du serveur MCP d'où vient l'ack ;
+//   - une URL ABSOLUE, ce que publiaient les versions antérieures. Les acks
+//     déjà persistés en portent, et un serveur tiers non-proxy pourrait en
+//     renvoyer : le verdict est rendu à l'AFFICHAGE, donc un ack relu doit
+//     rester lisible.
+// La forme absolue passe par `authorizationUrlOrigin` (elle vient telle quelle
+// du réseau : modèle de menace d'AB-3). La forme relative passe par
+// `composeAuthorizationUrl`, dont l'origine vient de la config utilisateur.
+//
+// `mcpServerUrl` est l'URL configurée du serveur d'où vient l'ack, résolue par
+// l'appelant depuis `m.mcpServer`. Absente (ack d'avant AB-5, serveur supprimé
+// depuis, config renommée), un chemin relatif n'est PAS composable : pas de
+// lien, l'ack reste rouge avec son message. Une affordance ne se devine pas.
+//
+// Un code présent sans cible recevable renvoie `null` : pas de lien. C'est voulu
+// et c'est le cas de refus des gardes — l'ack reste rouge et son message
 // d'erreur, lui, s'affiche toujours.
 // Pure, testable en QuickJS.
-function ackAuthorizationTarget(m) {
+function ackAuthorizationTarget(m, mcpServerUrl) {
   if (!m) return null;
   if (m.errorCode !== AUTHORIZATION_REQUIRED_ERROR_CODE) return null;
-  const origin = authorizationUrlOrigin(m.authorizationUrl);
+  const raw = typeof m.authorizationUrl === 'string' ? m.authorizationUrl.trim() : '';
+  if (!raw) return null;
+  if (raw.charAt(0) === '/') {
+    const url = composeAuthorizationUrl(mcpServerUrl, raw);
+    if (!url) return null;
+    return { url: url, origin: authorizationUrlOrigin(url), upstream: m.upstream || null };
+  }
+  const origin = authorizationUrlOrigin(raw);
   if (!origin) return null;
-  return { url: String(m.authorizationUrl).trim(), origin: origin, upstream: m.upstream || null };
+  return { url: raw, origin: origin, upstream: m.upstream || null };
 }
 
 // Ressources désignées par un ack POUR L'INSPECTEUR (lot Z-2). Étend

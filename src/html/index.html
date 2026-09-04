@@ -174,6 +174,11 @@ if (window.requestAnimationFrame) {
         <!-- Compteur d'agents en vol (T-2bis). Structuré pour accueillir un
              handler de clic en T-3 (ouverture du drawer) sans réécriture. -->
         <span class="agent-count" id="agent-count" hidden><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></span>
+        <!-- Serveurs MCP en attente d'autorisation (AB-5). Soeur de
+             .agent-count et non un enrichissement de .model-pill, qui porte
+             l'etat du backend LLM : deux domaines dans un composant lu en
+             permanence se confondraient. Masquee quand tout va bien. -->
+        <button class="agent-count auth-pending" id="auth-pending" hidden onclick="openMcpServers()" title="Ouvrir les serveurs MCP"><span class="auth-pending-dot"></span><span id="auth-pending-label"></span></button>
         <span class="model-pill"><span class="dot" id="conn-dot"></span><span id="model-label">modèle</span></span>
         <button class="icon-btn" onclick="openSettings()" title="Paramètres">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>

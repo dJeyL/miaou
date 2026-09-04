@@ -843,13 +843,24 @@ jamais un test de `kind` ni de code dans `buildToolAck`. Le contrat serveur
 (`error.data.code === "AUTHORIZATION_REQUIRED"`) est décrit dans `docs/mcp.md`
 point 15 ; ce qui suit ne couvre que le rendu.
 
-**Prédicat : `ackAuthorizationTarget(m)`** → `{url, origin, upstream}` ou `null`.
-Cible typée et non booléen, pour la même raison que `ackDownloadTarget` : le
-consommateur a besoin de l'origine à afficher, et un booléen l'aurait forcé à
-re-parser l'URL — deux formules d'analyse là où il en faut une. **Les deux**
-champs `errorCode` et `authorizationUrl` sont requis : le code seul dit qu'il
-faut autoriser sans dire où, l'URL seule ne distingue pas un refus d'une erreur
-ordinaire.
+**Prédicat : `ackAuthorizationTarget(m, mcpServerUrl)`** → `{url, origin,
+upstream}` ou `null`. Cible typée et non booléen, pour la même raison que
+`ackDownloadTarget` : le consommateur a besoin de l'origine à afficher, et un
+booléen l'aurait forcé à re-parser l'URL — deux formules d'analyse là où il en
+faut une. **Les deux** champs `errorCode` et `authorizationUrl` sont requis : le
+code seul dit qu'il faut autoriser sans dire où, l'URL seule ne distingue pas un
+refus d'une erreur ordinaire.
+
+`authorizationUrl` prend **deux formes** depuis la campagne AB : un chemin
+relatif (ce que publie `mcp_proxy` désormais) ou une URL absolue (acks déjà
+persistés, serveur non-proxy). Chacune a **sa** garde — la relative passe par
+`composeAuthorizationUrl` avec l'origine du serveur configuré, l'absolue par
+`authorizationUrlOrigin`, qui reste la garde des URL venues du réseau. Le second
+argument est cette origine, résolue par `_ackMcpServerUrl` (ui.js, impure) depuis
+le champ d'ack `mcpServer` — le **nom** du serveur, jamais son URL : celle-ci est
+relue dans la config à chaque affichage, pour qu'un ack rouvert des mois plus
+tard pointe là où le proxy est aujourd'hui. Serveur non résoluble et chemin
+relatif → **pas de lien** : une affordance ne se devine pas.
 
 **Seule affordance d'ack rendue en TEXTE et non en icône.** `.ack-dl` et
 `.ack-inspect` agissent *sur* l'ack et se lisent d'un pictogramme ; celle-ci

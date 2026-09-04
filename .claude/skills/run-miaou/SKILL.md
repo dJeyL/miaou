@@ -186,6 +186,25 @@ green proves nothing:
   "elsewhere" differ. A predicate is only tested by a state where a wrong
   implementation would give a different answer.
 
+  **The commonest instance, and the one that reads as fully covered: a check on
+  code that CLEARS state, exercised on a fresh path.** Lot AB-3 : deleting
+  `clearAuthorizationRefusal` (which wipes the authorization fields when a
+  retried call succeeds) left every check green. The scenario sent a *new* call
+  that succeeded — and a new call has nothing to clear, so present and absent
+  cleanup produce the same state. The fix is not a better assertion but a
+  different scenario: drive the failure first, then the success **on the same
+  entry** (here `callRemoteTool(..., reuseAckEntry)` twice), so the stale state
+  exists to survive. Nothing looks wrong in the meantime — the assertion is
+  sound, the premise true, the code correct; only the setup is inert.
+
+  Generalised: **any guard that removes, resets, expires or invalidates needs a
+  scenario where the thing removed was there in the first place.** The nominal
+  path almost never creates it, which is why these are systematically the
+  checks that survive mutation. Ask of every such check: *what would this
+  assert if the cleanup simply never ran?* — if the answer is "the same thing",
+  the scenario, not the assertion, is what needs rewriting. Assert the premise
+  too (the refusal DID mark the entry), or the absences that follow are vacuous.
+
 A third way a verify misleads, and the hardest to read: **a fixture that
 manufactures the very defect the check is looking for.** Here the assertion is
 sound and the code is correct — the setup collides with itself.

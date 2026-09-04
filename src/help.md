@@ -488,23 +488,34 @@ bloquer les autres.
 
 **Quand un serveur demande une autorisation.** Certains serveurs compagnons
 donnent accès à des services qui exigent que tu t'identifies — un espace de
-notes, un agenda, une messagerie. Dans ce cas, le premier appel d'un tel outil
-échoue proprement : la ligne d'appel devient rouge dans la conversation et porte
-un lien **Autoriser**, suivi de l'adresse vers laquelle il mène, affichée en
-clair pour que tu voies où tu vas avant de cliquer. Le lien ouvre la page
-d'autorisation dans un nouvel onglet ; une fois l'accès accordé, il suffit de
-redemander la même chose au modèle, et l'appel passe.
+notes, un agenda, une messagerie. Tu n'as pas besoin d'attendre un échec pour
+l'apprendre : dès la connexion au démarrage, une pastille apparaît en haut à
+droite (« 1 serveur à autoriser ») et t'emmène, d'un clic, sur la liste des
+serveurs compagnons.
+
+Là, le serveur concerné reste marqué comme connecté — ses outils sont bien
+disponibles — mais son état signale ce qui attend, et une ligne apparaît pour
+chaque service à autoriser, avec son bouton **Autoriser**. Le bouton ouvre la
+page d'autorisation dans un nouvel onglet ; en revenant sur MIAOU, l'état se
+remet à jour tout seul.
+
+Si l'appel a lieu avant que tu aies autorisé, il échoue proprement : la ligne
+d'appel devient rouge dans la conversation et porte elle aussi un lien
+**Autoriser**. Une fois l'accès accordé, il suffit de redemander la même chose
+au modèle. Ce lien-là reste attaché à la conversation : tu peux fermer MIAOU, y
+revenir plus tard et cliquer à ce moment-là.
 
 Le modèle, lui, ne peut rien faire de cette étape : il n'a aucun moyen
 d'autoriser un accès à ta place, et c'est délibéré. Il se contente de te
 signaler que l'action attend ton feu vert, puis continue avec ce qu'il peut
-faire sans. Le lien reste attaché à la conversation : tu peux fermer MIAOU, y
-revenir plus tard et cliquer à ce moment-là.
+faire sans.
 
-Un détail de sûreté qui vaut d'être connu : cette adresse est fournie par le
-serveur lui-même, donc MIAOU ne l'affiche que si elle est sécurisée (`https`) ou
-qu'elle pointe vers ta propre machine. Dans tout autre cas, aucun lien
-n'apparaît — la ligne reste rouge avec son message, et rien de cliquable.
+Un détail de sûreté qui vaut d'être connu : quand c'est le serveur lui-même qui
+fournit l'adresse complète, MIAOU ne l'affiche que si elle est sécurisée
+(`https`) ou qu'elle pointe vers ta propre machine ; dans tout autre cas aucun
+lien n'apparaît, la ligne reste rouge avec son message. Le bouton de la liste
+des serveurs, lui, ne prend au serveur que la fin de l'adresse : le début est
+celui que tu as toi-même saisi en configurant ce serveur.
 
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
@@ -672,6 +683,11 @@ Quelques repères pour te déplacer dans MIAOU :
   compteur n'apparaît que s'il t'apprend quelque chose : une seule réponse en
   cours, que tu es en train de regarder arriver, ne l'affiche pas — le bouton
   stop du composer le dit déjà.
+- **Serveurs à autoriser** : en haut à droite également, une pastille « 1
+  serveur à autoriser » apparaît quand un serveur compagnon donne accès à un
+  service qui attend que tu t'identifies. Elle ouvre la liste des serveurs, où
+  chaque accès en attente porte son bouton. Elle n'existe que dans ce cas :
+  quand tout est autorisé, rien ne s'affiche. Voir le sujet `mcp`.
 - **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une

@@ -466,7 +466,31 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
+    else recheckPendingAuthorizations();
   });
+}
+
+// Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE
+// onglet, et rien ne prévient MIAOU qu'il a abouti : le proxy n'a aucun canal
+// vers lui. Le retour de focus est le seul signal disponible et il est exact —
+// c'est le moment où l'utilisateur revient, typiquement après avoir cliqué
+// « Autoriser ». Pas de polling : on ne sonde pas, on réagit.
+//
+// Ne reconnecte QUE les serveurs qui attendaient quelque chose. Reconnecter tout
+// à chaque retour d'onglet serait un effet de bord que personne n'a demandé, sur
+// le chemin le plus fréquent de l'application. Sans serveur en attente, cette
+// fonction ne fait rien et ne coûte rien.
+//
+// Un serveur qui attend toujours après reconnexion reste simplement en attente :
+// la pastille et la carte se recalculent depuis le `_meta` fraîchement relu, donc
+// un parcours abandonné ou échoué se lit correctement, sans état à réconcilier.
+async function recheckPendingAuthorizations() {
+  const pending = resolveAuthorizationPending(mcpStatusSnapshot());
+  if (!pending.visible) return;
+  const servers = listEnabledMcpServers().filter(s => pending.servers.indexOf(s.name) >= 0);
+  if (!servers.length) return;
+  await runBackgroundTask('vérification MCP…', () => Promise.all(servers.map(s => connectMcpServer(s))));
+  renderMcpServersIfOpen();
 }
 
 // Modèle effectif pour l'échange courant : override de conversation s'il existe,

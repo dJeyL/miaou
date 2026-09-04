@@ -398,10 +398,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `spaceConvIds`), default Space, scope `profile` des souvenirs, description de
   Space concaténée au prompt système, bibliothèque de fichiers par Space.
 - **`docs/mcp.md`** — agrégation MCP distante (V2) : préfixage, routage,
-  transport, timeout, dégradation gracieuse, D5–D10, et les deux contrats
+  transport, timeout, dégradation gracieuse, D5–D10, les deux contrats
   d'erreur machine portés par `error.data.code` — `REF_UNKNOWN` (éphémère,
   décide d'un rejeu) et `AUTHORIZATION_REQUIRED` (campagne AB : persisté sur
-  l'ack, garde d'URL `authorizationUrlOrigin` appliquée à l'affichage).
+  l'ack, garde d'URL `authorizationUrlOrigin` appliquée à l'affichage) — et la
+  surface `_meta` de `tools/list` qui signale les upstreams à autoriser AVANT
+  tout échec (AB-5 : garde de composition distincte, pill dégradée, pastille
+  de topbar, revérification au retour de focus).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et

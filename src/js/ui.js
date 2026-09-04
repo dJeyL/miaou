@@ -2104,9 +2104,23 @@ function _appendAckAuthorizeLink(wrap, target) {
 // refus n'existe. Idempotente ; sans effet si le nœud est absent (génération
 // détachée — l'entrée est mutée quand même, le rendu à l'attache lira le
 // prédicat à jour).
+// URL configurée du serveur MCP d'où vient un ack, ou `null`. Impure (elle lit
+// le stockage), donc hors d'`ackAuthorizationTarget`, qui doit rester pure et
+// testable — et ses DEUX appelants passent par ici plutôt que de recomposer le
+// lookup, sans quoi un ack rendrait un lien là où l'autre n'en rendrait pas.
+//
+// Résolu à l'AFFICHAGE, jamais figé sur l'ack : c'est la config du moment qui
+// dit comment on joint le serveur aujourd'hui, et un ack relu dans six mois doit
+// pointer là où l'utilisateur a mis son proxy depuis, pas là où il était.
+function _ackMcpServerUrl(entry) {
+  if (!entry || !entry.mcpServer) return null;
+  const srv = getMcpServer(entry.mcpServer);
+  return (srv && srv.url) || null;
+}
+
 function refreshAckAuthorizationAffordance(node, entry) {
   if (!node || !entry) return;
-  const target = ackAuthorizationTarget(entry);
+  const target = ackAuthorizationTarget(entry, _ackMcpServerUrl(entry));
   if (!target) return;
   if (node.querySelector('.ack-authorize')) return;
   _appendAckAuthorizeLink(node, target);
@@ -2202,7 +2216,7 @@ function buildToolAck(m) {
   // y ait un sens, et ce serait un lien externe cliquable dans un fichier qui
   // circule. _formatToolCallHtml construit son markup indépendamment et ne
   // l'émet pas — vérifié, pas supposé (cf. tests d'export).
-  const authTarget = ackAuthorizationTarget(m);
+  const authTarget = ackAuthorizationTarget(m, _ackMcpServerUrl(m));
   if (authTarget) _appendAckAuthorizeLink(wrap, authTarget);
   if (spec.undo) {
     if (m.resolved) {
@@ -6922,7 +6936,33 @@ function renderApiServersIfOpen() {
   if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
 }
 
+// Pastille de topbar « des serveurs attendent une autorisation ».
+//
+// Le prédicat d'apparition ET le libellé viennent d'une fonction pure et testée
+// (`resolveAuthorizationPending`), cette fonction ne fait qu'appliquer — même
+// séparation que `syncAgentCount`/`resolveAgentCount`.
+//
+// Appelée depuis les DEUX fonctions de rendu des cartes MCP plutôt que depuis
+// chacun des points qui mutent l'état (connexion, déconnexion, sauvegarde,
+// suppression, toggle, boot, revérification au focus). Ces points sont nombreux
+// et convergent tous vers un rendu : s'y accrocher est un point de passage
+// obligé, alors qu'en câbler sept laisserait le huitième mentir en silence.
+function syncAuthorizationPending() {
+  const el = $('auth-pending');
+  if (!el) return;
+  const pending = resolveAuthorizationPending(mcpStatusSnapshot());
+  el.hidden = !pending.visible;
+  const label = $('auth-pending-label');
+  if (label) label.textContent = pending.label;
+}
+
 function renderMcpServersIfOpen() {
+  // La pastille se synchronise INCONDITIONNELLEMENT, contrairement aux cartes :
+  // elle vit en topbar, hors du drawer, et n'a aucune raison d'attendre qu'on
+  // l'ouvre. C'est même son intérêt — signaler sans qu'on soit allé voir. D'où
+  // cet appel ici EN PLUS de celui de `renderMcpServers` : le drawer fermé,
+  // celle-ci ne tourne pas, et le boot passe précisément par là.
+  syncAuthorizationPending();
   if ($('mcp-drawer') && $('mcp-drawer').classList.contains('show')) renderMcpServers();
 }
 
@@ -6934,6 +6974,11 @@ function isSkillsDrawerOpen() {
 }
 
 function renderMcpServers() {
+  // Ici et pas seulement dans `renderMcpServersIfOpen` : six sites appellent
+  // celle-ci directement (sauvegarde, suppression, toggle, ouverture du
+  // drawer, rehydratation multi-onglets), et n'accrocher que l'autre en
+  // laisserait la moitié sans mise à jour.
+  syncAuthorizationPending();
   const wrap = $('mcp-list');
   if (!wrap) return;
   wrap.innerHTML = '';
@@ -7104,16 +7149,16 @@ function buildMcpCard(server, isNew) {
   const viewEnabledI = viewToggle.input;
   viewRow.appendChild(viewToggle.row);
 
-  // Pill de statut — masquée si désactivé
+  // Pill de statut — masquée si désactivé. L'état ET le libellé viennent du
+  // prédicat pur `mcpStatusPill` : les composer ici rendrait le quatrième état
+  // (« connecté, mais des upstreams attendent ») invisible au test.
   const viewStatus = document.createElement('div');
   viewStatus.className = 'mcp-status';
-  if (!isNew && server.enabled !== false) {
-    const st = getMcpStatus(originalName);
-    if (st) {
-      if (st.state === 'ok') { viewStatus.classList.add('ok'); viewStatus.textContent = '● Connecté — ' + st.count + ' outil' + (st.count > 1 ? 's' : ''); }
-      else if (st.state === 'connecting') { viewStatus.textContent = '● connexion…'; }
-      else { viewStatus.classList.add('err'); viewStatus.textContent = '● injoignable' + (st.error ? ' : ' + st.error : ''); }
-    }
+  const liveStatus = (!isNew && server.enabled !== false) ? getMcpStatus(originalName) : null;
+  const pill = mcpStatusPill(liveStatus);
+  if (pill) {
+    if (pill.tone !== 'connecting') viewStatus.classList.add(pill.tone);
+    viewStatus.textContent = pill.text;
   }
   viewRow.appendChild(viewStatus);
 
@@ -7125,6 +7170,47 @@ function buildMcpCard(server, isNew) {
   viewRow.appendChild(modBtn);
 
   viewSection.appendChild(viewRow);
+
+  // Une ligne par upstream à autoriser (lot AB-5). Sous la pill, parce qu'elles
+  // en détaillent le compte : la pill dit combien, ces lignes disent lesquels et
+  // offrent l'action. Avec N upstreams, N lignes — MIAOU raisonne en serveur
+  // configuré, le proxy en upstreams agrégés, et c'est ce décalage qui interdit
+  // un booléen ici.
+  const pendingUpstreams = (liveStatus && Array.isArray(liveStatus.unauthorizedUpstreams))
+    ? liveStatus.unauthorizedUpstreams : [];
+  for (const up of pendingUpstreams) {
+    const row = document.createElement('div');
+    row.className = 'mcp-upstream-row';
+
+    const label = document.createElement('span');
+    label.className = 'mcp-upstream-name';
+    label.textContent = up.name;
+    row.appendChild(label);
+
+    // BOUTON, pas un lien nu : l'affordance de l'ack est discrète parce qu'elle
+    // s'insère dans une ligne d'erreur, ici on veut une action franche. Et son
+    // origine n'a pas à être affichée pour être vérifiée — elle vient de l'URL
+    // que l'utilisateur a lui-même saisie sur cette carte, visible juste
+    // au-dessus, pas d'un tiers.
+    const authUrl = composeAuthorizationUrl(server.url, up.authorizePath);
+    if (authUrl) {
+      const btn = document.createElement('button');
+      btn.className = 'drawer-btn mcp-authorize-btn';
+      btn.textContent = 'Autoriser';
+      btn.addEventListener('click', () => window.open(authUrl, '_blank', 'noopener'));
+      row.appendChild(btn);
+    } else {
+      // Chemin absent ou refusé par la garde de composition : on garde la
+      // ligne, sans action. Savoir qu'il faut autoriser reste utile même sans
+      // savoir où cliquer — même doctrine que l'ack sans lien.
+      const note = document.createElement('span');
+      note.className = 'mcp-upstream-note';
+      note.textContent = 'accès à autoriser';
+      row.appendChild(note);
+    }
+    viewSection.appendChild(row);
+  }
+
   card.appendChild(viewSection);
 
   // Toggle vue : persistance immédiate + reconnexion

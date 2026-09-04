@@ -77,7 +77,14 @@ qui l'exercerait resterait bloqué silencieusement.
 acceptés/refusés, loopback littéral, userinfo, caractères de contrôle, port non
 numérique, normalisation de casse), `ackAuthorizationTarget` (les deux champs
 requis, autre code machine, URL irrecevable, lecture par égalité et non par
-sous-chaîne du message), `applyAuthorizationRefusal`/`clearAuthorizationRefusal`
+sous-chaîne du message, et les **deux formes** d'URL — relative composée,
+absolue gardée comme avant, serveur non résoluble),
+`unauthorizedUpstreamsFromList` (extraction défensive : clé absente, `_meta`
+mal formé, entrée sans nom écartée, entrée sans chemin conservée),
+`composeAuthorizationUrl` (garde de **composition** : chemin non enraciné,
+protocol-relative, porteur de schéma), `mcpStatusPill` (les quatre états, dont
+le `pending` qui n'est ni succès ni panne) et `resolveAuthorizationPending`
+(apparition, pluriel, comptage par **serveur** et non par upstream), `applyAuthorizationRefusal`/`clearAuthorizationRefusal`
 (pose et retrait des trois champs **ensemble** — l'invariant qui empêche un lien
 périmé de subsister sur un ack redevenu vert au rejeu), la traversée de
 `ACK_COPY_FIELDS`, le texte modèle (`formatAuthorizationRefusalForModel` : qui
@@ -89,8 +96,22 @@ détachée relèvent du Playwright : `verify-authorization-required.mjs`
 (62 contrôles, MCP stubé au niveau de `mcpRpc` — pas de proxy à lancer), qui
 couvre aussi la matrice complète de la garde d'URL sur le chemin réel et le
 rejeu effaçant les marqueurs sur la **même** entrée d'ack (un appel neuf qui
-réussit ne teste pas cet invariant : il n'a rien à nettoyer). Restent hors de
-portée depuis MIAOU, cf. `docs/manual-tests.md` : le callback OAuth réel et la
+réussit ne teste pas cet invariant : il n'a rien à nettoyer).
+
+Le **signalement avant l'échec** (AB-5) a son propre script,
+`verify-authorization-pending.mjs` (28 contrôles, même montage stubé) : le
+`_meta` qui traverse `connectMcpServer` sans dégrader le serveur, la pastille et
+la carte peintes, l'URL composée — y compris derrière un hôte non-loopback, le
+seul cas où une composition fautive serait visible —, le retour de focus qui
+efface l'état, le témoin d'un serveur sain, et quatre `_meta` malformés qui ne
+doivent jamais faire basculer la connexion en erreur. Deux pièges de montage y
+sont documentés, tous deux payés : attendre `.boot-done` avant toute capture
+(l'écran de démarrage recouvre l'application alors que les mesures DOM sont
+déjà justes — trois captures vides et un clip accusé à tort), et un stub qui
+**discrimine par serveur**, faute de quoi le témoin sain est un second serveur
+dégradé et prouve l'inverse de ce qu'il annonce.
+
+Restent hors de portée depuis MIAOU, cf. `docs/manual-tests.md` : le callback OAuth réel et la
 distinction d'un 403 de scope, qui vit dans `mcp_proxy`.
 **ressources — cache session** (`getCachedRecordByAttId` : match exact attId+conversationId,
 conversationId omis, conversationId différent, attId absent ; `getCachedLibraryEntriesBySpace` :

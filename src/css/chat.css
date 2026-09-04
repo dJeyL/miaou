@@ -227,6 +227,31 @@
   box-shadow: 0 0 7px var(--accent-bd);
 }
 
+/* Pastille « des serveurs MCP attendent une autorisation » (AB-5). Reprend la
+   forme de .agent-count — meme pilule, meme typo — et s'en distingue par la
+   couleur et par une pastille FIXE : celle de .agent-count pulse parce qu'elle
+   dit « ca travaille », ici rien ne travaille, quelque chose attend. Animer
+   celle-ci emprunterait une metaphore qui ne s'applique pas. */
+.agent-count.auth-pending {
+  color: var(--pending);
+  border-color: var(--pending);
+  /* Fond OPAQUE, comme .agent-count : la topbar centre le titre de conversation
+     en position absolue derrière ces pilules, et un fond transparent le laisse
+     traverser la pastille. Vu en capture, invisible à toute assertion DOM —
+     les boîtes sont justes, c'est ce qu'il y a DERRIÈRE qui se voit. */
+  background: var(--surface-2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+.agent-count.auth-pending:hover { background: var(--surface-2); }
+.auth-pending-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--pending);
+  flex: none;
+}
+
 /* ═══ Messages ═══ */
 .messages {
   flex: 1;

@@ -88,6 +88,15 @@
      fragment court, mais vibre sur fond sombre quand il colore une phrase
      entière. Même esprit que --ctx-over (état persistant, pas alerte). */
   --err-soft:   #d96a6a;
+  /* État d'ATTENTE : ni succès ni panne. Un serveur MCP connecté dont un
+     upstream attend une autorisation marche — ses outils sont listés — mais
+     quelque chose manque et se répare par un clic. Ni --ok (qui dirait que
+     tout va bien) ni --err (qui dirait une panne, et ferait chercher un
+     dépannage là où il faut un consentement). Token SÉMANTIQUE propre plutôt
+     que réemploi de --ctx-warn, dont le nom le scope à l'inspecteur de
+     contexte : un token emprunté suit ensuite les retouches de son domaine
+     d'origine. */
+  --pending:      #d9a441;
   --ctx-cache:    #5fb3d9;               /* barre de cache KV (inspecteur de contexte) */
   --ctx-warn:     #b8720a;               /* compteur de contexte — approche de la limite */
   --ctx-warn-bd:  rgba(184,114,10,.33);  /* bordure du compteur warn (motif --accent-bd) */

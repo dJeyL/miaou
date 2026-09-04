@@ -798,7 +798,22 @@
 .mcp-status { font-size: 11.5px; color: var(--text-3); }
 .mcp-status.ok { color: var(--ok); }
 .mcp-status.err { color: var(--err); }
+.mcp-status.pending { color: var(--pending); }
 .mcp-view-row .drawer-btn { margin-left: auto; }
+
+/* Upstreams en attente d'autorisation (lot AB-5) — une ligne par upstream,
+   sous la pill dont elles détaillent le compte. */
+.mcp-upstream-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 6px; padding-left: 2px;
+  font-size: 12px;
+}
+.mcp-upstream-name { color: var(--text-2); }
+.mcp-upstream-name::before { content: '↳'; color: var(--pending); margin-right: 6px; }
+.mcp-upstream-note { color: var(--text-3); font-size: 11.5px; }
+/* Poussé à droite comme le « Modifier » de la ligne de vue, pour que les deux
+   actions de la carte s'alignent au lieu de flotter chacune sous son texte. */
+.mcp-upstream-row .mcp-authorize-btn { margin-left: auto; }
 
 /* ── Serveurs API : particularités ──────────────────────────────────────────── */
 .api-status { font-size: 11.5px; color: var(--text-3); }

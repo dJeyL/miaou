@@ -2671,6 +2671,233 @@ describe('ackAuthorizationTarget (campagne AB) — refus presentable', function(
   });
 });
 
+describe('unauthorizedUpstreamsFromList (AB-5) — extraction defensive', function() {
+  var KEY = 'miaou/unauthorized_upstreams';
+  function listed(meta) { return { tools: [], _meta: meta }; }
+
+  it('extrait les entrees bien formees', function() {
+    var out = unauthorizedUpstreamsFromList(listed({
+      'miaou/unauthorized_upstreams': [
+        { name: 'jira', authorize_path: '/authorize/jira' },
+        { name: 'confluence', authorize_path: '/authorize/confluence' },
+      ],
+    }));
+    expect(out.length).toBe(2);
+    expect(out[0].name).toBe('jira');
+    expect(out[0].authorizePath).toBe('/authorize/jira');
+    expect(out[1].name).toBe('confluence');
+  });
+  it('rend un tableau vide quand la cle est absente — le cas du proxy sain', function() {
+    expect(unauthorizedUpstreamsFromList(listed({})).length).toBe(0);
+    expect(unauthorizedUpstreamsFromList({ tools: [] }).length).toBe(0);
+  });
+  it('rend un tableau vide sur une entree quelconque, jamais null', function() {
+    // L'appelant compte et itere : un null l'obligerait a garder deux cas.
+    expect(unauthorizedUpstreamsFromList(null).length).toBe(0);
+    expect(unauthorizedUpstreamsFromList(undefined).length).toBe(0);
+    expect(unauthorizedUpstreamsFromList('nope').length).toBe(0);
+  });
+  it('ignore un _meta mal forme sans jamais lever', function() {
+    // connectMcpServer degrade gracieusement : une exception ici masquerait
+    // TOUS les outils du serveur pour une surface facultative.
+    expect(unauthorizedUpstreamsFromList(listed('texte')).length).toBe(0);
+    expect(unauthorizedUpstreamsFromList(listed({ 'miaou/unauthorized_upstreams': 'x' })).length).toBe(0);
+    expect(unauthorizedUpstreamsFromList(listed({ 'miaou/unauthorized_upstreams': {} })).length).toBe(0);
+  });
+  it('ecarte une entree sans nom : rien a afficher ni a adresser', function() {
+    var out = unauthorizedUpstreamsFromList(listed({
+      'miaou/unauthorized_upstreams': [
+        { authorize_path: '/authorize/x' },
+        { name: '   ' },
+        { name: 'ok', authorize_path: '/authorize/ok' },
+      ],
+    }));
+    expect(out.length).toBe(1);
+    expect(out[0].name).toBe('ok');
+  });
+  it('CONSERVE une entree sans chemin, avec authorizePath a null', function() {
+    // Savoir qu'il faut autoriser reste utile meme sans savoir ou cliquer :
+    // meme doctrine qu'ackAuthorizationTarget, qui laisse l'ack rouge visible.
+    var out = unauthorizedUpstreamsFromList(listed({
+      'miaou/unauthorized_upstreams': [{ name: 'jira' }],
+    }));
+    expect(out.length).toBe(1);
+    expect(out[0].name).toBe('jira');
+    expect(out[0].authorizePath).toBe(null);
+  });
+  it('lit la cle NAMESPACEE, pas une cle nue', function() {
+    var out = unauthorizedUpstreamsFromList(listed({ unauthorized_upstreams: [{ name: 'jira' }] }));
+    expect(out.length).toBe(0);
+    expect(KEY).toBe(UNAUTHORIZED_UPSTREAMS_META_KEY);
+  });
+});
+
+describe('composeAuthorizationUrl (AB-5) — origine locale, chemin distant', function() {
+  it('compose sur l\'origine du serveur configure', function() {
+    expect(composeAuthorizationUrl('http://127.0.0.1:8765/mcp', '/authorize/jira'))
+      .toBe('http://127.0.0.1:8765/authorize/jira');
+  });
+  it('ignore le chemin de l\'URL configuree, quel qu\'il soit', function() {
+    // Le chemin publie par le proxy est absolu depuis la RACINE de l'origine :
+    // le concatener au /mcp donnerait /mcp/authorize/jira, qui n'existe pas.
+    expect(composeAuthorizationUrl('https://mcp.home.test/', '/authorize/jira'))
+      .toBe('https://mcp.home.test/authorize/jira');
+    expect(composeAuthorizationUrl('https://mcp.home.test/base/proxy/mcp', '/authorize/jira'))
+      .toBe('https://mcp.home.test/authorize/jira');
+  });
+  it('accepte un hote distant en https — le cas du reverse proxy', function() {
+    // L'origine vient de la config UTILISATEUR, pas du reseau : la garde de
+    // l'ack (loopback seul en http) n'a pas lieu de s'appliquer ici.
+    expect(composeAuthorizationUrl('https://proxy.home.djeyl.net/mcp', '/authorize/jira'))
+      .toBe('https://proxy.home.djeyl.net/authorize/jira');
+  });
+  it('refuse un chemin sans / initial', function() {
+    expect(composeAuthorizationUrl('http://127.0.0.1:8765/mcp', 'authorize/jira')).toBe(null);
+  });
+  it('refuse un chemin protocol-relative — il changerait d\'hote', function() {
+    expect(composeAuthorizationUrl('http://127.0.0.1:8765/mcp', '//evil.test/authorize')).toBe(null);
+  });
+  it('refuse un chemin portant un schema', function() {
+    expect(composeAuthorizationUrl('http://127.0.0.1:8765/mcp', '/x:javascript:alert(1)')).toBe(null);
+    expect(composeAuthorizationUrl('http://127.0.0.1:8765/mcp', 'javascript:alert(1)')).toBe(null);
+  });
+  it('refuse un chemin portant un caractere de controle', function() {
+    expect(composeAuthorizationUrl('http://127.0.0.1:8765/mcp', '/authorize/\nx')).toBe(null);
+  });
+  it('refuse une URL de serveur inexploitable', function() {
+    expect(composeAuthorizationUrl('', '/authorize/jira')).toBe(null);
+    expect(composeAuthorizationUrl(null, '/authorize/jira')).toBe(null);
+    expect(composeAuthorizationUrl('pas-une-url', '/authorize/jira')).toBe(null);
+    expect(composeAuthorizationUrl('ftp://x.test/mcp', '/authorize/jira')).toBe(null);
+  });
+});
+
+describe('resolveAuthorizationPending (AB-5) — apparition de la pastille', function() {
+  function st(list) { return { state: 'ok', count: 3, unauthorizedUpstreams: list }; }
+
+  it('invisible quand aucun serveur n\'attend', function() {
+    var r = resolveAuthorizationPending({ proxy: st([]), autre: { state: 'ok', count: 2 } });
+    expect(r.visible).toBe(false);
+    expect(r.count).toBe(0);
+    expect(r.label).toBe('');
+  });
+  it('invisible sur un etat vide ou absent', function() {
+    expect(resolveAuthorizationPending({}).visible).toBe(false);
+    expect(resolveAuthorizationPending(null).visible).toBe(false);
+  });
+  it('un serveur : libelle au singulier — la pastille compte des SERVEURS, la carte des SERVICES', function() {
+    var r = resolveAuthorizationPending({ proxy: st([{ name: 'jira' }]) });
+    expect(r.visible).toBe(true);
+    expect(r.count).toBe(1);
+    expect(r.label).toBe('1 serveur \u00e0 autoriser');
+  });
+  it('compte des SERVEURS, pas des upstreams', function() {
+    // La pastille dit combien de cartes ouvrir ; le detail par upstream vit
+    // dans la carte. Un serveur a trois upstreams en attente compte pour un.
+    var r = resolveAuthorizationPending({
+      proxy: st([{ name: 'jira' }, { name: 'confluence' }, { name: 'gh' }]),
+    });
+    expect(r.count).toBe(1);
+    expect(r.servers.length).toBe(1);
+  });
+  it('plusieurs serveurs : pluriel, et noms tries', function() {
+    var r = resolveAuthorizationPending({
+      zeta: st([{ name: 'a' }]),
+      alpha: st([{ name: 'b' }]),
+      sain: st([]),
+    });
+    expect(r.count).toBe(2);
+    expect(r.servers[0]).toBe('alpha');
+    expect(r.servers[1]).toBe('zeta');
+    expect(r.label.indexOf('2 serveurs') === 0).toBe(true);
+  });
+});
+
+describe('mcpStatusPill (AB-5) — quatre etats, dont celui qui n\'est ni l\'un ni l\'autre', function() {
+  it('connecte et sain : le libelle historique, inchange', function() {
+    var p = mcpStatusPill({ state: 'ok', count: 34 });
+    expect(p.tone).toBe('ok');
+    expect(p.text).toBe('\u25cf Connect\u00e9 \u2014 34 outils');
+  });
+  it('un seul outil : singulier', function() {
+    expect(mcpStatusPill({ state: 'ok', count: 1 }).text).toBe('\u25cf Connect\u00e9 \u2014 1 outil');
+  });
+  it('un tableau VIDE se lit comme sain — pas d\'etat d\'attente fantome', function() {
+    var p = mcpStatusPill({ state: 'ok', count: 34, unauthorizedUpstreams: [] });
+    expect(p.tone).toBe('ok');
+  });
+  it('connecte AVEC des upstreams en attente : ni ok, ni err', function() {
+    // Le coeur du lot : ce serveur MARCHE (ses outils sont listes) et pourtant
+    // quelque chose manque. Le dire « ok » cache le seul fait actionnable ;
+    // le dire « injoignable » ferait chercher une panne la ou il faut un clic.
+    var p = mcpStatusPill({ state: 'ok', count: 34, unauthorizedUpstreams: [{ name: 'jira' }] });
+    expect(p.tone).toBe('pending');
+    expect(p.text).toBe('\u25cf Connect\u00e9 \u2014 34 outils, 1 service \u00e0 autoriser');
+  });
+  it('plusieurs upstreams en attente : pluriel', function() {
+    var p = mcpStatusPill({
+      state: 'ok', count: 34,
+      unauthorizedUpstreams: [{ name: 'jira' }, { name: 'confluence' }],
+    });
+    expect(p.text.indexOf('2 services \u00e0 autoriser') > 0).toBe(true);
+  });
+  it('injoignable : le message d\'erreur suit quand il existe', function() {
+    expect(mcpStatusPill({ state: 'error' }).tone).toBe('err');
+    expect(mcpStatusPill({ state: 'error', error: 'timeout' }).text.indexOf('timeout') > 0).toBe(true);
+  });
+  it('en cours de connexion', function() {
+    expect(mcpStatusPill({ state: 'connecting' }).tone).toBe('connecting');
+  });
+  it('null quand il n\'y a rien a peindre', function() {
+    expect(mcpStatusPill(null)).toBe(null);
+    expect(mcpStatusPill(undefined)).toBe(null);
+  });
+});
+
+describe('ackAuthorizationTarget (AB-5) — chemin relatif compose', function() {
+  var CODE = 'AUTHORIZATION_REQUIRED';
+
+  it('compose un chemin relatif avec l\'URL du serveur d\'origine', function() {
+    var t = ackAuthorizationTarget(
+      { errorCode: CODE, authorizationUrl: '/authorize/jira', upstream: 'jira', mcpServer: 'proxy' },
+      'http://127.0.0.1:8765/mcp'
+    );
+    expect(t.url).toBe('http://127.0.0.1:8765/authorize/jira');
+    expect(t.origin).toBe('127.0.0.1:8765');
+    expect(t.upstream).toBe('jira');
+  });
+  it('pas de lien quand l\'URL du serveur est introuvable', function() {
+    // Ack d'avant AB-5, serveur supprime depuis, ou config renommee : une
+    // affordance ne se devine pas. L'ack reste rouge avec son message.
+    expect(ackAuthorizationTarget({ errorCode: CODE, authorizationUrl: '/authorize/jira' }, null)).toBe(null);
+    expect(ackAuthorizationTarget({ errorCode: CODE, authorizationUrl: '/authorize/jira' }, '')).toBe(null);
+  });
+  it('pas de lien sur un chemin relatif irrecevable', function() {
+    expect(ackAuthorizationTarget(
+      { errorCode: CODE, authorizationUrl: '//evil.test/authorize' },
+      'http://127.0.0.1:8765/mcp'
+    )).toBe(null);
+  });
+  it('la forme ABSOLUE reste servie — les acks deja persistes en portent', function() {
+    // Le verdict est rendu a l'affichage : un ack ecrit par une version
+    // anterieure doit rester lisible, et sa garde reste celle de l'ack.
+    var t = ackAuthorizationTarget(
+      { errorCode: CODE, authorizationUrl: 'https://auth.notion.so/oauth/authorize' },
+      'http://127.0.0.1:8765/mcp'
+    );
+    expect(t.url).toBe('https://auth.notion.so/oauth/authorize');
+    expect(t.origin).toBe('auth.notion.so');
+  });
+  it('la forme absolue garde la garde de l\'ack, meme avec un serveur connu', function() {
+    // L'URL absolue vient du RESEAU : le modele de menace d'AB-3 tient, et
+    // connaitre le serveur ne l'assouplit pas.
+    expect(ackAuthorizationTarget(
+      { errorCode: CODE, authorizationUrl: 'http://faux.test/login' },
+      'http://127.0.0.1:8765/mcp'
+    )).toBe(null);
+  });
+});
+
 describe('refus d\'autorisation : ABSENT des exports (piege 21)', function() {
   var ack = {
     kind: 'mcp_call', name: 'proxy__notion__search', error: true,

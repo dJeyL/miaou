@@ -1298,3 +1298,35 @@ Configurer le proxy aval comme serveur MCP dans MIAOU, puis :
    upstreams du proxy. Vérifier qu'un 403 par scope insuffisant y est rapporté
    **comme tel**, et non comme une autorisation manquante — relancer le parcours
    ne répare pas une config de scopes.
+
+**Signalement avant l'échec (lot AB-5).** Les cas ci-dessus supposent tous qu'un
+appel a déjà échoué. Ceux-ci se vérifient **sans jamais appeler d'outil**, sur le
+même montage, en rechargeant simplement MIAOU :
+
+9. **Pastille au démarrage.** Recharger la page. Une pastille « 1 serveur à
+   autoriser » apparaît en topbar, à côté du compteur d'agents, sans qu'aucun
+   message n'ait été envoyé. Cliquer : le drawer des serveurs MCP s'ouvre.
+10. **Carte dégradée.** Sur la carte du proxy, la pill n'est ni verte ni rouge :
+    « ● Connecté — N outils, 1 **service** à autoriser ». Le compte d'outils
+    reste exact — les outils de l'upstream non autorisé **sont** listés. Une
+    ligne apparaît sous la pill, portant le nom de l'upstream et un bouton
+    **Autoriser**.
+11. **Composition de l'origine.** Le bouton doit pointer sur l'origine de l'URL
+    saisie dans la carte, pas sur celle que le proxy croit avoir. À vérifier en
+    configurant le serveur MCP par un **nom d'hôte** plutôt que par
+    `127.0.0.1` — le proxy ne connaît que son loopback d'écoute, et une
+    composition fautive se verrait ici et nulle part ailleurs.
+12. **Retour de focus.** Cliquer « Autoriser », mener le parcours dans l'autre
+    onglet, puis **revenir sur l'onglet MIAOU sans rien faire d'autre** : la
+    pastille disparaît et la carte repasse au vert d'elle-même. C'est le seul
+    signal dont MIAOU dispose ; il n'y a pas de polling.
+13. **Proxy sain.** Avec un proxy dont tous les upstreams sont autorisés (ou
+    sans OAuth du tout) : aucune pastille, pill verte habituelle, aucune ligne
+    d'upstream. Le cas courant ne doit rien voir changer.
+14. **Plusieurs upstreams, et les deux mots.** Configurer deux upstreams OAuth
+    non autorisés sur le même proxy : **deux** lignes sous la même pill, la pill
+    dit « 2 **services** à autoriser », et la pastille de topbar continue de dire
+    « 1 **serveur** ». Les deux comptes ne portent pas sur la même chose — la
+    carte compte ce que ce proxy agrège, la pastille compte les cartes à
+    ouvrir — et c'est précisément pourquoi ils n'emploient pas le même mot. Les
+    voir dire tous deux « serveur » serait la régression à rattraper ici.

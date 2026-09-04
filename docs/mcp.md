@@ -389,15 +389,24 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
     une sous-chaîne du message. `AUTHORIZATION_REQUIRED_ERROR_CODE` vit dans
     `utils.js`, à côté du prédicat qui la lit.
     - **Ce que porte `error.data`** : `code`, `upstream` (nom du serveur amont
-      qui a refusé) et `authorization_url` (le lien à présenter, **éventuellement
-      `null`** — le proxy peut n'avoir aucun parcours à proposer).
-      `error.message` est de la prose destinée à l'humain : affichable, **jamais
-      parsée**.
-    - **MIAOU n'apprend PAS la notion d'upstream.** `mcp_proxy` aplatit : MIAOU
-      voit UN serveur exposant une liste plate d'outils préfixés, et ne sait pas
-      que deux d'entre eux viennent d'amonts distincts. Le champ `upstream` sert
-      à **nommer** ce qui a refusé dans un libellé, jamais à modéliser une
-      structure — aucune surface ne liste d'upstreams.
+      qui a refusé) et `authorization_url` (**éventuellement `null`** — le proxy
+      peut n'avoir aucun parcours à proposer). `error.message` est de la prose
+      destinée à l'humain : affichable, **jamais parsée**.
+    - **Deux formes d'`authorization_url`, et il faut les deux.** Le proxy
+      publie un **chemin relatif** (`/authorize/{name}`) depuis son lot AB-4 :
+      l'URL absolue qu'il publiait avant était celle d'un parcours OAuth
+      **avorté**, qui menait à un callback orphelin. MIAOU compose donc
+      l'origine lui-même (voir point 16). La forme **absolue** reste servie :
+      des acks persistés en portent, et un serveur non-proxy pourrait en
+      renvoyer. Chacune a sa garde — c'est le point clé, cf. point 16.
+    - **MIAOU modélise la notion d'upstream** depuis le lot AB-5, ce que ce
+      document niait explicitement jusque-là. La raison est la **granularité** :
+      MIAOU raisonne en serveur configuré (une carte, une URL, une entrée de
+      `_remoteStatus`), `mcp_proxy` en upstreams agrégés (N derrière une seule
+      URL). Tant que `upstream` ne servait qu'à **nommer** un refus dans un
+      libellé, l'ignorer était gratuit ; dire « ce serveur marche, mais deux des
+      choses qu'il agrège attendent une autorisation » impose de les nommer, les
+      compter et les adresser. Cf. point 16.
     - **Persistance, contrairement à `REF_UNKNOWN`.** Ce dernier reste sur
       `result.errorCode`, éphémère par construction : son unique consommateur
       (le hook §12) le lit en synchrone pour décider d'un rejeu. Un refus
@@ -417,8 +426,14 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       l'écriture : un ack relu du stockage (ou écrit par une version antérieure)
       repasse par la même garde. C'est la seule URL d'origine **réseau** que
       MIAOU rende cliquable, d'où la liste fermée.
-    - **Rendu** : `ackAuthorizationTarget` (prédicat unique, utils.js) gate un
-      lien « Autoriser » sur l'ack, avec l'origine en clair à côté — construit
+    - **Rendu** : `ackAuthorizationTarget(m, mcpServerUrl)` (prédicat unique,
+      utils.js) gate un lien « Autoriser » sur l'ack, avec l'origine en clair à
+      côté. Son second argument est l'URL configurée du serveur d'où vient
+      l'ack, nécessaire pour composer un chemin relatif ; l'ack porte pour cela
+      `mcpServer` (le **nom**, pas l'URL — celle-ci est résolue à l'affichage
+      par `_ackMcpServerUrl`, ui.js, pour qu'un ack relu pointe là où le proxy
+      est aujourd'hui). Sans serveur résoluble, un chemin relatif ne donne
+      **aucun lien** : une affordance ne se devine pas. Construit
       par API DOM, `href` posé par **propriété** (aucun chemin string→HTML, cf.
       piège 21), `rel="noopener noreferrer"`. **Absent des deux exports**, comme
       le bouton de téléchargement et la loupe. Cf. `docs/tools.md`.
@@ -433,6 +448,89 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       phrase que le modèle pourrait recopier en réponse — remettant un lien
       d'origine réseau sur un chemin de rendu dépourvu de la garde ci-dessus.
     - **Pas de rejeu automatique** : la génération se termine normalement.
+
+16. **Surface `_meta` : savoir avant l'échec (campagne AB-5).** Le contrat du
+    point 15 est un contrat de **récupération** : il ne se déclenche qu'une fois
+    un appel refusé. Tant qu'il était seul, la seule façon pour l'utilisateur de
+    découvrir qu'une autorisation manquait était que le modèle échoue — et la
+    carte MCP affichait « ● Connecté — 34 outils » pour un proxy dont six
+    refuseraient.
+    - **Le véhicule** : `tools/list` porte un `_meta` sous la clé
+      `miaou/unauthorized_upstreams` (`UNAUTHORIZED_UPSTREAMS_META_KEY`,
+      utils.js), énumérant `{name, authorize_path}`. Il arrive dans le **même
+      objet** que `listed.tools`, donc sans requête ni changement de transport.
+      Contrat publié par `miaou-mcp-servers` (son `CLAUDE.md`, section « Où l'on
+      autorise, et à qui on le dit ») : **clé absente** quand il n'y a rien à
+      signaler, jamais un tableau vide ; **liste** dès la première version, un
+      proxy pouvant avoir N upstreams en attente.
+    - **Extraction défensive, sans exception.** `unauthorizedUpstreamsFromList`
+      (utils.js, pure) rend **toujours un tableau**. `connectMcpServer` dégrade
+      gracieusement par contrat — tout ce qui y lève marque le serveur en erreur
+      et masque **tous** ses outils : une surface facultative ne doit jamais
+      pouvoir déclencher ça. Une entrée sans nom est écartée ; une entrée sans
+      chemin est **conservée** (elle s'affiche, sans action) — savoir qu'il faut
+      autoriser reste utile même sans savoir où cliquer, même doctrine que
+      l'ack sans lien.
+    - **État** : posé sur `_remoteStatus[name].unauthorizedUpstreams`, dont il
+      partage exactement la durée de vie et l'origine (session, reconstruit à
+      chaque connexion). La branche d'erreur de `connectMcpServer` réécrit
+      l'objet **en entier**, donc l'information disparaît à la déconnexion —
+      comportement voulu.
+    - **Garde de COMPOSITION, distincte de la garde d'URL.**
+      `composeAuthorizationUrl(serverUrl, path)` (utils.js, pure) compose
+      l'origine de `server.url` avec le chemin du proxy. **Ce n'est pas**
+      `authorizationUrlOrigin` et il ne faut pas l'y renvoyer : celle-ci défend
+      contre une URL **dictée par un tiers** dans un message d'erreur (modèle de
+      menace du point 15), alors qu'ici l'origine est celle que l'**utilisateur**
+      a saisie dans le drawer — lui appliquer la garde de l'ack sous-entendrait
+      qu'elle vient d'ailleurs. Ce qui reste à garder est plus étroit et c'est le
+      **chemin**, qui vient du réseau : enraciné (`/`), jamais protocol-relative
+      (`//autre.hote/x` changerait d'hôte), sans schéma, sans caractère de
+      contrôle. L'origine vient de `server.url` et **jamais du proxy**, qui ne
+      connaît que son loopback d'écoute et publierait une adresse injoignable
+      derrière un reverse proxy.
+    - **Rendu** : `mcpStatusPill` (utils.js, pure) rend l'état ET le libellé de
+      la pill de carte — **quatrième état** `pending`, ni `ok` ni `err` : le
+      serveur est connecté, ses outils sont listés, et certains refuseront.
+      Extrait de `renderMcpCard` où il était composé inline, précisément parce
+      que c'est le cas qu'on rend mal. Sous la pill, une ligne par upstream avec
+      un **bouton** (pas un lien nu : l'affordance de l'ack est discrète parce
+      qu'elle s'insère dans une ligne d'erreur, ici l'action est franche, et
+      l'origine n'a pas à être affichée puisqu'elle est celle de la carte).
+    - **Pastille de topbar** : `resolveAuthorizationPending` (utils.js, pure)
+      décide de l'apparition et du libellé, `syncAuthorizationPending` (ui.js)
+      applique — même séparation que `resolveAgentCount`/`syncAgentCount`. Elle
+      compte des **serveurs**, pas des upstreams : elle dit combien de cartes
+      ouvrir, le détail vit dans la carte.
+    - **Deux compteurs, deux mots.** La pastille dit « 1 **serveur** à
+      autoriser » et la carte « 2 **services** à autoriser » : les comptes ne
+      portent pas sur la même chose (les cartes à ouvrir d'un côté, les upstreams
+      d'un proxy de l'autre), et le même mot à quelques pixels d'écart
+      désignerait deux niveaux. « Service » est le mot que `src/help.md` emploie
+      déjà pour ce à quoi un serveur compagnon donne accès — pas un terme forgé
+      pour l'occasion. Les tests QuickJS épinglent les deux libellés, et
+      `verify-authorization-pending.mjs` les vérifie côte à côte sur le même
+      écran : c'est ce qui empêche l'un de dériver vers l'autre. Sœur de `.agent-count`, jamais un
+      enrichissement de `.model-pill` (état du backend LLM : deux domaines dans
+      un composant lu en permanence se confondraient). Sa pastille ne **pulse
+      pas** — `.agent-count` anime parce qu'elle dit « ça travaille », ici rien
+      ne travaille, quelque chose attend.
+    - **Point de synchronisation** : accroché aux **deux** fonctions de rendu
+      des cartes (`renderMcpServers` ET `renderMcpServersIfOpen`), jamais à
+      chacun des sites qui mutent l'état MCP. Ceux-ci sont nombreux (connexion,
+      déconnexion, sauvegarde, suppression, toggle, boot, revérification) et
+      convergent tous vers un rendu : en câbler sept laisserait le huitième
+      mentir en silence. `renderMcpServersIfOpen` garde son propre appel parce
+      qu'elle tourne au boot avec le drawer fermé, et que la pastille n'a pas à
+      attendre qu'on ouvre un drawer pour signaler.
+    - **Retour d'autorisation** : rien ne prévient MIAOU qu'un parcours a
+      abouti — il se déroule dans un autre onglet, entièrement côté proxy, qui
+      n'a aucun canal retour. `recheckPendingAuthorizations` (main.js) réagit au
+      **retour de focus** (`visibilitychange`), seul signal disponible et
+      exact : c'est le moment où l'utilisateur revient. **Pas de polling.** Elle
+      ne reconnecte que les serveurs qui **attendaient** — reconnecter tout à
+      chaque retour d'onglet serait un effet de bord non demandé sur le chemin
+      le plus fréquent de l'application.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
