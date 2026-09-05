@@ -4348,6 +4348,10 @@ document.addEventListener('click', (e) => {
     const sm = $('space-menu');
     if (sm) sm.classList.remove('show');
   }
+  // Popover d'agents (T-3) : ferme au clic hors de son ancre. `closeAgentMenu`
+  // et non un `remove('show')` local — l'attribut aria-expanded du bouton doit
+  // suivre, et un seul point le sait.
+  if (!e.target.closest('#agent-anchor')) closeAgentMenu();
 });
 
 // Cascade Escape (D-Esc) : un seul niveau fermé par pression, priorité au plus
@@ -4417,7 +4421,7 @@ openToolInspector = _tInspect.open; closeToolInspector = _tInspect.close;
 // une liste dédiée. Escape recule d'un mode avant de fermer.
 
 let _cmdkOpen = false;
-let _cmdkMode = 'root';        // 'root' | 'model' | 'skill' | 'conv' | 'space'
+let _cmdkMode = 'root';        // 'root' | 'model' | 'skill' | 'conv' | 'space' | 'agent'
 let _cmdkItems = [];           // items rendus (mode courant, après filtrage)
 let _cmdkSel = 0;              // index sélectionné dans _cmdkItems
 let _cmdkFocusBefore = null;   // élément à re-focus à la fermeture (composer)
@@ -4474,6 +4478,9 @@ const CMDK_PLACEHOLDERS = {
   skill: 'Invoquer une skill…',
   conv:  'Rechercher une conversation…',
   space: 'Changer d’espace…',
+  // « Filtrer » et non « Rechercher » : ce sous-mode est un INVENTAIRE déjà
+  // affiché, que la frappe restreint — pas une recherche qui part de rien.
+  agent: 'Filtrer les agents…',
 };
 function cmdkRootPlaceholder() {
   return _cmdkFilterArmed ? CMDK_PLACEHOLDERS.rootFilter : CMDK_PLACEHOLDERS.root;
@@ -4514,6 +4521,12 @@ const COMMANDS = [
     run: () => { closeCommandPalette(); newConversation(); } },
   { id: 'search-conv', key: 'f', label: 'Rechercher une conversation', keywords: ['search', 'historique', 'find', 'chercher'],
     run: () => enterCmdkSubmode('conv') },
+  // `enabled` : la palette masque nativement les commandes hors contexte, donc
+  // l'entrée disparaît d'elle-même quand rien ne travaille — aucun code
+  // d'affichage conditionnel à écrire.
+  { id: 'agents', key: 'a', label: 'Agents', keywords: ['agent', 'agents', 'tâches', 'en cours'],
+    enabled: () => liveAgentInventory().length > 0,
+    run: () => enterCmdkSubmode('agent') },
   { id: 'switch-model', key: 'm', label: 'Changer de modèle', keywords: ['model', 'modèle', 'switch'],
     enabled: () => cmdkModelItems('').length > 0,
     run: () => enterCmdkSubmode('model') },
@@ -4608,6 +4621,9 @@ function cmdkModeItems(query) {
   if (_cmdkMode === 'conv') {
     return cmdkConvItems(query);
   }
+  if (_cmdkMode === 'agent') {
+    return cmdkAgentItems(query);
+  }
   return [];
 }
 
@@ -4653,6 +4669,85 @@ function cmdkConvItems(query) {
       // conv ouverte (même sidebar masquée) pour la retrouver en place.
       selectConv(c.id, true);
     },
+  }));
+}
+
+// Inventaire VIVANT des agents : la seule fonction qui branche le prédicat pur
+// `agentInventory` (agents.js) sur ses deux sources impures — les métadonnées de
+// conversations et le registre de générations. Les trois consommateurs du lot
+// (pilule de topbar, sous-mode de palette, drawer) passent par ici, jamais par
+// un balayage local : c'est ce qui garantit que la pilule annonce exactement le
+// nombre de lignes que le drawer affiche.
+function liveAgentInventory() {
+  return agentInventory(listAllConversations(), isGenerating);
+}
+
+// Aplatit l'inventaire en lignes de liste, dans l'ordre d'affichage : chaque
+// racine suivie de ses agents. `depth` (0 racine, 1 agent) porte l'indentation —
+// la palette comme le drawer en dérivent leur mise en forme, mais aucun des deux
+// ne recalcule la hiérarchie.
+//
+// `label` vient de `convLabel` (prédicat unique, agents.js) : un agent y est
+// libellé par son `agentIntent`, jamais par le placeholder de titre. Le
+// `provisional` qu'il rend accompagne la ligne pour que les surfaces l'italisent
+// comme ailleurs (extrait de secours en attente de titrage).
+function agentInventoryRows(inventory) {
+  const rows = [];
+  (inventory || []).forEach(g => {
+    const lbl = convLabel(g.conv);
+    rows.push({
+      conv: g.conv, depth: 0, working: g.working,
+      label: lbl.text || 'Sans titre', provisional: lbl.provisional,
+      // Un parent inerte qui attend ses agents ne « travaille » pas lui-même :
+      // le dire évite de lui prêter une génération qu'il n'a pas.
+      status: g.working ? 'génère' : 'en attente de ses agents',
+    });
+    g.agents.forEach(a => {
+      const al = convLabel(a);
+      rows.push({
+        conv: a, depth: 1, working: true,
+        label: al.text || 'Agent', provisional: al.provisional,
+        // Libellé UTILISATEUR issu de la table partagée (agents.js) : jamais une
+        // chaîne écrite ici, qui divergerait du bandeau d'agent.
+        status: AGENT_STATUS_UI_LABELS.running,
+      });
+    });
+  });
+  return rows;
+}
+
+// Navigation depuis une ligne d'inventaire — geste UNIQUE, partagé par la
+// palette et le drawer. Cross-Space par `followSpace` AVANT `selectConv`, dans
+// cet ordre : afficher un fil hors du Space actif violerait l'herméticité
+// (piège 18). C'est le geste déjà éprouvé de `cmdkConvItems`, pas une exception
+// nouvelle — la palette est cross-Space depuis le lot F.
+function gotoAgentInventoryRow(conv) {
+  if (!conv) return;
+  if (conv.spaceId !== getActiveSpaceId()) followSpace(conv.spaceId);
+  selectConv(conv.id, true);
+}
+
+// Submode « agents » : INVENTAIRE, pas recherche. Différence de nature avec
+// `cmdkConvItems` à ne pas gommer — pas de `if (!q) return []`, la liste est
+// présente d'emblée et la query ne fait que la restreindre.
+//
+// L'indentation d'un agent sous sa racine est matérialisée par un préfixe dans
+// le label : la palette rend ses items en ligne plate (un `<li>` à trois
+// emplacements fixes), elle n'a pas de niveau d'imbrication à offrir.
+function cmdkAgentItems(query) {
+  const q = (query || '').trim().toLowerCase();
+  const spaceNames = new Map(loadSpaces().map(s => [s.id, s.name || '']));
+  const active = getActiveSpaceId();
+  const rows = agentInventoryRows(liveAgentInventory());
+  // Le filtre s'applique à la ligne SEULE, sans repêcher son parent : une racine
+  // dont le libellé ne matche pas disparaît même si un de ses agents matche.
+  // Assumé — la query sert à retrouver une ligne connue, pas à reconstruire
+  // l'arbre.
+  return rows.filter(r => !q || r.label.toLowerCase().indexOf(q) >= 0).map(r => ({
+    label: (r.depth ? '↳ ' : '') + r.label,
+    note: r.conv.spaceId === active ? '' : (spaceNames.get(r.conv.spaceId) || 'Autre espace'),
+    hint: r.status,
+    run: () => { closeCommandPalette(); gotoAgentInventoryRow(r.conv); },
   }));
 }
 
@@ -4803,6 +4898,12 @@ function closeTopDropdownViaEscape() {
   const open = document.querySelectorAll('.model-menu.show');
   if (!open.length) return false;
   open.forEach(m => m.classList.remove('show'));
+  // Le popover d'agents (T-3) est un `.model-menu` comme les autres, mais il est
+  // le seul dont le DÉCLENCHEUR porte un état (`aria-expanded` sur la pilule) :
+  // le retirer de la classe ne suffit pas, il faut repasser par son fermeur.
+  // Sans ça, Escape referme le popover en laissant le bouton annoncer qu'il est
+  // ouvert — un état faux pour tout lecteur d'écran, invisible à l'oeil.
+  closeAgentMenu();
   return true;
 }
 function closeTopDrawerViaEscape() {
@@ -6739,10 +6840,106 @@ function activityBadgeEl(state) {
 function syncAgentCount() {
   const el = $('agent-count');
   if (!el) return;
-  const n = resolveAgentCount(_activeGenerations.size, isGenerating(currentConvId));
-  el.hidden = !n;
+  // Deux questions distinctes, deux sources — c'est le point de discipline du
+  // lot T-3 (decision Julien) :
+  //  - SE MONTRER ? `resolveAgentCount` sur le registre, inchange depuis T-2bis :
+  //    la pilule se tait quand elle n'apprend rien (une generation unique qu'on
+  //    regarde arriver est deja signalee par le composer en mode stop) ;
+  //  - AFFICHER QUOI ? le nombre de LIGNES de l'inventaire, c'est-a-dire
+  //    exactement ce que le popover va lister.
+  // Les confondre ferait mentir la pilule dans les deux sens : un parent inerte
+  // qui attend ses agents n'a aucune entree au registre (sous-compte), et la
+  // generation d'ecran en est retranchee alors que l'inventaire la liste.
+  const inv = liveAgentInventory();
+  const visible = resolveAgentCount(_activeGenerations.size, isGenerating(currentConvId));
+  el.hidden = !visible;
   const label = $('agent-count-label');
-  if (label) label.textContent = formatAgentCountLabel(n);
+  if (label) label.textContent = formatAgentCountLabel(agentInventoryCount(inv));
+  // Une pilule qui disparait pendant que son popover est ouvert emporte le
+  // popover : sans ca il resterait affiche, ancre a un element masque.
+  if (el.hidden) closeAgentMenu();
+  else if (isAgentMenuOpen()) renderAgentMenu();
+}
+
+// ── Popover d'inventaire des agents (lot T-3) ───────────────────────────────
+// Meme anatomie que #space-menu : ancre position:relative + .model-menu. Il
+// herite ainsi de deux choses sans une ligne de code — la fermeture par Escape
+// (`closeTopDropdownViaEscape`, qui balaie `.model-menu.show` AVANT les drawers)
+// et l'animation d'ouverture. Le clic-dehors, lui, est cable au meme endroit que
+// ses freres (le listener document plus haut).
+function isAgentMenuOpen() {
+  const m = $('agent-menu');
+  return !!(m && m.classList.contains('show'));
+}
+
+function closeAgentMenu() {
+  const m = $('agent-menu');
+  if (m) m.classList.remove('show');
+  const btn = $('agent-count');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleAgentMenu() {
+  if (isAgentMenuOpen()) { closeAgentMenu(); return; }
+  renderAgentMenu();
+  const m = $('agent-menu');
+  if (m) m.classList.add('show');
+  const btn = $('agent-count');
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+}
+
+// Rendu de l'inventaire. `createElement` + `textContent` : les libelles sont des
+// donnees utilisateur (titres de conversation) ET du texte de modele
+// (agentIntent) — jamais d'innerHTML, doctrine projet.
+//
+// L'indentation d'un agent sous sa racine est portee par une classe (`.depth-1`),
+// pas par un prefixe textuel comme dans la palette : ici on dispose d'une vraie
+// mise en page, et l'indentation EST ce qui distingue une racine d'un agent.
+function renderAgentMenu() {
+  const m = $('agent-menu');
+  if (!m) return;
+  m.textContent = '';
+  const rows = agentInventoryRows(liveAgentInventory());
+  const spaceNames = new Map(loadSpaces().map(s => [s.id, s.name || '']));
+  const active = getActiveSpaceId();
+  if (!rows.length) {
+    // Ne devrait pas s'afficher (la pilule est masquee quand rien ne tourne),
+    // mais une liste vide sans un mot serait un popover casse a l'ecran.
+    const empty = document.createElement('div');
+    empty.className = 'agent-menu-empty';
+    empty.textContent = 'Aucun agent au travail.';
+    m.appendChild(empty);
+    return;
+  }
+  rows.forEach(r => {
+    // `.model-opt` porte deja le hover et le curseur du composant ; le handler
+    // est pose sur la LIGNE entiere, padding compris — pose sur le seul libelle,
+    // le padding serait une zone morte (project_model_opt_row_click_target).
+    const row = document.createElement('div');
+    row.className = 'model-opt agent-row depth-' + r.depth;
+    const main = document.createElement('span');
+    main.className = 'agent-row-main';
+    const dot = document.createElement('span');
+    // Pastille `working` pulsante, celle des badges d'activite : toute ligne de
+    // l'inventaire travaille, directement ou par ses agents.
+    dot.className = 'waiter-dot activity-dot working';
+    main.appendChild(dot);
+    const label = document.createElement('span');
+    label.className = 'agent-row-label' + (r.provisional ? ' provisional' : '');
+    label.textContent = r.label;
+    main.appendChild(label);
+    row.appendChild(main);
+    const meta = document.createElement('span');
+    meta.className = 'agent-row-meta';
+    // Espace annote seulement s'il n'est pas l'actif — meme regle que la palette.
+    const space = r.conv.spaceId === active ? '' : (spaceNames.get(r.conv.spaceId) || 'Autre espace');
+    meta.textContent = space ? (r.status + ' · ' + space) : r.status;
+    row.appendChild(meta);
+    // Fermeture au clic (decision Julien) : le popover masque le fil qu'on vient
+    // ouvrir, et il se rouvre d'un geste.
+    row.addEventListener('click', () => { closeAgentMenu(); gotoAgentInventoryRow(r.conv); });
+    m.appendChild(row);
+  });
 }
 
 function syncActivityBadges() {

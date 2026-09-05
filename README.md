@@ -40,6 +40,10 @@ Figtree/Fira Code).
   modifiable. Le fil d'un agent passe en lecture seule une fois son travail
   rendu, et l'historique de la conversation qui l'a lancé ne peut pas être
   réécrit tant qu'il travaille — cf. [docs/agents.md](docs/agents.md).
+- **Inventaire de ce qui travaille** : la pastille de la barre du haut s'ouvre
+  sur les conversations en cours, agents indentés sous celle qui les a lancés,
+  tous Espaces confondus ; un clic y emmène. Même liste à la palette de
+  commandes (`Cmd+K`, `A`) — cf. [docs/agents.md](docs/agents.md).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
   alimenté en direct.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et

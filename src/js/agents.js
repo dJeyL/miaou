@@ -205,6 +205,65 @@ function countWorkingAgentsTotal() {
   return n;
 }
 
+// ── Inventaire des agents (lot T-3) ─────────────────────────────────────────
+// LE prédicat d'inventaire, PUR : il rend l'arbre « conversation racine →
+// agents » de tout ce qui travaille, toutes conversations et TOUS ESPACES
+// confondus. Consommé par les DEUX surfaces du lot (sous-mode `agent` de la
+// palette et drawer d'agents) — jamais un second balayage écrit au point
+// d'usage, sinon les deux répondraient différemment à la même question
+// (project_single_predicate_holds_only_if_every_consumer_uses_it).
+//
+// Impur en argument, pas en dépendance : `convs` (métadonnées) et `working`
+// (prédicat « cette conversation génère-t-elle ? ») arrivent de l'appelant.
+// C'est ce qui rend la fonction testable sans IDB ni registre
+// (project_extract_pure_helper_over_idb_stub).
+//
+// Une racine est retenue si elle génère elle-même OU si au moins un de ses
+// agents travaille — le second cas est celui du parent INERTE qui attend ses
+// enfants (décision Julien, T-3) : il n'a aucune entrée au registre de
+// générations, donc tout comptage fondé sur ce seul registre le manque.
+// C'est précisément pourquoi le compte affiché par la pilule dérive désormais
+// de cet inventaire et non de `_activeGenerations.size`.
+//
+// Un agent dont le parent a disparu est remonté comme sa propre racine plutôt
+// qu'omis : il travaille, il est atteignable, et le taire ferait mentir le
+// compte. Les agents TERMINÉS ne sont jamais listés (décision Julien : pas
+// d'état « non lu » côté agent, ils disparaissent) — seul leur parent, remis à
+// générer par la délivrance du résultat, reste visible le temps de son réveil.
+//
+// L'ordre est stable et suit `convs` (les racines dans l'ordre où elles y
+// figurent, chaque groupe d'agents dans le même ordre) : la liste ne doit pas
+// se réordonner sous le curseur à chaque rafraîchissement.
+function agentInventory(convs, working) {
+  const all = convs || [];
+  const isWorking = typeof working === 'function' ? working : () => false;
+  const byId = new Map(all.map(c => [c.id, c]));
+  const groups = new Map();
+  const rootEntry = (conv) => {
+    let g = groups.get(conv.id);
+    if (!g) { g = { conv: conv, working: isWorking(conv.id), agents: [] }; groups.set(conv.id, g); }
+    return g;
+  };
+  for (const c of all) {
+    if (!c || !isWorking(c.id)) continue;
+    if (isRootConversation(c)) { rootEntry(c); continue; }
+    const parent = byId.get(c.parentConvId);
+    // Parent introuvable : l'agent devient sa propre racine (cf. ci-dessus) —
+    // une entrée SANS enfant, surtout pas son propre enfant.
+    if (!parent) { rootEntry(c); continue; }
+    rootEntry(parent).agents.push(c);
+  }
+  return Array.from(groups.values());
+}
+
+// Nombre de LIGNES de l'inventaire — racines et agents confondus. C'est le
+// compte que la pilule de topbar affiche : elle annonce exactement ce que le
+// drawer va lister, jamais un total calculé autrement (décision Julien, T-3 :
+// un parent inerte en attente de ses agents compte pour une ligne).
+function agentInventoryCount(inventory) {
+  return (inventory || []).reduce((n, g) => n + 1 + g.agents.length, 0);
+}
+
 // ── Validation de la liste d'outils déléguée (X-e + X-i) ────────────────────
 // PUR et testable (project_extract_pure_helper_over_idb_stub). Trois règles :
 //  - défaut [] = AUCUN outil (le parent doit nommer ce qu'il délègue) ;

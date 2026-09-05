@@ -472,7 +472,12 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `{text, provisional}` depuis le lot AA (`title` > `agentIntent` > `snippet`) ;
   gardes de cycle de vie sur `hasWorkingAgent` — suppression, déplacement, et
   réécriture d'historique (édition/régénération refusées tant qu'un enfant
-  tourne, `agentBusyRewriteRefusal`, glyphes grisés par `body.agent-busy`).
+  tourne, `agentBusyRewriteRefusal`, glyphes grisés par `body.agent-busy`) ;
+  inventaire de ce qui travaille (lot T-3) — prédicat pur `agentInventory`
+  (arbre racine → agents, cross-Space), aplati par `agentInventoryRows`, servi
+  au popover de topbar ET au sous-mode `agent` de la palette, avec la scission
+  « se montrer » (`resolveAgentCount`) / « afficher quoi »
+  (`agentInventoryCount`).
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

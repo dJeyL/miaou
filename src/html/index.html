@@ -171,9 +171,16 @@ if (window.requestAnimationFrame) {
       </div>
       <div class="topbar-right">
         <span class="bg-activity" id="bg-activity"><span class="spin"></span><span id="bg-label"></span></span>
-        <!-- Compteur d'agents en vol (T-2bis). Structuré pour accueillir un
-             handler de clic en T-3 (ouverture du drawer) sans réécriture. -->
-        <span class="agent-count" id="agent-count" hidden><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></span>
+        <!-- Compteur d'agents en vol (T-2bis), devenu declencheur de
+             l'inventaire en T-3. Popover ancre SOUS la pilule (meme anatomie que
+             #space-menu : une ancre position:relative + un .model-menu), et non
+             un drawer pleine hauteur : l'inventaire est une liste courte, la
+             sortir du bord droit couperait le fil qu'on vient consulter.
+             Le bouton porte aria-expanded, tenu par syncAgentCount. -->
+        <span class="agent-anchor" id="agent-anchor">
+          <button type="button" class="agent-count" id="agent-count" hidden aria-expanded="false" onclick="toggleAgentMenu()" title="Voir les agents au travail"><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></button>
+          <div class="model-menu agent-menu" id="agent-menu"></div>
+        </span>
         <!-- Serveurs MCP en attente d'autorisation (AB-5). Soeur de
              .agent-count et non un enrichissement de .model-pill, qui porte
              l'etat du backend LLM : deux domaines dans un composant lu en

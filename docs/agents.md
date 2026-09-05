@@ -1183,6 +1183,85 @@ valeur est un consommateur qui l'oubliera — et c'est exactement ce qui s'étai
 produit. `toolDefinitions` continue de passer son `ctx`, la source reste unique
 (un test pin l'égalité des deux chemins).
 
+## L'inventaire de ce qui travaille (lot T-3)
+
+Deux surfaces exposent la même question — « qu'est-ce qui travaille, où que ce
+soit ? » : un **popover** ancré sous la pastille de topbar, et le **sous-mode
+`agent`** de la palette de commandes (`Cmd+K` puis `A`).
+
+### Un prédicat, deux consommateurs
+
+`agentInventory(convs, working)` (agents.js) est **pur** : les conversations et
+le prédicat « ça génère » arrivent en arguments. Il rend l'arbre `racine →
+agents` de ce qui travaille, tous Espaces confondus. `liveAgentInventory()`
+(ui.js) est le **seul** point qui le branche sur ses sources vivantes
+(`listAllConversations`, `isGenerating`) ; `agentInventoryRows` l'aplatit en
+lignes portant `depth` (0 racine, 1 agent). Les deux surfaces consomment ces
+lignes, aucune ne recalcule la hiérarchie — c'est ce qui garantit qu'elles
+répondent la même chose.
+
+Le libellé vient de `convLabel` (prédicat unique) : un agent y est nommé par son
+`agentIntent`, jamais par un placeholder de titre. Le statut utilisateur vient
+d'`AGENT_STATUS_UI_LABELS`, jamais d'une chaîne écrite au point d'usage.
+
+### Le parent inerte, et pourquoi le compte a changé de source
+
+Une racine est retenue si elle génère **ou** si un de ses agents travaille. Ce
+second cas est celui du parent qui attend ses enfants : il n'a **aucune entrée**
+dans `_activeGenerations`, donc tout comptage fondé sur ce seul registre le
+manque.
+
+D'où la séparation, portée par `syncAgentCount` :
+
+- **se montrer ?** `resolveAgentCount` sur le registre, inchangé depuis T-2bis —
+  la pastille se tait quand elle n'apprend rien (une génération unique qu'on
+  regarde arriver est déjà signalée par le composer en mode stop) ;
+- **afficher quoi ?** `agentInventoryCount`, le nombre de **lignes** de
+  l'inventaire — exactement ce que le popover va lister.
+
+Les confondre ferait mentir la pastille dans les deux sens : sous-compte du
+parent inerte, et retrait de la génération d'écran que l'inventaire liste
+pourtant. La vérification e2e mesure cet écart (1 parent + 3 agents = 4 lignes,
+là où le registre en aurait annoncé 3).
+
+Corollaire : les agents **terminés** ne sont jamais listés — décision Julien, un
+agent n'a pas d'état « non lu » côté utilisateur. Seul son parent, remis à
+générer par la délivrance du résultat, reste visible le temps de son réveil.
+
+### Navigation
+
+`gotoAgentInventoryRow(conv)` est le geste unique des deux surfaces :
+`followSpace` **avant** `selectConv`, dans cet ordre — afficher un fil hors du
+Space actif violerait l'herméticité (piège 18). Ce n'est pas une exception
+nouvelle : c'est le geste déjà éprouvé de `cmdkConvItems`, et la palette est
+cross-Space depuis le lot F. Le clic **referme** la surface (décision Julien) :
+un popover laissé ouvert masque le fil qu'on vient d'ouvrir.
+
+### Ce que la surface a coûté en CSS
+
+Le popover est un `.model-menu` — il hérite ainsi de la fermeture par Escape
+(`closeTopDropdownViaEscape`, qui balaie `.model-menu.show` **avant** les
+drawers) sans une ligne de code. Trois pièges payés à la capture, tous trois
+invisibles à toute assertion DOM :
+
+- ses surcharges doivent porter le sélecteur **double** `.model-menu.agent-menu`
+  : elles vivent dans `chat.css`, la base dans `drawers.css`, chargé **après**
+  dans `CSS_ORDER` — à spécificité égale le fichier tardif gagne, et le
+  `z-index` restait silencieusement à 10 ;
+- `.topbar` porte `backdrop-filter`, qui **crée un contexte d'empilement** :
+  tout `z-index` posé à l'intérieur y est confiné, et c'est la topbar entière
+  qui se compare au reste de la page. Sans `z-index` propre elle perdait contre
+  le fil, qui la suit dans le DOM — bulles et horodatages passaient par-dessus
+  le popover. Elle porte désormais `position: relative; z-index: 36`, sous les
+  drawers (40) : au-dessus du fil, jamais au-dessus d'un écran modal ;
+- `min-width: 0` sur le libellé, sans quoi un enfant de flex refuse de descendre
+  sous sa taille de contenu et l'ellipse ne se déclenche jamais.
+
+Le seul état porté par le déclencheur est `aria-expanded` sur la pastille :
+`closeTopDropdownViaEscape` ne le connaît pas, il rappelle donc `closeAgentMenu`
+— sans quoi Escape referme le popover en laissant le bouton annoncer qu'il est
+ouvert, faux pour un lecteur d'écran et invisible à l'œil.
+
 ## Tests
 
 `tests/test-agents.js` (QuickJS). Couverture pure : prédicat de racine et ses cas
@@ -1230,6 +1309,11 @@ compte est du câblage — le hook `onInterjections` d'un agent, le drain observ
 dans son payload, la file échouée sous lecture seule, les sélecteurs bloqués.
 C'est l'objet du verify e2e (`verify-agents.mjs` pour X-1, `verify-x1e.mjs` pour
 X-1e, étendu d'une section F pour X-1f).
+
+Pour T-3, `verify-agents-inventory.mjs` couvre ce que le prédicat pur ne peut
+pas voir : le branchement sur les sources vivantes, la cohérence pastille ↔
+popover ↔ palette, le parent inerte, la navigation cross-Space et l'extinction
+complète. Il tourne sur le même montage (stub SSE gaté).
 
 ## La vérification e2e
 

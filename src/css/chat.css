@@ -26,6 +26,16 @@
   border-bottom: 1px solid var(--border);
   background: var(--topbar-bg);
   backdrop-filter: blur(8px);
+  /* `backdrop-filter` CREE un contexte d'empilement : tout `z-index` pose a
+     l'interieur de la topbar (le popover d'agents, T-3) y est confine, et c'est
+     la topbar ENTIERE qui se compare au reste de la page. Sans z-index propre
+     elle perdait contre le fil, qui la suit dans le DOM — la bulle et
+     l'horodatage passaient par-dessus le popover. Mesure a la sonde : le
+     `z-index: 70` du popover etait bien applique, il ne servait a rien.
+     Valeur choisie SOUS les drawers (40) et leur backdrop : la topbar reste au-
+     dessus du fil, jamais au-dessus d'un ecran modal. */
+  position: relative;
+  z-index: 36;
 }
 .topbar-left  { display: flex; align-items: center; gap: 4px; justify-self: start; }
 /* Brand topbar : masqué EN DUR par défaut (état HTML statique), révélé par
@@ -209,6 +219,108 @@
   white-space: nowrap;
 }
 .agent-count[hidden] { display: none; }
+/* La pilule est un <button> depuis T-3 (elle ouvre l'inventaire) : neutraliser
+   les defauts de l'element, comme le fait deja .auth-pending juste en dessous.
+   `font-family` est REPOSE explicitement — un bouton ne l'herite pas, et sans ca
+   la pilule perdrait sa mono au profit de la police systeme. */
+.agent-count {
+  font-family: var(--mono);
+  cursor: pointer;
+  appearance: none;
+}
+.agent-count:hover { color: var(--text); border-color: var(--border); }
+
+/* Ancre du popover : c'est elle qui porte position:relative, pas la pilule —
+   la pilule est masquee (`hidden`) quand rien ne travaille, et un popover ancre
+   a un element `display:none` n'a plus de reference de position. */
+.agent-anchor { position: relative; display: flex; align-items: center; }
+
+/* Popover d'inventaire (T-3). Herite de .model-menu (drawers.css) pour la boite,
+   l'ombre et l'animation ; ne surcharge que ce qui differe : il s'ancre a DROITE
+   (la pilule est en fin de topbar, un menu cale a gauche deborderait de l'ecran)
+   et se dimensionne sur son contenu au lieu des `left:0; right:0` de la base,
+   qui l'ecraseraient a la largeur de la pilule. Meme geste que .move-bar. */
+/* Selecteur DOUBLE (`.model-menu.agent-menu`) et non `.agent-menu` seul : ces
+   regles surchargent la base `.model-menu`, qui vit dans drawers.css — charge
+   APRES chat.css dans CSS_ORDER. A specificite egale c'est le fichier le plus
+   tardif qui gagne, donc une classe nue se ferait ecraser en silence (le
+   `z-index` restait a 10, mesure a la sonde : le fil transparaissait a travers
+   le popover alors que son fond etait bien opaque). */
+.model-menu.agent-menu {
+  left: auto; right: 0;
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 32px));
+  max-height: 320px;
+  padding: 4px 0;
+  /* La topbar n'etablit AUCUN contexte d'empilement (pas de z-index propre) :
+     le `z-index: 10` de la base .model-menu se compare donc au fil de
+     conversation, qui gagne par ordre du DOM et transparait a travers le
+     popover. Ses freres n'ont pas le probleme — #space-menu vit dans la sidebar,
+     les menus du composer dans un conteneur deja empile. Vu en capture,
+     invisible a toute assertion DOM : les boites sont justes, c'est ce qu'il y a
+     DERRIERE qui se voit (meme signature que le fond opaque de .auth-pending). */
+  z-index: 70;
+}
+.model-menu.agent-menu .agent-row {
+  /* La base .model-opt est en `justify-content: space-between` sur une ligne ;
+     l'inventaire porte deux etages (libelle, puis statut) : on repasse en
+     colonne. Le padding reste celui de .model-opt — c'est lui la zone de clic. */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.model-menu.agent-menu .agent-row-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.model-menu.agent-menu .agent-row-main .activity-dot {
+  /* Meme remise a zero que dans la pilule : .waiter-dot pose une marge laterale
+     destinee au slot du patienteur, qui decalerait la pastille ici. */
+  width: 6px; height: 6px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.model-menu.agent-menu .agent-row-label {
+  /* `min-width: 0` INDISPENSABLE : un enfant de flex refuse par defaut de
+     descendre sous sa taille de contenu, donc l'ellipse ne se declenche jamais
+     et le libelle deborde du popover au lieu d'etre tronque. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Extrait de secours en attente de titrage : meme italique que les autres
+   surfaces qui affichent un libelle provisoire (convLabel). */
+.model-menu.agent-menu .agent-row-label.provisional { font-style: italic; color: var(--text-2); }
+.model-menu.agent-menu .agent-row-meta {
+  font-size: 10.5px;
+  color: var(--text-2);
+  /* Aligne sous le libelle, pas sous la pastille : 6px de pastille + 7px de gap. */
+  padding-left: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Un agent est indente SOUS sa racine : c'est la seule chose qui le distingue
+   d'une conversation racine dans cette liste (decision Julien, T-3). Le trait
+   vertical rattache visuellement l'enfant a son parent, l'indentation seule
+   restant ambigue sur une liste ou les libelles varient en longueur. */
+.model-menu.agent-menu .agent-row.depth-1 { position: relative; padding-left: 26px; }
+.model-menu.agent-menu .agent-row.depth-1::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 0; bottom: 0;
+  border-left: 1px solid var(--border-2);
+}
+.model-menu.agent-menu .agent-menu-empty {
+  padding: 8px 12px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
 /* La pastille est SEULE de son espèce dans cette pilule : aucune voisine pour
    donner l'échelle du couple working/unread, mais un voisin immédiat très
    présent — le point de connexion de .model-pill (7px, plein, halo). À 5px et

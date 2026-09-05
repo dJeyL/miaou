@@ -452,7 +452,10 @@ les a lancés.
 
 Une fois dans le fil d'un agent, un bandeau en tête te rappelle de quelle
 conversation il vient, et te ramène à elle d'un clic — c'est le chemin du
-retour, puisque l'agent n'est nulle part dans ta barre latérale. En haut, à la
+retour, puisque l'agent n'est nulle part dans ta barre latérale. Tant qu'il
+travaille, il est aussi listé dans la pastille du compteur d'agents, en haut à
+droite, sous la conversation qui l'a lancé : c'est de là que tu peux ouvrir son
+fil sans passer par elle (voir le sujet `interface`). En haut, à la
 place du titre, tu lis ce qui a été demandé à l'agent : un agent n'a pas de
 titre à lui, et ne se renomme pas.
 
@@ -783,10 +786,23 @@ sans perdre ta place.
   de lui-même (chercher, lire un fichier, calculer) avant de répondre. Cela
   inclut les **sous-conversations que le modèle lance lui-même** pour une tâche
   précise (voir le sujet `agents`) : si le modèle en lance une pendant qu'il te
-  répond, le compteur en indique deux, parce que deux choses travaillent. Le
-  compteur n'apparaît que s'il t'apprend quelque chose : une seule réponse en
-  cours, que tu es en train de regarder arriver, ne l'affiche pas — le bouton
-  stop du composer le dit déjà.
+  répond, le compteur en indique deux, parce que deux choses travaillent. Une
+  conversation qui a lancé des sous-conversations et attend leurs résultats est
+  comptée elle aussi : elle a du travail en cours, même si elle n'écrit rien
+  pour l'instant. Le compteur n'apparaît que s'il t'apprend quelque chose : une
+  seule réponse en cours, que tu es en train de regarder arriver, ne l'affiche
+  pas — le bouton stop du composer le dit déjà.
+- **Voir ce qui travaille, et y aller** : la pastille du compteur s'ouvre d'un
+  clic sur la liste de ce qui est en cours. Les conversations que tu as lancées
+  y figurent, et sous chacune, **décalées vers la droite**, les
+  sous-conversations qu'elle a elle-même lancées. Chaque ligne dit où elle en
+  est, et porte le nom de son Espace quand ce n'est pas celui où tu te trouves.
+  Cliquer sur une ligne t'y emmène — en changeant d'Espace au passage si besoin
+  — et referme la liste. La même liste s'obtient au clavier par la palette de
+  commandes (`Cmd+K`, puis `A`), où tu peux la filtrer en tapant. Elle disparaît
+  quand plus rien ne travaille. Les sous-conversations terminées n'y restent
+  pas : leur résultat revient à la conversation qui les a lancées, c'est là
+  qu'il se lit.
 - **Serveurs à autoriser** : en haut à droite également, une pastille « 1
   serveur à autoriser » apparaît quand un serveur compagnon donne accès à un
   service qui attend que tu t'identifies. Elle ouvre la liste des serveurs, où

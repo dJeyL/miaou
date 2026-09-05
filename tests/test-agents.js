@@ -1405,3 +1405,106 @@ describe('exposedTools résout les définitions dynamiques (X-1e)', function() {
     expect(t.description).toContain('Interromp');
   });
 });
+
+describe('agentInventory (T-3) — l\'arbre « racine → agents » de ce qui travaille', function() {
+  // Le prédicat est PUR : les conversations et le prédicat « ça génère » arrivent
+  // en arguments. C'est ce qui permet de le tester sans IDB ni registre.
+  var working = function(ids) { return function(id) { return ids.indexOf(id) >= 0; }; };
+
+  it('une racine qui génère seule fait une entrée sans agent', function() {
+    var convs = [{ id: 'p1', title: 'Refonte' }];
+    var inv = agentInventory(convs, working(['p1']));
+    expect(inv.length).toBe(1);
+    expect(inv[0].conv.id).toBe('p1');
+    expect(inv[0].working).toBe(true);
+    expect(inv[0].agents.length).toBe(0);
+  });
+
+  it('un parent INERTE dont un agent travaille est listé — le cas que le registre seul manque', function() {
+    // LE cas qui motive le prédicat (décision Julien, T-3) : `p1` n'a aucune
+    // entrée au registre de générations, donc tout comptage fondé sur
+    // _activeGenerations.size le manque. Il doit pourtant être la racine de son
+    // agent, sans quoi l'agent apparaîtrait orphelin.
+    var convs = [{ id: 'p1', title: 'Refonte' }, { id: 'a1', parentConvId: 'p1', agentIntent: 'Relire' }];
+    var inv = agentInventory(convs, working(['a1']));
+    expect(inv.length).toBe(1);
+    expect(inv[0].conv.id).toBe('p1');
+    expect(inv[0].working).toBe(false);
+    expect(inv[0].agents.length).toBe(1);
+    expect(inv[0].agents[0].id).toBe('a1');
+  });
+
+  it('un parent qui génère ET dont les agents travaillent : une entrée, deux agents', function() {
+    var convs = [
+      { id: 'p1', title: 'Refonte' },
+      { id: 'a1', parentConvId: 'p1', agentIntent: 'Relire' },
+      { id: 'a2', parentConvId: 'p1', agentIntent: 'Chiffrer' },
+    ];
+    var inv = agentInventory(convs, working(['p1', 'a1', 'a2']));
+    expect(inv.length).toBe(1);
+    expect(inv[0].working).toBe(true);
+    expect(inv[0].agents.length).toBe(2);
+  });
+
+  it('les agents TERMINÉS ne sont jamais listés (pas d\'état « non lu » côté agent)', function() {
+    var convs = [
+      { id: 'p1', title: 'Refonte' },
+      { id: 'a1', parentConvId: 'p1', agentIntent: 'Fini' },
+      { id: 'a2', parentConvId: 'p1', agentIntent: 'En cours' },
+    ];
+    var inv = agentInventory(convs, working(['a2']));
+    expect(inv[0].agents.length).toBe(1);
+    expect(inv[0].agents[0].id).toBe('a2');
+  });
+
+  it('rien ne travaille → inventaire vide (la pilule et la commande disparaissent)', function() {
+    var convs = [{ id: 'p1' }, { id: 'a1', parentConvId: 'p1' }];
+    expect(agentInventory(convs, working([])).length).toBe(0);
+  });
+
+  it('un agent dont le parent a disparu devient sa PROPRE racine, jamais omis', function() {
+    // Il travaille et il est atteignable : le taire ferait mentir le compte.
+    var convs = [{ id: 'a1', parentConvId: 'ghost', agentIntent: 'Orphelin' }];
+    var inv = agentInventory(convs, working(['a1']));
+    expect(inv.length).toBe(1);
+    expect(inv[0].conv.id).toBe('a1');
+    expect(inv[0].agents.length).toBe(0);
+  });
+
+  it('CROSS-SPACE : deux Espaces remontent dans le même inventaire', function() {
+    // L'inventaire répond à « qu'est-ce qui tourne, où que ce soit » : le filtrer
+    // par Space actif le viderait précisément quand il est utile.
+    var convs = [{ id: 'p1', spaceId: 's1' }, { id: 'p2', spaceId: 's2' }];
+    var inv = agentInventory(convs, working(['p1', 'p2']));
+    expect(inv.length).toBe(2);
+  });
+
+  it('l\'ordre suit `convs` — la liste ne se réordonne pas sous le curseur', function() {
+    var convs = [{ id: 'p2' }, { id: 'p1' }];
+    var inv = agentInventory(convs, working(['p1', 'p2']));
+    expect(inv[0].conv.id).toBe('p2');
+    expect(inv[1].conv.id).toBe('p1');
+  });
+
+  it('null / prédicat absent → inventaire vide, jamais d\'exception', function() {
+    expect(agentInventory(null, null).length).toBe(0);
+    expect(agentInventory([{ id: 'p1' }], null).length).toBe(0);
+  });
+});
+
+describe('agentInventoryCount (T-3) — ce que la pilule annonce', function() {
+  it('compte les LIGNES : racines ET agents', function() {
+    // Le compte doit valoir exactement ce que le popover affiche. Un parent
+    // inerte avec deux agents = trois lignes, pas deux.
+    var convs = [
+      { id: 'p1' },
+      { id: 'a1', parentConvId: 'p1' },
+      { id: 'a2', parentConvId: 'p1' },
+    ];
+    expect(agentInventoryCount(agentInventory(convs, function(id) { return id !== 'p1'; }))).toBe(3);
+  });
+  it('inventaire vide → 0 ; null → 0', function() {
+    expect(agentInventoryCount([])).toBe(0);
+    expect(agentInventoryCount(null)).toBe(0);
+  });
+});
