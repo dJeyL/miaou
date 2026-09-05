@@ -332,9 +332,17 @@ n'occupe pas un slot d'agent.
 Option (c), tranchée par Julien. `spawnAgent` ne réutilise **pas** `dispatchSend`,
 qui lit massivement l'état d'écran (`activeModel`, `currentConvId`,
 `currentThread`, `startAssistantMessage`, `setSending`…). Les hooks d'un agent
-sont **structurellement plus simples** — jamais d'écran à peindre,
-`genOwnsScreen` est faux par construction tant que rien n'ouvre son fil, et X-1
-n'en ouvre aucun. Ce n'est pas une copie de `dispatchSend`, c'est sa moitié.
+sont **plus simples** : ils n'ont pas de manifeste de contexte à recalculer, pas
+de carte de confirmation à ouvrir, pas de composer à basculer. Ce n'est pas une
+copie de `dispatchSend`, c'est sa moitié.
+
+**Ce que « sa moitié » ne veut PAS dire**, et X-1 s'y est trompé : que l'agent
+n'a jamais d'écran. Son fil est ouvrable (libellé cliquable, popover
+d'inventaire), donc `genOwnsScreen` peut devenir vrai à tout moment pendant son
+travail. Les hooks passent donc par les points d'écriture partagés de main.js
+(`setGenPartialContent`, `pushGenToolAck`, `pushGenMessage`), qui muent toujours
+et peignent si l'écran est possédé — cf. `docs/generations.md`, « Les points
+d'écriture partagés ».
 
 L'extraction d'un `runGeneration` commun est le bon geste **une fois** qu'on aura
 vu les deux chemins vivre ; le faire d'emblée serait concevoir l'abstraction
@@ -551,15 +559,19 @@ son commentaire le dit en toutes lettres. Le réveil viole cette prémisse, d'o�
 **deux branches explicites** (`startParentWakeGeneration`) :
 
 - **parent affiché** → `dispatchSend`, tel quel. C'est sa prémisse exacte.
-- **parent non affiché** → `runDetachedGeneration`, qui n'appelle **jamais**
-  `startAssistantMessage` (qui pousserait une bulle dans le DOM d'une autre
-  conversation) ni `setSending` (qui basculerait le composer d'une conversation
-  qu'on regarde et qui, elle, ne génère pas).
+- **parent non affiché** → `runDetachedGeneration`, qui ne pousse aucune bulle
+  ni ne bascule le composer **au démarrage** : à cet instant l'écran affiche une
+  autre conversation, et le faire y écrirait.
 
-`runDetachedGeneration` partage le corps « données seulement » des hooks d'agent
-— ce n'est pas un hasard : un agent **est** une génération sans écran, et un
-parent réveillé en arrière-plan aussi. Différences réelles : la trousse d'outils
+`runDetachedGeneration` partage le corps des hooks d'agent — ce n'est pas un
+hasard : un agent **est** une génération qui démarre sans écran, et un parent
+réveillé en arrière-plan aussi. Différences réelles : la trousse d'outils
 complète et le titrage conservé.
+
+Les deux passent par les points d'écriture partagés de main.js, qui décident de
+peindre au moment de chaque hook (`genOwnsScreen`) plutôt qu'une fois pour toutes
+au démarrage : revenir sur le parent, ou ouvrir le fil de l'agent, pendant qu'il
+travaille suffit à voir la suite arriver en direct. Cf. `docs/generations.md`.
 
 **Coût KV assumé** : insertion mid-séquence, invalidation **ponctuelle et
 volontaire** — corollaire du piège 16, précédent exact du piège 27

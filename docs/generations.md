@@ -253,14 +253,77 @@ le thread a lieu toujours — c'est la scission habituelle.
   question, elle, **reste dans le fil** (message assistant persisté) : revenir
   sur la conversation la montre, et y répondre reprend le fil.
 
-## Générations sans écran : agents et réveil de parent (lot X-1)
+## Générations qui DÉMARRENT sans écran : agents et réveil de parent (lot X-1)
 
-Le lot X-1 ajoute deux générations qui ne possèdent **jamais** l'écran par
-construction : celle d'un **agent** (`runAgentGeneration`, agents.js) et celle
-d'un **parent réveillé en arrière-plan** (`runDetachedGeneration`). Elles
-réutilisent tout ce qui précède — registre, abort ciblé, `persistGeneration`,
-`projectThreadToMessages` — et n'ont que la moitié « données » des hooks : aucun
-`startAssistantMessage`, aucun `setSending`, aucun `streamInto`.
+Le lot X-1 ajoute deux générations qui démarrent sur une conversation non
+affichée : celle d'un **agent** (`runAgentGeneration`, agents.js) et celle d'un
+**parent réveillé en arrière-plan** (`runDetachedGeneration`). Elles réutilisent
+tout ce qui précède — registre, abort ciblé, `persistGeneration`,
+`projectThreadToMessages`.
+
+**Elles démarrent sans écran ; elles ne restent pas sans écran.** X-1 les avait
+écrites avec la seule moitié « données » des hooks (aucun `startAssistantMessage`,
+aucun `streamInto`, aucun `placeToolAck`), sous la prémisse « un agent ne possède
+jamais l'écran par construction ». Cette prémisse était fausse dans le lot même
+qui l'écrivait : X-1 rend le fil d'un agent ouvrable (libellé cliquable, popover
+d'inventaire, palette), et rien n'empêche de revenir sur un parent pendant que
+son réveil tourne — c'est même le geste naturel quand l'agent vient de finir.
+
+Le symptôme était un fil **muet** : `attachGenerationToScreen` rebranchait bien
+`gen.wrap`, mais plus aucun hook ne peignait dedans. On voyait le partiel figé à
+l'instant du rebranchement, puis un curseur qui clignotait jusqu'au bout. Aucune
+donnée perdue (tout était persisté), donc un aller-retour montrait la réponse
+complète — ce qui rendait le défaut facile à prendre pour un caprice d'affichage.
+Second symptôme, même racine : leur `onEarlyAcks` drainait l'ack MCP de
+`_pendingToolAcks` pour le copier dans le fil, si bien que le
+`updateLastPendingToolAck` de leur `onEnrichLastAck` enrichissait une file vide.
+`args`/`result` n'atteignaient jamais l'entrée persistée, donc
+`ackHasInspectableDetail` répondait faux : **pas de loupe d'inspecteur dans un
+fil d'agent, ni pendant ni après reload**.
+
+### Les points d'écriture partagés (main.js)
+
+Le correctif ne duplique pas les hooks de `dispatchSend` — ce serait le motif
+« deux jeux de hooks corrects séparément qui divergent en silence ». Il factorise
+les écritures qu'une génération sans moitié écran effectue, chacune appliquant la
+scission du piège 28 (muter toujours, peindre si `genOwnsScreen`) :
+
+| Fonction | Écrit | Peint si l'écran est possédé |
+|---|---|---|
+| `setGenPartialContent` / `setGenPartialReasoning` | `gen.partialContent` / `…Reasoning` | `streamInto` / `setReasoning` |
+| `pushGenToolAck` | entrée `tool-ack` dans `gen.thread` | `placeToolAck`, rend `{entry, node}` |
+| `pushGenMessage` | message dans `gen.thread` | bulle, selon `kind` |
+| `clearGenLiveBubble` | — | referme la bulle vive d'une sortie non nominale |
+
+`pushGenMessage` a trois `kind`, qui se distinguent par ce qu'ils laissent dans
+`gen.wrap` : `'assistant'` finalise et **rouvre** une bulle (le travail
+continue), `'user'` insère une bulle utilisateur puis rouvre (interjection,
+résultat d'agent réinjecté), `'final'` finalise **sans rouvrir** — la génération
+se termine, et une bulle vive de plus resterait en attente de rien. Les deux
+premiers laissent donc toujours `gen.wrap` sur une bulle vive, ce que le
+rebranchement et les hooks suivants supposent.
+
+`clearGenLiveBubble` couvre les sorties **sans `onFinal`** (stop utilisateur,
+borne de tours épuisée, parent supprimé) : sans lui, la bulle vive resterait à
+l'écran avec son patienteur en train de tourner pour un travail terminé. Il
+retire la bulle si elle n'a jamais rien reçu, et la conserve si elle porte les
+acks du tour interrompu — ceux-là sont dans le fil et doivent rester visibles.
+
+Le registre des acks MCP peints avant leur round-trip est lui aussi factorisé
+(`createEarlyAckRegistry` / `applyEarlyAckError` / `enrichLastEarlyAck`) :
+`dispatchSend` en tenait un en closure, les chemins agents n'en avaient aucun.
+La reprise vaut **même sans écran** — elle porte alors sur la seule donnée, qui
+est ce qui est persisté et relu.
+
+`dispatchSend` **garde ses propres hooks** : il en fait davantage à chaque point
+(manifeste de contexte, affordances différées, carte de confirmation), et les
+réécrire par-dessus ces helpers ferait perdre ce surplus.
+
+**Ce qui reste délibérément non peint** : les blocs non-texte d'un outil distant
+(image, ressource binaire). Ils ne sont ni poussés dans le fil ni persistés, donc
+pas reconstructibles au reload — les peindre dans un fil d'agent affiché ferait
+diverger live et reload sur un contenu que le second ne peut pas montrer. Cf.
+« Ce qu'une génération détachée perd, délibérément » plus haut.
 
 **Le point neuf, et il viole une prémisse de ce document** : `dispatchSend` part
 toujours de l'écran (« un envoi part toujours de la conversation affichée, donc

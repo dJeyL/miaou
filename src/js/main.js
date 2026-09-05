@@ -152,6 +152,146 @@ function genOwnsScreen(gen) {
   return !!gen && gen.convId === currentConvId;
 }
 
+// ── Peinture partagée d'une génération (correctif du trou T/X) ──────────────
+// Les hooks de `dispatchSend` portent leur propre moitié écran (rétro-
+// application d'erreur, affordances, manifeste de contexte) ; ceux d'un agent
+// et d'un parent réveillé (agents.js) n'ont QUE la moitié données, parce que le
+// lot X les a écrits sous la prémisse « cette génération ne possède jamais
+// l'écran ». Cette prémisse est fausse dès qu'on OUVRE la conversation en
+// question pendant qu'elle travaille : `attachGenerationToScreen` rebranche
+// bien `gen.wrap`, mais plus personne ne peint dedans — on voit le partiel figé
+// à l'instant du rebranchement, puis rien jusqu'à la fin (le contenu, lui,
+// arrive bien : il est persisté, donc visible après un aller-retour).
+//
+// Le correctif ne duplique PAS les hooks : il factorise les trois écritures
+// qu'une génération sans écran effectue (partiel, ack, message poussé) en trois
+// fonctions qui muent TOUJOURS puis peignent si l'écran est possédé. C'est la
+// scission du piège 28, rendue appelable depuis agents.js au lieu d'être
+// recopiée. `dispatchSend` garde ses hooks : il en fait davantage à chaque
+// point, et les réécrire par-dessus ces helpers ferait perdre ce surplus.
+
+// Écriture du texte partiel du tour. LE point d'écriture de gen.partialContent
+// pour les chemins sans moitié écran — jamais une affectation nue à côté, sinon
+// le rebranchement redevient muet exactement comme avant.
+function setGenPartialContent(gen, full) {
+  gen.partialContent = full;
+  if (genOwnsScreen(gen)) streamInto(gen.wrap, full);
+}
+
+function setGenPartialReasoning(gen, full) {
+  gen.partialReasoning = full;
+  if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
+}
+
+// Pousse une entrée d'ack dans le fil et la peint dans la bulle vive si elle
+// est à l'écran. Rend `{entry, node}` : l'entrée est LA donnée (persistée,
+// relue au reload, seule cible de la reprise quand la génération n'a pas
+// d'écran) ; `node` est null hors écran, et les affordances différées savent
+// l'accepter.
+function pushGenToolAck(gen, ack) {
+  const entry = copyAckFields(ack, { role: 'tool-ack' });
+  gen.thread.push(entry);
+  const node = genOwnsScreen(gen) ? placeToolAck(gen.wrap, entry) : null;
+  return { entry, node };
+}
+
+// Registre des acks MCP peints AVANT leur round-trip réseau (onEarlyAcks), à
+// reprendre après (onToolAcks/onEnrichLastAck). `dispatchSend` en tient un en
+// closure ; les chemins agents n'en avaient AUCUN, et c'est ce qui leur coûtait
+// la loupe de l'inspecteur : leur onEarlyAcks retirait l'ack de
+// _pendingToolAcks pour le copier dans le fil, si bien que le
+// updateLastPendingToolAck de leur onEnrichLastAck enrichissait une file vide.
+// Les args/result n'atteignaient jamais l'entrée persistée, donc
+// ackHasInspectableDetail répondait faux — ni pendant, ni après reload.
+//
+// Une génération sans écran a `node: null` : la reprise porte alors sur la
+// seule DONNÉE, ce qui suffit — c'est elle qui est persistée et relue.
+function createEarlyAckRegistry() {
+  return [];
+}
+
+// Reprise des champs posés sur le descripteur brut APRÈS coup par
+// callRemoteTool (error, autorisation) et par onEnrichLastAck (args, result…).
+// Whitelist unique copyAckFields, jamais une copie champ par champ.
+function applyEarlyAckError(registry) {
+  for (const { ack, entry, node } of registry) {
+    if (ack.error && !entry.error) {
+      entry.error = true;
+      copyAckFields(ack, entry);
+      if (node) {
+        node.classList.add('ack-error');
+        const lbl = node.querySelector('.ack-label');
+        if (lbl) {
+          lbl.textContent = '';
+          ACK_KINDS.mcp_call.renderLabel(entry, lbl);
+        }
+        refreshAckAuthorizationAffordance(node, entry);
+      }
+    }
+  }
+  registry.length = 0;
+}
+
+// Enrichissement de l'ack MCP le plus récent du registre. Mute la donnée
+// TOUJOURS ; rafraîchit l'affordance de loupe si le nœud existe (l'ack a été
+// peint avant le round-trip, donc sans args/result, donc sans loupe).
+function enrichLastEarlyAck(registry, fields) {
+  const last = registry[registry.length - 1];
+  if (!last) return false;
+  Object.assign(last.entry, fields);
+  refreshAckInspectAffordance(last.node, last.entry);
+  return true;
+}
+
+// Pousse un message déjà construit dans le fil et le peint. Trois `kind`, qui
+// se distinguent par ce qu'ils laissent dans `gen.wrap` :
+//  - 'assistant' : finalise la bulle vive et en OUVRE UNE NEUVE — le travail
+//    continue (frontière de tour d'outils) ;
+//  - 'user' : insère une bulle utilisateur (interjection dans un fil d'agent,
+//    résultat d'agent réinjecté chez le parent) puis rouvre une bulle
+//    assistant, même raison ;
+//  - 'final' : finalise SANS rouvrir — la génération se termine, et une bulle
+//    vive de plus resterait à l'écran en attente de rien.
+// Les deux premiers laissent donc toujours `gen.wrap` sur une bulle vive, ce
+// que le rebranchement et les hooks suivants supposent.
+function pushGenMessage(gen, msg, kind) {
+  gen.thread.push(msg);
+  if (!genOwnsScreen(gen)) return;
+  if (kind === 'user') {
+    appendUserMessage(msg.content, msg.ts);
+  } else {
+    finalizeAssistant(gen.wrap, msg.content, msg.truncated);
+    revealMsgTimestamp(gen.wrap, msg.ts);
+    if (msg.reasoning && msg.reasoning.trim()) flushReasoning(gen.wrap, msg.reasoning);
+  }
+  gen.wrap = (kind === 'final') ? null : startAssistantMessage(gen.model, gen.serverName);
+  scrollBottom(true);
+}
+
+// Nettoyage d'écran en fin de génération sans écran nominale. Sur une sortie
+// SANS onFinal (abort utilisateur, borne de tours épuisée, parent supprimé),
+// aucun pushGenMessage 'final' n'a fermé la bulle vive : elle resterait à
+// l'écran avec son patienteur en train de tourner pour un travail terminé.
+// À appeler dans le finally des boucles sans moitié écran (agents.js) — les
+// hooks de dispatchSend, eux, finalisent par leurs propres chemins.
+function clearGenLiveBubble(gen) {
+  if (!gen || !genOwnsScreen(gen) || !gen.wrap) return;
+  stopWaiter();
+  cancelStreamRender();
+  cancelReasoningRender();
+  // Bulle jamais alimentée (aucun texte, aucun ack) : la retirer plutôt que de
+  // laisser une coquille vide. Sinon on la garde — elle porte les acks du tour
+  // interrompu, qui sont dans le fil et doivent rester visibles.
+  const body = gen.wrap.querySelector('.body');
+  const empty = (!body || !body.textContent.trim()) && !gen.wrap.querySelector('.tool-ack');
+  if (empty && gen.wrap.parentNode) gen.wrap.remove();
+  else if (body) {
+    const caret = body.querySelector('.cursor-blink');
+    if (caret) caret.remove();
+  }
+  gen.wrap = null;
+}
+
 function registerGeneration(gen) {
   _activeGenerations.set(gen.convId, gen);
   startGenerationRelay(gen.convId);

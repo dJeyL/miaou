@@ -742,6 +742,10 @@ html[data-motion="reduced"] *::after {
   color: var(--text-3);
 }
 
+.model-pill,
+.bg-activity,
+.agent-count { line-height: 14px; }
+
 .model-pill {
   display: flex;
   align-items: center;
@@ -925,6 +929,11 @@ html[data-motion="reduced"] *::after {
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
 }
+
+.msg.has-table-bleed {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+}
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .msg.user {
@@ -975,6 +984,22 @@ html[data-motion="reduced"] *::after {
 .agent-result-chevron { flex: 0 0 auto; opacity: .7; transition: transform .15s ease; }
 .agent-result-box[open] .agent-result-chevron { transform: rotate(90deg); }
 .agent-result-icon { flex: 0 0 auto; opacity: .8; }
+
+.agent-result-box .table-bleed {
+  --table-bleed: 0px;
+  max-width: 100%;
+
+  min-width: 0;
+}
+.msg.user.agent-result .bubble,
+.agent-result-box,
+.agent-result-box > .body { min-width: 0; }
+
+.agent-result-box .table-bleed table {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+}
 
 .agent-result-intent {
   flex: 1 1 auto;
@@ -1344,16 +1369,19 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 
 .table-bleed {
 
-  --table-bleed: max(0px, calc(100cqw - 48px - var(--col)));
+  --table-bleed: max(0px, calc(100cqw - var(--col)));
   margin: 12px calc(var(--table-bleed, 0px) / -2);
 
   width: calc(100% + var(--table-bleed, 0px));
 
+  overflow-x: auto;
+}
+
+.app.col-resizing .table-bleed {
   transition: margin var(--col-resize) var(--ease), width var(--col-resize) var(--ease);
 }
 
 .body table {
-  display: block;
   width: fit-content;
 
   min-width: calc(100% - var(--table-bleed, 0px));
@@ -1361,7 +1389,6 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   margin: 0 auto;
   border-collapse: collapse;
   font-size: 13px;
-  overflow-x: auto;
 }
 .body th, .body td {
   border: 1px solid var(--border);
@@ -4307,7 +4334,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-05 10:19 UTC */
+/* miaou — built: 2026-09-05 12:52 UTC */
 
 /* ── utils.js ── */
 
@@ -7513,7 +7540,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788603552}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788612752}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -9071,14 +9098,17 @@ function buildAgentApiMessages(sys, gen) {
 
 async function driveAgentConversation(gen, apiMessages, tools) {
   let sawFinal = false;
+
+  const earlyRendered = createEarlyAckRegistry();
   try {
     await runConversation(apiMessages, {
       gen: gen,
       model: gen.model,
       reasoningEffort: gen.reasoningEffort,
       agentTools: gen.agentTools,
-      onDelta: (full) => { gen.partialContent = full; },
-      onReasoning: (full) => { gen.partialReasoning = full; },
+
+      onDelta: (full) => setGenPartialContent(gen, full),
+      onReasoning: (full) => setGenPartialReasoning(gen, full),
       onToolTour: (content) => {
         gen.partialContent = '';
         gen.partialReasoning = '';
@@ -9087,8 +9117,10 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         if (content && content.trim()) {
           const msg = { role: 'assistant', content: content, model: gen.model, ts: Date.now() };
           if (gen.serverName) msg.server = gen.serverName;
-          gen.thread.push(msg);
+          pushGenMessage(gen, msg, 'assistant');
           persistGeneration(gen);
+        } else if (genOwnsScreen(gen)) {
+          resetAssistant(gen.wrap);
         }
         if (shouldStopAgent(gen.agentTurns, MAX_AGENT_TURNS)) {
           gen.agentExhausted = true;
@@ -9096,16 +9128,20 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         }
       },
       onEarlyAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        for (const ack of getPendingToolAcks()) {
+          const { entry, node } = pushGenToolAck(gen, ack);
+          earlyRendered.push({ ack, entry, node });
+        }
         clearPendingToolAcks();
       },
       onToolAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        applyEarlyAckError(earlyRendered);
+        for (const ack of getPendingToolAcks()) pushGenToolAck(gen, ack);
         clearPendingToolAcks();
 
         clearPendingToolBlocks();
       },
-      onEnrichLastAck: ({ name, args, result, ts, group, assistantText }) => {
+      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
         const fields = {};
         if (name != null) fields.name = name;
         if (args != null) fields.args = args;
@@ -9113,7 +9149,9 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         if (ts != null) fields.ts = ts;
         if (group != null) fields.group = group;
         if (assistantText != null) fields.assistantText = assistantText;
-        updateLastPendingToolAck(fields);
+
+        if (isMcp) enrichLastEarlyAck(earlyRendered, fields);
+        else updateLastPendingToolAck(fields);
       },
 
       onInterjections: async () => {
@@ -9125,7 +9163,8 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         let r = null;
         try { r = await resolveSend(literal); } catch (e) { r = null; }
         const content = (r && r.ok) ? r.content : literal;
-        gen.thread.push(buildInterjectionEntry(literal, content, Date.now()));
+
+        pushGenMessage(gen, buildInterjectionEntry(literal, content, Date.now()), 'user');
         persistGeneration(gen);
         return [{ role: 'user', content: content }];
       },
@@ -9135,7 +9174,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         const msg = { role: 'assistant', content: content, model: gen.model, ts: ts };
         if (gen.serverName) msg.server = gen.serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
 
         if (!gen.agentTerminalStatus) {
@@ -9149,7 +9188,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const msg = { role: 'assistant', content: text, model: gen.model, ts: Date.now() };
         if (gen.serverName) msg.server = gen.serverName;
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
         if (!gen.agentTerminalStatus) gen.agentTerminalStatus = 'done';
       },
@@ -9158,8 +9197,8 @@ async function driveAgentConversation(gen, apiMessages, tools) {
   } catch (e) {
     gen.agentError = true;
 
-    gen.thread.push({ role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
-      model: gen.model, ts: Date.now() });
+    pushGenMessage(gen, { role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
+      model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);
   } finally {
 
@@ -9169,6 +9208,8 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     setAgentTerminalStatus(gen.convId, status);
     persistConversationField(gen.convId, { agentTurns: gen.agentTurns });
     unregisterGeneration(gen);
+
+    clearGenLiveBubble(gen);
 
     if (gen.convId === currentConvId) setSending(isGenerating(currentConvId));
 
@@ -9279,33 +9320,42 @@ function runDetachedGeneration(convId, thread) {
 }
 
 async function driveDetachedConversation(gen, apiMessages) {
+
+  const earlyRendered = createEarlyAckRegistry();
   try {
     await runConversation(apiMessages, {
       gen: gen,
       model: gen.model,
       reasoningEffort: gen.reasoningEffort,
-      onDelta: (full) => { gen.partialContent = full; },
-      onReasoning: (full) => { gen.partialReasoning = full; },
+
+      onDelta: (full) => setGenPartialContent(gen, full),
+      onReasoning: (full) => setGenPartialReasoning(gen, full),
       onToolTour: (content) => {
         gen.partialContent = '';
         gen.partialReasoning = '';
         if (content && content.trim()) {
           const msg = { role: 'assistant', content: content, model: gen.model, ts: Date.now() };
           if (gen.serverName) msg.server = gen.serverName;
-          gen.thread.push(msg);
+          pushGenMessage(gen, msg, 'assistant');
           persistGeneration(gen);
+        } else if (genOwnsScreen(gen)) {
+          resetAssistant(gen.wrap);
         }
       },
       onEarlyAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        for (const ack of getPendingToolAcks()) {
+          const { entry, node } = pushGenToolAck(gen, ack);
+          earlyRendered.push({ ack, entry, node });
+        }
         clearPendingToolAcks();
       },
       onToolAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        applyEarlyAckError(earlyRendered);
+        for (const ack of getPendingToolAcks()) pushGenToolAck(gen, ack);
         clearPendingToolAcks();
         clearPendingToolBlocks();
       },
-      onEnrichLastAck: ({ name, args, result, ts, group, assistantText }) => {
+      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
         const fields = {};
         if (name != null) fields.name = name;
         if (args != null) fields.args = args;
@@ -9313,7 +9363,9 @@ async function driveDetachedConversation(gen, apiMessages) {
         if (ts != null) fields.ts = ts;
         if (group != null) fields.group = group;
         if (assistantText != null) fields.assistantText = assistantText;
-        updateLastPendingToolAck(fields);
+
+        if (isMcp) enrichLastEarlyAck(earlyRendered, fields);
+        else updateLastPendingToolAck(fields);
       },
 
       onInterjections: () => null,
@@ -9323,7 +9375,7 @@ async function driveDetachedConversation(gen, apiMessages) {
         if (!batch.length) return null;
         const out = [];
         for (const entry of batch) {
-          gen.thread.push(entry);
+          pushGenMessage(gen, entry, 'user');
           out.push({ role: 'user', content: entry.content });
         }
         persistGeneration(gen);
@@ -9337,7 +9389,7 @@ async function driveDetachedConversation(gen, apiMessages) {
         if (finishReason === 'length' || (finishReason === 'aborted' && content && content.trim())) {
           msg.truncated = true;
         }
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
         maybeTitle(gen);
       },
@@ -9346,17 +9398,19 @@ async function driveDetachedConversation(gen, apiMessages) {
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const msg = { role: 'assistant', content: text, model: gen.model, ts: Date.now() };
         if (gen.serverName) msg.server = gen.serverName;
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
       },
       onError: () => {},
     });
   } catch (e) {
-    gen.thread.push({ role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
-      model: gen.model, ts: Date.now() });
+    pushGenMessage(gen, { role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
+      model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);
   } finally {
     unregisterGeneration(gen);
+
+    clearGenLiveBubble(gen);
 
     if (gen.convId === currentConvId) setSending(isGenerating(currentConvId));
 
@@ -14166,6 +14220,9 @@ function wrapWideTables(scope) {
     holder.className = 'table-bleed';
     parent.insertBefore(holder, table);
     holder.appendChild(table);
+
+    const host = holder.closest('.msg');
+    if (host) host.classList.add('has-table-bleed');
   });
 }
 
@@ -15952,9 +16009,35 @@ let _colWidthStep = 0;
 function applyColWidth(step) {
   _colWidthStep = clampColWidthStep(step);
   const app = $('app');
-  if (app) app.style.setProperty('--col', Math.round(colWidthBase() * COL_WIDTH_STEPS[_colWidthStep]) + 'px');
+  if (app) {
+    app.style.setProperty('--col', Math.round(colWidthBase() * COL_WIDTH_STEPS[_colWidthStep]) + 'px');
+    markColResizing(app);
+  }
   syncColWidthUI();
   return _colWidthStep;
+}
+
+let _colResizeTimer = null;
+function markColResizing(app) {
+  app.classList.add('col-resizing');
+  if (_colResizeTimer) clearTimeout(_colResizeTimer);
+  _colResizeTimer = setTimeout(function() {
+    _colResizeTimer = null;
+    app.classList.remove('col-resizing');
+  }, colResizeMs());
+}
+
+const COL_RESIZE_FALLBACK_MS = 180;
+let _colResizeMs = 0;
+function colResizeMs() {
+  if (!_colResizeMs) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--col-resize').trim();
+    const v = parseFloat(raw);
+
+    const ms = (Number.isFinite(v) && v > 0) ? (/[^m]s$/.test(raw) ? v * 1000 : v) : COL_RESIZE_FALLBACK_MS;
+    _colResizeMs = ms;
+  }
+  return _colResizeMs;
 }
 
 function syncColWidthUI() {
@@ -20224,8 +20307,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .body hr { border: none; border-top: 1px solid var(--border-2); margin: 18px 0; }
 .body code:not([class*="language-"]) { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; color: var(--code-inline-color); }
 
-.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); }
-.body table { display: block; width: fit-content; min-width: calc(100% - var(--table-bleed, 0px)); max-width: 100%; margin: 0 auto; overflow-x: auto; border-collapse: collapse; font-size: 13px; }
+.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); overflow-x: auto; }
+.body table { width: fit-content; min-width: calc(100% - var(--table-bleed, 0px)); max-width: 100%; margin: 0 auto; border-collapse: collapse; font-size: 13px; }
 .body th, .body td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
 .body th { background: var(--surface); font-weight: 600; color: var(--text); }
 .body td { color: var(--text-2); }
@@ -20844,6 +20927,84 @@ function createGeneration(convId, thread, opts) {
 
 function genOwnsScreen(gen) {
   return !!gen && gen.convId === currentConvId;
+}
+
+function setGenPartialContent(gen, full) {
+  gen.partialContent = full;
+  if (genOwnsScreen(gen)) streamInto(gen.wrap, full);
+}
+
+function setGenPartialReasoning(gen, full) {
+  gen.partialReasoning = full;
+  if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
+}
+
+function pushGenToolAck(gen, ack) {
+  const entry = copyAckFields(ack, { role: 'tool-ack' });
+  gen.thread.push(entry);
+  const node = genOwnsScreen(gen) ? placeToolAck(gen.wrap, entry) : null;
+  return { entry, node };
+}
+
+function createEarlyAckRegistry() {
+  return [];
+}
+
+function applyEarlyAckError(registry) {
+  for (const { ack, entry, node } of registry) {
+    if (ack.error && !entry.error) {
+      entry.error = true;
+      copyAckFields(ack, entry);
+      if (node) {
+        node.classList.add('ack-error');
+        const lbl = node.querySelector('.ack-label');
+        if (lbl) {
+          lbl.textContent = '';
+          ACK_KINDS.mcp_call.renderLabel(entry, lbl);
+        }
+        refreshAckAuthorizationAffordance(node, entry);
+      }
+    }
+  }
+  registry.length = 0;
+}
+
+function enrichLastEarlyAck(registry, fields) {
+  const last = registry[registry.length - 1];
+  if (!last) return false;
+  Object.assign(last.entry, fields);
+  refreshAckInspectAffordance(last.node, last.entry);
+  return true;
+}
+
+function pushGenMessage(gen, msg, kind) {
+  gen.thread.push(msg);
+  if (!genOwnsScreen(gen)) return;
+  if (kind === 'user') {
+    appendUserMessage(msg.content, msg.ts);
+  } else {
+    finalizeAssistant(gen.wrap, msg.content, msg.truncated);
+    revealMsgTimestamp(gen.wrap, msg.ts);
+    if (msg.reasoning && msg.reasoning.trim()) flushReasoning(gen.wrap, msg.reasoning);
+  }
+  gen.wrap = (kind === 'final') ? null : startAssistantMessage(gen.model, gen.serverName);
+  scrollBottom(true);
+}
+
+function clearGenLiveBubble(gen) {
+  if (!gen || !genOwnsScreen(gen) || !gen.wrap) return;
+  stopWaiter();
+  cancelStreamRender();
+  cancelReasoningRender();
+
+  const body = gen.wrap.querySelector('.body');
+  const empty = (!body || !body.textContent.trim()) && !gen.wrap.querySelector('.tool-ack');
+  if (empty && gen.wrap.parentNode) gen.wrap.remove();
+  else if (body) {
+    const caret = body.querySelector('.cursor-blink');
+    if (caret) caret.remove();
+  }
+  gen.wrap = null;
 }
 
 function registerGeneration(gen) {

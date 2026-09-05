@@ -460,6 +460,40 @@ def run_build_unit_tests() -> tuple[int, int]:
           not [l for l in literal_body(esc(ui_src), build.EXPORT_SCRIPT_ANCHOR).split('\n')
                if l.lstrip().startswith('//')])
 
+    # check_export_literal_integrity : le backtick qui casse le CHARGEMENT sans
+    # casser le build (piège 22, payé deux fois — lot R, puis la correction du
+    # débordement des tableaux). Les passes de strip ci-dessus le détectent
+    # aussi, mais réagissent en no-op silencieux : bonne posture pour un
+    # nettoyage cosmétique, mauvaise pour un défaut. La garde du build échoue.
+    def integrity_raises(src):
+        try:
+            build.check_export_literal_integrity(src, 'fake.js')
+            return False
+        except SystemExit:
+            return True
+
+    check('export-literal : corps sains → build non bloqué',
+          not integrity_raises(
+              'const EXPORT_CSS = `\na { color: red; }\n`;\n'
+              'const EXPORT_SCRIPT = `\nvar s = 1;\n`;\n'))
+
+    check('export-literal : backtick dans un commentaire EXPORT_CSS → build échoue',
+          integrity_raises('const EXPORT_CSS = `\n/* le `.body` ici */\na {}\n`;\n'))
+
+    check('export-literal : backtick dans EXPORT_SCRIPT → build échoue',
+          integrity_raises('const EXPORT_CSS = `\na{}\n`;\n'
+                           'const EXPORT_SCRIPT = `\n// un `truc`\nvar s = 1;\n`;\n'))
+
+    check('export-literal : littéral non terminé → build échoue',
+          integrity_raises('const EXPORT_CSS = `\na { color: red; }\n'))
+
+    # Le corps d'EXPORT_CSS ne doit PAS être cherché au-delà de sa première fin :
+    # il engloberait EXPORT_SCRIPT, dont le backtick d'ouverture est légitime.
+    # Sans ce test, une garde trop large passe au vert sur les cas fabriqués
+    # ci-dessus et refuse la source réelle.
+    check('export-literal : la source réelle de ui.js passe la garde',
+          not integrity_raises(ui_src))
+
     # parse_system_skill_file / load_system_skills (skills système, src/system-skills/*.md)
     fake_path = Path('src/system-skills/fake.md')
 

@@ -749,14 +749,23 @@ function buildAgentApiMessages(sys, gen) {
 // call-sites à maintenir.
 async function driveAgentConversation(gen, apiMessages, tools) {
   let sawFinal = false;
+  // Acks MCP peints avant leur round-trip, à reprendre après (erreur, args,
+  // result). Vaut MÊME sans écran : la reprise porte alors sur la seule donnée,
+  // qui est ce qui est persisté et relu.
+  const earlyRendered = createEarlyAckRegistry();
   try {
     await runConversation(apiMessages, {
       gen: gen,
       model: gen.model,
       reasoningEffort: gen.reasoningEffort,
       agentTools: gen.agentTools,   // restreint body.tools tour après tour (api.js)
-      onDelta: (full) => { gen.partialContent = full; },
-      onReasoning: (full) => { gen.partialReasoning = full; },
+      // Points d'écriture PARTAGÉS (main.js) : ils muent toujours et peignent
+      // si l'utilisateur regarde ce fil d'agent travailler. Le lot X les
+      // écrivait en affectation nue, sous la prémisse « un agent ne possède
+      // jamais l'écran » — fausse dès qu'on ouvre son fil depuis un badge ou
+      // l'inventaire, et le symptôme est un fil muet jusqu'au reload.
+      onDelta: (full) => setGenPartialContent(gen, full),
+      onReasoning: (full) => setGenPartialReasoning(gen, full),
       onToolTour: (content) => {
         gen.partialContent = '';
         gen.partialReasoning = '';
@@ -769,8 +778,10 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         if (content && content.trim()) {
           const msg = { role: 'assistant', content: content, model: gen.model, ts: Date.now() };
           if (gen.serverName) msg.server = gen.serverName;
-          gen.thread.push(msg);
+          pushGenMessage(gen, msg, 'assistant');
           persistGeneration(gen);
+        } else if (genOwnsScreen(gen)) {
+          resetAssistant(gen.wrap);   // retour au patienteur entre deux tours d'outils
         }
         if (shouldStopAgent(gen.agentTurns, MAX_AGENT_TURNS)) {
           gen.agentExhausted = true;
@@ -778,18 +789,25 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         }
       },
       onEarlyAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        for (const ack of getPendingToolAcks()) {
+          const { entry, node } = pushGenToolAck(gen, ack);
+          earlyRendered.push({ ack, entry, node });
+        }
         clearPendingToolAcks();
       },
       onToolAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        applyEarlyAckError(earlyRendered);
+        for (const ack of getPendingToolAcks()) pushGenToolAck(gen, ack);
         clearPendingToolAcks();
         // Blocs non-texte d'un outil distant : éphémères par conception,
-        // jamais persistés. Un agent n'a pas d'écran où les rendre — on les
-        // draine pour ne pas les laisser fuiter dans la génération suivante.
+        // jamais persistés, donc jamais reconstructibles au reload. On les
+        // draine sans les rendre, même quand le fil est affiché : les peindre
+        // ici ferait diverger live et reload sur un contenu que le second ne
+        // peut pas montrer (docs/generations.md, « ce qu'une génération
+        // détachée perd »).
         clearPendingToolBlocks();
       },
-      onEnrichLastAck: ({ name, args, result, ts, group, assistantText }) => {
+      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
         const fields = {};
         if (name != null) fields.name = name;
         if (args != null) fields.args = args;
@@ -797,7 +815,12 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         if (ts != null) fields.ts = ts;
         if (group != null) fields.group = group;
         if (assistantText != null) fields.assistantText = assistantText;
-        updateLastPendingToolAck(fields);
+        // Un ack MCP a déjà QUITTÉ _pendingToolAcks (drainé par onEarlyAcks) :
+        // l'enrichir par updateLastPendingToolAck viserait une file vide, et
+        // args/result n'atteindraient jamais l'entrée persistée — c'est ce qui
+        // privait les fils d'agent de la loupe de l'inspecteur, pendant ET après.
+        if (isMcp) enrichLastEarlyAck(earlyRendered, fields);
+        else updateLastPendingToolAck(fields);
       },
       // Interjections DANS le fil d'un agent (X-1f). Le lot X-1e câblait ici
       // `() => null`, au motif que la file était un état d'ÉCRAN — prémisse
@@ -824,7 +847,9 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         let r = null;
         try { r = await resolveSend(literal); } catch (e) { r = null; }
         const content = (r && r.ok) ? r.content : literal;
-        gen.thread.push(buildInterjectionEntry(literal, content, Date.now()));
+        // pushGenMessage : l'interjection apparaît dans le fil de l'agent si on
+        // le regarde travailler, et rouvre une bulle vive pour la suite.
+        pushGenMessage(gen, buildInterjectionEntry(literal, content, Date.now()), 'user');
         persistGeneration(gen);
         return [{ role: 'user', content: content }];
       },
@@ -834,7 +859,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         const msg = { role: 'assistant', content: content, model: gen.model, ts: ts };
         if (gen.serverName) msg.server = gen.serverName;
         if (reasoning && reasoning.trim()) msg.reasoning = reasoning;
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
         // Le statut terminal est décidé ICI, avec le finishReason sous la main :
         // le finally ne le voit plus. `exhausted` prime sur `aborted`, car la
@@ -858,7 +883,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const msg = { role: 'assistant', content: text, model: gen.model, ts: Date.now() };
         if (gen.serverName) msg.server = gen.serverName;
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
         if (!gen.agentTerminalStatus) gen.agentTerminalStatus = 'done';
       },
@@ -869,8 +894,8 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     // Trace du plantage DANS le fil de l'agent : sans elle, ouvrir son fil
     // montrerait une conversation qui s'arrête sans rien dire, et le parent
     // recevrait un résultat vide sans cause lisible.
-    gen.thread.push({ role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
-      model: gen.model, ts: Date.now() });
+    pushGenMessage(gen, { role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
+      model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);
   } finally {
     // Résolution du statut terminal, dans l'ordre de priorité. Un statut déjà
@@ -882,6 +907,9 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     setAgentTerminalStatus(gen.convId, status);
     persistConversationField(gen.convId, { agentTurns: gen.agentTurns });
     unregisterGeneration(gen);
+    // Sortie sans onFinal (stop, borne épuisée) : refermer la bulle vive restée
+    // à l'écran si l'utilisateur regarde ce fil. No-op sinon.
+    clearGenLiveBubble(gen);
     // L'écran affiche le fil de cet agent (l'utilisateur le regardait
     // travailler) : le composer doit cesser d'annoncer une génération en cours.
     // Symétrique du même appel dans driveDetachedConversation — il manquait
@@ -1081,33 +1109,44 @@ function runDetachedGeneration(convId, thread) {
 // driveAgentConversation — muter le thread TOUJOURS, ne jamais peindre — mais
 // sans borne de tours, sans statut d'agent, et avec le titrage.
 async function driveDetachedConversation(gen, apiMessages) {
+  // Cf. driveAgentConversation : même registre, même raison.
+  const earlyRendered = createEarlyAckRegistry();
   try {
     await runConversation(apiMessages, {
       gen: gen,
       model: gen.model,
       reasoningEffort: gen.reasoningEffort,
-      onDelta: (full) => { gen.partialContent = full; },
-      onReasoning: (full) => { gen.partialReasoning = full; },
+      // Écriture du partiel par le point PARTAGÉ (main.js) : il mute toujours
+      // et peint si l'utilisateur a ouvert cette conversation pendant qu'elle
+      // travaille. Une affectation nue redonnerait le fil muet au rebranchement.
+      onDelta: (full) => setGenPartialContent(gen, full),
+      onReasoning: (full) => setGenPartialReasoning(gen, full),
       onToolTour: (content) => {
         gen.partialContent = '';
         gen.partialReasoning = '';
         if (content && content.trim()) {
           const msg = { role: 'assistant', content: content, model: gen.model, ts: Date.now() };
           if (gen.serverName) msg.server = gen.serverName;
-          gen.thread.push(msg);
+          pushGenMessage(gen, msg, 'assistant');
           persistGeneration(gen);
+        } else if (genOwnsScreen(gen)) {
+          resetAssistant(gen.wrap);   // retour au patienteur entre deux tours d'outils
         }
       },
       onEarlyAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        for (const ack of getPendingToolAcks()) {
+          const { entry, node } = pushGenToolAck(gen, ack);
+          earlyRendered.push({ ack, entry, node });
+        }
         clearPendingToolAcks();
       },
       onToolAcks: () => {
-        for (const ack of getPendingToolAcks()) gen.thread.push(copyAckFields(ack, { role: 'tool-ack' }));
+        applyEarlyAckError(earlyRendered);
+        for (const ack of getPendingToolAcks()) pushGenToolAck(gen, ack);
         clearPendingToolAcks();
         clearPendingToolBlocks();
       },
-      onEnrichLastAck: ({ name, args, result, ts, group, assistantText }) => {
+      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
         const fields = {};
         if (name != null) fields.name = name;
         if (args != null) fields.args = args;
@@ -1115,7 +1154,12 @@ async function driveDetachedConversation(gen, apiMessages) {
         if (ts != null) fields.ts = ts;
         if (group != null) fields.group = group;
         if (assistantText != null) fields.assistantText = assistantText;
-        updateLastPendingToolAck(fields);
+        // Un ack MCP a déjà QUITTÉ _pendingToolAcks (onEarlyAcks l'a drainé) :
+        // l'enrichir par updateLastPendingToolAck viserait une file vide, et
+        // args/result n'atteindraient jamais l'entrée persistée — c'est ce qui
+        // privait les fils d'agent de la loupe de l'inspecteur.
+        if (isMcp) enrichLastEarlyAck(earlyRendered, fields);
+        else updateLastPendingToolAck(fields);
       },
       // File d'interjections : état d'ÉCRAN, jamais drainée par une génération
       // détachée (docs/generations.md).
@@ -1127,7 +1171,7 @@ async function driveDetachedConversation(gen, apiMessages) {
         if (!batch.length) return null;
         const out = [];
         for (const entry of batch) {
-          gen.thread.push(entry);
+          pushGenMessage(gen, entry, 'user');
           out.push({ role: 'user', content: entry.content });
         }
         persistGeneration(gen);
@@ -1141,7 +1185,7 @@ async function driveDetachedConversation(gen, apiMessages) {
         if (finishReason === 'length' || (finishReason === 'aborted' && content && content.trim())) {
           msg.truncated = true;
         }
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
         maybeTitle(gen);
       },
@@ -1153,17 +1197,19 @@ async function driveDetachedConversation(gen, apiMessages) {
         const text = [leadIn, question].map(s => (s || '').trim()).filter(Boolean).join('\n\n');
         const msg = { role: 'assistant', content: text, model: gen.model, ts: Date.now() };
         if (gen.serverName) msg.server = gen.serverName;
-        gen.thread.push(msg);
+        pushGenMessage(gen, msg, 'final');
         persistGeneration(gen);
       },
       onError: () => {},
     });
   } catch (e) {
-    gen.thread.push({ role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
-      model: gen.model, ts: Date.now() });
+    pushGenMessage(gen, { role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
+      model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);
   } finally {
     unregisterGeneration(gen);
+    // Cf. driveAgentConversation : bulle vive refermée sur une sortie non nominale.
+    clearGenLiveBubble(gen);
     // Si l'écran affiche cette conversation à la fin (l'utilisateur a navigué
     // dessus pendant le tour), le composer doit refléter qu'elle ne génère plus.
     if (gen.convId === currentConvId) setSending(isGenerating(currentConvId));

@@ -1181,6 +1181,20 @@ function wrapWideTables(scope) {
     holder.className = 'table-bleed';
     parent.insertBefore(holder, table);
     holder.appendChild(table);
+    // Le message hôte renonce à content-visibility (cf. .msg, chat.css) : sa
+    // valeur `auto` implique `contain: layout paint`, et ce `paint` CLIPPE tout
+    // ce qui sort de la boîte du message — donc précisément le débordement
+    // qu'on vient de mettre en place. Posé ICI parce que c'est le seul endroit
+    // qui sache qu'un tableau va déborder, et posé sur le MESSAGE parce que
+    // c'est lui qui porte le confinement, pas le porteur. `closest` est nul à
+    // l'export (pas de .msg là-bas, ni de content-visibility) : rien à faire.
+    // Posée pour TOUT tableau enveloppé, sans mesurer s'il déborde vraiment :
+    // c'est le parti pris de cette fonction (le CSS décide seul, rien à
+    // ré-exécuter au resize ni au changement de cran). Un message à petit
+    // tableau renonce donc au confinement sans en avoir besoin — coût accepté
+    // contre une mesure au rendu, qu'il faudrait refaire à chaque frappe.
+    const host = holder.closest('.msg');
+    if (host) host.classList.add('has-table-bleed');
   });
 }
 
@@ -3622,9 +3636,55 @@ let _colWidthStep = 0;
 function applyColWidth(step) {
   _colWidthStep = clampColWidthStep(step);
   const app = $('app');
-  if (app) app.style.setProperty('--col', Math.round(colWidthBase() * COL_WIDTH_STEPS[_colWidthStep]) + 'px');
+  if (app) {
+    app.style.setProperty('--col', Math.round(colWidthBase() * COL_WIDTH_STEPS[_colWidthStep]) + 'px');
+    markColResizing(app);
+  }
   syncColWidthUI();
   return _colWidthStep;
+}
+
+// Fenêtre pendant laquelle le porteur de tableau élargi a le droit de glisser
+// (cf. `.app.col-resizing .table-bleed`, chat.css). Elle existe parce que sa
+// largeur ne dérive pas seulement de --col : elle se calcule sur `100cqw`, donc
+// sur la place laissée par la sidebar. Une transition déclarée en permanence
+// répondait donc aussi au repli/dépli de la sidebar, qui n'a jamais demandé de
+// glissement — le tableau y prenait une largeur intermédiaire avant de revenir
+// à la sienne, avec une barre de défilement le temps du trajet. Restreindre
+// l'animation à cette fenêtre la rend au seul geste qui la motive.
+//
+// Le timer est unique et réarmé : deux clics rapprochés sur le contrôle de
+// largeur ne doivent pas laisser le premier retirer la classe pendant que le
+// second glisse encore.
+let _colResizeTimer = null;
+function markColResizing(app) {
+  app.classList.add('col-resizing');
+  if (_colResizeTimer) clearTimeout(_colResizeTimer);
+  _colResizeTimer = setTimeout(function() {
+    _colResizeTimer = null;
+    app.classList.remove('col-resizing');
+  }, colResizeMs());
+}
+
+// Durée de la fenêtre, LUE sur le token qui porte déjà la transition
+// (--col-resize, base.css) plutôt que recopiée : une fenêtre plus courte que la
+// transition la couperait en pleine course, une plus longue laisserait la
+// sidebar animer une table à nouveau. Le filet ne sert qu'au cas où le token est
+// illisible — il ne peut alors qu'être trop généreux, ce qui dégrade vers le
+// comportement actuel plutôt que vers une animation tronquée. Même motif que
+// colWidthBase : lecture unique et mémorisée, base.css reste la seule source.
+const COL_RESIZE_FALLBACK_MS = 180;
+let _colResizeMs = 0;
+function colResizeMs() {
+  if (!_colResizeMs) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--col-resize').trim();
+    const v = parseFloat(raw);
+    // Le token est en ms ; un `s` explicite est admis pour qu'un changement
+    // d'unité en CSS n'ouvre pas une fenêtre mille fois trop courte.
+    const ms = (Number.isFinite(v) && v > 0) ? (/[^m]s$/.test(raw) ? v * 1000 : v) : COL_RESIZE_FALLBACK_MS;
+    _colResizeMs = ms;
+  }
+  return _colResizeMs;
 }
 
 // Les deux boutons sont désactivés en butée : le contrôle dit alors de
@@ -9177,13 +9237,17 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
    séparément. Le porteur est posé par wrapWideTables, partagée avec l'écran.
    Bornes différentes ici, et c'est tout ce qui change : pas de sidebar ni de
    --col, la colonne est .export-body et la place disponible se lit directement
-   sur le viewport, sans container query. Les 860px sont sa largeur de CONTENU
+   sur le viewport, sans container query — donc les 40px retranchés sont bien une
+   gouttière à soustraire ici, là où le 100cqw de l'écran exclut déjà son
+   padding. Les 860px sont sa largeur de CONTENU
    (900 de box moins 2x20 de padding, box-sizing: border-box) : prendre 900
    décalerait tout de 20px de chaque côté et ferait déborder même un tableau qui
    tient dans la colonne. Les 40px retranchés du viewport sont la gouttière qui
-   empêche le tableau de coller au bord de la fenêtre. */
-.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); }
-.body table { display: block; width: fit-content; min-width: calc(100% - var(--table-bleed, 0px)); max-width: 100%; margin: 0 auto; overflow-x: auto; border-collapse: collapse; font-size: 13px; }
+   empêche le tableau de coller au bord de la fenêtre. Le scroll est porté par le
+   PORTEUR et non par le tableau : un display:block sur un <table> casse la
+   répartition des colonnes (cf. chat.css, étage 2). */
+.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); overflow-x: auto; }
+.body table { width: fit-content; min-width: calc(100% - var(--table-bleed, 0px)); max-width: 100%; margin: 0 auto; border-collapse: collapse; font-size: 13px; }
 .body th, .body td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
 .body th { background: var(--surface); font-weight: 600; color: var(--text); }
 .body td { color: var(--text-2); }

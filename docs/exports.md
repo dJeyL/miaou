@@ -217,6 +217,26 @@ ultérieures du même lot).
     l'écriture, pas à la relecture de cette doc. Même posture pour `EXPORT_CSS`,
     nettoyé lui par `strip_css_comments` (scanner CSS à deux contextes, sûr) via
     `strip_export_css_comments`.
+
+    **Le backtick, lui, fait désormais échouer le build.** C'est l'autre moitié
+    du piège 22 et la plus coûteuse : un backtick écrit dans le corps de l'une
+    des deux constantes — en pratique dans un commentaire, seul endroit où l'on
+    y rédige de la prose — **clôt le template literal** par avance. Le build
+    réussissait, `dist/miaou.html` était produit, et c'est le **chargement** qui
+    cassait, sur un `Uncaught SyntaxError: Invalid or unexpected token` pointant
+    une ligne du bundle qui ne désigne pas la source fautive. Les passes de
+    strip détectent bien la situation (leur corps candidat contient un
+    backtick), mais réagissent en **no-op silencieux** : c'est la bonne posture
+    pour un nettoyage cosmétique, et la mauvaise pour un défaut — le silence est
+    précisément ce qui a laissé passer l'erreur deux fois (lot R, puis la
+    correction du débordement des tableaux). `check_export_literal_integrity`
+    (build.py), appelée **avant** tout strip, lève donc une `SystemExit` en
+    nommant la constante et la ligne. Son critère est celui du moteur JS : le
+    corps délimité par la **première** ligne `` `; `` ne doit contenir aucun
+    backtick — ne pas chercher au-delà, le corps d'`EXPORT_CSS` engloberait
+    `EXPORT_SCRIPT`, dont le backtick d'ouverture est légitime. Pour citer du
+    code dans ces commentaires, écrire le terme nu (`100cqw`, `display:block`),
+    sans délimiteur.
   - **Images cliquables → nouvel onglet (lot Gb2, décision A.4).** Le même
     script pose au chargement un handler de clic sur les images ouvrables :
     images modèle (`img.tool-block-img`, lot Gbis) et vignettes de chips user

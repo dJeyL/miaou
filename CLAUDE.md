@@ -307,8 +307,12 @@ geste ; le développement est dans la doc pointée.
     à la charge de qui touche ce CSS (cf. `docs/exports.md`). **`EXPORT_CSS` et
     `EXPORT_SCRIPT` sont des template literals** : jamais de backtick dans leur
     contenu, commentaires compris (un `` `.body` `` dans un commentaire CSS clôt
-    la chaîne — le build passe, mais le chargement du fichier casse en
-    `TypeError: not a function`, erreur payée au lot R). Leurs commentaires sont
+    la chaîne — erreur payée deux fois, au lot R puis en corrigeant le
+    débordement des tableaux). Le build **échoue** désormais dessus
+    (`check_export_literal_integrity`, appelée avant tout strip) : auparavant il
+    passait, et c'est le chargement qui cassait sur une `SyntaxError` pointant
+    une ligne du bundle sans rapport avec la source. Y citer du code se fait en
+    terme nu, sans délimiteur. Leurs commentaires sont
     retirés au build (ils partaient sinon dans **chaque fichier exporté**) :
     `strip_export_css_comments` / `strip_export_script_comments`. Corollaire pour
     `EXPORT_SCRIPT` : **commentaires `//` en pleine ligne UNIQUEMENT** — sa passe
@@ -366,7 +370,16 @@ geste ; le développement est dans la doc pointée.
     globale. Corollaire : `sending` veut dire « la conversation AFFICHÉE
     génère », pas « une génération tourne » (pour ça, `_activeGenerations.size`).
     Tout re-rendu du fil passe par `rerenderCurrentThread()`, jamais
-    `renderThread` nu. Cf. `docs/generations.md`.
+    `renderThread` nu. **Corollaire payé au lot X, puis en prod : « cette
+    génération ne possède jamais l'écran » n'est JAMAIS une propriété de
+    construction**, seulement l'état du moment — un fil d'agent s'ouvre, on
+    revient sur un parent réveillé. Une génération écrite sans moitié peinture
+    (`onDelta` en affectation nue) devient donc muette dès qu'on la regarde
+    travailler, et son `onEarlyAcks` sans registre de reprise prive ses acks MCP
+    de la loupe. Les points d'écriture partagés de main.js
+    (`setGenPartialContent`, `pushGenToolAck`, `pushGenMessage`) portent la
+    scission une fois pour toutes : les appeler, jamais muter `gen.thread`/
+    `gen.partial*` à côté. Cf. `docs/generations.md`.
 
 ## Domaines détaillés (`docs/`)
 
@@ -485,7 +498,12 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `openConversation`, `sending` reflet d'écran, abort ciblé par conversation ;
   prédicat unique `genOwnsScreen` et scission des hooks (muter le thread
   toujours / refléter dans le DOM si l'écran est possédé), attache/détache et
-  `splitTrailingAcks`, `rerenderCurrentThread` obligatoire pour tout re-rendu.
+  `splitTrailingAcks`, `rerenderCurrentThread` obligatoire pour tout re-rendu ;
+  points d'écriture partagés par les générations qui DÉMARRENT sans écran
+  (`setGenPartialContent`, `pushGenToolAck`, `pushGenMessage` et ses trois
+  `kind`, `clearGenLiveBubble`, registre d'acks anticipés) — ouvrir un fil
+  d'agent ou revenir sur un parent réveillé pendant son travail rend
+  `genOwnsScreen` vrai, ce que le lot X avait supposé impossible.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)
 

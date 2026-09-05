@@ -259,6 +259,55 @@ def _rewrite_export_literal(src: str, anchor: str, transform) -> str:
     return src[:i] + transform(body) + src[end:]
 
 
+def check_export_literal_integrity(src: str, filename: str) -> None:
+    """Échoue le BUILD si un littéral d'export contient un backtick (piège 22).
+
+    Distincte des passes de strip, et pour une raison de fond : quand un
+    backtick se glisse dans le corps (typiquement dans un commentaire, seul
+    endroit du littéral où l'on écrit de la prose), il clôt le template literal
+    plus tôt que prévu. _rewrite_export_literal le détecte — son corps candidat
+    contient alors un backtick — mais réagit en NE FAISANT RIEN, ce qui est la
+    bonne posture pour un nettoyage cosmétique et la mauvaise pour un défaut :
+    le build réussit, et produit un dist/miaou.html qui ne charge pas, avec pour
+    seul symptôme un « Uncaught SyntaxError: Invalid or unexpected token » à une
+    ligne du bundle qui ne désigne pas la source. Erreur payée deux fois — au
+    lot R (un `.body` dans un commentaire CSS), puis en corrigeant le
+    débordement des tableaux.
+
+    Le critère tient en une phrase : le corps délimité par la PREMIÈRE ligne
+    '`;' ne doit contenir aucun backtick. C'est la découpe que fait le moteur JS
+    lui-même, donc un backtick à l'intérieur signifie littéralement que le
+    littéral se termine ailleurs que là où l'auteur le croit. Ne pas chercher
+    plus loin que cette première fin : le corps d'EXPORT_CSS irait alors
+    englober EXPORT_SCRIPT, dont le backtick d'ouverture est parfaitement
+    légitime.
+    """
+    for anchor in (EXPORT_CSS_ANCHOR, EXPORT_SCRIPT_ANCHOR):
+        start = src.find(anchor)
+        if start == -1:
+            continue
+        i = start + len(anchor)
+        end = src.find('\n`;', i)
+        name = anchor.split()[1]
+        if end == -1:
+            raise SystemExit(
+                f"[build] {filename} : littéral {name} non terminé (pas de ligne '`;')."
+            )
+        body = src[i:end]
+        if '`' not in body:
+            continue
+        bad = [
+            (n, line) for n, line in enumerate(body.split('\n'), 1) if '`' in line
+        ]
+        detail = ' | '.join(f'ligne +{n} : {line.strip()[:70]}' for n, line in bad[:3])
+        raise SystemExit(
+            f"[build] {filename} : backtick dans le corps de {name} (piège 22). "
+            "Il clôt le template literal — sans cette garde le build passerait, "
+            "et c'est le CHARGEMENT du fichier qui casserait "
+            f"(Uncaught SyntaxError). {detail}"
+        )
+
+
 def strip_line_comments_only(src: str) -> str:
     """Retire les lignes ENTIÈREMENT commentées (premier caractère non-blanc
     '//'), et rien d'autre.
@@ -512,7 +561,11 @@ def assemble_js(cfg_data: dict, help_data: dict, help_labels: dict,
             print(f'  [warn] fichier manquant : {path}')
             continue
         parts.append(f'\n/* ── {name} ── */\n')
-        src_js = strip_export_css_comments(read(path))
+        raw_js = read(path)
+        # AVANT tout strip : un backtick dans EXPORT_CSS/EXPORT_SCRIPT casse le
+        # chargement du bundle sans casser le build (cf. la fonction).
+        check_export_literal_integrity(raw_js, name)
+        src_js = strip_export_css_comments(raw_js)
         src_js = strip_export_script_comments(src_js)
         parts.append(strip_js_comments(src_js))
     js = collapse_blank_code_lines('\n'.join(parts))

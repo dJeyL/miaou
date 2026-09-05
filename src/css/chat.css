@@ -151,6 +151,34 @@
   color: var(--text-3);
 }
 
+/* HAUTEUR COMMUNE DES PILULES DE TOPBAR.
+   Les quatre pilules de .topbar-right (modele, activite de fond, compteur
+   d'agents, autorisations MCP en attente) declarent chacune leur boite
+   separement — meme padding, meme font-size — mais deux sont des <span> et
+   deux des <button>. Un bouton n'herite PAS le line-height du document la ou
+   un span l'herite : 15.75px d'un cote, `normal` (14px) de l'autre, soit deux
+   hauteurs de pilule (23.75 / 22px). Centrees par align-items:center sur la
+   meme ligne flex, elles tombent alors sur des demi-pixels opposes et leurs
+   bords se decalent d'environ 1px.
+
+   Le defaut ne se voit qu'a la COHABITATION, donc jamais sur la pilule de
+   modele seule : il est apparu quand un agent travaillait pendant un titrage
+   (retour Julien sur capture, 2026-09-05). Corollaire de mesure : corriger
+   deux des quatre ne fait que DEPLACER l'ecart vers les deux autres — c'est
+   arrive dans le meme lot, en alignant bg-activity et agent-count sur 14px
+   sans toucher .model-pill, qui est la seule visible en permanence.
+
+   La valeur est donc posee ICI, une fois, pour les quatre : une pilule ajoutee
+   plus tard a la zone doit rejoindre ce selecteur plutot que redeclarer sa
+   hauteur. Ne pas la repartir dans les blocs individuels.
+   Verifie par verify-topbar-pill-alignment.mjs (run-miaou), qui compare les
+   quatre boites deux a deux. (La pilule d'autorisations n'a pas son propre
+   selecteur ici : .auth-pending est une variante de .agent-count et porte les
+   deux classes, donc la regle l'atteint deja.) */
+.model-pill,
+.bg-activity,
+.agent-count { line-height: 14px; }
+
 .model-pill {
   display: flex;
   align-items: center;
@@ -371,12 +399,15 @@
   padding: 28px 24px 16px;
   display: flex;
   flex-direction: column;
-  /* Plafond de débordement des tableaux (cf. .body table) : la largeur utile du
+  /* Plafond de débordement des tableaux (cf. .table-bleed) : la largeur utile du
      fil moins une gouttière de chaque côté. Posé ICI et non sur le tableau
      parce que c'est .messages qui connaît la place disponible — un 100vw sur
      le tableau compterait la sidebar, dont la largeur varie (redimensionnable,
-     et nulle quand elle est repliée). Les 24px retranchés sont le padding
-     horizontal ci-dessus, que 100cqw inclut. */
+     et nulle quand elle est repliée). La gouttière est le padding horizontal
+     ci-dessus, et il n'y a rien à en retrancher : `container-type: inline-size`
+     établit la query sur la CONTENT box, donc 100cqw l'exclut déjà. Le
+     retrancher une seconde fois rétrécissait la planche de 48px et figeait le
+     tableau d'autant plus tôt (mesuré : 100cqw = 1708 pour .messages à 1756). */
   container-type: inline-size;
 }
 .thread {
@@ -408,6 +439,28 @@
      pour que la barre de défilement ne tressaute pas en les traversant. */
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
+}
+/* Exception au confinement ci-dessus, posée par wrapWideTables (ui.js) sur le
+   message qui héberge un tableau élargi. `content-visibility: auto` implique
+   `contain: layout paint`, et ce `paint` clippe à la boîte du message : un
+   tableau qui déborde de la colonne de lecture (.table-bleed) est correctement
+   mis en page — largeur, centrage et colonnes justes à la mesure — puis COUPÉ
+   à la peinture, des deux côtés. Le défaut ne se voit donc dans aucune mesure
+   DOM, ce qui en fait un piège coûteux : getBoundingClientRect rend la table
+   entière, seul l'écran ment.
+
+   Ce que coûte l'exception, mesuré plutôt qu'estimé : sur un fil de 120
+   messages portant TOUS un tableau — pire cas très au-delà du réel — le
+   glissement de largeur passe de 62 à 59 fps. Négligeable, et la raison tient
+   à ce que le confinement protège vraiment : les 9 fps qui l'ont motivé (cf.
+   la règle ci-dessus) venaient de blocs de code colorisés par Prism, soit des
+   milliers de spans ; un tableau de cinq colonnes en compte quelques dizaines.
+   Le même fil en messages de code mesure 61 fps avec confinement contre 26
+   sans — l'optimisation reste donc entière là où elle compte, puisqu'un
+   message de code ne porte pas de tableau et ne reçoit jamais cette classe. */
+.msg.has-table-bleed {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
 }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
@@ -475,6 +528,51 @@
 .agent-result-chevron { flex: 0 0 auto; opacity: .7; transition: transform .15s ease; }
 .agent-result-box[open] .agent-result-chevron { transform: rotate(90deg); }
 .agent-result-icon { flex: 0 0 auto; opacity: .8; }
+/* Un compte rendu d'agent est rendu DANS une boîte encadrée : un tableau y
+   déborderait par-dessus la bordure, des deux côtés, ce qui n'a pas de sens
+   dans un conteneur qui s'annonce comme une boîte. On y remet le débordement
+   offert à zéro, et les deux étages retombent d'eux-mêmes sur le comportement
+   d'avant : tableau dans la largeur disponible, défilement interne au-delà
+   (le porteur garde son overflow-x). Rien à désactiver au JS, le porteur reste
+   posé partout.
+
+   La surcharge est portée par le PORTEUR et non par la boîte : `.table-bleed`
+   déclare `--table-bleed` sur lui-même, et une déclaration sur l'élément gagne
+   toujours sur une valeur héritée d'un ancêtre — la poser sur
+   `.agent-result-box` seule ne changeait donc rien (vérifié : marge du porteur
+   inchangée à -443.5px, table débordant hors de la boîte). Le sélecteur est
+   double pour la même raison, à spécificité supérieure.
+
+   La règle est ici et non sur `.msg.user .bubble`, dont le `max-width: 80%` ne
+   s'applique plus à un agent-result (cf. plus haut) : c'est bien la BOÎTE qui
+   pose la contrainte, pas la bulle. */
+.agent-result-box .table-bleed {
+  --table-bleed: 0px;
+  max-width: 100%;
+  /* Sans ça le porteur ne borne rien : il est dans une chaîne de conteneurs
+     flex (.msg > .bubble > details), dont la taille minimale automatique est
+     le contenu — chacun s'élargit donc pour accueillir le tableau au lieu de
+     le laisser défiler, et l'overflow-x n'a jamais rien à clipper (mesuré :
+     table peinte jusqu'à 2029 pour une boîte s'arrêtant à 1452). Le `min-width:
+     0` doit être posé sur TOUTE la chaîne, pas seulement ici : c'est le maillon
+     le plus haut qui décide. */
+  min-width: 0;
+}
+.msg.user.agent-result .bubble,
+.agent-result-box,
+.agent-result-box > .body { min-width: 0; }
+/* Le tableau prend sa largeur naturelle et c'est le porteur qui défile —
+   préférable dans un cadre étroit : mieux vaut faire glisser un tableau lisible
+   que tout écraser pour le faire rentrer. `min-width: 0` annule pour cela le
+   plancher `calc(100% - 0px)` que l'étage 2 pose sinon, et `max-content`
+   remplace son `fit-content`, qui se résout contre le porteur — lui-même borné
+   à la boîte, donc le tableau s'y ajustait encore en comprimant ses colonnes
+   (mesuré : 694px pour une boîte de 694, sans rien à défiler). */
+.agent-result-box .table-bleed table {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+}
 /* L'intent peut être long : il tronque plutôt que de pousser le statut hors du
    bandeau — replié, le statut est l'autre moitié de l'information utile. */
 .agent-result-intent {
@@ -947,39 +1045,73 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
    Deux conditions portées ailleurs, à ne pas casser : la bulle assistant n'a ni
    fond ni bordure ni overflow (elle clipperait), et .messages porte overflow-y
    (son bloc de formatage borne le débordement à la zone de fil, jamais sous la
-   sidebar). Non reflété dans EXPORT_CSS (feuille figée, piège 22) : l'export
-   garde le tableau dans la colonne, décidé avec Julien. */
+   sidebar). EXPORT_CSS (ui.js) porte les mêmes deux étages, mais bornés sur le
+   viewport et non sur une container query — c'est un PORTAGE, pas une
+   propagation : la feuille est figée (piège 22), les deux jeux évoluent
+   séparément et une correction ici doit être reportée là-bas à la main. */
 /* Étage 1 — le PORTEUR (.table-bleed, posé par wrapWideTables/ui.js) : élargit
    la boîte de part et d'autre par des marges négatives égales. Il faut bien deux
    éléments — la marge négative (déborder) et `margin-inline: auto` (centrer) se
    contredisent sur un même nœud, la seconde écrasant la première. */
 .table-bleed {
-  /* Débordement disponible = largeur utile du fil (le conteneur .messages, dont
-     100cqw inclut les 24px de padding de chaque côté) moins la colonne de
-     lecture. Calculé ICI et non hérité depuis .thread : une custom property
-     hérite comme du TEXTE non résolu, et `100cqw` évalué chez un ancêtre hors
-     conteneur ne donne rien. max(0px, …) : sur écran étroit la colonne occupe
-     tout, il n'y a rien à offrir et le tableau reste dans ses bornes. */
-  --table-bleed: max(0px, calc(100cqw - 48px - var(--col)));
+  /* Débordement disponible = largeur utile du fil moins la colonne de lecture.
+     `100cqw` est la CONTENT box du conteneur .messages : le padding de 24px de
+     chaque côté en est déjà exclu, donc rien à retrancher ici — il tient déjà
+     lieu de gouttière. Calculé ICI et non hérité depuis .thread : une custom
+     property hérite comme du TEXTE non résolu, et `100cqw` évalué chez un
+     ancêtre hors conteneur ne donne rien. max(0px, …) : sur écran étroit la
+     colonne occupe tout, il n'y a rien à offrir et le tableau reste dans ses
+     bornes. */
+  --table-bleed: max(0px, calc(100cqw - var(--col)));
   margin: 12px calc(var(--table-bleed, 0px) / -2);
   /* La marge négative déplace les bords mais ne change PAS la largeur de
      référence des pourcentages des enfants : sans ce `width`, le `max-width:
      100%` du tableau se calculerait encore sur la colonne et aucun tableau ne
      déborderait jamais. */
   width: calc(100% + var(--table-bleed, 0px));
-  /* --table-bleed dérive de --col dans un calc() et n'est PAS interpolable
-     (custom property non typée) : sa valeur calculée saute d'un coup au
-     changement de cran. Animer margin/width — qui, eux, le sont — convertit ce
-     saut en glissement, et la table débordante suit la colonne au lieu de
-     claquer en milieu de course. */
+  /* Le scroll est porté ICI et non par le tableau : cf. l'étage 2 ci-dessous,
+     où `display: block` sur un `<table>` casse la répartition des colonnes. */
+  overflow-x: auto;
+}
+/* --table-bleed dérive de --col dans un calc() et n'est PAS interpolable
+   (custom property non typée) : sa valeur calculée saute d'un coup au changement
+   de cran. Animer margin/width — qui, eux, le sont — convertit ce saut en
+   glissement, et la table débordante suit la colonne au lieu de claquer en
+   milieu de course.
+
+   La transition est PORTÉE PAR UNE CLASSE, et c'est tout l'enjeu : --table-bleed
+   dérive de `100cqw`, donc de la place disponible dans le fil, donc de la
+   sidebar autant que de --col. Déclarée en permanence, elle se déclenchait aussi
+   au repli/dépli de la sidebar, où personne ne l'a demandée — le porteur partait
+   alors pour 180ms d'un ease qui ne s'accorde pas aux 190ms de la sidebar, si
+   bien que le tableau changeait de largeur puis revenait à la sienne, et que sa
+   largeur interpolée, restée plus grande que le conteneur déjà rétréci, faisait
+   apparaître une barre de défilement horizontale sous tout le fil. Une classe
+   posée le temps du glissement (applyColWidth, ui.js) restreint l'animation à sa
+   cause, sur le modèle de `.sidebar.resizing` qui coupe la sienne pendant le
+   drag. Le redimensionnement de fenêtre en bénéficie au passage : lui non plus
+   n'a jamais eu à traîner. */
+.app.col-resizing .table-bleed {
   transition: margin var(--col-resize) var(--ease), width var(--col-resize) var(--ease);
 }
 /* Étage 2 — le TABLEAU dans la boîte élargie. `fit-content` l'arrête à sa
    largeur naturelle : un petit tableau n'utilise rien du débordement offert et
-   reste aligné sur la colonne, un grand va jusqu'à la butée puis défile en
-   interne. C'est ce couple qui rend inutile tout seuil mesuré en JS. */
+   reste aligné sur la colonne, un grand va jusqu'à la butée puis défile — dans
+   le PORTEUR, qui porte `overflow-x`. C'est ce couple qui rend inutile tout
+   seuil mesuré en JS.
+
+   Le tableau, lui, reste `display: table`, et c'est tout l'enjeu de la scission.
+   Le scroll a d'abord été porté par le tableau lui-même, ce qui imposait
+   `display: block` (une boîte `display: table` ignore `overflow`) — et un
+   `display: block` sur un `<table>` détruit le contexte de formatage tabulaire.
+   Les lignes passent alors par une table anonyme dont l'algorithme de
+   répartition ne voit plus la même boîte : une colonne se retrouve dimensionnée
+   sans tenir compte de son contenu, qui déborde de sa propre cellule et se fait
+   couper au bord du tableau, sans rien à défiler pour le rattraper
+   (`scrollWidth === clientWidth` alors même que du texte manque à l'écran).
+   Symptôme payé sur une première colonne rendue « s » / « eaux » / « tpellier »
+   pour Paris / Bordeaux / Montpellier. Ne pas y remettre `display: block`. */
 .body table {
-  display: block;
   width: fit-content;
   /* Plancher = la COLONNE, pas la boîte élargie : un `100%` se calculerait sur
      le porteur et étirerait jusqu'au débordement même un tableau à deux
@@ -990,7 +1122,6 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   margin: 0 auto;
   border-collapse: collapse;
   font-size: 13px;
-  overflow-x: auto;
 }
 .body th, .body td {
   border: 1px solid var(--border);
