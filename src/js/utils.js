@@ -421,6 +421,26 @@ function ackAuthorizationTarget(m, mcpServerUrl) {
   return { url: raw, origin: origin, upstream: m.upstream || null };
 }
 
+// Les DEUX motifs de marqueur de ressource, en un seul endroit —
+// `ackInspectResourceTargets` (qui en dérive les cibles) et
+// `splitResultResourceMarkers` (qui les détache du corps) les lisent tous les
+// deux. Les réécrire à chaque point d'usage les ferait dériver l'un de l'autre
+// en silence, sans aucun symptôme visible tant qu'un seul chemin est regardé.
+//   - `[resource_ref:res_…]` : marqueur à EXPANSION (`_makeResourceRef`),
+//     résolu au tour suivant par assembleToolResultForModel.
+//   - `[resource id=… mime=… name="…" size=…]` : descripteur STATIQUE
+//     (`formatResourceDescriptor`/`formatInlineHandleForModel`), jamais expansé.
+// Le corps du descripteur est pris large (tout sauf `]`) plutôt qu'attribut par
+// attribut : `size=251.2 KB` n'est pas entre guillemets et porte un espace
+// (modelSize), donc une alternance stricte s'arrêterait avant le `]`.
+// Motifs SOURCES (chaînes), jamais des RegExp `g` partagées : un RegExp global
+// porte un `lastIndex` mutable, et le réutiliser entre deux boucles ferait
+// sauter des occurrences. Chacun capture ce que ses lecteurs doivent extraire
+// (l'id, et pour le descripteur son corps d'attributs) ; qui n'en a pas besoin
+// ignore simplement les groupes.
+const RESOURCE_REF_PATTERN = '\\[resource_ref:([^\\]]+)\\]';
+const RESOURCE_DESC_PATTERN = '\\[resource id=([A-Za-z0-9_]+)([^\\]]*)\\]';
+
 // Ressources désignées par un ack POUR L'INSPECTEUR (lot Z-2). Étend
 // `ackDownloadTarget` sans le modifier : celui-ci est partagé avec le bouton de
 // téléchargement du fil, où l'élargir ferait DOUBLON — un appel MCP qui produit
@@ -429,12 +449,16 @@ function ackAuthorizationTarget(m, mcpServerUrl) {
 // prédicats donc, mais pas deux formules : celui-ci APPELLE l'autre pour le cas
 // qu'il couvre déjà, et n'y ajoute que ce que l'autre ignore.
 //
-// Ce qu'il ajoute : les `[resource_ref:res_…]` du RÉSULTAT. Un ack `mcp_call`
-// n'a ni kind `resource_*` ni champ `id` — la ressource n'y est désignée que
-// par ce marqueur, laissé dans le texte aplati par `internResourcesFromResult`
-// (resources.js, qui le pose via `_makeResourceRef`). Sans lecture de ce
-// marqueur, l'inspecteur d'un appel ayant produit une image n'affiche que la
-// référence, jamais l'image.
+// Ce qu'il ajoute : les DEUX marqueurs de ressource que le RÉSULTAT peut
+// porter. Un ack `mcp_call` n'a ni kind `resource_*` ni champ `id` — la
+// ressource n'y est désignée que par un marqueur laissé dans le texte aplati
+// par `internResourcesFromResult` (resources.js), et il y en a deux formes
+// selon la branche de stockage : `[resource_ref:res_…]` (`_makeResourceRef`,
+// binaires présentés) et le descripteur statique `[resource id=… mime=…]`
+// (`formatResourceDescriptor`/`formatInlineHandleForModel`, blob à mime
+// textuel — là où un ref ré-inlinerait tout au tour suivant, lot M). Les lire
+// toutes les deux, sans quoi l'inspecteur d'un appel ayant produit une image ou
+// un JSON n'affiche que le marqueur, jamais le contenu.
 //
 // TOUTES les références, dans l'ordre du texte, dédoublonnées : un appel peut
 // en produire plusieurs, et n'en montrer qu'une masquerait les suivantes en
@@ -443,8 +467,8 @@ function ackAuthorizationTarget(m, mcpServerUrl) {
 // `resource_*`, un `mcp_call` n'en porte pas de copie, et le record résolu les
 // donnera (il prime de toute façon, cf. `_inspectResourcePanel`).
 //
-// Regex alignée sur `_makeResourceRef` : l'id est en base36, jamais de `]`.
-// Pure, testable en QuickJS.
+// Motifs lus depuis `RESOURCE_REF_PATTERN`/`RESOURCE_DESC_PATTERN` ci-dessus,
+// jamais réécrits ici. Pure, testable en QuickJS.
 function ackInspectResourceTargets(m) {
   if (!m) return [];
   const direct = ackDownloadTarget(m);
@@ -452,33 +476,83 @@ function ackInspectResourceTargets(m) {
   if (m.result == null) return [];
   const out = [];
   const seen = {};
-  const re = /\[resource_ref:([^\]]+)\]/g;
-  let match;
-  while ((match = re.exec(String(m.result))) !== null) {
-    const id = match[1];
-    if (seen[id]) continue;
+  const text = String(m.result);
+  const push = (id, name, mime) => {
+    if (!id || seen[id]) return;
     seen[id] = true;
-    out.push({ by: 'resource', id: id, name: '', mime: '' });
+    out.push({ by: 'resource', id: id, name: name || '', mime: mime || '' });
+  };
+  const reRef = new RegExp(RESOURCE_REF_PATTERN, 'g');
+  let match;
+  while ((match = reRef.exec(text)) !== null) push(match[1], '', '');
+  // Deuxième forme : le descripteur statique, seul marqueur d'une ressource
+  // arrivée en blob à mime textuel (`store_inline_from_bytes`) — la branche qui
+  // ne peut PAS poser de ref sans ré-inliner tout le contenu au tour suivant
+  // (lot M). Sans cette lecture, l'inspecteur d'un tel appel n'affichait que le
+  // descripteur brut, sans téléchargement ni aperçu, alors que la ressource est
+  // bien en IDB. `mime`/`name` sont pris au passage quand ils y sont (le
+  // descripteur court n'a que l'id et le mime) ; le record les écrase de toute
+  // façon dès qu'il est résolu.
+  const reDesc = new RegExp(RESOURCE_DESC_PATTERN, 'g');
+  while ((match = reDesc.exec(text)) !== null) {
+    const attrs = match[2] || '';
+    const mimeM = /\bmime=(?:"([^"]*)"|([^\s\]]+))/.exec(attrs);
+    const nameM = /\bname=(?:"([^"]*)"|([^\s\]]+))/.exec(attrs);
+    push(match[1],
+      nameM ? (nameM[1] != null ? nameM[1] : nameM[2]) : '',
+      mimeM ? (mimeM[1] != null ? mimeM[1] : mimeM[2]) : '');
   }
   return out;
 }
 
-// « Ce résultat ne contient-il RIEN d'autre que des `[resource_ref:…]` ? »
-// Décide, dans l'inspecteur, si la section Réponse rend le texte en bloc de
-// code ou en simple ligne : un marqueur seul n'est pas un contenu, et lui
-// donner un <pre> à en-tête de langue et boutons copier/télécharger lui donne
-// le poids visuel de ce qu'il ne fait que désigner — le contenu, lui, est
-// peint juste en dessous par le volet ressource.
+// Sépare un résultat d'outil en `{ body, markers }` : ce que l'outil a
+// vraiment répondu d'un côté, les marqueurs de ressource de l'autre.
 //
-// Conservateur par construction : DÈS QU'il reste autre chose (une phrase, un
-// JSON, un second marqueur entouré de texte), on retombe sur le bloc de code et
-// rien n'est perdu. Le doute profite toujours à l'affichage complet.
+// Pourquoi séparer plutôt que décider en bloc : un marqueur n'est pas un
+// contenu, c'est un identifiant qui DÉSIGNE le contenu peint juste en dessous
+// par le volet Ressource. Lui donner un <pre> à en-tête de langue et boutons
+// copier/télécharger lui donne le poids visuel de ce qu'il ne fait que
+// nommer. Mais il arrive dans le MÊME champ qu'une prose authentique — un
+// serveur MCP qui écrit « Météo transférée au client comme ressource … » avant
+// son descripteur — et cette prose, elle, est bien la réponse de l'outil. Un
+// prédicat booléen « n'y a-t-il QUE des marqueurs ? » forçait alors le tout
+// dans un bloc de code, marqueur compris, dès qu'une seule phrase
+// l'accompagnait : le format du reste était dicté par la présence du marqueur.
+//
+// Aucun texte n'est jeté : ce qui n'est pas marqueur reste dans `body`, ce qui
+// l'est part dans `markers` (dans l'ordre, dédoublonné — la même ressource
+// désignée deux fois n'est pas deux ressources). Les deux sont rendus, à leur
+// registre. `body` est trimé aux extrémités seulement : retirer un marqueur en
+// milieu de phrase laisserait sinon un double espace au point de coupe, d'où
+// le collapse des blancs devenus contigus.
 // Pure, testable en QuickJS.
-function resultIsOnlyResourceRefs(text) {
-  const s = String(text == null ? '' : text).trim();
-  if (!s) return false;
-  if (s.indexOf('[resource_ref:') < 0) return false;
-  return s.replace(/\[resource_ref:[^\]]+\]/g, '').trim() === '';
+function splitResultResourceMarkers(text) {
+  const s = String(text == null ? '' : text);
+  const markers = [];
+  const seen = {};
+  const re = new RegExp(RESOURCE_REF_PATTERN + '|' + RESOURCE_DESC_PATTERN, 'g');
+  // Ligne par ligne : une ligne réduite à ses marqueurs disparaît (sinon elle
+  // laisserait un trou dans le corps), une ligne qui en portait au milieu garde
+  // sa prose. Le nettoyage ne touche QUE les lignes modifiées — un corps JSON
+  // ou du code indenté qui ne contient aucun marqueur ressort byte-identique,
+  // là où un collapse global des blancs lui écraserait son indentation.
+  const reNote = new RegExp(INLINE_HANDLE_NOTE_PATTERN, 'g');
+  const kept = [];
+  s.split('\n').forEach(line => {
+    if (line.indexOf('[resource') < 0) { kept.push(line); return; }
+    re.lastIndex = 0;
+    const stripped = line.replace(re, (found) => {
+      if (!seen[found]) { seen[found] = true; markers.push(found); }
+      return ' ';
+    });
+    // La note js__eval accompagne le descripteur sur la MÊME ligne : elle part
+    // avec lui. Retirée après le marqueur et non avant, pour que son tiret
+    // cadratin d'attache ne se retrouve jamais en tête de ce qui reste.
+    reNote.lastIndex = 0;
+    const cleaned = stripped.replace(reNote, '').replace(/[ \t]+/g, ' ').trim();
+    if (cleaned) kept.push(cleaned);
+  });
+  return { body: kept.join('\n').replace(/\n{3,}/g, '\n\n').trim(), markers: markers };
 }
 
 // Prédicat UNIQUE « cet ack a-t-il un détail d'appel à inspecter ? » (lot Z).
@@ -558,6 +632,30 @@ const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dan
 const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
   'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
   'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+
+// Troisième note MIAOU, celle de `formatInlineHandleForModel` (resources.js) :
+// « — texte adressable par js__eval (blob=res_…), non inliné dans le contexte. »
+// Même nature que les deux ci-dessus — un texte que MIAOU adresse au MODÈLE,
+// jamais une réponse du serveur — mais elle porte l'id, donc un motif et non un
+// littéral, et elle est concaténée en QUEUE DE LIGNE derrière le descripteur
+// plutôt qu'en fin de résultat : `splitToolResultNote` (suffixe strict) ne peut
+// pas la voir. D'où sa lecture ici, par `splitResultResourceMarkers`, qui passe
+// déjà ligne à ligne à l'endroit exact où le descripteur qu'elle suit est
+// retiré — sans quoi elle restait dans le corps, avec son tiret cadratin
+// orphelin, et suffisait à le faire tenir sur deux lignes donc à le renvoyer en
+// bloc de code.
+//
+// `isInlineHandleResult` (tools.js) reconnaît la MÊME note pour une autre raison
+// (idempotence de resource__from_result), mais sur un FRAGMENT volontairement
+// plus court (« texte adressable par js__eval (blob= » seul) : il doit répondre
+// vrai même sur une note tronquée ou reformulée en queue, là où ce motif-ci
+// doit matcher exactement ce qu'il retire — retirer approximativement
+// amputerait le corps. Deux portées différentes, donc deux expressions ; ce qui
+// ne doit jamais diverger est la PHRASE, dont `formatInlineHandleForModel`
+// (resources.js) reste l'unique émetteur. La reformuler oblige à repasser ici
+// ET là-bas — le commentaire de l'émetteur le dit aussi.
+const INLINE_HANDLE_NOTE_PATTERN =
+  ' ?— texte adressable par js__eval \\(blob=[A-Za-z0-9_]+\\), non inliné dans le contexte\\.';
 
 // Sépare un résultat d'outil de la note de présentation que MIAOU y a
 // concaténée pour le modèle. L'ack persiste UN champ `result` servant deux

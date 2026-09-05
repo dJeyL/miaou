@@ -1041,10 +1041,27 @@ textarea.skill-content {
 }
 .inspect-empty { margin: 0; color: var(--text-3); font-style: italic; font-size: 11px; }
 
-/* Marqueur `[resource_ref:…]` rendu SANS bloc de code (resultIsOnlyResourceRefs) :
+/* Réponse tenant sur UNE ligne, rendue sans <pre>. Même doctrine que les
+   valeurs d'arguments (`inspectValueShape` : pas de saut de ligne → inline),
+   appliquée ici au corps du résultat — un bloc de code à en-tête de langue et
+   boutons autour d'une phrase est plus de chrome que de contenu.
+   PAS monospace, contrairement à `.inspect-val` : celle-ci porte des ids et des
+   clés d'API, celle-là une phrase rédigée par le serveur. La chasse fixe se
+   justifie quand l'alignement des caractères porte du sens ; sur de la prose
+   elle ne fait que la rendre moins lisible. */
+.inspect-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* Marqueur de ressource rendu SANS bloc de code (splitResultResourceMarkers) :
    c'est un identifiant qui désigne le contenu peint juste en dessous, pas un
    contenu. Monospace parce que c'en est un, discret parce qu'il ne porte pas
-   l'information — le volet Ressource la porte. */
+   l'information — le volet Ressource la porte. Il suit la prose du résultat
+   quand il y en a une : le marqueur commente le corps, il ne l'introduit pas. */
 .inspect-ref {
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1067,7 +1084,11 @@ textarea.skill-content {
    Une marge négative sur la note corrigeait le cas du <pre> et CASSAIT l'autre :
    quand la Réponse est un simple `.inspect-ref` (marqueur seul, sans marge
    basse), les -12px faisaient chevaucher les deux lignes (mesuré -6px). D'où la
-   règle posée ici, sur le seul frère qui porte cette marge. */
+   règle posée ici, sur le seul frère qui porte cette marge.
+   Le sélecteur vise le <pre> suivi de la note IMMÉDIATEMENT : depuis que les
+   marqueurs sont détachés du corps, un `.inspect-ref` peut s'intercaler entre
+   les deux, et c'est alors lui le frère précédent — il n'a pas de marge basse,
+   donc rien à annuler. La règle reste juste sans élargissement. */
 .inspect-section pre:has(+ .inspect-note) { margin-bottom: 0; }
 
 .inspect-note {

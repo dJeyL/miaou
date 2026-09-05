@@ -6464,20 +6464,48 @@ function renderToolInspector(m) {
       empty.className = 'inspect-empty';
       empty.textContent = 'Réponse vide.';
       res.appendChild(empty);
-    } else if (resultIsOnlyResourceRefs(shape.text)) {
-      // Résultat réduit à des `[resource_ref:…]` : le marqueur est CONSERVÉ
-      // (l'inspecteur montre ce que l'outil a littéralement renvoyé), mais pas
-      // en <pre> — un bloc de code avec en-tête de langue et boutons
-      // copier/télécharger pour 26 caractères d'identifiant donne à un
-      // marqueur le poids visuel d'un contenu, alors que le contenu est juste
-      // en dessous, dans son volet. Registre du fil, qui affiche « Ressource
-      // enregistrée › nom » et non le marqueur.
-      const ref = document.createElement('p');
-      ref.className = 'inspect-ref';
-      ref.textContent = shape.text;
-      res.appendChild(ref);
     } else {
-      _inspectCodeBlock(res, shape.text, shape.lang, _inspectBlockName(m, 'resultat'));
+      // Marqueurs de ressource détachés du corps (splitResultResourceMarkers) :
+      // ils sont CONSERVÉS — l'inspecteur montre ce que l'outil a littéralement
+      // renvoyé — mais rendus à part, en `.inspect-ref`, et jamais en <pre>. Un
+      // bloc de code à en-tête de langue et boutons copier/télécharger pour un
+      // identifiant donne à un marqueur le poids visuel d'un contenu, alors que
+      // le contenu est juste en dessous, dans son volet. Registre du fil, qui
+      // affiche « Ressource enregistrée › nom » et non le marqueur.
+      //
+      // La prose qui les entoure, elle, reste rendue normalement : un serveur
+      // MCP peut écrire une vraie phrase avant son descripteur, et c'est bien
+      // la réponse de l'outil. Séparer les deux évite que la seule présence
+      // d'un marqueur décide du format du reste (ou l'inverse).
+      const split2 = splitResultResourceMarkers(shape.text);
+      if (split2.body) {
+        // Re-typer le corps amputé : retirer un marqueur peut rendre au JSON sa
+        // forme parsable (ou la lui retirer), et garder la `lang` calculée avant
+        // la scission colorierait le mauvais langage.
+        const bodyShape = inspectResultShape(split2.body);
+        // Même doctrine que les arguments de la Requête (`inspectValueShape`) :
+        // ce qui tient sur UNE ligne se lit en ligne. Un <pre> à en-tête de
+        // langue, hauteur bornée et boutons copier/télécharger autour d'une
+        // phrase unique est plus de chrome que de contenu — et la coloration
+        // syntaxique n'a rien à colorer sur de la prose. Le seuil est le saut
+        // de ligne, pas une longueur : une chaîne longue mais monoligne ne
+        // gagne rien à être encadrée, et le drawer sait déjà la faire passer
+        // à la ligne (overflow-wrap).
+        if (bodyShape.text.indexOf('\n') < 0) {
+          const line = document.createElement('p');
+          line.className = 'inspect-line';
+          line.textContent = bodyShape.text;
+          res.appendChild(line);
+        } else {
+          _inspectCodeBlock(res, bodyShape.text, bodyShape.lang, _inspectBlockName(m, 'resultat'));
+        }
+      }
+      split2.markers.forEach(mk => {
+        const ref = document.createElement('p');
+        ref.className = 'inspect-ref';
+        ref.textContent = mk;
+        res.appendChild(ref);
+      });
     }
     // Note SOUS le bloc : elle commente ce qui précède, et la placer au-dessus
     // repousserait le contenu — qui est ce qu'on vient inspecter.

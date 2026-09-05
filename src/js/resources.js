@@ -61,6 +61,12 @@ function formatInlineHandleForModel(id, mime, rec) {
   const desc = rec
     ? formatResourceDescriptor(rec)
     : ('[resource id=' + id + ' mime=' + (mime || 'text/plain') + ']');
+  // ÉMETTEUR UNIQUE de cette phrase, qui a deux reconnaisseurs ailleurs :
+  // `INLINE_HANDLE_NOTE_PATTERN` (utils.js, qui la détache à l'affichage, et
+  // doit donc matcher exactement) et `isInlineHandleResult` (tools.js,
+  // idempotence de resource__from_result, qui n'en teste qu'un fragment).
+  // La reformuler ici sans repasser sur les deux les ferait cesser de
+  // reconnaître, sans rien casser de visible.
   return desc + ' — texte adressable par js__eval (blob=' + id +
     '), non inliné dans le contexte.';
 }

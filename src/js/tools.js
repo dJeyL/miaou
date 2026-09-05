@@ -793,7 +793,10 @@ function validateResourceAppendArgs(args) {
 // Détecte qu'un `result` d'ack est DÉJÀ un handle inline model-side (sortie de
 // formatInlineHandleForModel) — idempotence de resource__from_result : convertir
 // deux fois un même tool result est un refus propre, pas une double
-// matérialisation. Marqueur stable de formatInlineHandleForModel.
+// matérialisation. Marqueur stable de formatInlineHandleForModel (resources.js,
+// émetteur unique de la phrase). Fragment volontairement court, et non le motif
+// complet d'`INLINE_HANDLE_NOTE_PATTERN` (utils.js) : ici on veut répondre vrai
+// même sur une note tronquée, là-bas on doit matcher exactement ce qu'on retire.
 function isInlineHandleResult(result) {
   return /texte adressable par js__eval \(blob=/.test(String(result || ''));
 }

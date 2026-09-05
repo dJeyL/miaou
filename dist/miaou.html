@@ -3047,6 +3047,14 @@ textarea.skill-content {
 }
 .inspect-empty { margin: 0; color: var(--text-3); font-style: italic; font-size: 11px; }
 
+.inspect-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 .inspect-ref {
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -4334,7 +4342,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-05 12:52 UTC */
+/* miaou — built: 2026-09-05 17:25 UTC */
 
 /* ── utils.js ── */
 
@@ -4552,6 +4560,9 @@ function ackAuthorizationTarget(m, mcpServerUrl) {
   return { url: raw, origin: origin, upstream: m.upstream || null };
 }
 
+const RESOURCE_REF_PATTERN = '\\[resource_ref:([^\\]]+)\\]';
+const RESOURCE_DESC_PATTERN = '\\[resource id=([A-Za-z0-9_]+)([^\\]]*)\\]';
+
 function ackInspectResourceTargets(m) {
   if (!m) return [];
   const direct = ackDownloadTarget(m);
@@ -4559,22 +4570,49 @@ function ackInspectResourceTargets(m) {
   if (m.result == null) return [];
   const out = [];
   const seen = {};
-  const re = /\[resource_ref:([^\]]+)\]/g;
-  let match;
-  while ((match = re.exec(String(m.result))) !== null) {
-    const id = match[1];
-    if (seen[id]) continue;
+  const text = String(m.result);
+  const push = (id, name, mime) => {
+    if (!id || seen[id]) return;
     seen[id] = true;
-    out.push({ by: 'resource', id: id, name: '', mime: '' });
+    out.push({ by: 'resource', id: id, name: name || '', mime: mime || '' });
+  };
+  const reRef = new RegExp(RESOURCE_REF_PATTERN, 'g');
+  let match;
+  while ((match = reRef.exec(text)) !== null) push(match[1], '', '');
+
+  const reDesc = new RegExp(RESOURCE_DESC_PATTERN, 'g');
+  while ((match = reDesc.exec(text)) !== null) {
+    const attrs = match[2] || '';
+    const mimeM = /\bmime=(?:"([^"]*)"|([^\s\]]+))/.exec(attrs);
+    const nameM = /\bname=(?:"([^"]*)"|([^\s\]]+))/.exec(attrs);
+    push(match[1],
+      nameM ? (nameM[1] != null ? nameM[1] : nameM[2]) : '',
+      mimeM ? (mimeM[1] != null ? mimeM[1] : mimeM[2]) : '');
   }
   return out;
 }
 
-function resultIsOnlyResourceRefs(text) {
-  const s = String(text == null ? '' : text).trim();
-  if (!s) return false;
-  if (s.indexOf('[resource_ref:') < 0) return false;
-  return s.replace(/\[resource_ref:[^\]]+\]/g, '').trim() === '';
+function splitResultResourceMarkers(text) {
+  const s = String(text == null ? '' : text);
+  const markers = [];
+  const seen = {};
+  const re = new RegExp(RESOURCE_REF_PATTERN + '|' + RESOURCE_DESC_PATTERN, 'g');
+
+  const reNote = new RegExp(INLINE_HANDLE_NOTE_PATTERN, 'g');
+  const kept = [];
+  s.split('\n').forEach(line => {
+    if (line.indexOf('[resource') < 0) { kept.push(line); return; }
+    re.lastIndex = 0;
+    const stripped = line.replace(re, (found) => {
+      if (!seen[found]) { seen[found] = true; markers.push(found); }
+      return ' ';
+    });
+
+    reNote.lastIndex = 0;
+    const cleaned = stripped.replace(reNote, '').replace(/[ \t]+/g, ' ').trim();
+    if (cleaned) kept.push(cleaned);
+  });
+  return { body: kept.join('\n').replace(/\n{3,}/g, '\n\n').trim(), markers: markers };
 }
 
 function ackHasInspectableDetail(m) {
@@ -4604,6 +4642,9 @@ const PRESENTED_NOTE = '\nLa ressource a été présentée à l\'utilisateur dan
 const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
   'l\'utilisateur ne le voit PAS dans l\'interface. Ne suppose jamais qu\'il l\'a ' +
   'sous les yeux — s\'il en a besoin, cite ou résume toi-même ce qui est utile.]';
+
+const INLINE_HANDLE_NOTE_PATTERN =
+  ' ?— texte adressable par js__eval \\(blob=[A-Za-z0-9_]+\\), non inliné dans le contexte\\.';
 
 function splitToolResultNote(result) {
   const s = result == null ? '' : String(result);
@@ -7540,7 +7581,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788612752}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788629112}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -9445,6 +9486,7 @@ function formatInlineHandleForModel(id, mime, rec) {
   const desc = rec
     ? formatResourceDescriptor(rec)
     : ('[resource id=' + id + ' mime=' + (mime || 'text/plain') + ']');
+
   return desc + ' — texte adressable par js__eval (blob=' + id +
     '), non inliné dans le contexte.';
 }
@@ -18102,14 +18144,28 @@ function renderToolInspector(m) {
       empty.className = 'inspect-empty';
       empty.textContent = 'Réponse vide.';
       res.appendChild(empty);
-    } else if (resultIsOnlyResourceRefs(shape.text)) {
-
-      const ref = document.createElement('p');
-      ref.className = 'inspect-ref';
-      ref.textContent = shape.text;
-      res.appendChild(ref);
     } else {
-      _inspectCodeBlock(res, shape.text, shape.lang, _inspectBlockName(m, 'resultat'));
+
+      const split2 = splitResultResourceMarkers(shape.text);
+      if (split2.body) {
+
+        const bodyShape = inspectResultShape(split2.body);
+
+        if (bodyShape.text.indexOf('\n') < 0) {
+          const line = document.createElement('p');
+          line.className = 'inspect-line';
+          line.textContent = bodyShape.text;
+          res.appendChild(line);
+        } else {
+          _inspectCodeBlock(res, bodyShape.text, bodyShape.lang, _inspectBlockName(m, 'resultat'));
+        }
+      }
+      split2.markers.forEach(mk => {
+        const ref = document.createElement('p');
+        ref.className = 'inspect-ref';
+        ref.textContent = mk;
+        res.appendChild(ref);
+      });
     }
 
     if (split.note) {

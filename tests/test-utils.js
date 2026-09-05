@@ -1814,6 +1814,46 @@ describe('ackInspectResourceTargets (lot Z-2)', function() {
     expect(ackInspectResourceTargets({ kind: 'mcp_call' }).length).toBe(0);
     expect(ackInspectResourceTargets(null).length).toBe(0);
   });
+  it('descripteur [resource id=...] complet → une cible, nom et mime lus', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: 'Meteo transferee au client comme ressource weather.json (257 K).\n' +
+        '[resource id=res_16jddxtr mime=application/json name="weather-bordeaux.json" size=251.2 KB]' });
+    expect(t.length).toBe(1);
+    expect(t[0].id).toBe('res_16jddxtr');
+    expect(t[0].by).toBe('resource');
+    expect(t[0].mime).toBe('application/json');
+    expect(t[0].name).toBe('weather-bordeaux.json');
+  });
+  it('descripteur court (id + mime seuls) → une cible, nom vide', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: '[resource id=res_ab12 mime=text/plain] - texte adressable par js__eval' });
+    expect(t.length).toBe(1);
+    expect(t[0].id).toBe('res_ab12');
+    expect(t[0].mime).toBe('text/plain');
+    expect(t[0].name).toBe('');
+  });
+  it('descripteur produit par formatInlineHandleForModel → detecte', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: formatInlineHandleForModel('res_zz9', 'application/json', null) });
+    expect(t.length).toBe(1);
+    expect(t[0].id).toBe('res_zz9');
+  });
+  it('les deux formes dans un meme resultat → deux cibles', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: '[resource_ref:res_a] et [resource id=res_b mime=text/csv]' });
+    expect(t.length).toBe(2);
+    expect(t[0].id).toBe('res_a');
+    expect(t[1].id).toBe('res_b');
+  });
+  it('meme id sous les deux formes → dedoublonne', function() {
+    var t = ackInspectResourceTargets({ kind: 'mcp_call',
+      result: '[resource_ref:res_a] [resource id=res_a mime=text/csv]' });
+    expect(t.length).toBe(1);
+  });
+  it('texte mentionnant resource sans marqueur → aucune cible', function() {
+    expect(ackInspectResourceTargets({ kind: 'mcp_call',
+      result: 'la resource id est inconnue' }).length).toBe(0);
+  });
   it('un kind resource_* prime : pas de double comptage via son propre result', function() {
     // L'ack porte les DEUX : son id de kind, et un marqueur dans le result.
     // Sans la delegation en tete, on afficherait deux fois la meme ressource.
@@ -1823,22 +1863,64 @@ describe('ackInspectResourceTargets (lot Z-2)', function() {
   });
 });
 
-describe('resultIsOnlyResourceRefs (lot Z-2)', function() {
-  it('un marqueur seul → true', function() {
-    expect(resultIsOnlyResourceRefs('[resource_ref:res_a]')).toBe(true);
+describe('splitResultResourceMarkers (scission prose / marqueurs)', function() {
+  it('un marqueur seul → corps vide, un marqueur', function() {
+    var r = splitResultResourceMarkers('[resource_ref:res_a]');
+    expect(r.body).toBe('');
+    expect(r.markers.length).toBe(1);
+    expect(r.markers[0]).toBe('[resource_ref:res_a]');
   });
-  it('deux marqueurs et des espaces → true', function() {
-    expect(resultIsOnlyResourceRefs(' [resource_ref:res_a]\n[resource_ref:res_b] ')).toBe(true);
+  it('deux marqueurs sur deux lignes → corps vide, deux marqueurs', function() {
+    var r = splitResultResourceMarkers(' [resource_ref:res_a]\n[resource_ref:res_b] ');
+    expect(r.body).toBe('');
+    expect(r.markers.length).toBe(2);
   });
-  it('marqueur AVEC du texte autour → false (rien ne doit etre perdu)', function() {
-    expect(resultIsOnlyResourceRefs('Voici : [resource_ref:res_a]')).toBe(false);
+  it('LE CAS PAYE : prose du serveur PUIS descripteur → la prose reste, le marqueur sort', function() {
+    var r = splitResultResourceMarkers(
+      'Meteo de Bordeaux transferee au client comme ressource weather.json (257 Ko).\n' +
+      '[resource id=res_16jddxtr mime=application/json name="weather.json" size=251.2 KB]');
+    expect(r.body).toBe('Meteo de Bordeaux transferee au client comme ressource weather.json (257 Ko).');
+    expect(r.markers.length).toBe(1);
   });
-  it('texte sans marqueur → false', function() {
-    expect(resultIsOnlyResourceRefs('{"a":1}')).toBe(false);
+  it('marqueur au MILIEU d une phrase → la phrase garde son sens, un seul espace', function() {
+    var r = splitResultResourceMarkers('Voici [resource_ref:res_a] le fichier.');
+    expect(r.body).toBe('Voici le fichier.');
   });
-  it('chaine vide → false', function() {
-    expect(resultIsOnlyResourceRefs('')).toBe(false);
-    expect(resultIsOnlyResourceRefs(null)).toBe(false);
+  it('meme marqueur repete → dedoublonne', function() {
+    var r = splitResultResourceMarkers('[resource_ref:res_a] [resource_ref:res_a]');
+    expect(r.markers.length).toBe(1);
+  });
+  it('les deux formes melangees → les deux sortent, dans l ordre', function() {
+    var r = splitResultResourceMarkers('[resource_ref:res_a]\n[resource id=res_b mime=text/csv]');
+    expect(r.markers.length).toBe(2);
+    expect(r.markers[0]).toBe('[resource_ref:res_a]');
+    expect(r.markers[1]).toBe('[resource id=res_b mime=text/csv]');
+  });
+  it('LA CAPTURE : descripteur + note js__eval sur la meme ligne → il ne reste que la prose', function() {
+    var r = splitResultResourceMarkers(
+      'Meteo de Bordeaux transferee au client comme ressource weather.json (25 Ko).\n' +
+      formatInlineHandleForModel('res_16jddxtr', 'application/json', null));
+    expect(r.body).toBe('Meteo de Bordeaux transferee au client comme ressource weather.json (25 Ko).');
+    expect(r.markers.length).toBe(1);
+  });
+  it('la note js__eval ne laisse ni tiret orphelin ni deuxieme ligne', function() {
+    var r = splitResultResourceMarkers(formatInlineHandleForModel('res_ab12', 'text/plain', null));
+    expect(r.body).toBe('');
+  });
+  it('la note n est retiree QUE sur la ligne d un marqueur (jamais dans une prose qui la cite)', function() {
+    var r = splitResultResourceMarkers('Le serveur dit : texte adressable par js__eval (blob=res_x), non inline dans le contexte.');
+    expect(r.body).toBe('Le serveur dit : texte adressable par js__eval (blob=res_x), non inline dans le contexte.');
+    expect(r.markers.length).toBe(0);
+  });
+  it('resultat SANS marqueur → corps byte-identique, indentation JSON preservee', function() {
+    var json = '{\n  \"a\": 1,\n  \"b\": [\n    2\n  ]\n}';
+    var r = splitResultResourceMarkers(json);
+    expect(r.body).toBe(json);
+    expect(r.markers.length).toBe(0);
+  });
+  it('vide / null → corps vide, aucun marqueur, pas d exception', function() {
+    expect(splitResultResourceMarkers('').body).toBe('');
+    expect(splitResultResourceMarkers(null).markers.length).toBe(0);
   });
 });
 

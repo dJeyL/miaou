@@ -1208,8 +1208,18 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
 - **Un appel qui produit une ressource la MONTRE, il n'en montre pas la
   référence** (lot Z-2). `ackDownloadTarget` désigne par le `kind` de l'ack
   (`resource_*`) plus un champ `id` — un `mcp_call` n'a ni l'un ni l'autre : la
-  ressource n'y est désignée que par le `[resource_ref:res_…]` que
-  `internResourcesFromResult` laisse dans le texte aplati. L'inspecteur passe
+  ressource n'y est désignée que par un marqueur que `internResourcesFromResult`
+  laisse dans le texte aplati. **Il y en a deux formes**, selon la branche de
+  stockage : `[resource_ref:res_…]` (`_makeResourceRef`, binaires présentés) et
+  le descripteur statique `[resource id=… mime=… name="…" size=…]`
+  (`formatResourceDescriptor` / `formatInlineHandleForModel`) pour un blob à
+  mime textuel, où poser un ref ré-inlinerait tout le contenu au tour suivant
+  (lot M). Les deux sont lues : n'en lire qu'une laissait l'inspecteur d'un
+  appel renvoyant du JSON sur son seul texte brut, sans téléchargement ni
+  aperçu, alors que la ressource était bien en IDB. Le descripteur donne au
+  passage `mime`/`name` (le record les écrase dès qu'il est résolu) ; son corps
+  est capturé large — `size=251.2 KB` n'est pas entre guillemets et porte un
+  espace. L'inspecteur passe
   donc par `ackInspectResourceTargets` (utils.js, pure), qui **appelle**
   `ackDownloadTarget` pour le cas qu'il couvre déjà et n'ajoute que la lecture
   des marqueurs — deux prédicats, jamais deux formules. Toutes les références,
@@ -1239,14 +1249,48 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
   `naturalWidth`/`naturalHeight` de la vignette, disponibles sans attente
   puisque c'est son clic qui ouvre la lightbox. La vignette, elle, n'imposant
   aucune dimension, restait juste — d'où un défaut visible au clic seulement.
-- **`[resource_ref:…]` seul n'est pas rendu en bloc de code**
-  (`resultIsOnlyResourceRefs`, pure). Le marqueur reste affiché — l'inspecteur
+- **Un marqueur de ressource n'est jamais rendu en bloc de code**
+  (`splitResultResourceMarkers`, pure). Le marqueur reste affiché — l'inspecteur
   montre ce que l'outil a littéralement renvoyé — mais en ligne discrète
   (`.inspect-ref`) : un `<pre>` à en-tête de langue et boutons
-  copier/télécharger donnerait à un identifiant de 26 caractères le poids visuel
-  d'un contenu, quand le contenu est peint juste en dessous. Prédicat
-  conservateur : dès qu'il reste autre chose que des marqueurs, on retombe sur
-  le bloc complet et rien n'est perdu.
+  copier/télécharger donnerait à un identifiant le poids visuel d'un contenu,
+  quand le contenu est peint juste en dessous, dans son volet.
+  **La fonction SCINDE au lieu de décider en bloc**, et c'est le point : le
+  marqueur arrive dans le MÊME champ qu'une prose authentique — un serveur MCP
+  écrit volontiers « Météo transférée au client comme ressource … » avant son
+  descripteur — et cette prose est bien la réponse de l'outil. Le prédicat
+  booléen d'origine (« n'y a-t-il QUE des marqueurs ? ») basculait alors tout
+  dans un `<pre>`, marqueur compris : la présence du marqueur dictait le format
+  du reste. Désormais le corps est rendu à son registre, les marqueurs au leur,
+  et aucun texte n'est jeté. Le corps amputé est **re-typé** par
+  `inspectResultShape` : retirer un marqueur peut rendre au JSON sa forme
+  parsable, et garder la `lang` calculée avant la scission colorierait le
+  mauvais langage. **Un corps qui tient sur une ligne est rendu sans `<pre>`**
+  (`.inspect-line`) : c'est la doctrine déjà appliquée aux arguments de la
+  Requête par `inspectValueShape` (pas de saut de ligne → inline), étendue au
+  résultat. Le seuil est le saut de ligne et non une longueur — une chaîne
+  longue mais monoligne ne gagne rien à être encadrée, et le drawer sait déjà la
+  faire passer à la ligne. La classe n'est pas monospace, contrairement à
+  `.inspect-val` : celle-ci porte des ids et des clés d'API, celle-là une phrase
+  rédigée par le serveur. Une ligne réduite à ses seuls marqueurs disparaît du corps ;
+  un résultat sans marqueur ressort **byte-identique** (nettoyage restreint aux
+  lignes touchées — un collapse global écraserait l'indentation d'un JSON).
+  La **note `js__eval`** de `formatInlineHandleForModel` part avec le
+  descripteur qu'elle suit (`INLINE_HANDLE_NOTE_PATTERN`, utils.js) : c'est une
+  troisième note MIAOU adressée au modèle, de même nature que `PRESENTED_NOTE`
+  et `NOT_PRESENTED_NOTE`, mais elle porte l'id (donc un motif, pas un littéral)
+  et se concatène en **queue de ligne** derrière le descripteur plutôt qu'en fin
+  de résultat — `splitToolResultNote`, qui teste un suffixe strict, ne peut pas
+  la voir. La laisser suffisait à faire tenir le corps sur deux lignes, donc à
+  le renvoyer en bloc de code, avec en prime un tiret cadratin orphelin. Elle
+  n'est retirée que sur une ligne portant un marqueur : une prose serveur qui la
+  citerait n'est pas amputée. `formatInlineHandleForModel` reste l'**émetteur
+  unique** de la phrase, avec deux reconnaisseurs aux portées délibérément
+  différentes : ce motif, qui doit matcher **exactement** ce qu'il retire (une
+  approximation amputerait le corps), et `isInlineHandleResult` (tools.js), qui
+  n'en teste qu'un fragment court pour répondre vrai même sur une note tronquée.
+  Deux expressions, donc, mais une seule phrase — la reformuler oblige à
+  repasser sur les trois points.
 - **Volet ressource** : désigné par `ackDownloadTarget` (prédicat unique partagé
   avec le bouton de téléchargement de l'ack). Quatre présentations décidées par
   `inspectResourcePresentation(mime, size)` — vignette (image bitmap), source +
