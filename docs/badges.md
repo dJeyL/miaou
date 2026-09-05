@@ -80,11 +80,56 @@ une génération ne survit pas au reload, son « non lu » non plus.
   `!genOwnsScreen(gen)` — une réponse qu'on a regardée arriver n'est pas « non
   lue ». Le prédicat d'écran reste celui de T-1, jamais un test réécrit. Il est
   évalué **après** le retrait du registre, pour que `convBadgeState` bascule sur
-  `unread` et pas sur un `working` résiduel.
+  `unread` et pas sur un `working` résiduel. **Restreint aux conversations
+  RACINE**, et sur un record qui existe encore — cf. la section suivante.
 - **Effacement** : `markConvRead(id)` dans `openConversation`. **Ouvrir la
   conversation suffit** (décision de lot) — pas de sémantique de lecture par message
   ni de « bas du fil atteint » : MIAOU n'en a nulle part ailleurs, en introduire
   une ici serait disproportionné.
+
+### Marquer suppose pouvoir effacer — le non-lu est réservé aux racines
+
+Le marquage a **un** point d'entrée et l'effacement **un** point de sortie, et
+les deux ne portaient pas sur le même ensemble. `unregisterGeneration` marquait
+toute conversation finissant hors écran ; `markConvRead` n'est appelé que par
+`openConversation`. Or une génération d'**agent** n'est par construction jamais
+à l'écran (les agents sont exclus de la sidebar, le spawn n'y bascule pas) : tout
+agent qui finissait se marquait non lu, et rien ne pouvait l'effacer — ouvrir le
+**parent** ne nettoie pas ses enfants. Le marqueur survivait à la session.
+
+Il restait invisible de la liste de gauche (filtrée sur `isRootConversation`)
+mais bien présent dans les **agrégats**, qui ne l'étaient pas : pastille allumée
+sur le hamburger et sur la ligne d'Espace, avec une liste de conversations
+vierge en dessous. C'est le **corollaire du dépliage retourné contre lui-même** —
+le déplié doit pouvoir répondre « où exactement ? », et là il ne le pouvait pas.
+Bug payé en usage réel le 2026-09-05 (trois agents terminés depuis plusieurs
+minutes, tout lu, pastille persistante).
+
+**Deux gardes, à deux étages, et elles ne se remplacent pas :**
+
+1. **À la source** — `unregisterGeneration` ne marque non lue qu'une
+   conversation **racine** dont le record **existe encore**. Le second test
+   n'est pas cosmétique : `loadConversation` rend `null` pour une conversation
+   supprimée pendant sa génération, et `isRootConversation(null)` vaut `true`
+   (une chaîne vide n'est pas un parent) — sans lui, une conversation détruite
+   laisserait le même fantôme sous une autre cause (famille du piège 20).
+2. **Aux agrégats** — `spaceBadgeState` et `aggregateBadgeState` filtrent
+   `isRootConversation` **sur la boucle des conversations uniquement**, jamais
+   sur celle du registre. Un agent **en vol** doit continuer d'allumer
+   l'agrégat : le `working` est adressé par la génération, l'`unread` par la
+   conversation. La ligne de partage passe exactement là.
+
+Rien n'est perdu par la restriction : la fin d'un agent **réveille** son parent,
+qui reprend donc un tour et porte son propre `working`, puis son propre `unread`
+s'il finit hors écran. C'est déjà le motif pour lequel `unread` n'est pas étendu
+au parent (plus bas) — la ligne de marquage se contentait de ne pas en tirer la
+conséquence côté enfant. Cas limite assumé : un agent explicitement ouvert puis
+quitté pendant son travail ne pose pas de non-lu ; son parent le signale.
+
+L'invariant général, qui déborde les badges : **un agrégat ne remonte rien
+qu'aucune surface de détail ne puisse expliquer.** Dès que deux surfaces
+appliquent des filtres différents à la même donnée, celle qui filtre le moins
+finit par afficher un état que l'autre ne peut pas justifier.
 
 ## Quatre surfaces
 
@@ -293,6 +338,34 @@ supprimé resterait sinon invisible du hamburger, qui doit être exhaustif.
   conversation, agrégation cross-Space repliée et dépliée, corollaire du
   dépliage, agrégation du hamburger et masquage CSS, apparence mesurée
   (tailles, opacités, keyframe, couleur commune), reduced-motion, zone morte.
+- **Playwright** — `.claude/skills/run-miaou/verify-agent-unread-ghost.mjs`
+  (2026-09-05) : la pastille fantôme après des agents terminés. Trois agents
+  lancés dans le même tour, tous menés à terme, conversation lue, puis lecture
+  des surfaces d'agrégat aux deux gestes du rapport (sidebar repliée, menu
+  d'Espaces déplié). Porte aussi les deux non-régressions du correctif — le
+  `working` du parent **pendant** le travail de ses agents, et le cycle nominal
+  complet du non-lu sur une racine (marquage hors écran, effacement à
+  l'ouverture). Sa non-vacuité est mesurée dans son en-tête, **résultat négatif
+  compris** : la garde des agrégats y est verte même retirée, tant que celle de
+  la source tient.
+
+  Piège d'écriture payé dessus : `applyActivityBadge` pose `hidden`, il ne
+  retire pas le nœud — `activityBadgeEl` en crée un par ligne, y compris à
+  l'état `null`, et hamburger comme sélecteur vivent en permanence dans le
+  markup. Compter les `.activity-dot` **présents** mesure donc le markup et non
+  ce que l'utilisateur voit : la première version du script avait trois
+  assertions vertes par construction, dont celle censée compter les pastilles de
+  la liste. Interroger la visibilité (`hidden`, `offsetParent`).
+
+  Défaut de la même famille trouvé dans `verify-badges.mjs` en passant, et
+  corrigé : son helper `convBadge` appariait la ligne **par son titre rendu**,
+  alors que le stub de titrage renvoie « Titre stub » pour toute conversation.
+  Plusieurs lignes portant le même libellé, la recherche tombait sur une
+  homonyme d'un autre Espace et rendait SON état — le helper ne pouvait donc
+  plus jamais répondre `row-not-found`, et le contrôle « elle n'est PAS dans la
+  liste du Space courant » était mort. L'appariement se fait désormais sur
+  l'identité (l'id présent dans les `onclick` générés des boutons de la ligne).
+  Un libellé n'est pas une identité.
 
 Deux points de méthode payés en écrivant ce verify :
 

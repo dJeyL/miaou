@@ -68,10 +68,23 @@ const initScript = () => {
   window.fetch = async function (input, opts) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
     if (url.indexOf('/chat/completions') >= 0) {
-      try { window.__sentPayloads.push(JSON.parse(opts.body)); } catch (e) {}
-      const phase = window.__stubPhase++;
+      let payload = null;
+      try { payload = JSON.parse(opts.body); window.__sentPayloads.push(payload); } catch (e) {}
+      // Aiguillage sur le CONTENU de la requête, jamais sur un compteur
+      // d'appels : l'application émet plusieurs requêtes propres avant celle de
+      // l'utilisateur (titrage, résumé…), si bien que __stubPhase valait déjà 4
+      // au moment du send — le tour d'outils n'était jamais servi, la
+      // génération finissait aussitôt, `sending` retombait, et l'interjection
+      // partait comme un message ordinaire. Les trois assertions rouges
+      // décrivaient fidèlement ce que le montage avait produit.
+      const msgs = (payload && payload.messages) || [];
+      const txt = m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '');
+      const isUserTurn = msgs.some(m => m.role === 'user' && txt(m).indexOf('Analyse ceci.') >= 0);
+      // Une fois l'outil exécuté la conversation porte un role:'tool' : second tour.
+      const toolDone = msgs.some(m => m.role === 'tool');
+      window.__stubPhase++;
       let lines;
-      if (phase === 0) {
+      if (isUserTurn && !toolDone) {
         // Tour 1 : un tool_call conv__list (interne, sync, sans effet de bord).
         // Le stream est GATÉ après le premier delta si __gateTour1 : la boucle
         // reste dans le tour 1 (avant onInterjections) tant qu'on n'a pas
@@ -152,7 +165,10 @@ await page.press('#composer-text', 'Enter');
 await page.waitForTimeout(150);
 
 let s = await page.evaluate(() => ({
-  queued: typeof _pendingInterjections !== 'undefined' ? _pendingInterjections.length : -1,
+  // File clefée PAR CONVERSATION (Map<convId, items[]>, X-1e) : lue via son
+  // accesseur `interjectionsFor`, jamais un `.length` sur la Map — qui rend
+  // `undefined` en silence et faisait échouer la mesure, pas l'application.
+  queued: typeof interjectionsFor === 'function' ? interjectionsFor(currentConvId).length : -1,
   chips: document.querySelectorAll('#ij-chips .ij-chip').length,
   railHidden: document.getElementById('ij-rail').hidden,
   composerEmpty: document.getElementById('composer-text').value === '',
@@ -262,7 +278,10 @@ await page.click('#send-btn');   // stop
 await page.waitForFunction(() => typeof sending !== 'undefined' && sending === false, { timeout: 5000 });
 await page.waitForTimeout(300);
 s = await page.evaluate(() => ({
-  queued: typeof _pendingInterjections !== 'undefined' ? _pendingInterjections.length : -1,
+  // File clefée PAR CONVERSATION (Map<convId, items[]>, X-1e) : lue via son
+  // accesseur `interjectionsFor`, jamais un `.length` sur la Map — qui rend
+  // `undefined` en silence et faisait échouer la mesure, pas l'application.
+  queued: typeof interjectionsFor === 'function' ? interjectionsFor(currentConvId).length : -1,
   chips: document.querySelectorAll('#ij-chips .ij-chip').length,
   composer: document.getElementById('composer-text').value,
 }));

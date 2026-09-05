@@ -73,6 +73,29 @@ check('streaming pendant lecture en haut : vue NON arrachée (scrollTop toujours
 check('isAtBottom() reflète bien "pas en bas"', !s.atBottom);
 
 // ── 4. L'utilisateur redescend tout en bas → l'autoscroll doit réembrayer ───
+// Deux effets asynchrones brouillent la mesure si on redescend et mesure d'un
+// trait, tous deux propres au MONTAGE, pas à l'application :
+//   - streamInto throttle à 90ms, et le dernier delta de la phase 3 a armé un
+//     timer AVEC follow=false (capturé pendant que l'utilisateur lisait en
+//     haut) : il tire APRÈS coup et grossit le contenu sans bouger scrollTop ;
+//   - remonter en bas RÉVÈLE des blocs jusque-là hors écran, dont la
+//     décoration/coloration asynchrone ajoute ~350px ~30ms plus tard —
+//     mesuré ici sans le moindre appel à streamInto entre-temps.
+// Dans les deux cas scrollHeight grandit pendant que scrollTop reste figé,
+// isAtBottom() repasse à faux, et le réembrayage ne peut plus s'observer.
+// On attend donc que scrollHeight se STABILISE, puis on se remet en bas.
+await page.waitForTimeout(150);
+await page.evaluate(() => {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+});
+await page.waitForFunction(() => {
+  const m = document.getElementById('messages');
+  const h = m.scrollHeight;
+  if (window.__lastH === h) return true;
+  window.__lastH = h;
+  return false;
+}, null, { polling: 100 });
 await page.evaluate(() => {
   const m = document.getElementById('messages');
   m.scrollTop = m.scrollHeight;

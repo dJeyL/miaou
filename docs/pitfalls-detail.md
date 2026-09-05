@@ -86,6 +86,38 @@ HTML, ou à la synchro multi-onglets.
    miaou-summaries »). Pas de `beforeunload` (non fiable). Le backfill
    (`runBackfill`) s'auto-garde sur la **présence d'URL** seulement (pas sur
    `configured`, qui exige une clef), pour couvrir les endpoints sans auth.
+
+   **Quand le résumé part : le timer d'inactivité.** Le piège ci-dessus dit
+   *quoi* résumer ; le déclenchement est une question distincte, et il a coûté
+   deux bugs. `armIdleSummaryTimer` (main.js, `IDLE_SUMMARY_MS` = 60 s) résume
+   `currentConvId` après une minute sans activité. La règle qui gouverne son
+   câblage : **la portée du réarmement est la portée de ce qui est résumé.**
+   Le réarmement a été document-wide un temps — trois listeners sur `document` —
+   et le timer devenait alors inatteignable : n'importe quel clic ailleurs dans
+   l'application (réglages, recherche d'historique, carte MCP, onglet de Space,
+   repli d'un ack) le repoussait de 60 s, si bien qu'une session passée dans
+   l'UI périphérique avec une conversation ouverte derrière ne produisait jamais
+   son résumé. `wireIdleSummaryActivity` n'écoute donc que trois surfaces — le
+   composer, le fil de messages (en délégation : les zones éditables d'un
+   message en cours d'édition naissent sans listener propre) et le titre.
+   Les changements de conversation ne passent pas par ce câblage :
+   `selectConv`, `newConversation` et `pickSpace` appellent le réarmement
+   directement, après avoir résumé celle qu'ils quittent — d'où l'importance
+   que `selectConv` reste le **point d'entrée unique**, y compris pour les liens
+   d'ack `conv_ref`. S'ajoute `visibilitychange → hidden`, seul moment où l'on
+   sait que l'utilisateur cesse de regarder, et seul qui échappe au throttling
+   des timers d'arrière-plan.
+
+   Vérifié par `.claude/skills/run-miaou/verify-idle-summary.mjs` (backend
+   stubé, résumé/titrage distingués par le prompt système) : le timer
+   tire seul sans aucune interaction, un clic en drawer ne le repousse plus,
+   taper dans le composer le repousse toujours, et les trois autres chemins de
+   déclenchement partent. Le cas où **rien** ne part malgré l'inactivité a son
+   propre script, `verify-idle-summary-stalled.mjs` : une génération bloquée sur
+   un stream qui ne se termine jamais laisse `isGenerating()` vrai, et
+   `summarizeIfNeeded` sort à sa première garde à chaque cycle — c'est le
+   symptôme aval du piège 10 (chien de garde d'inactivité), reproduit ici bout
+   en bout.
 <a id="p6"></a>
 
 6. **Tombstones.** Supprimer un souvenir pose `suppressed: true` **en conservant
@@ -197,6 +229,16 @@ HTML, ou à la synchro multi-onglets.
     tous les consommateurs existants. Seul l'affichage s'en sert
     (`showComposerError`) : sans ce signal, un flux mort serait indiscernable
     d'un arrêt volontaire, et l'utilisateur croirait le modèle fautif.
+
+    **Vérification.** Le risque de ce garde-fou n'est pas qu'il manque son
+    coup, c'est qu'il coupe une génération saine : la borne existe pour la
+    connexion morte, pas pour la lenteur.
+    `.claude/skills/run-miaou/verify-stream-watchdog-nominal.mjs` tient donc le
+    contre-exemple — flux volontairement lent (chunks toutes les 400 ms sur
+    ~4 s) avec le watchdog raccourci à 1 s : chaque chunk le réarme, rien ne
+    doit être interrompu. Le symptôme aval, lui, est couvert par
+    `verify-idle-summary-stalled.mjs` (cf. piège 5), qui reproduit la
+    conversation jamais résumée derrière une génération bloquée.
 <a id="p11"></a>
 
 11. **Recherche historique.** Filtre persistant module-level `convSearchFilter`
@@ -265,6 +307,26 @@ HTML, ou à la synchro multi-onglets.
     **Écart assumé au brief §3** : l'icône est dans l'en-tête du message (au-
     dessus du patienteur), pas littéralement « à côté », pour un seul mécanisme
     de pliage valable en live comme au reload.
+
+    **`delta.content` n'est pas toujours une string.** vLLM et Mistral servent
+    un **tableau de parts**, dont `{type:'thinking', thinking:[{text}]}` porte le
+    raisonnement et `{type:'text', text}` la réponse. Concaténer ce tableau
+    produit « [object Object] » répété avant la vraie réponse, et un curseur
+    clignotant au lieu des mots qui défilent pendant le raisonnement — observé
+    sur `mistral-medium-3.5`. `.claude/skills/run-miaou/verify-vllm-reasoning.mjs`
+    sert la **même** conversation dans les deux formes, vLLM puis Ollama : le
+    chemin historique est le contre-exemple, sans lequel le test passerait sur
+    un parseur qui aurait cassé l'ancienne forme en réparant la nouvelle. Il
+    vérifie en outre ce que les tests QuickJS ne peuvent pas voir — que le
+    raisonnement **défile en direct** (plusieurs états croissants observés
+    pendant le stream, pas seulement l'état final).
+
+    Le **repli** du bloc à l'export a son propre script,
+    `verify-reasoning-collapse.mjs` : cliquer le corps du raisonnement (pas
+    seulement l'en-tête) doit le replier, via l'imbrication
+    `<details><summary>…contenu…</summary></details>` — le même motif que les
+    outils, et la seule façon d'obtenir un repli dans un export **strictement
+    zéro-JS**.
 <a id="p15"></a>
 
 15. **Sélecteur de modèle (composer).** Deux notions **strictement séparées** :
@@ -287,7 +349,13 @@ HTML, ou à la synchro multi-onglets.
     `/models` par session et par serveur**, pas de re-fetch à chaque ouverture du
     dropdown. Lecture de rendu via `_modelsEntryOf(server)` (ne crée pas
     d'entrée, ne ressuscite pas une liste obsolète), création/actualisation via
-    `_modelsEntry(server)`. Le sélecteur est **multi-serveurs**
+    `_modelsEntry(server)`. Vérifié par
+    `.claude/skills/run-miaou/verify-models-cache-key.mjs` : `fetchModels` y est
+    stubé pour répondre **selon la clef d'API**, donc deux serveurs partageant
+    une URL et ne différant que par elle doivent voir chacun leur liste — la
+    clef de cache est l'identité, pas un attribut commode. Le script couvre aussi
+    l'invalidation par `stamp` (éditer une carte : même id, autre clef) et
+    l'absence de refetch en boucle. Le sélecteur est **multi-serveurs**
     (2026-08-21) : il liste les modèles de TOUS les serveurs non désactivés
     (`listSelectableApiServers`, storage.js — prédicat unique `!disabled && url`),
     regroupés par serveur (`.model-group`, en-tête affiché seulement s'il y a

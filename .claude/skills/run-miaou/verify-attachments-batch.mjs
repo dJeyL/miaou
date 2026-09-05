@@ -78,9 +78,13 @@ check('A : chip texte (att-2) tombe sur l\'icône, jamais de vignette (kind !== 
 await shot('01-attachment-chips.png');
 
 // ── B. recall_attachment (lot 3, D4) — appelé directement, sans LLM ──────────
-const recallImage = await page.evaluate(() => {
+const recallImage = await page.evaluate(async () => {
   clearPendingToolAcks();
-  const r = callTool('recall_attachment', { ref: 'att-1' });
+  // `recall_attachment` est un handler ASYNC : sans await, flattenToolResult
+  // aplatit une Promise et rend une chaîne vide — les acks, eux, sont poussés
+  // en synchrone, d'où trois assertions de texte rouges pendant que celles
+  // d'acks restaient vertes. Le décalage accusait l'application à tort.
+  const r = await callTool('recall_attachment', { ref: 'att-1' });
   return { text: flattenToolResult(r), isError: r.isError, acks: getPendingToolAcks() };
 });
 check('B : recall image → pas d\'erreur, texte informatif (pas de base64)',
@@ -104,9 +108,13 @@ check('B : bloc <img> affiché pour l\'image rappelée (lookup par attId, cf. pl
 await page.evaluate(() => document.getElementById('thread').lastElementChild.scrollIntoView());
 await shot('02-recall-attachment-image.png');
 
-const recallText = await page.evaluate(() => {
+const recallText = await page.evaluate(async () => {
   clearPendingToolAcks();
-  const r = callTool('recall_attachment', { ref: 'att-2' });
+  // `recall_attachment` est un handler ASYNC : sans await, flattenToolResult
+  // aplatit une Promise et rend une chaîne vide — les acks, eux, sont poussés
+  // en synchrone, d'où trois assertions de texte rouges pendant que celles
+  // d'acks restaient vertes. Le décalage accusait l'application à tort.
+  const r = await callTool('recall_attachment', { ref: 'att-2' });
   return { text: flattenToolResult(r), isError: r.isError, acks: getPendingToolAcks() };
 });
 check('B : recall texte → contenu en clair retourné (pas de bloc image attendu)',
@@ -114,9 +122,13 @@ check('B : recall texte → contenu en clair retourné (pas de bloc image attend
 check('B : ack attachment_recalled pour le texte aussi (attId=att-2)',
   recallText.acks.length === 1 && recallText.acks[0].attId === 'att-2');
 
-const recallUnknown = await page.evaluate(() => {
+const recallUnknown = await page.evaluate(async () => {
   clearPendingToolAcks();
-  const r = callTool('recall_attachment', { ref: 'att-999' });
+  // `recall_attachment` est un handler ASYNC : sans await, flattenToolResult
+  // aplatit une Promise et rend une chaîne vide — les acks, eux, sont poussés
+  // en synchrone, d'où trois assertions de texte rouges pendant que celles
+  // d'acks restaient vertes. Le décalage accusait l'application à tort.
+  const r = await callTool('recall_attachment', { ref: 'att-999' });
   return { text: flattenToolResult(r), isError: r.isError, acks: getPendingToolAcks() };
 });
 // Même posture que present_resource : message textuel clair, PAS isError

@@ -14,3 +14,20 @@ tmp/
 tmp-*/
 shots-*/
 spike-v45-fixtures/
+
+# Scripts Playwright d'ARTEFACT, par opposition aux non-régressions versionnées
+# du répertoire parent. Y vivent ceux qui ne gardent aucun invariant : les
+# `shot-*` (une capture, zéro assertion) et les `measure-*` (une mesure
+# d'arbitrage, lancée une fois pour trancher un choix). Le préfixe ne suffit
+# pas à décider — `verify-move-bar-width.mjs` est ici parce qu'il MESURE un
+# box-model pour un diagnostic ponctuel, et `shot-agent-busy-glyphs.mjs` aussi
+# malgré ses assertions, parce qu'il ne fait que cadrer ce que
+# `verify-agent-busy-rewrite.mjs` mesure déjà. Le critère est : est-ce que ce
+# script tomberait en rouge si quelqu'un cassait quelque chose ? Si oui, il se
+# versionne et se cite depuis la doc de son domaine.
+#
+# Attention en y ajoutant un script : le chemin du dépôt y est à un niveau de
+# plus qu'au-dessus (`../../../..`, pas `../../..`), et un import local vise le
+# parent (`../seed-fixtures.js`). L'import `playwright`, lui, se résout toujours
+# — Node remonte l'arborescence jusqu'au `node_modules` de la skill.
+untracked/

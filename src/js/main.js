@@ -159,6 +159,13 @@ function registerGeneration(gen) {
   // conversation) et le sélecteur d'espaces + hamburger (agrégats).
   renderConvList();
   syncSpaceUI();
+  // Troisième surface : le bouton « régénérer » du fil AFFICHÉ, masqué tant
+  // qu'un agent du parent travaille (syncLastAssistantActions, ui.js). Le
+  // spawn d'un agent ne passe par aucun des points d'appel existants de cette
+  // synchro (renderThread, finalizeAssistant, setSending) : sans ce rappel, le
+  // bouton resterait offert jusqu'au prochain rendu du fil, c'est-à-dire
+  // précisément pendant la fenêtre qu'on veut fermer.
+  syncLastAssistantActions();
 }
 
 function unregisterGeneration(gen) {
@@ -171,9 +178,41 @@ function unregisterGeneration(gen) {
   // regarde AILLEURS. Le prédicat d'écran est genOwnsScreen, jamais un test
   // réécrit ici — et il est évalué APRÈS le retrait du registre, pour que
   // convBadgeState bascule bien sur 'unread' et pas sur un 'working' résiduel.
-  if (!genOwnsScreen(gen)) markConvUnread(gen.convId);
+  //
+  // RESTREINT AUX RACINES. Une génération d'AGENT n'est par construction jamais
+  // à l'écran (les agents sont exclus de la sidebar, le spawn n'y bascule pas) :
+  // sans ce filtre, chaque agent qui finit se marquait non lu, et RIEN ne
+  // pouvait plus l'effacer — markConvRead n'a qu'un point d'appel,
+  // openConversation, et ouvrir le PARENT ne nettoie rien pour ses enfants. Le
+  // marqueur survivait donc à toute la session, invisible de la liste (filtrée
+  // sur isRootConversation) mais bien présent dans les agrégats, qui ne le sont
+  // pas : pastille allumée sur le hamburger et sur la ligne de l'Espace, sans
+  // rien à déplier qui l'explique. C'est le corollaire du dépliage retourné
+  // contre lui-même (docs/badges.md), et le bug payé en usage réel le
+  // 2026-09-05 (trois agents terminés, tout lu, pastille persistante).
+  //
+  // Rien n'est perdu par cette restriction : la fin d'un agent RÉVEILLE son
+  // parent, qui reprend donc un tour et porte son propre working puis, s'il
+  // finit hors écran, son propre unread. C'est déjà la raison pour laquelle
+  // `unread` n'est pas étendu au parent (docs/badges.md) — cette ligne se
+  // contentait de ne pas en tirer la conséquence côté enfant.
+  // Le record doit EXISTER, pas seulement être une racine : `loadConversation`
+  // rend null pour une conversation supprimée pendant sa génération, et
+  // `isRootConversation(null)` vaut true par construction (une chaîne vide n'est
+  // pas un parent). Sans ce test, une conversation détruite laisserait un non-lu
+  // que plus aucune ouverture ne peut effacer — le même fantôme sous une autre
+  // cause, dans un Set que rien ne purge (même famille que le piège 20).
+  const genConv = loadConversation(gen.convId);
+  if (!genOwnsScreen(gen) && genConv && isRootConversation(genConv)) {
+    markConvUnread(gen.convId);
+  }
   renderConvList();
   syncSpaceUI();
+  // Symétrique du rappel de registerGeneration : le bouton « régénérer » doit
+  // REVENIR quand le dernier agent du parent a fini. Poser la garde sans ce
+  // retour la rendrait permanente pour la session — le prédicat serait juste,
+  // et l'affordance perdue.
+  syncLastAssistantActions();
   // Actions de synchro multi-onglets différées (lot J, réception) : rejouées quand
   // PLUS AUCUNE génération ne tourne. Le drain vivait dans setSending(false)
   // avant T-1a ; il ne pouvait plus y rester, `sending` ne parlant que de
@@ -283,6 +322,22 @@ function convBadgeState(convId, convs) {
 // La source de l'appartenance reste `gen.spaceId` pour une génération en vol
 // (figé au démarrage, T-1) ; pour un parent sans génération propre dont l'enfant
 // travaille, c'est le spaceId du RECORD — ils coïncident par X-a.
+//
+// FILTRE DE RACINE sur la boucle des CONVERSATIONS, jamais sur celle du
+// registre : un agrégat ne doit rien remonter qu'aucune surface de détail ne
+// puisse expliquer. La liste de gauche est filtrée sur `isRootConversation`
+// (renderConvList) ; un agent qui y entrerait par l'agrégat produirait une
+// pastille que le dépliage ne justifie pas — exactement le bug du 2026-09-05.
+// C'est la deuxième garde du même défaut, l'autre étant à la source
+// (unregisterGeneration ne marque plus un agent non lu) : celle-ci tient même
+// si un futur chemin réintroduisait un non-lu d'agent.
+//
+// La boucle du REGISTRE, elle, n'est PAS filtrée, et c'est essentiel : un agent
+// EN VOL doit allumer l'agrégat. Son parent le porte déjà via
+// `hasWorkingAgent`, mais s'appuyer là-dessus rendrait l'agrégat correct pour
+// une raison indirecte — et faux le jour où un agent n'aurait plus de parent
+// visible. Le `working` reste donc adressé par la génération, l'`unread` par la
+// conversation : deux questions, deux sources, la ligne de partage passe ici.
 function spaceBadgeState(spaceId) {
   const states = [];
   const seen = new Set();
@@ -292,6 +347,7 @@ function spaceBadgeState(spaceId) {
   const convs = listAllConversations();
   for (const c of convs) {
     if (c.spaceId !== spaceId || seen.has(c.id)) continue;
+    if (!isRootConversation(c)) continue;
     const st = convBadgeState(c.id, convs);
     if (st) states.push(st);
   }
@@ -306,7 +362,9 @@ function spaceBadgeState(spaceId) {
 //    disponible. Le restreindre à l'ailleurs laisserait muette une conversation
 //    active de l'Espace courant, précisément celle qu'il ne peut pas voir.
 // Aligné sur convBadgeState comme spaceBadgeState (lot X-1, étape 7) : même
-// décision, même motif — cf. le commentaire ci-dessus.
+// décision, même motif — cf. le commentaire ci-dessus. Même ligne de partage
+// aussi pour le filtre de racine : sur la boucle des conversations, jamais sur
+// celle du registre (motif détaillé au-dessus de spaceBadgeState).
 function aggregateBadgeState(excludeSpaceId) {
   const states = [];
   const seen = new Set();
@@ -319,6 +377,7 @@ function aggregateBadgeState(excludeSpaceId) {
   for (const c of convs) {
     if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
     if (seen.has(c.id)) continue;
+    if (!isRootConversation(c)) continue;
     const st = convBadgeState(c.id, convs);
     if (st) states.push(st);
   }
@@ -2949,8 +3008,39 @@ function runGenerationFromCurrentThread() {
 // le contenu COURANT de la skill, et un slug invalide n'altère PAS le thread.
 // Retourne le message d'erreur (slug invalide) pour que l'appelant l'affiche SOUS
 // LA ZONE D'ÉDITION (pas le composer) ; null en cas de succès.
+// Refus commun aux deux réécritures d'historique (édition d'un message passé,
+// régénération de la dernière réponse) quand un agent de CETTE conversation
+// travaille. Un seul prédicat, `hasWorkingAgent` — le même que les gardes de
+// suppression et de déplacement, et que `convBadgeState` : la question « cette
+// conversation a-t-elle un enfant en vol ? » a UNE fonction (piège 18).
+//
+// Le motif n'est pas la concurrence d'écriture — l'agent écrit dans SON thread,
+// pas dans celui du parent (piège 28) — mais la cohérence de ce que l'agent
+// finira par réveiller. Le parent reprend un tour à la fin de son enfant, avec
+// un résultat qui répond au fil TEL QU'IL ÉTAIT au spawn. Tronquer ce fil
+// entre-temps fait atterrir le compte rendu derrière un message qui n'existait
+// pas, ou pire, réécrit après coup : le modèle reçoit la réponse d'une question
+// que l'historique ne pose plus.
+//
+// `sending` ne couvre pas ce cas et ne peut pas le couvrir : c'est un reflet
+// d'ÉCRAN (piège 28). Un parent inerte dont trois agents tournent a
+// `sending === false`, et les deux boutons étaient donc pleinement actifs.
+function agentBusyRewriteRefusal(convId) {
+  if (!hasWorkingAgent(convId)) return null;
+  return 'Un agent de cette conversation travaille : son résultat va revenir ' +
+    'dans ce fil. Attends qu\'il termine, ou interromps-le, avant de réécrire ' +
+    'l\'historique.';
+}
+
 async function editUserMessage(index, newText) {
   if (sending || _sendResolving) return null;   // pas d'édition pendant un stream ni une résolution en vol
+  // Agent en vol sur cette conversation : réécrire l'historique ferait revenir
+  // son compte rendu dans un fil qui n'est plus celui qu'il a reçu. Message
+  // rendu à l'appelant, qui l'affiche SOUS LA ZONE D'ÉDITION comme une erreur
+  // de slug — même canal, l'utilisateur garde son texte et sa bulle ouverte.
+  // C'est ici que le thread est muté : la garde d'UI ne remplace pas celle-ci.
+  const agentRefusal = agentBusyRewriteRefusal(currentConvId);
+  if (agentRefusal) return agentRefusal;
   const t = (newText || '').trim();
   if (!t) return null;
   if (index < 0 || index >= currentThread.length) return null;
@@ -3018,6 +3108,14 @@ async function editUserMessage(index, newText) {
 // (cf. syncLastAssistantActions, ui.js), donc le geste est déjà borné.
 function regenerateResponse() {
   if (!configured || sending) return;
+  // Agent en vol : même motif que dans editUserMessage — tronquer le fil ferait
+  // revenir le compte rendu de l'agent derrière un historique qui n'est plus
+  // celui auquel il répond. Refus SILENCIEUX ici, à dessein : le bouton est
+  // déjà masqué par syncLastAssistantActions dans cet état, donc ce chemin
+  // n'est atteint que par un DOM périmé (même raisonnement que la double
+  // vérification de continueTruncated). Il n'y a personne à qui expliquer quoi
+  // que ce soit — la garde n'est là que pour que le thread ne soit pas muté.
+  if (agentBusyRewriteRefusal(currentConvId)) return;
   if (_confirmPending) dismissConfirmation();   // même geste que sendMessage
   const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
   if (lastUserIdx < 0) return;

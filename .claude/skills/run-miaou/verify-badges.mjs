@@ -134,14 +134,24 @@ const waitGenCount = (n) => page.waitForFunction(
 // est LE contrat entre le JS et le CSS : on la lit, plus une mesure de rendu
 // (scénario 8 vérifie que la classe se traduit bien en pixels).
 const convBadge = (id) => page.evaluate((cid) => {
-  // La ligne ne porte pas d'id : appariement par son titre rendu.
+  // La ligne ne porte pas d'id, mais ses boutons SI : le pin et la corbeille
+  // reçoivent `togglePin('<id>')` / `onConvDel(this,'<id>')` en attribut généré.
+  // On apparie donc sur cette ancre, une IDENTITÉ.
+  //
+  // L'appariement PAR TITRE RENDU qui vivait ici mentait : le stub de titrage
+  // renvoie « Titre stub » pour toute conversation, donc plusieurs lignes
+  // portent le même libellé et la recherche tombait sur une homonyme d'un
+  // AUTRE Espace — elle rendait l'état de celle-là, et ne pouvait plus jamais
+  // répondre 'row-not-found'. Le contrôle « elle n'est PAS dans la liste du
+  // Space courant » en est mort (constaté rouge le 2026-09-05 ; le libellé
+  // n'est de toute façon pas une identité, cf.
+  // project_dom_state_pairing_carry_index_on_node).
   const rows = [...document.querySelectorAll('#conv-list .conv')];
   const conv = loadConversation(cid);
   if (!conv) return 'no-conv';
-  const title = conv.title || 'Nouvelle conversation';
   for (const r of rows) {
-    const t = r.querySelector('.conv-title');
-    if (t && t.textContent === title) {
+    const anchor = r.querySelector(`[onclick*="'${cid}'"]`);
+    if (anchor) {
       const dot = r.querySelector('.activity-dot');
       if (!dot) return 'no-dot';
       if (dot.hidden) return null;
@@ -247,9 +257,12 @@ const convC = await page.evaluate(() => currentConvId);
 await page.evaluate((id) => pickSpace(id), spaces.def);
 await page.waitForTimeout(350);
 check('génération de l\'autre Espace toujours en vol', await page.evaluate((c) => _activeGenerations.has(c), convC) === true);
+// Le seul énoncé qui porte : SA ligne est absente. La branche « la liste est
+// vide » qui vivait ici en alternative ne disait rien — le default Space a ses
+// propres conversations, donc elle était fausse en permanence et le contrôle
+// reposait entièrement sur l'autre, elle-même cassée par l'appariement au titre.
 check('elle n\'est PAS dans la liste du Space courant',
-  await page.evaluate(() => [...document.querySelectorAll('#conv-list .conv')].length) === 0
-  || await convBadge(convC) === 'row-not-found');
+  await convBadge(convC) === 'row-not-found');
 check('sélecteur replié : pastille working (activité ailleurs)', await dotState('#space-select-btn .activity-dot') === 'working');
 check('spaceBadgeState(ESP-X) = working', await page.evaluate((x) => spaceBadgeState(x), spaces.x) === 'working');
 check('spaceBadgeState(default) = null (rien chez lui)',

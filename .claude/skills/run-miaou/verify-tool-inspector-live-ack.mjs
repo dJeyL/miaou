@@ -41,13 +41,27 @@ const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
-// Backend : premier appel → un tool_call MCP ; second → la réponse finale.
-let turn = 0;
+// Backend : le tour de l'utilisateur → un tool_call MCP ; le suivant → la
+// réponse finale.
+//
+// Brancher sur le CONTENU de la requête, jamais sur un compteur d'appels :
+// l'application émet plusieurs requêtes propres avant celle-ci (titrage,
+// résumé…), si bien qu'au moment du send le compteur avait déjà dépassé 1 et
+// que le tour d'outil n'était jamais servi. Le symptôme était muet — un
+// timeout sur `__mcpCalled` sans une seule assertion rouge, parce que le code
+// mesuré n'était jamais atteint.
 await page.route('**/chat/completions', async (route) => {
-  turn++;
+  const payload = JSON.parse(route.request().postData() || '{}');
+  const msgs = payload.messages || [];
+  const asked = msgs.some(m => m.role === 'user' &&
+    String(typeof m.content === 'string' ? m.content : JSON.stringify(m.content))
+      .indexOf('berger australien') >= 0);
+  // Une fois l'outil exécuté, la conversation porte un message role:'tool' :
+  // c'est le signal du second tour (la réponse finale).
+  const toolDone = msgs.some(m => m.role === 'tool');
   const sse = (obj) => 'data: ' + JSON.stringify(obj) + '\n\n';
   let body;
-  if (turn === 1) {
+  if (asked && !toolDone) {
     body = sse({ choices: [{ delta: { role: 'assistant', content: 'Je cherche.' } }] })
       + sse({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function',
           function: { name: 'brave__brave_image_search', arguments: '' } }] } }] })

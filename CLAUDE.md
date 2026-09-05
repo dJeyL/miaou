@@ -88,6 +88,17 @@ pointer la constante source, ne jamais la recopier. Même réflexe pour un compt
 posé loin de ce qu'il compte (« les quatre marqueurs », deux paragraphes plus
 bas) : nommer plutôt que compter.
 
+**La règle vaut aussi dans les scripts de vérification** (`.claude/skills/
+run-miaou/*.mjs`), et c'est là qu'elle est le moins surveillée : aucun grep ne
+les vise, et un compte y a la forme d'une assertion, donc il *semble* vérifié.
+Rejeu complet de la suite le 2026-09-05 : cinq scripts rouges sur ce seul motif
+(`=== 5` pour « 2 skills seedées + 3 système » alors qu'il y en a cinq,
+`count === 3` pour le namespace `resource__` que `resource__append` avait porté
+à quatre). Ne pas ré-incrémenter le nombre — il repérime au prochain ajout.
+Le lire depuis la source vivante (`Object.keys(SYSTEM_SKILLS_CONTENT).length`),
+ou remplacer le cardinal par l'**ensemble des noms attendus**, qui a l'avantage
+de dire *lequel* manque quand il tombe : un compte nu ne le dit pas.
+
 Piège payé le 2026-08-29 : « Trois façons de l'alimenter » pour la bibliothèque
 d'Espace, périmé depuis que le modèle peut y déposer un fichier qu'il vient de
 produire (une quatrième). `help.md` disait bien « quatre », le README était resté
@@ -449,14 +460,19 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/badges.md`** — badges d'activité (lot T-2) : deux états (working
   pulsant / unread statique), prédicat unique `convBadgeState`, agrégation
   cross-Space assumée, quatre surfaces et leurs points de synchronisation,
-  volatilité du non-lu.
+  volatilité du non-lu et sa portée (racines seulement : marquer suppose
+  pouvoir effacer, et un agrégat ne remonte rien que le détail ne puisse
+  expliquer).
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
   modèle, prédicat de racine `isRootConversation` et les sept exclusions,
   outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
   parent accroché au `finally`, extension et alignement des badges, lecture
   seule d'un agent terminé (`isFinishedAgentConv`) et interjections reçues
   pendant son travail (X-1f) ; prédicat de libellé `convLabel`, qui rend
-  `{text, provisional}` depuis le lot AA (`title` > `agentIntent` > `snippet`).
+  `{text, provisional}` depuis le lot AA (`title` > `agentIntent` > `snippet`) ;
+  gardes de cycle de vie sur `hasWorkingAgent` — suppression, déplacement, et
+  réécriture d'historique (édition/régénération refusées tant qu'un enfant
+  tourne, `agentBusyRewriteRefusal`, glyphes grisés par `body.agent-busy`).
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

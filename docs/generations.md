@@ -104,6 +104,17 @@ Depuis T-1a, `sending` répond à « la conversation **affichée** génère-t-el
 question pour ses call-sites (composer, bouton stop, gardes d'édition), qui
 concernent tous la conv affichée.
 
+**Bonne question ne veut pas dire question suffisante.** Les gardes d'édition en
+sont l'exemple : `sending` y empêche bien de réécrire le fil pendant qu'il
+streame **sous les yeux**, mais un parent inerte dont des agents travaillent a
+`sending === false` — et réécrire son historique fait atterrir le compte rendu
+de l'agent derrière un fil qui ne pose plus la question à laquelle il répond.
+`editUserMessage` et `regenerateResponse` cumulent donc `sending` **et**
+`hasWorkingAgent` : deux questions distinctes, deux prédicats, aucun des deux ne
+subsumant l'autre (cf. `docs/agents.md`, « Réécriture d'historique »). Le
+réflexe à garder quand on lit un `if (sending)` : demander si le geste gardé est
+sensible à une génération que l'écran ne montre PAS.
+
 **Ne pas en faire un compteur global** (« une génération tourne quelque part ») :
 l'affordance globale est portée depuis T-2 par les pastilles d'activité, qui
 dérivent du **registre** (`convBadgeState` / `aggregateBadgeState`, cf.

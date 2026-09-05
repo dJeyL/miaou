@@ -31,7 +31,12 @@ await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.click('button[onclick="openSettings()"]');
 await page.waitForSelector('#drawer.show', { timeout: 5000 });
 await page.waitForTimeout(300);   // let the translateX(100%) -> none transition settle
-await page.locator('#set-confirm-skill-autouse').scrollIntoViewIfNeeded();
+// Dernier check-row du drawer : y scroller prouve que toute la colonne de
+// réglages s'est dépliée (c'est l'imbrication manuelle check-row/label-col qui
+// casse silencieusement, sans erreur console). L'ancienne cible
+// #set-confirm-skill-autouse a disparu du drawer — la confirmation est
+// désormais réglée par skill, dans le drawer Skills.
+await page.locator('#set-describe-files').scrollIntoViewIfNeeded();
 
 await page.screenshot({ path: outPath });
 await browser.close();

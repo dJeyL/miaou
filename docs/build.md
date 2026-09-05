@@ -165,6 +165,15 @@ prédicat non appliqué à toutes ses sources.
 que d'en recopier les noms, et refuse aussi bien un jeton orphelin dans
 `help.md` qu'une entrée de table jamais employée.
 
+Ce contrôle est **statique** : il apparie des noms, sans jamais exécuter la
+substitution. `.claude/skills/run-miaou/verify-help-placeholders.mjs` éprouve
+l'autre moitié, dans la page buildée — la chaîne `config.json` → constante →
+valeur substituée. Il vérifie qu'aucun jeton ne survit dans l'aide servie, que
+les valeurs rendues sont bien celles des constantes **vivantes** du build (et
+non des littéraux recopiés), et que `about_search` voit la même substitution
+qu'`about` — le partage de source décrit ci-dessus, asserté plutôt que
+seulement énoncé.
+
 ### Libellés de section et `{{TOPIC_LIST}}`
 
 Un titre de section peut porter un libellé lisible après un tiret cadratin :

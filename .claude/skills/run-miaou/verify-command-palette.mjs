@@ -297,10 +297,12 @@ await page.keyboard.press('Enter');   // sous-mode skill
 await page.waitForTimeout(120);
 const skillLabels = await page.evaluate(() =>
   Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label')).map(e => e.textContent));
-// 2 skills seedées (`revue`, `cr`) + les 3 skills SYSTÈME upsertées au
+// 2 skills seedées (`revue`, `cr`) + les skills SYSTÈME upsertées au
 // démarrage (ensureSystemSkills) : la palette liste les skills invocables,
-// système comprises.
-check('sous-mode skill : 2 seedées + 3 système listées', skillLabels.length === 5);
+// système comprises. Compte LU depuis SYSTEM_SKILLS_CONTENT, jamais en dur.
+const sysSkillCount = await page.evaluate(() => Object.keys(SYSTEM_SKILLS_CONTENT).length);
+check(`sous-mode skill : 2 seedées + ${sysSkillCount} système listées`,
+  skillLabels.length === 2 + sysSkillCount);
 await shot('05-submode-skill.png');
 await page.fill('#cmdk-input', 'revue');
 await page.waitForTimeout(120);

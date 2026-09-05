@@ -38,7 +38,8 @@ Figtree/Fira Code).
   autonome, qui travaille en parallèle avec les seuls outils et fichiers qu'il
   lui délègue, et dont le résultat lui revient dans le fil — replié, et non
   modifiable. Le fil d'un agent passe en lecture seule une fois son travail
-  rendu — cf. [docs/agents.md](docs/agents.md).
+  rendu, et l'historique de la conversation qui l'a lancé ne peut pas être
+  réécrit tant qu'il travaille — cf. [docs/agents.md](docs/agents.md).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
   alimenté en direct.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et

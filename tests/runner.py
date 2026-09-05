@@ -41,6 +41,13 @@ var document = {
   querySelector:       function() { return _fakeEl(); },
   querySelectorAll:    function() { return []; },
   addEventListener:    function() {},
+  // `body` : registerGeneration/unregisterGeneration appellent
+  // syncLastAssistantActions, qui bascule la classe `agent-busy` sur le body
+  // (glyphes de réécriture grisés tant qu'un agent travaille). Les tests
+  // d'agent__spawn passent par ce cycle de vie, donc l'atteignent. Même
+  // motif que `insertBefore` plus bas : le stub grandit quand un chemin
+  // légitime l'atteint, il n'anticipe pas.
+  body: _fakeEl(),
 };
 
 function _fakeEl() {

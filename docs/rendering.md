@@ -318,6 +318,14 @@ règle partagée, sans `max-height` (feuille figée, cf. `docs/exports.md`).
   `diagramImageName` — les seuls helpers purs. Le rendu, le toggle, le thème, l'iframe, la lightbox et le
   canvas PNG sont du **territoire manuel** : `docs/manual-tests.md` tests 71
   à 84.
+- Playwright : `.claude/skills/run-miaou/verify-thread-code-maxh.mjs` mesure la
+  borne au **runtime**, à plusieurs viewports — c'est la seule façon de la
+  vérifier, puisqu'elle est un `calc()` dépendant de la hauteur de fenêtre et
+  non une valeur qu'on puisse lire dans la feuille. Il asserte les deux moitiés
+  de la règle ensemble : le contenu long défile **dans** sa boîte, et
+  `.code-head` reste visible — c'est le point que porterait à faux une borne
+  posée sur le `<pre>`, et qu'une assertion sur la seule hauteur ne verrait pas.
+  L'inspecteur garde sa propre borne (300px), vérifiée du même coup.
 - Fixtures : `.claude/skills/run-miaou/seed-fixtures.js` seed-23 (bloc mermaid valide avec
   `filename=flux-oauth.mmd` — exercice du nommage d'export E3 — + bloc
   invalide + bloc bash de contrôle) et seed-24 (page HTML avec script sondant

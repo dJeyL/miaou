@@ -514,6 +514,36 @@ body.conv-readonly .msg-continue {
   pointer-events: none;
   opacity: 0.4;
 }
+/* Agent en vol sur la conversation affichée : les deux glyphes qui RÉÉCRIVENT
+   l'historique sont grisés et refusent le geste au survol. `.msg-continue`
+   n'en fait volontairement pas partie — il raccorde une réponse coupée sans
+   tronquer le fil, donc le compte rendu de l'agent atterrira derrière un
+   historique intact (décision de lot, cf. docs/agents.md).
+
+   Deux différences ASSUMÉES avec `.conv-readonly` juste au-dessus, et elles
+   vont ensemble :
+   - `pointer-events` reste ACTIF. Le couper, comme le fait le readonly,
+     empêcherait `cursor: not-allowed` de s'afficher et le `title` de paraître
+     — or c'est précisément ce qu'on veut ici : dire pourquoi, pas seulement
+     interdire. Le clic est neutralisé côté JS (enterEditMode,
+     regenerateResponse), et de toute façon la seule garde qui protège le
+     thread vit dans main.js.
+   - opacité 0.5 plutôt que 0.4. Ces boutons sont déjà à `opacity: 0` hors
+     survol de leur bulle ; le readonly vise un fil définitivement clos, tandis
+     que cet état est TRANSITOIRE et se lèvera tout seul. Un peu moins effacé
+     dit « pas maintenant » plutôt que « plus jamais ». */
+body.agent-busy .msg-edit,
+body.agent-busy .msg-regen {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Le survol ne doit pas rallumer la couleur d'accent (`.msg-edit:hover`) ni le
+   fond (`.msg-regen:hover`, chat.css) : sans ces deux annulations le bouton
+   grisé réagirait comme un bouton vivant, ce qui contredirait le curseur.
+   Sélecteurs à spécificité supérieure (body + classe), donc ils gagnent sans
+   `!important` — CSS_ORDER place de plus composer.css après chat.css. */
+body.agent-busy .msg-edit:hover { color: var(--text-3); }
+body.agent-busy .msg-regen:hover { color: var(--text-3); background: none; }
 /* .conv-retitle-btn : règle SÉPARÉE, et sans `opacity: 0.4`. Contrairement aux
    trois boutons ci-dessus (opacité 0 hors survol de LEUR bulle, que 0.4 grise
    correctement au survol), celui-ci est à `opacity: 0` EN PERMANENCE et ne

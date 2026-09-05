@@ -216,8 +216,12 @@ check('E : conversations et résumés sous idb, plus sous localStorage', !!paylo
   Array.isArray(payload.idb.conversations) && Array.isArray(payload.idb.summaries) &&
   !('miaou-conversations' in payload.localStorage) && !('miaou-summaries' in payload.localStorage));
 check('E : conversations exportées au complet', !!payload && payload.idb.conversations.length === CONV_COUNT_TOTAL);
-// 2 skills seedées + 3 skills système (ensureSystemSkills au démarrage)
-check('E : skills IDB embarquées (2 seedées + 3 système)', !!payload && payload.idb.skills.length === 5);
+// 2 skills seedées + les skills système (ensureSystemSkills au démarrage).
+// Compte LU depuis SYSTEM_SKILLS_CONTENT : en dur il périme au premier
+// fichier ajouté dans src/system-skills/.
+const sysSkillCount = await page.evaluate(() => Object.keys(SYSTEM_SKILLS_CONTENT).length);
+check(`E : skills IDB embarquées (2 seedées + ${sysSkillCount} système)`,
+  !!payload && payload.idb.skills.length === 2 + sysSkillCount);
 
 // import invalide : erreur inline, pas de récapitulatif
 await page.setInputFiles('#import-data-input', {

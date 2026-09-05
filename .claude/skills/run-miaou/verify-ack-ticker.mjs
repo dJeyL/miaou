@@ -97,7 +97,12 @@ await shot('02-compact-4acks.png');
 // (état muté tout de suite au clic, animation simultanée des deux panneaux
 // ~220ms — animateGroupPanelSwap).
 await page.click('.ack-badge');
-await page.waitForTimeout(300);
+// animateGroupPanelSwap ne pose `hidden` sur le panneau sortant qu'à la FIN de
+// la transition (~220ms) : un délai fixe de 300ms est une course, gagnée sur
+// une machine et perdue sur une autre — surpris ici avec le slot encore à
+// opacity 0.00012, donc ni visible ni `hidden`. On attend l'état terminal.
+await page.waitForFunction(() =>
+  document.querySelector('.ack-slot').hidden === true, null, { timeout: 5000 });
 s = await page.evaluate(() => ({
   mode: document.querySelector('.ack-group').dataset.mode,
   listVisible: !document.querySelector('.ack-list').hidden,
@@ -123,7 +128,9 @@ check('liste : un chevron déplié ouvre SEULEMENT son propre détail', await pa
 
 // Retour compact : le slot montre à nouveau le dernier ack, liste repliée
 await page.click('.ack-badge');
-await page.waitForTimeout(300);
+// Même course au retour, dans l'autre sens : c'est la liste qui devient `hidden`.
+await page.waitForFunction(() =>
+  document.querySelector('.ack-list').hidden === true, null, { timeout: 5000 });
 s = await page.evaluate(() => ({
   mode: document.querySelector('.ack-group').dataset.mode,
   slotVisible: !document.querySelector('.ack-slot').hidden,

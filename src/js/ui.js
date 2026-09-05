@@ -2681,6 +2681,16 @@ function renderThread(msgs) {
 // disparaître le texte qui l'accompagne dans la même bulle. Appelé en fin de
 // renderThread, dans finalizeAssistant et dans setSending : trois points où
 // l'ensemble des bulles ou l'état sending peuvent changer.
+// Un agent de cette conversation en vol masque AUSSI « régénérer » : sa fin
+// pousse un compte rendu dans ce fil, et tronquer entre-temps le ferait
+// atterrir derrière un historique qui n'est plus celui auquel il répond. Le
+// prédicat est `hasWorkingAgent` (agents.js), le même que les gardes de
+// suppression, de déplacement et de badge — jamais un balayage réécrit.
+//
+// `sending` ne suffit pas et ne peut pas suffire : c'est un reflet d'ÉCRAN
+// (piège 28). Un parent inerte dont un agent travaille a `sending === false`,
+// donc le bouton restait offert. La garde de mutation vit dans main.js
+// (regenerateResponse) ; celle-ci ne protège que le clic.
 function syncLastAssistantActions() {
   const bubbles = Array.from($('thread').querySelectorAll('.msg.assistant'));
   const last = bubbles[bubbles.length - 1];
@@ -2689,6 +2699,41 @@ function syncLastAssistantActions() {
     if (regenBtn) regenBtn.hidden = sending || b !== last;
     const continueBtn = b.querySelector('.msg-continue');
     if (continueBtn) continueBtn.disabled = sending || b !== last;
+  }
+  syncAgentBusyAffordances();
+}
+
+// Les deux glyphes de réécriture d'historique (crayon d'édition, régénération)
+// GRISÉS tant qu'un agent de la conversation affichée travaille, curseur
+// « interdit » au survol. Portés par une classe sur `body` plutôt que bulle par
+// bulle : le nombre de bulles change à chaque tour, la condition non — et la
+// même classe couvre du même coup les bulles créées PENDANT que la garde tient.
+//
+// Grisé, PAS masqué. Un bouton qui disparaît puis revient se lit comme un bug
+// d'affichage ; grisé avec un `title` qui donne la raison, l'état est lisible
+// et le geste reste découvrable. C'est le traitement déjà retenu pour la case
+// de déplacement d'une conversation dont un agent tourne (convItemEl) — même
+// situation, même vocabulaire.
+//
+// `pointer-events` reste ACTIF, contrairement à `body.conv-readonly` : le
+// couper empêcherait `cursor: not-allowed` de s'afficher et le `title` de
+// paraître. Le clic est neutralisé côté JS (enterEditMode, regenerateResponse),
+// où vit de toute façon la seule garde qui protège le thread.
+function syncAgentBusyAffordances() {
+  const busy = hasWorkingAgent(currentConvId);
+  document.body.classList.toggle('agent-busy', busy);
+  const hint = busy
+    ? 'Un agent de cette conversation travaille : l\'historique ne peut pas être réécrit pour l\'instant.'
+    : '';
+  for (const btn of document.querySelectorAll('#thread .msg-edit')) {
+    if (busy) btn.title = hint; else btn.title = 'Éditer';
+  }
+  // Libellés de repos recopiés des points de construction (buildMsg, ui.js) :
+  // « Éditer » et « Régénérer la réponse ». Les réécrire de mémoire changerait
+  // l'infobulle en silence — c'est arrivé ici même, « Régénérer » au lieu de
+  // « Régénérer la réponse », rattrapé en relisant la source.
+  for (const btn of document.querySelectorAll('#thread .msg-regen')) {
+    if (busy) btn.title = hint; else btn.title = 'Régénérer la réponse';
   }
 }
 
@@ -2919,6 +2964,14 @@ function onEditMsg(btn) {
 
 function enterEditMode(wrap) {
   if (sending) return;
+  // Agent en vol sur cette conversation : ouvrir la zone d'édition promettrait
+  // une réécriture que editUserMessage refusera de toute façon (main.js). Le
+  // bouton crayon, lui, n'est pas masqué : il est rendu UNE FOIS à la
+  // construction de la bulle et n'a pas de passe de synchro par état — le
+  // masquer demanderait d'en créer une, et il faudrait la rappeler au spawn
+  // comme à la fin de chaque agent. Garder au clic est ici le geste juste, et
+  // c'est déjà exactement ce que `sending` fait juste au-dessus.
+  if (hasWorkingAgent(currentConvId)) return;
   const index = msgIndex(wrap);
   if (index < 0) return;
   // Source UNIQUE du texte éditable et de la bulle restaurée : displayText (littéral

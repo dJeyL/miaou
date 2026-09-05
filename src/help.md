@@ -423,13 +423,23 @@ bien elle qui travaille, à travers lui. Le compteur d'agents en haut à droite
 le compte aussi (voir le sujet `multitache`). Quand il a fini, son résultat
 apparaît dans le fil comme un message, et le modèle repart de là.
 
+**Pendant qu'un agent travaille, tu ne peux pas réécrire l'historique de la
+conversation** : le crayon d'édition de tes messages et le bouton qui régénère
+la dernière réponse sont grisés, et le curseur te le dit au survol. La raison
+est que l'agent va revenir déposer son compte rendu dans ce fil, en réponse à
+ce qu'il contenait quand il est parti — le tronquer entre-temps ferait atterrir
+sa réponse derrière une question qui n'existe plus. Tu gardes la lecture, le
+défilement, la copie, et tu peux continuer à écrire normalement : c'est
+seulement la réécriture du passé qui attend. Dès que le dernier agent a fini,
+ces boutons redeviennent actifs.
+
 Ce message-là arrive **replié** : tu vois la tâche qui avait été confiée et
 l'état dans lequel l'agent s'est arrêté, et tu déplies d'un clic si tu veux lire
 le compte rendu entier. Un rapport d'agent est souvent long, et il tombe au
 milieu de votre échange — le laisser déplié noierait la conversation. Il n'est
-pas modifiable, contrairement à tes propres messages : c'est le compte rendu
-d'un travail qui a réellement eu lieu, le réécrire le ferait diverger de ce que
-l'agent a produit. Tu peux le copier, et ouvrir le fil de l'agent pour voir le
+pas modifiable **du tout** — et cette fois définitivement, là où le blocage
+décrit plus haut se lève tout seul : c'est le compte rendu d'un travail qui a
+réellement eu lieu, le réécrire le ferait diverger de ce que l'agent a produit. Tu peux le copier, et ouvrir le fil de l'agent pour voir le
 détail.
 
 **Ouvrir un agent.** Le libellé de la ligne est cliquable : il ouvre le fil de

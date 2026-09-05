@@ -133,6 +133,21 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   mark it, and `rm` it when done. The scratchpad is only for files that do
   **not** import from this `node_modules` (data, HTML, notes). This has
   been the single most-repeated mistake driving this skill.
+
+  **One sub-directory is allowed and ignored: `untracked/`.** It holds the
+  artefact scripts — the `shot-*` captures and the `measure-*` one-off
+  arbitrations — as opposed to the non-regressions that live at this level, are
+  versioned, and are cited from their domain doc. The sorting question is not
+  the prefix but: *would this script go red if someone broke something?* If yes
+  it belongs up here; if it only produces something to look at, it goes in
+  `untracked/`. Two scripts show the prefix is not the criterion:
+  `verify-move-bar-width.mjs` is down there (it measures a box model for a
+  one-off diagnosis), and `shot-agent-busy-glyphs.mjs` too despite carrying
+  assertions, because it only frames what `verify-agent-busy-rewrite.mjs`
+  already measures. `import ... from 'playwright'` still resolves from there
+  (Node walks up to this folder's `node_modules`), but **two paths shift by one
+  level**: the repo root is `../../../..` and a local import is
+  `../seed-fixtures.js`.
 - **`npx playwright install chromium` prints nothing on success.** Don't
   mistake silence for failure — verify with
   `node -e "console.log(require('playwright').chromium.executablePath())"`
@@ -142,6 +157,18 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   catches it mid-transition (drawer rendered, but pushed off-screen so
   only a sliver shows). Add a short `waitForTimeout` after the selector
   resolves, before the screenshot.
+- **A transition breaks assertions too, not only screenshots** — and there the
+  fixed delay is a race rather than a blur. `animateGroupPanelSwap` only sets
+  `hidden` on the outgoing ack panel when its transition ends (~220ms), so a
+  `waitForTimeout(300)` followed by `check(list.hidden === false && slot.hidden
+  === true)` passes or fails depending on the machine. Caught here with the slot
+  at `opacity: 0.000121` — **neither visible nor `hidden`**, a state no
+  assertion was written for, and one that instrumentation printed while a
+  separate debug read of the same element (evaluated a few lines later in the
+  same `page.evaluate`) already showed the settled values. Wait for the terminal
+  state itself: `page.waitForFunction(() => document.querySelector('.ack-slot')
+  .hidden === true)`. Then re-run the script two or three times — a race fixed
+  by luck and a race fixed properly look identical on a single green run.
 - **`config.json` (if present) gets embedded in `dist/miaou.html`,**
   including local backend URL/model — visible in a screenshot's
   "URL DE L'API" field. Harmless for local dev screenshots, but never
@@ -229,10 +256,29 @@ measurement agrees, the question is not "where did I frame?" but "what is painte
 on top?"** — and one `fullPage` screenshot answers it immediately, where another
 round of clip arithmetic cannot.
 
+The symmetric case: **hover-revealed controls photograph as nothing.** The
+message action glyphs (`.msg-edit`, `.msg-regen`, `.msg-copy-user`) live at
+`opacity: 0` and only rise when their own bubble is hovered. A screenshot taken
+to show one of them — greyed out, say — shows an empty gutter, and this time
+nothing is painted on top: the pixels are genuinely absent while every measure
+is right. Hover the **bubble** first, then the button itself if its `:hover`
+rules are part of what is being shown, with a short settle for the opacity
+transition:
+
+```js
+await page.hover('#thread .msg.user');           // reveals the action row
+await page.hover('#thread .msg.user .msg-edit'); // triggers the button's own :hover
+await page.waitForTimeout(250);
+```
+
+Then clip around the element rather than shooting full-page — two 14px glyphs
+are invisible in 820px of height. Worth stating because the reflex when a
+capture looks empty is to widen the frame, which here makes it strictly worse.
+
 ## Writing assertions in a verify script
 
-A verify is only worth its runtime if each assertion can *fail*. Two ways a
-green proves nothing:
+A verify is only worth its runtime if each assertion can *fail*. Ways a green
+proves nothing — the list grows, so it is deliberately not counted here:
 
 - **An assertion that accepts more than one outcome.** Real case (lot T-2bis):
   `check('le compteur suit le registre', pill === null || pill === '1 agent')`
@@ -296,11 +342,52 @@ counter two numbers higher, which surfaced a latent flaw that had been sitting
 in the script since it was written. A new check that makes an old one flaky is
 usually revealing it, not breaking it.
 
+A fourth way, specific to asserting that a control is **absent, hidden or
+disabled**: **counting nodes measures the markup, not what the user can act
+on.** MIAOU hides rather than removes — `applyActivityBadge` sets `hidden` and
+leaves the node in place, `activityBadgeEl` creates one per row even at state
+`null`, the hamburger and space selector carry theirs permanently, and the edit
+/ regenerate glyphs sit at `opacity: 0` until their bubble is hovered. So
+`querySelectorAll('.activity-dot').length === 0` is green on a page covered in
+badges. Paid on 2026-09-05: three assertions green by construction, including
+the one meant to count the conversation list's badges.
+
+Ask the DOM what is *visible*, and read greying off the **computed style**, not
+off the class:
+
+```js
+const visible = [...document.querySelectorAll(sel)]
+  .filter(el => !el.hidden && el.offsetParent !== null).length;
+const cs = getComputedStyle(btn);   // opacity, cursor — not classList.contains
+```
+
+Asserting `classList.contains('agent-busy')` only proves the JS ran; it says
+nothing about whether the cascade followed, which is the half that actually
+breaks (a more specific rule elsewhere silently wins). Assert both when the
+class is itself the contract, but never the class alone.
+
 So: **challenge each green by injecting the regression it is supposed to
 catch** (edit the source, rebuild, re-run, confirm it goes red, revert). This
 is how both blind spots above were found. It complements — and does not replace
 — running the verify against the pre-change code (a script green from the very
 first run is a signal to re-play, not a licence to skip it).
+
+**Rebuild on the way back too.** The revert is the half that gets skipped: the
+app under test is `dist/miaou.html`, so restoring `src/` without re-running
+`python3 build.py` leaves the *previous* regression live in the bundle. Every
+subsequent run then measures code you believe you have restored. Paid on
+2026-09-05 — a `cp` of a backup with no rebuild, then four diagnostic probes
+spent accusing correct application code of not repainting, because the bundle
+still held the mutilated version. The tell is specific and worth recognising:
+**a probe calling the function directly succeeds while the same call through
+its normal caller does nothing.** That shape means the two are not the same
+code — i.e. a stale artefact — and no amount of reading the source will show
+it. Script the cycle so the rebuild cannot be forgotten:
+
+```bash
+reg() { python3 build.py >/dev/null; node .claude/skills/run-miaou/<verify>.mjs …; \
+        cp /tmp/<file>.bak src/js/<file>.js; }   # then one final build.py
+```
 
 Assertions accumulate into a `failures` array via a `check(label, cond)` helper
 so one run reports every problem, rather than aborting on the first.
@@ -362,6 +449,27 @@ before touching the app:
   and the control assertion must be phrased as a control ("témoin : le serveur
   sain reste vert"), so a red on that line reads as "the fixture lost its
   control" rather than "the code regressed".
+
+- **A stub keyed on a call counter serves the wrong turn.** `if (turn === 1)`
+  and `if (phase === 0)` read as "the user's turn", but the application
+  legitimately issues several requests of its own before it — titling,
+  summarising — so by the time `send()` fires the counter has already passed the
+  branch that mattered. Measured here: `__stubPhase` was at **4**. The gated
+  tool-calling turn is then never served, the generation ends immediately, and
+  everything downstream reports the truth about a scenario that never happened.
+  Branch on the **content of the request** instead: the user's text for the
+  first turn, `msgs.some(m => m.role === 'tool')` for the one after the tool
+  ran. This is the same failure as the non-discriminating stub below, on a
+  different axis — that one fails to discriminate *between servers*, this one
+  discriminates on *ordering*, which is not a property the rig controls.
+
+  Worth recognising because it lies in two opposite ways. In
+  `verify-tool-inspector-live-ack.mjs` it hung: a timeout on `__mcpCalled` with
+  no red assertion. In `verify-interjections.mjs` it went loudly red on three
+  checks that accused the app of queueing nothing — a faithful description of
+  what the rig had produced, since `sending` had already fallen back to false
+  and the interjection went out as an ordinary message. Both were fixed by the
+  same one-line change of branching key.
 
 - **A protocol stub must serve the handshake, not only the call.** Replacing
   `mcpRpc` wholesale to suspend a tool call (to hold open the window where an
@@ -462,6 +570,52 @@ Practical form: at the end of a lot, before committing, run every verify whose
 domain the diff touches. A failure there is not noise to be silenced — decide
 case by case whether it is a genuine regression (fix the code) or a legitimately
 changed premise (fix the script, and say so in the commit).
+
+## Replaying the whole suite: scripts rot, and they rot in four ways
+
+The rules above are about the script being written now. This one is about the
+parc: 85 scripts replayed in one sitting (2026-09-05) produced **16 reds, and
+not one application bug**. `src/` came out of that session untouched. A verify
+that was correct when written decays as the code it watches moves on, and the
+decay is not random — four causes account for the lot (the script counts below
+overlap: two scripts carried two causes each):
+
+- **Stale closed enumerations** (5 scripts). `=== 5` for "2 seeded + 3 system
+  skills" when there are now five system skills; `count === 3` for the
+  `resource__` namespace when `resource__append` made it four. This is the
+  project's closed-enumeration rule (`CLAUDE.md`) striking inside the test
+  scripts, where **no grep watches**: `run_help_enumerations_check` covers
+  `help.md`, nothing covers `.mjs`. Do not re-bump the number — it will expire
+  again at the next addition. Read it from the live source
+  (`Object.keys(SYSTEM_SKILLS_CONTENT).length`), or drop the cardinal for the
+  expected **set of names**, which also says *which* one is missing when it
+  fails. A bare count cannot.
+- **Stubs keyed on ordering rather than content** (2 scripts) — see the rig
+  section above.
+- **Contracts that moved** (4 scripts). A handler became `async`, so
+  `flattenToolResult(r)` flattened a Promise into `''` while the
+  synchronously-pushed acks kept passing — three red text assertions beside
+  green ack assertions, which is the tell. A settings toggle the smoke test
+  scrolled to no longer exists. A doctrine string stopped mentioning the token
+  being searched for. One script resolved the bundle through `process.cwd()`,
+  so it only ran from the repo root.
+- **Timing races** (2 scripts) — see the transition gotcha above.
+
+**How to read a red, in this order.** A verify's red is a claim about the app,
+and it is wrong more often than it is right. Before touching `src/`: (1) is the
+assertion's premise still true — grep the wording, the id, the field it names;
+(2) does a green assertion right beside it contradict the red one (acks green /
+text red = the rig, not the app); (3) does the app do the right thing when
+called directly in a probe (if yes and it fails through its normal caller, cf.
+the stale-artefact rule); (4) only then, the pre-change replay
+(`git worktree add /tmp/<name> HEAD --detach`), which settles it definitively.
+
+**Corollary on maintenance.** A repaired verify is worth more than a deleted
+one, but a *silenced* one is worth less than nothing. When a premise has
+genuinely changed, fix the assertion **and say what replaced it** in a comment —
+`verify-brief-h-batch.mjs` now asserts "prefer native over server" where it used
+to assert `content_b64`, and the comment records why the old token vanished.
+Without that line the next reader restores the old assertion.
 
 ## Troubleshooting
 

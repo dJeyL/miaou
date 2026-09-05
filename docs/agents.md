@@ -655,6 +655,70 @@ Trois points d'UI :
 pendant que le mode sélection est ouvert (fenêtre de réentrance X-a, même famille
 que `project_await_reentrancy_guard`).
 
+### Réécriture d'historique : refusée tant qu'un enfant tourne
+
+Deux gestes réécrivent le fil du parent — éditer un message utilisateur passé
+(`editUserMessage`) et régénérer la dernière réponse (`regenerateResponse`).
+Les deux **tronquent** le thread puis relancent une génération. Refusés tant
+qu'un agent de cette conversation est en vol.
+
+**Le motif n'est pas la concurrence d'écriture.** Un agent écrit dans SON
+thread, jamais dans celui de son parent (piège 28) : rien ne se corromprait.
+C'est la cohérence de ce que l'agent va **réveiller**. Le parent reprend un tour
+à la fin de son enfant, avec un compte rendu qui répond au fil **tel qu'il était
+au spawn** ; tronquer entre-temps fait atterrir ce compte rendu derrière un
+historique qui ne pose plus la question à laquelle il répond. Même famille que
+le refus de déplacement ci-dessus : on supprime la fenêtre plutôt que de la
+garder sous une garde subtile.
+
+**`sending` ne pouvait pas couvrir ce cas.** Les deux gestes gardaient déjà sur
+lui, mais `sending` est un reflet d'ÉCRAN depuis T-1 (piège 28) : il dit « la
+conversation AFFICHÉE génère », pas « une génération tourne ». Un parent inerte
+dont trois agents travaillent a `sending === false` — les deux gestes étaient
+donc pleinement offerts, et c'est exactement l'état d'un utilisateur qui vient
+de lancer des agents et attend. Le prédicat est `hasWorkingAgent`, le même que
+les deux gardes ci-dessus et que les badges.
+
+Trois niveaux, qui ne se remplacent pas :
+
+1. **La mutation** (`agentBusyRewriteRefusal`, main.js) — la seule qui protège
+   le thread. `editUserMessage` en **retourne le message**, affiché sous la zone
+   d'édition par le canal déjà prévu pour un slug invalide ;
+   `regenerateResponse` refuse **en silence**, son bouton étant de toute façon
+   inatteignable dans cet état (même raisonnement que la double vérification de
+   `continueTruncated`).
+2. **L'apparence** — les deux glyphes **grisés**, `cursor: not-allowed`, et la
+   **raison dans leur `title`** : exactement le vocabulaire de la case de
+   déplacement ci-dessus, pour la même raison. Grisé et **non masqué** : un
+   bouton qui disparaît puis revient se lit comme un bug d'affichage.
+3. **Le refus au clic** (`enterEditMode`) — ouvrir la zone d'édition
+   promettrait une réécriture que la mutation refusera.
+
+Deux points d'implémentation qui ne vont pas de soi :
+
+- **La classe est portée par `body`** (`agent-busy`, posée par
+  `syncAgentBusyAffordances`), pas bulle par bulle : le nombre de bulles change
+  à chaque tour, la condition non — et la même classe couvre du même coup les
+  bulles créées **pendant** que la garde tient.
+- **`pointer-events` reste actif**, contrairement à `body.conv-readonly` qui le
+  coupe. Le couper empêcherait `cursor: not-allowed` de s'afficher et le `title`
+  de paraître — or on veut ici **dire pourquoi**, pas seulement interdire. Le
+  clic est neutralisé côté JS, où vit la seule garde qui compte.
+
+**Les deux rappels de `syncLastAssistantActions`** (dans `registerGeneration` et
+`unregisterGeneration`) ne sont pas décoratifs, mais leur nécessité est plus
+étroite qu'il n'y paraît — et c'est la vérification qui l'a établi. Dans le cas
+courant, le spawn comme la fin d'un agent passent par un tour du parent, donc
+par `setSending`, qui repeint déjà : retirer les rappels ne cassait rien. Ils ne
+comptent que là où `setSending` ne bascule pas pour l'écran — un agent lancé par
+une génération **détachée** (T-1), et un agent qui finit **sans réveiller** son
+parent. Sans le rappel de fin, la garde serait de surcroît **permanente pour la
+session** : le prédicat juste, et l'affordance perdue.
+
+`continueTruncated` n'est **volontairement pas** gardé : il raccorde une réponse
+coupée sans tronquer le fil, donc le compte rendu de l'agent atterrit derrière
+un historique intact. La garde vise la réécriture, pas la relance.
+
 ## La doctrine de déclenchement
 
 Split **QUAND / COMMENT**
@@ -1220,6 +1284,43 @@ mesure a **démenti l'attente** valent plus que les autres :
 Le tableau complet des régressions vit en tête du script, pas ici : il décrit un
 **résultat de mesure** daté, qui doit être relu au même endroit que le montage
 qui l'a produit.
+
+### Le filet de réécriture d'historique
+
+`.claude/skills/run-miaou/verify-agent-busy-rewrite.mjs` (2026-09-05), montage
+repris de celui-ci. Il exerce les trois niveaux **séparément** parce qu'ils
+tombent séparément : la mutation (appel direct à `editUserMessage` /
+`regenerateResponse`, en court-circuitant toute affordance), l'apparence
+(opacité, `cursor`, `title` — mesurés sur le **style calculé**, jamais sur la
+présence de la classe, qui ne dirait que « le JS a fait son travail »), et le
+refus au clic. Puis la **levée** de la garde : une garde qui ne se lève pas est
+une fonctionnalité perdue.
+
+Deux résultats négatifs, gardés parce qu'ils ont changé le script :
+
+1. **Les deux rappels de `syncLastAssistantActions` ne faisaient tomber aucun
+   contrôle.** Ils paraissaient donc inutiles ; ils ne le sont que dans le cas
+   courant, où `setSending` repeint déjà. Le scénario qui les couvre construit
+   l'autre cas — agent lancé par une génération détachée, agent qui finit sans
+   réveiller son parent. Sans lui, deux lignes de code auraient été supprimées
+   comme mortes.
+2. **Le contrôle de levée ne discriminait rien** tant que le premier agent
+   tournait encore : la classe devait rester posée, ce qui est vrai avec ou sans
+   rappel. Il fallait libérer ce premier agent avant de mesurer — sinon le
+   contrôle vérifiait une tautologie.
+
+Un troisième piège, de montage celui-là : le témoin de « la régénération n'a pas
+eu lieu » ne peut être ni un **compte de messages** ni `isGenerating`. Le stub
+répond instantanément, si bien qu'une régénération non gardée tronque **puis
+repeuple** — quelques centaines de millisecondes plus tard le fil a le même
+nombre de messages, les mêmes rôles, et plus rien en vol. Seul le **contenu** de
+la dernière réponse distingue « on n'a pas touché » de « on a refait ».
+
+Note d'environnement : ce cycle de vie touche désormais `document.body`, que le
+stub DOM de `tests/runner.py` n'exposait pas — huit tests d'agent tombaient sur
+`classList of undefined`. Le stub a été étendu, comme il l'avait été au lot X-1
+pour `insertBefore` : il grandit quand un chemin légitime l'atteint, il
+n'anticipe pas.
 
 ### Un bug trouvé au premier lancement
 

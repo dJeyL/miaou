@@ -165,10 +165,13 @@ await page.evaluate(() => { closeMcpServers(); openSkills(); });
 await page.waitForSelector('#skills-drawer.show');
 await page.waitForTimeout(350);
 const skills = await page.evaluate(() => document.querySelectorAll('#skill-list .cfg-card').length);
-// 5 cartes : les 2 skills seedées (`revue`, `cr`) + les 3 skills SYSTÈME
-// upsertées au démarrage par ensureSystemSkills() (js-eval, mermaid,
-// files-promote). Le « 2 » historique précédait ces dernières.
-check('skills : 2 seedées + 3 système (IDB)', skills === 5);
+// Les 2 skills seedées (`revue`, `cr`) + les skills SYSTÈME upsertées au
+// démarrage par ensureSystemSkills(). Leur nombre est LU depuis la source
+// vivante (SYSTEM_SKILLS_CONTENT, injectée au build depuis
+// src/system-skills/) : un compte en dur ici devient faux au premier fichier
+// ajouté là-bas, sans que rien ne le signale.
+const sysSkillCount = await page.evaluate(() => Object.keys(SYSTEM_SKILLS_CONTENT).length);
+check(`skills : 2 seedées + ${sysSkillCount} système (IDB)`, skills === 2 + sysSkillCount);
 await page.locator('#skill-list .drawer-btn:text("Modifier")').first().click();
 await page.waitForTimeout(200);
 await page.locator('#skill-list .skill-del').first().click();
@@ -177,10 +180,10 @@ check('skill-del : libellé « Confirmer ? » armé', await page.evaluate(() =>
   document.querySelector('#skill-list .skill-del').textContent === 'Confirmer ?'));
 await shot('07-skill-del-armed.png');
 await page.waitForTimeout(3000);
-check('skill-del : désarmé, libellé restauré, rien supprimé', await page.evaluate(() =>
+check('skill-del : désarmé, libellé restauré, rien supprimé', await page.evaluate((n) =>
   !document.querySelector('#skill-list .skill-del.armed') &&
   document.querySelector('#skill-list .skill-del').textContent === 'Supprimer' &&
-  document.querySelectorAll('#skill-list .cfg-card').length === 5));
+  document.querySelectorAll('#skill-list .cfg-card').length === n, 2 + sysSkillCount));
 
 // ── 9. Thème clair (résolu en JS) ────────────────────────────────────────────
 await page.evaluate(() => { closeSkills(); selectTheme('light'); });

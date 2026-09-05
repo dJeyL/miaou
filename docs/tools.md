@@ -712,6 +712,18 @@ Doctrine de déclenchement : `AGENT_DOCTRINE`, statique et inconditionnelle dans
 `ROOT_SYSTEM_PROMPT` ; mode d'emploi en skill système `agents`. Détail complet :
 `docs/agents.md`.
 
+**Regroupement du drawer en sous-namespaces.** Le drawer « Voir les outils
+exposés » range les outils internes plats sous `memory__` / `conv__` /
+`resource__` via `groupByNamespace` — un **préfixage des noms dans `TOOLS`**,
+sans aucun stockage ni table parallèle. Vérifié par
+`.claude/skills/run-miaou/verify-tool-namespaces.mjs` : la composition de chaque namespace y est assertée **par noms, jamais par cardinal**
+— un compte nu périme au premier outil ajouté (ce qui est arrivé quand
+`resource__append` a porté `resource` de trois à quatre) et, plus gênant, ne dit
+pas *lequel* manque quand il tombe. Le script couvre aussi l'ordre en trois
+familles (MIAOU plat, internes, distants — sans entrelacement) et surtout le
+**routage** : un nom sous-namespacé doit rester résolu en interne par
+`callTool`, pas expédié vers un serveur MCP.
+
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 
 Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique
@@ -837,6 +849,15 @@ la traçabilité n'est pas perdue. Un chemin finissant par `/` retombe sur le re
 **Absent des exports** (piège 21) : un HTML standalone n'a ni IDB ni globals
 MIAOU. Le bouton est construit dans `buildToolAck` (chemin DOM live) uniquement ;
 `formatToolAcksHtml` est inchangée.
+
+**Vérification :** `.claude/skills/run-miaou/verify-resource-download.mjs`
+couvre les deux surfaces derrière le nommeur unique — la
+bibliothèque d'un Espace et les acks de conversation — avec leurs contre-exemples :
+un ack sans `id` ne porte aucune icône, une ressource inline n'expose jamais son
+contenu (le bouton est le seul accès), une ressource supprimée garde son bouton
+mais inerte (l'ack reste vrai), et le CSV annoncé `text/plain` se télécharge bien
+en `.txt` — la limite assumée ci-dessus, tenue par une assertion plutôt que par un
+commentaire.
 
 ### Lien d'autorisation sur un ack refusé (campagne AB)
 
@@ -977,6 +998,17 @@ si `spec.expand` est présent et `!m.resolved`, ajoute le chip expandable.
 > `resource_stored` ET styler `.ack-expand*`. Ne pas la croire vivante en lisant
 > le code.
 Ajouter un outil traçable = ajouter une ligne à `ACK_KINDS`, pas toucher au renderer.
+
+**Séparateur « Action › cible ».** Les acks sans intent affichent leur libellé en
+deux temps, séparés par un chevron coloré (`.ack-sep`, `›`) et non par un
+deux-points littéral — `appendAckSep` pose le nœud, tous les kinds concernés
+passent par lui. Vérifié par `.claude/skills/run-miaou/verify-ack-sep-chevron.mjs` : chaque kind porte bien un `.ack-sep`, plus aucun `" : "` littéral
+ne subsiste dans les libellés, et **tous les séparateurs partagent la teinte
+accent** — la couleur est mesurée sur le rendu, pas supposée depuis la feuille.
+Le script garde au passage la taille lisible affichée par `resource_stored`, qui
+passe par `humanSize` (unité **française**, « Ko ») et non `modelSize`
+(« KB », figé pour les descripteurs adressés au modèle, cf. resources.js) : deux
+formateurs, deux publics, et l'ack est une surface d'interface.
 
 - **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`
   pour toute donnée modèle (label/title/content) ; `innerHTML` réservé à l'icône

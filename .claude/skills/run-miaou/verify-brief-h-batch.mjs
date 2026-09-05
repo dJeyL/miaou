@@ -109,10 +109,14 @@ check('C : message système byte-identique avec/sans serveur qualifiant (piège 
 check('C : deux blocs balisés (motif WEB_DOCTRINE)',
   docsDoc.doctrine.indexOf('<OUVERTURE_DE_DOCUMENTS>') >= 0 &&
   docsDoc.doctrine.indexOf('<SANS_OUVERTURE_DE_DOCUMENTS>') >= 0);
-check('C : aiguillage zip natif + critère ref/content_b64 (exemple docs__read)',
+// Le geste annoncé au modèle : list d'abord (structure sans contenu), puis read.
+// L'ancienne assertion cherchait aussi « content_b64 », le critère de capacité
+// d'un serveur : la doctrine ne le mentionne plus depuis qu'elle énonce la
+// préférence natif > serveur, ce que l'assertion vérifie désormais à sa place.
+check('C : aiguillage natif list → read, et préférence natif sur serveur',
   docsDoc.doctrine.indexOf('miaou__docs__list') >= 0 &&
-  docsDoc.doctrine.indexOf('content_b64') >= 0 &&
-  docsDoc.doctrine.indexOf('docs__read') >= 0);
+  docsDoc.doctrine.indexOf('docs__read') >= 0 &&
+  docsDoc.doctrine.indexOf('PRÉFÈRE LE NATIF') >= 0);
 check('C : helpers conditionnels v1 supprimés du bundle', docsDoc.gone);
 
 // ── D. ATTACHMENT_DOCTRINE nuancée ──────────────────────────────────────────
