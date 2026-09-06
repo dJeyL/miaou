@@ -882,13 +882,62 @@ const CONTENT_SCAN_MIN_CHARS = 3;
 //   - côté user, on scanne le littéral tapé (`displayText`), jamais le corps
 //     baké d'une slash-skill (que `content` porte aussi).
 function convContentMatches(conv, q) {
-  if (!conv || !Array.isArray(conv.messages) || !q) return false;
+  return !!convContentMatch(conv, q);
+}
+
+// Rayon d'extrait des surfaces UI : une carte de sidebar fait 264px de large par
+// défaut, une ligne de palette 600px — le rayon de l'outil (100 de chaque côté)
+// y donnerait cinq lignes de texte pour un mot surligné.
+const UI_EXCERPT_RADIUS = 42;
+
+// Même parcours que `convContentMatches`, mais rend l'EXTRAIT du premier message
+// matché ({text, ranges, leading, trailing}, cf. buildExcerpt) au lieu d'un
+// booléen — ou `null` si rien ne matche.
+//
+// C'est LE prédicat : le booléen ci-dessus n'est que son `!!`, pour qu'il n'y ait
+// jamais deux parcours à maintenir en parallèle (et donc jamais un extrait qui
+// désigne un message que le booléen n'aurait pas retenu, ou l'inverse).
+//
+// Le critère de MATCH reste la requête entière en sous-chaîne, inchangé depuis
+// U-3 : « trois petits chats » ne doit pas remonter toute conversation contenant
+// « chats ». Les mots-clefs ne servent qu'au SURLIGNAGE à l'intérieur de
+// l'extrait, où l'on veut au contraire marquer chaque mot séparément — la
+// sous-chaîne entière étant elle-même une de ces occurrences, elle est couverte.
+// Deux rôles distincts pour la même requête, à ne pas fusionner : les confondre
+// élargirait le périmètre de la recherche sans que personne l'ait décidé.
+//
+// PREMIER message matché, pas le plus pertinent : la carte n'en montre qu'un, et
+// « le premier » est la seule règle que l'utilisateur peut prédire en lisant le
+// fil. Un scoring y mettrait un passage arbitraire du milieu de conversation.
+function convContentMatch(conv, q) {
+  if (!conv || !Array.isArray(conv.messages) || !q) return null;
+  const terms = parseSearchTerms(q);
+  if (!terms.length) return null;
+  const needles = terms.map(t => t.text);
   for (const m of conv.messages) {
     if (isAckRole(m.role)) continue;
     const text = m.role === 'user' ? (m.displayText ?? m.content) : m.content;
-    if (typeof text === 'string' && text.toLowerCase().includes(q)) return true;
+    if (typeof text !== 'string') continue;
+    const lower = text.toLowerCase();
+    // ET sur les termes : TOUS présents dans le même message, ordre libre. Un
+    // terme cité compte pour un, sa suite de mots devant se retrouver telle
+    // quelle — c'est là toute la différence entre « chien de race » et
+    // "chien de race".
+    if (!needles.every(n => lower.indexOf(n) !== -1)) continue;
+    // Extrait centré sur le PREMIER terme trouvé dans le message (celui dont
+    // l'occurrence arrive le plus tôt), pas sur le premier terme de la requête :
+    // deux termes peuvent être loin l'un de l'autre, et cadrer sur le mauvais
+    // donnerait un extrait qui ne montre pas ce qu'on a trouvé.
+    const anchor = needles.slice().sort((a, b) => lower.indexOf(a) - lower.indexOf(b))[0];
+    const ex = buildExcerpt(text, [anchor], { radius: UI_EXCERPT_RADIUS });
+    if (!ex) continue;
+    // Surlignage par TERMES, jamais par mots : un terme cité se marque d'un seul
+    // tenant. Découper « chien de race » en trois mots ferait surligner le « de »
+    // d'un « de chien de race », qui n'appartient pas au passage trouvé — et
+    // zébrerait la marque de blancs nus.
+    return Object.assign({}, ex, { ranges: findMatchRanges(ex.text, needles) });
   }
-  return false;
+  return null;
 }
 
 // ── Command palette : scoring / filtrage / tri (fonctions pures, lot F) ─────
@@ -2320,6 +2369,177 @@ function usageDerived(usage) {
   return { inTokens, outTokens, cachedTokens, cachedRatio };
 }
 
+// ── Moteur d'extraits de recherche (pur) ────────────────────────────────────
+// Socle commun à TOUT ce qui doit montrer « où ça matche » : extraits d'aide
+// (about_search), cartes de la sidebar, lignes de la palette, résultats de
+// conv__list. Une seule mécanique de fenêtrage, pas une par surface — la
+// première version de ce code vivait inline dans searchHelpContent, et le
+// dupliquer pour l'UI aurait donné deux moteurs dérivant chacun de son côté.
+//
+// La sortie porte des OFFSETS, jamais du markup : c'est ce qui permet à l'UI de
+// surligner sans re-chercher les mots dans un texte déjà ellipsé (impossible à
+// faire juste — l'ellipse peut avaler une partie d'une occurrence), et à
+// conv__list de servir le même extrait en texte nu au modèle.
+
+// Découpe une requête en mots-clefs normalisés (minuscules, vides écartés).
+// Point d'entrée unique : les appelants passent la requête brute.
+function excerptKeywords(query) {
+  return parseSearchTerms(query).map(t => t.text);
+}
+
+// Découpe une requête en TERMES de recherche : les groupes entre guillemets
+// restent d'un bloc, le reste se coupe aux espaces.
+//   nid de poule          → 3 termes libres
+//   "nid de poule"        → 1 terme exact
+//   "nid de poule" mairie → 2 termes, dont un exact
+//
+// Rend `[{text, exact}]`, minuscules, vides écartés. `exact` n'a d'effet que sur
+// l'INTENTION affichée : un terme cité et un terme libre se cherchent de la même
+// façon (sous-chaîne) — ce qui les distingue est qu'un terme cité contenant des
+// espaces n'a pas été découpé, donc sa suite de mots doit se retrouver telle
+// quelle. Le drapeau est conservé pour que l'appelant puisse le dire à l'usager
+// si besoin, et pour que le parsing reste lisible.
+//
+// Guillemets droits ET typographiques : l'utilisateur qui tape sur un clavier
+// français avec correction automatique obtient « " » ou « " », et une requête
+// citée qui ne marche que dans un cas serait un piège silencieux.
+// Un guillemet ouvrant jamais refermé ferme implicitement en fin de requête —
+// c'est ce qui se passe pendant la frappe, et refuser la requête à ce moment-là
+// ferait clignoter la liste entre deux caractères.
+function parseSearchTerms(query) {
+  const s = String(query == null ? '' : query).toLowerCase();
+  const terms = [];
+  const OPEN = '"\u201c\u201d\u00ab\u00bb';
+  let i = 0;
+  while (i < s.length) {
+    const ch = s.charAt(i);
+    if (/\s/.test(ch)) { i++; continue; }
+    if (OPEN.indexOf(ch) >= 0) {
+      // Fin = prochain guillemet quel qu'il soit, ou fin de requête (frappe en
+      // cours). Le contenu est pris tel quel, espaces internes compris.
+      let end = i + 1;
+      while (end < s.length && OPEN.indexOf(s.charAt(end)) < 0) end++;
+      const body = s.slice(i + 1, end).trim();
+      if (body) terms.push({ text: body, exact: true });
+      i = end + 1;
+      continue;
+    }
+    let end = i;
+    while (end < s.length && !/\s/.test(s.charAt(end)) && OPEN.indexOf(s.charAt(end)) < 0) end++;
+    const word = s.slice(i, end);
+    if (word) terms.push({ text: word, exact: false });
+    i = end;
+  }
+  return terms;
+}
+
+// Toutes les occurrences de tous les mots-clefs dans `text`, en intervalles
+// [start, end) triés et FUSIONNÉS quand ils se chevauchent ou se touchent.
+// Deux mots-clefs qui se recouvrent (« conv » et « conversation ») donnent donc
+// un seul intervalle, jamais deux <mark> imbriqués.
+// Pure : ni DOM ni global.
+function findMatchRanges(text, keywords) {
+  const s = String(text == null ? '' : text);
+  const lower = s.toLowerCase();
+  const kws = (keywords || []).filter(Boolean);
+  if (!s || !kws.length) return [];
+
+  const raw = [];
+  kws.forEach((kw) => {
+    let from = 0;
+    let idx;
+    while ((idx = lower.indexOf(kw, from)) !== -1) {
+      raw.push([idx, idx + kw.length]);
+      from = idx + kw.length;
+    }
+  });
+  raw.sort((a, b) => a[0] - b[0]);
+
+  // Fusion des intervalles qui se chevauchent, se touchent, ou ne sont séparés
+  // que par des BLANCS. Ce dernier cas est une règle d'aspect, pas de logique :
+  // « chien de race » cherché mot à mot produit sinon trois marques séparées par
+  // deux espaces nus, qui se lisent comme un zébrage plutôt que comme un passage
+  // trouvé. Absorber le blanc rend une marque continue, sans rien changer à ce
+  // qui a matché.
+  // Bornée aux blancs exprès : absorber n'importe quoi souderait deux
+  // occurrences réellement distinctes (« chien ET race » à dix mots d'écart)
+  // en une marque qui recouvrirait le texte intercalaire.
+  const merged = [];
+  raw.forEach((r) => {
+    const last = merged[merged.length - 1];
+    const gapIsBlank = last && r[0] > last[1] && !s.slice(last[1], r[0]).trim();
+    if (last && (r[0] <= last[1] || gapIsBlank)) last[1] = Math.max(last[1], r[1]);
+    else merged.push(r.slice());
+  });
+  return merged.map(([start, end]) => ({ start, end }));
+}
+
+// Fenêtres d'extrait : chaque occurrence élargie de `radius` de part et d'autre,
+// bornée au texte, puis fusion des fenêtres qui se chevauchent ou se touchent.
+// Rendue séparément de `findMatchRanges` parce que les deux fusions n'ont pas le
+// même grain : les occurrences fusionnent pour le surlignage, les fenêtres pour
+// le découpage — un texte peut avoir deux occurrences distinctes (deux <mark>)
+// dans une seule fenêtre (un seul extrait).
+function matchWindows(text, keywords, radius) {
+  const s = String(text == null ? '' : text);
+  const r = Number(radius);
+  const pad = isFinite(r) && r >= 0 ? Math.floor(r) : 0;
+  const windows = [];
+  findMatchRanges(s, keywords).forEach((m) => {
+    const start = Math.max(0, m.start - pad);
+    const end = Math.min(s.length, m.end + pad);
+    const last = windows[windows.length - 1];
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else windows.push([start, end]);
+  });
+  return windows;
+}
+
+// UN extrait autour de la fenêtre demandée (la première par défaut), avec les
+// offsets de surlignage RECALÉS sur le texte découpé.
+//
+// Rend `null` quand rien ne matche — un extrait vide et un extrait absent ne se
+// distinguent pas à l'usage, et l'appelant doit pouvoir tester une seule chose.
+// Sinon : { text, ranges, leading, trailing }, où `leading`/`trailing` disent si
+// le texte est coupé de ce côté (l'ellipse est posée par le rendu, pas ici :
+// l'inclure dans `text` décalerait les offsets d'un caractère, exactement le
+// piège que cette fonction existe pour éviter).
+//
+// Le rognage des blancs de bord est fait AVANT le calcul des offsets, et les
+// ranges sont décalés d'autant : c'est la seule façon de garder un extrait
+// propre sans désaligner le surlignage.
+function buildExcerpt(text, keywords, opts) {
+  const s = String(text == null ? '' : text);
+  const o = opts || {};
+  const radius = o.radius != null ? o.radius : EXCERPT_RADIUS_DEFAULT;
+  const windows = matchWindows(s, keywords, radius);
+  const win = windows[o.windowIndex || 0];
+  if (!win) return null;
+
+  let [start, end] = win;
+  const slice = s.slice(start, end);
+  // Blancs de bord rognés, offsets décalés d'autant.
+  const lead = slice.length - slice.replace(/^\s+/, '').length;
+  const trail = slice.length - slice.replace(/\s+$/, '').length;
+  start += lead;
+  end -= trail;
+  const out = s.slice(start, end);
+
+  // Ranges relatifs au texte découpé, bornés à lui : une occurrence à cheval sur
+  // le bord (possible quand `radius` est plus petit que le mot-clef) est tronquée
+  // plutôt qu'écartée — le fragment visible reste surligné.
+  const ranges = findMatchRanges(s, keywords)
+    .filter((m) => m.end > start && m.start < end)
+    .map((m) => ({ start: Math.max(0, m.start - start), end: Math.min(out.length, m.end - start) }));
+
+  return { text: out, ranges, leading: start > 0, trailing: end < s.length };
+}
+
+// Rayon d'extrait par défaut, en caractères de part et d'autre de l'occurrence.
+// Valeur historique de searchHelpContent, conservée pour l'outil ; les surfaces
+// UI en passent un plus court (une carte de sidebar fait 264px de large).
+const EXCERPT_RADIUS_DEFAULT = 100;
+
 // Nombre max d'extraits renvoyés par topic par searchHelpContent — un
 // mot-clef générique (« fichier », « conversation ») peut avoir 10+
 // occurrences dans une section ; sans plafond la réponse de l'outil about_search
@@ -2338,46 +2558,25 @@ const HELP_SEARCH_MAX_EXCERPTS = 5;
 // fonctionnalité documentée plus bas). Fenêtres qui se chevauchent fusionnées
 // en un seul extrait ; plafond HELP_SEARCH_MAX_EXCERPTS, au-delà `truncated: true`.
 function searchHelpContent(helpContent, query) {
-  const keywords = String(query || '')
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const keywords = excerptKeywords(query);
   if (!helpContent || keywords.length === 0) return [];
 
-  const EXCERPT_RADIUS = 100;
   const results = [];
   Object.keys(helpContent).forEach((topic) => {
     const text = String(helpContent[topic] || '');
     const lower = text.toLowerCase();
     if (!keywords.every((kw) => lower.indexOf(kw) !== -1)) return;
 
-    // Toutes les occurrences de tous les mots-clefs, en fenêtres [start, end).
-    const windows = [];
-    keywords.forEach((kw) => {
-      let from = 0;
-      let idx;
-      while ((idx = lower.indexOf(kw, from)) !== -1) {
-        windows.push([Math.max(0, idx - EXCERPT_RADIUS), Math.min(text.length, idx + kw.length + EXCERPT_RADIUS)]);
-        from = idx + kw.length;
-      }
-    });
-    windows.sort((a, b) => a[0] - b[0]);
-
-    // Fusion des fenêtres qui se chevauchent ou se touchent.
-    const merged = [];
-    windows.forEach((w) => {
-      const last = merged[merged.length - 1];
-      if (last && w[0] <= last[1]) {
-        last[1] = Math.max(last[1], w[1]);
-      } else {
-        merged.push(w.slice());
-      }
-    });
-
-    const truncated = merged.length > HELP_SEARCH_MAX_EXCERPTS;
-    const kept = merged.slice(0, HELP_SEARCH_MAX_EXCERPTS);
-    const excerpts = kept.map(([start, end]) =>
-      (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : ''));
+    // Fenêtrage et fusion délégués au moteur commun ; ne reste ici que la mise
+    // en forme propre à l'outil : ellipses matérialisées dans la chaîne (le
+    // modèle reçoit du texte, pas des offsets) et plafond d'extraits.
+    const windows = matchWindows(text, keywords, EXCERPT_RADIUS_DEFAULT);
+    const truncated = windows.length > HELP_SEARCH_MAX_EXCERPTS;
+    const excerpts = [];
+    for (let i = 0; i < windows.length && i < HELP_SEARCH_MAX_EXCERPTS; i++) {
+      const ex = buildExcerpt(text, keywords, { radius: EXCERPT_RADIUS_DEFAULT, windowIndex: i });
+      if (ex) excerpts.push((ex.leading ? '…' : '') + ex.text + (ex.trailing ? '…' : ''));
+    }
 
     results.push({ topic, excerpts, truncated });
   });

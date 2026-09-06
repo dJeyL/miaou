@@ -65,6 +65,32 @@ html[data-theme="light"] {
   --code-head-bg:          hsl(var(--hue) 37% 84.5%);
   --code-inline-color:     hsl(var(--code-hue) 84.9% 41.6%);
   --brand:                 #e05f1c;   /* identité de marque, hors palette (cf. base.css) */
+  /* Surlignage de recherche : la marque doit être plus SOMBRE que le fond ici,
+     là où le thème sombre la veut plus claire (cf. base.css). Réglée proche du
+     fond pour la même raison — assez pour situer, pas assez pour crier. */
+  --search-hit-l:          68%;
+}
+
+/* Sidebar en clair : ses paliers sont plus resserrés que ceux du sombre, et s1
+   (90 %) ne se détachait pas du fond (92,7 %). La colonne est donc descendue
+   d'un cran — mais assombrir son fond seul aurait écrasé ce qui se pose DESSUS :
+   .new-btn, le sélecteur d'Espace et le survol d'une conversation lisent
+   --surface-2, qui serait devenu invisible. C'est toute l'échelle qui descend,
+   redéfinie POUR le sous-arbre .sidebar : les règles de sidebar.css gardent
+   leurs tokens, et l'écart relatif entre elles est préservé. Les paliers 2/3/4
+   ne remontent pas jusqu'à leur valeur globale, sinon le survol d'une conv
+   sauterait par-dessus le fond de la zone de conversation.
+   Sombre : rien à faire, --sidebar-bg y vaut --surface (écart déjà suffisant).
+   Le popover d'Espaces (.space-menu) est dans ce sous-arbre et suit — voulu :
+   il est ancré dans la colonne. Le .model-menu du composer, lui, est dehors. */
+html[data-theme="light"] .sidebar {
+  --sidebar-bg: hsl(var(--hue) var(--sat-s1) 87.2%);
+  --surface:    var(--sidebar-bg);
+  --surface-2:  hsl(var(--hue) var(--sat-s2) 83.4%);
+  --surface-3:  hsl(var(--hue) var(--sat-s3) 79.2%);
+  --surface-4:  hsl(var(--hue) var(--sat-s4) 75%);
+  --border:     hsl(var(--hue) var(--sat-bd) 73.5%);
+  --border-2:   hsl(var(--hue) var(--sat-bd2) 68%);
 }
 
 /* Pendant CLAIR de chaque palette : seules la teinte et les accents changent. */

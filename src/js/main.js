@@ -1861,10 +1861,10 @@ function onTitleBlur(e) {
   const t = el.textContent.trim();
   if (!t) {
     el.textContent = titleBefore;
-    document.title = (titleBefore || 'Nouvelle conversation') + ' — MIAOU';
+    document.title = documentTitleFor(titleBefore);
     return;
   }
-  document.title = t + ' — MIAOU';
+  document.title = documentTitleFor(t);
   if (currentConvId) {
     needTitle = false;   // titre fixé manuellement : on ne le régénère plus
     const conv = loadConversation(currentConvId);

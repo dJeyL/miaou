@@ -81,6 +81,12 @@
   --text-3:     hsl(var(--hue) var(--sat-t3) var(--l-t3));
   --accent-dim: hsl(var(--accent-hue) var(--accent-sat) 63.5% / .12);
   --accent-bd:  hsl(var(--accent-hue) var(--accent-sat) 63.5% / .28);
+  /* Clarté du surlignage de recherche (mark.search-hit, plus bas). Un gris qui
+     ressort sur fond sombre doit être CLAIR ; le thème clair l'inverse. C'est la
+     seule part de la marque qui ne peut pas être dérivée des paliers communs.
+     Volontairement PROCHE du fond : la marque doit se distinguer sans trancher —
+     réglée à l'œil sur les deux luminosités, un gris franc y criait. */
+  --search-hit-l: 52%;
   --ok:         #4ec98a;
   --err:        #ff5d5d;
   /* Rouge d'erreur DÉSATURÉ, réservé aux textes d'erreur longs affichés en
@@ -126,6 +132,12 @@
   --table-stripe:          rgba(255,255,255,.012);
   --code-bg:               hsl(var(--hue) var(--sat-code) var(--l-code));
   --code-head-bg:          var(--surface);
+  /* Fond de la sidebar : token PROPRE, pas --surface directement. En sombre
+     il vaut exactement --surface (l'écart avec --bg y suffit déjà) ; le thème
+     clair le descend d'un palier parce que ses paliers sont resserrés et que
+     la colonne ne se détachait plus de la zone de conversation. Un token à
+     part évite de déplacer s1, partagé par les bulles, drawers et tool-acks. */
+  --sidebar-bg:            var(--surface);
   --code-inline-color:     hsl(var(--code-hue) var(--accent-sat) 79%);
   /* Identité de marque : le nom « MIAOU » garde SA couleur quelle que soit la
      palette (décision Julien, lot S-a) — c'est un logotype, pas un accent.
@@ -193,6 +205,36 @@ body {
 }
 
 ::selection { background: var(--accent-dim); }
+
+/* Correspondance de recherche surlignée (sidebar et palette, posée par
+   applyHighlight — seul point d'écriture du <mark> de l'application).
+   Dérivé sur le motif de --accent-dim (HSL de la palette active + alpha), donc
+   il suit les palettes et les deux luminosités sans règle par thème. L'alpha est
+   plus soutenu que celui de --accent-dim (.12) parce que le surlignage doit
+   rester lisible SUR un fond --accent-dim : une ligne de palette sélectionnée
+   porte déjà cette teinte, et un mark à l'identique y disparaîtrait.
+   Le <mark> par défaut du navigateur (jaune, texte noir) est entièrement
+   neutralisé : couleur héritée, pas de gras — « discret » est le cahier des
+   charges, on souligne l'emplacement, on ne crie pas dessus.
+   Neutre et très peu saturé, à dessein : un surlignage accentué se lirait comme
+   un état (sélection, alerte) alors qu'il ne fait que pointer un emplacement. La
+   saturation reste celle de la palette active, mais divisée — assez pour que la
+   marque s'accorde au thème, trop peu pour attirer l'œil par sa couleur.
+   Semi-transparent, jamais un gris opaque : la marque se pose AUSSI sur une
+   ligne de palette sélectionnée (fond --accent-dim), qu'un fond plein
+   masquerait. Sa clarté est portée par --search-hit-l, qui s'inverse au thème
+   clair — un même gris ne peut pas ressortir sur fond sombre ET sur fond clair.
+   Le <mark> par défaut du navigateur (jaune, texte noir) est entièrement
+   neutralisé : couleur héritée, pas de gras.
+   Absent des exports (EXPORT_CSS) par choix : un extrait de recherche est une
+   affordance d'écran, qui n'a pas de sens dans une conversation exportée. */
+mark.search-hit {
+  background: hsl(var(--hue) calc(var(--sat-s4) / 2) var(--search-hit-l) / .5);
+  color: inherit;
+  font-weight: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
 
 /* scrollbars.
    Deux syntaxes non interchangeables : les pseudo-éléments ::-webkit-scrollbar

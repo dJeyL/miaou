@@ -53,6 +53,29 @@ en allant vers la teinte du fond. Valeurs retenues à 216° : 5,79 sombre /
 défaut, c'est la profondeur de bits — comparer les palettes sur `--surface-2`
 ou plus clair.
 
+## Un jeu de paliers n'est pas forcément global
+
+Les paliers (`--surface`, `--surface-2`…) sont posés sur `html`, mais rien
+n'interdit à un sous-arbre de les redéfinir pour lui : c'est ce que fait
+`html[data-theme="light"] .sidebar` (theme-light.css). Le clair a des paliers
+plus resserrés que le sombre, et la sidebar à `--surface` (90 %) ne se
+détachait pas du fond (92,7 %) ; la colonne descend donc d'un cran.
+
+Le point à retenir n'est pas la valeur mais la **méthode** : assombrir le seul
+fond aurait écrasé ce qui se pose dessus (`.new-btn`, le sélecteur d'Espace,
+le survol d'une conversation lisent tous `--surface-2`, qui serait passé sous
+le nouveau fond). Déplacer un fond suppose de déplacer l'échelle entière du
+conteneur, sinon les écarts relatifs se referment en silence — et aucune règle
+de `sidebar.css` ne le montre, puisqu'aucune ne change. Le fond de la colonne
+a son propre token, `--sidebar-bg`, qui vaut `--surface` en sombre.
+
+Corollaire de portée : un élément **dans** le sous-arbre suit le scope, même
+si sa classe est partagée avec un composant d'ailleurs. Le popover d'Espaces
+(`.space-menu`) réutilise `.model-menu` du composer mais vit dans la sidebar :
+il prend les paliers locaux, ce qui est voulu — il est ancré dans la colonne
+et doit se lire sur son fond. Le `.model-menu` du composer, hors sous-arbre,
+garde les paliers globaux.
+
 ## Exceptions hors palette
 
 - **Le logotype MIAOU** (`--brand`) garde sa couleur d'origine quelle que soit

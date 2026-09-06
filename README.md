@@ -113,7 +113,11 @@ Figtree/Fira Code).
   (`early_title`) ; cf. `docs/storage.md`.
 - Le titre écrit à l'envoi est **repris en fin d'échange**, quand la réponse est
   connue : réglage utilisateur, sans effet sur un titre saisi à la main.
-- Recherche dans l'historique en temps réel, par titre ou résumé/mots-clés.
+- Recherche dans l'historique en temps réel, par titre, résumé/mots-clés ou
+  contenu des messages. Chaque résultat porte un extrait surligné du passage
+  trouvé, dans la sidebar comme à la palette de commandes. Les mots sont exigés
+  tous présents, et une suite entre guillemets doit se retrouver telle quelle —
+  cf. [docs/storage.md](docs/storage.md).
 - Mémoire conversationnelle : résumés générés en arrière-plan, injection
   contextuelle, et deux outils pour que le modèle aille chercher lui-même dans
   les conversations passées.

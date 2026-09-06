@@ -95,9 +95,26 @@ function helpContentResolved() {
 }
 
 // Entrée « légère » : ce qui est déjà stocké dans l'index miaou-summaries.
-function summaryLight(e) {
-  return { id: e.id, title: e.title, timestamp: e.timestamp,
-           summary: e.summary, keywords: e.keywords };
+//
+// `query` (optionnelle) ajoute `match` : l'extrait du résumé ou du titre où la
+// recherche a porté, avec ses ellipses de bord — le même moteur que les extraits
+// de l'interface (`buildExcerpt`, utils.js). Sans query, RIEN n'est ajouté : le
+// cas « tout lister » ne doit pas grossir d'un champ que personne n'a demandé.
+//
+// L'extrait vient du résumé et du titre, jamais du contenu des messages : ce
+// handler est synchrone et le contenu vit en IDB. Le lire ici obligerait à
+// passer l'outil en async, ou à se contenter du cache chaud — donc à rendre un
+// résultat dépendant de ce que l'utilisateur a ouvert récemment. Le modèle qui
+// veut le contenu a `with_contents`.
+function summaryLight(e, query) {
+  const out = { id: e.id, title: e.title, timestamp: e.timestamp,
+                summary: e.summary, keywords: e.keywords };
+  if (query) {
+    const keywords = excerptKeywords(query);
+    const ex = buildExcerpt(e.summary || '', keywords) || buildExcerpt(e.title || '', keywords);
+    if (ex) out.match = (ex.leading ? '…' : '') + ex.text + (ex.trailing ? '…' : '');
+  }
+  return out;
 }
 
 // Doctrine comportementale : ressources binaires. Toujours injectée quand des outils
@@ -875,8 +892,16 @@ const TOOLS = [
       "date en tête ; le préciser (date ISO 8601) limite aux conversations " +
       "actives depuis cette date. Passer query pour ne garder que les " +
       "conversations dont le résumé ou les mots-clés correspondent (recherche " +
-      "par mots, pas de sous-chaîne exacte) — utile pour retrouver une " +
-      "conversation sur un sujet précis sans tout lister. Passer " +
+      "par mots) — utile pour retrouver une " +
+      "conversation sur un sujet précis sans tout lister. Mettre une suite de " +
+      "mots entre guillemets (\"nid de poule\") exige de la retrouver telle " +
+      "quelle ; sans guillemets, les mots sont cherchés séparément. Avec query, chaque " +
+      "conversation porte alors un champ match : un court extrait du résumé " +
+      "montrant où la recherche a porté. Cet extrait est INDICATIF et tronqué — " +
+      "il situe la correspondance, il ne dit pas tout ce que la conversation " +
+      "contient sur le sujet, et une conversation trouvée par ses mots-clés peut " +
+      "n'en avoir aucun. Pour lire réellement, utilise conv__get ou " +
+      "with_contents. Passer " +
       "with_contents=true pour inclure aussi le contenu complet de chacune " +
       "(potentiellement volumineux).",
     inputSchema: {
@@ -919,8 +944,22 @@ const TOOLS = [
       if (args.query != null && args.query !== '') {
         const qTokens = tokenize(args.query);     // utils.js
         entries = entries.filter(e => scoreSummary(qTokens, e) >= 1);
+        // Termes entre guillemets : contrainte SUPPLÉMENTAIRE au scoring, pas un
+        // remplacement. `scoreSummary` est un recouvrement pondéré, où « exiger
+        // une suite exacte » n'a pas de sens ; on garde donc son tri, et on
+        // écarte ensuite ce qui ne porte pas la suite littérale. Même syntaxe
+        // qu'à l'écran — une syntaxe qui marcherait dans l'interface mais pas
+        // dans l'outil serait un piège pour le modèle comme pour l'utilisateur
+        // qui la lui dicte.
+        const exact = parseSearchTerms(args.query).filter(t => t.exact).map(t => t.text);
+        if (exact.length) {
+          entries = entries.filter(e => {
+            const hay = ((e.summary || '') + ' ' + (e.title || '')).toLowerCase();
+            return exact.every(t => hay.indexOf(t) !== -1);
+          });
+        }
       }
-      const light = entries.map(summaryLight);
+      const light = entries.map(e => summaryLight(e, args.query));
       _pendingToolAcks.push({ kind: 'conversation_list', count: light.length });
       if (!args.with_contents) return JSON.stringify(light);
       return JSON.stringify(light.map(e => {

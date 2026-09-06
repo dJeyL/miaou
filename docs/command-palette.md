@@ -154,6 +154,31 @@ Tests : `tests/test-utils.js` (`scoreCommand`, `filterCommands`,
 utilisateur (titres de conversation, noms d'espace). Doctrine `textContent`
 du projet.
 
+**Item à deux étages.** Le `<li>` est une COLONNE : sa première ligne
+(`.cmdk-item-row` — touche/coche, label, note, hint) est toujours enveloppée,
+même quand elle est seule, et le second étage (`.cmdk-item-excerpt`) n'apparaît
+que pour un résultat de recherche de conversation dont le CONTENU a matché.
+N'envelopper qu'au besoin donnerait deux structures DOM selon le mode, donc deux
+jeux de règles CSS à tenir en phase. La hauteur d'item varie donc d'un mode à
+l'autre : réserver la seconde ligne partout laisserait un blanc sur tous les
+sous-modes, qui n'en ont jamais.
+
+Le placeholder du sous-mode `conv` porte la SYNTAXE de recherche
+(`SEARCH_SYNTAX_PLACEHOLDER`, ui.js), pas un intitulé de fonction : le champ de
+la palette est focalisé d'emblée, donc l'utilisateur sait déjà ce qu'il fait — la
+place est mieux employée à montrer ce qu'il peut taper. Constante partagée avec
+la sidebar (qui l'affiche au focus, son champ ayant un état de repos) : les deux
+surfaces acceptent la même syntaxe, et ne l'enseigner que d'un côté laisserait
+croire que l'autre ne la comprend pas.
+
+Un match trouvé dans le LIBELLÉ est surligné dans le libellé et n'ouvre pas de
+second étage — il répéterait la ligne du dessus. Le surlignage passe par
+`applyHighlight` (ui.js), seul point d'écriture du `<mark>` de l'application,
+partagé avec les cartes de la sidebar ; il se réduit exactement à un
+`textContent` quand l'item n'a pas de `labelRanges`, ce qui est le cas de tous
+les modes sauf la recherche de conversation. Extraits et offsets viennent du
+moteur pur `buildExcerpt`/`findMatchRanges` (utils.js) — cf. `docs/storage.md`.
+
 ## Intégration Escape (ordre)
 
 `closeCommandPaletteViaEscape()` est branché **en tête** de la cascade Escape

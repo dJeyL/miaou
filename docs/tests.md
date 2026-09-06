@@ -167,6 +167,23 @@ hors-sujet), entrées dégénérées (conversation sans messages, requête vide,
 par `collectContentSearchHits` (async, IDB) : son câblage relève du Playwright
 (`verify-conv-search.mjs`), pas de QuickJS.
 
+Depuis les extraits de recherche, `convContentMatches` n'est que le `!!` de
+`convContentMatch`, testée sur les mêmes exclusions plus : extrait du PREMIER
+message matché, surlignage de chaque mot de la requête à l'intérieur, et le fait
+la syntaxe de termes : ET sur tous les termes (« petits chats » remonte les deux
+mots même éloignés, « petits girafes » ne remonte rien) et suites exactes entre
+guillemets (`"chien de race"` refuse un texte où les mots sont dispersés, et
+marque la suite d'un seul bloc plutôt que d'en surligner le « de » de tête).
+`parseSearchTerms` a son propre bloc : guillemets droits et typographiques,
+guillemet non refermé, groupes vides, normalisation. Le moteur lui-même est couvert dans `test-utils.js` :
+`findMatchRanges` (occurrences multiples, fusion des recouvrements et des
+adjacences, entrées dégénérées) et `buildExcerpt` (offsets recalés sur le texte
+découpé, drapeaux de bord, rognage des blancs sans désalignement, `windowIndex`,
+absence de match → `null`). Les tests existants de `searchHelpContent`, inchangés,
+servent de non-régression : elle consomme désormais ce moteur au lieu de porter
+sa propre copie. En revanche `applyHighlight`/`searchExcerptEl` (pose des
+`<mark>`, ui.js) touchent le DOM et sortent de QuickJS.
+
 Couvert aussi : l'**export/import complet des données** (feature E, format v2
 depuis le lot U-4) — `EXPORT_KEYS` (les **7** clés, et l'absence explicite de
 `miaou-conversations`/`miaou-summaries`), `buildExportPayload` (structure

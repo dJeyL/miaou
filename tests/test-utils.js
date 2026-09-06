@@ -2361,6 +2361,193 @@ describe('ackIsError (prédicat unique de rendu en erreur)', function() {
   });
 });
 
+describe('findMatchRanges — occurrences à surligner', function() {
+  it('rend les offsets de chaque occurrence, pas seulement la première', function() {
+    expect(findMatchRanges('chat et chat', ['chat'])).toEqual([
+      { start: 0, end: 4 }, { start: 8, end: 12 },
+    ]);
+  });
+
+  it('insensible à la casse, offsets sur le texte d\'origine', function() {
+    expect(findMatchRanges('Chat, CHAT', ['chat'])).toEqual([
+      { start: 0, end: 4 }, { start: 6, end: 10 },
+    ]);
+  });
+
+  it('plusieurs mots-clefs, résultat trié par position', function() {
+    expect(findMatchRanges('bravo, alpha', ['alpha', 'bravo'])).toEqual([
+      { start: 0, end: 5 }, { start: 7, end: 12 },
+    ]);
+  });
+
+  it('deux occurrences séparées par un BLANC fusionnent (marque continue)', function() {
+    // Règle d'aspect : « chien de race » cherché mot à mot donnerait sinon trois
+    // marques zébrées de blancs nus.
+    expect(findMatchRanges('chien de race', ['chien', 'de', 'race'])).toEqual([
+      { start: 0, end: 13 },
+    ]);
+  });
+
+  it('deux occurrences séparées par du TEXTE restent distinctes', function() {
+    // La fusion des blancs ne doit pas souder ce qui est réellement éloigné.
+    expect(findMatchRanges('chien puis race', ['chien', 'race'])).toEqual([
+      { start: 0, end: 5 }, { start: 11, end: 15 },
+    ]);
+  });
+
+  it('deux mots-clefs qui se recouvrent fusionnent en un seul intervalle', function() {
+    // Sans fusion, le rendu poserait un <mark> dans un <mark>.
+    expect(findMatchRanges('conversation', ['conv', 'conversation'])).toEqual([
+      { start: 0, end: 12 },
+    ]);
+  });
+
+  it('mots-clefs adjacents fusionnent (intervalles qui se touchent)', function() {
+    expect(findMatchRanges('abcd', ['ab', 'cd'])).toEqual([{ start: 0, end: 4 }]);
+  });
+
+  it('aucune occurrence → tableau vide', function() {
+    expect(findMatchRanges('bonjour', ['chat'])).toEqual([]);
+  });
+
+  it('texte ou mots-clefs absents → tableau vide, jamais d\'exception', function() {
+    expect(findMatchRanges(null, ['chat'])).toEqual([]);
+    expect(findMatchRanges('chat', null)).toEqual([]);
+    expect(findMatchRanges('chat', [])).toEqual([]);
+    expect(findMatchRanges('', ['chat'])).toEqual([]);
+  });
+});
+
+describe('buildExcerpt — extrait et offsets recalés', function() {
+  it('centre l\'extrait sur l\'occurrence et recale les offsets dessus', function() {
+    var ex = buildExcerpt('aaaa CIBLE bbbb', ['cible'], { radius: 4 });
+    expect(ex.text).toBe('aaa CIBLE bbb');
+    // Offsets relatifs au texte DÉCOUPÉ : c'est tout l'intérêt du contrat.
+    expect(ex.ranges).toEqual([{ start: 4, end: 9 }]);
+    expect(ex.text.slice(ex.ranges[0].start, ex.ranges[0].end)).toBe('CIBLE');
+  });
+
+  it('signale les bords coupés sans les matérialiser dans le texte', function() {
+    // L'ellipse est posée par le rendu : l'inclure ici décalerait les offsets.
+    var ex = buildExcerpt('aaaaaaaa CIBLE bbbbbbbb', ['cible'], { radius: 3 });
+    expect(ex.leading).toBe(true);
+    expect(ex.trailing).toBe(true);
+    expect(ex.text.charAt(0)).toBe('a');
+  });
+
+  it('bords non coupés quand le rayon couvre tout le texte', function() {
+    var ex = buildExcerpt('CIBLE', ['cible'], { radius: 50 });
+    expect(ex.leading).toBe(false);
+    expect(ex.trailing).toBe(false);
+    expect(ex.text).toBe('CIBLE');
+  });
+
+  it('les blancs de bord sont rognés SANS désaligner le surlignage', function() {
+    // Rayon choisi pour que la fenêtre TOMBE dans les blancs des deux côtés :
+    // sans rognage l'extrait commencerait et finirait par des espaces.
+    var ex = buildExcerpt('xx      CIBLE      yy', ['cible'], { radius: 4 });
+    expect(ex.text.charAt(0)).toBe('C');
+    expect(ex.text.charAt(ex.text.length - 1)).toBe('E');
+    expect(ex.text.slice(ex.ranges[0].start, ex.ranges[0].end)).toBe('CIBLE');
+  });
+
+  it('deux occurrences dans une même fenêtre : un extrait, deux surlignages', function() {
+    var ex = buildExcerpt('chat et chat', ['chat'], { radius: 20 });
+    expect(ex.ranges.length).toBe(2);
+    expect(ex.text.slice(ex.ranges[1].start, ex.ranges[1].end)).toBe('chat');
+  });
+
+  it('windowIndex sélectionne les fenêtres suivantes', function() {
+    var text = 'CIBLE' + new Array(60).join('.') + 'CIBLE';
+    var second = buildExcerpt(text, ['cible'], { radius: 5, windowIndex: 1 });
+    expect(second.leading).toBe(true);
+    expect(second.trailing).toBe(false);
+    expect(second.text.slice(second.ranges[0].start, second.ranges[0].end)).toBe('CIBLE');
+  });
+
+  it('aucune occurrence → null (un extrait vide et un extrait absent se testent pareil)', function() {
+    expect(buildExcerpt('bonjour', ['chat'], { radius: 5 })).toBe(null);
+    expect(buildExcerpt('', ['chat'], { radius: 5 })).toBe(null);
+    expect(buildExcerpt(null, ['chat'], { radius: 5 })).toBe(null);
+    expect(buildExcerpt('chat', [], { radius: 5 })).toBe(null);
+  });
+
+  it('rayon nul : le surlignage couvre tout l\'extrait', function() {
+    var ex = buildExcerpt('aaa CIBLE bbb', ['cible'], { radius: 0 });
+    expect(ex.text).toBe('CIBLE');
+    expect(ex.ranges).toEqual([{ start: 0, end: 5 }]);
+  });
+});
+
+describe('parseSearchTerms — guillemets et mots libres', function() {
+  it('mots libres : un terme par mot', function() {
+    expect(parseSearchTerms('chien de race')).toEqual([
+      { text: 'chien', exact: false }, { text: 'de', exact: false }, { text: 'race', exact: false },
+    ]);
+  });
+
+  it('groupe entre guillemets : UN terme, espaces conservés', function() {
+    expect(parseSearchTerms('"chien de race"')).toEqual([
+      { text: 'chien de race', exact: true },
+    ]);
+  });
+
+  it('mélange guillemets et mots libres', function() {
+    expect(parseSearchTerms('"chien de race" vaccin')).toEqual([
+      { text: 'chien de race', exact: true }, { text: 'vaccin', exact: false },
+    ]);
+  });
+
+  it('guillemets typographiques acceptés comme les droits', function() {
+    expect(parseSearchTerms('\u201cchien de race\u201d')).toEqual([
+      { text: 'chien de race', exact: true },
+    ]);
+    expect(parseSearchTerms('\u00abchien de race\u00bb')).toEqual([
+      { text: 'chien de race', exact: true },
+    ]);
+  });
+
+  it('guillemet ouvert jamais refermé : ferme en fin de requête (frappe en cours)', function() {
+    expect(parseSearchTerms('"chien de')).toEqual([{ text: 'chien de', exact: true }]);
+  });
+
+  it('guillemets vides ignorés, pas de terme fantôme', function() {
+    expect(parseSearchTerms('""')).toEqual([]);
+    expect(parseSearchTerms('"   "')).toEqual([]);
+    expect(parseSearchTerms('a "" b')).toEqual([
+      { text: 'a', exact: false }, { text: 'b', exact: false },
+    ]);
+  });
+
+  it('normalise en minuscules et écarte les blancs', function() {
+    expect(parseSearchTerms('  Chien   "DE Race"  ')).toEqual([
+      { text: 'chien', exact: false }, { text: 'de race', exact: true },
+    ]);
+  });
+
+  it('requête vide ou absente → aucun terme', function() {
+    expect(parseSearchTerms('')).toEqual([]);
+    expect(parseSearchTerms('   ')).toEqual([]);
+    expect(parseSearchTerms(null)).toEqual([]);
+  });
+});
+
+describe('excerptKeywords', function() {
+  it('découpe et normalise en minuscules', function() {
+    expect(excerptKeywords('Petits CHATS')).toEqual(['petits', 'chats']);
+  });
+
+  it('écarte les vides et les blancs multiples', function() {
+    expect(excerptKeywords('  a   b  ')).toEqual(['a', 'b']);
+    expect(excerptKeywords('')).toEqual([]);
+    expect(excerptKeywords(null)).toEqual([]);
+  });
+
+  it('un groupe entre guillemets reste UN mot-clef (surligné d\'un bloc)', function() {
+    expect(excerptKeywords('"chien de race"')).toEqual(['chien de race']);
+  });
+});
+
 describe('searchHelpContent', function() {
   var HELP = {
     apercu: 'MIAOU est un client de chat. Tu peux discuter avec le modèle.',

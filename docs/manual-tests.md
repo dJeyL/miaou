@@ -126,7 +126,8 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     Q/R → titre auto-généré (barre du haut + sidebar). Provoquer une conversation
     **sans titre** (stop du streaming en cours de réponse via le bouton composer,
     ou réponse assistant trop courte, sous le seuil de substance) → la conversation
-    reste « Nouvelle conversation » partout. Sortir de la conversation puis y
+    reste « Nouvelle conversation » dans la barre du haut et la sidebar (l'onglet
+    du navigateur, lui, porte « MIAOU » nu). Sortir de la conversation puis y
     revenir (liste des conversations) : le titre reste absent (pas de retitrage à
     la simple réouverture). Éditer le premier message **ou** envoyer un tour
     supplémentaire dans cette même conversation rouverte → le titrage se déclenche

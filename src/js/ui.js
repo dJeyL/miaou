@@ -3271,6 +3271,35 @@ function relativeWhen(ts) {
 // arrière-plan, sélection, etc.) tant que le champ de recherche n'est pas vidé.
 let convSearchFilter = null;
 
+// Placeholder du champ de recherche AU FOCUS : il enseigne la syntaxe au moment
+// exact où elle sert. Au repos le champ annonce sa fonction (« Rechercher… ») ;
+// une fois dedans, l'utilisateur sait déjà qu'il cherche — la place est mieux
+// employée à montrer ce qu'il peut taper.
+//
+// Registre unique, à dessein : les deux membres se lisent comme ce qu'ils
+// décrivent, jamais comme des méta-variables à remplacer (« terme1 terme2 » fait
+// hésiter sur ce qu'il faut vraiment taper). Les guillemets sont MONTRÉS en
+// situation plutôt qu'expliqués : c'est la seule part de la syntaxe qui ne se
+// devine pas.
+//
+// Partagé avec le sous-mode `conv` de la palette (CMDK_PLACEHOLDERS) : les deux
+// surfaces acceptent la même syntaxe, et ne l'enseigner que d'un côté laisserait
+// croire que l'autre ne la comprend pas.
+const SEARCH_SYNTAX_PLACEHOLDER = 'mots cherchés ou "suite exacte"';
+
+// Compagnons du filtre pour le RENDU des résultats (extraits surlignés) — pas
+// pour le filtrage lui-même, qui reste l'affaire du seul `convSearchFilter`.
+// `convSearchQuery` porte la requête telle que frappée (le filtre est une
+// closure, elle ne la rend pas) ; `convSearchExcerpts` est la Map id → extrait
+// que rend `collectContentSearchHits`.
+//
+// Leur cycle de vie est EXACTEMENT celui de `convSearchFilter` — posés et remis
+// à null aux mêmes points, y compris dans `cancelConvSearchDebounce`. Un extrait
+// qui survivrait à une requête abandonnée se poserait sur les cartes de la
+// suivante, en surlignant des mots qu'elle ne contient pas.
+let convSearchQuery = '';
+let convSearchExcerpts = null;
+
 // Prédicat de recherche : match direct (sous-chaîne) sur le titre, ou
 // recouvrement de mots-clés sur le résumé via le scoring existant (seuil bas,
 // plus permissif que l'injection automatique), ou enfin appartenance à
@@ -3287,12 +3316,22 @@ let convSearchFilter = null;
 function searchConversations(query, contentHits) {
   const q = (query || '').trim().toLowerCase();
   if (!q) return null;
+  // Termes plutôt que requête brute : un groupe entre guillemets vaut UN terme
+  // (sa suite doit se retrouver telle quelle), le reste se coupe aux espaces, et
+  // TOUS doivent être présents. Sans ce découpage, une requête citée chercherait
+  // les guillemets eux-mêmes dans le titre — aucun titre ne matcherait jamais.
+  // Même parsing que le scan de contenu (`convContentMatch`) : les deux moitiés
+  // de la recherche doivent répondre à la même question.
+  const needles = excerptKeywords(q);
+  // Le résumé garde son scoring par mots (scoreSummary, recouvrement pondéré) :
+  // il est court et rédigé par la machine, un ET strict y serait trop sévère.
   const qTokens = tokenize(q);
   // Un seul instantané des résumés, capturé par la closure : le prédicat est
   // appelé une fois par conversation, sans relire le cache à chaque appel.
   const summaries = loadSummaries();
   return c => {
-    if ((c.title || '').toLowerCase().includes(q)) return true;
+    const title = (c.title || '').toLowerCase();
+    if (needles.length && needles.every(n => title.indexOf(n) !== -1)) return true;
     const entry = summaries[c.id];
     if (entry && !entry.suppressed && entry.summary && scoreSummary(qTokens, entry) >= 1) return true;
     return !!(contentHits && contentHits.has(c.id));
@@ -3322,6 +3361,28 @@ function cancelConvSearchDebounce() {
   // Invalide aussi toute passe de scan en vol : un effacement du champ ne doit
   // pas voir un filtre réapparaître quand la lecture IDB rend la main.
   _convSearchSeq++;
+  // Les extraits suivent le filtre, jamais leur propre horloge : une passe en
+  // vol invalidée ne doit pas laisser derrière elle les extraits qu'elle avait
+  // déjà posés (ils seraient réutilisés tels quels au rendu suivant, alors
+  // qu'ils décrivent une requête abandonnée).
+  convSearchExcerpts = null;
+}
+
+// Bascule du placeholder au focus/blur. Le texte de repos est lu depuis
+// l'attribut HTML au premier focus et mémorisé sur le nœud : le dupliquer en
+// constante JS ferait deux sources pour un même libellé, dont l'une seulement
+// serait mise à jour le jour où il change.
+function onConvSearchFocus() {
+  const input = $('conv-search');
+  if (!input) return;
+  if (input._restPlaceholder == null) input._restPlaceholder = input.placeholder;
+  input.placeholder = SEARCH_SYNTAX_PLACEHOLDER;
+}
+
+function onConvSearchBlur() {
+  const input = $('conv-search');
+  if (!input) return;
+  if (input._restPlaceholder != null) input.placeholder = input._restPlaceholder;
 }
 
 function onConvSearch() {
@@ -3340,12 +3401,15 @@ function onConvSearch() {
     // Sans ce rendu intermédiaire, la liste resterait figée sur l'ancien filtre
     // pendant toute la lecture — perceptible sur un gros historique.
     convSearchFilter = searchConversations(query);
+    convSearchQuery = query.trim();
+    convSearchExcerpts = null;
     animateNextConvList();
     renderConvList();
     const hits = await collectContentSearchHits(query);
     if (seq !== _convSearchSeq) return;   // requête abandonnée entre-temps
     if (!hits.size) return;               // rien à ajouter : pas de re-rendu
     convSearchFilter = searchConversations(query, hits);
+    convSearchExcerpts = hits;
     animateNextConvList();
     renderConvList();
   }, CONV_SEARCH_DEBOUNCE_MS);
@@ -3367,6 +3431,7 @@ function clearConvSearch() {
   $('search-clear').classList.remove('show');
   cancelConvSearchDebounce();
   convSearchFilter = null;
+  convSearchQuery = '';
   animateNextConvList();
   renderConvList();
   // La sélection courante (potentiellement très ancienne) peut être hors écran
@@ -3464,6 +3529,53 @@ function toggleConvSelection(id, checked) {
   renderMoveBar();
 }
 
+// ── Surlignage des correspondances de recherche ─────────────────────────────
+// SEUL point d'écriture du <mark> de l'application : sidebar (titre et extrait)
+// et palette (label et extrait) passent tous les quatre par ici. Le texte est
+// d'origine utilisateur ou modèle — titres de conversation, messages — donc il
+// est posé en `textContent`, jamais en template string : concaténer du HTML
+// autour de lui ouvrirait une injection là où le reste du rendu de liste s'en
+// garde déjà (cf. la doctrine de renderCommandList).
+//
+// `ranges` vient de `findMatchRanges`/`buildExcerpt` (utils.js, pur) : offsets
+// déjà fusionnés et triés, donc pas de <mark> imbriqué à gérer ici. Ranges vides
+// ou absents → simple textContent, ce qui rend la fonction utilisable sans
+// condition à l'appel.
+function applyHighlight(el, text, ranges) {
+  el.textContent = '';
+  const s = String(text == null ? '' : text);
+  const rs = (ranges || []).filter(r => r && r.end > r.start);
+  if (!rs.length) { el.textContent = s; return el; }
+  let at = 0;
+  for (const r of rs) {
+    const start = Math.max(at, Math.min(r.start, s.length));
+    const end = Math.max(start, Math.min(r.end, s.length));
+    if (start > at) el.appendChild(document.createTextNode(s.slice(at, start)));
+    if (end > start) {
+      const mk = document.createElement('mark');
+      mk.className = 'search-hit';
+      mk.textContent = s.slice(start, end);
+      el.appendChild(mk);
+    }
+    at = end;
+  }
+  if (at < s.length) el.appendChild(document.createTextNode(s.slice(at)));
+  return el;
+}
+
+// Ligne d'extrait d'un résultat de recherche (sidebar et palette), ellipses de
+// bord comprises. `excerpt` est ce que rend `buildExcerpt` ; les ellipses sont
+// posées ICI et non dans le texte de l'extrait, pour que les offsets de
+// surlignage restent alignés sur le texte nu (cf. buildExcerpt).
+function searchExcerptEl(excerpt, className) {
+  const el = document.createElement('div');
+  el.className = className;
+  applyHighlight(el, excerpt.text, excerpt.ranges);
+  if (excerpt.leading) el.insertBefore(document.createTextNode('…'), el.firstChild);
+  if (excerpt.trailing) el.appendChild(document.createTextNode('…'));
+  return el;
+}
+
 function convItemEl(c, convs) {
   const el = document.createElement('div');
   el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
@@ -3506,6 +3618,23 @@ function convItemEl(c, convs) {
   // à préserver (piège 11 : la fonction reste sans argument, elle dérive l'état
   // du registre elle-même).
   el.insertBefore(activityBadgeEl(convBadgeState(c.id, convs)), el.querySelector('.conv-actions'));
+
+  // Rendu de recherche (extraits surlignés), seulement pendant une recherche
+  // active. Deux gestes distincts, chacun conditionnel :
+  //   - le TITRE est re-rendu en DOM quand la requête y apparaît. Il reste écrit
+  //     en template ci-dessus (cas nominal, écrasante majorité des rendus) ; on
+  //     ne le remplace que pour poser les <mark>, ce que la template string ne
+  //     peut pas faire sans concaténer du HTML autour d'un titre utilisateur.
+  //   - l'EXTRAIT n'apparaît que si le match vient du CONTENU. Un match de titre
+  //     seul n'ajoute pas de ligne : elle répéterait le titre juste au-dessus.
+  if (convSearchQuery) {
+    const titleRanges = findMatchRanges(lbl.text || 'Nouvelle conversation', excerptKeywords(convSearchQuery));
+    if (titleRanges.length) {
+      applyHighlight(el.querySelector('.conv-title'), lbl.text || 'Nouvelle conversation', titleRanges);
+    }
+    const ex = convSearchExcerpts && convSearchExcerpts.get(c.id);
+    if (ex) el.querySelector('.conv-body').appendChild(searchExcerptEl(ex, 'conv-excerpt'));
+  }
   return el;
 }
 
@@ -3862,7 +3991,17 @@ function setTitle(label) {
   // L'onglet reçoit l'extrait BRUT, sans marque de provisoire : il n'a pas
   // d'italique, et distinguer les conversations entre plusieurs onglets prime
   // sur signaler le statut du titre.
-  document.title = (o.text || 'Nouvelle conversation') + ' — MIAOU';
+  document.title = documentTitleFor(o.text);
+}
+
+// Titre d'onglet, formule unique (main.js écrit aussi document.title à la
+// saisie manuelle d'un titre). Sans titre l'onglet porte « MIAOU » nu, pas le
+// placeholder du bandeau : l'onglet est ce qu'on met en favori, et une entrée
+// nommée d'après une conversation vide est une friction inutile. Le
+// placeholder reste l'affaire de la topbar (son :empty::before).
+function documentTitleFor(text) {
+  const t = (text || '').trim();
+  return t ? t + ' — MIAOU' : 'MIAOU';
 }
 
 // Éditabilité DURABLE du titre, gouvernée par la nature de la conversation
@@ -4683,7 +4822,10 @@ const CMDK_PLACEHOLDERS = {
   rootFilter: 'Filtrer les commandes…',
   model: 'Choisir un modèle…',
   skill: 'Invoquer une skill…',
-  conv:  'Rechercher une conversation…',
+  // Le champ de la palette est focalisé d'emblée : pas de bascule au focus à
+  // faire ici, le placeholder porte directement la syntaxe (même texte que la
+  // sidebar au focus, cf. SEARCH_SYNTAX_PLACEHOLDER).
+  conv:  SEARCH_SYNTAX_PLACEHOLDER,
   space: 'Changer d’espace…',
   // « Filtrer » et non « Rechercher » : ce sous-mode est un INVENTAIRE déjà
   // affiché, que la frappe restreint — pas une recherche qui part de rien.
@@ -4848,10 +4990,11 @@ function cmdkConvItems(query) {
   // requête (U-3), ou null tant qu'elle n'a pas rendu la main. Le rendu de la
   // palette reste synchrone ; c'est la passe qui redemande un rendu quand elle
   // aboutit (cf. scheduleCmdkContentScan).
-  const pred = searchConversations(q, _cmdkContentHits && _cmdkContentHits.query === q
-    ? _cmdkContentHits.hits : null);
+  const hits = _cmdkContentHits && _cmdkContentHits.query === q ? _cmdkContentHits.hits : null;
+  const pred = searchConversations(q, hits);
   if (!pred) return [];
   const ql = q.toLowerCase();
+  const keywords = excerptKeywords(q);
   const spaceNames = new Map(loadSpaces().map(s => [s.id, s.name || '']));
   const active = getActiveSpaceId();
   // La recherche de la palette est cross-Space (exception sanctionnée, lot F),
@@ -4868,6 +5011,12 @@ function cmdkConvItems(query) {
     }));
   return rankConvResults(scored, active).map(c => ({
     label: c.title,
+    // Mêmes deux gestes que la carte de sidebar, servis par le même moteur :
+    // surlignage du libellé quand la requête y apparaît, et extrait du contenu
+    // quand c'est lui qui a décidé du match. Un match de titre seul n'ouvre pas
+    // de seconde ligne (elle répéterait le libellé).
+    labelRanges: findMatchRanges(c.title, keywords),
+    excerpt: (hits && hits.get(c.id)) || null,
     note: c.spaceId === active ? '' : (spaceNames.get(c.spaceId) || 'Autre espace'),
     run: () => {
       closeCommandPalette();
@@ -5001,6 +5150,14 @@ function renderCommandList(query) {
   _cmdkItems.forEach((it, i) => {
     const li = document.createElement('li');
     li.className = 'cmdk-item' + (i === _cmdkSel ? ' selected' : '');
+    // Première ligne (clé, label, note, hint) TOUJOURS enveloppée, même sans
+    // extrait : l'item est passé en colonne pour accueillir l'extrait de
+    // recherche sous le label, et n'envelopper qu'au besoin donnerait deux
+    // structures DOM différentes selon le mode — donc deux jeux de règles CSS à
+    // tenir en phase. Les items sans extrait rendent simplement une ligne.
+    const row = document.createElement('div');
+    row.className = 'cmdk-item-row';
+    li.appendChild(row);
     // Emplacement de GAUCHE, largeur fixe : il porte la touche de raccourci en
     // mode racine, et la COCHE de l'élément courant dans les sous-modes (modèle,
     // espace) — les deux ne coexistent jamais (un sous-mode n'a pas de touches).
@@ -5015,23 +5172,29 @@ function renderCommandList(query) {
     } else {
       keyEl.classList.add('cmdk-item-key-empty');
     }
-    li.appendChild(keyEl);
+    row.appendChild(keyEl);
     const label = document.createElement('span');
     label.className = 'cmdk-item-label';
-    label.textContent = it.label;
-    li.appendChild(label);
+    // applyHighlight, pas textContent : même point d'écriture du <mark> que la
+    // sidebar. Sans `labelRanges` (tous les modes sauf la recherche de
+    // conversation) elle se réduit exactement à un textContent.
+    applyHighlight(label, it.label, it.labelRanges);
+    row.appendChild(label);
     if (it.note) {
       const note = document.createElement('span');
       note.className = 'cmdk-item-note';
       note.textContent = it.note;
-      li.appendChild(note);
+      row.appendChild(note);
     }
     if (it.hint) {
       const hint = document.createElement('span');
       hint.className = 'cmdk-item-hint';
       hint.textContent = it.hint;
-      li.appendChild(hint);
+      row.appendChild(hint);
     }
+    // Second étage : l'extrait du passage matché, seulement quand le match vient
+    // du contenu (cf. cmdkConvItems).
+    if (it.excerpt) li.appendChild(searchExcerptEl(it.excerpt, 'cmdk-item-excerpt'));
     li.addEventListener('mousedown', (ev) => { ev.preventDefault(); runCmdkItem(i); });
     list.appendChild(li);
   });

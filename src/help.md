@@ -314,8 +314,14 @@ Si tu as toi-même nommé la conversation, rien ne vient l'écraser, à aucun
 moment.
 
 Un champ de **recherche** filtre l'historique en temps réel, par titre ou par
-mots-clés du contenu. La palette de commandes (Ctrl/Cmd+K) propose la même
-recherche, elle étendue à tous tes espaces.
+mots-clés du contenu. Chaque résultat montre un court extrait du passage où tes
+mots ont été trouvés, surlignés — y compris dans le titre quand c'est là qu'ils
+apparaissent. Plusieurs mots sont cherchés séparément et doivent tous être
+présents, où qu'ils soient ; pour exiger une suite exacte, mets-la entre
+guillemets — `"nid de poule"` ne remontera pas une conversation qui parle de
+poule ailleurs que dans cette expression. La palette de commandes (Ctrl/Cmd+K)
+propose la même recherche, avec les mêmes extraits et les mêmes guillemets, elle
+étendue à tous tes espaces.
 
 Pour la **continuité entre conversations**, MIAOU résume tes échanges en
 arrière-plan et réinjecte ces résumés dans le contexte : le modèle garde ainsi

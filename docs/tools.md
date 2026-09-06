@@ -26,7 +26,29 @@ vingt-huit.
   `query` optionnels, filtres cumulables (since puis query). `query` réutilise
   le **même moteur que la recherche sidebar** (`tokenize` + `scoreSummary`,
   utils.js, seuil `score >= 1`) — mots-clés pèsent 2, mots du résumé/titre
-  pèsent 1 ; ce n'est PAS une sous-chaîne exacte.
+  pèsent 1. Une suite entre GUILLEMETS (`"nid de poule"`) doit en revanche se
+  retrouver telle quelle : les termes exacts (`parseSearchTerms`, utils.js) sont
+  appliqués en filtre **supplémentaire** au scoring, jamais en remplacement —
+  `scoreSummary` est un recouvrement pondéré où « exiger une suite » n'a pas de
+  sens. Même syntaxe qu'à l'écran, exprès : une syntaxe qui marcherait dans
+  l'interface mais pas dans l'outil piégerait le modèle comme l'utilisateur qui
+  la lui dicte. Attention, « même moteur » vaut
+  pour le SCORING du résumé seulement : la sidebar y ajoute le substring de titre
+  et le scan du contenu des messages, que cet outil n'a pas.
+  Avec `query`, chaque entrée porte en plus `match` : un court extrait du résumé
+  (ou, à défaut, du titre) montrant où la recherche a porté, produit par le
+  moteur d'extraits commun à l'interface (`buildExcerpt`, utils.js), ellipses
+  incluses et **sans balisage** — l'extrait est du texte, le surlignage est une
+  affaire d'écran. Il est INDICATIF : tronqué par construction, et absent quand
+  l'entrée a matché par ses seuls `keywords` (rien à montrer dans le résumé),
+  ce que la description de l'outil dit au modèle pour qu'il n'en conclue pas
+  l'absence du sujet. Sans `query`, aucun champ n'est ajouté : le cas « tout
+  lister » ne grossit pas.
+  L'extrait ne vient JAMAIS du contenu des messages, contrairement à celui de
+  l'interface : le handler est synchrone et le contenu vit en IDB. Le lire ici
+  imposerait de passer l'outil en async, ou de se contenter du cache chaud —
+  donc de rendre un résultat dépendant de ce que l'utilisateur a ouvert
+  récemment. `with_contents` reste la voie pour le contenu.
 
 **Écriture directe de souvenirs (chemin direct — instruction explicite) :**
 - `memory__create(content)` — écrit immédiatement dans `miaou-memories`, retourne

@@ -874,8 +874,8 @@ conversation » sur tout agent (`project_doc_promises_intent_code_never_confront
 si c'est un agent, sinon `snippet` (extrait de secours, lot AA), sinon `''`. Il
 rend `''` et **jamais le placeholder**, parce que le fallback appartient à chaque
 surface — la topbar veut `''` pour laisser parler son `:empty::before`,
-`document.title` veut « Nouvelle conversation ». Les mélanger ferait remonter un
-placeholder là où un champ vide est attendu. Et il ne lit `agentIntent` que sur
+`document.title` veut « MIAOU » nu (`documentTitleFor`, ui.js). Les mélanger
+ferait remonter un placeholder là où un champ vide est attendu. Et il ne lit `agentIntent` que sur
 un agent : sur une racine, ce champ résiduel ferait apparaître un libellé
 fantôme.
 

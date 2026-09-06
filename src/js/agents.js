@@ -59,8 +59,8 @@ function agentChildrenOf(convId, convs) {
 //
 // Retourne '' plutôt que le placeholder : le fallback d'affichage appartient à
 // chaque surface (la topbar veut '' pour laisser parler son :empty::before, le
-// document.title veut « Nouvelle conversation »). Mélanger les deux ferait
-// remonter un placeholder là où un champ vide était attendu.
+// document.title veut « MIAOU » nu, cf. documentTitleFor). Mélanger les deux
+// ferait remonter un placeholder là où un champ vide était attendu.
 //
 // Retourne {text, provisional} depuis le lot AA : `provisional` vaut vrai pour
 // le SEUL cas de l'extrait de secours (`snippet`), que les surfaces italisent

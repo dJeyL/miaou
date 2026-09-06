@@ -9,7 +9,7 @@
   width: 0;
   flex-shrink: 0;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   transition: width 190ms var(--ease);
 }
@@ -295,6 +295,24 @@
    l'ordre de CSS_ORDER pour gagner. */
 .conv-title.provisional { font-style: italic; }
 .conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+/* Extrait du passage matché, sous l'horodatage — présent uniquement pendant une
+   recherche, et seulement quand c'est le CONTENU qui a matché (un match de titre
+   se surligne dans le titre, sans ligne supplémentaire).
+   Deux lignes au plus : la sidebar fait 264px de large par défaut, et le rayon
+   d'extrait (UI_EXCERPT_RADIUS, utils.js) y tient en général sur deux lignes.
+   Au-delà, -webkit-line-clamp coupe proprement plutôt que de laisser une carte
+   s'étirer sur cinq lignes et noyer ses voisines. */
+.conv-excerpt {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .conv-actions {
   display: flex;
   flex-direction: column;

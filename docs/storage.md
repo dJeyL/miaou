@@ -236,16 +236,23 @@ jusque dans `renderConvList` et le rendu de la palette.
 
 **Le scan de contenu est donc précalculé, le prédicat reste synchrone.**
 
-- `convContentMatches(conv, q)` (utils.js, **pure**, testée) — ce qui est
-  scanné dans UNE conversation. Deux exclusions héritées du prédicat d'avant
+- `convContentMatch(conv, q)` (utils.js, **pure**, testée) — ce qui est
+  scanné dans UNE conversation, et l'EXTRAIT du premier message matché.
+  Deux exclusions héritées du prédicat d'avant
   U-3 : les acks (`tool-ack`/`memory-ack`, dont le `result` est potentiellement
   énorme et hors-sujet) et, côté user, le corps baké d'une slash-skill
   (`displayText` prime sur `content`). C'est elle qui porte l'invariant —
   sortie en pure exprès plutôt que noyée dans du code IDB non testable.
+  `convContentMatches` (booléen, nom historique) n'est plus que son `!!` : un
+  seul parcours, donc jamais un extrait qui désignerait un message que le
+  booléen n'aurait pas retenu.
 - `collectContentSearchHits(query)` (storage.js, **async**) — lit IDB via
-  `readAllConversationsFromDB()` et rend un `Set` d'ids. Sous
-  `CONTENT_SCAN_MIN_CHARS` (= 3, utils.js), rend un Set vide **sans aucune
+  `readAllConversationsFromDB()` et rend une **`Map` id → extrait**. Sous
+  `CONTENT_SCAN_MIN_CHARS` (= 3, utils.js), rend une table vide **sans aucune
   lecture** : le bruit d'un substring de 1-2 caractères domine le signal.
+  C'était un `Set` d'ids avant les extraits de recherche ; le passage au `Map`
+  est transparent pour qui ne veut que l'appartenance (`has()` répond pareil),
+  ce qui laisse `searchConversations` inchangé.
 - `searchConversations(query, contentHits)` (ui.js) — inchangé pour titre et
   résumé ; le scan de contenu devient une consultation `contentHits.has(id)`.
   **Argument omis = pas de scan de contenu**, ce qui est le comportement du
@@ -265,12 +272,53 @@ contenu en silence) :
 | | sidebar (`onConvSearch`) | palette (`scheduleCmdkContentScan`) |
 |---|---|---|
 | debounce | déjà présent (`CONV_SEARCH_DEBOUNCE_MS`) | **ajouté** (même constante) |
-| état du résultat | `convSearchFilter` (closure sur le Set) | `_cmdkContentHits` = `{ query, hits }` |
+| état du résultat | `convSearchFilter` (closure sur la table) | `_cmdkContentHits` = `{ query, hits }` |
+| extraits pour le rendu | `convSearchQuery` + `convSearchExcerpts` | lus dans `_cmdkContentHits.hits` |
 | jeton de séquence | `_convSearchSeq` | `_cmdkContentSeq` |
+
+**Syntaxe de recherche : termes, dont des suites exactes.** `parseSearchTerms`
+(utils.js, pure) découpe la requête en termes — les groupes entre guillemets
+restent d'un bloc, le reste se coupe aux espaces — et **tous** doivent être
+présents (ET, ordre libre). `"nid de poule"` exige donc la suite littérale, là où
+`nid de poule` accepte les trois mots dispersés. Guillemets droits ET
+typographiques (`" " " « »`), et un guillemet ouvert jamais refermé ferme
+implicitement en fin de requête : c'est l'état de la frappe en cours, refuser la
+requête à ce moment ferait clignoter la liste entre deux caractères.
+
+Les DEUX moitiés de la recherche passent par ce parsing — le titre dans
+`searchConversations` (ui.js) et le contenu dans `convContentMatch` — sans quoi
+une requête citée chercherait les guillemets eux-mêmes dans le titre, et aucun
+titre ne matcherait jamais. Le résumé garde en revanche son scoring par
+recouvrement (`scoreSummary`) : il est court et écrit par la machine, un ET
+strict y serait trop sévère. `conv__list` (tools.js) applique les termes exacts
+en filtre **supplémentaire** au scoring, pour la même raison.
+
+Le seuil `CONTENT_SCAN_MIN_CHARS` porte sur le plus long TERME, jamais sur la
+requête brute : `"ab"` fait 4 caractères pour un motif de 2, et déclencherait
+sinon le scan que le seuil existe pour éviter.
+
+**Extraits surlignés.** La table de résultats porte, pour chaque conversation,
+l'extrait du passage trouvé — ce qui répond à « pourquoi celle-ci remonte ? »,
+question que le seul filtrage laissait sans réponse. Le fenêtrage est le moteur
+pur commun `buildExcerpt`/`findMatchRanges` (utils.js), partagé avec la recherche
+d'aide (`about_search`) et `conv__list` : une seule mécanique d'extraction, pas
+une par surface. Il rend des **offsets**, jamais du markup — l'interface pose ses
+`<mark>` par `applyHighlight` (ui.js, seul point d'écriture), et les outils
+servent le même extrait en texte nu.
+
+Le surlignage porte sur les TERMES, jamais sur les mots d'un terme cité : marquer
+« chien », « de » et « race » séparément fait surligner le « de » d'un « **de**
+chien de race », qui n'appartient pas au passage trouvé. Et deux marques que rien
+ne sépare qu'un BLANC sont fusionnées (`findMatchRanges`) — sinon une suite de
+mots libres se rend en marques zébrées d'espaces nus. La fusion s'arrête aux
+blancs : absorber n'importe quel intervalle souderait deux occurrences
+réellement distinctes en une marque recouvrant le texte intercalaire. Poser les ellipses dans le texte de
+l'extrait décalerait les offsets d'un caractère : elles sont donc portées par
+deux drapeaux (`leading`/`trailing`) et matérialisées au rendu.
 
 **Rendu en deux temps, délibéré.** La liste est filtrée sur titre/résumé
 **immédiatement**, puis complétée quand la lecture IDB rend la main (re-rendu
-sauté si le Set est vide, pour ne pas rejouer l'animation d'entrée pour rien).
+sauté si la table est vide, pour ne pas rejouer l'animation d'entrée pour rien).
 Sans ce premier rendu, la liste resterait figée sur l'ancien filtre pendant
 toute la lecture — perceptible sur un gros historique.
 
@@ -279,15 +327,18 @@ en vol simultanément et rien ne garantit qu'elles rendent la main dans l'ordre 
 sans jeton, la plus lente écrase le résultat de la plus récente et la liste
 affiche le filtre d'une requête abandonnée
 (`project_await_reentrancy_guard`). Côté palette, le résultat est mémorisé
-**avec sa requête**, jamais seul — un Set arrivé en retard s'appliquerait sinon à
-une autre frappe. Les invalidations : effacement du champ
+**avec sa requête**, jamais seul — une table arrivée en retard s'appliquerait
+sinon à une autre frappe. Les invalidations : effacement du champ
 (`cancelConvSearchDebounce`), changement de submode et fermeture de la palette
 (`cancelCmdkContentScan`).
 
-**Tests** : QuickJS couvre `convContentMatches` et la consultation du Set. Ni la
+**Tests** : QuickJS couvre `convContentMatch` (extrait compris) et la
+consultation de la table. Ni la
 lecture IDB, ni le débounce, ni les jetons — c'est-à-dire exactement ce qui peut
 faire afficher un résultat périmé : vérifiés par
-`.claude/skills/run-miaou/verify-conv-search.mjs` (14 contrôles). Son seed écrit
+`.claude/skills/run-miaou/verify-conv-search.mjs` — qui couvre aussi le rendu des
+extraits (surlignage, match de titre sans ligne d'extrait, terme exact) et les
+placeholders. Son seed écrit
 **directement en IDB** sans ouvrir aucune conversation, et sans poser de `model`
 sur les réponses assistant : un seed passant par `saveConversation` les
 réchaufferait, et le script ne prouverait plus rien du chemin froid.

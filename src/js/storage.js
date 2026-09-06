@@ -671,7 +671,16 @@ async function readAllConversationsFromDB() {
   });
 }
 
-// Ensemble des ids dont le CONTENU matche `query` (recherche plein-texte, U-3).
+// Table des conversations dont le CONTENU matche `query` (recherche plein-texte,
+// U-3) : `Map` id → extrait du passage matché ({text, ranges, leading, trailing},
+// cf. `convContentMatch`).
+//
+// C'était un `Set` d'ids jusqu'à l'ajout des extraits de recherche. Le passage au
+// `Map` ne change RIEN pour les appelants qui ne veulent que l'appartenance : un
+// `Map` répond `has()` comme un `Set`, et `searchConversations` (ui.js) garde son
+// contrat mot pour mot. Le remplacer par une seconde passe qui aurait collecté
+// les extraits à côté aurait donné deux parcours pouvant diverger — celui qui
+// décide de l'affichage et celui qui l'explique.
 // Le prédicat de recherche (`searchConversations`, ui.js) reste synchrone pour
 // le titre et le résumé ; le scan de contenu, lui, a perdu sa source synchrone
 // avec le passage à IDB (une conversation froide n'a pas ses `messages` en RAM).
@@ -689,10 +698,16 @@ async function readAllConversationsFromDB() {
 // du tout : on rend un Set vide sans toucher à la base.
 async function collectContentSearchHits(query) {
   const q = (query || '').trim().toLowerCase();
-  const hits = new Set();
-  if (q.length < CONTENT_SCAN_MIN_CHARS) return hits;
+  const hits = new Map();
+  // Seuil mesuré sur le plus long TERME, pas sur la requête brute : les
+  // guillemets comptent des caractères qui ne sont pas cherchés, et `"ab"` (4
+  // caractères) déclencherait sinon un scan pour un motif de 2 — exactement le
+  // bruit que le seuil existe pour éviter.
+  const longest = excerptKeywords(q).reduce((n, t) => Math.max(n, t.length), 0);
+  if (longest < CONTENT_SCAN_MIN_CHARS) return hits;
   for (const conv of await readAllConversationsFromDB()) {
-    if (convContentMatches(conv, q)) hits.add(conv.id);
+    const ex = convContentMatch(conv, q);
+    if (ex) hits.set(conv.id, ex);
   }
   return hits;
 }

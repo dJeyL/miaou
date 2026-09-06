@@ -83,15 +83,25 @@
   flex: 1 1 auto;
 }
 
+/* L'item est une COLONNE : première ligne (touche, label, note, hint) puis,
+   pour un résultat de recherche de conversation, l'extrait du passage trouvé.
+   Les items sans extrait n'ont qu'une ligne — la hauteur varie donc d'un mode à
+   l'autre, ce qui est assumé : réserver la seconde ligne partout laisserait un
+   blanc sur tous les autres sous-modes, qui n'en ont jamais. */
 .cmdk-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
   padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;
   color: var(--text);
   font-size: 13px;
+}
+.cmdk-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .cmdk-item:hover { background: var(--surface-3); }
 .cmdk-item.selected { background: var(--accent-dim); }
@@ -163,6 +173,20 @@
   flex: 0 0 auto;
   color: var(--text-3);
   font-size: 12px;
+}
+
+/* Extrait du passage matché (second étage d'un résultat de recherche). Aligné
+   sur le label, pas sur le bord de l'item : la colonne de gauche (touche/coche)
+   fait 20px + 10px de gap, on la retrouve ici en marge pour que l'extrait
+   commence sous le libellé et non sous la touche. */
+.cmdk-item-excerpt {
+  margin-left: 30px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cmdk-empty {

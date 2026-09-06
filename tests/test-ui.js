@@ -301,9 +301,87 @@ describe('convContentMatches (scan de contenu, U-3)', function() {
 
   it('seuil de scan : CONTENT_SCAN_MIN_CHARS vaut 3 (le prédicat ne scanne pas sous ce seuil)', function() {
     // Le seuil est appliqué par collectContentSearchHits (storage.js, async) :
-    // sous 3 caractères, aucune lecture IDB n'est faite et le Set reste vide.
+    // sous 3 caractères, aucune lecture IDB n'est faite et la table reste vide.
     // Seule la valeur est testable ici ; le câblage l'est en Playwright.
     expect(CONTENT_SCAN_MIN_CHARS).toBe(3);
+  });
+
+  it('requête multi-mots : ET sur les termes, jamais un OU', function() {
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'des petits chiens et des gros chats' }] };
+    // Les deux mots sont là, même éloignés : la conversation remonte.
+    expect(convContentMatches(c, 'petits chats')).toBe(true);
+    // Un seul des deux ne suffit pas.
+    expect(convContentMatches(c, 'petits girafes')).toBe(false);
+  });
+
+  it('guillemets : la suite exacte est exigée, la requête nue ne l\'exige pas', function() {
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'des petits chiens et des gros chats' }] };
+    expect(convContentMatches(c, '"petits chats"')).toBe(false);
+    expect(convContentMatches(c, '"gros chats"')).toBe(true);
+    expect(convContentMatches(c, 'petits chats')).toBe(true);
+  });
+});
+
+describe('convContentMatch (extrait du passage matché)', function() {
+  it('rend l\'extrait du message matché, surlignage compris', function() {
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'Un mot rarissime : ornithorynque, voilà' }] };
+    var ex = convContentMatch(c, 'ornithorynque');
+    expect(ex.text.indexOf('ornithorynque') >= 0).toBe(true);
+    expect(ex.text.slice(ex.ranges[0].start, ex.ranges[0].end)).toBe('ornithorynque');
+  });
+
+  it('mots contigus dans le texte : UNE marque continue, pas un zébrage', function() {
+    var c = { id: 'c1', messages: [{ role: 'assistant', content: 'voici des gros chats gris' }] };
+    var ex = convContentMatch(c, 'gros chats');
+    expect(ex.ranges.length).toBe(1);
+    expect(ex.text.slice(ex.ranges[0].start, ex.ranges[0].end)).toBe('gros chats');
+  });
+
+  it('terme EXACT : la suite est marquée d\'un bloc, ses mots isolés ne le sont pas', function() {
+    // Le défaut que les guillemets corrigent : sans eux, le « de » de tête est
+    // surligné alors qu'il n'appartient pas au passage cherché.
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'parle de chien de race stp' }] };
+    var ex = convContentMatch(c, '"chien de race"');
+    expect(ex.ranges.length).toBe(1);
+    expect(ex.text.slice(ex.ranges[0].start, ex.ranges[0].end)).toBe('chien de race');
+  });
+
+  it('terme exact : la suite doit se retrouver TELLE QUELLE', function() {
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'un chien puis une race' }] };
+    expect(convContentMatch(c, '"chien de race"')).toBe(null);
+    // Sans guillemets, les mêmes mots dispersés matchent (ET, ordre libre).
+    expect(convContentMatch(c, 'chien race') === null).toBe(false);
+  });
+
+  it('ET sur les termes : tous présents, ordre libre', function() {
+    var c = { id: 'c1', messages: [{ role: 'user', content: 'la race avant le chien' }] };
+    expect(convContentMatch(c, 'chien race') === null).toBe(false);
+    expect(convContentMatch(c, 'chien girafe')).toBe(null);
+  });
+
+  it('PREMIER message matché, pas un autre plus loin', function() {
+    var c = { id: 'c1', messages: [
+      { role: 'user', content: 'premier ornithorynque ici' },
+      { role: 'assistant', content: 'second ornithorynque là' },
+    ] };
+    expect(convContentMatch(c, 'ornithorynque').text.indexOf('premier') >= 0).toBe(true);
+  });
+
+  it('mêmes exclusions que le booléen : acks ignorés, displayText côté user', function() {
+    var acks = { id: 'c1', messages: [
+      { role: 'tool-ack', kind: 'mcp_call', result: 'ornithorynque dans le result' },
+    ] };
+    expect(convContentMatch(acks, 'ornithorynque')).toBe(null);
+    var baked = { id: 'c2', messages: [{
+      role: 'user', displayText: 'Regarde ce texte', content: 'Regarde\n\nCorpsSkillRarissime',
+    }] };
+    expect(convContentMatch(baked, 'corpsskillrarissime')).toBe(null);
+  });
+
+  it('aucun match → null (c\'est ce dont le booléen est le !!)', function() {
+    expect(convContentMatch({ id: 'c1', messages: [] }, 'x')).toBe(null);
+    expect(convContentMatch(null, 'x')).toBe(null);
+    expect(convContentMatch({ id: 'c1', messages: [{ role: 'user', content: 'abc' }] }, '')).toBe(null);
   });
 });
 

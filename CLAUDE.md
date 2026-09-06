@@ -412,7 +412,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   derniers migrés depuis localStorage au lot U), champs de méta `snippet`
   (extrait de secours, lot AA) et `autoTitled` (titre écrit par la machine, qui
   autorise le retitrage de fin d'échange), plus le format d'export/import complet
-  (`.zip` depuis le lot V-3).
+  (`.zip` depuis le lot V-3) ; porte aussi la recherche plein-texte
+  (`collectContentSearchHits`, qui rend une `Map` id → extrait) et le moteur
+  d'extraits surlignés commun à la sidebar, à la palette et à `conv__list`
+  (`buildExcerpt`/`findMatchRanges`, offsets et jamais de markup).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
@@ -449,7 +452,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/palettes.md`** — palettes de couleurs (lot S-a) : deux axes
   orthogonaux (luminosité × palette), dérivation HSL des tokens, exceptions
   hors palette (logotype, code inline, sémantiques), condition de gratuité à
-  l'export.
+  l'export, et le scope local des paliers — un sous-arbre peut redéfinir son
+  échelle (`html[data-theme="light"] .sidebar`), auquel cas c'est l'échelle
+  ENTIÈRE qui bouge, jamais le seul fond.
 - **`docs/fonts.md`** — lots de fontes appairés (lot S-b) : troisième axe de
   présentation, `@import` unique préchargeant les six familles, contraintes
   d'une mono (tabular-nums de l'inspecteur), export en statu quo.
@@ -458,7 +463,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   hauteur bornée des blocs du fil (borne sur le `<code>` pour épingler
   `.code-head`, export non borné).
 - **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
-  déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée.
+  déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée,
+  item à deux étages (`.cmdk-item-row` toujours posée, `.cmdk-item-excerpt` pour
+  un match de contenu) et surlignage par `applyHighlight`.
 - **`docs/multitab-sync.md`** — synchro multi-onglets (lot J, BroadcastChannel) :
   protocole d'enveloppe, liste fermée de types, émetteurs/récepteurs, file
   d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
