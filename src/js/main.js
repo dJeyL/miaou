@@ -1889,6 +1889,7 @@ function onSaveSettings() {
     showReasoningSelector: $('set-reasoningselector').checked,
     intentTracing: $('set-intent-tracing').checked,
     earlyTitle: $('set-early-title').checked,
+    didYouKnow: $('set-did-you-know').checked,
     // REMISE à true quand le titrage précoce est désactivé, pas seulement
     // forcée à la lecture : sinon un `false` réglé du temps où le précoce était
     // actif dort en base et RESSURGIT au ré-activage, alors que le réglage doit

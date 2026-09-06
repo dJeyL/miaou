@@ -55,6 +55,53 @@ function showWelcome(exceptTitle) {
     '<div class="welcome-title">' + escHtml(w.title) + '</div>' +
     '<div class="welcome-sub">'   + escHtml(w.sub)   + '</div>';
   $('thread').appendChild(el);
+  scheduleDidYouKnow(el);
+}
+
+// ── Astuce « Le savais-tu ? » sous l'écran d'accueil ───────────────────────
+// Une astuce PAR écran d'accueil : le déclencheur est showWelcome, donc elle
+// change quand le welcome change (nouvelle conversation, bascule de thème via
+// refreshWelcomeIfPresent) et pas sur un timer. Décidé pour borner le coût —
+// l'astuce demande un appel modèle, et une rotation périodique en aurait
+// engagé un par minute sur un onglet simplement laissé ouvert.
+// DID_YOU_KNOW_DELAY_MS vient de storage.js (clef de build `did_you_know_delay_s`).
+let _didYouKnowTimer = null;
+
+// `hostEl` est L'écran d'accueil qui a demandé cette astuce : on la lui attache
+// seulement s'il est TOUJOURS celui affiché. Deux fenêtres d'attente le rendent
+// nécessaire (le délai de 2 s, puis la génération) : entre-temps l'utilisateur
+// peut avoir envoyé un message (thread rendu, welcome retiré) ou re-tiré un
+// welcome. `isConnected` répond aux deux cas d'un coup — un nœud retiré du DOM
+// le perd, y compris quand un AUTRE welcome l'a remplacé.
+function scheduleDidYouKnow(hostEl) {
+  if (_didYouKnowTimer) { clearTimeout(_didYouKnowTimer); _didYouKnowTimer = null; }
+  if (typeof generateDidYouKnowTip !== 'function') return;   // sources non buildées (tests)
+  if (!loadSettings().didYouKnow) return;
+  _didYouKnowTimer = setTimeout(async () => {
+    _didYouKnowTimer = null;
+    if (!hostEl.isConnected) return;
+    const res = await generateDidYouKnowTip();
+    if (!res || !hostEl.isConnected) return;
+    renderDidYouKnow(hostEl, res.tip);
+  }, DID_YOU_KNOW_DELAY_MS);
+}
+
+// escHtml impératif : `tip` est d'origine modèle (piège 21).
+function renderDidYouKnow(hostEl, tip) {
+  const old = hostEl.querySelector('.welcome-tip');
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.className = 'welcome-tip';
+  // escHtml par phrase : `tip` est d'origine modèle (piège 21). Le découpage
+  // en phrases se fait AVANT l'échappement, sur le texte brut — après, une
+  // entité (&amp;) introduirait des points-virgules qui ne coupent rien mais
+  // brouilleraient la lecture d'un futur motif.
+  const lines = (typeof splitTipSentences === 'function' ? splitTipSentences(tip) : [tip])
+    .map(p => '<span class="welcome-tip-line">' + escHtml(p) + '</span>').join('');
+  el.innerHTML =
+    '<span class="welcome-tip-head">💡 Le savais-tu ?</span>' +
+    '<span class="welcome-tip-body">' + lines + '</span>';
+  hostEl.appendChild(el);
 }
 
 // Coquetterie : si l'écran d'accueil est affiché (conversation vierge), un
@@ -5505,6 +5552,7 @@ function settingsFormDirty() {
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-early-title').checked !== !!s.earlyTitle
+    || $('set-did-you-know').checked !== !!s.didYouKnow
     || $('set-retitle-after-reply').checked !== effectiveRetitleAfterReply(s)
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
@@ -5618,6 +5666,7 @@ function openSettings() {
   setMotionUI(s.motion || 'system');
   $('set-intent-tracing').checked = !!s.intentTracing;
   $('set-early-title').checked = !!s.earlyTitle;
+  $('set-did-you-know').checked = !!s.didYouKnow;
   $('set-retitle-after-reply').checked = effectiveRetitleAfterReply(s);
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;

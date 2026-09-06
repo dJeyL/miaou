@@ -3701,3 +3701,214 @@ function skillDoctrinePrompt() {
   if (!getAutotriggerSkillsMeta().length) return '';
   return SKILL_DOCTRINE_BASE + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
 }
+
+// ── Astuce « Le savais-tu ? » (encart sous l'écran d'accueil) ──────────────
+// Pioche une section de l'aide, en extrait un passage contigu, et demande au
+// modèle d'en tirer une ou deux phrases affichables. Le tirage se fait sur
+// helpContentResolved() (jetons {{…}} déjà substitués), jamais sur HELP_CONTENT
+// brut : un extrait citant `{{TOPIC_LIST}}` ferait écrire au modèle une phrase
+// sur un jeton de gabarit.
+const DID_YOU_KNOW_MAX_CHARS = 1200;
+
+// « tutoiement » seul est ambigu et a été lu à l'envers par un modèle, qui a
+// produit « Tutoie MIAOU pour… » : l'encart s'adresse à l'utilisateur, c'est
+// MIAOU qui tutoie, jamais l'inverse. Le sens de l'adresse est donc explicite.
+// La consigne de sortie est en tête ET en queue : un modèle qui raisonne en
+// clair dans `content` (pas de canal reasoning séparé) rend sinon son
+// cheminement, son décompte de caractères et ses variantes dans le même flot.
+const DID_YOU_KNOW_PROMPT =
+  "Tu écris une astuce « Le savais-tu ? » pour l'encart d'accueil de MIAOU, " +
+  "un client de chat web. On te donne un extrait de la documentation " +
+  "utilisateur. Choisis-y UNE capacité concrète et écris une ou deux phrases " +
+  "courtes qui la font découvrir à quelqu'un qui ne la connaît pas.\n" +
+  "L'astuce s'adresse à l'utilisateur de MIAOU et lui parle à la deuxième " +
+  "personne du singulier (« tu peux… », « ton historique ») : c'est MIAOU qui " +
+  "le tutoie, jamais lui qui tutoierait MIAOU.\n" +
+  "Forme imposée : l'astuce ÉNONCE une capacité, elle ne donne pas d'ordre. " +
+  "Commence par « Tu peux… », « MIAOU te permet de… » ou « Le modèle peut… » " +
+  "(ou une tournure équivalente à l'indicatif). Jamais d'impératif : pas " +
+  "« Exporte tout en zip », mais « Tu peux exporter tout MIAOU en un fichier " +
+  "zip ». L'utilisateur découvre ce qui existe, on ne lui demande pas de le " +
+  "faire.\n" +
+  "Le choix de l'amorce n'est pas libre : il suit le sujet de l'extrait. Si " +
+  "l'extrait dit que le MODÈLE fait quelque chose de sa propre initiative " +
+  "(« le modèle peut ranger », « il va chercher »), l'astuce dit « Le modèle " +
+  "peut… » — surtout pas « Tu peux… », qui attribuerait à l'utilisateur une " +
+  "capacité qui n'est pas la sienne. Réserve « Tu peux… » à ce que " +
+  "l'utilisateur fait lui-même. Ne transpose jamais une capacité d'un sujet " +
+  "à l'autre pour rentrer dans une tournure.\n" +
+  "Contraintes : 200 caractères maximum, ton posé, pas de « Le savais-tu ? » " +
+  "en préambule (l'encart le dit déjà), pas de Markdown, pas de guillemets " +
+  "englobants.\n" +
+  "L'astuce se lit SEULE, hors de tout contexte : elle est affichée sans " +
+  "l'extrait. Chaque « cette base », « ce panneau », « ce bouton », « il » " +
+  "doit donc être remplacé par ce qu'il désigne, ou la phrase reformulée " +
+  "sans lui. Un mot que l'extrait définissait mais que l'astuce ne reprend " +
+  "pas ne veut plus rien dire pour le lecteur.\n" +
+  "Le message donne d'abord le SUJET dont l'extrait est tiré, puis l'extrait. " +
+  "Ce sujet est souvent ce que l'extrait laisse implicite parce qu'il n'en " +
+  "parle que sous forme de « ton fil », « ces fichiers », « le panneau » : " +
+  "nomme-le dans l'astuce quand elle serait sinon ambiguë (« ton fil » seul " +
+  "ne dit pas qu'il s'agit d'une conversation d'agent). Le sujet n'est pas " +
+  "l'astuce : ne le recopie pas tel quel en préambule.\n" +
+  "Annonce ce que MIAOU permet AUJOURD'HUI, jamais son histoire ni ses " +
+  "évolutions : pas de « désormais », « autrefois », « ne fait plus », pas de " +
+  "migration ni de changement passé. Qui lit l'encart découvre l'appli, il " +
+  "n'a pas connu l'état antérieur. Si le passage tiré ne raconte qu'une " +
+  "évolution, réponds PASS.\n" +
+  "Une astuce annonce une CAPACITÉ — quelque chose que l'utilisateur ou le " +
+  "modèle peut faire. Une garantie (« tes données ne quittent pas ton " +
+  "navigateur »), un principe de fonctionnement, une mise en garde ou un " +
+  "renvoi vers un autre sujet n'en sont pas : il n'y a rien à y découvrir " +
+  "ni à y faire. Si le passage tiré n'énonce que cela, réponds PASS.\n" +
+  "Si l'extrait ne contient rien d'intéressant à annoncer, réponds " +
+  "exactement : PASS\n" +
+  "Ta réponse entière est l'astuce elle-même, et rien d'autre : pas de " +
+  "raisonnement, pas de préambule, pas de décompte de caractères, pas de " +
+  "variante alternative, pas de commentaire sur l'extrait ou sur ces " +
+  "consignes. Une seule proposition, deux phrases au maximum.";
+
+// Retient la première phrase utile et jette le bavardage qui suit. Un modèle
+// sans canal de raisonnement séparé rend son cheminement dans `content` : on a
+// observé l'astuce correcte en tête, puis « Note : je dois respecter… », un
+// décompte de caractères et une variante — d'où la coupe au premier saut de
+// ligne (le bavardage arrive en bloc détaché), puis le rejet des amorces
+// méta connues si l'une ouvre malgré tout la réponse.
+const DID_YOU_KNOW_CHATTER_RE = /^(note|remarque|explication|justification|analyse|comptons|décompte|réflexion|voici|proposition|réponse)\b[\s:,-]/i;
+
+function cleanDidYouKnowTip(raw) {
+  let t = String(raw == null ? '' : raw).trim();
+  // Bloc détaché après l'astuce : tout ce qui suit une ligne vide part.
+  t = t.split(/\n\s*\n/)[0].trim();
+  // Puis ligne à ligne : on garde les premières lignes tant qu'elles ne sont
+  // pas une amorce méta (une astuce sur deux lignes reste possible).
+  const kept = [];
+  for (const line of t.split('\n')) {
+    if (DID_YOU_KNOW_CHATTER_RE.test(line.trim())) break;
+    kept.push(line.trim());
+  }
+  t = kept.join(' ').trim();
+  t = t.replace(/[*_`~]+/g, '');                       // marqueurs Markdown, pas leur contenu
+  t = t.replace(/^["'«»\s]+|["'«»\s]+$/g, '').trim();  // guillemets englobants
+  return t;
+}
+
+// Découpe une section en blocs. Un bloc est un paragraphe (séparé par une ligne
+// vide) OU un item de liste — help.md énumère ses capacités en listes `- **X** :`
+// sans ligne vide entre les items, si bien qu'un split sur ligne vide seule rend
+// la liste entière comme UN bloc : la section `interface` donnait deux blocs,
+// une phrase d'intro de 46 caractères et un mur de 6 000. Or l'item de liste est
+// justement l'unité « une capacité » que cherche ce générateur. Les lignes de
+// continuation indentées d'un item restent avec lui.
+function splitHelpBlocks(markdown) {
+  const out = [];
+  for (const para of String(markdown == null ? '' : markdown).split(/\n\s*\n/)) {
+    let cur = null;
+    for (const line of para.split('\n')) {
+      if (/^\s*(?:[-*+]|\d+[.)])\s+/.test(line)) {
+        if (cur != null) out.push(cur);
+        cur = line;
+      } else if (cur != null) {
+        cur += '\n' + line;
+      } else {
+        cur = line;
+      }
+    }
+    if (cur != null) out.push(cur);
+  }
+  return out.map(b => b.trim()).filter(b => b.length > 0);
+}
+
+// Rend une fenêtre de blocs contigus tirée au hasard et plafonnée à `maxChars`.
+// Contiguë et non « un bloc isolé » : dans help.md une phrase seule perd souvent
+// son référent (« ce bouton », « les deux modes ») laissé au bloc voisin.
+// Pure : `rnd` injecté pour être testable.
+function pickHelpExcerpt(markdown, maxChars, rnd) {
+  const random = rnd || Math.random;
+  const limit = maxChars || DID_YOU_KNOW_MAX_CHARS;
+  const paras = splitHelpBlocks(markdown);
+  if (!paras.length) return { text: '', from: 0, count: 0, total: 0 };
+  let start = Math.floor(random() * paras.length);
+  const picked = [];
+  let total = 0;
+  for (let i = start; i < paras.length; i++) {
+    const next = total + (picked.length ? 2 : 0) + paras[i].length;
+    if (picked.length && next > limit) break;
+    picked.push(paras[i]);
+    total = next;
+  }
+  // Extension VERS L'ARRIÈRE quand la fenêtre reste maigre. Sans elle, un tirage
+  // en fin de section rend le dernier bloc seul : la contiguïté vers l'avant
+  // n'amortit rien là où il n'y a plus rien devant. C'est le cas qui a produit
+  // « Le reste de tes données… », dont le référent était resté dans le bloc
+  // précédent, hors extrait. Le seuil est la moitié du plafond : au-delà, la
+  // fenêtre porte déjà assez de matière pour se suffire.
+  while (start > 0 && total < limit / 2) {
+    const prev = paras[start - 1];
+    if (total + 2 + prev.length > limit) break;
+    picked.unshift(prev);
+    total += 2 + prev.length;
+    start--;
+  }
+  return { text: picked.join('\n\n'), from: start, count: picked.length, total: paras.length };
+}
+
+// Sections écartées du tirage : `apercu` n'est qu'un sommaire, `genese` un récit
+// — ni l'un ni l'autre ne porte de capacité à annoncer.
+const DID_YOU_KNOW_EXCLUDED_TOPICS = ['apercu', 'genese'];
+
+function pickHelpTopic(content, rnd) {
+  const random = rnd || Math.random;
+  const slugs = Object.keys(content || {}).filter(s => DID_YOU_KNOW_EXCLUDED_TOPICS.indexOf(s) === -1);
+  if (!slugs.length) return null;
+  return slugs[Math.floor(random() * slugs.length)];
+}
+
+// Compose le message user : le SUJET d'abord, puis l'extrait. Sans le sujet, un
+// extrait qui ne parle que de « ton fil » ou « ces fichiers » produit une astuce
+// ambiguë — le modèle voit l'extrait dans une section titrée, le lecteur de
+// l'encart n'a que la phrase. Le libellé lisible (HELP_LABELS) plutôt que le
+// slug : « agents » dit moins que « agents : sous-conversations lancées par le
+// modèle », et c'est le libellé qui porte la désambiguïsation.
+function formatDidYouKnowInput(topic, excerpt, labels) {
+  const table = labels || (typeof HELP_LABELS === 'object' ? HELP_LABELS : {});
+  const label = (table && table[topic]) || topic;
+  return 'Sujet : ' + label + '\n\nExtrait :\n' + excerpt;
+}
+
+// Découpe une astuce en phrases, pour les afficher une par ligne. Coupe après
+// . ! ? suivis d'une espace et d'une majuscule : la condition sur la majuscule
+// évite de couper « 1.5 Mo », « cf. plus bas » ou une abréviation, là où un
+// split sur la seule ponctuation le ferait. Rend toujours au moins une entrée
+// (le texte entier) — une astuce sans ponctuation finale reste affichable.
+function splitTipSentences(tip) {
+  const t = String(tip == null ? '' : tip).trim();
+  if (!t) return [];
+  return t.split(/(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])/).map(x => x.trim()).filter(x => x.length > 0);
+}
+
+// Génère une astuce, ou rend null (réglage éteint, aide indisponible, PASS du
+// modèle, appel en échec). Ne journalise rien et ne lève jamais : l'encart est
+// une coquetterie, son échec ne doit pas se voir. Volontairement PAS de
+// runBackgroundTask : l'indicateur d'activité annoncerait un travail que
+// l'utilisateur n'a pas demandé, sur un écran vierge.
+async function generateDidYouKnowTip() {
+  if (!loadSettings().didYouKnow) return null;
+  const content = helpContentResolved();
+  const topic = pickHelpTopic(content);
+  if (!topic || content[topic] == null) return null;
+  const excerpt = pickHelpExcerpt(content[topic]);
+  if (!excerpt.text) return null;
+  let out;
+  try {
+    out = await silentCompletion([
+      { role: 'system', content: DID_YOU_KNOW_PROMPT },
+      { role: 'user', content: formatDidYouKnowInput(topic, excerpt.text) },
+    ], { temperature: 0.8, timeout: 60000, model: activeModel() });
+  } catch (e) {
+    return null;
+  }
+  const tip = cleanDidYouKnowTip(out);
+  if (!tip || tip === 'PASS') return null;
+  return { topic, tip };
+}

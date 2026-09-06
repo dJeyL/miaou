@@ -34,6 +34,12 @@ const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si s
 // la lecture des réglages : le défaut se résout dans DEFAULT_SETTINGS et non
 // dans loadSettings, contrairement à `url`/`model`.
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;   // défaut true
+// Astuce « Le savais-tu ? » sous l'écran d'accueil. Même forme que
+// BUILD_EARLY_TITLE ci-dessus (booléen → défaut résolu dans DEFAULT_SETTINGS).
+// Clef de build parce qu'elle engage un APPEL MODÈLE non demandé par
+// l'utilisateur : un déploiement sur API facturée doit pouvoir l'éteindre
+// d'emblée, sans que chaque utilisateur ait à le décocher.
+const BUILD_DID_YOU_KNOW = BUILD_CONFIG.did_you_know !== false;   // défaut true
 // Bornes d'agents (lot X-1). Deux bornes, pas une — un refus doit pouvoir
 // NOMMER laquelle est atteinte : « 3 agents déjà sur cette conversation » et
 // « 5 agents au total » appellent des gestes différents du parent (attendre l'un
@@ -99,6 +105,14 @@ const BUILD_DEFAULT_CONTEXT_WINDOW =
 // valeur calibrée pour un Ollama local — sans cette clé, la tentation face à un
 // faux positif serait de retirer la garde, ce que le piège 10 interdit.
 const STREAM_IDLE_TIMEOUT_MS = (typeof BUILD_CONFIG.stream_idle_timeout_s === 'number') ? BUILD_CONFIG.stream_idle_timeout_s * 1000 : 180000;
+// Délai avant de demander l'astuce « Le savais-tu ? » de l'écran d'accueil.
+// Défaut 0 : l'astuce part dès l'affichage. Le délai reste réglable pour qui
+// veut épargner l'appel quand la conversation vierge n'est qu'une étape de
+// passage (nouvelle conversation aussitôt quittée). Même à 0, le setTimeout
+// diffère au tour de boucle suivant, donc la garde `isConnected` de
+// scheduleDidYouKnow (ui.js) reste effective. Motif de `stream_idle_timeout_s` :
+// clef en secondes, stockée en ms.
+const DID_YOU_KNOW_DELAY_MS = (typeof BUILD_CONFIG.did_you_know_delay_s === 'number') ? BUILD_CONFIG.did_you_know_delay_s * 1000 : 0;
 // Timeout par défaut d'un appel MCP distant. Reste surchargeable
 // PAR SERVEUR dans l'UI : cette clé ne fixe que le défaut proposé, qui dépend
 // du parc MCP déployé.
@@ -145,6 +159,7 @@ const DEFAULT_SETTINGS = {
   // le titrage précoce fait attendre la génération) ; ce réglage-ci ne coûte
   // qu'un appel de fin d'échange, hors du chemin de latence perçue.
   retitleAfterReply: true, // (complément lot AA)
+  didYouKnow: BUILD_DID_YOU_KNOW, // astuce d'aide sous l'écran d'accueil
 };
 
 // ── Réglages ────────────────────────────────────────────────────────────────

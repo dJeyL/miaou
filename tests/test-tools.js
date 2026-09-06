@@ -2080,3 +2080,136 @@ describe('formatHelpTopicList — liste des sujets composée, jamais rédigée',
     expect(formatHelpTopicList(null, null, 'apercu')).toBe('');
   });
 });
+
+describe('splitHelpBlocks — un bloc = un paragraphe OU un item de liste', function() {
+  it('sépare les paragraphes sur ligne vide', function() {
+    expect(splitHelpBlocks('un\n\ndeux').length).toBe(2);
+  });
+  it('sépare les items d\'une liste sans ligne vide entre eux', function() {
+    // Le cas payé : help.md énumère ses capacités en listes serrées. Un split
+    // sur ligne vide seule rendait la liste entière comme UN bloc.
+    var md = 'Intro :\n\n- **A** : un\n- **B** : deux\n- **C** : trois';
+    expect(splitHelpBlocks(md).length).toBe(4);
+  });
+  it('garde les lignes de continuation avec leur item', function() {
+    var blocks = splitHelpBlocks('- **A** : début\n  suite de A\n- **B** : autre');
+    expect(blocks.length).toBe(2);
+    expect(blocks[0].indexOf('suite de A') > 0).toBeTruthy();
+  });
+  it('reconnaît aussi les listes numérotées', function() {
+    expect(splitHelpBlocks('1. un\n2. deux').length).toBe(2);
+  });
+  it('tolère un markdown vide ou nul', function() {
+    expect(splitHelpBlocks('').length).toBe(0);
+    expect(splitHelpBlocks(null).length).toBe(0);
+  });
+});
+
+describe('pickHelpExcerpt — fenêtre contiguë plafonnée', function() {
+  var md = 'A'.repeat(300) + '\n\n' + 'B'.repeat(300) + '\n\n' + 'C'.repeat(300) + '\n\n' + 'D'.repeat(300);
+
+  it('agrège des blocs contigus tant que le plafond le permet', function() {
+    var e = pickHelpExcerpt(md, 700, function() { return 0; });
+    expect(e.from).toBe(0);
+    expect(e.count).toBe(2);   // 300 + 2 + 300 = 602 ; un 3e dépasserait
+  });
+  it('étend vers l\'arrière quand le tirage tombe en fin de section', function() {
+    // Sans extension arrière, un tirage sur le DERNIER bloc rendait 300 car.
+    // seuls — le cas qui a produit une astuce au référent manquant.
+    var e = pickHelpExcerpt(md, 1200, function() { return 0.99; });
+    expect(e.from < 3).toBeTruthy();
+    expect(e.text.length > 600).toBeTruthy();
+  });
+  it('garde le premier bloc même s\'il dépasse à lui seul le plafond', function() {
+    var e = pickHelpExcerpt('X'.repeat(500), 100, function() { return 0; });
+    expect(e.count).toBe(1);
+  });
+  it('rend une fenêtre vide sur un markdown vide, sans exception', function() {
+    expect(pickHelpExcerpt('', 100, function() { return 0; }).text).toBe('');
+  });
+});
+
+describe('cleanDidYouKnowTip — jette le bavardage du modèle', function() {
+  it('laisse une astuce propre intacte', function() {
+    var t = 'Tu peux exporter une conversation en HTML autonome.';
+    expect(cleanDidYouKnowTip(t)).toBe(t);
+  });
+  it('coupe le raisonnement rendu en bloc détaché après l\'astuce', function() {
+    // Cas réel : astuce correcte, puis « Note : … », un décompte de caractères
+    // et une variante, le tout dans content (modèle sans canal reasoning).
+    var raw = 'Tu peux filtrer ton historique.\n\nNote : je dois respecter la contrainte.\n\n= 130 caractères.';
+    expect(cleanDidYouKnowTip(raw)).toBe('Tu peux filtrer ton historique.');
+  });
+  it('retire les guillemets englobants', function() {
+    expect(cleanDidYouKnowTip('« Tu peux relancer une recherche. »')).toBe('Tu peux relancer une recherche.');
+  });
+  it('retire les marqueurs Markdown sans toucher au contenu', function() {
+    expect(cleanDidYouKnowTip('Tu peux **épingler** un résumé.')).toBe('Tu peux épingler un résumé.');
+  });
+  it('recolle une astuce écrite sur deux lignes', function() {
+    expect(cleanDidYouKnowTip('Tu peux exporter.\nLe fichier s\'ouvre seul.'))
+      .toBe('Tu peux exporter. Le fichier s\'ouvre seul.');
+  });
+  it('rend une chaîne vide quand la réponse n\'est que méta', function() {
+    expect(cleanDidYouKnowTip('Voici : une astuce')).toBe('');
+  });
+  it('laisse passer PASS, que l\'appelant traite comme un refus', function() {
+    expect(cleanDidYouKnowTip('PASS')).toBe('PASS');
+  });
+  it('tolère null et vide', function() {
+    expect(cleanDidYouKnowTip(null)).toBe('');
+    expect(cleanDidYouKnowTip('')).toBe('');
+  });
+});
+
+describe('pickHelpTopic — écarte les sections sans capacité à annoncer', function() {
+  it('ne tire jamais apercu (sommaire) ni genese (récit)', function() {
+    var content = { apercu: 'a', genese: 'b', espaces: 'c' };
+    expect(pickHelpTopic(content, function() { return 0; })).toBe('espaces');
+    expect(pickHelpTopic(content, function() { return 0.99; })).toBe('espaces');
+  });
+  it('rend null quand il ne reste rien d\'éligible', function() {
+    expect(pickHelpTopic({ apercu: 'a', genese: 'b' }, function() { return 0; })).toBe(null);
+    expect(pickHelpTopic({}, function() { return 0; })).toBe(null);
+  });
+});
+
+describe('formatDidYouKnowInput — le sujet accompagne l\'extrait', function() {
+  it('préfixe l\'extrait du libellé lisible de la section', function() {
+    var out = formatDidYouKnowInput('agents', 'Ton fil passe en lecture seule.',
+      { agents: 'agents : sous-conversations lancées par le modèle' });
+    expect(out.indexOf('Sujet : agents : sous-conversations lancées par le modèle') === 0).toBeTruthy();
+    expect(out.indexOf('Ton fil passe en lecture seule.') > 0).toBeTruthy();
+  });
+  it('se rabat sur le slug quand le libellé manque', function() {
+    expect(formatDidYouKnowInput('mcp', 'texte', {}).indexOf('Sujet : mcp') === 0).toBeTruthy();
+  });
+  it('tolère une table de libellés absente', function() {
+    expect(formatDidYouKnowInput('mcp', 'texte', null).indexOf('Sujet : mcp') === 0).toBeTruthy();
+  });
+});
+
+describe('splitTipSentences — une phrase par ligne', function() {
+  it('coupe entre deux phrases', function() {
+    var out = splitTipSentences('Tu peux exporter en zip. Le fichier s\'ouvre seul.');
+    expect(out.length).toBe(2);
+    expect(out[0]).toBe('Tu peux exporter en zip.');
+    expect(out[1]).toBe('Le fichier s\'ouvre seul.');
+  });
+  it('ne coupe pas un nombre décimal ni une abréviation', function() {
+    // La coupe exige une majuscule après la ponctuation : sans elle, « 1.5 Mo »
+    // et « cf. plus bas » seraient tronçonnés.
+    expect(splitTipSentences('Tu peux joindre un fichier de 1.5 Mo au message.').length).toBe(1);
+    expect(splitTipSentences('Tu peux exporter, cf. les réglages dédiés.').length).toBe(1);
+  });
+  it('coupe aussi après ! et ?', function() {
+    expect(splitTipSentences('Vraiment ? Tu peux le faire.').length).toBe(2);
+  });
+  it('rend le texte entier quand il n\'y a pas de ponctuation finale', function() {
+    expect(splitTipSentences('Tu peux exporter en zip').length).toBe(1);
+  });
+  it('tolère null et vide', function() {
+    expect(splitTipSentences(null).length).toBe(0);
+    expect(splitTipSentences('').length).toBe(0);
+  });
+});

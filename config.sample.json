@@ -4,6 +4,8 @@
   "max_summaries":           3,
   "require_api_key":         true,
   "early_title":             true,
+  "did_you_know":            true,
+  "did_you_know_delay_s":    0,
   "chat_temperature":        0.7,
   "default_context_window":  32768,
   "max_agents_per_conv":     3,

@@ -1144,6 +1144,9 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   user-select: none;
   pointer-events: none;
   animation: welcome-fade-in 0.5s ease-out;
+  /* Référentiel de .welcome-tip, qui est hors flux : sans lui l'astuce se
+     positionnerait contre #thread. */
+  position: relative;
 }
 @keyframes welcome-fade-in {
   from { opacity: 0; }
@@ -1152,6 +1155,52 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 .welcome-emoji  { font-size: 42px; margin-bottom: 18px; line-height: 1; }
 .welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
 .welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
+
+/* Astuce « Le savais-tu ? » : sous l'écran d'accueil, plus petite que lui
+   (13px contre 14 pour .welcome-sub, qui est déjà le plus petit des trois) —
+   elle se lit après, jamais avant.
+   HORS FLUX (position: absolute) et non en quatrième enfant du flex : le bloc
+   d'accueil est centré verticalement (justify-content: center), donc un
+   élément de plus dans le flux pousserait emoji/titre/sous-titre vers le haut
+   au moment où l'astuce arrive — un sursaut visible, deux secondes après
+   l'affichage. Hors flux, le trio garde exactement sa position et l'astuce
+   apparaît sans rien déplacer. */
+.welcome-tip {
+  position: absolute;
+  top: calc(50% + 92px);
+  /* 80% de la colonne, centré : la pleine largeur donnait des lignes trop
+     longues à lire. Marges en pourcentage plutôt qu'une max-width, pour rester
+     hors flux sans avoir à recentrer par transform. */
+  left: 10%;
+  right: 10%;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+  opacity: 0.85;
+  /* Keyframe DÉDIÉE, et non welcome-fade-in : celle-ci finit à opacity 1, alors
+     que l'astuce se repose à 0.85. Le fondu montait donc jusqu'à 1 avant de
+     retomber d'un cran net à la fin de l'animation. Une keyframe qui s'arrête
+     à la valeur de repos supprime la marche ; retoucher welcome-fade-in aurait
+     touché .welcome-screen, qui finit bien à 1. */
+  animation: welcome-tip-fade-in 0.5s ease-out;
+}
+@keyframes welcome-tip-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 0.85; }
+}
+/* Le libellé occupe sa propre ligne : `display: block` plutôt qu'un <br>, pour
+   que la marge se règle en CSS. */
+.welcome-tip-head {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 650;
+  color: var(--text);
+}
+/* Une phrase par ligne : bloc plutôt que <br>, pour que l'espacement entre
+   phrases se règle en CSS. Le dernier n'a pas de marge, sinon l'encart
+   traînerait un blanc sous sa dernière ligne. */
+.welcome-tip-line { display: block; }
+.welcome-tip-line + .welcome-tip-line { margin-top: 4px; }
 
 /* Curseur de streaming (clignote pendant que le message assistant se remplit). */
 .cursor-blink {

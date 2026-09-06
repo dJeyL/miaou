@@ -45,8 +45,14 @@
      problème ne se posait pas) mais laisse la boîte grandir davantage sur les
      petits viewports au lieu de couper à un pourcentage qui, lui, rétrécit
      avec l'écran. calc(100vh - 16vh) reste le garde-fou bas (8vh de marge
-     haute + 8vh de marge basse) pour ne jamais toucher les bords. */
-  max-height: min(540px, calc(100vh - 16vh));
+     haute + 8vh de marge basse) pour ne jamais toucher les bords.
+     620px et non 540 : mesuré, le mode racine au complet (17 commandes, dont
+     six conditionnelles — « Agents » n'apparaît que si un agent travaille)
+     demande 592px. À 540 la liste scrollait alors que l'espace disponible
+     dépassait 950px : le plafond, pas la place, était le facteur limitant.
+     La marge restante absorbe une commande de plus ; en ajouter deux demande
+     de re-mesurer plutôt que d'ajuster à vue. */
+  max-height: min(620px, calc(100vh - 16vh));
   display: flex;
   flex-direction: column;
   background: var(--surface-2);

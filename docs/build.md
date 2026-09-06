@@ -95,12 +95,14 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).
-- `BUILD_EARLY_TITLE` (clef `early_title`, défaut `true`, lot AA) est le seul
-  dérivé qui alimente **`DEFAULT_SETTINGS` et non un test direct** : le réglage
-  est utilisateur, le build n'en pose que le défaut. Résolu **dans
-  `DEFAULT_SETTINGS`** et pas dans `loadSettings` comme `url`/`model`, parce
-  qu'il est booléen : « absent » n'y serait pas distinguable de « false ».
-  Contrainte d'ordre : sa déclaration précède `DEFAULT_SETTINGS` dans le fichier.
+- `BUILD_EARLY_TITLE` (clef `early_title`, défaut `true`, lot AA) et
+  `BUILD_DID_YOU_KNOW` (clef `did_you_know`, défaut `true`) alimentent
+  **`DEFAULT_SETTINGS` et non un test direct** : le réglage est utilisateur, le
+  build n'en pose que le défaut. Résolus **dans `DEFAULT_SETTINGS`** et pas dans
+  `loadSettings` comme `url`/`model`, parce qu'ils sont booléens : « absent »
+  n'y serait pas distinguable de « false ». Contrainte d'ordre : leur
+  déclaration précède `DEFAULT_SETTINGS` dans le fichier. Tout booléen de build
+  qui n'est qu'un défaut de réglage suit ce motif.
 
 ## Marqueur d'aide : `__MIAOU_HELP__`
 

@@ -735,6 +735,11 @@ et ton choix est conservé d'une session à l'autre.
   animations visuelles de l'interface — utile en cas de gêne au mouvement ou de
   préférence pour un affichage instantané. « Suivre le système » s'aligne sur la
   préférence de réduction d'animations de ton OS.
+- **Astuce à l'accueil** : sous l'écran d'accueil d'une conversation vierge,
+  un encart « Le savais-tu ? » présente en une phrase une capacité de MIAOU,
+  tirée au hasard de cette aide. Chaque astuce demande un court appel au
+  modèle ; le réglage se décoche dans les Paramètres si tu préfères t'en
+  passer.
 
 ## multitache — travailler en parallèle
 

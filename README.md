@@ -91,7 +91,8 @@ Figtree/Fira Code).
 - **Aide intégrée** : le modèle sait ce qu'est MIAOU et ce qu'il sait faire, et
   consulte une aide utilisateur rédigée à la main plutôt que de confabuler sur
   « comment je joins un fichier ? » ou « c'est quoi les Espaces ? ».
-- Écran d'accueil aléatoire à chaque nouvelle conversation.
+- Écran d'accueil aléatoire à chaque nouvelle conversation, avec une astuce
+  « Le savais-tu ? » tirée de l'aide (réglable, `did_you_know`).
 - **Inspecteur de contexte** : compteur de tokens dans le composer, cliquable,
   détaillant la composition du payload envoyé au modèle avec une jauge
   d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).
@@ -232,6 +233,8 @@ build.
   "max_summaries":           3,
   "require_api_key":         true,
   "early_title":             true,
+  "did_you_know":            true,
+  "did_you_know_delay_s":    0,
   "chat_temperature":        0.7,
   "default_context_window":  32768,
   "max_agents_per_conv":     3,
@@ -264,6 +267,14 @@ est faite au seul point de lecture.
   réglage utilisateur, qui prime une fois modifié. À `false`, le titre n'est
   généré qu'une fois l'échange terminé — ce qui évite de retarder le premier
   token sur un serveur qui traite une requête à la fois.
+- `did_you_know` : astuce « Le savais-tu ? » sous l'écran d'accueil (défaut
+  `true`). Valeur **par défaut** du réglage utilisateur, qui prime une fois
+  modifié. Chaque astuce coûte un appel au modèle : à `false` pour un
+  déploiement sur API facturée.
+- `did_you_know_delay_s` : délai avant de demander l'astuce, en secondes
+  (défaut `0`, l'astuce part dès l'affichage). Compté depuis l'affichage de
+  l'écran d'accueil ; si la conversation vierge est quittée avant, aucun appel
+  n'est émis — utile pour épargner l'appel sur un passage éclair.
 - `chat_temperature` : température des envois de chat (défaut `0.7`). Ne
   concerne que la conversation : les appels internes (titrage, résumé,
   description de fichier) gardent leur propre valeur, plus basse. Une valeur
