@@ -13,27 +13,48 @@ function $(id) { return document.getElementById(id); }
 
 // ── Écran d'accueil (nouvelle conversation) ─────────────────────────────────
 const WELCOME_SCREENS = [
-  { emoji: '🌙', title: 'À tes ordres.',          sub: 'Qu\'est-ce qu\'on démonte aujourd\'hui ?' },
-  { emoji: '⚡', title: 'Prêt.',                  sub: 'Pose la question que tu n\'osais pas chercher sur Google.' },
-  { emoji: '🧠', title: 'Connexion établie.',     sub: 'Ta prochaine bonne idée est à une question d\'ici.' },
-  { emoji: '🎯', title: 'En ligne.',              sub: 'Allons droit au but.' },
-  { emoji: '🔭', title: 'Je t\'écoute.',          sub: 'L\'inconnu n\'est qu\'un contexte manquant.' },
-  { emoji: '🌊', title: 'Dans le flux.',          sub: 'Décris le problème, on trouvera la sortie.' },
-  { emoji: '☕', title: 'Fraîchement infusé.',    sub: 'Le moment idéal pour poser cette question qui traîne.' },
-  { emoji: '🏗️', title: 'Chantier ouvert.',      sub: 'Amène tes plans, tes blocs, ou juste l\'intention.' },
-  { emoji: '🌿', title: 'Calme et disponible.',   sub: 'Prends ton temps.' },
-  { emoji: '🗺️', title: 'Carte blanche.',        sub: 'Par où commence-t-on ?' },
-  { emoji: '🔬', title: 'Sous la loupe.',         sub: 'Tout mérite d\'être examiné de plus près.' },
-  { emoji: '🚀', title: 'Compte à rebours.',      sub: 'Dix secondes pour formuler, le reste suit.' },
-  { emoji: '🎸', title: 'Accordé.',               sub: 'À toi de jouer.' },
-  { emoji: '🎲', title: 'Prêt à tout.',           sub: 'Une question, une idée, un bug — on y va.' },
-  { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.' },
-  { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.' },
-  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.' },
-  { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.' },
-  { emoji: '🎬', title: 'Moteur.',                sub: 'À toi de dire action.' },
-  { emoji: '🧩', title: 'Pièce manquante.',       sub: 'Cherchons la forme.' },
-  { emoji: '♟️', title: 'À ton tour.',            sub: 'J\'ai trois coups d\'avance. Ou je bluffe.' },
+  { emoji: '🌙', title: 'À tes ordres.',          sub: 'Qu\'est-ce qu\'on démonte aujourd\'hui ?',
+    tipEmoji: '🔧', tipHead: 'Dans la boîte à outils :' },
+  { emoji: '⚡', title: 'Prêt.',                  sub: 'Pose la question que tu n\'osais pas chercher sur Google.',
+    tipEmoji: '💡', tipHead: 'Le savais-tu ?' },
+  { emoji: '🧠', title: 'Connexion établie.',     sub: 'Ta prochaine bonne idée est à une question d\'ici.',
+    tipEmoji: '⚡', tipHead: 'Neurones prêts :' },
+  { emoji: '🎯', title: 'Dans le mille.',              sub: 'Allons droit au but.',
+    tipEmoji: '🏹', tipHead: 'Une autre flèche ?' },
+  { emoji: '🔭', title: 'Je t\'écoute.',          sub: 'L\'inconnu n\'est qu\'un contexte manquant.',
+    tipEmoji: '✨', tipHead: 'Repéré au loin :' },
+  { emoji: '🌊', title: 'Dans le flux.',          sub: 'Décris le problème, on trouvera la sortie.',
+    tipEmoji: '🏄‍♂️', tipHead: 'Au creux de la vague :' },
+  { emoji: '☕', title: 'Fraîchement infusé.',    sub: 'Le moment idéal pour poser cette question qui traîne.',
+    tipEmoji: '🍪', tipHead: 'Une friandise ?' },
+  { emoji: '🏗️', title: 'Chantier ouvert.',      sub: 'Amène tes plans, tes blocs, ou juste l\'intention.',
+    tipEmoji: '🧱', tipHead: 'Un bloc de plus :' },
+  { emoji: '🌿', title: 'Calme et disponible.',   sub: 'Prends ton temps.',
+    tipEmoji: '🍃', tipHead: 'Au passage :' },
+  { emoji: '🗺️', title: 'Carte blanche.',        sub: 'Par où commence-t-on ?',
+    tipEmoji: '🧭', tipHead: 'Un chemin parmi d\'autres :' },
+  { emoji: '🔍', title: 'Sous la loupe.',         sub: 'Tout mérite d\'être examiné de plus près.',
+    tipEmoji: '🔬', tipHead: 'Encore plus près ?' },
+  { emoji: '🚀', title: 'Compte à rebours.',      sub: 'Dix secondes pour formuler, le reste suit.',
+    tipEmoji: '🛰️', tipHead: 'Déjà en orbite ?' },
+  { emoji: '🎸', title: 'Accordé.',               sub: 'À toi de jouer.',
+    tipEmoji: '🎼', tipHead: 'Une corde de plus ?' },
+  { emoji: '🎲', title: 'Prêt à tout.',           sub: 'Une question, une idée, un bug — on y va.',
+    tipEmoji: '🔀', tipHead: 'Au hasard :' },
+  { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.',
+    tipEmoji: '⚙️', tipHead: 'Dans les rouages :' },
+  { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.',
+    tipEmoji: '🧈', tipHead: 'Pour faire passer :' },
+  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.',
+    tipEmoji: '🐾', tipHead: 'Dans mes croquettes :' },
+  { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.',
+    tipEmoji: '🪡', tipHead: 'Venu avec :' },
+  { emoji: '🎬', title: 'Moteur.',                sub: 'À toi de dire action.',
+    tipEmoji: '🎞️', tipHead: 'En coulisses :' },
+  { emoji: '🧩', title: 'Pièce manquante.',       sub: 'Cherchons la forme.',
+    tipEmoji: '📦', tipHead: 'Dans la boîte :' },
+  { emoji: '♟️', title: 'À ton tour.',            sub: 'J\'ai trois coups d\'avance. Ou je bluffe.',
+    tipEmoji: '👑', tipHead: 'Un coup à connaître :' },
 ];
 
 // Tire un écran d'accueil au hasard, en évitant `exceptTitle` si fourni (pour
@@ -55,10 +76,19 @@ function showWelcome(exceptTitle) {
     '<div class="welcome-title">' + escHtml(w.title) + '</div>' +
     '<div class="welcome-sub">'   + escHtml(w.sub)   + '</div>';
   $('thread').appendChild(el);
+  // La tête de l'astuce est celle de CET écran : mémorisée à la pose, car le
+  // rendu de l'astuce (deux secondes plus tard, puis à chaque redimensionnement)
+  // n'a plus accès à l'écran tiré — il ne reçoit que son nœud hôte.
+  _welcomeTipHead.set(el, { emoji: w.tipEmoji, head: w.tipHead });
   scheduleDidYouKnow(el);
 }
 
-// ── Astuce « Le savais-tu ? » sous l'écran d'accueil ───────────────────────
+// ── Astuce d'accueil (encart sous l'écran d'accueil) ───────────────────────
+// Tête de l'astuce (emoji + libellé d'introduction) pour un écran d'accueil
+// donné, posée par showWelcome. WeakMap plutôt qu'un champ sur le nœud, comme
+// _welcomeTipText plus bas : rien à nettoyer quand l'écran est remplacé.
+const _welcomeTipHead = new WeakMap();
+
 // Une astuce PAR écran d'accueil : le déclencheur est showWelcome, donc elle
 // change quand le welcome change (nouvelle conversation, bascule de thème via
 // refreshWelcomeIfPresent) et pas sur un timer. Décidé pour borner le coût —
@@ -86,7 +116,7 @@ function welcomeTipRoomPx(hostEl) {
   return hostEl.getBoundingClientRect().height / 2 - 92 - 20;
 }
 
-// Place minimale pour ESPÉRER une astuce : la tête « Le savais-tu ? » plus une
+// Place minimale pour ESPÉRER une astuce : la tête d'introduction plus une
 // ligne de corps. Seuil grossier par nécessité — au moment de décider s'il faut
 // appeler le modèle, le texte n'existe pas encore, donc son nombre de lignes
 // est inconnu. Mesuré : 48px pour une ligne de corps, 114px pour quatre (une
@@ -193,8 +223,14 @@ function renderDidYouKnow(hostEl, tip) {
   // brouilleraient la lecture d'un futur motif.
   const lines = (typeof splitTipSentences === 'function' ? splitTipSentences(tip) : [tip])
     .map(p => '<span class="welcome-tip-line">' + escHtml(p) + '</span>').join('');
+  // Tête accordée à l'écran d'accueil tiré ; repli sur la formule neutre si
+  // l'hôte n'en porte pas (écran posé par un chemin qui n'en fournirait pas).
+  const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
   el.innerHTML =
-    '<span class="welcome-tip-head">💡 Le savais-tu ?</span>' +
+    '<span class="welcome-tip-head">' +
+      '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
+      escHtml(head.head) +
+    '</span>' +
     '<span class="welcome-tip-body">' + lines + '</span>';
   hostEl.appendChild(el);
 }

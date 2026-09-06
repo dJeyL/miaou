@@ -744,9 +744,9 @@ et ton choix est conservé d'une session à l'autre.
   préférence pour un affichage instantané. « Suivre le système » s'aligne sur la
   préférence de réduction d'animations de ton OS.
 - **Astuce à l'accueil** : sous l'écran d'accueil d'une conversation vierge,
-  un encart « Le savais-tu ? » présente une capacité de MIAOU, tirée au hasard
-  de cette aide. Il se place au plus près du champ de saisie, et s'adapte à la
-  hauteur disponible : dans une fenêtre courte il se réduit à sa première
+  un encart présente une capacité de MIAOU, tirée au hasard de cette aide,
+  sous une introduction accordée à l'écran d'accueil affiché. Il se place au
+  plus près du champ de saisie, et s'adapte à la hauteur disponible : dans une fenêtre courte il se réduit à sa première
   phrase, et s'efface entièrement s'il n'a plus la place de rester lisible —
   agrandir la fenêtre le fait revenir. Chaque astuce demande un court appel au
   modèle ; le réglage se décoche dans les Paramètres si tu préfères t'en

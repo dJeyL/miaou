@@ -34,7 +34,7 @@ const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si s
 // la lecture des réglages : le défaut se résout dans DEFAULT_SETTINGS et non
 // dans loadSettings, contrairement à `url`/`model`.
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;   // défaut true
-// Astuce « Le savais-tu ? » sous l'écran d'accueil. Même forme que
+// Astuce d'accueil sous l'écran d'accueil. Même forme que
 // BUILD_EARLY_TITLE ci-dessus (booléen → défaut résolu dans DEFAULT_SETTINGS).
 // Clef de build parce qu'elle engage un APPEL MODÈLE non demandé par
 // l'utilisateur : un déploiement sur API facturée doit pouvoir l'éteindre
@@ -105,7 +105,7 @@ const BUILD_DEFAULT_CONTEXT_WINDOW =
 // valeur calibrée pour un Ollama local — sans cette clé, la tentation face à un
 // faux positif serait de retirer la garde, ce que le piège 10 interdit.
 const STREAM_IDLE_TIMEOUT_MS = (typeof BUILD_CONFIG.stream_idle_timeout_s === 'number') ? BUILD_CONFIG.stream_idle_timeout_s * 1000 : 180000;
-// Délai avant de demander l'astuce « Le savais-tu ? » de l'écran d'accueil.
+// Délai avant de demander l'astuce de l'écran d'accueil.
 // Défaut 0 : l'astuce part dès l'affichage. Le délai reste réglable pour qui
 // veut épargner l'appel quand la conversation vierge n'est qu'une étape de
 // passage (nouvelle conversation aussitôt quittée). Même à 0, le setTimeout

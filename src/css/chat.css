@@ -1159,7 +1159,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
 .welcome-title  { font-size: 21px; font-weight: 650; color: var(--text); margin-bottom: 10px; }
 .welcome-sub    { font-size: 14px; color: var(--text-2); max-width: 360px; line-height: 1.65; }
 
-/* Astuce « Le savais-tu ? » : sous l'écran d'accueil, plus petite que lui
+/* Astuce d'accueil : sous l'écran d'accueil, plus petite que lui
    (13px contre 14 pour .welcome-sub, qui est déjà le plus petit des trois) —
    elle se lit après, jamais avant.
    HORS FLUX (position: absolute) et non en quatrième enfant du flex : le bloc
@@ -1220,6 +1220,11 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   font-weight: 650;
   color: var(--text);
 }
+/* Écart entre l'emoji et le libellé réglé en CSS plutôt que par un espace dans
+   la chaîne : l'espace typographique d'une police varie, et un emoji suivi
+   d'une espace ordinaire se colle visuellement au mot. La marge le détache
+   d'une valeur choisie, la même quel que soit l'emoji tiré. */
+.welcome-tip-head-emoji { margin-right: 6px; }
 /* Une phrase par ligne : bloc plutôt que <br>, pour que l'espacement entre
    phrases se règle en CSS. Le dernier n'a pas de marge, sinon l'encart
    traînerait un blanc sous sa dernière ligne. */

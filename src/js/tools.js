@@ -3741,7 +3741,7 @@ function skillDoctrinePrompt() {
   return SKILL_DOCTRINE_BASE + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
 }
 
-// ── Astuce « Le savais-tu ? » (encart sous l'écran d'accueil) ──────────────
+// ── Astuce d'accueil (encart sous l'écran d'accueil) ──────────────────────
 // Pioche une section de l'aide, en extrait un passage contigu, et demande au
 // modèle d'en tirer une ou deux phrases affichables. Le tirage se fait sur
 // helpContentResolved() (jetons {{…}} déjà substitués), jamais sur HELP_CONTENT
@@ -3756,7 +3756,7 @@ const DID_YOU_KNOW_MAX_CHARS = 1200;
 // clair dans `content` (pas de canal reasoning séparé) rend sinon son
 // cheminement, son décompte de caractères et ses variantes dans le même flot.
 const DID_YOU_KNOW_PROMPT =
-  "Tu écris une astuce « Le savais-tu ? » pour l'encart d'accueil de MIAOU, " +
+  "Tu écris une astuce pour l'encart d'accueil de MIAOU, " +
   "un client de chat web. On te donne un extrait de la documentation " +
   "utilisateur. Choisis-y UNE capacité concrète et écris une ou deux phrases " +
   "courtes qui la font découvrir à quelqu'un qui ne la connaît pas.\n" +
@@ -3776,8 +3776,9 @@ const DID_YOU_KNOW_PROMPT =
   "capacité qui n'est pas la sienne. Réserve « Tu peux… » à ce que " +
   "l'utilisateur fait lui-même. Ne transpose jamais une capacité d'un sujet " +
   "à l'autre pour rentrer dans une tournure.\n" +
-  "Contraintes : 200 caractères maximum, ton posé, pas de « Le savais-tu ? » " +
-  "en préambule (l'encart le dit déjà), pas de Markdown, pas de guillemets " +
+  "Contraintes : 200 caractères maximum, ton posé, pas de préambule " +
+  "annonçant l'astuce (« Le savais-tu ? », « Astuce : » — l'encart porte " +
+  "déjà sa propre introduction), pas de Markdown, pas de guillemets " +
   "englobants.\n" +
   "L'astuce se lit SEULE, hors de tout contexte : elle est affichée sans " +
   "l'extrait. Chaque « cette base », « ce panneau », « ce bouton », « il » " +
