@@ -1170,7 +1170,28 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
    apparaît sans rien déplacer. */
 .welcome-tip {
   position: absolute;
+  /* Ancrée en BAS, au plus près du composer : l'astuce se lit après l'accueil,
+     donc elle gagne à s'en écarter. Les deux bords verticaux sont posés en
+     même temps — la boîte s'étire alors du plancher du trio d'accueil
+     (50% + 92px, sa position d'avant) jusqu'au bas de la colonne, et
+     `justify-content: flex-end` y pousse le texte contre le composer.
+     Poser `bottom` SEUL aurait laissé une astuce de trois ou quatre lignes
+     remonter sur le sous-titre quand la fenêtre est courte ; avec la boîte
+     bornée en haut, c'est l'espace disponible qui se réduit et le texte reste
+     au fond sans jamais franchir le trio. */
   top: calc(50% + 92px);
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Filet de dernier recours seulement : c'est le JS qui décide de ne pas
+     afficher (ni même générer) une astuce faute de place, et qui retire celle
+     déjà posée quand la fenêtre rétrécit — cf. WELCOME_TIP_MIN_ROOM_PX dans
+     ui.js, dont le calcul reprend les trois nombres ci-dessus. Reste ici pour
+     couvrir l'instant entre un redimensionnement et sa prise en compte.
+     Masqué plutôt que scrollable : l'astuce est décorative et sans
+     pointer-events, un ascenseur y serait une fausse affordance. */
+  overflow: hidden;
   /* 80% de la colonne, centré : la pleine largeur donnait des lignes trop
      longues à lire. Marges en pourcentage plutôt qu'une max-width, pour rester
      hors flux sans avoir à recentrer par transform. */

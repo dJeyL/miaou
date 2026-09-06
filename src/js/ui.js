@@ -73,6 +73,79 @@ let _didYouKnowTimer = null;
 // peut avoir envoyé un message (thread rendu, welcome retiré) ou re-tiré un
 // welcome. `isConnected` répond aux deux cas d'un coup — un nœud retiré du DOM
 // le perd, y compris quand un AUTRE welcome l'a remplacé.
+// Place disponible pour l'astuce, en pixels : hauteur de l'écran d'accueil
+// moins son plancher (le bas du trio emoji/titre/sous-titre, calc(50% + 92px)
+// en CSS) moins la marge basse contre le composer. Mesurée sur l'hôte plutôt
+// que dérivée de window.innerHeight : la topbar, le composer déployé et le
+// zoom du navigateur entrent tous dans l'écart entre les deux, et une
+// media query en aurait ignoré la totalité.
+// Les trois nombres sont ceux de `.welcome-tip` dans chat.css — les changer
+// d'un côté impose de les changer de l'autre ; il n'existe pas de canal par
+// lequel le JS lise un calc() CSS.
+function welcomeTipRoomPx(hostEl) {
+  return hostEl.getBoundingClientRect().height / 2 - 92 - 20;
+}
+
+// Place minimale pour ESPÉRER une astuce : la tête « Le savais-tu ? » plus une
+// ligne de corps. Seuil grossier par nécessité — au moment de décider s'il faut
+// appeler le modèle, le texte n'existe pas encore, donc son nombre de lignes
+// est inconnu. Mesuré : 48px pour une ligne de corps, 114px pour quatre (une
+// phrase longue se replie, deux phrases longues font donc quatre lignes et non
+// deux). Refuser dès ici tout ce qui ne tiendrait de toute façon jamais évite
+// l'appel modèle dans le cas franc.
+const WELCOME_TIP_MIN_ROOM_PX = 48;
+
+// La décision d'AFFICHER, elle, se prend sur le texte rendu : c'est la seule
+// mesure exacte, et c'est celle qui garantit que la tête n'est pas rognée.
+// Deux prédicats et non un seuil unique parce que les deux questions n'ont pas
+// les mêmes informations disponibles — « faut-il générer ? » ignore la longueur
+// du texte, « faut-il montrer ? » la connaît.
+function welcomeTipFits(tipEl) {
+  const head = tipEl.querySelector('.welcome-tip-head');
+  const body = tipEl.querySelector('.welcome-tip-body');
+  if (!head || !body) return true;
+  const needed = head.getBoundingClientRect().height
+    + parseFloat(getComputedStyle(head).marginBottom || 0)
+    + body.getBoundingClientRect().height;
+  // Demi-pixel de tolérance : les hauteurs sont fractionnaires et une astuce
+  // qui tient au pixel près ne doit pas être refusée par un arrondi.
+  return needed <= tipEl.getBoundingClientRect().height + 0.5;
+}
+
+// Faire tenir l'astuce en retirant des phrases PAR LA FIN, plutôt que de la
+// jeter entière : les phrases sont déjà des blocs séparés (.welcome-tip-line),
+// et l'astuce est écrite en ordre décroissant d'importance — la première porte
+// le fait, les suivantes le nuancent. Une astuce d'une phrase reste une astuce.
+// Rend true si quelque chose reste affichable, false si même la première phrase
+// ne tient pas (l'appelant retire alors tout : mieux vaut rien qu'une tête
+// suivie d'un fragment).
+// Le retrait se fait dans le DOM et se remesure à chaque tour — la hauteur d'un
+// texte replié ne se calcule pas d'avance, seulement s'observe.
+function fitWelcomeTipByDroppingLines(tipEl) {
+  const lines = Array.from(tipEl.querySelectorAll('.welcome-tip-line'));
+  for (let i = lines.length - 1; i >= 1 && !welcomeTipFits(tipEl); i--) {
+    lines[i].remove();
+  }
+  return welcomeTipFits(tipEl);
+}
+
+// Poser l'astuce puis l'ajuster à la place réelle : rendu complet, élagage des
+// phrases de queue, retrait total si même la première ne tient pas. Une seule
+// fonction pour la pose initiale ET le re-rendu après redimensionnement — les
+// deux doivent produire exactement le même résultat pour une même place, sinon
+// l'astuce changerait d'aspect au premier coup d'accordéon.
+// `animate` distingue la POSE (fondu d'apparition, l'astuce arrive) du
+// RE-RENDU après redimensionnement (aucun fondu : l'astuce était déjà là, la
+// refondre à chaque event de resize la ferait clignoter pendant tout un drag).
+function renderWelcomeTipFitted(hostEl, tip, animate) {
+  _welcomeTipLastRoom.set(hostEl, Math.round(welcomeTipRoomPx(hostEl)));
+  renderDidYouKnow(hostEl, tip);
+  const posed = hostEl.querySelector('.welcome-tip');
+  if (!posed) return;
+  if (!animate) posed.style.animation = 'none';
+  if (!fitWelcomeTipByDroppingLines(posed)) posed.remove();
+}
+
 function scheduleDidYouKnow(hostEl) {
   if (_didYouKnowTimer) { clearTimeout(_didYouKnowTimer); _didYouKnowTimer = null; }
   if (typeof generateDidYouKnowTip !== 'function') return;   // sources non buildées (tests)
@@ -80,14 +153,36 @@ function scheduleDidYouKnow(hostEl) {
   _didYouKnowTimer = setTimeout(async () => {
     _didYouKnowTimer = null;
     if (!hostEl.isConnected) return;
+    // Testé AVANT l'appel au modèle, pas seulement au rendu : une astuce qu'on
+    // ne montrera pas ne vaut pas une génération. Mesuré ici et non à la pose
+    // du timer — la fenêtre a pu être redimensionnée pendant l'attente.
+    if (welcomeTipRoomPx(hostEl) < WELCOME_TIP_MIN_ROOM_PX) return;
     const res = await generateDidYouKnowTip();
     if (!res || !hostEl.isConnected) return;
-    renderDidYouKnow(hostEl, res.tip);
+    // Re-mesuré après l'await : la génération dure, la fenêtre peut avoir
+    // rétréci entre-temps (fenêtre d'await, cf. piège 24).
+    if (welcomeTipRoomPx(hostEl) < WELCOME_TIP_MIN_ROOM_PX) return;
+    // Ajustement sur le texte RENDU : le seuil ci-dessus ne pouvait pas
+    // connaître son nombre de lignes. Poser puis élaguer plutôt que
+    // pré-calculer — la hauteur d'un texte replié ne se prédit pas hors DOM.
+    renderWelcomeTipFitted(hostEl, res.tip, true);
   }, DID_YOU_KNOW_DELAY_MS);
 }
 
+// Texte intégral de l'astuce, par écran d'accueil. Nécessaire parce que le
+// rendu est ÉLAGUÉ selon la place disponible : le DOM ne porte donc plus le
+// texte complet dès qu'une phrase a sauté, et un agrandissement de fenêtre
+// doit pouvoir la faire revenir. WeakMap plutôt qu'un champ sur le nœud : rien
+// à nettoyer quand l'écran d'accueil est remplacé.
+const _welcomeTipText = new WeakMap();
+
+// Dernière place mesurée pour laquelle l'astuce a été mise en page. Sert à
+// n'agir, au redimensionnement, que quand la place a réellement bougé.
+const _welcomeTipLastRoom = new WeakMap();
+
 // escHtml impératif : `tip` est d'origine modèle (piège 21).
 function renderDidYouKnow(hostEl, tip) {
+  _welcomeTipText.set(hostEl, tip);
   const old = hostEl.querySelector('.welcome-tip');
   if (old) old.remove();
   const el = document.createElement('div');
@@ -102,6 +197,36 @@ function renderDidYouKnow(hostEl, tip) {
     '<span class="welcome-tip-head">💡 Le savais-tu ?</span>' +
     '<span class="welcome-tip-body">' + lines + '</span>';
   hostEl.appendChild(el);
+}
+
+// Une astuce déjà posée quand la fenêtre rétrécit se ferait rogner par le haut
+// (elle est poussée contre le composer) : on la retire plutôt que de la laisser
+// décapitée. Elle ne revient pas si la fenêtre se ré-agrandit — la regénérer
+// coûterait un appel modèle par coup d'accordéon, et l'astuce est décorative.
+// Branchée sur le listener de visualViewport, qui suit déjà tout
+// redimensionnement.
+function revisitWelcomeTipRoom() {
+  const thread = $('thread');
+  if (!thread) return;
+  const host = thread.querySelector('.welcome-screen');
+  if (!host) return;
+  const tip = _welcomeTipText.get(host);
+  if (!tip) return;   // aucune astuce n'a jamais été posée sur cet écran
+  // Re-rendu depuis le TEXTE mémorisé, jamais depuis le DOM courant : celui-ci
+  // a pu être élagué, ou retiré entièrement. Repartir de lui rendrait la perte
+  // définitive — une astuce ne remonterait jamais après un agrandissement,
+  // alors qu'ouvrir puis refermer la console du navigateur est le cas courant.
+  // Aucun appel modèle n'est en jeu : le texte est déjà là, on ne fait que le
+  // remettre en page.
+  // Ne toucher au DOM que si la place a VRAIMENT changé. Un redimensionnement
+  // produit des dizaines d'events dont la quasi-totalité ne déplace rien ;
+  // re-rendre à chaque fois recréerait le nœud (donc un clignotement) pour un
+  // résultat identique. Comparer la place plutôt que re-rendre puis annuler :
+  // la seule façon de ne pas produire de mutation est de ne pas en produire.
+  const room = Math.round(welcomeTipRoomPx(host));
+  if (room === _welcomeTipLastRoom.get(host)) return;
+  _welcomeTipLastRoom.set(host, room);
+  renderWelcomeTipFitted(host, tip, false);
 }
 
 // Coquetterie : si l'écran d'accueil est affiché (conversation vierge), un
@@ -3815,6 +3940,7 @@ function initVisualViewport() {
   if (!vv) return;
   const update = () => {
     document.documentElement.style.setProperty('--vvh', vv.height + 'px');
+    revisitWelcomeTipRoom();
   };
   vv.addEventListener('resize', update);
   vv.addEventListener('scroll', update);
