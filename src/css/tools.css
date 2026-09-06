@@ -203,7 +203,12 @@
    groupe. Toujours visible plutôt que révélé au survol : le groupe compact
    épingle des hauteurs mesurées (ticker), un bouton qui apparaît au survol y
    changerait la géométrie sous le curseur. */
-.tool-ack .ack-inspect {
+/* .ack-open-agent (bouton oeil des acks agent) partage ce gabarit : meme
+   nature de bouton, meme place dans la colonne d'icones. Selecteurs GROUPES et
+   non un troisieme bloc recopie — trois copies d'un meme gabarit derivent l'une
+   apres l'autre, et rien ne signale l'ecart. */
+.tool-ack .ack-inspect,
+.tool-ack .ack-open-agent {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -214,7 +219,8 @@
   cursor: pointer;
   line-height: 0;
 }
-.tool-ack .ack-inspect:hover { color: var(--accent); }
+.tool-ack .ack-inspect:hover,
+.tool-ack .ack-open-agent:hover { color: var(--accent); }
 
 /* Lien d'autorisation (campagne AB). Seule affordance d'ack rendue en TEXTE et
    non en icône : ses deux voisines agissent sur l'ack, celle-ci sort de MIAOU

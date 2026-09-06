@@ -886,8 +886,9 @@ relue dans la config à chaque affichage, pour qu'un ack rouvert des mois plus
 tard pointe là où le proxy est aujourd'hui. Serveur non résoluble et chemin
 relatif → **pas de lien** : une affordance ne se devine pas.
 
-**Seule affordance d'ack rendue en TEXTE et non en icône.** `.ack-dl` et
-`.ack-inspect` agissent *sur* l'ack et se lisent d'un pictogramme ; celle-ci
+**Seule affordance d'ack rendue en TEXTE et non en icône.** Ses voisines
+(`.ack-dl`, `.ack-inspect`, `.ack-open-agent`) agissent *sur* l'ack ou sa cible
+et se lisent d'un pictogramme ; celle-ci
 **sort de MIAOU** vers un tiers, et l'origine doit être lisible avant le clic —
 ce qu'aucune icône ne porte. La clé (`ICON_KEY`, métaphore réservée) est **dans**
 le lien et non à côté : une seule cible de clic. L'origine, elle, n'est pas
@@ -1147,10 +1148,13 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
 - **Identité par l'objet.** La closure capture l'ENTRÉE, jamais `m.id` (non
   unique : un create et un delete du même souvenir le partagent). Idem pour la
   garde de fenêtre d'await du volet ressource (`_inspectEntry !== m`).
-- **Ordre des icônes** : `.ack-dl` PUIS `.ack-inspect`. La loupe est en dernière
-  position, donc à la même abscisse d'un ack à l'autre ; l'ordre inverse la
-  décalait sur les seules lignes porteuses d'un téléchargement, cassant
-  l'alignement de la colonne dans un groupe déplié.
+- **Ordre des icônes** : la loupe est en **dernière** position, quelles que
+  soient les autres présentes (`.ack-dl`, `.ack-open-agent` — cf.
+  `docs/agents.md`). Formulé comme une règle et non comme une liste : c'est ce
+  qui la garde vraie quand une affordance s'ajoute. Elle tient ainsi la même
+  abscisse d'un ack à l'autre ; l'ordre inverse la décalait sur les seules
+  lignes porteuses d'un téléchargement, cassant l'alignement de la colonne dans
+  un groupe déplié.
 - **Frontière string→HTML (piège 21)** : tout ce qui est affiché est d'origine
   modèle ou serveur distant. `textContent` ou `escHtml` dans un `<pre>`, jamais
   `renderMd`, jamais d'interpolation en template string. C'est le SECOND chemin

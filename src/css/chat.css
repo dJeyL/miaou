@@ -644,6 +644,7 @@
 }
 .msg.user:hover .msg-user-actions { opacity: 1; }
 .msg-copy-user,
+.msg-open-agent,
 .msg-edit {
   background: none;
   border: none;
@@ -654,8 +655,10 @@
   transition: color 120ms var(--ease);
 }
 .msg-copy-user:hover,
+.msg-open-agent:hover,
 .msg-edit:hover { color: var(--accent); }
 .msg-copy-user svg,
+.msg-open-agent svg,
 .msg-edit svg { width: 14px; height: 14px; display: block; }
 
 /* mode édition : la bulle prend toute la largeur de la colonne, le footer

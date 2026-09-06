@@ -2087,6 +2087,35 @@ describe('ackDownloadTarget (lot V)', function() {
   });
 });
 
+describe('ackAgentConvTarget', function() {
+  // L'ENSEMBLE des kinds attendus, jamais leur cardinal : un compte nu ne dit
+  // pas LEQUEL manque quand il tombe, et il reperime au prochain ajout
+  // (CLAUDE.md, enumerations fermees dans les scripts de verification).
+  var AGENT_KINDS = ['agent_spawn', 'agent_status', 'agent_result', 'agent_abort'];
+  it('les quatre kinds agent designent leur fil', function() {
+    AGENT_KINDS.forEach(function(kind) {
+      var t = ackAgentConvTarget({ kind: kind, convId: 'c_agent', title: 'analyser' });
+      expect(t && t.convId).toBe('c_agent');
+    });
+  });
+  it('convId manquant → null (rien ou aller)', function() {
+    AGENT_KINDS.forEach(function(kind) {
+      expect(ackAgentConvTarget({ kind: kind, title: 'analyser' })).toBe(null);
+    });
+  });
+  it('conversation_read est DEHORS malgre son convId', function() {
+    // Son icone de kind EST deja ICON_EYE : un bouton oeil y mettrait deux
+    // yeux sur la meme ligne. Le predicat vise les acks agent, pas « tout ack
+    // designant une conversation ».
+    expect(ackAgentConvTarget({ kind: 'conversation_read', convId: 'c1' })).toBe(null);
+  });
+  it('kinds hors perimetre → null', function() {
+    expect(ackAgentConvTarget({ kind: 'memory_create', id: 'm1' })).toBe(null);
+    expect(ackAgentConvTarget({ kind: 'mcp_call', name: 'x__y' })).toBe(null);
+    expect(ackAgentConvTarget(null)).toBe(null);
+  });
+});
+
 describe('isMermaidLang', function() {
   it('mermaid → true', function() {
     expect(isMermaidLang('mermaid')).toBeTruthy();

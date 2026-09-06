@@ -1086,7 +1086,70 @@ await page.waitForTimeout(200);
 await release('A:A9');
 await page.waitForTimeout(700);
 
-// L'ALLER : cliquer le libellé de l'ack agent_spawn, pas selectConv en direct.
+// L'ALLER, surface 1/2 : le BOUTON oeil de l'ack. Mesure faite AVANT tout clic,
+// tant qu'on est encore sur le parent — cliquer navigue, et l'ack n'existe que
+// dans le fil du parent.
+//
+// L'ensemble des kinds ATTENDUS plutot qu'un compte : `=== 4` ne dirait pas
+// LEQUEL manque quand il tombe, et reperimerait au prochain kind agent
+// (CLAUDE.md, enumerations fermees dans les scripts de verification).
+const AGENT_ACK_KINDS = ['agent_spawn', 'agent_status', 'agent_result', 'agent_abort'];
+const eyeState = await page.evaluate((kinds) => {
+  const ack = document.querySelector('.tool-ack.ack-agent_spawn');
+  if (!ack) return { noAck: true };
+  const eye = ack.querySelector('.ack-open-agent');
+  const insp = ack.querySelector('.ack-inspect');
+  // Ordre de colonne : la loupe DOIT rester en derniere position (invariant du
+  // lot Z). compareDocumentPosition plutot qu'un index : il dit la relation
+  // sans dependre du nombre d'enfants, donc il survit a l'ajout d'une voisine.
+  const eyeBeforeInspect = !!(eye && insp) &&
+    !!(eye.compareDocumentPosition(insp) & Node.DOCUMENT_POSITION_FOLLOWING);
+  return {
+    present: !!eye,
+    // Le predicat couvre les quatre kinds : on verifie qu'il est bien branche
+    // sur le kind, pas sur un test ad hoc du seul agent_spawn.
+    predicateCoversAllKinds: kinds.every(k =>
+      ackAgentConvTarget({ kind: k, convId: 'c1' }) !== null),
+    // Le lien du DETAIL est CONSERVE (demande explicite) : le bouton s'ajoute,
+    // il ne remplace pas. Sans ce controle, retirer le lien passerait inapercu.
+    linkStillThere: !!ack.querySelector('.ack-conv-link'),
+    // Toujours visible, comme .ack-inspect : le groupe compact epingle des
+    // hauteurs mesurees, une affordance qui apparait au survol y changerait la
+    // geometrie sous le curseur. Mesure en BOITE, pas sur .hidden.
+    opacity: eye ? getComputedStyle(eye).opacity : null,
+    title: eye ? eye.title : null,
+    eyeBeforeInspect: eyeBeforeInspect,
+    inspectPresent: !!insp,
+  };
+}, AGENT_ACK_KINDS);
+
+check('9. l\'ack agent_spawn porte un bouton d\'ouverture du fil', eyeState.present === true);
+check('9. ackAgentConvTarget couvre les quatre kinds agent',
+  eyeState.predicateCoversAllKinds === true);
+check('9. le lien du detail est CONSERVE a cote du bouton', eyeState.linkStillThere === true);
+check('9. le bouton est visible sans survol', eyeState.opacity === '1');
+check('9. son title nomme la destination, le bouton etant une icone seule',
+  /agent/i.test(eyeState.title || ''));
+// Controle NON VACUEUX : la loupe est bien presente sur cet ack, donc l'ordre
+// mesure ci-dessus porte sur deux elements reels. Sans lui, `eyeBeforeInspect`
+// serait faux par absence et le contrôle passerait pour la mauvaise raison.
+check('9. la loupe est presente sur cet ack (l\'ordre porte sur deux reels)',
+  eyeState.inspectPresent === true);
+check('9. l\'oeil precede la loupe (colonne alignee, invariant du lot Z)',
+  eyeState.eyeBeforeInspect === true);
+
+// Le bouton NAVIGUE vraiment — exister ne suffit pas.
+await page.evaluate(() => document.querySelector('.tool-ack.ack-agent_spawn .ack-open-agent').click());
+await page.waitForTimeout(600);
+const eyeNav = await page.evaluate((a) => ({ onAgent: currentConvId === a }), agent9);
+check('9. le bouton oeil ouvre le fil de l\'agent', eyeNav.onAgent === true);
+
+// Retour sur le parent pour eprouver la SECONDE surface depuis le meme etat.
+await page.evaluate((p) => selectConv(p), parent9);
+await page.waitForTimeout(500);
+
+// L'ALLER, surface 2/2 : cliquer le libellé de l'ack agent_spawn, pas selectConv
+// en direct. Les deux surfaces mènent au même endroit.
 const linkFound = await page.evaluate(() => {
   const a = document.querySelector('.tool-ack .ack-conv-link');
   if (!a) return false;

@@ -808,6 +808,44 @@ quatre acks `agent__*` cliquable vers `openConversation`. Une seule formule pour
 les quatre — quatre copies divergeraient précisément sur la cliquabilité, qui
 fait toute la valeur de l'affordance.
 
+Ce libellé restait cependant **hors de portée d'un clic direct** sur un ack
+porteur d'un `intent` : `renderIntentTwoLevel` replie alors le détail, et c'est
+là qu'habite le lien. Il fallait déplier pour atteindre une destination que la
+ligne annonçait déjà. D'où le bouton œil `.ack-open-agent`
+(`_appendAckOpenAgentBtn`, ui.js), qui remonte la même destination dans la
+colonne d'icônes — **sans remplacer le lien**, qui reste : les deux coexistent,
+l'un en surface, l'autre au fil du texte.
+
+Gated par le **prédicat unique `ackAgentConvTarget(m)`** (utils.js, pur, testé),
+au gabarit de `ackDownloadTarget` / `ackHasInspectableDetail` : jamais un test
+de `kind` en dur dans `buildToolAck`. Il couvre les **quatre** kinds agent pour
+la même raison que `renderAgentAckLabel` : ils portent le même `convId` et le
+même libellé cliquable, n'en équiper qu'un produirait l'asymétrie « ici le fil
+s'ouvre d'un clic, là il faut déplier ». `conversation_read` en est **exclu**
+bien qu'il porte aussi un `convId` cliquable — son icône de kind EST déjà
+`ICON_EYE`, un bouton œil y mettrait deux yeux sur la même ligne ; le prédicat
+vise les acks agent, pas « tout ack désignant une conversation », et son nom le
+dit.
+
+Placé **avant** la loupe dans la colonne : `.ack-inspect` doit rester en
+dernière position pour tenir la même abscisse d'un ack à l'autre dans un groupe
+déplié (invariant posé au lot Z). Absent des exports comme ses voisines
+(piège 21) — `_formatToolCallHtml` (utils.js), qui construit la trace d'export,
+n'émet ni bouton ni lien.
+
+L'existence de la conversation est vérifiée **au clic**, pas au rendu — à
+l'inverse du bouton équivalent sur le compte rendu (`agentOpenButtonHtml`, plus
+bas). La raison est le **mode compact** : un ack masqué vit détaché dans
+`ackNodeOf` (WeakMap) et peut être ré-attaché longtemps après sa construction,
+donc un test au rendu y serait périmé sans que rien ne le recalcule. Le clic est
+le seul instant qui vaut pour les deux chemins. Le bouton se retire alors
+lui-même plutôt que d'échouer en silence.
+
+Aucune rétro-application n'est nécessaire (contrairement à
+`refreshAckInspectAffordance`) : les quatre acks portent leur `convId` **dès
+leur création** dans tools.js — `spawnAgent` rend l'id sans await — là où la
+loupe attend l'enrichissement réseau.
+
 **Le retour** est un bandeau en tête de fil (`#agent-banner`, `syncAgentBanner`)
 — **doublé depuis X-1c d'un bouton de topbar**, cf. la section dédiée plus bas.
 Le bandeau porte en même temps l'information « ceci est un agent » et le **nom**
@@ -1169,11 +1207,39 @@ le bouton `.msg-edit` n'est pas posé (`buildMsg`), `enterEditMode` retourne tô
 les deux premières ne protègent que le clic. La **copie** reste offerte : c'est
 de la lecture.
 
+**Ouvrir le fil depuis le compte rendu.** À la place du bouton d'édition
+fermé ci-dessus, la barre d'actions porte un bouton qui ouvre la conversation
+de l'agent (`agentOpenButtonHtml` / `onOpenAgentConv`, ui.js). Le compte rendu
+dit ce que l'agent a répondu, jamais comment il y est arrivé ; le chemin vers
+ce détail existait déjà depuis le libellé de l'**ack** `agent_spawn`, mais un
+ack se perd loin en amont dans le fil, là où le compte rendu, lui, est sous les
+yeux au moment où la question se pose.
+
+`ICON_EYE`, pas la loupe : vocabulaire d'icônes, une métaphore = un usage.
+L'œil porte « on te remontre une conversation » (ack `conversation_read`, cité
+comme tel jusque dans le commentaire d'`ICON_AGENT`) ; la loupe est réservée à
+l'inspection du détail d'un appel d'outil (lot Z).
+
+L'affordance est **recalculée à chaque rendu** — `loadConversation(id)` au
+moment de produire le bouton — parce que le fil d'un agent est supprimable
+indépendamment de son parent, dont le compte rendu, lui, reste. Un bouton
+figé dans la donnée persistée promettrait une navigation morte
+(`project_affordance_decided_at_build_never_reread`). Le handler re-vérifie
+avant de naviguer, pour la fenêtre entre rendu et clic (suppression depuis un
+autre onglet) : il retire alors le bouton plutôt que d'échouer en silence.
+
+La cible vient du `dataset` du **bouton**, jamais d'un index dans
+`currentThread` : le nœud porte sa propre cible, donc aucun appariement
+positionnel à tenir juste.
+
 **Export.** Le markup vient de la MÊME fonction que l'écran
 (`agentResultBodyHtml`, appelée par `renderExportBody`) : deux formules donneraient
 deux structures, donc deux CSS à maintenir en parallèle — raison de plus quand la
 feuille, elle, est déjà distincte et figée (piège 22). Le repli fonctionne dans un
-export **non interactif** : `<details>` est natif, aucun JS requis. L'`escHtml` sur
+export **non interactif** : `<details>` est natif, aucun JS requis. Le bouton
+d'ouverture du fil, lui, en est ABSENT — il vit dans `.msg-user-actions`
+(`buildMsg`), que `renderExportBody` ne construit pas : un export est lu hors
+de l'application, où aucune conversation n'est navigable. L'`escHtml` sur
 intent et statut y est impératif — chaînes d'origine modèle (piège 21).
 
 ## Le drawer des outils exposés montrait `agent__spawn` vide (X-1e)
@@ -1343,8 +1409,11 @@ réveil parent inerte ; réveil parent occupé (file dédiée + drain à la fron
 de tour) ; **herméticité** depuis une génération détachée ; **erreur backend** ;
 stop utilisateur ; suppression du parent ; déplacement bloqué ; exclusions avec
 `conv__get` qui répond quand même au parent ; navigation parent ↔ agent (X-1c
-y ajoute le bouton de topbar) ; **délégation de fichiers** (X-1b) ; **image
-regardée par un agent** (X-1d). Le compte n'est volontairement pas écrit : une
+y ajoute le bouton de topbar ; l'aller est éprouvé sur ses **deux** surfaces —
+le bouton œil de l'ack et le libellé cliquable — qui doivent mener au même fil,
+et le lien du détail est vérifié PRÉSENT pour qu'un remplacement au lieu d'un
+ajout se voie) ; **délégation de fichiers** (X-1b) ; **image regardée par un
+agent** (X-1d). Le compte n'est volontairement pas écrit : une
 énumération fermée devient fausse au prochain ajout sans que rien ne la touche.
 
 **Fixtures représentatives** : deux Espaces nommés en plus du défaut, un témoin

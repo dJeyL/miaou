@@ -439,16 +439,18 @@ le compte rendu entier. Un rapport d'agent est souvent long, et il tombe au
 milieu de votre échange — le laisser déplié noierait la conversation. Il n'est
 pas modifiable **du tout** — et cette fois définitivement, là où le blocage
 décrit plus haut se lève tout seul : c'est le compte rendu d'un travail qui a
-réellement eu lieu, le réécrire le ferait diverger de ce que l'agent a produit. Tu peux le copier, et ouvrir le fil de l'agent pour voir le
-détail.
+réellement eu lieu, le réécrire le ferait diverger de ce que l'agent a produit.
+Sous le compte rendu, un bouton le copie ; à côté, l'œil ouvre le fil de
+l'agent pour en voir le détail.
 
-**Ouvrir un agent.** Le libellé de la ligne est cliquable : il ouvre le fil de
-l'agent, où tu vois tout son travail — ce qu'il a cherché, les outils qu'il a
-appelés, ce qu'il a répondu. C'est un geste de curiosité ou de débogage, pas
-quelque chose que tu as besoin de faire au quotidien. Les agents n'apparaissent
-volontairement **pas** dans ta barre latérale ni dans tes recherches : ils
-encombreraient ton historique alors qu'ils appartiennent à la conversation qui
-les a lancés.
+**Ouvrir un agent.** La ligne d'activité qui annonce l'agent porte un œil qui
+ouvre son fil, et son libellé reste cliquable pour la même destination — l'un
+est en surface, l'autre au fil du texte. Tu y vois tout son travail : ce qu'il
+a cherché, les outils qu'il a appelés, ce qu'il a répondu. C'est un geste de
+curiosité ou de débogage, pas quelque chose que tu as besoin de faire au
+quotidien. Les agents n'apparaissent volontairement **pas** dans ta barre
+latérale ni dans tes recherches : ils encombreraient ton historique alors
+qu'ils appartiennent à la conversation qui les a lancés.
 
 Une fois dans le fil d'un agent, un bandeau en tête te rappelle de quelle
 conversation il vient, et te ramène à elle d'un clic — c'est le chemin du

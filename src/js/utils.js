@@ -138,6 +138,38 @@ function ackDownloadTarget(m) {
   return null;
 }
 
+// Prédicat UNIQUE « cet ack désigne-t-il le fil d'un agent qu'on peut aller
+// ouvrir ? » Source de vérité du bouton œil des acks agent (`buildToolAck`,
+// ui.js) — ne jamais réécrire une liste de kinds ailleurs, même doctrine que
+// `ackDownloadTarget` et `ackHasInspectableDetail`.
+//
+// Les QUATRE kinds agent, pas le seul `agent_spawn` : ils partagent déjà le
+// même rendu de libellé cliquable (`renderAgentAckLabel`) et le même `convId`.
+// N'en équiper qu'un produirait l'asymétrie « ici le fil s'ouvre d'un clic,
+// là il faut déplier le détail pour retrouver le même lien », alors que rien
+// dans la donnée ne distingue ces cas.
+//
+// `conversation_read` est DEHORS bien qu'il porte aussi un `convId` cliquable :
+// son icône de kind EST déjà ICON_EYE, un bouton œil y mettrait deux yeux sur
+// la même ligne. Ce n'est donc pas « tout ack désignant une conversation »,
+// c'est « les acks agent », et le nom le dit.
+//
+// Ne vérifie PAS que la conversation existe : cette fonction est pure et
+// testable en QuickJS, là où `loadConversation` touche le stockage. Même
+// partage que `ackDownloadTarget`, qui désigne une ressource sans préjuger de
+// sa disponibilité — le rendu tranche, le prédicat désigne.
+//
+// `null` quand l'ack n'est pas un ack agent, ou qu'il lui manque son `convId`
+// (ack écrit avant que le champ n'entre dans ACK_COPY_FIELDS) : sans cible, un
+// bouton n'aurait nulle part où mener.
+function ackAgentConvTarget(m) {
+  if (!m) return null;
+  const kind = ackKindOf(m);
+  if (kind !== 'agent_spawn' && kind !== 'agent_status' &&
+      kind !== 'agent_result' && kind !== 'agent_abort') return null;
+  return m.convId ? { convId: m.convId } : null;
+}
+
 // Code d'erreur machine partagé avec `mcp_proxy` (campagne AB) : l'appel visait
 // un serveur amont dont le proxy ne détient pas (ou plus) d'autorisation OAuth.
 // Porté dans `error.data.code`, même slot applicatif que REF_UNKNOWN_ERROR_CODE

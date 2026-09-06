@@ -36,8 +36,9 @@ Figtree/Fira Code).
   [docs/generations.md](docs/generations.md) et [docs/badges.md](docs/badges.md).
 - **Agents** : le modèle confie une tâche délimitée à une sous-conversation
   autonome, qui travaille en parallèle avec les seuls outils et fichiers qu'il
-  lui délègue, et dont le résultat lui revient dans le fil — replié, et non
-  modifiable. Le fil d'un agent passe en lecture seule une fois son travail
+  lui délègue, et dont le résultat lui revient dans le fil — replié, non
+  modifiable, et bordé d'un bouton qui ouvre le fil de l'agent pour en lire le
+  détail. Le fil d'un agent passe en lecture seule une fois son travail
   rendu, et l'historique de la conversation qui l'a lancé ne peut pas être
   réécrit tant qu'il travaille — cf. [docs/agents.md](docs/agents.md).
 - **Inventaire de ce qui travaille** : la pastille de la barre du haut s'ouvre

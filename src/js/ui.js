@@ -959,6 +959,34 @@ function agentResultBodyHtml(content, agentResult) {
   );
 }
 
+// Bouton « ouvrir le fil de l'agent », rendu à la place de « Éditer » dans la
+// barre d'actions d'une réponse d'agent : le compte rendu replié dit CE QUE
+// l'agent a répondu, jamais comment il y est arrivé (les outils qu'il a
+// appelés, ses détours). Cette conversation existe toujours — la seule chose
+// qui manquait était le chemin pour y aller depuis l'endroit où on lit son
+// résultat.
+//
+// ICON_EYE, pas la loupe : vocabulaire d'icônes (une métaphore = un usage).
+// L'œil porte déjà « on te remontre une conversation » (ack conversation_read,
+// et le commentaire d'ICON_AGENT le cite comme tel) ; la loupe est RÉSERVÉE à
+// l'inspection du détail d'un appel d'outil (lot Z).
+//
+// Rendu seulement si la conversation de l'agent EXISTE ENCORE : elle est
+// supprimable indépendamment de son parent, et le résultat reste alors dans le
+// fil. Un bouton dont le clic ne ferait rien (openConversation est un no-op
+// silencieux sur un id inconnu) est pire que pas de bouton — il promet une
+// navigation qu'il ne tient pas. L'affordance est donc recalculée à chaque
+// rendu du fil, jamais figée dans la donnée persistée.
+function agentOpenButtonHtml(agentResult) {
+  const id = (agentResult && agentResult.id) || '';
+  if (!id || !loadConversation(id)) return '';
+  return (
+    `<button class="msg-open-agent" title="Ouvrir le fil de l'agent" onclick="onOpenAgentConv(this)" data-agent-conv="${escHtml(id)}">` +
+    ICON_EYE +
+    `</button>`
+  );
+}
+
 // `agentResult` (X-1e) : le message user porte une réponse d'agent
 // (buildAgentResultEntry, agents.js) plutôt qu'une saisie humaine. Il n'est pas
 // éditable — son texte est le compte rendu d'un travail qui a réellement eu
@@ -984,7 +1012,7 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
       `</div>` +
       `<div class="msg-user-footer">` +
       `<div class="msg-user-actions">` +
-      (agentResult ? '' :
+      (agentResult ? agentOpenButtonHtml(agentResult) :
       `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>`) +
@@ -1297,6 +1325,26 @@ function copyMsg(btn) {
     btn.classList.add('msg-copy--checked');
     setTimeout(() => { btn.innerHTML = svgCopy; btn.classList.remove('msg-copy--checked'); }, 1400);
   });
+}
+
+// Ouvre le fil de l'agent dont ce message porte le compte rendu (bouton posé par
+// agentOpenButtonHtml). L'id vient du dataset du BOUTON, pas d'un index dans
+// currentThread : le nœud porte lui-même sa cible (project_dom_state_pairing…),
+// donc aucun appariement positionnel à maintenir juste.
+//
+// Re-vérification de l'existence AVANT selectConv, alors que le bouton n'a été
+// rendu que parce que la conversation existait : entre ce rendu et le clic, un
+// autre onglet a pu la supprimer. selectConv → openConversation est déjà un
+// no-op silencieux sur un id inconnu — la re-vérification ne change donc pas
+// l'issue du clic, elle RETIRE le bouton devenu faux, pour que l'affordance
+// cesse de promettre une navigation qui n'existe plus. Pas de message : le
+// projet n'a pas de composant de notification transitoire, et en inventer un
+// ici serait redessiner à l'aveugle.
+function onOpenAgentConv(btn) {
+  const id = btn && btn.dataset ? btn.dataset.agentConv : '';
+  if (!id) return;
+  if (!loadConversation(id)) { btn.remove(); return; }
+  selectConv(id, true);
 }
 
 // ── Acks d'outils : table pilote (label + capacité d'annulation + icône) ──────
@@ -2119,6 +2167,40 @@ function _appendAckInspectBtn(wrap, m) {
   return insp;
 }
 
+// Bouton œil d'un ack agent : ouvre le fil de l'agent que l'ack désigne.
+//
+// ICON_EYE et pas la loupe : vocabulaire d'icônes, une métaphore = un usage.
+// L'œil dit « on te remontre une conversation » (c'est déjà l'icône de kind de
+// `conversation_read`, et le commentaire d'ICON_AGENT le désigne comme tel) ;
+// la loupe dit « on décortique cet appel » — ce que le bouton d'à côté fait,
+// et qui est une autre question.
+//
+// L'existence de la conversation est vérifiée AU CLIC, pas au rendu, à
+// l'inverse du bouton équivalent sur le compte rendu d'agent
+// (`agentOpenButtonHtml`). La raison est le mode compact : un ack masqué vit
+// détaché dans `ackNodeOf` (WeakMap) et peut être ré-attaché longtemps après
+// sa construction, donc un test au rendu y serait périmé sans que rien ne le
+// recalcule. Vérifier au clic est le seul instant qui vaut pour les deux
+// chemins. On retire alors le bouton devenu faux plutôt que d'échouer en
+// silence (openConversation est un no-op sur un id inconnu).
+//
+// stopPropagation pour la même raison que `.ack-inspect` : garde de frontière
+// contre un futur écouteur en bulle sur `.ack-panels`/`.tool-ack` qui ferait
+// replier le groupe alors que le geste demandé est « ouvrir le fil ».
+function _appendAckOpenAgentBtn(wrap, target) {
+  const btn = document.createElement('button');
+  btn.className = 'ack-open-agent';
+  btn.title = 'Ouvrir le fil de l\'agent';
+  btn.innerHTML = ICON_EYE;   // SVG statique author-controlled uniquement
+  btn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    if (!loadConversation(target.convId)) { btn.remove(); return; }
+    selectConv(target.convId, true);
+  });
+  wrap.appendChild(btn);
+  return btn;
+}
+
 // Fait apparaître la loupe sur un ack DÉJÀ PEINT qui vient d'être enrichi.
 // `buildToolAck` décide de l'affordance au moment où l'ack est créé ; or un ack
 // MCP est rendu par `onEarlyAcks` AVANT le round-trip réseau, donc avant que
@@ -2296,6 +2378,24 @@ function buildToolAck(m) {
   // unique (un create et un delete du même souvenir le partagent, cf. plus bas).
   // Comme `.ack-dl`, ce bouton est délibérément ABSENT des exports (piège 21) :
   // _formatToolCallHtml construit son markup indépendamment et ne l'émet pas.
+  // Ouverture du fil de l'agent (lot suivant X-1e) : gated par le prédicat
+  // UNIQUE `ackAgentConvTarget` (utils.js), jamais un test de kind ici — même
+  // doctrine que ses deux voisines. Le lien existait DÉJÀ, mais seulement sur
+  // le libellé, qu'un ack à `intent` replie dans son détail
+  // (`renderIntentTwoLevel`) : il fallait déplier pour l'atteindre. Le bouton
+  // le remonte en surface SANS le remplacer — les deux coexistent, un lien
+  // dans le texte et une affordance dans la colonne d'icônes.
+  //
+  // AVANT la loupe, pour ne pas casser l'invariant de colonne posé plus haut :
+  // `.ack-inspect` reste en dernière position, donc à la même abscisse d'un ack
+  // à l'autre dans un groupe déplié.
+  //
+  // Comme `.ack-dl` et `.ack-inspect`, ABSENT des exports (piège 21) : un HTML
+  // standalone lu hors de l'application n'a aucune conversation où naviguer.
+  // _formatToolCallHtml (utils.js) construit son markup indépendamment et ne
+  // l'émet pas — vérifié sur la fonction, pas supposé.
+  const agentTarget = ackAgentConvTarget(m);
+  if (agentTarget) _appendAckOpenAgentBtn(wrap, agentTarget);
   if (ackHasInspectableDetail(m)) _appendAckInspectBtn(wrap, m);
   // Lien d'autorisation (campagne AB) : gated par le prédicat UNIQUE
   // `ackAuthorizationTarget` (utils.js), jamais un test de kind ni de code ici —
