@@ -4484,7 +4484,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-07 11:44 UTC */
+/* miaou — built: 2026-09-07 16:56 UTC */
 
 /* ── utils.js ── */
 
@@ -7825,7 +7825,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788781493}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1788800192}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -10784,6 +10784,18 @@ const WEB_DOCTRINE =
   "pertinent, plutôt que de fabriquer des informations récentes.\n" +
   "</SANS_ACCES_WEB>\n";
 
+const AUTHORIZATION_DOCTRINE =
+  "Un outil distant peut échouer en signalant qu'une autorisation (OAuth) est " +
+  "requise. Ce n'est ni une panne, ni une erreur de configuration, ni un " +
+  "problème de clef d'API : le serveur fonctionne, il attend simplement que " +
+  "l'utilisateur accorde un accès à un service tiers. Ne lui suggère donc pas " +
+  "de vérifier ses réglages, ses jetons ou sa connexion. L'application affiche " +
+  "elle-même le lien d'autorisation à côté de l'appel concerné — tu n'as ni à " +
+  "le construire, ni à le répéter, et aucun outil ne te permet d'autoriser à sa " +
+  "place. Signale-lui que cette action attend son feu vert, poursuis avec ce " +
+  "que tu peux faire sans, et considère que le même appel réussira une fois " +
+  "l'accès accordé.";
+
 const CONV_REF_DOCTRINE =
   "Quand tu mentionnes une conversation passée obtenue via conv__get ou " +
   "conv__list (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
@@ -10922,7 +10934,8 @@ const AGENT_DOCTRINE =
 
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   DOCS_DOCTRINE + "\n\n---\n\n" +
-  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
+  WEB_DOCTRINE + "\n\n---\n\n" + AUTHORIZATION_DOCTRINE + "\n\n---\n\n" +
+  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
   "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE +
   "\n\n---\n\n" + AGENT_DOCTRINE;
 

@@ -447,6 +447,20 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       répétée** : elle serait alors deux fois dans le contexte, dont une dans une
       phrase que le modèle pourrait recopier en réponse — remettant un lien
       d'origine réseau sur un chemin de rendu dépourvu de la garde ci-dessus.
+    - **Doctrine permanente, en plus du tool result.** `AUTHORIZATION_DOCTRINE`
+      (tools.js, partie inconditionnelle de `ROOT_SYSTEM_PROMPT`) dit ce que la
+      situation EST, là où le tool result dit quoi FAIRE. Sans elle, un modèle
+      qui rencontre « autorisation OAuth » comble avec ce qu'il connaît —
+      « vérifie ta configuration MCP », « ton token d'API est-il renseigné ? » —
+      et envoie l'utilisateur déboguer une panne qui n'existe pas
+      (confabulation observée en production le 2026-09-07, **malgré** un tool
+      result correct : `help.md` couvre pourtant le sujet, mais le modèle ne le
+      lit que s'il appelle `miaou__about`, ce qu'il ne fait pas quand il croit
+      avoir compris). Elle écarte donc les fausses pistes **nommément** — dire
+      seulement « ce n'est pas une panne » le laisse libre de proposer quand
+      même le mauvais remède. Statique et inconditionnelle comme ses voisines :
+      la conditionner à la présence de serveurs MCP la rendrait dynamique d'un
+      tour à l'autre (piège 16) pour trois phrases.
     - **Pas de rejeu automatique** : la génération se termine normalement.
 
 16. **Surface `_meta` : savoir avant l'échec (campagne AB-5).** Le contrat du

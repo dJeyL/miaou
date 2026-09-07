@@ -767,6 +767,28 @@ describe('ATTACHMENT_DOCTRINE (constante, partie de ROOT_SYSTEM_PROMPT)', functi
   });
 });
 
+describe('AUTHORIZATION_DOCTRINE (constante inconditionnelle de ROOT_SYSTEM_PROMPT)', function() {
+  it('incluse dans ROOT_SYSTEM_PROMPT', function() {
+    expect(ROOT_SYSTEM_PROMPT.indexOf(AUTHORIZATION_DOCTRINE) >= 0).toBeTruthy();
+  });
+  it('nomme les fausses pistes que le modele proposait a leur place', function() {
+    // Confabulation observee en production : « verifie ta configuration MCP »,
+    // « ton token/cle API est-il renseigne ? ». La doctrine doit ecarter
+    // NOMMEMENT ces pistes — dire seulement « ce n'est pas une panne » laisse
+    // le modele libre de proposer quand meme le mauvais remede.
+    expect(AUTHORIZATION_DOCTRINE.indexOf('configuration') >= 0).toBeTruthy();
+    expect(AUTHORIZATION_DOCTRINE.indexOf('clef d\'API') >= 0).toBeTruthy();
+    expect(AUTHORIZATION_DOCTRINE.indexOf('reglages') >= 0 ||
+           AUTHORIZATION_DOCTRINE.indexOf('r\u00e9glages') >= 0).toBeTruthy();
+  });
+  it('dit que le lien est deja affiche, sans le faire repeter', function() {
+    // Le repeter remettrait une URL d'origine reseau dans le texte du modele,
+    // donc sur un chemin de rendu sans la garde d'origine (piege 21 / AB-3).
+    expect(AUTHORIZATION_DOCTRINE.indexOf('affiche') >= 0).toBeTruthy();
+    expect(AUTHORIZATION_DOCTRINE.indexOf('r\u00e9p\u00e9ter') >= 0).toBeTruthy();
+  });
+});
+
 describe('JS_EVAL_DOCTRINE (constante inconditionnelle de ROOT_SYSTEM_PROMPT, lot L)', function() {
   it('incluse dans ROOT_SYSTEM_PROMPT (inconditionnelle, AL4)', function() {
     expect(ROOT_SYSTEM_PROMPT.indexOf(JS_EVAL_DOCTRINE) >= 0).toBeTruthy();

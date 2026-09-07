@@ -313,6 +313,23 @@ proves nothing — the list grows, so it is deliberately not counted here:
   the scenario, not the assertion, is what needs rewriting. Assert the premise
   too (the refusal DID mark the entry), or the absences that follow are vacuous.
 
+- **A threshold that is open on the side where the defect lives.** Real case
+  (2026-09-07, autoscroll cap): the criterion was "the user bubble is still on
+  screen", asserted as `margin >= 0` — the distance from the top of the
+  scrollport to the top of the bubble. That catches a bubble pushed off the
+  *top*, and nothing else: a margin of 2961px in a 682px-high viewport is a
+  bubble far below the fold, and it passed. Two consecutive runs reported the
+  cap working while it was not; the user's own description ("my bubble is at
+  the bottom and the answer never appears") is what broke the tie, not the
+  measurements. The failing shape is a **one-sided comparison standing in for
+  a containment**: `>= 0` where the property is "within `[0, clientHeight)`".
+  Whenever an assertion bounds a position, an index or a size on one side only,
+  ask what the *other* side would look like when broken — if that state is
+  reachable, the check is blind to exactly half its subject. Prefer asserting
+  the containment directly (`0 <= x && x < limit`) and printing the limit
+  alongside the value, so a passing run still shows the margin against the
+  viewport it must fit in.
+
 A third way a verify misleads, and the hardest to read: **a fixture that
 manufactures the very defect the check is looking for.** Here the assertion is
 sound and the code is correct — the setup collides with itself.

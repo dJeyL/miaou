@@ -213,6 +213,33 @@ const WEB_DOCTRINE =
   "pertinent, plutôt que de fabriquer des informations récentes.\n" +
   "</SANS_ACCES_WEB>\n";
 
+// Doctrine comportementale : un outil distant refusé faute d'autorisation.
+// Partie de ROOT_SYSTEM_PROMPT.
+//
+// Le tool result d'un tel refus dit déjà quoi FAIRE
+// (formatAuthorizationRefusalForModel). Ce qui manquait est ce que la situation
+// EST : sans elle, un modèle qui rencontre « autorisation OAuth » comble avec
+// ce qu'il connaît — « vérifie ta configuration MCP », « ton token d'API est-il
+// renseigné ? » — et envoie l'utilisateur déboguer une panne qui n'existe pas.
+// Confabulation observée en production le 2026-09-07, malgré un tool result
+// correct : le modèle ne lit `help.md` que s'il appelle `miaou__about`, ce
+// qu'il ne fait pas quand il croit avoir compris.
+//
+// Statique et inconditionnelle, comme ses voisines : la conditionner à la
+// présence de serveurs MCP la rendrait dynamique d'un tour à l'autre
+// (piège 16, KV cache) pour trois phrases.
+const AUTHORIZATION_DOCTRINE =
+  "Un outil distant peut échouer en signalant qu'une autorisation (OAuth) est " +
+  "requise. Ce n'est ni une panne, ni une erreur de configuration, ni un " +
+  "problème de clef d'API : le serveur fonctionne, il attend simplement que " +
+  "l'utilisateur accorde un accès à un service tiers. Ne lui suggère donc pas " +
+  "de vérifier ses réglages, ses jetons ou sa connexion. L'application affiche " +
+  "elle-même le lien d'autorisation à côté de l'appel concerné — tu n'as ni à " +
+  "le construire, ni à le répéter, et aucun outil ne te permet d'autoriser à sa " +
+  "place. Signale-lui que cette action attend son feu vert, poursuis avec ce " +
+  "que tu peux faire sans, et considère que le même appel réussira une fois " +
+  "l'accès accordé.";
+
 // Doctrine comportementale : référence à une conversation passée. Toujours
 // injectée quand des outils existent (conv__get/conv__list en
 // font partie du registre de base) — même statut que BINARY_DOCTRINE. Le
@@ -524,7 +551,8 @@ const AGENT_DOCTRINE =
 //  hors racine par docsDoctrinePrompt(), supprimée avec V-1.)
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   DOCS_DOCTRINE + "\n\n---\n\n" +
-  WEB_DOCTRINE + "\n\n---\n\n" + CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
+  WEB_DOCTRINE + "\n\n---\n\n" + AUTHORIZATION_DOCTRINE + "\n\n---\n\n" +
+  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
   "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE +
   "\n\n---\n\n" + AGENT_DOCTRINE;
 
