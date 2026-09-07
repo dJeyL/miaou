@@ -74,6 +74,33 @@ ne serait pas identique à la même persistée depuis l'écran.
 `persistGeneration` **ne ressuscite pas** une conversation supprimée pendant la
 génération (`if (!conv) return`) — même posture que `summarizeIfNeeded` (piège 20).
 
+### La garde anti-troncature
+
+`persistGeneration` **refuse** d'écrire un thread plus court que ce que la
+conversation porte déjà en base (`generationWouldTruncate`, pur et testé).
+
+Le raisonnement : une génération ne raccourcit jamais son thread, elle y pousse
+(acks, tours, réponse finale). Les seules troncatures légitimes de l'application
+— édition d'un message user, régénération — passent par `persistCurrent`, jamais
+par `persistGeneration`. Un thread plus court signale donc qu'on s'apprête à
+écraser un historique avec un thread construit sur une **lecture vide**, et le
+seul producteur connu d'une telle lecture est l'étage 2 borné du cache.
+
+Ce n'est **pas le correctif** du bug du 2026-09-07 (le correctif est de réchauffer
+avant de lire, cf. `docs/agents.md`), mais une garde de fond : le défaut est
+silencieux et destructif — l'historique parti n'est récupérable nulle part — et
+douze call-sites peuvent l'atteindre. Elle refuse l'écriture au lieu de la faire
+à moitié, et **trace en console** : le refus est un symptôme, pas un
+fonctionnement normal. Sans ce log, elle transformerait une corruption bruyante
+en perte silencieuse du tour — le même défaut de nature, plus difficile à voir.
+
+Le premier argument vient de `conversationMessageCount(id)` (étage 1,
+**permanent**), jamais de `conv.messages` : sur une conversation froide ce dernier
+vaut `[]`, si bien que la garde aurait été aveugle exactement dans le cas qu'elle
+vise — le thread vide et la base vue vide se seraient dit d'accord. Écrite ainsi
+au premier jet, elle a été attrapée par le test de régression, pas par la
+relecture.
+
 La **doctrine d'écriture unique par échange est inchangée** : `onFinal`/`onHalt`
 restent les seuls points d'écriture (plus `onToolTour`). T-1 change seulement *où*
 ils écrivent.

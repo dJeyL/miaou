@@ -1021,6 +1021,298 @@ function scrollBottom(force) {
   if (!m) return;
   if (!force && !isAtBottom()) return;
   m.scrollTop = m.scrollHeight;
+  syncScrollBottomBtn();
+}
+
+// Maintient le fil collé au fond pendant que sa hauteur se stabilise après un
+// rendu complet (ouverture d'une conversation, rechargement).
+//
+// `scrollBottom(true)` seul ne suffit PAS : il colle au fond la hauteur du
+// MOMENT, mais le fil grandit encore après — coloration Prism en lazy-load,
+// décoration des blocs de code, diagrammes, images qui arrivent. Chaque
+// croissance postérieure éloigne d'autant du bas, et on ouvrait une
+// conversation à 332px du haut pour un maximum de 3095 (mesuré).
+//
+// Un ResizeObserver capte TOUTE croissance tardive sans avoir à énumérer ses
+// causes — l'énumération serait fausse au prochain contributeur de hauteur.
+// Il se retire de lui-même après un délai de calme : au-delà, une croissance
+// n'est plus la fin du rendu initial mais un événement de la vie du fil
+// (streaming, dépliage d'un raisonnement), qui ne doit rien forcer.
+const THREAD_SETTLE_MS = 900;
+let _settleRO = null;
+let _settleTimer = null;
+
+function stickToBottomWhileSettling() {
+  const m = $('messages');
+  const thread = $('thread');
+  if (!m || !thread || typeof ResizeObserver === 'undefined') return;
+  stopStickToBottom();
+  _settleRO = new ResizeObserver(() => { m.scrollTop = m.scrollHeight; syncScrollBottomBtn(); });
+  _settleRO.observe(thread);
+  _settleTimer = setTimeout(stopStickToBottom, THREAD_SETTLE_MS);
+}
+
+// Débranché dès qu'une génération démarre ou que l'utilisateur fait un geste :
+// le collage au fond est une phase de rendu, pas un mode de lecture.
+function stopStickToBottom() {
+  if (_settleRO) { _settleRO.disconnect(); _settleRO = null; }
+  if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+}
+
+// ── Plafond d'autoscroll pendant le streaming ───────────────────────────────
+// Sans plafond, une réponse plus haute que l'écran fait défiler la question qui
+// l'a provoquée hors du champ : on lit une réponse dont on ne voit plus l'énoncé.
+// Le plafond fige donc le suivi dès que le haut de la dernière bulle user
+// atteindrait le haut du viewport du fil — la génération continue d'écrire, la
+// vue reste sur l'énoncé, et le bouton « aller tout en bas » apparaît.
+//
+// ANCRAGE DOUX : le plafond est LEVÉ pour le reste de la génération dès que
+// l'utilisateur redescend au fond de son plein gré (clic sur le bouton, ou
+// scroll manuel jusqu'en bas). Il se réarme au tour suivant, quand une nouvelle
+// bulle user devient l'ancre.
+//
+// L'état est clefé PAR CONVERSATION et non porté par une globale d'écran : une
+// génération n'écrit jamais dans l'écran mais dans SA conversation (piège 28),
+// et on peut ouvrir un fil d'agent ou revenir sur un parent réveillé pendant
+// qu'il travaille.
+const _scrollCapReleased = new Set();   // Set<convId> — plafond levé pour ce tour
+
+function releaseScrollCap(convId) {
+  if (convId != null) _scrollCapReleased.add(convId);
+}
+
+function armScrollCap(convId) {
+  if (convId != null) _scrollCapReleased.delete(convId);
+}
+
+function scrollCapReleased(convId) {
+  return convId != null && _scrollCapReleased.has(convId);
+}
+
+// Position de scroll maximale autorisée, en pixels, pour garder `anchorTop`
+// (position de l'ancre dans le référentiel de défilement, cf.
+// anchorTopInScroll) visible en haut du viewport. Pure : prend
+// les mesures, rend un scrollTop. Le `max(0, …)` couvre l'ancre située avant le
+// premier écran de contenu, où le plafond ne mord pas.
+function cappedScrollTop(anchorTop, scrollHeight, clientHeight, padTop, currentTop) {
+  const bottom = Math.max(0, scrollHeight - clientHeight);
+  const cap = Math.max(0, anchorTop - (padTop || 0));
+  const target = Math.min(bottom, cap);
+  // Un autoscroll ne REMONTE jamais la vue. Sans cette borne, le plafond
+  // « tire vers le haut » dès que l'ancre est à moins d'un écran du fond :
+  // après une édition ou une régénération, le fil tronqué est court, on vient
+  // d'être amené au fond, et la naissance de la bulle assistant faisait sauter
+  // la vue en arrière pour coller l'ancre en haut — on ne voyait plus que sa
+  // propre bulle (mesuré : scrollTop 215 → 14). Le plafond est une BORNE de
+  // descente, pas une position à rejoindre.
+  return Math.max(target, Math.min(currentTop || 0, bottom));
+}
+
+// Bulle d'ancrage : la DERNIÈRE bulle user du fil affiché. Ce n'est pas
+// forcément « celle qui a lancé la génération en cours » — une interjection
+// mid-génération (lot Q) en insère une nouvelle, et c'est bien celle-là qu'il
+// faut garder à l'écran une fois le tour réaiguillé.
+function autoscrollAnchorEl() {
+  const msgs = $('thread') ? $('thread').querySelectorAll('.msg.user') : null;
+  return (msgs && msgs.length) ? msgs[msgs.length - 1] : null;
+}
+
+// Position de l'ancre DANS LE RÉFÉRENTIEL DE DÉFILEMENT de `#messages`.
+//
+// Surtout PAS `offsetTop` : il est relatif à l'`offsetParent`, c'est-à-dire au
+// parent positionné le plus proche — ici `.main` (position: relative), et non
+// `#messages` qui, lui, ne l'est pas. `offsetTop` inclut donc la hauteur de la
+// topbar, et le plafond calculé dessus laissait la bulle sortir de l'écran par
+// le haut de cet écart (52px mesurés, 24px de débordement visible).
+//
+// Les rects sont relatifs au viewport : leur DIFFÉRENCE annule ce décalage
+// quel que soit l'ancêtre positionné, et rajouter `scrollTop` la ramène dans
+// le repère du contenu défilant. Vrai indépendamment du CSS environnant, là où
+// `offsetTop` dépend de qui porte `position` au-dessus.
+function anchorTopInScroll(m, anchor) {
+  return anchor.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop;
+}
+
+// « Cette génération doit-elle continuer à faire défiler le fil ? »
+//
+// PAS `isAtBottom()`, qui était le prédicat de suivi avant le plafond et ne
+// peut plus l'être : dès que le plafond mord, la vue N'EST PLUS au fond par
+// construction, donc `isAtBottom()` devient faux et le suivi s'arrête POUR
+// TOUJOURS — plus aucun appel, la réponse s'écrit hors champ et on ne voit
+// plus rien (mesuré : figé à 820 pendant que le fil montait à 3259).
+//
+// Le vrai critère est l'INTENTION : on suit tant que l'utilisateur n'est pas
+// parti lire ailleurs. Deux cas de suivi, et un seul cas d'arrêt :
+//   - plafond encore armé   → on suit (le plafond borne la descente lui-même) ;
+//   - plafond levé ET au fond → on suit (ancrage doux, il veut voir la suite) ;
+//   - plafond levé et remonté → il lit plus haut : on ne le dérange pas.
+function shouldFollowStream(convId) {
+  if (!scrollCapReleased(convId)) return true;
+  return isAtBottom();
+}
+
+// Autoscroll de streaming : suit le bas du fil SANS jamais dépasser le plafond
+// d'ancrage. Distinct de scrollBottom(true), qui reste le geste « va vraiment
+// tout en bas » (envoi utilisateur, ouverture de conversation, clic du bouton).
+function scrollBottomCapped(convId) {
+  const m = $('messages');
+  if (!m) return;
+  // Une génération écrit : c'est elle qui gouverne le défilement à partir
+  // d'ici, plus la phase de stabilisation du rendu initial.
+  stopStickToBottom();
+  const anchor = scrollCapReleased(convId) ? null : autoscrollAnchorEl();
+  if (!anchor) {
+    m.scrollTop = m.scrollHeight;
+  } else {
+    const padTop = parseFloat(getComputedStyle(m).paddingTop) || 0;
+    m.scrollTop = cappedScrollTop(anchorTopInScroll(m, anchor), m.scrollHeight, m.clientHeight, padTop, m.scrollTop);
+  }
+  syncScrollBottomBtn();
+}
+
+// ── Bouton « aller tout en bas » ────────────────────────────────────────────
+// Durée de la descente au clic. Animation MAISON plutôt que
+// `behavior: 'smooth'` : le smooth natif n'expose aucune durée, et la sienne
+// (proportionnelle à la distance) traîne sur un fil long — un geste de
+// navigation explicite doit arriver vite.
+const SCROLL_BOTTOM_DURATION_MS = 260;
+
+let _scrollBottomAnim = null;    // handle rAF de la frame en attente
+let _scrollBottomAnimating = false;   // descente en cours (drapeau de visibilité)
+
+// PRÉDICAT UNIQUE de visibilité du bouton, et SEUL écrivain de son `hidden`.
+// Visible dès que le fil n'est pas au fond — génération en cours ou simple
+// relecture d'une conversation ancienne — SAUF pendant la descente animée
+// qu'il a lui-même déclenchée : le bouton est alors la cible qu'on vient de
+// cliquer, et le laisser sous le curseur pendant tout le trajet le fait
+// survivre à son propre effet.
+//
+// L'état d'animation est lu ICI plutôt que masqué à la main dans le handler de
+// clic : chaque frame de la descente émet un `scroll`, donc rappelle cette
+// fonction, et un masquage posé à côté était rallumé dès la frame suivante
+// (isAtBottom() encore faux). Deux écrivains d'un même attribut, dont le second
+// gagne toujours — le bouton ne disparaissait donc qu'à l'arrivée.
+function syncScrollBottomBtn() {
+  const btn = $('scroll-bottom-btn');
+  if (!btn) return;
+  if (_scrollBottomAnimating || isAtBottom()) btn.setAttribute('hidden', '');
+  else btn.removeAttribute('hidden');
+}
+
+// Clic : descente franche au fond ET levée du plafond pour le reste du tour —
+// c'est le geste par lequel l'utilisateur dit qu'il veut suivre la génération
+// plutôt que garder son énoncé à l'écran (ancrage doux).
+function onScrollBottomBtn() {
+  const m = $('messages');
+  if (!m) return;
+  releaseScrollCap(currentConvId);
+  scrollToBottomAnimated(m);
+}
+
+// Descente animée vers le bas du fil. La cible est relue À CHAQUE FRAME : une
+// génération en cours allonge le fil pendant la descente, et une cible figée au
+// départ arriverait court, en laissant le bouton se rallumer juste après.
+function scrollToBottomAnimated(m) {
+  if (_scrollBottomAnim) { cancelAnimationFrame(_scrollBottomAnim); _scrollBottomAnim = null; }
+  if (motionReduced()) {
+    m.scrollTop = m.scrollHeight;
+    syncScrollBottomBtn();
+    return;
+  }
+  // Drapeau posé AVANT le premier sync : c'est lui qui masque le bouton, dès
+  // ce tour de boucle et non à l'arrivée (cf. syncScrollBottomBtn).
+  _scrollBottomAnimating = true;
+  syncScrollBottomBtn();
+  const from = m.scrollTop;
+  const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / SCROLL_BOTTOM_DURATION_MS);
+    const eased = 1 - Math.pow(1 - t, 3);   // ease-out cubique, accord de --ease
+    const target = m.scrollHeight - m.clientHeight;
+    m.scrollTop = from + (target - from) * eased;
+    if (t < 1) {
+      _scrollBottomAnim = requestAnimationFrame(step);
+    } else {
+      _scrollBottomAnim = null;
+      _scrollBottomAnimating = false;
+      m.scrollTop = m.scrollHeight;   // atterrissage exact, à l'abri des arrondis
+      syncScrollBottomBtn();
+    }
+  };
+  _scrollBottomAnim = requestAnimationFrame(step);
+}
+
+// Écoute du défilement du fil : met à jour la visibilité du bouton, et lève le
+// plafond quand l'utilisateur redescend au fond à la main (même intention qu'un
+// clic sur le bouton). Throttlé par rAF — l'événement scroll part en rafale.
+//
+// La levée est gardée par `scrollFollowsUserIntent` : un autoscroll atteint LUI
+// AUSSI le fond (le plafond ne mord pas tant que la réponse tient dans
+// l'écran), et l'événement qu'il émet lèverait alors le plafond sans qu'on ait
+// rien demandé — il ne servirait plus jamais dès le premier tour court. Seul un
+// scroll SUIVANT UN GESTE vaut intention.
+let _scrollSyncPending = false;
+
+// ── Reconnaître un geste de l'utilisateur ───────────────────────────────────
+// Lever le plafond suppose de distinguer « l'utilisateur est redescendu au
+// fond » de « un autoscroll y est arrivé tout seul ». L'événement `scroll` ne
+// le dit pas : il est identique dans les deux cas.
+//
+// Deux tentatives ont échoué, pour la même raison de fond — l'ÉVÉNEMENT est un
+// mauvais support de cette question :
+//   1. drapeau à retombée sur rAF : le navigateur émet `scroll` de façon
+//      asynchrone, souvent APRÈS la frame suivante, donc l'écho arrivait le
+//      drapeau déjà retombé ;
+//   2. comparaison de position : entre l'écriture et l'événement, le fil
+//      grandit (bulle assistant, patienteur, frame de streaming), donc la
+//      position observée ne vaut plus celle qu'on avait mémorisée.
+//
+// On écoute donc le GESTE D'ENTRÉE — molette, doigt, touche de navigation —
+// qui, lui, n'est émis que par l'utilisateur. C'est déjà le support retenu
+// pour abandonner la descente animée (cancelScrollBottomAnim), et pour la
+// même raison.
+//
+// La fenêtre est généreuse : un geste de molette produit une salve
+// d'événements `scroll` étalée sur plusieurs centaines de ms (défilement
+// inertiel des trackpads), tous à imputer au même geste.
+const USER_SCROLL_INTENT_MS = 700;
+let _lastUserScrollIntent = 0;
+
+function noteUserScrollIntent() {
+  _lastUserScrollIntent = Date.now();
+  // Un geste pendant la phase de stabilisation la termine : l'utilisateur veut
+  // regarder ailleurs, le collage au fond lutterait contre lui.
+  stopStickToBottom();
+}
+
+function scrollFollowsUserIntent() {
+  return (Date.now() - _lastUserScrollIntent) <= USER_SCROLL_INTENT_MS;
+}
+
+// Abandon de la descente animée sur intention explicite de l'utilisateur
+// (molette, doigt). Pendant l'animation, chaque frame réécrit la position de
+// référence : un scroll utilisateur y est indistinguable d'une de nos frames,
+// donc c'est le geste D'ENTRÉE qu'on écoute, pas son effet — sans quoi on
+// continuerait à tirer la vue vers le bas contre lui.
+function cancelScrollBottomAnim() {
+  if (!_scrollBottomAnimating) return;
+  if (_scrollBottomAnim) cancelAnimationFrame(_scrollBottomAnim);
+  _scrollBottomAnim = null;
+  _scrollBottomAnimating = false;
+  syncScrollBottomBtn();
+}
+
+function onMessagesScroll() {
+  if (_scrollSyncPending) return;
+  _scrollSyncPending = true;
+  // Lu TOUT DE SUITE, pas dans le rAF : la fenêtre d'intention peut expirer
+  // d'ici là sur une salve longue.
+  const intent = scrollFollowsUserIntent();
+  requestAnimationFrame(() => {
+    _scrollSyncPending = false;
+    if (intent && isAtBottom()) releaseScrollCap(currentConvId);
+    syncScrollBottomBtn();
+  });
 }
 
 function modelName() {
@@ -2988,6 +3280,7 @@ function renderThread(msgs) {
   for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
   if (highlightEnabled && window.Prism) Prism.highlightAll();
   scrollBottom(true);   // ouverture/rechargement de conversation : toujours au fond
+  stickToBottomWhileSettling();   // ... et y RESTER le temps que la hauteur se fixe
   syncConvDownloadBtn();
   syncLastAssistantActions();
   reindexThreadDom();   // toutes les bulles viennent d'être (re)construites depuis msgs
@@ -3091,7 +3384,9 @@ function startAssistantMessage(model, server) {
   wrap.innerHTML = assistantHead(model, '', undefined, server) + `<div class="body"></div>`;
   $('thread').appendChild(wrap);
   startWaiter(wrap.querySelector('.body'));     // état WAITING
-  scrollBottom(true);   // nouvelle bulle en réponse à un envoi : toujours suivre
+  // Plafonné : une bulle assistant naît AUSSI en cours de tour (après chaque
+  // volée d'outils), là où un saut au fond arracherait l'énoncé de l'écran.
+  scrollBottomCapped(currentConvId);
   return wrap;
 }
 
@@ -3156,12 +3451,14 @@ function streamInto(wrap, full) {
     // isAtBottom() DOIT être lu avant la mutation du DOM ci-dessous : le
     // nouveau contenu fait grandir scrollHeight, donc évalué après il donnerait
     // presque toujours "pas en bas" même quand l'utilisateur suivait le fil.
-    const follow = isAtBottom();
+    const follow = shouldFollowStream(currentConvId);
     const body = p.wrap.querySelector('.body');
     body.innerHTML = renderMd(p.full) + '<span class="cursor-blink"></span>';
     decoratePre(p.wrap);
     highlightUnder(p.wrap);   // coloration pendant le streaming
-    if (follow) scrollBottom(true);
+    // Plafonné : le suivi s'arrête avant que l'énoncé qui a provoqué la
+    // réponse ne sorte par le haut (cf. scrollBottomCapped).
+    if (follow) scrollBottomCapped(currentConvId);
   }, 90);
 }
 
@@ -3195,7 +3492,7 @@ function finalizeAssistant(wrap, full, truncated) {
   cancelStreamRender();
   cancelReasoningRender();
   stopWaiter();
-  const follow = isAtBottom();   // lu avant mutation DOM, cf. streamInto
+  const follow = shouldFollowStream(currentConvId);   // lu avant mutation DOM, cf. streamInto
   const body = wrap.querySelector('.body');
   body.innerHTML = renderMd(full);
   body.dataset.raw = full;
@@ -3215,7 +3512,7 @@ function finalizeAssistant(wrap, full, truncated) {
   syncConvDownloadBtn();
   syncLastAssistantActions();
   reindexThreadDom();   // l'entrée assistant vient d'être poussée (cf. call-sites main.js)
-  if (follow) scrollBottom(true);
+  if (follow) scrollBottomCapped(currentConvId);
 }
 
 // Finalisation d'un tour en ÉCHEC (400 backend, exception réseau, non-convergence).
@@ -3228,7 +3525,7 @@ function finalizeAssistantError(wrap, msg) {
   cancelStreamRender();
   cancelReasoningRender();
   stopWaiter();
-  const follow = isAtBottom();
+  const follow = shouldFollowStream(currentConvId);
   const body = wrap.querySelector('.body');
   body.className = 'body msg-error';
   body.textContent = String(msg);
@@ -3237,7 +3534,7 @@ function finalizeAssistantError(wrap, msg) {
   const dlBtn = wrap.querySelector('.msg-dl');
   if (dlBtn) dlBtn.setAttribute('hidden', '');
   syncLastAssistantActions();
-  if (follow) scrollBottom(true);
+  if (follow) scrollBottomCapped(currentConvId);
 }
 
 // ── Édition d'un message utilisateur ────────────────────────────────────────

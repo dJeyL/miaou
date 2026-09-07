@@ -213,7 +213,7 @@ Une ligne par piège ci-dessous — **développement complet, exemples et noms d
 fonctions dans `docs/pitfalls-detail.md`** (le lire avant de toucher au flux de
 conversation, au streaming, aux résumés/titrage, à l'édition de message, au
 patienteur, au raisonnement, au sélecteur de modèle, ou au KV cache). Les pièges
-16, 18, 21, 24 et 28 sont les **invariants transverses** : ils gouvernent des
+16, 18, 21, 24, 28 et 29 sont les **invariants transverses** : ils gouvernent des
 frontières traversées par beaucoup de code, donc on peut les enfreindre sans
 savoir qu'on entre dans leur domaine. Leur ligne ci-dessous porte pour cette
 raison le prédicat et l'interdit, pas seulement l'intitulé — de quoi arrêter le
@@ -380,6 +380,21 @@ geste ; le développement est dans la doc pointée.
     (`setGenPartialContent`, `pushGenToolAck`, `pushGenMessage`) portent la
     scission une fois pour toutes : les appeler, jamais muter `gen.thread`/
     `gen.partial*` à côté. Cf. `docs/generations.md`.
+29. **Lire le thread d'une conversation NON AFFICHÉE exige de l'avoir
+    réchauffée.** L'étage 2 du cache est borné (`CONV_MESSAGES_LRU_MAX`) :
+    `loadConversation` d'une conversation évincée rend `messages: []` **par
+    contrat**, exactement comme une conversation réellement vide — les deux sont
+    indistinguables pour qui ne lit que `messages`. Tout code qui lit un thread
+    pour le réécrire doit donc faire `await warmConversation(id)` AVANT, puis
+    relire après l'await (piège 24 (b)). Sans ça, il pousse dans un tableau vide
+    et le premier `persistGeneration` **détruit l'historique**, silencieusement
+    et sans rien à récupérer. Payé le 2026-09-07 sur
+    `wakeParentWithPendingAgentResults`, qui n'avait pas repris le réchauffage
+    de son frère `deliverAgentResult`. Deux filets, ni l'un ni l'autre
+    substituable à la règle : `conversationMessageCount(id)` (étage 1, permanent)
+    pour poser la question « vide ou pas chargée ? », et `generationWouldTruncate`
+    qui fait refuser à `persistGeneration` toute écriture plus courte que la base.
+    Cf. `docs/agents.md`, `docs/storage.md` et `docs/generations.md`.
 
 ## Domaines détaillés (`docs/`)
 
@@ -402,9 +417,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `about_search`) — dont `{{TOPIC_LIST}}`, la liste des sujets composée depuis
   les sections présentes et leurs libellés (`formatHelpTopicList`).
 - **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
-  ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 28 sont
+  ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 29 sont
   développés dans leur doc de domaine (`docs/tools.md` pour 25 et 26,
-  `docs/interjections.md` pour 27, `docs/generations.md` pour 28).
+  `docs/interjections.md` pour 27, `docs/generations.md` pour 28,
+  `docs/agents.md` et `docs/storage.md` pour 29).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-memories`, `miaou-mcp-servers`, `miaou-api-servers`,
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
@@ -415,7 +431,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   (`.zip` depuis le lot V-3) ; porte aussi la recherche plein-texte
   (`collectContentSearchHits`, qui rend une `Map` id → extrait) et le moteur
   d'extraits surlignés commun à la sidebar, à la palette et à `conv__list`
-  (`buildExcerpt`/`findMatchRanges`, offsets et jamais de markup).
+  (`buildExcerpt`/`findMatchRanges`, offsets et jamais de markup) ; porte enfin
+  le contrat « froide = `messages: []` » et ses trois conséquences, dont
+  `conversationMessageCount` (compte porté par l'étage 1, seul moyen de
+  distinguer « vide » de « pas chargée »).
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
@@ -486,7 +505,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
   modèle, prédicat de racine `isRootConversation` et les sept exclusions,
   outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
-  parent accroché au `finally`, extension et alignement des badges, lecture
+  parent accroché au `finally` — et la **précondition de chaleur** de
+  `parentThreadFor` : un parent froid rend un thread vide, qu'y pousser puis
+  persister ÉCRASE son historique (payé le 2026-09-07) —, extension et
+  alignement des badges, lecture
   seule d'un agent terminé (`isFinishedAgentConv`) et interjections reçues
   pendant son travail (X-1f) ; prédicat de libellé `convLabel`, qui rend
   `{text, provisional}` depuis le lot AA (`title` > `agentIntent` > `snippet`) ;
@@ -510,7 +532,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   (`setGenPartialContent`, `pushGenToolAck`, `pushGenMessage` et ses trois
   `kind`, `clearGenLiveBubble`, registre d'acks anticipés) — ouvrir un fil
   d'agent ou revenir sur un parent réveillé pendant son travail rend
-  `genOwnsScreen` vrai, ce que le lot X avait supposé impossible.
+  `genOwnsScreen` vrai, ce que le lot X avait supposé impossible ; et la garde
+  anti-troncature de `persistGeneration` (`generationWouldTruncate`), qui refuse
+  d'écraser un historique par un thread construit sur une lecture froide.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)
 

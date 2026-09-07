@@ -693,6 +693,14 @@ Quelques repères pour te déplacer dans MIAOU :
   (langage, copier, télécharger) restant visible pendant que tu le parcours.
   Le fichier obtenu par le bouton « télécharger », lui, contient toujours le
   bloc entier, et les pages HTML exportées ne coupent rien.
+- **Suivi d'une réponse longue** : pendant que la réponse s'écrit, le fil
+  descend tout seul pour la suivre, mais il s'arrête avant que la question qui
+  l'a provoquée ne sorte par le haut de l'écran — tu gardes ton énoncé sous les
+  yeux pendant que la réponse continue de s'écrire plus bas. Dès que tu n'es
+  plus tout en bas du fil, un bouton rond fléché vers le bas apparaît au-dessus
+  de la zone de saisie : il ramène au dernier message. L'utiliser (ou redescendre
+  toi-même jusqu'en bas) relance le suivi jusqu'au bout pour cette réponse-là ;
+  le tour suivant repart du comportement normal.
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.

@@ -265,7 +265,7 @@ function pushGenMessage(gen, msg, kind) {
     if (msg.reasoning && msg.reasoning.trim()) flushReasoning(gen.wrap, msg.reasoning);
   }
   gen.wrap = (kind === 'final') ? null : startAssistantMessage(gen.model, gen.serverName);
-  scrollBottom(true);
+  scrollBottomCapped(gen.convId);
 }
 
 // Nettoyage d'écran en fin de génération sans écran nominale. Sur une sortie
@@ -571,6 +571,11 @@ function attachGenerationToScreen(gen) {
   // partiel, streamInto le remplace (il coupe le patienteur lui-même).
   if (gen.partialReasoning) flushReasoning(wrap, gen.partialReasoning);
   if (gen.partialContent) streamInto(wrap, gen.partialContent);
+  // Ouvrir une conversation qui génère amène au fond ET lève le plafond : on
+  // vient explicitement REGARDER ce travail, l'énoncé n'est plus ce qu'on
+  // cherche à garder à l'écran. Le plafond se réarmera au tour suivant
+  // (nouvelle bulle user), ou sur un scroll manuel vers le haut.
+  releaseScrollCap(gen.convId);
   scrollBottom(true);
 }
 
@@ -589,11 +594,48 @@ function detachGenerationFromScreen(gen) {
 // gen.thread et écrit dans gen.convId — jamais l'état d'écran. C'est LE point
 // qui rend une génération détachée inoffensive : sans lui, une génération sur A
 // écrirait le thread de A dans la conversation affichée B (corruption franche).
+// Une génération ne RACCOURCIT jamais son thread : elle y pousse (acks, tours,
+// réponse finale). Les seules troncatures légitimes de l'application — édition
+// d'un message user, régénération — passent par `persistCurrent`, jamais par
+// ici. Un thread plus court que ce qui est déjà en base signale donc qu'on
+// s'apprête à écraser un historique avec un thread construit sur une lecture
+// vide, et le seul producteur connu d'une telle lecture est l'étage 2 borné du
+// cache (une conversation froide rend `messages: []`).
+//
+// GARDE DE FOND, pas le correctif : le correctif est de réchauffer avant de
+// lire (cf. wakeParentWithPendingAgentResults). Celle-ci existe parce que le
+// défaut est SILENCIEUX et DESTRUCTIF — l'historique parti n'est récupérable
+// nulle part — et parce que douze call-sites peuvent l'atteindre. Elle refuse
+// l'écriture au lieu de la faire à moitié : mieux vaut un tour perdu qu'une
+// conversation vidée.
+// `had` vient de `conversationMessageCount` (étage 1, PERMANENT), jamais de
+// `conv.messages` : sur une conversation froide ce dernier vaut `[]`, si bien
+// que la garde aurait été aveugle exactement dans le cas qu'elle vise — le
+// thread vide et la base vue vide se seraient dit d'accord. C'est le piège du
+// « contrôle vert qui ne prouve rien » sous sa forme prémisse fausse, et il a
+// été attrapé par le test de régression, pas par la relecture.
+// `null` = conversation inconnue : on ne bloque pas ce qu'on ne sait pas juger.
+function generationWouldTruncate(had, threadMessages) {
+  if (typeof had !== 'number') return false;
+  const now = (threadMessages || []).length;
+  return had > 0 && now < had;
+}
+
 function persistGeneration(gen) {
   if (!gen || !gen.convId) return;
   const conv = loadConversation(gen.convId);
   if (!conv) return;   // conversation supprimée pendant la génération : ne pas la ressusciter
-  conv.messages = projectThreadToMessages(gen.thread);
+  const projected = projectThreadToMessages(gen.thread);
+  if (generationWouldTruncate(conversationMessageCount(gen.convId), projected)) {
+    // Trace explicite : ce refus est un symptôme, pas un fonctionnement normal.
+    // Sans le log, la garde transformerait une corruption bruyante en perte
+    // silencieuse du tour — le même défaut de nature, plus difficile à voir.
+    console.error('[miaou] persistGeneration refusé : le thread de la génération (' +
+      projected.length + ' messages) est plus court que la conversation ' + gen.convId +
+      ' en base (' + conversationMessageCount(gen.convId) + '). Écriture abandonnée pour ne pas détruire l\'historique.');
+    return;
+  }
+  conv.messages = projected;
   if (!conv.timestamp) conv.timestamp = Date.now();
   conv.updatedAt = Date.now();
   if (gen.convModel) conv.model = gen.convModel; else delete conv.model;
@@ -3120,6 +3162,15 @@ function runGenerationFromCurrentThread() {
   // sendMessage/editUserMessage/regenerateResponse (piège 12) — un seul call
   // site plutôt que dispersé dans les 3 points d'entrée (décision Cter §2).
   exitMoveModeIfActive();
+  // Réarmement du plafond d'autoscroll : ICI et non dans `appendUserMessage`,
+  // qui est une fonction d'AFFICHAGE — l'édition, la régénération et la reprise
+  // d'une troncature relancent un tour sans jamais l'appeler (elles passent par
+  // renderThread), et héritaient donc du plafond du tour précédent, levé. Ce
+  // point de convergence est le même que celui du piège 12.
+  armScrollCap(currentConvId);
+  // Le tour qui démarre gouverne le défilement : la phase de stabilisation du
+  // rendu qui précède (renderThread après troncature) n'a plus à coller au fond.
+  scrollBottom(true);
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
   // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
   // recherche mémoire porte sur le littéral, pas sur le corps de la skill injecté.
@@ -3528,7 +3579,7 @@ async function dispatchSend(matches, continuation) {
         // Lu avant les insertions DOM ci-dessous : cf. streamInto/finalizeAssistant,
         // sinon isAtBottom() verrait déjà le nouveau contenu et répondrait "faux"
         // même quand l'utilisateur suivait le fil.
-        const follow = owns && isAtBottom();
+        const follow = owns && shouldFollowStream(gen.convId);
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -3543,7 +3594,7 @@ async function dispatchSend(matches, continuation) {
           const node = owns ? placeToolAck(gen.wrap, entry) : null;
           earlyRendered.push({ ack, entry, node });
         }
-        if (follow) scrollBottom(true);
+        if (follow) scrollBottomCapped(gen.convId);
       },
       // Vidange des acks d'outils APRÈS l'exécution des outils d'un tour, donc
       // AVANT la réponse finale : ils sont la provenance de la réponse et doivent
@@ -3586,7 +3637,7 @@ async function dispatchSend(matches, continuation) {
 
         const owns = genOwnsScreen(gen);
         // Lu avant les insertions DOM ci-dessous, même raison que onEarlyAcks.
-        const follow = owns && isAtBottom();
+        const follow = owns && shouldFollowStream(gen.convId);
         const pending = getPendingToolAcks();
         clearPendingToolAcks();
         for (const ack of pending) {
@@ -3605,7 +3656,7 @@ async function dispatchSend(matches, continuation) {
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
         if (owns && blocks.length) placeToolBlocks(gen.wrap, blocks);
-        if (follow) scrollBottom(true);
+        if (follow) scrollBottomCapped(gen.convId);
 
         // Recalcul MI-ÉCHANGE (pas seulement en fin de tour) : un tour d'outils
         // vient de se clore (tool-acks poussés dans currentThread ci-dessus),
@@ -3910,7 +3961,14 @@ async function dispatchSend(matches, continuation) {
     // encore enregistrée à ce moment-là — elle est désenregistrée juste au-dessus.
     // Réveil différé, jamais un drain silencieux : la conversation redémarre.
     // Fire-and-forget, comme le drain A des interjections.
-    if (hasPendingAgentResults(gen.convId)) wakeParentWithPendingAgentResults(gen.convId);
+    if (hasPendingAgentResults(gen.convId)) {
+      // Fire-and-forget, mais JAMAIS nu : la fonction est async depuis le
+      // correctif de réchauffage, et une promesse rejetée sans catch remonterait
+      // en unhandledrejection sans que personne ne la lise.
+      wakeParentWithPendingAgentResults(gen.convId).catch(function(e) {
+        console.warn('[miaou] réveil du parent échoué :', (e && e.message) || e);
+      });
+    }
   }
 }
 
@@ -3922,10 +3980,42 @@ async function dispatchSend(matches, continuation) {
 // `parentThreadFor` (agents.js) tranche LA question dangereuse du lot : deux
 // sources possibles pour le thread du parent selon qu'il est affiché ou non, et
 // un choix erroné écrase des messages.
-function wakeParentWithPendingAgentResults(parentConvId) {
+//
+// ASYNC, et c'est le fond du correctif : `parentThreadFor` lit l'étage 2 du
+// cache, qui est BORNÉ (CONV_MESSAGES_LRU_MAX). Un parent évincé rend
+// `messages: []` — contrat explicite de `loadConversation` — et le tour qui
+// démarre alors persiste un thread réduit au seul message de réveil, ÉCRASANT
+// l'historique en base. `deliverAgentResult` réchauffe depuis toujours pour
+// cette raison exacte, en le disant en toutes lettres ; ce chemin-ci, ouvert
+// plus tard comme filet de la fenêtre de course de fin de génération, ne l'avait
+// pas repris. Le défaut ne se déclenche que quand le parent est FROID, donc
+// jamais sur un aller-retour simple : il faut plus de douze conversations
+// touchées depuis (chaque spawn en touche une), ce qu'une arborescence d'agents
+// un peu large atteint seule. Payé en usage réel le 2026-09-07 — conversation
+// parente réduite au prompt d'un de ses agents, premiers échanges et acks de
+// spawn disparus.
+//
+// Le désenregistrement de la génération (`unregisterGeneration`, juste avant
+// l'appel dans le finally) RETIRE l'épinglage du parent au moment précis où on
+// va lire son thread : le pire instant possible, et c'est bien celui-ci.
+async function wakeParentWithPendingAgentResults(parentConvId) {
+  if (!hasPendingAgentResults(parentConvId)) return;
+  if (!loadConversation(parentConvId)) return;   // supprimée avant même de commencer
+  // Réchauffage AVANT toute lecture de thread. Seul await de la fonction, donc
+  // seul point après lequel l'état doit être relu (piège 24 (b)).
+  await warmConversation(parentConvId);
+  // RELECTURE APRÈS L'AWAIT, jamais un instantané pris avant : le parent a pu
+  // être supprimé, ou avoir redémarré une génération, pendant le chargement.
+  if (!loadConversation(parentConvId)) return;   // piège 20
+  // Une génération a repris sur le parent pendant l'await : lui pousser un
+  // thread concurrent le ferait diverger de `gen.thread`. On remet en file —
+  // son drain de frontière de tour (`onAgentResults`) s'en chargera, et son
+  // propre finally rappellera ce filet si le tour se termine avant.
+  if (generationFor(parentConvId)) return;
+  // Batch pris APRÈS l'await, jamais avant : `takePendingAgentResults` RETIRE
+  // les entrées, et une sortie anticipée entre-temps les perdrait sans trace.
   const batch = takePendingAgentResults(parentConvId);
   if (!batch.length) return;
-  if (!loadConversation(parentConvId)) return;   // supprimée entre-temps (piège 20)
   const thread = parentThreadFor(parentConvId);
   for (const entry of batch) thread.push(entry);
   startParentWakeGeneration(parentConvId, thread);
@@ -4480,6 +4570,24 @@ async function init() {
     const id = decodeURIComponent(a.getAttribute('href').slice('#miaou-conv:'.length));
     selectConv(id);
   });
+
+  // Visibilité du bouton « aller tout en bas » + levée du plafond d'autoscroll
+  // quand l'utilisateur redescend au fond à la main (ui.js). Passif : le
+  // handler ne fait que lire des mesures et basculer un attribut.
+  $('messages').addEventListener('scroll', onMessagesScroll, { passive: true });
+  // Gestes de défilement de l'utilisateur. Ils servent à deux choses, toutes
+  // deux impossibles à déduire de l'événement `scroll` lui-même (identique
+  // qu'il vienne d'un geste ou d'un autoscroll) : abandonner la descente animée
+  // du bouton, et autoriser la levée du plafond d'autoscroll quand elle amène
+  // au fond (cf. noteUserScrollIntent / cancelScrollBottomAnim, ui.js).
+  const onUserScrollGesture = () => { noteUserScrollIntent(); cancelScrollBottomAnim(); };
+  $('messages').addEventListener('wheel', onUserScrollGesture, { passive: true });
+  $('messages').addEventListener('touchstart', onUserScrollGesture, { passive: true });
+  $('messages').addEventListener('touchmove', onUserScrollGesture, { passive: true });
+  // Clavier : PageUp/Down, flèches, Home/End défilent aussi le fil quand il a
+  // le focus. Posé sur le conteneur (pas sur document) pour ne pas compter une
+  // frappe dans le composer comme une intention de défilement.
+  $('messages').addEventListener('keydown', onUserScrollGesture);
 
   prefetchModels();      // liste des modèles (cache session) → sélecteur composer
   // handshake + tools/list des serveurs MCP activés ; rafraîchit aussi la pilule de

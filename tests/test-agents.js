@@ -1508,3 +1508,147 @@ describe('agentInventoryCount (T-3) — ce que la pilule annonce', function() {
     expect(agentInventoryCount(null)).toBe(0);
   });
 });
+
+// ── Réveil du parent : le parent doit être CHAUD (bug du 2026-09-07) ─────────
+// Défaut payé en usage réel : une conversation parente pilotant plusieurs
+// agents s'est retrouvée réduite au message de réveil d'un seul d'entre eux —
+// premiers échanges et acks de spawn disparus. Cause : le filet de fin de
+// génération (wakeParentWithPendingAgentResults) lisait le thread du parent
+// SANS le réchauffer, alors que `loadConversation` d'une conversation évincée
+// de l'étage 2 rend `messages: []` par contrat. Le tour qui démarrait alors
+// persistait ce thread d'un seul élément par-dessus l'historique.
+//
+// Ces tests exercent la MÉCANIQUE (éviction LRU réelle, pas de stub IDB :
+// le cache EST la source de vérité observable en QuickJS), pas seulement les
+// prédicats — c'est le joint entre storage et agents qui a cassé.
+
+describe('parentThreadFor + LRU — le joint qui a corrompu une conversation', function() {
+  function seedParent() {
+    resetConvCacheForTests();
+    currentConvId = null;
+    saveConversation({
+      id: 'P', title: 'parent', timestamp: 1, updatedAt: 1,
+      messages: [
+        { role: 'user', content: 'analyse la recette' },
+        { role: 'tool-ack', name: 'agent__spawn', args: {}, result: 'agent lancé' },
+        { role: 'assistant', content: 'je lance des agents' },
+      ],
+    });
+  }
+
+  // Déborde l'étage 2 (CONV_MESSAGES_LRU_MAX = 12). Chaque spawn d'agent fait
+  // un saveConversation, donc touche le LRU : une arborescence d'agents un peu
+  // large évince le parent toute seule, sans que l'utilisateur navigue.
+  function evictParent() {
+    for (var i = 0; i < 13; i++) {
+      saveConversation({ id: 'a' + i, parentConvId: 'P', timestamp: 2, updatedAt: 2,
+        messages: [{ role: 'user', content: 'tache ' + i }] });
+    }
+  }
+
+  it('un parent CHAUD rend son historique complet', function() {
+    seedParent();
+    expect(parentThreadFor('P').length).toBe(3);
+  });
+
+  it('un parent ÉVINCÉ rend un thread VIDE — la précondition de réchauffage est réelle', function() {
+    // Ce test documente le contrat plutôt qu'il ne le déplore : parentThreadFor
+    // ne PEUT pas distinguer « parent vide » de « parent froid ». C'est
+    // exactement pourquoi la charge du réchauffage est sur l'appelant.
+    seedParent();
+    evictParent();
+    expect(parentThreadFor('P').length).toBe(0);
+  });
+
+  it('persistGeneration REFUSE d\'écraser l\'historique par un thread tronqué', function() {
+    // La garde de fond. Sans elle, ce scénario écrit un seul message par-dessus
+    // les trois — c'est la corruption observée en prod, à l'octet près.
+    seedParent();
+    evictParent();
+    var thread = parentThreadFor('P');
+    thread.push({ role: 'user', content: '[Agent terminé] résultat', agentResult: true });
+    persistGeneration({ convId: 'P', thread: thread, convModel: '', convReasoningEffort: '' });
+    // On mesure le compte PERMANENT, pas `loadConversation().messages` : le
+    // parent est froid, donc ce dernier rend `[]` que l'écriture ait eu lieu ou
+    // non. Mesurer là aurait donné un test vert pour la mauvaise raison — et
+    // rouge pour la bonne, ce qui l'a fait remarquer.
+    expect(conversationMessageCount('P')).toBe(3);
+  });
+
+  it('une génération qui POUSSE persiste normalement — la garde ne bloque pas le cas nominal', function() {
+    // Contre-épreuve indispensable : une garde qui refuserait tout serait verte
+    // sur le test précédent tout en cassant l'application.
+    seedParent();
+    var thread = parentThreadFor('P');
+    thread.push({ role: 'user', content: '[Agent terminé] résultat', agentResult: true });
+    persistGeneration({ convId: 'P', thread: thread, convModel: '', convReasoningEffort: '' });
+    var after = loadConversation('P');
+    expect(after.messages.length).toBe(4);
+    expect(after.messages[3].agentResult).toBe(true);
+  });
+
+  it('une conversation NEUVE (base vide) se persiste — un thread court n\'est pas une troncature', function() {
+    // Le premier tour d'une conversation écrit forcément « plus que rien » :
+    // la garde ne doit se déclencher que sur une DIMINUTION.
+    resetConvCacheForTests();
+    currentConvId = null;
+    saveConversation({ id: 'N', title: '', timestamp: 1, updatedAt: 1, messages: [] });
+    persistGeneration({ convId: 'N', thread: [{ role: 'user', content: 'salut' }],
+      convModel: '', convReasoningEffort: '' });
+    expect(loadConversation('N').messages.length).toBe(1);
+  });
+});
+
+describe('generationWouldTruncate — le prédicat de la garde', function() {
+  // Premier argument : le compte PERMANENT (étage 1), pas un tableau de
+  // messages. La première version prenait `conv.messages`, et se trouvait donc
+  // aveugle sur une conversation froide — le cas même qu'elle devait couvrir.
+  it('diminution d\'un historique non vide → vrai', function() {
+    expect(generationWouldTruncate(3, [1])).toBe(true);
+  });
+  it('base VIDE → faux, quel que soit le thread (première écriture)', function() {
+    expect(generationWouldTruncate(0, [])).toBe(false);
+    expect(generationWouldTruncate(0, [1, 2])).toBe(false);
+  });
+  it('égalité → faux (réécriture en place d\'un ack, lot O-2)', function() {
+    // resource__from_result mute un entry.result SANS changer le compte :
+    // la garde ne doit surtout pas bloquer ce chemin.
+    expect(generationWouldTruncate(2, [1, 2])).toBe(false);
+  });
+  it('croissance → faux', function() {
+    expect(generationWouldTruncate(1, [1, 2, 3])).toBe(false);
+  });
+  it('compte INCONNU (null) → faux : on ne bloque pas ce qu\'on ne sait pas juger', function() {
+    expect(generationWouldTruncate(null, null)).toBe(false);
+    expect(generationWouldTruncate(undefined, [1])).toBe(false);
+  });
+});
+
+describe('conversationMessageCount — le compte qui survit à l\'éviction', function() {
+  it('une conversation FROIDE garde son compte, alors que ses messages sont partis', function() {
+    // LE point du champ : distinguer « vide » de « pas chargée », que
+    // loadConversation confond par contrat.
+    resetConvCacheForTests();
+    currentConvId = null;
+    saveConversation({ id: 'C', timestamp: 1, updatedAt: 1,
+      messages: [{ role: 'user', content: 'un' }, { role: 'assistant', content: 'deux' }] });
+    for (var i = 0; i < 13; i++) {
+      saveConversation({ id: 'x' + i, timestamp: 2, updatedAt: 2, messages: [{ role: 'user', content: 'y' }] });
+    }
+    expect(loadConversation('C').messages.length).toBe(0);   // froide : contrat U-1
+    expect(conversationMessageCount('C')).toBe(2);           // mais le compte, lui, tient
+  });
+  it('conversation inconnue → null, jamais 0', function() {
+    resetConvCacheForTests();
+    expect(conversationMessageCount('absente')).toBe(null);
+  });
+  it('le champ interne ne RESSORT jamais dans un record rendu', function() {
+    // Sinon un saveConversation le réécrirait en base : second porteur d'état,
+    // périmable indépendamment de ce qu'il compte.
+    resetConvCacheForTests();
+    currentConvId = null;
+    saveConversation({ id: 'D', timestamp: 1, updatedAt: 1, messages: [{ role: 'user', content: 'un' }] });
+    expect(loadConversation('D')._messageCount).toBe(undefined);
+    expect(listAllConversations()[0]._messageCount).toBe(undefined);
+  });
+});

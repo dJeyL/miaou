@@ -10,6 +10,10 @@
   background: linear-gradient(to top, var(--bg) 60%, transparent);
 }
 .composer-inner { max-width: var(--col); margin: 0 auto;
+  /* Ancre du bouton « aller tout en bas » (.scroll-bottom-btn, chat.css), qui
+     se pose en absolu au-dessus de la zone composer entière — sélecteurs et
+     bannières compris, puisqu'ils vivent ici. */
+  position: relative;
   /* Glisse avec le fil au changement de cran (cf. .thread, chat.css). */
   transition: max-width var(--col-resize) var(--ease); }
 .input-wrap {

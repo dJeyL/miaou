@@ -425,6 +425,40 @@
   transition: max-width var(--col-resize) var(--ease);
 }
 
+/* Bouton « aller tout en bas ». Vit dans .composer-inner (position: relative)
+   et se remonte au-dessus de lui : `bottom: 100%` le pose au bord HAUT de la
+   zone composer, sélecteurs et bannières compris, donc il suit ce bord quand
+   l'une de ces parts apparaît ou que le textarea grandit — au lieu de dériver
+   sur un offset écrit en dur. Le `+ 8px` le dégage franchement du bord plutôt
+   que de le laisser à cheval sur la dernière ligne du fil. Sa position ne
+   dépend jamais du contenu du fil, seule sa visibilité change
+   (syncScrollBottomBtn, ui.js).
+   z-index sous .main.dragover::after (50) : le survol de drop reste au-dessus. */
+.scroll-bottom-btn {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+  transition: background 130ms var(--ease), color 130ms var(--ease),
+              border-color 130ms var(--ease), opacity 130ms var(--ease);
+}
+.scroll-bottom-btn svg { width: 17px; height: 17px; }
+.scroll-bottom-btn:hover {
+  background: var(--surface-4);
+  border-color: var(--accent-bd);
+  color: var(--text);
+}
+
 .msg {
   display: flex;
   flex-direction: column;

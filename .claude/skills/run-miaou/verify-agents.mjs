@@ -1618,6 +1618,175 @@ check('11. …et expandThread la remet en part image dans le fil de l\'agent',
 await shot('12-agent-recalls-image.png');
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Scénario 12 : PARENT FROID réveillé par le filet de fin de génération
+// ═════════════════════════════════════════════════════════════════════════════
+// LE bug du 2026-09-07, trouvé en usage réel : une conversation parente pilotant
+// plusieurs agents s'est retrouvée réduite au message de réveil de l'un d'eux —
+// premiers échanges et acks de spawn disparus.
+//
+// Deux conditions doivent se réunir, et c'est pourquoi aucun scénario existant
+// ne l'attrapait :
+//
+//   (a) le réveil passe par le FILET DE FIN DE GÉNÉRATION
+//       (wakeParentWithPendingAgentResults), pas par deliverAgentResult. Ce
+//       filet couvre la fenêtre de course où l'agent finit APRÈS la dernière
+//       frontière de tour du parent : deliverAgentResult voit encore
+//       `generationFor(parent)` non nul, met en file… et cette génération se
+//       désenregistre juste après, si bien que plus aucun drain n'aura lieu.
+//
+//   (b) le parent est FROID — évincé de l'étage 2 du cache (LRU borné à 12).
+//       `loadConversation` rend alors `messages: []` PAR CONTRAT, et
+//       `parentThreadFor` ne peut pas distinguer ce cas d'un parent réellement
+//       vide. Le tour qui démarrait persistait donc un thread d'un seul élément
+//       PAR-DESSUS l'historique.
+//
+// Le point (b) est ce qui rend le bug invisible en test manuel : il faut plus de
+// douze conversations touchées depuis. Une arborescence d'agents y arrive seule
+// — chaque spawn fait un saveConversation, donc touche le LRU.
+//
+// Le TÉMOIN est le compte de messages du parent, lu APRÈS le réveil. Une capture
+// d'écran ne prouverait rien ici : le fil affiché est celui de l'écran courant,
+// et la corruption vit en base.
+console.log('\n— Scénario 12 : parent FROID réveillé par le filet de fin de génération (bug 2026-09-07)');
+await resetStub();
+await newConv();
+
+// Le parent se construit un historique substantiel : plusieurs échanges, plus
+// l'ack de spawn. C'est exactement ce qui avait disparu.
+await armSpawn('P12', 'A12', { intent: 'Analyse de recette' });
+// GATER L'AGENT : il doit rester en vol pendant qu'on met en place le reste.
+await gate('A:A12');
+await send('MARK-P12 première question sur la recette.');
+await waitSent('P:P12');
+await release('P:P12');
+await page.waitForTimeout(400);
+const parent12 = await page.evaluate(() => currentConvId);
+const agent12 = await childOf(parent12);
+check('12. l\'agent est lancé (prémisse)', !!agent12);
+await page.waitForFunction((p) => !isGenerating(p), parent12, { timeout: 10000 });
+
+// ATTEINDRE LE FILET, et pas deliverAgentResult — c'est TOUT l'enjeu du montage,
+// et la première version s'est trompée : elle laissait le parent inerte quand
+// l'agent finissait, donc empruntait deliverAgentResult (qui réchauffe depuis
+// toujours). Elle restait verte avec le bug réinjecté — mesuré, pas supposé.
+//
+// La recette du filet : le parent doit être OCCUPÉ quand l'agent finit (→ le
+// résultat part en file), sur un tour SIMPLE — pas un tour d'outils, qui offrirait
+// une frontière de tour où le drain normal aurait lieu. La génération se termine
+// donc sans jamais drainer, et c'est le `finally` qui rattrape.
+await page.evaluate(() => { window.__gates['P:P12B'] = true; });
+await send('MARK-P12B deuxième question, pendant que l\'agent travaille.');
+await waitSent('P:P12B');
+await page.waitForTimeout(200);
+const beforeCount = await page.evaluate((p) => (loadConversation(p).messages || []).length, parent12);
+check('12. le parent a un historique NON VIDE (prémisse)', beforeCount >= 2);
+check('12. le parent est OCCUPÉ sur un tour simple quand l\'agent finit',
+  await page.evaluate((p) => isGenerating(p), parent12));
+
+// L'agent finit MAINTENANT : parent occupé → mise en file, aucun drain possible.
+await release('A:A12');
+await page.waitForFunction((a) => !isGenerating(a), agent12, { timeout: 10000 });
+await page.waitForTimeout(250);
+check('12. le résultat est en FILE (aucune frontière de tour ne viendra)',
+  await page.evaluate((p) => hasPendingAgentResults(p), parent12));
+
+// (b) REFROIDIR le parent. Deux propriétés du cache commandent le montage, et
+// les ignorer donne un scénario vert pour une raison fausse (mesuré) :
+//
+//   1. le parent est ÉPINGLÉ tant qu'il génère (isConvPinnedInCache), et protégé
+//      tant qu'il est à l'écran → il faut le désépingler ET quitter son fil ;
+//   2. l'éviction est PARESSEUSE — `evictConvMessages` ne tourne que depuis
+//      `touchConvMessages`, donc uniquement quand une conversation est écrite ou
+//      réchauffée. Poser le ballast pendant que le parent est encore épinglé ne
+//      l'évince donc pas, et RIEN ne repassera l'évincer ensuite.
+//
+// Il faut par conséquent une écriture APRÈS le désépinglage du parent. En prod
+// c'était un SECOND agent, encore au travail, qui persistait son tour — d'où le
+// fait que le bug demande une arborescence d'agents et pas un agent seul. On
+// reproduit ça : un deuxième agent, gaté, qu'on libère une fois le parent
+// terminé, et dont la persistance déclenche l'éviction.
+await armSpawn('P12B', 'A12B', { intent: 'Second agent concurrent' });
+await page.evaluate(() => { window.__spawns['P:P12B'] = window.__spawns['P:P12B'] || null; });
+await gate('A:A12B');
+
+await newConv();
+await page.waitForTimeout(150);
+// Ballast : remplit l'étage 2 SANS évincer le parent (encore épinglé). Il rend
+// simplement le cache saturé, pour que la prochaine écriture le fasse déborder.
+await page.evaluate(() => {
+  for (let i = 0; i < 13; i++) {
+    saveConversation({ id: 'cold' + i, title: 'ballast ' + i, timestamp: 2, updatedAt: 2,
+      spaceId: activeSpaceId, messages: [{ role: 'user', content: 'ballast' }] });
+  }
+});
+
+// Libérer le tour du parent : il se termine SANS frontière de tour, donc sans
+// drain. Son `finally` désenregistre la génération (→ le parent perd son
+// épinglage) puis appelle le filet. On veut que l'éviction ait lieu ENTRE les
+// deux : on la provoque par une écriture concurrente, exactement comme le
+// faisait le second agent en prod.
+await page.evaluate((p) => {
+  // Hook posé sur unregisterGeneration : au désenregistrement du parent, une
+  // écriture concurrente déborde l'étage 2 et l'évince, avant que le filet
+  // (appelé juste après, dans le même finally) ne lise son thread. C'est
+  // l'ordonnancement du bug de prod, rendu déterministe.
+  const orig = window.unregisterGeneration || unregisterGeneration;
+  window.__origUnregister = orig;
+  globalThis.unregisterGeneration = function (gen) {
+    const r = orig(gen);
+    if (gen && gen.convId === p) {
+      for (let i = 0; i < 14; i++) {
+        saveConversation({ id: 'evict' + i, title: 'evict ' + i, timestamp: 3, updatedAt: 3,
+          spaceId: activeSpaceId, messages: [{ role: 'user', content: 'evict' }] });
+      }
+    }
+    return r;
+  };
+}, parent12);
+
+await release('P:P12B');
+await waitGenCount(0);
+await page.waitForTimeout(600);
+const cold = await page.evaluate((p) => ({ permanent: conversationMessageCount(p) }), parent12);
+check('12. le compte PERMANENT connaît toujours l\'historique (étage 1)', cold.permanent >= beforeCount);
+
+// LECTURE DEPUIS IDB, pas depuis le cache. Le parent est resté FROID (c'est tout
+// le point du scénario) : `loadConversation().messages` rend `[]` par contrat,
+// que l'écriture ait eu lieu ou non. Mesurer là donnait un rouge pour la
+// mauvaise raison — le correctif marchait déjà. Même piège de point de mesure
+// que dans les tests QuickJS, et attrapé de la même façon : en regardant la
+// valeur au lieu de conclure du verdict.
+const after12 = await page.evaluate(async (p) => {
+  const rec = await readConversationFromDB(p);
+  const msgs = (rec && rec.messages) || [];
+  return {
+    count: msgs.length,
+    permanent: conversationMessageCount(p),
+    stillQueued: hasPendingAgentResults(p),
+    firstRole: msgs[0] && msgs[0].role,
+    firstText: msgs[0] ? String(msgs[0].content || '') : '',
+    hasSpawnAck: msgs.some(m => m.kind === 'agent_spawn'),
+    wake: msgs.filter(m => m.role === 'user' && m.agentResult).length,
+  };
+}, parent12);
+
+// L'assertion CENTRALE : l'historique a GRANDI, il n'a pas été remplacé.
+check('12. l\'historique du parent n\'a PAS été écrasé', after12.count > beforeCount);
+check('12. son PREMIER message est toujours le sien, pas le prompt de l\'agent',
+  /MARK-P12/.test(after12.firstText) && after12.firstRole === 'user');
+check('12. l\'ack de spawn est toujours là (c\'est lui qui avait disparu)',
+  after12.hasSpawnAck === true);
+check('12. le message de réveil a bien été AJOUTÉ', after12.wake === 1);
+check('12. le compte permanent suit l\'écriture réelle en base', after12.permanent === after12.count);
+check('12. la file a bien été drainée par le filet', after12.stillQueued === false);
+
+// La garde de fond n'a PAS eu à se déclencher : le réchauffage suffit. Si elle
+// parle, c'est qu'un chemin lit encore un thread froid — le message est distinctif.
+const guardFired = errors.filter(e => /persistGeneration refusé/.test(e));
+check('12. la garde de persistGeneration n\'a pas eu à intervenir (le réchauffage suffit)',
+  guardFired.length === 0);
+
+// ═════════════════════════════════════════════════════════════════════════════
 console.log('');
 if (errors.length) {
   console.log('Erreurs console :');

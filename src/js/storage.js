@@ -524,13 +524,37 @@ function splitConvRecord(conv) {
     if (k === 'messages') continue;
     meta[k] = conv[k];
   }
+  // Compte de messages porté par l'ÉTAGE 1, donc survivant à l'éviction de
+  // l'étage 2. Il n'existe que pour rendre observable, sur une conversation
+  // FROIDE, la différence entre « vide » et « pas chargée » — que
+  // `loadConversation` confond par contrat (les deux rendent `messages: []`).
+  // C'est cette confusion qui a permis d'écraser une conversation parente le
+  // 2026-09-07 (cf. generationWouldTruncate, main.js).
+  //
+  // Nom préfixé `_` et retiré par `joinConvRecord` : il ne doit JAMAIS
+  // ressortir dans un record rendu aux appelants, sous peine d'être réécrit tel
+  // quel en base au saveConversation suivant et de devenir un second porteur
+  // d'état, périmable indépendamment de ce qu'il compte.
+  meta._messageCount = Array.isArray(conv.messages) ? conv.messages.length : 0;
   return { meta: meta, messages: Array.isArray(conv.messages) ? conv.messages : [] };
+}
+
+// Compte de messages d'une conversation, CHAUDE OU FROIDE. Lit l'étage 1, seul
+// étage permanent. Rend `null` — jamais 0 — pour une conversation inconnue :
+// « je ne sais pas » et « elle est vide » ne doivent pas se confondre, c'est
+// précisément la confusion qu'on répare ici.
+function conversationMessageCount(id) {
+  const meta = _convMetaCache.get(id);
+  if (!meta) return null;
+  return typeof meta._messageCount === 'number' ? meta._messageCount : null;
 }
 
 // Recompose une conversation complète depuis les deux étages. `messages` est
 // toujours un tableau (jamais undefined) : les consommateurs le supposent.
 function joinConvRecord(meta, messages) {
-  return Object.assign({}, meta, { messages: Array.isArray(messages) ? messages : [] });
+  const out = Object.assign({}, meta, { messages: Array.isArray(messages) ? messages : [] });
+  delete out._messageCount;   // interne au cache, jamais réécrit en base (cf. splitConvRecord)
+  return out;
 }
 
 // Éviction LRU de l'étage 2. Une conversation portant une génération en vol est

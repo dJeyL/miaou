@@ -111,6 +111,9 @@ html[data-theme="light"][data-palette="foret"] {
   --code-hue:   156;
 }
 html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+/* Même allègement que .model-menu : l'ombre du sombre, calibrée sur un fond
+   noir, tache sur fond clair. */
+html[data-theme="light"] .scroll-bottom-btn { box-shadow: 0 4px 12px rgba(0,0,0,.14); }
 
 /* Prism token overrides — thème clair */
 html[data-theme="light"] code[class*="language-"],

@@ -552,6 +552,40 @@ testée :
   `currentThread` désigne alors une **autre** conversation : y pousser le
   résultat le rangerait dans le mauvais fil.
 
+**Précondition, à la charge de l'appelant : dans la seconde branche, le parent
+doit être CHAUD.** `parentThreadFor` ne peut pas distinguer « parent vide » de
+« parent froid » — l'étage 2 du cache est borné (`CONV_MESSAGES_LRU_MAX`), et
+`loadConversation` d'une conversation évincée rend `messages: []` par contrat.
+Les deux cas rendent donc le même tableau vide.
+
+Un appelant qui saute `await warmConversation(id)` obtient un thread vide, y
+pousse le résultat de l'agent, et le premier `persistGeneration` **écrase
+l'historique du parent**. Payé en usage réel le 2026-09-07 : une conversation
+parente pilotant plusieurs agents s'est retrouvée réduite au message de réveil de
+l'un d'eux — premiers échanges et acks de spawn disparus. `deliverAgentResult`
+réchauffait depuis toujours ; `wakeParentWithPendingAgentResults`, ouvert plus
+tard comme filet de fin de génération, ne l'avait pas repris.
+
+Les deux appelants réchauffent désormais. `generationWouldTruncate` (main.js) est
+le filet si un troisième oublie — cf. `docs/generations.md`.
+
+**Ce que le défaut exigeait pour se déclencher**, et qui explique qu'il ait
+survécu à toute la campagne de vérification du lot X :
+
+1. le réveil passe par le **filet de fin de génération**, pas par
+   `deliverAgentResult` — c'est-à-dire la fenêtre de course où l'agent finit
+   *après* la dernière frontière de tour du parent ;
+2. le parent est **froid**, ce qui demande plus de douze conversations touchées
+   depuis. Chaque spawn faisant un `saveConversation`, une arborescence d'agents
+   y arrive seule ;
+3. et — condition la moins évidente — une **écriture concurrente après le
+   désépinglage** du parent : l'éviction est paresseuse (`evictConvMessages` ne
+   tourne que depuis `touchConvMessages`). En prod c'était un second agent encore
+   au travail qui persistait son tour. Un agent seul ne suffit donc pas, ce qui
+   est exactement pourquoi aucun scénario à un agent ne pouvait l'attraper.
+
+Le scénario 12 de `verify-agents.mjs` reproduit les trois conditions.
+
 ### Démarrer une génération sur une conversation non affichée
 
 Cas que le lot T n'a **jamais exercé** : `dispatchSend` part toujours de l'écran,

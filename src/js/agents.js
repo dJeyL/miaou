@@ -1003,6 +1003,17 @@ async function deliverAgentResult(agentConvId, status, thread) {
 //    projection de reload. `currentThread` désigne alors une AUTRE conversation :
 //    y pousser le résultat le rangerait dans le mauvais fil.
 // Une seule expression, testée. Jamais réécrit localement.
+//
+// PRÉCONDITION, à la charge de l'appelant : le parent doit être CHAUD dans la
+// branche « non affiché ». `loadConversation` d'une conversation évincée de
+// l'étage 2 rend `messages: []` (contrat U-1), et ce prédicat n'a aucun moyen
+// de distinguer « parent réellement vide » de « parent froid » — les deux
+// rendent un tableau vide. Un appelant qui saute `await warmConversation(id)`
+// obtient donc un thread vide, y pousse le résultat de l'agent, et le premier
+// persistGeneration ÉCRASE l'historique du parent. Payé en usage réel le
+// 2026-09-07 par wakeParentWithPendingAgentResults, qui ne réchauffait pas.
+// Les deux appelants réchauffent désormais ; `generationWouldTruncate`
+// (main.js) est le filet si un troisième oublie.
 function parentThreadFor(parentConvId) {
   if (parentConvId === currentConvId) return currentThread;
   return projectConvMessages(loadConversation(parentConvId));
@@ -1216,6 +1227,13 @@ async function driveDetachedConversation(gen, apiMessages) {
     // Un résultat arrivé après la dernière frontière de tour relance un réveil,
     // même règle que dans dispatchSend : sans ça, il resterait en file pour
     // toujours.
-    if (hasPendingAgentResults(gen.convId)) wakeParentWithPendingAgentResults(gen.convId);
+    if (hasPendingAgentResults(gen.convId)) {
+      // Fire-and-forget, mais JAMAIS nu : la fonction est async depuis le
+      // correctif de réchauffage, et une promesse rejetée sans catch remonterait
+      // en unhandledrejection sans que personne ne la lise.
+      wakeParentWithPendingAgentResults(gen.convId).catch(function(e) {
+        console.warn('[miaou] réveil du parent échoué :', (e && e.message) || e);
+      });
+    }
   }
 }

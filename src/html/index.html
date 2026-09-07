@@ -211,6 +211,21 @@ if (window.requestAnimationFrame) {
     <div class="composer">
       <div class="composer-inner">
 
+        <!-- Bouton « aller tout en bas ». Remonté en absolu au-dessus de la
+             zone composer : il doit rester fixe pendant que le fil défile,
+             donc surtout PAS dans .messages (il y défilerait avec le contenu,
+             cf. le commentaire de .agent-banner, qui exploite l'inverse).
+             Ancré sur .composer-inner et non sur .composer : ce qui masque la
+             fin du fil ne se limite pas au champ de saisie — la rangée de
+             sélecteurs et les bannières le surplombent et sont DANS
+             .composer-inner, donc c'est le haut de celui-ci qui est le bord
+             réel de la zone occultée. Toutes ces parts étant optionnelles,
+             l'ancrage suit leur présence sans offset écrit en dur.
+             Affichage piloté par syncScrollBottomBtn (ui.js), jamais en dur. -->
+        <button class="scroll-bottom-btn" id="scroll-bottom-btn" hidden onclick="onScrollBottomBtn()" title="Aller au dernier message" aria-label="Aller au dernier message">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/></svg>
+        </button>
+
         <!-- Bandeau multi-onglets (lot J : soft-lock / readonly). Informatif,
              non-bloquant ; texte piloté en JS (setTabBanner). -->
         <div class="banner tab-banner" id="tab-banner">
@@ -310,6 +325,7 @@ if (window.requestAnimationFrame) {
         </div>
       </div>
     </div>
+
   </div>
 
   <!-- ═══ Settings drawer ═══ -->

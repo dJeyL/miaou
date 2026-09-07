@@ -534,3 +534,44 @@ describe('brandHtmlFor — lien du dépôt sur le mot MIAOU (footer d\'export)',
     expect(h.indexOf('&quot;') >= 0).toBeTruthy();
   });
 });
+
+describe('cappedScrollTop', function() {
+  it('ne REMONTE jamais la vue : une position déjà plus basse est conservée', function() {
+    // Après une édition/régénération le fil est court et la vue vient d'être
+    // amenée au fond ; sans cette borne, la naissance de la bulle assistant
+    // faisait sauter la vue en arrière pour coller l'ancre en haut.
+    expect(cappedScrollTop(1500, 5000, 800, 28, 3000)).toBe(3000);
+  });
+  it('la position courante ne dépasse jamais le fond', function() {
+    // currentTop aberrant (mesure prise avant un raccourcissement du fil) :
+    // borné par le fond, jamais rendu tel quel.
+    expect(cappedScrollTop(1500, 2000, 800, 28, 9999)).toBe(1200);
+  });
+  it('sans position courante, le plafond s\'applique tel quel', function() {
+    expect(cappedScrollTop(1500, 5000, 800, 28)).toBe(1472);
+  });
+  it('contenu plus court que le viewport : plafond sans effet, on va au fond (0)', function() {
+    // scrollHeight <= clientHeight → il n'y a nulle part où défiler.
+    expect(cappedScrollTop(40, 500, 800, 28)).toBe(0);
+  });
+  it('ancre dans le premier écran : le plafond ne mord pas encore, on suit le fond', function() {
+    // fond = 2000-800 = 1200 ; plafond = 300-28 = 272 → c'est le plafond qui
+    // gagne dès que l'ancre a dépassé un écran de contenu au-dessus d'elle.
+    expect(cappedScrollTop(300, 2000, 800, 28)).toBe(272);
+  });
+  it('réponse plus haute que l\'écran : on s\'arrête au plafond, pas au fond', function() {
+    // fond = 5000-800 = 4200, très en dessous du plafond 1500-28 = 1472.
+    expect(cappedScrollTop(1500, 5000, 800, 28)).toBe(1472);
+  });
+  it('réponse encore courte : le fond est au-dessus du plafond, c\'est lui qui borne', function() {
+    // fond = 1000-800 = 200 < plafond 900-28 = 872 → jamais au-delà du fond.
+    expect(cappedScrollTop(900, 1000, 800, 28)).toBe(200);
+  });
+  it('ancre en tête de fil (offsetTop inférieur au padding) : jamais de scrollTop négatif', function() {
+    expect(cappedScrollTop(10, 3000, 800, 28)).toBe(0);
+  });
+  it('padding absent (0 ou omis) : le plafond vaut l\'offsetTop de l\'ancre', function() {
+    expect(cappedScrollTop(600, 4000, 800, 0)).toBe(600);
+    expect(cappedScrollTop(600, 4000, 800)).toBe(600);
+  });
+});

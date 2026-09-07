@@ -86,7 +86,7 @@ les **écritures** sont async (fire-and-forget).
 
 **Contrat à connaître** : `loadConversation(id)` d'une conversation **froide**
 rend `messages: []`, pas `null` — la conversation existe, ses messages ne sont
-simplement pas en RAM. Deux conséquences dures :
+simplement pas en RAM. Trois conséquences dures :
 
 1. **Ne jamais persister un record reconstruit depuis le cache pour modifier une
    métadonnée.** Épingler ou renommer une conversation froide via
@@ -103,6 +103,19 @@ simplement pas en RAM. Deux conséquences dures :
    `warmConversation(id)` charge une conversation en étage 2 ; `openConversation`
    l'appelle dans le même bloc `await` que `loadConversationResources`, donc
    avant la relecture post-await du piège 24.
+3. **« Vide » et « pas chargée » sont indistinguables** pour qui ne lit que
+   `messages`. C'est la forme la plus coûteuse du contrat : un appelant qui lit
+   le thread d'une conversation froide pour le réécrire l'écrase, sans erreur ni
+   trace. Payé le 2026-09-07 sur le réveil d'une conversation parente d'agents
+   (cf. `docs/agents.md`). `conversationMessageCount(id)` répond à cette
+   question-là, et à elle seule : il lit `_messageCount`, porté par l'**étage 1**
+   donc survivant à l'éviction, et rend `null` — jamais `0` — pour une
+   conversation inconnue. Champ **interne au cache** : posé par
+   `splitConvRecord`, retiré par `joinConvRecord`, absent de la projection de
+   `listAllConversations`. Il ne doit jamais ressortir dans un record rendu aux
+   appelants, sous peine d'être réécrit tel quel en base au `saveConversation`
+   suivant et de devenir un second porteur d'état, périmable indépendamment de
+   ce qu'il compte.
 
 **Écriture froide** : `persistConversationCold(conv)` écrit un record complet
 comme `persistConversation`, même transaction et même broadcast post-commit,
