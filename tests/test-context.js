@@ -213,6 +213,28 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
     expect(sp.root).toBe(ROOT_SYSTEM_PROMPT);
     expect(sp.codeblock).toBe(CODEBLOCK_DOCTRINE);
   });
+  // Les fixtures de `buildContextManifest` plus haut passent `root: 'ROOT'` : elles
+  // prouvent que la LIGNE root_prompt somme au total, jamais que les doctrines
+  // réelles y sont. Assertion de bout en bout sur les vraies constantes — chaque
+  // doctrine concaténée dans ROOT_SYSTEM_PROMPT est bien PAYÉE dans l'inspecteur.
+  it('chaque doctrine de ROOT_SYSTEM_PROMPT est comptée dans le manifeste (root_prompt)', function() {
+    var sp = systemMessageParts();
+    var m = buildContextManifest(sp, {}, [], '', null);
+    var root = m.entries.filter(function(e) { return e.source === 'root_prompt'; })[0];
+    expect(root.chars).toBe(ROOT_SYSTEM_PROMPT.length);
+    var doctrines = [
+      BINARY_DOCTRINE, ATTACHMENT_DOCTRINE, DOCS_DOCTRINE, WEB_DOCTRINE,
+      AUTHORIZATION_DOCTRINE, CONV_REF_DOCTRINE, MEMORY_DOCTRINE, FILES_DOCTRINE,
+      JS_EVAL_DOCTRINE, RESOURCE_DOCTRINE, AGENT_DOCTRINE,
+    ];
+    var summed = 0;
+    doctrines.forEach(function(d) {
+      expect(ROOT_SYSTEM_PROMPT.indexOf(d) >= 0).toBe(true);
+      summed += d.length;
+    });
+    // Somme des doctrines <= la ligne comptée : ce qui est concaténé est facturé.
+    expect(summed <= root.chars).toBe(true);
+  });
 });
 
 describe('buildSummaryBlock (résumés matchés injectés dans le contexte)', function() {

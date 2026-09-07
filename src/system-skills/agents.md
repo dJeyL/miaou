@@ -39,6 +39,11 @@ Quatre choses à y mettre systématiquement :
    ranger en ressource et de ne te rendre que le handle et une description — tu
    pourras l'interroger ensuite sans le payer en contexte.
 
+Et si la tâche se découpe en parties dont certaines peuvent tomber, demande-lui
+de **dire en fin de réponse ce qu'il a couvert et ce qu'il a dû laisser**. Il est
+le seul à le savoir : toi, tu ne verras que sa réponse et la trace de ses appels
+d'outils, qui ne te dit rien de sa complétude.
+
 Sa réponse finale **est** son résultat : elle t'arrive telle quelle. Un agent qui
 répond « comme demandé, voici ce que j'ai trouvé » suivi de rien d'exploitable a
 mal compris sa consigne de forme, pas sa tâche.
@@ -119,7 +124,9 @@ Si tu constates qu'il n'a plus lieu d'être, `miaou__agent__abort` l'arrête.
 Le résultat te dit d'abord **dans quel état** l'agent s'est arrêté. Cet état
 change ce que tu dois en faire :
 
-- **terminé** — le travail est complet, exploite-le.
+- **terminé** — il est allé au bout de son travail de lui-même. Ce statut dit
+  qu'il n'a pas été coupé, pas que la tâche est couverte en entier : ça, c'est sa
+  réponse qui le dit (section suivante).
 - **arrêté d'office (borne de tours atteinte)** — le résultat est **partiel**.
   Ne le présente pas comme complet. Soit tu t'en contentes en le disant, soit tu
   relances un agent sur ce qui reste, avec une tâche plus étroite.
@@ -129,15 +136,26 @@ change ce que tu dois en faire :
 - **terminé en erreur** — quelque chose a cassé côté technique ; le fil de
   l'agent en porte la trace.
 
-## Un outil manquant n'est pas une tâche échouée
+## La trace des appels en échec ne juge pas le travail
 
-Si le résultat signale des **outils en échec**, lis-les avant de conclure. Un
-agent privé de l'outil dont sa tâche avait besoin rend une réponse vide ou
-évasive — et la cause n'est pas la tâche, c'est la trousse que tu lui as donnée.
+Le résultat peut lister des **appels d'outils en échec**. Cette liste est brute :
+elle enregistre chaque appel qui a raté, y compris ceux que l'agent a aussitôt
+corrigés et refaits. Un agent qui se trompe d'argument, voit l'erreur et
+recommence correctement a fait son travail — sa trace n'en est pas moins longue.
 
-Dans ce cas : relance un agent avec le même prompt et l'outil manquant, plutôt
-que d'annoncer à l'utilisateur que ça n'a pas marché. C'est le cas le plus
-fréquent d'échec d'agent, et le plus facile à corriger.
+Donc : **la trace ne dit pas si la tâche est complète, seul l'agent le dit.**
+C'est lui, et lui seul, qui était en position de le savoir. S'il conclut que
+c'est traité, c'est traité — ne transforme pas des ratés rattrapés en réserve
+qu'il n'a pas formulée, et ne présente pas à l'utilisateur comme partiel un
+résultat que son auteur donne pour complet. S'il annonce au contraire qu'il lui
+manque une partie, c'est ça que tu relaies, même si aucun outil n'a échoué.
 
-De même, un agent qui **dit** dans sa réponse qu'il lui manquait un moyen d'agir
-te donne littéralement la correction à appliquer : prends-le au mot.
+Lis la trace pour **une** question, pas pour juger : est-ce qu'un outil lui
+**manquait** ? Un agent privé de l'outil dont sa tâche avait besoin rend une
+réponse vide ou évasive — et la cause n'est pas la tâche, c'est la trousse que tu
+lui as donnée. Dans ce cas, relance un agent avec le même prompt et l'outil
+manquant, plutôt que d'annoncer à l'utilisateur que ça n'a pas marché. C'est le
+cas le plus fréquent d'échec d'agent, et le plus facile à corriger.
+
+Un agent qui **dit** dans sa réponse qu'il lui manquait un moyen d'agir te donne
+littéralement la correction à appliquer : prends-le au mot.

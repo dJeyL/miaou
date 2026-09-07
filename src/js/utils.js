@@ -2222,7 +2222,10 @@ const CONTEXT_WINDOW_WARN_RATIO = 0.8;
 // (systemMessageParts, buildContextBlock, expandThread, toolDefinitions) pour
 // ne jamais dupliquer la logique d'assemblage (audit §0/§6).
 //
-// `sysParts` : { root, toolsSystem, intent, skills, docs, codeblock, user } (systemMessageParts()).
+// `sysParts` : { identity, root, intent, skills, codeblock, user } (systemMessageParts()).
+//   `toolsSystem` et `docs` sont des vestiges : plus personne ne les produit
+//   (`docs` a fusionné dans ROOT_SYSTEM_PROMPT au lot V-1). Leurs pushEntry
+//   restent inertes — pushEntry ignore le vide — mais ne comptent RIEN.
 // `dynParts` : { contextDateModel, memories, summaries, skillsContext } — chaque
 //   sous-bloc DÉJÀ formaté en string (ou '' si absent).
 // `threadMsgs` : array {role, content} (content string ou array de content-parts).

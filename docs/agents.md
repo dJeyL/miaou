@@ -416,6 +416,19 @@ Trois mesures, qui composent :
    `collectAgentToolFailures(thread)` dérive la trace des entrées `tool-ack` via
    `ackIsError`, **jamais un second prédicat**.
 
+   Cette trace est **brute par construction** : elle enregistre chaque appel
+   raté, y compris ceux que l'agent a corrigés et refaits au tour suivant. Elle
+   ne porte donc aucun jugement de complétude, et le parent qui la lit comme tel
+   se trompe dans les deux sens — payé en usage le 2026-09-07, un agent ayant
+   rattrapé des handles mal passés à `js__eval` s'est vu relayer comme ayant
+   rendu un résultat incomplet. Deux textes ferment l'écart, sur les deux
+   versants : `AGENT_SCOPE_NOTICE` demande à l'agent de **déclarer lui-même**
+   ce qu'il a couvert et ce qu'il a laissé (il est le seul en position de le
+   savoir), et la note jointe à la trace dans `formatAgentResultForParent` dit
+   au parent que le verdict appartient à la réponse de l'agent, la trace ne
+   servant qu'à répondre à « un outil lui **manquait**-il ? ». La skill système
+   `agents` porte la même ligne, développée.
+
 **Aucune des trois ne touche au prompt système** : X-d tient à la lettre.
 
 Corollaire assumé : un **agent lit `AGENT_DOCTRINE`** alors qu'il n'a jamais

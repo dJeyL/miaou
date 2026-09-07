@@ -335,6 +335,14 @@ describe('formatAgentResultForParent — cinq statuts DISTINCTS (X-1, étapes 5-
     expect(m).toContain('Fichier introuvable.');
     expect(m).toContain('trousse corrigée');
   });
+  it('la trace des échecs est annoncée comme brute, pas comme un verdict de complétude', function() {
+    var m = formatAgentResultForParent({
+      status: 'done', text: 'tout est traité',
+      toolFailures: ['miaou__js__eval : handle inconnu.'],
+    });
+    expect(m).toContain('trace est brute');
+    expect(m).toContain('c\'est la réponse de l\'agent qui en juge');
+  });
 });
 
 describe('buildAgentResultEntry — message user AUTHENTIQUE (X-1, Q1)', function() {

@@ -345,7 +345,13 @@ const AGENT_SCOPE_NOTICE =
   'permettent pas. S\'il t\'en manque un pour aboutir, dis-le explicitement dans ta ' +
   'réponse — c\'est cette phrase qui permettra de te relancer avec la bonne trousse.\n\n' +
   'Ta réponse finale EST ton résultat : elle est transmise telle quelle. Sois complet ' +
-  'et autonome, sans renvoyer à un contexte que ton lecteur n\'a pas.\n\n';
+  'et autonome, sans renvoyer à un contexte que ton lecteur n\'a pas.\n\n' +
+  'Tu es le seul à savoir si tu as tout fait : ton lecteur ne verra que ta réponse et ' +
+  'la trace brute de tes appels d\'outils, dont il ne peut pas déduire si un raté a ' +
+  'été rattrapé. Dis-le donc toi-même, en une phrase : soit la tâche est traitée en ' +
+  'entier, soit il manque telle partie et pour telle raison. Un outil qui a échoué puis ' +
+  'abouti après correction ne rend pas ton travail incomplet — ne le présente pas comme ' +
+  'une réserve.\n\n';
 
 // Séparateur de tâche, sorti d'AGENT_SCOPE_NOTICE (X-1b) pour que le bloc des
 // fichiers délégués puisse s'intercaler entre le cadrage et l'énoncé.
@@ -546,10 +552,13 @@ function formatAgentResultForParent(payload) {
   const failures = p.toolFailures || [];
   if (failures.length) {
     lines.push('');
-    lines.push('Outils en échec pendant son travail (' + failures.length + ') :');
+    lines.push('Appels d\'outils en échec pendant son travail (' + failures.length + ') :');
     for (const f of failures) lines.push('- ' + f);
-    lines.push('Si la tâche a échoué faute d\'outil, relance un agent avec la trousse corrigée ' +
-      'plutôt que de conclure à un échec de la tâche.');
+    lines.push('Cette trace est brute : un appel en échec a pu être corrigé et refait juste ' +
+      'après. Elle ne dit donc rien, seule, de la complétude du travail — c\'est la ' +
+      'réponse de l\'agent qui en juge. Ne la relaie pas comme une réserve qu\'il n\'a pas ' +
+      'formulée. Si c\'est un outil MANQUANT qui l\'a empêché d\'aboutir, relance un agent ' +
+      'avec la trousse corrigée plutôt que de conclure à un échec de la tâche.');
   }
   lines.push('');
   lines.push('--- Réponse de l\'agent ---');
