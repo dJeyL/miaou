@@ -2647,7 +2647,7 @@ const MCP_PROTOCOL_VERSION = '2025-06-18';
 const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
-let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, unauthorizedUpstreams? } }
+let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, unauthorizedUpstreams?, instructions? } }
 
 function getMcpStatus(name) { return _remoteStatus[name] || null; }
 
@@ -2657,6 +2657,29 @@ function getMcpStatus(name) { return _remoteStatus[name] || null; }
 // portée fichier ne franchit pas la frontière dans le test runner, qui évalue
 // chaque fichier séparément.
 function mcpStatusSnapshot() { return _remoteStatus; }
+
+// Serveurs CONNECTÉS publiant des consignes de portée serveur, dans l'ordre
+// d'affichage des cartes. Alimente `buildMcpInstructionsBlock` (utils, pur) via
+// `contextBlockParts` (main.js).
+//
+// Lit `_remoteStatus` et non la config : une consigne n'existe que pour un
+// serveur dont le handshake a abouti. Un serveur en erreur n'expose AUCUN de
+// ses outils (dégradation gracieuse) — injecter ses consignes décrirait au
+// modèle l'usage d'outils qu'il n'a pas, ce qui est pire que le silence. Même
+// raison pour un serveur désactivé, qui n'a pas d'entrée du tout.
+//
+// Le `slug` rendu est le nom de la carte, celui-là même qui préfixe les outils
+// exposés dans `connectMcpServer` — jamais une valeur venue du serveur.
+function mcpInstructionSources() {
+  const out = [];
+  for (const name of Object.keys(_remoteStatus)) {
+    const st = _remoteStatus[name];
+    if (!st || st.state !== 'ok' || !st.instructions) continue;
+    out.push({ slug: name, instructions: st.instructions });
+  }
+  out.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+  return out;
+}
 
 // Outils distants exposables : déjà préfixés `servername__` et filtrés (allowlist/denylist).
 function remoteToolDefs() {
@@ -2818,11 +2841,25 @@ async function connectMcpServer(server) {
   _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null };
   delete _remoteTools[s.name];
   try {
-    await mcpRpc(s, 'initialize', {
+    const init = await mcpRpc(s, 'initialize', {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: { name: 'miaou', version: '2' },
     });
+    // Champ STANDARD MCP (InitializeResult.instructions), destiné aux
+    // instructions du modèle : une consigne de portée SERVEUR, que rien d'autre
+    // dans le protocole ne peut porter (name/description/inputSchema sont
+    // par-outil). Jusqu'ici ce résultat était intégralement jeté — seul
+    // l'en-tête Mcp-Session-Id de la même réponse était lu.
+    //
+    // OPTIONNEL par contrat, et absent chez la majorité des serveurs : lecture
+    // défensive, aucun log, aucune branche d'erreur. Même posture que
+    // `unauthorizedUpstreams` juste dessous, et même durée de vie — porté par
+    // `_remoteStatus`, donc reconstruit à chaque connexion et effacé avec la
+    // carte à la déconnexion.
+    const instructions = (init && typeof init.instructions === 'string' && init.instructions.trim())
+      ? init.instructions
+      : null;
     try { await mcpRpc(s, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
     const listed = await mcpRpc(s, 'tools/list', {});
     const tools = (listed && Array.isArray(listed.tools)) ? listed.tools : [];
@@ -2845,6 +2882,7 @@ async function connectMcpServer(server) {
     _remoteStatus[s.name] = Object.assign(_remoteStatus[s.name] || {}, {
       state: 'ok', count: _remoteTools[s.name].length, error: null,
       unauthorizedUpstreams: unauthorizedUpstreamsFromList(listed),
+      instructions: instructions,
     });
     return true;
   } catch (e) {

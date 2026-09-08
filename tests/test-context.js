@@ -17,7 +17,7 @@ describe('estimateTokens', function() {
 
 describe('buildContextManifest', function() {
   function baseSysParts() {
-    return { root: 'ROOT', toolsSystem: '', intent: '', skills: '', docs: '', user: 'USER PROMPT' };
+    return { root: 'ROOT', intent: '', skills: '', user: 'USER PROMPT' };
   }
   function baseDynParts() {
     return { contextDateModel: 'Date: x', memories: '', summaries: '', skillsContext: '' };
@@ -38,7 +38,6 @@ describe('buildContextManifest', function() {
   it('omet les sous-blocs vides (pas d\'entrée à 0 chars)', function() {
     var m = buildContextManifest(baseSysParts(), baseDynParts(), [], '', null);
     var sources = m.entries.map(function(e) { return e.source; });
-    expect(sources.indexOf('tools_system')).toBe(-1);
     expect(sources.indexOf('intent_doctrine')).toBe(-1);
     expect(sources.indexOf('memories')).toBe(-1);
     expect(sources.indexOf('space_library')).toBe(-1);
@@ -112,7 +111,7 @@ describe('buildContextManifest', function() {
 
 describe('scaleManifestToUsage (Bbis, prorata sur l\'estimé)', function() {
   function baseSysParts() {
-    return { root: 'ROOT', toolsSystem: '', intent: '', skills: '', docs: '', user: 'USER PROMPT' };
+    return { root: 'ROOT', intent: '', skills: '', user: 'USER PROMPT' };
   }
   function baseDynParts() {
     return { contextDateModel: 'Date: x', memories: '', summaries: '', skillsContext: '' };
@@ -197,7 +196,7 @@ describe('usageDerived (Bbis)', function() {
 describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function() {
   it('buildSystemMessage reste identique à la concaténation des parts (pas de régression du séparateur)', function() {
     var sp = systemMessageParts();
-    var expected = [sp.identity, sp.root, sp.toolsSystem, sp.intent, sp.skills, sp.docs, sp.codeblock, sp.user]
+    var expected = [sp.identity, sp.root, sp.intent, sp.skills, sp.codeblock, sp.user]
       .filter(Boolean).join('\n\n---\n\n');
     expect(buildSystemMessage().content).toBe(expected);
   });

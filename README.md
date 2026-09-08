@@ -187,6 +187,9 @@ Détail : [docs/skills.md](docs/skills.md).
   sur la carte du serveur concerné — sans attendre qu'un appel échoue ; si
   l'appel a lieu avant, la ligne d'appel porte elle aussi le lien. Seul
   l'utilisateur peut l'accorder ; le modèle n'a aucun outil pour le faire.
+- Un serveur peut publier une consigne valant pour l'ensemble de ses outils
+  (champ `instructions` du protocole) : MIAOU la transmet au modèle rattachée au
+  préfixe des outils qu'elle couvre, jamais aux autres.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur — c'est ce que fait le proxy du projet

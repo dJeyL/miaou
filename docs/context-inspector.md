@@ -15,12 +15,14 @@ bloc logique, plus les totaux. Domaine assez distinct pour ne pas polluer
 ```
 
 Une entrée par sous-bloc non vide :
-- `root_prompt`, `tools_system`, `intent_doctrine`, `skills_doctrine`,
-  `user_prompt` — sous-parts du system message
+- `identity_blurb`, `root_prompt`, `intent_doctrine`, `skills_doctrine`,
+  `codeblock_doctrine`, `user_prompt` — sous-parts du system message
   (`systemMessageParts()`, main.js), dans le même ordre que
   `buildSystemMessage()` les concatène.
-- `context_date_model`, `memories`, `summaries`, `skills_context` — sous-parts
-  du contexte dynamique (`contextBlockParts()`, main.js).
+- `context_date_model`, `memories`, `summaries`, `skills_context`,
+  `mcp_instructions`, `space_library` — sous-parts du contexte dynamique
+  (`contextBlockParts()`, main.js). Cette liste dérive : elle doit couvrir
+  toutes les clés rendues par `contextBlockParts`, qui est la source.
 - `tool_definitions` — mesuré depuis `JSON.stringify(toolDefinitions())`,
   **jamais** depuis les messages (le tableau `tools` part séparément de
   `apiMessages` dans l'appel réseau).

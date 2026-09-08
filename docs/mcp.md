@@ -546,6 +546,72 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       chaque retour d'onglet serait un effet de bord non demandé sur le chemin
       le plus fréquent de l'application.
 
+17. **Consignes de portée serveur (`instructions` de l'InitializeResult).** Les
+    seuls champs qu'un client relaie au modèle par outil sont `name`,
+    `description`, `inputSchema`. Une consigne valant pour un serveur **entier**
+    (« lis telle documentation avant d'utiliser ces outils ») n'avait donc
+    d'autre issue que d'être recopiée à l'identique dans N descriptions, où elle
+    ne discrimine aucun outil et n'aide ni à choisir ni à appeler. `instructions`
+    est le seul emplacement du protocole à cette portée. Champ **standard MCP**,
+    pas une extension maison — et une piste « `preflight_skill` dans le `_meta`
+    par outil » a été évaluée puis écartée côté serveur : `_meta` est un canal
+    serveur→**client**, il n'a aucune place dans le format de requête d'un
+    fournisseur de LLM. Ne pas y revenir.
+    - **Lecture** : `connectMcpServer` recevait déjà le résultat d'`initialize`
+      et le **jetait** — seul l'en-tête `Mcp-Session-Id` de la même réponse était
+      lu. Le champ est **optionnel et absent chez la majorité des serveurs** :
+      lecture défensive, aucun log, aucune branche d'erreur, exactement la
+      posture du point 16. Posé sur `_remoteStatus[name].instructions`, dont il
+      partage durée de vie et origine.
+    - **Injection dans le contexte ÉPHÉMÈRE, jamais dans le message système.**
+      `buildMcpInstructionsBlock` (utils.js, pure) est appelée depuis
+      `contextBlockParts` (main.js) et son bloc `<miaou_mcp_instructions>` est
+      un **sibling** de `<miaou_skills_context>` dans le préfixe du dernier
+      message user. Le système est statique par contrat (piège 16) et ces
+      consignes ne le sont pas : elles apparaissent et disparaissent au
+      branchement/débranchement d'un serveur, à un ré-handshake, au renommage
+      d'une carte — les y mettre invaliderait le préfixe KV de façon
+      **récurrente**, ce que le piège vise précisément.
+    - **Le préambule du proxy est FAUX D'UN CRAN une fois passé par MIAOU**, et
+      c'est toute la raison du parsing. Le proxy écrit « les outils sont
+      préfixés `<serveur>__<outil>` » : littéralement vrai pour un client qui
+      lui parle en direct, faux pour MIAOU qui re-préfixe du slug de la carte et
+      expose `<slug>__<serveur>__<outil>`. **MIAOU est le seul à connaître ce
+      slug** — choisi par l'utilisateur, renommable à tout moment — et c'est
+      exactement pourquoi le proxy ne le porte pas en configuration : l'y mettre
+      dupliquerait une donnée qui vit côté client, avec dérive garantie au
+      premier renommage. `splitMcpInstructionSections` (pure) sépare donc
+      préambule et sections `## <nom>` ; le préambule reçu est **ignoré** (il ne
+      porte que cette convention), les corps de section passent **verbatim** —
+      c'est du texte d'auteur, MIAOU n'en réécrit que le cadre.
+    - **Le rattachement compte autant que l'injection.** Plusieurs serveurs
+      peuvent publier ; un bloc dont on ne sait plus à quels outils il s'applique
+      est **pire qu'absent** — le modèle appliquerait à tous une règle qui n'en
+      couvre qu'une partie. `mcpInstructionSectionsForServer` (pure) titre chaque
+      section du **préfixe réel** : `<slug>__<serveur>` pour un agrégateur,
+      `<slug>` seul pour un serveur unitaire (dont les outils sont
+      `<slug>__<outil>`). C'est un **préfixe, jamais un nom d'outil complet** :
+      la consigne porte sur tout ce qui commence par là.
+    - **Le cas unitaire tient sans branche dédiée** : un texte sans aucune
+      entête `## ` tombe entièrement dans la part préambule, que
+      `mcpInstructionSectionsForServer` reprend sous le slug. Il n'y a pas de
+      convention à respecter pour un serveur qui n'agrège rien.
+    - **Source** : `mcpInstructionSources` (tools.js) lit `_remoteStatus`, **pas
+      la config** — une consigne n'existe que pour un serveur dont le handshake a
+      abouti. Un serveur en erreur n'expose aucun outil (dégradation gracieuse) :
+      injecter ses consignes décrirait l'usage d'outils absents, pire que le
+      silence.
+    - **Coût visible** : entrée `mcp_instructions` du manifeste de contexte
+      (« Consignes des serveurs MCP »), avec sa couleur dans `CTX_PALETTE`.
+      Aucune autre surface UI, aucun réglage : le bloc est vide quand personne ne
+      publie, donc zéro token dépensé pour le cas majoritaire.
+    - **Témoin de bout en bout** : `mcp_bench` publie une consigne demandant au
+      modèle de clore sa réponse par « banc d'essai bench — résultat non
+      contractuel » après tout usage d'un outil `bench`. Cette ligne ne peut pas
+      être produite par hasard : sa présence après un appel `bench` prouve
+      **lecture ET rattachement** ; son apparition après un appel à un autre
+      serveur prouverait le rattachement défaillant.
+
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
 Le lot V a rapatrié dans le navigateur ce que `mcp_docs` savait faire — le zip

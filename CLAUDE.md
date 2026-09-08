@@ -461,7 +461,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   l'ack, garde d'URL `authorizationUrlOrigin` appliquée à l'affichage) — et la
   surface `_meta` de `tools/list` qui signale les upstreams à autoriser AVANT
   tout échec (AB-5 : garde de composition distincte, pill dégradée, pastille
-  de topbar, revérification au retour de focus).
+  de topbar, revérification au retour de focus) ; porte aussi les consignes de
+  portée serveur du champ standard `instructions` de l'InitializeResult
+  (`buildMcpInstructionsBlock`, injectées en contexte ÉPHÉMÈRE et jamais dans le
+  système, rattachées au préfixe d'outil réel `<slug>__<serveur>` que MIAOU est
+  le seul à connaître).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et

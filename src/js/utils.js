@@ -405,6 +405,129 @@ function mcpStatusPill(status) {
   };
 }
 
+// ── Consignes de portée serveur publiées par un serveur MCP ─────────────────
+//
+// Le champ `instructions` de l'InitializeResult est le SEUL emplacement du
+// protocole pour une consigne qui vaut pour un serveur ENTIER (« lis telle
+// documentation avant d'utiliser ces outils »). Sans lui, une telle consigne
+// n'a d'autre issue que d'être recopiée à l'identique dans chaque description
+// d'outil : N copies d'un texte qui ne discrimine aucun outil, et qui n'aide le
+// modèle ni à choisir ni à appeler. Champ standard MCP, optionnel : absent ou
+// null est le cas MAJORITAIRE et parfaitement normal — jamais un warning.
+//
+// Un proxy d'agrégation publie un texte STRUCTURÉ : un préambule, puis une
+// section `## <serveur>` par upstream, titrée du préfixe d'outil. Un serveur
+// unitaire publie son texte NU, sans préambule ni section.
+//
+// LE PRÉAMBULE DU PROXY EST FAUX D'UN CRAN UNE FOIS PASSÉ PAR MIAOU, et c'est
+// la raison d'être de ce parsing. Le proxy écrit « les outils sont préfixés
+// `<serveur>__<outil>` » — littéralement vrai pour un client qui lui parle en
+// direct, faux pour MIAOU qui re-préfixe du slug de la carte et expose
+// `<slug>__<serveur>__<outil>`. MIAOU est le SEUL à connaître ce slug (choisi
+// par l'utilisateur, renommable) : c'est précisément pourquoi le proxy ne le
+// porte pas en configuration, et pourquoi c'est ici qu'on réécrit. On ignore
+// donc le préambule reçu — il ne porte que cette convention de nommage — et on
+// ne garde que les sections, verbatim.
+const MCP_INSTRUCTIONS_SECTION_RE = /^##[ \t]+(.+?)[ \t]*$/;
+
+// Découpe un texte d'instructions en sections `## <nom>`.
+//
+// Rend `{ preamble, sections: [{ name, body }] }`. Un texte SANS aucune entête
+// `## ` (serveur unitaire) rend donc `sections: []` et tout le texte en
+// préambule — l'appelant décide quoi en faire, et c'est ce qui fait tenir le
+// cas unitaire sans branche dédiée : il n'y a pas de convention à respecter
+// pour un serveur qui n'agrège rien.
+//
+// Les corps de section passent VERBATIM (seuls les blancs de bord sont
+// rognés) : c'est du texte d'auteur, adressé au modèle, dont MIAOU n'a aucune
+// raison de réécrire le contenu. Il n'en réécrit que le CADRE.
+// Pure, testable en QuickJS.
+function splitMcpInstructionSections(text) {
+  const raw = typeof text === 'string' ? text : '';
+  const lines = raw.split('\n');
+  const preambleLines = [];
+  const sections = [];
+  let cur = null;
+  for (const line of lines) {
+    const m = line.match(MCP_INSTRUCTIONS_SECTION_RE);
+    if (m) {
+      cur = { name: m[1].trim(), bodyLines: [] };
+      sections.push(cur);
+    } else if (cur) {
+      cur.bodyLines.push(line);
+    } else {
+      preambleLines.push(line);
+    }
+  }
+  return {
+    preamble: preambleLines.join('\n').trim(),
+    sections: sections
+      .map(s => ({ name: s.name, body: s.bodyLines.join('\n').trim() }))
+      .filter(s => s.name && s.body),
+  };
+}
+
+// Projette les instructions d'UN serveur configuré en sections rattachées au
+// préfixe d'outil RÉEL, tel que le modèle le voit.
+//
+// LE RATTACHEMENT COMPTE AUTANT QUE L'INJECTION : plusieurs serveurs peuvent
+// publier des consignes, et un bloc dont on ne sait plus à quels outils il
+// s'applique est pire qu'absent — le modèle appliquerait à tous les outils une
+// règle qui n'en couvre qu'une partie. Le titre rendu ici est donc le préfixe
+// que porte réellement le nom d'outil exposé :
+//   - serveur agrégateur → `<slug>__<serveur>` (les outils sont
+//     `<slug>__<serveur>__<outil>`) ;
+//   - serveur unitaire → `<slug>` (les outils sont `<slug>__<outil>`).
+// C'est un PRÉFIXE, jamais un nom d'outil complet : la consigne porte sur tout
+// ce qui commence par là.
+// Pure, testable en QuickJS.
+function mcpInstructionSectionsForServer(slug, instructions) {
+  const name = typeof slug === 'string' ? slug.trim() : '';
+  const text = typeof instructions === 'string' ? instructions.trim() : '';
+  if (!name || !text) return [];
+  const split = splitMcpInstructionSections(text);
+  if (split.sections.length) {
+    return split.sections.map(s => ({ prefix: name + '__' + s.name, body: s.body }));
+  }
+  // Serveur unitaire : le texte entier est la consigne, le préfixe est le slug.
+  if (!split.preamble) return [];
+  return [{ prefix: name, body: split.preamble }];
+}
+
+// Bloc `<miaou_mcp_instructions>` injecté dans le contexte ÉPHÉMÈRE du tour
+// (contextBlockParts, main.js) — JAMAIS dans le message système.
+//
+// Le system message est STATIQUE par contrat (piège 16, préfixe KV cache) et
+// ces consignes ne le sont pas : elles apparaissent et disparaissent au
+// branchement/débranchement d'un serveur, à un ré-handshake, au renommage d'une
+// carte. Les mettre dans le prompt racine invaliderait le préfixe à chaque
+// changement d'état MCP — exactement l'invalidation RÉCURRENTE que le piège
+// vise. Leur place est celle de `<miaou_skills_context>` : recalculé à chaque
+// tour, reflétant l'état courant sans cas particulier.
+//
+// `servers` : `[{ slug, instructions }]`, dans l'ordre de configuration.
+// Rend '' quand aucun serveur ne publie rien — le cas majoritaire, et pas un
+// token dépensé pour une liste vide.
+// Pure, testable en QuickJS.
+function buildMcpInstructionsBlock(servers) {
+  const list = Array.isArray(servers) ? servers : [];
+  const blocks = [];
+  for (const s of list) {
+    if (!s) continue;
+    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions)) {
+      blocks.push('## ' + sec.prefix + '\n\n' + sec.body);
+    }
+  }
+  if (!blocks.length) return '';
+  return '<miaou_mcp_instructions>\n' +
+    'Consignes publiées par les serveurs d\'outils MCP branchés, qui portent sur ' +
+    'l\'usage de leurs outils. Chaque titre ci-dessous est le PRÉFIXE des noms ' +
+    'd\'outils que sa consigne couvre : elle s\'applique à tout outil dont le nom ' +
+    'commence par ce préfixe, et à aucun autre. Applique-les quand tu utilises ces ' +
+    'outils-là ; ne les mentionne pas spontanément.\n\n' +
+    blocks.join('\n\n') + '\n</miaou_mcp_instructions>\n\n';
+}
+
 // Prédicat UNIQUE « cet ack porte-t-il un refus d'autorisation présentable ? »
 // (campagne AB). Même patron que `ackDownloadTarget` juste au-dessus : renvoie
 // une CIBLE typée ou `null`, jamais un booléen — l'appelant a besoin de l'URL
@@ -2223,9 +2346,6 @@ const CONTEXT_WINDOW_WARN_RATIO = 0.8;
 // ne jamais dupliquer la logique d'assemblage (audit §0/§6).
 //
 // `sysParts` : { identity, root, intent, skills, codeblock, user } (systemMessageParts()).
-//   `toolsSystem` et `docs` sont des vestiges : plus personne ne les produit
-//   (`docs` a fusionné dans ROOT_SYSTEM_PROMPT au lot V-1). Leurs pushEntry
-//   restent inertes — pushEntry ignore le vide — mais ne comptent RIEN.
 // `dynParts` : { contextDateModel, memories, summaries, skillsContext } — chaque
 //   sous-bloc DÉJÀ formaté en string (ou '' si absent).
 // `threadMsgs` : array {role, content} (content string ou array de content-parts).
@@ -2244,7 +2364,6 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
 
   pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);   // DOCS_DOCTRINE y est comptée depuis V-1 (plus de part `docs` séparée)
-  pushEntry('tools_system', 'Liste des outils (system)', sp.toolsSystem);
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
@@ -2254,6 +2373,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('memories', 'Souvenirs', dp.memories);
   pushEntry('summaries', 'Résumés injectés', dp.summaries);
   pushEntry('skills_context', 'Contexte skills (autotrigger)', dp.skillsContext);
+  pushEntry('mcp_instructions', 'Consignes des serveurs MCP', dp.mcpInstructions);
   pushEntry('space_library', 'Fichiers d\'espace', dp.library);
 
   if (toolDefsJson) {

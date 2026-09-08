@@ -3228,3 +3228,104 @@ describe('refus d\'autorisation : ABSENT des exports (piege 21)', function() {
     expect(html).toContain('ack-head-error');
   });
 });
+
+describe('instructions MCP de portee serveur — parsing et injection', function() {
+  // Fixture : le texte REELLEMENT emis par mcp_proxy (depot miaou-mcp-servers),
+  // preambule + une section par upstream. Le recopier ici plutot que d'en
+  // fabriquer un plausible : c'est ce contrat-la qu'on lit, pas un idealise.
+  var PROXY = [
+    'Ce serveur agrege plusieurs serveurs MCP. Les outils sont prefixes par le nom de leur serveur d\'origine (`<serveur>__<outil>`). Les sections ci-dessous portent les consignes propres a chaque serveur d\'origine, titrees par ce meme nom.',
+    '',
+    '## bench',
+    '',
+    'Banc d\'essai du developpement de MIAOU : les outils `bench` n\'ont pas d\'utilite',
+    'en production, meme quand leur effet est reel (resolution DNS, par exemple).',
+    '',
+    'Apres avoir utilise un outil `bench`, le signaler a l\'utilisateur sur une',
+    'derniere ligne : « banc d\'essai bench — resultat non contractuel ».',
+  ].join('\n');
+
+  it('separe le preambule des sections', function() {
+    var out = splitMcpInstructionSections(PROXY);
+    expect(out.sections.length).toBe(1);
+    expect(out.sections[0].name).toBe('bench');
+    expect(out.preamble.indexOf('Ce serveur agrege') >= 0).toBe(true);
+    // Le corps passe VERBATIM : c'est du texte d'auteur adresse au modele.
+    expect(out.sections[0].body.indexOf('banc d\'essai bench') >= 0).toBe(true);
+    expect(out.sections[0].body.indexOf('Ce serveur agrege') >= 0).toBe(false);
+  });
+
+  it('un serveur unitaire (aucune entete) met tout en preambule', function() {
+    var out = splitMcpInstructionSections('Consigne brute, sans section.');
+    expect(out.sections.length).toBe(0);
+    expect(out.preamble).toBe('Consigne brute, sans section.');
+  });
+
+  it('rattache la section au prefixe REEL <slug>__<serveur>', function() {
+    // Le titre rendu est le prefixe d'outil vu par le modele, pas le nom nu
+    // publie par le proxy : MIAOU re-prefixe du slug de la carte.
+    var secs = mcpInstructionSectionsForServer('miaou-proxy', PROXY);
+    expect(secs.length).toBe(1);
+    expect(secs[0].prefix).toBe('miaou-proxy__bench');
+  });
+
+  it('suit le renommage de la carte serveur — le slug vit cote client', function() {
+    var secs = mcpInstructionSectionsForServer('proxy', PROXY);
+    expect(secs[0].prefix).toBe('proxy__bench');
+  });
+
+  it('serveur unitaire : le prefixe est le slug seul', function() {
+    // Ses outils sont <slug>__<outil>, jamais <slug>__<serveur>__<outil>.
+    var secs = mcpInstructionSectionsForServer('bench', 'Consigne brute.');
+    expect(secs.length).toBe(1);
+    expect(secs[0].prefix).toBe('bench');
+    expect(secs[0].body).toBe('Consigne brute.');
+  });
+
+  it('champ absent, null ou vide : aucune section, cas majoritaire', function() {
+    expect(mcpInstructionSectionsForServer('srv', null).length).toBe(0);
+    expect(mcpInstructionSectionsForServer('srv', undefined).length).toBe(0);
+    expect(mcpInstructionSectionsForServer('srv', '   ').length).toBe(0);
+    expect(mcpInstructionSectionsForServer('', PROXY).length).toBe(0);
+  });
+
+  it('ecarte une section titree mais vide', function() {
+    var secs = mcpInstructionSectionsForServer('p', '## vide\n\n## plein\n\ntexte');
+    expect(secs.length).toBe(1);
+    expect(secs[0].prefix).toBe('p__plein');
+  });
+
+  it('bloc vide quand aucun serveur ne publie rien — zero token depense', function() {
+    expect(buildMcpInstructionsBlock([])).toBe('');
+    expect(buildMcpInstructionsBlock(null)).toBe('');
+    expect(buildMcpInstructionsBlock([{ slug: 'a', instructions: null }])).toBe('');
+  });
+
+  it('plusieurs serveurs : rattachement DISTINCT, jamais fusionne', function() {
+    // Le rattachement compte autant que l'injection : un bloc dont on ne sait
+    // plus a quels outils il s'applique est pire qu'absent.
+    var block = buildMcpInstructionsBlock([
+      { slug: 'proxy', instructions: PROXY },
+      { slug: 'meteo', instructions: 'Toujours donner la temperature en Celsius.' },
+    ]);
+    expect(block.indexOf('## proxy__bench') >= 0).toBe(true);
+    expect(block.indexOf('## meteo') >= 0).toBe(true);
+    expect(block.indexOf('banc d\'essai bench') >= 0).toBe(true);
+    expect(block.indexOf('Celsius') >= 0).toBe(true);
+  });
+
+  it('le preambule FAUX du proxy n\'atteint jamais le modele', function() {
+    // « les outils sont prefixes <serveur>__<outil> » est vrai pour un client
+    // parlant au proxy en direct, faux une fois passe par MIAOU. C'est la
+    // raison d'etre du parsing : MIAOU ecrit son propre cadrage.
+    var block = buildMcpInstructionsBlock([{ slug: 'miaou-proxy', instructions: PROXY }]);
+    expect(block.indexOf('Ce serveur agrege') >= 0).toBe(false);
+    expect(block.indexOf('est le PRÉFIXE des noms') >= 0).toBe(true);
+  });
+
+  it('le bloc est balise et se termine par le separateur de sibling', function() {
+    var block = buildMcpInstructionsBlock([{ slug: 'b', instructions: 'x' }]);
+    expect(block.indexOf('<miaou_mcp_instructions>') === 0).toBe(true);
+    expect(block.indexOf('</miaou_mcp_instructions>\n\n') > 0).toBe(true);
+  });
+});

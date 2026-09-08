@@ -564,6 +564,16 @@ lien n'apparaît, la ligne reste rouge avec son message. Le bouton de la liste
 des serveurs, lui, ne prend au serveur que la fin de l'adresse : le début est
 celui que tu as toi-même saisi en configurant ce serveur.
 
+**Quand un serveur donne des consignes d'usage.** Un serveur compagnon peut
+publier, en se connectant, une consigne qui vaut pour l'ensemble de ses outils —
+par exemple « lis telle documentation avant d'utiliser ces outils », ou « signale
+que ce résultat n'est pas contractuel ». MIAOU la transmet au modèle en la
+rattachant au serveur d'origine, de sorte qu'elle s'applique aux outils de ce
+serveur-là et à aucun autre. Tu n'as rien à configurer : c'est le serveur qui la
+fournit, et la plupart n'en publient aucune. Si le comportement du modèle change
+après avoir branché un serveur, c'est peut-être de là que cela vient ; le détail
+de ce qui part est visible dans le compteur de contexte (sujet `contexte`).
+
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
 façon recommandée d'ajouter cette capacité à MIAOU. Il fournit aussi un serveur
@@ -631,7 +641,8 @@ que la conversion de fichier ci-dessus, sans passer par un `.md` intermédiaire.
 À chaque message que tu envoies, MIAOU ne transmet pas que ton texte : il y
 ajoute automatiquement un **contexte** pour que le modèle réponde en connaissance
 de cause. Ce contexte comprend, selon le cas, tes instructions système, la
-définition des outils disponibles (y compris ceux des serveurs compagnons), tes
+définition des outils disponibles (y compris ceux des serveurs compagnons), les
+consignes d'usage publiées par ces serveurs (sujet `mcp`), tes
 souvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés
 pertinents, la date du jour et le manifeste de la bibliothèque de fichiers de
 l'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus
@@ -657,12 +668,13 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
   joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est
   déjà une optimisation intégrée.
 - **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses
-  outils au contexte. En débrancher un allège la liste d'outils envoyée.
+  outils au contexte, et éventuellement ses consignes d'usage (sujet `mcp`). En
+  débrancher un allège la liste d'outils envoyée.
 
 Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
 (instructions système, définitions d'outils) reste **identique octet pour octet**
-d'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés) en
-préfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe
+d'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés,
+consignes des serveurs compagnons) en préfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe
 (Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au
 lieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes
 instructions système, casse volontairement ce préfixe stable (le contexte change

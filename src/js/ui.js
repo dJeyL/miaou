@@ -6803,10 +6803,11 @@ function closeSummaryDrawer() {
 // cohérente barre/table. 'thread'/'attachment_images' en dernier (volumes les
 // plus variables).
 const CTX_PALETTE = {
-  identity_blurb: '#e0d45a', root_prompt: '#7c8cf8', tools_system: '#5fb3d9', tool_definitions: '#4fc3a1',
+  identity_blurb: '#e0d45a', root_prompt: '#7c8cf8', tool_definitions: '#4fc3a1',
   intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a',
   codeblock_doctrine: '#e05ac9', user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
-  summaries: '#e0955a', skills_context: '#8bc98b', space_library: '#3ea8d9',
+  summaries: '#e0955a', skills_context: '#8bc98b', mcp_instructions: '#5ec9c0',
+  space_library: '#3ea8d9',
   thread: '#4a90d9', attachment_images: '#d9974a',
 };
 

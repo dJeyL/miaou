@@ -823,6 +823,7 @@ function contextBlockParts(matches) {
     memories: buildMemoryEntriesBlock(),
     skillsContext: buildSkillsContextBlock(),
     library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name),
+    mcpInstructions: buildMcpInstructionsBlock(mcpInstructionSources()),
   };
 }
 
@@ -3424,8 +3425,14 @@ async function dispatchSend(matches, continuation) {
   const manifestThreadMsgs = threadMsgs.slice();
   if (lastUserIdx >= 0) {
     const skillsCtx = dynParts.skillsContext;
+    // Sibling au même titre que <miaou_skills_context> : les consignes de
+    // portée serveur des MCP branchés (cf. buildMcpInstructionsBlock, utils).
+    // Dans le préfixe ÉPHÉMÈRE et jamais dans le message système : elles
+    // changent au branchement/débranchement d'un serveur, donc elles
+    // invalideraient le préfixe KV de façon récurrente (piège 16).
+    const mcpInstr = dynParts.mcpInstructions;
     const ctx = buildContextBlock(matches);
-    const prefix = skillsCtx + ctx + '\n\n---\n\n';
+    const prefix = skillsCtx + mcpInstr + ctx + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     // Tour d'attache (brief A lot 2) : `content` peut être un tableau de
     // content parts OpenAI (image jointe) — le préfixe dynamique s'insère alors
