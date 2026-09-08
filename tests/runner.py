@@ -19,7 +19,7 @@ except ImportError:
 ROOT = Path(__file__).parent
 SRC_JS = ROOT.parent / 'src' / 'js'
 
-JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
+JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
 
 # ── Stubs navigateur ──────────────────────────────────────────────────────────
 # On simule juste ce qu'il faut pour que le code source charge sans exploser.

@@ -10,7 +10,7 @@
 //
 // MONTAGE : entièrement stubé, aucun proxy lancé, aucun port ouvert.
 // `mcpRpcAttempt` traduit `msg.error.data` en `err.data` AVANT que le moindre
-// code AB-3 n'intervienne (tools.js) : tout ce que les vrais proxys ajouteraient
+// code AB-3 n'intervienne (mcp.js) : tout ce que les vrais proxys ajouteraient
 // au-dessus de ce point relève d'AB-1/AB-2, clos et couverts dans leur dépôt.
 // Sur les deux cas qui comptent (URL irrecevable, URL absente), le stub fait
 // même mieux qu'une config tordue : il pose l'`authorization_url` voulue en une
@@ -543,7 +543,7 @@ check('cas 3bis : le rejeu réussi efface aussi le marqueur d\'erreur',
   !replay.after.error);
 
 // `stub.local` est bien résolu en réseau par UN chemin : `reopenMcpSession`
-// appelle `mcpRpcAttempt` DIRECTEMENT (tools.js), donc sans passer par le
+// appelle `mcpRpcAttempt` DIRECTEMENT (mcp.js), donc sans passer par le
 // `mcpRpc` stubé ici. C'est une limite du montage, pas un défaut d'AB-3 : la
 // réouverture de session est un chemin de reconnexion, hors du contrat
 // d'autorisation. On l'attend donc explicitement plutôt que de la taire — et on

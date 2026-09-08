@@ -4,6 +4,16 @@ MIAOU est un **client/agrégateur MCP** : il fusionne ses outils internes et ceu
 de N serveurs MCP distants en **un seul registre**, invisible au modèle. Les
 invariants ci-dessous sont déjà payés — ne pas les ré-introduire de travers.
 
+**Où vit ce code.** Le côté **distant** est dans `src/js/mcp.js` (chargé avant
+`tools.js` dans `JS_ORDER`) : protocole et état de session (`_remoteTools`/
+`_remoteStatus`), client JSON-RPC (`mcpRpcAttempt`/`mcpRpc`/`readSseJsonRpc`),
+handshake (`connectMcpServer`/`disconnectMcpServer`), marqueurs de refus
+d'autorisation et `callRemoteTool`. Ce qui **compose** interne et distant reste
+dans `tools.js` — `exposedTools` (elle lit `TOOLS`), le dispatcher `callTool`/
+`callInternalTool`, le hook d'inflation `callDocsInflatedRemoteTool` et les
+doctrines. La frontière est « parle au réseau » contre « décide où router » :
+une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
+
 1. **Le préfixe est une VUE, pas un stockage.** `TOOLS` reste en noms **nus**
    (`memory__create`, …). Le préfixe `miaou__` est ajouté **à l'exposition
    seulement** par `exposedTools()` (consommé par `toolDefinitions()`). Les
@@ -144,7 +154,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
 12. **Hook d'inflation dispatcher pour les pièces jointes (brief A — moitié
     client du lot D `mcp_docs`).** `callTool` route désormais les appels
     distants via `callDocsInflatedRemoteTool(server, toolName, args, intent)`
-    (tools.js), point d'accroche juste avant `callRemoteTool`. But : injecter
+    (tools.js), point d'accroche juste avant `callRemoteTool` (mcp.js). But : injecter
     le contenu base64 d'une pièce jointe (`att-N`) **sur le wire uniquement**
     quand l'outil distant ciblé en a besoin, sans jamais toucher aux `args`
     capturés par l'appelant pour la réinjection cross-turn (`onEnrichLastAck`)
@@ -180,7 +190,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       `result.errorCode` sur le chemin `catch` (jamais persisté — lu
       synchrone par l'appelant immédiat, pas dans `ACK_COPY_FIELDS`).
       `_isRefUnknownError(result)` teste `result.errorCode ===
-      REF_UNKNOWN_ERROR_CODE` (constante unique, tools.js) — **jamais** une
+      REF_UNKNOWN_ERROR_CODE` (constante unique, mcp.js) — **jamais** une
       recherche de sous-chaîne dans le texte d'erreur (fragile, dépendrait de
       la formulation libre du message serveur).
     - Si l'état local dit « déjà poussé » mais le serveur répond
@@ -413,7 +423,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       d'autorisation, lui, appelle une action de l'**utilisateur**, qui peut
       quitter la conversation et y revenir : `errorCode`, `authorizationUrl` et
       `upstream` passent donc par l'**ack**, via `ACK_COPY_FIELDS`
-      (`applyAuthorizationRefusal` / `clearAuthorizationRefusal`, tools.js —
+      (`applyAuthorizationRefusal` / `clearAuthorizationRefusal`, mcp.js —
       posés ensemble, retirés ensemble ; le rejeu qui réussit les efface comme
       il efface `error`, sans quoi un lien périmé subsisterait sous un appel
       redevenu vert).
@@ -437,7 +447,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       par API DOM, `href` posé par **propriété** (aucun chemin string→HTML, cf.
       piège 21), `rel="noopener noreferrer"`. **Absent des deux exports**, comme
       le bouton de téléchargement et la loupe. Cf. `docs/tools.md`.
-    - **Texte au modèle** : `formatAuthorizationRefusalForModel` (tools.js,
+    - **Texte au modèle** : `formatAuthorizationRefusalForModel` (mcp.js,
       pure) complète le message serveur. Celui-ci est à l'impératif sans
       destinataire (« Ouvrir ce lien… ») et se lit comme une consigne AU MODÈLE,
       qui n'a aucun outil pour autoriser — et n'en aura pas, ce serait une
@@ -596,7 +606,7 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
       entête `## ` tombe entièrement dans la part préambule, que
       `mcpInstructionSectionsForServer` reprend sous le slug. Il n'y a pas de
       convention à respecter pour un serveur qui n'agrège rien.
-    - **Source** : `mcpInstructionSources` (tools.js) lit `_remoteStatus`, **pas
+    - **Source** : `mcpInstructionSources` (mcp.js) lit `_remoteStatus`, **pas
       la config** — une consigne n'existe que pour un serveur dont le handshake a
       abouti. Un serveur en erreur n'expose aucun outil (dégradation gracieuse) :
       injecter ses consignes décrirait l'usage d'outils absents, pire que le

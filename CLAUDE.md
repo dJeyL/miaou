@@ -138,7 +138,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   la cascade** ; `base` porte l'@import des fontes, `theme-light` reste dernier.
 - **`/* __JS__ */`** ← `src/js/*.js` dans l'ordre `JS_ORDER` (`docs.js` porte le
   domaine « ouvrir un document » du lot V, cf. `docs/documents.md` pour la ligne
-  de partage avec `utils`).
+  de partage avec `utils` ; `mcp.js` porte le côté DISTANT de l'agrégation MCP —
+  client JSON-RPC, handshake, `callRemoteTool` — là où ce qui COMPOSE interne et
+  distant reste dans `tools.js`, cf. `docs/mcp.md`).
 
   **Les deux listes ne sont recopiées nulle part** — la seule énumération est
   celle de `build.py` (constantes en tête de fichier), à lire là-bas. Elles
@@ -465,7 +467,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   portée serveur du champ standard `instructions` de l'InitializeResult
   (`buildMcpInstructionsBlock`, injectées en contexte ÉPHÉMÈRE et jamais dans le
   système, rattachées au préfixe d'outil réel `<slug>__<serveur>` que MIAOU est
-  le seul à connaître).
+  le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
+  `tools.js` (composition et routage).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et

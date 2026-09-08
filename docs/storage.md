@@ -448,7 +448,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   posture de transparence, aucun toggle de masquage. CRUD
   dans `storage.js` (`loadMcpServers`/`upsertMcpServer`/`deleteMcpServer`/
   `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
-  n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, tools.js) est en
+  n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
   mémoire seule, reconstruit au démarrage.
 - `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,
   url, key, model, disabled, vision }]`. Remplace les champs plats `url`/`key`/`model` de

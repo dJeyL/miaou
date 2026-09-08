@@ -8505,7 +8505,7 @@ function buildMcpCard(server, isNew) {
   editSection.appendChild(cfgField('URL', urlI));
   // Le libellé « sse » reste nu dans la pilule (harmonisation des dropdowns) :
   // l'avertissement « différé » vit dans le hint du champ, pas dans l'option —
-  // `sse` lève à l'usage (mcpRpc, tools.js), l'info ne doit pas disparaître.
+  // `sse` lève à l'usage (mcpRpc, mcp.js), l'info ne doit pas disparaître.
   editSection.appendChild(cfgField('Transport', transport.root,
     'streamable-http seul est implémenté ; sse est différé.'));
   editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));

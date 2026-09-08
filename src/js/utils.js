@@ -94,7 +94,7 @@ function copyAckFields(src, dst) {
 // rendu en erreur, partagée par le thread live (buildToolAck, ui.js) et les DEUX
 // exports (_formatToolCallMd / _formatToolCallHtml). Deux signaux, jamais
 // fusionnés dans l'objet persisté :
-//   - `error: true` : posé par callRemoteTool (tools.js) sur les acks MCP
+//   - `error: true` : posé par callRemoteTool (mcp.js) sur les acks MCP
 //     distants (isError du serveur, ou throw/timeout du transport).
 //   - `ok === false` : posé par le handler js__eval (lot L) — refus de cap ET
 //     plantage guest. Côté MODÈLE ces deux cas ne sont volontairement PAS des
