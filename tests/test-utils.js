@@ -3328,4 +3328,43 @@ describe('instructions MCP de portee serveur — parsing et injection', function
     expect(block.indexOf('<miaou_mcp_instructions>') === 0).toBe(true);
     expect(block.indexOf('</miaou_mcp_instructions>\n\n') > 0).toBe(true);
   });
+
+  it('index par prefixe : clef = prefixe d\'outil, pas le slug nu', function() {
+    // La clef doit etre directement comparable au `namespace` rendu par
+    // groupByNamespace au drawer : un serveur agregateur donne `<slug>__<serveur>`.
+    var idx = mcpInstructionsByPrefix([{ slug: 'proxy', instructions: PROXY }]);
+    expect(Object.prototype.hasOwnProperty.call(idx, 'proxy__bench')).toBe(true);
+    expect(idx['proxy__bench'].indexOf('banc d\'essai bench') >= 0).toBe(true);
+  });
+
+  it('index par prefixe : serveur unitaire indexe sous son slug', function() {
+    var idx = mcpInstructionsByPrefix([{ slug: 'meteo', instructions: 'Temperature en Celsius.' }]);
+    expect(idx['meteo']).toBe('Temperature en Celsius.');
+  });
+
+  it('index par prefixe : vide quand personne ne publie rien', function() {
+    expect(Object.keys(mcpInstructionsByPrefix([])).length).toBe(0);
+    expect(Object.keys(mcpInstructionsByPrefix(null)).length).toBe(0);
+    expect(Object.keys(mcpInstructionsByPrefix([{ slug: 'a', instructions: null }])).length).toBe(0);
+  });
+
+  it('index par prefixe : MEME decoupage que le bloc injecte au modele', function() {
+    // Le drawer ne doit pas pouvoir montrer une version divergente de ce que
+    // le modele recoit : les deux passent par mcpInstructionSectionsForServer.
+    var servers = [
+      { slug: 'proxy', instructions: PROXY },
+      { slug: 'meteo', instructions: 'Toujours donner la temperature en Celsius.' },
+    ];
+    var idx = mcpInstructionsByPrefix(servers);
+    var block = buildMcpInstructionsBlock(servers);
+    Object.keys(idx).forEach(function(prefix) {
+      expect(block.indexOf('## ' + prefix + '\n\n' + idx[prefix]) >= 0).toBe(true);
+    });
+  });
+
+  it('index par prefixe : le preambule FAUX du proxy n\'y entre pas non plus', function() {
+    var idx = mcpInstructionsByPrefix([{ slug: 'miaou-proxy', instructions: PROXY }]);
+    var joined = Object.keys(idx).map(function(k) { return idx[k]; }).join('\n');
+    expect(joined.indexOf('Ce serveur agrege') >= 0).toBe(false);
+  });
 });

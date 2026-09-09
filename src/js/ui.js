@@ -315,9 +315,11 @@ if (window.marked) {
 // en lien Markdown standard AVANT marked.parse — jamais après : une fois passés
 // par le parseur, les crochets bruts seraient déjà interprétés (syntaxe de lien
 // incomplète) et donc invisibles/imprévisibles à ce stade. Le href pointe vers un
-// pseudo-schéma `#miaou-conv:ID` intercepté par délégation de clic (openConvRefLink),
-// jamais une vraie navigation. Titre : celui fourni par le modèle, sinon lookup
-// dans l'index des résumés (storage.js) — y compris une entrée tombstone
+// pseudo-schéma `#miaou-conv:ID` intercepté par délégation de clic (listener
+// anonyme posé une fois sur `#messages` dans init(), main.js — greper le
+// sélecteur `a[href^="#miaou-conv:"]`), jamais une vraie navigation. Titre :
+// celui fourni par le modèle, sinon lookup dans l'index des résumés
+// (storage.js) — y compris une entrée tombstone
 // (suppressed:true ne concerne QUE le résumé/mémoire, cf. §6 CLAUDE.md ; la
 // conversation elle-même reste intacte et ouvrable, son titre reste affichable).
 // Conversation réellement supprimée (deleteConv → deleteSummaryEntry, hard
@@ -341,6 +343,34 @@ function resolveConvRefs(text, opts) {
     }
     if (asPlainText) return safeLabel;
     return '[' + safeLabel + '](#miaou-conv:' + encodeURIComponent(id) + ')';
+  });
+}
+
+// Ouverture des liens du markdown rendu dans un nouvel onglet. Posé en hook
+// DOMPurify plutôt que dans les renderers marked : `sanitizeHtml` est le
+// passage OBLIGÉ des trois chemins de rendu (renderMd, renderUserMd,
+// renderMarkdownDocBody), donc le seul endroit où la règle ne peut pas être
+// oubliée par un futur appelant — et elle vaut aussi pour les liens d'un
+// fragment HTML inline écrit par le modèle, que marked laisse passer sans
+// jamais appeler son renderer `link`.
+// Deux exclusions, pour la même raison dans les deux cas : ce sont des liens
+// qui ne naviguent pas.
+//   - `#miaou-conv:` — pseudo-schéma résolu par resolveConvRefs, intercepté en
+//     délégation de clic (main.js) qui fait preventDefault + selectConv. Un
+//     `target` y ouvrirait un second MIAOU sur l'ancre au lieu de changer de
+//     conversation.
+//   - toute autre ancre pure (`#…`) — navigation interne au document, pertinente
+//     surtout dans l'export standalone (sommaire de document converti).
+// `rel="noopener noreferrer"` systématique avec `target` : sans lui, la page
+// ouverte reçoit `window.opener` et peut renaviguer l'onglet MIAOU. Le lien vient
+// du modèle ou d'un contenu utilisateur, donc jamais de confiance.
+if (window.DOMPurify) {
+  DOMPurify.addHook('afterSanitizeAttributes', function(node) {
+    if (node.tagName !== 'A') return;
+    const href = node.getAttribute('href') || '';
+    if (href.charAt(0) === '#') return;
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
   });
 }
 
@@ -6392,6 +6422,9 @@ function openSettings() {
   $('set-retitle-after-reply').checked = effectiveRetitleAfterReply(s);
   $('set-describe-files').checked = s.describeFiles !== false;
   $('set-export-interactive').checked = s.exportInteractive !== false;
+  // Auto-persisté et donc modifiable hors du formulaire (autre onglet) : relu à
+  // l'ouverture, comme les segments ci-dessus.
+  $('set-wide-tables').checked = s.wideTables !== false;
   const pre = $('root-prompt-pre');
   if (pre && !pre.dataset.loaded) {
     pre.innerHTML = renderMd(rootSystemPromptDisplay());
@@ -6715,6 +6748,25 @@ function selectMotion(motion) {
   setMotionUI(motion);
   applyMotion(motion);
   saveSettings({ motion });   // persisté immédiatement, modèle selectTheme
+}
+
+// Réglage « Élargir les grands tableaux » : un seul attribut sur <html>, lu par
+// `html[data-wide-tables="off"] .table-bleed` (chat.css). Même forme
+// qu'applyPalette/applyMotion — et surtout AUCUN re-rendu du fil : le porteur
+// est posé en permanence par wrapWideTables, c'est le CSS qui décide seul si le
+// débordement est consommé. Attribut posé seulement quand le réglage est
+// décoché, pour que le cas par défaut ne laisse aucune trace dans le DOM.
+function applyWideTables(enabled) {
+  if (enabled === false) document.documentElement.setAttribute('data-wide-tables', 'off');
+  else document.documentElement.removeAttribute('data-wide-tables');
+}
+
+// Persisté immédiatement (modèle selectTheme/selectMotion) et donc EXCLU de
+// settingsFormDirty : le basculer ne doit pas armer « Enregistrer ».
+function onToggleWideTables() {
+  const on = $('set-wide-tables').checked;
+  applyWideTables(on);
+  saveSettings({ wideTables: on });
 }
 
 function onToggleHighlight() {
@@ -7559,6 +7611,10 @@ function renderToolsList() {
     return;
   }
   wrap.innerHTML = '';
+  // Calculé UNE fois pour tous les groupes : `mcpInstructionSources` lit l'état
+  // vivant des serveurs branchés, et le relire par groupe donnerait autant de
+  // parcours pour un résultat identique.
+  const instructionsByPrefix = mcpInstructionsByPrefix(mcpInstructionSources());
   const ICON_NS_CHEVRON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
   groups.forEach(function(g, i) {
     const group = document.createElement('div');
@@ -7581,6 +7637,14 @@ function renderToolsList() {
     body.className = i === 0 ? 'tool-ns-body open' : 'tool-ns-body';
     const bodyInner = document.createElement('div');
     bodyInner.className = 'tool-ns-body-inner';
+    // Consigne de portée serveur publiée par le MCP (champ standard
+    // `instructions` de l'InitializeResult), en tête de la section qu'elle
+    // couvre. `mcpInstructionsByPrefix` (utils) est indexé par le préfixe
+    // d'outil, qui EST le namespace du groupe : lookup direct, aucun nom
+    // reconstruit ici. Même source que le bloc injecté au modèle, pour que
+    // l'écran ne puisse pas en montrer une version divergente.
+    const nsInstructions = instructionsByPrefix[g.namespace];
+    if (nsInstructions) bodyInner.appendChild(buildToolNsInstructions(nsInstructions));
     // Tri alpha par nom nu, purement présentationnel (comme le tri des
     // namespaces ci-dessus) : groupByNamespace reste en ordre d'apparition.
     const sorted = g.tools.slice().sort((a, b) => a.bareName.localeCompare(b.bareName));
@@ -7604,6 +7668,33 @@ function renderToolsList() {
     group.appendChild(body);
     wrap.appendChild(group);
   });
+}
+
+// Consigne de portée serveur, en tête de sa section du drawer des outils.
+//
+// Le texte vient d'un SERVEUR DISTANT : il traverse `renderMd`, donc marked +
+// DOMPurify, jamais une concaténation de chaînes. C'est le même chemin que le
+// markdown du modèle, et pour la même raison — un serveur MCP branché n'est pas
+// plus digne de confiance qu'un contenu rapporté par un outil (piège 21).
+//
+// `renderMd` et non `escHtml` : la demande est un rendu Markdown, et ces
+// consignes en contiennent (titres, listes, gras). La contrepartie assumée est
+// que le lien éventuel d'une consigne devient cliquable, comme dans le fil.
+function buildToolNsInstructions(markdown) {
+  const box = document.createElement('div');
+  box.className = 'tool-ns-instructions';
+
+  const label = document.createElement('div');
+  label.className = 'tool-ns-instructions-label';
+  label.textContent = 'Consignes du serveur MCP';
+  box.appendChild(label);
+
+  const body = document.createElement('div');
+  body.className = 'tool-ns-instructions-body body';
+  body.innerHTML = renderMd(markdown);
+  box.appendChild(body);
+
+  return box;
 }
 
 function buildToolItem(bareName, def) {
@@ -10047,6 +10138,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
    PORTEUR et non par le tableau : un display:block sur un <table> casse la
    répartition des colonnes (cf. chat.css, étage 2). */
 .table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); overflow-x: auto; }
+/* Réglage « Élargir les grands tableaux » (Apparence), figé à l'export : le
+   fichier produit n'a pas de réglages, donc l'état du moment est gravé dans le
+   markup par buildExportHtml (attribut sur body, faute de pouvoir toucher à
+   html — la case de thème y est la seule source de vérité). Même gate qu'à
+   l'écran, sur --table-bleed du porteur : une valeur héritée ne battrait pas la
+   déclaration que .table-bleed porte sur lui-même. */
+body[data-wide-tables="off"] .table-bleed { --table-bleed: 0px; }
+/* Une bulle utilisateur est une boîte : un tableau n'en sort jamais, quel que
+   soit le réglage ci-dessus. Portage de chat.css (.msg.user .bubble
+   .table-bleed) — la chaîne flex y demande le même min-width: 0. */
+.msg.user .bubble .table-bleed { --table-bleed: 0px; max-width: 100%; min-width: 0; }
+.msg.user .bubble, .msg.user .bubble .body { min-width: 0; }
+.msg.user .bubble .table-bleed table { width: max-content; min-width: 0; max-width: none; }
 .body table { width: fit-content; min-width: calc(100% - var(--table-bleed, 0px)); max-width: 100%; margin: 0 auto; border-collapse: collapse; font-size: 13px; }
 .body th, .body td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
 .body th { background: var(--surface); font-weight: 600; color: var(--text); }
@@ -10366,7 +10470,13 @@ function brandHtmlFor(url) {
     '" target="_blank" rel="noopener">MIAOU</a>';
 }
 function exportBrandHtml() { return brandHtmlFor(BUILD_REPO_URL); }
-function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind }) {
+// `wideTables` fige l'état du réglage « Élargir les grands tableaux » au moment
+// de l'export : le fichier produit n'a pas de réglages, et le débordement des
+// tableaux est une décision de présentation qui doit le suivre. Porté par
+// <body> et non <html>, dont l'absence d'attribut est un contrat (cf. plus bas,
+// la case de thème est la seule source de vérité). Absent/undefined → élargi,
+// c'est le défaut du réglage, et ça garde les appelants de test inchangés.
+function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables }) {
   const hasHeader = !!(title && String(title).trim());
   const docTitle = hasHeader ? title : 'Document';
   const verbs = EXPORT_VERBS[kind] || EXPORT_VERBS.export;
@@ -10404,7 +10514,7 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     '<meta property="og:image" content="' + escHtml(LOGO_SRC) + '">\n' +
     '<style>' + styleCss + '</style>\n' +
     '</head>\n' +
-    '<body>\n' +
+    '<body' + (wideTables === false ? ' data-wide-tables="off"' : '') + '>\n' +
     // Bascule de thème SANS JavaScript (lot R, révisé) : une case masquée en
     // tête de body + un <label for> cliquable. Le CSS bascule via
     // `body:has(#theme-switch:checked)`. Fonctionne dans les visionneuses qui
@@ -10725,6 +10835,7 @@ async function convertMarkdownToHtmlFile(mdText, sourceName) {
     dateDisplay: exportDateDisplay(now),
     kind: 'convert',
     theme, styleCss, bodyHtml, scriptTag,
+    wideTables: s.wideTables !== false,
   });
   downloadFile(mdHtmlFileName(sourceName), html, 'text/html');
   return html;
@@ -10824,7 +10935,8 @@ async function exportConvHtml() {
     const scriptTag = (s.exportInteractive !== false)
       ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
       : '';
-    const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind: 'export' });
+    const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind: 'export',
+      wideTables: s.wideTables !== false });
     const sizeBytes = new Blob([html]).size;
     if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
       const mb = (sizeBytes / (1024 * 1024)).toFixed(1);

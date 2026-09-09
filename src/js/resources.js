@@ -165,7 +165,8 @@ const ATTACHMENT_TEXT_EXTENSIONS = [
 // Classe une pièce jointe selon son mime et/ou son extension de fichier.
 // Priorité : mime image/* → 'image' ; sinon extension dans la liste texte →
 // 'text' ; sinon 'binary'. Pure, ne dépend pas du contenu du fichier (le cap
-// 200 kB texte→binary est appliqué séparément, après lecture).
+// texte→binary (ATTACHMENT_TEXT_MAX_BYTES, main.js) est appliqué séparément,
+// après lecture).
 function classifyAttachmentKind(name, mime) {
   const m = String(mime || '').toLowerCase().split(';')[0].trim();
   if (m.startsWith('image/')) return 'image';
@@ -245,8 +246,28 @@ function formatAttachmentDescriptor(att) {
 // nom de fichier, PERSISTÉ TEL QUEL (pas de descripteur, pas de rewrite
 // ultérieur — texte cheap, KV cache préservé). `text` = contenu déjà décodé
 // (UTF-8) du fichier.
+//
+// La note « full content inlined below » n'est pas décorative : sans elle, ce
+// descripteur était le SEUL des trois à ne rien dire de son propre statut, alors
+// qu'il partage sa forme d'ouverture (`file "..."`) avec le descripteur BINAIRE,
+// lequel annonce « binary content, not inlined ». Un modèle qui a lu la seconde
+// forme applique sa conclusion à la première et affirme ne pas avoir le contenu
+// — observé le 2026-09-09 sur un petit modèle local, qui a refusé de lire un .md
+// pourtant fencé juste en dessous, puis a demandé à l'utilisateur de « l'envoyer »
+// une seconde fois. Un silence n'est pas neutre face à un prior : le mot
+// « attachment » signale à lui seul un contenu absent. ATTACHMENT_DOCTRINE dit
+// déjà la même chose (tools.js), mais elle est loin du point de lecture et
+// formulée comme une interdiction de rappel, pas comme une autorisation de lire.
+//
+// Format anglais, comme les deux autres descripteurs (cf. modelSize). Byte-stable
+// (dérivé des seuls champs figés attId/name), donc KV-safe. Le changement de
+// format ne réécrit PAS les messages déjà persistés (le bloc est stocké tel quel
+// et collapseAttachedMessageContent ne le régénère pas) : les anciens gardent
+// l'ancienne forme, écart permanent assumé — il ne porte aucun fait, seulement
+// une redite.
 function formatTextAttachmentBlock(att, text) {
-  return '[attachment ' + att.attId + ': file "' + (att.name || '') + '"]\n' +
+  return '[attachment ' + att.attId + ': file "' + (att.name || '') +
+    '" — full content inlined below]\n' +
     '```\n' + String(text || '') + '\n```';
 }
 

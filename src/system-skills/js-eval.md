@@ -48,7 +48,9 @@ erreur que tu peux voir dans le résultat (ce n'est pas un silence).
 - jsonLines("cle") → un tableau d'objets, une ligne JSON parsée par élément (les
   lignes vides ou non parsables sont ignorées) ; pour un fichier JSON-lines/NDJSON.
 - parse("cle") → cette ressource entière parsée comme un unique document JSON.
-- emit(chunk) → ajoute `chunk` à la fin de la ressource de sortie. N'EXISTE QUE
+- emit(chunk) → ajoute `chunk` à la fin de la ressource de sortie, LITTÉRALEMENT :
+  aucun saut de ligne n'est ajouté, ton chunk est collé au dernier caractère déjà
+  présent. Si tu produis des lignes, écris `emit(row + "\n")`. N'EXISTE QUE
   si tu as passé `output_handle` en appelant miaou__js__eval : sans ce paramètre,
   l'appeler échoue sur « emit is not defined ». C'est la seule primitive qui
   ÉCRIT — les autres ne font que lire. N'en déduis pas qu'il en existe d'autres
@@ -100,10 +102,13 @@ Le résultat renvoyé est plafonné, donc il ne sert pas à PRODUIRE un gros con
 (un CSV de milliers de lignes, un rapport complet). Pour ça :
 
 1. Crée d'abord la ressource de destination avec miaou__resource__create (un
-   contenu initial minimal suffit — un en-tête de CSV, par exemple).
+   contenu initial minimal suffit — un en-tête de CSV, par exemple). Termine ce
+   contenu initial par un saut de ligne : le premier emit() se collera sinon
+   directement à sa fin, sur la même ligne.
 2. Rappelle miaou__js__eval en passant son handle res_… en `output_handle`.
 3. Dans ton code, appelle emit(…) au fil du calcul, autant de fois que tu veux.
-   Chaque appel ajoute à la fin de la ressource ; rien ne s'accumule en mémoire.
+   Chaque appel ajoute à la fin de la ressource, sans séparateur ; rien ne
+   s'accumule en mémoire.
 4. Renvoie quand même une petite valeur de synthèse (un compte, un aperçu) : le
    canal de retour normal reste actif et c'est ce que tu liras dans le résultat.
 

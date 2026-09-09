@@ -613,8 +613,22 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       silence.
     - **Coût visible** : entrée `mcp_instructions` du manifeste de contexte
       (« Consignes des serveurs MCP »), avec sa couleur dans `CTX_PALETTE`.
-      Aucune autre surface UI, aucun réglage : le bloc est vide quand personne ne
-      publie, donc zéro token dépensé pour le cas majoritaire.
+      Aucun réglage : le bloc est vide quand personne ne publie, donc zéro token
+      dépensé pour le cas majoritaire.
+    - **Lisible à l'écran** : le sous-drawer « Voir les outils exposés » affiche
+      la consigne **en tête de la section du serveur qu'elle couvre**
+      (`buildToolNsInstructions`, ui.js), rendue en Markdown. L'index
+      `mcpInstructionsByPrefix` (utils.js, pure) est clefé par le **préfixe
+      d'outil**, c'est-à-dire exactement le `namespace` que `groupByNamespace`
+      rend au drawer : le rendu fait un lookup direct, il ne reconstruit aucun
+      nom. Surtout, il passe par `mcpInstructionSectionsForServer` comme le bloc
+      injecté — **un seul découpage pour les deux surfaces**. Deux découpages
+      parallèles divergeraient en silence et l'écran deviendrait un témoin
+      trompeur de ce que le modèle reçoit réellement ; un test QuickJS vérifie
+      cette équivalence sur le contenu, pas seulement sur les clefs. Le texte
+      venant d'un serveur distant, il traverse `renderMd` (marked + DOMPurify)
+      et jamais une concaténation de chaînes — même posture que pour le markdown
+      du modèle (piège 21).
     - **Témoin de bout en bout** : `mcp_bench` publie une consigne demandant au
       modèle de clore sa réponse par « banc d'essai bench — résultat non
       contractuel » après tout usage d'un outil `bench`. Cette ligne ne peut pas

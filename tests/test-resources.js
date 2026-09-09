@@ -821,11 +821,24 @@ describe('formatAttachmentDescriptor', function() {
 describe('formatTextAttachmentBlock', function() {
   it('en-tête avec attId et nom, contenu fencé', function() {
     var block = formatTextAttachmentBlock({ attId: 'att-2', name: 'notes.txt' }, 'ligne1\nligne2');
-    expect(block).toBe('[attachment att-2: file "notes.txt"]\n```\nligne1\nligne2\n```');
+    expect(block).toBe('[attachment att-2: file "notes.txt" — full content inlined below]\n```\nligne1\nligne2\n```');
   });
   it('texte vide/absent → fence vide, pas de crash', function() {
     var block = formatTextAttachmentBlock({ attId: 'att-1', name: 'x.txt' }, undefined);
-    expect(block).toBe('[attachment att-1: file "x.txt"]\n```\n\n```');
+    expect(block).toBe('[attachment att-1: file "x.txt" — full content inlined below]\n```\n\n```');
+  });
+  // Le descripteur TEXTE et le descripteur BINAIRE partagent leur forme
+  // d'ouverture (`file "..."`) : c'est la note finale, et elle seule, qui les
+  // distingue. Assertion CONJOINTE parce que deux tests séparés passeraient
+  // encore si les deux notes refusionnaient en une même formule.
+  it('annonce un statut inline OPPOSÉ à celui du descripteur binaire', function() {
+    var textBlock = formatTextAttachmentBlock({ attId: 'att-1', name: 'doc.md' }, 'x');
+    var binDesc = formatBinaryAttachmentDescriptor({
+      attId: 'att-2', name: 'doc.pdf', mime: 'application/pdf', size: 2048,
+    });
+    expect(textBlock.indexOf('full content inlined below') > -1).toBe(true);
+    expect(binDesc.indexOf('binary content, not inlined') > -1).toBe(true);
+    expect(binDesc.indexOf('full content inlined below')).toBe(-1);
   });
 });
 
@@ -864,7 +877,9 @@ describe('buildAttachedMessageContent', function() {
     var c = buildAttachedMessageContent('regarde ce fichier', [{ att: { attId: 'att-1', name: 'a.txt' }, text: 'contenu' }], []);
     expect(typeof c).toBe('string');
     expect(c.indexOf('regarde ce fichier') === 0).toBeTruthy();
-    expect(c.indexOf('[attachment att-1: file "a.txt"]') >= 0).toBeTruthy();
+    // Composé DEPUIS le formateur : la forme exacte du bloc est assertée une
+    // seule fois (describe formatTextAttachmentBlock), jamais recopiée ici.
+    expect(c.indexOf(formatTextAttachmentBlock({ attId: 'att-1', name: 'a.txt' }, 'contenu')) >= 0).toBeTruthy();
   });
   it('attachment image → tableau de content parts OpenAI, une part par image', function() {
     var c = buildAttachedMessageContent('vois cette image', [], [{ att: { attId: 'att-1' }, dataUrl: 'data:image/png;base64,AAA' }]);
@@ -889,7 +904,7 @@ describe('buildAttachedMessageContent', function() {
       [{ att: { attId: 'att-2' }, dataUrl: 'data:image/png;base64,ZZZ' }]);
     expect(Array.isArray(c)).toBeTruthy();
     expect(c[0].text.indexOf('titre') === 0).toBeTruthy();
-    expect(c[0].text.indexOf('[attachment att-1: file "a.txt"]') >= 0).toBeTruthy();
+    expect(c[0].text.indexOf(formatTextAttachmentBlock({ attId: 'att-1', name: 'a.txt' }, 'X')) >= 0).toBeTruthy();
   });
   it('attachment binaire seul → string = texte + descripteur, pas de tableau (brief H)', function() {
     var c = buildAttachedMessageContent('voici un fichier', [], [], [{ attId: 'att-1', name: 'rapport.docx', mime: 'application/msword', size: 5000 }]);

@@ -571,8 +571,10 @@ que ce résultat n'est pas contractuel ». MIAOU la transmet au modèle en la
 rattachant au serveur d'origine, de sorte qu'elle s'applique aux outils de ce
 serveur-là et à aucun autre. Tu n'as rien à configurer : c'est le serveur qui la
 fournit, et la plupart n'en publient aucune. Si le comportement du modèle change
-après avoir branché un serveur, c'est peut-être de là que cela vient ; le détail
-de ce qui part est visible dans le compteur de contexte (sujet `contexte`).
+après avoir branché un serveur, c'est peut-être de là que cela vient. Tu peux
+lire la consigne elle-même dans « Voir les outils exposés » : elle s'affiche en
+tête de la section du serveur qui la publie, avant ses outils. Ce qu'elle coûte
+en contexte se lit, lui, dans le compteur de contexte (sujet `contexte`).
 
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
@@ -713,6 +715,11 @@ Quelques repères pour te déplacer dans MIAOU :
   de la zone de saisie : il ramène au dernier message. L'utiliser (ou redescendre
   toi-même jusqu'en bas) relance le suivi jusqu'au bout pour cette réponse-là ;
   le tour suivant repart du comportement normal.
+- **Liens** : un lien web cité dans un message — par toi ou par le modèle —
+  s'ouvre dans un **nouvel onglet**, pour que la conversation reste en place
+  derrière. Seuls les liens vers une de tes conversations (sujet `historique`)
+  s'ouvrent dans l'onglet courant : ils changent de conversation, ils ne quittent
+  pas MIAOU.
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.
@@ -763,6 +770,13 @@ et ton choix est conservé d'une session à l'autre.
   animations visuelles de l'interface — utile en cas de gêne au mouvement ou de
   préférence pour un affichage instantané. « Suivre le système » s'aligne sur la
   préférence de réduction d'animations de ton OS.
+- **Élargir les grands tableaux** : un tableau qui a plus de colonnes que la
+  largeur de lecture n'en accepte déborde de la colonne, centré, plutôt que de
+  comprimer ses colonnes jusqu'à l'illisible ; s'il dépasse même ainsi, il
+  défile sur place. Le réglage se décoche dans les Paramètres pour le garder
+  strictement dans la colonne. Il vaut aussi pour les pages HTML exportées, où
+  l'état choisi au moment de l'export est conservé dans le fichier. Un tableau
+  placé dans un de tes propres messages, lui, reste toujours dans sa bulle.
 - **Astuce à l'accueil** : sous l'écran d'accueil d'une conversation vierge,
   un encart présente une capacité de MIAOU, tirée au hasard de cette aide,
   sous une introduction accordée à l'écran d'accueil affiché. Il se place au

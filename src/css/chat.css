@@ -512,6 +512,38 @@
   word-break: break-word;
   text-align: left;
 }
+/* Une bulle utilisateur est une BOÎTE, exactement comme la boîte de compte
+   rendu d'agent plus bas : un tableau qui en sort passerait par-dessus son fond
+   et sa bordure, des deux côtés. On y remet donc le débordement offert à zéro,
+   et les deux étages retombent d'eux-mêmes sur le comportement d'avant :
+   tableau dans la largeur disponible, défilement interne au-delà (le porteur
+   garde son overflow-x). Inconditionnel, sans rapport avec le réglage
+   « élargir les grands tableaux » : ce réglage arbitre si un tableau PEUT
+   sortir de la colonne de lecture, pas s'il a le droit de sortir d'un cadre
+   dessiné.
+
+   Même construction que `.agent-result-box .table-bleed` : la surcharge est
+   portée par le PORTEUR (une déclaration sur l'élément gagne toujours sur une
+   valeur héritée d'un ancêtre — la poser sur `.bubble` ne changerait rien), et
+   `min-width: 0` doit être posé sur toute la chaîne flex, faute de quoi chaque
+   maillon s'élargit pour accueillir le tableau au lieu de le laisser défiler.
+   Ici la chaîne s'arrête à `.bubble` : le `max-width: 80%` de la bulle borne
+   déjà le reste. */
+.msg.user .bubble .table-bleed {
+  --table-bleed: 0px;
+  max-width: 100%;
+  min-width: 0;
+}
+.msg.user .bubble,
+.msg.user .bubble .body { min-width: 0; }
+/* Le tableau prend sa largeur naturelle et c'est le porteur qui défile, même
+   arbitrage que dans la boîte d'agent : mieux vaut faire glisser un tableau
+   lisible que tout écraser pour le faire rentrer dans une bulle étroite. */
+.msg.user .bubble .table-bleed table {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+}
 .msg.user .bubble .body { font-size: 13.5px; line-height: 1.6; }
 .msg.user .bubble .body p { margin-bottom: 7px; }
 /* dernier paragraphe : pas de marge résiduelle, sinon le bas de la bulle est
@@ -1109,6 +1141,18 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
   /* Le scroll est porté ICI et non par le tableau : cf. l'étage 2 ci-dessous,
      où `display: block` sur un `<table>` casse la répartition des colonnes. */
   overflow-x: auto;
+}
+/* Réglage « Élargir les grands tableaux » (Apparence, défaut activé) : décoché,
+   un tableau reste dans la colonne de lecture et défile en interne au-delà.
+   Le gate est posé sur --table-bleed du PORTEUR et non sur la présence de ce
+   dernier : wrapWideTables enveloppe toujours, le CSS décide seul, donc rien à
+   ré-exécuter au basculement du réglage ni à re-rendre le fil (même forme que
+   les deux exceptions de boîte ci-dessus, et que data-palette/data-motion pour
+   la diffusion de l'attribut). Sélecteur double par nécessité : une valeur
+   héritée de <html> ne battrait pas la déclaration que .table-bleed porte sur
+   lui-même. */
+html[data-wide-tables="off"] .table-bleed {
+  --table-bleed: 0px;
 }
 /* --table-bleed dérive de --col dans un calc() et n'est PAS interpolable
    (custom property non typée) : sa valeur calculée saute d'un coup au changement

@@ -551,8 +551,11 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
 52. **Fichier texte joint → injection directe** : joindre un `.txt`/`.md`/`.py`
     (liste `ATTACHMENT_TEXT_EXTENSIONS`), envoyer. Dans Network, le message user
     de ce tour contient le texte tapé **et** un bloc fencé avec en-tête
-    `[attachment att-N: file "nom.ext"]` suivi du contenu du fichier entre
-    ` ``` `. Le modèle doit pouvoir répondre sur le contenu du fichier. Tour
+    `[attachment att-N: file "nom.ext" — full content inlined below]` suivi du
+    contenu du fichier entre ` ``` `. La note finale est ce qui distingue ce
+    descripteur de son homologue BINAIRE (« binary content, not inlined »), dont
+    il partage la forme d'ouverture. Le modèle doit pouvoir répondre sur le
+    contenu du fichier. Tour
     suivant : le même bloc fencé reste identique dans le payload (PAS de
     descripteur pour un attachment texte, contrairement à l'image) —
     comparer les deux payloads octet pour octet sur ce message.

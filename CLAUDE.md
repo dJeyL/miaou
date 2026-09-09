@@ -487,7 +487,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/rendering.md`** — rendu enrichi des blocs de code : diagrammes
   Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité) et
   hauteur bornée des blocs du fil (borne sur le `<code>` pour épingler
-  `.code-head`, export non borné).
+  `.code-head`, export non borné) ; porte aussi le débordement centré des grands
+  tableaux — porteur `.table-bleed`/`wrapWideTables` et scission des deux étages,
+  levier unique `--table-bleed` et ses trois consommateurs (réglage « Élargir les
+  grands tableaux » via `data-wide-tables`, bulles utilisateur et comptes rendus
+  d'agent inconditionnels), figeage du réglage à l'export par `buildExportHtml`.
 - **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
   déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée,
   item à deux étages (`.cmdk-item-row` toujours posée, `.cmdk-item-excerpt` pour

@@ -152,6 +152,7 @@ const DEFAULT_SETTINGS = {
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (lot Cbis)
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (zéro-JS révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
+  wideTables: true, // laisser un grand tableau déborder (centré) de la colonne de lecture ; vaut aussi pour les exports HTML
   earlyTitle: BUILD_EARLY_TITLE, // titrer dès l'envoi, sans attendre la fin de l'échange (lot AA)
   // Retitrer en fin d'échange (niveau 3) même quand le titrage précoce a
   // abouti. Défaut EN DUR à true, sans clef config.json : `early_title` en a

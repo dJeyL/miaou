@@ -383,6 +383,34 @@ nothing about whether the cascade followed, which is the half that actually
 breaks (a more specific rule elsewhere silently wins). Assert both when the
 class is itself the contract, but never the class alone.
 
+A fifth way, and this one goes red on correct code rather than green on broken
+code — which makes it worse, because a red is believed: **`getBoundingClientRect()`
+returns the LAYOUT box, not what is painted.** An element clipped by an
+ancestor's `overflow` still reports its full width. Measuring the clipped
+element to prove containment therefore accuses a correct render.
+
+Paid on 2026-09-09 verifying that a wide table stays inside a user bubble: the
+`<table>` reported 600px inside a 548px carrier that clips and scrolls it, so
+three assertions went red while a screenshot showed the table properly contained,
+column H cut off at the bubble's edge. The reflex on a red is to go re-read the
+CSS — the wrong half of the problem entirely.
+
+**Measure the thing that establishes the containment**, i.e. the element
+carrying `overflow`, never the one being clipped:
+
+```js
+const holder = table.parentElement;              // porte overflow-x: auto
+const inside = holder.getBoundingClientRect();   // ce que la boîte contient vraiment
+const scrolls = holder.scrollWidth > holder.clientWidth + 1;   // et le contenu déborde bien
+```
+
+Assert both halves: the carrier is contained, *and* it scrolls. Containment
+alone passes on a table crushed to illegible columns, which is precisely the
+outcome the bleed exists to avoid. And when several rules can produce the same
+geometry (here a settings gate and two unconditional box exceptions all zeroing
+`--table-bleed`), read the resolved custom property too — it says *which one*
+acted, where geometry alone leaves the question open.
+
 So: **challenge each green by injecting the regression it is supposed to
 catch** (edit the source, rebuild, re-run, confirm it goes red, revert). This
 is how both blind spots above were found. It complements — and does not replace

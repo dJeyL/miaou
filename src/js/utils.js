@@ -528,6 +528,36 @@ function buildMcpInstructionsBlock(servers) {
     blocks.join('\n\n') + '\n</miaou_mcp_instructions>\n\n';
 }
 
+// Index « préfixe d'outil → consigne » des serveurs MCP branchés, pour
+// l'AFFICHAGE (drawer des outils). Même source et même découpage que le bloc
+// injecté au modèle juste au-dessus : les deux passent par
+// `mcpInstructionSectionsForServer`, jamais par un re-split local. C'est ce qui
+// garantit que la consigne lue à l'écran est mot pour mot celle que le modèle
+// reçoit — deux découpages parallèles divergeraient en silence, et l'écran
+// deviendrait un témoin trompeur de ce qui est réellement injecté.
+//
+// La clef est le PRÉFIXE (`<slug>` ou `<slug>__<serveur>`), c'est-à-dire
+// exactement le `namespace` que `groupByNamespace` (tools.js) rend au drawer :
+// l'appelant fait un lookup direct, sans reconstruire le nom.
+//
+// `servers` : `[{ slug, instructions }]` (cf. `mcpInstructionSources`, mcp.js).
+// Rend un objet nu, vide quand personne ne publie rien.
+// Pure, testable en QuickJS.
+function mcpInstructionsByPrefix(servers) {
+  const list = Array.isArray(servers) ? servers : [];
+  const out = {};
+  for (const s of list) {
+    if (!s) continue;
+    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions)) {
+      // Premier gagnant : deux cartes ne peuvent pas porter le même slug (le
+      // préfixe est unique par construction), donc la collision n'existe pas —
+      // mais si elle survenait, écraser silencieusement serait pire qu'ignorer.
+      if (!Object.prototype.hasOwnProperty.call(out, sec.prefix)) out[sec.prefix] = sec.body;
+    }
+  }
+  return out;
+}
+
 // Prédicat UNIQUE « cet ack porte-t-il un refus d'autorisation présentable ? »
 // (campagne AB). Même patron que `ackDownloadTarget` juste au-dessus : renvoie
 // une CIBLE typée ou `null`, jamais un booléen — l'appelant a besoin de l'URL

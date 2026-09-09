@@ -146,6 +146,21 @@ describe('buildExportHtml', function() {
     var r = buildExportHtml(Object.assign({}, base, { theme: 'light' }));
     expect(r.indexOf('<input type="checkbox" id="theme-switch" checked>') >= 0).toBeTruthy();
   });
+  // Le réglage « Élargir les grands tableaux » est figé dans le fichier exporté :
+  // le body porte l'attribut que lit `body[data-wide-tables="off"] .table-bleed`
+  // (EXPORT_CSS). Défaut (absent/true) → aucun attribut, cas le plus courant.
+  it('wideTables false : le body porte data-wide-tables="off"', function() {
+    var r = buildExportHtml(Object.assign({}, base, { wideTables: false }));
+    expect(r.indexOf('<body data-wide-tables="off">') >= 0).toBeTruthy();
+  });
+  it('wideTables true : body nu', function() {
+    var r = buildExportHtml(Object.assign({}, base, { wideTables: true }));
+    expect(r.indexOf('<body>') >= 0).toBeTruthy();
+  });
+  it('wideTables absent : body nu (défaut = élargi)', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<body>') >= 0).toBeTruthy();
+  });
   it('la bascule de thème est du markup STATIQUE (présente sans scriptTag)', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<script') >= 0).toBeFalsy();

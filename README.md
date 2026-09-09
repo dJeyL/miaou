@@ -48,7 +48,8 @@ Figtree/Fira Code).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
   alimenté en direct.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et
-  « télécharger ».
+  « télécharger ». Un grand tableau déborde de la colonne de lecture, centré,
+  plutôt que de comprimer ses colonnes — réglable, et respecté à l'export HTML.
 - **Diagrammes Mermaid** rendus en place, avec bascule diagramme ↔ source,
   lightbox pan/zoom et export SVG/PNG — cf. [docs/rendering.md](docs/rendering.md).
 - **Aperçu des blocs HTML et SVG** dans une iframe isolée, sur clic explicite —

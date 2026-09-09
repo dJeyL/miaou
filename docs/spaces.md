@@ -213,7 +213,9 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
 - **Ingestion** — trois chemins :
   1. **Upload direct** depuis l'onglet sidebar « Fichiers » (`ingestLibraryFile`,
      main.js) — mêmes caps que les pièces jointes (image 1536px q0.85, texte
-     ≤200 kB inline, binaire tel quel). Cible `activeSpaceId` (pas
+     sous `ATTACHMENT_TEXT_MAX_BYTES` inline, binaire tel quel — le seuil est
+     lu depuis la constante, jamais recopié : c'est une borne de contexte, pas
+     de stockage, et il a déjà bougé). Cible `activeSpaceId` (pas
      `_spaceScreenId` — indépendant du drawer, cf. section UI ci-dessus).
      **Deux gestes, un seul chemin** : le bouton « Ajouter un fichier »
      (`<input type=file>` masqué) et le **drag&drop sur le panneau**

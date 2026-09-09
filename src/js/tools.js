@@ -480,8 +480,11 @@ const RESOURCE_DOCTRINE =
   "exploitable sans le traîner à chaque tour ; miaou__resource__append quand tu " +
   "as déjà une ressource res_… et du contenu à y ajouter, en plusieurs appels ou " +
   "plusieurs tours — tu n'écris que le morceau nouveau, jamais ce qui est déjà " +
-  "stocké. N'utilise aucun des trois pour un texte court que tu peux simplement " +
-  "écrire dans ta réponse.";
+  "stocké. Dans les trois cas la concaténation est LITTÉRALE : aucun séparateur " +
+  "n'est ajouté entre ce qui est stocké et ce que tu écris. Si tu construis un " +
+  "contenu ligne à ligne (CSV, rapport, log), termine toi-même chaque morceau par " +
+  "un saut de ligne, en-tête compris. N'utilise aucun des trois pour un texte court " +
+  "que tu peux simplement écrire dans ta réponse.";
 
 // Doctrine de déclenchement des agents (lot X-1, question structurante 5).
 // Split QUAND / COMMENT (project_doctrine_extraction_quand_comment_split) : le
@@ -1320,7 +1323,10 @@ const TOOLS = [
       "dans ta réponse. Le handle renvoyé se passe ensuite à miaou__js__eval(handle, code) " +
       "pour compter/filtrer/agréger/extraire sans repayer ce texte en tokens à chaque tour. " +
       "N'accepte PAS de référence à un résultat d'outil passé — pour convertir un tool " +
-      "result déjà dans l'historique, utilise miaou__resource__from_result.",
+      "result déjà dans l'historique, utilise miaou__resource__from_result. Le contenu " +
+      "est stocké tel quel : si tu poses une amorce destinée à être prolongée (en-tête " +
+      "de CSV, préambule de rapport), termine-la toi-même par un saut de ligne — rien " +
+      "n'en ajoutera un avant le premier ajout.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1425,13 +1431,16 @@ const TOOLS = [
       "retransmettre ce qu'elle contient déjà. Sers-t'en pour construire un gros " +
       "contenu (CSV, rapport, agrégat) en plusieurs appels ou plusieurs tours : tu " +
       "n'écris à chaque fois que le morceau nouveau. Le handle reste le même et " +
-      "s'utilise ensuite avec miaou__js__eval. Ne fonctionne que sur une ressource " +
+      "s'utilise ensuite avec miaou__js__eval. La concaténation est LITTÉRALE : ton texte " +
+      "est collé au dernier caractère déjà stocké, aucun séparateur n'est ajouté. Pour " +
+      "construire un contenu ligne à ligne, termine chaque `content` par un saut de " +
+      "ligne. Ne fonctionne que sur une ressource " +
       "res_… (pas sur une pièce jointe att-N ni un fichier de bibliothèque file-<id>).",
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Handle res_<id> de la ressource existante à prolonger' },
-        content: { type: 'string', description: 'Texte à ajouter à la fin du contenu actuel (le morceau NOUVEAU seulement)' },
+        content: { type: 'string', description: 'Texte à ajouter à la fin du contenu actuel (le morceau NOUVEAU seulement) ; collé littéralement au dernier caractère stocké, donc termine-le par un saut de ligne si tu écris des lignes' },
       },
       required: ['id', 'content'],
     },
@@ -1709,7 +1718,8 @@ const TOOLS = [
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
       "grosse → refus explicite (réécris pour synthétiser) ; pour PRODUIRE un gros " +
       "contenu sans buter sur cette limite, passe output_handle et écris au fil de " +
-      "l'eau avec emit(). N'inclus jamais le " +
+      "l'eau avec emit() — qui concatène LITTÉRALEMENT, sans ajouter de saut de ligne : " +
+      "termine toi-même chaque chunk par \\n si tu produis des lignes. N'inclus jamais le " +
       "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
       "de la skill 'js-eval' avant utilisation dans une conversation.",
     inputSchema: {

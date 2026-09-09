@@ -489,6 +489,19 @@ if (window.requestAnimationFrame) {
       <div class="field">
         <div class="check-row">
           <div class="label-col">
+            <label>Astuce à l'accueil</label>
+            <span class="hint">Affiche une astuce sous l'écran d'accueil, tirée de l'aide. Chaque astuce demande un appel au modèle.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-did-you-know">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
             <label>Coloration syntaxique</label>
             <span class="hint">Colore les blocs de code via Prism.</span>
           </div>
@@ -502,11 +515,11 @@ if (window.requestAnimationFrame) {
       <div class="field">
         <div class="check-row">
           <div class="label-col">
-            <label>Export HTML interactif</label>
-            <span class="hint">Ajoute à l'export un script : boutons copier/télécharger sur les blocs de code, et mémorisation du thème choisi. Décoché, l'export reste sans JavaScript — la bascule de thème, elle, fonctionne dans les deux cas.</span>
+            <label>Élargir les grands tableaux</label>
+            <span class="hint">Un tableau plus large que la colonne de lecture déborde, centré, au lieu de comprimer ses colonnes. Vaut aussi dans les exports HTML.</span>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="set-export-interactive" checked>
+            <input type="checkbox" id="set-wide-tables" checked onchange="onToggleWideTables()">
             <span class="track"></span>
             <span class="thumb"></span>
           </label>
@@ -515,11 +528,11 @@ if (window.requestAnimationFrame) {
       <div class="field">
         <div class="check-row">
           <div class="label-col">
-            <label>Astuce à l'accueil</label>
-            <span class="hint">Affiche une astuce sous l'écran d'accueil, tirée de l'aide. Chaque astuce demande un appel au modèle.</span>
+            <label>Export HTML interactif</label>
+            <span class="hint">Ajoute à l'export un script : boutons copier/télécharger sur les blocs de code, et mémorisation du thème choisi. Décoché, l'export reste sans JavaScript — la bascule de thème, elle, fonctionne dans les deux cas.</span>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="set-did-you-know">
+            <input type="checkbox" id="set-export-interactive" checked>
             <span class="track"></span>
             <span class="thumb"></span>
           </label>

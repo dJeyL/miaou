@@ -1737,6 +1737,14 @@ function applySyncedSettings(keys) {
   if (set.has('motion')) { applyMotion(s.motion || 'system'); setMotionUI(s.motion || 'system'); }
   if (set.has('colWidth')) applyColWidth(s.colWidth);   // applyColWidth resynchronise déjà les boutons
   if (set.has('highlight')) highlightEnabled = s.highlight !== false;
+  // Auto-persisté (onToggleWideTables), donc à ré-appliquer ET à refléter dans
+  // la case : le drawer peut être ouvert chez le pair, comme pour les segments
+  // ci-dessus. Aucun re-rendu du fil, le CSS suffit (cf. applyWideTables).
+  if (set.has('wideTables')) {
+    applyWideTables(s.wideTables !== false);
+    const cbWide = $('set-wide-tables');
+    if (cbWide) cbWide.checked = s.wideTables !== false;
+  }
   // Autres clés (systemPrompt, contextWindow, sélecteurs…) : effet au prochain
   // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
   // recalcule au prochain syncContextCounter.
@@ -2450,7 +2458,14 @@ async function applyImportedData(payload) {
 // son num_ctx), lues ici en corps de fonction seulement.
 const ATTACHMENT_IMAGE_MAX_EDGE = 1536;                // plus grand côté après downscale
 const ATTACHMENT_IMAGE_JPEG_QUALITY = 0.85;            // ré-encodage JPEG
-const ATTACHMENT_TEXT_MAX_BYTES = 200 * 1024;          // 200 kB, au-delà → binary
+// 50 kB, au-delà → binary. Ce cap n'est PAS une borne de stockage (le blob est
+// stocké dans tous les cas, seule sa classe change) : c'est une borne de
+// CONTEXTE. Le contenu inline est réinjecté à chaque tour, et ~4 octets/token en
+// UTF-8 font de 200 kB (valeur d'origine) quelque 50k tokens payés à chaque
+// requête — abaissé à 50 kB le 2026-09-09, soit ~12k tokens. Au-delà, le fichier
+// reste adressable par son handle (recall_attachment, js__eval) : on échange une
+// lecture d'office contre une lecture à la demande, pas contre un refus.
+const ATTACHMENT_TEXT_MAX_BYTES = 50 * 1024;
 
 // Cap de taille selon le kind classifié (pure) : image → borne pré-resize,
 // texte/binary → borne blob js__eval. Retourne { bytes, label } (label pour le
@@ -4510,6 +4525,8 @@ async function init() {
   $('set-system').value = s.systemPrompt || '';
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
+  $('set-wide-tables').checked = s.wideTables !== false;
+  applyWideTables(s.wideTables !== false);
   $('set-modelselector').checked = !!s.showModelSelector;
   $('set-reasoning-effort').value = s.reasoningEffort || '';
   syncSettingsReasoningLabel();

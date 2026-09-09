@@ -311,6 +311,62 @@ sans composer à préserver — une boîte à scroll interne y couperait le code
 lieu de le rendre atteignable. `EXPORT_CSS` porte donc sa propre copie de la
 règle partagée, sans `max-height` (feuille figée, cf. `docs/exports.md`).
 
+## Débordement des grands tableaux (« planche »)
+
+Un tableau de synthèse a souvent plus de colonnes que la largeur de lecture n'en
+accepte, et le comprimer jusqu'à l'illisible sert moins que de le laisser sortir
+de la colonne. Il prend donc la largeur dont il a besoin et se recentre par
+**débordement symétrique**, jusqu'à une gouttière de chaque côté ; au-delà il se
+fige et défile sur place.
+
+**Deux étages, et la scission est le cœur du mécanisme.** Le PORTEUR
+(`.table-bleed`, posé par `wrapWideTables`/`ui.js`) élargit la boîte par des
+marges négatives égales et porte l'`overflow-x` ; le TABLEAU se centre dedans et
+reste en `display: table`. Le scroll ne peut PAS être porté par le `<table>` :
+il exigerait `display: block`, qui détruit le contexte de formatage tabulaire
+(colonnes dimensionnées sans tenir compte de leur contenu, texte coupé sans
+rien à défiler pour le rattraper). Le raisonnement fin, les valeurs et les
+symptômes payés sont dans les commentaires de `chat.css` — ils sont la
+référence, cette section en donne la carte.
+
+**Aucune mesure au rendu, aucun seuil JS.** `wrapWideTables` enveloppe toujours,
+et c'est le CSS seul qui décide si le débordement offert est consommé
+(`width: fit-content` sur le tableau). Rien n'est donc à ré-exécuter au
+redimensionnement de la fenêtre, au changement de cran de colonne, ni au
+basculement du réglage ci-dessous.
+
+**Le levier unique est `--table-bleed`**, la custom property que le porteur
+déclare sur lui-même. Tout ce qui veut annuler le débordement le remet à `0px`
+sur le porteur — et sur le porteur, jamais sur un ancêtre : une valeur héritée
+ne bat pas une déclaration portée par l'élément. Trois consommateurs :
+
+- **Le réglage « Élargir les grands tableaux »** (Apparence, défaut activé) :
+  `applyWideTables` (ui.js) pose `data-wide-tables="off"` sur `<html>` — même
+  forme qu'`applyPalette`/`applyMotion` — et `html[data-wide-tables="off"]
+  .table-bleed` neutralise. Auto-persisté par `onToggleWideTables`
+  (modèle `selectTheme`), donc **exclu de `settingsFormDirty`** : le basculer
+  n'arme pas « Enregistrer ». Ré-appliqué par le récepteur de synchro
+  multi-onglets, qui reflète aussi la case (le drawer peut être ouvert chez le
+  pair).
+- **Les bulles utilisateur** (`.msg.user .bubble .table-bleed`) et **les comptes
+  rendus d'agent** (`.agent-result-box .table-bleed`) : **inconditionnels**, sans
+  rapport avec le réglage. Une bulle et une boîte de rapport sont des cadres
+  DESSINÉS (fond, bordure) ; un tableau qui en sort passe par-dessus, ce qui n'a
+  pas de sens. Le réglage arbitre si un tableau peut sortir de la *colonne de
+  lecture*, pas s'il a le droit de sortir d'un cadre. Les deux exigent
+  `min-width: 0` sur toute la chaîne flex, faute de quoi chaque maillon
+  s'élargit pour accueillir le tableau au lieu de le laisser défiler.
+
+**L'export HTML porte les mêmes règles, par PORTAGE et non par propagation** :
+`EXPORT_CSS` est une feuille figée (piège 22), les deux jeux évoluent séparément
+et une correction ici se reporte là-bas à la main. Deux différences assumées :
+les bornes se calculent sur le viewport et `.export-body` (pas de sidebar, pas
+de `--col`, pas de container query), et le réglage y est **figé au moment de
+l'export** — `buildExportHtml` reçoit `wideTables` et pose l'attribut sur
+`<body>`, faute de pouvoir toucher `<html>` (l'absence de `data-theme` y est un
+contrat, cf. `docs/exports.md`). Un fichier exporté n'a pas de réglages : il
+garde l'état du moment.
+
 ## Tests
 
 - QuickJS (`tests/test-utils.js`) : `isMermaidLang`, `mermaidThemeFor`,
@@ -326,6 +382,16 @@ règle partagée, sans `max-height` (feuille figée, cf. `docs/exports.md`).
   `.code-head` reste visible — c'est le point que porterait à faux une borne
   posée sur le `<pre>`, et qu'une assertion sur la seule hauteur ne verrait pas.
   L'inspecteur garde sa propre borne (300px), vérifiée du même coup.
+- Playwright : `.claude/skills/run-miaou/verify-wide-tables.mjs` couvre le
+  débordement des tableaux — gate du réglage à l'écran, borne inconditionnelle
+  des bulles utilisateur, et les deux dans l'export HTML **réellement ouvert**
+  (seule façon de vérifier que la feuille figée porte bien le portage). Il
+  mesure la géométrie du **PORTEUR**, jamais celle de la `<table>` : une table
+  qui défile dans son porteur rend une boîte de mise en page plus large que ce
+  qui est peint, si bien qu'une assertion sur la table rougit alors que le rendu
+  est correct (payé en écrivant le script). Il lit aussi la valeur résolue de
+  `--table-bleed`, qui dit *lequel* des consommateurs a agi là où une géométrie
+  seule laisse la question ouverte.
 - Fixtures : `.claude/skills/run-miaou/seed-fixtures.js` seed-23 (bloc mermaid valide avec
   `filename=flux-oauth.mmd` — exercice du nommage d'export E3 — + bloc
   invalide + bloc bash de contrôle) et seed-24 (page HTML avec script sondant
