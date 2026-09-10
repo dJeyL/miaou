@@ -2944,6 +2944,8 @@ body.conv-readonly .conv-retitle-btn { pointer-events: none; }
 .tool-ns-instructions-body ol { margin: 5px 0 8px; padding-left: 18px; }
 .tool-ns-instructions-body li { margin-bottom: 2px; }
 
+.tool-ns-instructions-body strong { color: inherit; }
+
 .tool-ns-instructions-body code:not([class*="language-"]) {
   font-size: 0.92em;
   padding: 0 4px;
@@ -4545,7 +4547,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-09 18:38 UTC */
+/* miaou — built: 2026-09-10 21:48 UTC */
 
 /* ── utils.js ── */
 
@@ -7873,7 +7875,13 @@ function routeMessage(env, ctx) {
     case 'settings-updated':
       return { action: 'apply-settings', keys: Array.isArray(p.keys) ? p.keys : [] };
     case 'resources-updated':
-      return { action: 'invalidate-resources', ids: Array.isArray(p.ids) ? p.ids : [], convId: p.convId != null ? p.convId : null };
+
+      return {
+        action: 'invalidate-resources',
+        ids: Array.isArray(p.ids) ? p.ids : [],
+        convId: p.convId != null ? p.convId : null,
+        spaceId: p.spaceId != null ? p.spaceId : null,
+      };
     case 'skills-updated':
       return { action: 'reload-skills' };
     case 'full-reload':
@@ -7958,7 +7966,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1788979134}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789076899}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -10299,7 +10307,12 @@ function putResource(record) {
       req.onsuccess = function() { resolve(record.id); };
 
       tx.oncomplete = function() {
-        syncPost('resources-updated', { ids: [record.id], convId: record.conversationId || null });
+
+        syncPost('resources-updated', {
+          ids: [record.id],
+          convId: record.conversationId || null,
+          spaceId: record.spaceId || null,
+        });
       };
       tx.onerror = function(e) { reject(e.target.error); };
     });
@@ -10433,6 +10446,8 @@ async function storeLibraryFile(spaceId, mime, name, data, cls, source, descript
     await putResource(record);
     _cacheRecord(record);
     requestPersistence();
+
+    if (typeof refreshVisibleSpaceLibrary === 'function') refreshVisibleSpaceLibrary(spaceId);
     return record;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] storeLibraryFile:', e && e.message);
@@ -21079,6 +21094,15 @@ async function renderSpaceFilesList(spaceId) {
   }
 }
 
+async function refreshVisibleSpaceLibrary(spaceId) {
+  if (!spaceId || spaceId !== activeSpaceId) return;
+  const panel = $('space-files-panel');
+  if (!panel || panel.hidden) return;
+  await renderSpaceFilesList(spaceId);
+
+  panel.scrollTop = panel.scrollHeight;
+}
+
 function setFileDescriptionStatus(fileId, status, description) {
   const line = $('file-description-' + fileId);
   const btns = $('file-btns-' + fileId);
@@ -21142,7 +21166,8 @@ async function ingestLibraryFiles(fileList) {
     const rec = await ingestLibraryFile(spaceId, file);
     if (rec) stored.push(rec);
   }
-  await renderSpaceFilesList(spaceId);
+
+  await refreshVisibleSpaceLibrary(spaceId);
   if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
 
   for (const rec of stored) {
@@ -22859,6 +22884,8 @@ function applySyncDecision(d) {
       if (!sending && d.convId != null && d.convId === currentConvId) {
         loadConversationResources(currentConvId).then(function() { rerenderCurrentThread(); });
       }
+
+      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId);
       return;
 
     case 'reload-skills':

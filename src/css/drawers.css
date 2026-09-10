@@ -787,6 +787,10 @@
 .tool-ns-instructions-body ul,
 .tool-ns-instructions-body ol { margin: 5px 0 8px; padding-left: 18px; }
 .tool-ns-instructions-body li { margin-bottom: 2px; }
+/* `.body strong` remonte a --text pour ressortir sur la prose du fil ; dans ce
+   cadre, deja plus sombre que son entourage, ce contraste-la vire au blanc pur.
+   Le gras y garde la couleur du texte courant, et ne porte plus que sa graisse. */
+.tool-ns-instructions-body strong { color: inherit; }
 /* Le code inline de `.body` est calibre en ABSOLU (12.5px, chat.css) pour la
    taille de texte du fil ; ici le porteur est a 12px, donc il ressortait plus
    gros que la prose qui l'entoure. Reexprime en relatif pour qu'il suive

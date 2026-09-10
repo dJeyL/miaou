@@ -94,7 +94,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `conv-deleted` | `{ convId, spaceId }` | affichée → `conv-gone` ; sinon → `render-list` |
 | `space-changed` | `{ spaceId }` | `space-list` |
 | `settings-updated` | `{ keys }` | `apply-settings` |
-| `resources-updated` | `{ ids, convId? }` | `invalidate-resources` |
+| `resources-updated` | `{ ids, convId?, spaceId? }` | `invalidate-resources` (`spaceId` : records de bibliothèque d'espace seulement) |
 | `skills-updated` | `{}` | `reload-skills` |
 | `full-reload` | `{}` | `full-reload` (import/reset) |
 | `conv-opened` | `{ convId, tabId }` | affichée → `soft-lock` ; sinon `ignore` |
@@ -117,7 +117,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `persistConversationField` (storage.js) | IDB `tx.oncomplete` | `conv-updated` | `{ convId, spaceId }` — écriture de métadonnée (pin, titre, modèle, spaceId…) |
 | `moveSelectedConversations` (main.js) | IDB `tx.oncomplete` | `conv-updated` × N | un par id déplacé, `{ convId, spaceId: cible }` |
 | `saveSpaces` (storage.js) | localStorage | `space-changed` | `{}` (liste rechargée en entier) |
-| `putResource` (resources.js) | IndexedDB | `resources-updated` | `{ ids: [id], convId }` (sur `tx.oncomplete`) |
+| `putResource` (resources.js) | IndexedDB | `resources-updated` | `{ ids: [id], convId, spaceId }` (sur `tx.oncomplete`) — `spaceId` non nul pour un record `kind:'library'`, seul cas où le pair a de quoi repeindre la bibliothèque |
 | `deleteResource` (resources.js) | IndexedDB | `resources-updated` | `{ ids: [id], convId: null }` (sur `tx.oncomplete`) |
 | `deleteResourcesByConversation` (resources.js) | IndexedDB | `resources-updated` | `{ ids: [...], convId }` (sur `tx.oncomplete`, si non vide) |
 | `putSkill` (skills.js) | IndexedDB | `skills-updated` | `{}` (sur `tx.oncomplete`) |
@@ -182,7 +182,7 @@ inoffensif, les pairs rechargent de toute façon.
 | `conv-gone` | conv affichée supprimée ailleurs → `resetToEmpty()` (émetteur a déjà persisté ; pas de re-suppression). Différé si `sending`. |
 | `space-list` | `syncSpaceUI()` + `renderConvList()`. Le Space actif local ne change pas. |
 | `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés, **sans toucher au draft ni au thread**. Sur `active-api-server` (bascule de serveur) : lève l'override de modèle de la conv affichée (`currentConvModel=''`, **en mémoire seul** — l'émetteur a déjà persisté/broadcasté via son `setConvModel('')`) et `prefetchModels()` (refetch cache modèles du nouveau serveur), sinon `activeModel()` resterait collé sur l'ancien modèle (piège 15). |
-| `invalidate-resources` | `invalidateResourceCache(ids)` ; si conv affichée concernée et `!sending` → `loadConversationResources` + `renderThread`. |
+| `invalidate-resources` | `invalidateResourceCache(ids)` ; si conv affichée concernée et `!sending` → `loadConversationResources` + `renderThread`. Si `spaceId` non nul → `refreshVisibleSpaceLibrary(spaceId)` : re-render de la bibliothèque + scroll à l'arrivant, sous les gardes du helper (Space actif, onglet « Fichiers » visible). Une **suppression** diffusée ne porte pas de `spaceId` (`deleteResource` n'a que l'id) : elle ne repeint donc rien chez le pair, limite assumée — l'onglet qui supprime re-rend le sien. |
 | `reload-skills` | `loadSkillsCache()` ; `renderSkills()` si drawer ouvert (`isSkillsDrawerOpen`), sinon `syncSkillHintUI`. |
 | `full-reload` | `location.reload()`. |
 | `soft-lock` | pair affiche la même conv → l'ajouter à `_peersOnConv`, afficher le bandeau, **re-signaler** si pair nouveau (handshake borné). Soft-lock. |

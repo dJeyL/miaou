@@ -9615,6 +9615,30 @@ async function renderSpaceFilesList(spaceId) {
   }
 }
 
+// Rafraîchit la bibliothèque AFFICHÉE après un ajout, quelle que soit la voie
+// (promotion modèle `files__promote`, promotion utilisateur d'une pièce jointe,
+// ou ajout diffusé par un autre onglet). Deux gardes, non redondantes : le
+// panneau ne montre JAMAIS que `activeSpaceId` — une génération d'agent ou
+// d'une conversation d'un autre Space promeut dans SON Space (piège 18), et
+// rafraîchir alors afficherait la bibliothèque de l'espace actif enrichie d'un
+// fichier qui n'y est pas —, et `hidden` dit si l'onglet « Fichiers » est celui
+// qu'on regarde : sinon `selectSpaceTab` re-rendra à l'ouverture, il n'y a rien
+// à faire ici.
+//
+// Le scroll en bas est la CONSÉQUENCE du tri de `renderSpaceFilesList`
+// (createdAt→id croissant, aligné sur le manifeste de contexte) : le nouvel
+// arrivant y est en fin de liste. Si ce tri s'inverse un jour, ce scroll devient
+// faux — ce n'est pas une préférence d'affichage, c'est « montrer l'arrivant ».
+async function refreshVisibleSpaceLibrary(spaceId) {
+  if (!spaceId || spaceId !== activeSpaceId) return;
+  const panel = $('space-files-panel');
+  if (!panel || panel.hidden) return;
+  await renderSpaceFilesList(spaceId);
+  // Le scrolleur est le panneau entier (`.space-side-panel`, `overflow-y: auto`),
+  // pas `.mem-list` qui n'a pas d'overflow propre.
+  panel.scrollTop = panel.scrollHeight;
+}
+
 // Statut de description par carte : « description en cours… » pendant le
 // calcul, puis contenu (done) ou message d'échec discret (failed) — précédent
 // setMemItemLoading, mais ciblé sur les deux zones (excerpt + bouton) plutôt
@@ -9699,7 +9723,12 @@ async function ingestLibraryFiles(fileList) {
     const rec = await ingestLibraryFile(spaceId, file);
     if (rec) stored.push(rec);
   }
-  await renderSpaceFilesList(spaceId);
+  // Re-render AWAITÉ ici, en plus du rafraîchissement fire-and-forget déclenché
+  // par storeLibraryFile : les callbacks de statut ci-dessous ciblent des ids DOM
+  // (`file-description-<id>`) qui doivent exister au moment où on les branche.
+  // Passer par le helper plutôt que par renderSpaceFilesList nu évite en outre
+  // que les deux rendus se croisent et laissent le scroll ailleurs qu'en bas.
+  await refreshVisibleSpaceLibrary(spaceId);
   if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
   // Trigger de description après le re-render (statut par carte visible dès le premier tick) :
   // fire-and-forget, chaque fichier indépendant (pas de blocage séquentiel).

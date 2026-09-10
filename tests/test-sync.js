@@ -109,6 +109,18 @@ describe('routeMessage', function() {
     expect(d.action).toBe('invalidate-resources');
     expect(d.ids).toEqual(['res_1', 'res_2']);
     expect(d.convId).toBe('c1');
+    // Écriture d'attachment : pas de spaceId au payload → null, et le câblage
+    // impur ne va donc PAS repeindre la bibliothèque. L'assertion est ici, dans
+    // le même test que le cas nominal : deux tests séparés passeraient encore si
+    // le champ se mettait à valoir n'importe quoi dans ce cas-là.
+    expect(d.spaceId).toBe(null);
+  });
+  it('resources-updated d\'un fichier de bibliothèque porte le spaceId', function() {
+    var env = makeEnvelope('resources-updated', 'other', { ids: ['file_1'], convId: null, spaceId: 's2' });
+    var d = routeMessage(env, CTX);
+    expect(d.action).toBe('invalidate-resources');
+    expect(d.spaceId).toBe('s2');
+    expect(d.convId).toBe(null);
   });
 
   it('skills-updated → reload-skills', function() {

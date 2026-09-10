@@ -316,8 +316,11 @@ aide à la décision de lecture).
   - upload direct (voie 1, `onSpaceFilesSelected`) — fire-and-forget après
     le re-render de la liste, un appel par fichier, indépendants entre eux ;
   - promotion utilisateur (voie 2, `promoteAttachmentToLibrary`) —
-    fire-and-forget, aucun statut par carte affiché immédiatement (pas d'écran
-    Space ouvert à cet instant), visible à la prochaine ouverture ;
+    fire-and-forget, sans callback de statut : l'utilisateur est dans une
+    conversation, et l'onglet « Fichiers » de la sidebar, s'il est ouvert,
+    montrera la description à son prochain re-render plutôt qu'en direct.
+    Le fichier lui-même, en revanche, y apparaît immédiatement (cf.
+    « Rafraîchissement de la bibliothèque affichée » ci-dessous) ;
   - **jamais** pour la promotion modèle (voie 3, `files__promote`) : la
     `description` y est déjà fournie par le modèle et stockée telle quelle (arbitrage confirmé), une génération de description supplémentaire serait un doublon.
   Pas de queue, pas de retry : un échec laisse le fichier sans description,
@@ -425,6 +428,23 @@ aide à la décision de lecture).
   donc l'override du composer s'il y en a un (cf. ci-dessus ; c'était
   `activeApiConfig().model` jusqu'au correctif V-9). Le coût de contention
   multi-modèle est accepté (YAGNI, revisiter seulement si ça gêne en usage réel).
+- **Rafraîchissement de la bibliothèque affichée** (`refreshVisibleSpaceLibrary`,
+  ui.js) : un fichier qui rejoint la bibliothèque apparaît dans le panneau si
+  celui-ci est **présentement affiché**, et la liste scrolle jusqu'à lui.
+  L'appel vit dans `storeLibraryFile` (resources.js), **point d'écriture unique
+  des trois voies** — pas chez les trois appelants : une quatrième voie
+  l'oublierait en silence. Deux gardes portées par le helper, non redondantes :
+  le Space (le panneau ne montre que `activeSpaceId`, or une génération d'agent
+  ou d'une conversation d'un autre Space promeut dans le SIEN — piège 18), et
+  `#space-files-panel.hidden` (un autre onglet actif ⇒ rien à faire,
+  `selectSpaceTab` re-rendra à l'ouverture). Le **scroll en bas** est la
+  conséquence du tri de `renderSpaceFilesList` (`createdAt`→`id` croissant,
+  aligné sur le manifeste de contexte) : l'arrivant y est en fin de liste — si
+  ce tri s'inverse, le scroll devient faux. Le scrolleur est le panneau entier
+  (`.space-side-panel`, `overflow-y: auto`), pas `.mem-list`. Le même helper est
+  appelé à la **réception** d'un `resources-updated` portant un `spaceId`
+  (cf. `docs/multitab-sync.md`) : un onglet voisin ouvert sur la bibliothèque du
+  même Space se met à jour de la même façon.
 - **Statut par carte** (`renderSpaceFilesList`/`setFileDescriptionStatus`,
   ui.js) : « description en cours… » sur la ligne d'excerpt + bouton désactivé
   pendant le calcul, puis contenu (`done`) ou retour à l'état neutre avec

@@ -722,7 +722,17 @@ function putResource(record) {
       // indépendante du resolve() ci-dessus (qui reste sur onsuccess, sémantique
       // inchangée pour les appelants).
       tx.oncomplete = function() {
-        syncPost('resources-updated', { ids: [record.id], convId: record.conversationId || null });
+        // `spaceId` (additif au payload, absent des records d'attachment) dit au
+        // pair QUELLE bibliothèque a gagné un fichier : sans lui il ne peut ni
+        // savoir que c'est un record `kind:'library'`, ni le rattacher à son
+        // Space actif — donc ni décider d'aller montrer l'arrivant. Champ
+        // ignoré par un onglet resté sur une version antérieure (validateEnvelope
+        // ne regarde pas le payload) : rétro-compatible.
+        syncPost('resources-updated', {
+          ids: [record.id],
+          convId: record.conversationId || null,
+          spaceId: record.spaceId || null,
+        });
       };
       tx.onerror = function(e) { reject(e.target.error); };
     });
@@ -884,6 +894,14 @@ async function storeLibraryFile(spaceId, mime, name, data, cls, source, descript
     await putResource(record);
     _cacheRecord(record);
     requestPersistence();
+    // Point d'écriture UNIQUE des trois voies d'ajout (upload direct, promotion
+    // utilisateur d'une pièce jointe, promotion modèle `files__promote`) : le
+    // rafraîchissement du panneau vit ICI, pas chez les appelants — sinon la
+    // quatrième voie qui arrivera l'oubliera, en silence. Le helper est
+    // lui-même gardé (Space actif + onglet visible), donc l'appel est
+    // inconditionnel. `typeof` : le runner QuickJS charge resources.js sans
+    // ui.js, et cette fonction n'y est de toute façon pas atteignable (IDB).
+    if (typeof refreshVisibleSpaceLibrary === 'function') refreshVisibleSpaceLibrary(spaceId);
     return record;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] storeLibraryFile:', e && e.message);

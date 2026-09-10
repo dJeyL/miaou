@@ -38,7 +38,7 @@ const SYNC_MESSAGE_TYPES = [
   'conv-deleted',             // { convId, spaceId } — suppression conversation
   'space-changed',            // { spaceId } — création/renommage/suppression d'Espace
   'settings-updated',         // { keys } — réglages globaux modifiés
-  'resources-updated',        // { ids, convId? } — écriture/suppression IndexedDB resources
+  'resources-updated',        // { ids, convId?, spaceId? } — écriture/suppression IndexedDB resources (spaceId : records de bibliothèque)
   'skills-updated',           // { } — écriture/suppression IndexedDB skills
   'full-reload',              // { } — import/reset : rechargement franc
   'conv-opened',              // { convId, tabId } — soft-lock awareness
@@ -124,7 +124,16 @@ function routeMessage(env, ctx) {
     case 'settings-updated':
       return { action: 'apply-settings', keys: Array.isArray(p.keys) ? p.keys : [] };
     case 'resources-updated':
-      return { action: 'invalidate-resources', ids: Array.isArray(p.ids) ? p.ids : [], convId: p.convId != null ? p.convId : null };
+      // `spaceId` n'est porté que par les records de bibliothèque d'espace
+      // (`kind:'library'`) : `null` ailleurs, et le câblage impur s'en sert pour
+      // décider s'il va MONTRER l'arrivant (re-render + scroll) ou seulement
+      // évincer des copies RAM.
+      return {
+        action: 'invalidate-resources',
+        ids: Array.isArray(p.ids) ? p.ids : [],
+        convId: p.convId != null ? p.convId : null,
+        spaceId: p.spaceId != null ? p.spaceId : null,
+      };
     case 'skills-updated':
       return { action: 'reload-skills' };
     case 'full-reload':

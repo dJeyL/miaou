@@ -1596,6 +1596,13 @@ function applySyncDecision(d) {
       if (!sending && d.convId != null && d.convId === currentConvId) {
         loadConversationResources(currentConvId).then(function() { rerenderCurrentThread(); });
       }
+      // Un fichier de bibliothèque ajouté ailleurs : si CET onglet regarde la
+      // bibliothèque du même Space, la montrer enrichie et aller à l'arrivant —
+      // mêmes gardes que la voie locale, portées par le helper lui-même.
+      // `spaceId` n'est renseigné que pour un ajout (`putResource`) ; une
+      // suppression diffusée le laisse à null et ne repeint donc rien ici,
+      // limite assumée (l'onglet qui supprime re-rend le sien).
+      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId);
       return;
 
     case 'reload-skills':
