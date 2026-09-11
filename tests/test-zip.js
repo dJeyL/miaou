@@ -335,6 +335,94 @@ describe('buildZipMemberName', function() {
   });
 });
 
+describe('resolveZipMemberPath', function() {
+  it('sans path : dérive du record comme avant, dedup incluse', function() {
+    var taken = new Set();
+    var a = resolveZipMemberPath({ name: 'rapport.md' }, null, taken);
+    expect(a.ok).toBe(true);
+    expect(a.name).toBe('rapport.md');
+    taken.add(a.name);
+    var b = resolveZipMemberPath({ name: 'rapport.md' }, undefined, taken);
+    expect(b.name).toBe('rapport-2.md');
+  });
+
+  it('path de fichier : renomme ET range, littéralement', function() {
+    var r = resolveZipMemberPath({ name: 'truc.json' }, 'machins/machin.json', new Set());
+    expect(r.ok).toBe(true);
+    expect(r.name).toBe('machins/machin.json');
+  });
+
+  it('path de fichier sans extension : PAS de complétion depuis le mime', function() {
+    // S'il nomme, c'est sa responsabilité — on ne corrige pas.
+    var r = resolveZipMemberPath({ name: 'truc.json', mime: 'application/json' }, 'notes', new Set());
+    expect(r.name).toBe('notes');
+  });
+
+  it('path terminé par / : dossier + nom d\'origine', function() {
+    var r = resolveZipMemberPath({ name: 'truc.json' }, 'machins/', new Set());
+    expect(r.name).toBe('machins/truc.json');
+  });
+
+  it('path terminé par / : la dedup opère DANS le dossier', function() {
+    var taken = new Set(['machins/truc.json']);
+    var r = resolveZipMemberPath({ name: 'truc.json' }, 'machins/', taken);
+    expect(r.name).toBe('machins/truc-2.json');
+  });
+
+  it('même nom dans DEUX dossiers distincts : accepté, pas de collision', function() {
+    // La dedup est clefée sur le chemin COMPLET : a/x.md et b/x.md sont deux
+    // membres légitimes, les refuser serait faux.
+    var taken = new Set(['a/x.md']);
+    var r = resolveZipMemberPath({ name: 'x.md' }, 'b/', taken);
+    expect(r.name).toBe('b/x.md');
+  });
+
+  it('collision sur un path EXPLICITE : refus, jamais de renommage silencieux', function() {
+    var taken = new Set(['machins/machin.json']);
+    var r = resolveZipMemberPath({ name: 'truc.json' }, 'machins/machin.json', taken);
+    expect(r.ok).toBe(false);
+    expect(/même chemin|écraserait/.test(r.message)).toBe(true);
+  });
+
+  it('refuse un chemin absolu', function() {
+    var r = resolveZipMemberPath({ name: 'x.md' }, '/etc/passwd', new Set());
+    expect(r.ok).toBe(false);
+    expect(/non sûr/.test(r.message)).toBe(true);
+  });
+
+  it('refuse un chemin remontant', function() {
+    var r = resolveZipMemberPath({ name: 'x.md' }, '../x.md', new Set());
+    expect(r.ok).toBe(false);
+  });
+
+  it('refuse un chemin absolu Windows', function() {
+    var r = resolveZipMemberPath({ name: 'x.md' }, 'C:\\x.md', new Set());
+    expect(r.ok).toBe(false);
+  });
+
+  it('refuse un path réduit à néant (« . », « / », espaces)', function() {
+    expect(resolveZipMemberPath({ name: 'x.md' }, '.', new Set()).ok).toBe(false);
+    expect(resolveZipMemberPath({ name: 'x.md' }, './', new Set()).ok).toBe(false);
+    // Un path d'espaces est trimé à vide : c'est le cas « pas de path ».
+    expect(resolveZipMemberPath({ name: 'x.md' }, '   ', new Set()).name).toBe('x.md');
+  });
+
+  it('écarte les segments vides plutôt que de produire un membre inciblable', function() {
+    var r = resolveZipMemberPath({ name: 'x.md' }, 'a//b/x.md', new Set());
+    expect(r.name).toBe('a/b/x.md');
+  });
+
+  it('normalise les antislashs en séparateurs', function() {
+    var r = resolveZipMemberPath({ name: 'x.md' }, 'machins\\machin.json', new Set());
+    expect(r.name).toBe('machins/machin.json');
+  });
+
+  it('tolère un taken absent', function() {
+    expect(resolveZipMemberPath({ name: 'x.md' }, null, null).name).toBe('x.md');
+    expect(resolveZipMemberPath({ name: 'x.md' }, 'a/b.md', null).name).toBe('a/b.md');
+  });
+});
+
 describe('validateZipPlan', function() {
   it('accepte un plan valide', function() {
     var r = validateZipPlan([{ name: 'a.txt', size: 10 }, { name: 'b.txt', size: 20 }]);

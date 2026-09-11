@@ -3179,6 +3179,86 @@ function buildZipMemberName(record, taken) {
   return candidate;
 }
 
+// Chemin de membre EFFECTIF, à partir du record et du `path` DEMANDÉ par le
+// modèle. C'est la seule fonction qui décide d'un nom de membre à la création :
+// buildZipMemberName reste la dérivation « depuis le record », appelée ici.
+//
+// Quatre branches, et leur point commun est la DEDUP, clefée sur le chemin
+// COMPLET dans `taken` (jamais sur le basename : `a/x.md` et `b/x.md` sont deux
+// membres légitimes, les refuser serait faux) :
+//   - pas de `path` → dérivation historique, dedup incluse ;
+//   - `path` finissant par `/` → dossier + nom dérivé du record, dedup DANS ce
+//     dossier (« range ça là » sans avoir à renommer) ;
+//   - `path` nommant un fichier → pris LITTÉRALEMENT, sans complétion
+//     d'extension, et SANS dedup : une collision est un REFUS ;
+//   - `path` vide, `.`/`..`, ou zip-slip → refus.
+//
+// Pourquoi dedup d'un côté et refus de l'autre : un nom HÉRITÉ qui collide est
+// un accident que MIAOU rattrape (deux ressources d'une même conversation
+// s'appellent très souvent rapport.md) ; un chemin ÉCRIT DEUX FOIS par le modèle
+// est une erreur de sa part, et le renommer en silence la lui cacherait. La
+// distinction porte sur l'origine du nom, pas sur sa forme.
+//
+// Retourne { ok:true, name } ou { ok:false, message } — même forme que
+// validateZipPlan et decideZipMemberExtraction : le message est rendu au modèle
+// en result TEXTE non-isError, pour qu'il se re-cible dans le même tour.
+function resolveZipMemberPath(record, path, taken) {
+  const set = taken && typeof taken.has === 'function' ? taken : null;
+  const raw = String(path == null ? '' : path).replace(/\\/g, '/').trim();
+
+  // Pas de path : comportement historique, inchangé.
+  if (!raw) return { ok: true, name: buildZipMemberName(record, set) };
+
+  // Zip-slip (absolu, remontant) : garde RÉUTILISÉE, jamais réécrite. Elle
+  // protège désormais un chemin RÉDIGÉ par le modèle et non plus seulement un
+  // chemin lu dans une archive — même code, posture de menace différente.
+  if (isZipSlipPath(raw)) {
+    return { ok: false,
+      message: 'Chemin de membre non sûr (absolu ou remontant), refusé : ' + path +
+        '. Donne un chemin relatif, par exemple « machins/machin.json ».' };
+  }
+
+  const endsWithSlash = raw.charAt(raw.length - 1) === '/';
+  // Segments significatifs. Un segment vide (« a//b ») ou « . » est écarté :
+  // zipSync les écrirait tels quels et le membre deviendrait inciblable.
+  const segs = [];
+  for (const seg of raw.split('/')) {
+    const s = seg.trim();
+    if (!s || s === '.') continue;
+    segs.push(s);
+  }
+  if (!segs.length) {
+    return { ok: false,
+      message: 'Chemin de membre vide, refusé. Donne un nom de fichier, ' +
+        'ou un dossier terminé par « / » pour garder le nom d\'origine.' };
+  }
+
+  // Dossier seul : le nom vient du record, dedup APPLIQUÉE dans ce dossier.
+  // Le préfixe passe à buildZipMemberName par un Set dérivé, pour que
+  // l'incrément (rapport-2.md) porte sur le nom et jamais sur le dossier.
+  if (endsWithSlash) {
+    const dir = segs.join('/') + '/';
+    const local = new Set();
+    if (set) {
+      for (const t of set) {
+        if (typeof t === 'string' && t.indexOf(dir) === 0) local.add(t.slice(dir.length));
+      }
+    }
+    return { ok: true, name: dir + buildZipMemberName(record, local) };
+  }
+
+  // Fichier nommé : littéral. Pas de complétion d'extension — s'il nomme, c'est
+  // sa responsabilité de bien le faire.
+  const name = segs.join('/');
+  if (set && set.has(name)) {
+    return { ok: false,
+      message: 'Deux membres porteraient le chemin « ' + name + ' » dans l\'archive. ' +
+        'Ce chemin est demandé explicitement : donne-lui un nom distinct, ' +
+        'l\'un écraserait l\'autre.' };
+  }
+  return { ok: true, name: name };
+}
+
 // Nom du FICHIER d'archive produit (pas d'un membre), rédigé par le modèle donc
 // jamais pris tel quel. Trois garanties, dans cet ordre :
 //   - le chemin est retiré (zipMemberBaseName) : le nom finit dans un record et

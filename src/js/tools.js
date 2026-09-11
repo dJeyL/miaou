@@ -381,11 +381,15 @@ const DOCS_DOCTRINE =
   "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
   "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
   "sans réseau.\n" +
+  "Dans l'autre sens, miaou__docs__pack regroupe plusieurs ressources déjà " +
+  "stockées en UNE archive zip téléchargeable, chaque membre pouvant être " +
+  "renommé et rangé dans un sous-dossier : propose-le dès que l'utilisateur " +
+  "veut récupérer d'un bloc des fichiers produits au fil de l'échange.\n" +
   "Avant ton PREMIER appel à un outil miaou__docs__* dans cette conversation, " +
   "appelle miaou__skills__read avec le slug « docs » (skill système, listée dans " +
   "<miaou_skills_context> si présente) : elle donne la forme exacte du selector " +
-  "de chaque format, quand sortir une lecture en ressource, et comment lire les " +
-  "refus.\n" +
+  "de chaque format, quand sortir une lecture en ressource, comment lire les " +
+  "refus, et comment nommer les membres d'une archive que tu crées.\n" +
   "</OUVERTURE_DE_DOCUMENTS>\n\n" +
   "<SANS_OUVERTURE_DE_DOCUMENTS>\n" +
   "Si aucun outil disponible ne sait ouvrir le format d'un fichier joint, dis-le à " +
@@ -2245,15 +2249,34 @@ const TOOLS = [
       "en une seule archive zip que l'utilisateur peut télécharger depuis le fil. " +
       "À utiliser quand tu as produit ou rassemblé plusieurs fichiers au cours de " +
       "l'échange et que l'utilisateur veut le tout d'un bloc, parce qu'un téléchargement " +
-      "unique lui évite de récupérer les pièces une par une. Ne crée aucun contenu : les " +
+      "unique lui évite de récupérer les pièces une par une. Chaque membre peut être " +
+      "renommé et rangé dans un sous-dossier via son champ path. Ne crée aucun contenu : les " +
       "ressources doivent déjà exister. Le contenu des membres n'entre jamais dans ton contexte.",
     inputSchema: {
       type: 'object',
       properties: {
         handles: {
           type: 'array',
-          items: { type: 'string' },
-          description: 'Handles des ressources à archiver : att-N, file-<id> ou res_<id>. Au moins un.',
+          items: {
+            type: 'object',
+            properties: {
+              handle: {
+                type: 'string',
+                description: 'Handle de la ressource à archiver : att-N, file-<id> ou res_<id>.',
+              },
+              path: {
+                type: 'string',
+                description: 'Chemin du membre DANS l\'archive, facultatif. Omis : le nom ' +
+                  'de la ressource d\'origine, à la racine (les homonymes sont renommés ' +
+                  'automatiquement). Un chemin de fichier ("machins/machin.json") est pris ' +
+                  'littéralement, extension comprise — deux membres ne peuvent pas viser le ' +
+                  'même. Terminé par "/" ("machins/"), il range le membre dans ce dossier en ' +
+                  'gardant son nom d\'origine. Chemin absolu ou remontant refusé.',
+              },
+            },
+            required: ['handle'],
+          },
+          description: 'Ressources à archiver, une entrée { handle, path? } par membre. Au moins une.',
         },
         name: {
           type: 'string',
@@ -2275,17 +2298,33 @@ const TOOLS = [
       // génération (piège 26b). Échec NOMINATIF — le modèle doit savoir lequel.
       const resolved = [];
       const taken = new Set();
-      for (const raw of handles) {
-        const ref = String(raw == null ? '' : raw).trim();
+      for (const item of handles) {
+        // Entrée { handle, path? }. Une chaîne nue n'est PAS acceptée : le
+        // schéma a changé de forme au lot des chemins de membres, et accepter
+        // silencieusement l'ancienne laisserait le modèle croire que `path`
+        // a été pris en compte alors qu'il n'aurait pas pu être fourni.
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return toolFail('docs__pack', 'Chaque entrée de handles doit être un objet ' +
+            '{ handle, path? } — reçu : ' + JSON.stringify(item) + '.');
+        }
+        const ref = String(item.handle == null ? '' : item.handle).trim();
         if (!ref) return toolFail('docs__pack', 'Handle vide dans la liste.');
         if (classifyHandleRef(ref) === null) {
           return toolFail('docs__pack', 'Handle invalide : ' + ref + ' (attendu att-N, file-<id> ou res_<id>).');
         }
         const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
         if (!record || !record.data) return toolFail('docs__pack', 'Handle introuvable : ' + ref + '.');
-        const memberName = buildZipMemberName(record, taken);   // utils.js, pur
-        taken.add(memberName);
-        resolved.push({ ref, record, name: memberName, size: record.data.byteLength });
+        // resolveZipMemberPath (utils.js, pur) porte les quatre branches de
+        // nommage ET la dedup ; buildZipMemberName n'est plus appelée ici.
+        const placed = resolveZipMemberPath(record, item.path, taken);
+        if (!placed.ok) {
+          // REFUS métier, même posture que validateZipPlan plus bas : ack rouge,
+          // result TEXTE non-isError, le modèle re-cible dans le même tour.
+          _pendingToolAcks.push({ kind: 'docs_pack', ok: false, message: placed.message, count: handles.length });
+          return placed.message;
+        }
+        taken.add(placed.name);
+        resolved.push({ ref, record, name: placed.name, size: record.data.byteLength });
       }
 
       const plan = validateZipPlan(resolved.map(r => ({ name: r.name, size: r.size })));   // utils.js, pur

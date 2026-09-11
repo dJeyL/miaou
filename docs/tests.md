@@ -421,7 +421,10 @@ d'encodage de nom, seul discriminant UTF-8/CP437 du format), `isZipSlipPath`,
 `decideZipMemberExtraction` (les cinq refus, pris sur le seul central directory
 donc avant toute allocation), les helpers de création de V-2
 (`buildZipMemberName`, `validateZipPlan`, `ZIP_EXT_BY_MIME`,
-`normalizeArchiveName`) et `sniffBackupFormat` de V-3.
+`normalizeArchiveName`), `resolveZipMemberPath` (les quatre branches de nommage
+d'un membre, la dedup clefée sur le chemin **complet** — `a/x.md` et `b/x.md`
+sont deux membres légitimes —, et la frontière dedup/refus selon que le nom est
+hérité du record ou écrit par le modèle) et `sniffBackupFormat` de V-3.
 
 `test-docs.js` (V-4) couvre le pur du chemin « document natif » :
 `sniffDocumentKind` (reconnaissance **aux octets** — dont deux cas qui figent

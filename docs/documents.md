@@ -1114,12 +1114,46 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   **asynchrone** (`ensureFflate` + `_storeBlock`). Ne crée **aucun** contenu :
   les ressources doivent déjà exister, et la description vue par le modèle porte
   cette borne négative explicitement.
-- Chaîne : pour chaque handle `classifyHandleRef` → `resolveHandleRecord(ref,
-  ctx)` (**`ctx` explicite**, piège 28) → `buildZipMemberName` →
+- **Chaque entrée de `handles` est un objet `{ handle, path? }`**, et la chaîne
+  nue n'est **pas** acceptée. Le refus est explicite plutôt que tolérant : une
+  chaîne nue ne peut pas porter de `path`, donc l'accepter en silence laisserait
+  le modèle croire que son chemin a été pris en compte. Changement **cassant**
+  assumé et gratuit — `docs__pack` est adressé au modèle seul, et rien de
+  persisté ne rejoue d'anciens appels.
+- Chaîne : pour chaque entrée `classifyHandleRef` → `resolveHandleRecord(ref,
+  ctx)` (**`ctx` explicite**, piège 28) → `resolveZipMemberPath` →
   `validateZipPlan` (utils.js, purs) → `zipSync` → `_storeBlock` en classe
   **`'binary'` explicite** → `formatResourceDescriptor`. Les records sont
   **gelés avant le premier `await`** : le handler est `async`, un état relu
   après un `await` pourrait appartenir à une autre génération (piège 26b).
+- **`resolveZipMemberPath(record, path, taken)` est LE point de décision du nom
+  de membre**, et la seule fonction que le handler appelle pour ça —
+  `buildZipMemberName` reste dessous, appelée par elle, jamais depuis le
+  handler. Quatre branches : `path` absent → dérivation historique depuis le
+  record ; `path` terminé par `/` → dossier + nom dérivé du record ; `path`
+  nommant un fichier → **littéral**, sans complétion d'extension ; `path` vide,
+  `.`/`..` ou zip-slip → refus. Un `path` qui nomme un fichier est pris tel
+  quel **extension comprise** : si le modèle nomme, c'est sa responsabilité de
+  bien nommer, et compléter derrière lui produirait un `notes.md` qu'il n'a pas
+  demandé.
+- **Dedup sur le nom hérité, REFUS sur le chemin explicite.** La distinction
+  porte sur l'**origine** du nom, jamais sur sa forme. Deux ressources d'une même
+  conversation s'appellent très souvent `rapport.md` : la collision y est un
+  accident, que MIAOU rattrape en silence (`rapport-2.md`). Un chemin écrit
+  **deux fois** par le modèle est au contraire une erreur de sa part, et le
+  renommer lui cacherait qu'il s'est trompé — donc refus, avec le chemin fautif
+  nommé. Les deux régimes partagent **un seul** `taken`, ce qui les fait
+  composer au lieu de diverger.
+- **La dedup est clefée sur le chemin COMPLET**, jamais sur le basename :
+  `a/x.md` et `b/x.md` sont deux membres parfaitement légitimes, et les traiter
+  comme une collision serait faux. Corollaire pour la branche « dossier `/` » :
+  l'incrément est calculé **dans** le dossier (un `Set` local dérivé du préfixe),
+  pour qu'il porte sur le nom (`machins/rapport-2.md`) et jamais sur le dossier.
+- **`isZipSlipPath` est réutilisée telle quelle, et c'est délibéré.** Le code ne
+  change pas, mais la **posture de menace** si : la garde protégeait un chemin
+  *lu* dans une archive tierce, elle protège désormais un chemin *rédigé* par le
+  modèle. Même fonction, deux provenances — d'où des tests dédiés à la seconde
+  plutôt qu'une confiance héritée de la première.
 - **`formatResourceDescriptor`, surtout pas `formatInlineHandleForModel`.** Cette
   dernière ajoute « texte adressable par `js__eval` » — note qui serait **fausse**
   sur un `application/zip` : `js__eval` y décoderait les octets compressés en

@@ -6,9 +6,12 @@
 // Chemin réellement exercé (modèle STUBÉ, aucun appel réseau sortant) :
 //   1. Trois ressources sont créées via _storeBlock dans la conversation
 //      courante — dont DEUX PORTANT LE MÊME NOM, pour exercer la déduplication.
-//   2. miaou__docs__pack(handles=[res_…, res_…, res_…]) — handler async :
-//      buildZipMemberName → validateZipPlan (purs) → lazy-load fflate → zipSync
+//   2. miaou__docs__pack(handles=[{handle, path?}, …]) — handler async :
+//      resolveZipMemberPath → validateZipPlan (purs) → lazy-load fflate → zipSync
 //      → _storeBlock classe 'binary' → formatResourceDescriptor.
+//      resolveZipMemberPath porte les quatre branches de nommage (pas de path /
+//      chemin de fichier littéral / dossier terminé par « / » / refus) et la
+//      dedup ; buildZipMemberName reste dessous, appelée par elle.
 //   3. ALLER-RETOUR COMPLET, le point le plus parlant du sous-lot : on relit
 //      l'archive produite par miaou__docs__list, puis on ré-extrait un membre
 //      par miaou__docs__extract et on compare les octets à la source. Un nom de
@@ -27,6 +30,12 @@
 //   - handle inexistant → échec NOMMANT le handle, et rien n'est matérialisé
 //   - handle hors du cache de session → même message qu'inexistant (no-oracle)
 //   - handles: [] → refus, aucune archive de zéro membre créée
+//   - une entrée en CHAÎNE NUE (ancien schéma) → refus explicite, jamais un
+//     path silencieusement ignoré
+//   - path "dossier/fichier.ext" → le membre porte exactement ce chemin
+//   - path "dossier/" → le membre garde son nom d'origine dans ce dossier
+//   - deux entrées visant le MÊME path explicite → refus (pas de renommage)
+//   - un sous-dossier fait l'ALLER-RETOUR : docs__list le relit tel quel
 //   - le record produit est mime application/zip et classe 'binary'
 //   - window.fflate.zipSync est une fonction après l'appel (garde étendue V-2)
 //
@@ -115,15 +124,26 @@ try {
 
   const registered = await page.evaluate(() => {
     const t = TOOLS.find((x) => x.name === 'docs__pack');
+    const items = t ? t.inputSchema.properties.handles.items : null;
     return {
       present: !!t,
       required: t ? JSON.stringify(t.inputSchema.required) : null,
       // Description vue par le modèle : la borne négative doit y être.
       negBound: t ? /ne crée aucun contenu/i.test(t.description) : false,
+      // FORME des items, pas seulement `required` : une assertion sur
+      // `required` reste verte quel que soit le type des entrées, donc elle ne
+      // prouve rien du contrat { handle, path? } (mémoire projet
+      // green_check_proves_nothing — instrument qui ne lit pas la grandeur).
+      itemType: items ? items.type : null,
+      itemRequired: items ? JSON.stringify(items.required) : null,
+      hasPath: !!(items && items.properties && items.properties.path),
     };
   });
   check('docs__pack enregistré nativement', registered.present, JSON.stringify(registered));
   check('docs__pack exige handles', registered.required === '["handles"]', String(registered.required));
+  check('chaque entrée est un OBJET exigeant handle, avec path facultatif',
+    registered.itemType === 'object' && registered.itemRequired === '["handle"]' && registered.hasPath,
+    JSON.stringify(registered));
   check('sa description porte la borne négative « ne crée aucun contenu »', registered.negBound);
 
   // ── Trois ressources sources, dont DEUX HOMONYMES ─────────────────────────
@@ -155,9 +175,17 @@ try {
   const empty = await callTool_('miaou__docs__pack', { handles: [] });
   check('handles: [] → refus', /au moins un/i.test(empty.text), empty.text.slice(0, 160));
 
-  const ghost = await callTool_('miaou__docs__pack', { handles: [sources.a, 'res_zzzzzzzz'] });
+  const ghost = await callTool_('miaou__docs__pack',
+    { handles: [{ handle: sources.a }, { handle: 'res_zzzzzzzz' }] });
   check('handle inexistant → échec NOMMANT le handle fautif',
     /introuvable/i.test(ghost.text) && /res_zzzzzzzz/.test(ghost.text), ghost.text.slice(0, 160));
+
+  // Ancien schéma (chaîne nue) : REFUS explicite. L'accepter en silence ferait
+  // croire au modèle que son `path` a été pris en compte alors que cette forme
+  // ne peut pas en porter — défaut « silence » du texte adressé au modèle.
+  const legacy = await callTool_('miaou__docs__pack', { handles: [sources.a] });
+  check('entrée en chaîne nue (ancien schéma) → refus explicite',
+    !legacy.ok || /doit être un objet/i.test(legacy.text), legacy.text.slice(0, 160));
 
   // F4 — handle d'une AUTRE conversation. Pour la famille `res_...`,
   // resolveHandleRecord n'applique AUCUN filtre de convId (contrairement a
@@ -175,9 +203,30 @@ try {
     invalidateResourceCache([other]);   // hors cache de session = hors portee
     return other;
   });
-  const cross = await callTool_('miaou__docs__pack', { handles: [foreign] });
+  const cross = await callTool_('miaou__docs__pack', { handles: [{ handle: foreign }] });
   check('handle hors du cache de session -> MEME message qu\'introuvable (no-oracle)',
     /introuvable/i.test(cross.text), cross.text.slice(0, 160));
+
+  // Refus portés par les CHEMINS de membres. Ils vivent ici, et pas plus bas,
+  // pour tomber dans le périmètre du « aucun refus n'a matérialisé d'archive »
+  // qui suit : un refus dont on ne vérifie pas qu'il n'a rien écrit ne vérifie
+  // que son message.
+  //
+  // Deux entrées visant le MÊME path explicite : refus, jamais un renommage
+  // silencieux — la dedup ne rattrape que les noms HÉRITÉS du record.
+  const clash = await callTool_('miaou__docs__pack', {
+    handles: [
+      { handle: sources.a, path: 'docs/rapport.md' },
+      { handle: sources.b, path: 'docs/rapport.md' },
+    ],
+  });
+  check('deux path explicites identiques → refus',
+    !clash.ok || /écraserait|même chemin/i.test(clash.text), clash.text.slice(0, 200));
+
+  const slip = await callTool_('miaou__docs__pack',
+    { handles: [{ handle: sources.a, path: '../evasion.md' }] });
+  check('path remontant → refus (garde zip-slip sur un chemin RÉDIGÉ par le modèle)',
+    !slip.ok || /non sûr/i.test(slip.text), slip.text.slice(0, 200));
 
   // Aucun refus ne doit avoir matérialisé quoi que ce soit.
   const zipsAfterRefusals = await page.evaluate(async () => {
@@ -190,7 +239,7 @@ try {
 
   // ── L'appel nominal ───────────────────────────────────────────────────────
   const packed = await callTool_('miaou__docs__pack',
-    { handles: [sources.a, sources.b, sources.c], name: 'livrables' });
+    { handles: [{ handle: sources.a }, { handle: sources.b }, { handle: sources.c }], name: 'livrables' });
   check('docs__pack réussit', packed.ok, packed.text.slice(0, 200));
   check('le retour contient un descripteur [resource id=…]',
     /\[resource id=res_[^\]]+\]/.test(packed.text), packed.text.slice(0, 200));
@@ -266,6 +315,48 @@ try {
   }, { text: extracted.text, expected: sources.bodyA });
   check('le membre ré-extrait est identique à la source, octet pour octet',
     roundTrip.ok, roundTrip.why);
+
+  // ── Chemins de membres : renommage et sous-dossiers ───────────────────────
+  // Second appel nominal, dédié aux `path`. L'ALLER-RETOUR est le point : un
+  // chemin de membre est un IDENTIFIANT au même titre qu'un nom nu, donc il ne
+  // suffit pas que zipSync l'accepte — il doit revenir tel quel par docs__list,
+  // sinon le membre est inatteignable (leçon des noms non-UTF-8, clôture V-1).
+  const tree = await callTool_('miaou__docs__pack', {
+    handles: [
+      // Renommage + rangement en une fois, extension comprise.
+      { handle: sources.a, path: 'machins/machin.md' },
+      // Dossier seul : le nom d'origine (rapport.md) est conservé.
+      { handle: sources.b, path: 'machins/' },
+      // Sans path : racine, nom d'origine.
+      { handle: sources.c },
+    ],
+    name: 'arborescence',
+  });
+  check('docs__pack accepte des chemins de membres', tree.ok, tree.text.slice(0, 200));
+  const treeId = tree.text.match(/\[resource id=(res_[^\s\]]+)/);
+  const treeRef = treeId ? treeId[1] : null;
+
+  const treeListed = await callTool_('miaou__docs__list', { ref: treeRef });
+  check('docs__list relit l\'archive arborescente', treeListed.ok, treeListed.text.slice(0, 200));
+  check('le path de fichier fait l\'aller-retour : machins/machin.md',
+    /machins\/machin\.md/.test(treeListed.text), treeListed.text.slice(0, 300));
+  check('le path « dossier/ » garde le nom d\'origine : machins/rapport.md',
+    /machins\/rapport\.md/.test(treeListed.text), treeListed.text.slice(0, 300));
+  check('l\'entrée sans path reste à la racine : vignette.png',
+    /(^|\s|\|)vignette\.png/m.test(treeListed.text), treeListed.text.slice(0, 300));
+
+  // Recibler un membre PAR SON CHEMIN : lister ne prouve pas l'adressabilité.
+  const deep = await callTool_('miaou__docs__extract', { ref: treeRef, path: 'machins/machin.md' });
+  check('docs__extract recible un membre par son chemin complet', deep.ok, deep.text.slice(0, 200));
+  const deepRound = await page.evaluate(async ({ text, expected }) => {
+    const m = text.match(/\[resource id=(res_[^\s\]]+)/);
+    if (!m) return { ok: false, why: 'pas d\'id dans le retour' };
+    const r = getCachedRecord(m[1]);
+    if (!r) return { ok: false, why: 'record absent du cache' };
+    const got = new TextDecoder().decode(new Uint8Array(r.data));
+    return { ok: got === expected, why: JSON.stringify(got).slice(0, 120) };
+  }, { text: deep.text, expected: sources.bodyA });
+  check('le membre en sous-dossier revient octet pour octet', deepRound.ok, deepRound.why);
 
   await page.screenshot({ path: path.join(outDir, '1-pack.png'), fullPage: true }).catch(() => {});
 

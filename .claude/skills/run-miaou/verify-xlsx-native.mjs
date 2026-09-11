@@ -356,7 +356,7 @@ try {
 
     // CE QUE LA FIXTURE EST RÉELLEMENT (constaté le 2026-08-28, pas supposé) :
     // scanned.pdf est un scan DÉJÀ OCÉRISÉ — 376 items, 1928 caractères de
-    // couche texte, bruitée (« CrNTRE HOSPIT AUER UNl'l RSITAIR[ ») mais bien
+    // couche texte, bruitée (mots coupés, lettres muées en chiffres) mais bien
     // présente. Ce n'est donc PAS le cas « page sans texte » : la garde des
     // pages vides n'a pas à se déclencher ici, et c'est correct qu'elle ne le
     // fasse pas. Les premières assertions écrites pour ce bloc supposaient un

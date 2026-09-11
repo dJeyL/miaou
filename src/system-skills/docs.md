@@ -1,10 +1,11 @@
 ---
-name: Ouverture de documents
-description: Comment lire un document joint (PDF, Excel, Word, PowerPoint, archive zip) — quel outil, quel selector, quand sortir en ressource
+name: Documents et archives
+description: Comment lire un document joint (PDF, Excel, Word, PowerPoint, archive zip) et comment regrouper des ressources en une archive zip — quel outil, quel selector, quand sortir en ressource
 ---
 
-Tu as décidé d'ouvrir un document joint. Voici comment t'y prendre, format par
-format.
+Tu as décidé d'ouvrir un document joint, ou de regrouper des ressources en une
+archive. Voici comment t'y prendre : d'abord la lecture, format par format, puis
+la création d'archive en fin de page.
 
 ## Le geste, dans tous les cas
 
@@ -69,7 +70,7 @@ Un document scanné n'est pas toujours sans texte. Il arrive qu'il ait été pas
 la reconnaissance de caractères avant de t'arriver, et que le résultat soit
 mauvais : mots coupés au milieu, lettres remplacées par des chiffres ou des
 symboles, majuscules erratiques. Quelque chose comme
-`CrNTRE HOSPIT AUER UNl'l RSITAIR[`.
+`RAPP0RT ANNU EL D'ACT lVIT[`.
 
 Aucun avertissement ne se déclenchera : il *y a* du texte, et MIAOU n'a aucun
 moyen de décider à ta place qu'il est trop abîmé — le seuil n'existe pas, et se
@@ -208,3 +209,25 @@ explicitement la structure interne du document, ou pour en tirer une image.
 stockées en **une** archive zip téléchargeable. C'est le geste à proposer quand
 tu as produit plusieurs fichiers au fil de la conversation et que l'utilisateur
 veut les récupérer d'un coup.
+
+Chaque entrée de `handles` est un objet `{ handle, path }`. Le `handle` est
+obligatoire (`att-N`, `file-<id>` ou `res_<id>`) ; le `path` est **facultatif**
+et décide du chemin du membre dans l'archive :
+
+- **`path` absent** — le membre garde le nom de la ressource d'origine, à la
+  racine de l'archive. Deux ressources homonymes sont renommées automatiquement
+  (`rapport.md`, puis `rapport-2.md`) : tu n'as rien à faire pour éviter la
+  collision.
+- **`path` nommant un fichier** — le membre porte exactement ce chemin :
+  `"machins/machin.json"` range le fichier dans un sous-dossier et le renomme en
+  une seule fois. Tu peux imbriquer autant de niveaux que nécessaire. Le nom est
+  pris **littéralement** : si tu écris `"notes"` sans extension, le membre
+  s'appellera `notes`, sans extension. À toi de la mettre.
+- **`path` terminé par `/`** — le membre est rangé dans ce dossier en gardant
+  son nom d'origine : `"machins/"` sur une ressource `truc.json` donne
+  `machins/truc.json`. C'est la forme à utiliser pour classer sans renommer.
+
+Deux entrées ne peuvent pas viser le même chemin explicite : l'appel est refusé,
+plutôt que de laisser un membre en écraser un autre. Un chemin absolu (`/etc/x`)
+ou remontant (`../x`) est refusé lui aussi. Le renommage n'affecte que l'archive,
+jamais la ressource d'origine.
