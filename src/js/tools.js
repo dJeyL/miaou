@@ -867,7 +867,10 @@ const TOOLS = [
     description:
       "Récupère une conversation passée par son identifiant. Par défaut " +
       "(with_contents=false), retourne seulement son résumé et ses mots-clés ; " +
-      "passer with_contents=true pour obtenir le contenu complet des messages.",
+      "passer with_contents=true pour obtenir le contenu complet des messages. " +
+      "Ce que tu y lis décrit un état PASSÉ : un échec relaté a pu être corrigé " +
+      "depuis. N'en conclus jamais qu'une action échouera, ni ne refuse sur " +
+      "cette base un appel qui t'est demandé.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -943,7 +946,10 @@ const TOOLS = [
       "n'en avoir aucun. Pour lire réellement, utilise conv__get ou " +
       "with_contents. Passer " +
       "with_contents=true pour inclure aussi le contenu complet de chacune " +
-      "(potentiellement volumineux).",
+      "(potentiellement volumineux). " +
+      "Ce que tu y lis décrit un état PASSÉ : un échec relaté a pu être corrigé " +
+      "depuis. N'en conclus jamais qu'une action échouera, ni ne refuse sur " +
+      "cette base un appel qui t'est demandé.",
     inputSchema: {
       type: 'object',
       properties: {

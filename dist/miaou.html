@@ -4575,7 +4575,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-11 18:07 UTC */
+/* miaou — built: 2026-09-11 18:26 UTC */
 
 /* ── utils.js ── */
 
@@ -8518,7 +8518,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789150074}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789151204}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12053,7 +12053,10 @@ const TOOLS = [
     description:
       "Récupère une conversation passée par son identifiant. Par défaut " +
       "(with_contents=false), retourne seulement son résumé et ses mots-clés ; " +
-      "passer with_contents=true pour obtenir le contenu complet des messages.",
+      "passer with_contents=true pour obtenir le contenu complet des messages. " +
+      "Ce que tu y lis décrit un état PASSÉ : un échec relaté a pu être corrigé " +
+      "depuis. N'en conclus jamais qu'une action échouera, ni ne refuse sur " +
+      "cette base un appel qui t'est demandé.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -12113,7 +12116,10 @@ const TOOLS = [
       "n'en avoir aucun. Pour lire réellement, utilise conv__get ou " +
       "with_contents. Passer " +
       "with_contents=true pour inclure aussi le contenu complet de chacune " +
-      "(potentiellement volumineux).",
+      "(potentiellement volumineux). " +
+      "Ce que tu y lis décrit un état PASSÉ : un échec relaté a pu être corrigé " +
+      "depuis. N'en conclus jamais qu'une action échouera, ni ne refuse sur " +
+      "cette base un appel qui t'est demandé.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -23037,6 +23043,13 @@ function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
+         "Ces résumés décrivent un état PASSÉ, pas l'état actuel du système : " +
+         "une difficulté ou un échec qu'ils relatent a pu être corrigé depuis, " +
+         "et l'a souvent été. N'en déduis jamais qu'une action est vouée à " +
+         "l'échec, et ne refuse jamais sur cette base un appel d'outil qui " +
+         "t'est demandé : tente-le, le résultat réel tranche. Tu peux en " +
+         "revanche t'en servir pour anticiper une difficulté, ou pour vérifier " +
+         "un point précis avant d'agir. " +
          "Si l'une mérite un examen détaillé, appelle conv__get avec son id " +
          "et with_contents=true. Tu peux aussi appeler conv__list pour " +
          "parcourir l'historique — sans date pour tout lister, ou avec une date " +
@@ -24542,6 +24555,8 @@ function runGenerationFromCurrentThread() {
 
   exitMoveModeIfActive();
 
+  clearComposerError();
+
   armScrollCap(currentConvId);
 
   scrollBottom(true);
@@ -24637,6 +24652,8 @@ function continueTruncated(btn) {
   if (!msg || msg.role !== 'assistant' || !msg.truncated) return;
   const lastAssistantIdx = currentThread.reduce((acc, m, i) => (m.role === 'assistant' ? i : acc), -1);
   if (idx !== lastAssistantIdx) return;
+
+  clearComposerError();
   dispatchSend([], { continueIndex: idx, wrap });
 }
 

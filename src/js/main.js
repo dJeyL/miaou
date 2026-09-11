@@ -838,6 +838,13 @@ function buildSummaryBlock(matches) {
   if (!matches.length) return '';
   const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
+         "Ces résumés décrivent un état PASSÉ, pas l'état actuel du système : " +
+         "une difficulté ou un échec qu'ils relatent a pu être corrigé depuis, " +
+         "et l'a souvent été. N'en déduis jamais qu'une action est vouée à " +
+         "l'échec, et ne refuse jamais sur cette base un appel d'outil qui " +
+         "t'est demandé : tente-le, le résultat réel tranche. Tu peux en " +
+         "revanche t'en servir pour anticiper une difficulté, ou pour vérifier " +
+         "un point précis avant d'agir. " +
          "Si l'une mérite un examen détaillé, appelle conv__get avec son id " +
          "et with_contents=true. Tu peux aussi appeler conv__list pour " +
          "parcourir l'historique — sans date pour tout lister, ou avec une date " +
@@ -3241,6 +3248,13 @@ function runGenerationFromCurrentThread() {
   // sendMessage/editUserMessage/regenerateResponse (piège 12) — un seul call
   // site plutôt que dispersé dans les 3 points d'entrée (décision Cter §2).
   exitMoveModeIfActive();
+  // Erreur du tour PRÉCÉDENT levée ici, pour la même raison que l'armScrollCap
+  // juste en dessous : les autres points d'effacement sont tous des gestes de
+  // COMPOSER (frappe, envoi), et l'édition comme la régénération relancent un
+  // tour sans jamais en passer par là. Le bandeau d'un stream mort survivait
+  // donc au geste qui le répare — « Régénérer » sur une bulle vide laissait
+  // affiché « Connexion interrompue » pendant le nouveau tour.
+  clearComposerError();
   // Réarmement du plafond d'autoscroll : ICI et non dans `appendUserMessage`,
   // qui est une fonction d'AFFICHAGE — l'édition, la régénération et la reprise
   // d'une troncature relancent un tour sans jamais l'appeler (elles passent par
@@ -3415,6 +3429,12 @@ function continueTruncated(btn) {
   if (!msg || msg.role !== 'assistant' || !msg.truncated) return;
   const lastAssistantIdx = currentThread.reduce((acc, m, i) => (m.role === 'assistant' ? i : acc), -1);
   if (idx !== lastAssistantIdx) return;
+  // Second point d'effacement, non couvert par runGenerationFromCurrentThread :
+  // cette reprise appelle dispatchSend directement (pas de recherche mémoire
+  // pour un raccord de texte). C'est le cas le plus criant — le bandeau annonce
+  // une réponse incomplète, et « Continuer » est précisément ce qu'il invite à
+  // faire : le laisser affiché contredit le geste qu'il a provoqué.
+  clearComposerError();
   dispatchSend([], { continueIndex: idx, wrap });
 }
 
