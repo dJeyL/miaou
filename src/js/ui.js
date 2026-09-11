@@ -6873,6 +6873,39 @@ const CTX_PALETTE = {
   thread: '#4a90d9', attachment_images: '#d9974a',
 };
 
+// Explication au survol, par source — même forme de lookup que CTX_PALETTE
+// juste au-dessus, et même contrat : une clé par `source` produite par
+// buildContextManifest (utils.js), qui reste LA source de la liste.
+//
+// Texte STRICTEMENT DESCRIPTIF (registre choisi) : ce que contient le bloc,
+// jamais un conseil d'allègement. Les leviers de réduction vivent dans le
+// sujet `contexte` de help.md, à un seul endroit — les dupliquer ici les
+// ferait diverger au premier réglage qui change.
+//
+// Ces libellés vivent côté RENDU, pas dans buildContextManifest : le manifeste
+// est une mesure (chars/tokens), et y verser de la prose mettrait du texte
+// d'affichage dans une structure que les tests purs assertent champ par champ.
+//
+// Impersonnel comme tout texte d'interface (le tutoiement est réservé à
+// help.md) : « tes souvenirs » se dit ici « les souvenirs actifs ».
+const CTX_EXPLAIN = {
+  identity_blurb: 'Le bloc d\'identité : il indique au modèle quelle application il pilote et ce qu\'elle sait faire.',
+  root_prompt: 'Les instructions de base du modèle : comment se servir des outils disponibles et des documents.',
+  intent_doctrine: 'La consigne qui demande au modèle d\'annoncer son intention avant chaque appel d\'outil.',
+  skills_doctrine: 'La consigne qui explique au modèle ce qu\'est une skill et quand en déclencher une.',
+  codeblock_doctrine: 'La consigne de mise en forme des blocs de code dans les réponses.',
+  user_prompt: 'Les instructions système saisies dans les Paramètres, suivies de la description de l\'Espace actif.',
+  context_date_model: 'La date et l\'heure courantes, le modèle utilisé et le nom de l\'Espace actif.',
+  memories: 'Les souvenirs actifs, réinjectés à chaque message.',
+  summaries: 'Les résumés de conversations passées jugés pertinents pour ce message.',
+  skills_context: 'La liste des skills à déclenchement automatique, avec leur description — pas leur contenu.',
+  mcp_instructions: 'Les consignes d\'usage publiées par les serveurs MCP branchés, pour leurs propres outils.',
+  space_library: 'La liste des fichiers de la bibliothèque de l\'Espace : nom, type et taille — pas leur contenu.',
+  tool_definitions: 'La description de chaque outil disponible et de ses paramètres, au format attendu par l\'API.',
+  thread: 'Les messages de la conversation — les tiens, ceux du modèle et les traces d\'appels d\'outils.',
+  attachment_images: 'Les images jointes encore envoyées en pleine résolution, comptées à part du texte.',
+};
+
 // Manifeste effectif : dernier envoi réel s'il existe, sinon simulation
 // à froid. Ne recalcule PAS depuis zéro à chaque appel du compteur : la
 // simulation est bon marché (fonctions pures déjà utilisées à l'envoi), mais
@@ -7480,7 +7513,17 @@ function renderContextInspector() {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
       const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
-      return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>${escHtml(e.label)}${note}</td>` +
+      // Explication au survol du libellé. `escHtml` bien que le texte soit une
+      // constante littérale d'ici (aucune origine modèle, hors piège 21) : on
+      // est en position d'ATTRIBUT, et ces phrases portent des apostrophes —
+      // escHtml échappe `'` et `"`. Garder l'échappement inconditionnel pour
+      // qu'un jour où cette valeur deviendrait dynamique, le point d'injection
+      // ne soit pas déjà ouvert.
+      const why = CTX_EXPLAIN[e.source] || '';
+      const titleAttr = why ? ` title="${escHtml(why)}"` : '';
+      const labelCls = why ? ' class="ctx-label-explained"' : '';
+      return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +
+        `<span${labelCls}${titleAttr}>${escHtml(e.label)}</span>${note}</td>` +
         `<td>${e.chars}</td><td>≈${e.tokens}</td><td>${pct}%</td></tr>`;
     });
     const totalTokLabel = (m.real ? '' : '≈') + m.totalTokens;

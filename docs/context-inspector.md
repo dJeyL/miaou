@@ -153,10 +153,42 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
   « dernier envoi réel » vs « simulation », barre empilée (`.ctx-bar`, un
   segment par entrée du manifeste, couleurs fixes `CTX_PALETTE` dans ui.js,
   échelle = fenêtre de contexte si connue sinon total courant), table
-  label/chars/≈tokens/% (`.ctx-table`). Rendu par `renderContextInspector()`.
+  label/chars/≈tokens/% (`.ctx-table`), chaque label portant son explication au
+  survol (cf. « Explication des parts » plus bas). Rendu par
+  `renderContextInspector()`.
 - **Réglage fenêtre de contexte** : `#set-contextwindow` (catégorie « Modèle &
   raisonnement »), lu/écrit dans `init`/`onSaveSettings`, participe à
   `settingsFormDirty`.
+
+## Explication des parts
+
+Chaque libellé de la table porte une explication en `title` natif, servie par
+`CTX_EXPLAIN` (ui.js) : une clé par `source` produite par
+`buildContextManifest`, qui reste LA source de la liste — une entrée sans clé
+correspondante s'affiche simplement sans explication (pas de placeholder, pas
+d'erreur), donc ajouter une `source` sans l'expliquer dégrade proprement.
+
+Trois décisions à ne pas défaire :
+
+- **Côté rendu, pas dans le manifeste.** `buildContextManifest` est une
+  *mesure* (chars/tokens) ; y verser de la prose d'affichage mettrait du texte
+  d'interface dans une structure que les tests purs assertent champ par champ.
+- **Strictement descriptif.** L'explication dit ce que le bloc CONTIENT, jamais
+  comment l'alléger : les leviers de réduction vivent au seul sujet `contexte`
+  de `src/help.md`, et les dupliquer ici les ferait diverger au premier réglage
+  qui change. Registre impersonnel comme tout texte d'interface (le tutoiement
+  est réservé à `help.md`).
+- **`escHtml` inconditionnel** sur la valeur, bien qu'elle soit une constante
+  littérale hors origine modèle (donc hors piège 21) : on est en position
+  d'ATTRIBUT et ces phrases portent des apostrophes. L'échappement reste posé
+  pour que le point d'injection ne soit pas déjà ouvert le jour où la valeur
+  deviendrait dynamique.
+
+Côté CSS (`drawers.css`), `.ctx-label-explained` pose un souligné pointillé
+discret et `cursor: help`. **Le pointillé est le signal au repos** : sans lui,
+rien n'indique qu'il y a quelque chose à survoler et la tooltip n'est jamais
+découverte. Teinte `border-2` et souligné seul, pour qu'il ne se lise pas comme
+un lien cliquable — le libellé n'ouvre rien.
 
 ## Usage API réel (Bbis)
 

@@ -944,7 +944,8 @@ modèle.
 - **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une
-  estimation du poids de chaque part. Utile pour comprendre ce que « voit » le
+  estimation du poids de chaque part. Survole le nom d'une part pour lire ce
+  qu'elle contient. Utile pour comprendre ce que « voit » le
   modèle et surveiller le remplissage de la fenêtre de contexte. La taille de
   fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce
   calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la

@@ -586,6 +586,16 @@
 .ctx-table tr.ctx-total td { font-weight: 600; color: var(--text); border-bottom: none; border-top: 1px solid var(--border-2); }
 .ctx-table tr.ctx-output td { font-style: italic; color: var(--text-3); }
 .ctx-swatch { display: inline-block; vertical-align: middle; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; margin-bottom: 2px; }
+/* Libellé porteur d'une explication au survol (title natif, CTX_EXPLAIN dans
+   ui.js). Le pointillé est le SIGNAL AU REPOS : sans lui, rien n'indique qu'il
+   y a quelque chose à survoler et la tooltip n'est jamais découverte. Discret
+   (border-2, sous-ligne seule) pour ne pas se lire comme un lien cliquable —
+   le libellé n'ouvre rien. */
+.ctx-label-explained {
+  border-bottom: 1px dotted var(--border-2);
+  cursor: help;
+}
+.ctx-label-explained:hover { border-bottom-color: var(--text-2); }
 .drawer-title { font-size: 13px; font-weight: 600; color: var(--text); }
 
 .drawer-btn {
