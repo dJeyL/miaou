@@ -797,9 +797,15 @@ async function driveAgentConversation(gen, apiMessages, tools) {
           if (gen.abort) gen.abort.abort();
         }
       },
-      onEarlyAcks: () => {
+      onEarlyAcks: ({ args } = {}) => {
         for (const ack of getPendingToolAcks()) {
           const { entry, node } = pushGenToolAck(gen, ack);
+          // Appel parti, réponse pas encore là : loupe immédiate, et fiche
+          // portant DÉJÀ les arguments (c'est ce qu'on vient y lire pendant
+          // qu'un outil lent travaille). Posé ICI et non dans `pushGenToolAck`,
+          // que `onToolAcks` appelle aussi — les acks d'outils INTERNES qui y
+          // transitent ont déjà répondu, et les marquer en attente serait faux.
+          markEarlyAckPending(entry, node, args);
           earlyRendered.push({ ack, entry, node });
         }
         clearPendingToolAcks();
@@ -1153,9 +1159,15 @@ async function driveDetachedConversation(gen, apiMessages) {
           resetAssistant(gen.wrap);   // retour au patienteur entre deux tours d'outils
         }
       },
-      onEarlyAcks: () => {
+      onEarlyAcks: ({ args } = {}) => {
         for (const ack of getPendingToolAcks()) {
           const { entry, node } = pushGenToolAck(gen, ack);
+          // Appel parti, réponse pas encore là : loupe immédiate, et fiche
+          // portant DÉJÀ les arguments (c'est ce qu'on vient y lire pendant
+          // qu'un outil lent travaille). Posé ICI et non dans `pushGenToolAck`,
+          // que `onToolAcks` appelle aussi — les acks d'outils INTERNES qui y
+          // transitent ont déjà répondu, et les marquer en attente serait faux.
+          markEarlyAckPending(entry, node, args);
           earlyRendered.push({ ack, entry, node });
         }
         clearPendingToolAcks();

@@ -1229,6 +1229,60 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
   La closure capture la **référence** de l'entrée, donc l'enrichissement par
   `Object.assign` sur ce même objet est vu à l'ouverture du drawer sans qu'il
   faille re-poser de listener.
+- **Un appel EN VOL est inspectable, et son drawer se complète tout seul.**
+  La rétro-application ci-dessus fait apparaître la loupe *à la réponse* — donc
+  pas pendant l'attente, qui est précisément le moment où l'on veut voir ce qui
+  a été envoyé (un appel distant lent est le cas qui motive la surface entière).
+  Un quatrième cas d'éligibilité couvre l'attente : `pending === true`, posé sur
+  l'entrée par `markEarlyAckPending` depuis les **trois** `onEarlyAcks` (écran et
+  les deux chemins d'agent), retiré par `settleEarlyAckPending`.
+  - Le drapeau est **volatil** : hors `ACK_COPY_FIELDS`, donc filtré par
+    `copyAckFields` à la projection, donc jamais persisté. Un ack relu au reload
+    n'est jamais en vol, et le persister rouvrirait un drawer en attente d'une
+    réponse qui n'arrivera plus.
+  - Il est posé sur l'**entrée**, jamais sur le descripteur brut `ack` : c'est
+    l'entrée que le thread porte, que le drawer affiche et que la closure de la
+    loupe capture.
+  - Il vaut strictement `true` — un drapeau, pas un message : le prédicat teste
+    l'égalité, pour qu'un futur `pending: 'oui'` ne se faufile pas.
+  - **Deux points de retrait, et le second est inconditionnel.**
+    `enrichLastEarlyAck` le retire à la réponse ; `applyEarlyAckError` le retire
+    en fin de tour **quoi qu'il soit arrivé à l'appel**. Sans ce second point, un
+    ack dont la réponse n'est jamais revenue (abort, transport en échec) n'aurait
+    pas vu l'enrichissement et resterait « en attente » indéfiniment à l'écran.
+  - Le marquage n'est PAS dans `pushGenToolAck`, que `onToolAcks` appelle aussi :
+    les acks d'outils **internes** qui y transitent ont déjà répondu, et les
+    marquer en attente serait faux.
+  - **Les ARGUMENTS sont lisibles pendant le vol, et c'est le point de la
+    surface** : inspecter un appel en cours sans voir ce qu'on lui a demandé
+    n'aurait pas d'intérêt. `args` ne peut donc pas attendre `onEnrichLastAck` —
+    il est passé au hook `onEarlyAcks({ args })` par **api.js**, qui tient les
+    arguments ORIGINAUX du tool_call, ceux-là mêmes que l'enrichissement posera à
+    la réponse : une seule source, donc aucune valeur qui change sous les yeux de
+    l'utilisateur. Ils ne viennent **pas** de `callRemoteTool` (mcp.js), qui
+    serait pourtant le site naturel puisqu'il construit l'ack : sur le chemin
+    d'inflation documentaire il reçoit des `wireArgs` gonflés d'un `content_b64`
+    de plusieurs Mo, que l'inspecteur afficherait — la doctrine existante veut
+    que l'ack porte les args non inflés (cf. `callDocsInflatedRemoteTool`).
+  - Côté drawer, ce qui reste absent pendant le vol est dit comme tel, jamais
+    conclu : la **Réponse** rend `.inspect-pending` (« Réponse en attente… »,
+    pastille pulsante, `prefers-reduced-motion` à 0.01ms et jamais `none`) au
+    lieu de « Aucun résultat enregistré » ; l'**issue** affiche « en cours »
+    plutôt que « succès » — `ackIsError` répond faux par défaut, donc sans ce cas
+    l'inspecteur affirmait le succès d'un appel dont rien n'était revenu ;
+    l'**horodatage** est simplement omis, `ts` étant calculé APRÈS l'await
+    (api.js), donc un horodatage de réponse qui n'existe pas pendant l'attente —
+    aucun `tsStart` n'a été ajouté, ce qui aurait été un changement de schéma
+    persisté pour une ligne d'affichage. La **Requête**, elle, n'a pas de
+    formulation d'attente : arriver dans sa branche vide avec `pending` signifie
+    un appel réellement sans arguments, pas des arguments à venir.
+  - **Le drawer déjà ouvert se met à jour** : `settleEarlyAckPending` appelle
+    `refreshToolInspectorIfOpen(entry)` (ui.js), qui re-rend si et seulement si
+    `_inspectEntry` est **cette entrée** (identité d'objet, jamais `m.id` — même
+    garde que la fenêtre d'await du volet ressource, et même risque : l'utilisateur
+    a pu ouvrir un autre appel pendant le round-trip). Sans lui, le drawer
+    resterait sur « réponse en attente » alors que la réponse est arrivée — un
+    état faux affiché à l'écran, que seule une réouverture corrigerait.
 - **La note de présentation est détachée du résultat avant affichage**
   (`splitToolResultNote`, utils.js, pure). L'ack persiste UN champ `result` qui
   sert deux destinataires : le modèle, à qui `internResourcesFromResult`

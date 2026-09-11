@@ -1743,6 +1743,41 @@ describe('ackHasInspectableDetail (lot Z)', function() {
     expect(ackHasInspectableDetail({ result: '' })).toBe(true);
     expect(ackHasInspectableDetail({ args: {} })).toBe(true);
   });
+  it('pending seul suffit : appel parti, reponse pas encore la', function() {
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', pending: true })).toBe(true);
+  });
+  it('pending distingue l attente d un vide DEFINITIF (ack legacy)', function() {
+    // Meme objet sans champs : seul `pending` separe les deux cas.
+    expect(ackHasInspectableDetail({ kind: 'mcp_call' })).toBe(false);
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', pending: true })).toBe(true);
+  });
+  it('pending exige true, jamais une valeur truthy quelconque', function() {
+    // Garde contre un `pending: 'oui'` venu d un futur site d appel : le champ
+    // est un drapeau, pas un message.
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', pending: false })).toBe(false);
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', pending: 1 })).toBe(false);
+  });
+  it('pending retire mais result arrive → toujours inspectable', function() {
+    // Etat post-enrichissement : le drapeau est parti, le contenu l a remplace.
+    expect(ackHasInspectableDetail({ kind: 'mcp_call', result: 'ok' })).toBe(true);
+  });
+});
+
+describe('pending est VOLATIL : jamais persiste (campagne inspecteur)', function() {
+  it('copyAckFields ne recopie pas pending', function() {
+    // Un ack relu depuis le stockage n est jamais en vol. Le persister ferait
+    // rouvrir au reload un drawer en attente d une reponse qui n arrivera plus.
+    var out = copyAckFields({ kind: 'mcp_call', name: 'srv__t', pending: true }, { role: 'tool-ack' });
+    expect(out.pending === undefined).toBe(true);
+    expect(out.name).toBe('srv__t');
+  });
+  it('un ack enrichi ET encore marque pending ne persiste que le contenu', function() {
+    var out = copyAckFields({ kind: 'mcp_call', pending: true, args: { q: 1 }, result: 'ok' }, {});
+    expect(out.pending === undefined).toBe(true);
+    expect(out.result).toBe('ok');
+    // Relu sans pending, il reste inspectable par ses champs de contenu.
+    expect(ackHasInspectableDetail(out)).toBe(true);
+  });
 });
 
 describe('inspectValueShape (lot Z)', function() {

@@ -1085,6 +1085,40 @@ textarea.skill-content {
 }
 .inspect-empty { margin: 0; color: var(--text-3); font-style: italic; font-size: 11px; }
 
+/* Attente de reponse : meme registre que `.inspect-empty` (gris, italique) et
+   NON une couleur d'alerte — rien n'est anormal, l'appel est simplement en
+   cours. Le point pulsant porte a lui seul la difference entre « pas encore »
+   et « rien » ; le texte, lui, la dit en toutes lettres. */
+.inspect-pending {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--text-3);
+  font-style: italic;
+  font-size: 11px;
+}
+/* `currentColor` : la pastille suit la couleur du texte qu'elle accompagne, donc
+   les palettes et le thème clair sans qu'aucune valeur ne soit redite ici. */
+.inspect-pending::before {
+  content: '';
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: inspect-pending-pulse 1.4s ease-in-out infinite;
+}
+@keyframes inspect-pending-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+/* Kill-switch mouvement : 0.01ms et jamais `none` — l'animation doit rester
+   DECLAREE (un test de non-regression la lit), seule sa duree tombe. */
+@media (prefers-reduced-motion: reduce) {
+  .inspect-pending::before { animation-duration: 0.01ms; opacity: 0.6; }
+}
+
 /* Réponse tenant sur UNE ligne, rendue sans <pre>. Même doctrine que les
    valeurs d'arguments (`inspectValueShape` : pas de saut de ligne → inline),
    appliquée ici au corps du résultat — un bloc de code à en-tête de langue et

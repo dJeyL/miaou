@@ -747,18 +747,28 @@ function splitResultResourceMarkers(text) {
 //
 // Le prédicat porte sur la PRÉSENCE DES CHAMPS, jamais sur le `kind` : ce qui
 // rend un ack inspectable n'est pas la famille d'outil, c'est le fait qu'on ait
-// gardé de quoi montrer l'appel. Les trois champs sont persistés
-// (ACK_COPY_FIELDS) — `args`/`result` par l'enrichissement cross-turn
-// (onEnrichLastAck), `code` par le handler js__eval.
+// gardé de quoi montrer l'appel. `args`, `result` et `code` sont persistés
+// (ACK_COPY_FIELDS) — les deux premiers par l'enrichissement cross-turn
+// (onEnrichLastAck), le troisième par le handler js__eval.
+//
+// `pending` est le QUATRIÈME cas, et le seul qui ne soit pas un contenu : il dit
+// « cet appel est parti, sa réponse n'est pas encore là ». Un ack MCP est peint
+// par onEarlyAcks AVANT le round-trip réseau, donc sans aucun des trois autres
+// champs — sans ce cas, la loupe n'apparaît qu'à la réponse, c'est-à-dire
+// précisément pas pendant l'attente, qui est le moment où l'on veut voir ce qui
+// a été envoyé. Il est VOLATIL (hors ACK_COPY_FIELDS) : un ack relu depuis le
+// stockage n'est jamais en vol, et le persister ferait rouvrir au reload un
+// drawer en attente d'une réponse qui n'arrivera plus.
 //
 // Un ack LEGACY (antérieur à l'enrichissement, ou poussé hors d'un tool_call —
 // resource_presented émis par un handler, par exemple) répond `false` et
 // n'affiche aucun bouton : dégradation propre, jamais un drawer vide qui
-// prétendrait avoir quelque chose à montrer.
+// prétendrait avoir quelque chose à montrer. C'est ce que `pending` distingue
+// d'un vide définitif — sans lui, les deux sont le même objet sans champs.
 // Pure, testable en QuickJS.
 function ackHasInspectableDetail(m) {
   if (!m) return false;
-  return m.args != null || m.result != null || m.code != null;
+  return m.args != null || m.result != null || m.code != null || m.pending === true;
 }
 
 // ── Inspecteur d'appel d'outil : helpers purs (lot Z) ────────────────────────

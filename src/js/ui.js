@@ -6964,6 +6964,26 @@ function closeToolInspector() {
   _inspectEntry = null;
 }
 
+// Re-rend le drawer s'il est ouvert SUR CETTE ENTRÉE, sinon ne fait rien.
+// Appelée quand un appel en vol reçoit sa réponse : l'enrichissement est un
+// `Object.assign` sur l'entrée que le drawer affiche déjà, donc un simple
+// re-rendu suffit à faire apparaître résultat et horodatage — aucun état
+// intermédiaire à recoller, `renderToolInspector` reconstruit tout depuis
+// l'entrée.
+//
+// La garde compare l'ENTRÉE (identité d'objet), jamais `m.id` : cet id n'est
+// pas unique, et l'utilisateur a pu ouvrir un AUTRE appel pendant le
+// round-trip. Même doctrine que la fenêtre d'await du volet ressource
+// (`_inspectEntry !== m`) — c'est le même risque, à la même échelle de temps.
+//
+// Sans elle, le drawer resterait sur « réponse en attente » alors que la
+// réponse est arrivée : un état faux affiché à l'écran, que seule une
+// réouverture corrigerait.
+function refreshToolInspectorIfOpen(entry) {
+  if (!entry || _inspectEntry !== entry) return;
+  renderToolInspector(entry);
+}
+
 // Titre de section d'un volet. Les volets sont EMPILÉS verticalement, jamais
 // des onglets (décision d'ouverture) : on lit une fiche d'appel de haut en bas.
 function _inspectSection(parent, title) {
@@ -7281,6 +7301,10 @@ function renderToolInspector(m) {
   } else if (m.code == null) {
     const none = document.createElement('p');
     none.className = 'inspect-empty';
+    // Un appel EN VOL porte ses `args` depuis l'émission (markEarlyAckPending) :
+    // arriver ici avec `pending` signifie donc un appel réellement sans
+    // arguments, pas un appel dont ils ne seraient « pas encore » là. Ne pas
+    // rétablir de formulation d'attente ici : elle serait fausse.
     none.textContent = 'Aucun argument enregistré pour cet appel.';
     req.appendChild(none);
   }
@@ -7349,6 +7373,15 @@ function renderToolInspector(m) {
       n.textContent = split.note;
       res.appendChild(n);
     }
+  } else if (m.pending === true) {
+    // Appel parti, réponse pas encore revenue. Distinct du cas suivant, et la
+    // distinction est tout l'objet du drapeau : « pas encore » et « jamais »
+    // sont le même objet sans `result`, et les confondre ferait lire un appel
+    // en cours comme un ack legacy sans rien à montrer.
+    const wait = document.createElement('p');
+    wait.className = 'inspect-pending';
+    wait.textContent = 'Réponse en attente…';
+    res.appendChild(wait);
   } else {
     const none = document.createElement('p');
     none.className = 'inspect-empty';
@@ -7375,7 +7408,11 @@ function renderToolInspector(m) {
     _inspectField(meta, 'horodatage',
       new Date(m.ts).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' }), m);
   }
-  _inspectField(meta, 'issue', ackIsError(m) ? 'échec' : 'succès', m);
+  // « succès » est une CONCLUSION, qu'un appel encore en vol n'autorise pas :
+  // `ackIsError` répond faux par défaut, donc sans ce cas l'inspecteur
+  // affirmait le succès d'un appel dont rien n'était revenu.
+  _inspectField(meta, 'issue',
+    m.pending === true ? 'en cours' : (ackIsError(m) ? 'échec' : 'succès'), m);
 }
 
 function openContextInspector() {

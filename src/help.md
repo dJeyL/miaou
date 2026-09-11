@@ -935,6 +935,12 @@ modèle.
   Un fichier trop volumineux n'est pas prévisualisé — il reste téléchargeable.
   La loupe n'apparaît que sur les traces dont le détail a été conservé : les
   conversations les plus anciennes peuvent en être dépourvues.
+- **Inspecter un appel pendant qu'il tourne** : la loupe apparaît dès que
+  l'appel part, sans attendre sa réponse. Le panneau montre alors déjà **ce qui
+  a été demandé** — les paramètres de l'appel, l'outil, le serveur — et indique
+  « Réponse en attente » à la place du résultat. Il se complète tout seul dès
+  que l'outil répond, sans avoir à le refermer. Utile quand un outil distant est
+  lent : tu vois ce qu'il est en train de faire pendant qu'il le fait.
 - **Compteur de contexte** : un « ≈ N tok » dans le composer, cliquable, ouvre
   un panneau qui détaille ce qui est envoyé au modèle (tes instructions, les
   outils, la mémoire, les résumés, l'historique, les pièces jointes…) avec une

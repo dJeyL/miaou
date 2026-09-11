@@ -442,7 +442,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
   présentation détachée du résultat par `splitToolResultNote`, ressources
   désignées par `ackInspectResourceTargets` — y compris les `[resource_ref:…]`
-  d'un `mcp_call`, que `ackDownloadTarget` ne voit pas), références de
+  d'un `mcp_call`, que `ackDownloadTarget` ne voit pas ; appel EN VOL
+  inspectable par le drapeau volatil `pending`, posé aux trois `onEarlyAcks`
+  par `markEarlyAckPending` et retiré par `settleEarlyAckPending` — dont un
+  point de retrait inconditionnel en fin de tour —, drawer ouvert recomplété
+  par `refreshToolInspectorIfOpen`), références de
   conversation dans le texte du modèle (`conv_ref`), et lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
   d'ack rendue en texte, absente des exports).

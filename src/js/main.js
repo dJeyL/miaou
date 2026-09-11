@@ -215,6 +215,11 @@ function createEarlyAckRegistry() {
 // Whitelist unique copyAckFields, jamais une copie champ par champ.
 function applyEarlyAckError(registry) {
   for (const { ack, entry, node } of registry) {
+    // Point de retrait INCONDITIONNEL du drapeau d'attente : ce vidage de
+    // registre a lieu en fin de tour quoi qu'il soit arrivé à l'appel. Un ack
+    // dont la réponse n'est jamais revenue (abort, transport en échec) n'a pas
+    // vu `enrichLastEarlyAck` et resterait « en attente » indéfiniment.
+    settleEarlyAckPending(entry, node);
     if (ack.error && !entry.error) {
       entry.error = true;
       copyAckFields(ack, entry);
@@ -239,8 +244,59 @@ function enrichLastEarlyAck(registry, fields) {
   const last = registry[registry.length - 1];
   if (!last) return false;
   Object.assign(last.entry, fields);
-  refreshAckInspectAffordance(last.node, last.entry);
+  settleEarlyAckPending(last.entry, last.node);
   return true;
+}
+
+// Marque une entrée d'ack « appel parti, réponse pas encore là », et fait
+// apparaître la loupe TOUT DE SUITE — c'est-à-dire pendant le round-trip, le
+// seul moment où l'on gagne quelque chose à voir ce qui a été envoyé.
+//
+// Le drapeau est VOLATIL : hors ACK_COPY_FIELDS, donc jamais persisté (la
+// whitelist de `copyAckFields` le filtre à la projection). Un ack relu au
+// reload n'est jamais en vol ; le persister ferait rouvrir un drawer en attente
+// d'une réponse qui n'arrivera plus.
+//
+// Sur l'ENTRÉE, pas sur le descripteur brut `ack` : c'est l'entrée que le
+// thread porte, que le drawer affiche et que la closure de la loupe capture.
+// Le nœud peut être null (génération détachée) — la donnée est marquée quand
+// même, et le rendu à l'attache lira le prédicat à jour, exactement comme pour
+// l'affordance de loupe elle-même.
+// `args` sont les arguments ORIGINAUX du tool_call, passés par api.js dès
+// l'émission : sans eux l'inspection d'un appel en vol ne montrerait que son
+// nom, alors que ce qu'on veut voir pendant qu'un outil lent travaille est
+// précisément CE QU'ON LUI A DEMANDÉ. Ils sont identiques à ceux que
+// `onEnrichLastAck` posera à la réponse — même objet, donc rien ne change sous
+// les yeux de l'utilisateur.
+function markEarlyAckPending(entry, node, args) {
+  if (!entry) return;
+  entry.pending = true;
+  // `!= null` et non `if (args)` : un appel sans argument rend `{}`, qui est
+  // falsy-adjacent en apparence mais parfaitement légitime — l'inspecteur sait
+  // déjà afficher « Aucun argument ».
+  if (args != null && entry.args == null) entry.args = args;
+  refreshAckInspectAffordance(node, entry);
+}
+
+// Retire le drapeau d'attente et remet l'affichage d'accord avec la donnée.
+// Appelée à la réponse (enrichissement) ET à toute fin de tour (onToolAcks) :
+// une réponse peut ne JAMAIS arriver — abort, erreur de transport, génération
+// interrompue — et un drapeau posé sans point de retrait inconditionnel
+// laisserait l'ack « en attente » à l'écran pour toujours.
+//
+// `refreshAckInspectAffordance` reste appelée après le retrait : l'entrée
+// enrichie porte alors `args`/`result`, donc le prédicat répond vrai par son
+// contenu et la loupe posée à l'émission garde sa raison d'être. Dans le cas
+// d'un abort sans aucun champ, elle ne repose rien (idempotente) — le bouton
+// déjà là ouvrirait un drawer disant « aucun résultat enregistré », ce qui est
+// alors la vérité.
+function settleEarlyAckPending(entry, node) {
+  if (!entry) return;
+  delete entry.pending;
+  refreshAckInspectAffordance(node, entry);
+  // Le drawer peut être ouvert SUR cette entrée : sans ce rafraîchissement il
+  // resterait sur « réponse en attente » alors que la réponse est arrivée.
+  refreshToolInspectorIfOpen(entry);
 }
 
 // Pousse un message déjà construit dans le fil et le peint. Trois `kind`, qui
@@ -3603,7 +3659,7 @@ async function dispatchSend(matches, continuation) {
       // démarrage de callTool() et AVANT l'await, pour que la ligne s'affiche
       // pendant le round-trip réseau (pas seulement après). Les acks des outils
       // internes (synchrones) ne sont jamais ici — ils arrivent dans onToolAcks.
-      onEarlyAcks: () => {
+      onEarlyAcks: ({ args } = {}) => {
         const owns = genOwnsScreen(gen);
         // Lu avant les insertions DOM ci-dessous : cf. streamInto/finalizeAssistant,
         // sinon isAtBottom() verrait déjà le nouveau contenu et répondrait "faux"
@@ -3621,6 +3677,12 @@ async function dispatchSend(matches, continuation) {
           // application d'erreur en onToolAcks porte sur la DONNÉE, elle doit
           // avoir lieu dans les deux cas), seul le nœud DOM manque.
           const node = owns ? placeToolAck(gen.wrap, entry) : null;
+          // Appel parti, réponse pas encore là : la loupe s'affiche DÈS
+          // MAINTENANT, et la fiche porte déjà les ARGUMENTS — sans eux,
+          // inspecter un appel en vol ne montrerait que son nom, ce qui rate
+          // l'intérêt de la surface. Drapeau volatil, retiré par
+          // settleEarlyAckPending.
+          markEarlyAckPending(entry, node, args);
           earlyRendered.push({ ack, entry, node });
         }
         if (follow) scrollBottomCapped(gen.convId);
@@ -3724,15 +3786,18 @@ async function dispatchSend(matches, continuation) {
           if (last) {
             Object.assign(last.entry, fields);
             // L'ack MCP a été PEINT par onEarlyAcks, avant le round-trip
-            // réseau — donc avant que `args`/`result` n'existent, donc sans
-            // loupe (`ackHasInspectableDetail` répondait faux à ce moment-là).
-            // Sans cette rétro-application, l'affordance n'apparaissait qu'après
-            // avoir quitté et rouvert la conversation, le reload relisant
-            // l'entrée enrichie. Même motif que la rétro-application d'erreur de
-            // `onToolAcks` : muter la donnée TOUJOURS, peindre si le nœud
-            // existe (null quand la génération est détachée — le rendu à
-            // l'attache lira alors le prédicat à jour).
-            refreshAckInspectAffordance(last.node, last.entry);
+            // réseau — donc avant que `args`/`result` n'existent. `pending` lui
+            // donne sa loupe dès ce moment-là ; ici on retire le drapeau, on
+            // repose l'affordance si elle manquait (lot Z-2 : sans cette
+            // rétro-application elle n'apparaissait qu'après avoir quitté et
+            // rouvert la conversation, le reload relisant l'entrée enrichie), et
+            // on rafraîchit le drawer s'il est ouvert SUR cette entrée — sinon
+            // il resterait sur « réponse en attente » alors qu'elle est arrivée.
+            // Même motif que la rétro-application d'erreur de `onToolAcks` :
+            // muter la donnée TOUJOURS, peindre si le nœud existe (null quand la
+            // génération est détachée — le rendu à l'attache lira alors le
+            // prédicat à jour).
+            settleEarlyAckPending(last.entry, last.node);
           }
         } else {
           updateLastPendingToolAck(fields);

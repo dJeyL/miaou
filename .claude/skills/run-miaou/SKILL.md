@@ -225,6 +225,30 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   conversation" / default settings. That's a feature for a smoke test,
   not a bug: don't expect prior `node driver.mjs` runs to have left
   state behind.
+- **`page.reload()` keeps the storage but NOT the open conversation.** MIAOU
+  boots to an empty "Nouvelle conversation" — it does not reopen whatever was
+  displayed before. The data survived (it is in IDB); the *screen* did not. So
+  reading `currentThread` right after a reload reads an empty array, and every
+  assertion about the messages that were there fails on a false premise rather
+  than on a defect. It reads like data loss, which is the expensive part:
+  the reflex is to go looking at persistence.
+  Capture the id **before** the reload and reopen explicitly after it, then wait
+  on a terminal state rather than a delay:
+
+  ```js
+  const convId = await page.evaluate(() => currentConvId);
+  await page.reload();
+  await page.waitForSelector('#composer-text');
+  await page.waitForFunction(() => document.querySelector('.boot-done') !== null);
+  await page.evaluate((id) => openConversation(id, true), convId);
+  await page.waitForFunction(() => !!document.querySelector('#thread .tool-ack'));
+  ```
+
+  Paid on 2026-09-11: four assertions red on a correct feature, on a 4-minute
+  run. Note the shape — the one check that *passed* in that block ("nothing is
+  pending after reload") passed **because** the thread was empty, i.e. it was
+  vacuous. A green sitting next to reds on the same fixture deserves as much
+  suspicion as the reds.
 
 ### Screenshots: wait for `.boot-done`, or capture the boot overlay instead
 
@@ -410,6 +434,29 @@ outcome the bleed exists to avoid. And when several rules can produce the same
 geometry (here a settings gate and two unconditional box exceptions all zeroing
 `--table-bleed`), read the resolved custom property too — it says *which one*
 acted, where geometry alone leaves the question open.
+
+A sixth way, the generalisation of the fifth: **when the capture shows the
+correct behaviour and the assertion says otherwise, the instrument is wrong
+until proven otherwise — not the application.** A red is believed, so the reflex
+is to go re-read the feature code; but a script holds far more untested
+assumptions than the code it measures, and every one of them is a way to accuse
+something correct.
+
+Paid twice in one session on 2026-09-11, same script, two unrelated causes:
+`window.currentThread` returning `undefined` (MIAOU's globals are not all
+`window` properties — see the dedicated gotcha), then a reload that silently
+dropped the displayed conversation. Twelve reds across two runs, zero
+application defects. Both times the screenshots sitting right there in the
+output directory showed the feature working exactly as intended.
+
+The practical rule: **read the capture before re-reading the source.** It is
+already on disk, it costs one look, and it answers "is the thing broken?"
+directly — where another pass over the CSS or the handler answers only "can I
+find something that would explain the number I got?", a question that always
+has an answer. Two tells that the fault is in the script, both present that day:
+the reds cluster around one mechanism the script uses (a way of reading state, a
+navigation step) rather than around one feature, and a vacuous green sits among
+them.
 
 So: **challenge each green by injecting the regression it is supposed to
 catch** (edit the source, rebuild, re-run, confirm it goes red, revert). This

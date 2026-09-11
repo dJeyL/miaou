@@ -840,7 +840,18 @@ async function runConversation(messages, hooks) {
               const p = parseToolName(tc.function.name).serverPrefix;
               return p !== '' && p !== 'miaou';
             })();
-            if (h.onEarlyAcks && isMcp) h.onEarlyAcks();
+            // `args` passés DÈS l'émission : ce sont les arguments ORIGINAUX du
+            // tool_call, ceux-là mêmes que `onEnrichLastAck` posera à la réponse
+            // — donc aucune seconde source, et aucune valeur qui changerait sous
+            // les yeux de l'utilisateur entre l'émission et la réponse.
+            //
+            // Ils ne peuvent PAS venir de `callRemoteTool` (mcp.js), qui serait
+            // pourtant le site naturel puisqu'il construit l'ack : sur le chemin
+            // d'inflation documentaire il reçoit des `wireArgs` gonflés d'un
+            // `content_b64` de plusieurs Mo, que l'inspecteur afficherait. La
+            // doctrine existante veut que l'ack porte les args non inflés (cf.
+            // callDocsInflatedRemoteTool) ; api.js est le seul endroit qui les a.
+            if (h.onEarlyAcks && isMcp) h.onEarlyAcks({ args });
             const rawResult = await toolPromise;
             // Interception ressources : stocke les blocs non-textuels dans IDB,
             // réécrit rawResult.content avec des références. Même contexte que l'outil lui-même — la
