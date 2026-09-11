@@ -87,6 +87,16 @@ qui permet au modèle d'aller droit à la bonne section au lieu de balayer. Sur 
 document long, il peut ranger sa lecture dans une ressource et l'interroger par
 code plutôt que de la faire défiler.
 
+Les **images d'une page sont signalées en fin de page**, avec leur taille et la
+part de la page qu'elles occupent. C'est ce dernier chiffre qui compte : il
+distingue le bandeau décoratif du schéma qui porte l'information, et permet au
+modèle de décider s'il vaut la peine de se faire rendre la page. Sans ça, une
+image au milieu d'un texte par ailleurs lisible ne laissait aucune trace — le
+modèle concluait sur ce qu'il lisait, sans savoir qu'il manquait quelque chose.
+À la différence des documents Office, il n'y a **pas de chemin de fichier à
+recopier** : un PDF n'a pas de pièces séparées à l'intérieur, donc l'image se
+signale mais ne s'extrait pas. La suite reste le rendu de la page.
+
 Une page de PDF peut aussi être **rendue en image** pour que le modèle la regarde
 avec sa vision, page par page à sa demande. C'est la réponse aux pages scannées,
 mais pas seulement : un schéma, un graphique ou un tableau mis en forme se lisent

@@ -229,7 +229,14 @@ function formatPdfRead(pages, opts) {
     const num = Math.floor(Number(p && p.page) || 0);
     const text = String((p && p.text) || '').trim();
     if (!text) empty.push(num);
-    parts.push('--- Page ' + num + ' ---\n' + text);
+    // Les ancres viennent APRÈS le texte de la page (lot AC-5) : le texte est ce
+    // qu'on lit, les ancres sont un index de ce qu'on peut aller voir. Même
+    // ordre que la slide et la feuille. `anchors` est une chaîne DÉJÀ formatée
+    // (formatPdfPageAnchorNote) ou '' : la page vide ci-dessus reste détectée
+    // sur le TEXTE seul, sans quoi une page scannée — dont l'image unique
+    // produit justement une ancre — cesserait d'être signalée comme vide et
+    // perdrait son renvoi vers docs__render_page.
+    parts.push('--- Page ' + num + ' ---\n' + text + String((p && p.anchors) || ''));
   }
   let out = parts.join('\n\n');
   if (empty.length) {
@@ -1824,6 +1831,60 @@ async function renderPdfPageImage(u8, record, pageNum) {
   }
 }
 
+// Collecte des images peintes sur UNE page pdf.js (lot AC-5). L'IMPUR de
+// l'étape, et il se réduit délibérément à « parcourir les opérateurs et suivre
+// la matrice » : tout ce qui DÉCIDE (bande, couverture, cap, forme de la ligne)
+// vit dans les purs plus haut, parce que pdf.js ne tourne pas sous QuickJS et
+// que ce qui n'est pas pur ici n'est testable nulle part.
+//
+// LA POSITION NE SE LIT PAS SUR L'OPÉRATEUR, elle se DÉRIVE de la matrice de
+// transformation courante (CTM) : les opérateurs d'image ne portent qu'un nom
+// d'objet, et l'image est toujours peinte dans le carré unité, mise à l'échelle
+// et positionnée par la CTM. D'où la pile save/restore et la multiplication
+// matricielle — sans elles, toutes les images sortiraient à la même place.
+//
+// Les trois opérateurs sont énumérés (mesuré présents dans le build 3.11.174) :
+// XObject classique, image inline, et masque. Le masque compte : c'est souvent
+// un logo monochrome, et l'omettre laisserait un trou dans le comptage.
+async function collectPdfPageImages(page) {
+  const lib = (typeof window !== 'undefined' && window.pdfjsLib) ? window.pdfjsLib : null;
+  const OPS = lib && lib.OPS;
+  if (!page || !OPS) return [];
+  const ol = await page.getOperatorList();
+  if (!ol || !ol.fnArray) return [];
+  const vp = page.getViewport({ scale: 1 });
+  const pageW = Math.abs(Number(vp && vp.width) || 0);
+  const pageH = Math.abs(Number(vp && vp.height) || 0);
+  const area = pageW * pageH;
+
+  const mul = (a, b) => [
+    a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5],
+  ];
+
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack = [];
+  const out = [];
+  for (let i = 0; i < ol.fnArray.length; i++) {
+    const fn = ol.fnArray[i];
+    if (fn === OPS.save) { stack.push(ctm.slice()); continue; }
+    if (fn === OPS.restore) { ctm = stack.pop() || [1, 0, 0, 1, 0, 0]; continue; }
+    if (fn === OPS.transform) { ctm = mul(ctm, ol.argsArray[i]); continue; }
+    if (fn !== OPS.paintImageXObject && fn !== OPS.paintInlineImageXObject &&
+        fn !== OPS.paintImageMaskXObject) continue;
+    const w = Math.abs(ctm[0]);
+    const h = Math.abs(ctm[3]);
+    out.push({
+      rank: out.length + 1,          // le rang PAR PAGE : le seul adressage stable
+      w: w, h: h,
+      covPct: area > 0 ? (100 * w * h) / area : 0,
+      band: pdfAnchorBand(ctm[5], h, pageH),   // pur, plus haut dans ce fichier
+    });
+  }
+  return out;
+}
+
 // Lecteur `read` du PDF — la lecture paginée (V-4 décision 2, option (c)).
 // Le selector est parsé AVANT l'ouverture ? Non : il faut le total de pages pour
 // le borner, donc l'ouverture précède. C'est le seul ordre possible, et il fait
@@ -1841,7 +1902,18 @@ async function readPdfDocument(u8, record, ref, selector) {
       const page = await doc.getPage(n);
       try {
         const tc = await page.getTextContent();
-        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items) });   // pur, plus haut dans ce fichier
+        // Les ancres d'images (lot AC-5) coûtent un getOperatorList PAR PAGE,
+        // en plus du getTextContent. C'est le prix assumé de l'étape : sans la
+        // liste d'opérateurs, une image d'un PDF est INVISIBLE à l'extraction —
+        // il n'existe pas d'équivalent du membre de zip qu'on lirait au passage.
+        // Un échec de cette collecte ne doit jamais faire échouer la LECTURE :
+        // le texte est la raison d'être de l'appel, l'ancre est un bonus.
+        let anchors = '';
+        try {
+          anchors = formatPdfPageAnchorNote(   // pur, plus haut dans ce fichier
+            await collectPdfPageImages(page), n);
+        } catch (e) { /* page sans ancre : on sert le texte */ }
+        pages.push({ page: n, text: joinPdfTextItems(tc && tc.items), anchors: anchors });   // pur, plus haut
       } finally {
         try { page.cleanup(); } catch (e) { /* rien à rattraper */ }
       }
@@ -2746,6 +2818,112 @@ function formatXlsxAnchorNote(part, cap) {
       (inside.length ? '' : ' — aucune ne recouvre ce qui précède') + '.]';
   }
   return out;
+}
+
+// ── Ancres d'images d'un PDF (lot AC-5) ────────────────────────────────────
+// Une image d'un PDF ne laissait AUCUNE trace dans le texte extrait : un modèle
+// lisant une page où un schéma occupe un tiers de la surface recevait le texte
+// qui l'entoure et concluait dessus. La seule issue était de rendre la page
+// ENTIÈRE en image (docs__render_page) — coûteux, et surtout indécidable : rien
+// ne lui disait qu'il y avait quelque chose à aller voir.
+//
+// LA DIFFÉRENCE DE FOND AVEC LES ANCRES OFFICE (AC-1/2/4), et elle gouverne la
+// forme de la ligne : un .docx/.xlsx/.pptx est un zip, donc l'ancre peut porter
+// un CHEMIN de pièce (`word/media/image3.png`) que le modèle recopie pour aller
+// chercher les octets via docs__extract. UN PDF N'A PAS DE MEMBRE ADRESSABLE.
+// L'ancre y signale donc une PRÉSENCE, sans rien à viser : la seule suite
+// offerte reste docs__render_page sur la page entière. C'est un choix assumé
+// (« signaler sans extraire », arbitrage Julien 2026-09-11), pas une étape vers
+// une extraction restée en chemin.
+//
+// L'ADRESSAGE EST (page, rang), JAMAIS LE NOM D'OBJET pdf.js. Mesuré sur
+// test.pdf, les noms rendus par getOperatorList (`img_p2_1`, `g_d0_img_p2_1`)
+// sont INSTABLES sur les trois axes qui comptent ici :
+//   - une seconde ouverture du même document incrémente le préfixe de cache
+//     global (`g_d0_` → `g_d1_`) ;
+//   - visiter les pages en ordre inverse change le suffixe ET la page citée
+//     (la page 3 rend un `img_p6_1`) ;
+//   - visiter une page SEULE supprime le préfixe (`img_p2_1` tout court).
+// Chacun suffirait : MIAOU ne contrôle pas l'ordre de lecture du modèle, et
+// chaque appel d'outil rouvre le document. Un nom servi au tour N désignerait
+// une autre image au tour N+1 — et rendrait UNE image plutôt qu'une erreur,
+// donc en silence. Le rang par page, lui, est mesuré STABLE sur les trois axes
+// (il suit le flux de contenu, qui est une propriété du fichier).
+//
+// LES ANCRES SONT GROUPÉES EN FIN DE PAGE, comme le classeur et non comme le
+// document Word, et c'est une RÉVISION mesurée : l'entrelacement au fil du
+// texte avait été retenu, puis abandonné parce que getTextContent émet ses
+// items dans l'ordre du FLUX DE CONTENU, pas dans l'ordre géométrique. Mesure
+// sur test.pdf : 7 pages sur 8 « remontent » au moins une fois, jusqu'à +269
+// points sur une page de 540. Une ancre insérée par comparaison d'ordonnée
+// atterrirait donc à un endroit arbitraire du texte — en passant pour juste sur
+// les documents à une seule colonne, ce qui est le pire cas.
+const PDF_MAX_IMAGE_ANCHORS = 24;
+
+// Bande verticale d'une image dans la page, en mots plutôt qu'en coordonnées.
+// Les ordonnées PDF partent du BAS (y=0 en bas), ce qu'un modèle n'a aucune
+// raison de savoir : servir « y=464 » l'inviterait à le lire comme un écart
+// depuis le haut, donc à l'envers. Le tiers est rendu en clair.
+//
+// Rend '' quand la hauteur de page est inconnue ou absurde : une bande calculée
+// sur une division par zéro serait une affirmation fausse, pas une approximation.
+function pdfAnchorBand(y, h, pageHeight) {
+  const ph = Number(pageHeight) || 0;
+  if (ph <= 0) return '';
+  const top = Number(y) || 0;
+  const hh = Number(h) || 0;
+  // Centre de l'image, converti en « depuis le haut ».
+  const fromTop = ph - (top + hh / 2);
+  if (!isFinite(fromTop)) return '';
+  const r = fromTop / ph;
+  if (r < 0.33) return 'haut de page';
+  if (r < 0.66) return 'milieu de page';
+  return 'bas de page';
+}
+
+// Une ligne d'ancre. PURE. Volontairement PAS formatImageAnchor : celle-ci
+// annonce un chemin que le modèle peut recopier, et il n'y en a pas ici — lui
+// en fabriquer un (« page3-image2.png ») inventerait une cible inexistante.
+//
+// La COUVERTURE est le champ qui décide, et c'est pour elle que l'étape existe :
+// elle sépare le logo décoratif (mesuré à 0-2 % sur test.pdf) du schéma qui
+// porte l'information (32 % sur la page 1). C'est elle qui permet au modèle de
+// trancher si un docs__render_page vaut ses tokens — sans elle, il ne peut que
+// tout rendre ou tout ignorer.
+//
+// Arrondie à l'entier, plancher à 1 % : une image mesurée à 0 % serait annoncée
+// comme inexistante alors qu'elle est là (les pastilles de 36x29 de la fixture
+// tombent sous le demi-point).
+function formatPdfImageAnchor(img, pageNum) {
+  const o = img || {};
+  const rank = Math.max(1, Math.floor(Number(o.rank) || 0));
+  const w = Math.max(0, Math.round(Number(o.w) || 0));
+  const h = Math.max(0, Math.round(Number(o.h) || 0));
+  const pct = Math.max(1, Math.round(Number(o.covPct) || 0));
+  const band = String(o.band || '');
+  const page = Math.max(1, Math.floor(Number(pageNum) || 0));
+  return '[image: page ' + page + ', image ' + rank + ' — ' + w + '×' + h +
+    ', ' + pct + ' % de la page' + (band ? ', ' + band : '') + ']';
+}
+
+// La note d'ancres d'UNE page. Rend '' quand la page ne porte aucune image —
+// une page sans illustration ne doit produire aucune ligne, pas une note vide.
+//
+// LA RÉPÉTITION D'UNE MÊME IMAGE ENTRE PAGES EST ASSUMÉE, non déduplicée
+// (arbitrage Julien 2026-09-11). Sur test.pdf le bandeau reparaît sur 7 pages
+// sur 8, et c'est du bruit — mais dédupliquer demanderait une identité d'image,
+// que pdf.js ne fournit pas de façon stable (cf. le bloc ci-dessus) ; le
+// substitut position+taille échoue sur ce cas précis, le bandeau se déplaçant
+// de quelques points d'une page à l'autre (795,464 page 3 contre 802,464
+// page 4). Une déduplication à demi juste effacerait des images RÉELLES : on
+// préfère le bruit à l'omission.
+function formatPdfPageAnchorNote(images, pageNum, cap) {
+  const list = (images || []).filter((i) => !!i);
+  if (!list.length) return '';
+  const lines = capImageAnchors(
+    list.map((i) => formatPdfImageAnchor(i, pageNum)),
+    cap || PDF_MAX_IMAGE_ANCHORS, 'cette page');
+  return '\n\n' + lines.join('\n');
 }
 
 // Placeholders d'une pièce de notes qui ne PORTENT PAS de propos : l'image de

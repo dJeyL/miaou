@@ -754,6 +754,90 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   —, toutes couvertes sur entrée construite, pour qu'une session future ne les
   « rétablisse » pas sur fixture.
 
+**Ancres d'images d'un PDF (lot AC-5) :**
+- **L'ancre signale une PRÉSENCE, sans rien à viser** — `[image: page 3, image 2
+  — 112×92, 2 % de la page, bas de page]`. C'est la différence de fond avec
+  AC-1/2/4 : un `.docx`/`.xlsx`/`.pptx` est un zip, donc l'ancre y porte un
+  **chemin de pièce** que le modèle recopie pour extraire les octets. Un PDF n'a
+  **aucun membre adressable** — la seule suite offerte reste `docs__render_page`
+  sur la page entière. « Signaler sans extraire » est un arbitrage explicite
+  (Julien, 2026-09-11), pas une extraction restée en chemin : lui fabriquer un
+  faux chemin (`page3-image2.png`) inventerait une cible inexistante. D'où une
+  fonction de rendu **distincte** de `formatImageAnchor`, qui annonce un chemin.
+- **La COUVERTURE est le champ qui justifie le lot.** Elle sépare le décor de
+  l'information : sur la fixture, bandeaux et pastilles tombent entre 0 et 2 %
+  quand le schéma de la première page occupe 32 %. C'est elle qui permet au
+  modèle de trancher si un rendu de page vaut ses tokens — sans elle, il ne peut
+  que tout rendre ou tout ignorer. **Plancher à 1 %** : une image mesurée sous le
+  demi-point serait annoncée « 0 % de la page », donc dite inexistante alors
+  qu'elle est là.
+- **L'ADRESSAGE EST (page, rang), JAMAIS LE NOM D'OBJET pdf.js**, et c'est
+  mesuré, pas supposé. Les noms rendus par `getOperatorList` (`img_p2_1`,
+  `g_d0_img_p2_1`) sont instables sur les trois axes qui comptent : une seconde
+  ouverture du même document incrémente le préfixe de cache global (`g_d0_` →
+  `g_d1_`) ; visiter les pages en ordre inverse change le suffixe **et la page
+  citée** (la page 3 rend un `img_p6_1`) ; visiter une page seule supprime le
+  préfixe. Chacun suffirait — MIAOU ne contrôle pas l'ordre de lecture du modèle,
+  et chaque appel d'outil rouvre le document. Un nom servi au tour N désignerait
+  une autre image au tour N+1, et rendrait **une image plutôt qu'une erreur**,
+  donc en silence. Le rang par page, lui, est mesuré stable sur les trois axes :
+  il suit le flux de contenu, qui est une propriété du fichier.
+- **Les ancres sont GROUPÉES EN FIN DE PAGE, comme le classeur et non comme le
+  document Word — et c'est une RÉVISION mesurée.** L'entrelacement au fil du
+  texte avait été retenu, puis abandonné : `getTextContent` émet ses items dans
+  l'ordre du **flux de contenu**, pas dans l'ordre géométrique. Mesure sur la
+  fixture : 7 pages sur 8 « remontent » au moins une fois, jusqu'à **+269 points
+  sur une page de 540**. Une ancre insérée par comparaison d'ordonnée
+  atterrirait donc à un endroit arbitraire du texte — en passant pour juste sur
+  les documents à une seule colonne, ce qui est le pire cas. Ne pas « rétablir »
+  l'entrelacement sans retrier le texte géométriquement, ce qui toucherait
+  `joinPdfTextItems` et son calibrage `hasEOL`, hors de proportion avec l'étape.
+- **La bande (`haut`/`milieu`/`bas de page`) traduit une ordonnée, parce que les
+  ordonnées PDF partent du BAS.** Servir « y=464 » inviterait le modèle à le lire
+  comme un écart depuis le haut, donc à l'envers. `pdfAnchorBand` rend `''` quand
+  la hauteur de page est inconnue : une bande dérivée d'une division par zéro
+  serait une affirmation fausse, pas une approximation.
+- **La RÉPÉTITION d'une même image entre pages est ASSUMÉE, non dédupliquée**
+  (arbitrage Julien). Le bandeau reparaît sur 7 des 8 pages de la fixture, et
+  c'est du bruit — mais dédupliquer exigerait une identité d'image, que pdf.js ne
+  fournit pas de façon stable (ci-dessus) ; le substitut position+taille échoue
+  précisément sur ce cas, le bandeau se déplaçant de quelques points entre pages
+  (`795,464` en p3 contre `802,464` en p4). Une déduplication à demi juste
+  effacerait des images **réelles** : le bruit est préféré à l'omission.
+- **La détection de page vide reste fondée sur le TEXTE SEUL.** Une page scannée
+  porte désormais une ancre (image à 100 %) : si l'ancre comptait comme du
+  contenu, la page cesserait d'être signalée « sans texte extractible » et
+  perdrait son renvoi vers `docs__render_page` — la seule issue offerte au modèle
+  sur un scan. Régression que le lot pouvait introduire silencieusement, figée en
+  contrôle.
+- **Un échec de collecte ne fait jamais échouer la LECTURE.** `collectPdfPageImages`
+  est appelée sous `try/catch` dans `readPdfDocument` : le texte est la raison
+  d'être de l'appel, l'ancre est un bonus. Coût assumé de l'étape : un
+  `getOperatorList` **par page**, en plus du `getTextContent`.
+- **`docs__render_page` ne porte pas d'ancres** (arbitrage utilisateur) : un
+  modèle qui demande le rendu d'une page le fait pour la regarder, il verra
+  qu'elle porte autre chose que du texte.
+- **La description de bibliothèque en est exclue, structurellement** :
+  `describePdfForLibrary` lit métadonnées et sommaire par son propre chemin, sans
+  jamais passer par `readPdfDocument` ni `collectPdfPageImages`. L'exclusion est
+  donc gratuite — même posture qu'AC-4, et figée en non-régression.
+- **`PDF_MAX_IMAGE_ANCHORS` (24)** borne l'énumération, dépassement **annoncé**
+  avec son compte, via le `capImageAnchors` partagé (unité « cette page »).
+  Comme ses homologues, **aucune fixture ne l'exerce** (la page la plus chargée
+  du dépôt porte 3 images) : garde de principe, pas valeur calibrée.
+- **Vérification** : `collectPdfPageImages` (parcours des opérateurs et suivi de
+  la CTM) n'est exercée que par `verify-pdf-anchors.mjs`, pdf.js ne tournant pas
+  sous QuickJS — or c'est elle qui produit **tous les nombres** que les purs
+  mettent en forme. Le script **remesure ses trois prémisses** (instabilité des
+  noms, stabilité du rang, pouvoir discriminant de la couverture) et **nomme ses
+  trois vacuités** — le cap, la bande « milieu de page », et les opérateurs
+  `paintInlineImageXObject`/`paintImageMaskXObject`, à zéro occurrence mesurée.
+  Deux pièges d'instrument y ont été payés en rouge et sont documentés dans le
+  script : mesurer l'instabilité des noms sur une page **visitée seule** (le
+  préfixe `g_d` n'y est jamais posé — faux négatif), et chercher le bandeau
+  répété sur une plage incluant la **page de titre**, qui ne le porte pas
+  (vacuité inversée).
+
 **Lecture native de documents Word (lot V-5 étape 2, `docs__list` / `docs__read`) :**
 - **`DOC_READERS.docx` gagne `{ list, read }`** (`listDocxDocument` /
   `readDocxDocument`) à la place du lecteur zip. Comme pour l'Excel, le listing

@@ -77,7 +77,8 @@ Figtree/Fira Code).
   archive téléchargeable depuis le fil — cf. [docs/tools.md](docs/tools.md).
 - **PDF** : le modèle en lit la structure (sommaire avec ses numéros de page) et
   les pages, ou s'en fait rendre une en image pour la lire avec sa vision — page
-  scannée, schéma, graphique —, sans serveur — cf.
+  scannée, schéma, graphique —, sans serveur ; les images d'une page y sont
+  signalées avec la part de page qu'elles occupent — cf.
   [docs/documents.md](docs/documents.md).
 - **Classeurs Excel** : le modèle en liste les feuilles et en lit une plage de
   cellules, sans serveur ; les formules, les cellules fusionnées et les images

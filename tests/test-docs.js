@@ -2085,3 +2085,71 @@ describe('formatXlsxAnchorNote — la note de fin, et son silence', function() {
     expect(out).toContain('6 autres images sur cette feuille, non listées.');
   });
 });
+
+describe('pdfAnchorBand — les ordonnées PDF partent du BAS (AC-5)', function() {
+  it('une image haute sur la page se dit « haut de page »', function() {
+    // Mesure test.pdf p2 : bandeau à y=464, hauteur 40, page de 540.
+    // 540 - (464 + 20) = 56 depuis le haut, soit 10 % → haut.
+    expect(pdfAnchorBand(464, 40, 540)).toBe('haut de page');
+  });
+
+  it('une image basse se dit « bas de page », jamais l\'inverse', function() {
+    // LE PIÈGE de l'étape : lire y comme un écart depuis le haut rendrait
+    // exactement la réponse opposée sur ces deux cas.
+    expect(pdfAnchorBand(37, 92, 540)).toBe('bas de page');
+  });
+
+  it('une image centrée se dit « milieu de page »', function() {
+    expect(pdfAnchorBand(250, 40, 540)).toBe('milieu de page');
+  });
+
+  it('sans hauteur de page exploitable, aucune bande n\'est affirmée', function() {
+    // Une bande dérivée d'une division par zéro serait une affirmation fausse.
+    expect(pdfAnchorBand(100, 10, 0)).toBe('');
+    expect(pdfAnchorBand(100, 10, null)).toBe('');
+  });
+});
+
+describe('formatPdfImageAnchor — signaler sans rien à extraire (AC-5)', function() {
+  it('l\'ancre porte (page, rang), la taille et la couverture', function() {
+    // Mesure test.pdf p1 image 2 : 681x681 natif peint en 407x407 sur 960x540.
+    expect(formatPdfImageAnchor(
+      { rank: 2, w: 407, h: 407, covPct: 32, band: 'milieu de page' }, 1))
+      .toBe('[image: page 1, image 2 — 407×407, 32 % de la page, milieu de page]');
+  });
+
+  it('une image minuscule est annoncée à 1 %, jamais à 0 %', function() {
+    // Les pastilles de 36x29 de la fixture tombent sous le demi-point : les
+    // annoncer à « 0 % de la page » les dirait inexistantes alors qu'elles
+    // sont là.
+    expect(formatPdfImageAnchor({ rank: 3, w: 36, h: 29, covPct: 0.2, band: 'haut de page' }, 4))
+      .toBe('[image: page 4, image 3 — 36×29, 1 % de la page, haut de page]');
+  });
+
+  it('sans bande, l\'ancre reste utile — la couverture porte', function() {
+    expect(formatPdfImageAnchor({ rank: 1, w: 100, h: 50, covPct: 5, band: '' }, 2))
+      .toBe('[image: page 2, image 1 — 100×50, 5 % de la page]');
+  });
+});
+
+describe('formatPdfPageAnchorNote — groupées en fin de page (AC-5)', function() {
+  it('une page sans image ne produit AUCUNE note', function() {
+    expect(formatPdfPageAnchorNote([], 3)).toBe('');
+    expect(formatPdfPageAnchorNote(null, 3)).toBe('');
+  });
+
+  it('les ancres suivent le texte, séparées par une ligne vide', function() {
+    const out = formatPdfPageAnchorNote(
+      [{ rank: 1, w: 196, h: 40, covPct: 2, band: 'haut de page' }], 7);
+    expect(out).toBe('\n\n[image: page 7, image 1 — 196×40, 2 % de la page, haut de page]');
+  });
+
+  it('le cap annonce son dépassement, en parlant de « cette page »', function() {
+    // Une notice qui parlerait de slide dans un PDF serait fausse au moment
+    // précis où le modèle a besoin de savoir ce qui manque.
+    const many = [];
+    for (let i = 0; i < 26; i++) many.push({ rank: i + 1, w: 10, h: 10, covPct: 1, band: '' });
+    const lines = formatPdfPageAnchorNote(many, 2).split('\n');
+    expect(lines[lines.length - 1]).toBe('[2 autres images sur cette page, non listées.]');
+  });
+});

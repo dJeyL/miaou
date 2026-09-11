@@ -481,6 +481,39 @@ reg() { python3 build.py >/dev/null; node .claude/skills/run-miaou/<verify>.mjs 
         cp /tmp/<file>.bak src/js/<file>.js; }   # then one final build.py
 ```
 
+A seventh way, and it is the **symmetric** of the sixth rather than another
+instance of it: **an assertion can exercise a path where the defect it hunts
+does not manifest, and go red while accusing a premise that is perfectly
+true.** The sixth mode is a red on correct application code; this one is a red
+on a correct *premise*, produced by a measurement aimed one notch off. It is
+nastier, because the natural response to it is to "fix" something sound — and
+because, unlike a vacuous green, it does not look like an absence of evidence.
+
+Paid on 2026-09-11 writing `verify-pdf-anchors.mjs`. The premise: pdf.js object
+names (`img_p2_1`, `g_d0_img_p2_1`) are unstable across document opens, which is
+why anchors address images by `(page, rank)` instead. The premise is true and had
+been measured three ways. The assertion opened the document twice and read
+**page 3 alone** each time — but the unstable part is the `g_dN_` global-cache
+prefix, which is only set on objects promoted to the shared cache, i.e. only if
+earlier pages were visited. Reading page 3 in isolation yields bare `img_p2_*`
+names, identical every time. Red, on a premise that holds. The fix was to walk
+pages 1→3 before sampling.
+
+The tell is specific: **the assertion fails on a claim you measured yourself,
+by another route, and could reproduce on demand.** When that happens, do not
+re-derive the claim and do not weaken it — ask instead *which conditions make
+the phenomenon appear*, and whether the script reproduces them. A defect that
+needs prior state (a cache filled, a prefix promoted, a second writer having
+run) will not show up in a measurement that starts clean.
+
+Generalised: a verify is not only a set of assertions, it is a set of
+**conditions under which they are evaluated**, and those conditions are as
+untested as the assertions themselves. The vacuous green and the inverted
+vacuity are the cases where the condition is *too weak*; this is the case
+where it is *too clean*. Naming the conditions a premise needs — in the header,
+next to the measurement it cites — is what keeps a later session from
+"simplifying" the setup and quietly turning the check into a tautology.
+
 Assertions accumulate into a `failures` array via a `check(label, cond)` helper
 so one run reports every problem, rather than aborting on the first.
 
