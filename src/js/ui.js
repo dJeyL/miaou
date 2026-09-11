@@ -2324,21 +2324,27 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_CODE,
-    label: m => 'Code exécuté sur ' + jsEvalHandlesSummary(m.inputHandles) +
+    label: m => (jsEvalHasNoInputs(m.inputHandles)
+      ? 'Code exécuté sans ressource'
+      : 'Code exécuté sur ' + jsEvalHandlesSummary(m.inputHandles)) +
       (m.ok === false ? ' (refusé)' : (m.outLen != null ? ' → ' + m.outLen + ' car.' : '')),
     renderLabel: (m, el) => {
       const tail = m.ok === false ? ' (refusé)' : (m.outLen != null ? ' → ' + m.outLen + ' car.' : '');
-      if (m.intent) {
-        renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Code exécuté sur '));
-          appendAckSep(detail);
-          detail.appendChild(document.createTextNode(' ' + jsEvalHandlesSummary(m.inputHandles) + tail));
-        });
-      } else {
-        el.appendChild(document.createTextNode('Code exécuté sur '));
-        appendAckSep(el);
-        el.appendChild(document.createTextNode(' ' + jsEvalHandlesSummary(m.inputHandles) + tail));
-      }
+      // Calcul pur (aucune entrée) : la phrase se termine sur elle-même, sans
+      // séparateur ni résumé — « exécuté sur › ? » suggérerait une ressource
+      // non identifiée là où il n'y en a simplement aucune.
+      const bare = jsEvalHasNoInputs(m.inputHandles);
+      const paint = (node) => {
+        if (bare) {
+          node.appendChild(document.createTextNode('Code exécuté sans ressource' + tail));
+          return;
+        }
+        node.appendChild(document.createTextNode('Code exécuté sur '));
+        appendAckSep(node);
+        node.appendChild(document.createTextNode(' ' + jsEvalHandlesSummary(m.inputHandles) + tail));
+      };
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, paint);
+      else paint(el);
     },
   },
   // Listing d'un document (miaou__docs__list, lot V-1, élargi V-4) : lecture

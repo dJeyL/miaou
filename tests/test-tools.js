@@ -808,14 +808,17 @@ describe('JS_EVAL_DOCTRINE (constante inconditionnelle de ROOT_SYSTEM_PROMPT, lo
 });
 
 describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2)', function() {
-  it('miaou__js__eval est dans exposedTools avec input_handles+code requis', function() {
+  it('miaou__js__eval est dans exposedTools : code SEUL requis, input_handles facultatif', function() {
     var def = exposedTools().find(function(t) { return t.name === 'miaou__js__eval'; });
     expect(!!def).toBe(true);
     var props = def.inputSchema.properties;
     expect(!!props.input_handles).toBe(true);
     expect(props.input_handles.type).toBe('object');
     expect(!!props.code).toBe(true);
-    expect(def.inputSchema.required.indexOf('input_handles') >= 0).toBeTruthy();
+    // input_handles est SORTI de required : un calcul pur (aucune ressource à
+    // lire) est un appel légitime, et l'exiger forçait le modèle à fabriquer une
+    // ressource factice pour avoir le droit d'exécuter du code.
+    expect(def.inputSchema.required.indexOf('input_handles') >= 0).toBe(false);
     expect(def.inputSchema.required.indexOf('code') >= 0).toBeTruthy();
     // Le paramètre scalaire du lot L a DISPARU (décision 3 du brief L-2 : une
     // seule forme d'appel, pas de compat parallèle qui ferait deux syntaxes à
@@ -823,13 +826,24 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     expect(!!props.handle).toBe(false);
     expect(def.inputSchema.required.indexOf('handle') >= 0).toBe(false);
   });
-  it('rejette input_handles manquant en erreur synchrone (avant tout async)', function() {
-    var r = flattenToolResult(callTool('miaou__js__eval', { code: '1' }));
-    expect(r.indexOf('input_handles manquant ou invalide') >= 0).toBeTruthy();
+  it('input_handles ABSENT n\'est plus un refus : l\'appel part en exécution', function() {
+    // DISCRIMINANT : un refus synchrone rend un objet { content } APLATISSABLE,
+    // tandis que passer les gardes atteint runInQuickJs et rend une PROMISE.
+    // C'est `.then` qui distingue les deux — pas le texte aplati, qui vaut ''
+    // sur une Promise et ferait passer ce test sans qu'il atteigne son chemin.
+    var r = callTool('miaou__js__eval', { code: '1' });
+    expect(typeof r.then === 'function').toBe(true);
+    // Contrôle de prémisse : le MÊME helper rend bien un refus aplatissable quand
+    // une garde mord vraiment (ici `code` manquant), sinon l'assertion ci-dessus
+    // serait vraie pour toute entrée et ne prouverait rien.
+    var refus = callTool('miaou__js__eval', {});
+    expect(typeof refus.then === 'function').toBe(false);
+    expect(flattenToolResult(refus)).toBe('Code manquant.');
   });
-  it('rejette un input_handles qui n\'est pas un objet (string)', function() {
+  it('rejette un input_handles PRÉSENT mais pas un objet (string)', function() {
+    // Distinction load-bearing : absent = légitime, présent-mais-malformé = refusé.
     var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: 'att-1', code: '1' }));
-    expect(r.indexOf('input_handles manquant ou invalide') >= 0).toBeTruthy();
+    expect(r.indexOf('input_handles invalide') >= 0).toBeTruthy();
   });
   it('rejette un TABLEAU : typeof object ne suffit pas, la garde Array.isArray est nécessaire', function() {
     // Contrôle de prémisse du test : un tableau EST bien un typeof 'object' en JS,
@@ -837,11 +851,14 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     // ferait des clés numériques — une forme positionnelle acceptée en douce.
     expect(typeof []).toBe('object');
     var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: ['att-1'], code: '1' }));
-    expect(r.indexOf('input_handles manquant ou invalide') >= 0).toBeTruthy();
+    expect(r.indexOf('input_handles invalide') >= 0).toBeTruthy();
   });
-  it('rejette un input_handles vide', function() {
-    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: {}, code: '1' }));
-    expect(r.indexOf('input_handles est vide') >= 0).toBeTruthy();
+  it('un input_handles VIDE est accepté, comme un input_handles absent', function() {
+    // {} n'est plus un refus : le modèle qui écrit la forme cérémonielle obtient
+    // le même mode calcul pur que celui qui omet le paramètre. Même discriminant
+    // que ci-dessus — une Promise prouve qu'on a atteint l'exécution.
+    var r = callTool('miaou__js__eval', { input_handles: {}, code: '1' });
+    expect(typeof r.then === 'function').toBe(true);
   });
   it('rejette au-delà de JS_EVAL_MAX_INPUTS clés, en nommant le compte et la limite', function() {
     var many = {};
@@ -855,6 +872,15 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     for (var j = 0; j < JS_EVAL_MAX_INPUTS; j++) ok['k' + j] = 'att-1';
     var r2 = flattenToolResult(callTool('miaou__js__eval', { input_handles: ok, code: '1' }));
     expect(r2.indexOf('maximum') >= 0).toBe(false);
+  });
+  it('doctrine ET description annoncent le calcul sans ressource', function() {
+    // Le handler l'accepte, mais un modèle qui ne le lit nulle part ne l'utilisera
+    // jamais (défaut « capacité inatteignable »). La doctrine porte le QUAND et vit
+    // dans le prompt racine ; la description est lue au moment de composer l'appel.
+    expect(JS_EVAL_DOCTRINE.indexOf('FACULTATIVES') >= 0).toBeTruthy();
+    expect(JS_EVAL_DOCTRINE.indexOf('sans input_handles') >= 0).toBeTruthy();
+    var def = exposedTools().find(function(t) { return t.name === 'miaou__js__eval'; });
+    expect(def.description.indexOf('FACULTATIF') >= 0).toBeTruthy();
   });
   it('rejette un code manquant en erreur synchrone', function() {
     expect(flattenToolResult(callTool('miaou__js__eval', { input_handles: { a: 'att-1' } })))
@@ -1883,9 +1909,11 @@ describe('js__eval + output_handle / emit (lot Y)', function() {
     const def = TOOLS.find(t => t.name === 'js__eval');
     expect(def.inputSchema.properties.output_handle).toBeTruthy();
     expect(def.inputSchema.required.indexOf('output_handle') >= 0).toBe(false);
-    // Contrôle de prémisse : les deux autres, eux, SONT requis.
-    expect(def.inputSchema.required.indexOf('input_handles') >= 0).toBe(true);
+    // Contrôle de prémisse : `code`, lui, EST requis — sans quoi ce test passerait
+    // sur un schéma qui n'exige plus rien du tout. input_handles est facultatif
+    // depuis l'ouverture du calcul sans ressource.
     expect(def.inputSchema.required.indexOf('code') >= 0).toBe(true);
+    expect(def.inputSchema.required.indexOf('input_handles') >= 0).toBe(false);
   });
   it('readOnlyHint est false : l\'outil écrit dès qu\'un output_handle est fourni', function() {
     const def = TOOLS.find(t => t.name === 'js__eval');

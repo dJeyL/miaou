@@ -444,7 +444,7 @@ const JS_EVAL_OUTPUT_CAP = 20000;
 // l'appelle via miaou__skills__read avant d'écrire son premier appel.
 const JS_EVAL_DOCTRINE =
   "L'outil miaou__js__eval exécute du JavaScript que TU écris dans un bac à sable " +
-  "isolé (QuickJS), sur le contenu TEXTUEL d'une à " + JS_EVAL_MAX_INPUTS + " ressources " +
+  "isolé (QuickJS). Il peut lire le contenu TEXTUEL de jusqu'à " + JS_EVAL_MAX_INPUTS + " ressources " +
   "référencées par handle (att-N, file-<id> ou res_<id>), sans jamais charger ce " +
   "contenu dans ta fenêtre de contexte. Sers-t'en pour interroger un gros fichier " +
   "joint (log, JSON-lines, CSV, texte volumineux) — compter, filtrer, agréger, " +
@@ -455,6 +455,11 @@ const JS_EVAL_DOCTRINE =
   "sable — jamais en faisant transiter leur contenu par ton contexte. C'est aussi la " +
   "voie à prendre quand docs__read refuse un fichier trop volumineux : n'insiste pas " +
   "avec docs__read, passe directement à miaou__js__eval sur le même handle.\n\n" +
+  "Les ressources en entrée sont FACULTATIVES : appelle l'outil avec le seul paramètre " +
+  "code, sans input_handles, quand tu n'as rien à lire et veux seulement CALCULER — " +
+  "arithmétique exacte sur de grands nombres, manipulation de chaînes, vérification " +
+  "d'une formule ou d'une date, simulation courte. Ne fabrique jamais une ressource " +
+  "inutile pour avoir le droit d'exécuter du code.\n\n" +
   "Le résultat est ramené en texte : au-delà de " + JS_EVAL_OUTPUT_CAP + " caractères, " +
   "l'appel est REFUSÉ (pas tronqué) — vise toujours une synthèse (compte, top-N, " +
   "échantillon), jamais le fichier brut.\n\n" +
@@ -1697,10 +1702,12 @@ const TOOLS = [
   },
   {
     // miaou__js__eval (lot L) : exécute du JS écrit par le modèle dans un bac à
-    // sable QuickJS-WASM sur le contenu TEXTUEL d'une à JS_EVAL_MAX_INPUTS ressources
+    // sable QuickJS-WASM sur le contenu TEXTUEL de ZÉRO à JS_EVAL_MAX_INPUTS ressources
     // clientes, chacune référencée par handle (att-N/file-<id>/res_<id>) sous une clé
     // que le modèle choisit (lot L-2), sans jamais charger les octets bruts en
-    // contexte. Handler ASYNC (lazy-load engine + exécution VM) → renvoie une
+    // contexte. Zéro entrée est un mode à part entière (calcul pur) : le prélude
+    // guest ne dépend pas de `texts`, seules les primitives de lecture le font — ne
+    // pas en appeler suffit. Handler ASYNC (lazy-load engine + exécution VM) → renvoie une
     // Promise<string> ; callInternalTool la mappe (précédent skills__read). Les
     // contrôles d'args (forme d'input_handles, code manquant) sont synchrones ; la
     // résolution des handles et l'exécution sont async. Résolution en REFUS TOTAL :
@@ -1711,12 +1718,14 @@ const TOOLS = [
     // session, un handle hors-scope → null → « handle introuvable » (pas d'oracle).
     name: 'js__eval',
     description:
-      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé sur le contenu " +
-      "TEXTUEL d'une à " + JS_EVAL_MAX_INPUTS + " ressources référencées par handle " +
+      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé. Il peut lire le " +
+      "contenu TEXTUEL de jusqu'à " + JS_EVAL_MAX_INPUTS + " ressources référencées par handle " +
       "(att-N, file-<id> ou res_<id>), sans charger ce contenu dans ton contexte. " +
       "Sers-t'en pour interroger un gros fichier (log, JSON-lines, CSV, texte) — " +
       "compter, filtrer, agréger, extraire — ou pour CROISER plusieurs ressources en " +
-      "un seul appel. Primitives disponibles dans le bac à sable, toutes prenant la " +
+      "un seul appel. input_handles est FACULTATIF : omets-le et le code s'exécute sans " +
+      "rien lire, pour un calcul pur (arithmétique exacte, manipulation de chaînes, " +
+      "vérification d'une formule). Primitives disponibles dans le bac à sable, toutes prenant la " +
       "clé de la ressource à lire : text(cle), lines(cle), jsonLines(cle), " +
       "parse(cle) (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
       "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
@@ -1731,15 +1740,16 @@ const TOOLS = [
       properties: {
         input_handles: {
           type: 'object',
-          description: 'Ressources en entrée, sous la forme {"cle": "handle"} — de une à ' +
-            JS_EVAL_MAX_INPUTS + ' clés (handles att-N, file-<id> ou res_<id> ; jamais le ' +
-            'contenu ni un chemin). Tu choisis chaque clé : elle nomme la ressource dans ' +
-            'ton code, où text("cle") la lit',
+          description: 'Optionnel — ressources en entrée, sous la forme {"cle": "handle"} : ' +
+            'jusqu\'à ' + JS_EVAL_MAX_INPUTS + ' clés (handles att-N, file-<id> ou res_<id> ; ' +
+            'jamais le contenu ni un chemin). Tu choisis chaque clé : elle nomme la ressource ' +
+            'dans ton code, où text("cle") la lit. Omets ce paramètre pour un calcul qui ne ' +
+            'lit aucune ressource',
         },
         code: { type: 'string', description: 'Code JavaScript à exécuter ; sa dernière valeur évaluée est le résultat renvoyé' },
         output_handle: { type: 'string', description: 'Optionnel — handle res_<id> d\'une ressource existante (créée via miaou__resource__create) où écrire au fil de l\'eau. Sans ce paramètre, la primitive emit() n\'existe pas dans le bac à sable' },
       },
-      required: ['input_handles', 'code'],
+      required: ['code'],
     },
     // readOnlyHint: false INCONDITIONNEL (lot Y). L'outil ÉCRIT dès qu'un
     // output_handle est fourni ; JSON Schema ne sait pas conditionner une
@@ -1747,7 +1757,14 @@ const TOOLS = [
     // un mode d'usage réel est pire qu'un hint légèrement pessimiste dans l'autre.
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args, ctx) => {
-      const rawInputs = args && args.input_handles;
+      // `input_handles` ABSENT est un cas légitime (calcul pur : arithmétique,
+      // manipulation de chaînes, vérification d'une formule — rien à lire). On
+      // distingue donc « absent » de « présent mais malformé » : le premier passe,
+      // le second reste refusé avec toutes les gardes d'origine. Confondre les
+      // deux obligerait le modèle à fabriquer une ressource inutile pour avoir le
+      // droit d'exécuter du JS, exactement ce que cette voie supprime.
+      const hasInputs = !!(args && args.input_handles !== undefined && args.input_handles !== null);
+      const rawInputs = hasInputs ? args.input_handles : null;
       const code = args && args.code != null ? String(args.code) : '';
       // Sorties PRÉCOCES (rien n'a été exécuté) → ack tool_failed. Les échecs de
       // l'exécution elle-même (cap, throw guest) gardent leur ack js_eval propre,
@@ -1759,13 +1776,10 @@ const TOOLS = [
       // `typeof === 'object'`, et Object.keys y rendrait des indices numériques —
       // on accepterait silencieusement une forme positionnelle que le schéma ne
       // déclare pas, et dont les « clés » (0, 1, 2) ne porteraient aucune intention.
-      if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
-        return toolFail('js__eval', 'input_handles manquant ou invalide (attendu un objet {"cle": "handle"}).');
+      if (hasInputs && (typeof rawInputs !== 'object' || Array.isArray(rawInputs))) {
+        return toolFail('js__eval', 'input_handles invalide (attendu un objet {"cle": "handle"}, ou rien du tout pour un calcul sans ressource).');
       }
-      const inputKeys = Object.keys(rawInputs);
-      if (inputKeys.length === 0) {
-        return toolFail('js__eval', 'input_handles est vide : au moins une ressource est requise.');
-      }
+      const inputKeys = hasInputs ? Object.keys(rawInputs) : [];
       if (inputKeys.length > JS_EVAL_MAX_INPUTS) {
         return toolFail('js__eval', 'input_handles porte ' + inputKeys.length + ' clés, maximum ' +
           JS_EVAL_MAX_INPUTS + '.');
@@ -3162,8 +3176,10 @@ const JS_EVAL_EMIT_PRELUDE =
   "function emit(chunk){ __miaou_emit(String(chunk)); }\n";
 
 // Exécute le code modèle dans un bac à sable QuickJS-WASM sur les textes fournis
-// (`texts` : objet {clé: string}, une à JS_EVAL_MAX_INPUTS entrées depuis le lot
-// L-2 ; le handler a déjà résolu et décodé chaque handle) (lot L, cœur impur — NON testable QuickJS, vérif runtime manuelle). Discipline VM
+// (`texts` : objet {clé: string}, zéro à JS_EVAL_MAX_INPUTS entrées depuis le lot
+// L-2 ; le handler a déjà résolu et décodé chaque handle — zéro entrée est le mode
+// calcul pur, que le prélude supporte sans rien de spécial : seules les primitives
+// de lecture consultent `texts`, et ne pas les appeler suffit) (lot L, cœur impur — NON testable QuickJS, vérif runtime manuelle). Discipline VM
 // stricte : tous les handles créés côté host sont disposés en try/finally, le
 // runtime porte les guards (setInterruptHandler wall-time, setMemoryLimit), la
 // sortie est bornée APRÈS dump (checkOutputCap). Retourne un objet discriminé :

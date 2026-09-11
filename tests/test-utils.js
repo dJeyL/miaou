@@ -2296,13 +2296,51 @@ describe('jsEvalHandlesSummary (résumé des entrées d\'un ack js_eval, lot L-2
       .toBe('3 ressources (a, b, c)');
   });
   it('dégrade en ? sur objet vide, null, ou non-objet (ack ancien ou tronqué)', function() {
+    // Inchangé : ce résumé reste la réponse à « QUELLES entrées ? ». Le cas
+    // « aucune entrée » (calcul pur) est porté par jsEvalHasNoInputs, en amont —
+    // les appelants ne demandent plus ce résumé quand il n'y a rien à résumer.
     expect(jsEvalHandlesSummary({})).toBe('?');
     expect(jsEvalHandlesSummary(null)).toBe('?');
     expect(jsEvalHandlesSummary(undefined)).toBe('?');
     expect(jsEvalHandlesSummary('res_abc')).toBe('?');
   });
+});
+
+describe('jsEvalHasNoInputs (calcul pur vs entrées inconnues)', function() {
+  it('vrai sur absence réelle d\'entrées : null, undefined, objet vide', function() {
+    expect(jsEvalHasNoInputs(null)).toBe(true);
+    expect(jsEvalHasNoInputs(undefined)).toBe(true);
+    expect(jsEvalHasNoInputs({})).toBe(true);
+  });
+  it('faux dès qu\'une entrée existe', function() {
+    expect(jsEvalHasNoInputs({ src: 'res_abc' })).toBe(false);
+    expect(jsEvalHasNoInputs({ a: 'res_1', b: 'res_2' })).toBe(false);
+  });
+  it('faux sur une forme inattendue : inconnue n\'est pas « aucune »', function() {
+    // Un ack tronqué qui porterait une string doit rester un `?` (information
+    // perdue), jamais être présenté comme un calcul pur assumé.
+    expect(jsEvalHasNoInputs('res_abc')).toBe(false);
+    expect(jsEvalHasNoInputs(42)).toBe(false);
+  });
   it('dégrade en ? le handle d\'une clé unique vide, sans rendre "undefined"', function() {
     expect(jsEvalHandlesSummary({ a: '' })).toBe('?');
+  });
+});
+
+describe('exports d\'un js__eval sans entrée (calcul pur)', function() {
+  var ackPur = { kind: 'js_eval', name: 'miaou__js__eval', code: '6*7;', outLen: 2, ok: true };
+  it('Markdown : « aucune (calcul pur) », jamais un ? trompeur', function() {
+    var md = _formatToolCallMd(ackPur).join('\n');
+    expect(md.indexOf('Entrées : aucune (calcul pur)') >= 0).toBe(true);
+    expect(md.indexOf('`?`') >= 0).toBe(false);
+    // Contrôle de prémisse : un ack AVEC entrées énumère toujours clé=handle.
+    var avec = _formatToolCallMd({ kind: 'js_eval', code: '1;', inputHandles: { src: 'res_a' } }).join('\n');
+    expect(avec.indexOf('src=res_a') >= 0).toBe(true);
+  });
+  it('HTML : « aucune (calcul pur) », et le code reste échappé', function() {
+    var html = _formatToolCallHtml(ackPur);
+    expect(html.indexOf('Entrées : aucune (calcul pur)') >= 0).toBe(true);
+    expect(html.indexOf('<code>?</code>') >= 0).toBe(false);
   });
 });
 

@@ -320,9 +320,9 @@ model-side unique sur la bibliothèque) :**
   (« Oui » / « Non » / correction libre), qui est un message user ordinaire.
 
 **Compute sandboxé sur un blob client (lot L, `js__eval`) :**
-- `js__eval(input_handles, code, output_handle?)` — exécute du JavaScript **écrit par le modèle** dans
-  un bac à sable **QuickJS-WASM** sur le contenu **textuel** d'**une à
-  `JS_EVAL_MAX_INPUTS` ressources** (lot L-2), chacune référencée par handle
+- `js__eval(code, input_handles?, output_handle?)` — exécute du JavaScript **écrit par le modèle** dans
+  un bac à sable **QuickJS-WASM**, éventuellement sur le contenu **textuel** de
+  **zéro à `JS_EVAL_MAX_INPUTS` ressources** (lot L-2), chacune référencée par handle
   (`att-N` / `file-<id>` / `res_<id>`) sous une **clé choisie par le modèle**,
   **sans jamais charger les octets bruts dans le contexte du modèle**. Cas
   d'usage : interroger un gros fichier (log, JSON-lines, CSV, texte volumineux) —
@@ -335,15 +335,16 @@ model-side unique sur la bibliothèque) :**
   distingue pas cette provenance de `web__fetch_resource`, la décode identique. Handler **asynchrone** (lazy-load de l'engine + exécution VM) →
   renvoie une `Promise<string>` mappée par `callInternalTool` (précédent
   `skills__read`). Contrôles synchrones d'abord (forme de
-  `input_handles` — objet non vide, non tableau, ≤ `JS_EVAL_MAX_INPUTS` clés —,
+  `input_handles` **quand il est présent** — objet non tableau,
+  ≤ `JS_EVAL_MAX_INPUTS` clés —,
   `code` manquant → messages d'erreur testables QuickJS) ; puis, **par clé** et
   dans l'ordre d'insertion, `classifyHandleRef` / `resolveHandleRecord` (impur,
   cache session → herméticité piège 18, handle hors-scope = « introuvable », pas
   d'oracle) / `utf8Decode(record.data)` (contenu textuel, AL3), agrégés dans un
   objet `texts` passé à `runInQuickJs(texts, code)`.
-- **Entrée : `input_handles`, objet de handles nommés (lot L-2).** L'`inputSchema`
-  déclare `input_handles` et `code` requis. `input_handles` est un **objet**
-  `{clé: handle}` de **1 à `JS_EVAL_MAX_INPUTS`** (défaut 10, surchargeable par la
+- **Entrée : `input_handles`, objet de handles nommés (lot L-2), FACULTATIF.**
+  L'`inputSchema` ne déclare que `code` requis. `input_handles` est un **objet**
+  `{clé: handle}` de **0 à `JS_EVAL_MAX_INPUTS`** (défaut 10, surchargeable par la
   clé de config `js_eval_max_inputs` — déclarée dans `storage.js` avec les autres
   bornes configurables, cf. README) entrées ; la clé porte l'intention du modèle (« quelle ressource je croise avec quelle autre ») et
   c'est elle qu'il réutilise dans son code (`text("clé")`), pas le handle.
@@ -353,9 +354,18 @@ model-side unique sur la bibliothèque) :**
   faire transiter l'un des deux par le contexte, c'est-à-dire exactement ce que
   `js__eval` existe pour éviter. Pas de forme scalaire conservée en parallèle
   (breaking change assumé) : deux syntaxes seraient deux choses à documenter au
-  modèle, et une clé obligatoire même à une seule ressource garde une seule
+  modèle, et une clé obligatoire dès qu'on fournit des entrées garde une seule
   grammaire d'appel. Le modèle ne fournit **jamais** le contenu ni un chemin : le
-  contenu vient des primitives guest. Le paramètre **optionnel** `output_handle`
+  contenu vient des primitives guest. **Zéro entrée est un mode à part entière**
+  (« calcul pur ») : `input_handles` omis — ou fourni vide — exécute le `code`
+  sans rien lire, pour de l'arithmétique exacte, de la manipulation de chaînes ou
+  la vérification d'une formule. Le prélude guest ne dépend pas de `texts` (seules
+  les primitives de lecture le font, et ne pas les appeler suffit), donc aucune
+  garde n'est levée pour ça : seul le refus « au moins une ressource est requise »
+  disparaît. Distinction load-bearing dans le handler : `input_handles` **absent**
+  est légitime, **présent mais malformé** (tableau, string) reste refusé — les
+  confondre obligeait le modèle à fabriquer une ressource factice pour obtenir le
+  droit d'exécuter du code, exactement ce que ce mode supprime. Le paramètre **optionnel** `output_handle`
   (lot Y) est une ressource de **sortie**, indépendante des entrées — rien
   n'interdit qu'un handle soit à la fois lu en entrée et écrit en sortie (relire
   un CSV commencé pour savoir où reprendre est un usage légitime).
@@ -411,7 +421,16 @@ model-side unique sur la bibliothèque) :**
   d'undo** (pur compute, aucune écriture d'état). La ligne de thread annonce
   seulement les entrées **résumées** par `jsEvalHandlesSummary` (utils.js, pure —
   handle nu à une clé, « N ressources (clés…) » au-delà ; partagée avec les
-  exports, jamais réécrite localement) et l'issue (`ICON_CODE`) — **le code exécuté n'est PAS rendu dans le thread**
+  exports, jamais réécrite localement) et l'issue (`ICON_CODE`). **Cas « aucune
+  entrée » (calcul pur) : prédicat séparé `jsEvalHasNoInputs`** (utils.js, pure),
+  partagé par les MÊMES trois surfaces (libellé de thread, export Markdown, export
+  HTML) et jamais réécrit en `!Object.keys(…).length` sur place. Il ne se confond
+  pas avec le `?` de `jsEvalHandlesSummary` : celui-ci reste la réponse à « quelles
+  entrées ? » quand elles sont **inconnues** (ack ancien ou tronqué, forme
+  inattendue), là où l'absence d'entrées est un **mode d'usage normal** — le
+  thread écrit « Code exécuté sans ressource », les exports « Entrées : aucune
+  (calcul pur) ». Confondre les deux affichait « exécuté sur › ? », qui suggère une
+  ressource non identifiée là où il n'y en a aucune — **le code exécuté n'est PAS rendu dans le thread**
   (brief §3 : la doctrine no-silent-action vise les écritures d'état inférées, pas
   le compute pur). Le `code` n'est capté que **dans l'ack, pour l'export**
   (`formatToolAcksHtml`/`_formatToolCallMd`, champ `code` rendu COMPLET, non

@@ -1826,6 +1826,19 @@ const EXPORT_RESNAME_MAX = 60;
 // NOMBRE et les CLÉS qui informent — les handles bruts (res_a1b2c3…) n'ont aucune
 // valeur de lecture pour un humain, alors que les clés portent l'intention du
 // modèle. Le détail clé=handle reste disponible dans les exports, qui l'énumèrent.
+// « Cet appel js__eval n'avait AUCUNE ressource en entrée » — distinct de « ses
+// entrées sont inconnues » (ack ancien/tronqué, non-objet), que
+// jsEvalHandlesSummary continue de rendre par `?`. Les deux se ressemblent en
+// structure mais disent le contraire au lecteur : le calcul pur est un mode
+// d'usage normal depuis l'ouverture de js__eval sans entrée, pas une dégradation.
+// Prédicat UNIQUE, partagé par le libellé de thread (ui.js) et les deux exports —
+// jamais un `!Object.keys(...).length` réécrit sur place.
+function jsEvalHasNoInputs(inputHandles) {
+  if (inputHandles == null) return true;
+  if (typeof inputHandles !== 'object') return false;   // forme inattendue = inconnue, pas « aucune »
+  return Object.keys(inputHandles).length === 0;
+}
+
 function jsEvalHandlesSummary(inputHandles) {
   if (!inputHandles || typeof inputHandles !== 'object') return '?';
   const keys = Object.keys(inputHandles);
@@ -1882,8 +1895,13 @@ function _formatToolCallMd(m) {
       ? entries.map(k => _truncMd(k, EXPORT_RESNAME_MAX) + '=' +
           _truncMd(String(inH[k] || '?'), EXPORT_RESNAME_MAX)).join(', ')
       : '?';
-    lines.push('   Entrées : `' + handlesTxt + '`' +
-      (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : ''));
+    // Calcul pur : pas de ligne « Entrées », qui n'aurait rien à énumérer. Le
+    // lecteur d'archive doit lire « aucune ressource », pas un `?` qui laisse
+    // croire à une information perdue (prédicat partagé, jamais réécrit ici).
+    lines.push(jsEvalHasNoInputs(inH)
+      ? '   Entrées : aucune (calcul pur)' + (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : '')
+      : '   Entrées : `' + handlesTxt + '`' +
+        (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : ''));
     lines.push('   Code exécuté :');
     lines.push('   ```js');
     String(m.code).split('\n').forEach(cl => lines.push('   ' + cl));
@@ -1958,8 +1976,14 @@ function _formatToolCallHtml(m) {
       ? entries.map(k => escHtml(_truncMd(k, EXPORT_RESNAME_MAX)) + '=' +
           escHtml(_truncMd(String(inH[k] || '?'), EXPORT_RESNAME_MAX))).join(', ')
       : '?';
-    lines.push('<br>Entrées : <code>' + handlesTxt + '</code>' +
-      (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : ''));
+    // Calcul pur : même traitement qu'en Markdown. Texte FIXE (aucun fragment
+    // d'origine modèle), donc rien à échapper ici — l'exigence escHtml du piège 21
+    // porte sur les clés/handles énumérés, qui sont justement absents dans ce cas.
+    lines.push(jsEvalHasNoInputs(inH)
+      ? '<br>Entrées : aucune (calcul pur)' +
+        (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : '')
+      : '<br>Entrées : <code>' + handlesTxt + '</code>' +
+        (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : ''));
     lines.push('<br>Code exécuté :<pre class="tool-ack-code"><code>' + escHtml(String(m.code)) + '</code></pre>');
   }
   return lines.join('');

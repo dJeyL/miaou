@@ -203,7 +203,9 @@ exécutant du code dans un bac à sable isolé, et ne ramener que le résultat. 
 pour interroger un fichier trop gros pour tenir dans le contexte. Il peut même
 croiser jusqu'à {{JS_EVAL_MAX_INPUTS}} fichiers dans un même calcul — pour
 rapprocher deux résultats obtenus séparément sans avoir à les faire repasser par
-la conversation. Le calcul est borné dans le temps ({{JS_EVAL_TIMEOUT_S}}
+la conversation. Ce bac à sable lui sert aussi **sans aucun fichier**, pour
+calculer juste : une opération sur de grands nombres, une vérification de date ou
+de formule, là où un calcul mental dériverait. Le calcul est borné dans le temps ({{JS_EVAL_TIMEOUT_S}}
 secondes) : une analyse qui n'aboutit pas dans ce délai est interrompue. Si la réponse
 ramenée est elle-même trop volumineuse, le modèle est invité à la resserrer
 plutôt qu'à déverser le fichier brut — ou, quand il s'agit justement de

@@ -1,8 +1,9 @@
 // Vérifie l'outil natif js__eval (lot L) : compute sandboxé QuickJS-WASM sur le
-// contenu textuel d'une à N ressources clientes référencées par handle (lot L-2 :
-// input_handles, clés choisies par le modèle), sans jamais faire entrer
+// contenu textuel de ZÉRO à N ressources clientes référencées par handle (lot L-2 :
+// input_handles, clés choisies par le modèle — facultatif depuis l'ouverture du
+// calcul pur, cf. point 10), sans jamais faire entrer
 // les octets bruts en contexte. Checklist unique batchée (mémoire
-// feedback_no_manual_verification) = §9 du brief lot L, 9 points :
+// feedback_no_manual_verification) = §9 du brief lot L, étendue au calcul pur :
 //   1. Synthèse d'un gros fichier : le code renvoie un petit résultat, le raw
 //      n'apparaît jamais dans le tool result.
 //   2. Boucle infinie tuée par le guard timeout (erreur, dans un délai borné).
@@ -14,6 +15,10 @@
 //   8. Code capturé dans l'ack (export) mais ABSENT du rendu thread.
 //   9. Engine lazy-loadé (pas chargé avant le 1er appel) + doctrine COMPUTE_SANDBOX
 //      statique dans le system message (KV-safe).
+//  10. Calcul pur : sans input_handles (ou avec un objet vide), le code atteint la
+//      VM et rend son résultat, l'ack est poussé, le libellé reste lisible — avec
+//      les contrôles négatifs qui prouvent qu'un input_handles MALFORMÉ est
+//      toujours refusé (ouvrir l'absence n'a pas ouvert l'invalide).
 //
 // Le test pilote directement les globals du bundle (callInternalTool, runInQuickJs,
 // buildSystemMessage, ACK_KINDS…) en page.evaluate — pas de flux modèle/SSE : L3
@@ -114,8 +119,9 @@ const BIG = await page.evaluate(() => {
 });
 
 // Helper : appelle js__eval sur UNE ressource, rangée sous la clé 'src' (lot L-2 —
-// la clé est obligatoire même à une seule entrée). Le croisement multi-ressources
-// a son propre script, verify-js-eval-multi.mjs.
+// la clé est obligatoire dès qu'on fournit des entrées). Le croisement
+// multi-ressources a son propre script, verify-js-eval-multi.mjs ; le mode SANS
+// entrée ne passe pas par ce helper (il doit justement omettre input_handles).
 async function evalTool(handle, code) {
   return page.evaluate(async ([h, c]) => {
     clearPendingToolAcks();
@@ -248,6 +254,77 @@ const exportEsc = await page.evaluate(() => {
 check('export HTML échappe </script> du code modèle (pas de balise brute)',
   exportEsc.indexOf('</script>') === -1 && exportEsc.indexOf('<b>pwn</b>') === -1 &&
   exportEsc.indexOf('&lt;/script&gt;') !== -1);
+
+// ── Point 10 : CALCUL PUR — aucun input_handles, le code s'exécute quand même ─
+// Le cœur (runInQuickJs) est explicitement NON testable depuis le runner QuickJS :
+// les tests unitaires n'éprouvent que les gardes synchrones du handler, jamais
+// qu'un appel sans entrée ATTEINT la VM et en revient avec le bon résultat. C'est
+// précisément ce que ce point mesure, et lui seul.
+const pure = await page.evaluate(async () => {
+  clearPendingToolAcks();
+  // BigInt : un résultat qu'un calcul mental rate et qu'aucune ressource ne
+  // fournit — donc impossible à obtenir autrement que par une exécution réelle.
+  const res = await callInternalTool('js__eval', { code: '(2n ** 127n - 1n).toString();' });
+  const text = res && res.content && res.content[0] ? res.content[0].text : '';
+  return { text, isError: !!res.isError, acks: _pendingToolAcks.slice() };
+});
+check('calcul pur sans input_handles : 2^127-1 exact',
+  pure.text === '170141183460469231731687303715884105727' && !pure.isError, 'got=' + pure.text);
+// L'ack doit être poussé comme pour tout autre appel : sans lui, l'inspecteur et
+// l'export perdraient la trace d'un mode d'usage entier.
+const ackPure = pure.acks.find(a => a.kind === 'js_eval');
+check('calcul pur : ack js_eval poussé malgré l\'absence d\'entrées', !!ackPure,
+  ackPure ? JSON.stringify(ackPure.inputHandles) : 'aucun ack');
+// Le libellé du thread doit rester lisible sans entrée à résumer (jsEvalHandlesSummary
+// reçoit un objet vide/absent) : jamais « undefined » ni « [object Object] ».
+const labelPure = await page.evaluate((ack) => {
+  const el = document.createElement('div');
+  const spec = ACK_KINDS.js_eval;
+  if (spec.renderLabel) spec.renderLabel(ack, el); else el.textContent = spec.label(ack);
+  return el.textContent;
+}, ackPure);
+// Le premier jeu de ce point a montré « Code exécuté sur › ? » : vert sur un check
+// qui ne bannissait que « undefined »/« [object Object] », alors que le `?` ment
+// (il suggère une ressource NON IDENTIFIÉE là où il n'y en a aucune). Le check
+// exige donc désormais la formulation positive, et bannit le `?` explicitement.
+check('calcul pur : libellé de thread dit « sans ressource », jamais « ? »',
+  /sans ressource/.test(labelPure) && labelPure.indexOf('?') === -1 &&
+  labelPure.indexOf('undefined') === -1 && labelPure.indexOf('[object Object]') === -1, labelPure);
+// Exports : mêmes deux surfaces, même exigence (un export est une archive).
+const exportsPure = await page.evaluate((ack) => {
+  const m = Object.assign({ name: 'miaou__js__eval' }, ack, { code: '(2n**127n-1n).toString();' });
+  return { md: _formatToolCallMd(m).join('\n'), html: _formatToolCallHtml(m) };
+}, ackPure);
+check('calcul pur : export Markdown annonce « aucune (calcul pur) »',
+  /Entrées : aucune \(calcul pur\)/.test(exportsPure.md), exportsPure.md.slice(0, 90));
+check('calcul pur : export HTML annonce « aucune (calcul pur) »',
+  /Entrées : aucune \(calcul pur\)/.test(exportsPure.html), exportsPure.html.slice(0, 90));
+// input_handles: {} — forme cérémonielle, décidée équivalente à l'absence.
+const pureEmpty = await page.evaluate(async () => {
+  const res = await callInternalTool('js__eval', { input_handles: {}, code: '6*7;' });
+  return res.content[0].text;
+});
+check('calcul pur : input_handles vide équivaut à son absence', pureEmpty === '42', 'got=' + pureEmpty);
+// CONTRÔLE NÉGATIF : ouvrir l'absence ne doit pas avoir ouvert le malformé. Sans
+// ce contrôle, les checks ci-dessus passeraient aussi si toute validation avait
+// sauté — ils ne prouveraient alors pas ce qu'ils annoncent.
+const stillRefused = await page.evaluate(async () => {
+  const arr = await callInternalTool('js__eval', { input_handles: ['att-7'], code: '1;' });
+  const str = await callInternalTool('js__eval', { input_handles: 'att-7', code: '1;' });
+  return { arr: arr.content[0].text, str: str.content[0].text };
+});
+check('contrôle négatif : un input_handles TABLEAU reste refusé',
+  /invalide/i.test(stillRefused.arr), stillRefused.arr.slice(0, 70));
+check('contrôle négatif : un input_handles STRING reste refusé',
+  /invalide/i.test(stillRefused.str), stillRefused.str.slice(0, 70));
+// Et une primitive de lecture appelée sans entrée doit lever côté guest (la skill
+// l'annonce au modèle) — pas rendre un undefined silencieux.
+const noKey = await page.evaluate(async () => {
+  const res = await callInternalTool('js__eval', { code: 'text("src").length;' });
+  return res.content[0].text;
+});
+check('calcul pur : lire une clé inexistante lève une erreur explicite',
+  /erreur/i.test(noKey) && /src/.test(noKey), noKey.slice(0, 80));
 
 // ── Point 9c : engine chargé APRÈS le premier appel (lazy confirmé) ──────────
 const lazyAfter = await page.evaluate(() => _quickjsPromise != null);
