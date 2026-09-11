@@ -219,6 +219,11 @@ try {
   // ayant l'air d'avoir servi la plage — « plausible et faux ».
   const ranged = await callTool('docs__read', { ref: xref, selector: 'Synthèse!B2:C5' });
   check('docs__read avec plage rend la plage', !ranged.isError && /\(B2:C5\)/.test(ranged.text));
+  // AC-3 : le filtre écarte l'en-tête ET toute ligne entre crochets — notice de
+  // clamp, cap de lignes, et désormais la note de plages fusionnées. Sans ce
+  // dernier cas, la note serait comptée comme une ligne de données et ferait
+  // tomber la borne haute ci-dessous : un FAIL qui accuserait le code alors que
+  // c'est l'instrument qui aurait vieilli.
   const rangedRows = ranged.text.split('\n').filter(l => l && !/^---/.test(l) && !/^\[/.test(l)).length;
   // Borne HAUTE : un refus de lecture (texte court, monoligne, non-isError) la
   // satisfait par le bas. On exige donc aussi le plancher d'une vraie plage.

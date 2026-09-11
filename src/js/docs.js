@@ -632,41 +632,186 @@ function formatXlsxListing(sheets) {
   return out.join('\n');
 }
 
-// Mise en forme d'une feuille lue. Reçoit le CSV DÉJÀ produit par SheetJS.
+// ── Rendu structuré d'une feuille (lot AC-3) ────────────────────────────────
+// REMPLACE formatXlsxRead (lot V-5), retiré ici : il mettait en forme le CSV de
+// sheet_to_csv, qui ne passe plus nulle part. Le garder pour son unique appel
+// dégénéré (la feuille vide, qui lui passait '') aurait laissé vivre un
+// formateur de CSV tenu en vie par ses seuls tests — vert sans rien prouver.
+// Le cap de lignes, la notice de clamp et le « aucune cellule remplie » sont
+// repris tels quels ci-dessous : c'est la façon de rendre une CELLULE qui
+// change, pas la doctrine de ce qui entoure la feuille.
+// Remplace le CSV de sheet_to_csv dans le chemin de lecture. Deux informations
+// étaient jusqu'ici perdues EN SILENCE, toutes deux du type « le modèle conclut
+// sans savoir qu'il lui manque quelque chose » :
+//   - les FORMULES : le modèle lisait « 27 » sans savoir que c'est un décompte
+//     dérivé d'une autre feuille ;
+//   - les CELLULES FUSIONNÉES : elles sortaient vides, indistinguables d'une
+//     absence de donnée — d'où les lignes « ,,, » du CSV.
 //
-// Le cap de lignes est un portage de MAX_XLSX_ROWS_DEFAULT (200) du serveur, et
-// il ne s'applique QUE sans plage explicite : un modèle qui demande A1:C10000
-// sait ce qu'il fait, alors qu'un modèle qui lit une feuille entière ne sait pas
-// encore qu'elle fait 50 000 lignes. La troncature se DIT et propose la suite
-// (une plage, ou as_resource), jamais un silence.
-function formatXlsxRead(csv, opts) {
+// POURQUOI LE PIPE ET PAS LE CSV. Le CSV est hostile à toute annotation : une
+// formule contient des virgules et des guillemets, donc l'annoter dans une
+// cellule CSV imposerait de l'échapper, et une formule échappée n'est plus
+// lisible. Le pipe « a | b | c » est en outre le rendu tabulaire DÉJÀ employé
+// par les deux autres formats du domaine — htmlTableToText (docx) et les a:tbl
+// du pptx —, sur l'argument explicite qu'un tableau ne doit pas se lire
+// autrement selon le format d'où il sort.
+//
+// CE PUR EST LA SEULE CHOSE QUI DÉCIDE. L'impur se réduit à « lire la feuille
+// et remplir la matrice » : SheetJS ne tourne pas sous QuickJS, donc tout ce qui
+// porte un invariant doit vivre ici, sur des structures simples.
+//
+// Entrée : { rows, merges } où `rows` est une matrice de cellules (ou null pour
+// une case vide) et `merges` la liste des plages fusionnées en A1. Les DEUX sont
+// nécessaires : la note de fin énumère des PLAGES, qu'un booléen par cellule ne
+// permettrait pas de reconstituer sans re-dériver ce qu'on avait déjà.
+//
+// Chaque cellule : { w, v, f, masked }.
+//   - `w` est la valeur FORMATÉE par Excel, `v` la valeur brute.
+//   - `masked` marque une case couverte par une fusion dont elle n'est pas la
+//     maîtresse.
+
+// Cap de LONGUEUR d'une formule rendue. Une formule réelle peut faire des
+// centaines de caractères (imbrications de SI, plages nommées) ; rendue entière
+// sur chaque cellule d'une colonne calculée, elle noierait la feuille sous sa
+// propre annotation. 120 caractères tiennent les formes courantes mesurées (le
+// COUNTIF inter-feuilles de la fixture en fait 42) tout en bornant le cas
+// pathologique.
+//
+// La troncature est ANNONCÉE (« … »), jamais muette : une formule coupée en
+// silence se lit comme une formule complète, et le modèle conclurait sur un
+// prédicat qu'il croit entier. Même doctrine que capImageAnchors.
+const MAX_XLSX_FORMULA_CHARS = 120;
+
+// Cap du nombre de plages fusionnées ÉNUMÉRÉES dans la note de fin. La note sert
+// à faire comprendre la géométrie du tableau ; au-delà d'une douzaine de plages
+// elle cesse d'informer et devient du bruit — on bascule alors sur le seul
+// COMPTE, qui porte l'essentiel (« il y a des fusions, et combien »). La fixture
+// mesurée en porte 8, donc ce cap n'y mord pas : c'est une garde de principe,
+// pas une valeur calibrée sur un débordement observé.
+const MAX_XLSX_MERGE_NOTES = 12;
+
+function formatSheetCell(cell) {
+  const c = cell || null;
+  if (!c) return '';
+  // Une case masquée par une fusion n'est PAS vide : elle est couverte par la
+  // valeur de sa maîtresse. Le marqueur les distingue, ce que le CSV ne faisait
+  // pas — il rendait les deux comme une colonne vide.
+  if (c.masked) return '↳';
+
+  // ── LE POINT À NE PAS « SIMPLIFIER » : w D'ABORD, v EN REPLI ──────────────
+  // `w` est ce qu'Excel AFFICHE, `v` la valeur brute du moteur. Sur les dates et
+  // les durées l'écart est massif : une date de juin 2026 a pour `v` le nombre
+  // 46174 et pour `w` « Jun-26 » ; une durée de cinq heures a pour `v`
+  // 0.7083333333357587. Rendre `v` afficherait ces nombres à la place de ce que
+  // le document dit.
+  //
+  // Ce n'est PAS une correction apportée par ce lot : sheet_to_csv utilisait
+  // déjà `w` en interne, donc les dates sortaient correctement AVANT. C'est une
+  // RÉGRESSION À ÉVITER en remplaçant le rendu. Quiconque « simplifie » vers `v`
+  // casse un comportement qui marche, et le bug ne se verra que sur un classeur
+  // à dates, à monnaies ou à pourcentages.
+  let text = '';
+  if (c.w != null && String(c.w) !== '') text = String(c.w);
+  else if (c.v != null) text = String(c.v);
+
+  // Le pipe est le séparateur de colonnes : un pipe DANS une valeur casserait
+  // la grille. On l'échappe plutôt que de changer de séparateur, parce que le
+  // séparateur est ce qui aligne ce rendu sur le docx et le pptx.
+  text = text.replace(/\n+/g, ' ').replace(/\|/g, '\\|').trim();
+
+  const f = c.f == null ? '' : String(c.f).replace(/\s+/g, ' ').trim();
+  if (!f) return text;
+
+  // La formule est annoncée sur TOUTES les cellules qui en portent une, sans
+  // filtrer sur son « intérêt » : juger qu'une somme locale mérite moins d'être
+  // dite qu'un renvoi inter-feuilles est exactement le genre d'heuristique qui
+  // se trompe, et elle se tromperait en silence.
+  let shown = f;
+  if (shown.length > MAX_XLSX_FORMULA_CHARS) {
+    shown = shown.slice(0, MAX_XLSX_FORMULA_CHARS) + '…';
+  }
+  const annot = '[=' + shown.replace(/\|/g, '\\|') + ']';
+  return text ? text + ' ' + annot : annot;
+}
+
+// Une plage fusionnée en A1 ('B28:E31') depuis ses bornes 0-based. Réutilise
+// formatA1Range pour que l'écriture des plages soit la MÊME partout dans ce
+// fichier — le selector, la notice de clamp et cette note parlent de la même
+// géométrie et ne doivent pas diverger dans leur façon de l'écrire.
+function formatMergeRanges(merges, cap) {
+  const list = [];
+  for (const m of (merges || [])) {
+    const txt = typeof m === 'string' ? m.trim() : formatA1Range(m);
+    if (txt) list.push(txt);
+  }
+  if (!list.length) return '';
+  const max = Math.max(1, Math.floor(Number(cap) || MAX_XLSX_MERGE_NOTES));
+  const n = list.length;
+  const head = n > 1 ? n + ' plages fusionnées' : '1 plage fusionnée';
+  // Au-delà du cap, le COMPTE seul : énumérer cinquante plages n'apprend plus
+  // la géométrie, il la noie. Mais ne jamais taire qu'il y en a.
+  if (n > max) {
+    return '\n\n[' + head + ' dans cette plage — trop nombreuses pour être ' +
+      'énumérées. Les cellules « ↳ » sont couvertes par la fusion qui les précède.]';
+  }
+  return '\n\n[' + head + ' : ' + list.join(', ') +
+    '. Les cellules « ↳ » sont couvertes par la fusion qui les précède.]';
+}
+
+// Le rendu complet. Il garde le squelette posé au lot V-5 (en-tête qui nomme la
+// feuille et la plage servie, cap de lignes qui se DIT, notice de clamp reportée
+// en fin) : ce lot change la façon de rendre une CELLULE, pas la doctrine de ce
+// qui entoure la feuille.
+function formatXlsxSheet(sheet, opts) {
   const o = opts || {};
-  const sheet = String(o.sheet == null ? '' : o.sheet);
+  const name = String(o.sheet == null ? '' : o.sheet);
   const ref = String(o.ref == null ? '' : o.ref).trim();
   const maxRows = Math.max(0, Math.floor(Number(o.maxRows) || 0));
-  const text = String(csv == null ? '' : csv);
+  const src = (sheet && sheet.rows) || [];
 
-  // Le CSV de SheetJS se termine par un saut de ligne : le retirer avant de
-  // compter, sinon une feuille de 3 lignes en annonce 4.
-  const body = text.replace(/\n+$/, '');
-  let lines = body === '' ? [] : body.split('\n');
-  let truncated = 0;
-  if (maxRows && lines.length > maxRows) {
-    truncated = lines.length - maxRows;
-    lines = lines.slice(0, maxRows);
+  const lines = [];
+  for (const row of src) {
+    const cells = [];
+    for (const cell of (row || [])) cells.push(formatSheetCell(cell));
+    // Une ligne entièrement vide reste une LIGNE : la supprimer décalerait la
+    // lecture que le modèle fait de la géométrie (« la ligne 17 est vide » est
+    // une information, et le selector qu'il écrira ensuite compte les lignes).
+    lines.push(cells.join(' | '));
   }
 
-  const head = '--- Feuille « ' + sheet + ' »' + (ref ? ' (' + ref + ')' : '') + ' ---';
-  let out = head + '\n' + lines.join('\n');
-  if (!lines.length) {
+  let shown = lines;
+  let truncated = 0;
+  if (maxRows && shown.length > maxRows) {
+    truncated = shown.length - maxRows;
+    shown = shown.slice(0, maxRows);
+  }
+
+  const head = '--- Feuille « ' + name + ' »' + (ref ? ' (' + ref + ')' : '') + ' ---';
+  let out = head + '\n' + shown.join('\n');
+  if (!shown.length) {
     out += '\n[Cette plage ne contient aucune cellule remplie.]';
   }
   if (truncated) {
     out += '\n\n[Lecture limitée aux ' + maxRows + ' premières lignes : ' + truncated +
-      ' ligne(s) non affichée(s). Demande une plage explicite (selector « ' + sheet +
+      ' ligne(s) non affichée(s). Demande une plage explicite (selector « ' + name +
       "!A" + (maxRows + 1) + ':…' + " ») ou relance avec as_resource: true pour tout obtenir " +
       'dans une ressource interrogeable par miaou__js__eval.]';
   }
+  // La note de fusion vient APRÈS la troncature : elle décrit la feuille, pas
+  // la portion servie, et un modèle qui n'a reçu que 200 lignes a d'autant plus
+  // besoin de savoir que des fusions structurent ce qu'il lit.
+  out += formatMergeRanges(sheet && sheet.merges, o.maxMergeNotes);
+  // Les ancres d'images (AC-4) suivent la même doctrine, et arrivent APRÈS les
+  // fusions : la géométrie du tableau se lit avant ce qui flotte au-dessus.
+  //
+  // Elles n'entrent QUE si l'appelant les fournit — et seul readXlsxDocument le
+  // fait. describeXlsxForLibrary, qui partage ce rendu depuis AC-3, n'en passe
+  // délibérément pas (arbitrage utilisateur) : une description de bibliothèque
+  // annonce ce que le classeur contient, pas l'index de ses images, et son
+  // aperçu est borné à dix lignes — une image ancrée plus bas y serait citée
+  // sans que rien de ce qui l'entoure n'ait été montré. La conséquence
+  // pratique est qu'elle n'a AUCUN décorticage de zip à payer à la dépose.
+  if (o.anchors) out += formatXlsxAnchorNote(o.anchors, o.maxImageAnchors);
   if (o.notice) out += String(o.notice);
   return out;
 }
@@ -772,6 +917,33 @@ function htmlTableToText(tableHtml) {
 // Le niveau n'a de sens que pour un heading (1-6) ; il gouverne le bornage des
 // sections (« jusqu'au prochain heading de niveau ≤ »), règle portée telle
 // quelle du serveur.
+// Les <img> que mammoth émet, extraites d'un fragment de paragraphe. Rend
+// { anchors, rest } : les ancres dans l'ordre du document, et le fragment PRIVÉ
+// de ses <img> pour que le texte qui les entourait reste rendu.
+//
+// L'attribut lu est `alt` (mammoth y recopie le docPr/@descr) et `src`, où
+// openDocxDocument a posé le CHEMIN de la pièce — jamais les octets, cf. la
+// note de convertImage. Un src vide reste une ancre utile : « il y a une image
+// ici » est une information, même sans savoir laquelle (§4 du brief).
+function docxExtractImages(fragment) {
+  const src = String(fragment == null ? '' : fragment);
+  const anchors = [];
+  const rest = src.replace(/<img\b[^>]*>/gi, (tag) => {
+    const path = (/\bsrc="([^"]*)"/i.exec(tag) || [])[1] || '';
+    const alt = (/\balt="([^"]*)"/i.exec(tag) || [])[1] || '';
+    // L'alt traverse le HTML de mammoth : il est ENCODÉ là où le descr portait
+    // une esperluette ou un guillemet. Le décoder ici, comme partout ailleurs
+    // dans ce fichier, sinon le libellé sortirait avec ses entités visibles.
+    const label = ooxmlImageLabel(decodeHtmlEntities(alt));
+    anchors.push(path
+      ? formatImageAnchor(decodeHtmlEntities(path), label)
+      // Pièce non retrouvée : on annonce l'image SANS chemin plutôt que rien.
+      : '[image' + (label ? ' : « ' + label + ' »' : ' sans référence retrouvée') + ']');
+    return '';
+  });
+  return { anchors: anchors, rest: rest };
+}
+
 function docxHtmlToBlocks(html) {
   const src = String(html == null ? '' : html);
   const blocks = [];
@@ -783,12 +955,39 @@ function docxHtmlToBlocks(html) {
   // du serveur qui rassemblait à la fin ce que le document avait dispersé.
   const re = /<(h[1-6])[^>]*>([\s\S]*?)<\/\1>|<p[^>]*>([\s\S]*?)<\/p>|<table[^>]*>([\s\S]*?)<\/table>|<(ul|ol)[^>]*>([\s\S]*?)<\/\5>/gi;
   let m;
+  // Compte les ancres déjà émises : le cap est PAR DOCUMENT, là où celui du
+  // pptx est par slide. Un docx n'a pas d'unité intermédiaire entre le document
+  // et la section, et capper par section laisserait un document à cent images
+  // en émettre cent — le cap ne mordrait dans aucune.
+  let anchorCount = 0;
+  let anchorsOmitted = 0;
   while ((m = re.exec(src)) !== null) {
     if (m[1]) {
       const text = htmlFragmentToInlineText(m[2]);
       if (text) blocks.push({ type: 'heading', level: Number(m[1].charAt(1)), text: text });
     } else if (m[3] !== undefined) {
-      const text = htmlFragmentToInlineText(m[3]);
+      // L'image vit DANS un <p> (mesuré : <p><strong><img/></strong></p>), et
+      // non au premier niveau — d'où l'extraction ici plutôt qu'une cinquième
+      // alternative à la regex.
+      //
+      // L'ancre sort en bloc SÉPARÉ, avant le texte du paragraphe qui la porte,
+      // pour deux raisons : elle s'aligne sur AC-1, où une ancre est un bloc
+      // typé et non du texte ; et un consommateur peut l'écarter sans la
+      // reconnaître à un préfixe de chaîne. Sur la fixture mesurée, les quatre
+      // <img> sont SEULES dans leur paragraphe (texte restant : ''), donc le
+      // cas « image au fil d'une phrase » n'y est jamais exercé — le `rest`
+      // ci-dessous le couvre défensivement, sans prétendre l'avoir vérifié.
+      const img = docxExtractImages(m[3]);
+      for (const a of img.anchors) {
+        // Le cap mord ici, pièce par pièce, plutôt qu'en fin de balayage : les
+        // ancres sont dispersées dans le document et les tronquer après coup
+        // supposerait de les rassembler, donc de perdre leur position — qui est
+        // précisément ce que l'étape livre.
+        if (anchorCount >= DOCX_MAX_IMAGE_ANCHORS) { anchorsOmitted++; continue; }
+        anchorCount++;
+        blocks.push({ type: 'image', level: 0, text: a });
+      }
+      const text = htmlFragmentToInlineText(img.rest);
       if (text) blocks.push({ type: 'para', level: 0, text: text });
     } else if (m[4] !== undefined) {
       const text = htmlTableToText(m[4]);
@@ -803,6 +1002,19 @@ function docxHtmlToBlocks(html) {
       }
       if (items.length) blocks.push({ type: 'list', level: 0, text: items.join('\n') });
     }
+  }
+  // Le dépassement est ANNONCÉ avec son compte, jamais tronqué en silence :
+  // même règle qu'AC-1 côté pptx. Un modèle qui ignore qu'il manque des images
+  // conclut sur ce qu'il voit. La notice va en fin de document faute de
+  // position propre — les ancres omises sont dispersées, et l'ancrer ailleurs
+  // prétendrait savoir où.
+  if (anchorsOmitted > 0) {
+    blocks.push({
+      type: 'image', level: 0,
+      text: '[' + anchorsOmitted + ' autre' + (anchorsOmitted > 1 ? 's' : '') +
+        ' image' + (anchorsOmitted > 1 ? 's' : '') + ' dans ce document, non listée' +
+        (anchorsOmitted > 1 ? 's' : '') + '.]',
+    });
   }
   return blocks;
 }
@@ -936,9 +1148,9 @@ function formatDocxListing(sections, opts) {
   return out.join('\n');
 }
 
-// Mise en forme d'une section lue. Même squelette que formatXlsxRead : un
-// en-tête qui nomme l'unité servie, le corps, et une notice de cap qui propose
-// la suite au lieu de tronquer en silence.
+// Mise en forme d'une section lue. Même squelette que le rendu d'une feuille
+// Excel (formatXlsxSheet) : un en-tête qui nomme l'unité servie, le corps, et
+// une notice de cap qui propose la suite au lieu de tronquer en silence.
 function formatDocxRead(section, opts) {
   const o = opts || {};
   const s = section || {};
@@ -994,7 +1206,7 @@ function formatDocxRead(section, opts) {
 // Rend la liste des chemins de pièces, dans l'ordre de présentation. Repli sur
 // `fallback` (les noms de pièces triés numériquement) si l'une des deux sources
 // manque ou ne résout rien : mieux vaut un ordre probable qu'aucune slide.
-function pptxRelationshipMap(relsXml) {
+function ooxmlRelationshipMap(relsXml) {
   const map = {};
   const src = String(relsXml == null ? '' : relsXml);
   const re = /<Relationship\b([^>]*)>/g;
@@ -1014,7 +1226,7 @@ function pptxRelationshipMap(relsXml) {
 // Résout un Target de .rels (relatif à la pièce qui le porte) en chemin de
 // pièce absolu dans le zip. `base` est le répertoire du fichier source
 // (ex. 'ppt' pour presentation.xml, 'ppt/slides' pour slideN.xml).
-function pptxResolveTarget(base, target) {
+function ooxmlResolveTarget(base, target) {
   const raw = String(target == null ? '' : target);
   if (!raw) return '';
   // Un Target commençant par '/' est absolu AU PACKAGE, pas relatif à la pièce
@@ -1031,7 +1243,7 @@ function pptxResolveTarget(base, target) {
 
 function pptxSlideOrder(presentationXml, relsXml, fallback) {
   const fb = (fallback || []).slice();
-  const map = pptxRelationshipMap(relsXml);
+  const map = ooxmlRelationshipMap(relsXml);
   const out = [];
   const seen = {};
   const src = String(presentationXml == null ? '' : presentationXml);
@@ -1042,7 +1254,7 @@ function pptxSlideOrder(presentationXml, relsXml, fallback) {
     if (!rid) continue;
     const rel = map[rid[1]];
     if (!rel) continue;
-    const path = pptxResolveTarget('ppt', rel.target);
+    const path = ooxmlResolveTarget('ppt', rel.target);
     if (path && !seen[path]) { seen[path] = true; out.push(path); }
   }
   if (!out.length) return fb;
@@ -1061,11 +1273,11 @@ function pptxSlideOrder(presentationXml, relsXml, fallback) {
 // absurde de résoudre soigneusement l'ordre des slides pour apparier les notes
 // au jugé.
 function pptxNotesTarget(slideRelsXml) {
-  const map = pptxRelationshipMap(slideRelsXml);
+  const map = ooxmlRelationshipMap(slideRelsXml);
   for (const id in map) {
     if (!Object.prototype.hasOwnProperty.call(map, id)) continue;
     if (/\/notesSlide$/.test(map[id].type)) {
-      return pptxResolveTarget('ppt/slides', map[id].target);
+      return ooxmlResolveTarget('ppt/slides', map[id].target);
     }
   }
   return '';
@@ -1079,15 +1291,31 @@ function pptxNotesTarget(slideRelsXml) {
 // aucun appel de plus.
 //
 // L'extrait vient des BLOCS (shape → a:p → runs), jamais du balayage plat des
-// runs : à plat, la même slide donne « Centre », « », « de  », « Cyberdéfense »
+// runs : à plat, la même slide donne des fragments d'un ou deux mots
 // — du bruit à la place d'un repère.
 const PPTX_EXCERPT_CHARS = 90;
 
+// Texte d'un bloc, quelle que soit sa forme. Les blocs sont typés depuis AC-1
+// ({type, text}) ; cette fonction est le SEUL endroit qui sait les lire, pour
+// qu'un consommateur n'ait jamais à faire String(bloc) — qui rendrait
+// « [object Object] », chaîne NON VIDE, donc un extrait pollué qu'aucune
+// assertion d'extrait ne distingue d'un vrai texte.
+function pptxBlockText(b) {
+  if (b == null) return '';
+  if (typeof b === 'string') return b;
+  return String(b.text == null ? '' : b.text);
+}
+
+// L'extrait sert à CHOISIR une slide : les ancres d'images en sont exclues
+// (AC-1 §2.5). Une slide d'icônes verrait sinon son libellé de listing rempli
+// de chemins de fichiers à la place de son texte — et la fixture mesurée en
+// porte 241 sur une seule slide.
 function pptxSlideExcerpt(blocks, maxChars) {
   const cap = Math.max(10, Math.floor(Number(maxChars) || PPTX_EXCERPT_CHARS));
   const flat = [];
   for (const b of (blocks || [])) {
-    const s = String(b == null ? '' : b).replace(/\s+/g, ' ').trim();
+    if (b && b.type === 'image') continue;
+    const s = pptxBlockText(b).replace(/\s+/g, ' ').trim();
     if (s) flat.push(s);
   }
   if (!flat.length) return '';
@@ -1171,8 +1399,10 @@ function formatPptxRead(slides, opts) {
       ? 'Aucune slide de cette plage ne porte de texte'
       : 'Slide(s) sans texte : ' + empty.join(', ');
     out += '\n\n[' + quoi + '. Une slide peut être entièrement composée d\'images ou de ' +
-      "diagrammes non textuels : MIAOU ne fait pas d'OCR. Dis-le plutôt que de conclure " +
-      'que la présentation est vide.]';
+      "diagrammes non textuels : MIAOU ne fait pas d'OCR. Les images y sont " +
+      'signalées par une ancre « [image: ppt/media/…] » qui donne le chemin de la ' +
+      'pièce dans le conteneur : tu peux ouvrir le .pptx comme une archive pour la ' +
+      'lire. Dis-le plutôt que de conclure que la présentation est vide.]';
   }
   if (o.notice) out += String(o.notice);
   return out;
@@ -1632,6 +1862,76 @@ async function readPdfDocument(u8, record, ref, selector) {
 }
 
 // Ouverture d'un classeur par SheetJS. Facteur commun de listXlsxDocument et
+// L'IMPUR du rendu Excel (lot AC-3), et il se réduit délibérément à « lire la
+// feuille et remplir la matrice » : tout ce qui DÉCIDE vit dans formatXlsxSheet,
+// parce que SheetJS ne tourne pas sous QuickJS et que ce qui n'est pas pur ici
+// n'est testable nulle part.
+//
+// Rend { rows, merges } pour formatXlsxSheet. Trois points mesurés qui gouvernent
+// cette fonction, et qu'on ne peut pas deviner en lisant SheetJS :
+//
+//   - LE !ref NE COMMENCE PAS FORCÉMENT EN A1 (la feuille mesurée est 'B2:E31').
+//     Toute arithmétique qui supposerait une origine A1 décalerait TOUTES les
+//     colonnes. D'où l'itération sur les bornes réelles de la plage.
+//   - DANS UNE ZONE FUSIONNÉE, SEULE LA CELLULE HAUT-GAUCHE EXISTE : les autres
+//     sont `undefined`, pas vides. C'est ce qui rend « masquée » et « vide »
+//     indistinguables pour qui lit seulement les cellules — la perte que le lot
+//     corrige — et c'est pourquoi le masque se dérive de '!merges', jamais de
+//     l'absence d'une cellule.
+//   - '!merges' PEUT ÊTRE ABSENT (une feuille sans fusion n'a pas la clé du
+//     tout) : toujours le lire défensivement.
+//
+// La plage est honorée ICI, par restriction du balayage. C'est ce qui remplace
+// le clone à '!ref' de V-5 : la garde n'est pas perdue, elle change de forme —
+// on ne demande plus à SheetJS de respecter une plage (ce qu'il ne faisait pas
+// pour sheet_to_csv), on ne lit que les cellules de la plage.
+function sheetToMatrix(sheet, refA1) {
+  const sh = sheet || {};
+  const box = parseA1Range(refA1 || (sh['!ref'] ? String(sh['!ref']) : ''));   // pur
+  if (!box) return { rows: [], merges: [] };
+
+  // Les fusions qui INTERSECTENT la plage lue. Une fusion entièrement hors plage
+  // n'a rien à dire au modèle sur ce qu'il regarde ; une fusion qui la chevauche,
+  // si — c'est elle qui explique les « ↳ » qu'il va voir.
+  const merges = [];
+  for (const m of (sh['!merges'] || [])) {
+    if (!m || !m.s || !m.e) continue;
+    if (m.e.r < box.s.r || m.s.r > box.e.r) continue;
+    if (m.e.c < box.s.c || m.s.c > box.e.c) continue;
+    merges.push(formatA1Range(m));   // pur
+  }
+
+  // Le masque est pré-calculé UNE FOIS, pas reparcouru à chaque cellule : une
+  // lecture as_resource peut porter sur des dizaines de milliers de lignes, et
+  // re-balayer '!merges' par case ferait un coût produit (cellules × fusions)
+  // sur le chemin même qui sert les grosses feuilles.
+  const masked = {};
+  for (const m of (sh['!merges'] || [])) {
+    if (!m || !m.s || !m.e) continue;
+    for (let r = Math.max(m.s.r, box.s.r); r <= Math.min(m.e.r, box.e.r); r++) {
+      for (let c = Math.max(m.s.c, box.s.c); c <= Math.min(m.e.c, box.e.c); c++) {
+        if (r === m.s.r && c === m.s.c) continue;   // la maîtresse porte la valeur
+        masked[r + ':' + c] = true;
+      }
+    }
+  }
+
+  const rows = [];
+  for (let r = box.s.r; r <= box.e.r; r++) {
+    const row = [];
+    for (let c = box.s.c; c <= box.e.c; c++) {
+      // Masquée = couverte par une fusion dont elle n'est PAS la maîtresse.
+      if (masked[r + ':' + c]) { row.push({ masked: true }); continue; }
+
+      const cell = sh[colIndexToLetter(c) + (r + 1)];   // pur
+      if (!cell) { row.push(null); continue; }
+      row.push({ v: cell.v, w: cell.w, f: cell.f });
+    }
+    rows.push(row);
+  }
+  return { rows: rows, merges: merges };
+}
+
 // readXlsxDocument — même forme qu'openPdfDocument : rend { wb } ou { fail },
 // JAMAIS d'exception (un throw remonterait en erreur technique là où un fichier
 // illisible est un refus ordinaire dont le modèle doit pouvoir parler).
@@ -1699,6 +1999,109 @@ async function listXlsxDocument(u8, record, ref) {
   return formatXlsxListing(sheets);   // pur, plus haut dans ce fichier
 }
 
+// L'IMPUR des ancres Excel (lot AC-4) : il se réduit à « ouvrir les pièces du
+// zip et résoudre les rels », tout ce qui décide vivant dans les purs plus haut.
+//
+// Rend { 'Nom de feuille': [{path, label, range}] } — clé par NOM de feuille,
+// parce que c'est ce que le selector désigne et que l'appelant n'a que ça.
+// Rend {} sur n'importe quel échec : perdre le texte d'un classeur parce qu'une
+// image est mal référencée serait un très mauvais échange.
+//
+// LA CHAÎNE, mesurée de bout en bout sur la fixture (deux indirections de plus
+// que le pptx) :
+//   xl/workbook.xml             → ordre des feuilles et leur r:id
+//   xl/_rels/workbook.xml.rels  → r:id → worksheets/sheetN.xml
+//   xl/worksheets/_rels/sheetN.xml.rels → relation `drawing` → drawingN.xml
+//   xl/drawings/drawingN.xml            → ancres (from/to + r:embed)
+//   xl/drawings/_rels/drawingN.xml.rels → r:embed → ../media/imageN.ext
+//
+// NE JAMAIS SUPPOSER drawing1 ↔ sheet1, et ce n'est pas une précaution
+// théorique : sur une fixture du dépôt, `drawing1.xml` est rattaché à la
+// DEUXIÈME feuille (la première n'a aucun .rels). Le rattachement se lit dans
+// les rels, exactement comme la liaison slide ↔ notes du pptx.
+//
+// unzipSync est FILTRÉ, et xl/media/ en est EXCLU : on ne veut que les CHEMINS.
+// C'est ce qui garde l'ouverture peu coûteuse — les deux médias de la fixture
+// pèsent 166 ko à eux seuls, pour un classeur dont tout le reste fait 60 ko.
+async function xlsxImageAnchors(u8) {
+  let lib;
+  try {
+    lib = await ensureFflate();   // ui.js — déjà chargé par le chemin zip
+  } catch (_e) {
+    return {};
+  }
+
+  let files;
+  try {
+    files = lib.unzipSync(u8, {
+      filter: (f) => f.name === 'xl/workbook.xml'
+        || f.name === 'xl/_rels/workbook.xml.rels'
+        || /^xl\/worksheets\/_rels\/[^/]+\.rels$/.test(f.name)
+        || /^xl\/drawings\/drawing\d+\.xml$/.test(f.name)
+        || /^xl\/drawings\/_rels\/drawing\d+\.xml\.rels$/.test(f.name),
+    });
+  } catch (_e) {
+    return {};
+  }
+
+  const dec = new TextDecoder();
+  const txt = (name) => (files[name] ? dec.decode(files[name]) : '');
+
+  const wbXml = txt('xl/workbook.xml');
+  if (!wbXml) return {};
+  const wbRels = ooxmlRelationshipMap(txt('xl/_rels/workbook.xml.rels'));   // pur
+
+  const out = {};
+  // Le nom de feuille est lu sur l'élément <sheet>, à l'attribut `name`. Il est
+  // encodé en XML (une feuille « Ventes & marges » sort en `&amp;`), d'où le
+  // décodage — sans lui, la clé ne correspondrait jamais au nom que SheetJS
+  // rend à l'appelant, et l'ancre serait silencieusement perdue.
+  const re = /<sheet\b([^>]*)\/?>/g;
+  let m;
+  while ((m = re.exec(wbXml))) {
+    const nameAttr = /\bname\s*=\s*"([^"]*)"/.exec(m[1]);
+    const ridAttr = /\br:id\s*=\s*"([^"]*)"/.exec(m[1]);
+    if (!nameAttr || !ridAttr) continue;
+    const sheetName = decodeHtmlEntities(nameAttr[1]);   // pur, plus haut
+    const rel = wbRels[ridAttr[1]];
+    if (!rel) continue;
+
+    // Le Target d'une relation de workbook est relatif à xl/.
+    const sheetPath = ooxmlResolveTarget('xl', rel.target);   // pur
+    if (!sheetPath) continue;
+
+    const sheetRelsName = sheetPath.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
+    const sheetRels = ooxmlRelationshipMap(txt(sheetRelsName));   // pur
+    let drawingPath = '';
+    for (const id in sheetRels) {
+      if (!Object.prototype.hasOwnProperty.call(sheetRels, id)) continue;
+      if (/\/drawing$/.test(sheetRels[id].type)) {
+        drawingPath = ooxmlResolveTarget('xl/worksheets', sheetRels[id].target);   // pur
+        break;
+      }
+    }
+    if (!drawingPath || !files[drawingPath]) continue;
+
+    const anchors = parseXlsxDrawingAnchors(txt(drawingPath));   // pur
+    if (!anchors.length) continue;   // drawing PRÉSENT mais VIDE : rien à dire
+
+    const drawingRelsName = drawingPath.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
+    const drawingRels = ooxmlRelationshipMap(txt(drawingRelsName));   // pur
+    const drawingDir = drawingPath.replace(/\/[^/]+$/, '');
+
+    const resolved = [];
+    for (const a of anchors) {
+      const rr = drawingRels[a.embed];
+      if (!rr) continue;   // rId non résolu : pièce absente, pas d'ancre borgne
+      const path = ooxmlResolveTarget(drawingDir, rr.target);   // pur
+      if (!path) continue;
+      resolved.push({ path: path, label: a.label || '', range: a.range });
+    }
+    if (resolved.length) out[sheetName] = resolved;
+  }
+  return out;
+}
+
 // Lecteur `read` du xlsx (lot V-5). Le selector est 'Feuille' ou
 // 'Feuille!A1:C10' — PAS le 'N'/'N-M' du PDF : une feuille se désigne par son
 // nom, et forcer un index serait demander au modèle de compter des feuilles
@@ -1711,7 +2114,10 @@ async function listXlsxDocument(u8, record, ref) {
 async function readXlsxDocument(u8, record, ref, selector) {
   const opened = await openXlsxDocument(u8, record, 'docs__read');
   if (opened.fail) return opened.fail;
-  const wb = opened.wb, lib = opened.lib;
+  // `lib` n'est plus déballé ici depuis AC-3 : le rendu ne passe plus par
+  // lib.utils.sheet_to_csv. SheetJS sert à OUVRIR le classeur (openXlsxDocument),
+  // plus à le mettre en forme.
+  const wb = opened.wb;
 
   const sel = parseSheetSelector(selector, wb.SheetNames);   // pur, plus haut dans ce fichier
   if (!sel.ok) return toolFail('docs__read', sel.message);
@@ -1722,7 +2128,7 @@ async function readXlsxDocument(u8, record, ref, selector) {
     // Feuille présente mais vide : ce n'est pas une erreur, et le dire vaut
     // mieux que rendre une chaîne vide dont le modèle conclurait n'importe quoi.
     return {
-      text: formatXlsxRead('', { sheet: sel.sheet, ref: '' }),
+      text: formatXlsxSheet({ rows: [], merges: [] }, { sheet: sel.sheet, ref: '' }),
       label: sel.sheet,
       resourceName: docReadResourceName(record.name, slugifyResourceSuffix(sel.sheet)),
     };
@@ -1731,17 +2137,31 @@ async function readXlsxDocument(u8, record, ref, selector) {
   const restricted = restrictSheetRange(sheetRef, sel.range);   // pur, plus haut dans ce fichier
   if (restricted.fail) return toolFail('docs__read', restricted.fail);
 
-  // Le clone est SUPERFICIEL et volontairement : les cellules sont partagées,
-  // seule la clé '!ref' est réécrite. Copier les cellules d'une feuille de
-  // 50 000 lignes pour n'en lire que dix serait absurde.
-  const view = Object.assign({}, sheet, { '!ref': restricted.ref });
-  const csv = lib.utils.sheet_to_csv(view);
+  // AC-3 : la plage reste honorée par RESTRICTION EXPLICITE de la lecture, et
+  // plus par le clone à '!ref'. La garde de V-5 (l'option `range` de
+  // sheet_to_csv silencieusement ignorée) ne disparaît donc pas faute d'objet :
+  // elle est REMPLACÉE par une lecture qui ne balaie que les cellules de la
+  // plage — sheetToMatrix n'appelle plus SheetJS du tout pour le rendu. Ne pas
+  // « restaurer » sheet_to_csv ici : ce serait reperdre formules et fusions.
+  const matrix = sheetToMatrix(sheet, restricted.ref);
+
+  // Les ancres d'images (AC-4) sont résolues À LA LECTURE seulement, et jamais
+  // au listing ni à la description de bibliothèque : le listing n'a pas besoin
+  // de savoir où sont les images, et la description a été explicitement exclue
+  // (arbitrage utilisateur — cf. le commentaire de formatXlsxSheet). Un classeur
+  // déposé ne paie donc aucun décorticage de zip.
+  //
+  // Échec → {} → aucune note : une image mal référencée ne doit jamais coûter
+  // le texte de la feuille.
+  const anchorsBySheet = await xlsxImageAnchors(u8);
+  const part = partitionXlsxAnchors(anchorsBySheet[sel.sheet], restricted.ref);   // pur
 
   return {
-    text: formatXlsxRead(csv, {          // pur, plus haut dans ce fichier
+    text: formatXlsxSheet(matrix, {          // pur, plus haut dans ce fichier
       sheet: sel.sheet, ref: restricted.ref,
       // Le cap de lignes ne mord QUE sans plage explicite (cf. la constante).
       maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
+      anchors: part,
       notice: restricted.notice,
     }),
     // Le label porte la plage EFFECTIVEMENT servie, pas celle demandée : c'est
@@ -1778,6 +2198,12 @@ async function openDocxDocument(u8, record, toolName) {
       'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
   }
 
+  // Annuaire des pièces de word/media/, clé (taille, hash) → chemin, construit
+  // AVANT la conversion pour que convertImage puisse résoudre à la volée.
+  // Best-effort : un échec ici ne prive pas le modèle du texte, les ancres
+  // sortiront simplement sans chemin.
+  const mediaIndex = await docxMediaIndex(u8);
+
   let html;
   try {
     // mammoth veut un ArrayBuffer. u8.buffer est passé TEL QUEL (pas de slice) :
@@ -1787,7 +2213,28 @@ async function openDocxDocument(u8, record, toolName) {
     const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
       ? u8.buffer
       : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-    const res = await lib.convertToHtml({ arrayBuffer: ab });
+
+    // convertImage remplace le src par le CHEMIN de la pièce, jamais par les
+    // octets. Ce n'est pas qu'une commodité d'ancrage : par défaut mammoth
+    // encode chaque image en base64 DANS le HTML, qui est ensuite jeté par
+    // htmlFragmentToInlineText — mesuré sur la fixture, 51 487 caractères
+    // contre 4 643, soit un facteur 11 de mémoire et de CPU dépensés pour rien.
+    // Ne pas « re-simplifier » en retirant convertImage : le src vide était le
+    // symptôme, l'inflation du HTML intermédiaire était le coût.
+    const convertImage = lib.images && lib.images.imgElement
+      ? lib.images.imgElement(async (image) => {
+        let src = '';
+        try {
+          const bytes = await image.readAsBuffer();
+          src = (bytes && mediaIndex[mediaMatchKey(bytes.length, fnv1aBytes(bytes))]) || '';
+        } catch (_e) { src = ''; }   // image illisible : ancre sans chemin
+        return { src: src };
+      })
+      : null;
+
+    const res = convertImage
+      ? await lib.convertToHtml({ arrayBuffer: ab }, { convertImage: convertImage })
+      : await lib.convertToHtml({ arrayBuffer: ab });
     html = (res && res.value) || '';
   } catch (e) {
     return { fail: toolFail(toolName, 'Document Word illisible : ' +
@@ -1922,24 +2369,383 @@ async function openPptxDocument(u8, record, toolName) {
   let untitled = 0;
   for (const name of ordered) {
     const doc = parser.parseFromString(txt(name), 'application/xml');
-    const blocks = pptxShapeBlocks(doc);
+
+    // Les rels de la slide portent DEUX liaisons : la note (pptxNotesTarget) et
+    // les pièces média des a:blip (ancres d'images, AC-1). Une seule dérivation
+    // du nom de la pièce de rels, partagée par les deux.
+    const relsName = name.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
+    const relsXml = txt(relsName);
+    const blocks = pptxShapeBlocks(doc, { rels: ooxmlRelationshipMap(relsXml) });
     const title = pptxSlideTitle(doc);
     if (!title) untitled++;
 
     // La note se trouve par les RELS de la slide, jamais par son numéro
     // (pptxNotesTarget, pur) : notesSlide3.xml n'est pas
     // nécessairement la note de la troisième slide affichée.
-    const relsName = name.replace(/^(.*)\/([^/]+)$/, '$1/_rels/$2.rels');
     const notesPath = pptxNotesTarget(txt(relsName));   // pur, plus haut dans ce fichier
     let notes = '';
     if (notesPath && files[notesPath]) {
       const nd = parser.parseFromString(txt(notesPath), 'application/xml');
-      notes = pptxShapeBlocks(nd, { skipPlaceholders: PPTX_NOTES_SKIP_PH }).join('\n').trim();
+      // Pas de `rels` ici : une pièce de notes ne porte pas d'ancre d'image.
+      // Le sldImg (l'image de la diapositive) est déjà écarté par
+      // PPTX_NOTES_SKIP_PH, et ne pas passer les rels ferme la seconde voie.
+      notes = pptxShapeBlocks(nd, { skipPlaceholders: PPTX_NOTES_SKIP_PH })
+        .map(pptxBlockText).join('\n').trim();
     }
 
     slides.push({ name: name, title: title, blocks: blocks, notes: notes, hasNotes: !!notes });
   }
   return { slides: slides, untitled: untitled };
+}
+
+// ── Ancres d'images OOXML (lots AC-1 pptx et AC-2 docx) ────────────────────
+// Le texte extrait ne portait aucune trace du passage d'une image : un modèle
+// qui sortait ppt/media/image7.png du conteneur n'avait aucun moyen de la
+// raccrocher à la slide où elle sert. L'ancre est le CHEMIN de la pièce, et
+// rien d'autre : le modèle va chercher les octets lui-même s'il en a besoin.
+//
+// Cette section est PARTAGÉE par les trois formats. Elle ne porte plus le
+// préfixe pptx depuis AC-2, qui en est le deuxième consommateur : `descr` et
+// `docPr/@descr` sont la MÊME donnée OOXML, que mammoth remonte en `altText`
+// côté Word. Dupliquer la règle de libellé aurait fait diverger deux formats
+// pour une seule notion. ooxmlRelationshipMap/ooxmlResolveTarget ont suivi la
+// même règle du deuxième occupant à l'ouverture d'AC-4, qui les emploie pour
+// résoudre les drawings d'un classeur : ils n'ont jamais rien eu de spécifique
+// au pptx, et un nom qui ment est un piège pour la session suivante.
+//
+// Tout ce qui DÉCIDE est ici, en fonctions pures sur chaînes : DOMParser est
+// absent de QuickJS, donc pptxShapeBlocks (qui prend un Document) est
+// intestable. Le DOM n'y sert plus qu'à collecter {embed, descr, name}, ce qui
+// est trop mince pour cacher un bug.
+
+// Suffixe des descriptions auto-générées par Office. « Une image contenant
+// dessin » est du bruit (13 occurrences identiques dans la fixture mesurée), et
+// un libellé faux coûte plus cher qu'un libellé absent : on retire tout.
+const OOXML_AUTO_DESCR_RE = /\n\s*\n\s*Description générée automatiquement\s*$/;
+
+// Libellé d'une image, ou '' — le libellé est un BONUS, jamais l'ancre :
+// 95 % de descr sur une fixture mesurée, 0 % sur l'autre. `name` (« Image 3 »,
+// « Object 63 ») n'est JAMAIS retenu, c'est de la numérotation automatique.
+//
+// Côté Word l'entrée est l'`altText` de mammoth, qui EST le docPr/@descr du
+// w:drawing : même donnée, même règle, même fonction.
+function ooxmlImageLabel(descr) {
+  const raw = String(descr == null ? '' : descr);
+  if (OOXML_AUTO_DESCR_RE.test(raw)) return '';
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
+// Forme du bloc : [image: ppt/media/image7.png — « Blockchain »]. Les crochets
+// sont déjà le marqueur des notices (« [Slide(s) sans texte : …] »). Le chemin
+// n'est jamais tronqué ni mis entre guillemets : le modèle doit pouvoir le
+// recopier tel quel pour viser la pièce.
+function formatImageAnchor(path, label) {
+  const p = String(path == null ? '' : path).trim();
+  if (!p) return '';
+  const l = String(label == null ? '' : label).trim();
+  return '[image: ' + p + (l ? ' — « ' + l + ' »' : '') + ']';
+}
+
+// Les icônes Office modernes sont stockées DEUX fois — un PNG et un SVG liés
+// par asvg:svgBlip dans le même a:blip. On annonce le raster (lisible par un
+// modèle vision) et on tait le jumeau vectoriel : il n'ajoute rien et double la
+// longueur de la ligne. Dédupliquer aussi les répétitions d'une même pièce sur
+// une slide (un logo posé quinze fois n'est qu'une image à retrouver).
+function pptxDedupeImageRefs(refs) {
+  const out = [];
+  const seen = {};
+  const svg = {};
+  for (const r of (refs || [])) {
+    if (r && r.svgPath) svg[r.svgPath] = true;
+  }
+  for (const r of (refs || [])) {
+    const path = r && r.path ? String(r.path) : '';
+    if (!path || seen[path] || svg[path]) continue;
+    seen[path] = true;
+    out.push(r);
+  }
+  return out;
+}
+
+// Cap par slide. La slide 4 de la fixture mesurée référence 241 médias : sans
+// cap, une seule slide noie le tool result. 24 est un ordre de grandeur choisi
+// pour rester lisible (les caps voisins sont MAX_XLSX_ROWS_DEFAULT = 200 lignes
+// et MAX_DOCX_SECTION_CHARS = 18000 caractères, mais une ancre coûte une ligne
+// entière) tout en couvrant la quasi-totalité des slides réelles — les trois
+// premières de la fixture en portent 22, 5 et 1.
+//
+// Le dépassement est ANNONCÉ avec son compte, jamais tronqué en silence : un
+// modèle qui ignore qu'il manque des images conclut sur ce qu'il voit.
+const PPTX_MAX_IMAGE_ANCHORS = 24;
+
+// L'UNITÉ est paramétrable depuis AC-2 : le pptx omet « sur cette slide », le
+// docx « dans cette section ». Le défaut reste la slide pour ne pas réécrire
+// les appels d'AC-1. Une notice qui parlerait de slide dans un document Word
+// serait fausse au moment précis où le modèle a besoin de savoir ce qui manque.
+function capImageAnchors(anchors, cap, unit) {
+  const list = (anchors || []).filter((a) => !!a);
+  const max = Math.max(1, Math.floor(Number(cap) || PPTX_MAX_IMAGE_ANCHORS));
+  if (list.length <= max) return list;
+  const omitted = list.length - max;
+  const where = String(unit || 'cette slide');
+  return list.slice(0, max).concat([
+    '[' + omitted + ' autre' + (omitted > 1 ? 's' : '') + ' image' + (omitted > 1 ? 's' : '') +
+    ' sur ' + where + ', non listée' + (omitted > 1 ? 's' : '') + '.]',
+  ]);
+}
+
+// ── Ancres d'images Word (lot AC-2) ────────────────────────────────────────
+// mammoth donne l'altText et les OCTETS de chaque image, mais PAS le chemin de
+// la pièce dans le zip. Le hash des octets le rend exactement : mesuré sur la
+// fixture réelle, les quatre images émises correspondent octet pour octet à une
+// pièce de word/media/. Le rapprochement n'est donc pas heuristique.
+//
+// Ce n'est PAS un hash cryptographique, et c'est délibéré : le besoin est de
+// distinguer une douzaine de pièces d'un même document, pas de résister à un
+// adversaire. FNV-1a est retenu pour trois raisons, dans cet ordre :
+//   - crypto.subtle n'existe QUE dans un secure context, et file:// n'en est pas
+//     un partout — MIAOU est souvent ouvert en local (cf. sync.js) ;
+//   - crypto.subtle est ASYNCHRONE, donc indisponible au runner QuickJS, où
+//     cette fonction est justement testée ;
+//   - le dépôt n'utilise crypto.subtle nulle part aujourd'hui : ce serait une
+//     première, pour un besoin qui ne la demande pas.
+// Ne pas « corriger » vers SHA-256 : ce serait rendre intestable un pur, pour
+// une propriété dont on n'a pas l'usage.
+function fnv1aBytes(bytes) {
+  const b = bytes || [];
+  let h = 0x811c9dc5;
+  for (let i = 0; i < b.length; i++) {
+    h ^= (b[i] & 0xff);
+    // Multiplication par le prime FNV 16777619, décomposée en décalages : un
+    // produit direct dépasserait 2^53 et perdrait des bits de poids faible.
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h >>> 0;
+}
+
+// La clé d'appariement est (taille, hash) et jamais le hash seul. La taille est
+// gratuite — elle est dans l'annuaire zip sans décompression — et elle écarte
+// d'emblée les collisions de hash 32 bits, qui sont rares mais pas
+// impossibles. Mesuré sur la fixture : 12 pièces, 12 clés distinctes.
+function mediaMatchKey(size, hash) {
+  return String(Number(size) || 0) + ':' + String(hash >>> 0);
+}
+
+// Annuaire des pièces de word/media/ : { "taille:hash": "word/media/imageN.png" }.
+// Rend {} sur n'importe quel échec — fflate indisponible, archive illisible :
+// les ancres sortiront sans chemin, ce qui reste plus utile que perdre le texte
+// du document pour une image.
+//
+// Contrairement au pptx, qui n'ouvre JAMAIS ses médias, il faut ici
+// décompresser pour hacher : c'est la dérogation que le lot assume, et elle est
+// bornée à word/media/.
+//
+// Le brief recommandait de pré-filtrer par taille (f.originalSize est bien
+// disponible avant décompression) pour éviter l'EMF de 836 ko de la fixture.
+// ÉCARTÉ, et c'est mesuré : les tailles émises ne sont connues que dans le
+// callback de mammoth, donc pré-filtrer imposerait une PREMIÈRE conversion
+// complète pour les collecter. Or décompresser tout word/media/ coûte 8 ms sur
+// la fixture la plus lourde du lot, quand une seconde convertToHtml coûte bien
+// davantage : le pré-filtre dépenserait du CPU pour économiser de la mémoire
+// transitoire. On décompresse donc tout en une passe, et les octets sont
+// relâchés aussitôt l'annuaire construit — seules les CLÉS et les chemins
+// survivent, jamais les octets.
+async function docxMediaIndex(u8) {
+  let lib;
+  try {
+    lib = await ensureFflate();   // ui.js — déjà chargé par le chemin zip
+  } catch (_e) {
+    return {};
+  }
+  try {
+    const files = lib.unzipSync(u8, {
+      filter: (f) => /^word\/media\/[^/]+$/.test(f.name),
+    });
+    const index = {};
+    for (const name of Object.keys(files)) {
+      const bytes = files[name];
+      if (!bytes || !bytes.length) continue;
+      const key = mediaMatchKey(bytes.length, fnv1aBytes(bytes));
+      // Première pièce gagnante : deux pièces d'octets identiques sont la MÊME
+      // image dupliquée dans le conteneur, et laquelle des deux on nomme est
+      // sans importance — le modèle atteindra les mêmes octets.
+      if (!index[key]) index[key] = name;
+    }
+    return index;
+  } catch (_e) {
+    return {};
+  }
+}
+
+// Les ancres docx sont bornées comme les pptx, par cohérence de forme — mais
+// AUCUNE fixture ne l'exerce : la seule qui porte des images en a quatre, pour
+// 18 000 caractères de section. Le cap est donc une garde de principe, pas une
+// valeur calibrée sur un débordement observé ; ne pas lui prêter une mesure
+// qu'il n'a pas. Il vaut son homologue pptx faute de raison d'en différer.
+const DOCX_MAX_IMAGE_ANCHORS = 24;
+
+// ── Ancres d'images Excel (lot AC-4) ───────────────────────────────────────
+// Une image de classeur ne vit pas DANS une cellule : elle flotte au-dessus
+// d'une plage. Elle ne peut donc pas s'insérer dans le tableau pipe d'AC-3 comme
+// un bloc s'insère dans une slide — elle sort en NOTE DE FIN, et la plage
+// qu'elle recouvre porte l'information de position sans déformer le tableau.
+//
+// SheetJS n'expose ni drawings ni médias (mesuré : les clés non-cellule d'une
+// feuille sont !ref, !margins, !merges, et wb.files vaut false). Le chemin passe
+// donc par fflate, comme le pptx, sur des pièces que SheetJS ne lit pas — et
+// JAMAIS par xl/media/, dont on ne veut que les CHEMINS.
+//
+// Tout ce qui décide est ici, en purs sur CHAÎNES : ni DOMParser ni SheetJS ne
+// tournent sous QuickJS. Le parsing est fait à la regex, comme pptxSlideOrder et
+// ooxmlRelationshipMap, et pour la même raison — un drawing ne porte que quatre
+// entiers et un r:embed par ancre, ce qui est trop mince pour justifier un
+// parseur intestable.
+
+// Les trois formes d'ancre du schéma DrawingML, et ce qu'on sait en rendre :
+//   - xdr:twoCellAnchor  : from ET to  → une PLAGE (E4:E15). La seule mesurée.
+//   - xdr:oneCellAnchor   : from seul + une taille en EMU → la CELLULE d'ancrage
+//     seule. Convertir des EMU en cellules demanderait les largeurs de colonnes
+//     et hauteurs de lignes réelles : on ne le fait pas, on annonce le point
+//     d'ancrage. Mieux vaut une position plus vague qu'une position inventée.
+//   - xdr:absoluteAnchor : aucune cellule (position en EMU absolus) → l'image est
+//     annoncée SANS position.
+// Les deux dernières ne sont exercées par AUCUNE fixture du dépôt : elles sont
+// traitées défensivement, et ne pas prétendre le contraire.
+//
+// xdr:from/xdr:to portent col et row en BASE 0 ; les colOff/rowOff sont des
+// offsets EMU intra-cellule, délibérément ignorés (ils déplacent l'image à
+// l'intérieur de sa cellule, ce qui ne change pas la cellule).
+//
+// Rend [{embed, range, label}] dans l'ordre du document — `range` vaut '' quand
+// la forme ne permet pas de la nommer, `label` '' quand l'auteur n'en a pas mis.
+// La résolution embed → chemin de pièce n'est PAS faite ici : elle a besoin des
+// rels, que l'appelant seul possède.
+function parseXlsxDrawingAnchors(drawingXml) {
+  const src = String(drawingXml == null ? '' : drawingXml);
+  const out = [];
+  if (!src) return out;
+
+  // Une ancre par bloc, quelle que soit sa forme. On capture le NOM de la balise
+  // pour savoir quoi faire du from/to, plutôt que de faire trois passes qui
+  // perdraient l'ordre du document.
+  const re = /<xdr:(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[^>]*>([\s\S]*?)<\/xdr:\1>/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const kind = m[1];
+    const body = m[2];
+
+    // Le r:embed du a:blip est le raster. Un a:blip sans r:embed existe (r:link,
+    // image liée externe) : on ne rend alors aucune ancre plutôt qu'une ancre
+    // sans pièce à atteindre — même règle qu'au pptx (blipRef).
+    const blip = /<a:blip\b([^>]*)>/.exec(body) || /<a:blip\b([^>]*)\/>/.exec(body);
+    if (!blip) continue;
+    const embed = /\br:embed\s*=\s*"([^"]*)"/.exec(blip[1]);
+    if (!embed || !embed[1]) continue;
+
+    // Le libellé vient du xdr:cNvPr/@descr du nœud porteur, exactement comme le
+    // p:cNvPr/@descr du pptx et le docPr/@descr que mammoth remonte côté Word :
+    // MÊME donnée OOXML, donc MÊME règle de nettoyage (ooxmlImageLabel retire
+    // les descriptions auto-générées et n'accepte jamais `name`).
+    //
+    // Les deux images mesurées ont un descr VIDE, donc leurs ancres sortent
+    // nues — comportement attendu, pas un défaut. On le lit quand même : le
+    // format l'autorise et d'autres classeurs en portent. Aucune fixture du
+    // dépôt n'exerce donc ce chemin, ce que le test le dit explicitement.
+    const pr = /<xdr:cNvPr\b([^>]*)>/.exec(body) || /<xdr:cNvPr\b([^>]*)\/>/.exec(body);
+    const descr = pr && /\bdescr\s*=\s*"([^"]*)"/.exec(pr[1]);
+    const label = descr ? ooxmlImageLabel(decodeHtmlEntities(descr[1])) : '';
+
+    out.push({ embed: embed[1], range: xlsxAnchorRange(kind, body), label: label });
+  }
+  return out;
+}
+
+// La plage A1 d'une ancre, ou '' si sa forme ne permet pas de la nommer.
+// Passe par formatA1Range / colIndexToLetter (V-5, base 26 BIJECTIVE et testées
+// jusqu'à la colonne 800) : réécrire une conversion col→lettre ici en ferait
+// une seconde qui dériverait, et le décalage AA/AB ne se voit qu'au-delà de Z.
+function xlsxAnchorRange(kind, body) {
+  if (kind === 'absoluteAnchor') return '';   // aucune cellule à nommer
+
+  const corner = (tag) => {
+    const block = new RegExp('<xdr:' + tag + '\\b[^>]*>([\\s\\S]*?)</xdr:' + tag + '>').exec(body);
+    if (!block) return null;
+    const col = /<xdr:col>\s*(\d+)\s*<\/xdr:col>/.exec(block[1]);
+    const row = /<xdr:row>\s*(\d+)\s*<\/xdr:row>/.exec(block[1]);
+    if (!col || !row) return null;
+    return { c: parseInt(col[1], 10), r: parseInt(row[1], 10) };
+  };
+
+  const from = corner('from');
+  if (!from) return '';
+  // oneCellAnchor n'a pas de `to` : la plage se réduit à sa cellule d'ancrage.
+  const to = kind === 'twoCellAnchor' ? corner('to') : null;
+  if (!to) return colIndexToLetter(from.c) + (from.r + 1);
+  return formatA1Range({ s: from, e: to });
+}
+
+// Partition des ancres selon la plage SERVIE, et c'est une décision de fond :
+// annoncer une image qui n'a pas été lue serait incohérent avec le reste du
+// domaine (le label d'un read porte déjà la plage effectivement servie, jamais
+// celle demandée). Mais taire qu'il en existe ailleurs ferait conclure « il n'y
+// a pas d'image » — un silence qui vaut interdiction. D'où deux listes, jamais
+// un filtre muet.
+//
+// Le prédicat d'intersection est celui de sheetToMatrix pour les fusions
+// (chevauchement de rectangles, pas inclusion) : une image à cheval sur la
+// bordure de la plage lue EST visible dans ce qu'on sert. Deux prédicats
+// d'intersection sur la même feuille divergeraient.
+//
+// Une ancre SANS plage (absoluteAnchor) est comptée comme hors plage : on ne
+// peut pas affirmer qu'elle recouvre ce que le modèle lit.
+function partitionXlsxAnchors(anchors, servedRef) {
+  const inside = [];
+  let outside = 0;
+  const box = parseA1Range(servedRef || '');
+  for (const a of (anchors || [])) {
+    if (!a) continue;
+    const r = a.range ? parseA1Range(a.range) : null;
+    if (!box || !r || r.e.r < box.s.r || r.s.r > box.e.r || r.e.c < box.s.c || r.s.c > box.e.c) {
+      outside++;
+      continue;
+    }
+    inside.push(a);
+  }
+  return { inside: inside, outside: outside };
+}
+
+// Cap propre au classeur : une feuille peut porter des dizaines d'images sans
+// que ce soit pathologique. Il vaut ses homologues pptx et docx faute de raison
+// d'en différer — et comme eux, AUCUNE fixture du dépôt ne l'exerce (la seule
+// illustrée porte deux images) : garde de principe, pas valeur calibrée.
+const XLSX_MAX_IMAGE_ANCHORS = 24;
+
+// La note d'ancres : une ligne par image, plus le compte de celles qui sont hors
+// de la plage lue. Rend '' quand il n'y a rien à dire — un drawing PRÉSENT MAIS
+// VIDE est le cas dégénéré mesuré (une fixture porte un <xdr:wsDr></xdr:wsDr>
+// sans enfant et aucun xl/media/), et il ne doit produire aucune note.
+//
+// Le compte hors plage est donné même sans aucune image dedans : c'est
+// exactement le cas où le silence tromperait le plus.
+function formatXlsxAnchorNote(part, cap) {
+  const p = part || {};
+  const inside = p.inside || [];
+  const outside = Math.max(0, Math.floor(Number(p.outside) || 0));
+  if (!inside.length && !outside) return '';
+
+  const lines = capImageAnchors(
+    inside.map((a) => formatImageAnchor(a.path, a.label) +
+      (a.range ? ' — ancrée sur ' + a.range : '')),
+    cap || XLSX_MAX_IMAGE_ANCHORS, 'cette feuille');
+
+  let out = '';
+  if (lines.length) out += '\n\n' + lines.join('\n');
+  if (outside) {
+    out += '\n\n[' + outside + ' image' + (outside > 1 ? 's' : '') + ' de cette feuille ' +
+      (outside > 1 ? 'sont ancrées' : 'est ancrée') + ' hors de la plage lue' +
+      (inside.length ? '' : ' — aucune ne recouvre ce qui précède') + '.]';
+  }
+  return out;
 }
 
 // Placeholders d'une pièce de notes qui ne PORTENT PAS de propos : l'image de
@@ -1952,10 +2758,12 @@ const PPTX_NOTES_SKIP_PH = ['sldNum', 'sldImg', 'ftr', 'dt'];
 // Découpe d'une slide en blocs de texte : shape → paragraphe (a:p) → runs.
 // C'EST la décision d'implémentation du format, et elle a été MESURÉE sur le
 // deck réel (V-5-PLAN §3.1 bis), pas devinée :
-//   - balayage plat des a:t  → 160 fragments « Centre », « », « de  »… illisible,
-//     les runs étant coupés par les changements de mise en forme ;
-//   - par shape, runs collés  → « Risques ITMarc GUIDAT », libellé et personne collés ;
-//   - shape → a:p → runs      → « Risques IT\nMarc GUIDAT », le bon niveau.
+//   - balayage plat des a:t  → 160 fragments d'un ou deux mots, illisible, les
+//     runs étant coupés par les changements de mise en forme ;
+//   - par shape, runs collés  → libellé et personne collés bout à bout, sans
+//     séparation (« Pilotage des RisquesAlex Durand ») ;
+//   - shape → a:p → runs      → « Pilotage des Risques\nAlex Durand », le bon
+//     niveau. (Exemples NEUTRES : la fixture mesurée ne se cite pas.)
 // Un balayage plat produirait la bouillie de fragments qu'on reproche au
 // serveur, à l'envers : lui perd du texte, elle en rend trop peu structuré.
 //
@@ -1967,12 +2775,20 @@ const PPTX_NOTES_SKIP_PH = ['sldNum', 'sldImg', 'ftr', 'dt'];
 // Les tableaux (a:tbl d'un p:graphicFrame) sont rendus en lignes « a | b | c »,
 // même forme que htmlTableToText côté docx : un deck de format différent ne doit
 // pas se lire d'une autre façon.
+// Les blocs sont TYPÉS ({type: 'text'|'table'|'image', text}) depuis AC-1, là
+// où la fonction rendait des chaînes nues. Le typage est ce qui permet à
+// pptxSlideExcerpt d'écarter les ancres d'images sans les reconnaître à un
+// préfixe de chaîne — un couplage qui dérive dès qu'on touche à la forme du
+// bloc. docxHtmlToBlocks rend déjà {type, level, text} et AC-2 y insérera le
+// même type 'image' : deux formats divergents pour une même notion coûteraient
+// plus cher que cette bascule.
 function pptxShapeBlocks(doc, opts) {
   const o = opts || {};
   const skip = o.skipPlaceholders || null;
   const out = [];
   const root = doc && doc.documentElement;
   if (!root) return out;
+  const rels = o.rels || null;   // {rId: {target, type}} — absent sur les notes
 
   const paragraphsOf = (el) => {
     const paras = [];
@@ -1984,6 +2800,57 @@ function pptxShapeBlocks(doc, opts) {
       if (line.trim()) paras.push(line);
     }
     return paras;
+  };
+
+  // Les images collectées à part : elles sont dédupliquées et cappées EN BLOC
+  // (une décision par slide, pas par nœud), puis émises à la fin du parcours.
+  const imageRefs = [];
+
+  // Résout un a:blip en {path, svgPath}. Le r:embed de l'a:blip est le raster ;
+  // celui d'un asvg:svgBlip imbriqué est le jumeau vectoriel, qu'on note pour
+  // pouvoir l'écarter. Un a:blip sans r:embed existe (r:link, image liée
+  // externe) : il ne rend rien plutôt qu'une ancre sans chemin.
+  const blipRef = (blip) => {
+    if (!rels) return null;
+    const embed = blip.getAttribute('r:embed');
+    if (!embed) return null;
+    const rel = rels[embed];
+    if (!rel) return null;   // rId non résolu : pièce absente du zip
+    const path = ooxmlResolveTarget('ppt/slides', rel.target);
+    if (!path) return null;
+    let svgPath = '';
+    const svgBlips = blip.getElementsByTagName('asvg:svgBlip');
+    if (svgBlips.length) {
+      const svgEmbed = svgBlips[0].getAttribute('r:embed');
+      const svgRel = svgEmbed && rels[svgEmbed];
+      if (svgRel) svgPath = ooxmlResolveTarget('ppt/slides', svgRel.target);
+    }
+    return { path: path, svgPath: svgPath, label: '' };
+  };
+
+  // Un nœud porteur d'image, quel que soit son CONTENEUR : viser p:pic
+  // littéralement raterait les 5 images de la fixture think-cell, qui vivent
+  // sous p:oleObj < mc:Fallback. On vise « un nœud portant un a:blip ».
+  const collectImages = (el) => {
+    const blips = el.getElementsByTagName('a:blip');
+    for (let i = 0; i < blips.length; i++) {
+      const ref = blipRef(blips[i]);
+      if (!ref) continue;
+      // Le libellé se cherche en REMONTANT depuis le blip vers le nœud porteur
+      // (p:pic, p:oleObj…), dont le p:nvPicPr/p:cNvPr porte le descr. Remonter,
+      // jamais descendre : `el` peut contenir plusieurs images (un p:grpSp, une
+      // slide entière), et y chercher un p:cNvPr rendrait le PREMIER du
+      // sous-arbre — donc le même libellé collé à toutes les images du groupe.
+      // `descr` seul fait foi ; `name` (« Image 3 ») n'est jamais un libellé.
+      let node = blips[i].parentNode;
+      while (node && node.nodeType === 1) {
+        const prs = node.getElementsByTagName('p:cNvPr');
+        if (prs.length) { ref.label = ooxmlImageLabel(prs[0].getAttribute('descr')); break; }
+        if (node === el) break;
+        node = node.parentNode;
+      }
+      imageRefs.push(ref);
+    }
   };
 
   const walk = (el) => {
@@ -1998,7 +2865,15 @@ function pptxShapeBlocks(doc, opts) {
           if (ty && skip.indexOf(ty) >= 0) continue;
         }
         const paras = paragraphsOf(ch);
-        if (paras.length) out.push(paras.join('\n'));
+        if (paras.length) out.push({ type: 'text', text: paras.join('\n') });
+        collectImages(ch);   // un p:sp peut porter une image de remplissage
+      } else if (tag === 'mc:AlternateContent') {
+        // Un même visuel apparaît dans mc:Choice ET mc:Fallback : descendre
+        // dans les deux compterait chaque image OLE deux fois. On retient le
+        // Fallback, qui porte le rendu raster réellement présent dans le zip
+        // (le Choice think-cell mesuré ne porte aucune pièce raccrochable).
+        const fb = ch.getElementsByTagName('mc:Fallback')[0];
+        walk(fb || ch);
       } else if (tag === 'p:grpSp') {
         walk(ch);   // le sous-arbre d'un groupe porte des p:sp ordinaires
       } else if (tag === 'p:graphicFrame') {
@@ -2012,14 +2887,25 @@ function pptxShapeBlocks(doc, opts) {
             for (let c = 0; c < tcs.length; c++) cells.push(paragraphsOf(tcs[c]).join(' ').trim());
             rows.push(cells.join(' | '));
           }
-          if (rows.length) out.push(rows.join('\n'));
+          if (rows.length) out.push({ type: 'table', text: rows.join('\n') });
         }
+        collectImages(ch);
+      } else if (tag === 'p:pic') {
+        collectImages(ch);
       } else {
         walk(ch);
       }
     }
   };
   walk(root);
+
+  // Les ancres viennent APRÈS le texte de la slide : le texte est ce qu'on lit,
+  // les ancres sont un index de ce qu'on peut aller chercher.
+  for (const line of capImageAnchors(
+    pptxDedupeImageRefs(imageRefs).map((r) => formatImageAnchor(r.path, r.label)),
+    PPTX_MAX_IMAGE_ANCHORS)) {
+    out.push({ type: 'image', text: line });
+  }
   return out;
 }
 
@@ -2084,7 +2970,7 @@ async function readPptxDocument(u8, record, ref, selector) {
     const s = all[n - 1];
     picked.push({
       number: n, title: s.title,
-      text: (s.blocks || []).join('\n\n').trim(),
+      text: (s.blocks || []).map(pptxBlockText).filter((t) => !!t).join('\n\n').trim(),
       notes: s.notes,
     });
   }
@@ -2129,20 +3015,21 @@ async function describeXlsxForLibrary(u8, maxChars) {
     }
     const head = formatXlsxListing(sheets);   // pur, plus haut dans ce fichier
 
-    // Aperçu : les premières lignes de la première feuille NON VIDE. Le clone à
-    // !ref restreint est le même geste que readXlsxDocument — et pour la même
-    // raison : l'option `range` de sheet_to_csv est silencieusement ignorée.
+    // Aperçu : les premières lignes de la première feuille NON VIDE. Il passe
+    // par le MÊME rendu que la lecture depuis AC-3 (arbitrage utilisateur) :
+    // décrire un classeur autrement qu'on le lit ferait diverger deux vues du
+    // même contenu, et c'est la description qui sert de première impression au
+    // modèle. Formules et fusions y apparaissent donc aussi.
     let preview = '';
     for (const sh of sheets) {
       if (!sh.ref) continue;
       const full = parseA1Range(sh.ref);
       if (!full) continue;
       const end = Math.min(full.e.r, full.s.r + 9);   // 10 lignes au plus
-      const view = Object.assign({}, wb.Sheets[sh.name], {
-        '!ref': formatA1Range({ s: full.s, e: { r: end, c: full.e.c } }),   // pur, plus haut dans ce fichier
-      });
-      const csv = String(lib.utils.sheet_to_csv(view) || '').replace(/\n+$/, '');
-      if (csv) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + csv; }
+      const previewRef = formatA1Range({ s: full.s, e: { r: end, c: full.e.c } });
+      const matrix = sheetToMatrix(wb.Sheets[sh.name], previewRef);
+      const body = formatXlsxSheet(matrix, { sheet: sh.name, ref: previewRef });
+      if (body) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + body; }
       break;
     }
     const out = preview ? head + '\n\n' + preview : head;

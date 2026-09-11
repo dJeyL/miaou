@@ -772,37 +772,159 @@ describe('formatXlsxListing', function() {
   });
 });
 
-describe('formatXlsxRead', function() {
+describe('formatSheetCell — formules et fusions (AC-3)', function() {
+  it('w PRIME sur v : sans ça les dates redeviennent des nombres', function() {
+    // LA non-régression du lot. sheet_to_csv rendait déjà w ; un rendu maison
+    // qui prendrait v afficherait 46174 là où le document dit « Jun-26 ».
+    expect(formatSheetCell({ t: 'n', v: 46174, w: 'Jun-26' })).toBe('Jun-26');
+    expect(formatSheetCell({ t: 'n', v: 0.7083333333357587, w: '5:00:00 PM' })).toBe('5:00:00 PM');
+  });
+
+  it('v sert de repli quand w est absent ou vide', function() {
+    expect(formatSheetCell({ t: 'n', v: 27 })).toBe('27');
+    expect(formatSheetCell({ t: 's', v: 'texte', w: '' })).toBe('texte');
+  });
+
+  it('une formule est annoncée APRÈS sa valeur', function() {
+    expect(formatSheetCell({ v: 27, w: '27', f: "COUNTIF('Autre feuille'!F:F,B7)" }))
+      .toBe("27 [=COUNTIF('Autre feuille'!F:F,B7)]");
+  });
+
+  it('le cas où les deux annotations se croisent : formule ET date formatée', function() {
+    // E15 de la fixture : w='5:00:00 PM', v=0.708…, f='E12-E9'. Le formatage
+    // Excel est trompeur pour une durée, mais c'est ce que le document dit —
+    // l'annotation de formule donne au modèle de quoi le comprendre.
+    expect(formatSheetCell({ v: 0.7083333333357587, w: '5:00:00 PM', f: 'E12-E9' }))
+      .toBe('5:00:00 PM [=E12-E9]');
+  });
+
+  it('une formule sans valeur calculée sort quand même', function() {
+    expect(formatSheetCell({ f: 'SUM(A1:A9)' })).toBe('[=SUM(A1:A9)]');
+  });
+
+  it('une formule trop longue est tronquée et le DIT', function() {
+    var long = 'IF(' + new Array(200).join('X') + ')';
+    var out = formatSheetCell({ v: 1, w: '1', f: long });
+    expect(out.indexOf('…]') >= 0).toBe(true);
+    expect(out.length < long.length).toBe(true);
+  });
+
+  it('une case masquée par une fusion n\'est PAS une case vide', function() {
+    // Le CSV rendait les deux comme une colonne vide : « absente » et « vide »
+    // étaient indistinguables, c'est la perte que le lot corrige.
+    expect(formatSheetCell({ masked: true })).toBe('↳');
+    expect(formatSheetCell(null)).toBe('');
+  });
+
+  it('un pipe dans une valeur est échappé : il casserait la grille', function() {
+    expect(formatSheetCell({ v: 'a|b', w: 'a|b' })).toBe('a\\|b');
+  });
+
+  it('un saut de ligne dans une cellule ne casse pas la ligne du tableau', function() {
+    expect(formatSheetCell({ w: 'deux\nlignes' })).toBe('deux lignes');
+  });
+});
+
+describe('formatMergeRanges — signaler, jamais propager (AC-3)', function() {
+  it('sans fusion, aucune note', function() {
+    expect(formatMergeRanges([])).toBe('');
+    expect(formatMergeRanges(null)).toBe('');
+  });
+
+  it('les plages sont énumérées et le marqueur est expliqué', function() {
+    var out = formatMergeRanges(['B17:E17', 'B28:E31']);
+    expect(out.indexOf('2 plages fusionnées') >= 0).toBe(true);
+    expect(out.indexOf('B17:E17, B28:E31') >= 0).toBe(true);
+    expect(out.indexOf('↳') >= 0).toBe(true);
+  });
+
+  it('le singulier est accordé', function() {
+    expect(formatMergeRanges(['B17:E17']).indexOf('1 plage fusionnée') >= 0).toBe(true);
+  });
+
+  it('au-delà du cap, le COMPTE seul — mais jamais le silence', function() {
+    var many = [];
+    for (var i = 1; i <= 20; i++) many.push('A' + i + ':C' + i);
+    var out = formatMergeRanges(many, 12);
+    expect(out.indexOf('20 plages fusionnées') >= 0).toBe(true);
+    expect(out.indexOf('trop nombreuses') >= 0).toBe(true);
+    expect(out.indexOf('A1:C1') >= 0).toBe(false);
+  });
+
+  it('une plage en bornes 0-based est écrite comme partout ailleurs', function() {
+    // Même écriture que le selector et la notice de clamp : une seule
+    // convention de plage dans tout le fichier.
+    expect(formatMergeRanges([{ s: { r: 16, c: 1 }, e: { r: 16, c: 4 } }])
+      .indexOf('B17:E17') >= 0).toBe(true);
+  });
+});
+
+describe('formatXlsxSheet — le rendu pipe (AC-3)', function() {
+  var GRID = {
+    rows: [
+      [{ w: 'Verdict' }, { w: 'Nombre' }],
+      [{ w: 'NA' }, { v: 27, w: '27', f: "COUNTIF('Autre'!F:F,B7)" }],
+    ],
+    merges: [],
+  };
+
+  it('les colonnes sont séparées par un pipe, comme le docx et le pptx', function() {
+    var out = formatXlsxSheet(GRID, { sheet: 'S', ref: 'B2:C3' });
+    expect(out.indexOf('Verdict | Nombre') >= 0).toBe(true);
+    expect(out.indexOf("NA | 27 [=COUNTIF('Autre'!F:F,B7)]") >= 0).toBe(true);
+  });
+
   it('l\'en-tête porte le nom de la feuille ET la plage servie', function() {
-    var out = formatXlsxRead('a,b\n1,2\n', { sheet: 'Synthèse', ref: 'B2:C3' });
+    var out = formatXlsxSheet(GRID, { sheet: 'Synthèse', ref: 'B2:C3' });
     expect(out.indexOf('Feuille « Synthèse » (B2:C3)') >= 0).toBe(true);
   });
 
-  it('le saut de ligne final du CSV ne compte pas pour une ligne', function() {
-    var out = formatXlsxRead('a,b\n1,2\n', { sheet: 'S', ref: 'A1:B2', maxRows: 2 });
-    expect(out.indexOf('non affichée') >= 0).toBe(false);
+  it('une ligne entièrement vide reste une ligne : la géométrie est une information', function() {
+    var out = formatXlsxSheet({ rows: [[{ w: 'a' }], [null], [{ w: 'b' }]] }, { sheet: 'S' });
+    var body = out.split('\n').slice(1);
+    expect(body.length).toBe(3);
+    expect(body[1]).toBe('');
   });
 
-  it('au-delà du cap, la troncature se DIT et propose la suite', function() {
-    var out = formatXlsxRead('1\n2\n3\n4\n5\n', { sheet: 'S', ref: 'A1:A5', maxRows: 2 });
-    expect(out.indexOf('3 ligne(s) non affichée(s)') >= 0).toBe(true);
-    expect(out.indexOf('as_resource') >= 0).toBe(true);
-    expect(out.indexOf('S!A3') >= 0).toBe(true);
-  });
-
-  it('maxRows à 0 ne borne rien : une plage explicite est une intention', function() {
-    var out = formatXlsxRead('1\n2\n3\n4\n5\n', { sheet: 'S', ref: 'A1:A5', maxRows: 0 });
-    expect(out.indexOf('non affichée') >= 0).toBe(false);
-  });
-
-  it('une plage sans cellule remplie le DIT, jamais un blanc', function() {
-    var out = formatXlsxRead('', { sheet: 'S', ref: 'A1:B2' });
+  it('une plage sans aucune cellule le DIT, jamais un blanc', function() {
+    var out = formatXlsxSheet({ rows: [] }, { sheet: 'S', ref: 'A1:B2' });
     expect(out.indexOf('aucune cellule remplie') >= 0).toBe(true);
   });
 
-  it('la notice de clamp est reportée en fin de sortie', function() {
-    var out = formatXlsxRead('a\n', { sheet: 'S', ref: 'A1:A1', notice: '\n\n[Plage ramenée à A1:A1]' });
-    expect(out.indexOf('[Plage ramenée à A1:A1]') >= 0).toBe(true);
+  it('le cap de lignes se dit et propose la suite', function() {
+    var rows = [];
+    for (var i = 0; i < 5; i++) rows.push([{ w: String(i) }]);
+    var out = formatXlsxSheet({ rows: rows }, { sheet: 'S', maxRows: 2 });
+    expect(out.indexOf('3 ligne(s) non affichée(s)') >= 0).toBe(true);
+    expect(out.indexOf('as_resource') >= 0).toBe(true);
+  });
+
+  it('maxRows à 0 ne borne rien : une plage explicite est une intention', function() {
+    var rows = [];
+    for (var i = 0; i < 5; i++) rows.push([{ w: String(i) }]);
+    expect(formatXlsxSheet({ rows: rows }, { sheet: 'S', maxRows: 0 })
+      .indexOf('non affichée') >= 0).toBe(false);
+  });
+
+  it('la note de fusion survit à la troncature : elle décrit la feuille', function() {
+    // Un modèle qui n'a reçu que les premières lignes a D'AUTANT PLUS besoin de
+    // savoir que des fusions structurent ce qu'il lit.
+    var rows = [];
+    for (var i = 0; i < 5; i++) rows.push([{ w: String(i) }]);
+    var out = formatXlsxSheet({ rows: rows, merges: ['B28:E31'] }, { sheet: 'S', maxRows: 2 });
+    expect(out.indexOf('non affichée') >= 0).toBe(true);
+    expect(out.indexOf('B28:E31') >= 0).toBe(true);
+  });
+
+  it('la notice de clamp est reportée en toute fin', function() {
+    var out = formatXlsxSheet(GRID, { sheet: 'S', notice: '\n\n[Plage ramenée à B2:C3]' });
+    expect(out.indexOf('[Plage ramenée à B2:C3]') >= 0).toBe(true);
+  });
+
+  it('une feuille sans fusion ne porte AUCUNE note : rien ne change pour elle', function() {
+    var out = formatXlsxSheet(GRID, { sheet: 'S', ref: 'B2:C3' });
+    expect(out.indexOf('fusionnée') >= 0).toBe(false);
+    expect(out.indexOf('↳') >= 0).toBe(false);
   });
 });
 
@@ -1137,35 +1259,35 @@ describe('libellés d\'ack — la section docx (V-5 étape 2)', function() {
 // tests portent sur ce qui DÉCIDE — l'ordre réel des slides, la liaison aux
 // notes, le repli d'extrait, la mise en forme.
 
-describe('pptxRelationshipMap — l\'ordre des attributs n\'est pas garanti', function() {
+describe('ooxmlRelationshipMap — l\'ordre des attributs n\'est pas garanti', function() {
   it('lit Id/Target quel que soit leur ordre dans la balise', function() {
     const xml = '<Relationships>' +
       '<Relationship Id="rId1" Type="x/slide" Target="slides/slide1.xml"/>' +
       '<Relationship Target="slides/slide2.xml" Id="rId2" Type="x/slide"/>' +
       '</Relationships>';
-    const map = pptxRelationshipMap(xml);
+    const map = ooxmlRelationshipMap(xml);
     expect(map.rId1.target).toBe('slides/slide1.xml');
     expect(map.rId2.target).toBe('slides/slide2.xml');
   });
 
   it('une Relationship sans Target est ignorée plutôt que rendue à moitié', function() {
-    const map = pptxRelationshipMap('<Relationship Id="rId9" Type="x"/>');
+    const map = ooxmlRelationshipMap('<Relationship Id="rId9" Type="x"/>');
     expect(map.rId9 === undefined).toBe(true);
   });
 });
 
-describe('pptxResolveTarget', function() {
+describe('ooxmlResolveTarget', function() {
   it('remonte les .. relatifs à la pièce porteuse', function() {
-    expect(pptxResolveTarget('ppt/slides', '../notesSlides/notesSlide2.xml'))
+    expect(ooxmlResolveTarget('ppt/slides', '../notesSlides/notesSlide2.xml'))
       .toBe('ppt/notesSlides/notesSlide2.xml');
   });
 
   it('un target sans .. se colle à la base', function() {
-    expect(pptxResolveTarget('ppt', 'slides/slide1.xml')).toBe('ppt/slides/slide1.xml');
+    expect(ooxmlResolveTarget('ppt', 'slides/slide1.xml')).toBe('ppt/slides/slide1.xml');
   });
 
   it('un target absolu perd son slash de tête', function() {
-    expect(pptxResolveTarget('ppt', '/ppt/slides/slide3.xml')).toBe('ppt/slides/slide3.xml');
+    expect(ooxmlResolveTarget('ppt', '/ppt/slides/slide3.xml')).toBe('ppt/slides/slide3.xml');
   });
 });
 
@@ -1233,11 +1355,14 @@ describe('pptxNotesTarget — la liaison notes passe par les rels, jamais par le
 
 describe('pptxSlideExcerpt / pptxSlideLabel — le repli quand le titre manque', function() {
   it('l\'extrait vient des BLOCS, pas du balayage plat des runs', function() {
-    // À plat, cette slide donnerait « Centre », « », « de  », « Cyberdéfense » :
-    // du bruit à la place d'un repère (mesuré sur le deck réel).
-    const blocks = ['Centre Opérationnel de Cyberdéfense\nMickaël MARTINEZ', 'Risques IT\nMarc GUIDAT'];
+    // Forme mesurée sur un deck réel (une shape = un libellé + une personne,
+    // sur deux a:p) : à plat, elle donnerait « Pilotage », « », « des  »,
+    // « Risques » — du bruit à la place d'un repère. Les valeurs ci-dessous
+    // sont NEUTRES : les fixtures sont des documents à ne pas divulguer, et un
+    // test n'a pas besoin de contenu authentique pour garder une forme.
+    const blocks = ['Pilotage des Risques\nAlex Durand', 'Conformité\nCamille Petit'];
     expect(pptxSlideExcerpt(blocks, 90))
-      .toBe('Centre Opérationnel de Cyberdéfense Mickaël MARTINEZ · Risques IT Marc GUIDAT');
+      .toBe('Pilotage des Risques Alex Durand · Conformité Camille Petit');
   });
 
   it('l\'extrait est borné et coupe sur un mot entier', function() {
@@ -1254,8 +1379,8 @@ describe('pptxSlideExcerpt / pptxSlideLabel — le repli quand le titre manque',
   it('sans titre, le libellé est l\'extrait — jamais « (sans titre) »', function() {
     // 6 slides titrées sur 71 dans le deck réel : le listing du serveur répond
     // « (sans titre) » soixante-cinq fois, ce qui ne permet pas de choisir.
-    expect(pptxSlideLabel({ title: '', blocks: ['Direction financière'] }))
-      .toBe('Direction financière');
+    expect(pptxSlideLabel({ title: '', blocks: ['Trajectoire budgétaire'] }))
+      .toBe('Trajectoire budgétaire');
   });
 
   it('sans titre NI texte, le libellé le dit', function() {
@@ -1263,16 +1388,297 @@ describe('pptxSlideExcerpt / pptxSlideLabel — le repli quand le titre manque',
   });
 });
 
+// ── Ancres d'images PowerPoint (lot AC-1) ──────────────────────────────────
+// pptxShapeBlocks prend un Document (DOMParser, absent de QuickJS) et reste
+// donc intestable ici : tout ce qui DÉCIDE en a été sorti en pures sur chaînes,
+// et c'est ce qui suit. Le parcours DOM est couvert par verify-pptx-native.mjs.
+
+describe('ooxmlImageLabel — le libellé est un bonus, jamais l\'ancre', function() {
+  it('un descr informatif est retenu tel quel', function() {
+    expect(ooxmlImageLabel('Blockchain')).toBe('Blockchain');
+  });
+
+  it('un descr auto-généré par Office est RETIRÉ, pas affiché', function() {
+    // « Une image contenant dessin » est du bruit : 13 occurrences identiques
+    // dans la fixture mesurée. Un libellé faux coûte plus qu'un libellé absent.
+    expect(ooxmlImageLabel('Une image contenant dessin\n\nDescription générée automatiquement'))
+      .toBe('');
+  });
+
+  it('un descr absent ou vide ne rend jamais « undefined »', function() {
+    expect(ooxmlImageLabel(null)).toBe('');
+    expect(ooxmlImageLabel(undefined)).toBe('');
+    expect(ooxmlImageLabel('   ')).toBe('');
+  });
+
+  it('les blancs internes d\'un descr multi-ligne sont normalisés', function() {
+    expect(ooxmlImageLabel('Diagramme\n  d\'interconnexion')).toBe('Diagramme d\'interconnexion');
+  });
+});
+
+describe('formatImageAnchor', function() {
+  it('le chemin est copiable tel quel, le libellé entre guillemets', function() {
+    expect(formatImageAnchor('ppt/media/image7.png', 'Blockchain'))
+      .toBe('[image: ppt/media/image7.png — « Blockchain »]');
+  });
+
+  it('sans libellé, l\'ancre reste utile — c\'est le chemin qui porte', function() {
+    expect(formatImageAnchor('ppt/media/image12.png', ''))
+      .toBe('[image: ppt/media/image12.png]');
+  });
+
+  it('sans chemin, pas d\'ancre du tout', function() {
+    expect(formatImageAnchor('', 'Blockchain')).toBe('');
+    expect(formatImageAnchor(null, null)).toBe('');
+  });
+});
+
+describe('pptxDedupeImageRefs — le doublon PNG/SVG des icônes Office', function() {
+  it('le jumeau SVG désigné par svgBlip est écarté, le raster reste', function() {
+    // Un comptage naïf de ppt/media/ doublerait les images : 120 SVG pour
+    // 121 PNG sur la slide mesurée.
+    const refs = [
+      { path: 'ppt/media/image1.png', svgPath: 'ppt/media/image2.svg' },
+      { path: 'ppt/media/image2.svg', svgPath: '' },
+    ];
+    const out = pptxDedupeImageRefs(refs);
+    expect(out.length).toBe(1);
+    expect(out[0].path).toBe('ppt/media/image1.png');
+  });
+
+  it('une même pièce répétée sur la slide ne sort qu\'une fois', function() {
+    const refs = [
+      { path: 'ppt/media/logo.png', svgPath: '' },
+      { path: 'ppt/media/logo.png', svgPath: '' },
+    ];
+    expect(pptxDedupeImageRefs(refs).length).toBe(1);
+  });
+
+  it('un ref sans chemin est ignoré plutôt que rendu à moitié', function() {
+    expect(pptxDedupeImageRefs([{ path: '', svgPath: '' }]).length).toBe(0);
+    expect(pptxDedupeImageRefs(null).length).toBe(0);
+  });
+});
+
+describe('capImageAnchors — 241 médias sur une slide mesurée', function() {
+  it('sous le cap, rien n\'est ajouté', function() {
+    expect(capImageAnchors(['a', 'b'], 24).length).toBe(2);
+  });
+
+  it('au-dessus, la troncature est ANNONCÉE avec son compte', function() {
+    // Jamais une troncature muette : un modèle qui ignore qu'il manque des
+    // images conclut sur ce qu'il voit.
+    const many = [];
+    for (let i = 0; i < 30; i++) many.push('[image: ppt/media/image' + i + '.png]');
+    const out = capImageAnchors(many, 24);
+    expect(out.length).toBe(25);
+    expect(out[24]).toBe('[6 autres images sur cette slide, non listées.]');
+  });
+
+  it('une seule image omise se dit au singulier', function() {
+    const many = [];
+    for (let i = 0; i < 25; i++) many.push('x');
+    expect(capImageAnchors(many, 24)[24]).toBe('[1 autre image sur cette slide, non listée.]');
+  });
+});
+
+describe('pptxBlockText / pptxSlideExcerpt — le typage des blocs (AC-1)', function() {
+  it('un bloc typé rend son texte, jamais « [object Object] »', function() {
+    // String({}) rend une chaîne NON VIDE : un extrait pollué passerait toute
+    // assertion qui se contente de vérifier qu'il n'est pas vide.
+    expect(pptxBlockText({ type: 'text', text: 'Pilotage des Risques' })).toBe('Pilotage des Risques');
+    expect(pptxBlockText('chaîne nue')).toBe('chaîne nue');
+    expect(pptxBlockText(null)).toBe('');
+  });
+
+  it('les ancres d\'images sont EXCLUES de l\'extrait de listing', function() {
+    // L'extrait sert à CHOISIR une slide ; 241 chemins de fichiers n'y aident
+    // pas (AC-1 §2.5).
+    const blocks = [
+      { type: 'image', text: '[image: ppt/media/image1.png — « Blockchain »]' },
+      { type: 'text', text: 'Trajectoire budgétaire' },
+    ];
+    expect(pptxSlideExcerpt(blocks, 90)).toBe('Trajectoire budgétaire');
+  });
+
+  it('une slide qui ne porte QUE des images n\'a pas d\'extrait', function() {
+    const blocks = [{ type: 'image', text: '[image: ppt/media/image1.png]' }];
+    expect(pptxSlideExcerpt(blocks, 90)).toBe('');
+    expect(pptxSlideLabel({ title: '', blocks: blocks })).toBe('(slide sans texte)');
+  });
+});
+
+// ── Ancres d'images Word (lot AC-2) ────────────────────────────────────────
+// openDocxDocument branche mammoth et fflate (ni l'un ni l'autre sous QuickJS) :
+// tout ce qui DÉCIDE en est sorti en pur sur chaînes et sur octets, et c'est ce
+// qui suit. Les exemples sont NEUTRES — les fixtures de untracked/test-files/
+// sont des documents à ne pas divulguer, et une forme se porte aussi bien par
+// un exemple inventé.
+
+describe('fnv1aBytes — le hash d\'appariement, non cryptographique par décision', function() {
+  const bytes = (s) => {
+    const out = [];
+    for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xff);
+    return out;
+  };
+
+  it('rend les vecteurs FNV-1a 32 bits de référence', function() {
+    // Vecteurs standard : si un « nettoyage » futur change l'algorithme, ces
+    // trois valeurs tombent — c'est le but. Le hash n'a pas à être FNV, mais il
+    // doit rester STABLE, sinon un annuaire construit avant ne matche plus.
+    expect(fnv1aBytes(bytes(''))).toBe(2166136261);
+    expect(fnv1aBytes(bytes('a'))).toBe(3826002220);
+    expect(fnv1aBytes(bytes('abc'))).toBe(440920331);
+  });
+
+  it('reste dans les 32 bits non signés, jamais de négatif', function() {
+    // Le décalage << 24 produit un négatif sans le >>> 0 final, et une clé
+    // négative d'un côté et positive de l'autre ne matcherait jamais.
+    const h = fnv1aBytes(bytes('miaou'));
+    expect(h >= 0).toBe(true);
+    expect(h <= 4294967295).toBe(true);
+    expect(h === Math.floor(h)).toBe(true);
+  });
+
+  it('deux contenus différents donnent deux hashs différents', function() {
+    expect(fnv1aBytes(bytes('image-a')) === fnv1aBytes(bytes('image-b'))).toBe(false);
+  });
+
+  it('une entrée absente ou vide ne lève pas', function() {
+    expect(fnv1aBytes(null)).toBe(2166136261);
+    expect(fnv1aBytes([])).toBe(2166136261);
+  });
+});
+
+describe('mediaMatchKey — la clé est (taille, hash), jamais le hash seul', function() {
+  it('compose les deux, pour qu\'une collision 32 bits ne suffise pas à apparier', function() {
+    expect(mediaMatchKey(3366, 123)).toBe('3366:123');
+  });
+
+  it('deux pièces de même hash mais de tailles différentes ont des clés distinctes', function() {
+    expect(mediaMatchKey(100, 7) === mediaMatchKey(200, 7)).toBe(false);
+  });
+
+  it('une taille absente ne rend jamais « NaN: »', function() {
+    expect(mediaMatchKey(null, 7)).toBe('0:7');
+    expect(mediaMatchKey(undefined, 7)).toBe('0:7');
+  });
+});
+
+describe('docxExtractImages — l\'image vit DANS un <p>, pas au premier niveau', function() {
+  it('extrait l\'ancre et rend le fragment privé de son <img>', function() {
+    const r = docxExtractImages('<strong><img alt="Schéma" src="word/media/image5.png" /></strong>');
+    expect(r.anchors.length).toBe(1);
+    expect(r.anchors[0]).toBe('[image: word/media/image5.png — « Schéma »]');
+    expect(r.rest.indexOf('<img') < 0).toBe(true);
+  });
+
+  it('le texte qui entourait l\'image est CONSERVÉ', function() {
+    // Cas non exercé par les fixtures (leurs images sont seules dans leur
+    // paragraphe) : couvert défensivement, pas mesuré.
+    const r = docxExtractImages('avant <img alt="" src="word/media/image1.png" /> après');
+    expect(r.anchors.length).toBe(1);
+    expect(htmlFragmentToInlineText(r.rest)).toBe('avant après');
+  });
+
+  it('plusieurs images dans un même paragraphe sortent DANS L\'ORDRE', function() {
+    const r = docxExtractImages(
+      '<img alt="" src="word/media/image1.png" /><img alt="" src="word/media/image2.png" />');
+    expect(r.anchors.length).toBe(2);
+    expect(r.anchors[0]).toBe('[image: word/media/image1.png]');
+    expect(r.anchors[1]).toBe('[image: word/media/image2.png]');
+  });
+
+  it('un alt auto-généré par Office est retiré, comme côté pptx', function() {
+    const r = docxExtractImages(
+      '<img alt="Une image contenant dessin&#10;&#10;Description générée automatiquement" ' +
+      'src="word/media/image9.png" />');
+    expect(r.anchors[0]).toBe('[image: word/media/image9.png]');
+  });
+
+  it('un alt encodé est DÉCODÉ : sinon le libellé sort avec ses entités', function() {
+    const r = docxExtractImages('<img alt="Gateway &amp; API" src="word/media/image3.png" />');
+    expect(r.anchors[0]).toBe('[image: word/media/image3.png — « Gateway & API »]');
+  });
+
+  it('pièce non retrouvée : l\'ancre le DIT, plutôt que de disparaître', function() {
+    // « Il y a une image ici » reste une information même sans son chemin.
+    const sans = docxExtractImages('<img alt="Logo" src="" />');
+    expect(sans.anchors[0]).toBe('[image : « Logo »]');
+    const nu = docxExtractImages('<img src="" />');
+    expect(nu.anchors[0]).toBe('[image sans référence retrouvée]');
+  });
+
+  it('un fragment sans image ne touche à rien', function() {
+    const r = docxExtractImages('<strong>texte</strong>');
+    expect(r.anchors.length).toBe(0);
+    expect(r.rest).toBe('<strong>texte</strong>');
+  });
+});
+
+describe('docxHtmlToBlocks — les ancres d\'images (AC-2)', function() {
+  it('l\'ancre est un bloc TYPÉ « image », à sa place dans le flux', function() {
+    const b = docxHtmlToBlocks(
+      '<h1>T</h1><p><strong><img alt="Schéma" src="word/media/image5.png" /></strong></p><p>suite</p>');
+    expect(b.length).toBe(3);
+    expect(b[0].type).toBe('heading');
+    expect(b[1].type).toBe('image');
+    expect(b[1].text).toBe('[image: word/media/image5.png — « Schéma »]');
+    expect(b[2].type).toBe('para');
+    expect(b[2].text).toBe('suite');
+  });
+
+  it('un paragraphe qui ne portait QUE l\'image ne laisse pas de bloc vide', function() {
+    const b = docxHtmlToBlocks('<p><img alt="" src="word/media/image1.png" /></p>');
+    expect(b.length).toBe(1);
+    expect(b[0].type).toBe('image');
+  });
+
+  it('l\'ancre appartient à la SECTION qui la porte', function() {
+    const s = docxSections(docxHtmlToBlocks(
+      '<h1>A</h1><p><img alt="" src="word/media/image1.png" /></p><h1>B</h1><p>x</p>'));
+    expect(s[0].text.indexOf('word/media/image1.png') > 0).toBe(true);
+    expect(s[1].text.indexOf('word/media/image1.png') < 0).toBe(true);
+  });
+
+  it('au-delà du cap, le dépassement est ANNONCÉ avec son compte', function() {
+    let html = '';
+    for (let i = 0; i < 30; i++) {
+      html += '<p><img alt="" src="word/media/image' + i + '.png" /></p>';
+    }
+    const b = docxHtmlToBlocks(html);
+    const imgs = b.filter((x) => x.type === 'image');
+    // 24 ancres + la notice, jamais 30 et jamais 24 muettes.
+    expect(imgs.length).toBe(25);
+    expect(imgs[24].text).toBe('[6 autres images dans ce document, non listées.]');
+  });
+
+  it('une seule image omise se dit au singulier', function() {
+    let html = '';
+    for (let i = 0; i < 25; i++) html += '<p><img alt="" src="word/media/i' + i + '.png" /></p>';
+    const imgs = docxHtmlToBlocks(html).filter((x) => x.type === 'image');
+    expect(imgs[24].text).toBe('[1 autre image dans ce document, non listée.]');
+  });
+
+  it('un document SANS image ne porte aucun bloc image ni aucune notice', function() {
+    // Non-régression : le chemin docx est partagé par des documents sans
+    // aucune image, et convertImage change la sortie de mammoth pour TOUS.
+    const b = docxHtmlToBlocks('<h1>T</h1><p>corps</p><table><tr><td>x</td></tr></table>');
+    expect(b.filter((x) => x.type === 'image').length).toBe(0);
+    expect(b.length).toBe(3);
+  });
+});
+
 describe('formatPptxListing', function() {
   const slides = [
     { title: 'Organigramme', blocks: ['x'], hasNotes: true },
-    { title: '', blocks: ['Risques IT\nMarc GUIDAT'], hasNotes: false },
+    { title: '', blocks: ['Pilotage des Risques\nAlex Durand'], hasNotes: false },
   ];
 
   it('numérote dans l\'ordre de présentation et rend le selector attendu', function() {
     const out = formatPptxListing(slides, {});
     expect(out.indexOf('1. Organigramme') >= 0).toBe(true);
-    expect(out.indexOf('2. Risques IT Marc GUIDAT') >= 0).toBe(true);
+    expect(out.indexOf('2. Pilotage des Risques Alex Durand') >= 0).toBe(true);
     expect(out.indexOf('Présentation PowerPoint — 2 slides') >= 0).toBe(true);
   });
 
@@ -1324,6 +1730,18 @@ describe('formatPptxRead', function() {
   it('une slide muette au corps mais porteuse de notes n\'est PAS comptée vide', function() {
     const out = formatPptxRead([{ number: 4, text: '', notes: 'tout est ici' }], {});
     expect(out.indexOf('sans texte') < 0).toBe(true);
+  });
+
+  it('la notice ANNONCE les ancres d\'images au lieu de les taire (AC-1)', function() {
+    // Une slide sans texte porte désormais des ancres : taire la capacité
+    // ferait conclure le modèle à une impasse (mémoire
+    // project_model_facing_text_indicative_and_reachable — un silence vaut
+    // interdiction). Aucune fixture e2e ne peut exercer ce chemin : la notice
+    // ne tombe que si la slide n'a NI corps NI notes, et aucun des trois decks
+    // disponibles n'en porte une telle. D'où ce test sur entrée construite.
+    const out = formatPptxRead([{ number: 1, text: '' }], {});
+    expect(out.indexOf('[image: ppt/media/…]') >= 0).toBe(true);
+    expect(out.indexOf('archive') >= 0).toBe(true);
   });
 });
 
@@ -1448,5 +1866,222 @@ describe('formatZipListing', function() {
 
   it('tolère une liste absente', function() {
     expect(formatZipListing(null, {})).toContain('0 membre');
+  });
+});
+
+// ── Ancres d'images Excel (lot AC-4) ───────────────────────────────────────
+// SheetJS n'expose ni drawings ni médias, et ne tourne pas sous QuickJS : tout
+// ce qui DÉCIDE est sorti en pur sur chaînes, et c'est ce qui suit. Les extraits
+// XML sont INVENTÉS — les fixtures de untracked/test-files/ sont des documents à
+// ne pas divulguer, et une forme se porte aussi bien par un exemple construit.
+// Les valeurs de col/row sont choisies pour exercer la base 0 et les passages de
+// dizaine, pas pour reproduire un classeur réel.
+
+describe('parseXlsxDrawingAnchors — les trois formes du schéma DrawingML', function() {
+  const twoCell = (col1, row1, col2, row2, rid) =>
+    '<xdr:twoCellAnchor editAs="oneCell">' +
+    '<xdr:from><xdr:col>' + col1 + '</xdr:col><xdr:colOff>9525</xdr:colOff>' +
+    '<xdr:row>' + row1 + '</xdr:row><xdr:rowOff>19050</xdr:rowOff></xdr:from>' +
+    '<xdr:to><xdr:col>' + col2 + '</xdr:col><xdr:colOff>0</xdr:colOff>' +
+    '<xdr:row>' + row2 + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>' +
+    '<xdr:pic><xdr:blipFill><a:blip r:embed="' + rid + '"/></xdr:blipFill></xdr:pic>' +
+    '</xdr:twoCellAnchor>';
+
+  it('rend la plage A1 d\'un twoCellAnchor, col/row étant en BASE 0', function() {
+    // col 4 / row 3 → E4 : la base 0 est le piège du format, et un off-by-one
+    // y produirait une plage plausible et fausse.
+    const out = parseXlsxDrawingAnchors('<xdr:wsDr>' + twoCell(4, 3, 4, 14, 'rId1') + '</xdr:wsDr>');
+    expect(out.length).toBe(1);
+    expect(out[0].embed).toBe('rId1');
+    expect(out[0].range).toBe('E4:E15');
+  });
+
+  it('tient le passage de dizaine des colonnes (AA, pas AB)', function() {
+    // Le décalage classique de la base 26 bijective ne se voit qu'au-delà de Z :
+    // aucune fixture jouet ne l'exerce, donc il est vérifié ici.
+    const out = parseXlsxDrawingAnchors(twoCell(26, 0, 27, 4, 'rId9'));
+    expect(out[0].range).toBe('AA1:AB5');
+  });
+
+  it('ignore les colOff/rowOff, qui déplacent l\'image DANS sa cellule', function() {
+    const out = parseXlsxDrawingAnchors(twoCell(2, 32, 4, 41, 'rId2'));
+    expect(out[0].range).toBe('C33:E42');
+  });
+
+  it('un oneCellAnchor rend sa CELLULE d\'ancrage, jamais une plage inventée', function() {
+    // Il porte une taille en EMU, pas un `to` : convertir en cellules
+    // demanderait les largeurs réelles des colonnes. On annonce le point
+    // d'ancrage seul.
+    const xml = '<xdr:oneCellAnchor>' +
+      '<xdr:from><xdr:col>3</xdr:col><xdr:row>7</xdr:row></xdr:from>' +
+      '<xdr:ext cx="914400" cy="914400"/>' +
+      '<xdr:pic><xdr:blipFill><a:blip r:embed="rId4"/></xdr:blipFill></xdr:pic>' +
+      '</xdr:oneCellAnchor>';
+    const out = parseXlsxDrawingAnchors(xml);
+    expect(out.length).toBe(1);
+    expect(out[0].range).toBe('D8');
+  });
+
+  it('un absoluteAnchor est rendu SANS position plutôt qu\'avec une position fausse', function() {
+    const xml = '<xdr:absoluteAnchor>' +
+      '<xdr:pos x="100" y="200"/><xdr:ext cx="914400" cy="914400"/>' +
+      '<xdr:pic><xdr:blipFill><a:blip r:embed="rId5"/></xdr:blipFill></xdr:pic>' +
+      '</xdr:absoluteAnchor>';
+    const out = parseXlsxDrawingAnchors(xml);
+    expect(out.length).toBe(1);
+    expect(out[0].embed).toBe('rId5');
+    expect(out[0].range).toBe('');
+  });
+
+  it('garde l\'ordre du document sur des formes mélangées', function() {
+    const xml = '<xdr:wsDr>' + twoCell(0, 0, 1, 1, 'rIdA') +
+      '<xdr:absoluteAnchor><a:blip r:embed="rIdB"/></xdr:absoluteAnchor>' +
+      twoCell(5, 5, 6, 6, 'rIdC') + '</xdr:wsDr>';
+    const out = parseXlsxDrawingAnchors(xml);
+    expect(out.length).toBe(3);
+    expect(out[0].embed).toBe('rIdA');
+    expect(out[1].embed).toBe('rIdB');
+    expect(out[2].embed).toBe('rIdC');
+  });
+
+  it('un a:blip sans r:embed (image LIÉE) ne rend aucune ancre', function() {
+    // Une ancre sans pièce à atteindre serait un chemin que le modèle ne peut
+    // pas suivre — même règle qu'au pptx.
+    const xml = '<xdr:twoCellAnchor>' +
+      '<xdr:from><xdr:col>1</xdr:col><xdr:row>1</xdr:row></xdr:from>' +
+      '<xdr:to><xdr:col>2</xdr:col><xdr:row>2</xdr:row></xdr:to>' +
+      '<xdr:pic><xdr:blipFill><a:blip r:link="rId8"/></xdr:blipFill></xdr:pic>' +
+      '</xdr:twoCellAnchor>';
+    expect(parseXlsxDrawingAnchors(xml).length).toBe(0);
+  });
+
+  it('reprend le descr du nœud porteur, avec la règle de libellé partagée', function() {
+    // Aucune fixture du dépôt n'exerce ce chemin : les deux images mesurées ont
+    // un descr VIDE, donc leurs ancres sortent nues, et c'est correct. Le format
+    // l'autorise pourtant et d'autres classeurs en portent — d'où l'entrée
+    // construite plutôt qu'une assertion sur fixture qui passerait par vacuité.
+    const xml = '<xdr:twoCellAnchor>' +
+      '<xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from>' +
+      '<xdr:to><xdr:col>1</xdr:col><xdr:row>1</xdr:row></xdr:to>' +
+      '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Image 1" descr="Courbe de charge"/>' +
+      '</xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic>' +
+      '</xdr:twoCellAnchor>';
+    expect(parseXlsxDrawingAnchors(xml)[0].label).toBe('Courbe de charge');
+  });
+
+  it('écarte un descr AUTO-GÉNÉRÉ, comme les deux autres formats', function() {
+    const xml = '<xdr:twoCellAnchor>' +
+      '<xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from>' +
+      '<xdr:to><xdr:col>1</xdr:col><xdr:row>1</xdr:row></xdr:to>' +
+      '<xdr:pic><xdr:nvPicPr>' +
+      '<xdr:cNvPr descr="Une image contenant dessin&#10;&#10;Description générée automatiquement"/>' +
+      '</xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic>' +
+      '</xdr:twoCellAnchor>';
+    expect(parseXlsxDrawingAnchors(xml)[0].label).toBe('');
+  });
+
+  it('« name » n\'est JAMAIS un libellé, même sans descr', function() {
+    const xml = '<xdr:twoCellAnchor>' +
+      '<xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from>' +
+      '<xdr:to><xdr:col>1</xdr:col><xdr:row>1</xdr:row></xdr:to>' +
+      '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Image 1"/></xdr:nvPicPr>' +
+      '<xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic>' +
+      '</xdr:twoCellAnchor>';
+    expect(parseXlsxDrawingAnchors(xml)[0].label).toBe('');
+  });
+
+  it('LE CAS DÉGÉNÉRÉ : un drawing présent mais VIDE ne rend rien', function() {
+    // Mesuré sur une fixture sans image : le classeur porte bien un
+    // xl/drawings/drawing1.xml, mais sans enfant et sans xl/media/. Un drawing
+    // présent ne prouve donc PAS qu'il y a des images.
+    expect(parseXlsxDrawingAnchors('<xdr:wsDr></xdr:wsDr>').length).toBe(0);
+    expect(parseXlsxDrawingAnchors('').length).toBe(0);
+    expect(parseXlsxDrawingAnchors(null).length).toBe(0);
+  });
+});
+
+describe('partitionXlsxAnchors — annoncer ce qui a été lu, compter le reste', function() {
+  const a = (range) => ({ embed: 'rId1', path: 'xl/media/image1.png', label: '', range: range });
+
+  it('une ancre dans la plage servie est annoncée', function() {
+    const p = partitionXlsxAnchors([a('E4:E15')], 'B2:E31');
+    expect(p.inside.length).toBe(1);
+    expect(p.outside).toBe(0);
+  });
+
+  it('une ancre hors de la plage servie est COMPTÉE, jamais annoncée', function() {
+    const p = partitionXlsxAnchors([a('C33:E42')], 'A1:C10');
+    expect(p.inside.length).toBe(0);
+    expect(p.outside).toBe(1);
+  });
+
+  it('l\'intersection est un CHEVAUCHEMENT, pas une inclusion', function() {
+    // Une image à cheval sur la bordure est visible dans ce qu'on sert : c'est
+    // le prédicat de sheetToMatrix pour les fusions, et deux prédicats
+    // d'intersection sur la même feuille divergeraient.
+    const p = partitionXlsxAnchors([a('C8:E12')], 'A1:C10');
+    expect(p.inside.length).toBe(1);
+  });
+
+  it('une ancre SANS plage est comptée hors plage, pas supposée dedans', function() {
+    const p = partitionXlsxAnchors([a('')], 'A1:C10');
+    expect(p.inside.length).toBe(0);
+    expect(p.outside).toBe(1);
+  });
+
+  it('tolère une liste absente et une plage illisible', function() {
+    expect(partitionXlsxAnchors(null, 'A1:C10').inside.length).toBe(0);
+    expect(partitionXlsxAnchors([a('A1:B2')], '').outside).toBe(1);
+  });
+});
+
+describe('formatXlsxAnchorNote — la note de fin, et son silence', function() {
+  const a = (path, range, label) => ({ path: path, range: range, label: label || '' });
+
+  it('une ancre porte son chemin ET sa plage', function() {
+    const out = formatXlsxAnchorNote({ inside: [a('xl/media/image1.png', 'E4:E15')], outside: 0 });
+    expect(out).toContain('[image: xl/media/image1.png]');
+    expect(out).toContain('ancrée sur E4:E15');
+  });
+
+  it('le libellé est repris quand il existe', function() {
+    // Aucune fixture du dépôt n'en porte côté Excel (descr vides) : ce contrôle
+    // est la SEULE couverture du cas, d'où l'entrée construite.
+    const out = formatXlsxAnchorNote({ inside: [a('xl/media/image2.png', 'C3:D4', 'Schéma')], outside: 0 });
+    expect(out).toContain('« Schéma »');
+  });
+
+  it('une ancre sans plage sort sans mention de position', function() {
+    const out = formatXlsxAnchorNote({ inside: [a('xl/media/image3.png', '')], outside: 0 });
+    expect(out).toContain('[image: xl/media/image3.png]');
+    expect(out.indexOf('ancrée sur') < 0).toBe(true);
+  });
+
+  it('le compte hors plage est DIT, y compris quand rien n\'est annoncé', function() {
+    // Le silence vaudrait « il n'y a pas d'image », qui est faux.
+    const out = formatXlsxAnchorNote({ inside: [], outside: 2 });
+    expect(out).toContain('2 images');
+    expect(out).toContain('hors de la plage lue');
+    expect(out).toContain('aucune ne recouvre ce qui précède');
+  });
+
+  it('accorde le singulier du compte hors plage', function() {
+    const out = formatXlsxAnchorNote({ inside: [a('xl/media/image1.png', 'A1:B2')], outside: 1 });
+    expect(out).toContain('1 image');
+    expect(out).toContain('est ancrée');
+  });
+
+  it('RIEN à dire → chaîne vide, jamais une note à blanc', function() {
+    expect(formatXlsxAnchorNote({ inside: [], outside: 0 })).toBe('');
+    expect(formatXlsxAnchorNote(null)).toBe('');
+  });
+
+  it('le cap borne l\'énumération et ANNONCE le reste', function() {
+    // Aucune fixture ne l'exerce (la seule illustrée porte deux images) : garde
+    // de principe vérifiée sur entrée construite, comme ses homologues.
+    const many = [];
+    for (let i = 0; i < 30; i++) many.push(a('xl/media/image' + i + '.png', 'A' + (i + 1)));
+    const out = formatXlsxAnchorNote({ inside: many, outside: 0 }, 24);
+    expect(out).toContain('6 autres images sur cette feuille, non listées.');
   });
 });

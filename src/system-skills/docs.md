@@ -101,6 +101,18 @@ pas encore, au moment de demander une feuille, si elle en fait trente ou
 cinquante mille. Pour aller au-delà, demande une plage, ou passe par une
 ressource (voir plus bas).
 
+La feuille te revient en tableau, les colonnes séparées par des `|`. Deux
+annotations s'y ajoutent quand elles s'appliquent :
+
+- une cellule **calculée** porte sa formule après sa valeur —
+  `27 [=COUNTIF('Autre feuille'!F:F,B7)]`. La valeur est celle qu'Excel affiche ;
+  la formule te dit d'où elle vient. Une formule très longue est tronquée par un
+  `…`.
+- une cellule recouverte par une **fusion** porte `↳` : elle n'est pas vide, elle
+  est couverte par la valeur de la cellule en haut à gauche de la zone fusionnée.
+  Les plages concernées sont énumérées en fin de lecture. Ne lis pas un `↳` comme
+  une donnée manquante.
+
 ## Document Word
 
 `docs__list` rend les sections du document, dans l'ordre. Le selector de

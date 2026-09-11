@@ -620,10 +620,14 @@ function ensureSheetJs() {
     s.src = SHEETJS_CDN;
     s.onload = () => {
       const lib = window.XLSX;
-      // Le global ET tout ce qu'on consomme : read pour ouvrir, utils.sheet_to_csv
-      // pour rendre. Un build CDN partiel doit échouer ICI (leçon V-3).
-      if (!lib || typeof lib.read !== 'function' || !lib.utils
-          || typeof lib.utils.sheet_to_csv !== 'function') {
+      // Le global ET tout ce qu'on consomme. Depuis AC-3 c'est `read` SEUL :
+      // le rendu ne passe plus par utils.sheet_to_csv (les cellules sont lues
+      // directement, pour ne perdre ni les formules ni les fusions). Garder
+      // sheet_to_csv dans cette garde ferait échouer le chargement sur une
+      // fonction dont plus rien ne dépend — et, pire, ferait croire qu'elle est
+      // encore le chemin de rendu. Un build CDN partiel doit échouer ICI
+      // (leçon V-3), sur ce qu'on utilise VRAIMENT.
+      if (!lib || typeof lib.read !== 'function') {
         reject(new Error('SheetJS absent ou incomplet après chargement')); return;
       }
       resolve(lib);

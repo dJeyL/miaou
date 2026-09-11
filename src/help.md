@@ -117,13 +117,37 @@ premières lignes et sait qu'il doit demander une plage ou ranger la lecture dan
 une ressource. Un classeur déposé dans la bibliothèque d'un Espace est décrit par
 ses feuilles et un aperçu, plutôt que par son nom seul.
 
+Une feuille lui arrive sous forme de tableau, une ligne par ligne du classeur,
+et plusieurs choses y sont dites que le rendu d'un tableur laisse d'ordinaire de
+côté. Une cellule **calculée** montre sa valeur **et sa formule** : le modèle
+voit que le `27` qu'il lit est un décompte tiré d'une autre feuille, au lieu de
+le prendre pour une saisie. Les **cellules fusionnées** sont signalées comme
+telles — celles que la fusion recouvre portent une marque, et les plages
+concernées sont listées en fin de lecture. Sans ça elles arrivaient vides,
+impossibles à distinguer d'une donnée manquante, et un tableau à en-têtes
+fusionnés se lisait de travers sans que rien ne le signale.
+
+Enfin, les **images du classeur sont signalées avec la plage de cellules
+qu'elles recouvrent**, listées après le tableau : une image ne vit pas dans une
+case, elle flotte au-dessus d'une zone, et c'est cette zone qui dit à quoi elle
+se rapporte. Comme pour les autres formats, le modèle reçoit le chemin du
+fichier à l'intérieur du `.xlsx` et peut aller le lire en ouvrant le classeur
+comme une archive. Seules les images qui recouvrent la partie réellement lue
+sont détaillées ; les autres sont comptées, pour que leur existence ne soit
+jamais passée sous silence.
+
 Les **documents Word** (`.docx`) s'ouvrent nativement aussi. Le modèle en liste
 d'abord les sections — les titres du document — puis lit celle que tu lui
 désignes, ou celle qui lui paraît utile ; lire une section lui donne aussi ses
 sous-parties. Les **tableaux sont préservés** et rendus à leur place dans la
 section qui les porte, ce qui compte pour un document dont la substance est
-souvent tabulaire. Un document déposé dans la bibliothèque d'un Espace est décrit
-par ses sections et un aperçu.
+souvent tabulaire. Les **images sont signalées à leur place dans le texte**,
+comme pour une présentation : avec le chemin du fichier à l'intérieur du
+`.docx` et, quand l'auteur en a mis un, le libellé de l'image. Le modèle sait
+alors qu'une image sert là, laquelle, et il peut aller la lire en ouvrant le
+document comme une archive. Au-delà d'un certain nombre, les suivantes sont
+comptées plutôt qu'énumérées. Un document déposé dans la bibliothèque d'un
+Espace est décrit par ses sections et un aperçu.
 
 Les **présentations PowerPoint** (`.pptx`) s'ouvrent nativement elles aussi, et
 c'est le format où MIAOU en voit le plus. Le modèle en liste les slides **dans
@@ -133,12 +157,17 @@ son numéro, ou une plage. Chaque slide du listing porte son titre, ou à défau
 extrait de son texte : sur un deck où presque aucune slide n'est titrée, une
 liste de « (sans titre) » ne t'aiderait pas plus qu'elle n'aide le modèle.
 
-Deux choses valent d'être sues sur ce format. Le texte des **formes groupées**
-est lu — c'est le cas des organigrammes, où les noms et les rattachements vivent
-justement dans des groupes, et où un outil qui ne descend pas dedans perd la
-moitié du contenu. Et les **notes de présentateur** sont lues avec leur slide,
-clairement séparées d'elle : dans une présentation, les slides portent souvent
-des mots-clés et les notes portent le propos.
+Plusieurs choses valent d'être sues sur ce format. Le texte des **formes
+groupées** est lu — c'est le cas des organigrammes, où les noms et les
+rattachements vivent justement dans des groupes, et où un outil qui ne descend
+pas dedans perd la moitié du contenu. Les **notes de présentateur** sont lues
+avec leur slide, clairement séparées d'elle : dans une présentation, les slides
+portent souvent des mots-clés et les notes portent le propos. Et les **images
+sont signalées à leur place dans la slide**, avec le chemin du fichier à
+l'intérieur du `.pptx` et, quand l'auteur en a mis un, le libellé de l'image :
+le modèle sait alors qu'une image sert là, laquelle, et il peut aller la lire en
+ouvrant la présentation comme une archive. Sur une slide qui en porte beaucoup,
+il n'en est annoncé qu'un nombre limité, et le reste est compté.
 
 Une limite à connaître : un PDF, un classeur, un document Word ou une
 présentation **protégé par mot de passe** est refusé franchement, MIAOU ne

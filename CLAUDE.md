@@ -448,8 +448,16 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   d'ack rendue en texte, absente des exports).
 - **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
   formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
-  CDN et versions gelées, selectors par format, caps de lecture, et la ligne de
-  partage `docs.js` / `utils.js` (lot V-7).
+  CDN et versions gelées, selectors par format, caps de lecture (dont
+  `PPTX_MAX_IMAGE_ANCHORS`, ancres d'images par slide), la ligne de
+  partage `docs.js` / `utils.js` (lot V-7), les ancres d'images PowerPoint
+  (lot AC-1 : blocs typés `{type, text}`, chemin de la pièce comme seule ancre),
+  le rendu structuré d'une feuille Excel (lot AC-3 : tableau pipe,
+  formules annotées, fusions signalées par `↳` + note de plages, `w` avant `v`
+  comme non-régression sur les dates), et les ancres d'images Excel (lot AC-4 :
+  chaîne `workbook`→`rels`→`drawing`→`media` par fflate, rattachement lu dans
+  les rels et jamais déduit de la numérotation, filtrage par la plage servie
+  avec compte du hors-plage, description de bibliothèque explicitement exclue).
 - **`docs/context-inspector.md`** — inspecteur de contexte (brief B) : manifeste
   par bloc logique du contexte envoyé au modèle (`buildContextManifest`, pur) et
   totaux chars/tokens, rendu dans le drawer (`renderContextInspector`).

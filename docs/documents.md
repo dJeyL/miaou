@@ -567,10 +567,12 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   générique : reconnaître un message est fragile, d'où le repli, mais le silence
   serait pire.
 - **`ensureSheetJs` (ui.js)** suit `ensureFflate`/`ensurePdfJs` (échec propagé,
-  promesse mémoïsée, reset-on-reject, garde post-`onload` sur `read` ET
-  `utils.sheet_to_csv`), en plus simple : **pas de worker**, donc « script
-  chargé » et « bibliothèque prête » coïncident ici — ce qui n'était pas le cas
-  de pdf.js.
+  promesse mémoïsée, reset-on-reject, garde post-`onload`), en plus simple :
+  **pas de worker**, donc « script chargé » et « bibliothèque prête » coïncident
+  ici — ce qui n'était pas le cas de pdf.js. La garde porte sur `read` **seul**
+  depuis AC-3 : elle citait aussi `utils.sheet_to_csv`, qui n'est plus le chemin
+  de rendu. Garder une fonction morte dans une garde de chargement fait échouer
+  l'ouverture sur ce dont plus rien ne dépend, et laisse croire qu'elle sert.
 - **Ni SheetJS ni mammoth ne DÉTACHENT le buffer qu'on leur passe** — vérifié par
   exécution (deux lectures enchaînées du même buffer, `byteLength` intact ;
   contrôles ajoutés au spike). Le `u8.slice()` défensif d'`openPdfDocument` est
@@ -598,6 +600,159 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   (pages) ou nommée ; le **mot** de l'unité nommée, lui, vient de la table
   (étape 2 — avec un seul format nommé, tout selector non numérique s'annonçait
   « Feuille … lue », y compris une section de document Word).
+
+**Rendu structuré d'une feuille (lot AC-3) — formules et cellules fusionnées :**
+- **Le rendu quitte le CSV pour un tableau pipe `a | b | c`.** C'est un vrai
+  changement de ce que le modèle reçoit, assumé. Deux raisons : le CSV est
+  **hostile à toute annotation** (une formule porte virgules et guillemets, donc
+  l'annoter dans une cellule CSV imposerait un échappement qui la rend
+  illisible), et le pipe est **déjà** le rendu tabulaire des deux autres formats
+  du domaine — `htmlTableToText` (docx) et les `a:tbl` du pptx —, sur l'argument
+  explicite qu'un tableau ne doit pas se lire autrement selon le format d'où il
+  sort.
+- **Deux pertes silencieuses corrigées**, toutes deux du type « le modèle conclut
+  sans savoir qu'il lui manque quelque chose » : les **formules** (le modèle
+  lisait `27` sans savoir que c'est un décompte dérivé d'une autre feuille) et
+  les **cellules fusionnées** (elles sortaient vides, indistinguables d'une
+  absence de donnée — les lignes `,,,` du CSV).
+- **Formule : annotée en suffixe**, `27 [=COUNTIF('Autre feuille'!F:F,B7)]`, sur
+  **toutes** les cellules qui en portent une. Pas de filtrage sur « l'intérêt »
+  de la formule : juger qu'une somme locale mérite moins d'être dite qu'un renvoi
+  inter-feuilles est une heuristique qui se tromperait en silence. Bornée par
+  `MAX_XLSX_FORMULA_CHARS` (120), troncature **annoncée** (`…`).
+- **Fusion : signalée, jamais propagée.** Propager la valeur dans toute la zone
+  ferait croire à des données répétées — inventer. La maîtresse porte la valeur,
+  les cases couvertes portent `↳`, et une note de fin **énumère les plages**
+  (`B28:E31`), bornée par `MAX_XLSX_MERGE_NOTES` (12) au-delà de laquelle seul le
+  **compte** est donné — mais jamais le silence. La note vient **après** la
+  troncature de lignes : elle décrit la feuille, pas la portion servie.
+- **`w` d'abord, `v` en repli — et c'est une RÉGRESSION ÉVITÉE, pas un bug
+  corrigé.** `sheet_to_csv` utilisait déjà `w` (la valeur *formatée*), donc les
+  dates sortaient correctement AVANT ce lot. Un rendu maison qui prendrait `v`
+  afficherait `46174` là où le document dit « Jun-26 », et `0.7083333333357587`
+  pour une durée de cinq heures. Quiconque « simplifie » vers `v` casse un
+  comportement qui marche, et le bug ne se verra que sur un classeur à dates, à
+  monnaies ou à pourcentages. **Ne pas activer `cellDates: true`** non plus :
+  mesuré, l'option expose l'époque Excel telle quelle sur une durée.
+- **La garde de V-5 change de forme, elle ne disparaît pas.** L'option `range` de
+  `sheet_to_csv` était silencieusement ignorée, d'où le clone à `!ref` restreint.
+  Le rendu ne passant plus par `sheet_to_csv`, ce clone n'a plus d'objet : la
+  plage est désormais honorée par **restriction du balayage** dans
+  `sheetToMatrix` (on ne lit que les cellules de la plage). Ne pas « restaurer »
+  `sheet_to_csv` : ce serait reperdre formules et fusions.
+- **La ligne de partage pur/impur est la contrainte structurante.** SheetJS ne
+  tourne pas sous QuickJS : tout ce qui **décide** vit dans les purs
+  (`formatSheetCell`, `formatMergeRanges`, `formatXlsxSheet`), l'impur
+  (`sheetToMatrix`) se réduit à « lire la feuille et remplir la matrice ». Son
+  entrée porte **la matrice ET les plages fusionnées** : la note énumère des
+  *plages*, qu'un booléen par cellule ne permettrait pas de reconstituer.
+- **Trois faits mesurés gouvernent `sheetToMatrix`**, indevinables en lisant
+  SheetJS : le `!ref` **ne commence pas forcément en A1** (une feuille mesurée
+  est `B2:E31`, et supposer A1 décalerait toutes les colonnes) ; dans une zone
+  fusionnée **seule la cellule haut-gauche existe** (les autres sont `undefined`,
+  pas vides — d'où un masque dérivé de `!merges`, jamais de l'absence d'une
+  cellule) ; et `!merges` **peut être absent**, donc toujours lu défensivement.
+- **`formatXlsxRead` est retiré** (il mettait en forme le CSV). Son unique appel
+  restant était dégénéré — la feuille vide, à qui on passait `''`. Le garder
+  aurait laissé vivre un formateur de CSV tenu en vie par ses seuls tests : vert
+  sans rien prouver. Le cap de lignes, la notice de clamp et le « aucune cellule
+  remplie » sont repris tels quels par `formatXlsxSheet`.
+- **L'aperçu de bibliothèque partage le rendu** (arbitrage utilisateur) :
+  `describeXlsxForLibrary` passe par `sheetToMatrix` + `formatXlsxSheet` comme la
+  lecture. Décrire un classeur autrement qu'on le lit ferait diverger deux vues
+  du même contenu, et c'est la description qui sert de première impression au
+  modèle.
+- **Hors périmètre assumé**, à ne pas lire comme des oublis : cellules d'erreur
+  (`t:'e'`), commentaires, validations, formats conditionnels, colonnes masquées.
+  Non mesurés non plus, donc non revendiqués : pourcentages, monnaies, arrondis
+  d'affichage — même mécanisme `v`/`w`, donc couverts par construction, mais
+  jamais vérifiés.
+- **Vérification** : les purs sont couverts par le runner QuickJS, mais
+  **SheetJS n'y tourne pas** — donc `sheetToMatrix` (lecture des cellules,
+  dérivation du masque depuis `!merges`, restriction à la plage) et sa
+  **composition** avec les purs ne sont exercées que par
+  `verify-xlsx-structured.mjs`. Si le masque ou l'origine du `!ref` étaient
+  faux, les purs resteraient verts et la sortie serait décalée. Le script
+  **remesure les trois prémisses** avant toute assertion de rendu (origine
+  non-A1, cellule voisine d'une fusion réellement absente, `!merges` absent
+  d'une feuille sans fusion) : elles venaient du brief, pas d'une exécution
+  rejouable en lisant le code, et un rendu vert sur une prémisse fausse serait
+  le pire cas. Les **deux caps** y sont vérifiés sur **entrée construite** — la
+  fixture porte 8 fusions et des formules de ~42 caractères, donc un contrôle
+  sur document réel passerait par vacuité.
+
+**Ancres d'images d'un classeur (lot AC-4) :**
+- **L'ancre est le CHEMIN de la pièce, plus la plage qu'elle recouvre** —
+  `[image: xl/media/image1.png] — ancrée sur E4:E15`. Même doctrine qu'AC-1 et
+  AC-2 : on annonce où l'image sert, le modèle va chercher les octets lui-même en
+  ouvrant le classeur comme une archive. Aucune matérialisation.
+- **Une image ne s'insère PAS dans le tableau**, parce qu'elle ne vit pas dans une
+  cellule : elle flotte au-dessus d'une plage. Elle sort donc en **note de fin de
+  feuille**, après la note de fusion — la géométrie du tableau se lit avant ce qui
+  flotte au-dessus. L'insérer à la ligne de sa cellule haut-gauche aurait cassé
+  l'alignement du tableau et serait devenu faux dès que deux images partagent une
+  ligne.
+- **SheetJS n'expose ni drawings ni médias** (mesuré : les clés non-cellule d'une
+  feuille sont `!ref`, `!margins`, `!merges`, et `wb.files` vaut `false`). Le
+  chemin passe donc par **fflate**, comme le pptx — aucun artefact nouveau. Le
+  filtre `unzipSync` **exclut `xl/media/`** : on ne veut que les chemins, jamais
+  les octets (les deux médias de la fixture pèsent 166 ko pour un classeur dont
+  tout le reste fait 60 ko).
+- **LE PIÈGE DU FORMAT, et il est dans le dépôt : le rattachement feuille ↔
+  drawing ne suit PAS la numérotation.** Sur une fixture, `drawing1.xml` est
+  rattaché à la **deuxième** feuille (la première n'a aucun `.rels`). Un code qui
+  apparierait `drawing1` ↔ `sheet1` attacherait les ancres à la mauvaise feuille.
+  Le rattachement se lit dans les rels, exactement comme la liaison slide ↔ notes
+  du pptx (`pptxNotesTarget`). La chaîne complète compte **deux indirections de
+  plus que le pptx** : `xl/workbook.xml` → `xl/_rels/workbook.xml.rels` →
+  `xl/worksheets/_rels/sheetN.xml.rels` → `xl/drawings/drawingN.xml` →
+  `xl/drawings/_rels/drawingN.xml.rels` → `xl/media/…`.
+- **Le filtrage par la plage servie**, et sa contrepartie obligatoire : une image
+  hors de la plage lue n'est **pas annoncée** (annoncer ce qui n'a pas été lu
+  serait incohérent avec le label, qui porte déjà la plage effectivement servie),
+  mais elle est **comptée** — un silence vaudrait « il n'y a pas d'image ». Le
+  prédicat d'intersection est le **chevauchement** de `sheetToMatrix`, pas
+  l'inclusion : une image à cheval sur la bordure est visible dans ce qu'on sert.
+  Deux prédicats d'intersection sur la même feuille divergeraient.
+- **Une image peut flotter HORS de la zone de données**, et ce n'est pas un cas
+  limite : sur la fixture illustrée, la seconde image est ancrée sur `C33:E42`
+  alors que le `!ref` de la feuille s'arrête à `E31`. Lire « toute la feuille »
+  n'annonce donc qu'une des deux ancres, l'autre étant comptée. Le brief du lot
+  attendait deux ancres ici : une assertion qui l'exigerait serait une **vacuité
+  inversée**, accusant le code d'un défaut que la fixture ne porte pas.
+- **La description de bibliothèque en est EXCLUE** (arbitrage utilisateur), alors
+  même qu'elle partage le rendu de la lecture depuis AC-3. Décrire un classeur
+  n'est pas l'indexer, et son aperçu est borné à dix lignes — une image ancrée
+  plus bas y serait citée sans que rien de ce qui l'entoure n'ait été montré.
+  L'exclusion est **structurelle** : les ancres n'entrent dans `formatXlsxSheet`
+  que par `opts.anchors`, que seul `readXlsxDocument` fournit. Conséquence
+  pratique : un classeur déposé ne paie **aucun** décorticage de zip.
+- **Formes d'ancre NON COUVERTES, à ne pas prétendre vérifiées** : `oneCellAnchor`
+  et `absoluteAnchor` ont **zéro** occurrence dans les fixtures. Traitées
+  défensivement — la première rend sa **cellule d'ancrage seule** (convertir sa
+  taille EMU en cellules demanderait les largeurs de colonnes réelles : on ne
+  l'invente pas), la seconde rend l'image **sans position**. Non couverts non
+  plus : le doublon PNG/SVG (`asvg:svgBlip`), non observé ici.
+- **Le libellé suit la règle partagée** (`ooxmlImageLabel`, depuis le
+  `xdr:cNvPr/@descr`) : `name` n'est jamais un libellé, les descriptions
+  auto-générées sont retirées. Les deux images mesurées ont un `descr` **vide**,
+  donc leurs ancres sortent nues — comportement attendu, et **aucune fixture
+  n'exerce le libellé côté Excel** : il est couvert sur entrée construite.
+- **`XLSX_MAX_IMAGE_ANCHORS` (24)** borne l'énumération, dépassement **annoncé**
+  avec son compte. Comme ses homologues pptx et docx, **aucune fixture ne
+  l'exerce** (la seule illustrée porte deux images) : garde de principe, pas
+  valeur calibrée sur un débordement observé.
+- **Renommage préalable** : `pptxRelationshipMap`/`pptxResolveTarget` sont devenus
+  `ooxmlRelationshipMap`/`ooxmlResolveTarget` dans un commit `refactor` distinct.
+  Ils n'ont jamais rien eu de spécifique au pptx, et AC-4 en est le deuxième
+  consommateur — même déclencheur que le renommage de `pptxImageLabel` en AC-2.
+- **Vérification** : `xlsxImageAnchors` (décorticage + résolution des rels) n'est
+  exercée que par `verify-xlsx-anchors.mjs`, ni fflate ni SheetJS ne tournant sous
+  QuickJS. Le script **remesure ses deux prémisses** avant toute assertion de
+  rendu (la chaîne aboutit ; le rattachement ne suit pas la numérotation) et
+  **nomme ses quatre vacuités** — libellé, cap, `oneCellAnchor`, `absoluteAnchor`
+  —, toutes couvertes sur entrée construite, pour qu'une session future ne les
+  « rétablisse » pas sur fixture.
 
 **Lecture native de documents Word (lot V-5 étape 2, `docs__list` / `docs__read`) :**
 - **`DOC_READERS.docx` gagne `{ list, read }`** (`listDocxDocument` /
@@ -671,6 +826,91 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   `as_resource`. **La marge sous le cap du handler est fonctionnelle** : sans
   elle, le texte tronqué **plus sa notice** repasserait au-dessus et le handler
   refuserait quand même — la garde se serait annulée elle-même.
+- **Les images sont ANCRÉES dans le texte extrait** (lot AC-2), même forme que
+  le pptx : `[image: word/media/image5.png — « Vivats contour »]`. La règle de
+  libellé est **partagée**, pas réécrite — `ooxmlImageLabel` (renommée depuis
+  `pptxImageLabel` au deuxième occupant) : `docPr/@descr` côté Word et `descr`
+  côté PowerPoint sont la **même donnée OOXML**, que mammoth remonte en
+  `altText`. Deux règles de libellé auraient divergé en silence.
+  - **mammoth est CONSERVÉ, et le chemin vient du hash des octets.** Le cadrage
+    prévoyait de le doubler avec un second parseur OOXML, sur l'hypothèse qu'il
+    ne donnait pas le chemin de la pièce. La mesure l'infirme : `convertImage`
+    livre `altText`, `contentType` **et les octets**, et le hash les raccroche
+    **exactement** à une pièce de `word/media/` — les quatre images d'une
+    fixture mesurée correspondent octet pour octet. Pas de second parseur.
+  - **Le hash n'est PAS cryptographique, et c'est une décision.** `fnv1aBytes`
+    (pur) plutôt que `crypto.subtle`, pour trois raisons cumulées : `subtle`
+    n'existe que dans un **secure context**, et `file://` n'en est pas un
+    partout alors que MIAOU est souvent ouvert en local ; il est **asynchrone**,
+    donc hors de portée du runner QuickJS où cette fonction est justement
+    testée ; et le dépôt ne l'utilise **nulle part** aujourd'hui. Le besoin est
+    de distinguer une douzaine de pièces d'un même document, pas de résister à
+    un adversaire. Ne pas « corriger » vers SHA-256 : ce serait rendre
+    intestable un pur pour une propriété sans usage. La clé d'appariement est
+    **(taille, hash)**, jamais le hash seul.
+  - **`word/media/` est décompressé en UNE passe, sans pré-filtre par taille.**
+    C'est la dérogation du lot au « ne jamais décompresser les médias » du pptx,
+    et elle est bornée à ce dossier. Le pré-filtrage par taille (pourtant
+    possible : `originalSize` est lisible avant décompression) a été **écarté à
+    la mesure** — les tailles émises ne sont connues que dans le callback de
+    mammoth, donc pré-filtrer imposerait une **première conversion complète**
+    pour les collecter, quand tout décompresser coûte **8 ms** sur la fixture la
+    plus lourde. Le pré-filtre dépenserait du CPU pour économiser de la mémoire
+    transitoire. Les octets sont relâchés dès l'annuaire construit : seules les
+    clés et les chemins survivent.
+  - **`convertImage` n'est pas qu'un moyen d'ancrer : il dégonfle le HTML
+    intermédiaire d'un facteur 11** (51 487 → 4 643 caractères mesurés). Par
+    défaut mammoth encode **chaque image en base64 dans le HTML**, qui est
+    ensuite jeté par `htmlFragmentToInlineText` — de la mémoire et du CPU
+    dépensés pour rien sur tout document illustré. **Ne pas « re-simplifier » en
+    retirant `convertImage`** : le `src` vide est le symptôme visible, l'inflation
+    était le coût.
+  - **L'ancre sort en bloc typé `{type:'image'}`, dans le flux du document.**
+    L'`<img>` vit **dans** un `<p>` (mesuré : `<p><strong><img/></strong></p>`)
+    et non au premier niveau, d'où une extraction **dans** la branche `<p>`
+    plutôt qu'une cinquième alternative à la regex de balayage — le « quatre
+    conteneurs de premier niveau » reste donc exact. Sur la fixture, les quatre
+    `<img>` sont **seules dans leur paragraphe** : le cas « image au fil d'une
+    phrase » n'y est **jamais exercé**, le texte résiduel est conservé
+    défensivement sans que ce chemin ait été vérifié.
+  - **Le SVG jumeau est gratuit ici**, contrairement au pptx : mammoth rend le
+    PNG et n'émet jamais le SVG. Corollaire à ne pas perdre — **ne jamais
+    énumérer `word/media/` pour compter les images** : la fixture y porte 12
+    pièces pour 4 images du corps. Les 8 autres sont 4 jumeaux SVG et **4 pièces
+    d'en-tête/pied de page** (mesuré : `header1/2/3.xml.rels` et
+    `footer3.xml.rels` les référencent), que `convertToHtml` ne traverse pas.
+  - **Seul le CORPS est extrait** — `convertToHtml` ne rend ni en-têtes ni pieds
+    de page, et c'est le comportement de mammoth, pas une décision du lot. Sur
+    la fixture, ces parties portent pourtant **8 `w:drawing` et 6 `w:pict`**, à
+    comparer aux 4 `w:drawing` du corps : l'essentiel des images du conteneur
+    est donc **hors de portée de l'extraction elle-même**, bien avant la
+    question de l'ancrage. Ne pas lire « 4 images » comme « ce document porte 4
+    images » : c'est « 4 images dans ce que MIAOU lit ».
+  - **Cap par DOCUMENT** (`DOCX_MAX_IMAGE_ANCHORS = 24`), là où celui du pptx
+    est par slide : un docx n'a pas d'unité intermédiaire, et capper par section
+    laisserait un document à cent images en émettre cent. Le dépassement est
+    **annoncé avec son compte**. **Aucune fixture ne l'exerce** (la seule
+    illustrée porte 4 images pour 18 000 caractères de section) : c'est une
+    garde de principe, pas une valeur calibrée sur un débordement observé.
+  - **Pièce non retrouvée : l'ancre le dit.** Un hash sans correspondance rend
+    `[image : « libellé »]` ou `[image sans référence retrouvée]` plutôt que
+    rien — « il y a une image ici » reste une information.
+  - **Non couvert, et à ne pas prétendre vérifié** : le VML legacy
+    (`w:pict`/`v:imagedata`) et les `wp:inline` **dans le corps**. La fixture
+    porte bien 6 `w:pict`, mais **tous dans ses en-têtes et pieds de page**,
+    donc dans la partie que mammoth n'extrait pas : ils ne sont pas une
+    couverture du VML, ils sont hors d'atteinte. Le corps, lui, n'a que des
+    `wp:anchor`. La forme reste donc traitée par ce que mammoth en fait, sans
+    mesure propre — et l'affirmation « 0 `w:pict` » du cadrage, dérivée de
+    `word/document.xml` seul, est fausse au niveau du conteneur.
+  - **Vérification** : les pures sont couvertes par le runner QuickJS, mais **ni
+    mammoth ni fflate n'y tournent** — donc `docxMediaIndex`, `convertImage` et
+    surtout leur **composition** (le hash des octets émis retrouve-t-il la pièce
+    du zip ?) ne sont exercés que par `verify-docx-image-anchors.mjs`. Si
+    l'appariement échoue, les ancres sortent sans chemin et **aucun test
+    unitaire ne le voit**. Le cap y est vérifié sur **entrée construite** : la
+    seule fixture illustrée porte 4 images, donc un contrôle sur document réel
+    passerait par vacuité.
 - **Description de bibliothèque : le Word rejoint la bifurcation**
   (`describeDocxForLibrary`) — liste des sections plus le début de la première
   qui porte du texte. La cascade `kind !== 'pdf' && kind !== 'xlsx'` est
@@ -717,7 +957,7 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   parsing correct qui ne l'est pas.
 - **L'ordre des attributs d'un `.rels` n'est pas garanti** (mesuré : le deck réel
   écrit `Id`, `Type`, `Target`, un autre outil peut écrire autrement).
-  `pptxRelationshipMap` lit donc chaque `<Relationship>` **en bloc** puis y
+  `ooxmlRelationshipMap` lit donc chaque `<Relationship>` **en bloc** puis y
   cherche chaque attribut séparément, au lieu de supposer une séquence. Une
   relation sans `Target` est ignorée, jamais rendue à moitié.
 - **La liaison slide ↔ notes passe par les rels de la SLIDE**
@@ -728,13 +968,17 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   serait absurde de résoudre soigneusement l'ordre pour apparier les notes au
   jugé.
 - **La découpe est shape → paragraphe (`a:p`) → runs**, et c'est LA décision
-  d'implémentation du format. Elle a été **mesurée** sur la slide 2 du deck réel,
-  pas devinée : le balayage plat des `a:t` rend 160 fragments (`"Centre "`, `" "`,
-  `"de  "`, `"Cyberdéfense"`) — illisible, les runs étant coupés par les
-  changements de mise en forme ; par shape avec runs concaténés, 30 blocs mais
-  libellé et personne **collés** (`"Risques ITMarc GUIDAT"`) ; shape → `a:p` →
-  runs, 30 blocs au bon niveau (`"Risques IT\nMarc GUIDAT"`). Un balayage plat
-  produirait la bouillie qu'on reproche au serveur, à l'envers.
+  d'implémentation du format. Elle a été **mesurée** sur la slide 2 d'un deck
+  réel, pas devinée : le balayage plat des `a:t` rend 160 fragments d'un ou deux
+  mots — illisible, les runs étant coupés par les changements de mise en forme ;
+  par shape avec runs concaténés, 30 blocs mais libellé et personne **collés**
+  bout à bout ; shape → `a:p` → runs, 30 blocs au bon niveau (la forme
+  `"Pilotage des Risques\nAlex Durand"`). Un balayage plat produirait la
+  bouillie qu'on reproche au serveur, à l'envers. **Les exemples de cette doc
+  et des tests sont NEUTRES** : les fixtures de `untracked/test-files/` sont des
+  documents à ne pas divulguer, et rien de versionné n'en cite le contenu — ni
+  assertion, ni donnée de test, ni commentaire. Un exemple n'a pas besoin d'être
+  authentique pour porter une forme.
 - **Le parcours descend DANS les `p:grpSp`, et c'est le gain net du format.**
   `slide.shapes` de `python-pptx` **n'itère pas dans les groupes** : sur la
   slide 2 du deck réel, **83 des 160 fragments** sont imbriqués dans des shapes
@@ -747,6 +991,63 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
 - **Les tableaux (`a:tbl` d'un `p:graphicFrame`) sortent en lignes « a | b | c »**,
   même forme que `htmlTableToText` côté docx : deux documents de formats
   différents ne doivent pas se lire de deux façons.
+- **Les images sont ANCRÉES dans le texte extrait** (lot AC-1), sous la forme
+  `[image: ppt/media/image7.png — « Blockchain »]`. Le texte ne portait
+  auparavant aucune trace du passage d'une image : un modèle qui sortait
+  `ppt/media/image7.png` du conteneur n'avait aucun moyen de la raccrocher à la
+  slide où elle sert. C'est un défaut d'**ancre**, pas d'extraction — la donnée
+  de liaison est dans les `.rels`, que le code décompressait déjà.
+  - **L'ancre est le CHEMIN de la pièce, et rien d'autre.** Pas de
+    matérialisation façon `docs__render_page` : le modèle va chercher les octets
+    lui-même en ouvrant le `.pptx` comme une archive. Le filtre `unzipSync`
+    continue de **ne jamais décompresser `ppt/media/`** — c'est ce qui garde
+    l'ouverture d'un deck de 5 Mo peu coûteuse, et on ne veut que le chemin.
+    Si la matérialisation se fait un jour, elle empruntera le chemin `attId`
+    **existant** (piège 19, corollaire V-8), jamais un second chemin.
+  - **La branche vise « un nœud portant un `a:blip` », jamais `p:pic`
+    littéralement.** Mesuré : les 5 images d'une fixture réelle vivent sous
+    `p:oleObj < mc:Fallback` (graphiques think-cell embarqués en OLE, dont le
+    `.emf` est le rendu de secours). Cibler `p:pic` les raterait toutes.
+  - **`mc:AlternateContent` est traité explicitement**, sinon chaque image OLE
+    sort **deux fois** — le `walk` descendait dans `mc:Choice` ET `mc:Fallback`
+    par son `else`. On retient le `Fallback`, qui porte le raster réellement
+    présent dans le zip.
+  - **Le libellé est un BONUS, jamais l'ancre** : 95 % de `descr` sur une
+    fixture mesurée, **0 %** sur l'autre. Le bloc reste utile sans lui. Les
+    `descr` auto-générés par Office (suffixe `Description générée
+    automatiquement`) sont **retirés** : « Une image contenant dessin » est du
+    bruit, et un libellé faux coûte plus cher qu'un libellé absent. Le `name`
+    (`Image 3`, `Object 63`) n'est **jamais** un libellé — c'est de la
+    numérotation automatique. Le libellé se cherche en **remontant** du blip
+    vers son nœud porteur : le chercher en descendant depuis un groupe
+    collerait le premier `descr` du sous-arbre à toutes ses images.
+  - **Le doublon PNG/SVG est déduplique.** Les icônes Office modernes sont
+    stockées deux fois, liées par `asvg:svgBlip` **dans le même `a:blip`** (120
+    SVG pour 121 PNG sur une slide mesurée). On annonce le raster, lisible par
+    un modèle vision, et on tait le jumeau vectoriel. **Ne jamais parcourir
+    `ppt/media/` pour énumérer** : on compterait double.
+  - **Cap par slide obligatoire** (`PPTX_MAX_IMAGE_ANCHORS = 24`). La slide 4
+    d'une fixture référence **241 médias** : sans cap, une seule slide noie le
+    tool result. Le dépassement est **annoncé avec son compte**, jamais tronqué
+    en silence.
+  - **Les blocs sont TYPÉS `{type: 'text'|'table'|'image', text}`**, là où
+    `pptxShapeBlocks` rendait des chaînes nues. C'est ce qui permet à
+    `pptxSlideExcerpt` d'**écarter les ancres de l'extrait de listing** (241
+    chemins de fichiers n'aident pas à *choisir* une slide) sans les reconnaître
+    à un préfixe de chaîne, couplage qui dériverait. `docxHtmlToBlocks` rend
+    déjà `{type, level, text}`. Corollaire : aucun consommateur ne fait
+    `String(bloc)` — qui rendrait `[object Object]`, chaîne **non vide**, donc
+    un extrait pollué qu'aucune assertion de non-vacuité ne distingue d'un vrai
+    texte. `pptxBlockText` est le seul lecteur de la forme d'un bloc.
+  - **Les notes ne reçoivent pas de rels**, donc pas d'ancre : une pièce de
+    notes porte un `sldImg` (l'image de la diapositive), déjà écarté par
+    `PPTX_NOTES_SKIP_PH` — ne pas passer les rels ferme la seconde voie.
+  - **Testabilité** : `pptxShapeBlocks` prend un `Document` (`DOMParser`, absent
+    de QuickJS) et reste **intestable** sous le runner. Tout ce qui décide en a
+    donc été sorti en pures sur chaînes — `ooxmlImageLabel`, `formatImageAnchor`,
+    `pptxDedupeImageRefs`, `capImageAnchors`, `pptxBlockText` — le DOM ne
+    servant plus qu'à collecter `{embed, descr, name}`. Le parcours lui-même est
+    couvert par `verify-pptx-native.mjs`.
 - **Le listing retombe sur un EXTRAIT quand le titre manque** (décision 6, et
   **ajout de périmètre assumé** — `mcp_docs` ne le fait pas). Le titre est extrait
   par la règle exacte de `slide.shapes.title` (le `p:sp` dont le `p:ph` porte

@@ -51,8 +51,9 @@
 //     montrent un EXTRAIT de leur texte, jamais « (sans titre) »
 //   - LE gain sur le serveur : la slide 2 du deck réel rend le texte des shapes
 //     GROUPÉES (83 fragments que python-pptx n'itère pas)
-//   - la découpe shape → a:p → runs : « Risques IT\nMarc GUIDAT », ni la
-//     bouillie plate (« Centre », « », « de  ») ni les mots collés
+//   - la découpe shape → a:p → runs : des blocs multi-lignes, ni la bouillie
+//     plate de fragments d'un mot ni les lignes collées bout à bout
+//     (contrôlé par la FORME : la fixture ne se cite pas, cf. note plus bas)
 //   - les notes de présentateur sont LUES et SÉPARÉES par un intertitre
 //   - le filtre de placeholders : une note vide ne rend pas « Notes view: 17 »
 //     (le numéro de slide du gabarit, présenté comme du propos)
@@ -255,14 +256,30 @@ try {
     !s2.isError && /^--- Slide /.test(s2.text) && s2.text.length > 200,
     s2.text.split('\n')[0].slice(0, 80));
   check('l\'en-tête nomme la slide servie', /--- Slide 2/.test(s2.text), s2.text.split('\n')[0]);
-  check('LE GAIN : le texte des shapes GROUPÉES est là (le serveur le perd)',
-    /GUIDAT/.test(s2.text) && /MARTINEZ/.test(s2.text),
-    'GUIDAT=' + /GUIDAT/.test(s2.text) + ' MARTINEZ=' + /MARTINEZ/.test(s2.text));
-  // La découpe : « Risques IT\nMarc GUIDAT » et non « Risques ITMarc GUIDAT »
-  // (par shape, runs collés) ni « Risques », « IT », « » (balayage plat).
-  check('la découpe est shape → a:p → runs : le libellé et la personne sont sur DEUX lignes',
-    /Risques IT\nMarc GUIDAT/.test(s2.text),
-    (s2.text.match(/Risques IT.{0,20}/s) || ['motif absent'])[0].replace(/\n/g, '⏎'));
+  // CONFIDENTIALITÉ : cette fixture est un document à ne pas divulguer. Les
+  // deux contrôles qui suivent portaient des noms propres extraits du deck ;
+  // ils visent désormais la STRUCTURE, qui est ce qu'ils prouvaient réellement.
+  //
+  // LE GAIN se mesure au VOLUME : slide.shapes de python-pptx n'itère pas dans
+  // les p:grpSp et perd 83 des 160 fragments a:t de cette slide. Un parcours
+  // qui ne descendrait pas dans les groupes rendrait donc ~la moitié du texte.
+  // Le seuil est posé au-dessus de ce qu'un tel parcours produirait, et la
+  // borne haute évite qu'un rendu dégénéré (tout le XML recraché) passe.
+  const bodyLen = s2.text.replace(/^--- Slide[^\n]*\n/, '').trim().length;
+  check('LE GAIN : le texte des shapes GROUPÉES est là (le serveur en perd la moitié)',
+    bodyLen > 700 && bodyLen < 20000, bodyLen + ' caractères de corps');
+  // La découpe shape → a:p → runs se lit à la FORME des blocs : un bloc porte
+  // plusieurs lignes (le libellé d'une shape et son contenu sont deux a:p),
+  // là où « par shape, runs collés » rendrait une ligne unique par bloc et où
+  // le balayage plat rendrait des fragments d'un ou deux mots.
+  const s2Blocks = s2.text.replace(/^--- Slide[^\n]*\n/, '').split('\n\n').filter(b => b.trim());
+  const multiline = s2Blocks.filter(b => b.trim().split('\n').length >= 2).length;
+  check('la découpe est shape → a:p → runs : des blocs portent PLUSIEURS lignes',
+    multiline >= 3, multiline + ' bloc(s) multi-lignes sur ' + s2Blocks.length);
+  // Le balayage plat, lui, produirait une majorité de fragments très courts.
+  const tiny = s2Blocks.filter(b => b.trim().length <= 3).length;
+  check('ce n\'est pas un balayage plat : pas de nuée de fragments minuscules',
+    tiny === 0, tiny + ' fragment(s) de moins de 4 caractères');
   check('ce n\'est pas un balayage plat : aucun fragment isolé d\'un seul espace',
     /^--- Slide /.test(s2.text) && !/\n \n/.test(s2.text));
 

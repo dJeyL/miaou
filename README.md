@@ -7,7 +7,7 @@ compatible OpenAI (URL et clef configurables). La sortie est un **fichier HTML
 unique** (`dist/miaou.html`) : pas de serveur applicatif, pas de bundler,
 aucune dépendance hors CDN (marked.js, Prism, Google Fonts, et — chargés à la
 demande seulement — Mermaid pour les diagrammes, QuickJS-WASM pour le calcul
-sandboxé, fflate pour les archives zip et les présentations PowerPoint, pdf.js
+sandboxé, fflate pour les archives zip et les documents Office, pdf.js
 pour les PDF, SheetJS pour les classeurs Excel et mammoth pour les documents
 Word). On l'ouvre dans
 un navigateur, ou on le sert via n'importe quel serveur web statique.
@@ -80,11 +80,15 @@ Figtree/Fira Code).
   scannée, schéma, graphique —, sans serveur — cf.
   [docs/documents.md](docs/documents.md).
 - **Classeurs Excel** : le modèle en liste les feuilles et en lit une plage de
-  cellules, sans serveur — cf. [docs/tools.md](docs/tools.md).
+  cellules, sans serveur ; les formules, les cellules fusionnées et les images
+  avec la plage qu'elles recouvrent y sont signalées, là où un rendu tabulaire
+  ordinaire les perd — cf. [docs/documents.md](docs/documents.md).
 - **Documents Word** : le modèle en liste les sections et en lit une, tableaux
-  compris, sans serveur — cf. [docs/tools.md](docs/tools.md).
+  compris, sans serveur ; les images y sont signalées à leur place, par leur
+  chemin dans le fichier — cf. [docs/tools.md](docs/tools.md).
 - **Présentations PowerPoint** : le modèle en liste les slides dans l'ordre de la
-  présentation et en lit une, notes de présentateur comprises, sans serveur —
+  présentation et en lit une, notes de présentateur comprises, sans serveur ; les
+  images y sont signalées à leur place, par leur chemin dans le fichier —
   cf. [docs/tools.md](docs/tools.md).
 - **Ressources adressables** : le modèle range un texte de côté — qu'il l'ait
   produit ou qu'il convertisse un gros résultat d'outil pour alléger la

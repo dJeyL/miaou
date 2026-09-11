@@ -447,8 +447,10 @@ sur le nom exact, le rattrapage de casse et son refus quand elle est ambiguë,
 et le message qui **nomme les feuilles disponibles**), `restrictSheetRange`
 (la garde du format : `A1:Z999` sur une feuille `B2:E31` est **ramené**, pas
 déroulé en 999 lignes de vide ; l'intersection vide est un **échec**, pas un
-rendu blanc), `formatXlsxListing`, `formatXlsxRead` (le cap qui ne mord que
-sans plage explicite, la troncature qui **se dit**), et
+rendu blanc), `formatXlsxListing`, `formatXlsxSheet` (le cap qui ne mord que
+sans plage explicite, la troncature qui **se dit** ; il a remplacé
+`formatXlsxRead` au lot AC-3, avec `formatSheetCell` et `formatMergeRanges`),
+et
 `docReadResourceName`/`slugifyResourceSuffix`. Les libellés d'ack gagnent leurs
 unités « feuille » (féminin — même piège d'accord qu'en V-4) et la distinction
 par **forme du selector** plutôt que par extension.
@@ -472,10 +474,10 @@ L'**étape 3** ajoute le pur du chemin PowerPoint, dont la particularité est qu
 la part testable y est **plus étroite qu'ailleurs** : QuickJS n'a pas de
 `DOMParser`, donc les purs prennent des structures déjà parsées (décision 3) et
 tout le parsing XML (`pptxShapeBlocks`, `pptxSlideTitle`) n'est exercé que par le
-verify. Ce qui est couvert est ce qui **décide** : `pptxRelationshipMap` (l'ordre
+verify. Ce qui est couvert est ce qui **décide** : `ooxmlRelationshipMap` (l'ordre
 des attributs d'un `.rels` n'étant pas garanti, `Id`/`Target` sont cherchés
 séparément — et une relation sans `Target` est ignorée, pas rendue à moitié),
-`pptxResolveTarget` (les `..` relatifs, et le `/` de tête d'un target **absolu au
+`ooxmlResolveTarget` (les `..` relatifs, et le `/` de tête d'un target **absolu au
 package**, qui produirait sinon `ppt/ppt/slides/…`), `pptxSlideOrder` — **la
 garde critique du format, et l'exception regex assumée de la décision 3** : un
 `sldIdLst` réordonné doit primer sur le numéro de fichier, une pièce hors
