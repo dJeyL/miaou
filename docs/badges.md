@@ -243,6 +243,11 @@ total === 1 && screenOwned → 0   (redondant avec le composer en mode stop)
 sinon                      → total
 ```
 
+`total` est le nombre de **lignes de l'inventaire** (`agentInventoryCount`), pas
+la taille du registre `_activeGenerations` — cf. `docs/agents.md`, « Le parent
+inerte » : le registre ignore le parent qui attend ses agents, et la garde
+`total === 1` masquait alors la pilule dès qu'on ouvrait le fil de l'agent.
+
 **Le nombre affiché est TOUJOURS le total**, jamais `total - 1` : afficher
 « 2 agents » quand trois tournent serait un piège à confusion. La règle porte
 sur le **seuil d'apparition**, pas sur le comptage. `formatAgentCountLabel(n)`
@@ -250,10 +255,11 @@ porte le singulier/pluriel, séparément, pour rester testable sans DOM.
 
 ### Câblage
 
-`syncAgentCount()` (ui.js) dérive du **registre** (`_activeGenerations.size`) et
-de `isGenerating(currentConvId)` — **jamais de `sending`**, qui est un reflet
-d'écran depuis T-1 et bascule sur un simple changement de conversation
-(piège 28).
+`syncAgentCount()` (ui.js) dérive de l'**inventaire vivant**
+(`liveAgentInventory`, dont il tire à la fois le compte affiché et l'argument de
+visibilité) et de `isGenerating(currentConvId)` — **jamais de `sending`**, qui
+est un reflet d'écran depuis T-1 et bascule sur un simple changement de
+conversation (piège 28).
 
 Appelée depuis `syncSpaceUI()` (donc `registerGeneration`,
 `unregisterGeneration`, `openConversation`) **et directement depuis
@@ -330,8 +336,12 @@ supprimé resterait sinon invisible du hamburger, qui doit être exhaustif.
 
 - **Unitaire** — `resolveActivityBadge` : 10 tests (`tests/test-utils.js`),
   dont l'absence de troisième état et la tolérance aux valeurs nulles/inconnues.
-  `resolveAgentCount` / `formatAgentCountLabel` : 10 tests (T-2bis), dont
-  « affiche le total, jamais total-1 » et le singulier.
+  `resolveAgentCount` / `formatAgentCountLabel` (T-2bis) : la règle d'apparition
+  sur toutes ses entrées, dont « affiche le total, jamais total-1 », le
+  singulier et les valeurs aberrantes. S'y ajoute (`tests/test-agents.js`) la
+  **composition** inventaire → visibilité, seul niveau où se voit le défaut du
+  2026-09-12 : les deux fonctions pures étaient justes séparément, c'est leur
+  joint qui lisait deux grandeurs différentes.
 - **Playwright** — `.claude/skills/run-miaou/verify-badges.mjs`, stub SSE gaté
   par conversation (repris de `verify-generations.mjs`) : working sur la ligne,
   unread hors écran, absence d'unread sous les yeux, non-lu au niveau

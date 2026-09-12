@@ -161,6 +161,15 @@ if (window.requestAnimationFrame) {
         <button class="icon-btn conv-parent-btn" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
+        <!-- Marqueur « ceci est un fil d'agent » (robot, ICON_AGENT — une
+             métaphore = un usage, cf. vocabulaire d'icônes). Non interactif :
+             span et non .icon-btn, parce qu'il ne mène nulle part — le retour
+             au parent est le chevron à sa gauche. Masqué/révélé par le MÊME
+             appel que ce chevron (syncAgentBanner, ui.js) : les deux répondent
+             à la question « ce fil est-il celui d'un agent ? », et deux
+             formules divergeraient. Le SVG n'est pas recopié ici : il est
+             injecté depuis ICON_AGENT (ui.js), source unique du tracé. -->
+        <span class="conv-agent-mark" id="conv-agent-mark" title="Conversation d'agent" aria-hidden="true" hidden></span>
         <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>

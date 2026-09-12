@@ -2982,7 +2982,14 @@ function resolveActivityBadge(states) {
 // unique qu'on regarde arriver est déjà signalée par le composer en mode stop,
 // l'annoncer une seconde fois en haut à droite serait du bruit.
 //
-// `total` = nombre de générations en vol (_activeGenerations.size)
+// `total` = nombre de LIGNES de l'inventaire (agentInventoryCount), PAS la
+//   taille du registre `_activeGenerations`. La distinction n'est pas cosmétique :
+//   un parent inerte qui attend ses agents n'a aucune entrée au registre, donc
+//   avec cette source un agent seul donnait `total === 1` et la règle ci-dessous
+//   masquait la pilule dès qu'on ouvrait le fil de cet agent — alors que le
+//   parent en attente restait, lui, parfaitement tu par l'écran. La garde
+//   `n === 1` n'est légitime que si la génération regardée est la SEULE chose
+//   à annoncer, ce que seul l'inventaire sait dire.
 // `screenOwned` = la conversation AFFICHÉE génère-t-elle ?
 //
 // Le nombre rendu est TOUJOURS le total, jamais « total - 1 » : afficher

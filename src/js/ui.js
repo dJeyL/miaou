@@ -4548,10 +4548,23 @@ function syncAgentBanner(conv) {
   // affordances, sinon le bouton mènerait à une conversation inexistante
   // pendant que le bandeau dit « conversation supprimée ».
   const btn = document.querySelector('.conv-parent-btn');
+  // Marqueur robot de topbar : il suit « ce fil est-il celui d'un agent ? »,
+  // et RIEN d'autre — à la différence du chevron de retour, qui dépend en plus
+  // de la survie du parent. Un agent dont le parent a été supprimé reste un
+  // agent : le marqueur reste, seule la voie de retour disparaît.
+  const mark = $('conv-agent-mark');
   if (!isAgentConversation(conv)) {
     el.classList.remove('show');
     if (btn) { btn.hidden = true; btn.onclick = null; }
+    if (mark) mark.hidden = true;
     return;
+  }
+  if (mark) {
+    // Tracé injecté depuis ICON_AGENT (statique, author-controlled) plutôt que
+    // recopié dans index.html : une seule source pour la silhouette de robot,
+    // partagée avec les acks agent__*.
+    if (!mark.firstChild) mark.innerHTML = ICON_AGENT;
+    mark.hidden = false;
   }
   const link = $('agent-banner-link');
   // Statut (X-1e) : le bandeau explique pourquoi le composer est fermé quand
@@ -7937,18 +7950,21 @@ function activityBadgeEl(state) {
 function syncAgentCount() {
   const el = $('agent-count');
   if (!el) return;
-  // Deux questions distinctes, deux sources — c'est le point de discipline du
-  // lot T-3 (decision Julien) :
-  //  - SE MONTRER ? `resolveAgentCount` sur le registre, inchange depuis T-2bis :
-  //    la pilule se tait quand elle n'apprend rien (une generation unique qu'on
-  //    regarde arriver est deja signalee par le composer en mode stop) ;
+  // Deux questions distinctes — c'est le point de discipline du lot T-3
+  // (decision Julien) :
+  //  - SE MONTRER ? `resolveAgentCount`, dont la regle d'apparition (se taire
+  //    quand on n'apprend rien) est inchangee depuis T-2bis ;
   //  - AFFICHER QUOI ? le nombre de LIGNES de l'inventaire, c'est-a-dire
   //    exactement ce que le popover va lister.
-  // Les confondre ferait mentir la pilule dans les deux sens : un parent inerte
-  // qui attend ses agents n'a aucune entree au registre (sous-compte), et la
-  // generation d'ecran en est retranchee alors que l'inventaire la liste.
+  // Les deux questions restent distinctes, mais elles lisent la MEME grandeur :
+  // l'inventaire. La visibilite est partie du registre `_activeGenerations`, et
+  // ce sous-compte se payait exactement dans le cas que le lot T-3 avait pourtant
+  // nomme -- le parent inerte n'y a aucune entree, donc un agent au travail
+  // donnait `total === 1`, et ouvrir le fil de cet agent (screenOwned) masquait
+  // une pilule qui annoncait « 2 agents » depuis le parent. La garde `n === 1`
+  // ne vaut que si la generation regardee est la SEULE chose a annoncer.
   const inv = liveAgentInventory();
-  const visible = resolveAgentCount(_activeGenerations.size, isGenerating(currentConvId));
+  const visible = resolveAgentCount(agentInventoryCount(inv), isGenerating(currentConvId));
   el.hidden = !visible;
   const label = $('agent-count-label');
   if (label) label.textContent = formatAgentCountLabel(agentInventoryCount(inv));

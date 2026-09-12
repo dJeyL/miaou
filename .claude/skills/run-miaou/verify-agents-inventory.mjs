@@ -13,10 +13,11 @@
 //   1. le BRANCHEMENT du pur sur ses sources vivantes (`liveAgentInventory`) —
 //      un prédicat juste appliqué aux mauvaises données reste faux ;
 //   2. la COHÉRENCE pilule / popover : le compte affiché doit valoir exactement
-//      le nombre de lignes listées. Les deux dérivent maintenant de l'inventaire,
-//      alors que la VISIBILITÉ de la pilule reste sur `resolveAgentCount` — une
-//      séparation volontaire (décision Julien) qui est précisément le genre de
-//      chose qui se remet à diverger en silence ;
+//      le nombre de lignes listées. Compte ET visibilité dérivent de
+//      l'inventaire — la visibilité lisait le registre `_activeGenerations`
+//      jusqu'au 2026-09-12, et cet écart de grandeur faisait disparaître la
+//      pilule dès qu'on ouvrait le fil d'un agent dont le parent attendait
+//      (une entrée au registre, deux lignes à l'inventaire) ;
 //   3. le cas du PARENT INERTE en attente de ses agents : il n'a aucune entrée
 //      dans `_activeGenerations`, donc tout comptage fondé sur ce seul registre
 //      le manque. C'est le cas qui a motivé de changer la source du compte.
@@ -406,6 +407,116 @@ check('3. (contrôle) les autres commandes sont bien là — la palette n\'est p
   labels.length > 5);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(150);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Scénario 4 — UN SEUL agent : la pilule ne doit pas disparaître sur son fil
+// ════════════════════════════════════════════════════════════════════════════
+// Bug observé en usage réel le 2026-09-12 : avec un parent qui attend son
+// UNIQUE agent, aller consulter le fil de l'agent faisait disparaître la
+// pilule, qui revenait en retournant sur le parent.
+//
+// POURQUOI LES TROIS SCÉNARIOS CI-DESSUS NE POUVAIENT PAS L'ATTRAPER — c'est
+// le point de ce scénario, pas seulement le fait qu'il soit rouge avant le
+// correctif. La visibilité dérivait de `_activeGenerations.size`, et la garde
+// de `resolveAgentCount` ne s'arme qu'à `total === 1 && screenOwned`. Le
+// scénario 1 monte un parent à TROIS agents : le registre y vaut 3, la garde
+// ne s'applique jamais, et aucune quantité d'assertions sur ce montage ne
+// peut faire tomber le cas. La fenêtre du défaut est exactement « une seule
+// génération au registre », ce qui la rend invisible à qui lance toujours
+// plusieurs agents — raison pour laquelle l'utilisateur ne l'avait vu qu'en
+// test à un agent. Un montage pluriel est ici un contrôle VIDE, pas un
+// contrôle faible.
+//
+// L'écart de grandeur est aussi ce que le scénario mesure : UNE entrée au
+// registre, DEUX lignes à l'inventaire (le parent qui attend + son agent).
+console.log('\n— Scénario 4 : un seul agent, bascule parent ↔ agent');
+await resetStub();
+await newConv();
+
+await page.evaluate(() => {
+  window.__spawns['P:P4'] = { prompt: 'AGENT-A4 travail solitaire.', intent: 'Vérifier la pilule à un agent', tools: [] };
+});
+await gate('A:A4');
+await send('MARK-P4 lance un seul agent.');
+await waitSent('P:P4');
+await release('P:P4');
+await page.waitForTimeout(700);
+
+const soloParent = await page.evaluate(() => currentConvId);
+const soloAgents = await page.evaluate(
+  (p) => agentChildrenOf(p, listAllConversations()).map(c => c.id), soloParent);
+check('4. un unique agent, en vol',
+  soloAgents.length === 1 && await page.evaluate((id) => isGenerating(id), soloAgents[0]));
+
+// La fenêtre du défaut, mesurée : si l'une de ces deux assertions tombait, le
+// reste du scénario ne prouverait plus rien de ce qu'il annonce.
+check('4. le registre ne contient QU\'UNE génération (la fenêtre du bug)',
+  await page.evaluate(() => _activeGenerations.size === 1));
+check('4. le parent inerte n\'y est pas, mais l\'inventaire compte DEUX lignes',
+  await page.evaluate((p) => !_activeGenerations.has(p) &&
+    agentInventoryCount(liveAgentInventory()) === 2, soloParent));
+
+// ── Depuis le parent : état de référence (déjà correct avant le correctif) ───
+const pill4parent = await pill();
+check('4. depuis le parent : pilule visible, 2 agents',
+  pill4parent.hidden === false && pill4parent.label === '2 agents');
+
+// ── Depuis le fil de l'agent : LE contrôle ─────────────────────────
+// On ouvre par le chemin utilisateur réel (le popover), pas par un appel direct
+// à selectConv : c'est la bascule d'écran qui arme `screenOwned`.
+await page.click('#agent-count');
+await page.waitForTimeout(250);
+const rows4 = await popoverRows();
+check('4. le popover liste le parent et son agent', rows4.length === 2);
+await page.evaluate(() => document.querySelectorAll('#agent-menu .agent-row')[1].click());
+await page.waitForTimeout(600);
+check('4. on est bien sur le fil de l\'agent',
+  await page.evaluate((id) => currentConvId === id, soloAgents[0]));
+check('4. cet écran GÉNÈRE — sans quoi le contrôle suivant serait vide',
+  await page.evaluate(() => isGenerating(currentConvId) === true));
+
+const pill4agent = await pill();
+check('4. la pilule reste VISIBLE sur le fil de l\'agent (bug du 2026-09-12)',
+  pill4agent.hidden === false);
+check('4. et annonce toujours 2 agents, le parent en attente compris',
+  pill4agent.label === '2 agents');
+await shot('05-pilule-sur-fil-agent.png');
+
+// ── Retour au parent : la pilule ne doit pas « revenir », elle n'est pas partie
+await page.evaluate((id) => selectConv(id), soloParent);
+await page.waitForTimeout(500);
+const pill4back = await pill();
+check('4. retour au parent : toujours visible, même libellé (aucune bascule)',
+  pill4back.hidden === false && pill4back.label === '2 agents');
+
+// ── Non-régression de la règle que la garde protège ───────────────────
+// L'agent termine : il ne reste que le parent, réveillé par la délivrance du
+// résultat — UNE ligne, sous les yeux. C'est le cas pour lequel T-2bis a posé
+// la garde : le composer en mode stop le dit déjà, la pilule se tait. Sans ce
+// contrôle, « rendre la pilule plus visible » pourrait se faire en supprimant
+// la garde, et ce verify resterait vert.
+// Le tour de RÉVEIL du parent se re-taggue `P:P4` — le stub dérive le tag du
+// dernier message user portant MARK-, et le réveil n'en crée pas de nouveau.
+// Il faut donc REFERMER cette porte (relachée plus haut pour le tour de spawn)
+// avant de libérer l'agent, sinon le parent traverse son réveil d'un trait et
+// les assertions ci-dessous ne trouvent plus rien qui génère.
+await page.evaluate(() => { window.__released['P:P4'] = false; window.__gates['P:P4'] = true; });
+await release('A:A4');
+await page.waitForFunction(() => liveAgentInventory().length === 1 &&
+  agentInventoryCount(liveAgentInventory()) === 1, null, { timeout: 20000 });
+check('4. l\'agent terminé ne laisse qu\'une ligne : le parent réveillé',
+  await page.evaluate((p) => {
+    const inv = liveAgentInventory();
+    return inv.length === 1 && inv[0].conv.id === p && inv[0].agents.length === 0;
+  }, soloParent));
+check('4. ce parent réveillé est bien sous les yeux et génère',
+  await page.evaluate((p) => currentConvId === p && isGenerating(p) === true, soloParent));
+check('4. une ligne unique sous les yeux → pilule MUETTE (garde de T-2bis)',
+  (await pill()).hidden === true);
+
+await release('P:P4');
+await page.waitForFunction(() => _activeGenerations.size === 0, null, { timeout: 20000 });
+await page.waitForTimeout(400);
 
 // ── Bilan ───────────────────────────────────────────────────────────────────
 check('aucune erreur console sur tout le parcours',

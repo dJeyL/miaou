@@ -88,6 +88,26 @@
    écran sans autre issue serait un piège, pas une discrétion. */
 .conv-parent-btn { opacity: 1; width: 26px; height: 26px; flex-shrink: 0; transition: background 130ms var(--ease), color 130ms var(--ease); }
 .conv-parent-btn svg { width: 14px; height: 14px; }
+/* Marqueur robot : décor, pas affordance — donc ni hover, ni curseur, ni
+   surface au survol (ce serait promettre un clic qui n'arrive pas). Couleur
+   atténuée comme les autres glyphes de topbar au repos. Délibérément UN CRAN
+   au-dessus du chevron voisin, et non calé sur lui : le chevron est une cible
+   de clic (sa boîte de 26px lui donne sa présence), là où le robot n'est qu'un
+   glyphe nu — à taille égale il se lisait plus petit que son voisin. Réglage
+   validé à l'œil sur les trois jeux de fontes, ne pas « harmoniser ».
+   La marge droite NÉGATIVE rattrape le `padding: 4px 10px` de
+   .conv-title-edit : ce padding est la surface de survol/édition du titre, il
+   ne se réduit pas pour une question d'espacement, mais il laisse un blanc de
+   ~12px que l'œil lit comme un écart entre le glyphe et le mot. On tire donc
+   le glyphe DANS ce blanc au lieu de le supprimer.
+   `translateY` négatif et non un changement d'`align-items` : le span est
+   centré sur la hauteur de LIGNE, alors que l'œil aligne le bas du robot sur
+   la BASE des lettres du titre — deux références qui ne coïncident pas (le
+   creux sous la baseline, plus le padding vertical du titre). Le décalage est
+   donc un ajustement optique, pas un alignement de boîtes, et il ne bouge pas
+   la mise en page (transform). */
+.conv-agent-mark { display: grid; place-items: center; width: 16px; height: 26px; flex-shrink: 0; margin-right: -6px; color: var(--text-2); transform: translateY(-1.5px); }
+.conv-agent-mark svg { width: 16px; height: 16px; }
 .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
 
 .icon-btn {

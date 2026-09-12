@@ -1517,6 +1517,47 @@ describe('agentInventoryCount (T-3) — ce que la pilule annonce', function() {
   });
 });
 
+// Composition inventaire → visibilité de la pilule. Ce niveau est le SEUL où le
+// défaut se voit : `resolveAgentCount` seule est juste sur toute entrée, et
+// `agentInventoryCount` seule aussi -- c'est leur JOINT qui était faux, la
+// visibilité lisant le registre `_activeGenerations` là où le libellé lisait
+// l'inventaire. Les deux tests unitaires restaient verts sans rien prouver du
+// câblage (motif « joint entre deux purs »).
+describe('pilule d\'agents : visibilité composée sur l\'inventaire', function() {
+  // Un parent inerte qui attend son unique agent. Le registre ne contient que
+  // l'agent ; l'inventaire compte DEUX lignes (le parent + son agent).
+  var convs = [{ id: 'p1' }, { id: 'a1', parentConvId: 'p1' }];
+  var working = function(id) { return id === 'a1'; };
+  var lines = function() { return agentInventoryCount(agentInventory(convs, working)); };
+
+  it('deux lignes à l\'inventaire pour une seule génération au registre', function() {
+    expect(lines()).toBe(2);
+  });
+
+  it('depuis le parent : pilule visible', function() {
+    // `screenOwned` faux : le parent ne génère pas, il attend.
+    expect(resolveAgentCount(lines(), false)).toBe(2);
+  });
+
+  it('depuis le fil de l\'agent : pilule TOUJOURS visible (bug du 2026-09-12)', function() {
+    // Le symptôme observé : la pilule disparaîtrait en consultant l'agent, et
+    // reviendrait en retournant sur le parent. Avec la taille du registre (1)
+    // la garde `n === 1 && screenOwned` s'appliquait à tort ; l'inventaire (2)
+    // la désarme, parce qu'il reste une chose à annoncer que l'écran ne dit pas.
+    expect(resolveAgentCount(lines(), true)).toBe(2);
+  });
+
+  it('racine ordinaire sans agent : la règle de T-2bis tient toujours', function() {
+    // Non-régression du cas que la garde protège : une seule conversation qui
+    // génère, sous les yeux, une seule ligne → le composer suffit, pilule muette.
+    var solo = [{ id: 'r1' }];
+    var n = agentInventoryCount(agentInventory(solo, function() { return true; }));
+    expect(n).toBe(1);
+    expect(resolveAgentCount(n, true)).toBe(0);
+    expect(resolveAgentCount(n, false)).toBe(1);
+  });
+});
+
 // ── Réveil du parent : le parent doit être CHAUD (bug du 2026-09-07) ─────────
 // Défaut payé en usage réel : une conversation parente pilotant plusieurs
 // agents s'est retrouvée réduite au message de réveil d'un seul d'entre eux —

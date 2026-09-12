@@ -16,9 +16,11 @@ ack enrichi).
 
 Depuis T-2bis, la pilule de topbar compte les conversations en train de tourner
 et les appelle « agents ». X ne change pas ce sens : il l'**étend** aux
-sous-conversations. `resolveAgentCount` reste donc juste sans modification —
-elle compte simplement plus de choses. Un parent qui génère pendant qu'un de ses
-agents travaille affiche « 2 agents », parce que deux choses tournent.
+sous-conversations. La **règle** de `resolveAgentCount` traverse sans
+modification — elle s'applique simplement à plus de choses. Un parent qui génère
+pendant qu'un de ses agents travaille affiche « 2 agents », parce que deux
+choses tournent. Ce qui a dû changer, c'est la **grandeur** qu'on lui passe : la
+taille du registre ne voit pas le parent qui attend (cf. « Le parent inerte »).
 
 ## Stockage : une conversation ordinaire
 
@@ -1338,15 +1340,24 @@ manque.
 
 D'où la séparation, portée par `syncAgentCount` :
 
-- **se montrer ?** `resolveAgentCount` sur le registre, inchangé depuis T-2bis —
-  la pastille se tait quand elle n'apprend rien (une génération unique qu'on
-  regarde arriver est déjà signalée par le composer en mode stop) ;
-- **afficher quoi ?** `agentInventoryCount`, le nombre de **lignes** de
-  l'inventaire — exactement ce que le popover va lister.
+- **se montrer ?** `resolveAgentCount`, dont la règle d'apparition est inchangée
+  depuis T-2bis — la pastille se tait quand elle n'apprend rien (une génération
+  unique qu'on regarde arriver est déjà signalée par le composer en mode stop) ;
+- **afficher quoi ?** le nombre de **lignes** de l'inventaire — exactement ce
+  que le popover va lister.
 
-Les confondre ferait mentir la pastille dans les deux sens : sous-compte du
-parent inerte, et retrait de la génération d'écran que l'inventaire liste
-pourtant. La vérification e2e mesure cet écart (1 parent + 3 agents = 4 lignes,
+Les deux questions restent distinctes, mais elles lisent depuis le 2026-09-12 la
+**même grandeur** : `agentInventoryCount`. La visibilité était restée sur le
+registre, et ce sous-compte se payait dans le cas même que cette section nomme.
+Un parent inerte plus un agent au travail, c'est **une** entrée au registre et
+**deux** lignes à l'inventaire : ouvrir le fil de l'agent rendait `screenOwned`
+vrai, la garde `n === 1` s'appliquait, et la pastille disparaîssait — pour
+revenir en retournant sur le parent. Cette garde ne vaut que si la génération
+regardée est la **seule chose à annoncer**, ce que seul l'inventaire sait dire ;
+le registre, lui, ne voit jamais le parent qui attend.
+
+Les confondre ferait par ailleurs mentir la pastille dans l'autre sens : retrait
+de la génération d'écran que l'inventaire liste pourtant. La vérification e2e mesure cet écart (1 parent + 3 agents = 4 lignes,
 là où le registre en aurait annoncé 3).
 
 Corollaire : les agents **terminés** ne sont jamais listés — décision Julien, un
@@ -1439,6 +1450,18 @@ Pour T-3, `verify-agents-inventory.mjs` couvre ce que le prédicat pur ne peut
 pas voir : le branchement sur les sources vivantes, la cohérence pastille ↔
 popover ↔ palette, le parent inerte, la navigation cross-Space et l'extinction
 complète. Il tourne sur le même montage (stub SSE gaté).
+
+Un quatrième scénario y a été ajouté le 2026-09-12 : **un parent avec un SEUL
+agent**, et la bascule d'écran parent ↔ agent. Le montage est le point, pas la
+bascule : la garde d'apparition ne s'arme qu'à `total === 1`, donc les trois
+scénarios précédents — montés à trois agents ou plus — ne pouvaient pas faire
+tomber le cas, quel que soit le nombre d'assertions qu'on y ajoutait. Un montage
+pluriel est ici un contrôle **vide**, pas un contrôle faible, et c'est aussi ce
+qui rendait le défaut invisible en usage réel à qui lance toujours plusieurs
+agents. Le scénario mesure l'écart de grandeur (une entrée au registre, deux
+lignes à l'inventaire) avant de vérifier la pastille sur les deux écrans, et se
+termine par la **non-régression de la garde** : l'agent terminé, le parent
+réveillé seul sous les yeux fait bien taire la pastille.
 
 ## La vérification e2e
 
