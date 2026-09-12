@@ -799,34 +799,42 @@ describe('listAllConversations — expose spaceId', function() {
   });
 });
 
-describe('resolveUserSystemPrompt — description du Space ajoutée après le prompt global (D4 corrigé)', function() {
-  it('concatène description du Space APRÈS le prompt global (jamais un remplacement), avec intro générique sans nom', function() {
-    var r = resolveUserSystemPrompt('Prompt global', { description: 'Description du Space' });
-    expect(r).toBe('Prompt global\n\n---\n\nDescription de cet espace :\nDescription du Space');
+// La composition « prompt global + description d'Espace » a été SCINDÉE par la
+// campagne cache : la description a rejoint le bloc Espace du message système
+// (`buildSpaceBlock`), donc `resolveUserSystemPrompt` ne porte plus que le
+// prompt global et `formatSpaceDescription` porte la mise en forme. La règle du
+// lot C tient toujours — la description est AJOUTÉE au contexte, jamais
+// substituée au prompt — mais les deux vivent désormais à deux endroits
+// distincts du même message système, ce qu'assertent les tests de composition
+// du bloc Espace (test-context.js).
+describe('resolveUserSystemPrompt — prompt système global seul', function() {
+  it('rend le prompt global tel quel', function() {
+    expect(resolveUserSystemPrompt('Prompt global')).toBe('Prompt global');
   });
-  it('nom d\'espace fourni → intro le nomme', function() {
-    var r = resolveUserSystemPrompt('Prompt global', { name: 'Projet X', description: 'Description du Space' });
-    expect(r).toBe('Prompt global\n\n---\n\nDescription de l\'espace Projet X :\nDescription du Space');
+  it('chaîne vide si pas de prompt global', function() {
+    expect(resolveUserSystemPrompt('')).toBe('');
+    expect(resolveUserSystemPrompt(null)).toBe('');
   });
-  it('seul le prompt global si le Space n\'a pas de description', function() {
-    var r = resolveUserSystemPrompt('Prompt global', { description: '' });
-    expect(r).toBe('Prompt global');
+  it('trim', function() {
+    expect(resolveUserSystemPrompt('  global  ')).toBe('global');
   });
-  it('seul le prompt global si le Space est null (introuvable)', function() {
-    var r = resolveUserSystemPrompt('Prompt global', null);
-    expect(r).toBe('Prompt global');
-  });
-  it('seule la description (avec intro) si pas de prompt global', function() {
-    var r = resolveUserSystemPrompt('', { description: 'Description du Space' });
+});
+
+describe('formatSpaceDescription — description du Space, mise en forme', function() {
+  it('intro générique sans nom d\'espace', function() {
+    var r = formatSpaceDescription({ description: 'Description du Space' });
     expect(r).toBe('Description de cet espace :\nDescription du Space');
   });
-  it('chaîne vide si ni Space ni global', function() {
-    expect(resolveUserSystemPrompt('', null)).toBe('');
-    expect(resolveUserSystemPrompt('', { description: '' })).toBe('');
+  it('nom d\'espace fourni → intro le nomme', function() {
+    var r = formatSpaceDescription({ name: 'Projet X', description: 'Description du Space' });
+    expect(r).toBe('Description de l\'espace Projet X :\nDescription du Space');
   });
-  it('trim des deux côtés', function() {
-    expect(resolveUserSystemPrompt('  global  ', null)).toBe('global');
-    expect(resolveUserSystemPrompt('', { description: '  space  ' })).toBe('Description de cet espace :\nspace');
+  it('chaîne vide si pas de description, ou Space introuvable', function() {
+    expect(formatSpaceDescription({ description: '' })).toBe('');
+    expect(formatSpaceDescription(null)).toBe('');
+  });
+  it('trim de la description', function() {
+    expect(formatSpaceDescription({ description: '  space  ' })).toBe('Description de cet espace :\nspace');
   });
 });
 

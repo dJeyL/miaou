@@ -731,7 +731,14 @@ function buildAgentApiMessages(sys, gen) {
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(gen.thread)));
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   if (lastUserIdx >= 0) {
-    const prefix = buildSkillsContextBlock() + buildContextBlock([]) + '\n\n---\n\n';
+    // MÊME géométrie que dispatchSend, et c'est un invariant (X-d). Depuis la
+    // campagne cache, le contexte skills, les consignes MCP, les souvenirs de
+    // profil et tout le bloc Espace vivent dans le message SYSTÈME, que l'agent
+    // hérite tel quel du parent (`buildSystemMessage()` sans argument, cf.
+    // runAgentGeneration) : il les reçoit donc sans rien reconstruire ici, et
+    // les rajouter au préfixe les écrirait DEUX FOIS tout en rouvrant le
+    // préfixe KV partagé entre parent et agent.
+    const prefix = buildContextBlock([]) + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     threadMsgs[lastUserIdx] = {
       role: 'user',

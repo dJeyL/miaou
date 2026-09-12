@@ -557,16 +557,22 @@ HTML, ou à la synchro multi-onglets.
 
     **Description de Space, pas un system prompt (brief C, CORRIGÉ).** Le
     champ s'appelle `description` (pas `systemPrompt`) et n'est **JAMAIS un
-    remplacement** : `resolveUserSystemPrompt(globalSystemPrompt, space)`
-    (main.js, pure) **concatène** la description du Space actif APRÈS le
-    prompt système utilisateur global (séparateur `\n\n---\n\n`, si les deux
-    sont non vides), exactement comme les autres parts de `buildSystemMessage()`.
+    remplacement** : la description du Space actif est **ajoutée** au message
+    système en plus du prompt système utilisateur global, jamais à sa place.
+    Depuis la campagne cache elle vit dans le bloc Espace
+    (`buildSpaceBlock`/`formatSpaceDescription`, main.js) et non plus concaténée
+    au prompt global par `resolveUserSystemPrompt` — un déplacement de
+    PLACEMENT, qui ne touche pas la règle : les deux textes coexistent toujours,
+    à deux endroits distincts du même message système.
     (Le brief C d'origine proposait un remplacement — décision inversée
     explicitement par l'utilisateur après implémentation initiale : un Space
     porte une description contextuelle, pas un system prompt de substitution.)
-    C'est la SEULE part de `buildSystemMessage()` qui varie d'un Space à
-    l'autre — `ROOT_SYSTEM_PROMPT`, les doctrines intent/skills et le prompt
-    système utilisateur global restent identiques quel que soit le Space.
+    Le bloc Espace est la SEULE part de `buildSystemMessage()` qui varie d'un
+    Space à l'autre — `ROOT_SYSTEM_PROMPT`, les doctrines intent/skills et le
+    prompt système utilisateur global restent identiques quel que soit le Space.
+    C'est précisément pourquoi il est contigu : tout ce qu'un switch de Space
+    invalide (description, bibliothèque, souvenirs de l'Espace) y est rassemblé,
+    pour coûter une seule césure de préfixe au lieu de plusieurs.
     Changer de Space actif change donc le system
     message complet (la part ajoutée en fin) : **assumé et documenté**, ça
     invalide le préfixe KV cache (piège 16) au moment du switch — mais le

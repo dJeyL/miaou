@@ -2095,6 +2095,106 @@ describe('inspectResourcePresentation (lot Z)', function() {
   });
 });
 
+describe('base64ByteLength', function() {
+  // Les trois formes de padding, verifiees contre la taille REELLE de l'entree
+  // (btoa n'existe pas en QuickJS : les vecteurs sont ecrits a la main).
+  it('sans padding : 3 octets pour 4 caracteres', function() {
+    expect(base64ByteLength('YWJj')).toBe(3);            // "abc"
+  });
+  it('un caractere de padding → 2 octets', function() {
+    expect(base64ByteLength('YWI=')).toBe(2);            // "ab"
+  });
+  it('deux caracteres de padding → 1 octet', function() {
+    expect(base64ByteLength('YQ==')).toBe(1);            // "a"
+  });
+  it('chaine plus longue : 6 octets', function() {
+    expect(base64ByteLength('YWJjZGVm')).toBe(6);        // "abcdef"
+  });
+  // Un base64 encode en MIME porte des sauts de ligne : les compter gonflerait
+  // la taille annoncee sans rien changer au fichier.
+  it('ignore les sauts de ligne et espaces', function() {
+    expect(base64ByteLength('YWJj\nZGVm')).toBe(6);
+    expect(base64ByteLength('YWJj ZGVm')).toBe(6);
+  });
+  it('entree vide ou absente → 0, jamais NaN', function() {
+    expect(base64ByteLength('')).toBe(0);
+    expect(base64ByteLength(null)).toBe(0);
+    expect(base64ByteLength(undefined)).toBe(0);
+  });
+});
+
+describe('ackDisplayOrder', function() {
+  // Cas signale : docs__pack pousse son resource_stored (via _storeBlock) AVANT
+  // son ack docs_pack, si bien que « Ressource enregistree » s'affichait
+  // au-dessus de « Archive creee ».
+  it('outil interne : l action repasse devant son sous-produit', function() {
+    var out = ackDisplayOrder([
+      { kind: 'resource_stored', id: 'res_1', resourceName: 'a.zip' },
+      { kind: 'docs_pack', id: 'res_1', resourceName: 'a.zip', count: 4 },
+    ]);
+    expect(out[0].kind).toBe('docs_pack');
+    expect(out[1].kind).toBe('resource_stored');
+  });
+  it('ne mute pas le tableau d entree', function() {
+    var input = [
+      { kind: 'resource_stored', id: 'res_1' },
+      { kind: 'docs_pack', id: 'res_1' },
+    ];
+    ackDisplayOrder(input);
+    expect(input[0].kind).toBe('resource_stored');
+  });
+  // Outil MCP distant : onEarlyAcks a deja drainé l'action avant l'appel reseau,
+  // internResourcesFromResult cree la ressource apres. L'ordre est deja bon.
+  it('outil distant : ordre deja correct, laisse tel quel', function() {
+    var out = ackDisplayOrder([
+      { kind: 'mcp_call', id: 'res_1', name: 'srv__fetch_url' },
+      { kind: 'resource_stored', id: 'res_1' },
+    ]);
+    expect(out[0].kind).toBe('mcp_call');
+    expect(out[1].kind).toBe('resource_stored');
+  });
+  // Le critere est l'identite de la ressource : un resource_stored seul ack de
+  // son appel porte lui-meme l'intent du modele et ne doit pas bouger, meme si
+  // un AUTRE outil du meme tour pousse une action apres lui.
+  it('resource__create suivi d une action sans rapport → inchange', function() {
+    var out = ackDisplayOrder([
+      { kind: 'resource_stored', id: 'res_1', intent: 'je range ca' },
+      { kind: 'docs_pack', id: 'res_9' },
+    ]);
+    expect(out[0].id).toBe('res_1');
+    expect(out[1].id).toBe('res_9');
+  });
+  it('resource_stored seul → inchange', function() {
+    var out = ackDisplayOrder([{ kind: 'resource_stored', id: 'res_1' }]);
+    expect(out.length).toBe(1);
+    expect(out[0].kind).toBe('resource_stored');
+  });
+  // Plusieurs couples dans un meme groupe (tour multi-outils) : chaque
+  // sous-produit suit SON action, jamais tous repousses en fin de liste.
+  it('deux couples action/ressource restent apparies', function() {
+    var out = ackDisplayOrder([
+      { kind: 'resource_stored', id: 'res_1' },
+      { kind: 'docs_pack', id: 'res_1' },
+      { kind: 'resource_stored', id: 'res_2' },
+      { kind: 'docs_extract', id: 'res_2' },
+    ]);
+    expect(out.map(function(a) { return a.kind + ':' + a.id; }).join(' ')).toBe(
+      'docs_pack:res_1 resource_stored:res_1 docs_extract:res_2 resource_stored:res_2');
+  });
+  it('groupe sans aucun resource_stored → inchange', function() {
+    var out = ackDisplayOrder([
+      { kind: 'mcp_call', name: 'a' },
+      { kind: 'docs_pack', id: 'res_1' },
+    ]);
+    expect(out[0].name).toBe('a');
+    expect(out[1].kind).toBe('docs_pack');
+  });
+  it('entree vide ou non tableau → copie sans exception', function() {
+    expect(ackDisplayOrder([]).length).toBe(0);
+    expect(ackDisplayOrder(null).length).toBe(0);
+  });
+});
+
 describe('ackDownloadTarget (lot V)', function() {
   it('resource_stored → cible par id de ressource', function() {
     var t = ackDownloadTarget({ kind: 'resource_stored', id: 'res_1', resourceName: 'a.csv', mime: 'text/csv' });

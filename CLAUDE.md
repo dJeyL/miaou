@@ -268,7 +268,17 @@ geste ; le développement est dans la doc pointée.
     l'immuabilité : modifier un contenu statique invalide le préfixe une fois,
     puis il se re-stabilise — le piège vise les invalidations **récurrentes**.
     Ne pas en faire un veto contre tout changement de contenu statique.
-    Cf. `docs/pitfalls-detail.md`.
+    **La faute symétrique coûte autant** et ne se voit pas : laisser en éphémère
+    un bloc qui ne change qu'à un geste explicite (consignes MCP, souvenirs de
+    profil, liste des skills autotrigger). Collé au dernier message user, il
+    GLISSE derrière chaque nouvel envoi — donc il n'est structurellement jamais
+    servi par un cache par préfixe, même en ne bougeant pas de toute la
+    conversation. Le critère est « change-t-il d'un TOUR à l'autre ? », pas
+    « peut-il changer ? » : à cette dernière question tout répond oui, et on
+    range alors tout du mauvais côté. Corollaire à vérifier avant de déplacer un
+    bloc : **sa position tranchait peut-être quelque chose** (cf. la garde
+    d'ordre de `skillsContext` dans `buildSystemMessage()`).
+    Cf. `docs/pitfalls-detail.md` et `docs/context-inspector.md`.
 17. **Persistance des images jointes (content parts → descripteur).** Image en
     content parts OpenAI (`image_url` base64) **seulement au tour d'attache** ;
     ensuite le message user est réécrit **une fois** en string = texte + ligne(s)
@@ -477,9 +487,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   tout échec (AB-5 : garde de composition distincte, pill dégradée, pastille
   de topbar, revérification au retour de focus) ; porte aussi les consignes de
   portée serveur du champ standard `instructions` de l'InitializeResult
-  (`buildMcpInstructionsBlock`, injectées en contexte ÉPHÉMÈRE et jamais dans le
-  système, rattachées au préfixe d'outil réel `<slug>__<serveur>` que MIAOU est
-  le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
+  (`buildMcpInstructionsBlock`, injectées dans le message SYSTÈME depuis la
+  campagne cache — décision inversée, le motif d'origine confondait « varier »
+  et « varier à chaque tour » ; rattachées au préfixe d'outil réel
+  `<slug>__<serveur>` que MIAOU est le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
   `tools.js` (composition et routage).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation).

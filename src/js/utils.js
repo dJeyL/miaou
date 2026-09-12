@@ -120,6 +120,65 @@ function ackIsError(m) {
 // `null` quand l'ack ne désigne rien de téléchargeable, ou qu'il lui manque sa
 // clé (ack legacy, champ absent de ACK_COPY_FIELDS à l'époque de l'écriture).
 // Pure, testable en QuickJS.
+// Ordre D'AFFICHAGE des acks d'un groupe : remet l'ack d'action devant le
+// `resource_stored` que son stockage a poussé avant lui. Pure, testable en
+// QuickJS ; rend un NOUVEAU tableau, l'entrée n'est jamais mutée.
+//
+// LE DÉFAUT : pour un outil INTERNE qui matérialise une ressource (`docs__pack`,
+// `docs__extract`, `docs__read as_resource`), `_storeBlock` (resources.js)
+// pousse son ack au moment où il écrit en IDB — donc AVANT que le handler qui
+// l'appelle pousse le sien. Le fil montrait « Ressource enregistrée ›
+// archive.zip » puis « Archive créée › archive.zip — 4 membres » : le
+// sous-produit devant l'action, dans l'ordre de l'exécution et non dans celui
+// de la lecture.
+//
+// Les outils MCP DISTANTS n'ont jamais eu ce défaut, et c'est ce qui rendait le
+// symptôme intermittent : leur ack d'action est drainé par `onEarlyAcks` AVANT
+// l'appel réseau, et leur `resource_stored` n'est créé qu'après la réponse par
+// `internResourcesFromResult` (api.js, après `await toolPromise`). L'ordre y est
+// donc déjà action-puis-sous-produit, et ce tri les laisse inchangés.
+//
+// AFFICHAGE SEULEMENT, jamais l'état. L'ordre des acks dans le thread porte la
+// structure de groupe lue par `enrichedAckGroups`, qui ne relit `assistantText`
+// que sur le PREMIER ack du groupe : réordonner la donnée fait reconstruire le
+// message assistant à `content: null` et la réponse du modèle DISPARAÎT au
+// reload (mesuré). Ce tri s'applique à la seule boucle de peinture du mode
+// liste, `state.acks` reste en ordre d'arrivée — ce dont dépend aussi
+// `ackGroupVisibleAck`, qui doit continuer à désigner l'action (dernière
+// arrivée) comme ack visible du slot compact.
+//
+// CRITÈRE : identité de la ressource. Un `resource_stored` ne recule que si un
+// ack POSTÉRIEUR du même groupe porte le MÊME `id`, c'est-à-dire parle de la
+// ressource qu'il vient d'écrire. Un `resource_stored` seul ack de son appel
+// (`resource__create`, `resource__from_result`) n'a aucun successeur qui le
+// désigne et ne bouge pas — il porte alors lui-même l'intent du modèle (cf. les
+// deux postures documentées sur le spec `resource_stored`, ui.js). Un critère
+// positionnel (« tout resource_stored suivi d'une action ») attraperait ces
+// appels-là dès qu'un AUTRE outil du même tour pousse une action après eux.
+function ackDisplayOrder(acks) {
+  const list = Array.isArray(acks) ? acks : [];
+  if (list.length < 2) return list.slice();
+  const out = list.slice();
+  for (let i = 0; i < out.length; i++) {
+    const m = out[i];
+    if (!m || ackKindOf(m) !== 'resource_stored' || !m.id) continue;
+    // Cherche l'action qui parle de CETTE ressource, après lui.
+    let target = -1;
+    for (let j = i + 1; j < out.length; j++) {
+      const other = out[j];
+      if (other && ackKindOf(other) !== 'resource_stored' && other.id === m.id) { target = j; break; }
+    }
+    if (target < 0) continue;
+    // Glisse le sous-produit JUSTE APRÈS son action, sans déplacer le reste :
+    // un groupe peut enchaîner plusieurs couples (action, ressource), qui
+    // doivent rester appariés plutôt que tous repoussés en fin de liste.
+    out.splice(i, 1);
+    out.splice(target, 0, m);
+    i--;   // l'index courant porte désormais l'élément suivant
+  }
+  return out;
+}
+
 function ackDownloadTarget(m) {
   if (!m) return null;
   const kind = ackKindOf(m);
@@ -1524,6 +1583,24 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
+// Taille en OCTETS d'une charge base64, calculée depuis la seule longueur de la
+// chaîne — sans décoder. Un zip de 100 Ko n'a pas à être matérialisé en
+// Uint8Array (b64ToBytes) juste pour être compté : l'encodage base64 fait
+// 4 caractères pour 3 octets, et le padding final (`=` ou `==`) dit combien
+// d'octets du dernier groupe sont du remplissage.
+//
+// Les caractères hors alphabet (sauts de ligne d'un base64 encodé en MIME,
+// espaces) sont retirés avant le calcul : les compter gonflerait la taille
+// annoncée sans rien changer au fichier. Pure, QuickJS-testable.
+function base64ByteLength(b64) {
+  const s = String(b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  if (!s) return 0;
+  let pad = 0;
+  if (s.charAt(s.length - 1) === '=') pad++;
+  if (s.charAt(s.length - 2) === '=') pad++;
+  return Math.max(0, Math.floor(s.length / 4) * 3 - pad);
+}
+
 // ── js__eval : briques pures du sandbox de compute (lot L) ────────────────────
 // Substrat de la primitive guest lines() : découpe un texte en lignes sur \n,
 // après normalisation des fins de ligne CRLF/CR → LF. Le dernier fragment sans
@@ -2401,6 +2478,20 @@ const IMAGE_TOKENS_ESTIMATE = 768;
 // contexte connue, la jauge passe ambre.
 const CONTEXT_WINDOW_WARN_RATIO = 0.8;
 
+// Index du dernier message user AUTHENTIQUE d'un thread étendu — celui auquel
+// `dispatchSend` colle le préfixe éphémère, et donc celui qui sépare
+// l'historique du dernier tour dans le payload. Exclut les user SYNTHÉTIQUES
+// (recall d'image, `_synthetic`, cf. brief A2) : ce ne sont pas des tours.
+//
+// Fonction partagée exprès : `dispatchSend` (où le préfixe s'injecte) et
+// `buildContextManifest` (où la scission thread_history / thread_last_user se
+// dessine) doivent répondre à la question par le MÊME prédicat, sinon la barre
+// de l'inspecteur décrit un découpage que le payload ne suit pas.
+// Rend -1 si le thread ne porte aucun user authentique.
+function lastAuthenticUserIndex(msgs) {
+  return (msgs || []).reduce((acc, m, i) => (m && m.role === 'user' && !m._synthetic) ? i : acc, -1);
+}
+
 // Construit le manifeste de contexte : une entrée par bloc logique, plus
 // les totaux. Pure, testable QuickJS — ne lit AUCUN global (settings, TOOLS,
 // currentThread…), tout arrive en arguments. Les deux call-sites (assemblage
@@ -2409,12 +2500,24 @@ const CONTEXT_WINDOW_WARN_RATIO = 0.8;
 // (systemMessageParts, buildContextBlock, expandThread, toolDefinitions) pour
 // ne jamais dupliquer la logique d'assemblage (audit §0/§6).
 //
-// `sysParts` : { identity, root, intent, skills, codeblock, user } (systemMessageParts()).
-// `dynParts` : { contextDateModel, memories, summaries, skillsContext } — chaque
+// `sysParts` : { identity, root, intent, mcpInstructions, memoriesProfile,
+//   space, skillsContext, skills, codeblock, user } (systemMessageParts()).
+// `dynParts` : { contextDateModel, summaries, library } — chaque
 //   sous-bloc DÉJÀ formaté en string (ou '' si absent).
-// `threadMsgs` : array {role, content} (content string ou array de content-parts).
+// Les deux listes dérivent de leurs sources (systemMessageParts/contextBlockParts) :
+// une part ajoutée là-bas et pas ici disparaît simplement du manifeste, sans
+// erreur — donc sans rien pour le signaler. Les compter ici est le seul filet.
+// `threadMsgs` : array {role, content} (content string ou array de content-parts),
+//   SANS le préfixe éphémère (déjà ventilé par `dynParts`).
 // `toolDefsJson` : string = JSON.stringify(toolDefinitions()), ou '' si aucun outil.
-// `apiUsage` : {prompt_tokens, completion_tokens, total_tokens} ou null (réservé, non-goal v1).
+// `apiUsage` : {prompt_tokens, completion_tokens, total_tokens} ou null.
+//
+// ORDRE DES ENTRÉES = ordre réel du payload, donc cachabilité décroissante
+// (campagne cache, axe 2). C'est ce qui donne son sens à la barre empilée du
+// drawer : les blocs qu'un cache par préfixe peut servir sont à gauche, ce qui
+// rouvre le préfixe à chaque tour est à droite. Ne pas réordonner pour des
+// raisons de présentation — la lecture de la barre 2 (segment de cache sur la
+// même échelle) en dépend entièrement.
 function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage) {
   const sp = sysParts || {};
   const dp = dynParts || {};
@@ -2426,20 +2529,21 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
   };
 
+  // 1. Parts du message SYSTÈME, dans l'ordre exact du join de buildSystemMessage().
   pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);   // DOCS_DOCTRINE y est comptée depuis V-1 (plus de part `docs` séparée)
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
+  pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
+  pushEntry('memories_profile', 'Souvenirs de profil', sp.memoriesProfile);
+  pushEntry('space', 'Espace actif (description, fichiers, souvenirs)', sp.space);
+  pushEntry('skills_context', 'Contexte skills (autotrigger)', sp.skillsContext);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
-  pushEntry('user_prompt', 'Prompt utilisateur (+ Space)', sp.user);
+  pushEntry('user_prompt', 'Prompt utilisateur (+ Espace)', sp.user);
 
-  pushEntry('context_date_model', 'Date/modèle/Space', dp.contextDateModel);
-  pushEntry('memories', 'Souvenirs', dp.memories);
-  pushEntry('summaries', 'Résumés injectés', dp.summaries);
-  pushEntry('skills_context', 'Contexte skills (autotrigger)', dp.skillsContext);
-  pushEntry('mcp_instructions', 'Consignes des serveurs MCP', dp.mcpInstructions);
-  pushEntry('space_library', 'Fichiers d\'espace', dp.library);
-
+  // 2. Définitions d'outils : tableau `tools` du payload, après le message
+  // système et avant les messages. Mesuré depuis son JSON, jamais depuis les
+  // messages.
   if (toolDefsJson) {
     entries.push({
       source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
@@ -2447,12 +2551,25 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     });
   }
 
-  // Thread : agrégat + sous-comptes par rôle. Les parts image ne
-  // sont JAMAIS comptées en chars (le base64 exploserait le total) : une seule
-  // ligne agrégée `attachment_images` = imageCount × IMAGE_TOKENS_ESTIMATE.
-  let threadChars = 0, threadTokens = 0, imageCount = 0;
-  const byRole = {};
-  (threadMsgs || []).forEach(m => {
+  // 3 et 5. Le fil, SCINDÉ au dernier message user authentique : l'historique
+  // d'un côté, le dernier tour utilisateur de l'autre. La scission n'est pas
+  // cosmétique — le préfixe éphémère (entrées 4) s'injecte DANS ce dernier
+  // message, donc tout ce qui le suit dans le payload est hors de portée d'un
+  // cache par préfixe. Le prédicat de coupe est partagé avec dispatchSend
+  // (`lastAuthenticUserIndex`) : deux formules divergeraient en silence.
+  //
+  // Ce qui suit le dernier user dans le fil (tool-acks d'un tour en cours,
+  // réponse assistant, recall d'image synthétique) est compté avec
+  // `thread_history` : l'entrée mesure un VOLUME de fil, pas un segment
+  // contigu du payload.
+  //
+  // Les parts image ne sont JAMAIS comptées en chars (le base64 exploserait le
+  // total) : une seule ligne agrégée `attachment_images` = imageCount ×
+  // IMAGE_TOKENS_ESTIMATE, posée en dernier.
+  const msgs = threadMsgs || [];
+  const cutIdx = lastAuthenticUserIndex(msgs);
+  let historyChars = 0, lastUserChars = 0, imageCount = 0;
+  msgs.forEach((m, i) => {
     if (!m) return;
     let chars = 0;
     if (Array.isArray(m.content)) {
@@ -2464,22 +2581,28 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     } else if (typeof m.content === 'string') {
       chars = m.content.length;
     }
-    threadChars += chars;
-    const tk = Math.ceil(chars / 4);   // même arrondi qu'estimateTokens, sans son allocation
-    threadTokens += tk;
-    const role = m.role || 'other';
-    if (!byRole[role]) byRole[role] = { chars: 0, tokens: 0 };
-    byRole[role].chars += chars;
-    byRole[role].tokens += tk;
+    if (i === cutIdx) lastUserChars += chars;
+    else historyChars += chars;
   });
-  if (threadChars > 0) {
-    entries.push({
-      source: 'thread', label: 'Historique (agrégat)',
-      chars: threadChars, tokens: threadTokens,
-      byRole: Object.keys(byRole).map(r => Object.assign({ role: r }, byRole[r])),
-    });
-  }
 
+  const pushThreadEntry = (source, label, chars) => {
+    if (chars <= 0) return;
+    // Même arrondi qu'estimateTokens, sans son allocation de chaîne.
+    entries.push({ source, label, chars, tokens: Math.ceil(chars / 4) });
+  };
+
+  pushThreadEntry('thread_history', 'Historique de la conversation', historyChars);
+
+  // 4. Parts du préfixe ÉPHÉMÈRE, dans l'ordre de buildContextBlock() — elles
+  // vivent EN TÊTE du dernier message user, donc après l'historique.
+  pushEntry('context_date_model', 'Date et modèle', dp.contextDateModel);
+  pushEntry('summaries', 'Résumés injectés', dp.summaries);
+  pushEntry('space_library', 'Fichiers d\'espace', dp.library);
+
+  // 5. Le dernier message user lui-même, après son préfixe.
+  pushThreadEntry('thread_last_user', 'Dernier message utilisateur', lastUserChars);
+
+  // 6. Images, en queue : jamais servies d'un cache de préfixe textuel.
   if (imageCount > 0) {
     const imgTokens = imageCount * IMAGE_TOKENS_ESTIMATE;
     entries.push({

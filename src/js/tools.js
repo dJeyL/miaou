@@ -1062,7 +1062,8 @@ const TOOLS = [
       // Herméticité (brief C) : hors de portée du Space actif =
       // « introuvable », même posture sans-oracle que conv__get. La portée est
       // celle de `isMemoryInScope` — Space actif ET scope transverse 'profile',
-      // soit exactement ce que `buildMemoryEntriesBlock()` injecte au modèle :
+      // soit exactement ce que les deux blocs de souvenirs (profil + Space,
+      // main.js) injectent au modèle, dont la réunion vaut cette portée :
       // refuser un souvenir de profil qu'on vient de lui montrer avec son id
       // n'était pas de l'herméticité, juste un prédicat inter-Spaces recopié
       // trop loin. `editMemory` mute en place sans toucher au scope.
@@ -1206,8 +1207,8 @@ const TOOLS = [
     name: 'files__list',
     description:
       "Liste les fichiers de la bibliothèque de l'espace actif (id, nom, type, " +
-      "taille, provenance). Utiliser avant files__read pour retrouver l'identifiant " +
-      "d'un fichier (file-N).",
+      "taille, provenance, description quand elle existe). Utiliser avant " +
+      "files__read pour retrouver l'identifiant d'un fichier (file-N).",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: (args, ctx) => {
@@ -1216,10 +1217,19 @@ const TOOLS = [
       // même pattern que conv__get.
       const spaceId = ctx.spaceId;
       const entries = getCachedLibraryEntriesBySpace(spaceId);   // resources.js (chargé avant)
-      const light = entries.map(e => ({
-        id: libraryRefFromId(e.id), name: e.name, mime: e.mime, size: e.size,
-        source: e.source || null,
-      }));
+      // `description` incluse : c'est ici, et plus dans un manifeste injecté à
+      // chaque tour, qu'elle est servie au modèle (la note du message système
+      // annonce le nombre de fichiers et renvoie à cet outil). L'omettre
+      // rendrait la description inatteignable dès que le réglage
+      // `libraryManifestInContext` est à false, c'est-à-dire par défaut.
+      const light = entries.map(e => {
+        const row = {
+          id: libraryRefFromId(e.id), name: e.name, mime: e.mime, size: e.size,
+          source: e.source || null,
+        };
+        if (e.description) row.description = e.description;
+        return row;
+      });
       _pendingToolAcks.push({ kind: 'files_list', count: light.length });
       return JSON.stringify(light);
     },
@@ -1346,7 +1356,18 @@ const TOOLS = [
       type: 'object',
       properties: {
         content: { type: 'string', description: 'Texte à matérialiser en ressource' },
-        name: { type: 'string', description: 'Nom optionnel du record (défaut : "resource")' },
+        // Le nom n'est pas qu'une étiquette interne : il s'affiche À L'UTILISATEUR
+        // dans la trace « Ressource enregistrée › <nom> » du fil. L'ancienne
+        // rédaction annonçait le repli (« défaut : "resource" »), ce qui en
+        // faisait une issue légitime — et un modèle qui l'a prise au mot a
+        // produit une trace « Ressource enregistrée › resource », où le nom
+        // occupe la place d'un nom sans en être un. Le repli EXISTE toujours
+        // côté handler (contrat inchangé, `name` reste optionnel, aucun appel
+        // existant ne casse) ; ce qui change est qu'on cesse de l'annoncer.
+        name: { type: 'string',
+          description: 'Nom du fichier, avec son extension (ex. "rapport.md"). ' +
+            "Affiché tel quel à l'utilisateur dans la trace de l'appel : nomme ce que ce " +
+            'contenu EST, jamais un terme générique.' },
         mime: { type: 'string', description: 'Type MIME optionnel (défaut : "text/plain")' },
       },
       required: ['content'],
@@ -1389,7 +1410,18 @@ const TOOLS = [
       properties: {
         ref: { type: 'string', description: 'Id call:… du résultat d\'outil à convertir (affiché en tête de ce résultat)' },
         description: { type: 'string', description: 'Court résumé de ce que contient le résultat converti (tu l\'as lu) — remplace le contenu dans l\'historique' },
-        name: { type: 'string', description: 'Nom optionnel du record (défaut : "resource")' },
+        // Le nom n'est pas qu'une étiquette interne : il s'affiche À L'UTILISATEUR
+        // dans la trace « Ressource enregistrée › <nom> » du fil. L'ancienne
+        // rédaction annonçait le repli (« défaut : "resource" »), ce qui en
+        // faisait une issue légitime — et un modèle qui l'a prise au mot a
+        // produit une trace « Ressource enregistrée › resource », où le nom
+        // occupe la place d'un nom sans en être un. Le repli EXISTE toujours
+        // côté handler (contrat inchangé, `name` reste optionnel, aucun appel
+        // existant ne casse) ; ce qui change est qu'on cesse de l'annoncer.
+        name: { type: 'string',
+          description: 'Nom du fichier, avec son extension (ex. "reponse-api.json"). ' +
+            "Affiché tel quel à l'utilisateur dans la trace de l'appel : nomme ce que ce " +
+            'résultat CONTIENT, jamais un terme générique.' },
       },
       required: ['ref', 'description'],
     },

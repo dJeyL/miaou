@@ -155,6 +155,48 @@ describe('buildLibraryManifestBlock', function() {
   });
 });
 
+// ── buildLibraryNoteBlock (note courte servie au message SYSTÈME) ────────────
+// Remplace le manifeste complet par défaut : le compte + le renvoi à
+// files__list, dont la longueur ne croît pas avec la bibliothèque.
+
+describe('buildLibraryNoteBlock', function() {
+  var one = [{ id: 'file_a1', name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1 }];
+  it('bibliothèque vide/absente → chaîne vide (le silence dit déjà « rien ici »)', function() {
+    expect(buildLibraryNoteBlock([])).toBe('');
+    expect(buildLibraryNoteBlock(null)).toBe('');
+    expect(buildLibraryNoteBlock(undefined)).toBe('');
+  });
+  it('annonce le cardinal et nomme le geste qui donne la liste', function() {
+    var out = buildLibraryNoteBlock(one);
+    expect(out).toContain('1 fichier');
+    expect(out).toContain('files__list');
+  });
+  it('accorde le pluriel au-delà d\'un fichier', function() {
+    var two = one.concat([{ id: 'file_b2', name: 'b.txt', mime: 'text/plain', size: 1, createdAt: 2 }]);
+    expect(buildLibraryNoteBlock(two)).toContain('2 fichiers');
+  });
+  it('nom d\'espace fourni → la note le nomme', function() {
+    expect(buildLibraryNoteBlock(one, 'Projet X')).toContain('Projet X');
+  });
+  // C'est tout l'intérêt du remplacement : la note ne porte ni les noms de
+  // fichiers ni leurs descriptions, donc sa taille ne suit pas la bibliothèque.
+  it('ne cite ni nom de fichier ni description, et ne croît pas avec la bibliothèque', function() {
+    var many = [];
+    for (var i = 0; i < 40; i++) {
+      many.push({ id: 'file_' + i, name: 'secret-' + i + '.txt', mime: 'text/plain',
+                  size: 10, createdAt: i, description: 'Description détaillée ' + i });
+    }
+    var out = buildLibraryNoteBlock(many);
+    expect(out.indexOf('secret-0.txt')).toBe(-1);
+    expect(out.indexOf('Description détaillée')).toBe(-1);
+    // Bornée : plus courte que le manifeste complet des mêmes entrées.
+    expect(out.length < buildLibraryManifestBlock(many).length).toBe(true);
+  });
+  it('byte-stable : deux appels identiques produisent le même texte', function() {
+    expect(buildLibraryNoteBlock(one, 'X')).toBe(buildLibraryNoteBlock(one, 'X'));
+  });
+});
+
 // ── humanSize ─────────────────────────────────────────────────────────────────
 
 describe('humanSize (interface, français)', function() {

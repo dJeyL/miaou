@@ -853,24 +853,56 @@ function buildSummaryBlock(matches) {
 }
 
 // Souvenirs utilisateur actifs injectés en contexte (injection complète, pas de
-// filtrage/ranking : volume faible attendu pour un usage personnel). Scope
-// profile (global) + Space actif uniquement (brief C, souvenirs) — jamais les souvenirs
-// d'un autre Space.
-function buildMemoryEntriesBlock() {
-  // Portée = `memoryScopesForSpace` (storage.js), la MÊME que celle qu'appliquent
-  // memory__update/memory__delete : ce qu'on montre au modèle et ce qu'il peut
-  // toucher doivent rester le même ensemble, jamais deux listes réécrites côte
-  // à côte (cf. le bug du profil inéditable).
-  const entries = listMemoryEntries(memoryScopesForSpace(activeSpaceId));
+// filtrage/ranking : volume faible attendu pour un usage personnel).
+//
+// `scopes` est fourni par l'appelant, mais l'ENSEMBLE des scopes atteignables
+// reste défini par `memoryScopesForSpace` (storage.js) — la MÊME portée
+// qu'appliquent memory__update/memory__delete : ce qu'on montre au modèle et ce
+// qu'il peut toucher doivent rester le même ensemble, jamais deux listes
+// réécrites côte à côte (cf. le bug du profil inéditable). Les deux appelants
+// ci-dessous (profil / Space) découpent cet ensemble, ils ne l'élargissent pas :
+// leur union est exactement `memoryScopesForSpace(activeSpaceId)`.
+function buildMemoryEntriesBlock(scopes) {
+  const entries = listMemoryEntries(scopes);
   if (!entries.length) return '';
   const lines = entries.map(e => `- [id: ${e.id}] ${e.content}`);
   return "Souvenirs de l'utilisateur (persistants, à respecter et prendre en compte) :\n" +
          lines.join('\n');
 }
 
+// Les deux moitiés de la portée mémoire, séparées parce qu'elles n'ont pas la
+// même stabilité et ne vont donc plus au même endroit du payload :
+//
+// - `profile` est TRANSVERSE aux Spaces (il est au-dessus de la frontière, il
+//   n'est pas « le Space d'à côté ») : il ne change ni au switch de Space ni au
+//   fil de la conversation → part `memoriesProfile` du message système.
+// - le scope du Space actif ne vaut que dans son Espace → bloc ESPACE du même
+//   message système (`buildSpaceBlock`), avec la description et la note de
+//   bibliothèque. Les deux sont donc dans le système, mais pas au même endroit,
+//   et c'est le point : ce qu'un switch de Space invalide est CONTIGU, donc
+//   coûte une seule césure de préfixe.
+//
+// Le scope profil reste néanmoins ÉCRIVABLE par le modèle en cours d'échange
+// (memory__update de scope profile) : il invalide alors le préfixe système une
+// fois. C'est une invalidation PONCTUELLE, pas récurrente — le cas que le
+// piège 16 dit explicitement de ne pas traiter en veto. Le préfixe se
+// re-stabilise au tour suivant.
+function buildProfileMemoriesBlock() {
+  return buildMemoryEntriesBlock(['profile']);
+}
+
+function buildSpaceMemoriesBlock() {
+  // Le scope du Space actif = la portée complète MOINS 'profile'. Dérivé de
+  // `memoryScopesForSpace` et non réécrit en `[activeSpaceId]` : le jour où la
+  // portée gagne un scope, ce filtre le suit au lieu de l'ignorer en silence.
+  const scopes = memoryScopesForSpace(activeSpaceId).filter(sc => sc !== 'profile');
+  return buildMemoryEntriesBlock(scopes);
+}
+
 // Sous-blocs du contexte dynamique, AVANT concaténation (brief B) — même
 // principe que systemMessageParts() : source unique pour buildContextBlock()
-// ET pour le manifeste de contexte.
+// ET pour le manifeste de contexte. Réduit par la campagne cache à ce qui
+// change vraiment d'un tour à l'autre (cf. buildContextBlock).
 function contextBlockParts(matches) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
@@ -879,26 +911,38 @@ function contextBlockParts(matches) {
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
   const space = getSpace(activeSpaceId);
-  if (space && space.name) lines.push('Espace : ' + space.name);
+  // Pas de ligne « Espace : <nom> » ici : le nom de l'Espace est porté par
+  // l'en-tête du bloc Espace (message système, `buildSpaceBlock`), qui établit
+  // le référentiel une fois pour toutes. Le redire à chaque tour le faisait
+  // payer deux fois pour la même information.
   return {
     contextDateModel: lines.join('\n'),
     summaries: buildSummaryBlock(matches || []),
-    memories: buildMemoryEntriesBlock(),
-    skillsContext: buildSkillsContextBlock(),
-    library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name),
-    mcpInstructions: buildMcpInstructionsBlock(mcpInstructionSources()),
+    // Manifeste COMPLET de la bibliothèque : seulement si l'utilisateur l'a
+    // demandé (réglage `libraryManifestInContext`, défaut false). Sinon le
+    // message système porte la note courte (`buildLibraryNoteBlock`) et
+    // `files__list` sert le détail à la demande. Les deux sont exclusifs — le
+    // système n'annonce jamais un cardinal que l'éphémère développe déjà juste
+    // en dessous.
+    library: loadSettings().libraryManifestInContext
+      ? buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name)
+      : '',
   };
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, souvenirs,
-// manifeste de la bibliothèque de fichiers d'espace (manifeste, lot Cbis).
+// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, et
+// le manifeste complet de la bibliothèque quand l'utilisateur l'a demandé.
 // Injecté en préfixe du dernier message utilisateur, pas dans le system message,
 // pour préserver le préfixe stable et permettre le KV cache prefix matching.
+//
+// Ce qui n'est PLUS ici (campagne cache) : le nom de l'Espace, ses souvenirs et
+// la note de bibliothèque, tous rassemblés dans le bloc Espace du message
+// système. Ce bloc-ci ne garde que ce qui change d'un TOUR à l'autre — l'heure,
+// et les résumés, qui dépendent du message envoyé.
 function buildContextBlock(matches) {
   const dp = contextBlockParts(matches);
   const parts = [dp.contextDateModel];
   if (dp.summaries) parts.push(dp.summaries);
-  if (dp.memories) parts.push(dp.memories);
   if (dp.library) parts.push(dp.library);
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
@@ -920,9 +964,12 @@ function buildContextBlock(matches) {
 // Deux textes parlaient de la même skill au modèle : DOCS_DOCTRINE (prompt
 // système) « avant ton PREMIER appel à un outil miaou__docs__*, appelle
 // skills__read avec le slug docs », et ce bloc-ci « aucune n'est obligatoire,
-// n'en lis pas au cas où ». Contradiction pure — et ce bloc gagne, parce qu'il
-// est recalculé à chaque tour donc plus proche du dernier message user que le
-// prompt système. Payé en test réel (gemma-4-e4b, 2026-08-29) : le modèle a
+// n'en lis pas au cas où ». Contradiction pure — et ce bloc gagne. Il la gagnait
+// à l'origine par PROXIMITÉ (recalculé à chaque tour, donc collé au dernier
+// message user, loin devant le prompt système) ; depuis que la campagne cache
+// l'a remonté DANS le message système, la proximité a disparu et seul l'ordre du
+// join la rejoue — d'où la garde de position dans `buildSystemMessage()`, qui
+// n'est pas cosmétique. Payé en test réel (gemma-4-e4b, 2026-08-29) : le modèle a
 // listé la skill `docs` dans son raisonnement, a explicitement statué « the
 // available skills context includes docs », ne l'a pas lue, et a inventé le
 // selector `'scanned2'` (le titre du document) là où la skill dit en toutes
@@ -962,19 +1009,68 @@ function buildSkillsContextBlock() {
 // explicite : un Space porte une description, pas un system prompt de
 // substitution). `space` peut être null (Space introuvable/default sans
 // description) → seul le prompt global s'applique alors.
-function resolveUserSystemPrompt(globalSystemPrompt, space) {
-  const parts = [];
-  const global = (globalSystemPrompt || '').trim();
-  if (global) parts.push(global);
-  const spaceDescription = (space && space.description || '').trim();
-  if (spaceDescription) {
-    const spaceName = (space && space.name || '').trim();
-    const intro = spaceName
-      ? 'Description de l\'espace ' + spaceName + ' :'
-      : 'Description de cet espace :';
-    parts.push(intro + '\n' + spaceDescription);
-  }
-  return parts.join('\n\n---\n\n');
+function resolveUserSystemPrompt(globalSystemPrompt) {
+  return (globalSystemPrompt || '').trim();
+}
+
+// Formate la description de l'Espace actif pour le bloc Espace. Extraite de
+// `resolveUserSystemPrompt`, qui la composait avec le prompt système global :
+// la description ayant rejoint le bloc Espace unifié, ce call-site passait
+// `null` en second argument et la moitié « description » de la fonction n'était
+// plus atteignable que depuis ses propres tests — un vert qui ne prouvait plus
+// rien (cf. le motif du gate mort). Séparée plutôt qu'entretenue morte.
+//
+// La règle du lot C n'est PAS levée pour autant : la description reste
+// AJOUTÉE au contexte, jamais substituée au prompt système global — les deux
+// coexistent, à deux endroits distincts du même message système.
+function formatSpaceDescription(space) {
+  const description = (space && space.description || '').trim();
+  if (!description) return '';
+  const name = (space && space.name || '').trim();
+  const intro = name
+    ? 'Description de l\'espace ' + name + ' :'
+    : 'Description de cet espace :';
+  return intro + '\n' + description;
+}
+
+// Tout ce qui décrit l'Espace ACTIF, en UN SEUL bloc contigu du message système
+// (pure, testable QuickJS — `libraryNote` et `memories` arrivent déjà formatés,
+// la description est mise en forme par `formatSpaceDescription`).
+//
+// Regroupement décidé après coup : la première version de la
+// campagne cache répartissait ces éléments par fréquence de changement, ce qui
+// les avait éparpillés en quatre endroits — description en fin de système, note
+// de bibliothèque au milieu, nom de l'Espace et souvenirs en préfixe éphémère.
+// Incohérent à trois titres :
+//
+//   1. Le nom de l'Espace était écrit DEUX FOIS, dont une en éphémère, donc
+//      repayée à chaque tour pour redire ce que le système disait déjà.
+//   2. Le motif qui gardait les souvenirs d'Espace en éphémère (« ils changent
+//      au switch de Space ») vaut MOT POUR MOT pour la description de Space,
+//      qui est en système depuis le lot C sans que ça pose problème. Un switch
+//      de Space invalide de toute façon déjà le préfixe système : garder les
+//      souvenirs dehors ne protégeait rien et coûtait leur re-envoi non caché.
+//   3. Le vrai critère n'est pas « à quelle fréquence ça change » mais « qu'est-ce
+//      qui invalide quoi » : ce qu'un même geste invalide doit être contigu, pour
+//      qu'il coûte UNE césure de préfixe et non plusieurs.
+//
+// L'EN-TÊTE N'EST PAS DÉCORATIF. Il porte le référentiel : une fois la ligne
+// « Espace : <nom> » retirée du bloc éphémère, plus rien n'aurait dit que ce
+// qui suit décrit l'Espace COURANT et non un Espace quelconque. Le nom y est
+// donc rappelé une fois, en tête, pour tout le bloc.
+function buildSpaceBlock(space, libraryNote, memories) {
+  const name = (space && space.name || '').trim();
+  const description = formatSpaceDescription(space);
+  const body = [];
+  if (description) body.push(description);
+  if (libraryNote) body.push(libraryNote);
+  if (memories) body.push(memories);
+  if (!body.length) return '';
+  const intro = name
+    ? 'Tu travailles dans l\'espace « ' + name +' » (l\'espace actif). ' +
+      'Ce qui suit ne concerne que lui.'
+    : 'Ce qui suit décrit l\'espace de travail actif, et lui seul.';
+  return intro + '\n\n' + body.join('\n\n');
 }
 
 // Sous-blocs du system message, AVANT concaténation (brief B) : source
@@ -983,7 +1079,11 @@ function resolveUserSystemPrompt(globalSystemPrompt, space) {
 // sous-bloc absent/désactivé.
 function systemMessageParts() {
   const settings = loadSettings();
-  const out = { identity: '', root: '', intent: '', skills: '', codeblock: '', user: '' };
+  const out = {
+    identity: '', root: '', intent: '',
+    mcpInstructions: '', memoriesProfile: '', space: '', skillsContext: '',
+    skills: '', codeblock: '', user: '',
+  };
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
   // Les gardes RÉELLES restent internes à chaque helper : intentTracing (intent),
@@ -994,14 +1094,41 @@ function systemMessageParts() {
   out.identity = IDENTITY_BLURB;
   out.root = ROOT_SYSTEM_PROMPT;
   out.intent = intentDoctrinePrompt();
+  // Blocs remontés du préfixe éphémère vers le système (campagne cache) :
+  // consignes MCP, souvenirs de profil, contexte skills, et tout ce qui décrit
+  // l'Espace actif. Ils ne changent qu'à un geste explicite (brancher un
+  // serveur, écrire un souvenir, déposer un fichier, changer d'Espace), jamais
+  // d'un tour à l'autre — donc les laisser dans le préfixe éphémère les faisait
+  // glisser derrière chaque nouveau message utilisateur, sans jamais bénéficier
+  // du cache. Cf. la garde de position de `skillsContext` juste en dessous, et
+  // `buildSystemMessage()` pour l'ordre du join.
+  out.mcpInstructions = buildMcpInstructionsBlock(mcpInstructionSources());
+  out.memoriesProfile = buildProfileMemoriesBlock();
+  const space = getSpace(activeSpaceId);
+  // Note de bibliothèque : le manifeste COMPLET, quand l'utilisateur l'a
+  // demandé, part en éphémère — les deux restent exclusifs (cf. contextBlockParts).
+  const libraryNote = settings.libraryManifestInContext
+    ? ''
+    : buildLibraryNoteBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name);
+  out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
+  out.skillsContext = buildSkillsContextBlock();
   out.skills = skillDoctrinePrompt();
   out.codeblock = CODEBLOCK_DOCTRINE;
-  out.user = resolveUserSystemPrompt(settings.systemPrompt, getSpace(activeSpaceId));
+  // `null` en second argument, PAS `space` : la description de l'Espace vit
+  // désormais dans `out.space` (bloc unifié ci-dessus). La lui repasser ici
+  // l'écrirait deux fois dans le même message système. `resolveUserSystemPrompt`
+  // garde sa signature à deux arguments — elle reste la source unique de la
+  // composition « prompt global + description d'Espace » et un test l'assert
+  // encore telle quelle ; c'est le CALL-SITE qui a changé d'avis, pas la règle
+  // (la description reste concaténée au prompt, jamais substituée — lot C).
+  out.user = resolveUserSystemPrompt(settings.systemPrompt);
   return out;
 }
 
 // Ordre : identité (toujours, EN TÊTE) → racine (DOCS_DOCTRINE y est incluse
-// depuis V-1) → doctrine intent (si ON) →
+// depuis V-1) → doctrine intent (si ON) → consignes MCP → souvenirs de profil →
+// bloc Espace (description + bibliothèque + souvenirs de l'Espace) →
+// contexte skills autotrigger →
 // doctrine skills (si skills autotrigger) → doctrine codeblock (toujours) →
 // utilisateur → description du Space actif (concaténée, jamais substituée —
 // description de Space corrigée). Piège 18 (CLAUDE.md) : cette dernière part varie d'un Space à
@@ -1012,7 +1139,21 @@ function systemMessageParts() {
 // une deuxième fois — un seul point de concaténation malgré tout (audit §6).
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
-  const parts = [sp.identity, sp.root, sp.intent, sp.skills, sp.codeblock, sp.user].filter(Boolean);
+  // L'ORDRE EST UN CONTRAT, pas une mise en page. `skillsContext` doit rester
+  // APRÈS `root` : c'est sa position qui tranche une contradiction réelle entre
+  // deux textes qui parlent au modèle de la même skill. DOCS_DOCTRINE (dans
+  // `root`) dit « avant ton PREMIER appel à un outil docs, lis la skill docs » ;
+  // `skillsContext` dit « aucune n'est obligatoire, n'en lis pas au cas où ».
+  // Tant que `skillsContext` vivait dans le préfixe éphémère, il gagnait par
+  // proximité avec le dernier message user ; en le remontant dans le système on
+  // perd cette proximité, et seul l'ordre du join la rejoue. L'inverser
+  // ressusciterait un défaut mesuré en test réel (gemma-4-e4b, 2026-08-29 : la
+  // skill listée, statuée disponible, non lue, et un selector inventé).
+  const parts = [
+    sp.identity, sp.root, sp.intent,
+    sp.mcpInstructions, sp.memoriesProfile, sp.space, sp.skillsContext,
+    sp.skills, sp.codeblock, sp.user,
+  ].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }
 
@@ -2018,6 +2159,7 @@ function onSaveSettings() {
     // c'est le défaut qu'on refuse ici.
     retitleAfterReply: $('set-early-title').checked ? $('set-retitle-after-reply').checked : true,
     describeFiles: $('set-describe-files').checked,
+    libraryManifestInContext: $('set-library-manifest').checked,
     exportInteractive: $('set-export-interactive').checked,
     contextWindow: $('set-contextwindow').value,
   };
@@ -3511,7 +3653,10 @@ async function dispatchSend(matches, continuation) {
   // Exclut les messages user SYNTHÉTIQUES (recall image, expandThread — flag
   // _synthetic) : l'injection <miaou_context> doit viser le dernier message user
   // AUTHENTIQUE, pas une ré-injection d'image (brief A2).
-  const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
+  // Prédicat PARTAGÉ avec buildContextManifest (utils.js), qui scinde le fil au
+  // même endroit pour l'inspecteur de contexte : le réécrire ici ferait décrire
+  // à la barre un découpage que le payload ne suit pas.
+  const lastUserIdx = lastAuthenticUserIndex(threadMsgs);
   const dynParts = contextBlockParts(matches);
   // Photo du thread AVANT injection du préfixe dynamique, pour le manifeste de
   // contexte (plus bas) : buildContextManifest compte déjà `dynParts` en entrées
@@ -3522,15 +3667,15 @@ async function dispatchSend(matches, continuation) {
   // passent naturellement un thread sans préfixe : même convention ici.
   const manifestThreadMsgs = threadMsgs.slice();
   if (lastUserIdx >= 0) {
-    const skillsCtx = dynParts.skillsContext;
-    // Sibling au même titre que <miaou_skills_context> : les consignes de
-    // portée serveur des MCP branchés (cf. buildMcpInstructionsBlock, utils).
-    // Dans le préfixe ÉPHÉMÈRE et jamais dans le message système : elles
-    // changent au branchement/débranchement d'un serveur, donc elles
-    // invalideraient le préfixe KV de façon récurrente (piège 16).
-    const mcpInstr = dynParts.mcpInstructions;
+    // Le préfixe éphémère ne porte plus que ce qui bouge VRAIMENT d'un tour à
+    // l'autre : date/heure, résumés injectés (fonction du message envoyé),
+    // souvenirs du Space, et le manifeste de bibliothèque quand l'utilisateur
+    // l'a explicitement demandé. Le contexte skills et les consignes MCP sont
+    // remontés dans le message système (systemMessageParts) — ils ne changeaient
+    // qu'à un geste explicite, et les garder ici les faisait glisser derrière
+    // chaque nouveau message user sans jamais être servis du cache.
     const ctx = buildContextBlock(matches);
-    const prefix = skillsCtx + mcpInstr + ctx + '\n\n---\n\n';
+    const prefix = ctx + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     // Tour d'attache (brief A lot 2) : `content` peut être un tableau de
     // content parts OpenAI (image jointe) — le préfixe dynamique s'insère alors
@@ -4638,6 +4783,11 @@ async function init() {
   syncModelUI();
   syncReasoningUI();
 
+  // Colonne de texte d'une .check-row cliquable (cf. onCheckRowLabelClick,
+  // ui.js). Délégation sur document et non sur #drawer : la structure est
+  // générique et vaut pour tout drawer qui l'emploierait.
+  document.addEventListener('click', onCheckRowLabelClick);
+
   // Dirty-tracking du bouton « Enregistrer » : délégation input/change sur le
   // drawer (couvre champs texte et toggles) ; les chemins programmatiques sans
   // événement appellent updateSettingsDirty() directement (cf. ui.js).
@@ -4715,8 +4865,8 @@ async function init() {
   // skills système (upsert inconditionnel depuis src/system-skills/*.md, cf.
   // skills.js) PUIS méta des skills en mémoire → autocomplétion + outils +
   // légende « / » ; rafraîchit aussi la pilule de contexte, sous-évaluée tant
-  // que le bloc skills autotrigger (buildSkillsContextBlock) n'a pas ces
-  // données (même écart que loadSpaceLibrary).
+  // que le bloc skills autotrigger (buildSkillsContextBlock, désormais part du
+  // message système) n'a pas ces données (même écart que loadSpaceLibrary).
   ensureSystemSkills().then(loadSkillsCache).then(() => {
     syncSkillHintUI();
     _lastContextManifest = null;

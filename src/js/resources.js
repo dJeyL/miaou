@@ -150,6 +150,35 @@ function buildLibraryManifestBlock(entries, spaceName) {
   return intro + '\n' + lines.join('\n');
 }
 
+// Version COURTE du manifeste ci-dessus : annonce l'existence de la
+// bibliothèque et son cardinal, puis renvoie à `files__list` pour le détail.
+// Sert dans le message SYSTÈME (pas dans le préfixe éphémère) : contrairement
+// au manifeste complet, sa longueur ne croît pas avec la bibliothèque et son
+// texte ne change qu'au franchissement d'un compte — invalidation ponctuelle,
+// pas récurrente (piège 16).
+//
+// Le compte est rendu EXPLICITEMENT parce que c'est la seule information que
+// le modèle ne peut pas obtenir sans dépenser un tour : savoir qu'il y a zéro
+// fichier lui évite d'appeler `files__list` pour rien, et savoir qu'il y en a
+// le décide à appeler. La note dit donc l'existence et le geste, jamais le
+// contenu — les noms et descriptions sont le travail de `files__list`.
+//
+// '' si la bibliothèque est vide : le silence dit déjà « rien ici », et une
+// phrase « aucun fichier » coûterait des tokens à chaque tour pour ça. Attention,
+// ce choix se paie d'une ambiguïté assumée — l'absence de note ne distingue pas
+// « espace vide » de « bibliothèque pas encore chargée » (le cache est peuplé
+// en fire-and-forget, cf. `loadSpaceLibrary`). Dans les deux cas, `files__list`
+// reste appelable et tranche.
+function buildLibraryNoteBlock(entries, spaceName) {
+  const n = (entries && entries.length) || 0;
+  if (!n) return '';
+  const where = spaceName ? 'L\'espace ' + spaceName + ' dispose' : 'Cet espace dispose';
+  return where + ' d\'une bibliothèque de fichiers contenant ' +
+    (n === 1 ? '1 fichier' : n + ' fichiers') +
+    '. Appelle files__list pour en obtenir la liste (identifiants, noms, types, descriptions) ' +
+    'quand tu en as besoin ; elle n\'est pas reproduite ici.';
+}
+
 // ── Pièces jointes (composer) — helpers purs (QuickJS-testables) ────────────
 // Brief A : classification kind + allocation d'id conversation-scopée.
 // Constantes ajustables regroupées ici, en un seul endroit.
@@ -1137,8 +1166,14 @@ function makeResourcePresentBlock(record) {
       text: utf8Decode(record.data), mimeType: record.mime, uri: record.name,
     }};
   }
-  // binary non-image → téléchargement
+  // binary non-image → téléchargement. `size` est la taille RÉELLE du record,
+  // transportée jusqu'au rendu pour que l'encart « Pièce jointe » l'annonce sans
+  // la redériver de la charge base64 : quand l'information existe, on la lit
+  // plutôt que de la recalculer. Le champ reste FACULTATIF côté rendu — les
+  // blocs d'un outil MCP distant arrivent par `_pendingToolBlocks`, sans record
+  // IDB derrière eux, et n'ont donc que leur charge pour être mesurés.
   return { type: 'resource', resource: {
     blob: arrayBufferToBase64(record.data), mimeType: record.mime, uri: record.name,
+    size: record.size,
   }};
 }

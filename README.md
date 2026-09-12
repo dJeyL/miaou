@@ -103,6 +103,13 @@ Figtree/Fira Code).
 - **Inspecteur de contexte** : compteur de tokens dans le composer, cliquable,
   détaillant la composition du payload envoyé au modèle avec une jauge
   d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).
+- **Contexte organisé pour le cache** : ce qui ne change qu'à un geste explicite
+  (instructions, outils, consignes des serveurs MCP, souvenirs de profil) est
+  regroupé en tête du payload, à l'écart de ce qui varie à chaque envoi, pour
+  qu'un backend à cache KV par préfixe en réutilise le calcul. La liste des
+  fichiers d'un Espace n'est plus envoyée à chaque tour par défaut : le modèle
+  en connaît le nombre et la demande au besoin (réglable) — cf.
+  [docs/context-inspector.md](docs/context-inspector.md).
 - **Synchronisation multi-onglets** (locale au navigateur) : messages, titres,
   réglages, fichiers et Espaces se répercutent partout sans rechargement. Une
   conversation ouverte à deux endroits passe en lecture seule le temps d'une

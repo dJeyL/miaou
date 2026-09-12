@@ -166,6 +166,12 @@
   padding: 8px 12px;
 }
 .tool-block-label { font-size: 12px; color: var(--text-2); }
+/* Nom du fichier : le seul élément identifiant de l'encart, donc mis en avant.
+   Le <strong> porte déjà la graisse, mais le libellé entier vit en --text-2
+   (texte secondaire) — un gras dans une couleur atténuée se distingue mal de son
+   voisin. On remonte donc AUSSI la couleur au token principal : c'est le couple
+   graisse + contraste qui fait la hiérarchie, pas la graisse seule. */
+.tool-block-label .tool-block-name { color: var(--text); }
 .tool-block-dl {
   font-size: 12px;
   padding: 4px 10px;

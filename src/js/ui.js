@@ -3147,9 +3147,22 @@ function renderAckGroup(group) {
     // Rebuild depuis l'état (source unique) : un ack a pu arriver pendant que
     // le groupe était en mode compact (donc jamais append à .ack-list), ou le
     // nœud visible a été déplacé dans le track par un précédent rendu compact.
-    for (const a of group.state.acks) {
+    // ORDRE D'AFFICHAGE, pas l'ordre d'état : `ackDisplayOrder` (utils.js, pure)
+    // remet l'ack d'action devant le `resource_stored` que `_storeBlock` a
+    // poussé avant lui sur les outils internes. `group.state.acks` reste en
+    // ordre d'arrivée — c'est lui que lit `ackGroupVisibleAck` pour le slot
+    // compact (l'action, dernière arrivée, doit y rester l'ack visible), et
+    // c'est l'ordre du THREAD qui porte la structure de groupe d'
+    // `enrichedAckGroups`. Trier la donnée ferait disparaître la réponse du
+    // modèle au reload (assistantText n'est relu que sur le premier ack).
+    //
+    // `appendChild` d'un nœud déjà enfant le DÉPLACE en fin : la garde
+    // `parentNode !== group.list` doit donc sauter dès que l'ordre voulu diffère
+    // de l'ordre du DOM, sinon un nœud déjà placé ne serait jamais reclassé.
+    // On repositionne inconditionnellement, ce qui est idempotent.
+    for (const a of ackDisplayOrder(group.state.acks)) {
       const n = ackNodeOf.get(a);
-      if (n && n.parentNode !== group.list) group.list.appendChild(n);
+      if (n) group.list.appendChild(n);
     }
   } else {
     // Slot compact (ou transparent sous le seuil) : ne montre que le dernier ack.
@@ -6317,6 +6330,7 @@ function settingsFormDirty() {
     || $('set-did-you-know').checked !== !!s.didYouKnow
     || $('set-retitle-after-reply').checked !== effectiveRetitleAfterReply(s)
     || $('set-describe-files').checked !== (s.describeFiles !== false)
+    || $('set-library-manifest').checked !== !!s.libraryManifestInContext
     || $('set-export-interactive').checked !== (s.exportInteractive !== false)
     || $('set-contextwindow').value !== (s.contextWindow || '');
 }
@@ -6431,6 +6445,7 @@ function openSettings() {
   $('set-did-you-know').checked = !!s.didYouKnow;
   $('set-retitle-after-reply').checked = effectiveRetitleAfterReply(s);
   $('set-describe-files').checked = s.describeFiles !== false;
+  $('set-library-manifest').checked = !!s.libraryManifestInContext;
   $('set-export-interactive').checked = s.exportInteractive !== false;
   // Auto-persisté et donc modifiable hors du formulaire (autre onglet) : relu à
   // l'ouverture, comme les segments ci-dessus.
@@ -6779,6 +6794,30 @@ function onToggleWideTables() {
   saveSettings({ wideTables: on });
 }
 
+// Clic sur le libellé ou la description d'une .check-row : bascule
+// l'interrupteur de la ligne. Le <label class="toggle"> natif ne couvre que la
+// pastille — la colonne de texte est le reste de la ligne, et c'est elle qu'on
+// vise naturellement. Délégation unique plutôt qu'un for= par ligne : les hints
+// sont des <span> (imbriquer un label dans .label-col donnerait deux labels
+// emboîtés), et la règle vaut alors pour toute .check-row à venir.
+// Trois refus : ligne sans interrupteur (le sélecteur de raisonnement partage
+// la structure), interrupteur désactivé (cf. .check-row.is-locked), et clic
+// terminant une sélection de texte — lire une description longue en la
+// surlignant ne doit pas la faire basculer.
+function onCheckRowLabelClick(e) {
+  const col = e.target.closest && e.target.closest('.check-row .label-col');
+  if (!col) return;
+  if (e.target.closest('a, button, input, select, textarea')) return;
+  const sel = window.getSelection && window.getSelection();
+  if (sel && !sel.isCollapsed && col.contains(sel.anchorNode)) return;
+  const input = col.closest('.check-row').querySelector('.toggle input[type="checkbox"]');
+  if (!input || input.disabled) return;
+  input.checked = !input.checked;
+  // `checked` posé par script n'émet rien : le change explicite réveille les
+  // onchange inline (onToggleHighlight…) ET la délégation de dirty-tracking.
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 function onToggleHighlight() {
   highlightEnabled = $('set-highlight').checked;
   rerenderCurrentThread();   // jamais renderThread nu : cf. lot T-1b (bulle vive)
@@ -6861,16 +6900,18 @@ function closeSummaryDrawer() {
 }
 
 // ── Inspecteur de contexte (brief B) ────────────────────────────────────────
-// Palette fixe par source (ordre d'apparition dans buildContextManifest),
-// cohérente barre/table. 'thread'/'attachment_images' en dernier (volumes les
-// plus variables).
+// Palette fixe par source, cohérente barre/table. L'ordre des segments n'est
+// PAS décidé ici mais par buildContextManifest (utils.js), qui émet ses entrées
+// dans l'ordre réel du payload — cette table n'est qu'un lookup.
 const CTX_PALETTE = {
   identity_blurb: '#e0d45a', root_prompt: '#7c8cf8', tool_definitions: '#4fc3a1',
   intent_doctrine: '#f2a65a', skills_doctrine: '#f2c85a',
-  codeblock_doctrine: '#e05ac9', user_prompt: '#e07a9e', context_date_model: '#9aa5b1', memories: '#e0605a',
+  codeblock_doctrine: '#e05ac9', user_prompt: '#e07a9e', context_date_model: '#9aa5b1',
   summaries: '#e0955a', skills_context: '#8bc98b', mcp_instructions: '#5ec9c0',
+  memories_profile: '#c94a6e', space: '#6ab8e0',
   space_library: '#3ea8d9',
-  thread: '#4a90d9', attachment_images: '#d9974a',
+  thread_history: '#4a90d9', thread_last_user: '#a8c9ef',
+  attachment_images: '#d9974a',
 };
 
 // Explication au survol, par source — même forme de lookup que CTX_PALETTE
@@ -6895,14 +6936,16 @@ const CTX_EXPLAIN = {
   skills_doctrine: 'La consigne qui explique au modèle ce qu\'est une skill et quand en déclencher une.',
   codeblock_doctrine: 'La consigne de mise en forme des blocs de code dans les réponses.',
   user_prompt: 'Les instructions système saisies dans les Paramètres, suivies de la description de l\'Espace actif.',
-  context_date_model: 'La date et l\'heure courantes, le modèle utilisé et le nom de l\'Espace actif.',
-  memories: 'Les souvenirs actifs, réinjectés à chaque message.',
+  context_date_model: 'La date et l\'heure courantes, et le modèle utilisé.',
+  memories_profile: 'Les souvenirs de portée générale, valables dans tous les Espaces.',
+  space: 'Tout ce qui décrit l\'Espace actif : sa description, le nombre de fichiers de sa bibliothèque et les souvenirs qui lui sont rattachés.',
   summaries: 'Les résumés de conversations passées jugés pertinents pour ce message.',
   skills_context: 'La liste des skills à déclenchement automatique, avec leur description — pas leur contenu.',
   mcp_instructions: 'Les consignes d\'usage publiées par les serveurs MCP branchés, pour leurs propres outils.',
   space_library: 'La liste des fichiers de la bibliothèque de l\'Espace : nom, type et taille — pas leur contenu.',
   tool_definitions: 'La description de chaque outil disponible et de ses paramètres, au format attendu par l\'API.',
-  thread: 'Les messages de la conversation — les tiens, ceux du modèle et les traces d\'appels d\'outils.',
+  thread_history: 'Les messages précédents de la conversation — ceux de l\'utilisateur, ceux du modèle et les traces d\'appels d\'outils.',
+  thread_last_user: 'Le dernier message envoyé, celui auquel le modèle répond.',
   attachment_images: 'Les images jointes encore envoyées en pleine résolution, comptées à part du texte.',
 };
 
@@ -7489,15 +7532,28 @@ function renderContextInspector() {
     }).join('');
   }
 
-  // 2e barre, accolée : part de l'ENTRÉE servie par le cache (Bbis). Échelle
-  // interne (cached/prompt), indépendante de la fenêtre — affichée dès que
-  // cached_tokens est connu, quel que soit le mode de la barre 1. Absente sur
-  // les backends qui ne le renvoient pas (ex. Ollama).
+  // 2e barre, accolée : part de l'ENTRÉE servie par le cache (Bbis). Dessinée
+  // sur la MÊME échelle que la barre 1 (campagne cache, axe 2) et non plus sur
+  // une échelle interne : le 100 % de la barre 2 est le X % de la barre 1, donc
+  // les deux se lisent l'une sous l'autre. C'est tout ce qu'on prétend dire —
+  // AUCUN repère de « frontière théorique du cacheable » n'est dessiné : on ne
+  // sait pas ce que le backend cache. L'information vient de l'ordre de la
+  // barre 1 (payload, donc cachabilité décroissante) : si le segment s'arrête
+  // là où commencent les parts éphémères, ça se lit sans légende.
+  //
+  // `cachedTokens` est dans l'unité de l'API, comme les entrées une fois
+  // calibrées par scaleManifestToUsage (m.real). Sans ce calibrage les entrées
+  // restent en estimé chars/4 et les deux échelles ne sont pas comparables :
+  // on masque plutôt que de superposer deux unités différentes. Absente aussi
+  // sur les backends qui ne renvoient pas cached_tokens (ex. Ollama).
   const barCache = $('ctx-bar-cache');
   if (barCache) {
-    if (ud.cachedTokens != null && ud.cachedRatio != null) {
-      const pct = Math.max(0, Math.min(100, ud.cachedRatio * 100));
-      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${ud.cachedTokens} tok servis par le cache (${Math.round(pct)}%)"></span>`;
+    if (ud.cachedTokens != null && m.real) {
+      const pct = Math.max(0, Math.min(100, (ud.cachedTokens / scale) * 100));
+      const share = ud.cachedRatio != null ? Math.round(ud.cachedRatio * 100) : null;
+      const title = `${ud.cachedTokens} tok servis par le cache` +
+        (share != null ? ` (${share}% de l'entrée)` : '');
+      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${escHtml(title)}"></span>`;
       barCache.hidden = false;
     } else {
       barCache.innerHTML = '';
@@ -9501,7 +9557,29 @@ function renderBinaryBlock(box, block) {
   box.classList.add('tool-block-binary');
   const label = document.createElement('span');
   label.className = 'tool-block-label';
-  label.textContent = 'Pièce jointe : ' + fname + ' (' + mime + ')';
+  // Taille : le `size` du record IDB quand le bloc en vient (makeResourcePresentBlock
+  // le transporte) — c'est la taille RÉELLE, déjà connue, qu'il serait absurde de
+  // redériver. Repli sur la charge base64 (base64ByteLength, utils.js — calcul par
+  // la longueur, sans décoder) pour les blocs qui n'ont pas de record derrière eux :
+  // ceux d'un outil MCP DISTANT, arrivés par `_pendingToolBlocks`, éphémères et
+  // jamais persistés. Omise si elle vaut 0 — une pièce jointe vide est soit un
+  // bloc malformé, soit une charge qu'on n'a pas su lire, et « (0 o) »
+  // affirmerait un fait qu'on n'a pas mesuré.
+  const declaredSize = block && block.resource && block.resource.size;
+  const bytes = Number(declaredSize) > 0 ? Number(declaredSize)
+    : (typeof base64ByteLength === 'function' ? base64ByteLength(b64) : 0);
+  const sizePart = bytes > 0 ? ', ' + humanSize(bytes) : '';
+  // Libellé composé en NŒUDS et non en une chaîne unique : le nom du fichier est
+  // mis en gras, le reste (préfixe, mime, taille) garde son poids normal. Chaque
+  // fragment reste posé en textContent — `fname` dérive d'une URI d'origine
+  // modèle ou serveur, et un `innerHTML` en ferait une voie d'injection là où le
+  // fichier n'en est jamais une.
+  label.appendChild(document.createTextNode('Pièce jointe : '));
+  const nameEl = document.createElement('strong');
+  nameEl.className = 'tool-block-name';
+  nameEl.textContent = fname;
+  label.appendChild(nameEl);
+  label.appendChild(document.createTextNode(' (' + mime + sizePart + ')'));
   const btn = document.createElement('button');
   btn.className = 'tool-block-dl';
   btn.textContent = 'Télécharger';

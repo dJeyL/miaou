@@ -10,25 +10,57 @@ bloc logique, plus les totaux. Domaine assez distinct pour ne pas polluer
 (utils.js, pure, QuickJS-testable) retourne :
 
 ```
-{ entries: [{ source, label, chars, tokens, images?, byRole? }],
+{ entries: [{ source, label, chars, tokens, images? }],
   totalChars, totalTokens, imageCount, apiUsage }
 ```
 
+**Les entrées sortent dans l'ordre RÉEL du payload**, donc par cachabilité
+décroissante (campagne cache, axe 2) : parts système, `tool_definitions`,
+`thread_history`, parts éphémères, `thread_last_user`, `attachment_images`.
+Ce n'est pas un choix de présentation — c'est ce qui donne son sens à la barre
+empilée du drawer et à la barre de cache dessinée sur la même échelle : les
+blocs qu'un cache par préfixe peut servir sont à gauche, ce qui rouvre le
+préfixe à chaque tour est à droite. Réordonner casserait la lecture sans qu'aucun
+autre test ne bronche, d'où un test qui garde les positions **relatives** (jamais
+une liste recopiée, qui deviendrait fausse au premier ajout de part).
+
 Une entrée par sous-bloc non vide :
-- `identity_blurb`, `root_prompt`, `intent_doctrine`, `skills_doctrine`,
+- `identity_blurb`, `root_prompt`, `intent_doctrine`, `mcp_instructions`,
+  `memories_profile`, `space`, `skills_context`, `skills_doctrine`,
   `codeblock_doctrine`, `user_prompt` — sous-parts du system message
   (`systemMessageParts()`, main.js), dans le même ordre que
   `buildSystemMessage()` les concatène.
-- `context_date_model`, `memories`, `summaries`, `skills_context`,
-  `mcp_instructions`, `space_library` — sous-parts du contexte dynamique
-  (`contextBlockParts()`, main.js). Cette liste dérive : elle doit couvrir
-  toutes les clés rendues par `contextBlockParts`, qui est la source.
+- `context_date_model`, `summaries`, `space_library` — sous-parts du
+  contexte dynamique (`contextBlockParts()`, main.js). Cette liste dérive : elle
+  doit couvrir toutes les clés rendues par `contextBlockParts`, qui est la
+  source.
+
+Chaque `source` doit avoir une entrée dans `CTX_PALETTE` **et** dans
+`CTX_EXPLAIN` (ui.js) : sans couleur le segment de barre est invisible, sans
+explication le libellé perd sa tooltip — deux dégradations silencieuses. Un test
+dérive les sources d'un manifeste réel et vérifie les deux tables, plutôt que de
+recopier la liste.
 - `tool_definitions` — mesuré depuis `JSON.stringify(toolDefinitions())`,
   **jamais** depuis les messages (le tableau `tools` part séparément de
   `apiMessages` dans l'appel réseau).
-- `thread` — agrégat du fil (`expandThread(...)`), plus `byRole` (sous-comptes
-  par rôle). Les parts `image_url` d'un content-part array ne sont **jamais**
-  comptées en chars (le base64 exploserait le total).
+- `thread_history` / `thread_last_user` — le fil (`expandThread(...)`),
+  **scindé au dernier message user AUTHENTIQUE**. La coupe n'est pas cosmétique :
+  c'est là que `dispatchSend` injecte le préfixe éphémère, donc là que le payload
+  cesse d'être servissable par un cache de préfixe — d'où les parts éphémères
+  émises ENTRE les deux entrées. Le prédicat de coupe est
+  `lastAuthenticUserIndex(msgs)` (utils.js, pure), **partagé** avec
+  `dispatchSend` : deux formules divergeraient en silence, et la barre
+  décrirait un découpage que le payload ne suit pas. Un user `_synthetic`
+  (recall d'image, brief A2) n'est pas un tour et ne tient donc pas lieu de
+  dernier message. Ce qui SUIT le dernier user (tool-acks d'un tour en cours,
+  réponse assistant, recall) est compté avec `thread_history` : l'entrée mesure
+  un VOLUME de fil, pas un segment contigu du payload. Les parts `image_url`
+  d'un content-part array ne sont **jamais** comptées en chars (le base64
+  exploserait le total).
+
+  Le champ `byRole` (sous-comptes par rôle) que portait l'ancienne entrée
+  `thread` unique a été **retiré** à la scission : aucun rendu ne l'a jamais lu
+  depuis le brief B.
 - `attachment_images` — `imageCount × IMAGE_TOKENS_ESTIMATE` (constante ; cf. le traitement des images).
   `entry.label` reste `'Images jointes'` (texte fonctionnel, pas de mention
   d'approximation) : la note « très approximatif » n'est ajoutée qu'à
@@ -40,6 +72,42 @@ Une entrée par sous-bloc non vide :
 - `apiUsage` — crochet réservé (non-goal v1) : repassé tel quel si fourni,
   jamais calculé ici. Alimenté plus tard par `usage` renvoyé en fin de stream
   (`stream_options.include_usage`, absent sur certains backends dont Ollama).
+
+**La frontière entre ces deux listes est celle du cache, pas une commodité de
+rangement** (campagne cache). Y vit en système ce qui ne change qu'à un geste
+explicite de l'utilisateur — brancher un serveur MCP, écrire un souvenir,
+déposer un fichier, activer une skill, changer d'Espace : autant d'invalidations
+**ponctuelles**, que le piège 16 ne vise pas. Reste en éphémère ce qui change
+d'un tour à l'autre par construction : l'heure, et les résumés injectés (qui
+dépendent du message envoyé).
+
+**Le critère n'est pas « à quelle fréquence ça change » mais « qu'est-ce qui
+invalide quoi ».** La première version de la campagne a réparti par fréquence
+et s'est retrouvée avec l'Espace décrit à QUATRE endroits — description en fin
+de système, note de bibliothèque au milieu, nom de l'Espace et souvenirs en
+éphémère. Trois défauts d'un coup : le nom écrit deux fois dont une repayée à
+chaque tour ; les souvenirs d'Espace gardés en éphémère au nom d'un motif
+(« ils changent au switch de Space ») qui vaut mot pour mot pour la description
+de Space, en système depuis le lot C sans que ça pose problème ; et un switch de
+Space qui coûtait plusieurs césures de préfixe au lieu d'une. D'où la part
+`space` (`buildSpaceBlock`, main.js) : **ce qu'un même geste invalide est
+contigu**.
+
+Les souvenirs restent **scindés** par portée — `buildProfileMemoriesBlock`
+(part `memories_profile`, transverse) / `buildSpaceMemoriesBlock` (à l'intérieur
+du bloc Espace), dont la réunion reste exactement `memoryScopesForSpace`
+(piège 18 — la scission est de placement, jamais de portée, et un test le garde).
+
+L'en-tête du bloc Espace **porte le référentiel** : la ligne « Espace : <nom> »
+ayant quitté le préfixe éphémère, c'est le seul endroit qui dit encore que ce
+qui suit décrit l'Espace COURANT et non un Espace quelconque.
+
+Déplacer une part d'une liste à l'autre **suppose de vérifier ce que sa
+position tranchait**. `skills_context` en est le cas type : sa proximité avec le
+dernier message user lui faisait gagner un arbitrage contre `DOCS_DOCTRINE`
+(incluse dans `root_prompt`), et en système cet arbitrage n'est plus rejoué que
+par l'ordre du join — d'où la garde de position dans `buildSystemMessage()` et
+son test.
 
 `estimateTokens(str)` = `Math.ceil(str.length / 4)`, seule et unique
 définition (estimation de tokens) — remplaçable plus tard par un vrai tokenizer ou un total
@@ -229,8 +297,11 @@ calibre un manifeste ESTIMÉ (chars/4) sur l'`usage.prompt_tokens` réel :
 - `factor = usage.prompt_tokens / (totalTokens_estimé - imageTokens)` : chaque
   entrée (sauf `attachment_images`) est multipliée par `factor` et arrondie.
 - **Résidu d'arrondi** reporté sur la plus grosse ligne (par tokens estimés
-  avant scaling, typiquement `thread`) pour que Σ(entries.tokens hors images)
-  === `usage.prompt_tokens` exactement.
+  avant scaling, cherchée dynamiquement) pour que Σ(entries.tokens hors images)
+  === `usage.prompt_tokens` exactement. La scission du fil a retiré `thread`,
+  qui était typiquement cette ligne : le résidu se pose désormais ailleurs, ce
+  qui ne casse rien parce que la recherche n'a jamais nommé de source. Les tests
+  gardent la SOMME, jamais l'identité de la ligne qui absorbe.
 - `totalTokens` du manifeste retourné = `usage.prompt_tokens + imageTokens`
   (la ligne images reste HORS budget réel, additionnée telle quelle).
 - Drapeau `real: true` posé sur le manifeste — consommé par le rendu pour
@@ -285,8 +356,8 @@ même valeur sans recalcul.
     déjà réels si `scaleManifestToUsage` est passé, l'occupation en tient
     compte automatiquement.
   - Barre 2 cache (`#ctx-bar-cache`, index.html, masquée par défaut) : un seul
-    segment, largeur = `cachedRatio` (échelle interne à l'entrée, PAS celle de
-    la fenêtre de contexte) — rendu/masqué selon `usageDerived(m.apiUsage).cachedTokens`.
+    segment, largeur = `cachedTokens / scale` — **la même échelle que la
+    barre 1** depuis l'axe 2 de la campagne cache (voir plus bas).
   - Table : lignes toujours `≈` (jamais mesurées par bloc, même proratisées) ;
     le TOTAL seul perd le `≈` si `m.real`. Ligne « Réponse (sortie) »
     (`.ctx-output`, `completion_tokens`) ajoutée après le total quand connue —
@@ -299,6 +370,32 @@ même valeur sans recalcul.
 - **Pas d'affichage de la sortie dans la pilule elle-même** (décision par
   défaut, PLAN-Bbis) : la pilule reste une mesure d'occupation d'ENTRÉE, la
   sortie ne vit que dans le drawer.
+
+## Les deux barres se lisent ensemble (campagne cache, axe 2)
+
+La barre 2 était dessinée sur une **échelle interne** (`cachedRatio`, soit
+cached/prompt) : son 100 % ne désignait rien de repérable sur la barre 1, donc
+les deux ne se lisaient pas l'une sous l'autre. Elle est désormais sur la
+**même échelle** (`cachedTokens / scale`, où `scale` est la fenêtre de contexte
+si connue, sinon le total courant). Formulation de la décision : *le 100 % de la
+barre 2 est le X % de la barre 1*.
+
+**On ne dessine AUCUN repère de « frontière théorique du cacheable »**, et on ne
+calcule rien de tel. On ne sait pas ce que le backend cache ; prétendre le
+savoir mettrait une affirmation fausse sous les yeux de l'utilisateur. Ce qui
+porte l'information, c'est **l'ordre de la barre 1** : les entrées étant dans
+l'ordre du payload, si le segment de cache s'arrête là où commencent les parts
+éphémères, ça se lit sans légende. Le `%` de la table, lui, reste inchangé
+(part de chaque bloc dans le total) — il ne parle pas de cache.
+
+Deux conditions d'affichage, et non plus une :
+
+- `cachedTokens` connu (absent sur les backends qui ne le renvoient pas ;
+  les versions récentes d'Ollama le font désormais) ;
+- **`m.real`**, c'est-à-dire manifeste calibré par `scaleManifestToUsage`.
+  Sans calibrage les entrées restent en estimé chars/4 tandis que
+  `cachedTokens` est dans l'unité de l'API : superposer deux barres d'unités
+  différentes produirait une comparaison muette et fausse. On masque plutôt.
 
 ## État
 

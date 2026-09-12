@@ -687,10 +687,10 @@ de cause. Ce contexte comprend, selon le cas, tes instructions système, la
 définition des outils disponibles (y compris ceux des serveurs compagnons), les
 consignes d'usage publiées par ces serveurs (sujet `mcp`), tes
 souvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés
-pertinents, la date du jour et le manifeste de la bibliothèque de fichiers de
-l'Espace (sujet `espaces`). Tout cela part vers l'API **à chaque tour**, en plus
-de ton message — donc oui, cela consomme des tokens en entrée, au-delà de ce
-que tu as tapé toi-même.
+pertinents, la date du jour et une description de l'Espace actif — dont le
+nombre de fichiers que contient sa bibliothèque (sujet `espaces`). Tout cela part vers l'API **à
+chaque tour**, en plus de ton message — donc oui, cela consomme des tokens en
+entrée, au-delà de ce que tu as tapé toi-même.
 
 Deux idées à ne pas confondre :
 
@@ -707,6 +707,12 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
   ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.
 - **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en
   supprimer ou en mettre en veille réduit d'autant le contexte.
+- **Liste des fichiers de l'Espace** : par défaut, le modèle apprend seulement
+  combien de fichiers contient la bibliothèque, et en demande la liste quand il
+  en a besoin. Le réglage « Liste des fichiers en contexte » (Paramètres,
+  Bibliothèque de fichiers) renvoie au comportement inverse : la liste complète,
+  avec les descriptions, part à chaque message. Utile si tu veux que le modèle
+  ait toujours tes fichiers en tête ; coûteux dès que la bibliothèque grossit.
 - **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la
   joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est
   déjà une optimisation intégrée.
@@ -715,13 +721,22 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
   débrancher un allège la liste d'outils envoyée.
 
 Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
-(instructions système, définitions d'outils) reste **identique octet pour octet**
-d'un tour à l'autre, et place le contenu qui varie (date, mémoire, résumés,
-consignes des serveurs compagnons) en préfixe éphémère du dernier message. Un backend qui gère un cache KV par préfixe
-(Ollama, par exemple) peut ainsi réutiliser le calcul de cette partie stable au
-lieu de tout recalculer à chaque tour. Changer d'Espace actif, ou modifier tes
-instructions système, casse volontairement ce préfixe stable (le contexte change
-vraiment) : c'est attendu.
+reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
+éphémère du dernier message le seul contenu qui change vraiment à chaque envoi.
+Côté stable : tes instructions système, les définitions d'outils, les consignes
+des serveurs compagnons, les souvenirs de portée générale, la liste des skills à
+déclenchement automatique, et un bloc unique décrivant l'Espace actif (sa
+description, le nombre de fichiers de sa bibliothèque, les souvenirs qui lui
+sont rattachés). Côté éphémère : la date et l'heure, et les résumés injectés.
+Un backend qui gère un cache KV par préfixe (Ollama, par exemple) peut ainsi
+réutiliser le calcul de la partie stable au lieu de tout recalculer à chaque
+tour.
+
+Certains gestes cassent volontairement ce préfixe stable, parce que le contexte
+change réellement : changer d'Espace actif, modifier tes instructions système,
+brancher ou débrancher un serveur compagnon, activer une skill, déposer un
+fichier dans la bibliothèque. C'est attendu, et sans conséquence durable — le
+préfixe se re-stabilise dès le tour suivant.
 
 ## interface — repères à l'écran
 

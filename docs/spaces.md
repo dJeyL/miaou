@@ -57,13 +57,21 @@ branchés avec l'herméticité :
   la promotion Space → profil restant une action UI (`promoteMemoryEntry`).
   Décision maintenue explicitement : corriger un fait déjà accepté en profil est
   un geste moins engageant que d'en installer un nouveau.
-- Description de Space : `resolveUserSystemPrompt()` — la `description` du
-  Space actif est **ajoutée après** le prompt système global (concaténation,
-  jamais substitution — brief C, description de Space — corrigé). Changer de Space change donc le
-  system message (assumé, casse le préfixe KV cache le temps du switch —
-  piège 16).
-- `<miaou_context>` porte une ligne statique-par-Space « Espace : &lt;nom&gt; »
-  (y compris pour le default Space).
+- **Tout ce qui décrit l'Espace actif vit dans UNE part du message système** :
+  `buildSpaceBlock(space, libraryNote, memories)` (main.js, pure) — en-tête
+  nommant l'Espace, puis description (`formatSpaceDescription`), note de
+  bibliothèque et souvenirs de scope Space. La `description` reste **ajoutée**,
+  jamais substituée au prompt système global (brief C, corrigé) : les deux
+  coexistent, à deux endroits distincts du même message. Changer de Space change
+  donc le system message (assumé, casse le préfixe KV le temps du switch —
+  piège 16), mais **en une seule césure** puisque tout ce qu'un switch invalide
+  est contigu.
+- **L'en-tête du bloc porte le référentiel.** `<miaou_context>` portait
+  auparavant une ligne « Espace : &lt;nom&gt; » ; elle en a été retirée (le nom
+  y était repayé à chaque tour pour redire ce que le système disait déjà), et
+  c'est l'en-tête qui établit désormais, une fois, que ce qui suit décrit
+  l'Espace COURANT. Ne pas retirer cet en-tête en croyant supprimer du
+  décorum : sans lui le bloc ne dit plus de quel Espace il parle.
 
 **Exception cross-Space assumée n°1 (lot F).** Le sous-mode « recherche de
 conversation » de la palette de commandes (`cmdkConvItems`, ui.js) perce
@@ -256,12 +264,29 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   posture no-oracle que `conv__get` sur id étranger/inconnu. Lecture
   binaire routée via le hook d'inflation mcp_docs généralisé (att-N ou
   file-<id>, cf. `docs/mcp.md`). Détail : `docs/tools.md`.
-- **Contexte** : manifeste compact (`buildLibraryManifestBlock`) injecté dans
-  `<miaou_context>` si la bibliothèque du Space actif est non vide — une ligne
-  d'intro nommant le Space (« Fichiers disponibles dans l'espace X : »), puis
-  une ligne par fichier, description incluse si elle existe. Alimente aussi le
-  context inspector (entrée `space_library`). Détail : pitfalls-detail.md,
-  piège 18.
+- **Contexte** : deux régimes exclusifs, arbitrés par le réglage
+  `libraryManifestInContext` (storage.js, **défaut `false`**).
+  - **Défaut — note courte** (`buildLibraryNoteBlock`, resources.js) : une
+    phrase annonçant le cardinal de la bibliothèque et renvoyant à `files__list`
+    pour le détail, servie **dans le bloc Espace** du message système (et non
+    comme une part autonome : elle décrit l'Espace, donc elle vit avec le reste
+    de ce qui le décrit). Sa longueur ne croît pas avec
+    la bibliothèque et son texte ne change qu'au franchissement d'un compte,
+    donc elle peut vivre dans le préfixe stable sans l'invalider à répétition
+    (piège 16). Entrée d'inspecteur : `space_library_note`.
+    C'est ce régime qui rend la `description` d'un fichier nécessaire dans la
+    réponse de `files__list` : sans elle, elle serait inatteignable par défaut.
+  - **Sur demande — manifeste complet** (`buildLibraryManifestBlock`) injecté
+    dans `<miaou_context>` (préfixe **éphémère**) si la bibliothèque du Space
+    actif est non vide — une ligne d'intro nommant le Space (« Fichiers
+    disponibles dans l'espace X : »), puis une ligne par fichier, description
+    incluse si elle existe. Entrée d'inspecteur : `space_library`. Il reste en
+    éphémère et ne remonte JAMAIS au système : sa taille suit la bibliothèque,
+    donc chaque dépôt de fichier invaliderait un préfixe d'autant plus cher.
+  - **Exclusivité** : quand le manifeste est actif, la note est omise du bloc
+    Espace — le système n'annonce jamais un cardinal que l'éphémère développe
+    juste en dessous. Gardé par un test.
+  Détail : pitfalls-detail.md, piège 18.
 - **Consentement de la promotion modèle — voie B (décision Cbis-4).** Le
   primitif halting existant (`ask_confirmation`) n'est **jamais** auto-rappelé
   par le même outil dans la base actuelle : le modèle l'appelle, obtient

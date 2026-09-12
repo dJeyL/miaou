@@ -150,6 +150,14 @@ const DEFAULT_SETTINGS = {
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (lot Cbis)
+  // Manifeste COMPLET de la bibliothèque d'espace (une ligne par fichier, avec
+  // description) injecté en contexte à chaque tour, comme avant. Défaut false :
+  // la note courte du message système annonce le nombre de fichiers et renvoie
+  // à files__list, qui sert la même information à la demande. Passer à true
+  // restaure le manifeste dans le préfixe ÉPHÉMÈRE (role:user), jamais dans le
+  // système — sa taille croît avec la bibliothèque et il redeviendrait un
+  // invalidant récurrent du préfixe KV.
+  libraryManifestInContext: false,
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (zéro-JS révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
   wideTables: true, // laisser un grand tableau déborder (centré) de la colonne de lecture ; vaut aussi pour les exports HTML
@@ -1367,13 +1375,18 @@ function persistMemories(arr) {
 // (default Space) donc pas de filet 'pas de scope = visible partout' ici.
 // Scopes de souvenirs visibles ET modifiables depuis le Space actif : le scope
 // transverse 'profile' PLUS le Space courant. Source unique partagée par
-// `buildMemoryEntriesBlock()` (ce qui est injecté au modèle) et par
+// l'injection au modèle et par
 // `memory__update`/`memory__delete` (ce que le modèle peut toucher) — les deux
 // doivent coïncider, sinon on montre au modèle une entrée avec son id puis on
 // lui répond « introuvable » quand il la vise (bug payé au lot C : le prédicat
 // d'herméticité inter-Spaces avait été recopié tel quel dans les handlers, où
 // il excluait 'profile' — qui n'est pas « un autre Space » mais un scope
 // AU-DESSUS de la frontière que l'herméticité protège).
+// Côté injection, l'ensemble est SERVI EN DEUX BLOCS de destinations
+// différentes (`buildProfileMemoriesBlock` vers le message système,
+// `buildSpaceMemoriesBlock` vers le préfixe éphémère, main.js) : c'est une
+// scission de PLACEMENT, pas de portée — leur réunion doit rester exactement
+// ce que rend cette fonction, et un test le garde.
 // `create` reste volontairement asymétrique : il stampe toujours le Space actif,
 // la promotion vers 'profile' restant une action UI (décision lot C, maintenue).
 function memoryScopesForSpace(spaceId) {

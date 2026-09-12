@@ -573,15 +573,26 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       lecture défensive, aucun log, aucune branche d'erreur, exactement la
       posture du point 16. Posé sur `_remoteStatus[name].instructions`, dont il
       partage durée de vie et origine.
-    - **Injection dans le contexte ÉPHÉMÈRE, jamais dans le message système.**
+    - **Injection dans le message SYSTÈME** (révision de la campagne cache ;
+      voir ci-dessous pourquoi la décision initiale est inversée).
       `buildMcpInstructionsBlock` (utils.js, pure) est appelée depuis
-      `contextBlockParts` (main.js) et son bloc `<miaou_mcp_instructions>` est
-      un **sibling** de `<miaou_skills_context>` dans le préfixe du dernier
-      message user. Le système est statique par contrat (piège 16) et ces
-      consignes ne le sont pas : elles apparaissent et disparaissent au
-      branchement/débranchement d'un serveur, à un ré-handshake, au renommage
-      d'une carte — les y mettre invaliderait le préfixe KV de façon
-      **récurrente**, ce que le piège vise précisément.
+      `systemMessageParts` (main.js), qui place le bloc
+      `<miaou_mcp_instructions>` après la doctrine intent et avant les souvenirs
+      de profil.
+    - **Pourquoi l'inversion.** La version initiale plaçait ce bloc dans le
+      préfixe éphémère en invoquant le piège 16, au motif que les consignes
+      « apparaissent et disparaissent au branchement/débranchement d'un serveur,
+      à un ré-handshake, au renommage d'une carte ». Le raisonnement confondait
+      **varier** et **varier à chaque tour** : ces trois événements sont des
+      gestes explicites de l'utilisateur, rares et isolés — chacun invalide le
+      préfixe **une fois**, puis il se re-stabilise. Le piège 16 dit en toutes
+      lettres que ce qui compte est la stabilité d'un tour à l'autre, pas
+      l'immuabilité, et qu'il vise les invalidations **récurrentes** : il ne
+      couvrait donc pas ce cas. Le coût du placement éphémère, lui, était bien
+      récurrent — le bloc étant collé au dernier message user, il **glissait**
+      derrière chaque nouvel envoi et n'avait structurellement jamais l'occasion
+      d'être servi par un cache par préfixe, quand bien même son contenu
+      n'aurait pas bougé de toute la conversation.
     - **Le préambule du proxy est FAUX D'UN CRAN une fois passé par MIAOU**, et
       c'est toute la raison du parsing. Le proxy écrit « les outils sont
       préfixés `<serveur>__<outil>` » : littéralement vrai pour un client qui
