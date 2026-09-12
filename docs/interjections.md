@@ -89,8 +89,11 @@ le composer le compte rendu d'un agent.
 Pendant `sending`, Entrée (`onComposerKey`, ui.js) appelle
 `enqueueInterjection` au lieu de `sendMessage` — jamais d'envoi direct
 concurrent. Le bouton du composer reste le **stop** (`onSendBtn` inchangé). Le
-placeholder passe en « Le modèle travaille — Entrée ajoute à la file… »
-(`setComposerStreaming`).
+placeholder annonce l'étape en cours suivie de « — Entrée ajoute à la file… »
+(`composerBusyPlaceholder`, ui.js, posé par `setComposerStreaming` à l'entrée
+puis par `setComposerPhase` à chaque changement d'étape). Le suffixe, lui, ne
+dépend pas de l'étape : c'est l'affordance du mécanisme, elle ne doit pas
+clignoter. Les étapes sont portées par `gen.phase`, cf. `docs/generations.md`.
 
 `enqueueInterjection` (main.js) valide le slug **à la mise en file** (arbitrage
 lot Q, pas au drain) : même chemin que `sendMessage` — `resolveSend` sur le

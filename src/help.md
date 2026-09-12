@@ -751,7 +751,10 @@ Quelques repères pour te déplacer dans MIAOU :
   appel d'outil au moment du clic, l'arrêt est pris en compte tout de suite
   mais se concrétise à la fin de cet appel (pas de coupure en plein milieu) —
   le bouton se fige le temps d'y arriver, pour t'éviter de recliquer pour rien.
-  À côté, le trombone pour joindre des fichiers.
+  À côté, le trombone pour joindre des fichiers. Pendant qu'il travaille, la
+  zone de saisie te dit **où il en est** : qu'il travaille, qu'il réfléchit
+  intensément, qu'il répond, ou qu'il utilise des outils — et rappelle à chaque
+  fois qu'Entrée ajoute à la file (sujet `multitache`) plutôt que d'interrompre.
 - **Largeur de lecture** : sous le composer, à droite, deux petits boutons
   « – » et « + » élargissent ou resserrent la zone centrale (le fil et le
   composer ensemble). La largeur d'origine est la plus étroite : le « – » est
@@ -768,7 +771,10 @@ Quelques repères pour te déplacer dans MIAOU :
   l'a provoquée ne sorte par le haut de l'écran — tu gardes ton énoncé sous les
   yeux pendant que la réponse continue de s'écrire plus bas. Dès que tu n'es
   plus tout en bas du fil, un bouton rond fléché vers le bas apparaît au-dessus
-  de la zone de saisie : il ramène au dernier message. L'utiliser (ou redescendre
+  de la zone de saisie : il ramène au dernier message. Il **pulse** quand quelque chose
+  est arrivé en bas pendant que tu lisais plus haut — du texte, un appel
+  d'outil. Y descendre l'éteint ; il se rallume au prochain contenu. Tant qu'il
+  ne pulse pas, tu n'as rien manqué. L'utiliser (ou redescendre
   toi-même jusqu'en bas) relance le suivi jusqu'au bout pour cette réponse-là ;
   le tour suivant repart du comportement normal.
 - **Liens** : un lien web cité dans un message — par toi ou par le modèle —
@@ -854,7 +860,10 @@ sans perdre ta place.
   transmis dès la prochaine étape, ce qui te permet de le **réorienter avant
   qu'il ait fini**. Le message en attente reste modifiable (clique dessus pour
   le récupérer dans le composer) ou annulable (la croix). Si tu en mets
-  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps.
+  plusieurs, ils partent fusionnés. Le bouton reste un stop pendant ce temps,
+  et la zone de saisie annonce l'étape en cours (il travaille, il réfléchit
+  intensément, il répond, il utilise des outils) : tu vois s'il est encore en
+  train de chercher ou déjà en train d'écrire avant de décider de le réorienter.
   Ce message appartient à **la conversation où tu l'as tapé** : si tu pars
   ailleurs, il ne te suit pas — tu le retrouves en revenant, et il part bien
   dans cette conversation-là, même si tu regardes autre chose au moment où elle

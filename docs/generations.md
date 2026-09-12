@@ -22,7 +22,7 @@ C'est une décision de lot, pas une limite d'implémentation.
 
 ```
 { id, convId, spaceId, thread, model, serverName, reasoningEffort,
-  convModel, convReasoningEffort, needTitle, abort, status, startedAt }
+  convModel, convReasoningEffort, needTitle, abort, phase, startedAt }
 ```
 
 Trois champs méritent une justification :
@@ -202,6 +202,141 @@ que le rebranchement n'aurait pas pu restituer. Remis à zéro à chaque **front
 de tour** (`onToolTour`), sinon un rebranchement ultérieur ré-afficherait le
 texte du tour précédent.
 
+### L'étape annoncée vit aussi sur la génération
+
+`gen.phase` — `waiting` | `reasoning` | `answering` | `tools` — est ce que le
+composer **annonce** à l'utilisateur pendant qu'il ne peut qu'ajouter à la file,
+pas un statut de cycle de vie : à « ça tourne encore », c'est le registre qui
+répond (`generationFor`). Elle remplace un champ `status` que le lot T avait
+déclaré et que personne n'a jamais ni écrit ni lu — deux porteurs d'état
+concurrents pour la même question auraient divergé dès le premier ajout.
+
+Écrite **uniquement** par `setGenPhase`, qui applique la scission du piège 28 :
+muter toujours, peindre (`setComposerPhase`, ui.js) si l'écran est possédé.
+Muter hors écran n'est pas décoratif — c'est ce qui permet à `openConversation`
+et aux deux `finally` d'agents.js de passer la phase à `setSending`, donc de
+reprendre le placeholder à la bonne étape en rebranchant une génération déjà
+en cours d'écriture.
+
+Deux règles y vivent, à l'intérieur de `setGenPhase` et nulle part ailleurs
+(recopiées aux points d'appel — `dispatchSend` et les deux helpers partagés —
+elles divergeraient) :
+
+- `reasoning` ne s'obtient que **depuis** `waiting`. Un backend qui entrelace
+  raisonnement et contenu ferait sinon clignoter le placeholder ; le premier
+  token de réponse clôt le raisonnement du point de vue de l'annonce.
+- une phase identique ne repeint rien (sortie anticipée) : `onDelta` est appelé
+  à chaque chunk.
+
+Le cycle se **rejoue** à chaque tour d'outils : `onToolTour` passe en `tools`,
+`onToolAcks` revient à `waiting`, et le tour suivant reparcourt raisonnement
+puis réponse. Les libellés eux-mêmes sont dans `COMPOSER_PHASE_LABELS` (ui.js),
+seule source des textes ; `run_build_unit_tests` compare les phases émises par
+`main.js`/`agents.js` à cette table, dans les deux sens.
+
+### La pulsation du bouton « aller tout en bas »
+
+`.scroll-bottom-btn.has-unseen` pulse (`@keyframes scroll-bottom-glow`,
+chat.css). Ce que la classe signifie n'est **pas** « une génération tourne »
+mais « du contenu est arrivé en bas pendant que tu regardais ailleurs ». La
+distinction est le cœur du mécanisme : une attente sans rien d'écrit n'a rien
+à montrer, et y faire briller le bouton promettrait du vide.
+
+Trois transitions, et elles seules :
+
+| Événement | Effet | Point de code |
+|---|---|---|
+| contenu arrivé, fil qui ne suit plus | non vu | `markThreadContentUnseen` |
+| le fil atteint le fond | vu | `ackThreadContentSeen`, depuis `syncScrollBottomBtn` |
+| changement de conversation | sans objet | le Set est clefé par conversation |
+
+L'état vit dans `_threadUnseen`, `Set<convId>` volatile — même clef et même
+volatilité que `_scrollCapReleased` juste à côté, pour la raison du piège 28 :
+une génération écrit dans SA conversation, et on peut ouvrir un fil d'agent ou
+revenir sur un parent réveillé pendant son travail. Jamais persisté : « je n'ai
+pas encore vu ça » ne survit pas à un rechargement, qui repart du fond.
+
+**Le prédicat de marquage est `shouldFollowStream`, surtout pas `isAtBottom`.**
+Pendant un suivi nominal, le fil s'arrête au plafond d'ancrage
+(`scrollBottomCapped`) pour garder l'énoncé à l'écran : on n'est donc pas au
+fond, alors que le contenu arrive bien sous les yeux. Marquer sur `isAtBottom`
+ferait briller le bouton en permanence pendant toute génération suivie — le
+contraire exact de l'intention. Le fil « ne suit plus » une fois le plafond levé
+par une redescente volontaire (ancrage doux), puis une remontée.
+
+L'acquittement est posé dans `syncScrollBottomBtn` et non dans le handler de
+clic, parce que descendre au fond **à la main** est le même geste du point de
+vue de l'utilisateur et n'a pas de handler propre à décorer.
+
+Visibilité et pulsation restent deux questions séparées, avec deux écrivains :
+`syncScrollBottomBtn` pour l'attribut `hidden` (position de défilement),
+`syncScrollBottomGlow` pour la classe (non-vu). Indépendants, donc la classe
+survit aux passages masqué/visible.
+
+#### L'apparition est en fondu, et `[hidden]` ne masque plus rien tout seul
+
+Le bouton entre et sort en fondu (opacité + 4px de translation verticale, dans
+le sens du geste qu'il propose). Cela a demandé de **neutraliser** le
+`display: none` que la feuille du navigateur applique à tout `[hidden]` :
+mesuré, il gagne contre la règle de classe, et une propriété discrète comme
+`display` ne s'interpole pas — aucune transition ne pouvait jouer. D'où
+`display: grid !important` sur `.scroll-bottom-btn`, l'état masqué porté par
+`opacity: 0` et révélé par `:not([hidden])`, même motif que
+`.topbar-space-badge`.
+
+L'attribut reste la **source de vérité** (`syncScrollBottomBtn` en est le seul
+écrivain) ; il ne pilote simplement plus le `display`. Trois conséquences, dont
+deux sont des régressions que ce changement **introduit** et qu'il doit donc
+réparer lui-même :
+
+- `visibility: hidden` en plus de l'opacité. Sans elle, un bouton invisible
+  reste focusable au Tab et annoncé aux lecteurs d'écran — ce dont le
+  `display: none` d'avant protégeait gratuitement. Elle s'interpole (par pas
+  discret en fin de transition), donc elle doit figurer dans la liste des
+  transitions : sinon elle bascule aussitôt et coupe le fondu.
+- `:not([hidden])` sur les règles d'animation du glow. Le bouton n'étant plus
+  retiré du flux, les deux boucles infinies tourneraient en permanence sur un
+  élément invisible. La classe, elle, reste posée — elle décrit le non-vu, pas
+  la visibilité, et le bouton doit reparaître **en brillant** s'il l'était.
+- `:not([hidden])` aussi sur la règle de survol qui coupe l'animation, sans
+  quoi elle pèse 0-3-0 contre 0-3-1 et **perd** malgré sa position plus bas
+  dans le fichier : l'ordre source ne départage qu'à spécificité égale.
+
+Le `transform` compose les deux translations (`translateX(-50%)` du centrage et
+`translateY` du mouvement) dans une seule déclaration — une règle qui n'en
+poserait qu'une décentrerait le bouton.
+
+Les points de marquage sont les écritures **visuelles** du fil : `streamInto`,
+`finalizeAssistant` (seul rendu quand la réponse est plus courte que le
+throttle de 90 ms), `placeToolAck`, `placeToolBlocks`. `placeToolAck` distingue
+l'arrivée du re-rendu par son `animate !== false` — `renderThread` et le
+rebranchement d'écran passent `false`, les trois chemins live laissent
+l'argument indéfini. S'appuyer sur ce drapeau plutôt que d'en ajouter un
+second : deux drapeaux pour la même distinction divergeraient.
+
+La flèche scintille avec lui (`@keyframes scroll-bottom-arrow`, sur le `svg`).
+Deux animations séparées parce qu'elles portent sur deux **éléments**, pas par
+choix esthétique : même durée et même timing, les désaccorder ferait lire deux
+signaux au lieu d'un. Elle anime `color`, pas `opacity` — le `svg` est en
+`currentColor`, et baisser l'opacité le ferait disparaître dans le fond au lieu
+de virer vers l'accent. Le survol coupe **les deux** (`animation: none`), sinon
+la flèche continuerait de scintiller sous le curseur alors que le halo s'est tu.
+
+Piège à ne pas rouvrir : `box-shadow` est une propriété **unique**. Le keyframe
+doit reconduire l'ombre portante du bouton en même temps que le halo, sinon la
+pulsation efface sa profondeur. Cette ombre est le token `--jump-shadow`
+(base.css, allégé par `theme-light.css` — l'ombre du sombre tache sur fond
+clair), **jamais** une valeur recopiée dans le keyframe : une copie ferait
+clignoter l'ombre sombre à chaque pulsation en thème clair.
+
+Le halo dérive de `--accent-hue`/`--accent-sat`, donc suit la palette active
+sans exception à déclarer. Son intensité crête, en revanche, est un token par
+**luminosité** (`--jump-glow-a` : `.25` en sombre, `.375` en clair) et non une
+valeur de keyframe — pour la même raison que l'ombre, un halo coloré ne se lit
+pas pareil sur les deux fonds, et il tient une opacité plus haute sur fond clair
+à intensité perçue comparable. Deux axes distincts, donc : la teinte suit la
+palette, l'intensité suit la luminosité.
+
 Corollaire non évident : une génération détachée ne doit surtout pas appeler
 `streamInto`/`setReasoning`, qui rangent `wrap` dans un **slot de throttle
 partagé au module**. Le timer repeindrait alors un nœud orphelin — ou pire,
@@ -317,7 +452,8 @@ scission du piège 28 (muter toujours, peindre si `genOwnsScreen`) :
 
 | Fonction | Écrit | Peint si l'écran est possédé |
 |---|---|---|
-| `setGenPartialContent` / `setGenPartialReasoning` | `gen.partialContent` / `…Reasoning` | `streamInto` / `setReasoning` |
+| `setGenPartialContent` / `setGenPartialReasoning` | `gen.partialContent` / `…Reasoning`, plus `gen.phase` via `setGenPhase` | `streamInto` / `setReasoning` |
+| `setGenPhase` | `gen.phase` | `setComposerPhase` (placeholder du composer) |
 | `pushGenToolAck` | entrée `tool-ack` dans `gen.thread` | `placeToolAck`, rend `{entry, node}` |
 | `pushGenMessage` | message dans `gen.thread` | bulle, selon `kind` |
 | `clearGenLiveBubble` | — | referme la bulle vive d'une sortie non nominale |

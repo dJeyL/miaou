@@ -458,9 +458,15 @@
   position: absolute;
   left: 50%;
   bottom: calc(100% + 8px);
-  transform: translateX(-50%);
   z-index: 12;
-  display: grid;
+  /* `display` déclaré ICI avec !important : la feuille du navigateur applique
+     `display: none` à tout [hidden], et elle GAGNE contre une règle de classe
+     (mesuré — display calculé 'none' malgré ce `grid`). Sans cette neutralisation,
+     l'élément quitte le flux dès que le JS pose l'attribut, et aucune transition
+     de disparition ne peut jouer : une propriété discrète ne s'interpole pas.
+     L'attribut reste la SOURCE DE VÉRITÉ (syncScrollBottomBtn en est le seul
+     écrivain) ; il ne pilote simplement plus le display, mais l'opacité. */
+  display: grid !important;
   place-items: center;
   width: 34px; height: 34px;
   border-radius: 50%;
@@ -468,15 +474,113 @@
   border: 1px solid var(--border-2);
   color: var(--text-2);
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+  box-shadow: var(--jump-shadow);
+  /* État MASQUÉ par défaut, révélé par :not([hidden]) — même motif que
+     .topbar-space-badge plus haut. Le translateY compose avec le translateX du
+     centrage : les deux vivent dans la même déclaration `transform`, une règle
+     qui n'en poserait qu'un décentrerait le bouton. Il entre en montant de 4px,
+     dans le sens du geste qu'il propose (aller vers le bas de la page fait
+     remonter le bouton à sa place). */
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+  pointer-events: none;
+  /* `visibility` et pas seulement `opacity` : en neutralisant le display:none
+     du UA, on a rendu le bouton focusable au Tab et annonçable aux lecteurs
+     d'écran alors qu'il est invisible — régression introduite par cette
+     transition, pas défaut préexistant. `visibility: hidden` le retire des
+     deux, et contrairement à `display` elle S'INTERPOLE (par pas discret en
+     fin de transition), donc la disparition reste douce : l'opacité descend
+     pendant 180ms, la visibilité bascule à l'arrivée.
+     C'est aussi pour ça qu'elle figure dans la liste des transitions — sans
+     l'y déclarer, elle basculerait immédiatement et couperait le fondu. */
+  visibility: hidden;
   transition: background 130ms var(--ease), color 130ms var(--ease),
-              border-color 130ms var(--ease), opacity 130ms var(--ease);
+              border-color 130ms var(--ease),
+              opacity 180ms var(--ease), transform 180ms var(--ease),
+              visibility 180ms var(--ease);
+}
+.scroll-bottom-btn:not([hidden]) {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+  visibility: visible;
 }
 .scroll-bottom-btn svg { width: 17px; height: 17px; }
 .scroll-bottom-btn:hover {
   background: var(--surface-4);
   border-color: var(--accent-bd);
   color: var(--text);
+}
+
+/* Pulsation pendant la génération de la conversation AFFICHÉE (.has-unseen,
+   posée par setComposerStreaming — même écrivain que le placeholder d'étape et
+   le mode stop du bouton d'envoi, donc les trois ne peuvent pas se désynchroniser).
+   Elle dit « il se passe quelque chose en bas que tu ne vois pas » : le bouton
+   n'est de toute façon visible que lorsqu'on n'est PAS au fond (syncScrollBottomBtn).
+
+   L'ombre portante est reconduite DANS le keyframe : `box-shadow` est une seule
+   propriété, et animer le halo seul effacerait la profondeur du bouton. Elle
+   vient du token --jump-shadow (base.css, allégé par theme-light.css) et JAMAIS
+   d'une valeur recopiée : le thème clair allège cette ombre, et une copie y
+   ferait clignoter l'ombre sombre à chaque pulsation. Le halo, lui, dérive de
+   --accent-hue/--accent-sat plutôt que de --accent : il suit ainsi la palette
+   active sans exception à déclarer (cf. docs/palettes.md), et son INTENSITÉ
+   crête vient du token --jump-glow-a, réglé par luminosité — même raison que
+   l'ombre : un halo coloré ne se lit pas pareil sur fond sombre et sur fond
+   clair.
+
+   La flèche scintille avec le halo (scroll-bottom-arrow, sur le svg) : deux
+   animations distinctes parce qu'elles portent sur deux ÉLÉMENTS (le bouton,
+   son svg), pas par choix esthétique. Même durée et même timing pour qu'elles
+   restent en phase — les désaccorder ferait lire deux signaux au lieu d'un.
+
+   Extrémités ÉTEINTES (0% et 100% identiques au repos) : sous data-motion="reduced"
+   le kill-switch global de base.css ramène l'animation à 0.01ms et une seule
+   itération — elle se fige alors sur sa dernière frame, qui doit donc être
+   l'apparence normale du bouton, pas un halo figé. */
+@keyframes scroll-bottom-glow {
+  0%, 100% {
+    box-shadow: var(--jump-shadow),
+                0 0 0 0 hsl(var(--accent-hue) var(--accent-sat) 63.5% / 0);
+    border-color: var(--border-2);
+  }
+  50% {
+    box-shadow: var(--jump-shadow),
+                0 0 14px 3px hsl(var(--accent-hue) var(--accent-sat) 63.5% / var(--jump-glow-a));
+    border-color: var(--accent-bd);
+  }
+}
+/* Scintillement de la flèche elle-même. `color` et non `opacity` : le svg est
+   en currentColor, et faire varier l'opacité le ferait disparaître dans le fond
+   plutôt que virer vers l'accent. Repos = --text-2, la couleur héritée du
+   bouton — extrémités éteintes, même raison que le halo (kill-switch). */
+@keyframes scroll-bottom-arrow {
+  0%, 100% { color: var(--text-2); }
+  50%      { color: var(--accent); }
+}
+.scroll-bottom-btn.has-unseen:not([hidden]) {
+  animation: scroll-bottom-glow 1.8s var(--ease) infinite;
+}
+.scroll-bottom-btn.has-unseen:not([hidden]) svg {
+  animation: scroll-bottom-arrow 1.8s var(--ease) infinite;
+}
+/* `:not([hidden])` sur les deux règles ci-dessus : le bouton n'est plus retiré
+   du flux quand il est masqué (display: grid !important, cf. plus haut), donc
+   sans cette garde les deux boucles infinies tourneraient en permanence sur un
+   élément invisible — ce que le display:none d'avant suspendait gratuitement.
+   La classe, elle, reste posée : elle décrit l'état « du non-vu », pas la
+   visibilité, et le bouton doit reparaître EN BRILLANT s'il l'était.
+
+   Le survol reprend la main : l'utilisateur pointe le bouton, l'affordance de
+   survol doit primer sur l'annonce d'activité (sinon le halo continue de faire
+   clignoter la bordure sous le curseur). */
+/* `:not([hidden])` ici AUSSI, et pas par symétrie décorative : sans lui cette
+   règle pèse 0-3-0 contre 0-3-1 pour celles qui posent l'animation, donc elle
+   perd malgré sa position plus bas dans le fichier — l'ordre source ne départage
+   qu'à spécificité ÉGALE. Le survol ne couperait plus rien. */
+.scroll-bottom-btn.has-unseen:not([hidden]):hover,
+.scroll-bottom-btn.has-unseen:not([hidden]):hover svg {
+  animation: none;
 }
 
 .msg {

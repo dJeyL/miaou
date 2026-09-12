@@ -18,6 +18,16 @@ html[data-theme="light"] {
   --accent-hue: 21;
   --accent-sat: 77.8%;
   --code-hue:   21;
+  /* Même allègement que .model-menu : l'ombre du sombre, calibrée sur un fond
+     noir, tache sur fond clair. Token (base.css) et non règle de composant,
+     parce que le keyframe de pulsation du bouton la reconduit — une règle de
+     composant ne l'aurait pas suivi dans le keyframe. Ici et pas dans un bloc
+     de palette : l'allègement tient à la LUMINOSITÉ, il vaut pour les trois. */
+  --jump-shadow: 0 4px 12px rgba(0, 0, 0, .14);
+  /* Crête du halo : un halo coloré se noie davantage sur fond clair que sur
+     fond sombre, il y tient donc une opacité plus haute à intensité PERÇUE
+     comparable. Cf. --jump-glow-a (base.css). */
+  --jump-glow-a: .375;
 
   --sat-bg:     40.5%;
   --sat-s1:     29.5%;
@@ -111,9 +121,6 @@ html[data-theme="light"][data-palette="foret"] {
   --code-hue:   156;
 }
 html[data-theme="light"] .model-menu   { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
-/* Même allègement que .model-menu : l'ombre du sombre, calibrée sur un fond
-   noir, tache sur fond clair. */
-html[data-theme="light"] .scroll-bottom-btn { box-shadow: 0 4px 12px rgba(0,0,0,.14); }
 
 /* Prism token overrides — thème clair */
 html[data-theme="light"] code[class*="language-"],

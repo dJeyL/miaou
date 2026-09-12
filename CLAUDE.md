@@ -631,6 +631,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `genOwnsScreen` vrai, ce que le lot X avait supposé impossible ; et la garde
   anti-troncature de `persistGeneration` (`generationWouldTruncate`), qui refuse
   d'écraser un historique par un thread construit sur une lecture froide.
+  Porte aussi l'étape annoncée par le composer (`gen.phase`, écrite par le seul
+  `setGenPhase`, libellés dans `COMPOSER_PHASE_LABELS`, posée par
+  `setComposerStreaming`/`setComposerPhase`) et, distincte d'elle, la pulsation
+  du bouton « aller tout en bas » : `.has-unseen` dit « du contenu est arrivé
+  pendant que tu regardais ailleurs », jamais « ça génère » — état `_threadUnseen`
+  (Set par conv), marqué sur `shouldFollowStream` et NON `isAtBottom`, acquitté
+  en atteignant le fond ; tokens `--jump-shadow` et `--jump-glow-a`.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)
 

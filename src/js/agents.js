@@ -938,7 +938,10 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     // ici, et le fil d'un agent terminé gardait le placeholder « Le modèle
     // travaille » et son bouton stop. La lecture seule (X-1e) rend le défaut
     // visible : composer verrouillé ET libellé de travail en cours.
-    if (gen.convId === currentConvId) setSending(isGenerating(currentConvId));
+    if (gen.convId === currentConvId) {
+      const stillGen = generationFor(currentConvId);
+      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase);
+    }
     // LE point d'entrée unique de la délivrance, sur TOUTE sortie sans
     // exception. Fire-and-forget : rien n'attend le réveil du parent.
     deliverAgentResult(gen.convId, status, gen.thread);
@@ -1251,7 +1254,10 @@ async function driveDetachedConversation(gen, apiMessages) {
     clearGenLiveBubble(gen);
     // Si l'écran affiche cette conversation à la fin (l'utilisateur a navigué
     // dessus pendant le tour), le composer doit refléter qu'elle ne génère plus.
-    if (gen.convId === currentConvId) setSending(isGenerating(currentConvId));
+    if (gen.convId === currentConvId) {
+      const stillGen = generationFor(currentConvId);
+      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase);
+    }
     // Un résultat arrivé après la dernière frontière de tour relance un réveil,
     // même règle que dans dispatchSend : sans ça, il resterait en file pour
     // toujours.

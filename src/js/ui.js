@@ -1123,6 +1123,59 @@ function scrollCapReleased(convId) {
   return convId != null && _scrollCapReleased.has(convId);
 }
 
+// ── Contenu non vu, pour la pulsation du bouton « aller tout en bas » ───────
+// Le bouton ne brille que s'il y a quelque chose à ALLER VOIR : du contenu est
+// arrivé en bas du fil alors que l'utilisateur regardait plus haut. Ce n'est
+// PAS « une génération tourne » — une attente sans rien d'écrit n'a rien à
+// montrer, et faire briller le bouton y promettrait du vide.
+//
+// Trois transitions, et elles seules :
+//   contenu arrivé, fil qui ne suit  → non vu      (markThreadContentUnseen)
+//   le fil atteint le fond           → vu          (acquitté par syncScrollBottomBtn)
+//   la conversation change           → sans objet  (le Set est clefé par conv)
+//
+// Même clef et même volatilité que _scrollCapReleased juste au-dessus, pour la
+// même raison (piège 28) : une génération écrit dans SA conversation, et on
+// peut ouvrir un fil d'agent ou revenir sur un parent réveillé pendant son
+// travail. Un Set en mémoire, jamais persisté : « je n'ai pas encore vu ce qui
+// vient d'arriver » ne survit pas à un rechargement, qui repart du fond.
+const _threadUnseen = new Set();   // Set<convId> — du contenu est arrivé hors de vue
+
+// Appelée aux points d'écriture VISUELLE du fil (streamInto, placeToolAck,
+// placeToolBlocks, finalizeAssistant). Les appelants passent par ici plutôt que
+// d'écrire dans le Set — un seul écrivain, une seule fois la condition.
+//
+// La condition est `shouldFollowStream`, PAS `isAtBottom`. Pendant un suivi
+// nominal le fil s'arrête au plafond d'ancrage (scrollBottomCapped) pour garder
+// l'énoncé à l'écran : on n'est donc PAS au fond, alors que le contenu arrive
+// bien sous les yeux. Marquer sur `isAtBottom` ferait briller le bouton en
+// permanence pendant toute génération suivie — exactement ce qu'on ne veut pas.
+// Le fil « ne suit plus » quand l'utilisateur a levé le plafond en redescendant
+// de son plein gré (ancrage doux), puis est reparti vers le haut.
+function markThreadContentUnseen() {
+  if (currentConvId == null || shouldFollowStream(currentConvId)) return;
+  _threadUnseen.add(currentConvId);
+  syncScrollBottomGlow();
+}
+
+// Acquittement : arriver au fond vaut « j'ai vu ». Appelée par le prédicat de
+// visibilité, donc à chaque scroll — y compris la dernière frame de la descente
+// animée déclenchée par le clic.
+function ackThreadContentSeen() {
+  if (currentConvId == null) return;
+  _threadUnseen.delete(currentConvId);
+}
+
+// SEUL écrivain de la classe .has-unseen. Distinct de syncScrollBottomBtn, qui
+// reste le seul écrivain de `hidden` : deux questions (« le montrer ? » selon
+// la position, « le faire briller ? » selon le non-vu), deux prédicats — la
+// classe survit d'ailleurs aux passages masqué/visible.
+function syncScrollBottomGlow() {
+  const btn = $('scroll-bottom-btn');
+  if (!btn) return;
+  btn.classList.toggle('has-unseen', currentConvId != null && _threadUnseen.has(currentConvId));
+}
+
 // Position de scroll maximale autorisée, en pixels, pour garder `anchorTop`
 // (position de l'ancre dans le référentiel de défilement, cf.
 // anchorTopInScroll) visible en haut du viewport. Pure : prend
@@ -1229,7 +1282,14 @@ let _scrollBottomAnimating = false;   // descente en cours (drapeau de visibilit
 function syncScrollBottomBtn() {
   const btn = $('scroll-bottom-btn');
   if (!btn) return;
-  if (_scrollBottomAnimating || isAtBottom()) btn.setAttribute('hidden', '');
+  const atBottom = isAtBottom();
+  // Arriver au fond vaut « j'ai vu » — que ce soit par le clic (dernière frame
+  // de la descente animée) ou à la main. Acquitter ICI plutôt qu'au clic : le
+  // scroll manuel jusqu'en bas est le MÊME geste du point de vue de
+  // l'utilisateur, et n'a pas de handler propre à décorer.
+  if (atBottom) ackThreadContentSeen();
+  syncScrollBottomGlow();
+  if (_scrollBottomAnimating || atBottom) btn.setAttribute('hidden', '');
   else btn.removeAttribute('hidden');
 }
 
@@ -3299,6 +3359,13 @@ function placeToolAck(wrap, entry, animate) {
       }
     }
   }
+  // `animate !== false` distingue déjà un ack QUI ARRIVE d'un ack RE-RENDU :
+  // renderThread (reload) et le rebranchement d'écran passent false, les trois
+  // chemins live laissent l'argument indéfini. S'appuyer dessus plutôt que
+  // d'ajouter un second signal — deux drapeaux pour la même distinction
+  // divergeraient. `wrap` null = génération hors écran : rien n'est apparu à
+  // l'écran, donc rien à aller voir.
+  if (wrap && animate !== false) markThreadContentUnseen();
   return node;
 }
 
@@ -3512,6 +3579,9 @@ function streamInto(wrap, full) {
     // Plafonné : le suivi s'arrête avant que l'énoncé qui a provoqué la
     // réponse ne sorte par le haut (cf. scrollBottomCapped).
     if (follow) scrollBottomCapped(currentConvId);
+    // Du texte vient d'arriver en bas. Après le scroll de suivi, pas avant :
+    // si `follow` nous a ramenés au fond, il n'y a rien de non vu.
+    markThreadContentUnseen();
   }, 90);
 }
 
@@ -3566,6 +3636,9 @@ function finalizeAssistant(wrap, full, truncated) {
   syncLastAssistantActions();
   reindexThreadDom();   // l'entrée assistant vient d'être poussée (cf. call-sites main.js)
   if (follow) scrollBottomCapped(currentConvId);
+  // Seul rendu du tour quand la réponse est plus courte que le throttle de
+  // streamInto : sans cet appel, une réponse brève n'allumerait jamais le glow.
+  markThreadContentUnseen();
 }
 
 // Finalisation d'un tour en ÉCHEC (400 backend, exception réseau, non-convergence).
@@ -4634,7 +4707,7 @@ function syncConfigured() {
 
   if (configured) {
     wrap.classList.remove('disabled');
-    ta.placeholder = 'Message…';
+    ta.placeholder = COMPOSER_IDLE_PLACEHOLDER;
     ta.disabled = false;
     send.disabled = false;   // pendant un stream le bouton sert de « stop » : jamais désactivé
     dot.className = 'dot ok';
@@ -4652,9 +4725,12 @@ function syncConfigured() {
 // ne lit pas le registre de générations lui-même (pas de dépendance inverse
 // vers main.js) : c'est à l'appelant de le porter. Absent/false → pas d'attente
 // en cours, comportement historique.
-function setSending(on, stopping) {
+// `phase` (optionnel) : même statut que `stopping` — la phase de la génération
+// affichée, portée par l'appelant, pour que le placeholder reprenne à la bonne
+// étape quand on rebranche l'écran sur une génération déjà en cours.
+function setSending(on, stopping, phase) {
   sending = on;
-  setComposerStreaming(on);
+  setComposerStreaming(on, phase);
   const send = $('send-btn');
   // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend du
   // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
@@ -4731,8 +4807,36 @@ function isComposerReadonly() {
   return _convReadonly;
 }
 
+// Phases d'une génération, telles que le composer les ANNONCE — pas un statut
+// interne : chaque entrée est un texte adressé à l'utilisateur. La table est
+// LA source des libellés (jamais une chaîne recopiée au point d'appel), et
+// `composerBusyPlaceholder` la seule lecture — un `phase` inconnu retombe sur
+// l'attente plutôt que de vider le placeholder, parce qu'une génération existe
+// toujours quand on interroge cette table.
+//
+// Le suffixe « Entrée ajoute à la file » porte l'affordance des interjections
+// (lot Q) : il ne dépend pas de la phase et reste donc sur les quatre textes.
+const COMPOSER_PHASE_LABELS = {
+  waiting:   'Le modèle travaille',
+  reasoning: 'Le modèle réfléchit intensément',
+  answering: 'Le modèle répond',
+  tools:     'Le modèle utilise des outils',
+};
+const COMPOSER_QUEUE_HINT = ' — Entrée ajoute à la file…';
+const COMPOSER_IDLE_PLACEHOLDER = 'Message…';
+
+// Pure : phase → texte du placeholder pendant une génération.
+function composerBusyPlaceholder(phase) {
+  const label = COMPOSER_PHASE_LABELS[phase] || COMPOSER_PHASE_LABELS.waiting;
+  return label + COMPOSER_QUEUE_HINT;
+}
+
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
-function setComposerStreaming(on) {
+// `phase` (optionnel) : phase de la génération AFFICHÉE, cf. setComposerPhase.
+// ui.js ne lit jamais le registre de générations (pas de dépendance inverse
+// vers main.js) — c'est l'appelant qui porte la phase, comme il porte déjà
+// `stopping`. Absente → attente, le comportement d'avant les phases.
+function setComposerStreaming(on, phase) {
   const send = $('send-btn');
   if (!send) return;
   send.classList.toggle('streaming', on);
@@ -4740,7 +4844,18 @@ function setComposerStreaming(on) {
   // Mode file (lot Q) : le placeholder annonce la mise en file pendant la
   // génération — l'affordance principale du mécanisme, avec le rail de puces.
   const ta = $('composer-text');
-  if (ta) ta.placeholder = on ? 'Le modèle travaille — Entrée ajoute à la file…' : 'Message…';
+  if (ta) ta.placeholder = on ? composerBusyPlaceholder(phase) : COMPOSER_IDLE_PLACEHOLDER;
+}
+
+// Rafraîchit le SEUL placeholder, sans retoucher au bouton ni au reste de
+// l'état d'envoi : appelé à chaque changement de phase pendant une génération,
+// là où setSending n'est appelé qu'à ses bornes. Garde `sending` : une phase
+// qui arriverait d'une génération sans écran (elle ne devrait pas — le point
+// d'appel est gardé par genOwnsScreen) n'écrirait pas sur un composer inerte.
+function setComposerPhase(phase) {
+  if (!sending) return;
+  const ta = $('composer-text');
+  if (ta) ta.placeholder = composerBusyPlaceholder(phase);
 }
 
 // Stop cliqué pendant un tour d'outils (gen.abort momentanément null, cf.
@@ -9494,12 +9609,19 @@ function clearComposerError() {
 // attributs (img src en data-URI) ; aucun markup modèle injecté en innerHTML.
 function placeToolBlocks(wrap, blocks) {
   const body = wrap && wrap.querySelector('.body');
+  let placed = 0;
   for (const b of (blocks || [])) {
     const node = renderToolBlock(b);
     if (!node) continue;
     if (body) wrap.insertBefore(node, body);
     else if (wrap) wrap.appendChild(node);
+    placed++;
   }
+  // Blocs non-text d'un outil distant (image, ressource) : purement éphémères,
+  // donc jamais re-rendus — pas de distinction live/reload à faire ici. On
+  // compte les blocs RÉELLEMENT insérés : renderToolBlock peut tout refuser,
+  // auquel cas rien n'est apparu.
+  if (wrap && placed) markThreadContentUnseen();
 }
 
 function renderToolBlock(block) {

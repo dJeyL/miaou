@@ -604,6 +604,28 @@ def run_build_unit_tests() -> tuple[int, int]:
     check('JS_ORDER : aucun .js de src/js/ n\'est absent de la liste',
           sorted(p.name for p in SRC_JS.glob('*.js')) == sorted(JS_ORDER))
 
+    # ── Phases du composer : émetteurs (main.js/agents.js) ↔ table (ui.js) ──
+    # test-ui.js vérifie la table contre une liste de phases écrite DANS le
+    # test : une cinquième phase émise par main.js lui échapperait entièrement.
+    # Le fait à garder est un fait sur les SOURCES, donc il se vérifie ici, en
+    # lisant les deux côtés — jamais une liste recopiée dans le runner.
+    emitted = set()
+    for name in ('main.js', 'agents.js'):
+        emitted |= set(re.findall(r"setGenPhase\([^,]+,\s*'([a-z]+)'\)",
+                                  (SRC_JS / name).read_text(encoding='utf-8')))
+    ui_src_phases = (SRC_JS / 'ui.js').read_text(encoding='utf-8')
+    m = re.search(r'const COMPOSER_PHASE_LABELS = \{(.*?)\};', ui_src_phases, re.S)
+    labelled = set(re.findall(r"^\s*([a-z]+):", m.group(1), re.M)) if m else set()
+    check('phases du composer : la table de libellés est bien reconnue dans ui.js',
+          bool(m))
+    check('phases du composer : au moins une phase est émise (le grep mord)',
+          len(emitted) > 0)
+    # Le label PORTE l'écart : un compte nu ne dirait pas LAQUELLE manque.
+    check(f'phases du composer : toute phase émise a un libellé (sans libellé : {sorted(emitted - labelled)})',
+          emitted <= labelled)
+    check(f'phases du composer : aucun libellé orphelin (jamais émis : {sorted(labelled - emitted)})',
+          labelled <= emitted)
+
     return passed, failed
 
 

@@ -81,6 +81,18 @@
   --text-3:     hsl(var(--hue) var(--sat-t3) var(--l-t3));
   --accent-dim: hsl(var(--accent-hue) var(--accent-sat) 63.5% / .12);
   --accent-bd:  hsl(var(--accent-hue) var(--accent-sat) 63.5% / .28);
+  /* Ombre portante du bouton « aller tout en bas » (chat.css). Token et non
+     valeur en dur parce qu'elle a DEUX consommateurs : la règle de repos et le
+     keyframe de pulsation, qui doit la reconduire (box-shadow est une seule
+     propriété — animer le halo seul effacerait la profondeur). Le thème clair
+     l'allège ; sans ce token, chaque pulsation y ramènerait l'ombre sombre. */
+  --jump-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+  /* Opacité crête du halo de pulsation (chat.css). Token par LUMINOSITÉ et non
+     valeur de keyframe : le même halo ne se lit pas pareil sur fond sombre et
+     sur fond clair — réglé à l'œil sur les deux, le clair tient une crête plus
+     forte que le sombre. La teinte, elle, reste dérivée de l'accent, donc suit
+     les palettes sans réglage par palette. */
+  --jump-glow-a: .25;
   /* Clarté du surlignage de recherche (mark.search-hit, plus bas). Un gris qui
      ressort sur fond sombre doit être CLAIR ; le thème clair l'inverse. C'est la
      seule part de la marque qui ne peut pas être dérivée des paliers communs.

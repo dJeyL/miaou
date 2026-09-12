@@ -124,7 +124,12 @@ function createGeneration(convId, thread, opts) {
     needTitle: needTitle,                           // besoin de titrage figé au démarrage (piège 9 : ne pas lire l'écran à la fin)
     abort: null,                                    // AbortController du stream courant (posé par streamCompletion)
     stopRequested: false,                           // Stop cliqué pendant un tour d'outils (gen.abort momentanément null) : honoré à la frontière de tour suivante (runConversation)
-    status: 'waiting',                              // waiting | streaming | tools | done | error | aborted
+    // Étape courante, TELLE QUE LE COMPOSER L'ANNONCE (jamais un statut de
+    // cycle de vie : pour « ça tourne encore », c'est le registre qui répond).
+    // waiting (rien reçu de ce tour) | reasoning | answering | tools.
+    // Écrite UNIQUEMENT par setGenPhase — jamais une affectation nue, sinon le
+    // placeholder ne suit plus la moitié des transitions.
+    phase: 'waiting',
     startedAt: Date.now(),
     // ── Présentation (lot T-1b) ──────────────────────────────────────────
     // `wrap` : bulle assistant en cours DANS LE DOM, ou null si la génération
@@ -175,12 +180,34 @@ function genOwnsScreen(gen) {
 // le rebranchement redevient muet exactement comme avant.
 function setGenPartialContent(gen, full) {
   gen.partialContent = full;
+  setGenPhase(gen, 'answering');
   if (genOwnsScreen(gen)) streamInto(gen.wrap, full);
 }
 
 function setGenPartialReasoning(gen, full) {
   gen.partialReasoning = full;
+  setGenPhase(gen, 'reasoning');
   if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
+}
+
+// Étape annoncée par le composer. Même scission que les trois points ci-dessus
+// (piège 28) : muter TOUJOURS, peindre si l'écran est possédé. Muter même hors
+// écran n'est pas gratuit — c'est ce qui permet à openConversation de reprendre
+// à la bonne étape en rebranchant une génération déjà en cours d'écriture.
+//
+// Les transitions ne reviennent jamais en arrière DANS un tour (le
+// raisonnement précède le contenu, cf. api.js), mais une frontière de tour
+// d'outils, elle, rejoue le cycle : onToolTour repasse en 'tools', et le tour
+// suivant repart de 'waiting' (onToolAcks).
+function setGenPhase(gen, phase) {
+  if (!gen || gen.phase === phase) return;
+  // Un backend qui entrelace raisonnement et contenu ferait sinon clignoter le
+  // placeholder : le premier token de réponse clôt le raisonnement du point de
+  // vue de l'annonce. La règle vit ICI et non aux points d'appel — recopiée à
+  // chacun (dispatchSend et les deux helpers partagés), elle divergerait.
+  if (phase === 'reasoning' && gen.phase !== 'waiting') return;
+  gen.phase = phase;
+  if (genOwnsScreen(gen)) setComposerPhase(phase);
 }
 
 // Pousse une entrée d'ack dans le fil et la peint dans la bulle vive si elle
@@ -1333,7 +1360,7 @@ async function openConversation(id, reveal) {
   // composer, bouton stop et mode file des interjections suivent la conv
   // AFFICHÉE, pas « une génération tourne quelque part ». Sans cet appel, le
   // composer resterait en mode « stop » sur une conversation inerte.
-  setSending(!!gen, gen && gen.stopRequested);
+  setSending(!!gen, gen && gen.stopRequested, gen && gen.phase);
   // File d'interjections (X-1e) : le rail montre celle de la conversation qu'on
   // vient d'afficher — vide si elle n'en a pas. APRÈS setSending, qui remet le
   // composer dans le mode de CETTE conversation.
@@ -3790,10 +3817,12 @@ async function dispatchSend(matches, continuation) {
       // écraserait le rendu de la génération qui, elle, possède l'écran).
       onDelta: (full) => {
         gen.partialContent = isContinuation ? prefix + full : full;
+        setGenPhase(gen, 'answering');
         if (genOwnsScreen(gen)) streamInto(gen.wrap, gen.partialContent);
       },
       onReasoning: (full) => {
         gen.partialReasoning = full;
+        setGenPhase(gen, 'reasoning');
         if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
       },
       onToolTour: (content) => {
@@ -3802,6 +3831,8 @@ async function dispatchSend(matches, continuation) {
         // rebranchement ultérieur ré-afficherait le texte du tour précédent.
         gen.partialContent = '';
         gen.partialReasoning = '';
+        // Les outils du tour s'exécutent maintenant, et jusqu'à onToolAcks.
+        setGenPhase(gen, 'tools');
         if (content && content.trim()) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
@@ -3933,6 +3964,12 @@ async function dispatchSend(matches, continuation) {
           applyUsageToLastManifest(usage);
           syncContextCounter();
         }
+        // Outils du tour exécutés : api.js relance aussitôt le modèle. Le tour
+        // qui s'ouvre n'a encore rien reçu — on repart de l'attente, et le
+        // cycle raisonnement/réponse se rejoue. Si la boucle s'arrête ici
+        // (dernier tour), onFinal enchaîne sur setSending(false) et le
+        // placeholder quitte de toute façon le mode génération.
+        setGenPhase(gen, 'waiting');
       },
       // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
       // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
@@ -4201,7 +4238,7 @@ async function dispatchSend(matches, continuation) {
     // registre déjà à jour.
     unregisterGeneration(gen);
     const stillGen = generationFor(currentConvId);
-    setSending(!!stillGen, stillGen && stillGen.stopRequested);
+    setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase);
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
     // Interjections restantes (lot Q, révisé X-1e) : drain A si fin nominale,

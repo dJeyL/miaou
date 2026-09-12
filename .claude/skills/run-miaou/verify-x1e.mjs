@@ -404,8 +404,11 @@ const composerState = await page.evaluate(() => ({
 }));
 check('B2ter. le composer cesse d\'annoncer un travail en cours',
   composerState.sending === false && composerState.streaming === false);
+// Assertion sur le placeholder AU REPOS, pas sur l'absence d'un mot : depuis
+// que le placeholder annonce l'étape (travaille / réfléchit / répond / outils),
+// chercher « travaille » ne couvrait plus que la première des quatre.
 check('B2quater. et son placeholder n\'invite plus à la mise en file',
-  composerState.placeholder.indexOf('travaille') < 0);
+  composerState.placeholder === 'Message…');
 await shot('04-agent-termine-lecture-seule.png');
 
 // Le bandeau explique POURQUOI (sans lui, un composer grisé est une panne).

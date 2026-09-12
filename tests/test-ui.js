@@ -590,3 +590,58 @@ describe('cappedScrollTop', function() {
     expect(cappedScrollTop(600, 4000, 800)).toBe(600);
   });
 });
+
+describe('composerBusyPlaceholder', function() {
+  // Les quatre phases sont nommées, jamais comptées : quand une cinquième
+  // arrive, ce test dit LAQUELLE manque au lieu d'afficher « 4 !== 5 ».
+  var PHASES = ['waiting', 'reasoning', 'answering', 'tools'];
+
+  it('chaque phase émise par main.js a son libellé', function() {
+    for (var i = 0; i < PHASES.length; i++) {
+      expect(typeof COMPOSER_PHASE_LABELS[PHASES[i]]).toBe('string');
+      expect(COMPOSER_PHASE_LABELS[PHASES[i]].length > 0).toBeTruthy();
+    }
+  });
+
+  it('la table ne porte QUE des phases que main.js sait produire', function() {
+    // Symétrique du test précédent : un libellé orphelin est du texte mort
+    // adressé à l'utilisateur, que rien n'affichera jamais.
+    var keys = Object.keys(COMPOSER_PHASE_LABELS).sort();
+    expect(keys.join(',')).toBe(PHASES.slice().sort().join(','));
+  });
+
+  it('les quatre libellés sont distincts : un doublon rendrait une étape muette', function() {
+    var seen = {};
+    var dup = '';
+    for (var i = 0; i < PHASES.length; i++) {
+      var label = COMPOSER_PHASE_LABELS[PHASES[i]];
+      if (seen[label]) dup = label;
+      seen[label] = true;
+    }
+    expect(dup).toBe('');
+  });
+
+  it('porte l\'affordance de mise en file quelle que soit la phase', function() {
+    // Le suffixe ne dépend pas de l'étape : pendant toute la génération,
+    // Entrée ajoute à la file (lot Q). L'oublier sur une seule phase ferait
+    // disparaître l'affordance par intermittence.
+    for (var i = 0; i < PHASES.length; i++) {
+      var txt = composerBusyPlaceholder(PHASES[i]);
+      expect(txt.indexOf(COMPOSER_QUEUE_HINT) > 0).toBeTruthy();
+      expect(txt.indexOf(COMPOSER_PHASE_LABELS[PHASES[i]])).toBe(0);
+    }
+  });
+
+  it('phase absente ou inconnue → l\'attente, jamais un placeholder vide', function() {
+    // On n'appelle cette fonction QUE pendant une génération : rendre '' y
+    // laisserait le composer muet alors que le modèle travaille.
+    expect(composerBusyPlaceholder()).toBe(composerBusyPlaceholder('waiting'));
+    expect(composerBusyPlaceholder('zzz')).toBe(composerBusyPlaceholder('waiting'));
+    expect(composerBusyPlaceholder(null)).toBe(composerBusyPlaceholder('waiting'));
+  });
+
+  it('le texte d\'attente est bien celui d\'avant les phases', function() {
+    // Non-régression sur le libellé historique du mode file (lot Q).
+    expect(composerBusyPlaceholder('waiting')).toBe('Le modèle travaille — Entrée ajoute à la file…');
+  });
+});
