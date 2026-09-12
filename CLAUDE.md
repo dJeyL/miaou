@@ -209,6 +209,68 @@ de slugs y vont, le contenu des sections arrive en tool result à la demande.
   - Le bouton du composer appelle `onSendBtn()` (envoi **ou** stop selon
     `sending`), jamais `sendMessage()` directement.
 
+## Coût en contexte (tout ajout de texte adressé au modèle se pèse)
+
+Un outil, une doctrine, une consigne ajoutée au prompt système sont **payés à
+chaque tour de chaque conversation**. Le contexte fixe (définitions d'outils +
+prompt racine) pèse ~47 000 caractères ≈ 12 000 tokens : c'est le plancher de
+toute conversation, avant le moindre message. Trois règles avant d'y ajouter
+quoi que ce soit.
+
+**1. Mesurer sur la sortie composée, jamais sur la source.** Le seul point de
+mesure juste des définitions d'outils est `JSON.stringify(toolDefinitions())` —
+celui qu'utilise déjà `buildContextManifest`. Compter sur le registre `TOOLS`
+sous-évalue de ~38 % : `agent__spawn` y porte une description VIDE (la vraie est
+construite au vol par `agentSpawnToolDef`) et `miaou_intent` est ajouté par
+`toolDefinitions()` au moment de composer. Plus simple encore : l'inspecteur de
+contexte affiche la grandeur, le croire lui plutôt qu'un calcul maison.
+
+**2. Une propriété de schéma est payée une fois PAR OUTIL.** Le facteur ~35
+transforme une phrase anodine en poste budgétaire : `miaou_intent`, avec un
+`title` et une description d'une ligne, coûtait 4 620 caractères — 12 % des
+définitions — pour redire ce qu'`INTENT_DOCTRINE` énonce **une fois** dans le
+message système, en mieux. Toute consigne générale vaut mieux dans une doctrine
+que répétée dans chaque schéma ; ne rédiger dans un schéma que ce qui est propre
+à CE paramètre.
+
+**3. Placer selon la cachabilité, pas selon la taille.** Le message système et
+le tableau `tools` sont servis par le cache KV du backend (mesuré, cf.
+`docs/context-inspector.md` et le § du piège 16) ; le préfixe éphémère et tout
+tool result ne le sont pas. Conséquences pratiques :
+- raccourcir **en place** est toujours un gain ;
+- **déplacer vers l'aval** (sortir un texte de description vers une skill, dont
+  le contenu revient en tool result) est en général une perte : on troque un
+  coût caché contre un coût récurrent, plus un tour d'aller-retour ;
+- rendre **dynamique** un bloc statique coûte une invalidation à chaque bascule
+  — acceptable pour un geste rare, jamais pour ce qui change d'un tour à l'autre
+  (piège 16).
+
+**Extraire vers une skill système obéit à un critère précis, pas à la taille.**
+Une skill porte le COMMENT ; le QUOI — la capacité existe — doit rester annoncé
+quelque part d'inconditionnel, sinon un modèle qui n'ouvre pas la skill ignore
+que la capacité est là. Et la migration n'est sûre que si la skill est **SUR le
+chemin** : une doctrine qui impose nommément sa lecture avant le premier appel
+(`DOCS_DOCTRINE`, `JS_EVAL_DOCTRINE`, `AGENT_DOCTRINE` le font, et
+`<miaou_skills_context>` exempte explicitement ce cas de son « aucune skill
+n'est obligatoire »). Sur un outil ordinaire, resserrer la rédaction sur place.
+Deux tests QuickJS gardent cette règle sur `js__eval` — les lire avant de couper
+une description.
+
+**Une doctrine en double branche `<X>` / `<SANS_X>` se re-vérifie à chaque
+passage d'une capacité en natif.** La branche négative n'est légitime que si la
+condition est satisfiable, donc si les outils cités sont DISTANTS. Dès qu'ils
+entrent dans le registre `TOOLS` (const build-time, exposée à tous les tours),
+elle décrit un état inatteignable et fait arbitrer au modèle ce que
+l'application tranche déjà. Payé sur `DOCS_DOCTRINE`, dont la branche est restée
+morte plusieurs lots après le passage des lecteurs en natif (V-1) ;
+`WEB_DOCTRINE` garde la sienne à bon droit, ses outils étant distants. Le cas
+d'un **agent** à trousse restreinte n'est pas un contre-exemple : il est couvert,
+mieux, par `AGENT_SCOPE_NOTICE` (agents.js).
+
+Le récit détaillé des trois campagnes d'optimisation, avec les chiffres, les
+gardes posées et les effets de bord à surveiller, est dans
+`untracked/context-optimization.md` (non versionné).
+
 ## Pièges déjà payés (ne pas les ré-introduire)
 
 Une ligne par piège ci-dessous — **développement complet, exemples et noms de

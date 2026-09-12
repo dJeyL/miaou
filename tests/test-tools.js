@@ -965,11 +965,20 @@ describe('DOCS_DOCTRINE v2 (lot V-1 — statique, inconditionnelle, motif WEB_DO
   it('est intégrée au prompt racine (plus de part conditionnelle)', function() {
     expect(ROOT_SYSTEM_PROMPT.indexOf(DOCS_DOCTRINE) >= 0).toBe(true);
   });
-  it('porte les deux blocs balisés, comme WEB_DOCTRINE', function() {
-    expect(DOCS_DOCTRINE.indexOf('<OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
-    expect(DOCS_DOCTRINE.indexOf('</OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
-    expect(DOCS_DOCTRINE.indexOf('<SANS_OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
-    expect(DOCS_DOCTRINE.indexOf('</SANS_OUVERTURE_DE_DOCUMENTS>') >= 0).toBe(true);
+  it('v3 : plus de double branche — la branche « sans outil » décrivait un état inatteignable', function() {
+    // Les cinq lecteurs sont NATIFS et vivent dans TOOLS (const build-time) :
+    // ils sont exposés à tous les tours de toute conversation. Une branche
+    // « si aucun outil ne sait ouvrir un document » ne peut donc jamais
+    // s'appliquer, et faisait arbitrer au modèle une condition que
+    // l'application tranche déjà. Le seul cas d'outils absents est un agent à
+    // liste blanche restreinte, couvert par AGENT_SCOPE_NOTICE (agents.js).
+    expect(DOCS_DOCTRINE.indexOf('SANS_OUVERTURE_DE_DOCUMENTS')).toBe(-1);
+    expect(DOCS_DOCTRINE.indexOf('<OUVERTURE_DE_DOCUMENTS>')).toBe(-1);
+  });
+  it('garde la consigne de ne pas supposer le contenu d\'un fichier non ouvrable', function() {
+    // Ce que la branche coupée disait d'utile survit, rattaché au cas qui peut
+    // réellement se produire : un FORMAT non couvert (pas une absence d'outil).
+    expect(DOCS_DOCTRINE.indexOf('Ne suppose JAMAIS le contenu') >= 0).toBe(true);
   });
   it('aiguille les CINQ formats vers les outils natifs (v6 : la puce serveur a disparu)', function() {
     expect(DOCS_DOCTRINE.indexOf('miaou__docs__list') >= 0).toBe(true);

@@ -4610,7 +4610,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-12 09:07 UTC */
+/* miaou — built: 2026-09-12 12:13 UTC */
 
 /* ── utils.js ── */
 
@@ -8671,7 +8671,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789204047}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789215184}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11920,25 +11920,24 @@ const CONV_REF_DOCTRINE =
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
   "CHEMIN DIRECT — appelle miaou__memory__create immédiatement (sans demander) quand l'utilisateur :\n" +
-  "  - donne une instruction durable explicite : \"souviens-toi que\", \"retiens\", \"dorénavant\", " +
-  "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\"\n" +
+  "  - donne une instruction durable explicite (\"souviens-toi que\", \"retiens\", " +
+  "\"dorénavant\", \"appelle-moi X\", \"ne fais plus jamais Y\", etc.)\n" +
   "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
   "  - exprime une préférence de fond sur le format ou le ton de tes réponses\n" +
-  "Sur le chemin direct : tu PEUX narrer « c'est noté » car l'écriture a déjà eu lieu.\n\n" +
-  "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS (sans demande explicite) " +
-  "qu'un fait durable mérite d'être retenu. Élargis le périmètre des faits durables pour " +
-  "inclure systématiquement la localisation géographique et l'environnement quotidien : " +
-  "si un tel détail apparaît, même s'il sert de contexte à une question technique, utilise " +
-  "ce chemin pour proposer de le retenir. La question doit contenir LITTÉRALEMENT le " +
-  "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
-  "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
-  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__memory__create dans ce même tour.\n\n" +
-  "CHEMIN CORRECTION — quand l'utilisateur répond en texte libre à une question ask_confirmation " +
-  "(au lieu de cliquer Accepter/Rejeter) et que sa réponse contient une valeur corrigée " +
-  "(ex. « non, plutôt un modèle Y »), appelle miaou__memory__create avec la valeur corrigée. " +
-  "Ne pas se contenter d'acquitter en texte.\n\n" +
-  "MISE À JOUR / SUPPRESSION : si un souvenir existant devient obsolète ou inexact, " +
-  "appelle miaou__memory__update (correction in-place) ou miaou__memory__delete (tombstone réversible).\n\n" +
+  "Sur ce chemin tu PEUX narrer « c'est noté » : l'écriture a déjà eu lieu.\n\n" +
+  "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS, sans demande explicite, " +
+  "qu'un fait durable mérite d'être retenu. Compte parmi eux la localisation " +
+  "géographique et l'environnement quotidien, même mentionnés en passant pour situer " +
+  "une question technique. La question doit contenir LITTÉRALEMENT le contenu " +
+  "envisagé : « Tu veux que je retienne : « … » ? ». N'écris JAMAIS en mémoire sans " +
+  "cette confirmation, et n'affirme JAMAIS avoir enregistré quoi que ce soit sans " +
+  "avoir appelé miaou__memory__create dans le même tour.\n\n" +
+  "CHEMIN CORRECTION — si l'utilisateur répond en texte libre à un ask_confirmation " +
+  "(au lieu de cliquer Accepter/Rejeter) et que sa réponse porte une valeur corrigée " +
+  "(« non, plutôt un modèle Y »), appelle miaou__memory__create avec la valeur " +
+  "corrigée : ne te contente pas d'acquitter en texte.\n\n" +
+  "MISE À JOUR / SUPPRESSION : un souvenir devenu obsolète ou inexact se corrige par " +
+  "miaou__memory__update (in-place) ou miaou__memory__delete (tombstone réversible).\n\n" +
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
@@ -11952,7 +11951,6 @@ const FILES_DOCTRINE =
   "préalable, format d'appel) avant tout appel à miaou__files__promote.";
 
 const DOCS_DOCTRINE =
-  "<OUVERTURE_DE_DOCUMENTS>\n" +
   "Un fichier binaire joint par l'utilisateur ou déposé dans la bibliothèque de " +
   "l'espace (descripteur [attachment att-N: file \"...\", <mime>, <taille> — binary " +
   "content, not inlined]) n'est pas lisible directement : son contenu n'est jamais " +
@@ -11970,7 +11968,9 @@ const DOCS_DOCTRINE =
   "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
-  "suis-la, ne suppose jamais le contenu du fichier.\n" +
+  "suis-la. Ne suppose JAMAIS le contenu d'un fichier que tu n'as pas pu ouvrir — " +
+  "dis à l'utilisateur que le format n'est pas lisible ; tu n'as alors que le nom, " +
+  "le type et la taille donnés par son descripteur.\n" +
   "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
   "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
   "sans réseau.\n" +
@@ -11982,13 +11982,7 @@ const DOCS_DOCTRINE =
   "appelle miaou__skills__read avec le slug « docs » (skill système, listée dans " +
   "<miaou_skills_context> si présente) : elle donne la forme exacte du selector " +
   "de chaque format, quand sortir une lecture en ressource, comment lire les " +
-  "refus, et comment nommer les membres d'une archive que tu crées.\n" +
-  "</OUVERTURE_DE_DOCUMENTS>\n\n" +
-  "<SANS_OUVERTURE_DE_DOCUMENTS>\n" +
-  "Si aucun outil disponible ne sait ouvrir le format d'un fichier joint, dis-le à " +
-  "l'utilisateur plutôt que de supposer ou de fabriquer son contenu. Tu connais son " +
-  "nom, son type et sa taille par son descripteur : c'est tout ce dont tu disposes.\n" +
-  "</SANS_OUVERTURE_DE_DOCUMENTS>\n";
+  "refus, et comment nommer les membres d'une archive que tu crées.\n";
 
 const JS_EVAL_MEM_BYTES = 256 * 1024 * 1024;
 const JS_EVAL_OUTPUT_CAP = 20000;
@@ -12265,33 +12259,27 @@ const TOOLS = [
   },
   {
     name: 'conv__list',
+
     description:
       "Liste les conversations passées (résumé + mots-clés par défaut), hors " +
-      "la conversation en cours. Le paramètre since est OPTIONNEL : l'omettre " +
-      "liste TOUTES les conversations — appelle l'outil sans hésiter même sans " +
-      "date en tête ; le préciser (date ISO 8601) limite aux conversations " +
-      "actives depuis cette date. Passer query pour ne garder que les " +
-      "conversations dont le résumé ou les mots-clés correspondent (recherche " +
-      "par mots) — utile pour retrouver une " +
-      "conversation sur un sujet précis sans tout lister. Mettre une suite de " +
-      "mots entre guillemets (\"nid de poule\") exige de la retrouver telle " +
-      "quelle ; sans guillemets, les mots sont cherchés séparément. Avec query, chaque " +
-      "conversation porte alors un champ match : un court extrait du résumé " +
-      "montrant où la recherche a porté. Cet extrait est INDICATIF et tronqué — " +
-      "il situe la correspondance, il ne dit pas tout ce que la conversation " +
-      "contient sur le sujet, et une conversation trouvée par ses mots-clés peut " +
-      "n'en avoir aucun. Pour lire réellement, utilise conv__get ou " +
-      "with_contents. Passer " +
-      "with_contents=true pour inclure aussi le contenu complet de chacune " +
-      "(potentiellement volumineux). " +
-      "Ce que tu y lis décrit un état PASSÉ : un échec relaté a pu être corrigé " +
-      "depuis. N'en conclus jamais qu'une action échouera, ni ne refuse sur " +
-      "cette base un appel qui t'est demandé.",
+      "la conversation en cours. since est OPTIONNEL : l'omettre liste TOUTES " +
+      "les conversations — appelle l'outil sans hésiter même sans date en tête ; " +
+      "le préciser (date ISO 8601) limite aux conversations actives depuis " +
+      "cette date. query ne garde que celles dont le résumé ou les mots-clés " +
+      "correspondent, pour retrouver un sujet précis sans tout lister. " +
+      "with_contents=true inclut le contenu complet de chacune (potentiellement " +
+      "volumineux) ; pour lire une seule conversation, conv__get. Ce que tu y " +
+      "lis décrit un état PASSÉ : un échec relaté a pu être corrigé depuis, " +
+      "n'en conclus jamais qu'une action échouera.",
     inputSchema: {
       type: 'object',
       properties: {
         since: { type: 'string', description: 'Optionnel — date ISO 8601. Omettre pour tout lister.' },
-        query: { type: 'string', description: 'Optionnel — mots-clés à rechercher dans le résumé/titre.' },
+
+        query: { type: 'string', description: 'Optionnel — mots-clés cherchés dans le résumé/titre, séparément ; ' +
+          'une suite entre guillemets ("nid de poule") doit être retrouvée telle quelle. ' +
+          'Chaque résultat porte alors un champ match : un court extrait INDICATIF qui situe ' +
+          'la correspondance, jamais tout ce que la conversation dit du sujet.' },
         with_contents: { type: 'boolean', description: 'Inclure le contenu complet (défaut false)' },
       },
     },
@@ -12918,24 +12906,20 @@ const TOOLS = [
   {
 
     name: 'js__eval',
+
     description:
-      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé. Il peut lire le " +
-      "contenu TEXTUEL de jusqu'à " + JS_EVAL_MAX_INPUTS + " ressources référencées par handle " +
-      "(att-N, file-<id> ou res_<id>), sans charger ce contenu dans ton contexte. " +
-      "Sers-t'en pour interroger un gros fichier (log, JSON-lines, CSV, texte) — " +
-      "compter, filtrer, agréger, extraire — ou pour CROISER plusieurs ressources en " +
-      "un seul appel. input_handles est FACULTATIF : omets-le et le code s'exécute sans " +
-      "rien lire, pour un calcul pur (arithmétique exacte, manipulation de chaînes, " +
-      "vérification d'une formule). Primitives disponibles dans le bac à sable, toutes prenant la " +
-      "clé de la ressource à lire : text(cle), lines(cle), jsonLines(cle), " +
-      "parse(cle) (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
-      "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
-      "grosse → refus explicite (réécris pour synthétiser) ; pour PRODUIRE un gros " +
-      "contenu sans buter sur cette limite, passe output_handle et écris au fil de " +
-      "l'eau avec emit() — qui concatène LITTÉRALEMENT, sans ajouter de saut de ligne : " +
-      "termine toi-même chaque chunk par \\n si tu produis des lignes. N'inclus jamais le " +
-      "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
-      "de la skill 'js-eval' avant utilisation dans une conversation.",
+      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé, qui peut lire le " +
+      "contenu TEXTUEL de ressources référencées par handle (att-N, file-<id> ou " +
+      "res_<id>) sans le charger dans ton contexte. Sers-t'en pour interroger un gros " +
+      "fichier (log, JSON-lines, CSV, texte) — compter, filtrer, agréger, extraire —, " +
+      "pour CROISER plusieurs ressources en un seul appel, ou pour un calcul pur sans " +
+      "rien lire : input_handles est FACULTATIF. La dernière valeur évaluée du code est " +
+      "renvoyée ; une sortie trop grosse est refusée, et pour PRODUIRE un gros contenu " +
+      "il faut passer output_handle et écrire au fil de l'eau avec emit(). N'inclus " +
+      "jamais le contenu d'une ressource dans le code : il vient des primitives de " +
+      "lecture du bac à sable. Lecture OBLIGATOIRE de la skill 'js-eval' avant " +
+      "utilisation dans une conversation : elle donne les primitives, la forme exacte " +
+      "des paramètres et les contraintes de sortie.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -13590,29 +13574,27 @@ function agentDefaultReasoningEffort(ctx) {
 function agentSpawnToolDef(ctx) {
   const effort = agentDefaultReasoningEffort(ctx);
   return {
+
     description:
       "Lance un agent : une sous-conversation autonome à qui tu confies une tâche " +
       "précise, et qui travaille en parallèle pendant que tu continues. Rend son " +
-      "identifiant IMMÉDIATEMENT — ton tour continue, tu ne l'attends pas. Tu seras " +
-      "prévenu automatiquement quand il aura terminé, avec son résultat. L'agent " +
-      "démarre À FROID : il n'a ni ton historique ni ton contexte, seulement le " +
-      "prompt que tu lui écris — celui-ci doit donc être autosuffisant. Il ne voit " +
-      "aucun de tes fichiers non plus : pour qu'il travaille sur l'un d'eux, nomme " +
-      "son handle dans `attachments`. Voir la " +
-      "skill 'agents' pour rédiger un prompt d'agent et choisir sa trousse d'outils.",
+      "identifiant IMMÉDIATEMENT — tu ne l'attends pas, tu seras prévenu avec son " +
+      "résultat quand il aura terminé. Il démarre À FROID : ni ton historique, ni " +
+      "ton contexte, ni tes fichiers. Voir la skill 'agents' pour rédiger son " +
+      "prompt, choisir sa trousse d'outils et exploiter son résultat.",
     inputSchema: {
       type: 'object',
       properties: {
         prompt: { type: 'string',
-          description: 'La tâche confiée, rédigée pour quelqu\'un qui n\'a AUCUN contexte : rappelle tout ce qui est nécessaire, y compris la forme de sortie attendue.' },
+          description: 'La tâche confiée, rédigée pour quelqu\'un qui n\'a AUCUN contexte : elle doit tenir seule, forme de sortie attendue comprise.' },
         intent: { type: 'string',
-          description: 'Ce que tu demandes à l\'agent, en une phrase, tel que tu l\'expliquerais à l\'utilisateur — c\'est ce libellé qui s\'affichera dans la conversation à la place d\'un titre, parce qu\'un agent n\'est jamais titré.' },
+          description: 'Ce que tu demandes à l\'agent, en une phrase, tel que tu l\'expliquerais à l\'utilisateur — ce libellé s\'affiche à la place d\'un titre.' },
         tools: { type: 'array', items: { type: 'string' },
-          description: 'Noms des outils délégués à l\'agent (ex. "miaou__js__eval"). Par défaut AUCUN : nomme ce dont la tâche a besoin, et rien de plus. Un nom invalide te sera renvoyé avec la liste des noms valides.' },
+          description: 'Noms des outils délégués (ex. "miaou__js__eval"). Par défaut AUCUN : nomme ce dont la tâche a besoin, et rien de plus.' },
         attachments: { type: 'array', items: { type: 'string' },
-          description: 'Handles des fichiers mis à la disposition de l\'agent : att-N, file-<id> ou res_<id>, tels que TU les adresses. Par défaut AUCUN — un agent ne voit aucun de tes fichiers si tu ne les nommes pas ici, et tu ne peux pas non plus lui en recopier le contenu. Il les recevra sous des handles réécrits, listés dans ma réponse.' },
+          description: 'Handles des fichiers confiés à l\'agent (att-N, file-<id> ou res_<id>), tels que TU les adresses. Par défaut AUCUN : sans cela il ne voit aucun de tes fichiers.' },
         reasoning_effort: { type: 'string',
-          description: 'Effort de raisonnement de l\'agent' + (effort ? ' (par défaut : ' + effort + ')' : ' (par défaut : celui de l\'application)') + '. Une tâche mécanique se traite bien à un niveau bas.' },
+          description: 'Effort de raisonnement de l\'agent' + (effort ? ' (par défaut : ' + effort + ')' : ' (par défaut : celui de l\'application)') + '.' },
       },
       required: ['prompt', 'intent'],
     },
@@ -14021,7 +14003,8 @@ function toolIsHalting(name) { return name === 'ask_confirmation'; }
 
 function toolDefinitions(allow, ctx) {
   const intentEnabled = !!loadSettings().intentTracing;
-  const intentProp = { type: 'string', title: 'Intention', description: 'Phrase courte décrivant le but de l\'appel, pour l\'utilisateur.' };
+
+  const intentProp = { type: 'string' };
   const allowSet = Array.isArray(allow) ? new Set(allow) : null;
 
   const mcpDefs = exposedTools(ctx)

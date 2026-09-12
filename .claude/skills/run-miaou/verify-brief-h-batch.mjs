@@ -106,9 +106,13 @@ const docsDoc = await page.evaluate(() => {
 check('C : DOCS_DOCTRINE incluse dans ROOT_SYSTEM_PROMPT', docsDoc.inRoot);
 check('C : présente dans buildSystemMessage() SANS aucun serveur branché', docsDoc.inSystemMessage);
 check('C : message système byte-identique avec/sans serveur qualifiant (piège 16)', docsDoc.stable);
-check('C : deux blocs balisés (motif WEB_DOCTRINE)',
-  docsDoc.doctrine.indexOf('<OUVERTURE_DE_DOCUMENTS>') >= 0 &&
-  docsDoc.doctrine.indexOf('<SANS_OUVERTURE_DE_DOCUMENTS>') >= 0);
+// v3 (campagne contexte) : la double branche a été RETIRÉE. Les cinq lecteurs
+// étant natifs et inconditionnels (registre TOOLS, const build-time), la
+// branche « sans ouverture de documents » décrivait un état inatteignable.
+// L'assertion vérifie donc l'inverse de ce qu'elle vérifiait — ce n'est pas un
+// assouplissement : elle garde que la branche morte ne revienne pas.
+check('C : plus de double branche (la branche « sans outil » est inatteignable)',
+  docsDoc.doctrine.indexOf('SANS_OUVERTURE_DE_DOCUMENTS') === -1);
 // Le geste annoncé au modèle : list d'abord (structure sans contenu), puis read.
 // L'ancienne assertion cherchait aussi « content_b64 », le critère de capacité
 // d'un serveur : la doctrine ne le mentionne plus depuis qu'elle énonce la

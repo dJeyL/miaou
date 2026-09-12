@@ -256,28 +256,38 @@ const CONV_REF_DOCTRINE =
   "l'application le remplace automatiquement par un lien affichant le titre.";
 
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
+// v2 (campagne contexte) : resserrée sur place, SANS extraction en skill. Les
+// quatre chemins sont conservés tels quels — ce sont des règles réelles, pas du
+// remplissage. Ce qui part est la redondance de rédaction : la liste des
+// formules déclenchantes ramenée à un échantillon suivi de « etc. » (elle n'a
+// jamais été une liste fermée à matcher, et un modèle qui la lit comme telle
+// est plus fautif qu'un modèle qui généralise), les deux « Ne JAMAIS » du
+// chemin inféré fusionnés, et les périphrases contractées. Pas d'extraction en
+// skill ici, contrairement à files-promote : la mémoire se déclenche à
+// n'importe quel tour, donc le coût d'un aller-retour skills__read se paierait
+// souvent — alors qu'un dépôt en bibliothèque est un geste rare. Les noms
+// d'outils restent PRÉFIXÉS (docs/mcp.md §2), sauf ask_confirmation qui est nu.
 const MEMORY_DOCTRINE =
   "Doctrine de déclenchement pour les outils mémoire :\n\n" +
   "CHEMIN DIRECT — appelle miaou__memory__create immédiatement (sans demander) quand l'utilisateur :\n" +
-  "  - donne une instruction durable explicite : \"souviens-toi que\", \"retiens\", \"dorénavant\", " +
-  "\"désormais\", \"à partir de maintenant\", \"appelle-moi X\", \"ne fais plus jamais Y\"\n" +
+  "  - donne une instruction durable explicite (\"souviens-toi que\", \"retiens\", " +
+  "\"dorénavant\", \"appelle-moi X\", \"ne fais plus jamais Y\", etc.)\n" +
   "  - communique un fait stable sur lui-même (métier, projet, contrainte personnelle)\n" +
   "  - exprime une préférence de fond sur le format ou le ton de tes réponses\n" +
-  "Sur le chemin direct : tu PEUX narrer « c'est noté » car l'écriture a déjà eu lieu.\n\n" +
-  "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS (sans demande explicite) " +
-  "qu'un fait durable mérite d'être retenu. Élargis le périmètre des faits durables pour " +
-  "inclure systématiquement la localisation géographique et l'environnement quotidien : " +
-  "si un tel détail apparaît, même s'il sert de contexte à une question technique, utilise " +
-  "ce chemin pour proposer de le retenir. La question doit contenir LITTÉRALEMENT le " +
-  "contenu envisagé : « Tu veux que je retienne : « … » ? ». " +
-  "Ne JAMAIS écrire en mémoire sans confirmation préalable sur ce chemin. " +
-  "Ne JAMAIS affirmer avoir enregistré quelque chose si tu n'as pas appelé miaou__memory__create dans ce même tour.\n\n" +
-  "CHEMIN CORRECTION — quand l'utilisateur répond en texte libre à une question ask_confirmation " +
-  "(au lieu de cliquer Accepter/Rejeter) et que sa réponse contient une valeur corrigée " +
-  "(ex. « non, plutôt un modèle Y »), appelle miaou__memory__create avec la valeur corrigée. " +
-  "Ne pas se contenter d'acquitter en texte.\n\n" +
-  "MISE À JOUR / SUPPRESSION : si un souvenir existant devient obsolète ou inexact, " +
-  "appelle miaou__memory__update (correction in-place) ou miaou__memory__delete (tombstone réversible).\n\n" +
+  "Sur ce chemin tu PEUX narrer « c'est noté » : l'écriture a déjà eu lieu.\n\n" +
+  "CHEMIN INFÉRÉ — appelle ask_confirmation quand tu DÉDUIS, sans demande explicite, " +
+  "qu'un fait durable mérite d'être retenu. Compte parmi eux la localisation " +
+  "géographique et l'environnement quotidien, même mentionnés en passant pour situer " +
+  "une question technique. La question doit contenir LITTÉRALEMENT le contenu " +
+  "envisagé : « Tu veux que je retienne : « … » ? ». N'écris JAMAIS en mémoire sans " +
+  "cette confirmation, et n'affirme JAMAIS avoir enregistré quoi que ce soit sans " +
+  "avoir appelé miaou__memory__create dans le même tour.\n\n" +
+  "CHEMIN CORRECTION — si l'utilisateur répond en texte libre à un ask_confirmation " +
+  "(au lieu de cliquer Accepter/Rejeter) et que sa réponse porte une valeur corrigée " +
+  "(« non, plutôt un modèle Y »), appelle miaou__memory__create avec la valeur " +
+  "corrigée : ne te contente pas d'acquitter en texte.\n\n" +
+  "MISE À JOUR / SUPPRESSION : un souvenir devenu obsolète ou inexact se corrige par " +
+  "miaou__memory__update (in-place) ou miaou__memory__delete (tombstone réversible).\n\n" +
   "Le contenu stocké est toujours à la 3e personne, factuel, sans interprétation.\n" +
   "Ne déclenche PAS pour une instruction valable seulement pour la réponse en cours.";
 
@@ -358,8 +368,24 @@ const FILES_DOCTRINE =
 //
 // Une modification ici invalide le préfixe KV cache sur toutes les conversations
 // (ponctuel, assumé : la doctrine change une fois puis se re-stabilise).
+// v3 (campagne contexte) : la double branche <OUVERTURE_DE_DOCUMENTS> /
+// <SANS_OUVERTURE_DE_DOCUMENTS> est SUPPRIMÉE, et avec elle la seconde branche.
+// Elle datait de l'époque où ouvrir un document supposait un serveur MCP : la
+// condition « si aucun outil ne sait ouvrir ce format » était alors réelle.
+// Depuis V-1 les cinq lecteurs sont NATIFS — docs__list/read/extract/
+// render_page/pack sont dans le registre TOOLS, une const build-time, donc
+// présents à tous les tours de toute conversation. La branche décrivait un état
+// inatteignable, et faisait porter au modèle un arbitrage que MIAOU tranche
+// déjà : défaut « condition non évaluable » côté modèle, alors qu'elle est
+// évaluée côté application. Le seul contexte où les outils peuvent manquer est
+// un AGENT à liste blanche restreinte — et il est déjà couvert, mieux, par
+// AGENT_SCOPE_NOTICE (agents.js) : « les doctrines du prompt système décrivent
+// les capacités de l'application dans son ensemble, pas nécessairement les
+// tiennes ». Ce qui reste utile de la branche coupée (ne pas supposer le
+// contenu d'un fichier qu'on ne sait pas ouvrir) vaut pour un format non
+// couvert, pas pour une absence d'outil : c'est dit là où le cas se produit,
+// dans le paragraphe des refus.
 const DOCS_DOCTRINE =
-  "<OUVERTURE_DE_DOCUMENTS>\n" +
   "Un fichier binaire joint par l'utilisateur ou déposé dans la bibliothèque de " +
   "l'espace (descripteur [attachment att-N: file \"...\", <mime>, <taille> — binary " +
   "content, not inlined]) n'est pas lisible directement : son contenu n'est jamais " +
@@ -377,7 +403,9 @@ const DOCS_DOCTRINE =
   "Appelle ces outils sans attendre que l'utilisateur te le demande explicitement, " +
   "dès lors que la conversation porte sur le fichier joint. Si un outil te répond " +
   "qu'il ne sait pas ouvrir un format, sa réponse te dit quoi faire à la place : " +
-  "suis-la, ne suppose jamais le contenu du fichier.\n" +
+  "suis-la. Ne suppose JAMAIS le contenu d'un fichier que tu n'as pas pu ouvrir — " +
+  "dis à l'utilisateur que le format n'est pas lisible ; tu n'as alors que le nom, " +
+  "le type et la taille donnés par son descripteur.\n" +
   "Quand un même outil existe en natif (préfixe miaou__) et via un serveur " +
   "(autre préfixe), PRÉFÈRE LE NATIF : le serveur est un fallback pour le cas " +
   "sans réseau.\n" +
@@ -389,13 +417,7 @@ const DOCS_DOCTRINE =
   "appelle miaou__skills__read avec le slug « docs » (skill système, listée dans " +
   "<miaou_skills_context> si présente) : elle donne la forme exacte du selector " +
   "de chaque format, quand sortir une lecture en ressource, comment lire les " +
-  "refus, et comment nommer les membres d'une archive que tu crées.\n" +
-  "</OUVERTURE_DE_DOCUMENTS>\n\n" +
-  "<SANS_OUVERTURE_DE_DOCUMENTS>\n" +
-  "Si aucun outil disponible ne sait ouvrir le format d'un fichier joint, dis-le à " +
-  "l'utilisateur plutôt que de supposer ou de fabriquer son contenu. Tu connais son " +
-  "nom, son type et sa taille par son descripteur : c'est tout ce dont tu disposes.\n" +
-  "</SANS_OUVERTURE_DE_DOCUMENTS>\n";
+  "refus, et comment nommer les membres d'une archive que tu crées.\n";
 
 // ── js__eval : compute sandboxé sur un blob client (lot L) ────────────────────
 // Paramètres du sandbox (constantes MIAOU dédiées, tranchées à l'audit AL2 sur
@@ -928,33 +950,43 @@ const TOOLS = [
   },
   {
     name: 'conv__list',
+    // Description dégraissée (campagne contexte) : les développements retirés
+    // n'étaient pas du contrat d'appel. Le caractère indicatif de `match` est
+    // désormais dit en une clause dans la description du paramètre `query`, là
+    // où il se lit au moment de choisir (mémoire
+    // project_search_excerpt_indicative_not_exhaustive : la règle est de le
+    // DIRE dans la description de l'outil, pas de le développer en trois
+    // phrases). La mise en garde « état PASSÉ » RESTE, en une phrase au lieu de
+    // trois : aucune doctrine racine ne la porte (CONV_REF_DOCTRINE ne traite
+    // que le marqueur [conv_ref:ID]), et son seul autre porteur —
+    // buildSummaryBlock, main.js — est CONDITIONNEL aux résumés injectés. Un
+    // conv__list sans résumé pertinent ne la lirait donc nulle part.
     description:
       "Liste les conversations passées (résumé + mots-clés par défaut), hors " +
-      "la conversation en cours. Le paramètre since est OPTIONNEL : l'omettre " +
-      "liste TOUTES les conversations — appelle l'outil sans hésiter même sans " +
-      "date en tête ; le préciser (date ISO 8601) limite aux conversations " +
-      "actives depuis cette date. Passer query pour ne garder que les " +
-      "conversations dont le résumé ou les mots-clés correspondent (recherche " +
-      "par mots) — utile pour retrouver une " +
-      "conversation sur un sujet précis sans tout lister. Mettre une suite de " +
-      "mots entre guillemets (\"nid de poule\") exige de la retrouver telle " +
-      "quelle ; sans guillemets, les mots sont cherchés séparément. Avec query, chaque " +
-      "conversation porte alors un champ match : un court extrait du résumé " +
-      "montrant où la recherche a porté. Cet extrait est INDICATIF et tronqué — " +
-      "il situe la correspondance, il ne dit pas tout ce que la conversation " +
-      "contient sur le sujet, et une conversation trouvée par ses mots-clés peut " +
-      "n'en avoir aucun. Pour lire réellement, utilise conv__get ou " +
-      "with_contents. Passer " +
-      "with_contents=true pour inclure aussi le contenu complet de chacune " +
-      "(potentiellement volumineux). " +
-      "Ce que tu y lis décrit un état PASSÉ : un échec relaté a pu être corrigé " +
-      "depuis. N'en conclus jamais qu'une action échouera, ni ne refuse sur " +
-      "cette base un appel qui t'est demandé.",
+      "la conversation en cours. since est OPTIONNEL : l'omettre liste TOUTES " +
+      "les conversations — appelle l'outil sans hésiter même sans date en tête ; " +
+      "le préciser (date ISO 8601) limite aux conversations actives depuis " +
+      "cette date. query ne garde que celles dont le résumé ou les mots-clés " +
+      "correspondent, pour retrouver un sujet précis sans tout lister. " +
+      "with_contents=true inclut le contenu complet de chacune (potentiellement " +
+      "volumineux) ; pour lire une seule conversation, conv__get. Ce que tu y " +
+      "lis décrit un état PASSÉ : un échec relaté a pu être corrigé depuis, " +
+      "n'en conclus jamais qu'une action échouera.",
     inputSchema: {
       type: 'object',
       properties: {
         since: { type: 'string', description: 'Optionnel — date ISO 8601. Omettre pour tout lister.' },
-        query: { type: 'string', description: 'Optionnel — mots-clés à rechercher dans le résumé/titre.' },
+        // La syntaxe des guillemets et le caractère indicatif de `match` ont
+        // quitté la description de l'outil pour ATTERRIR ICI, pas pour
+        // disparaître : le handler implémente réellement la suite exacte
+        // (parseSearchTerms), et un extrait présenté comme exhaustif ferait
+        // conclure au modèle qu'il a tout lu
+        // (project_search_excerpt_indicative_not_exhaustive). C'est le lieu où
+        // ça se lit au moment de remplir le paramètre.
+        query: { type: 'string', description: 'Optionnel — mots-clés cherchés dans le résumé/titre, séparément ; ' +
+          'une suite entre guillemets ("nid de poule") doit être retrouvée telle quelle. ' +
+          'Chaque résultat porte alors un champ match : un court extrait INDICATIF qui situe ' +
+          'la correspondance, jamais tout ce que la conversation dit du sujet.' },
         with_contents: { type: 'boolean', description: 'Inclure le contenu complet (défaut false)' },
       },
     },
@@ -1755,24 +1787,36 @@ const TOOLS = [
     // skills__read. Herméticité (piège 18) : resolveHandleRecord lit le cache
     // session, un handle hors-scope → null → « handle introuvable » (pas d'oracle).
     name: 'js__eval',
+    // Description dégraissée (campagne contexte) : ce qui EST parti est ce que
+    // la skill système `js-eval` dit déjà, et mieux — l'énumération des
+    // primitives et leur sémantique (§ « Primitives disponibles », liste
+    // FERMÉE), le comportement littéral d'emit() et le MONTAGE output_handle en
+    // 4 étapes (§ « Écrire un gros résultat »), le détail du mode calcul pur
+    // (§ « Calcul sans aucune ressource »). Ce qui NE pouvait pas partir, et
+    // que deux tests gardent : l'EXISTENCE de `output_handle`/`emit()` et le
+    // caractère FACULTATIF d'input_handles. Une capacité que le modèle ne lit
+    // qu'en skill est inatteignable pour qui n'ouvre pas la skill — les tests
+    // exigent les deux porteurs, doctrine ET description, et ils ont raison :
+    // c'est la description qu'on lit en composant l'appel. Le cap chiffré reste porté par
+    // JS_EVAL_DOCTRINE (prompt racine), à laquelle la skill renvoie
+    // explicitement — la description n'a jamais été le porteur de ce chiffre.
+    // Ce qui RESTE est le contrat d'appel et le déclencheur : sans lui, le
+    // modèle n'a aucune raison d'aller lire la skill. La clause de lecture
+    // OBLIGATOIRE est le pivot du montage (JS_EVAL_DOCTRINE la pose aussi) :
+    // la retirer romprait la chaîne doctrine → skill → appel correct.
     description:
-      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé. Il peut lire le " +
-      "contenu TEXTUEL de jusqu'à " + JS_EVAL_MAX_INPUTS + " ressources référencées par handle " +
-      "(att-N, file-<id> ou res_<id>), sans charger ce contenu dans ton contexte. " +
-      "Sers-t'en pour interroger un gros fichier (log, JSON-lines, CSV, texte) — " +
-      "compter, filtrer, agréger, extraire — ou pour CROISER plusieurs ressources en " +
-      "un seul appel. input_handles est FACULTATIF : omets-le et le code s'exécute sans " +
-      "rien lire, pour un calcul pur (arithmétique exacte, manipulation de chaînes, " +
-      "vérification d'une formule). Primitives disponibles dans le bac à sable, toutes prenant la " +
-      "clé de la ressource à lire : text(cle), lines(cle), jsonLines(cle), " +
-      "parse(cle) (voir la skill 'js-eval' pour le détail). La dernière valeur évaluée du code " +
-      "est renvoyée (sérialisée en JSON si ce n'est pas une string). Sortie trop " +
-      "grosse → refus explicite (réécris pour synthétiser) ; pour PRODUIRE un gros " +
-      "contenu sans buter sur cette limite, passe output_handle et écris au fil de " +
-      "l'eau avec emit() — qui concatène LITTÉRALEMENT, sans ajouter de saut de ligne : " +
-      "termine toi-même chaque chunk par \\n si tu produis des lignes. N'inclus jamais le " +
-      "contenu du fichier dans le code : il vient des primitives. Lecture OBLIGATOIRE " +
-      "de la skill 'js-eval' avant utilisation dans une conversation.",
+      "Exécute du JavaScript (que tu écris) dans un bac à sable isolé, qui peut lire le " +
+      "contenu TEXTUEL de ressources référencées par handle (att-N, file-<id> ou " +
+      "res_<id>) sans le charger dans ton contexte. Sers-t'en pour interroger un gros " +
+      "fichier (log, JSON-lines, CSV, texte) — compter, filtrer, agréger, extraire —, " +
+      "pour CROISER plusieurs ressources en un seul appel, ou pour un calcul pur sans " +
+      "rien lire : input_handles est FACULTATIF. La dernière valeur évaluée du code est " +
+      "renvoyée ; une sortie trop grosse est refusée, et pour PRODUIRE un gros contenu " +
+      "il faut passer output_handle et écrire au fil de l'eau avec emit(). N'inclus " +
+      "jamais le contenu d'une ressource dans le code : il vient des primitives de " +
+      "lecture du bac à sable. Lecture OBLIGATOIRE de la skill 'js-eval' avant " +
+      "utilisation dans une conversation : elle donne les primitives, la forme exacte " +
+      "des paramètres et les contraintes de sortie.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -2673,29 +2717,38 @@ function agentDefaultReasoningEffort(ctx) {
 function agentSpawnToolDef(ctx) {
   const effort = agentDefaultReasoningEffort(ctx);
   return {
+    // Description dégraissée (campagne contexte) : c'était le 2e outil le plus
+    // lourd du payload (2044 chars en forme wire), et la skill système `agents`
+    // couvre CHACUN de ses paramètres plus en détail qu'elle ne le faisait —
+    // le § « test de l'enveloppe fermée » pour `prompt`, un § entier pour
+    // `tools` et pour `attachments` (dont le défaut AUCUN, les handles réécrits
+    // et le refus qui renvoie la liste des noms valides), un § pour
+    // `reasoning_effort`. AGENT_DOCTRINE impose nommément sa lecture avant le
+    // premier appel, et <miaou_skills_context> reconnaît cette exception au
+    // « aucune skill n'est obligatoire » : la skill est SUR le chemin, pas à
+    // côté — c'est ce qui rend le dégraissage sûr ici et pas sur un outil
+    // ordinaire. Ce qui reste : le QUOI, le fait que l'appel rend la main
+    // immédiatement, et une ligne de contrat par paramètre.
     description:
       "Lance un agent : une sous-conversation autonome à qui tu confies une tâche " +
       "précise, et qui travaille en parallèle pendant que tu continues. Rend son " +
-      "identifiant IMMÉDIATEMENT — ton tour continue, tu ne l'attends pas. Tu seras " +
-      "prévenu automatiquement quand il aura terminé, avec son résultat. L'agent " +
-      "démarre À FROID : il n'a ni ton historique ni ton contexte, seulement le " +
-      "prompt que tu lui écris — celui-ci doit donc être autosuffisant. Il ne voit " +
-      "aucun de tes fichiers non plus : pour qu'il travaille sur l'un d'eux, nomme " +
-      "son handle dans `attachments`. Voir la " +
-      "skill 'agents' pour rédiger un prompt d'agent et choisir sa trousse d'outils.",
+      "identifiant IMMÉDIATEMENT — tu ne l'attends pas, tu seras prévenu avec son " +
+      "résultat quand il aura terminé. Il démarre À FROID : ni ton historique, ni " +
+      "ton contexte, ni tes fichiers. Voir la skill 'agents' pour rédiger son " +
+      "prompt, choisir sa trousse d'outils et exploiter son résultat.",
     inputSchema: {
       type: 'object',
       properties: {
         prompt: { type: 'string',
-          description: 'La tâche confiée, rédigée pour quelqu\'un qui n\'a AUCUN contexte : rappelle tout ce qui est nécessaire, y compris la forme de sortie attendue.' },
+          description: 'La tâche confiée, rédigée pour quelqu\'un qui n\'a AUCUN contexte : elle doit tenir seule, forme de sortie attendue comprise.' },
         intent: { type: 'string',
-          description: 'Ce que tu demandes à l\'agent, en une phrase, tel que tu l\'expliquerais à l\'utilisateur — c\'est ce libellé qui s\'affichera dans la conversation à la place d\'un titre, parce qu\'un agent n\'est jamais titré.' },
+          description: 'Ce que tu demandes à l\'agent, en une phrase, tel que tu l\'expliquerais à l\'utilisateur — ce libellé s\'affiche à la place d\'un titre.' },
         tools: { type: 'array', items: { type: 'string' },
-          description: 'Noms des outils délégués à l\'agent (ex. "miaou__js__eval"). Par défaut AUCUN : nomme ce dont la tâche a besoin, et rien de plus. Un nom invalide te sera renvoyé avec la liste des noms valides.' },
+          description: 'Noms des outils délégués (ex. "miaou__js__eval"). Par défaut AUCUN : nomme ce dont la tâche a besoin, et rien de plus.' },
         attachments: { type: 'array', items: { type: 'string' },
-          description: 'Handles des fichiers mis à la disposition de l\'agent : att-N, file-<id> ou res_<id>, tels que TU les adresses. Par défaut AUCUN — un agent ne voit aucun de tes fichiers si tu ne les nommes pas ici, et tu ne peux pas non plus lui en recopier le contenu. Il les recevra sous des handles réécrits, listés dans ma réponse.' },
+          description: 'Handles des fichiers confiés à l\'agent (att-N, file-<id> ou res_<id>), tels que TU les adresses. Par défaut AUCUN : sans cela il ne voit aucun de tes fichiers.' },
         reasoning_effort: { type: 'string',
-          description: 'Effort de raisonnement de l\'agent' + (effort ? ' (par défaut : ' + effort + ')' : ' (par défaut : celui de l\'application)') + '. Une tâche mécanique se traite bien à un niveau bas.' },
+          description: 'Effort de raisonnement de l\'agent' + (effort ? ' (par défaut : ' + effort + ')' : ' (par défaut : celui de l\'application)') + '.' },
       },
       required: ['prompt', 'intent'],
     },
@@ -3504,7 +3557,16 @@ function toolIsHalting(name) { return name === 'ask_confirmation'; }
 // repli sur l'écran est celui de toolCtx, documenté.
 function toolDefinitions(allow, ctx) {
   const intentEnabled = !!loadSettings().intentTracing;
-  const intentProp = { type: 'string', title: 'Intention', description: 'Phrase courte décrivant le but de l\'appel, pour l\'utilisateur.' };
+  // Propriété NUE, sans `title` ni `description` : elle est répétée sur CHAQUE
+  // outil exposé, donc chaque mot y est payé autant de fois qu'il y a d'outils
+  // (≈35 en usage réel — 132 chars × 35 = 4620, 12 % des définitions). Ce
+  // qu'elle disait est déjà dit UNE fois par INTENT_DOCTRINE dans le message
+  // système, et mieux : consigne, critère (« pas une paraphrase du nom
+  // technique »), trois exemples et contrainte de forme. Le `title` ne servait
+  // rien ici (pas de formulaire à étiqueter). La doctrine PORTE désormais seule
+  // la consigne : la retirer du prompt système sans remettre une description
+  // ici laisserait `miaou_intent` sans aucun énoncé nulle part.
+  const intentProp = { type: 'string' };
   const allowSet = Array.isArray(allow) ? new Set(allow) : null;
   // Les définitions dynamiques (agent__spawn) sont déjà résolues par
   // exposedTools(ctx) — d'où le ctx passé ici. UNE source pour la description
