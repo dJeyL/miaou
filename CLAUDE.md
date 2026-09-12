@@ -636,8 +636,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `setComposerStreaming`/`setComposerPhase`) et, distincte d'elle, la pulsation
   du bouton « aller tout en bas » : `.has-unseen` dit « du contenu est arrivé
   pendant que tu regardais ailleurs », jamais « ça génère » — état `_threadUnseen`
-  (Set par conv), marqué sur `shouldFollowStream` et NON `isAtBottom`, acquitté
-  en atteignant le fond ; tokens `--jump-shadow` et `--jump-glow-a`.
+  (Set par conv), marqué sur `isAtBottom` et NON `shouldFollowStream` (qui rend
+  `true` par construction tant que le plafond d'ancrage est armé, donc ne
+  marquait jamais le cas le plus fréquent : la réponse qui passe sous le fold),
+  acquitté en atteignant le fond ; tokens `--jump-shadow` et `--jump-glow-a`.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)
 

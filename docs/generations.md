@@ -246,7 +246,7 @@ Trois transitions, et elles seules :
 
 | Événement | Effet | Point de code |
 |---|---|---|
-| contenu arrivé, fil qui ne suit plus | non vu | `markThreadContentUnseen` |
+| contenu arrivé hors de vue | non vu | `markThreadContentUnseen` |
 | le fil atteint le fond | vu | `ackThreadContentSeen`, depuis `syncScrollBottomBtn` |
 | changement de conversation | sans objet | le Set est clefé par conversation |
 
@@ -256,13 +256,27 @@ une génération écrit dans SA conversation, et on peut ouvrir un fil d'agent o
 revenir sur un parent réveillé pendant son travail. Jamais persisté : « je n'ai
 pas encore vu ça » ne survit pas à un rechargement, qui repart du fond.
 
-**Le prédicat de marquage est `shouldFollowStream`, surtout pas `isAtBottom`.**
-Pendant un suivi nominal, le fil s'arrête au plafond d'ancrage
-(`scrollBottomCapped`) pour garder l'énoncé à l'écran : on n'est donc pas au
-fond, alors que le contenu arrive bien sous les yeux. Marquer sur `isAtBottom`
-ferait briller le bouton en permanence pendant toute génération suivie — le
-contraire exact de l'intention. Le fil « ne suit plus » une fois le plafond levé
-par une redescente volontaire (ancrage doux), puis une remontée.
+**Le prédicat de marquage est `isAtBottom`, surtout pas `shouldFollowStream`.**
+Les deux répondent à des questions différentes : « faut-il continuer à dérouler
+le fil ? » regarde ce que l'utilisateur veut, « ce qui vient d'arriver est-il
+visible ? » regarde où est la vue. Seule la seconde décide d'une pulsation.
+
+Marquer sur `shouldFollowStream` ne marquait **jamais** tant que le plafond
+d'ancrage était armé, puisque ce prédicat rend `true` par construction dans ce
+cas. Or le plafond mord exactement quand la réponse dépasse l'écran : le suivi
+s'arrête au ras de la bulle utilisateur, la suite s'écrit sous le fold, donc
+hors de vue — le cas même que le bouton doit signaler, et le plus fréquent.
+Le bouton y est d'ailleurs déjà **visible** (`syncScrollBottomBtn`, appelée par
+`scrollBottomCapped` à chaque écriture) : ce qui est montré doit pouvoir
+briller, sinon le glow rate sa seule occasion utile.
+
+Pas de pulsation permanente pendant une génération réellement suivie pour
+autant : en ancrage doux (plafond levé par une redescente volontaire), la vue
+reste au fond, donc `isAtBottom()` reste vrai. Et là où un point d'insertion
+marque avant son `scrollBottomCapped` (les deux `onEarlyAcks`/`onToolAcks` de
+main.js, où `placeToolAck` marque depuis l'intérieur), le faux positif est
+acquitté dans la même frame synchrone par le `syncScrollBottomBtn` que
+`scrollBottomCapped` appelle — avant peinture, donc invisible.
 
 L'acquittement est posé dans `syncScrollBottomBtn` et non dans le handler de
 clic, parce que descendre au fond **à la main** est le même geste du point de
@@ -272,6 +286,22 @@ Visibilité et pulsation restent deux questions séparées, avec deux écrivains
 `syncScrollBottomBtn` pour l'attribut `hidden` (position de défilement),
 `syncScrollBottomGlow` pour la classe (non-vu). Indépendants, donc la classe
 survit aux passages masqué/visible.
+
+**En animations réduites, le halo devient un état statique — il ne disparaît
+pas.** Le kill-switch global (`html[data-motion="reduced"]`, base.css) ramène
+toute animation à 0.01ms et une itération ; les keyframes de la pulsation ont
+donc leurs extrémités éteintes, pour ne pas se figer sur un halo arbitraire à
+mi-course. Cela rend l'animation inoffensive sous ce mode, mais ne suffit pas à
+y porter le signal : sans plus, le bouton ne distingue plus « du contenu est
+arrivé hors de vue » du repos, et le kill-switch supprime l'**information** en
+même temps que le mouvement — là où sa doctrine ne vise que le mouvement.
+Un bloc dédié (`chat.css`, en fin de section) repeint donc la crête du keyframe
+en statique, halo adouci (10px sans spread) parce qu'un état permanent n'a pas
+besoin de l'intensité d'une crête qui ne fait que passer. Il n'a pas besoin
+d'`!important` : le kill-switch n'en pose que sur les propriétés d'animation et
+de transition, jamais sur `box-shadow`/`border-color`/`color`. Les deux moitiés
+se tiennent — toucher les keyframes sans ce bloc rend le bouton muet sous ce
+mode, et l'inverse rend un halo figé.
 
 #### L'apparition est en fondu, et `[hidden]` ne masque plus rien tout seul
 

@@ -1130,7 +1130,7 @@ function scrollCapReleased(convId) {
 // montrer, et faire briller le bouton y promettrait du vide.
 //
 // Trois transitions, et elles seules :
-//   contenu arrivé, fil qui ne suit  → non vu      (markThreadContentUnseen)
+//   contenu arrivé hors de vue       → non vu      (markThreadContentUnseen)
 //   le fil atteint le fond           → vu          (acquitté par syncScrollBottomBtn)
 //   la conversation change           → sans objet  (le Set est clefé par conv)
 //
@@ -1145,15 +1145,25 @@ const _threadUnseen = new Set();   // Set<convId> — du contenu est arrivé hor
 // placeToolBlocks, finalizeAssistant). Les appelants passent par ici plutôt que
 // d'écrire dans le Set — un seul écrivain, une seule fois la condition.
 //
-// La condition est `shouldFollowStream`, PAS `isAtBottom`. Pendant un suivi
-// nominal le fil s'arrête au plafond d'ancrage (scrollBottomCapped) pour garder
-// l'énoncé à l'écran : on n'est donc PAS au fond, alors que le contenu arrive
-// bien sous les yeux. Marquer sur `isAtBottom` ferait briller le bouton en
-// permanence pendant toute génération suivie — exactement ce qu'on ne veut pas.
-// Le fil « ne suit plus » quand l'utilisateur a levé le plafond en redescendant
-// de son plein gré (ancrage doux), puis est reparti vers le haut.
+// La condition est la POSITION (`isAtBottom`), pas l'intention de suivi
+// (`shouldFollowStream`). Les deux questions sont distinctes : « faut-il
+// continuer à dérouler le fil ? » regarde ce que l'utilisateur veut, « ce qui
+// vient d'arriver est-il visible ? » regarde où est la vue.
+//
+// Marquer sur `shouldFollowStream` ne marquait JAMAIS tant que le plafond
+// d'ancrage était armé, puisque ce prédicat rend `true` par construction dans
+// ce cas. Or le plafond mord exactement quand la réponse dépasse l'écran : le
+// suivi s'arrête au ras de la bulle utilisateur, la suite s'écrit sous le fold,
+// donc hors de vue — le cas même que le bouton doit signaler. Le bouton est
+// d'ailleurs déjà VISIBLE là (`syncScrollBottomBtn`, appelée par
+// `scrollBottomCapped` à chaque écriture) : ce qui est montré doit pouvoir
+// briller, sinon le glow rate sa seule occasion utile.
+//
+// Pas de risque de glow permanent pendant une génération réellement suivie :
+// l'ancrage doux (plafond levé, vue au fond) garde `isAtBottom()` vrai, et
+// `syncScrollBottomBtn` acquitte à chaque `scroll` dès que le fond est atteint.
 function markThreadContentUnseen() {
-  if (currentConvId == null || shouldFollowStream(currentConvId)) return;
+  if (currentConvId == null || isAtBottom()) return;
   _threadUnseen.add(currentConvId);
   syncScrollBottomGlow();
 }

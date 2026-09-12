@@ -536,8 +536,11 @@
 
    Extrémités ÉTEINTES (0% et 100% identiques au repos) : sous data-motion="reduced"
    le kill-switch global de base.css ramène l'animation à 0.01ms et une seule
-   itération — elle se fige alors sur sa dernière frame, qui doit donc être
-   l'apparence normale du bouton, pas un halo figé. */
+   itération — elle se fige alors sur sa dernière frame, qui ne doit pas être un
+   halo figé à mi-course. Cela rend l'animation inoffensive sous ce mode, mais ne
+   suffit PAS à y rendre le signal : c'est le bloc data-motion="reduced" en bas
+   de section qui repeint la crête en statique. Les deux vont ensemble — toucher
+   l'un sans l'autre rend soit un halo arbitraire, soit un bouton muet. */
 @keyframes scroll-bottom-glow {
   0%, 100% {
     box-shadow: var(--jump-shadow),
@@ -581,6 +584,31 @@
 .scroll-bottom-btn.has-unseen:not([hidden]):hover,
 .scroll-bottom-btn.has-unseen:not([hidden]):hover svg {
   animation: none;
+}
+
+/* Animations réduites : le halo devient un état STATIQUE, il ne disparaît pas.
+   Le kill-switch global (base.css) ramène l'animation à 0.01ms et une itération,
+   donc elle se fige sur ses extrémités — éteintes par construction. Sans ces
+   règles le bouton perd alors toute distinction entre « du contenu est arrivé
+   hors de vue » et le repos : le kill-switch supprimerait l'INFORMATION en même
+   temps que le mouvement, là où sa doctrine ne vise que le mouvement.
+   On peint donc directement la crête du keyframe (50%), sans `!important` :
+   le kill-switch n'en pose que sur les propriétés d'animation et de transition,
+   jamais sur box-shadow/border-color/color, qui restent libres ici.
+   Halo volontairement adouci par rapport à la crête animée (10px au lieu de
+   14px, pas de spread) : une pulsation ne se lit que par son mouvement et peut
+   pousser sa crête, un état permanent tient dans le champ de vision en continu
+   et crierait à la même intensité.
+   Le survol reprend la main de la même façon qu'au-dessus, et pour la même
+   raison — d'où la reprise du bloc en :not(:hover) plutôt qu'une surcharge
+   supplémentaire posée après. */
+html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hover) {
+  box-shadow: var(--jump-shadow),
+              0 0 10px hsl(var(--accent-hue) var(--accent-sat) 63.5% / var(--jump-glow-a));
+  border-color: var(--accent-bd);
+}
+html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hover) svg {
+  color: var(--accent);
 }
 
 .msg {
