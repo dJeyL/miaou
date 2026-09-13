@@ -60,7 +60,11 @@ Même discipline que `spaceConvIds` (piège 18) : chaque question a UNE fonction
   non-lu et qui regénère affiche l'activité en cours, information la plus
   fraîche).
 - **`spaceBadgeState(spaceId)`** (main.js) — l'état d'un Espace, agrégé.
-- **`aggregateBadgeState(excludeSpaceId)`** (main.js) — l'agrégat multi-Espaces.
+- **`aggregateBadgeState(excludeSpaceId, excludeConvId)`** (main.js) — l'agrégat
+  multi-Espaces. Deux exclusions, deux questions distinctes : `excludeSpaceId`
+  répond « de l'activité **ailleurs** qu'ici ? » (sélecteur replié),
+  `excludeConvId` retire le sous-arbre de la conversation **affichée**
+  (hamburger — cf. plus bas).
 - **`resolveActivityBadge(states)`** (utils.js, **pure et testée**) — la règle
   de résolution : `unread` présent → `'unread'` ; sinon `working` présent →
   `'working'` ; sinon `null`.
@@ -76,9 +80,18 @@ persistance, aucune clé localStorage, aucun champ sur la conversation** — c'e
 exactement la portée de survie des générations elles-mêmes (T-1 décision 1) :
 une génération ne survit pas au reload, son « non lu » non plus.
 
-- **Marquage** : dans `unregisterGeneration`, et seulement si
+- **Marquage** : deux producteurs, et le second n'est pas une génération.
+  (1) `unregisterGeneration`, et seulement si
   `!genOwnsScreen(gen)` — une réponse qu'on a regardée arriver n'est pas « non
-  lue ». Le prédicat d'écran reste celui de T-1, jamais un test réécrit. Il est
+  lue ». (2) `carryThreadUnseenToBadge` au **départ** d'une conversation dont le
+  fil a du contenu non vu (on était remonté, la réponse s'est écrite sous le
+  fold, on part sans être redescendu) : la surface qui le disait — le bouton
+  « aller tout en bas » — n'existe plus une fois qu'on est ailleurs, le badge
+  prend le relais. Détail dans `docs/generations.md`. Les deux passent par
+  `markConvUnread`, jamais un `_unreadConvs.add` écrit sur place, et les deux
+  portent la **garde de racine** décrite plus bas — quitter un fil d'agent en
+  étant remonté serait sinon un troisième chemin vers le fantôme du
+  2026-09-05. Le prédicat d'écran reste celui de T-1, jamais un test réécrit. Il est
   évalué **après** le retrait du registre, pour que `convBadgeState` bascule sur
   `unread` et pas sur un `working` résiduel. **Restreint aux conversations
   RACINE**, et sur un record qui existe encore — cf. la section suivante.
@@ -89,8 +102,10 @@ une génération ne survit pas au reload, son « non lu » non plus.
 
 ### Marquer suppose pouvoir effacer — le non-lu est réservé aux racines
 
-Le marquage a **un** point d'entrée et l'effacement **un** point de sortie, et
-les deux ne portaient pas sur le même ensemble. `unregisterGeneration` marquait
+À l'époque du bug, le marquage avait **un** point d'entrée et l'effacement
+**un** point de sortie (le marquage en a deux depuis le report du non-vu, cf.
+plus haut ; l'invariant ci-dessous ne change pas pour autant), et les deux ne
+portaient pas sur le même ensemble. `unregisterGeneration` marquait
 toute conversation finissant hors écran ; `markConvRead` n'est appelé que par
 `openConversation`. Or une génération d'**agent** n'est par construction jamais
 à l'écran (les agents sont exclus de la sidebar, le spawn n'y bascule pas) : tout
@@ -175,12 +190,39 @@ d'en oublier un pour figer la pastille dans un état faux. La classe `.show` du
 menu est déjà la source de vérité — même ressort que le masquage du hamburger
 sous `.app.sidebar-open`.
 
-### Le hamburger agrège tout
+### Le hamburger agrège tous les Espaces — mais pas ce qui est sous les yeux
 
 Sidebar repliée, l'utilisateur ne voit ni la liste des conversations ni le
 sélecteur : c'est le **seul** indicateur disponible. Le restreindre à l'ailleurs
 laisserait muette une conversation active de l'Espace courant, précisément celle
-qu'il ne peut pas voir.
+qu'il ne peut pas voir. Aucun **Espace** n'est donc exclu.
+
+**La conversation AFFICHÉE, elle, l'est** (`aggregateBadgeState(null,
+currentConvId)`). Le hamburger dit « il y a quelque chose à voir *là-dedans* » ;
+la conversation qu'on regarde n'est pas « là-dedans ». Son activité est déjà
+portée par le composer en mode stop et par la bulle qui se remplit — la
+signaler une seconde fois invite à ouvrir la sidebar pour y trouver ce qu'on
+avait déjà sous les yeux. C'est la même règle que `resolveAgentCount`
+(utils.js), qui tait la pilule quand la seule chose à annoncer est la
+génération regardée.
+
+Ce qui est exclu est le **sous-arbre** de la conversation affichée, pas la seule
+racine : le travail d'un de ses **agents** est annoncé par la pilule
+« *n* agents » de la topbar, visible sidebar repliée elle aussi.
+
+L'exclusion ne peut pas masquer un `unread` : ouvrir une conversation la marque
+lue (`markConvRead`), et `unregisterGeneration` n'en pose jamais sur une
+génération qui possède l'écran. Elle ne masque donc que du `working`, celui
+qu'on regarde.
+
+**Point de synchronisation qui n'allait pas de soi** : `resetToEmpty` (retour à
+l'accueil) ne passe par aucun `syncSpaceUI`, le Space ne changeant pas. Il
+appelle donc `syncActivityBadges()` directement — sans quoi quitter une
+conversation active laisserait le hamburger muet alors que l'activité vient de
+passer « ailleurs ». Même motif que l'appel à `syncAgentCount` juste au-dessus,
+et même famille de défaut : une pastille qui dépend de l'écran a besoin d'un
+rappel à **chaque** changement d'écran, pas seulement à chaque changement
+d'état.
 
 Sidebar **ouverte**, la pastille s'efface — l'information est alors lisible à sa
 source, la redonder au point d'entrée ferait clignoter deux objets pour un seul

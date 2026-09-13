@@ -4673,7 +4673,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-12 23:19 UTC */
+/* miaou — built: 2026-09-13 13:02 UTC */
 
 /* ── utils.js ── */
 
@@ -8734,7 +8734,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789255170}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789304569}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -15652,7 +15652,20 @@ function markThreadContentUnseen() {
 
 function ackThreadContentSeen() {
   if (currentConvId == null) return;
-  _threadUnseen.delete(currentConvId);
+  const had = _threadUnseen.delete(currentConvId);
+
+  if (had && markConvRead(currentConvId)) { renderConvList(); syncSpaceUI(); }
+}
+
+function carryThreadUnseenToBadge(convId) {
+  if (!hasThreadUnseen(convId)) return;
+  const conv = loadConversation(convId);
+  if (!conv || !isRootConversation(conv)) return;
+  markConvUnread(convId);
+}
+
+function hasThreadUnseen(convId) {
+  return convId != null && _threadUnseen.has(convId);
 }
 
 function syncScrollBottomGlow() {
@@ -20646,7 +20659,7 @@ function syncActivityBadges() {
   if (burger) {
     let dot = burger.querySelector('.activity-dot');
     if (!dot) { dot = activityBadgeEl(null); burger.appendChild(dot); }
-    applyActivityBadge(dot, aggregateBadgeState(null));
+    applyActivityBadge(dot, aggregateBadgeState(null, currentConvId));
   }
 }
 
@@ -23244,18 +23257,25 @@ function spaceBadgeState(spaceId) {
   return resolveActivityBadge(states);
 }
 
-function aggregateBadgeState(excludeSpaceId) {
+function aggregateBadgeState(excludeSpaceId, excludeConvId) {
   const states = [];
   const seen = new Set();
+
+  const hidden = new Set();
+  if (excludeConvId != null) {
+    hidden.add(excludeConvId);
+    for (const c of agentChildrenOf(excludeConvId, listAllConversations())) hidden.add(c.id);
+  }
   for (const gen of _activeGenerations.values()) {
     if (excludeSpaceId != null && gen.spaceId === excludeSpaceId) continue;
+    if (hidden.has(gen.convId)) continue;
     states.push('working');
     seen.add(gen.convId);
   }
   const convs = listAllConversations();
   for (const c of convs) {
     if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
-    if (seen.has(c.id)) continue;
+    if (seen.has(c.id) || hidden.has(c.id)) continue;
     if (!isRootConversation(c)) continue;
     const st = convBadgeState(c.id, convs);
     if (st) states.push(st);
@@ -23611,6 +23631,8 @@ async function openConversation(id, reveal) {
     resetPeerState();
 
     detachGenerationFromScreen(generationFor(currentConvId));
+
+    carryThreadUnseenToBadge(currentConvId);
   }
   currentConvId = id;
 
@@ -23660,6 +23682,8 @@ function resetToEmpty() {
   if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
 
   detachGenerationFromScreen(generationFor(currentConvId));
+
+  carryThreadUnseenToBadge(currentConvId);
   currentConvId = null;
 
   setSending(false);
@@ -23684,6 +23708,8 @@ function resetToEmpty() {
   renderConvList();
 
   syncAgentCount();
+
+  syncActivityBadges();
   syncModelUI();
   syncReasoningUI();
   _lastContextManifest = null;

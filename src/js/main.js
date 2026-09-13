@@ -580,26 +580,48 @@ function spaceBadgeState(spaceId) {
 // Agrégat de TOUS les Espaces sauf ceux exclus. Deux appelants, deux portées :
 //  - sélecteur d'espaces REPLIÉ → exclut l'Espace actif : il répond « y a-t-il
 //    de l'activité AILLEURS ? » (le détail par Espace se lit au dépliage).
-//  - hamburger → n'exclut RIEN : sidebar repliée, l'utilisateur ne voit ni
-//    la liste des conversations ni le sélecteur, c'est le SEUL indicateur
+//  - hamburger → n'exclut aucun ESPACE : sidebar repliée, l'utilisateur ne voit
+//    ni la liste des conversations ni le sélecteur, c'est le SEUL indicateur
 //    disponible. Le restreindre à l'ailleurs laisserait muette une conversation
 //    active de l'Espace courant, précisément celle qu'il ne peut pas voir.
+//    Il exclut en revanche la conversation AFFICHÉE (cf. `excludeConvId`).
 // Aligné sur convBadgeState comme spaceBadgeState (lot X-1, étape 7) : même
 // décision, même motif — cf. le commentaire ci-dessus. Même ligne de partage
 // aussi pour le filtre de racine : sur la boucle des conversations, jamais sur
 // celle du registre (motif détaillé au-dessus de spaceBadgeState).
-function aggregateBadgeState(excludeSpaceId) {
+//
+// `excludeConvId` — même famille de règle que `resolveAgentCount` (utils.js) :
+// une pastille n'annonce que ce qu'on ne voit PAS. Le hamburger dit « il y a
+// quelque chose à voir là-dedans » ; la conversation affichée n'est justement
+// pas « là-dedans » — elle est sous les yeux, son activité étant déjà portée
+// par le composer en mode stop et par la bulle qui se remplit. Ce qui est
+// exclu, c'est le SOUS-ARBRE de cette conversation, pas la seule racine : le
+// travail d'un de ses agents est annoncé par la pilule « n agents » de la
+// topbar, visible sidebar repliée elle aussi (et `resolveAgentCount` ne la tait
+// que lorsque l'unique chose à annoncer est la génération regardée).
+// L'exclusion ne peut pas masquer d'`unread` : ouvrir une conversation la
+// marque lue (`markConvRead`), et `unregisterGeneration` n'en pose jamais sur
+// une génération qui possède l'écran.
+function aggregateBadgeState(excludeSpaceId, excludeConvId) {
   const states = [];
   const seen = new Set();
+  // Sous-arbre exclu : la conversation affichée ET ses agents. Calculé une
+  // fois, jamais un test `c.parentConvId === x` réécrit dans les boucles.
+  const hidden = new Set();
+  if (excludeConvId != null) {
+    hidden.add(excludeConvId);
+    for (const c of agentChildrenOf(excludeConvId, listAllConversations())) hidden.add(c.id);
+  }
   for (const gen of _activeGenerations.values()) {
     if (excludeSpaceId != null && gen.spaceId === excludeSpaceId) continue;
+    if (hidden.has(gen.convId)) continue;
     states.push('working');
     seen.add(gen.convId);
   }
   const convs = listAllConversations();
   for (const c of convs) {
     if (excludeSpaceId != null && c.spaceId === excludeSpaceId) continue;
-    if (seen.has(c.id)) continue;
+    if (seen.has(c.id) || hidden.has(c.id)) continue;
     if (!isRootConversation(c)) continue;
     const st = convBadgeState(c.id, convs);
     if (st) states.push(st);
@@ -1305,6 +1327,12 @@ async function openConversation(id, reveal) {
     // cesser d'écrire dans un DOM qui va être vidé dès maintenant, pas
     // seulement après le chargement des ressources de la conv d'arrivée.
     detachGenerationFromScreen(generationFor(currentConvId));
+    // Du contenu non vu dans la conversation qu'on quitte devient un non-lu de
+    // sidebar : tant qu'on y était, le bouton « aller tout en bas » suffisait à
+    // le dire ; en partant, il n'y a plus de surface pour l'annoncer. AVANT
+    // l'await, comme le débranchement, et sur `currentConvId` — après, il
+    // désigne la conversation d'ARRIVÉE.
+    carryThreadUnseenToBadge(currentConvId);
   }
   currentConvId = id;
   // Réchauffe les messages en étage 2 (lot U-1) AVANT la relecture post-await :
@@ -1352,6 +1380,14 @@ async function openConversation(id, reveal) {
   // une bulle vive pour la suite du tour en cours. Sans génération, rendu normal.
   // Lot T-2 : ouvrir la conversation SUFFIT à la marquer lue. Avant
   // renderConvList, pour que la liste soit rendue une seule fois, déjà à jour.
+  //
+  // Reste vrai avec le non-lu issu du non-vu (`carryThreadUnseenToBadge`) :
+  // toute réouverture atterrit au FOND (`scrollBottom(true)` en fin de
+  // renderThread, et de attachGenerationToScreen pour une conv qui génère
+  // encore). Ouvrir EST donc atteindre le fond, et l'acquittement des deux
+  // porteurs se fait de lui-même par ackThreadContentSeen au premier scroll.
+  // Une exception « ne pas marquer lu si non-vu » a été écrite ici puis
+  // retirée : elle décrivait un acquittement différé qui n'a jamais lieu.
   markConvRead(id);
   rerenderCurrentThread();
   renderConvList();
@@ -1388,6 +1424,9 @@ function resetToEmpty() {
   // L'écran part à l'accueil : une génération en vol sur la conv quittée perd
   // sa bulle (vidée juste en dessous) mais continue (lot T-1b).
   detachGenerationFromScreen(generationFor(currentConvId));
+  // Départ vers l'accueil : même report du non-vu qu'au switch de conversation
+  // (openConversation), ce chemin ne passant pas par lui. Avant la mise à null.
+  carryThreadUnseenToBadge(currentConvId);
   currentConvId = null;
   // L'accueil ne génère jamais : le composer doit sortir du mode « stop » même
   // si la conversation qu'on quitte, elle, génère encore (symétrique du
@@ -1427,6 +1466,11 @@ function resetToEmpty() {
   // écran, donc de masquée à affichée. syncSpaceUI n'est pas appelé ici (le
   // Space ne change pas), d'où l'appel direct.
   syncAgentCount();
+  // Même motif pour la pastille du hamburger, qui exclut la conversation
+  // AFFICHÉE : quitter une conversation active pour l'accueil la fait passer
+  // de « sous les yeux » à « ailleurs », donc de tue à annoncée. Sans cet
+  // appel, elle resterait muette jusqu'au prochain syncSpaceUI.
+  syncActivityBadges();
   syncModelUI();
   syncReasoningUI();
   _lastContextManifest = null;

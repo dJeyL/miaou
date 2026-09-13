@@ -248,7 +248,10 @@ Trois transitions, et elles seules :
 |---|---|---|
 | contenu arrivé hors de vue | non vu | `markThreadContentUnseen` |
 | le fil atteint le fond | vu | `ackThreadContentSeen`, depuis `syncScrollBottomBtn` |
-| changement de conversation | sans objet | le Set est clefé par conversation |
+| on QUITTE la conversation | reporté sur le badge de sidebar | `carryThreadUnseenToBadge` |
+
+Le Set reste clefé par conversation : quitter n'efface rien, le non-vu attend
+le retour. Ce qui change en partant, c'est qu'il gagne une **seconde** surface.
 
 L'état vit dans `_threadUnseen`, `Set<convId>` volatile — même clef et même
 volatilité que `_scrollCapReleased` juste à côté, pour la raison du piège 28 :
@@ -281,6 +284,30 @@ acquitté dans la même frame synchrone par le `syncScrollBottomBtn` que
 L'acquittement est posé dans `syncScrollBottomBtn` et non dans le handler de
 clic, parce que descendre au fond **à la main** est le même geste du point de
 vue de l'utilisateur et n'a pas de handler propre à décorer.
+
+#### Le non-vu déborde sur la sidebar quand on quitte
+
+Tant qu'on est **dans** la conversation, le bouton suffit à dire « il reste
+quelque chose en bas », et allumer en plus la pastille de sidebar serait le
+défaut corrigé sur le hamburger : signaler ce qui est déjà sous les yeux. En la
+**quittant**, le contenu non vu devient inaccessible sans y revenir — c'est
+exactement ce que la pastille de sidebar signifie. `carryThreadUnseenToBadge`
+(ui.js) fait donc le report, appelé depuis les deux seuls chemins de départ :
+la branche `switching` d'`openConversation` et `resetToEmpty` (retour à
+l'accueil, qui ne passe pas par la première).
+
+Le marquage passe par `markConvUnread`, jamais un `_unreadConvs.add` réécrit —
+un seul écrivain, comme pour le reste des badges (cf. `docs/badges.md`).
+
+**Ouvrir suffit à acquitter, et ce n'est pas une décision mais une
+conséquence** : toute réouverture atterrit au fond (`scrollBottom(true)` clôt
+`renderThread`, et `attachGenerationToScreen` pour une conversation qui génère
+encore). « Acquitter au fond » et « acquitter à l'ouverture » ne peuvent donc
+pas diverger. Une exception « ne pas marquer lu si non-vu » a été écrite dans
+`openConversation` puis retirée : elle décrivait un acquittement différé qui
+n'a jamais lieu, et aurait fait croire à une divergence inexistante.
+`ackThreadContentSeen` acquitte quand même les **deux** porteurs, pour le cas
+qui reste : descendre sans avoir quitté la conversation.
 
 Visibilité et pulsation restent deux questions séparées, avec deux écrivains :
 `syncScrollBottomBtn` pour l'attribut `hidden` (position de défilement),

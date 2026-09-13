@@ -19,8 +19,12 @@
 //   4. ouvrir la conversation efface l'unread (B2)
 //   5. agrégation cross-Space : sélecteur replié + lignes du menu déplié
 //   6. corollaire B5 : la pastille quitte le libellé du courant au dépliage
-//   7. hamburger : agrège TOUT (B6), s'efface sidebar ouverte
+//   7. hamburger : agrège tous les Espaces (B6), s'efface sidebar ouverte, et
+//      TAIT la conversation affichée — ce qui est sous les yeux ne s'annonce pas
 //   8. apparence : working pulse, unread est statique et plus gros
+//   9. compteur d'agents en vol (T-2bis)
+//  10. le non-VU du fil (bouton « aller tout en bas ») devient un non-LU de
+//      sidebar quand on QUITTE la conversation sans être descendu
 //
 // Usage : node verify-badges.mjs <dossier-captures> [--headed]
 import { chromium } from 'playwright';
@@ -52,6 +56,7 @@ const initScript = () => {
 
   window.__gates = {};
   window.__released = {};
+  window.__bulky = {};
 
   const tagOf = (body) => {
     const msgs = (body && body.messages) || [];
@@ -90,6 +95,13 @@ const initScript = () => {
       async start(controller) {
         const send = (o) => controller.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'));
         send({ choices: [{ delta: { content: 'Début-' + tag + '. ' } }] });
+        // Tags « volumineux » (scénario 10) : la réponse doit dépasser le fold,
+        // sinon on ne peut pas remonter au-dessus du contenu qui arrive et le
+        // non-vu ne peut pas exister. Émis AVANT la gate pour que le fil soit
+        // déjà long quand le test remonte.
+        if (window.__bulky && window.__bulky[tag]) {
+          for (let i = 0; i < 60; i++) send({ choices: [{ delta: { content: 'Ligne ' + i + ' du remplissage.\n\n' } }] });
+        }
         while (window.__gates[tag] && !window.__released[tag]) {
           if (opts && opts.signal && opts.signal.aborted) {
             const err = new Error('aborted'); err.name = 'AbortError'; throw err;
@@ -290,8 +302,23 @@ await waitGenCount(1);
 await page.waitForTimeout(250);
 check('activité DANS le Space courant : sélecteur replié muet (rien ailleurs)',
   await dotState('#space-select-btn .activity-dot') === null);
-check('… alors que le hamburger, lui, signale (B6 : il agrège tout)',
+// … et le hamburger reste muet LUI AUSSI, mais pour une autre raison : la
+// conversation qui travaille est celle qu'on REGARDE. Une pastille n'annonce
+// que ce qu'on ne voit pas ; le composer en mode stop porte déjà l'information.
+check('… et le hamburger se tait : c\'est la conversation AFFICHÉE qui travaille',
+  await dotState('#sidebar-toggle .activity-dot') === null);
+// Le discriminant du hamburger vit donc ailleurs : la MÊME génération, vue
+// depuis une autre conversation, doit le rallumer. Sans ce contrôle, une
+// exclusion trop large (tout l'Espace courant, ou tout court) passerait.
+const convE = await page.evaluate(() => currentConvId);
+await page.evaluate(() => resetToEmpty());
+await page.waitForTimeout(200);
+check('quitter cette conversation rallume le hamburger (elle est « ailleurs » maintenant)',
   await dotState('#sidebar-toggle .activity-dot') === 'working');
+await page.evaluate((c) => selectConv(c), convE);
+await page.waitForTimeout(200);
+check('y revenir le rend muet à nouveau',
+  await dotState('#sidebar-toggle .activity-dot') === null);
 await release('E');
 await waitGenCount(0);
 await page.waitForTimeout(300);
@@ -569,6 +596,71 @@ console.log('  shot  08-agent-count.png (recadré topbar droite)');
 await release('H');
 await waitGenCount(0);
 await page.waitForTimeout(300);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Scénario 10 : le non-VU du fil devient un non-LU de sidebar au départ
+// ─────────────────────────────────────────────────────────────────────────
+// Deux états distincts portent le même mot et ne doivent pas être confondus :
+//   _threadUnseen  — « du contenu est arrivé pendant que je regardais PLUS HAUT »
+//                    (bouton « aller tout en bas », pulsation .has-unseen)
+//   _unreadConvs   — « ça s'est terminé pendant que j'étais AILLEURS »
+//                    (pastille de sidebar)
+// Tant qu'on reste dans la conversation, seul le premier parle. En la QUITTANT,
+// le contenu non vu devient inaccessible sans y revenir : il se reporte donc
+// sur le second (carryThreadUnseenToBadge).
+console.log('\n— Scénario 10 : non-vu du fil → non-lu de sidebar au départ');
+await page.evaluate(() => { window.__gates = {}; window.__released = {}; window.__bulky = {}; });
+await newConv();
+await page.evaluate(() => { window.__bulky.I = true; });
+await gate('I');
+await send('CONV-I longue réponse.');
+await waitGenCount(1);
+await page.waitForTimeout(500);
+const convI = await page.evaluate(() => currentConvId);
+
+// Remonter en haut du fil : ce qui s'écrit ensuite arrive hors de vue.
+await page.evaluate(() => { $('messages').scrollTop = 0; });
+await page.waitForTimeout(150);
+check('remonté en haut : pas au fond', await page.evaluate(() => isAtBottom()) === false);
+
+// Laisser la génération finir pendant qu'on regarde plus haut.
+await release('I');
+await waitGenCount(0);
+await page.waitForTimeout(400);
+check('contenu arrivé hors de vue : le fil est marqué non-vu',
+  await page.evaluate((c) => hasThreadUnseen(c), convI) === true);
+check('le bouton « aller tout en bas » pulse',
+  await page.evaluate(() => $('scroll-bottom-btn').classList.contains('has-unseen')) === true);
+// Le point de la décision : PAS de pastille de sidebar tant qu'on est dessus.
+check('… mais AUCUNE pastille de sidebar : la conversation est sous les yeux',
+  await convBadge(convI) === null);
+await page.screenshot({ path: path.join(outDir, '09-unseen-in-thread.png') });
+console.log('  shot  09-unseen-in-thread.png');
+
+// Quitter sans être descendu : le non-vu se reporte sur le badge.
+await newConv();
+await page.waitForTimeout(250);
+check('quittée sans descendre : la conversation devient non lue en sidebar',
+  await convBadge(convI) === 'unread');
+await page.screenshot({ path: path.join(outDir, '10-unseen-carried.png') });
+console.log('  shot  10-unseen-carried.png');
+
+// Y revenir : toute réouverture atterrit au FOND (scrollBottom(true) en fin de
+// renderThread), donc l'acquittement est immédiat et les DEUX états tombent.
+await page.evaluate((c) => selectConv(c), convI);
+await page.waitForTimeout(500);
+check('réouverture : on atterrit au fond', await page.evaluate(() => isAtBottom()) === true);
+check('… le non-vu du fil est acquitté',
+  await page.evaluate((c) => hasThreadUnseen(c), convI) === false);
+check('… et la pastille de sidebar s\'est éteinte', await convBadge(convI) === null);
+
+// Contrôle en creux : quitter une conversation SANS non-vu n'allume rien.
+await page.evaluate(() => { $('messages').scrollTop = $('messages').scrollHeight; });
+await page.waitForTimeout(150);
+await newConv();
+await page.waitForTimeout(200);
+check('quitter une conversation entièrement lue n\'allume aucune pastille',
+  await convBadge(convI) === null);
 
 // ─────────────────────────────────────────────────────────────────────────
 console.log('');

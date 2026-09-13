@@ -489,6 +489,33 @@ describe('convBadgeState étendu : un parent dont un agent travaille (X-1, étap
     expect(spaceBadgeState('sA')).toBe('working');
     _activeGenerations.clear();
   });
+  // EXCLUSION DE LA CONVERSATION AFFICHÉE (hamburger). Une pastille n'annonce
+  // que ce qu'on ne voit pas : la conversation sous les yeux ne se signale pas.
+  it('le hamburger tait la génération de la conversation AFFICHÉE', function() {
+    setup();
+    _activeGenerations.set('p1', { convId: 'p1', spaceId: 'sA' });
+    expect(aggregateBadgeState(null)).toBe('working');
+    expect(aggregateBadgeState(null, 'p1')).toBe(null);
+    _activeGenerations.clear();
+  });
+  it('le hamburger tait aussi l\'AGENT de la conversation affichée', function() {
+    setup();
+    _activeGenerations.set('a1', { convId: 'a1', spaceId: 'sA' });
+    expect(aggregateBadgeState(null, 'p1')).toBe(null);
+    _activeGenerations.clear();
+  });
+  it('le hamburger annonce toujours une AUTRE conversation qui travaille', function() {
+    setup();
+    _activeGenerations.set('p2', { convId: 'p2', spaceId: 'sB' });
+    expect(aggregateBadgeState(null, 'p1')).toBe('working');
+    _activeGenerations.clear();
+  });
+  it('exclure la conversation affichée n\'efface pas l\'unread d\'une autre', function() {
+    setup();
+    _unreadConvs.add('p2');
+    expect(aggregateBadgeState(null, 'p1')).toBe('unread');
+    _unreadConvs.clear();
+  });
   it('unread d\'un parent remonte encore aux agrégats après l\'alignement', function() {
     setup();
     _unreadConvs.add('p1');

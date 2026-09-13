@@ -1171,9 +1171,66 @@ function markThreadContentUnseen() {
 // Acquittement : arriver au fond vaut « j'ai vu ». Appelée par le prédicat de
 // visibilité, donc à chaque scroll — y compris la dernière frame de la descente
 // animée déclenchée par le clic.
+//
+// Acquitte les DEUX porteurs du même fait, depuis que quitter une conversation
+// à non-vu la marque non lue en sidebar (`carryThreadUnseenToBadge`). Les
+// séparer laisserait la sidebar allumée sur une conversation entièrement lue,
+// sans rien pour l'expliquer (le fantôme du 2026-09-05, sous une autre cause).
+//
+// Ce n'est PAS le seul chemin d'effacement, et il ne faut pas le croire :
+// `openConversation` appelle `markConvRead` inconditionnellement, et toute
+// réouverture atterrit au fond de toute façon. Ce point-ci couvre le cas où
+// l'on descend sans avoir quitté la conversation — le badge n'existe alors pas
+// encore, `markConvRead` rend false, et rien ne se re-rend.
 function ackThreadContentSeen() {
   if (currentConvId == null) return;
-  _threadUnseen.delete(currentConvId);
+  const had = _threadUnseen.delete(currentConvId);
+  // Le badge ne se rafraîchit pas tout seul : la liste de gauche et les
+  // agrégats sont des rendus, pas des observateurs. Conditionné au retrait
+  // effectif — cette fonction est appelée à CHAQUE scroll, un renderConvList
+  // par frame de défilement serait un coût pour rien.
+  if (had && markConvRead(currentConvId)) { renderConvList(); syncSpaceUI(); }
+}
+
+// Report du non-vu sur le badge de conversation, au DÉPART de la conversation.
+// « Du contenu est arrivé pendant que je regardais plus haut » et « je n'ai pas
+// vu ce qui est arrivé pendant mon absence » sont deux énoncés distincts tant
+// qu'on reste dans la conversation — le bouton « aller tout en bas » suffit à
+// dire le premier, et allumer la sidebar pour ce qui est à un scroll de la vue
+// serait le défaut qu'on vient de corriger sur le hamburger.
+//
+// En la QUITTANT, ils fusionnent : le contenu non vu devient inaccessible sans
+// y revenir, ce qui est exactement ce que la pastille de sidebar signifie.
+// Appelée depuis le seul point de bascule d'écran qui distingue un vrai départ
+// d'une ré-hydratation (`switching` dans openConversation) et depuis
+// `resetToEmpty` (départ vers l'accueil, qui ne passe pas par là).
+//
+// Ne marque QUE si la conversation a du non-vu : quitter une conversation lue
+// n'allume rien. Et le marquage passe par `markConvUnread`, jamais un
+// `_unreadConvs.add` réécrit ici — un seul écrivain, comme pour le reste.
+// GARDE DE RACINE, la même qu'à l'autre producteur (`unregisterGeneration`) et
+// pour la même raison : un non-lu d'AGENT est invisible de la liste de gauche
+// (filtrée sur `isRootConversation`) mais bien présent dans les agrégats, qui
+// ne le sont pas — pastille allumée sur le hamburger et sur la ligne d'Espace,
+// sans rien à déplier qui l'explique. C'est le bug du 2026-09-05, et un fil
+// d'agent qu'on ouvre puis qu'on quitte en étant remonté serait un troisième
+// chemin vers lui. Sans cette garde le fantôme ne serait pas permanent (rouvrir
+// le fil atterrit au fond et acquitte), mais l'invariant « un agrégat ne
+// remonte rien qu'aucune surface de détail ne puisse expliquer » serait rompu
+// tant qu'on n'y retourne pas.
+function carryThreadUnseenToBadge(convId) {
+  if (!hasThreadUnseen(convId)) return;
+  const conv = loadConversation(convId);
+  if (!conv || !isRootConversation(conv)) return;
+  markConvUnread(convId);
+}
+
+// LE prédicat de non-vu. Une fonction plutôt qu'un `_threadUnseen.has` recopié
+// chez chaque lecteur : le Set est un détail d'implémentation, et c'est la
+// troisième question posée sur le même état (les deux autres étant « faire
+// briller le bouton ? » et « reporter sur le badge en partant ? »).
+function hasThreadUnseen(convId) {
+  return convId != null && _threadUnseen.has(convId);
 }
 
 // SEUL écrivain de la classe .has-unseen. Distinct de syncScrollBottomBtn, qui
@@ -8193,9 +8250,13 @@ function syncActivityBadges() {
     if (!dot) { dot = activityBadgeEl(null); trigger.insertBefore(dot, trigger.querySelector('.chev')); }
     applyActivityBadge(dot, aggregateBadgeState(activeSpaceId));
   }
-  // Hamburger : agrège TOUT, Espace actif compris. Seul indicateur
-  // disponible sidebar repliée — il dit « il y a quelque chose à voir
-  // là-dedans ». Sidebar OUVERTE, il s'efface : l'information est alors lisible
+  // Hamburger : agrège tous les ESPACES, l'actif compris, mais PAS la
+  // conversation affichée ni ses agents. Seul indicateur disponible sidebar
+  // repliée — il dit « il y a quelque chose à voir là-dedans », et ce que
+  // l'utilisateur a déjà sous les yeux n'est pas « là-dedans » : il n'a pas à
+  // ouvrir la sidebar pour voir travailler la conversation qu'il regarde
+  // (composer en mode stop, bulle qui se remplit, pilule « n agents »).
+  // Sidebar OUVERTE, il s'efface : l'information est alors lisible
   // à sa source (liste de gauche, sélecteur), la redonder au point d'entrée
   // ferait clignoter deux objets pour un seul fait.
   //
@@ -8209,7 +8270,7 @@ function syncActivityBadges() {
   if (burger) {
     let dot = burger.querySelector('.activity-dot');
     if (!dot) { dot = activityBadgeEl(null); burger.appendChild(dot); }
-    applyActivityBadge(dot, aggregateBadgeState(null));
+    applyActivityBadge(dot, aggregateBadgeState(null, currentConvId));
   }
 }
 
