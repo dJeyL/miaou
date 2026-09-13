@@ -44,7 +44,9 @@ Ce n'est **pas** « `docs.js` n'appelle que `utils.js` ». Le domaine s'appuie s
 des fonctions déclarées **plus bas** dans `JS_ORDER`, toutes depuis des corps de
 fonction (runtime, après chargement complet) — c'est légal et voulu :
 `toolFail`, `_pendingToolAcks` et `docsUnsupportedFormatMessage` (`tools.js`),
-`humanSize` (`resources.js`), les quatre `ensure*` (`ui.js`). Un grep
+`humanSize` (`resources.js`), les lazy-loads `ensure*` et — depuis le lot AD —
+les entrées du worker de parsing `parseXlsxInWorker`/`parseDocxInWorker`
+(`ui.js`). Un grep
 « `docs.js` ne cite aucun symbole aval » sortirait donc **rouge sans qu'il y ait
 la moindre régression** : ne pas le lire comme tel.
 
@@ -56,9 +58,110 @@ raison est le **domaine**, pas un interdit d'appel — `docs.js` l'appelle bien.
 Ce que `docs.js` **ne porte pas**, délibérément : les schémas d'outils `docs__*`
 (le registre `TOOLS` est une liste unique, elle ne se fragmente pas par
 domaine), `DOCS_DOCTRINE` (aux côtés des autres doctrines de
-`ROOT_SYSTEM_PROMPT`), et les lazy-loads CDN `ensureFflate`/`ensurePdfJs`/
-`ensureSheetJs`/`ensureMammoth` (`ui.js`, où vivent **tous** les lazy-loads du
-projet — Mermaid, Prism, QuickJS).
+`ROOT_SYSTEM_PROMPT`), et les lazy-loads CDN (`ui.js`, où vivent **tous** les
+lazy-loads du projet — Mermaid, Prism, QuickJS). Le **worker de parsing** du lot
+AD y vit aussi, et pour la même raison : c'est un lazy-load de plus, qui charge
+SheetJS et mammoth par `importScripts`.
+
+## Le parsing lourd tourne dans un Web Worker (lot AD)
+
+**Le problème était un GEL D'UI, pas une lenteur.** Un `.xlsx` de ~30 Mo déposé
+dans une bibliothèque d'Espace figeait l'onglet assez longtemps pour que le
+navigateur propose de tuer la page : rien ne se peignait, rien ne se cliquait.
+
+| Format | Fixture | Gel avant | Gel après | Décision |
+|---|---|---|---|---|
+| xlsx | 37,9 Mo | **5 731 ms** | 18 ms | porté en worker |
+| docx | 3,3 Mo | **493-725 ms** | 18 ms | porté en worker |
+| pptx | 19,9 Mo | 59 ms | — | **laissé en main thread** |
+
+Le worker ne fait **pas gagner de temps** (+2 à +6 % de coût total, dont ~50 ms
+d'`importScripts` par worker créé). Ce qu'il achète, c'est que l'UI reste
+vivante. Deux conséquences qui dépassent le confort : une **génération en vol**
+(piège 28) se figeait avec l'UI — le lot T a dépensé beaucoup d'énergie à rendre
+les générations non bloquantes, et un parsing main-thread de 5,7 s était une
+régression architecturale par le côté ; et **le Stop ne pouvait rien**, `XLSX.read`
+n'étant pas préemptible. Le worker rend l'interruption possible (`terminate()`),
+capacité **non câblée** dans ce lot, délibérément.
+
+**Le worker renvoie la matrice extraite et bornée, JAMAIS le workbook.** Mesuré :
+`postMessage` d'un workbook SheetJS complet coûte 1 248-1 398 ms de gel. Le
+renvoyer transformerait un gel de 5,7 s en un gel de 1,3 s — un worker à moitié
+raté **dont personne ne verrait qu'il l'est**, puisque le symptôme passerait de
+« le navigateur s'inquiète » à « ça rame ». D'où un message **par opération**
+(`list` / `read` / `describe`) : les trois consommateurs xlsx tirent des choses
+différentes du même classeur, et chacun dit ce qu'il veut extraire.
+
+**Cinq points d'entrée, pas deux — c'est le piège du lot.**
+`describeXlsxForLibrary` appelait `lib.read` **directement**, sans passer par
+l'ouvreur, et tourne **au moment où l'utilisateur dépose le fichier**. Porter les
+seuls ouvreurs aurait laissé le gel intact au geste même qui a produit le rapport
+d'origine.
+
+**Les purs sont injectés depuis leur SOURCE VIVE** (`DOC_WORKER_PURES`, ui.js),
+par `Function.prototype.toString()` concaténé — jamais recopiés : deux copies
+divergent et les tests QuickJS ne couvriraient que l'une. `strip_js_comments`
+blanchit les commentaires en préservant lignes et structure, donc la source
+injectée (celle du **bundle**, car `toString` rend le texte tel qu'il a été parsé)
+reste du JS valide — vérifié à l'exécution, pas déduit.
+
+> **PRÉCONDITION que ce mécanisme impose au domaine :** ces fonctions forment un
+> **graphe clos** — chacune n'appelle que ses pairs, aucune constante de module,
+> aucun global applicatif. Une seule référence extérieure ajoutée à l'une d'elles
+> casserait le worker **silencieusement à l'exécution**, en `ReferenceError` loin
+> de sa cause. `verify-docs-worker.mjs` garde cette propriété en comparant le
+> résultat du worker à celui du main thread.
+
+`parseSheetSelector` fait partie du graphe injecté : il a besoin de
+`wb.SheetNames`, qui ne sort plus du worker. Le faire remonter pour décider côté
+principal imposerait un **second parsing** du classeur, soit exactement le coût
+que le lot supprime.
+
+**Le buffer est COPIÉ, jamais transféré.** `postMessage(buf, [buf])` éviterait la
+copie de 30 Mo mais **détache** `u8` côté appelant — or `readXlsxDocument` le
+réutilise après le parsing, pour `xlsxImageAnchors`. Corollaire de vocabulaire :
+le commentaire d'`ensureSheetJs` dit que **SheetJS** ne détache pas le buffer,
+ce qui reste vrai ; *nous* le pourrions.
+
+**Le docx renvoie le HTML, et c'est sûr grâce à `convertImage`** : il remplace
+les octets des images par leur **chemin**, donc le HTML reste petit (facteur 11
+mesuré sans lui). Sans cette substitution, mammoth encoderait chaque image en
+base64 dans le HTML, et son `postMessage` coûterait le gel qu'on vient de
+supprimer — le piège symétrique de celui du workbook. `docxMediaIndex` reste en
+**main thread** : 8 ms mesurés, et le sortir imposerait de charger fflate une
+seconde fois dans le worker.
+
+**Le pptx reste en main thread, et ce n'est pas un oubli.** Son `unzipSync`
+**filtré** fait que le coût suit le **texte**, jamais les octets : les médias —
+l'essentiel du poids d'un deck — ne sont jamais décompressés. Le porter serait
+une **perte** : `DOMParser` n'existe pas en worker, et le prototype du spike a dû
+renvoyer les 452 pièces XML brutes pour les parser côté principal, ne déplaçant
+que 39 ms d'`unzipSync`. Le commentaire d'`openPptxDocument` porte ce constat
+avec ses chiffres, précisément pour qu'un prochain lot ne le porte pas « par
+symétrie ».
+
+**Ce qui n'a PAS changé** : les purs restent purs et testés en QuickJS.
+`formatXlsxSheet`, `formatDocxListing`, `docxHtmlToBlocks`, `docxSections`,
+`partitionXlsxAnchors` restent côté principal — ils travaillent sur la matrice ou
+le HTML déjà extraits, jamais sur les octets. Il n'y a **pas** de cap de taille
+sur les documents (arbitrage utilisateur) : le worker supprime le gel, il ne
+supprime pas le risque d'OOM sur un fichier encore plus gros — il le transforme
+en worker qui meurt proprement plutôt qu'en onglet figé.
+
+**Conséquence sur les loaders** : `ensureMammoth` **n'existe plus** (le worker
+charge mammoth par `importScripts`, plus rien ne le chargeait dans la page).
+`ensureSheetJs` survit comme **instrument de mesure** pour
+`verify-xlsx-structured.mjs`, qui charge SheetJS dans la page pour remesurer ses
+trois prémisses — et jamais comme chemin de lecture.
+
+**Vérification** : `verify-docs-worker.mjs` (versionné). Il valide **sa propre
+sonde** sur un blocage synthétique de 3 000 ms avant de croire ce qu'elle dit —
+la première sonde du spike annonçait 18 ms de gel pour 5 872 ms de parsing, parce
+qu'elle était coupée avant que le tick en retard ne s'exécute ; un **compte de
+ticks** est le contrôle qui démasque ce cas. Il porte aussi un **témoin inversé**
+sur le pptx (son gel doit rester *mesurable*, sinon quelqu'un l'a porté) et une
+assertion de **forme du payload** (le workbook ne traverse jamais), le temps seul
+ne suffisant pas à distinguer un worker réussi d'un worker qui renvoie `wb`.
 
 **Côté tests**, la même frontière : `tests/test-zip.js` couvre la mécanique zip,
 `tests/test-docs.js` le domaine documents. Elle était déjà pratiquée depuis V-1,
@@ -671,7 +774,12 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   **SheetJS n'y tourne pas** — donc `sheetToMatrix` (lecture des cellules,
   dérivation du masque depuis `!merges`, restriction à la plage) et sa
   **composition** avec les purs ne sont exercées que par
-  `verify-xlsx-structured.mjs`. Si le masque ou l'origine du `!ref` étaient
+  `verify-xlsx-structured.mjs`. **Depuis le lot AD cette phrase a un second
+  sens**, à ne pas confondre avec le premier : `sheetToMatrix` ne tourne plus
+  seulement hors QuickJS, elle tourne hors du **thread principal** — injectée
+  dans le worker depuis sa source vive. Son absence de QuickJS reste la raison
+  pour laquelle ce script existe ; son exécution en worker est ce que garde
+  `verify-docs-worker.mjs`, qui compare son résultat à celui du main thread. Si le masque ou l'origine du `!ref` étaient
   faux, les purs resteraient verts et la sortie serait décalée. Le script
   **remesure les trois prémisses** avant toute assertion de rendu (origine
   non-A1, cellule voisine d'une fusion réellement absente, `!merges` absent
@@ -990,7 +1098,13 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   - **Vérification** : les pures sont couvertes par le runner QuickJS, mais **ni
     mammoth ni fflate n'y tournent** — donc `docxMediaIndex`, `convertImage` et
     surtout leur **composition** (le hash des octets émis retrouve-t-il la pièce
-    du zip ?) ne sont exercés que par `verify-docx-image-anchors.mjs`. Si
+    du zip ?) ne sont exercés que par `verify-docx-image-anchors.mjs`. **Le lot
+    AD scinde cette composition entre deux threads** : `docxMediaIndex` reste en
+    main thread (fflate, 8 ms mesurés) et l'annuaire traverse vers le worker, où
+    `convertImage` résout contre lui — le **hash** se calcule donc côté worker,
+    sur les octets que mammoth y émet, d'où `fnv1aBytes`/`mediaMatchKey` dans le
+    graphe injecté. L'appariement franchit une frontière de thread qu'il ne
+    franchissait pas, sans que sa clé `(taille, hash)` change. Si
     l'appariement échoue, les ancres sortent sans chemin et **aucun test
     unitaire ne le voit**. Le cap y est vérifié sur **entrée construite** : la
     seule fixture illustrée porte 4 images, donc un contrôle sur document réel

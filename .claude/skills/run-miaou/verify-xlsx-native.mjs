@@ -367,7 +367,29 @@ try {
     // « aucune couche texte » demande une autre fixture (préalable V-8).
     const sread = await callTool('docs__read', { ref: sref, selector: '1' });
     check('lire une page scannée ne plante pas', !sread.isError, sread.text.slice(0, 70).replace(/\n/g, ' '));
-    const sbody = sread.text.replace(/--- Page 1 ---/, '').replace(/\[[^\]]*\]/g, '').trim();
+    // RETRAIT DES NOTICES, ancré sur le DÉBUT DE LIGNE — et c'est mesuré, pas
+    // stylistique. Un `\[[^\]]*\]` global était utilisé ici, et il MANGEAIT LE
+    // CORPS DU DOCUMENT : la couche OCR de cette fixture contient un crochet
+    // ouvrant jamais refermé (une lettre mal reconnue en fin de mot), donc la
+    // regex partait de ce crochet et avalait tout jusqu'au `]` de la notice
+    // finale, des dizaines de lignes plus bas. Résultat : 48 caractères
+    // conservés sur 2 086 réellement extraits, et une assertion rouge qui
+    // accusait le lecteur PDF alors qu'il faisait exactement son travail.
+    //
+    // Les notices de MIAOU sont TOUJOURS seules sur leur ligne (vérifié :
+    // « [image: page 1, image 1 — … ] » en dernière ligne, « [Page(s) sans
+    // texte extractible… ] », « [Plage ramenée à … ] »), là où le bruit OCR est
+    // au MILIEU d'une ligne de corps. Ancrer sur ^ sépare donc exactement les
+    // deux, sans avoir à énumérer les préfixes de notice — une liste qui
+    // deviendrait fausse au prochain ajout.
+    //
+    // Ne pas « simplifier » vers un [...] global : il repasserait vert sur un
+    // document propre et ne rougirait que sur un OCR bruité, c'est-à-dire
+    // précisément le cas que ce bloc existe pour couvrir.
+    const sbody = sread.text
+      .replace(/--- Page 1 ---/, '')
+      .replace(/^\s*\[[^\]]*\]\s*$/gm, '')
+      .trim();
     check('ce scan est OCÉRISÉ : sa couche texte est lue (≠ page vide)',
       sbody.length > 500, sbody.length + ' caractères extraits');
     check('la notice de page vide ne se déclenche PAS sur une page qui a du texte',

@@ -609,10 +609,26 @@ let _sheetjsPromise = null;
 // plus simple : SheetJS n'a pas de worker à câbler, donc « le script chargé » et
 // « la bibliothèque prête » coïncident ici — ce qui n'était PAS le cas de pdf.js.
 //
+// LOT AD — CE QUE CETTE FONCTION EST DEVENUE, à lire avant de s'en servir :
+// elle n'est PLUS le chemin de lecture des classeurs. Le parsing tourne dans le
+// worker (importScripts), et aucun code applicatif ne l'appelle. Elle survit
+// comme INSTRUMENT DE MESURE : verify-xlsx-structured.mjs charge SheetJS dans la
+// page pour remesurer ses trois prémisses (origine non-A1, cellule voisine d'une
+// fusion réellement absente, '!merges' absent) avant toute assertion de rendu.
+// Son homologue ensureMammoth a été RETIRÉ, n'ayant pas cet usage.
+// Ne pas la rebrancher sur un chemin de lecture : ce serait ramener le gel.
+//
 // Vérifié au spike plutôt que supposé : SheetJS ne DÉTACHE PAS le buffer qu'on
 // lui passe (byteLength intact après read, deuxième lecture du même buffer OK).
 // Le u8.slice() défensif d'openPdfDocument n'a donc pas à être reproduit ici —
 // et cette phrase existe pour que le prochain ne le rajoute pas « par symétrie ».
+//
+// PRÉCISION DEVENUE NÉCESSAIRE AU LOT AD, qui a introduit un postMessage vers le
+// worker : ce que la phrase ci-dessus garantit, c'est que LA BIBLIOTHÈQUE ne
+// détache pas. NOUS le pourrions — postMessage(buf, [buf]) détache par contrat.
+// C'est pourquoi runDocWorker COPIE au lieu de transférer : readXlsxDocument
+// réutilise u8 après le parsing, pour xlsxImageAnchors. Ne pas lire « rien ne
+// détache jamais » là où il est écrit « SheetJS ne détache pas ».
 function ensureSheetJs() {
   if (_sheetjsPromise) return _sheetjsPromise;
   _sheetjsPromise = new Promise((resolve, reject) => {
@@ -642,36 +658,279 @@ function ensureSheetJs() {
 // mammoth (lot V-5, étape 2) — lecture des .docx. Contrairement à SheetJS,
 // mammoth est toujours publié sur npm : 1.11.0 est une version courante et non
 // une branche gelée, l'épinglage est ici du conservatisme ordinaire.
-const MAMMOTH_CDN = 'https://cdn.jsdelivr.net/npm/mammoth@1.11.0/mammoth.browser.min.js';
-let _mammothPromise = null;
-
-// Même contrat que les trois précédents. Comme SheetJS et à la différence de
-// pdf.js : pas de worker (« script chargé » = « lib prête »), et le buffer n'est
-// PAS détaché — mesuré au spike (byteLength intact, deuxième conversion du même
-// buffer OK), donc pas de u8.slice() défensif à recopier « par symétrie ».
 //
-// La garde post-onload porte sur convertToHtml, et sur elle seule : c'est la
-// seule API consommée. extractRawText et convertToMarkdown ont été ÉCARTÉES au
-// spike — la première perd les tableaux, la seconde les aplatit cellule par
-// cellule tout en sur-échappant. Les vérifier ici laisserait croire qu'on peut
-// s'en servir.
-function ensureMammoth() {
-  if (_mammothPromise) return _mammothPromise;
-  _mammothPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = MAMMOTH_CDN;
-    s.onload = () => {
-      const lib = window.mammoth;
-      if (!lib || typeof lib.convertToHtml !== 'function') {
-        reject(new Error('mammoth absent ou incomplet après chargement')); return;
+// LOT AD : il n'y a PLUS de loader `ensureMammoth`. La bibliothèque est chargée
+// par importScripts DANS le worker de parsing (cf. plus bas), donc plus rien ne
+// la charge dans la page — garder le loader aurait laissé du code qu'aucun
+// appelant n'atteint, tenu en vie par la seule symétrie avec ses frères.
+// Seule l'URL survit : c'est le worker qui la consomme, et une bibliothèque a
+// une seule adresse.
+//
+// Deux faits du spike V-5 restent vrais et méritent de ne pas se reperdre :
+// la seule API consommée est convertToHtml (extractRawText perd les tableaux,
+// convertToMarkdown les aplatit cellule par cellule en sur-échappant) — d'où la
+// garde post-importScripts du worker, qui porte sur elle seule.
+const MAMMOTH_CDN = 'https://cdn.jsdelivr.net/npm/mammoth@1.11.0/mammoth.browser.min.js';
+
+// ── Worker de parsing documentaire (lot AD) ─────────────────────────────────
+// POURQUOI : le parsing d'un .xlsx lourd GÈLE l'onglet. Mesuré sur une fixture
+// de 37,9 Mo : 5 731 ms pendant lesquels rien ne se peint, rien ne se clique,
+// et le navigateur propose de tuer la page. Le docx suit, en moins spectaculaire
+// (493-725 ms sur 3,3 Mo). Ce n'est pas un problème de vitesse — le worker ne
+// fait PAS gagner de temps (+2 à +6 % de coût total) — c'est que l'UI reste
+// vivante pendant.
+//
+// Deux conséquences qui dépassent le confort :
+//   - une GÉNÉRATION EN VOL (piège 28) se fige avec l'UI. Le lot T a dépensé
+//     beaucoup d'énergie à rendre les générations non bloquantes ; un parsing
+//     main-thread de 5,7 s est une régression architecturale par le côté.
+//   - le Stop ne peut RIEN : XLSX.read n'est pas préemptible, aucun
+//     AbortController ne l'atteint. Le worker rend l'interruption possible
+//     (terminate()) — capacité NON câblée dans ce lot, délibérément.
+//
+// LE PPTX NE PASSE PAS ICI, et ce n'est pas un oubli : voir le commentaire
+// d'openPptxDocument (docs.js), qui porte la mesure et le motif.
+//
+// CONTRAT, calqué sur ensurePdfJs : la fonction résout « prêt », jamais « le
+// script est chargé ». Aucun appelant ne câble le worker lui-même.
+// Différence avec pdf.js : PAS de fetch + createObjectURL pour la lib. Le worker
+// fait importScripts(CDN), qui accepte le cross-origin — c'est `workerSrc` de
+// pdf.js qui ne l'acceptait pas. Le blob: reste nécessaire pour la source DU
+// WORKER, pas pour la bibliothèque.
+//
+// Worker JETABLE par appel : pas d'état résiduel, terminate() trivial, et les
+// ~50 ms d'importScripts sont négligeables devant un parsing qui se compte en
+// secondes. Un worker persistant imposerait une invalidation et un cycle de vie
+// à raisonner pour économiser 1 %.
+//
+// ÉCHEC PROPAGÉ, jamais de repli silencieux en main thread : un repli rendrait
+// le gel intermittent, donc indiagnosticable (même posture que le worker pdf.js).
+
+// Les purs que le worker doit exécuter, injectés par leur SOURCE VIVE. Le worker
+// ne peut pas les appeler autrement : il n'a pas accès au scope de la page.
+//
+// JAMAIS de copie manuelle de ces fonctions ici. Deux copies divergent, et les
+// tests QuickJS ne couvriraient que l'une — c'est la forme « instrument qui
+// compte la source au lieu de la sortie composée » du contrôle vert qui ne
+// prouve rien. Function.prototype.toString() rend la source telle qu'elle a été
+// PARSÉE, donc celle du bundle (commentaires retirés par strip_js_comments) et
+// non celle de src/ : vérifié à l'exécution, c'est du JS valide et complet.
+//
+// PRÉCONDITION que ce mécanisme impose au domaine : ces fonctions forment un
+// graphe CLOS — chacune n'appelle que ses pairs de cette liste, aucune constante
+// de module, aucun global applicatif. Une seule référence extérieure ajoutée à
+// l'une d'elles (MAX_XLSX_ROWS_DEFAULT, par exemple) casserait le worker
+// SILENCIEUSEMENT à l'exécution, en ReferenceError loin de sa cause. C'est
+// verify-docs-worker.mjs qui garde cette propriété, en comparant le résultat du
+// worker à celui du main thread.
+const DOC_WORKER_PURES = [
+  'colIndexToLetter', 'colLetterToIndex', 'parseA1Range', 'formatA1Range',
+  'restrictSheetRange', 'sheetToMatrix',
+  // parseSheetSelector a besoin de wb.SheetNames, qui n'existe QUE dans le
+  // worker. L'injecter évite un second aller-retour (« rends-moi les feuilles »,
+  // puis « lis celle-ci ») — et surtout évite de parser deux fois le classeur,
+  // ce qui doublerait le coût que le lot vise à supprimer.
+  'parseSheetSelector',
+  // Côté docx : le callback convertImage doit apparier les octets qu'il reçoit
+  // à une pièce de word/media/, et la clé est (taille, hash) — donc le hash se
+  // calcule DANS le worker, sur les octets que mammoth lui donne.
+  'fnv1aBytes', 'mediaMatchKey',
+];
+
+// Compose la source du worker : les purs, puis le corps qui les orchestre.
+// Le corps est un template literal ordinaire — attention, comme EXPORT_SCRIPT,
+// à ne JAMAIS y mettre de backtick (piège 22).
+function docWorkerSource() {
+  const pures = DOC_WORKER_PURES
+    .map((n) => {
+      const fn = globalThis[n];
+      if (typeof fn !== 'function') {
+        throw new Error('pur manquant pour le worker documentaire : ' + n);
       }
-      resolve(lib);
+      return Function.prototype.toString.call(fn);
+    })
+    .join('\n\n');
+
+  return pures + '\n' + DOC_WORKER_BODY;
+}
+
+// Le corps du worker. Un message par OPÉRATION (list / read / describe) : les
+// trois consommateurs xlsx tirent des choses différentes du même classeur, et
+// renvoyer le workbook pour les laisser choisir coûterait 1,3 s de gel au
+// postMessage (mesuré) — un worker à moitié raté, dont personne ne verrait
+// qu'il l'est. Le worker renvoie donc ce qui est DÉJÀ EXTRAIT ET BORNÉ.
+const DOC_WORKER_BODY = [
+  "self.onmessage = async (ev) => {",
+  "  const msg = ev.data || {};",
+  "  const reply = (payload) => self.postMessage(payload);",
+  "  try {",
+  "    if (msg.lib === 'sheetjs') {",
+  "      importScripts(msg.cdn);",
+  "      const XLSX = self.XLSX;",
+  "      if (!XLSX || typeof XLSX.read !== 'function') throw new Error('SheetJS absent ou incomplet apres importScripts');",
+  "      const wb = XLSX.read(msg.bytes, { type: 'array' });",
+  "      if (!wb || !wb.SheetNames || !wb.SheetNames.length) { reply({ ok: false, empty: true }); return; }",
+  // Les dimensions de TOUTES les feuilles : c'est le seul dénominateur commun
+  // aux trois opérations, et c'est minuscule (un objet par feuille).
+  "      const sheets = wb.SheetNames.map((name) => {",
+  "        const sh = wb.Sheets[name];",
+  "        const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';",
+  "        const r = refA1 ? parseA1Range(refA1) : null;",
+  "        return { name: name, ref: refA1, rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 };",
+  "      });",
+  "      if (msg.op === 'list') { reply({ ok: true, sheets: sheets }); return; }",
+  "      if (msg.op === 'read') {",
+  // Le selector est résolu ICI parce que lui seul connaît wb.SheetNames. Les
+  // refus (feuille introuvable, plage invalide) remontent tels quels : c'est
+  // l'appelant qui les tourne en toolFail, le worker ne connaît pas les outils.
+  "        const sel = parseSheetSelector(msg.selector, wb.SheetNames);",
+  "        if (!sel.ok) { reply({ ok: true, sheets: sheets, selectorFail: sel.message }); return; }",
+  "        const sheet = wb.Sheets[sel.sheet];",
+  "        const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';",
+  "        if (!sheetRef) { reply({ ok: true, sheets: sheets, sheetName: sel.sheet, emptySheet: true }); return; }",
+  "        const restricted = restrictSheetRange(sheetRef, sel.range);",
+  "        if (restricted.fail) { reply({ ok: true, sheets: sheets, sheetName: sel.sheet, restrictFail: restricted.fail }); return; }",
+  "        const matrix = sheetToMatrix(sheet, restricted.ref);",
+  "        reply({ ok: true, sheets: sheets, sheetName: sel.sheet, hadRange: !!sel.range, matrix: matrix, ref: restricted.ref, notice: restricted.notice });",
+  "        return;",
+  "      }",
+  "      if (msg.op === 'describe') {",
+  // La première feuille NON VIDE, bornée à msg.previewRows lignes : exactement
+  // ce que describeXlsxForLibrary consomme, calculé ici pour que le gel du
+  // DÉPÔT de fichier disparaisse lui aussi (c'est le geste qui a produit le
+  // rapport d'origine).
+  "        let preview = null;",
+  "        for (const s of sheets) {",
+  "          if (!s.ref) continue;",
+  "          const box = parseA1Range(s.ref);",
+  "          if (!box) continue;",
+  "          const lastRow = Math.min(box.e.r, box.s.r + (msg.previewRows || 10) - 1);",
+  "          const previewRef = formatA1Range({ s: box.s, e: { r: lastRow, c: box.e.c } });",
+  "          preview = { sheet: s.name, ref: previewRef, matrix: sheetToMatrix(wb.Sheets[s.name], previewRef) };",
+  "          break;",
+  "        }",
+  "        reply({ ok: true, sheets: sheets, preview: preview });",
+  "        return;",
+  "      }",
+  "      throw new Error('operation inconnue pour sheetjs : ' + msg.op);",
+  "    }",
+  "    if (msg.lib === 'mammoth') {",
+  "      importScripts(msg.cdn);",
+  "      const mammoth = self.mammoth;",
+  "      if (!mammoth || typeof mammoth.convertToHtml !== 'function') throw new Error('mammoth absent ou incomplet apres importScripts');",
+  // Le HTML est le payload, et c'est mesuré : convertImage remplace les octets
+  // par des CHEMINS, donc le HTML reste petit (facteur 11 sans lui). Sans
+  // convertImage, mammoth encode chaque image en base64 DANS le HTML — ce qui
+  // ferait exploser le postMessage autant que le workbook.
+  "      const u8 = msg.bytes;",
+  "      const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength) ? u8.buffer : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);",
+  "      const index = msg.mediaIndex || {};",
+  "      const convertImage = (mammoth.images && mammoth.images.imgElement)",
+  "        ? mammoth.images.imgElement(async (image) => {",
+  "            let src = '';",
+  "            try {",
+  "              const bytes = await image.readAsBuffer();",
+  "              src = (bytes && index[mediaMatchKey(bytes.length, fnv1aBytes(bytes))]) || '';",
+  "            } catch (e) { src = ''; }",
+  "            return { src: src };",
+  "          })",
+  "        : null;",
+  "      const res = convertImage",
+  "        ? await mammoth.convertToHtml({ arrayBuffer: ab }, { convertImage: convertImage })",
+  "        : await mammoth.convertToHtml({ arrayBuffer: ab });",
+  "      reply({ ok: true, html: (res && res.value) || '' });",
+  "      return;",
+  "    }",
+  "    throw new Error('bibliotheque inconnue : ' + msg.lib);",
+  "  } catch (err) {",
+  "    reply({ ok: false, error: String((err && err.message) || err) });",
+  "  }",
+  "};",
+].join('\n');
+
+// Borne de sécurité : un worker qui ne répond jamais laisserait l'appelant
+// suspendu pour toujours, et la promesse d'un document qui ne s'ouvre pas est
+// pire que son refus. Tout appel est borné, sans exception (piège :
+// project_fetch_timeout_required — la règle vise les appels réseau, et un
+// worker qui fait importScripts EST un appel réseau).
+const DOC_WORKER_TIMEOUT_MS = 120000;
+
+// Exécute une requête de parsing dans un worker jetable.
+// Rend la réponse du worker ({ ok: true, … }) ou LÈVE — l'échec est propagé,
+// jamais un repli main thread (cf. le commentaire de tête).
+//
+// terminate() en finally, sur TOUS les chemins : succès, échec, timeout. Un
+// worker oublié garde son thread et ses ~30 Mo d'octets vivants.
+function runDocWorker(request) {
+  return new Promise((resolve, reject) => {
+    let source;
+    try { source = docWorkerSource(); }
+    catch (e) { reject(e); return; }
+
+    let url = null, w = null, timer = null;
+    const cleanup = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (w) { try { w.terminate(); } catch (_e) {} w = null; }
+      if (url) { try { URL.revokeObjectURL(url); } catch (_e) {} url = null; }
     };
-    s.onerror = () => reject(new Error('échec de chargement mammoth (CDN)'));
-    document.head.appendChild(s);
+
+    try {
+      url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+      w = new Worker(url);
+    } catch (e) {
+      cleanup();
+      reject(new Error('création du worker impossible : ' + ((e && e.message) || e)));
+      return;
+    }
+
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('le worker de parsing n\'a pas répondu (délai dépassé)'));
+    }, DOC_WORKER_TIMEOUT_MS);
+
+    w.onmessage = (ev) => {
+      const data = ev.data || {};
+      cleanup();
+      if (data.ok === false && data.error) { reject(new Error(data.error)); return; }
+      resolve(data);
+    };
+    // onerror couvre l'échec d'importScripts (CDN injoignable) et toute
+    // exception non rattrapée du worker : sans lui, le seul filet serait le
+    // timeout, soit deux minutes d'attente pour une erreur immédiate.
+    w.onerror = (ev) => {
+      cleanup();
+      reject(new Error('erreur du worker de parsing : ' + ((ev && ev.message) || 'inconnue')));
+    };
+
+    try {
+      // COPIE, jamais de transfert. postMessage(buf, [buf]) éviterait la copie
+      // de 30 Mo mais DÉTACHERAIT u8 côté appelant — or readXlsxDocument
+      // réutilise u8 après le parsing, pour xlsxImageAnchors. Mesuré : la copie
+      // est comprise dans les 18 ms de gel du worker, donc elle ne coûte rien
+      // d'observable.
+      w.postMessage(request);
+    } catch (e) {
+      cleanup();
+      reject(new Error('envoi au worker impossible : ' + ((e && e.message) || e)));
+    }
   });
-  _mammothPromise.catch(() => { _mammothPromise = null; });   // reset sur rejet → retry possible
-  return _mammothPromise;
+}
+
+// Les deux entrées publiques du domaine. Elles portent le CDN plutôt que de le
+// laisser au worker : la constante vit ici, aux côtés des quatre autres
+// lazy-loads, et une seule source d'URL par bibliothèque.
+function parseXlsxInWorker(u8, op, opts) {
+  const o = opts || {};
+  return runDocWorker({
+    lib: 'sheetjs', cdn: SHEETJS_CDN, op: op, bytes: u8,
+    selector: o.selector || '', previewRows: o.previewRows || 0,
+  });
+}
+
+function parseDocxInWorker(u8, mediaIndex) {
+  return runDocWorker({
+    lib: 'mammoth', cdn: MAMMOTH_CDN, bytes: u8, mediaIndex: mediaIndex || {},
+  });
 }
 
 // Passe de rendu : transforme chaque bloc ```mermaid de `scope` en diagramme.

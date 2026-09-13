@@ -4673,7 +4673,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-13 13:43 UTC */
+/* miaou — built: 2026-09-13 15:58 UTC */
 
 /* ── utils.js ── */
 
@@ -7795,21 +7795,10 @@ function sheetToMatrix(sheet, refA1) {
   return { rows: rows, merges: merges };
 }
 
-async function openXlsxDocument(u8, record, toolName) {
-  let lib;
+async function openXlsxDocument(u8, record, toolName, op, opts) {
+  let res;
   try {
-    lib = await ensureSheetJs();
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture Excel indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de classeur.') };
-  }
-  try {
-    const wb = lib.read(u8, { type: 'array' });
-    if (!wb || !wb.SheetNames || !wb.SheetNames.length) {
-      return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
-    }
-    return { wb: wb, lib: lib };
+    res = await parseXlsxInWorker(u8, op, opts);
   } catch (e) {
     const msg = (e && e.message) || '';
     if (/password|encrypt/i.test(msg)) {
@@ -7819,26 +7808,21 @@ async function openXlsxDocument(u8, record, toolName) {
       return { fail: 'Classeur Excel protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
         'Demande à l\'utilisateur une version non protégée.' };
     }
-    return { fail: toolFail(toolName, 'Classeur illisible : ' + (msg || 'structure invalide') + '.') };
+
+    return { fail: toolFail(toolName, 'Classeur illisible ou moteur de lecture Excel indisponible : ' +
+      (msg || 'structure invalide') + '. Le moteur se charge depuis un CDN : sans réseau, ' +
+      'MIAOU ne peut pas ouvrir de classeur.') };
   }
+  if (res && res.empty) {
+    return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
+  }
+  return res;
 }
 
 async function listXlsxDocument(u8, record, ref) {
-  const opened = await openXlsxDocument(u8, record, 'docs__list');
+  const opened = await openXlsxDocument(u8, record, 'docs__list', 'list');
   if (opened.fail) return opened.fail;
-  const wb = opened.wb;
-  const sheets = [];
-  for (const name of wb.SheetNames) {
-    const sh = wb.Sheets[name];
-    const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-    const r = refA1 ? parseA1Range(refA1) : null;
-    sheets.push({
-      name: name,
-      ref: refA1,
-      rows: r ? (r.e.r - r.s.r + 1) : 0,
-      cols: r ? (r.e.c - r.s.c + 1) : 0,
-    });
-  }
+  const sheets = opened.sheets || [];
   _pendingToolAcks.push({
     kind: 'docs_list', handle: ref, resourceName: record.name, count: sheets.length,
   });
@@ -7921,87 +7905,58 @@ async function xlsxImageAnchors(u8) {
 }
 
 async function readXlsxDocument(u8, record, ref, selector) {
-  const opened = await openXlsxDocument(u8, record, 'docs__read');
+  const opened = await openXlsxDocument(u8, record, 'docs__read', 'read', { selector: selector });
   if (opened.fail) return opened.fail;
 
-  const wb = opened.wb;
+  if (opened.selectorFail) return toolFail('docs__read', opened.selectorFail);
+  if (opened.restrictFail) return toolFail('docs__read', opened.restrictFail);
 
-  const sel = parseSheetSelector(selector, wb.SheetNames);
-  if (!sel.ok) return toolFail('docs__read', sel.message);
-
-  const sheet = wb.Sheets[sel.sheet];
-  const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';
-  if (!sheetRef) {
+  if (opened.emptySheet) {
 
     return {
-      text: formatXlsxSheet({ rows: [], merges: [] }, { sheet: sel.sheet, ref: '' }),
-      label: sel.sheet,
-      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(sel.sheet)),
+      text: formatXlsxSheet({ rows: [], merges: [] }, { sheet: opened.sheetName, ref: '' }),
+      label: opened.sheetName,
+      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(opened.sheetName)),
     };
   }
 
-  const restricted = restrictSheetRange(sheetRef, sel.range);
-  if (restricted.fail) return toolFail('docs__read', restricted.fail);
-
-  const matrix = sheetToMatrix(sheet, restricted.ref);
+  const matrix = opened.matrix;
+  const sheetName = opened.sheetName;
+  const restrictedRef = opened.ref;
 
   const anchorsBySheet = await xlsxImageAnchors(u8);
-  const part = partitionXlsxAnchors(anchorsBySheet[sel.sheet], restricted.ref);
+  const part = partitionXlsxAnchors(anchorsBySheet[sheetName], restrictedRef);
 
   return {
     text: formatXlsxSheet(matrix, {
-      sheet: sel.sheet, ref: restricted.ref,
+      sheet: sheetName, ref: restrictedRef,
 
-      maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
+      maxRows: opened.hadRange ? 0 : MAX_XLSX_ROWS_DEFAULT,
       anchors: part,
-      notice: restricted.notice,
+      notice: opened.notice,
     }),
 
-    label: sel.sheet + '!' + restricted.ref,
+    label: sheetName + '!' + restrictedRef,
     resourceName: docReadResourceName(record.name,
-      slugifyResourceSuffix(sel.sheet + ' ' + restricted.ref)),
+      slugifyResourceSuffix(sheetName + ' ' + restrictedRef)),
   };
 }
 
 async function openDocxDocument(u8, record, toolName) {
-  let lib;
-  try {
-    lib = await ensureMammoth();
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture Word indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
-  }
 
   const mediaIndex = await docxMediaIndex(u8);
 
   let html;
   try {
 
-    const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
-      ? u8.buffer
-      : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-
-    const convertImage = lib.images && lib.images.imgElement
-      ? lib.images.imgElement(async (image) => {
-        let src = '';
-        try {
-          const bytes = await image.readAsBuffer();
-          src = (bytes && mediaIndex[mediaMatchKey(bytes.length, fnv1aBytes(bytes))]) || '';
-        } catch (_e) { src = ''; }
-        return { src: src };
-      })
-      : null;
-
-    const res = convertImage
-      ? await lib.convertToHtml({ arrayBuffer: ab }, { convertImage: convertImage })
-      : await lib.convertToHtml({ arrayBuffer: ab });
-    html = (res && res.value) || '';
+    const res = await parseDocxInWorker(u8, mediaIndex);
+    html = (res && res.html) || '';
   } catch (e) {
-    return { fail: toolFail(toolName, 'Document Word illisible : ' +
+    return { fail: toolFail(toolName, 'Document Word illisible ou moteur de lecture indisponible : ' +
       ((e && e.message) || 'structure invalide') + '. Un .docx protégé par mot de passe ' +
       "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
-      'une version non protégée si c\'est le cas.') };
+      'une version non protégée si c\'est le cas. Le moteur se charge depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
   }
 
   const blocks = docxHtmlToBlocks(html);
@@ -8475,33 +8430,21 @@ async function readPptxDocument(u8, record, ref, selector) {
   };
 }
 
+const XLSX_LIBRARY_PREVIEW_ROWS = 10;
+
 async function describeXlsxForLibrary(u8, maxChars) {
   try {
-    const lib = await ensureSheetJs();
-    const wb = lib.read(u8, { type: 'array' });
-    if (!wb || !wb.SheetNames || !wb.SheetNames.length) return null;
+    const res = await parseXlsxInWorker(u8, 'describe',
+      { previewRows: XLSX_LIBRARY_PREVIEW_ROWS });
+    if (!res || res.empty || !res.sheets || !res.sheets.length) return null;
 
-    const sheets = [];
-    for (const name of wb.SheetNames) {
-      const sh = wb.Sheets[name];
-      const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-      const r = refA1 ? parseA1Range(refA1) : null;
-      sheets.push({ name: name, ref: refA1,
-        rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 });
-    }
-    const head = formatXlsxListing(sheets);
+    const head = formatXlsxListing(res.sheets);
 
     let preview = '';
-    for (const sh of sheets) {
-      if (!sh.ref) continue;
-      const full = parseA1Range(sh.ref);
-      if (!full) continue;
-      const end = Math.min(full.e.r, full.s.r + 9);
-      const previewRef = formatA1Range({ s: full.s, e: { r: end, c: full.e.c } });
-      const matrix = sheetToMatrix(wb.Sheets[sh.name], previewRef);
-      const body = formatXlsxSheet(matrix, { sheet: sh.name, ref: previewRef });
-      if (body) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + body; }
-      break;
+    const p = res.preview;
+    if (p && p.matrix) {
+      const body = formatXlsxSheet(p.matrix, { sheet: p.sheet, ref: p.ref });
+      if (body) preview = 'Aperçu de « ' + p.sheet + ' » :\n' + body;
     }
     const out = preview ? head + '\n\n' + preview : head;
     return out.slice(0, maxChars);
@@ -8734,7 +8677,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789307001}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789315086}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -15290,25 +15233,173 @@ function ensureSheetJs() {
 }
 
 const MAMMOTH_CDN = 'https://cdn.jsdelivr.net/npm/mammoth@1.11.0/mammoth.browser.min.js';
-let _mammothPromise = null;
 
-function ensureMammoth() {
-  if (_mammothPromise) return _mammothPromise;
-  _mammothPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = MAMMOTH_CDN;
-    s.onload = () => {
-      const lib = window.mammoth;
-      if (!lib || typeof lib.convertToHtml !== 'function') {
-        reject(new Error('mammoth absent ou incomplet après chargement')); return;
+const DOC_WORKER_PURES = [
+  'colIndexToLetter', 'colLetterToIndex', 'parseA1Range', 'formatA1Range',
+  'restrictSheetRange', 'sheetToMatrix',
+
+  'parseSheetSelector',
+
+  'fnv1aBytes', 'mediaMatchKey',
+];
+
+function docWorkerSource() {
+  const pures = DOC_WORKER_PURES
+    .map((n) => {
+      const fn = globalThis[n];
+      if (typeof fn !== 'function') {
+        throw new Error('pur manquant pour le worker documentaire : ' + n);
       }
-      resolve(lib);
+      return Function.prototype.toString.call(fn);
+    })
+    .join('\n\n');
+
+  return pures + '\n' + DOC_WORKER_BODY;
+}
+
+const DOC_WORKER_BODY = [
+  "self.onmessage = async (ev) => {",
+  "  const msg = ev.data || {};",
+  "  const reply = (payload) => self.postMessage(payload);",
+  "  try {",
+  "    if (msg.lib === 'sheetjs') {",
+  "      importScripts(msg.cdn);",
+  "      const XLSX = self.XLSX;",
+  "      if (!XLSX || typeof XLSX.read !== 'function') throw new Error('SheetJS absent ou incomplet apres importScripts');",
+  "      const wb = XLSX.read(msg.bytes, { type: 'array' });",
+  "      if (!wb || !wb.SheetNames || !wb.SheetNames.length) { reply({ ok: false, empty: true }); return; }",
+
+  "      const sheets = wb.SheetNames.map((name) => {",
+  "        const sh = wb.Sheets[name];",
+  "        const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';",
+  "        const r = refA1 ? parseA1Range(refA1) : null;",
+  "        return { name: name, ref: refA1, rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 };",
+  "      });",
+  "      if (msg.op === 'list') { reply({ ok: true, sheets: sheets }); return; }",
+  "      if (msg.op === 'read') {",
+
+  "        const sel = parseSheetSelector(msg.selector, wb.SheetNames);",
+  "        if (!sel.ok) { reply({ ok: true, sheets: sheets, selectorFail: sel.message }); return; }",
+  "        const sheet = wb.Sheets[sel.sheet];",
+  "        const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';",
+  "        if (!sheetRef) { reply({ ok: true, sheets: sheets, sheetName: sel.sheet, emptySheet: true }); return; }",
+  "        const restricted = restrictSheetRange(sheetRef, sel.range);",
+  "        if (restricted.fail) { reply({ ok: true, sheets: sheets, sheetName: sel.sheet, restrictFail: restricted.fail }); return; }",
+  "        const matrix = sheetToMatrix(sheet, restricted.ref);",
+  "        reply({ ok: true, sheets: sheets, sheetName: sel.sheet, hadRange: !!sel.range, matrix: matrix, ref: restricted.ref, notice: restricted.notice });",
+  "        return;",
+  "      }",
+  "      if (msg.op === 'describe') {",
+
+  "        let preview = null;",
+  "        for (const s of sheets) {",
+  "          if (!s.ref) continue;",
+  "          const box = parseA1Range(s.ref);",
+  "          if (!box) continue;",
+  "          const lastRow = Math.min(box.e.r, box.s.r + (msg.previewRows || 10) - 1);",
+  "          const previewRef = formatA1Range({ s: box.s, e: { r: lastRow, c: box.e.c } });",
+  "          preview = { sheet: s.name, ref: previewRef, matrix: sheetToMatrix(wb.Sheets[s.name], previewRef) };",
+  "          break;",
+  "        }",
+  "        reply({ ok: true, sheets: sheets, preview: preview });",
+  "        return;",
+  "      }",
+  "      throw new Error('operation inconnue pour sheetjs : ' + msg.op);",
+  "    }",
+  "    if (msg.lib === 'mammoth') {",
+  "      importScripts(msg.cdn);",
+  "      const mammoth = self.mammoth;",
+  "      if (!mammoth || typeof mammoth.convertToHtml !== 'function') throw new Error('mammoth absent ou incomplet apres importScripts');",
+
+  "      const u8 = msg.bytes;",
+  "      const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength) ? u8.buffer : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);",
+  "      const index = msg.mediaIndex || {};",
+  "      const convertImage = (mammoth.images && mammoth.images.imgElement)",
+  "        ? mammoth.images.imgElement(async (image) => {",
+  "            let src = '';",
+  "            try {",
+  "              const bytes = await image.readAsBuffer();",
+  "              src = (bytes && index[mediaMatchKey(bytes.length, fnv1aBytes(bytes))]) || '';",
+  "            } catch (e) { src = ''; }",
+  "            return { src: src };",
+  "          })",
+  "        : null;",
+  "      const res = convertImage",
+  "        ? await mammoth.convertToHtml({ arrayBuffer: ab }, { convertImage: convertImage })",
+  "        : await mammoth.convertToHtml({ arrayBuffer: ab });",
+  "      reply({ ok: true, html: (res && res.value) || '' });",
+  "      return;",
+  "    }",
+  "    throw new Error('bibliotheque inconnue : ' + msg.lib);",
+  "  } catch (err) {",
+  "    reply({ ok: false, error: String((err && err.message) || err) });",
+  "  }",
+  "};",
+].join('\n');
+
+const DOC_WORKER_TIMEOUT_MS = 120000;
+
+function runDocWorker(request) {
+  return new Promise((resolve, reject) => {
+    let source;
+    try { source = docWorkerSource(); }
+    catch (e) { reject(e); return; }
+
+    let url = null, w = null, timer = null;
+    const cleanup = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (w) { try { w.terminate(); } catch (_e) {} w = null; }
+      if (url) { try { URL.revokeObjectURL(url); } catch (_e) {} url = null; }
     };
-    s.onerror = () => reject(new Error('échec de chargement mammoth (CDN)'));
-    document.head.appendChild(s);
+
+    try {
+      url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+      w = new Worker(url);
+    } catch (e) {
+      cleanup();
+      reject(new Error('création du worker impossible : ' + ((e && e.message) || e)));
+      return;
+    }
+
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('le worker de parsing n\'a pas répondu (délai dépassé)'));
+    }, DOC_WORKER_TIMEOUT_MS);
+
+    w.onmessage = (ev) => {
+      const data = ev.data || {};
+      cleanup();
+      if (data.ok === false && data.error) { reject(new Error(data.error)); return; }
+      resolve(data);
+    };
+
+    w.onerror = (ev) => {
+      cleanup();
+      reject(new Error('erreur du worker de parsing : ' + ((ev && ev.message) || 'inconnue')));
+    };
+
+    try {
+
+      w.postMessage(request);
+    } catch (e) {
+      cleanup();
+      reject(new Error('envoi au worker impossible : ' + ((e && e.message) || e)));
+    }
   });
-  _mammothPromise.catch(() => { _mammothPromise = null; });
-  return _mammothPromise;
+}
+
+function parseXlsxInWorker(u8, op, opts) {
+  const o = opts || {};
+  return runDocWorker({
+    lib: 'sheetjs', cdn: SHEETJS_CDN, op: op, bytes: u8,
+    selector: o.selector || '', previewRows: o.previewRows || 0,
+  });
+}
+
+function parseDocxInWorker(u8, mediaIndex) {
+  return runDocWorker({
+    lib: 'mammoth', cdn: MAMMOTH_CDN, bytes: u8, mediaIndex: mediaIndex || {},
+  });
 }
 
 async function renderMermaidUnder(scope) {

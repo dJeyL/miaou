@@ -533,7 +533,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   comme non-régression sur les dates), et les ancres d'images Excel (lot AC-4 :
   chaîne `workbook`→`rels`→`drawing`→`media` par fflate, rattachement lu dans
   les rels et jamais déduit de la numérotation, filtrage par la plage servie
-  avec compte du hors-plage, description de bibliothèque explicitement exclue).
+  avec compte du hors-plage, description de bibliothèque explicitement exclue) ;
+  porte enfin le **parsing hors thread principal** (lot AD : `xlsx` et `docx` en
+  Web Worker jetable, `pptx` laissé en main thread avec sa mesure et son motif,
+  matrice bornée renvoyée et jamais le workbook, purs injectés depuis leur source
+  vive par `toString()` et la précondition de **graphe clos** que ça impose, les
+  cinq points d'entrée dont `describeXlsxForLibrary` qui tourne au dépôt du
+  fichier, buffer copié et jamais transféré).
 - **`docs/context-inspector.md`** — inspecteur de contexte (brief B) : manifeste
   par bloc logique du contexte envoyé au modèle (`buildContextManifest`, pur) et
   totaux chars/tokens, rendu dans le drawer (`renderContextInspector`).

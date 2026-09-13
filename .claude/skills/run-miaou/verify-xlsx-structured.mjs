@@ -21,6 +21,21 @@
 // Le scénario 1 les mesure DIRECTEMENT sur la fixture, avant toute assertion de
 // rendu. Un rendu vert sur une prémisse fausse serait le pire des cas.
 //
+// ── LOT AD : CE SCRIPT EST LE SEUL À CHARGER SHEETJS DANS LA PAGE ──────────
+// Depuis le lot AD, le parsing des classeurs tourne dans un Web Worker, qui
+// charge SheetJS par importScripts. Aucun code applicatif n'appelle plus
+// `ensureSheetJs` : le loader de ui.js n'a SURVÉCU que pour ce script, qui s'en
+// sert comme INSTRUMENT DE MESURE (scénario 1, lecture directe du workbook pour
+// remesurer les trois prémisses ci-dessus). Son homologue `ensureMammoth` a été
+// retiré, faute d'un tel usage.
+//
+// Conséquence à connaître avant de « nettoyer » : retirer l'appel à
+// ensureSheetJs d'ici rendrait le loader orphelin, et le prochain passage le
+// supprimerait — on perdrait la remesure des prémisses, c'est-à-dire ce qui
+// distingue ce script d'un test de rendu ordinaire. Le chemin de LECTURE, lui,
+// ne doit jamais être rebranché dessus : ce serait ramener le gel de 5,7 s que
+// le lot AD a supprimé (cf. verify-docs-worker.mjs).
+//
 // CONFIDENTIALITÉ DES FIXTURES : les fichiers d'untracked/test-files/ sont des
 // documents à ne pas divulguer. Aucune assertion ni aucun `detail` de ce script
 // ne porte sur leur CONTENU — ni valeur de cellule, ni libellé, ni nom propre.

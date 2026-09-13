@@ -31,7 +31,8 @@
 // fonction (runtime, après chargement complet) — c'est légal et voulu :
 //   - tools.js : toolFail, _pendingToolAcks, docsUnsupportedFormatMessage ;
 //   - resources.js : humanSize ;
-//   - ui.js : ensureFflate / ensurePdfJs / ensureSheetJs / ensureMammoth.
+//   - ui.js : ensureFflate / ensurePdfJs / ensureSheetJs, et depuis le lot AD
+//     les entrées du worker de parsing (parseXlsxInWorker / parseDocxInWorker).
 // Un grep « docs.js ne cite aucun symbole aval » sortirait donc rouge sans
 // qu'il y ait la moindre régression : ne pas le lire comme tel.
 //
@@ -50,9 +51,9 @@
 //     ne se fragmente pas par domaine) ;
 //   - DOCS_DOCTRINE (tools.js, aux côtés des autres doctrines de
 //     ROOT_SYSTEM_PROMPT) ;
-//   - les lazy-loads CDN ensureFflate/ensurePdfJs/ensureSheetJs/ensureMammoth
-//     (ui.js, où vivent TOUS les lazy-loads du projet — Mermaid, Prism,
-//     QuickJS).
+//   - les lazy-loads CDN (ui.js, où vivent TOUS les lazy-loads du projet —
+//     Mermaid, Prism, QuickJS), ET le worker de parsing du lot AD, qui est un
+//     lazy-load de plus : il charge SheetJS et mammoth par importScripts.
 
 // Sniff Office : un .docx/.xlsx/.pptx EST un zip. Sert à ANNONCER la nature de
 // l'archive dans le listing, JAMAIS à refuser l'ouverture (décision lot V).
@@ -2004,34 +2005,28 @@ function sheetToMatrix(sheet, refA1) {
   return { rows: rows, merges: merges };
 }
 
-// readXlsxDocument — même forme qu'openPdfDocument : rend { wb } ou { fail },
-// JAMAIS d'exception (un throw remonterait en erreur technique là où un fichier
-// illisible est un refus ordinaire dont le modèle doit pouvoir parler).
+// openXlsxDocument — même forme qu'openPdfDocument : rend le RÉSULTAT D'EXTRACTION
+// ou { fail }, JAMAIS d'exception (un throw remonterait en erreur technique là où
+// un fichier illisible est un refus ordinaire dont le modèle doit pouvoir parler).
 //
-// Différence avec pdf.js, mesurée et non supposée : SheetJS ne détache pas le
-// buffer (spike V-5), donc pas de u8.slice() ici. Et il n'a rien à libérer — pas
-// de worker, pas de handle natif : aucun équivalent de doc.destroy() n'existe,
-// vérifié avant de conclure plutôt que déduit de l'absence de doc.
+// LOT AD : le parsing tourne dans un WEB WORKER (parseXlsxInWorker, ui.js), et
+// plus dans ce thread. Motif mesuré : XLSX.read sur un classeur de 37,9 Mo gèle
+// l'onglet 5 731 ms — rien ne se peint, rien ne se clique, et une génération en
+// vol (piège 28) se fige avec l'UI.
 //
-// Un classeur protégé n'a PAS l'équivalent du PasswordException de pdf.js :
-// SheetJS lève une erreur ordinaire. On la reconnaît sur son message pour rendre
-// un refus métier lisible, avec repli sur l'erreur générique — reconnaître un
-// message est fragile, d'où le repli, mais le silence serait pire.
-async function openXlsxDocument(u8, record, toolName) {
-  let lib;
+// CE QUI REVIENT DU WORKER EST DÉJÀ EXTRAIT ET BORNÉ, jamais le workbook :
+// postMessage d'un workbook SheetJS complet coûte 1 248-1 398 ms de gel (mesuré),
+// ce qui ferait un worker à moitié raté dont personne ne verrait qu'il l'est.
+// D'où le paramètre `op` : chaque appelant dit ce qu'il veut extraire.
+//
+// La reconnaissance du classeur protégé survit au portage, sur le message
+// d'erreur remonté par le worker : SheetJS n'a PAS l'équivalent du
+// PasswordException de pdf.js, il lève une erreur ordinaire. Repli sur l'erreur
+// générique — reconnaître un message est fragile, mais le silence serait pire.
+async function openXlsxDocument(u8, record, toolName, op, opts) {
+  let res;
   try {
-    lib = await ensureSheetJs();   // ui.js
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture Excel indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de classeur.') };
-  }
-  try {
-    const wb = lib.read(u8, { type: 'array' });
-    if (!wb || !wb.SheetNames || !wb.SheetNames.length) {
-      return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
-    }
-    return { wb: wb, lib: lib };
+    res = await parseXlsxInWorker(u8, op, opts);   // ui.js
   } catch (e) {
     const msg = (e && e.message) || '';
     if (/password|encrypt/i.test(msg)) {
@@ -2041,30 +2036,32 @@ async function openXlsxDocument(u8, record, toolName) {
       return { fail: 'Classeur Excel protégé par mot de passe : MIAOU ne peut pas l\'ouvrir. ' +
         'Demande à l\'utilisateur une version non protégée.' };
     }
-    return { fail: toolFail(toolName, 'Classeur illisible : ' + (msg || 'structure invalide') + '.') };
+    // Le chargement de SheetJS se fait par importScripts DANS le worker : son
+    // échec (CDN injoignable) arrive ici comme n'importe quelle autre erreur de
+    // worker, d'où le message qui couvre les deux cas sans prétendre les
+    // distinguer.
+    return { fail: toolFail(toolName, 'Classeur illisible ou moteur de lecture Excel indisponible : ' +
+      (msg || 'structure invalide') + '. Le moteur se charge depuis un CDN : sans réseau, ' +
+      'MIAOU ne peut pas ouvrir de classeur.') };
   }
+  if (res && res.empty) {
+    return { fail: toolFail(toolName, 'Classeur sans aucune feuille lisible.') };
+  }
+  return res;
 }
 
 // Lecteur `list` du xlsx — entrée xlsx de DOC_READERS (lot V-5).
 // Rend une feuille par ligne AVEC sa dimension : c'est ce dont le modèle a
 // besoin pour écrire son selector. Sans la dimension il demande 'A1:Z100' au
 // jugé, et tombe dans le cas que restrictSheetRange doit rattraper.
+//
+// La dérivation des dimensions (le !ref de chaque feuille lu en lignes/colonnes)
+// vit désormais DANS le worker (lot AD) : elle a besoin du workbook, qui n'en
+// sort plus. C'est ce qui rend le listing aussi non bloquant que la lecture.
 async function listXlsxDocument(u8, record, ref) {
-  const opened = await openXlsxDocument(u8, record, 'docs__list');
+  const opened = await openXlsxDocument(u8, record, 'docs__list', 'list');
   if (opened.fail) return opened.fail;
-  const wb = opened.wb;
-  const sheets = [];
-  for (const name of wb.SheetNames) {
-    const sh = wb.Sheets[name];
-    const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-    const r = refA1 ? parseA1Range(refA1) : null;   // pur, plus haut dans ce fichier
-    sheets.push({
-      name: name,
-      ref: refA1,
-      rows: r ? (r.e.r - r.s.r + 1) : 0,
-      cols: r ? (r.e.c - r.s.c + 1) : 0,
-    });
-  }
+  const sheets = opened.sheets || [];
   _pendingToolAcks.push({
     kind: 'docs_list', handle: ref, resourceName: record.name, count: sheets.length,
   });
@@ -2183,39 +2180,40 @@ async function xlsxImageAnchors(u8) {
 // sheet_to_csv, qui est SILENCIEUSEMENT IGNORÉE en 0.18.5 (spike V-5, figé par
 // un contrôle) : elle rendrait la feuille entière en ayant l'air d'avoir servi
 // la plage. Ne pas « simplifier » vers l'option native sans rejouer le spike.
+//
+// LOT AD : le parsing ET la résolution du selector vivent dans le worker — ce
+// dernier parce que parseSheetSelector a besoin de wb.SheetNames, qui ne sort
+// plus du worker. Le faire remonter pour décider ici imposerait un SECOND
+// parsing du classeur, soit exactement le coût que le lot supprime.
 async function readXlsxDocument(u8, record, ref, selector) {
-  const opened = await openXlsxDocument(u8, record, 'docs__read');
+  const opened = await openXlsxDocument(u8, record, 'docs__read', 'read', { selector: selector });
   if (opened.fail) return opened.fail;
-  // `lib` n'est plus déballé ici depuis AC-3 : le rendu ne passe plus par
-  // lib.utils.sheet_to_csv. SheetJS sert à OUVRIR le classeur (openXlsxDocument),
-  // plus à le mettre en forme.
-  const wb = opened.wb;
 
-  const sel = parseSheetSelector(selector, wb.SheetNames);   // pur, plus haut dans ce fichier
-  if (!sel.ok) return toolFail('docs__read', sel.message);
+  // Les refus du selector sont décidés dans le worker (qui seul voit les noms de
+  // feuilles) mais TOURNÉS EN toolFail ici : le worker ne connaît pas les outils.
+  if (opened.selectorFail) return toolFail('docs__read', opened.selectorFail);
+  if (opened.restrictFail) return toolFail('docs__read', opened.restrictFail);
 
-  const sheet = wb.Sheets[sel.sheet];
-  const sheetRef = (sheet && sheet['!ref']) ? String(sheet['!ref']) : '';
-  if (!sheetRef) {
+  if (opened.emptySheet) {
     // Feuille présente mais vide : ce n'est pas une erreur, et le dire vaut
     // mieux que rendre une chaîne vide dont le modèle conclurait n'importe quoi.
     return {
-      text: formatXlsxSheet({ rows: [], merges: [] }, { sheet: sel.sheet, ref: '' }),
-      label: sel.sheet,
-      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(sel.sheet)),
+      text: formatXlsxSheet({ rows: [], merges: [] }, { sheet: opened.sheetName, ref: '' }),
+      label: opened.sheetName,
+      resourceName: docReadResourceName(record.name, slugifyResourceSuffix(opened.sheetName)),
     };
   }
 
-  const restricted = restrictSheetRange(sheetRef, sel.range);   // pur, plus haut dans ce fichier
-  if (restricted.fail) return toolFail('docs__read', restricted.fail);
-
   // AC-3 : la plage reste honorée par RESTRICTION EXPLICITE de la lecture, et
-  // plus par le clone à '!ref'. La garde de V-5 (l'option `range` de
-  // sheet_to_csv silencieusement ignorée) ne disparaît donc pas faute d'objet :
-  // elle est REMPLACÉE par une lecture qui ne balaie que les cellules de la
-  // plage — sheetToMatrix n'appelle plus SheetJS du tout pour le rendu. Ne pas
-  // « restaurer » sheet_to_csv ici : ce serait reperdre formules et fusions.
-  const matrix = sheetToMatrix(sheet, restricted.ref);
+  // jamais par l'option `range` de sheet_to_csv, SILENCIEUSEMENT IGNORÉE en
+  // 0.18.5 (spike V-5, figé par un contrôle) : elle rendrait la feuille entière
+  // en ayant l'air d'avoir servi la plage. sheetToMatrix ne balaie que les
+  // cellules de la plage — et tourne maintenant dans le worker, sur la source
+  // vive injectée (jamais une copie : cf. DOC_WORKER_PURES, ui.js). Ne pas
+  // « restaurer » sheet_to_csv : ce serait reperdre formules et fusions.
+  const matrix = opened.matrix;
+  const sheetName = opened.sheetName;
+  const restrictedRef = opened.ref;
 
   // Les ancres d'images (AC-4) sont résolues À LA LECTURE seulement, et jamais
   // au listing ni à la description de bibliothèque : le listing n'a pas besoin
@@ -2226,22 +2224,23 @@ async function readXlsxDocument(u8, record, ref, selector) {
   // Échec → {} → aucune note : une image mal référencée ne doit jamais coûter
   // le texte de la feuille.
   const anchorsBySheet = await xlsxImageAnchors(u8);
-  const part = partitionXlsxAnchors(anchorsBySheet[sel.sheet], restricted.ref);   // pur
+  const part = partitionXlsxAnchors(anchorsBySheet[sheetName], restrictedRef);   // pur
 
   return {
     text: formatXlsxSheet(matrix, {          // pur, plus haut dans ce fichier
-      sheet: sel.sheet, ref: restricted.ref,
+      sheet: sheetName, ref: restrictedRef,
       // Le cap de lignes ne mord QUE sans plage explicite (cf. la constante).
-      maxRows: sel.range ? 0 : MAX_XLSX_ROWS_DEFAULT,
+      // `hadRange` vient du worker, seul à avoir résolu le selector.
+      maxRows: opened.hadRange ? 0 : MAX_XLSX_ROWS_DEFAULT,
       anchors: part,
-      notice: restricted.notice,
+      notice: opened.notice,
     }),
     // Le label porte la plage EFFECTIVEMENT servie, pas celle demandée : c'est
     // ce qui s'affiche dans l'ack, et un ack qui annonce la demande plutôt que
     // le service ment dès qu'un clamp a mordu.
-    label: sel.sheet + '!' + restricted.ref,
+    label: sheetName + '!' + restrictedRef,
     resourceName: docReadResourceName(record.name,
-      slugifyResourceSuffix(sel.sheet + ' ' + restricted.ref)),
+      slugifyResourceSuffix(sheetName + ' ' + restrictedRef)),
   };
 }
 
@@ -2260,16 +2259,25 @@ async function readXlsxDocument(u8, record, ref, selector) {
 // mammoth ne connaît pas de document « protégé » à la façon d'un PDF ou d'un
 // classeur : un .docx chiffré n'est plus un zip OOXML lisible, et il échoue à
 // l'ouverture. Le message le dit sans promettre de distinguer les deux cas.
+//
+// LOT AD : la conversion mammoth tourne dans un WEB WORKER (parseDocxInWorker,
+// ui.js). Moins spectaculaire que le xlsx mais du même ordre — 493 à 725 ms de
+// gel mesurés sur une fixture de 3,3 Mo.
+//
+// CE QUI REVIENT DU WORKER EST LE HTML, et c'est sûr précisément PARCE QUE
+// convertImage remplace les octets par des chemins (cf. plus bas) : sans lui le
+// HTML porterait chaque image en base64, et son postMessage coûterait le gel
+// qu'on vient de supprimer — le piège symétrique de celui du workbook.
+//
+// docxMediaIndex reste en MAIN THREAD : il coûte 8 ms mesurés (fflate sur
+// word/media/ seul), et le sortir imposerait de charger fflate une seconde fois
+// dans le worker pour économiser ces 8 ms.
+//
+// `record` n'est plus lu depuis le lot AD (il servait au message d'erreur du
+// chargement mammoth, désormais fondu dans celui du worker). Il reste dans la
+// signature par symétrie avec openPdfDocument/openXlsxDocument, que ses trois
+// appelants alimentent déjà — le retirer coûterait trois sites pour rien.
 async function openDocxDocument(u8, record, toolName) {
-  let lib;
-  try {
-    lib = await ensureMammoth();   // ui.js
-  } catch (e) {
-    return { fail: toolFail(toolName, 'Moteur de lecture Word indisponible : ' +
-      ((e && e.message) || 'chargement impossible') + '. Le chargement se fait depuis un CDN : ' +
-      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
-  }
-
   // Annuaire des pièces de word/media/, clé (taille, hash) → chemin, construit
   // AVANT la conversion pour que convertImage puisse résoudre à la volée.
   // Best-effort : un échec ici ne prive pas le modèle du texte, les ancres
@@ -2278,41 +2286,29 @@ async function openDocxDocument(u8, record, toolName) {
 
   let html;
   try {
-    // mammoth veut un ArrayBuffer. u8.buffer est passé TEL QUEL (pas de slice) :
-    // mesuré au spike, mammoth ne détache pas. Mais u8 peut être une VUE
-    // partielle d'un buffer plus grand — d'où byteOffset/byteLength, qui coûtent
-    // une copie seulement dans ce cas-là.
-    const ab = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
-      ? u8.buffer
-      : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-
+    // L'annuaire traverse vers le worker, où le callback convertImage résout
+    // contre lui. La clé d'appariement étant (taille, hash), le HASH se calcule
+    // dans le worker sur les octets que mammoth lui donne — d'où fnv1aBytes et
+    // mediaMatchKey dans DOC_WORKER_PURES (ui.js), injectés depuis leur source
+    // vive et jamais recopiés.
+    //
     // convertImage remplace le src par le CHEMIN de la pièce, jamais par les
     // octets. Ce n'est pas qu'une commodité d'ancrage : par défaut mammoth
     // encode chaque image en base64 DANS le HTML, qui est ensuite jeté par
     // htmlFragmentToInlineText — mesuré sur la fixture, 51 487 caractères
     // contre 4 643, soit un facteur 11 de mémoire et de CPU dépensés pour rien.
     // Ne pas « re-simplifier » en retirant convertImage : le src vide était le
-    // symptôme, l'inflation du HTML intermédiaire était le coût.
-    const convertImage = lib.images && lib.images.imgElement
-      ? lib.images.imgElement(async (image) => {
-        let src = '';
-        try {
-          const bytes = await image.readAsBuffer();
-          src = (bytes && mediaIndex[mediaMatchKey(bytes.length, fnv1aBytes(bytes))]) || '';
-        } catch (_e) { src = ''; }   // image illisible : ancre sans chemin
-        return { src: src };
-      })
-      : null;
-
-    const res = convertImage
-      ? await lib.convertToHtml({ arrayBuffer: ab }, { convertImage: convertImage })
-      : await lib.convertToHtml({ arrayBuffer: ab });
-    html = (res && res.value) || '';
+    // symptôme, l'inflation du HTML intermédiaire était le coût — et depuis le
+    // lot AD ce HTML traverse un postMessage, ce qui rend l'inflation plus chère
+    // encore.
+    const res = await parseDocxInWorker(u8, mediaIndex);   // ui.js
+    html = (res && res.html) || '';
   } catch (e) {
-    return { fail: toolFail(toolName, 'Document Word illisible : ' +
+    return { fail: toolFail(toolName, 'Document Word illisible ou moteur de lecture indisponible : ' +
       ((e && e.message) || 'structure invalide') + '. Un .docx protégé par mot de passe ' +
       "n'est plus une archive OOXML lisible et échoue ici : demande à l'utilisateur " +
-      'une version non protégée si c\'est le cas.') };
+      'une version non protégée si c\'est le cas. Le moteur se charge depuis un CDN : ' +
+      'sans réseau, MIAOU ne peut pas ouvrir de document Word.') };
   }
 
   const blocks = docxHtmlToBlocks(html);        // pur, plus haut dans ce fichier
@@ -2388,6 +2384,25 @@ async function readDocxDocument(u8, record, ref, selector) {
 // notes et presentation.xml — pas les médias, qui sont l'essentiel du poids
 // d'un deck (551 ko pour 71 slides dans la fixture réelle, dont presque tout en
 // images et objets OLE).
+//
+// ── LOT AD : CE FORMAT RESTE EN MAIN THREAD, DÉLIBÉRÉMENT ──────────────────
+// Le lot AD a sorti le xlsx et le docx du thread principal parce qu'ils gèlent
+// l'onglet (5 731 ms pour un classeur de 37,9 Mo, 493-725 ms pour un document
+// de 3,3 Mo). LE PPTX N'A PAS CE PROBLÈME : 59 ms mesurés sur un deck de 150
+// slides et 19,9 Mo.
+//
+// La raison est structurelle, et c'est l'unzipSync FILTRÉ ci-dessus : le coût
+// suit le TEXTE, jamais les octets. Les médias — l'essentiel du poids d'un deck
+// — ne sont jamais décompressés. Un deck lourd est lourd en images, et les
+// images ne coûtent rien ici.
+//
+// LE PORTER SERAIT UNE PERTE, mesurée au spike : DOMParser N'EXISTE PAS en
+// worker. Le prototype a dû renvoyer les 452 pièces XML brutes et laisser le
+// parsing DOM côté principal — donc ne déplacer que 39 ms d'unzipSync, au prix
+// d'un thread et de la sérialisation de toutes les pièces.
+//
+// Ne pas porter ce format « par symétrie » avec les deux autres : la symétrie
+// est précisément le raisonnement que cette phrase existe pour arrêter.
 async function openPptxDocument(u8, record, toolName) {
   let lib;
   try {
@@ -3177,38 +3192,41 @@ async function readPptxDocument(u8, record, ref, selector) {
 // Rend null sur échec, JAMAIS d'exception (l'appelant retombe sur le chemin
 // serveur, puis sur une description vide : un fichier doit toujours pouvoir
 // être déposé). Pas de console.warn — leçon U-1.
+//
+// LOT AD — CE CHEMIN EST LE PIÈGE DU LOT, et il est le plus visible des cinq :
+// il tourne AU MOMENT OÙ L'UTILISATEUR DÉPOSE LE FICHIER, c'est-à-dire au geste
+// même qui a produit le rapport de gel d'origine. Il appelait `lib.read`
+// DIRECTEMENT, sans passer par openXlsxDocument : porter les seuls ouvreurs
+// aurait donc laissé le gel de 5,7 s intact ici, simplement déplacé de la
+// lecture vers le dépôt. Ne pas le re-sortir du worker « parce que ce n'est
+// qu'une description » : c'est le même classeur et le même coût.
+//
+// Le nombre de lignes d'aperçu est passé au worker, qui compose la matrice :
+// lui seul a le workbook, et le faire remonter coûterait le gel qu'on supprime.
+const XLSX_LIBRARY_PREVIEW_ROWS = 10;
+
 async function describeXlsxForLibrary(u8, maxChars) {
   try {
-    const lib = await ensureSheetJs();   // ui.js
-    const wb = lib.read(u8, { type: 'array' });
-    if (!wb || !wb.SheetNames || !wb.SheetNames.length) return null;
+    const res = await parseXlsxInWorker(u8, 'describe',   // ui.js
+      { previewRows: XLSX_LIBRARY_PREVIEW_ROWS });
+    if (!res || res.empty || !res.sheets || !res.sheets.length) return null;
 
-    const sheets = [];
-    for (const name of wb.SheetNames) {
-      const sh = wb.Sheets[name];
-      const refA1 = (sh && sh['!ref']) ? String(sh['!ref']) : '';
-      const r = refA1 ? parseA1Range(refA1) : null;   // pur, plus haut dans ce fichier
-      sheets.push({ name: name, ref: refA1,
-        rows: r ? (r.e.r - r.s.r + 1) : 0, cols: r ? (r.e.c - r.s.c + 1) : 0 });
-    }
-    const head = formatXlsxListing(sheets);   // pur, plus haut dans ce fichier
+    const head = formatXlsxListing(res.sheets);   // pur, plus haut dans ce fichier
 
     // Aperçu : les premières lignes de la première feuille NON VIDE. Il passe
     // par le MÊME rendu que la lecture depuis AC-3 (arbitrage utilisateur) :
     // décrire un classeur autrement qu'on le lit ferait diverger deux vues du
     // même contenu, et c'est la description qui sert de première impression au
     // modèle. Formules et fusions y apparaissent donc aussi.
+    //
+    // La SÉLECTION de la feuille et le calcul de la plage d'aperçu sont faits
+    // dans le worker (ils ont besoin du workbook) ; le RENDU reste ici, sur le
+    // pur partagé avec la lecture.
     let preview = '';
-    for (const sh of sheets) {
-      if (!sh.ref) continue;
-      const full = parseA1Range(sh.ref);
-      if (!full) continue;
-      const end = Math.min(full.e.r, full.s.r + 9);   // 10 lignes au plus
-      const previewRef = formatA1Range({ s: full.s, e: { r: end, c: full.e.c } });
-      const matrix = sheetToMatrix(wb.Sheets[sh.name], previewRef);
-      const body = formatXlsxSheet(matrix, { sheet: sh.name, ref: previewRef });
-      if (body) { preview = 'Aperçu de « ' + sh.name + ' » :\n' + body; }
-      break;
+    const p = res.preview;
+    if (p && p.matrix) {
+      const body = formatXlsxSheet(p.matrix, { sheet: p.sheet, ref: p.ref });   // pur
+      if (body) preview = 'Aperçu de « ' + p.sheet + ' » :\n' + body;
     }
     const out = preview ? head + '\n\n' + preview : head;
     return out.slice(0, maxChars);
