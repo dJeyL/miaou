@@ -15,7 +15,7 @@
 // Scénarios :
 //   1. working sur la ligne de conversation, pendant le stream
 //   2. unread à la fin, si l'écran ne possédait PAS la génération
-//   3. PAS d'unread si l'écran la possédait (on a regardé la réponse arriver)
+//   3. PAS d'unread si l'écran la possédait ET que la fin était sous les yeux
 //   4. ouvrir la conversation efface l'unread (B2)
 //   5. agrégation cross-Space : sélecteur replié + lignes du menu déplié
 //   6. corollaire B5 : la pastille quitte le libellé du courant au dépliage
@@ -24,7 +24,8 @@
 //   8. apparence : working pulse, unread est statique et plus gros
 //   9. compteur d'agents en vol (T-2bis)
 //  10. le non-VU du fil (bouton « aller tout en bas ») devient un non-LU de
-//      sidebar quand on QUITTE la conversation sans être descendu
+//      sidebar à la FIN de la génération, même sur la conversation affichée —
+//      et au DÉPART pour un non-vu qu'aucune génération ne clôt
 //
 // Usage : node verify-badges.mjs <dossier-captures> [--headed]
 import { chromium } from 'playwright';
@@ -236,6 +237,14 @@ const convB = await page.evaluate(() => currentConvId);
 await release('B');
 await waitGenCount(0);
 await page.waitForTimeout(300);
+// Prémisse du scénario, assertée et non supposée : la réponse tient dans
+// l'écran, donc la fin est réellement VUE. Depuis le 2026-09-13, posséder
+// l'écran ne suffit plus à empêcher l'unread — c'est `hasThreadUnseen` qui
+// tranche. Sans ce contrôle, un stub qui grossirait ferait rougir la ligne
+// suivante pour une raison qui n'est pas celle qu'elle teste (ou, pire,
+// passerait vert sur une prémisse fausse).
+check('prémisse : la fin de génération est bien dans l\'écran',
+  await page.evaluate((b) => hasThreadUnseen(b) === false, convB) === true);
 check('conv terminée SOUS LES YEUX : aucun badge', await convBadge(convB) === null);
 check('_unreadConvs ne la contient pas', await page.evaluate((b) => _unreadConvs.has(b) === false, convB) === true);
 
@@ -605,10 +614,11 @@ await page.waitForTimeout(300);
 //                    (bouton « aller tout en bas », pulsation .has-unseen)
 //   _unreadConvs   — « ça s'est terminé pendant que j'étais AILLEURS »
 //                    (pastille de sidebar)
-// Tant qu'on reste dans la conversation, seul le premier parle. En la QUITTANT,
-// le contenu non vu devient inaccessible sans y revenir : il se reporte donc
-// sur le second (carryThreadUnseenToBadge).
-console.log('\n— Scénario 10 : non-vu du fil → non-lu de sidebar au départ');
+// Le premier se reporte sur le second à DEUX moments (le premier renversant la
+// règle d'origine, 2026-09-13, après usage) : quand une génération FINIT sur un
+// fil à non-vu, même si la conversation est affichée (unregisterGeneration), et
+// au DÉPART d'une conversation à non-vu sans génération (carryThreadUnseenToBadge).
+console.log('\n— Scénario 10 : non-vu du fil → non-lu de sidebar');
 await page.evaluate(() => { window.__gates = {}; window.__released = {}; window.__bulky = {}; });
 await newConv();
 await page.evaluate(() => { window.__bulky.I = true; });
@@ -631,16 +641,20 @@ check('contenu arrivé hors de vue : le fil est marqué non-vu',
   await page.evaluate((c) => hasThreadUnseen(c), convI) === true);
 check('le bouton « aller tout en bas » pulse',
   await page.evaluate(() => $('scroll-bottom-btn').classList.contains('has-unseen')) === true);
-// Le point de la décision : PAS de pastille de sidebar tant qu'on est dessus.
-check('… mais AUCUNE pastille de sidebar : la conversation est sous les yeux',
-  await convBadge(convI) === null);
+// LE POINT DE LA DÉCISION (renversée le 2026-09-13) : la génération a fini sur
+// un fil dont la fin est hors de vue, la conversation est AFFICHÉE, et la
+// pastille de sidebar s'allume quand même. Regarder la conversation ne veut pas
+// dire avoir vu la réponse.
+check('fin hors de vue sur la conv AFFICHÉE : pastille de sidebar allumée',
+  await convBadge(convI) === 'unread');
 await page.screenshot({ path: path.join(outDir, '09-unseen-in-thread.png') });
 console.log('  shot  09-unseen-in-thread.png');
 
-// Quitter sans être descendu : le non-vu se reporte sur le badge.
+// Quitter sans être descendu : le badge tient (le non-vu, lui, n'est pas
+// consommé par le report — il attend le retour au fond).
 await newConv();
 await page.waitForTimeout(250);
-check('quittée sans descendre : la conversation devient non lue en sidebar',
+check('quittée sans descendre : elle reste non lue en sidebar',
   await convBadge(convI) === 'unread');
 await page.screenshot({ path: path.join(outDir, '10-unseen-carried.png') });
 console.log('  shot  10-unseen-carried.png');
@@ -653,6 +667,32 @@ check('réouverture : on atterrit au fond', await page.evaluate(() => isAtBottom
 check('… le non-vu du fil est acquitté',
   await page.evaluate((c) => hasThreadUnseen(c), convI) === false);
 check('… et la pastille de sidebar s\'est éteinte', await convBadge(convI) === null);
+
+// Le SECOND producteur, isolé : un non-vu qu'aucune fin de génération ne clôt.
+// La conversation est terminée depuis longtemps ; on y remonte, on lit un vieux
+// message, on repart. Sans `carryThreadUnseenToBadge` rien ne l'allumerait —
+// et depuis que `unregisterGeneration` couvre le cas de la conv affichée, c'est
+// le seul montage qui exerce encore ce chemin.
+await page.evaluate((c) => selectConv(c), convI);
+await page.waitForTimeout(400);
+await page.evaluate(() => {
+  // Remonter, puis simuler l'arrivée de contenu hors de vue SANS génération :
+  // c'est l'unique écrivain du Set, appelé ici tel quel plutôt que reproduit.
+  $('messages').scrollTop = 0;
+  markThreadContentUnseen();
+});
+await page.waitForTimeout(150);
+check('non-vu posé hors génération : aucune pastille tant qu\'on y est',
+  await convBadge(convI) === null);
+await newConv();
+await page.waitForTimeout(250);
+check('quittée avec ce non-vu : carryThreadUnseenToBadge allume la pastille',
+  await convBadge(convI) === 'unread');
+await page.evaluate((c) => selectConv(c), convI);
+await page.waitForTimeout(500);
+check('retour au fond : les deux porteurs retombent',
+  await convBadge(convI) === null
+  && await page.evaluate((c) => hasThreadUnseen(c), convI) === false);
 
 // Contrôle en creux : quitter une conversation SANS non-vu n'allume rien.
 await page.evaluate(() => { $('messages').scrollTop = $('messages').scrollHeight; });

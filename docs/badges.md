@@ -81,9 +81,13 @@ exactement la portée de survie des générations elles-mêmes (T-1 décision 1)
 une génération ne survit pas au reload, son « non lu » non plus.
 
 - **Marquage** : deux producteurs, et le second n'est pas une génération.
-  (1) `unregisterGeneration`, et seulement si
-  `!genOwnsScreen(gen)` — une réponse qu'on a regardée arriver n'est pas « non
-  lue ». (2) `carryThreadUnseenToBadge` au **départ** d'une conversation dont le
+  (1) `unregisterGeneration`, si `!genOwnsScreen(gen)` — **ou** si l'écran
+  possédait la génération mais que sa fin s'est écrite hors de vue
+  (`hasThreadUnseen`). Regarder la conversation ne veut pas dire avoir vu la
+  réponse : le plafond d'ancrage arrête le suivi dès qu'elle dépasse l'écran, et
+  la suite s'écrit sous le fold. La formulation d'origine (« une réponse qu'on a
+  regardée arriver n'est pas non lue ») confondait les deux ; renversé le
+  2026-09-13, après usage. (2) `carryThreadUnseenToBadge` au **départ** d'une conversation dont le
   fil a du contenu non vu (on était remonté, la réponse s'est écrite sous le
   fold, on part sans être redescendu) : la surface qui le disait — le bouton
   « aller tout en bas » — n'existe plus une fois qu'on est ailleurs, le badge
@@ -210,10 +214,14 @@ Ce qui est exclu est le **sous-arbre** de la conversation affichée, pas la seul
 racine : le travail d'un de ses **agents** est annoncé par la pilule
 « *n* agents » de la topbar, visible sidebar repliée elle aussi.
 
-L'exclusion ne peut pas masquer un `unread` : ouvrir une conversation la marque
-lue (`markConvRead`), et `unregisterGeneration` n'en pose jamais sur une
-génération qui possède l'écran. Elle ne masque donc que du `working`, celui
-qu'on regarde.
+L'exclusion masque le `working` qu'on regarde, et — depuis le 2026-09-13 — un
+`unread` posé sur la conversation **affichée** dont la fin de génération est
+restée hors de vue. C'est assumé, par la règle même de cette section : le
+hamburger n'annonce que ce qu'on ne voit pas, or ce non-lu-là porte sur la
+conversation sous les yeux. Il a déjà deux surfaces — le bouton « aller tout en
+bas » qui brille dans le fil, et la pastille de sidebar dès qu'on la déplie. En
+faire pastiller le hamburger dirait « il y a quelque chose ailleurs » pour du
+contenu à un scroll de la vue.
 
 **Point de synchronisation qui n'allait pas de soi** : `resetToEmpty` (retour à
 l'accueil) ne passe par aucun `syncSpaceUI`, le Space ne changeant pas. Il

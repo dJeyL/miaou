@@ -639,9 +639,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   (Set par conv), marqué sur `isAtBottom` et NON `shouldFollowStream` (qui rend
   `true` par construction tant que le plafond d'ancrage est armé, donc ne
   marquait jamais le cas le plus fréquent : la réponse qui passe sous le fold),
-  acquitté en atteignant le fond — et **reporté sur le badge de sidebar quand
-  on quitte** la conversation sans être redescendu (`carryThreadUnseenToBadge`,
-  seconde source de non-lu à côté d'`unregisterGeneration`) ; tokens
+  acquitté en atteignant le fond — et **reporté sur le badge de sidebar** à deux
+  moments : quand une génération FINIT sur un fil à non-vu, **même si la
+  conversation est affichée** (`unregisterGeneration` ; posséder l'écran ne vaut
+  pas « vu »), et quand on **quitte** la conversation sans être redescendu
+  (`carryThreadUnseenToBadge`) ; tokens
   `--jump-shadow` et `--jump-glow-a`.
 
 ## Composants UI provisoires (ne pas redessiner sans spec)

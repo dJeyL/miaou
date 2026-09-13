@@ -242,16 +242,18 @@ mais « du contenu est arrivé en bas pendant que tu regardais ailleurs ». La
 distinction est le cœur du mécanisme : une attente sans rien d'écrit n'a rien
 à montrer, et y faire briller le bouton promettrait du vide.
 
-Trois transitions, et elles seules :
+Les transitions, et elles seules :
 
 | Événement | Effet | Point de code |
 |---|---|---|
 | contenu arrivé hors de vue | non vu | `markThreadContentUnseen` |
 | le fil atteint le fond | vu | `ackThreadContentSeen`, depuis `syncScrollBottomBtn` |
+| une génération FINIT sur un fil à non-vu | reporté sur le badge de sidebar | `unregisterGeneration` |
 | on QUITTE la conversation | reporté sur le badge de sidebar | `carryThreadUnseenToBadge` |
 
-Le Set reste clefé par conversation : quitter n'efface rien, le non-vu attend
-le retour. Ce qui change en partant, c'est qu'il gagne une **seconde** surface.
+Le Set reste clefé par conversation : ni quitter ni reporter n'efface quoi que
+ce soit, le non-vu attend le retour au fond. Un report lui donne une surface de
+plus, il ne le consomme pas.
 
 L'état vit dans `_threadUnseen`, `Set<convId>` volatile — même clef et même
 volatilité que `_scrollCapReleased` juste à côté, pour la raison du piège 28 :
@@ -285,16 +287,27 @@ L'acquittement est posé dans `syncScrollBottomBtn` et non dans le handler de
 clic, parce que descendre au fond **à la main** est le même geste du point de
 vue de l'utilisateur et n'a pas de handler propre à décorer.
 
-#### Le non-vu déborde sur la sidebar quand on quitte
+#### Le non-vu déborde sur la sidebar
 
-Tant qu'on est **dans** la conversation, le bouton suffit à dire « il reste
-quelque chose en bas », et allumer en plus la pastille de sidebar serait le
-défaut corrigé sur le hamburger : signaler ce qui est déjà sous les yeux. En la
-**quittant**, le contenu non vu devient inaccessible sans y revenir — c'est
-exactement ce que la pastille de sidebar signifie. `carryThreadUnseenToBadge`
-(ui.js) fait donc le report, appelé depuis les deux seuls chemins de départ :
-la branche `switching` d'`openConversation` et `resetToEmpty` (retour à
-l'accueil, qui ne passe pas par la première).
+Deux chemins de report, pour deux moments distincts.
+
+**À la fin d'une génération** (`unregisterGeneration`), **même si la
+conversation est affichée** : si son fil porte du non-vu, le badge se pose.
+Décision du 2026-09-13, qui **renverse** celle du lot précédent — laquelle
+réservait la pastille au départ, au motif que le bouton « aller tout en bas »
+suffisait tant qu'on restait dans la conversation. L'usage a tranché autrement :
+ce bouton ne dit plus rien dès qu'on regarde une autre fenêtre, alors que la
+réponse, elle, est bel et bien terminée sans avoir été lue. La pastille de
+sidebar est le seul porteur qui tienne au-delà du fil.
+
+**Au départ** (`carryThreadUnseenToBadge`, ui.js), pour le non-vu qu'aucune fin
+de génération ne couvre — on remonte dans un fil déjà terminé, on s'en va sans
+être redescendu. Appelé depuis les deux seuls chemins de départ : la branche
+`switching` d'`openConversation` et `resetToEmpty` (retour à l'accueil, qui ne
+passe pas par la première).
+
+Le hamburger, lui, continue d'exclure le sous-arbre affiché : il annonce ce
+qu'on ne voit pas, et ce non-lu-là est sous les yeux (cf. `docs/badges.md`).
 
 Le marquage passe par `markConvUnread`, jamais un `_unreadConvs.add` réécrit —
 un seul écrivain, comme pour le reste des badges (cf. `docs/badges.md`).

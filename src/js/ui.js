@@ -1193,14 +1193,15 @@ function ackThreadContentSeen() {
 }
 
 // Report du non-vu sur le badge de conversation, au DÉPART de la conversation.
-// « Du contenu est arrivé pendant que je regardais plus haut » et « je n'ai pas
-// vu ce qui est arrivé pendant mon absence » sont deux énoncés distincts tant
-// qu'on reste dans la conversation — le bouton « aller tout en bas » suffit à
-// dire le premier, et allumer la sidebar pour ce qui est à un scroll de la vue
-// serait le défaut qu'on vient de corriger sur le hamburger.
+// Deuxième chemin vers le même badge, à côté de `unregisterGeneration` : celui-ci
+// couvre le non-vu SANS génération qui se termine (on remonte dans le fil, puis
+// on s'en va), l'autre la génération qui finit hors de vue — y compris sur la
+// conversation affichée depuis le 2026-09-13.
 //
-// En la QUITTANT, ils fusionnent : le contenu non vu devient inaccessible sans
-// y revenir, ce qui est exactement ce que la pastille de sidebar signifie.
+// La formulation d'origine réservait la pastille au départ, au motif que le
+// bouton « aller tout en bas » suffisait tant qu'on restait dans la
+// conversation. L'usage a tranché autrement : ce bouton ne dit rien dès qu'on
+// regarde une autre fenêtre, et la sidebar est le seul porteur qui tienne.
 // Appelée depuis le seul point de bascule d'écran qui distingue un vrai départ
 // d'une ré-hydratation (`switching` dans openConversation) et depuis
 // `resetToEmpty` (départ vers l'accueil, qui ne passe pas par là).

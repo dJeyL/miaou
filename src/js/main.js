@@ -425,8 +425,22 @@ function unregisterGeneration(gen) {
   // pas un parent). Sans ce test, une conversation détruite laisserait un non-lu
   // que plus aucune ouverture ne peut effacer — le même fantôme sous une autre
   // cause, dans un Set que rien ne purge (même famille que le piège 20).
+  //
+  // POSSÉDER L'ÉCRAN NE VAUT PAS « VU » (décision du 2026-09-13, qui renverse
+  // celle du lot précédent). La fin d'une génération regardée peut très bien
+  // laisser du contenu hors de vue : la vue est remontée dans le fil, ou le
+  // plafond d'ancrage a arrêté le suivi et la réponse s'est écrite sous le
+  // fold. Le bouton « aller tout en bas » brille alors déjà, mais il ne
+  // survit pas au premier regard ailleurs, et surtout il ne dit rien tant
+  // qu'on ne revient pas sur cette fenêtre. La pastille de sidebar, elle,
+  // tient — d'où la pose ici MÊME sur la conversation affichée, dès lors que
+  // `hasThreadUnseen` le dit. Le report au départ (`carryThreadUnseenToBadge`)
+  // reste, il couvre le non-vu sans génération qui finit ; les deux passent par
+  // `markConvUnread`, un seul écrivain, et l'acquittement commun est
+  // `ackThreadContentSeen` (atteindre le fond efface les deux porteurs).
   const genConv = loadConversation(gen.convId);
-  if (!genOwnsScreen(gen) && genConv && isRootConversation(genConv)) {
+  const unseenOnScreen = genOwnsScreen(gen) && hasThreadUnseen(gen.convId);
+  if ((!genOwnsScreen(gen) || unseenOnScreen) && genConv && isRootConversation(genConv)) {
     markConvUnread(gen.convId);
   }
   renderConvList();
@@ -473,9 +487,14 @@ function isStopRequested(convId) {
 // au reload, son « non lu » non plus.
 const _unreadConvs = new Set();
 
-// Marquage à la FIN d'une génération, et seulement si l'écran ne la possédait
-// pas : une réponse qu'on a regardée arriver n'est pas « non lue ». Le prédicat
-// d'écran reste genOwnsScreen (T-1), jamais un test réécrit ici.
+// Marquage à la FIN d'une génération, si l'écran ne la possédait pas — ou s'il
+// la possédait mais que la fin s'est écrite hors de vue (`hasThreadUnseen`,
+// 2026-09-13). « Regarder la conversation » ne veut pas dire « avoir vu la
+// réponse » : le plafond d'ancrage arrête le suivi dès qu'elle dépasse l'écran.
+// Les deux prédicats restent ceux des autres (genOwnsScreen, hasThreadUnseen),
+// jamais un test réécrit ici, et la condition elle-même vit chez l'appelant
+// (`unregisterGeneration`) — cette fonction est le seul ÉCRIVAIN du Set, pas
+// l'arbitre.
 function markConvUnread(convId) {
   if (convId == null) return;
   _unreadConvs.add(convId);
@@ -599,9 +618,14 @@ function spaceBadgeState(spaceId) {
 // travail d'un de ses agents est annoncé par la pilule « n agents » de la
 // topbar, visible sidebar repliée elle aussi (et `resolveAgentCount` ne la tait
 // que lorsque l'unique chose à annoncer est la génération regardée).
-// L'exclusion ne peut pas masquer d'`unread` : ouvrir une conversation la
-// marque lue (`markConvRead`), et `unregisterGeneration` n'en pose jamais sur
-// une génération qui possède l'écran.
+// L'exclusion PEUT désormais masquer un `unread` de la conversation affichée,
+// depuis que `unregisterGeneration` en pose un sur une génération qui possède
+// l'écran mais dont la fin est hors de vue (2026-09-13). C'est assumé, et c'est
+// la même règle qu'au-dessus : le hamburger n'annonce que ce qu'on ne voit pas,
+// or ce non-lu-là concerne la conversation SOUS LES YEUX — il est annoncé par
+// le bouton « aller tout en bas » qui brille dans le fil, et par la pastille de
+// sidebar dès qu'on la déplie. Étendre le hamburger à ce cas ferait pastiller
+// « il y a quelque chose ailleurs » pour du contenu à un scroll de la vue.
 function aggregateBadgeState(excludeSpaceId, excludeConvId) {
   const states = [];
   const seen = new Set();
