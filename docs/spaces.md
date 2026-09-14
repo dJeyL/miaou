@@ -264,28 +264,41 @@ ephémères — restent inchangées) : la bibliothèque est le chemin persistant
   posture no-oracle que `conv__get` sur id étranger/inconnu. Lecture
   binaire routée via le hook d'inflation mcp_docs généralisé (att-N ou
   file-<id>, cf. `docs/mcp.md`). Détail : `docs/tools.md`.
-- **Contexte** : deux régimes exclusifs, arbitrés par le réglage
-  `libraryManifestInContext` (storage.js, **défaut `false`**).
+- **Contexte** : deux formes exclusives et **co-localisées**, arbitrées par le
+  réglage `libraryManifestInContext` (storage.js, **défaut `false`**). Toutes
+  deux vivent **dans le bloc Espace** du message système, au même endroit — et
+  non comme une part autonome : elles décrivent l'Espace, donc elles vivent avec
+  le reste de ce qui le décrit.
   - **Défaut — note courte** (`buildLibraryNoteBlock`, resources.js) : une
     phrase annonçant le cardinal de la bibliothèque et renvoyant à `files__list`
-    pour le détail, servie **dans le bloc Espace** du message système (et non
-    comme une part autonome : elle décrit l'Espace, donc elle vit avec le reste
-    de ce qui le décrit). Sa longueur ne croît pas avec
-    la bibliothèque et son texte ne change qu'au franchissement d'un compte,
-    donc elle peut vivre dans le préfixe stable sans l'invalider à répétition
-    (piège 16). Entrée d'inspecteur : `space_library_note`.
-    C'est ce régime qui rend la `description` d'un fichier nécessaire dans la
-    réponse de `files__list` : sans elle, elle serait inatteignable par défaut.
-  - **Sur demande — manifeste complet** (`buildLibraryManifestBlock`) injecté
-    dans `<miaou_context>` (préfixe **éphémère**) si la bibliothèque du Space
-    actif est non vide — une ligne d'intro nommant le Space (« Fichiers
-    disponibles dans l'espace X : »), puis une ligne par fichier, description
-    incluse si elle existe. Entrée d'inspecteur : `space_library`. Il reste en
-    éphémère et ne remonte JAMAIS au système : sa taille suit la bibliothèque,
-    donc chaque dépôt de fichier invaliderait un préfixe d'autant plus cher.
-  - **Exclusivité** : quand le manifeste est actif, la note est omise du bloc
-    Espace — le système n'annonce jamais un cardinal que l'éphémère développe
-    juste en dessous. Gardé par un test.
+    pour le détail. C'est ce régime qui rend la `description` d'un fichier
+    nécessaire dans la réponse de `files__list` : sans elle, elle serait
+    inatteignable par défaut.
+  - **Sur demande — manifeste complet** (`buildLibraryManifestBlock`) : une
+    ligne d'intro nommant le Space (« Fichiers disponibles dans l'espace X : »),
+    puis une ligne par fichier, description incluse si elle existe. `''` si la
+    bibliothèque est vide.
+  - **Exclusivité** : l'une REMPLACE l'autre, jamais les deux — le bloc
+    n'annonce pas un cardinal qu'il développe juste en dessous. Gardé par un
+    test, sur une bibliothèque réellement peuplée (sans fichier, les deux
+    producteurs rendent `''` et l'assertion serait verte sans rien prouver).
+
+  **Le manifeste a d'abord vécu dans le préfixe éphémère**, au motif que « sa
+  taille suit la bibliothèque, donc chaque dépôt de fichier invaliderait un
+  préfixe d'autant plus cher ». Le motif était faux, et c'est la faute
+  symétrique du piège 16 : la taille d'un bloc ne le rend pas invalidant, seule
+  sa **fréquence de changement** le fait. Cette liste ne bouge qu'à un geste
+  explicite — déposer un fichier, en retirer un, changer d'Espace —, jamais d'un
+  tour à l'autre. En système elle est donc cachée une fois puis servie
+  gratuitement, alors qu'en éphémère elle glissait derrière chaque nouveau
+  message user et se repayait à **chaque tour**, d'autant plus cher qu'elle est
+  grosse. Un gros bloc stable est exactement ce qu'un cache par préfixe sert le
+  mieux.
+
+  Côté inspecteur, les deux formes partagent l'entrée `space` puisqu'elles
+  partagent un emplacement : le libellé reste court et fixe, c'est la **tooltip**
+  qui dit laquelle est là, depuis `systemMessageParts().libraryForm`.
+  Cf. `docs/context-inspector.md`.
   Détail : pitfalls-detail.md, piège 18.
 - **Consentement de la promotion modèle — voie B (décision Cbis-4).** Le
   primitif halting existant (`ask_confirmation`) n'est **jamais** auto-rappelé

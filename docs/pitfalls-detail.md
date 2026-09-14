@@ -587,12 +587,15 @@ HTML, ou à la synchro multi-onglets.
     UI topbar, qui lui masque le default Space — deux décisions indépendantes,
     ne pas les confondre).
 
-    **Manifeste de bibliothèque de fichiers (lot Cbis)** : `contextBlockParts()`
-    gagne un champ `library: buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name)`
-    (main.js), consommé à la fois par `buildContextBlock()` (injection réelle,
-    ajouté après `memories` dans `<miaou_context>`) et par `buildContextManifest()`
-    (utils.js, entrée `space_library` — même source unique que les autres
-    sous-blocs, pas de second calcul pour le context inspector). `buildLibraryManifestBlock`
+    **Manifeste de bibliothèque de fichiers (lot Cbis)** : produit par
+    `systemMessageParts()` (main.js), qui choisit entre le manifeste complet et
+    la note courte selon `libraryManifestInContext` et verse le résultat dans
+    `out.space` — les deux formes sont exclusives et **co-localisées** dans le
+    bloc Espace du message système. `buildContextManifest()` (utils.js) les
+    mesure donc avec lui, sous l'entrée `space`, dont la tooltip varie selon
+    `out.libraryForm` (cf. `docs/spaces.md` et `docs/context-inspector.md`).
+    Le manifeste a d'abord vécu dans `contextBlockParts()` (préfixe éphémère),
+    sur un motif erroné — cf. plus bas. `buildLibraryManifestBlock`
     (resources.js, pure) trie par `createdAt` puis `id` (déterministe, byte-stable),
     une ligne d'intro nommant le Space (« Fichiers disponibles dans l'espace
     X : », ou une forme générique si le nom est absent — cf. retour
@@ -610,8 +613,20 @@ HTML, ou à la synchro multi-onglets.
     d'une description de fichier) — assumé, de même nature qu'un switch de
     Space : statique tant que la bibliothèque du Space actif est inchangée.
 
-    **Synchronicité `contextBlockParts()` (lecture IDB en amont)** : la fonction
-    reste synchrone — elle lit `getCachedLibraryEntriesBySpace` sur le cache
+    **Pourquoi il est remonté au système.** Le manifeste a d'abord été injecté
+    dans `<miaou_context>` (préfixe éphémère), au motif que « sa taille suit la
+    bibliothèque, donc chaque dépôt de fichier invaliderait un préfixe d'autant
+    plus cher ». C'est la **faute symétrique** de ce piège, celle que le §
+    ci-dessus décrit comme coûtant autant sans se voir : la taille d'un bloc ne
+    le rend pas invalidant, seule sa fréquence de changement le fait — et cette
+    liste ne change qu'à un geste explicite, exactement comme la note courte qui
+    partageait déjà le bloc Espace. En éphémère elle glissait derrière chaque
+    nouveau message user, donc se repayait à chaque tour sans jamais être servie
+    par un cache par préfixe ; en système elle est cachée une fois. Le critère
+    reste « change-t-il d'un TOUR à l'autre ? », jamais « est-il gros ? ».
+
+    **Synchronicité (lecture IDB en amont)** : `systemMessageParts()` reste
+    synchrone — elle lit `getCachedLibraryEntriesBySpace` sur le cache
     session déjà peuplé, jamais un appel IDB direct. Le peuplement se fait via
     `loadSpaceLibrary(spaceId)` (resources.js, fire-and-forget, symétrique à
     `loadConversationResources`), appelé à `init()` (activeSpaceId initial) et

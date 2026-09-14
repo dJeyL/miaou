@@ -687,8 +687,8 @@ de cause. Ce contexte comprend, selon le cas, tes instructions système, la
 définition des outils disponibles (y compris ceux des serveurs compagnons), les
 consignes d'usage publiées par ces serveurs (sujet `mcp`), tes
 souvenirs actifs (sujet `memoire`), les résumés des conversations passées jugés
-pertinents, la date du jour et une description de l'Espace actif — dont le
-nombre de fichiers que contient sa bibliothèque (sujet `espaces`). Tout cela part vers l'API **à
+pertinents, la date du jour et une description de l'Espace actif — dont ce que
+le modèle sait de sa bibliothèque de fichiers (sujet `espaces`). Tout cela part vers l'API **à
 chaque tour**, en plus de ton message — donc oui, cela consomme des tokens en
 entrée, au-delà de ce que tu as tapé toi-même.
 
@@ -711,8 +711,11 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
   combien de fichiers contient la bibliothèque, et en demande la liste quand il
   en a besoin. Le réglage « Liste des fichiers en contexte » (Paramètres,
   Bibliothèque de fichiers) renvoie au comportement inverse : la liste complète,
-  avec les descriptions, part à chaque message. Utile si tu veux que le modèle
+  avec les descriptions, est envoyée d'emblée. Utile si tu veux que le modèle
   ait toujours tes fichiers en tête ; coûteux dès que la bibliothèque grossit.
+  Les deux formes occupent la même place dans le contexte — la partie stable
+  décrite plus bas —, donc l'une remplace l'autre et le surcoût est celui d'un
+  bloc plus gros, pas d'un envoi répété.
 - **Pièces jointes** : une image ne part en pleine résolution qu'au tour où tu la
   joins, puis MIAOU la réduit à une trace légère (voir pièces jointes) — c'est
   déjà une optimisation intégrée.
@@ -726,8 +729,9 @@ reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
 Côté stable : tes instructions système, les définitions d'outils, les consignes
 des serveurs compagnons, les souvenirs de portée générale, la liste des skills à
 déclenchement automatique, et un bloc unique décrivant l'Espace actif (sa
-description, le nombre de fichiers de sa bibliothèque, les souvenirs qui lui
-sont rattachés). Côté éphémère : la date et l'heure, et les résumés injectés.
+description, ce qu'il dit de sa bibliothèque — le nombre de fichiers, ou leur
+liste si tu as activé le réglage ci-dessus —, les souvenirs qui lui sont
+rattachés). Côté éphémère : la date et l'heure, et les résumés injectés.
 Un backend qui gère un cache KV par préfixe (Ollama, par exemple) peut ainsi
 réutiliser le calcul de la partie stable au lieu de tout recalculer à chaque
 tour.

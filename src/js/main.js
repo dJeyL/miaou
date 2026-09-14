@@ -983,7 +983,6 @@ function contextBlockParts(matches) {
   const model = activeModel().trim();
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
-  const space = getSpace(activeSpaceId);
   // Pas de ligne « Espace : <nom> » ici : le nom de l'Espace est porté par
   // l'en-tête du bloc Espace (message système, `buildSpaceBlock`), qui établit
   // le référentiel une fois pour toutes. Le redire à chaque tour le faisait
@@ -991,32 +990,24 @@ function contextBlockParts(matches) {
   return {
     contextDateModel: lines.join('\n'),
     summaries: buildSummaryBlock(matches || []),
-    // Manifeste COMPLET de la bibliothèque : seulement si l'utilisateur l'a
-    // demandé (réglage `libraryManifestInContext`, défaut false). Sinon le
-    // message système porte la note courte (`buildLibraryNoteBlock`) et
-    // `files__list` sert le détail à la demande. Les deux sont exclusifs — le
-    // système n'annonce jamais un cardinal que l'éphémère développe déjà juste
-    // en dessous.
-    library: loadSettings().libraryManifestInContext
-      ? buildLibraryManifestBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name)
-      : '',
   };
 }
 
-// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés, et
-// le manifeste complet de la bibliothèque quand l'utilisateur l'a demandé.
+// Contenu dynamique par tour : date/heure, modèle actif, résumés injectés.
 // Injecté en préfixe du dernier message utilisateur, pas dans le system message,
 // pour préserver le préfixe stable et permettre le KV cache prefix matching.
 //
-// Ce qui n'est PLUS ici (campagne cache) : le nom de l'Espace, ses souvenirs et
-// la note de bibliothèque, tous rassemblés dans le bloc Espace du message
-// système. Ce bloc-ci ne garde que ce qui change d'un TOUR à l'autre — l'heure,
-// et les résumés, qui dépendent du message envoyé.
+// Ce qui n'est PLUS ici : le nom de l'Espace, ses souvenirs et la note de
+// bibliothèque (campagne cache), puis le manifeste complet de la bibliothèque,
+// qui les a rejoints dans le bloc Espace du message système — il ne changeait
+// pas non plus d'un tour à l'autre, seulement à un dépôt de fichier, et le
+// garder ici le faisait repayer à chaque envoi. Ce bloc-ci ne garde que ce qui
+// change d'un TOUR à l'autre — l'heure, et les résumés, qui dépendent du
+// message envoyé.
 function buildContextBlock(matches) {
   const dp = contextBlockParts(matches);
   const parts = [dp.contextDateModel];
   if (dp.summaries) parts.push(dp.summaries);
-  if (dp.library) parts.push(dp.library);
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -1156,6 +1147,9 @@ function systemMessageParts() {
     identity: '', root: '', intent: '',
     mcpInstructions: '', memoriesProfile: '', space: '', skillsContext: '',
     skills: '', codeblock: '', user: '',
+    // PAS un sous-bloc : métadonnée sur le contenu de `space` (voir plus bas).
+    // Le manifeste l'utilise pour libeller, jamais pour mesurer.
+    libraryForm: '',
   };
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
@@ -1178,11 +1172,26 @@ function systemMessageParts() {
   out.mcpInstructions = buildMcpInstructionsBlock(mcpInstructionSources());
   out.memoriesProfile = buildProfileMemoriesBlock();
   const space = getSpace(activeSpaceId);
-  // Note de bibliothèque : le manifeste COMPLET, quand l'utilisateur l'a
-  // demandé, part en éphémère — les deux restent exclusifs (cf. contextBlockParts).
+  // Bibliothèque : les deux formes sont EXCLUSIVES et vivent au même endroit,
+  // ici. Le manifeste complet quand l'utilisateur l'a demandé, la note courte
+  // (cardinal + renvoi à files__list) sinon. Toutes deux ne changent qu'à un
+  // geste explicite, donc toutes deux sont cachables — cf. le commentaire de
+  // `libraryManifestInContext` (storage.js) pour le motif du déplacement depuis
+  // le préfixe éphémère.
+  const libraryEntries = getCachedLibraryEntriesBySpace(activeSpaceId);
   const libraryNote = settings.libraryManifestInContext
+    ? buildLibraryManifestBlock(libraryEntries, space && space.name)
+    : buildLibraryNoteBlock(libraryEntries, space && space.name);
+  // Quelle FORME de bibliothèque le bloc Espace porte, pour l'inspecteur de
+  // contexte : les deux vivent dans la même part `space`, donc le manifeste ne
+  // peut plus le déduire d'une entrée séparée. Drapeau explicite plutôt que
+  // reniflage du texte produit — un prédicat réécrit sur la forme d'une chaîne
+  // diverge au premier reword de `buildLibraryNoteBlock`. '' quand la
+  // bibliothèque est vide : les deux producteurs rendent '' dans ce cas, et le
+  // bloc ne dit alors rien d'elle.
+  out.libraryForm = !libraryNote
     ? ''
-    : buildLibraryNoteBlock(getCachedLibraryEntriesBySpace(activeSpaceId), space && space.name);
+    : (settings.libraryManifestInContext ? 'manifest' : 'note');
   out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
   out.skillsContext = buildSkillsContextBlock();
   out.skills = skillDoctrinePrompt();

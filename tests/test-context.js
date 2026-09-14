@@ -40,7 +40,7 @@ describe('buildContextManifest', function() {
     var sources = m.entries.map(function(e) { return e.source; });
     expect(sources.indexOf('intent_doctrine')).toBe(-1);
     expect(sources.indexOf('memories')).toBe(-1);
-    expect(sources.indexOf('space_library')).toBe(-1);
+    expect(sources.indexOf('space')).toBe(-1);
   });
 
   it('sp.identity non vide → entrée identity_blurb, comptée une seule fois (lot I, piège B)', function() {
@@ -52,13 +52,45 @@ describe('buildContextManifest', function() {
     expect(matches[0].chars).toBe(sp.identity.length);
   });
 
-  it('dp.library non vide → entrée space_library (lot Cbis, D4)', function() {
-    var dp = baseDynParts();
-    dp.library = 'file-abc — doc.txt (text/plain, 1.0 KB)';
-    var m = buildContextManifest(baseSysParts(), dp, [], '', null);
-    var entry = m.entries.filter(function(e) { return e.source === 'space_library'; })[0];
+  // La bibliothèque n'a plus d'entrée à elle : ses deux formes (cardinal et
+  // liste complète) vivent dans le bloc Espace du message système, donc elles
+  // sont mesurées AVEC lui. Le libellé de l'entrée dit laquelle, et `sp.space`
+  // porte déjà les caractères — une entrée séparée les compterait deux fois.
+  it('la bibliothèque est comptée dans l\'entrée space, sans entrée à part', function() {
+    var sp = baseSysParts();
+    sp.space = 'Espace X.\n\nfile-abc — doc.txt (text/plain, 1.0 KB)';
+    sp.libraryForm = 'manifest';
+    var m = buildContextManifest(sp, baseDynParts(), [], '', null);
+    expect(m.entries.filter(function(e) { return e.source === 'space_library'; }).length).toBe(0);
+    var entry = m.entries.filter(function(e) { return e.source === 'space'; })[0];
     expect(entry).toBeTruthy();
-    expect(entry.chars).toBe(dp.library.length);
+    expect(entry.chars).toBe(sp.space.length);
+  });
+
+  // Le libellé reste COURT et stable quelle que soit la forme portée : la
+  // colonne est étroite, et énumérer le contenu du bloc y ferait un libellé à
+  // rallonge qui passe à deux lignes selon l'état. C'est la tooltip qui varie.
+  it('le libellé de l\'entrée space ne varie pas avec la forme de bibliothèque', function() {
+    var mk = function(form) {
+      var sp = baseSysParts();
+      sp.space = 'Espace X.';
+      sp.libraryForm = form;
+      var m = buildContextManifest(sp, baseDynParts(), [], '', null);
+      return m.entries.filter(function(e) { return e.source === 'space'; })[0].label;
+    };
+    expect(mk('manifest')).toBe(mk('note'));
+    expect(mk('')).toBe(mk('note'));
+    expect(mk('note')).toBe('Espace actif');
+  });
+
+  // Le manifeste est une photo : le rendu lit la forme QU'IL A MESURÉE, pas le
+  // réglage courant. Sans ce report, la tooltip décrirait un bloc absent des
+  // chiffres affichés dès qu'on bascule le réglage sans réenvoyer.
+  it('la forme de bibliothèque est reportée sur le manifeste rendu', function() {
+    var sp = baseSysParts();
+    sp.space = 'Espace X.';
+    sp.libraryForm = 'note';
+    expect(buildContextManifest(sp, baseDynParts(), [], '', null).libraryForm).toBe('note');
   });
 
   it('les définitions d\'outils sont mesurées depuis leur JSON, pas depuis les messages', function() {
@@ -132,7 +164,8 @@ describe('buildContextManifest', function() {
   it('les entrées sortent dans l\'ordre du payload (cachabilité décroissante)', function() {
     var sp = baseSysParts();
     sp.identity = 'ID';
-    var dp = { contextDateModel: 'D', summaries: 'S', library: 'L' };
+    sp.space = 'ESPACE';
+    var dp = { contextDateModel: 'D', summaries: 'S' };
     var thread = [
       { role: 'user', content: 'ancien' },
       { role: 'assistant', content: 'reponse' },
@@ -146,8 +179,8 @@ describe('buildContextManifest', function() {
     expect(at('tool_definitions') < at('thread_history')).toBe(true);
     expect(at('thread_history') < at('context_date_model')).toBe(true);
     expect(at('context_date_model') < at('summaries')).toBe(true);
-    expect(at('summaries') < at('space_library')).toBe(true);
-    expect(at('space_library') < at('thread_last_user')).toBe(true);
+    expect(at('space') < at('tool_definitions')).toBe(true);
+    expect(at('summaries') < at('thread_last_user')).toBe(true);
     expect(at('thread_last_user') < at('attachment_images')).toBe(true);
   });
 
@@ -458,19 +491,58 @@ describe('répartition système / éphémère (campagne cache)', function() {
     expect(sp.space).toContain('Souvenir local');
     expect(sp.space.indexOf('Souvenir transverse')).toBe(-1);
   });
-  // Exclusivité : le système annonce un cardinal OU l'éphémère développe la
-  // liste, jamais les deux — sinon le modèle lit deux fois la même information,
-  // dont une payée intégralement à chaque tour.
-  it('note de bibliothèque et manifeste complet sont mutuellement exclusifs', function() {
+  // Exclusivité ET co-localisation : le bloc Espace porte le cardinal OU la
+  // liste complète, jamais les deux (le modèle lirait deux fois la même
+  // information), et toujours au MÊME endroit — le message système, où elles
+  // sont cachables. La liste a vécu dans le préfixe éphémère, où elle se
+  // repayait à chaque tour alors qu'elle ne change qu'à un dépôt de fichier.
+  //
+  // Bibliothèque RÉELLEMENT peuplée : sans fichier, les deux producteurs
+  // rendent '' et le test passerait sur une prémisse fausse — vert sans rien
+  // prouver de l'exclusivité.
+  it('note de bibliothèque et manifeste complet sont exclusifs, et tous deux dans le système', function() {
     localStorage.clear();
     activeSpaceId = DEFAULT_SPACE_ID;
-    // Défaut (réglage absent) : note côté système (dans le bloc Espace),
-    // manifeste éteint côté éphémère.
+    _resourceCache['lib-1'] = {
+      id: 'lib-1', kind: 'library', spaceId: DEFAULT_SPACE_ID,
+      name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1,
+    };
+    // Défaut : la note courte, avec son renvoi à files__list.
     expect(loadSettings().libraryManifestInContext).toBe(false);
-    // Manifeste demandé : la note disparaît du bloc Espace — sinon le système
-    // annoncerait un cardinal que l'éphémère développe juste en dessous.
+    var withNote = systemMessageParts();
+    expect(withNote.space).toContain('files__list');
+    expect(withNote.space.indexOf('doc.txt')).toBe(-1);
+    expect(withNote.libraryForm).toBe('note');
+    // Manifeste demandé : la liste REMPLACE la note, au même endroit. Le nom du
+    // fichier y apparaît, le renvoi à files__list disparaît.
     saveSettings({ libraryManifestInContext: true });
-    expect(systemMessageParts().space.indexOf('files__list')).toBe(-1);
+    var withManifest = systemMessageParts();
+    expect(withManifest.space).toContain('doc.txt');
+    expect(withManifest.space.indexOf('files__list')).toBe(-1);
+    expect(withManifest.libraryForm).toBe('manifest');
+    delete _resourceCache['lib-1'];
+  });
+
+  // Le préfixe éphémère ne porte plus RIEN de la bibliothèque, quel que soit le
+  // réglage : c'est tout l'objet du déplacement. Un retour en arrière silencieux
+  // (une part `library` réintroduite dans contextBlockParts) rendrait ce test
+  // rouge, là où le test d'exclusivité ci-dessus resterait vert.
+  it('la bibliothèque ne passe jamais par le préfixe éphémère', function() {
+    localStorage.clear();
+    activeSpaceId = DEFAULT_SPACE_ID;
+    _resourceCache['lib-1'] = {
+      id: 'lib-1', kind: 'library', spaceId: DEFAULT_SPACE_ID,
+      name: 'doc.txt', mime: 'text/plain', size: 1024, createdAt: 1,
+    };
+    saveSettings({ libraryManifestInContext: true });
+    // `contextBlockParts` appelle Intl (absent sous QuickJS), donc on lit la
+    // SOURCE plutôt que son exécution : aucune mention de bibliothèque dans le
+    // producteur du préfixe éphémère. Grossier mais non tautologique — un
+    // `library:` réintroduit là-bas rend ce test rouge.
+    var src = String(contextBlockParts);
+    expect(src.indexOf('buildLibraryManifestBlock')).toBe(-1);
+    expect(src.indexOf('buildLibraryNoteBlock')).toBe(-1);
+    delete _resourceCache['lib-1'];
   });
 });
 
@@ -493,7 +565,7 @@ describe('alignement CTX_PALETTE / CTX_EXPLAIN sur les sources du manifeste', fu
     var sp = systemMessageParts();
     // dynParts non atteignable ici (Intl absent sous QuickJS) : fourni à la main,
     // toutes clés non vides, pour que chaque source dynamique soit produite.
-    var dp = { contextDateModel: 'D', summaries: 'S', library: 'L' };
+    var dp = { contextDateModel: 'D', summaries: 'S' };
     // Le fil doit produire les DEUX entrées de sa scission : un dernier message
     // user porteur de texte (sans quoi `thread_last_user` n'existe pas et le
     // test resterait vert sans jamais avoir vu cette source), plus un tour
@@ -513,6 +585,42 @@ describe('alignement CTX_PALETTE / CTX_EXPLAIN sur les sources du manifeste', fu
       expect(typeof CTX_PALETTE[e.source]).toBe('string');
       expect(typeof CTX_EXPLAIN[e.source]).toBe('string');
     });
+    // Le rendu n'appelle plus la table directement mais `contextExplainFor`,
+    // qui résout les sources à plusieurs états. Asserter la table seule
+    // laisserait une variante vide passer inaperçue : c'est la fonction servie
+    // au rendu qui doit rendre du texte, dans CHACUN de ses états.
+    ['manifest', 'note', ''].forEach(function(libraryForm) {
+      m.entries.forEach(function(e) {
+        expect(contextExplainFor(e.source, libraryForm).length > 0).toBe(true);
+      });
+    });
+  });
+});
+
+// Le bloc Espace dit deux choses différentes de la bibliothèque selon
+// `libraryManifestInContext`, parce que le CONTENU lui-même diffère — les deux
+// formes sont exclusives et co-localisées. Une tooltip unique décrivait donc un
+// contenu absent dans l'un des deux états.
+describe('contextExplainFor (tooltips à contenu variable)', function() {
+  it('la tooltip du bloc Espace annonce la forme de bibliothèque réellement portée', function() {
+    var note = contextExplainFor('space', 'note');
+    var manifest = contextExplainFor('space', 'manifest');
+    expect(note === manifest).toBe(false);
+    expect(note.indexOf('nombre de fichiers') >= 0).toBe(true);
+    // L'état « manifeste » ne promet pas un cardinal que le bloc ne porte pas.
+    expect(manifest.indexOf('nombre de fichiers') >= 0).toBe(false);
+    expect(manifest.indexOf('liste complète') >= 0).toBe(true);
+  });
+
+  it('bibliothèque vide : la tooltip n\'annonce aucune des deux formes', function() {
+    var empty = contextExplainFor('space', '');
+    expect(empty.indexOf('fichiers') >= 0).toBe(false);
+    expect(empty).toBe(CTX_EXPLAIN.space);
+  });
+
+  it('une source sans variante rend la valeur de table, quel que soit l\'état', function() {
+    expect(contextExplainFor('thread_last_user', 'manifest')).toBe(CTX_EXPLAIN.thread_last_user);
+    expect(contextExplainFor('thread_last_user', '')).toBe(CTX_EXPLAIN.thread_last_user);
   });
 });
 

@@ -30,10 +30,21 @@ Une entrée par sous-bloc non vide :
   `codeblock_doctrine`, `user_prompt` — sous-parts du system message
   (`systemMessageParts()`, main.js), dans le même ordre que
   `buildSystemMessage()` les concatène.
-- `context_date_model`, `summaries`, `space_library` — sous-parts du
-  contexte dynamique (`contextBlockParts()`, main.js). Cette liste dérive : elle
-  doit couvrir toutes les clés rendues par `contextBlockParts`, qui est la
-  source.
+- `context_date_model`, `summaries` — sous-parts du contexte dynamique
+  (`contextBlockParts()`, main.js). Cette liste dérive : elle doit couvrir
+  toutes les clés rendues par `contextBlockParts`, qui est la source.
+
+Le bloc Espace porte aussi la bibliothèque, sous l'une de deux formes
+exclusives et co-localisées — le cardinal, ou la liste complète si
+`libraryManifestInContext` est actif. Elles partagent l'entrée `space` parce
+qu'elles partagent un emplacement. Le **libellé reste court et fixe**
+(« Espace actif ») : la colonne est étroite, et y énumérer le contenu du bloc
+donnait un libellé qui passait à deux lignes selon l'état. C'est la **tooltip**
+qui dit laquelle des deux formes est là. Celle-ci voyage par
+`systemMessageParts().libraryForm`, reporté sur le manifeste : elle est **lue,
+jamais reniflée** sur le texte produit, et le rendu prend celle du manifeste
+(photo du dernier envoi) plutôt que de relire le réglage courant — qui
+décrirait sinon un bloc que les chiffres affichés ne mesurent pas.
 
 Chaque `source` doit avoir une entrée dans `CTX_PALETTE` **et** dans
 `CTX_EXPLAIN` (ui.js) : sans couleur le segment de barre est invisible, sans
@@ -251,6 +262,16 @@ Trois décisions à ne pas défaire :
   d'ATTRIBUT et ces phrases portent des apostrophes. L'échappement reste posé
   pour que le point d'injection ne soit pas déjà ouvert le jour où la valeur
   deviendrait dynamique.
+
+Une explication peut avoir **plusieurs états**, quand le bloc qu'elle décrit en
+a. `contextExplainFor(source, libraryForm)` résout `space` contre
+`CTX_EXPLAIN_SPACE_VARIANTS` — cardinal, liste complète, ou bibliothèque vide —
+et rend la valeur de table pour toute autre source. Deux règles s'y attachent.
+La variante est une **phrase entière**, jamais un fragment recollé à la valeur
+de table : une substitution partielle redevient muette au premier reword de
+`CTX_EXPLAIN.space`, sans que rien ne le signale. Et le test d'alignement
+interroge **la fonction dans chacun de ses états**, pas la table seule — sinon
+une variante vide passerait inaperçue, la table restant, elle, bien remplie.
 
 Côté CSS (`drawers.css`), `.ctx-label-explained` pose un souligné pointillé
 discret et `cursor: help`. **Le pointillé est le signal au repos** : sans lui,

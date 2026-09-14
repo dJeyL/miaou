@@ -7364,7 +7364,6 @@ const CTX_PALETTE = {
   codeblock_doctrine: '#e05ac9', user_prompt: '#e07a9e', context_date_model: '#9aa5b1',
   summaries: '#e0955a', skills_context: '#8bc98b', mcp_instructions: '#5ec9c0',
   memories_profile: '#c94a6e', space: '#6ab8e0',
-  space_library: '#3ea8d9',
   thread_history: '#4a90d9', thread_last_user: '#a8c9ef',
   attachment_images: '#d9974a',
 };
@@ -7390,19 +7389,51 @@ const CTX_EXPLAIN = {
   intent_doctrine: 'La consigne qui demande au modèle d\'annoncer son intention avant chaque appel d\'outil.',
   skills_doctrine: 'La consigne qui explique au modèle ce qu\'est une skill et quand en déclencher une.',
   codeblock_doctrine: 'La consigne de mise en forme des blocs de code dans les réponses.',
-  user_prompt: 'Les instructions système saisies dans les Paramètres, suivies de la description de l\'Espace actif.',
+  user_prompt: 'Les instructions système saisies dans les Paramètres. La description de l\'Espace actif est comptée à part, avec le bloc Espace.',
   context_date_model: 'La date et l\'heure courantes, et le modèle utilisé.',
   memories_profile: 'Les souvenirs de portée générale, valables dans tous les Espaces.',
-  space: 'Tout ce qui décrit l\'Espace actif : sa description, le nombre de fichiers de sa bibliothèque et les souvenirs qui lui sont rattachés.',
+  // Seule entrée à plusieurs états : ce que le bloc dit de sa bibliothèque
+  // dépend du réglage `libraryManifestInContext`, et disparaît si elle est vide
+  // (cf. CTX_EXPLAIN_SPACE_VARIANTS et `contextExplainFor` juste en dessous).
+  // La valeur ici est celle du cas bibliothèque vide, qui sert aussi de défaut
+  // pour que le test d'alignement continue de lire une string.
+  space: 'Tout ce qui décrit l\'Espace actif : sa description et les souvenirs qui lui sont rattachés.',
   summaries: 'Les résumés de conversations passées jugés pertinents pour ce message.',
   skills_context: 'La liste des skills à déclenchement automatique, avec leur description — pas leur contenu.',
   mcp_instructions: 'Les consignes d\'usage publiées par les serveurs MCP branchés, pour leurs propres outils.',
-  space_library: 'La liste des fichiers de la bibliothèque de l\'Espace : nom, type et taille — pas leur contenu.',
   tool_definitions: 'La description de chaque outil disponible et de ses paramètres, au format attendu par l\'API.',
   thread_history: 'Les messages précédents de la conversation — ceux de l\'utilisateur, ceux du modèle et les traces d\'appels d\'outils.',
   thread_last_user: 'Le dernier message envoyé, celui auquel le modèle répond.',
   attachment_images: 'Les images jointes encore envoyées en pleine résolution, comptées à part du texte.',
 };
+
+// Les états du bloc Espace, selon la forme de bibliothèque qu'il porte
+// (`systemMessageParts().libraryForm`, lu et jamais reniflé sur le texte). Les
+// deux formes sont EXCLUSIVES par construction et CO-LOCALISÉES : le bloc
+// porte le cardinal, OU la liste complète, au même endroit. Le manifeste ne
+// peut donc pas les distinguer par une entrée séparée, et son libellé reste
+// court et fixe — c'est cette tooltip, seule, qui dit laquelle est là.
+//
+// Phrase ENTIÈRE par état, jamais un fragment recollé à la valeur de table :
+// une substitution partielle redeviendrait muette au premier reword de
+// CTX_EXPLAIN.space, sans que rien ne le signale.
+const CTX_EXPLAIN_SPACE_VARIANTS = {
+  manifest: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et la liste complète des fichiers de sa bibliothèque — nom, type, taille et description, mais pas leur contenu.',
+  note: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et le nombre de fichiers de sa bibliothèque — la liste est servie au modèle à sa demande.',
+};
+
+// Explication affichée pour une source, résolue contre l'état courant.
+// Pure : `libraryForm` est passé, pas lu — le seul appelant (le rendu du
+// drawer) fait la lecture impure. Toute source sans variante, et tout état sans
+// entrée dans la table des variantes, retombe sur la valeur de table : le
+// contrat du test d'alignement (une string non vide par source produite) vaut
+// donc dans tous les états.
+function contextExplainFor(source, libraryForm) {
+  if (source === 'space' && CTX_EXPLAIN_SPACE_VARIANTS[libraryForm]) {
+    return CTX_EXPLAIN_SPACE_VARIANTS[libraryForm];
+  }
+  return CTX_EXPLAIN[source] || '';
+}
 
 // Manifeste effectif : dernier envoi réel s'il existe, sinon simulation
 // à froid. Ne recalcule PAS depuis zéro à chaque appel du compteur : la
@@ -8020,6 +8051,11 @@ function renderContextInspector() {
   if (body) {
     // Lignes toujours `≈` (ventilation par bloc jamais mesurée par l'API,
     // même proratisée) ; seul le TOTAL perd le `≈` quand m.real (lot Bbis).
+    // Forme de bibliothèque prise sur le MANIFESTE, jamais relue des réglages :
+    // le manifeste est la photo du dernier envoi, et le réglage a pu changer
+    // depuis — la tooltip décrirait alors un bloc que ces chiffres ne mesurent
+    // pas.
+    const libraryForm = m.libraryForm || '';
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
@@ -8030,7 +8066,7 @@ function renderContextInspector() {
       // escHtml échappe `'` et `"`. Garder l'échappement inconditionnel pour
       // qu'un jour où cette valeur deviendrait dynamique, le point d'injection
       // ne soit pas déjà ouvert.
-      const why = CTX_EXPLAIN[e.source] || '';
+      const why = contextExplainFor(e.source, libraryForm);
       const titleAttr = why ? ` title="${escHtml(why)}"` : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +

@@ -2501,9 +2501,11 @@ function lastAuthenticUserIndex(msgs) {
 // ne jamais dupliquer la logique d'assemblage (audit §0/§6).
 //
 // `sysParts` : { identity, root, intent, mcpInstructions, memoriesProfile,
-//   space, skillsContext, skills, codeblock, user } (systemMessageParts()).
-// `dynParts` : { contextDateModel, summaries, library } — chaque
-//   sous-bloc DÉJÀ formaté en string (ou '' si absent).
+//   space, skillsContext, skills, codeblock, user } (systemMessageParts()),
+//   plus `libraryForm` — métadonnée, pas un sous-bloc : jamais mesurée, juste
+//   reportée sur le manifeste pour que le rendu sache quelle tooltip servir.
+// `dynParts` : { contextDateModel, summaries } — chaque sous-bloc DÉJÀ formaté
+//   en string (ou '' si absent).
 // Les deux listes dérivent de leurs sources (systemMessageParts/contextBlockParts) :
 // une part ajoutée là-bas et pas ici disparaît simplement du manifeste, sans
 // erreur — donc sans rien pour le signaler. Les compter ici est le seul filet.
@@ -2535,11 +2537,19 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
   pushEntry('memories_profile', 'Souvenirs de profil', sp.memoriesProfile);
-  pushEntry('space', 'Espace actif (description, fichiers, souvenirs)', sp.space);
+  // Libellé COURT et fixe : le bloc porte aussi la bibliothèque, sous l'une de
+  // ses deux formes exclusives (cardinal ou liste complète), mais l'énumérer
+  // ici ferait un libellé à rallonge dans une colonne étroite. C'est la tooltip
+  // qui détaille, et qui varie (`contextExplainFor`, ui.js) — le manifeste
+  // reporte `libraryForm` pour qu'elle le puisse.
+  pushEntry('space', 'Espace actif', sp.space);
   pushEntry('skills_context', 'Contexte skills (autotrigger)', sp.skillsContext);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
-  pushEntry('user_prompt', 'Prompt utilisateur (+ Espace)', sp.user);
+  // Le « (+ Espace) » du libellé d'origine est tombé avec la campagne cache :
+  // la description de l'Espace a migré dans `sp.space` (bloc unifié), elle
+  // n'est plus concaténée ici. Le libellé la promettait encore.
+  pushEntry('user_prompt', 'Prompt utilisateur', sp.user);
 
   // 2. Définitions d'outils : tableau `tools` du payload, après le message
   // système et avant les messages. Mesuré depuis son JSON, jamais depuis les
@@ -2597,7 +2607,6 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   // vivent EN TÊTE du dernier message user, donc après l'historique.
   pushEntry('context_date_model', 'Date et modèle', dp.contextDateModel);
   pushEntry('summaries', 'Résumés injectés', dp.summaries);
-  pushEntry('space_library', 'Fichiers d\'espace', dp.library);
 
   // 5. Le dernier message user lui-même, après son préfixe.
   pushThreadEntry('thread_last_user', 'Dernier message utilisateur', lastUserChars);
@@ -2614,7 +2623,15 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   const totalChars = entries.reduce((a, e) => a + (e.chars || 0), 0);
   const totalTokens = entries.reduce((a, e) => a + (e.tokens || 0), 0);
 
-  return { entries, totalChars, totalTokens, imageCount, apiUsage: apiUsage || null };
+  // `libraryForm` reporté tel quel : le manifeste est une PHOTO du dernier
+  // envoi, donc le rendu doit lire la forme qui valait À CE MOMENT-LÀ, pas
+  // relire le réglage courant (qui a pu changer depuis, et décrirait alors un
+  // bloc que la mesure ne contient pas).
+  return {
+    entries, totalChars, totalTokens, imageCount,
+    libraryForm: sp.libraryForm || '',
+    apiUsage: apiUsage || null,
+  };
 }
 
 // Calibre un manifeste ESTIMÉ (chars/4) sur l'usage réel rapporté par l'API

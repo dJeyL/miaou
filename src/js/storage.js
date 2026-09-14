@@ -151,12 +151,22 @@ const DEFAULT_SETTINGS = {
   contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (lot Cbis)
   // Manifeste COMPLET de la bibliothèque d'espace (une ligne par fichier, avec
-  // description) injecté en contexte à chaque tour, comme avant. Défaut false :
-  // la note courte du message système annonce le nombre de fichiers et renvoie
-  // à files__list, qui sert la même information à la demande. Passer à true
-  // restaure le manifeste dans le préfixe ÉPHÉMÈRE (role:user), jamais dans le
-  // système — sa taille croît avec la bibliothèque et il redeviendrait un
-  // invalidant récurrent du préfixe KV.
+  // description). Défaut false : la note courte annonce le nombre de fichiers
+  // et renvoie à files__list, qui sert la même information à la demande.
+  // Passer à true remplace cette note par le manifeste, AU MÊME ENDROIT — le
+  // bloc Espace du message système. Les deux formes sont exclusives et
+  // co-localisées.
+  //
+  // Le manifeste a d'abord vécu dans le préfixe ÉPHÉMÈRE, au motif que « sa
+  // taille croît avec la bibliothèque et il redeviendrait un invalidant
+  // récurrent du préfixe KV ». Le motif était faux : la taille d'un bloc ne le
+  // rend pas invalidant, seule sa fréquence de changement le fait. Cette liste
+  // ne bouge qu'à un geste explicite (déposer un fichier, en retirer un,
+  // changer d'Espace), jamais d'un tour à l'autre — donc en système elle est
+  // cachée une fois puis servie gratuitement, tandis qu'en éphémère elle
+  // glissait derrière chaque nouveau message user et se repayait à CHAQUE
+  // tour, d'autant plus cher qu'elle est grosse. C'est la faute symétrique du
+  // piège 16, celle qui ne se voit pas.
   libraryManifestInContext: false,
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (zéro-JS révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
