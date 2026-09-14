@@ -1231,10 +1231,19 @@ function buildSystemMessage(sp) {
   // perd cette proximité, et seul l'ordre du join la rejoue. L'inverser
   // ressusciterait un défaut mesuré en test réel (gemma-4-e4b, 2026-08-29 : la
   // skill listée, statuée disponible, non lue, et un selector inventé).
+  //
+  // `space` est le DERNIER, juste après `user`, et c'est également un contrat :
+  // le prompt utilisateur est général, la description d'Espace en est un
+  // complément propre à l'Espace actif — elle se lit donc après lui, comme
+  // quand elle lui était concaténée (`resolveUserSystemPrompt`, avant la
+  // campagne cache). C'est aussi la bonne place par cachabilité : un switch
+  // d'Espace ou un dépôt de fichier invalide ce bloc, là où `skills`,
+  // `codeblock` et `user` sont bien plus stables — le placer avant eux faisait
+  // repayer leur recalcul à chaque geste sur l'Espace.
   const parts = [
     sp.identity, sp.root, sp.intent,
-    sp.mcpInstructions, sp.memoriesProfile, sp.space, sp.skillsContext,
-    sp.skills, sp.codeblock, sp.user,
+    sp.mcpInstructions, sp.memoriesProfile, sp.skillsContext,
+    sp.skills, sp.codeblock, sp.user, sp.space,
   ].filter(Boolean);
   return { role: 'system', content: parts.join('\n\n---\n\n') };
 }

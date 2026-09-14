@@ -62,7 +62,11 @@ branchés avec l'herméticité :
   nommant l'Espace, puis description (`formatSpaceDescription`), note de
   bibliothèque et souvenirs de scope Space. La `description` reste **ajoutée**,
   jamais substituée au prompt système global (brief C, corrigé) : les deux
-  coexistent, à deux endroits distincts du même message. Changer de Space change
+  coexistent, en deux parts distinctes mais **adjacentes** — le bloc Espace
+  ferme le message système, juste après le prompt utilisateur, parce que celui-ci
+  est général et que la description d'Espace en est un complément (ordre de
+  lecture d'avant le regroupement, quand elle lui était concaténée ; garde de
+  position testée sur le join réel, cf. `docs/context-inspector.md`). Changer de Space change
   donc le system message (assumé, casse le préfixe KV le temps du switch —
   piège 16), mais **en une seule césure** puisque tout ce qu'un switch invalide
   est contigu.

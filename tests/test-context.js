@@ -179,6 +179,10 @@ describe('buildContextManifest', function() {
     expect(at('tool_definitions') < at('thread_history')).toBe(true);
     expect(at('thread_history') < at('context_date_model')).toBe(true);
     expect(at('context_date_model') < at('summaries')).toBe(true);
+    // `space` ferme le message système, après `user_prompt` : la description
+    // d'Espace complète le prompt général, et un geste sur l'Espace n'invalide
+    // ainsi rien de ce qui le précède.
+    expect(at('user_prompt') < at('space')).toBe(true);
     expect(at('space') < at('tool_definitions')).toBe(true);
     expect(at('summaries') < at('thread_last_user')).toBe(true);
     expect(at('thread_last_user') < at('attachment_images')).toBe(true);
@@ -352,6 +356,25 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
     var iSkillsCtx = content.indexOf('miaou_skills_context');
     expect(iRoot >= 0).toBe(true);
     expect(iSkillsCtx > iRoot).toBe(true);
+  });
+  // GARDE DE POSITION également, mais pour une autre raison : le prompt
+  // utilisateur est général, la description d'Espace en est un complément
+  // propre à l'Espace actif — elle se lit donc APRÈS lui, comme du temps où
+  // elle lui était concaténée (`resolveUserSystemPrompt`, avant le
+  // regroupement). Accessoirement c'est sa place par cachabilité : un switch
+  // d'Espace ou un dépôt de fichier n'invalide alors rien de ce qui précède.
+  // Le test lit le JOIN RÉEL, pas le manifeste : les deux ordres doivent
+  // coïncider, et c'est celui-ci qui fait foi.
+  it('le bloc Espace ferme le message système, après le prompt utilisateur', function() {
+    localStorage.clear();
+    activeSpaceId = DEFAULT_SPACE_ID;
+    saveSettings({ systemPrompt: 'PROMPT-GLOBAL-UTILISATEUR' });
+    saveMemory({ id: 'ms', content: 'Souvenir local', scope: DEFAULT_SPACE_ID });
+    var content = buildSystemMessage().content;
+    var iUser = content.indexOf('PROMPT-GLOBAL-UTILISATEUR');
+    var iSpace = content.indexOf('Souvenir local');
+    expect(iUser >= 0).toBe(true);
+    expect(iSpace > iUser).toBe(true);
   });
   it('la part identity est présente, inconditionnelle et EN TÊTE (lot I)', function() {
     var sp = systemMessageParts();

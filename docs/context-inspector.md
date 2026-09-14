@@ -26,8 +26,8 @@ une liste recopiée, qui deviendrait fausse au premier ajout de part).
 
 Une entrée par sous-bloc non vide :
 - `identity_blurb`, `root_prompt`, `intent_doctrine`, `mcp_instructions`,
-  `memories_profile`, `space`, `skills_context`, `skills_doctrine`,
-  `codeblock_doctrine`, `user_prompt` — sous-parts du system message
+  `memories_profile`, `skills_context`, `skills_doctrine`,
+  `codeblock_doctrine`, `user_prompt`, `space` — sous-parts du system message
   (`systemMessageParts()`, main.js), dans le même ordre que
   `buildSystemMessage()` les concatène.
 - `context_date_model`, `summaries` — sous-parts du contexte dynamique
@@ -119,6 +119,17 @@ dernier message user lui faisait gagner un arbitrage contre `DOCS_DOCTRINE`
 (incluse dans `root_prompt`), et en système cet arbitrage n'est plus rejoué que
 par l'ordre du join — d'où la garde de position dans `buildSystemMessage()` et
 son test.
+
+**`space` ferme le message système**, juste après `user_prompt`, et c'est une
+seconde garde de position. Deux raisons qui pointent dans le même sens : le
+prompt utilisateur est général, la description d'Espace en est un complément
+propre à l'Espace actif — elle se lit donc après lui, comme du temps où elle lui
+était concaténée (`resolveUserSystemPrompt`) ; et c'est sa place par
+cachabilité, un switch d'Espace ou un dépôt de fichier n'invalidant alors rien
+de ce qui précède. Le bloc a un temps vécu au milieu du message système, hérité
+du regroupement : il y faisait recalculer `skills_context`, `skills_doctrine`,
+`codeblock_doctrine` et `user_prompt` à chaque geste sur l'Espace. Un test lit
+le **join réel** (pas le manifeste) pour garder cet ordre.
 
 `estimateTokens(str)` = `Math.ceil(str.length / 4)`, seule et unique
 définition (estimation de tokens) — remplaçable plus tard par un vrai tokenizer ou un total

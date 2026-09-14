@@ -2537,12 +2537,6 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
   pushEntry('memories_profile', 'Souvenirs de profil', sp.memoriesProfile);
-  // Libellé COURT et fixe : le bloc porte aussi la bibliothèque, sous l'une de
-  // ses deux formes exclusives (cardinal ou liste complète), mais l'énumérer
-  // ici ferait un libellé à rallonge dans une colonne étroite. C'est la tooltip
-  // qui détaille, et qui varie (`contextExplainFor`, ui.js) — le manifeste
-  // reporte `libraryForm` pour qu'elle le puisse.
-  pushEntry('space', 'Espace actif', sp.space);
   pushEntry('skills_context', 'Contexte skills (autotrigger)', sp.skillsContext);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
@@ -2550,6 +2544,15 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   // la description de l'Espace a migré dans `sp.space` (bloc unifié), elle
   // n'est plus concaténée ici. Le libellé la promettait encore.
   pushEntry('user_prompt', 'Prompt utilisateur', sp.user);
+  // `space` EN DERNIER, après `user` : le prompt utilisateur est général, la
+  // description d'Espace en est un complément — même ordre de lecture que quand
+  // elle lui était concaténée. C'est aussi sa place par cachabilité (un geste
+  // sur l'Espace ne doit pas invalider ce qui le suit). Libellé COURT et fixe :
+  // le bloc porte aussi la bibliothèque sous l'une de ses deux formes, mais
+  // l'énumérer ici ferait un libellé à rallonge dans une colonne étroite —
+  // c'est la tooltip qui détaille et qui varie (`contextExplainFor`, ui.js),
+  // le manifeste reportant `libraryForm` pour qu'elle le puisse.
+  pushEntry('space', 'Espace actif', sp.space);
 
   // 2. Définitions d'outils : tableau `tools` du payload, après le message
   // système et avant les messages. Mesuré depuis son JSON, jamais depuis les
