@@ -4673,7 +4673,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-14 20:10 UTC */
+/* miaou — built: 2026-09-14 20:55 UTC */
 
 /* ── utils.js ── */
 
@@ -6042,6 +6042,13 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
   };
 
+  if (toolDefsJson) {
+    entries.push({
+      source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
+      chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
+    });
+  }
+
   pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
@@ -6054,13 +6061,6 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('user_prompt', 'Prompt utilisateur', sp.user);
 
   pushEntry('space', 'Espace actif', sp.space);
-
-  if (toolDefsJson) {
-    entries.push({
-      source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
-      chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
-    });
-  }
 
   const msgs = threadMsgs || [];
   const cutIdx = lastAuthenticUserIndex(msgs);
@@ -8682,7 +8682,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789416613}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789419308}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -20376,8 +20376,11 @@ function renderContextInspector() {
     if (ud.cachedTokens != null && m.real) {
       const pct = Math.max(0, Math.min(100, (ud.cachedTokens / scale) * 100));
       const share = ud.cachedRatio != null ? Math.round(ud.cachedRatio * 100) : null;
+
       const title = `${ud.cachedTokens} tok servis par le cache` +
-        (share != null ? ` (${share}% de l'entrée)` : '');
+        (share != null ? ` (${share}% de l'entrée)` : '') +
+        ' — quantité totale, pas une position dans la liste :' +
+        ' le backend aligne sur ses propres blocs.';
       barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${escHtml(title)}"></span>`;
       barCache.hidden = false;
     } else {

@@ -8023,9 +8023,19 @@ function renderContextInspector() {
   // une échelle interne : le 100 % de la barre 2 est le X % de la barre 1, donc
   // les deux se lisent l'une sous l'autre. C'est tout ce qu'on prétend dire —
   // AUCUN repère de « frontière théorique du cacheable » n'est dessiné : on ne
-  // sait pas ce que le backend cache. L'information vient de l'ordre de la
-  // barre 1 (payload, donc cachabilité décroissante) : si le segment s'arrête
-  // là où commencent les parts éphémères, ça se lit sans légende.
+  // sait pas ce que le backend cache.
+  //
+  // ⚠ CETTE BARRE MESURE UNE QUANTITÉ, PAS UNE POSITION. Sa longueur ne dit
+  // PAS « tout est caché jusqu'à l'entrée sous laquelle elle s'arrête » :
+  // `cached_tokens` est aligné par le backend sur ses propres blocs internes,
+  // qui ne tombent sur aucune frontière de bloc logique. Mesuré le 2026-09-14
+  // (Ollama 0.34) : en faisant varier la longueur de la part modifiée,
+  // `cached_tokens` reste FIGÉ sur un palier (4890 constant pendant que le
+  // prompt passait de 5677 à 5701 tokens), et la valeur du palier dépend de
+  // l'historique des requêtes, pas seulement du contenu. Lire l'abscisse où le
+  // segment s'arrête et la reporter sur la liste est donc une sur-lecture —
+  // l'écart attendu se chiffre en centaines de tokens. Ce qui reste solide est
+  // CATÉGORIEL (servi / pas servi du tout), jamais la position exacte.
   //
   // `cachedTokens` est dans l'unité de l'API, comme les entrées une fois
   // calibrées par scaleManifestToUsage (m.real). Sans ce calibrage les entrées
@@ -8037,8 +8047,14 @@ function renderContextInspector() {
     if (ud.cachedTokens != null && m.real) {
       const pct = Math.max(0, Math.min(100, (ud.cachedTokens / scale) * 100));
       const share = ud.cachedRatio != null ? Math.round(ud.cachedRatio * 100) : null;
+      // Libellé formulé en QUANTITÉ, jamais en frontière : « jusqu'à » ou
+      // « s'arrête à » inviterait la lecture positionnelle que la mesure
+      // ci-dessus invalide. La mention d'alignement est là pour désamorcer
+      // l'écart que le lecteur constatera forcément en comparant à la liste.
       const title = `${ud.cachedTokens} tok servis par le cache` +
-        (share != null ? ` (${share}% de l'entrée)` : '');
+        (share != null ? ` (${share}% de l'entrée)` : '') +
+        ' — quantité totale, pas une position dans la liste :' +
+        ' le backend aligne sur ses propres blocs.';
       barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${escHtml(title)}"></span>`;
       barCache.hidden = false;
     } else {

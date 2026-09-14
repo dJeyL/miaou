@@ -14,15 +14,72 @@ bloc logique, plus les totaux. Domaine assez distinct pour ne pas polluer
   totalChars, totalTokens, imageCount, apiUsage }
 ```
 
-**Les entrées sortent dans l'ordre RÉEL du payload**, donc par cachabilité
-décroissante (campagne cache, axe 2) : parts système, `tool_definitions`,
-`thread_history`, parts éphémères, `thread_last_user`, `attachment_images`.
+**Les entrées sortent dans l'ordre RÉEL du prompt assemblé par le backend**,
+donc par cachabilité décroissante (campagne cache, axe 2) : `tool_definitions`,
+parts système, `thread_history`, parts éphémères, `thread_last_user`,
+`attachment_images`.
+
+**Les définitions d'outils viennent EN TÊTE, avant le message système** — et
+c'est une mesure, pas une déduction. Le corps JSON place `messages` avant
+`tools` (api.js), mais l'ordre des clés d'un objet ne dit rien de l'ordre
+d'assemblage côté serveur : s'y fier a laissé cette entrée mal placée pendant
+toute la campagne cache. Mesuré le 2026-09-14 sur Ollama 0.34
+(`ornith-1.5-txt:9b`, `/v1/chat/completions`, `usage.prompt_tokens_details.cached_tokens`),
+trois observations concordantes :
+
+- modifier la SEULE fin du message système laisse cachés **plus** de tokens que
+  le message système entier n'en pèse → les tool defs sont en amont ;
+- **retirer** les tools met `cached_tokens` à `0` alors que le préfixe système
+  n'a pas bougé d'un octet → ce qui est devant a changé, donc tout tombe ;
+- le non-servi correspond exactement à la part modifiée plus le message user.
+
+Conséquence pratique, inverse de ce que l'ancien ordre laissait croire :
+**toucher au message système n'invalide pas les définitions d'outils.** La
+mesure du 2026-09-12 (« la barre 2 s'arrête où finissent les tool defs »)
+n'était pas fausse mais INDISCERNABLE : tant que rien ne change dans le système,
+système et tools sont servis ensemble et les deux ordres donnent la même barre.
+Seule l'invalidation d'un bloc **tardif** du système les sépare. Sa formulation,
+en revanche, prêtait à la barre 2 une précision de position qu'elle n'a pas —
+cf. l'avertissement en fin de document.
+
+⚠ **Portée** : un backend, une version, un modèle. L'ordre d'assemblage est un
+détail d'implémentation serveur, pas une garantie du protocole OpenAI — vLLM ou
+llama.cpp peuvent différer. Le protocole de mesure ci-dessus est reproductible
+tel quel pour trancher ailleurs.
 Ce n'est pas un choix de présentation — c'est ce qui donne son sens à la barre
 empilée du drawer et à la barre de cache dessinée sur la même échelle : les
 blocs qu'un cache par préfixe peut servir sont à gauche, ce qui rouvre le
 préfixe à chaque tour est à droite. Réordonner casserait la lecture sans qu'aucun
 autre test ne bronche, d'où un test qui garde les positions **relatives** (jamais
 une liste recopiée, qui deviendrait fausse au premier ajout de part).
+
+**Corollaire, et c'est le vrai usage de cet écran : une entrée dont la place
+surprend est un diagnostic sur le PAYLOAD, jamais un défaut de présentation à
+lisser.** L'inspecteur est l'instrument qui donne à voir la structure du
+contexte ; quand il montre quelque chose d'inattendu, il a probablement raison.
+Trois défauts réels ont été trouvés comme ça le 2026-09-14, aucun des trois
+détectable par un test :
+
+- une entrée de bibliothèque apparaissant parmi les parts éphémères a révélé
+  que ce bloc était mal placé (il ne changeait qu'à un dépôt de fichier, donc il
+  se repayait à chaque tour pour rien) ;
+- l'entrée `space` haut dans la liste a révélé que le bloc Espace fermait mal le
+  message système, faisant recalculer tout ce qui le suivait à chaque switch
+  d'Espace — alors que le piège 1 du CLAUDE.md décrivait le bon ordre depuis
+  toujours, et que l'implémentation avait dérivé sans que rien ne le signale ;
+- et la proportion servie par la barre de cache, RAPPORTÉE À CE QUE LE TABLEAU
+  annonçait, a révélé que `tool_definitions` était lui-même mal placé dans le
+  manifeste (cf. plus haut) : un cache qui sert 91 % de l'entrée est impossible
+  si la part la plus lourde vient après le bloc qu'on vient de modifier. Ce
+  défaut-là se lit dans la COMPARAISON des deux barres, ce qu'aucune des deux ne
+  dit seule.
+
+Deux réflexes à s'interdire, parce qu'ils **détruisent le signal** au lieu de le
+lire : fusionner deux entrées voisines pour « faire propre » (leur séparation
+est précisément ce qui rend un écart visible — la fusion des deux entrées de
+bibliothèque avait été envisagée, elle aurait masqué le premier défaut), et
+réordonner le manifeste pour qu'il « se lise mieux ». Si l'ordre affiché
+déplaît, c'est l'ordre d'INJECTION qu'il faut changer, puis le manifeste suit.
 
 Une entrée par sous-bloc non vide :
 - `identity_blurb`, `root_prompt`, `intent_doctrine`, `mcp_instructions`,
@@ -53,7 +110,8 @@ dérive les sources d'un manifeste réel et vérifie les deux tables, plutôt qu
 recopier la liste.
 - `tool_definitions` — mesuré depuis `JSON.stringify(toolDefinitions())`,
   **jamais** depuis les messages (le tableau `tools` part séparément de
-  `apiMessages` dans l'appel réseau).
+  `apiMessages` dans l'appel réseau). Émis EN TÊTE du manifeste, cf. la mesure
+  en haut de ce document.
 - `thread_history` / `thread_last_user` — le fil (`expandThread(...)`),
   **scindé au dernier message user AUTHENTIQUE**. La coupe n'est pas cosmétique :
   c'est là que `dispatchSend` injecte le préfixe éphémère, donc là que le payload
@@ -414,11 +472,35 @@ barre 2 est le X % de la barre 1*.
 
 **On ne dessine AUCUN repère de « frontière théorique du cacheable »**, et on ne
 calcule rien de tel. On ne sait pas ce que le backend cache ; prétendre le
-savoir mettrait une affirmation fausse sous les yeux de l'utilisateur. Ce qui
-porte l'information, c'est **l'ordre de la barre 1** : les entrées étant dans
-l'ordre du payload, si le segment de cache s'arrête là où commencent les parts
-éphémères, ça se lit sans légende. Le `%` de la table, lui, reste inchangé
-(part de chaque bloc dans le total) — il ne parle pas de cache.
+savoir mettrait une affirmation fausse sous les yeux de l'utilisateur. Le `%` de
+la table, lui, reste inchangé (part de chaque bloc dans le total) — il ne parle
+pas de cache.
+
+### ⚠ La barre 2 mesure une QUANTITÉ, pas une position
+
+Sa longueur ne dit **pas** « tout est servi jusqu'à l'entrée sous laquelle elle
+s'arrête ». `cached_tokens` est une quantité que le backend aligne sur ses
+propres blocs internes, lesquels ne tombent sur aucune frontière de bloc
+logique. Mesuré le 2026-09-14 (Ollama 0.34, `ornith-1.5-txt:9b`) en faisant
+varier la longueur de la part modifiée : `cached_tokens` reste **figé sur un
+palier** — 4890 constant pendant que `prompt_tokens` passait de 5677 à 5701 —
+et la valeur du palier dépend de l'historique des requêtes, pas seulement du
+contenu envoyé.
+
+Conséquence pour qui lit l'écran : reporter l'abscisse où le segment s'arrête
+sur la liste des entrées est une **sur-lecture**, et l'écart se chiffre en
+centaines de tokens. Un cas réel du 2026-09-14 : 91 % servis, un segment qui
+semblait s'arrêter vers « Doctrine skills », alors que la part réellement
+invalidée était le bloc Espace, tout en bas du message système. Ce qui reste
+solide dans cette barre est **catégoriel** — servi / pas servi du tout, et les
+grands ordres de grandeur —, jamais la position exacte.
+
+La phrase de cette doc qui disait « si le segment s'arrête là où commencent les
+parts éphémères, ça se lit sans légende » portait exactement cette
+sur-lecture : retirée. Même chose pour la formulation de la mesure du
+2026-09-12 (« la barre 2 s'arrête très exactement où finissent les tool defs »),
+qui décrivait une coïncidence d'ordre de grandeur comme une frontière au token
+près.
 
 Deux conditions d'affichage, et non plus une :
 

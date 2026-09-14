@@ -175,15 +175,19 @@ describe('buildContextManifest', function() {
     var m = buildContextManifest(sp, dp, thread, '{"tools":[]}', null);
     var sources = m.entries.map(function(e) { return e.source; });
     var at = function(src) { return sources.indexOf(src); };
-    expect(at('identity_blurb') < at('tool_definitions')).toBe(true);
-    expect(at('tool_definitions') < at('thread_history')).toBe(true);
+    // Les définitions d'outils sont EN TÊTE, avant le message système : mesuré
+    // (Ollama 0.34, cf. l'en-tête de buildContextManifest), et non déduit de
+    // l'ordre des clés du corps JSON — qui dit l'inverse et ne prouve rien sur
+    // l'assemblage côté serveur.
+    expect(at('tool_definitions') < at('identity_blurb')).toBe(true);
+    expect(at('identity_blurb') < at('thread_history')).toBe(true);
     expect(at('thread_history') < at('context_date_model')).toBe(true);
     expect(at('context_date_model') < at('summaries')).toBe(true);
     // `space` ferme le message système, après `user_prompt` : la description
     // d'Espace complète le prompt général, et un geste sur l'Espace n'invalide
     // ainsi rien de ce qui le précède.
     expect(at('user_prompt') < at('space')).toBe(true);
-    expect(at('space') < at('tool_definitions')).toBe(true);
+    expect(at('space') < at('thread_history')).toBe(true);
     expect(at('summaries') < at('thread_last_user')).toBe(true);
     expect(at('thread_last_user') < at('attachment_images')).toBe(true);
   });

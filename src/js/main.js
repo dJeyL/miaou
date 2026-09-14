@@ -1221,6 +1221,12 @@ function systemMessageParts() {
 // une deuxième fois — un seul point de concaténation malgré tout (audit §6).
 function buildSystemMessage(sp) {
   sp = sp || systemMessageParts();
+  // Toute modification de cet ordre se répercute sur le manifeste de
+  // l'inspecteur de contexte, qui DOIT rester représentatif de l'ordre réel
+  // d'envoi (`buildContextManifest`, utils.js — lire `docs/context-inspector.md`
+  // avant d'y toucher) : c'est lui qui rend les mauvais placements visibles,
+  // et deux défauts de cache ont été trouvés comme ça.
+  //
   // L'ORDRE EST UN CONTRAT, pas une mise en page. `skillsContext` doit rester
   // APRÈS `root` : c'est sa position qui tranche une contradiction réelle entre
   // deux textes qui parlent au modèle de la même skill. DOCS_DOCTRINE (dans

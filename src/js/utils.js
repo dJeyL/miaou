@@ -2514,12 +2514,47 @@ function lastAuthenticUserIndex(msgs) {
 // `toolDefsJson` : string = JSON.stringify(toolDefinitions()), ou '' si aucun outil.
 // `apiUsage` : {prompt_tokens, completion_tokens, total_tokens} ou null.
 //
-// ORDRE DES ENTRÉES = ordre réel du payload, donc cachabilité décroissante
-// (campagne cache, axe 2). C'est ce qui donne son sens à la barre empilée du
-// drawer : les blocs qu'un cache par préfixe peut servir sont à gauche, ce qui
-// rouvre le préfixe à chaque tour est à droite. Ne pas réordonner pour des
-// raisons de présentation — la lecture de la barre 2 (segment de cache sur la
-// même échelle) en dépend entièrement.
+// ORDRE DES ENTRÉES = ordre réel du PROMPT ASSEMBLÉ PAR LE BACKEND, donc
+// cachabilité décroissante (campagne cache, axe 2). C'est ce qui donne son sens
+// à la barre empilée du drawer : les blocs qu'un cache par préfixe peut servir
+// sont à gauche, ce qui rouvre le préfixe à chaque tour est à droite. Ne pas
+// réordonner pour des raisons de présentation — la lecture de la barre 2
+// (segment de cache sur la même échelle) en dépend entièrement.
+//
+// `tool_definitions` vient EN TÊTE, avant le message système. **Ce n'est pas
+// l'ordre des clés du corps JSON** (`messages` y précède `tools`, api.js) :
+// l'ordre des clés d'un objet n'a aucun rapport avec l'ordre d'assemblage du
+// prompt côté serveur, et s'y fier a valu une entrée mal placée pendant toute
+// la campagne cache. Mesuré le 2026-09-14 sur Ollama 0.34
+// (`ornith-1.5-txt:9b`, /v1/chat/completions, `usage.prompt_tokens_details.
+// cached_tokens`), trois observations concordantes :
+//   - modifier la SEULE fin du message système laisse cachés plus de tokens que
+//     le message système entier n'en pèse → les tool defs sont en amont ;
+//   - RETIRER les tools met `cached_tokens` à 0 alors que le préfixe système
+//     n'a pas bougé d'un octet → ce qui est devant a changé, donc tout tombe ;
+//   - le non-servi correspond exactement à la part modifiée + le message user.
+// Conséquence pratique, inverse de ce que l'ancien ordre laissait croire :
+// toucher au message système n'invalide PAS les définitions d'outils.
+//
+// PORTÉE DE LA MESURE : Ollama 0.34, un modèle, un endpoint. Rien ne garantit
+// qu'un autre backend (vLLM, llama.cpp, un service distant) assemble dans le
+// même ordre — c'est un détail d'implémentation serveur, pas une garantie du
+// protocole OpenAI. Si la barre de cache d'un autre backend contredit cet
+// ordre, le protocole de mesure est reproductible : invalider UNIQUEMENT la
+// fin du message système, tools inchangés, et lire `cached_tokens`. Plus de
+// tokens cachés que le système n'en pèse = tools en amont.
+//
+// La mesure du 2026-09-12 (« la barre 2 s'arrête où finissent les tool defs »)
+// n'était pas fausse, elle était INDISCERNABLE : tant que rien ne change dans le
+// système, système et tools sont servis ensemble et les deux ordres donnent la
+// même barre. Seule l'invalidation d'un bloc TARDIF du système les sépare.
+//
+// Corollaire : si l'ordre AFFICHÉ déplaît, c'est l'ordre d'INJECTION qu'il faut
+// changer (`buildSystemMessage`/`buildContextBlock`, main.js), jamais ce
+// fichier. Une entrée dont la place surprend est un diagnostic sur le payload,
+// et cet écran ne sert à rien s'il le maquille. Ne pas fusionner non plus deux
+// entrées voisines pour « faire propre » : leur séparation est ce qui rend un
+// écart visible. Cf. `docs/context-inspector.md`.
 function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage) {
   const sp = sysParts || {};
   const dp = dynParts || {};
@@ -2531,7 +2566,18 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
   };
 
-  // 1. Parts du message SYSTÈME, dans l'ordre exact du join de buildSystemMessage().
+  // 1. Définitions d'outils, EN TÊTE du prompt assemblé — avant le message
+  // système (cf. l'en-tête pour la mesure qui l'établit ; ce n'est pas l'ordre
+  // des clés du corps JSON). Mesurées depuis leur JSON, jamais depuis les
+  // messages.
+  if (toolDefsJson) {
+    entries.push({
+      source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
+      chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
+    });
+  }
+
+  // 2. Parts du message SYSTÈME, dans l'ordre exact du join de buildSystemMessage().
   pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);   // DOCS_DOCTRINE y est comptée depuis V-1 (plus de part `docs` séparée)
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
@@ -2553,16 +2599,6 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   // c'est la tooltip qui détaille et qui varie (`contextExplainFor`, ui.js),
   // le manifeste reportant `libraryForm` pour qu'elle le puisse.
   pushEntry('space', 'Espace actif', sp.space);
-
-  // 2. Définitions d'outils : tableau `tools` du payload, après le message
-  // système et avant les messages. Mesuré depuis son JSON, jamais depuis les
-  // messages.
-  if (toolDefsJson) {
-    entries.push({
-      source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
-      chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
-    });
-  }
 
   // 3 et 5. Le fil, SCINDÉ au dernier message user authentique : l'historique
   // d'un côté, le dernier tour utilisateur de l'autre. La scission n'est pas
