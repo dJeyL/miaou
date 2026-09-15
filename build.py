@@ -4,6 +4,7 @@ build.py — assemble dist/miaou.html depuis src/
 Usage : python build.py
 """
 import argparse
+import difflib
 import json
 import re
 import sys
@@ -566,11 +567,55 @@ def load_config(use_config: bool = True) -> dict:
     # et ne mentionne jamais config.json. Piège classique : les guillemets
     # simples, que JSON n'accepte pas.
     try:
-        return json.loads(p.read_text(encoding='utf-8'))
+        cfg = json.loads(p.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
         sys.exit(f'[erreur] config.json : JSON invalide ligne {e.lineno}, '
                  f'colonne {e.colno} — {e.msg}. Rappel : JSON exige des '
                  f'guillemets DOUBLES (\"...\"), jamais simples.')
+    warn_unknown_config_keys(cfg)
+    return cfg
+
+
+def warn_unknown_config_keys(cfg: dict) -> list:
+    """Signale les clefs de config.json que le code ne lit jamais.
+
+    Une clef mal orthographiée est du JSON parfaitement valide : le build
+    réussit, le marqueur est injecté, et le réglage est simplement ignoré au
+    runtime. Rien ne le dit — on rebuild, on recharge, et on cherche le défaut
+    dans le code applicatif. Payé le 2026-09-15 sur `prompt-order` écrit avec un
+    tiret au lieu de `prompt_order` : deux symptômes distincts observés en
+    déploiement (serveur existant ET carte neuve au mauvais défaut) pour une
+    seule faute de frappe.
+
+    La référence est `config.sample.json`, lu à CHAQUE build et jamais recopié
+    ici : une liste de clefs figée dans ce fichier dériverait au premier ajout,
+    et ce serait alors le build qui mentirait. Le sample est versionné et fait
+    déjà autorité (le README documente ses clefs une à une).
+
+    `build_ts` est accepté en plus : `assemble_js` l'écrase, il n'a pas à
+    figurer dans le sample (cf. docs/build.md).
+
+    Un WARN, jamais une erreur : une clef inconnue peut être un réglage en cours
+    d'ajout, ou une clef volontairement laissée là par l'utilisateur. Le but est
+    qu'elle ne passe pas en SILENCE, pas d'interdire.
+    """
+    sample = ROOT / 'config.sample.json'
+    if not sample.exists():
+        return []           # pas de référence disponible : ne rien affirmer
+    try:
+        known = set(json.loads(sample.read_text(encoding='utf-8')).keys())
+    except json.JSONDecodeError:
+        print('  [warn] config.sample.json illisible — clefs de config.json '
+              'non vérifiées.')
+        return []
+    known.add('build_ts')
+    unknown = sorted(k for k in cfg if k not in known)
+    for k in unknown:
+        near = difflib.get_close_matches(k, known, n=1, cutoff=0.7)
+        hint = f' — vouliez-vous « {near[0]} » ?' if near else ''
+        print(f'  [warn] config.json : clef inconnue « {k} », ignorée au '
+              f'runtime{hint}')
+    return unknown
 
 
 def assemble_css() -> str:

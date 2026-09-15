@@ -2530,7 +2530,7 @@ function lastAuthenticUserIndex(msgs) {
 //
 // Deux ordres mesurés, par le MÊME protocole (invalider la SEULE fin du message
 // système, tools inchangés, lire `usage.prompt_tokens_details.cached_tokens` ;
-// `untracked/probe-prompt-order.py` l'automatise) :
+// se rejoue en trois requêtes) :
 //
 //   - 'tools-first' — Ollama 0.34 (`ornith-1.5-txt:9b`), 2026-09-14. Modifier
 //     la seule fin du système laisse cachés PLUS de tokens que le système

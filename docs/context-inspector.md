@@ -30,7 +30,10 @@ Protocole commun aux deux mesures — invalider **uniquement la fin du message
 système**, `tools` rigoureusement inchangés, et lire
 `usage.prompt_tokens_details.cached_tokens`. Il ne dépend **d'aucun état
 antérieur** du serveur, contrairement à toute comparaison entre deux requêtes de
-formes différentes. `untracked/probe-prompt-order.py` l'automatise.
+formes différentes. Il tient en trois requêtes et se réécrit sans peine ; le
+montage gagne à forcer l'écart (un bloc `tools` nettement plus lourd que le
+message système, pour que les deux hypothèses ne donnent pas des chiffres
+voisins).
 
 | Ordre | Backend mesuré | Date | Observation |
 |---|---|---|---|

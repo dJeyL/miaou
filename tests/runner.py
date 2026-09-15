@@ -6,6 +6,7 @@ Usage :
   python tests/runner.py test-api.js  # un fichier précis
 Dépendance : pip install quickjs
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -493,6 +494,36 @@ def run_build_unit_tests() -> tuple[int, int]:
     # ci-dessus et refuse la source réelle.
     check('export-literal : la source réelle de ui.js passe la garde',
           not integrity_raises(ui_src))
+
+    # warn_unknown_config_keys : une clef mal orthographiée est du JSON valide,
+    # donc le build réussit et le réglage est ignoré en silence. Payé le
+    # 2026-09-15 (`prompt-order` pour `prompt_order`), avec deux symptômes
+    # distincts en déploiement pour une seule faute de frappe.
+    known_sample = json.loads((Path(__file__).parent.parent / 'config.sample.json')
+                              .read_text(encoding='utf-8'))
+    a_real_key = next(iter(known_sample))
+
+    check('config : une clef du sample ne déclenche aucun warn',
+          build.warn_unknown_config_keys({a_real_key: known_sample[a_real_key]}) == [])
+
+    check('config : build_ts est accepté (écrasé par assemble_js, absent du sample)',
+          build.warn_unknown_config_keys({'build_ts': 1}) == [])
+
+    check('config : une clef inconnue est signalée',
+          build.warn_unknown_config_keys({'zoubida': 1}) == ['zoubida'])
+
+    check('config : la faute de frappe réelle (tiret pour underscore) est signalée',
+          build.warn_unknown_config_keys({'prompt-order': 'tools-last'}) == ['prompt-order'])
+
+    # Le sample EST la référence : s'il contenait une clef que le code ne lit
+    # pas, la garde validerait une faute de frappe pour toujours. On vérifie
+    # donc que chacune de ses clefs est réellement lue quelque part dans src/js
+    # (BUILD_CONFIG.<clef>), plutôt que de recopier une liste ici.
+    storage_src = (Path(__file__).parent.parent / 'src/js/storage.js').read_text(encoding='utf-8')
+    unread = [k for k in known_sample if f'BUILD_CONFIG.{k}' not in storage_src]
+    if unread:
+        print(f'  [info] clefs du sample jamais lues par storage.js : {unread}')
+    check('config : chaque clef du sample est lue par storage.js', not unread)
 
     # parse_system_skill_file / load_system_skills (skills système, src/system-skills/*.md)
     fake_path = Path('src/system-skills/fake.md')

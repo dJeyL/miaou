@@ -87,6 +87,21 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   défaut `0` côté `storage.js` signifie donc « sources non buildées » (tests
   QuickJS), jamais « config incomplète ». Les autres clefs, elles, viennent
   toutes de `config.json` et sont documentées dans le README.
+- **Une clef inconnue de `config.json` est signalée en WARN**
+  (`warn_unknown_config_keys`), avec suggestion du nom proche quand il y en a un.
+  Motif : une clef mal orthographiée est du JSON parfaitement valide — le build
+  réussit, le marqueur est injecté, et le réglage est simplement ignoré au
+  runtime. Rien ne le disait, et on cherche alors le défaut dans le code
+  applicatif. Payé le 2026-09-15 avec `prompt-order` écrit pour `prompt_order` :
+  deux symptômes distincts observés en déploiement (serveur existant ET carte
+  neuve au mauvais défaut) pour une seule faute de frappe.
+  **La référence est `config.sample.json`, relu à chaque build et jamais
+  recopié** — une liste de clefs figée dans `build.py` dériverait au premier
+  ajout, et ce serait alors le build qui mentirait. Un test garde la cohérence
+  dans l'autre sens : chaque clef du sample doit être lue par `storage.js`
+  (`BUILD_CONFIG.<clef>`), sans quoi le sample validerait une faute de frappe
+  pour toujours. WARN et non erreur : une clef inconnue peut être un réglage en
+  cours d'ajout — le but est qu'elle ne passe pas en silence, pas d'interdire.
 - `BUILD_REPO_URL` (défaut `DEFAULT_REPO_URL`, le dépôt public) est le seul
   dérivé qui distingue **trois** états et non deux : d'où un `typeof === 'string'`
   et surtout **pas** un `||`, qui écraserait la chaîne vide — laquelle veut dire

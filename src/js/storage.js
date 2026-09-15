@@ -324,9 +324,9 @@ function normalizeApiServer(s) {
 // OpenAI n'en garantit rien (l'ordre des clés du corps JSON ne le dit pas non
 // plus — cf. l'en-tête de `buildContextManifest`).
 //
-// Deux valeurs mesurées à ce jour, chacune par le protocole de
-// `untracked/probe-prompt-order.py` (invalider la SEULE fin du message système,
-// tools inchangés, lire `cached_tokens`) :
+// Deux valeurs mesurées à ce jour, chacune par le protocole du § « deux ordres
+// mesurés » de `docs/context-inspector.md` (invalider la SEULE fin du message
+// système, tools inchangés, lire `cached_tokens`) :
 //   - 'tools-first' : Ollama 0.34, mesuré le 2026-09-14 — DÉFAUT, donc les
 //     serveurs déjà enregistrés ne changent pas de comportement.
 //   - 'tools-last'  : vLLM (mistral-medium-3-5-0), mesuré le 2026-09-15.

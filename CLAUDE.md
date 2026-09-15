@@ -489,7 +489,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `help.md` résolus au runtime depuis les constantes vivantes
   (`helpPlaceholderValues`/`resolveHelpPlaceholders`, servis à `about` ET
   `about_search`) — dont `{{TOPIC_LIST}}`, la liste des sujets composée depuis
-  les sections présentes et leurs libellés (`formatHelpTopicList`).
+  les sections présentes et leurs libellés (`formatHelpTopicList`) ; porte aussi
+  le WARN sur clef inconnue de `config.json` (`warn_unknown_config_keys`, qui
+  lit `config.sample.json` comme référence vivante plutôt qu'une liste recopiée).
 - **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
   ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 29 sont
   développés dans leur doc de domaine (`docs/tools.md` pour 25 et 26,
