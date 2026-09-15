@@ -101,6 +101,27 @@ describe('flag vision manuel par (serveur, modèle) — D5 brief A2', function()
     expect(serverModelVisionEnabled(null, 'm')).toBe(true);
     expect(serverModelVisionEnabled({}, 'm')).toBe(true);
   });
+
+  // `promptOrder` : propriété MESURÉE du backend (où il place les définitions
+  // d'outils dans le prompt assemblé), pas une préférence d'affichage. Le défaut
+  // conserve le comportement d'avant le réglage — un serveur déjà enregistré ne
+  // doit pas voir son inspecteur changer d'ordre au premier chargement.
+  it('normalizePromptOrder : défaut tools-first pour absent/inconnu/vide', function() {
+    expect(normalizePromptOrder(undefined)).toBe('tools-first');
+    expect(normalizePromptOrder('')).toBe('tools-first');
+    expect(normalizePromptOrder('vllm')).toBe('tools-first');
+    expect(normalizePromptOrder(null)).toBe('tools-first');
+  });
+
+  it('normalizePromptOrder : conserve les deux valeurs mesurées', function() {
+    expect(normalizePromptOrder('tools-first')).toBe('tools-first');
+    expect(normalizePromptOrder('tools-last')).toBe('tools-last');
+  });
+
+  it('normalizeApiServer : promptOrder posé par défaut, valeur explicite conservée', function() {
+    expect(normalizeApiServer({ name: 'S', url: 'u', model: 'm' }).promptOrder).toBe('tools-first');
+    expect(normalizeApiServer({ name: 'S', url: 'u', model: 'm', promptOrder: 'tools-last' }).promptOrder).toBe('tools-last');
+  });
 });
 
 describe('hasSubstance (piège 5 — seuil conversation avortée)', function() {

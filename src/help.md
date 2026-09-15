@@ -749,6 +749,16 @@ Un backend qui gère un cache KV par préfixe (Ollama, par exemple) peut ainsi
 réutiliser le calcul de la partie stable au lieu de tout recalculer à chaque
 tour.
 
+Les serveurs ne rangent pas tous ce contexte dans le même ordre : certains
+placent la définition des outils **avant** tes instructions, d'autres **après**.
+Ça ne change rien à ce qui est envoyé, mais ça change ce qu'un geste invalide —
+quand les outils viennent après, modifier tes instructions ou changer d'Espace
+fait aussi recalculer leur définition, qui est souvent la part la plus lourde.
+Le réglage « Ordre affiché dans l'inspecteur », sur la carte de chaque serveur
+API, dit lequel des deux cas s'applique : il n'agit que sur l'affichage de
+l'inspecteur de contexte, pour que la ventilation reflète la réalité de ton
+serveur.
+
 Certains gestes cassent volontairement ce préfixe stable, parce que le contexte
 change réellement : changer d'Espace actif, modifier tes instructions système,
 brancher ou débrancher un serveur compagnon, activer une skill, déposer un

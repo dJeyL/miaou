@@ -122,6 +122,20 @@ const MCP_DEFAULT_TIMEOUT = (typeof BUILD_CONFIG.mcp_default_timeout_s === 'numb
 // de la machine hôte ; la garde elle-même n'est pas désactivable (0 ou négatif
 // retombe sur le défaut).
 const JS_EVAL_TIMEOUT_MS = (typeof BUILD_CONFIG.js_eval_timeout_s === 'number' && BUILD_CONFIG.js_eval_timeout_s > 0) ? BUILD_CONFIG.js_eval_timeout_s * 1000 : 10000;
+// Ordre d'assemblage du prompt par le backend : où il place les définitions
+// d'outils par rapport au message système. Propriété MESURÉE du serveur, portée
+// par chaque carte (`promptOrder`), dont voici le défaut — réglable au build
+// pour qu'un déploiement interne arrive préconfiguré sur son backend.
+//
+// Contrairement à BUILD_API_URL/BUILD_API_MODEL, qui ne servent qu'à la
+// MIGRATION d'une config plate historique, celui-ci est le défaut PERMANENT de
+// tout serveur dont le champ n'est pas explicitement posé : un serveur ajouté à
+// la main des mois après l'installation doit en hériter aussi, sinon le
+// préréglage ne vaudrait que pour la première carte.
+const PROMPT_ORDERS = ['tools-first', 'tools-last'];
+const DEFAULT_PROMPT_ORDER =
+  PROMPT_ORDERS.indexOf(String(BUILD_CONFIG.prompt_order || '')) >= 0
+    ? String(BUILD_CONFIG.prompt_order) : 'tools-first';
 // Plafond de taille d'une IMAGE jointe, appliqué avant resize/base64 (le cap
 // texte/binary est MAX_INLINE_BYTES, utils.js). Dépend du modèle vision servi et
 // de son num_ctx : une image trop lourde se paie en troncature silencieuse côté
@@ -300,7 +314,49 @@ function normalizeApiServer(s) {
     // pourrait plus le réactiver.
     disabled: o.disabled === true,
     vision,
+    promptOrder: normalizePromptOrder(o.promptOrder),
   };
+}
+
+// Où CE backend place-t-il les définitions d'outils dans le prompt qu'il
+// assemble ? Propriété du serveur, MESURÉE, pas une préférence d'affichage :
+// l'ordre d'assemblage est un détail d'implémentation serveur, et le protocole
+// OpenAI n'en garantit rien (l'ordre des clés du corps JSON ne le dit pas non
+// plus — cf. l'en-tête de `buildContextManifest`).
+//
+// Deux valeurs mesurées à ce jour, chacune par le protocole de
+// `untracked/probe-prompt-order.py` (invalider la SEULE fin du message système,
+// tools inchangés, lire `cached_tokens`) :
+//   - 'tools-first' : Ollama 0.34, mesuré le 2026-09-14 — DÉFAUT, donc les
+//     serveurs déjà enregistrés ne changent pas de comportement.
+//   - 'tools-last'  : vLLM (mistral-medium-3-5-0), mesuré le 2026-09-15.
+//
+// Le réglage est MANUEL et le restera : la détection automatique a été tentée
+// puis écartée le 2026-09-15. Le seul témoin disponible était un header maison
+// (`X-Endpoint-Type: vllm`), visible dans les devtools mais ABSENT
+// d'`Access-Control-Expose-Headers` — donc `headers.get()` rend `null` depuis la
+// page. Aucun header standard ne désigne un backend, et un reverse proxy
+// masque `Server:`. Ne pas réintroduire un mode 'auto' sans un témoin
+// réellement lisible en CORS : le piège est qu'il « marche » en test manuel.
+//
+// N'affecte QUE l'inspecteur de contexte (la position de l'entrée
+// `tool_definitions` dans le manifeste). Rien de ce qui part à l'API n'en
+// dépend — le corps JSON est identique dans les deux cas.
+// Toute valeur inconnue retombe sur le défaut, y compris `undefined` (serveur
+// enregistré avant ce champ) : même esprit que `vision`, où seules les entrées
+// explicitement signifiantes sont conservées.
+function normalizePromptOrder(v) {
+  return PROMPT_ORDERS.indexOf(String(v || '')) >= 0 ? String(v) : DEFAULT_PROMPT_ORDER;
+}
+
+// Ordre d'assemblage du serveur ACTIF, pour les appelants qui composent le
+// manifeste (main.js). Prédicat unique : ne pas relire `promptOrder` à la main
+// ailleurs — un serveur absent ou un champ jamais écrit doit rendre le défaut,
+// pas `undefined`, sinon `buildContextManifest` reçoit une valeur qu'il
+// traiterait comme inconnue au lieu de la normaliser ici.
+function activePromptOrder() {
+  const s = activeApiServer();
+  return normalizePromptOrder(s && s.promptOrder);
 }
 
 // Serveurs candidats à la découverte de modèles (sélecteur composer) : tous les

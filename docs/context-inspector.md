@@ -15,44 +15,67 @@ bloc logique, plus les totaux. Domaine assez distinct pour ne pas polluer
 ```
 
 **Les entrées sortent dans l'ordre RÉEL du prompt assemblé par le backend**,
-donc par cachabilité décroissante (campagne cache, axe 2) : `tool_definitions`,
-parts système, `thread_history`, parts éphémères, `thread_last_user`,
-`attachment_images`.
+donc par cachabilité décroissante (campagne cache, axe 2) : parts système,
+`thread_history`, parts éphémères, `thread_last_user`, `attachment_images` —
+avec `tool_definitions` **avant ou après le bloc système selon le backend**.
 
-**Les définitions d'outils viennent EN TÊTE, avant le message système** — et
-c'est une mesure, pas une déduction. Le corps JSON place `messages` avant
-`tools` (api.js), mais l'ordre des clés d'un objet ne dit rien de l'ordre
-d'assemblage côté serveur : s'y fier a laissé cette entrée mal placée pendant
-toute la campagne cache. Mesuré le 2026-09-14 sur Ollama 0.34
-(`ornith-1.5-txt:9b`, `/v1/chat/completions`, `usage.prompt_tokens_details.cached_tokens`),
-trois observations concordantes :
+## Position des définitions d'outils — deux ordres mesurés
 
-- modifier la SEULE fin du message système laisse cachés **plus** de tokens que
-  le message système entier n'en pèse → les tool defs sont en amont ;
-- le non-servi correspond à la part modifiée plus le message user.
+Ce n'est **pas une constante**, et ce n'est pas non plus l'ordre des clés du
+corps JSON : celui-ci place `messages` avant `tools` (api.js), mais l'ordre des
+clés d'un objet ne dit rien de l'ordre d'assemblage côté serveur. S'y fier a
+laissé cette entrée mal placée pendant toute la campagne cache.
 
-Le premier point suffit, et c'est volontaire : il ne dépend **d'aucun état
-antérieur** du serveur. Un troisième « contrôle » avait d'abord été retenu —
-retirer les tools met `cached_tokens` à `0` alors que le préfixe système est
-intact — puis **écarté après re-mesure** : une requête sans tools est un préfixe
-DIFFÉRENT, donc une autre entrée de cache, froide au premier envoi et chaude au
-suivant (1246 sur 1250). Ce chiffre ne renseigne que l'historique des requêtes.
-Le piège est instructif : une mesure à froid déguisée en résultat, qui allait
-dans le sens de la conclusion et n'a donc pas été rejouée.
+Protocole commun aux deux mesures — invalider **uniquement la fin du message
+système**, `tools` rigoureusement inchangés, et lire
+`usage.prompt_tokens_details.cached_tokens`. Il ne dépend **d'aucun état
+antérieur** du serveur, contrairement à toute comparaison entre deux requêtes de
+formes différentes. `untracked/probe-prompt-order.py` l'automatise.
 
-Conséquence pratique, inverse de ce que l'ancien ordre laissait croire :
-**toucher au message système n'invalide pas les définitions d'outils.** La
-mesure du 2026-09-12 (« la barre 2 s'arrête où finissent les tool defs »)
+| Ordre | Backend mesuré | Date | Observation |
+|---|---|---|---|
+| `tools-first` | Ollama 0.34 (`ornith-1.5-txt:9b`) | 2026-09-14 | après modification de la fin du système, le cache sert **plus** de tokens que le système entier n'en pèse → les tool defs sont en amont |
+| `tools-last` | vLLM (`mistral-medium-3-5-0`) | 2026-09-15 | système ~1253 tokens, cache servi après la même modification = 1200, soit **au plus le système lui-même** → les tool defs sont tombées avec lui |
+
+Sur le backend vLLM mesuré, les définitions pesaient 3665 tokens, **75 % du
+prompt** : en `tools-last`, tout geste sur le message système (changer d'Espace,
+éditer les instructions, brancher un serveur compagnon) les fait recalculer. En
+`tools-first`, au contraire, **toucher au message système n'invalide pas les
+définitions d'outils**.
+
+Un « contrôle » tentant mais FAUX a été écarté après re-mesure : retirer les
+tools met `cached_tokens` à `0` alors que le préfixe système est intact — mais
+une requête sans tools est un préfixe DIFFÉRENT, donc une autre entrée de cache,
+froide au premier envoi et chaude au suivant (1246 sur 1250). Ce chiffre ne
+renseigne que l'historique des requêtes. Le piège est instructif : une mesure à
+froid déguisée en résultat, qui allait dans le sens de la conclusion et n'a donc
+pas été rejouée. La sonde le signale désormais dans son propre rapport.
+
+La mesure du 2026-09-12 (« la barre 2 s'arrête où finissent les tool defs »)
 n'était pas fausse mais INDISCERNABLE : tant que rien ne change dans le système,
 système et tools sont servis ensemble et les deux ordres donnent la même barre.
-Seule l'invalidation d'un bloc **tardif** du système les sépare. Sa formulation,
-en revanche, prêtait à la barre 2 une précision de position qu'elle n'a pas —
-cf. l'avertissement en fin de document.
+Seule l'invalidation d'un bloc **tardif** du système les sépare.
 
-⚠ **Portée** : un backend, une version, un modèle. L'ordre d'assemblage est un
-détail d'implémentation serveur, pas une garantie du protocole OpenAI — vLLM ou
-llama.cpp peuvent différer. Le protocole de mesure ci-dessus est reproductible
-tel quel pour trancher ailleurs.
+## D'où vient l'ordre appliqué
+
+Chaque serveur API porte un champ `promptOrder` (`normalizePromptOrder`,
+storage.js), lu par `activePromptOrder()` et passé en dernier argument de
+`buildContextManifest`. Le défaut est `tools-first`, réglable au build par la
+clef `prompt_order` de `config.json` — un déploiement interne qui sait contre
+quel backend il tourne arrive ainsi préréglé.
+
+Le réglage est **manuel, et le restera**. La détection automatique a été tentée
+puis écartée le 2026-09-15 : aucun en-tête standard ne désigne un backend, un
+reverse proxy masque `Server:`, et le seul témoin disponible sur l'infra visée
+(`X-Endpoint-Type: vllm`) était **absent d'`Access-Control-Expose-Headers`** —
+visible dans les devtools, donc `null` pour `headers.get()` depuis la page. Ne
+pas réintroduire un mode « auto » sans un témoin réellement lisible en CORS : le
+piège est qu'il « marche » en test manuel et échoue en silence dans l'app.
+
+⚠ **Portée** : chaque ligne du tableau vaut pour un backend, une version, un
+modèle. L'ordre d'assemblage est un détail d'implémentation serveur, pas une
+garantie du protocole OpenAI. Un troisième backend se **mesure** — il ne se
+devine pas, et surtout il ne se renifle pas.
 Ce n'est pas un choix de présentation — c'est ce qui donne son sens à la barre
 empilée du drawer et à la barre de cache dessinée sur la même échelle : les
 blocs qu'un cache par préfixe peut servir sont à gauche, ce qui rouvre le
@@ -117,8 +140,9 @@ dérive les sources d'un manifeste réel et vérifie les deux tables, plutôt qu
 recopier la liste.
 - `tool_definitions` — mesuré depuis `JSON.stringify(toolDefinitions())`,
   **jamais** depuis les messages (le tableau `tools` part séparément de
-  `apiMessages` dans l'appel réseau). Émis EN TÊTE du manifeste, cf. la mesure
-  en haut de ce document.
+  `apiMessages` dans l'appel réseau). Sa POSITION dépend du backend — en tête du
+  manifeste, ou juste après le bloc système — cf. les deux ordres mesurés en
+  haut de ce document.
 - `thread_history` / `thread_last_user` — le fil (`expandThread(...)`),
   **scindé au dernier message user AUTHENTIQUE**. La coupe n'est pas cosmétique :
   c'est là que `dispatchSend` injecte le préfixe éphémère, donc là que le payload

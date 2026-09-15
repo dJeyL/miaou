@@ -540,6 +540,19 @@ le chemin MCP distant** (fetch JSON-RPC, SSE réel, AbortController, cascade de 
 vérifient à la main (checklist dans `docs/manual-tests.md`). Le banc d'essai MCP
 (`mcp_bench.py`) a été extrait dans le projet `miaou-mcp-servers`.
 
+**Ordre d'assemblage du prompt (`promptOrder`).** Les positions relatives des
+entrées du manifeste sont gardées en QuickJS pour les deux ordres, avec une
+assertion conjointe qui vérifie qu'ils **diffèrent réellement** et que seule
+l'entrée `tool_definitions` se déplace — deux branches identiques passeraient
+sinon les deux tests sans rien distinguer. Ce que QuickJS ne peut pas atteindre,
+c'est le câblage DOM du réglage (pilule `cfgPillSelect` → input hidden →
+`onSaveApiCard` → `localStorage` → `activePromptOrder()` → manifeste) :
+`verify-prompt-order.mjs` le parcourt de bout en bout, par le geste réel de clic
+sur l'option et non en forçant la valeur du hidden, sur les deux parcours
+(édition d'une carte existante, et création via `addApiServerCard`). C'est
+précisément le chemin qui a cassé en cours de lot — le champ s'affichait, la
+valeur se perdait à l'enregistrement, et aucun test unitaire ne bronchait.
+
 **Fixtures de développement (`.claude/skills/run-miaou/seed-fixtures.js`).**
 Jeu de données réaliste — 26 conversations (dont 5 dans un second Space
 « Pro »), leurs résumés, 4 souvenirs, 2 skills et les pièces jointes de

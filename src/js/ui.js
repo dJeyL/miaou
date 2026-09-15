@@ -9354,7 +9354,13 @@ function addApiServerCard() {
   if (!wrap) return;
   const empty = wrap.querySelector('.mem-empty');
   if (empty) empty.remove();
-  wrap.insertBefore(buildApiCard({ id: '', name: '', url: '', key: '', model: '', disabled: false }, true, false), wrap.firstChild);
+  // Passe par normalizeApiServer plutôt qu'un littéral : la carte neuve hérite
+  // ainsi de TOUT défaut de champ (dont `promptOrder`, réglable au build) sans
+  // qu'on ait à le recopier ici — une copie manuelle oublierait le prochain
+  // champ ajouté, en silence. `id: ''` est conservé : c'est lui qui marque la
+  // carte comme neuve pour onSaveApiCard.
+  const blank = Object.assign(normalizeApiServer({}), { id: '' });
+  wrap.insertBefore(buildApiCard(blank, true, false), wrap.firstChild);
 }
 
 function buildApiCard(server, isNew, isActive) {
@@ -9477,6 +9483,21 @@ function buildApiCard(server, isNew, isActive) {
   ], server.disabled ? 'off' : 'on');
   editSection.appendChild(cfgField('Disponibilité', enabledPill.root,
     'Mis de côté : ce serveur n\'apparaît plus dans le sélecteur serveur/modèle du composer.'));
+
+  // Ordre d'assemblage du prompt : où CE backend place les définitions d'outils.
+  // Propriété mesurée du serveur (cf. normalizePromptOrder, storage.js), pas une
+  // préférence de présentation — mais elle ne change QUE l'inspecteur de
+  // contexte, jamais ce qui part à l'API. Le libellé le dit, sinon on promet un
+  // levier qui n'existe pas. Valeurs nommées par effet observable et non par
+  // backend : une liste de backends deviendrait fausse au premier non listé
+  // (énumération fermée), là où « avant/après les instructions » reste vrai.
+  // `.api-prompt-order` (hidden) porte la valeur, lue par onSaveApiCard.
+  const orderPill = cfgPillSelect('api-prompt-order', [
+    { value: 'tools-first', label: 'Outils avant les instructions' },
+    { value: 'tools-last', label: 'Outils après les instructions' },
+  ], normalizePromptOrder(server.promptOrder));
+  editSection.appendChild(cfgField('Ordre affiché dans l\'inspecteur', orderPill.root,
+    'Où ce serveur place les définitions d\'outils dans le prompt qu\'il assemble. N\'affecte que l\'inspecteur de contexte, pas ce qui est envoyé.'));
 
   editSection.appendChild(cfgErrEl());
 

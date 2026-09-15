@@ -1276,7 +1276,7 @@ function computeContextManifestNow() {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts([]);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
-  return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
 }
 
 // Rejoue le manifeste du DERNIER ENVOI RÉEL, à la fin du tour (onFinal/onHalt,
@@ -1297,7 +1297,7 @@ function recomputeLastContextManifest(matches, midTurn) {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts(matches);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null);
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
   _lastContextManifestMidTurn = !!midTurn;
 }
 
@@ -2380,6 +2380,9 @@ function onSaveApiCard(cardEl, originalId) {
     model,
     disabled: get('.api-disabled') === 'off',
     vision,
+    // Normalisé par normalizeApiServer ; une carte rendue avant ce champ (ou un
+    // sélecteur absent du DOM) donne '' et retombe donc sur le défaut de build.
+    promptOrder: get('.api-prompt-order'),
   };
   const arr = upsertApiServer(server);
   if (wasEmpty) {
@@ -3827,7 +3830,7 @@ async function dispatchSend(matches, continuation) {
   // sans ce syncContextCounter(), la pilule restait au total du tour précédent
   // tant que le tour en cours n'était pas terminé, alors que le drawer (ouvert
   // au clic, recalculé à l'instant) affichait déjà le nouveau total.
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null);
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
   syncContextCounter();
 
   // Descripteurs byte-stables des images du TOUR COURANT (brief A lot 2) :

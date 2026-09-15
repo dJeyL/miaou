@@ -3,6 +3,7 @@
   "api_model":               "gemma4:26b-nvfp4",
   "max_summaries":           3,
   "require_api_key":         true,
+  "prompt_order":            "tools-first",
   "early_title":             true,
   "did_you_know":            true,
   "did_you_know_delay_s":    0,

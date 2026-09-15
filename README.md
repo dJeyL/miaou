@@ -254,6 +254,7 @@ build.
   "api_model":               "gemma4:26b-nvfp4",
   "max_summaries":           3,
   "require_api_key":         true,
+  "prompt_order":            "tools-first",
   "early_title":             true,
   "did_you_know":            true,
   "did_you_know_delay_s":    0,
@@ -285,6 +286,12 @@ est faite au seul point de lecture.
 - `require_api_key` : gouverne l'état « configuré ». Par défaut (`true`), le
   composer exige URL **et** clef. À `false`, l'URL seule suffit — pour un
   endpoint sans authentification.
+- `prompt_order` : où le backend visé place les définitions d'outils dans le
+  prompt qu'il assemble — `tools-first` (défaut) ou `tools-last`. Valeur **par
+  défaut** du réglage porté par chaque serveur API, qui prime une fois modifié.
+  N'affecte que l'ordre d'affichage de l'inspecteur de contexte, jamais ce qui
+  est envoyé à l'API ; utile pour qu'un déploiement interne arrive préréglé sur
+  son backend (cf. `docs/context-inspector.md`).
 - `early_title` : titrage dès l'envoi (défaut `true`). Valeur **par défaut** du
   réglage utilisateur, qui prime une fois modifié. À `false`, le titre n'est
   généré qu'une fois l'échange terminé — ce qui évite de retarder le premier

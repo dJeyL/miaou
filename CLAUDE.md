@@ -546,9 +546,15 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   manifeste doit rester représentatif de l'ORDRE RÉEL d'envoi** — c'est ce qui
   donne son sens à la barre (cachabilité décroissante) et ce qui fait de cet
   écran un instrument de diagnostic : une entrée dont la place surprend accuse
-  le payload, pas l'affichage. À lire avant de toucher au manifeste **et avant
-  de toucher à l'ordre du join de `buildSystemMessage()`**, que ce fichier
-  documente et dont deux gardes de position dépendent.
+  le payload, pas l'affichage. Cet ordre réel **dépend du backend** : la position
+  des définitions d'outils (avant ou après le message système) est une propriété
+  MESURÉE, portée par chaque serveur API (`promptOrder`, défaut réglable au build
+  par `prompt_order`) et passée à `buildContextManifest` — deux ordres mesurés à
+  ce jour, Ollama et vLLM, et un troisième backend se mesure au lieu de se
+  deviner (la détection par en-tête a été tentée puis écartée). À lire avant de
+  toucher au manifeste **et avant de toucher à l'ordre du join de
+  `buildSystemMessage()`**, que ce fichier documente et dont deux gardes de
+  position dépendent.
 - **`docs/spaces.md`** — Spaces / « Espaces » (lot C) : herméticité (piège 18,
   `spaceConvIds`), default Space, scope `profile` des souvenirs, description de
   Space concaténée au prompt système, bibliothèque de fichiers par Space.

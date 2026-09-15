@@ -2521,32 +2521,40 @@ function lastAuthenticUserIndex(msgs) {
 // réordonner pour des raisons de présentation — la lecture de la barre 2
 // (segment de cache sur la même échelle) en dépend entièrement.
 //
-// `tool_definitions` vient EN TÊTE, avant le message système. **Ce n'est pas
-// l'ordre des clés du corps JSON** (`messages` y précède `tools`, api.js) :
-// l'ordre des clés d'un objet n'a aucun rapport avec l'ordre d'assemblage du
-// prompt côté serveur, et s'y fier a valu une entrée mal placée pendant toute
-// la campagne cache. Mesuré le 2026-09-14 sur Ollama 0.34
-// (`ornith-1.5-txt:9b`, /v1/chat/completions, `usage.prompt_tokens_details.
-// cached_tokens`), trois observations concordantes :
-//   - modifier la SEULE fin du message système laisse cachés plus de tokens que
-//     le message système entier n'en pèse → les tool defs sont en amont ;
-//   - le non-servi correspond à la part modifiée + le message user.
-// Le premier point suffit et ne dépend d'aucun état antérieur du serveur.
-// Un « contrôle » tentant mais FAUX a été écarté après re-mesure : retirer les
-// tools semble mettre `cached_tokens` à 0, mais une requête sans tools est un
-// préfixe DIFFÉRENT, donc une autre entrée de cache — froide au premier envoi,
-// chaude ensuite (1246/1250 au second). Ce chiffre ne parle que de
-// l'historique des requêtes, jamais de l'ordre d'assemblage.
-// Conséquence pratique, inverse de ce que l'ancien ordre laissait croire :
-// toucher au message système n'invalide PAS les définitions d'outils.
+// La position de `tool_definitions` N'EST PAS UNE CONSTANTE : elle dépend du
+// backend, et arrive par le paramètre `promptOrder`. **Ce n'est en revanche
+// jamais l'ordre des clés du corps JSON** (`messages` y précède `tools`,
+// api.js) : l'ordre des clés d'un objet n'a aucun rapport avec l'ordre
+// d'assemblage du prompt côté serveur, et s'y fier a valu une entrée mal placée
+// pendant toute la campagne cache.
 //
-// PORTÉE DE LA MESURE : Ollama 0.34, un modèle, un endpoint. Rien ne garantit
-// qu'un autre backend (vLLM, llama.cpp, un service distant) assemble dans le
-// même ordre — c'est un détail d'implémentation serveur, pas une garantie du
-// protocole OpenAI. Si la barre de cache d'un autre backend contredit cet
-// ordre, le protocole de mesure est reproductible : invalider UNIQUEMENT la
-// fin du message système, tools inchangés, et lire `cached_tokens`. Plus de
-// tokens cachés que le système n'en pèse = tools en amont.
+// Deux ordres mesurés, par le MÊME protocole (invalider la SEULE fin du message
+// système, tools inchangés, lire `usage.prompt_tokens_details.cached_tokens` ;
+// `untracked/probe-prompt-order.py` l'automatise) :
+//
+//   - 'tools-first' — Ollama 0.34 (`ornith-1.5-txt:9b`), 2026-09-14. Modifier
+//     la seule fin du système laisse cachés PLUS de tokens que le système
+//     entier n'en pèse → les tool defs sont en amont. Conséquence : toucher au
+//     message système n'invalide PAS les définitions d'outils.
+//   - 'tools-last' — vLLM (`mistral-medium-3-5-0`), 2026-09-15. Même montage :
+//     système ~1253 tokens, cache servi après modification de sa fin = 1200,
+//     soit au plus le système lui-même → les tool defs sont tombées avec, donc
+//     elles suivent. Ici les tools pesaient 3665 tokens (75 % du prompt) :
+//     tout geste sur le système les fait recalculer.
+//
+// L'observation d'invalidation suffit et ne dépend d'aucun état antérieur du
+// serveur. Un « contrôle » tentant mais FAUX a été écarté après re-mesure :
+// retirer les tools semble mettre `cached_tokens` à 0, mais une requête sans
+// tools est un préfixe DIFFÉRENT, donc une autre entrée de cache — froide au
+// premier envoi, chaude ensuite (1246/1250 au second). Ce chiffre ne parle que
+// de l'historique des requêtes, jamais de l'ordre d'assemblage. La sonde le
+// signale explicitement dans son rapport (« ne prouve rien sur l'ordre »).
+//
+// Ces deux mesures valent chacune pour UN backend, UNE version, UN endpoint.
+// Un troisième backend se mesure, il ne se devine pas — et surtout il ne se
+// renifle pas : la détection automatique a été tentée puis écartée le
+// 2026-09-15 (cf. `normalizePromptOrder`, storage.js, qui porte le motif).
+// D'où un réglage déclaré par serveur, et ce paramètre.
 //
 // La mesure du 2026-09-12 (« la barre 2 s'arrête où finissent les tool defs »)
 // n'était pas fausse, elle était INDISCERNABLE : tant que rien ne change dans le
@@ -2559,10 +2567,14 @@ function lastAuthenticUserIndex(msgs) {
 // et cet écran ne sert à rien s'il le maquille. Ne pas fusionner non plus deux
 // entrées voisines pour « faire propre » : leur séparation est ce qui rend un
 // écart visible. Cf. `docs/context-inspector.md`.
-function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage) {
+function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage, promptOrder) {
   const sp = sysParts || {};
   const dp = dynParts || {};
   const entries = [];
+  // Défaut assumé ICI AUSSI, et pas seulement chez l'appelant : cette fonction
+  // est pure et testable isolément, donc appelée sans ce paramètre dans les
+  // tests antérieurs au réglage. Une valeur inconnue vaut 'tools-first'.
+  const toolsLast = promptOrder === 'tools-last';
 
   const pushEntry = (source, label, str) => {
     const s = str || '';
@@ -2570,16 +2582,22 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries.push({ source, label, chars: s.length, tokens: estimateTokens(s) });
   };
 
-  // 1. Définitions d'outils, EN TÊTE du prompt assemblé — avant le message
-  // système (cf. l'en-tête pour la mesure qui l'établit ; ce n'est pas l'ordre
-  // des clés du corps JSON). Mesurées depuis leur JSON, jamais depuis les
-  // messages.
-  if (toolDefsJson) {
+  // Les définitions d'outils, mesurées depuis leur JSON et jamais depuis les
+  // messages. Leur POSITION dépend du backend (cf. l'en-tête) : en tête du
+  // prompt assemblé, ou après le message système. Une seule fonction d'émission
+  // pour les deux cas — deux `entries.push` recopiés divergeraient dès qu'on
+  // touche au libellé ou au calcul.
+  const pushToolDefs = () => {
+    if (!toolDefsJson) return;
     entries.push({
       source: 'tool_definitions', label: 'Définitions d\'outils (JSON)',
       chars: toolDefsJson.length, tokens: estimateTokens(toolDefsJson),
     });
-  }
+  };
+
+  // 1. Backend 'tools-first' (Ollama, llama.cpp) : les tool defs ouvrent le
+  // prompt, donc toucher au message système ne les invalide pas.
+  if (!toolsLast) pushToolDefs();
 
   // 2. Parts du message SYSTÈME, dans l'ordre exact du join de buildSystemMessage().
   pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
@@ -2603,6 +2621,14 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   // c'est la tooltip qui détaille et qui varie (`contextExplainFor`, ui.js),
   // le manifeste reportant `libraryForm` pour qu'elle le puisse.
   pushEntry('space', 'Espace actif', sp.space);
+
+  // 2bis. Backend 'tools-last' (vLLM) : les tool defs suivent le message
+  // système. Conséquence lisible directement sur la barre — tout geste sur le
+  // système (changer d'Espace, éditer les instructions, brancher un serveur
+  // compagnon) invalide AUSSI les définitions d'outils, qui sont souvent la
+  // part la plus lourde du prompt. C'est le diagnostic que cet écran doit
+  // rendre visible, pas le maquiller derrière un ordre uniforme.
+  if (toolsLast) pushToolDefs();
 
   // 3 et 5. Le fil, SCINDÉ au dernier message user authentique : l'historique
   // d'un côté, le dernier tour utilisateur de l'autre. La scission n'est pas

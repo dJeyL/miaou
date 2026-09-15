@@ -192,6 +192,64 @@ describe('buildContextManifest', function() {
     expect(at('thread_last_user') < at('attachment_images')).toBe(true);
   });
 
+  // Même montage, backend 'tools-last' (vLLM, mesuré le 2026-09-15) : les
+  // définitions d'outils SUIVENT le message système. Tout le reste de l'ordre
+  // est inchangé — seule l'entrée `tool_definitions` se déplace.
+  it('en \'tools-last\', les définitions d\'outils suivent le message système', function() {
+    var sp = baseSysParts();
+    sp.identity = 'ID';
+    sp.space = 'ESPACE';
+    // Fil NON VIDE : sans lui, `thread_history` n'existe pas et `indexOf` rend
+    // -1, ce qui rendrait l'assertion de position fausse pour une raison qui
+    // n'a rien à voir avec l'ordre.
+    var thread = [
+      { role: 'user', content: 'ancien' },
+      { role: 'assistant', content: 'reponse' },
+      { role: 'user', content: 'nouveau' },
+    ];
+    var m = buildContextManifest(sp, baseDynParts(), thread, '{"tools":[]}', null, 'tools-last');
+    var sources = m.entries.map(function(e) { return e.source; });
+    var at = function(src) { return sources.indexOf(src); };
+    expect(at('identity_blurb') < at('tool_definitions')).toBe(true);
+    // Après le système ENTIER, `space` compris : c'est ce qui rend visible
+    // qu'un changement d'Espace y fait tomber les tool defs avec lui.
+    expect(at('space') < at('tool_definitions')).toBe(true);
+    expect(at('tool_definitions') < at('thread_history')).toBe(true);
+  });
+
+  // Garde anti-test-tautologique : si les deux branches produisaient le même
+  // ordre, les deux tests ci-dessus passeraient tous les deux sans rien
+  // distinguer. On vérifie donc que l'ordre CHANGE réellement — et que c'est la
+  // seule entrée à bouger.
+  it('les deux ordres diffèrent, et seule l\'entrée tool_definitions se déplace', function() {
+    var sp = baseSysParts();
+    sp.identity = 'ID';
+    sp.space = 'ESPACE';
+    var sourcesFor = function(order) {
+      return buildContextManifest(sp, baseDynParts(), [], '{"tools":[]}', null, order)
+        .entries.map(function(e) { return e.source; });
+    };
+    var first = sourcesFor('tools-first');
+    var last = sourcesFor('tools-last');
+    expect(first.join(',') === last.join(',')).toBe(false);
+    var strip = function(a) { return a.filter(function(s) { return s !== 'tool_definitions'; }).join(','); };
+    expect(strip(first)).toBe(strip(last));
+  });
+
+  // Une valeur inconnue (serveur enregistré avant le réglage, valeur corrompue)
+  // retombe sur le défaut plutôt que de produire un troisième ordre.
+  it('un ordre inconnu retombe sur le défaut tools-first', function() {
+    var sp = baseSysParts();
+    sp.identity = 'ID';
+    var at = function(order) {
+      var s = buildContextManifest(sp, baseDynParts(), [], '{"tools":[]}', null, order)
+        .entries.map(function(e) { return e.source; });
+      return s.indexOf('tool_definitions') < s.indexOf('identity_blurb');
+    };
+    expect(at(undefined)).toBe(true);
+    expect(at('n-importe-quoi')).toBe(true);
+  });
+
   it('une part image_url compte IMAGE_TOKENS_ESTIMATE, jamais le base64 en chars', function() {
     var thread = [
       { role: 'user', content: [
