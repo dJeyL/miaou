@@ -420,10 +420,23 @@ avec un cartouche `--- name: … description: … ---` en tête de fichier) :
   champs (ceux absents du cartouche restent inchangés) ; le cartouche lui-même
   reste dans le contenu.
 - **Glisser-déposer** un fichier `.md` sur le panneau Skills, ou **coller un
-  fichier `.md` copié** depuis ton explorateur de fichiers : si son cartouche
-  correspond à une skill déjà existante (même nom), tu bascules directement en
-  édition de cette skill ; sinon une nouvelle skill est créée, prête à nommer et
-  enregistrer.
+  fichier `.md` copié** depuis ton explorateur de fichiers : si le slug obtenu
+  correspond à une skill déjà existante, tu bascules directement en édition de
+  cette skill ; sinon une nouvelle skill est créée, prête à enregistrer.
+
+Le slug vient de la clé `name` du cartouche — dans ce format, `name` est un
+identifiant (minuscules, tirets), pas un titre. Si le cartouche n'en a pas, le
+nom du fichier déposé sert de slug (sauf `SKILL.md`, qui n'apprend rien). Le nom
+affiché dans MIAOU est déduit du slug ; pour en choisir un toi-même, ajoute-le
+au cartouche sous `metadata:` puis `title:` — une clé que les autres outils
+ignorent, donc la skill reste utilisable ailleurs :
+
+    ---
+    name: revue-de-code
+    description: Grille de relecture d'une merge request
+    metadata:
+      title: Revue de code approfondie
+    ---
 
 **Skills système** : quelques skills sont fournies par l'application (par
 exemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le

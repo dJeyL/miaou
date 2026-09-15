@@ -309,6 +309,97 @@ describe('parseSkillFrontmatter', function() {
   });
 });
 
+describe('parseSkillFrontmatter — metadata.title', function() {
+  it('metadata: puis title indenté → title extrait', function() {
+    var text = '---\nname: revue-de-code\nmetadata:\n  title: Revue de code approfondie\n---\nCorps.';
+    var fm = parseSkillFrontmatter(text);
+    expect(fm.name).toBe('revue-de-code');
+    expect(fm.title).toBe('Revue de code approfondie');
+  });
+  it('title RACINE ignoré (extension posée sous metadata uniquement)', function() {
+    var fm = parseSkillFrontmatter('---\nname: x\ntitle: Racine\n---\n');
+    expect(fm.title).toBe(null);
+  });
+  it('clé indentée sous une autre clé que metadata → ignorée', function() {
+    var fm = parseSkillFrontmatter('---\nname: x\nautre:\n  title: Piégé\n---\n');
+    expect(fm.title).toBe(null);
+  });
+  it('metadata absent → title null', function() {
+    expect(parseSkillFrontmatter('---\nname: x\n---\n').title).toBe(null);
+  });
+  it('clé racine après un bloc metadata reste lue', function() {
+    var fm = parseSkillFrontmatter('---\nmetadata:\n  title: T\ndescription: Après le bloc.\n---\n');
+    expect(fm.title).toBe('T');
+    expect(fm.description).toBe('Après le bloc.');
+  });
+});
+
+describe('skillDisplayNameFromSlug', function() {
+  it('tirets et underscores → espaces, initiale capitalisée', function() {
+    expect(skillDisplayNameFromSlug('revue-de-code')).toBe('Revue de code');
+    expect(skillDisplayNameFromSlug('hand_off')).toBe('Hand off');
+  });
+  it('casse interne préservée (acronyme)', function() {
+    expect(skillDisplayNameFromSlug('audit-SQL')).toBe('Audit SQL');
+  });
+  it('slug vide → chaîne vide', function() {
+    expect(skillDisplayNameFromSlug('')).toBe('');
+    expect(skillDisplayNameFromSlug(null)).toBe('');
+  });
+});
+
+describe('skillSlugFromFilename', function() {
+  it('extension retirée', function() {
+    expect(skillSlugFromFilename('revue-de-code.md')).toBe('revue-de-code');
+  });
+  it('SKILL.md ne porte aucune information → chaîne vide', function() {
+    expect(skillSlugFromFilename('SKILL.md')).toBe('');
+    expect(skillSlugFromFilename('skill.md')).toBe('');
+  });
+  it('chemin : seul le nom de base compte', function() {
+    expect(skillSlugFromFilename('/tmp/dossier/Revue de Code.md')).toBe('revue-de-code');
+  });
+  it('absent → chaîne vide', function() {
+    expect(skillSlugFromFilename(null)).toBe('');
+  });
+});
+
+describe('resolveSkillIdentity', function() {
+  it('name du cartouche → slug, nom dérivé du slug', function() {
+    var id = resolveSkillIdentity({ name: 'revue-de-code', title: null }, 'SKILL.md');
+    expect(id.slug).toBe('revue-de-code');
+    expect(id.name).toBe('Revue de code');
+  });
+  it('metadata.title prime sur la dérivation', function() {
+    var id = resolveSkillIdentity({ name: 'revue-de-code', title: 'Ma revue maison' }, null);
+    expect(id.slug).toBe('revue-de-code');
+    expect(id.name).toBe('Ma revue maison');
+  });
+  it('name hors charset → slugifié', function() {
+    expect(resolveSkillIdentity({ name: 'Revue: Code!', title: null }, null).slug).toBe('revue-code');
+  });
+  it('cartouche sans name → repli sur le nom de fichier', function() {
+    var id = resolveSkillIdentity({ name: null, title: null }, 'handoff.md');
+    expect(id.slug).toBe('handoff');
+    expect(id.name).toBe('Handoff');
+  });
+  it('pas de cartouche du tout → repli sur le nom de fichier', function() {
+    var id = resolveSkillIdentity(null, 'mon-outil.md');
+    expect(id.slug).toBe('mon-outil');
+    expect(id.name).toBe('Mon outil');
+  });
+  it('rien à dériver → slug et nom vides (saisie manuelle)', function() {
+    var id = resolveSkillIdentity(null, 'SKILL.md');
+    expect(id.slug).toBe('');
+    expect(id.name).toBe('');
+  });
+  it('title seul sans slug résoluble → nom vide (pas de skill sans identité)', function() {
+    var id = resolveSkillIdentity({ name: null, title: 'Titre orphelin' }, 'SKILL.md');
+    expect(id.slug).toBe('');
+    expect(id.name).toBe('Titre orphelin');
+  });
+});
+
 describe('resolveSkillDropTarget', function() {
   it('pas de cartouche → création, slug vide', function() {
     var t = resolveSkillDropTarget(null, ['autre']);
@@ -329,5 +420,19 @@ describe('resolveSkillDropTarget', function() {
     var t = resolveSkillDropTarget({ name: 'Handoff', description: null, disableModelInvocation: null }, ['handoff', 'autre']);
     expect(t.mode).toBe('edit');
     expect(t.slug).toBe('handoff');
+  });
+  it('sans cartouche, nom de fichier matchant une skill EXISTANTE → édition', function() {
+    var t = resolveSkillDropTarget(null, ['handoff', 'autre'], 'handoff.md');
+    expect(t.mode).toBe('edit');
+    expect(t.slug).toBe('handoff');
+  });
+  it('cartouche sans name + fichier nommé → création, slug du fichier', function() {
+    var t = resolveSkillDropTarget({ name: null, description: 'x', disableModelInvocation: null }, ['autre'], 'mon-outil.md');
+    expect(t.mode).toBe('create');
+    expect(t.slug).toBe('mon-outil');
+  });
+  it('name du cartouche prime sur le nom de fichier', function() {
+    var t = resolveSkillDropTarget({ name: 'depuis-cartouche', description: null, disableModelInvocation: null }, ['autre'], 'depuis-fichier.md');
+    expect(t.slug).toBe('depuis-cartouche');
   });
 });

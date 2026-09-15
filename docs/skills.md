@@ -100,29 +100,47 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    existant ; lu par `onSaveSkillCard` comme `enabled`.
    - **Import de cartouche au collage** (`.skill-content`, listener `paste`) :
      `parseSkillFrontmatter` (skills.js, pur) détecte un bloc `---\n…\n---` en
-     tête du texte collé (format Claude Code, ex. skill Claude Code) et
-     pré-remplit `slug` (slugifié via `slugifySkillName`) + `name` depuis la clé
-     `name`, `description` depuis `description`, et **inverse**
-     `disable-model-invocation` vers le toggle `autotrigger` (approximation
-     assumée : pas d'équivalent MIAOU exact à « désactiver l'invocation modèle »,
-     `autotrigger` est le champ le plus proche disponible). Le **cartouche reste
-     dans le contenu collé** (jamais retiré) — seul le formulaire est pré-rempli.
-     Une clé absente du cartouche laisse le champ formulaire correspondant
-     inchangé. Extraction factorisée dans `applySkillFrontmatterToCard(scope, text)`
-     (ui.js), partagée avec l'import de fichier ci-dessous.
+     tête du texte collé (format **Agent Skills**, celui de Claude Code) et
+     pré-remplit le formulaire. Le **cartouche reste dans le contenu collé**
+     (jamais retiré) — seul le formulaire l'est. Une clé absente du cartouche
+     laisse le champ formulaire correspondant inchangé. Extraction factorisée
+     dans `applySkillFrontmatterToCard(scope, text, filename)` (ui.js), partagée
+     avec l'import de fichier ci-dessous.
+
+     **`name` du cartouche EST le slug**, pas un libellé libre : le format amont
+     le contraint au charset d'un identifiant et l'aligne sur le nom du dossier
+     porteur du `SKILL.md`. MIAOU le lit donc comme tel, ce qui rend une skill
+     trouvée sur Internet importable sans saisie. Le format n'a en revanche
+     **aucun champ de libellé humain** : MIAOU en pose un sous `metadata:` /
+     `title:`, seul espace que le format laisse libre (Claude Code ignore
+     `metadata:`), et jamais en clé racine — un `title:` racine est ignoré, pour
+     ne pas inventer une divergence de format. Sans lui, le nom d'affichage est
+     dérivé du slug (`skillDisplayNameFromSlug`) plutôt que laissé vide.
+     `description` alimente `description`, et `disable-model-invocation` est
+     **inversé** vers le toggle `autotrigger` (approximation assumée : pas
+     d'équivalent MIAOU exact à « désactiver l'invocation modèle »,
+     `autotrigger` est le champ le plus proche disponible).
+
+     La résolution slug + nom est portée par **`resolveSkillIdentity(fm,
+     filename)`** (skills.js, pur), source unique pour les trois chemins
+     d'import — ne pas re-slugifier `fm.name` localement.
    - **Import de fichier `.md` : drag&drop OU copier-coller Finder/Explorateur,
      sur tout le drawer (`#skills-drawer`)**, pas seulement la liste — zone large,
      pattern `.dragover` identique au composer (`composer.css`/`drawers.css`).
      Filtre `isMarkdownFile` (nom `.md`/`.markdown`/`.txt` ou type
      `text/markdown`/`text/plain`) : tout autre fichier glissé/collé est ignoré
-     silencieusement. Lecture via `file.text()`. Routage décidé par
-     `resolveSkillDropTarget(fm, existingSlugs)` (skills.js, pur) :
-     - pas de cartouche, ou cartouche sans `name` → **création**, nouvelle card
-       vide (slug à saisir).
-     - cartouche avec `name` dont le slug slugifié **matche une skill
+     silencieusement. Lecture via `file.text()`. Le **nom du fichier** est
+     transmis avec le texte : il sert de repli de slug quand le cartouche n'a pas
+     de `name` (`skillSlugFromFilename` — `SKILL.md` rend une chaîne vide, ce nom
+     conventionnel ne portant aucune information, l'identité vivant alors dans le
+     dossier que le navigateur ne nous donne pas). Routage décidé par
+     `resolveSkillDropTarget(fm, existingSlugs, filename)` (skills.js, pur), sur
+     le slug résolu par `resolveSkillIdentity` :
+     - slug résolu (cartouche, à défaut nom de fichier) qui **matche une skill
        existante** → **édition** de cette skill (bascule sur sa card).
-     - sinon → **création**, slug pré-rempli par le `name` slugifié.
-     Orchestré par `ingestSkillMarkdownFile(text)` (main.js) : ferme toute card
+     - sinon → **création**, slug pré-rempli par le slug résolu — vide si rien
+       n'est dérivable, laissé à la saisie.
+     Orchestré par `ingestSkillMarkdownFile(text, filename)` (main.js) : ferme toute card
      restée ouverte (`renderSkills()`), cible/crée la card, pose le contenu
      intégral dans `.skill-content` **avant** d'appeler
      `applySkillFrontmatterToCard` — **ne passe jamais par `enterSkillEdit`**
@@ -214,9 +232,17 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    - **Fichiers source** : un fichier par skill système dans
      `src/system-skills/<slug>.md` — le **nom de fichier (sans extension) est
      le slug**, la clé IDB. Cartouche frontmatter en tête (`name`,
-     `description` — sous-ensemble des clés de l'import utilisateur,
+     `description`, `metadata:`/`title:` — mêmes clés que l'import utilisateur,
      `parseSkillFrontmatter`, mais parsé côté build par
      `parse_system_skill_file`, `build.py`) puis le corps Markdown complet.
+     **`name` doit être ÉGAL au nom de fichier** : le build ÉCHOUE sinon, ce qui
+     attrape le renommage de fichier sans mise à jour du cartouche — il
+     passerait sinon en silence et livrerait un fichier non conforme au format
+     à qui le partage. Le libellé humain est sous `metadata:`/`title:`, et il
+     compte : `buildSkillsContextBlock` (main.js) l'envoie au modèle à **chaque
+     tour**, les skills système étant toutes autotrigger. Sans `title`, il est
+     dérivé du slug (`system_skill_display_name`, miroir Python de
+     `skillDisplayNameFromSlug`).
      **Pas de clé `autotrigger`/`enabled`** : une skill système n'expose AUCUN
      réglage, cf. upsert ci-dessous.
    - **Injection au build** : `load_system_skills()` (`build.py`) lit tous les

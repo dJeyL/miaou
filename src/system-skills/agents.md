@@ -1,6 +1,8 @@
 ---
-name: Consignes de lancement et de suivi d'un agent
+name: agents
 description: Comment rédiger le prompt d'un agent, choisir les outils et les fichiers à lui confier, et exploiter son résultat (y compris incomplet)
+metadata:
+  title: Consignes de lancement et de suivi d'un agent
 ---
 
 Tu as décidé de lancer un agent. Voici comment le faire utilement.

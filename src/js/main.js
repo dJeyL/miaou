@@ -2451,14 +2451,15 @@ async function onSaveSkillCard(cardEl, originalSlug) {
 // Import d'un fichier .md dans le drawer skills (drag&drop sur le drawer, ou
 // copier-coller Finder/Explorateur hors d'une card déjà en édition — cf.
 // docs/skills.md). Décide création vs édition via resolveSkillDropTarget (pur,
-// skills.js) : cartouche avec `name` dont le slug matche une skill EXISTANTE →
-// bascule sur sa card ; sinon nouvelle card. Remplit les champs comme le paste
-// texte dans la textarea (même parseSkillFrontmatter), contenu intégral posé
-// dans .skill-content quel que soit le mode.
-function ingestSkillMarkdownFile(text) {
+// skills.js) : slug résolu — `name` du cartouche, à défaut nom du fichier —
+// qui matche une skill EXISTANTE → bascule sur sa card ; sinon nouvelle card.
+// Remplit les champs comme le paste texte dans la textarea (même
+// parseSkillFrontmatter), contenu intégral posé dans .skill-content quel que
+// soit le mode.
+function ingestSkillMarkdownFile(text, filename) {
   const fm = parseSkillFrontmatter(text);
   const existing = listAllSkillsCache().map(s => s.slug);
-  const target = resolveSkillDropTarget(fm, existing);
+  const target = resolveSkillDropTarget(fm, existing, filename);
   renderSkills();   // ferme toute card restée en édition, repart d'un état propre
   const wrap = $('skill-list');
   if (!wrap) return;
@@ -2478,7 +2479,7 @@ function ingestSkillMarkdownFile(text) {
   card.classList.add('is-editing');
   const contentT = card.querySelector('.skill-content');
   if (contentT) contentT.value = text;
-  applySkillFrontmatterToCard(card, text);
+  applySkillFrontmatterToCard(card, text, filename);
   card.scrollIntoView({ block: 'nearest' });
 }
 

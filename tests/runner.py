@@ -498,31 +498,47 @@ def run_build_unit_tests() -> tuple[int, int]:
     fake_path = Path('src/system-skills/fake.md')
 
     nominal_skill = build.parse_system_skill_file(
-        '---\nname: Fake\ndescription: Une skill de test\n---\n\nCorps de la skill.\n',
-        fake_path)
+        '---\nname: fake\ndescription: Une skill de test\nmetadata:\n  title: Une skill de test\n---\n'
+        '\nCorps de la skill.\n',
+        fake_path, 'fake')
     check('system-skills : cartouche nominal → {name, description, content}',
-          nominal_skill == {'name': 'Fake', 'description': 'Une skill de test',
+          nominal_skill == {'name': 'Une skill de test', 'description': 'Une skill de test',
                              'content': 'Corps de la skill.'})
 
     no_desc_skill = build.parse_system_skill_file(
-        '---\nname: Fake\n---\n\nCorps.\n', fake_path)
+        '---\nname: fake\n---\n\nCorps.\n', fake_path, 'fake')
     check('system-skills : description absente → chaîne vide',
           no_desc_skill['description'] == '')
 
+    # `name` EST le slug (format Agent Skills) : le libellé humain vit sous
+    # metadata.title, et à défaut se dérive du slug — jamais vide, il part au
+    # modèle à chaque tour via buildSkillsContextBlock (main.js).
+    derived = build.parse_system_skill_file(
+        '---\nname: files-promote\n---\n\nCorps.\n', fake_path, 'files-promote')
+    check('system-skills : sans metadata.title, le libellé se dérive du slug',
+          derived['name'] == 'Files promote')
+
     try:
-        build.parse_system_skill_file('Pas de cartouche ici.\n', fake_path)
+        build.parse_system_skill_file(
+            '---\nname: autre-slug\n---\n\nCorps.\n', fake_path, 'fake')
+        check('system-skills : « name » ≠ nom de fichier → ValueError', False)
+    except ValueError:
+        check('system-skills : « name » ≠ nom de fichier → ValueError', True)
+
+    try:
+        build.parse_system_skill_file('Pas de cartouche ici.\n', fake_path, 'fake')
         check('system-skills : cartouche absent → ValueError', False)
     except ValueError:
         check('system-skills : cartouche absent → ValueError', True)
 
     try:
-        build.parse_system_skill_file('---\ndescription: sans nom\n---\nCorps.\n', fake_path)
+        build.parse_system_skill_file('---\ndescription: sans nom\n---\nCorps.\n', fake_path, 'fake')
         check('system-skills : cartouche sans « name » → ValueError', False)
     except ValueError:
         check('system-skills : cartouche sans « name » → ValueError', True)
 
     try:
-        build.parse_system_skill_file('---\nname: Fake\n---\n\n', fake_path)
+        build.parse_system_skill_file('---\nname: fake\n---\n\n', fake_path, 'fake')
         check('system-skills : corps vide → ValueError', False)
     except ValueError:
         check('system-skills : corps vide → ValueError', True)

@@ -470,32 +470,66 @@ def load_help() -> tuple[dict, dict]:
 _SKILL_FRONTMATTER_RE = re.compile(r'^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)')
 
 
-def parse_system_skill_file(text: str, path: Path) -> dict:
+def system_skill_display_name(slug: str) -> str:
+    """Nom d'affichage dérivé d'un slug (`files-promote` → « Files promote »).
+    Miroir Python de skillDisplayNameFromSlug (skills.js) : repli quand le
+    cartouche ne porte pas de `metadata.title`."""
+    s = re.sub(r'[-_]+', ' ', slug).strip()
+    return s[:1].upper() + s[1:] if s else ''
+
+
+def parse_system_skill_file(text: str, path: Path, slug: str) -> dict:
     """Parse un fichier `src/system-skills/<slug>.md` : cartouche frontmatter
-    `---\\nclé: valeur\\n---` en tête (name, description) suivi du corps
-    Markdown. Le slug est dérivé du nom de fichier (sans extension), pas du
-    cartouche : c'est la clé IDB, elle doit être stable et lisible depuis le
-    nom du fichier source. Pas de clé `autotrigger` ni `enabled` : une skill
-    système est TOUJOURS activée et autotrigger (figé par ensureSystemSkills,
-    skills.js — aucun réglage possible dessus, cf. docs/skills.md)."""
+    `---\\nclé: valeur\\n---` en tête suivi du corps Markdown.
+
+    Le cartouche suit le format Agent Skills : `name` EST le slug (charset
+    contraint), pas un libellé libre. Le slug effectif reste dérivé du nom de
+    fichier — c'est la clé IDB, elle doit être lisible depuis le fichier source
+    sans l'ouvrir — et `name` doit lui être ÉGAL : la garde ci-dessous attrape
+    le renommage de fichier sans mise à jour du cartouche, qui passerait sinon
+    en silence et livrerait un fichier non conforme au format à qui le partage.
+
+    Le libellé humain vit sous `metadata.title` (espace laissé libre par le
+    format, ignoré par les autres lecteurs), à défaut il est dérivé du slug.
+    Il compte : `buildSkillsContextBlock` (main.js) l'envoie au modèle à chaque
+    tour pour les skills autotrigger, ce que les skills système sont toutes.
+
+    Pas de clé `autotrigger` ni `enabled` : une skill système est TOUJOURS
+    activée et autotrigger (figé par ensureSystemSkills, skills.js — aucun
+    réglage possible dessus, cf. docs/skills.md)."""
     m = _SKILL_FRONTMATTER_RE.match(text)
     if not m:
         raise ValueError(f'{path} : cartouche frontmatter --- manquant en tête de fichier.')
     meta = {}
+    title = None
+    in_metadata = False
     for line in m.group(1).split('\n'):
-        kv = re.match(r'^([A-Za-z_-]+)\s*:\s*(.*)$', line.strip())
+        indented = re.match(r'^\s+\S', line) is not None
+        kv = re.match(r'^\s*([A-Za-z_-]+)\s*:\s*(.*)$', line)
         if not kv:
+            if not indented:
+                in_metadata = False
             continue
         key = kv.group(1).strip().lower()
         val = kv.group(2).strip().strip('"\'')
+        if indented:
+            if in_metadata and key == 'title' and val:
+                title = val
+            continue
+        in_metadata = (key == 'metadata' and not val)
         meta[key] = val
     if 'name' not in meta:
         raise ValueError(f'{path} : cartouche sans clé « name ».')
+    if meta['name'] != slug:
+        raise ValueError(
+            f'{path} : « name: {meta["name"]} » ne correspond pas au nom de fichier '
+            f'(slug attendu : « {slug} »). Dans le format Agent Skills, `name` EST le '
+            f'slug ; le libellé humain va sous `metadata:` / `title:`.')
     body = text[m.end():].strip('\n')
     if not body:
         raise ValueError(f'{path} : corps de skill vide.')
     return {
-        'name': meta['name'],
+        'name': title or system_skill_display_name(slug),
         'description': meta.get('description', ''),
         'content': body,
     }
@@ -511,7 +545,7 @@ def load_system_skills() -> dict:
     out = {}
     for path in sorted(d.glob('*.md')):
         slug = path.stem
-        out[slug] = parse_system_skill_file(read(path), path)
+        out[slug] = parse_system_skill_file(read(path), path, slug)
     return out
 
 

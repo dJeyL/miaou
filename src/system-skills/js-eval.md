@@ -1,6 +1,8 @@
 ---
-name: Consignes d'utilisation de la sandbox js__eval
+name: js-eval
 description: Comment écrire l'appel miaou__js__eval (signature, primitives disponibles, méthode, contraintes de sortie)
+metadata:
+  title: Consignes d'utilisation de la sandbox js__eval
 ---
 
 Tu as décidé d'utiliser miaou__js__eval. Voici comment l'appeler correctement.

@@ -1,6 +1,8 @@
 ---
-name: Génération de diagrammes Mermaid
+name: mermaid
 description: Règles obligatoires pour générer un diagramme mermaid valide dans MIAOU
+metadata:
+  title: Génération de diagrammes Mermaid
 ---
 
 Tu vas générer un bloc de code mermaid. Applique CES RÈGLES EXACTEMENT, sans

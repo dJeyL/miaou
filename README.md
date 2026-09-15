@@ -176,8 +176,9 @@ Détail : [docs/spaces.md](docs/spaces.md).
 - **Découverte et écriture par le modèle** : il liste et lit seul les skills
   activées quand la demande y correspond, et peut en créer ou en modifier à ta
   demande (une modification passe par une confirmation explicite).
-- **Import d'une skill Claude Code** : coller ou déposer un `.md` portant un
-  cartouche `--- name: … description: … ---` pré-remplit l'édition.
+- **Import d'une skill Claude Code** : coller ou déposer un `.md` au format
+  Agent Skills pré-remplit l'édition (slug, nom, description), à défaut de
+  cartouche depuis le nom du fichier.
 - **Skills système** fournies par l'application : toujours actives, non
   éditables, consultables en lecture seule.
 

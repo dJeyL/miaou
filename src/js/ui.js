@@ -9531,7 +9531,7 @@ function onSkillsDrop(e) {
   if (!files || !files.length) return;
   const file = Array.from(files).find(isMarkdownFile);
   if (!file) return;
-  file.text().then(text => ingestSkillMarkdownFile(text)).catch(() => {});
+  file.text().then(text => ingestSkillMarkdownFile(text, file.name)).catch(() => {});
 }
 // Copier-coller Finder/Explorateur sur le drawer (hors focus d'une textarea déjà
 // en édition — ce cas est intercepté par le listener .skill-content lui-même,
@@ -9545,7 +9545,7 @@ function onSkillsDrawerPaste(e) {
   }
   if (!file) return;
   e.preventDefault();
-  file.text().then(text => ingestSkillMarkdownFile(text)).catch(() => {});
+  file.text().then(text => ingestSkillMarkdownFile(text, file.name)).catch(() => {});
 }
 
 // Liste les skills depuis le cache mémoire (méta) ; le contenu Markdown est lu en
@@ -9692,21 +9692,25 @@ function addSkillCard() {
 }
 
 // Pré-remplit slug/nom/description/autotrigger d'une card skill (vue édition)
-// depuis le cartouche d'un texte donné, sans jamais toucher un champ dont la
-// clé correspondante est absente du cartouche. `scope` est la card ou sa section
-// édition (querySelector cherche par classe, marche dans les deux cas). Partagé
+// depuis le cartouche d'un texte donné, sans jamais toucher un champ dont rien
+// dans la source ne permet de décider. `scope` est la card ou sa section
+// édition (querySelector cherche par classe, marche dans les deux cas).
+// `filename` est le nom du fichier source quand l'import en vient (drop / paste
+// Finder), omis sur un paste de texte : il sert de repli de slug. Partagé
 // par le paste dans .skill-content ET l'import fichier (drag&drop / paste Finder
 // hors édition, cf. ingestSkillMarkdownFile, main.js).
-function applySkillFrontmatterToCard(scope, text) {
+function applySkillFrontmatterToCard(scope, text, filename) {
   const fm = parseSkillFrontmatter(text);
-  if (!fm) return;
+  const ident = resolveSkillIdentity(fm, filename);
+  if (!fm && !ident.slug) return;
   const slugI = scope.querySelector('.skill-slug');
   const nameI = scope.querySelector('.skill-name');
   const descI = scope.querySelector('.skill-desc');
-  if (fm.name != null) {
-    if (slugI) slugI.value = slugifySkillName(fm.name);
-    if (nameI) nameI.value = fm.name;
+  if (ident.slug) {
+    if (slugI) slugI.value = ident.slug;
+    if (nameI) nameI.value = ident.name;
   }
+  if (!fm) return;
   if (fm.description != null && descI) descI.value = fm.description;
   if (fm.disableModelInvocation != null) {
     const autotriggerEl = scope.querySelector('.skill-autotrigger');
@@ -9804,7 +9808,7 @@ function buildSkillCard(skill, isNew) {
     if (file) {
       e.preventDefault();
       e.stopPropagation();   // évite un double-traitement par le listener du drawer (paste sur #skills-drawer)
-      file.text().then(text => { contentT.value = text; applySkillFrontmatterToCard(editSection, text); }).catch(() => {});
+      file.text().then(text => { contentT.value = text; applySkillFrontmatterToCard(editSection, text, file.name); }).catch(() => {});
       return;
     }
     setTimeout(() => { applySkillFrontmatterToCard(editSection, contentT.value); }, 0);

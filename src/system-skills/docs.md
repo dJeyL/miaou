@@ -1,6 +1,8 @@
 ---
-name: Documents et archives
+name: docs
 description: Comment lire un document joint (PDF, Excel, Word, PowerPoint, archive zip) et comment regrouper des ressources en une archive zip — quel outil, quel selector, quand sortir en ressource
+metadata:
+  title: Documents et archives
 ---
 
 Tu as décidé d'ouvrir un document joint, ou de regrouper des ressources en une

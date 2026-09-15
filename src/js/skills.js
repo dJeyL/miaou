@@ -71,23 +71,39 @@ function slugifySkillName(name) {
 }
 
 // Parse un cartouche frontmatter (```---\nclé: valeur\n---```) en tête d'un
-// contenu de skill collé (format Claude Code, cf. untracked/example-skill.md).
-// Ne reconnaît que les 3 clés utiles au formulaire MIAOU : `name`, `description`,
-// `disable-model-invocation`. Retourne null si aucun cartouche détecté en tête
-// (pas de bloc `---`/`---`) ; sinon { name, description, disableModelInvocation }
-// où chaque champ est `null` si la clé est absente du cartouche (l'appelant ne
-// touche pas au champ formulaire correspondant). Pur, ne modifie jamais le texte
-// source : le cartouche reste dans le contenu collé (décision explicite Julien).
+// contenu de skill collé (format Agent Skills, celui de Claude Code —
+// cf. untracked/example-skill.md). Clés reconnues : `name`, `description`,
+// `disable-model-invocation`, plus `metadata:` et sa sous-clé `title`.
+// Retourne null si aucun cartouche détecté en tête (pas de bloc `---`/`---`) ;
+// sinon { name, description, disableModelInvocation, title } où chaque champ est
+// `null` si la clé est absente du cartouche (l'appelant ne touche pas au champ
+// formulaire correspondant). Pur, ne modifie jamais le texte source : le
+// cartouche reste dans le contenu collé (décision explicite Julien).
+//
+// `name` est le SLUG dans le format amont (charset contraint, égal au nom du
+// dossier porteur du SKILL.md), pas un libellé libre : c'est resolveSkillIdentity
+// qui en tire slug ET nom d'affichage. `metadata.title` est une extension MIAOU
+// posée là où le format prévoit explicitement l'espace libre (`metadata:` est
+// ignoré par Claude Code), et non en clé racine, pour rester importable ailleurs.
+// Le parseur reste ligne à ligne : `metadata:` est le seul niveau d'imbrication
+// admis, reconnu par une valeur vide suivie de lignes indentées.
 function parseSkillFrontmatter(text) {
   const s = String(text == null ? '' : text);
   const m = /^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(s);
   if (!m) return null;
-  const out = { name: null, description: null, disableModelInvocation: null };
+  const out = { name: null, description: null, disableModelInvocation: null, title: null };
+  let inMetadata = false;
   for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z_-]+)\s*:\s*(.*)$/.exec(line);
-    if (!kv) continue;
+    const indented = /^\s+\S/.test(line);
+    const kv = /^\s*([A-Za-z_-]+)\s*:\s*(.*)$/.exec(line);
+    if (!kv) { if (!indented) inMetadata = false; continue; }
     const key = kv[1].trim().toLowerCase();
     const val = kv[2].trim().replace(/^["']|["']$/g, '');
+    if (indented) {
+      if (inMetadata && key === 'title' && val) out.title = val;
+      continue;
+    }
+    inMetadata = (key === 'metadata' && !val);
     if (key === 'name') out.name = val;
     else if (key === 'description') out.description = val;
     else if (key === 'disable-model-invocation') out.disableModelInvocation = /^true$/i.test(val);
@@ -95,21 +111,60 @@ function parseSkillFrontmatter(text) {
   return out;
 }
 
+// Dérive un nom d'affichage lisible depuis un slug (`revue-de-code` → « Revue de
+// code ») : séparateurs en espaces, première lettre capitalisée, le reste laissé
+// tel quel (un acronyme saisi en majuscules le reste). Sert de repli quand le
+// cartouche ne porte pas de `metadata.title` — le format amont n'ayant AUCUN
+// champ de libellé humain, un import de skill trouvée sur Internet n'aurait
+// sinon jamais de nom côté MIAOU.
+function skillDisplayNameFromSlug(slug) {
+  const s = String(slug == null ? '' : slug).replace(/[-_]+/g, ' ').trim();
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Dérive le slug d'un nom de fichier importé : `revue-de-code.md` → `revue-de-code`.
+// Rend '' pour `SKILL.md` (nom conventionnel du format amont, qui ne porte aucune
+// information — l'identité vit alors dans le dossier, que le navigateur ne nous
+// donne pas) comme pour tout nom dont il ne reste rien après slugification.
+function skillSlugFromFilename(filename) {
+  const base = String(filename == null ? '' : filename).split(/[\\/]/).pop().replace(/\.[^.]*$/, '');
+  if (/^skill$/i.test(base)) return '';
+  return slugifySkillName(base);
+}
+
+// Résout l'identité d'une skill importée — { slug, name } — depuis le cartouche
+// (`fm`, résultat de parseSkillFrontmatter, ou null) et le nom du fichier source
+// (`filename`, optionnel : absent sur un paste de texte brut).
+//  - slug : `name` du cartouche (slugifié s'il sort du charset), sinon repli sur
+//    le nom de fichier, sinon '' (saisie manuelle).
+//  - name : `metadata.title` du cartouche s'il est présent, sinon dérivé du slug.
+// Rend `name: ''` quand il n'y a pas de slug : rien à dériver, et on ne veut pas
+// inventer un libellé que l'utilisateur n'a pas fourni.
+// Pur. Source unique de l'identité pour les trois chemins d'import (drop, paste
+// fichier, paste texte en card) — ne pas re-slugifier `fm.name` ailleurs.
+function resolveSkillIdentity(fm, filename) {
+  const raw = fm && fm.name != null ? String(fm.name).trim() : '';
+  let slug = raw ? slugifySkillName(raw) : '';
+  if (!slug) slug = skillSlugFromFilename(filename);
+  const title = fm && fm.title != null ? String(fm.title).trim() : '';
+  const name = title || (slug ? skillDisplayNameFromSlug(slug) : '');
+  return { slug, name };
+}
+
 // Décide du routage d'un import de fichier .md dans le drawer skills (drag&drop
 // ou copier-coller Finder/Explorateur, cf. docs/skills.md) : `fm` est le résultat
-// de parseSkillFrontmatter (ou null si aucun cartouche). Règles :
-//  - pas de cartouche, ou cartouche sans `name` → création (slug dérivé du name
-//    quand présent quand même — cas cartouche partiel — sinon slug vide, laissé
-//    à la saisie manuelle).
-//  - cartouche avec `name` dont le slug slugifié matche un slug EXISTANT →
+// de parseSkillFrontmatter (ou null si aucun cartouche), `filename` le nom du
+// fichier source quand il y en a un. L'identité vient de resolveSkillIdentity :
+//  - slug résolu (cartouche puis nom de fichier) qui matche un slug EXISTANT →
 //    édition de CE slug (bascule sur la card déjà en base).
-//  - sinon → création, slug pré-rempli par le name slugifié.
+//  - sinon → création, slug pré-rempli par le slug résolu (vide si rien à en
+//    tirer : saisie manuelle).
 // Pur, ne lit ni n'écrit aucun store — l'appelant (main.js) route ensuite vers
 // la card DOM correspondante.
-function resolveSkillDropTarget(fm, existingSlugs) {
+function resolveSkillDropTarget(fm, existingSlugs, filename) {
   const slugs = Array.isArray(existingSlugs) ? existingSlugs : [];
-  const name = fm && fm.name != null ? fm.name : '';
-  const slug = name ? slugifySkillName(name) : '';
+  const slug = resolveSkillIdentity(fm, filename).slug;
   if (slug && slugs.indexOf(slug) >= 0) return { mode: 'edit', slug };
   return { mode: 'create', slug };
 }

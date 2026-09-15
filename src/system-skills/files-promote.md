@@ -1,6 +1,8 @@
 ---
-name: Bibliothèque de fichiers
+name: files-promote
 description: Doctrine de déclenchement pour déposer un fichier dans la bibliothèque persistante de l'espace
+metadata:
+  title: Bibliothèque de fichiers
 ---
 
 Doctrine de déclenchement pour miaou__files__promote (bibliothèque de fichiers

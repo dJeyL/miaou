@@ -2530,9 +2530,13 @@ function lastAuthenticUserIndex(msgs) {
 // cached_tokens`), trois observations concordantes :
 //   - modifier la SEULE fin du message système laisse cachés plus de tokens que
 //     le message système entier n'en pèse → les tool defs sont en amont ;
-//   - RETIRER les tools met `cached_tokens` à 0 alors que le préfixe système
-//     n'a pas bougé d'un octet → ce qui est devant a changé, donc tout tombe ;
-//   - le non-servi correspond exactement à la part modifiée + le message user.
+//   - le non-servi correspond à la part modifiée + le message user.
+// Le premier point suffit et ne dépend d'aucun état antérieur du serveur.
+// Un « contrôle » tentant mais FAUX a été écarté après re-mesure : retirer les
+// tools semble mettre `cached_tokens` à 0, mais une requête sans tools est un
+// préfixe DIFFÉRENT, donc une autre entrée de cache — froide au premier envoi,
+// chaude ensuite (1246/1250 au second). Ce chiffre ne parle que de
+// l'historique des requêtes, jamais de l'ordre d'assemblage.
 // Conséquence pratique, inverse de ce que l'ancien ordre laissait croire :
 // toucher au message système n'invalide PAS les définitions d'outils.
 //

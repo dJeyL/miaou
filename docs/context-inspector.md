@@ -29,9 +29,16 @@ trois observations concordantes :
 
 - modifier la SEULE fin du message système laisse cachés **plus** de tokens que
   le message système entier n'en pèse → les tool defs sont en amont ;
-- **retirer** les tools met `cached_tokens` à `0` alors que le préfixe système
-  n'a pas bougé d'un octet → ce qui est devant a changé, donc tout tombe ;
-- le non-servi correspond exactement à la part modifiée plus le message user.
+- le non-servi correspond à la part modifiée plus le message user.
+
+Le premier point suffit, et c'est volontaire : il ne dépend **d'aucun état
+antérieur** du serveur. Un troisième « contrôle » avait d'abord été retenu —
+retirer les tools met `cached_tokens` à `0` alors que le préfixe système est
+intact — puis **écarté après re-mesure** : une requête sans tools est un préfixe
+DIFFÉRENT, donc une autre entrée de cache, froide au premier envoi et chaude au
+suivant (1246 sur 1250). Ce chiffre ne renseigne que l'historique des requêtes.
+Le piège est instructif : une mesure à froid déguisée en résultat, qui allait
+dans le sens de la conclusion et n'a donc pas été rejouée.
 
 Conséquence pratique, inverse de ce que l'ancien ordre laissait croire :
 **toucher au message système n'invalide pas les définitions d'outils.** La
