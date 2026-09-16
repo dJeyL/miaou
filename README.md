@@ -298,8 +298,9 @@ est faite au seul point de lecture.
   token sur un serveur qui traite une requête à la fois.
 - `did_you_know` : astuce sous l'écran d'accueil (défaut
   `true`). Valeur **par défaut** du réglage utilisateur, qui prime une fois
-  modifié. Chaque astuce coûte un appel au modèle : à `false` pour un
-  déploiement sur API facturée.
+  modifié. Chaque astuce coûte un appel au modèle, jusqu'à trois quand les
+  premiers passages tirés ne s'y prêtent pas : à `false` pour un déploiement
+  sur API facturée.
 - `did_you_know_delay_s` : délai avant de demander l'astuce, en secondes
   (défaut `0`, l'astuce part dès l'affichage). Compté depuis l'affichage de
   l'écran d'accueil ; si la conversation vierge est quittée avant, aucun appel

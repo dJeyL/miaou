@@ -872,8 +872,9 @@ et ton choix est conservé d'une session à l'autre.
   plus près du champ de saisie, et s'adapte à la hauteur disponible : dans une fenêtre courte il se réduit à sa première
   phrase, et s'efface entièrement s'il n'a plus la place de rester lisible —
   agrandir la fenêtre le fait revenir. Chaque astuce demande un court appel au
-  modèle ; le réglage se décoche dans les Paramètres si tu préfères t'en
-  passer.
+  modèle — parfois deux ou trois, quand le passage tiré ne se prête pas à une
+  astuce et qu'un autre est tenté ; le réglage se décoche dans les Paramètres
+  si tu préfères t'en passer.
 
 ## multitache — travailler en parallèle
 

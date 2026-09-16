@@ -2188,6 +2188,30 @@ describe('pickHelpExcerpt — fenêtre contiguë plafonnée', function() {
   });
 });
 
+describe('pickDidYouKnowSource — tirage d\'une source non déjà essayée', function() {
+  var content = { interface: 'A'.repeat(300) + '\n\n' + 'B'.repeat(300), agents: 'C'.repeat(300) };
+
+  it('rend un couple sujet/extrait et sa clef', function() {
+    var s = pickDidYouKnowSource(content, new Set(), function() { return 0; });
+    expect(s.topic).toBe('interface');   // ordre d'insertion : rnd 0 → premier slug
+    expect(s.key).toBe('interface#0');
+    expect(s.text.length > 0).toBeTruthy();
+  });
+  it('rend null quand le tirage retombe sur une source déjà essayée', function() {
+    var seen = new Set(['interface#0']);
+    expect(pickDidYouKnowSource(content, seen, function() { return 0; })).toBe(null);
+  });
+  it('distingue deux fenêtres d\'un même sujet par leur clef', function() {
+    var a = pickDidYouKnowSource({ interface: content.interface }, new Set(), function() { return 0; });
+    var b = pickDidYouKnowSource({ interface: content.interface }, new Set(), function() { return 0.99; });
+    expect(a.key).toBe('interface#0');
+    expect(b.topic).toBe('interface');
+  });
+  it('rend null sur une aide vide, sans exception', function() {
+    expect(pickDidYouKnowSource({}, new Set(), function() { return 0; })).toBe(null);
+  });
+});
+
 describe('cleanDidYouKnowTip — jette le bavardage du modèle', function() {
   it('laisse une astuce propre intacte', function() {
     var t = 'Tu peux exporter une conversation en HTML autonome.';

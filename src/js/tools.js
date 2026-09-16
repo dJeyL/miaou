@@ -3796,28 +3796,58 @@ function splitTipSentences(tip) {
   return t.split(/(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])/).map(x => x.trim()).filter(x => x.length > 0);
 }
 
+// Tire un couple (sujet, extrait) hors de ceux déjà essayés. `seen` est un Set
+// de clefs `topic#from`, pas de sujets : deux fenêtres distinctes d'une même
+// section sont deux sources différentes, et exclure le sujet entier après un
+// PASS jetterait le reste de la section avec l'extrait fautif. Rend null quand
+// l'aide est vide ou quand le tirage retombe sur du déjà-vu (l'appelant décide
+// alors d'abandonner plutôt que de boucler à la recherche d'un inédit —
+// `DID_YOU_KNOW_MAX_TRIES` borne le nombre d'appels au modèle, pas le nombre de
+// tirages). Pure : `rnd` injecté.
+function pickDidYouKnowSource(content, seen, rnd) {
+  const topic = pickHelpTopic(content, rnd);
+  if (!topic || !content || content[topic] == null) return null;
+  const excerpt = pickHelpExcerpt(content[topic], DID_YOU_KNOW_MAX_CHARS, rnd);
+  if (!excerpt.text) return null;
+  const key = topic + '#' + excerpt.from;
+  if (seen && seen.has(key)) return null;
+  return { topic, key, text: excerpt.text };
+}
+
+// Un PASS ne dit rien de l'aide, seulement de l'extrait tiré : c'est un verdict
+// sur un tirage, pas sur MIAOU. Un autre passage a donc de bonnes chances de
+// porter une capacité annonçable — d'où ces nouvelles tentatives, chacune sur
+// un tirage COMPLET (sujet ET fenêtre re-tirés), jamais un second essai sur le
+// même extrait. Borne basse assumée : trois appels au modèle au maximum, sur un
+// écran que l'utilisateur n'a rien demandé de remplir.
+const DID_YOU_KNOW_MAX_TRIES = 3;
+
 // Génère une astuce, ou rend null (réglage éteint, aide indisponible, PASS du
-// modèle, appel en échec). Ne journalise rien et ne lève jamais : l'encart est
-// une coquetterie, son échec ne doit pas se voir. Volontairement PAS de
-// runBackgroundTask : l'indicateur d'activité annoncerait un travail que
-// l'utilisateur n'a pas demandé, sur un écran vierge.
+// modèle à chaque tentative, appel en échec). Ne journalise rien et ne lève
+// jamais : l'encart est une coquetterie, son échec ne doit pas se voir.
+// Volontairement PAS de runBackgroundTask : l'indicateur d'activité annoncerait
+// un travail que l'utilisateur n'a pas demandé, sur un écran vierge.
+// Un échec RÉSEAU n'est pas rejoué : il ne vient pas de l'extrait, et le
+// prochain appel échouerait pareil — seul le PASS relance.
 async function generateDidYouKnowTip() {
   if (!loadSettings().didYouKnow) return null;
   const content = helpContentResolved();
-  const topic = pickHelpTopic(content);
-  if (!topic || content[topic] == null) return null;
-  const excerpt = pickHelpExcerpt(content[topic]);
-  if (!excerpt.text) return null;
-  let out;
-  try {
-    out = await silentCompletion([
-      { role: 'system', content: DID_YOU_KNOW_PROMPT },
-      { role: 'user', content: formatDidYouKnowInput(topic, excerpt.text) },
-    ], { temperature: 0.8, timeout: 60000, model: activeModel() });
-  } catch (e) {
-    return null;
+  const seen = new Set();
+  for (let i = 0; i < DID_YOU_KNOW_MAX_TRIES; i++) {
+    const src = pickDidYouKnowSource(content, seen);
+    if (!src) return null;
+    seen.add(src.key);
+    let out;
+    try {
+      out = await silentCompletion([
+        { role: 'system', content: DID_YOU_KNOW_PROMPT },
+        { role: 'user', content: formatDidYouKnowInput(src.topic, src.text) },
+      ], { temperature: 0.8, timeout: 60000, model: activeModel() });
+    } catch (e) {
+      return null;
+    }
+    const tip = cleanDidYouKnowTip(out);
+    if (tip && tip !== 'PASS') return { topic: src.topic, tip };
   }
-  const tip = cleanDidYouKnowTip(out);
-  if (!tip || tip === 'PASS') return null;
-  return { topic, tip };
+  return null;
 }
