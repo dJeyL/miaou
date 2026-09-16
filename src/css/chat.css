@@ -429,6 +429,18 @@
      retrancher une seconde fois rétrécissait la planche de 48px et figeait le
      tableau d'autant plus tôt (mesuré : 100cqw = 1708 pour .messages à 1756). */
   container-type: inline-size;
+  /* Gouttière de scrollbar réservée DES DEUX CÔTÉS. .thread se centre dans
+     .messages (qui a la scrollbar) et .composer-inner dans .composer (qui n'en
+     a pas) : sans ça, le fil se décale d'une demi-largeur de scrollbar vers la
+     gauche par rapport au composer, et seulement quand il déborde — donc un
+     désalignement intermittent, doublé d'un reflow à l'apparition de la barre.
+     `both-edges` plutôt que `stable` nu : c'est la symétrie qui réaligne, la
+     seule stabilité rendrait le décalage constant au lieu de le supprimer.
+     Compenser côté composer marcherait aussi, mais recopierait la largeur de
+     barre de base.css, fausse hors Blink (scrollbar-width: thin n'y mesure
+     pas 7px). Le prix est 2 gouttières de largeur utile, que 100cqw ci-dessus
+     retranche déjà tout seul (container-type mesure la content box). */
+  scrollbar-gutter: stable both-edges;
 }
 .thread {
   max-width: var(--col);
