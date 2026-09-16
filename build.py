@@ -615,6 +615,38 @@ def warn_unknown_config_keys(cfg: dict) -> list:
         hint = f' — vouliez-vous « {near[0]} » ?' if near else ''
         print(f'  [warn] config.json : clef inconnue « {k} », ignorée au '
               f'runtime{hint}')
+
+    # Les clefs IMBRIQUÉES de `mcp_server` échappent à la boucle ci-dessus, qui
+    # ne parcourt que le premier niveau. Le cas n'est pas théorique : `timeout`
+    # y a été renommé `timeout_s` (alignement sur la convention d'unité), et une
+    # config restée à l'ancien nom serait silencieusement ignorée — précisément
+    # le silence que cette fonction existe pour supprimer.
+    #
+    # Référence lue dans le sample, comme au premier niveau : la forme y est
+    # l'exemple canonique. Les clefs facultatives absentes du sample sont
+    # ajoutées ici parce que le sample montre le cas courant et n'a pas à
+    # énumérer tout le contrat.
+    sub_known = set()
+    sample_mcp = None
+    try:
+        sample_mcp = json.loads(sample.read_text(encoding='utf-8')).get('mcp_server')
+    except json.JSONDecodeError:
+        sample_mcp = None
+    if isinstance(sample_mcp, dict):
+        sub_known |= set(sample_mcp.keys())
+    sub_known |= {'transport', 'enabled', 'toolAllowlist', 'toolDenylist'}
+    raw = cfg.get('mcp_server')
+    entries = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for k in sorted(k for k in entry if k not in sub_known):
+            near = difflib.get_close_matches(k, sub_known, n=1, cutoff=0.7)
+            hint = f' — vouliez-vous « {near[0]} » ?' if near else ''
+            print(f'  [warn] config.json : clef inconnue « mcp_server.{k} », '
+                  f'ignorée au runtime{hint}')
+            unknown.append('mcp_server.' + k)
+
     return unknown
 
 

@@ -903,6 +903,21 @@
 .mcp-status.pending { color: var(--pending); }
 .mcp-view-row .drawer-btn { margin-left: auto; }
 
+/* Glyphe de reconnexion, insere AVANT « Modifier » dans le DOM. C'est donc LUI
+   qui porte le margin-left:auto quand il est present — sinon il resterait colle
+   a la pill de statut, et « Modifier » continuerait seul a droite en laissant
+   un trou au milieu. Le selecteur de voisinage neutralise alors celui du
+   .drawer-btn qui suit (specificite superieure : deux classes + combinateur). */
+.mcp-view-row .mcp-refresh {
+  margin-left: auto;
+  width: 28px; height: 28px;
+  color: var(--text-3);
+}
+.mcp-view-row .mcp-refresh + .drawer-btn { margin-left: 0; }
+.mcp-view-row .mcp-refresh:hover:not(:disabled) { color: var(--text-1); }
+.mcp-view-row .mcp-refresh:disabled { opacity: .45; cursor: default; }
+.mcp-view-row .mcp-refresh svg { width: 15px; height: 15px; }
+
 /* Upstreams en attente d'autorisation (lot AB-5) — une ligne par upstream,
    sous la pill dont elles détaillent le compte. */
 .mcp-upstream-row {

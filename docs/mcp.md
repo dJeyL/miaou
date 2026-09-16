@@ -52,8 +52,15 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
    Côté UI, le choix passe par le dropdown pilule custom `cfgPillSelect`
    (ui.js — valeur dans l'input hidden `.mcp-transport`), pas un select natif.
 5. **Timeout via `AbortController`.** Chaque appel `mcpRpc` arme un
-   `setTimeout(timeout)` → `abort()` ; sur abort, résultat `{ isError: true }` au
-   message clair. Sans ça le champ `timeout` serait décoratif. `Mcp-Session-Id`
+   `setTimeout` → `abort()` ; sur abort, résultat `{ isError: true }` au
+   message clair. Sans ça le champ `timeout_s` serait décoratif. **Tout le
+   domaine MCP compte en SECONDES** (clef de config, champ de carte, défaut) ;
+   `mcpRpcAttempt` est le SEUL point de conversion vers les millisecondes, au
+   contact de `setTimeout`. Les cartes d'avant ce changement portent un
+   `timeout` en ms, migré à la lecture par `mcpTimeoutSeconds` (utils, pur) —
+   sur le NOM du champ, jamais sur un seuil de valeur, et dans
+   `normalizeMcpServer` plutôt qu'en passe de démarrage pour couvrir aussi
+   l'import d'un `.zip` exporté avant. `Mcp-Session-Id`
    capturé sur l'`initialize` et renvoyé sur les appels suivants.
 6. **Dégradation gracieuse.** `connectMcpServer` (initialize → notification
    initialized → tools/list → préfixe + filtre + cache) **ne lève jamais** vers
@@ -150,6 +157,44 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
     éditables construites en `createElement`/`textContent`), pas une ligne de plus
     dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
     espace, `__`, `miaou`, et les doublons.
+
+11b. **Serveur pré-configuré au build (`mcp_server` de `config.json`).** Un
+    déploiement d'équipe veut livrer un bundle déjà branché sur son proxy MCP
+    sans faire saisir la carte à chacun. La clef accepte un objet **ou** un
+    tableau (`BUILD_MCP_SERVERS`, storage.js) ; son `timeout` est en
+    **secondes** et converti en ms au seed — le champ homonyme de la carte
+    persistée est en ms, c'est le seul endroit où les deux unités se croisent.
+    Aucun `authorization_token` n'est lu depuis la config : elle est sérialisée
+    dans `dist/miaou.html`, donc lisible par qui reçoit le fichier.
+
+    Le seed est **one-shot**, gardé par sa propre clef `miaou-mcp-seeded` :
+    `miaou-mcp-servers` existe déjà chez tout utilisateur ayant ouvert le
+    drawer, elle ne peut donc pas servir de marqueur comme
+    `miaou-api-servers` le fait pour les serveurs API. Elle signifie « une
+    config **non vide** a été traitée une fois » — elle ne mémorise aucune
+    identité de build, donc elle ne peut pas signifier « ce build s'est
+    présenté ». D'où l'ordre des gardes : **config vide → on ne pose rien**, pas
+    même la sentinelle, sinon tout build antérieur à cette feature (ils le sont
+    tous) brûlerait au premier démarrage le seed du build suivant qui, lui,
+    porterait une config. En revanche elle EST posée quand la config est non
+    vide mais qu'aucun candidat n'est retenu (tous ont déjà un équivalent) :
+    sans ça, supprimer la carte la ferait revenir au démarrage suivant.
+    Conséquences assumées : une
+    carte seedée puis supprimée ne revient pas, et changer l'URL du proxy dans
+    un build ultérieur ne la propage PAS aux installations existantes (ce serait
+    un re-seed récurrent, qui annulerait les suppressions).
+
+    La décision d'insérer est pure et testée : `mcpSeedCandidates(configured,
+    existing)` (utils) écarte tout candidat ayant un équivalent **par nom** (le
+    nom est le préfixe d'outil, donc l'identité) ou **par URL** au sens de
+    `mcpUrlIdentity` — trim, casse, slash final, et rien de plus : l'équivalence
+    d'hôtes (`localhost` vs `127.0.0.1`) serait une devinette sur un
+    déploiement qu'on ne connaît pas. Les candidats sont aussi dédupliqués entre
+    eux, et un nom invalide est écarté plutôt que de créer une carte au préfixe
+    cassé. `miaou-mcp-seeded` n'est **pas** dans `EXPORT_KEYS` : c'est un
+    marqueur d'installation, pas une donnée utilisateur — l'exporter
+    empêcherait un import sur machine neuve de recevoir le seed de son propre
+    build.
 
 12. **Hook d'inflation dispatcher pour les pièces jointes (brief A — moitié
     client du lot D `mcp_docs`).** `callTool` route désormais les appels
@@ -549,12 +594,13 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       attendre qu'on ouvre un drawer pour signaler.
     - **Retour d'autorisation** : rien ne prévient MIAOU qu'un parcours a
       abouti — il se déroule dans un autre onglet, entièrement côté proxy, qui
-      n'a aucun canal retour. `recheckPendingAuthorizations` (main.js) réagit au
-      **retour de focus** (`visibilitychange`), seul signal disponible et
-      exact : c'est le moment où l'utilisateur revient. **Pas de polling.** Elle
-      ne reconnecte que les serveurs qui **attendaient** — reconnecter tout à
-      chaque retour d'onglet serait un effet de bord non demandé sur le chemin
-      le plus fréquent de l'application.
+      n'a aucun canal retour. `recheckMcpServers` (main.js) réagit au **retour
+      de focus**, seul signal disponible et exact : c'est le moment où
+      l'utilisateur revient. **Pas de polling.** Elle ne reconnecte que les
+      serveurs **en défaut** — reconnecter tout à chaque retour d'onglet serait
+      un effet de bord non demandé sur le chemin le plus fréquent de
+      l'application (cf. point 18 pour l'élargissement aux serveurs en erreur et
+      le second signal).
 
 17. **Consignes de portée serveur (`instructions` de l'InitializeResult).** Les
     seuls champs qu'un client relaie au modèle par outil sont `name`,
@@ -646,6 +692,69 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       être produite par hasard : sa présence après un appel `bench` prouve
       **lecture ET rattachement** ; son apparition après un appel à un autre
       serveur prouverait le rattachement défaillant.
+
+18. **Reprise d'un serveur tombé : trois surfaces, un seul prédicat de défaut.**
+    Le point 16 traitait l'autorisation manquante ; un serveur simplement
+    **injoignable** (proxy pas encore démarré, machine réveillée, VPN coupé)
+    n'avait lui aucune reprise : la seule issue était d'ouvrir le drawer et de
+    sauvegarder la carte pour forcer un handshake. Trois affordances, de la plus
+    explicite à la plus passive :
+    - **Glyphe de reconnexion par carte** (`onRefreshMcpCard`, main.js). Présent
+      sur toute carte **enregistrée et activée**, pas seulement en erreur : le
+      geste sert autant à réparer qu'à **relire la liste d'outils** d'un serveur
+      sain dont le proxy vient de gagner un upstream — sans lui, rafraîchir
+      exigeait de sauvegarder la carte, donc de simuler une modification. Le
+      bouton se désarme pendant le handshake (deux clics lanceraient deux
+      `connectMcpServer` concurrents, le second écrasant le statut du premier) et
+      n'est jamais réarmé à la main : le `renderMcpServers()` final reconstruit
+      la carte. Le serveur est relu par `getMcpServer(name)` et non capturé à la
+      construction de la carte — un autre onglet a pu changer l'URL entre-temps.
+    - **Reprise au retour de l'utilisateur**, sur **DEUX** signaux et non un :
+      `visibilitychange` ne couvre que le changement d'onglet, or un serveur MCP
+      se démarre **en console** — le navigateur reste visible tout du long,
+      l'onglet ne se cache jamais. Sans `window` `focus`, le cas d'usage
+      principal (« je lance le proxy, je reviens ») ne déclencherait rien. Le
+      recouvrement des deux est sans conséquence : `recheckMcpServers` ne fait
+      rien quand aucun serveur n'est éligible. Le choix de qui l'est vit dans un
+      pur, `shouldRecheckMcpServer(status, lastAttempt, now, minIntervalMs)` :
+      un serveur **en défaut** (erreur ou upstream à autoriser) est retenté
+      **sans délai** — c'est le cas d'usage, on lance le proxy et on revient, et
+      un throttle le rendrait muet juste après l'échec qu'on veut réparer ; un
+      serveur **sain** l'est au plus une fois par `MCP_RECHECK_MIN_INTERVAL_MS`
+      (2 min), ce qui permet de relire sa liste d'outils — un proxy peut gagner
+      un upstream sans rien dire — sans transformer chaque retour de fenêtre en
+      handshake, qui était la réserve du point 16. Un serveur `connecting` n'est
+      jamais relancé (une tentative est en vol).
+
+      Le throttle est **par serveur**, porté par `_mcpLastAttempt` (mcp.js) —
+      registre **séparé** de `_remoteStatus` et non un champ de plus : la branche
+      d'erreur de `connectMcpServer` réécrit ce dernier EN ENTIER, donc un
+      horodatage posé dessus serait perdu à chaque échec, c'est-à-dire
+      exactement là où il faut savoir quand on a essayé. Il est écrit à
+      l'**entrée** de `connectMcpServer` (deux retours rapprochés pendant un
+      handshake lent doivent voir la tentative en cours) et effacé par
+      `disconnectMcpServer` (un serveur recréé sous le même nom hériterait sinon
+      du throttle de son prédécesseur). Un horodatage global, lui, ferait qu'un
+      serveur ajouté à l'instant bloquerait la vérification de tous les autres.
+
+      Elle n'utilise **pas** `pending.servers` pour
+      choisir quoi reconnecter : ce champ ne porte que le niveau de sévérité
+      affiché, alors qu'il faut ici retenter les deux. La pastille répond à
+      « qu'affiche-t-on ? », pas à « que retente-t-on ? ».
+    - **Pastille de topbar, une seule pour deux sévérités.**
+      `resolveAuthorizationPending` rend désormais une `severity` (`error` >
+      `pending`) et n'affiche que le niveau le plus haut, `servers` ne listant
+      que celui-ci. Décision explicite : l'attente d'autorisation est **masquée**
+      tant qu'un serveur est KO. Elle redevient visible dès la réparation, sans
+      rien à réconcilier — la pastille est **recalculée** à chaque rendu depuis
+      `mcpStatusSnapshot()` et ne mémorise aucun état (un test épingle la
+      transition). Le motif : l'utilisateur mené au drawer par la rouge y voit de
+      toute façon la cause de la jaune sur la carte voisine. Côté DOM,
+      `syncAuthorizationPending` **retire** les deux classes avant de poser celle
+      qui vaut : sans le retrait, une pastille passée d'erreur à attente
+      resterait rouge — précisément la transition qu'on veut voir se produire.
+      Le `title` a quitté le markup pour la même raison : deux écrivains pour un
+      attribut, dont l'un ne s'exprime qu'au boot.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 

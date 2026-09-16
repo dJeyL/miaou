@@ -585,7 +585,18 @@ exemple :
 
 Si aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; le
 reste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans
-bloquer les autres.
+bloquer les autres : ses outils disparaissent, les autres serveurs continuent.
+
+**Quand un serveur ne répond pas.** Une pastille rouge apparaît en haut à droite
+(« 1 serveur injoignable ») et t'emmène sur la liste des serveurs compagnons.
+C'est le cas courant quand un serveur tourne sur ta machine et n'est pas encore
+démarré. Tu n'as rien à faire de particulier : MIAOU retente tout seul quand tu
+reviens sur la fenêtre, donc lancer le serveur puis revenir suffit. Le glyphe de
+rafraîchissement de la carte permet aussi de retenter à la demande.
+
+Ce même retour dans MIAOU rafraîchit au passage les serveurs qui vont bien, de
+temps en temps — de quoi voir apparaître un outil ajouté de leur côté sans rien
+faire. Là encore, le glyphe de la carte donne le même résultat immédiatement.
 
 **Quand un serveur demande une autorisation.** Certains serveurs compagnons
 donnent accès à des services qui exigent que tu t'identifies — un espace de
@@ -946,11 +957,14 @@ sans perdre ta place.
   quand plus rien ne travaille. Les sous-conversations terminées n'y restent
   pas : leur résultat revient à la conversation qui les a lancées, c'est là
   qu'il se lit.
-- **Serveurs à autoriser** : en haut à droite également, une pastille « 1
-  serveur à autoriser » apparaît quand un serveur compagnon donne accès à un
-  service qui attend que tu t'identifies. Elle ouvre la liste des serveurs, où
-  chaque accès en attente porte son bouton. Elle n'existe que dans ce cas :
-  quand tout est autorisé, rien ne s'affiche. Voir le sujet `mcp`.
+- **Serveurs compagnons** : en haut à droite également, une pastille signale ce
+  qui demande ton attention côté serveurs. Rouge (« 1 serveur injoignable »)
+  quand un serveur ne répond pas ; jaune (« 1 serveur à autoriser ») quand un
+  serveur donne accès à un service qui attend que tu t'identifies. Un clic ouvre
+  la liste des serveurs, où chaque carte porte son état et ses actions. Quand un
+  serveur est tombé, c'est ce qu'elle affiche en priorité ; les autorisations en
+  attente réapparaissent une fois le problème réglé. Quand tout va bien, elle ne
+  s'affiche pas. Voir le sujet `mcp`.
 - **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
   navigateur ; ils restent synchronisés. Une modification faite dans un onglet
   (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en

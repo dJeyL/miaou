@@ -190,8 +190,11 @@ Détail : [docs/skills.md](docs/skills.md).
   délègue les appels qu'il ne sait pas servir à un ou plusieurs serveurs MCP
   distants. Pour le modèle il n'y a qu'un seul registre.
 - Configuration dans un sous-écran dédié : nom (= préfixe), URL, transport, jeton
-  bearer optionnel, timeout, listes blanche/noire d'outils. Un serveur
-  injoignable est simplement ignoré, le reste continue de fonctionner.
+  bearer optionnel, timeout (en secondes), listes blanche/noire d'outils. Un serveur
+  injoignable n'expose aucun outil, le reste continue de fonctionner.
+- Un serveur tombé ou en attente d'autorisation est signalé en topbar et retenté
+  au retour dans MIAOU ; chaque carte porte un bouton de reconnexion, qui sert
+  aussi à relire la liste d'outils d'un serveur sain (cf. `docs/mcp.md`).
 - Les résultats non-textuels (image, ressource, binaire) sont stockés localement
   et rendus dans la réponse ; les octets récupérés du web ou extraits d'une
   archive deviennent des ressources de première classe, analysables par le calcul
@@ -328,6 +331,14 @@ est faite au seul point de lecture.
   backend lent à produire son premier token.
 - `mcp_default_timeout_s` : délai d'attente **par défaut** d'un appel à un
   serveur MCP (défaut 30 s). Reste modifiable serveur par serveur dans l'UI.
+- `mcp_server` : serveur MCP pré-configuré, ajouté automatiquement au premier
+  démarrage — de quoi livrer un build déjà branché sur un proxy MCP d'équipe.
+  Un objet `{ name, url }` (`transport`, `timeout_s`, `enabled`,
+  `toolAllowlist`, `toolDenylist` optionnels), ou un tableau d'objets. L'ajout
+  est **unique et non répété** : il n'a lieu que si aucun serveur existant ne
+  porte déjà ce nom ou cette URL, et une carte supprimée ensuite ne revient pas.
+  Pas de jeton ici — la config part dans le bundle distribué (cf.
+  `docs/mcp.md`).
 - `attachment_image_max_bytes` / `attachment_max_images` : plafond de taille
   d'une image jointe, appliqué avant redimensionnement (défaut 10 Mo), et
   nombre d'images par message (défaut 4). Les fichiers non-image relèvent d'un

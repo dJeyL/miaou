@@ -8987,6 +8987,17 @@ function syncAuthorizationPending() {
   if (!el) return;
   const pending = resolveAuthorizationPending(mcpStatusSnapshot());
   el.hidden = !pending.visible;
+  // Sévérité posée en classe, jamais en style inline : c'est le CSS qui décide
+  // de quelle couleur est « injoignable ». Les deux classes sont retirées puis
+  // celle qui vaut est remise — sans le retrait, une pastille passée d'erreur à
+  // attente resterait rouge (le cas exact qu'on veut voir se produire quand
+  // l'erreur est réparée et que l'attente d'autorisation réapparaît).
+  el.classList.remove('is-error', 'is-pending');
+  if (pending.severity === 'error') el.classList.add('is-error');
+  else if (pending.severity === 'pending') el.classList.add('is-pending');
+  el.title = pending.severity === 'error'
+    ? 'Ouvrir les serveurs MCP — vérifier les serveurs injoignables'
+    : 'Ouvrir les serveurs MCP';
   const label = $('auth-pending-label');
   if (label) label.textContent = pending.label;
 }
@@ -9037,7 +9048,7 @@ function addMcpServerCard() {
   if (empty) empty.remove();
   wrap.insertBefore(buildMcpCard({
     name: '', url: '', transport: '', enabled: true,
-    authorization_token: '', timeout: 30000, toolAllowlist: [], toolDenylist: [],
+    authorization_token: '', timeout_s: MCP_DEFAULT_TIMEOUT_S, toolAllowlist: [], toolDenylist: [],
   }, true), wrap.firstChild);
 }
 
@@ -9197,6 +9208,22 @@ function buildMcpCard(server, isNew) {
   }
   viewRow.appendChild(viewStatus);
 
+  // Reconnexion à la demande. Présent sur TOUTE carte enregistrée et activée,
+  // pas seulement en erreur : le geste sert autant à réparer qu'à relire la
+  // liste d'outils d'un serveur sain dont le proxy vient de gagner un upstream
+  // — c'est le seul moyen de la rafraîchir sans sauvegarder la carte.
+  // Absent d'une carte neuve (rien à reconnecter) et d'un serveur désactivé
+  // (aucun handshake n'est dû, la pill est masquée pour la même raison).
+  if (!isNew && server.enabled !== false) {
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'icon-btn mcp-refresh';
+    refreshBtn.title = 'Reconnecter et relire les outils';
+    refreshBtn.setAttribute('aria-label', 'Reconnecter ce serveur');
+    refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+    refreshBtn.addEventListener('click', () => onRefreshMcpCard(originalName, refreshBtn));
+    viewRow.appendChild(refreshBtn);
+  }
+
   // Bouton Modifier — pattern .drawer-btn de la gestion des souvenirs
   const modBtn = document.createElement('button');
   modBtn.className = 'drawer-btn';
@@ -9290,7 +9317,7 @@ function buildMcpCard(server, isNew) {
   });
 
   const tokenI = mkInput('mcp-token', 'password', server.authorization_token, 'Bearer (optionnel)');
-  const tmoI = mkInput('mcp-timeout', 'number', server.timeout || 30000, '30000');
+  const tmoI = mkInput('mcp-timeout', 'number', mcpTimeoutSeconds(server) || MCP_DEFAULT_TIMEOUT_S, String(MCP_DEFAULT_TIMEOUT_S));
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
@@ -9302,7 +9329,7 @@ function buildMcpCard(server, isNew) {
   editSection.appendChild(cfgField('Transport', transport.root,
     'streamable-http seul est implémenté ; sse est différé.'));
   editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
-  editSection.appendChild(cfgField('Timeout (ms)', tmoI));
+  editSection.appendChild(cfgField('Timeout (s)', tmoI));
   editSection.appendChild(cfgField('Outils autorisés', allowI));
   editSection.appendChild(cfgField('Outils masqués', denyI));
 

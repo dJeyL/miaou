@@ -39,6 +39,17 @@ const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
 let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, unauthorizedUpstreams?, instructions? } }
 
+// Dernière tentative de handshake, par serveur : { servername: timestamp }.
+// Registre SÉPARÉ de `_remoteStatus` et non un champ de plus, parce que la
+// branche d'erreur de `connectMcpServer` réécrit cet objet EN ENTIER — un
+// horodatage posé dessus survivrait au succès (Object.assign) mais serait perdu
+// à chaque échec, c'est-à-dire exactement dans le cas où l'on veut savoir quand
+// on a essayé pour la dernière fois. Alimenté par `connectMcpServer` seule, donc
+// par tous les chemins qui connectent (boot, save de carte, glyphe, retour de
+// focus), sans avoir à les câbler un par un.
+let _mcpLastAttempt = {};
+function mcpLastAttempt(name) { return _mcpLastAttempt[name] || 0; }
+
 function getMcpStatus(name) { return _remoteStatus[name] || null; }
 
 // La table entière, pour les consommateurs qui raisonnent sur TOUS les serveurs
@@ -91,7 +102,12 @@ let _mcpRpcId = 0;
 async function mcpRpcAttempt(server, method, params, opts) {
   const o = opts || {};
   const ctrl = new AbortController();
-  const tmo = server.timeout || 30000;
+  // SEUL point de conversion secondes → millisecondes du domaine MCP : la carte,
+  // la config et le défaut sont tous en secondes, `setTimeout` est la seule
+  // frontière qui exige des ms. Passe par `mcpTimeoutSeconds` plutôt que de lire
+  // `server.timeout_s` nu, pour qu'une carte non normalisée (objet forgé par un
+  // test, carte d'avant la migration lue directement) reste correctement bornée.
+  const tmo = (mcpTimeoutSeconds(server) || MCP_DEFAULT_TIMEOUT_S) * 1000;
   const timer = setTimeout(() => ctrl.abort(), tmo);
   const id = o.notify ? undefined : (++_mcpRpcId);
   const body = { jsonrpc: '2.0', method };
@@ -200,6 +216,10 @@ async function readSseJsonRpc(res, wantId) {
 // lever vers l'appelant — un mauvais backend ne gèle jamais MIAOU.
 async function connectMcpServer(server) {
   const s = server;
+  // Horodaté à l'ENTRÉE, pas à la sortie : deux retours de focus rapprochés
+  // pendant un handshake lent doivent voir la tentative en cours, sinon le
+  // throttle ne protège de rien précisément quand le serveur est lent.
+  _mcpLastAttempt[s.name] = Date.now();
   _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null };
   delete _remoteTools[s.name];
   try {
@@ -257,6 +277,10 @@ async function connectMcpServer(server) {
 function disconnectMcpServer(name) {
   delete _remoteTools[name];
   delete _remoteStatus[name];
+  // L'horodatage part avec le reste : un serveur supprimé puis recréé sous le
+  // même nom hériterait sinon du throttle de son prédécesseur, et sa première
+  // vérification serait muette sans raison lisible.
+  delete _mcpLastAttempt[name];
 }
 
 // Pose / retire les marqueurs de refus d'autorisation sur un ack (campagne AB).

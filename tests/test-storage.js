@@ -414,28 +414,28 @@ describe('normalizeMcpServer (defaults et coercition)', function() {
     expect(s.transport).toBe('streamable-http');
     expect(s.enabled).toBe(true);
     expect(s.authorization_token).toBe('');
-    expect(s.timeout).toBe(30000);
+    expect(s.timeout_s).toBe(30);
     expect(s.toolAllowlist).toEqual([]);
     expect(s.toolDenylist).toEqual([]);
   });
   it('objet complet → valeurs conservées', function() {
     var s = normalizeMcpServer({
       name: 'jira', url: 'https://h/mcp', transport: 'sse', enabled: false,
-      authorization_token: 'tok', timeout: 5000,
+      authorization_token: 'tok', timeout_s: 5,
       toolAllowlist: ['a'], toolDenylist: ['b'],
     });
     expect(s.name).toBe('jira');
     expect(s.transport).toBe('sse');
     expect(s.enabled).toBe(false);
     expect(s.authorization_token).toBe('tok');
-    expect(s.timeout).toBe(5000);
+    expect(s.timeout_s).toBe(5);
     expect(s.toolAllowlist).toEqual(['a']);
     expect(s.toolDenylist).toEqual(['b']);
   });
   it('champs de type inattendu → coercition (transport inconnu, timeout non-positif, listes non-array)', function() {
-    var s = normalizeMcpServer({ transport: 'websocket', timeout: -5, toolAllowlist: 'x', toolDenylist: null });
+    var s = normalizeMcpServer({ transport: 'websocket', timeout_s: -5, toolAllowlist: 'x', toolDenylist: null });
     expect(s.transport).toBe('streamable-http');
-    expect(s.timeout).toBe(30000);
+    expect(s.timeout_s).toBe(30);
     expect(s.toolAllowlist).toEqual([]);
     expect(s.toolDenylist).toEqual([]);
   });
@@ -592,7 +592,7 @@ describe('Serveurs MCP : CRUD (miaou-mcp-servers)', function() {
     upsertMcpServer({ name: 'x', url: 'https://h/mcp' });
     var s = getMcpServer('x');
     expect(s.transport).toBe('streamable-http');
-    expect(s.timeout).toBe(30000);
+    expect(s.timeout_s).toBe(30);
     expect(s.enabled).toBe(true);
   });
   it('delete retire par name', function() {

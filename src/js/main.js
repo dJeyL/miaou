@@ -836,8 +836,21 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
-    else recheckPendingAuthorizations();
+    else recheckMcpServers();
   });
+
+  // DEUXIÈME signal de retour, et non un doublon du précédent : `visibilitychange`
+  // ne couvre QUE le changement d'onglet. Un serveur MCP se démarre en console —
+  // le navigateur reste visible pendant toute l'opération, l'onglet ne se cache
+  // jamais, et seul le passage du focus de fenêtre au terminal puis retour est
+  // observable. Sans celui-ci, le cas d'usage principal (« je lance le proxy,
+  // je reviens ») ne déclencherait aucune revérification.
+  //
+  // Le recouvrement des deux signaux est sans conséquence : `recheckMcpServers`
+  // ne fait rien quand aucun serveur n'est en défaut, et un double appel
+  // rapproché relance au pire un handshake déjà en cours, que `connectMcpServer`
+  // absorbe (il réécrit le statut, il n'accumule pas).
+  window.addEventListener('focus', () => { recheckMcpServers(); });
 }
 
 // Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE
@@ -854,10 +867,31 @@ function wireIdleSummaryActivity() {
 // Un serveur qui attend toujours après reconnexion reste simplement en attente :
 // la pastille et la carte se recalculent depuis le `_meta` fraîchement relu, donc
 // un parcours abandonné ou échoué se lit correctement, sans état à réconcilier.
-async function recheckPendingAuthorizations() {
-  const pending = resolveAuthorizationPending(mcpStatusSnapshot());
-  if (!pending.visible) return;
-  const servers = listEnabledMcpServers().filter(s => pending.servers.indexOf(s.name) >= 0);
+//
+// Élargie aux serveurs en ERREUR (au-delà des seuls en attente d'autorisation
+// dont elle tient son origine) : un proxy redémarré, une machine réveillée, un
+// VPN reconnecté sont exactement ce qu'on découvre en revenant sur l'onglet, et
+// le seul recours était jusqu'ici d'ouvrir le drawer pour sauvegarder la carte.
+// La décision d'origine — ne pas reconnecter à chaque retour d'onglet — reste
+// respectée : un serveur SAIN n'est jamais retouché, donc le chemin fréquent de
+// l'application ne porte aucun handshake nouveau.
+//
+// Ne lit PAS `pending.servers` pour décider quoi reconnecter : ce champ ne porte
+// que les serveurs du niveau de sévérité affiché (l'erreur masque l'attente,
+// cf. `resolveAuthorizationPending`), alors qu'ici on veut retenter les DEUX.
+// La pastille répond à « qu'affiche-t-on ? », pas à « que retente-t-on ? », et
+// c'est `shouldRecheckMcpServer` (pur) qui répond à la seconde question.
+//
+// Les serveurs SAINS y sont inclus, mais throttlés par serveur
+// (`MCP_RECHECK_MIN_INTERVAL_MS`) : relire leur liste d'outils est utile — un
+// proxy peut gagner un upstream sans rien dire — sans pour autant transformer
+// chaque retour de fenêtre en handshake, ce qui était la réserve d'origine.
+async function recheckMcpServers() {
+  const statuses = mcpStatusSnapshot();
+  const now = Date.now();
+  const servers = listEnabledMcpServers().filter(s => shouldRecheckMcpServer(
+    statuses && statuses[s.name], mcpLastAttempt(s.name), now, MCP_RECHECK_MIN_INTERVAL_MS,
+  ));
   if (!servers.length) return;
   await runBackgroundTask('vérification MCP…', () => Promise.all(servers.map(s => connectMcpServer(s))));
   renderMcpServersIfOpen();
@@ -2315,6 +2349,30 @@ async function reconnectMcpServers() {
   renderMcpServersIfOpen();
 }
 
+// Reconnecte UN serveur à la demande (glyphe de sa carte). Lié par
+// addEventListener dans buildMcpCard (closure : nom d'origine + le bouton).
+//
+// Désarme son propre bouton pendant le handshake : deux clics rapprochés
+// lanceraient deux `connectMcpServer` concurrents sur le même serveur, dont le
+// second écraserait le statut du premier — le résultat serait juste par
+// accident, pas par construction. Le bouton n'est PAS réarmé à la main : le
+// `renderMcpServers()` final reconstruit la carte, donc un bouton neuf.
+//
+// `getMcpServer(name)` et non l'objet capturé à la construction de la carte :
+// entre-temps un autre onglet a pu changer l'URL ou le jeton (synchro lot J).
+// Un serveur supprimé ou désactivé depuis ne se reconnecte pas.
+async function onRefreshMcpCard(name, btnEl) {
+  const server = getMcpServer(name);
+  if (!server || server.enabled === false) { renderMcpServers(); return; }
+  if (btnEl) btnEl.disabled = true;
+  try {
+    disconnectMcpServer(name);            // session morte : ne pas renvoyer l'id
+    await runBackgroundTask('connexion MCP…', () => connectMcpServer(server));
+  } finally {
+    renderMcpServers();
+  }
+}
+
 // Persiste une carte serveur (valide → upsert → (re)connecte → re-rend). Lié par
 // addEventListener dans buildMcpCard (closure : carte + nom d'origine).
 async function onSaveMcpCard(cardEl, originalName) {
@@ -2332,7 +2390,7 @@ async function onSaveMcpCard(cardEl, originalName) {
     transport: get('.mcp-transport') || 'streamable-http',
     enabled: enabledEl ? enabledEl.checked : true,
     authorization_token: get('.mcp-token'),
-    timeout: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : 30000,
+    timeout_s: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : MCP_DEFAULT_TIMEOUT_S,
     toolAllowlist: parseToolFilterList(get('.mcp-allow')),
     toolDenylist: parseToolFilterList(get('.mcp-deny')),
   };

@@ -440,14 +440,20 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   avec un tableau de scopes (ex. `['profile', activeSpaceId]`), filtre en plus
   sur `scope` (cf. Spaces ci-dessous). `forgetMemory(id)` supprime définitivement l'entrée du tableau.
 - `miaou-mcp-servers` : tableau de backends MCP distants `[{ name, url, transport,
-  enabled, authorization_token, timeout, toolAllowlist, toolDenylist }]`
+  enabled, authorization_token, timeout_s, toolAllowlist, toolDenylist }]`
   (cf. `docs/mcp.md`). `name` est l'identité **et** le
   préfixe d'outil (unique, charset `[A-Za-z0-9_-]`, pas de `__`, `miaou` interdit).
   `authorization_token` est stocké **en clair** (posture assumée non-prod).
   Les lignes d'appel `mcp_call` sont **toujours affichées** dans le thread —
   posture de transparence, aucun toggle de masquage. CRUD
   dans `storage.js` (`loadMcpServers`/`upsertMcpServer`/`deleteMcpServer`/
-  `getMcpServer`/`listEnabledMcpServers`). **Aucun état de session/outils distants
+  `getMcpServer`/`listEnabledMcpServers`). `loadMcpServers` déclenche au passage
+  le seed **one-shot** du serveur pré-configuré au build (`mcp_server` de
+  `config.json`, cf. `docs/mcp.md` point 11b), gardé par la clef sentinelle
+  `miaou-mcp-seeded` — une string `'1'`, posée seulement si le build porte une
+  config non vide (sinon elle brûlerait le seed d'un build ultérieur), et
+  **hors `EXPORT_KEYS`** : c'est un marqueur d'installation, pas une donnée
+  utilisateur. **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
   mémoire seule, reconstruit au démarrage.
 - `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,

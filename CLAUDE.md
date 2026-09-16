@@ -498,7 +498,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `docs/interjections.md` pour 27, `docs/generations.md` pour 28,
   `docs/agents.md` et `docs/storage.md` pour 29).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
-  `miaou-memories`, `miaou-mcp-servers`, `miaou-api-servers`,
+  `miaou-memories`, `miaou-mcp-servers` (+ sa sentinelle de seed de build
+  `miaou-mcp-seeded`), `miaou-api-servers`,
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
   derniers migrés depuis localStorage au lot U), champs de méta `snippet`
@@ -567,7 +568,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   l'ack, garde d'URL `authorizationUrlOrigin` appliquée à l'affichage) — et la
   surface `_meta` de `tools/list` qui signale les upstreams à autoriser AVANT
   tout échec (AB-5 : garde de composition distincte, pill dégradée, pastille
-  de topbar, revérification au retour de focus) ; porte aussi les consignes de
+  de topbar, revérification au retour de focus) — pastille devenue **unique pour
+  deux sévérités** (`severity`, l'erreur masquant l'attente) et reprise élargie
+  aux serveurs injoignables sur DEUX signaux (`visibilitychange` ET `focus` de
+  fenêtre, un serveur se démarrant en console), éligibilité tranchée par le pur
+  `shouldRecheckMcpServer` (défaut sans délai, sain throttlé par serveur via
+  `_mcpLastAttempt` et `MCP_RECHECK_MIN_INTERVAL_MS`), plus un glyphe de
+  reconnexion par carte qui sert aussi à relire la liste d'outils ; porte aussi les consignes de
   portée serveur du champ standard `instructions` de l'InitializeResult
   (`buildMcpInstructionsBlock`, injectées dans le message SYSTÈME depuis la
   campagne cache — décision inversée, le motif d'origine confondait « varier »

@@ -296,7 +296,7 @@ await page.evaluate(() => {
   // exactement ce que le listener de main.js appelle, pour vérifier la CHAÎNE
   // (revérification → reconnexion → rendu → pastille), pas l'événement du
   // navigateur, qui n'est pas de notre ressort.
-  return recheckPendingAuthorizations();
+  return recheckMcpServers();
 });
 await page.waitForTimeout(600);
 
@@ -326,13 +326,36 @@ await shot(page, 'ab5-4-apres-autorisation', { fullPage: false });
 // Prémisse inverse de tout ce qui précède : sans _meta, RIEN ne doit apparaître.
 // Sans ce cas, les assertions ci-dessus passeraient aussi si la pastille était
 // simplement toujours masquée.
+//
+// L'assertion porte sur le THROTTLE, pas sur « un serveur sain n'est jamais
+// reconnecté » : depuis l'ajout de `MCP_RECHECK_MIN_INTERVAL_MS`, un serveur
+// sain EST revérifié au retour, au plus une fois par intervalle. Le libellé
+// d'avant restait vert ici par accident de timing (le serveur venait d'être
+// reconnecté à l'étape 7, donc throttlé) tout en affirmant quelque chose de
+// devenu faux — un vert qui ne prouve plus ce qu'il énonce.
+//
+// Les deux moitiés sont vérifiées : throttle actif juste après une tentative,
+// puis passage effectif une fois l'horodatage vieilli. Vieillir l'horodatage
+// plutôt que d'attendre deux minutes — on teste la décision, pas l'horloge.
 const noPendingCalls = await page.evaluate(async () => {
   const before = window.__listCalls;
-  await recheckPendingAuthorizations();
+  await recheckMcpServers();
   return window.__listCalls - before;
 });
-check('sans serveur en attente, la revérification ne reconnecte RIEN',
+check('un serveur sain tout juste reconnecté est THROTTLÉ, pas resollicité',
   noPendingCalls === 0);
+
+const afterThrottleWindow = await page.evaluate(async () => {
+  // Recule la dernière tentative au-delà de l'intervalle, pour tous les serveurs.
+  Object.keys(mcpStatusSnapshot()).forEach((n) => {
+    _mcpLastAttempt[n] = Date.now() - (MCP_RECHECK_MIN_INTERVAL_MS + 1000);
+  });
+  const before = window.__listCalls;
+  await recheckMcpServers();
+  return window.__listCalls - before;
+});
+check('...et il EST revérifié une fois l\'intervalle écoulé (liste d\'outils relue)',
+  afterThrottleWindow > 0);
 
 // ── 9. Robustesse : un _meta hostile ne casse pas la connexion ──────────────
 const hostile = await page.evaluate(async () => {

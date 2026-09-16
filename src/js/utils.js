@@ -396,34 +396,115 @@ function composeAuthorizationUrl(serverUrl, authorizePath) {
   return scheme + '://' + origin + path;
 }
 
-// Serveurs MCP ayant au moins un upstream à autoriser, et le libellé de la
-// pastille de topbar. Prédicat d'APPARITION et libellé au même endroit, purs et
-// testés — même séparation que `resolveAgentCount` : la synchro DOM ne fait
-// qu'appliquer, elle ne décide de rien.
+// Délai d'attente d'une carte MCP, en SECONDES, depuis un objet de carte brut.
+// Rend 0 quand rien d'exploitable n'est présent — l'appelant substitue alors son
+// défaut, qu'il est seul à connaître (`MCP_DEFAULT_TIMEOUT_S`, storage.js).
+//
+// Lit `timeout_s` en priorité, et retombe sur l'ancien `timeout` **en
+// millisecondes** : les cartes persistées avant ce changement le portent, et un
+// `30000` relu comme des secondes donnerait huit heures d'attente. La bascule se
+// fait sur le NOM du champ, jamais sur un seuil de valeur — un « au-dessus de
+// 1000, ce sont sûrement des ms » se déclencherait un jour sur une valeur
+// légitime, et se tairait sur `timeout: 500`.
+//
+// Pure, testable en QuickJS.
+function mcpTimeoutSeconds(o) {
+  const src = o || {};
+  if (typeof src.timeout_s === 'number' && src.timeout_s > 0) return src.timeout_s;
+  if (typeof src.timeout === 'number' && src.timeout > 0) return Math.round(src.timeout / 1000);
+  return 0;
+}
+
+// Faut-il retenter ce serveur au retour de l'utilisateur ? Pure, testable, et
+// SÉPARÉE de la pastille : celle-ci répond à « qu'affiche-t-on ? », celle-là à
+// « que retente-t-on ? » — deux questions dont les réponses divergent déjà (une
+// erreur masque une attente à l'affichage, mais les deux se retentent).
+//
+// Un serveur EN DÉFAUT (erreur, ou upstream à autoriser) est retenté
+// immédiatement, sans throttle : c'est le cas d'usage — on lance le proxy en
+// console, on revient, ça repart. Lui appliquer le délai le rendrait muet
+// pendant deux minutes juste après l'échec qu'on cherche à réparer.
+//
+// Un serveur SAIN est retenté au plus une fois par `minIntervalMs`, pour relire
+// sa liste d'outils sans transformer chaque retour de fenêtre en handshake. Le
+// throttle est PAR SERVEUR : un horodatage global ferait qu'un serveur ajouté à
+// l'instant bloquerait la vérification de tous les autres.
+//
+// `lastAttempt` à 0 (jamais tenté) passe toujours — `now - 0` dépasse tout
+// intervalle raisonnable, mais on ne s'en remet pas à cette arithmétique : le
+// cas est explicite, parce qu'une horloge remise à zéro ou un `now` de test à
+// petite valeur le rendrait faux en silence.
+function shouldRecheckMcpServer(status, lastAttempt, now, minIntervalMs) {
+  if (!status) return false;
+  if (status.state === 'error') return true;
+  const up = Array.isArray(status.unauthorizedUpstreams) ? status.unauthorizedUpstreams : [];
+  if (up.length) return true;
+  if (status.state !== 'ok') return false;      // 'connecting' : une tentative est en vol
+  if (!lastAttempt) return true;
+  return (now - lastAttempt) >= minIntervalMs;
+}
+
+// État de la pastille MCP de topbar : prédicat d'APPARITION, sévérité et
+// libellé au même endroit, purs et testés — même séparation que
+// `resolveAgentCount` : la synchro DOM ne fait qu'appliquer, elle ne décide de
+// rien.
 //
 // `statuses` est la table `_remoteStatus` telle quelle. On compte des SERVEURS,
 // pas des upstreams : la pastille dit combien de cartes ouvrir, et le détail par
 // upstream vit dans la carte. Un serveur à trois upstreams en attente compte
 // pour un.
+//
+// **Une seule pastille, l'erreur prioritaire.** Un serveur injoignable et un
+// autre en attente d'autorisation peuvent coexister ; plutôt que deux pilules
+// voisines, la pastille prend la sévérité la plus haute et n'affiche que
+// celle-là. L'attente d'autorisation redevient visible dès que l'erreur est
+// traitée — rien n'est mémorisé ici, tout est recalculé depuis `statuses` à
+// chaque rendu, donc il n'y a aucun état à réconcilier. Décision assumée : la
+// jaune est masquée tant qu'un serveur est KO, et l'utilisateur mené au drawer
+// par la rouge y voit de toute façon la cause de la jaune sur la carte voisine.
+//
+// `severity` ('error' | 'pending') porte la classe CSS ; `servers` ne liste que
+// les serveurs du niveau retenu (c'est ce que le compte désigne, et ce que
+// `recheckMcpServers` doit reconnecter).
 // Pure, testable en QuickJS.
 function resolveAuthorizationPending(statuses) {
-  const names = [];
+  const errored = [];
+  const pendingAuth = [];
   if (statuses && typeof statuses === 'object') {
     for (const name of Object.keys(statuses)) {
       const st = statuses[name];
-      const pending = st && Array.isArray(st.unauthorizedUpstreams) ? st.unauthorizedUpstreams : [];
-      if (pending.length) names.push(name);
+      if (!st) continue;
+      // L'erreur d'abord : un serveur en erreur n'expose aucun outil, et sa
+      // table de statut a été réécrite en entier (donc sans upstreams) — mais
+      // on ne dépend pas de ça pour trancher, l'ordre du test suffit.
+      if (st.state === 'error') { errored.push(name); continue; }
+      const up = Array.isArray(st.unauthorizedUpstreams) ? st.unauthorizedUpstreams : [];
+      if (up.length) pendingAuth.push(name);
     }
   }
-  names.sort();
-  const n = names.length;
-  if (!n) return { visible: false, count: 0, servers: [], label: '' };
-  return {
-    visible: true,
-    count: n,
-    servers: names,
-    label: n + ' serveur' + (n > 1 ? 's' : '') + ' à autoriser',
-  };
+  errored.sort();
+  pendingAuth.sort();
+  if (errored.length) {
+    const n = errored.length;
+    return {
+      visible: true,
+      severity: 'error',
+      count: n,
+      servers: errored,
+      label: n + ' serveur' + (n > 1 ? 's' : '') + ' injoignable' + (n > 1 ? 's' : ''),
+    };
+  }
+  if (pendingAuth.length) {
+    const n = pendingAuth.length;
+    return {
+      visible: true,
+      severity: 'pending',
+      count: n,
+      servers: pendingAuth,
+      label: n + ' serveur' + (n > 1 ? 's' : '') + ' à autoriser',
+    };
+  }
+  return { visible: false, severity: '', count: 0, servers: [], label: '' };
 }
 
 // Pill de statut d'une carte de serveur MCP : état visuel et libellé.
@@ -1693,6 +1774,49 @@ function validateMcpServerName(name, existingNames) {
   if (!/^[a-zA-Z0-9_-]+$/.test(n)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
   if (Array.isArray(existingNames) && existingNames.indexOf(n) >= 0) return 'Ce nom est déjà utilisé.';
   return null;
+}
+
+// Normalise une URL de serveur MCP pour la COMPARAISON d'identité (jamais pour
+// l'appel réseau, qui garde l'URL saisie telle quelle) : trim, casse ignorée,
+// slash final retiré. Volontairement doux — on ne cherche pas l'équivalence
+// d'hôtes (127.0.0.1 vs localhost) ni la normalisation de port par défaut, qui
+// seraient de la devinette sur des déploiements qu'on ne connaît pas.
+function mcpUrlIdentity(url) {
+  return String(url || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+// Décide quels serveurs MCP CONFIGURÉS AU BUILD méritent d'être seedés dans un
+// parc existant. Pure : les deux arguments sont des tableaux déjà normalisés,
+// le retour est le sous-ensemble à insérer, dans l'ordre reçu.
+//
+// Un candidat est écarté s'il a un équivalent existant PAR NOM (le nom est le
+// préfixe d'outil, donc la clé d'identité du parc) ou PAR URL (au sens doux
+// ci-dessus) : on ne veut ni doublonner un serveur que l'utilisateur a déjà
+// ajouté à la main sous un autre nom, ni réserver deux fois le même préfixe.
+// Les candidats sont aussi dédupliqués ENTRE EUX : deux entrées de config qui
+// collident ne doivent pas produire deux cartes (la seconde échouerait de toute
+// façon à l'upsert, silencieusement).
+//
+// Un nom invalide (charset, `__`, `miaou` réservé) est écarté : une carte au
+// préfixe cassé vaut moins que pas de carte. Une URL vide aussi.
+function mcpSeedCandidates(configured, existing) {
+  const names = [];
+  const urls = [];
+  (Array.isArray(existing) ? existing : []).forEach(function (s) {
+    if (s && s.name) names.push(String(s.name).trim());
+    if (s && s.url) urls.push(mcpUrlIdentity(s.url));
+  });
+  const out = [];
+  (Array.isArray(configured) ? configured : []).forEach(function (c) {
+    if (!c || !c.url) return;
+    if (validateMcpServerName(c.name, names)) return;
+    const u = mcpUrlIdentity(c.url);
+    if (urls.indexOf(u) >= 0) return;
+    names.push(String(c.name).trim());
+    urls.push(u);
+    out.push(c);
+  });
+  return out;
 }
 
 // Filtre les outils d'un serveur au moment du merge. allowlist/denylist

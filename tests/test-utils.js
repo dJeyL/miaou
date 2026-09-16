@@ -400,6 +400,47 @@ describe('validateMcpServerName', function() {
   it('rejette un nom vide', function() { expect(validateMcpServerName('', [])).toBeTruthy(); });
 });
 
+describe('mcpUrlIdentity (comparaison douce)', function() {
+  it('retire le slash final', function() {
+    expect(mcpUrlIdentity('http://127.0.0.1:8765/mcp/')).toBe('http://127.0.0.1:8765/mcp');
+  });
+  it('ignore la casse et les espaces', function() {
+    expect(mcpUrlIdentity('  HTTP://Host/MCP ')).toBe('http://host/mcp');
+  });
+  it("ne prétend PAS que localhost vaut 127.0.0.1", function() {
+    var same = mcpUrlIdentity('http://localhost/mcp') === mcpUrlIdentity('http://127.0.0.1/mcp');
+    expect(same).toBe(false);
+  });
+});
+
+describe('mcpSeedCandidates (seed de build)', function() {
+  var cfg = { name: 'miaou-mcp', url: 'http://127.0.0.1:8765/mcp' };
+  it('seede dans un parc vide', function() {
+    expect(mcpSeedCandidates([cfg], []).length).toBe(1);
+  });
+  it('écarte un équivalent par nom', function() {
+    expect(mcpSeedCandidates([cfg], [{ name: 'miaou-mcp', url: 'http://autre/mcp' }]).length).toBe(0);
+  });
+  it('écarte un équivalent par URL, sous un autre nom', function() {
+    expect(mcpSeedCandidates([cfg], [{ name: 'perso', url: 'http://127.0.0.1:8765/mcp/' }]).length).toBe(0);
+  });
+  it('écarte un nom réservé', function() {
+    expect(mcpSeedCandidates([{ name: 'miaou', url: 'http://h/mcp' }], []).length).toBe(0);
+  });
+  it('écarte une entrée sans URL', function() {
+    expect(mcpSeedCandidates([{ name: 'ok' }], []).length).toBe(0);
+  });
+  it('dédoublonne les candidats entre eux', function() {
+    var r = mcpSeedCandidates([cfg, { name: 'autre', url: 'http://127.0.0.1:8765/mcp' }], []);
+    expect(r.length).toBe(1);
+  });
+  it('préserve l\'ordre reçu', function() {
+    var r = mcpSeedCandidates([cfg, { name: 'second', url: 'http://h2/mcp' }], []);
+    expect(r[0].name).toBe('miaou-mcp');
+    expect(r[1].name).toBe('second');
+  });
+});
+
 describe('filterMcpTools (D7, denylist gagne)', function() {
   var tools = [{ name: 'a' }, { name: 'b' }, { name: 'c' }];
   it('vide/vide → tout passe', function() { expect(filterMcpTools(tools, [], []).length).toBe(3); });
@@ -3243,6 +3284,77 @@ describe('composeAuthorizationUrl (AB-5) — origine locale, chemin distant', fu
   });
 });
 
+describe('mcpTimeoutSeconds — migration ms → s des cartes MCP', function() {
+  it('lit timeout_s quand il est present', function() {
+    expect(mcpTimeoutSeconds({ timeout_s: 45 })).toBe(45);
+  });
+  it('convertit un ancien timeout en ms', function() {
+    // Le cas qui motive la migration : 30000 relu en secondes ferait 8 heures.
+    expect(mcpTimeoutSeconds({ timeout: 30000 })).toBe(30);
+  });
+  it('timeout_s prime sur un timeout residuel', function() {
+    expect(mcpTimeoutSeconds({ timeout_s: 10, timeout: 30000 })).toBe(10);
+  });
+  it('arrondit une valeur ms non ronde', function() {
+    expect(mcpTimeoutSeconds({ timeout: 4500 })).toBe(5);
+  });
+  it('rend 0 quand rien n\'est exploitable (l\'appelant met SON defaut)', function() {
+    expect(mcpTimeoutSeconds({})).toBe(0);
+    expect(mcpTimeoutSeconds(null)).toBe(0);
+    expect(mcpTimeoutSeconds({ timeout_s: 0 })).toBe(0);
+    expect(mcpTimeoutSeconds({ timeout: -5 })).toBe(0);
+  });
+  it('ne devine JAMAIS l\'unite depuis la valeur', function() {
+    // Un seuil heuristique (« > 1000 donc des ms ») lirait 1500 comme 1.5 s.
+    // C'est le NOM du champ qui tranche : timeout_s: 1500 vaut 1500 secondes.
+    expect(mcpTimeoutSeconds({ timeout_s: 1500 })).toBe(1500);
+    // ...et symetriquement un petit timeout en ms reste des ms.
+    expect(mcpTimeoutSeconds({ timeout: 800 })).toBe(1);
+  });
+});
+
+describe('shouldRecheckMcpServer — que retente-t-on au retour ?', function() {
+  var MIN = 120000;
+  var T = 1000000;      // « maintenant » arbitraire, loin de 0
+
+  it('un serveur en erreur : tout de suite, sans throttle', function() {
+    // Le cas d'usage : proxy lance en console, on revient. Un delai ici
+    // rendrait la reprise muette juste apres l'echec qu'on veut reparer.
+    var r = shouldRecheckMcpServer({ state: 'error' }, T - 1000, T, MIN);
+    expect(r).toBe(true);
+  });
+  it('un serveur en attente d\'autorisation : tout de suite egalement', function() {
+    var st = { state: 'ok', unauthorizedUpstreams: [{ name: 'jira' }] };
+    expect(shouldRecheckMcpServer(st, T - 1000, T, MIN)).toBe(true);
+  });
+  it('un serveur sain tente il y a moins de l\'intervalle : non', function() {
+    expect(shouldRecheckMcpServer({ state: 'ok' }, T - 60000, T, MIN)).toBe(false);
+  });
+  it('un serveur sain tente il y a plus de l\'intervalle : oui', function() {
+    expect(shouldRecheckMcpServer({ state: 'ok' }, T - 180000, T, MIN)).toBe(true);
+  });
+  it('pile a l\'intervalle : oui (borne inclusive)', function() {
+    expect(shouldRecheckMcpServer({ state: 'ok' }, T - MIN, T, MIN)).toBe(true);
+  });
+  it('jamais tente (horodatage a 0) : oui, et par un cas EXPLICITE', function() {
+    // Pas par l'arithmetique `now - 0 >= MIN`, qui deviendrait fausse avec un
+    // `now` de petite valeur — celui-ci le prouve.
+    expect(shouldRecheckMcpServer({ state: 'ok' }, 0, 5, MIN)).toBe(true);
+  });
+  it('une connexion EN VOL n\'est pas relancee', function() {
+    expect(shouldRecheckMcpServer({ state: 'connecting' }, 0, T, MIN)).toBe(false);
+  });
+  it('un serveur sans statut (jamais connecte) n\'est pas retente ici', function() {
+    // reconnectMcpServers s'en charge au boot ; ce chemin ne traite que des
+    // serveurs deja connus.
+    expect(shouldRecheckMcpServer(null, 0, T, MIN)).toBe(false);
+  });
+  it('l\'attente d\'autorisation prime sur le throttle d\'un serveur sain', function() {
+    var st = { state: 'ok', unauthorizedUpstreams: [{ name: 'jira' }] };
+    expect(shouldRecheckMcpServer(st, T - 1, T, MIN)).toBe(true);
+  });
+});
+
 describe('resolveAuthorizationPending (AB-5) — apparition de la pastille', function() {
   function st(list) { return { state: 'ok', count: 3, unauthorizedUpstreams: list }; }
 
@@ -3281,6 +3393,54 @@ describe('resolveAuthorizationPending (AB-5) — apparition de la pastille', fun
     expect(r.servers[0]).toBe('alpha');
     expect(r.servers[1]).toBe('zeta');
     expect(r.label.indexOf('2 serveurs') === 0).toBe(true);
+  });
+  it('severite pending quand seule une autorisation manque', function() {
+    var r = resolveAuthorizationPending({ proxy: st([{ name: 'jira' }]) });
+    expect(r.severity).toBe('pending');
+  });
+});
+
+describe('resolveAuthorizationPending — une pastille, l\'erreur prioritaire', function() {
+  function st(list) { return { state: 'ok', count: 3, unauthorizedUpstreams: list }; }
+  function ko(msg) { return { state: 'error', count: 0, error: msg || 'echec' }; }
+
+  it('un serveur injoignable : severite error et libelle dedie', function() {
+    var r = resolveAuthorizationPending({ proxy: ko() });
+    expect(r.visible).toBe(true);
+    expect(r.severity).toBe('error');
+    expect(r.count).toBe(1);
+    expect(r.label).toBe('1 serveur injoignable');
+  });
+  it('pluriel accorde sur le nom ET l\'adjectif', function() {
+    var r = resolveAuthorizationPending({ a: ko(), b: ko() });
+    expect(r.label).toBe('2 serveurs injoignables');
+  });
+  it('erreur et attente simultanees : l\'erreur gagne, et elle seule est comptee', function() {
+    var r = resolveAuthorizationPending({ casse: ko(), attente: st([{ name: 'jira' }]) });
+    expect(r.severity).toBe('error');
+    expect(r.count).toBe(1);
+    expect(r.servers[0]).toBe('casse');
+  });
+  it('l\'attente redevient visible une fois l\'erreur reparee', function() {
+    // La condition posee a la conception : la jaune doit savoir apparaitre
+    // quand la rouge est traitee. Rien n'est memorise — le meme appel sur un
+    // etat repare rend la severite d'attente, sans etat a reconcilier.
+    var avant = resolveAuthorizationPending({ casse: ko(), attente: st([{ name: 'jira' }]) });
+    var apres = resolveAuthorizationPending({ casse: st([]), attente: st([{ name: 'jira' }]) });
+    expect(avant.severity).toBe('error');
+    expect(apres.severity).toBe('pending');
+    expect(apres.servers[0]).toBe('attente');
+  });
+  it('un serveur en erreur ET porteur d\'upstreams ne compte qu\'une fois, du cote erreur', function() {
+    var r = resolveAuthorizationPending({
+      proxy: { state: 'error', count: 0, unauthorizedUpstreams: [{ name: 'jira' }] },
+    });
+    expect(r.count).toBe(1);
+    expect(r.severity).toBe('error');
+  });
+  it('etat connecting : ni erreur ni attente, la pastille reste muette', function() {
+    var r = resolveAuthorizationPending({ proxy: { state: 'connecting', count: 0 } });
+    expect(r.visible).toBe(false);
   });
 });
 

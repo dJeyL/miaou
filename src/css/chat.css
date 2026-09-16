@@ -412,6 +412,19 @@
   flex: none;
 }
 
+/* Variante d'ERREUR de la meme pastille : une seule pilule porte les deux
+   severites, l'erreur primant sur l'attente (cf. resolveAuthorizationPending).
+   Forme et typo inchangees — le libelle porte deja la distinction (« injoignable »
+   contre « a autoriser »), la couleur n'a pas a inventer une seconde grammaire.
+   N'emprunte PAS --err-soft, reserve aux textes d'erreur dans le fil : ici le
+   signal est en topbar et se lit de loin. Reste FIXE comme sa soeur : rien ne
+   travaille, quelque chose est tombe. */
+.agent-count.auth-pending.is-error {
+  color: var(--err);
+  border-color: var(--err);
+}
+.agent-count.auth-pending.is-error .auth-pending-dot { background: var(--err); }
+
 /* ═══ Messages ═══ */
 .messages {
   flex: 1;

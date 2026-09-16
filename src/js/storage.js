@@ -116,7 +116,33 @@ const DID_YOU_KNOW_DELAY_MS = (typeof BUILD_CONFIG.did_you_know_delay_s === 'num
 // Timeout par défaut d'un appel MCP distant. Reste surchargeable
 // PAR SERVEUR dans l'UI : cette clé ne fixe que le défaut proposé, qui dépend
 // du parc MCP déployé.
-const MCP_DEFAULT_TIMEOUT = (typeof BUILD_CONFIG.mcp_default_timeout_s === 'number') ? BUILD_CONFIG.mcp_default_timeout_s * 1000 : 30000;
+// En SECONDES, comme la clef de config dont elle dérive et comme le champ
+// `timeout_s` des cartes : plus aucune conversion d'unité dans ce domaine.
+// La multiplication par 1000 vit désormais au SEUL point qui parle à
+// `setTimeout` (`mcpRpc`, mcp.js).
+const MCP_DEFAULT_TIMEOUT_S = (typeof BUILD_CONFIG.mcp_default_timeout_s === 'number' && BUILD_CONFIG.mcp_default_timeout_s > 0) ? BUILD_CONFIG.mcp_default_timeout_s : 30;
+// Intervalle minimum entre deux vérifications d'un serveur MCP SAIN au retour
+// de l'utilisateur (les serveurs en défaut sont retentés sans délai, cf.
+// `shouldRecheckMcpServer`). Borne un confort — relire la liste d'outils d'un
+// serveur qui va bien —, pas une garde de sûreté : la relever ne fait que
+// retarder la découverte d'un outil ajouté côté serveur.
+const MCP_RECHECK_MIN_INTERVAL_MS = 120000;
+// Serveur(s) MCP pré-configurés au build : permet de livrer un binaire déjà
+// branché sur un proxy MCP partagé (déploiement d'équipe) sans faire saisir la
+// carte à chaque utilisateur. Objet unique OU tableau — le singulier est le cas
+// courant, le tableau évite une migration de clef le jour où il en faut deux.
+// Le délai s'y nomme `timeout_s`, suffixe d'unité de toutes les durées de
+// `config.json` (`mcp_default_timeout_s`, `stream_idle_timeout_s`…) et du champ
+// homonyme de la carte : tout le domaine MCP est en secondes, la seule
+// conversion vers les millisecondes vit dans `mcpRpcAttempt`, au contact de
+// `setTimeout`. Absent → le défaut.
+// Pas de `authorization_token` : cette config est versionnée dans le bundle,
+// un jeton y serait lisible par quiconque reçoit le fichier.
+const BUILD_MCP_SERVERS = (function () {
+  const raw = BUILD_CONFIG.mcp_server;
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw.filter(Boolean) : [raw];
+})();
 // Temps d'exécution max d'un js__eval dans la VM QuickJS-WASM (garde obligatoire
 // du piège 25, avec la mémoire et le cap de sortie). Configurable comme fonction
 // de la machine hôte ; la garde elle-même n'est pas désactivable (0 ou négatif
@@ -445,10 +471,55 @@ function activeApiConfig() {
 // (token côté serveur), hors périmètre V2.
 const MCP_SERVERS_KEY = 'miaou-mcp-servers';
 
-// MCP_DEFAULT_TIMEOUT (défaut, éditable par serveur) est déclaré
+// MCP_DEFAULT_TIMEOUT_S (défaut, éditable par serveur) est déclaré
 // plus haut avec les autres bornes configurables.
 
+// Sentinelle du seed de build. ONE-SHOT, et il lui faut sa propre clef : à la
+// différence des serveurs API (où l'absence de `miaou-api-servers` prouve qu'on
+// n'a jamais rien écrit), `miaou-mcp-servers` existe déjà chez tout utilisateur
+// ayant ouvert le drawer MCP — elle ne dit donc rien du seed. Posée dès le
+// premier passage, même quand il n'y a rien à insérer : le contrat est « ce
+// build s'est présenté une fois », pas « il a inséré quelque chose ».
+//
+// Conséquence assumée : un serveur seedé puis supprimé par l'utilisateur reste
+// supprimé, et une URL de proxy changée dans un build ultérieur ne se propage
+// PAS aux installations existantes (elle vaut une consigne humaine, pas une
+// resynchronisation automatique qui annulerait les suppressions).
+const MCP_SEEDED_KEY = 'miaou-mcp-seeded';
+
+function seedBuildMcpServersIfNeeded() {
+  // Config vide → on ne pose RIEN, pas même la sentinelle. La poser ici
+  // brûlerait le seed d'un build ULTÉRIEUR qui, lui, porte une config : la
+  // sentinelle ne mémorise aucune identité de build, elle ne peut donc pas
+  // signifier « ce build s'est présenté » — seulement « une config non vide a
+  // été traitée ». Tout build antérieur à cette feature est dans ce cas.
+  if (!BUILD_MCP_SERVERS.length) return;
+  if (localStorage.getItem(MCP_SEEDED_KEY) !== null) return;
+  let existing = [];
+  try {
+    const arr = JSON.parse(localStorage.getItem(MCP_SERVERS_KEY));
+    if (Array.isArray(arr)) existing = arr;
+  } catch (e) { existing = []; }
+  const candidates = mcpSeedCandidates(BUILD_MCP_SERVERS, existing);
+  // Posée même sans candidat retenu : une config non vide dont tous les
+  // serveurs ont un équivalent existant EST traitée — ne pas re-tester à
+  // chaque démarrage, sinon supprimer la carte la ferait revenir.
+  localStorage.setItem(MCP_SEEDED_KEY, '1');
+  if (!candidates.length) return;
+  const next = existing.concat(candidates.map(c => normalizeMcpServer({
+    name: c.name,
+    url: c.url,
+    transport: c.transport,
+    enabled: c.enabled,
+    timeout_s: c.timeout_s,
+    toolAllowlist: c.toolAllowlist,
+    toolDenylist: c.toolDenylist,
+  })));
+  saveMcpServers(next);      // post-commit + broadcast (piège 24)
+}
+
 function loadMcpServers() {
+  seedBuildMcpServersIfNeeded();
   try {
     const arr = JSON.parse(localStorage.getItem(MCP_SERVERS_KEY));
     return Array.isArray(arr) ? arr : [];
@@ -471,7 +542,19 @@ function normalizeMcpServer(s) {
     transport: o.transport === 'sse' ? 'sse' : 'streamable-http',
     enabled: o.enabled !== false,
     authorization_token: o.authorization_token ? String(o.authorization_token) : '',
-    timeout: (typeof o.timeout === 'number' && o.timeout > 0) ? o.timeout : MCP_DEFAULT_TIMEOUT,
+    // En SECONDES, et le nom le dit. Les millisecondes n'avaient aucun intérêt
+    // ici (personne ne règle un timeout MCP à 1500 ms) et créaient le seul
+    // endroit de l'application où deux unités se croisaient : `config.json` en
+    // secondes, la carte en ms.
+    //
+    // MIGRATION des cartes existantes, qui portent un `timeout` en ms : elle
+    // vit ici plutôt que dans une passe de démarrage parce que `normalizeMcpServer`
+    // est le passage obligé de toute lecture de carte — y compris à l'import
+    // d'un `.zip` exporté avant ce changement, qu'aucune migration de boot ne
+    // rattraperait. Pas de seuil heuristique (« > 1000 donc des ms ») : le NOM
+    // du champ tranche, donc la conversion est exacte et ne peut pas se
+    // déclencher sur une valeur légitime.
+    timeout_s: mcpTimeoutSeconds(o) || MCP_DEFAULT_TIMEOUT_S,
     toolAllowlist: Array.isArray(o.toolAllowlist) ? o.toolAllowlist : [],
     toolDenylist: Array.isArray(o.toolDenylist) ? o.toolDenylist : [],
   };
