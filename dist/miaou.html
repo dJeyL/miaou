@@ -4691,7 +4691,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-17 10:35 UTC */
+/* miaou — built: 2026-09-17 14:56 UTC */
 
 /* ── utils.js ── */
 
@@ -5955,18 +5955,42 @@ function conversationSnippet(text) {
 
 function formatCallMarker(id) { return '[call:' + id + ']\n'; }
 
+function ackIsExpandable(m) {
+  if (!m) return false;
+  return m.args != null && m.name != null;
+}
+
+function unservedToolCallIds(messages) {
+  var served = {};
+  var list = messages || [];
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i];
+    if (m && m.role === 'tool' && m.tool_call_id != null) served[m.tool_call_id] = true;
+  }
+  var missing = [];
+  for (var j = 0; j < list.length; j++) {
+    var a = list[j];
+    if (!a || !a.tool_calls) continue;
+    for (var k = 0; k < a.tool_calls.length; k++) {
+      var tc = a.tool_calls[k];
+      if (tc && !served[tc.id]) missing.push(tc.id);
+    }
+  }
+  return missing;
+}
+
 function enrichedAckGroups(thread) {
   var groups = [];
   var i = 0;
   while (i < thread.length) {
     var m = thread[i];
-    if (isAckRole(m.role) && m.args != null) {
+    if (isAckRole(m.role) && ackIsExpandable(m)) {
       var grp = m.group;
       var groupAcks = [m];
       var j = i + 1;
       if (grp != null) {
         while (j < thread.length && isAckRole(thread[j].role) &&
-               thread[j].args != null && thread[j].group === grp) {
+               ackIsExpandable(thread[j]) && thread[j].group === grp) {
           groupAcks.push(thread[j]);
           j++;
         }
@@ -6012,8 +6036,9 @@ function expandThread(thread) {
   while (i < thread.length) {
     var m = thread[i];
     if (isAckRole(m.role)) {
-      if (m.args != null) {
-        var group = byStart[i];
+
+      var group = byStart[i];
+      if (group) {
         var groupAcks = group.acks;
         var ids = group.ids;
         var j = group.end;
@@ -6050,6 +6075,7 @@ function expandThread(thread) {
         }
         i = j;
       } else {
+
         i++;
       }
     } else if (m.role === 'assistant' && (m.content == null || String(m.content).trim() === '')) {
@@ -8766,7 +8792,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789641329}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789656992}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14843,11 +14869,8 @@ async function runConversation(messages, hooks) {
 
       if (h.onToolTour) h.onToolTour(result.content);
 
-      messages.push({
-        role: 'assistant',
-        content: result.content || null,
-        tool_calls: result.toolCalls,
-      });
+      const servedToolCalls = [];
+      const servedToolMsgs = [];
 
       const group = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       const assistantText = result.content || null;
@@ -14910,7 +14933,17 @@ async function runConversation(messages, hooks) {
           }
         }
 
-        messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
+        servedToolCalls.push(tc);
+        servedToolMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
+      }
+
+      if (servedToolCalls.length) {
+        messages.push({
+          role: 'assistant',
+          content: result.content || null,
+          tool_calls: servedToolCalls,
+        });
+        for (const tm of servedToolMsgs) messages.push(tm);
       }
 
       if (typeof getPendingImageInjections === 'function') {

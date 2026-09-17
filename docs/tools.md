@@ -983,7 +983,8 @@ Historiquement, ces échecs étaient **totalement invisibles** : le handler fais
 `return 'Souvenir introuvable.'` sans pousser d'ack. Le modèle recevait bien
 l'erreur en tool result, mais l'appel n'apparaissait nulle part dans le fil (pas
 un ack blanc — *aucun* ack), et il **disparaissait aussi de la réinjection
-cross-turn** (`expandThread` ne réinjecte que les acks porteurs d'`args`) : au tour
+cross-turn** (`expandThread` ne réinjecte que les acks réinjectables, cf.
+`ackIsExpandable` — à l'époque : les porteurs d'`args`) : au tour
 suivant le modèle ne voyait plus qu'il avait essayé et raté, ce qui l'invitait à
 retenter à l'identique. Corollaire réglé au passage : `onEnrichLastAck`
 (sans `minLength`) enrichissait alors l'ack de l'outil **précédent** du même tour
@@ -1128,10 +1129,40 @@ formateurs, deux publics, et l'ack est une surface d'interface.
   `onToolAcks` pour les acks internes + la mise à jour d'erreur MCP + les blocs non-text
   (cf. `docs/mcp.md`).
 - **Payload API — `expandThread(currentThread)`** (utils.js, pur, testé QuickJS).
-  Remplace l'ancien filtre `!isAckRole`. Acks **enrichis** (champs `args` +
-  `result` présents) → expansés en paire `[assistant+tool_calls, tool…]` pour
-  réinjecter les résultats d'outils passés dans les tours suivants ; acks
-  **legacy** (sans `args`) → élagués comme avant (compat ascendante). Si le
+  Remplace l'ancien filtre `!isAckRole`. Acks **réinjectables** → expansés en
+  paire `[assistant+tool_calls, tool…]` pour réinjecter les résultats d'outils
+  passés dans les tours suivants ; les autres → élagués (compat ascendante).
+
+  Le prédicat est `ackIsExpandable(m)` — **`args` ET `name`**, source unique
+  partagée par les trois sites qui en dépendent (ouverture de groupe et
+  agrégation dans `enrichedAckGroups`, branchement dans `expandThread`, qui
+  teste la PRÉSENCE du groupe plutôt qu'une copie locale du prédicat : les
+  trois doivent répondre la même chose, sinon `byStart[i]` est `undefined`).
+  `name` y est exigé parce que c'est lui, et lui seul, que l'expansion pose en
+  `function.name` : un ack qui en manque produisait un tool_call sans nom,
+  **rejeté en 422** par les backends stricts, avec un message `tool` réduit à
+  son seul marqueur `[call:…]` (`stampTs` d'un `result` absent rend `''`).
+  Le couple `args`+`name` était garanti tant qu'`onEnrichLastAck` en était la
+  seule source (il pose `name`/`args`/`result`/`ts` **ensemble**) ; il ne l'est
+  plus depuis que `markEarlyAckPending` (main.js, lot Z-2) pose `args` **seul**
+  avant le round-trip, pour montrer les arguments d'un appel en vol.
+
+  **Distinct d'`ackHasInspectableDetail` à dessein** : un appel en vol n'est
+  pas réinjectable (rien à réinjecter) mais reste inspectable — c'est tout
+  l'intérêt de la loupe pendant qu'un outil lent travaille. Ne pas fusionner.
+
+  Deuxième voie vers le même 422, **hors** `expandThread` et corrigée à sa
+  source (api.js) : un tool_call annoncé par l'assistant du tour sans que son
+  message `tool` soit jamais poussé (handler sorti en exception, abort
+  mid-tour). Le message assistant est désormais émis **après** la boucle
+  d'exécution, avec les seuls appels **servis** — un tour dont aucun appel
+  n'aboutit n'émet rien du tout (un `tool_calls: []` serait rejeté à son tour,
+  cf. piège 27). Ce cas ne laissait **aucun** ack dans le thread (l'ack est
+  poussé par le handler, dans l'`await` qui n'est jamais revenu), donc aucune
+  garde côté `expandThread` ne pouvait le rattraper. Le pur
+  `unservedToolCallIds(messages)` nomme les appels sans résultat : garde de
+  diagnostic, jamais un filtre de rattrapage — réparer le payload après coup
+  masquerait la cause. Si le
   premier ack d'un groupe porte `assistantText`, le message assistant standalone
   qui le précède immédiatement est absorbé dans le `content` de l'assistant
   expansé pour éviter la duplication. `stampTs(ts, result)` (utils.js) préfixe

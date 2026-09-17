@@ -773,11 +773,29 @@ async function runConversation(messages, hooks) {
       // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
       if (h.onToolTour) h.onToolTour(result.content);
 
-      messages.push({
-        role: 'assistant',
-        content: result.content || null,
-        tool_calls: result.toolCalls,
-      });
+      // Le message assistant porteur des tool_calls est poussé APRÈS la boucle
+      // d'exécution, pas avant — avec les SEULS appels qui ont effectivement
+      // reçu leur message `tool`.
+      //
+      // LE DÉFAUT (payé en prod, 422) : poussé avant, il portait les N appels
+      // émis par le modèle, alors que la boucle ne pousse un `tool` que pour
+      // ceux qui vont au bout. Un handler qui sort en exception, ou un abort à
+      // la frontière de tour, laissait donc un assistant à 3 tool_calls pour 2
+      // messages `tool` — payload rejeté par les backends stricts, qui exigent
+      // un résultat par appel. Le tool_call surnuméraire n'avait PAS d'ack non
+      // plus (l'ack est poussé par le handler, dans le même await qui n'est
+      // jamais revenu) : il n'apparaissait donc nulle part dans le thread, et
+      // aucune garde côté expandThread ne pouvait le rattraper — d'où la
+      // correction ici, à l'émission du tour.
+      //
+      // `servedToolMsgs` accumule les messages `tool` au lieu de les pousser
+      // directement : l'ordre final envoyé reste STRICTEMENT assistant → tools
+      // → injections (image, interjections, résultats d'agent), inchangé.
+      // Un tour dont AUCUN appel n'aboutit ne pousse rien du tout, plutôt qu'un
+      // assistant à `tool_calls: []` — autre forme rejetée (piège 27 : un
+      // assistant sans content ni tool_calls est un 400).
+      const servedToolCalls = [];
+      const servedToolMsgs = [];
 
       // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
       // pour que expandThread puisse reconstruire un seul assistant+N tools.
@@ -879,7 +897,27 @@ async function runConversation(messages, hooks) {
           }
         }
 
-        messages.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
+        // Cet appel a produit un résultat : il est SERVI, donc il a le droit de
+        // figurer dans les tool_calls de l'assistant. Les deux tableaux
+        // avancent ensemble — jamais l'un sans l'autre, c'est l'invariant que
+        // le backend vérifie.
+        servedToolCalls.push(tc);
+        servedToolMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
+      }
+
+      // Émission du tour, dans l'ordre exigé : l'assistant porteur des appels
+      // servis, puis leurs résultats. `servedToolCalls` est vide quand aucun
+      // appel n'a abouti (abort sur le premier, exception généralisée) : on
+      // n'émet alors NI l'un NI l'autre — le contenu textuel éventuel du tour
+      // n'est pas perdu pour autant, il est déjà passé à l'UI par onToolTour
+      // et sera porté par le message final (onFinal/onHalt).
+      if (servedToolCalls.length) {
+        messages.push({
+          role: 'assistant',
+          content: result.content || null,
+          tool_calls: servedToolCalls,
+        });
+        for (const tm of servedToolMsgs) messages.push(tm);
       }
 
       // Brief A2 — ré-injection image intra-échange. Un recall_attachment

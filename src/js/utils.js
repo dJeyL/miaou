@@ -2380,6 +2380,74 @@ function conversationSnippet(text) {
 // jamais réécrire ce format d'un seul côté (dérive de ciblage muette).
 function formatCallMarker(id) { return '[call:' + id + ']\n'; }
 
+// Prédicat UNIQUE « cet ack est-il RÉINJECTABLE en tool_call ? » — source de
+// vérité de l'expansion, partagée par les trois sites qui décidaient jusqu'ici
+// sur `args != null` nu (ouverture de groupe et agrégation dans
+// enrichedAckGroups, branchement dans expandThread). Ces trois-là doivent
+// répondre la MÊME chose : un groupe ouvert sur un critère et refermé sur un
+// autre laisse `byStart[i]` undefined, ce qui casse plus fort que le défaut
+// qu'on corrige.
+//
+// `name` est exigé EN PLUS de `args` parce que c'est lui, et lui seul, que
+// l'expansion pose en `function.name`. Un ack qui en manque produit un
+// tool_call `{id, type, function:{arguments}}` sans `name` — payload REJETÉ en
+// 422 par les backends stricts, et le message `tool` correspondant réduit à son
+// seul marqueur `[call:…]` (stampTs d'un result absent rend ''). Le couple
+// `args`+`name` était garanti tant qu'`onEnrichLastAck` était la seule source
+// des deux (il pose name/args/result/ts ENSEMBLE, à la réponse de l'outil) ;
+// il ne l'est plus depuis que `markEarlyAckPending` (main.js, lot Z-2) pose
+// `args` SEUL avant le round-trip, pour montrer les arguments d'un appel en
+// vol. Un ack dont la réponse n'arrive jamais — abort, transport en échec —
+// reste donc avec `args` orphelin et franchissait ce prédicat.
+//
+// Distinct d'`ackHasInspectableDetail` À DESSEIN, et les deux ne se
+// contredisent pas : un appel en vol N'EST PAS réinjectable (rien à réinjecter)
+// mais reste parfaitement inspectable (c'est même tout l'intérêt de la loupe
+// pendant qu'un outil lent travaille). Ne pas fusionner les deux.
+//
+// Un ack refusé ici est élagué exactement comme un ack legacy non enrichi :
+// il reste dans le thread (rendu, loupe, export) et ne part jamais sur le fil.
+// Pur, testable en QuickJS.
+function ackIsExpandable(m) {
+  if (!m) return false;
+  return m.args != null && m.name != null;
+}
+
+// Invariant de payload « tout tool_call a son résultat » : rend la liste des
+// `tool_call_id` annoncés par un message assistant sans message `tool`
+// correspondant. Tableau VIDE = payload sain.
+//
+// C'est la condition que les backends stricts vérifient, et dont la violation
+// se paye en 422 sans rien dire d'utile. Deux sources l'ont violée, chacune
+// bouchée à sa source — celle-ci reste le filet qui les couvre toutes :
+//   - un tool_call jamais exécuté jusqu'au bout (handler en exception, abort
+//     mid-tour) dont l'assistant portait quand même l'annonce (api.js, corrigé
+//     en n'émettant l'assistant qu'avec les appels SERVIS) ;
+//   - un ack réinjecté sans `name` (cf. ackIsExpandable), qui produisait un
+//     tool_call innommable.
+//
+// Pure, testable en QuickJS. Utilisée comme garde de diagnostic plutôt que
+// comme filtre : réparer un payload après coup masquerait la cause, alors que
+// la nommer permet de la corriger là où elle naît.
+function unservedToolCallIds(messages) {
+  var served = {};
+  var list = messages || [];
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i];
+    if (m && m.role === 'tool' && m.tool_call_id != null) served[m.tool_call_id] = true;
+  }
+  var missing = [];
+  for (var j = 0; j < list.length; j++) {
+    var a = list[j];
+    if (!a || !a.tool_calls) continue;
+    for (var k = 0; k < a.tool_calls.length; k++) {
+      var tc = a.tool_calls[k];
+      if (tc && !served[tc.id]) missing.push(tc.id);
+    }
+  }
+  return missing;
+}
+
 // Regroupe les acks ENRICHIS de `thread` en tours [assistant+tool_calls, tool…],
 // avec l'id de tool_call dérivé pour chaque ack. SOURCE UNIQUE de la logique de
 // groupement/dérivation d'id, partagée par expandThread (émission) et
@@ -2391,13 +2459,13 @@ function enrichedAckGroups(thread) {
   var i = 0;
   while (i < thread.length) {
     var m = thread[i];
-    if (isAckRole(m.role) && m.args != null) {
+    if (isAckRole(m.role) && ackIsExpandable(m)) {
       var grp = m.group;
       var groupAcks = [m];
       var j = i + 1;
       if (grp != null) {
         while (j < thread.length && isAckRole(thread[j].role) &&
-               thread[j].args != null && thread[j].group === grp) {
+               ackIsExpandable(thread[j]) && thread[j].group === grp) {
           groupAcks.push(thread[j]);
           j++;
         }
@@ -2464,8 +2532,14 @@ function expandThread(thread) {
   while (i < thread.length) {
     var m = thread[i];
     if (isAckRole(m.role)) {
-      if (m.args != null) {
-        var group = byStart[i];
+      // Branchement sur la PRÉSENCE du groupe, jamais sur une copie locale du
+      // prédicat : `byStart[i]` EST la réponse d'enrichedAckGroups, donc les
+      // deux ne peuvent pas diverger. Sous la forme précédente (`m.args != null`
+      // recopié ici), resserrer le prédicat d'un seul côté faisait lire
+      // `group.acks` sur un `undefined` — un plantage franc à la place du
+      // payload malformé qu'on corrige.
+      var group = byStart[i];
+      if (group) {
         var groupAcks = group.acks;
         var ids = group.ids;
         var j = group.end;
@@ -2514,7 +2588,16 @@ function expandThread(thread) {
         }
         i = j;
       } else {
-        i++;   // ack legacy non enrichi : élagué
+        // Ack NON réinjectable (cf. ackIsExpandable) : élagué. Deux familles —
+        // l'ack legacy non enrichi (sans `args`, compat ascendante) et l'ack
+        // incomplet dont l'enrichissement n'est jamais arrivé (`args` posé en
+        // vol par markEarlyAckPending, puis abort/échec de transport : pas de
+        // `name`, donc pas de tool_call émettable). Élaguer est le seul choix
+        // sûr pour le second : l'expanser produisait un `function.name` absent,
+        // que les backends stricts rejettent en 422 — et un tool_call qu'on ne
+        // peut pas nommer n'apprend rien au modèle, il ne fait que casser
+        // l'échange. L'entrée reste dans le thread (rendu, loupe, export).
+        i++;
       }
     } else if (m.role === 'assistant' && (m.content == null || String(m.content).trim() === '')) {
       // Assistant à content BLANC : jamais émis. Un assistant sans content ni

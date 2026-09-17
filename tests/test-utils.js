@@ -1319,6 +1319,160 @@ describe('expandThread', function() {
     };
     expect(expandThread(mk())[2].content).toBe(expandThread(mk())[2].content);
   });
+
+  // Ack dont l'enrichissement n'est jamais arrivé : `args` posé EN VOL par
+  // markEarlyAckPending (lot Z-2), puis abort / échec de transport, donc pas de
+  // `name`. Sous le prédicat `args != null` nu, il franchissait l'expansion et
+  // produisait un tool_call sans `function.name` — rejeté en 422 par les
+  // backends stricts, avec un message `tool` réduit à son seul marqueur.
+  it('ack à args orphelin (sans name) n\'est jamais expansé en tool_call', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      { role: 'tool-ack', kind: 'mcp_call', args: { instance: 'prod' }, group: 'gOrphan' },
+      { role: 'assistant', content: 'suite' },
+    ];
+    var r = expandThread(t);
+    expect(r.length).toBe(2);          // l'ack est élagué, comme un legacy
+    expect(r[0].role).toBe('user');
+    expect(r[1].role).toBe('assistant');
+    expect(r[1].content).toBe('suite');
+  });
+
+  // Le cas qui a produit le payload fautif : l'ack orphelin COHABITE avec un
+  // ack valide. Il ne doit ni contaminer le groupe, ni faire disparaître son
+  // voisin — seul le tool_call innommable tombe.
+  it('un ack orphelin dans un groupe ne retire que lui, jamais le voisin valide', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gMix', name: 'srv__vrai', result: 'contenu réel' }),
+      { role: 'tool-ack', kind: 'resource_stored', args: { x: 1 }, group: 'gMix' },
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    expect(r[1].role).toBe('assistant');
+    expect(r[1].tool_calls.length).toBe(1);
+    expect(r[1].tool_calls[0].function.name).toBe('srv__vrai');
+    expect(r[2].role).toBe('tool');
+    expect(r[2].content.indexOf('contenu réel') >= 0).toBeTruthy();
+  });
+
+  // Tout tool_call émis porte un `name` : l'invariant que le backend exige,
+  // asserté sur la SORTIE composée plutôt que sur le prédicat d'entrée.
+  it('tout tool_call émis porte un function.name non vide', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gA' }),
+      { role: 'tool-ack', kind: 'mcp_call', args: { y: 2 }, group: 'gB' },
+      ack({ group: 'gC', name: 'srv__autre' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var emitted = 0;
+    expandThread(t).forEach(function(msg) {
+      (msg.tool_calls || []).forEach(function(tc) {
+        emitted++;
+        expect(typeof tc.function.name).toBe('string');
+        expect(tc.function.name.length > 0).toBeTruthy();
+      });
+    });
+    expect(emitted).toBe(2);   // gA et gC ; gB est orphelin, jamais émis
+  });
+
+  // Garde de non-divergence : enrichedAckGroups et expandThread décidaient sur
+  // DEUX copies du même prédicat. Resserrer l'une sans l'autre faisait lire
+  // `group.acks` sur un undefined — un plantage, pas un payload malformé.
+  // expandThread branche désormais sur la présence du groupe ; ce test échoue
+  // par exception si quelqu'un y recopie un prédicat local.
+  it('expandThread et enrichedAckGroups ne divergent pas sur un ack orphelin', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      { role: 'tool-ack', kind: 'mcp_call', args: { z: 3 }, group: 'gSolo' },
+    ];
+    expect(enrichedAckGroups(t).length).toBe(0);
+    expect(expandThread(t).length).toBe(1);
+  });
+});
+
+describe('unservedToolCallIds (invariant de payload)', function() {
+  it('rend un tableau vide sur un payload sain', function() {
+    var ok = [
+      { role: 'user', content: 'q' },
+      { role: 'assistant', tool_calls: [{ id: 'a1' }, { id: 'a2' }] },
+      { role: 'tool', tool_call_id: 'a1', content: 'r1' },
+      { role: 'tool', tool_call_id: 'a2', content: 'r2' },
+    ];
+    expect(unservedToolCallIds(ok).length).toBe(0);
+  });
+
+  // Le payload de prod : 3 appels annoncés, 2 servis.
+  it('nomme le tool_call annoncé sans résultat', function() {
+    var ko = [
+      { role: 'assistant', tool_calls: [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }] },
+      { role: 'tool', tool_call_id: 'a1', content: 'r1' },
+      { role: 'tool', tool_call_id: 'a3', content: 'r3' },
+    ];
+    expect(unservedToolCallIds(ko)).toEqual(['a2']);
+  });
+
+  it('tolère une entrée vide ou absente, sans exception', function() {
+    expect(unservedToolCallIds([]).length).toBe(0);
+    expect(unservedToolCallIds(null).length).toBe(0);
+    expect(unservedToolCallIds([{ role: 'user', content: 'x' }]).length).toBe(0);
+  });
+
+  // Sur la SORTIE composée d'expandThread, les DEUX conditions du backend,
+  // asserties ensemble sur un thread mêlant ack valide et acks incomplets.
+  //
+  // `unservedToolCallIds` seul ne suffit PAS ici et ne doit pas donner le
+  // change : avant le correctif, un ack orphelin était expansé AVEC son message
+  // `tool` (vide), donc l'invariant « un résultat par appel » était satisfait
+  // et ce contrôle restait vert — c'est l'absence de `name` qui déclenchait le
+  // 422. Vérifié en rejouant la suite sous l'ancien prédicat : seule la seconde
+  // assertion tombe. Les deux ensemble couvrent les deux voies connues.
+  it('expandThread satisfait les deux conditions du backend (résultat servi, appel nommé)', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      { role: 'tool-ack', kind: 'mcp_call', name: 'srv__ok', args: { a: 1 },
+        result: 'ok', ts: 0, group: 'gM' },
+      { role: 'tool-ack', kind: 'resource_stored', args: { b: 2 }, group: 'gM' },
+      { role: 'tool-ack', kind: 'mcp_call', args: { c: 3 }, group: 'gSolo' },
+      { role: 'assistant', content: 'fin' },
+    ];
+    var out = expandThread(t);
+    expect(unservedToolCallIds(out).length).toBe(0);
+    var unnamed = 0;
+    out.forEach(function(msg) {
+      (msg.tool_calls || []).forEach(function(tc) {
+        if (!tc.function || !tc.function.name) unnamed++;
+      });
+    });
+    expect(unnamed).toBe(0);
+  });
+});
+
+describe('ackIsExpandable (prédicat unique de réinjection)', function() {
+  it('exige args ET name', function() {
+    expect(ackIsExpandable({ args: {}, name: 'srv__foo' })).toBeTruthy();
+    expect(ackIsExpandable({ args: {} })).toBe(false);
+    expect(ackIsExpandable({ name: 'srv__foo' })).toBe(false);
+    expect(ackIsExpandable({})).toBe(false);
+    expect(ackIsExpandable(null)).toBe(false);
+  });
+
+  // `args: {}` est légitime (outil sans argument) : le prédicat teste la
+  // PRÉSENCE, jamais la truthiness — `if (args)` refuserait cet appel valide.
+  it('accepte un objet d\'arguments vide, qui est un appel légitime', function() {
+    expect(ackIsExpandable({ args: {}, name: 'srv__sans_args' })).toBeTruthy();
+  });
+
+  // Distinct d'ackHasInspectableDetail À DESSEIN : un appel EN VOL n'est pas
+  // réinjectable (rien à réinjecter) mais reste inspectable (tout l'intérêt de
+  // la loupe pendant qu'un outil lent travaille). Fusionner les deux ferait
+  // perdre la loupe sur les appels en vol, ou ré-émettrait les orphelins.
+  it('ne se confond pas avec ackHasInspectableDetail sur un appel en vol', function() {
+    var enVol = { args: { q: 1 }, pending: true };
+    expect(ackHasInspectableDetail(enVol)).toBeTruthy();
+    expect(ackIsExpandable(enVol)).toBe(false);
+  });
 });
 
 describe('formatCallMarker (source unique du marqueur d\'id, O-2)', function() {
