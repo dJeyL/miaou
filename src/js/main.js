@@ -1555,6 +1555,12 @@ function resetToEmpty() {
   syncActivityBadges();
   syncModelUI();
   syncReasoningUI();
+  // L'accueil ne défile pas : aucun `scroll` ne viendra rafraîchir le bouton
+  // « aller tout en bas », qui resterait donc affiché avec l'état du fil
+  // qu'on vient de quitter. openConversation n'a pas ce défaut (son
+  // `scrollBottom(true)` final synchronise) ; ce chemin-ci doit le faire
+  // explicitement.
+  syncScrollBottomBtn();
   _lastContextManifest = null;
   syncContextCounter();
 }
