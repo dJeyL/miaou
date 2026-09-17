@@ -875,7 +875,20 @@ async function runConversation(messages, hooks) {
             // réécrit rawResult.content avec des références. Même contexte que l'outil lui-même — la
             // ressource appartient à la conversation de la génération.
             if (typeof internResourcesFromResult === 'function') {
-              await internResourcesFromResult(rawResult, toolExecContext.convId, Date.now, Math.random);
+              // `toolCtx` (tools.js) est LE point de lecture unique du contexte
+              // d'outil, repli sur l'écran compris. Lire `toolExecContext.convId`
+              // à la main — ce que faisait ce site — réécrivait ce prédicat
+              // localement ET plantait sur un `toolExecContext` undefined, valeur
+              // pourtant NOMINALE hors génération (drawer d'outils, tests : cf. sa
+              // dérivation plus haut, où `undefined` signifie « pas de contexte
+              // figé, prends l'écran »). Les trois autres usages passent l'objet
+              // entier, qui tolère l'absence par contrat ; seul celui-ci
+              // déréférençait. Garde `typeof` symétrique de celle qui l'entoure :
+              // le test runner évalue api.js sans tools.js.
+              const ictx = (typeof toolCtx === 'function')
+                ? toolCtx(toolExecContext)
+                : (toolExecContext || {});
+              await internResourcesFromResult(rawResult, ictx.convId, Date.now, Math.random);
             }
             out = flattenToolResult(rawResult);
             servedKeys.add(key);

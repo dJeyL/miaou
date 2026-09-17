@@ -1162,7 +1162,20 @@ formateurs, deux publics, et l'ack est une surface d'interface.
   garde côté `expandThread` ne pouvait le rattraper. Le pur
   `unservedToolCallIds(messages)` nomme les appels sans résultat : garde de
   diagnostic, jamais un filtre de rattrapage — réparer le payload après coup
-  masquerait la cause. Si le
+  masquerait la cause.
+
+  **Non-régression e2e** : `.claude/skills/run-miaou/verify-toolcall-payload-integrity.mjs`
+  (modèle stubé en SSE, payloads capturés à la sortie de `fetch`). Il injecte un
+  ack tel que le laisse un appel interrompu en vol — `args` seul —, puis audite
+  le payload de l'envoi suivant. Rejoué sous l'ancien prédicat, il tombe en
+  nommant le tool_call anonyme ; c'est ce rejeu qui le qualifie, pas son vert.
+  **Ce qu'il ne couvre pas**, mesuré en l'écrivant plutôt que supposé : le
+  chemin d'émission d'api.js est INOBSERVABLE depuis le payload, parce qu'un
+  handler qui lève ne laisse aucun ack et que le tableau `messages` de la boucle
+  ne repart jamais sur le fil (l'exception sort de `runConversation`). Ce chemin
+  est couvert par `test-api.js`, qui inspecte le tableau directement — une
+  première version du verify, bâtie sur l'hypothèse inverse, passait au vert
+  avant comme après correctif. Si le
   premier ack d'un groupe porte `assistantText`, le message assistant standalone
   qui le précède immédiatement est absorbé dans le `content` de l'assistant
   expansé pour éviter la duplication. `stampTs(ts, result)` (utils.js) préfixe

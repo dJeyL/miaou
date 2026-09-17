@@ -119,6 +119,57 @@ function describe(label, fn) {
   fn();
 }
 
+// Déroule une promesse jusqu'à son terme et rend sa valeur — ou relance son
+// rejet, pour qu'un `it` le voie comme n'importe quelle exception.
+//
+// EXPLICITE À DESSEIN, jamais caché dans un `it` async. QuickJS ne pompe pas sa
+// file de microtâches tout seul : une promesse non pompée reste `pending` pour
+// toujours, et un `it` qui se contenterait de la retourner rendrait la main
+// sans rien exécuter — donc PASSERAIT AU VERT sans avoir rien testé. Cette
+// défaillance-là est invisible à la lecture du test, et c'est la pire qu'un
+// harnais puisse avoir. Un helper NOMMÉ rend l'oubli visible : pas de
+// `runAsync`, pas d'asynchrone. Ne jamais le rendre implicite.
+//
+// Le pompage lui-même vit côté Python (`execute_pending_job` est une méthode du
+// contexte, hors d'atteinte du JS) et est exposé par `__pump`.
+//
+// `settled` distingue les trois issues, là où lire la seule valeur confondrait
+// « résolu à undefined » et « jamais terminé » — c'est exactement l'ambiguïté
+// qui laisserait passer un test qui n'a pas tourné.
+function runAsync(promise) {
+  if (!promise || typeof promise.then !== 'function') {
+    throw new Error('runAsync attend une promesse, reçu ' + JSON.stringify(promise));
+  }
+  var settled = false, value, error, rejected = false;
+  promise.then(
+    function(v) { settled = true; value = v; },
+    function(e) { settled = true; rejected = true; error = e; }
+  );
+  __pump();
+  if (!settled) {
+    // Promesse jamais résolue : attente d'un timer, d'un I/O, ou d'un stub qui
+    // ne répond pas. Échec franc — le silence serait un faux vert.
+    throw new Error('runAsync : la promesse n\'est jamais retombée (pompage épuisé). ' +
+                    'Un stub ne répond probablement pas.');
+  }
+  if (rejected) throw (error instanceof Error ? error : new Error(String(error)));
+  return value;
+}
+
+// Variante pour un rejet ATTENDU : rend l'erreur au lieu de la relancer.
+// `runAsync` seul obligerait à un try/catch dans chaque test d'échec, et un
+// `catch` vide y masquerait une promesse qui ne retombe jamais.
+function runAsyncReject(promise) {
+  try {
+    var v = runAsync(promise);
+    throw new Error('attendu un rejet, reçu la valeur ' + JSON.stringify(v));
+  } catch (e) {
+    if (String(e.message || '').indexOf('attendu un rejet') === 0) throw e;
+    if (String(e.message || '').indexOf('runAsync :') === 0) throw e;
+    return e;
+  }
+}
+
 function it(label, fn) {
   try {
     fn();
@@ -177,6 +228,21 @@ def load_sources(ctx: "quickjs.Context") -> int:
 
 def run_file(test_path: Path) -> tuple[int, int]:
     ctx = quickjs.Context()
+
+    # Pompage de la file de microtâches, exposé au JS sous `__pump`.
+    # QuickJS n'exécute PAS les jobs en attente tout seul : sans ce pont, tout
+    # `await` reste figé et une promesse ne retombe jamais. Côté Python parce
+    # que `execute_pending_job` est une méthode du contexte, invisible du JS.
+    # La borne est un garde-fou contre une boucle de promesses qui se
+    # réalimente : on rend la main, `runAsync` échouera sur « jamais retombée »
+    # plutôt que de faire tourner le runner indéfiniment.
+    def _pump() -> int:
+        n = 0
+        while n < 100000 and ctx.execute_pending_job():
+            n += 1
+        return n
+
+    ctx.add_callable('__pump', _pump)
 
     # 1. Stubs + framework
     ctx.eval(BROWSER_STUBS)

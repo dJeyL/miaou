@@ -1,7 +1,57 @@
 # Couverture de tests
 
 Squelettes dans `tests/` exécutés par `tests/runner.py` (QuickJS, stubs
-navigateur + framework maison). Le runner exécute d'abord quelques **tests
+navigateur + framework maison).
+
+## Tests asynchrones — `runAsync`, jamais un `it` async
+
+QuickJS **ne pompe pas sa file de microtâches tout seul** : une promesse laissée
+telle quelle reste `pending` pour toujours. Le runner expose donc `__pump`
+(pont vers `execute_pending_job`, côté Python — la méthode est invisible du JS),
+et le framework en tire deux helpers :
+
+- **`runAsync(promise)`** — déroule la chaîne d'`await` et rend la valeur, ou
+  relance le rejet pour qu'un `it` le voie comme n'importe quelle exception.
+- **`runAsyncReject(promise)`** — pour un rejet ATTENDU : rend l'erreur au lieu
+  de la relancer, sans obliger chaque test d'échec à son propre `try/catch`
+  (où un `catch` vide masquerait une promesse qui ne retombe jamais).
+
+**Le helper est explicite à dessein : ne jamais le rendre implicite dans `it`.**
+Un `it` qui se contenterait de retourner une promesse rendrait la main sans
+avoir rien exécuté, donc **passerait au vert sans rien tester** — défaillance
+invisible à la lecture, et la pire qu'un harnais puisse porter. Nommer le
+pompage rend l'omission visible : pas de `runAsync`, pas d'asynchrone. Une
+promesse qui ne retombe pas échoue franchement (« jamais retombée »), jamais en
+silence ; quatre tests de `test-api.js` gardent ce comportement, dont celui du
+faux vert.
+
+Ce que ça ouvre reste borné : l'asynchrone n'est plus un obstacle, **IDB et
+`fetch` le restent** (le harnais ne les fournit pas). Un chemin async pur, ou
+dont les frontières sont stubables, est désormais testable ; un chemin qui lit
+la base ne l'est pas davantage qu'avant.
+
+**Premier usage — `runConversation` (boucle d'outils, `test-api.js`).** Deux
+propriétés du projet le rendent possible : `messages` est muté EN PLACE, donc
+l'appelant garde la référence et peut l'inspecter après coup (ce que font les
+trois appelants de production) ; et `streamCompletion`/`callTool` sont des
+déclarations `function`, donc des globals réassignables dans le realm partagé —
+la contrainte « tout est global » joue ici en faveur du test. **Portée à
+respecter** : ces deux frontières étant stubées, seule la BOUCLE est couverte
+(ce qu'elle laisse dans `messages`), rien du streaming SSE, du routage d'outil
+ni du transport. Élargir le `describe` sans élargir les stubs en ferait une
+fixture partielle. Sont couverts : l'invariant « tout `tool_call` a son message
+`tool` » (`unservedToolCallIds`), l'ordre assistant → tools, et l'échec de
+handler en première comme en dernière position — la variante de position
+existe parce qu'un correctif ne traitant que « le dernier appel » passerait
+sinon pour bon.
+
+**Complément e2e** : `verify-toolcall-payload-integrity.mjs` couvre l'autre
+voie du même 422 (réinjection d'un ack interrompu en vol) en auditant le
+payload réellement sorti de `fetch`. La répartition entre les deux n'est pas
+un choix de confort : le chemin d'émission d'api.js est **inobservable depuis
+le payload** (un handler qui lève ne laisse aucun ack, et le tableau de la
+boucle ne repart jamais sur le fil), donc il ne peut être couvert QUE par le
+test pur ; la réinjection, elle, se voit sur le fil. Cf. `docs/tools.md`. Le runner exécute d'abord quelques **tests
 unitaires Python de build.py** (`run_build_unit_tests` : strip des commentaires
 JS/CSS/HTML — strings, templates, regex, commentaire non terminé ;
 `parse_help_sections` — nominal, ordre, fence, slug dupliqué, fichier sans
@@ -251,9 +301,10 @@ endpoint+modèle — indépendance par URL et par modèle). Le retry de
 `streamCompletion` sans le paramètre après rejet passe par `fetch` : manuel.
 
 Le contenu skill lu en IDB (`getSkillContent`/`getSkillRecord`, chemin async)
-se vérifie à la main, comme la garde « aucune skill activée » de `resolveSend`
-(async — le harness QuickJS n'exécute pas les microtâches, un `.then` ne se
-résout jamais dans le corps synchrone d'un `it`). IDB, `internResourcesFromResult`, `loadConversationResources`
+se vérifie à la main, comme la garde « aucune skill activée » de `resolveSend` —
+non pas parce que l'asynchrone serait hors d'atteinte (il ne l'est plus, cf.
+`runAsync` ci-dessous), mais parce que ces chemins dépendent d'IDB, que le
+harness ne fournit pas. IDB, `internResourcesFromResult`, `loadConversationResources`
 et la cascade de blocs non-text (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans
 `docs/manual-tests.md`).
 

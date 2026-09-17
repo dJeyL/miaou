@@ -557,3 +557,173 @@ describe('TITLE_PROMPT à texte CONSTANT après extraction de TITLE_RULES (lot A
     expect(EARLY_TITLE_PROMPT).toContain('monter en généralité');
   });
 });
+
+// ── Boucle d'outils : invariant de payload (runConversation) ─────────────────
+// PORTÉE DE CES TESTS, à lire avant d'en ajouter. `streamCompletion` et
+// `callTool` sont STUBÉS : ce qui est couvert ici, c'est la boucle et ce
+// qu'elle laisse dans `messages` — rien du streaming SSE, du routage d'outil
+// ni du transport. Un `describe` qui laisserait croire à une couverture d'api.js
+// entière serait une fixture partielle, pas une garantie.
+//
+// Ce qui rend le montage possible : `messages` est muté EN PLACE, donc
+// l'appelant garde la référence et peut l'inspecter après coup — exactement ce
+// que font les trois appelants de production. Et les deux frontières sont des
+// déclarations `function`, donc des globals réassignables dans le realm partagé
+// (la contrainte « tout est global » du projet joue ici en faveur du test).
+//
+// `runAsync` est OBLIGATOIRE sur tout appel : sans lui, la promesse reste
+// pending et le test passerait au vert sans rien exécuter (cf. son commentaire
+// dans runner.py).
+describe('runConversation — invariant « tout tool_call a son résultat »', function() {
+  var _savedStream, _savedCallTool;
+
+  // Pas de `gen` : l'appel hors génération est un cas NOMINAL (drawer d'outils,
+  // tests), et `toolExecContext` y vaut `undefined` par construction — le repli
+  // sur l'écran est fait par `toolCtx`. Ce montage a révélé qu'un site le
+  // déréférençait à la main ; le garder sans `gen` pin la correction.
+
+  function stubTurns(toolCalls, toolImpl) {
+    _savedStream = streamCompletion;
+    _savedCallTool = callTool;
+    var turn = 0;
+    streamCompletion = function() {
+      turn++;
+      if (turn === 1) {
+        return Promise.resolve({ content: '', toolCalls: toolCalls,
+          finishReason: 'tool_calls', usage: null, reasoning: '' });
+      }
+      return Promise.resolve({ content: 'fini', toolCalls: [],
+        finishReason: 'stop', usage: null, reasoning: '' });
+    };
+    callTool = toolImpl;
+  }
+
+  function restore() {
+    streamCompletion = _savedStream;
+    callTool = _savedCallTool;
+  }
+
+  function tc(id, name) {
+    return { id: id, type: 'function', function: { name: name, arguments: '{}' } };
+  }
+
+  function rolesOf(msgs) {
+    return msgs.map(function(m) { return m.role; }).join(',');
+  }
+
+  it('un handler qui lève ne laisse aucun tool_call sans résultat', function() {
+    stubTurns([tc('call_ok', 'miaou__a'), tc('call_bad', 'miaou__b')],
+      function(name) {
+        if (name === 'miaou__b') return Promise.reject(new Error('boom'));
+        return Promise.resolve('res-a');
+      });
+    try {
+      var msgs = [{ role: 'user', content: 'go' }];
+      // L'exception du handler remonte et sort de runConversation, comme en
+      // production : c'est CE chemin qui laissait un assistant bancal derrière
+      // lui. On vérifie l'état du tableau APRÈS la sortie en erreur.
+      var err = runAsyncReject(runConversation(msgs, {}));
+      expect(err.message).toContain('boom');
+      expect(unservedToolCallIds(msgs).length).toBe(0);
+      // Aucun appel n'a été servi : ni assistant, ni tool. Un assistant à
+      // `tool_calls: []` serait rejeté à son tour (piège 27).
+      expect(rolesOf(msgs)).toBe('user');
+    } finally {
+      restore();
+    }
+  });
+
+  it('un tour nominal à deux outils émet l\'assistant puis les deux résultats', function() {
+    stubTurns([tc('c1', 'miaou__a'), tc('c2', 'miaou__b')],
+      function() { return Promise.resolve('ok'); });
+    try {
+      var msgs = [{ role: 'user', content: 'go' }];
+      runAsync(runConversation(msgs, {}));
+      expect(unservedToolCallIds(msgs).length).toBe(0);
+      // L'ORDRE est le contrat : assistant porteur des appels, puis leurs
+      // résultats. Différer le push de l'assistant ne doit pas le déplacer.
+      expect(rolesOf(msgs)).toBe('user,assistant,tool,tool');
+      expect(msgs[1].tool_calls.length).toBe(2);
+      expect(msgs[2].tool_call_id).toBe('c1');
+      expect(msgs[3].tool_call_id).toBe('c2');
+    } finally {
+      restore();
+    }
+  });
+
+  it('un échec sur le PREMIER de deux outils n\'émet rien du tour', function() {
+    // Variante de position : le défaut d'origine se voyait sur le second appel,
+    // mais rien ne garantit que l'échec arrive en fin de liste. Sans ce cas, un
+    // correctif qui ne traiterait que « le dernier » passerait pour bon.
+    stubTurns([tc('c1', 'miaou__a'), tc('c2', 'miaou__b')],
+      function(name) {
+        if (name === 'miaou__a') return Promise.reject(new Error('boom-first'));
+        return Promise.resolve('ok');
+      });
+    try {
+      var msgs = [{ role: 'user', content: 'go' }];
+      var err = runAsyncReject(runConversation(msgs, {}));
+      expect(err.message).toContain('boom-first');
+      expect(unservedToolCallIds(msgs).length).toBe(0);
+      expect(rolesOf(msgs)).toBe('user');
+    } finally {
+      restore();
+    }
+  });
+
+  it('tout tool_call émis porte un id apparié à un message tool', function() {
+    // Assertion sur la SORTIE composée plutôt que sur un compte : elle dit
+    // LEQUEL manque quand elle tombe, là où un cardinal nu reste muet.
+    stubTurns([tc('x1', 'miaou__a'), tc('x2', 'miaou__b'), tc('x3', 'miaou__c')],
+      function() { return Promise.resolve('ok'); });
+    try {
+      var msgs = [{ role: 'user', content: 'go' }];
+      runAsync(runConversation(msgs, {}));
+      var announced = [];
+      var served = [];
+      msgs.forEach(function(m) {
+        (m.tool_calls || []).forEach(function(t) { announced.push(t.id); });
+        if (m.role === 'tool') served.push(m.tool_call_id);
+      });
+      expect(announced).toEqual(['x1', 'x2', 'x3']);
+      expect(served).toEqual(['x1', 'x2', 'x3']);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// ── Garde du harnais lui-même ───────────────────────────────────────────────
+// Sans pompage, une promesse reste pending pour toujours et un test asynchrone
+// passerait au vert sans rien exécuter. Ces deux tests vérifient que le helper
+// fait bien la différence, donc qu'un faux vert reste impossible.
+describe('runAsync (helper de pompage)', function() {
+  it('déroule une chaîne d\'await et rend la valeur finale', function() {
+    var f = async function() {
+      var a = await Promise.resolve(1);
+      var b = await Promise.resolve(2);
+      return a + b;
+    };
+    expect(runAsync(f())).toBe(3);
+  });
+
+  it('relance le rejet pour qu\'un it le voie comme une exception', function() {
+    var f = async function() { await null; throw new Error('nope'); };
+    var err = runAsyncReject(f());
+    expect(err.message).toBe('nope');
+  });
+
+  it('échoue franchement sur une promesse qui ne retombe jamais', function() {
+    // Le faux vert que le helper existe pour empêcher.
+    var jamais = new Promise(function() {});
+    var caught = null;
+    try { runAsync(jamais); } catch (e) { caught = e.message; }
+    expect(String(caught)).toContain('jamais retombée');
+  });
+
+  it('refuse une valeur qui n\'est pas une promesse', function() {
+    var caught = null;
+    try { runAsync(42); } catch (e) { caught = e.message; }
+    expect(String(caught)).toContain('attend une promesse');
+  });
+});
