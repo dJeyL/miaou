@@ -133,6 +133,10 @@ async function mcpRpcAttempt(server, method, params, opts) {
     if (!msg) throw new Error('Réponse vide.');
     if (msg.error) {
       const err = new Error((msg.error && msg.error.message) || 'Erreur JSON-RPC.');
+      // Le serveur a REPONDU : quoi que dise cette erreur, il est joignable.
+      // Le drapeau sert a `noteMcpCallFailure` (plus bas) pour ne pas declarer
+      // injoignable un serveur qui refuse simplement l'appel.
+      err.applicative = true;
       if (hadSession && /session/i.test(err.message)) err.staleSession = true;   // signalée par erreur JSON-RPC
       // Code machine applicatif (brief D, contrat REF_UNKNOWN) : slot standard
       // JSON-RPC 2.0 pour les données d'erreur applicatives, `code` restant
@@ -359,6 +363,45 @@ function clearAuthorizationRefusal(ackEntry) {
 // essai au lieu d'en pousser une seconde — même rendu qu'un rejeu staleSession
 // (dont le rejeu vit SOUS un seul callRemoteTool) : UNE ligne d'appel pour
 // l'échange complet, l'erreur transitoire est effacée si le rejeu réussit.
+// Un appel d'outil qui echoue au TRANSPORT retombe sur le statut du serveur.
+//
+// Sans ca l'information se perdait : `_remoteStatus` n'est ecrit qu'aux
+// mutations de configuration (connexion, sauvegarde, reverification au focus),
+// donc un serveur tombant EN COURS de conversation restait marque 'ok'. Le
+// modele voyait « Failed to fetch » dans son tool result et l'utilisateur
+// n'avait aucun signal : ni pastille de topbar, ni chat soucieux.
+//
+// La ligne de partage est transport / applicatif, et elle compte : une erreur
+// JSON-RPC (outil inconnu, argument invalide, refus d'autorisation) prouve au
+// contraire que le serveur repond. La declarer injoignable rendrait le chat
+// soucieux pour un appel malformé, et le signal cesserait d'etre lu.
+//
+// Ne touche QUE `state`/`error` : le reste de l'entree (outils listes, session,
+// consignes) reste valide, c'est la reconnexion qui la reecrit en entier.
+function noteMcpCallFailure(serverName, err) {
+  if (!serverName || (err && err.applicative)) return;
+  const st = _remoteStatus[serverName];
+  if (!st || st.state === 'error') return;
+  st.state = 'error';
+  st.error = (err && err.message) || 'injoignable';
+  // Meme point de passage que les autres ecritures de statut : la pastille de
+  // topbar ET le chat soucieux en derivent, aucun des deux n'est cable ici.
+  if (typeof syncAuthorizationPending === 'function') syncAuthorizationPending();
+}
+
+// Reciproque de `noteMcpCallFailure` : un appel reussi releve le statut.
+// Prudence deliberee — on ne repasse 'ok' que depuis 'error', et sans toucher
+// au compte d'outils ni aux upstreams a autoriser : ce sont des faits etablis
+// par `tools/list`, qu'un simple `tools/call` ne reobserve pas.
+function noteMcpCallSuccess(serverName) {
+  if (!serverName) return;
+  const st = _remoteStatus[serverName];
+  if (!st || st.state !== 'error') return;
+  st.state = 'ok';
+  st.error = null;
+  if (typeof syncAuthorizationPending === 'function') syncAuthorizationPending();
+}
+
 async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
   const fullName = server.name + '__' + toolName;
   const ackEntry = reuseAckEntry || { kind: 'mcp_call', server: server.name, name: fullName };
@@ -370,6 +413,13 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
     const content = (result && Array.isArray(result.content)) ? result.content : [];
     const nonText = content.filter(b => b && b.type !== 'text');
     if (nonText.length) _pendingToolBlocks.push.apply(_pendingToolBlocks, nonText);
+    // Un appel qui PASSE prouve le serveur joignable, y compris quand l'outil
+    // repond une erreur metier : c'est le transport qui est en cause dans un
+    // 'error' pose par `noteMcpCallFailure`, et il vient de fonctionner.
+    // Sans cette reciproque l'etat survivait jusqu'au prochain retour de focus
+    // — le chat restait soucieux devant un serveur redevenu sain, exactement le
+    // defaut corrige cote backend au lot precedent.
+    noteMcpCallSuccess(server && server.name);
     if (result && result.isError) ackEntry.error = true;
     else if (reuseAckEntry) {
       delete ackEntry.error;              // rejeu réussi : échec transitoire effacé
@@ -394,6 +444,7 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
     // seulement `code` : `authorization_url` et `upstream` sont déjà là, rien à
     // ajouter au transport.
     applyAuthorizationRefusal(ackEntry, errorCode, e && e.data, server && server.name);
+    noteMcpCallFailure(server && server.name, e);
     const serverMessage = (e && e.message) || e;
     // Le refus d'autorisation reçoit un texte propre (cf. sa fonction) : le
     // message serveur seul s'adresse mal au modèle. Tout autre échec garde la

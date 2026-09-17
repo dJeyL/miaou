@@ -26,6 +26,9 @@
 // parfois avant même le démarrage du fade-in — _bootReady fait attendre le
 // vrai rAF avant de planifier.
 const BOOT_MIN_AFTER_READY_MS = 1800;
+// Plancher allongé quand le chat est soucieux : le temps du clin nominal, plus
+// celui de voir l'expression s'installer (transition des sourcils : 260ms).
+const BOOT_MIN_WORRIED_MS = 3000;
 function finishBoot() {
   const el = document.getElementById('boot-overlay');
   if (!el) return;
@@ -34,7 +37,19 @@ function finishBoot() {
   // par aucun script.
   if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
   const since = Date.now() - _bootReadyAt;
-  const wait = Math.max(0, BOOT_MIN_AFTER_READY_MS - since);
+  // Le chat soucieux ne vaut au boot que s'il est VU : le plancher nominal est
+  // calé sur un clin, pas sur une expression qui apparaît en fin de course. On
+  // rallonge donc quand le verdict est déjà tombé — « d'abord je cligne,
+  // ensuite je soupçonne ».
+  //
+  // On rallonge, on n'ATTEND pas : le boot ne se suspend jamais pour un verdict
+  // réseau. Si le diagnostic arrive après l'estompage (sonde plus lente que le
+  // plancher, MCP qui répond tard), l'overlay est déjà parti et c'est la topbar
+  // qui prend le relais — les trois surfaces portant la même classe, il n'y a
+  // rien à rattraper.
+  const floor = document.body.classList.contains('miaou-worried')
+    ? BOOT_MIN_WORRIED_MS : BOOT_MIN_AFTER_READY_MS;
+  const wait = Math.max(0, floor - since);
   setTimeout(() => {
     el.classList.add('boot-done');
     // Animation d'entrée de la liste jouée PENDANT l'estompage de l'overlay
@@ -48,30 +63,22 @@ function finishBoot() {
   }, wait);
 }
 
-// ── Logo : source unique (favicon + sidebar) ────────────────────────────────
-// Logo MIAOU (chat), encodé en base64 et inliné ici : le SVG d'origine n'est pas
-// versionné, le build n'en dépend donc pas. Factorisée via applyLogo().
-const LOGO_SRC =
-  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMC' +
-  'A2NCA2NCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnQiIgeDE9IjMyIiB5MT0iMiIgeDI9IjMyIiB5Mj0iNjIiIGdyYW' +
-  'RpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNGRkM5M0MiLz48c3RvcC' +
-  'BvZmZzZXQ9Ii41NSIgc3RvcC1jb2xvcj0iI0ZGN0ExQSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI0YyNDMxQS' +
-  'IvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxzdHlsZT4uZXlle3RyYW5zZm9ybS1ib3g6ZmlsbC1ib3g7dHJhbnNmb3JtLW' +
-  '9yaWdpbjpjZW50ZXI7YW5pbWF0aW9uOm1pYW91LWJsaW5rIDZzIGVhc2UtaW4tb3V0IGluZmluaXRlfUBrZXlmcmFtZXMgbW' +
-  'lhb3UtYmxpbmt7MCUsODYlLDEwMCV7dHJhbnNmb3JtOnNjYWxlWSgxKX04OCUsODkle3RyYW5zZm9ybTpzY2FsZVkoLjA4KX' +
-  '05MSV7dHJhbnNmb3JtOnNjYWxlWSgxKX05MyUsOTQle3RyYW5zZm9ybTpzY2FsZVkoLjA4KX05NiV7dHJhbnNmb3JtOnNjYW' +
-  'xlWSgxKX19QG1lZGlhKHByZWZlcnMtcmVkdWNlZC1tb3Rpb246cmVkdWNlKXsuZXlle2FuaW1hdGlvbjpub25lfX08L3N0eW' +
-  'xlPjxnIGZpbGw9InVybCgjZ0IpIj48cGF0aCBkPSJNMTQgMTggTDE4IDUgTDI4IDE4IFoiLz48cGF0aCBkPSJNNTAgMTggTD' +
-  'Q2IDUgTDM2IDE4IFoiLz48cmVjdCB4PSI2IiB5PSIxNiIgd2lkdGg9IjUyIiBoZWlnaHQ9IjMwIiByeD0iMTEiLz48cGF0aC' +
-  'BkPSJNMTYgNDMgTDE1IDU3IEwyOSA0NCBaIi8+PC9nPjxjaXJjbGUgY2xhc3M9ImV5ZSIgY3g9IjI2IiBjeT0iMzAiIHI9Ij' +
-  'MuMyIgZmlsbD0iIzE2MGQwNyIvPjxjaXJjbGUgY2xhc3M9ImV5ZSIgY3g9IjM4IiBjeT0iMzAiIHI9IjMuMyIgZmlsbD0iIz' +
-  'E2MGQwNyIvPjxwYXRoIGQ9Ik0yOSAzNyBRMzIgNDAgMzUgMzciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE2MGQwNyIgc3Ryb2' +
-  'tlLXdpZHRoPSIyLjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==';
+// ── Logo : le data-URI, pour ce qui n'accepte pas un noeud SVG ─────────────
+// La forme du chat vit dans src/svg/cat.svg, injectée INLINE par le build aux
+// trois surfaces qui l'animent (boot, sidebar, topbar — cf. build.py). Ce
+// data-URI en est dérivé au build depuis le MÊME fichier, et ne subsiste que
+// pour les trois points où un noeud SVG n'est pas une option : le favicon
+// (<link rel="icon">), le glyphe de source du fil (ui.js) et l'export
+// standalone. Il porte donc toujours le chat NORMAL : un favicon soucieux
+// n'apporte rien, et un export ne doit pas figer un incident passé.
+// Garde try/catch : les tests QuickJS lisent la source non buildée, où le
+// marqueur n'est pas substitué.
+const LOGO_SRC = (function () {
+  try { return __MIAOU_LOGO_DATA__; } catch (e) { return ''; }
+})();
 
 function applyLogo() {
   $('favicon').href = LOGO_SRC;
-  $('brand-logo').src = LOGO_SRC;
-  $('topbar-logo').src = LOGO_SRC;
 }
 
 // ── État de session ─────────────────────────────────────────────────────────
@@ -836,7 +843,7 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
-    else recheckMcpServers();
+    else { recheckMcpServers(); maybeProbeBackend(); }
   });
 
   // DEUXIÈME signal de retour, et non un doublon du précédent : `visibilitychange`
@@ -850,7 +857,7 @@ function wireIdleSummaryActivity() {
   // ne fait rien quand aucun serveur n'est en défaut, et un double appel
   // rapproché relance au pire un handshake déjà en cours, que `connectMcpServer`
   // absorbe (il réécrit le statut, il n'accumule pas).
-  window.addEventListener('focus', () => { recheckMcpServers(); });
+  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); });
 }
 
 // Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE
@@ -2340,8 +2347,60 @@ function onSaveSettings() {
 // chargée à l'ouverture du sélecteur (loadAllServerModels), pour ne pas payer N
 // requêtes au démarrage si le menu n'est jamais ouvert.
 async function prefetchModels() {
+  const server = activeApiServer();
   try { await loadModelsCached(); } catch (e) { /* sélecteur masqué */ }
+  // Le verdict de CE chargement alimente la pastille, au même titre qu'une
+  // sonde explicite : c'est le premier contact avec le backend, et sans lui un
+  // serveur déjà mort au démarrage laissait la pastille au vert optimiste
+  // (`probe: null`) jusqu'au premier retour de focus. `loadModelsCached` ne
+  // rejette pas — l'échec vit dans l'entrée de cache, relue APRÈS l'await.
+  //
+  // Seulement si un serveur est configuré : sans ça on poserait un verdict de
+  // panne sur une install neuve, qui doit rester 'unconfigured' (la pastille y
+  // envoie aux réglages, pas vers un serveur à attendre).
+  if (server) {
+    markBackendProbed(Date.now());
+    noteBackendProbe(!_modelsEntryOf(server).error);
+  }
   syncModelUI();
+}
+
+// ── Sonde de santé du backend API ───────────────────────────────────────────
+// Rend la pastille de connexion honnête : avant ce lot elle ne repassait verte
+// qu'au prochain ÉCHANGE réussi, donc restait rouge indéfiniment après une
+// panne réparée tant qu'on n'envoyait pas de message. Le signal disait « le
+// dernier échange a échoué » là où sa forme — une pastille d'état permanente —
+// promettait « le backend est joignable ».
+//
+// La sonde réutilise `/models` (`fetchModels`), déjà appelé au démarrage et à
+// chaque changement de serveur, et dont l'échec était jusqu'ici avalé en
+// silence par `prefetchModels`. Aucune requête d'un nouveau genre : on branche
+// le verdict d'une requête qui existait déjà.
+//
+// `force: true` est IMPÉRATIF. `loadServerModels` sert un cache de session par
+// serveur : sans le forçage, la sonde répondrait « ok » depuis une entrée mise
+// en cache AVANT la panne — un vert qui ne prouve rien, précisément le défaut
+// qu'on corrige. Le succès rafraîchit le cache au passage.
+async function probeBackend() {
+  const server = activeApiServer();
+  if (!server) { noteBackendProbe(false); return; }
+  markBackendProbed(Date.now());
+  // Ne rejette jamais : l'échec est mémorisé dans l'entrée de cache, qu'on relit
+  // APRÈS l'await — un instantané pris avant serait celui de l'état précédent.
+  await loadServerModels(server, true);
+  const entry = _modelsEntryOf(server);
+  noteBackendProbe(!entry.error);
+  syncModelUI();
+}
+
+// Sonde au retour de l'utilisateur, si l'état courant le justifie
+// (`shouldProbeBackend` : jamais en 'unconfigured', sans délai en 'down',
+// throttlé en 'ok'). Même paire de signaux que `recheckMcpServers`, et pour la
+// même raison : `visibilitychange` ne couvre que le changement d'onglet, alors
+// qu'on relance un backend en console sans jamais cacher la fenêtre.
+function maybeProbeBackend() {
+  if (!backendProbeDue(Date.now())) return;
+  probeBackend();
 }
 
 // ── Serveurs MCP distants : orchestration ────────────────────────────────────
@@ -4306,9 +4365,15 @@ async function dispatchSend(matches, continuation) {
         // indiscernable d'un Stop volontaire — l'utilisateur voit une réponse
         // tronquée sans savoir que sa connexion a lâché, et croit le modèle
         // fautif. Le bandeau « Continuer » reste disponible par ailleurs.
-        if (stalled && genOwnsScreen(gen)) {
+        // Le VERDICT sur le backend n'est pas conditionné à l'écran : un flux
+        // mort est un fait sur la connexion, pas sur la conversation regardée
+        // (le `catch` de fin de fonction ne l'a jamais conditionné non plus).
+        // Seul le bandeau d'erreur l'est — il parle de la conversation affichée.
+        if (stalled) {
           setConnDot('err');
-          showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
+          if (genOwnsScreen(gen)) {
+            showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
+          }
         }
         // Réécriture UNIQUE parts→descripteur : le tour vient de se
         // terminer (normalement OU avorté, cf. commentaire de

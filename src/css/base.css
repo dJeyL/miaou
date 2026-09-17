@@ -298,6 +298,7 @@ mark.search-hit {
   transform: scale(.9);
   transition: opacity 500ms ease-out, transform 500ms ease-out;
 }
+.boot-logo svg { width: 100%; height: 100%; display: block; }
 .boot-overlay.boot-ready .boot-logo {
   opacity: 1;
   transform: scale(1);
@@ -308,11 +309,11 @@ mark.search-hit {
    clin soit toujours vu pendant l'affichage bref de l'overlay. */
 /* Blink lancé AVEC le fade-in (via .boot-ready) pour rester synchronisé au même
    instant de démarrage sur tous les moteurs. Delay 0.7s = après le fade. */
-.boot-eye {
+.eye {
   transform-box: fill-box;
   transform-origin: center;
 }
-.boot-overlay.boot-ready .boot-eye {
+.boot-overlay.boot-ready .eye {
   animation: boot-blink 2.4s ease-in-out 0.7s infinite;
 }
 @keyframes boot-blink {
@@ -324,9 +325,86 @@ mark.search-hit {
 }
 @media (prefers-reduced-motion: reduce) {
   .boot-logo { animation: none; opacity: 1; }
-  .boot-eye  { animation: none; }
+  .eye { animation: none; }
   .boot-overlay { transition: none; }
 }
+
+/* ═══ Chat soucieux : sourcils asymétriques ═══
+   Le logo porte ses deux sourcils DANS le markup (src/svg/cat.svg), invisibles
+   au repos : le chat normal, celui qui cligne, n'en a pas. `body.miaou-worried`
+   les révèle sur les trois surfaces à la fois (boot, sidebar, topbar) — une
+   seule classe, posée par le seul syncWorriedLogo (ui.js).
+
+   L'asymétrie est portée par des ROTATIONS, pas par une seconde géométrie : la
+   forme reste diffable dans un unique fichier, et elle se lit à 22px comme à
+   192px.
+
+   Elle doit se lire STATIQUEMENT : sous reduced-motion les transitions tombent
+   (kill-switch plus bas) et il ne reste que l'état final. C'est pourquoi
+   l'information est dans la POSITION des sourcils, jamais dans le mouvement qui
+   y mène — celui-ci n'est qu'un agrément pour qui le voit. */
+/* Position de REPOS = sourcil detendu, et c'est un etat qu'on ne voit jamais
+   fixe : il n'existe que comme point de depart du mouvement. L'arrivee, elle,
+   est le trace brut du SVG (transform: none) — la forme est dans le fichier,
+   pas dans une valeur CSS qu'il faudrait tenir en phase avec lui.
+   L'opacite monte PLUS VITE que la rotation ne s'acheve (180ms contre 420ms) :
+   sans ce decalage le sourcil apparaitrait deja en place et le froncement ne
+   se verrait pas. C'est le seul endroit du logo ou l'ordre des deux compte. */
+.brow {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 180ms ease-out, transform 420ms ease-out;
+}
+.brow-l { transform: translateY(-1.5px) rotate(9deg); }
+.brow-r { transform: translateY(-1px) rotate(-4deg); }
+body.miaou-worried .brow { opacity: 1; }
+/* L'etat d'arrivee, et la seule chose que voit qui coupe les animations.
+   Les deux sourcils ne font PAS le meme geste, et c'est tout le sujet : les
+   incliner du meme angle donne un visage penche, pas un visage qui doute. Le
+   droit se leve franchement, le gauche se contente de retrouver son trace —
+   c'est le CONTRASTE entre les deux qui se lit comme un jugement plutot que
+   comme une emotion (deux sourcils qui montent ensemble : la surprise ; deux
+   qui descendent : la colere).
+   Le gauche arrive a `none`, donc au trace brut du SVG : la forme de reference
+   reste dans le fichier, et aucune valeur CSS n'a a etre tenue en phase avec
+   elle. Valeurs calees a l'ecran avec Julien, aux trois tailles. */
+body.miaou-worried .brow-l { transform: none; }   /* le trace brut : voir ci-dessus */
+body.miaou-worried .brow-r { transform: translateY(-3.3px) rotate(-5deg); }
+
+/* Clin permanent de la sidebar et de la topbar, cycle LENT (6s) : c'est le
+   comportement historique, porte jusqu'ici par le <style> interne du data-URI
+   que l'ancien <img> chargeait. Le passage au SVG inline l'a laisse derriere
+   lui — ce style ne vaut que dans le data-URI, et rien ne le remplaçait cote
+   page : les deux logos sont restes figes. Le rendre au CSS de la page est la
+   contrepartie normale de l'inlining, pas un ajout.
+   Le cycle long est ce qui le rend discret : un clin isole de loin en loin,
+   pas un battement. */
+.brand-logo .eye,
+.topbar-brand-logo .eye {
+  animation: miaou-blink 6s ease-in-out infinite;
+}
+@keyframes miaou-blink {
+  0%, 86%, 100% { transform: scaleY(1); }
+  88%, 89%      { transform: scaleY(.08); }
+  91%           { transform: scaleY(1); }
+  93%, 94%      { transform: scaleY(.08); }
+  96%           { transform: scaleY(1); }
+}
+/* Le cycle court (2.4s) reste RESERVE au boot, ou l'overlay ne dure que
+   quelques secondes : il y faut un clin garanti pendant ce bref passage. En
+   sidebar et topbar le rythme ne change pas selon l'etat — ce sont les
+   sourcils qui portent l'information, et accelerer le clin en plus rendrait
+   nerveux un logo qu'on a sous les yeux toute la journee. */
+/* La bouche s'aplatit, elle ne se retourne PAS : une moue rend le chat triste
+   quand on veut qu'il soit dubitatif. Le sourire disparait, c'est assez — un
+   trait neutre sous un sourcil leve, c'est exactement le registre vise.
+   Deux traces superposes commutes par opacite, et non la propriete CSS `d:`
+   (non supportee par Safari : la bouche y serait restee un sourire). */
+.mouth-worried { opacity: 0; }
+.mouth, .mouth-worried { transition: opacity 260ms ease-out; }
+body.miaou-worried .mouth-ok { opacity: 0; }
+body.miaou-worried .mouth-worried { opacity: 1; }
 
 /* ═══ Reduced-motion : kill-switch global ═══
    Le réglage Animations (storage.js `motion`, appliqué par applyMotion, ui.js)

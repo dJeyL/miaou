@@ -4,6 +4,7 @@ build.py — assemble dist/miaou.html depuis src/
 Usage : python build.py
 """
 import argparse
+import base64
 import difflib
 import json
 import re
@@ -650,6 +651,95 @@ def warn_unknown_config_keys(cfg: dict) -> list:
     return unknown
 
 
+# ── Logo : une source SVG, trois sorties ────────────────────────────────────
+# `src/svg/cat.svg` est LA forme du chat (versionnée, diffable, sourcils
+# compris). Le build en dérive deux choses, et c'est la seule raison pour
+# laquelle le doublon historique SVG inline / base64 disparaît sans rien
+# casser :
+#   — `__MIAOU_LOGO_SVG__`, injecté TROIS fois dans index.html (boot, sidebar,
+#     topbar). Inline, donc le CSS de la page atteint `.eye` / `.brow` ; un
+#     `<use>`/`<symbol>` ne conviendrait PAS, le clone vivant dans un shadow
+#     DOM que les sélecteurs de la page ne traversent pas (l'animation de clin
+#     du boot, calée à la main pour synchroniser Chrome et Safari, mourrait).
+#   — `__MIAOU_LOGO_DATA__`, le data-URI base64 qui reste nécessaire là où un
+#     nœud SVG n'est pas une option : `<link rel="icon">`, le glyphe du fil et
+#     l'export standalone. Celui-là porte son animation DANS le fichier (un
+#     data-URI est opaque au CSS de la page).
+LOGO_PLACEHOLDER      = '__MIAOU_LOGO_SVG__'
+LOGO_DATA_PLACEHOLDER = '__MIAOU_LOGO_DATA__'
+LOGO_INSTANCES        = 3
+
+# Animation embarquée du data-URI : reproduit le clignement historique (cycle
+# 6s) puisque le CSS de la page n'entre pas dans un `<img src="data:">`. Ce
+# même isolement fait que le data-URI est TOUJOURS le chat normal — sourcils
+# et moue neutralisés ici : favicon, glyphe du fil et export ne prennent pas
+# l'air soucieux, et l'export n'a de toute façon pas à figer un état de
+# service transitoire.
+LOGO_DATA_STYLE = (
+    '<style>.eye{transform-box:fill-box;transform-origin:center;'
+    'animation:miaou-blink 6s ease-in-out infinite}'
+    '@keyframes miaou-blink{0%,86%,100%{transform:scaleY(1)}'
+    '88%,89%{transform:scaleY(.08)}91%{transform:scaleY(1)}'
+    '93%,94%{transform:scaleY(.08)}96%{transform:scaleY(1)}}'
+    '@media(prefers-reduced-motion:reduce){.eye{animation:none}}'
+    '.brow,.mouth-worried{opacity:0}</style>'
+)
+
+
+def read_logo_svg() -> str:
+    """Charge src/svg/cat.svg, commentaires retirés et espaces resserrés."""
+    path = SRC / 'svg' / 'cat.svg'
+    if not path.exists():
+        raise FileNotFoundError(f'Logo source introuvable : {path}')
+    svg = re.sub(r'<!--.*?-->', '', read(path), flags=re.S)
+    svg = re.sub(r'>\s+<', '><', svg.strip())
+    return re.sub(r'\s*\n\s*', ' ', svg)
+
+
+def logo_instance(svg: str, suffix: str) -> str:
+    """Une instance inline du logo, ses ids internes suffixés.
+
+    Sans ce suffixe les trois copies déclarent le MÊME `id="gB"` et chaque
+    `url(#gB)` résout sur la première du document : déplacer ou masquer le boot
+    viderait le dégradé de la sidebar et de la topbar. Le suffixe est appliqué
+    à la déclaration ET à ses références, jamais à l'une seule.
+    """
+    ids = re.findall(r'\sid="([^"]+)"', svg)
+    for raw in ids:
+        svg = svg.replace(f'id="{raw}"', f'id="{raw}-{suffix}"')
+        svg = svg.replace(f'url(#{raw})', f'url(#{raw}-{suffix})')
+    return svg
+
+
+def logo_data_uri(svg: str) -> str:
+    """Le même logo en data-URI base64, animation embarquée."""
+    inline = logo_instance(svg, 'data')
+    marker = '<defs>'
+    assert marker in inline, 'le logo source doit porter un <defs>'
+    end = inline.index('</defs>') + len('</defs>')
+    withstyle = inline[:end] + LOGO_DATA_STYLE + inline[end:]
+    b64 = base64.b64encode(withstyle.encode('utf-8')).decode('ascii')
+    return 'data:image/svg+xml;base64,' + b64
+
+
+def inject_logo_html(template: str, svg: str) -> str:
+    """Substitue les instances inline, et ÉCHOUE si le compte a bougé.
+
+    Le compte n'est pas une précaution de style : une surface ajoutée sans son
+    instance, ou retirée en laissant le marqueur, passe autrement inaperçue —
+    le build sort vert et c'est l'écran qui manque un logo.
+    """
+    found = template.count(LOGO_PLACEHOLDER)
+    if found != LOGO_INSTANCES:
+        raise ValueError(
+            f'{LOGO_PLACEHOLDER} attendu {LOGO_INSTANCES} fois dans le template, '
+            f'trouvé {found} — ajouter/retirer une surface de logo se décide, '
+            f'et se répercute sur LOGO_INSTANCES.')
+    for i in range(LOGO_INSTANCES):
+        template = template.replace(LOGO_PLACEHOLDER, logo_instance(svg, str(i + 1)), 1)
+    return template
+
+
 def assemble_css() -> str:
     parts = []
     for name in CSS_ORDER:
@@ -662,7 +752,7 @@ def assemble_css() -> str:
 
 
 def assemble_js(cfg_data: dict, help_data: dict, help_labels: dict,
-                system_skills_data: dict) -> str:
+                system_skills_data: dict, logo_data: str) -> str:
     now = datetime.now(timezone.utc)
     build_date = now.strftime('%Y-%m-%d %H:%M UTC')
     cfg_data['build_ts'] = int(now.timestamp())
@@ -707,6 +797,11 @@ def assemble_js(cfg_data: dict, help_data: dict, help_labels: dict,
     # upsert en IDB à l'init, cf. docs/skills.md).
     system_skills_literal = json.dumps(system_skills_data, ensure_ascii=False).replace('</', '<\\/')
     js = js.replace('__MIAOU_SYSTEM_SKILLS__', system_skills_literal)
+
+    # Data-URI du logo, dérivé de la MÊME source que les instances inline du
+    # template. Marqueur en position de valeur, avec sa garde try/catch côté
+    # source pour que les tests QuickJS (sources non buildées) ne cassent pas.
+    js = js.replace(LOGO_DATA_PLACEHOLDER, json.dumps(logo_data))
     return js
 
 
@@ -727,8 +822,11 @@ def build(use_config: bool = True):
     cfg_data = load_config(use_config)
     help_data, help_labels = load_help()
     system_skills_data = load_system_skills()
+    logo_svg = read_logo_svg()
+    template = inject_logo_html(template, logo_svg)
     css = assemble_css()
-    js = assemble_js(cfg_data, help_data, help_labels, system_skills_data)
+    js = assemble_js(cfg_data, help_data, help_labels, system_skills_data,
+                     logo_data_uri(logo_svg))
 
     output = template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, js)
 

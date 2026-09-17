@@ -127,6 +127,11 @@ const MCP_DEFAULT_TIMEOUT_S = (typeof BUILD_CONFIG.mcp_default_timeout_s === 'nu
 // serveur qui va bien —, pas une garde de sûreté : la relever ne fait que
 // retarder la découverte d'un outil ajouté côté serveur.
 const MCP_RECHECK_MIN_INTERVAL_MS = 120000;
+// Intervalle minimum entre deux sondes du backend API SAIN au retour de
+// l'utilisateur (un backend en défaut est sondé sans délai, cf.
+// `shouldProbeBackend`). Même nature que son homologue MCP ci-dessus : borne un
+// confort, pas une garde de sûreté.
+const API_PROBE_MIN_INTERVAL_MS = 120000;
 // Serveur(s) MCP pré-configurés au build : permet de livrer un binaire déjà
 // branché sur un proxy MCP partagé (déploiement d'équipe) sans faire saisir la
 // carte à chaque utilisateur. Objet unique OU tableau — le singulier est le cas

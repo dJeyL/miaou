@@ -823,6 +823,23 @@ Quelques repères pour te déplacer dans MIAOU :
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.
+- **Pastille de connexion** : la petite pastille à gauche du nom du modèle, en
+  haut, dit si le serveur qui répond est joignable. Verte, tout va bien. Rouge,
+  survole-la : elle distingue deux situations différentes. « API non
+  configurée » veut dire qu'il manque une adresse ou une clef, et c'est dans
+  les Paramètres que ça se règle. « Backend injoignable » veut dire que le
+  serveur est configuré mais ne répond pas — il est arrêté, ou le réseau ne
+  passe pas. Dans ce dernier cas, MIAOU revérifie tout seul quand tu reviens
+  sur l'onglet ou sur la fenêtre : relance ton serveur, reviens, la pastille
+  reverdit sans que tu aies besoin d'envoyer quoi que ce soit.
+- **Le chat fronce les sourcils** quand quelque chose ne va pas : le logo, en
+  haut à gauche comme dans la barre latérale, prend un air soucieux dès que le
+  serveur actif ne répond plus ou qu'un serveur MCP est injoignable. C'est le
+  même diagnostic que les pastilles, en plus visible du coin de l'œil ; les
+  pastilles disent où regarder, le chat dit qu'il y a quelque chose à regarder.
+  Il redevient normal tout seul dès que le service répond de nouveau. Une
+  installation neuve, pas encore configurée, ne le fait pas froncer : il n'y a
+  rien de cassé, juste rien de réglé.
 - **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :
   change le modèle de la conversation courante sans toucher à ton défaut. Si
   plusieurs serveurs API sont configurés, il liste les modèles de chacun,

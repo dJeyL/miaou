@@ -444,6 +444,80 @@ function shouldRecheckMcpServer(status, lastAttempt, now, minIntervalMs) {
   return (now - lastAttempt) >= minIntervalMs;
 }
 
+// ── Santé du backend API ────────────────────────────────────────────────────
+// TROIS états, pas deux, et la distinction est le cœur du prédicat : « pas
+// configuré » n'est PAS « ne répond pas ».
+//
+//   'unconfigured' — URL absente, ou clef absente alors que le build l'exige.
+//                    Rien à sonder, et sonder serait FAUX : une requête sans
+//                    clef sur un endpoint qui en réclame une rend 401, qu'on
+//                    lirait comme une panne alors que c'est un réglage manquant.
+//   'down'         — configuré, mais le dernier signal dit qu'il ne répond pas.
+//   'ok'           — configuré et joignable.
+//
+// Les deux états dégradés appellent des gestes DIFFÉRENTS (ouvrir les réglages
+// vs attendre/relancer le serveur) : les confondre sous une seule pastille
+// rouge, c'est envoyer l'utilisateur au mauvais endroit. Le composer fait déjà
+// cette distinction dans son placeholder ; la pastille doit dire la même chose
+// que lui.
+//
+// `probe` est le dernier verdict de sonde ou d'échange : `null` = jamais rien
+// observé (on présume joignable plutôt que d'accuser un backend qu'on n'a pas
+// encore essayé — un rouge au démarrage, avant tout appel, serait un mensonge),
+// `{ ok: false }` = observé en défaut, `{ ok: true }` = observé joignable.
+// Pure, testable en QuickJS.
+function resolveBackendHealth(cfg, requireKey, probe) {
+  const url = ((cfg && cfg.url) || '').trim();
+  const key = ((cfg && cfg.key) || '').trim();
+  if (!url) return 'unconfigured';
+  if (requireKey && !key) return 'unconfigured';
+  if (probe && probe.ok === false) return 'down';
+  return 'ok';
+}
+
+// Faut-il sonder le backend au retour de l'utilisateur ? Même séparation que
+// pour le MCP — `resolveBackendHealth` répond à « qu'affiche-t-on ? », celle-ci
+// à « que retente-t-on ? ».
+//
+// Trois règles, et la première est la raison d'être de la fonction :
+//   - 'unconfigured' ne sonde JAMAIS. Il n'y a rien à joindre, et taper un
+//     endpoint avec une clef vide à chaque retour de fenêtre produirait une
+//     rafale de 401 sans rien apprendre.
+//   - 'down' sonde sans délai : c'est le cas d'usage — on relance Ollama, on
+//     revient, ça repart. Le throttle l'y rendrait muet deux minutes juste
+//     après la panne qu'on cherche à voir réparée.
+//   - 'ok' est throttlé : re-sonder un backend sain à chaque retour de focus
+//     n'apprend presque rien et coûte une requête.
+//
+// `lastProbe` à 0 (jamais sondé) passe toujours, explicitement plutôt que par
+// l'arithmétique de `now - 0` (cf. shouldRecheckMcpServer, même motif).
+// Pure, testable en QuickJS.
+function shouldProbeBackend(health, lastProbe, now, minIntervalMs) {
+  if (health === 'unconfigured') return false;
+  if (health === 'down') return true;
+  if (!lastProbe) return true;
+  return (now - lastProbe) >= minIntervalMs;
+}
+
+// Le chat a-t-il l'air soucieux ? Prédicat unique des trois surfaces de logo
+// (boot, sidebar, topbar), qui COMPOSE les deux versants de santé sans en
+// rouvrir un troisième : `backendHealth` vient de `resolveBackendHealth`,
+// `mcpSeverity` de `resolveAuthorizationPending().severity`.
+//
+// Deux décisions portées ici, et pas ailleurs :
+//   - `unconfigured` ne rend PAS le chat soucieux. Le soucieux dit « quelque
+//     chose est cassé » ; une install neuve n'est pas cassée, elle est vide.
+//     Accueillir le premier lancement par une grimace ferait lire un état
+//     normal comme une panne — et le composer dit déjà quoi faire.
+//   - Côté MCP, seul 'error' (au moins un serveur injoignable) compte. Une
+//     attente d'autorisation ('pending') est une action à faire, pas une
+//     panne : sa pastille jaune la porte déjà, et le chat doublerait un signal
+//     qui n'a pas la même urgence.
+// Pure, testable en QuickJS.
+function resolveWorriedLogo(backendHealth, mcpSeverity) {
+  return backendHealth === 'down' || mcpSeverity === 'error';
+}
+
 // État de la pastille MCP de topbar : prédicat d'APPARITION, sévérité et
 // libellé au même endroit, purs et testés — même séparation que
 // `resolveAgentCount` : la synchro DOM ne fait qu'appliquer, elle ne décide de

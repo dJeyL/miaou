@@ -1,0 +1,151 @@
+# Santé des services et ce qu'on en montre
+
+Ce que MIAOU sait de l'état des services dont il dépend — le backend API qui
+répond, les serveurs MCP compagnons —, et comment cet état arrive à l'écran.
+
+Le domaine tient en une discipline : **un prédicat pur par question, et un seul
+écrivain par surface.** Les deux questions ne se confondent pas —
+« qu'affiche-t-on ? » et « que retente-t-on ? » ont déjà des réponses
+divergentes côté MCP (une erreur masque une attente à l'affichage, mais les deux
+se retentent), et le backend suit le même découpage.
+
+Le versant MCP — pastille de topbar, sévérités, reprise par serveur — est
+documenté dans `docs/mcp.md` ; ce fichier porte le backend API et ce qui
+compose les deux.
+
+## Pastille de connexion (pilule modèle)
+
+La pastille de la pilule modèle (`#conn-dot`, topbar) dit si le serveur actif
+est joignable. Trois états, portés par un prédicat pur unique
+(`resolveBackendHealth`, utils.js) :
+
+| État | Condition | Rendu |
+|---|---|---|
+| `unconfigured` | pas d'URL, ou pas de clef alors que `REQUIRE_API_KEY` | rouge, titre « API non configurée » |
+| `down` | configuré, dernier verdict observé en échec | rouge, titre « Backend injoignable » |
+| `ok` | configuré, et rien d'observé en échec | vert |
+
+**« Pas configuré » n'est pas « ne répond pas », et c'est le cœur du prédicat.**
+Les deux sont rouges mais appellent des gestes opposés — ouvrir les réglages
+contre attendre/relancer le serveur —, et les confondre envoie l'utilisateur au
+mauvais endroit. C'est aussi ce qui interdit de sonder en `unconfigured` : une
+requête sans clef sur un endpoint qui en exige une rend 401, qu'on lirait comme
+une panne alors que c'est un réglage manquant.
+
+**Un seul écrivain.** `syncConnDot` (ui.js) est le seul à toucher le DOM de la
+pastille, et il ne prend pas d'argument : sa seule source est le prédicat. Le
+verdict, lui, entre par `noteBackendProbe(ok)`, point d'écriture unique de
+`_backendProbe`. Avant ce lot ils étaient deux, à sémantiques divergentes —
+`syncConfigured` repeignait en vert sur le seul critère « url et clef
+renseignées », effaçant un rouge légitime dès qu'on passait dans les réglages.
+`syncConfigured` dérive désormais son propre `configured` du MÊME prédicat
+(« pas `unconfigured` »), plutôt que de réécrire le test.
+
+**Reprise active.** `probeBackend()` (main.js) réutilise `/models` via
+`loadServerModels(server, true)` — aucune requête d'un nouveau genre : c'est
+l'appel déjà fait au démarrage et à chaque changement de serveur, dont l'échec
+était jusqu'ici avalé en silence par `prefetchModels`. Le `force: true` est
+**impératif** : `loadServerModels` sert un cache de session par serveur, et sans
+forçage la sonde répondrait « ok » depuis une entrée mise en cache AVANT la
+panne. Elle ne rejette jamais (l'échec est mémorisé dans l'entrée), donc le
+verdict se lit sur `_modelsEntryOf(server).error` **après** l'await, jamais sur
+un instantané pris avant (piège 24 (b)).
+
+**Le premier contact compte aussi.** `prefetchModels()` (main.js), appelé au
+démarrage et à chaque changement de serveur, pose le même verdict : sans ça un
+backend DÉJÀ mort à l'ouverture laissait la pastille au vert optimiste
+(`probe: null`) jusqu'au premier retour de focus — la panne ne se voyait qu'en
+quittant la fenêtre et en revenant. Le verdict n'y est posé que si un serveur
+est configuré : sur une install neuve l'état doit rester `unconfigured`, qui
+envoie aux réglages plutôt que vers un serveur à attendre.
+
+`maybeProbeBackend()` est branchée sur `visibilitychange` ET `focus`, aux côtés
+de `recheckMcpServers` et pour la même raison : le premier ne couvre que le
+changement d'onglet, alors qu'on relance un backend en console sans jamais
+cacher la fenêtre. L'éligibilité est tranchée par le pur `shouldProbeBackend`
+(jamais en `unconfigured`, sans délai en `down`, throttlé en `ok` par
+`API_PROBE_MIN_INTERVAL_MS`) — même découpage que `shouldRecheckMcpServer` :
+« qu'affiche-t-on ? » et « que retente-t-on ? » sont deux questions distinctes.
+
+**Sans cette reprise, la pastille ne reverdissait qu'au prochain échange
+réussi** : après une panne réparée, elle restait rouge tant qu'on n'envoyait pas
+de message. Le signal disait « le dernier échange a échoué » là où sa forme —
+une pastille d'état permanente — promet « le backend est joignable ».
+Non-régression : `verify-backend-health.mjs` (cycle vert → rouge → vert sans
+envoi, sur un vrai serveur HTTP local éteint puis rallumé).
+
+## Le chat soucieux (logo)
+
+Quand un service ne répond plus, le logo du chat fronce les sourcils. Même
+information que les pastilles, mais portée par une surface qu'on regarde sans
+la chercher — la pastille dit *où* est le problème, le chat dit *qu'il y en a
+un*.
+
+**Une source SVG, trois sorties.** `src/svg/cat.svg` est la forme du chat,
+versionnée et diffable, sourcils compris. Le build (`build.py`) en dérive :
+
+- `__MIAOU_LOGO_SVG__`, injecté **inline** aux trois surfaces du template
+  (boot, sidebar, topbar). Inline est la condition de tout le reste : le CSS de
+  la page atteint `.eye`, `.brow`, `.mouth` — ce qu'un `<img src="data:">` ne
+  permet pas, son contenu étant opaque aux sélecteurs.
+- `__MIAOU_LOGO_DATA__`, le data-URI base64 (`LOGO_SRC`, main.js) pour les
+  trois points où un nœud SVG n'est pas une option : `<link rel="icon">`, le
+  glyphe de source du fil (ui.js) et l'export standalone. Il porte **toujours**
+  le chat normal — un favicon soucieux n'apporte rien, et un export ne doit pas
+  figer un incident passé.
+
+Deux gardes au build, chacune payée par un défaut qu'elle rend impossible :
+les ids internes du SVG sont **suffixés par instance** (`gB-1`, `gB-2`, `gB-3`),
+sans quoi les trois `url(#gB)` résoudraient tous sur la première copie du
+document — masquer le boot viderait le dégradé des deux autres ; et le compte
+d'instances est **vérifié** (`LOGO_INSTANCES`), le build échouant s'il a bougé,
+parce qu'une surface ajoutée sans son logo sort autrement un build vert.
+
+**`<use>`/`<symbol>` a été écarté, et ne doit pas être réessayé.** Le clone
+d'un `<use>` vit dans un shadow DOM que les sélecteurs de la page ne traversent
+pas : l'animation de clin du boot, calée à la main pour synchroniser Chrome et
+Safari, cesserait de s'appliquer. C'est la même contrainte qui justifiait
+historiquement le doublon SVG inline / base64, lequel disparaît ici sans rien
+perdre puisque les deux sorties viennent désormais du même fichier.
+
+**Prédicat unique, `resolveWorriedLogo(backendHealth, mcpSeverity)`** (pur,
+utils.js), qui compose les deux versants sans en ouvrir un troisième. Deux
+décisions y sont portées :
+
+- `unconfigured` ne fronce PAS. Le soucieux dit « quelque chose est cassé » ;
+  une install neuve n'est pas cassée, elle est vide — accueillir le premier
+  lancement par une grimace ferait lire un état normal comme une panne.
+- Côté MCP, seul `error` compte (au moins un serveur injoignable). Une attente
+  d'autorisation est une action à faire, pas une panne : sa pastille jaune la
+  porte déjà, et le chat doublerait un signal qui n'a pas la même urgence.
+
+**Écrivain DOM unique, `syncWorriedLogo()`** (ui.js) : une classe sur `<body>`,
+`miaou-worried`, pilote les trois surfaces à la fois. Elle s'accroche aux deux
+synchros déjà obligatoires — `syncConnDot` pour le backend,
+`syncAuthorizationPending` pour le MCP — et à aucun autre signal : tout point
+qui change la santé d'un service passe déjà par l'une des deux. Le retrait
+emprunte le même chemin que la pose, la classe étant recalculée en entier à
+chaque appel.
+
+**Un appel d'outil MCP qui échoue au transport retombe sur le statut du
+serveur** (`noteMcpCallFailure`, mcp.js), avec sa réciproque sur appel réussi
+(`noteMcpCallSuccess`). Sans elles l'information se perdait : `_remoteStatus`
+n'est écrit qu'aux mutations de configuration, donc un serveur tombant **en
+cours de conversation** restait marqué `ok` — le modèle lisait « Failed to
+fetch » dans son tool result et l'utilisateur n'avait aucun signal. La ligne de
+partage est transport / applicatif (drapeau `err.applicative`, posé là où une
+erreur JSON-RPC est reçue) : un outil inconnu ou un refus d'autorisation
+**prouvent** que le serveur répond, et les traiter en panne rendrait le chat
+soucieux pour un appel malformé.
+
+**Au boot, le plancher d'affichage est allongé quand le chat est soucieux**
+(`BOOT_MIN_WORRIED_MS`, 3s contre 1.8s) : une expression qui apparaît en fin de
+course ne serait pas vue. On rallonge, on n'**attend** pas — le boot ne se
+suspend jamais pour un verdict réseau ; si le diagnostic tombe après
+l'estompage, la topbar prend le relais, les trois surfaces portant la même
+classe.
+
+**L'état doit être lisible sans animation.** Le kill-switch reduced-motion
+coupe transitions et clin : l'information est donc dans la POSITION des
+sourcils, jamais dans le mouvement qui y mène. Corollaire pour qui retouche le
+CSS : une valeur d'arrivée se juge à l'arrêt, pas pendant la transition.

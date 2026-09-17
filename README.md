@@ -45,6 +45,10 @@ Figtree/Fira Code).
   sur les conversations en cours, agents indentés sous celle qui les a lancés,
   tous Espaces confondus ; un clic y emmène. Même liste à la palette de
   commandes (`Cmd+K`, `A`) — cf. [docs/agents.md](docs/agents.md).
+- **Santé des services en un coup d'œil** : une pastille dit si le backend
+  répond et distingue « pas configuré » de « injoignable » ; le logo du chat
+  fronce les sourcils dès qu'un service est en panne, et se déride tout seul
+  quand il revient — cf. [docs/backend-health.md](docs/backend-health.md).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
   alimenté en direct.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et

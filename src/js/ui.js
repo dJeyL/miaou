@@ -5066,27 +5066,30 @@ function apiKeyFieldHint() {
 
 // ── État configuré / non configuré ──────────────────────────────────────────
 function syncConfigured() {
-  const cfg = activeApiConfig();
-  configured = !!(cfg.url && (cfg.key || !REQUIRE_API_KEY));
+  // Dérivé du MÊME prédicat que la pastille : « configuré » est exactement
+  // « pas unconfigured ». Réécrire le test ici (url && (key || !REQUIRE))
+  // ferait deux formules à maintenir pour une seule question.
+  configured = resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, null) !== 'unconfigured';
 
   const wrap = $('input-wrap');
   const ta = $('composer-text');
   const send = $('send-btn');
-  const dot = $('conn-dot');
 
   if (configured) {
     wrap.classList.remove('disabled');
     ta.placeholder = COMPOSER_IDLE_PLACEHOLDER;
     ta.disabled = false;
     send.disabled = false;   // pendant un stream le bouton sert de « stop » : jamais désactivé
-    dot.className = 'dot ok';
   } else {
     wrap.classList.add('disabled');
     ta.placeholder = 'API non configurée — ouvrir les paramètres';
     ta.disabled = true;
     send.disabled = true;
-    dot.className = 'dot err';
   }
+  // La pastille N'EST PLUS écrite ici : « configuré » est une condition
+  // nécessaire à « joignable », jamais suffisante. syncConnDot tranche depuis
+  // resolveBackendHealth, qui lit la config ET le dernier verdict observé.
+  syncConnDot();
 }
 
 // `stopping` (optionnel) : la génération qu'on affiche (s'il y en a une) a
@@ -5252,9 +5255,88 @@ function setStopping(on) {
     send.title = 'Arrêter';
   }
 }
-function setConnDot(state) {
+// ── Pastille de connexion (pilule modèle) ───────────────────────────────────
+// État observé du backend, mémorisé ICI parce que la pastille doit survivre à
+// tout re-rendu : avant ce lot, `syncConfigured` la repeignait en vert sur le
+// seul critère « une URL et une clef sont renseignées », effaçant un rouge
+// légitime dès qu'on passait dans les réglages — deux écrivains, deux
+// sémantiques, et le dernier qui parle gagne.
+//
+// `null` = rien d'observé depuis le démarrage (cf. resolveBackendHealth : on ne
+// présume pas la panne d'un backend qu'on n'a pas encore essayé).
+let _backendProbe = null;
+let _backendLastProbe = 0;      // horodatage de la dernière SONDE (pas des échanges) — throttle
+
+// Enregistre un verdict sur le backend, d'où qu'il vienne : fin d'échange
+// réussie, échec de génération, flux coupé, ou sonde /models. Repeint la
+// pastille dans la foulée — les appelants n'ont rien d'autre à faire.
+//
+// Point d'écriture UNIQUE de `_backendProbe` : c'est ce qui garantit qu'un
+// verdict ne peut pas être posé sans que la pastille suive.
+function noteBackendProbe(ok) {
+  _backendProbe = { ok: !!ok };
+  syncConnDot();
+}
+
+// Horodatage de la dernière SONDE (pas des échanges) : porté ici avec l'état
+// qu'il qualifie, et écrit par ce seul accesseur. Le laisser affecter depuis
+// main.js ferait deux écrivains d'une même variable à travers une frontière de
+// fichier — ce que ce lot corrige par ailleurs sur la pastille.
+function markBackendProbed(now) {
+  _backendLastProbe = now;
+}
+
+// Faut-il sonder maintenant ? Regroupe la lecture des deux états locaux et la
+// décision pure, pour que l'appelant n'ait aucun état à lire lui-même.
+function backendProbeDue(now) {
+  const health = resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe);
+  return shouldProbeBackend(health, _backendLastProbe, now, API_PROBE_MIN_INTERVAL_MS);
+}
+
+// Repeint la pastille depuis l'état courant. Pas d'argument : la seule source
+// est `resolveBackendHealth`, qui lit la config et le dernier verdict — un
+// appelant qui pourrait imposer une couleur rouvrirait la porte au bug
+// ci-dessus.
+function syncConnDot() {
   const dot = $('conn-dot');
-  if (dot) dot.className = 'dot ' + (state || '');
+  if (!dot) return;
+  const health = resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe);
+  // 'unconfigured' et 'down' sont tous deux rouges, mais ne disent PAS la même
+  // chose : le titre porte la distinction, et c'est lui qui envoie au bon geste.
+  if (health === 'ok') {
+    dot.className = 'dot ok';
+    dot.title = 'Backend joignable';
+  } else if (health === 'unconfigured') {
+    dot.className = 'dot err';
+    dot.title = 'API non configurée — ouvrir les paramètres';
+  } else {
+    dot.className = 'dot err';
+    dot.title = 'Backend injoignable';
+  }
+  syncWorriedLogo();
+}
+
+// Compat : les points d'échange (main.js) posent leur verdict par cet ancien
+// nom. 'ok' / 'err' sont les deux seules valeurs jamais passées.
+function setConnDot(state) {
+  noteBackendProbe(state === 'ok');
+}
+
+// Écrivain DOM UNIQUE du chat soucieux. Une seule classe sur <body> pilote les
+// trois surfaces (boot, sidebar, topbar) : le logo y est inline, donc le CSS de
+// la page l'atteint partout, et il n'y a rien à repeindre par surface.
+//
+// S'accroche aux DEUX synchros déjà obligatoires — `syncConnDot` pour le
+// backend, `syncAuthorizationPending` pour le MCP. Pas de troisième signal :
+// tout point qui change la santé d'un service passe déjà par l'une des deux, et
+// en câbler d'autres laisserait diverger ce que la pastille et le chat disent
+// du même incident. Le RETRAIT emprunte le même chemin que la pose : la classe
+// est recalculée en entier à chaque appel, jamais posée sans être reprise.
+function syncWorriedLogo() {
+  const worried = resolveWorriedLogo(
+    resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe),
+    resolveAuthorizationPending(mcpStatusSnapshot()).severity);
+  document.body.classList.toggle('miaou-worried', worried);
 }
 
 // Active ou désactive l'état « confirmation en attente ». Le composer reste
@@ -9000,6 +9082,7 @@ function syncAuthorizationPending() {
     : 'Ouvrir les serveurs MCP';
   const label = $('auth-pending-label');
   if (label) label.textContent = pending.label;
+  syncWorriedLogo();
 }
 
 function renderMcpServersIfOpen() {

@@ -3509,6 +3509,108 @@ describe('shouldRecheckMcpServer — que retente-t-on au retour ?', function() {
   });
 });
 
+describe('resolveBackendHealth — trois etats, pas deux', function() {
+  var CFG = { url: 'http://x/v1', key: 'k' };
+
+  it('sans URL : unconfigured, quoi qu\'en dise la sonde', function() {
+    // Meme avec un verdict de panne en memoire : il n'y a rien a joindre, et
+    // afficher « injoignable » enverrait au mauvais geste (attendre le serveur
+    // plutot qu'ouvrir les reglages).
+    expect(resolveBackendHealth({ url: '', key: 'k' }, false, { ok: false })).toBe('unconfigured');
+  });
+  it('URL blanche (espaces) : unconfigured', function() {
+    expect(resolveBackendHealth({ url: '   ', key: 'k' }, false, null)).toBe('unconfigured');
+  });
+  it('clef absente alors que le build l\'exige : unconfigured', function() {
+    expect(resolveBackendHealth({ url: 'http://x/v1', key: '' }, true, null)).toBe('unconfigured');
+  });
+  it('clef absente mais NON exigee : ce n\'est pas un defaut de config', function() {
+    // Endpoint local sans authentification : le cas courant d'un Ollama.
+    expect(resolveBackendHealth({ url: 'http://x/v1', key: '' }, false, null)).toBe('ok');
+  });
+  it('configure, rien d\'observe : ok — on n\'accuse pas un backend jamais essaye', function() {
+    // Un rouge au demarrage, avant tout appel, serait un mensonge.
+    expect(resolveBackendHealth(CFG, true, null)).toBe('ok');
+  });
+  it('configure et observe en defaut : down', function() {
+    expect(resolveBackendHealth(CFG, true, { ok: false })).toBe('down');
+  });
+  it('configure et observe joignable : ok', function() {
+    expect(resolveBackendHealth(CFG, true, { ok: true })).toBe('ok');
+  });
+  it('un verdict de panne est EFFACE par le retour a ok (le bug corrige)', function() {
+    // La pastille restait rouge jusqu'au prochain echange reussi : ici le meme
+    // prédicat repasse au vert sur le seul verdict, sans envoi utilisateur.
+    expect(resolveBackendHealth(CFG, true, { ok: false })).toBe('down');
+    expect(resolveBackendHealth(CFG, true, { ok: true })).toBe('ok');
+  });
+  it('config absente : unconfigured, sans exception', function() {
+    expect(resolveBackendHealth(null, true, null)).toBe('unconfigured');
+  });
+});
+
+describe('shouldProbeBackend — que sonde-t-on au retour ?', function() {
+  var MIN = 120000;
+  var T = 1000000;
+
+  it('unconfigured : JAMAIS de sonde', function() {
+    // Taper l'endpoint avec une clef vide rendrait 401 a chaque retour de
+    // fenetre, sans rien apprendre — et un 401 se lirait comme une panne.
+    expect(shouldProbeBackend('unconfigured', 0, T, MIN)).toBe(false);
+    expect(shouldProbeBackend('unconfigured', T - 999999, T, MIN)).toBe(false);
+  });
+  it('down : tout de suite, sans throttle', function() {
+    // Le cas d'usage : on relance Ollama, on revient, la pastille reverdit.
+    expect(shouldProbeBackend('down', T - 1, T, MIN)).toBe(true);
+  });
+  it('ok sonde il y a moins de l\'intervalle : non', function() {
+    expect(shouldProbeBackend('ok', T - 60000, T, MIN)).toBe(false);
+  });
+  it('ok sonde il y a plus de l\'intervalle : oui', function() {
+    expect(shouldProbeBackend('ok', T - 180000, T, MIN)).toBe(true);
+  });
+  it('pile a l\'intervalle : oui (borne inclusive, comme son homologue MCP)', function() {
+    expect(shouldProbeBackend('ok', T - MIN, T, MIN)).toBe(true);
+  });
+  it('jamais sonde (horodatage a 0) : oui, par un cas EXPLICITE', function() {
+    // Un `now` de petite valeur le prouve : l'arithmetique `now - 0 >= MIN`
+    // repondrait faux ici.
+    expect(shouldProbeBackend('ok', 0, 5, MIN)).toBe(true);
+  });
+});
+
+describe('resolveWorriedLogo — quand le chat fronce les sourcils', function() {
+
+  it('tout va bien : chat normal', function() {
+    expect(resolveWorriedLogo('ok', '')).toBe(false);
+  });
+  it('backend injoignable : soucieux', function() {
+    expect(resolveWorriedLogo('down', '')).toBe(true);
+  });
+  it('un MCP injoignable, backend sain : soucieux quand meme', function() {
+    // Perimetre decide avec Julien : serveur actif KO OU tout MCP KO.
+    expect(resolveWorriedLogo('ok', 'error')).toBe(true);
+  });
+  it('backend non configure : chat NORMAL, pas soucieux', function() {
+    // Une install neuve n'est pas cassee, elle est vide. Le distinguo compte :
+    // c'est le tout premier ecran que voit un nouvel utilisateur.
+    expect(resolveWorriedLogo('unconfigured', '')).toBe(false);
+  });
+  it('non configure ET un MCP KO : soucieux, par le MCP seul', function() {
+    // Le 'unconfigured' n'annule rien — il ne declenche simplement pas.
+    expect(resolveWorriedLogo('unconfigured', 'error')).toBe(true);
+  });
+  it('attente d\'autorisation MCP : pas soucieux', function() {
+    // 'pending' est une action a faire, pas une panne ; sa pastille jaune la
+    // porte deja. Si le chat s'en emouvait, il doublerait un signal moins
+    // urgent et cesserait d'etre lu.
+    expect(resolveWorriedLogo('ok', 'pending')).toBe(false);
+  });
+  it('attente MCP + backend down : soucieux, par le backend', function() {
+    expect(resolveWorriedLogo('down', 'pending')).toBe(true);
+  });
+});
+
 describe('resolveAuthorizationPending (AB-5) — apparition de la pastille', function() {
   function st(list) { return { state: 'ok', count: 3, unauthorizedUpstreams: list }; }
 

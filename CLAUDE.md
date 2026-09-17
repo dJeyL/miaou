@@ -161,6 +161,14 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   composent au runtime la liste des sujets d'`apercu` via le jeton
   `{{TOPIC_LIST}}` — ajouter ou scinder une section suffit à l'y annoncer, là où
   la liste rédigée en prose devenait fausse en silence (cf. `docs/build.md`).
+- **`__MIAOU_LOGO_SVG__`** ← `src/svg/cat.svg`, injecté **inline** aux TROIS
+  surfaces de logo du template (boot, sidebar, topbar) : seul l'inline laisse le
+  CSS de la page atteindre yeux et sourcils. Les ids internes sont suffixés par
+  instance (`url(#gB)` résoudrait sinon sur la première copie du document) et le
+  compte est vérifié — le build ÉCHOUE si le nombre d'occurrences a bougé.
+  `__MIAOU_LOGO_DATA__` ← le même fichier en data-URI base64 (injecté dans
+  `main.js`, d'où `LOGO_SRC` pour favicon/glyphe du fil/export). Cf.
+  `docs/backend-health.md` pour la raison du montage et l'impasse `<use>`.
 - **`__MIAOU_SYSTEM_SKILLS__`** ← `src/system-skills/*.md` (un fichier par
   skill, nom de fichier = slug) parsés en `{slug: {name, description,
   content}}` (injecté dans `skills.js`, upserté en IDB à chaque démarrage par
@@ -169,10 +177,12 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
 
 Les commentaires sont retirés au passage (`strip_js_comments`/`strip_css_comments`/
 `strip_html_comments`, testés dans `run_build_unit_tests`) : `src/` reste la
-référence commentée, `dist/` est compact. Les marqueurs `__MIAOU_*` ci-dessus
+référence commentée, `dist/` est compact. Les marqueurs `__MIAOU_*` injectés dans le JS
 sont à **occurrence unique en position de valeur**, avec une garde `try/catch`
-côté source pour que les tests QuickJS (sources non buildées) retombent sur
-`{}`. **`HELP_CONTENT`
+côté source pour que les tests QuickJS (sources non buildées) retombent sur une
+valeur neutre. `__MIAOU_LOGO_SVG__` est l'exception et déroge aux deux points :
+il est injecté dans le HTML, et délibérément à occurrences MULTIPLES — leur
+nombre est vérifié au build plutôt que supposé (cf. `LOGO_INSTANCES`). **`HELP_CONTENT`
 n'entre jamais dans le contexte du modèle** : seul le blurb d'identité et l'enum
 de slugs y vont, le contenu des sections arrive en tool result à la demande.
 
@@ -512,6 +522,23 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   le contrat « froide = `messages: []` » et ses trois conséquences, dont
   `conversationMessageCount` (compte porté par l'étage 1, seul moyen de
   distinguer « vide » de « pas chargée »).
+- **`docs/backend-health.md`** — santé des services et ce qu'on en montre :
+  pastille de connexion de la pilule modèle, prédicat pur `resolveBackendHealth`
+  et ses TROIS états (`unconfigured` distinct de `down` — deux rouges, deux
+  gestes opposés), écrivain unique `syncConnDot` (le second écrivain,
+  `syncConfigured`, effaçait un rouge légitime), reprise active par sonde
+  `/models` réutilisant `loadServerModels(s, true)` (le `force` est impératif :
+  sans lui le cache de session répond « ok » depuis une entrée d'avant la panne),
+  éligibilité par le pur `shouldProbeBackend` et câblage sur les DEUX signaux de
+  retour comme son homologue MCP ; porte aussi le **chat soucieux** — source SVG
+  unique `src/svg/cat.svg` injectée inline aux trois surfaces (ids suffixés par
+  instance, compte d'instances vérifié au build) avec `LOGO_SRC` dérivé du même
+  fichier pour favicon/glyphe/export, prédicat pur `resolveWorriedLogo`
+  (`unconfigured` ne fronce pas, `pending` MCP non plus), écrivain unique
+  `syncWorriedLogo` accroché aux deux synchros existantes, report d'un échec
+  d'appel MCP sur le statut du serveur (`noteMcpCallFailure` et sa réciproque,
+  ligne de partage transport/applicatif), et la règle « lisible sans
+  animation ». Le versant MCP reste dans `docs/mcp.md`.
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
