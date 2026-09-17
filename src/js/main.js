@@ -29,6 +29,16 @@ const BOOT_MIN_AFTER_READY_MS = 1800;
 // Plancher allongé quand le chat est soucieux : le temps du clin nominal, plus
 // celui de voir l'expression s'installer (transition des sourcils : 260ms).
 const BOOT_MIN_WORRIED_MS = 3000;
+// Borne DURE du sursis accordé aux verdicts de santé encore en vol : au-delà,
+// l'overlay part même sans réponse. Calée au-dessus du refus de connexion d'un
+// MCP (~2 s, tranché par l'OS) et très en dessous d'un timeout applicatif, qui
+// se compte en dizaines de secondes.
+const BOOT_MAX_WAIT_MS = 2600;
+// Vrai quand les deux sondes de santé lancées par `init()` ont conclu — ce que
+// `finishBoot` attend avant de décider de son plancher. Posé par `init()`, qui
+// est le seul endroit où les deux promesses sont en vue.
+let _healthSettled = false;
+
 function finishBoot() {
   const el = document.getElementById('boot-overlay');
   if (!el) return;
@@ -36,31 +46,58 @@ function finishBoot() {
   // fichier seul, jamais index.html — _bootReady/_bootReadyAt n'y sont posés
   // par aucun script.
   if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
-  const since = Date.now() - _bootReadyAt;
   // Le chat soucieux ne vaut au boot que s'il est VU : le plancher nominal est
   // calé sur un clin, pas sur une expression qui apparaît en fin de course. On
   // rallonge donc quand le verdict est déjà tombé — « d'abord je cligne,
   // ensuite je soupçonne ».
   //
   // On rallonge, on n'ATTEND pas : le boot ne se suspend jamais pour un verdict
-  // réseau. Si le diagnostic arrive après l'estompage (sonde plus lente que le
-  // plancher, MCP qui répond tard), l'overlay est déjà parti et c'est la topbar
-  // qui prend le relais — les trois surfaces portant la même classe, il n'y a
-  // rien à rattraper.
-  const floor = document.body.classList.contains('miaou-worried')
-    ? BOOT_MIN_WORRIED_MS : BOOT_MIN_AFTER_READY_MS;
-  const wait = Math.max(0, floor - since);
-  setTimeout(() => {
-    el.classList.add('boot-done');
-    // Animation d'entrée de la liste jouée PENDANT l'estompage de l'overlay
-    // (320ms), pas après : accrochée à la fin du fade, la sidebar resterait
-    // figée le temps qu'il se termine, puis s'animerait — décalage visible.
-    // Ici la liste se met en place au moment même où l'app se découvre. Le
-    // re-render est le seul du démarrage à ce titre (celui d'init() a déjà eu
-    // lieu, sous l'overlay opaque, donc invisible).
-    animateNextConvList();
-    renderConvList();
-  }, wait);
+  // réseau. Si le diagnostic arrive après le plancher ALLONGÉ, l'overlay part
+  // et c'est la topbar qui prend le relais — les trois surfaces portant la même
+  // classe, il n'y a rien à rattraper.
+  //
+  // La classe est relue À L'ÉCHÉANCE, jamais au moment d'armer le timer :
+  // `finishBoot` est appelée en fin d'`init()`, donc AVANT que `prefetchModels`
+  // et `reconnectMcpServers` — lancées quelques lignes plus haut sans être
+  // attendues — aient rendu leur verdict. Un plancher calculé ici serait figé
+  // sur un état encore vierge, et le fronçage qui tombe 50 ms plus tard
+  // n'allongerait rien (piège 24(b) : relire après l'attente, pas un
+  // instantané pris avant). Le défaut se voyait surtout côté MCP, dont le
+  // handshake conclut un peu après la sonde backend : le chat fronçait au boot
+  // pour un backend mort, mais pas pour un serveur MCP mort.
+  const decide = () => {
+    const elapsed = Date.now() - _bootReadyAt;
+    const floor = document.body.classList.contains('miaou-worried')
+      ? BOOT_MIN_WORRIED_MS : BOOT_MIN_AFTER_READY_MS;
+    const left = Math.max(0, floor - elapsed);
+    if (left > 0) { setTimeout(decide, Math.min(left, 120)); return; }
+    // Plancher atteint, mais un verdict de santé peut être encore EN VOL : un
+    // serveur MCP refusé par l'OS conclut vers 2s, soit juste après le plancher
+    // nominal de 1.8s. Sans ce sursis le chat fronçait systématiquement 200 ms
+    // trop tard — l'overlay parti, l'expression n'apparaissait qu'en topbar
+    // (constaté par Julien, `ERR_CONNECTION_REFUSED` à ~2s au Network).
+    //
+    // On attend le verdict, pas une durée devinée, et sous une borne DURE :
+    // au-delà de BOOT_MAX_WAIT_MS le boot part quoi qu'il arrive, sinon un
+    // serveur qui pend (timeout applicatif à 130 s sur une carte d'ici) tiendrait
+    // l'écran de démarrage en otage. C'est la limite de la règle « on rallonge,
+    // on n'attend pas » : on accorde un sursis borné, on ne suspend pas.
+    if (!_healthSettled && elapsed < BOOT_MAX_WAIT_MS) { setTimeout(decide, 120); return; }
+    hideBootOverlay(el);
+  };
+  decide();
+}
+
+function hideBootOverlay(el) {
+  el.classList.add('boot-done');
+  // Animation d'entrée de la liste jouée PENDANT l'estompage de l'overlay
+  // (320ms), pas après : accrochée à la fin du fade, la sidebar resterait
+  // figée le temps qu'il se termine, puis s'animerait — décalage visible.
+  // Ici la liste se met en place au moment même où l'app se découvre. Le
+  // re-render est le seul du démarrage à ce titre (celui d'init() a déjà eu
+  // lieu, sous l'overlay opaque, donc invisible).
+  animateNextConvList();
+  renderConvList();
 }
 
 // ── Logo : le data-URI, pour ce qui n'accepte pas un noeud SVG ─────────────
@@ -5117,13 +5154,23 @@ async function init() {
   // frappe dans le composer comme une intention de défilement.
   $('messages').addEventListener('keydown', onUserScrollGesture);
 
-  prefetchModels();      // liste des modèles (cache session) → sélecteur composer
+  // Les deux sondes de santé du démarrage. `finishBoot` accorde un sursis borné
+  // à leur verdict (cf. _healthSettled) : un MCP refusé par l'OS conclut vers
+  // 2 s, juste après le plancher nominal, et le chat fronçait sinon une fois
+  // l'overlay parti. Leurs échecs sont déjà absorbés chacun de leur côté
+  // (`prefetchModels` avale, `connectMcpServer` dégrade) — d'où le `catch`
+  // défensif ici, qui ne sert qu'à garantir que le drapeau tombe.
+  const modelsReady = prefetchModels();   // liste des modèles → sélecteur composer
   // handshake + tools/list des serveurs MCP activés ; rafraîchit aussi la pilule de
   // contexte, sous-évaluée tant que toolDefinitions() ignore les outils MCP distants.
-  reconnectMcpServers().then(() => {
+  const mcpReady = reconnectMcpServers().then(() => {
     _lastContextManifest = null;
     syncContextCounter();
   });
+  Promise.all([
+    Promise.resolve(modelsReady).catch(() => {}),
+    Promise.resolve(mcpReady).catch(() => {}),
+  ]).then(() => { _healthSettled = true; });
   // skills système (upsert inconditionnel depuis src/system-skills/*.md, cf.
   // skills.js) PUIS méta des skills en mémoire → autocomplétion + outils +
   // légende « / » ; rafraîchit aussi la pilule de contexte, sous-évaluée tant

@@ -140,10 +140,30 @@ soucieux pour un appel malformé.
 
 **Au boot, le plancher d'affichage est allongé quand le chat est soucieux**
 (`BOOT_MIN_WORRIED_MS`, 3s contre 1.8s) : une expression qui apparaît en fin de
-course ne serait pas vue. On rallonge, on n'**attend** pas — le boot ne se
-suspend jamais pour un verdict réseau ; si le diagnostic tombe après
-l'estompage, la topbar prend le relais, les trois surfaces portant la même
-classe.
+course ne serait pas vue.
+
+Deux précautions vont avec, et les deux ont été payées. La classe est relue **à
+l'échéance**, jamais au moment d'armer le timer : `finishBoot` est appelée en
+fin d'`init()`, donc avant que `prefetchModels` et `reconnectMcpServers` —
+lancées sans être attendues — aient conclu ; un plancher calculé là serait figé
+sur un état encore vierge (piège 24(b)). Et le plancher nominal pouvant expirer
+**avant** le verdict, un sursis borné lui est accordé (`BOOT_MAX_WAIT_MS`,
+2.6s) tant que `_healthSettled` est faux. Sans lui le chat fronçait
+systématiquement trop tard pour un serveur MCP dont la connexion met ~2s à être
+refusée — défaut constaté en usage réel, invisible en local où le refus est
+immédiat.
+
+On accorde un sursis, on ne **suspend** pas : au-delà de la borne l'overlay part
+quoi qu'il arrive, sinon un serveur qui pend (timeout applicatif réglable
+jusqu'à des dizaines de secondes) tiendrait l'écran de démarrage en otage. Si le
+diagnostic tombe après, la topbar prend le relais, les trois surfaces portant la
+même classe. Non-régression : `verify-boot-worried.mjs`, dont le serveur de
+fixture échoue **après un délai calibré**. Le délai est fabriqué et non subi :
+un port fermé est refusé en quelques centaines de millisecondes sur la machine
+de développement, donc dans la fenêtre où même le code défectueux affichait le
+fronçage — alors que la latence d'un refus dépend entièrement de
+l'environnement. Le banc doit produire la fenêtre qu'il veut tester plutôt que
+d'espérer la rencontrer.
 
 **L'état doit être lisible sans animation.** Le kill-switch reduced-motion
 coupe transitions et clin : l'information est donc dans la POSITION des

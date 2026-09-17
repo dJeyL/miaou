@@ -4713,7 +4713,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-17 21:17 UTC */
+/* miaou — built: 2026-09-17 21:43 UTC */
 
 /* ── utils.js ── */
 
@@ -8834,7 +8834,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789679835}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789681439}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -23510,22 +23510,35 @@ async function exportConvHtml() {
 const BOOT_MIN_AFTER_READY_MS = 1800;
 
 const BOOT_MIN_WORRIED_MS = 3000;
+
+const BOOT_MAX_WAIT_MS = 2600;
+
+let _healthSettled = false;
+
 function finishBoot() {
   const el = document.getElementById('boot-overlay');
   if (!el) return;
 
   if (typeof _bootReady === 'undefined' || !_bootReady) { requestAnimationFrame(() => finishBoot()); return; }
-  const since = Date.now() - _bootReadyAt;
 
-  const floor = document.body.classList.contains('miaou-worried')
-    ? BOOT_MIN_WORRIED_MS : BOOT_MIN_AFTER_READY_MS;
-  const wait = Math.max(0, floor - since);
-  setTimeout(() => {
-    el.classList.add('boot-done');
+  const decide = () => {
+    const elapsed = Date.now() - _bootReadyAt;
+    const floor = document.body.classList.contains('miaou-worried')
+      ? BOOT_MIN_WORRIED_MS : BOOT_MIN_AFTER_READY_MS;
+    const left = Math.max(0, floor - elapsed);
+    if (left > 0) { setTimeout(decide, Math.min(left, 120)); return; }
 
-    animateNextConvList();
-    renderConvList();
-  }, wait);
+    if (!_healthSettled && elapsed < BOOT_MAX_WAIT_MS) { setTimeout(decide, 120); return; }
+    hideBootOverlay(el);
+  };
+  decide();
+}
+
+function hideBootOverlay(el) {
+  el.classList.add('boot-done');
+
+  animateNextConvList();
+  renderConvList();
 }
 
 const LOGO_SRC = (function () {
@@ -26372,12 +26385,16 @@ async function init() {
 
   $('messages').addEventListener('keydown', onUserScrollGesture);
 
-  prefetchModels();
+  const modelsReady = prefetchModels();
 
-  reconnectMcpServers().then(() => {
+  const mcpReady = reconnectMcpServers().then(() => {
     _lastContextManifest = null;
     syncContextCounter();
   });
+  Promise.all([
+    Promise.resolve(modelsReady).catch(() => {}),
+    Promise.resolve(mcpReady).catch(() => {}),
+  ]).then(() => { _healthSettled = true; });
 
   ensureSystemSkills().then(loadSkillsCache).then(() => {
     syncSkillHintUI();
