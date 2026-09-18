@@ -3796,6 +3796,22 @@ function splitTipSentences(tip) {
   return t.split(/(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])/).map(x => x.trim()).filter(x => x.length > 0);
 }
 
+// Rend insécable l'espace qui précède une ponctuation haute française, et
+// celle qui suit un chevron ouvrant / précède un chevron fermant. Sans ça le
+// repli de ligne laisse le signe seul en début de ligne — vu sur le `:` de la
+// tête d'astuce, mais le corps vient du modèle et porte les mêmes signes.
+// Insécable FINE (U+202F) pour ; ! ? et les chevrons ; insécable PLEINE
+// (U+00A0) pour le deux-points, conformément à l'usage français. Idempotente :
+// une espace déjà insécable n'est pas retouchée (la classe source ne vise que
+// les espaces ordinaires). Pure.
+function hardenFrenchSpacing(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ \t]+:/g, '\u00a0:')
+    .replace(/[ \t]+([;!?])/g, '\u202f$1')
+    .replace(/\u00ab[ \t]+/g, '\u00ab\u202f')
+    .replace(/[ \t]+\u00bb/g, '\u202f\u00bb');
+}
+
 // Tire un couple (sujet, extrait) hors de ceux déjà essayés. `seen` est un Set
 // de clefs `topic#from`, pas de sujets : deux fenêtres distinctes d'une même
 // section sont deux sources différentes, et exclure le sujet entier après un

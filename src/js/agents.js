@@ -1206,8 +1206,10 @@ async function driveDetachedConversation(gen, apiMessages) {
       // File d'interjections : état d'ÉCRAN, jamais drainée par une génération
       // détachée (docs/generations.md).
       onInterjections: () => null,
-      // Un autre agent peut finir pendant ce tour : même drain qu'en écran, sans
-      // aucun effet DOM (la conversation n'est pas affichée par construction).
+      // Un autre agent peut finir pendant ce tour : même drain qu'en écran.
+      // L'effet DOM n'est PAS nul par construction — on peut ouvrir le fil d'un
+      // agent pendant son travail (corollaire du piège 28) : c'est
+      // `pushGenMessage` qui tranche, via `genOwnsScreen`.
       onAgentResults: () => {
         const batch = takePendingAgentResults(gen.convId);
         if (!batch.length) return null;

@@ -2272,6 +2272,38 @@ describe('formatDidYouKnowInput — le sujet accompagne l\'extrait', function() 
   });
 });
 
+describe('hardenFrenchSpacing — ponctuation haute jamais seule en début de ligne', function() {
+  it('rend insécable l\'espace avant un deux-points', function() {
+    expect(hardenFrenchSpacing('Dans la boîte à outils :')).toBe('Dans la bo\u00eete \u00e0 outils\u00a0:');
+  });
+  it('utilise une fine avant ; ! ?', function() {
+    expect(hardenFrenchSpacing('Vraiment ?')).toBe('Vraiment\u202f?');
+    expect(hardenFrenchSpacing('Ah !')).toBe('Ah\u202f!');
+    expect(hardenFrenchSpacing('a ; b')).toBe('a\u202f; b');
+  });
+  it('colle les chevrons à leur contenu', function() {
+    expect(hardenFrenchSpacing('dit « oui » ici')).toBe('dit \u00ab\u202foui\u202f\u00bb ici');
+  });
+  it('est idempotente', function() {
+    var once = hardenFrenchSpacing('Au passage : vraiment ?');
+    expect(hardenFrenchSpacing(once)).toBe(once);
+  });
+  it('ne touche pas un deux-points sans espace devant', function() {
+    expect(hardenFrenchSpacing('https://exemple.net')).toBe('https://exemple.net');
+  });
+  it('tolère null et vide', function() {
+    expect(hardenFrenchSpacing(null)).toBe('');
+    expect(hardenFrenchSpacing('')).toBe('');
+  });
+  it('appliquée APRÈS le découpage en phrases, elle ne bloque pas la coupe', function() {
+    // L'ordre compte : une fine posée avant le split empêcherait
+    // splitTipSentences de couper sur \s+ après le « ? ».
+    var parts = splitTipSentences('Vraiment ? Tu peux le faire.').map(hardenFrenchSpacing);
+    expect(parts.length).toBe(2);
+    expect(parts[0]).toBe('Vraiment\u202f?');
+  });
+});
+
 describe('splitTipSentences — une phrase par ligne', function() {
   it('coupe entre deux phrases', function() {
     var out = splitTipSentences('Tu peux exporter en zip. Le fichier s\'ouvre seul.');

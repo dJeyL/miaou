@@ -4713,7 +4713,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-17 21:43 UTC */
+/* miaou — built: 2026-09-18 07:25 UTC */
 
 /* ── utils.js ── */
 
@@ -8834,7 +8834,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1789681439}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1789716311}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14450,6 +14450,14 @@ function splitTipSentences(tip) {
   return t.split(/(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])/).map(x => x.trim()).filter(x => x.length > 0);
 }
 
+function hardenFrenchSpacing(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ \t]+:/g, '\u00a0:')
+    .replace(/[ \t]+([;!?])/g, '\u202f$1')
+    .replace(/\u00ab[ \t]+/g, '\u00ab\u202f')
+    .replace(/[ \t]+\u00bb/g, '\u202f\u00bb');
+}
+
 function pickDidYouKnowSource(content, seen, rnd) {
   const topic = pickHelpTopic(content, rnd);
   if (!topic || !content || content[topic] == null) return null;
@@ -15339,14 +15347,15 @@ function renderDidYouKnow(hostEl, tip) {
   const el = document.createElement('div');
   el.className = 'welcome-tip';
 
+  const harden = s => (typeof hardenFrenchSpacing === 'function' ? hardenFrenchSpacing(s) : s);
   const lines = (typeof splitTipSentences === 'function' ? splitTipSentences(tip) : [tip])
-    .map(p => '<span class="welcome-tip-line">' + escHtml(p) + '</span>').join('');
+    .map(p => '<span class="welcome-tip-line">' + escHtml(harden(p)) + '</span>').join('');
 
   const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
   el.innerHTML =
     '<span class="welcome-tip-head">' +
       '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
-      escHtml(head.head) +
+      escHtml(harden(head.head)) +
     '</span>' +
     '<span class="welcome-tip-body">' + lines + '</span>';
   hostEl.appendChild(el);
@@ -17672,10 +17681,10 @@ function syncConvDownloadBtn() {
   if (retitleBtn) retitleBtn.hidden = !hasAssistant || isAgent;
 }
 
-function appendUserMessage(text, ts, attachments) {
+function appendUserMessage(text, ts, attachments, agentResult) {
   const welcome = $('thread').querySelector('.welcome-screen');
   if (welcome) welcome.remove();
-  const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments);
+  const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments, agentResult);
   $('thread').appendChild(el);
   highlightUnder(el);
   scrollBottom(true);
@@ -23674,7 +23683,8 @@ function pushGenMessage(gen, msg, kind) {
   gen.thread.push(msg);
   if (!genOwnsScreen(gen)) return;
   if (kind === 'user') {
-    appendUserMessage(msg.content, msg.ts);
+
+    appendUserMessage(msg.content, msg.ts, undefined, msg.agentResult);
   } else {
     finalizeAssistant(gen.wrap, msg.content, msg.truncated);
     revealMsgTimestamp(gen.wrap, msg.ts);
@@ -25898,7 +25908,7 @@ async function dispatchSend(matches, continuation) {
         for (const entry of batch) {
           gen.thread.push(entry);
           if (genOwnsScreen(gen)) {
-            appendUserMessage(entry.content, entry.ts);
+            appendUserMessage(entry.content, entry.ts, undefined, entry.agentResult);
             gen.wrap = startAssistantMessage(model, serverName);
           }
           out.push({ role: 'user', content: entry.content });

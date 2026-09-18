@@ -150,6 +150,16 @@ const initScript = () => {
   window.__spawns = {};      // tag → { prompt, intent, tools } : ce tag lance un agent
   window.__toolTags = {};    // tag → true : ce tag fait un tour d'outils conv__list
   window.__errorTags = {};   // tag → true : le backend répond en erreur HTTP
+  // Gate par CONTENU, indépendant du tag. Nécessaire quand le tour à suspendre
+  // ne peut pas être distingué par son étiquette : le tour qui SUIT un drain de
+  // résultat d'agent porte encore le tag du tour d'outils qui l'a précédé
+  // (`tagOf` lit le PREMIER message user, que le drain ne change pas), et ce
+  // tag-là vient forcément d'être relâché pour que le drain ait lieu. Réarmer
+  // son gate après coup est une course perdue d'avance : `holdOn` ne boucle pas
+  // si `__released` est déjà vrai quand la requête entre. On gate donc sur ce qui
+  // distingue RÉELLEMENT ce tour — la présence du résultat d'agent dans son
+  // payload. Motif (source de RegExp) → true.
+  window.__holdIfUser = {};
 
   // Un handler d'outil rend soit une string, soit une enveloppe MCP
   // { content: [{ type:'text', text }] }. Stringifier l'enveloppe échapperait
@@ -226,15 +236,33 @@ const initScript = () => {
     }
 
     const enc = new TextEncoder();
-    const hasToolResult = (body.messages || []).some(m => m.role === 'tool');
+    // COMPTE de tool results déjà présents, et non un booléen : un tag peut
+    // demander PLUSIEURS tours d'outils successifs (`{ turns: n }`), ce dont le
+    // scénario 4 a besoin — il lui faut une frontière de tour qui arrive APRÈS
+    // la fin de l'agent, or la frontière du premier tour est déjà consommée
+    // quand l'enfant finit. Le booléen historique interdisait ce montage, et son
+    // absence envoyait le drain sur le filet `finally` (parent inerte) plutôt
+    // que sur `onAgentResults` : un autre chemin, donc un autre code mesuré.
+    const toolResultCount = (body.messages || []).filter(m => m.role === 'tool').length;
+    const hasToolResult = toolResultCount > 0;
 
-    // Un tour d'outils n'est émis qu'au PREMIER passage (pas de tool result
-    // encore dans le payload) : sinon la boucle d'outils ne se termine jamais.
+    // Un tour d'outils n'est émis que tant que le quota du tag n'est pas atteint
+    // (1 par défaut) : sinon la boucle d'outils ne se termine jamais.
     const spawn = !hasToolResult ? window.__spawns[tag] : null;
-    const wantTool = !hasToolResult && !!window.__toolTags[tag];
+    const toolSpec = window.__toolTags[tag];
+    const toolTurns = (toolSpec && toolSpec !== true && toolSpec.turns) || 1;
+    const wantTool = !!toolSpec && toolResultCount < toolTurns;
+
+    // Le gate par contenu est évalué UNE FOIS, à l'entrée : le payload ne change
+    // plus. `heldByContent` vaut le motif qui a mordu, et c'est lui — pas le tag —
+    // qui sert de clef de libération.
+    const heldByContent = Object.keys(window.__holdIfUser).find((re) =>
+      (body.messages || []).some(m => m.role === 'user'
+        && new RegExp(re).test(typeof m.content === 'string' ? m.content : '')));
 
     const holdOn = async () => {
-      while (window.__gates[tag] && !window.__released[tag]) {
+      while ((window.__gates[tag] && !window.__released[tag])
+        || (heldByContent && window.__holdIfUser[heldByContent])) {
         if (opts && opts.signal && opts.signal.aborted) {
           const err = new Error('aborted'); err.name = 'AbortError'; throw err;
         }
@@ -272,7 +300,7 @@ const initScript = () => {
             // `__toolTags[tag]` vaut `true` (conv__list, historique) ou un objet
             // { name, args } pour cibler un autre outil — X-1d en a besoin pour
             // faire appeler recall_attachment avec un handle d'image.
-            const spec = window.__toolTags[tag];
+            const spec = toolSpec;
             if (spec && spec !== true && spec.name) {
               toolCall(spec.name, spec.args || {});
               await holdOn();
@@ -539,7 +567,16 @@ const agent2 = await childOf(parent2);
 
 // Le parent repart sur un tour d'OUTILS, gaté : il est occupé et il lui reste
 // une frontière de tour à traverser — c'est là que le drain doit avoir lieu.
-await page.evaluate(() => { window.__toolTags['P:P2X'] = true; window.__gates['P:P2X'] = true; });
+// DEUX tours d'outils, pas un : le drain d'un résultat d'agent a lieu à une
+// FRONTIÈRE de tour (hook `onAgentResults`, api.js), et il faut donc qu'une
+// frontière reste à franchir APRÈS la fin de l'enfant. Avec un tour unique, le
+// premier est déjà consommé quand l'enfant termine, la génération du parent
+// s'achève sans frontière, et c'est le filet du `finally`
+// (`wakeParentWithPendingAgentResults`) qui livre — un chemin DIFFÉRENT, qui
+// repeint tout le fil par `renderThread` au lieu de la seule bulle. Mesuré ici :
+// le scénario restait vert avec la régression de rendu réinjectée, parce qu'il
+// ne passait pas par le point d'écriture live.
+await page.evaluate(() => { window.__toolTags['P:P2X'] = { turns: 2 }; window.__gates['P:P2X'] = true; });
 await send('MARK-P2X deuxième question.');
 await waitSent('P:P2X');
 await page.waitForTimeout(200);
@@ -558,9 +595,104 @@ s = await page.evaluate(([p, a]) => ({
 check('4. le résultat est MIS EN FILE (parent occupé)', s.queued === true);
 check('4. le parent génère toujours', s.parentStillBusy === true);
 check('4. rien n\'a encore été poussé dans son fil', s.alreadyInThread === false);
+// Le tour QUI SUIT le drain doit rester suspendu : c'est la seule fenêtre où le
+// résultat est PEINT alors que le parent génère encore — celle que le bug de
+// rendu (bulle utilisateur ordinaire au lieu d'une bulle de résultat d'agent)
+// occupait, et qui se referme d'elle-même au premier re-rendu complet du fil.
+//
+// Ce tour ne peut pas être gaté par son TAG : `tagOf` lit le PREMIER message
+// user du payload (« MARK-P2 lance un agent. »), que le drain ne change pas,
+// donc il porte encore `P:P2X` — le tag qu'on doit justement relâcher pour que
+// la frontière de tour soit franchie. On gate donc sur ce qui distingue
+// réellement ce tour : la présence du résultat d'agent dans son payload.
+await page.evaluate(() => { window.__holdIfUser["Résultat d'agent"] = true; });
 
-// Libérer le tour d'outils : la frontière de tour est franchie, le drain a lieu.
+// Libérer les tours d'outils : la frontière du DEUXIÈME est celle où le drain a
+// lieu, et le tour qui la suit porte le résultat — suspendu par le gate de
+// contenu, ce qui ouvre la fenêtre d'observation.
 await release('P:P2X');
+
+// Attendre l'ÉTAT terminal — le tour de réponse est parti, porte le résultat
+// d'agent, et le parent génère encore — jamais un délai : le drain, la
+// persistance et le nouvel envoi s'enchaînent en millisecondes variables.
+await page.waitForFunction((p) => isGenerating(p) && window.__sent.some(x => x.body.stream === true
+  && (x.body.messages || []).some(m => m.role === 'user'
+    && /Résultat d'agent/.test(typeof m.content === 'string' ? m.content : ''))),
+  parent2, { timeout: 10000 });
+await page.waitForTimeout(150);
+
+// ── Troisième surface : le DOM LIVE (thread-audit-3-surfaces) ───────────────
+// Les checks ci-dessous et ceux d'après mesurent le MÊME résultat d'agent sur
+// deux surfaces différentes : ici pendant qu'il est peint par le drain, plus
+// bas après re-rendu depuis le store. Les deux passent par `buildMsg`, mais par
+// des APPELANTS distincts (`appendUserMessage` en live, `renderThread` au
+// re-rendu) — et c'est l'appelant live qui omettait l'argument `agentResult`,
+// donc peignait une bulle utilisateur ordinaire. Un contrôle sur le store seul
+// est structurellement aveugle à ça : l'entrée y porte bien son `agentResult`.
+check('4. le parent génère toujours pendant qu\'on observe la bulle peinte',
+  await page.evaluate((p) => isGenerating(p), parent2));
+s = await page.evaluate(() => {
+  const bubbles = Array.from(document.querySelectorAll('#thread .msg.user'));
+  const wake = bubbles.filter(el => el.querySelector('.agent-result-box'));
+  const last = bubbles[bubbles.length - 1] || null;
+  return {
+    userBubbles: bubbles.length,
+    wakeBubbles: wake.length,
+    // La classe porte le contrat de mise en page (chat.css) : l'assertion la
+    // vise EN PLUS de la structure, jamais à sa place — une classe posée dit
+    // que le JS a tourné, pas que la cascade a suivi.
+    lastHasClass: last ? last.classList.contains('agent-result') : null,
+    lastHasBox: last ? !!last.querySelector('.agent-result-box') : null,
+    // Replié par défaut : <details> sans `open`. C'est la moitié « c'est moche »
+    // du symptôme — un compte rendu déplié en pleine bulle utilisateur.
+    lastCollapsed: last ? (() => {
+      const d = last.querySelector('details.agent-result-box');
+      return d ? d.open === false : null;
+    })() : null,
+    lastIntent: last ? (() => {
+      const el = last.querySelector('.agent-result-intent');
+      return el ? el.textContent : null;
+    })() : null,
+    // Affordances : le bouton d'ouverture du fil REMPLACE l'édition (une
+    // réponse d'agent n'est pas éditable, cf. buildMsg). L'absence d'édition
+    // est donc un discriminant, pas un détail — et elle se lit sur la présence
+    // du nœud, que MIAOU retire ici réellement au lieu de le masquer.
+    lastHasOpenAgent: last ? !!last.querySelector('.msg-open-agent') : null,
+    lastHasEdit: last ? !!last.querySelector('.msg-edit') : null,
+  };
+});
+check('4. (DOM live) la bulle du résultat est peinte comme résultat d\'agent',
+  s.wakeBubbles === 1);
+check('4. (DOM live) c\'est la DERNIÈRE bulle user, et elle porte la boîte dédiée',
+  s.lastHasBox === true);
+check('4. (DOM live) …et la classe de mise en page .agent-result', s.lastHasClass === true);
+check('4. (DOM live) la boîte est REPLIÉE par défaut', s.lastCollapsed === true);
+check('4. (DOM live) l\'en-tête nomme la tâche confiée à l\'agent',
+  s.lastIntent === 'Compiler les chiffres');
+check('4. (DOM live) le bouton « ouvrir le fil de l\'agent » est présent',
+  s.lastHasOpenAgent === true);
+check('4. (DOM live) et le bouton d\'édition est absent (résultat non éditable)',
+  s.lastHasEdit === false);
+// TÉMOIN : la bulle user ordinaire du même fil, elle, garde son bouton d'édition
+// et n'a pas de boîte. Sans lui, les deux checks ci-dessus passeraient sur un
+// fil où AUCUNE bulle n'a jamais de .msg-edit (une régression de sélecteur, un
+// rendu vide) — ils mesureraient alors une absence globale, pas un contraste.
+s = await page.evaluate(() => {
+  const plain = Array.from(document.querySelectorAll('#thread .msg.user'))
+    .filter(el => !el.querySelector('.agent-result-box'));
+  const first = plain[0] || null;
+  return {
+    plainCount: plain.length,
+    firstHasEdit: first ? !!first.querySelector('.msg-edit') : null,
+    firstHasBox: first ? !!first.querySelector('.agent-result-box') : null,
+  };
+});
+check('4. (témoin) le fil contient bien des bulles user ordinaires', s.plainCount >= 1);
+check('4. (témoin) une bulle ordinaire garde son bouton d\'édition', s.firstHasEdit === true);
+check('4. (témoin) …et n\'a pas de boîte de résultat d\'agent', s.firstHasBox === false);
+
+// Laisser le tour de réveil se terminer, puis reprendre les contrôles de store.
+await page.evaluate(() => { window.__holdIfUser["Résultat d'agent"] = false; });
 await waitGenCount(0);
 await page.waitForTimeout(500);
 s = await page.evaluate((p) => {
@@ -581,6 +713,31 @@ check('4. la file est vidée après la frontière de tour', s.stillQueued === fa
 check('4. le résultat est arrivé dans le fil (rien de perdu)', s.wakeCount === 1);
 check('4. il porte bien la réponse de l\'enfant', /Fin-A:A2/.test(s.wakeText));
 check('4. il a effectivement été envoyé au modèle', s.reachedModel === true);
+
+// Surface 2 : le MÊME résultat après un re-rendu complet du fil depuis le store.
+// C'est l'autre appelant de `buildMsg` (renderThread), celui qui n'a jamais été
+// cassé — d'où la valeur du contraste : le live et le re-rendu doivent rendre la
+// MÊME structure, et c'est cette égalité qui est le contrat, pas chaque moitié
+// prise isolément.
+await page.evaluate((p) => openConversation(p, true), parent2);
+await page.waitForTimeout(250);
+s = await page.evaluate(() => {
+  const bubbles = Array.from(document.querySelectorAll('#thread .msg.user'));
+  const wake = bubbles.filter(el => el.querySelector('.agent-result-box'));
+  const el = wake[0] || null;
+  return {
+    wakeBubbles: wake.length,
+    hasClass: el ? el.classList.contains('agent-result') : null,
+    collapsed: el ? el.querySelector('details.agent-result-box').open === false : null,
+    intent: el ? (el.querySelector('.agent-result-intent') || {}).textContent : null,
+    hasEdit: el ? !!el.querySelector('.msg-edit') : null,
+  };
+});
+check('4. (re-rendu) une seule bulle de résultat d\'agent, comme en live', s.wakeBubbles === 1);
+check('4. (re-rendu) même classe qu\'en live', s.hasClass === true);
+check('4. (re-rendu) même repli qu\'en live', s.collapsed === true);
+check('4. (re-rendu) même intent qu\'en live', s.intent === 'Compiler les chiffres');
+check('4. (re-rendu) toujours non éditable', s.hasEdit === false);
 await shot('03-wake-busy-parent.png');
 
 // ═════════════════════════════════════════════════════════════════════════════

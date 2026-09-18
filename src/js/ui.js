@@ -263,15 +263,19 @@ function renderDidYouKnow(hostEl, tip) {
   // en phrases se fait AVANT l'échappement, sur le texte brut — après, une
   // entité (&amp;) introduirait des points-virgules qui ne coupent rien mais
   // brouilleraient la lecture d'un futur motif.
+  // hardenFrenchSpacing AVANT escHtml : elle ne produit que des espaces
+  // insécables, qu'escHtml laisse passer tels quels — l'inverse ferait passer
+  // ses motifs sur des entités (&amp;) plutôt que sur le texte.
+  const harden = s => (typeof hardenFrenchSpacing === 'function' ? hardenFrenchSpacing(s) : s);
   const lines = (typeof splitTipSentences === 'function' ? splitTipSentences(tip) : [tip])
-    .map(p => '<span class="welcome-tip-line">' + escHtml(p) + '</span>').join('');
+    .map(p => '<span class="welcome-tip-line">' + escHtml(harden(p)) + '</span>').join('');
   // Tête accordée à l'écran d'accueil tiré ; repli sur la formule neutre si
   // l'hôte n'en porte pas (écran posé par un chemin qui n'en fournirait pas).
   const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
   el.innerHTML =
     '<span class="welcome-tip-head">' +
       '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
-      escHtml(head.head) +
+      escHtml(harden(head.head)) +
     '</span>' +
     '<span class="welcome-tip-body">' + lines + '</span>';
   hostEl.appendChild(el);
@@ -3857,10 +3861,17 @@ function syncConvDownloadBtn() {
 }
 
 // ── Streaming d'une réponse assistant ───────────────────────────────────────
-function appendUserMessage(text, ts, attachments) {
+// `agentResult` : un message user peut porter un compte rendu d'agent plutôt
+// qu'une saisie humaine (buildAgentResultEntry, agents.js). Le paramètre est
+// OBLIGATOIRE au point d'appel des drains de résultats — l'omettre peint une
+// bulle utilisateur ordinaire, alors que le reload et `renderThread` rendent une
+// bulle dédiée depuis le MÊME `buildMsg` : l'écart ne se voit que pendant le
+// travail des agents restants, puis se répare tout seul au premier re-rendu du
+// fil, donc il ne laisse aucune trace.
+function appendUserMessage(text, ts, attachments, agentResult) {
   const welcome = $('thread').querySelector('.welcome-screen');
   if (welcome) welcome.remove();
-  const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments);
+  const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments, agentResult);
   $('thread').appendChild(el);
   highlightUnder(el);
   scrollBottom(true);   // l'utilisateur vient d'envoyer : toujours suivre

@@ -385,7 +385,15 @@ function pushGenMessage(gen, msg, kind) {
   gen.thread.push(msg);
   if (!genOwnsScreen(gen)) return;
   if (kind === 'user') {
-    appendUserMessage(msg.content, msg.ts);
+    // `msg.agentResult` transmis par COHÉRENCE de signature avec l'autre point
+    // d'écriture live (le drain d'écran de dispatchSend), pas parce que le cas
+    // se produit : la seule entrée qui en porte un est un résultat d'agent, et
+    // il est toujours destiné à une RACINE — un agent ne peut pas être parent
+    // d'un agent (borne de profondeur, handler agent__spawn). La branche
+    // 'user' d'ici ne sert donc aujourd'hui qu'aux interjections d'un fil
+    // d'agent, qui n'ont pas d'`agentResult`. Omettre l'argument marcherait,
+    // mais rouvrirait le défaut au premier assouplissement de cette borne.
+    appendUserMessage(msg.content, msg.ts, undefined, msg.agentResult);
   } else {
     finalizeAssistant(gen.wrap, msg.content, msg.truncated);
     revealMsgTimestamp(gen.wrap, msg.ts);
@@ -4346,7 +4354,7 @@ async function dispatchSend(matches, continuation) {
         for (const entry of batch) {
           gen.thread.push(entry);
           if (genOwnsScreen(gen)) {
-            appendUserMessage(entry.content, entry.ts);
+            appendUserMessage(entry.content, entry.ts, undefined, entry.agentResult);
             gen.wrap = startAssistantMessage(model, serverName);
           }
           out.push({ role: 'user', content: entry.content });
