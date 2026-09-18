@@ -243,15 +243,23 @@ const initScript = () => {
     // quand l'enfant finit. Le booléen historique interdisait ce montage, et son
     // absence envoyait le drain sur le filet `finally` (parent inerte) plutôt
     // que sur `onAgentResults` : un autre chemin, donc un autre code mesuré.
-    const toolResultCount = (body.messages || []).filter(m => m.role === 'tool').length;
-    const hasToolResult = toolResultCount > 0;
+    const hasToolResult = (body.messages || []).some(m => m.role === 'tool');
 
-    // Un tour d'outils n'est émis que tant que le quota du tag n'est pas atteint
-    // (1 par défaut) : sinon la boucle d'outils ne se termine jamais.
     const spawn = !hasToolResult ? window.__spawns[tag] : null;
+
+    // Quota de tours d'outils PAR TAG, compté côté stub (`__toolEmitted`) et non
+    // déduit du payload. Deux bornes déduites ont été essayées et sont fausses :
+    // compter tous les `role:'tool'` de la conversation fait croire le quota
+    // atteint avant le premier appel (le tour de spawn en a déjà laissé autant
+    // que d'agents lancés), et les compter « depuis le dernier message user »
+    // remet le compteur à zéro à chaque réveil de parent — un résultat d'agent
+    // EST un message user, donc le tour de réveil réémettait un appel d'outil au
+    // lieu de répondre. Le stub sait ce qu'il a émis ; le payload, lui, ne
+    // distingue pas un tour du suivant.
     const toolSpec = window.__toolTags[tag];
     const toolTurns = (toolSpec && toolSpec !== true && toolSpec.turns) || 1;
-    const wantTool = !!toolSpec && toolResultCount < toolTurns;
+    window.__toolEmitted = window.__toolEmitted || {};
+    const wantTool = !!toolSpec && (window.__toolEmitted[tag] || 0) < toolTurns;
 
     // Le gate par contenu est évalué UNE FOIS, à l'entrée : le payload ne change
     // plus. `heldByContent` vaut le motif qui a mordu, et c'est lui — pas le tag —
@@ -273,8 +281,12 @@ const initScript = () => {
     return new Response(new ReadableStream({
       async start(controller) {
         const send = (o) => controller.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'));
-        const toolCall = (name, args) => {
-          send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_' + tag + '_' + name,
+        // `index` explicite : deux tool calls d'un MÊME tour doivent porter des
+        // index distincts, sinon MIAOU les agrège en un seul (piège 4, agrégation
+        // SSE par `index`). Défaut 0 — la très grande majorité des scénarios
+        // n'émet qu'un appel par tour.
+        const toolCall = (name, args, index) => {
+          send({ choices: [{ delta: { tool_calls: [{ index: index || 0, id: 'call_' + tag + '_' + name + '_' + (index || 0),
             type: 'function', function: { name: name, arguments: JSON.stringify(args) } }] } }] });
         };
         const closeWith = (finish) => {
@@ -285,9 +297,16 @@ const initScript = () => {
 
         try {
           if (spawn) {
-            toolCall('miaou__agent__spawn', Object.assign({
-              prompt: spawn.prompt, intent: spawn.intent, tools: spawn.tools || [],
-            }, spawn.attachments ? { attachments: spawn.attachments } : {}));
+            // `__spawns[tag]` vaut un objet (un agent) ou un TABLEAU d'objets
+            // (plusieurs agents lancés dans le même tour d'outils) — ce dont le
+            // scénario 4bis a besoin pour que deux agents soient drainés dans le
+            // même batch.
+            const spawnList = Array.isArray(spawn) ? spawn : [spawn];
+            spawnList.forEach((sp, i) => {
+              toolCall('miaou__agent__spawn', Object.assign({
+                prompt: sp.prompt, intent: sp.intent, tools: sp.tools || [],
+              }, sp.attachments ? { attachments: sp.attachments } : {}), i);
+            });
             // GATE AVANT finish_reason (piège 2) : sans cela le tour d'outils
             // part immédiatement et l'état d'écran qu'on veut faire diverger
             // (Espace, conversation affichée) n'a pas encore bougé — le
@@ -303,19 +322,27 @@ const initScript = () => {
             const spec = toolSpec;
             if (spec && spec !== true && spec.name) {
               toolCall(spec.name, spec.args || {});
+              window.__toolEmitted[tag] = (window.__toolEmitted[tag] || 0) + 1;
               await holdOn();
               closeWith('tool_calls');
               return;
             }
             toolCall('miaou__conv__list', {});
+            window.__toolEmitted[tag] = (window.__toolEmitted[tag] || 0) + 1;
             await holdOn();
             closeWith('tool_calls');
             return;
           }
 
-          // Premier fragment : rend le stream OBSERVABLE avant le gate.
-          send({ choices: [{ delta: { content: 'Début-' + tag + '. ' } }] });
+          // Premier fragment : rend le stream OBSERVABLE avant le gate. SAUF si
+          // le tour est retenu par le gate de CONTENU — dans ce cas on veut
+          // observer l'écran tel qu'il est AVANT que le streaming ne commence
+          // (patienteur encore en place, piège 13 : patienteur et streaming ne
+          // coexistent jamais). Émettre ici ferait céder le patienteur et
+          // rendrait « combien de patienteurs à l'écran ? » inobservable.
+          if (!heldByContent) send({ choices: [{ delta: { content: 'Début-' + tag + '. ' } }] });
           await holdOn();
+          if (heldByContent) send({ choices: [{ delta: { content: 'Début-' + tag + '. ' } }] });
           send({ choices: [{ delta: { content: 'Fin-' + tag + '.' } }] });
           closeWith('stop');
         } catch (e) {
@@ -351,6 +378,7 @@ const release = (tag) => page.evaluate((t) => { window.__released[t] = true; }, 
 const resetStub = () => page.evaluate(() => {
   window.__gates = {}; window.__released = {}; window.__spawns = {};
   window.__toolTags = {}; window.__errorTags = {}; window.__sent = [];
+  window.__toolEmitted = {}; window.__holdIfUser = {};
 });
 // Arme un tour agent__spawn sur le tag parent `pTag`, lançant l'agent `aTag`.
 const armSpawn = (pTag, aTag, opts) => page.evaluate(([p, a, o]) => {
@@ -362,6 +390,16 @@ const armSpawn = (pTag, aTag, opts) => page.evaluate(([p, a, o]) => {
     attachments: (o && o.attachments) || null,
   };
 }, [pTag, aTag, opts || null]);
+// Arme PLUSIEURS spawns sur un seul tour parent (tableau de tags d'agents).
+// Frère d'`armSpawn`, pas une extension : l'écrasante majorité des scénarios
+// lance un agent et n'a aucune raison de manipuler un tableau.
+const armSpawnMany = (pTag, aTags, intents) => page.evaluate(([p, as, ints]) => {
+  window.__spawns['P:' + p] = as.map((a, i) => ({
+    prompt: 'AGENT-' + a + ' fais le travail.',
+    intent: (ints && ints[i]) || ('Travail ' + a),
+    tools: [], attachments: null,
+  }));
+}, [pTag, aTags, intents || null]);
 const send = async (text) => {
   await page.fill('#composer-text', text);
   await page.press('#composer-text', 'Enter');
@@ -739,6 +777,140 @@ check('4. (re-rendu) même repli qu\'en live', s.collapsed === true);
 check('4. (re-rendu) même intent qu\'en live', s.intent === 'Compiler les chiffres');
 check('4. (re-rendu) toujours non éditable', s.hasEdit === false);
 await shot('03-wake-busy-parent.png');
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Scénario 4bis : DEUX résultats drainés dans le MÊME batch
+// ═════════════════════════════════════════════════════════════════════════════
+// Le scénario 4 ne draine qu'une entrée, donc il ne peut pas voir ce qui ne se
+// produit qu'à partir de la deuxième : l'ouverture d'une bulle assistant par
+// tour de boucle. Chaque bulle naît avec son patienteur, et les timers
+// d'animation sont GLOBAUX (`_waiterRotate`, ui.js) — `startWaiter` commence par
+// `stopWaiter()`, donc seul le dernier patienteur tourne réellement et les
+// précédents restent FIGÉS sur leur mot, visibles jusqu'au prochain re-rendu du
+// fil. C'est pourquoi le défaut se résorbe tout seul, et pourquoi le compte de
+// nœuds est le seul instrument qui le voit : l'animation, elle, a l'air normale.
+//
+// Il faut donc deux agents qui finissent AVANT la même frontière de tour, pour
+// que `takePendingAgentResults` en rende deux d'un coup. Même acquis qu'au
+// scénario 4 pour le reste : deux tours d'outils (sans quoi la frontière est
+// déjà consommée et c'est le filet du `finally` qui livre, en repeignant tout le
+// fil — chemin qui MASQUE ce défaut), et gate par contenu pour suspendre le tour
+// d'après.
+console.log('\n— Scénario 4bis : deux résultats drainés ensemble (une seule bulle vive)');
+await resetStub();
+await newConv();
+
+await armSpawnMany('P2B', ['A2B1', 'A2B2'], ['Compiler les chiffres', 'Relire la note']);
+await gate('A:A2B1');
+await gate('A:A2B2');
+await send('MARK-P2B lance deux agents.');
+await waitSent('P:P2B');
+await release('P:P2B');
+await page.waitForTimeout(400);
+const parent2b = await page.evaluate(() => currentConvId);
+s = await page.evaluate((p) => ({
+  children: agentChildrenOf(p, listAllConversations()).map(c => c.id),
+}), parent2b);
+check('4bis. les DEUX agents ont bien été lancés par le même tour', s.children.length === 2);
+const [agent2b1, agent2b2] = s.children;
+
+// Le parent repart sur deux tours d'outils gatés.
+await page.evaluate(() => { window.__toolTags['P:P2BX'] = { turns: 2 }; window.__gates['P:P2BX'] = true; });
+await send('MARK-P2BX deuxième question.');
+await waitSent('P:P2BX');
+await page.waitForTimeout(200);
+check('4bis. le parent est OCCUPÉ quand ses deux enfants finissent',
+  await page.evaluate((p) => isGenerating(p), parent2b));
+
+// Les DEUX enfants finissent avant la frontière : un seul batch de deux entrées.
+await release('A:A2B1');
+await release('A:A2B2');
+await page.waitForFunction(([a, b]) => !isGenerating(a) && !isGenerating(b),
+  [agent2b1, agent2b2], { timeout: 10000 });
+await page.waitForTimeout(250);
+check('4bis. les deux résultats sont en file (parent occupé)',
+  await page.evaluate((p) => hasPendingAgentResults(p), parent2b));
+
+// Suspendre le tour qui suit le drain, pour observer l'écran pendant qu'il vit.
+await page.evaluate(() => { window.__holdIfUser["Résultat d'agent"] = true; });
+await release('P:P2BX');
+await page.waitForFunction((p) => isGenerating(p) && window.__sent.some(x => x.body.stream === true
+  && (x.body.messages || []).some(m => m.role === 'user'
+    && /Résultat d'agent/.test(typeof m.content === 'string' ? m.content : ''))),
+  parent2b, { timeout: 10000 });
+await page.waitForTimeout(150);
+
+s = await page.evaluate(() => {
+  // Compter les nœuds VISIBLES, jamais les nœuds tout court : MIAOU masque
+  // plutôt qu'il ne retire en bien des endroits, et un compte de markup
+  // passerait sur un écran couvert de patienteurs.
+  const vis = (sel) => Array.from(document.querySelectorAll(sel))
+    .filter(el => !el.hidden && el.offsetParent !== null).length;
+  const bubbles = Array.from(document.querySelectorAll('#thread .msg.user'));
+  return {
+    waiters: vis('#thread .waiter'),
+    // Bulles assistant OUVERTES — pas « vides ». Une bulle abandonnée par la
+    // boucle est vide, mais la bulle vive légitime ne l'est pas forcément (elle
+    // streame déjà, ou porte les acks du tour), donc « vide » mesure la mauvaise
+    // grandeur et accuse du code correct. L'oracle robuste est le chrome de
+    // finalisation : `finalizeAssistant` dévoile `.msg-copy`, donc une bulle
+    // encore ouverte est exactement celle dont le bouton copie est masqué.
+    openAssistants: Array.from(document.querySelectorAll('#thread .msg.assistant'))
+      .filter(el => {
+        const c = el.querySelector('.msg-copy');
+        return c && c.hasAttribute('hidden');
+      }).length,
+    agentBubbles: bubbles.filter(el => el.querySelector('.agent-result-box')).length,
+    intents: bubbles.map(el => {
+      const i = el.querySelector('.agent-result-intent');
+      return i ? i.textContent : null;
+    }).filter(Boolean),
+  };
+});
+check('4bis. UN SEUL patienteur à l\'écran pendant le drain', s.waiters === 1);
+// Non-vacuité du check ci-dessus : sans cette assertion, `waiters === 1` passerait
+// aussi sur un écran où le drain n'a rien peint du tout (zéro bulle, zéro
+// patienteur d'agent, celui du tour courant tout seul).
+check('4bis. les DEUX résultats sont bien peints', s.agentBubbles === 2);
+check('4bis. …et chacun nomme sa propre tâche',
+  s.intents.includes('Compiler les chiffres') && s.intents.includes('Relire la note'));
+check('4bis. une seule bulle assistant OUVERTE (la vive), aucune abandonnée',
+  s.openAssistants === 1);
+
+await page.evaluate(() => { window.__holdIfUser["Résultat d'agent"] = false; });
+await waitGenCount(0);
+await page.waitForTimeout(400);
+s = await page.evaluate((p) => {
+  const msgs = loadConversation(p).messages || [];
+  return {
+    wakeCount: msgs.filter(m => m.role === 'user' && m.agentResult).length,
+    // Le fil retombe à zéro patienteur une fois la génération finie : c'est la
+    // preuve que la résorption observée n'était pas ce qui rendait le contrôle
+    // vert plus haut.
+    waiters: Array.from(document.querySelectorAll('#thread .waiter'))
+      .filter(el => !el.hidden && el.offsetParent !== null).length,
+  };
+}, parent2b);
+check('4bis. les deux résultats sont dans le fil persisté', s.wakeCount === 2);
+check('4bis. plus aucun patienteur une fois la génération terminée', s.waiters === 0);
+
+// Troisième surface : le reload. L'hôte `_acksOnly` matérialisé à la clôture du
+// tour doit donner aux acks un message dans le thread — sans lui `renderThread`
+// les rendrait nus (branche orpheline, piège 27) — sans pour autant produire une
+// bulle assistant vide de plus à l'écran.
+await page.evaluate((p) => openConversation(p, true), parent2b);
+await page.waitForTimeout(250);
+s = await page.evaluate(() => ({
+  agentBubbles: Array.from(document.querySelectorAll('#thread .msg.user'))
+    .filter(el => el.querySelector('.agent-result-box')).length,
+  orphanAcks: Array.from(document.querySelectorAll('#thread .tool-ack'))
+    .filter(el => !el.closest('.msg')).length,
+  openAssistants: Array.from(document.querySelectorAll('#thread .msg.assistant'))
+    .filter(el => { const c = el.querySelector('.msg-copy'); return c && c.hasAttribute('hidden'); }).length,
+}));
+check('4bis. (reload) les deux résultats sont rendus', s.agentBubbles === 2);
+check('4bis. (reload) aucun ack orphelin hors bulle', s.orphanAcks === 0);
+check('4bis. (reload) aucune bulle assistant restée ouverte', s.openAssistants === 0);
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Scénario 5 : HERMÉTICITÉ — le scénario sans lequel le lot serait vert et faux

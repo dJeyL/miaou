@@ -560,6 +560,33 @@ before touching the app:
   `verify-stop-deferred.mjs`, gating `callTool` to reproduce the exact window
   where `gen.abort` is null between tool-call tours).
 
+- **A gate re-armed after the fact is a race you have already lost — gate on
+  CONTENT instead.** To observe an intermediate turn (the one right after a drain,
+  a tool result, an injection), the reflex is to release the gate that blocks the
+  current turn, then re-arm it for the next one. It does not work: `holdOn` only
+  loops while `__gates[tag] && !__released[tag]`, and it evaluates that on entry —
+  a request that arrives with `__released` still true sails straight through, and
+  nothing re-checks it. Worse, the turn you want to catch usually carries the SAME
+  tag: `tagOf` reads the FIRST user message of the payload, which a mid-generation
+  insertion never changes. So the tag you must release to make the turn happen is
+  the very tag you would need to hold it with.
+  Gate on whatever actually distinguishes that turn — the text of the inserted
+  message — with a content gate evaluated once at request entry:
+
+  ```js
+  window.__holdIfUser = {};    // regexp source → true
+  const heldByContent = Object.keys(window.__holdIfUser).find((re) =>
+    (body.messages || []).some(m => m.role === 'user'
+      && new RegExp(re).test(typeof m.content === 'string' ? m.content : '')));
+  // …then in holdOn: || (heldByContent && window.__holdIfUser[heldByContent])
+  ```
+
+  Paid on 2026-09-18 (`verify-agents.mjs` scenario 4), and it lied in both
+  directions before being understood: first a timeout with no failing check, then
+  — once the timing was "fixed" — a green run measuring the re-render instead of
+  the live paint. Both are the signatures already listed at the top of this
+  section; the cause here is specifically the entry-time read.
+
 - **A stub that does not discriminate destroys its own control.** A verify that
   proves "the degraded card looks degraded" needs a healthy card beside it,
   otherwise the assertion passes on a page where every card looks the same. But

@@ -4350,15 +4350,44 @@ async function dispatchSend(matches, continuation) {
       onAgentResults: () => {
         const batch = takePendingAgentResults(gen.convId);
         if (!batch.length) return null;
+        // Clôture du tour en cours AVANT d'insérer les résultats, exactement
+        // comme le drain d'interjections juste au-dessus (piège 27) : à ce point
+        // `gen.wrap` est une bulle assistant OUVERTE — celle qu'`onToolAcks` a
+        // posée pour les acks du tour — et elle porte son patienteur. L'abandonner
+        // pour en ouvrir une neuve en laissait deux à l'écran, chacune avec son
+        // mot ; les timers d'animation étant GLOBAUX (`_waiterRotate`, ui.js) et
+        // `startWaiter` commençant par `stopWaiter()`, seule la dernière tournait
+        // et les autres restaient figées jusqu'au prochain re-rendu du fil.
+        // L'hôte matérialisé (`_acksOnly`) donne aux acks du tour un message dans
+        // le thread, sans quoi `renderThread` les rendrait nus au reload.
+        const tourTs = Date.now();
+        const tourMsg = { role: 'assistant', content: '', model, ts: tourTs, _acksOnly: true };
+        if (serverName) tourMsg.server = serverName;
+        gen.thread.push(tourMsg);
+        if (genOwnsScreen(gen)) {
+          finalizeAssistant(gen.wrap, '');
+          revealMsgTimestamp(gen.wrap, tourTs);
+        }
         const out = [];
         for (const entry of batch) {
           gen.thread.push(entry);
           if (genOwnsScreen(gen)) {
             appendUserMessage(entry.content, entry.ts, undefined, entry.agentResult);
-            gen.wrap = startAssistantMessage(model, serverName);
           }
           out.push({ role: 'user', content: entry.content });
         }
+        // UNE seule bulle assistant pour TOUT le batch, ouverte après la boucle —
+        // jamais une par entrée. Deux agents qui finissent pendant le même tour
+        // sont drainés ensemble, et rouvrir une bulle à chaque tour de boucle en
+        // laissait N-1 derrière soi, chacune peinte avec son patienteur : les
+        // timers d'animation sont GLOBAUX (`_waiterRotate`, ui.js) et `startWaiter`
+        // commence par `stopWaiter()`, donc seul le dernier tournait — les autres
+        // restaient figées sur leur mot, visibles jusqu'au prochain re-rendu du
+        // fil. Même forme que le drain d'interjections juste au-dessus, qui fusionne
+        // son batch en un seul message et n'ouvre donc qu'une bulle ; et même
+        // invariant du lot N derrière (un seul groupe d'acks contigu par bulle
+        // assistant), qui suppose une bulle vive UNIQUE.
+        if (genOwnsScreen(gen)) gen.wrap = startAssistantMessage(model, serverName);
         persistGeneration(gen);
         return out;
       },
