@@ -3785,6 +3785,41 @@ function formatDidYouKnowInput(topic, excerpt, labels) {
   return 'Sujet : ' + label + '\n\nExtrait :\n' + excerpt;
 }
 
+// Texte pré-rempli au composer quand on clique l'astuce d'accueil pour la faire
+// développer. Pur, et volontairement ici plutôt qu'en ui.js : c'est un texte
+// adressé au MODÈLE, voisin de DID_YOU_KNOW_PROMPT qui l'a produite.
+//
+// Le SLUG est cité et non le libellé lisible : c'est lui qui est la valeur
+// attendue par l'enum `topic` de miaou__about. Le libellé, lui, ne désigne rien
+// d'appelable — le donner ferait deviner le slug au modèle, quand on l'a sous
+// la main. Le backtick le marque comme identifiant plutôt que comme prose.
+//
+// `tip` est le texte INTÉGRAL de l'astuce, pas celui affiché : le rendu est
+// élagué par la fin selon la place disponible (fitWelcomeTipByDroppingLines),
+// donc lire le DOM amputerait le prompt des phrases qui n'ont pas tenu, sans
+// que rien ne le signale. L'appelant lit _welcomeTipText.
+//
+// Formulé à l'impératif et en deux temps, l'ordre comptant : lire l'aide AVANT
+// d'expliquer. Une astuce est un extrait d'une fenêtre de quelques blocs
+// (pickHelpExcerpt) — développer depuis la seule astuce, c'est développer
+// depuis moins que ce que le générateur avait lu.
+//
+// La demande porte sur CE QUE L'ASTUCE DIT et son voisinage immédiat, pas sur
+// le sujet entier : le slug situe OÙ lire, il ne définit pas le périmètre de la
+// réponse. Une section d'aide couvre bien plus que l'astuce tirée (`interface`
+// fait des milliers de caractères), et « développe tout le sujet » ferait
+// répondre à côté — un exposé de section quand la question est une capacité.
+function formatTipFollowUpPrompt(tip, topic) {
+  const t = String(tip == null ? '' : tip).trim();
+  if (!t) return '';
+  const slug = String(topic == null ? '' : topic).trim();
+  const where = slug ? 'le sujet `' + slug + '` de l\'aide' : 'le sujet de l\'aide concerné';
+  return 'Développe cette astuce : « ' + t + ' »\n\n'
+    + 'Retrouve-la dans ' + where + ', lis ce qui l\'entoure, '
+    + 'puis explique-moi concrètement ce point-là et ce qui s\'y rattache '
+    + 'de près — pas la section entière.';
+}
+
 // Découpe une astuce en phrases, pour les afficher une par ligne. Coupe après
 // . ! ? suivis d'une espace et d'une majuscule : la condition sur la majuscule
 // évite de couper « 1.5 Mo », « cf. plus bas » ou une abréviation, là où un

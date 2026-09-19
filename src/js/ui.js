@@ -237,6 +237,11 @@ function scheduleDidYouKnow(hostEl) {
     // Ajustement sur le texte RENDU : le seuil ci-dessus ne pouvait pas
     // connaître son nombre de lignes. Poser puis élaguer plutôt que
     // pré-calculer — la hauteur d'un texte replié ne se prédit pas hors DOM.
+    // Le sujet est posé ICI et non dans renderDidYouKnow : celui-ci sert aussi
+    // le re-rendu au redimensionnement, qui ne repasse pas par la génération et
+    // n'a donc pas le topic à lui donner. Un WeakMap écrit une fois, au seul
+    // point qui connaît la réponse.
+    _welcomeTipTopic.set(hostEl, res.topic);
     renderWelcomeTipFitted(hostEl, res.tip, true);
   }, DID_YOU_KNOW_DELAY_MS);
 }
@@ -247,6 +252,13 @@ function scheduleDidYouKnow(hostEl) {
 // doit pouvoir la faire revenir. WeakMap plutôt qu'un champ sur le nœud : rien
 // à nettoyer quand l'écran d'accueil est remplacé.
 const _welcomeTipText = new WeakMap();
+
+// Sujet d'aide (slug) d'où l'astuce a été tirée, par écran d'accueil. Mémorisé
+// pour le clic « développe » : le prompt pré-rempli nomme le slug, que
+// generateDidYouKnowTip rend déjà mais que le rendu jetait. Comme
+// _welcomeTipText, il survit à l'élagage du DOM — et comme lui, il se relit
+// au re-rendu après redimensionnement, qui ne repasse pas par la génération.
+const _welcomeTipTopic = new WeakMap();
 
 // Dernière place mesurée pour laquelle l'astuce a été mise en page. Sert à
 // n'agir, au redimensionnement, que quand la place a réellement bougé.
@@ -278,7 +290,46 @@ function renderDidYouKnow(hostEl, tip) {
       escHtml(harden(head.head)) +
     '</span>' +
     '<span class="welcome-tip-body">' + lines + '</span>';
+  // Cliquer l'astuce pré-remplit le composer d'une demande de développement.
+  // Listener et non attribut inline : ce nœud est recréé à chaque mise en page
+  // (pose puis re-rendus au redimensionnement), il n'y a donc aucun câblage
+  // durable à maintenir — et l'affordance suit le nœud sans dépendre d'un nom
+  // global cité dans une template string.
+  // `title` plutôt qu'un texte d'invite ajouté dans l'encart : l'astuce est
+  // courte et bornée en hauteur (elle s'élague déjà faute de place), une ligne
+  // de plus y disputerait la place au contenu.
+  el.title = 'Demander à développer';
+  el.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
   hostEl.appendChild(el);
+}
+
+// Pré-remplit le composer d'une demande de développement de l'astuce affichée,
+// puis focus — SANS envoyer. Même geste qu'insertSkillIntoComposer :
+// l'utilisateur voit le prompt, l'amende ou l'abandonne. Un clic sur un encart
+// décoratif ne déclenche pas une génération.
+//
+// Le texte lu est le texte INTÉGRAL mémorisé (_welcomeTipText), jamais le DOM :
+// celui-ci a pu être élagué par la fin faute de place, et citer l'astuce
+// amputée priverait le modèle des phrases qu'elle contenait.
+//
+// Écrase un éventuel brouillon plutôt que de s'y ajouter, contrairement au
+// reflux d'interjections : celui-ci RESTITUE un texte que l'utilisateur avait
+// écrit et à qui on doit de ne rien perdre, là où ici le composer d'un écran
+// d'accueil vierge est le cas nominal — et un clic sur l'astuce est une
+// intention claire de partir sur CE sujet.
+function askToDevelopWelcomeTip(hostEl) {
+  const tip = _welcomeTipText.get(hostEl);
+  if (!tip) return;
+  const ta = $('composer-text');
+  if (!ta || ta.disabled || isComposerReadonly()) return;
+  const prompt = formatTipFollowUpPrompt(tip, _welcomeTipTopic.get(hostEl));
+  if (!prompt) return;
+  ta.value = prompt;
+  ta.focus();
+  const caret = ta.value.length;
+  ta.setSelectionRange(caret, caret);
+  autoGrow(ta);
+  if (typeof onComposerInput === 'function') onComposerInput();
 }
 
 // Une astuce déjà posée quand la fenêtre rétrécit se ferait rogner par le haut

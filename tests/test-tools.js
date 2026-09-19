@@ -2272,6 +2272,33 @@ describe('formatDidYouKnowInput — le sujet accompagne l\'extrait', function() 
   });
 });
 
+describe('formatTipFollowUpPrompt — demande de développement pré-remplie au composer', function() {
+  it('cite l\'astuce intégrale et nomme le slug, pas le libellé', function() {
+    var out = formatTipFollowUpPrompt('Un agent travaille en parallèle.', 'agents');
+    expect(out.indexOf('Un agent travaille en parallèle.') > 0).toBeTruthy();
+    expect(out.indexOf('`agents`') > 0).toBeTruthy();
+  });
+  it('borne le périmètre : le voisinage de l\'astuce, pas la section entière', function() {
+    // Le slug dit OÙ lire, il ne définit pas ce qu'il faut exposer. Sans cette
+    // borne le modèle récite une section de plusieurs milliers de caractères.
+    var out = formatTipFollowUpPrompt('Astuce.', 'interface');
+    expect(out.indexOf('pas la section entière') > 0).toBeTruthy();
+    expect(out.indexOf('lis ce qui l\'entoure') > 0).toBeTruthy();
+  });
+  it('reste utilisable sans slug (aucun sujet mémorisé)', function() {
+    var out = formatTipFollowUpPrompt('Astuce.', '');
+    expect(out.indexOf('le sujet de l\'aide concerné') > 0).toBeTruthy();
+    expect(out.indexOf('Astuce.') > 0).toBeTruthy();
+  });
+  it('rend une chaîne vide sur une astuce vide — rien à développer', function() {
+    // L'appelant s'en sert comme garde : un composer pré-rempli d'une consigne
+    // sans astuce citée serait une demande sans objet.
+    expect(formatTipFollowUpPrompt('', 'agents')).toBe('');
+    expect(formatTipFollowUpPrompt('   ', 'agents')).toBe('');
+    expect(formatTipFollowUpPrompt(null, 'agents')).toBe('');
+  });
+});
+
 describe('hardenFrenchSpacing — ponctuation haute jamais seule en début de ligne', function() {
   it('rend insécable l\'espace avant un deux-points', function() {
     expect(hardenFrenchSpacing('Dans la boîte à outils :')).toBe('Dans la bo\u00eete \u00e0 outils\u00a0:');

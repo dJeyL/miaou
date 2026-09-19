@@ -103,7 +103,8 @@ Figtree/Fira Code).
   consulte une aide utilisateur rédigée à la main plutôt que de confabuler sur
   « comment je joins un fichier ? » ou « c'est quoi les Espaces ? ».
 - Écran d'accueil aléatoire à chaque nouvelle conversation, avec une astuce
-  tirée de l'aide (réglable, `did_you_know`).
+  tirée de l'aide (réglable, `did_you_know`) — cliquable pour la faire
+  développer.
 - **Inspecteur de contexte** : compteur de tokens dans le composer, cliquable,
   détaillant la composition du payload envoyé au modèle avec une jauge
   d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).

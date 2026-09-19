@@ -902,7 +902,9 @@ et ton choix est conservé d'une session à l'autre.
   agrandir la fenêtre le fait revenir. Chaque astuce demande un court appel au
   modèle — parfois deux ou trois, quand le passage tiré ne se prête pas à une
   astuce et qu'un autre est tenté ; le réglage se décoche dans les Paramètres
-  si tu préfères t'en passer.
+  si tu préfères t'en passer. Une astuce qui t'intrigue se clique : le champ de
+  saisie se pré-remplit d'une demande de développement, que tu peux modifier ou
+  abandonner avant d'envoyer — rien n'est envoyé par le seul clic.
 
 ## multitache — travailler en parallèle
 

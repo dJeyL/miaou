@@ -1445,9 +1445,22 @@ html[data-wide-tables="off"] .table-bleed {
      déjà posée quand la fenêtre rétrécit — cf. WELCOME_TIP_MIN_ROOM_PX dans
      ui.js, dont le calcul reprend les trois nombres ci-dessus. Reste ici pour
      couvrir l'instant entre un redimensionnement et sa prise en compte.
-     Masqué plutôt que scrollable : l'astuce est décorative et sans
-     pointer-events, un ascenseur y serait une fausse affordance. */
+     Masqué plutôt que scrollable : l'astuce est bornée en hauteur et s'élague
+     par la fin (fitWelcomeTipByDroppingLines), un ascenseur y serait une
+     fausse affordance. */
   overflow: hidden;
+  /* Réactivé : `.welcome-screen` pose `pointer-events: none` sur tout son
+     sous-arbre (le trio d'accueil n'est pas interactif), ce qui rendait
+     l'astuce inatteignable au clic — aucun listener n'aurait jamais tiré.
+     `user-select` de même : citer l'astuce à la main reste possible, et le
+     texte d'un encart qu'on peut cliquer ne doit pas fuir sous la souris. */
+  pointer-events: auto;
+  user-select: text;
+  cursor: pointer;
+  /* Transition sur la seule opacité : l'encart se pose avec un fondu qui finit
+     à 0.85 (cf. keyframe dédiée), le survol le remonte à 1 — le même cran que
+     le fondu d'arrivée, donc aucun nouveau palier à accorder. */
+  transition: opacity 160ms var(--ease);
   /* 80% de la colonne, centré : la pleine largeur donnait des lignes trop
      longues à lire. Marges en pourcentage plutôt qu'une max-width, pour rester
      hors flux sans avoir à recentrer par transform. */
@@ -1468,6 +1481,12 @@ html[data-wide-tables="off"] .table-bleed {
   from { opacity: 0; }
   to   { opacity: 0.85; }
 }
+/* Survol : l'astuce est cliquable (elle pré-remplit le composer d'une demande
+   de développement), le seul signal au repos est le curseur. Remonter à
+   l'opacité pleine suffit à le dire sans rien déplacer — un fond ou une bordure
+   dessinerait une boîte là où l'encart est délibérément sans cadre. */
+.welcome-tip:hover { opacity: 1; }
+.welcome-tip:hover .welcome-tip-head { text-decoration: underline; }
 /* Le libellé occupe sa propre ligne : `display: block` plutôt qu'un <br>, pour
    que la marge se règle en CSS. */
 .welcome-tip-head {
