@@ -360,3 +360,99 @@ describe('formatLibraryFileHeadline / formatDescriptionImageDescriptor (lot V-9)
     expect(d.indexOf('recall_attachment') < 0).toBeTruthy();
   });
 });
+
+// setGenPhase — machine à états de l'étape annoncée par le composer.
+//
+// Testée sur gen seul : `convId` volontairement absent du registre d'écran,
+// donc genOwnsScreen rend faux et la moitié peinture ne s'exécute pas. Ce
+// qu'on vérifie ici est la moitié DONNÉES, celle dont dépendent aussi les
+// générations sans écran (agents, parent réveillé) — cf. piège 28.
+describe('setGenPhase — étapes du composer, dont les deux d\'après-outils', function () {
+
+  function g(phase) { return { convId: '__hors-ecran__', phase: phase }; }
+
+  it('le cycle nominal avance : waiting → reasoning → answering', function () {
+    const gen = g('waiting');
+    setGenPhase(gen, 'reasoning');
+    expect(gen.phase).toBe('reasoning');
+    setGenPhase(gen, 'answering');
+    expect(gen.phase).toBe('answering');
+  });
+
+  it('un raisonnement annoncé après le premier token est ignoré (pas de clignotement)', function () {
+    const gen = g('answering');
+    setGenPhase(gen, 'reasoning');
+    expect(gen.phase).toBe('answering');
+  });
+
+  it('la frontière de tour d\'outils mène à analyzing, pas à waiting', function () {
+    // C'est le fait que l'étape existe : après des résultats d'outils, le
+    // composer ne doit plus retomber sur le libellé générique d'attente.
+    const gen = g('tools');
+    setGenPhase(gen, 'analyzing');
+    expect(gen.phase).toBe('analyzing');
+  });
+
+  it('un raisonnement demandé depuis analyzing devient pondering', function () {
+    // Dérivation portée par setGenPhase et non par l'appelant : les helpers
+    // partagés (et donc les agents) demandent 'reasoning' sans rien savoir du
+    // tour d'outils qui précède.
+    const gen = g('analyzing');
+    setGenPhase(gen, 'reasoning');
+    expect(gen.phase).toBe('pondering');
+  });
+
+  it('depuis waiting, le raisonnement reste reasoning', function () {
+    const gen = g('waiting');
+    setGenPhase(gen, 'reasoning');
+    expect(gen.phase).toBe('reasoning');
+  });
+
+  it('pondering cède au premier token de réponse, et ne revient pas', function () {
+    const gen = g('pondering');
+    setGenPhase(gen, 'answering');
+    expect(gen.phase).toBe('answering');
+    setGenPhase(gen, 'reasoning');
+    expect(gen.phase).toBe('answering');
+  });
+
+  it('gen absente : aucun throw', function () {
+    setGenPhase(null, 'answering');
+    expect(true).toBeTruthy();
+  });
+
+  it('un tirage par ENTRÉE dans la phase, jamais à la repeinture', function () {
+    // Le fait qui empêche le placeholder de clignoter. Une transition refusée
+    // (la garde anti-retour) ou ignorée (phase identique) ne doit pas retirer :
+    // sinon un onDelta par chunk changerait la formulation en cours de phrase.
+    const gen = g('waiting');
+    setGenPhase(gen, 'answering');
+    const drawn = gen.phaseVariant;
+    setGenPhase(gen, 'answering');           // même phase : sortie anticipée
+    expect(gen.phaseVariant).toBe(drawn);
+    setGenPhase(gen, 'reasoning');           // refusée par la garde
+    expect(gen.phaseVariant).toBe(drawn);
+  });
+
+  it('le variant est un entier fini : la table le ramène modulo sa longueur', function () {
+    // setGenPhase ne connaît pas le nombre de formulations d'une phase (c'est
+    // tout l'intérêt : en ajouter une ne périme aucun tirage en vol). Ce qu'il
+    // doit garantir est seulement que la valeur est exploitable par le modulo.
+    const gen = g('waiting');
+    for (let i = 0; i < 20; i++) {
+      gen.phase = 'waiting';
+      setGenPhase(gen, 'tools');
+      expect(Number.isFinite(gen.phaseVariant)).toBeTruthy();
+      expect(gen.phaseVariant >= 0).toBeTruthy();
+      expect(Math.trunc(gen.phaseVariant)).toBe(gen.phaseVariant);
+    }
+  });
+
+  it('une génération neuve ouvre sur la formulation historique', function () {
+    // `phaseVariant: 0` au démarrage : le tout premier texte affiché d'un
+    // échange est toujours le libellé d'origine, jamais une variante.
+    const gen = createGeneration('c1', [], {});
+    expect(gen.phase).toBe('waiting');
+    expect(gen.phaseVariant).toBe(0);
+  });
+});

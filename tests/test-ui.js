@@ -592,14 +592,21 @@ describe('cappedScrollTop', function() {
 });
 
 describe('composerBusyPlaceholder', function() {
-  // Les quatre phases sont nommées, jamais comptées : quand une cinquième
-  // arrive, ce test dit LAQUELLE manque au lieu d'afficher « 4 !== 5 ».
-  var PHASES = ['waiting', 'reasoning', 'answering', 'tools'];
+  // Les phases sont nommées, jamais comptées : quand une nouvelle arrive, ce
+  // test dit LAQUELLE manque au lieu d'afficher « 4 !== 5 ». Les deux
+  // dernières sont les étapes d'APRÈS un tour d'outils (cf. setGenPhase).
+  var PHASES = ['waiting', 'reasoning', 'answering', 'tools',
+                'analyzing', 'pondering'];
 
-  it('chaque phase émise par main.js a son libellé', function() {
+  it('chaque phase émise par main.js a ses libellés', function() {
     for (var i = 0; i < PHASES.length; i++) {
-      expect(typeof COMPOSER_PHASE_LABELS[PHASES[i]]).toBe('string');
-      expect(COMPOSER_PHASE_LABELS[PHASES[i]].length > 0).toBeTruthy();
+      var list = COMPOSER_PHASE_LABELS[PHASES[i]];
+      expect(Array.isArray(list)).toBeTruthy();
+      expect(list.length > 0).toBeTruthy();
+      for (var j = 0; j < list.length; j++) {
+        expect(typeof list[j]).toBe('string');
+        expect(list[j].length > 0).toBeTruthy();
+      }
     }
   });
 
@@ -610,25 +617,69 @@ describe('composerBusyPlaceholder', function() {
     expect(keys.join(',')).toBe(PHASES.slice().sort().join(','));
   });
 
-  it('les quatre libellés sont distincts : un doublon rendrait une étape muette', function() {
+  it('les libellés sont deux à deux distincts, TOUTES phases confondues', function() {
+    // Un doublon rendrait une étape muette — et, depuis qu'une phase porte
+    // plusieurs formulations, il peut naître AU SEIN d'une liste comme ENTRE
+    // deux phases : un même texte tiré pour `waiting` et pour `analyzing`
+    // effacerait précisément la distinction que ces phases existent pour dire.
+    // D'où le balayage à plat plutôt qu'un test par liste.
     var seen = {};
     var dup = '';
     for (var i = 0; i < PHASES.length; i++) {
-      var label = COMPOSER_PHASE_LABELS[PHASES[i]];
-      if (seen[label]) dup = label;
-      seen[label] = true;
+      var list = COMPOSER_PHASE_LABELS[PHASES[i]];
+      for (var j = 0; j < list.length; j++) {
+        if (seen[list[j]]) dup = list[j];
+        seen[list[j]] = true;
+      }
     }
     expect(dup).toBe('');
   });
 
-  it('porte l\'affordance de mise en file quelle que soit la phase', function() {
+  it('porte l\'affordance de mise en file quelle que soit la phase ET la formulation', function() {
     // Le suffixe ne dépend pas de l'étape : pendant toute la génération,
     // Entrée ajoute à la file (lot Q). L'oublier sur une seule phase ferait
-    // disparaître l'affordance par intermittence.
+    // disparaître l'affordance par intermittence — et depuis les variantes,
+    // sur une seule FORMULATION, ce qui serait encore plus intermittent :
+    // d'où le balayage de chaque variant de chaque phase.
     for (var i = 0; i < PHASES.length; i++) {
-      var txt = composerBusyPlaceholder(PHASES[i]);
-      expect(txt.indexOf(COMPOSER_QUEUE_HINT) > 0).toBeTruthy();
-      expect(txt.indexOf(COMPOSER_PHASE_LABELS[PHASES[i]])).toBe(0);
+      var list = COMPOSER_PHASE_LABELS[PHASES[i]];
+      for (var j = 0; j < list.length; j++) {
+        var txt = composerBusyPlaceholder(PHASES[i], j);
+        expect(txt.indexOf(COMPOSER_QUEUE_HINT) > 0).toBeTruthy();
+        expect(txt.indexOf(list[j])).toBe(0);
+      }
+    }
+  });
+
+  it('le variant est ramené modulo la liste : aucun entier ne sort du pool', function() {
+    // La fonction est TOTALE par contrat : l'appelant (setGenPhase) tire un
+    // entier sans connaître le nombre de formulations, et en ajouter une ne
+    // doit périmer aucun tirage en vol.
+    var list = COMPOSER_PHASE_LABELS.waiting;
+    expect(composerBusyPlaceholder('waiting', list.length)).toBe(composerBusyPlaceholder('waiting', 0));
+    expect(composerBusyPlaceholder('waiting', list.length * 7 + 2)).toBe(composerBusyPlaceholder('waiting', 2));
+    // Négatif et non entier : produits par aucun chemin connu, mais un
+    // placeholder `undefined` serait visible à l'écran, donc on les borne.
+    expect(composerBusyPlaceholder('waiting', -1)).toBe(composerBusyPlaceholder('waiting', 1));
+    expect(composerBusyPlaceholder('waiting', 1.7)).toBe(composerBusyPlaceholder('waiting', 1));
+  });
+
+  it('variant absent ou non fini → la formulation historique', function() {
+    // Tout chemin qui ne porte pas de tirage (setSending sans variant, code
+    // d'avant les variantes) retombe sur le texte d'origine de la phase.
+    var first = COMPOSER_PHASE_LABELS.tools[0];
+    expect(composerBusyPlaceholder('tools').indexOf(first)).toBe(0);
+    expect(composerBusyPlaceholder('tools', null).indexOf(first)).toBe(0);
+    expect(composerBusyPlaceholder('tools', NaN).indexOf(first)).toBe(0);
+    expect(composerBusyPlaceholder('tools', Infinity).indexOf(first)).toBe(0);
+  });
+
+  it('chaque phase propose plusieurs formulations : sans quoi le tirage est décoratif', function() {
+    // Le fait demandé est la VARIATION. Une liste retombée à un seul élément
+    // rendrait le tirage silencieusement inopérant pour cette phase — vert
+    // partout ailleurs, et pourtant la feature morte sur cette étape.
+    for (var i = 0; i < PHASES.length; i++) {
+      expect(COMPOSER_PHASE_LABELS[PHASES[i]].length > 1).toBeTruthy();
     }
   });
 
@@ -642,6 +693,6 @@ describe('composerBusyPlaceholder', function() {
 
   it('le texte d\'attente est bien celui d\'avant les phases', function() {
     // Non-régression sur le libellé historique du mode file (lot Q).
-    expect(composerBusyPlaceholder('waiting')).toBe('Le modèle travaille — Entrée ajoute à la file…');
+    expect(composerBusyPlaceholder('waiting', 0)).toBe('Le modèle travaille — Entrée ajoute à la file…');
   });
 });

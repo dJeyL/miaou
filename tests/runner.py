@@ -723,9 +723,22 @@ def run_build_unit_tests() -> tuple[int, int]:
     # Le fait à garder est un fait sur les SOURCES, donc il se vérifie ici, en
     # lisant les deux côtés — jamais une liste recopiée dans le runner.
     emitted = set()
+    main_src_phases = (SRC_JS / 'main.js').read_text(encoding='utf-8')
     for name in ('main.js', 'agents.js'):
         emitted |= set(re.findall(r"setGenPhase\([^,]+,\s*'([a-z]+)'\)",
                                   (SRC_JS / name).read_text(encoding='utf-8')))
+    # Une phase peut aussi naître d'une RÉÉCRITURE interne à setGenPhase
+    # (`phase = 'pondering'`) : aucun appelant ne la nomme, donc le grep des
+    # appels ne la voit pas et le test des libellés orphelins l'accuserait à
+    # tort. Le fait reste « toute phase que le code sait produire a un
+    # libellé » — les deux voies de production comptent, pas une seule.
+    emitted |= set(re.findall(r"\bphase = '([a-z]+)';", main_src_phases))
+    # …et d'une troisième : la valeur INITIALE de l'objet génération, qu'aucun
+    # appel ne pose. Depuis qu'une phase d'après-outils la remplace à la
+    # frontière de tour, 'waiting' n'est plus écrite que là — le grep des
+    # appels seul la déclarait libellé mort alors qu'elle est l'étape de tout
+    # début de génération.
+    emitted |= set(re.findall(r"^\s*phase: '([a-z]+)',", main_src_phases, re.M))
     ui_src_phases = (SRC_JS / 'ui.js').read_text(encoding='utf-8')
     m = re.search(r'const COMPOSER_PHASE_LABELS = \{(.*?)\};', ui_src_phases, re.S)
     labelled = set(re.findall(r"^\s*([a-z]+):", m.group(1), re.M)) if m else set()

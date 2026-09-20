@@ -170,10 +170,22 @@ function createGeneration(convId, thread, opts) {
     stopRequested: false,                           // Stop cliqué pendant un tour d'outils (gen.abort momentanément null) : honoré à la frontière de tour suivante (runConversation)
     // Étape courante, TELLE QUE LE COMPOSER L'ANNONCE (jamais un statut de
     // cycle de vie : pour « ça tourne encore », c'est le registre qui répond).
-    // waiting (rien reçu de ce tour) | reasoning | answering | tools.
+    // waiting (rien reçu de ce tour) | reasoning | answering | tools, plus les
+    // deux étapes D'APRÈS un tour d'outils : analyzing (l'attente qui suit la
+    // remontée des résultats) et pondering (son raisonnement). Ces deux-là ne
+    // sont pas des phases de plus dans le cycle : ce sont waiting et reasoning
+    // vus depuis l'autre côté d'une frontière de tour — d'où leur dérivation
+    // dans setGenPhase plutôt qu'un point d'appel qui les choisirait.
     // Écrite UNIQUEMENT par setGenPhase — jamais une affectation nue, sinon le
     // placeholder ne suit plus la moitié des transitions.
     phase: 'waiting',
+    // Formulation tirée pour la phase courante (cf. COMPOSER_PHASE_LABELS,
+    // ui.js) : un entier quelconque, que la table ramène modulo sa longueur.
+    // Il vit ICI et non dans ui.js parce qu'un tirage fait à l'affichage
+    // changerait le texte à chaque repeinture — rebrancher l'écran sur une
+    // génération en cours le ferait clignoter sans qu'aucun état n'ait bougé.
+    // 0 au démarrage : la formulation historique ouvre toujours l'échange.
+    phaseVariant: 0,
     startedAt: Date.now(),
     // ── Présentation (lot T-1b) ──────────────────────────────────────────
     // `wrap` : bulle assistant en cours DANS LE DOM, ou null si la génération
@@ -242,16 +254,36 @@ function setGenPartialReasoning(gen, full) {
 // Les transitions ne reviennent jamais en arrière DANS un tour (le
 // raisonnement précède le contenu, cf. api.js), mais une frontière de tour
 // d'outils, elle, rejoue le cycle : onToolTour repasse en 'tools', et le tour
-// suivant repart de 'waiting' (onToolAcks).
+// suivant repart de 'analyzing' (onToolAcks) — l'équivalent de 'waiting' pour
+// un tour qui, lui, a des résultats d'outils à digérer.
+//
+// Les appelants ne connaissent que le cycle nominal (waiting/reasoning/…) :
+// c'est ICI qu'un raisonnement demandé depuis l'après-outils devient
+// 'pondering'. Le motif est celui de la garde ci-dessous — les trois émetteurs
+// (dispatchSend et les deux helpers partagés, dont dépendent les agents)
+// recopieraient sinon un choix qui divergerait au premier oubli.
 function setGenPhase(gen, phase) {
-  if (!gen || gen.phase === phase) return;
+  if (!gen) return;
+  if (phase === 'reasoning' && gen.phase === 'analyzing') phase = 'pondering';
+  if (gen.phase === phase) return;
   // Un backend qui entrelace raisonnement et contenu ferait sinon clignoter le
   // placeholder : le premier token de réponse clôt le raisonnement du point de
   // vue de l'annonce. La règle vit ICI et non aux points d'appel — recopiée à
   // chacun (dispatchSend et les deux helpers partagés), elle divergerait.
-  if (phase === 'reasoning' && gen.phase !== 'waiting') return;
+  // Les deux étapes d'attente sont traitées ensemble : après un tour d'outils
+  // le raisonnement part de 'analyzing', et ne lister que 'waiting' ici le
+  // rendrait indicible exactement là où on vient de l'ajouter.
+  if ((phase === 'reasoning' || phase === 'pondering')
+      && gen.phase !== 'waiting' && gen.phase !== 'analyzing') return;
   gen.phase = phase;
-  if (genOwnsScreen(gen)) setComposerPhase(phase);
+  // Une entrée dans la phase, un tirage. C'est le seul point où il se fait :
+  // toute repeinture ultérieure (rebranchement d'écran, recalcul du composer)
+  // relit `gen.phaseVariant` au lieu de retirer, donc le texte ne bouge que
+  // quand l'étape bouge. Un modulo est appliqué à la LECTURE (ui.js) et pas
+  // ici : ce point n'a pas à connaître le nombre de formulations, et en
+  // ajouter une ne doit périmer aucun tirage en vol.
+  gen.phaseVariant = Math.floor(Math.random() * 1e6);
+  if (genOwnsScreen(gen)) setComposerPhase(phase, gen.phaseVariant);
 }
 
 // Pousse une entrée d'ack dans le fil et la peint dans la bulle vive si elle
@@ -1530,7 +1562,7 @@ async function openConversation(id, reveal) {
   // composer, bouton stop et mode file des interjections suivent la conv
   // AFFICHÉE, pas « une génération tourne quelque part ». Sans cet appel, le
   // composer resterait en mode « stop » sur une conversation inerte.
-  setSending(!!gen, gen && gen.stopRequested, gen && gen.phase);
+  setSending(!!gen, gen && gen.stopRequested, gen && gen.phase, gen && gen.phaseVariant);
   // File d'interjections (X-1e) : le rail montre celle de la conversation qu'on
   // vient d'afficher — vide si elle n'en a pas. APRÈS setSending, qui remet le
   // composer dans le mode de CETTE conversation.
@@ -4230,10 +4262,14 @@ async function dispatchSend(matches, continuation) {
         }
         // Outils du tour exécutés : api.js relance aussitôt le modèle. Le tour
         // qui s'ouvre n'a encore rien reçu — on repart de l'attente, et le
-        // cycle raisonnement/réponse se rejoue. Si la boucle s'arrête ici
-        // (dernier tour), onFinal enchaîne sur setSending(false) et le
-        // placeholder quitte de toute façon le mode génération.
-        setGenPhase(gen, 'waiting');
+        // cycle raisonnement/réponse se rejoue. C'est l'attente D'APRÈS des
+        // résultats d'outils : la distinguer de 'waiting' est tout l'intérêt
+        // de l'étape, sans quoi le composer réannonce « le modèle travaille »
+        // alors que ce qu'il fait — digérer ce que les outils ont rendu — est
+        // justement ce que l'utilisateur attend de voir nommé. Si la boucle
+        // s'arrête ici (dernier tour), onFinal enchaîne sur setSending(false)
+        // et le placeholder quitte de toute façon le mode génération.
+        setGenPhase(gen, 'analyzing');
       },
       // Enrichit l'ack du tool_call qui vient de s'exécuter avec les champs
       // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
@@ -4537,7 +4573,7 @@ async function dispatchSend(matches, continuation) {
     // registre déjà à jour.
     unregisterGeneration(gen);
     const stillGen = generationFor(currentConvId);
-    setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase);
+    setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant);
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
     // Interjections restantes (lot Q, révisé X-1e) : drain A si fin nominale,

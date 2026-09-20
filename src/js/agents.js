@@ -940,7 +940,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     // visible : composer verrouillé ET libellé de travail en cours.
     if (gen.convId === currentConvId) {
       const stillGen = generationFor(currentConvId);
-      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase);
+      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant);
     }
     // LE point d'entrée unique de la délivrance, sur TOUTE sortie sans
     // exception. Fire-and-forget : rien n'attend le réveil du parent.
@@ -1258,7 +1258,7 @@ async function driveDetachedConversation(gen, apiMessages) {
     // dessus pendant le tour), le composer doit refléter qu'elle ne génère plus.
     if (gen.convId === currentConvId) {
       const stillGen = generationFor(currentConvId);
-      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase);
+      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant);
     }
     // Un résultat arrivé après la dernière frontière de tour relance un réveil,
     // même règle que dans dispatchSend : sans ça, il resterait en file pour

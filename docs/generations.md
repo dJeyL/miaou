@@ -22,7 +22,8 @@ C'est une décision de lot, pas une limite d'implémentation.
 
 ```
 { id, convId, spaceId, thread, model, serverName, reasoningEffort,
-  convModel, convReasoningEffort, needTitle, abort, phase, startedAt }
+  convModel, convReasoningEffort, needTitle, abort, phase, phaseVariant,
+  startedAt }
 ```
 
 Trois champs méritent une justification :
@@ -204,7 +205,8 @@ texte du tour précédent.
 
 ### L'étape annoncée vit aussi sur la génération
 
-`gen.phase` — `waiting` | `reasoning` | `answering` | `tools` — est ce que le
+`gen.phase` — `waiting` | `reasoning` | `answering` | `tools`, plus `analyzing`
+et `pondering` pour l'après-outils — est ce que le
 composer **annonce** à l'utilisateur pendant qu'il ne peut qu'ajouter à la file,
 pas un statut de cycle de vie : à « ça tourne encore », c'est le registre qui
 répond (`generationFor`). Elle remplace un champ `status` que le lot T avait
@@ -218,21 +220,64 @@ et aux deux `finally` d'agents.js de passer la phase à `setSending`, donc de
 reprendre le placeholder à la bonne étape en rebranchant une génération déjà
 en cours d'écriture.
 
-Deux règles y vivent, à l'intérieur de `setGenPhase` et nulle part ailleurs
+Les règles de transition vivent à l'intérieur de `setGenPhase` et nulle part ailleurs
 (recopiées aux points d'appel — `dispatchSend` et les deux helpers partagés —
 elles divergeraient) :
 
-- `reasoning` ne s'obtient que **depuis** `waiting`. Un backend qui entrelace
-  raisonnement et contenu ferait sinon clignoter le placeholder ; le premier
-  token de réponse clôt le raisonnement du point de vue de l'annonce.
+- un raisonnement ne s'obtient que **depuis une étape d'attente** (`waiting` ou
+  `analyzing`). Un backend qui entrelace raisonnement et contenu ferait sinon
+  clignoter le placeholder ; le premier token de réponse clôt le raisonnement
+  du point de vue de l'annonce. La règle nomme les **deux** attentes : n'y
+  lister que `waiting` rendrait le raisonnement d'après-outils indicible.
+- un `reasoning` demandé depuis `analyzing` devient `pondering`. Les appelants
+  ne connaissent que le cycle nominal — les deux helpers partagés, et donc les
+  agents, demandent `reasoning` sans rien savoir du tour d'outils qui précède.
 - une phase identique ne repeint rien (sortie anticipée) : `onDelta` est appelé
   à chaque chunk.
 
 Le cycle se **rejoue** à chaque tour d'outils : `onToolTour` passe en `tools`,
-`onToolAcks` revient à `waiting`, et le tour suivant reparcourt raisonnement
-puis réponse. Les libellés eux-mêmes sont dans `COMPOSER_PHASE_LABELS` (ui.js),
+`onToolAcks` enchaîne sur `analyzing`, et le tour suivant reparcourt
+raisonnement (`pondering`) puis réponse. `analyzing`/`pondering` ne sont pas des
+étapes de plus dans le cycle : ce sont `waiting`/`reasoning` **vus depuis
+l'autre côté d'une frontière de tour**, ce qui est exactement le fait que
+l'utilisateur veut voir nommé — sans elles, un modèle qui digère des résultats
+d'outils réannonce « le modèle travaille ».
+
+### Une formulation tirée par entrée dans la phase
+
+Chaque phase porte **plusieurs** formulations dans `COMPOSER_PHASE_LABELS`, et
+`gen.phaseVariant` dit laquelle est affichée. Le tirage se fait dans
+`setGenPhase`, **après** la garde de transition — donc une fois par entrée
+réelle dans la phase, jamais sur une transition refusée ni sur une phase
+identique (sans quoi un `onDelta` par chunk changerait la formulation en pleine
+phrase).
+
+Le variant vit sur la **génération** et pas dans ui.js, pour la même raison que
+la phase elle-même : tirer à l'affichage ferait changer le texte à chaque
+repeinture — rebrancher l'écran sur une génération en cours le ferait clignoter
+sans qu'aucun état n'ait bougé. C'est aussi pourquoi les cinq points qui
+rebranchent l'écran passent `gen.phaseVariant` à `setSending` en même temps que
+`gen.phase` : oublier le second ferait sauter la formulation au simple retour
+sur la conversation.
+
+Deux conventions portent le reste :
+
+- le modulo est appliqué à la **lecture** (`composerBusyPlaceholder`), pas au
+  tirage. `setGenPhase` n'a donc pas à connaître le nombre de formulations
+  d'une phase, et en ajouter une ne périme aucun tirage en vol. La fonction
+  reste **totale** : variant absent, négatif ou non fini → index 0.
+- la **première** de chaque liste est le libellé historique de la phase. Tout
+  chemin sans variant y retombe, et une génération neuve ouvre dessus
+  (`phaseVariant: 0`).
+
+Les libellés eux-mêmes sont dans `COMPOSER_PHASE_LABELS` (ui.js),
 seule source des textes ; `run_build_unit_tests` compare les phases émises par
-`main.js`/`agents.js` à cette table, dans les deux sens.
+`main.js`/`agents.js` à cette table, dans les deux sens. « Émise » y couvre
+**trois** voies, pas seulement l'appel littéral : la valeur initiale du champ
+`phase:` (seul lieu où `waiting` naît désormais) et la réécriture interne de
+`setGenPhase` (seul lieu où `pondering` naît) comptent autant — ne grepper que
+les appels déclarerait ces deux libellés morts alors qu'ils sont les plus
+visibles à l'écran.
 
 ### La pulsation du bouton « aller tout en bas »
 
@@ -523,7 +568,7 @@ scission du piège 28 (muter toujours, peindre si `genOwnsScreen`) :
 | Fonction | Écrit | Peint si l'écran est possédé |
 |---|---|---|
 | `setGenPartialContent` / `setGenPartialReasoning` | `gen.partialContent` / `…Reasoning`, plus `gen.phase` via `setGenPhase` | `streamInto` / `setReasoning` |
-| `setGenPhase` | `gen.phase` | `setComposerPhase` (placeholder du composer) |
+| `setGenPhase` | `gen.phase`, `gen.phaseVariant` | `setComposerPhase` (placeholder du composer) |
 | `pushGenToolAck` | entrée `tool-ack` dans `gen.thread` | `placeToolAck`, rend `{entry, node}` |
 | `pushGenMessage` | message dans `gen.thread` | bulle, selon `kind` |
 | `clearGenLiveBubble` | — | referme la bulle vive d'une sortie non nominale |

@@ -5162,9 +5162,13 @@ function syncConfigured() {
 // `phase` (optionnel) : même statut que `stopping` — la phase de la génération
 // affichée, portée par l'appelant, pour que le placeholder reprenne à la bonne
 // étape quand on rebranche l'écran sur une génération déjà en cours.
-function setSending(on, stopping, phase) {
+// `variant` (optionnel) : la formulation tirée pour cette phase
+// (`gen.phaseVariant`), portée par l'appelant pour la même raison — la
+// rebrancher est ce qui empêche un retour sur la conversation de changer le
+// texte sous les yeux de l'utilisateur. Absent → la formulation historique.
+function setSending(on, stopping, phase, variant) {
   sending = on;
-  setComposerStreaming(on, phase);
+  setComposerStreaming(on, phase, variant);
   const send = $('send-btn');
   // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend du
   // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
@@ -5249,20 +5253,75 @@ function isComposerReadonly() {
 // toujours quand on interroge cette table.
 //
 // Le suffixe « Entrée ajoute à la file » porte l'affordance des interjections
-// (lot Q) : il ne dépend pas de la phase et reste donc sur les quatre textes.
+// (lot Q) : il ne dépend pas de la phase et reste donc sur tous les textes.
+//
+// `analyzing`/`pondering` sont les homologues de `waiting`/`reasoning` APRÈS un
+// tour d'outils (dérivées dans setGenPhase, main.js) : même moment du cycle,
+// mais l'utilisateur sait alors qu'il y a des résultats à digérer, et c'est
+// précisément ce qu'il veut voir nommé plutôt qu'un retour au texte générique.
+//
+// Chaque phase porte PLUSIEURS formulations, tirée une fois par entrée dans la
+// phase (`gen.phaseVariant`, main.js). La variation est là pour que le composer
+// ne devienne pas un décor qu'on cesse de lire ; le tirage est donc tenu par la
+// génération et jamais par l'affichage — un tirage fait ici changerait le texte
+// à chaque repeinture (rebranchement d'écran, recalcul du composer), ce qui
+// ferait clignoter le placeholder sans qu'aucun état n'ait bougé.
+//
+// La PREMIÈRE de chaque liste est le libellé historique de la phase : c'est
+// elle que rend un variant absent, donc elle reste le comportement par défaut
+// de tout chemin qui ne porte pas de tirage.
 const COMPOSER_PHASE_LABELS = {
-  waiting:   'Le modèle travaille',
-  reasoning: 'Le modèle réfléchit intensément',
-  answering: 'Le modèle répond',
-  tools:     'Le modèle utilise des outils',
+  waiting: [
+    'Le modèle travaille',
+    'Le modèle se met à l\'ouvrage',
+    'Le modèle a pris le dossier',
+    'Le modèle retrousse ses manches',
+  ],
+  reasoning: [
+    'Le modèle réfléchit intensément',
+    'Le modèle pèse le pour et le contre',
+    'Le modèle tourne la question dans tous les sens',
+    'Le modèle ne veut pas dire de bêtise',
+  ],
+  answering: [
+    'Le modèle répond',
+    'Le modèle met ça au propre',
+    'Le modèle déroule',
+    'Le modèle a trouvé ses mots',
+  ],
+  tools: [
+    'Le modèle utilise des outils',
+    'Le modèle met les mains dans le cambouis',
+    'Le modèle fait tourner la quincaillerie',
+    'Le modèle va chercher ce qui lui manque',
+  ],
+  analyzing: [
+    'Le modèle analyse les résultats d\'outils',
+    'Le modèle dépouille ce que les outils ont rapporté',
+    'Le modèle fait le tri dans la récolte des outils',
+    'Le modèle regarde ce que les outils ont donné',
+  ],
+  pondering: [
+    'Le modèle pense profondément suite à l\'appel d\'outils',
+    'Le modèle médite sur ce que les outils ont rendu',
+    'Le modèle relit tout ça d\'un air songeur',
+    'Le modèle reprend la question, résultats d\'outils en main',
+  ],
 };
 const COMPOSER_QUEUE_HINT = ' — Entrée ajoute à la file…';
 const COMPOSER_IDLE_PLACEHOLDER = 'Message…';
 
-// Pure : phase → texte du placeholder pendant une génération.
-function composerBusyPlaceholder(phase) {
-  const label = COMPOSER_PHASE_LABELS[phase] || COMPOSER_PHASE_LABELS.waiting;
-  return label + COMPOSER_QUEUE_HINT;
+// Pure : (phase, variant) → texte du placeholder pendant une génération.
+//
+// `variant` est un entier quelconque porté par la génération : il est ramené
+// modulo la longueur de la liste, donc la fonction reste TOTALE — aucun
+// appelant n'a à connaître le nombre de formulations d'une phase, et en ajouter
+// une ne périme aucun tirage en cours. Absent ou non fini → 0, la formulation
+// historique.
+function composerBusyPlaceholder(phase, variant) {
+  const list = COMPOSER_PHASE_LABELS[phase] || COMPOSER_PHASE_LABELS.waiting;
+  const n = Number.isFinite(variant) ? Math.abs(Math.trunc(variant)) % list.length : 0;
+  return list[n] + COMPOSER_QUEUE_HINT;
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
@@ -5270,7 +5329,7 @@ function composerBusyPlaceholder(phase) {
 // ui.js ne lit jamais le registre de générations (pas de dépendance inverse
 // vers main.js) — c'est l'appelant qui porte la phase, comme il porte déjà
 // `stopping`. Absente → attente, le comportement d'avant les phases.
-function setComposerStreaming(on, phase) {
+function setComposerStreaming(on, phase, variant) {
   const send = $('send-btn');
   if (!send) return;
   send.classList.toggle('streaming', on);
@@ -5278,7 +5337,7 @@ function setComposerStreaming(on, phase) {
   // Mode file (lot Q) : le placeholder annonce la mise en file pendant la
   // génération — l'affordance principale du mécanisme, avec le rail de puces.
   const ta = $('composer-text');
-  if (ta) ta.placeholder = on ? composerBusyPlaceholder(phase) : COMPOSER_IDLE_PLACEHOLDER;
+  if (ta) ta.placeholder = on ? composerBusyPlaceholder(phase, variant) : COMPOSER_IDLE_PLACEHOLDER;
 }
 
 // Rafraîchit le SEUL placeholder, sans retoucher au bouton ni au reste de
@@ -5286,10 +5345,10 @@ function setComposerStreaming(on, phase) {
 // là où setSending n'est appelé qu'à ses bornes. Garde `sending` : une phase
 // qui arriverait d'une génération sans écran (elle ne devrait pas — le point
 // d'appel est gardé par genOwnsScreen) n'écrirait pas sur un composer inerte.
-function setComposerPhase(phase) {
+function setComposerPhase(phase, variant) {
   if (!sending) return;
   const ta = $('composer-text');
-  if (ta) ta.placeholder = composerBusyPlaceholder(phase);
+  if (ta) ta.placeholder = composerBusyPlaceholder(phase, variant);
 }
 
 // Stop cliqué pendant un tour d'outils (gen.abort momentanément null, cf.
