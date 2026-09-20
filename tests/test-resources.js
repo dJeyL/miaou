@@ -109,6 +109,117 @@ describe('normalizeLibraryRecord', function() {
   });
 });
 
+// ── normalizeLibraryName (renommage utilisateur d'un fichier de bibliothèque) ─
+
+describe('normalizeLibraryName', function() {
+  it('rend le nom saisi, débarrassé de ses blancs de bord', function() {
+    expect(normalizeLibraryName('  rapport final.pdf  ', 'vieux.pdf')).toBe('rapport final.pdf');
+  });
+  it('aplatit les blancs internes : un nom collé peut porter un saut de ligne', function() {
+    expect(normalizeLibraryName('rapport\n  final.pdf', 'vieux.pdf')).toBe('rapport final.pdf');
+  });
+  it('saisie vide ou blanche → fallback, jamais un nom vide écrit en base', function() {
+    expect(normalizeLibraryName('', 'vieux.pdf')).toBe('vieux.pdf');
+    expect(normalizeLibraryName('   ', 'vieux.pdf')).toBe('vieux.pdf');
+    expect(normalizeLibraryName(null, 'vieux.pdf')).toBe('vieux.pdf');
+    expect(normalizeLibraryName(undefined, 'vieux.pdf')).toBe('vieux.pdf');
+  });
+  it('cape la longueur : le nom part dans le message système à chaque tour', function() {
+    var out = normalizeLibraryName(new Array(400).join('a'), 'vieux.pdf');
+    expect(out.length).toBe(LIBRARY_NAME_MAX_CHARS);
+  });
+  it('cape SANS ellipse : un nom de fichier ne doit pas mentir sur son extension', function() {
+    var out = normalizeLibraryName(new Array(400).join('a'), 'vieux.pdf');
+    expect(out.indexOf('…')).toBe(-1);
+  });
+  it('aucune garde d\'extension : le nom est libre (décision 2026-09-20)', function() {
+    expect(normalizeLibraryName('notes', 'vieux.pdf')).toBe('notes');
+  });
+  it('fallback absent → chaîne vide plutôt qu\'une exception', function() {
+    expect(normalizeLibraryName('', undefined)).toBe('');
+  });
+});
+
+// ── libraryNameStemLength (présélection au focus : tout sauf l'extension) ────
+
+describe('libraryNameStemLength', function() {
+  it('borne le radical avant le point d\'extension', function() {
+    expect(libraryNameStemLength('rapport.pdf')).toBe(7);
+  });
+  it('point cherché en DERNIER : archive.tar.gz garde .gz seul hors sélection', function() {
+    expect(libraryNameStemLength('archive.tar.gz')).toBe(11);   // « archive.tar »
+  });
+  it('sans extension → tout le nom (sélectionner tout, pas rien)', function() {
+    expect(libraryNameStemLength('notes')).toBe(5);
+  });
+  it('fichier caché sans extension → tout le nom, jamais une sélection vide', function() {
+    expect(libraryNameStemLength('.gitignore')).toBe(10);
+  });
+  it('point final, extension vide → tout le nom (rien à préserver)', function() {
+    expect(libraryNameStemLength('rapport.')).toBe(8);
+  });
+  it('nom caché AVEC extension : le dernier point tranche', function() {
+    expect(libraryNameStemLength('.env.local')).toBe(4);   // « .env »
+  });
+  it('nom vide ou absent → 0, jamais d\'exception', function() {
+    expect(libraryNameStemLength('')).toBe(0);
+    expect(libraryNameStemLength(null)).toBe(0);
+    expect(libraryNameStemLength(undefined)).toBe(0);
+  });
+  it('un nom d\'espaces reste sélectionné en entier', function() {
+    expect(libraryNameStemLength('mon rapport final')).toBe(17);
+  });
+});
+
+// ── libraryFileDate / libraryFileTypeLabel (ligne méta d'une carte) ──────────
+
+describe('libraryFileDate', function() {
+  it('rend le ts de dépôt, brut (le formatage appartient à l\'appelant)', function() {
+    expect(libraryFileDate({ createdAt: 1700000000000 })).toBe(1700000000000);
+  });
+  it('IGNORE un updatedAt : renommer ou re-décrire ne modifie pas le CONTENU', function() {
+    // Décision Julien 2026-09-20. Un record qui porterait le champ (import,
+    // version future) ne doit pas déplacer la date pour autant : aucun chemin
+    // ne réécrit les octets d'un fichier de bibliothèque.
+    expect(libraryFileDate({ createdAt: 1000, updatedAt: 9999 })).toBe(1000);
+  });
+  it('record sans date → null : on n\'invente pas « maintenant »', function() {
+    expect(libraryFileDate({})).toBe(null);
+    expect(libraryFileDate(null)).toBe(null);
+  });
+});
+
+describe('libraryFileTypeLabel', function() {
+  it('les mimes Office sont nommés par leur MARQUE seule, sans périphrase', function() {
+    // « Excel », pas « Classeur Excel » : la marque dit déjà le genre, et la
+    // périphrase rallonge la ligne qu'on cherche à raccourcir (Julien,
+    // 2026-09-20). Même registre qu'à l'étage mimeExt — un nom de format.
+    expect(libraryFileTypeLabel('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+      .toBe('Excel');
+    expect(libraryFileTypeLabel('application/vnd.openxmlformats-officedocument.wordprocessingml.document'))
+      .toBe('Word');
+    expect(libraryFileTypeLabel('application/vnd.openxmlformats-officedocument.presentationml.presentation'))
+      .toBe('PowerPoint');
+  });
+  it('les formats legacy tombent sur le même libellé que leur version OOXML', function() {
+    expect(libraryFileTypeLabel('application/vnd.ms-excel')).toBe('Excel');
+    expect(libraryFileTypeLabel('application/vnd.ms-powerpoint')).toBe('PowerPoint');
+  });
+  it('tout le reste passe par mimeExt, source vivante, mis en capitales', function() {
+    expect(libraryFileTypeLabel('text/csv')).toBe('CSV');
+    expect(libraryFileTypeLabel('application/pdf')).toBe('PDF');
+    expect(libraryFileTypeLabel('image/png')).toBe('PNG');
+    expect(libraryFileTypeLabel('text/plain')).toBe('TXT');
+  });
+  it('paramètre de charset ignoré (text/csv; charset=utf-8)', function() {
+    expect(libraryFileTypeLabel('text/csv; charset=utf-8')).toBe('CSV');
+  });
+  it('mime vide ou absent → chaîne vide, jamais « BIN » posé au hasard', function() {
+    expect(libraryFileTypeLabel('')).toBe('');
+    expect(libraryFileTypeLabel(null)).toBe('');
+  });
+});
+
 // ── buildLibraryManifestBlock (D4 — manifeste contexte, byte-stable) ─────────
 
 describe('buildLibraryManifestBlock', function() {

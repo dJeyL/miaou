@@ -10518,11 +10518,38 @@ async function renderSpaceFilesList(spaceId) {
     const item = document.createElement('div');
     item.className = 'mem-item';
     item.dataset.id = e.id;
-    const provenanceBadge = e.source ? '<span class="mem-sub"> · promu depuis une conversation</span>' : '';
+    // « promu » nu, la phrase entière en tooltip : la provenance est une
+    // information de second plan, et elle coûtait ~25 caractères sur une ligne
+    // qui doit aussi porter type, taille et date dans ~210 px utiles.
+    const provenanceBadge = e.source
+      ? '<span class="mem-sub" title="Promu depuis une conversation"> · promu</span>'
+      : '';
+    // Date de DÉPÔT sur la ligne méta, à sa place de fait (type · taille ·
+    // date · provenance) : elle rejoint la ligne des faits sur le fichier
+    // plutôt que d'ajouter une hauteur à une carte qui wrappe déjà. Montrée
+    // NUE, sans verbe l'introduisant : il n'y a qu'une date, donc rien à
+    // distinguer (le pur `libraryFileDate` porte ce motif, et celui de
+    // l'absence de date de modification). Le rendu suit le patron de la
+    // sidebar — énoncé variable au repos, date complète en tooltip
+    // (`formatFullDateFr`), jamais deux formules pour deux surfaces du même ts.
+    //
+    // `formatDateRelative` et NON `relativeWhen` (qui sert la liste des
+    // conversations) : celui-ci rend l'heure nue pour aujourd'hui (« 14:30 »),
+    // or une carte de fichier annonce une DATE, pas un instant —
+    // `formatDateRelative` est date-only par construction (« aujourd'hui »,
+    // « hier », « 3 mars »), et c'est déjà l'emploi que lui donne la bannière
+    // de résumés. L'heure exacte reste dans le tooltip.
+    const dts = libraryFileDate(e);
+    const dateBit = dts
+      ? ` · <span title="${escHtml(formatFullDateFr(dts))}">${escHtml(formatDateRelative(dts, Date.now()))}</span>`
+      : '';
     const descriptionLine = `<div class="mem-excerpt file-description-line" id="file-description-${e.id}">${e.description ? escHtml(e.description) : ''}</div>`;
     item.innerHTML =
       `<div class="mem-header"><div class="mem-meta">` +
-      `<div class="mem-sub">${escHtml(e.mime)} · ${escHtml(humanSize(e.size))}${provenanceBadge}</div>` +
+      // Type lisible plutôt que mime brut (`libraryFileTypeLabel`), le mime
+      // exact restant accessible en tooltip : il n'est pas perdu, il est
+      // rangé là où on le consulte au lieu de le subir.
+      `<div class="mem-sub"><span title="${escHtml(e.mime)}">${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>` +
       `</div>` +
       // Téléchargement en GLYPHE dans l'en-tête (pas un bouton texte) : la
       // colonne latérale fait ~210 px utiles, un troisième bouton texte faisait
@@ -10533,14 +10560,93 @@ async function renderSpaceFilesList(spaceId) {
       // position imprévisible. Même glyphe que l'ack (ICON_DOWNLOAD).
       `<button class="mem-dl" title="Télécharger" onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
       `</div>` +
-      `<div class="mem-content">${escHtml(e.name)}</div>` +
+      // Nom RENOMMABLE en place, même mécanique que le titre de conversation
+      // (contenteditable, Entrée valide, Échap annule, blur persiste, vide
+      // restaure) : un seul vocabulaire de renommage dans l'appli. Les
+      // handlers sont posés après insertion (wireLibraryNameEditing) plutôt
+      // qu'en attributs inline : il faut mémoriser le nom d'avant l'édition
+      // pour pouvoir le restaurer, ce qu'un attribut ne porte pas.
+      `<div class="mem-content file-name-edit" id="file-name-${e.id}" contenteditable="true" spellcheck="false" title="Renommer le fichier">${escHtml(e.name)}</div>` +
       descriptionLine +
       `<div class="drawer-btns" id="file-btns-${e.id}">` +
       `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? 'Régénérer la description' : 'Générer une description'}</button>` +
       `<button class="drawer-btn danger" onclick="onDeleteSpaceFile(this,'${e.id}','${spaceId}')">Supprimer</button>` +
       `</div>`;
     wrap.appendChild(item);
+    wireLibraryNameEditing(item.querySelector('.file-name-edit'), e.id, spaceId);
   }
+}
+
+// Renommage en place du nom d'un fichier de bibliothèque. Calque de
+// wireTitleEditing (main.js) : `before` figé au focus, Entrée = blur (donc
+// validation), Échap = restauration puis blur, blur = persistance.
+//
+// Différence assumée avec le titre de conversation : la persistance est
+// asynchrone (IDB), donc le nom affiché est réécrit depuis la valeur
+// EFFECTIVEMENT retenue par renameLibraryFile (normalisation, cap de longueur)
+// plutôt que laissé tel que tapé — sinon la carte afficherait un nom que le
+// store ne porte pas, et le prochain re-render le ferait sauter sans
+// explication. `_libFileNameBefore` est porté par le nœud DOM, pas par une
+// globale : plusieurs cartes coexistent, et la liste est re-rendue sous les
+// handlers (mémoire d'index sur le nœud, jamais d'appariement positionnel).
+function wireLibraryNameEditing(el, fileId, spaceId) {
+  if (!el) return;
+  el.addEventListener('focus', () => {
+    el._libNameBefore = el.textContent;
+    // Présélection du RADICAL, pas de tout le texte : le geste courant est de
+    // renommer « export-final-v2 » en gardant « .csv », et une sélection
+    // complète oblige alors à retaper l'extension. Le titre de conversation
+    // pose le caret en fin (placeCaretEnd) parce qu'un titre n'a pas de
+    // suffixe à préserver — la divergence est délibérée, pas un oubli.
+    // requestAnimationFrame comme là-bas : poser la sélection DANS le handler
+    // de focus la voit écrasée par le placement de caret que le navigateur
+    // effectue derrière (clic).
+    requestAnimationFrame(() => selectLibraryNameStem(el));
+  });
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); }
+    else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      // stopPropagation : sans lui, Échap remonte au handler global qui ferme
+      // le drawer/annule le mode courant — on annule une saisie, pas un écran.
+      ev.stopPropagation();
+      el.textContent = el._libNameBefore || '';
+      el.blur();
+    }
+  });
+  el.addEventListener('blur', async () => {
+    const before = el._libNameBefore || '';
+    const typed = el.textContent;
+    if (typed.trim() === before.trim()) { el.textContent = before; return; }
+    const applied = await renameLibraryFile(fileId, typed);
+    // null = échec d'écriture (IDB indisponible, record disparu) : on remet le
+    // nom d'avant plutôt que de laisser à l'écran un renommage qui n'a pas eu
+    // lieu — l'affordance ne doit jamais mentir sur l'état du store.
+    el.textContent = applied != null ? applied : before;
+    el._libNameBefore = el.textContent;
+    // Le libellé du bouton de suppression du drawer Space porte des comptes,
+    // pas des noms : rien à resynchroniser ici (contrairement à onDeleteSpaceFile).
+  });
+}
+
+// Sélectionne le radical du nom (tout sauf l'extension) dans un champ
+// contenteditable. La borne vient du pur `libraryNameStemLength` ; ici ne
+// reste que le geste DOM, qui n'est pas testable en QuickJS.
+//
+// Le nœud texte est pris par `firstChild` : le champ ne contient qu'une chaîne
+// (posée par `escHtml` au rendu, réécrite par `textContent` au blur), jamais de
+// balisage. S'il est vide ou absent — cas limite d'un nom vidé — on retombe sur
+// le caret en fin plutôt que de lever sur un nœud manquant.
+function selectLibraryNameStem(el) {
+  const node = el.firstChild;
+  if (!node || node.nodeType !== 3) { placeCaretEnd(el); return; }
+  const end = libraryNameStemLength(node.nodeValue);
+  const range = document.createRange();
+  range.setStart(node, 0);
+  range.setEnd(node, Math.min(end, node.nodeValue.length));
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 // Rafraîchit la bibliothèque AFFICHÉE après un ajout, quelle que soit la voie

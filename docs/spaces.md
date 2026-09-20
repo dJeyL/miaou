@@ -512,6 +512,94 @@ aide à la décision de lecture).
   vient d'une liste déjà scopée par `getResourcesBySpace` (piège 18).
   Indisponibilité → le bouton passe à « Indisponible » et reste inerte.
 
+- **Ligne méta d'une carte** (`renderSpaceFilesList`, ui.js ;
+  `libraryFileDate` + `libraryFileTypeLabel`, resources.js, purs) :
+  `type · taille · date · provenance`, sur UNE ligne — la colonne fait ~210 px
+  utiles et la carte wrappe déjà sur ses boutons, donc la hauteur est la
+  contrainte, mesurée et non supposée.
+  - **Type lisible plutôt que mime brut**, mime exact en tooltip. Motif chiffré :
+    `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` fait 68
+    caractères et poussait à lui seul la ligne sur **quatre** lignes une fois la
+    date ajoutée (mesuré). Les familles Office sont nommées par leur MARQUE
+    seule (`MIME_LABELS`) — « Excel », « Word », « PowerPoint », jamais
+    « Classeur Excel » ni « Présentation PowerPoint » : la marque dit déjà le
+    genre du document, et la périphrase rallonge la ligne qu'on cherche à
+    raccourcir (décision Julien 2026-09-20). Le registre est alors le même qu'à
+    l'étage suivant — un nom de format, jamais une phrase. Tout le reste passe
+    par `mimeExt` (utils.js) en capitales — source VIVANTE des correspondances
+    mime→type, jamais recopiée ici.
+  - **Provenance abrégée en « promu »**, phrase complète en tooltip : ~25
+    caractères rendus à une ligne qui porte trois autres informations.
+    Le cumul le plus défavorable mesuré (« PowerPoint » + date portant l'année +
+    « promu ») tient sur UNE ligne, glyphe de téléchargement aligné — la
+    géométrie est vérifiée par `verify-resource-download.mjs`, dont la fixture
+    ne couvre en revanche aucun mime Office : elle mesure les boîtes, jamais le
+    texte du type.
+  - **Date de DÉPÔT (`createdAt`), montrée NUE** — sans verbe l'introduisant :
+    un verbe ne sert qu'à distinguer deux dates possibles, et il n'y en a
+    qu'une. Formatée par `formatDateRelative` et **non** `relativeWhen` (qui
+    sert la liste des conversations) : celui-ci rend l'heure nue pour
+    aujourd'hui, or une carte de fichier annonce une date, pas un instant.
+    Date complète en tooltip (`formatFullDateFr`), même patron que la sidebar.
+  - **Pas de date de « dernière modification », décision explicite** (Julien,
+    2026-09-20). La modification qu'elle annoncerait est celle du CONTENU, et
+    aucun chemin ne réécrit les octets d'un fichier de bibliothèque :
+    `storeLibraryFile` crée, et les deux seuls `putResource` sur un record
+    `library` (renommage, description générée) ne touchent que des métadonnées.
+    Un champ `updatedAt` a été écrit puis **retiré** pour ce motif — ne pas le
+    réintroduire sans un chemin qui remplace réellement le contenu, lequel
+    justifierait alors aussi le retour d'un verbe (deux dates à distinguer).
+    Un test QuickJS garde la règle : `libraryFileDate` ignore un `updatedAt`
+    présent sur un record (import, version future).
+
+- **Renommage en place** (`wireLibraryNameEditing` ui.js, `renameLibraryFile` +
+  `normalizeLibraryName` resources.js, 2026-09-20) : le nom de la carte
+  (`.mem-content.file-name-edit`) est `contenteditable`, avec le MÊME triptyque
+  que le titre de conversation (`wireTitleEditing`, main.js) — Entrée valide,
+  Échap restaure le nom d'avant, blur persiste, saisie vide restaure. Un seul
+  vocabulaire de renommage dans l'appli, c'est le motif du calque ; le CSS
+  décalque de même les états de `.conv-title-edit` (repos transparent, survol
+  et focus en fond), d'un palier plus haut parce que `.mem-item` est déjà sur
+  `surface-2`.
+
+  **Présélection du radical au focus** (`libraryNameStemLength` resources.js,
+  pur ; `selectLibraryNameStem` ui.js pour le geste DOM) : le clic surligne tout
+  sauf l'extension, de sorte que taper remplace « export-final-v2 » en laissant
+  « .csv ». Divergence DÉLIBÉRÉE avec le titre de conversation, qui pose le
+  caret en fin (`placeCaretEnd`) parce qu'un titre n'a pas de suffixe à
+  préserver. Le point est cherché en DERNIER (`archive.tar.gz` → `archive.tar`),
+  et trois cas rendent la longueur entière, donc « sélectionne tout » plutôt
+  qu'une sélection vide : pas de point, un point en tête et lui seul
+  (`.gitignore`, fichier caché sans extension), un point final (extension vide).
+  Le `requestAnimationFrame` n'est pas décoratif : poser la Range dans le
+  handler de `focus` la fait écraser par le placement de caret que le navigateur
+  effectue derrière un clic.
+
+  Les autres points qui ne se déduisent pas du calque :
+  - **Le nom est libre, aucune garde d'extension** (décision Julien
+    2026-09-20). `normalizeLibraryName` normalise les blancs (un nom collé peut
+    porter un saut de ligne, qui casserait une ligne du manifeste) et **cape à
+    `LIBRARY_NAME_MAX_CHARS`** — le nom part dans le message système
+    (`buildLibraryManifestBlock` ou la note courte) et dans `files__list`, donc
+    un nom non borné s'y paierait à chaque tour. Cap **sans ellipse** : on ne
+    fabrique pas un nom de fichier qui mentirait sur son extension.
+  - **La description ne bouge pas** (décision Julien 2026-09-20) : elle décrit
+    le CONTENU, que le renommage ne touche pas. « Régénérer la description »
+    reste la voie explicite.
+  - **`renameLibraryFile` relit le record depuis IDB** au lieu d'écrire celui
+    capturé au rendu de la carte : une description peut avoir abouti entre les
+    deux (calcul async), et écrire l'instantané l'écraserait — relecture
+    post-await, piège 24.
+  - **Aucun type de message de synchro nouveau** : `putResource` porte déjà le
+    broadcast post-commit avec `spaceId`, donc un onglet voisin ouvert sur la
+    même bibliothèque se rafraîchit par le chemin existant
+    (`refreshVisibleSpaceLibrary`). Le nom vit dans le message système, statique
+    et cachable : un renommage l'invalide **une fois**, ce que le piège 16 admet
+    explicitement (le veto vise le dynamique récurrent).
+
+  Échec d'écriture (IDB indisponible, record disparu) → le nom affiché revient à
+  celui d'avant : l'affordance ne ment jamais sur l'état du store.
+
 ## Non-goals v1
 
 - Pas de configuration MCP ni de skills par Space (restent globaux).

@@ -1449,14 +1449,14 @@ html[data-wide-tables="off"] .table-bleed {
      par la fin (fitWelcomeTipByDroppingLines), un ascenseur y serait une
      fausse affordance. */
   overflow: hidden;
-  /* Réactivé : `.welcome-screen` pose `pointer-events: none` sur tout son
-     sous-arbre (le trio d'accueil n'est pas interactif), ce qui rendait
-     l'astuce inatteignable au clic — aucun listener n'aurait jamais tiré.
-     `user-select` de même : citer l'astuce à la main reste possible, et le
-     texte d'un encart qu'on peut cliquer ne doit pas fuir sous la souris. */
-  pointer-events: auto;
-  user-select: text;
-  cursor: pointer;
+  /* La BOÎTE reste inerte, ce sont ses enfants qui prennent le clic (règle plus
+     bas). Elle s'étire du plancher du trio jusqu'au composer et pousse le texte
+     au fond : tout ce qui est AU-DESSUS du texte lui appartient quand même, et
+     la rendre cliquable donnait une cible allant du message de bienvenue à
+     l'astuce — plusieurs centaines de pixels de vide. La hauteur d'étirement
+     sert au positionnement et à l'élagage, pas à la zone de clic ; les enfants,
+     eux, épousent le texte. */
+  pointer-events: none;
   /* Transition sur la seule opacité : l'encart se pose avec un fondu qui finit
      à 0.85 (cf. keyframe dédiée), le survol le remonte à 1 — le même cran que
      le fondu d'arrivée, donc aucun nouveau palier à accorder. */
@@ -1481,12 +1481,36 @@ html[data-wide-tables="off"] .table-bleed {
   from { opacity: 0; }
   to   { opacity: 0.85; }
 }
+/* Cible du clic : la tête et le corps, jamais la boîte. Ce sont les deux seuls
+   enfants, et chacun épouse la hauteur de son texte — la zone sensible colle
+   donc à ce qui est visible, là où le conteneur s'étire jusqu'au message de
+   bienvenue. `.welcome-screen` pose `pointer-events: none` sur tout son
+   sous-arbre (le trio d'accueil n'est pas interactif) : sans cette
+   réactivation, aucun listener ne tirerait.
+   `user-select` de même : citer l'astuce à la main reste possible, et le texte
+   d'un encart qu'on peut cliquer ne doit pas fuir sous la souris. */
+.welcome-tip-head,
+.welcome-tip-body {
+  pointer-events: auto;
+  user-select: text;
+  cursor: pointer;
+}
+/* `display: block` sur le corps : c'est un <span> qui contient des blocs
+   (.welcome-tip-line), donc un inline dont les enfants forcent des boîtes
+   anonymes — sa boîte de hit-test n'épouse alors pas ses lignes. En bloc, il
+   mesure exactement la hauteur du texte, ce dont dépend la zone de clic. */
+.welcome-tip-body { display: block; }
 /* Survol : l'astuce est cliquable (elle pré-remplit le composer d'une demande
    de développement), le seul signal au repos est le curseur. Remonter à
    l'opacité pleine suffit à le dire sans rien déplacer — un fond ou une bordure
-   dessinerait une boîte là où l'encart est délibérément sans cadre. */
-.welcome-tip:hover { opacity: 1; }
-.welcome-tip:hover .welcome-tip-head { text-decoration: underline; }
+   dessinerait une boîte là où l'encart est délibérément sans cadre.
+   Porté par `:has()` et non `.welcome-tip:hover` : la boîte est inerte, elle ne
+   reçoit plus le survol. L'opacité reste réglée sur ELLE pour que la tête et le
+   corps montent ensemble — les survoler l'un après l'autre ne doit pas éclairer
+   la moitié de l'encart. */
+.welcome-tip:has(.welcome-tip-head:hover, .welcome-tip-body:hover) { opacity: 1; }
+.welcome-tip:has(.welcome-tip-body:hover) .welcome-tip-head,
+.welcome-tip-head:hover { text-decoration: underline; }
 /* Le libellé occupe sa propre ligne : `display: block` plutôt qu'un <br>, pour
    que la marge se règle en CSS. */
 .welcome-tip-head {

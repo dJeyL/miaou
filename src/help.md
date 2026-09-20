@@ -278,8 +278,17 @@ de produire — demande-lui d'enregistrer dans la bibliothèque un CSV, un scrip
 ou un document qu'il a généré, et il le fera sans que tu aies à le récupérer
 puis le rejoindre à la main. Quand c'est lui qui en prend l'initiative, il te
 demande confirmation avant d'écrire ; quand c'est toi qui le demandes, il
-s'exécute directement. Chaque fichier de la liste porte une **icône de
-téléchargement** en haut à droite de sa carte, pour le récupérer sur ta machine.
+s'exécute directement. Chaque carte annonce le type du fichier, sa taille et sa
+date de dépôt (la date complète apparaît en survolant), et porte une **icône de
+téléchargement** en haut à droite, pour le récupérer sur ta machine.
+Tu peux aussi **renommer** un fichier : clique sur son nom dans la carte et
+écris le nouveau, Entrée pour valider, Échap pour annuler. Au clic, tout est
+présélectionné sauf l'extension — tape directement, le `.csv` ou le `.pdf`
+reste en place sans que tu aies à le retaper. Le nom est libre —
+rien ne t'oblige à garder l'extension d'origine — et c'est celui que le modèle
+voit. Sa description, elle, ne bouge pas : elle décrit le contenu, que le
+renommage ne touche pas (le bouton « Régénérer la description » reste là si tu
+veux la refaire).
 
 Supprimer un Espace supprime en cascade ses conversations, ses fichiers et ses
 souvenirs propres (double confirmation) ; les souvenirs de profil, valables
@@ -693,8 +702,9 @@ MIAOU sait transformer n'importe quel fichier `.md` en page HTML au même format
 C'est dans les réglages, section « Outils & extensions » : tu choisis un fichier
 ou tu le déposes sur la zone prévue, et le `.html` correspondant se télécharge
 (même nom, extension changée). Si le document commence par un titre de niveau 1,
-celui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête et la date
-figure en pied. Cette conversion est purement locale : le modèle n'est pas
+celui-ci sert d'en-tête à la page ; sinon la page n'a pas d'en-tête. La date de
+production, elle, figure toujours en pied de page, comme dans les exports de
+conversation. Cette conversion est purement locale : le modèle n'est pas
 sollicité et rien n'est envoyé nulle part.
 
 Côté blocs de code, chaque bloc a ses propres boutons pour **copier** ou

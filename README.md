@@ -165,6 +165,8 @@ Figtree/Fira Code).
   promotion d'une pièce jointe déjà envoyée, promotion proposée par le modèle
   (toujours soumise à confirmation), ou dépôt par le modèle d'un fichier qu'il
   vient de produire.
+- Un fichier de bibliothèque se **renomme en place**, au clic sur son nom — même
+  geste que le titre d'une conversation.
 - Un fichier déposé est **décrit automatiquement** pour que le modèle sache s'il
   vaut la peine d'être ouvert. Quand il n'y a pas de texte à extraire — PDF
   scanné, image —, l'image est donnée à voir au modèle, avec repli sur une

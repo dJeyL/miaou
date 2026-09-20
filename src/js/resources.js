@@ -112,6 +112,104 @@ function capFileDescription(str) {
   return s.slice(0, FILE_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
 }
 
+// Nom de fichier de bibliothèque saisi à la main (renommage utilisateur).
+// Pur, testé QuickJS. Trois règles, et rien de plus :
+//   - les blancs sont normalisés (un nom collé depuis un explorateur peut
+//     porter un saut de ligne, qui casserait une ligne du manifeste) ;
+//   - un nom vidé n'écrit rien : on rend `fallback` (l'ancien nom), comme le
+//     titre de conversation restaure `titleBefore` sur saisie vide ;
+//   - la longueur est CAPÉE. Le nom part dans le message système (manifeste de
+//     bibliothèque ou note courte) et dans `files__list` : sans borne, un nom
+//     collé de 40 000 caractères s'y paie à chaque tour. Le cap est dur et non
+//     décoratif — pas d'ellipse ajoutée, on ne fabrique pas un nom de fichier
+//     qui ment sur son extension.
+// Aucune garde d'extension, délibérément (décision Julien 2026-09-20) : le nom
+// est libre, comme un titre de conversation. `resourceDownloadName` gère déjà
+// un nom sans extension.
+const LIBRARY_NAME_MAX_CHARS = 120;
+function normalizeLibraryName(raw, fallback) {
+  const s = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+  if (!s) return String(fallback == null ? '' : fallback);
+  return s.length > LIBRARY_NAME_MAX_CHARS ? s.slice(0, LIBRARY_NAME_MAX_CHARS).trim() : s;
+}
+
+// Longueur du RADICAL d'un nom de fichier : ce que la préselection au focus
+// couvre, l'extension restant hors sélection (on renomme « rapport », pas
+// « .pdf »). Pur, testé QuickJS — la règle « où finit le radical » a plus de
+// cas limites qu'il n'y paraît, et aucun ne se voit dans un handler d'UI.
+//
+// Le point est TOUJOURS cherché en dernier (`lastIndexOf`) : « archive.tar.gz »
+// se renomme sur « archive.tar », l'usage étant de garder le suffixe qu'on
+// voit. Trois cas rendent la longueur ENTIÈRE, c'est-à-dire « sélectionne
+// tout » plutôt qu'une sélection vide ou absurde :
+//   - pas de point du tout (« notes ») ;
+//   - un point en tête et lui seul (« .gitignore ») : c'est un fichier caché
+//     sans extension, son radical est le nom entier ;
+//   - un point final (« rapport. ») : l'extension est vide, rien à préserver.
+// Le nom est libre (aucune garde d'extension au renommage) : cette fonction
+// SERT la saisie, elle ne la contraint pas.
+function libraryNameStemLength(name) {
+  const s = String(name == null ? '' : name);
+  const dot = s.lastIndexOf('.');
+  if (dot <= 0 || dot === s.length - 1) return s.length;
+  return dot;
+}
+
+// Type LISIBLE d'un fichier de bibliothèque, pour la ligne méta d'une carte.
+// Pur, testé QuickJS. Le mime brut y tenait la place de trois informations :
+// `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` fait
+// 68 caractères et poussait la ligne méta à QUATRE lignes dans une colonne de
+// ~210 px utiles (mesuré) — deux lignes déjà avant qu'on y ajoute une date.
+//
+// Deux étages, et le second n'est pas une table :
+//   1. les familles Office, seules à porter des mimes de cette longueur, sont
+//      nommées par leur MARQUE seule (`MIME_LABELS`) — « Excel », « Word »,
+//      « PowerPoint ». Pas « Classeur Excel » ni « Présentation PowerPoint » :
+//      la marque dit déjà le genre du document, et la périphrase ne fait que
+//      rallonger la ligne qu'on cherche à raccourcir (décision Julien
+//      2026-09-20). Le registre est ainsi le même qu'à l'étage 2 — un nom de
+//      format, jamais une phrase ;
+//   2. tout le reste passe par `mimeExt` (utils.js) mis en capitales — CSV,
+//      PDF, PNG, ZIP. C'est la SOURCE VIVANTE des correspondances mime→type du
+//      projet : une seconde table recopiée ici dériverait de celle-là, et
+//      dériverait en silence puisque rien ne les compare.
+// Le mime exact n'est pas perdu, il passe en tooltip (cf. renderSpaceFilesList).
+const MIME_LABELS = {
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+  'application/vnd.ms-excel': 'Excel',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+  'application/msword': 'Word',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+  'application/vnd.ms-powerpoint': 'PowerPoint',
+};
+function libraryFileTypeLabel(mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0].trim();
+  if (!m) return '';
+  if (MIME_LABELS[m]) return MIME_LABELS[m];
+  return String(mimeExt(m) || '').toUpperCase();
+}
+
+// Date à montrer pour un fichier de bibliothèque. Pur, testé QuickJS — rend le
+// ts brut, jamais une chaîne formatée : le formatage relatif de la ligne méta
+// et la date complète du tooltip sont deux rendus du MÊME ts, et les composer
+// ici obligerait à rendre deux chaînes que l'appelant devrait raccorder.
+//
+// **Une seule date existe, celle du dépôt, et elle se montre NUE** — sans verbe
+// l'introduisant (décision Julien 2026-09-20) : un verbe ne sert qu'à
+// distinguer deux dates possibles, et il n'y en a qu'une.
+//
+// Il n'y a délibérément pas de « dernière modification » : la modification
+// qu'une telle date annoncerait est celle du CONTENU, et aucun chemin ne
+// réécrit les octets d'un fichier de bibliothèque — `storeLibraryFile` crée, et
+// les deux seuls `putResource` sur un record `library` (renommage, description
+// générée) ne touchent que des métadonnées. Renommer un fichier ou lui refaire
+// sa description ne modifie pas le fichier. Si un jour un chemin remplace
+// vraiment le contenu, c'est LUI qui justifiera un second champ — et alors un
+// verbe redeviendra nécessaire, puisqu'il y aura deux dates à distinguer.
+function libraryFileDate(rec) {
+  return (rec && rec.createdAt) || null;   // sans date : rien à dire, on n'invente pas « maintenant »
+}
+
 // Normalise un record library aux champs figés du schéma : présent dès le
 // jour un pour éviter une migration ultérieure de `source`/`description`.
 function normalizeLibraryRecord(rec) {
@@ -934,6 +1032,39 @@ async function storeLibraryFile(spaceId, mime, name, data, cls, source, descript
     return record;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] storeLibraryFile:', e && e.message);
+    return null;
+  }
+}
+
+// Renommage d'un fichier de bibliothèque (geste utilisateur, une carte à la
+// fois). Seul le champ `name` bouge : la description reste celle calculée sur
+// le CONTENU, qui n'a pas changé (décision Julien 2026-09-20 — le bouton
+// « Régénérer la description » reste la voie explicite pour la refaire).
+//
+// Relit le record depuis IDB plutôt que d'écrire un record reconstruit depuis
+// la liste affichée : `getResourcesBySpace` rend bien le record complet, mais
+// une description peut avoir abouti entre le rendu de la carte et la validation
+// du nom (le calcul est asynchrone et re-render la ligne, pas l'objet capturé
+// par le handler). Écrire l'instantané écraserait cette description — même
+// discipline que la relecture post-await du piège 24.
+//
+// `putResource` porte déjà le cache session ET le broadcast post-commit avec
+// `spaceId` : les autres onglets qui regardent la même bibliothèque se
+// rafraîchissent par ce chemin, sans type de message supplémentaire.
+// Rend le nom effectivement écrit (normalisé), ou null si rien n'a été fait.
+async function renameLibraryFile(id, rawName) {
+  let record;
+  try { record = await getResource(id); } catch (e) { record = null; }
+  if (!record || record.kind !== 'library') return null;
+  const name = normalizeLibraryName(rawName, record.name);
+  if (name === record.name) return name;   // no-op : pas d'écriture, pas de broadcast
+  record.name = name;
+  try {
+    await putResource(record);
+    _cacheRecord(record);
+    return name;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] renameLibraryFile:', e && e.message);
     return null;
   }
 }

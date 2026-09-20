@@ -141,12 +141,13 @@ ultérieures du même lot).
   links »). Le tombstone `~~label (supprimée)~~` reste inchangé dans les deux
   modes (c'est déjà du texte, pas un lien). `renderMd(text, opts)` transmet
   `opts` à `resolveConvRefs` en passe-plat.
-- **`buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag })`**
+- **`buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables })`**
   (ui.js, pure — mais **pas** couverte par le runner QuickJS, malgré une
   mention historique contraire : `tests/runner.py` ne l'appelle pas ; référencer
   `LOGO_SRC` — global de main.js — y est donc sans danger) : assemble le
-  squelette `<!doctype html><html data-theme="…"><head>…</head><body>` (topbar
-  titre+date, `bodyHtml`, footer « Généré par MIAOU » — le nom pouvant porter un
+  squelette `<!doctype html><html><head>…</head><body>` (pas de `data-theme` sur
+  `<html>` : la case `#theme-switch` est seule source de vérité, cf. plus bas ;
+  topbar logo+titre, `bodyHtml`, footer daté « Généré par MIAOU » — le nom pouvant porter un
   lien vers le dépôt, cf. plus bas —, `scriptTag` avant
   `</body>`). Un seul `<link>` (favicon, cf. ci-dessous) ; pas de CDN/CSS externe
   (Prism inliné). Le `<script>` n'est plus interdit (**décision zéro-JS révisée**, cf.

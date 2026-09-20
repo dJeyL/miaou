@@ -687,6 +687,25 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* Nom d'un fichier de bibliothèque, renommable en place (même geste que le
+   titre de conversation, cf. .conv-title-edit dans chat.css). Les états sont
+   décalqués de là-bas — repos transparent, survol et focus en surface-3 — mais
+   la BASE reste .mem-content : le sélecteur est double pour gagner sur la
+   spécificité de .mem-content sans dupliquer sa typographie. Le fond de survol
+   monte d'un palier par rapport à la topbar (.mem-item est déjà sur
+   surface-2), sinon l'affordance serait invisible sur son propre fond. */
+.mem-content.file-name-edit {
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+  margin-left: -6px;   /* ramène le texte à l'aplomb du reste de la carte malgré le padding */
+  outline: none;
+  cursor: text;
+  transition: background 130ms var(--ease), border-color 130ms var(--ease);
+}
+.mem-content.file-name-edit:hover { background: var(--surface-3); }
+.mem-content.file-name-edit:focus { background: var(--surface-3); border-color: var(--border-2); }
+
 .mem-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .mem-edit-wrap.hidden { display: none; }
 .mem-edit-input {

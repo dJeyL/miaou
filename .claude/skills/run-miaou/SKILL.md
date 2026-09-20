@@ -514,6 +514,56 @@ where it is *too clean*. Naming the conditions a premise needs — in the header
 next to the measurement it cites — is what keeps a later session from
 "simplifying" the setup and quietly turning the check into a tautology.
 
+### Two ways a verify depends on something it never meant to test
+
+Both were paid on 2026-09-20 (library file renaming), both went **red on
+correct application code**, and both are properties of the *script's* coupling
+to the page rather than of any assertion.
+
+**A `page.click` couples the check to the card's GEOMETRY.** The rename checks
+clicked `#file-name-<id>` to focus it. Adding a date to the card's meta line
+pushed that line from one to two lines, which moved the field — and eight
+assertions about renaming, Escape and persistence went red at once, accusing a
+change that had nothing to do with them. Click when the *pointing* is the
+subject (hit area, a control that only appears on hover); otherwise focus the
+element directly, so a taller card cannot redden a check about persistence.
+The tell is a block of reds whose labels have no common subject with the diff.
+
+**A Range you set can be overwritten one frame later by the app's own focus
+handler.** `wireLibraryNameEditing` answers `focus` with a
+`requestAnimationFrame` that selects the filename stem; a script that focuses
+and sets `selectNodeContents` in the same turn has its selection replaced
+mid-typing. The symptom is not an exception but a **swallowed first character**
+— `"référentiel.tsv"` typed, `"éférentiel.tsv"` in the DOM — intermittent
+across runs (8 reds, then 7, then none). Two hours went into blaming typing
+speed (`keyboard.type` has a `delay` option, which looks like the answer and is
+not) before the handler was read.
+
+Focus first, let the handler's frame run, then set your selection:
+
+```js
+await page.evaluate((s) => { document.querySelector(s).focus(); }, sel);
+await page.waitForFunction((s) =>
+  document.activeElement === document.querySelector(s), sel);
+await page.evaluate(() => new Promise(r => requestAnimationFrame(() => r())));
+// …now setStart/setEnd or selectNodeContents
+```
+
+And never validate on a keystroke you have not seen land — wait for the
+terminal text, not a delay:
+
+```js
+await page.keyboard.type(text, { delay: 30 });
+await page.waitForFunction(({ s, t }) =>
+  document.querySelector(s).textContent === t, { s: sel, t: text });
+```
+
+Without that wait, a truncated name propagates: every later block inherits it
+and reddens, so the reds cluster *downstream* of the real problem. Generalise
+beyond `contenteditable` — any field whose app handler reacts to `focus` (an
+input that selects-all, a picker that repositions a caret) is racing whatever
+the script does in the same turn.
+
 Assertions accumulate into a `failures` array via a `check(label, cond)` helper
 so one run reports every problem, rather than aborting on the first.
 
