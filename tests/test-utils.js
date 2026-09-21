@@ -3957,3 +3957,579 @@ describe('instructions MCP de portee serveur — parsing et injection', function
     expect(joined.indexOf('Ce serveur agrege') >= 0).toBe(false);
   });
 });
+
+describe('compaction du contexte (lot AE) — frontiere et elagage a l\'emission', function() {
+  function ack(overrides) {
+    return Object.assign({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',
+      args: { q: 1 }, result: 'ok', ts: 0, group: 'g1' }, overrides);
+  }
+  function mark(summary) {
+    return { role: 'compaction', content: summary || 'Resume du debut.' };
+  }
+
+  it('isCompactionEntry ne reconnait QUE le role compaction', function() {
+    expect(isCompactionEntry(mark())).toBe(true);
+    expect(isCompactionEntry({ role: 'user', content: 'x' })).toBe(false);
+    expect(isCompactionEntry({ role: 'assistant', content: 'x' })).toBe(false);
+    expect(isCompactionEntry(ack())).toBe(false);
+    expect(isCompactionEntry(null)).toBe(false);
+  });
+
+  it('lastCompactionIndex rend la DERNIERE frontiere, -1 sans aucune', function() {
+    expect(lastCompactionIndex([])).toBe(-1);
+    expect(lastCompactionIndex([{ role: 'user', content: 'a' }])).toBe(-1);
+    var t = [mark('un'), { role: 'user', content: 'a' }, mark('deux'), { role: 'user', content: 'b' }];
+    expect(lastCompactionIndex(t)).toBe(2);
+  });
+
+  it('ce qui PRECEDE la frontiere ne part pas sur le fil', function() {
+    var t = [
+      { role: 'user', content: 'vieille question' },
+      { role: 'assistant', content: 'vieille reponse' },
+      mark('Ils ont parle de X.'),
+      { role: 'user', content: 'nouvelle question' },
+    ];
+    var r = expandThread(t);
+    var joined = JSON.stringify(r);
+    expect(joined.indexOf('vieille question')).toBe(-1);
+    expect(joined.indexOf('vieille reponse')).toBe(-1);
+    expect(joined.indexOf('nouvelle question') >= 0).toBe(true);
+  });
+
+  it('le resume est emis EN TETE, en user synthetique', function() {
+    var t = [
+      { role: 'user', content: 'ancien' },
+      mark('Ils ont parle de X.'),
+      { role: 'user', content: 'recent' },
+    ];
+    var r = expandThread(t);
+    expect(r.length).toBe(2);
+    expect(r[0].role).toBe('user');
+    expect(r[0]._synthetic).toBe(true);
+    expect(r[0].content.indexOf('Ils ont parle de X.') >= 0).toBe(true);
+    expect(r[1].content).toBe('recent');
+  });
+
+  it('le message de compaction est SYNTHETIQUE : lastAuthenticUserIndex ne le vise pas', function() {
+    // Sinon le prefixe ephemere <miaou_context> se collerait au resume au lieu
+    // du dernier tour utilisateur reel (meme motif que le recall d'image, A2).
+    var t = [{ role: 'user', content: 'ancien' }, mark('resume')];
+    var r = expandThread(t);
+    expect(r.length).toBe(1);
+    expect(lastAuthenticUserIndex(r)).toBe(-1);
+  });
+
+  it('deux frontieres : seule la DERNIERE vaut, la premiere n\'est pas reemise', function() {
+    var t = [
+      { role: 'user', content: 'tres vieux' },
+      mark('premier resume'),
+      { role: 'user', content: 'vieux' },
+      mark('second resume'),
+      { role: 'user', content: 'recent' },
+    ];
+    var r = expandThread(t);
+    expect(r.length).toBe(2);
+    expect(r[0].content.indexOf('second resume') >= 0).toBe(true);
+    expect(r[0].content.indexOf('premier resume')).toBe(-1);
+    expect(JSON.stringify(r).indexOf('vieux')).toBe(-1);
+  });
+
+  it('byte-stabilite du rejeu : deux expandThread rendent le MEME payload (invariant 2)', function() {
+    var mk = function() {
+      return [
+        { role: 'user', content: 'ancien' },
+        ack({ group: 'gAE1' }),
+        mark('Resume stable.'),
+        { role: 'user', content: 'recent' },
+        ack({ group: 'gAE2', name: 'srv__bar' }),
+        { role: 'assistant', content: 'fin' },
+      ];
+    };
+    expect(JSON.stringify(expandThread(mk()))).toBe(JSON.stringify(expandThread(mk())));
+  });
+
+  it('un groupe d\'acks APRES la frontiere garde son assistant porteur', function() {
+    // Le danger de l'elagage : emettre un tool result dont le message assistant
+    // porteur des tool_calls aurait ete coupe (payload malforme, 400 backend).
+    var t = [
+      { role: 'user', content: 'ancien' },
+      mark('resume'),
+      { role: 'user', content: 'recent' },
+      ack({ group: 'gAfter', args: { q: 7 } }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    var r = expandThread(t);
+    var toolIdx = -1;
+    for (var i = 0; i < r.length; i++) if (r[i].role === 'tool') toolIdx = i;
+    expect(toolIdx > 0).toBe(true);
+    expect(r[toolIdx - 1].role).toBe('assistant');
+    expect(r[toolIdx - 1].tool_calls.length).toBe(1);
+    expect(r[toolIdx].tool_call_id).toBe(r[toolIdx - 1].tool_calls[0].id);
+  });
+
+  it('les ids de tool_call d\'APRES la frontiere ne bougent PAS quand on compacte', function() {
+    // L'ELAGAGE se fait a l'emission, sur une indexation ABSOLUE : la
+    // frontiere existe deja dans le thread, compacter ne DEPLACE rien. C'est ce
+    // qui protege les ids `solo:N` des acks legacy, qui sont POSITIONNELS — un
+    // slice du tableau en amont les ferait deriver (tool_call_id changeants,
+    // ciblage findAckByCallId casse, piege 26a).
+    //
+    // Le thread est donc le MEME objet dans les deux mesures ; seule bouge la
+    // position de la frontiere, qu'on recule d'un cran pour que l'ack passe de
+    // « avant » a « apres » sans que son index change.
+    var solo = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__solo',
+                 args: { q: 1 }, result: 'ok', ts: 0 };
+    var t = [mark('resume'), { role: 'user', content: 'a' }, solo, { role: 'assistant', content: 'f' }];
+    var idApresFrontiere = null;
+    var r1 = expandThread(t);
+    for (var i = 0; i < r1.length; i++) if (r1[i].tool_calls) idApresFrontiere = r1[i].tool_calls[0].id;
+    expect(idApresFrontiere != null).toBe(true);
+    // Meme thread, sans frontiere du tout : l'ack est au MEME index (2).
+    var sans = [{ role: 'assistant', content: 'z' }, { role: 'user', content: 'a' }, solo, { role: 'assistant', content: 'f' }];
+    var idSansFrontiere = null;
+    var r2 = expandThread(sans);
+    for (var j = 0; j < r2.length; j++) if (r2[j].tool_calls) idSansFrontiere = r2[j].tool_calls[0].id;
+    expect(idApresFrontiere).toBe(idSansFrontiere);
+  });
+
+  it('un ack GROUPE garde son id quelle que soit sa position (contraste avec le legacy)', function() {
+    // Mesure de cadrage, pas une garde du lot : les ids d'un ack porteur de
+    // `group` derivent de cette valeur, pas de sa position — ils sont donc
+    // insensibles a toute insertion en amont. Les acks legacy (sans `group`,
+    // prefixe positionnel `solo:N`) ne le sont pas, et ne l'etaient DEJA pas
+    // avant ce lot. Ce contraste est la raison pour laquelle l'elagage doit
+    // rester a l'emission sur index absolus.
+    var g = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__g',
+              args: { q: 1 }, result: 'ok', ts: 0, group: 'gPos' };
+    var idAt = function(t) {
+      var r = expandThread(t);
+      for (var i = 0; i < r.length; i++) if (r[i].tool_calls) return r[i].tool_calls[0].id;
+      return null;
+    };
+    var court = [{ role: 'user', content: 'a' }, g, { role: 'assistant', content: 'f' }];
+    var long = [{ role: 'user', content: 'x' }, { role: 'user', content: 'a' }, g, { role: 'assistant', content: 'f' }];
+    expect(idAt(court)).toBe(idAt(long));
+  });
+
+  it('formatCompactionMessage : enveloppe byte-stable, derivee du seul resume', function() {
+    expect(formatCompactionMessage('abc')).toBe(formatCompactionMessage('abc'));
+    expect(formatCompactionMessage('abc').indexOf('abc') >= 0).toBe(true);
+    expect(formatCompactionMessage(null).indexOf('undefined')).toBe(-1);
+  });
+
+  it('thread sans frontiere : payload inchange (non-regression)', function() {
+    var t = [
+      { role: 'user', content: 'q' },
+      ack({ group: 'gNone' }),
+      { role: 'assistant', content: 'fin' },
+    ];
+    expect(JSON.stringify(expandThread(t)).indexOf('compact')).toBe(-1);
+    expect(expandThread(t).length).toBe(4);
+  });
+});
+
+describe('microcompaction des tool results (lot AE, etape 2)', function() {
+  // Ack enrichi minimal : `args` + `name` (ackIsExpandable), plus un result.
+  var mk = function(result, extra) {
+    var a = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__outil',
+              args: {}, group: 'gX', result: result };
+    if (extra) for (var k in extra) a[k] = extra[k];
+    return a;
+  };
+  var big = new Array(2500).join('x');   // 2499 caracteres
+  var small = new Array(100).join('y');  // 99 caracteres
+  // Reconnaisseur reel : la phrase emise par formatInlineHandleForModel.
+  var evacuated = function(s) { return /texte adressable par js__eval \(blob=/.test(String(s || '')); };
+
+  it('au-dessus du seuil : evacuation demandee', function() {
+    expect(ackNeedsEvacuation(mk(big), 2000, evacuated)).toBe(true);
+  });
+
+  it('sous le seuil : rien a evacuer (le descripteur couterait plus cher)', function() {
+    expect(ackNeedsEvacuation(mk(small), 2000, evacuated)).toBe(false);
+  });
+
+  it('seuil exact : la borne est stricte (egal = on ne touche pas)', function() {
+    var exact = new Array(2001).join('z'); // 2000 caracteres
+    expect(exact.length).toBe(2000);
+    expect(ackNeedsEvacuation(mk(exact), 2000, evacuated)).toBe(false);
+    expect(ackNeedsEvacuation(mk(exact + 'z'), 2000, evacuated)).toBe(true);
+  });
+
+  it('ack NON expansable : jamais evacue, meme enorme', function() {
+    // Sans `name` : elague a l'emission (expandThread). Evacuer creerait une
+    // ressource que rien ne transmet.
+    var orphan = { role: 'tool-ack', kind: 'mcp_call', args: {}, result: big };
+    expect(ackNeedsEvacuation(orphan, 2000, evacuated)).toBe(false);
+    // Sans `args` non plus (ack legacy).
+    var legacy = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__o', result: big };
+    expect(ackNeedsEvacuation(legacy, 2000, evacuated)).toBe(false);
+  });
+
+  it('deja evacue : idempotent (recompacter ne fait rien)', function() {
+    var handle = formatInlineHandleForModel('res_abc', 'text/plain', null);
+    var already = mk(handle + new Array(2500).join('w'));
+    expect(evacuated(already.result)).toBe(true);
+    expect(ackNeedsEvacuation(already, 2000, evacuated)).toBe(false);
+  });
+
+  it('result absent : rien a faire', function() {
+    expect(ackNeedsEvacuation(mk(null), 2000, evacuated)).toBe(false);
+    expect(ackNeedsEvacuation(null, 2000, evacuated)).toBe(false);
+  });
+
+  it('le seuil par defaut vaut TOOL_RESULT_EVACUATION_MIN_CHARS', function() {
+    expect(TOOL_RESULT_EVACUATION_MIN_CHARS).toBe(2000);
+    // Sans minChars explicite, la constante s'applique.
+    expect(ackNeedsEvacuation(mk(big), undefined, evacuated)).toBe(true);
+    expect(ackNeedsEvacuation(mk(small), undefined, evacuated)).toBe(false);
+  });
+
+  it('le marqueur pose est le descripteur STATIQUE, JAMAIS resource_ref', function() {
+    // Piege du chapitre 4.3 : [resource_ref:...] est a EXPANSION et
+    // re-inlinerait tout le contenu au tour suivant — l'inverse exact du but.
+    // Les deux constantes sont des CHAINES de motif (jamais des RegExp) :
+    // les compiler ici est ce que font leurs consommateurs reels.
+    var handle = formatInlineHandleForModel('res_zz', 'text/plain', null);
+    var out = formatEvacuatedToolResult(handle, '');
+    expect(new RegExp(RESOURCE_REF_PATTERN).test(out)).toBe(false);
+    expect(out.indexOf('resource_ref')).toBe(-1);
+    // Et c'est bien le descripteur statique qui est pose.
+    var m = new RegExp(RESOURCE_DESC_PATTERN).exec(out);
+    expect(m === null).toBe(false);
+    expect(m[1]).toBe('res_zz');
+  });
+
+  it('la note NOT_PRESENTED survit a l evacuation, octet pour octet', function() {
+    var body = big + NOT_PRESENTED_NOTE;
+    var split = splitToolResultNoteRaw(body);
+    expect(split.note).toBe(NOT_PRESENTED_NOTE);
+    expect(split.text).toBe(big);
+    var handle = formatInlineHandleForModel('res_n', 'text/plain', null);
+    var out = formatEvacuatedToolResult(handle, split.note);
+    // La note est recollee TELLE QUELLE : le modele continue de savoir que
+    // l'utilisateur ne voit pas ce contenu.
+    expect(out.slice(-NOT_PRESENTED_NOTE.length)).toBe(NOT_PRESENTED_NOTE);
+    expect(out.indexOf(handle)).toBe(0);
+  });
+
+  it('la note PRESENTED ne gagne pas de crochets au passage', function() {
+    // splitToolResultNote (affichage) retire crochets et \n ; la version brute
+    // doit rendre les octets d'origine, sinon PRESENTED_NOTE — qui n'a pas de
+    // crochets — en recevrait.
+    var split = splitToolResultNoteRaw(big + PRESENTED_NOTE);
+    expect(split.note).toBe(PRESENTED_NOTE);
+    var out = formatEvacuatedToolResult('H', split.note);
+    expect(out).toBe('H' + PRESENTED_NOTE);
+    expect(out.indexOf('[La ressource')).toBe(-1);
+  });
+
+  it('resultat sans note : rien n est ajoute', function() {
+    var split = splitToolResultNoteRaw(big);
+    expect(split.note).toBe('');
+    expect(split.text).toBe(big);
+    expect(formatEvacuatedToolResult('H', split.note)).toBe('H');
+  });
+
+  it('formatEvacuatedToolResult est byte-stable au rejeu', function() {
+    var h = formatInlineHandleForModel('res_s', 'text/plain', null);
+    expect(formatEvacuatedToolResult(h, NOT_PRESENTED_NOTE))
+      .toBe(formatEvacuatedToolResult(h, NOT_PRESENTED_NOTE));
+    expect(formatEvacuatedToolResult(h, null).indexOf('null')).toBe(-1);
+  });
+
+  it('un resultat evacue reste reconnu comme evacue (boucle fermee)', function() {
+    // Le geste produit une sortie que son propre prédicat d'idempotence
+    // reconnait : sans ca, recompacter evacuerait le handle lui-meme.
+    var h = formatInlineHandleForModel('res_loop', 'text/plain', null);
+    var out = formatEvacuatedToolResult(h, NOT_PRESENTED_NOTE);
+    expect(evacuated(out)).toBe(true);
+  });
+
+  it('le nom de ressource derive de l outil, sans prefixe miaou__', function() {
+    expect(evacuatedResourceName({ name: 'miaou__docs__read' })).toBe('docs__read.txt');
+    expect(evacuatedResourceName({ name: 'srv__outil' })).toBe('srv__outil.txt');
+    // Caracteres hors charset remplaces, jamais un nom vide.
+    expect(evacuatedResourceName({ name: '' })).toBe('resultat.txt');
+    expect(evacuatedResourceName(null)).toBe('resultat.txt');
+  });
+});
+
+describe('geste de compaction (lot AE, etape 3)', function() {
+  var u = function(t) { return { role: 'user', content: t }; };
+  var a = function(t) { return { role: 'assistant', content: t }; };
+  var long = new Array(1500).join('m');   // 1499 caracteres
+
+  it('les deux seuils restent DISTINCTS', function() {
+    // Le coeur de la decision AE : 50 % (proposer la compaction) et 80 %
+    // (approche du mur technique) repondent a deux questions differentes.
+    // Les refondre ferait apparaitre la proposition quand il est trop tard.
+    expect(CONTEXT_COMPACTION_HINT_RATIO).toBe(0.5);
+    expect(CONTEXT_WINDOW_WARN_RATIO).toBe(0.8);
+    expect(CONTEXT_COMPACTION_HINT_RATIO < CONTEXT_WINDOW_WARN_RATIO).toBe(true);
+  });
+
+  it('la matiere compactable compte le contenu ET les resultats d outils', function() {
+    // Un tour d'outils pese dans le contexte autant qu'une reponse : l'ignorer
+    // sous-estimerait justement les conversations qu'on veut compacter.
+    var thread = [u('abcde'), { role: 'tool-ack', name: 'x', args: {}, result: 'XYZ' }];
+    expect(compactableCharCount(thread)).toBe(8);
+  });
+
+  it('la matiere se compte APRES la derniere frontiere', function() {
+    // On ne recompacte pas du deja-compacte : ce qui precede la frontiere
+    // n'est deja plus transmis, donc il n'y a rien a en retirer.
+    var thread = [u('aaaaaaaaaa'), { role: 'compaction', content: 'r' }, u('bb')];
+    expect(compactableCharCount(thread)).toBe(2);
+  });
+
+  it('une conversation juste compactee n a plus de matiere', function() {
+    var thread = [u(long), { role: 'compaction', content: 'resume' }];
+    expect(compactableCharCount(thread)).toBe(0);
+    expect(hasCompactableSubstance(thread, 2000)).toBe(false);
+  });
+
+  it('le plancher de matiere est une borne INCLUSIVE', function() {
+    var exact = [u(new Array(2001).join('z'))];   // exactement 2000
+    expect(compactableCharCount(exact)).toBe(2000);
+    expect(hasCompactableSubstance(exact, 2000)).toBe(true);
+    var under = [u(new Array(2000).join('z'))];   // 1999
+    expect(hasCompactableSubstance(under, 2000)).toBe(false);
+  });
+
+  it('thread vide : aucune matiere, et aucune exception', function() {
+    expect(compactableCharCount([])).toBe(0);
+    expect(compactableCharCount(null)).toBe(0);
+    expect(hasCompactableSubstance([], 2000)).toBe(false);
+  });
+
+  // ── Les deux gardes AE-7, et le fait qu'elles soient DEUX ────────────────
+  it('une generation en vol refuse, en nommant SA borne', function() {
+    var msg = compactionRefusal(true, null, true);
+    expect(/g[eé]n[eé]r/.test(msg)).toBe(true);
+  });
+
+  it('un agent au travail refuse, avec le message d agentBusyRewriteRefusal', function() {
+    // Le message vient du predicat partage, jamais d'une formule locale
+    // (piege 18) : le geste ne fait que le relayer.
+    var agentMsg = 'Un agent de cette conversation travaille : …';
+    expect(compactionRefusal(false, agentMsg, true)).toBe(agentMsg);
+  });
+
+  it('les deux refus sont DISTINCTS l un de l autre', function() {
+    // « attends la fin de la generation » et « attends tes agents » appellent
+    // des gestes differents : un message unique les confondrait.
+    var gen = compactionRefusal(true, null, true);
+    var agent = compactionRefusal(false, 'Un agent travaille.', true);
+    expect(gen === agent).toBe(false);
+  });
+
+  it('la generation prime sur l agent quand les deux sont vrais', function() {
+    var msg = compactionRefusal(true, 'Un agent travaille.', true);
+    expect(/g[eé]n[eé]r/.test(msg)).toBe(true);
+  });
+
+  it('sans matiere : refus, meme si rien ne tourne', function() {
+    var msg = compactionRefusal(false, null, false);
+    expect(typeof msg).toBe('string');
+    expect(msg.length > 0).toBe(true);
+  });
+
+  it('rien ne tourne et il y a de la matiere : aucun refus', function() {
+    expect(compactionRefusal(false, null, true)).toBe(null);
+  });
+
+  // ── Projection lue par le modele qui redige ─────────────────────────────
+  it('la projection porte les appels d outils, pas seulement user/assistant', function() {
+    // Un tool result porte des decisions et des handles dont la suite depend.
+    var thread = [u('question'), { role: 'tool-ack', name: 'docs__read', args: {}, result: 'CONTENU' }, a('reponse')];
+    var out = projectThreadForCompaction(thread);
+    expect(out.indexOf('question') >= 0).toBe(true);
+    expect(out.indexOf('docs__read') >= 0).toBe(true);
+    expect(out.indexOf('CONTENU') >= 0).toBe(true);
+    expect(out.indexOf('reponse') >= 0).toBe(true);
+  });
+
+  it('la projection part APRES la derniere frontiere', function() {
+    var thread = [u('AVANT'), { role: 'compaction', content: 'r' }, u('APRES')];
+    var out = projectThreadForCompaction(thread);
+    expect(out.indexOf('AVANT') >= 0).toBe(false);
+    expect(out.indexOf('APRES') >= 0).toBe(true);
+  });
+
+  it('un resultat d outil trop long est tronque, et la troncature le DIT', function() {
+    // Sans le marqueur, le modele presenterait une donnee coupee comme
+    // complete (souvenir model-facing-text, defaut « silence »).
+    var thread = [{ role: 'tool-ack', name: 'x', args: {}, result: new Array(3000).join('q') }];
+    var out = projectThreadForCompaction(thread, 600);
+    expect(out.length < 1200).toBe(true);
+    expect(out.indexOf('tronqu') >= 0).toBe(true);
+  });
+
+  it('la frontiere posee par le geste est reconnue par le pur d etape 1', function() {
+    // Boucle fermee entre les deux etapes : ce que le geste ecrit dans le
+    // thread est exactement ce que l'elagage a l'emission sait lire.
+    var entry = { role: 'compaction', content: 'le resume', ts: 1 };
+    expect(isCompactionEntry(entry)).toBe(true);
+    expect(lastCompactionIndex([u('a'), entry])).toBe(1);
+    // Et le message emis derive du seul resume persiste (byte-stabilite).
+    expect(formatCompactionMessage(entry.content))
+      .toBe(formatCompactionMessage(entry.content));
+  });
+
+  // ── Projection du resume auto / titrage (point 4, 2026-09-22) ───────────
+  // Ces deux appels lisent la conversation ENTIERE (retrouver, titrer), la ou
+  // projectThreadForCompaction part de la frontiere (continuer a travailler).
+  it('sans frontiere : user et assistant projetes, rien d autre', function() {
+    var thread = [u('question'), a('reponse'),
+                  { role: 'tool-ack', name: 'x', args: {}, result: 'BRUIT' }];
+    var out = projectThreadForRecap(thread);
+    expect(out.indexOf('question') >= 0).toBe(true);
+    expect(out.indexOf('reponse') >= 0).toBe(true);
+    expect(out.indexOf('BRUIT') >= 0).toBe(false);
+  });
+
+  it('avec frontiere : le resume REMPLACE ce qu il couvre, le reste suit', function() {
+    // Le defaut corrige : le thread brut renvoyait AVANT au modele, donc on
+    // repayait a chaque titrage le contexte qu on venait de compacter.
+    var thread = [u('AVANT'), a('AUSSI AVANT'),
+                  { role: 'compaction', content: 'LE RESUME' }, u('APRES')];
+    var out = projectThreadForRecap(thread);
+    expect(out.indexOf('AVANT') >= 0).toBe(false);
+    expect(out.indexOf('AUSSI AVANT') >= 0).toBe(false);
+    expect(out.indexOf('LE RESUME') >= 0).toBe(true);
+    expect(out.indexOf('APRES') >= 0).toBe(true);
+  });
+
+  it('la couverture reste complete : le resume est la, pas saute', function() {
+    // Sauter la frontiere produirait un titre amnesique — c est la difference
+    // avec projectThreadForCompaction, qui lui part APRES.
+    var thread = [u('AVANT'), { role: 'compaction', content: 'LE RESUME' }];
+    expect(projectThreadForRecap(thread).indexOf('LE RESUME') >= 0).toBe(true);
+    expect(projectThreadForCompaction(thread).indexOf('LE RESUME') >= 0).toBe(false);
+  });
+
+  it('seule la derniere frontiere vaut', function() {
+    var thread = [u('A'), { role: 'compaction', content: 'R1' },
+                  u('B'), { role: 'compaction', content: 'R2' }, u('C')];
+    var out = projectThreadForRecap(thread);
+    expect(out.indexOf('R1') >= 0).toBe(false);
+    expect(out.indexOf('B') >= 0).toBe(false);
+    expect(out.indexOf('R2') >= 0).toBe(true);
+    expect(out.indexOf('C') >= 0).toBe(true);
+  });
+
+  it('le libelle n annonce PAS une transmission interrompue', function() {
+    // formatCompactionMessage s adresse au modele en cours de chat ; ici le
+    // destinataire doit seulement titrer/resumer, la notion de transmission
+    // n a pas de sens pour lui (souvenir model-facing-text).
+    var thread = [{ role: 'compaction', content: 'R' }];
+    expect(projectThreadForRecap(thread).indexOf('plus transmis') >= 0).toBe(false);
+  });
+
+  it('thread vide ou nul : chaine vide, jamais d exception', function() {
+    expect(projectThreadForRecap([])).toBe('');
+    expect(projectThreadForRecap(null)).toBe('');
+  });
+});
+
+describe('Evacuation comme geste autonome (AE-5 annule, 2026-09-22)', function() {
+  var u = function(t) { return { role: 'user', content: t }; };
+  var big = function(n) { return new Array((n || 3000) + 1).join('x'); };
+  var ack = function(result) {
+    return { role: 'tool-ack', name: 'docs__read', args: {}, result: result };
+  };
+
+  // ── Inventaire servant l affordance ───────────────────────────────────
+  it('compte les acks eligibles et leur poids', function() {
+    var thread = [u('a'), ack(big(3000)), ack('court'), ack(big(5000))];
+    var found = evacuableToolResults(thread, 2000, null);
+    expect(found.count).toBe(2);
+    expect(found.chars).toBe(8000);
+  });
+
+  it('un thread sans gros resultat : rien a faire', function() {
+    expect(evacuableToolResults([u('a'), ack('court')], 2000, null).count).toBe(0);
+    expect(evacuableToolResults([], 2000, null).count).toBe(0);
+    expect(evacuableToolResults(null, 2000, null).count).toBe(0);
+  });
+
+  it('un resultat deja evacue n est plus compte', function() {
+    var deja = function(text) { return text.indexOf('DEJA') === 0; };
+    var thread = [ack('DEJA' + big(3000)), ack(big(3000))];
+    expect(evacuableToolResults(thread, 2000, deja).count).toBe(1);
+  });
+
+  // ── Poids du thread : deux questions, deux fonctions ──────────────────
+  it('threadCharCount ignore la frontiere, compactableCharCount non', function() {
+    // Confondre les deux donnerait un bilan de zero sur une conversation deja
+    // compactee : l evacuation balaie tout le thread, y compris l amont.
+    var thread = [u('avant'), { role: 'compaction', content: 'r' }, u('apres')];
+    expect(threadCharCount(thread)).toBe('avant'.length + 'r'.length + 'apres'.length);
+    expect(compactableCharCount(thread)).toBe('apres'.length);
+  });
+
+  it('threadCharCount compte les content ET les result', function() {
+    expect(threadCharCount([u('abc'), ack('defg')])).toBe(7);
+    expect(threadCharCount(null)).toBe(0);
+  });
+
+  // ── Bilan d apres-coup ────────────────────────────────────────────────
+  it('le bilan annonce un gain NET, en tokens', function() {
+    // 4000 car. remplaces par 400 : (1000 - 100) tokens.
+    expect(formatReclaimSummary('2 resultats evacues', 4000, 400))
+      .toBe('2 resultats evacues, ≈ 900 tok récupérés');
+  });
+
+  it('un gain nul ou negatif se DIT, il ne se tait pas', function() {
+    // Reel : evacuer des resultats a peine au-dessus du seuil peut couter plus
+    // que ca ne rapporte. Le silence ferait chercher ce qui s est passe.
+    expect(formatReclaimSummary('1 resultat evacue', 400, 400))
+      .toBe('1 resultat evacue, contexte inchangé');
+    expect(formatReclaimSummary('1 resultat evacue', 400, 800))
+      .toBe('1 resultat evacue, contexte inchangé');
+  });
+
+  it('estimateTokensFromChars suit la meme convention qu estimateTokens', function() {
+    expect(estimateTokensFromChars(4000)).toBe(estimateTokens(new Array(4001).join('x')));
+    expect(estimateTokensFromChars(0)).toBe(0);
+    expect(estimateTokensFromChars(null)).toBe(0);
+  });
+
+  // ── Suffixe du separateur : interpole vers innerHTML ──────────────────
+  it('le suffixe porte le compte quand il y a un gain', function() {
+    expect(formatCompactionReclaimSuffix(900)).toBe(' (≈ 900 tok récupérés)');
+  });
+
+  it('un gain nul n encombre pas le fil', function() {
+    expect(formatCompactionReclaimSuffix(0)).toBe('');
+    expect(formatCompactionReclaimSuffix(null)).toBe('');
+    expect(formatCompactionReclaimSuffix(undefined)).toBe('');
+  });
+
+  it('le suffixe ne peut JAMAIS porter autre chose qu un nombre (piege 21)', function() {
+    // Le champ est PERSISTE : un import ou une donnee de test peut y mettre
+    // n importe quoi, et le point d injection (innerHTML) ne le saurait pas.
+    expect(formatCompactionReclaimSuffix('<img src=x onerror=alert(1)>')).toBe('');
+    expect(formatCompactionReclaimSuffix('900"><script>')).toBe('');
+    expect(formatCompactionReclaimSuffix({})).toBe('');
+    expect(formatCompactionReclaimSuffix([])).toBe('');
+    expect(formatCompactionReclaimSuffix(Infinity)).toBe('');
+  });
+
+  it('une chaine numerique propre reste acceptee, arrondie', function() {
+    expect(formatCompactionReclaimSuffix('900')).toBe(' (≈ 900 tok récupérés)');
+    expect(formatCompactionReclaimSuffix(12.7)).toBe(' (≈ 13 tok récupérés)');
+  });
+
+  // ── Le refus nomme le BON geste ───────────────────────────────────────
+  it('le refus de generation nomme le geste refuse', function() {
+    var compact = compactionRefusal(true, null, true);
+    var evac = compactionRefusal(true, null, true, 'évacuer les résultats d\'outils');
+    expect(compact.indexOf('compacter le contexte') >= 0).toBe(true);
+    expect(evac.indexOf('évacuer les résultats d\'outils') >= 0).toBe(true);
+    // Un refus qui nommerait le mauvais geste ferait chercher une affordance
+    // qu on n a pas touchee.
+    expect(evac.indexOf('compacter le contexte') >= 0).toBe(false);
+  });
+});

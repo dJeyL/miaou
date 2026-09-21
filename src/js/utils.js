@@ -2589,12 +2589,417 @@ function findAckByCallId(thread, callId) {
   return null;
 }
 
+// ── Compaction de contexte (lot AE) ─────────────────────────────────────────
+// Une compaction pose dans le thread UNE entrée `role: 'compaction'`, portant
+// le résumé rédigé par le modèle (champ `content`). Elle n'est pas un message :
+// c'est une FRONTIÈRE. À l'émission, `expandThread` élague tout ce qui la
+// précède et la traduit en un message user synthétique portant le résumé.
+//
+// Pourquoi une entrée dans le thread plutôt qu'un champ de méta : le thread est
+// la seule structure que `expandThread`, le rendu et la persistance lisent déjà
+// ensemble. Un champ de méta imposerait de passer la frontière en argument à un
+// pur qui n'en prend aucun, et de la tenir d'accord avec le thread à chaque
+// mutation.
+//
+// AE-2 : l'historique compacté reste EN BASE, il n'est jamais détruit — même
+// doctrine que les deux élagages qui précèdent dans cette fonction (ack non
+// réinjectable, assistant blanc) et que les tombstones (piège 6). Ce qui
+// disparaît est ce qui part sur le fil, pas ce qui est stocké.
+function isCompactionEntry(m) {
+  return !!m && m.role === 'compaction';
+}
+
+// Index de la DERNIÈRE entrée de compaction d'un thread, -1 s'il n'y en a
+// aucune. La dernière et non la première : compacter deux fois doit repartir de
+// la frontière la plus récente, sinon la seconde compaction réémettrait
+// l'historique que la première avait déjà écarté.
+function lastCompactionIndex(thread) {
+  var idx = -1;
+  for (var i = 0; i < (thread || []).length; i++) {
+    if (isCompactionEntry(thread[i])) idx = i;
+  }
+  return idx;
+}
+
+// Texte du message user synthétique qui porte un résumé de compaction sur le
+// fil. ÉMETTEUR UNIQUE de cette enveloppe — byte-stable par construction (elle
+// ne dérive que du résumé persisté, jamais de l'heure ni d'un compte recalculé),
+// ce qui est la condition pour que le rejeu ne réinvalide pas le KV cache à
+// chaque tour (invariant 2, piège 16).
+function formatCompactionMessage(summary) {
+  return '[Résumé du début de cette conversation, dont les messages ne sont ' +
+    'plus transmis :]\n\n' + String(summary == null ? '' : summary);
+}
+
+// ── Microcompaction des tool results (lot AE, étape 2) ───────────────────────
+// Seuil d'évacuation d'un résultat d'outil, en CARACTÈRES du champ `result`
+// persisté. Sous ce seuil, le descripteur qui remplacerait le contenu (~120
+// caractères, plus la note) coûte davantage que ce qu'il évacue : le geste
+// serait une perte nette.
+//
+// Appliqué UNIFORMÉMENT à tous les kinds, jamais via une liste d'outils
+// éligibles — une telle liste périmerait au prochain outil ajouté, en silence
+// (souvenir `hardcoded-until-2nd`). La grandeur qui décide est la taille, et
+// elle est la même pour tout le monde.
+const TOOL_RESULT_EVACUATION_MIN_CHARS = 2000;
+
+// Un ack est-il candidat à l'évacuation de son résultat ? Pur, testable.
+//
+// Trois conditions, et la première n'est PAS une question de taille :
+//   - `ackIsExpandable` — un ack sans `args`/`name` est déjà élagué à
+//     l'émission (cf. expandThread). Évacuer son résultat créerait une
+//     ressource que rien ne transmet : du stockage pour personne.
+//   - taille du `result` au-dessus du seuil. Mesurée sur le champ PERSISTÉ,
+//     pas sur ce qui part au modèle (`formatCallMarker` + `stampTs` ajoutent
+//     une soixantaine de caractères à l'émission, mais ils ne sont pas dans
+//     l'ack et ne seraient donc pas évacués).
+//   - pas déjà évacué. Le prédicat vit dans tools.js (`isInlineHandleResult`,
+//     qui reconnaît la phrase de `formatInlineHandleForModel`) et lui est
+//     passé en argument plutôt que recopié ici : une seconde formule
+//     divergerait du jour où la phrase changerait.
+function ackNeedsEvacuation(ack, minChars, alreadyEvacuated) {
+  if (!ack || !ackIsExpandable(ack)) return false;
+  var result = ack.result;
+  if (result == null) return false;
+  var text = String(result);
+  var limit = typeof minChars === 'number' ? minChars : TOOL_RESULT_EVACUATION_MIN_CHARS;
+  if (text.length <= limit) return false;
+  if (typeof alreadyEvacuated === 'function' && alreadyEvacuated(text)) return false;
+  return true;
+}
+
+// Ce qu'une évacuation aurait à se mettre sous la dent : combien d'acks, et
+// combien de caractères ils pèsent. Pur, testable.
+//
+// Sert l'affordance du drawer (« y a-t-il quelque chose à faire ? ») et elle
+// SEULE : le geste lui-même ne s'appuie pas dessus, il refait le tri au moment
+// d'agir, après ses awaits. Deux lectures d'une même population à deux instants
+// différents, donc — pas un prédicat dupliqué : c'est `ackNeedsEvacuation` qui
+// tranche dans les deux cas, ici comme là-bas.
+//
+// `chars` est la taille BRUTE des résultats. Le gain réel est plus faible (le
+// handle qui les remplace coûte lui aussi), et c'est voulu : cette fonction
+// répond « y a-t-il de la matière ? », pas « combien vas-tu gagner ? ». La
+// seconde question n'est honnêtement calculable qu'APRÈS coup, une fois les
+// descripteurs réellement écrits — c'est ce que rend le geste.
+function evacuableToolResults(thread, minChars, alreadyEvacuated) {
+  var list = Array.isArray(thread) ? thread : [];
+  var count = 0;
+  var chars = 0;
+  for (var i = 0; i < list.length; i++) {
+    if (!ackNeedsEvacuation(list[i], minChars, alreadyEvacuated)) continue;
+    count++;
+    chars += String(list[i].result).length;
+  }
+  return { count: count, chars: chars };
+}
+
+// Bilan d'un geste d'allègement, rédigé APRÈS coup. Pur, testable.
+//
+// Le chiffre est un gain NET et MESURÉ : l'appelant compare le poids réel du
+// thread avant et après, il ne rejoue pas une prévision. C'est la raison pour
+// laquelle rien n'est annoncé avant le clic — un gain promis puis démenti par
+// la pilule serait pire que pas de chiffre du tout, et le descripteur qui
+// remplace un résultat évacué coûte lui-même assez pour creuser l'écart.
+//
+// Le « ≈ » n'est pas décoratif : l'estimation est en chars/4 comme partout
+// ailleurs (`estimateTokens`), et la pilule porte déjà la même réserve. Le
+// taire ici ferait lire une mesure là où il y a une approximation (souvenir
+// `model-facing-text`, défaut « silence » — vrai aussi pour l'utilisateur).
+//
+// Un gain nul ou négatif se DIT. Le cas est réel : évacuer des résultats à
+// peine au-dessus du seuil peut coûter plus que ça ne rapporte, et afficher
+// « ~0 tok récupérés » après un geste explicite vaut mieux qu'un silence qui
+// laisserait chercher ce qui s'est passé.
+function formatReclaimSummary(head, charsBefore, charsAfter) {
+  var saved = estimateTokensFromChars(charsBefore) - estimateTokensFromChars(charsAfter);
+  if (saved <= 0) return head + ', contexte inchangé';
+  return head + ', ≈ ' + saved + ' tok récupérés';
+}
+
+// Même arrondi qu'estimateTokens, mais depuis un COMPTE de caractères plutôt
+// qu'une chaîne (on n'a pas les chaînes ici, et les concaténer pour les
+// mesurer serait absurde). Même formule, une seule convention.
+function estimateTokensFromChars(chars) {
+  return Math.ceil((chars || 0) / 4);
+}
+
+// Suffixe « (≈ N tok récupérés) » du séparateur de compaction, ou chaîne vide.
+// Pur, testable.
+//
+// SÛRETÉ (piège 21) : la sortie est interpolée dans un template string envoyé à
+// `innerHTML` par `buildCompactionMarker`. Elle ne doit donc JAMAIS pouvoir
+// porter autre chose qu'un nombre — d'où la coercition par `Number` et le rejet
+// de tout ce qui n'est pas un entier fini positif, plutôt qu'un `String(...)`
+// qui laisserait passer ce qu'on aurait mis dans le champ. Le champ vient de
+// nos propres écritures aujourd'hui, mais il est PERSISTÉ : un import, une
+// donnée de test ou un futur producteur peuvent y mettre n'importe quoi, et le
+// point d'injection ne le saurait pas.
+//
+// Un gain nul ne s'affiche pas : « (≈ 0 tok récupérés) » sur une règle de
+// séparation ajouterait du bruit permanent à une information sans valeur, là où
+// le bilan d'après-coup du drawer, lui, le dit — c'est le moment du geste qui
+// justifie de rendre compte, pas le fil relu trois jours plus tard.
+function formatCompactionReclaimSuffix(reclaimed) {
+  var n = Number(reclaimed);
+  if (!isFinite(n) || n <= 0) return '';
+  return ' (≈ ' + Math.round(n) + ' tok récupérés)';
+}
+
+// Poids du thread ENTIER, frontière ignorée. Pur, testable.
+//
+// Distinct de `compactableCharCount`, qui part de la dernière frontière parce
+// que c'est la matière qu'une compaction peut encore résumer. Ici on mesure ce
+// que le thread PÈSE, pour comparer un avant et un après : l'évacuation balaie
+// tout le thread, y compris ce qui précède une frontière déjà posée, donc
+// mesurer depuis la frontière raterait précisément ce qu'elle vient d'alléger.
+// Deux questions différentes, deux fonctions — les confondre donnerait un
+// bilan de zéro sur une conversation déjà compactée.
+function threadCharCount(thread) {
+  var list = thread || [];
+  var total = 0;
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i];
+    if (!m) continue;
+    if (typeof m.content === 'string') total += m.content.length;
+    if (typeof m.result === 'string') total += m.result.length;
+  }
+  return total;
+}
+
+// Sépare un résultat d'outil de sa note MIAOU de queue, en rendant la note
+// SOUS SA FORME BRUTE (`\n` de tête et crochets compris), contrairement à
+// `splitToolResultNote` qui la démaquille pour l'affichage.
+//
+// Deux portées, donc deux fonctions, exactement comme le couple
+// `INLINE_HANDLE_NOTE_PATTERN` / `isInlineHandleResult` déjà en place : celle-ci
+// sert à RECOMPOSER un résultat destiné au modèle, donc elle doit rendre les
+// octets d'origine. Réutiliser la version d'affichage ajouterait des crochets à
+// `PRESENTED_NOTE`, qui n'en porte pas.
+// La liste des notes reste celle de `splitToolResultNote` — une seule source.
+// Pure, testable en QuickJS.
+function splitToolResultNoteRaw(result) {
+  var s = result == null ? '' : String(result);
+  var notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
+  for (var i = 0; i < notes.length; i++) {
+    var n = notes[i];
+    if (s.length > n.length && s.slice(-n.length) === n) {
+      return { text: s.slice(0, s.length - n.length), note: n };
+    }
+  }
+  return { text: s, note: '' };
+}
+
+// Recompose le `result` d'un ack évacué : le handle statique, puis la note
+// MIAOU que le résultat portait éventuellement en queue.
+//
+// La note (`NOT_PRESENTED_NOTE` / `PRESENTED_NOTE`) est du texte ADRESSÉ AU
+// MODÈLE qui conditionne son comportement — « l'utilisateur ne voit PAS ce
+// contenu » n'est pas de l'habillage. L'évacuer avec le corps la ferait
+// disparaître du contexte en silence, et le modèle supposerait de nouveau que
+// l'utilisateur a le résultat sous les yeux (souvenir `model-facing-text`,
+// défaut « silence »). Elle est donc recollée derrière le handle, telle quelle.
+//
+// Le corps évacué, lui, part dans la ressource SANS sa note : ce qui est stocké
+// est ce que l'outil a répondu, pas l'annotation de MIAOU.
+// Pure et byte-stable : ne dérive que du handle et de la note, jamais de
+// l'heure ni d'un compte recalculé (invariant 2).
+function formatEvacuatedToolResult(handle, note) {
+  return String(handle == null ? '' : handle) + String(note == null ? '' : note);
+}
+
+// ── Geste de compaction (lot AE, étape 3) ────────────────────────────────────
+// Occupation du contexte à partir de laquelle MIAOU PROPOSE de compacter.
+//
+// DISTINCTE de CONTEXT_WINDOW_WARN_RATIO (0.8), et les deux ne doivent jamais
+// être refondues : elles répondent à deux questions différentes. 80 % dit « tu
+// approches du mur technique » ; 50 % dit « le modèle décroche probablement
+// déjà ». C'est le seuil où la courbe « lost in the middle » s'effondre du U
+// (début et fin privilégiés) en simple récence — le début de la conversation
+// cesse d'être lu (cf. docs/compaction.md). Les confondre ferait apparaître la
+// proposition quand il est déjà trop tard.
+//
+// AE-1 : ce seuil rend l'affordance SAILLANTE, il ne déclenche jamais rien. Le
+// geste reste disponible en dessous — un modèle peut déraper plus tôt.
+const CONTEXT_COMPACTION_HINT_RATIO = 0.5;
+
+// Plancher de matière compactable, en caractères de ce qui serait ÉLAGUÉ.
+//
+// Même raisonnement que TOOL_RESULT_EVACUATION_MIN_CHARS et même nature de
+// décision : sous ce volume, le résumé qui remplace l'historique coûte au moins
+// aussi cher que l'historique lui-même, et la compaction est une perte nette.
+// La grandeur qui décide est le POIDS de ce qu'on retire, jamais un nombre de
+// messages — deux messages portant chacun un gros tool result méritent la
+// compaction, dix messages d'une ligne non.
+const COMPACTION_MIN_CHARS = 2000;
+
+// Poids en caractères de ce qu'une compaction retirerait du fil : tout ce qui
+// précède le point de coupe, c'est-à-dire la dernière frontière existante (on
+// ne recompacte pas du déjà-compacté, cf. `lastCompactionIndex`).
+//
+// Compte le `content` des messages ET le `result` des acks : un tour d'outils
+// pèse dans le contexte autant qu'une réponse, et l'ignorer sous-estimerait
+// gravement la matière des conversations les plus lourdes — précisément celles
+// qu'on veut compacter. Pure, testable.
+function compactableCharCount(thread) {
+  var list = thread || [];
+  var from = lastCompactionIndex(list) + 1;
+  var total = 0;
+  for (var i = from; i < list.length; i++) {
+    var m = list[i];
+    if (!m) continue;
+    if (typeof m.content === 'string') total += m.content.length;
+    if (typeof m.result === 'string') total += m.result.length;
+  }
+  return total;
+}
+
+// Y a-t-il matière à compacter ? Pur, et seule source de la question.
+//
+// Le cas « rien à élaguer » (conversation vide, ou déjà compactée à l'instant)
+// est couvert par le même calcul : un total de 0 est sous n'importe quel
+// plancher. Pas de second prédicat pour lui.
+function hasCompactableSubstance(thread, minChars) {
+  var limit = typeof minChars === 'number' ? minChars : COMPACTION_MIN_CHARS;
+  return compactableCharCount(thread) >= limit;
+}
+
+// Projette en texte plat la matière que le modèle doit lire pour rédiger un
+// résumé de compaction : tout ce qui précède le point de coupe.
+//
+// Diffère de la projection de `generateSummary`, qui ne garde que user et
+// assistant, et c'est délibéré : un APPEL D'OUTIL porte ici des décisions et
+// des handles de ressource dont la suite du travail dépend (« le CSV est en
+// res_abc », « la requête a échoué avec telle erreur »). Les jeter rendrait le
+// résumé aveugle à la moitié du travail sur les conversations les plus
+// outillées — exactement celles qu'on compacte.
+//
+// Les résultats d'outils sont BORNÉS ici, pas dans le prompt : un seul tool
+// result peut peser plus que toute la conversation, et le modèle qui compacte
+// travaille déjà sur un contexte chargé. La borne est généreuse (on veut la
+// substance, pas l'exhaustivité) et le marqueur de troncature le DIT, pour que
+// le modèle sache qu'il lit un extrait et ne présente pas une donnée coupée
+// comme complète (souvenir `model-facing-text`, défaut « silence »).
+// Pure, testable.
+function projectThreadForCompaction(thread, maxResultChars) {
+  var list = thread || [];
+  var from = lastCompactionIndex(list) + 1;
+  var cap = typeof maxResultChars === 'number' ? maxResultChars : 600;
+  var parts = [];
+  for (var i = from; i < list.length; i++) {
+    var m = list[i];
+    if (!m) continue;
+    if (isAckRole(m.role)) {
+      var name = m.name != null ? String(m.name) : 'outil';
+      var res = m.result == null ? '' : String(m.result);
+      if (res.length > cap) res = res.slice(0, cap) + '\n[…extrait tronqué…]';
+      parts.push('[appel d\'outil ' + name + ']' + (res ? '\n' + res : ''));
+      continue;
+    }
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    parts.push(m.role + ': ' + messageTextForSummary(m));
+  }
+  return parts.join('\n\n');
+}
+
+// Projette un thread en « role: texte » pour les appels applicatifs qui lisent
+// une conversation ENTIÈRE — le résumé de recherche (`generateSummary`) et le
+// titrage (`generateTitle`). Pure, testable.
+//
+// HONORE LA FRONTIÈRE DE COMPACTION, et c'est la raison d'être de cette
+// fonction. Les deux appelants projetaient le thread brut avec un `filter`/`map`
+// inline identique, qui ignorait l'entrée `role: 'compaction'` comme un rôle
+// inconnu : après une compaction, ils renvoyaient au modèle l'intégralité des
+// messages que l'utilisateur venait justement de faire évacuer. Le résumé
+// produit restait juste, mais au prix fort — on repayait à chaque titrage et à
+// chaque résumé le contexte qu'on avait compacté (signalé en usage réel le
+// 2026-09-22).
+//
+// Le résumé de compaction REMPLACE les messages qu'il couvre, il ne s'ajoute
+// pas à eux et on ne les saute pas non plus : ces deux appels-ci doivent
+// couvrir la conversation DEPUIS SON DÉBUT (retrouver une conversation, la
+// titrer — pas continuer à travailler, ce que fait `projectThreadForCompaction`
+// en partant de la frontière). Garder le résumé préserve donc la couverture
+// complète pour une fraction du coût, là où sauter la frontière produirait un
+// titre et un résumé amnésiques.
+//
+// Sans préfixe de rôle sur le résumé : il n'est d'aucun interlocuteur, et
+// `TITLE_PROMPT`/`SUMMARY_PROMPT` ne décrivent que « user: » / « assistant: ».
+//
+// Libellé PROPRE à ce contexte, et surtout PAS `formatCompactionMessage` : ce
+// dernier est adressé au modèle en cours de chat et lui annonce que les
+// messages « ne sont plus transmis » — une notion de transmission qui n'a aucun
+// sens pour qui doit seulement titrer ou résumer un historique, et qui
+// l'inviterait à commenter une lacune plutôt qu'à faire son travail (souvenir
+// `model-facing-text`, défaut « référentiel implicite »).
+function projectThreadForRecap(thread) {
+  var list = thread || [];
+  var from = lastCompactionIndex(list);
+  var parts = [];
+  var i = 0;
+  if (from >= 0) {
+    parts.push('[Résumé du début de la conversation :]\n\n' +
+      String(list[from].content == null ? '' : list[from].content));
+    i = from + 1;
+  }
+  for (; i < list.length; i++) {
+    var m = list[i];
+    if (!m) continue;
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    parts.push(m.role + ': ' + messageTextForSummary(m));
+  }
+  return parts.join('\n\n');
+}
+
+// Refus de compaction, ou null si le geste est permis. PUR : les trois états
+// arrivent en arguments, la lecture des registres reste à l'appelant.
+//
+// Les deux premières bornes sont AE-7, et ce sont DEUX gardes, pas une : elles
+// nomment chacune la borne atteinte, parce que « attends la fin de la
+// génération » et « attends tes agents » appellent des gestes différents
+// (précédent `agentSpawnLimitError`). L'ordre compte peu, les cas étant
+// disjoints en pratique, mais la génération passe d'abord : c'est la borne que
+// l'utilisateur vient de provoquer lui-même, donc la plus compréhensible.
+//
+// `generating` vient de `isGenerating(convId)`, JAMAIS de `sending` — celui-ci
+// est un reflet d'ÉCRAN (piège 28) : une conversation qui génère sans être
+// affichée a `sending === false`, et la garde serait muette exactement là où
+// elle compte.
+// `gesture` nomme le geste refusé dans le message d'attente (« avant de
+// compacter le contexte », « avant d'évacuer les résultats d'outils »). Les
+// DEUX gestes d'allègement tombent sous les mêmes bornes AE-7 et relaient donc
+// ce même pur — mais un refus qui nomme le mauvais geste ferait chercher une
+// affordance qu'on n'a pas touchée. Défaut par défaut : la compaction, seul
+// appelant jusqu'au 2026-09-22.
+function compactionRefusal(generating, agentBusyMessage, hasSubstanceToCompact, gesture) {
+  if (generating) {
+    return 'Cette conversation est en train de générer une réponse. Attends ' +
+      'la fin de la génération, ou interromps-la, avant de ' +
+      (gesture || 'compacter le contexte') + '.';
+  }
+  if (agentBusyMessage) return agentBusyMessage;
+  if (!hasSubstanceToCompact) {
+    return 'Il n\'y a pas assez d\'historique à compacter : le résumé qui le ' +
+      'remplacerait coûterait autant que ce qu\'il retire.';
+  }
+  return null;
+}
+
 // Reconstruit un tableau de messages OpenAI depuis currentThread.
 // Acks ENRICHIS (args + result présents) → paire [assistant+tool_calls, tool…].
 // Acks legacy (sans args) → élagués comme avant (compat ascendante).
 // Si le premier ack d'un groupe porte assistantText, le message assistant
 // standalone qui le précède immédiatement est absorbé dans le content de
 // l'assistant expansé pour éviter la duplication.
+//
+// Compaction (lot AE) : la boucle DÉMARRE après la dernière entrée de
+// compaction, qui est émise en tête sous forme de message user synthétique.
+// L'indexation des groupes reste ABSOLUE (`enrichedAckGroups` est calculé sur le
+// thread entier, `byStart` est indexé par l'index réel) : c'est ce qui rend
+// l'élagage sûr. Un `slice` du tableau en amont ferait dériver les ids `solo:N`
+// des acks legacy, qui sont POSITIONNELS — les tool_call_id changeraient à
+// chaque compaction, invalidant le cache et cassant le ciblage
+// `findAckByCallId` (piège 26a).
 function expandThread(thread) {
   var out = [];
   // Groupes pré-calculés par enrichedAckGroups (source unique de la dérivation
@@ -2603,9 +3008,29 @@ function expandThread(thread) {
   var allGroups = enrichedAckGroups(thread);
   for (var gi = 0; gi < allGroups.length; gi++) byStart[allGroups[gi].start] = allGroups[gi];
   var i = 0;
+  // Frontière de compaction : tout ce qui précède est élagué à l'ÉMISSION, le
+  // résumé le remplace en tête. `_synthetic` est OBLIGATOIRE — sans lui,
+  // `lastAuthenticUserIndex` viserait ce message dès qu'une compaction termine
+  // le fil, et le préfixe éphémère <miaou_context> se collerait au résumé au
+  // lieu du vrai dernier tour utilisateur (même motif que le recall d'image,
+  // brief A2).
+  var compactAt = lastCompactionIndex(thread);
+  if (compactAt >= 0) {
+    out.push({ role: 'user', _synthetic: true,
+               content: formatCompactionMessage(thread[compactAt].content) });
+    i = compactAt + 1;
+  }
   while (i < thread.length) {
     var m = thread[i];
-    if (isAckRole(m.role)) {
+    if (isCompactionEntry(m)) {
+      // Compaction ANTÉRIEURE à la frontière courante : jamais réémise. On ne
+      // re-résume pas du résumé (hors périmètre AE, cf. § 5 du brief) et on ne
+      // l'empile pas non plus — seule la dernière frontière vaut, les
+      // précédentes sont derrière elle par construction. Cette branche n'est
+      // donc atteinte que si une entrée de compaction suit la dernière, ce que
+      // `lastCompactionIndex` exclut : elle est défensive.
+      i++;
+    } else if (isAckRole(m.role)) {
       // Branchement sur la PRÉSENCE du groupe, jamais sur une copie locale du
       // prédicat : `byStart[i]` EST la réponse d'enrichedAckGroups, donc les
       // deux ne peuvent pas diverger. Sous la forme précédente (`m.args != null`
@@ -2947,8 +3372,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
 
   const pushThreadEntry = (source, label, chars) => {
     if (chars <= 0) return;
-    // Même arrondi qu'estimateTokens, sans son allocation de chaîne.
-    entries.push({ source, label, chars, tokens: Math.ceil(chars / 4) });
+    entries.push({ source, label, chars, tokens: estimateTokensFromChars(chars) });
   };
 
   pushThreadEntry('thread_history', 'Historique de la conversation', historyChars);

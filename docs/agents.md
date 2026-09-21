@@ -1331,6 +1331,27 @@ Le libellé vient de `convLabel` (prédicat unique) : un agent y est nommé par 
 `agentIntent`, jamais par un placeholder de titre. Le statut utilisateur vient
 d'`AGENT_STATUS_UI_LABELS`, jamais d'une chaîne écrite au point d'usage.
 
+**Deux tables de statut, pas une** (lot AE, étape 8). `AGENT_STATUS_UI_LABELS`
+qualifie un AGENT — ce que le modèle a lancé ; `ROOT_ACTIVITY_UI_LABELS`
+qualifie une conversation RACINE — ce qui l'occupe. Les fusionner ferait porter
+à `running` deux sens selon la profondeur de la ligne.
+
+La table racine a **trois** entrées, et la troisième est née de l'entrée de la
+compaction au registre des générations (`docs/compaction.md`) : une
+conversation qui compacte est vue « working » par l'inventaire, mais elle ne
+génère pas de réponse — elle réécrit son historique. Sans statut propre, sa
+ligne retombait sur le libellé générique « génère », qui est faux, et c'est ce
+que lit l'utilisateur au moment où il cherche à comprendre ce qui travaille
+dans une conversation qu'il ne regarde pas.
+
+Le pur `rootActivityLabel(working, compacting)` résout les trois cas depuis les
+deux prédicats que l'appelant sait évaluer (`g.working` et `isCompacting`,
+main.js). **L'ordre des tests est une garde** : une conversation qui compacte a
+`working` vrai AUSSI (elle est au registre), donc le cas spécifique passe en
+premier — l'inverser la ferait retomber sur « génère », c'est-à-dire
+exactement le défaut. Un test QuickJS garde cet ordre, un autre garde le fait
+que les trois libellés soient distincts.
+
 ### Le parent inerte, et pourquoi le compte a changé de source
 
 Une racine est retenue si elle génère **ou** si un de ses agents travaille. Ce

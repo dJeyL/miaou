@@ -113,6 +113,32 @@ const AGENT_STATUS_LABELS = {
 // l'autre — l'utilisateur se verrait attribuer un appel d'outil qu'il n'a pas
 // fait, ou le modèle lirait un statut à la deuxième personne qui parle de
 // quelqu'un d'autre.
+// Statut d'une ligne RACINE de l'inventaire — trois états, pas deux (lot AE,
+// étape 8). Table séparée d'`AGENT_STATUS_UI_LABELS` : celle-ci qualifie un
+// AGENT (ce que le modèle a lancé), celle-là une conversation racine (ce qui
+// l'occupe). Les fusionner ferait porter à `running` deux sens selon la
+// profondeur de la ligne.
+//
+// `compacting` existe parce qu'une compaction entre au registre des
+// générations : sans lui, sa ligne retombait sur le libellé générique
+// « génère », qui est faux — elle ne génère pas de réponse, elle réécrit
+// l'historique. C'est un texte lu par l'utilisateur au moment où il cherche à
+// comprendre ce qui travaille dans une conversation qu'il ne regarde pas.
+const ROOT_ACTIVITY_UI_LABELS = {
+  generating: 'génère',
+  compacting: 'compacte le contexte',
+  waiting:    'en attente de ses agents',
+};
+
+// PUR : résout le statut d'une ligne racine depuis les deux prédicats que
+// l'appelant sait évaluer. L'ordre des tests n'est pas indifférent — une
+// conversation qui compacte est AU REGISTRE, donc `working` y est vrai aussi ;
+// c'est le cas le plus spécifique, il passe en premier.
+function rootActivityLabel(working, compacting) {
+  if (compacting) return ROOT_ACTIVITY_UI_LABELS.compacting;
+  return working ? ROOT_ACTIVITY_UI_LABELS.generating : ROOT_ACTIVITY_UI_LABELS.waiting;
+}
+
 const AGENT_STATUS_UI_LABELS = {
   running:  'au travail',
   done:     'travail terminé',

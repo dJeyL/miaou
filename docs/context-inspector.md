@@ -320,7 +320,11 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
   classe `.ctx-counter-warn` entre `CONTEXT_WINDOW_WARN_RATIO` et 100 %,
   `.ctx-counter-over` à 100 % ou plus, `.ctx-counter-midturn` — bordure en
   tirets, cumulable avec les deux précédentes — tant que le total affiché est
-  un recalcul mi-échange). Ouvre le drawer au clic (`openContextInspector`).
+  un recalcul mi-échange). Porte aussi le **glyphe de compaction**
+  (`#ctx-counter-compact`, lot AE) au-delà de `CONTEXT_COMPACTION_HINT_RATIO` —
+  un signal de FORME, délibérément pas une couleur, celles-ci étant prises par
+  les deux seuils de saturation ci-dessus (cf. `docs/compaction.md`). Ouvre le
+  drawer au clic (`openContextInspector`).
 - **`syncContextCounter()`** (ui.js) : recalcule le libellé depuis
   `effectiveContextManifest()` (= `_lastContextManifest` sinon simulation).
   Câblé à `openConversation`, `resetToEmpty` (donc `newConversation`,
@@ -336,11 +340,16 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
   segment par entrée du manifeste, couleurs fixes `CTX_PALETTE` dans ui.js,
   échelle = fenêtre de contexte si connue sinon total courant), table
   label/chars/≈tokens/% (`.ctx-table`), chaque label portant son explication au
-  survol (cf. « Explication des parts » plus bas). Rendu par
+  survol (cf. « Explication des parts » plus bas), et — depuis le lot AE —
+  l'**affordance de compaction** en pied (`#ctx-compact`, toujours présente,
+  `.is-salient` au-delà du seuil ; cf. `docs/compaction.md`). Rendu par
   `renderContextInspector()`.
 - **Réglage fenêtre de contexte** : `#set-contextwindow` (catégorie « Modèle &
   raisonnement »), lu/écrit dans `init`/`onSaveSettings`, participe à
-  `settingsFormDirty`.
+  `settingsFormDirty`. N'est plus un pur dénominateur d'affichage depuis le lot
+  AE : il décide aussi du seuil à partir duquel la compaction est conseillée —
+  le hint du champ et deux passages de `src/help.md` disaient « seulement »
+  utile à l'inspecteur, corrigés au même lot.
 
 ## Explication des parts
 

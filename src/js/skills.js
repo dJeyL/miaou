@@ -45,9 +45,30 @@ const SYSTEM_SKILLS_CONTENT = (function () { try { return __MIAOU_SYSTEM_SKILLS_
 
 const SKILL_SLUG_MAX = 48;
 
+// ── Commandes MIAOU : la SECONDE famille derrière le `/` du composer ──────────
+// Le `/` était réservé aux skills jusqu'au lot AE. `/compact` y introduit une
+// autre famille : une commande n'est pas une skill (pas de contenu injecté, pas
+// de record IDB, pas de card dans le drawer), elle déclenche un geste de
+// l'application.
+//
+// Registre EN LISTE dès la première entrée, jamais un littéral 'compact'
+// comparé sur place (souvenir `hardcoded-until-2nd`) : AE-1 renvoie déjà le
+// seuil automatique à un lot ultérieur, une seconde commande finira par venir.
+// Cette liste est la source unique : réservation du slug, autocomplétion et
+// reconnaissance à l'envoi la lisent toutes les trois — aucun des trois ne
+// réécrit le prédicat localement.
+const MIAOU_COMMANDS = [
+  { slug: 'compact', label: 'Compacter le contexte' },
+];
+
+function commandSlugs() {
+  return MIAOU_COMMANDS.map(c => c.slug);
+}
+
 // Valide un slug de skill (clé d'invocation `/slug` ET clé d'objet IDB).
 // Contraintes : non vide, pas d'espace, pas de `/`, charset contraint, longueur
-// raisonnable, unicité. Retourne une chaîne d'erreur (français) ou null si valide.
+// raisonnable, slug non réservé à une commande MIAOU (AE-9), unicité.
+// Retourne une chaîne d'erreur (français) ou null si valide.
 function validateSkillSlug(slug, existingSlugs) {
   const s = String(slug == null ? '' : slug).trim();
   if (!s) return 'Slug requis.';
@@ -55,8 +76,45 @@ function validateSkillSlug(slug, existingSlugs) {
   if (/\s/.test(s)) return 'Le slug ne peut pas contenir d\'espace.';
   if (s.indexOf('/') >= 0) return 'Le slug ne peut pas contenir « / ».';
   if (!/^[a-zA-Z0-9_-]+$/.test(s)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
+  // AE-9 : le message dit POURQUOI, pas seulement qu'on refuse — sinon
+  // l'utilisateur cherche une skill homonyme qui n'existe pas.
+  if (commandSlugs().indexOf(s) >= 0) {
+    return 'Slug réservé : « /' + s + ' » est une commande de MIAOU, pas une skill.';
+  }
   if (Array.isArray(existingSlugs) && existingSlugs.indexOf(s) >= 0) return 'Ce slug est déjà utilisé.';
   return null;
+}
+
+// Reconnaissance d'une commande à l'envoi. Le prédicat est « le littéral trimé
+// vaut EXACTEMENT le slug de la commande », et c'est plus serré que le
+// `atStart` de findSlashTriggers : `/compact et au fait, …` n'est PAS une
+// commande (condition 3 du § 4.7 du brief AE). Rend le slug reconnu, ou null.
+// Pur — aucune lecture de cache, aucun effet.
+function matchMiaouCommand(literal) {
+  const s = String(literal == null ? '' : literal).trim();
+  if (!s || s[0] !== '/') return null;
+  const slug = s.slice(1);
+  return commandSlugs().indexOf(slug) >= 0 ? slug : null;
+}
+
+// Refus de FORME d'une commande : le slug est connu, mais le littéral portait
+// autre chose (`/compact et au fait, …`). Distinct de « skill inconnue », qui
+// serait faux et désorientant. Source unique — resolveSend le dérive à deux
+// endroits (avec et sans skill activée), et deux formulations divergeraient.
+function commandFormRefusal(slug) {
+  return '« /' + slug + ' » est une commande : elle s\'envoie seule, sans autre texte.';
+}
+
+// Filtre les commandes dont le slug (ou le libellé) matche la saisie après `/`.
+// Jumelle de `matchSkillCompletions`, délibérément DISTINCTE d'elle : y verser
+// les commandes les ferait apparaître partout où cette fonction-là est appelée,
+// alors que l'autocomplétion des commandes est réservée au composer (jamais en
+// édition de message passé). L'appelant concatène. Pur, synchrone.
+function matchCommandCompletions(query) {
+  const q = String(query == null ? '' : query).toLowerCase();
+  return MIAOU_COMMANDS.filter(c =>
+    c.slug.toLowerCase().indexOf(q) >= 0 ||
+    c.label.toLowerCase().indexOf(q) >= 0);
 }
 
 // Dérive un slug valide (charset validateSkillSlug) à partir d'un nom libre :

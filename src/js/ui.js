@@ -3278,6 +3278,38 @@ function refreshAckAuthorizationAffordance(node, entry) {
   _appendAckAuthorizeLink(node, target);
 }
 
+// Séparateur de compaction dans le fil (lot AE). Ni une bulle ni un ack : une
+// règle horizontale légendée, repliée par défaut sur le résumé.
+//
+// Ce que cette surface DIT, et qui n'est pas anodin : les messages d'avant sont
+// toujours là (AE-2 conserve tout en base, l'élagage est à l'émission). Ce qui
+// a changé est ce que le modèle reçoit. Un libellé qui laisserait croire à une
+// suppression ferait craindre une perte qui n'a pas lieu.
+//
+// Le résumé est d'origine MODÈLE : rendu par `renderMd` (sortie sanitisée),
+// jamais par interpolation de chaîne (piège 21).
+function buildCompactionMarker(m) {
+  const wrap = document.createElement('div');
+  wrap.className = 'compaction-mark';
+  const head = document.createElement('div');
+  head.className = 'compaction-mark-head';
+  head.innerHTML =
+    `<svg class="compaction-mark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>` +
+    `<span class="compaction-mark-label">Contexte compacté${formatCompactionReclaimSuffix(m.reclaimed)} — les messages précédents ne sont plus transmis au modèle</span>`;
+  wrap.appendChild(head);
+  const body = document.createElement('details');
+  body.className = 'compaction-mark-body';
+  const sum = document.createElement('summary');
+  sum.textContent = 'Voir le résumé';
+  body.appendChild(sum);
+  const content = document.createElement('div');
+  content.className = 'compaction-mark-summary body';
+  content.innerHTML = renderMd(m.content || '');
+  body.appendChild(content);
+  wrap.appendChild(body);
+  return wrap;
+}
+
 function buildToolAck(m) {
   const kind = ackKindOf(m);
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
@@ -3809,6 +3841,16 @@ function renderThread(msgs) {
   let pendingAcks = [];
   for (const m of msgs) {
     if (isAckRole(m.role)) { pendingAcks.push(m); continue; }
+    // Frontière de compaction (lot AE) : ni bulle ni message — un séparateur.
+    // Les acks en attente sont vidés AVANT, sinon ils seraient replacés dans la
+    // première bulle assistant d'APRÈS la frontière, à laquelle ils
+    // n'appartiennent pas.
+    if (isCompactionEntry(m)) {
+      for (const a of pendingAcks) thread.appendChild(buildToolAck(a));
+      pendingAcks = [];
+      thread.appendChild(buildCompactionMarker(m));
+      continue;
+    }
     // Bulle user : afficher le littéral tapé (displayText) si présent — slash-
     // commande skill, où content embarque le corps de la skill injectée (invisible à l'UI).
     const shown = (m.role === 'user' && m.displayText != null) ? m.displayText : m.content;
@@ -4239,15 +4281,49 @@ function clearEditError(wrap) {
 
 // ── Indicateur d'activité en arrière-plan ───────────────────────────────────
 // Point d'entrée unique avec compteur, pour gérer les chevauchements.
+//
+// L'indicateur est GLOBAL et anonyme : il dit « une tâche de fond tourne »,
+// jamais laquelle ni dans quelle conversation. C'est ce qui convient à ses
+// usages historiques (résumé, titrage, description de fichier), qui n'ont
+// aucune autre surface.
+//
+// La compaction fait exception (lot AE, étape 8) : elle a une SECONDE surface,
+// la pilule d'activité de la topbar, qui dit la même chose en mieux dès qu'on
+// a quitté la conversation — elle la NOMME et permet d'y revenir d'un clic.
+// Les deux allumées en même temps font doublon (signalé par Julien,
+// 2026-09-22). D'où `_bgSuppressed` : un drapeau qui éteint l'indicateur sans
+// toucher au compteur, de sorte que les tâches CONCURRENTES (un titrage qui
+// tournerait pendant la compaction) continuent d'être comptées et que la levée
+// du drapeau les retrouve.
 let _bgCount = 0;
+let _bgSuppressed = false;
 function bgActivityStart(label) {
   _bgCount++;
   $('bg-label').textContent = label;
-  $('bg-activity').classList.add('active');
+  syncBgActivity();
 }
 function bgActivityEnd() {
   _bgCount = Math.max(0, _bgCount - 1);
-  if (_bgCount === 0) $('bg-activity').classList.remove('active');
+  syncBgActivity();
+}
+
+// Écrivain UNIQUE de la classe `.active` — les trois points qui la
+// changeaient (start, end, et la suppression) passent par ici, sinon le
+// dernier à parler gagnerait (souvenir `concurrent-writers`).
+function syncBgActivity() {
+  const el = $('bg-activity');
+  if (!el) return;
+  el.classList.toggle('active', _bgCount > 0 && !_bgSuppressed);
+}
+
+// Masque l'indicateur alors qu'une tâche tourne toujours : la tâche a une
+// autre surface, mieux placée, et deux annonces du même fait se lisent comme
+// deux faits. Réversible à tout moment — c'est ce qui permet de suivre la
+// navigation, la pilule ne prenant le relais qu'une fois la conversation
+// quittée.
+function setBgActivitySuppressed(on) {
+  _bgSuppressed = !!on;
+  syncBgActivity();
 }
 function bgActivityLabel(label) {
   $('bg-label').textContent = label;
@@ -6266,9 +6342,13 @@ function agentInventoryRows(inventory) {
     rows.push({
       conv: g.conv, depth: 0, working: g.working,
       label: lbl.text || 'Sans titre', provisional: lbl.provisional,
-      // Un parent inerte qui attend ses agents ne « travaille » pas lui-même :
-      // le dire évite de lui prêter une génération qu'il n'a pas.
-      status: g.working ? 'génère' : 'en attente de ses agents',
+      // Trois états, pas deux (lot AE, étape 8) : un parent inerte qui attend
+      // ses agents ne « travaille » pas lui-même, et une conversation qui
+      // COMPACTE ne génère pas — elle réécrit son historique. Le libellé vient
+      // du pur `rootActivityLabel` (agents.js) et de sa table, jamais d'une
+      // chaîne écrite ici : le statut d'agent, juste en dessous, a déjà payé
+      // cette règle.
+      status: rootActivityLabel(g.working, isCompacting(g.conv.id)),
     });
     g.agents.forEach(a => {
       const al = convLabel(a);
@@ -7740,6 +7820,195 @@ function syncContextCounter() {
   // réouverture manuelle.
   const drawer = $('ctx-drawer');
   if (drawer && drawer.classList.contains('show')) renderContextInspector();
+
+  // Glyphe de compaction sur la pilule : même point de synchro que le reste du
+  // compteur, donc même cadence (points send-relevant, jamais de polling).
+  syncCompactionHintGlyph(m, win);
+}
+
+// ── Affordance de compaction (lot AE, étape 3) ──────────────────────────────
+// Le seuil de 50 % se signale sur la pilule par la FORME (un glyphe), jamais
+// par la couleur : `ctx-counter-warn` (80 %) et `ctx-counter-over` (100 %)
+// occupent déjà le registre chromatique, et les trois seuils ne disent pas la
+// même chose. La couleur dit « limite technique », la forme dit « hygiène
+// conseillée » — deux grammaires pour deux questions, cf. docs/compaction.md.
+//
+// Le glyphe est PUREMENT INDICATIF : le geste reste disponible en dessous du
+// seuil (décision Julien), il n'est simplement pas mis en avant.
+function syncCompactionHintGlyph(manifest, win) {
+  const el = $('ctx-counter-compact');
+  if (!el) return;
+  // Sans fenêtre connue, aucun ratio calculable : pas de glyphe plutôt qu'un
+  // signal arbitraire (même posture que le `%` du libellé, absent lui aussi).
+  const ratio = win ? (manifest.totalTokens / win) : 0;
+  const show = !!win && ratio >= CONTEXT_COMPACTION_HINT_RATIO;
+  // `el.hidden = false` NE SUFFIT PAS ici : la cible est un <svg>, et `hidden`
+  // est une propriété de HTMLElement, absente de SVGElement. L'affectation crée
+  // donc une propriété JS sur l'objet SANS retirer l'attribut HTML, que
+  // `[hidden] { display: none !important }` (base.css) continue d'honorer —
+  // le glyphe reste invisible quel que soit le ratio, pendant que tout code qui
+  // lit `el.hidden` répond « visible ». Écrire l'ATTRIBUT, pas la propriété.
+  // (Mesuré : sur un <div> l'affectation retire bien l'attribut, sur un <svg>
+  // elle le laisse — d'où un défaut qui ne se voit sur aucune autre surface.)
+  if (show) el.removeAttribute('hidden');
+  else el.setAttribute('hidden', '');
+}
+
+// Synchro de l'affordance elle-même, dans le drawer. Appelée par
+// `renderContextInspector` : le bouton vit dans le drawer, il n'a donc à être
+// à jour qu'au moment où on le regarde.
+//
+// Le bouton n'est JAMAIS désactivé sur les bornes AE-7 : `compactCurrentConversation`
+// porte les gardes au point de mutation, et un bouton grisé sans explication
+// ferait chercher une panne là où il y a une attente. Il reste cliquable et le
+// refus NOMME sa borne (même posture que les refus de spawn d'agent).
+//
+// L'ABSENCE DE MATIÈRE est le seul cas qui déroge, et pour la raison inverse :
+// une borne AE-7 est une attente (ça va se lever tout seul, cliquer a du sens
+// pour apprendre pourquoi), alors qu'une conversation trop courte ne changera
+// pas tant que l'utilisateur n'aura pas parlé. Cliquer n'y apprend rien que le
+// hint ne dise déjà, donc le grisé décrit l'état au lieu de cacher une panne.
+// Le prédicat reste `hasCompactableSubstance`, jamais un second écrit ici.
+// Bilan du dernier geste d'allègement, par affordance (`compact` / `evacuate`).
+// VOLATIL et hors de tout objet persisté (souvenir `no-view-state-persisted`) :
+// c'est un état de VUE, le résultat d'un clic, pas une propriété de la
+// conversation.
+//
+// Il existe parce que le bilan est rendu APRÈS coup et que le geste re-rend le
+// drawer dans la foulée : sans lui, `syncCompactionAffordance` reposerait le
+// hint nominal et effacerait le chiffre dans le même tour. Réinitialisé à
+// l'ouverture du drawer et au changement de conversation — un bilan est le
+// compte rendu d'un geste qu'on vient de faire, pas un état de la conversation.
+let _reclaimReports = {};
+function setReclaimReport(key, text) { _reclaimReports[key] = text || ''; }
+function clearReclaimReports() { _reclaimReports = {}; }
+
+function syncCompactionAffordance() {
+  const hint = $('ctx-compact-hint');
+  const wrap = $('ctx-compact');
+  const btn = $('ctx-compact-btn');
+  if (!wrap || !hint) return;
+  const m = effectiveContextManifest();
+  const win = contextWindowFor(activeModel());
+  const ratio = win ? (m.totalTokens / win) : 0;
+  const salient = !!win && ratio >= CONTEXT_COMPACTION_HINT_RATIO;
+  wrap.classList.toggle('is-salient', salient);
+
+  // Le hint explique ce que le geste FAIT, et dit que rien n'est perdu — la
+  // crainte spontanée devant « compacter » est la suppression (cf. le libellé
+  // du séparateur, même précaution).
+  const substance = hasCompactableSubstance(currentThread);
+  // Écrivain unique du grisé « pas de matière » (souvenir `concurrent-writers`).
+  // `onCompactContext` pose lui aussi `disabled` — mais comme garde de
+  // RÉENTRANCE pendant la rédaction, et son `finally` rend la main à cette
+  // synchro en re-rendant le drawer : après une compaction réussie il n'y a
+  // plus de matière, et c'est ici que le bouton se regrise.
+  if (btn) btn.disabled = !substance;
+  // Le bilan d'un geste qu'on vient de faire PRIME sur le hint nominal : il
+  // répond à « qu'est-ce que ça a donné ? », question plus pressante que « à
+  // quoi ça sert ? » une fois le bouton cliqué. Il cède la place au prochain
+  // rendu qui n'en porte pas (changement de conversation, réouverture).
+  if (_reclaimReports.compact) {
+    hint.textContent = _reclaimReports.compact;
+  } else if (!substance) {
+    hint.textContent = 'Pas encore assez d\'historique pour que ce soit utile.';
+  } else if (salient) {
+    hint.textContent = 'Le contexte est assez chargé pour que le modèle commence ' +
+      'à perdre le fil. Compacter remplace le début de la conversation par un ' +
+      'résumé : les messages restent affichés ici, seul ce qui part au modèle change.';
+  } else {
+    hint.textContent = 'Remplace le début de la conversation par un résumé. ' +
+      'Les messages restent affichés ici, seul ce qui part au modèle change.';
+  }
+}
+
+// Corps COMMUN aux deux affordances d'allègement. Le refus comme le bilan sont
+// rendus par le geste et affichés SOUS le bouton, dans le hint : même canal que
+// le reste de l'affordance, et l'utilisateur lit la réponse là où il vient de
+// cliquer.
+//
+// Factorisé plutôt que dupliqué : les deux gestes ont exactement la même
+// mécanique d'appel (réentrance, libellé d'attente, refus, bilan, re-rendu) et
+// ne diffèrent que par leurs ids, leur phrase d'attente et la fonction
+// appelée. Deux copies divergeraient au premier ajustement de l'une.
+async function runReclaimGesture(btnId, hintId, wrapId, pendingLabel, run) {
+  const btn = $(btnId);
+  const hint = $(hintId);
+  const wrap = $(wrapId);
+  // Garde de RÉENTRANCE, distincte du grisé d'absence de matière que pose
+  // `syncCompactionAffordance` : un double-clic lancerait deux gestes
+  // concurrents sur le même thread.
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  if (wrap) wrap.classList.remove('is-refused');
+  if (hint) hint.textContent = pendingLabel;
+  let out = null;
+  try {
+    out = await run();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+  if (out && out.refusal) {
+    if (wrap) wrap.classList.add('is-refused');
+    if (hint) hint.textContent = out.refusal;
+    return;
+  }
+  // Le bilan n'est PAS posé ici : le geste lui-même l'a déjà fait, avant son
+  // `syncContextCounter`. Un second poseur à cet endroit arriverait APRÈS ce
+  // re-rendu et n'aurait aucun effet pour l'évacuation, tout en doublant celui
+  // de la compaction — deux écrivains d'un même état, dont un mort (souvenir
+  // `concurrent-writers`). Le re-rendu ci-dessous reste utile : il couvre le
+  // cas du refus, où rien n'a été synchronisé.
+  renderContextInspector();
+}
+
+async function onCompactContext() {
+  await runReclaimGesture('ctx-compact-btn', 'ctx-compact-hint',
+    'ctx-compact', 'Rédaction du résumé…', compactCurrentConversation);
+}
+
+async function onEvacuateToolResults() {
+  await runReclaimGesture('ctx-evacuate-btn', 'ctx-evacuate-hint',
+    'ctx-evacuate', 'Évacuation…', evacuateToolResults);
+}
+
+// Synchro de l'affordance d'évacuation. Écrivain UNIQUE de son grisé, même
+// posture que sa voisine.
+//
+// Contrairement à la compaction, ce geste n'est jamais « saillant » : il ne
+// répond pas à un seuil de remplissage mais à la présence de matière. Il se
+// GRISE quand il n'y a rien à évacuer — état stable, que cliquer n'apprendrait
+// pas mieux que le hint (les bornes AE-7, elles, restent cliquables : ce sont
+// des attentes qui se lèvent seules).
+function syncEvacuateAffordance() {
+  const hint = $('ctx-evacuate-hint');
+  const wrap = $('ctx-evacuate');
+  const btn = $('ctx-evacuate-btn');
+  if (!wrap || !hint) return;
+  const found = evacuableToolResults(currentThread, TOOL_RESULT_EVACUATION_MIN_CHARS,
+                                     isInlineHandleResult);
+  if (btn) btn.disabled = !found.count;
+  if (_reclaimReports.evacuate) {
+    hint.textContent = _reclaimReports.evacuate;
+  } else if (!found.count) {
+    hint.textContent = 'Aucun résultat d\'outil assez volumineux à évacuer.';
+  } else {
+    // Le COMPTE se dit, le gain NON : il n'est honnêtement calculable qu'une
+    // fois les descripteurs écrits (ils coûtent, et l'écart se verrait sur la
+    // pilule juste après). Annoncer « ~N tok » ici puis en afficher moins
+    // ferait mentir l'affordance — le bilan d'après-coup répond, lui, sur du
+    // mesuré.
+    hint.textContent = found.count + (found.count > 1
+      ? ' résultats d\'outils volumineux peuvent être remplacés par un lien.'
+      : ' résultat d\'outil volumineux peut être remplacé par un lien.') +
+      // Formulé SANS deux-points, et ce n'est pas un détail de style : le hint
+      // se replie sur deux lignes à la largeur du drawer, et la coupure tombait
+      // juste avant le « : », qui se retrouvait orphelin en tête de ligne. Le
+      // dépôt n'emploie aucune espace insécable (vérifié : zéro U+00A0 dans
+      // ui.js), donc la corriger ici en introduirait une invisible à la
+      // relecture et fragile au copier-coller. Reformuler coûte moins.
+      ' Rien n\'est perdu, le modèle peut les rouvrir à la demande.';
+  }
 }
 
 // ── Inspecteur d'appel d'outil (lot Z) ───────────────────────────────────────
@@ -8223,6 +8492,9 @@ function renderToolInspector(m) {
 }
 
 function openContextInspector() {
+  // Les bilans sont le compte rendu d'un clic, pas un état de la conversation :
+  // rouvrir le drawer repart des hints nominaux.
+  clearReclaimReports();
   renderContextInspector();
   $('ctx-drawer').classList.add('show');
   $('ctx-backdrop').classList.add('show');
@@ -8342,6 +8614,11 @@ function renderContextInspector() {
     }
     body.innerHTML = rows.join('');
   }
+
+  // Affordances d'allègement : rafraîchies avec le reste du drawer, dans
+  // l'ordre où elles apparaissent (coût croissant).
+  syncEvacuateAffordance();
+  syncCompactionAffordance();
 }
 
 function switchMemoryTab(tab) {
@@ -9854,11 +10131,25 @@ function closeSkills() {
   $('skills-backdrop').classList.remove('show');
 }
 
-// Légende « / pour une skill » du composer : visible seulement s'il existe au
-// moins une skill activée (sinon le slash n'a aucun sens pour l'utilisateur).
+// Légende du `/` au composer. Jusqu'au lot AE elle disait « / pour une skill »
+// et disparaissait sans skill activée — le slash n'avait alors aucun sens. Les
+// commandes MIAOU (`MIAOU_COMMANDS`, skills.js) existent indépendamment des
+// skills : la légende est désormais INCONDITIONNELLE, et c'est son TEXTE qui
+// suit l'état. Un `/` annoncé « pour une skill » sur une install sans skill
+// serait faux dans les deux sens : il marche, et pas pour ça.
+//
+// Texte éphémère lu seul (souvenir `ephemeral-text-read-alone`) : chaque
+// variante se suffit, aucune ne s'appuie sur ce que l'autre aurait dit avant.
 function syncSkillHintUI() {
   const el = $('composer-hint-skill');
-  if (el) el.hidden = !listEnabledSkills().length;
+  if (!el) return;
+  el.hidden = false;
+  const label = el.querySelector('.composer-hint-slash-label');
+  if (label) {
+    label.textContent = listEnabledSkills().length
+      ? 'pour une skill ou une commande'
+      : 'pour une commande';
+  }
 }
 
 // Légende de la palette : le raccourci écoute metaKey||ctrlKey partout (cf.
@@ -10031,6 +10322,21 @@ function buildSkillCard(skill, isNew) {
   viewSlug.className = 'skill-view-slug';
   viewSlug.textContent = '/' + (skill.slug || '');
   viewMain.append(viewName, viewSlug);
+  // Skill dont le slug est devenu une commande MIAOU (lot AE, AE-9).
+  // `validateSkillSlug` interdit les créations FUTURES, mais une skill déjà en
+  // base ne repasse jamais par la validation : elle continue d'exister et
+  // cesse simplement de répondre au slash, la commande primant. Le dire ici
+  // plutôt que de laisser constater — et le dire DANS LE DRAWER, seul endroit
+  // où l'utilisateur peut agir (renommer). Au composer ce serait au pire
+  // moment : il veut compacter, pas arbitrer un conflit de nom.
+  if (skill.slug && commandSlugs().indexOf(skill.slug) >= 0) {
+    const warn = document.createElement('div');
+    warn.className = 'skill-view-shadowed';
+    warn.textContent = 'Ce slug est désormais une commande de MIAOU : /' +
+      skill.slug + ' déclenche la commande, pas cette skill. Renomme-la pour la ' +
+      'rendre à nouveau invocable.';
+    viewMain.appendChild(warn);
+  }
   viewSection.appendChild(viewMain);
 
   const viewRow = document.createElement('div');
@@ -10149,7 +10455,18 @@ function enterSkillEdit(card, slug) {
 // index }` (cf. _composerAc / état créé dans enterEditMode). `index` mémorise la
 // sélection clavier ET le trigger actif courant (start/end/slug) pour l'insertion.
 
-const _composerAc = { ta: null, box: null, index: -1, trigger: null };
+// `commands: true` n'est posé QUE sur l'état du composer (lot AE). C'est le
+// discriminant des deux contextes : l'état de la bulle d'édition (enterEditMode)
+// a exactement la même forme, et rien à l'intérieur de updateSkillAutocomplete
+// ne permettrait sinon de les distinguer. Nommé d'après la CAPACITÉ (« cet état
+// propose les commandes ») et non d'après le contexte (`isComposer`), qui
+// inviterait à y brancher d'autres différences sans rapport.
+//
+// Les commandes MIAOU sont absentes de l'édition d'un message passé (condition 2
+// du § 4.7) : éditer un message passé EST une réécriture d'historique, déjà sous
+// la garde AE-7 — y proposer une commande qui en déclenche une autre n'aurait
+// pas de sens.
+const _composerAc = { ta: null, box: null, index: -1, trigger: null, commands: true };
 
 function onComposerInput() {
   clearComposerError();
@@ -10173,7 +10490,27 @@ function updateSkillAutocomplete(state) {
   const trig = triggers.find(t => caret >= t.start && caret <= t.end) || null;
   if (!trig) { hideSkillAutocomplete(state); return; }
   if (!trig.atStart && trig.slug === '') { hideSkillAutocomplete(state); return; }
-  const matches = matchSkillCompletions(trig.slug);
+  // COMMANDES EN TÊTE, skills ensuite. L'ordre inverse avait été posé d'abord
+  // (« les skills sont le cas courant, une commande n'a pas à pousser une skill
+  // hors de vue ») et la première capture l'a réfuté : les commandes sont peu
+  // nombreuses et BORNÉES (registre build-time), les skills une liste OUVERTE,
+  // donc mettre les secondes devant pousse systématiquement les premières sous
+  // le pli dès qu'il y a plus de quelques skills — `/compact` était invisible
+  // sans défiler. La règle générale : ce qui est borné passe devant ce qui ne
+  // l'est pas, sinon le borné devient inatteignable à mesure que l'autre grossit.
+  //
+  // Les commandes ne sont proposées qu'en position 0 — `/compact` n'est reconnu
+  // à l'envoi que seul dans le champ (condition 3), donc le proposer au milieu
+  // d'un texte suggérerait une capacité qui n'existe pas (défaut « capacité
+  // inatteignable » du souvenir `model-facing-text`, qui vaut aussi pour un
+  // humain).
+  const commands = (state.commands === true && trig.atStart)
+    ? matchCommandCompletions(trig.slug).map(c => ({ slug: c.slug, label: c.label, command: true }))
+    : [];
+  const skills = matchSkillCompletions(trig.slug).map(s => ({
+    slug: s.slug, label: s.name, command: false,
+  }));
+  const matches = commands.concat(skills);
   if (!matches.length) { hideSkillAutocomplete(state); return; }
   state.trigger = trig;
   renderSkillAutocomplete(state, matches);
@@ -10184,30 +10521,70 @@ function renderSkillAutocomplete(state, matches) {
   if (!box) return;
   box.innerHTML = '';
   state.index = -1;
+  // Entrées normalisées `{ slug, label, command }` par l'appelant : skills et
+  // commandes MIAOU partagent la liste mais pas l'apparence — `.is-command`
+  // porte la distinction visuelle (lot AE). Une commande affichée comme une
+  // skill ferait chercher une skill « compact » éditable dans le drawer.
   matches.forEach((s, i) => {
     const opt = document.createElement('div');
-    opt.className = 'skill-ac-opt';
+    opt.className = 'skill-ac-opt' + (s.command ? ' is-command' : '');
     opt.dataset.slug = s.slug;
     const slugEl = document.createElement('span');
     slugEl.className = 'skill-ac-slug';
     slugEl.textContent = '/' + s.slug;
     opt.appendChild(slugEl);
-    if (s.name) {
+    if (s.label) {
       const nameEl = document.createElement('span');
       nameEl.className = 'skill-ac-name';
-      nameEl.textContent = s.name;
+      nameEl.textContent = s.label;
       opt.appendChild(nameEl);
+    }
+    if (s.command) {
+      const tag = document.createElement('span');
+      tag.className = 'skill-ac-tag';
+      tag.textContent = 'commande';
+      opt.appendChild(tag);
     }
     opt.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSkillCompletion(state, s.slug); });
     box.appendChild(opt);
   });
   box.removeAttribute('hidden');
+  fitSkillAutocompleteHeight(box);
+}
+
+// Borne la hauteur du panneau à la place RÉELLEMENT libre au-dessus de lui,
+// plutôt qu'aux 220px fixes du CSS (lot AE étape 5).
+//
+// Mesuré avant correction : 11 options = ~395px de contenu comprimés dans
+// 220px, alors que 445px étaient libres au-dessus du composer. La moitié de la
+// place disponible était inutilisée et les dernières options passaient sous le
+// pli — dont `/compact`, ce qui a ouvert le sujet.
+//
+// Pourquoi en JS et pas en CSS : le panneau du composer est en `position:
+// absolute` ancré à `.input-wrap`, dont la hauteur varie (pièces jointes, rail
+// d'interjections, saisie multiligne). Aucune fonction CSS ne donne la place
+// libre au-dessus d'une ancre absolue — `vh` mesure le viewport, pas l'ancre.
+//
+// Appelée APRÈS `removeAttribute('hidden')` : un panneau caché n'a pas de
+// géométrie, sa mesure rendrait 0. Recalculée à chaque peinture, donc jamais
+// périmée — c'est ce qui la distingue d'une constante relevée.
+function fitSkillAutocompleteHeight(box) {
+  // L'instance de la bulle d'édition n'est pas ancrée pareil (flux normal,
+  // sous la textarea) : la mesure ne lui convient pas, elle garde le plafond
+  // du CSS.
+  if (!box || box.id !== 'skill-ac') return;
+  box.style.maxHeight = '';
+  const top = box.getBoundingClientRect().top;
+  // Marge de respiration en haut de fenêtre, et plancher pour que le panneau
+  // reste utilisable même dans une fenêtre très basse (il défilera alors).
+  const avail = Math.max(120, Math.round(top - 12));
+  box.style.maxHeight = avail + 'px';
 }
 
 function hideSkillAutocomplete(state) {
   const s = state || _composerAc;
   const box = s.box;
-  if (box) { box.setAttribute('hidden', ''); box.innerHTML = ''; }
+  if (box) { box.setAttribute('hidden', ''); box.innerHTML = ''; box.style.maxHeight = ''; }
   s.index = -1;
   s.trigger = null;
 }

@@ -37,6 +37,45 @@ const NOTHINK_PARAMS = { reasoning_effort: 'none' };
 // Cache session : endpoints ayant rejeté NOTHINK_PARAMS (clé = URL endpoint).
 const _noThinkRejected = {};
 
+// Cet échec porte-t-il un VERDICT DU SERVEUR sur ce qu'on lui a envoyé, ou
+// n'accuse-t-il que le réseau ? Pure, QuickJS-testable.
+//
+// Prédicat UNIQUE des deux dégradations de ce chemin — le no-think
+// (`_noThinkRejected`, cascade ci-dessous) et la vision (`claimVisionRetry`,
+// en bas de `silentCompletion`). Les deux posent un flag de SESSION sur une
+// hypothèse tirée d'un échec ; ni l'une ni l'autre n'a le droit de la tirer
+// d'un échec qui n'a jamais atteint le serveur.
+//
+// La cascade NOTHINK marquait l'endpoint sur un `catch` NU : n'importe quel
+// échec — timeout, panne réseau, 500 transitoire — le rangeait parmi ceux qui
+// rejettent `reasoning_effort`, et tous les appels silencieux de la session
+// repartaient ensuite SANS le paramètre. Sur un backend lent (Ollama), le
+// premier timeout suffisait donc à rallumer le raisonnement pour la session
+// entière : temps de réponse allongés, donc d'autres timeouts, et un modèle qui
+// part en prose au lieu de rendre son JSON. Défaut observé en usage réel le
+// 2026-09-22, invisible au reload (l'état est en mémoire de session).
+//
+// La règle est celle qu'applique déjà le chemin de génération
+// (`streamCompletion`, qui ne marque que sur `!res.ok`) : seul un REFUS du
+// serveur accuse le paramètre. Un abort n'a jamais atteint le serveur, il
+// n'apprend donc rien sur ce qu'il accepte — c'est la distinction que le
+// chemin silencieux avait perdue.
+//
+// Conservateur par défaut : un échec de forme inconnue est traité comme un
+// rejet, exactement comme avant. On ne retire que les cas dont on est SÛR
+// qu'ils ne disent rien du paramètre, jamais l'inverse — se tromper ici
+// coûterait une boucle d'échecs sur un endpoint qui refuse vraiment.
+function serverVerdictOnFailure(err) {
+  if (!err) return true;
+  // AbortError : timeout du garde-fou local, ou coupure. Le serveur n'a rien
+  // dit. C'est le cas qui a payé.
+  if (err.name === 'AbortError') return false;
+  // TypeError : `fetch` qui échoue avant toute réponse (DNS, connexion
+  // refusée, CORS). Même raison — aucun verdict serveur.
+  if (err.name === 'TypeError') return false;
+  return true;
+}
+
 // Extrait un détail lisible du corps d'une réponse HTTP en échec, pour l'afficher
 // à l'utilisateur (chemin onError → .msg-error). Défensif : les backends OpenAI-
 // compatibles ne s'accordent pas sur la forme. On gère, par ordre de préférence :
@@ -250,6 +289,67 @@ Markdown, sans commentaire :
 keywords : 5 à 12 termes saillants (sujets techniques, noms propres,
 technologies, concepts), en minuscules, sans doublons.`;
 
+// Prompt de COMPACTION (lot AE, étape 3) — distinct de SUMMARY_PROMPT, et pour
+// une raison de fond, pas de format : celui-ci résume pour RETROUVER une
+// conversation plus tard (index de recherche, 5-10 lignes, mots-clés) ; ici on
+// résume pour CONTINUER à travailler dans un fil dont le début ne sera plus
+// transmis. Ce qu'un index peut perdre sans dommage — une décision intermédiaire,
+// un handle de ressource, une piste déjà écartée — est exactement ce dont la
+// suite a besoin.
+//
+// STRUCTURÉ PAR CONTRAT, jamais « résume cette conversation » : un résumé libre
+// rend de la prose narrative qui perd ce dont on a besoin pour reprendre (§ 2 du
+// brief, leçon transposée de Claude Code). La checklist ci-dessous est celle
+// d'un agent de code adaptée au domaine de MIAOU — client de chat généraliste,
+// donc pas de « fichiers touchés » ni d'« état du plan ».
+//
+// Texte ADRESSÉ AU MODÈLE, soumis aux défauts connus (souvenir
+// `model-facing-text`) :
+//   - destinataire explicite (« la conversation continue APRÈS ton résumé, et
+//     c'est toi qui la reprendras ») — sans quoi le modèle rédige pour un
+//     lecteur humain absent et se met à raconter au passé ;
+//   - aucune condition qu'il ne peut pas évaluer : on ne lui demande pas ce qui
+//     « sera utile plus tard » (il ne connaît pas la suite) mais ce qui est
+//     ÉTABLI, ce qui est EN SUSPENS, et ce qui a ÉCHOUÉ ;
+//   - pas d'exclusivité implicite : les rubriques vides sont explicitement
+//     autorisées à être omises, sinon le modèle invente de la matière pour
+//     remplir un plan qu'il croit obligatoire ;
+//   - « désigne, ne recopie pas » pour les ressources : la réinjection relit
+//     les sources vives, le résumé porte les décisions. Recopier le contenu
+//     d'un `res_…` dans le résumé annulerait le gain du geste.
+//
+// Sortie JSON comme SUMMARY_PROMPT : même parsing défensif (piège 7), même
+// dégradation silencieuse vers null.
+const COMPACTION_PROMPT =
+`Tu es en train de compacter le contexte de la conversation que tu viens de
+lire. Les messages du début ne te seront plus transmis : ton résumé les
+remplacera, et c'est toi qui reprendras le travail à partir de lui. Écris-le
+donc pour toi-même, comme des notes de reprise — pas comme un compte rendu
+destiné à un tiers.
+
+Couvre ce qui suit, dans cet ordre, en omettant simplement une rubrique qui
+n'a pas d'objet dans cette conversation :
+
+1. Ce que l'utilisateur cherche à faire, et comment son intention a évolué —
+   la demande la plus récente prime sur celle du début.
+2. Les décisions prises et les faits établis, avec ce qui les motive. Une
+   décision sans son motif se redéfait au premier doute.
+3. Les ressources, fichiers et pièces jointes en jeu, DÉSIGNÉS PAR LEUR
+   HANDLE (att-N, file-N, res_…) et par ce qu'ils contiennent. Ne recopie
+   jamais leur contenu : tu pourras les relire, ils restent accessibles.
+4. Ce qui a été tenté sans succès, et pourquoi — pour ne pas le refaire.
+5. Ce qui reste en suspens, et la prochaine étape concrète.
+
+Sois factuel et dense. Préfère les termes exacts déjà employés (noms de
+fichiers, d'outils, d'erreurs, de concepts) aux reformulations générales :
+c'est à ces termes que tu te raccrocheras ensuite.
+
+Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, sans balises
+Markdown, sans commentaire :
+{
+  "summary": "le résumé structuré, en Markdown"
+}`;
+
 // Prompt dédié à la description de fichier de bibliothèque (lot Cbis) —
 // DISTINCT de SUMMARY_PROMPT (qui vise une conversation, format JSON
 // summary+keywords) : ici une sortie texte libre, cap strict, aucune donnée
@@ -343,12 +443,21 @@ async function silentCompletion(messages, opts) {
     if (!_noThinkRejected[url]) {
       try {
         return await _attempt(NOTHINK_PARAMS);
-      } catch (_) {
-        // Assumé : ce catch marque l'endpoint rejetant même sur un timeout/panne
-        // réseau transitoire (pas seulement un vrai rejet du param), perdant le
-        // no-think pour la session par excès de prudence. Dégradation douce
-        // (retry direct juste après, se réactive sur les appels suivants) —
-        // pas affiné tant qu'aucun cas réel n'a montré le besoin.
+      } catch (e) {
+        // Ne marquer QUE sur un échec concluant (serverVerdictOnFailure,
+        // plus haut) : un timeout ou une panne réseau n'apprend rien sur ce que
+        // l'endpoint accepte, et le marquer rallumait le raisonnement pour toute
+        // la session — le cas réel que le commentaire précédent attendait pour
+        // affiner est arrivé (Ollama lent, 2026-09-22).
+        //
+        // Et sur un échec NON concluant, on ne rejoue pas non plus : le rejeu
+        // sans paramètre n'a de sens que contre un endpoint qui REFUSE le
+        // paramètre. Après un timeout il est nuisible deux fois — il redouble
+        // l'attente (un second `_attempt` repart sur un timeout PLEIN, soit
+        // jusqu'à 180 s pour une compaction avant de renoncer) et il retire
+        // justement le no-think, donc il rallonge la réponse qu'on attend sur
+        // un backend déjà trop lent. On propage l'échec tel quel.
+        if (!serverVerdictOnFailure(e)) throw e;
         _noThinkRejected[url] = true;
       }
     }
@@ -360,7 +469,15 @@ async function silentCompletion(messages, opts) {
   } catch (e) {
     // UN seul rejeu dégradé — le flag posé par claimVisionRetry fait prendre la
     // branche proactive à l'appel récursif, qui ne peut donc pas reboucler.
-    if (claimVisionRetry(payload, url, model)) return silentCompletion(messages, opts);
+    //
+    // Même garde que dans la cascade, et pour la MÊME raison : un timeout ou
+    // une panne réseau n'accuse pas plus les images qu'il n'accusait le
+    // no-think. Sans elle, une compaction lente sur un payload porteur
+    // d'images marquerait le (endpoint, modèle) non-vision à tort — pour la
+    // session et pour TOUS les chemins, générations comprises, ce que le
+    // commentaire de la cascade dit précisément vouloir éviter.
+    if (serverVerdictOnFailure(e) &&
+        claimVisionRetry(payload, url, model)) return silentCompletion(messages, opts);
     throw e;
   }
 }
@@ -1050,10 +1167,9 @@ function normalizeTitle(raw) {
 // doit pas suivre l'écran), regenerateTitle passe `activeModel()` (action
 // d'écran, donc l'écran est le bon référentiel).
 async function generateTitle(thread, model) {
-  const convo = thread
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => m.role + ': ' + messageTextForSummary(m))
-    .join('\n\n');
+  // projectThreadForRecap : honore la frontière de compaction (le résumé
+  // remplace les messages qu'il couvre) au lieu de reprojeter le thread brut.
+  const convo = projectThreadForRecap(thread);
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
@@ -1077,10 +1193,10 @@ async function generateEarlyTitle(userText, model) {
 
 // ── Génération d'un résumé ──────────────────────────────────────────────────
 async function generateSummary(thread) {
-  const convo = thread
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => m.role + ': ' + messageTextForSummary(m))
-    .join('\n\n');
+  // projectThreadForRecap : même projection que le titrage, et pour la même
+  // raison — après une compaction, le thread brut renvoyait au modèle tout ce
+  // que l'utilisateur venait de faire évacuer.
+  const convo = projectThreadForRecap(thread);
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: convo },
@@ -1095,6 +1211,40 @@ async function generateSummary(thread) {
     ? parsed.keywords.map(k => String(k).toLowerCase()).filter(Boolean)
     : [];
   return { summary: parsed.summary, keywords };
+}
+
+// ── Génération du résumé de compaction (lot AE, étape 3) ────────────────────
+// Appel HORS BANDE, sur le même patron que `generateSummary` et avec les mêmes
+// gardes, qui ne sont pas optionnelles :
+//   - TIMEOUT (piège 10) — porté par `silentCompletion`, tout appel réseau est
+//     borné sans exception. Plus large que celui du résumé (90 s contre 60) :
+//     la matière lue est la conversation ENTIÈRE, pas un extrait, et le modèle
+//     rédige davantage ;
+//   - PARSING DÉFENSIF (piège 7) — `parseSummaryJSON` nettoie les fences avant
+//     tout `JSON.parse` ; échec → `null` silencieux, l'appelant renonce sans
+//     rien muter.
+// L'indicateur d'activité (piège 8) appartient à l'appelant, comme pour
+// `generateSummary` : c'est `summarizeIfNeeded` qui enveloppe, pas elle.
+//
+// AE-3 : rédigé par le MODÈLE ACTIF de la conversation. `activeModel()` résout
+// déjà settings.model contre l'override de conversation (piège 15) — c'est
+// exactement « le modèle actif », rien à câbler de plus.
+async function generateCompactionSummary(thread) {
+  const convo = projectThreadForCompaction(thread);
+  if (!convo.trim()) return null;
+  const out = await silentCompletion([
+    { role: 'system', content: COMPACTION_PROMPT },
+    { role: 'user', content: convo },
+  ], { temperature: 0.3, timeout: 90000, model: activeModel() });
+
+  const parsed = parseSummaryJSON(out);
+  if (!parsed || typeof parsed.summary !== 'string' || !parsed.summary.trim()) {
+    if (typeof console !== 'undefined') {
+      console.warn('[miaou] résumé de compaction non parsable :', (out || '').slice(0, 200));
+    }
+    return null;   // abandon : l'appelant ne pose aucune frontière
+  }
+  return parsed.summary.trim();
 }
 
 // ── Recherche / sélection des résumés pertinents ────────────────────────────

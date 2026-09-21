@@ -256,6 +256,20 @@ factorisation `.banner` ne s'y refléterait pas automatiquement.
 Empêche deux générations concurrentes silencieuses sur la même conversation : un
 onglet qui génère verrouille en lecture seule la même conv dans les autres onglets.
 
+**Le relais couvre DEUX natures d'occupation depuis le lot AE** (étape 8), sans
+qu'une ligne de ce protocole ait changé : une génération de stream, et une
+**compaction** — un geste de réécriture d'historique de plusieurs secondes,
+pendant lequel un onglet voisin pourrait éditer un message, régénérer ou lancer
+sa propre compaction. C'est précisément pour hériter de ce relais que la
+compaction entre au registre des générations plutôt que d'inventer un second
+verrou (cf. `docs/compaction.md`). Les pairs n'ont rien à distinguer : ils
+reçoivent la même enveloppe et posent le même readonly.
+
+L'onglet LOCAL, lui, n'est pas couvert par ce mécanisme — `applyReadonlyState`
+ne lit que `_peersGenerating`. Pour un stream c'est sans conséquence
+(`setSending(true)` le borde) ; pour une compaction il a fallu l'ajouter
+explicitement, cf. `docs/compaction.md`.
+
 **Émission** (main.js, couplée au **cycle de vie de la génération** depuis T-1a —
 plus à `setSending`, qui n'est qu'un reflet d'écran) :
 - `startGenerationRelay(convId)` depuis `registerGeneration()` : émet

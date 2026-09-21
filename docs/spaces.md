@@ -463,6 +463,22 @@ aide à la décision de lecture).
     non-vision **à tort**, pour toute la session et pour tous les chemins,
     générations comprises. On ne suspecte les images qu'après l'échec du dernier
     essai, celui qui ne porte plus aucun paramètre exotique.
+  - **L'ordonnancement ne suffit pas : encore faut-il que l'échec DISE quelque
+    chose.** Les deux dégradations de ce chemin (no-think, vision) posent un
+    flag de SESSION sur une hypothèse tirée d'un échec — elles sont donc toutes
+    deux gardées par le pur `serverVerdictOnFailure` (api.js), qui répond « cet
+    échec porte-t-il un verdict du serveur ? ». Un `AbortError` (timeout du
+    garde-fou local) ou un `TypeError` (fetch mort avant toute réponse) n'a
+    jamais atteint le serveur : il n'apprend rien sur ce qu'il accepte. Défaut
+    payé le 2026-09-22 sur backend lent (Ollama) — un premier timeout brûlait
+    le no-think pour la session entière, ce qui rallongeait les réponses
+    suivantes (donc d'autres timeouts) et faisait partir le modèle en prose au
+    lieu du JSON attendu ; le même `catch` marquait aussi le modèle non-vision
+    à tort dès que le payload portait une image. Le prédicat est
+    **conservateur** : une erreur de forme inconnue reste traitée comme un
+    rejet. Corollaire : après un échec non concluant on ne rejoue pas non plus
+    sans le paramètre — le rejeu redoublerait l'attente (deux timeouts pleins)
+    en retirant justement le no-think sur un backend déjà trop lent.
 - **Réglage** : `describeFiles` (storage.js `DEFAULT_SETTINGS`, **défaut
   `true`**, décidé), case dans le drawer réglages (« Descriptions de
   fichiers »), rejoint `settingsFormDirty`. **Pas de model picker** (décidé) :

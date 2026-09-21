@@ -31,6 +31,82 @@ describe('validateSkillSlug', function() {
   it('accepte un slug valide unique', function() {
     expect(validateSkillSlug('revue-code_1', ['autre'])).toBe(null);
   });
+  // AE-9 : le slug d'une commande MIAOU est réservé, et le refus dit POURQUOI.
+  it('refuse un slug réservé à une commande MIAOU', function() {
+    expect(validateSkillSlug('compact', [])).toContain('commande');
+  });
+  it('réserve TOUS les slugs du registre, jamais un littéral', function() {
+    // Lit la source vivante : une commande ajoutée à MIAOU_COMMANDS est
+    // réservée sans toucher à ce test (et sans qu'il périme en silence).
+    commandSlugs().forEach(function(slug) {
+      expect(validateSkillSlug(slug, [])).toContain('réservé');
+    });
+  });
+  it('refuse le slug réservé AVANT le doublon (message spécifique)', function() {
+    // Non-vacuité : si la garde passait après l'unicité, une skill `compact`
+    // déjà en base rendrait « déjà utilisé », qui n'explique rien.
+    expect(validateSkillSlug('compact', ['compact'])).toContain('commande');
+  });
+});
+
+describe('matchMiaouCommand', function() {
+  it('reconnaît le littéral seul', function() {
+    expect(matchMiaouCommand('/compact')).toBe('compact');
+  });
+  it('trime avant de comparer', function() {
+    expect(matchMiaouCommand('  /compact  ')).toBe('compact');
+    expect(matchMiaouCommand('/compact\n')).toBe('compact');
+  });
+  // Condition 3 du § 4.7 : plus serrée que « commence par ».
+  it('refuse un littéral qui porte autre chose', function() {
+    expect(matchMiaouCommand('/compact et au fait, merci')).toBe(null);
+    expect(matchMiaouCommand('/compact maintenant')).toBe(null);
+  });
+  it('refuse un slash ailleurs qu\'en tête', function() {
+    expect(matchMiaouCommand('tiens /compact')).toBe(null);
+  });
+  it('refuse un slug inconnu et une entrée vide', function() {
+    expect(matchMiaouCommand('/compacter')).toBe(null);
+    expect(matchMiaouCommand('/')).toBe(null);
+    expect(matchMiaouCommand('')).toBe(null);
+    expect(matchMiaouCommand(null)).toBe(null);
+  });
+  it('reconnaît chaque slug du registre', function() {
+    commandSlugs().forEach(function(slug) {
+      expect(matchMiaouCommand('/' + slug)).toBe(slug);
+    });
+  });
+});
+
+describe('matchCommandCompletions', function() {
+  it('matche sur un préfixe de slug', function() {
+    expect(matchCommandCompletions('com').map(function(c) { return c.slug; })).toEqual(['compact']);
+  });
+  it('matche aussi sur le libellé', function() {
+    expect(matchCommandCompletions('contexte').length > 0).toBe(true);
+  });
+  it('rend tout le registre sur une saisie vide', function() {
+    expect(matchCommandCompletions('').length).toBe(commandSlugs().length);
+  });
+  it('rend une liste vide sur un non-match', function() {
+    expect(matchCommandCompletions('zzz').length).toBe(0);
+  });
+  // Séparation délibérée des deux purs : verser les commandes dans
+  // matchSkillCompletions les ferait apparaître dans le sous-mode `skill` de la
+  // palette de commandes (ui.js), qui n'appelle que celle-là.
+  it('reste distincte de matchSkillCompletions', function() {
+    setSkillsCache([{ slug: 'revue', name: 'Revue', enabled: true }]);
+    expect(matchSkillCompletions('com').length).toBe(0);
+    setSkillsCache([]);
+  });
+});
+
+describe('commandFormRefusal', function() {
+  it('nomme la commande et sa contrainte de forme', function() {
+    var msg = commandFormRefusal('compact');
+    expect(msg).toContain('/compact');
+    expect(msg).toContain('seule');
+  });
 });
 
 describe('findSlashTriggers', function() {

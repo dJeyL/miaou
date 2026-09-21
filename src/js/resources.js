@@ -1095,6 +1095,92 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
   }
 }
 
+// ── Microcompaction des tool results (lot AE, étape 2) ───────────────────────
+// Évacue les résultats d'outils volumineux d'un thread : chaque `result` au-delà
+// de TOOL_RESULT_EVACUATION_MIN_CHARS est stocké en ressource `inline` et
+// remplacé, DANS L'ACK PERSISTÉ, par son handle statique.
+//
+// C'est le même geste que `resource__from_result` (piège 26), à trois
+// différences près : la décision vient de l'utilisateur et non du modèle, elle
+// porte sur N acks et non un seul, et la cible n'est pas adressée par un
+// `call:…` — donc pas de `findAckByCallId`, pas d'exposition de la dérive
+// positionnelle des ids `solo:N` (cf. docs/compaction.md).
+//
+// Les trois gardes de son aîné sont reprises :
+//   - JAMAIS `_makeResourceRef` — un `[resource_ref:…]` vers un record 'inline'
+//     ré-inlinerait tout le contenu au tour suivant, soit exactement l'inverse
+//     du but (piège 26c, souvenir `resource-ref-reinlines`). Toujours
+//     `formatInlineHandleForModel`, descripteur STATIQUE jamais expansé ;
+//   - réentrance — la cible est gelée AVANT l'await, puis re-cherchée par
+//     IDENTITÉ D'OBJET après. Un index serait faux dès qu'une mutation
+//     concurrente décale le tableau ; ici, N awaits se succèdent, donc la
+//     fenêtre est N fois plus large que chez `resource__from_result` ;
+//   - idempotence — `isInlineHandleResult` reconnaît un résultat déjà évacué,
+//     par ce geste OU par `resource__from_result`. Recompacter est sans effet.
+//
+// Vivre ici plutôt que dans tools.js : c'est une écriture de ressource, et
+// tools.js s'interdit de toucher à l'UI (contrainte QuickJS). Le pur qui décide
+// (`ackNeedsEvacuation`) est dans utils.js, testé à part.
+//
+// Rend le compte de ce qui a été évacué. N'écrit RIEN en base : la persistance
+// appartient à l'appelant, qui sait dans quelle conversation il écrit (piège 28)
+// et doit émettre son `syncPost` post-commit (piège 24).
+async function microcompactToolResults(thread, conversationId, now, rand) {
+  const list = Array.isArray(thread) ? thread : [];
+  const theNow = (typeof now === 'function') ? now : Date.now;
+  const theRand = (typeof rand === 'function') ? rand : Math.random;
+  // Gel de la population AVANT tout await : on capture les RÉFÉRENCES d'ack,
+  // jamais leurs index.
+  const targets = [];
+  for (let i = 0; i < list.length; i++) {
+    if (ackNeedsEvacuation(list[i], TOOL_RESULT_EVACUATION_MIN_CHARS, isInlineHandleResult)) {
+      targets.push(list[i]);
+    }
+  }
+  let evacuated = 0;
+  // `_storeBlock` pousse un ack `resource_stored` dans `_pendingToolAcks`, ce
+  // qui est juste pendant un tour d'outils et faux ici : aucun tour ne tourne,
+  // personne ne draine, et ces acks atterriraient dans la bulle du tour SUIVANT
+  // — une compaction s'y présenterait comme un appel d'outil du modèle. On
+  // relève la longueur et on y revient à la fin (jamais un `clear` : la file
+  // peut porter autre chose, qu'on n'a pas à détruire).
+  const ackFloor = pendingToolAcksLength();
+  for (const ack of targets) {
+    // Re-vérification APRÈS les awaits des tours précédents : la cible a pu
+    // être évacuée entre-temps (geste concurrent), ou son résultat réécrit.
+    if (!ackNeedsEvacuation(ack, TOOL_RESULT_EVACUATION_MIN_CHARS, isInlineHandleResult)) continue;
+    // La note MIAOU de queue est détachée ici : le CORPS part dans la ressource
+    // (ce que l'outil a répondu), la NOTE est recollée derrière le handle (elle
+    // s'adresse au modèle et conditionne son comportement).
+    const split = splitToolResultNoteRaw(ack.result);
+    const name = evacuatedResourceName(ack);
+    const id = await _storeBlock('text/plain', name, utf8Encode(split.text), 'inline',
+                                 conversationId || null, theNow(), theRand);
+    if (!id) continue;
+    // La cible est toujours dans le thread ? Recherche par identité d'objet :
+    // sa POSITION a pu bouger (insertion concurrente), son identité non.
+    // Absente → la ressource reste valide, on ne réécrit rien (dégradation
+    // propre, même posture que resource__from_result).
+    if (list.indexOf(ack) < 0) continue;
+    ack.result = formatEvacuatedToolResult(
+      formatInlineHandleForModel(id, 'text/plain', getCachedRecord(id)), split.note);
+    evacuated++;
+  }
+  truncatePendingToolAcks(ackFloor);
+  return evacuated;
+}
+
+// Nom de la ressource créée en évacuant un résultat d'outil. Affiché à
+// l'utilisateur dans l'inspecteur : il doit dire ce que le contenu EST, et le
+// nom de l'outil est la seule chose qu'on sache à coup sûr (la description
+// modèle de `resource__from_result` n'existe pas ici — personne ne l'a lue).
+// Pure, testable.
+function evacuatedResourceName(ack) {
+  const raw = ack && ack.name != null ? String(ack.name) : '';
+  const base = raw.replace(/^miaou__/, '').replace(/[^A-Za-z0-9_.-]+/g, '-') || 'resultat';
+  return base + '.txt';
+}
+
 // ── Écriture incrémentale d'une ressource (lot Y) ────────────────────────────
 
 // NOYAU PUR de l'append (lot Y), extrait exprès du wrapper IDB pour rester

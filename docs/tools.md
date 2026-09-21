@@ -552,6 +552,42 @@ model-side unique sur la bibliothèque) :**
     `flattenToolResult` (api.js) — un blob binaire est déjà un handle dans
     `entry.result`, donc la conversion ne rencontre que du **texte aplati** (le
     cas visé : gros `fetch_url`/`docs__read`). Aucune garde de type à ajouter.
+**Microcompaction des tool results (lot AE) — le même geste, décidé par
+l'utilisateur.** `microcompactToolResults(thread, convId, now, rand)`
+(resources.js) évacue d'un coup **tous** les `result` d'acks dépassant
+`TOOL_RESULT_EVACUATION_MIN_CHARS` (2 000 caractères), par le même chemin que
+`resource__from_result` : `_storeBlock` classe `'inline'` puis
+`formatInlineHandleForModel`, **jamais** `_makeResourceRef`. Trois écarts avec
+son aîné, tous conséquents :
+
+- **pas de `findAckByCallId`** — la cible n'est pas adressée par un `call:…`,
+  on balaie le thread. Les ids `solo:N` positionnels des acks legacy ne sont
+  donc jamais sollicités ;
+- **N awaits au lieu d'un** — la population est gelée en **références d'objet**
+  avant le premier, et chaque cible est re-cherchée **par identité** (`indexOf`)
+  après le sien, jamais par index : la fenêtre de réentrance est N fois plus
+  large. Le prédicat est re-évalué à chaque tour, un geste concurrent ayant pu
+  évacuer la cible ;
+- **la note MIAOU de queue est préservée** — `splitToolResultNoteRaw` (utils.js)
+  détache `NOT_PRESENTED_NOTE`/`PRESENTED_NOTE` sous leur forme **brute**, le
+  corps part dans la ressource, la note est recollée derrière le handle. Elle
+  conditionne le comportement du modèle (« l'utilisateur ne voit PAS ce
+  contenu ») : l'évacuer en silence le ferait de nouveau répondre comme si
+  l'utilisateur avait le résultat sous les yeux. Distincte de
+  `splitToolResultNote`, qui démaquille pour l'AFFICHAGE — la réutiliser
+  ajouterait des crochets à `PRESENTED_NOTE`, qui n'en porte pas.
+
+Un ack **non expansable** (`ackIsExpandable` faux) n'est jamais évacué : il est
+déjà élagué à l'émission, la ressource créée ne serait transmise à personne.
+
+**L'ack `resource_stored` que `_storeBlock` pousse inconditionnellement** est
+retiré après coup : hors d'un tour d'outils personne ne draine
+`_pendingToolAcks`, et ces acks atterriraient dans la bulle du tour **suivant**,
+présentant une compaction comme un appel d'outil du modèle. Le geste relève la
+longueur (`pendingToolAcksLength`) et **tronque** à cette valeur
+(`truncatePendingToolAcks`) — jamais un `clear`, qui détruirait ce qu'un autre
+chemin aurait mis dans la file. Cf. `docs/compaction.md`.
+
 - **Doctrine `RESOURCE_DOCTRINE`** (tools.js, inconditionnelle comme
   `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux **trois** outils —
   `resource__create` pour un texte que le modèle vient de produire/recomposer,

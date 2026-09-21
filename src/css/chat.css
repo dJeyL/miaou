@@ -1674,3 +1674,39 @@ html[data-wide-tables="off"] .table-bleed {
   box-shadow: 0 0 0 2px var(--topbar-bg);
 }
 .app.sidebar-open #sidebar-toggle .activity-dot { display: none; }
+
+/* ── Séparateur de compaction (lot AE) ──────────────────────────────────────
+   Frontière posée dans le fil quand le contexte a été compacté. Volontairement
+   DISCRET : ce n'est pas un message, c'est une marque de ce qui n'est plus
+   transmis. Tokens dérivés uniquement (aucune valeur en dur), donc suit les
+   palettes et les deux luminosités sans réglage par palette.
+
+   Le trait traverse la colonne et le libellé s'y pose au centre : la métaphore
+   est la coupure, pas la notification — une bannière colorée en ferait un
+   événement à traiter, alors que l'utilisateur vient de le provoquer. */
+.compaction-mark { margin: 18px 0; }
+.compaction-mark-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-3);
+}
+/* Les deux filets qui prolongent le libellé de part et d'autre. */
+.compaction-mark-head::before,
+.compaction-mark-head::after {
+  content: ''; flex: 1 1 auto; height: 1px; background: var(--border);
+}
+.compaction-mark-icon { width: 14px; height: 14px; flex: 0 0 auto; opacity: .75; }
+.compaction-mark-label { flex: 0 1 auto; }
+.compaction-mark-body { margin-top: 6px; }
+/* Le chevron natif est retiré au profit du curseur seul : le résumé est un
+   repli secondaire, la ligne au-dessus porte déjà l'information. */
+.compaction-mark-body > summary {
+  cursor: pointer; font-size: 12px; color: var(--text-3);
+  text-align: center; list-style: none;
+}
+.compaction-mark-body > summary::-webkit-details-marker { display: none; }
+.compaction-mark-body > summary:hover { color: var(--text-2); }
+.compaction-mark-summary {
+  margin-top: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text-2); font-size: 13px;
+}

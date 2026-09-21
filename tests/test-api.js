@@ -34,6 +34,32 @@ describe('sseDataObject sur un chunk terminal stream_options.include_usage (Bbis
   });
 });
 
+describe('serverVerdictOnFailure (un échec accuse-t-il le payload ou le réseau ?)', function() {
+  // Le défaut payé le 2026-09-22 : un timeout sur backend lent marquait
+  // l'endpoint comme rejetant reasoning_effort, ce qui rallumait le
+  // raisonnement pour TOUTE la session (appels plus lents, donc d'autres
+  // timeouts, et un modèle qui part en prose au lieu de rendre son JSON).
+  it('AbortError (timeout du garde-fou) → aucun verdict serveur', function() {
+    var e = new Error('aborted');
+    e.name = 'AbortError';
+    expect(serverVerdictOnFailure(e)).toBe(false);
+  });
+  it('TypeError (fetch échoué avant toute réponse) → aucun verdict serveur', function() {
+    var e = new TypeError('Failed to fetch');
+    expect(serverVerdictOnFailure(e)).toBe(false);
+  });
+  it('refus HTTP du serveur → verdict, le paramètre est bien accusé', function() {
+    expect(serverVerdictOnFailure(new Error('silentCompletion 400'))).toBe(true);
+  });
+  // Conservateur par défaut : on ne retire que les cas dont on est SÛR qu'ils
+  // ne disent rien du payload. Une forme inconnue reste traitée comme un rejet,
+  // exactement comme avant le correctif.
+  it('erreur de forme inconnue → traitée comme un rejet (conservateur)', function() {
+    expect(serverVerdictOnFailure(new Error('boom'))).toBe(true);
+    expect(serverVerdictOnFailure(null)).toBe(true);
+  });
+});
+
 describe('formatErrorDetail (détail lisible d\'une réponse HTTP en échec)', function() {
   it('body vide → chaîne vide (« HTTP <code> » reste seul)', function() {
     expect(formatErrorDetail('')).toBe('');

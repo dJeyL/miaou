@@ -108,6 +108,12 @@ Figtree/Fira Code).
 - **Inspecteur de contexte** : compteur de tokens dans le composer, cliquable,
   détaillant la composition du payload envoyé au modèle avec une jauge
   d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).
+- **Allègement du contexte** : deux gestes indépendants, proposés par
+  l'inspecteur. Évacuer les gros résultats d'outils les remplace par un lien que
+  le modèle peut rouvrir ; compacter (bouton ou commande `/compact`) remplace le
+  début d'une conversation longue par un résumé que le modèle rédige. Rien n'est
+  supprimé, seul ce qui part au modèle change — cf.
+  [docs/compaction.md](docs/compaction.md).
 - **Contexte organisé pour le cache** : ce qui ne change qu'à un geste explicite
   (instructions, outils, consignes des serveurs MCP, souvenirs de profil) est
   regroupé en tête du payload, à l'écart de ce qui varie à chaque envoi, pour
@@ -118,7 +124,7 @@ Figtree/Fira Code).
 - **Synchronisation multi-onglets** (locale au navigateur) : messages, titres,
   réglages, fichiers et Espaces se répercutent partout sans rechargement. Une
   conversation ouverte à deux endroits passe en lecture seule le temps d'une
-  réponse, pour éviter deux générations concurrentes — cf.
+  réponse ou d'une compaction, pour éviter deux écritures concurrentes — cf.
   [docs/multitab-sync.md](docs/multitab-sync.md).
 
 **Historique & mémoire**
@@ -178,8 +184,11 @@ Détail : [docs/spaces.md](docs/spaces.md).
 
 - Fragments d'instructions Markdown réutilisables, gérés dans un drawer dédié :
   slug, nom, description et corps Markdown, avec un toggle d'activation.
-- **Invocation par slash** : taper `/slug` dans le composer injecte le corps du
-  skill dans le message envoyé, avec autocomplétion au fil de la frappe.
+- **Invocation par slash** : taper `/slug` dans le composer injecte le corps de
+  la skill dans le message envoyé, avec autocomplétion au fil de la frappe. Le
+  `/` sert aussi aux **commandes** de MIAOU (`/compact`), distinctes des skills
+  et signalées comme telles dans l'autocomplétion — cf.
+  [docs/skills.md](docs/skills.md).
 - **Découverte et écriture par le modèle** : il liste et lit seul les skills
   activées quand la demande y correspond, et peut en créer ou en modifier à ta
   demande (une modification passe par une confirmation explicite).

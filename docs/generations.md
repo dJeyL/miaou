@@ -21,13 +21,24 @@ C'est une décision de lot, pas une limite d'implémentation.
 `createGeneration(convId, thread, opts)` (main.js) :
 
 ```
-{ id, convId, spaceId, thread, model, serverName, reasoningEffort,
+{ id, kind, convId, spaceId, thread, model, serverName, reasoningEffort,
   convModel, convReasoningEffort, needTitle, abort, phase, phaseVariant,
   startedAt }
 ```
 
-Trois champs méritent une justification :
+Quatre champs méritent une justification :
 
+- **`kind`** — NATURE de l'entrée, pas un statut. `'stream'` par défaut (un
+  modèle répond : stream, bulle, tours d'outils) ; `'compaction'` pour un geste
+  de réécriture d'historique qui occupe la conversation **sans rien peindre**
+  (lot AE, étape 8 — cf. `docs/compaction.md`). Une compaction est construite
+  par cette même fonction, **complète** : ce qu'elle ne remplit pas, elle le
+  remplit VIDE (`abort: null`, `wrap: null`), jamais en l'omettant, de sorte
+  qu'un consommateur qui déréférence un champ ne plante pas au premier chemin
+  oublié. **À ne pas confondre** avec le paramètre `kind` de `pushGenMessage`
+  (`'assistant'` / `'user'` / `'final'`, plus bas), qui qualifie un MESSAGE
+  poussé et non l'entrée du registre — homonymie regrettable, mais les deux
+  mots sont justes dans leur contexte et aucun n'est lu par l'autre.
 - **`thread`** — SON tableau de travail. Les hooks de `dispatchSend` le mutent au
   lieu de `currentThread`. Tant que la conversation reste affichée, c'est la
   **même référence** que `currentThread` (pas une copie) : les mutations restent
@@ -49,6 +60,20 @@ refusé/mis en file par les interjections, lot Q — arbitrage du brief).
 Accesseurs : `generationFor(convId)` et `isGenerating(convId)`. **Un seul
 prédicat, jamais réécrit localement** — même discipline que `spaceConvIds`
 (piège 18).
+
+Deux accesseurs de plus depuis le lot AE (étape 8), qui **ne remplacent pas**
+les précédents mais répondent à d'autres questions :
+
+| Accesseur | Question | Qui l'appelle |
+|---|---|---|
+| `isGenerating(convId)` | « cette conv est-elle OCCUPÉE ? » | gardes AE-7, badges, bornes d'agents — doivent répondre vrai pour une compaction, c'est la raison de son entrée au registre |
+| `streamGenerationFor(convId)` | « y a-t-il un thread de travail en avance sur le storage, à rebrancher ? » | les points de **rebranchement d'écran** : `rerenderCurrentThread`, `openConversation`, les deux `detachGenerationFromScreen` |
+| `isCompacting(convId)` | « est-ce une compaction ? » | verrou local (`applyReadonlyState`), statut de la ligne d'inventaire |
+
+`streamGenerationFor` n'est **pas** un second prédicat d'écran — `genOwnsScreen`
+reste seul sur cette question. Il pose une question de DONNÉES : un stream a un
+thread de travail (son tour courant n'est persisté qu'à `onFinal`), une
+compaction n'en a pas (elle mute son tableau en place).
 
 Cycle de vie : `registerGeneration(gen)` / `unregisterGeneration(gen)`. Ils
 portent aussi le relais multi-onglets et le drain des actions de synchro
@@ -174,6 +199,22 @@ suivant ne part pas). `setStopping(true)` (ui.js) désactive le bouton composer
 et pulse son icône pendant cette attente, pour qu'un reclic soit impossible
 plutôt que silencieusement sans effet.
 
+**Une compaction n'est pas interruptible ici** (lot AE, étape 8) : `abortStream`
+sort immédiatement sur `gen.kind === 'compaction'`. Sans cette exemption on
+tomberait sur la branche du stop différé, qui poserait `stopRequested` que
+**personne n'honore** (il n'y a pas de boucle de tours pour le consulter) et
+figerait le bouton composer jusqu'à la fin du geste — une promesse d'arrêt qui
+ne serait pas tenue.
+
+Le test est écrit `=== 'compaction'` et **non** `!== 'stream'`, alors que
+`genOwnsScreen` fait l'inverse. Ce n'est pas une inconséquence : on regarde de
+quel côté tombe le défaut si le champ manque (fixture, chemin futur construisant
+l'objet à la main). Ne pas interrompre un stream est **silencieux** — il
+continue de consommer sans que personne le voie ; peindre sur une entrée qui
+n'a pas de quoi l'être **casse**. Le doute va donc vers « interrompre » ici, et
+vers « ne possède pas l'écran » là-bas. Un test QuickJS garde chaque sens, dont
+un explicitement sur l'entrée sans `kind`.
+
 ## Présentation : un prédicat, deux temps (T-1b)
 
 Le couplage à l'écran est direct : les hooks appellent `streamInto`,
@@ -181,9 +222,9 @@ Le couplage à l'écran est direct : les hooks appellent `streamInto`,
 ces appels **ne crashent pas** — ils écrivent dans un sous-arbre détaché. Le
 travail est perdu **silencieusement** côté écran.
 
-**`genOwnsScreen(gen)`** (`gen.convId === currentConvId`) est LE prédicat. Un
-seul, jamais réécrit localement. Tous les hooks se scindent en deux temps, dans
-cet ordre :
+**`genOwnsScreen(gen)`** (`gen.kind === 'stream' && gen.convId === currentConvId`)
+est LE prédicat. Un seul, jamais réécrit localement. Tous les hooks se scindent
+en deux temps, dans cet ordre :
 
 1. **muter `gen.thread`** — TOUJOURS ;
 2. **refléter dans le DOM** — seulement si `genOwnsScreen(gen)`.
@@ -193,6 +234,12 @@ cet ordre :
 
 `gen.wrap` remplace la variable `wrap` en closure — c'est ce qui permet au
 détachement de la mettre à `null`.
+
+**Le test de `kind` est une exemption nommée** (lot AE, étape 8) : une
+compaction ne possède JAMAIS l'écran, même sur la conversation affichée. Elle
+n'a ni bulle, ni stream, ni ack à peindre — les deux temps ci-dessus n'en ont
+qu'un pour elle, et il ne passe pas par le DOM. C'est ici qu'on répond, jamais
+par un test `kind` réécrit chez un consommateur : le prédicat reste unique.
 
 ### Le partiel du tour vit sur la génération
 

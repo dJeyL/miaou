@@ -153,10 +153,36 @@ const _activeGenerations = new Map();   // Map<convId, gen>
 // `spaceId` est figé au démarrage : une génération lancée dans l'Espace X reste
 // dans le référentiel de X même si l'utilisateur bascule sur Y (herméticité,
 // piège 18 — exploité par T-1c pour le contexte d'exécution des outils).
+//
+// `kind` — NATURE de l'entrée du registre, et non un statut. Deux valeurs :
+//   'stream'     : une génération au sens plein (un modèle répond, il y a un
+//                  stream, une bulle, des tours d'outils). Le défaut.
+//   'compaction' : un geste de RÉÉCRITURE d'historique qui occupe la
+//                  conversation sans rien peindre (lot AE, étape 8).
+//
+// Pourquoi une compaction entre au registre. Elle dure plusieurs secondes
+// (aller-retour modèle) et réécrit l'historique ; pendant ce temps un onglet
+// voisin peut éditer un message, régénérer, ou lancer sa propre compaction. Le
+// registre porte DÉJÀ tout ce qu'il faut pour l'empêcher — relais readonly
+// multi-onglets (`startGenerationRelay`), fermeture automatique des deux gardes
+// AE-7 via `isGenerating`, badge « working », retrait de « régénérer ». Un
+// second mécanisme de verrou serait le deuxième porteur du même état, contre
+// quoi met en garde `concurrent-writers`.
+//
+// L'objet est construit ICI, complet, et jamais en littéral ad hoc : un
+// consommateur qui déréférencerait `gen.thread` sur une entrée tronquée
+// planterait au premier chemin oublié. Ce qu'une compaction ne remplit pas,
+// elle le remplit VIDE (`abort: null`, `wrap: null`), pas en l'omettant.
+//
+// Trois exemptions nommées en découlent, et trois seulement — chacune
+// commentée à son point de code : `genOwnsScreen` (une compaction ne peint
+// rien), `streamGenerationFor` (rebranchement d'écran et composer), et
+// `abortStream` (il n'y a pas de stream à interrompre).
 function createGeneration(convId, thread, opts) {
   const o = opts || {};
   return {
     id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    kind: o.kind || 'stream',
     convId,
     spaceId: activeSpaceId,
     thread,
@@ -209,8 +235,22 @@ function createGeneration(convId, thread, opts) {
 //   (a) muter gen.thread            → TOUJOURS
 //   (b) refléter dans le DOM        → seulement si genOwnsScreen(gen)
 // et (a) ne doit JAMAIS dépendre de (b).
+// EXEMPTION 1 (lot AE, étape 8) : une compaction ne possède JAMAIS l'écran.
+// Le prédicat reste unique — c'est ici qu'on répond, jamais par un test `kind`
+// réécrit chez un consommateur. Une compaction n'a ni bulle, ni stream, ni ack
+// à peindre : les deux temps de l'invariant (muter / refléter) n'ont pour elle
+// qu'un seul temps, et il ne passe pas par le DOM. Laisser ce prédicat vrai
+// ferait passer tous les hooks de peinture sur une génération qui n'a rien à
+// peindre, en commençant par la bulle assistant vide qu'ouvrirait
+// `attachGenerationToScreen`.
+//
+// Test en `=== 'stream'`, à l'INVERSE d'`abortStream` (qui teste
+// `=== 'compaction'`), et pour la même méthode : on regarde de quel côté tombe
+// le défaut. Ici, peindre sur une entrée qui n'a pas de quoi être peinte
+// (thread absent, wrap absent) casse ; ne pas peindre est bénin. Le doute doit
+// donc aller vers « ne possède pas l'écran ». Là-bas c'était le contraire.
 function genOwnsScreen(gen) {
-  return !!gen && gen.convId === currentConvId;
+  return !!gen && gen.kind === 'stream' && gen.convId === currentConvId;
 }
 
 // ── Peinture partagée d'une génération (correctif du trou T/X) ──────────────
@@ -473,6 +513,21 @@ function registerGeneration(gen) {
   // bouton resterait offert jusqu'au prochain rendu du fil, c'est-à-dire
   // précisément pendant la fenêtre qu'on veut fermer.
   syncLastAssistantActions();
+  // Quatrième surface (lot AE, étape 8) : le verrou de la conversation
+  // AFFICHÉE. Une compaction locale doit verrouiller SON onglet — les trois
+  // rappels ci-dessus ne le font pas, et `setSending` (qui borde une
+  // génération ordinaire) n'est jamais appelé par ce geste. Posé ici plutôt
+  // que dans le geste : le cycle de vie du registre est le seul endroit qui
+  // voie les deux bornes, et `applyReadonlyState` reste le point de décision
+  // unique.
+  //
+  // Conditionné au kind, et pas seulement parce que l'appel serait un no-op
+  // pour un stream : `applyReadonlyState` touche l'UI (`setConvReadonly`,
+  // `renderInterjectionRail`), là où le reste de `registerGeneration` ne le
+  // fait qu'à travers des synchros que le harnais QuickJS fournit. L'appeler
+  // inconditionnellement rendait `agent__spawn` dépendant de l'UI et faisait
+  // tomber huit tests d'agents — une génération d'agent passe par ici.
+  if (gen.kind === 'compaction') { applyReadonlyState(); syncCompactionActivitySurface(); }
 }
 
 function unregisterGeneration(gen) {
@@ -534,6 +589,13 @@ function unregisterGeneration(gen) {
   // retour la rendrait permanente pour la session — le prédicat serait juste,
   // et l'affordance perdue.
   syncLastAssistantActions();
+  // Symétrique du verrou local posé par registerGeneration (étape 8) : sans
+  // cette levée, l'onglet qui vient de compacter resterait en lecture seule
+  // jusqu'au prochain recalcul fortuit — et le geste, qui n'a pas d'autre
+  // surface, laisserait la conversation morte sous les yeux de qui l'a lancé.
+  // Conditionné au kind pour la même raison qu'à la pose : cette fonction
+  // touche l'UI, et une génération d'agent passe aussi par ici.
+  if (gen.kind === 'compaction') { applyReadonlyState(); syncCompactionActivitySurface(); }
   // Actions de synchro multi-onglets différées (lot J, réception) : rejouées quand
   // PLUS AUCUNE génération ne tourne. Le drain vivait dans setSending(false)
   // avant T-1a ; il ne pouvait plus y rester, `sending` ne parlant que de
@@ -552,6 +614,74 @@ function generationFor(convId) {
 
 function isGenerating(convId) {
   return !!generationFor(convId);
+}
+
+// EXEMPTION 2 (lot AE, étape 8) : filtre du registre par NATURE d'entrée.
+//
+// Ce n'est PAS un second prédicat de possession d'écran — `genOwnsScreen` reste
+// seul à répondre à cette question-là. Celui-ci répond à une autre, qui est une
+// question de DONNÉES : « cette conversation a-t-elle un thread de travail en
+// avance sur le storage, sur lequel il faut rebrancher l'affichage ? ». Une
+// génération de stream, oui : son tour courant n'est persisté qu'à onFinal. Une
+// compaction, non : elle mute `currentThread` EN PLACE, donc l'écran est déjà
+// sur les bonnes données et il n'y a rien à rebrancher.
+//
+// Trois appelants, tous des points de rebranchement d'écran :
+// `rerenderCurrentThread`, `openConversation`, `resetToEmpty`/`detach`. Les
+// consommateurs qui posent la question « cette conv est-elle occupée ? »
+// (gardes AE-7, badges, agents) continuent d'appeler `generationFor` /
+// `isGenerating` sans filtre — c'est tout l'intérêt de faire entrer la
+// compaction au registre.
+function streamGenerationFor(convId) {
+  const gen = generationFor(convId);
+  return gen && gen.kind === 'stream' ? gen : null;
+}
+
+// « Cette conversation est-elle en train d'être COMPACTÉE ? » — pendant du
+// précédent, côté compaction. Un seul prédicat pour cette question aussi :
+// les surfaces qui doivent distinguer les deux occupations (verrou local,
+// statut de la ligne d'inventaire) passent par ici, jamais par un
+// `generationFor(id).kind` relu sur place.
+//
+// Ne remplace PAS `isGenerating` : les consommateurs qui demandent « cette
+// conv est-elle occupée ? » (gardes AE-7, badges, bornes d'agents) doivent
+// continuer de répondre vrai pour une compaction — c'est la raison même de son
+// entrée au registre.
+function isCompacting(convId) {
+  const gen = generationFor(convId);
+  return !!gen && gen.kind === 'compaction';
+}
+
+// Y a-t-il une compaction en vol dont la conversation n'est PAS affichée ?
+// Cette question-là n'a qu'un client : l'arbitrage entre les deux surfaces qui
+// annoncent le geste (cf. ci-dessous). Elle balaie le registre plutôt que
+// d'interroger `currentConvId` seul — la compaction peut avoir été lancée
+// depuis une conversation qu'on a quittée, c'est même le cas nominal.
+function hasOffscreenCompaction() {
+  for (const gen of _activeGenerations.values()) {
+    if (gen.kind === 'compaction' && gen.convId !== currentConvId) return true;
+  }
+  return false;
+}
+
+// Arbitrage entre les DEUX surfaces qui annoncent une compaction (lot AE,
+// étape 8 — signalé par Julien le 2026-09-22) : l'indicateur d'activité de
+// fond (`.bg-activity`, anonyme et global) et la pilule d'activité de la
+// topbar (qui NOMME la conversation et permet d'y revenir d'un clic).
+//
+// Chacune parle exactement là où l'autre se tait :
+//  - on REGARDE la conversation qui compacte → la pilule se tait
+//    (`resolveAgentCount` : une pastille n'annonce que ce qu'on ne voit pas),
+//    donc l'indicateur de fond est la seule surface, et il reste ;
+//  - on a NAVIGUÉ ailleurs → la pilule prend le relais et dit mieux, donc
+//    l'indicateur s'efface.
+//
+// Appelé aux mêmes points que `applyReadonlyState` (les deux chemins de
+// navigation) mais écrit à côté de lui, pas dedans : le verrou et cet
+// arbitrage sont deux décisions distinctes, et les fondre ferait une fonction
+// qui répond à deux questions.
+function syncCompactionActivitySurface() {
+  setBgActivitySuppressed(hasOffscreenCompaction());   // ui.js
 }
 
 // Stop déjà demandé sur CETTE conversation, pas encore honoré (tour d'outils
@@ -758,7 +888,12 @@ function splitTrailingAcks(thread) {
 // gen.wrap pointer sur un nœud orphelin — le stream continuerait d'écrire dans
 // le vide jusqu'à la fin du tour, sans erreur visible.
 function rerenderCurrentThread() {
-  const gen = generationFor(currentConvId);
+  // `streamGenerationFor` et non `generationFor` : une compaction en vol est
+  // bien au registre, mais elle n'a pas de thread de travail à rebrancher — la
+  // rebrancher ouvrirait une bulle assistant vive vide au bas du fil. Et ce
+  // chemin est emprunté PAR la compaction elle-même, qui appelle
+  // `rerenderCurrentThread` après avoir poussé sa frontière.
+  const gen = streamGenerationFor(currentConvId);
   if (gen) attachGenerationToScreen(gen);
   else renderThread(currentThread);
 }
@@ -1460,6 +1595,14 @@ function projectConvMessages(conv) {
     // n'existe plus au rechargement (project_ack_field_whitelists, même motif
     // que la projection méta de listAllConversations).
     if (m.agentResult) o.agentResult = m.agentResult;
+    // Tokens récupérés par une compaction, affichés par son séparateur dans le
+    // fil. Même raison que la ligne du dessus : whitelist, donc un champ absent
+    // d'ici ne survit pas au reload. Il faut la ligne dans les DEUX sens du
+    // voyage (lecture `projectConvMessages` / écriture `projectThreadToMessages`) :
+    // n'en faire qu'un perdrait le chiffre à l'aller ou au retour.
+    // `!= null` et non truthy : un gain nul est une information (le geste a eu
+    // lieu et n'a rien rapporté), pas une absence de mesure.
+    if (m.reclaimed != null) o.reclaimed = m.reclaimed;
     return o;
   });
 }
@@ -1486,13 +1629,18 @@ async function openConversation(id, reveal) {
   // ni vider le peer state — d'où le garde `id !== currentConvId`.
   const switching = id !== currentConvId;
   if (switching) {
+    // Les bilans d'allègement décrivent un geste fait sur la conversation qu'on
+    // QUITTE : les laisser les collerait au hint de la suivante, avec le drawer
+    // ouvert. Sous `switching` à dessein — une re-hydratation rappelle
+    // openConversation sur la MÊME conv et ne doit rien effacer.
+    clearReclaimReports();
     announceConvClosed(currentConvId);   // quitte l'ancienne (no-op si null)
     resetPeerState();                    // repart d'un set vide pour la nouvelle
     // On quitte une conversation qui génère (lot T-1b) : la génération perd
     // l'écran mais CONTINUE. Débranchement AVANT l'await : les hooks doivent
     // cesser d'écrire dans un DOM qui va être vidé dès maintenant, pas
     // seulement après le chargement des ressources de la conv d'arrivée.
-    detachGenerationFromScreen(generationFor(currentConvId));
+    detachGenerationFromScreen(streamGenerationFor(currentConvId));
     // Du contenu non vu dans la conversation qu'on quitte devient un non-lu de
     // sidebar : tant qu'on y était, le bouton « aller tout en bas » suffisait à
     // le dire ; en partant, il n'y a plus de surface pour l'annoncer. AVANT
@@ -1526,7 +1674,12 @@ async function openConversation(id, reveal) {
   // la MÊME référence de tableau, pas une copie : les mutations des hooks
   // restent directement visibles par renderThread, exactement comme si la
   // génération n'avait jamais quitté l'écran.
-  const gen = generationFor(id);
+  // `streamGenerationFor` : seule une génération de stream porte un thread de
+  // travail en avance sur le storage. Une compaction mute `currentThread` en
+  // place — adopter « son » thread serait adopter celui qu'on a déjà, et
+  // `setSending(!!gen)` plus bas mettrait le composer en mode stop avec un
+  // bouton qui n'interrompt rien.
+  const gen = streamGenerationFor(id);
   currentThread = gen ? gen.thread : projectConvMessages(conv);
   currentConvModel = conv.model || '';
   currentConvReasoningEffort = conv.reasoningEffort || '';
@@ -1571,6 +1724,9 @@ async function openConversation(id, reveal) {
   // de message. Recalculé ici parce que la cause dépend de la conversation
   // AFFICHÉE, contrairement au readonly cross-onglets qui dépend des pairs.
   applyReadonlyState();
+  // Même dépendance à la conversation affichée, autre décision : laquelle des
+  // deux surfaces annonce une compaction en vol (cf. syncCompactionActivitySurface).
+  syncCompactionActivitySurface();
   // Ouverture depuis la palette (recherche de conversation) : ramener la conv
   // fraîchement chargée dans la liste visible, même sidebar masquée (reveal),
   // centrée pour ne pas la coller au bord.
@@ -1589,7 +1745,7 @@ function resetToEmpty() {
   if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
   // L'écran part à l'accueil : une génération en vol sur la conv quittée perd
   // sa bulle (vidée juste en dessous) mais continue (lot T-1b).
-  detachGenerationFromScreen(generationFor(currentConvId));
+  detachGenerationFromScreen(streamGenerationFor(currentConvId));
   // Départ vers l'accueil : même report du non-vu qu'au switch de conversation
   // (openConversation), ce chemin ne passant pas par lui. Avant la mise à null.
   carryThreadUnseenToBadge(currentConvId);
@@ -1608,6 +1764,9 @@ function resetToEmpty() {
   // posé, et plus rien ne le levait : composer mort sur l'écran d'accueil.
   // L'ordre est la garde ; ce second appel est celui qui voit l'état final.
   applyReadonlyState();
+  // Départ vers l'accueil : une compaction en vol n'a plus d'écran, donc la
+  // pilule prend le relais et l'indicateur de fond s'efface.
+  syncCompactionActivitySurface();
   currentThread = [];
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
   currentConvReasoningEffort = '';   // nouvelle conversation → reasoning_effort par défaut
@@ -1906,11 +2065,27 @@ function refreshTabBanner() {
 //      partirait dans un fil que plus personne ne lit — ni le parent, qui a
 //      déjà reçu son compte rendu, ni l'utilisateur, qui croirait relancer
 //      l'agent. Cause DÉFINITIVE : un agent ne repart jamais.
+//  (c) Une COMPACTION LOCALE tourne sur la conv affichée (lot AE, étape 8).
+//      Cause temporaire comme (a), mais elle vient de CET onglet, et c'est ce
+//      qui la rend nécessaire : (a) ne regarde que `_peersGenerating`, donc
+//      l'onglet d'où part le geste n'était couvert par personne. Une génération
+//      locale ORDINAIRE n'a pas besoin de ce verrou — `setSending(true)` met
+//      déjà le composer en mode stop et retire « régénérer » ; une compaction,
+//      elle, n'appelle jamais `setSending` (le bouton stop n'interromprait
+//      rien, cf. l'exemption d'`abortStream`), donc rien ne la bordait
+//      localement. Sans (c), l'onglet qui compacte peut envoyer, éditer et
+//      régénérer pendant que sa propre compaction réécrit l'historique —
+//      exactement le trou que l'étape voulait fermer, rouvert chez soi.
 //
-// Lecture, scroll et retour au parent restent permis dans les deux cas (et
+// Lecture, scroll et retour au parent restent permis dans les trois cas (et
 // le readonly ne neutralise que les MUTATIONS — cf. .conv-parent-btn, composer.css).
 function applyReadonlyState() {
-  setConvReadonly(_peersGenerating.size > 0 || isFinishedAgentConv(currentConvId));   // ui.js
+  // Le prédicat est élargi ICI, jamais par un `setConvReadonly` appelé depuis
+  // le geste : le verrou a UN écrivain (setConvReadonly) et UN point de
+  // décision (cette fonction). Un second point déciderait en concurrence du
+  // premier, et le dernier à parler gagnerait (souvenir `concurrent-writers`).
+  setConvReadonly(_peersGenerating.size > 0 || isCompacting(currentConvId) ||
+                  isFinishedAgentConv(currentConvId));   // ui.js
   // Le rail d'interjections change d'apparence ET d'affordances avec le verrou
   // (X-1f) : légende (« sera transmise » vs « jamais transmise »), édition
   // retirée, balise éteinte. Re-rendu ici, à côté du seul écrivain du verrou —
@@ -2325,6 +2500,14 @@ function projectThreadToMessages(thread) {
     // n'existe plus au rechargement (project_ack_field_whitelists, même motif
     // que la projection méta de listAllConversations).
     if (m.agentResult) o.agentResult = m.agentResult;
+    // Tokens récupérés par une compaction, affichés par son séparateur dans le
+    // fil. Même raison que la ligne du dessus : whitelist, donc un champ absent
+    // d'ici ne survit pas au reload. Il faut la ligne dans les DEUX sens du
+    // voyage (lecture `projectConvMessages` / écriture `projectThreadToMessages`) :
+    // n'en faire qu'un perdrait le chiffre à l'aller ou au retour.
+    // `!= null` et non truthy : un gain nul est une information (le geste a eu
+    // lieu et n'a rien rapporté), pas une absence de mesure.
+    if (m.reclaimed != null) o.reclaimed = m.reclaimed;
     return o;
   });
 }
@@ -3279,6 +3462,20 @@ function onSendBtn() {
 function abortStream(convId) {
   const gen = generationFor(convId);
   if (!gen) return;
+  // EXEMPTION 3 (lot AE, étape 8) : une compaction ne s'interrompt pas ici.
+  // Elle n'a pas de stream (`gen.abort` reste null), donc on tomberait sur la
+  // branche du stop différé — qui poserait `gen.stopRequested` que PERSONNE
+  // n'honore (il n'y a pas de boucle de tours pour le consulter) et
+  // `setStopping(true)`, figeant le bouton composer jusqu'à la fin du geste.
+  // Un refus muet plutôt qu'une promesse d'arrêt qui ne sera pas tenue.
+  //
+  // Test en `=== 'compaction'` et NON en `!== 'stream'` : le sens du défaut
+  // n'est pas symétrique. Ne pas interrompre un stream est silencieux (il
+  // continue de consommer, personne ne le voit) ; refuser d'interrompre une
+  // compaction ne l'est pas. Une entrée de registre sans `kind` — une fixture,
+  // un chemin futur qui construirait l'objet à la main — doit donc tomber du
+  // côté qui INTERROMPT.
+  if (gen.kind === 'compaction') return;
   if (gen.abort) { gen.abort.abort(); return; }
   gen.stopRequested = true;
   if (genOwnsScreen(gen)) setStopping(true);
@@ -3299,17 +3496,36 @@ function abortStream(convId) {
 //   { ok:true,  literal, content, isSkill }   — au moins un slash résolu (content = bakové)
 //   { ok:false, error }                        — slug en position 0 inconnu / désactivé / indisponible
 async function resolveSend(literal) {
-  // Aucune skill activée : rien à reconnaître — un `/mot` (même en position 0)
-  // est du texte comme un autre, jamais un blocage « skill inconnue ».
-  if (!listEnabledSkills().length) return { ok: true, literal, content: literal, isSkill: false };
   const triggers = findSlashTriggers(literal);
   if (!triggers.length) return { ok: true, literal, content: literal, isSkill: false };
+  // Aucune skill activée : rien à reconnaître — un `/mot` (même en position 0)
+  // est du texte comme un autre, jamais un blocage « skill inconnue ».
+  //
+  // EXCEPTION lot AE : une commande MIAOU existe indépendamment des skills, et
+  // son refus de forme (« elle s'envoie seule ») doit sortir même sans aucune
+  // skill activée. Sans cette exception, `/compact et au fait, …` partirait
+  // silencieusement au modèle comme du texte, sur une install sans skill — la
+  // plus courante. `sendMessage` a déjà exécuté la forme correcte en amont :
+  // ce qui arrive ici est forcément mal formé.
+  if (!listEnabledSkills().length) {
+    const bad = triggers.find(t => t.atStart && commandSlugs().indexOf(t.slug) >= 0);
+    if (!bad) return { ok: true, literal, content: literal, isSkill: false };
+    return { ok: false, error: commandFormRefusal(bad.slug) };
+  }
 
   const resolved = [];
   for (const t of triggers) {
     const meta = getSkillMeta(t.slug);   // cache mémoire (skills.js)
     const known = meta && meta.enabled !== false;
     if (!known) {
+      // Slug d'une COMMANDE MIAOU en position 0 sans être seul dans le champ :
+      // `sendMessage` a déjà écarté la forme reconnue (littéral trimé ===
+      // `/compact`), donc on est forcément sur `/compact et au fait, …`. Le
+      // refus « skill inconnue » serait faux ET désorientant — le slug est
+      // connu, c'est sa FORME qui ne l'est pas. Nommer la vraie contrainte.
+      if (t.atStart && commandSlugs().indexOf(t.slug) >= 0) {
+        return { ok: false, error: commandFormRefusal(t.slug) };
+      }
       if (t.atStart) return { ok: false, error: 'Skill inconnue ou désactivée : /' + t.slug };
       continue;   // mid-message non reconnu : reste texte littéral, pas de blocage
     }
@@ -3551,6 +3767,31 @@ async function sendMessage() {
   // « image seule », cas naturel avec le trombone/drag&drop).
   if (!text && !pendingAttachments.length) return;
 
+  // ── Commandes MIAOU (lot AE, AE-8) ─────────────────────────────────────────
+  // Reconnaissance ICI, dans sendMessage, et surtout PAS dans resolveSend :
+  // celui-ci a SIX appelants, dont les deux drains d'interjection (main.js et
+  // agents.js) qui re-résolvent le littéral à la frontière de tour. Y placer le
+  // prédicat rendrait `/compact` exécutable par interjection — or AE-7 refuse
+  // de compacter pendant une génération, et une interjection n'existe QUE
+  // pendant une génération. Le cas doit rester vide par construction, pas
+  // rattrapé par une garde.
+  //
+  // Le placement règle du même coup le court-circuit de tête de resolveSend
+  // (« aucune skill activée → un /mot est du texte ») : une commande n'est pas
+  // une skill, elle n'a pas à en hériter. Sans aucune skill, /compact marche.
+  const command = matchMiaouCommand(text);
+  if (command) {
+    // Pièces jointes en attente : ni jeter (perte silencieuse), ni envoyer
+    // comme texte (la commande ne serait pas exécutée). On refuse en nommant la
+    // raison, et rien n'est consommé — ni la saisie, ni les pièces jointes.
+    if (pendingAttachments.length) {
+      showComposerError('Retire d\'abord la pièce jointe : une commande ne s\'envoie pas avec un fichier.');
+      return;
+    }
+    await runMiaouCommand(command);
+    return;
+  }
+
   // On résout AVANT de vider le composer : un slug invalide ne perd pas la saisie
   // ni ne consomme un tour modèle. Le verrou couvre exactement cet await.
   let r;
@@ -3575,6 +3816,53 @@ async function sendMessage() {
   pendingAttachments = [];
   renderComposerAttachments();
   await sendUserText(r.literal, r.isSkill ? r.content : undefined, attachments);
+}
+
+// ── Exécution d'une commande MIAOU (lot AE) ──────────────────────────────────
+// Dispatch par slug, table plutôt que cascade de `if` : une commande de plus se
+// pose ici, à côté de son entrée de `MIAOU_COMMANDS` (skills.js), sans toucher
+// à `sendMessage`.
+//
+// Une commande ne pousse AUCUN message : rien ne part au modèle, le thread
+// n'est pas muté par l'envoi lui-même (le geste, lui, peut l'être). Le composer
+// est vidé comme pour un envoi normal — la saisie a été consommée.
+//
+// Verrou de réentrance propre au geste : `_sendResolving` est relâché avant que
+// la commande ne s'exécute, et la rédaction du résumé de compaction est un
+// aller-retour réseau de plusieurs secondes. Deux Entrée rapides poseraient
+// sinon deux frontières (même raison que le `btn.disabled` de l'affordance du
+// drawer, ui.js).
+let _commandRunning = false;
+
+async function runMiaouCommand(slug) {
+  if (_commandRunning) return;
+  const ta = $('composer-text');
+  _commandRunning = true;
+  try {
+    ta.value = ''; ta.style.height = 'auto';
+    clearComposerError();
+    hideSkillAutocomplete();
+    if (slug === 'compact') {
+      // Le geste rend `{ refusal }` ou `{ done }` — même protocole qu'au bouton
+      // du drawer. Le REFUS passe par le canal d'erreur du composer : c'est là
+      // que l'utilisateur vient de taper, et c'est bien une erreur.
+      //
+      // Le BILAN, lui, n'y va pas. `showComposerError` est un canal d'erreur
+      // (rouge, purgé à la frappe) et son propre commentaire met en garde
+      // contre l'élargissement par commodité. Le bilan est donc posé dans le
+      // hint du drawer, où il sera lu si celui-ci est ouvert — et où le bouton
+      // l'aurait mis de toute façon. Un succès silencieux au composer est
+      // acceptable : le fil se re-rend, la pilule descend.
+      //
+      // Pas de `runBackgroundTask` ici : `compactCurrentConversation` porte
+      // déjà le sien autour de la rédaction du résumé (piège 8). En imbriquer
+      // un second compterait deux fois la même tâche dans l'indicateur.
+      const out = await compactCurrentConversation();
+      if (out && out.refusal) showComposerError(out.refusal);
+    }
+  } finally {
+    _commandRunning = false;
+  }
 }
 
 // Construit le `content` d'un message porteur d'attachments au tour d'attache
@@ -4846,6 +5134,333 @@ async function summarizeIfNeeded(id) {
   });
 }
 
+// ── Geste de compaction du contexte (lot AE, étape 3) ───────────────────────
+// Le geste complet, déclenché par l'utilisateur sur la conversation AFFICHÉE :
+// le modèle actif rédige un résumé structuré, la frontière est posée dans le
+// thread, la microcompaction de l'étape 2 est déclenchée par le même geste
+// (AE-5), et le tout est persisté une fois.
+//
+// PÉRIMÈTRE : la conversation à l'écran, et elle seule. C'est ce qui neutralise
+// les pièges 28 et 29 — `currentThread` EST le thread chaud de `currentConvId`,
+// donc pas de `warmConversation`, pas de lecture froide qui rendrait
+// `messages: []` et ferait écraser l'historique.
+//
+// Rend un message de refus (string) ou null en cas de succès — même protocole
+// que `editUserMessage`, dont il partage la nature de réécriture d'historique.
+// Rend un OBJET, jamais une string nue : `{ refusal }` ou `{ done }` (bilan
+// chiffré), et `null` quand il n'y a rien à dire (parti ailleurs en cours de
+// route). Le protocole « string = refus » d'origine ne pouvait pas porter le
+// bilan d'après-coup sans que l'appelant devine lequel des deux il lit.
+async function compactCurrentConversation() {
+  if (!currentConvId) return null;
+  const convId = currentConvId;
+
+  // ── Gardes AE-7, AU POINT DE MUTATION ──────────────────────────────────
+  // Ici et pas seulement sur le bouton : griser une affordance ne protège pas
+  // un thread (précédent `editUserMessage`, et sa troisième voie fermée).
+  //
+  // DEUX gardes distinctes, jamais une seule, et chacune NOMME sa borne :
+  // « attends la fin de la génération » et « attends tes agents » appellent des
+  // gestes différents (précédent `agentSpawnLimitError`).
+  //
+  // `isGenerating(convId)` et JAMAIS `sending` : celui-ci est un reflet d'ÉCRAN
+  // (piège 28). Une conversation qui génère sans être affichée a
+  // `sending === false` — et comme ce geste peut être déclenché depuis le
+  // drawer après avoir navigué, la distinction n'est pas théorique.
+  const refusal = compactionRefusal(
+    isGenerating(convId),
+    agentBusyRewriteRefusal(convId),
+    hasCompactableSubstance(currentThread));
+  if (refusal) return { refusal };
+
+  // ── Occupation de la conversation, TOUS ONGLETS (lot AE, étape 8) ───────
+  // La compaction entre au registre des générations le temps du geste. Elle y
+  // gagne, sans qu'aucun code nouveau ne les porte : le relais readonly
+  // multi-onglets (`conv-generation-started`, qui verrouille le composer et les
+  // mutations chez les pairs affichant cette conversation), la fermeture
+  // automatique des deux gardes AE-7 contre un second geste local — y compris
+  // une seconde compaction, ce qui rend inutile toute garde de réentrance ad
+  // hoc —, le badge « working », et le retrait de « régénérer ».
+  //
+  // APRÈS la garde d'entrée, jamais avant : `isGenerating(convId)` en fait
+  // partie, et s'enregistrer d'abord ferait refuser le geste par sa propre
+  // occupation (motif `predicate-killed-by-feature`).
+  //
+  // `thread: currentThread` — la même RÉFÉRENCE que le thread affiché, pas une
+  // copie. Le geste mute en place ; l'entrée du registre ne sert pas à porter
+  // un thread de travail (aucun consommateur ne l'y lira, `streamGenerationFor`
+  // les en écarte), mais le contrat de l'objet est rempli plutôt que troué.
+  const gen = createGeneration(convId, currentThread, { kind: 'compaction' });
+  registerGeneration(gen);
+  try {
+    return await runCompaction(gen, convId);
+  } finally {
+    // `finally` et pas une sortie par chemin : le geste a sept retours (refus,
+    // abandon, succès) et un `await` qui peut jeter. Un seul point de
+    // libération, comme pour les générations de stream — sans quoi la
+    // conversation resterait verrouillée sur TOUS les onglets, et la seule
+    // façon d'en sortir serait de recharger la page.
+    unregisterGeneration(gen);
+  }
+}
+
+// Corps du geste, une fois la conversation occupée (cf. ci-dessus). Séparé de
+// son enveloppe pour que le `try/finally` du désenregistrement n'ait pas à
+// englober le corps entier avec ses sept retours.
+async function runCompaction(gen, convId) {
+  // Indicateur d'activité (piège 8) : try/finally porté par runBackgroundTask.
+  const summary = await runBackgroundTask('compaction…',
+    () => generateCompactionSummary(currentThread));
+  // Échec de rédaction (réseau, timeout, JSON non parsable — piège 7) : on ne
+  // pose AUCUNE frontière. Une frontière sans résumé élaguerait l'historique en
+  // ne le remplaçant par rien, soit une perte de contexte pure.
+  if (!summary) {
+    return { refusal: 'Le résumé de compaction n\'a pas pu être produit (le ' +
+      'modèle n\'a pas répondu, ou sa réponse était inexploitable). Rien n\'a ' +
+      'été modifié, tu peux réessayer.' };
+  }
+
+  // Relecture APRÈS l'await (piège 24 b) : la génération du résumé a pris du
+  // temps réseau, et tout peut avoir bougé pendant. L'utilisateur a pu changer
+  // de conversation, en relancer une génération, ou lancer un agent pendant
+  // qu'on rédigeait.
+  //
+  // PARTI AILLEURS : on TERMINE QUAND MÊME (correctif du 2026-09-22).
+  // Le geste abandonnait ici, silencieusement — le résumé était rédigé, l'appel
+  // modèle payé, puis jeté, et l'utilisateur retrouvait sa conversation sans
+  // aucune trace de la compaction qu'il avait demandée. Une perte de travail,
+  // pas un défaut d'affichage.
+  //
+  // Cet abandon était JUSTE avant l'étape 8, et il ne l'est plus : sa prémisse
+  // était que rien ne protégeait la conversation pendant le geste, donc
+  // qu'écrire dedans à l'aveugle était dangereux. Depuis, elle est au registre
+  // et verrouillée sur tous les onglets — personne d'autre n'a pu la muter.
+  //
+  // Ce qui change quand l'écran est parti, c'est le RÉFÉRENTIEL d'écriture,
+  // exactement la scission du piège 28 : `currentThread` a été réaffecté au
+  // thread de la conversation d'ARRIVÉE par `openConversation`, donc y pousser
+  // la frontière l'écrirait dans la mauvaise conversation. On écrit dans
+  // `gen.thread` — la référence capturée à l'enregistrement, c'est-à-dire le
+  // tableau de CETTE conversation — et on persiste par `persistGeneration`,
+  // qui écrit dans `gen.convId` et porte la garde anti-troncature (piège 29).
+  //
+  // Le piège 29 est neutralisé sans `warmConversation` : `gen.thread` a été
+  // capturé alors que la conversation était AFFICHÉE, donc chaud par
+  // construction. C'est la même raison qui valait pour le périmètre d'origine,
+  // et elle survit au départ de l'écran.
+  // Le référentiel se décide sur l'IDENTITÉ du tableau, pas sur l'égalité des
+  // ids. Les deux divergent dans un cas réel : partir puis REVENIR pendant la
+  // rédaction. `openConversation` réaffecte alors `currentThread` depuis le
+  // storage (`projectConvMessages`) — un tableau NEUF, et non `gen.thread`,
+  // puisque `streamGenerationFor` écarte les compactions du rebranchement.
+  // `currentConvId === convId` serait donc vrai, mais `currentThread` ne
+  // serait plus le tableau que ce geste a mesuré : y pousser la frontière la
+  // poserait dans une copie, et `persistCurrent` écraserait l'autre.
+  //
+  // On écrit donc TOUJOURS dans `gen.thread` — la référence capturée à
+  // l'enregistrement, seule à être restée la même d'un bout à l'autre du
+  // geste — et on ne peint que si l'écran affiche EXACTEMENT ce tableau.
+  const thread = gen.thread;
+  const onScreen = (currentConvId === convId) && (currentThread === thread);
+  // `generationFor(convId) !== gen` et NON `isGenerating(convId)` : depuis
+  // l'étape 8 cette compaction est elle-même au registre, donc `isGenerating`
+  // répondrait vrai à cause d'elle et le geste se refuserait à lui-même juste
+  // avant d'aboutir (motif `predicate-killed-by-feature`, et le registre étant
+  // clé par convId, il ne peut de toute façon porter qu'UNE entrée). La
+  // question posée reste exactement la même — « quelqu'un d'autre occupe-t-il
+  // cette conversation ? » — mais elle s'exprime par identité plutôt que par
+  // présence. Le cas n'est pas théorique : une génération lancée depuis un
+  // autre onglet passe par le registre local via la rehydratation.
+  const refusalAfter = compactionRefusal(
+    generationFor(convId) !== gen,
+    agentBusyRewriteRefusal(convId),
+    hasCompactableSubstance(thread));
+  if (refusalAfter) return { refusal: refusalAfter };
+
+  // PAS de microcompaction ici — AE-5 est ANNULÉ (décision du 2026-09-22).
+  //
+  // Le geste couplé était sans effet observable : `expandThread` élague tout ce
+  // qui précède la frontière, et la frontière est posée en FIN de thread, donc
+  // il n'y a rien en aval qu'une évacuation pourrait alléger. Elle mutait le
+  // thread persisté sans rien changer à ce qui part au modèle. Aucun test ne
+  // pouvait l'attraper : les purs de l'évacuation vérifiaient qu'elle évacue
+  // (vrai), ceux de la frontière qu'elle élague (vrai aussi) — le défaut était
+  // dans le JOINT (souvenir `green-check-proves-nothing`).
+  //
+  // L'évacuation est désormais un geste autonome (`evacuateToolResults`,
+  // ci-dessous), où elle retrouve son sens : alléger les gros résultats SANS
+  // couper l'historique ni appeler le modèle.
+
+  // Poids AVANT, pour le bilan. Mesuré sur le thread ENTIER : la frontière
+  // qu'on s'apprête à poser ne déplace rien en base, elle change ce qui est
+  // ÉMIS — donc le gain se lit sur ce que `expandThread` cessera d'envoyer,
+  // pas sur ce que le thread pèse. D'où `compactableCharCount` (depuis la
+  // dernière frontière) et non `threadCharCount` : c'est exactement la matière
+  // qui va cesser d'être transmise.
+  const reclaimedChars = compactableCharCount(thread);
+
+  // La frontière. Une ENTRÉE du thread, pas un message (cf. docs/compaction.md)
+  // — `expandThread` élaguera tout ce qui la précède à l'ÉMISSION, sans rien
+  // détruire en base (AE-2).
+  //
+  // `reclaimed` (tokens récupérés) est PERSISTÉ sur l'entrée, pas recalculé au
+  // rendu : après coup, la matière d'origine n'est plus mesurable depuis le
+  // thread (la frontière est posée, mais c'est l'émission qui change — et un
+  // rendu ne doit pas rejouer un calcul dont l'entrée a bougé). C'est une
+  // donnée du geste, au même titre que son horodatage (souvenir
+  // `random-belongs-to-data` : ce qui ne se redérive pas du rendu appartient à
+  // l'état). Le séparateur du fil l'affiche, donc le chiffre survit au reload
+  // et se lit sans ouvrir le drawer.
+  const reclaimed = estimateTokensFromChars(reclaimedChars) -
+                    estimateTokensFromChars(summary.length);
+  thread.push({ role: 'compaction', content: summary, ts: Date.now(),
+                reclaimed: reclaimed > 0 ? reclaimed : 0 });
+
+  // Persistance selon le RÉFÉRENTIEL, pas selon l'écran (piège 28, les deux
+  // chemins de `docs/generations.md`) :
+  //  - écran possédé → `persistCurrent`, le chemin historique ;
+  //  - parti ailleurs → `persistGeneration(gen)`, qui écrit dans `gen.convId`
+  //    et porte la garde anti-troncature (`generationWouldTruncate`, piège 29).
+  // Les DEUX héritent leur `syncPost` post-commit de `persistConversation`
+  // (émis sur `tx.oncomplete`) : il ne faut SURTOUT pas en écrire un second.
+  if (onScreen) persistCurrent();
+  else persistGeneration(gen);
+  // Peinture : seulement si l'écran est encore sur cette conversation. C'est
+  // la seconde moitié de la scission — muter TOUJOURS, refléter SI on possède
+  // l'écran. Rien à peindre sinon : la frontière apparaîtra au retour, par le
+  // chemin de rendu normal (`openConversation` relit le storage), ce qui est
+  // exactement l'invariant live = reload.
+  if (onScreen) rerenderCurrentThread();   // jamais `renderThread` nu (piège 28)
+  else if (currentConvId === convId) {
+    // Cas « parti puis REVENU pendant la rédaction » : l'écran affiche bien
+    // cette conversation, mais sur un tableau relu du storage, distinct de
+    // `gen.thread`. La frontière vient d'être persistée ; sans ce rechargement
+    // elle n'apparaîtrait qu'au prochain rendu fortuit — le même symptôme
+    // d'« aucune trace de la compaction » que ce correctif ferme, sous une
+    // variante plus rare. `openConversation` relit le storage et resynchronise
+    // pilule et inspecteur au passage.
+    openConversation(convId);
+  }
+  // Le résumé REMPLACE ce qu'il couvre : le gain net déduit son propre poids.
+  const done = formatReclaimSummary('Historique résumé', reclaimedChars, summary.length);
+  // Bilan posé AVANT la synchro, et par le GESTE plutôt que par ses appelants :
+  // `syncContextCounter` re-rend le drawer s'il est ouvert, donc le bilan est
+  // affiché sans que chaque voie de déclenchement (bouton, `/compact`) ait à
+  // s'en charger — deux poseurs divergeraient, et la commande resterait muette.
+  // Bilan et synchro de pilule : des surfaces d'ÉCRAN, donc conditionnées au
+  // référentiel comme la peinture. Parti ailleurs, `_reclaimReports` est un
+  // état de VUE purgé au changement de conversation (docs/compaction.md) — le
+  // poser viserait le drawer de la conversation d'ARRIVÉE, et le manifeste à
+  // invalider est le sien, pas celui qu'on vient de compacter. Le retour sur
+  // la conversation compactée passe par `openConversation`, qui remet
+  // `_lastContextManifest` à null et resynchronise : la pilule y sera juste
+  // sans qu'on ait rien à faire ici.
+  if (!onScreen) return { done };
+
+  setReclaimReport('compact', done);
+  // Le manifeste du dernier ENVOI RÉEL est périmé par ce geste, et doit être
+  // annulé AVANT la synchro — sinon la pilule et l'inspecteur réaffichent la
+  // photo d'AVANT la compaction. `effectiveContextManifest()` rend
+  // `_lastContextManifest || computeContextManifestNow()` : tant que la photo
+  // existe elle GAGNE, et ce geste n'envoie rien qui la rafraîchisse. C'est la
+  // même ligne que les six autres sites qui périment le manifeste (bibliothèque
+  // de Space, MCP, skills, switch de Space, switch de conversation) ; les deux
+  // gestes d'allègement étaient les seuls à l'omettre, alors que réduire ce qui
+  // sera envoyé est précisément leur raison d'être.
+  //
+  // Le défaut avait été soupçonné comme un problème d'onglet MASQUÉ. La
+  // visibilité n'y est pour rien : il vaut aussi au premier plan, drawer
+  // ouvert. Ce qui l'a rendu insaisissable, c'est qu'`openConversation` remet
+  // le manifeste à null — changer de conversation et revenir EFFACE le
+  // symptôme, donc toute reproduction passant par la sidebar le rate.
+  _lastContextManifest = null;
+  syncContextCounter();      // la pilule doit refléter le contexte allégé
+  return { done };
+}
+
+// ── Évacuation des résultats d'outils volumineux (geste autonome) ───────────
+// Décision du 2026-09-22, qui annule AE-5 : la microcompaction était couplée au
+// geste de compaction, où elle n'avait aucun effet observable (tout ce qui
+// précède la frontière est élagué à l'émission, et la frontière est posée en
+// fin de thread). Détachée, elle répond à un besoin réel et distinct : alléger
+// les gros résultats d'outils SANS couper l'historique ni appeler le modèle.
+//
+// C'est le geste LÉGER des deux : pas d'aller-retour réseau, rien de résumé,
+// rien qui cesse d'être transmis — les résultats restent intégralement
+// récupérables par leur handle. D'où sa place AU-DESSUS de la compaction dans
+// le drawer : les deux affordances y sont rangées par coût croissant.
+//
+// MÊME PÉRIMÈTRE que la compaction — la conversation AFFICHÉE et elle seule.
+// C'est ce qui neutralise les pièges 28 et 29 : `currentThread` EST le thread
+// chaud de `currentConvId`, donc pas de `warmConversation`, pas de lecture
+// froide qui rendrait `messages: []` et ferait écraser l'historique.
+//
+// Même protocole de retour que sa voisine : `{ refusal }`, `{ done }`, ou null.
+async function evacuateToolResults() {
+  if (!currentConvId) return null;
+  const convId = currentConvId;
+
+  // Gardes AE-7, AU POINT DE MUTATION comme pour la compaction : ce geste
+  // réécrit lui aussi des entrées du thread persisté, donc il tombe sous les
+  // mêmes bornes. Elles sont RELAYÉES TELLES QUELLES, jamais reformulées — deux
+  // rédactions du même refus divergeraient (souvenir `single-predicate-consumers`).
+  const EVACUATE_GESTURE = 'évacuer les résultats d\'outils';
+  if (isGenerating(convId)) {
+    return { refusal: compactionRefusal(true, null, true, EVACUATE_GESTURE) };
+  }
+  const agentBusy = agentBusyRewriteRefusal(convId);
+  if (agentBusy) return { refusal: compactionRefusal(false, agentBusy, true, EVACUATE_GESTURE) };
+
+  // Troisième borne, PROPRE à ce geste : la matière est ici « des résultats
+  // d'outils assez gros », pas « assez d'historique ». Le prédicat de la
+  // compaction (`hasCompactableSubstance`) répondrait à côté — une conversation
+  // fournie peut n'avoir aucun résultat éligible, et une conversation courte
+  // avec un seul énorme résultat en a un.
+  const before = evacuableToolResults(currentThread, TOOL_RESULT_EVACUATION_MIN_CHARS,
+                                      isInlineHandleResult);
+  if (!before.count) {
+    return { refusal: 'Aucun résultat d\'outil assez volumineux pour valoir ' +
+      'd\'être évacué.' };
+  }
+
+  const charsBefore = threadCharCount(currentThread);
+  // Indicateur d'activité (piège 8) : try/finally porté par runBackgroundTask.
+  // `microcompactToolResults` gère elle-même l'ack `resource_stored` parasite
+  // que `_storeBlock` pousserait hors tour d'outils, et ne persiste rien — la
+  // persistance appartient à l'appelant, qui sait dans quelle conversation il
+  // écrit (piège 28) et doit émettre son `syncPost` post-commit (piège 24).
+  const evacuated = await runBackgroundTask('évacuation…',
+    () => microcompactToolResults(currentThread, convId));
+
+  // Relecture APRÈS les awaits (piège 24 b) : `microcompactToolResults` en
+  // enchaîne N sur IDB, et l'utilisateur a pu changer de conversation pendant.
+  // Le thread muté reste correct (elle travaille par identité d'objet), mais on
+  // ne persiste ni ne peint sur un écran qui a changé de sujet.
+  if (currentConvId !== convId) return null;
+  if (!evacuated) {
+    return { refusal: 'Aucun résultat n\'a pu être évacué. Rien n\'a été modifié.' };
+  }
+
+  persistCurrent();
+  rerenderCurrentThread();   // jamais `renderThread` nu (piège 28)
+  const head = evacuated + (evacuated > 1 ? ' résultats évacués' : ' résultat évacué');
+  const done = formatReclaimSummary(head, charsBefore, threadCharCount(currentThread));
+  // Bilan posé AVANT la synchro, et par le GESTE — même règle que sa voisine :
+  // `syncContextCounter` re-rend le drawer s'il est ouvert, donc le poser après
+  // arriverait trop tard et le hint garderait son texte d'avant le geste
+  // (défaut attrapé par le verify, qui lisait « Aucun résultat… » alors que le
+  // geste rendait le bon bilan).
+  setReclaimReport('evacuate', done);
+  // Manifeste du dernier envoi réel périmé par ce geste : même raison et même
+  // ligne que sa voisine (cf. le commentaire développé dans
+  // `compactCurrentConversation`). Sans elle, le thread maigrit réellement mais
+  // la pilule reste figée sur la photo d'avant — mesuré, elle affichait encore
+  // le poids des résultats évacués.
+  _lastContextManifest = null;
+  syncContextCounter();
+  return { done };
+}
+
 // ── Description de fichier de bibliothèque d'espace (lot Cbis) ─────────
 // Nommée « description », PAS « résumé » : le texte ne condense pas le
 // contenu, il décrit ce que le fichier EST (nature, sujets, structure) pour
@@ -5249,6 +5864,12 @@ async function init() {
   // légende « / » ; rafraîchit aussi la pilule de contexte, sous-évaluée tant
   // que le bloc skills autotrigger (buildSkillsContextBlock, désormais part du
   // message système) n'a pas ces données (même écart que loadSpaceLibrary).
+  // Légende « / » posée AVANT (et hors) de la chaîne IDB : depuis le lot AE
+  // elle annonce aussi les commandes MIAOU, qui n'ont besoin d'aucun store. La
+  // laisser derrière ce `then` la garderait cachée à jamais sur un échec IDB,
+  // alors que `/compact` fonctionnerait. Le `then` la repose ensuite, le
+  // libellé changeant s'il existe des skills activées.
+  syncSkillHintUI();
   ensureSystemSkills().then(loadSkillsCache).then(() => {
     syncSkillHintUI();
     _lastContextManifest = null;

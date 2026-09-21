@@ -549,9 +549,15 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   par `markEarlyAckPending` et retiré par `settleEarlyAckPending` — dont un
   point de retrait inconditionnel en fin de tour —, drawer ouvert recomplété
   par `refreshToolInspectorIfOpen`), références de
-  conversation dans le texte du modèle (`conv_ref`), et lien d'autorisation
+  conversation dans le texte du modèle (`conv_ref`), lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
-  d'ack rendue en texte, absente des exports).
+  d'ack rendue en texte, absente des exports), et **microcompaction des tool
+  results** (lot AE : `microcompactToolResults`, seuil uniforme
+  `TOOL_RESULT_EVACUATION_MIN_CHARS` jamais une liste de kinds, descripteur
+  statique et jamais `_makeResourceRef`, réentrance par identité d'objet sur N
+  awaits, note de queue préservée par `splitToolResultNoteRaw` — variante BRUTE
+  de `splitToolResultNote`, qui elle démaquille pour l'affichage —, et retrait
+  de l'ack `resource_stored` parasite hors tour d'outils).
 - **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
   formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
   CDN et versions gelées, selectors par format, caps de lecture (dont
@@ -584,7 +590,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   deviner (la détection par en-tête a été tentée puis écartée). À lire avant de
   toucher au manifeste **et avant de toucher à l'ordre du join de
   `buildSystemMessage()`**, que ce fichier documente et dont deux gardes de
-  position dépendent.
+  position dépendent. Le drawer héberge depuis le lot AE l'affordance de
+  compaction, et la pilule son glyphe de seuil (`docs/compaction.md`) : le
+  réglage de fenêtre de contexte n'y est plus un pur dénominateur d'affichage.
 - **`docs/spaces.md`** — Spaces / « Espaces » (lot C) : herméticité (piège 18,
   `spaceConvIds`), default Space, scope `profile` des souvenirs, description de
   Space concaténée au prompt système, bibliothèque de fichiers par Space.
@@ -609,7 +617,23 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `<slug>__<serveur>` que MIAOU est le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
   `tools.js` (composition et routage).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
-  stage 2 (autotrigger, doctrine de déclenchement, confirmation).
+  stage 2 (autotrigger, doctrine de déclenchement, confirmation) ; porte aussi,
+  depuis le lot AE, la **seconde famille derrière le `/`** — les commandes MIAOU
+  (`MIAOU_COMMANDS`, registre en liste), qui ne sont PAS des skills : prédicat
+  pur `matchMiaouCommand` (« le littéral trimé vaut EXACTEMENT `/<slug>` »,
+  plus serré que l'`atStart` de `findSlashTriggers`), posé dans `sendMessage` et
+  jamais dans `resolveSend` (six appelants, dont deux drains d'interjection —
+  y placer le prédicat rendrait `/compact` exécutable pendant une génération,
+  qu'AE-7 refuse), réservation du slug par `validateSkillSlug` avant le test
+  d'unicité (AE-9) avec signalement d'une skill homonyme déjà en base sur sa
+  card, discriminant d'autocomplétion `commands: true` porté par le seul état
+  composer (les deux états ont la même forme), `matchCommandCompletions` tenue
+  distincte de `matchSkillCompletions`, et la légende « / » du composer devenue
+  INCONDITIONNELLE (c'est son libellé qui varie) ; porte enfin la **géométrie du
+  panneau d'autocomplétion** — hauteur max MESURÉE à l'ouverture
+  (`fitSkillAutocompleteHeight`, style inline, jamais les pixels fixes du CSS :
+  ancré en absolu, il ne connaît pas en CSS la place libre au-dessus de lui) et
+  densité de LISTE et non de contenu.
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
   ce qui doit être vérifié à la main (`docs/manual-tests.md`).
 - **`docs/exports.md`** — export Markdown et export HTML standalone des
@@ -670,6 +694,91 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   au popover de topbar ET au sous-mode `agent` de la palette, avec la scission
   « se montrer » (`resolveAgentCount`) / « afficher quoi »
   (`agentInventoryCount`).
+- **`docs/compaction.md`** — compaction du contexte (lot AE) : pourquoi le geste
+  n'est PAS calé sur la saturation (context rot, lost in the middle — d'où une
+  affordance à 50 % distincte du seuil d'alerte à 80 %), frontière portée par une
+  entrée `role: 'compaction'` du thread et les purs qui la servent
+  (`isCompactionEntry`, `lastCompactionIndex`, `formatCompactionMessage`),
+  troisième élagage à
+  l'ÉMISSION d'`expandThread` (rien n'est détruit, décision AE-2), message émis
+  `_synthetic` obligatoire, indexation ABSOLUE des groupes d'acks comme garde du
+  ciblage `findAckByCallId` (les ids `solo:N` des acks legacy sont positionnels —
+  mesuré), byte-stabilité du rejeu, et « seule la dernière frontière vaut » ;
+  porte les DEUX projections qui consomment la frontière et la ligne de partage
+  entre elles — `projectThreadForCompaction` part APRÈS (continuer à
+  travailler, appels d'outils inclus et bornés), `projectThreadForRecap` part de
+  la frontière INCLUSE (retrouver/titrer, couverture depuis le début), cette
+  dernière partagée par `generateSummary` et `generateTitle` qui reprojetaient
+  le thread brut jusqu'au 2026-09-22 ;
+  porte aussi l'**évacuation des tool results**, geste AUTONOME depuis
+  l'annulation d'AE-5 le 2026-09-22 (`evacuateToolResults`, main.js) : couplée à
+  la compaction elle n'avait AUCUN effet observable, la frontière étant posée en
+  fin de thread et tout l'amont élagué à l'émission — défaut invisible aux purs,
+  qui vérifiaient chacun leur moitié, et logé dans le JOINT ; seuil 2 000 caractères
+  appliqué uniformément et jamais par liste de kinds, `ackIsExpandable` comme
+  première condition avant toute question de taille, descripteur STATIQUE contre
+  le `resource_ref` à expansion, note MIAOU de queue recollée derrière le handle
+  via `splitToolResultNoteRaw`, réentrance par identité d'objet sur N awaits, et
+  le geste qui ne persiste rien — l'appelant possède la conversation et son
+  `syncPost`) ; porte les DEUX affordances du drawer rangées par COÛT CROISSANT
+  (évacuation d'abord, elle n'appelle pas le modèle et ne coupe rien), leur
+  mécanique d'appel partagée `runReclaimGesture`, leurs bornes AE-7 relayées par
+  le MÊME `compactionRefusal` dont l'argument `gesture` nomme le geste refusé, et
+  le **bilan rendu APRÈS coup et jamais promis avant** (`formatReclaimSummary` sur
+  une mesure avant/après, gain nul dit explicitement, posé PAR LE GESTE avant son
+  `syncContextCounter` — un poseur placé après n'aurait aucun effet, et les deux
+  voies de déclenchement auraient sinon chacune à s'en charger ; `_reclaimReports`
+  est un état de VUE volatil, purgé à l'ouverture du drawer et au changement de
+  conversation), la compaction PERSISTANT le sien sur l'entrée de frontière
+  (champ `reclaimed`, affiché par le séparateur du fil, d'où sa ligne dans les
+  DEUX whitelists de projection et le pur `formatCompactionReclaimSuffix` qui
+  refuse tout ce qui n'est pas un entier — sortie interpolée vers `innerHTML`,
+  piège 21) ; porte enfin le **geste utilisateur complet**
+  (`compactCurrentConversation`, main.js) : périmètre limité à la conversation
+  AFFICHÉE (ce qui neutralise les pièges 28 et 29, au prix d'une relecture après
+  chaque await), DEUX gardes AE-7 distinctes et nommant leur borne
+  (`isGenerating` — jamais `sending`, reflet d'écran — et
+  `agentBusyRewriteRefusal` relayé tel quel), posées au point de mutation et non
+  sur le bouton, plancher de matière en CARACTÈRES (`COMPACTION_MIN_CHARS`,
+  `compactableCharCount` comptant les `result` d'acks autant que les `content`),
+  résumé STRUCTURÉ PAR CONTRAT (`COMPACTION_PROMPT`, distinct de
+  `SUMMARY_PROMPT` — retrouver plus tard ≠ continuer à travailler) rédigé par
+  `activeModel()` (AE-3) avec les gardes des résumés automatiques (timeout,
+  parsing défensif, `runBackgroundTask` chez l'appelant), échec de rédaction →
+  AUCUNE frontière, persistance UNIQUE dont le `syncPost` post-commit est hérité
+  de `persistConversation`, et l'affordance du drawer d'inspecteur — visible
+  quel que soit le remplissage et saillante au-delà de
+  `CONTEXT_COMPACTION_HINT_RATIO`, grisée sur la SEULE borne d'absence de
+  matière (les deux bornes AE-7 sont des attentes, donc restent cliquables et
+  leur refus nomme la sienne), seuil signalé sur la pilule par la FORME (glyphe)
+  — qui porte l'accent de la palette et REDESCEND à `currentColor` sous
+  saturation, le registre chromatique des deux seuils gardant la priorité ; le
+  glyphe écrit sa visibilité sur l'ATTRIBUT `hidden` et jamais sur la propriété
+  (`SVGElement` n'a pas `hidden` : l'affectation ment et laisse l'attribut,
+  défaut payé) ; porte enfin les **deux voies de
+  déclenchement** du même geste (bouton du drawer, commande `/compact`) et les
+  trois points où la commande le touche — pas de `runBackgroundTask` imbriqué,
+  verrou `_commandRunning` distinct du `btn.disabled`, refus si des pièces
+  jointes attendent —, le mécanisme du `/` lui-même restant dans
+  `docs/skills.md` ; porte enfin l'**occupation de la conversation pendant le
+  geste** (étape 8) — entrée au registre des générations par un `kind`
+  `'compaction'` plutôt qu'un second verrou, d'où relais readonly
+  multi-onglets, gardes AE-7 refermées sur elles-mêmes et badge « working »
+  gratuits ; les trois exemptions nommées que ce `kind` impose
+  (`genOwnsScreen` faux, `streamGenerationFor` qui écarte du rebranchement
+  d'écran, `abortStream` qui sort) et le **sens asymétrique** de leurs tests,
+  choisi sur le côté où tombe le défaut ; la garde post-await qui teste
+  l'IDENTITÉ (`generationFor(convId) !== gen`) et non la présence, sans quoi le
+  geste se refuse à lui-même ; le verrou LOCAL, que le relais ne couvre pas
+  (`applyReadonlyState` ne lit que les pairs, et une compaction n'appelle pas
+  `setSending`) ; l'aboutissement **même si l'écran est parti** — écriture dans
+  `gen.thread` et `persistGeneration`, référentiel décidé sur l'IDENTITÉ du
+  tableau et jamais sur l'égalité des ids (mesuré : partir puis revenir perd
+  sinon la frontière) ; l'invalidation de `_lastContextManifest` avant
+  `syncContextCounter` dans les DEUX gestes d'allègement, sans quoi pilule et
+  inspecteur restent figés sur la photo du dernier envoi ; et l'arbitrage des
+  **deux surfaces d'annonce** (`syncCompactionActivitySurface` /
+  `setBgActivitySuppressed`), chacune parlant là où l'autre se tait.
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

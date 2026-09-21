@@ -1728,3 +1728,40 @@ describe('conversationMessageCount — le compte qui survit à l\'éviction', fu
     expect(listAllConversations()[0]._messageCount).toBe(undefined);
   });
 });
+
+// ── Statut d'une ligne RACINE de l'inventaire (lot AE, étape 8) ─────────────
+// Trois états, pas deux. Le troisième est né de l'entrée de la compaction au
+// registre des générations : sans lui, sa ligne de popover disait « génère »,
+// ce qui est faux — elle ne produit aucune réponse, elle réécrit l'historique.
+describe('rootActivityLabel — trois occupations d\'une conversation racine', function () {
+
+  it('une racine qui génère le dit', function () {
+    expect(rootActivityLabel(true, false)).toBe('génère');
+  });
+
+  it('une racine inerte qui attend ses agents ne se prête pas une génération', function () {
+    expect(rootActivityLabel(false, false)).toBe('en attente de ses agents');
+  });
+
+  it('une compaction dit qu\'elle COMPACTE, pas qu\'elle génère', function () {
+    // Le cas qui motive la fonction : une conversation en compaction est au
+    // registre, donc `working` y est VRAI aussi. Le test le pose explicitement
+    // — avec `working` faux il passerait sans rien prouver du conflit réel.
+    expect(rootActivityLabel(true, true)).toBe('compacte le contexte');
+  });
+
+  it('le cas spécifique passe avant le générique, quel que soit working', function () {
+    // Garde d'ORDRE : inverser les deux tests de la fonction ferait retomber
+    // une compaction sur « génère », c'est-à-dire exactement le défaut.
+    expect(rootActivityLabel(false, true)).toBe('compacte le contexte');
+  });
+
+  it('les trois libellés sont DISTINCTS', function () {
+    // Deux libellés qui refusionneraient laisseraient les tests ci-dessus
+    // verts tout en rendant l'inventaire muet sur la différence
+    // (souvenir `distinct-labels-joint-assert`).
+    const all = [rootActivityLabel(true, false), rootActivityLabel(false, false),
+                 rootActivityLabel(true, true)];
+    expect(new Set(all).size).toBe(3);
+  });
+});

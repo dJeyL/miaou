@@ -21,6 +21,8 @@ Ce que tu peux faire ici :
 - **Analyser** un ou plusieurs fichiers volumineux (log, JSON, CSV, texte) : le
   modèle peut exécuter du code sur leur contenu pour compter, filtrer, extraire
   ou les croiser entre eux, sans les charger dans le contexte.
+- **Compacter** une conversation devenue longue : son début est remplacé par un
+  résumé pour que le modèle garde le fil, sans que rien soit supprimé.
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
 - **Déléguer** : le modèle peut confier une tâche à un agent — une
   sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
@@ -400,7 +402,7 @@ nom, une description et un corps en Markdown. Tu les gères dans un panneau déd
 (Paramètres → Skills) : création, édition, suppression, et un interrupteur pour
 activer ou désactiver chacune.
 
-Deux façons de s'en servir :
+Plusieurs façons de s'en servir :
 
 - **Invocation directe** : tape `/` suivi du slug dans le composer. Le corps de
   la skill est injecté dans le message envoyé (une autocomplétion t'aide au fil de
@@ -420,6 +422,15 @@ Deux façons de s'en servir :
 
 Une skill est utile pour un cadrage récurrent : un style de réponse, une
 procédure, un gabarit — tout ce que tu répéterais sinon à la main.
+
+**Le `/` ne sert pas qu'aux skills.** Il ouvre aussi les **commandes** de MIAOU,
+qui ne sont pas des skills : elles ne s'écrivent pas, ne se modifient pas, et
+n'apparaissent pas dans le panneau Skills — elles déclenchent un geste de
+l'application. L'autocomplétion les distingue par une étiquette « commande ».
+Une commande s'envoie **seule** dans le composer, sans autre texte autour, et
+elle n'est pas proposée quand tu modifies un message déjà envoyé. `/compact`
+compacte le contexte de la conversation (cf. `contexte`). Le slug d'une commande
+est réservé : une skill ne peut pas porter le même.
 
 **Importer une skill existante** (par exemple une skill écrite pour Claude Code,
 avec un cartouche `--- name: … description: … ---` en tête de fichier) :
@@ -731,12 +742,20 @@ Deux idées à ne pas confondre :
 - **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.
   Clique-le pour voir la ventilation part par part.
 - **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**
-  un levier de réduction : c'est le dénominateur qui sert à afficher un taux de
+  un levier de réduction : c'est le dénominateur qui sert à calculer un taux de
   remplissage (« combien sur le maximum du modèle »). La modifier ne change rien
-  à ce qui est envoyé — c'est une jauge, pas un robinet.
+  à ce qui est envoyé — c'est une jauge, pas un robinet. Elle décide en revanche
+  de deux repères calculés sur ce taux : le moment où le compteur signale qu'on
+  approche de la limite, et celui où la compaction est conseillée.
 
 Les **vrais leviers** pour alléger ce qui part à chaque tour :
 
+- **Évacuer les résultats d'outils** : remplace les résultats volumineux déjà
+  obtenus par un lien que le modèle peut rouvrir. Le geste le plus léger — aucun
+  appel au modèle, et rien ne cesse d'être transmis — détaillé juste en dessous.
+- **Compacter le contexte** : remplace le début de la conversation par un résumé
+  que le modèle rédige lui-même. C'est le levier le plus direct sur une
+  conversation devenue longue — détaillé juste en dessous.
 - **Résumés** : leur injection a un mode réglable (automatique, sur proposition,
   ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.
 - **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en
@@ -756,6 +775,66 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
 - **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses
   outils au contexte, et éventuellement ses consignes d'usage (sujet `mcp`). En
   débrancher un allège la liste d'outils envoyée.
+
+### Compacter le contexte
+
+Quand une conversation s'allonge, le modèle commence à perdre le fil bien avant
+que la fenêtre de contexte ne soit pleine : les informations du milieu de la
+conversation sont les moins bien exploitées, et la qualité décline à mesure que
+l'ensemble grossit. **Compacter** répond à ça.
+
+Deux façons de le déclencher, pour le même geste : le bouton de l'inspecteur de
+contexte (clique le compteur « ≈ N tok », puis « Compacter le contexte »), ou la
+commande **`/compact`** envoyée seule dans le composer (cf. `skills`). MIAOU
+demande alors au modèle de la conversation de
+rédiger un résumé structuré de ce qui s'est passé — l'intention, les décisions
+prises et leurs motifs, les fichiers et ressources en jeu, ce qui a échoué, ce
+qui reste à faire. Ce résumé remplace le début de la conversation dans ce qui
+part au modèle.
+
+**Rien n'est supprimé.** Les messages restent affichés dans le fil et tu peux
+continuer à les relire : ce qui change est seulement ce que le modèle reçoit.
+Une ligne dans la conversation marque l'endroit de la coupure, indique ce que
+l'opération a fait gagner, et le résumé s'y consulte en le dépliant.
+
+**Alléger sans rien couper : évacuer les résultats d'outils.** Le même panneau
+propose, au-dessus de la compaction, un second geste plus léger. Quand un outil
+a renvoyé un résultat volumineux (le contenu d'un gros fichier, une longue
+réponse d'API), ce résultat pèse dans le contexte à chaque tour alors qu'il a
+souvent déjà servi. L'évacuer le remplace par un lien que le modèle peut rouvrir
+à la demande — aucun appel au modèle, aucun résumé, rien qui cesse d'être
+transmis. Le bouton est grisé s'il n'y a rien d'assez volumineux, et il annonce
+ensuite combien de résultats ont été évacués et ce que ça a libéré. Les deux
+gestes sont indépendants : tu peux évacuer sans compacter, et l'inverse.
+
+MIAOU **propose** la compaction quand le contexte atteint la moitié de la fenêtre
+(un petit symbole apparaît alors sur le compteur), mais ne la déclenche jamais
+tout seul : c'est toujours ta décision. Tu peux compacter plus tôt si tu vois le
+modèle dériver, et recommencer plus tard — seule la coupure la plus récente
+compte, on ne résume jamais un résumé.
+
+Sur une conversation encore trop courte, le bouton est grisé et le panneau
+explique pourquoi : il n'y a pas encore assez d'historique pour qu'un résumé
+apporte quoi que ce soit.
+
+Deux situations où ces gestes sont refusés, avec le motif affiché : pendant
+qu'une réponse est en cours de génération, et tant qu'un agent lancé depuis cette
+conversation travaille encore (son compte rendu doit revenir dans le fil tel
+qu'il l'a quitté). Attends la fin, ou interromps, puis recommence. Dans ces
+deux cas le bouton reste cliquable — c'est une attente qui va se lever, pas une
+impossibilité.
+
+**Pendant qu'une compaction se fait, la conversation est en lecture seule** —
+dans cet onglet comme dans les autres où elle serait ouverte. Le temps que le
+résumé s'écrive (quelques secondes), tu ne peux ni envoyer, ni modifier un
+message, ni relancer une réponse : l'historique est en train d'être réécrit, et
+deux écritures en même temps se marcheraient dessus. Tout redevient normal dès
+que c'est fini.
+
+Tu n'as pas à rester sur la conversation pour autant : **le geste va au bout
+même si tu pars ailleurs**, et tu retrouveras la coupure à ton retour. Pendant
+ce temps, une pastille en haut de la fenêtre indique qu'une compaction est en
+cours et sur quelle conversation — clique-la pour y revenir.
 
 Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
 reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
@@ -803,6 +882,8 @@ Quelques repères pour te déplacer dans MIAOU :
   zone de saisie te dit **où il en est** : qu'il travaille, qu'il réfléchit
   intensément, qu'il répond, ou qu'il utilise des outils — et rappelle à chaque
   fois qu'Entrée ajoute à la file (sujet `multitache`) plutôt que d'interrompre.
+  Taper `/` y ouvre une liste : tes skills (sujet `skills`) et les commandes de
+  MIAOU, ces dernières repérables à leur étiquette « commande ».
 - **Largeur de lecture** : sous le composer, à droite, deux petits boutons
   « – » et « + » élargissent ou resserrent la zone centrale (le fil et le
   composer ensemble). La largeur d'origine est la plus étroite : le « – » est
@@ -1003,9 +1084,10 @@ sans perdre ta place.
   Espaces différents dans deux onglets. Si la même conversation est ouverte à
   deux endroits, un
   bandeau discret le signale. Et si une réponse est en cours de génération dans
-  un onglet, la même conversation passe en **lecture seule** dans les autres le
-  temps de la réponse — pour éviter deux générations concurrentes qui
-  s'écraseraient ; tu peux toujours lire et faire défiler. La synchro est locale
+  un onglet — ou si une compaction du contexte s'y fait —, la même conversation
+  passe en **lecture seule** dans les autres le temps de l'opération, pour
+  éviter deux écritures concurrentes qui s'écraseraient ; tu peux toujours lire
+  et faire défiler. La synchro est locale
   à ton navigateur (elle ne relie pas deux machines ni deux navigateurs
   différents).
 
@@ -1052,11 +1134,13 @@ modèle.
   estimation du poids de chaque part. Survole le nom d'une part pour lire ce
   qu'elle contient. Utile pour comprendre ce que « voit » le
   modèle et surveiller le remplissage de la fenêtre de contexte. La taille de
-  fenêtre réglée dans les Paramètres est **seulement le dénominateur** de ce
-  calcul (le « N tok sur combien ») : c'est un indicateur d'atteinte de la
-  limite, pas un filtre — la changer ne réduit ni n'augmente ce qui part
-  réellement à l'API. Pour ce qui pèse et comment l'alléger, voir le sujet
-  contexte.
+  fenêtre réglée dans les Paramètres est le **dénominateur** de ce calcul (le
+  « N tok sur combien ») : c'est un indicateur d'occupation, pas un filtre — la
+  changer ne réduit ni n'augmente ce qui part réellement à l'API, mais elle
+  déplace les repères qui en découlent, dont celui à partir duquel la compaction
+  est conseillée. C'est aussi depuis ce panneau qu'on **allège le contexte** —
+  en évacuant les gros résultats d'outils, ou en compactant.
+  Pour ce qui pèse et comment l'alléger, voir le sujet contexte.
 
 ## donnees — tes données et leur stockage
 

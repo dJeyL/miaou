@@ -456,3 +456,98 @@ describe('setGenPhase — étapes du composer, dont les deux d\'après-outils', 
     expect(gen.phaseVariant).toBe(0);
   });
 });
+
+// ── `kind` de l'entrée du registre (lot AE, étape 8) ────────────────────────
+// Une compaction entre au registre des générations pour occuper la
+// conversation sur TOUS les onglets (relais readonly), sans rien peindre. Le
+// contrat tient en trois exemptions nommées ; ces tests les gardent, parce
+// qu'aucune d'elles ne se voit dans un rendu et qu'une régression y serait
+// silencieuse — un stream jamais interrompu, ou une bulle vide au bas du fil.
+describe('kind de génération — compaction au registre sans peindre', function () {
+
+  it('createGeneration pose \'stream\' par défaut', function () {
+    // Le défaut couvre tous les appels existants, qui ne passent pas de kind :
+    // sans lui, chaque génération réelle deviendrait une compaction.
+    const gen = createGeneration('c1', []);
+    expect(gen.kind).toBe('stream');
+  });
+
+  it('createGeneration accepte \'compaction\' et remplit quand même le contrat', function () {
+    // L'objet est COMPLET, jamais un littéral tronqué : un consommateur qui
+    // déréférence gen.thread ou gen.abort ne doit pas planter au premier
+    // chemin oublié. Ce qui n'est pas rempli l'est VIDE, pas omis.
+    const gen = createGeneration('c1', [], { kind: 'compaction' });
+    expect(gen.kind).toBe('compaction');
+    expect(gen.convId).toBe('c1');
+    expect(gen.abort).toBe(null);
+    expect(gen.wrap).toBe(null);
+    expect(Array.isArray(gen.thread)).toBeTruthy();
+    expect(typeof gen.id).toBe('string');
+  });
+
+  it('genOwnsScreen : une compaction ne possède JAMAIS l\'écran, même sur la conv affichée', function () {
+    // L'exemption porte sur le prédicat unique, jamais sur un test `kind`
+    // réécrit chez un consommateur. Le témoin (même convId, kind stream)
+    // prouve que le montage atteint bien le cas : sans lui, un genOwnsScreen
+    // cassé rendrait ce test vert pour la mauvaise raison.
+    const saved = currentConvId;
+    currentConvId = 'c1';
+    expect(genOwnsScreen({ kind: 'stream', convId: 'c1' })).toBe(true);
+    expect(genOwnsScreen({ kind: 'compaction', convId: 'c1' })).toBe(false);
+    currentConvId = saved;
+  });
+
+  it('streamGenerationFor écarte la compaction, isGenerating la VOIT', function () {
+    // Les deux moitiés du choix, dans un seul test parce que c'est leur
+    // conjonction qui fait le lot : le geste doit occuper la conversation
+    // (isGenerating vrai → gardes AE-7, badge, relais readonly) tout en
+    // restant invisible du rebranchement d'écran. Vérifier l'une sans l'autre
+    // laisserait passer la moitié du défaut.
+    _activeGenerations.clear();
+    const gen = createGeneration('c1', [], { kind: 'compaction' });
+    _activeGenerations.set('c1', gen);
+    expect(isGenerating('c1')).toBe(true);
+    expect(generationFor('c1')).toBe(gen);
+    expect(streamGenerationFor('c1')).toBe(null);
+    _activeGenerations.clear();
+  });
+
+  it('streamGenerationFor rend bien une génération de stream', function () {
+    // Contre-épreuve : sans elle, un streamGenerationFor qui rendrait TOUJOURS
+    // null passerait le test précédent.
+    _activeGenerations.clear();
+    const gen = createGeneration('c1', []);
+    _activeGenerations.set('c1', gen);
+    expect(streamGenerationFor('c1')).toBe(gen);
+    _activeGenerations.clear();
+  });
+
+  it('abortStream n\'interrompt pas une compaction et ne lui pose pas de stopRequested', function () {
+    // Le stop différé serait un mensonge : aucune boucle de tours ne consulte
+    // stopRequested pour une compaction, et setStopping figerait le bouton
+    // composer jusqu'à la fin du geste.
+    _activeGenerations.clear();
+    let aborted = false;
+    const gen = createGeneration('c1', [], { kind: 'compaction' });
+    gen.abort = { abort: function () { aborted = true; } };
+    _activeGenerations.set('c1', gen);
+    abortStream('c1');
+    expect(aborted).toBe(false);
+    expect(!!gen.stopRequested).toBe(false);
+    _activeGenerations.clear();
+  });
+
+  it('une entrée SANS kind reste interruptible (le doute tombe du bon côté)', function () {
+    // Asymétrie délibérée avec genOwnsScreen : ne pas interrompre un stream est
+    // SILENCIEUX (il consomme sans que personne le voie), alors que refuser
+    // d'interrompre une compaction ne l'est pas. D'où un test en
+    // `=== 'compaction'` et non `!== 'stream'`. Fixtures et chemins futurs qui
+    // construiraient l'objet à la main tombent donc du côté qui interrompt.
+    _activeGenerations.clear();
+    let aborted = false;
+    _activeGenerations.set('c1', { convId: 'c1', abort: { abort: function () { aborted = true; } } });
+    abortStream('c1');
+    expect(aborted).toBe(true);
+    _activeGenerations.clear();
+  });
+});

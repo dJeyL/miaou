@@ -7,17 +7,23 @@ skill qui la fait lister chaque tour dans un bloc de contexte dynamique, pour
 découverte proactive par le modèle sans appel préalable à `skills__list`. Un
 troisième axe (non numéroté en stage) ajoute les **skills système** : skills
 non éditables/supprimables par l'utilisateur, dont le contenu vit dans
-`src/system-skills/*.md` et est injecté au build (cf. §7 ci-dessous).
+`src/system-skills/*.md` et est injecté au build (cf. §8 ci-dessous).
 **Hors périmètre stage 1+2** (ne pas amorcer) : skills multi-fichiers (stage 3),
 primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémoire
 + couche IDB).
+
+**Depuis le lot AE, ce fichier ne couvre plus seulement les skills** : le `/` du
+composer porte une seconde famille, les **commandes MIAOU** (`/compact`), qui
+n'en sont pas. Elles vivent ici parce qu'elles partagent la saisie, la
+reconnaissance et l'autocomplétion — pas le stockage ni le mécanisme
+d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchent.
 
 1. **Stockage = IDB store `skills`** (base `miaou` v2, keyPath `slug`) :
    `{ slug, name, description, enabled, content, autotrigger, system }`.
    `autotrigger` (stage 2, défaut `false` — **opposé** de `enabled`) : pas de
    bump de version IDB pour ce seul ajout (schemaless, absence == `false`).
    `system` (défaut `false`, même logique schemaless) marque une skill système
-   — cf. §7. Le **cache mémoire** (`_skillsCache`, méta SANS `content`,
+   — cf. §8. Le **cache mémoire** (`_skillsCache`, méta SANS `content`,
    projection `_skillMeta` — couvre `autotrigger` et `system`) alimente
    l'autocomplétion (filtrage synchrone par frappe, ne peut pas attendre IDB).
    `content` n'est lu en IDB qu'à l'**invocation** (slash ou `skills__read`) et
@@ -27,19 +33,76 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    Suppression = **hard delete** (pas de tombstone : action administrative
    explicite de l'utilisateur, ≠ écriture mémoire inférée où « undo ≠
    consentement ») — s'applique aux skills utilisateur ; une skill système
-   n'expose pas de bouton Supprimer (cf. §7).
+   n'expose pas de bouton Supprimer (cf. §8).
 
-2. **Invocation slash = injection côté client, ≠ `<miaou_context>`.** Détection +
+2. **Le `/` porte DEUX familles depuis le lot AE : skills et commandes MIAOU.**
+   Cette section décrivait l'invocation slash comme propre aux skills ; elle ne
+   l'est plus. Une **commande** (`MIAOU_COMMANDS`, skills.js — registre EN LISTE
+   dès la première entrée, jamais un littéral comparé sur place) n'a ni record
+   IDB, ni contenu injecté, ni card dans le drawer : elle déclenche un geste de
+   l'application. `/compact` est la première (cf. `docs/compaction.md`).
+   - **Le prédicat est `matchMiaouCommand` (pur) : « le littéral trimé vaut
+     EXACTEMENT `/<slug>` »**, plus serré que l'`atStart` de
+     `findSlashTriggers` — `/compact et au fait, …` n'est PAS une commande.
+   - **Il vit dans `sendMessage`, AVANT l'appel à `resolveSend`, jamais dedans.**
+     `resolveSend` a **six** appelants, dont deux drains d'interjection
+     (`main.js` et `agents.js`) qui re-résolvent le littéral à la frontière de
+     tour : y placer le prédicat rendrait `/compact` exécutable par
+     interjection, alors qu'AE-7 refuse de compacter pendant une génération et
+     qu'une interjection n'existe QUE pendant une génération. Le cas doit rester
+     vide **par construction**, pas rattrapé par une garde. Ce placement règle du
+     même coup le court-circuit « aucune skill activée » : une commande n'est pas
+     une skill et n'a pas à en hériter.
+   - **Une seule exception à ce court-circuit**, dans `resolveSend` : un slug de
+     commande en position 0 mal formé (`/compact et …`) doit sortir en refus
+     **même sans aucune skill activée**, sinon il partirait silencieusement au
+     modèle comme du texte sur l'install la plus courante. Le message
+     (`commandFormRefusal`, pur, source unique — `resolveSend` le dérive à deux
+     endroits) nomme la contrainte de FORME plutôt que « skill inconnue », qui
+     serait faux : le slug est connu, c'est son emploi qui ne l'est pas.
+   - **Jamais en édition d'un message passé** (condition 2) : l'édition EST une
+     réécriture d'historique, déjà sous la garde AE-7 — y accepter une commande
+     qui en déclenche une autre n'aurait pas de sens. Voir le discriminant
+     d'autocomplétion au §4.
+   - **Réservation du slug (AE-9)** : `validateSkillSlug` refuse tout slug du
+     registre, **avant** le test d'unicité (sinon une skill homonyme déjà en base
+     rendrait « déjà utilisé », qui n'explique rien) et avec un message qui dit
+     POURQUOI. Deux points d'application couvrent les trois voies d'entrée du
+     brief : `onSaveSkillCard` (main.js — **l'import y passe**, drop et paste ne
+     font que pré-remplir la card, ils n'écrivent rien) et `skills__write`
+     (tools.js, chemin modèle).
+   - **Skill `compact` DÉJÀ en base** : la garde ne la voit jamais. Décision
+     (Julien, 2026-09-21) : simple **signalement**, pas de renommage automatique
+     — un texte sur sa card dans le drawer (`.skill-view-shadowed`,
+     `buildSkillCard`). Dans le drawer et **pas** au composer : c'est là que
+     l'utilisateur peut agir (renommer) ; au composer ce serait au pire moment,
+     il veut compacter, pas arbitrer un conflit de nom. La skill continue de
+     fonctionner par `skills__read` et l'autotrigger, seul son slash est pris.
+   - **Exécution** : `runMiaouCommand(slug)` (main.js), dispatch par slug.
+     Aucun message n'est poussé, rien ne part au modèle. Verrou `_commandRunning`
+     propre au geste — `_sendResolving` est relâché avant, et la rédaction du
+     résumé de compaction est un aller-retour réseau : deux Entrée rapides
+     poseraient sinon deux frontières (même raison que le `btn.disabled` de
+     l'affordance du drawer).
+   - **La légende « / » du composer est devenue inconditionnelle.** Elle
+     disparaissait sans skill activée, et disait « pour une skill » : les deux
+     sont faux depuis qu'une commande existe sans aucune skill. C'est désormais
+     son TEXTE qui suit l'état (`syncSkillHintUI`), et l'appel est posé **hors**
+     de la chaîne `ensureSystemSkills().then(loadSkillsCache)` — derrière elle,
+     un échec IDB laisserait la légende cachée à jamais alors que `/compact`
+     marcherait.
+
+3. **Invocation slash (skills) = injection côté client, ≠ `<miaou_context>`.** Détection +
    validation + injection vivent dans **`resolveSend(literal)`** (main.js, async),
    **chemin UNIQUE partagé par `sendMessage` ET `editUserMessage`** — jamais deux
    implémentations. **Garde d'entrée : aucune skill activée
    (`listEnabledSkills()` vide) → aucun parsing de slug, aucun blocage** — un
    `/mot` même en position 0 part comme du texte normal (l'erreur « skill
-   inconnue » n'a pas de sens quand il n'existe aucune skill à connaître). La
-   légende « `/` pour une skill » du composer suit la même condition : span
-   `#composer-hint-skill`, visible seulement s'il existe ≥1 skill activée
-   (`syncSkillHintUI`, ui.js — synchronisée après `loadSkillsCache` au démarrage
-   et à chaque CRUD via `renderSkills`). `findSlashTriggers` (pur) repère les
+   inconnue » n'a pas de sens quand il n'existe aucune skill à connaître) —
+   **sauf le slug d'une commande MIAOU mal formé**, seule exception, cf. §2.
+   La légende du composer (span `#composer-hint-skill`, `syncSkillHintUI`,
+   ui.js) ne suit **plus** cette condition depuis le lot AE : elle est
+   inconditionnelle et c'est son libellé qui varie (§2). `findSlashTriggers` (pur) repère les
    `/<slug>` du texte ; pour chacun, lookup cache : slug absent/désactivé →
    `{ ok:false, error }` → erreur composer locale (`showComposerError`),
    **aucun envoi, aucun tour modèle, thread inchangé** ; sinon `getSkillContent`
@@ -61,7 +124,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      antérieures au renommage). **Chemin strictement distinct** de
      `buildContextBlock`/`miaou_context` (lui recalculé et préfixé à chaque tour).
 
-3. **Autocomplétion** (`onComposerInput` → `matchSkillCompletions`, activés
+4. **Autocomplétion** (`onComposerInput` → `matchSkillCompletions`, activés
    uniquement, match slug **ou** name) : ouverte tant qu'on tape le slug
    (`cmd.rest` vide), navigation clavier dans `onComposerKey` (↑↓ Tab Entrée Échap),
    sélection complète `/slug ` **sans envoyer**.
@@ -71,12 +134,58 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      de sélecteurs à l'ouverture au lieu de les décaler vers le haut. L'instance
      de la bulle d'édition (classe `.skill-ac` sans l'id) reste en flux, sous le
      champ.
+   - **Sa hauteur maximale est MESURÉE à l'ouverture**, pas fixée en CSS
+     (`fitSkillAutocompleteHeight`, ui.js, appelée par `renderSkillAutocomplete`
+     **après** `removeAttribute('hidden')` — un panneau caché n'a pas de
+     géométrie). Le `max-height: 220px` de `.skill-ac` reste le plancher de
+     l'instance d'édition, qui n'est pas ancrée pareil. Motif : ancrée en
+     absolu, l'instance du composer ne connaît pas en CSS la place libre
+     au-dessus d'elle — `vh` mesure le viewport, pas l'ancre — alors que la
+     hauteur du composer varie (pièces jointes, rail d'interjections, saisie
+     multiligne). Mesuré avant correction : 11 options = ~395 px comprimés dans
+     220 px **alors que 445 px étaient libres**, et les dernières options
+     passaient sous le pli, dont `/compact`. Recalculée à chaque peinture, donc
+     jamais périmée — c'est ce qui la distingue d'une constante relevée.
+   - **Densité de LISTE, pas de contenu** (lot AE étape 5). Le pas de ligne
+     valait 36 px (`padding: 8px`, `gap: 10px`, 13 px) : le CSS était respecté
+     — mesuré, il n'y avait aucun écart avec sa déclaration — mais réglé comme
+     un bloc de texte alors que c'est une liste qu'on parcourt à la flèche.
+     Ramené à ~27 px. Le slug est en `var(--mono)` : il déclarait sa pile
+     **en dur** et échappait donc à l'axe des lots de fontes (`docs/fonts.md`).
    - **Entrée dans la liste par ↑ sans sélection = DERNIÈRE option**
      (`moveSkillAcSelection`) : l'arithmétique modulaire depuis l'index -1
      donnerait l'avant-dernière. Vaut pour les deux contextes (composer et bulle
      d'édition).
+   - **Les commandes MIAOU s'y ajoutent, sous un discriminant explicite**
+     (lot AE). `updateSkillAutocomplete` reçoit un état `{ ta, box, index,
+     trigger }` et les deux contextes ont **exactement la même forme** : rien à
+     l'intérieur ne permettrait de les distinguer. Le composer (`_composerAc`)
+     porte donc `commands: true`, que l'état de la bulle d'édition n'a pas —
+     c'est ce qui tient la condition 2 du § 4.7 (jamais de commande en édition
+     d'un message passé). Nommé d'après la CAPACITÉ et non le contexte
+     (`isComposer`), qui inviterait à y brancher d'autres différences.
+   - **Commandes EN TÊTE de la liste, skills ensuite.** L'ordre inverse avait
+     été posé d'abord et réfuté à la première capture : les commandes sont
+     **bornées** (registre build-time), les skills une liste **ouverte**, donc
+     mettre l'ouverte devant pousse la bornée sous le pli dès qu'il y a plus de
+     quelques skills — `/compact` était invisible sans défiler. Ce qui est borné
+     passe devant ce qui ne l'est pas. Conséquence assumée : `acceptSkillAcSelection`
+     prend la première option à défaut de sélection, donc Entrée sur un `/` nu
+     complète une commande — elle insère, elle n'envoie pas.
+   - **`matchCommandCompletions` est DISTINCTE de `matchSkillCompletions`**, et
+     l'appelant concatène. Verser les commandes dans la seconde les ferait
+     apparaître dans le sous-mode `skill` de la palette de commandes
+     (`cmdkModeItems`, ui.js), qui n'appelle qu'elle — un test fige la
+     séparation. Les commandes ne sont proposées qu'**en position 0** : ailleurs
+     elles suggéreraient une capacité inatteignable, puisque la reconnaissance à
+     l'envoi exige le littéral seul.
+   - **Distinction visuelle** : `.skill-ac-opt.is-command` et une étiquette
+     « commande » (`.skill-ac-tag`, vocabulaire repris de `.root-prompt-badge` /
+     `.skill-system-badge`). Deux signaux plutôt qu'un — l'étiquette reste
+     lisible sans la couleur. Les afficher identiques ferait croire à une skill
+     `compact` éditable dans le drawer.
 
-4. **Chemin langage naturel = `skills__list` + `skills__read` + `skills__write`**
+5. **Chemin langage naturel = `skills__list` + `skills__read` + `skills__write`**
    (cf. `docs/tools.md`). Additif au registre `miaou__` existant — ne renomme
    aucun outil. C'est un **tool_result normal** (passe par la généralisation
    tool-ack, contenu disponible au modèle dès ce tour ET réinjecté cross-turn via
@@ -90,7 +199,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
    posture que la suppression (hard delete, pas de tombstone : action
    explicite).
 
-5. **Drawer `#skills-drawer`** (`.drawer-wide`, plus large pour éditer le corps) :
+6. **Drawer `#skills-drawer`** (`.drawer-wide`, plus large pour éditer le corps) :
    cartes vue/édition en `createElement`/`textContent` (jamais `innerHTML` pour les
    données). Rendu dans `ui.js` (`renderSkills`/`buildSkillCard`), persistance dans
    `main.js` (`onSaveSkillCard`/`onDeleteSkillCard`/`onToggleSkill`), comme le
@@ -156,7 +265,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
        (sinon double-traitement : la card courante ET potentiellement une
        bascule vers une autre skill).
 
-6. **Autotrigger (stage 2) : listing dynamique, SIBLING de `<miaou_context>`, pas
+7. **Autotrigger (stage 2) : listing dynamique, SIBLING de `<miaou_context>`, pas
    une section dedans.** `getAutotriggerSkillsMeta()` (skills.js, pure) filtre le
    cache sur `enabled === true && autotrigger === true` et projette
    `{slug, name, description}` (même forme que `skills__list`, fonction
@@ -211,7 +320,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      prétendre avoir appliqué une skill sans avoir appelé `skills__read` dans
      le même tour.
 
-7. **Skills système : non éditables, source = `src/system-skills/*.md`.** Une
+8. **Skills système : non éditables, source = `src/system-skills/*.md`.** Une
    skill système (`system: true` sur le record IDB) sert à documenter une
    capacité de l'application elle-même (ex. la syntaxe mermaid, cf. ci-dessous)
    sans dupliquer ce contenu à la main dans une constante JS ni le rendre
@@ -294,7 +403,7 @@ primitive `ask_*` dédiée. Logique dans `skills.js` (helpers purs + cache mémo
      modèle sa disponibilité sans avoir à durcir un slug en dur dans une
      doctrine statique.
 
-8. **Skills système extraites de `ROOT_SYSTEM_PROMPT` (`files-promote`,
+9. **Skills système extraites de `ROOT_SYSTEM_PROMPT` (`files-promote`,
    `js-eval`, `docs`)** — même mécanisme que `mermaid`, appliqué à trois des
    sept doctrines statiques de `tools.js` (cf. `docs/tools.md` pour la composition
    complète de `ROOT_SYSTEM_PROMPT`), avec un traitement différent selon la
