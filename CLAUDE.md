@@ -722,7 +722,14 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   le `resource_ref` à expansion, note MIAOU de queue recollée derrière le handle
   via `splitToolResultNoteRaw`, réentrance par identité d'objet sur N awaits, et
   le geste qui ne persiste rien — l'appelant possède la conversation et son
-  `syncPost`) ; porte les DEUX affordances du drawer rangées par COÛT CROISSANT
+  `syncPost`) ; porte la RELECTURE de ce qui a été évacué, moitié sans laquelle
+  le geste n'a pas de sens (`recall_attachment` sur le `res_…` du handle rend le
+  texte en clair — chemin qui marchait mais que RIEN n'annonçait : exclusivité
+  implicite entre `RESOURCE_DOCTRINE`, qui ne cite que `js__eval`, et
+  `ATTACHMENT_DOCTRINE`, qui ne citait `res_<id>` que pour les images ; mesuré en
+  prod le 2026-09-22, corrigé dans le message SYSTÈME et non dans le handle, plus
+  le refus de `resource__from_result` qui NOMME désormais la ressource via
+  `inlineHandleResourceId`) ; porte les DEUX affordances du drawer rangées par COÛT CROISSANT
   (évacuation d'abord, elle n'appelle pas le modèle et ne coupe rien), leur
   mécanique d'appel partagée `runReclaimGesture`, leurs bornes AE-7 relayées par
   le MÊME `compactionRefusal` dont l'argument `gesture` nomme le geste refusé, et

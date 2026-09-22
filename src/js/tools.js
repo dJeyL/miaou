@@ -176,6 +176,10 @@ const ATTACHMENT_DOCTRINE =
   "normalement. Ce même outil accepte AUSSI un handle de bibliothèque (file-<id>) ou de " +
   "ressource (res_<id>) : c'est par lui que tu regardes n'importe quelle image, y compris " +
   "celle que tu viens de télécharger ou de produire, et pas seulement une pièce jointe. " +
+  "Sur une ressource TEXTUELLE — un gros résultat d'outil rangé ou évacué, dont il ne " +
+  "reste qu'un handle res_… dans la conversation — le même outil te rend le contenu en " +
+  "clair : c'est ainsi que tu relis un résultat que tu n'as plus sous les yeux, sans " +
+  "refaire l'appel qui l'avait produit. " +
   "Ne décris jamais une image de mémoire sans l'avoir rappelée. Pour un " +
   "fichier binaire, le contenu n'est pas lisible directement, sauf si un outil " +
   "d'extraction est disponible (cf. ci-dessous).";
@@ -893,6 +897,21 @@ function isInlineHandleResult(result) {
   return /texte adressable par js__eval \(blob=/.test(String(result || ''));
 }
 
+// Extrait l'id res_… porté par un handle inline (même note, même émetteur
+// unique `formatInlineHandleForModel`), ou '' si le résultat n'en est pas un.
+//
+// Troisième lecteur de la phrase, avec sa propre portée : les deux autres
+// répondent « est-ce un handle ? » (isInlineHandleResult) et « quelle tranche
+// retirer ? » (INLINE_HANDLE_NOTE_PATTERN, utils.js) ; celui-ci répond
+// « LEQUEL ? », la seule question dont dépend un refus actionnable. Le motif
+// d'id reste celui du pattern d'utils.js ([A-Za-z0-9_]+), sans le reste de la
+// note : comme `isInlineHandleResult` il doit rendre l'id même sur une note
+// tronquée en queue. Pur, testable QuickJS.
+function inlineHandleResourceId(result) {
+  const m = /texte adressable par js__eval \(blob=([A-Za-z0-9_]+)/.exec(String(result || ''));
+  return m ? m[1] : '';
+}
+
 // ── Registre MCP interne ─────────────────────────────────────────────────────
 // Forme canonique : { name, description, inputSchema (JSON Schema), annotations,
 // handler }. ask_confirmation est exclu (primitif halting, voir ASK_CONFIRMATION_DEF).
@@ -1485,7 +1504,26 @@ const TOOLS = [
       if (!hit) return toolFail('resource__from_result', 'Résultat introuvable.');
       const targetAck = hit.ack;
       if (isInlineHandleResult(targetAck.result)) {
-        return toolFail('resource__from_result', 'Ce résultat est déjà une ressource.');
+        // Refus ACTIONNABLE : nommer la ressource, pas seulement constater.
+        // « Ce résultat est déjà une ressource. » est vrai mais ne dit pas
+        // LAQUELLE — le modèle doit alors la retrouver lui-même, et faute d'y
+        // arriver il rappelle au hasard ou re-fetch l'URL (observé en prod le
+        // 2026-09-22 : deux tours perdus, puis une conclusion fausse sur ses
+        // propres capacités). L'id est dans le résultat ciblé : le lire coûte
+        // une regex (souvenir `model-facing-text`, défaut « refus qui affirme
+        // un fait vrai mais inactionnable »).
+        // `recall_attachment` d'abord, et non `js__eval` : sur une ressource
+        // 'inline' il rend le texte EN CLAIR (utf8Decode, handler ci-dessus),
+        // donc c'est le geste qui répond littéralement à « je veux relire ce
+        // résultat ». js__eval sert à en faire quelque chose sans le repayer
+        // en tokens — autre besoin, cité ensuite.
+        const already = inlineHandleResourceId(targetAck.result);
+        return toolFail('resource__from_result', already
+          ? 'Ce résultat est déjà la ressource ' + already + ' — rien à convertir. '
+            + 'Pour en relire le contenu : miaou__recall_attachment(ref="' + already + '"). '
+            + 'Pour l\'exploiter sans le ramener dans ton contexte : passe ' + already
+            + ' à miaou__js__eval.'
+          : 'Ce résultat est déjà une ressource.');
       }
       const text = targetAck.result != null ? String(targetAck.result) : '';
       if (!text) return toolFail('resource__from_result', 'Résultat vide, rien à convertir.');

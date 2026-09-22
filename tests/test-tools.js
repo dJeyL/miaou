@@ -1336,6 +1336,39 @@ describe('isInlineHandleResult (idempotence resource__from_result, lot O-2)', fu
   });
 });
 
+describe('inlineHandleResourceId (refus actionnable de resource__from_result)', function() {
+  // Couplé à l'ÉMETTEUR (formatInlineHandleForModel) et jamais à une chaîne
+  // recopiée : la phrase a un émetteur unique et trois lecteurs, donc un test
+  // qui recopierait la note resterait vert après une reformulation qui casse
+  // l'extraction (souvenir `green-check-proves-nothing`, « instrument
+  // tautologique »).
+  it('rend l\'id porté par une sortie de formatInlineHandleForModel', function() {
+    const handle = formatInlineHandleForModel('res_9rui340q', 'text/plain', null);
+    expect(inlineHandleResourceId(handle)).toBe('res_9rui340q');
+  });
+  it('rend l\'id même si la note est tronquée en queue', function() {
+    const handle = formatInlineHandleForModel('res_abc123', 'text/plain', null);
+    const coupe = handle.slice(0, handle.indexOf('blob=') + 'blob=res_abc123'.length);
+    expect(inlineHandleResourceId(coupe)).toBe('res_abc123');
+  });
+  it('un résultat d\'outil ordinaire ne rend aucun id', function() {
+    expect(inlineHandleResourceId('Voici le contenu de la page web récupérée.')).toBe('');
+  });
+  it('null/undefined → chaîne vide, pas de crash', function() {
+    expect(inlineHandleResourceId(null)).toBe('');
+    expect(inlineHandleResourceId(undefined)).toBe('');
+  });
+  it('accorde son verdict avec isInlineHandleResult sur le même texte', function() {
+    // Les deux lecteurs partagent la phrase : un handle reconnu doit livrer un
+    // id, et un non-handle n'en livrer aucun. Ils divergeraient en silence si
+    // l'un des deux motifs était retouché seul.
+    const handle = formatInlineHandleForModel('res_zz9', 'application/json', null);
+    expect(isInlineHandleResult(handle) && inlineHandleResourceId(handle) !== '').toBe(true);
+    const ordinaire = 'Résultat brut sans handle';
+    expect(isInlineHandleResult(ordinaire) || inlineHandleResourceId(ordinaire) !== '').toBe(false);
+  });
+});
+
 describe('resource__from_result — définition d\'outil (lot O-2)', function() {
   it('resource__from_result est dans TOOLS avec ref ET description requis (schéma pleinement contraint)', function() {
     const def = TOOLS.find(t => t.name === 'resource__from_result');

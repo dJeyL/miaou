@@ -237,6 +237,45 @@ La persistance appartient à l'appelant, qui seul sait dans quelle conversation 
 écrit (piège 28) et doit émettre son `syncPost` **post-commit** (piège 24). Ce
 raccordement arrive à l'étape 3, avec le geste complet.
 
+### Relire ce qui a été évacué — la moitié qui donne son sens à l'autre
+
+Évacuer ne vaut que si le modèle peut **rouvrir** ce qu'il a rangé : c'est ce
+que l'aide promet à l'utilisateur (« une référence que le modèle peut rouvrir à
+la demande »). Le chemin est `miaou__recall_attachment(ref="res_…")`, qui sur une
+ressource de classe `inline` rend le texte **en clair** (`utf8Decode`, handler de
+`recall_attachment` dans tools.js) — l'id se lit dans le handle qui a remplacé le
+résultat.
+
+Ce chemin a toujours fonctionné ; ce qui manquait, c'est qu'il soit **dit**.
+`RESOURCE_DOCTRINE` n'annonce que `js__eval` (elle traite du rangement, pas de la
+relecture), et `ATTACHMENT_DOCTRINE` n'annonçait `res_<id>` que pour **regarder
+une image**. Rien de faux dans les deux textes, mais leur conjonction posait une
+**exclusivité implicite** : un modèle y lit que `res_…` sert aux images, et rien
+ne lui dit qu'une ressource textuelle se relit. Mesuré en conversation réelle le
+2026-09-22 — trois tours de tâtonnement, une re-exécution de l'appel d'origine,
+puis une conclusion fausse du modèle sur ses propres capacités. Défaut « silence »
+puis « capacité inatteignable » (souvenir `model-facing-text`).
+
+Deux corrections, l'une dans le texte permanent, l'autre au point de friction :
+
+- `ATTACHMENT_DOCTRINE` énonce désormais le cas textuel, en le reliant
+  explicitement au résultat évacué. C'est du message **système** (caché, payé une
+  fois) plutôt qu'un allongement du handle, qui serait repayé sur **chaque**
+  résultat évacué **à chaque tour** — et le handle n'est lu qu'au moment où le
+  modèle cherche déjà, là où la doctrine est lue avant qu'il ne se trompe.
+- Le refus de `resource__from_result` sur un résultat **déjà** ressource **nomme
+  la ressource** et dit quoi faire (`inlineHandleResourceId`, tools.js, troisième
+  lecteur de la phrase de `formatInlineHandleForModel`). « Ce résultat est déjà
+  une ressource. » était vrai et inactionnable : le modèle devait retrouver
+  l'id seul, ce qui lui a coûté deux tours.
+
+Vérification de bout en bout : `.claude/skills/run-miaou/verify-evacuated-recall.mjs`
+rejoue le scénario complet (évacuer → relire en clair → refus actionnable →
+capacité annoncée dans le message système **composé**, jamais dans la constante).
+Les cinq contrôles qui gardent ces deux corrections tombent sur le code d'avant,
+vérifié ; les autres restent verts, le chemin ayant toujours marché — c'est
+précisément la distinction qu'on veut d'eux.
+
 ## Le geste de compaction
 
 `compactCurrentConversation` (main.js) est le geste complet : gardes, rédaction
@@ -880,6 +919,22 @@ de message passé, et la densité de l'étape 5.
 Le script lit ses compteurs depuis la **source vivante** (`commandSlugs()`) et
 asserte l'**ensemble des slugs**, jamais leur nombre : un cardinal repérime au
 prochain ajout et ne dit pas *lequel* manque quand il tombe.
+
+`verify-evacuated-recall.mjs` tient la moitié que celui-ci ne regarde pas : non
+pas que le contenu **parte**, mais qu'on puisse le **relire** (cf. « Relire ce
+qui a été évacué » plus haut). Il évacue un résultat monté pour l'occasion, le
+rappelle par `recall_attachment`, et vérifie que le texte revient **entier** —
+marqueurs de début ET de fin, un rappel tronqué passerait sinon —, que le refus
+de `resource__from_result` nomme la ressource, et que la capacité est annoncée
+dans le message système **composé** (`buildSystemMessage().content`), jamais dans
+la constante. Trois pièges de montage y sont payés et commentés sur place :
+`ensureConversation()` est obligatoire (le geste sort sur `!currentConvId`, que
+`newConversation` remet justement à null), l'ack est une entrée `tool-ack` de
+**premier niveau** du thread et non un champ d'assistant, et `callTool` rend la
+forme MCP `{ content: [...] }` — un `String(out)` donnerait « [object Object] »
+et TOUS les contrôles de contenu passeraient au vert sur du vide. L'id `call:…`
+est enfin **demandé** à `enrichedAckGroups` plutôt qu'inventé : il est dérivé, pas
+stocké.
 
 Les blocs 6 et 7 (étape 8) jouent en revanche la compaction **de bout en bout**,
 ce que les cinq premiers ne pouvaient pas faire. Ce qui a levé l'obstacle n'est
