@@ -105,9 +105,12 @@ vingt-huit.
   **persistée** reste le descripteur (`formatAttachmentDescriptor`, resources.js,
   piège n°17) : le message user d'origine porte toujours le descripteur `att-N`,
   la ré-injection image n'est que transitoire (recomputée par le pré-pass, jamais
-  écrite). `servedKeys` (api.js) court-circuite un recall rigoureusement identique
-  répété dans le même échange (clé `nom:arguments`) : acceptable, l'image ré-injectée
-  plus haut est encore dans le contexte de l'échange. Doctrine dédiée
+  écrite). Un recall rigoureusement identique répété dans le même échange est
+  SERVI et ré-injecte l'image à nouveau ; seule la borne `TOOL_REPEAT_MAX`
+  (api.js, piège n°3) le refuse au-delà de son compte. Le coût contexte d'une
+  répétition est réel mais borné, et préférable au refus sec d'avant le
+  2026-09-22, qui prétendait au modèle que le contenu lui avait déjà été fourni.
+  Doctrine dédiée
   `ATTACHMENT_DOCTRINE` (tools.js, partie de `ROOT_SYSTEM_PROMPT`) : distincte de
   `BINARY_DOCTRINE` (qui couvre les ressources produites par un outil, pas les
   fichiers attachés par l'utilisateur). Elle est calée sur l'implémentation
@@ -1033,10 +1036,10 @@ Deux nuances à connaître avant d'ajouter un site d'échec :
   boucle d'outils soit coupée. Les trois `isError` de `callInternalTool` (outil
   inconnu, throw d'un handler = bug) poussent eux aussi un `tool_failed` — avant,
   le plus anormal était le plus muet : un plantage JS ne laissait aucune trace.
-- **Le court-circuit anti-redemande pousse aussi un `tool_failed`.** Quand
-  `servedKeys` (api.js, piège n°3) court-circuite un tool_call identique à un
-  appel déjà servi dans l'échange, aucun handler ne tourne — donc aucun ack par
-  le chemin normal. `pushDuplicateCallAck(name, message)` (tools.js) pousse la
+- **La borne de répétition pousse aussi un `tool_failed`.** Quand `callCounts`
+  (api.js, piège n°3) refuse un tool_call identique au-delà de
+  `TOOL_REPEAT_MAX`, aucun handler ne tourne — donc aucun ack par
+  le chemin normal. `pushRepeatLimitAck(name, message)` (tools.js) pousse la
   trace : même forme que `toolFail`, mais `name` arrive déjà canonique (nom
   exact du tool_call, interne ou distant) — pas de préfixe ajouté. api.js
   enchaîne avec `onEnrichLastAck` (args/result/ts/group) pour la fidélité

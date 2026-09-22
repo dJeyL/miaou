@@ -1666,24 +1666,39 @@ describe('toolFail — ack d\'échec des outils natifs', function() {
   });
 });
 
-// Court-circuit anti-redemande (servedKeys, api.js) : un tool_call identique à
-// un appel déjà servi dans l'échange n'exécute AUCUN handler — sans ack dédié,
-// il était invisible dans le fil.
-describe('pushDuplicateCallAck — ack du court-circuit anti-redemande', function() {
+// Borne de répétition (callCounts/TOOL_REPEAT_MAX, api.js) : au-delà de la
+// borne, un tool_call identique n'exécute AUCUN handler — sans ack dédié, le
+// refus serait invisible dans le fil.
+describe('pushRepeatLimitAck — ack de la borne de répétition', function() {
   it('pousse un ack tool_failed en erreur, reconnu par ackIsError', function() {
     clearPendingToolAcks();
-    pushDuplicateCallAck('miaou__conv__get', '(déjà fourni plus haut dans cet échange)');
+    pushRepeatLimitAck('miaou__conv__get', 'Appel refusé : borne atteinte.');
     var acks = getPendingToolAcks();
     expect(acks.length).toBe(1);
     expect(acks[0].kind).toBe('tool_failed');
     expect(acks[0].error).toBe(true);
-    expect(acks[0].message).toBe('(déjà fourni plus haut dans cet échange)');
+    expect(acks[0].message).toBe('Appel refusé : borne atteinte.');
     expect(ackIsError(acks[0])).toBe(true);
   });
   it('name déjà canonique : AUCUN préfixe ajouté (contrairement à toolFail)', function() {
     clearPendingToolAcks();
-    pushDuplicateCallAck('brave__web_search', 'x');
+    pushRepeatLimitAck('brave__web_search', 'x');
     expect(getPendingToolAcks()[0].name).toBe('brave__web_search');
+  });
+});
+
+// La borne est un filet anti-boucle, PAS une interdiction de re-sonder : un
+// outil qui observe un état vivant (agent__status) se rappelle légitimement
+// avec les mêmes arguments, et c'est le seul geste qui l'exprime. Ce test garde
+// l'ordre de grandeur — une borne rabaissée au voisinage d'un sondage plausible
+// rétablirait le défaut d'origine (refus d'un appel légitime), et une borne
+// au-delà de MAX_TURNS ne couperait jamais rien.
+describe('TOOL_REPEAT_MAX — calibrage de la borne', function() {
+  it('laisse passer tout sondage plausible (bien au-dessus de quelques appels)', function() {
+    expect(TOOL_REPEAT_MAX >= 10).toBe(true);
+  });
+  it('coupe la boucle bien avant le plafond de tours', function() {
+    expect(TOOL_REPEAT_MAX < MAX_TURNS).toBe(true);
   });
 });
 

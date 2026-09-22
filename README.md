@@ -289,6 +289,7 @@ build.
   "attachment_image_max_bytes": 10485760,
   "attachment_max_images":   4,
   "max_turns":               100,
+  "tool_repeat_max":         20,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }
 ```
@@ -362,6 +363,10 @@ est faite au seul point de lecture.
   effective.
 - `max_turns` : nombre de tours d'appels d'outils qu'un échange peut enchaîner
   avant d'être arrêté (défaut 100). Pendant non-agent de `max_agent_turns`.
+- `tool_repeat_max` : nombre d'appels d'un même outil avec exactement les mêmes
+  arguments qu'un échange tolère avant de refuser les suivants (défaut 20).
+  Filet anti-boucle : re-sonder un état qui change (l'avancement d'un agent)
+  reste légitime et n'a pas d'autre forme que l'appel identique.
 - `repo_url` : URL liée sur le mot « MIAOU » dans le footer des exports HTML
   (conversations et Markdown convertis). **Trois états distincts** : clef
   **absente ou `null`** → lien vers le dépôt public

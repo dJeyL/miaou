@@ -178,6 +178,13 @@ const ATTACHMENT_MAX_IMAGES = (typeof BUILD_CONFIG.attachment_max_images === 'nu
 // Borne sur les tours de la boucle tool_calls (piège 3). Pendant non-agent de
 // MAX_AGENT_TURNS ci-dessus, exposée pour la même raison.
 const MAX_TURNS = (typeof BUILD_CONFIG.max_turns === 'number') ? BUILD_CONFIG.max_turns : 100;
+// Borne sur les appels RIGOUREUSEMENT IDENTIQUES d'un même échange (piège 3) :
+// au-delà, l'appel est refusé sans exécuter d'outil. Filet contre le modèle qui
+// boucle, PAS une interdiction de re-sonder — un outil qui observe un état
+// vivant (agent__status) se rappelle légitimement avec les mêmes arguments.
+// D'où une valeur très au-dessus de tout sondage plausible, et très en dessous
+// de MAX_TURNS pour couper la pathologie bien avant le plafond de tours.
+const TOOL_REPEAT_MAX = (typeof BUILD_CONFIG.tool_repeat_max === 'number') ? BUILD_CONFIG.tool_repeat_max : 20;
 
 const DEFAULT_SETTINGS = {
   url: '',

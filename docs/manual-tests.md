@@ -65,9 +65,11 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     `deleteConv`) reste, elle, un **lien cliquable normal** — le tombstone ne
     concerne que le résumé/mémoire, jamais la conversation elle-même.
 5. **Plusieurs tool_calls par tour** : tous exécutés dans le même tour.
-6. **Anti-redemande** : redemander un appel rigoureusement identique dans le même
-   échange ne redéclenche pas le handler ; deux appels distincts du même outil
-   (ex. deux `memory__create`) sont tous deux servis.
+6. **Répétition d'appel** : un appel rigoureusement identique répété dans le même
+   échange est SERVI — le handler retourne, et un outil qui observe un état
+   vivant (`agent__status`) rend bien la valeur du moment, pas celle du premier
+   appel. Seule la répétition au-delà de `TOOL_REPEAT_MAX` est refusée, avec un
+   ack rouge dont le message nomme la borne (jamais « tu l'as déjà »).
 7. **Suppression réversible** : supprimer un souvenir → plus jamais re-résumé,
    même après redémarrage ; « Ré-autoriser » → régénéré au passage suivant.
 8. **Souvenirs — chemin direct** : "souviens-toi que X" → le modèle appelle

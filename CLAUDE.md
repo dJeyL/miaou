@@ -299,7 +299,9 @@ geste ; le développement est dans la doc pointée.
 2. **Injection ≠ appel d'outil.** L'injection de résumés est du texte ajouté par
    MIAOU ; les `tool_calls` viennent du **modèle** uniquement.
 3. **Résultat d'outil jamais affiché avant `finish_reason: 'stop'`.** Borne
-   `MAX_TOURS` sur les tours ; anti-redemande via `servedKeys`.
+   `MAX_TOURS` sur les tours ; répétition d'un appel identique BORNÉE
+   (`callCounts`/`TOOL_REPEAT_MAX`), jamais interdite — un outil qui observe un
+   état vivant se re-sonde avec les mêmes arguments.
 4. **Agrégation SSE par `index`.** Agréger `tool_calls` fragmentés par
    `tcDelta.index` ; ne pas parser `function.arguments` avant fin de stream.
 5. **Pas de résumé sur conversation fraîche/avortée.** Seuil `hasSubstance()`

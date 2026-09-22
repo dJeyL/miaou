@@ -58,13 +58,38 @@ HTML, ou à la synchro multi-onglets.
    boucle `runConversation` (`api.js`) va **toujours jusqu'au `finish_reason:
    'stop'`** avant d'afficher quoi que ce soit. Borne : `MAX_TURNS` tours (pas
    une borne sur le nombre d'outils — tous les `tool_calls` d'un tour sont
-   exécutés dans ce tour). **Anti-redemande par échange** : `servedKeys`
-   (clé `nom + ':' + arguments bruts`) court-circuite un appel rigoureusement
-   identique déjà servi dans le même échange — deux appels du même outil avec
-   des arguments distincts (ex. deux `memory__create`) sont tous les deux servis.
-   Le court-circuit laisse une trace dans le fil : ack `tool_failed` rouge poussé
-   par `pushDuplicateCallAck` (tools.js) + enrichissement standard — sans lui,
-   aucun handler ne tournant, l'appel était totalement invisible.
+   exécutés dans ce tour). **Borne de répétition par échange** : `callCounts`
+   (clé `nom + ':' + arguments bruts` → compte) refuse un appel rigoureusement
+   identique au-delà de `TOOL_REPEAT_MAX` (storage.js, 20) — deux appels du même
+   outil avec des arguments distincts (ex. deux `memory__create`) sont comptés
+   séparément. Le refus laisse une trace dans le fil : ack `tool_failed` rouge
+   poussé par `pushRepeatLimitAck` (tools.js) + enrichissement standard — sans
+   lui, aucun handler ne tournant, l'appel serait totalement invisible.
+
+   **C'était un court-circuit SEC jusqu'au 2026-09-22** : le premier appel
+   identique répété était refusé. La clé traitait ainsi tout outil comme une
+   fonction PURE du temps de l'échange — faux de tout ce qui observe un état
+   vivant (`agent__status` d'abord, mais aussi la relecture d'une conversation
+   qu'un agent écrit, ou une re-vérification MCP). Pour ces outils, réappeler à
+   l'identique EST le geste correct et **aucun autre geste ne l'exprime** : les
+   arguments sont les mêmes par définition. Le refus était donc inatteignable
+   par la voie légitime, et son message (« déjà fourni plus haut… ne redemande
+   pas ce contenu ») **mentait au modèle sur l'état du monde**, le poussant à
+   rapporter un statut périmé plutôt qu'à re-sonder. Aucun blocage utile n'avait
+   été observé en usage réel. Ce qui reste est le seul filet qui était vraiment
+   payant : contre le modèle qui BOUCLE. La borne est donc calibrée très
+   au-dessus de tout sondage plausible et très en dessous de `MAX_TURNS` (100) ;
+   un test garde cet ordre de grandeur, une borne rabaissée au voisinage d'un
+   sondage rétablissant le défaut d'origine.
+
+   **Le compteur se vide quand un message UTILISATEUR entre en cours d'échange**
+   (drain d'interjections, api.js) : la borne compte une boucle du modèle laissé
+   à lui-même, et une interjection est l'utilisateur qui reprend la main — ce
+   qu'il demande peut légitimement passer par un outil déjà sollicité. Les
+   **résultats d'agent** drainés juste après ne vident RIEN, délibérément : c'est
+   une injection machine, pas un geste utilisateur, et un parent qui réveille des
+   agents en série se redonnerait sinon un budget à chaque livraison — soit
+   exactement la boucle visée.
 <a id="p4"></a>
 
 4. **Agrégation SSE par `index`.** Les `tool_calls` arrivent fragmentés :

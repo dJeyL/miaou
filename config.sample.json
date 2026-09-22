@@ -20,5 +20,6 @@
   "attachment_image_max_bytes": 10485760,
   "attachment_max_images":   4,
   "max_turns":               100,
+  "tool_repeat_max":         20,
   "repo_url":                "https://github.com/dJeyL/miaou"
 }

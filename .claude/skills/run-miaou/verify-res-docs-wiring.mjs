@@ -187,10 +187,11 @@ const initScript = ({ oracleUrl, proxyUrl }) => {
       let tcs = Array.isArray(window.__scriptedToolCalls) ? window.__scriptedToolCalls : [];
       // N'émettre CHAQUE tour scripté qu'UNE fois. MIAOU rappelle le modèle
       // après avoir servi les outils d'un tour : sans cette déduplication, le
-      // stub réémettait le MÊME tool_call avec des arguments identiques, et
-      // l'anti-redemande (`servedKeys`, piège 3) court-circuitait légitimement
-      // le second appel — le test lisait « déjà fourni plus haut » au lieu du
-      // texte extrait et accusait à tort le contrat d'inflation.
+      // stub réémettrait indéfiniment le MÊME tool_call et l'échange
+      // tournerait jusqu'à `MAX_TURNS` (100) au lieu d'aboutir. La borne de
+      // répétition d'api.js (`TOOL_REPEAT_MAX`, piège 3) ne sauve PAS ce cas :
+      // elle est délibérément haute, et le stub y arriverait bien après le
+      // timeout du test. C'est donc au stub de ne pas boucler.
       // Déduplication par CLÉ (nom + arguments) plutôt que vidage global : le
       // script Node réarme `__scriptedToolCalls` pendant que l'échange
       // précédent tourne encore, un vidage inconditionnel consommerait le tour

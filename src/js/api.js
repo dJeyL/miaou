@@ -811,9 +811,26 @@ async function streamCompletion(messages, opts) {
 // toujours jusqu'à la réponse finale (finish_reason === 'stop').
 async function runConversation(messages, hooks) {
   const h = hooks || {};
-  // anti-redemande, par échange : clé nom + ':' + arguments bruts (voir plus
-  // bas, pas 'nom:id'/'nom:since' — deux appels distincts doivent tous être servis)
-  const servedKeys = new Set();
+  // Borne de répétition, par échange : clé nom + ':' + arguments bruts → nombre
+  // d'appels déjà servis (voir plus bas, pas 'nom:id'/'nom:since' — deux appels
+  // distincts doivent tous être servis).
+  //
+  // Ce n'était PAS une borne à l'origine mais un court-circuit sec : le premier
+  // appel identique répété était refusé. La clé traitait ainsi tout outil comme
+  // une fonction PURE du temps de l'échange, ce qui est faux de tout ce qui
+  // observe un état vivant — `agent__status` au premier chef, mais aussi la
+  // relecture d'une conversation qu'un agent est en train d'écrire, ou une
+  // re-vérification MCP. Pour ceux-là, réappeler à l'identique EST le geste
+  // correct, et aucun autre geste ne l'exprime : les arguments sont les mêmes
+  // par définition. Le refus était donc inatteignable par la voie légitime, et
+  // son message mentait au modèle sur l'état du monde — le poussant à rapporter
+  // un statut périmé plutôt qu'à re-sonder.
+  //
+  // Ce qui reste : le filet contre le modèle qui BOUCLE. TOOL_REPEAT_MAX est
+  // délibérément très au-dessus de tout sondage plausible et très en dessous de
+  // MAX_TURNS (100) : la pathologie est coupée à un cinquième du plafond de
+  // tours, sans qu'aucune attente réelle n'en approche.
+  const callCounts = new Map();
   // Contexte d'exécution des outils de CET échange (lot T-1c) : dérivé de la
   // génération propriétaire, donc figé pour toute la boucle — y compris après un
   // changement de conversation ou d'Espace côté écran. Repli sur l'état d'écran
@@ -925,24 +942,31 @@ async function runConversation(messages, hooks) {
         catch (e) { args = {}; }
 
         let out;
-        // Clé d'anti-redemande sur les arguments BRUTS du tool_call, pas sur
+        // Clé de répétition sur les arguments BRUTS du tool_call, pas sur
         // id/since seuls : deux appels distincts du même outil (ex. deux
         // memory__create, ou conv__get résumé puis with_contents) ont des
-        // arguments distincts et doivent tous être servis. Seul un appel
-        // rigoureusement identique (modèle qui boucle) est court-circuité.
+        // arguments distincts et sont comptés séparément. Seule la répétition
+        // rigoureusement identique alimente le compteur.
         const key = tc.function.name + ':' + (tc.function.arguments || '');
-        if (servedKeys.has(key)) {
-          out = '(déjà fourni plus haut dans cet échange — ne redemande pas ce contenu. ' +
-            'Utilise ce que tu as déjà, réponds à l\'utilisateur, ou reprends ta vraie tâche.)';
-          // Trace UI du court-circuit : sans elle, l'appel ne laissait AUCUN
-          // ack dans le fil (aucun handler n'a tourné). Ack tool_failed rouge
+        if ((callCounts.get(key) || 0) >= TOOL_REPEAT_MAX) {
+          // Le refus NOMME sa borne au lieu d'affirmer que le résultat est déjà
+          // connu : le modèle sonde peut-être un état qui a réellement changé,
+          // et lui dire « tu l'as déjà » le ferait confabuler sur une valeur
+          // périmée (défaut « texte adressé au modèle », famille capacité
+          // inatteignable — c'est exactement ce que disait l'ancien message).
+          out = 'Appel refusé : cet outil a déjà été appelé ' + TOOL_REPEAT_MAX +
+            ' fois avec exactement ces arguments dans cet échange. Cette borne protège ' +
+            'contre les boucles ; elle ne dit RIEN sur la fraîcheur du résultat. ' +
+            'Change d\'approche, ou réponds à l\'utilisateur en signalant ce que tu attendais.';
+          // Trace UI du refus : sans elle, l'appel ne laisserait AUCUN ack dans
+          // le fil (aucun handler n'a tourné). Ack tool_failed rouge
           // + enrichissement standard (args/result/ts/group) pour la fidélité
           // reload/export. isMcp: false — l'ack est poussé dans
           // _pendingToolAcks quel que soit l'outil visé, jamais dans le
           // chemin earlyRendered. Garde typeof : le test runner évalue api.js
           // sans tools.js (cf. internResourcesFromResult plus bas).
-          if (typeof pushDuplicateCallAck === 'function') {
-            pushDuplicateCallAck(tc.function.name, out);
+          if (typeof pushRepeatLimitAck === 'function') {
+            pushRepeatLimitAck(tc.function.name, out);
             if (h.onEnrichLastAck) h.onEnrichLastAck({
               isMcp: false,
               name: tc.function.name,
@@ -1008,7 +1032,7 @@ async function runConversation(messages, hooks) {
               await internResourcesFromResult(rawResult, ictx.convId, Date.now, Math.random);
             }
             out = flattenToolResult(rawResult);
-            servedKeys.add(key);
+            callCounts.set(key, (callCounts.get(key) || 0) + 1);
             // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
             // réinjection cross-turn (args, result aplati, ts, group). Pour les
             // outils distants l'ack est déjà dans earlyRendered ; pour les
@@ -1089,6 +1113,19 @@ async function runConversation(messages, hooks) {
         const extra = await h.onInterjections();
         if (extra && extra.length) {
           for (const em of extra) messages.push(em);
+          // Un message UTILISATEUR entre dans l'échange : la borne de répétition
+          // repart de zéro. Elle compte une boucle du modèle laissé à lui-même ;
+          // une interjection est précisément l'utilisateur qui reprend la main,
+          // et ce qu'il demande peut légitimement passer par un outil déjà
+          // sollicité. Sans ce reset, un échange long resterait borné par des
+          // appels antérieurs à une consigne qui les a rendus caducs.
+          //
+          // `onAgentResults` juste en dessous ne reset PAS, délibérément : un
+          // résultat d'agent est une injection MACHINE, pas un geste
+          // utilisateur. La borne doit courir à travers, sinon un parent qui
+          // réveille des agents en série se redonnerait un budget à chaque
+          // livraison — soit exactement la boucle que la borne vise.
+          callCounts.clear();
         }
       }
 

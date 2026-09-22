@@ -770,16 +770,16 @@ function toolFail(toolName, message) {
   return message;
 }
 
-// Ack du court-circuit anti-redemande (servedKeys, api.js — piège n°3) : un
-// tool_call rigoureusement identique à un appel déjà servi dans l'échange est
-// court-circuité SANS exécuter d'outil — aucun handler ne tourne, donc aucun
-// ack n'est poussé par le chemin normal, et le court-circuit était totalement
-// invisible dans le fil (même angle mort que l'historique de toolFail).
+// Ack de la borne de répétition (callCounts, api.js — piège n°3) : au-delà de
+// TOOL_REPEAT_MAX appels rigoureusement identiques dans le même échange, l'appel
+// est refusé SANS exécuter d'outil — aucun handler ne tourne, donc aucun ack
+// n'est poussé par le chemin normal, et le refus serait totalement invisible
+// dans le fil (même angle mort que l'historique de toolFail).
 // Kind `tool_failed` (rouge, triangle) : du point de vue du tour c'est bien un
 // appel qui n'a rien produit. Contrairement à toolFail, `name` arrive déjà
 // CANONIQUE (le nom exact du tool_call, préfixé `miaou__…` ou distant
 // `server__…`) : pas de préfixe ajouté ici.
-function pushDuplicateCallAck(name, message) {
+function pushRepeatLimitAck(name, message) {
   _pendingToolAcks.push({ kind: 'tool_failed', name, message, error: true });
 }
 
