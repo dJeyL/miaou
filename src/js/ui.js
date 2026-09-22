@@ -7999,16 +7999,25 @@ function syncEvacuateAffordance() {
     // pilule juste après). Annoncer « ~N tok » ici puis en afficher moins
     // ferait mentir l'affordance — le bilan d'après-coup répond, lui, sur du
     // mesuré.
+    // Formulé SANS deux-points, et ce n'est pas un détail de style : le hint
+    // se replie sur deux lignes à la largeur du drawer, et la coupure tombait
+    // juste avant le « : », qui se retrouvait orphelin en tête de ligne. Le
+    // dépôt n'emploie aucune espace insécable (vérifié : zéro U+00A0 dans
+    // ui.js), donc la corriger ici en introduirait une invisible à la
+    // relecture et fragile au copier-coller. Reformuler coûte moins.
+    //
+    // Chaque branche porte ses DEUX phrases en entier. Le pluriel y dit « des
+    // références » (une PAR résultat, là où « une référence » laisse imaginer
+    // un regroupement), et c'est précisément ce qui interdit la queue commune
+    // qu'on avait ici : elle reprenait par un pronom — « peut les rouvrir » —
+    // un antécédent dont le nombre change avec la branche. Ce pronom reprend
+    // LA RÉFÉRENCE et non le résultat (« peut la rouvrir »), ce qui se lit
+    // mieux et reste vrai : c'est bien la référence que le modèle rouvre.
     hint.textContent = found.count + (found.count > 1
-      ? ' résultats d\'outils volumineux peuvent être remplacés par un lien.'
-      : ' résultat d\'outil volumineux peut être remplacé par un lien.') +
-      // Formulé SANS deux-points, et ce n'est pas un détail de style : le hint
-      // se replie sur deux lignes à la largeur du drawer, et la coupure tombait
-      // juste avant le « : », qui se retrouvait orphelin en tête de ligne. Le
-      // dépôt n'emploie aucune espace insécable (vérifié : zéro U+00A0 dans
-      // ui.js), donc la corriger ici en introduirait une invisible à la
-      // relecture et fragile au copier-coller. Reformuler coûte moins.
-      ' Rien n\'est perdu, le modèle peut les rouvrir à la demande.';
+      ? ' résultats d\'outils volumineux peuvent être remplacés par des références.'
+        + ' Rien n\'est perdu, le modèle peut les rouvrir à la demande.'
+      : ' résultat d\'outil volumineux peut être remplacé par une référence.'
+        + ' Rien n\'est perdu, le modèle peut la rouvrir à la demande.');
   }
 }
 

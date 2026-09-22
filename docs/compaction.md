@@ -684,12 +684,15 @@ qui prend depuis le 2026-09-22 un argument `gesture` nommant le geste refusé :
 un refus qui dirait « avant de compacter le contexte » sur un clic d'évacuation
 ferait chercher une affordance qu'on n'a pas touchée.
 
-Le glyphe de l'évacuation est un **maillon de chaîne**, et surtout pas le bac à
-flèche descendante posé au premier jet : celui-là se lit « télécharger » — il
-est déjà, au glyphe près, celui de l'export de conversation (souvenir
-`icon-vocabulary`, une métaphore = un usage). Le geste ne transfère rien, il
-remplace un contenu par un lien vers lui. Un contrôle du verify compare les
-deux SVG.
+Le glyphe de l'évacuation reprend le **bac** du « télécharger », mais sa flèche
+REMONTE et s'échappe par la droite après un coude à 90° : le contenu SORT du
+contexte. Ce qui le distingue de ses deux voisins est donc le seul trajet de la
+flèche — descendante et pointe en bas pour l'export de conversation, montante
+droite et pointe en haut pour l'import de réglages (souvenir
+`icon-vocabulary`, une métaphore = un usage). La pointe s'arrête à `x=20` :
+plus loin, la jointure arrondie du chevron déborde du `viewBox` et se fait
+rogner au rendu. Le premier jet était un maillon de chaîne, écarté avec le
+passage de « lien » à « référence » dans le libellé.
 
 ### Le bilan est rendu APRÈS coup, jamais promis avant
 

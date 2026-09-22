@@ -751,8 +751,9 @@ Deux idées à ne pas confondre :
 Les **vrais leviers** pour alléger ce qui part à chaque tour :
 
 - **Évacuer les résultats d'outils** : remplace les résultats volumineux déjà
-  obtenus par un lien que le modèle peut rouvrir. Le geste le plus léger — aucun
-  appel au modèle, et rien ne cesse d'être transmis — détaillé juste en dessous.
+  obtenus par des références que le modèle peut rouvrir. Le geste le plus léger
+  — aucun appel au modèle, et rien ne cesse d'être transmis — détaillé juste en
+  dessous.
 - **Compacter le contexte** : remplace le début de la conversation par un résumé
   que le modèle rédige lui-même. C'est le levier le plus direct sur une
   conversation devenue longue — détaillé juste en dessous.
@@ -801,8 +802,8 @@ l'opération a fait gagner, et le résumé s'y consulte en le dépliant.
 propose, au-dessus de la compaction, un second geste plus léger. Quand un outil
 a renvoyé un résultat volumineux (le contenu d'un gros fichier, une longue
 réponse d'API), ce résultat pèse dans le contexte à chaque tour alors qu'il a
-souvent déjà servi. L'évacuer le remplace par un lien que le modèle peut rouvrir
-à la demande — aucun appel au modèle, aucun résumé, rien qui cesse d'être
+souvent déjà servi. L'évacuer le remplace par une référence que le modèle peut
+rouvrir à la demande — aucun appel au modèle, aucun résumé, rien qui cesse d'être
 transmis. Le bouton est grisé s'il n'y a rien d'assez volumineux, et il annonce
 ensuite combien de résultats ont été évacués et ce que ça a libéré. Les deux
 gestes sont indépendants : tu peux évacuer sans compacter, et l'inverse.

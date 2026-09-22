@@ -109,10 +109,10 @@ Figtree/Fira Code).
   détaillant la composition du payload envoyé au modèle avec une jauge
   d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).
 - **Allègement du contexte** : deux gestes indépendants, proposés par
-  l'inspecteur. Évacuer les gros résultats d'outils les remplace par un lien que
-  le modèle peut rouvrir ; compacter (bouton ou commande `/compact`) remplace le
-  début d'une conversation longue par un résumé que le modèle rédige. Rien n'est
-  supprimé, seul ce qui part au modèle change — cf.
+  l'inspecteur. Évacuer les gros résultats d'outils les remplace par des
+  références que le modèle peut rouvrir ; compacter (bouton ou commande
+  `/compact`) remplace le début d'une conversation longue par un résumé que le
+  modèle rédige. Rien n'est supprimé, seul ce qui part au modèle change — cf.
   [docs/compaction.md](docs/compaction.md).
 - **Contexte organisé pour le cache** : ce qui ne change qu'à un geste explicite
   (instructions, outils, consignes des serveurs MCP, souvenirs de profil) est

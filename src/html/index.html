@@ -881,13 +881,14 @@ if (window.requestAnimationFrame) {
            il n'y a aucun résultat éligible (syncEvacuateAffordance, ui.js). -->
       <div class="ctx-compact" id="ctx-evacuate">
         <button type="button" class="ctx-compact-btn" id="ctx-evacuate-btn" onclick="onEvacuateToolResults()">
-          <!-- Maillon de chaîne, et PAS le bac à flèche descendante d'abord
-               posé ici : celui-là se lit « télécharger » (il est déjà, au
-               glyphe près, celui de l'export de conversation et de l'import
-               de réglages — souvenir icon-vocabulary, une métaphore = un
-               usage). Le geste ne transfère rien : il REMPLACE un contenu
-               volumineux par un lien vers lui, que le modèle peut rouvrir. -->
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <!-- Le bac du glyphe « télécharger », mais la flèche REMONTE et
+               s'échappe par la droite (coude à 90°) : le contenu SORT du
+               contexte. Distinct du download (flèche descendante, pointe en
+               bas) et de l'upload (flèche montante droite, pointe en haut) —
+               souvenir icon-vocabulary, une métaphore = un usage. Le geste ne
+               transfère rien : il remplace un contenu volumineux par une
+               référence, que le modèle peut rouvrir. -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M12 18V7a2 2 0 0 1 2-2h6"/><polyline points="17 2 20 5 17 8"/></svg>
           <span>Évacuer les résultats d'outils</span>
         </button>
         <span class="hint" id="ctx-evacuate-hint"></span>
