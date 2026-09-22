@@ -3975,6 +3975,37 @@ describe('compaction du contexte (lot AE) — frontiere et elagage a l\'emission
     expect(isCompactionEntry(null)).toBe(false);
   });
 
+  it('entryHasMsgBubble ecarte les acks ET la frontiere, garde user/assistant', function() {
+    expect(entryHasMsgBubble({ role: 'user', content: 'x' })).toBe(true);
+    expect(entryHasMsgBubble({ role: 'assistant', content: 'x' })).toBe(true);
+    expect(entryHasMsgBubble(ack())).toBe(false);
+    expect(entryHasMsgBubble({ role: 'memory-ack', kind: 'memory_create' })).toBe(false);
+    expect(entryHasMsgBubble(mark())).toBe(false);
+    expect(entryHasMsgBubble(null)).toBe(false);
+  });
+
+  // L'appariement bulle .msg ↔ entrée que `reindexThreadDom` (ui.js) calcule :
+  // la liste des indices d'entrées à bulle, dans l'ordre. Le defaut corrige ici
+  // est un DECALAGE — une frontiere comptee comme entree a bulle poussait tous
+  // les indices suivants de un, et l'edition d'un message user chargeait le
+  // contenu du message SUIVANT. On assert donc les indices, pas seulement le
+  // predicat : c'est la grandeur que le bug faussait.
+  it('l\'appariement bulle↔entree ne se decale pas apres une frontiere', function() {
+    var t = [
+      { role: 'user', content: 'avant' },        // 0 → bulle
+      ack(),                                     // 1
+      { role: 'assistant', content: 'reponse' }, // 2 → bulle
+      mark('Resume.'),                           // 3 — separateur, PAS de bulle
+      { role: 'user', content: 'apres' },        // 4 → bulle
+      { role: 'assistant', content: 'suite' },   // 5 → bulle
+    ];
+    var bubbled = [];
+    for (var i = 0; i < t.length; i++) if (entryHasMsgBubble(t[i])) bubbled.push(i);
+    expect(bubbled).toEqual([0, 2, 4, 5]);
+    // La 3e bulle du DOM est bien le message user d'apres la frontiere.
+    expect(t[bubbled[2]].content).toBe('apres');
+  });
+
   it('lastCompactionIndex rend la DERNIERE frontiere, -1 sans aucune', function() {
     expect(lastCompactionIndex([])).toBe(-1);
     expect(lastCompactionIndex([{ role: 'user', content: 'a' }])).toBe(-1);

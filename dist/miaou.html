@@ -4858,7 +4858,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-21 23:49 UTC */
+/* miaou — built: 2026-09-22 10:26 UTC */
 
 /* ── utils.js ── */
 
@@ -6215,6 +6215,10 @@ function findAckByCallId(thread, callId) {
 
 function isCompactionEntry(m) {
   return !!m && m.role === 'compaction';
+}
+
+function entryHasMsgBubble(m) {
+  return !!m && !isAckRole(m.role) && !isCompactionEntry(m);
 }
 
 function lastCompactionIndex(thread) {
@@ -9150,7 +9154,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790034540}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790072762}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -18395,16 +18399,16 @@ function finalizeAssistantError(wrap, msg) {
 
 function reindexThreadDom() {
   const msgs = $('thread').querySelectorAll('.msg');
-  const nonAck = [];
+  const bubbled = [];
   for (let i = 0; i < currentThread.length; i++) {
-    if (!isAckRole(currentThread[i].role)) nonAck.push(i);
+    if (entryHasMsgBubble(currentThread[i])) bubbled.push(i);
   }
-  if (msgs.length !== nonAck.length && typeof console !== 'undefined') {
+  if (msgs.length !== bubbled.length && typeof console !== 'undefined') {
     console.warn('[miaou] reindexThreadDom: ' + msgs.length + ' bulle(s) .msg pour ' +
-      nonAck.length + ' entrée(s) non-ack — appariement partiel');
+      bubbled.length + ' entrée(s) à bulle — appariement partiel');
   }
-  const n = Math.min(msgs.length, nonAck.length);
-  for (let k = 0; k < n; k++) msgs[k].dataset.threadIdx = nonAck[k];
+  const n = Math.min(msgs.length, bubbled.length);
+  for (let k = 0; k < n; k++) msgs[k].dataset.threadIdx = bubbled[k];
 
   for (let k = n; k < msgs.length; k++) delete msgs[k].dataset.threadIdx;
 }
@@ -24548,8 +24552,8 @@ function unregisterGeneration(gen) {
   stopGenerationRelay(gen.convId);
 
   const genConv = loadConversation(gen.convId);
-  const unseenOnScreen = genOwnsScreen(gen) && hasThreadUnseen(gen.convId);
-  if ((!genOwnsScreen(gen) || unseenOnScreen) && genConv && isRootConversation(genConv)) {
+  const onScreen = gen.convId === currentConvId;
+  if ((!onScreen || hasThreadUnseen(gen.convId)) && genConv && isRootConversation(genConv)) {
     markConvUnread(gen.convId);
   }
   renderConvList();

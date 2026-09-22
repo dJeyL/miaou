@@ -537,8 +537,7 @@ function unregisterGeneration(gen) {
   if (_activeGenerations.get(gen.convId) === gen) _activeGenerations.delete(gen.convId);
   stopGenerationRelay(gen.convId);
   // « Non lu » (lot T-2) : la génération se termine alors que l'utilisateur
-  // regarde AILLEURS. Le prédicat d'écran est genOwnsScreen, jamais un test
-  // réécrit ici — et il est évalué APRÈS le retrait du registre, pour que
+  // regarde AILLEURS. Évalué APRÈS le retrait du registre, pour que
   // convBadgeState bascule bien sur 'unread' et pas sur un 'working' résiduel.
   //
   // RESTREINT AUX RACINES. Une génération d'AGENT n'est par construction jamais
@@ -577,9 +576,17 @@ function unregisterGeneration(gen) {
   // reste, il couvre le non-vu sans génération qui finit ; les deux passent par
   // `markConvUnread`, un seul écrivain, et l'acquittement commun est
   // `ackThreadContentSeen` (atteindre le fond efface les deux porteurs).
+  // La question est « la conversation est-elle SOUS LES YEUX ? », pas « cette
+  // génération possédait-elle l'écran ? ». Pour un stream les deux coïncident,
+  // et `genOwnsScreen` tenait lieu des deux ; pour une compaction non : elle
+  // est exemptée de `genOwnsScreen` par construction (elle ne peint rien), donc
+  // la lire ici posait un non-lu même quand on regardait la conversation,
+  // scrollé au fond, sans rien de non vu. La pastille ne s'effaçait alors qu'en
+  // partant puis revenant. Le test est donc l'écran lui-même ; `hasThreadUnseen`
+  // garde son rôle de second motif quand l'écran est bien là.
   const genConv = loadConversation(gen.convId);
-  const unseenOnScreen = genOwnsScreen(gen) && hasThreadUnseen(gen.convId);
-  if ((!genOwnsScreen(gen) || unseenOnScreen) && genConv && isRootConversation(genConv)) {
+  const onScreen = gen.convId === currentConvId;
+  if ((!onScreen || hasThreadUnseen(gen.convId)) && genConv && isRootConversation(genConv)) {
     markConvUnread(gen.convId);
   }
   renderConvList();
@@ -701,12 +708,11 @@ function isStopRequested(convId) {
 // au reload, son « non lu » non plus.
 const _unreadConvs = new Set();
 
-// Marquage à la FIN d'une génération, si l'écran ne la possédait pas — ou s'il
-// la possédait mais que la fin s'est écrite hors de vue (`hasThreadUnseen`,
-// 2026-09-13). « Regarder la conversation » ne veut pas dire « avoir vu la
-// réponse » : le plafond d'ancrage arrête le suivi dès qu'elle dépasse l'écran.
-// Les deux prédicats restent ceux des autres (genOwnsScreen, hasThreadUnseen),
-// jamais un test réécrit ici, et la condition elle-même vit chez l'appelant
+// Marquage à la FIN d'une génération, si la conversation n'était pas à l'écran
+// — ou si elle y était mais que la fin s'est écrite hors de vue
+// (`hasThreadUnseen`, 2026-09-13). « Regarder la conversation » ne veut pas dire
+// « avoir vu la réponse » : le plafond d'ancrage arrête le suivi dès qu'elle
+// dépasse l'écran. La condition elle-même vit chez l'appelant
 // (`unregisterGeneration`) — cette fonction est le seul ÉCRIVAIN du Set, pas
 // l'arbitre.
 function markConvUnread(convId) {

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // Lot AE — compaction du contexte. Vérification des surfaces VISUELLES.
 //
-// Périmètre, et pourquoi il s'arrête là : les purs du lot sont couverts par 58
-// tests QuickJS (frontière, élagage, microcompaction, gardes AE-7, registre de
-// commandes). Ce qui n'est couvert par AUCUN test pur, et qui est donc l'objet
+// Périmètre, et pourquoi il s'arrête là : les purs du lot sont couverts par les
+// tests QuickJS (frontière, élagage, appariement bulle↔entrée, microcompaction,
+// gardes AE-7, registre de commandes). Ce qui n'est couvert par AUCUN test pur, et qui est donc l'objet
 // exclusif de ce script, c'est le CSS et le rendu — `docs/compaction.md` le dit
 // explicitement en fin de section « Vérification ».
 //
-// Quatre blocs :
+// Les blocs, dans l'ordre du script (leurs titres `── N. … ──` font foi, ce
+// sommaire ne les compte pas — un cardinal en tête reperime au prochain ajout) :
 //   1. Séparateur de compaction dans le fil, et ce qu'il PROMET (rien n'est
 //      perdu : les messages d'avant restent affichés).
 //   2. Glyphe de seuil sur la pilule — visible au-delà de 50 %, caché en
@@ -19,6 +20,13 @@
 //      passe par le texte, décision de design explicite).
 //   4. Liste du `/` et ses deux familles — ordre, distinction visuelle,
 //      absence en édition de message passé, et la densité mesurée de l'étape 5.
+//   5. Les deux affordances d'allègement, rangées par coût croissant.
+//   6. Occupation de la conversation pendant le geste (registre, relais).
+//   7. Navigation pendant le geste (partir ; partir puis revenir).
+//   8. Appariement bulle ↔ entrée APRÈS une frontière : édition d'un message
+//      user, symptômes du décalage corrigé le 2026-09-22.
+//   9. Pastille « non lu » — absente sur une compaction REGARDÉE, présente sur
+//      une compaction finie hors écran (l'autre défaut du 2026-09-22).
 //
 // Ce que ce script NE fait PAS, délibérément : la compaction de bout en bout
 // (elle exige de stuber /chat/completions pour la rédaction du résumé) et la
@@ -1110,6 +1118,191 @@ check('aller-retour : UNE frontière persistée, pas zéro ni deux',
 check('aller-retour : l\'historique est intact', returned.storedCount > returned.before);
 check('aller-retour : le séparateur est peint sans rechargement manuel',
   returned.markInDom === true);
+
+// ════════════════════════════════════════════════════════════════════════════
+// 8. Appariement bulle ↔ entrée de thread APRÈS une frontière
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\n── 8. Édition d\'un message après une frontière ──');
+
+// Défaut signalé par Julien le 2026-09-22, et c'est un DÉCALAGE : la frontière
+// de compaction n'est pas un ack, mais elle ne produit pas de bulle `.msg` non
+// plus (c'est un séparateur). `reindexThreadDom` la comptait donc comme une
+// entrée à bulle, et tous les indices d'après glissaient de un — l'édition d'un
+// message user chargeait la textarea avec le contenu du message SUIVANT, puis
+// `editUserMessage` refusait silencieusement (`role !== 'user'`), d'où un
+// « Valider » sans effet.
+//
+// Le pur `entryHasMsgBubble` est couvert par QuickJS ; ce qui ne l'est pas, et
+// qui est l'objet de ce bloc, c'est le CÂBLAGE DOM → thread : les tests purs
+// ne voient ni `data-thread-idx` ni la textarea. On mesure donc les deux
+// symptômes que Julien a vus, pas le prédicat.
+const edited = await page.evaluate(async () => {
+  await newConversation();
+  ensureConversation();
+  currentThread.push({ role: 'user', content: 'U-avant' });
+  currentThread.push({ role: 'tool-ack', kind: 'mcp_call', name: 'srv__foo',
+                       args: { q: 1 }, result: 'ok', ts: Date.now(), group: 'g1' });
+  currentThread.push({ role: 'assistant', content: 'A-avant' });
+  currentThread.push({ role: 'compaction', content: 'Résumé.', reclaimed: 10, ts: Date.now() });
+  currentThread.push({ role: 'user', content: 'U-après' });
+  currentThread.push({ role: 'assistant', content: 'A-après' });
+  await persistCurrent();
+  rerenderCurrentThread();
+
+  // Chaque bulle doit pointer l'entrée dont elle affiche le texte. On compare
+  // le TEXTE peint à celui de l'entrée visée : un appariement décalé coïncide
+  // parfois par hasard sur les indices, jamais sur le contenu.
+  const rows = Array.from(document.querySelectorAll('#thread .msg')).map(w => ({
+    idx: Number(w.dataset.threadIdx),
+    painted: (w.querySelector('.body') || {}).textContent || '',
+  }));
+  return {
+    rows: rows.map(r => ({ idx: r.idx, painted: r.painted.trim(),
+      pointed: (currentThread[r.idx] || {}).content })),
+    bubbles: rows.length,
+    entries: currentThread.length,
+  };
+});
+
+check('témoin : quatre bulles pour six entrées (ack + frontière sans bulle)',
+  edited.bubbles === 4 && edited.entries === 6);
+check('chaque bulle pointe l\'entrée dont elle affiche le texte',
+  edited.rows.every(r => r.painted === r.pointed));
+// Le message d'APRÈS la frontière est celui que le décalage visait : sans le
+// correctif, sa bulle pointait l'assistant qui le suit.
+const afterRow = edited.rows.find(r => r.painted === 'U-après');
+check('le message user d\'après la frontière pointe bien son entrée',
+  !!afterRow && afterRow.pointed === 'U-après');
+
+// Symptôme 1 : la textarea se remplissait avec le mauvais contenu.
+const ta = await page.evaluate(() => {
+  const wrap = Array.from(document.querySelectorAll('#thread .msg.user'))
+    .find(w => (w.querySelector('.body') || {}).textContent.trim() === 'U-après');
+  enterEditMode(wrap);
+  const area = wrap.querySelector('.msg-edit-area');
+  return area ? area.value : null;
+});
+check('la textarea d\'édition est remplie avec le message CLIQUÉ', ta === 'U-après');
+
+// Symptôme 2 : « Valider » restait sans effet (editUserMessage refusait sur un
+// index non-user, et son refus est un `null` silencieux — pas un message).
+// On stube le tour de génération : ce qu'on mesure est la TRONCATURE du thread,
+// preuve que la réécriture a bien eu lieu à l'index visé.
+const submitted = await page.evaluate(async () => {
+  const wrap = Array.from(document.querySelectorAll('#thread .msg.user'))
+    .find(w => w.classList.contains('editing'));
+  const realRun = window.runGenerationFromCurrentThread;
+  runGenerationFromCurrentThread = async function () { return null; };
+  let err;
+  try { err = await commitEdit(wrap, 'U-après CORRIGÉ'); }
+  finally { runGenerationFromCurrentThread = realRun; }
+  return {
+    err,
+    roles: currentThread.map(e => e.role),
+    last: currentThread[currentThread.length - 1],
+    stillBoundary: currentThread.some(e => e.role === 'compaction'),
+  };
+});
+check('la soumission réécrit bien le message (thread tronqué à l\'index visé)',
+  submitted.last && submitted.last.role === 'user' &&
+  submitted.last.content === 'U-après CORRIGÉ');
+check('la frontière de compaction survit à la réécriture', submitted.stillBoundary === true);
+check('aucune erreur d\'édition remontée', !submitted.err);
+
+// ════════════════════════════════════════════════════════════════════════════
+// 9. La pastille « non lu » après une compaction sous les yeux
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\n── 9. Pas de « non lu » sur une compaction qu\'on regarde ──');
+
+// Second défaut signalé le 2026-09-22. `unregisterGeneration` lisait
+// `genOwnsScreen` pour répondre à « la conversation est-elle sous les yeux ? ».
+// Les deux coïncident pour un stream, mais une compaction est EXEMPTÉE de
+// `genOwnsScreen` par construction (elle ne peint rien) : la pastille se posait
+// donc même en regardant la conversation, scrollé au fond, et ne s'effaçait
+// qu'en partant puis revenant (`openConversation` → `markConvRead`).
+//
+// Le contrôle porte sur `convBadgeState` APRÈS le geste, sans changer d'écran —
+// exactement le geste que Julien ne pouvait pas faire.
+const badge = await page.evaluate(async () => {
+  await newConversation();
+  ensureConversation();
+  const targetId = currentConvId;
+  for (let i = 0; i < 6; i++) {
+    currentThread.push({ role: 'user', content: 'Q' + i + ' ' + new Array(200).join('m') });
+    currentThread.push({ role: 'assistant', content: 'R' + i + ' ' + new Array(200).join('r') });
+  }
+  await persistCurrent();
+  rerenderCurrentThread();
+  scrollBottom(true);
+
+  const real = window.silentCompletion;
+  silentCompletion = async function () {
+    return JSON.stringify({ summary: 'Résumé d\'une compaction regardée.' });
+  };
+  let res;
+  try { res = await compactCurrentConversation(); }
+  finally { silentCompletion = real; }
+
+  return {
+    res,
+    onScreen: currentConvId === targetId,
+    atBottom: isAtBottom(),
+    unseen: hasThreadUnseen(targetId),
+    badge: convBadgeState(targetId),
+    // Le badge se lit aussi dans la sidebar : un état interne juste avec un
+    // rendu qui traîne laisserait la pastille à l'écran (souvenir
+    // `ui-refresh-at-write-point`). La conversation compactée est l'ACTIVE (on
+    // ne l'a pas quittée) ; la pastille existe toujours en DOM et c'est
+    // `hidden` qui porte l'état (applyActivityBadge), donc on lit le pixel.
+    dotInSidebar: (() => {
+      const d = document.querySelector('.conv.active .activity-dot');
+      if (!d) return false;
+      const r = d.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(d).display !== 'none';
+    })(),
+  };
+});
+
+check('témoin : le geste a abouti', !!(badge.res && badge.res.done));
+check('témoin : on est resté dans la conversation, scrollé au fond',
+  badge.onScreen === true && badge.atBottom === true);
+check('témoin : rien de non vu dans le fil', badge.unseen === false);
+check('AUCUNE pastille « non lu » après une compaction regardée', badge.badge === null);
+check('et rien de peint dans la sidebar', badge.dotInSidebar === false);
+
+// Réciproque : la même compaction, mais lancée depuis une conversation qu'on
+// QUITTE, doit bien poser la pastille. Sans ce versant, le contrôle ci-dessus
+// passerait aussi sur un code qui aurait simplement supprimé le marquage.
+const badgeAway = await page.evaluate(async () => {
+  await newConversation();
+  ensureConversation();
+  const targetId = currentConvId;
+  for (let i = 0; i < 6; i++) {
+    currentThread.push({ role: 'user', content: 'Q' + i + ' ' + new Array(200).join('m') });
+    currentThread.push({ role: 'assistant', content: 'R' + i + ' ' + new Array(200).join('r') });
+  }
+  await persistCurrent();
+  await newConversation(); ensureConversation();
+  currentThread.push({ role: 'user', content: 'ailleurs' });
+  await persistCurrent();
+  const otherId = currentConvId;
+  await openConversation(targetId);
+
+  const real = window.silentCompletion;
+  silentCompletion = async function () {
+    await openConversation(otherId);   // on part et on NE revient pas
+    return JSON.stringify({ summary: 'Résumé hors écran.' });
+  };
+  let res;
+  try { res = await compactCurrentConversation(); }
+  finally { silentCompletion = real; }
+
+  return { res, left: currentConvId === otherId, badge: convBadgeState(targetId) };
+});
+
+check('témoin : on a bien quitté la conversation compactée', badgeAway.left === true);
+check('une compaction finie HORS écran pose bien la pastille',
+  badgeAway.badge === 'unread');
 
 // ════════════════════════════════════════════════════════════════════════════
 console.log('\n────────────────────────────────────────────');

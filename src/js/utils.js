@@ -2609,6 +2609,19 @@ function isCompactionEntry(m) {
   return !!m && m.role === 'compaction';
 }
 
+// « Cette entrée de thread produit-elle une bulle `.msg` ? » — prédicat UNIQUE
+// de l'appariement DOM ↔ thread (`reindexThreadDom`, ui.js). Deux familles
+// d'entrées n'en produisent pas : les acks (rendus dans la bulle assistant
+// qu'ils nourrissent, ou en blocs autonomes) et la frontière de compaction
+// (rendue en séparateur `.compaction-mark`). Il a d'abord été écrit inline en
+// `!isAckRole(...)`, ce qui a décalé de un TOUT l'appariement dès la première
+// compaction : l'édition d'un message user chargeait l'entrée suivante et
+// devenait insoumettable. Toute nouvelle entrée de thread sans bulle propre
+// doit s'ajouter ICI, pas au call-site.
+function entryHasMsgBubble(m) {
+  return !!m && !isAckRole(m.role) && !isCompactionEntry(m);
+}
+
 // Index de la DERNIÈRE entrée de compaction d'un thread, -1 s'il n'y en a
 // aucune. La dernière et non la première : compacter deux fois doit repartir de
 // la frontière la plus récente, sinon la seconde compaction réémettrait

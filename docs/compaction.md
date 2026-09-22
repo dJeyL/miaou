@@ -864,7 +864,7 @@ celui qui la nomme.
 
 Le **CSS n'est couvert par aucun test pur** : le séparateur, le glyphe de seuil
 et l'affordance du drawer se regardent en conditions réelles. C'est l'objet de
-`verify-compaction.mjs`, en sept blocs — séparateur
+`verify-compaction.mjs`, dont les premiers blocs couvrent — séparateur
 dans le fil et sa promesse « rien n'est perdu » (les messages d'avant restent
 AFFICHÉS, ce que les purs ne voient pas : ils testent l'émission, où ils sont
 bien élagués) ; glyphe de seuil dans ses **trois** états, dont « sans fenêtre
@@ -901,6 +901,38 @@ avant/après le re-rendu, lui, ne peut pas mentir.
 rester parti ; partir puis revenir). Il vérifie que la frontière est persistée
 dans la BONNE conversation, que celle d'arrivée ne reçoit rien (piège 28), que
 l'historique n'est pas tronqué (piège 29), et qu'UNE seule frontière est posée.
+
+**Blocs 8 et 9 — les deux défauts du 2026-09-22**, signalés par Julien après
+l'étape 8 et tous deux invisibles aux purs, chacun pour une raison propre.
+
+Le **bloc 8** mesure l'appariement bulle `.msg` ↔ entrée de thread après une
+frontière. `reindexThreadDom` écartait les seuls acks (`!isAckRole`), or la
+frontière n'est pas un ack et ne produit pourtant pas de bulle : elle était
+comptée comme entrée à bulle, et tout ce qui suit glissait d'un rang —
+l'édition d'un message user chargeait la textarea avec le contenu du SUIVANT,
+puis `editUserMessage` refusait silencieusement (`role !== 'user'`), d'où un
+« Valider » sans effet. Le prédicat est désormais `entryHasMsgBubble`
+(utils.js), couvert par QuickJS ; ce que le script ajoute est le CÂBLAGE, que
+les purs ne voient pas — `data-thread-idx`, la textarea, la troncature. Les
+bulles sont appariées sur le TEXTE PEINT et non sur l'indice seul : un
+appariement décalé coïncide parfois par hasard sur les indices, jamais sur le
+contenu.
+
+Le **bloc 9** mesure la pastille « non lu » après une compaction qu'on REGARDE.
+`unregisterGeneration` lisait `genOwnsScreen` pour répondre à « la conversation
+est-elle sous les yeux ? » : les deux coïncident pour un stream, mais une
+compaction en est EXEMPTÉE par construction (elle ne peint rien), donc la
+pastille se posait même scrollé au fond, et ne s'effaçait qu'en partant puis
+revenant (`openConversation` → `markConvRead`). Le test est maintenant l'écran
+lui-même. Le bloc porte sa **réciproque** — la même compaction finie hors écran
+doit bien poser la pastille —, sans quoi il passerait aussi sur un code qui
+aurait simplement supprimé le marquage ; et il lit le pixel de la pastille en
+sidebar, pas seulement `convBadgeState` (un état interne juste avec un rendu qui
+traîne laisse la pastille à l'écran).
+
+Non-vacuité mesurée : rejoués contre le code d'AVANT les deux correctifs, ils
+tombent à six rouges — quatre au bloc 8, deux au bloc 9 — tous leurs témoins
+restant verts.
 
 Reste hors couverture, délibérément : la microcompaction (IDB), et le
 multi-onglets réel — un seul `page` ne peut pas observer le pair, `file://` ne

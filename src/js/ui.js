@@ -4139,27 +4139,28 @@ function finalizeAssistantError(wrap, msg) {
 // ── Édition d'un message utilisateur ────────────────────────────────────────
 // Réindexation autoritaire DOM → currentThread. Chaque bulle `.msg` reçoit
 // `data-thread-idx` = l'index RÉEL de son entrée dans currentThread (les
-// tool-ack ne produisent pas de `.msg` autonome : ils sont sautés). C'est LA
+// entrées sans bulle propre — acks, frontière de compaction — sont sautées,
+// prédicat unique `entryHasMsgBubble`, utils.js). C'est LA
 // source de vérité de l'appariement bulle↔entrée — jamais un recomptage par
 // call-site (l'ancien msgIndex appariait « n-ième .msg ↔ n-ième non-ack », qui
 // désalignait silencieusement dès qu'un `.msg` DOM et une entrée divergeaient
 // en nombre/ordre : édition d'un message qui chargeait la mauvaise entrée). À
 // rappeler après toute mutation qui change la correspondance (renderThread,
 // ajout live, finalisation, suppression). Garde de divergence : si le nombre de
-// `.msg` ne correspond pas au nombre d'entrées non-ack, on le signale (console)
+// `.msg` ne correspond pas au nombre d'entrées à bulle, on le signale (console)
 // — un mapping partiel vaut mieux qu'un mapping faux et muet.
 function reindexThreadDom() {
   const msgs = $('thread').querySelectorAll('.msg');
-  const nonAck = [];
+  const bubbled = [];
   for (let i = 0; i < currentThread.length; i++) {
-    if (!isAckRole(currentThread[i].role)) nonAck.push(i);
+    if (entryHasMsgBubble(currentThread[i])) bubbled.push(i);
   }
-  if (msgs.length !== nonAck.length && typeof console !== 'undefined') {
+  if (msgs.length !== bubbled.length && typeof console !== 'undefined') {
     console.warn('[miaou] reindexThreadDom: ' + msgs.length + ' bulle(s) .msg pour ' +
-      nonAck.length + ' entrée(s) non-ack — appariement partiel');
+      bubbled.length + ' entrée(s) à bulle — appariement partiel');
   }
-  const n = Math.min(msgs.length, nonAck.length);
-  for (let k = 0; k < n; k++) msgs[k].dataset.threadIdx = nonAck[k];
+  const n = Math.min(msgs.length, bubbled.length);
+  for (let k = 0; k < n; k++) msgs[k].dataset.threadIdx = bubbled[k];
   // Bulles en excès (jamais censé arriver) : pas d'attribut → msgIndex renvoie -1.
   for (let k = n; k < msgs.length; k++) delete msgs[k].dataset.threadIdx;
 }
