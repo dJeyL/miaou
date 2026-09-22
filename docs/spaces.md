@@ -474,7 +474,11 @@ aide à la décision de lecture).
     le no-think pour la session entière, ce qui rallongeait les réponses
     suivantes (donc d'autres timeouts) et faisait partir le modèle en prose au
     lieu du JSON attendu ; le même `catch` marquait aussi le modèle non-vision
-    à tort dès que le payload portait une image. Le prédicat est
+    à tort dès que le payload portait une image. Même règle pour une réponse
+    HTTP : seul un 4xx (hors 408/429) est un verdict (`httpStatusIsVerdict`,
+    appliqué aussi aux deux dégradations de `streamCompletion`) — un 5xx, un
+    502/504 de proxy devant un backend lent notamment, dit « j'ai un problème »
+    et non « ta requête ne me convient pas » (revue du 2026-09-22). Le prédicat est
     **conservateur** : une erreur de forme inconnue reste traitée comme un
     rejet. Corollaire : après un échec non concluant on ne rejoue pas non plus
     sans le paramètre — le rejeu redoublerait l'attente (deux timeouts pleins)

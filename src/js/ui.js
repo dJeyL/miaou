@@ -1869,7 +1869,7 @@ function assistantHead(model, reasoning, ts, server) {
       `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
       `</button>` +
-      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="regenerateResponse()">` +
+      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="onRegenBtn(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
@@ -3899,7 +3899,17 @@ function syncLastAssistantActions() {
     const regenBtn = b.querySelector('.msg-regen');
     if (regenBtn) regenBtn.hidden = sending || b !== last;
     const continueBtn = b.querySelector('.msg-continue');
-    if (continueBtn) continueBtn.disabled = sending || b !== last;
+    if (continueBtn) {
+      // Réponse que la compaction a retirée de ce qui part au modèle : la
+      // continuer n'a plus de sens (`compactionFollows`, utils.js). Désactivé
+      // et non masqué, comme sur les bulles anciennes — le texte « Réponse
+      // incomplète » reste vrai ; le title dit pourquoi le bouton est inerte.
+      const cut = b === last && compactionFollows(currentThread, msgIndex(b));
+      continueBtn.disabled = sending || b !== last || cut;
+      continueBtn.title = cut
+        ? 'Cette réponse n\'est plus transmise au modèle depuis la compaction : elle ne peut plus être continuée.'
+        : '';
+    }
   }
   syncAgentBusyAffordances();
 }
@@ -4178,7 +4188,31 @@ function msgIndex(wrap) {
 function onEditMsg(btn) {
   if (sending) return;                          // pas d'édition pendant un stream
   const wrap = btn.closest('.msg');
-  if (wrap) enterEditMode(wrap);
+  if (!wrap) return;
+  // Message situé AVANT la dernière frontière de compaction : l'envoi de
+  // l'édition tronquera le thread après lui, frontière comprise. Second clic
+  // exigé, sur le même prédicat que l'avis affiché après coup
+  // (`compactionUndoneNotice`, utils.js) — deux formules divergeraient.
+  const index = msgIndex(wrap);
+  if (index >= 0 && compactionUndoneNotice(currentThread, index + 1)) {
+    armThenRun(btn, () => enterEditMode(wrap), null,
+      'Modifier ce message annulera la compaction — cliquer à nouveau pour confirmer');
+    return;
+  }
+  enterEditMode(wrap);
+}
+
+// Bouton « régénérer » de la dernière réponse. Même garde que `onEditMsg` :
+// régénérer juste après une compaction retire la frontière, posée en fin de
+// thread APRÈS cette réponse (revue du 2026-09-22). Le cas nominal — aucune
+// frontière emportée — reste un clic simple.
+function onRegenBtn(btn) {
+  if (compactionUndoneNotice(currentThread, regenerateKeptLength(currentThread))) {
+    armThenRun(btn, regenerateResponse, null,
+      'Régénérer annulera la compaction — cliquer à nouveau pour confirmer');
+    return;
+  }
+  regenerateResponse();
 }
 
 function enterEditMode(wrap) {
@@ -4540,9 +4574,16 @@ function clearConvSearch() {
 // « Supprimer » des cartes MCP/API/skills. `armedLabel` (optionnel) remplace le
 // texte du bouton pendant l'armement (boutons textuels) ; les boutons icône
 // s'appuient sur la classe .armed + le title.
+//
+// Sert aussi, depuis la revue AE du 2026-09-22, de GARDE sur deux gestes non
+// destructeurs par nature mais qui peuvent annuler une compaction (régénérer,
+// éditer — cf. `onRegenBtn`/`onEditMsg`). `armedTitle` (optionnel) y dit
+// pourquoi le second clic est demandé ; la couleur de l'état armé est portée
+// par le CSS de chaque bouton — rouge `--err` pour une suppression, accent de
+// la palette pour une garde, qui n'est pas une destruction.
 const ARM_DELETE_MS = 2600;
 
-function armThenRun(btn, onConfirm, armedLabel) {
+function armThenRun(btn, onConfirm, armedLabel, armedTitle) {
   if (btn.classList.contains('armed')) {
     clearTimeout(btn._disarmTimer);
     btn.classList.remove('armed');
@@ -4551,7 +4592,7 @@ function armThenRun(btn, onConfirm, armedLabel) {
   }
   btn.classList.add('armed');
   btn._origTitle = btn.title;
-  btn.title = 'Cliquer à nouveau pour confirmer';
+  btn.title = armedTitle || 'Cliquer à nouveau pour confirmer';
   if (armedLabel != null) { btn._origLabel = btn.textContent; btn.textContent = armedLabel; }
   btn._disarmTimer = setTimeout(() => {
     btn.classList.remove('armed');
@@ -6349,7 +6390,7 @@ function agentInventoryRows(inventory) {
       // du pur `rootActivityLabel` (agents.js) et de sa table, jamais d'une
       // chaîne écrite ici : le statut d'agent, juste en dessous, a déjà payé
       // cette règle.
-      status: rootActivityLabel(g.working, isCompacting(g.conv.id)),
+      status: rootActivityLabel(g.working, historyRewriteKind(g.conv.id)),
     });
     g.agents.forEach(a => {
       const al = convLabel(a);
@@ -7668,6 +7709,32 @@ function clearTabBanner() {
   if (el) el.classList.remove('show');
 }
 
+// Avis « compaction annulée » (revue du 2026-09-22) : un régénérer ou une
+// édition qui remonte avant la dernière frontière de compaction la retire du
+// thread, et le modèle reçoit de nouveau l'historique qu'elle écartait. Le
+// geste est accepté, mais il doit se DIRE au moment où il a lieu — le
+// séparateur qui disparaît du fil ne suffit pas, c'est précisément l'absence
+// qu'il faudrait remarquer. Texte rédigé par le pur `compactionUndoneNotice`
+// (utils.js).
+//
+// Même anatomie `.banner` et même logique de recollage au fond que
+// `setTabBanner` (le bandeau vit dans le composer, en flux). Levé par sa croix,
+// au changement de conversation, et par une nouvelle compaction.
+function showCompactionUndoneBanner(text) {
+  const el = $('compaction-undone-banner');
+  if (!el) return;
+  const t = $('compaction-undone-text');
+  if (t) t.textContent = text || '';
+  const wasAtBottom = isAtBottom();
+  const wasShown = el.classList.contains('show');
+  el.classList.add('show');
+  if (!wasShown && wasAtBottom) scrollBottom(true);
+}
+function clearCompactionUndoneBanner() {
+  const el = $('compaction-undone-banner');
+  if (el) el.classList.remove('show');
+}
+
 // ── Drawer combiné Résumés / Souvenirs ─────────────────────────────────────
 function openSummaryDrawer(tab) {
   switchMemoryTab(tab || 'summaries');
@@ -7904,12 +7971,18 @@ function syncCompactionAffordance() {
   // RÉENTRANCE pendant la rédaction, et son `finally` rend la main à cette
   // synchro en re-rendant le drawer : après une compaction réussie il n'y a
   // plus de matière, et c'est ici que le bouton se regrise.
-  if (btn) btn.disabled = !substance;
+  // Agent terminé : lecture seule DÉFINITIVE, donc un état stable — grisé comme
+  // l'absence de matière, et pour la même raison (rien ne bougera ; les attentes
+  // AE-7 et l'onglet voisin, elles, restent cliquables et leur refus les nomme).
+  const finished = isFinishedAgentConv(currentConvId);   // main.js
+  if (btn) btn.disabled = !substance || finished;
   // Le bilan d'un geste qu'on vient de faire PRIME sur le hint nominal : il
   // répond à « qu'est-ce que ça a donné ? », question plus pressante que « à
   // quoi ça sert ? » une fois le bouton cliqué. Il cède la place au prochain
   // rendu qui n'en porte pas (changement de conversation, réouverture).
-  if (_reclaimReports.compact) {
+  if (finished) {
+    hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
+  } else if (_reclaimReports.compact) {
     hint.textContent = _reclaimReports.compact;
   } else if (!substance) {
     hint.textContent = 'Pas encore assez d\'historique pour que ce soit utile.';
@@ -7988,8 +8061,11 @@ function syncEvacuateAffordance() {
   if (!wrap || !hint) return;
   const found = evacuableToolResults(currentThread, TOOL_RESULT_EVACUATION_MIN_CHARS,
                                      isInlineHandleResult);
-  if (btn) btn.disabled = !found.count;
-  if (_reclaimReports.evacuate) {
+  const finished = isFinishedAgentConv(currentConvId);   // main.js — cf. syncCompactionAffordance
+  if (btn) btn.disabled = !found.count || finished;
+  if (finished) {
+    hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
+  } else if (_reclaimReports.evacuate) {
     hint.textContent = _reclaimReports.evacuate;
   } else if (!found.count) {
     hint.textContent = 'Aucun résultat d\'outil assez volumineux à évacuer.';
@@ -10584,10 +10660,15 @@ function fitSkillAutocompleteHeight(box) {
   // du CSS.
   if (!box || box.id !== 'skill-ac') return;
   box.style.maxHeight = '';
-  const top = box.getBoundingClientRect().top;
+  // Le BAS, jamais le haut. Le panneau est ancré par `bottom` : son bas est
+  // fixe, son haut dépend de sa propre hauteur (plafonnée à 220px par
+  // `.skill-ac` une fois le style inline retiré). Lire `top` soustrayait donc
+  // la hauteur courante de la place libre — ~213px pour 445px libres, moins
+  // que le plafond qu'on voulait lever (relevé en revue le 2026-09-22).
+  const bottom = box.getBoundingClientRect().bottom;
   // Marge de respiration en haut de fenêtre, et plancher pour que le panneau
   // reste utilisable même dans une fenêtre très basse (il défilera alors).
-  const avail = Math.max(120, Math.round(top - 12));
+  const avail = Math.max(120, Math.round(bottom - 12));
   box.style.maxHeight = avail + 'px';
 }
 

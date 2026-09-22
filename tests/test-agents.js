@@ -1733,7 +1733,7 @@ describe('conversationMessageCount — le compte qui survit à l\'éviction', fu
 // Trois états, pas deux. Le troisième est né de l'entrée de la compaction au
 // registre des générations : sans lui, sa ligne de popover disait « génère »,
 // ce qui est faux — elle ne produit aucune réponse, elle réécrit l'historique.
-describe('rootActivityLabel — trois occupations d\'une conversation racine', function () {
+describe('rootActivityLabel — occupations d\'une conversation racine', function () {
 
   it('une racine qui génère le dit', function () {
     expect(rootActivityLabel(true, false)).toBe('génère');
@@ -1761,7 +1761,13 @@ describe('rootActivityLabel — trois occupations d\'une conversation racine', f
     // verts tout en rendant l'inventaire muet sur la différence
     // (souvenir `distinct-labels-joint-assert`).
     const all = [rootActivityLabel(true, false), rootActivityLabel(false, false),
-                 rootActivityLabel(true, true)];
-    expect(new Set(all).size).toBe(3);
+                 rootActivityLabel(true, 'compaction'), rootActivityLabel(true, 'evacuation')];
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('une évacuation dit qu\'elle ÉVACUE, ni compacte ni génère', function () {
+    // Elle est au registre depuis la revue du 2026-09-22 : working y est vrai.
+    expect(rootActivityLabel(true, 'evacuation')).toBe('évacue des résultats d\'outils');
+    expect(rootActivityLabel(true, 'compaction')).toBe('compacte le contexte');
   });
 });

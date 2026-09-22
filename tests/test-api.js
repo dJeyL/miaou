@@ -51,6 +51,25 @@ describe('serverVerdictOnFailure (un échec accuse-t-il le payload ou le réseau
   it('refus HTTP du serveur → verdict, le paramètre est bien accusé', function() {
     expect(serverVerdictOnFailure(new Error('silentCompletion 400'))).toBe(true);
   });
+  // Revue 2026-09-22 : un 5xx (502/504 d un proxy devant un backend lent) est un
+  // incident serveur, pas un refus du payload.
+  it('status porte par l erreur : 4xx verdict, 5xx non', function() {
+    var e400 = new Error('silentCompletion 400'); e400.status = 400;
+    var e422 = new Error('x'); e422.status = 422;
+    var e502 = new Error('silentCompletion 502'); e502.status = 502;
+    var e504 = new Error('x'); e504.status = 504;
+    expect(serverVerdictOnFailure(e400)).toBe(true);
+    expect(serverVerdictOnFailure(e422)).toBe(true);
+    expect(serverVerdictOnFailure(e502)).toBe(false);
+    expect(serverVerdictOnFailure(e504)).toBe(false);
+  });
+  it('408 et 429 decrivent l etat du serveur, pas le payload', function() {
+    expect(httpStatusIsVerdict(408)).toBe(false);
+    expect(httpStatusIsVerdict(429)).toBe(false);
+    expect(httpStatusIsVerdict(400)).toBe(true);
+    expect(httpStatusIsVerdict(500)).toBe(false);
+    expect(httpStatusIsVerdict(200)).toBe(false);
+  });
   // Conservateur par défaut : on ne retire que les cas dont on est SÛR qu'ils
   // ne disent rien du payload. Une forme inconnue reste traitée comme un rejet,
   // exactement comme avant le correctif.
@@ -751,5 +770,12 @@ describe('runAsync (helper de pompage)', function() {
     var caught = null;
     try { runAsync(42); } catch (e) { caught = e.message; }
     expect(String(caught)).toContain('attend une promesse');
+  });
+});
+
+describe('COMPACTION_PROMPT (recompaction, revue 2026-09-22)', function() {
+  it('demande d integrer un resume anterieur, qui cessera d etre transmis', function() {
+    // La consigne ne repose pas sur le seul libelle de la projection.
+    expect(/r[ée]sum[ée] ant[ée]rieur/.test(COMPACTION_PROMPT)).toBe(true);
   });
 });

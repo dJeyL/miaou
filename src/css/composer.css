@@ -393,9 +393,11 @@
 #set-reasoning-menu { left: auto; right: 0; min-width: 160px; }
 
 /* bannière résumés (mode « proposer ») */
-/* Anatomie de bandeau contextuel PARTAGÉE (lot J) : base commune de
-   .summary-banner (résumés liés, ci-dessous), .move-bar (mode déplacement,
-   sidebar.css) et .tab-banner (soft-lock / readonly multi-onglets, ci-dessous).
+/* Anatomie de bandeau contextuel PARTAGÉE (lot J) : base commune de tous les
+   bandeaux — les éléments `class="banner <variante>"` d'index.html, qui font
+   foi. Leur liste n'est PAS recopiée ici : elle l'a été, et a dérivé comme
+   toute énumération dupliquée (.agent-banner et .compaction-undone-banner y
+   manquaient ; cf. CLAUDE.md, règle des énumérations fermées).
    Masqué par défaut, .show l'affiche. Les variantes ne portent QUE leurs
    spécificités (margin, layout interne). NE PAS refléter dans EXPORT_CSS (figé,
    piège 22) — aucun bandeau n'y apparaît. */
@@ -510,6 +512,35 @@
   min-width: 0;
 }
 .tab-banner-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+
+/* ── Avis « compaction annulée » (revue AE, 2026-09-22) ────────────────────
+   Variante informative de .banner, même anatomie que .tab-banner (icône +
+   texte) plus une croix de fermeture : l'avis décrit un geste passé, il doit
+   pouvoir être congédié. L'icône est celle du séparateur de compaction du fil
+   (buildCompactionMarker) — l'avis parle de cette coupure-là. */
+.compaction-undone-banner { margin: 12px 0; }
+.compaction-undone-body {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 0;
+}
+.compaction-undone-body > span { flex: 1 1 auto; min-width: 0; }
+.compaction-undone-icon { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+.compaction-undone-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.compaction-undone-close:hover { background: var(--surface-3); color: var(--text); }
+.compaction-undone-close svg { width: 14px; height: 14px; }
 
 /* Readonly cross-onglets (lot J : génération en cours dans un autre onglet).
    Verrouille les mutations LOCALES sans empêcher lecture/scroll. Le composer

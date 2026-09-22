@@ -27,6 +27,8 @@
 //      user, symptômes du décalage corrigé le 2026-09-22.
 //   9. Pastille « non lu » — absente sur une compaction REGARDÉE, présente sur
 //      une compaction finie hors écran (l'autre défaut du 2026-09-22).
+//  10. Régénérer / éditer / continuer par-dessus une frontière — second clic
+//      et bandeau « Compaction annulée », continuation refusée (revue AE).
 //
 // Ce que ce script NE fait PAS, délibérément : la compaction de bout en bout
 // (elle exige de stuber /chat/completions pour la rédaction du résumé) et la
@@ -576,7 +578,8 @@ const longList = await page.evaluate(async () => {
   const r = box.getBoundingClientRect();
   return {
     n: box.querySelectorAll('.skill-ac-opt').length,
-    top: r.top, height: r.height,
+    top: r.top, height: r.height, bottom: r.bottom,
+    maxInline: parseInt(box.style.maxHeight, 10),
     overflows: box.scrollHeight > box.clientHeight + 1,
     scrollable: getComputedStyle(box).overflowY,
   };
@@ -585,6 +588,16 @@ check('avec une liste longue, le panneau reste dans le viewport', longList.top >
 check('et il défile plutôt que de déborder', longList.overflows && longList.scrollable === 'auto');
 check('la liste longue est bien plus longue que le panneau (le cas dur est atteint)',
   longList.n > 20);
+// Revue du 2026-09-22 : la borne lisait `rect.top` d'un panneau ancré par le
+// BAS, donc soustrayait sa propre hauteur de la place libre — jusqu'à rester
+// SOUS les 220px qu'elle devait lever. Les contrôles ci-dessus passaient quand
+// même (ils ne demandaient que « dans le viewport » et « défile »). On exige
+// donc que la place disponible soit réellement prise : la borne vaut le bas du
+// panneau moins la marge, et dépasse le plafond du CSS quand il y a la place.
+check(`la borne se mesure depuis le BAS du panneau (max ${longList.maxInline}px, bas à ${Math.round(longList.bottom)}px)`,
+  Math.abs(longList.maxInline - Math.max(120, Math.round(longList.bottom - 12))) <= 1);
+check(`avec la place, le panneau dépasse le plafond CSS de 220px (mesuré ${Math.round(longList.height)}px)`,
+  longList.bottom - 12 <= 220 || longList.height > 220);
 
 // Condition 2 du § 4.7 : JAMAIS de commande en édition d'un message passé.
 // L'édition EST une réécriture d'historique, donc déjà sous la garde AE-7 ; y
@@ -727,13 +740,13 @@ await page.screenshot({ path: path.join(outDir, '5-affordances.png'),
 // ≠ chemin emprunté »). C'est précisément ce que la reproduction doit établir :
 // le défaut n'apparaît QUE lorsqu'une photo d'envoi réel existe.
 const outcome = await page.evaluate(async () => {
-  const before = threadCharCount(currentThread);
+  const before = emittedHistoryCharCount(currentThread);
   recomputeLastContextManifest([], false);
   syncContextCounter();
   const pillBefore = document.getElementById('ctx-counter-label').textContent;
   const res = await evacuateToolResults();
   return {
-    res, before, after: threadCharCount(currentThread),
+    res, before, after: emittedHistoryCharCount(currentThread),
     pillBefore,
     pillAfter: document.getElementById('ctx-counter-label').textContent,
     hint: document.getElementById('ctx-evacuate-hint').textContent,
@@ -1303,6 +1316,150 @@ const badgeAway = await page.evaluate(async () => {
 check('témoin : on a bien quitté la conversation compactée', badgeAway.left === true);
 check('une compaction finie HORS écran pose bien la pastille',
   badgeAway.badge === 'unread');
+
+// ════════════════════════════════════════════════════════════════════════════
+// 10. Revenir en arrière par-dessus une frontière (revue du 2026-09-22)
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\n── 10. Régénérer / éditer / continuer par-dessus une frontière ──');
+
+// Régénérer ou éditer avant la dernière frontière la retire (retour en arrière
+// ACCEPTÉ, décision Julien) : second clic exigé AVANT, bandeau « Compaction
+// annulée » APRÈS. « Continuer » une réponse tronquée d'avant la frontière est,
+// lui, refusé. Les purs (`compactionUndoneNotice`, `regenerateKeptLength`,
+// `compactionFollows`) sont couverts en QuickJS ; l'objet de ce bloc est le
+// CÂBLAGE — onclick réel, état armé peint, bandeau visible, bouton inerte.
+// Chaque « avant/après » est mesuré dans un même evaluate : l'armement se
+// désarme seul après ARM_DELETE_MS.
+const seedBoundary = async (page, { truncated } = {}) => page.evaluate(async (tr) => {
+  await newConversation();
+  ensureConversation();
+  currentThread.push({ role: 'user', content: 'U1' });
+  const a = { role: 'assistant', content: 'A1' };
+  if (tr) a.truncated = true;
+  currentThread.push(a);
+  currentThread.push({ role: 'compaction', content: 'Résumé.', reclaimed: 10, ts: Date.now() });
+  await persistCurrent();
+  rerenderCurrentThread();
+  clearCompactionUndoneBanner();
+}, !!truncated);
+
+const bannerShown = () => {
+  const el = document.getElementById('compaction-undone-banner');
+  const r = el.getBoundingClientRect();
+  return { shown: r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none',
+           text: (document.getElementById('compaction-undone-text') || {}).textContent || '' };
+};
+
+await seedBoundary(page);
+const regen = await page.evaluate(async (bannerShownSrc) => {
+  const bannerShown = eval(bannerShownSrc);
+  const btn = document.querySelector('#thread .msg.assistant .msg-regen');
+  const real = window.runGenerationFromCurrentThread;
+  let runs = 0;
+  runGenerationFromCurrentThread = async function () { runs++; return null; };
+  const out = { visible: !!btn && !btn.hidden };
+  try {
+    btn.click();
+    // `.msg-regen` transitionne son fond en 150 ms : mesuré à l'instant du clic,
+    // on lirait une valeur intermédiaire (rouge au premier passage, pour cette
+    // raison et non pour un défaut de CSS). On attend la fin de la transition,
+    // bien en deçà de la fenêtre d'armement.
+    await new Promise(r => setTimeout(r, 300));
+    // Couleur de l'état armé : l'ACCENT de la palette, jamais le rouge --err
+    // des suppressions. Comparée à une sonde peinte avec les deux tokens.
+    const probe = document.createElement('div');
+    document.body.appendChild(probe);
+    probe.style.background = 'var(--accent)';
+    const accent = getComputedStyle(probe).backgroundColor;
+    probe.style.background = 'var(--err)';
+    const err = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    out.afterFirst = {
+      armed: btn.classList.contains('armed'),
+      bg: getComputedStyle(btn).backgroundColor, accent, err,
+      title: btn.title,
+      boundary: currentThread.some(e => e.role === 'compaction'),
+      runs,
+      banner: bannerShown(),
+    };
+    btn.click();
+    out.afterSecond = {
+      boundary: currentThread.some(e => e.role === 'compaction'),
+      runs,
+      banner: bannerShown(),
+    };
+    document.querySelector('#compaction-undone-banner .compaction-undone-close').click();
+    out.afterClose = bannerShown();
+  } finally { runGenerationFromCurrentThread = real; }
+  return out;
+}, bannerShown.toString());
+
+check('témoin : « régénérer » est offert sur la réponse qui précède la frontière', regen.visible);
+check('premier clic : le bouton s\'ARME, rien n\'est tronqué',
+  regen.afterFirst.armed && regen.afterFirst.boundary && regen.afterFirst.runs === 0);
+check(`l'état armé porte l'accent de la palette, pas le rouge des suppressions (${regen.afterFirst.bg})`,
+  regen.afterFirst.bg === regen.afterFirst.accent && regen.afterFirst.bg !== regen.afterFirst.err);
+check('le title armé dit que la compaction sera annulée', /annulera la compaction/.test(regen.afterFirst.title));
+check('aucun bandeau avant la confirmation', !regen.afterFirst.banner.shown);
+check('second clic : la régénération part et la frontière est retirée',
+  regen.afterSecond.runs === 1 && !regen.afterSecond.boundary);
+check('le bandeau « Compaction annulée » est PEINT',
+  regen.afterSecond.banner.shown && /^Compaction annulée/.test(regen.afterSecond.banner.text));
+check('il dit que toute la conversation repart (aucune frontière antérieure)',
+  /toute la conversation/.test(regen.afterSecond.banner.text));
+check('sa croix le lève', !regen.afterClose.shown);
+
+// Réciproque : sans frontière emportée, un clic suffit — sans elle, les
+// contrôles ci-dessus passeraient sur un code qui armerait TOUJOURS.
+const nominal = await page.evaluate(async () => {
+  await newConversation();
+  ensureConversation();
+  currentThread.push({ role: 'user', content: 'U1' });
+  currentThread.push({ role: 'assistant', content: 'A1' });
+  await persistCurrent();
+  rerenderCurrentThread();
+  const btn = document.querySelector('#thread .msg.assistant .msg-regen');
+  const real = window.runGenerationFromCurrentThread;
+  let runs = 0;
+  runGenerationFromCurrentThread = async function () { runs++; return null; };
+  try { btn.click(); } finally { runGenerationFromCurrentThread = real; }
+  return { runs, armed: btn.classList.contains('armed') };
+});
+check('sans frontière emportée : un seul clic régénère, rien ne s\'arme',
+  nominal.runs === 1 && !nominal.armed);
+
+// Édition d'un message situé AVANT la frontière : même garde sur le crayon.
+await seedBoundary(page);
+const editGuard = await page.evaluate(() => {
+  const wrap = document.querySelector('#thread .msg.user');
+  const btn = wrap.querySelector('.msg-edit');
+  btn.click();
+  const first = { armed: btn.classList.contains('armed'),
+                  editing: !!wrap.querySelector('.msg-edit-area'),
+                  actionsVisible: getComputedStyle(wrap.querySelector('.msg-user-actions')).opacity === '1' };
+  btn.click();
+  return { first, editingAfter: !!wrap.querySelector('.msg-edit-area') };
+});
+check('éditer avant la frontière : le premier clic arme sans ouvrir l\'édition',
+  editGuard.first.armed && !editGuard.first.editing);
+check('le crayon armé reste visible hors survol', editGuard.first.actionsVisible);
+check('le second clic ouvre l\'édition', editGuard.editingAfter);
+
+// « Continuer » une réponse tronquée d'avant la frontière : refusé, bouton
+// inerte avec son motif, et aucune génération au point de mutation.
+await seedBoundary(page, { truncated: true });
+const cont = await page.evaluate(() => {
+  const btn = document.querySelector('#thread .msg.assistant .msg-continue');
+  const real = window.dispatchSend;
+  let calls = 0;
+  dispatchSend = function () { calls++; };
+  try { continueTruncated(btn); } finally { dispatchSend = real; }
+  return { present: !!btn, disabled: btn && btn.disabled, title: btn && btn.title, calls };
+});
+check('témoin : la réponse tronquée porte son bouton « Continuer »', cont.present);
+check('il est DÉSACTIVÉ, avec un title qui dit pourquoi',
+  cont.disabled && /compaction/.test(cont.title));
+check('même appelé directement, il ne lance rien (garde au point de mutation)', cont.calls === 0);
 
 // ════════════════════════════════════════════════════════════════════════════
 console.log('\n────────────────────────────────────────────');

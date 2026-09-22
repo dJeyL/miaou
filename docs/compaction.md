@@ -104,13 +104,65 @@ l'identique ensuite. C'est aussi ce qui impose que la création des ressources
 de la microcompaction appartienne au geste et non à `expandThread`, qui est pur
 et synchrone (et testé en QuickJS à ce titre).
 
+### Revenir en arrière annule la compaction
+
+`regenerateResponse` tronque le thread après le dernier message user, et
+`editUserMessage` après le message édité. La frontière étant posée en FIN de
+thread, un tel retour en arrière l'emporte dès qu'il la précède — et le résumé
+avec elle : le modèle reçoit de nouveau l'historique qu'elle écartait.
+Régénérer juste après avoir compacté suffit à le déclencher, le bouton restant
+sur la dernière bulle assistant, qui précède le séparateur.
+
+**Comportement accepté, mais DIT au moment du geste** (décision Julien, revue du
+2026-09-22). Il était silencieux, alors qu'il peut faire repasser la
+conversation au-dessus de la fenêtre de contexte. Le séparateur qui disparaît
+du fil ne suffit pas : c'est précisément une absence qu'il faudrait remarquer.
+Le pur `compactionUndoneNotice(thread, keptLength)` (utils.js), évalué AVANT la
+troncature, rend le texte ou null ; il distingue la frontière antérieure qui
+survit (le modèle repart d'elle) de l'absence de toute frontière (toute la
+conversation repart). `showCompactionUndoneBanner` (ui.js) l'affiche dans un
+bandeau `.banner` du composer, levé par sa croix, au changement de conversation
+et par une nouvelle compaction.
+
+Le signal est DOUBLE, sur suggestion de Julien : AVANT le geste, les boutons
+« régénérer » et « éditer » exigent un second clic quand le geste emporterait
+une frontière (`onRegenBtn`/`onEditMsg`, ui.js, via `armThenRun` — le même
+armement que les suppressions) ; APRÈS, le bandeau. Les deux décident sur le
+MÊME pur `compactionUndoneNotice`, et régénérer calcule sa coupe par
+`regenerateKeptLength` (utils.js), partagé avec `regenerateResponse` — deux
+formules de la coupe divergeraient. L'état armé prend l'**accent de la
+palette** et non le rouge `--err` des suppressions : c'est une garde sur un
+geste légitime, pas une destruction. Hors frontière emportée, le clic reste
+simple.
+
+**« Continuer » une réponse tronquée est, lui, REFUSÉ après une frontière.**
+La continuation ne tronque rien : elle rejoue le thread en comptant que le
+modèle y voie sa réponse coupée en dernier tour. Une frontière posée après elle
+l'élague de l'émission — le modèle ne reçoit que le résumé, et ce qu'il
+écrirait serait recollé derrière un texte qu'il n'a pas lu. Le cas est le
+premier atteint, le bouton vivant sur la dernière bulle assistant, qui précède
+une frontière posée en fin de thread. Pur `compactionFollows(thread, idx)`
+(utils.js) : bouton désactivé avec un `title` qui dit pourquoi
+(`syncLastAssistantActions`), et même garde au point de mutation
+(`continueTruncated`). Pas de « compaction annulée » ici : il n'y a rien à
+annuler, et la suite se demande par un nouveau message.
+
 ### Compacter deux fois
 
-Seule la **dernière** frontière vaut : les précédentes sont derrière elle par
-construction et ne sont jamais réémises. On ne re-résume donc pas du résumé —
-posture voisine de l'API Anthropic, qui conserve ses blocs de compaction
-antérieurs verbatim. La compaction récursive proprement dite reste hors
-périmètre.
+Seule la **dernière** frontière est émise : les précédentes sont derrière elle
+par construction. Le nouveau résumé REMPLACE donc l'ancien sur le fil — et c'est
+pourquoi il doit l'**intégrer** : `projectThreadForCompaction` ouvre la matière
+du rédacteur sur le résumé de la frontière précédente (en entier, jamais borné),
+et `COMPACTION_PROMPT` demande d'en reprendre ce qui reste valable.
+
+Défaut corrigé en revue le 2026-09-22 : la projection partait APRÈS la frontière
+sans le résumé précédent, en supposant que le rédacteur « l'avait déjà sous les
+yeux ». Il ne l'a pas — `generateCompactionSummary` ne lui envoie que la
+projection. Compacter une seconde fois effaçait donc du contexte, définitivement,
+tout ce que la première compaction avait consigné. Cette section se réclamait
+alors de l'API Anthropic, qui conserve ses blocs antérieurs verbatim : c'était
+l'inverse du code. Le choix retenu (intégrer plutôt qu'empiler) garde un seul
+résumé émis, donc un préfixe court et byte-stable.
 
 ## Microcompaction des tool results
 
@@ -157,6 +209,13 @@ une question de taille :
 | Condition | Pourquoi |
 |---|---|
 | `ackIsExpandable(ack)` | un ack sans `args`/`name` est **déjà élagué à l'émission** : évacuer son résultat créerait une ressource que rien ne transmet |
+
+La même raison borne la **population** : `evacuationTargets` (pur, seule
+définition, lue par l'affordance ET par `microcompactToolResults`) ne balaie que
+ce qui suit la dernière frontière de compaction. L'amont n'est jamais émis ;
+l'évacuer créait des ressources pour personne et faisait annoncer au bilan un
+gain que la pilule ne montrait pas — défaut du joint relevé en revue le
+2026-09-22, symétrique de celui qui a fait annuler AE-5.
 | `result.length > seuil` | borne **stricte** — à égalité, on ne touche pas |
 | pas déjà évacué | `isInlineHandleResult`, passé en argument plutôt que recopié |
 
@@ -218,17 +277,18 @@ dérive positionnelle des ids `solo:N` décrite plus haut.
 
 ### L'ack `resource_stored` parasite
 
-`_storeBlock` pousse inconditionnellement un ack `resource_stored` dans
+`_storeBlock` pousse d'ordinaire un ack `resource_stored` dans
 `_pendingToolAcks`. C'est juste pendant un tour d'outils, et **faux ici** :
 aucun tour ne tourne, personne ne draine, et ces acks atterriraient dans la
-bulle du tour **suivant** — une compaction s'y présenterait comme un appel
+bulle du tour **suivant** — une évacuation s'y présenterait comme un appel
 d'outil du modèle, qui n'a rien demandé.
 
-Le geste relève donc la longueur de la file avant (`pendingToolAcksLength`) et y
-revient après (`truncatePendingToolAcks`). **Jamais un `clear`** : rien ne
-garantit depuis l'extérieur que la file est vide, et effacer ce qu'un autre
-chemin y a mis perdrait des acks légitimes. On ne retire que ce qu'on a
-soi-même ajouté.
+Le geste demande donc à `_storeBlock` de **ne pas l'écrire** (`opts.noAck`).
+Une première version relevait la longueur de la file puis la tronquait après
+coup ; mais la file est GLOBALE — une génération en vol sur une AUTRE
+conversation y pousse ses propres acks pendant les N awaits du geste, et la
+troncature pouvait les couper (revue du 2026-09-22). Ne pas écrire dans une
+structure commune vaut mieux que défaire ce qu'on y a écrit.
 
 ### Ce que le geste n'écrit pas
 
@@ -297,9 +357,13 @@ rendrait `messages: []` et ferait écraser l'historique au premier `persistCurre
 Le prix de ce périmètre est une **relecture après chaque await** (piège 24 b) :
 la rédaction du résumé est un aller-retour réseau de plusieurs secondes (et,
 côté évacuation, `microcompactToolResults` enchaîne N awaits IDB). Entre-temps
-l'utilisateur peut changer de conversation. Le geste revérifie donc
-`currentConvId !== convId` après chaque await et abandonne silencieusement —
-rien n'est muté, puisque rien ne l'a encore été.
+l'utilisateur peut changer de conversation. Les DEUX gestes vont alors **au
+bout** : ils écrivent dans le tableau capturé à l'entrée (`gen.thread`, chaud
+par construction) et persistent par `persistGeneration` — cf. « La compaction
+OCCUPE la conversation » plus bas. Une première version abandonnait
+silencieusement ; l'étape 8 l'a corrigé pour la compaction, la revue du
+2026-09-22 pour l'évacuation, qui laissait sinon des ressources orphelines et
+des acks mutés que plus rien ne persistait.
 
 ### Deux gardes AE-7, jamais une
 
@@ -311,13 +375,24 @@ sont pas le même.
 
 | Borne | Prédicat | Pourquoi |
 |---|---|---|
-| une génération tourne | `isGenerating(convId)` | **jamais `sending`**, reflet d'ÉCRAN (piège 28) — une conversation qui génère sans être affichée a `sending === false` |
+| la conversation est occupée | `reclaimOccupation(convId)` (main.js) | rend la NATURE de l'occupation, que le refus nomme : agent terminé (lecture seule définitive), compaction en vol, génération en vol — `isGenerating`, **jamais `sending`**, reflet d'ÉCRAN (piège 28) —, ou onglet voisin qui écrit (`_peersGenerating`) |
 | un agent travaille | `agentBusyRewriteRefusal(convId)` | prédicat partagé (piège 18), relayé tel quel : le compte rendu de l'agent doit revenir dans le fil tel qu'il l'a quitté |
 | pas assez de matière | `hasCompactableSubstance(thread)` | sous le plancher, le résumé coûte autant que ce qu'il retire |
 
 Les gardes sont évaluées **au point de mutation**, pas seulement sur le bouton :
 griser une affordance ne protège pas un thread (précédent `editUserMessage` et
 sa troisième voie fermée).
+
+**Readonly c'est readonly** (revue du 2026-09-22). La première borne n'était
+d'abord qu'un booléen `isGenerating` : elle faisait dire « en train de générer…
+interromps-la » pendant une compaction (faux deux fois — une compaction ne
+s'interrompt pas), et ne voyait ni l'onglet voisin ni l'agent terminé. Or les
+boutons du drawer échappent à `setConvReadonly`, qui ne verrouille que le
+composer et les actions de message : un onglet pouvait compacter pendant qu'un
+autre générait, et un agent terminé se laissait réécrire. `reclaimOccupation`
+relit les causes de `applyReadonlyState` À LA SOURCE, au point de mutation. Côté
+bouton, seul l'agent terminé grise (état stable, comme l'absence de matière) ;
+les autres occupations sont des attentes et restent cliquables.
 
 Le bouton, lui, n'est désactivé que sur **la troisième** de ces bornes, et la
 ligne de partage est ce que l'utilisateur peut y faire :
@@ -338,8 +413,11 @@ bouton après une compaction réussie (il n'y a alors plus de matière).
 
 ### La matière compactable se mesure en caractères
 
-`compactableCharCount` (pur) compte ce qui serait élagué, c'est-à-dire tout ce
-qui suit la dernière frontière — on ne recompacte pas du déjà-compacté. Deux
+`compactableCharCount` (pur) compte la matière NOUVELLE, c'est-à-dire tout ce
+qui suit la dernière frontière : c'est elle qui décide s'il y a lieu de
+recompacter (le résumé précédent, déjà condensé, n'y entre pas). Le BILAN, lui,
+se mesure sur `emittedHistoryCharCount` — résumé précédent compris, puisqu'il
+cesse lui aussi d'être émis. Deux
 décisions y sont figées :
 
 - **le `result` des acks compte autant que le `content` des messages.** Un tour
@@ -423,7 +501,8 @@ compaction REMPLACE les messages qu'il couvre.
 
 La différence avec `projectThreadForCompaction` n'est pas cosmétique, elle tient
 à la **question posée** : celui-ci part APRÈS la frontière (il s'agit de
-*continuer à travailler*, le modèle a déjà le résumé sous les yeux), celui-là
+*continuer à travailler* ; il reprend toutefois le résumé précédent, que le
+nouveau remplacera — cf. « Compacter deux fois »), celui-là
 part de la frontière INCLUSE et couvre la conversation **depuis son début** (il
 s'agit de la *retrouver* ou de la *titrer*). Sauter la frontière au lieu de la
 garder produirait un titre et un résumé amnésiques ; garder le résumé préserve
@@ -502,6 +581,13 @@ Mesuré avant correction : `≈ 13961 tok (43%)` avant *et* après une évacuati
 retombé à 159 caractères.
 
 ## La compaction OCCUPE la conversation, sur tous les onglets
+
+*Vaut aussi pour l'évacuation depuis la revue du 2026-09-22* (`kind`
+`'evacuation'`, même montage dans `evacuateToolResults`/`runEvacuation`) : elle
+n'entrait pas au registre, donc ni verrou local, ni relais aux onglets voisins,
+ni aboutissement hors écran. Les sites qui traitent les deux gestes pareil
+passent par `isHistoryRewriteKind` ; ceux qui les distinguent (libellé
+d'inventaire, motif de refus) par `historyRewriteKind`.
 
 Le geste est une réécriture d'historique de plusieurs secondes. Pendant ce
 temps, un onglet voisin peut éditer un message, régénérer, ou lancer sa propre
@@ -679,10 +765,18 @@ au geste :
 
 **Jamais par interjection, et par construction.** AE-7 refuse de compacter
 pendant une génération ; une interjection n'existe QUE pendant une génération.
-Le cas est donc vide, et c'est le placement du prédicat dans `sendMessage`
-plutôt que dans `resolveSend` qui le garantit — les deux drains d'interjection
-re-résolvent le littéral par `resolveSend`. À noter explicitement, sinon un
-lecteur futur y verra un oubli de garde.
+L'EXÉCUTION y est donc impossible, et c'est le placement du prédicat dans
+`sendMessage` plutôt que dans `resolveSend` qui le garantit — les deux drains
+d'interjection re-résolvent le littéral par `resolveSend`.
+
+Le REFUS, lui, n'est pas vide : `enqueueInterjection` et `editUserMessage`
+appellent `resolveSend`, qui ne connaît de la commande que sa forme, et
+servaient donc `commandFormRefusal` (« elle s'envoie seule ») à qui venait de
+l'envoyer seule. Corrigé en revue le 2026-09-22 : ces deux chemins testent
+`matchMiaouCommand` AVANT `resolveSend` et servent `commandContextRefusal`
+(skills.js), qui nomme la vraie borne — la génération en cours, ou l'édition.
+Le cas vide « par construction » décrivait l'exécution ; le lire comme couvrant
+aussi le message est ce qui a laissé passer le défaut.
 
 ## L'affordance
 
@@ -743,7 +837,9 @@ l'évacuation annonce donc un **compte** (« 2 résultats… ») et la compactio
 qu'elle FAIT, rien de plus.
 
 Après coup, `formatReclaimSummary` (pur) rédige un bilan à partir d'une mesure
-avant/après — « 2 résultats évacués, ≈ 1 421 tok récupérés ». Le « ≈ » n'est pas
+avant/après de ce que le thread ÉMET (`emittedHistoryCharCount` : dernier résumé
+plus ce qui suit sa frontière — jamais le thread entier, dont l'amont ne part
+pas) — « 2 résultats évacués, ≈ 1 421 tok récupérés ». Le « ≈ » n'est pas
 décoratif : l'estimation est en chars/4 comme partout ailleurs
 (`estimateTokensFromChars`, qui partage la formule d'`estimateTokens` depuis un
 COMPTE plutôt qu'une chaîne). Un gain nul ou négatif **se dit** (« contexte

@@ -235,6 +235,19 @@ if (window.requestAnimationFrame) {
           </div>
         </div>
 
+        <!-- Avis « compaction annulée » (revue AE, 2026-09-22) : un retour en
+             arrière a retiré la dernière frontière de compaction. Informatif,
+             texte piloté en JS (showCompactionUndoneBanner). -->
+        <div class="banner compaction-undone-banner" id="compaction-undone-banner" role="status">
+          <div class="compaction-undone-body">
+            <svg class="compaction-undone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
+            <span id="compaction-undone-text"></span>
+            <button type="button" class="compaction-undone-close" onclick="clearCompactionUndoneBanner()" title="Fermer" aria-label="Fermer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
         <!-- Bannière mémoire (mode « proposer ») -->
         <div class="banner summary-banner" id="summary-banner">
           <div class="summary-banner-head">

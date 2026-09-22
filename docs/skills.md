@@ -49,8 +49,12 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
      (`main.js` et `agents.js`) qui re-résolvent le littéral à la frontière de
      tour : y placer le prédicat rendrait `/compact` exécutable par
      interjection, alors qu'AE-7 refuse de compacter pendant une génération et
-     qu'une interjection n'existe QUE pendant une génération. Le cas doit rester
-     vide **par construction**, pas rattrapé par une garde. Ce placement règle du
+     qu'une interjection n'existe QUE pendant une génération. L'exécution doit
+     rester impossible **par construction**, pas rattrapée par une garde. Le
+     REFUS, en revanche, a son chemin : `enqueueInterjection` et
+     `editUserMessage` testent `matchMiaouCommand` avant `resolveSend` et
+     servent `commandContextRefusal` (la vraie borne), jamais
+     `commandFormRefusal` (qui accuserait la forme d'une commande bien formée). Ce placement règle du
      même coup le court-circuit « aucune skill activée » : une commande n'est pas
      une skill et n'a pas à en hériter.
    - **Une seule exception à ce court-circuit**, dans `resolveSend` : un slug de

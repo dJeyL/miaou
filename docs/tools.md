@@ -583,13 +583,14 @@ son aîné, tous conséquents :
 Un ack **non expansable** (`ackIsExpandable` faux) n'est jamais évacué : il est
 déjà élagué à l'émission, la ressource créée ne serait transmise à personne.
 
-**L'ack `resource_stored` que `_storeBlock` pousse inconditionnellement** est
-retiré après coup : hors d'un tour d'outils personne ne draine
+**L'ack `resource_stored` que `_storeBlock` pousse d'ordinaire n'est pas
+écrit** (`opts.noAck`) : hors d'un tour d'outils personne ne draine
 `_pendingToolAcks`, et ces acks atterriraient dans la bulle du tour **suivant**,
-présentant une compaction comme un appel d'outil du modèle. Le geste relève la
-longueur (`pendingToolAcksLength`) et **tronque** à cette valeur
-(`truncatePendingToolAcks`) — jamais un `clear`, qui détruirait ce qu'un autre
-chemin aurait mis dans la file. Cf. `docs/compaction.md`.
+présentant une évacuation comme un appel d'outil du modèle. Une première version
+les retirait après coup en tronquant la file à une longueur relevée — mais la
+file est GLOBALE, partagée avec une génération en vol sur une autre
+conversation, dont la troncature pouvait couper les acks (revue du 2026-09-22).
+Cf. `docs/compaction.md`.
 
 - **Doctrine `RESOURCE_DOCTRINE`** (tools.js, inconditionnelle comme
   `JS_EVAL_DOCTRINE`) : porte le QUAND commun aux **trois** outils —

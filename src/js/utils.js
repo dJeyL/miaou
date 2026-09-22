@@ -2696,15 +2696,30 @@ function ackNeedsEvacuation(ack, minChars, alreadyEvacuated) {
 // seconde question n'est honnêtement calculable qu'APRÈS coup, une fois les
 // descripteurs réellement écrits — c'est ce que rend le geste.
 function evacuableToolResults(thread, minChars, alreadyEvacuated) {
-  var list = Array.isArray(thread) ? thread : [];
-  var count = 0;
+  var targets = evacuationTargets(thread, minChars, alreadyEvacuated);
   var chars = 0;
-  for (var i = 0; i < list.length; i++) {
-    if (!ackNeedsEvacuation(list[i], minChars, alreadyEvacuated)) continue;
-    count++;
-    chars += String(list[i].result).length;
+  for (var i = 0; i < targets.length; i++) chars += String(targets[i].result).length;
+  return { count: targets.length, chars: chars };
+}
+
+// Les acks qu'une évacuation viserait, dans l'ordre du thread. Pur, testable,
+// et SEULE définition de la population — l'affordance (`evacuableToolResults`)
+// et le geste (`microcompactToolResults`) la lisent tous deux ici.
+//
+// Le balayage part APRÈS la dernière frontière de compaction. Ce qui la précède
+// n'est jamais émis (`expandThread` l'élague) : évacuer ces résultats créerait
+// des ressources pour personne, et le bilan annoncerait un gain que la pilule
+// ne montrerait jamais. C'est le défaut d'AE-5 retourné — là l'évacuation
+// précédait une frontière qui l'annulait, ici elle suivait une frontière qui
+// l'avait déjà rendue inutile — et, comme lui, il vivait dans le JOINT entre
+// deux purs justes chacun de leur côté (relevé en revue le 2026-09-22).
+function evacuationTargets(thread, minChars, alreadyEvacuated) {
+  var list = Array.isArray(thread) ? thread : [];
+  var out = [];
+  for (var i = lastCompactionIndex(list) + 1; i < list.length; i++) {
+    if (ackNeedsEvacuation(list[i], minChars, alreadyEvacuated)) out.push(list[i]);
   }
-  return { count: count, chars: chars };
+  return out;
 }
 
 // Bilan d'un geste d'allègement, rédigé APRÈS coup. Pur, testable.
@@ -2759,25 +2774,27 @@ function formatCompactionReclaimSuffix(reclaimed) {
   return ' (≈ ' + Math.round(n) + ' tok récupérés)';
 }
 
-// Poids du thread ENTIER, frontière ignorée. Pur, testable.
+// Poids de l'historique que le thread ÉMET, en caractères : le dernier résumé
+// de compaction (s'il y en a un) plus tout ce qui suit sa frontière. Pur,
+// testable.
 //
-// Distinct de `compactableCharCount`, qui part de la dernière frontière parce
-// que c'est la matière qu'une compaction peut encore résumer. Ici on mesure ce
-// que le thread PÈSE, pour comparer un avant et un après : l'évacuation balaie
-// tout le thread, y compris ce qui précède une frontière déjà posée, donc
-// mesurer depuis la frontière raterait précisément ce qu'elle vient d'alléger.
-// Deux questions différentes, deux fonctions — les confondre donnerait un
-// bilan de zéro sur une conversation déjà compactée.
-function threadCharCount(thread) {
+// C'est la grandeur que les DEUX gestes d'allègement font baisser, donc celle
+// sur laquelle se mesurent leurs bilans avant/après. Ce qui précède la
+// dernière frontière n'y entre pas : `expandThread` ne l'émet jamais, et le
+// compter ferait annoncer un gain que la pilule ne montrerait pas. Une première
+// version (`threadCharCount`) comptait le thread ENTIER, au motif que
+// l'évacuation le balayait entier — prémisse corrigée le 2026-09-22, le
+// balayage s'arrête désormais à la frontière (`evacuationTargets`).
+//
+// Le résumé en fait partie parce qu'une nouvelle compaction le remplace lui
+// aussi : le nouveau résumé l'intègre (`projectThreadForCompaction`) et
+// l'ancien cesse d'être émis. L'oublier sous-estimerait le gain d'une
+// recompaction.
+function emittedHistoryCharCount(thread) {
   var list = thread || [];
-  var total = 0;
-  for (var i = 0; i < list.length; i++) {
-    var m = list[i];
-    if (!m) continue;
-    if (typeof m.content === 'string') total += m.content.length;
-    if (typeof m.result === 'string') total += m.result.length;
-  }
-  return total;
+  var at = lastCompactionIndex(list);
+  var prev = at >= 0 && typeof list[at].content === 'string' ? list[at].content.length : 0;
+  return prev + compactableCharCount(list);
 }
 
 // Sépare un résultat d'outil de sa note MIAOU de queue, en rendant la note
@@ -2893,12 +2910,30 @@ function hasCompactableSubstance(thread, minChars) {
 // substance, pas l'exhaustivité) et le marqueur de troncature le DIT, pour que
 // le modèle sache qu'il lit un extrait et ne présente pas une donnée coupée
 // comme complète (souvenir `model-facing-text`, défaut « silence »).
+//
+// RECOMPACTION : le résumé de la frontière précédente ouvre la projection, en
+// entier (jamais borné — il est déjà une condensation). Le nouveau résumé
+// REMPLACE l'ancien à l'émission (seule la dernière frontière est émise), donc
+// il doit en reprendre la substance : sans ça, compacter une seconde fois
+// effaçait du contexte tout ce que la première avait consigné — intention,
+// décisions, handles. La version d'origine partait APRÈS la frontière en
+// supposant que le rédacteur « avait déjà le résumé sous les yeux » ; il ne
+// l'a pas, `generateCompactionSummary` ne lui envoie que cette projection
+// (défaut relevé en revue le 2026-09-22). Son libellé dit ce qu'il couvre et
+// ce qu'il faut en faire ; `COMPACTION_PROMPT` le redit, pour que la consigne
+// ne dépende pas d'un seul des deux textes.
 // Pure, testable.
 function projectThreadForCompaction(thread, maxResultChars) {
   var list = thread || [];
-  var from = lastCompactionIndex(list) + 1;
+  var at = lastCompactionIndex(list);
+  var from = at + 1;
   var cap = typeof maxResultChars === 'number' ? maxResultChars : 600;
   var parts = [];
+  if (at >= 0) {
+    parts.push('[Résumé antérieur, qui couvre le début de la conversation — à ' +
+      'intégrer à ton résumé, qui le remplacera :]\n\n' +
+      String(list[at].content == null ? '' : list[at].content));
+  }
   for (var i = from; i < list.length; i++) {
     var m = list[i];
     if (!m) continue;
@@ -2964,6 +2999,56 @@ function projectThreadForRecap(thread) {
   return parts.join('\n\n');
 }
 
+// Nombre d'entrées que « régénérer » CONSERVE : tout jusqu'au dernier message
+// user inclus, 0 s'il n'y en a pas. Pur, testable, source unique de la coupe
+// — `regenerateResponse` tronque avec, `onRegenBtn` (ui.js) décide avec s'il
+// faut une confirmation. Deux calculs de la coupe divergeraient au premier
+// ajustement de l'un.
+function regenerateKeptLength(thread) {
+  var list = thread || [];
+  for (var i = list.length - 1; i >= 0; i--) {
+    if (list[i] && list[i].role === 'user') return i + 1;
+  }
+  return 0;
+}
+
+// Une frontière de compaction SUIT-elle l'entrée `idx` ? Pur, testable.
+//
+// Sert « continuer une réponse tronquée » : la continuation rejoue le thread et
+// compte que le modèle y voie sa réponse coupée en DERNIER tour, pour la
+// prolonger. Si une compaction a été posée après elle, `expandThread` l'élague
+// — le modèle ne reçoit que le résumé, et ce qu'il écrirait serait recollé
+// derrière un texte qu'il n'a pas lu (relevé en revue le 2026-09-22). Le bouton
+// est posé sur la dernière bulle assistant, qui PRÉCÈDE justement une
+// frontière posée en fin de thread : le cas est le premier atteint.
+function compactionFollows(thread, idx) {
+  return lastCompactionIndex(thread) > idx;
+}
+
+// Avis « compaction annulée » d'une troncature du thread, ou null. Pur, testable.
+//
+// Régénérer la dernière réponse ou éditer un message tronque le thread après un
+// point donné (`keptLength` = nombre d'entrées conservées). La frontière de
+// compaction étant posée en FIN de thread, un tel retour en arrière l'emporte
+// dès qu'il la précède — et avec elle le résumé : le modèle reçoit de nouveau
+// l'historique qu'elle écartait. Comportement ACCEPTÉ (c'est un vrai retour en
+// arrière, décision Julien du 2026-09-22), mais il doit se DIRE au moment du
+// geste : il était silencieux, alors qu'il peut faire repasser la conversation
+// au-dessus de la fenêtre de contexte.
+//
+// Deux cas, parce qu'ils ne disent pas la même chose de ce qui repart : une
+// frontière antérieure survit à la troncature (le modèle repart d'elle), ou
+// aucune (il reçoit de nouveau toute la conversation).
+function compactionUndoneNotice(thread, keptLength) {
+  var list = thread || [];
+  if (lastCompactionIndex(list) < keptLength) return null;
+  var survivor = lastCompactionIndex(list.slice(0, keptLength));
+  return 'Compaction annulée : ce retour en arrière passe avant la dernière ' +
+    'coupure, dont le résumé est retiré. ' + (survivor >= 0
+      ? 'Le modèle reçoit de nouveau les messages depuis la compaction précédente.'
+      : 'Le modèle reçoit de nouveau toute la conversation.');
+}
+
 // Refus de compaction, ou null si le geste est permis. PUR : les trois états
 // arrivent en arguments, la lecture des registres reste à l'appelant.
 //
@@ -2984,11 +3069,41 @@ function projectThreadForRecap(thread) {
 // ce même pur — mais un refus qui nomme le mauvais geste ferait chercher une
 // affordance qu'on n'a pas touchée. Défaut par défaut : la compaction, seul
 // appelant jusqu'au 2026-09-22.
-function compactionRefusal(generating, agentBusyMessage, hasSubstanceToCompact, gesture) {
-  if (generating) {
+//
+// Premier argument : l'OCCUPATION de la conversation, pas un booléen « génère »
+// (revue du 2026-09-22). Le booléen faisait dire « en train de générer une
+// réponse… ou interromps-la » pendant une COMPACTION — faux deux fois : rien ne
+// génère, et une compaction ne s'interrompt pas (`abortStream` l'exempte). Et
+// il ne voyait ni l'onglet voisin qui écrit, ni l'agent terminé, que la lecture
+// seule protège pourtant (« readonly c'est readonly »). Valeurs :
+//   'finished-agent' — agent terminé : lecture seule DÉFINITIVE ;
+//   'compacting'     — une compaction de cette conversation est en vol ;
+//   'evacuating'     — une évacuation de ses résultats d'outils est en vol ;
+//   'generating'     — une génération est en vol (`true` vaut 'generating') ;
+//   'peer'           — un AUTRE onglet génère ou compacte cette conversation ;
+//   falsy            — libre.
+// La lecture des registres reste à l'appelant (`reclaimOccupation`, main.js).
+function compactionRefusal(occupied, agentBusyMessage, hasSubstanceToCompact, gesture) {
+  var g = gesture || 'compacter le contexte';
+  if (occupied === 'finished-agent') {
+    return 'Cet agent a terminé son travail : sa conversation est en lecture ' +
+      'seule, on ne peut plus y ' + g + '.';
+  }
+  if (occupied === 'compacting') {
+    return 'Une compaction du contexte de cette conversation est déjà en cours. ' +
+      'Attends qu\'elle se termine avant de ' + g + '.';
+  }
+  if (occupied === 'evacuating') {
+    return 'Une évacuation des résultats d\'outils de cette conversation est en ' +
+      'cours. Attends qu\'elle se termine avant de ' + g + '.';
+  }
+  if (occupied === 'peer') {
+    return 'Cette conversation est en cours de modification dans un autre ' +
+      'onglet. Attends que ce soit fini avant de ' + g + '.';
+  }
+  if (occupied) {
     return 'Cette conversation est en train de générer une réponse. Attends ' +
-      'la fin de la génération, ou interromps-la, avant de ' +
-      (gesture || 'compacter le contexte') + '.';
+      'la fin de la génération, ou interromps-la, avant de ' + g + '.';
   }
   if (agentBusyMessage) return agentBusyMessage;
   if (!hasSubstanceToCompact) {

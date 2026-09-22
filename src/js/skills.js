@@ -105,6 +105,25 @@ function commandFormRefusal(slug) {
   return '« /' + slug + ' » est une commande : elle s\'envoie seule, sans autre texte.';
 }
 
+// Refus d'une commande BIEN FORMÉE, arrivée par un chemin qui ne l'exécute pas.
+// Distinct de `commandFormRefusal`, qui accuse la forme : servi à ces chemins,
+// il affirmait « elle s'envoie seule » à qui venait justement de l'envoyer seule
+// (relevé en revue le 2026-09-22). Deux chemins, chacun nommant SA borne :
+//   'generating' — la saisie part en file d'interjection (`enqueueInterjection`),
+//                  pendant une génération, qu'AE-7 exclut ;
+//   'editing'    — l'édition d'un message passé (`editUserMessage`), où une
+//                  commande n'a pas de sens (condition 2 du § 4.7).
+// Pur, source unique.
+function commandContextRefusal(slug, context) {
+  const c = '« /' + slug + ' »';
+  if (context === 'editing') {
+    return c + ' est une commande : elle ne s\'exécute pas en modifiant un ' +
+      'message passé. Envoie-la depuis le champ de saisie.';
+  }
+  return c + ' est une commande : elle ne s\'exécute pas pendant une ' +
+    'génération. Attends la fin de la réponse, ou interromps-la, puis envoie-la.';
+}
+
 // Filtre les commandes dont le slug (ou le libellé) matche la saisie après `/`.
 // Jumelle de `matchSkillCompletions`, délibérément DISTINCTE d'elle : y verser
 // les commandes les ferait apparaître partout où cette fonction-là est appelée,

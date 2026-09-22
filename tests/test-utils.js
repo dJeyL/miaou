@@ -4437,8 +4437,33 @@ describe('geste de compaction (lot AE, etape 3)', function() {
     // avec projectThreadForCompaction, qui lui part APRES.
     var thread = [u('AVANT'), { role: 'compaction', content: 'LE RESUME' }];
     expect(projectThreadForRecap(thread).indexOf('LE RESUME') >= 0).toBe(true);
-    expect(projectThreadForCompaction(thread).indexOf('LE RESUME') >= 0).toBe(false);
   });
+
+  // ── Recompaction (revue du 2026-09-22) ──────────────────────────────────
+  // Le nouveau resume REMPLACE l ancien a l emission : le redacteur doit donc
+  // le lire, sinon compacter deux fois efface la premiere compaction.
+  it('recompaction : le resume precedent ouvre la projection du redacteur', function() {
+    var thread = [u('AVANT'), { role: 'compaction', content: 'LE RESUME' }, u('APRES')];
+    var out = projectThreadForCompaction(thread);
+    expect(out.indexOf('LE RESUME') >= 0).toBe(true);
+    expect(out.indexOf('LE RESUME') < out.indexOf('APRES')).toBe(true);
+    expect(out.indexOf('AVANT') >= 0).toBe(false);
+  });
+
+  it('recompaction : seul le DERNIER resume est repris (il integre les precedents)', function() {
+    var thread = [u('A'), { role: 'compaction', content: 'R1' },
+                  u('B'), { role: 'compaction', content: 'R2' }, u('C')];
+    var out = projectThreadForCompaction(thread);
+    expect(out.indexOf('R1') >= 0).toBe(false);
+    expect(out.indexOf('R2') >= 0).toBe(true);
+  });
+
+  it('recompaction : le resume repris n est jamais tronque', function() {
+    var long = new Array(3001).join('r');
+    var thread = [{ role: 'compaction', content: long }, u('x')];
+    expect(projectThreadForCompaction(thread, 600).indexOf(long) >= 0).toBe(true);
+  });
+
 
   it('seule la derniere frontiere vaut', function() {
     var thread = [u('A'), { role: 'compaction', content: 'R1' },
@@ -4491,18 +4516,27 @@ describe('Evacuation comme geste autonome (AE-5 annule, 2026-09-22)', function()
     expect(evacuableToolResults(thread, 2000, deja).count).toBe(1);
   });
 
-  // ── Poids du thread : deux questions, deux fonctions ──────────────────
-  it('threadCharCount ignore la frontiere, compactableCharCount non', function() {
-    // Confondre les deux donnerait un bilan de zero sur une conversation deja
-    // compactee : l evacuation balaie tout le thread, y compris l amont.
-    var thread = [u('avant'), { role: 'compaction', content: 'r' }, u('apres')];
-    expect(threadCharCount(thread)).toBe('avant'.length + 'r'.length + 'apres'.length);
-    expect(compactableCharCount(thread)).toBe('apres'.length);
+  // ── Perimetre : ce qui suit la derniere frontiere (revue 2026-09-22) ──
+  it('un gros resultat AVANT une frontiere n est pas une cible', function() {
+    // Il n est jamais emis : l evacuer creerait une ressource pour personne et
+    // le bilan annoncerait un gain que la pilule ne montrerait pas.
+    var avant = ack(big(3000)), apres = ack(big(3000));
+    var thread = [avant, { role: 'compaction', content: 'r' }, apres];
+    var t = evacuationTargets(thread, 2000, null);
+    expect(t.length).toBe(1);
+    expect(t[0] === apres).toBe(true);
+    expect(evacuableToolResults(thread, 2000, null).count).toBe(1);
   });
 
-  it('threadCharCount compte les content ET les result', function() {
-    expect(threadCharCount([u('abc'), ack('defg')])).toBe(7);
-    expect(threadCharCount(null)).toBe(0);
+  it('emittedHistoryCharCount : dernier resume + ce qui suit, jamais l amont', function() {
+    var thread = [u('avant'), { role: 'compaction', content: 'r1' },
+                  u('milieu'), { role: 'compaction', content: 'r2' }, u('apres')];
+    expect(emittedHistoryCharCount(thread)).toBe('r2'.length + 'apres'.length);
+  });
+
+  it('emittedHistoryCharCount : sans frontiere, content ET result comptent', function() {
+    expect(emittedHistoryCharCount([u('abc'), ack('defg')])).toBe(7);
+    expect(emittedHistoryCharCount(null)).toBe(0);
   });
 
   // ── Bilan d apres-coup ────────────────────────────────────────────────
@@ -4562,5 +4596,75 @@ describe('Evacuation comme geste autonome (AE-5 annule, 2026-09-22)', function()
     // Un refus qui nommerait le mauvais geste ferait chercher une affordance
     // qu on n a pas touchee.
     expect(evac.indexOf('compacter le contexte') >= 0).toBe(false);
+  });
+
+  // ── Occupation nommee (revue 2026-09-22) ──────────────────────────────
+  it('pendant une compaction : ni « generer » ni « interromps »', function() {
+    // Faux deux fois : rien ne genere, et une compaction ne s interrompt pas.
+    var msg = compactionRefusal('compacting', null, true, 'évacuer les résultats d\'outils');
+    expect(msg.indexOf('compaction') >= 0).toBe(true);
+    expect(/g[ée]n[ée]r/.test(msg)).toBe(false);
+    expect(msg.indexOf('interromps') >= 0).toBe(false);
+    expect(msg.indexOf('évacuer les résultats d\'outils') >= 0).toBe(true);
+  });
+
+  it('onglet voisin et agent termine : refuses, chacun nommant sa cause', function() {
+    var peer = compactionRefusal('peer', null, true);
+    var fin = compactionRefusal('finished-agent', null, true);
+    expect(peer.indexOf('autre onglet') >= 0).toBe(true);
+    expect(fin.indexOf('lecture seule') >= 0).toBe(true);
+    // La lecture seule definitive prime sur tout le reste.
+    expect(compactionRefusal('finished-agent', 'Un agent travaille.', false)).toBe(fin);
+  });
+
+  // ── Avis « compaction annulee » (revue 2026-09-22) ─────────────────────
+  it('troncature APRES la frontiere : aucun avis', function() {
+    var thread = [u('a'), { role: 'compaction', content: 'r' }, u('b'), { role: 'assistant', content: 'c' }];
+    // regenerer : on garde jusqu au dernier user (index 2) → 3 entrees
+    expect(compactionUndoneNotice(thread, 3)).toBe(null);
+  });
+
+  it('troncature qui emporte l unique frontiere : toute la conversation repart', function() {
+    // Cas reel : compaction posee en FIN de thread, puis « regenerer ».
+    var thread = [u('a'), { role: 'assistant', content: 'b' }, { role: 'compaction', content: 'r' }];
+    var msg = compactionUndoneNotice(thread, 1);
+    expect(msg.indexOf('Compaction annulée') === 0).toBe(true);
+    expect(msg.indexOf('toute la conversation') >= 0).toBe(true);
+  });
+
+  it('une frontiere anterieure survit : le modele repart d elle', function() {
+    var thread = [u('a'), { role: 'compaction', content: 'r1' }, u('b'),
+                  { role: 'assistant', content: 'c' }, { role: 'compaction', content: 'r2' }];
+    var msg = compactionUndoneNotice(thread, 3);
+    expect(msg.indexOf('compaction précédente') >= 0).toBe(true);
+    expect(msg.indexOf('toute la conversation') >= 0).toBe(false);
+  });
+
+  it('regenerateKeptLength : jusqu au dernier user inclus, 0 sans user', function() {
+    var thread = [u('a'), { role: 'assistant', content: 'b' }, u('c'),
+                  { role: 'assistant', content: 'd' }, { role: 'compaction', content: 'r' }];
+    expect(regenerateKeptLength(thread)).toBe(3);
+    // Boucle fermee avec l avis : regenerer apres une compaction l emporte.
+    expect(compactionUndoneNotice(thread, regenerateKeptLength(thread)) !== null).toBe(true);
+    expect(regenerateKeptLength([{ role: 'assistant', content: 'x' }])).toBe(0);
+    expect(regenerateKeptLength(null)).toBe(0);
+  });
+
+  it('compactionFollows : vrai seulement si une frontiere suit l entree', function() {
+    // Cas reel : reponse tronquee, puis compaction posee en fin de thread.
+    var thread = [u('a'), { role: 'assistant', content: 'coupe', truncated: true },
+                  { role: 'compaction', content: 'r' }];
+    expect(compactionFollows(thread, 1)).toBe(true);
+    expect(compactionFollows([u('a'), { role: 'compaction', content: 'r' }, { role: 'assistant', content: 'x' }], 2)).toBe(false);
+    expect(compactionFollows([u('a')], 0)).toBe(false);
+  });
+
+  it('sans frontiere, ou thread nul : aucun avis', function() {
+    expect(compactionUndoneNotice([u('a'), u('b')], 1)).toBe(null);
+    expect(compactionUndoneNotice(null, 0)).toBe(null);
+  });
+
+  it('true reste lu comme une generation', function() {
+    expect(compactionRefusal(true, null, true)).toBe(compactionRefusal('generating', null, true));
   });
 });

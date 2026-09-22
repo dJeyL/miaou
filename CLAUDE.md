@@ -558,8 +558,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `TOOL_RESULT_EVACUATION_MIN_CHARS` jamais une liste de kinds, descripteur
   statique et jamais `_makeResourceRef`, réentrance par identité d'objet sur N
   awaits, note de queue préservée par `splitToolResultNoteRaw` — variante BRUTE
-  de `splitToolResultNote`, qui elle démaquille pour l'affichage —, et retrait
-  de l'ack `resource_stored` parasite hors tour d'outils).
+  de `splitToolResultNote`, qui elle démaquille pour l'affichage —, et ack
+  `resource_stored` parasite hors tour d'outils jamais écrit (`_storeBlock`
+  `opts.noAck`, plutôt qu'une troncature de la file globale)).
 - **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
   formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
   CDN et versions gelées, selectors par format, caps de lecture (dont
@@ -705,10 +706,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   l'ÉMISSION d'`expandThread` (rien n'est détruit, décision AE-2), message émis
   `_synthetic` obligatoire, indexation ABSOLUE des groupes d'acks comme garde du
   ciblage `findAckByCallId` (les ids `solo:N` des acks legacy sont positionnels —
-  mesuré), byte-stabilité du rejeu, et « seule la dernière frontière vaut » ;
+  mesuré), byte-stabilité du rejeu, et « seule la dernière frontière est émise »
+  — d'où un nouveau résumé qui INTÈGRE le précédent (recompaction qui perdait la
+  première, corrigée en revue le 2026-09-22) ;
   porte les DEUX projections qui consomment la frontière et la ligne de partage
-  entre elles — `projectThreadForCompaction` part APRÈS (continuer à
-  travailler, appels d'outils inclus et bornés), `projectThreadForRecap` part de
+  entre elles — `projectThreadForCompaction` part APRÈS, précédée du seul résumé
+  antérieur (continuer à travailler, appels d'outils inclus et bornés),
+  `projectThreadForRecap` part de
   la frontière INCLUSE (retrouver/titrer, couverture depuis le début), cette
   dernière partagée par `generateSummary` et `generateTitle` qui reprojetaient
   le thread brut jusqu'au 2026-09-22 ;
@@ -716,7 +720,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   l'annulation d'AE-5 le 2026-09-22 (`evacuateToolResults`, main.js) : couplée à
   la compaction elle n'avait AUCUN effet observable, la frontière étant posée en
   fin de thread et tout l'amont élagué à l'émission — défaut invisible aux purs,
-  qui vérifiaient chacun leur moitié, et logé dans le JOINT ; seuil 2 000 caractères
+  qui vérifiaient chacun leur moitié, et logé dans le JOINT ; population bornée
+  à l'aval de la dernière frontière (`evacuationTargets`, seul émis) et bilans
+  mesurés sur `emittedHistoryCharCount` ; seuil 2 000 caractères
   appliqué uniformément et jamais par liste de kinds, `ackIsExpandable` comme
   première condition avant toute question de taille, descripteur STATIQUE contre
   le `resource_ref` à expansion, note MIAOU de queue recollée derrière le handle

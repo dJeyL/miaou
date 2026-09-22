@@ -109,6 +109,23 @@ describe('commandFormRefusal', function() {
   });
 });
 
+describe('commandContextRefusal (revue 2026-09-22)', function() {
+  // Servi a une commande BIEN FORMEE : il ne doit jamais accuser la forme,
+  // ce que faisait commandFormRefusal sur ces deux chemins.
+  it('pendant une generation : nomme la borne, jamais la forme', function() {
+    var msg = commandContextRefusal('compact', 'generating');
+    expect(msg).toContain('/compact');
+    expect(msg).toContain('génération');
+    expect(msg.indexOf('seule') >= 0).toBe(false);
+  });
+  it('en edition : nomme l edition, jamais la forme', function() {
+    var msg = commandContextRefusal('compact', 'editing');
+    expect(msg).toContain('/compact');
+    expect(msg).toContain('message passé');
+    expect(msg.indexOf('seule') >= 0).toBe(false);
+  });
+});
+
 describe('findSlashTriggers', function() {
   it('détecte un trigger en position 0', function() {
     var t = findSlashTriggers('/revue ce fichier');

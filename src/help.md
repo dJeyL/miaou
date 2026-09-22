@@ -798,6 +798,16 @@ continuer à les relire : ce qui change est seulement ce que le modèle reçoit.
 Une ligne dans la conversation marque l'endroit de la coupure, indique ce que
 l'opération a fait gagner, et le résumé s'y consulte en le dépliant.
 
+**Revenir en arrière annule la compaction.** Relancer la dernière réponse, ou
+modifier un message situé avant la coupure, retire cette coupure et son résumé :
+le modèle reçoit de nouveau l'historique qu'elle écartait (toute la
+conversation, ou depuis la compaction précédente s'il y en a une). Dans ce cas,
+le bouton concerné demande un second clic pour confirmer (il se colore le temps
+de la confirmation), puis un bandeau « Compaction annulée » le rappelle. Tu peux
+recompacter ensuite si besoin. En revanche, une réponse restée incomplète avant
+la coupure ne peut plus être continuée : elle n'est plus transmise au modèle,
+demande-lui la suite par un nouveau message.
+
 **Alléger sans rien couper : évacuer les résultats d'outils.** Le même panneau
 propose, au-dessus de la compaction, un second geste plus léger. Quand un outil
 a renvoyé un résultat volumineux (le contenu d'un gros fichier, une longue
@@ -811,31 +821,34 @@ gestes sont indépendants : tu peux évacuer sans compacter, et l'inverse.
 MIAOU **propose** la compaction quand le contexte atteint la moitié de la fenêtre
 (un petit symbole apparaît alors sur le compteur), mais ne la déclenche jamais
 tout seul : c'est toujours ta décision. Tu peux compacter plus tôt si tu vois le
-modèle dériver, et recommencer plus tard — seule la coupure la plus récente
-compte, on ne résume jamais un résumé.
+modèle dériver, et recommencer plus tard : la nouvelle compaction reprend le
+résumé précédent dans le sien, donc rien de ce qu'il consignait n'est perdu.
 
 Sur une conversation encore trop courte, le bouton est grisé et le panneau
 explique pourquoi : il n'y a pas encore assez d'historique pour qu'un résumé
 apporte quoi que ce soit.
 
-Deux situations où ces gestes sont refusés, avec le motif affiché : pendant
-qu'une réponse est en cours de génération, et tant qu'un agent lancé depuis cette
-conversation travaille encore (son compte rendu doit revenir dans le fil tel
-qu'il l'a quitté). Attends la fin, ou interromps, puis recommence. Dans ces
-deux cas le bouton reste cliquable — c'est une attente qui va se lever, pas une
-impossibilité.
+Ces gestes sont refusés, avec le motif affiché, tant que la conversation est
+occupée : une réponse en cours de génération, une compaction déjà en cours, un
+autre onglet qui la modifie, ou un agent lancé depuis elle qui travaille encore
+(son compte rendu doit revenir dans le fil tel qu'il l'a quitté). Attends la
+fin, puis recommence. Le bouton reste alors cliquable — c'est une attente qui va
+se lever, pas une impossibilité. Seule exception : la conversation d'un agent
+qui a terminé son travail est définitivement en lecture seule, et les boutons y
+sont grisés.
 
-**Pendant qu'une compaction se fait, la conversation est en lecture seule** —
-dans cet onglet comme dans les autres où elle serait ouverte. Le temps que le
-résumé s'écrive (quelques secondes), tu ne peux ni envoyer, ni modifier un
+**Pendant une compaction ou une évacuation, la conversation est en lecture
+seule** — dans cet onglet comme dans les autres où elle serait ouverte. Le temps
+que le geste se fasse (quelques secondes pour écrire un résumé, moins pour
+évacuer), tu ne peux ni envoyer, ni modifier un
 message, ni relancer une réponse : l'historique est en train d'être réécrit, et
 deux écritures en même temps se marcheraient dessus. Tout redevient normal dès
 que c'est fini.
 
 Tu n'as pas à rester sur la conversation pour autant : **le geste va au bout
-même si tu pars ailleurs**, et tu retrouveras la coupure à ton retour. Pendant
-ce temps, une pastille en haut de la fenêtre indique qu'une compaction est en
-cours et sur quelle conversation — clique-la pour y revenir.
+même si tu pars ailleurs**, et tu en retrouveras le résultat à ton retour.
+Pendant ce temps, une pastille en haut de la fenêtre indique ce qui est en cours
+et sur quelle conversation — clique-la pour y revenir.
 
 Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
 reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe

@@ -1344,9 +1344,10 @@ ligne retombait sur le libellé générique « génère », qui est faux, et c'e
 que lit l'utilisateur au moment où il cherche à comprendre ce qui travaille
 dans une conversation qu'il ne regarde pas.
 
-Le pur `rootActivityLabel(working, compacting)` résout les trois cas depuis les
-deux prédicats que l'appelant sait évaluer (`g.working` et `isCompacting`,
-main.js). **L'ordre des tests est une garde** : une conversation qui compacte a
+Le pur `rootActivityLabel(working, rewriteKind)` résout les cas depuis ce que
+l'appelant sait évaluer (`g.working` et `historyRewriteKind`, main.js) — quatre
+depuis que l'évacuation des résultats d'outils entre elle aussi au registre
+(« évacue des résultats d'outils », revue du 2026-09-22). **L'ordre des tests est une garde** : une conversation qui compacte a
 `working` vrai AUSSI (elle est au registre), donc le cas spécifique passe en
 premier — l'inverser la ferait retomber sur « génère », c'est-à-dire
 exactement le défaut. Un test QuickJS garde cet ordre, un autre garde le fait

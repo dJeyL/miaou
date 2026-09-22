@@ -124,9 +124,13 @@ const AGENT_STATUS_LABELS = {
 // « génère », qui est faux — elle ne génère pas de réponse, elle réécrit
 // l'historique. C'est un texte lu par l'utilisateur au moment où il cherche à
 // comprendre ce qui travaille dans une conversation qu'il ne regarde pas.
+//
+// `evacuating` pour la même raison, depuis que l'évacuation des résultats
+// d'outils entre elle aussi au registre (revue du 2026-09-22).
 const ROOT_ACTIVITY_UI_LABELS = {
   generating: 'génère',
   compacting: 'compacte le contexte',
+  evacuating: 'évacue des résultats d\'outils',
   waiting:    'en attente de ses agents',
 };
 
@@ -134,8 +138,13 @@ const ROOT_ACTIVITY_UI_LABELS = {
 // l'appelant sait évaluer. L'ordre des tests n'est pas indifférent — une
 // conversation qui compacte est AU REGISTRE, donc `working` y est vrai aussi ;
 // c'est le cas le plus spécifique, il passe en premier.
-function rootActivityLabel(working, compacting) {
-  if (compacting) return ROOT_ACTIVITY_UI_LABELS.compacting;
+//
+// Second argument : le `kind` de réécriture d'historique en vol
+// (`historyRewriteKind`, main.js) — 'compaction', 'evacuation', ou falsy.
+// `true` reste lu comme une compaction (forme d'origine).
+function rootActivityLabel(working, rewriteKind) {
+  if (rewriteKind === 'evacuation') return ROOT_ACTIVITY_UI_LABELS.evacuating;
+  if (rewriteKind) return ROOT_ACTIVITY_UI_LABELS.compacting;
   return working ? ROOT_ACTIVITY_UI_LABELS.generating : ROOT_ACTIVITY_UI_LABELS.waiting;
 }
 

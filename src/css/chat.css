@@ -887,6 +887,9 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   transition: opacity 120ms var(--ease);
 }
 .msg.user:hover .msg-user-actions { opacity: 1; }
+/* Crayon armé (garde de compaction, cf. onEditMsg) : la rangée reste visible
+   hors survol tant que la fenêtre de confirmation court. */
+.msg-user-actions:has(.msg-edit.armed) { opacity: 1; }
 .msg-copy-user,
 .msg-open-agent,
 .msg-edit {
@@ -1605,6 +1608,14 @@ html[data-wide-tables="off"] .table-bleed {
 .msg-copy[hidden],
 .msg-dl[hidden],
 .msg-regen[hidden] { display: none; }
+/* Armé = GARDE, pas suppression (revue AE, 2026-09-22) : régénérer ou éditer
+   avant une frontière annule la compaction, d'où un second clic (armThenRun).
+   Accent de la palette et non `--err` : le geste reste légitime, le rouge le
+   présenterait comme une destruction. `--accent-ink` suit la palette avec lui. */
+.msg-regen.armed,
+.msg-regen.armed:hover,
+.msg-edit.armed,
+.msg-edit.armed:hover { color: var(--accent-ink); background: var(--accent); }
 .msg-copy--checked { color: var(--accent) !important; }
 
 /* Horodatages inline des messages */

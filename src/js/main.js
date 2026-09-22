@@ -527,7 +527,7 @@ function registerGeneration(gen) {
   // fait qu'à travers des synchros que le harnais QuickJS fournit. L'appeler
   // inconditionnellement rendait `agent__spawn` dépendant de l'UI et faisait
   // tomber huit tests d'agents — une génération d'agent passe par ici.
-  if (gen.kind === 'compaction') { applyReadonlyState(); syncCompactionActivitySurface(); }
+  if (isHistoryRewriteKind(gen.kind)) { applyReadonlyState(); syncCompactionActivitySurface(); }
 }
 
 function unregisterGeneration(gen) {
@@ -602,7 +602,7 @@ function unregisterGeneration(gen) {
   // surface, laisserait la conversation morte sous les yeux de qui l'a lancé.
   // Conditionné au kind pour la même raison qu'à la pose : cette fonction
   // touche l'UI, et une génération d'agent passe aussi par ici.
-  if (gen.kind === 'compaction') { applyReadonlyState(); syncCompactionActivitySurface(); }
+  if (isHistoryRewriteKind(gen.kind)) { applyReadonlyState(); syncCompactionActivitySurface(); }
   // Actions de synchro multi-onglets différées (lot J, réception) : rejouées quand
   // PLUS AUCUNE génération ne tourne. Le drain vivait dans setSending(false)
   // avant T-1a ; il ne pouvait plus y rester, `sending` ne parlant que de
@@ -644,19 +644,35 @@ function streamGenerationFor(convId) {
   return gen && gen.kind === 'stream' ? gen : null;
 }
 
-// « Cette conversation est-elle en train d'être COMPACTÉE ? » — pendant du
-// précédent, côté compaction. Un seul prédicat pour cette question aussi :
-// les surfaces qui doivent distinguer les deux occupations (verrou local,
-// statut de la ligne d'inventaire) passent par ici, jamais par un
-// `generationFor(id).kind` relu sur place.
+// Pendant du précédent, côté réécriture d'historique. Un seul prédicat pour
+// cette question aussi : les surfaces qui doivent distinguer les occupations
+// (verrou local, statut de la ligne d'inventaire, motif de refus) passent par
+// ici, jamais par un `generationFor(id).kind` relu sur place. Remplace
+// `isCompacting` depuis que l'évacuation entre elle aussi au registre.
 //
 // Ne remplace PAS `isGenerating` : les consommateurs qui demandent « cette
 // conv est-elle occupée ? » (gardes AE-7, badges, bornes d'agents) doivent
-// continuer de répondre vrai pour une compaction — c'est la raison même de son
+// continuer de répondre vrai pour ces gestes — c'est la raison même de leur
 // entrée au registre.
-function isCompacting(convId) {
+// Les kinds de RÉÉCRITURE D'HISTORIQUE : des gestes qui occupent la
+// conversation au registre sans stream ni bulle — la compaction, et depuis la
+// revue du 2026-09-22 l'évacuation des résultats d'outils, qui n'y entrait pas
+// (ni verrou local, ni relais aux onglets voisins, et un abandon silencieux sur
+// navigation que l'étape 8 avait corrigé chez sa voisine seulement).
+//
+// Liste EXPLICITE et non `!== 'stream'`, pour la raison qu'`abortStream` donne :
+// une entrée sans `kind` doit tomber du côté du stream, que les exemptions
+// n'écartent pas. Les sites qui traitent les deux gestes pareil (verrou local,
+// surfaces d'annonce, abort) passent par ici ; ceux qui doivent les distinguer
+// (libellés, motif de refus) lisent `historyRewriteKind`.
+function isHistoryRewriteKind(kind) {
+  return kind === 'compaction' || kind === 'evacuation';
+}
+
+// Le kind de réécriture d'historique en vol sur cette conversation, ou null.
+function historyRewriteKind(convId) {
   const gen = generationFor(convId);
-  return !!gen && gen.kind === 'compaction';
+  return gen && isHistoryRewriteKind(gen.kind) ? gen.kind : null;
 }
 
 // Y a-t-il une compaction en vol dont la conversation n'est PAS affichée ?
@@ -666,7 +682,7 @@ function isCompacting(convId) {
 // depuis une conversation qu'on a quittée, c'est même le cas nominal.
 function hasOffscreenCompaction() {
   for (const gen of _activeGenerations.values()) {
-    if (gen.kind === 'compaction' && gen.convId !== currentConvId) return true;
+    if (isHistoryRewriteKind(gen.kind) && gen.convId !== currentConvId) return true;
   }
   return false;
 }
@@ -1640,6 +1656,9 @@ async function openConversation(id, reveal) {
     // ouvert. Sous `switching` à dessein — une re-hydratation rappelle
     // openConversation sur la MÊME conv et ne doit rien effacer.
     clearReclaimReports();
+    // Même raison pour l'avis « compaction annulée » : il décrit un geste fait
+    // sur la conversation qu'on quitte.
+    clearCompactionUndoneBanner();   // ui.js
     announceConvClosed(currentConvId);   // quitte l'ancienne (no-op si null)
     resetPeerState();                    // repart d'un set vide pour la nouvelle
     // On quitte une conversation qui génère (lot T-1b) : la génération perd
@@ -1747,6 +1766,7 @@ async function openConversation(id, reveal) {
 }
 
 function resetToEmpty() {
+  clearCompactionUndoneBanner();   // l'avis décrit la conversation qu'on quitte (ui.js)
   // Soft-lock : on quitte la conv affichée (le cas échéant) vers l'accueil.
   if (currentConvId) { announceConvClosed(currentConvId); resetPeerState(); }
   // L'écran part à l'accueil : une génération en vol sur la conv quittée perd
@@ -2090,7 +2110,7 @@ function applyReadonlyState() {
   // le geste : le verrou a UN écrivain (setConvReadonly) et UN point de
   // décision (cette fonction). Un second point déciderait en concurrence du
   // premier, et le dernier à parler gagnerait (souvenir `concurrent-writers`).
-  setConvReadonly(_peersGenerating.size > 0 || isCompacting(currentConvId) ||
+  setConvReadonly(_peersGenerating.size > 0 || !!historyRewriteKind(currentConvId) ||
                   isFinishedAgentConv(currentConvId));   // ui.js
   // Le rail d'interjections change d'apparence ET d'affordances avec le verrou
   // (X-1f) : légende (« sera transmise » vs « jamais transmise »), édition
@@ -3481,7 +3501,7 @@ function abortStream(convId) {
   // compaction ne l'est pas. Une entrée de registre sans `kind` — une fixture,
   // un chemin futur qui construirait l'objet à la main — doit donc tomber du
   // côté qui INTERROMPT.
-  if (gen.kind === 'compaction') return;
+  if (isHistoryRewriteKind(gen.kind)) return;
   if (gen.abort) { gen.abort.abort(); return; }
   gen.stopRequested = true;
   if (genOwnsScreen(gen)) setStopping(true);
@@ -3631,6 +3651,10 @@ async function enqueueInterjection() {
   const ta = $('composer-text');
   const text = ta.value.trim();
   if (!text) return;
+  // Commande bien formée tapée pendant une génération : refus nommant la vraie
+  // borne (AE-7), AVANT `resolveSend`, qui n'en connaît que la forme.
+  const command = matchMiaouCommand(text);
+  if (command) { showComposerError(commandContextRefusal(command, 'generating')); return; }
   let r;
   _ijResolving = true;
   try {
@@ -4107,6 +4131,10 @@ async function editUserMessage(index, newText) {
   // sa réponse sans la voir.
   const old = currentThread[index];
   const oldAttachments = old.attachments;
+  // Commande bien formée en édition : même raison qu'à l'enqueue d'une
+  // interjection — `resolveSend` n'en refuserait que la forme, à tort.
+  const command = matchMiaouCommand(t);
+  if (command) return commandContextRefusal(command, 'editing');
 
   // Résoudre AVANT toute mutation : un slug invalide laisse le thread intact et la
   // bulle en mode édition (l'utilisateur corrige), erreur remontée à l'appelant.
@@ -4128,7 +4156,10 @@ async function editUserMessage(index, newText) {
   if (!r.ok) return r.error;
   if (content === undefined) content = r.content;
 
+  // Calculé AVANT la troncature : c'est elle qui retire la frontière.
+  const undone = compactionUndoneNotice(currentThread, index + 1);
   currentThread = currentThread.slice(0, index + 1);
+  if (undone) showCompactionUndoneBanner(undone);   // ui.js
   const msg = { role: 'user', content, ts: Date.now() };
   // Doctrine displayText alignée sur sendUserText : source UNIQUE de la bulle
   // dès que `content` diverge du littéral tapé. Deux causes cumulables — skill
@@ -4161,9 +4192,12 @@ function regenerateResponse() {
   // que ce soit — la garde n'est là que pour que le thread ne soit pas muté.
   if (agentBusyRewriteRefusal(currentConvId)) return;
   if (_confirmPending) dismissConfirmation();   // même geste que sendMessage
-  const lastUserIdx = currentThread.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-  if (lastUserIdx < 0) return;
-  currentThread = currentThread.slice(0, lastUserIdx + 1);
+  const kept = regenerateKeptLength(currentThread);   // utils.js — coupe partagée avec onRegenBtn
+  if (!kept) return;
+  // Calculé AVANT la troncature : c'est elle qui retire la frontière.
+  const undone = compactionUndoneNotice(currentThread, kept);
+  currentThread = currentThread.slice(0, kept);
+  if (undone) showCompactionUndoneBanner(undone);   // ui.js
   persistCurrent();                             // troncature écrite avant relance
   renderThread(currentThread);
   runGenerationFromCurrentThread();
@@ -4188,6 +4222,9 @@ function continueTruncated(btn) {
   if (!msg || msg.role !== 'assistant' || !msg.truncated) return;
   const lastAssistantIdx = currentThread.reduce((acc, m, i) => (m.role === 'assistant' ? i : acc), -1);
   if (idx !== lastAssistantIdx) return;
+  // Même garde au point de mutation que sur le bouton : une compaction posée
+  // après cette réponse l'a retirée de ce qui part au modèle (compactionFollows).
+  if (compactionFollows(currentThread, idx)) return;
   // Second point d'effacement, non couvert par runGenerationFromCurrentThread :
   // cette reprise appelle dispatchSend directement (pas de recherche mémoire
   // pour un raccord de texte). C'est le cas le plus criant — le bandeau annonce
@@ -5157,6 +5194,28 @@ async function summarizeIfNeeded(id) {
 // chiffré), et `null` quand il n'y a rien à dire (parti ailleurs en cours de
 // route). Le protocole « string = refus » d'origine ne pouvait pas porter le
 // bilan d'après-coup sans que l'appelant devine lequel des deux il lit.
+// Occupation d'une conversation au sens des gestes d'allègement — premier
+// argument de `compactionRefusal` (utils.js, qui en documente les valeurs).
+// Lit les registres, d'où sa place ici et non dans le pur.
+//
+// C'est la garde AU POINT DE MUTATION de la lecture seule : les boutons du
+// drawer ne sont pas couverts par `setConvReadonly` (qui ne verrouille que le
+// composer et les actions de message), et les deux gestes ne regardaient que le
+// registre LOCAL — un onglet voisin pouvait compacter pendant qu'un autre
+// générait, et un agent terminé se laissait réécrire (revue du 2026-09-22).
+// Mêmes causes que `applyReadonlyState`, relues à la source plutôt que sur
+// l'état d'UI qu'elle écrit : `_peersGenerating` ne concerne que la
+// conversation AFFICHÉE, d'où le test sur `currentConvId`.
+function reclaimOccupation(convId) {
+  if (isFinishedAgentConv(convId)) return 'finished-agent';
+  const rewrite = historyRewriteKind(convId);
+  if (rewrite === 'compaction') return 'compacting';
+  if (rewrite === 'evacuation') return 'evacuating';
+  if (isGenerating(convId)) return 'generating';
+  if (convId === currentConvId && _peersGenerating.size > 0) return 'peer';
+  return false;
+}
+
 async function compactCurrentConversation() {
   if (!currentConvId) return null;
   const convId = currentConvId;
@@ -5174,7 +5233,7 @@ async function compactCurrentConversation() {
   // `sending === false` — et comme ce geste peut être déclenché depuis le
   // drawer après avoir navigué, la distinction n'est pas théorique.
   const refusal = compactionRefusal(
-    isGenerating(convId),
+    reclaimOccupation(convId),
     agentBusyRewriteRefusal(convId),
     hasCompactableSubstance(currentThread));
   if (refusal) return { refusal };
@@ -5297,13 +5356,12 @@ async function runCompaction(gen, convId) {
   // ci-dessous), où elle retrouve son sens : alléger les gros résultats SANS
   // couper l'historique ni appeler le modèle.
 
-  // Poids AVANT, pour le bilan. Mesuré sur le thread ENTIER : la frontière
-  // qu'on s'apprête à poser ne déplace rien en base, elle change ce qui est
-  // ÉMIS — donc le gain se lit sur ce que `expandThread` cessera d'envoyer,
-  // pas sur ce que le thread pèse. D'où `compactableCharCount` (depuis la
-  // dernière frontière) et non `threadCharCount` : c'est exactement la matière
-  // qui va cesser d'être transmise.
-  const reclaimedChars = compactableCharCount(thread);
+  // Poids AVANT, pour le bilan. La frontière qu'on s'apprête à poser ne
+  // déplace rien en base, elle change ce qui est ÉMIS — donc le gain se lit sur
+  // ce que `expandThread` cessera d'envoyer : tout ce qui suit la frontière
+  // précédente, PLUS le résumé qu'elle portait, que le nouveau intègre et
+  // remplace (`emittedHistoryCharCount`).
+  const reclaimedChars = emittedHistoryCharCount(thread);
 
   // La frontière. Une ENTRÉE du thread, pas un message (cf. docs/compaction.md)
   // — `expandThread` élaguera tout ce qui la précède à l'ÉMISSION, sans rien
@@ -5364,6 +5422,8 @@ async function runCompaction(gen, convId) {
   if (!onScreen) return { done };
 
   setReclaimReport('compact', done);
+  // Une nouvelle frontière rend caduc l'avis d'une annulation précédente.
+  clearCompactionUndoneBanner();   // ui.js
   // Le manifeste du dernier ENVOI RÉEL est périmé par ce geste, et doit être
   // annulé AVANT la synchro — sinon la pilule et l'inspecteur réaffichent la
   // photo d'AVANT la compaction. `effectiveContextManifest()` rend
@@ -5411,8 +5471,9 @@ async function evacuateToolResults() {
   // mêmes bornes. Elles sont RELAYÉES TELLES QUELLES, jamais reformulées — deux
   // rédactions du même refus divergeraient (souvenir `single-predicate-consumers`).
   const EVACUATE_GESTURE = 'évacuer les résultats d\'outils';
-  if (isGenerating(convId)) {
-    return { refusal: compactionRefusal(true, null, true, EVACUATE_GESTURE) };
+  const occupied = reclaimOccupation(convId);
+  if (occupied) {
+    return { refusal: compactionRefusal(occupied, null, true, EVACUATE_GESTURE) };
   }
   const agentBusy = agentBusyRewriteRefusal(convId);
   if (agentBusy) return { refusal: compactionRefusal(false, agentBusy, true, EVACUATE_GESTURE) };
@@ -5429,28 +5490,59 @@ async function evacuateToolResults() {
       'd\'être évacué.' };
   }
 
-  const charsBefore = threadCharCount(currentThread);
-  // Indicateur d'activité (piège 8) : try/finally porté par runBackgroundTask.
-  // `microcompactToolResults` gère elle-même l'ack `resource_stored` parasite
-  // que `_storeBlock` pousserait hors tour d'outils, et ne persiste rien — la
-  // persistance appartient à l'appelant, qui sait dans quelle conversation il
-  // écrit (piège 28) et doit émettre son `syncPost` post-commit (piège 24).
-  const evacuated = await runBackgroundTask('évacuation…',
-    () => microcompactToolResults(currentThread, convId));
+  // ── Occupation de la conversation (revue du 2026-09-22) ────────────────
+  // Même montage que la compaction (étape 8), que ce geste n'avait pas reçu :
+  // entrée au registre le temps du geste, d'où le verrou local et chez les
+  // onglets voisins (relais readonly), la fermeture des gardes contre un second
+  // geste, et le badge « working ». APRÈS les gardes d'entrée, pour ne pas se
+  // refuser soi-même (motif `predicate-killed-by-feature`).
+  const gen = createGeneration(convId, currentThread, { kind: 'evacuation' });
+  registerGeneration(gen);
+  try {
+    return await runEvacuation(gen, convId);
+  } finally {
+    unregisterGeneration(gen);
+  }
+}
 
-  // Relecture APRÈS les awaits (piège 24 b) : `microcompactToolResults` en
-  // enchaîne N sur IDB, et l'utilisateur a pu changer de conversation pendant.
-  // Le thread muté reste correct (elle travaille par identité d'objet), mais on
-  // ne persiste ni ne peint sur un écran qui a changé de sujet.
-  if (currentConvId !== convId) return null;
+// Corps de l'évacuation, une fois la conversation occupée. Même schéma que
+// `runCompaction`, et pour les mêmes raisons (cf. son commentaire développé) :
+//  - on écrit TOUJOURS dans `gen.thread`, la référence capturée à
+//    l'enregistrement — chaude par construction, puisque la conversation était
+//    affichée (piège 29) ;
+//  - PARTI AILLEURS, on termine quand même : le geste abandonnait ici,
+//    laissant des ressources orphelines en IDB et des acks mutés dans un
+//    tableau que plus rien ne persistait. C'est le défaut que l'étape 8 avait
+//    corrigé chez la compaction, jamais reporté sur sa voisine ;
+//  - persistance et peinture selon le RÉFÉRENTIEL (piège 28) : écran possédé →
+//    `persistCurrent` et re-rendu ; sinon `persistGeneration(gen)`, et
+//    `openConversation` si l'on est revenu sur un tableau relu du storage.
+async function runEvacuation(gen, convId) {
+  const thread = gen.thread;
+  const charsBefore = emittedHistoryCharCount(thread);
+  // Indicateur d'activité (piège 8) : try/finally porté par runBackgroundTask.
+  // `microcompactToolResults` n'écrit pas d'ack `resource_stored` (`noAck`) et
+  // ne persiste rien — la persistance appartient à l'appelant, qui sait dans
+  // quelle conversation il écrit (piège 28) et hérite son `syncPost`
+  // post-commit de `persistConversation` (piège 24).
+  const evacuated = await runBackgroundTask('évacuation…',
+    () => microcompactToolResults(thread, convId));
   if (!evacuated) {
     return { refusal: 'Aucun résultat n\'a pu être évacué. Rien n\'a été modifié.' };
   }
 
-  persistCurrent();
-  rerenderCurrentThread();   // jamais `renderThread` nu (piège 28)
+  // Relecture APRÈS les awaits (piège 24 b), sur l'IDENTITÉ du tableau.
+  const onScreen = (currentConvId === convId) && (currentThread === thread);
+  if (onScreen) persistCurrent();
+  else persistGeneration(gen);
+  if (onScreen) rerenderCurrentThread();   // jamais `renderThread` nu (piège 28)
+  else if (currentConvId === convId) openConversation(convId);
+
   const head = evacuated + (evacuated > 1 ? ' résultats évacués' : ' résultat évacué');
-  const done = formatReclaimSummary(head, charsBefore, threadCharCount(currentThread));
+  const done = formatReclaimSummary(head, charsBefore, emittedHistoryCharCount(thread));
+  // Bilan et pilule : surfaces d'ÉCRAN, conditionnées au référentiel comme la
+  // peinture (même raisonnement que `runCompaction`).
+  if (!onScreen) return { done };
   // Bilan posé AVANT la synchro, et par le GESTE — même règle que sa voisine :
   // `syncContextCounter` re-rend le drawer s'il est ouvert, donc le poser après
   // arriverait trop tard et le hint garderait son texte d'avant le geste

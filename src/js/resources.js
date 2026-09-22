@@ -1071,7 +1071,14 @@ async function renameLibraryFile(id, rawName) {
 
 // Stocke un bloc individuel dans IDB + session cache ; pousse l'ack resource_stored.
 // Retourne l'id généré en cas de succès, null sinon.
-async function _storeBlock(mime, name, data, cls, conversationId, now, rand, originUrl) {
+//
+// `opts.noAck` : ne PAS pousser l'ack. Pour un appelant hors tour d'outils
+// (l'évacuation, geste utilisateur), où personne ne draine la file et où l'ack
+// atterrirait dans la bulle du tour suivant. Remplace un relevé/troncature de
+// `_pendingToolAcks` qui coupait une file GLOBALE partagée avec une génération
+// en vol sur une autre conversation (revue du 2026-09-22) : ne pas écrire vaut
+// mieux que défaire ce qu'on a écrit dans une structure commune.
+async function _storeBlock(mime, name, data, cls, conversationId, now, rand, originUrl, opts) {
   const id = generateResourceId(rand);
   const record = {
     id, conversationId: conversationId || null,
@@ -1087,7 +1094,9 @@ async function _storeBlock(mime, name, data, cls, conversationId, now, rand, ori
     _cacheRecord(record);
     requestPersistence();
     // _pendingToolAcks est déclaré dans tools.js ; accessible en runtime (même scope).
-    _pendingToolAcks.push({ kind: 'resource_stored', id, resourceName: record.name, mime: record.mime, size: record.size });
+    if (!(opts && opts.noAck)) {
+      _pendingToolAcks.push({ kind: 'resource_stored', id, resourceName: record.name, mime: record.mime, size: record.size });
+    }
     return id;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] _storeBlock:', e && e.message);
@@ -1130,21 +1139,11 @@ async function microcompactToolResults(thread, conversationId, now, rand) {
   const theNow = (typeof now === 'function') ? now : Date.now;
   const theRand = (typeof rand === 'function') ? rand : Math.random;
   // Gel de la population AVANT tout await : on capture les RÉFÉRENCES d'ack,
-  // jamais leurs index.
-  const targets = [];
-  for (let i = 0; i < list.length; i++) {
-    if (ackNeedsEvacuation(list[i], TOOL_RESULT_EVACUATION_MIN_CHARS, isInlineHandleResult)) {
-      targets.push(list[i]);
-    }
-  }
+  // jamais leurs index. Population définie par `evacuationTargets` (utils.js),
+  // la même que lit l'affordance du drawer — et bornée à ce qui suit la
+  // dernière frontière de compaction, seule partie émise.
+  const targets = evacuationTargets(list, TOOL_RESULT_EVACUATION_MIN_CHARS, isInlineHandleResult);
   let evacuated = 0;
-  // `_storeBlock` pousse un ack `resource_stored` dans `_pendingToolAcks`, ce
-  // qui est juste pendant un tour d'outils et faux ici : aucun tour ne tourne,
-  // personne ne draine, et ces acks atterriraient dans la bulle du tour SUIVANT
-  // — une compaction s'y présenterait comme un appel d'outil du modèle. On
-  // relève la longueur et on y revient à la fin (jamais un `clear` : la file
-  // peut porter autre chose, qu'on n'a pas à détruire).
-  const ackFloor = pendingToolAcksLength();
   for (const ack of targets) {
     // Re-vérification APRÈS les awaits des tours précédents : la cible a pu
     // être évacuée entre-temps (geste concurrent), ou son résultat réécrit.
@@ -1155,7 +1154,13 @@ async function microcompactToolResults(thread, conversationId, now, rand) {
     const split = splitToolResultNoteRaw(ack.result);
     const name = evacuatedResourceName(ack);
     const id = await _storeBlock('text/plain', name, utf8Encode(split.text), 'inline',
-                                 conversationId || null, theNow(), theRand);
+                                 conversationId || null, theNow(), theRand,
+                                 null, { noAck: true });
+    // `noAck` : `_storeBlock` pousse sinon un ack `resource_stored`, juste
+    // pendant un tour d'outils et faux ici — aucun tour ne tourne, personne ne
+    // draine, et l'ack atterrirait dans la bulle du tour SUIVANT, comme un
+    // appel d'outil que le modèle n'a pas fait. On ne l'écrit pas, plutôt que
+    // de le retirer après coup d'une file globale (cf. `_storeBlock`).
     if (!id) continue;
     // La cible est toujours dans le thread ? Recherche par identité d'objet :
     // sa POSITION a pu bouger (insertion concurrente), son identité non.
@@ -1166,7 +1171,6 @@ async function microcompactToolResults(thread, conversationId, now, rand) {
       formatInlineHandleForModel(id, 'text/plain', getCachedRecord(id)), split.note);
     evacuated++;
   }
-  truncatePendingToolAcks(ackFloor);
   return evacuated;
 }
 

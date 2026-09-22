@@ -68,7 +68,7 @@ les précédents mais répondent à d'autres questions :
 |---|---|---|
 | `isGenerating(convId)` | « cette conv est-elle OCCUPÉE ? » | gardes AE-7, badges, bornes d'agents — doivent répondre vrai pour une compaction, c'est la raison de son entrée au registre |
 | `streamGenerationFor(convId)` | « y a-t-il un thread de travail en avance sur le storage, à rebrancher ? » | les points de **rebranchement d'écran** : `rerenderCurrentThread`, `openConversation`, les deux `detachGenerationFromScreen` |
-| `isCompacting(convId)` | « est-ce une compaction ? » | verrou local (`applyReadonlyState`), statut de la ligne d'inventaire |
+| `historyRewriteKind(convId)` | « est-ce une réécriture d'historique, et laquelle ? » (`'compaction'`, `'evacuation'` — l'évacuation y entre depuis la revue du 2026-09-22 —, ou null) | verrou local (`applyReadonlyState`), statut de la ligne d'inventaire, motif de refus (`reclaimOccupation`) ; `isHistoryRewriteKind(kind)` sert les sites qui traitent les deux gestes pareil (verrou, surfaces d'annonce, exemption d'`abortStream`) |
 
 `streamGenerationFor` n'est **pas** un second prédicat d'écran — `genOwnsScreen`
 reste seul sur cette question. Il pose une question de DONNÉES : un stream a un

@@ -65,8 +65,16 @@ const _noThinkRejected = {};
 // rejet, exactement comme avant. On ne retire que les cas dont on est SÛR
 // qu'ils ne disent rien du paramètre, jamais l'inverse — se tromper ici
 // coûterait une boucle d'échecs sur un endpoint qui refuse vraiment.
+//
+// Réponse HTTP en échec : seul un 4xx est un verdict (revue du 2026-09-22,
+// `httpStatusIsVerdict`). Le commentaire ci-dessus citait déjà le « 500
+// transitoire » parmi les causes du défaut, mais tout `Error` rendait `true` :
+// un 502/504 de Caddy devant un Ollama lent reproduisait exactement le cas
+// corrigé. Le status est porté par l'erreur (`err.status`, posé par
+// `silentCompletion`), jamais relu dans le message.
 function serverVerdictOnFailure(err) {
   if (!err) return true;
+  if (typeof err.status === 'number') return httpStatusIsVerdict(err.status);
   // AbortError : timeout du garde-fou local, ou coupure. Le serveur n'a rien
   // dit. C'est le cas qui a payé.
   if (err.name === 'AbortError') return false;
@@ -74,6 +82,18 @@ function serverVerdictOnFailure(err) {
   // refusée, CORS). Même raison — aucun verdict serveur.
   if (err.name === 'TypeError') return false;
   return true;
+}
+
+// Un status HTTP d'échec accuse-t-il le PAYLOAD ? Pur, testable.
+//
+// 4xx seulement : c'est la famille où le serveur dit « ta requête ne me
+// convient pas » — vLLM & co. rejettent en 400/422 un paramètre inconnu ou des
+// content parts image. Un 5xx dit « j'ai un problème » (surcharge, modèle en
+// chargement, proxy qui abandonne) et n'apprend rien sur ce qu'il accepte.
+// Deux 4xx font exception pour la même raison : 408 (délai de requête) et 429
+// (quota) décrivent l'état du serveur, pas le contenu envoyé.
+function httpStatusIsVerdict(status) {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
 // Extrait un détail lisible du corps d'une réponse HTTP en échec, pour l'afficher
@@ -327,6 +347,10 @@ remplacera, et c'est toi qui reprendras le travail à partir de lui. Écris-le
 donc pour toi-même, comme des notes de reprise — pas comme un compte rendu
 destiné à un tiers.
 
+Si ce que tu lis s'ouvre sur un résumé antérieur, il couvre le début de la
+conversation et cessera lui aussi d'être transmis : reprends-en tout ce qui
+reste valable, sans quoi cette partie du travail sera perdue.
+
 Couvre ce qui suit, dans cet ordre, en omettant simplement une rubrique qui
 n'a pas d'objet dans cette conversation :
 
@@ -424,7 +448,11 @@ async function silentCompletion(messages, opts) {
         body: JSON.stringify({ model, messages: payload, stream: false, temperature, ...extra }),
         signal: ctrl.signal,
       });
-      if (!res.ok) throw new Error('silentCompletion ' + res.status);
+      if (!res.ok) {
+        const err = new Error('silentCompletion ' + res.status);
+        err.status = res.status;   // lu par serverVerdictOnFailure
+        throw err;
+      }
       const data = await res.json();
       return (data.choices?.[0]?.message?.content ?? '').trim();
     } finally {
@@ -699,6 +727,11 @@ async function streamCompletion(messages, opts) {
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
+    // Les deux dégradations ci-dessous ne se tirent que d'un VERDICT (4xx hors
+    // 408/429, `httpStatusIsVerdict`) : un 5xx marquait sinon reasoning_effort
+    // ou la vision comme rejetés pour toute la session, sur un simple incident
+    // serveur (revue du 2026-09-22, même règle que `serverVerdictOnFailure`).
+    const verdict = !res.ok && httpStatusIsVerdict(res.status);
     if (!res.ok || !res.body) {
       // Hypothèse directe (pas de retry de diagnostic) : si reasoning_effort était
       // posé, on le tient pour responsable de l'échec — marqué pour (endpoint,
@@ -706,7 +739,7 @@ async function streamCompletion(messages, opts) {
       // LA MÊME requête une fois sans le paramètre (vLLM & co. rejettent en 400
       // les paramètres inconnus : l'utilisateur ne doit pas voir une erreur pour
       // ça). Le flag posé garantit que l'appel récursif n'en fait pas un autre.
-      if (body.reasoning_effort) {
+      if (verdict && body.reasoning_effort) {
         markReasoningEffortRejected(cfg.url, model);
         return streamCompletion(messages, opts);
       }
@@ -716,7 +749,7 @@ async function streamCompletion(messages, opts) {
       // rejeu : le flag posé AVANT l'appel récursif garantit que celui-ci
       // prend la branche proactive plutôt que de re-tenter avec images et
       // reboucler indéfiniment sur un 400 persistant pour une autre raison.
-      if (claimVisionRetry(body.messages, cfg.url, model)) {
+      if (verdict && claimVisionRetry(body.messages, cfg.url, model)) {
         return streamCompletion(messages, opts);
       }
       throw new Error('HTTP ' + res.status + await readErrorDetail(res));

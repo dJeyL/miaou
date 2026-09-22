@@ -31,7 +31,8 @@
   `activeReasoningEffort()` (main.js), même pattern que `activeModel()` :
   `conv.reasoningEffort` (override) sinon `settings.reasoningEffort` (défaut).
   Si l'API rejette `reasoning_effort` pour un (endpoint, modèle) donné (vLLM
-  renvoie 400 sur les paramètres inconnus), le rejet est mémorisé en session
+  renvoie 400 sur les paramètres inconnus ; seul un 4xx hors 408/429 vaut
+  rejet, cf. `httpStatusIsVerdict`), le rejet est mémorisé en session
   (`_reasoningEffortRejected`, api.js — clé composite URL+modèle, **pas** juste
   l'URL comme `_noThinkRejected` : un même endpoint peut exposer plusieurs modèles
   aux capacités de raisonnement différentes), puis `streamCompletion` **rejoue une

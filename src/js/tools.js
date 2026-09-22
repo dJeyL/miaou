@@ -712,19 +712,6 @@ const INTENT_DOCTRINE =
 let _pendingToolAcks = [];
 function getPendingToolAcks() { return _pendingToolAcks.slice(); }
 function clearPendingToolAcks() { _pendingToolAcks = []; }
-// Longueur courante de la file, et retour à une longueur relevée plus tôt
-// (lot AE). Motif : un geste qui appelle `_storeBlock` HORS d'un tour d'outils
-// — la microcompaction — hérite de l'ack `resource_stored` que `_storeBlock`
-// pousse inconditionnellement. Personne ne le draine à ce moment-là : il
-// atterrirait dans la bulle du tour SUIVANT, présentant une compaction comme
-// un appel d'outil du modèle.
-// `truncate` plutôt que `clear` : la file peut ne pas être vide (rien ne le
-// garantit depuis l'extérieur), et effacer ce qu'un autre chemin y a mis
-// perdrait des acks légitimes. On ne retire que ce qu'on a soi-même ajouté.
-function pendingToolAcksLength() { return _pendingToolAcks.length; }
-function truncatePendingToolAcks(n) {
-  if (typeof n === 'number' && n >= 0 && n < _pendingToolAcks.length) _pendingToolAcks.length = n;
-}
 // Brief A2 — injections image du tour COURANT. Un recall_attachment sur une
 // image ne peut pas remettre les pixels dans son résultat role:'tool' (textuel) :
 // il annonce l'image et pousse ici { dataUrl, attId }. La boucle runConversation

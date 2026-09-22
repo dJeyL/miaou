@@ -124,7 +124,8 @@ Figtree/Fira Code).
 - **Synchronisation multi-onglets** (locale au navigateur) : messages, titres,
   réglages, fichiers et Espaces se répercutent partout sans rechargement. Une
   conversation ouverte à deux endroits passe en lecture seule le temps d'une
-  réponse ou d'une compaction, pour éviter deux écritures concurrentes — cf.
+  réponse ou d'un allègement du contexte, pour éviter deux écritures
+  concurrentes — cf.
   [docs/multitab-sync.md](docs/multitab-sync.md).
 
 **Historique & mémoire**
