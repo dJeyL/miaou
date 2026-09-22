@@ -3847,6 +3847,17 @@ function formatDidYouKnowInput(topic, excerpt, labels) {
 // réponse. Une section d'aide couvre bien plus que l'astuce tirée (`interface`
 // fait des milliers de caractères), et « développe tout le sujet » ferait
 // répondre à côté — un exposé de section quand la question est une capacité.
+//
+// Le dernier paragraphe fixe QUI est « tu » dans la réponse. Deux textes lus
+// par le modèle s'y contredisent : l'aide tutoie l'utilisateur et dit « le
+// modèle » pour ce que fait le modèle, les doctrines du message système
+// tutoient le MODÈLE. Observé le 2026-09-23 : l'explication recopiait la voix
+// des doctrines (« le texte te revient en clair ») et imputait à l'utilisateur
+// la fin de ligne de chaque `resource__append`. L'astuce elle-même peut s'être
+// trompée de sujet malgré DID_YOU_KNOW_PROMPT (« Tu peux enrichir… » pour une
+// capacité du modèle — vu sur un 9B comme sur mistral-medium) : c'est l'aide
+// qui tranche, pas l'astuce citée. En italique : la bulle utilisateur rend le
+// Markdown (renderUserMd), et la consigne s'y distingue de la demande.
 function formatTipFollowUpPrompt(tip, topic) {
   const t = String(tip == null ? '' : tip).trim();
   if (!t) return '';
@@ -3855,7 +3866,11 @@ function formatTipFollowUpPrompt(tip, topic) {
   return 'Développe cette astuce : « ' + t + ' »\n\n'
     + 'Retrouve-la dans ' + where + ', lis ce qui l\'entoure, '
     + 'puis explique-moi concrètement ce point-là et ce qui s\'y rattache '
-    + 'de près — pas la section entière.';
+    + 'de près — pas la section entière.\n\n'
+    + '*Dans ta réponse, « tu » me désigne, moi l\'utilisateur, et personne '
+    + 'd\'autre. Ce que fait le modèle, dis « le modèle » ou « je », jamais '
+    + '« tu ». Attribue chaque geste à qui le fait réellement selon l\'aide, '
+    + 'même si l\'astuce me prête une capacité qui est celle du modèle.*';
 }
 
 // Découpe une astuce en phrases, pour les afficher une par ligne. Coupe après

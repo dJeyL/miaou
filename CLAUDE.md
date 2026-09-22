@@ -22,6 +22,11 @@ uv run --with quickjs python tests/runner.py   # tests des fonctions pures
 
 **Avant chaque commit :** build si du code a changé, puis tests. Ne jamais
 commit ni push sans avoir demandé l'accord explicite de l'utilisateur au préalable.
+**La publication est une question à part** : le push sur `origin` (qui déploie)
+et la synchro GitHub se demandent chacun par une question dédiée,
+posée APRÈS que l'utilisateur a pu tester — jamais déduits de l'approbation du
+travail, même quand la liste approuvée mentionne le push. S'arrêter après les
+commits.
 
 **Nouvelle feature utilisateur → se poser la question « faut-il mettre à jour
 `src/help.md` ? »** `src/help.md` est l'aide utilisateur final servie au modèle

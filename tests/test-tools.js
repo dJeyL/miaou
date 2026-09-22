@@ -2333,6 +2333,15 @@ describe('formatTipFollowUpPrompt — demande de développement pré-remplie au 
     expect(out.indexOf('pas la section entière') > 0).toBeTruthy();
     expect(out.indexOf('lis ce qui l\'entoure') > 0).toBeTruthy();
   });
+  it('fixe le référent de « tu » : l\'utilisateur, jamais le modèle', function() {
+    // Les doctrines système tutoient le modèle, l'aide tutoie l'utilisateur :
+    // sans cette consigne l'explication mêle les deux voix et impute à
+    // l'utilisateur des gestes du modèle (observé 2026-09-23).
+    var out = formatTipFollowUpPrompt('Astuce.', 'ressources');
+    expect(out.indexOf('« tu » me désigne, moi l\'utilisateur') > 0).toBeTruthy();
+    expect(out.indexOf('jamais « tu »') > 0).toBeTruthy();
+    expect(out.indexOf('même si l\'astuce me prête une capacité') > 0).toBeTruthy();
+  });
   it('reste utilisable sans slug (aucun sujet mémorisé)', function() {
     var out = formatTipFollowUpPrompt('Astuce.', '');
     expect(out.indexOf('le sujet de l\'aide concerné') > 0).toBeTruthy();
