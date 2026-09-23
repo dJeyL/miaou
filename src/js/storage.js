@@ -76,11 +76,9 @@ const BUILD_REPO_URL   = (typeof BUILD_CONFIG.repo_url === 'string') ? BUILD_CON
 // rejette une clé absente, une chaîne ou null : tous retombent sur 0.7 plutôt
 // que d'envoyer une valeur invalide à l'endpoint.
 const BUILD_CHAT_TEMPERATURE = (typeof BUILD_CONFIG.chat_temperature === 'number') ? BUILD_CONFIG.chat_temperature : 0.7;
-// Fenêtre de contexte par défaut (tokens) si l'utilisateur n'a rien saisi dans
-// les réglages (`contextWindow` reste '' — cf. DEFAULT_SETTINGS ci-dessous) :
-// permet de fournir une valeur d'installation sans forcer chaque utilisateur à
-// la ressaisir (brief B, complété). 0 = pas de défaut de build (comportement
-// v1 inchangé, `contextWindowFor` renvoie null).
+// Fenêtre de contexte par défaut (tokens) : DERNIER recours de la chaîne de
+// `resolveContextWindow`, quand ni le serveur ni l'utilisateur n'en disent rien.
+// 0 = pas de défaut de build (`contextWindowFor` renvoie alors null).
 const BUILD_DEFAULT_CONTEXT_WINDOW =
   (typeof BUILD_CONFIG.default_context_window === 'number') ? BUILD_CONFIG.default_context_window : 0;
 
@@ -200,7 +198,6 @@ const DEFAULT_SETTINGS = {
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   colWidth: 0,             // largeur de la colonne centrale : index dans COL_WIDTH_STEPS (ui.js), 0 = la plus étroite
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
-  contextWindow: '', // taille de fenêtre de contexte (tokens), global, '' = inconnu (brief B)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (lot Cbis)
   // Manifeste COMPLET de la bibliothèque d'espace (une ligne par fichier, avec
   // description). Défaut false : la note courte annonce le nombre de fichiers
@@ -269,14 +266,54 @@ function saveSettings(obj) {
   return next;
 }
 
-// Accesseur isolé (brief B) : champ global unique en v1 (`model` ignoré),
-// signature prête pour une future map (serveur, modèle) sans toucher les
-// call-sites. `null`/vide = inconnu.
+// ── Fenêtre de contexte (lot AF) ─────────────────────────────────────────────
+// Chaîne de précédence, de la plus sûre à la plus théorique. Une MESURE n'est
+// jamais écrasée par une saisie ; la saisie passe devant le maximum déclaré, ce
+// qui corrige une passerelle qui coupe plus bas qu'elle ne le déclare.
+//   served-now  : servie, lue sur `/api/ps` pendant cette session ;
+//   configured  : `num_ctx` du Modelfile (Ollama applique cette valeur au
+//                 chargement, avant `OLLAMA_CONTEXT_LENGTH` — mesuré) ;
+//   served-last : servie, dernière mesure d'une session antérieure ;
+//   user        : saisie pour ce modèle sur la carte du serveur ;
+//   declared    : maximum déclaré par le serveur (`/models`, `/api/show`) ;
+//   build       : `default_context_window` de config.json.
+// Rend {value, source, at} (`at` : date de la mesure, pour les deux `served-*`),
+// ou {value: null, source: null, at: null} si rien n'est connu.
+const MODEL_PROPS_SESSION_START = Date.now();
+
+function resolveContextWindow(record, userOverride, buildDefault, sessionStart) {
+  const r = record || {};
+  const sv = r.served;
+  const at = sv ? sv.at : null;
+  if (sv && sv.value > 0 && at >= sessionStart) return { value: sv.value, source: 'served-now', at };
+  if (r.contextConfigured > 0) return { value: r.contextConfigured, source: 'configured', at: null };
+  if (sv && sv.value > 0) return { value: sv.value, source: 'served-last', at };
+  if (userOverride > 0) return { value: userOverride, source: 'user', at: null };
+  if (r.contextMax > 0) return { value: r.contextMax, source: 'declared', at: null };
+  if (buildDefault > 0) return { value: buildDefault, source: 'build', at: null };
+  return { value: null, source: null, at: null };
+}
+
+// Saisie de l'utilisateur pour (serveur, modèle), ou null.
+function serverModelContextWindow(server, model) {
+  const map = server && server.contextWindows;
+  const v = map && model ? map[model] : null;
+  return (typeof v === 'number' && Number.isInteger(v) && v > 0) ? v : null;
+}
+
+// Fenêtre d'un modèle sur un serveur (par défaut le serveur actif — c'est lui
+// que sert `activeModel()`, un modèle d'un autre serveur basculant le serveur
+// actif). Consommateurs : pilule, inspecteur, seuils de compaction, et le hint
+// de la carte serveur.
+function contextWindowInfo(model, server) {
+  const srv = server || activeApiServer();
+  return resolveContextWindow(modelPropsFor(srv, model), serverModelContextWindow(srv, model),
+    BUILD_DEFAULT_CONTEXT_WINDOW, MODEL_PROPS_SESSION_START);
+}
+
+// Accesseur historique (brief B) : la valeur seule, null = inconnue.
 function contextWindowFor(model) {
-  const v = loadSettings().contextWindow;
-  const n = parseInt(v, 10);
-  if (Number.isFinite(n) && n > 0) return n;
-  return BUILD_DEFAULT_CONTEXT_WINDOW > 0 ? BUILD_DEFAULT_CONTEXT_WINDOW : null;
+  return contextWindowInfo(model).value;
 }
 
 // ── Serveurs API (multi-backends) ────────────────────────────────────────────
@@ -339,6 +376,16 @@ function normalizeApiServer(s) {
   if (o.vision && typeof o.vision === 'object') {
     for (const k in o.vision) { if (o.vision[k] === false) vision[k] = false; }
   }
+  // `contextWindows` (lot AF) : map { [nomModèle]: tokens } — fenêtre SAISIE
+  // par l'utilisateur pour ce modèle sur ce serveur. Seuls les entiers
+  // strictement positifs sont gardés ; absence = pas de saisie.
+  const contextWindows = {};
+  if (o.contextWindows && typeof o.contextWindows === 'object') {
+    for (const k in o.contextWindows) {
+      const v = o.contextWindows[k];
+      if (typeof v === 'number' && Number.isInteger(v) && v > 0) contextWindows[k] = v;
+    }
+  }
   return {
     id: o.id || genApiServerId(),
     name: String(o.name || '').trim(),
@@ -352,6 +399,7 @@ function normalizeApiServer(s) {
     // pourrait plus le réactiver.
     disabled: o.disabled === true,
     vision,
+    contextWindows,
     promptOrder: normalizePromptOrder(o.promptOrder),
   };
 }
@@ -404,15 +452,39 @@ function listSelectableApiServers() {
   return loadApiServers().filter(s => !s.disabled && (s.url || '').trim());
 }
 
-// Flag vision manuel pour un couple (serveur, modèle). Pur, testable.
-// Retourne `false` SEULEMENT si l'utilisateur a explicitement marqué ce modèle
-// sans vision sur ce serveur ; sinon `true` (défaut : on envoie les images).
-// N.B. « true » ici = « envoyer les parts », pas « vision confirmée » : l'état
-// inconnu et l'état vision-capable sont traités pareil (le brief : unknown =
-// send anyway). Seul `false` déclenche la dégradation proactive.
+// Vision d'un couple (serveur, modèle). Deux sources, dans cet ordre (lot AF) :
+//   1. la capacité DÉCLARÉE par le serveur (`modelPropsFor`, tri-état) : quand
+//      elle a tranché, elle fait foi dans les deux sens, flag manuel compris —
+//      on ne force pas la vision contre une déclaration (décision du lot) ;
+//   2. à défaut (inconnue), le flag MANUEL « Sans vision » de la fiche serveur.
+// Pur : `declared` (true/false/null) et `manualOff` (booléen) en arguments.
+// Rend {enabled, source} ; `source` ∈ 'declared' | 'manual' | 'unknown'.
+// « enabled » = « envoyer les parts image », pas « vision confirmée » : l'état
+// inconnu envoie, comme avant le lot (unknown = send anyway).
+function resolveModelVision(declared, manualOff) {
+  if (declared === true) return { enabled: true, source: 'declared' };
+  if (declared === false) return { enabled: false, source: 'declared' };
+  if (manualOff) return { enabled: false, source: 'manual' };
+  return { enabled: true, source: 'unknown' };
+}
+
+function modelVisionState(server, model) {
+  const m = String(model || '');
+  const manualOff = !!(server && server.vision && server.vision[m] === false);
+  return resolveModelVision(modelPropsFor(server, m).caps.vision, manualOff);
+}
+
+// Prédicat unique consommé par l'envoi (dispatchSend), la description de
+// fichier et `files__read`. `false` déclenche la dégradation proactive.
 function serverModelVisionEnabled(server, model) {
-  if (!server || !server.vision) return true;
-  return server.vision[String(model || '')] !== false;
+  return modelVisionState(server, model).enabled;
+}
+
+// Raisonnement DÉCLARÉ (true/false/null). Ne pilote que le sélecteur et l'envoi
+// de `reasoning_effort` — jamais l'affichage du raisonnement, qui se détecte sur
+// le delta (piège 14).
+function modelThinkingDeclared(server, model) {
+  return modelPropsFor(server, String(model || '')).caps.thinking;
 }
 
 // Insère ou remplace un serveur par `id` (clé d'identité). Retourne le tableau.
@@ -470,6 +542,108 @@ function activeApiConfig() {
     key: (s && s.key) || '',
     model: (s && s.model) || loadSettings().model || '',
   };
+}
+
+// ── Propriétés des modèles, persistées (lot AF) ───────────────────────────────
+// Ce que le backend déclare de chaque modèle (records de `modelPropsFrom*`,
+// api.js), gardé d'une session à l'autre par (serveur, modèle) :
+//   { [serverId]: { url, models: { [modelId]: record } } }
+// `url` date l'entrée : un serveur dont l'URL a changé repart de zéro (la clef
+// n'y entre pas, elle ne change pas ce que le backend déclare). C'est un CACHE
+// reconstructible : hors EXPORT_KEYS, et sans broadcast — un onglet voisin le
+// relit à sa prochaine lecture, chaque écriture relisant le stockage juste avant
+// d'écrire (lecture-modification-écriture synchrone).
+const MODEL_PROPS_KEY = 'miaou-model-props';
+
+function loadModelProps() {
+  try {
+    const m = JSON.parse(localStorage.getItem(MODEL_PROPS_KEY));
+    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  } catch (e) { return {}; }
+}
+
+function saveModelProps(map) {
+  localStorage.setItem(MODEL_PROPS_KEY, JSON.stringify(map || {}));
+}
+
+function _modelPropsUrl(url) { return String(url || '').trim(); }
+
+// Pure : record persisté d'un modèle, ou null si rien n'est connu (entrée
+// absente, ou datée d'une autre URL). À défaut du nom exact, la forme complète
+// d'Ollama : un modèle saisi `llama3` est listé `llama3:latest`, et c'est sous
+// l'id listé que les lectures s'écrivent. Sans objet ailleurs (un id qui porte
+// déjà une étiquette, ou un backend qui ne liste pas les deux formes).
+function modelPropsEntry(map, serverId, url, modelId) {
+  const srv = map && map[serverId];
+  if (!srv || srv.url !== _modelPropsUrl(url) || !srv.models) return null;
+  if (srv.models[modelId]) return srv.models[modelId];
+  const full = ollamaFullModelName(modelId);
+  return (full && full !== modelId && srv.models[full]) || null;
+}
+
+// Pure : superpose plusieurs records ({id: record}) aux modèles d'un serveur,
+// sans élaguer (lectures natives d'Ollama, déjà alignées sur les ids listés).
+function mergeManyModelProps(map, serverId, url, recordsById) {
+  let out = map || {};
+  for (const id of Object.keys(recordsById || {})) {
+    out = mergeOneModelProps(out, serverId, url, id, recordsById[id]);
+  }
+  return out;
+}
+
+// Écrit des lectures natives. Relit le stockage juste avant d'écrire.
+function recordModelProps(server, recordsById) {
+  if (!server || !server.id) return;
+  saveModelProps(mergeManyModelProps(loadModelProps(), server.id, server.url, recordsById));
+}
+
+// Pure : intègre une lecture réussie de la liste (`ids` : les modèles listés,
+// `propsById` : leurs records, un id sans record ne déclarant rien). Chaque record lu est
+// superposé au persisté (`mergeModelProps` : ce que la lecture sait remplace,
+// une inconnue n'efface rien — le `/v1/models` d'Ollama, entièrement inconnu,
+// laisse donc intact ce que `/api/show` avait appris). Les modèles absents de
+// la liste sont oubliés : la liste fait foi de ce qui existe. `knownServerIds`
+// (Set, optionnel) élague les serveurs supprimés depuis.
+function mergeListedModelProps(map, serverId, url, ids, propsById, knownServerIds) {
+  const out = {};
+  for (const id of Object.keys(map || {})) {
+    if (id === serverId) continue;
+    if (knownServerIds && !knownServerIds.has(id)) continue;
+    out[id] = map[id];
+  }
+  const u = _modelPropsUrl(url);
+  const prev = (map && map[serverId] && map[serverId].url === u && map[serverId].models) || {};
+  const models = {};
+  const props = propsById || {};
+  for (const modelId of (ids || [])) {
+    models[modelId] = mergeModelProps(prev[modelId] || null, props[modelId] || null);
+  }
+  out[serverId] = { url: u, models };
+  return out;
+}
+
+// Pure : superpose un record à UN modèle déjà listé (lecture `/api/show`), sans
+// toucher aux autres ni élaguer.
+function mergeOneModelProps(map, serverId, url, modelId, record) {
+  const u = _modelPropsUrl(url);
+  const srv = (map && map[serverId] && map[serverId].url === u) ? map[serverId] : { url: u, models: {} };
+  const models = Object.assign({}, srv.models || {});
+  models[modelId] = mergeModelProps(models[modelId] || null, record);
+  return Object.assign({}, map || {}, { [serverId]: { url: u, models } });
+}
+
+// Écrit une lecture réussie de la liste d'un serveur.
+function recordListedModelProps(server, ids, propsById) {
+  if (!server || !server.id) return;
+  const known = new Set(loadApiServers().map(s => s.id));
+  saveModelProps(mergeListedModelProps(loadModelProps(), server.id, server.url, ids, propsById, known));
+}
+
+// Propriétés connues d'un modèle sur un serveur. Toujours un record : un modèle
+// dont on ne sait rien rend un record entièrement inconnu, jamais null.
+function modelPropsFor(server, modelId) {
+  const rec = server ? modelPropsEntry(loadModelProps(), server.id, server.url, modelId) : null;
+  return rec ? mergeModelProps(null, rec) : modelPropsRecord();
 }
 
 // ── Serveurs MCP distants ─────────────────────────────────────────────────────
@@ -1725,7 +1899,9 @@ function spaceConvIds(spaceId, convs) {
 // courante ; la lecture accepte toutes les versions ≤ celle-ci.
 const EXPORT_FORMAT_VERSION = 3;
 
-// Les 7 clés localStorage du schéma. Référencée uniquement en corps de
+// Les clés localStorage EXPORTÉES — pas tout le schéma : un marqueur
+// d'installation (`miaou-mcp-seeded`) ou un cache reconstructible
+// (`miaou-model-props`) n'y entre pas. Référencée uniquement en corps de
 // fonction depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md)
 // — jamais au top-level d'un fichier tiers.
 //

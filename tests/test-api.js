@@ -779,3 +779,289 @@ describe('COMPACTION_PROMPT (recompaction, revue 2026-09-22)', function() {
     expect(/r[ée]sum[ée] ant[ée]rieur/.test(COMPACTION_PROMPT)).toBe(true);
   });
 });
+
+// ── Propriétés déclarées des modèles (lot AF) ───────────────────────────────
+// Fixtures RÉELLES, élaguées aux clés utiles plus un peu de bruit :
+// - schéma Mistral servi par vLLM : réponse `/v1/models` relevée par la sonde
+//   `backend-capabilities.py` le 2026-09-23 (objet `capabilities` brut recopié) ;
+// - Ollama 0.34.2 : `/api/tags` et `/api/show` relevés le 2026-09-23.
+// `/api/ps` est reconstruit sur la forme documentée, avec la valeur mesurée le
+// 2026-09-22 (32768 servis pour 262144 déclarés) : aucun modèle n'était chargé
+// au relevé, et en charger un pour la fixture aurait occupé la VRAM.
+
+var AF_MISTRAL_MODELS = {
+  object: 'list',
+  data: [
+    { id: 'mistral-medium-3-5-0', object: 'model', owned_by: 'mistral', max_context_length: 262144,
+      default_model_temperature: 0.7,
+      capabilities: { completion_chat: true, stop_tokens: true, function_calling: true, grammar: true,
+        fine_tuning: true, vision: true, priority: true, tier: true, multiple_sequences: true,
+        custom_grammar: true, reasoning: true } },
+    { id: 'mistral-small-2603', object: 'model', owned_by: 'mistral', max_context_length: 262144,
+      capabilities: { completion_chat: true, stop_tokens: true, function_calling: true, grammar: true,
+        vision: true, priority: true, tier: true, multiple_sequences: true, custom_grammar: true,
+        reasoning: true } },
+  ],
+};
+
+var AF_OLLAMA_TAGS = {
+  models: [
+    { name: 'ornith-1.5:9b', model: 'ornith-1.5:9b',
+      details: { parent_model: '', format: 'gguf', family: 'qwen35', families: ['qwen35'], parameter_size: '9.0B',
+        quantization_level: 'Q4_K_M', context_length: 262144, embedding_length: 4096 },
+      capabilities: ['completion', 'vision'] },
+    { name: 'gemma4:26b-nvfp4', model: 'gemma4:26b-nvfp4',
+      details: { parent_model: '', format: 'safetensors', family: '', families: null, parameter_size: '',
+        quantization_level: 'nvfp4' },
+      capabilities: ['completion', 'vision', 'tools', 'thinking'] },
+    { name: 'ornith-1.5-txt:9b-nvfp4', model: 'ornith-1.5-txt:9b-nvfp4',
+      details: { parent_model: '', format: 'safetensors', family: '', families: null, parameter_size: '',
+        quantization_level: '' },
+      capabilities: ['completion', 'tools', 'thinking'] },
+  ],
+};
+
+var AF_OLLAMA_SHOW_GGUF = {
+  capabilities: ['tools', 'thinking', 'completion', 'vision'],
+  model_info: { 'general.architecture': 'qwen35', 'qwen35.block_count': 32,
+    'qwen35.context_length': 262144, 'qwen35.embedding_length': 4096 },
+  details: { format: 'gguf', family: 'qwen35' },
+};
+
+var AF_OLLAMA_SHOW_SAFETENSORS = {
+  capabilities: ['completion', 'vision', 'tools', 'thinking'],
+  model_info: { 'gemma4.block_count': 30, 'gemma4.context_length': 262144,
+    'gemma4.embedding_length': 2816, 'general.architecture': 'gemma4' },
+  parameters: 'temperature                    1\ntop_k                          64\ntop_p                          0.95',
+};
+
+var AF_OLLAMA_PS = {
+  models: [
+    { name: 'ornith-1.5-txt:9b', model: 'ornith-1.5-txt:9b', size: 7000000000, size_vram: 7000000000,
+      expires_at: '2026-09-22T21:00:00Z', context_length: 32768 },
+  ],
+};
+
+describe('normalizeModelCaps (tri-état, forme reconnue seulement)', function() {
+  it('objet Mistral : alias function_calling → tools, reasoning → thinking', function() {
+    expect(normalizeModelCaps(AF_MISTRAL_MODELS.data[0].capabilities, false))
+      .toEqual({ vision: true, tools: true, thinking: true });
+  });
+  it('objet reconnu : une clé à false, ou absente, vaut false', function() {
+    expect(normalizeModelCaps({ completion_chat: true, vision: false }, false))
+      .toEqual({ vision: false, tools: false, thinking: false });
+  });
+  it('liste Ollama autoritative : absence = false', function() {
+    expect(normalizeModelCaps(['completion', 'tools', 'thinking'], false))
+      .toEqual({ vision: false, tools: true, thinking: true });
+  });
+  it('positiveOnly (/api/tags) : absence = inconnu, présence = true', function() {
+    expect(normalizeModelCaps(['completion', 'vision'], true))
+      .toEqual({ vision: true, tools: null, thinking: null });
+  });
+  it('un modèle d\'embedding reconnu est bien sans vision', function() {
+    expect(normalizeModelCaps(['embedding'], false))
+      .toEqual({ vision: false, tools: false, thinking: false });
+  });
+  it('aucun nom connu → inconnu partout, jamais false', function() {
+    expect(normalizeModelCaps({ image_input: true, tool_use: true }, false))
+      .toEqual({ vision: null, tools: null, thinking: null });
+    expect(normalizeModelCaps([], false))
+      .toEqual({ vision: null, tools: null, thinking: null });
+  });
+  it('forme absente ou exotique → inconnu', function() {
+    expect(normalizeModelCaps(undefined, false)).toEqual({ vision: null, tools: null, thinking: null });
+    expect(normalizeModelCaps('vision', false)).toEqual({ vision: null, tools: null, thinking: null });
+  });
+  it('insensible à la casse', function() {
+    expect(normalizeModelCaps(['Completion', 'VISION'], false).vision).toBe(true);
+  });
+});
+
+describe('extractModelContextMax', function() {
+  it('clé à plat du schéma Mistral', function() {
+    expect(extractModelContextMax(AF_MISTRAL_MODELS.data[0])).toEqual({ value: 262144, key: 'max_context_length' });
+  });
+  it('vLLM nu : max_model_len', function() {
+    expect(extractModelContextMax({ id: 'x', max_model_len: 32768 })).toEqual({ value: 32768, key: 'max_model_len' });
+  });
+  it('model_info d\'Ollama : clé préfixée par l\'architecture', function() {
+    expect(extractModelContextMax(AF_OLLAMA_SHOW_GGUF.model_info)).toEqual({ value: 262144, key: 'qwen35.context_length' });
+  });
+  it('l\'architecture déclarée l\'emporte sur une autre clé suffixée (synthétique)', function() {
+    var mi = { 'clip.vision.context_length': 1024, 'general.architecture': 'qwen35', 'qwen35.context_length': 262144 };
+    expect(extractModelContextMax(mi)).toEqual({ value: 262144, key: 'qwen35.context_length' });
+  });
+  it('sans general.architecture : repli sur le suffixe', function() {
+    expect(extractModelContextMax({ 'gemma4.context_length': 131072 })).toEqual({ value: 131072, key: 'gemma4.context_length' });
+  });
+  it('details safetensors sans fenêtre → null', function() {
+    expect(extractModelContextMax(AF_OLLAMA_TAGS.models[1].details)).toBe(null);
+  });
+  it('valeurs non entières ou nulles ignorées', function() {
+    expect(extractModelContextMax({ max_context_length: '262144' })).toBe(null);
+    expect(extractModelContextMax({ context_length: 0 })).toBe(null);
+    expect(extractModelContextMax(null)).toBe(null);
+  });
+});
+
+describe('modelPropsFromOpenAIModels (schéma Mistral réel)', function() {
+  it('fenêtre, source et capacités pour chaque modèle listé', function() {
+    var p = modelPropsFromOpenAIModels(AF_MISTRAL_MODELS);
+    expect(Object.keys(p).sort()).toEqual(['mistral-medium-3-5-0', 'mistral-small-2603']);
+    expect(p['mistral-medium-3-5-0']).toEqual({
+      contextMax: 262144, contextSource: 'models:max_context_length', contextConfigured: null, served: null,
+      caps: { vision: true, tools: true, thinking: true },
+    });
+  });
+  it('vLLM nu : fenêtre connue, capacités inconnues', function() {
+    var p = modelPropsFromOpenAIModels({ data: [{ id: 'm', object: 'model', max_model_len: 32768 }] });
+    expect(p.m.contextMax).toBe(32768);
+    expect(p.m.caps).toEqual({ vision: null, tools: null, thinking: null });
+  });
+  it('/v1/models d\'Ollama (id seul) : tout inconnu', function() {
+    var p = modelPropsFromOpenAIModels({ object: 'list', data: [{ id: 'gemma4:26b-nvfp4', object: 'model', owned_by: 'library' }] });
+    expect(p['gemma4:26b-nvfp4']).toEqual({ contextMax: null, contextSource: null, contextConfigured: null, served: null,
+      caps: { vision: null, tools: null, thinking: null } });
+  });
+  it('réponse illisible → objet vide', function() {
+    expect(modelPropsFromOpenAIModels(null)).toEqual({});
+    expect(modelPropsFromOpenAIModels({ data: 'x' })).toEqual({});
+  });
+});
+
+describe('modelPropsFromOllamaTags / Show (Ollama réel)', function() {
+  it('/api/tags : GGUF sous-déclaré → tools/thinking inconnus, fenêtre lue dans details', function() {
+    var p = modelPropsFromOllamaTags(AF_OLLAMA_TAGS)['ornith-1.5:9b'];
+    expect(p.caps).toEqual({ vision: true, tools: null, thinking: null });
+    expect(p.contextMax).toBe(262144);
+    expect(p.contextSource).toBe('tags:context_length');
+  });
+  it('/api/tags : safetensors sans fenêtre, sans vision → vision inconnue et non false', function() {
+    var p = modelPropsFromOllamaTags(AF_OLLAMA_TAGS)['ornith-1.5-txt:9b-nvfp4'];
+    expect(p.contextMax).toBe(null);
+    expect(p.caps).toEqual({ vision: null, tools: true, thinking: true });
+  });
+  it('/api/show GGUF : capacités complètes et fenêtre préfixée', function() {
+    expect(modelPropsFromOllamaShow(AF_OLLAMA_SHOW_GGUF)).toEqual({
+      contextMax: 262144, contextSource: 'show:qwen35.context_length', contextConfigured: null, served: null,
+      caps: { vision: true, tools: true, thinking: true },
+    });
+  });
+  it('/api/show safetensors : parameters sans num_ctx → pas de fenêtre configurée', function() {
+    var p = modelPropsFromOllamaShow(AF_OLLAMA_SHOW_SAFETENSORS);
+    expect(p.contextMax).toBe(262144);
+    expect(p.contextConfigured).toBe(null);
+  });
+  it('/api/show : num_ctx du Modelfile → contextConfigured', function() {
+    var show = { capabilities: ['completion'], model_info: { 'general.architecture': 'llama', 'llama.context_length': 131072 },
+      parameters: 'num_ctx                        16384\ntemperature                    0.7' };
+    expect(modelPropsFromOllamaShow(show).contextConfigured).toBe(16384);
+  });
+  it('/api/show illisible → record inconnu, jamais une exception', function() {
+    expect(modelPropsFromOllamaShow(null)).toEqual({ contextMax: null, contextSource: null, contextConfigured: null, served: null,
+      caps: { vision: null, tools: null, thinking: null } });
+  });
+});
+
+describe('chemin natif Ollama : racine et appariement des noms (AF-1)', function() {
+  it('racine dérivée en retirant /v1, slash final toléré', function() {
+    expect(ollamaNativeRoot('https://trinity.home.djeyl.net:11435/v1')).toBe('https://trinity.home.djeyl.net:11435');
+    expect(ollamaNativeRoot('http://h:11434/v1/')).toBe('http://h:11434');
+  });
+  it('URL sans /v1 final → pas de racine devinée', function() {
+    expect(ollamaNativeRoot('https://h/api')).toBe(null);
+    expect(ollamaNativeRoot('https://h/v1beta')).toBe(null);
+    expect(ollamaNativeRoot('')).toBe(null);
+  });
+  it('forme complète : :latest ajouté seulement sans étiquette, cherchée après le dernier /', function() {
+    expect(ollamaFullModelName('llama3')).toBe('llama3:latest');
+    expect(ollamaFullModelName('ornith-1.5:9b')).toBe('ornith-1.5:9b');
+    expect(ollamaFullModelName('hf.co/org/repo:Q4_K_M')).toBe('hf.co/org/repo:Q4_K_M');
+    expect(ollamaFullModelName('registry:5000/org/model')).toBe('registry:5000/org/model:latest');
+    expect(ollamaFullModelName('')).toBe('');
+  });
+  it('réponse /api/tags reconnue, liste vide comprise ; le reste ne l\'est pas', function() {
+    expect(isOllamaTagsResponse(AF_OLLAMA_TAGS)).toBe(true);
+    expect(isOllamaTagsResponse({ models: [] })).toBe(true);
+    expect(isOllamaTagsResponse({ data: [] })).toBe(false);
+    expect(isOllamaTagsResponse({ error: { message: '404' } })).toBe(false);
+    expect(isOllamaTagsResponse(null)).toBe(false);
+  });
+  it('noms natifs rattachés aux ids listés sur la forme complète, dans les deux sens', function() {
+    var out = alignOllamaNames(['llama3:latest', 'qwen:7b', 'mistral'],
+      { 'llama3': 1, 'qwen:7b': 2, 'mistral:latest': 3, 'absent:1b': 4 });
+    expect(out).toEqual({ 'llama3:latest': 1, 'qwen:7b': 2, 'mistral': 3 });
+  });
+  it('/api/ps aligné → records servis datés, rien d\'autre de connu', function() {
+    var served = alignOllamaNames(['ornith-1.5-txt:9b'], servedContextsFromOllamaPs(AF_OLLAMA_PS));
+    var r = servedRecords(served, 1000)['ornith-1.5-txt:9b'];
+    expect(r.served).toEqual({ value: 32768, at: 1000 });
+    expect(r.contextMax).toBe(null);
+    expect(r.caps).toEqual({ vision: null, tools: null, thinking: null });
+  });
+});
+
+describe('servedContextsFromOllamaPs', function() {
+  it('fenêtre servie par modèle chargé', function() {
+    expect(servedContextsFromOllamaPs(AF_OLLAMA_PS)).toEqual({ 'ornith-1.5-txt:9b': 32768 });
+  });
+  it('aucun modèle chaud → objet vide', function() {
+    expect(servedContextsFromOllamaPs({ models: [] })).toEqual({});
+    expect(servedContextsFromOllamaPs(null)).toEqual({});
+  });
+});
+
+describe('mergeModelProps', function() {
+  it('/api/show complète /api/tags : l\'inconnu est comblé, le connu confirmé', function() {
+    var tags = modelPropsFromOllamaTags(AF_OLLAMA_TAGS)['ornith-1.5:9b'];
+    var show = modelPropsFromOllamaShow(AF_OLLAMA_SHOW_GGUF);
+    var m = mergeModelProps(tags, show);
+    expect(m.caps).toEqual({ vision: true, tools: true, thinking: true });
+    expect(m.contextSource).toBe('show:qwen35.context_length');
+  });
+  it('une inconnue de la surcouche n\'efface jamais un connu', function() {
+    var base = modelPropsRecord(262144, 'show:qwen35.context_length', { vision: false, tools: true, thinking: true }, 8192);
+    var m = mergeModelProps(base, modelPropsRecord());
+    expect(m).toEqual(base);
+  });
+  it('un false déclaré par la surcouche remplace un true de la base', function() {
+    var base = modelPropsRecord(null, null, { vision: true, tools: null, thinking: null });
+    var over = modelPropsRecord(null, null, { vision: false, tools: true, thinking: false });
+    expect(mergeModelProps(base, over).caps).toEqual({ vision: false, tools: true, thinking: false });
+  });
+});
+
+describe('modelListFromResponse (ids ET props du même appel)', function() {
+  it('schéma Mistral : ids triés, props par id', function() {
+    var r = modelListFromResponse(AF_MISTRAL_MODELS);
+    expect(r.ids).toEqual(['mistral-medium-3-5-0', 'mistral-small-2603']);
+    expect(r.props['mistral-small-2603'].caps.vision).toBe(true);
+  });
+  it('liste de chaînes nues : ids lus comme avant, aucune prop', function() {
+    var r = modelListFromResponse({ models: ['b', 'a'] });
+    expect(r.ids).toEqual(['a', 'b']);
+    expect(r.props).toEqual({});
+  });
+  it('réponse vide ou illisible : rien, sans exception', function() {
+    expect(modelListFromResponse({})).toEqual({ ids: [], props: {} });
+    expect(modelListFromResponse(null)).toEqual({ ids: [], props: {} });
+  });
+});
+
+describe('reasoningEffortBlocked (rejet de session OU déclaré sans raisonnement)', function() {
+  it('bloqué pour un modèle du serveur actif déclaré sans raisonnement, pas pour les autres', function() {
+    localStorage.removeItem('miaou-model-props');
+    saveApiServersRaw([{ id: 'srvR', name: 'r', url: 'https://r/v1', key: '' }]);
+    setActiveApiServerId('srvR');
+    recordListedModelProps(getApiServer('srvR'), ['noThink', 'think'], {
+      noThink: modelPropsRecord(null, null, { vision: null, tools: null, thinking: false }),
+      think: modelPropsRecord(null, null, { vision: null, tools: null, thinking: true }),
+    });
+    expect(reasoningEffortBlocked('https://r/v1', 'noThink')).toBe(true);
+    expect(reasoningEffortBlocked('https://r/v1', 'think')).toBe(false);
+    expect(reasoningEffortBlocked('https://r/v1', 'inconnu')).toBe(false);
+    // Une URL qui n'est pas celle du serveur actif n'emprunte pas sa déclaration.
+    expect(reasoningEffortBlocked('https://autre/v1', 'noThink')).toBe(false);
+  });
+});

@@ -107,7 +107,9 @@ Figtree/Fira Code).
   développer.
 - **Inspecteur de contexte** : compteur de tokens dans le composer, cliquable,
   détaillant la composition du payload envoyé au modèle avec une jauge
-  d'occupation — cf. [docs/context-inspector.md](docs/context-inspector.md).
+  d'occupation, rapportée à la fenêtre du modèle lue sur le serveur quand il
+  la déclare, ou réellement servie quand c'est un Ollama — cf. [docs/context-inspector.md](docs/context-inspector.md) et
+  [docs/model-props.md](docs/model-props.md).
 - **Allègement du contexte** : deux gestes indépendants, proposés par
   l'inspecteur. Évacuer les gros résultats d'outils les remplace par des
   références que le modèle peut rouvrir ; compacter (bouton ou commande
@@ -330,9 +332,10 @@ est faite au seul point de lecture.
   concerne que la conversation : les appels internes (titrage, résumé,
   description de fichier) gardent leur propre valeur, plus basse. Une valeur
   non numérique est ignorée (retour à `0.7`).
-- `default_context_window` : taille de fenêtre de contexte (en tokens) utilisée
-  par défaut tant que l'utilisateur n'a rien saisi dans les réglages. `0` ou
-  absent = inconnue (aucune valeur par défaut appliquée).
+- `default_context_window` : taille de fenêtre de contexte (en tokens), en
+  dernier recours : quand le serveur ne la déclare pas pour le modèle et que
+  l'utilisateur n'en a saisi aucune sur la carte du serveur. `0` ou absent =
+  inconnue (cf. `docs/model-props.md`).
 - `max_agents_per_conv` / `max_agents_total` : bornes d'agents simultanés —
   par conversation (défaut 3) et toutes conversations confondues (défaut 5).
   Un refus nomme celle qui est atteinte.

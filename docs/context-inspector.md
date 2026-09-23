@@ -299,19 +299,43 @@ ne peut apparaître que si `_lastContextManifest` est non-null.
 
 ## Fenêtre de contexte
 
-`contextWindowFor(model)` (storage.js) lit `loadSettings().contextWindow` (champ
-global unique, `''` = inconnu) ; `model` est ignoré en v1 mais fait partie de la
-signature pour basculer plus tard vers une map (serveur, modèle) sans toucher
-les call-sites. `CONTEXT_WINDOW_WARN_RATIO = 0.8` (utils.js) : seuil d'occupation
-au-delà duquel la pilule passe ambre (`.ctx-counter-warn`) ; à 100 % ou plus
-(`ratio >= 1`), elle passe rouge (`.ctx-counter-over`) à la place — les deux
+`contextWindowFor(model)` (storage.js) rend la valeur seule, `null` =
+inconnue. Elle délègue à `contextWindowInfo(model, server?)`, qui rend
+`{value, source, at}` pour le serveur actif. Depuis le lot AF, la fenêtre
+dépend du couple (serveur, modèle), et sa précédence est tranchée par le
+pur `resolveContextWindow`. Chaîne complète, libellés et mesures :
+`docs/model-props.md`.
+
+Le champ global des réglages (`#set-contextwindow`, `settings.contextWindow`)
+a été **supprimé** au lot AF, sans migration : la détection prend le relais,
+et une valeur globale n'avait pas de propriétaire naturel parmi les modèles.
+La saisie se fait maintenant par modèle, sur la fiche du serveur
+(`server.contextWindows`). `BUILD_DEFAULT_CONTEXT_WINDOW` (storage.js, lu
+depuis `BUILD_CONFIG.default_context_window`, `0` = aucun) reste le dernier
+recours de la chaîne. Valeur suggérée dans `config.sample.json` : `32768`.
+
+`CONTEXT_WINDOW_WARN_RATIO = 0.8` (utils.js) : au-delà de ce seuil
+d'occupation, la pilule passe ambre (`.ctx-counter-warn`). À 100 % ou plus
+(`ratio >= 1`), elle passe rouge (`.ctx-counter-over`) à la place. Les deux
 classes sont mutuellement exclusives (`syncContextCounter`, ui.js).
 
-Si le réglage est vide, repli sur `BUILD_DEFAULT_CONTEXT_WINDOW` (storage.js) —
-lu depuis `BUILD_CONFIG.default_context_window` (config.json, même mécanisme
-que `MAX_SUMMARIES`/`BUILD_API_URL`), `0` = pas de défaut de build (comportement
-d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
-`config.sample.json` : `32768`.
+La fenêtre dépendant du modèle, `syncModelUI` appelle `syncContextCounter`
+en fin de course. C'est le point par lequel passent tout changement de
+modèle ou de serveur et toute relecture de liste qui a pu apprendre une
+fenêtre. L'inspecteur ouvert se re-rend par la même voie.
+
+Le drawer affiche la valeur retenue ET sa source (`#ctx-window-hint`,
+`formatContextWindowLine`) : une fenêtre déduite d'un maximum théorique
+peut être fausse, et l'utilisateur doit pouvoir le voir. La ligne vient après
+le tableau des catégories et avant les gestes d'allègement : elle qualifie le
+total qu'elle suit, et laisse la barre et le tableau en tête du drawer.
+
+Juste dessous, `#ctx-caps-hint` (`formatModelCapsLine`) donne les capacités
+DÉCLARÉES du modèle actif : lecture d'images, outils, raisonnement, avec
+« inconnu » quand le serveur ne dit rien. Un `tools: false` y est
+accompagné de « Les outils sont envoyés quand même » : la capacité est
+seulement mémorisée, elle n'empêche rien. Un « Sans vision » manuel est
+nommé quand c'est lui qui décide.
 
 ## UI
 
@@ -344,12 +368,8 @@ d'origine, `contextWindowFor` renvoie `null`). Valeur suggérée dans
   l'**affordance de compaction** en pied (`#ctx-compact`, toujours présente,
   `.is-salient` au-delà du seuil ; cf. `docs/compaction.md`). Rendu par
   `renderContextInspector()`.
-- **Réglage fenêtre de contexte** : `#set-contextwindow` (catégorie « Modèle &
-  raisonnement »), lu/écrit dans `init`/`onSaveSettings`, participe à
-  `settingsFormDirty`. N'est plus un pur dénominateur d'affichage depuis le lot
-  AE : il décide aussi du seuil à partir duquel la compaction est conseillée —
-  le hint du champ et deux passages de `src/help.md` disaient « seulement »
-  utile à l'inspecteur, corrigés au même lot.
+- **Fenêtre de contexte** : plus de champ dans les réglages depuis le lot AF,
+  cf. § « Fenêtre de contexte » ci-dessus et `docs/model-props.md`.
 
 ## Explication des parts
 

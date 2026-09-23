@@ -597,6 +597,12 @@
   overflow: hidden;
   background: var(--surface-3);
   border: 1px solid var(--border-2);
+  /* `.drawer-body` est une colonne flex qui défile : quand le contenu dépasse,
+     ses enfants se compriment, et une boîte en overflow:hidden n'a pas de
+     hauteur minimale de contenu — la barre tombait à ses seules bordures
+     (mesuré : 2px sur un drawer qui déborde). La hauteur est fixe, on la
+     tient ; c'est le drawer qui défile. Vaut aussi pour la barre de cache. */
+  flex-shrink: 0;
 }
 .ctx-bar-seg { display: block; height: 100%; min-width: 1px; }
 /* 2e barre, accolée sous la barre d'entrée : part de l'entrée servie par le
@@ -610,6 +616,10 @@
 .ctx-table td:not(:first-child) { text-align: right; font-family: var(--mono); white-space: nowrap; }
 .ctx-table tr.ctx-total td { font-weight: 600; color: var(--text); border-bottom: none; border-top: 1px solid var(--border-2); }
 .ctx-table tr.ctx-output td { font-style: italic; color: var(--text-3); }
+/* Le tableau se referme toujours sur un filet, qu'il finisse sur le Total (pas
+   encore de réponse) ou sur la ligne de sortie : sans lui, la ligne de fenêtre
+   qui suit se colle au Total dans un cas et pas dans l'autre. */
+.ctx-table tr.ctx-total:last-child td { border-bottom: 1px solid var(--border); }
 .ctx-swatch { display: inline-block; vertical-align: middle; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; margin-bottom: 2px; }
 
 /* ── Affordance de compaction (lot AE) ──────────────────────────────────────
@@ -617,8 +627,11 @@
    il n'est simplement pas mis en avant. `.is-salient` (≥50 % d'occupation)
    appuie le bouton sans changer sa nature — une couleur d'alerte en ferait un
    incident à traiter, alors que c'est une hygiène proposée. */
+/* Fenêtre et capacités du modèle : un bloc de deux lignes, resserré. */
+.ctx-model-lines { display: flex; flex-direction: column; gap: 4px; }
+/* Pas de margin-top : le `gap` de `.drawer-body` (16px) espace déjà les blocs,
+   et une marge s'y ajoutait (30px au-dessus du filet contre 12 en dessous). */
 .ctx-compact {
-  margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
   display: flex;
@@ -935,6 +948,9 @@
 .cfg-field select:focus,
 .cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
 .cfg-field .hint { font-size: 11px; color: var(--text-3); }
+/* Valeur figée à la place d'un choix (lot AF : vision déclarée par le serveur). */
+.cfg-field .cfg-fixed { font-size: 12px; color: var(--text-2); }
+.cfg-field .cfg-fixed[hidden] { display: none; }
 /* Séparateur de section dans un drawer body plat (pas de collapse — écran
    Space) : même vocabulaire visuel que .conv-section (sidebar). */
 .drawer-section-title {
@@ -1000,6 +1016,17 @@
 /* Seul le dernier bouton (Modifier) est repoussé à droite : « Utiliser ce
    serveur » occupe la place du pill « Actif », tout à gauche. */
 .api-view-row .drawer-btn:last-child { margin-left: auto; }
+/* Glyphe de relecture (AF-9) : meme geometrie que .mcp-refresh, et meme
+   passation du margin-left:auto, puisqu'il precede « Modifier ». */
+.api-view-row .api-refresh {
+  margin-left: auto;
+  width: 28px; height: 28px;
+  color: var(--text-3);
+}
+.api-view-row .api-refresh + .drawer-btn:last-child { margin-left: 0; }
+.api-view-row .api-refresh:hover:not(:disabled) { color: var(--text-1); }
+.api-view-row .api-refresh:disabled { opacity: .45; cursor: default; }
+.api-view-row .api-refresh svg { width: 15px; height: 15px; }
 /* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
    à la suite (séparateur .inline-sep, même format que le thread). */
 .active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }

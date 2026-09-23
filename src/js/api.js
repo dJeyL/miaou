@@ -141,6 +141,16 @@ async function readErrorDetail(res) {
 const _reasoningEffortRejected = {};
 function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || ''); }
 function isReasoningEffortRejected(url, model) { return !!_reasoningEffortRejected[reasoningEffortRejectedKey(url, model)]; }
+// Faut-il s'abstenir de `reasoning_effort` pour ce (endpoint, modèle) ? Oui si
+// l'endpoint l'a déjà rejeté cette session (filet réactif), ou si le serveur
+// ACTIF déclare ce modèle sans raisonnement (lot AF). Prédicat unique de l'envoi
+// (streamCompletion) et du sélecteur (syncReasoningUI).
+function reasoningEffortBlocked(url, model) {
+  if (isReasoningEffortRejected(url, model)) return true;
+  const srv = typeof activeApiServer === 'function' ? activeApiServer() : null;
+  return !!srv && (srv.url || '').trim() === String(url || '').trim()
+    && modelThinkingDeclared(srv, model) === false;
+}
 function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
 
 // Cache session : (endpoint, modèle) ayant rejeté des content parts image_url
@@ -493,7 +503,10 @@ async function silentCompletion(messages, opts) {
   };
 
   try {
-    return await _cascade();
+    const out = await _cascade();
+    // Le modèle vient de servir : sa fenêtre servie est lisible (AF-2 révisée).
+    if (typeof noteModelCalled === 'function') noteModelCalled(url, model);
+    return out;
   } catch (e) {
     // UN seul rejeu dégradé — le flag posé par claimVisionRetry fait prendre la
     // branche proactive à l'appel récursif, qui ne peut donc pas reboucler.
@@ -648,8 +661,9 @@ async function streamCompletion(messages, opts) {
   }
   // reasoning_effort : choix explicite de l'utilisateur (composer), '' = défaut =
   // aucun paramètre envoyé. Jamais posé si l'endpoint+modèle l'a déjà rejeté cette
-  // session (cf. isReasoningEffortRejected) — le sélecteur est alors masqué côté UI.
-  if (o.reasoningEffort && !isReasoningEffortRejected(cfg.url, model)) {
+  // session, ou si le serveur le déclare sans raisonnement (reasoningEffortBlocked)
+  // — le sélecteur est alors masqué côté UI.
+  if (o.reasoningEffort && !reasoningEffortBlocked(cfg.url, model)) {
     body.reasoning_effort = o.reasoningEffort;
   }
 
@@ -709,6 +723,7 @@ async function streamCompletion(messages, opts) {
   const toolCalls = [];
   let aborted = false;
   let usage = null;
+  let answered = false;   // le backend a accepté la requête (réponse 2xx avec corps)
 
   try {
     // Le chien de garde couvre AUSSI la connexion, pas seulement le flux : un
@@ -756,6 +771,7 @@ async function streamCompletion(messages, opts) {
     }
 
     const reader = res.body.getReader();
+    answered = true;
     const decoder = new TextDecoder();
     let buffer = '';
 
@@ -826,6 +842,10 @@ async function streamCompletion(messages, opts) {
     // a déjà posé un plus récent qu'il ne faut pas effacer.
     if (o.gen && o.gen.abort === ctrl) o.gen.abort = null;
   }
+
+  // Le backend a servi ce modèle, donc l'a chargé : sa fenêtre servie est
+  // lisible (AF-2 révisée). Même sur un Stop, le chargement a eu lieu.
+  if (answered && typeof noteModelCalled === 'function') noteModelCalled(cfg.url, model);
 
   return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, stalled, usage };
 }
@@ -1339,8 +1359,289 @@ function searchSummaries(queryText, excludeId, spaceId) {
   return matches.slice(0, MAX_SUMMARIES);
 }
 
+// ── Propriétés déclarées des modèles (lot AF) ───────────────────────────────
+// Extraction PURE de ce que le backend déclare de chaque modèle : fenêtre de
+// contexte maximale et capacités. Aucune requête ici — les fonctions reçoivent
+// la réponse JSON déjà parsée. Trois formes mesurées (cf. docs/model-props.md) :
+//   - `/v1/models` au schéma Mistral : `max_context_length` à plat, capacités
+//     en OBJET de booléens aux noms propres (`function_calling`, `reasoning`) ;
+//     un vLLM nu y met `max_model_len`, sans capacités ;
+//   - `/api/tags` d'Ollama : capacités en LISTE, qui SOUS-DÉCLARE (`tools` et
+//     `thinking` omis pour les GGUF, mesuré) — lue en positif seulement ;
+//     `details.context_length` pour les GGUF seulement ;
+//   - `/api/show` d'Ollama : liste de capacités qui fait autorité, fenêtre dans
+//     `model_info` sous une clé préfixée par l'architecture.
+//
+// Chaque capacité est TRI-ÉTAT : true, false, ou null (inconnu). `false` ne se
+// déduit que d'une déclaration dont la forme est RECONNUE — une forme inconnue,
+// ou une déclaration qui ne contient aucun nom connu, rend null partout : elle
+// ne prouve pas l'absence, elle prouve qu'on ne sait pas la lire (défaut payé
+// par la première sonde de découverte, qui concluait « aucune capacité »).
+
+// Vocabulaire commun (ce que MIAOU consomme) et alias des deux dialectes.
+const MODEL_CAP_KEYS = ['vision', 'tools', 'thinking'];
+const MODEL_CAP_ALIASES = {
+  vision: 'vision',
+  tools: 'tools', function_calling: 'tools',
+  thinking: 'thinking', reasoning: 'thinking',
+};
+// Noms connus sans équivalent consommé : ils ne donnent aucune capacité, mais
+// leur présence prouve que la déclaration est lue dans une forme reconnue — un
+// modèle d'embedding qui ne déclare que `embedding` est bien « sans vision ».
+const MODEL_CAP_KNOWN_OTHER = ['completion', 'completion_chat', 'embedding', 'audio', 'insert'];
+
+// Clés de fenêtre à plat, par ordre de préférence, et suffixe des clés
+// préfixées d'Ollama (`qwen35.context_length`, `gemma4.context_length`…).
+const MODEL_CONTEXT_FLAT_KEYS = ['max_model_len', 'max_context_length', 'context_length', 'n_ctx', 'max_seq_len'];
+const MODEL_CONTEXT_SUFFIX = '.context_length';
+
+function unknownModelCaps() {
+  const out = {};
+  for (const k of MODEL_CAP_KEYS) out[k] = null;
+  return out;
+}
+
+// Normalise une déclaration de capacités (liste de chaînes OU objet de
+// booléens) vers {vision, tools, thinking} tri-état. `positiveOnly` : la source
+// sous-déclare (`/api/tags`), une absence y vaut null et non false.
+function normalizeModelCaps(raw, positiveOnly) {
+  let names, present;
+  if (Array.isArray(raw)) {
+    names = raw.filter(c => typeof c === 'string').map(c => c.toLowerCase());
+    present = names;
+  } else if (raw && typeof raw === 'object') {
+    names = Object.keys(raw).map(k => k.toLowerCase());
+    present = Object.keys(raw).filter(k => raw[k] === true).map(k => k.toLowerCase());
+  } else {
+    return unknownModelCaps();
+  }
+  const recognized = names.some(n =>
+    Object.prototype.hasOwnProperty.call(MODEL_CAP_ALIASES, n) || MODEL_CAP_KNOWN_OTHER.includes(n));
+  if (!recognized) return unknownModelCaps();
+  const out = {};
+  for (const k of MODEL_CAP_KEYS) out[k] = positiveOnly ? null : false;
+  for (const n of present) {
+    if (Object.prototype.hasOwnProperty.call(MODEL_CAP_ALIASES, n)) out[MODEL_CAP_ALIASES[n]] = true;
+  }
+  return out;
+}
+
+function _positiveInt(v) {
+  return (typeof v === 'number' && Number.isInteger(v) && v > 0) ? v : null;
+}
+
+// Fenêtre maximale déclarée dans un objet : clés à plat d'abord, puis la clé
+// `<architecture>.context_length` (l'architecture se lit dans
+// `general.architecture` quand l'objet la porte — elle ne se déduit PAS du nom
+// du modèle), puis toute clé finissant par `.context_length` en dernier
+// recours. Rend {value, key} ou null.
+function extractModelContextMax(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  for (const k of MODEL_CONTEXT_FLAT_KEYS) {
+    const v = _positiveInt(obj[k]);
+    if (v) return { value: v, key: k };
+  }
+  const arch = obj['general.architecture'];
+  if (typeof arch === 'string' && arch) {
+    const k = arch + MODEL_CONTEXT_SUFFIX;
+    const v = _positiveInt(obj[k]);
+    if (v) return { value: v, key: k };
+  }
+  for (const k of Object.keys(obj)) {
+    if (!k.endsWith(MODEL_CONTEXT_SUFFIX)) continue;
+    const v = _positiveInt(obj[k]);
+    if (v) return { value: v, key: k };
+  }
+  return null;
+}
+
+// Enregistrement de propriétés d'un modèle. `contextConfigured` : `num_ctx`
+// fixé dans le Modelfile d'Ollama (`/api/show`, champ `parameters`), fenêtre
+// que le serveur appliquera au chargement — elle passe avant
+// `OLLAMA_CONTEXT_LENGTH` (mesuré). `served` : `{value, at}`, dernière fenêtre
+// RÉELLEMENT servie lue sur `/api/ps`, datée (ms) pour distinguer une mesure de
+// la session d'une mesure persistée d'une session antérieure.
+function modelPropsRecord(contextMax, contextSource, caps, contextConfigured, served) {
+  const sv = served && _positiveInt(served.value) && typeof served.at === 'number'
+    ? { value: served.value, at: served.at } : null;
+  return {
+    contextMax: contextMax || null,
+    contextSource: contextMax ? contextSource : null,
+    contextConfigured: contextConfigured || null,
+    served: sv,
+    caps: caps || unknownModelCaps(),
+  };
+}
+
+// `/v1/models` (OpenAI-compatible, schéma Mistral ou vLLM nu).
+// Rend {id: record} ; les entrées sans id sont ignorées.
+function modelPropsFromOpenAIModels(json) {
+  const list = (json && (json.data || json.models)) || [];
+  const out = {};
+  if (!Array.isArray(list)) return out;
+  for (const m of list) {
+    if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !m.id) continue;
+    const ctx = extractModelContextMax(m);
+    out[m.id] = modelPropsRecord(ctx && ctx.value, ctx && ('models:' + ctx.key),
+      normalizeModelCaps(m.capabilities, false), null);
+  }
+  return out;
+}
+
+// `/api/tags` d'Ollama. Capacités en positif seulement (sous-déclaration
+// mesurée), fenêtre dans `details` (GGUF seulement).
+function modelPropsFromOllamaTags(json) {
+  const list = (json && json.models) || [];
+  const out = {};
+  if (!Array.isArray(list)) return out;
+  for (const m of list) {
+    if (!m || typeof m !== 'object') continue;
+    const id = m.name || m.model;
+    if (typeof id !== 'string' || !id) continue;
+    const ctx = extractModelContextMax(m.details);
+    out[id] = modelPropsRecord(ctx && ctx.value, ctx && ('tags:' + ctx.key),
+      normalizeModelCaps(m.capabilities, true), null);
+  }
+  return out;
+}
+
+// `parameters` de `/api/show` : texte « nom   valeur » par ligne.
+function _ollamaNumCtx(parameters) {
+  if (typeof parameters !== 'string') return null;
+  for (const line of parameters.split('\n')) {
+    const m = /^\s*num_ctx\s+(\d+)\s*$/.exec(line);
+    if (m) return _positiveInt(parseInt(m[1], 10));
+  }
+  return null;
+}
+
+// `/api/show` d'Ollama, pour UN modèle. Déclaration de capacités qui fait
+// autorité. Rend un record, jamais null (un champ illisible reste inconnu).
+function modelPropsFromOllamaShow(json) {
+  const j = (json && typeof json === 'object') ? json : {};
+  const ctx = extractModelContextMax(j.model_info);
+  return modelPropsRecord(ctx && ctx.value, ctx && ('show:' + ctx.key),
+    normalizeModelCaps(j.capabilities, false), _ollamaNumCtx(j.parameters));
+}
+
+// `/api/ps` d'Ollama : fenêtre RÉELLEMENT servie, pour les seuls modèles
+// chargés. Rend {nom: tokens} ; un modèle absent est froid, pas « sans fenêtre ».
+function servedContextsFromOllamaPs(json) {
+  const list = (json && json.models) || [];
+  const out = {};
+  if (!Array.isArray(list)) return out;
+  for (const m of list) {
+    if (!m || typeof m !== 'object') continue;
+    const id = m.name || m.model;
+    const v = _positiveInt(m.context_length);
+    if (typeof id === 'string' && id && v) out[id] = v;
+  }
+  return out;
+}
+
+// ── Chemin natif d'Ollama (lot AF, étape 5) ─────────────────────────────────
+// Racine native dérivée de l'URL configurée en retirant `/v1` (AF-1). Une URL
+// qui ne finit pas par `/v1` ne se sonde pas : on ne devine pas une racine.
+function ollamaNativeRoot(url) {
+  const u = String(url || '').trim().replace(/\/+$/, '');
+  return /\/v1$/.test(u) ? u.slice(0, -3) : null;
+}
+
+// Nom complet d'un modèle Ollama : sans étiquette, Ollama sert `:latest`. Le
+// `:` se cherche après le dernier `/` (`hf.co/org/repo:Q4_K_M`, `host:port/…`).
+function ollamaFullModelName(name) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  return n.slice(n.lastIndexOf('/') + 1).includes(':') ? n : n + ':latest';
+}
+
+// La racine a-t-elle répondu comme un Ollama ? `/api/tags` rend `{models: []}`,
+// liste vide comprise ; tout autre forme (ou un échec) vaut « pas un Ollama ».
+function isOllamaTagsResponse(json) {
+  return !!(json && typeof json === 'object' && Array.isArray(json.models));
+}
+
+// Rattache des valeurs indexées par nom natif (`/api/tags`, `/api/ps`) aux ids
+// LISTÉS par `/v1/models`, sur la forme complète des deux côtés. Un nom natif
+// sans id listé correspondant est ignoré : la liste fait foi de ce qui existe.
+function alignOllamaNames(ids, byName) {
+  const full = {};
+  for (const name of Object.keys(byName || {})) full[ollamaFullModelName(name)] = byName[name];
+  const out = {};
+  for (const id of (ids || [])) {
+    const k = ollamaFullModelName(id);
+    if (Object.prototype.hasOwnProperty.call(full, k)) out[id] = full[k];
+  }
+  return out;
+}
+
+// Records `served` datés depuis une lecture `/api/ps` alignée ({id: tokens}).
+function servedRecords(servedById, at) {
+  const out = {};
+  for (const id of Object.keys(servedById || {})) {
+    out[id] = modelPropsRecord(null, null, null, null, { value: servedById[id], at });
+  }
+  return out;
+}
+
+// GET/POST borné vers la racine native. Rend le JSON, ou null sur tout échec
+// (réseau, CORS, HTTP, JSON) : le chemin natif ne fait jamais d'erreur visible,
+// il rend « inconnu » (AF-1).
+async function fetchOllamaNative(root, path, key, body) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const init = {
+      headers: { 'Authorization': 'Bearer ' + (key || 'no-key') },
+      signal: ctrl.signal,
+    };
+    if (body) {
+      init.method = 'POST';
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetch(root + path, init);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Superpose deux records : ce que `over` sait remplace ce que `base` savait,
+// une inconnue de `over` ne l'efface jamais. Sert à combiner `/api/tags` (en
+// positif) et `/api/show` (qui fait autorité), et plus tard une relecture sur
+// une valeur persistée.
+function mergeModelProps(base, over) {
+  const b = base || modelPropsRecord();
+  const o = over || modelPropsRecord();
+  const caps = {};
+  for (const k of MODEL_CAP_KEYS) {
+    const ov = o.caps ? o.caps[k] : null;
+    caps[k] = (ov === true || ov === false) ? ov : (b.caps ? b.caps[k] : null);
+    if (caps[k] === undefined) caps[k] = null;
+  }
+  const useOverCtx = !!o.contextMax;
+  return modelPropsRecord(
+    useOverCtx ? o.contextMax : b.contextMax,
+    useOverCtx ? o.contextSource : b.contextSource,
+    caps,
+    o.contextConfigured || b.contextConfigured,
+    o.served || b.served);
+}
+
 // ── Liste des modèles exposés par l'API ─────────────────────────────────────
+// Liste des ids, triée. Pour la carte serveur en édition, qui ne veut que les
+// noms (le serveur n'y est peut-être pas encore enregistré).
 async function fetchModels(override) {
+  return (await fetchModelList(override)).ids;
+}
+
+// Liste des ids ET propriétés déclarées par `/models` ({id: record}, lot AF) :
+// même appel, la réponse portait déjà tout et on n'en gardait que `id`.
+async function fetchModelList(override) {
   const cfg = Object.assign({}, loadSettings(), activeApiConfig(), override || {});
   // Timeout borné (même motif que streamCompletion) : un endpoint qui pend ne
   // doit pas laisser le chargement de modèles en attente indéfinie.
@@ -1357,9 +1658,17 @@ async function fetchModels(override) {
   }
   if (!res.ok) throw new Error('models ' + res.status);
   const data = await res.json();
-  const list = data.data || data.models || [];
-  return list
-    .map(m => (typeof m === 'string' ? m : m.id))
+  return modelListFromResponse(data);
+}
+
+// Pure : {ids, props} depuis la réponse `/models`. Les ids restent lus comme
+// avant (chaîne nue ou objet à `id`) ; les props ne couvrent que les entrées
+// objet, une chaîne nue ne déclarant rien.
+function modelListFromResponse(data) {
+  const list = (data && (data.data || data.models)) || [];
+  const ids = (Array.isArray(list) ? list : [])
+    .map(m => (typeof m === 'string' ? m : (m && m.id)))
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, 'fr'));
+  return { ids, props: modelPropsFromOpenAIModels(data) };
 }

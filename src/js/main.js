@@ -2400,7 +2400,7 @@ function applySyncedSettings(keys) {
     const cbWide = $('set-wide-tables');
     if (cbWide) cbWide.checked = s.wideTables !== false;
   }
-  // Autres clés (systemPrompt, contextWindow, sélecteurs…) : effet au prochain
+  // Autres clés (systemPrompt, sélecteurs…) : effet au prochain
   // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
   // recalcule au prochain syncContextCounter.
   syncContextCounter();
@@ -2613,7 +2613,6 @@ function onSaveSettings() {
     describeFiles: $('set-describe-files').checked,
     libraryManifestInContext: $('set-library-manifest').checked,
     exportInteractive: $('set-export-interactive').checked,
-    contextWindow: $('set-contextwindow').value,
   };
   saveSettings(obj);
   updateSettingsDirty();   // formulaire = persisté → bouton redésactivé
@@ -2623,7 +2622,7 @@ function onSaveSettings() {
   syncReasoningUI();     // visibilité + valeur du sélecteur de raisonnement
   prefetchModels();     // (re)charge la liste si besoin, puis re-sync
   rerenderCurrentThread();   // ré-applique/retire la coloration
-  syncContextCounter();   // fenêtre de contexte modifiée : recalcule occupation/jauge
+  syncContextCounter();
   closeSettings();
 }
 
@@ -2782,6 +2781,12 @@ function onSaveApiCard(cardEl, originalId) {
   const vision = Object.assign({}, (prior && prior.vision) || {});
   if (get('.api-vision') === 'off') vision[model] = false;
   else delete vision[model];
+  // Fenêtre saisie (lot AF) : même motif — les autres modèles gardent la leur,
+  // un champ vide ou invalide retire l'entrée du modèle courant.
+  const contextWindows = Object.assign({}, (prior && prior.contextWindows) || {});
+  const ctxN = parseInt(get('.api-context-window'), 10);
+  if (model && Number.isInteger(ctxN) && ctxN > 0) contextWindows[model] = ctxN;
+  else delete contextWindows[model];
   const server = {
     id: originalId || undefined,
     name, url,
@@ -2789,6 +2794,7 @@ function onSaveApiCard(cardEl, originalId) {
     model,
     disabled: get('.api-disabled') === 'off',
     vision,
+    contextWindows,
     // Normalisé par normalizeApiServer ; une carte rendue avant ce champ (ou un
     // sélecteur absent du DOM) donne '' et retombe donc sur le défaut de build.
     promptOrder: get('.api-prompt-order'),
@@ -2832,6 +2838,35 @@ function onUseApiServer(id) {
   syncConfigured();
   syncModelUI();
   prefetchModels();   // cache par id (_modelsById) : re-fetch seulement si ce serveur est inconnu
+}
+
+// Glyphe de relecture d'une fiche serveur (AF-9). Redondant avec un reload de
+// la page (AF-7), sur le même motif que la reconnexion des fiches MCP. Le
+// serveur actif passe par `probeBackend`, dont le chargement forcé vaut aussi
+// verdict de santé ; un autre serveur recharge sa seule liste. Dans les deux
+// cas on attend la lecture native qui suit (`e.native`) avant de re-rendre.
+// Une fiche non active lit `/api/show` de son modèle par défaut, que sa fiche
+// affiche : le chargement de liste ne le fait que pour le serveur actif.
+async function onRefreshApiCard(id, btnEl) {
+  const server = getApiServer(id);
+  if (!server) { renderApiServers(); return; }
+  if (btnEl) btnEl.disabled = true;
+  try {
+    await runBackgroundTask('lecture du serveur…', async () => {
+      const active = activeApiServer();
+      const isActive = !!(active && active.id === server.id);
+      if (isActive) await probeBackend();
+      else await loadServerModels(server, true);
+      const e = _modelsEntryOf(server);
+      if (e.native) await e.native;
+      if (!isActive && server.model) {
+        if (await readOllamaShow(server, server.model)) onModelPropsChanged();
+      }
+    });
+  } finally {
+    renderApiServers();
+    syncModelUI();
+  }
 }
 
 // ── Skills : persistance (orchestration depuis le drawer de gestion) ──────────
@@ -5853,7 +5888,6 @@ async function init() {
   $('set-reasoning-effort').value = s.reasoningEffort || '';
   syncSettingsReasoningLabel();
   $('set-reasoningselector').checked = !!s.showReasoningSelector;
-  $('set-contextwindow').value = s.contextWindow || '';
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');

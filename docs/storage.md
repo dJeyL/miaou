@@ -458,7 +458,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
   mémoire seule, reconstruit au démarrage.
 - `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,
-  url, key, model, disabled, vision }]`. Remplace les champs plats `url`/`key`/`model` de
+  url, key, model, disabled, vision, contextWindows, promptOrder }]`. Remplace les champs plats `url`/`key`/`model` de
   `miaou-settings` (cf. ci-dessus). **`id` est l'identité** (pas `name`, à la
   différence des serveurs MCP) : permet de renommer une carte sans perdre la
   référence de serveur actif ni casser un override en cours. `key` stocké en
@@ -486,14 +486,25 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   `vision` (brief A2, flag manuel) : map `{ [nomModèle]: false }` — flag **manuel** « ce
   modèle sur ce serveur n'a pas la vision ». Seule la valeur `false` est
   persistée (`normalizeApiServer` filtre les `true`) ; absence d'entrée = inconnu
-  = on envoie les parts image (défaut). Lu par le prédicat pur
-  `serverModelVisionEnabled(server, model)` → `false` seulement si marqué. Quand
+  = on envoie les parts image (défaut). Lu par le prédicat
+  `serverModelVisionEnabled(server, model)`, qui ne consulte ce flag qu'en
+  SECOND : depuis le lot AF, la capacité déclarée par le serveur
+  (`miaou-model-props`) fait foi quand elle existe, dans les deux sens. Le
+  flag manuel ne joue donc plus que pour un modèle dont la vision est inconnue
+  (`resolveModelVision`, pur ; cf. `docs/model-props.md`). Quand
   `false`, `dispatchSend` passe `visionDisabled` à `streamCompletion` qui dégrade
   **proactivement** les parts image en descripteur (mitigation du silent-failure
   Ollama F1 : aucun 400 renvoyé sur un modèle sans projecteur vision, le chemin
   réactif `_visionRejected` d'api.js — cache SESSION non persisté — ne peut pas
   l'attraper). Réglé dans la carte serveur (drawer API), pill sous le champ
   modèle. Distinct de `_visionRejected` (api.js, session, réactif sur 400).
+  `contextWindows` (lot AF) : map `{ [nomModèle]: tokens }`, fenêtre de
+  contexte **saisie** pour ce modèle sur la fiche du serveur. Seuls les
+  entiers strictement positifs sont gardés (`normalizeApiServer`). Lue par
+  `serverModelContextWindow`. Elle passe au rang « saisie » de
+  `resolveContextWindow` (cf. `docs/model-props.md`) : devant le maximum
+  déclaré, derrière toute mesure. Elle remplace le champ global
+  `settings.contextWindow`, supprimé sans migration.
   Serveur actif persisté séparément dans `miaou-active-api-server` (string,
   `id` du serveur). CRUD dans `storage.js`
   (`loadApiServers`/`upsertApiServer`/`deleteApiServer`/`getApiServer`/
@@ -507,6 +518,26 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   Suppression du dernier serveur restant bloquée dans l'UI
   (`onDeleteApiCard`, main.js) : jamais d'état « configuré » sans aucun
   serveur en tableau non-vide.
+- `miaou-model-props` (lot AF) : propriétés **déclarées** par le backend pour
+  chaque modèle, gardées d'une session à l'autre :
+  `{ [serverId]: { url, models: { [modelId]: record } } }`. Un record a la
+  forme `{contextMax, contextSource, contextConfigured, served, caps}` (cf.
+  `docs/model-props.md`). `url` date l'entrée : si l'URL du serveur change,
+  l'entrée ne vaut plus rien. C'est un **cache reconstructible**, donc hors
+  `EXPORT_KEYS` et sans broadcast. Chaque écriture relit le stockage juste
+  avant d'écrire. Écrit par `recordListedModelProps` à chaque lecture
+  réussie de `/models` (`loadServerModels`, ui.js), avec des fusions pures
+  (`mergeListedModelProps`, `mergeOneModelProps`) :
+  - ce que la lecture sait remplace ce qui était persisté ;
+  - une inconnue n'efface rien ;
+  - un modèle absent de la liste est oublié, un serveur supprimé aussi.
+
+  Sur un Ollama, les lectures natives (`/api/tags`, `/api/show`, `/api/ps`)
+  s'y superposent par `recordModelProps` (`mergeManyModelProps`, sans
+  élaguer), sous l'id listé apparié sur la forme complète `:latest`.
+
+  Lu par `modelPropsFor(server, modelId)`, qui rend toujours un record,
+  entièrement inconnu à défaut.
 - `miaou-spaces` : tableau `[{ id, name, description?, createdAt }]` (feature
   Spaces, lot C). `description` (texte libre) est **ajoutée après** le prompt
   système utilisateur global dans `buildSystemMessage()` — ce n'est PAS un

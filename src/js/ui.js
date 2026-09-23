@@ -2355,6 +2355,12 @@ const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="14" height="14" fill="non
 // là où le rendu FABRIQUE une image qui n'existait pas.
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
 
+// Métaphore « appareil photo » — RÉSERVÉE à « ce modèle lit les images » (lot
+// AF : pilule et menu des modèles). Ni l'œil (consultation, aperçu) ni le
+// cadre-montagne (image produite). Doublon voulu du glyphe statique de
+// index.html (#composer-model-vision) : l'un est dans le HTML, l'autre généré.
+const ICON_CAMERA = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>';
+
 // Métaphore « loupe » — RÉSERVÉE à l'inspection du détail d'un appel d'outil
 // (lot Z). Vocabulaire d'icônes : une métaphore = un usage. Distincte
 // d'ICON_EYE, qui dit « on te remontre un contenu » (conversation_read,
@@ -6749,11 +6755,138 @@ function loadServerModels(server, force) {
   if (e.pending && !force) return e.pending;
   if (e.error && !force) return Promise.resolve([]);
   e.error = null;
-  e.pending = fetchModels({ url, key: server.key })
-    .then(models => { e.models = models; e.error = null; return models; })
+  e.pending = fetchModelList({ url, key: server.key })
+    .then(r => {
+      // Propriétés déclarées persistées au passage (lot AF), même appel.
+      try { recordListedModelProps(server, r.ids, r.props); } catch (err) { /* cache : un échec d'écriture ne coûte pas la liste */ }
+      e.models = r.ids; e.error = null;
+      // Chemin natif d'Ollama, NON attendu : la liste (et le verdict de santé
+      // qu'en tire `probeBackend`) ne doit pas patienter derrière trois appels
+      // de plus. Qui a besoin de la fin (glyphe de la fiche) attend `e.native`.
+      const active = activeApiServer();
+      e.native = readOllamaNative(server, r.ids, (active && active.id === server.id) ? activeModel() : '');
+      return r.ids;
+    })
     .catch(err => { e.models = null; e.error = String((err && err.message) || err || 'échec'); return []; })
     .then(models => { e.pending = null; return models; });
   return e.pending;
+}
+
+// ── Chemin natif d'Ollama (lot AF, étape 5) ─────────────────────────────────
+// `/v1/models` d'Ollama ne porte que des ids : la fenêtre et les capacités sont
+// sur la racine native (AF-1). État de SESSION par serveur, tenu à l'empreinte
+// d'endpoint comme le cache de liste :
+//   root    : racine qui a répondu comme un Ollama à la dernière lecture de la
+//             liste, null sinon (pas un Ollama, CORS, panne : « inconnu ») ;
+//   shown   : modèles dont `/api/show` a été lu depuis cette lecture ;
+//   psDone  : modèles pour qui un appel a déjà déclenché `/api/ps` (AF-2) ;
+//   psBusy  : lecture `/api/ps` en vol (verrou : titrage, résumé et chat qui
+//             finissent ensemble n'en déclenchent qu'une).
+const _ollamaNative = {};
+
+function _ollamaState(server) {
+  const id = (server && server.id) || '';
+  const stamp = _serverStamp(server);
+  let st = _ollamaNative[id];
+  if (!st || st.stamp !== stamp) {
+    st = _ollamaNative[id] = { stamp, root: null, shown: new Set(), psDone: new Set(), psBusy: false };
+  }
+  return st;
+}
+
+// Id LISTÉ correspondant à un nom (forme complète), sinon le nom tel quel.
+function _ollamaListedId(server, name) {
+  const ids = _modelsEntryOf(server).models || [];
+  const hit = alignOllamaNames(ids, { [name]: true });
+  return Object.keys(hit)[0] || name;
+}
+
+// Lecture native complète, à chaque chargement réussi de la liste (AF-7) :
+// `/api/tags` (qui décide si c'est un Ollama, et se lit en positif), `/api/ps`
+// (un appel pour tous les modèles chargés), `/api/show` du seul `showModel` —
+// le modèle actif pour le serveur actif, rien pour un autre serveur (sa liste
+// se charge à l'ouverture du menu : pas un POST par serveur pour autant), le
+// modèle par défaut de la fiche pour le glyphe d'une fiche non active.
+// Ne rejette jamais ; rafraîchit l'affichage si c'est un Ollama.
+async function readOllamaNative(server, ids, showModel) {
+  const st = _ollamaState(server);
+  st.shown = new Set();   // une relecture de la liste relit `/api/show`
+  const root = ollamaNativeRoot(server.url);
+  const tags = root ? await fetchOllamaNative(root, '/api/tags', server.key) : null;
+  if (_ollamaState(server) !== st) return;   // endpoint modifié pendant l'await
+  if (!isOllamaTagsResponse(tags)) { st.root = null; return; }
+  st.root = root;
+  try { recordModelProps(server, alignOllamaNames(ids, modelPropsFromOllamaTags(tags))); } catch (e) { /* cache */ }
+  await readOllamaServed(server, st);
+  await readOllamaShow(server, showModel);
+  onModelPropsChanged();
+}
+
+// `/api/ps` : fenêtre servie de tout ce qui est chargé. Une absence (modèle
+// froid) n'efface pas la dernière mesure (fusion). Rend true si lu.
+async function readOllamaServed(server, st) {
+  if (!st.root || st.psBusy) return false;
+  st.psBusy = true;
+  try {
+    const ps = await fetchOllamaNative(st.root, '/api/ps', server.key);
+    if (!ps || _ollamaState(server) !== st) return false;
+    const ids = _modelsEntryOf(server).models || [];
+    const served = alignOllamaNames(ids, servedContextsFromOllamaPs(ps));
+    try { recordModelProps(server, servedRecords(served, Date.now())); } catch (e) { /* cache */ }
+    return true;
+  } finally {
+    st.psBusy = false;
+  }
+}
+
+// `/api/show` d'UN modèle, une fois par lecture de la liste. POST par modèle :
+// jamais en rafale sur la liste (AF-7).
+async function readOllamaShow(server, model) {
+  const st = _ollamaState(server);
+  const m = String(model || '').trim();
+  if (!st.root || !m || st.shown.has(m)) return false;
+  st.shown.add(m);
+  const show = await fetchOllamaNative(st.root, '/api/show', server.key, { model: m });
+  if (!show || _ollamaState(server) !== st) return false;
+  try { recordModelProps(server, { [_ollamaListedId(server, m)]: modelPropsFromOllamaShow(show) }); } catch (e) { /* cache */ }
+  return true;
+}
+
+// Changement de modèle (appelée par `syncModelUI`, par où passent tous les
+// changements) : lit `/api/show` du modèle actif s'il ne l'a pas été depuis la
+// dernière lecture de la liste. Sans effet hors d'un Ollama reconnu.
+function ensureActiveModelShown() {
+  const server = activeApiServer();
+  if (!server) return;
+  const st = _ollamaNative[server.id];
+  const m = activeModel();
+  if (!st || st.stamp !== _serverStamp(server) || !st.root || !m || st.shown.has(m)) return;
+  readOllamaShow(server, m).then(wrote => { if (wrote) onModelPropsChanged(); });
+}
+
+// Fin d'un appel réussi au modèle (`silentCompletion`/`streamCompletion`,
+// AF-2 révisée) : le moteur vient de charger ce modèle, sa fenêtre servie est
+// lisible. Au plus une lecture par (serveur, modèle) et par session, jamais
+// hors d'un Ollama reconnu — surtout pas une sonde de dialecte à chaque appel.
+function noteModelCalled(url, model) {
+  const server = activeApiServer();
+  if (!server || String(server.url || '').trim() !== String(url || '').trim()) return;
+  const st = _ollamaNative[server.id];
+  const m = String(model || '').trim();
+  if (!st || st.stamp !== _serverStamp(server) || !st.root || !m || st.psDone.has(m) || st.psBusy) return;
+  const sv = modelPropsFor(server, m).served;
+  if (sv && sv.at >= MODEL_PROPS_SESSION_START) return;   // déjà mesuré cette session
+  st.psDone.add(m);
+  readOllamaServed(server, st).then(wrote => { if (wrote) onModelPropsChanged(); });
+}
+
+// Une lecture native a écrit : pilule, inspecteur, marque de vision, sélecteur
+// de raisonnement (tous via `syncModelUI`), et les fiches serveur — sauf une
+// fiche en cours d'édition, qu'un re-rendu viderait.
+function onModelPropsChanged() {
+  syncModelUI();
+  const list = $('api-list');
+  if (!(list && list.querySelector('.api-card.is-editing'))) renderApiServersIfOpen();
 }
 
 // Compat : liste du serveur ACTIF (utilisée par la visibilité du sélecteur et
@@ -6796,6 +6929,8 @@ function loadAllServerModels(force) {
 // laisse alors le nom intact.
 const COMPOSER_MODEL_MAX_RATIO = 0.55;
 const COMPOSER_MODEL_BTN_CHROME_PX = 52;
+// Marque de vision (lot AF) : glyphe 13px + gap 6px, retranchés quand elle est visible.
+const COMPOSER_MODEL_VISION_PX = 19;
 const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
 
 // Budget du libellé de la pilule topbar (`.model-pill`, chat.css). Même besoin
@@ -6823,7 +6958,9 @@ function composerModelLabelBudget() {
   const row = $('composer-selectors');
   const rowWidth = row ? row.clientWidth : 0;
   if (!rowWidth) return 0;
-  const textPx = rowWidth * COMPOSER_MODEL_MAX_RATIO - COMPOSER_MODEL_BTN_CHROME_PX;
+  const cam = $('composer-model-vision');
+  const camPx = (cam && !cam.hidden) ? COMPOSER_MODEL_VISION_PX : 0;
+  const textPx = rowWidth * COMPOSER_MODEL_MAX_RATIO - COMPOSER_MODEL_BTN_CHROME_PX - camPx;
   if (textPx <= 0) return 0;
   return Math.floor(textPx / COMPOSER_MODEL_CHAR_PX);
 }
@@ -6861,6 +6998,13 @@ function syncModelUI() {
   }
   // Bouton composer : nom ABRÉGÉ (auteur retiré, puis fin tronquée) — le nom
   // complet reste dans la liste déroulée ET en title, pour rester récupérable.
+  // Marque de vision AVANT le libellé : son affichage change la place que le
+  // budget de caractères doit lui laisser.
+  const cam = $('composer-model-vision');
+  if (cam) {
+    const vs = modelVisionState(activeApiServer(), activeModel());
+    cam.hidden = !(vs.source === 'declared' && vs.enabled);
+  }
   const compLabel = $('composer-model-label');
   if (compLabel) {
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
@@ -6878,6 +7022,18 @@ function syncModelUI() {
     const show = !!(loadSettings().showModelSelector && ((models && models.length) || others.length));
     box.hidden = !show;
   }
+  // La fenêtre de contexte dépend du (serveur, modèle) depuis le lot AF : tout
+  // changement de modèle, et toute relecture de liste qui a pu en apprendre la
+  // fenêtre, repasse par ici — pilule, glyphe de seuil et inspecteur ouvert.
+  syncContextCounter();
+  // Même motif pour le raisonnement déclaré : un modèle déclaré sans
+  // raisonnement masque le sélecteur (reasoningEffortBlocked).
+  syncReasoningUI();
+  // Tout changement de modèle passe par ici : c'est le point où lire
+  // `/api/show` du nouveau modèle actif sur un Ollama (AF-7). Mémoïsé par
+  // lecture de liste, donc sans effet au re-rendu — la lecture qui aboutit
+  // rappelle `syncModelUI` et trouve le modèle déjà lu.
+  ensureActiveModelShown();
 }
 
 function toggleComposerModelMenu() {
@@ -6966,7 +7122,11 @@ function renderComposerModelOptionsInner() {
       const isSel = m === cur && s.id === activeId;
       const o = document.createElement('div');
       o.className = 'model-opt' + (isSel ? ' selected' : '');
-      o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
+      // Marque de vision déclarée (lot AF), même glyphe que la pilule.
+      const vs = modelVisionState(s, m);
+      const cam = (vs.source === 'declared' && vs.enabled)
+        ? `<span class="model-opt-vision" title="Lit les images (déclaré par le serveur)">${ICON_CAMERA}</span>` : '';
+      o.innerHTML = `<span>${escHtml(m)}</span><span class="model-opt-trail">${cam}<span class="check">✓</span></span>`;
       o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m, s.id); };
       menu.appendChild(o);
     });
@@ -7019,8 +7179,9 @@ function pickComposerModel(m, serverId) {
 // générique), mais liste STATIQUE (pas de fetch, pas de cache session) : les 5
 // valeurs possibles sont fixes. Masqué si le réglage est désactivé OU si l'API a
 // déjà rejeté reasoning_effort pour l'endpoint+modèle actifs cette session
-// (isReasoningEffortRejected, api.js) — dans ce cas on force aussi l'effort actif
-// à '' (défaut), pour ne pas reposer un paramètre déjà rejeté au tour suivant.
+// (isReasoningEffortRejected, api.js), ou si le serveur déclare le modèle sans
+// raisonnement (reasoningEffortBlocked). Le niveau choisi est CONSERVÉ : c'est
+// l'envoi qui s'abstient, pas la conversation qui oublie.
 const REASONING_EFFORT_OPTIONS = [
   { value: '', label: 'défaut' },
   { value: 'none', label: 'none' },
@@ -7036,8 +7197,13 @@ function syncReasoningUI() {
   // La clé du cache de rejet est l'URL du serveur ACTIF (posée par
   // streamCompletion via activeApiConfig) — pas settings.url, legacy depuis le
   // multi-serveurs : sur un serveur actif ≠ serveur migré, la lecture raterait.
-  const rejected = isReasoningEffortRejected(activeApiConfig().url, activeModel());
-  if (rejected && currentConvReasoningEffort) { setConvReasoningEffort(''); return; }   // ré-entre via syncReasoningUI
+  // Même prédicat que l'envoi : rejet essuyé OU modèle déclaré sans raisonnement.
+  // Bloqué, le sélecteur se MASQUE sans toucher au niveau de la conversation :
+  // l'effacer (setConvReasoningEffort, qui persiste) le perdait pour de bon, et
+  // depuis que syncModelUI appelle ce rendu, il suffisait d'OUVRIR une
+  // conversation servie par un modèle bloqué pour écraser son niveau enregistré.
+  // Rien ne part pour autant : streamCompletion applique le même prédicat.
+  const rejected = reasoningEffortBlocked(activeApiConfig().url, activeModel());
   const cur = activeReasoningEffort();
   const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
   const label = $('composer-reasoning-label');
@@ -7153,8 +7319,7 @@ function settingsFormDirty() {
     || $('set-retitle-after-reply').checked !== effectiveRetitleAfterReply(s)
     || $('set-describe-files').checked !== (s.describeFiles !== false)
     || $('set-library-manifest').checked !== !!s.libraryManifestInContext
-    || $('set-export-interactive').checked !== (s.exportInteractive !== false)
-    || $('set-contextwindow').value !== (s.contextWindow || '');
+    || $('set-export-interactive').checked !== (s.exportInteractive !== false);
 }
 
 // Active « Enregistrer » seulement si quelque chose est à enregistrer. Appelé
@@ -8590,10 +8755,87 @@ function closeContextInspector() {
   $('ctx-backdrop').classList.remove('show');
 }
 
+// ── Fenêtre de contexte : libellés (lot AF) ─────────────────────────────────
+// Purs (QuickJS). Vocabulaire : « réelle » pour une fenêtre mesurée sur le
+// serveur, « théorique » pour une valeur annoncée ou saisie.
+function formatTokenCount(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+}
+
+function contextWindowSourceLabel(info, now) {
+  switch (info && info.source) {
+    case 'served-now': return 'réelle, mesurée sur le serveur pendant cette session';
+    case 'configured': return 'fixée par la configuration du modèle sur le serveur (num_ctx), appliquée au chargement';
+    case 'served-last': return 'réelle, dernière mesure sur le serveur (' + formatDateRelative(info.at, now) + ')';
+    case 'user': return 'théorique, saisie pour ce modèle sur la fiche du serveur';
+    case 'declared': return 'théorique, maximum déclaré par le serveur';
+    case 'build': return 'théorique, valeur par défaut de l\'installation';
+    default: return '';
+  }
+}
+
+// Ligne de l'inspecteur : la valeur retenue ET d'où elle vient.
+function formatContextWindowLine(info, now) {
+  if (!info || !info.value) {
+    return 'Fenêtre de contexte inconnue : le serveur ne la déclare pas pour ce modèle, ' +
+      'et aucune valeur n\'est saisie sur la fiche du serveur.';
+  }
+  return 'Fenêtre de contexte : ' + formatTokenCount(info.value) + ' tokens — ' +
+    contextWindowSourceLabel(info, now) + '.';
+}
+
+// Hint du champ de la carte serveur. `detected` : la chaîne résolue SANS saisie
+// ni défaut de build (ce que le serveur dit de lui-même) ; `buildDefault` pour
+// annoncer le repli. Dit ce que devient une saisie face à ce qui est connu —
+// une mesure prime sur elle, un maximum déclaré lui cède.
+function contextWindowCardHint(model, detected, buildDefault, now) {
+  if (!model) return 'Choisir d\'abord un modèle : la fenêtre se règle par modèle.';
+  const src = detected && detected.source;
+  if (src === 'served-now' || src === 'configured' || src === 'served-last') {
+    return 'Connue : ' + formatTokenCount(detected.value) + ' tokens (' +
+      contextWindowSourceLabel(detected, now) + '). Elle prime sur une valeur saisie ici.';
+  }
+  if (src === 'declared') {
+    return 'Déclarée par le serveur : ' + formatTokenCount(detected.value) + ' tokens (maximum du modèle). ' +
+      'Une valeur saisie ici la remplace — utile si le serveur coupe plus bas.';
+  }
+  return 'Le serveur ne déclare pas cette fenêtre pour ce modèle. Une valeur saisie ici sert de repère : ' +
+    'jauge de l\'inspecteur de contexte et seuil de compaction conseillée.' +
+    (buildDefault > 0 ? ' Vide : ' + formatTokenCount(buildDefault) + ' tokens, valeur par défaut de l\'installation.' : '');
+}
+
+// Ligne des capacités (lot AF). `caps` tri-état tel que déclaré ; `vision`
+// l'état résolu (resolveModelVision), pour nommer un « Sans vision » manuel.
+// `tools: false` n'empêche rien : les outils partent quand même, et la ligne le
+// dit plutôt que de laisser croire l'inverse.
+function formatModelCapsLine(caps, vision) {
+  const c = caps || {};
+  const known = ['vision', 'tools', 'thinking'].some(k => c[k] === true || c[k] === false);
+  const manual = vision && vision.source === 'manual'
+    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
+  if (!known) return 'Capacités du modèle : non déclarées par le serveur.' + manual;
+  // Coche / croix pour un déclaré, mot en clair pour l'inconnu : un glyphe
+  // de plus (« ? ») se lirait mal à côté des deux autres, et l'inconnu est
+  // justement ce que la ligne doit nommer sans ambiguïté.
+  const v = (x) => x === true ? '✓' : (x === false ? '✗' : 'inconnu');
+  return 'Capacités déclarées par le serveur : lecture d\'images ' + v(c.vision) +
+    ', outils ' + v(c.tools) + ', raisonnement ' + v(c.thinking) + '.' +
+    (c.tools === false ? ' Les outils sont envoyés quand même.' : '') + manual;
+}
+
 function renderContextInspector() {
   const m = effectiveContextManifest();
-  const win = contextWindowFor(activeModel());
+  const winInfo = contextWindowInfo(activeModel());
+  const win = winInfo.value;
   const scale = win || m.totalTokens || 1;
+
+  const winHint = $('ctx-window-hint');
+  if (winHint) winHint.textContent = formatContextWindowLine(winInfo, Date.now());
+  const capsHint = $('ctx-caps-hint');
+  if (capsHint) {
+    const srv = activeApiServer(), mdl = activeModel();
+    capsHint.textContent = formatModelCapsLine(modelPropsFor(srv, mdl).caps, modelVisionState(srv, mdl));
+  }
 
   const ud = usageDerived(m.apiUsage);
 
@@ -10048,6 +10290,19 @@ function buildApiCard(server, isNew, isActive) {
     viewRow.appendChild(useBtn);
   }
 
+  // Relecture à la demande (AF-9) : liste, puis sur un Ollama `/api/ps` et
+  // `/api/show`, sans recharger la page. Même glyphe et même place que la
+  // reconnexion des fiches MCP. Absent d'une fiche neuve (rien à relire).
+  if (!isNew) {
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'icon-btn api-refresh';
+    refreshBtn.title = 'Relire les modèles et leurs propriétés';
+    refreshBtn.setAttribute('aria-label', 'Relire ce serveur');
+    refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+    refreshBtn.addEventListener('click', () => onRefreshApiCard(originalId, refreshBtn));
+    viewRow.appendChild(refreshBtn);
+  }
+
   const modBtn = document.createElement('button');
   modBtn.className = 'drawer-btn';
   modBtn.textContent = 'Modifier';
@@ -10100,14 +10355,57 @@ function buildApiCard(server, isNew, isActive) {
   const visionPill = cfgPillSelect('api-vision', [
     { value: 'on', label: 'Activée' },
     { value: 'off', label: 'Sans vision' },
-  ], serverModelVisionEnabled(server, server.model) ? 'on' : 'off');
+  ], 'on');
+  // Quand le serveur DÉCLARE la vision du modèle (lot AF), la déclaration fait
+  // foi dans les deux sens : la pilule cède la place à un libellé figé, et ne
+  // propose plus de choix. Elle reste dans le DOM, portant le flag MANUEL tel
+  // qu'il est persisté, pour qu'enregistrer la fiche ne le modifie pas.
+  const visionFixed = document.createElement('span');
+  visionFixed.className = 'cfg-fixed';
+  const visionField = cfgField('Vision (images)', visionPill.root, ' ');
+  visionField.insertBefore(visionFixed, visionPill.root);
+  const visionHint = visionField.querySelector('.hint');
   // Le flag suit le modèle : changer de modèle réévalue l'état affiché depuis la
-  // map `vision` du serveur (un modèle non encore réglé retombe sur « activées »).
+  // déclaration du serveur, puis la map `vision` (un modèle non réglé : « activée »).
+  const syncVisionField = () => {
+    const m = modelI.value.trim();
+    const manualOff = !!(server.vision && server.vision[m] === false);
+    visionPill.setValue(manualOff ? 'off' : 'on');
+    const declared = m ? modelPropsFor(server, m).caps.vision : null;
+    const isDeclared = declared === true || declared === false;
+    visionPill.root.style.display = isDeclared ? 'none' : '';
+    visionFixed.hidden = !isDeclared;
+    if (isDeclared) {
+      visionFixed.textContent = declared ? 'Lit les images' : 'Ne lit pas les images';
+      visionHint.textContent = 'Déclaré par le serveur pour ce modèle : MIAOU s\'y fie, sans réglage manuel.' +
+        (declared ? '' : ' Les images sont remplacées par un descripteur textuel.');
+    } else {
+      visionHint.textContent = 'Le serveur ne dit pas si ce modèle lit les images. S\'il ne les lit pas, ' +
+        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
+    }
+  };
+  syncVisionField();
+  modelI.addEventListener('change', syncVisionField);
+  editSection.appendChild(visionField);
+
+  // Fenêtre de contexte saisie (lot AF), par (serveur, modèle courant) comme la
+  // vision. Le hint dit ce que le serveur déclare ou ce qu'on a mesuré, et ce que
+  // devient la saisie face à cela (cf. resolveContextWindow, storage.js).
+  const ctxI = mkInput('api-context-window', 'number', serverModelContextWindow(server, server.model) || '', 'ex. 128000');
+  ctxI.min = '0'; ctxI.step = '1000';
+  const ctxField = cfgField('Fenêtre de contexte (tokens)', ctxI, ' ');
+  const ctxHint = ctxField.querySelector('.hint');
+  const syncCtxHint = () => {
+    const m = modelI.value.trim();
+    const detected = m ? resolveContextWindow(modelPropsFor(server, m), null, 0, MODEL_PROPS_SESSION_START) : null;
+    ctxHint.textContent = contextWindowCardHint(m, detected, BUILD_DEFAULT_CONTEXT_WINDOW, Date.now());
+  };
+  syncCtxHint();
   modelI.addEventListener('change', () => {
-    visionPill.setValue(serverModelVisionEnabled(server, modelI.value.trim()) ? 'on' : 'off');
+    ctxI.value = serverModelContextWindow(server, modelI.value.trim()) || '';
+    syncCtxHint();
   });
-  editSection.appendChild(cfgField('Vision (images)', visionPill.root,
-    'Si ce modèle ne sait pas lire les images, choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.'));
+  editSection.appendChild(ctxField);
 
   // Flag `disabled` : un serveur mis de côté n'est plus interrogé pour peupler le
   // sélecteur serveur/modèle du composer, ni retenu comme repli d'activeApiServer().

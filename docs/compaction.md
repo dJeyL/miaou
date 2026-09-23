@@ -908,6 +908,11 @@ interdit justement l'emprunt de token entre domaines.
 
 ### Conséquence sur le réglage « fenêtre de contexte »
 
+*(Le champ global décrit ici a été remplacé au lot AF par une fenêtre par
+(serveur, modèle), lue sur le serveur ou saisie sur sa fiche, cf.
+`docs/model-props.md`. La conséquence décrite reste vraie de la fenêtre
+retenue.)*
+
 Ce réglage n'était jusqu'ici qu'un **dénominateur d'affichage**. Il décide
 désormais aussi du moment où la compaction est conseillée. Trois textes le
 disaient « seulement » utile à l'inspecteur et sont corrigés au même lot : le

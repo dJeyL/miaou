@@ -40,7 +40,9 @@ trombone du composer, glisse-dépose un ou plusieurs fichiers n'importe où sur
 la zone de conversation (pas seulement sur la barre de saisie), ou colle
 directement depuis le presse-papier — une image copiée, ou un fichier copié
 depuis l'explorateur de fichiers. Sont exploitables : **images** (le modèle les
-voit réellement, s'il gère la vision), **fichiers texte** (leur contenu est
+voit réellement, s'il gère la vision ; quand le serveur déclare qu'un modèle ne
+lit pas les images, MIAOU le sait d'avance et lui envoie une description
+textuelle à la place), **fichiers texte** (leur contenu est
 transmis au modèle), **archives zip** (le modèle en liste le contenu et en sort
 le fichier qui l'intéresse) et **documents** — PDF, classeurs Excel, documents
 Word et présentations PowerPoint — que MIAOU ouvre lui-même, structure d'abord
@@ -741,11 +743,20 @@ Deux idées à ne pas confondre :
 
 - **Le compteur « ≈ N tok »** (dans le composer) mesure ce qui part réellement.
   Clique-le pour voir la ventilation part par part.
-- **La taille de fenêtre de contexte** réglée dans les Paramètres n'est **pas**
-  un levier de réduction : c'est le dénominateur qui sert à calculer un taux de
-  remplissage (« combien sur le maximum du modèle »). La modifier ne change rien
-  à ce qui est envoyé — c'est une jauge, pas un robinet. Elle décide en revanche
-  de deux repères calculés sur ce taux : le moment où le compteur signale qu'on
+- **La taille de fenêtre de contexte** n'est **pas** un levier de réduction.
+  MIAOU la connaît modèle par modèle. Il la lit sur le serveur quand celui-ci
+  l'expose, et sinon il prend celle que tu as saisie sur la fiche du serveur
+  (Paramètres → Serveurs API), pour ce modèle. Une fenêtre mesurée sur le
+  serveur passe avant une valeur saisie, et une valeur saisie passe avant un
+  maximum que le serveur se contente de déclarer. Avec Ollama, la fenêtre
+  réellement servie ne se mesure qu'une fois le modèle chargé : MIAOU la relit
+  après le premier appel au modèle, et affiche d'ici là la dernière mesure
+  connue ou le maximum du modèle. L'inspecteur de contexte
+  affiche la valeur retenue et d'où elle vient. C'est le dénominateur qui sert
+  à calculer un taux de remplissage (« combien sur le maximum du modèle »).
+  Changer la valeur saisie ne change rien à ce qui est envoyé : c'est une
+  jauge, pas un robinet. Elle décide en revanche de deux repères calculés sur
+  ce taux : le moment où le compteur signale qu'on
   approche de la limite, et celui où la compaction est conseillée.
 
 Les **vrais leviers** pour alléger ce qui part à chaque tour :
@@ -952,7 +963,14 @@ Quelques repères pour te déplacer dans MIAOU :
   serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée
   apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour
   réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →
-  Serveurs API) pour ne plus être interrogé ni proposé.
+  Serveurs API) pour ne plus être interrogé ni proposé. Le glyphe de
+  rafraîchissement de cette fiche relit la liste de ses modèles et ce que le
+  serveur en déclare, sans recharger la page — utile après avoir changé sa
+  configuration côté serveur. Un petit **appareil
+  photo** accompagne le nom d'un modèle, sur le bouton comme dans la liste,
+  quand son serveur déclare que ce modèle lit les images. Et le sélecteur de
+  niveau de raisonnement s'efface pour un modèle que son serveur déclare sans
+  raisonnement.
 - **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour
   ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
   Échap pour fermer. Elle donne accès aux actions courantes sans la souris —
@@ -1148,11 +1166,13 @@ modèle.
   estimation du poids de chaque part. Survole le nom d'une part pour lire ce
   qu'elle contient. Utile pour comprendre ce que « voit » le
   modèle et surveiller le remplissage de la fenêtre de contexte. La taille de
-  fenêtre réglée dans les Paramètres est le **dénominateur** de ce calcul (le
+  fenêtre est le **dénominateur** de ce calcul (le
   « N tok sur combien ») : c'est un indicateur d'occupation, pas un filtre — la
   changer ne réduit ni n'augmente ce qui part réellement à l'API, mais elle
   déplace les repères qui en découlent, dont celui à partir duquel la compaction
-  est conseillée. C'est aussi depuis ce panneau qu'on **allège le contexte** —
+  est conseillée. Le panneau affiche cette taille et sa source : mesurée sur le
+  serveur, fixée dans la configuration du modèle (Ollama), déclarée par lui, saisie sur la fiche du serveur pour ce modèle, ou
+  valeur par défaut de l'installation. C'est aussi depuis ce panneau qu'on **allège le contexte** —
   en évacuant les gros résultats d'outils, ou en compactant.
   Pour ce qui pèse et comment l'alléger, voir le sujet contexte.
 

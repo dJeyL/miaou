@@ -271,6 +271,11 @@ if (window.requestAnimationFrame) {
             <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
               <span id="composer-model-label">modèle</span>
+              <!-- Marque « ce modèle voit les images » (lot AF) : posée seulement
+                   quand le serveur DÉCLARE la vision (syncModelUI). Appareil
+                   photo, pas l'œil : l'œil est pris (aperçu, consultation) —
+                   vocabulaire d'icônes, une métaphore = un usage. -->
+              <span class="composer-model-vision" id="composer-model-vision" title="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="model-menu" id="composer-model-menu"></div>
@@ -427,11 +432,6 @@ if (window.requestAnimationFrame) {
             <span class="thumb"></span>
           </label>
         </div>
-      </div>
-      <div class="field">
-        <label for="set-contextwindow">Fenêtre de contexte (tokens)</label>
-        <span class="hint">Estimation, non détectée automatiquement. Vide = inconnu. Sert de repère d'occupation : jauge de l'inspecteur de contexte, et seuil à partir duquel la compaction est conseillée.</span>
-        <input type="number" id="set-contextwindow" min="0" step="1000" placeholder="ex. 128000">
       </div>
           </div>
         </div>
@@ -887,6 +887,17 @@ if (window.requestAnimationFrame) {
       <div class="ctx-bar" id="ctx-bar"></div>
       <div class="ctx-bar ctx-bar-cache" id="ctx-bar-cache" hidden></div>
       <table class="ctx-table" id="ctx-table"><tbody id="ctx-table-body"></tbody></table>
+      <!-- Fenêtre de contexte retenue et sa source (lot AF), après le détail
+           des catégories et avant les gestes d'allègement : mesurée, saisie,
+           déclarée ou défaut de build. Peuplée par renderContextInspector. -->
+      <!-- Les deux lignes du modèle forment un bloc : regroupées pour se suivre
+           de près, sans l'espacement qui sépare les blocs du drawer. -->
+      <div class="ctx-model-lines">
+        <span class="hint" id="ctx-window-hint"></span>
+        <!-- Capacités déclarées du modèle actif (lot AF). Peuplée par
+             renderContextInspector. -->
+        <span class="hint" id="ctx-caps-hint"></span>
+      </div>
       <!-- Affordance d'évacuation des résultats d'outils volumineux. Placée
            AVANT la compaction : les deux gestes allègent le contexte, rangés
            par coût croissant — celui-ci n'appelle pas le modèle et ne coupe

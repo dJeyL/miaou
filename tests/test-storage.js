@@ -1552,3 +1552,139 @@ describe('loadSettings : retitleAfterReply (complément lot AA)', function() {
     expect(loadSettings().retitleAfterReply).toBe(false);
   });
 });
+
+// ── Propriétés des modèles persistées (lot AF) ──────────────────────────────
+describe('lectures natives d\'Ollama : mergeManyModelProps / repli :latest (étape 5)', function() {
+  var U = 'https://h/v1';
+  var show = modelPropsRecord(262144, 'show:qwen35.context_length', { vision: false, tools: true, thinking: true });
+  it('un modèle saisi sans étiquette retrouve le record de son id listé', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['llama3:latest'], { 'llama3:latest': show });
+    expect(modelPropsEntry(m, 's1', U, 'llama3')).toEqual(show);
+  });
+  it('le nom exact prime sur le repli', function() {
+    var other = modelPropsRecord(8192, 'models:max_model_len');
+    var m = mergeListedModelProps({}, 's1', U, ['llama3', 'llama3:latest'], { 'llama3': other, 'llama3:latest': show });
+    expect(modelPropsEntry(m, 's1', U, 'llama3').contextMax).toBe(8192);
+  });
+  it('une étiquette explicite ne se replie pas', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['llama3:latest'], { 'llama3:latest': show });
+    expect(modelPropsEntry(m, 's1', U, 'llama3:8b')).toBe(null);
+  });
+  it('/api/ps superposé : la mesure s\'ajoute sans effacer /api/show, les autres modèles intacts', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a:1b', 'b:1b'], { 'a:1b': show, 'b:1b': show });
+    m = mergeManyModelProps(m, 's1', U, servedRecords({ 'a:1b': 32768 }, 5));
+    expect(modelPropsEntry(m, 's1', U, 'a:1b').served).toEqual({ value: 32768, at: 5 });
+    expect(modelPropsEntry(m, 's1', U, 'a:1b').caps.vision).toBe(false);
+    expect(modelPropsEntry(m, 's1', U, 'a:1b').contextMax).toBe(262144);
+    expect(modelPropsEntry(m, 's1', U, 'b:1b')).toEqual(show);
+  });
+  it('modèle froid (absent de /api/ps) : la dernière mesure survit à une relecture', function() {
+    var m = mergeManyModelProps({}, 's1', U, servedRecords({ 'a:1b': 32768 }, 5));
+    m = mergeManyModelProps(m, 's1', U, servedRecords({}, 9));
+    m = mergeManyModelProps(m, 's1', U, { 'a:1b': modelPropsRecord() });
+    expect(modelPropsEntry(m, 's1', U, 'a:1b').served).toEqual({ value: 32768, at: 5 });
+  });
+  it('une nouvelle mesure remplace l\'ancienne', function() {
+    var m = mergeManyModelProps({}, 's1', U, servedRecords({ 'a:1b': 32768 }, 5));
+    m = mergeManyModelProps(m, 's1', U, servedRecords({ 'a:1b': 65536 }, 9));
+    expect(modelPropsEntry(m, 's1', U, 'a:1b').served).toEqual({ value: 65536, at: 9 });
+  });
+});
+
+describe('mergeListedModelProps / modelPropsEntry (purs)', function() {
+  var U = 'https://h/v1';
+  var vis = modelPropsRecord(262144, 'models:max_context_length', { vision: true, tools: true, thinking: true });
+  var unk = modelPropsRecord();
+
+  it('première lecture : un record par modèle listé', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
+    expect(modelPropsEntry(m, 's1', U, 'a')).toEqual(vis);
+  });
+  it('une relecture entièrement inconnue (/v1/models d\'Ollama) n\'efface pas le connu', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
+    m = mergeListedModelProps(m, 's1', U, ['a'], { a: unk });
+    expect(modelPropsEntry(m, 's1', U, 'a')).toEqual(vis);
+  });
+  it('un id listé sans record (chaîne nue) garde le persisté', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
+    m = mergeListedModelProps(m, 's1', U, ['a'], {});
+    expect(modelPropsEntry(m, 's1', U, 'a')).toEqual(vis);
+  });
+  it('un false déclaré remplace un true persisté', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
+    var noVis = modelPropsRecord(null, null, { vision: false, tools: true, thinking: true });
+    m = mergeListedModelProps(m, 's1', U, ['a'], { a: noVis });
+    expect(modelPropsEntry(m, 's1', U, 'a').caps.vision).toBe(false);
+    expect(modelPropsEntry(m, 's1', U, 'a').contextMax).toBe(262144);
+  });
+  it('un modèle retiré de la liste est oublié', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a', 'b'], { a: vis, b: vis });
+    m = mergeListedModelProps(m, 's1', U, ['a'], { a: vis });
+    expect(modelPropsEntry(m, 's1', U, 'b')).toBe(null);
+  });
+  it('URL changée : l\'ancienne entrée ne vaut plus', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
+    expect(modelPropsEntry(m, 's1', 'https://autre/v1', 'a')).toBe(null);
+    m = mergeListedModelProps(m, 's1', 'https://autre/v1', ['a'], { a: unk });
+    expect(modelPropsEntry(m, 's1', 'https://autre/v1', 'a')).toEqual(unk);
+  });
+  it('les autres serveurs sont gardés, sauf ceux qui n\'existent plus', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
+    m = mergeListedModelProps(m, 's2', U, ['a'], { a: unk });
+    expect(modelPropsEntry(m, 's1', U, 'a')).toEqual(vis);
+    m = mergeListedModelProps(m, 's2', U, ['a'], { a: unk }, new Set(['s2']));
+    expect(modelPropsEntry(m, 's1', U, 'a')).toBe(null);
+  });
+  it('mergeOneModelProps complète un seul modèle, sans élaguer', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a', 'b'], { a: modelPropsRecord(null, null, { vision: true, tools: null, thinking: null }), b: vis });
+    m = mergeOneModelProps(m, 's1', U, 'a', modelPropsRecord(262144, 'show:qwen35.context_length', { vision: true, tools: true, thinking: true }));
+    expect(modelPropsEntry(m, 's1', U, 'a').caps).toEqual({ vision: true, tools: true, thinking: true });
+    expect(modelPropsEntry(m, 's1', U, 'b')).toEqual(vis);
+  });
+});
+
+describe('recordListedModelProps / modelPropsFor (localStorage)', function() {
+  it('persiste, relit, et rend un record inconnu pour un modèle ignoré', function() {
+    localStorage.removeItem('miaou-model-props');
+    saveApiServersRaw([{ id: 'srvAF', name: 'x', url: 'https://h/v1', key: '' }]);
+    var srv = getApiServer('srvAF');
+    var rec = modelPropsRecord(262144, 'models:max_context_length', { vision: true, tools: true, thinking: false });
+    recordListedModelProps(srv, ['m1'], { m1: rec });
+    expect(modelPropsFor(srv, 'm1')).toEqual(rec);
+    expect(modelPropsFor(srv, 'absent')).toEqual(modelPropsRecord());
+    expect(modelPropsFor(null, 'm1')).toEqual(modelPropsRecord());
+  });
+  it('stockage corrompu : lu comme vide, sans exception', function() {
+    localStorage.setItem('miaou-model-props', '{pas du json');
+    expect(loadModelProps()).toEqual({});
+  });
+  it('hors export : la clé n\'est pas dans EXPORT_KEYS', function() {
+    expect(EXPORT_KEYS.indexOf('miaou-model-props')).toBe(-1);
+  });
+});
+
+describe('vision : déclaration du serveur, puis flag manuel (lot AF)', function() {
+  it('resolveModelVision : la déclaration tranche dans les deux sens', function() {
+    expect(resolveModelVision(true, true)).toEqual({ enabled: true, source: 'declared' });
+    expect(resolveModelVision(false, false)).toEqual({ enabled: false, source: 'declared' });
+  });
+  it('resolveModelVision : inconnue → flag manuel, sinon envoyer', function() {
+    expect(resolveModelVision(null, true)).toEqual({ enabled: false, source: 'manual' });
+    expect(resolveModelVision(null, false)).toEqual({ enabled: true, source: 'unknown' });
+  });
+  it('serverModelVisionEnabled lit la déclaration persistée avant le flag manuel', function() {
+    localStorage.removeItem('miaou-model-props');
+    saveApiServersRaw([{ id: 'srvV', name: 'v', url: 'https://v/v1', key: '', vision: { mA: false } }]);
+    var srv = getApiServer('srvV');
+    // Prémisse : sans déclaration, le flag manuel s'applique.
+    expect(serverModelVisionEnabled(srv, 'mA')).toBe(false);
+    recordListedModelProps(srv, ['mA', 'mB'], {
+      mA: modelPropsRecord(null, null, { vision: true, tools: true, thinking: true }),
+      mB: modelPropsRecord(null, null, { vision: false, tools: true, thinking: false }),
+    });
+    expect(modelVisionState(srv, 'mA')).toEqual({ enabled: true, source: 'declared' });
+    expect(serverModelVisionEnabled(srv, 'mB')).toBe(false);
+    expect(modelThinkingDeclared(srv, 'mB')).toBe(false);
+    expect(modelThinkingDeclared(srv, 'inconnu')).toBe(null);
+  });
+});

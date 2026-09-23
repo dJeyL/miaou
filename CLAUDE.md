@@ -516,7 +516,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `docs/agents.md` et `docs/storage.md` pour 29).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-memories`, `miaou-mcp-servers` (+ sa sentinelle de seed de build
-  `miaou-mcp-seeded`), `miaou-api-servers`,
+  `miaou-mcp-seeded`), `miaou-api-servers`, `miaou-model-props` (cache
+  des propriétés déclarées, hors export),
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
   derniers migrés depuis localStorage au lot U), champs de méta `snippet`
@@ -546,6 +547,30 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   d'appel MCP sur le statut du serveur (`noteMcpCallFailure` et sa réciproque,
   ligne de partage transport/applicatif), et la règle « lisible sans
   animation ». Le versant MCP reste dans `docs/mcp.md`.
+- **`docs/model-props.md`** — propriétés déclarées des modèles (lot AF) :
+  fenêtre de contexte et capacités lues dans la réponse du backend, jamais
+  devinées depuis son identité. Formes mesurées : l'objet de booléens
+  du schéma Mistral sur `/v1/models`, `/api/tags` d'Ollama lu en positif
+  seulement parce qu'il sous-déclare, et `/api/show`, qui fait autorité ;
+  `/api/ps` donne la fenêtre servie. Capacités TRI-ÉTAT, avec `false`
+  seulement sur une forme reconnue. Les purs sont `normalizeModelCaps`,
+  `extractModelContextMax`, les `modelPropsFrom*` et `mergeModelProps`.
+  Persistance par (serveur, modèle) dans `miaou-model-props`, écrite au même
+  appel `/models` (`fetchModelList`), lue par `modelPropsFor`. Porte aussi la
+  chaîne de précédence de la fenêtre de contexte (`resolveContextWindow` : une
+  mesure prime sur une saisie, une saisie sur un maximum déclaré), la saisie
+  par modèle sur la fiche serveur (`server.contextWindows`, qui remplace le
+  champ global supprimé) et les libellés de source de l'inspecteur ; porte
+  enfin la vision déclarée qui prime sur le flag manuel (`resolveModelVision`,
+  derrière le prédicat inchangé `serverModelVisionEnabled`), la marque
+  appareil photo (l'œil est pris), et `reasoningEffortBlocked`, prédicat
+  unique de l'envoi et du sélecteur de raisonnement ; porte enfin le **chemin
+  natif d'Ollama** — racine dérivée en retirant `/v1`, Ollama reconnu à la
+  forme de `/api/tags` (état de session `_ollamaNative`), `/api/show` du seul
+  modèle actif (`ensureActiveModelShown` en fin de `syncModelUI`), `/api/ps`
+  relu après un appel par `noteModelCalled`, accrochée aux deux seuls points
+  réseau `silentCompletion`/`streamCompletion`, appariement sur la forme
+  `:latest`, et le glyphe de relecture de la fiche serveur.
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de

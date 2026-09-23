@@ -793,14 +793,119 @@ describe('buildSkillsContextBlock (skills autotrigger, stage 2)', function() {
 // sous-blocs purs ci-dessus (buildSummaryBlock/buildMemoryEntriesBlock/
 // buildSkillsContextBlock).
 
-describe('contextWindowFor', function() {
-  it('valeur vide/non numérique → null (inconnu)', function() {
+describe('contextWindowFor (lot AF : par serveur et modèle)', function() {
+  it('rien de connu → null (inconnu)', function() {
     localStorage.clear();
     expect(contextWindowFor('any-model')).toBe(null);
   });
-  it('valeur numérique positive persistée → retournée en entier', function() {
+  it('saisie sur la carte du serveur actif, pour CE modèle seulement', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 'sCW', name: 'x', url: 'https://h/v1', key: '', model: 'm1', contextWindows: { m1: 128000 } }]);
+    setActiveApiServerId('sCW');
+    expect(contextWindowFor('m1')).toBe(128000);
+    expect(contextWindowFor('m2')).toBe(null);
+    expect(contextWindowInfo('m1').source).toBe('user');
+  });
+  it('le champ global des réglages n\'est plus lu', function() {
     localStorage.clear();
     saveSettings({ contextWindow: '128000' });
-    expect(contextWindowFor('any-model')).toBe(128000);
+    expect(contextWindowFor('any-model')).toBe(null);
+  });
+  it('maximum déclaré persisté, lu pour le serveur actif', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 'sCW', name: 'x', url: 'https://h/v1', key: '', model: 'm1' }]);
+    setActiveApiServerId('sCW');
+    recordListedModelProps(getApiServer('sCW'), ['m1'],
+      { m1: modelPropsRecord(262144, 'models:max_context_length', null) });
+    expect(contextWindowInfo('m1')).toEqual({ value: 262144, source: 'declared', at: null });
+  });
+});
+
+describe('resolveContextWindow (chaîne de précédence)', function() {
+  var START = 1000000;
+  function rec(o) {
+    return modelPropsRecord(o.max || null, o.max ? 'x' : null, null, o.conf || null,
+      o.served ? { value: o.served, at: o.at } : null);
+  }
+  it('servie mesurée pendant la session : prime sur tout', function() {
+    expect(resolveContextWindow(rec({ max: 262144, conf: 65536, served: 32768, at: START + 1 }), 100000, 8192, START))
+      .toEqual({ value: 32768, source: 'served-now', at: START + 1 });
+  });
+  it('num_ctx du Modelfile : prime sur une mesure d\'une session antérieure', function() {
+    expect(resolveContextWindow(rec({ max: 262144, conf: 65536, served: 32768, at: START - 1 }), 100000, 8192, START))
+      .toEqual({ value: 65536, source: 'configured', at: null });
+  });
+  it('dernière mesure : prime sur la saisie (une mesure n\'est jamais écrasée)', function() {
+    expect(resolveContextWindow(rec({ max: 262144, served: 32768, at: START - 1 }), 100000, 8192, START))
+      .toEqual({ value: 32768, source: 'served-last', at: START - 1 });
+  });
+  it('saisie : prime sur le maximum déclaré', function() {
+    expect(resolveContextWindow(rec({ max: 262144 }), 100000, 8192, START))
+      .toEqual({ value: 100000, source: 'user', at: null });
+  });
+  it('maximum déclaré, puis défaut de build, puis rien', function() {
+    expect(resolveContextWindow(rec({ max: 262144 }), null, 8192, START).source).toBe('declared');
+    expect(resolveContextWindow(rec({}), null, 8192, START)).toEqual({ value: 8192, source: 'build', at: null });
+    expect(resolveContextWindow(null, null, 0, START)).toEqual({ value: null, source: null, at: null });
+  });
+});
+
+describe('normalizeApiServer : contextWindows', function() {
+  it('garde les entiers positifs, jette le reste', function() {
+    var s = normalizeApiServer({ url: 'u', contextWindows: { a: 32768, b: 0, c: '1000', d: 1.5, e: -3 } });
+    expect(s.contextWindows).toEqual({ a: 32768 });
+  });
+  it('absent → map vide', function() {
+    expect(normalizeApiServer({ url: 'u' }).contextWindows).toEqual({});
+  });
+});
+
+describe('libellés de fenêtre (inspecteur, carte serveur)', function() {
+  var NOW = new Date(2026, 8, 23, 12, 0).getTime();
+  it('formatTokenCount groupe par milliers (espace fine)', function() {
+    expect(formatTokenCount(262144)).toBe('262\u202f144');
+    expect(formatTokenCount(512)).toBe('512');
+  });
+  it('ligne d\'inspecteur : valeur ET source, chacune des six sources a son libellé', function() {
+    ['served-now', 'configured', 'served-last', 'user', 'declared', 'build'].forEach(function(src) {
+      var line = formatContextWindowLine({ value: 32768, source: src, at: NOW - 86400000 }, NOW);
+      expect(line).toContain('32\u202f768 tokens — ');
+      expect(contextWindowSourceLabel({ source: src, at: NOW }, NOW).length > 0).toBe(true);
+    });
+  });
+  it('mesure et saisie se distinguent par « réelle » / « théorique »', function() {
+    expect(contextWindowSourceLabel({ source: 'served-now' }, NOW)).toContain('réelle');
+    expect(contextWindowSourceLabel({ source: 'served-last', at: NOW - 86400000 }, NOW)).toContain('hier');
+    expect(contextWindowSourceLabel({ source: 'user' }, NOW)).toContain('théorique');
+    expect(contextWindowSourceLabel({ source: 'build' }, NOW)).toContain('théorique');
+  });
+  it('fenêtre inconnue : dit pourquoi et où la saisir', function() {
+    expect(formatContextWindowLine({ value: null, source: null }, NOW)).toContain('fiche du serveur');
+  });
+  it('hint de carte : une mesure prime sur la saisie, un maximum déclaré lui cède', function() {
+    expect(contextWindowCardHint('m', { value: 32768, source: 'served-last', at: NOW }, 0, NOW)).toContain('prime sur une valeur saisie');
+    expect(contextWindowCardHint('m', { value: 65536, source: 'configured', at: null }, 0, NOW)).toContain('prime sur une valeur saisie');
+    expect(contextWindowCardHint('m', { value: 262144, source: 'declared', at: null }, 0, NOW)).toContain('la remplace');
+  });
+  it('hint de carte : rien de connu, avec ou sans défaut d\'installation', function() {
+    expect(contextWindowCardHint('m', { value: null, source: null }, 0, NOW)).toContain('ne déclare pas');
+    expect(contextWindowCardHint('m', { value: null, source: null }, 32768, NOW)).toContain('Vide : 32\u202f768 tokens');
+    expect(contextWindowCardHint('', null, 0, NOW)).toContain('Choisir d\'abord un modèle');
+  });
+});
+
+describe('formatModelCapsLine (inspecteur, lot AF)', function() {
+  it('capacités déclarées, inconnue nommée comme telle', function() {
+    expect(formatModelCapsLine({ vision: true, tools: true, thinking: null }, { enabled: true, source: 'declared' }))
+      .toBe('Capacités déclarées par le serveur : lecture d\'images ✓, outils ✓, raisonnement inconnu.');
+  });
+  it('outils déclarés absents : dit qu\'ils partent quand même', function() {
+    expect(formatModelCapsLine({ vision: false, tools: false, thinking: false }, { enabled: false, source: 'declared' }))
+      .toContain('Les outils sont envoyés quand même.');
+  });
+  it('rien de déclaré, avec ou sans « Sans vision » manuel', function() {
+    var unk = { vision: null, tools: null, thinking: null };
+    expect(formatModelCapsLine(unk, { enabled: true, source: 'unknown' })).toBe('Capacités du modèle : non déclarées par le serveur.');
+    expect(formatModelCapsLine(unk, { enabled: false, source: 'manual' })).toContain('Marqué « Sans vision »');
   });
 });

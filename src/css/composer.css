@@ -336,6 +336,13 @@
    aligné sur la PREMIÈRE ligne du nom, pas centré sur un bloc à deux lignes. */
 #composer-model-menu .model-opt { align-items: flex-start; }
 #composer-model-menu .model-opt span:first-child { overflow-wrap: anywhere; }
+/* Marque « lit les images » (lot AF) : dans la pilule et en queue de ligne du
+   menu, avant le ✓. Une règle `display` sur la classe battrait le `[hidden]` de
+   l'agent utilisateur : le cas masqué est donc réécrit explicitement. */
+.composer-model-btn .composer-model-vision { display: inline-flex; opacity: .8; }
+.composer-model-btn .composer-model-vision[hidden] { display: none; }
+#composer-model-menu .model-opt-trail { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px; }
+#composer-model-menu .model-opt-vision { display: inline-flex; color: var(--text-3); }
 
 /* pilule de sélection générique (bouton pilule + .model-menu) : sert le
    sélecteur de raisonnement du composer, celui des réglages globaux, et

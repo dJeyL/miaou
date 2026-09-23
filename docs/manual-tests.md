@@ -760,9 +760,11 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     conversation ou de Space → le compteur retombe sur une simulation (en-tête
     « simulation du prochain envoi »). Joindre une image → une ligne « Images
     jointes (très approximatif) » apparaît, comptée à une constante fixe (pas
-    au poids du base64). Réglages → Modèle & raisonnement → renseigner une
-    fenêtre de contexte → le compteur affiche un `%` et passe ambre au-delà de
-    80% d'occupation.
+    au poids du base64). Sur la fiche du serveur (Paramètres → Serveurs API),
+    renseigner une fenêtre de contexte pour le modèle courant d'un serveur qui
+    ne la déclare pas → le compteur affiche un `%` et passe ambre au-delà de
+    80 % d'occupation, et l'inspecteur nomme la source « saisie pour ce
+    modèle ».
 
 66. **Usage API réel (Bbis)** : avec un backend qui renvoie `usage` en fin de
     stream (la plupart des endpoints OpenAI-compatibles récents) — envoyer un
@@ -1336,3 +1338,44 @@ même montage, en rechargeant simplement MIAOU :
     carte compte ce que ce proxy agrège, la pastille compte les cartes à
     ouvrir — et c'est précisément pourquoi ils n'emploient pas le même mot. Les
     voir dire tous deux « serveur » serait la régression à rattraper ici.
+
+## Propriétés déclarées des modèles (lot AF)
+
+Sur un serveur au schéma Mistral (`/v1/models` avec `max_context_length` et un
+objet `capabilities`), sélecteur de modèle activé dans les réglages :
+
+1. **Appareil photo.** Un modèle déclaré `vision: true` porte l'appareil photo
+   sur le bouton de modèle du composer et dans sa ligne du menu. Un modèle
+   déclaré sans vision, ou dont le serveur ne dit rien, n'en porte pas.
+2. **Fiche serveur.** Pour un modèle dont la vision est déclarée, le champ
+   « Vision (images) » affiche un libellé figé à la place de la pilule. Changer
+   le modèle de la fiche vers un modèle non déclaré fait revenir la pilule.
+3. **Déclaration contre flag manuel.** Poser « Sans vision » sur un modèle
+   non déclaré, puis faire déclarer la vision par le serveur (ou changer de
+   serveur) : les images partent, la déclaration l'emporte.
+4. **Raisonnement.** Un modèle déclaré sans raisonnement masque le sélecteur
+   de niveau de raisonnement, et `reasoning_effort` n'est pas envoyé
+   (vérifiable dans l'onglet réseau). Choisir « high » sur un modèle qui
+   raisonne, passer sur un modèle déclaré sans, puis revenir : le sélecteur
+   réaffiche « high ». Même chose après rechargement de la conversation.
+5. **Inspecteur.** La ligne des capacités nomme lecture d'images, outils et
+   raisonnement, et « inconnu » pour ce que le serveur ne déclare pas.
+
+Sur un **Ollama** (URL en `/v1`, derrière un proxy qui laisse passer CORS) :
+
+6. **Modèle froid.** Décharger le modèle (`ollama stop <modèle>`), recharger
+   MIAOU : l'inspecteur donne la dernière mesure (« dernière mesure ») ou, sur
+   une installation neuve, le maximum déclaré par `/api/show`. Les capacités
+   sont celles de `/api/show`, outils et raisonnement compris pour un GGUF.
+7. **Mesure après un appel.** Envoyer un message : à la fin de la réponse,
+   l'inspecteur passe à la fenêtre servie (« mesurée sur le serveur pendant
+   cette session »), par exemple 32768 sous `OLLAMA_CONTEXT_LENGTH=32768`.
+   Dans l'onglet réseau, un seul `/api/ps` après l'échange, aucun au suivant.
+8. **Changement de modèle.** Choisir un autre modèle dans le sélecteur : un
+   `/api/show` part pour lui, et l'appareil photo suit sa déclaration.
+9. **Glyphe de la fiche.** Changer la config d'Ollama, puis cliquer le glyphe
+   de rafraîchissement de la fiche serveur : liste, `/api/tags`, `/api/ps` et
+   `/api/show` repartent, sans recharger la page.
+10. **Passerelle non-Ollama.** Sur le backend au schéma Mistral, l'onglet
+    réseau montre un `/api/tags` en 404 par chargement de liste, et aucun
+    `/api/ps` ni `/api/show`.
