@@ -5,7 +5,7 @@
 // exerce le chemin serveur du MÊME nom d'outil).
 //
 // Chemin réellement exercé (modèle STUBÉ, aucun réseau) :
-//   1. untracked/muscle/log.zip est attaché en pièce jointe réelle via
+//   1. untracked/muscle/fixtures/log.zip est attaché en pièce jointe réelle via
 //      #attach-file-input → att-N classifié 'binary' (22,5 Mo décompressés :
 //      au-delà de l'ancien cap 32 Mo, sous le nouveau MAX_INLINE_BYTES = 64 Mo,
 //      ce qui valide concrètement l'étape 1 du lot).
@@ -18,7 +18,7 @@
 //      rendu par formatInlineHandleForModel (JAMAIS [resource_ref:…], piège 26c).
 //   4. miaou__js__eval(input_handles={membre:res_…}, code) : preuve que le membre
 //      décompressé a bien traversé jusqu'à l'IDB et se relit intégralement.
-//   5. untracked/muscle/enc.zip (zip chiffré) : REFUS EXPLICITE à l'extraction.
+//   5. untracked/muscle/fixtures/enc.zip (zip chiffré) : REFUS EXPLICITE à l'extraction.
 //      C'est LE test qui garde le piège de l'AUDIT §3 — fflate ne détecte pas le
 //      chiffrement et rend des ordures binaires SANS lever d'erreur. Sans la
 //      lecture manuelle du bit 0 du general purpose flag, ce point passe au vert
@@ -39,9 +39,9 @@
 //     son listing natif, sans serveur MCP branché
 //
 // ── FIXTURES (untracked/, donc NON versionnées — à régénérer) ────────────────
-// Les trois archives vivent dans `untracked/muscle/`, exclue du dépôt par
+// Les trois archives vivent dans `untracked/muscle/fixtures/`, exclue du dépôt par
 // `.gitignore`. Ce script est versionné, elles non : voici de quoi les refaire.
-// Provenance et commandes d'origine : `untracked/muscle/README-fixtures-zip.md`
+// Provenance et commandes d'origine : `untracked/muscle/fixtures/README-fixtures-zip.md`
 // (lui aussi untracked — d'où cette duplication délibérée, seule trace publique).
 //
 //   multi.zip  — plusieurs membres + une entrée répertoire (3 entrées, 458 o) :
@@ -85,7 +85,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const fixturesDir = path.join(repoRoot, 'untracked/muscle');
+const fixturesDir = path.join(repoRoot, 'untracked/muscle/fixtures');
 const logZipPath = path.join(fixturesDir, 'log.zip');
 const encZipPath = path.join(fixturesDir, 'enc.zip');
 const multiZipPath = path.join(fixturesDir, 'multi.zip');
@@ -106,7 +106,7 @@ const check = (label, cond, detail) => {
 if (!fs.existsSync(distPath)) { console.error('dist/miaou.html manquant — lance build.py'); process.exit(2); }
 for (const p of [logZipPath, encZipPath, multiZipPath]) {
   if (!fs.existsSync(p)) {
-    console.error('fixture manquante : ' + p + '\n(régénération : untracked/muscle/README-fixtures-zip.md)');
+    console.error('fixture manquante : ' + p + '\n(régénération : untracked/muscle/fixtures/README-fixtures-zip.md)');
     process.exit(2);
   }
 }

@@ -148,9 +148,9 @@ function slugifySkillName(name) {
 }
 
 // Parse un cartouche frontmatter (```---\nclé: valeur\n---```) en tête d'un
-// contenu de skill collé (format Agent Skills, celui de Claude Code —
-// cf. untracked/example-skill.md). Clés reconnues : `name`, `description`,
-// `disable-model-invocation`, plus `metadata:` et sa sous-clé `title`.
+// contenu de skill collé (format Agent Skills, celui de Claude Code).
+// Clés reconnues : `name`, `description`, `disable-model-invocation`, plus
+// `metadata:` et sa sous-clé `title`.
 // Retourne null si aucun cartouche détecté en tête (pas de bloc `---`/`---`) ;
 // sinon { name, description, disableModelInvocation, title } où chaque champ est
 // `null` si la clé est absente du cartouche (l'appelant ne touche pas au champ

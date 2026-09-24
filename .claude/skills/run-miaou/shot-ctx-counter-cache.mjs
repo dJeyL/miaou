@@ -11,7 +11,7 @@ import { seedConversations } from './seed-fixtures.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
-const outDir = path.join(repoRoot, 'untracked/muscle');
+const outDir = path.join(repoRoot, 'untracked/muscle/echantillons');
 fs.mkdirSync(outDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });

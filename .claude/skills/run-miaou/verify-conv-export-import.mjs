@@ -533,14 +533,14 @@ check('zip sans manifeste : rien n\'est détruit', (await readState()).idbConvs.
 // Fixture `enc-backup.zip` : un manifest.json protégé par mot de passe.
 // C'est bien celle-là qu'il faut, pas `enc.zip` (fixture V-1) : cette dernière
 // ne contient PAS de manifest.json, donc elle exerce la garde (d) et non la (c).
-const encBackup = path.join(repoRoot, 'untracked/muscle/enc-backup.zip');
+const encBackup = path.join(repoRoot, 'untracked/muscle/fixtures/enc-backup.zip');
 if (fs.existsSync(encBackup)) {
   const errEnc = await importFileViaUI(encBackup, { expectRejected: true });
   check('manifeste chiffré → refus explicite mentionnant le mot de passe',
     typeof errEnc === 'string' && /mot de passe|chiffr/i.test(errEnc));
   check('manifeste chiffré : rien n\'est détruit', (await readState()).idbConvs.join(',') === intactIds);
 } else {
-  console.log('  SKIP  manifeste chiffré (fixture untracked/muscle/enc-backup.zip absente)');
+  console.log('  SKIP  manifeste chiffré (fixture untracked/muscle/fixtures/enc-backup.zip absente)');
 }
 
 // (d) L'ORDRE des gardes, figé parce qu'il est observable. `enc.zip` est
@@ -548,7 +548,7 @@ if (fs.existsSync(encBackup)) {
 // qui doit l'emporter, pas « chiffrée ». Le bon ordre : un zip sans manifeste
 // n'est pas une sauvegarde, quoi qu'il contienne — le dire d'abord évite
 // d'envoyer chercher un mot de passe pour une archive qui n'en est pas une.
-const encFixture = path.join(repoRoot, 'untracked/muscle/enc.zip');
+const encFixture = path.join(repoRoot, 'untracked/muscle/fixtures/enc.zip');
 if (fs.existsSync(encFixture)) {
   const errOrder = await importFileViaUI(encFixture, { expectRejected: true });
   check('zip chiffré SANS manifeste → c\'est « pas une sauvegarde » qui prime',
@@ -556,7 +556,7 @@ if (fs.existsSync(encFixture)) {
   check('zip chiffré sans manifeste : rien n\'est détruit',
     (await readState()).idbConvs.join(',') === intactIds);
 } else {
-  console.log('  SKIP  ordre des gardes (fixture untracked/muscle/enc.zip absente)');
+  console.log('  SKIP  ordre des gardes (fixture untracked/muscle/fixtures/enc.zip absente)');
 }
 
 // ── 12. Réentrance : le chemin d'import est ASYNCHRONE depuis V-3 ───────────

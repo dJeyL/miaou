@@ -92,7 +92,7 @@ garde les paliers globaux.
 - **Tokens Prism** (coloration syntaxique) : inchangés, ils ne suivent pas la
   palette. Défendable (la coloration a sa logique propre) mais assumé : en
   thème clair, Encre et Forêt affichent un Prism accordé au sable d'Ambre.
-  Dette connue, cf. `untracked/muscle/S-garde-robe.md`.
+  Dette connue (lot S).
 
 ## Export : gratuit, sous condition
 

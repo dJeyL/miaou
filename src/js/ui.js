@@ -382,16 +382,15 @@ if (window.Prism && Prism.plugins && Prism.plugins.autoloader) {
     'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
 }
 
-// Renderer custom pour les fences de code : marked 12.0.0 (désassemblage vérifié,
-// cf. untracked/brief-codeblock-filename.md) conserve l'info string COMPLÈTE dans
-// `lang` (ex. "python filename=foo.py") et son renderer par défaut prend juste
-// `^\S*` pour la classe language-xxx — un filename séparé par un ESPACE ne casse
-// donc déjà rien côté Prism, mais est perdu (jamais lu). On réutilise le même corps
-// que le renderer d'origine (signature vérifiée : code(text, lang, escaped)) en y
-// ajoutant l'extraction du filename (parseCodeFenceInfo, utils.js) posé en attribut
-// data- sur le <code>, jamais dans la classe. Pur/déterministe (même entrée → même
-// HTML), s'applique aussi à renderUserMd (même instance marked globale — souhaité :
-// un user peut coller un codeblock nommé).
+// Renderer custom pour les fences de code : marked 12.0.0 (désassemblage vérifié)
+// conserve l'info string COMPLÈTE dans `lang` (ex. "python filename=foo.py") et son
+// renderer par défaut prend juste `^\S*` pour la classe language-xxx — un filename
+// séparé par un ESPACE ne casse donc déjà rien côté Prism, mais est perdu (jamais lu).
+// On réutilise le même corps que le renderer d'origine (signature vérifiée :
+// code(text, lang, escaped)) en y ajoutant l'extraction du filename
+// (parseCodeFenceInfo, utils.js) posé en attribut data- sur le <code>, jamais dans la
+// classe. Pur/déterministe (même entrée → même HTML), s'applique aussi à renderUserMd
+// (même instance marked globale — souhaité : un user peut coller un codeblock nommé).
 if (window.marked) {
   marked.use({
     renderer: {
@@ -10775,12 +10774,12 @@ function buildSkillCard(skill, isNew) {
 
   editSection.appendChild(cfgErrEl());
 
-  // Collage d'un contenu à cartouche (format Claude Code, ex. untracked/example-skill.md),
-  // OU d'un vrai fichier .md copié depuis le Finder/Explorateur (clipboardData porte un
-  // File, pas garanti d'être posé en texte nativement par le navigateur — on le lit
-  // nous-mêmes via getAsFile() plutôt que de compter sur le comportement natif) :
-  // pré-remplit slug/nom/description/autotrigger depuis le frontmatter, sans jamais
-  // le retirer du contenu posé dans la textarea (skills.js, parseSkillFrontmatter — pur).
+  // Collage d'un contenu à cartouche (format Claude Code), OU d'un vrai fichier .md copié
+  // depuis le Finder/Explorateur (clipboardData porte un File, pas garanti d'être posé en
+  // texte nativement par le navigateur — on le lit nous-mêmes via getAsFile() plutôt que
+  // de compter sur le comportement natif) : pré-remplit slug/nom/description/autotrigger
+  // depuis le frontmatter, sans jamais le retirer du contenu posé dans la textarea
+  // (skills.js, parseSkillFrontmatter — pur).
   contentT.addEventListener('paste', (e) => {
     const items = e.clipboardData && e.clipboardData.items;
     let file = null;
@@ -11442,13 +11441,14 @@ function wireLibraryNameEditing(el, fileId, spaceId) {
   el.addEventListener('blur', async () => {
     const before = el._libNameBefore || '';
     const typed = el.textContent;
-    if (typed.trim() === before.trim()) { el.textContent = before; return; }
+    if (typed.trim() === before.trim()) { el.textContent = before; flushDeferredLibraryRefresh(); return; }
     const applied = await renameLibraryFile(fileId, typed);
     // null = échec d'écriture (IDB indisponible, record disparu) : on remet le
     // nom d'avant plutôt que de laisser à l'écran un renommage qui n'a pas eu
     // lieu — l'affordance ne doit jamais mentir sur l'état du store.
     el.textContent = applied != null ? applied : before;
     el._libNameBefore = el.textContent;
+    flushDeferredLibraryRefresh();
     // Le libellé du bouton de suppression du drawer Space porte des comptes,
     // pas des noms : rien à resynchroniser ici (contrairement à onDeleteSpaceFile).
   });
@@ -11488,14 +11488,48 @@ function selectLibraryNameStem(el) {
 // (createdAt→id croissant, aligné sur le manifeste de contexte) : le nouvel
 // arrivant y est en fin de liste. Si ce tri s'inverse un jour, ce scroll devient
 // faux — ce n'est pas une préférence d'affichage, c'est « montrer l'arrivant ».
-async function refreshVisibleSpaceLibrary(spaceId) {
+//
+// `ids` (optionnel) : les records touchés, passés par la voie de synchro. Seul un
+// id sans carte à l'écran justifie de descendre (libraryRefreshRevealsArrival,
+// resources.js) ; sinon c'est une mise à jour sur place et la position de
+// lecture est restaurée. Le constat se fait AVANT le re-rendu, qui recrée toutes
+// les cartes.
+//
+// Un nom EN COURS D'ÉDITION diffère le re-rendu jusqu'à son blur
+// (`_libraryRefreshDeferred`, vidé par wireLibraryNameEditing). Re-rendre
+// maintenant retirerait le champ focalisé : le navigateur émet alors un `blur`,
+// dont le handler PERSISTE le brouillon comme un renommage validé — tandis que
+// la carte re-rendue montre l'ancien nom (mesuré le 2026-09-24). La liste reste
+// figée le temps d'une saisie, prix accepté ; les `ids` différés sont cumulés,
+// `null` (ajout local) l'emportant, pour que le rendu d'après sache encore s'il
+// doit montrer un arrivant.
+let _libraryRefreshDeferred = null;   // { spaceId, ids } | null
+// Joue le rafraîchissement différé pendant une saisie, à la sortie du champ —
+// sur TOUTES les sorties (validé, inchangé, Échap), sinon la liste resterait
+// périmée jusqu'à la prochaine écriture.
+function flushDeferredLibraryRefresh() {
+  const deferred = _libraryRefreshDeferred;
+  _libraryRefreshDeferred = null;
+  if (deferred) refreshVisibleSpaceLibrary(deferred.spaceId, deferred.ids);
+}
+async function refreshVisibleSpaceLibrary(spaceId, ids) {
   if (!spaceId || spaceId !== activeSpaceId) return;
   const panel = $('space-files-panel');
   if (!panel || panel.hidden) return;
+  const focused = document.activeElement;
+  if (focused && focused.classList.contains('file-name-edit') && panel.contains(focused)) {
+    const prev = _libraryRefreshDeferred;
+    const merged = !ids || (prev && prev.spaceId === spaceId && !prev.ids) ? null
+      : (prev && prev.spaceId === spaceId ? prev.ids.concat(ids) : ids.slice());
+    _libraryRefreshDeferred = { spaceId, ids: merged };
+    return;
+  }
+  const reveal = libraryRefreshRevealsArrival(ids, (id) => !!$('file-name-' + id));
+  const keepTop = panel.scrollTop;
   await renderSpaceFilesList(spaceId);
   // Le scrolleur est le panneau entier (`.space-side-panel`, `overflow-y: auto`),
   // pas `.mem-list` qui n'a pas d'overflow propre.
-  panel.scrollTop = panel.scrollHeight;
+  panel.scrollTop = reveal ? panel.scrollHeight : keepTop;
 }
 
 // Statut de description par carte : « description en cours… » pendant le
@@ -11738,7 +11772,7 @@ function _removeProposalCard(pid) {
   if (!Object.keys(_proposalMap).length) setConfirmPending(false);
 }
 
-// ── Export HTML standalone (brief `untracked/muscle/G-html-export.md`) ──────
+// ── Export HTML standalone (lot G) ──────
 // Fichier autonome zéro-JS, ouvrable hors MIAOU. Le corps est un RE-RENDU
 // depuis currentThread (jamais un clone du DOM live #thread) : sûr par
 // construction (mêmes renderers que l'écran), pas de nouveau chemin de

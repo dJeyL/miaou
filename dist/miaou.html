@@ -4925,7 +4925,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-23 18:21 UTC */
+/* miaou — built: 2026-09-24 18:42 UTC */
 
 /* ── utils.js ── */
 
@@ -9264,7 +9264,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790187706}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790275367}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11467,10 +11467,15 @@ function libraryFileDate(rec) {
   return (rec && rec.createdAt) || null;
 }
 
+function libraryRefreshRevealsArrival(ids, isShown) {
+  if (!ids) return true;
+  return ids.some(function(id) { return !isShown(id); });
+}
+
 function normalizeLibraryRecord(rec) {
   const out = {
     id: rec.id, spaceId: rec.spaceId, kind: 'library',
-    name: String(rec.name || 'file'), mime: String(rec.mime || 'application/octet-stream'),
+    name: normalizeLibraryName(rec.name, 'file'), mime: String(rec.mime || 'application/octet-stream'),
     size: Number(rec.size) || 0, createdAt: rec.createdAt,
   };
   if (rec.source) out.source = rec.source;
@@ -24169,11 +24174,12 @@ function wireLibraryNameEditing(el, fileId, spaceId) {
   el.addEventListener('blur', async () => {
     const before = el._libNameBefore || '';
     const typed = el.textContent;
-    if (typed.trim() === before.trim()) { el.textContent = before; return; }
+    if (typed.trim() === before.trim()) { el.textContent = before; flushDeferredLibraryRefresh(); return; }
     const applied = await renameLibraryFile(fileId, typed);
 
     el.textContent = applied != null ? applied : before;
     el._libNameBefore = el.textContent;
+    flushDeferredLibraryRefresh();
 
   });
 }
@@ -24190,13 +24196,30 @@ function selectLibraryNameStem(el) {
   sel.addRange(range);
 }
 
-async function refreshVisibleSpaceLibrary(spaceId) {
+let _libraryRefreshDeferred = null;
+
+function flushDeferredLibraryRefresh() {
+  const deferred = _libraryRefreshDeferred;
+  _libraryRefreshDeferred = null;
+  if (deferred) refreshVisibleSpaceLibrary(deferred.spaceId, deferred.ids);
+}
+async function refreshVisibleSpaceLibrary(spaceId, ids) {
   if (!spaceId || spaceId !== activeSpaceId) return;
   const panel = $('space-files-panel');
   if (!panel || panel.hidden) return;
+  const focused = document.activeElement;
+  if (focused && focused.classList.contains('file-name-edit') && panel.contains(focused)) {
+    const prev = _libraryRefreshDeferred;
+    const merged = !ids || (prev && prev.spaceId === spaceId && !prev.ids) ? null
+      : (prev && prev.spaceId === spaceId ? prev.ids.concat(ids) : ids.slice());
+    _libraryRefreshDeferred = { spaceId, ids: merged };
+    return;
+  }
+  const reveal = libraryRefreshRevealsArrival(ids, (id) => !!$('file-name-' + id));
+  const keepTop = panel.scrollTop;
   await renderSpaceFilesList(spaceId);
 
-  panel.scrollTop = panel.scrollHeight;
+  panel.scrollTop = reveal ? panel.scrollHeight : keepTop;
 }
 
 function setFileDescriptionStatus(fileId, status, description) {
@@ -26135,7 +26158,7 @@ function applySyncDecision(d) {
         loadConversationResources(currentConvId).then(function() { rerenderCurrentThread(); });
       }
 
-      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId);
+      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId, d.ids);
       return;
 
     case 'reload-skills':
@@ -28091,9 +28114,11 @@ async function describeFileIfNeeded(fileId, onStatus, force) {
   }));
   if (!description) { if (onStatus) onStatus('failed'); return; }
 
-  record.description = capFileDescription(description);
+  const fresh = await getResource(fileId);
+  if (!fresh || fresh.kind !== 'library') { if (onStatus) onStatus('failed'); return; }
+  fresh.description = capFileDescription(description);
   try {
-    await putResource(record);
+    await putResource(fresh);
     if (onStatus) onStatus('done');
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] describeFileIfNeeded:', e && e.message);

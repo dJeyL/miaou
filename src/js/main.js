@@ -2244,13 +2244,15 @@ function applySyncDecision(d) {
       if (!sending && d.convId != null && d.convId === currentConvId) {
         loadConversationResources(currentConvId).then(function() { rerenderCurrentThread(); });
       }
-      // Un fichier de bibliothèque ajouté ailleurs : si CET onglet regarde la
-      // bibliothèque du même Space, la montrer enrichie et aller à l'arrivant —
-      // mêmes gardes que la voie locale, portées par le helper lui-même.
-      // `spaceId` n'est renseigné que pour un ajout (`putResource`) ; une
-      // suppression diffusée le laisse à null et ne repeint donc rien ici,
-      // limite assumée (l'onglet qui supprime re-rend le sien).
-      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId);
+      // Un fichier de bibliothèque écrit ailleurs (ajout, renommage, description
+      // aboutie) : si CET onglet regarde la bibliothèque du même Space, la
+      // rafraîchir — mêmes gardes que la voie locale, portées par le helper
+      // lui-même. Les `ids` lui font distinguer un arrivant (on descend) d'une
+      // carte déjà affichée (on reste où l'on lisait). `spaceId` n'est
+      // renseigné que par `putResource` ; une suppression diffusée le laisse à
+      // null et ne repeint donc rien ici, limite assumée (l'onglet qui supprime
+      // re-rend le sien).
+      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId, d.ids);
       return;
 
     case 'reload-skills':
@@ -5733,9 +5735,16 @@ async function describeFileIfNeeded(fileId, onStatus, force) {
   }));
   if (!description) { if (onStatus) onStatus('failed'); return; }
 
-  record.description = capFileDescription(description);
+  // Relire le record APRÈS l'await de rédaction, jamais écrire l'instantané
+  // capturé avant (piège 24 b) : `putResource` est un `put` intégral, donc
+  // l'instantané écraserait un renommage survenu pendant la rédaction — et
+  // RESSUSCITERAIT un fichier supprimé entre-temps. Disparu : on abandonne
+  // (même discipline que summarizeIfNeeded, piège 20).
+  const fresh = await getResource(fileId);
+  if (!fresh || fresh.kind !== 'library') { if (onStatus) onStatus('failed'); return; }
+  fresh.description = capFileDescription(description);
   try {
-    await putResource(record);
+    await putResource(fresh);
     if (onStatus) onStatus('done');
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] describeFileIfNeeded:', e && e.message);

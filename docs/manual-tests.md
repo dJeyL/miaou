@@ -479,7 +479,7 @@ Vérifier IndexedDB dans DevTools → Application → IndexedDB → `miaou` → 
     (`sniffBackupFormat`) et non à l'extension : un JSON quelconque → « JSON
     invalide » ; un zip quelconque sans `manifest.json` → « Ce zip n'est pas une
     sauvegarde MIAOU » ; un zip protégé par mot de passe portant un
-    `manifest.json` (fixture `untracked/muscle/enc-backup.zip`) → « Archive
+    `manifest.json` (fixture `untracked/muscle/fixtures/enc-backup.zip`) → « Archive
     protégée par mot de passe », **jamais** « JSON invalide » (fflate extrait un
     membre chiffré sans lever d'erreur, cf. lot V-1).
 47bis. **Sauvegarde `.json` héritée (v1/v2)** : réimporter une sauvegarde
@@ -1379,3 +1379,36 @@ Sur un **Ollama** (URL en `/v1`, derrière un proxy qui laisse passer CORS) :
 10. **Passerelle non-Ollama.** Sur le backend au schéma Mistral, l'onglet
     réseau montre un `/api/tags` en 404 par chargement de liste, et aucun
     `/api/ps` ni `/api/show`.
+
+## Bibliothèque d'Espace : écritures concurrentes et second onglet
+
+Les purs (`normalizeLibraryName`, `libraryRefreshRevealsArrival`) sont couverts
+en QuickJS ; ce qui suit touche IndexedDB, le DOM et la synchro, et se vérifie à
+la main. Onglet « Fichiers » du panneau d'Espace ; IndexedDB dans DevTools →
+Application → `miaou` → `resources`.
+
+1. **Renommage pendant une description.** Réglage de description automatique
+   actif, déposer un fichier dont la description prend quelques secondes.
+   Pendant « description en cours… », renommer la carte. À l'arrivée de la
+   description, le record porte les DEUX : le nouveau nom et la description.
+   Refaire avec « Régénérer la description » puis renommage pendant le calcul.
+2. **Suppression pendant une description.** Même montage, mais supprimer le
+   fichier pendant « description en cours… ». À l'arrivée de la description,
+   rien ne réapparaît — ni dans la liste, ni dans IndexedDB, ni après un
+   rechargement.
+3. **Second onglet, arrivant.** Deux onglets sur la bibliothèque du même Space.
+   Déposer un fichier dans le premier : le second l'affiche et descend jusqu'à
+   lui.
+4. **Second onglet, pas de saut.** Bibliothèque plus haute que le panneau ;
+   dans le second onglet, s'arrêter au milieu de la liste. Dans le premier,
+   renommer une AUTRE carte, puis en régénérer la description. Le second onglet
+   reflète les deux changements et reste où il était.
+5. **Brouillon pendant une écriture ailleurs.** Dans le second onglet, cliquer
+   un nom et taper un brouillon sans valider ; dans le premier, renommer une
+   AUTRE carte. Le brouillon reste en place, focus compris, et rien n'est écrit.
+   Échap rend le nom d'origine, Entrée écrit le brouillon ; dans les deux cas
+   la liste affiche ensuite le renommage fait dans le premier onglet.
+6. **Nom proposé par le modèle.** Faire promouvoir un fichier par le modèle
+   (`files__promote`) avec un nom sur plusieurs lignes ou très long : la carte
+   porte un nom sur une ligne, borné, et la ligne correspondante du manifeste
+   de bibliothèque reste une seule ligne.

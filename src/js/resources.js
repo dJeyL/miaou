@@ -112,7 +112,10 @@ function capFileDescription(str) {
   return s.slice(0, FILE_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
 }
 
-// Nom de fichier de bibliothèque saisi à la main (renommage utilisateur).
+// Nom de fichier de bibliothèque, à l'INGESTION (via normalizeLibraryRecord,
+// fallback 'file') comme au renommage utilisateur (fallback = l'ancien nom).
+// L'ingestion en a autant besoin : le nom de `files__promote` est un texte
+// libre du modèle que rien d'autre ne valide.
 // Pur, testé QuickJS. Trois règles, et rien de plus :
 //   - les blancs sont normalisés (un nom collé depuis un explorateur peut
 //     porter un saut de ligne, qui casserait une ligne du manifeste) ;
@@ -210,12 +213,28 @@ function libraryFileDate(rec) {
   return (rec && rec.createdAt) || null;   // sans date : rien à dire, on n'invente pas « maintenant »
 }
 
+// Un rafraîchissement de la bibliothèque affichée doit-il aller MONTRER un
+// arrivant (scroll en bas, cf. refreshVisibleSpaceLibrary) ? Oui seulement si
+// un des ids touchés n'a pas encore de carte : une carte déjà là (renommage,
+// description aboutie) est mise à jour sur place, et descendre ferait sauter le
+// panneau sous les yeux de qui lit plus haut. Décidé chez le RÉCEPTEUR, qui voit
+// ce qu'il affiche — plutôt qu'un drapeau « ajout » dans le broadcast, que
+// chaque appelant de `putResource` devrait penser à poser. `ids` absent : voie
+// locale d'ajout, l'arrivant est certain. `isShown(id)` est injecté (DOM côté
+// ui.js), d'où la pureté.
+function libraryRefreshRevealsArrival(ids, isShown) {
+  if (!ids) return true;
+  return ids.some(function(id) { return !isShown(id); });
+}
+
 // Normalise un record library aux champs figés du schéma : présent dès le
 // jour un pour éviter une migration ultérieure de `source`/`description`.
+// Le nom passe par la MÊME normalisation que le renommage : les trois voies
+// d'ajout (upload, promotion utilisateur, `files__promote`) convergent ici.
 function normalizeLibraryRecord(rec) {
   const out = {
     id: rec.id, spaceId: rec.spaceId, kind: 'library',
-    name: String(rec.name || 'file'), mime: String(rec.mime || 'application/octet-stream'),
+    name: normalizeLibraryName(rec.name, 'file'), mime: String(rec.mime || 'application/octet-stream'),
     size: Number(rec.size) || 0, createdAt: rec.createdAt,
   };
   if (rec.source) out.source = rec.source;

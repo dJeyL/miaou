@@ -107,6 +107,36 @@ describe('normalizeLibraryRecord', function() {
     expect(r.name).toBe('file');
     expect(r.mime).toBe('application/octet-stream');
   });
+  it('normalise le nom à l\'ingestion comme au renommage (nom libre du modèle)', function() {
+    var r = normalizeLibraryRecord({ id: 'file_e', spaceId: 's1', name: 'synthèse\n  Q3.md', size: 0, createdAt: 1 });
+    expect(r.name).toBe('synthèse Q3.md');
+  });
+  it('nom fait de blancs → file, jamais une carte sans libellé', function() {
+    var r = normalizeLibraryRecord({ id: 'file_f', spaceId: 's1', name: ' \n\t ', size: 0, createdAt: 1 });
+    expect(r.name).toBe('file');
+  });
+  it('nom capé à LIBRARY_NAME_MAX_CHARS', function() {
+    var r = normalizeLibraryRecord({ id: 'file_g', spaceId: 's1', name: new Array(500).join('x'), size: 0, createdAt: 1 });
+    expect(r.name.length).toBe(LIBRARY_NAME_MAX_CHARS);
+  });
+});
+
+// ── libraryRefreshRevealsArrival (scroll vers l'arrivant ou non) ─────────────
+
+describe('libraryRefreshRevealsArrival', function() {
+  var shown = function(id) { return id === 'file_a' || id === 'file_b'; };
+  it('sans ids (voie locale d\'ajout) → montre l\'arrivant', function() {
+    expect(libraryRefreshRevealsArrival(null, shown)).toBe(true);
+  });
+  it('mise à jour d\'une carte déjà affichée (renommage, description) → pas de scroll', function() {
+    expect(libraryRefreshRevealsArrival(['file_a'], shown)).toBe(false);
+  });
+  it('id pas encore affiché → arrivant, scroll', function() {
+    expect(libraryRefreshRevealsArrival(['file_z'], shown)).toBe(true);
+  });
+  it('lot mixte : un seul arrivant suffit', function() {
+    expect(libraryRefreshRevealsArrival(['file_a', 'file_z'], shown)).toBe(true);
+  });
 });
 
 // ── normalizeLibraryName (renommage utilisateur d'un fichier de bibliothèque) ─

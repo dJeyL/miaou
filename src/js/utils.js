@@ -1529,10 +1529,10 @@ function langExt(lang) {
 // en { lang, filename }. Le premier segment non-espace est le langage (comme le
 // renderer par défaut de marked, ^\S*), débarrassé d'une éventuelle virgule
 // terminale (tolérance à l'ancienne forme cassée "python, filename=…", testée et
-// rejetée par Julien — cf. untracked/brief-codeblock-filename.md). Le filename
-// est cherché dans le reste via filename=valeur ou filename="valeur entre guillemets"
-// (guillemets retirés). '' si absent. Pure, sans effet de bord — appelée par le
-// renderer custom marked (ui.js) et testable seule en QuickJS.
+// rejetée par Julien). Le filename est cherché dans le reste via filename=valeur
+// ou filename="valeur entre guillemets" (guillemets retirés). '' si absent.
+// Pure, sans effet de bord — appelée par le renderer custom marked (ui.js) et
+// testable seule en QuickJS.
 function parseCodeFenceInfo(info) {
   const raw = (info || '').match(/^\S*/)[0];
   const lang = raw.replace(/,$/, '');

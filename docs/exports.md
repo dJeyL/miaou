@@ -61,7 +61,7 @@
   l'intérieur du bubble (sinon il serait exclu/recréé lors des reconstructions
   de `bubble.innerHTML` comme dans `cancelEdit`).
 
-## Export HTML standalone (lot G, brief `untracked/muscle/G-html-export.md`)
+## Export HTML standalone (lot G)
 
 Export d'une conversation en un fichier `.html` autonome, zéro-JS, ouvrable
 hors MIAOU (mail, partage). Étape G-1 : socle de fonctions pures (le

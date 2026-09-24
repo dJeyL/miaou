@@ -8,7 +8,7 @@ La zone hors-Space historique est elle-même un Space — le **default Space**
 existe **au-dessus** des Spaces pour les souvenirs uniquement : global,
 injecté dans tous les Spaces.
 
-Décisions actées (brief C, `untracked/muscle/C-spaces.md` — non versionné,
+Décisions actées (lot C,
 décisions reprises ici) :
 - Nom d'affichage du default Space : « Général ».
 - Ligne « Espace : &lt;nom&gt; » dans `<miaou_context>` (visible au modèle).
@@ -210,7 +210,7 @@ un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
     ricochet. `_lastContextManifest` est invalidé dans les deux branches où
     la conv suivie change de Space (piège 16/18).
   - Décisions et audit complet (alternatives écartées, ambiguïtés tranchées) :
-    `untracked/muscle/Cter-audit.md` (non versionné).
+    lot Cter.
 
 ## Bibliothèque de fichiers d'espace (lot Cbis)
 
@@ -369,6 +369,13 @@ aide à la décision de lecture).
   plus une action manuelle « Régénérer la description » sur la carte
   (`onRegenerateFileDescription`, paramètre `force=true` — ignore le toggle ET
   une description déjà présente).
+  **Le record est relu APRÈS la rédaction**, jamais l'instantané lu avant
+  réécrit : `putResource` étant un `put` intégral, cet instantané écraserait un
+  renommage fait pendant la rédaction (jusqu'à 60 s) et ressusciterait un
+  fichier supprimé entre-temps. Disparu → statut `failed`, rien d'écrit
+  (piège 24 b, même discipline que les résumés au piège 20). C'est le pendant
+  de la relecture de `renameLibraryFile` : les deux écrivains relisent, dans
+  les deux sens.
 - **Extraction** : texte (`class:'inline'`) → contenu déchiffré, tronqué à
   `FILE_DESCRIPTION_EXTRACT_MAX_CHARS` (8 kB, proposition confirmée) ;
   binaire → **appel direct** à `mcpRpc` via `findDocsInflationTool()` +
@@ -506,7 +513,16 @@ aide à la décision de lecture).
   (`.space-side-panel`, `overflow-y: auto`), pas `.mem-list`. Le même helper est
   appelé à la **réception** d'un `resources-updated` portant un `spaceId`
   (cf. `docs/multitab-sync.md`) : un onglet voisin ouvert sur la bibliothèque du
-  même Space se met à jour de la même façon.
+  même Space se met à jour — mais ne descend que s'il y a un **arrivant**. Un
+  `resources-updated` diffuse aussi un renommage ou une description aboutie, sur
+  une carte déjà affichée : y descendre ferait sauter le panneau sous les yeux
+  de qui lit plus haut. Le récepteur passe ses `ids`, et le pur
+  `libraryRefreshRevealsArrival` (resources.js) tranche sur « un id sans carte
+  à l'écran ? », constaté AVANT le re-rendu ; sinon la position de lecture est
+  restaurée. Décidé côté récepteur, qui voit ce qu'il affiche, plutôt que par
+  un drapeau « ajout » dans le payload que chaque appelant de `putResource`
+  devrait penser à poser. La voie locale (`storeLibraryFile`, sans `ids`) reste
+  un ajout certain.
 - **Statut par carte** (`renderSpaceFilesList`/`setFileDescriptionStatus`,
   ui.js) : « description en cours… » sur la ligne d'excerpt + bouton désactivé
   pendant le calcul, puis contenu (`done`) ou retour à l'état neutre avec
@@ -602,7 +618,11 @@ aide à la décision de lecture).
     `LIBRARY_NAME_MAX_CHARS`** — le nom part dans le message système
     (`buildLibraryManifestBlock` ou la note courte) et dans `files__list`, donc
     un nom non borné s'y paierait à chaque tour. Cap **sans ellipse** : on ne
-    fabrique pas un nom de fichier qui mentirait sur son extension.
+    fabrique pas un nom de fichier qui mentirait sur son extension. La même
+    normalisation s'applique **à l'ingestion** (`normalizeLibraryRecord`,
+    repli `'file'`) : le nom de `files__promote` est un texte libre du modèle
+    que rien d'autre ne valide, et un saut de ligne y casserait le manifeste
+    tout autant.
   - **La description ne bouge pas** (décision Julien 2026-09-20) : elle décrit
     le CONTENU, que le renommage ne touche pas. « Régénérer la description »
     reste la voie explicite.
@@ -616,6 +636,16 @@ aide à la décision de lecture).
     (`refreshVisibleSpaceLibrary`). Le nom vit dans le message système, statique
     et cachable : un renommage l'invalide **une fois**, ce que le piège 16 admet
     explicitement (le veto vise le dynamique récurrent).
+
+  - **Un rafraîchissement arrivé pendant la saisie est DIFFÉRÉ** jusqu'à la
+    sortie du champ (`_libraryRefreshDeferred`, `flushDeferredLibraryRefresh`,
+    ui.js), sur toutes ses sorties — Entrée, Échap, nom inchangé. Re-rendre
+    tout de suite retire le champ focalisé ; le navigateur émet alors un `blur`
+    dont le handler persiste le BROUILLON comme un renommage validé, pendant que
+    la carte re-rendue affiche l'ancien nom (mesuré le 2026-09-24 : n'importe
+    quelle écriture de bibliothèque dans un autre onglet suffisait). La liste
+    reste figée le temps d'une saisie, prix accepté ; les `ids` différés sont
+    cumulés pour que le rendu d'après sache encore s'il doit montrer un arrivant.
 
   Échec d'écriture (IDB indisponible, record disparu) → le nom affiché revient à
   celui d'avant : l'affordance ne ment jamais sur l'état du store.
