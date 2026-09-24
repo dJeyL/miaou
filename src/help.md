@@ -931,6 +931,12 @@ Quelques repères pour te déplacer dans MIAOU :
   ne pulse pas, tu n'as rien manqué. L'utiliser (ou redescendre
   toi-même jusqu'en bas) relance le suivi jusqu'au bout pour cette réponse-là ;
   le tour suivant repart du comportement normal.
+- **Sélectionner pendant que la réponse s'écrit** : tu peux sélectionner et
+  copier du texte d'une réponse en cours, et faire défiler un bloc de code ou
+  un tableau large : ce qui est déjà écrit ne bouge plus. Si ta sélection
+  touche le passage en train de s'écrire, l'affichage de la suite **se met en
+  pause** tant que la sélection existe — rien n'est perdu, tout ce qui est
+  arrivé entre-temps apparaît dès que tu cliques ailleurs.
 - **Liens** : un lien web cité dans un message — par toi ou par le modèle —
   s'ouvre dans un **nouvel onglet**, pour que la conversation reste en place
   derrière. Seuls les liens vers une de tes conversations (sujet `historique`)

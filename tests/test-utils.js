@@ -1770,6 +1770,40 @@ describe('copyAckFields (whitelist unique des champs d\'ack)', function() {
   });
 });
 
+describe('streamBlockKeepCount', function() {
+  it('garde le préfixe commun et rien au-delà', function() {
+    expect(streamBlockKeepCount({ keys: ['a', 'b', 'c'], links: '' }, { keys: ['a', 'b', 'c2', 'd'], links: '' })).toBe(2);
+  });
+  it('garde tout quand des blocs ne font que s’ajouter', function() {
+    expect(streamBlockKeepCount({ keys: ['a', 'b'], links: '' }, { keys: ['a', 'b', 'c'], links: '' })).toBe(2);
+  });
+  it('ne garde rien quand la signature des liens en référence a changé', function() {
+    expect(streamBlockKeepCount({ keys: ['a', 'b'], links: '' }, { keys: ['a', 'b', 'c'], links: '["x"]' })).toBe(0);
+  });
+  it('ne garde rien sans état précédent', function() {
+    expect(streamBlockKeepCount(null, { keys: ['a'], links: '' })).toBe(0);
+  });
+  it('re-rend un bloc requalifié même si le suivant est identique', function() {
+    expect(streamBlockKeepCount({ keys: ['a', 'b', 'c'], links: '' }, { keys: ['a', 'B', 'c'], links: '' })).toBe(1);
+  });
+});
+
+describe('appendOnlySuffix', function() {
+  it('rend la partie ajoutée quand le texte se prolonge', function() {
+    expect(appendOnlySuffix('abc', 'abcdef')).toBe('def');
+  });
+  it('rend une chaîne vide sans changement', function() {
+    expect(appendOnlySuffix('abc', 'abc')).toBe('');
+  });
+  it('rend null sur une réécriture ou un raccourcissement', function() {
+    expect(appendOnlySuffix('abc', 'abX')).toBe(null);
+    expect(appendOnlySuffix('abc', 'ab')).toBe(null);
+  });
+  it('traite un précédent absent comme vide', function() {
+    expect(appendOnlySuffix(null, 'x')).toBe('x');
+  });
+});
+
 describe('parseCodeFenceInfo', function() {
   it('lang seul, pas de filename', function() {
     var r = parseCodeFenceInfo('python');

@@ -367,11 +367,76 @@ l'export** — `buildExportHtml` reçoit `wideTables` et pose l'attribut sur
 contrat, cf. `docs/exports.md`). Un fichier exporté n'a pas de réglages : il
 garde l'état du moment.
 
+## Rendu pendant le streaming (par blocs)
+
+`streamInto` rend la réponse en cours par fenêtres de ~90 ms. Il réécrivait tout
+le `.body` à chaque fenêtre : chaque nœud était recréé, donc une sélection de
+texte sautait, et le défilement interne des blocs de code bornés et des porteurs
+de tableau (`.table-bleed`) revenait à zéro. Remarqué en usage réel.
+
+**Principe.** `renderStreamBlocks` (ui.js) passe par `marked.lexer`, puis rend
+chaque token de premier niveau séparément (`marked.parser` sur une liste d'un
+seul token, qui porte les `links` de la liste complète). L'état de vue
+(`_streamBlocks`, WeakMap clefée par le `.body`) retient pour chaque bloc son
+`raw` et les nœuds qu'il a produits. Les blocs dont la source n'a pas bougé sont
+GARDÉS, nœuds compris ; seuls les autres sont remplacés — en pratique le dernier.
+Le décompte vient du pur `streamBlockKeepCount` (utils.js).
+
+- **Comparer la source, jamais supposer figé ce qui précède le dernier bloc.**
+  Un bloc peut être requalifié après coup (paragraphe devenu titre setext,
+  en-tête devenu tableau, liste qui s'allonge) : son `raw` change, il est re-rendu.
+  Seule dépendance non locale : une définition de lien en référence arrivée plus
+  bas. D'où la signature `links`, dont tout changement invalide l'ensemble.
+- **Pas de conteneur par bloc.** Les nœuds sont enfants directs du `.body`, comme
+  dans un rendu d'un seul tenant : le CSS n'a pas à connaître le découpage.
+- **Nœuds relevés APRÈS `decoratePre`.** `wrapWideTables` y déplace chaque
+  `<table>` dans un porteur `.table-bleed`, qui devient l'enfant direct du `.body`
+  (`bodyChildOf`). Retenir le `<table>` brut invalidait l'état à la frame suivante,
+  si bien que tout était re-rendu à chaque frame dès qu'un tableau existait. Ce
+  défaut, invisible aux tests purs, a été attrapé par le Playwright ci-dessous.
+- **État jeté dès que ses nœuds ne sont plus dans le `.body`** (finalize, patienteur
+  d'un tour d'outils, rebranchement sur une autre bulle) : on repart de zéro.
+- **Options de marked fusionnées explicitement** (`{...marked.defaults, breaks}`) :
+  contrairement à `marked.parse`, `marked.lexer`/`marked.parser` (12.0.0) prennent
+  les options telles quelles, et `{ breaks: true }` seul perd GFM (plus de tableaux)
+  et le renderer de code posé par `marked.use`. Vérifié sur la source de marked.
+- **Coloration des seuls nœuds neufs.** Prism réécrit le contenu du `<code>` qu'il
+  colore, donc recolorer un bloc gardé y détruirait la sélection. `decoratePre`
+  est déjà idempotent (il ne touche que les `<pre>` sans `.code-head`).
+- **Défilement interne reporté.** Sur les nœuds remplacés, `scrollTop`/`scrollLeft`
+  des boîtes `pre > code` et `.table-bleed` sont relevés dans l'ordre du document,
+  puis réappliqués aux boîtes neuves : le bloc en cours d'écriture est justement
+  celui qu'on fait défiler pour le lire.
+- **Sélection sur un bloc à remplacer → rendu DIFFÉRÉ.** Le timer se réarme sans
+  peindre ; rien n'est perdu, le texte continue de s'accumuler dans
+  `gen.partialContent`, et le rendu rattrape au relâchement de la sélection. Une
+  sélection limitée aux blocs gardés ne diffère rien.
+
+**Finalisation par le même chemin.** Un rendu d'un seul tenant dans
+`finalizeAssistant` ferait perdre, à la toute fin, la sélection que le streaming
+vient de préserver. Elle appelle donc `renderStreamBlocks` en mode `force` (jamais
+différé) et sans caret. Le résultat est identique à `renderMd` : le parser de marked
+rend chaque token de premier niveau indépendamment, ce qui a été vérifié sur marked
+12.0.0 (titres, tableaux, listes, liens en référence, fence non fermée). Une seule
+exception : un bloc HTML brut peut ouvrir une balise qu'un bloc suivant referme, et
+assaini seul par DOMPurify, il ne se recolle pas. `noHtml` fait alors retomber la
+finalisation sur le rendu d'un seul tenant. Pendant le streaming, ce décalage est
+toléré parce que transitoire. `highlightUncolored` recolore les blocs gardés restés
+sans token Prism (grammaire chargée trop tard par l'autoloader), et eux seuls.
+Mermaid reste réservé à la finalisation (cf. « Cycle de rendu »).
+
+**Raisonnement.** Même symptôme, plus simple : `renderReasoningNow` ajoute un nœud
+texte quand le raisonnement ne fait que se prolonger (`appendOnlySuffix`, utils.js)
+et ne réécrit `textContent` que sinon.
+
 ## Tests
 
 - QuickJS (`tests/test-utils.js`) : `isMermaidLang`, `mermaidThemeFor`,
   `sanitizeMermaidSource`, `isPreviewableLang`, `buildPreviewSrcdoc`,
-  `diagramImageName` — les seuls helpers purs. Le rendu, le toggle, le thème, l'iframe, la lightbox et le
+  `diagramImageName`, `streamBlockKeepCount`, `appendOnlySuffix` — les seuls
+  helpers purs. Le rendu par blocs lui-même (DOM, sélection, défilement) se
+  vérifie à la main : `docs/manual-tests.md`, section « Rendu pendant le
+  streaming ». Le rendu, le toggle, le thème, l'iframe, la lightbox et le
   canvas PNG sont du **territoire manuel** : `docs/manual-tests.md` tests 71
   à 84.
 - Playwright : `.claude/skills/run-miaou/verify-thread-code-maxh.mjs` mesure la
@@ -392,6 +457,17 @@ garde l'état du moment.
   est correct (payé en écrivant le script). Il lit aussi la valeur résolue de
   `--table-bleed`, qui dit *lequel* des consommateurs a agi là où une géométrie
   seule laisse la question ouverte.
+- Playwright : `.claude/skills/run-miaou/verify-stream-blocks.mjs` couvre le
+  rendu par blocs pendant le streaming. Il vérifie les points suivants :
+  - un bloc terminé garde le même nœud et sa sélection ;
+  - une sélection sur le bloc en cours diffère le rendu, qui rattrape au
+    relâchement ;
+  - le défilement d'un bloc de code remplacé est reporté ;
+  - le `scrollLeft` d'un tableau terminé est conservé ;
+  - la finalisation garde la sélection et rend la même chose que `renderMd`, après
+    normalisation de la coloration Prism (asynchrone, et elle pose un `tabindex`
+    sur le `<pre>`) ;
+  - le raisonnement garde sa sélection pendant qu'il s'allonge.
 - Fixtures : `.claude/skills/run-miaou/seed-fixtures.js` seed-23 (bloc mermaid valide avec
   `filename=flux-oauth.mmd` — exercice du nommage d'export E3 — + bloc
   invalide + bloc bash de contrôle) et seed-24 (page HTML avec script sondant

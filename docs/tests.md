@@ -308,6 +308,12 @@ harness ne fournit pas. IDB, `internResourcesFromResult`, `loadConversationResou
 et la cascade de blocs non-text (cf. `docs/mcp.md`) se vérifient à la main (tests 28–34 dans
 `docs/manual-tests.md`).
 
+Couvert aussi : le **rendu par blocs pendant le streaming** (cf.
+`docs/rendering.md`) — `streamBlockKeepCount` (préfixe commun gardé, blocs
+seulement ajoutés, signature de liens changée, absence d'état, bloc requalifié
+au milieu) et `appendOnlySuffix` (prolongement, identité, réécriture,
+raccourcissement, précédent absent). Le DOM se vérifie à la main.
+
 Couvert aussi : le **nom de fichier proposé par le modèle pour un bloc de code**
 (`filename=`, cf. `docs/tools.md`) — `parseCodeFenceInfo` (lang seul, lang +
 filename séparés par un espace, espaces multiples, filename entre guillemets

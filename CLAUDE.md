@@ -688,6 +688,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   levier unique `--table-bleed` et ses trois consommateurs (réglage « Élargir les
   grands tableaux » via `data-wide-tables`, bulles utilisateur et comptes rendus
   d'agent inconditionnels), figeage du réglage à l'export par `buildExportHtml`.
+  Porte aussi le **rendu par blocs pendant le streaming** (`renderStreamBlocks` :
+  blocs gardés tant que leur `raw` est inchangé, `streamBlockKeepCount`, rendu
+  différé tant qu'une sélection touche un bloc à remplacer, défilement interne
+  reporté, options marked fusionnées explicitement, finalisation par le même
+  chemin sauf bloc HTML brut).
 - **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
   déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée,
   item à deux étages (`.cmdk-item-row` toujours posée, `.cmdk-item-excerpt` pour

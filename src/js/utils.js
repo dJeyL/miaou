@@ -1542,6 +1542,37 @@ function parseCodeFenceInfo(info) {
   return { lang, filename };
 }
 
+// Rendu par blocs pendant le streaming (streamInto, ui.js) : combien de blocs
+// déjà peints peut-on GARDER tels quels ? `prev`/`next` = { keys, links } —
+// keys : le `raw` de chaque token de premier niveau du lexer marked, links : la
+// signature des définitions de liens en référence. Un bloc est gardé tant que
+// sa source est identique ET que tous ceux qui le précèdent le sont (préfixe
+// commun) : le comparer à la source, plutôt que de supposer figé tout ce qui
+// précède le dernier bloc, couvre les requalifications rétroactives (paragraphe
+// devenu titre setext, en-tête devenu tableau, liste qui s'allonge) — le bloc
+// concerné change de `raw`, donc se re-rend. Seule dépendance NON locale d'un
+// bloc : une définition `[x]: url` arrivée plus bas change le rendu d'un lien
+// plus haut sans toucher à son `raw` — d'où la signature, dont tout changement
+// invalide l'ensemble. Pure, testée en QuickJS.
+function streamBlockKeepCount(prev, next) {
+  if (!prev || !next || prev.links !== next.links) return 0;
+  const a = prev.keys || [], b = next.keys || [];
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i++;
+  return i;
+}
+
+// Suffixe à ajouter quand `next` prolonge `prev` à l'identique, `null` sinon
+// (réécriture, texte raccourci). Sert au raisonnement en streaming
+// (renderReasoningNow, ui.js) : ajouter au nœud texte au lieu de réécrire tout le
+// textContent préserve une sélection en cours. Pure, testée en QuickJS.
+function appendOnlySuffix(prev, next) {
+  const p = String(prev == null ? '' : prev), n = String(next == null ? '' : next);
+  if (n.length < p.length || n.slice(0, p.length) !== p) return null;
+  return n.slice(p.length);
+}
+
 // Assainit un nom de fichier proposé par le modèle pour le téléchargement d'un
 // codeblock : retire tout séparateur de chemin et les caractères de contrôle —
 // on écrit un nom de fichier, jamais un chemin (defense-in-depth, pas de directory

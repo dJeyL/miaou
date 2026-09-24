@@ -1412,3 +1412,27 @@ Application → `miaou` → `resources`.
    (`files__promote`) avec un nom sur plusieurs lignes ou très long : la carte
    porte un nom sur une ligne, borné, et la ligne correspondante du manifeste
    de bibliothèque reste une seule ligne.
+
+## Rendu pendant le streaming (sélection et défilement)
+
+Le pur (`streamBlockKeepCount`, `appendOnlySuffix`) est couvert en QuickJS ; ce
+qui suit touche le DOM et la sélection. Demander une réponse longue qui mêle
+paragraphes, un tableau large et un long bloc de code (au-delà de la hauteur
+bornée), sur un modèle assez lent pour avoir le temps d'agir.
+
+1. **Sélection dans un bloc terminé.** Pendant le streaming, sélectionner une
+   phrase d'un paragraphe déjà complet : la sélection tient pendant que la
+   suite arrive, et après la fin de la réponse.
+2. **Sélection dans le bloc en cours.** Sélectionner du texte dans le dernier
+   paragraphe, en cours d'écriture : l'affichage se fige tant que la sélection
+   existe, puis rattrape tout le texte reçu entre-temps dès qu'on clique
+   ailleurs.
+3. **Défilement d'un bloc de code en cours d'écriture.** Remonter dans le bloc
+   de code pendant qu'il s'allonge : la position reste où on l'a mise.
+4. **Défilement horizontal d'un tableau.** Faire défiler un tableau large déjà
+   complet pendant que la réponse continue : il ne revient pas à gauche.
+5. **Rendu final identique.** À la fin de la réponse, recharger la page : le
+   message rendu depuis l'historique est identique à celui de fin de streaming
+   (titres, tableau, liste, bloc de code coloré, lien).
+6. **Raisonnement.** Sur un modèle à raisonnement, déplier le panneau et
+   sélectionner une ligne pendant qu'il s'écrit : la sélection tient.

@@ -2032,10 +2032,15 @@ function renderReasoningNow(wrap, text) {
   // Autoscroll du raisonnement : même doctrine que le fil (isAtBottom) — ne
   // suivre le bas que si l'utilisateur y était déjà AVANT la réécriture, pour
   // ne pas arracher la vue d'un lecteur remonté dans un raisonnement en cours.
-  // Mesuré avant textContent (qui réécrit tout et modifie scrollHeight).
+  // Mesuré avant l'écriture (qui modifie scrollHeight).
   const stick = !panel.hasAttribute('hidden') &&
     content.scrollHeight - content.scrollTop - content.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
-  content.textContent = text;
+  // Ajout en queue plutôt que réécriture quand le texte ne fait que se
+  // prolonger (cas du streaming) : réécrire textContent recrée le nœud texte et
+  // perd toute sélection en cours. Réécriture complète sinon.
+  const suffix = appendOnlySuffix(content.textContent, text);
+  if (suffix === null) content.textContent = text;
+  else if (suffix) content.appendChild(document.createTextNode(suffix));
   if (stick) content.scrollTop = content.scrollHeight;  // suivre si déplié ET déjà en bas
 }
 
@@ -4044,13 +4049,24 @@ function stopWaiter() {
 // coloration que par fenêtres de ~90 ms. Chaque frame peinte est complète
 // (parsée, décorée, colorée) — jamais d'état intermédiaire non coloré, donc
 // pas de scintillement. La dernière mise à jour en attente est écrasée.
+//
+// Rendu PAR BLOCS (renderStreamBlocks) : réécrire tout le .body à chaque frame
+// recréait chaque nœud, donc perdait toute sélection de texte et remettait à
+// zéro le défilement interne des blocs de code bornés et des tableaux larges.
+// Seuls les blocs dont la source a changé sont remplacés — en pratique le
+// dernier. Et tant qu'une sélection touche un bloc à remplacer, le rendu est
+// DIFFÉRÉ (le texte continue de s'accumuler dans gen.partialContent, rien n'est
+// perdu) : il reprend au relâchement. Cf. docs/rendering.md.
 let _streamTimer = null;
 let _streamPending = null;
 
 function streamInto(wrap, full) {
   stopWaiter();                 // transition WAITING/REASONING → STREAMING
   _streamPending = { wrap, full };
-  if (_streamTimer) return;
+  if (!_streamTimer) scheduleStreamRender();
+}
+
+function scheduleStreamRender() {
   _streamTimer = setTimeout(() => {
     _streamTimer = null;
     const p = _streamPending;
@@ -4061,9 +4077,13 @@ function streamInto(wrap, full) {
     // presque toujours "pas en bas" même quand l'utilisateur suivait le fil.
     const follow = shouldFollowStream(currentConvId);
     const body = p.wrap.querySelector('.body');
-    body.innerHTML = renderMd(p.full) + '<span class="cursor-blink"></span>';
-    decoratePre(p.wrap);
-    highlightUnder(p.wrap);   // coloration pendant le streaming
+    if (renderStreamBlocks(p.wrap, body, p.full, { caret: true }) === 'deferred') {
+      // Sélection en cours sur un bloc à remplacer : on repasse plus tard. Un
+      // delta arrivé entre-temps a la priorité (il porte le texte le plus long).
+      if (!_streamPending) _streamPending = p;
+      scheduleStreamRender();
+      return;
+    }
     // Plafonné : le suivi s'arrête avant que l'énoncé qui a provoqué la
     // réponse ne sorte par le haut (cf. scrollBottomCapped).
     if (follow) scrollBottomCapped(currentConvId);
@@ -4078,6 +4098,131 @@ function streamInto(wrap, full) {
 function cancelStreamRender() {
   if (_streamTimer) { clearTimeout(_streamTimer); _streamTimer = null; }
   _streamPending = null;
+}
+
+// État de VUE du rendu par blocs, clefé par le .body (WeakMap : jamais posé sur
+// un objet persisté). { keys, links, nodes } — nodes[i] : les nœuds DOM
+// produits par le bloc i, enfants directs du .body. Pas de conteneur par bloc :
+// le DOM reste celui d'un rendu d'un seul tenant, donc le CSS (`.body > p`,
+// premiers/derniers enfants) n'a pas à le savoir.
+const _streamBlocks = new WeakMap();
+
+// Rend `full` dans `body` en ne remplaçant que les blocs dont la source a
+// changé (streamBlockKeepCount, utils.js). Rend 'done', 'deferred' (une
+// sélection touche un bloc à remplacer — jamais avec opts.force), ou 'full'
+// (repli sur un rendu d'un seul tenant : marked sans lexer, ou opts.noHtml et un
+// bloc HTML brut présent). Un état dont les nœuds ne sont plus dans le .body
+// (finalize, patienteur d'un tour d'outils, rendu d'ailleurs) est jeté : on
+// repart de zéro plutôt que de garder des nœuds qui ne sont plus à l'écran.
+function renderStreamBlocks(wrap, body, full, opts) {
+  const o = opts || {};
+  const caretHtml = '<span class="cursor-blink"></span>';
+  const fullRender = () => {
+    _streamBlocks.delete(body);
+    body.innerHTML = renderMd(full) + (o.caret ? caretHtml : '');
+    decoratePre(wrap);
+    highlightUnder(wrap);
+    return 'full';
+  };
+  if (!window.marked || !marked.lexer || !marked.parser) return fullRender();
+  // Fusion EXPLICITE avec marked.defaults : contrairement à marked.parse,
+  // marked.lexer/marked.parser (12.0.0, source lue) prennent les options telles
+  // quelles — `{ breaks: true }` seul perdrait GFM (tableaux) et le renderer de
+  // code posé par marked.use.
+  const mdOpts = Object.assign({}, marked.defaults, { breaks: true });
+  const tokens = marked.lexer(resolveConvRefs(full), mdOpts);
+  // Un bloc HTML brut peut ouvrir une balise qu'un bloc suivant referme :
+  // assaini seul, il ne se recolle pas comme dans un rendu d'un seul tenant.
+  // Toléré pendant le streaming (transitoire), jamais pour le rendu définitif.
+  if (o.noHtml && tokens.some(t => t.type === 'html')) return fullRender();
+  const next = { keys: tokens.map(t => t.raw), links: JSON.stringify(tokens.links || {}) };
+  let st = _streamBlocks.get(body);
+  if (st && !st.nodes.every(ns => ns.every(n => n.parentNode === body))) st = null;
+  const keep = streamBlockKeepCount(st, next);
+  const doomed = st ? [].concat(...st.nodes.slice(keep)) : [];
+  if (st && !o.force && selectionTouchesNodes(doomed)) return 'deferred';
+  const scroll = captureInnerScroll(doomed);
+  if (st) doomed.forEach(n => n.remove());
+  else body.textContent = '';                 // patienteur, rendu non suivi
+  const oldCaret = body.querySelector(':scope > .cursor-blink');
+  if (oldCaret) oldCaret.remove();
+  const nodes = st ? st.nodes.slice(0, keep) : [];
+  for (let i = keep; i < tokens.length; i++) {
+    const one = [tokens[i]];
+    one.links = tokens.links;                 // le parser résout les liens en référence depuis la liste
+    const tpl = document.createElement('template');
+    tpl.innerHTML = sanitizeHtml(marked.parser(one, mdOpts));
+    const ns = Array.from(tpl.content.childNodes);
+    body.appendChild(tpl.content);
+    nodes.push(ns);
+  }
+  if (o.caret) body.insertAdjacentHTML('beforeend', caretHtml);
+  decoratePre(wrap);                          // idempotent : ne touche que les <pre> neufs
+  // Relevé APRÈS decoratePre : wrapWideTables y déplace chaque <table> dans un
+  // porteur `.table-bleed`, qui devient l'enfant direct du .body. Retenir le
+  // <table> invaliderait l'état à la frame suivante (il n'est plus enfant du
+  // .body), donc tout serait re-rendu à chaque frame dès qu'un tableau existe.
+  for (let i = keep; i < nodes.length; i++) nodes[i] = nodes[i].map(n => bodyChildOf(body, n));
+  _streamBlocks.set(body, { keys: next.keys, links: next.links, nodes });
+  // Coloration des SEULS nœuds neufs : Prism réécrit le contenu du <code>, ce
+  // qui détruirait une sélection posée dans un bloc gardé.
+  // Depuis les nœuds RELEVÉS (porteurs compris) : le report du défilement doit
+  // retrouver le `.table-bleed`, qui n'est pas dans les nœuds bruts du parser.
+  const settled = [].concat(...nodes.slice(keep));
+  settled.forEach(n => { if (n.nodeType === 1) highlightUnder(n); });
+  restoreInnerScroll(settled, scroll);
+  return 'done';
+}
+
+// Ancêtre de `n` qui est enfant direct de `body` (n lui-même s'il l'est déjà).
+function bodyChildOf(body, n) {
+  while (n && n.parentNode && n.parentNode !== body) n = n.parentNode;
+  return n;
+}
+
+function selectionTouchesNodes(nodes) {
+  if (!nodes.length || !window.getSelection) return false;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+  const range = sel.getRangeAt(0);
+  return nodes.some(n => range.intersectsNode(n));
+}
+
+// Défilement interne des boîtes qui en ont un (bloc de code borné, porteur de
+// tableau large), relevé dans l'ordre du document sur les nœuds remplacés et
+// réappliqué dans le même ordre sur leurs successeurs : le bloc en cours
+// d'écriture est justement celui qu'on fait défiler pour le lire.
+const INNER_SCROLL_SELECTOR = 'pre > code, .table-bleed';
+function innerScrollBoxes(nodes) {
+  const out = [];
+  nodes.forEach(n => {
+    if (n.nodeType !== 1) return;
+    if (n.matches(INNER_SCROLL_SELECTOR)) out.push(n);
+    out.push(...n.querySelectorAll(INNER_SCROLL_SELECTOR));
+  });
+  return out;
+}
+function captureInnerScroll(nodes) {
+  return innerScrollBoxes(nodes).map(el => ({ top: el.scrollTop, left: el.scrollLeft }));
+}
+function restoreInnerScroll(nodes, saved) {
+  if (!saved.some(s => s.top || s.left)) return;
+  innerScrollBoxes(nodes).forEach((el, i) => {
+    if (!saved[i]) return;
+    el.scrollTop = saved[i].top;
+    el.scrollLeft = saved[i].left;
+  });
+}
+
+// Au rendu définitif, les blocs gardés ont été colorés pendant le streaming —
+// sauf si la grammaire Prism n'était pas encore chargée à ce moment (autoloader
+// asynchrone). Ne recolorer que ceux-là : recolorer un bloc déjà coloré
+// détruirait une sélection qu'on vient justement de préserver.
+function highlightUncolored(scope) {
+  if (!highlightEnabled || !window.Prism) return;
+  scope.querySelectorAll('pre > code[class*="language-"]').forEach(el => {
+    if (!el.querySelector('.token')) Prism.highlightElement(el);
+  });
 }
 
 function resetAssistant(wrap) {
@@ -4105,10 +4250,16 @@ function finalizeAssistant(wrap, full, truncated) {
   stopWaiter();
   const follow = shouldFollowStream(currentConvId);   // lu avant mutation DOM, cf. streamInto
   const body = wrap.querySelector('.body');
-  body.innerHTML = renderMd(full);
+  // Même chemin par blocs que le streaming, sans différé ni caret : un rendu
+  // d'un seul tenant ferait perdre, à la toute fin, la sélection que le
+  // streaming vient de préserver. Rendu identique à renderMd (le parser marked
+  // rend chaque bloc de premier niveau indépendamment), sauf bloc HTML brut —
+  // d'où noHtml, qui retombe alors sur le rendu d'un seul tenant.
+  if (renderStreamBlocks(wrap, body, full, { force: true, noHtml: true }) === 'done') {
+    highlightUncolored(body);
+  }
+  _streamBlocks.delete(body);
   body.dataset.raw = full;
-  decoratePre(wrap);
-  highlightUnder(wrap);
   renderMermaidUnder(wrap);   // rendu mermaid à la finalisation SEULEMENT (jamais streamInto)
   const copyBtn = wrap.querySelector('.msg-copy');
   if (copyBtn) copyBtn.removeAttribute('hidden');
