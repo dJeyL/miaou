@@ -8276,6 +8276,9 @@ function syncCompactionAffordance() {
   const ratio = win ? (m.totalTokens / win) : 0;
   const salient = !!win && ratio >= CONTEXT_COMPACTION_HINT_RATIO;
   wrap.classList.toggle('is-salient', salient);
+  // Cette synchro réécrit le hint : le refus qu'y avait posé
+  // `runReclaimGesture` disparaît, sa couleur doit partir avec lui.
+  wrap.classList.remove('is-refused');
 
   // Le hint explique ce que le geste FAIT, et dit que rien n'est perdu — la
   // crainte spontanée devant « compacter » est la suppression (cf. le libellé
@@ -8378,6 +8381,7 @@ function syncEvacuateAffordance() {
                                      isInlineHandleResult);
   const finished = isFinishedAgentConv(currentConvId);   // main.js — cf. syncCompactionAffordance
   if (btn) btn.disabled = !found.count || finished;
+  wrap.classList.remove('is-refused');   // cf. syncCompactionAffordance
   if (finished) {
     hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
   } else if (_reclaimReports.evacuate) {

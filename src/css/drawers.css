@@ -663,9 +663,11 @@
   background: var(--accent-dim);
 }
 /* Refus affiché dans le hint : le texte NOMME la borne atteinte, la couleur ne
-   fait que le signaler comme un refus et non comme l'explication nominale. */
-.ctx-compact.is-refused .ctx-compact-hint,
-.ctx-compact.is-refused #ctx-compact-hint { color: var(--err-soft); }
+   fait que le signaler comme un refus et non comme l'explication nominale.
+   Visé par `.hint` et non par id : les DEUX affordances (évacuation et
+   compaction) partagent `.ctx-compact` et `runReclaimGesture` ; un sélecteur
+   par id laissait le refus d'évacuation dans la couleur nominale. */
+.ctx-compact.is-refused .hint { color: var(--err-soft); }
 /* Libellé porteur d'une explication au survol (title natif, CTX_EXPLAIN dans
    ui.js). Le pointillé est le SIGNAL AU REPOS : sans lui, rien n'indique qu'il
    y a quelque chose à survoler et la tooltip n'est jamais découverte. Discret
