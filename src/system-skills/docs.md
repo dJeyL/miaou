@@ -1,6 +1,6 @@
 ---
 name: docs
-description: Comment lire un document joint (PDF, Excel, Word, PowerPoint, archive zip) et comment regrouper des ressources en une archive zip — quel outil, quel selector, quand sortir en ressource
+description: Comment lire un document joint (PDF, Excel, Word, PowerPoint, archive zip) et comment regrouper des ressources en une archive zip ou en modifier une — quel outil, quel selector, quand sortir en ressource
 metadata:
   title: Documents et archives
 ---
@@ -203,7 +203,8 @@ Un `.docx`, un `.xlsx` ou un `.pptx` **est** techniquement une archive zip.
 
 Ce n'est **pas** la voie normale : elle te donne la mécanique interne du fichier
 là où `docs__read` t'en donne le texte. N'y recours que si l'utilisateur demande
-explicitement la structure interne du document, ou pour en tirer une image.
+explicitement la structure interne du document, pour en tirer une image, ou pour
+le modifier (cf. « Modifier une archive existante »).
 
 ## Regrouper des ressources en une archive
 
@@ -233,3 +234,43 @@ Deux entrées ne peuvent pas viser le même chemin explicite : l'appel est refus
 plutôt que de laisser un membre en écraser un autre. Un chemin absolu (`/etc/x`)
 ou remontant (`../x`) est refusé lui aussi. Le renommage n'affecte que l'archive,
 jamais la ressource d'origine.
+
+## Modifier une archive existante
+
+Passe le handle de l'archive dans `base` : au lieu d'en créer une, `docs__pack`
+en produit une **copie modifiée**, sous un nouvel identifiant `res_…` —
+l'original reste intact. Les membres que tu ne touches pas sont recopiés tels
+quels, sans être décompressés : c'est le geste pour ajouter un fichier à un gros
+zip, jamais « tout extraire puis tout ré-archiver ».
+
+- **Ajouter** — les entrées de `handles`, avec les mêmes règles de `path` que
+  ci-dessus. Un nom hérité qui existe déjà dans l'archive est renommé
+  (`rapport-2.md`), comme entre deux ajouts.
+- **Remplacer** — un `path` de fichier **identique** au chemin d'un membre
+  existant le remplace. C'est la seule façon de désigner le membre à remplacer :
+  prends le chemin exact rendu par `docs__list`.
+- **Retirer** — `remove` prend une liste de chemins exacts ; un chemin terminé
+  par `/` retire le dossier entier. Un chemin qui ne désigne aucun membre fait
+  refuser l'appel : rien n'est retiré en silence.
+- **Renommer ou déplacer** — `rename` prend des `{ from, to }` en chemins
+  exacts : `{ from: "notes.txt", to: "archives/2024/notes.txt" }`. Un dossier se
+  renomme en dossier (`"brouillons/"` → `"final/"`) et emporte tout son contenu.
+  Le contenu n'est ni extrait ni recompressé, donc un membre chiffré se renomme
+  aussi. Un nom qui en écraserait un autre est refusé : pour remplacer, passe par
+  `handles`. Un membre ne peut pas être renommé et remplacé dans le même appel ;
+  en revanche un nom libéré par un renommage peut être repris par un ajout.
+
+`handles` devient facultatif avec `base` (un retrait ou un renommage seul est valide), mais un
+appel qui ne change rien est refusé. Sans `name`, la copie garde le nom de
+l'archive d'origine.
+
+Ça marche aussi sur un **document Office**, qui est un zip : pour corriger un
+`.docx`, extrais `word/document.xml` avec `docs__extract`, produis la version
+corrigée (avec `miaou__js__eval` et un `output_handle`), puis remplace-le avec
+`base` et `path: "word/document.xml"`. Le résultat reste un `.docx`. N'utilise
+ce chemin que si l'utilisateur veut un fichier modifié : pour **lire** un
+document, `docs__read` reste la voie normale.
+
+Certaines archives sont refusées, avec un message qui dit pourquoi : archive
+auto-extractible, en plusieurs volumes, ou au format Zip64 réel. Rapporte le
+refus plutôt que de reconstruire l'archive membre par membre.

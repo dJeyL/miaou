@@ -1424,3 +1424,94 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
 - **Le libellé « zip » de la description est daté V-2**, au même titre que celui
   de `docs__list`/`docs__extract` (V-1) : à élargir si la création d'autres
   formats devient native.
+
+**Modification d'archive (`docs__pack` avec `base`) :**
+- **Même outil, pas un nouvel outil.** `base` (handle de l'archive à modifier),
+  `remove` (chemins à retirer) et `rename` (`{from, to}`) sont trois propriétés de plus sur le schéma de
+  `docs__pack`, `handles` devenant facultatif. Un outil dédié aurait coûté une
+  définition entière à chaque tour (cf. CLAUDE.md, « Coût en contexte ») ; le
+  schéma a pris ~550 caractères (plus ~260 pour `rename`), `DOCS_DOCTRINE` une phrase (~150) pour que la
+  capacité soit annoncée hors de la seule description d'outil. Le résultat est TOUJOURS une nouvelle ressource
+  `res_…` : les records restent immuables, l'original reste adressable.
+- **Aucun membre gardé n'est décompressé.** fflate n'écrit que des archives
+  neuves et n'a pas de copie brute d'un membre compressé. Or le central
+  directory est en fin de fichier et chaque membre y est un segment d'octets
+  autonome : `spliceZipArchive` (utils.js, pur) recopie les segments gardés,
+  colle derrière ceux d'une mini-archive `zipSync` des seuls ajouts (d'où CRC et
+  deflate gratuits), puis réécrit le central directory (offsets recalculés, champ
+  +42) et l'EOCD, commentaire d'archive conservé. Conséquences : un membre
+  **chiffré** traverse intact (là où tout décompresser l'aurait transformé en
+  bruit sans erreur), un retrait seul ne charge même pas fflate, et l'ordre
+  d'origine est préservé — les ajouts suivent, ce qui garde en tête un
+  `mimetype` d'EPUB/OpenDocument tant qu'on ne le remplace pas.
+- **Géométrie STRICTE, distincte de celle du listing.** `parseZipCentralDirectory`
+  tolère une archive abîmée (elle rend ce qu'elle a pu lire) : c'est juste pour
+  lister, fautif pour réécrire. `parseZipLayout` refuse donc tout écart, par un
+  message nommé : pas de zip, octets après l'EOCD, multi-volumes, valeur Zip64
+  saturée, central directory qui ne tombe pas pile avant l'EOCD (données en tête
+  d'un auto-extractible), offset local sans en-tête, membre qui déborde de son
+  segment. Le **segment** d'un membre court jusqu'à l'offset local suivant (ou le
+  central directory) : ça dispense de mesurer un data descriptor (bit 3), dont la
+  taille n'est pas fixe.
+- **Zip64 redondant accepté** (`_zip64RecordIsRedundant`). Info-ZIP pose un
+  record + locator Zip64 dès que l'entrée est un flux (`zip -`), sans qu'aucune
+  valeur ne dépasse 32 bits — mesuré sur une archive réelle, qui était refusée
+  par la première version. Si chaque valeur du record recoupe l'EOCD classique,
+  il est omis à la réécriture ; un vrai Zip64 reste refusé.
+- **Nommage : remplacement sur chemin explicite, dedup sur nom hérité**
+  (`resolveZipEditMemberPath`, au-dessus de `resolveZipMemberPath`). Même
+  principe que la création — la décision porte sur l'ORIGINE du nom : un `path`
+  de fichier identique à un membre de la base est un remplacement (seul moyen de
+  désigner un membre à remplacer, et sans ambiguïté), un nom hérité qui collide
+  avec la base est un accident, rattrapé par `rapport-2.md`. Deux ajouts au même
+  chemin explicite restent un refus. La base est déduite des retraits AVANT la
+  résolution des ajouts, pour qu'un membre retiré ne provoque plus de dedup.
+- **Retraits : comparaison stricte, refus sur chemin sans effet**
+  (`resolveZipRemovals`). Même contrat que `docs__extract` (le nom rendu par
+  `docs__list`) ; un chemin terminé par `/` vise le dossier et tout son contenu.
+  Un chemin qui ne désigne rien est refusé plutôt qu'ignoré : sinon le modèle
+  annoncerait avoir retiré un fichier resté dans l'archive.
+- **Renommage (`rename: [{from, to}]`) : deux en-têtes recomposés, données
+  intactes.** Le nom n'entre ni dans le CRC ni dans le chiffrement (ZipCrypto
+  comme AES) : `spliceZipArchive` recompose l'en-tête local et l'entrée du
+  central directory d'un membre renommé et recopie le reste du segment tel quel —
+  un membre chiffré se renomme sans mot de passe. Deux détails qui font la
+  différence entre « renommé » et « renommé chez certains lecteurs » : le nom est
+  encodé en UTF-8 avec le **bit 11 posé dans les deux en-têtes** (un nom
+  d'origine CP437 laisserait sinon le nouveau nom relu octet par octet), et le
+  bloc extra **0x7075** (« Unicode Path », copie UTF-8 du nom écrite par
+  Info-ZIP) est retiré (`_zipStripUnicodePathExtra`) — les lecteurs qui le
+  connaissent le préfèrent au nom de l'en-tête et verraient l'ancien. Aucun des
+  lecteurs disponibles ici (`unzip` de macOS, `zipfile`) n'honore ce bloc : ce
+  retrait est couvert en QuickJS seulement.
+- **Règles de renommage** (`resolveZipRenames`, pur) : `from` exact, ou dossier
+  par préfixe (`to` alors dossier aussi) ; `from` sans effet, déjà retiré, ou
+  visé par deux renommages → refus nommé ; `to` passe la garde zip-slip, sans
+  segment vide ; collision du nom FINAL avec un membre gardé → refus, jamais un
+  écrasement (remplacer reste le rôle de `handles`). L'unicité est jugée sur les
+  noms finaux, d'où un échange `a ↔ b` accepté. Les ajouts voient les noms
+  APRÈS renommage : un nom libéré peut être réoccupé, et un ajout dont le chemin
+  explicite vise la cible d'un renommage est refusé (« renomme ou remplace »),
+  plutôt que de perdre l'une des deux intentions.
+- **Gardes de plan** (`validateZipEditPlan`) : opération sans ajout, retrait ni renommage
+  (copie à l'identique sous un autre id), archive vidée de tout, cap
+  `MAX_INLINE_BYTES` sur base + ajouts non compressés (la base n'est pas
+  décompressée, mais elle est en mémoire avec la sortie), 65 534 membres.
+- **Un Office modifié reste un Office.** La base est reconnue aux OCTETS, jamais
+  au mime ; la sortie reprend le mime de la base (`application/zip` si absent ou
+  `octet-stream`) et son extension (`normalizeEditedArchiveName` : `name` omis →
+  nom de la base, extension de la base garantie sans doublon). Un `.docx` rendu
+  en `.zip` ne s'ouvrirait plus d'un double-clic.
+- **Ack** : même kind `docs_pack`, avec un champ `zipEdit` `{added, replaced,
+  removed, renamed}` (ajouté à `ACK_COPY_FIELDS`) dont la présence fait dire « Archive
+  modifiée » ; le bilan est formulé par `formatZipEditTally`, partagé avec le
+  retour au modèle. Ce retour nomme le handle de base et précise que l'original
+  est inchangé.
+- **Vérifié hors navigateur** contre `unzip -t` et `zipfile` de Python :
+  archive deflate avec commentaire, archive à data descriptors, membre chiffré
+  `zip -P` conservé, flux Info-ZIP à Zip64 redondant, et un `.docx` dont
+  `word/document.xml` est remplacé, relu par python-docx. Les fixtures QuickJS
+  (`tests/test-zip.js`) sont des archives stockées construites en test, plus
+  l'archive Info-ZIP réelle. Le parcours outil complet (refus sans matérialisation, remplacement,
+  dedup contre la base, retrait seul, base intacte, base Office) est couvert
+  par `verify-zip-pack.mjs`, relu par `docs__list`/`docs__extract`.

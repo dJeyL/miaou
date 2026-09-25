@@ -80,7 +80,7 @@ l'intéresse pour l'analyser — typiquement une archive de logs. Les membres
 protégés par mot de passe sont refusés explicitement plutôt que lus de travers.
 Un document Office (`.docx`, `.xlsx`, `.pptx`) étant lui aussi une archive,
 MIAOU sait l'ouvrir de cette façon — il n'y voit alors que sa mécanique interne,
-ce qui ne sert qu'à qui veut justement la voir. Pour en tirer le texte, c'est
+ce qui sert à qui veut justement la voir, ou la modifier (voir plus bas). Pour en tirer le texte, c'est
 l'ouverture par format décrite ci-dessous qui s'applique, et elle est automatique.
 
 Les **PDF** sont lus nativement eux aussi. Le modèle peut en donner la structure
@@ -207,6 +207,13 @@ extraits qu'il a produits ou sortis d'une autre archive — il peut les regroupe
 en un seul zip que tu récupères d'un clic, plutôt que de te les faire
 télécharger un par un. Le bouton de téléchargement apparaît directement dans le
 fil, sous la trace de l'outil.
+
+Il peut aussi **modifier une archive existante** — un zip, mais aussi un
+document Office, qui en est un sous un autre nom : y ajouter des fichiers, en
+remplacer, en renommer ou en déplacer, en retirer. Il produit alors une **copie** modifiée, téléchargeable
+de la même façon ; le fichier d'origine n'est jamais touché, et un document
+Office modifié reste un document Office. Les archives auto-extractibles ou en
+plusieurs volumes ne peuvent pas être modifiées.
 
 ## ressources — analyse par le calcul et ressources
 

@@ -753,8 +753,10 @@ même primitive de stockage.
 - `docs__render_page(ref, page)` — rend **une** page de PDF en image et la montre
   au modèle, pour qu'il la lise avec sa vision (page scannée, OCR trop abîmé,
   schéma ou graphique). Ce n'est pas de l'OCR : MIAOU rend, le modèle lit.
-- `docs__pack(refs, name?)` — agrège N ressources en **une** archive zip
-  téléchargeable.
+- `docs__pack(handles?, base?, remove?, rename?, name?)` — agrège N ressources
+  en **une** archive zip téléchargeable, ou, avec `base`, produit une copie
+  modifiée d'une archive existante (zip ou Office) : membres ajoutés,
+  remplacés, renommés ou retirés, les autres recopiés sans recompression.
 
 **Le détail est dans `docs/documents.md`** : formats et artefacts CDN, versions
 gelées, forme des selectors par format, caps de lecture, table `DOC_READERS`,

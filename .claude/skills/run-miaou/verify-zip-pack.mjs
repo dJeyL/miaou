@@ -38,6 +38,14 @@
 //   - un sous-dossier fait l'ALLER-RETOUR : docs__list le relit tel quel
 //   - le record produit est mime application/zip et classe 'binary'
 //   - window.fflate.zipSync est une fonction après l'appel (garde étendue V-2)
+//   - MODIFICATION (base) : remplacement sur path explicite, dedup d'un nom hérité
+//     contre la base, rangement par dossier, retrait ; membres gardés relus octet
+//     pour octet ; base intacte ; retrait seul ; refus (chemin absent, appel vide,
+//     remove sans base, base non-zip, archive vidée) sans rien matérialiser ;
+//     ack « Archive modifiée » + bilan ; base Office qui garde mime et extension
+//   - RENOMMAGE (rename) : fichier et dossier, nom libéré réoccupé par un ajout,
+//     contenu renommé relu octet pour octet ; refus (collision, from absent,
+//     rename sans base, renommer ET remplacer) sans rien matérialiser
 //
 // PAS de fixture disque : toutes les ressources sont fabriquées en page. Le
 // refus de cap (total > MAX_INLINE_BYTES) n'est PAS exercé ici — allouer 64 Mo
@@ -137,10 +145,16 @@ try {
       itemType: items ? items.type : null,
       itemRequired: items ? JSON.stringify(items.required) : null,
       hasPath: !!(items && items.properties && items.properties.path),
+      hasBase: !!(t && t.inputSchema.properties.base),
+      hasRemove: !!(t && t.inputSchema.properties.remove),
     };
   });
   check('docs__pack enregistré nativement', registered.present, JSON.stringify(registered));
-  check('docs__pack exige handles', registered.required === '["handles"]', String(registered.required));
+  // Contrat changé avec la modification d'archive : un retrait seul (base +
+  // remove) n'a pas de handles, donc plus rien n'est requis au schéma — c'est le
+  // handler qui refuse un appel vide (vérifié plus bas).
+  check('docs__pack n\'exige plus handles au schéma, et expose base + remove',
+    registered.required == null && registered.hasBase && registered.hasRemove, JSON.stringify(registered));
   check('chaque entrée est un OBJET exigeant handle, avec path facultatif',
     registered.itemType === 'object' && registered.itemRequired === '["handle"]' && registered.hasPath,
     JSON.stringify(registered));
@@ -358,6 +372,190 @@ try {
   }, { text: deep.text, expected: sources.bodyA });
   check('le membre en sous-dossier revient octet pour octet', deepRound.ok, deepRound.why);
 
+  // ── MODIFICATION d'une archive existante (docs__pack avec base) ──────────
+  // Base = livrables.zip produite plus haut : rapport.md (A), rapport-2.md (B),
+  // vignette.png. Chaque membre relu l'est par les outils de LECTURE, jamais
+  // par un parseur maison : c'est l'aller-retour qui prouve que la réécriture
+  // du central directory est juste.
+  const readMember = async (ref, member) => {
+    const r = await callTool_('miaou__docs__extract', { ref, path: member });
+    return page.evaluate((text) => {
+      const m = text.match(/\[resource id=(res_[^\s\]]+)/);
+      const rec = m && getCachedRecord(m[1]);
+      return rec ? new TextDecoder().decode(new Uint8Array(rec.data)) : 'ÉCHEC: ' + text.slice(0, 120);
+    }, r.text);
+  };
+  const countZips = () => page.evaluate(async () =>
+    (await getAllResources()).filter((r) => r.mime === 'application/zip').length);
+
+  const extra = await page.evaluate(async () => {
+    const d = await _storeBlock('text/markdown', 'remplacant.md',
+      new TextEncoder().encode('# Remplaçant\ndelta\n'), 'inline', currentConvId, Date.now(), Math.random);
+    return { d, bodyD: '# Remplaçant\ndelta\n' };
+  });
+
+  // Refus d'abord, pour vérifier qu'aucun n'a rien matérialisé.
+  const zipsBeforeEditRefusals = await countZips();
+  const rmGhost = await callTool_('miaou__docs__pack', { base: zipRef, remove: ['absent.txt'] });
+  check('modif : retrait d\'un chemin absent → refus NOMMANT le chemin',
+    /absent\.txt/.test(rmGhost.text) && /rien n'a été retiré/i.test(rmGhost.text), rmGhost.text.slice(0, 200));
+  const noop = await callTool_('miaou__docs__pack', { base: zipRef });
+  check('modif : base seule, sans ajout ni retrait → refus', /rien à modifier/i.test(noop.text), noop.text.slice(0, 200));
+  const rmNoBase = await callTool_('miaou__docs__pack', { remove: ['rapport.md'] });
+  check('remove sans base → refus', /qu'avec base/i.test(rmNoBase.text), rmNoBase.text.slice(0, 200));
+  const notZip = await callTool_('miaou__docs__pack', { base: sources.a, handles: [{ handle: sources.c }] });
+  check('modif : base qui n\'est pas un zip → refus', /pas une archive zip/i.test(notZip.text), notZip.text.slice(0, 200));
+  const emptied = await callTool_('miaou__docs__pack',
+    { base: zipRef, remove: ['rapport.md', 'rapport-2.md', 'vignette.png'] });
+  check('modif : tout retirer → refus (archive vide)', /serait vide/i.test(emptied.text), emptied.text.slice(0, 200));
+  check('modif : aucun refus n\'a matérialisé d\'archive',
+    (await countZips()) === zipsBeforeEditRefusals, String(await countZips()));
+
+  // Appel nominal : remplacement + ajout avec nom hérité en collision + ajout
+  // en sous-dossier + retrait, en UN appel.
+  const acksBeforeEdit = await page.evaluate(() => _pendingToolAcks.length);
+  const edited = await callTool_('miaou__docs__pack', {
+    base: zipRef,
+    handles: [
+      { handle: extra.d, path: 'rapport.md' },          // REMPLACE le membre existant
+      { handle: sources.a },                            // nom hérité rapport.md : pris → dedup
+      { handle: sources.b, path: 'ajouts/' },           // dossier : garde son nom
+    ],
+    remove: ['vignette.png'],
+  });
+  check('modif : docs__pack avec base réussit', edited.ok && /copie modifiée de res_/.test(edited.text),
+    edited.text.slice(0, 260));
+  check('modif : le retour dit que l\'original est inchangé', /original est inchangé/.test(edited.text),
+    edited.text.slice(0, 260));
+  check('modif : le retour porte le bilan (2 ajoutés, 1 remplacé, 1 retiré)',
+    /2 ajoutés, 1 remplacé, 1 retiré/.test(edited.text), edited.text.slice(0, 260));
+  check('modif : sans name, la copie garde le nom de la base',
+    /name="livrables\.zip"/.test(edited.text), edited.text.slice(0, 200));
+  const editedRef = (edited.text.match(/\[resource id=(res_[^\s\]]+)/) || [])[1];
+  check('modif : une NOUVELLE ressource, distincte de la base', !!editedRef && editedRef !== zipRef,
+    editedRef + ' vs ' + zipRef);
+
+  const editAck = await page.evaluate((n) => {
+    const a = _pendingToolAcks.slice(n).find((x) => x.kind === 'docs_pack');
+    return a ? { ok: a.ok, count: a.count, zipEdit: a.zipEdit, label: ACK_KINDS.docs_pack.label(a) } : null;
+  }, acksBeforeEdit);
+  check('modif : ack docs_pack porte zipEdit et count = 4',
+    !!editAck && editAck.count === 4 && JSON.stringify(editAck.zipEdit) === '{"added":2,"replaced":1,"removed":1,"renamed":0}',
+    JSON.stringify(editAck));
+  check('modif : le libellé d\'ack dit « Archive modifiée » avec le bilan',
+    !!editAck && /^Archive modifiée : livrables\.zip — 4 membres \(2 ajoutés, 1 remplacé, 1 retiré\)/.test(editAck.label),
+    editAck && editAck.label);
+
+  const editedList = await callTool_('miaou__docs__list', { ref: editedRef });
+  check('modif : docs__list relit la copie, 4 membres', editedList.ok && /4 membres/.test(editedList.text),
+    editedList.text.slice(0, 300));
+  check('modif : le membre retiré a disparu', !/vignette\.png/.test(editedList.text), editedList.text.slice(0, 300));
+  check('modif : nom hérité en collision avec la base → rapport-3.md',
+    /rapport-3\.md/.test(editedList.text), editedList.text.slice(0, 300));
+  check('modif : membre rangé par dossier → ajouts/rapport.md',
+    /ajouts\/rapport\.md/.test(editedList.text), editedList.text.slice(0, 300));
+  check('modif : le membre REMPLACÉ porte le nouveau contenu',
+    (await readMember(editedRef, 'rapport.md')) === extra.bodyD);
+  const keptB = await readMember(editedRef, 'rapport-2.md');
+  check('modif : un membre GARDÉ revient octet pour octet (recopié, pas recompressé)',
+    keptB === '# Second rapport\nbeta\n', JSON.stringify(keptB));
+  check('modif : membre ajouté par nom hérité lisible',
+    (await readMember(editedRef, 'rapport-3.md')) === sources.bodyA);
+
+  const origList = await callTool_('miaou__docs__list', { ref: zipRef });
+  check('modif : la base est intacte (3 membres, vignette.png toujours là)',
+    /3 membres/.test(origList.text) && /vignette\.png/.test(origList.text), origList.text.slice(0, 300));
+  check('modif : la base garde son contenu d\'origine',
+    (await readMember(zipRef, 'rapport.md')) === sources.bodyA);
+
+  // Retrait seul : aucun ajout, donc aucune compression.
+  const rmOnly = await callTool_('miaou__docs__pack', { base: zipRef, remove: ['vignette.png'], name: 'allege' });
+  check('modif : retrait seul réussit, nom fourni complété en .zip',
+    rmOnly.ok && /name="allege\.zip"/.test(rmOnly.text) && /1 retiré/.test(rmOnly.text), rmOnly.text.slice(0, 260));
+  const rmOnlyRef = (rmOnly.text.match(/\[resource id=(res_[^\s\]]+)/) || [])[1];
+  const rmOnlyList = await callTool_('miaou__docs__list', { ref: rmOnlyRef });
+  check('modif : retrait seul → 2 membres relus', /2 membres/.test(rmOnlyList.text), rmOnlyList.text.slice(0, 200));
+
+  // Base Office : un .docx modifié reste un .docx (mime ET extension). La base
+  // est reconnue aux octets — ici ceux de livrables.zip sous un mime Word.
+  const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const docxRef = await page.evaluate(async ({ ref, mime }) => {
+    const z = getCachedRecord(ref);
+    return _storeBlock(mime, 'note.docx', new Uint8Array(z.data), 'binary', currentConvId, Date.now(), Math.random);
+  }, { ref: zipRef, mime: DOCX_MIME });
+  const docxEdit = await callTool_('miaou__docs__pack',
+    { base: docxRef, handles: [{ handle: extra.d, path: 'word/ajout.xml' }], name: 'note-v2' });
+  check('modif Office : le nom garde l\'extension de la base (note-v2.docx)',
+    /name="note-v2\.docx"/.test(docxEdit.text), docxEdit.text.slice(0, 260));
+  const docxRec = await page.evaluate((text) => {
+    const m = text.match(/\[resource id=(res_[^\s\]]+)/);
+    const r = m && getCachedRecord(m[1]);
+    return r ? { mime: r.mime, cls: r.class } : null;
+  }, docxEdit.text);
+  check('modif Office : le mime de la base est conservé, classe binary',
+    !!docxRec && docxRec.mime === DOCX_MIME && docxRec.cls === 'binary', JSON.stringify(docxRec));
+
+  // ── RENOMMAGE (rename) ───────────────────────────────────────────────────
+  const zipsBeforeRename = await countZips();
+  const renClash = await callTool_('miaou__docs__pack',
+    { base: zipRef, rename: [{ from: 'rapport.md', to: 'rapport-2.md' }] });
+  check('renommage : collision avec un membre gardé → refus nommé, jamais un écrasement',
+    /rapport-2\.md/.test(renClash.text) && /écraserait/.test(renClash.text), renClash.text.slice(0, 200));
+  const renGhost = await callTool_('miaou__docs__pack',
+    { base: zipRef, rename: [{ from: 'absent.md', to: 'x.md' }] });
+  check('renommage : from absent → refus nommé', /absent\.md/.test(renGhost.text) && /rien n'a été renommé/.test(renGhost.text),
+    renGhost.text.slice(0, 200));
+  const renNoBase = await callTool_('miaou__docs__pack', { rename: [{ from: 'a', to: 'b' }] });
+  check('rename sans base → refus', /rename n'a de sens qu'avec base/.test(renNoBase.text), renNoBase.text.slice(0, 200));
+  const renAndReplace = await callTool_('miaou__docs__pack', {
+    base: zipRef, rename: [{ from: 'rapport.md', to: 'x.md' }], handles: [{ handle: extra.d, path: 'x.md' }],
+  });
+  check('renommage : renommer ET remplacer la même cible → refus', /renomme ou remplace/.test(renAndReplace.text),
+    renAndReplace.text.slice(0, 200));
+  check('renommage : aucun refus n\'a matérialisé d\'archive', (await countZips()) === zipsBeforeRename);
+
+  const renamed = await callTool_('miaou__docs__pack', {
+    base: zipRef,
+    rename: [
+      { from: 'rapport-2.md', to: 'second/rapport.md' },
+      { from: 'vignette.png', to: 'images/vignette.png' },
+    ],
+    handles: [{ handle: extra.d, path: 'rapport-2.md' }],   // nom LIBÉRÉ par le renommage, réoccupé
+    name: 'range',
+  });
+  check('renommage : l\'appel réussit, bilan « 1 ajouté, 2 renommés »',
+    renamed.ok && /1 ajouté, 2 renommés/.test(renamed.text), renamed.text.slice(0, 260));
+  const renamedRef = (renamed.text.match(/\[resource id=(res_[^\s\]]+)/) || [])[1];
+  const renamedList = await callTool_('miaou__docs__list', { ref: renamedRef });
+  check('renommage : docs__list relit les nouveaux chemins, 4 membres',
+    /4 membres/.test(renamedList.text) && /second\/rapport\.md/.test(renamedList.text) &&
+      /images\/vignette\.png/.test(renamedList.text) && !/(^|\s)vignette\.png/m.test(renamedList.text),
+    renamedList.text.slice(0, 300));
+  check('renommage : le membre renommé revient octet pour octet',
+    (await readMember(renamedRef, 'second/rapport.md')) === '# Second rapport\nbeta\n');
+  check('renommage : le nom libéré est réoccupé par l\'ajout, pas par l\'ancien membre',
+    (await readMember(renamedRef, 'rapport-2.md')) === extra.bodyD);
+  const renAck = await page.evaluate(() => {
+    const a = _pendingToolAcks.filter((x) => x.kind === 'docs_pack' && x.ok).pop();
+    return a ? ACK_KINDS.docs_pack.label(a) : null;
+  });
+  check('renommage : le libellé d\'ack porte le bilan', /^Archive modifiée : range\.zip — 4 membres \(1 ajouté, 2 renommés\)/.test(renAck || ''),
+    renAck);
+
+  const renDir = await callTool_('miaou__docs__pack',
+    { base: renamedRef, rename: [{ from: 'second/', to: 'deuxieme/' }] });
+  const renDirRef = (renDir.text.match(/\[resource id=(res_[^\s\]]+)/) || [])[1];
+  const renDirList = await callTool_('miaou__docs__list', { ref: renDirRef });
+  check('renommage seul d\'un dossier : son contenu suit',
+    renDir.ok && /deuxieme\/rapport\.md/.test(renDirList.text) && !/second\//.test(renDirList.text),
+    renDirList.text.slice(0, 300));
+
+  await page.evaluate((n) => { _pendingToolAcks.length = n; }, before);
+  // Les acks du fil sont ceux de l'appel nominal de création, repoussé pour la
+  // section DOM qui suit (elle lit _pendingToolAcks).
+  await callTool_('miaou__docs__pack',
+    { handles: [{ handle: sources.a }, { handle: sources.b }, { handle: sources.c }], name: 'livrables' });
+
   await page.screenshot({ path: path.join(outDir, '1-pack.png'), fullPage: true }).catch(() => {});
 
   // ── Le bouton .ack-dl dans le DOM ─────────────────────────────────────────
@@ -417,6 +615,6 @@ if (failures.length) {
   console.log('  ÉCHECS (' + failures.length + ') :\n   - ' + failures.join('\n   - '));
   process.exit(exitCode || 1);
 } else {
-  console.log('  OK — tous les points de la checklist V-2 sont verts.');
+  console.log('  OK — tous les points de la checklist sont verts (création et modification).');
   process.exit(0);
 }

@@ -416,12 +416,14 @@ const DOCS_DOCTRINE =
   "Dans l'autre sens, miaou__docs__pack regroupe plusieurs ressources déjà " +
   "stockées en UNE archive zip téléchargeable, chaque membre pouvant être " +
   "renommé et rangé dans un sous-dossier : propose-le dès que l'utilisateur " +
-  "veut récupérer d'un bloc des fichiers produits au fil de l'échange.\n" +
+  "veut récupérer d'un bloc des fichiers produits au fil de l'échange. Avec " +
+  "base, il modifie une archive existante (zip ou Office) sans tout extraire : " +
+  "ajout, remplacement, renommage, retrait.\n" +
   "Avant ton PREMIER appel à un outil miaou__docs__* dans cette conversation, " +
   "appelle miaou__skills__read avec le slug « docs » (skill système, listée dans " +
   "<miaou_skills_context> si présente) : elle donne la forme exacte du selector " +
   "de chaque format, quand sortir une lecture en ressource, comment lire les " +
-  "refus, et comment nommer les membres d'une archive que tu crées.\n";
+  "refus, et comment nommer les membres d'une archive que tu crées ou modifies.\n";
 
 // ── js__eval : compute sandboxé sur un blob client (lot L) ────────────────────
 // Paramètres du sandbox (constantes MIAOU dédiées, tranchées à l'audit AL2 sur
@@ -2384,7 +2386,9 @@ const TOOLS = [
       "À utiliser quand tu as produit ou rassemblé plusieurs fichiers au cours de " +
       "l'échange et que l'utilisateur veut le tout d'un bloc, parce qu'un téléchargement " +
       "unique lui évite de récupérer les pièces une par une. Chaque membre peut être " +
-      "renommé et rangé dans un sous-dossier via son champ path. Ne crée aucun contenu : les " +
+      "renommé et rangé dans un sous-dossier via son champ path. Avec base, modifie une archive " +
+      "existante (zip ou document Office) au lieu d'en créer une : ajoute, remplace, renomme ou retire " +
+      "des membres sans toucher aux autres, et rend une NOUVELLE ressource. Ne crée aucun contenu : les " +
       "ressources doivent déjà exister. Le contenu des membres n'entre jamais dans ton contexte.",
     inputSchema: {
       type: 'object',
@@ -2410,21 +2414,85 @@ const TOOLS = [
             },
             required: ['handle'],
           },
-          description: 'Ressources à archiver, une entrée { handle, path? } par membre. Au moins une.',
+          description: 'Ressources à archiver, une entrée { handle, path? } par membre. Avec base, ' +
+            'un path identique à un membre existant le REMPLACE.',
+        },
+        base: {
+          type: 'string',
+          description: 'Handle d\'une archive à modifier (zip, docx, xlsx, pptx…). Ses membres sont ' +
+            'recopiés tels quels, sans être recompressés.',
+        },
+        remove: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Avec base : chemins exacts des membres à retirer, tels que rendus par ' +
+            'docs__list ; terminé par "/", retire le dossier entier.',
+        },
+        rename: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { from: { type: 'string' }, to: { type: 'string' } },
+            required: ['from', 'to'],
+          },
+          description: 'Avec base : membres à renommer ou déplacer, { from, to } en chemins ' +
+            'exacts ; un dossier ("a/" → "b/") emporte son contenu.',
         },
         name: {
           type: 'string',
-          description: 'Nom du fichier d\'archive produit, extension .zip incluse (défaut : archive.zip)',
+          description: 'Nom du fichier produit (défaut : archive.zip, ou le nom de base)',
         },
       },
-      required: ['handles'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },   // écrit un record IDB
     handler: async (args, ctx) => {
-      const handles = args && Array.isArray(args.handles) ? args.handles : null;
-      if (!handles || !handles.length) {
+      const handles = args && Array.isArray(args.handles) ? args.handles : [];
+      const baseRef = args && args.base != null ? String(args.base).trim() : '';
+      const removes = args && Array.isArray(args.remove) ? args.remove : [];
+      const renames = args && Array.isArray(args.rename) ? args.rename : [];
+      if (!baseRef && (removes.length || renames.length)) {
+        return toolFail('docs__pack', (removes.length ? 'remove' : 'rename') +
+          ' n\'a de sens qu\'avec base : indique l\'archive à modifier.');
+      }
+      if (!baseRef && !handles.length) {
         return toolFail('docs__pack', 'Aucun handle fourni : passe au moins une ressource à archiver.');
       }
+      const refuse = message => {
+        // REFUS métier : ack rouge (ok:false) mais result TEXTE non-isError —
+        // le modèle re-cible dans le même tour (même posture que docs__extract).
+        _pendingToolAcks.push({ kind: 'docs_pack', ok: false, message, count: handles.length });
+        return message;
+      };
+
+      // Archive de BASE (modification). Résolue, gelée et analysée AVANT le
+      // premier await, comme les handles d'ajout. Reconnue aux OCTETS
+      // (parseZipLayout), jamais au mime : un .docx est un zip sous un autre nom.
+      let baseRecord = null, baseU8 = null, layout = null, baseNames = new Set(), drop = new Set();
+      let renameMap = new Map();
+      const renamedTargets = new Set();
+      if (baseRef) {
+        if (classifyHandleRef(baseRef) === null) {
+          return toolFail('docs__pack', 'Handle de base invalide : ' + baseRef + ' (attendu att-N, file-<id> ou res_<id>).');
+        }
+        baseRecord = resolveHandleRecord(baseRef, ctx);   // ctx EXPLICITE (piège 28)
+        if (!baseRecord || !baseRecord.data) return toolFail('docs__pack', 'Handle introuvable : ' + baseRef + '.');
+        baseU8 = new Uint8Array(baseRecord.data);
+        layout = parseZipLayout(baseU8);   // utils.js, pur
+        if (!layout.ok) return refuse(layout.message);
+        const removal = resolveZipRemovals(layout.entries.map(e => e.name), removes);   // utils.js, pur
+        if (!removal.ok) return refuse(removal.message);
+        drop = removal.drop;
+        const renaming = resolveZipRenames(layout.entries.map(e => e.name), renames, drop);   // utils.js, pur
+        if (!renaming.ok) return refuse(renaming.message);
+        renameMap = renaming.map;
+        for (const t of renameMap.values()) renamedTargets.add(t);
+        // Noms APRÈS renommage : ce sont eux que les ajouts voient (dedup,
+        // remplacement). Un nom libéré par un renommage peut être réoccupé.
+        for (const e of layout.entries) {
+          if (!drop.has(e.name)) baseNames.add(renameMap.has(e.name) ? renameMap.get(e.name) : e.name);
+        }
+      }
+      const removedCount = drop.size;
 
       // Résolution de CHAQUE handle AVANT le premier await, ctx EXPLICITE
       // (piège 28). Les records sont GELÉS ici : le handler est async, et un
@@ -2432,6 +2500,7 @@ const TOOLS = [
       // génération (piège 26b). Échec NOMINATIF — le modèle doit savoir lequel.
       const resolved = [];
       const taken = new Set();
+      let replaced = 0;
       for (const item of handles) {
         // Entrée { handle, path? }. Une chaîne nue n'est PAS acceptée : le
         // schéma a changé de forme au lot des chemins de membres, et accepter
@@ -2449,58 +2518,87 @@ const TOOLS = [
         const record = resolveHandleRecord(ref, ctx);   // ctx EXPLICITE (piège 28)
         if (!record || !record.data) return toolFail('docs__pack', 'Handle introuvable : ' + ref + '.');
         // resolveZipMemberPath (utils.js, pur) porte les quatre branches de
-        // nommage ET la dedup ; buildZipMemberName n'est plus appelée ici.
-        const placed = resolveZipMemberPath(record, item.path, taken);
-        if (!placed.ok) {
-          // REFUS métier, même posture que validateZipPlan plus bas : ack rouge,
-          // result TEXTE non-isError, le modèle re-cible dans le même tour.
-          _pendingToolAcks.push({ kind: 'docs_pack', ok: false, message: placed.message, count: handles.length });
-          return placed.message;
+        // nommage ET la dedup ; en modification, resolveZipEditMemberPath y
+        // ajoute la collision avec la base (remplacement ou dedup).
+        const placed = baseRecord
+          ? resolveZipEditMemberPath(record, item.path, taken, baseNames)
+          : resolveZipMemberPath(record, item.path, taken);
+        if (!placed.ok) return refuse(placed.message);
+        if (placed.replaces && renamedTargets.has(placed.name)) {
+          // Remplacer un membre qu'on renomme dans le même appel : deux intentions
+          // sur un seul membre, dont l'une serait perdue. Le modèle tranche.
+          return refuse('« ' + placed.name + ' » est la cible d\'un renommage ET d\'un ajout : ' +
+            'renomme ou remplace, pas les deux dans le même appel.');
         }
+        if (placed.replaces) { drop.add(placed.name); baseNames.delete(placed.name); replaced++; }
         taken.add(placed.name);
         resolved.push({ ref, record, name: placed.name, size: record.data.byteLength });
       }
 
-      const plan = validateZipPlan(resolved.map(r => ({ name: r.name, size: r.size })));   // utils.js, pur
-      if (!plan.ok) {
-        // REFUS métier : ack rouge (ok:false) mais result TEXTE non-isError —
-        // le modèle re-cible dans le même tour (même posture que docs__extract).
-        _pendingToolAcks.push({ kind: 'docs_pack', ok: false, message: plan.message, count: resolved.length });
-        return plan.message;
+      if (resolved.length) {
+        const plan = validateZipPlan(resolved.map(r => ({ name: r.name, size: r.size })));   // utils.js, pur
+        if (!plan.ok) return refuse(plan.message);
+      }
+      if (baseRecord) {
+        const edit = validateZipEditPlan(baseU8.byteLength, resolved, removedCount, baseNames.size, renameMap.size);   // utils.js, pur
+        if (!edit.ok) return refuse(edit.message);
       }
 
-      let ff;
-      try { ff = await ensureFflate(); }   // ui.js — échec PROPAGÉ, pas dégradé
-      catch (e) {
-        return toolFail('docs__pack', 'Moteur de compression indisponible : ' +
-          (e && e.message ? e.message : 'échec de chargement') + '.');
+      // fflate n'est chargé que s'il y a quelque chose à compresser : un retrait
+      // pur est un simple déplacement d'octets.
+      let addU8 = null;
+      if (resolved.length) {
+        let ff;
+        try { ff = await ensureFflate(); }   // ui.js — échec PROPAGÉ, pas dégradé
+        catch (e) {
+          return toolFail('docs__pack', 'Moteur de compression indisponible : ' +
+            (e && e.message ? e.message : 'échec de chargement') + '.');
+        }
+        try {
+          // zipSync prend un objet { nom: octets } : c'est PRÉCISÉMENT pourquoi la
+          // déduplication de buildZipMemberName n'est pas cosmétique — deux clés
+          // homonymes s'écraseraient ici en silence, sans que fflate y soit pour
+          // quoi que ce soit. validateZipPlan a déjà refusé ce cas.
+          const files = {};
+          for (const r of resolved) files[r.name] = new Uint8Array(r.record.data);
+          addU8 = ff.zipSync(files, { level: 6 });
+        } catch (e) {
+          return toolFail('docs__pack', 'Échec de compression : ' +
+            (e && e.message ? e.message : 'inconnu') + '.');
+        }
       }
 
-      let data;
-      try {
-        // zipSync prend un objet { nom: octets } : c'est PRÉCISÉMENT pourquoi la
-        // déduplication de buildZipMemberName n'est pas cosmétique — deux clés
-        // homonymes s'écraseraient ici en silence, sans que fflate y soit pour
-        // quoi que ce soit. validateZipPlan a déjà refusé ce cas.
-        const files = {};
-        for (const r of resolved) files[r.name] = new Uint8Array(r.record.data);
-        data = ff.zipSync(files, { level: 6 });
-      } catch (e) {
-        return toolFail('docs__pack', 'Échec de compression : ' +
-          (e && e.message ? e.message : 'inconnu') + '.');
+      let data = addU8, count = resolved.length;
+      if (baseRecord) {
+        // Les membres gardés sont RECOPIÉS octet pour octet (chiffrés compris) ;
+        // seuls central directory et EOCD sont réécrits, plus les deux en-têtes
+        // d'un membre renommé — ses données restent intactes (spliceZipArchive, pur).
+        const spliced = spliceZipArchive(baseU8, layout, drop, addU8, renameMap);
+        if (!spliced.ok) return refuse(spliced.message);
+        data = spliced.data;
+        count = spliced.count;
       }
 
       // Classe 'binary' EXPLICITE : un application/zip n'est pas textuel, et son
-      // contenu ne doit jamais pouvoir être inliné dans le contexte.
-      const archiveName = normalizeArchiveName(args && args.name);   // utils.js, pur
-      const id = await _storeBlock('application/zip', archiveName, data, 'binary',
+      // contenu ne doit jamais pouvoir être inliné dans le contexte. Une base
+      // Office garde son mime ET son extension : un .docx modifié reste un .docx.
+      const archiveName = baseRecord
+        ? normalizeEditedArchiveName(args && args.name, baseRecord.name)   // utils.js, pur
+        : normalizeArchiveName(args && args.name);   // utils.js, pur
+      const baseMime = baseRecord ? String(baseRecord.mime || '').split(';')[0].trim() : '';
+      const mime = baseMime && baseMime !== 'application/octet-stream' ? baseMime : 'application/zip';
+      const id = await _storeBlock(mime, archiveName, data, 'binary',
                                    ctx.convId, Date.now(), Math.random);
       if (!id) return toolFail('docs__pack', 'Échec de stockage de l\'archive.');
 
-      _pendingToolAcks.push({
+      const ack = {
         kind: 'docs_pack', ok: true, resourceName: archiveName,
-        mime: 'application/zip', size: data.byteLength, count: resolved.length, id,
-      });
+        mime, size: data.byteLength, count, id,
+      };
+      if (baseRecord) {
+        ack.zipEdit = { added: resolved.length - replaced, replaced, removed: removedCount, renamed: renameMap.size };
+      }
+      _pendingToolAcks.push(ack);
 
       // DESCRIPTEUR, jamais le contenu, et JAMAIS _makeResourceRef (piège 26c).
       // formatInlineHandleForModel ne conviendrait PAS ici : sa note « texte
@@ -2511,9 +2609,13 @@ const TOOLS = [
       // bouton est déjà dans le fil (précédent NOT_PRESENTED_NOTE, resources.js).
       const rec = getCachedRecord(id);
       const desc = rec ? formatResourceDescriptor(rec)
-                       : '[resource id=' + id + ' mime=application/zip name="' + archiveName + '"]';
-      return desc + ' — archive de ' +
-        (resolved.length === 1 ? '1 membre' : resolved.length + ' membres') +
+                       : '[resource id=' + id + ' mime=' + mime + ' name="' + archiveName + '"]';
+      const members = count === 1 ? '1 membre' : count + ' membres';
+      const what = baseRecord
+        ? 'copie modifiée de ' + baseRef + ' (' + members + ' : ' + formatZipEditTally(ack.zipEdit) +
+          ' ; l\'original est inchangé)'
+        : 'archive de ' + members;
+      return desc + ' — ' + what +
         ', déjà proposée au téléchargement dans le fil : l\'utilisateur n\'a rien d\'autre à demander.';
     },
   },

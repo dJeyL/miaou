@@ -77,8 +77,10 @@ Figtree/Fira Code).
   étape ni buter sur la taille d'une réponse — cf.
   [docs/tools.md](docs/tools.md).
 - **Archives zip** : le modèle ouvre un zip pour en lister les membres et en
-  extraire un, ou regroupe plusieurs fichiers produits au fil de l'échange en une
-  archive téléchargeable depuis le fil — cf. [docs/tools.md](docs/tools.md).
+  extraire un, regroupe plusieurs fichiers produits au fil de l'échange en une
+  archive téléchargeable depuis le fil, ou produit une copie modifiée d'une
+  archive existante (membres ajoutés, remplacés, renommés, retirés) — cf.
+  [docs/tools.md](docs/tools.md).
 - **PDF** : le modèle en lit la structure (sommaire avec ses numéros de page) et
   les pages, ou s'en fait rendre une en image pour la lire avec sa vision — page
   scannée, schéma, graphique —, sans serveur ; les images d'une page y sont

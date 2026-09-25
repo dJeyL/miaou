@@ -64,6 +64,7 @@ const ACK_COPY_FIELDS = [
                                           // docs_extract/docs_pack, et resource_appended (lot Y, où ok:false = calcul
                                           // interrompu, pas écriture ratée). Lu par ackIsError, jamais par kind.
   'path',                                 // docs__extract (lot V-1) — chemin du membre extrait dans l'archive
+  'zipEdit',                              // docs__pack avec base — bilan {added, replaced, removed, renamed} ; sa présence fait dire « Archive modifiée »
   'selector',                             // docs__read (V-4) — unité lue : « 2-5 » (pages) ou « Synthèse!B2:E31 » (feuille, V-5)
   'sourceName',                           // docs__read (V-5) — nom du document LU, dont se déduit le mot d'unité ; distinct de resourceName, qui est l'extrait PRODUIT en as_resource (un .txt)
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
@@ -4467,6 +4468,468 @@ function validateZipPlan(entries) {
         'au-delà de la limite de ' + humanSize(cap) + '. Archive moins de ressources à la fois.' };
   }
   return { ok: true };
+}
+
+// ── Modification d'une archive existante (docs__pack avec `base`) ────────────
+// fflate n'écrit que des archives NEUVES : aucune API ne recopie un membre déjà
+// compressé. Tout décompresser puis tout recompresser coûterait le temps et la
+// RAM de l'archive entière, et échouerait en silence sur un membre chiffré
+// (fflate le « décompresse » en bruit sans lever d'erreur, cf. plus haut).
+//
+// Le format permet mieux : le central directory est EN FIN de fichier, et chaque
+// membre y est un segment d'octets autonome (en-tête local + données compressées
+// + data descriptor éventuel). Modifier = recopier tels quels les segments
+// gardés, coller derrière ceux des nouveaux membres, puis réécrire le central
+// directory (offsets recalculés) et l'EOCD. Les nouveaux membres sont compressés
+// par fflate dans une mini-archive dont on reprend les segments : on n'a ni CRC
+// ni deflate à écrire soi-même, seulement des octets à déplacer.
+//
+// Tout ce qui suit est PUR et opère sur des Uint8Array — le handler ne fait que
+// résoudre des handles, appeler zipSync sur les ajouts et stocker le résultat.
+
+const ZIP_LFH_SIG = 0x04034b50;   // Local File Header
+
+function _zipPut16(u8, p, v) { u8[p] = v & 0xff; u8[p + 1] = (v >>> 8) & 0xff; }
+function _zipPut32(u8, p, v) {
+  u8[p] = v & 0xff; u8[p + 1] = (v >>> 8) & 0xff;
+  u8[p + 2] = (v >>> 16) & 0xff; u8[p + 3] = (v >>> 24) & 0xff;
+}
+
+// Un enregistrement Zip64 (record + locator, entre le central directory et
+// l'EOCD) peut être posé SANS nécessité : Info-ZIP le fait dès que l'entrée est
+// un flux (`zip -`), la taille n'étant pas connue d'avance. Si chacune de ses
+// valeurs recoupe celle de l'EOCD classique, rien n'y est saturé et il est
+// REDONDANT : la réécriture peut l'omettre sans rien perdre. Tout écart — une
+// valeur qui ne tient réellement qu'en 64 bits — laisse l'archive refusée.
+function _zip64RecordIsRedundant(u8, eocd, count, cdSize, cdOffset) {
+  const loc = eocd - 20;
+  if (loc < 0 || _zipU32(u8, loc) !== 0x07064b50) return false;
+  if (_zipU32(u8, loc + 12) !== 0) return false;              // offset 64 bits > 4 Go
+  const rec = _zipU32(u8, loc + 8);
+  if (rec !== cdOffset + cdSize || rec + 56 > loc || _zipU32(u8, rec) !== 0x06064b50) return false;
+  if (_zipU32(u8, rec + 8) !== 0 || rec + 12 + _zipU32(u8, rec + 4) !== loc) return false;
+  const hi = function(p) { return _zipU32(u8, p + 4) !== 0; };
+  if (hi(rec + 24) || hi(rec + 32) || hi(rec + 40) || hi(rec + 48)) return false;
+  return _zipU32(u8, rec + 32) === count && _zipU32(u8, rec + 40) === cdSize &&
+         _zipU32(u8, rec + 48) === cdOffset;
+}
+
+// Géométrie COMPLÈTE d'une archive, pour la réécrire — là où
+// parseZipCentralDirectory ne sert qu'à la lister et tolère une archive abîmée
+// (elle s'arrête au premier en-tête illisible et rend ce qu'elle a lu). Ici la
+// tolérance serait fautive : réécrire une archive mal comprise produirait un
+// fichier corrompu présenté comme réussi. Tout écart est donc un REFUS nommé :
+//   - EOCD introuvable, ou suivi d'octets hors commentaire ;
+//   - archive multi-volumes ;
+//   - Zip64 (compte, taille ou offset saturé à 0xFFFF / 0xFFFFFFFF) — hors de
+//     portée sous MAX_INLINE_BYTES, mais le seul signe d'un Zip64 est cette
+//     saturation, et la prendre pour une vraie valeur corromprait tout ;
+//   - central directory qui ne tombe pas pile entre son offset et l'EOCD
+//     (données en tête d'un auto-extractible, Zip64 réel) — sauf un
+//     enregistrement Zip64 redondant, omis à la réécriture ;
+//   - en-tête local absent à l'offset annoncé, ou segment trop court pour ses
+//     données.
+// Le SEGMENT d'un membre court de son offset local jusqu'à l'offset local
+// suivant (ou le central directory) : c'est ce qui dispense de calculer la
+// longueur d'un data descriptor (bit 3), qui n'a pas de taille fixe.
+// Rend { ok:true, entries:[{name, cdStart, cdLen, localOffset, segEnd}],
+// cdOffset, cdSize, eocdOffset, comment } ou { ok:false, message }.
+function parseZipLayout(u8) {
+  const bad = function(why) {
+    return { ok: false, message: 'Archive non modifiable : ' + why + '.' };
+  };
+  if (!u8 || typeof u8.length !== 'number' || u8.length < 22) return bad('ce n\'est pas une archive zip');
+
+  let eocd = -1;
+  const floor = Math.max(0, u8.length - 22 - 65535);
+  for (let p = u8.length - 22; p >= floor; p--) {
+    if (_zipU32(u8, p) === ZIP_EOCD_SIG) { eocd = p; break; }
+  }
+  if (eocd < 0) return bad('ce n\'est pas une archive zip');
+
+  const commentLen = _zipU16(u8, eocd + 20);
+  if (eocd + 22 + commentLen !== u8.length) return bad('octets inattendus en fin d\'archive');
+  if (_zipU16(u8, eocd + 4) !== 0 || _zipU16(u8, eocd + 6) !== 0) return bad('archive en plusieurs volumes');
+  const count = _zipU16(u8, eocd + 10);
+  const cdSize = _zipU32(u8, eocd + 12);
+  const cdOffset = _zipU32(u8, eocd + 16);
+  if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) return bad('format Zip64');
+  if (_zipU16(u8, eocd + 8) !== count) return bad('archive en plusieurs volumes');
+  if (cdOffset + cdSize !== eocd && !_zip64RecordIsRedundant(u8, eocd, count, cdSize, cdOffset)) {
+    return bad('répertoire central mal placé (archive auto-extractible, ou Zip64 réel)');
+  }
+
+  const cdEnd = cdOffset + cdSize;
+  const entries = [];
+  let p = cdOffset;
+  for (let k = 0; k < count; k++) {
+    if (p + 46 > cdEnd || _zipU32(u8, p) !== ZIP_CDFH_SIG) return bad('répertoire central illisible');
+    const csize = _zipU32(u8, p + 20);
+    const size = _zipU32(u8, p + 24);
+    const nlen = _zipU16(u8, p + 28);
+    const len = 46 + nlen + _zipU16(u8, p + 30) + _zipU16(u8, p + 32);
+    const localOffset = _zipU32(u8, p + 42);
+    if (p + len > cdEnd) return bad('répertoire central illisible');
+    if (csize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) return bad('format Zip64');
+    if (_zipU16(u8, p + 34) !== 0) return bad('archive en plusieurs volumes');
+    const gp = _zipU16(u8, p + 8);
+    entries.push({
+      name: _zipDecodeName(u8, p + 46, nlen, (gp & 0x800) !== 0),
+      cdStart: p, cdLen: len, localOffset: localOffset, csize: csize,
+    });
+    p += len;
+  }
+  if (p !== cdEnd) return bad('répertoire central illisible');
+
+  // Segments : triés par offset local, chacun court jusqu'au suivant.
+  const byOffset = entries.slice().sort(function(a, b) { return a.localOffset - b.localOffset; });
+  if (byOffset.length && byOffset[0].localOffset !== 0) return bad('données en tête d\'archive (auto-extractible ?)');
+  for (let i = 0; i < byOffset.length; i++) {
+    const e = byOffset[i];
+    const end = i + 1 < byOffset.length ? byOffset[i + 1].localOffset : cdOffset;
+    if (end === e.localOffset) return bad('deux membres partagent le même emplacement');
+    if (e.localOffset + 30 > end || _zipU32(u8, e.localOffset) !== ZIP_LFH_SIG) return bad('en-tête local introuvable');
+    const head = 30 + _zipU16(u8, e.localOffset + 26) + _zipU16(u8, e.localOffset + 28);
+    if (e.localOffset + head + e.csize > end) return bad('membre tronqué');
+    e.segEnd = end;
+  }
+
+  return {
+    ok: true, entries: entries, cdOffset: cdOffset, cdSize: cdSize, eocdOffset: eocd,
+    comment: u8.subarray(eocd + 22, eocd + 22 + commentLen),
+  };
+}
+
+// Membres RETIRÉS d'une archive, depuis les chemins demandés par le modèle.
+// Un chemin est comparé à l'IDENTIQUE au nom du membre (même contrat que
+// docs__extract : c'est le nom rendu par docs__list) ; terminé par « / », il
+// vise le dossier ET tout ce qu'il contient. Un chemin qui ne désigne rien est
+// un REFUS nommé, jamais ignoré : sinon le modèle annoncerait avoir retiré un
+// fichier resté dans l'archive.
+// Rend { ok:true, drop:Set<nom> } ou { ok:false, message }.
+function resolveZipRemovals(names, removes) {
+  const list = Array.isArray(names) ? names : [];
+  const drop = new Set();
+  const asked = Array.isArray(removes) ? removes : [];
+  for (const r of asked) {
+    const path = String(r == null ? '' : r);
+    if (!path) return { ok: false, message: 'Chemin à retirer vide, refusé.' };
+    const isDir = path.charAt(path.length - 1) === '/';
+    let hit = 0;
+    for (const n of list) {
+      if (n === path || (isDir && n.indexOf(path) === 0)) { drop.add(n); hit++; }
+    }
+    if (!hit) {
+      return { ok: false,
+        message: 'Aucun membre « ' + path + ' » dans l\'archive de base : rien n\'a été retiré. ' +
+          'Le chemin doit être exactement celui rendu par docs__list (un dossier se termine par « / »).' };
+    }
+  }
+  return { ok: true, drop: drop };
+}
+
+// Chemin d'un membre AJOUTÉ à une archive existante. Même régime que
+// resolveZipMemberPath (qu'elle appelle), avec une distinction de plus : la
+// collision avec un membre de la BASE.
+//   - chemin de fichier explicite qui existe dans la base → REMPLACEMENT
+//     (`replaces: true`). C'est le seul moyen de nommer un membre à remplacer, et
+//     écrire le chemin exact d'un membre existant est un geste sans ambiguïté ;
+//   - nom hérité (pas de path, ou dossier « / ») → dedup CONTRE la base aussi :
+//     une collision y est un accident, comme entre deux ajouts.
+// Deux AJOUTS au même chemin explicite restent un refus (resolveZipMemberPath).
+// `added` : chemins déjà pris par les ajouts ; `base` : membres gardés de la base
+// (retraits déjà déduits — un membre retiré ne provoque plus de dedup).
+function resolveZipEditMemberPath(record, path, added, base) {
+  const raw = String(path == null ? '' : path).replace(/\\/g, '/').trim();
+  const explicitFile = !!raw && raw.charAt(raw.length - 1) !== '/';
+  if (explicitFile) {
+    const r = resolveZipMemberPath(record, path, added);
+    if (!r.ok) return r;
+    return { ok: true, name: r.name, replaces: !!(base && base.has(r.name)) };
+  }
+  const union = new Set(added ? Array.from(added) : []);
+  if (base) for (const n of base) union.add(n);
+  const r = resolveZipMemberPath(record, path, union);
+  if (!r.ok) return r;
+  return { ok: true, name: r.name, replaces: false };
+}
+
+// Garde de dernier ressort sur une MODIFICATION : une opération vide (ni ajout,
+// ni retrait, ni renommage) produirait une copie à l'identique sous un autre id ; une archive
+// vidée de tout est presque sûrement une erreur de ciblage ; et le cap porte sur
+// base + ajouts non compressés, pic RAM réel (la base est recopiée, pas
+// décompressée, mais elle est en mémoire avec la sortie). Les ajouts eux-mêmes
+// sont validés par validateZipPlan, appelée à côté.
+function validateZipEditPlan(baseBytes, addEntries, dropCount, keptCount, renameCount) {
+  const adds = Array.isArray(addEntries) ? addEntries : [];
+  if (!adds.length && !dropCount && !renameCount) {
+    return { ok: false, reason: 'noop',
+      message: 'Rien à modifier : donne des ressources à ajouter (handles), des chemins à retirer (remove) ' +
+        'ou des membres à renommer (rename).' };
+  }
+  if (!adds.length && !keptCount) {
+    return { ok: false, reason: 'empty',
+      message: 'L\'archive résultante serait vide : tous ses membres seraient retirés.' };
+  }
+  let total = Number(baseBytes) || 0;
+  for (const e of adds) total += Number(e && e.size) || 0;
+  if (total > MAX_INLINE_BYTES) {
+    return { ok: false, reason: 'cap',
+      message: 'Archive trop volumineuse : ' + humanSize(total) + ' (base comprise), ' +
+        'au-delà de la limite de ' + humanSize(MAX_INLINE_BYTES) + '.' };
+  }
+  if (keptCount + adds.length > 0xfffe) {
+    return { ok: false, reason: 'cap', message: 'Trop de membres pour une archive zip classique.' };
+  }
+  return { ok: true };
+}
+
+// Encodage UTF-8 d'un nom de membre, sans TextEncoder (absent de QuickJS).
+// Réciproque de la branche UTF-8 de _zipDecodeName : un nom renommé doit faire
+// l'aller-retour à l'identique, sinon le membre devient inciblable.
+function _zipEncodeUtf8(str) {
+  const out = [];
+  const s = String(str);
+  for (let i = 0; i < s.length; i++) {
+    let c = s.charCodeAt(i);
+    if (c >= 0xd800 && c < 0xdc00 && i + 1 < s.length) {
+      const d = s.charCodeAt(i + 1);
+      if (d >= 0xdc00 && d < 0xe000) { c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00); i++; }
+    }
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+  }
+  return new Uint8Array(out);
+}
+
+// Champ extra d'un membre RENOMMÉ, privé de son « Unicode Path Extra Field »
+// (0x7075, Info-ZIP). Ce bloc porte une seconde copie du nom, en UTF-8, que les
+// lecteurs qui le connaissent PRÉFÈRENT au nom de l'en-tête : le garder ferait
+// réapparaître l'ancien nom chez eux, renommage silencieusement annulé. Tout
+// autre bloc (Zip64, horodatages, AES…) est gardé tel quel. Un extra mal formé
+// est rendu intact plutôt que tronqué au hasard.
+function _zipStripUnicodePathExtra(extra) {
+  const keep = [];
+  let p = 0;
+  while (p + 4 <= extra.length) {
+    const id = extra[p] | (extra[p + 1] << 8);
+    const len = extra[p + 2] | (extra[p + 3] << 8);
+    if (p + 4 + len > extra.length) return extra;
+    if (id !== 0x7075) keep.push(extra.subarray(p, p + 4 + len));
+    p += 4 + len;
+  }
+  if (p !== extra.length) return extra;
+  let n = 0;
+  for (const k of keep) n += k.length;
+  const out = new Uint8Array(n);
+  let w = 0;
+  for (const k of keep) { out.set(k, w); w += k.length; }
+  return out;
+}
+
+// Renommages demandés par le modèle → Map(nom d'origine → nouveau nom). Règles :
+//   - `from` comparé à l'IDENTIQUE (nom rendu par docs__list) ; terminé par
+//     « / », il renomme le dossier ET tout son contenu, par préfixe — `to` doit
+//     alors être un dossier (« / » final) lui aussi ;
+//   - un `from` sans effet, déjà retiré, ou visé par deux renommages est un
+//     REFUS nommé : jamais un renommage annoncé qui n'a pas eu lieu ;
+//   - `to` passe la garde zip-slip et ses segments vides ou « . » sont refusés
+//     (même exigence d'identifiant que resolveZipMemberPath) ;
+//   - collision du nom final avec un membre gardé ou un autre renommage →
+//     REFUS. Jamais un écrasement : remplacer reste le rôle de `handles`.
+// `names` : membres de la base ; `drop` : retraits déjà résolus.
+// Rend { ok:true, map } ou { ok:false, message }.
+function resolveZipRenames(names, renames, drop) {
+  const list = Array.isArray(names) ? names : [];
+  const asked = Array.isArray(renames) ? renames : [];
+  const dropped = drop && typeof drop.has === 'function' ? drop : new Set();
+  const map = new Map();
+  const fail = function(m) { return { ok: false, message: m }; };
+  for (const r of asked) {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      return fail('Chaque entrée de rename doit être un objet { from, to } — reçu : ' + JSON.stringify(r) + '.');
+    }
+    const from = String(r.from == null ? '' : r.from);
+    const to = String(r.to == null ? '' : r.to).replace(/\\/g, '/').trim();
+    if (!from) return fail('Renommage sans « from », refusé.');
+    if (!to) return fail('Renommage de « ' + from + ' » sans « to », refusé.');
+    const isDir = from.charAt(from.length - 1) === '/';
+    if (isDir !== (to.charAt(to.length - 1) === '/')) {
+      return fail('Renommage de « ' + from + ' » vers « ' + to + ' » : un dossier (terminé par « / ») ' +
+        'se renomme en dossier, un fichier en fichier.');
+    }
+    if (isZipSlipPath(to)) return fail('Nouveau nom non sûr (absolu ou remontant), refusé : ' + to + '.');
+    const segs = to.split('/');
+    if (isDir) segs.pop();
+    for (const seg of segs) {
+      if (!seg || seg === '.') return fail('Nouveau nom mal formé (segment vide ou « . »), refusé : ' + to + '.');
+    }
+    let hit = 0;
+    for (const n of list) {
+      if (!(n === from || (isDir && n.indexOf(from) === 0))) continue;
+      if (dropped.has(n)) return fail('« ' + n + ' » est à la fois retiré et renommé : choisis l\'un ou l\'autre.');
+      if (map.has(n)) return fail('« ' + n + ' » est visé par deux renommages.');
+      map.set(n, isDir ? to + n.slice(from.length) : to);
+      hit++;
+    }
+    if (!hit) {
+      return fail('Aucun membre « ' + from + ' » dans l\'archive de base : rien n\'a été renommé. ' +
+        'Le chemin doit être exactement celui rendu par docs__list (un dossier se termine par « / »).');
+    }
+  }
+  // Unicité des noms FINAUX parmi les membres gardés.
+  const finals = new Set();
+  for (const n of list) {
+    if (dropped.has(n)) continue;
+    const f = map.has(n) ? map.get(n) : n;
+    if (finals.has(f)) {
+      return fail('Après renommage, deux membres porteraient le nom « ' + f + ' » : l\'un écraserait l\'autre.');
+    }
+    finals.add(f);
+  }
+  return { ok: true, map: map };
+}
+
+// Assemble l'archive modifiée. `base` et `baseLayout` (parseZipLayout) décrivent
+// l'archive d'origine, `drop` les noms à ne pas garder (retraits ET membres
+// remplacés), `addU8` une archive produite par zipSync pour les seuls ajouts
+// (ou null), `renames` une Map(nom d'origine → nouveau nom) (ou null). Ordre de
+// sortie : membres gardés dans leur ordre d'origine, puis ajouts — ce qui
+// préserve un premier membre imposé par un format (le `mimetype` d'un EPUB ou
+// d'un OpenDocument) tant qu'on ne le remplace pas. Le commentaire d'archive de
+// la base est conservé.
+//
+// Un membre RENOMMÉ garde ses données compressées intactes (le nom n'entre pas
+// dans le CRC, ni dans ZipCrypto ni dans AES : un membre chiffré se renomme
+// sans mot de passe). Seuls ses deux en-têtes sont recomposés : nom encodé en
+// UTF-8 avec le bit 11 posé (un nom d'origine CP437 serait sinon relu de
+// travers), et extra privé de sa copie Unicode du nom (_zipStripUnicodePathExtra).
+// Rend { ok:true, data, count } ou { ok:false, message }.
+function spliceZipArchive(base, baseLayout, drop, addU8, renames) {
+  const kept = baseLayout.entries.filter(function(e) { return !drop || !drop.has(e.name); });
+  let add = null;
+  if (addU8) {
+    add = parseZipLayout(addU8);
+    if (!add.ok) return { ok: false, message: 'Échec d\'assemblage des nouveaux membres.' };
+  }
+  const addEntries = add ? add.entries : [];
+  const count = kept.length + addEntries.length;
+  if (count > 0xfffe) return { ok: false, message: 'Trop de membres pour une archive zip classique.' };
+
+  // Pièces de chaque membre gardé : en-tête local + reste du segment, et entrée
+  // du central directory. Un membre non renommé est une recopie pure.
+  const pieces = new Map();
+  for (const e of kept) {
+    const to = renames && renames.has(e.name) ? renames.get(e.name) : null;
+    if (to == null) {
+      pieces.set(e, {
+        local: [base.subarray(e.localOffset, e.segEnd)],
+        cd: [base.subarray(e.cdStart, e.cdStart + e.cdLen)],
+      });
+      continue;
+    }
+    const nameU8 = _zipEncodeUtf8(to);
+    if (nameU8.length > 0xffff) return { ok: false, message: 'Nouveau nom trop long : ' + to + '.' };
+    const lo = e.localOffset;
+    const lNlen = _zipU16(base, lo + 26), lElen = _zipU16(base, lo + 28);
+    const lHead = base.slice(lo, lo + 30);
+    const lExtra = _zipStripUnicodePathExtra(base.subarray(lo + 30 + lNlen, lo + 30 + lNlen + lElen));
+    _zipPut16(lHead, 6, _zipU16(lHead, 6) | 0x800);
+    _zipPut16(lHead, 26, nameU8.length);
+    _zipPut16(lHead, 28, lExtra.length);
+    const c = e.cdStart;
+    const cNlen = _zipU16(base, c + 28), cElen = _zipU16(base, c + 30);
+    const cHead = base.slice(c, c + 46);
+    const cExtra = _zipStripUnicodePathExtra(base.subarray(c + 46 + cNlen, c + 46 + cNlen + cElen));
+    _zipPut16(cHead, 8, _zipU16(cHead, 8) | 0x800);
+    _zipPut16(cHead, 28, nameU8.length);
+    _zipPut16(cHead, 30, cExtra.length);
+    pieces.set(e, {
+      local: [lHead, nameU8, lExtra, base.subarray(lo + 30 + lNlen + lElen, e.segEnd)],
+      cd: [cHead, nameU8, cExtra, base.subarray(c + 46 + cNlen + cElen, c + e.cdLen)],
+    });
+  }
+  const sum = function(arr) { let n = 0; for (const a of arr) n += a.length; return n; };
+
+  const byOffset = kept.slice().sort(function(a, b) { return a.localOffset - b.localOffset; });
+  let localLen = 0, cdLen = 0;
+  for (const e of kept) { localLen += sum(pieces.get(e).local); cdLen += sum(pieces.get(e).cd); }
+  const addLocalLen = add ? add.cdOffset : 0;
+  for (const e of addEntries) cdLen += e.cdLen;
+  const comment = baseLayout.comment || new Uint8Array(0);
+  const total = localLen + addLocalLen + cdLen + 22 + comment.length;
+  if (total > 0xffffffff) return { ok: false, message: 'Archive trop volumineuse pour le format zip classique.' };
+
+  const out = new Uint8Array(total);
+  const newOffset = new Map();
+  let w = 0;
+  for (const e of byOffset) {
+    newOffset.set(e, w);
+    for (const part of pieces.get(e).local) { out.set(part, w); w += part.length; }
+  }
+  const shift = w;
+  if (add) { out.set(addU8.subarray(0, add.cdOffset), w); w += add.cdOffset; }
+
+  const cdOffset = w;
+  for (const e of kept) {
+    const at = w;
+    for (const part of pieces.get(e).cd) { out.set(part, w); w += part.length; }
+    _zipPut32(out, at + 42, newOffset.get(e));
+  }
+  for (const e of addEntries) {
+    out.set(addU8.subarray(e.cdStart, e.cdStart + e.cdLen), w);
+    _zipPut32(out, w + 42, e.localOffset + shift);
+    w += e.cdLen;
+  }
+
+  _zipPut32(out, w, ZIP_EOCD_SIG);
+  _zipPut16(out, w + 4, 0);
+  _zipPut16(out, w + 6, 0);
+  _zipPut16(out, w + 8, count);
+  _zipPut16(out, w + 10, count);
+  _zipPut32(out, w + 12, w - cdOffset);
+  _zipPut32(out, w + 16, cdOffset);
+  _zipPut16(out, w + 20, comment.length);
+  out.set(comment, w + 22);
+  return { ok: true, data: out, count: count };
+}
+
+// Nom du fichier produit par une MODIFICATION. L'extension est celle de la
+// BASE, pas .zip : un .docx modifié reste un .docx (sinon l'utilisateur
+// télécharge un « rapport.zip » que Word n'ouvre plus d'un double-clic). Nom
+// omis → celui de la base. Même nettoyage que normalizeArchiveName : chemin
+// retiré, extension garantie sans doublon, casse intacte.
+function normalizeEditedArchiveName(name, baseName) {
+  const fallback = String(baseName == null ? '' : baseName).trim();
+  const baseClean = fallback ? zipMemberBaseName(fallback) : '';
+  const m = /\.([A-Za-z0-9]{1,8})$/.exec(baseClean);
+  const ext = m ? m[1] : 'zip';
+  let s = String(name == null ? '' : name).trim();
+  s = s ? zipMemberBaseName(s) : '';
+  if (!s || s === '.' || s === '..') s = baseClean;
+  if (!s || s === '.' || s === '..') return 'archive.' + ext;
+  const low = s.toLowerCase(), dotExt = '.' + ext.toLowerCase();
+  if (low.length > dotExt.length && low.slice(-dotExt.length) === dotExt) return s;
+  if (low === dotExt) return 'archive.' + ext;
+  return s + '.' + ext;
+}
+
+// Bilan d'une modification — « 2 ajoutés, 1 remplacé, 1 retiré » —, partagé
+// par le retour au modèle et le libellé d'ack (ui.js) : une seule formulation.
+// Les postes nuls sont omis ; rien du tout → « aucun changement ».
+function formatZipEditTally(t) {
+  const parts = [];
+  const put = function(n, one, many) {
+    const k = Number(n) || 0;
+    if (k > 0) parts.push(k + ' ' + (k === 1 ? one : many));
+  };
+  put(t && t.added, 'ajouté', 'ajoutés');
+  put(t && t.replaced, 'remplacé', 'remplacés');
+  put(t && t.removed, 'retiré', 'retirés');
+  put(t && t.renamed, 'renommé', 'renommés');
+  return parts.length ? parts.join(', ') : 'aucun changement';
 }
 
 // ── Sauvegarde compressée : sniff de conteneur (lot V-3) ─────────────────────

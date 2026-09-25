@@ -2503,6 +2503,19 @@ function renderIntentTwoLevel(el, intent, detailText, detailBuilder) {
   el.appendChild(detail);
 }
 
+// Libellé d'un ack docs_pack, en deux moitiés parce que renderLabel intercale
+// un séparateur entre elles. `zipEdit` (présent seulement sur une modification,
+// docs__pack avec base) change le verbe et ajoute le bilan.
+function docsPackAckVerb(m) {
+  return m && m.zipEdit ? 'Archive modifiée' : 'Archive créée';
+}
+function docsPackAckTail(m) {
+  if (!m || m.ok === false) return ' (refusée)';
+  const n = m.count === 1 ? '1 membre' : (m.count != null ? m.count : '?') + ' membres';
+  return ' — ' + n + (m.zipEdit ? ' (' + formatZipEditTally(m.zipEdit) + ')' : '') +
+    (m.size != null ? ', ' + humanSize(m.size) : '');
+}
+
 const ACK_KINDS = {
   memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
   memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
@@ -2998,7 +3011,8 @@ const ACK_KINDS = {
       }
     },
   },
-  // Création d'archive (miaou__docs__pack, lot V-2) : même posture que
+  // Création ou modification d'archive (miaou__docs__pack, lot V-2 ; `base`
+  // pour la modification, libellé par docsPackAckVerb/Tail) : même posture que
   // docs_extract — informatif, pas d'undo, et un refus métier (plan vide,
   // doublon, cap, nom non sûr) arrive avec ok:false → rouge par ackIsError,
   // alors que le result modèle reste un texte non-isError.
@@ -3012,23 +3026,19 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => 'Archive créée : ' + (m.resourceName || '?') +
-      (m.ok === false ? ' (refusée)'
-        : ' — ' + (m.count === 1 ? '1 membre' : (m.count != null ? m.count : '?') + ' membres') +
-          (m.size != null ? ', ' + humanSize(m.size) : '')),
+    label: m => docsPackAckVerb(m) + ' : ' + (m.resourceName || '?') + docsPackAckTail(m),
     renderLabel: (m, el) => {
-      const tail = m.ok === false ? ' (refusée)'
-        : ' — ' + (m.count === 1 ? '1 membre' : (m.count != null ? m.count : '?') + ' membres') +
-          (m.size != null ? ', ' + humanSize(m.size) : '');
+      const verb = docsPackAckVerb(m);
+      const tail = docsPackAckTail(m);
       const name = m.resourceName || '?';
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Archive créée '));
+          detail.appendChild(document.createTextNode(verb + ' '));
           appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + name + tail));
         });
       } else {
-        el.appendChild(document.createTextNode('Archive créée '));
+        el.appendChild(document.createTextNode(verb + ' '));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + name + tail));
       }
