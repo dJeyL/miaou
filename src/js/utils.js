@@ -1713,6 +1713,31 @@ function sanitizeMermaidSource(src) {
     .replace(/\\n/g, '<br/>');
 }
 
+// Texte de la notice .mermaid-error : le libellé fixe SUIVI du message de
+// l'exception Mermaid. Sans ce message, un échec interne de Mermaid (bug de
+// rendu 11.12.0 sur les puces après <br/>, payé des mois durant) est
+// indistinguable d'une faute de syntaxe du modèle — c'est ce qu'on accusait.
+// Les messages de parse sont multi-lignes (extrait, ligne de caret « ---^ »,
+// « Expecting … ») : la ligne de caret, qui n'a de sens qu'en chasse fixe, est
+// retirée ; le reste est aplati sur une ligne et borné. Pure, testable en
+// QuickJS ; la sortie part en textContent, jamais en innerHTML.
+const MERMAID_ERROR_DETAIL_MAX = 240;
+function mermaidErrorNotice(err) {
+  const base = 'Diagramme invalide — source affichée';
+  const raw = err && typeof err === 'object' ? err.message : err;
+  const detail = String(raw == null ? '' : raw)
+    .split(/\r?\n/)
+    .filter(line => !/^\s*-*\^\s*$/.test(line))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!detail) return base;
+  const cut = detail.length > MERMAID_ERROR_DETAIL_MAX
+    ? detail.slice(0, MERMAID_ERROR_DETAIL_MAX - 1) + '…'
+    : detail;
+  return base + ' (mermaid : ' + cut + ')';
+}
+
 // Nom de fichier pour l'export image d'un diagramme Mermaid (lot E3) : le
 // data-filename du fence, assaini par sanitizeDownloadName, extension
 // REMPLACÉE par celle de l'image demandée (un data-filename de bloc mermaid

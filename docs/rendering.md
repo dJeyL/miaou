@@ -18,7 +18,7 @@ page. Pour Mermaid, injection dynamique d'un `<script>` au premier bloc
 ` ```mermaid ` rencontré, derrière une **promesse mémoïsée avec reset sur
 rejet** : un échec CDN n'empoisonne pas la session, la passe suivante retente.
 
-Pin : `https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js`
+Pin : `https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.13.0/mermaid.min.js`
 — même host que marked/DOMPurify/Prism, build **IIFE** exposant
 `window.mermaid` (pas l'ESM `.mjs` : le projet n'a pas de modules). Confirmé
 par Julien le 2026-07-10.
@@ -109,8 +109,23 @@ Détails de la passe :
   (jamais un timestamp seul).
 - Garde anti-obsolescence après chaque `await` : `pre.isConnected` et source
   inchangée, sinon abandon silencieux du résultat.
-- **Échec de parse** → `<pre>` intact + notice `.mermaid-error`
-  (« Diagramme invalide — source affichée »), jamais de rendu cassé. Mermaid
+- **Échec de parse ou de rendu** → `<pre>` intact + notice `.mermaid-error`
+  (« Diagramme invalide — source affichée (mermaid : …) »), jamais de rendu
+  cassé. Le message de l'exception est rendu par `mermaidErrorNotice` (utils.js,
+  pure) : ligne de caret retirée, aplati, borné à `MERMAID_ERROR_DETAIL_MAX`, et
+  écrit en `textContent`. La notice existante est réécrite à chaque échec, pour
+  qu'une source éditée affiche la raison de SON échec. Ce message est ce qui
+  distingue une faute de syntaxe du modèle d'un bug de Mermaid. Précédent :
+  en 11.12.0, avec `htmlLabels: false`, un label de plusieurs lignes à puces
+  (`<br/>- a<br/>- b`) assez long pour être coupé levait `splitLineToFitWidth
+  does not support newlines in the line`. Les `<br/>` y deviennent des sauts de
+  ligne, les puces forment alors une liste markdown non gérée, et le texte brut
+  arrive avec ses sauts de ligne dans la coupure. La syntaxe était valide, mais
+  la notice sans message a laissé croire des mois durant à une désobéissance du
+  modèle. Corrigé par la montée en 11.13.0. Garde de non-régression :
+  `.claude/skills/run-miaou/verify-mermaid-bullets.mjs`, qui passe par la vraie
+  passe de rendu. Son option `--mermaid-file` sert un autre build de Mermaid, et
+  la 11.12.0 doit l'y faire échouer. Mermaid
   v11 peut laisser un nœud d'erreur orphelin dans `document.body` : nettoyé
   (ids `uid` et `d<uid>`).
 - **CDN indisponible** → passe silencieuse, la source surlignée reste (même

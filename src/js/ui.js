@@ -512,7 +512,7 @@ function highlightUnder(el) { if (highlightEnabled && window.Prism) Prism.highli
 // — prérequis de l'export PNG canvas (lot E3, canvas tainted sur Safari sinon) ;
 // rendu des labels légèrement différent du défaut Mermaid, assumé.
 // Cf. docs/rendering.md.
-const MERMAID_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js';
+const MERMAID_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.13.0/mermaid.min.js';
 let _mermaidPromise = null;
 let _mermaidTheme = null;   // thème du dernier initialize (détection de changement)
 let _mermaidUid = 0;
@@ -550,7 +550,7 @@ function ensureMermaid() {
 // le global `window.QJS`, WASM RELEASE_SYNC (synchrone, Model 2) INLINÉ dans ce
 // fichier unique → un seul <script src>, 2 requêtes réseau totales, aucun fetch
 // .wasm séparé, aucun module ES au niveau source (contrainte dure MIAOU). Version
-// épinglée @0.32.0 comme Mermaid @11.12.0. Détail : AUDIT-L, section spike.
+// épinglée @0.32.0 comme Mermaid @11.13.0. Détail : AUDIT-L, section spike.
 const QUICKJS_CDN = 'https://cdn.jsdelivr.net/npm/quickjs-emscripten@0.32.0/dist/index.global.min.js';
 let _quickjsPromise = null;
 
@@ -588,7 +588,7 @@ function ensureQuickJs() {
 // le précédent QuickJS rend jsdelivr non exceptionnel ici. Le même fichier couvre
 // unzip ET zip (`unzipSync`, `zipSync`, `strToU8`) : V-2 (création d'archive)
 // n'aura ni second script ni changement d'artefact. Version épinglée comme
-// mermaid@11.12.0 et quickjs-emscripten@0.32.0.
+// mermaid@11.13.0 et quickjs-emscripten@0.32.0.
 const FFLATE_CDN = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
 let _fflatePromise = null;
 
@@ -631,7 +631,7 @@ function ensureFflate() {
 // seul build proposé, la variante `legacy/` comprise). La contrainte dure MIAOU
 // « pas de modules ES » fige donc la dépendance sur la dernière UMD publiée.
 // Cette branche ne suivra pas l'amont ; le jour où MIAOU accepterait un module
-// ES, la question se rouvre. Épinglée comme mermaid@11.12.0, fflate@0.8.2 et
+// ES, la question se rouvre. Épinglée comme mermaid@11.13.0, fflate@0.8.2 et
 // quickjs-emscripten@0.32.0.
 const PDFJS_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -1089,12 +1089,15 @@ async function renderMermaidUnder(scope) {
       if (!pre.isConnected || sanitizeMermaidSource(code.textContent) !== src) continue;
       pre._mermaidErrSrc = src;
       pre.classList.remove('mermaid-rendered');
-      if (!pre.querySelector('.mermaid-error')) {
-        const note = document.createElement('div');
+      // Notice réécrite si elle existe déjà : une source éditée peut échouer
+      // pour une autre raison, et le message doit être celui de CET échec.
+      let note = pre.querySelector('.mermaid-error');
+      if (!note) {
+        note = document.createElement('div');
         note.className = 'mermaid-error';
-        note.textContent = 'Diagramme invalide — source affichée';
         pre.appendChild(note);
       }
+      note.textContent = mermaidErrorNotice(e);
     }
   }
 }

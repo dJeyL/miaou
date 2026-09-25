@@ -2546,6 +2546,31 @@ describe('sanitizeMermaidSource', function() {
   });
 });
 
+describe('mermaidErrorNotice', function() {
+  it('suffixe le libellé fixe du message de l\'exception', function() {
+    expect(mermaidErrorNotice(new Error('splitLineToFitWidth does not support newlines in the line')))
+      .toBe('Diagramme invalide — source affichée (mermaid : splitLineToFitWidth does not support newlines in the line)');
+  });
+  it('retire la ligne de caret et aplatit un message de parse multi-lignes', function() {
+    const msg = "Parse error on line 2:\n...A[foo(bar)]\n------^\nExpecting 'SQE', got 'PS'";
+    expect(mermaidErrorNotice(new Error(msg)))
+      .toBe("Diagramme invalide — source affichée (mermaid : Parse error on line 2: ...A[foo(bar)] Expecting 'SQE', got 'PS')");
+  });
+  it('borne un message trop long, terminé par une ellipse', function() {
+    const out = mermaidErrorNotice(new Error('x'.repeat(1000)));
+    expect(out.length).toBe('Diagramme invalide — source affichée (mermaid : '.length + MERMAID_ERROR_DETAIL_MAX + 1);
+    expect(out.slice(-2)).toBe('…)');
+  });
+  it('accepte une chaîne jetée telle quelle', function() {
+    expect(mermaidErrorNotice('boom')).toBe('Diagramme invalide — source affichée (mermaid : boom)');
+  });
+  it('sans message exploitable → libellé seul', function() {
+    expect(mermaidErrorNotice(null)).toBe('Diagramme invalide — source affichée');
+    expect(mermaidErrorNotice(new Error(''))).toBe('Diagramme invalide — source affichée');
+    expect(mermaidErrorNotice({})).toBe('Diagramme invalide — source affichée');
+  });
+});
+
 describe('isPreviewableLang', function() {
   it('html et svg → true', function() {
     expect(isPreviewableLang('html')).toBeTruthy();

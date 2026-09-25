@@ -861,10 +861,11 @@ de contrôle.
 
 72. **Erreur de parse → fallback** : le deuxième bloc de seed-23 (invalide)
     reste en source surlignée, avec la notice discrète « Diagramme invalide —
-    source affichée » sous le bloc. Aucun rendu cassé, aucun nœud d'erreur
-    Mermaid résiduel en bas de page (inspecter `document.body`). Le bouton de
-    bascule reste caché sur ce bloc. Le bloc bash de contrôle n'a ni bouton de
-    bascule ni tentative de rendu.
+    source affichée (mermaid : …) » sous le bloc, qui cite le message de
+    Mermaid. Aucun rendu cassé, aucun nœud d'erreur Mermaid résiduel en bas de
+    page (inspecter `document.body`). Le bouton de bascule reste caché sur ce
+    bloc. Le bloc bash de contrôle n'a ni bouton de bascule ni tentative de
+    rendu.
 
 73. **Toggle diagramme ↔ source** : sur le bloc valide, le bouton « diagramme »
     (3 nœuds reliés, dans les actions de l'en-tête) bascule entre vue rendue et
