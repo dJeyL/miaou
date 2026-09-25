@@ -8,7 +8,7 @@
 // se perd à l'enregistrement.
 //
 // Usage: node verify-prompt-order.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,7 +17,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const headed = process.argv.includes('--headed');
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
 const consoleErrors = [];

@@ -359,8 +359,11 @@ le fil ? » regarde ce que l'utilisateur veut, « ce qui vient d'arriver est-il
 visible ? » regarde où est la vue. Seule la seconde décide d'une pulsation.
 
 Marquer sur `shouldFollowStream` ne marquait **jamais** tant que le plafond
-d'ancrage était armé, puisque ce prédicat rend `true` par construction dans ce
-cas. Or le plafond mord exactement quand la réponse dépasse l'écran : le suivi
+d'ancrage était armé, puisque ce prédicat rend `true` quand la vue est posée au
+plafond (ou en dessous) — et il le rendait alors sans condition, y compris pour
+un lecteur remonté au-dessus de l'ancre, qu'il ramenait sur son énoncé à chaque
+delta (corrigé le 2026-09-25 : remonté au-dessus du plafond, on ne suit plus,
+cf. `viewAtOrBelowScrollCap`). Or le plafond mord exactement quand la réponse dépasse l'écran : le suivi
 s'arrête au ras de la bulle utilisateur, la suite s'écrit sous le fold, donc
 hors de vue — le cas même que le bouton doit signaler, et le plus fréquent.
 Le bouton y est d'ailleurs déjà **visible** (`syncScrollBottomBtn`, appelée par

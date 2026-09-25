@@ -4,7 +4,7 @@
 //  - le bouton n'existe qu'en export interactif
 //  - la bascule change réellement les couleurs calculées dans le fichier exporté
 //  - l'override est persisté et re-appliqué au rechargement
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -15,7 +15,7 @@ const outDir = path.resolve(dir, 'tmp-export-theme');
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 await page.goto(appUrl);
 await page.waitForFunction(() => typeof serializeThemeTokens === 'function');

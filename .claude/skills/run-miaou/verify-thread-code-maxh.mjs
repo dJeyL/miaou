@@ -1,13 +1,17 @@
 // Vérifie la borne de hauteur des blocs de code du fil (.body pre code /
 // .tool-block pre code) : le contenu long scrolle DANS sa boîte, .code-head
 // reste visible, et l'inspecteur garde sa propre borne (300px).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const browser = await chromium.launch();
+const distUrl = 'file://' + path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist/miaou.html');
+
+const browser = await launchIsolated();
 const rows = [];
 for (const vp of [{width:1280,height:800},{width:1440,height:900},{width:900,height:600},{width:1280,height:1400}]) {
   const page = await browser.newPage({ viewport: vp });
-  await page.goto('file:///Users/julien/llm-playground/miaou/dist/miaou.html');
+  await page.goto(distUrl);
   await page.waitForSelector('#composer-text', { timeout: 10000 });
   await page.waitForTimeout(400);
   const r = await page.evaluate(() => {

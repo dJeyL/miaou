@@ -62,7 +62,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '../../..');
+const repoRoot = path.resolve(__dirname, '../../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const zipPath = path.join(repoRoot, 'untracked/test-files/test-extract.zip');
 const outDir = process.argv[2] && !process.argv[2].startsWith('--')
@@ -164,6 +164,12 @@ const initScript = ({ proxyUrl }) => {
         },
       });
       return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
+    }
+    // Sonde native d'Ollama (lot AF : `/api/tags`, `/api/ps`, `/api/show`, racine
+    // dérivée de l'URL sans `/v1`) : 404 = « pas un Ollama ». Sans cette branche
+    // la requête sort vers stub.local et journalise ERR_NAME_NOT_RESOLVED.
+    if (/\/api\/(tags|ps|show)$/.test(url)) {
+      return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } });
     }
     if (url.indexOf('/models') >= 0) {
       return Promise.resolve(new Response(JSON.stringify({ data: [] }), {

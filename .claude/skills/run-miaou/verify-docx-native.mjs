@@ -44,7 +44,7 @@
 //
 // Usage : node verify-docx-native.mjs [dossier-captures] [--headed]
 //   Prérequis : `python3 build.py` fait. Réseau requis (CDN mammoth).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -125,7 +125,7 @@ const initScript = () => {
   };
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const ctx = await browser.newContext({ acceptDownloads: true });
 const page = await ctx.newPage();
 await page.addInitScript(initScript);
@@ -223,7 +223,11 @@ try {
     /^## 0\./m.test(sec0.text));
 
   // ── 5. Bornage : un h2 ne ferme pas un h1 ─────────────────────────────────
-  const whole = await callTool('docs__read', { ref: dref, selector: 'Checklist — Cadrage de l’upgrade IBM API Connect' });
+  // Titre du h1 relu au listing (première entrée non indentée), jamais recopié
+  // ici : la fixture est un document réel, son intitulé n'a rien à faire dans
+  // un fichier versionné.
+  const h1Title = (listed.text.match(/\n- ([^\n]+)/) || [])[1] || '';
+  const whole = await callTool('docs__read', { ref: dref, selector: h1Title });
   check('lire le h1 rend AUSSI ses sous-sections (bornage au niveau ≤)',
     !whole.isError && /## 0\./.test(whole.text) && /## 8\./.test(whole.text),
     whole.text.length + ' caractères');

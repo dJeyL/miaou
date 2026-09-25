@@ -134,7 +134,9 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   **not** import from this `node_modules` (data, HTML, notes). This has
   been the single most-repeated mistake driving this skill.
 
-  **One sub-directory is allowed and ignored: `untracked/`.** It holds the
+  **Sub-directories allowed: `untracked/` (ignored) and `archives/`
+  (versioned, obsolete verifies kept runnable — see the MCP proxy gotcha
+  below).** `untracked/` holds the
   artefact scripts — the `shot-*` captures and the `measure-*` one-off
   arbitrations — as opposed to the non-regressions that live at this level, are
   versioned, and are cited from their domain doc. The sorting question is not
@@ -169,22 +171,40 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   state itself: `page.waitForFunction(() => document.querySelector('.ack-slot')
   .hidden === true)`. Then re-run the script two or three times — a race fixed
   by luck and a race fixed properly look identical on a single green run.
+- **Launch through `stub-backend.js`, never `chromium.launch()` directly.**
+  `launchIsolated(launchOpts, backendOpts)` returns a browser whose every
+  context gets, before any page script: a fixture API server
+  (`http://stub.local/v1`), no MCP server (build seed neutralised), the native
+  Ollama probe answered 404, and — unless the script stubs them itself — model
+  list and chat served. Without it, a verify runs against the machine's own
+  backend and proxy, as embedded from `config.json` (see the fifth cause under
+  "Replaying the whole suite"). Pass `{ serve: false }` when the script stubs
+  chat/models itself (`window.fetch` or `page.route`), `{ native: false }` too
+  when it stubs `/api/*`; the header of the module explains why those are the
+  only two combinations that compose regardless of init-script order.
+  To PROVE the isolation rather than assume it, replay with
+  `VERIFY_NET_AUDIT=/tmp/netaudit.txt`: every request to a host that is
+  neither `stub.local` nor a library CDN is logged with its script. The
+  2026-09-25 audit caught two scripts that purged `miaou-api-servers` without
+  reloading — the app re-migrated from the build config and probed the real
+  backend, while every check stayed green.
 - **`config.json` (if present) gets embedded in `dist/miaou.html`,**
   including local backend URL/model — visible in a screenshot's
   "URL DE L'API" field. Harmless for local dev screenshots, but never
   ship a build for `github-main`/public consumption without
   `build.py --no-config` first (see project `CLAUDE.md` →
   "Synchronisation main → github-main").
-- **The `miaou-mcp-servers` proxy listens on port 8765** (moved from 8767,
-  definitive as of 2026-08-28). Two scripts talk to a proxy, and they do
-  *opposite* things despite sharing the `VERIFY_PROXY_PORT` override:
-  `verify-docs-extract.mjs` **reuses** the proxy already running on 8765,
-  while `verify-res-docs-wiring.mjs` **spawns its own** on a dedicated
-  8799 precisely so it never collides with it. When a verify fails with
-  "Le proxy MCP ne répond pas", read it as an environment fact before
-  suspecting the app or a stale assertion: check what port the proxy is
-  actually on (`lsof -nP -iTCP -sTCP:LISTEN | grep -i python`) rather
-  than patching the script.
+- **No versioned verify talks to the real MCP proxy any more.** The only two
+  that did, `archives/verify-docs-extract.mjs` (reuses the proxy on 8765) and
+  `archives/verify-res-docs-wiring.mjs` (spawns its own on 8799), exercise the
+  server path of `mcp_docs`, disabled by default since lot V-5 — they exit with
+  code 3 and say so unless run deliberately with `--obsolete-ok` (their header
+  says how). They are kept as runnable archives, outside the replayed set
+  (`ls verify-*.mjs` at this level does not see them). Like `untracked/`, the
+  sub-directory shifts paths by one level (`../../../..` to the repo root).
+  If you do run them and they fail with "Le proxy MCP ne répond pas", check
+  which port the proxy is actually on (`lsof -nP -iTCP -sTCP:LISTEN | grep -i
+  python`) before suspecting the app.
 - **Wait for `.boot-done` as a STATE, never with `waitForSelector`.** The boot
   overlay hides the app until it is ready, and the class marking the end of
   boot is put on that overlay *as it becomes invisible*. `waitForSelector`
@@ -818,6 +838,46 @@ genuinely changed, fix the assertion **and say what replaced it** in a comment �
 `verify-brief-h-batch.mjs` now asserts "prefer native over server" where it used
 to assert `content_b64`, and the comment records why the old token vanished.
 Without that line the next reader restores the old assertion.
+
+**A fifth cause, found on the 2026-09-25 replay (26 reds on 92, one of them a
+real application regression): the script inherits the LOCAL BUILD.** The bundle
+under test embeds `config.json`, so a verify that does not neutralise it tests
+the machine as much as the code. Three shapes, all of which flip with the state
+of Julien's environment rather than with `src/`:
+
+- **The build-seeded MCP server.** `seedBuildMcpServersIfNeeded` appends the
+  config's `mcp_server` to whatever list is found at boot — including an empty
+  `[]` set by the fixture. With the proxy down, `ERR_CONNECTION_REFUSED` reddens
+  every "no console error" check; with it up, "no MCP server connected" fails
+  instead. Setting `miaou-mcp-servers` to `[]` is not enough: set
+  `miaou-mcp-seeded` to `'1'` next to it. In an `addInitScript`, guard it to the
+  first load (`if (localStorage.getItem('miaou-mcp-seeded') !== null) return;`),
+  or a later `page.reload()` wipes the list the scenario built.
+- **Endpoints added after the stub was written.** A `fetch` stub that answers
+  `/models` and `/chat/completions` and passes everything else to the network
+  now leaks the native Ollama probe (`/api/tags`, `/api/ps`, `/api/show`, root
+  derived by stripping `/v1`) to `stub.local` — `ERR_NAME_NOT_RESOLVED`. Answer
+  it with a 404 (« not an Ollama »). A stub that passes unknown URLs through is
+  only complete for the endpoints that existed the day it was written.
+- **Durations intercepted by literal value.** `ms === 180000` to shorten the
+  stream watchdog stopped matching the day `config.json` set
+  `stream_idle_timeout_s`; the shortcut went silent and the script either timed
+  out red or — worse — stayed green on a scenario that no longer exercised the
+  watchdog. Read the live constant by its bare name inside `page.evaluate`
+  (`STREAM_IDLE_TIMEOUT_MS`, `IDLE_SUMMARY_MS`: script-scope `const`s are
+  readable there, they are just not on `window`).
+
+The remedy is now shared: `stub-backend.js` (see Gotchas), applied to every
+versioned verify. Do not re-add a local `/api/*` branch or a local seed
+sentinel to a script — that is the duplication that let each copy rot on its
+own.
+
+The same replay found a verify **green for two independent reasons, neither of
+them the feature**: `verify-stream-watchdog-nominal` used `route.fulfill`, which
+delivers the whole SSE body in one block — no silence between chunks, so a
+watchdog that never re-arms passes too (the script's own comment said so). It
+now serves a `ReadableStream` with real 400ms gaps, and removing the re-arm
+turns four checks red.
 
 ## Troubleshooting
 

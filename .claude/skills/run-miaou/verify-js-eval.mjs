@@ -28,7 +28,7 @@
 //
 // Réseau : le premier appel js__eval charge quickjs-emscripten depuis jsDelivr
 // (ensureQuickJs, ui.js). Nécessite donc un accès réseau. Usage : node verify-js-eval.mjs
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -38,7 +38,7 @@ const appUrl = 'file://' + path.resolve(dir, '../../../dist/miaou.html');
 const results = [];
 function check(name, ok, extra) { results.push({ name, ok: !!ok, extra }); }
 
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });

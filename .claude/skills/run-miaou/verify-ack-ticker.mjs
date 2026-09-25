@@ -8,7 +8,7 @@
 //   - héritage slot-expanded (détail déplié survit à l'arrivée suivante),
 //   - réglage Animations coupe l'attribut html[data-motion] et donc la transition.
 // Usage : node verify-ack-ticker.mjs <dossier-captures> [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +26,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

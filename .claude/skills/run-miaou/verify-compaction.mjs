@@ -42,7 +42,7 @@
 // tombés sur ce seul motif le 2026-09-05).
 //
 // Usage : node verify-compaction.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,11 +61,27 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const consoleErrors = [];
 page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', e => consoleErrors.push(String(e)));
+
+// Serveur API : celui de stub-backend.js (fixture stub.local). La fenêtre de
+// contexte se règle depuis le lot AF par (serveur, modèle) sur la fiche serveur
+// (`server.contextWindows`) ; le champ global `settings.contextWindow` que ce
+// script posait a été supprimé — la valeur ne prenait plus, la pilule tombait
+// en saturation et le glyphe en `currentColor`. Le serveur réel de la config
+// introduirait en plus une fenêtre MESURÉE (`/api/ps`, qui prime sur une
+// saisie) dépendante de la machine.
+await page.addInitScript(() => {
+  // Saisie de fenêtre pour le modèle actif, par le même champ que la fiche
+  // serveur (cf. onSaveApiServer, main.js).
+  window.__setContextWindow = (w) => {
+    const srv = activeApiServer();
+    upsertApiServer(Object.assign({}, srv, { contextWindows: { [activeModel()]: w } }));
+  };
+});
 
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
@@ -223,7 +239,7 @@ check('le signal est un GLYPHE (svg), pas une teinte', glyphStyle.isSvg);
 // ≠ chemin emprunté. On pose donc une vraie conversation et une vraie fenêtre,
 // et on regarde la pilule telle qu'elle se peint.
 const viaRealPath = async (chars, win) => page.evaluate(async ({ c, w }) => {
-  const s = loadSettings(); s.contextWindow = w; saveSettings(s);
+  __setContextWindow(w);
   await newConversation();
   if (c) currentThread.push({ role: 'user', content: 'x'.repeat(c) });
   await persistCurrent();
@@ -246,7 +262,7 @@ check(`chemin réel, au-delà (${realHigh.label}) : glyphe peint sur la pilule`,
 for (const pal of ['ambre', 'encre', 'foret']) {
   const c = await page.evaluate(async (p) => {
     selectPalette(p);
-    const s = loadSettings(); s.contextWindow = 200000; saveSettings(s);
+    __setContextWindow(200000);
     await newConversation();
     currentThread.push({ role: 'user', content: 'x'.repeat(500000) });
     await persistCurrent(); rerenderCurrentThread(); syncContextCounter();
@@ -257,7 +273,7 @@ for (const pal of ['ambre', 'encre', 'foret']) {
       accent: m ? `rgb(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)})` : hex,
     };
   }, pal);
-  check(`palette ${pal} : le glyphe porte l'accent de la palette`, c.glyph === c.accent);
+  check(`palette ${pal} : le glyphe porte l'accent de la palette (${c.glyph} / ${c.accent})`, c.glyph === c.accent);
 }
 
 // EXCEPTION : sous un seuil de saturation, le glyphe redescend à la couleur de
@@ -265,7 +281,7 @@ for (const pal of ['ambre', 'encre', 'foret']) {
 // concurrents, et c'est la saturation qui doit gagner.
 const warnColors = await page.evaluate(async () => {
   selectPalette('ambre');
-  const s = loadSettings(); s.contextWindow = 200000; saveSettings(s);
+  __setContextWindow(200000);
   await newConversation();
   currentThread.push({ role: 'user', content: 'x'.repeat(750000) });
   await persistCurrent(); rerenderCurrentThread(); syncContextCounter();
@@ -301,7 +317,7 @@ console.log('\n── 3. Affordance de compaction (drawer) ──');
 // testé juste après n'aurait rien à mesurer. Une fixture héritée du bloc
 // précédent est la façon la plus discrète de rendre un contrôle vacu.
 await page.evaluate(async () => {
-  const s = loadSettings(); s.contextWindow = 200000; saveSettings(s);
+  __setContextWindow(200000);
   await newConversation();
   currentThread.push({ role: 'user', content: 'Un message AVANT la frontière' });
   currentThread.push({ role: 'compaction', content: 'Résumé court.' });
@@ -1430,19 +1446,30 @@ check('sans frontière emportée : un seul clic régénère, rien ne s\'arme',
 
 // Édition d'un message situé AVANT la frontière : même garde sur le crayon.
 await seedBoundary(page);
-const editGuard = await page.evaluate(() => {
+// Deux temps : la rangée d'actions monte en opacité par une transition
+// (120ms, chat.css) ; lue dans le même tour que le clic, elle valait encore 0
+// une fois sur deux. On attend l'état TERMINAL avant le second clic (la
+// fenêtre d'armement court bien au-delà).
+const editFirst = await page.evaluate(() => {
   const wrap = document.querySelector('#thread .msg.user');
   const btn = wrap.querySelector('.msg-edit');
   btn.click();
-  const first = { armed: btn.classList.contains('armed'),
-                  editing: !!wrap.querySelector('.msg-edit-area'),
-                  actionsVisible: getComputedStyle(wrap.querySelector('.msg-user-actions')).opacity === '1' };
-  btn.click();
-  return { first, editingAfter: !!wrap.querySelector('.msg-edit-area') };
+  return { armed: btn.classList.contains('armed'),
+           editing: !!wrap.querySelector('.msg-edit-area') };
 });
+const actionsVisible = await page.waitForFunction(() =>
+  getComputedStyle(document.querySelector('#thread .msg.user .msg-user-actions')).opacity === '1',
+  null, { timeout: 1500 }).then(() => true, () => false);
+const actionsOpacity = await page.evaluate(() =>
+  getComputedStyle(document.querySelector('#thread .msg.user .msg-user-actions')).opacity);
+const editGuard = await page.evaluate((first) => {
+  const wrap = document.querySelector('#thread .msg.user');
+  wrap.querySelector('.msg-edit').click();
+  return { first, editingAfter: !!wrap.querySelector('.msg-edit-area') };
+}, Object.assign(editFirst, { actionsVisible, opacity: actionsOpacity }));
 check('éditer avant la frontière : le premier clic arme sans ouvrir l\'édition',
   editGuard.first.armed && !editGuard.first.editing);
-check('le crayon armé reste visible hors survol', editGuard.first.actionsVisible);
+check(`le crayon armé reste visible hors survol (opacité ${editGuard.first.opacity})`, editGuard.first.actionsVisible);
 check('le second clic ouvre l\'édition', editGuard.editingAfter);
 
 // « Continuer » une réponse tronquée d'avant la frontière : refusé, bouton

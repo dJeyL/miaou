@@ -13,7 +13,7 @@
 //   (applySyncDecision) dans un tableau global window.__syncTrace, relu après.
 //
 // Usage : node verify-multitab-sync.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -142,7 +142,7 @@ const traceScript = () => {
   }
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const context = await browser.newContext({ viewport: { width: 1100, height: 820 } });
 await context.addInitScript(initScript);
 

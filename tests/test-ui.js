@@ -591,6 +591,27 @@ describe('cappedScrollTop', function() {
   });
 });
 
+describe('viewAtOrBelowScrollCap', function() {
+  it('vue posée au plafond par le suivi : on continue à suivre', function() {
+    // plafond = 1500-28 = 1472 ; scrollTop arrondi d'une position fractionnaire.
+    expect(viewAtOrBelowScrollCap(1500.4, 28, 1472)).toBeTruthy();
+  });
+  it('vue sous le plafond (le lecteur lit la réponse) : suivi, sans effet de remontée', function() {
+    expect(viewAtOrBelowScrollCap(1500, 28, 2600)).toBeTruthy();
+  });
+  it('vue remontée AU-DESSUS de l\'ancre : on ne ramène pas le lecteur sur son énoncé', function() {
+    expect(viewAtOrBelowScrollCap(2611, 28, 0)).toBeFalsy();
+    expect(viewAtOrBelowScrollCap(2611, 28, 2000)).toBeFalsy();
+  });
+  it('tolérance de isAtBottom : quelques pixels au-dessus du plafond comptent encore comme dessus', function() {
+    expect(viewAtOrBelowScrollCap(1500, 28, 1472 - AUTOSCROLL_TOLERANCE_PX)).toBeTruthy();
+    expect(viewAtOrBelowScrollCap(1500, 28, 1472 - AUTOSCROLL_TOLERANCE_PX - 1)).toBeFalsy();
+  });
+  it('ancre en tête de fil : plafond à 0, jamais négatif', function() {
+    expect(viewAtOrBelowScrollCap(10, 28, 0)).toBeTruthy();
+  });
+});
+
 describe('composerBusyPlaceholder', function() {
   // Les phases sont nommées, jamais comptées : quand une nouvelle arrive, ce
   // test dit LAQUELLE manque au lieu d'afficher « 4 !== 5 ». Les deux

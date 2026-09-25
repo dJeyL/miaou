@@ -8,7 +8,7 @@
 //     (filename= du fence via diagramImageName).
 // Nécessite le réseau (Mermaid CDN).
 // Usage : node verify-mermaid-lightbox.mjs <dossier-captures> [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

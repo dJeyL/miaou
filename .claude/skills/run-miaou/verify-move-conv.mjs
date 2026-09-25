@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 // Vérification manuelle groupée du flux "déplacer des conversations entre Spaces"
 // (brief Cter). Checklist unique, exécutée une fois, sur dist/miaou.html.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = '/Users/julien/llm-playground/miaou';
+const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const outDir = __dirname;
 
-const browser = await chromium.launch({ headless: true });
+const browser = await launchIsolated({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
 const consoleErrors = [];

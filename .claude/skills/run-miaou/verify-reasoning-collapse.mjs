@@ -2,7 +2,7 @@
 // le CORPS du raisonnement (pas l'en-tête) doit le replier, via l'imbrication
 // <details><summary>…contenu…</summary></details> (même motif que les outils).
 // Export non interactif (scriptTag vide) → aucun JS dans le fichier.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -13,7 +13,7 @@ const thread = [
     reasoning: 'Une ligne de raisonnement assez longue pour cliquer dedans sans viser le titre.',
     content: 'Réponse.' },
 ];
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 await page.goto(appUrl);
 await page.waitForFunction(() => typeof buildExportHtml === 'function');

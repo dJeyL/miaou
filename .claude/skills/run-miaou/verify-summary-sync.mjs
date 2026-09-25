@@ -13,7 +13,7 @@
 //   3. le rafraîchissement ne casse pas les résumés locaux de B
 //
 // Usage : node verify-summary-sync.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,7 +27,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 // MÊME contexte pour les deux pages : BroadcastChannel est scopé à l'origine ET
 // au contexte navigateur. Deux contextes distincts ne se parlent pas.
 const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 } });

@@ -50,7 +50,7 @@
 // verify de performance sans fichier lourd mesure le vide.
 //
 // Usage : node verify-docs-worker.mjs [--headed]   (depuis .claude/skills/run-miaou/)
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -115,7 +115,7 @@ for (const f of FIXTURES) {
   f.size = f.bytes.length;
 }
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(String(e)));

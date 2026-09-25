@@ -12,7 +12,7 @@
 //      serializeThemeTokens capture la palette active (byte-neutralité prouvée
 //      au RUNTIME, pas par lecture).
 // Usage : node verify-palettes.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,7 +58,7 @@ const chanDist = (a, b) => {
   return Math.max(...[0, 1, 2].map(i => Math.abs(parseInt(pa[i], 16) - parseInt(pb[i], 16))));
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const consoleErrors = [];
 page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -242,7 +242,15 @@ console.log('\n── 6. Propagation multi-onglets (rendu + drawer) ──');
   await tabB.evaluate(() => { if (typeof openSettings === 'function') openSettings(); });
   await tabB.waitForTimeout(350);
   await tabA.evaluate(() => { selectTheme('light'); selectPalette('encre'); selectFonts('atelier'); });
-  await tabA.waitForTimeout(800);
+  // État TERMINAL chez le pair plutôt qu'un délai fixe : les 800 ms d'avant
+  // perdaient la course sous charge (suite rejouée à trois en parallèle). Un
+  // échec de propagation expire ici et les contrôles ci-dessous le disent.
+  await tabB.waitForFunction(() => {
+    const r = document.documentElement;
+    const seg = id => { const e = document.querySelector('#' + id + ' .seg.active'); return e ? e.getAttribute('data-mode') : null; };
+    return r.getAttribute('data-palette') === 'encre' && r.getAttribute('data-fonts') === 'atelier'
+      && seg('palette-mode') === 'encre' && seg('fonts-mode') === 'atelier';
+  }, null, { timeout: 5000 }).catch(() => {});
   const seen = await tabB.evaluate(() => {
     const root = document.documentElement;
     const seg = id => { const e = document.querySelector('#' + id + ' .seg.active'); return e ? e.getAttribute('data-mode') : null; };

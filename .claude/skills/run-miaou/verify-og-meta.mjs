@@ -1,11 +1,11 @@
 // Vérifie les balises Open Graph / Twitter dans le <head> de l'export, et
 // l'échappement des attributs content quand le titre contient des guillemets.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const appUrl = 'file://' + path.resolve(dir, '../../../dist/miaou.html');
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 await page.goto(appUrl);
 await page.waitForFunction(() => typeof buildExportHtml === 'function');

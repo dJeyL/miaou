@@ -13,7 +13,7 @@
 //   - la densité est inférieure à celle du fil (exigence explicite).
 //
 // Usage : node verify-tool-inspector.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -371,8 +371,11 @@ await page.evaluate(() => {
   placeToolAck(w, { id: 'n1', role: 'tool-ack', kind: 'mcp_call', server: 'splunk',
     name: 'splunk__search', args: { query: 'index=main\n| stats count' },
     result: '{"a":1}' }, false);
+  // Résultat MULTILIGNE : un résultat qui tient sur une ligne se rend en ligne
+  // dans le drawer, sans bloc ni téléchargement (même doctrine que les
+  // arguments) — avec `'2'`, il n'y avait plus de fichier à nommer.
   placeToolAck(w, { id: 'n2', role: 'tool-ack', kind: 'js_eval', name: 'miaou__js__eval',
-    code: 'const x = 1;\nx + 1;', result: '2' }, false);
+    code: 'const x = 1;\nx + 1;', result: 'ligne 1\nligne 2' }, false);
   placeToolAck(w, { id: 'res_json', role: 'tool-ack', kind: 'resource_stored',
     resourceName: 'resultat.json', mime: 'application/json', size: 40,
     name: 'mcp__store', args: { p: 1 }, result: 'ok' }, false);

@@ -7,7 +7,7 @@
 // Pilotage direct des fonctions globales (pas de vrai stream réseau), même
 // principe que verify-context-inspector-batch.mjs.
 // Usage : node verify-context-inspector-cache-bar.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,7 @@ const check = (label, cond) => {
 // profil persistant, IndexedDB peut y être à une version supérieure à celle
 // attendue par le seed d'une exécution précédente → "requested version is
 // less than existing version"). cf. HANDOVER.md "Environnement de test".
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const context = await browser.newContext({ viewport: { width: 900, height: 900 } });
 const page = await context.newPage();
 const consoleErrors = [];

@@ -24,7 +24,7 @@
 //
 // Backend stubé au schéma Mistral. VERIFY_DIST=<chemin> rejoue sur un autre
 // build (vérifier qu'il passe au rouge sur le code d'avant l'étape).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,7 +33,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = process.env.VERIFY_DIST || path.join(repoRoot, 'dist/miaou.html');
 const headed = process.argv.includes('--headed');
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false, native: false });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
 const consoleErrors = [];

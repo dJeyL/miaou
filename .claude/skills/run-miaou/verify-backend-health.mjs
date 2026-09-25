@@ -27,7 +27,7 @@
 //
 // Usage : node verify-backend-health.mjs [--headed]
 //   Prérequis : `python3 build.py` fait.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const headed = process.argv.includes('--headed');
-const PORT = 8791;   // hors du 8765 du proxy MCP et du 8799 de verify-res-docs-wiring
+const PORT = 8791;   // hors du 8765 du proxy MCP et du 8799 de archives/verify-res-docs-wiring
 
 const failures = [];
 function check(label, cond, detail) {
@@ -109,7 +109,7 @@ const dotState = () => {
 
 await startBackend();
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const ctx = await browser.newContext();
 const page = await ctx.newPage();
 await page.addInitScript(initScript, { apiUrl: 'http://127.0.0.1:' + PORT + '/v1' });

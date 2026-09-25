@@ -11,7 +11,7 @@
 //
 // Le backend est stubé : /chat/completions rend un JSON de résumé valide, et on
 // compte les appels dont le system prompt est celui du résumé.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,7 +20,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const headed = process.argv.includes('--headed');
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
 const consoleErrors = [];
@@ -58,21 +58,24 @@ await page.evaluate(() => {
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 15000 });
 
-// Raccourcit le cycle d'inactivité. IDLE_SUMMARY_MS est un const inaccessible,
-// et surcharger `armIdleSummaryTimer` ne suffirait PAS : les listeners de
+// Raccourcit le cycle d'inactivité. Surcharger `armIdleSummaryTimer` ne suffirait PAS : les listeners de
 // wireIdleSummaryActivity ont capturé la référence ORIGINALE au moment du
 // addEventListener — ils continueraient d'armer le timer de 60 s, et le timer
 // court posé à côté ne serait jamais annulé par la frappe (le test verrait un
 // faux « la frappe ne repousse pas »).
 //
 // On intercepte donc setTimeout lui-même : tout délai égal à IDLE_SUMMARY_MS
-// (60 000) est ramené à 1200 ms, quel que soit l'appelant. La fonction réelle
-// reste en place, donc les listeners réarment bien CE timer-là.
+// est ramené à 1200 ms, quel que soit l'appelant. La fonction réelle reste en
+// place, donc les listeners réarment bien CE timer-là. La constante est lue
+// par son nom (une `const` de portée script se lit depuis page.evaluate, elle
+// n'est simplement pas sur `window`) plutôt qu'en littéral, qui rendrait le
+// raccourci muet au premier changement de valeur.
 await page.evaluate(() => {
   window.__IDLE_MS = 1200;
+  const idleCycle = IDLE_SUMMARY_MS;
   const realST = window.setTimeout;
   window.setTimeout = function (fn, ms, ...rest) {
-    return realST(fn, ms === 60000 ? window.__IDLE_MS : ms, ...rest);
+    return realST(fn, ms === idleCycle ? window.__IDLE_MS : ms, ...rest);
   };
 });
 

@@ -9,15 +9,15 @@
 //
 // Ce que ce script prouve, et qu'aucun test pur ne peut prouver (c'est un défaut
 // de CÂBLAGE : le prédicat était juste, il n'était pas réévalué) :
-//   - pendant le round-trip MCP, l'ack est affiché SANS loupe (état correct :
-//     il n'y a encore rien à inspecter) ;
-//   - dès la réponse de l'outil, la loupe apparaît — sans changer de conversation ;
+//   - pendant le round-trip MCP, l'ack est affiché AVEC sa loupe (appel en vol
+//     inspectable depuis le 2026-09-11 ; ce script assertait avant l'inverse) ;
+//   - à la réponse de l'outil, la loupe est là — sans changer de conversation ;
 //   - elle ouvre bien le drawer sur CET appel, avec ses arguments et son résultat ;
 //   - elle n'est pas posée deux fois (idempotence) ;
 //   - elle reste à sa place dans l'ordre des icônes.
 //
 // Usage : node verify-tool-inspector-live-ack.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +35,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -141,8 +141,12 @@ const during = await page.evaluate(() => ({
   generating: !!document.querySelector('#thread .tool-ack'),
 }));
 check('l\'ack MCP est affiché pendant le round-trip', during.ackVisible);
-check('pendant le round-trip : pas de loupe (rien à inspecter encore)',
-  during.hasInspect === false);
+// Prémisse inversée le 2026-09-11 : un appel EN VOL est inspectable (drapeau
+// volatil `pending`, posé par markEarlyAckPending) — la loupe est donc là dès
+// le round-trip, là où ce script assertait autrefois son absence. Sa pose
+// unique une fois la réponse arrivée reste vérifiée plus bas (idempotence).
+check('pendant le round-trip : la loupe est déjà là (appel en vol inspectable)',
+  during.hasInspect === true);
 await page.screenshot({ path: path.join(outDir, '01-pendant-appel.png') });
 
 // ── L'outil répond : la loupe doit apparaître SANS changer de conversation ──

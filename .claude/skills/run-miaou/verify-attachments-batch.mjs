@@ -16,7 +16,7 @@
 //      round-trip réseau complet avec un vrai serveur mcp_docs reste manuel
 //      (lot D pas livré, cf. docs/manual-tests.md test 57).
 // Usage : node verify-attachments-batch.mjs <dossier-captures> [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +35,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 // ERR_CONNECTION_REFUSED est ATTENDU pour le test D (port fermé volontaire,
 // cf. section D ci-dessous) — pas un signal de bug, filtré explicitement pour

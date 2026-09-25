@@ -2,7 +2,7 @@
 // replié → compteur seul, 1er clic → liste d'intents, clic sur la liste →
 // détail JSON, clic sur le détail JSON → RETOUR aux intents (cycle, pas de
 // cul-de-sac). Checklist unique batchée (cf. mémoire feedback_no_manual_verification).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -12,7 +12,7 @@ const appUrl = 'file://' + path.resolve(dir, '../../../dist/miaou.html');
 const results = [];
 function check(name, ok, extra) { results.push({ name, ok, extra }); }
 
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });

@@ -4,7 +4,7 @@
 //
 // Opens dist/miaou.html, dismisses the empty-state welcome screen if present,
 // types into the composer to prove the page is interactive, and screenshots.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +14,7 @@ const distPath = path.join(repoRoot, 'dist/miaou.html');
 const outPath = process.argv[2] || path.join(__dirname, 'screenshot.png');
 const headed = process.argv.includes('--headed');
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
 const consoleErrors = [];

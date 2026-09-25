@@ -4,7 +4,8 @@
 //  - zoom neutralisé sous 767px, conservé au-dessus
 //  - taille de texte effectivement plus grande sur mobile qu'avant le correctif
 //  - pas de scroll horizontal du body
-import { chromium, devices } from 'playwright';
+import { devices } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -30,7 +31,7 @@ def une_fonction_au_nom_plutot_long(parametre):
 \`\`\`
 `;
 
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 await page.goto(appUrl);
 await page.waitForFunction(() => typeof convertMarkdownToHtmlFile === 'function');

@@ -22,7 +22,7 @@
 // se produire (piège documenté dans SKILL.md).
 //
 // Usage : node verify-authorization-required.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +40,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -99,6 +99,10 @@ await page.route('**/models', (r) => r.fulfill({
   body: JSON.stringify({ data: [{ id: 'stub-model' }] }),
 }));
 
+// Aucun serveur MCP au démarrage (stub-backend.js) : sinon le seed de build
+// branche le serveur de config.json AVANT que le stub plus bas ne remplace la
+// liste, et ses requêtes réelles font rougir le contrôle des requêtes échouées
+// selon l'état de la machine, pas selon le code.
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 15000 });
 await page.waitForFunction(() => document.querySelector('.boot-done') !== null,
@@ -115,10 +119,10 @@ await page.evaluate(() => {
   // l'OS, donc les captures varieraient d'une machine à l'autre. Elles servent
   // aussi d'illustration, ce qui exige qu'elles soient reproductibles.
   selectTheme('dark');
-  // Un serveur d'API enregistré l'emporte sur miaou-settings : le laisser
-  // ferait appeler le vrai backend et le stub resterait froid.
-  localStorage.removeItem('miaou-api-servers');
-  localStorage.removeItem('miaou-active-api-server');
+  // Serveur d'API : la fixture de stub-backend.js. Retirer `miaou-api-servers`
+  // ici, comme le faisait ce script, faisait REMIGRER l'appli depuis la config
+  // de build (le backend de la machine) — la sonde `/api/*` partait alors pour
+  // de vrai (mesuré par VERIFY_NET_AUDIT, 2026-09-25).
   mcpRpc = async function (server, method) {
     if (method === 'initialize') return { protocolVersion: '2024-11-05', capabilities: {} };
     if (method === 'notifications/initialized') return {};
@@ -328,8 +332,6 @@ await page.screenshot({ path: path.join(outDir, '02-apres-reload.png') });
 await page.evaluate(() => {
   window.__authFailure = null;
   window.__mcpCalls = 0;
-  localStorage.removeItem('miaou-api-servers');
-  localStorage.removeItem('miaou-active-api-server');
   mcpRpc = async function (server, method) {
     if (method === 'initialize') return { protocolVersion: '2024-11-05', capabilities: {} };
     if (method === 'notifications/initialized') return {};

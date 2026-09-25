@@ -18,7 +18,7 @@
 //                           faire ÉCHOUER les cas à puces, sinon le contrôle ne
 //                           prouve rien).
 // Usage : node verify-mermaid-bullets.mjs <dossier-captures> [--headed] [--md f] [--mermaid-file f]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,8 +44,8 @@ const check = (label, cond) => {
 // Labels à puces multi-lignes, assez longs pour que Mermaid doive les couper.
 const L = 'texte assez long pour dépasser la largeur de coupure du noeud';
 const DIAGRAMS = [
-  'flowchart TD\n    N1["Structure projet Python<br/>- Dépendances (uv ? ou pip)<br/>- Tests unitaires<br/>- Scripts qui ne font rien"]\n    N9["Réponses aux questions(échange avec POP ?)<br/>- Articulation des YAML<br/>- Gestion de versions ?<br/>- Packaging (où/comment ?), ou lien direct ?"]\n    N14["Réponses aux questions<br/>- Toolkit(s) IBM : sur DLU ?<br/>(alternative : download web, vu que stockage de binaires interdit sur GitLab)"]\n    N1 --> N9\n    N14 --> N9',
-  'flowchart TD\n    subgraph N6["cicd_apim"]\n        N7["Structure projet Python<br>- Dépendances<br>- Tests unitaires<br>- Scripts (placeholders)"]\n        N9["[Développements]"]\n    end\n    N7 --> N9',
+  'flowchart TD\n    N1["Préparer la randonnée<br/>- Vérifier la météo (vent ? ou pluie)<br/>- Remplir les gourdes<br/>- Prévenir quelqu\'un de l\'itinéraire"]\n    N9["Choisir le parcours(boucle ou aller simple ?)<br/>- Dénivelé cumulé<br/>- Points d\'eau ?<br/>- Retour (à pied/en bus ?), ou navette directe ?"]\n    N14["Matériel à emporter<br/>- Frontale(s) : piles neuves ?<br/>(alternative : lampe du téléphone, vu que la batterie ne tient pas la journée)"]\n    N1 --> N9\n    N14 --> N9',
+  'flowchart TD\n    subgraph N6["cuisine"]\n        N7["Préparer le repas<br>- Courses<br>- Épluchage des légumes<br>- Cuisson (au four)"]\n        N9["[Dressage]"]\n    end\n    N7 --> N9',
   `flowchart LR\n    A["Étapes<br/>1. ${L}<br/>2. ${L}"] --> B["Puces<br/>- ${L}<br/>- ${L}"]`,
   `flowchart TD\n    A["Titre<br/>* ${L}<br/>* ${L}"] --> B["Titre<br/>+ ${L}<br/>+ ${L}"]`,
   `graph TD\n    A{"Choix<br/>- ${L}<br/>- ${L}"} -->|oui| B["Fin"]`,
@@ -57,7 +57,7 @@ if (mdFile) {
   DIAGRAMS.push(...blocks);
 }
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

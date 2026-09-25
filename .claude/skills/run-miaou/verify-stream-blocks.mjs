@@ -12,7 +12,7 @@
 //      le même que renderMd (celui du rechargement) ;
 //   6. le raisonnement garde une sélection pendant qu'il s'allonge.
 // Usage : node verify-stream-blocks.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,7 +27,7 @@ const check = (label, cond, detail) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

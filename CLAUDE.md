@@ -668,7 +668,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   ancré en absolu, il ne connaît pas en CSS la place libre au-dessus de lui) et
   densité de LISTE et non de contenu.
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
-  ce qui doit être vérifié à la main (`docs/manual-tests.md`).
+  ce qui doit être vérifié à la main (`docs/manual-tests.md`) ; porte aussi les
+  fixtures des verify Playwright et leur serveur factice commun
+  (`stub-backend.js`, `launchIsolated`, qui isole de la config locale embarquée).
 - **`docs/exports.md`** — export Markdown et export HTML standalone des
   conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
 - **`docs/palettes.md`** — palettes de couleurs (lot S-a) : deux axes
@@ -850,8 +852,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   du bouton « aller tout en bas » : `.has-unseen` dit « du contenu est arrivé
   pendant que tu regardais ailleurs », jamais « ça génère » — état `_threadUnseen`
   (Set par conv), marqué sur `isAtBottom` et NON `shouldFollowStream` (qui rend
-  `true` par construction tant que le plafond d'ancrage est armé, donc ne
-  marquait jamais le cas le plus fréquent : la réponse qui passe sous le fold),
+  `true` quand la vue est posée au plafond d'ancrage, donc ne marquait jamais le
+  cas le plus fréquent : la réponse qui passe sous le fold),
   acquitté en atteignant le fond — et **reporté sur le badge de sidebar** à deux
   moments : quand une génération FINIT sur un fil à non-vu, **même si la
   conversation est affichée** (`unregisterGeneration` ; posséder l'écran ne vaut

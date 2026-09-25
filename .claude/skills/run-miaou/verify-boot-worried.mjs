@@ -34,7 +34,7 @@
 //
 // Usage : node verify-boot-worried.mjs [--headed]
 //   Prérequis : `python3 build.py` fait.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -167,7 +167,7 @@ async function bootAndMeasure(browser, mcpUrl) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: !headed });
+  const browser = await launchIsolated({ headless: !headed });
   console.log('\n=== Chat soucieux au boot ===\n');
 
   // ── 1. MCP injoignable : le chat fronce PENDANT le boot ───────────────────

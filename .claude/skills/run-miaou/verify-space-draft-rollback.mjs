@@ -1,12 +1,12 @@
 // Vérifie le rollback d'un Space créé puis abandonné sans enregistrement
 // (createSpaceAndOpen → closeSpaceScreen), et les cas où il ne doit PAS jouer.
 // Zone non couverte par QuickJS : globals UI + DOM + localStorage.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const appUrl = 'file://' + path.resolve(dir, '../../../dist/miaou.html');
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 await page.goto(appUrl);
 await page.waitForFunction(() => typeof createSpaceAndOpen === 'function');

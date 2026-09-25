@@ -401,7 +401,7 @@ QUAND (trois lignes) : le COMMENT reste dans la skill, le split V-7 tient.
     n'affecte ni les autres ni le listing. `resolveOutlinePage` ne jette jamais.
   - **Aucune borne, et c'est mesuré** : les résolutions partent en un seul
     `Promise.all`, soit **1,4 ms pour 372 entrées** sur trois niveaux
-    (`spike-v8-pdf.mjs`, 2026-08-29 ; le séquentiel mesuré à 6,5 ms serait lui
+    (spike de mesure du lot V-8, non versionné, 2026-08-29 ; le séquentiel mesuré à 6,5 ms serait lui
     aussi indolore). Une borne « les N premières entrées » avait été envisagée
     puis abandonnée : elle aurait coûté un message de troncature et un sommaire
     hétérogène pour économiser une milliseconde.
@@ -528,7 +528,7 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   surtout le **contrat de sortie change de nature** — un texte d'un côté, une
   annonce plus une injection d'image de l'autre. Coût assumé : un schéma de plus
   à chaque tour, borné par une description courte (le COMMENT est dans la skill).
-- **Échelle et cap, MESURÉS** (`spike-v8-pdf.mjs`) : `scale: 2` (≈144 dpi, le
+- **Échelle et cap, MESURÉS** (spike de mesure du lot V-8, non versionné) : `scale: 2` (≈144 dpi, le
   viewport pdf.js étant à 72), cap de **4 Mo sur la dataUrl base64** — c'est elle
   qui part dans le contexte, pas les octets bruts. Dégradation à `1.5` puis `1`
   avant abandon, pour qu'une page hors norme (plan A0) reste lisible plutôt que

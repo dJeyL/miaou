@@ -636,3 +636,18 @@ Deux points à ne pas redécouvrir :
 Les scripts verify **écrits depuis** construisent leurs propres fixtures en
 `page.evaluate` plutôt que de dépendre du module : c'est la pratique cible pour
 tout nouveau script, le module reste pour ceux qui en dépendent déjà.
+
+**Serveur factice commun (`.claude/skills/run-miaou/stub-backend.js`).** Tout
+verify versionné se lance par `launchIsolated()` et non `chromium.launch()`.
+La page testée embarque le `config.json` LOCAL (serveur API de la machine,
+serveur MCP seedé au démarrage, délais) : sans isolation, un verify teste la
+machine autant que le code. Le rejeu complet du 2026-09-25 l'a montré, avec des
+rouges qui changeaient selon que le proxy MCP tournait ou non. Le module pose
+dans chaque contexte un serveur API fixture, zéro serveur MCP (sentinelle de
+seed posée), une sonde native d'Ollama en 404, et sert modèles et chat pour les
+scripts qui ne les stubent pas eux-mêmes. `VERIFY_NET_AUDIT=<fichier>` journalise
+toute requête qui sortirait quand même vers la machine. Le mode d'emploi détaillé
+est dans le SKILL.md de run-miaou.
+
+Les verify obsolètes gardés comme archives exécutables vivent dans
+`run-miaou/archives/`, hors du parc rejoué.

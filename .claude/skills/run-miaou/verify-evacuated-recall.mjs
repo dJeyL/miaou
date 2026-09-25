@@ -26,7 +26,7 @@
 // qu'emprunte une génération (`callTool`), sans la couche réseau.
 //
 // Usage : node verify-evacuated-recall.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,7 +52,7 @@ const toolText = (out) => {
   return parts.filter(p => p && p.type === 'text').map(p => String(p.text || '')).join('\n');
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const consoleErrors = [];
 page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });

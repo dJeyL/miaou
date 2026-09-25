@@ -19,7 +19,7 @@
 //      bouton juste après que setStopping l'ait désactivé — ordre corrigé).
 //
 // Usage : node verify-stop-deferred.mjs <dossier-captures> [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,7 +90,7 @@ const initScript = () => {
   };
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const context = await browser.newContext({ viewport: { width: 1100, height: 820 } });
 await context.addInitScript(initScript);
 

@@ -7,13 +7,13 @@ tmp/
 # binaires pour la plupart, et re-générés à chaque exécution. `tmp/` couvrait
 # déjà le répertoire nu, pas les préfixés — un `git add -A` les a happés une
 # fois (2026-09-01), au point de les emporter vers le dépôt public.
-# `spike-v45-fixtures/` est nommé explicitement plutôt que par un motif
-# `spike-*-fixtures/` : `spike-v8-fixtures/`, lui, EST versionné (générateurs
-# de PDF, pas des binaires produits) et un motif large le masquerait au premier
-# fichier qu'on y ajouterait.
+# Pas de motif `spike-*-fixtures/` : `spike-v8-fixtures/` EST versionné
+# (générateurs de PDF dont verify-v8-pdf.mjs a besoin, pas des binaires
+# produits) et un motif large le masquerait au premier fichier qu'on y
+# ajouterait. Les fixtures de spike non versionnées vivent sous `untracked/`
+# avec leur script (déplacement du 2026-09-25).
 tmp-*/
 shots-*/
-spike-v45-fixtures/
 
 # Scripts Playwright d'ARTEFACT, par opposition aux non-régressions versionnées
 # du répertoire parent. Y vivent ceux qui ne gardent aucun invariant : les

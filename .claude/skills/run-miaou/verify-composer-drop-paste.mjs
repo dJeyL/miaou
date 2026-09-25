@@ -2,7 +2,7 @@
 // Checklist Playwright : drop pleine-zone (#main-col) + paste de fichier
 // (image et non-image) dans le composer. Vérifie handleAttachFiles est bien
 // atteint depuis les deux points d'entrée étendus (onMainDrop / onComposerPaste).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 
-const browser = await chromium.launch({ headless: true });
+const browser = await launchIsolated({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.goto('file://' + distPath);
 await page.waitForTimeout(300);

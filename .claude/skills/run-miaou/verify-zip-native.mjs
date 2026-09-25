@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Vérif e2e du lot V-1 (MIAOU) : ouverture NATIVE d'une archive zip, sans aucun
 // serveur MCP compagnon. C'est le point du sous-lot — ce script ne lance et ne
-// requiert donc AUCUN proxy (contrairement à verify-docs-extract.mjs, lot M, qui
+// requiert donc AUCUN proxy (contrairement à archives/verify-docs-extract.mjs, lot M, qui
 // exerce le chemin serveur du MÊME nom d'outil).
 //
 // Chemin réellement exercé (modèle STUBÉ, aucun réseau) :
@@ -77,7 +77,7 @@
 //
 // Usage : node verify-zip-native.mjs [dossier-captures] [--headed]
 //   Prérequis : `python3 build.py` fait. Aucun serveur à lancer.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -161,7 +161,7 @@ const initScript = () => {
 };
 
 // ── Pilotage Playwright ──────────────────────────────────────────────────────
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const ctx = await browser.newContext({ acceptDownloads: true });
 const page = await ctx.newPage();
 await page.addInitScript(initScript);

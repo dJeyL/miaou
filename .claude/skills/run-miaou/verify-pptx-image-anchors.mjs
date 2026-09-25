@@ -58,7 +58,7 @@
 //
 // Usage : node verify-pptx-image-anchors.mjs [--headed]
 //   Prérequis : `python3 build.py` fait. Réseau requis (CDN fflate).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -140,7 +140,7 @@ const initScript = () => {
   };
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const ctx = await browser.newContext({ acceptDownloads: true });
 const page = await ctx.newPage();
 await page.addInitScript(initScript);

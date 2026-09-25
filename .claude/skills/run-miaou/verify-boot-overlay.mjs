@@ -7,7 +7,7 @@
 //   - estompé (.boot-done) puis invisible une fois l'app en place,
 //   - reduced-motion : overlay quand même retiré.
 // Usage : node verify-boot-overlay.mjs <dossier-captures> [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +25,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 
 // ── 1. Overlay opaque au premier paint + délai minimum ───────────────────────
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -40,19 +40,22 @@ const earlyState = await page.evaluate(() => {
     present: !!el,
     opaque: cs.opacity === '1' && !el.classList.contains('boot-done'),
     hasLogo: !!el.querySelector('.boot-logo'),
-    eyes: el.querySelectorAll('.boot-eye').length,
+    // `.eye` et non plus `.boot-eye` : depuis la source SVG unique (cat.svg,
+    // injectée inline aux trois surfaces), les yeux portent la même classe
+    // partout, et c'est le CSS scopé `.boot-overlay` qui les anime.
+    eyes: el.querySelectorAll('.eye').length,
     z: cs.zIndex,
   };
 });
 check('overlay présent au premier paint', earlyState.present);
 check('overlay opaque (masque le montage)', earlyState.opaque);
 check('logo MIAOU inline présent', earlyState.hasLogo);
-check('deux yeux (.boot-eye) présents', earlyState.eyes === 2);
+check('deux yeux (.eye) présents dans l\'overlay', earlyState.eyes === 2);
 check('overlay au-dessus de tout (z-index 200)', earlyState.z === '200');
 // Bug corrigé : au tout premier paint (avant le start du blink à 0.7s), les yeux
 // sont OUVERTS (scaleY ≈ 1), pas figés mi-clos par un delay négatif.
 const eyeScaleEarly = await page.evaluate(() => {
-  const eye = document.querySelector('.boot-eye');
+  const eye = document.querySelector('#boot-overlay .eye');
   const m = new DOMMatrixReadOnly(getComputedStyle(eye).transform);
   return m.d;   // scaleY
 });

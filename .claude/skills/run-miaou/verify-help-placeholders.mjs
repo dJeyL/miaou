@@ -1,7 +1,7 @@
 // Vérifie la résolution des jetons {{…}} de l'aide (miaou__about) contre les
 // valeurs VIVANTES du build : c'est la chaîne config.json → constante →
 // substitution qu'on éprouve, pas une phrase particulière de help.md.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.resolve(__dirname, '../../..', 'dist/miaou.html');
 
-const b = await chromium.launch();
+const b = await launchIsolated();
 const p = await b.newPage();
 await p.goto('file://' + distPath);
 await p.waitForFunction(() => typeof helpPlaceholderValues === 'function');

@@ -7,7 +7,7 @@
 // Pas de serveur réel : `fetchModels` est stubé et répond SELON LA CLEF, ce qui
 // est précisément la distinction que l'ancien cache par URL effaçait.
 // Usage: node verify-models-cache-key.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +16,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const headed = process.argv.includes('--headed');
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -31,24 +31,39 @@ await page.addInitScript(() => {
   ]));
   localStorage.setItem('miaou-active-space', 'default');
   localStorage.setItem('miaou-conversations', JSON.stringify([]));
+  // Stub réseau et non de fonction : `fetchModels` est devenu `fetchModelList`
+  // (qui rend `{ids, props}`) au lot AF, et le stub de fonction, resté sur
+  // l'ancien nom, ne servait plus rien — le vrai fetch partait vers l'URL
+  // bidon. Au niveau `fetch`, le stub survit aux renommages ET couvre le
+  // prefetch de démarrage et la sonde native d'Ollama (`/api/tags`, 404 ici :
+  // pas un Ollama). La liste dépend de la CLEF (en-tête Authorization) ;
+  // `__calls` compte les appels `/models` par (url, clef) pour prouver
+  // l'absence de refetch en boucle.
+  globalThis.__calls = [];
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (input, opts) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('https://api.corp.local/') !== 0) return realFetch(input, opts);
+    const json = (body, status) => new Response(JSON.stringify(body),
+      { status: status || 200, headers: { 'Content-Type': 'application/json' } });
+    if (!/\/v1\/models$/.test(url)) return json({ error: 'not found' }, 404);
+    const auth = ((opts && opts.headers) || {}).Authorization || '';
+    const key = auth.replace(/^Bearer /, '');
+    globalThis.__calls.push(url.replace(/\/models$/, '') + '|' + key);
+    const ids = key === 'KEY-A' ? ['alpha-1', 'alpha-2']
+      : key === 'KEY-B' ? ['beta-1', 'beta-2', 'beta-3'] : ['inconnu'];
+    return json({ object: 'list', data: ids.map(id => ({ id, object: 'model' })) });
+  };
 });
 
 await page.goto('file://' + distPath);
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForSelector('.boot-done', { timeout: 10000 }).catch(() => {});
 
-// Stub de fetchModels : la liste dépend de la CLEF. Compte les appels par
-// (url, key) pour prouver l'absence de refetch en boucle.
+// Le cache a été amorcé par le prefetch de démarrage (déjà stubé, mais
+// compté) : on repart d'une ardoise propre, compteur compris.
 await page.evaluate(() => {
   globalThis.__calls = [];
-  globalThis.fetchModels = async ({ url, key }) => {
-    globalThis.__calls.push(url + '|' + key);
-    if (key === 'KEY-A') return ['alpha-1', 'alpha-2'];
-    if (key === 'KEY-B') return ['beta-1', 'beta-2', 'beta-3'];
-    return ['inconnu'];
-  };
-  // Le cache a pu être amorcé par le prefetch de démarrage avec le vrai
-  // fetchModels (qui a échoué : URL bidon). On repart d'une ardoise propre.
   for (const k of Object.keys(_modelsById)) delete _modelsById[k];
 });
 

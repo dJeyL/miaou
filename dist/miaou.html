@@ -4924,7 +4924,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-25 07:28 UTC */
+/* miaou — built: 2026-09-25 10:43 UTC */
 
 /* ── utils.js ── */
 
@@ -9295,7 +9295,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790321291}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790333025}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -16391,6 +16391,8 @@ function scheduleDidYouKnow(hostEl) {
     if (!hostEl.isConnected) return;
 
     if (welcomeTipRoomPx(hostEl) < WELCOME_TIP_MIN_ROOM_PX) return;
+
+    if (!configured) return;
     const res = await generateDidYouKnowTip();
     if (!res || !hostEl.isConnected) return;
 
@@ -17216,8 +17218,18 @@ function anchorTopInScroll(m, anchor) {
 }
 
 function shouldFollowStream(convId) {
-  if (!scrollCapReleased(convId)) return true;
-  return isAtBottom();
+  if (isAtBottom()) return true;
+  if (scrollCapReleased(convId)) return false;
+  const m = $('messages');
+  const anchor = autoscrollAnchorEl();
+  if (!m || !anchor) return false;
+  const padTop = parseFloat(getComputedStyle(m).paddingTop) || 0;
+  return viewAtOrBelowScrollCap(anchorTopInScroll(m, anchor), padTop, m.scrollTop);
+}
+
+function viewAtOrBelowScrollCap(anchorTop, padTop, scrollTop) {
+  const cap = Math.max(0, anchorTop - (padTop || 0));
+  return scrollTop >= cap - AUTOSCROLL_TOLERANCE_PX;
 }
 
 function scrollBottomCapped(convId) {

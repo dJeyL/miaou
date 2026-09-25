@@ -18,7 +18,7 @@
 //     chemins asynchrones réels entrelacés.
 //
 // Usage : node verify-v8-pdf.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,7 +48,7 @@ if (missing.length) {
   console.log('         spike-v8-fixtures/gen-big-toc.py et gen-named-dest-toc.py)');
 }
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 900, height: 1000 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

@@ -21,7 +21,7 @@
 //      <body>), et la bulle utilisateur y garde sa borne.
 //
 // Usage : node verify-wide-tables.mjs [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -57,7 +57,7 @@ const WIDE_TABLE_MD = [
 // Viewport large : le débordement n'existe QUE s'il reste de la place entre la
 // colonne de lecture et les bords du fil. Sur écran étroit `max(0px, …)` le
 // ramène à zéro et les quatre volets deviendraient vacuously verts.
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

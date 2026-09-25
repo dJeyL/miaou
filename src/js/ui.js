@@ -229,6 +229,11 @@ function scheduleDidYouKnow(hostEl) {
     // ne montrera pas ne vaut pas une génération. Mesuré ici et non à la pose
     // du timer — la fenêtre a pu être redimensionnée pendant l'attente.
     if (welcomeTipRoomPx(hostEl) < WELCOME_TIP_MIN_ROOM_PX) return;
+    // Sans serveur API, `silentCompletion` partirait sur une URL vide : un
+    // `fetch('/chat/completions')` relatif, voué à l'échec (et journalisé par
+    // le navigateur). Lu au déclenchement, pas à la pose : la configuration a
+    // pu changer pendant l'attente.
+    if (!configured) return;
     const res = await generateDidYouKnowTip();
     if (!res || !hostEl.isConnected) return;
     // Re-mesuré après l'await : la génération dure, la fenêtre peut avoir
@@ -1655,13 +1660,32 @@ function anchorTopInScroll(m, anchor) {
 // plus rien (mesuré : figé à 820 pendant que le fil montait à 3259).
 //
 // Le vrai critère est l'INTENTION : on suit tant que l'utilisateur n'est pas
-// parti lire ailleurs. Deux cas de suivi, et un seul cas d'arrêt :
-//   - plafond encore armé   → on suit (le plafond borne la descente lui-même) ;
+// parti lire ailleurs.
 //   - plafond levé ET au fond → on suit (ancrage doux, il veut voir la suite) ;
-//   - plafond levé et remonté → il lit plus haut : on ne le dérange pas.
+//   - plafond levé et remonté → il lit plus haut : on ne le dérange pas ;
+//   - plafond armé → on suit tant que la vue est au fond OU à la hauteur du
+//     plafond ou en dessous (le plafond borne la descente lui-même) ; remonté
+//     AU-DESSUS de l'ancre, il lit plus haut : on ne le dérange pas non plus.
+// Ce dernier cas manquait : « plafond armé → on suit » sans condition ramenait
+// sur l'énoncé, à chaque delta, un lecteur remonté consulter l'historique
+// pendant la génération (mesuré par verify-autoscroll : scrollTop 0 → 2583).
 function shouldFollowStream(convId) {
-  if (!scrollCapReleased(convId)) return true;
-  return isAtBottom();
+  if (isAtBottom()) return true;
+  if (scrollCapReleased(convId)) return false;
+  const m = $('messages');
+  const anchor = autoscrollAnchorEl();
+  if (!m || !anchor) return false;   // pas d'ancre, pas de plafond : seul le fond compte
+  const padTop = parseFloat(getComputedStyle(m).paddingTop) || 0;
+  return viewAtOrBelowScrollCap(anchorTopInScroll(m, anchor), padTop, m.scrollTop);
+}
+
+// Pure : la vue est-elle à la hauteur du plafond d'ancrage, ou en dessous ?
+// Même plafond que cappedScrollTop (`anchorTop - padTop`, jamais négatif), à la
+// tolérance de isAtBottom près — le plafond posé par nous tombe sur une
+// position fractionnaire que scrollTop arrondit.
+function viewAtOrBelowScrollCap(anchorTop, padTop, scrollTop) {
+  const cap = Math.max(0, anchorTop - (padTop || 0));
+  return scrollTop >= cap - AUTOSCROLL_TOLERANCE_PX;
 }
 
 // Autoscroll de streaming : suit le bas du fil SANS jamais dépasser le plafond

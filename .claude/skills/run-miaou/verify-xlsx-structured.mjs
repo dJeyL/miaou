@@ -101,7 +101,7 @@
 //
 // Usage : node verify-xlsx-structured.mjs [--headed]
 //   Prérequis : `python3 build.py` fait. Réseau requis (CDN SheetJS).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -170,7 +170,7 @@ const initScript = () => {
   };
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 let exitCode = 0;
 try {
   const page = await browser.newPage();

@@ -20,7 +20,7 @@
 // (piège documenté dans SKILL.md).
 //
 // Usage : node verify-authorization-pending.mjs [dossier-captures] [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +41,7 @@ const shot = async (page, name, opts) => {
   await page.screenshot(Object.assign({ path: path.join(outDir, name + '.png') }, opts || {}));
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -69,8 +69,6 @@ await page.evaluate(() => {
   // Thème sombre EXPLICITE : le défaut suit l'OS, donc les captures varieraient
   // d'une machine à l'autre. Elles servent aussi d'illustration.
   selectTheme('dark');
-  localStorage.removeItem('miaou-api-servers');
-  localStorage.removeItem('miaou-active-api-server');
 
   window.__meta = {
     'miaou/unauthorized_upstreams': [

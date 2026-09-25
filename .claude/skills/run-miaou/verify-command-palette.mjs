@@ -9,7 +9,7 @@
 //   - recherche conversation CROSS-Space (Space actif en tête, annotation, follow),
 //   - profondeur Escape / sous-mode.
 // Usage : node verify-command-palette.mjs <dossier-captures> [--headed]
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,7 @@ const check = (label, cond) => {
   if (!cond) failures.push(label);
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { models: ['gpt-x', 'mistral-small3.2', 'llama3'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -251,6 +251,9 @@ check('bascule coloration : checkbox Réglages inversée (pas de no-op DOM)', hl
 // réinitialise) l'entrée avec l'empreinte d'endpoint courante, ce qui la rend
 // lisible par `activeServerModels()` — écrire une globale `_modelsCache` ne
 // marche plus depuis l'indexation par serveur.
+// Le serveur actif est celui de stub-backend.js, qui déclare les mêmes modèles :
+// sur le serveur réel de la machine, choisir un modèle fictif faisait demander
+// sa fiche (`/api/show`) et récoltait un 404 réel en erreur console.
 await page.evaluate(() => {
   _modelsEntry(activeApiServer()).models = ['gpt-x', 'mistral-small3.2', 'llama3'];
 });

@@ -12,7 +12,7 @@
 //
 // Le stub sert la MÊME conversation dans les deux formes (vLLM puis Ollama)
 // pour prouver qu'on n'a pas cassé le chemin historique.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -87,7 +87,7 @@ const initScript = () => {
   };
 };
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const context = await browser.newContext({ viewport: { width: 1100, height: 820 } });
 await context.addInitScript(initScript);
 

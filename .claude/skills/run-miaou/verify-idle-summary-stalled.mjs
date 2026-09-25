@@ -15,10 +15,12 @@
 //   B. la conversation concernée finit par être résumée
 //   C. aucune génération fantôme ne subsiste
 //   D. une autre conversation est résumée elle aussi
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const distPath = '/Users/julien/llm-playground/miaou/dist/miaou.html';
-const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
+const distPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist/miaou.html');
+const browser = await launchIsolated({ headless: !process.argv.includes('--headed') }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const consoleErrors = [];
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
@@ -55,10 +57,15 @@ await page.waitForSelector('#composer-text', { timeout: 15000 });
 await page.evaluate(() => {
   window.__IDLE_MS = 1000;
   const realST = window.setTimeout;
-  // 60000 = cycle de résumé, 180000 = chien de garde d'inactivité du stream.
+  // Durées lues sur les constantes VIVANTES (cycle de résumé, chien de garde
+  // d'inactivité du stream), jamais en littéral : la seconde se règle au build
+  // (`stream_idle_timeout_s` de config.json), et un `180000` en dur ne
+  // raccourcissait plus rien dès que la config posait une autre valeur — le
+  // chien de garde gardait ses minutes et les trois contrôles rougissaient.
+  const idleCycle = IDLE_SUMMARY_MS, watchdog = STREAM_IDLE_TIMEOUT_MS;
   window.setTimeout = function (fn, ms, ...rest) {
-    if (ms === 60000) ms = window.__IDLE_MS;
-    else if (ms === 180000) ms = 2500;
+    if (ms === idleCycle) ms = window.__IDLE_MS;
+    else if (ms === watchdog) ms = 2500;
     return realST(fn, ms, ...rest);
   };
 });

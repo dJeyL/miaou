@@ -15,7 +15,7 @@
 //
 // Backend stubé : on distingue titrage précoce / titrage de fin / chat par le
 // system prompt, et on COMPTE les appels de chaque sorte.
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,7 +24,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const distPath = path.join(repoRoot, 'dist/miaou.html');
 const headed = process.argv.includes('--headed');
 
-const browser = await chromium.launch({ headless: !headed });
+const browser = await launchIsolated({ headless: !headed }, { serve: false });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
 const consoleErrors = [];
@@ -36,6 +36,8 @@ page.on('pageerror', (e) => consoleErrors.push(String(e)));
 // première phrase. Les distinguer est tout l'objet des contrôles 6 et 7.
 let calls = { early: 0, late: 0, chat: 0 };
 const resetCalls = () => { calls = { early: 0, late: 0, chat: 0 }; };
+// Retard de la réponse de chat, posé par le seul scénario 10 (cf. là-bas).
+let chatDelayMs = 0;
 
 // Retenue globale des réponses, par un flag lu DANS le handler unique. Un
 // second `page.route` posé par-dessus (même avec `times`) intercepte tout le
@@ -69,6 +71,7 @@ await page.route('**/chat/completions', async (route) => {
     return;
   }
   calls.chat++;
+  if (chatDelayMs) await new Promise(r => setTimeout(r, chatDelayMs));
   const chunks = [
     { choices: [{ delta: { content: 'Une réponse assez longue pour compter comme substantielle.' } }] },
     { choices: [{ delta: {}, finish_reason: 'stop' }] },
@@ -310,8 +313,15 @@ await page.waitForSelector('#composer-text', { timeout: 15000 });
 await page.evaluate(() => { newConversation(); });
 await page.waitForTimeout(1500);
 resetCalls();
+// La réponse est RETARDÉE ici : un stub qui la sert instantanément fait finir
+// l'échange avant que le titre précoce ne soit appliqué, et maybeTitle, encore
+// armé, titre une seconde fois — la course bénigne assumée en commentaire de
+// maybeEarlyTitle (main.js). Ce scénario mesure le désarmement, pas cette
+// course : sans le retard il rougissait une fois sur deux (2026-09-25).
+chatDelayMs = 1000;
 await page.evaluate((t) => { sendUserText(t); }, 'Une question avec retitrage decoche.');
-await page.waitForTimeout(2500);
+await page.waitForTimeout(3500);
+chatDelayMs = 0;
 check('10a. décoché : le niveau 3 est désarmé, un seul titrage',
   calls.early === 1 && calls.late === 0, JSON.stringify(calls));
 const s10 = await surfaces(await page.evaluate(() => currentConvId));

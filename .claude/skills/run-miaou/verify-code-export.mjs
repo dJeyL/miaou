@@ -2,7 +2,7 @@
 // script copier/télécharger optionnel (settings.exportInteractive), et que le
 // fichier exporté s'ouvre et révèle bien les deux boutons quand le JS tourne.
 // Checklist unique, batché (cf. mémoire feedback_no_manual_verification).
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -18,7 +18,7 @@ const thread = [
 const results = [];
 function check(name, ok, extra) { results.push({ name, ok, extra }); }
 
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });

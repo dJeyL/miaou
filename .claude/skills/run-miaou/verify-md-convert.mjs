@@ -6,7 +6,7 @@
 //  - sanitisation : un <script> présent dans le .md ne survit pas
 //  - blocs de code décorés (langage) et colorés
 //  - le fichier téléchargé porte bien le nom du .md source
-import { chromium } from 'playwright';
+import { launchIsolated } from './stub-backend.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -17,7 +17,7 @@ const outDir = path.resolve(dir, 'tmp-md-convert');
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-const browser = await chromium.launch();
+const browser = await launchIsolated();
 const page = await browser.newPage();
 const results = [];
 const check = (n, ok) => results.push({ n, ok });
