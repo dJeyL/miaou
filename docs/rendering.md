@@ -17,6 +17,9 @@ est un `<script src>` statique dans `index.html`, payé à chaque ouverture de
 page. Pour Mermaid, injection dynamique d'un `<script>` au premier bloc
 ` ```mermaid ` rencontré, derrière une **promesse mémoïsée avec reset sur
 rejet** : un échec CDN n'empoisonne pas la session, la passe suivante retente.
+Le chargement lui-même passe par `loadCdnScript`, borné (un CDN muet rejette au
+lieu de pendre) — cf. `docs/documents.md`, qui porte le détail commun aux
+loaders.
 
 Pin : `https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.13.0/mermaid.min.js`
 — même host que marked/DOMPurify/Prism, build **IIFE** exposant

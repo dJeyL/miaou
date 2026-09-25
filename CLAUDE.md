@@ -145,7 +145,13 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   domaine « ouvrir un document » du lot V, cf. `docs/documents.md` pour la ligne
   de partage avec `utils` ; `mcp.js` porte le côté DISTANT de l'agrégation MCP —
   client JSON-RPC, handshake, `callRemoteTool` — là où ce qui COMPOSE interne et
-  distant reste dans `tools.js`, cf. `docs/mcp.md`).
+  distant reste dans `tools.js`, cf. `docs/mcp.md` ; `export.js` porte les
+  exports standalone et la conversion `.md` — pièges 21 et 22 —, cf.
+  `docs/exports.md` ; `acks.js` porte le rendu des traces d'outils et
+  l'inspecteur d'appel, cf. `docs/tools.md` ; `multitab.js` porte la couche
+  APPLICATIVE de la synchro multi-onglets — réception, soft-lock, relais
+  readonly —, là où `sync.js` garde le noyau pur et l'adaptateur, cf.
+  `docs/multitab-sync.md`).
 
   **Les deux listes ne sont recopiées nulle part** — la seule énumération est
   celle de `build.py` (constantes en tête de fichier), à lire là-bas. Elles
@@ -423,7 +429,11 @@ geste ; le développement est dans la doc pointée.
     `req.onsuccess`. (b) Un récepteur qui rehydrate relit l'état **après** son
     `await`, jamais un instantané figé avant (bug « toujours en retard d'un
     tour »). Règle générale : tout `await` entre la réception d'un signal et le
-    commit du rendu est une fenêtre où le store peut avancer.
+    commit du rendu est une fenêtre où le store peut avancer. (c) Pour
+    localStorage, (a) ne suffit PAS : émettre après le `setItem` ne garantit
+    pas que le pair VOIE l'écriture quand le message arrive (mesuré, rafale de
+    réglages) — un type adossé à localStorage est donc aussi relu sur
+    l'événement `storage` (`storageEventDecision`, sync.js).
     Cf. `docs/pitfalls-detail.md` et `docs/multitab-sync.md`.
 25. **Monde guest `js__eval` clos : deux host functions, énumérées, jamais plus.**
     Le JS d'origine modèle tourne dans un bac à sable QuickJS-WASM
@@ -529,7 +539,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   (`buildExcerpt`/`findMatchRanges`, offsets et jamais de markup) ; porte enfin
   le contrat « froide = `messages: []` » et ses trois conséquences, dont
   `conversationMessageCount` (compte porté par l'étage 1, seul moyen de
-  distinguer « vide » de « pas chargée »).
+  distinguer « vide » de « pas chargée ») ; et la fermeture de chaque connexion
+  IDB sur `versionchange` (`releaseSupersededDb`) — sans elle, un onglet resté
+  sur l'ancien bundle bloque le démarrage du nouveau au prochain bump de
+  `MIAOU_DB_VERSION`.
 - **`docs/backend-health.md`** — santé des services et ce qu'on en montre :
   pastille de connexion de la pilule modèle, prédicat pur `resolveBackendHealth`
   et ses TROIS états (`unconfigured` distinct de `down` — deux rouges, deux
@@ -608,7 +621,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   matrice bornée renvoyée et jamais le workbook, purs injectés depuis leur source
   vive par `toString()` et la précondition de **graphe clos** que ça impose, les
   cinq points d'entrée dont `describeXlsxForLibrary` qui tourne au dépôt du
-  fichier, buffer copié et jamais transféré).
+  fichier, buffer copié et jamais transféré) ; porte enfin le **chargement
+  borné des bibliothèques CDN** (`loadCdnScript`, point unique de tous les
+  loaders de page, Mermaid et QuickJS compris : un CDN muet rejette au lieu de
+  pendre, et la tentative suivante change d'URL parce que le navigateur la
+  rattacherait sinon à la requête pendue).
 - **`docs/context-inspector.md`** — inspecteur de contexte (brief B) : manifeste
   par bloc logique du contexte envoyé au modèle (`buildContextManifest`, pur) et
   totaux chars/tokens, rendu dans le drawer (`renderContextInspector`). **Le
@@ -702,7 +719,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/multitab-sync.md`** — synchro multi-onglets (lot J, BroadcastChannel) :
   protocole d'enveloppe, liste fermée de types, émetteurs/récepteurs, file
   d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
-  broadcast post-commit + relecture post-await (piège 24).
+  broadcast post-commit + relecture post-await (piège 24), et la relecture sur
+  événement `storage` (`storageEventDecision`) pour les types adossés à
+  localStorage, dont le message peut précéder la visibilité de l'écriture.
 - **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
   locale de messages tapés pendant une génération, clefée PAR CONVERSATION
   (X-1e) et drainée à la frontière de tour (réaiguillage mid-boucle) ou en fin
@@ -717,7 +736,7 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   pouvoir effacer, et un agrégat ne remonte rien que le détail ne puisse
   expliquer).
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
-  modèle, prédicat de racine `isRootConversation` et les sept exclusions,
+  modèle, prédicat de racine `isRootConversation` et ses sites d'exclusion,
   outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
   parent accroché au `finally` — et la **précondition de chaleur** de
   `parentThreadFor` : un parent froid rend un thread vide, qu'y pousser puis

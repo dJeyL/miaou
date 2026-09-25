@@ -3,7 +3,7 @@
 // portant un champ `parentConvId`. Tout l'existant sert gratuitement —
 // persistance, cache RAM à deux étages, rendu de thread, synchro multi-onglets,
 // export/import — et ce qui n'a pas de sens pour un agent est exclu
-// EXPLICITEMENT, jamais subi (cf. les huit sites de l'étape 2).
+// EXPLICITEMENT, jamais subi (cf. la table des sites d'exclusion, docs/agents.md).
 //
 // Ligne de partage (décision 12, modèle docs.js/utils.js du lot V-7) : ce
 // fichier porte le DOMAINE agent — cycle de vie, prédicats, statut, délivrance
@@ -20,9 +20,11 @@
 // toujours aucune lecture hors toolCtx.
 
 // ── Le prédicat de racine ───────────────────────────────────────────────────
-// LE prédicat, unique (discipline spaceConvIds, piège 18). Huit sites le
-// consomment ; JAMAIS un `c.parentConvId == null` réécrit localement — c'est ce
-// qui décide de la tenue du lot entier.
+// LE prédicat, unique (discipline spaceConvIds, piège 18). Les sites
+// d'exclusion qui le consomment sont nommés dans docs/agents.md (une table,
+// pas un compte : le code en annonçait huit quand la doc en listait sept) ; JAMAIS un
+// `c.parentConvId == null` réécrit localement — c'est ce qui décide de la tenue
+// du lot entier.
 //
 // Une chaîne VIDE n'est pas un parent : `{ parentConvId: '' }` est une racine.
 // C'est le cas produit par un record legacy ou une désérialisation qui pose le

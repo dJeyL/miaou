@@ -169,6 +169,37 @@ upgrades synchrones » (ce que la dette U-1 disait déjà) mais que **le numéro
 version était le vrai piège**, et qu'un `console.warn` sur un chemin
 d'infrastructure achète du silence, pas de la robustesse.
 
+### Une promesse d'écriture IDB rejette sur `abort`, jamais sur `error` seul
+
+Un échec au COMMIT d'une transaction (quota dépassé, typiquement) l'avorte sans
+émettre `error` : une promesse qui résout sur `oncomplete` et ne rejette que sur
+`onerror` reste alors pendante pour toujours — c'était le cas des écritures de
+résumé, que `refreshSummariesFromDB` attend, et de `putSkill`/`deleteResource`
+et voisines. Chaque transaction qui rejette sur `onerror` porte donc aussi
+`tx.onabort` (2026-09-25), et les écritures fire-and-forget de conversation
+tracent sur `abort`, qui couvre les deux cas (`reportStorageWriteError`).
+Vérifié à la lecture de la spécification et non par exécution : un
+`tx.abort()` explicite déclenche aussi `error` sur les requêtes en cours, il ne
+simule donc pas fidèlement un quota au commit.
+
+### Montée de version par un autre onglet
+
+Troisième règle, posée le 2026-09-25 AVANT le prochain bump, parce qu'elle ne
+peut servir qu'aux onglets chargés après elle : **chaque connexion ferme sur
+`versionchange`** (`releaseSupersededDb`, storage.js, posé par les deux points
+d'ouverture). Quand un onglet ouvre la base à une version plus haute (nouveau
+bundle), toute connexion restée ouverte ailleurs BLOQUE son ouverture — sans
+erreur ni délai : son `init()` attend l'hydratation et l'écran de démarrage ne
+se lève jamais. L'onglet ancien ferme donc sa connexion, remet sa promesse
+mémoïsée à `null` et l'annonce dans le bandeau multi-onglets (`_dbSuperseded`,
+prioritaire, cf. `docs/multitab-sync.md`) : son code ne sait plus lire la base,
+seul un rechargement le répare. Côté onglet neuf, `onblocked` ne laisse qu'une
+trace console (`warnDbOpenBlocked`) : l'écran de démarrage couvre alors toute
+surface, et un pair chargé AVANT cette règle ne fermera de toute façon rien.
+Non-régression : `.claude/skills/run-miaou/verify-db-versionchange.mjs` (deux
+onglets, ouverture à `MIAOU_DB_VERSION + 1` depuis la constante vivante ; rouge
+sur le code d'avant — `blocked`, jamais `success`).
+
 **Tests** : QuickJS n'a pas IndexedDB. Le cache y EST la source de vérité
 observable (on ne stube pas IDB, cf. `project_extract_pure_helper_over_idb_stub`) ;
 `resetConvCacheForTests()` le remet à zéro, et le stub `localStorage.clear()` du

@@ -784,7 +784,8 @@ L'affordance *visible* — celle qui se propose — vit dans le **drawer de
 l'inspecteur de contexte** : le seul endroit qui explique *pourquoi* on
 compacterait, les barres montrant où va le contexte. `/compact` est l'autre
 voie, mais elle ne se propose pas : il faut la connaître (d'où sa mention dans
-`help.md`, topics `skills` et `contexte`, et dans l'autocomplétion du `/`).
+`help.md`, topics `skills` et `compaction` — ce dernier séparé de `contexte`
+le 2026-09-25 —, et dans l'autocomplétion du `/`).
 `syncCompactionAffordance` (ui.js) la rafraîchit avec le reste du drawer.
 
 **Toujours visible**, jamais masquée sous le seuil (décision Julien) : un
@@ -924,7 +925,7 @@ laquelle la règle des énumérations fermées vise aussi les mots comme
 
 ## Rendu dans le fil
 
-`buildCompactionMarker` (ui.js) rend une règle horizontale légendée, avec le
+`buildCompactionMarker` (acks.js) rend une règle horizontale légendée, avec le
 résumé replié dans un `<details>`. Volontairement discret : la métaphore est la
 **coupure**, pas la notification — une bannière colorée en ferait un événement
 à traiter, alors que l'utilisateur vient de le provoquer.

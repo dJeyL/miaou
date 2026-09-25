@@ -67,7 +67,7 @@ se chargerait jamais, ou ne serait jamais préchargée.
 
 ## Export : rien à faire (statu quo vérifié)
 
-`--sans` et `--mono` sont **déjà** dans `THEME_TOKENS` (ui.js), donc l'export
+`--sans` et `--mono` sont **déjà** dans `THEME_TOKENS` (export.js), donc l'export
 capture les piles de polices du lot actif sans travail supplémentaire.
 
 En revanche l'export **ne charge aucun fichier de fonte** — ni avant ce lot, ni

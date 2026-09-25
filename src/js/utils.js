@@ -92,7 +92,7 @@ function copyAckFields(src, dst) {
 }
 
 // Prédicat UNIQUE « cet ack rend compte d'un échec ? » — source de vérité du
-// rendu en erreur, partagée par le thread live (buildToolAck, ui.js) et les DEUX
+// rendu en erreur, partagée par le thread live (buildToolAck, acks.js) et les DEUX
 // exports (_formatToolCallMd / _formatToolCallHtml). Deux signaux, jamais
 // fusionnés dans l'objet persisté :
 //   - `error: true` : posé par callRemoteTool (mcp.js) sur les acks MCP
@@ -113,7 +113,7 @@ function ackIsError(m) {
 
 // Prédicat UNIQUE « cet ack désigne-t-il une ressource téléchargeable ? »
 // (lot V). Source de vérité du bouton de téléchargement des acks
-// (`buildToolAck`, ui.js) — ne jamais réécrire une liste de kinds ailleurs.
+// (`buildToolAck`, acks.js) — ne jamais réécrire une liste de kinds ailleurs.
 // Renvoie une CIBLE typée, pas un id nu : les deux familles ne se résolvent pas
 // par la même clé (`resource_*` par id de ressource IDB, `attachment_recalled`
 // par attId scopé à une conversation — cf. getCachedRecordByAttId), et
@@ -200,7 +200,7 @@ function ackDownloadTarget(m) {
 
 // Prédicat UNIQUE « cet ack désigne-t-il le fil d'un agent qu'on peut aller
 // ouvrir ? » Source de vérité du bouton œil des acks agent (`buildToolAck`,
-// ui.js) — ne jamais réécrire une liste de kinds ailleurs, même doctrine que
+// acks.js) — ne jamais réécrire une liste de kinds ailleurs, même doctrine que
 // `ackDownloadTarget` et `ackHasInspectableDetail`.
 //
 // Les QUATRE kinds agent, pas le seul `agent_spawn` : ils partagent déjà le
@@ -956,7 +956,7 @@ function splitResultResourceMarkers(text) {
 }
 
 // Prédicat UNIQUE « cet ack a-t-il un détail d'appel à inspecter ? » (lot Z).
-// Source de vérité du bouton d'inspection des acks (`buildToolAck`, ui.js) —
+// Source de vérité du bouton d'inspection des acks (`buildToolAck`, acks.js) —
 // ne jamais réécrire une liste de kinds ailleurs, exactement comme
 // `ackDownloadTarget` juste au-dessus.
 //
@@ -2159,7 +2159,7 @@ const EXPORT_RESULT_MAX = 300;
 const EXPORT_RESNAME_MAX = 60;
 
 // Résumé lisible des ressources d'entrée d'un ack js_eval (lot L-2). PUR (testé
-// QuickJS), partagé par le libellé live du thread (ACK_KINDS.js_eval, ui.js) et
+// QuickJS), partagé par le libellé live du thread (ACK_KINDS.js_eval, acks.js) et
 // par les deux formats d'export — une seule formule, jamais réécrite localement.
 //
 // À UNE clé, on rend le handle NU : c'est le cas majoritaire (interroger un seul
@@ -2333,7 +2333,7 @@ function _formatToolCallHtml(m) {
 
 // Icône générique (clé plate) pour la preview repliée d'un ack dans l'export —
 // une seule icône pour tous les kinds (pas de dépendance à ACK_KINDS, défini
-// dans ui.js, hors de portée depuis utils.js — cf. CLAUDE.md, frontière de
+// dans acks.js, hors de portée depuis utils.js — cf. CLAUDE.md, frontière de
 // fichiers du test runner).
 const EXPORT_ACK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
 
@@ -2400,7 +2400,7 @@ function formatToolAcksHtml(acks) {
 }
 
 // Sélection PURE (testée QuickJS) des acks porteurs d'une image à ré-émettre
-// dans l'export HTML (lot Gbis), miroir des règles de placeToolAck (ui.js) :
+// dans l'export HTML (lot Gbis), miroir des règles de placeToolAck (acks.js) :
 //   resource_presented → lookup par record id ;
 //   resource_stored    → idem (le filtre class !== 'inline' se fait APRÈS le
 //                        lookup dans renderExportBody, on ne connaît pas la
@@ -2426,7 +2426,7 @@ function exportableAckImageKey(ack) {
 
 // « Cette image d'ack a-t-elle sa place DANS LE FIL ? » — prédicat UNIQUE,
 // partagé par les deux surfaces qui affichent une image portée par un ack :
-// placeToolAck (écran, ui.js) et exportableAckImageKey (export, ci-dessus).
+// placeToolAck (écran, acks.js) et exportableAckImageKey (export, ci-dessus).
 // Un seul prédicat exprès : deux filtres écrits séparément — l'un pour l'écran,
 // l'autre pour l'export — divergeraient en silence au premier changement, et
 // c'est précisément le motif des acks image du lot Gbis (une image visible en

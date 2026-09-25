@@ -761,9 +761,16 @@ describe('ATTACHMENT_DOCTRINE (constante, partie de ROOT_SYSTEM_PROMPT)', functi
     expect(ATTACHMENT_DOCTRINE.indexOf('recall_attachment') >= 0).toBeTruthy();
     expect(ROOT_SYSTEM_PROMPT.indexOf(ATTACHMENT_DOCTRINE) >= 0).toBeTruthy();
   });
-  it('brief H : la phrase binaire est nuancée (renvoie vers la doctrine docs conditionnelle), plus affirmative "pas lisible" sans réserve', function() {
-    expect(ATTACHMENT_DOCTRINE.indexOf('sauf si un outil') >= 0).toBeTruthy();
+  // Brief H posait « sauf si un outil d'extraction est disponible » tant que la
+  // doctrine docs était conditionnelle. Les lecteurs sont natifs depuis V-1 :
+  // la condition était toujours vraie, donc la réserve décrivait un état
+  // inatteignable (cf. CLAUDE.md, doctrine en double branche). La phrase renvoie
+  // désormais sans condition vers les outils de DOCS_DOCTRINE, qui la suit.
+  it('la phrase binaire renvoie aux outils docs, sans condition morte ni « pas lisible » sec', function() {
+    expect(ATTACHMENT_DOCTRINE.indexOf('se lit par les outils décrits ci-dessous') >= 0).toBeTruthy();
+    expect(ATTACHMENT_DOCTRINE.indexOf('sauf si un outil') >= 0).toBeFalsy();
     expect(ATTACHMENT_DOCTRINE.indexOf('le résultat renvoie le') >= 0).toBeFalsy();
+    expect(ROOT_SYSTEM_PROMPT.indexOf(ATTACHMENT_DOCTRINE) < ROOT_SYSTEM_PROMPT.indexOf(DOCS_DOCTRINE)).toBeTruthy();
   });
 });
 

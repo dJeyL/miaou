@@ -96,7 +96,7 @@ garde les paliers globaux.
 
 ## Export : gratuit, sous condition
 
-`readThemeTokens` (ui.js) lit les valeurs **résolues** via `getComputedStyle`,
+`readThemeTokens` (export.js) lit les valeurs **résolues** via `getComputedStyle`,
 avec bascule temporaire de `data-theme` pour capturer les deux variantes
 (`serializeThemeTokens`). Une palette qui redéfinit des tokens **existants** est
 donc capturée sans toucher à l'export.
@@ -110,7 +110,7 @@ la valeur sur la `color` d'une sonde et lire son computed style), sinon il
 compare des chaînes et prend « hsl(219 12% 4.9%) » pour du rgb(219,12,4.9).
 
 **Condition dure** : n'introduire aucun nouveau nom de token **consommé par
-l'export** sans l'ajouter à `THEME_TOKENS` (ui.js, liste figée ; piège 22 —
+l'export** sans l'ajouter à `THEME_TOKENS` (export.js, liste figée ; piège 22 —
 `EXPORT_CSS` ne suit pas les feuilles de l'app). `--hue`/`--sat-*`/`--l-*` sont
 des variables intermédiaires, jamais lues telles quelles par l'export : elles
 n'y figurent pas. `--brand` non plus, l'export n'affichant pas le nom de

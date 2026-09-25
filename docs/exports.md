@@ -1,5 +1,11 @@
 # Export Markdown, export HTML, téléchargements et horodatages
 
+Où vit le code : l'export HTML standalone (lot G) et la conversion d'un `.md`
+externe (lot R) sont dans `src/js/export.js`, séparé d'`ui.js` le 2026-09-25 et
+chargé juste après lui ; les purs partagés (`slugTitle`, `exportDateStamp`,
+`formatToolAcksHtml`…) restent dans `utils.js`, et les boutons de
+téléchargement du fil (`decoratePre`, `downloadMsgMd`) dans `ui.js`.
+
 ## Export Markdown et téléchargements
 
 - `downloadFile(filename, content, mimeType)` dans `utils.js` : Blob +
@@ -85,7 +91,7 @@ ultérieures du même lot).
      (`.tool-ack-preview-list`, une `.tool-ack-preview` par ack — imite
      `.tool-ack` du thread live : bordure gauche + icône outil générique
      `EXPORT_ACK_ICON`, une seule icône pour tous les kinds, pas de
-     dépendance à `ACK_KINDS`/ui.js hors de portée depuis `utils.js` — +
+     dépendance à `ACK_KINDS`/acks.js hors de portée depuis `utils.js` — +
      `m.intent` si présent, sinon fallback `<code>name</code>`). Un ack en
      échec (`ackIsError`) porte la classe `ack-error` : icône `--err`, label
      `--err-soft` — mêmes couleurs que `.tool-ack.ack-error` du thread live.
@@ -116,7 +122,7 @@ ultérieures du même lot).
   `CLAUDE.md`/`docs/pitfalls-detail.md`) — toute future extension qui
   ajoute un chemin similaire doit `escHtml` de la même façon.
 - **`exportableAckImageKey(ack)`** dans `utils.js` (pure, testée QuickJS,
-  lot Gbis) : miroir des règles image de `placeToolAck` (ui.js). Retourne
+  lot Gbis) : miroir des règles image de `placeToolAck` (acks.js). Retourne
   `{ by: 'id' }` (`resource_presented`, `resource_stored`), `{ by: 'attId' }`
   (`attachment_recalled`) ou `null` (kind non porteur d'image, ou id/attId
   manquant). Ne fait **que** la sélection — le lookup cache et le filtre
@@ -142,7 +148,7 @@ ultérieures du même lot).
   modes (c'est déjà du texte, pas un lien). `renderMd(text, opts)` transmet
   `opts` à `resolveConvRefs` en passe-plat.
 - **`buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables })`**
-  (ui.js, pure — mais **pas** couverte par le runner QuickJS, malgré une
+  (export.js, pure — mais **pas** couverte par le runner QuickJS, malgré une
   mention historique contraire : `tests/runner.py` ne l'appelle pas ; référencer
   `LOGO_SRC` — global de main.js — y est donc sans danger) : assemble le
   squelette `<!doctype html><html><head>…</head><body>` (pas de `data-theme` sur
@@ -190,7 +196,7 @@ ultérieures du même lot).
   **Depuis le lot R**, `EXPORT_SCRIPT` porte un second rôle : la mémorisation du
   thème choisi. La **bascule** de thème, elle, est du markup statique et ne
   dépend PAS du réglage (cf. section dédiée plus bas).
-- **`EXPORT_SCRIPT`** (ui.js, constante template string, injectée seulement si
+- **`EXPORT_SCRIPT`** (export.js, constante template string, injectée seulement si
   `exportInteractive`) : script **autonome** (l'export n'a aucun global MIAOU —
   `downloadFile`/`sanitizeDownloadName`/`LANG_TO_EXT` réimplémentés inline en
   minimal). Parcourt les `<pre>`, ajoute dans le `.code-head` (déjà présent) un
@@ -255,14 +261,14 @@ ultérieures du même lot).
     liens interactifs seuls, évite le doublement des octets base64 `src` +
     `href`). Les chips **non-image** restent inertes (pas de `.att-thumb`, donc
     ignorées par la boucle de découverte).
-- **`decorateExportPre(scope)`** (ui.js, DOM — pas QuickJS) : appelée par
+- **`decorateExportPre(scope)`** (export.js, DOM — pas QuickJS) : appelée par
   `renderExportBody` après le highlight Prism. Insère dans chaque `<pre>` un
   `.code-head` **statique** = un seul `<span class="code-lang">` (langage lu
   depuis `language-xxx`). **Zéro bouton, zéro onclick** (ils seraient perdus par
   la sérialisation `innerHTML`, et l'export n'a pas les globals) — les actions
   sont l'affaire d'`EXPORT_SCRIPT` au runtime. À ne pas confondre avec
   `decoratePre` (live), qui pose barre **et** boutons câblés en une passe.
-- **`renderExportBody(thread, convId)`** (ui.js, DOM/marked — pas QuickJS) :
+- **`renderExportBody(thread, convId)`** (export.js, DOM/marked — pas QuickJS) :
   construit un **fragment détaché** (jamais de lecture/mutation de `#thread`
   live), itère `thread` en tamponnant les acks précédant un message
   `assistant`. **Le buffer empile TOUS les acks** (comme `renderThread` live,
@@ -324,7 +330,7 @@ ultérieures du même lot).
     (`getPendingToolBlocks().length === 0` sur `resource_stored`) n'est **pas**
     transposé : aucune file pendante à l'export. Affichage **pleine largeur**
     (décision A.2), curseur/lien de clic posés uniquement en interactif (Gb2).
-- **`embedExportMermaid(container)`** (ui.js, DOM/async — pas QuickJS, lot E4) :
+- **`embedExportMermaid(container)`** (export.js, DOM/async — pas QuickJS, lot E4) :
   passe Mermaid de l'export. Chaque `code.language-mermaid` du fragment devient
   un **SVG embarqué statiquement** (`.mermaid-view` — visible à l'ouverture du
   fichier, **sans JS**), la source surlignée restant disponible repliée dans un
@@ -347,7 +353,7 @@ ultérieures du même lot).
   de toggle ni de lightbox dans l'export** (boutons perdus à la sérialisation
   `innerHTML`, aucun global MIAOU côté fichier) ; pas de préviz iframe non
   plus (audit §4b).
-- **`THEME_TOKENS`** (ui.js, liste de noms `--…`) + **`serializeThemeTokens()`**
+- **`THEME_TOKENS`** (export.js, liste de noms `--…`) + **`serializeThemeTokens()`**
   (via `readThemeTokens()`, qui lit `getComputedStyle(document.documentElement)`
   pour chaque nom) : voie **runtime** tranchée (pas de modif `build.py`, pas de
   placeholder). **`THEME_TOKENS` est la seule chose à tenir à jour** si un token
@@ -386,13 +392,13 @@ ultérieures du même lot).
   via `applyTheme` (hooks Mermaid/accueil) ni `selectTheme` (persistance +
   broadcast multi-onglets, piège 24).
 
-- **`PRISM_THEME_CSS`** (ui.js, constante) : copie **figée** de
+- **`PRISM_THEME_CSS`** (export.js, constante) : copie **figée** de
   `prism-tomorrow.min.css` (CDN, cf. `index.html`) + les overrides Prism clair
   de `theme-light.css`. Inlinée dans l'export (pas de `<link>` CDN) puisque
   les `<span>` de tokens sont pré-générés par `renderExportBody`. **Dette
   assumée** : à resynchroniser manuellement si le thème Prism CDN change
   (rare).
-- **`EXPORT_CSS`** (ui.js, constante, template string) : feuille **dédiée et
+- **`EXPORT_CSS`** (export.js, constante, template string) : feuille **dédiée et
   minimale**, écrite à la main — PAS une extraction programmatique de
   `chat.css`/`tools.css` (leur sectionnement mélange règles écran/export,
   dette `next.md`), PAS un miroir vivant de ces fichiers. Couvre uniquement
@@ -434,7 +440,7 @@ ultérieures du même lot).
   `:has(#conv-title:hover, .conv-retitle-btn:hover)` (chat.css) : la
   condition inclut le bouton lui-même, sinon il disparaîtrait sous le
   curseur dès qu'on quitte `#conv-title` pour l'atteindre.
-- **`exportConvHtml()`** (ui.js, global — handler `onclick`) : point
+- **`exportConvHtml()`** (export.js, global — handler `onclick`) : point
   d'entrée. Résout titre/slug (`slugTitle`)/thème actif/`dateStamp`
   (`exportDateStamp`), assemble `styleCss` et `bodyHtml`, appelle
   `buildExportHtml`, calcule la taille du HTML final (`Blob.size`) et avertit
@@ -521,7 +527,7 @@ par le modèle**, aucune ressource stockée.
     v2.html »). Le titre h1 n'intervient **pas** (le nom suit le fichier
     source). Séparateurs de chemin et caractères de contrôle neutralisés, points
     de tête retirés — dans cet ordre (`../etc/passwd.md` → `_etc_passwd.html`).
-- **`renderMarkdownDocBody(md)`** (ui.js, async) : **troisième chemin
+- **`renderMarkdownDocBody(md)`** (export.js, async) : **troisième chemin
   string→HTML** au sens du piège 21, assumé et documenté. Ni `renderMd` (qui
   applique `resolveConvRefs` — des références de conversation n'ont aucun sens
   dans un `.md` externe), ni `renderUserMd` (qui échappe les `<`, alors qu'un
@@ -568,7 +574,7 @@ par le modèle**, aucune ressource stockée.
     que seul le mot « MIAOU » porte le lien du dépôt : une chaîne d'un bloc
     obligerait à la redécouper au rendu.
 
-- **Lien du dépôt sur le mot « MIAOU » (footer).** `brandHtmlFor(url)` (ui.js,
+- **Lien du dépôt sur le mot « MIAOU » (footer).** `brandHtmlFor(url)` (export.js,
   **pure et testée**) décide lien ou texte ; `exportBrandHtml()` n'est que son
   point de lecture de `BUILD_REPO_URL` (constante de build, `storage.js`, figée
   au chargement — d'où la scission : la partie décisionnelle reste testable).

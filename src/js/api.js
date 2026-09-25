@@ -683,6 +683,13 @@ async function streamCompletion(messages, opts) {
     body.messages = applyVisionDegradation(body.messages, o.imageDescriptors);
   }
 
+  // Garde de DIAGNOSTIC, jamais un filtre (cf. unservedToolCallIds, utils.js) :
+  // un tool_call sans son message `tool` se paye en 422 muet sur les backends
+  // stricts. Le nommer en console désigne la source à corriger ; réparer le
+  // payload ici masquerait la cause.
+  const unserved = unservedToolCallIds(body.messages);
+  if (unserved.length) console.warn('[miaou] tool_call sans résultat dans le payload :', unserved.join(', '));
+
   // Controller de CE stream. Publié sur la génération (o.gen) pour qu'un abort
   // ciblé puisse l'atteindre ; une génération n'a qu'un stream en vol à la fois
   // (les tours de la boucle d'outils sont séquentiels), donc l'écrasement d'un

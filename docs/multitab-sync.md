@@ -34,10 +34,18 @@ Hors périmètre : pas de Web Locks / élection de leader, pas de résolution de
 conflit, pas de sync cross-device (BroadcastChannel est same-browser), pas de
 miroir de streaming token-à-token.
 
-## Architecture (`src/js/sync.js`)
+## Architecture (`src/js/sync.js`, `src/js/multitab.js`)
 
-Placé juste après `utils.js` dans `JS_ORDER` (build.py **et** tests/runner.py —
-la liste est dupliquée). Deux sections nettes :
+Deux fichiers. `sync.js` porte le noyau pur et l'adaptateur `BroadcastChannel`,
+décrits ci-dessous ; il est chargé tôt dans `JS_ORDER` (build.py **et**
+tests/runner.py — la liste est dupliquée, un test vérifie leur égalité).
+`multitab.js`, chargé juste avant `main.js`, porte la couche qui APPLIQUE :
+réception (`handleSyncMessage`/`applySyncDecision`/`applySyncedSettings`), file
+différée pendant une génération locale, soft-lock, relais readonly et heartbeat.
+Elle vivait dans `main.js` jusqu'au 2026-09-25 ; le branchement du canal, lui,
+y reste (`init()`, cf. « Init du canal »).
+
+`sync.js` a deux sections nettes :
 
 ### Noyau pur (QuickJS-testable)
 
@@ -171,7 +179,7 @@ inoffensif, les pairs rechargent de toute façon.
 
 ### Récepteurs (livrés)
 
-`handleSyncMessage(env)` (main.js) reçoit l'enveloppe **déjà validée**, appelle
+`handleSyncMessage(env)` (multitab.js) reçoit l'enveloppe **déjà validée**, appelle
 `routeMessage` (pur) avec `{ tabId, currentConvId, activeSpaceId }`, puis
 `applySyncDecision(d)` exécute l'effet impur :
 
@@ -223,7 +231,7 @@ plus `ignore-self` (défense en profondeur, jamais atteint en pratique).
 Awareness non-bloquante : quand la même conversation est ouverte dans ≥2 onglets,
 chacun affiche un bandeau informatif (« aussi ouverte dans un autre onglet »).
 
-**Émission** (main.js) :
+**Émission** (multitab.js, appelée depuis `openConversation`/`resetToEmpty` de main.js) :
 - `announceConvOpened(convId)` → `conv-opened { convId, tabId }` en fin
   d'`openConversation`, **uniquement sur un vrai switch** (`id !== currentConvId`
   à l'entrée) — une re-hydratation (récepteur `rehydrate` rappelle
@@ -247,7 +255,7 @@ Convergent aussi à 3+ onglets, jamais de boucle infinie.
 `.banner` (composer.css), extraite lot J des trois usages qui la partageaient
 (`.summary-banner`, `.move-bar`, `.tab-banner`). La base porte les 7 propriétés
 communes + `.banner.show` ; chaque variante ne porte que sa marge/son layout
-interne. **`EXPORT_CSS` (ui.js) ne contient aucun bandeau** → rien à propager
+interne. **`EXPORT_CSS` (export.js) ne contient aucun bandeau** → rien à propager
 (piège 22 respecté nativement), mais si un bandeau y était ajouté un jour, la
 factorisation `.banner` ne s'y refléterait pas automatiquement.
 
@@ -270,7 +278,7 @@ ne lit que `_peersGenerating`. Pour un stream c'est sans conséquence
 (`setSending(true)` le borde) ; pour une compaction il a fallu l'ajouter
 explicitement, cf. `docs/compaction.md`.
 
-**Émission** (main.js, couplée au **cycle de vie de la génération** depuis T-1a —
+**Émission** (multitab.js, couplée au **cycle de vie de la génération** depuis T-1a —
 plus à `setSending`, qui n'est qu'un reflet d'écran) :
 - `startGenerationRelay(convId)` depuis `registerGeneration()` : émet
   `conv-generation-started` + arme un **heartbeat** (`setInterval`,
@@ -293,7 +301,7 @@ plus à `setSending`, qui n'est qu'un reflet d'écran) :
 - Discipline **deux timers** (piège 13) : les timers de relais sont distincts des
   timers du patienteur (`startWaiter`/`stopWaiter`) ; ne jamais les confondre.
 
-**Réception** (main.js) :
+**Réception** (multitab.js) :
 - `readonly-on` (message initial OU heartbeat) : ajoute le `tabId` à
   `_peersGenerating`, horodate (`_peerHeartbeatAt[tabId]`), arme le balayage TTL
   (`armTtlSweeper`), active le readonly. **Idempotent** : un heartbeat répété
@@ -320,7 +328,11 @@ levée, le composer est restauré selon `configured`, jamais sur `sending` seul.
 
 **Priorité bandeau** : `refreshTabBanner` fait primer le readonly (« réponse en
 cours dans un autre onglet — lecture seule ») sur le soft-lock (« aussi ouverte
-dans un autre onglet »).
+dans un autre onglet »). Au-dessus des deux depuis le 2026-09-25 : la base
+mise à niveau par un autre onglet (`_dbSuperseded`, cf. `docs/storage.md`,
+« Montée de version par un autre onglet »), seul état qu'aucun geste de peering
+ne lève. `refreshTabBanner` est le seul écrivain de `#tab-banner`, ce qui fait
+tenir cette priorité contre tous les recalculs.
 
 **`help.md`** : passe unique en fin de lot (décision Julien 2026-07-11) — topic `interface`,
 entrée « Plusieurs onglets » décrivant toute la synchro d'un bloc.
@@ -355,7 +367,8 @@ survenu **pendant** l'await — typiquement la réponse assistant persistée jus
 après `conv-generation-ended` — est alors perdu, et le fil reste en retard d'un
 tour (visible seulement à la navigation/reload suivante, qui relit le store).
 
-Trois mesures concordantes (main.js) :
+Trois mesures concordantes (les deux premières dans `openConversation`, main.js ;
+la troisième dans `applySyncDecision`, multitab.js) :
 
 1. **Relecture post-await** : `openConversation` ne projette `conv.messages`
    (`projectConvMessages`, pur, testé) qu'**après** l'await ; avant, simple
@@ -416,7 +429,7 @@ hors-ligne : il emprunte le même chemin no-op.
 
 Les quatre réglages auto-persistés (`theme`, `palette`, `fonts`, `motion` —
 ceux qui s'appliquent sans clic sur « Enregistrer ») voyagent par
-`settings-updated`. À la réception, `main.js` doit appeler **la paire**
+`settings-updated`. À la réception, `applySyncedSettings` (multitab.js) doit appeler **la paire**
 `applyXxx` + `setXxxUI` pour chacun :
 
 - `applyXxx` repeint (attribut sur `<html>`, hooks Mermaid…) ;
@@ -432,41 +445,43 @@ Défaut relevé par Julien après le lot S ; il préexistait pour `theme` et
 `motion`. Couvert par une assertion à deux onglets dans `verify-palettes.mjs`
 et `verify-fonts.mjs`.
 
-### Dette connue : propagation du thème intermittente
+### Propagation intermittente des réglages — cause trouvée et corrigée (2026-09-25)
 
-**Symptôme** (Julien, 2026-08-22, après le correctif ci-dessus) : en usage réel,
-un pair reçoit parfois le changement de thème sans l'appliquer — les segments
-du drawer passent bien à « Sombre » et le hint suit, mais l'écran reste clair.
-**Non reproductible de façon consistante** : après de nombreux essais, « ça
-marche plus souvent que l'inverse ». Jamais reproduit sous Playwright (deux
-onglets même contexte, `file://`, palette Encre, drawer ouvert ou fermé,
-réseau bridé) — le message part, arrive, `applyTheme` s'exécute sans lever et
-l'attribut est bien posé.
+**Symptôme** (Julien, 2026-08-22) : un pair reçoit parfois le changement de
+thème sans l'appliquer. Longtemps non reproduit : un changement isolé passe
+presque toujours.
 
-**Piste principale, non confirmée** : `serializeThemeTokens` (ui.js) bascule
-`data-theme` en direct pour capturer les deux jeux de tokens, sous `try/finally`
-qui restaure une valeur **capturée avant** la bascule. Un `settings-updated`
-traité pendant cette fenêtre verrait son attribut écrasé par le `finally`. La
-fenêtre est censée être entièrement synchrone (aucun `await` entre bascule et
-restauration), ce qui rendrait le scénario impossible — mais c'est la seule
-autre voie d'écriture de `data-theme` en dehors d'`applyTheme` et du script de
-boot, et l'intermittence colle à une fenêtre de course.
+**Cause, mesurée** : l'ordre d'arrivée entre le message du canal et la
+VISIBILITÉ de l'écriture localStorage dans le pair n'est pas garanti. Le
+récepteur de `settings-updated` (et de `space-changed`) relit localStorage ; en
+rafale (thème, palette et fontes changés dans le même tour, trois messages), le
+pair lisait à la réception des trois messages le nouveau thème et l'ancienne
+palette, appliquait cet état, et plus aucun message ne venait le corriger —
+relu une seconde plus tard, localStorage était juste. 11 à 30 rafales sur 40 en
+échec. La piste `serializeThemeTokens` notée ici auparavant était fausse.
 
-Autres pistes non écartées : un onglet resté ouvert sur une version antérieure
-du bundle (le symptôme d'avant le correctif est différent — rien ne bougeait,
-segments compris — donc peu probable ici) ; une écriture concurrente du même
-attribut par le suivi `matchMedia` sur un réglage « système ».
+**Correctif** : l'événement `storage`, émis dans les autres onglets quand la
+valeur y est visible, est traduit par le pur `storageEventDecision` (sync.js)
+en la même décision que le message du canal (`apply-settings` avec les SEULES
+clés qui ont changé, ou `space-list`) et passé au même `applySyncDecision`. Le
+message du canal reste : il suffit presque toujours et porte des types
+qu'aucun événement `storage` ne voit ; la relecture tardive ne fait que
+corriger ce qu'il a pu appliquer trop tôt. L'application côté pair n'écrit
+rien, donc pas d'écho. Les types adossés à IDB ne sont pas concernés : leur
+émission suit le commit (piège 24 (a)).
 
-**À faire si ça remonte** : instrumenter `data-theme` par `MutationObserver`
-dans l'onglet récepteur (voir si l'attribut est posé puis ré-écrit, ou jamais
-posé) — c'est ce qui distinguera « le CSS ne suit pas » de « l'attribut est
-écrasé ».
+Non-régression : `.claude/skills/run-miaou/verify-settings-sync-race.mjs`
+(40 rafales ; imprime, en cas d'échec, ce que le pair lisait dans localStorage
+à chaque réception). Corollaire de montage appliqué à `verify-fonts` et
+`verify-palettes` : attendre `.boot-done` sur les DEUX onglets — le canal se
+branche en fin d'`init()`, un pair encore en démarrage manque le message (vrai
+aussi en usage réel, fenêtre de quelques centaines de ms, non traitée).
 
 ## Tests
 
 - **QuickJS** (`tests/test-sync.js`) : noyau pur — enveloppe, validation
   (v/type/tabId, payload manquant), routage par type, self-loopback, génération
-  d'id. L'adaptateur impur (BroadcastChannel absent sous QuickJS) n'est pas
+  d'id, traduction d'un événement `storage` (`storageEventDecision`). L'adaptateur impur (BroadcastChannel absent sous QuickJS) n'est pas
   couvert ici.
 - **Manuel / Playwright** (à venir) : scénarios deux-onglets de la checklist
   §7 du brief — voir `docs/manual-tests.md`.

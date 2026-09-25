@@ -922,7 +922,15 @@ function openResourceDB() {
         db.createObjectStore('summaries', { keyPath: 'id' });
       }
     };
-    req.onsuccess = function(e) { resolve(e.target.result); };
+    // Montée de version par un autre onglet : cf. releaseSupersededDb
+    // (storage.js). Cette connexion est distincte de celle d'openConvDB et
+    // bloquerait à elle seule l'ouverture du nouvel onglet.
+    req.onsuccess = function(e) {
+      const db = e.target.result;
+      db.onversionchange = function() { _resourceDbPromise = null; releaseSupersededDb(db); };
+      resolve(db);
+    };
+    req.onblocked = warnDbOpenBlocked;
     req.onerror = function(e) {
       // Ne pas figer la promesse mémoïsée sur un échec (transitoire) : la
       // remettre à null pour qu'un appel ultérieur retente l'ouverture, sinon
@@ -958,6 +966,7 @@ function putResource(record) {
         });
       };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -969,6 +978,7 @@ function getResource(id) {
       const req = tx.objectStore('resources').get(id);
       req.onsuccess = function(e) { resolve(e.target.result || null); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -980,6 +990,7 @@ function getResourcesByConversation(convId) {
       const req = tx.objectStore('resources').index('by_conversation').getAll(convId);
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -993,6 +1004,7 @@ function getResourcesBySpace(spaceId) {
       const req = tx.objectStore('resources').index('by_space').getAll(spaceId);
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -1007,6 +1019,7 @@ function deleteResource(id) {
       // mais absent du cache (incohérence).
       tx.oncomplete = function() { _uncacheRecord(id); syncPost('resources-updated', { ids: [id], convId: null }); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -1028,6 +1041,7 @@ function deleteResourcesByConversation(convId) {
         if (removed.length) syncPost('resources-updated', { ids: removed, convId: convId });
       };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -1050,6 +1064,7 @@ function getAllResources() {
       const req = tx.objectStore('resources').getAll();
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -1064,6 +1079,7 @@ function clearIdbStore(storeName) {
       const req = tx.objectStore(storeName).clear();
       req.onsuccess = function() { resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }

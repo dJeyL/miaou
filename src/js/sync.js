@@ -103,6 +103,46 @@ function validateEnvelope(obj) {
 // « affichée ? » (convId === ctx.currentConvId) — l'herméticité de Space
 // (piège 18) est laissée au câblage impur (il a accès à `spaceConvIds` et à la
 // liste réelle des conversations), routeMessage ne fait que la présélection.
+// ── Écritures localStorage d'un pair : l'événement `storage` ────────────────
+// Les types adossés à localStorage (`settings-updated`, `space-changed`) disent
+// « relis », et le récepteur relit localStorage. Or rien n'ordonne l'arrivée du
+// message sur le canal et la VISIBILITÉ de l'écriture dans cet onglet : mesuré
+// le 2026-09-25 (thème, palette et fontes changés d'affilée dans un onglet), le
+// pair recevait ses trois messages en lisant encore l'ancienne palette et les
+// anciennes fontes, les appliquait, et plus rien ne venait corriger — la dette
+// « propagation du thème intermittente » de docs/multitab-sync.md.
+//
+// L'événement `storage`, lui, est émis dans les AUTRES onglets quand la valeur
+// y est visible, par définition. Cette fonction pure le traduit en la même
+// décision que routeMessage aurait rendue, pour le même chemin d'application ;
+// le message du canal reste (il suffit presque toujours, et il porte des types
+// qu'aucun événement `storage` ne voit), la relecture tardive ne fait que
+// corriger ce qu'il a pu appliquer trop tôt. `null` = rien à faire.
+//
+// Réglages : seules les clés qui ont CHANGÉ sont rendues (diff ancien/nouveau
+// JSON), pour que l'application garde sa granularité par clé. Constantes de
+// storage.js lues dans le corps (chargé après ce fichier, cf. CLAUDE.md).
+function storageEventDecision(key, oldValue, newValue) {
+  if (key === SETTINGS_KEY) {
+    let before = {}, after = {};
+    try { before = JSON.parse(oldValue || '{}') || {}; } catch (e) { before = {}; }
+    try { after = JSON.parse(newValue || '{}') || {}; } catch (e) { after = {}; }
+    const keys = [];
+    const all = Object.keys(before).concat(Object.keys(after));
+    for (let i = 0; i < all.length; i++) {
+      const k = all[i];
+      if (keys.indexOf(k) !== -1) continue;
+      if (JSON.stringify(before[k]) !== JSON.stringify(after[k])) keys.push(k);
+    }
+    return keys.length ? { action: 'apply-settings', keys: keys } : null;
+  }
+  if (key === API_SERVERS_KEY) return { action: 'apply-settings', keys: ['api-servers'] };
+  if (key === ACTIVE_API_SERVER_KEY) return { action: 'apply-settings', keys: ['active-api-server'] };
+  if (key === MCP_SERVERS_KEY) return { action: 'apply-settings', keys: ['mcp-servers'] };
+  if (key === SPACES_KEY) return { action: 'space-list' };
+  return null;
+}
+
 function routeMessage(env, ctx) {
   ctx = ctx || {};
   const p = env.payload || {};

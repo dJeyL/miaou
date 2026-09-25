@@ -516,6 +516,22 @@ describe('convBadgeState étendu : un parent dont un agent travaille (X-1, étap
     expect(aggregateBadgeState(null, 'p1')).toBe('unread');
     _unreadConvs.clear();
   });
+  // Piège 18 : une conversation SANS spaceId (record legacy, import) appartient
+  // à l'Espace par défaut. Deux couches le garantissent aujourd'hui
+  // (listAllConversations normalise le champ, spaceConvIds le résout) ; ce test
+  // garde le CONTRAT, quelle que soit celle qui le porte. Il passait déjà avant
+  // que les agrégats passent par spaceConvIds (2026-09-25) : ce n'est pas une
+  // non-régression de ce changement, c'est le filet du jour où l'une des deux
+  // couches cesserait de normaliser.
+  it('une conversation sans spaceId compte dans l\'Espace par défaut (spaceConvIds)', function() {
+    setup();
+    saveConversation({ id: 'legacy', title: 'ancienne', timestamp: 4, updatedAt: 4, messages: [] });
+    _unreadConvs.add('legacy');
+    expect(spaceBadgeState(DEFAULT_SPACE_ID)).toBe('unread');
+    expect(aggregateBadgeState(DEFAULT_SPACE_ID)).toBe(null);
+    expect(aggregateBadgeState('sA')).toBe('unread');
+    _unreadConvs.clear();
+  });
   it('unread d\'un parent remonte encore aux agrégats après l\'alignement', function() {
     setup();
     _unreadConvs.add('p1');

@@ -29,6 +29,9 @@ JS_ORDER = [
     'tools.js',
     'api.js',
     'ui.js',
+    'acks.js',
+    'export.js',
+    'multitab.js',
     'main.js',
 ]
 
@@ -234,7 +237,7 @@ EXPORT_SCRIPT_ANCHOR = 'const EXPORT_SCRIPT = `'
 
 
 def _rewrite_export_literal(src: str, anchor: str, transform) -> str:
-    """Applique `transform` au CORPS d'un littéral d'export de ui.js.
+    """Applique `transform` au CORPS d'un littéral d'export de export.js.
 
     Facteur commun de strip_export_css_comments / strip_export_script_comments :
     même repérage, même posture de prudence, seul le nettoyage diffère.
@@ -329,7 +332,7 @@ def strip_line_comments_only(src: str) -> str:
 
 
 def strip_export_script_comments(src: str) -> str:
-    """Retire les commentaires de ligne du littéral EXPORT_SCRIPT (ui.js).
+    """Retire les commentaires de ligne du littéral EXPORT_SCRIPT (export.js).
 
     Même motivation que strip_export_css_comments : ce JS statique part dans
     chaque export INTERACTIF (~2 Ko de commentaires sur 7). Le nettoyage est
@@ -339,7 +342,7 @@ def strip_export_script_comments(src: str) -> str:
 
 
 def strip_export_css_comments(src: str) -> str:
-    """Retire les commentaires du littéral EXPORT_CSS (ui.js).
+    """Retire les commentaires du littéral EXPORT_CSS (export.js).
 
     strip_js_comments laisse intact le CONTENU des template literals — c'est
     voulu (une chaîne JS n'est pas du code). Mais EXPORT_CSS est une feuille de

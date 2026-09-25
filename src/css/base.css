@@ -183,7 +183,7 @@
    préchargées par prefetchFontLots() (ui.js) au boot, donc la bascule ne
    déclenche aucun fetch — sans ce préchargement, elle coûtait 2 requêtes et un
    saut visuel (cf. docs/fonts.md).
-   --sans/--mono sont DÉJÀ dans THEME_TOKENS (ui.js) : l'export capture les
+   --sans/--mono sont DÉJÀ dans THEME_TOKENS (export.js) : l'export capture les
    piles de polices sans travail supplémentaire. Il ne charge en revanche aucun
    fichier de fonte (statu quo assumé, cf. docs/fonts.md) et retombe sur les
    familles système — vrai avant ce lot comme après. */

@@ -783,7 +783,7 @@ HTML, ou à la synchro multi-onglets.
 <a id="p21"></a>
 
 21. **Export HTML standalone : un seul chemin string→HTML à risque.** L'export
-    (`renderExportBody`, ui.js) hérite de la sûreté de l'écran UNIQUEMENT parce
+    (`renderExportBody`, export.js) hérite de la sûreté de l'écran UNIQUEMENT parce
     qu'il re-rend le contenu via `renderMd`/`renderUserMd` — les mêmes renderers
     que le DOM live, dont la sortie passe par `sanitizeHtml` (DOMPurify). marked
     laisse traverser le HTML inline produit par le modèle ; c'est la
@@ -864,6 +864,15 @@ HTML, ou à la synchro multi-onglets.
 <a id="p24"></a>
 
 24. **Synchro multi-onglets : broadcast POST-commit, et relecture APRÈS l'await.**
+
+    **Troisième volet (2026-09-25), localStorage seulement** : émettre après le
+    `setItem` ne garantit pas que le pair voie l'écriture quand le message
+    arrive — mesuré en rafale de réglages, le pair relisait l'ancienne valeur
+    et l'appliquait sans que rien ne la corrige ensuite (la « propagation du
+    thème intermittente »). Les types adossés à localStorage sont donc aussi
+    relus sur l'événement `storage`, émis quand la valeur est visible
+    (`storageEventDecision`, cf. `docs/multitab-sync.md`). IDB n'est pas
+    concerné : `tx.oncomplete` précède l'émission.
 
     Deux invariants jumeaux de la synchro BroadcastChannel (lot J), tous deux
     payés. Le premier était anticipé dès la conception ; le second a coûté une

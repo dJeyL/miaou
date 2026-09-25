@@ -92,7 +92,7 @@
 .ack-group { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
 /* Colonne unique en grille : .ack-slot et .ack-list occupent la MÊME cellule
    (superposés) plutôt que deux enfants flex côte à côte — pendant la bascule
-   compact/liste (animateGroupPanelSwap, ui.js) les deux sont visibles en même
+   compact/liste (animateGroupPanelSwap, acks.js) les deux sont visibles en même
    temps le temps de l'anim, et deux items flex indépendants se disputaient la
    largeur (jitter horizontal, retour Julien). Une seule colonne = pas de
    redistribution de largeur possible. */

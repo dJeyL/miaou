@@ -198,8 +198,15 @@ console.log('\n── 7. Propagation multi-onglets (rendu + drawer) ──');
   const ctx2 = await browser.newContext();
   const tabA = await ctx2.newPage();
   const tabB = await ctx2.newPage();
+  // Boot TERMINÉ des deux côtés, pas seulement le composer présent : le canal
+  // de synchro se branche en fin d'init(), et un pair encore en train de
+  // démarrer manque le message — course de montage, vue au rejeu parallèle du
+  // 2026-09-25 (rouge sous charge, vert isolé).
+  const booted = () => document.querySelector('.boot-done') !== null;
   await tabA.goto('file://' + distPath); await tabA.waitForSelector('#composer-text');
+  await tabA.waitForFunction(booted);
   await tabB.goto('file://' + distPath); await tabB.waitForSelector('#composer-text');
+  await tabB.waitForFunction(booted);
   await tabA.evaluate(() => { selectTheme('dark'); selectPalette('ambre'); selectFonts('graphite'); });
   await tabA.waitForTimeout(400);
   await tabB.evaluate(() => { if (typeof openSettings === 'function') openSettings(); });
@@ -225,6 +232,10 @@ console.log('\n── 7. Propagation multi-onglets (rendu + drawer) ──');
   });
   check('le rendu du pair suit (thème, palette, fontes)',
         seen.theme === 'light' && seen.palette === 'encre' && seen.fonts === 'atelier');
+  if (!(seen.theme === 'light' && seen.palette === 'encre' && seen.fonts === 'atelier'
+        && seen.segTheme === 'light' && seen.segPalette === 'encre' && seen.segFonts === 'atelier')) {
+    console.log('        état du pair : ' + JSON.stringify(seen));
+  }
   check('les segments du drawer du pair suivent aussi',
         seen.segTheme === 'light' && seen.segPalette === 'encre' && seen.segFonts === 'atelier');
   await ctx2.close();

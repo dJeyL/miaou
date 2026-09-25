@@ -364,6 +364,7 @@ function getAllSkillRecords() {
       const req = tx.objectStore('skills').getAll();
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -376,6 +377,7 @@ function getSkillRecord(slug) {
       const req = tx.objectStore('skills').get(slug);
       req.onsuccess = function(e) { resolve(e.target.result || null); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -398,6 +400,7 @@ function putSkill(record) {
       tx.objectStore('skills').put(rec);
       tx.oncomplete = function() { upsertSkillCache(rec); syncPost('skills-updated', {}); resolve(rec.slug); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -411,6 +414,7 @@ function deleteSkillDb(slug) {
       tx.objectStore('skills').delete(slug);
       tx.oncomplete = function() { removeSkillCache(slug); syncPost('skills-updated', {}); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }

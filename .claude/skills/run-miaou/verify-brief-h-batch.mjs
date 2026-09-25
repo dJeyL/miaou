@@ -124,11 +124,15 @@ check('C : aiguillage natif list → read, et préférence natif sur serveur',
 check('C : helpers conditionnels v1 supprimés du bundle', docsDoc.gone);
 
 // ── D. ATTACHMENT_DOCTRINE nuancée ──────────────────────────────────────────
+// « sauf si un outil d'extraction est disponible » a disparu le 2026-09-25 :
+// les lecteurs sont natifs, la condition était toujours vraie. La phrase renvoie
+// désormais sans réserve aux outils de DOCS_DOCTRINE, qui la suit.
 const attDoctrine = await page.evaluate(() => ({
-  nuanced: ATTACHMENT_DOCTRINE.indexOf('sauf si un outil') >= 0,
+  nuanced: ATTACHMENT_DOCTRINE.indexOf('se lit par les outils décrits ci-dessous') >= 0
+    && ATTACHMENT_DOCTRINE.indexOf('sauf si un outil') < 0,
   notCategorical: ATTACHMENT_DOCTRINE.indexOf('le résultat renvoie le') < 0,
 }));
-check('D : phrase binaire nuancée (renvoie vers DOCS_DOCTRINE)', attDoctrine.nuanced);
+check('D : phrase binaire renvoie aux outils de DOCS_DOCTRINE, sans condition morte', attDoctrine.nuanced);
 check('D : ancienne formulation catégorique disparue', attDoctrine.notCategorical);
 
 await browser.close();

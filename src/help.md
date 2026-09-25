@@ -441,7 +441,7 @@ n'apparaissent pas dans le panneau Skills — elles déclenchent un geste de
 l'application. L'autocomplétion les distingue par une étiquette « commande ».
 Une commande s'envoie **seule** dans le composer, sans autre texte autour, et
 elle n'est pas proposée quand tu modifies un message déjà envoyé. `/compact`
-compacte le contexte de la conversation (cf. `contexte`). Le slug d'une commande
+compacte le contexte de la conversation (cf. `compaction`). Le slug d'une commande
 est réservé : une skill ne peut pas porter le même.
 
 **Importer une skill existante** (par exemple une skill écrite pour Claude Code,
@@ -773,11 +773,10 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
 
 - **Évacuer les résultats d'outils** : remplace les résultats volumineux déjà
   obtenus par des références que le modèle peut rouvrir. Le geste le plus léger
-  — aucun appel au modèle, et rien ne cesse d'être transmis — détaillé juste en
-  dessous.
+  — aucun appel au modèle, et rien ne cesse d'être transmis (sujet `compaction`).
 - **Compacter le contexte** : remplace le début de la conversation par un résumé
   que le modèle rédige lui-même. C'est le levier le plus direct sur une
-  conversation devenue longue — détaillé juste en dessous.
+  conversation devenue longue (sujet `compaction`).
 - **Résumés** : leur injection a un mode réglable (automatique, sur proposition,
   ou jamais). En mode « jamais », aucun résumé n'est ajouté au contexte.
 - **Souvenirs** : les souvenirs actifs sont réinjectés à chaque message ; en
@@ -798,7 +797,36 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
   outils au contexte, et éventuellement ses consignes d'usage (sujet `mcp`). En
   débrancher un allège la liste d'outils envoyée.
 
-### Compacter le contexte
+Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
+reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
+éphémère du dernier message le seul contenu qui change vraiment à chaque envoi.
+Côté stable : tes instructions système, les définitions d'outils, les consignes
+des serveurs compagnons, les souvenirs de portée générale, la liste des skills à
+déclenchement automatique, et un bloc unique décrivant l'Espace actif (sa
+description, ce qu'il dit de sa bibliothèque — le nombre de fichiers, ou leur
+liste si tu as activé le réglage ci-dessus —, les souvenirs qui lui sont
+rattachés). Côté éphémère : la date et l'heure, et les résumés injectés.
+Un backend qui gère un cache KV par préfixe (Ollama, par exemple) peut ainsi
+réutiliser le calcul de la partie stable au lieu de tout recalculer à chaque
+tour.
+
+Les serveurs ne rangent pas tous ce contexte dans le même ordre : certains
+placent la définition des outils **avant** tes instructions, d'autres **après**.
+Ça ne change rien à ce qui est envoyé, mais ça change ce qu'un geste invalide —
+quand les outils viennent après, modifier tes instructions ou changer d'Espace
+fait aussi recalculer leur définition, qui est souvent la part la plus lourde.
+Le réglage « Ordre affiché dans l'inspecteur », sur la carte de chaque serveur
+API, dit lequel des deux cas s'applique : il n'agit que sur l'affichage de
+l'inspecteur de contexte, pour que la ventilation reflète la réalité de ton
+serveur.
+
+Certains gestes cassent volontairement ce préfixe stable, parce que le contexte
+change réellement : changer d'Espace actif, modifier tes instructions système,
+brancher ou débrancher un serveur compagnon, activer une skill, déposer un
+fichier dans la bibliothèque. C'est attendu, et sans conséquence durable — le
+préfixe se re-stabilise dès le tour suivant.
+
+## compaction — compacter et alléger une conversation longue
 
 Quand une conversation s'allonge, le modèle commence à perdre le fil bien avant
 que la fenêtre de contexte ne soit pleine : les informations du milieu de la
@@ -870,35 +898,6 @@ Tu n'as pas à rester sur la conversation pour autant : **le geste va au bout
 même si tu pars ailleurs**, et tu en retrouveras le résultat à ton retour.
 Pendant ce temps, une pastille en haut de la fenêtre indique ce qui est en cours
 et sur quelle conversation — clique-la pour y revenir.
-
-Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
-reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
-éphémère du dernier message le seul contenu qui change vraiment à chaque envoi.
-Côté stable : tes instructions système, les définitions d'outils, les consignes
-des serveurs compagnons, les souvenirs de portée générale, la liste des skills à
-déclenchement automatique, et un bloc unique décrivant l'Espace actif (sa
-description, ce qu'il dit de sa bibliothèque — le nombre de fichiers, ou leur
-liste si tu as activé le réglage ci-dessus —, les souvenirs qui lui sont
-rattachés). Côté éphémère : la date et l'heure, et les résumés injectés.
-Un backend qui gère un cache KV par préfixe (Ollama, par exemple) peut ainsi
-réutiliser le calcul de la partie stable au lieu de tout recalculer à chaque
-tour.
-
-Les serveurs ne rangent pas tous ce contexte dans le même ordre : certains
-placent la définition des outils **avant** tes instructions, d'autres **après**.
-Ça ne change rien à ce qui est envoyé, mais ça change ce qu'un geste invalide —
-quand les outils viennent après, modifier tes instructions ou changer d'Espace
-fait aussi recalculer leur définition, qui est souvent la part la plus lourde.
-Le réglage « Ordre affiché dans l'inspecteur », sur la carte de chaque serveur
-API, dit lequel des deux cas s'applique : il n'agit que sur l'affichage de
-l'inspecteur de contexte, pour que la ventilation reflète la réalité de ton
-serveur.
-
-Certains gestes cassent volontairement ce préfixe stable, parce que le contexte
-change réellement : changer d'Espace actif, modifier tes instructions système,
-brancher ou débrancher un serveur compagnon, activer une skill, déposer un
-fichier dans la bibliothèque. C'est attendu, et sans conséquence durable — le
-préfixe se re-stabilise dès le tour suivant.
 
 ## interface — repères à l'écran
 
@@ -1137,7 +1136,10 @@ sans perdre ta place.
   éviter deux écritures concurrentes qui s'écraseraient ; tu peux toujours lire
   et faire défiler. La synchro est locale
   à ton navigateur (elle ne relie pas deux machines ni deux navigateurs
-  différents).
+  différents). Après une mise à jour de MIAOU, un onglet resté ouvert sur
+  l'ancienne version peut afficher « Une version plus récente de MIAOU est
+  ouverte dans un autre onglet » : il cède alors ses données à la nouvelle
+  version et doit simplement être rechargé.
 
 ## traces-outils — traces d'outils et inspection
 
@@ -1189,8 +1191,8 @@ modèle.
   est conseillée. Le panneau affiche cette taille et sa source : mesurée sur le
   serveur, fixée dans la configuration du modèle (Ollama), déclarée par lui, saisie sur la fiche du serveur pour ce modèle, ou
   valeur par défaut de l'installation. C'est aussi depuis ce panneau qu'on **allège le contexte** —
-  en évacuant les gros résultats d'outils, ou en compactant.
-  Pour ce qui pèse et comment l'alléger, voir le sujet contexte.
+  en évacuant les gros résultats d'outils, ou en compactant (sujet `compaction`).
+  Pour ce qui pèse et comment l'alléger, voir le sujet `contexte`.
 
 ## donnees — tes données et leur stockage
 

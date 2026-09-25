@@ -180,9 +180,8 @@ const ATTACHMENT_DOCTRINE =
   "reste qu'un handle res_… dans la conversation — le même outil te rend le contenu en " +
   "clair : c'est ainsi que tu relis un résultat que tu n'as plus sous les yeux, sans " +
   "refaire l'appel qui l'avait produit. " +
-  "Ne décris jamais une image de mémoire sans l'avoir rappelée. Pour un " +
-  "fichier binaire, le contenu n'est pas lisible directement, sauf si un outil " +
-  "d'extraction est disponible (cf. ci-dessous).";
+  "Ne décris jamais une image de mémoire sans l'avoir rappelée. Un fichier " +
+  "binaire, lui, se lit par les outils décrits ci-dessous.";
 
 // Doctrine d'accès Web. Toujours injectée quand des outils Web sont disponibles.
 // Partie de ROOT_SYSTEM_PROMPT.
@@ -675,15 +674,12 @@ const IDENTITY_BLURB =
 // présents, comme INTENT_DOCTRINE. PAS dans ROOT_SYSTEM_PROMPT (constante
 // build-time inconditionnelle) : ce bloc dépend de la disponibilité des outils
 // skill au runtime, même mécanisme que intentDoctrinePrompt()/INTENT_DOCTRINE.
+//
+// Émise sous la MÊME condition que le bloc <miaou_skills_context> (au moins une
+// skill autotrigger), dont le préambule porte déjà « quand lire, quand ne pas
+// lire ». Ne pas le répéter ici : jusqu'au 2026-09-25 un premier paragraphe
+// redisait mot pour mot ce préambule, ~560 caractères payés à chaque tour.
 const SKILL_DOCTRINE_BASE =
-  "Doctrine de déclenchement pour les skills :\n\n" +
-  "Si un bloc <miaou_skills_context> est présent dans le contexte, il liste des " +
-  "skills que l'utilisateur a choisi de rendre disponibles pour un usage proactif " +
-  "— ce ne sont PAS des skills que tu es obligé d'utiliser, seulement des fragments " +
-  "d'instructions pertinents si la situation s'y prête. N'en lis une que si elle " +
-  "correspond réellement à ce que tu es en train de faire ; ne les parcours pas " +
-  "toutes pour voir. D'autres skills, non listées ici, sont invoquées directement " +
-  "par l'utilisateur à sa discrétion : tu n'as pas à les découvrir ni à les charger.\n\n" +
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
   "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
 

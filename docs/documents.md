@@ -515,7 +515,7 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   **deux fois** (« Page » en dur révélé par la slide en V-5, `sourceName` révélé
   par le docx). Un test garde la dérivation.
 - **`icon` d'`ACK_KINDS` accepte désormais une FONCTION** (comme `label` le
-  faisait déjà), résolue au seul point de consommation (`buildToolAck`, ui.js).
+  faisait déjà), résolue au seul point de consommation (`buildToolAck`, acks.js).
   La garde de sécurité est intacte : la fonction **choisit parmi les constantes
   `ICON_*`**, elle n'en fabrique aucune — rien d'origine modèle n'entre là.
 - **UNE PAGE PAR APPEL, structurellement** : le paramètre est un entier, pas une
@@ -669,6 +669,22 @@ la lui montre. Ce n'est **pas de l'OCR** : MIAOU rend, le modèle lit. C'est un
   reconnaît **sur son message** (`/password|encrypt/i`) avec repli sur l'erreur
   générique : reconnaître un message est fragile, d'où le repli, mais le silence
   serait pire.
+- **Chargement BORNÉ des bibliothèques CDN** (`loadCdnScript`, ui.js, depuis le
+  2026-09-25). Les loaders de page (`ensureFflate`, `ensurePdfJs`,
+  `ensureSheetJs`, et hors de ce domaine `ensureMermaid`, `ensureQuickJs`)
+  passent tous par ce point unique, qui rejette après `CDN_LOAD_TIMEOUT_MS`
+  (120 s, l'ordre de grandeur de `DOC_WORKER_TIMEOUT_MS` qui bornait déjà le
+  worker) ; le fetch du worker pdf.js est borné de même. Motif : un CDN qui
+  accepte la connexion sans jamais répondre ne déclenche ni `onload` ni
+  `onerror`, donc la promesse mémoïsée pendait pour toujours, et l'outil qui
+  l'attendait avec elle — or Stop n'interrompt jamais un outil en vol
+  (piège 10) : la génération restait bloquée sans issue. **Corollaire mesuré :**
+  retirer le `<script>` n'annule pas la requête, et le navigateur rattache une
+  nouvelle requête sur la même URL à celle qui pend encore (aucune requête
+  réémise) ; une tentative qui suit une expiration porte donc un paramètre
+  `miaou-retry=` qui rend son URL distincte. Non-régression :
+  `.claude/skills/run-miaou/verify-cdn-load-timeout.mjs` (CDN muet simulé,
+  borne raccourcie depuis la constante vivante ; rouge sur le code d'avant).
 - **`ensureSheetJs` (ui.js)** suit `ensureFflate`/`ensurePdfJs` (échec propagé,
   promesse mémoïsée, reset-on-reject, garde post-`onload`), en plus simple :
   **pas de worker**, donc « script chargé » et « bibliothèque prête » coïncident

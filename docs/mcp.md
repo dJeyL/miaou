@@ -296,9 +296,12 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       délibérément les noms du serveur pour que la bascule natif/serveur reste
       invisible au modèle. Le critère `ref`+`content_b64` reste donc le seul
       discriminant fiable côté code.
-      La phrase binaire d'`ATTACHMENT_DOCTRINE` (inconditionnelle) est nuancée
+      La phrase binaire d'`ATTACHMENT_DOCTRINE` (inconditionnelle) a été nuancée
       en conséquence (« pas lisible directement, sauf si un outil d'extraction
       est disponible ») plutôt que de rester catégorique comme avant le lot D.
+      Depuis que les lecteurs sont natifs (lot V), la condition était toujours
+      vraie : la phrase renvoie désormais sans réserve aux outils de
+      `DOCS_DOCTRINE`, qui la suit dans le message système (2026-09-25).
 
 13. **Généralisation du hook d'inflation aux fichiers de bibliothèque d'espace
     (lot Cbis, `files__read` — §4 audit).** Le hook du point 12 était câblé en
@@ -486,7 +489,7 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       côté. Son second argument est l'URL configurée du serveur d'où vient
       l'ack, nécessaire pour composer un chemin relatif ; l'ack porte pour cela
       `mcpServer` (le **nom**, pas l'URL — celle-ci est résolue à l'affichage
-      par `_ackMcpServerUrl`, ui.js, pour qu'un ack relu pointe là où le proxy
+      par `_ackMcpServerUrl`, acks.js, pour qu'un ack relu pointe là où le proxy
       est aujourd'hui). Sans serveur résoluble, un chemin relatif ne donne
       **aucun lien** : une affordance ne se devine pas. Construit
       par API DOM, `href` posé par **propriété** (aucun chemin string→HTML, cf.

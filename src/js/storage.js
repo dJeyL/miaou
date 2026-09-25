@@ -816,6 +816,37 @@ let _convMessagesCache = new Map();
 let _summariesCache = {};
 let _convCacheHydrated = false;
 
+// ── Montée de version de la base par un autre onglet ───────────────────────
+// Quand un onglet ouvre la base avec une version PLUS HAUTE (nouveau bundle
+// déployé, onglet rechargé), chaque connexion ouverte ailleurs reçoit
+// `versionchange` ; tant qu'une seule reste ouverte, l'ouverture du nouvel
+// onglet est BLOQUÉE — sans erreur, sans délai : son `init()` attend
+// l'hydratation et l'écran de démarrage ne se lève jamais. D'où la règle
+// standard : fermer sa connexion sur `versionchange`, et le dire. Cet onglet
+// tourne alors sur un code périmé face à une base qu'il ne sait plus lire ; il
+// doit être rechargé, ce que le bandeau multi-onglets annonce (`_dbSuperseded`,
+// prioritaire dans refreshTabBanner, multitab.js).
+//
+// Les DEUX points d'ouverture (openConvDB ici, openResourceDB dans
+// resources.js) posent le handler : chacun tient sa propre connexion, et une
+// seule oubliée suffit à bloquer. Le handler n'aide que les onglets chargés
+// APRÈS son introduction (2026-09-25) : il doit être en place AVANT le prochain
+// bump de MIAOU_DB_VERSION, pas livré avec lui.
+let _dbSuperseded = false;
+function releaseSupersededDb(db) {
+  try { db.close(); } catch (e) { /* déjà fermée */ }
+  _dbSuperseded = true;
+  console.warn('[miaou] base IndexedDB mise à niveau par un autre onglet : connexion fermée, recharger cet onglet');
+  if (typeof refreshTabBanner === 'function') refreshTabBanner();
+}
+// Côté onglet NEUF : un pair ancien (chargé avant le handler ci-dessus) tient
+// encore sa connexion. L'ouverture reste en attente jusqu'à ce qu'il se ferme
+// — rien d'autre à faire qu'en laisser la trace, l'écran de démarrage couvrant
+// toute surface d'interface à ce moment-là.
+function warnDbOpenBlocked() {
+  console.warn('[miaou] ouverture de la base bloquée par un autre onglet MIAOU resté sur une version antérieure : le fermer ou le recharger');
+}
+
 function openConvDB() {
   if (_convDbPromise) return _convDbPromise;
   _convDbPromise = new Promise(function(resolve, reject) {
@@ -847,7 +878,12 @@ function openConvDB() {
         db.createObjectStore('summaries', { keyPath: 'id' });
       }
     };
-    req.onsuccess = function(e) { resolve(e.target.result); };
+    req.onsuccess = function(e) {
+      const db = e.target.result;
+      db.onversionchange = function() { _convDbPromise = null; releaseSupersededDb(db); };
+      resolve(db);
+    };
+    req.onblocked = warnDbOpenBlocked;
     req.onerror = function(e) {
       // Ne pas figer la promesse mémoïsée sur un échec (transitoire) : la
       // remettre à null pour qu'un appel ultérieur retente l'ouverture.
@@ -957,12 +993,14 @@ async function hydrateConvCache() {
       const req = tx.objectStore('conversations').getAll();
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     }),
     new Promise(function(resolve, reject) {
       const tx = db.transaction('summaries', 'readonly');
       const req = tx.objectStore('summaries').getAll();
       req.onsuccess = function(e) { resolve(e.target.result || []); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     })
   ]);
   _convMetaCache = new Map();
@@ -1006,6 +1044,7 @@ async function warmConversation(id) {
     const req = tx.objectStore('conversations').get(id);
     req.onsuccess = function(e) { resolve(e.target.result || null); };
     tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
   });
   if (!rec) return;
   const split = splitConvRecord(rec);
@@ -1023,6 +1062,7 @@ async function readConversationFromDB(id) {
     const req = tx.objectStore('conversations').get(id);
     req.onsuccess = function(e) { resolve(e.target.result || null); };
     tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
   });
 }
 
@@ -1036,6 +1076,7 @@ async function readAllConversationsFromDB() {
     const req = tx.objectStore('conversations').getAll();
     req.onsuccess = function(e) { resolve(e.target.result || []); };
     tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
   });
 }
 
@@ -1095,7 +1136,7 @@ function persistConversation(conv) {
     tx.oncomplete = function() {
       syncPost('conv-updated', { convId: conv.id, spaceId: spaceId });
     };
-    tx.onerror = function(e) { reportStorageWriteError('conversation', conv.id, e.target.error); };
+    tx.onabort = function() { reportStorageWriteError('conversation', conv.id, tx.error); };
   }).catch(function(err) { reportStorageWriteError('conversation', conv.id, err); });
 }
 
@@ -1123,7 +1164,7 @@ function persistConversationCold(conv) {
     tx.oncomplete = function() {
       syncPost('conv-updated', { convId: conv.id, spaceId: spaceId });
     };
-    tx.onerror = function(e) { reportStorageWriteError('conversation', conv.id, e.target.error); };
+    tx.onabort = function() { reportStorageWriteError('conversation', conv.id, tx.error); };
   }).catch(function(err) { reportStorageWriteError('conversation', conv.id, err); });
 }
 
@@ -1136,7 +1177,7 @@ function removeConversationRecord(id, spaceId) {
     tx.oncomplete = function() {
       syncPost('conv-deleted', { convId: id, spaceId: spaceId });
     };
-    tx.onerror = function(e) { reportStorageWriteError('conversation', id, e.target.error); };
+    tx.onabort = function() { reportStorageWriteError('conversation', id, tx.error); };
   }).catch(function(err) { reportStorageWriteError('conversation', id, err); });
 }
 
@@ -1172,7 +1213,7 @@ async function refreshConversationFromDB(id) {
 // n'émettent aucun broadcast propre (lot J). L'index est petit et intégralement
 // en RAM, donc on le relit en entier — pas de granularité par entrée à gérer.
 // Appelé en arrière-plan par le récepteur de synchro, jamais dans un chemin
-// d'envoi (cf. applySyncDecision, main.js).
+// d'envoi (cf. applySyncDecision, multitab.js).
 async function refreshSummariesFromDB() {
   // Attendre les écritures locales en vol AVANT de lire, puis FUSIONNER plutôt
   // qu'écraser (cf. _summariesInFlight / mergeSummaryIndex) : les deux
@@ -1194,6 +1235,7 @@ async function readAllSummariesFromDB() {
     const req = tx.objectStore('summaries').getAll();
     req.onsuccess = function(e) { resolve(e.target.result || []); };
     tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
   });
 }
 
@@ -1218,7 +1260,7 @@ async function replaceConvRecordsFromImport(conversations, summaries) {
     for (const rec of (summaries || [])) sumStore.put(rec);
     tx.oncomplete = function() { resolve({ conversations: (conversations || []).length, summaries: (summaries || []).length }); };
     tx.onerror = function(e) { reject(e.target.error); };
-    tx.onabort = function(e) { reject(tx.error || (e.target && e.target.error)); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
   });
 }
 
@@ -1244,7 +1286,10 @@ function trackSummaryWrite(id, promise) {
   return done;
 }
 
-// Rend la promesse du COMMIT (`tx.oncomplete`), pas celle du `put`. Les
+// Rend la promesse du COMMIT (`tx.oncomplete`), pas celle du `put`. Rejet sur
+// `abort` et non `error` (cf. reportStorageWriteError) : sur un échec au commit,
+// `error` ne vient jamais, et la promesse que `refreshSummariesFromDB` attend
+// restait pendante pour toujours. Les
 // appelants restent libres de l'ignorer — l'écriture demeure fire-and-forget du
 // point de vue de l'UI (décision U-1 : pas de surface d'erreur dédiée) ; seul
 // `refreshSummariesFromDB` l'attend, pour ne pas lire par-dessus.
@@ -1255,7 +1300,7 @@ function persistSummaryRecord(entry) {
       const tx = db.transaction('summaries', 'readwrite');
       tx.objectStore('summaries').put(entry);
       tx.oncomplete = function() { resolve(); };
-      tx.onerror = function(e) { reportStorageWriteError('résumé', entry.id, e.target.error); reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };   // tracé par le .catch
     });
   }).catch(function(err) { reportStorageWriteError('résumé', entry.id, err); }));
 }
@@ -1269,7 +1314,7 @@ function removeSummaryRecord(id) {
       const tx = db.transaction('summaries', 'readwrite');
       tx.objectStore('summaries').delete(id);
       tx.oncomplete = function() { resolve(); };
-      tx.onerror = function(e) { reportStorageWriteError('résumé', id, e.target.error); reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };   // tracé par le .catch
     });
   }).catch(function(err) { reportStorageWriteError('résumé', id, err); }));
 }
@@ -1317,6 +1362,11 @@ function mergeSummaryIndex(local, snapshot) {
 // et le quota IDB est de plusieurs ordres de grandeur au-dessus de celui de
 // localStorage — l'échec d'écriture qui motivait ce lot n'a plus la même
 // probabilité. À rouvrir si l'usage réel dément.
+//
+// Écouté sur `abort` et non `error` : un échec au COMMIT (quota dépassé,
+// typiquement) avorte la transaction sans émettre `error`, et une requête en
+// erreur non rattrapée l'avorte aussi — `abort` couvre donc les deux, là où
+// `error` laissait le quota sans la moindre trace, console comprise.
 function reportStorageWriteError(kind, id, err) {
   console.error('[miaou] échec d\'écriture ' + kind + ' ' + id, err);
 }
@@ -1356,7 +1406,7 @@ function persistConversationField(id, fields) {
     tx.oncomplete = function() {
       syncPost('conv-updated', { convId: id, spaceId: spaceId });
     };
-    tx.onerror = function(e) { reportStorageWriteError('conversation', id, e.target.error); };
+    tx.onabort = function() { reportStorageWriteError('conversation', id, tx.error); };
   }).catch(function(err) { reportStorageWriteError('conversation', id, err); });
 }
 
@@ -1471,7 +1521,7 @@ async function migrateConversationsToIdbIfNeeded() {
 
     tx.oncomplete = function() { resolve(counts); };
     tx.onerror = function(e) { reject(e.target.error); };
-    tx.onabort = function(e) { reject(tx.error || (e.target && e.target.error)); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
   });
 
   // POST-COMMIT uniquement (piège 24 dans sa forme la plus littérale : ici
@@ -2224,6 +2274,7 @@ function measureResourcesBytes() {
       };
       tx.oncomplete = function() { resolve(n); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }
@@ -2237,6 +2288,7 @@ function measureSkillsBytes() {
       req.onsuccess = function(e) { n = sumRecordBytes(e.target.result || []); };
       tx.oncomplete = function() { resolve(n); };
       tx.onerror = function(e) { reject(e.target.error); };
+      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
     });
   });
 }

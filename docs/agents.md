@@ -63,7 +63,7 @@ Une **chaîne vide n'est pas un parent** : `{ parentConvId: '' }` est une racine
 C'est le cas d'un record legacy ou d'une désérialisation qui pose le champ sans
 valeur ; le traiter comme un agent le rendrait invisible partout, en silence.
 
-### Les sept sites d'exclusion
+### Les sites d'exclusion
 
 | Site | Fonction | Fichier |
 |---|---|---|
@@ -847,12 +847,12 @@ Non-goals tranchés à l'esquisse :
 
 ## Navigation parent ↔ agent (élargissement X-1)
 
-Un agent n'apparaît nulle part (sept sites d'exclusion) : sans affordance
+Un agent n'apparaît nulle part (cf. les sites d'exclusion) : sans affordance
 dédiée, il est donc *inatteignable* depuis l'interface, et une fois atteint on
 n'en revient pas. La boucle est fermée par deux gestes symétriques, plus un
 libellé.
 
-**L'aller** existait déjà : `renderAgentAckLabel` (ui.js) rend le libellé des
+**L'aller** existait déjà : `renderAgentAckLabel` (acks.js) rend le libellé des
 quatre acks `agent__*` cliquable vers `openConversation`. Une seule formule pour
 les quatre — quatre copies divergeraient précisément sur la cliquabilité, qui
 fait toute la valeur de l'affordance.
@@ -861,7 +861,7 @@ Ce libellé restait cependant **hors de portée d'un clic direct** sur un ack
 porteur d'un `intent` : `renderIntentTwoLevel` replie alors le détail, et c'est
 là qu'habite le lien. Il fallait déplier pour atteindre une destination que la
 ligne annonçait déjà. D'où le bouton œil `.ack-open-agent`
-(`_appendAckOpenAgentBtn`, ui.js), qui remonte la même destination dans la
+(`_appendAckOpenAgentBtn`, acks.js), qui remonte la même destination dans la
 colonne d'icônes — **sans remplacer le lien**, qui reste : les deux coexistent,
 l'un en surface, l'autre au fil du texte.
 
@@ -1113,7 +1113,7 @@ finie. Distinguer ici ferait un second prédicat de statut, concurrent du premie
 Un agent rechargé (aucun statut, aucune génération) retombe sur `aborted` : le
 fil est fermé, ce qui est correct — il ne repartira jamais.
 
-**Deux causes composées, un seul setter.** `applyReadonlyState()` (main.js)
+**Deux causes composées, un seul setter.** `applyReadonlyState()` (multitab.js)
 compose `_peersGenerating.size > 0` (readonly cross-onglets — cause
 TEMPORAIRE) et `isFinishedAgentConv(currentConvId)` (cause DÉFINITIVE). C'est la
 discipline de `refreshTabBanner` juste à côté, et pour la même raison :

@@ -1295,7 +1295,7 @@ pre.preview-open .code-preview-btn { color: var(--accent); }
    Deux conditions portées ailleurs, à ne pas casser : la bulle assistant n'a ni
    fond ni bordure ni overflow (elle clipperait), et .messages porte overflow-y
    (son bloc de formatage borne le débordement à la zone de fil, jamais sous la
-   sidebar). EXPORT_CSS (ui.js) porte les mêmes deux étages, mais bornés sur le
+   sidebar). EXPORT_CSS (export.js) porte les mêmes deux étages, mais bornés sur le
    viewport et non sur une container query — c'est un PORTAGE, pas une
    propagation : la feuille est figée (piège 22), les deux jeux évoluent
    séparément et une correction ici doit être reportée là-bas à la main. */

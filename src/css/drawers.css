@@ -158,7 +158,6 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-.storage-report-note { color: var(--text-3); font-size: 11px; }
 
 /* Récapitulatif d'import (feature E) : compteurs + bouton d'application
    arm-then-confirm, même registre visuel que .hint mais encadré (action

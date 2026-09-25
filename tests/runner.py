@@ -20,7 +20,7 @@ except ImportError:
 ROOT = Path(__file__).parent
 SRC_JS = ROOT.parent / 'src' / 'js'
 
-JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'main.js']
+JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'acks.js', 'export.js', 'multitab.js', 'main.js']
 
 # ── Stubs navigateur ──────────────────────────────────────────────────────────
 # On simule juste ce qu'il faut pour que le code source charge sans exploser.
@@ -404,7 +404,7 @@ def run_build_unit_tests() -> tuple[int, int]:
           build.parse_help_sections('juste du texte, pas de titre\n') == ({}, {}))
 
     # strip_export_css_comments : EXPORT_CSS est une feuille CSS figée qui vit
-    # dans un template literal de ui.js. strip_js_comments laisse le contenu
+    # dans un template literal de export.js. strip_js_comments laisse le contenu
     # des literals intact (c'est voulu), donc ses commentaires partaient dans
     # dist/miaou.html ET dans chaque fichier exporté. Ces cas visent le
     # CÂBLAGE (quel stripper s'applique à quoi), pas la découpe elle-même :
@@ -456,16 +456,16 @@ def run_build_unit_tests() -> tuple[int, int]:
     # littéral est un jour renommé ou ré-indenté — sans quoi la fonction
     # redeviendrait un no-op silencieux et les commentaires repartiraient
     # dans les exports sans que rien ne l'annonce.
-    ui_src = (ROOT.parent / 'src' / 'js' / 'ui.js').read_text(encoding='utf-8')
-    check('export-css : EXPORT_CSS est bien reconnu dans src/js/ui.js',
-          ecc(ui_src) != ui_src)
+    export_src = (ROOT.parent / 'src' / 'js' / 'export.js').read_text(encoding='utf-8')
+    check('export-css : EXPORT_CSS est bien reconnu dans src/js/export.js',
+          ecc(export_src) != export_src)
     def literal_body(text, anchor):
         """Corps du littéral `anchor` dans `text` (même découpe que le build)."""
         i = text.index(anchor) + len(anchor)
         return text[i:text.index('\n`;', i)]
 
     check('export-css : plus aucun /* dans EXPORT_CSS après strip (source réelle)',
-          '/*' not in literal_body(ecc(ui_src), build.EXPORT_CSS_ANCHOR))
+          '/*' not in literal_body(ecc(export_src), build.EXPORT_CSS_ANCHOR))
 
     # strip_export_script_comments : EXPORT_SCRIPT est du JS statique embarqué
     # dans les exports INTERACTIFS. On n'y retire QUE les lignes '//' — un
@@ -498,15 +498,15 @@ def run_build_unit_tests() -> tuple[int, int]:
           esc(esc('const EXPORT_SCRIPT = `\n// com\nvar b = 2;\n`;\n'))
           == esc('const EXPORT_SCRIPT = `\n// com\nvar b = 2;\n`;\n'))
 
-    check('export-script : EXPORT_SCRIPT est bien reconnu dans src/js/ui.js',
-          esc(ui_src) != ui_src)
+    check('export-script : EXPORT_SCRIPT est bien reconnu dans src/js/export.js',
+          esc(export_src) != export_src)
 
     # GARDE DE DOCTRINE (décision Julien) : EXPORT_SCRIPT ne tolère QUE des
     # commentaires '//' en pleine ligne. Un bloc /* */ ou un '//' en fin de
     # ligne de code ne serait PAS retiré — il partirait silencieusement dans
     # chaque export interactif. Ce test est la seule chose qui empêche la
     # règle de dériver : il échoue à l'écriture, pas à la lecture de la doc.
-    script_body = literal_body(ui_src, build.EXPORT_SCRIPT_ANCHOR)
+    script_body = literal_body(export_src, build.EXPORT_SCRIPT_ANCHOR)
     check('export-script : aucun bloc /* */ dans EXPORT_SCRIPT (doctrine)',
           '/*' not in script_body)
 
@@ -524,7 +524,7 @@ def run_build_unit_tests() -> tuple[int, int]:
           not [l for l in script_body.split('\n') if code_line_has_trailing_comment(l)])
 
     check('export-script : plus aucune ligne // après strip (source réelle)',
-          not [l for l in literal_body(esc(ui_src), build.EXPORT_SCRIPT_ANCHOR).split('\n')
+          not [l for l in literal_body(esc(export_src), build.EXPORT_SCRIPT_ANCHOR).split('\n')
                if l.lstrip().startswith('//')])
 
     # check_export_literal_integrity : le backtick qui casse le CHARGEMENT sans
@@ -558,8 +558,8 @@ def run_build_unit_tests() -> tuple[int, int]:
     # il engloberait EXPORT_SCRIPT, dont le backtick d'ouverture est légitime.
     # Sans ce test, une garde trop large passe au vert sur les cas fabriqués
     # ci-dessus et refuse la source réelle.
-    check('export-literal : la source réelle de ui.js passe la garde',
-          not integrity_raises(ui_src))
+    check('export-literal : la source réelle de export.js passe la garde',
+          not integrity_raises(export_src))
 
     # warn_unknown_config_keys : une clef mal orthographiée est du JSON valide,
     # donc le build réussit et le réglage est ignoré en silence. Payé le

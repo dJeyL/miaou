@@ -183,3 +183,39 @@ describe('generateTabId', function() {
     expect(a === b).toBe(false);
   });
 });
+
+// L'événement `storage` arrive quand l'écriture du pair est VISIBLE ; le
+// message du canal peut la précéder (mesuré). storageEventDecision rend la même
+// décision que routeMessage pour les types adossés à localStorage.
+describe('storageEventDecision (relecture sur événement storage)', function() {
+  it('réglages : seules les clés qui ont changé, pour garder la granularité', function() {
+    var d = storageEventDecision(SETTINGS_KEY,
+      JSON.stringify({ theme: 'dark', palette: 'ambre', fonts: 'graphite' }),
+      JSON.stringify({ theme: 'dark', palette: 'encre', fonts: 'atelier' }));
+    expect(d.action).toBe('apply-settings');
+    expect(d.keys.slice().sort().join(',')).toBe('fonts,palette');
+  });
+  it('réglages : une clé ajoutée ou retirée compte comme changée', function() {
+    var d = storageEventDecision(SETTINGS_KEY, JSON.stringify({ theme: 'dark' }),
+      JSON.stringify({ palette: 'encre' }));
+    expect(d.keys.slice().sort().join(',')).toBe('palette,theme');
+  });
+  it('réglages identiques : rien à faire', function() {
+    var v = JSON.stringify({ theme: 'dark', nested: { a: 1 } });
+    expect(storageEventDecision(SETTINGS_KEY, v, v)).toBe(null);
+  });
+  it('réglages illisibles : lus comme vides, jamais une exception', function() {
+    var d = storageEventDecision(SETTINGS_KEY, '{pas du json', JSON.stringify({ theme: 'light' }));
+    expect(d.keys.join(',')).toBe('theme');
+  });
+  it('serveurs et Espaces : mêmes clés de décision que les messages du canal', function() {
+    expect(storageEventDecision(API_SERVERS_KEY, '[]', '[{}]').keys.join(',')).toBe('api-servers');
+    expect(storageEventDecision(ACTIVE_API_SERVER_KEY, 'a', 'b').keys.join(',')).toBe('active-api-server');
+    expect(storageEventDecision(MCP_SERVERS_KEY, '[]', '[{}]').keys.join(',')).toBe('mcp-servers');
+    expect(storageEventDecision(SPACES_KEY, '[]', '[{}]').action).toBe('space-list');
+  });
+  it('autre clé, ou clear() (clé null) : rien — full-reload couvre l\'import', function() {
+    expect(storageEventDecision('miaou-memories', '[]', '[{}]')).toBe(null);
+    expect(storageEventDecision(null, null, null)).toBe(null);
+  });
+});

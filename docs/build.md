@@ -106,7 +106,7 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   dérivé qui distingue **trois** états et non deux : d'où un `typeof === 'string'`
   et surtout **pas** un `||`, qui écraserait la chaîne vide — laquelle veut dire
   « pas de lien du tout », pas « valeur manquante ». Lu uniquement par le footer
-  des exports (`brandHtmlFor`, ui.js), cf. `docs/exports.md`.
+  des exports (`brandHtmlFor`, export.js), cf. `docs/exports.md`.
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).

@@ -159,7 +159,7 @@ if (window.requestAnimationFrame) {
              appel que ce chevron (syncAgentBanner, ui.js) : les deux répondent
              à la question « ce fil est-il celui d'un agent ? », et deux
              formules divergeraient. Le SVG n'est pas recopié ici : il est
-             injecté depuis ICON_AGENT (ui.js), source unique du tracé. -->
+             injecté depuis ICON_AGENT (acks.js), source unique du tracé. -->
         <span class="conv-agent-mark" id="conv-agent-mark" title="Conversation d'agent" aria-hidden="true" hidden></span>
         <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -858,7 +858,7 @@ if (window.requestAnimationFrame) {
   <!-- Inspecteur d'appel d'outil (lot Z) : détail complet d'UN appel, ouvert
        depuis la loupe d'un ack. `drawer-wide` comme les drawers Outils et
        Skills — un payload MCP a besoin de largeur. Corps rempli par
-       renderToolInspector (ui.js) ; volets empilés, jamais des onglets. -->
+       renderToolInspector (acks.js) ; volets empilés, jamais des onglets. -->
   <div class="backdrop" id="inspect-backdrop" onclick="closeToolInspector()"></div>
   <div class="drawer drawer-wide" id="inspect-drawer">
     <div class="drawer-head">

@@ -827,13 +827,19 @@ familles (MIAOU plat, internes, distants — sans entrelacement) et surtout le
 
 ## Acks d'outils côté client (`tool-ack`, ex-`memory-ack`)
 
+Où vit le code : le côté producteur (`_pendingToolAcks`, handlers) est dans
+`tools.js`, les purs partagés (`ackIsError`, `ackHasInspectableDetail`,
+`ACK_COPY_FIELDS`…) dans `utils.js`, et tout le rendu — table `ACK_KINDS`,
+`buildToolAck`/`placeToolAck`, groupe d'acks, inspecteur d'appel, blocs non-texte
+d'un résultat distant — dans `acks.js`, séparé d'`ui.js` le 2026-09-25 et chargé
+juste après lui.
+
 Mécanisme **générique** couvrant les écritures mémoire, les lectures d'historique
 et les appels MCP distants. Chaque handler traçable pousse un descripteur
-`{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` ∈ `memory_create |
-memory_update | memory_delete | conversation_read | conversation_list | mcp_call |
-resource_stored | resource_presented | attachment_recalled |
-skill_list | skill_read | skill_write | files_list | files_read | file_promote |
-about_read | js_eval | tool_failed`.
+`{ kind, … }` dans `_pendingToolAcks` (tools.js) — `kind` est une clé de la
+table `ACK_KINDS` (acks.js), seule énumération des kinds : la lire là-bas. Elle
+était recopiée ici et avait perdu dix kinds en route (`resource_appended`,
+`about_search`, les `docs_*`, les `agent_*`).
 Les hooks `onEarlyAcks()` et `onToolAcks()` (main.js) consomment la file via
 `getPendingToolAcks` / `clearPendingToolAcks` et injectent des messages
 `{ role: 'tool-ack', kind, id?, content?, prevContent?, title?, count?, server?,
@@ -869,7 +875,7 @@ Rendu : `mcp_call`, `conversation_list`, `skill_list`, `conversation_read` et
 `skill_read` partagent tous le même rendu à deux niveaux quand `m.intent` est
 présent — intention en langage naturel (niveau 1, visible) + détail technique
 (niveau 2, replié par défaut derrière un chevron `mcp-chevron`), via le helper
-`renderIntentTwoLevel(el, intent, detailText, detailBuilder?)` (ui.js). Sans
+`renderIntentTwoLevel(el, intent, detailText, detailBuilder?)` (acks.js). Sans
 intent, chaque kind retombe sur son rendu simple d'origine (texte brut ou
 breadcrumb direct pour `mcp_call`). La classe `has-intent` (icône alignée en
 haut, pas centrée) s'applique dès que `m.intent` est présent, quel que soit
@@ -981,7 +987,7 @@ relatif (ce que publie `mcp_proxy` désormais) ou une URL absolue (acks déjà
 persistés, serveur non-proxy). Chacune a **sa** garde — la relative passe par
 `composeAuthorizationUrl` avec l'origine du serveur configuré, l'absolue par
 `authorizationUrlOrigin`, qui reste la garde des URL venues du réseau. Le second
-argument est cette origine, résolue par `_ackMcpServerUrl` (ui.js, impure) depuis
+argument est cette origine, résolue par `_ackMcpServerUrl` (acks.js, impure) depuis
 le champ d'ack `mcpServer` — le **nom** du serveur, jamais son URL : celle-ci est
 relue dans la config à chaque affichage, pour qu'un ack rouvert des mois plus
 tard pointe là où le proxy est aujourd'hui. Serveur non résoluble et chemin
@@ -1080,7 +1086,7 @@ Les **échecs MCP distants** ne passent pas par `toolFail` : ils gardent leur ki
 `callRemoteTool`. Dans tous les cas, la couleur est décidée par le prédicat unique
 `ackIsError` (voir Rendu ci-dessous).
 
-La table `ACK_KINDS` (ui.js) est **l'unique source de vérité** : par kind,
+La table `ACK_KINDS` (acks.js) est **l'unique source de vérité** : par kind,
 un `label(m)` (texte brut), une capacité d'annulation `undo` (fonction
 `(id) => void`, ou **`null`** = variante informative), une icône SVG statique,
 optionnellement `renderLabel(m, labelEl)` pour les kinds nécessitant un rendu DOM
@@ -1091,10 +1097,10 @@ riche (rendu à deux niveaux via `renderIntentTwoLevel`, breadcrumb `<code>` pou
 `buildToolAck` appelle `spec.renderLabel` si présent, sinon `label.textContent` ;
 si `spec.expand` est présent et `!m.resolved`, ajoute le chip expandable.
 
-> **⚠️ `expand` est DORMANT / non branché (audit F, 2026-07-10).** Aucun
-> `ACK_SPEC` ne définit `expand:` → le bloc correspondant de `renderAck` (ui.js)
+> **⚠️ `expand` est DORMANT / non branché (audit F, 2026-07-10).** Aucune
+> entrée d'`ACK_KINDS` ne définit `expand:` → le bloc correspondant de `buildToolAck` (acks.js)
 > ne s'exécute **jamais**, les classes `.ack-expand`/`.ack-expand-content` n'ont
-> aucun style CSS, et `presentResourceFromChip` (ui.js, le `spec.expand` attendu)
+> aucun style CSS, et `presentResourceFromChip` (acks.js, le `spec.expand` attendu)
 > n'est appelée nulle part. Chaîne à moitié écrite puis jamais câblée, **conservée
 > sciemment** comme jalon d'une feature « déplier une ressource stockée depuis son
 > ack ». Pour l'activer : poser `expand: presentResourceFromChip` sur le spec
@@ -1113,7 +1119,7 @@ passe par `humanSize` (unité **française**, « Ko ») et non `modelSize`
 (« KB », figé pour les descripteurs adressés au modèle, cf. resources.js) : deux
 formateurs, deux publics, et l'ack est une surface d'interface.
 
-- **Rendu** : `buildToolAck(m)` (ui.js) construit en `createElement` + `textContent`
+- **Rendu** : `buildToolAck(m)` (acks.js) construit en `createElement` + `textContent`
   pour toute donnée modèle (label/title/content) ; `innerHTML` réservé à l'icône
   SVG author-controlled. La classe `ack-error` est ajoutée si **`ackIsError(m)`**
   (utils.js, pure) — prédicat UNIQUE partagé avec les deux exports
@@ -1140,7 +1146,7 @@ formateurs, deux publics, et l'ack est une surface d'interface.
 - **Placement = provenance, DANS la bulle** : les acks s'affichent à l'intérieur
   de la bulle assistant (`.msg.assistant`, colonne flex), **entre l'en-tête**
   (`.meta` : icône + nom du modèle) **et le corps** (`.body` : patienteur puis
-  réponse). Helper unique `placeToolAck(wrap, entry)` (ui.js) : `insertBefore(node,
+  réponse). Helper unique `placeToolAck(wrap, entry)` (acks.js) : `insertBefore(node,
   wrap.querySelector('.body'))`. Ordre à l'écran : icône+modèle → acks (au fil des tours) →
   patienteur → réponse. `resetAssistant` ne touchant que `.body`, les acks survivent
   à la reprise d'attente entre tours. **Reload** :
@@ -1148,7 +1154,7 @@ formateurs, deux publics, et l'ack est une surface d'interface.
   ordre `[user, …acks, assistant]`) et les replace dans la bulle assistant suivante
   via `placeToolAck` ; repli en blocs autonomes s'ils ne précèdent pas un assistant.
 - **Repli à deux étages (ticker, brief N) — LIVE-ONLY.** `placeToolAck` route
-  chaque nœud `.tool-ack` vers un groupe (`wrap._ackGroup`, ui.js), créé
+  chaque nœud `.tool-ack` vers un groupe (`wrap._ackGroup`, acks.js), créé
   paresseusement au 1er ack de la bulle et posé **avant** `.body`, transparent
   tant que `count < 2` (pas de re-parent au franchissement du seuil). État pur
   testable QuickJS : `ackGroupReduce(state, action)` (`arrive` / `toggleMode` /
@@ -1222,7 +1228,9 @@ formateurs, deux publics, et l'ack est une surface d'interface.
   garde côté `expandThread` ne pouvait le rattraper. Le pur
   `unservedToolCallIds(messages)` nomme les appels sans résultat : garde de
   diagnostic, jamais un filtre de rattrapage — réparer le payload après coup
-  masquerait la cause.
+  masquerait la cause. `streamCompletion` l'applique au payload juste avant
+  l'envoi et nomme les ids fautifs en `console.warn` (elle n'était appelée que
+  par les tests jusqu'au 2026-09-25 : la garde annoncée ne gardait rien).
 
   **Non-régression e2e** : `.claude/skills/run-miaou/verify-toolcall-payload-integrity.mjs`
   (modèle stubé en SSE, payloads capturés à la sortie de `fetch`). Il injecte un
@@ -1262,7 +1270,7 @@ formateurs, deux publics, et l'ack est une surface d'interface.
 - Survivent au rechargement (sérialisés par `persistCurrent`, restaurés par
   `openConversation`). Traiter comme un journal d'événements immuable, pas un
   miroir de l'état mémoire. Helpers purs `isAckRole` / `ackKindOf` dans utils.js,
-  `ackLabel` dans ui.js (testés QuickJS).
+  `ackLabel` dans acks.js (testés QuickJS).
 
 ### Inspecteur d'appel d'outil (lot Z)
 
@@ -1279,7 +1287,7 @@ le KV cache. Corollaire : ce que l'inspecteur peut montrer est exactement ce que
 la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
 
 - **Éligibilité** : `ackHasInspectableDetail(m)` (utils.js, pure) — prédicat
-  UNIQUE, jamais un test de `kind` dans ui.js. Porte sur la PRÉSENCE des champs,
+  UNIQUE, jamais un test de `kind` dans acks.js. Porte sur la PRÉSENCE des champs,
   pas sur la famille d'outil : ce qui rend un ack inspectable n'est pas ce qu'il
   a fait, c'est qu'on ait gardé de quoi le montrer. Un ack legacy (poussé hors
   d'un tool_call, ou antérieur à l'enrichissement) répond faux et n'affiche
@@ -1320,7 +1328,7 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
   `onEnrichLastAck` ne pose `args`/`result`, donc sans loupe. Le prédicat était
   juste, il n'était simplement jamais relu : l'affordance n'apparaissait qu'après
   avoir quitté et rouvert la conversation, le reload relisant l'entrée enrichie.
-  `refreshAckInspectAffordance(node, entry)` (ui.js) la pose après coup, appelée
+  `refreshAckInspectAffordance(node, entry)` (acks.js) la pose après coup, appelée
   depuis `onEnrichLastAck` — donc **par outil**, dès que celui-ci répond, et non
   en fin de tour. Même doctrine que la rétro-application d'erreur de
   `onToolAcks` : muter la donnée TOUJOURS, peindre si le nœud existe (`node` est
@@ -1381,7 +1389,7 @@ la whitelist retient — un champ qui n'y est pas n'est pas inspectable.
     formulation d'attente : arriver dans sa branche vide avec `pending` signifie
     un appel réellement sans arguments, pas des arguments à venir.
   - **Le drawer déjà ouvert se met à jour** : `settleEarlyAckPending` appelle
-    `refreshToolInspectorIfOpen(entry)` (ui.js), qui re-rend si et seulement si
+    `refreshToolInspectorIfOpen(entry)` (acks.js), qui re-rend si et seulement si
     `_inspectEntry` est **cette entrée** (identité d'objet, jamais `m.id` — même
     garde que la fenêtre d'await du volet ressource, et même risque : l'utilisateur
     a pu ouvrir un autre appel pendant le round-trip). Sans lui, le drawer
@@ -1572,10 +1580,13 @@ jamais exposer son ID technique en clair dans le texte affiché.
    marqueur `[conv_ref:ID]` ou `[conv_ref:ID|Titre]` (titre optionnel, connu du
    modèle depuis le JSON de `conv__get`/`conv__list`) plutôt que
    d'écrire l'ID en clair (backticks, guillemets, texte brut).
-2. **Parsing** : `parseConvRefs(text)` (utils.js, pure, testée) extrait tous les
-   marqueurs `{ match, id, title }` d'une chaîne — regex `CONV_REF_RE`, id
-   délimité par `|` ou `]` (jamais ces deux caractères), titre optionnel après
-   `|`, jamais de `]` non plus (pas de lookahead/lookbehind variable).
+2. **Parsing** : la regex `CONV_REF_RE` (utils.js) — id délimité par `|` ou `]`
+   (jamais ces deux caractères), titre optionnel après `|`, jamais de `]` non
+   plus (pas de lookahead/lookbehind variable). Le rendu l'applique directement
+   dans `resolveConvRefs` ; `parseConvRefs(text)` (pure, rend les marqueurs
+   `{ match, id, title }`) n'a AUCUN appelant applicatif : elle n'existe que pour
+   que les tests QuickJS exercent la regex partagée, `resolveConvRefs` dépendant
+   de l'index des résumés.
 3. **Résolution = AVANT `marked.parse`, jamais après.** `resolveConvRefs(text)`
    (ui.js, testée) remplace chaque marqueur par un lien Markdown standard
    `[Titre](#miaou-conv:ID)` avant le rendu Markdown — traiter ça en
@@ -1667,7 +1678,7 @@ Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
    sécurité, la doctrine demande l'extension au modèle). Chaîne vide en sortie
    → repli sur `miaou-snippet.<ext>`. Si `data-filename` absent : comportement
    inchangé.
-5bis. **Bloc de ressource présenté par MIAOU** (`renderResourceText`, ui.js) :
+5bis. **Bloc de ressource présenté par MIAOU** (`renderResourceText`, acks.js) :
    ce `<pre>` n'est pas issu d'une fence du modèle, donc **aucun `filename=`
    n'existe** pour l'alimenter — il retombait sur `miaou-snippet.txt`, perdant
    à la fois le nom choisi par le modèle à la création de la ressource et
@@ -1678,10 +1689,10 @@ Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
    `makeResourcePresentBlock` (resources.js) renseigne désormais pour la classe
    `inline` comme il le faisait déjà pour la classe `binary`. Le nom étant déjà
    extensionné, `sanitizeDownloadName` de l'étape 5 le laisse intact.
-   L'étiquette de langage du même bloc vient de `mimeToLang` (ui.js), qui
+   L'étiquette de langage du même bloc vient de `mimeToLang` (acks.js), qui
    connaît `csv` : un `text/csv` s'affiche `csv` et non plus `text`.
 6. **Pas d'affichage du filename dans le header `.code-head`** dans ce lot
    (décision explicite, cf. « Composants UI provisoires » dans
    `CLAUDE.md` : ne pas redessiner un composant visuel sans spec) — le nom n'est utilisé que pour le
    download. `decoratePre` reste le **chemin unique** de décoration des `<pre>`
-   (rendu message ET rendu ressource texte en bloc de code, `ui.js:~3701`).
+   (rendu message ET rendu ressource texte en bloc de code, `renderResourceText`).

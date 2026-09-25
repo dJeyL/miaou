@@ -306,7 +306,7 @@ function applyAuthorizationRefusal(ackEntry, errorCode, data, mcpServerName) {
   if (data && data.authorization_url != null) ackEntry.authorizationUrl = data.authorization_url;
   if (data && data.upstream != null) ackEntry.upstream = data.upstream;
   // Le nom du serveur MCP configuré, pas son URL : celle-ci est résolue à
-  // l'AFFICHAGE depuis la config (cf. _ackMcpServerUrl, ui.js). Figer l'URL ici
+  // l'AFFICHAGE depuis la config (cf. _ackMcpServerUrl, acks.js). Figer l'URL ici
   // ferait pointer un ack relu vers l'adresse d'hier.
   if (mcpServerName) ackEntry.mcpServer = mcpServerName;
   return ackEntry;
