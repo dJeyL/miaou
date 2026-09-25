@@ -92,6 +92,27 @@ identifiant global) — nomme ta variable autrement, ex. `const rows = lines("x"
 Les globals JavaScript standard (JSON, Math, Array, String, RegExp, Date…) sont
 disponibles. Aucun déterminisme n'est requis (Date/Math.random autorisés).
 
+## Langage : moderne, mais sans hôte
+
+La syntaxe et la bibliothèque standard sont RÉCENTES : classes à champs privés,
+`?.`/`??`, BigInt, `Object.groupBy`, `toSorted`/`findLast`, méthodes de `Set`,
+helpers d'itérateurs, etc. Ne te rabats pas sur une syntaxe ancienne après un
+échec : la cause est presque toujours l'une de celles-ci.
+
+- Pas de `await` au niveau global : le code tourne en script, pas en module.
+  `SyntaxError: expecting ';'` sur une ligne qui contient `await` veut dire ça,
+  pas « moteur trop ancien ». N'utilise pas d'`async` du tout : les primitives
+  sont synchrones, et une promesse renvoyée n'est pas attendue (tu recevrais
+  l'état de la promesse, pas sa valeur).
+- Aucune API d'environnement : ni `console` (le résultat est la dernière valeur
+  évaluée, pas un log), ni `setTimeout`, `atob`/`btoa`, `TextEncoder`, `URL`,
+  `crypto`, `structuredClone`. Ce sont des API de navigateur ou de Node, pas du
+  JavaScript.
+- `Intl` est absent, et c'est SILENCIEUX : `toLocaleString`,
+  `toLocaleDateString` et leurs variantes ignorent la locale et les options sans
+  lever d'erreur (un mois en toutes lettres ne sort jamais). Formate nombres et
+  dates à la main (`padStart`, tableau de noms de mois).
+
 ## Méthode
 
 Procède par petits appels successifs plutôt que de viser un seul gros script

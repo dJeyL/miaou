@@ -470,19 +470,27 @@ model-side unique sur la bibliothèque) :**
 - **Guidage des modèles — pièges du mode global (skill système `js-eval`, ex-
   `JS_EVAL_DOCTRINE`).** Le code modèle est évalué en **mode global** (pas dans
   une fonction — l'enveloppe IIFE a été retirée car elle supprimait la
-  completion-value). Ce mode expose trois pièges que des modèles moins solides
+  completion-value). Ce mode expose des pièges que des modèles moins solides
   déclenchent en boucle (constaté sur des exports réels : mistral tâtonnait ~10
   tours là où gemma4 réussissait du premier coup) — c'est de la **doctrine**,
   jamais un changement du harnais d'évaluation (fragile, cf. bug IIFE) :
   1. **Collision de noms** — `const lines = lines()` → `invalid redefinition of
      global identifier` (les primitives sont des globals). La skill liste les
-     quatre noms réservés ; `_jsEvalErrText` **accole en plus un hint** au message
+     noms réservés ; `_jsEvalErrText` **accole en plus un hint** au message
      d'erreur brut (qui ne nomme ni l'identifiant ni la cause).
   2. **Objet nu final** — `{ a: 1 }` en dernière ligne est lu comme un **bloc**, pas
      une valeur → `expecting ';'`. La skill impose `JSON.stringify({…})` ou
      `({…})` (ce que gemma4 fait spontanément).
   3. **ASI** — instructions sans point-virgule + `const` en mode global →
      `ReferenceError: X is not initialized`. La skill réclame les points-virgules.
+  4. **Faux diagnostic « moteur trop ancien »** — le moteur est récent (mesuré
+     sur l'artefact épinglé : ES2025 complet, une partie d'ES2026), mais il tourne
+     en **script** (`await` global → `expecting ';'`, même message que le 2),
+     n'expose **aucune API d'hôte** (`console`, `TextEncoder`, `atob`, `URL`…
+     → `ReferenceError`) et n'a **pas d'`Intl`** — `toLocale*` ignore alors locale
+     et options SANS erreur. Mistral en concluait qu'il visait une ES trop récente
+     et régressait sa syntaxe. La skill nomme ces trois causes plutôt qu'un numéro
+     de version, qui se périmerait au prochain bump de l'artefact.
   La skill incite aussi à **enchaîner plusieurs petits appels** (inspecter puis
   cibler) plutôt qu'un gros script unique, et à ne PAS raccourcir vers un one-liner
   (contre-productif : le problème n'est jamais la longueur mais la forme du retour).

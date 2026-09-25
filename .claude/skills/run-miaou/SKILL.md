@@ -1,6 +1,6 @@
 ---
 name: run-miaou
-description: Build, run, and drive MIAOU (the single-file web chat client). Use when asked to build MIAOU, run its tests, start the app, take a screenshot of its UI, or interact with the running app (drawers, composer, settings).
+description: Build, run, and drive MIAOU (the single-file web chat client). Use when asked to build MIAOU, run its tests, start the app, take a screenshot of its UI, or interact with the running app (drawers, composer, settings). Load it BEFORE writing or editing any Playwright script (verify-*.mjs, shot-*, measure-*), including one copied from a sibling script — the rules that make a verify able to fail are at the bottom of this file.
 ---
 
 MIAOU is a static single-file web app (`dist/miaou.html`, built from
