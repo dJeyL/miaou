@@ -214,8 +214,8 @@ describe('acks d\'outils — helpers', function() {
     expect(ackLabel('conversation_list', {})).toContain('?');
   });
   it('ackLabel conversation_list : intent préfixe le libellé', function() {
-    expect(ackLabel('conversation_list', { count: 3, intent: 'retrouver X' })).toBe('retrouver X : 3 conversations listées');
-    expect(ackLabel('conversation_list', { count: 0, intent: 'retrouver X' })).toBe('retrouver X : Aucune conversation trouvée');
+    expect(ackLabel('conversation_list', { count: 3, intent: 'retrouver X' })).toBe('retrouver X\u00a0: 3 conversations listées');
+    expect(ackLabel('conversation_list', { count: 0, intent: 'retrouver X' })).toBe('retrouver X\u00a0: Aucune conversation trouvée');
   });
   it('ackLabel mcp_call : breadcrumb avec les deux segments', function() {
     var lbl = ackLabel('mcp_call', { name: 'bench__echo' });

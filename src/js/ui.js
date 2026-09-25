@@ -13,90 +13,90 @@ function $(id) { return document.getElementById(id); }
 
 // ── Écran d'accueil (nouvelle conversation) ─────────────────────────────────
 const WELCOME_SCREENS = [
-  { emoji: '🌙', title: 'À tes ordres.',          sub: 'Qu\'est-ce qu\'on démonte aujourd\'hui ?',
-    tipEmoji: '🧰', tipHead: 'Dans la boîte à outils :' },
+  { emoji: '🌙', title: 'À tes ordres.',          sub: 'Qu\'est-ce qu\'on démonte aujourd\'hui ?',
+    tipEmoji: '🧰', tipHead: 'Dans la boîte à outils :' },
   { emoji: '⚡', title: 'Prêt.',                  sub: 'Pose la question que tu n\'osais pas chercher sur Google.',
-    tipEmoji: '🤫', tipHead: 'Ce que Google ne t\'aurait pas dit :' },
+    tipEmoji: '🤫', tipHead: 'Ce que Google ne t\'aurait pas dit :' },
   { emoji: '🧠', title: 'Connexion établie.',     sub: 'Ta prochaine bonne idée est à une question d\'ici.',
-    tipEmoji: '💭', tipHead: 'En attendant la tienne :' },
+    tipEmoji: '💭', tipHead: 'En attendant la tienne :' },
   { emoji: '🎯', title: 'Dans le mille.',         sub: 'Allons droit au but.',
-    tipEmoji: '🏹', tipHead: 'Une flèche pour ton carquois :' },
+    tipEmoji: '🏹', tipHead: 'Une flèche pour ton carquois :' },
   { emoji: '🔭', title: 'Je t\'écoute.',          sub: 'L\'inconnu n\'est qu\'un contexte manquant.',
-    tipEmoji: '🪐', tipHead: 'Justement, un peu de contexte :' },
+    tipEmoji: '🪐', tipHead: 'Justement, un peu de contexte :' },
   { emoji: '🌊', title: 'Dans le flux.',          sub: 'Décris le problème, on trouvera la sortie.',
-    tipEmoji: '🐚', tipHead: 'Ramené par la marée :' },
+    tipEmoji: '🐚', tipHead: 'Ramené par la marée :' },
   { emoji: '☕', title: 'Fraîchement infusé.',    sub: 'Le moment idéal pour poser cette question qui traîne.',
-    tipEmoji: '🥐', tipHead: 'Avec le café :' },
+    tipEmoji: '🥐', tipHead: 'Avec le café :' },
   { emoji: '🏗️', title: 'Chantier ouvert.',      sub: 'Amène tes plans, tes blocs, ou juste l\'intention.',
-    tipEmoji: '📐', tipHead: 'Lu sur les plans :' },
+    tipEmoji: '📐', tipHead: 'Lu sur les plans :' },
   { emoji: '🌿', title: 'Calme et disponible.',   sub: 'Prends ton temps.',
-    tipEmoji: '🍃', tipHead: 'Au passage :' },
-  { emoji: '🗺️', title: 'Carte blanche.',        sub: 'Par où commence-t-on ?',
-    tipEmoji: '🧭', tipHead: 'Un repère, pour commencer :' },
+    tipEmoji: '🍃', tipHead: 'Au passage :' },
+  { emoji: '🗺️', title: 'Carte blanche.',        sub: 'Par où commence-t-on ?',
+    tipEmoji: '🧭', tipHead: 'Un repère, pour commencer :' },
   { emoji: '🔍', title: 'Sous la loupe.',         sub: 'Tout mérite d\'être examiné de plus près.',
-    tipEmoji: '🔬', tipHead: 'Vu de plus près :' },
+    tipEmoji: '🔬', tipHead: 'Vu de plus près :' },
   { emoji: '🚀', title: 'Compte à rebours.',      sub: 'Dix secondes pour formuler, le reste suit.',
-    tipEmoji: '🛰️', tipHead: 'Pendant le compte à rebours :' },
+    tipEmoji: '🛰️', tipHead: 'Pendant le compte à rebours :' },
   { emoji: '🎸', title: 'Accordé.',               sub: 'À toi de jouer.',
-    tipEmoji: '🎼', tipHead: 'Un accord à connaître :' },
+    tipEmoji: '🎼', tipHead: 'Un accord à connaître :' },
   { emoji: '🎲', title: 'Prêt à tout.',           sub: 'Une question, une idée, un bug — on y va.',
-    tipEmoji: '🃏', tipHead: 'Tiré au hasard :' },
+    tipEmoji: '🃏', tipHead: 'Tiré au hasard :' },
   { emoji: '🦾', title: 'Opérationnel.',          sub: 'Dis-moi ce qui coince.',
-    tipEmoji: '⚙️', tipHead: 'Dans les rouages :' },
+    tipEmoji: '⚙️', tipHead: 'Dans les rouages :' },
   { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.',
-    tipEmoji: '🧑‍🍳', tipHead: 'Sorti du four :' },
+    tipEmoji: '🧑‍🍳', tipHead: 'Sorti du four :' },
   { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.',
-    tipEmoji: '🐾', tipHead: 'Ronronné en passant :' },
+    tipEmoji: '🐾', tipHead: 'Ronronné en passant :' },
   { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.',
-    tipEmoji: '🪡', tipHead: 'Au bout du fil :' },
+    tipEmoji: '🪡', tipHead: 'Au bout du fil :' },
   { emoji: '🎬', title: 'Moteur.',                sub: 'À toi de dire action.',
-    tipEmoji: '🍿', tipHead: 'Dans les bonus :' },
+    tipEmoji: '🍿', tipHead: 'Dans les bonus :' },
   { emoji: '🧩', title: 'Pièce manquante.',       sub: 'Cherchons la forme.',
-    tipEmoji: '📦', tipHead: 'Une pièce qui s\'emboîte :' },
+    tipEmoji: '📦', tipHead: 'Une pièce qui s\'emboîte :' },
   { emoji: '♟️', title: 'À ton tour.',            sub: 'J\'ai trois coups d\'avance. Ou je bluffe.',
-    tipEmoji: '🏰', tipHead: 'Une ouverture à connaître :' },
+    tipEmoji: '🏰', tipHead: 'Une ouverture à connaître :' },
   { emoji: '🕯️', title: 'Allumé.',                sub: 'Pas de panique, la cire tient jusqu\'au matin.',
-    tipEmoji: '🔥', tipHead: 'À la lueur :' },
+    tipEmoji: '🔥', tipHead: 'À la lueur :' },
   { emoji: '🧪', title: 'Paillasse dégagée.',     sub: 'Amène ton hypothèse, on verra ce qui explose.',
-    tipEmoji: '⚗️', tipHead: 'Résultat d\'expérience :' },
+    tipEmoji: '⚗️', tipHead: 'Résultat d\'expérience :' },
   { emoji: '📡', title: 'Signal reçu.',           sub: 'Cinq sur cinq. Ou quatre, selon le Wi-Fi.',
-    tipEmoji: '📻', tipHead: 'Capté entre deux fréquences :' },
+    tipEmoji: '📻', tipHead: 'Capté entre deux fréquences :' },
   { emoji: '🦉', title: 'Encore debout.',         sub: 'Les bonnes questions sont souvent nocturnes.',
-    tipEmoji: '🌒', tipHead: 'Vu de nuit :' },
+    tipEmoji: '🌒', tipHead: 'Vu de nuit :' },
   { emoji: '🔑', title: 'Porte ouverte.',         sub: 'Pas besoin de frapper.',
-    tipEmoji: '🚪', tipHead: 'Trouvé sur le paillasson :' },
+    tipEmoji: '🚪', tipHead: 'Trouvé sur le paillasson :' },
   { emoji: '🪄', title: 'Abracadabra.',           sub: 'Dis ce que tu as dans la manche, je fais le reste.',
-    tipEmoji: '🎩', tipHead: 'Sorti du chapeau :' },
+    tipEmoji: '🎩', tipHead: 'Sorti du chapeau :' },
   { emoji: '🧊', title: 'Sang-froid.',            sub: 'Rien ne brûle tant qu\'on n\'a pas lu les logs.',
-    tipEmoji: '🐧', tipHead: 'Conservé au frais :' },
-  { emoji: '🕰️', title: 'Juste à l\'heure.',      sub: 'Ni en avance, ni en retard : exactement quand tu arrives.',
-    tipEmoji: '⏳', tipHead: 'Le temps de le lire :' },
+    tipEmoji: '🐧', tipHead: 'Conservé au frais :' },
+  { emoji: '🕰️', title: 'Juste à l\'heure.',      sub: 'Ni en avance, ni en retard : exactement quand tu arrives.',
+    tipEmoji: '⏳', tipHead: 'Le temps de le lire :' },
   { emoji: '🐙', title: 'Huit bras libres.',      sub: 'De quoi tenir plusieurs sujets à la fois.',
-    tipEmoji: '🫧', tipHead: 'Remonté des profondeurs :' },
+    tipEmoji: '🫧', tipHead: 'Remonté des profondeurs :' },
   { emoji: '📚', title: 'Page blanche.',          sub: 'Le premier mot est le plus cher, les suivants sont offerts.',
-    tipEmoji: '🔖', tipHead: 'Noté en marge :' },
+    tipEmoji: '🔖', tipHead: 'Noté en marge :' },
   { emoji: '🧲', title: 'Aimanté.',               sub: 'Balance le problème, il collera.',
-    tipEmoji: '📎', tipHead: 'Resté accroché :' },
+    tipEmoji: '📎', tipHead: 'Resté accroché :' },
   { emoji: '🕵️', title: 'Enquête ouverte.',      sub: 'Un bug, un mobile, pas encore de coupable.',
-    tipEmoji: '🗂️', tipHead: 'Dans le dossier :' },
+    tipEmoji: '🗂️', tipHead: 'Dans le dossier :' },
   { emoji: '🧯', title: 'Rien ne brûle.',         sub: 'Pour l\'instant. Raconte.',
-    tipEmoji: '🚒', tipHead: 'Consigne de sécurité :' },
+    tipEmoji: '🚒', tipHead: 'Consigne de sécurité :' },
   { emoji: '🦆', title: 'Coin.',                  sub: 'Explique-moi comme au canard. Moi, je réponds en plus.',
-    tipEmoji: '🛁', tipHead: 'Flotté jusqu\'ici :' },
+    tipEmoji: '🛁', tipHead: 'Flotté jusqu\'ici :' },
   { emoji: '🍳', title: 'Poêle chaude.',          sub: 'Casse tes œufs, je fais l\'omelette.',
-    tipEmoji: '🧂', tipHead: 'Une pincée en plus :' },
+    tipEmoji: '🧂', tipHead: 'Une pincée en plus :' },
   { emoji: '🐘', title: 'Mémoire d\'éléphant.',   sub: 'Enfin, jusqu\'à la fenêtre de contexte.',
-    tipEmoji: '🥜', tipHead: 'Une cacahuète pour la route :' },
-  { emoji: '🔮', title: 'Boule de cristal.',      sub: 'Je vois… une question. Tu confirmes ?',
-    tipEmoji: '🌠', tipHead: 'Prédit sans garantie :' },
+    tipEmoji: '🥜', tipHead: 'Une cacahuète pour la route :' },
+  { emoji: '🔮', title: 'Boule de cristal.',      sub: 'Je vois… une question. Tu confirmes ?',
+    tipEmoji: '🌠', tipHead: 'Prédit sans garantie :' },
   { emoji: '🏔️', title: 'Campement établi.',     sub: 'Le sommet est en haut, ça aide.',
-    tipEmoji: '🧗', tipHead: 'Un point d\'ancrage :' },
+    tipEmoji: '🧗', tipHead: 'Un point d\'ancrage :' },
   { emoji: '🐝', title: 'La ruche bourdonne.',   sub: 'Goûtons de ce miel.',
-    tipEmoji: '🍯', tipHead: 'Butiné ce matin :' },
+    tipEmoji: '🍯', tipHead: 'Butiné ce matin :' },
   { emoji: '🛸', title: 'Atterrissage.',          sub: 'Conduis-moi à ton problème.',
-    tipEmoji: '👽', tipHead: 'Intercepté en orbite :' },
+    tipEmoji: '👽', tipHead: 'Intercepté en orbite :' },
   { emoji: '🧭', title: 'Cap libre.',             sub: 'Donne la direction, je m\'occupe du reste.',
-    tipEmoji: '⛵', tipHead: 'Relevé au compas :' },
+    tipEmoji: '⛵', tipHead: 'Relevé au compas :' },
 ];
 
 // Tire un écran d'accueil au hasard, en évitant `exceptTitle` si fourni (pour
@@ -288,7 +288,7 @@ function renderDidYouKnow(hostEl, tip) {
     .map(p => '<span class="welcome-tip-line">' + escHtml(harden(p)) + '</span>').join('');
   // Tête accordée à l'écran d'accueil tiré ; repli sur la formule neutre si
   // l'hôte n'en porte pas (écran posé par un chemin qui n'en fournirait pas).
-  const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
+  const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
   el.innerHTML =
     '<span class="welcome-tip-head">' +
       '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
@@ -2499,7 +2499,7 @@ function syncLastAssistantActions() {
       const cut = b === last && compactionFollows(currentThread, msgIndex(b));
       continueBtn.disabled = sending || b !== last || cut;
       continueBtn.title = cut
-        ? 'Cette réponse n\'est plus transmise au modèle depuis la compaction : elle ne peut plus être continuée.'
+        ? 'Cette réponse n\'est plus transmise au modèle depuis la compaction : elle ne peut plus être continuée.'
         : '';
     }
   }
@@ -2526,7 +2526,7 @@ function syncAgentBusyAffordances() {
   const busy = hasWorkingAgent(currentConvId);
   document.body.classList.toggle('agent-busy', busy);
   const hint = busy
-    ? 'Un agent de cette conversation travaille : l\'historique ne peut pas être réécrit pour l\'instant.'
+    ? 'Un agent de cette conversation travaille : l\'historique ne peut pas être réécrit pour l\'instant.'
     : '';
   for (const btn of document.querySelectorAll('#thread .msg-edit')) {
     if (busy) btn.title = hint; else btn.title = 'Éditer';
@@ -3461,7 +3461,7 @@ function convItemEl(c, convs) {
   // bug (« pourquoi je ne peux pas cocher celle-là ? »).
   const agentBusy = hasWorkingAgent(c.id, convs);
   const lockAttrs = agentBusy
-    ? ' disabled title="Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant."'
+    ? ' disabled title="Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant."'
     : '';
   // convLabel, pas `c.title` nu (lot AA) : c'était la dernière des surfaces de
   // libellé restée hors du prédicat. Elle y gagne l'extrait provisoire — la
@@ -4576,7 +4576,7 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
   // MIAOU absents du fichier exporté).
   const liveAttrs = (!removable && conversationId)
     ? ` onclick="onAttachmentChipClick(event, '${att.attId}', '${conversationId}')" ` +
-      `title="${att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger'}"`
+      `title="${att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger'}"`
     : '';
   const chipClass = (!removable && conversationId) ? 'att-chip att-chip-live' : 'att-chip';
   return (
@@ -6192,7 +6192,7 @@ function openSettings() {
   const lbl = $('build-ts-label');
   if (lbl) {
     lbl.textContent = BUILD_TS
-      ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
+      ? 'Build : ' + new Date(BUILD_TS * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
       : '';
   }
   refreshStorageReport();  // asynchrone : le bloc se remplit après ouverture
@@ -6264,7 +6264,7 @@ function renderImportSummary(counts, onApply) {
   if (counts.missingResourceData) {
     const warn = document.createElement('div');
     warn.className = 'import-summary-warn';
-    warn.textContent = counts.missingResourceData + ' ressource(s) sans données dans l\'archive : ' +
+    warn.textContent = counts.missingResourceData + ' ressource(s) sans données dans l\'archive : ' +
       'elles seront importées vides.';
     sum.appendChild(warn);
   }
@@ -6689,8 +6689,8 @@ const CTX_PALETTE = {
 // Impersonnel comme tout texte d'interface (le tutoiement est réservé à
 // help.md) : « tes souvenirs » se dit ici « les souvenirs actifs ».
 const CTX_EXPLAIN = {
-  identity_blurb: 'Le bloc d\'identité : il indique au modèle quelle application il pilote et ce qu\'elle sait faire.',
-  root_prompt: 'Les instructions de base du modèle : comment se servir des outils disponibles et des documents.',
+  identity_blurb: 'Le bloc d\'identité : il indique au modèle quelle application il pilote et ce qu\'elle sait faire.',
+  root_prompt: 'Les instructions de base du modèle : comment se servir des outils disponibles et des documents.',
   intent_doctrine: 'La consigne qui demande au modèle d\'annoncer son intention avant chaque appel d\'outil.',
   skills_doctrine: 'La consigne qui explique au modèle ce qu\'est une skill et quand en déclencher une.',
   codeblock_doctrine: 'La consigne de mise en forme des blocs de code dans les réponses.',
@@ -6702,7 +6702,7 @@ const CTX_EXPLAIN = {
   // (cf. CTX_EXPLAIN_SPACE_VARIANTS et `contextExplainFor` juste en dessous).
   // La valeur ici est celle du cas bibliothèque vide, qui sert aussi de défaut
   // pour que le test d'alignement continue de lire une string.
-  space: 'Tout ce qui décrit l\'Espace actif : sa description et les souvenirs qui lui sont rattachés.',
+  space: 'Tout ce qui décrit l\'Espace actif : sa description et les souvenirs qui lui sont rattachés.',
   summaries: 'Les résumés de conversations passées jugés pertinents pour ce message.',
   skills_context: 'La liste des skills à déclenchement automatique, avec leur description — pas leur contenu.',
   mcp_instructions: 'Les consignes d\'usage publiées par les serveurs MCP branchés, pour leurs propres outils.',
@@ -6723,8 +6723,8 @@ const CTX_EXPLAIN = {
 // une substitution partielle redeviendrait muette au premier reword de
 // CTX_EXPLAIN.space, sans que rien ne le signale.
 const CTX_EXPLAIN_SPACE_VARIANTS = {
-  manifest: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et la liste complète des fichiers de sa bibliothèque — nom, type, taille et description, mais pas leur contenu.',
-  note: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et le nombre de fichiers de sa bibliothèque — la liste est servie au modèle à sa demande.',
+  manifest: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et la liste complète des fichiers de sa bibliothèque — nom, type, taille et description, mais pas leur contenu.',
+  note: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et le nombre de fichiers de sa bibliothèque — la liste est servie au modèle à sa demande.',
 };
 
 // Explication affichée pour une source, résolue contre l'état courant.
@@ -6896,7 +6896,7 @@ function syncCompactionAffordance() {
   // quoi ça sert ? » une fois le bouton cliqué. Il cède la place au prochain
   // rendu qui n'en porte pas (changement de conversation, réouverture).
   if (finished) {
-    hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
+    hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
   } else if (_reclaimReports.compact) {
     hint.textContent = _reclaimReports.compact;
   } else if (!substance) {
@@ -6904,7 +6904,7 @@ function syncCompactionAffordance() {
   } else if (salient) {
     hint.textContent = 'Le contexte est assez chargé pour que le modèle commence ' +
       'à perdre le fil. Compacter remplace le début de la conversation par un ' +
-      'résumé : les messages restent affichés ici, seul ce qui part au modèle change.';
+      'résumé : les messages restent affichés ici, seul ce qui part au modèle change.';
   } else {
     hint.textContent = 'Remplace le début de la conversation par un résumé. ' +
       'Les messages restent affichés ici, seul ce qui part au modèle change.';
@@ -6980,7 +6980,7 @@ function syncEvacuateAffordance() {
   if (btn) btn.disabled = !found.count || finished;
   wrap.classList.remove('is-refused');   // cf. syncCompactionAffordance
   if (finished) {
-    hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
+    hint.textContent = 'Conversation d\'agent terminée : elle est en lecture seule.';
   } else if (_reclaimReports.evacuate) {
     hint.textContent = _reclaimReports.evacuate;
   } else if (!found.count) {
@@ -7048,10 +7048,10 @@ function contextWindowSourceLabel(info, now) {
 // Ligne de l'inspecteur : la valeur retenue ET d'où elle vient.
 function formatContextWindowLine(info, now) {
   if (!info || !info.value) {
-    return 'Fenêtre de contexte inconnue : le serveur ne la déclare pas pour ce modèle, ' +
+    return 'Fenêtre de contexte inconnue : le serveur ne la déclare pas pour ce modèle, ' +
       'et aucune valeur n\'est saisie sur la fiche du serveur.';
   }
-  return 'Fenêtre de contexte : ' + formatTokenCount(info.value) + ' tokens — ' +
+  return 'Fenêtre de contexte : ' + formatTokenCount(info.value) + ' tokens — ' +
     contextWindowSourceLabel(info, now) + '.';
 }
 
@@ -7060,19 +7060,19 @@ function formatContextWindowLine(info, now) {
 // annoncer le repli. Dit ce que devient une saisie face à ce qui est connu —
 // une mesure prime sur elle, un maximum déclaré lui cède.
 function contextWindowCardHint(model, detected, buildDefault, now) {
-  if (!model) return 'Choisir d\'abord un modèle : la fenêtre se règle par modèle.';
+  if (!model) return 'Choisir d\'abord un modèle : la fenêtre se règle par modèle.';
   const src = detected && detected.source;
   if (src === 'served-now' || src === 'configured' || src === 'served-last') {
-    return 'Connue : ' + formatTokenCount(detected.value) + ' tokens (' +
+    return 'Connue : ' + formatTokenCount(detected.value) + ' tokens (' +
       contextWindowSourceLabel(detected, now) + '). Elle prime sur une valeur saisie ici.';
   }
   if (src === 'declared') {
-    return 'Déclarée par le serveur : ' + formatTokenCount(detected.value) + ' tokens (maximum du modèle). ' +
+    return 'Déclarée par le serveur : ' + formatTokenCount(detected.value) + ' tokens (maximum du modèle). ' +
       'Une valeur saisie ici la remplace — utile si le serveur coupe plus bas.';
   }
-  return 'Le serveur ne déclare pas cette fenêtre pour ce modèle. Une valeur saisie ici sert de repère : ' +
+  return 'Le serveur ne déclare pas cette fenêtre pour ce modèle. Une valeur saisie ici sert de repère : ' +
     'jauge de l\'inspecteur de contexte et seuil de compaction conseillée.' +
-    (buildDefault > 0 ? ' Vide : ' + formatTokenCount(buildDefault) + ' tokens, valeur par défaut de l\'installation.' : '');
+    (buildDefault > 0 ? ' Vide : ' + formatTokenCount(buildDefault) + ' tokens, valeur par défaut de l\'installation.' : '');
 }
 
 // Ligne des capacités (lot AF). `caps` tri-état tel que déclaré ; `vision`
@@ -7083,13 +7083,13 @@ function formatModelCapsLine(caps, vision) {
   const c = caps || {};
   const known = ['vision', 'tools', 'thinking'].some(k => c[k] === true || c[k] === false);
   const manual = vision && vision.source === 'manual'
-    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
-  if (!known) return 'Capacités du modèle : non déclarées par le serveur.' + manual;
+    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
+  if (!known) return 'Capacités du modèle : non déclarées par le serveur.' + manual;
   // Coche / croix pour un déclaré, mot en clair pour l'inconnu : un glyphe
   // de plus (« ? ») se lirait mal à côté des deux autres, et l'inconnu est
   // justement ce que la ligne doit nommer sans ambiguïté.
   const v = (x) => x === true ? '✓' : (x === false ? '✗' : 'inconnu');
-  return 'Capacités déclarées par le serveur : lecture d\'images ' + v(c.vision) +
+  return 'Capacités déclarées par le serveur : lecture d\'images ' + v(c.vision) +
     ', outils ' + v(c.tools) + ', raisonnement ' + v(c.thinking) + '.' +
     (c.tools === false ? ' Les outils sont envoyés quand même.' : '') + manual;
 }
@@ -7169,7 +7169,7 @@ function renderContextInspector() {
       // l'écart que le lecteur constatera forcément en comparant à la liste.
       const title = `${ud.cachedTokens} tok servis par le cache` +
         (share != null ? ` (${share}% de l'entrée)` : '') +
-        ' — quantité totale, pas une position dans la liste :' +
+        ' — quantité totale, pas une position dans la liste :' +
         ' le backend aligne sur ses propres blocs.';
       barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${escHtml(title)}"></span>`;
       barCache.hidden = false;
@@ -8408,7 +8408,7 @@ function buildMcpCard(server, isNew) {
   // l'avertissement « différé » vit dans le hint du champ, pas dans l'option —
   // `sse` lève à l'usage (mcpRpc, mcp.js), l'info ne doit pas disparaître.
   editSection.appendChild(cfgField('Transport', transport.root,
-    'streamable-http seul est implémenté ; sse est différé.'));
+    'streamable-http seul est implémenté ; sse est différé.'));
   editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
   editSection.appendChild(cfgField('Timeout (s)', tmoI));
   editSection.appendChild(cfgField('Outils autorisés', allowI));
@@ -8433,7 +8433,7 @@ function buildMcpCard(server, isNew) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger mcp-del'; delBtn.textContent = 'Supprimer';
     delBtn.addEventListener('click', () =>
-      armThenRun(delBtn, () => onDeleteMcpCard(card, originalName), 'Confirmer ?'));
+      armThenRun(delBtn, () => onDeleteMcpCard(card, originalName), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -8649,11 +8649,11 @@ function buildApiCard(server, isNew, isActive) {
     visionFixed.hidden = !isDeclared;
     if (isDeclared) {
       visionFixed.textContent = declared ? 'Lit les images' : 'Ne lit pas les images';
-      visionHint.textContent = 'Déclaré par le serveur pour ce modèle : MIAOU s\'y fie, sans réglage manuel.' +
+      visionHint.textContent = 'Déclaré par le serveur pour ce modèle : MIAOU s\'y fie, sans réglage manuel.' +
         (declared ? '' : ' Les images sont remplacées par un descripteur textuel.');
     } else {
       visionHint.textContent = 'Le serveur ne dit pas si ce modèle lit les images. S\'il ne les lit pas, ' +
-        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
+        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
     }
   };
   syncVisionField();
@@ -8688,7 +8688,7 @@ function buildApiCard(server, isNew, isActive) {
     { value: 'off', label: 'De côté' },
   ], server.disabled ? 'off' : 'on');
   editSection.appendChild(cfgField('Disponibilité', enabledPill.root,
-    'Mis de côté : ce serveur n\'apparaît plus dans le sélecteur serveur/modèle du composer.'));
+    'Mis de côté : ce serveur n\'apparaît plus dans le sélecteur serveur/modèle du composer.'));
 
   // Ordre d'assemblage du prompt : où CE backend place les définitions d'outils.
   // Propriété mesurée du serveur (cf. normalizePromptOrder, storage.js), pas une
@@ -8721,7 +8721,7 @@ function buildApiCard(server, isNew, isActive) {
     const delBtn = document.createElement('button');
     delBtn.className = 'drawer-btn danger api-del'; delBtn.textContent = 'Supprimer';
     delBtn.addEventListener('click', () =>
-      armThenRun(delBtn, () => onDeleteApiCard(card, originalId), 'Confirmer ?'));
+      armThenRun(delBtn, () => onDeleteApiCard(card, originalId), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);
@@ -8840,7 +8840,7 @@ function renderSkills() {
   if (system.length) {
     const intro = document.createElement('div');
     intro.className = 'hint skill-system-intro';
-    intro.textContent = 'Skills système : fournies par l\'application, toujours actives, non modifiables ni supprimables.';
+    intro.textContent = 'Skills système : fournies par l\'application, toujours actives, non modifiables ni supprimables.';
     wrap.appendChild(intro);
     for (const s of system) wrap.appendChild(buildSystemSkillCard(s));
   }
@@ -8988,7 +8988,7 @@ function buildSkillCard(skill, isNew) {
   if (skill.slug && commandSlugs().indexOf(skill.slug) >= 0) {
     const warn = document.createElement('div');
     warn.className = 'skill-view-shadowed';
-    warn.textContent = 'Ce slug est désormais une commande de MIAOU : /' +
+    warn.textContent = 'Ce slug est désormais une commande de MIAOU : /' +
       skill.slug + ' déclenche la commande, pas cette skill. Renomme-la pour la ' +
       'rendre à nouveau invocable.';
     viewMain.appendChild(warn);
@@ -9084,7 +9084,7 @@ function buildSkillCard(skill, isNew) {
     delBtn.className = 'drawer-btn danger skill-del'; delBtn.textContent = 'Supprimer';
     // Hard delete définitif : armement deux temps (pas de window.confirm natif).
     delBtn.addEventListener('click', () =>
-      armThenRun(delBtn, () => onDeleteSkillCard(card, originalSlug), 'Confirmer ?'));
+      armThenRun(delBtn, () => onDeleteSkillCard(card, originalSlug), 'Confirmer ?'));
     actions.appendChild(delBtn);
   }
   editSection.appendChild(actions);

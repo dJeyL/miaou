@@ -177,7 +177,7 @@ await page.waitForTimeout(200);
 await page.locator('#skill-list .skill-del').first().click();
 check('skill-del : libellé « Confirmer ? » armé', await page.evaluate(() =>
   document.querySelector('#skill-list .skill-del.armed') !== null &&
-  document.querySelector('#skill-list .skill-del').textContent === 'Confirmer ?'));
+  document.querySelector('#skill-list .skill-del').textContent === 'Confirmer\u00a0?'));
 await shot('07-skill-del-armed.png');
 await page.waitForTimeout(3000);
 check('skill-del : désarmé, libellé restauré, rien supprimé', await page.evaluate((n) =>

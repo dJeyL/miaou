@@ -628,7 +628,7 @@ function mcpStatusPill(status) {
   if (status.state !== 'ok') {
     return {
       tone: 'err',
-      text: '● injoignable' + (status.error ? ' : ' + status.error : ''),
+      text: '● injoignable' + (status.error ? ' : ' + status.error : ''),
     };
   }
   const count = status.count || 0;
@@ -1763,7 +1763,7 @@ function mermaidErrorNotice(err) {
   const cut = detail.length > MERMAID_ERROR_DETAIL_MAX
     ? detail.slice(0, MERMAID_ERROR_DETAIL_MAX - 1) + '…'
     : detail;
-  return base + ' (mermaid : ' + cut + ')';
+  return base + ' (mermaid : ' + cut + ')';
 }
 
 // Nom de fichier pour l'export image d'un diagramme Mermaid (lot E3) : le
@@ -1929,7 +1929,7 @@ function validateMcpServerName(name, existingNames) {
   if (!n) return 'Nom requis.';
   if (n === 'miaou') return 'Le nom « miaou » est réservé aux outils internes.';
   if (n.indexOf('__') >= 0) return 'Le nom ne peut pas contenir « __ » (séparateur réservé).';
-  if (!/^[a-zA-Z0-9_-]+$/.test(n)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
+  if (!/^[a-zA-Z0-9_-]+$/.test(n)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
   if (Array.isArray(existingNames) && existingNames.indexOf(n) >= 0) return 'Ce nom est déjà utilisé.';
   return null;
 }
@@ -2236,15 +2236,15 @@ function _formatToolCallMd(m) {
   const lines = [];
   const head = m.intent ? '`' + m.name + '` — ' + m.intent : '`' + m.name + '`';
   lines.push(head);
-  if (m.args != null) lines.push('   Arguments : `' + _truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX) + '`');
+  if (m.args != null) lines.push('   Arguments : `' + _truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX) + '`');
   if (ackIsError(m)) {
-    lines.push('   Résultat (erreur) : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
+    lines.push('   Résultat (erreur) : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
   } else if (m.result != null) {
-    lines.push('   Résultat : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
+    lines.push('   Résultat : `' + _truncMd(m.result, EXPORT_RESULT_MAX) + '`');
   }
   if (m.kind === 'resource_presented') {
     const name = _truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX);
-    lines.push('   Ressource présentée automatiquement : `' + name + '`' +
+    lines.push('   Ressource présentée automatiquement : `' + name + '`' +
       (m.mime ? ' (' + m.mime + ')' : '') + ' — non incluse dans cet export');
   }
   // js__eval (lot L) : le code exécuté est capté dans l'ack (champ `code`),
@@ -2268,10 +2268,10 @@ function _formatToolCallMd(m) {
     // lecteur d'archive doit lire « aucune ressource », pas un `?` qui laisse
     // croire à une information perdue (prédicat partagé, jamais réécrit ici).
     lines.push(jsEvalHasNoInputs(inH)
-      ? '   Entrées : aucune (calcul pur)' + (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : '')
-      : '   Entrées : `' + handlesTxt + '`' +
+      ? '   Entrées : aucune (calcul pur)' + (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : '')
+      : '   Entrées : `' + handlesTxt + '`' +
         (m.outLen != null ? ' — sortie ' + m.outLen + ' car.' : ''));
-    lines.push('   Code exécuté :');
+    lines.push('   Code exécuté :');
     lines.push('   ```js');
     String(m.code).split('\n').forEach(cl => lines.push('   ' + cl));
     lines.push('   ```');
@@ -2317,16 +2317,16 @@ function _formatToolCallHtml(m) {
     : '<code>' + escHtml(m.name) + '</code>';
   lines.push(ackIsError(m) ? '<span class="ack-head-error">' + head + '</span>' : head);
   if (m.args != null) {
-    lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
+    lines.push('<br>Arguments : <code>' + escHtml(_truncMd(JSON.stringify(m.args), EXPORT_ARGS_MAX)) + '</code>');
   }
   if (ackIsError(m)) {
-    lines.push('<br>Résultat (erreur) : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
+    lines.push('<br>Résultat (erreur) : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
   } else if (m.result != null) {
-    lines.push('<br>Résultat : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
+    lines.push('<br>Résultat : <code>' + escHtml(_truncMd(m.result, EXPORT_RESULT_MAX)) + '</code>');
   }
   if (m.kind === 'resource_presented') {
     const name = escHtml(_truncMd(m.resourceName || m.id || '?', EXPORT_RESNAME_MAX));
-    lines.push('<br>Ressource présentée automatiquement : <code>' + name + '</code>' +
+    lines.push('<br>Ressource présentée automatiquement : <code>' + name + '</code>' +
       (m.mime ? ' (' + escHtml(m.mime) + ')' : '') + ' — non incluse dans cet export');
   }
   // js__eval (lot L) : `code` et les entrées sont d'origine MODÈLE → escHtml
@@ -2349,9 +2349,9 @@ function _formatToolCallHtml(m) {
     // d'origine modèle), donc rien à échapper ici — l'exigence escHtml du piège 21
     // porte sur les clés/handles énumérés, qui sont justement absents dans ce cas.
     lines.push(jsEvalHasNoInputs(inH)
-      ? '<br>Entrées : aucune (calcul pur)' +
+      ? '<br>Entrées : aucune (calcul pur)' +
         (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : '')
-      : '<br>Entrées : <code>' + handlesTxt + '</code>' +
+      : '<br>Entrées : <code>' + handlesTxt + '</code>' +
         (m.outLen != null ? ' — sortie ' + escHtml(String(m.outLen)) + ' car.' : ''));
     lines.push('<br>Code exécuté :<pre class="tool-ack-code"><code>' + escHtml(String(m.code)) + '</code></pre>');
   }
@@ -3127,7 +3127,7 @@ function compactionUndoneNotice(thread, keptLength) {
   var list = thread || [];
   if (lastCompactionIndex(list) < keptLength) return null;
   var survivor = lastCompactionIndex(list.slice(0, keptLength));
-  return 'Compaction annulée : ce retour en arrière passe avant la dernière ' +
+  return 'Compaction annulée : ce retour en arrière passe avant la dernière ' +
     'coupure, dont le résumé est retiré. ' + (survivor >= 0
       ? 'Le modèle reçoit de nouveau les messages depuis la compaction précédente.'
       : 'Le modèle reçoit de nouveau toute la conversation.');
@@ -3170,7 +3170,7 @@ function compactionUndoneNotice(thread, keptLength) {
 function compactionRefusal(occupied, agentBusyMessage, hasSubstanceToCompact, gesture) {
   var g = gesture || 'compacter le contexte';
   if (occupied === 'finished-agent') {
-    return 'Cet agent a terminé son travail : sa conversation est en lecture ' +
+    return 'Cet agent a terminé son travail : sa conversation est en lecture ' +
       'seule, on ne peut plus y ' + g + '.';
   }
   if (occupied === 'compacting') {
@@ -3191,7 +3191,7 @@ function compactionRefusal(occupied, agentBusyMessage, hasSubstanceToCompact, ge
   }
   if (agentBusyMessage) return agentBusyMessage;
   if (!hasSubstanceToCompact) {
-    return 'Il n\'y a pas assez d\'historique à compacter : le résumé qui le ' +
+    return 'Il n\'y a pas assez d\'historique à compacter : le résumé qui le ' +
       'remplacerait coûterait autant que ce qu\'il retire.';
   }
   return null;

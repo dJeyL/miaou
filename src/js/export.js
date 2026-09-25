@@ -1021,9 +1021,9 @@ async function runMdConversion(file) {
     setMdConvertStatus('Conversion de « ' + file.name +' »…', false);
     const text = await file.text();
     await convertMarkdownToHtmlFile(text, file.name);
-    setMdConvertStatus('Converti : ' + mdHtmlFileName(file.name), false);
+    setMdConvertStatus('Converti : ' + mdHtmlFileName(file.name), false);
   } catch (e) {
-    setMdConvertStatus('Échec de la conversion : ' + (e && e.message ? e.message : 'erreur inconnue'), true);
+    setMdConvertStatus('Échec de la conversion : ' + (e && e.message ? e.message : 'erreur inconnue'), true);
   } finally {
     _convertingMd = false;
   }
@@ -1058,7 +1058,7 @@ function onMdConvertDrop(e) {
   const file = Array.from(files).find(isMarkdownFile);
   // Ici, contrairement au drawer skills, un mauvais fichier mérite un retour :
   // l'utilisateur a visé une zone dédiée, le silence passerait pour un bug.
-  if (!file) { setMdConvertStatus('Fichier ignoré : seuls les .md sont convertis.', true); return; }
+  if (!file) { setMdConvertStatus('Fichier ignoré : seuls les .md sont convertis.', true); return; }
   runMdConversion(file);
 }
 
@@ -1100,7 +1100,7 @@ async function exportConvHtml() {
     const sizeBytes = new Blob([html]).size;
     if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
       const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
-      if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
+      if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
     }
     downloadFile(exportConvFilename(title, now, 'html'), html, 'text/html');
   } catch (e) {

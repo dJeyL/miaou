@@ -87,30 +87,30 @@ describe('formatErrorDetail (détail lisible d\'une réponse HTTP en échec)', f
   });
   it('forme { message } (ex. vLLM) → préfixe « : » + message', function() {
     var body = '{"object":"error","message":"Assistant message must have either content or tool_calls, but not none.","type":"invalid_request_assistant_message","code":"3240"}';
-    expect(formatErrorDetail(body)).toBe(' : Assistant message must have either content or tool_calls, but not none.');
+    expect(formatErrorDetail(body)).toBe('\u00a0: Assistant message must have either content or tool_calls, but not none.');
   });
   it('forme OpenAI { error: { message } }', function() {
     var body = '{"error":{"message":"Invalid API key","type":"auth_error"}}';
-    expect(formatErrorDetail(body)).toBe(' : Invalid API key');
+    expect(formatErrorDetail(body)).toBe('\u00a0: Invalid API key');
   });
   it('forme { error: "…" } (error string)', function() {
-    expect(formatErrorDetail('{"error":"model not found"}')).toBe(' : model not found');
+    expect(formatErrorDetail('{"error":"model not found"}')).toBe('\u00a0: model not found');
   });
   it('forme tableau Gemini/Google [{ error: { message } }] → message déballé', function() {
     var body = '[{"error":{"code":429,"message":"You exceeded your current quota.","status":"RESOURCE_EXHAUSTED"}}]';
-    expect(formatErrorDetail(body)).toBe(' : You exceeded your current quota.');
+    expect(formatErrorDetail(body)).toBe('\u00a0: You exceeded your current quota.');
   });
   it('tableau vide → texte brut du body (pas de throw)', function() {
-    expect(formatErrorDetail('[]')).toBe(' : []');
+    expect(formatErrorDetail('[]')).toBe('\u00a0: []');
   });
   it('JSON illisible → texte brut conservé, préfixé', function() {
-    expect(formatErrorDetail('{oops not json')).toBe(' : {oops not json');
+    expect(formatErrorDetail('{oops not json')).toBe('\u00a0: {oops not json');
   });
   it('texte brut non-JSON (ex. proxy HTML) → tel quel, préfixé', function() {
-    expect(formatErrorDetail('Bad Gateway')).toBe(' : Bad Gateway');
+    expect(formatErrorDetail('Bad Gateway')).toBe('\u00a0: Bad Gateway');
   });
   it('JSON sans champ de message reconnu → texte brut du body', function() {
-    expect(formatErrorDetail('{"foo":1}')).toBe(' : {"foo":1}');
+    expect(formatErrorDetail('{"foo":1}')).toBe('\u00a0: {"foo":1}');
   });
 });
 

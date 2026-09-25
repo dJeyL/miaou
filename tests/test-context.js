@@ -889,7 +889,7 @@ describe('libellés de fenêtre (inspecteur, carte serveur)', function() {
   });
   it('hint de carte : rien de connu, avec ou sans défaut d\'installation', function() {
     expect(contextWindowCardHint('m', { value: null, source: null }, 0, NOW)).toContain('ne déclare pas');
-    expect(contextWindowCardHint('m', { value: null, source: null }, 32768, NOW)).toContain('Vide : 32\u202f768 tokens');
+    expect(contextWindowCardHint('m', { value: null, source: null }, 32768, NOW)).toContain('Vide\u00a0: 32\u202f768 tokens');
     expect(contextWindowCardHint('', null, 0, NOW)).toContain('Choisir d\'abord un modèle');
   });
 });
@@ -897,7 +897,7 @@ describe('libellés de fenêtre (inspecteur, carte serveur)', function() {
 describe('formatModelCapsLine (inspecteur, lot AF)', function() {
   it('capacités déclarées, inconnue nommée comme telle', function() {
     expect(formatModelCapsLine({ vision: true, tools: true, thinking: null }, { enabled: true, source: 'declared' }))
-      .toBe('Capacités déclarées par le serveur : lecture d\'images ✓, outils ✓, raisonnement inconnu.');
+      .toBe('Capacités déclarées par le serveur\u00a0: lecture d\'images ✓, outils ✓, raisonnement inconnu.');
   });
   it('outils déclarés absents : dit qu\'ils partent quand même', function() {
     expect(formatModelCapsLine({ vision: false, tools: false, thinking: false }, { enabled: false, source: 'declared' }))
@@ -905,7 +905,7 @@ describe('formatModelCapsLine (inspecteur, lot AF)', function() {
   });
   it('rien de déclaré, avec ou sans « Sans vision » manuel', function() {
     var unk = { vision: null, tools: null, thinking: null };
-    expect(formatModelCapsLine(unk, { enabled: true, source: 'unknown' })).toBe('Capacités du modèle : non déclarées par le serveur.');
+    expect(formatModelCapsLine(unk, { enabled: true, source: 'unknown' })).toBe('Capacités du modèle\u00a0: non déclarées par le serveur.');
     expect(formatModelCapsLine(unk, { enabled: false, source: 'manual' })).toContain('Marqué «\u00a0Sans vision\u00a0»');
   });
 });

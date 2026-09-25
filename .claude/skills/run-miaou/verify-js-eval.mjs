@@ -296,9 +296,9 @@ const exportsPure = await page.evaluate((ack) => {
   return { md: _formatToolCallMd(m).join('\n'), html: _formatToolCallHtml(m) };
 }, ackPure);
 check('calcul pur : export Markdown annonce « aucune (calcul pur) »',
-  /Entrées : aucune \(calcul pur\)/.test(exportsPure.md), exportsPure.md.slice(0, 90));
+  /Entrées\u00a0: aucune \(calcul pur\)/.test(exportsPure.md), exportsPure.md.slice(0, 90));
 check('calcul pur : export HTML annonce « aucune (calcul pur) »',
-  /Entrées : aucune \(calcul pur\)/.test(exportsPure.html), exportsPure.html.slice(0, 90));
+  /Entrées\u00a0: aucune \(calcul pur\)/.test(exportsPure.html), exportsPure.html.slice(0, 90));
 // input_handles: {} — forme cérémonielle, décidée équivalente à l'absence.
 const pureEmpty = await page.evaluate(async () => {
   const res = await callInternalTool('js__eval', { input_handles: {}, code: '6*7;' });

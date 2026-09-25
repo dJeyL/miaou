@@ -82,7 +82,7 @@ await page.waitForSelector('#thread .mermaid-error', { timeout: 20000 });
 const notice = await page.evaluate(() => document.querySelector('#thread .mermaid-error').textContent);
 console.log('  info  notice : ' + notice);
 check('notice : libellé fixe suivi du message Mermaid',
-  notice.startsWith('Diagramme invalide — source affichée (mermaid : ') && notice.length > 50);
+  notice.startsWith('Diagramme invalide — source affichée (mermaid\u00a0: ') && notice.length > 50);
 check('version épinglée : 11.13.0', await page.evaluate(() => MERMAID_CDN.includes('/11.13.0/')));
 
 // ── 2. Les diagrammes à puces, par la vraie passe ──────────────────────────

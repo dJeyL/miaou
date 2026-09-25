@@ -443,7 +443,7 @@ try {
     !!editAck && editAck.count === 4 && JSON.stringify(editAck.zipEdit) === '{"added":2,"replaced":1,"removed":1,"renamed":0}',
     JSON.stringify(editAck));
   check('modif : le libellé d\'ack dit « Archive modifiée » avec le bilan',
-    !!editAck && /^Archive modifiée : livrables\.zip — 4 membres \(2 ajoutés, 1 remplacé, 1 retiré\)/.test(editAck.label),
+    !!editAck && /^Archive modifiée\u00a0: livrables\.zip — 4 membres \(2 ajoutés, 1 remplacé, 1 retiré\)/.test(editAck.label),
     editAck && editAck.label);
 
   const editedList = await callTool_('miaou__docs__list', { ref: editedRef });
@@ -539,7 +539,7 @@ try {
     const a = _pendingToolAcks.filter((x) => x.kind === 'docs_pack' && x.ok).pop();
     return a ? ACK_KINDS.docs_pack.label(a) : null;
   });
-  check('renommage : le libellé d\'ack porte le bilan', /^Archive modifiée : range\.zip — 4 membres \(1 ajouté, 2 renommés\)/.test(renAck || ''),
+  check('renommage : le libellé d\'ack porte le bilan', /^Archive modifiée\u00a0: range\.zip — 4 membres \(1 ajouté, 2 renommés\)/.test(renAck || ''),
     renAck);
 
   const renDir = await callTool_('miaou__docs__pack',

@@ -121,7 +121,7 @@ function formatErrorDetail(bodyText) {
       else if (typeof o.error === 'string' && o.error) msg = o.error;
     }
   } catch (_) { /* body non-JSON : on garde le texte brut */ }
-  return msg ? ' : ' + msg : '';
+  return msg ? ' : ' + msg : '';
 }
 
 // Lit le corps d'une réponse en échec (une seule fois, tolère l'échec de lecture)

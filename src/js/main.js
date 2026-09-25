@@ -2568,7 +2568,7 @@ async function exportAllData() {
   let data;
   try { data = ff.zipSync(files, { level: 6 }); }
   catch (e) {
-    showExportDataError('Échec de la compression : ' + (e && e.message ? e.message : 'erreur inconnue') + '.');
+    showExportDataError('Échec de la compression : ' + (e && e.message ? e.message : 'erreur inconnue') + '.');
     return;
   }
 
@@ -2603,21 +2603,21 @@ async function readBackupFromZip(u8) {
   const manifestPick = decideZipMemberExtraction(entries, 'manifest.json', 0);
   if (!manifestPick.ok) {
     if (manifestPick.reason === 'encrypted') {
-      throw new Error('Archive protégée par mot de passe : MIAOU ne peut pas la déchiffrer.');
+      throw new Error('Archive protégée par mot de passe : MIAOU ne peut pas la déchiffrer.');
     }
-    throw new Error('Ce zip n\'est pas une sauvegarde MIAOU : aucun manifest.json à la racine.');
+    throw new Error('Ce zip n\'est pas une sauvegarde MIAOU : aucun manifest.json à la racine.');
   }
 
   const ff = await ensureFflate();
   let files;
   try { files = ff.unzipSync(u8); }
-  catch (e) { throw new Error('Archive illisible : ' + (e && e.message ? e.message : 'décompression impossible')); }
+  catch (e) { throw new Error('Archive illisible : ' + (e && e.message ? e.message : 'décompression impossible')); }
 
   const raw = files['manifest.json'];
-  if (!raw) throw new Error('Ce zip n\'est pas une sauvegarde MIAOU : aucun manifest.json à la racine.');
+  if (!raw) throw new Error('Ce zip n\'est pas une sauvegarde MIAOU : aucun manifest.json à la racine.');
   let obj;
   try { obj = JSON.parse(new TextDecoder('utf-8').decode(raw)); }
-  catch (e) { throw new Error('Manifeste illisible : JSON invalide.'); }
+  catch (e) { throw new Error('Manifeste illisible : JSON invalide.'); }
 
   // Réassemblage AVANT validation : `validateImportPayload` compte
   // `idb.resources.length` pour le récapitulatif affiché avant confirmation.
@@ -2690,9 +2690,9 @@ function onImportFileSelected(input) {
       // réutiliser `_zipDecodeName`, qui décode des NOMS de membres.
       let text;
       try { text = new TextDecoder('utf-8').decode(u8); }
-      catch (e) { showImportDataError('Fichier illisible : encodage invalide.'); return; }
+      catch (e) { showImportDataError('Fichier illisible : encodage invalide.'); return; }
       try { obj = JSON.parse(text); }
-      catch (e) { showImportDataError('Fichier illisible : JSON invalide.'); return; }
+      catch (e) { showImportDataError('Fichier illisible : JSON invalide.'); return; }
     }
     const res = validateImportPayload(obj);
     if (!res.ok) { showImportDataError(res.error); return; }
@@ -3148,13 +3148,13 @@ async function resolveSend(literal) {
       if (t.atStart && commandSlugs().indexOf(t.slug) >= 0) {
         return { ok: false, error: commandFormRefusal(t.slug) };
       }
-      if (t.atStart) return { ok: false, error: 'Skill inconnue ou désactivée : /' + t.slug };
+      if (t.atStart) return { ok: false, error: 'Skill inconnue ou désactivée : /' + t.slug };
       continue;   // mid-message non reconnu : reste texte littéral, pas de blocage
     }
     let content = null;
     try { content = await getSkillContent(t.slug); } catch (e) { content = null; }
     if (content == null) {
-      if (t.atStart) return { ok: false, error: 'Contenu de la skill indisponible : /' + t.slug };
+      if (t.atStart) return { ok: false, error: 'Contenu de la skill indisponible : /' + t.slug };
       continue;
     }
     resolved.push({ slug: t.slug, content });
@@ -3411,7 +3411,7 @@ async function sendMessage() {
     // comme texte (la commande ne serait pas exécutée). On refuse en nommant la
     // raison, et rien n'est consommé — ni la saisie, ni les pièces jointes.
     if (pendingAttachments.length) {
-      showComposerError('Retire d\'abord la pièce jointe : une commande ne s\'envoie pas avec un fichier.');
+      showComposerError('Retire d\'abord la pièce jointe : une commande ne s\'envoie pas avec un fichier.');
       return;
     }
     await runMiaouCommand(command);
@@ -3691,7 +3691,7 @@ function runGenerationFromCurrentThread() {
 // `sending === false`, et les deux boutons étaient donc pleinement actifs.
 function agentBusyRewriteRefusal(convId) {
   if (!hasWorkingAgent(convId)) return null;
-  return 'Un agent de cette conversation travaille : son résultat va revenir ' +
+  return 'Un agent de cette conversation travaille : son résultat va revenir ' +
     'dans ce fil. Attends qu\'il termine, ou interromps-le, avant de réécrire ' +
     'l\'historique.';
 }
@@ -4409,7 +4409,7 @@ async function dispatchSend(matches, continuation) {
         if (stalled) {
           setConnDot('err');
           if (genOwnsScreen(gen)) {
-            showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
+            showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
           }
         }
         // Réécriture UNIQUE parts→descripteur : le tour vient de se
@@ -4492,7 +4492,7 @@ async function dispatchSend(matches, continuation) {
     // réseau au sens strict — on ne re-préfixe « Erreur réseau » que le vrai
     // échec de transport (fetch rejeté : DNS, CORS, connexion refusée).
     const detail = (e && e.message) || String(e);
-    if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
+    if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
     setConnDot('err');
   } finally {
     // Désenregistrement AVANT setSending : ce dernier dérive `sending` du

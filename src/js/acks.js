@@ -133,11 +133,11 @@ function docsPackAckTail(m) {
 }
 
 const ACK_KINDS = {
-  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
-  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
-  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
+  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
+  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
+  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
   conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,
-    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
+    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
     renderLabel: (m, el) => {
       // Titre cliquable si convId connu (mène à la conversation) — sans changer
       // sa couleur hors survol, cf. .ack-conv-link.
@@ -170,7 +170,7 @@ const ACK_KINDS = {
   // mcp_call. `label` reste la version texte brut (ackLabel, tests).
   conversation_list: { destination: 'user', undo: null, icon: ICON_LIST,
     label: m =>
-      (m.intent ? m.intent + ' : ' : '') + (
+      (m.intent ? m.intent + ' : ' : '') + (
         m.count === 0 ? 'Aucune conversation trouvée'
       : m.count === 1 ? '1 conversation listée'
       : (m.count != null ? m.count : '?') + ' conversations listées'),
@@ -191,7 +191,7 @@ const ACK_KINDS = {
   // + breadcrumb technique (niveau 2, repliée par défaut via chevron).
   // `label` reste la version texte brut (ackLabel, tests) — breadcrumb uniquement.
   mcp_call: { destination: 'user', undo: null, icon: ICON_WRENCH,
-    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
+    label: m => 'Appel : ' + (m.name || '').split('__').filter(Boolean).join(' › '),
     renderLabel: (m, el) => {
       const segs = (m.name || '').split('__').filter(Boolean);
       const buildBreadcrumb = detail => {
@@ -218,7 +218,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => 'Ressource enregistrée : ' + (m.resourceName || m.id || '?') +
+    label: m => 'Ressource enregistrée : ' + (m.resourceName || m.id || '?') +
       (m.size != null ? ' (' + humanSize(m.size) + ')' : ''),
     renderLabel: (m, el) => {
       const build = target => {
@@ -253,7 +253,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => 'Ressource complétée : ' + (m.resourceName || m.id || '?') +
+    label: m => 'Ressource complétée : ' + (m.resourceName || m.id || '?') +
       (m.appendedLen != null ? ' (+' + m.appendedLen + ' car.' +
         (m.size != null ? ', ' + humanSize(m.size) + ' au total' : '') +
         (m.ok === false ? ', interrompu' : '') + ')'
@@ -276,7 +276,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_EYE,
-    label: m => 'Ressource présentée : ' + (m.resourceName || m.id || '?'),
+    label: m => 'Ressource présentée : ' + (m.resourceName || m.id || '?'),
     renderLabel: (m, el) => {
       const build = target => {
         target.appendChild(document.createTextNode('Ressource présentée '));
@@ -305,7 +305,7 @@ const ACK_KINDS = {
     icon: m => (m && m.origin === 'docs_render') ? ICON_IMAGE : ICON_EYE,
     label: m => (m && m.origin === 'docs_render')
       ? docsRenderAckLabel(m)                                  // docs.js, pur
-      : 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
+      : 'Pièce jointe rappelée : ' + (m.resourceName || m.attId || '?'),
     renderLabel: (m, el) => {
       const render = m && m.origin === 'docs_render';
       const head = (render ? docsRenderAckHead(m) : 'Pièce jointe rappelée') + ' ';
@@ -333,7 +333,7 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_LIST,
     label: m =>
-      (m.intent ? m.intent + ' : ' : '') + (
+      (m.intent ? m.intent + ' : ' : '') + (
         m.count === 0 ? 'Aucune skill disponible'
       : m.count === 1 ? '1 skill listée'
       : (m.count != null ? m.count : '?') + ' skills listées'),
@@ -355,7 +355,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_BOOK,
-    label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
+    label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
     renderLabel: (m, el) => {
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
@@ -377,7 +377,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_EDIT,
-    label: m => (m.created ? 'Skill créée : ' : 'Skill modifiée : ') + (m.title || m.slug || '?'),
+    label: m => (m.created ? 'Skill créée : ' : 'Skill modifiée : ') + (m.title || m.slug || '?'),
     renderLabel: (m, el) => {
       const verb = m.created ? 'Skill créée' : 'Skill modifiée';
       if (m.intent) {
@@ -399,7 +399,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_BOOK,
-    label: m => 'Aide consultée : ' + (m.topic || 'apercu'),
+    label: m => 'Aide consultée : ' + (m.topic || 'apercu'),
     renderLabel: (m, el) => {
       const topic = m.topic || 'apercu';
       if (m.intent) {
@@ -423,7 +423,7 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_LIST,
     label: m =>
-      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
+      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
         m.count === 0 ? 'aucun résultat'
       : m.count === 1 ? '1 sujet trouvé'
       : (m.count != null ? m.count : '?') + ' sujets trouvés'),
@@ -453,7 +453,7 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_LIST,
     label: m =>
-      (m.intent ? m.intent + ' : ' : '') + (
+      (m.intent ? m.intent + ' : ' : '') + (
         m.count === 0 ? 'Aucun fichier dans la bibliothèque'
       : m.count === 1 ? '1 fichier listé'
       : (m.count != null ? m.count : '?') + ' fichiers listés'),
@@ -475,7 +475,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_BOOK,
-    label: m => 'Fichier consulté : ' + (m.resourceName || m.id || '?'),
+    label: m => 'Fichier consulté : ' + (m.resourceName || m.id || '?'),
     renderLabel: (m, el) => {
       const name = m.resourceName || m.id || '?';
       if (m.intent) {
@@ -499,7 +499,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
+    label: m => 'Fichier ajouté à la bibliothèque : ' + (m.resourceName || m.id || '?'),
     renderLabel: (m, el) => {
       const build = target => {
         target.appendChild(document.createTextNode('Fichier ajouté à la bibliothèque '));
@@ -554,7 +554,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_LIST,
-    label: m => docsListAckHead(m) + ' : ' + (m.resourceName || m.handle || '?') +
+    label: m => docsListAckHead(m) + ' : ' + (m.resourceName || m.handle || '?') +
       ' — ' + docsListAckCount(m),
     renderLabel: (m, el) => {
       const countText = docsListAckCount(m);
@@ -610,7 +610,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => 'Membre extrait : ' + (m.path || '?') +
+    label: m => 'Membre extrait : ' + (m.path || '?') +
       (m.ok === false ? ' (refusé)' : (m.size != null ? ' — ' + humanSize(m.size) : '')),
     renderLabel: (m, el) => {
       const tail = m.ok === false ? ' (refusé)' : (m.size != null ? ' — ' + humanSize(m.size) : '');
@@ -642,7 +642,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_PACKAGE,
-    label: m => docsPackAckVerb(m) + ' : ' + (m.resourceName || '?') + docsPackAckTail(m),
+    label: m => docsPackAckVerb(m) + ' : ' + (m.resourceName || '?') + docsPackAckTail(m),
     renderLabel: (m, el) => {
       const verb = docsPackAckVerb(m);
       const tail = docsPackAckTail(m);
@@ -673,7 +673,7 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_ALERT,
-    label: m => 'Échec : ' + (m.name || 'outil') + (m.message ? ' — ' + m.message : ''),
+    label: m => 'Échec : ' + (m.name || 'outil') + (m.message ? ' — ' + m.message : ''),
     renderLabel: (m, el) => {
       const detailText = (m.name || 'outil') + (m.message ? ' — ' + m.message : '');
       // Avec intent : l'intention du modèle en niveau 1 (ce qu'il VOULAIT faire),
@@ -703,28 +703,28 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent lancé'),
   },
   agent_status: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'État d\'agent consulté'),
   },
   agent_result: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Résultat d\'agent relu'),
   },
   agent_abort: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent interrompu'),
   },
 };
@@ -1823,7 +1823,7 @@ function _inspectResourcePanel(parent, m, target) {
       note.textContent = (p.reason === 'too-big')
         ? 'Ressource trop volumineuse pour être prévisualisée (' + humanSize(size) +
           ') — utilise le téléchargement.'
-        : 'Contenu binaire : pas de prévisualisation, téléchargement disponible.';
+        : 'Contenu binaire : pas de prévisualisation, téléchargement disponible.';
       preview.appendChild(note);
       return;
     }
@@ -2191,7 +2191,7 @@ function renderBinaryBlock(box, block) {
   // fragment reste posé en textContent — `fname` dérive d'une URI d'origine
   // modèle ou serveur, et un `innerHTML` en ferait une voie d'injection là où le
   // fichier n'en est jamais une.
-  label.appendChild(document.createTextNode('Pièce jointe : '));
+  label.appendChild(document.createTextNode('Pièce jointe : '));
   const nameEl = document.createElement('strong');
   nameEl.className = 'tool-block-name';
   nameEl.textContent = fname;

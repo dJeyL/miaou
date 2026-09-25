@@ -592,8 +592,8 @@ describe('formatToolAcksMd', function() {
     expect(r.indexOf('**Outil appelé :**') >= 0).toBeTruthy();
     expect(r.indexOf('Outils appelés') >= 0).toBeFalsy();
     expect(r.indexOf('`miaou__memory__create`') >= 0).toBeTruthy();
-    expect(r.indexOf('Arguments :') >= 0).toBeTruthy();
-    expect(r.indexOf('Résultat :') >= 0).toBeTruthy();
+    expect(r.indexOf('Arguments\u00a0:') >= 0).toBeTruthy();
+    expect(r.indexOf('Résultat\u00a0:') >= 0).toBeTruthy();
   });
   it('intent présent → rendu "— intent" après le nom', function() {
     var r = formatToolAcksMd([{ name: 'weather__get', intent: 'vérifier la météo', args: {}, result: 'ok' }]);
@@ -622,8 +622,8 @@ describe('formatToolAcksMd', function() {
   });
   it('erreur : "Résultat (erreur)" au lieu de "Résultat"', function() {
     var r = formatToolAcksMd([{ name: 'a', args: {}, result: 'timeout', error: true }]);
-    expect(r.indexOf('Résultat (erreur) :') >= 0).toBeTruthy();
-    expect(r.indexOf('Résultat :') >= 0).toBeFalsy();
+    expect(r.indexOf('Résultat (erreur)\u00a0:') >= 0).toBeTruthy();
+    expect(r.indexOf('Résultat\u00a0:') >= 0).toBeFalsy();
   });
   it('résultat long tronqué avec "..." (pas de mention "tronqué")', function() {
     var long = new Array(400).join('x');
@@ -653,7 +653,7 @@ describe('formatToolAcksMd', function() {
   });
   it('pas d\'args (absent) : pas de ligne Arguments', function() {
     var r = formatToolAcksMd([{ name: 'a', result: 'ok' }]);
-    expect(r.indexOf('Arguments :') >= 0).toBeFalsy();
+    expect(r.indexOf('Arguments\u00a0:') >= 0).toBeFalsy();
   });
   it('résultat multiligne : \\n rendu visible, pas de saut de ligne brut dans le code span', function() {
     var r = formatToolAcksMd([{ name: 'a', args: {}, result: 'ligne1\nligne2\r\nligne3' }]);
@@ -2549,20 +2549,20 @@ describe('sanitizeMermaidSource', function() {
 describe('mermaidErrorNotice', function() {
   it('suffixe le libellé fixe du message de l\'exception', function() {
     expect(mermaidErrorNotice(new Error('splitLineToFitWidth does not support newlines in the line')))
-      .toBe('Diagramme invalide — source affichée (mermaid : splitLineToFitWidth does not support newlines in the line)');
+      .toBe('Diagramme invalide — source affichée (mermaid\u00a0: splitLineToFitWidth does not support newlines in the line)');
   });
   it('retire la ligne de caret et aplatit un message de parse multi-lignes', function() {
     const msg = "Parse error on line 2:\n...A[foo(bar)]\n------^\nExpecting 'SQE', got 'PS'";
     expect(mermaidErrorNotice(new Error(msg)))
-      .toBe("Diagramme invalide — source affichée (mermaid : Parse error on line 2: ...A[foo(bar)] Expecting 'SQE', got 'PS')");
+      .toBe("Diagramme invalide — source affichée (mermaid\u00a0: Parse error on line 2: ...A[foo(bar)] Expecting 'SQE', got 'PS')");
   });
   it('borne un message trop long, terminé par une ellipse', function() {
     const out = mermaidErrorNotice(new Error('x'.repeat(1000)));
-    expect(out.length).toBe('Diagramme invalide — source affichée (mermaid : '.length + MERMAID_ERROR_DETAIL_MAX + 1);
+    expect(out.length).toBe('Diagramme invalide — source affichée (mermaid\u00a0: '.length + MERMAID_ERROR_DETAIL_MAX + 1);
     expect(out.slice(-2)).toBe('…)');
   });
   it('accepte une chaîne jetée telle quelle', function() {
-    expect(mermaidErrorNotice('boom')).toBe('Diagramme invalide — source affichée (mermaid : boom)');
+    expect(mermaidErrorNotice('boom')).toBe('Diagramme invalide — source affichée (mermaid\u00a0: boom)');
   });
   it('sans message exploitable → libellé seul', function() {
     expect(mermaidErrorNotice(null)).toBe('Diagramme invalide — source affichée');
@@ -2720,7 +2720,7 @@ describe('exports d\'un js__eval sans entrée (calcul pur)', function() {
   var ackPur = { kind: 'js_eval', name: 'miaou__js__eval', code: '6*7;', outLen: 2, ok: true };
   it('Markdown : « aucune (calcul pur) », jamais un ? trompeur', function() {
     var md = _formatToolCallMd(ackPur).join('\n');
-    expect(md.indexOf('Entrées : aucune (calcul pur)') >= 0).toBe(true);
+    expect(md.indexOf('Entrées\u00a0: aucune (calcul pur)') >= 0).toBe(true);
     expect(md.indexOf('`?`') >= 0).toBe(false);
     // Contrôle de prémisse : un ack AVEC entrées énumère toujours clé=handle.
     var avec = _formatToolCallMd({ kind: 'js_eval', code: '1;', inputHandles: { src: 'res_a' } }).join('\n');
@@ -2728,7 +2728,7 @@ describe('exports d\'un js__eval sans entrée (calcul pur)', function() {
   });
   it('HTML : « aucune (calcul pur) », et le code reste échappé', function() {
     var html = _formatToolCallHtml(ackPur);
-    expect(html.indexOf('Entrées : aucune (calcul pur)') >= 0).toBe(true);
+    expect(html.indexOf('Entrées\u00a0: aucune (calcul pur)') >= 0).toBe(true);
     expect(html.indexOf('<code>?</code>') >= 0).toBe(false);
   });
 });

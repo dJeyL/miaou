@@ -331,8 +331,8 @@ describe('miaou__skills__list — outil', function() {
     expect(ackLabel('skill_list', {})).toContain('?');
   });
   it('ackLabel skill_list : intent préfixe le libellé', function() {
-    expect(ackLabel('skill_list', { count: 3, intent: 'trouver un outil' })).toBe('trouver un outil : 3 skills listées');
-    expect(ackLabel('skill_list', { count: 0, intent: 'trouver un outil' })).toBe('trouver un outil : Aucune skill disponible');
+    expect(ackLabel('skill_list', { count: 3, intent: 'trouver un outil' })).toBe('trouver un outil\u00a0: 3 skills listées');
+    expect(ackLabel('skill_list', { count: 0, intent: 'trouver un outil' })).toBe('trouver un outil\u00a0: Aucune skill disponible');
   });
 });
 
