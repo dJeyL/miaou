@@ -613,6 +613,18 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
     figées). **Pas d'ack `resource_stored`** : `storeAttachment` est une
     fonction dédiée, distincte de `_storeBlock` — un attachment utilisateur
     n'est pas un résultat d'outil, rien à annoncer dans le fil.
+    **Classement texte / binaire à l'ingestion** (`ingestAttachmentFile`, et
+    `ingestLibraryFile` à l'identique) : l'extension d'abord
+    (`classifyAttachmentKind`, liste `ATTACHMENT_TEXT_EXTENSIONS`), puis, pour
+    une extension inconnue, les **octets** (`bytesLookLikeText`) — le mime du
+    navigateur est vide ou `application/octet-stream` pour un `.tcl`, un
+    `.drawio`, une config sans extension, et l'extension n'est qu'une liste
+    fermée. Un fichier reconnu texte par son contenu prend le mime
+    `textAttachmentMime(file.type)` (celui du navigateur s'il dit plus que
+    « octets », sinon `text/plain`). Rétrogradé en `binary` par sa taille
+    (`ATTACHMENT_TEXT_MAX_BYTES`), il porte `textual: true` sur son descripteur
+    de message, qui dit alors « text content, too large to inline » au lieu de
+    « binary content » (`formatBinaryAttachmentDescriptor`).
     `formatAttachmentDescriptor` (resources.js, brief A lot 2) est un
     formateur **distinct** de `formatResourceDescriptor` (format différent :
     `att-N`, dimensions, texte anglais, mention `miaou__recall_attachment`) —

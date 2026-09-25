@@ -43,7 +43,10 @@ depuis l'explorateur de fichiers. Sont exploitables : **images** (le modèle les
 voit réellement, s'il gère la vision ; quand le serveur déclare qu'un modèle ne
 lit pas les images, MIAOU le sait d'avance et lui envoie une description
 textuelle à la place), **fichiers texte** (leur contenu est
-transmis au modèle), **archives zip** (le modèle en liste le contenu et en sort
+transmis au modèle ; un fichier est reconnu comme texte à son contenu, quelle
+que soit son extension — script, configuration, XML d'un schéma drawio… — et
+un texte trop long pour être transmis d'office reste lisible par le modèle à la
+demande), **archives zip** (le modèle en liste le contenu et en sort
 le fichier qui l'intéresse) et **documents** — PDF, classeurs Excel, documents
 Word et présentations PowerPoint — que MIAOU ouvre lui-même, structure d'abord
 puis lecture ciblée (voir le sujet `documents`). Les autres fichiers binaires

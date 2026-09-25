@@ -1249,11 +1249,16 @@ const TOOLS = [
         }
         return 'Image ' + attRef + ' ré-affichée à l\'utilisateur ; son contenu suit dans le message suivant.';
       }
-      if (record.class === 'inline') {
-        return utf8Decode(record.data);
-      }
-      return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
-        ' — contenu non lisible directement.';
+      // Texte en clair : inline par construction, ou binaire dont les OCTETS
+      // sont du texte (recordTextPayload, resources.js) — texte rétrogradé par
+      // sa taille, fichier stocké avant la détection par contenu, ressource MCP
+      // typée application/octet-stream. Rendre « non lisible » sur un texte
+      // envoyait le modèle essayer tous les outils avant js__eval.
+      const textual = recordTextPayload(record, recallTextMaxBytes());
+      if (textual && textual.text != null) return textual.text;
+      const desc = formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size });
+      if (textual && textual.tooLarge) return desc + ' — ' + tooLargeTextNotice(ref);
+      return desc + ' — contenu non lisible directement.';
     },
   },
   {
@@ -1330,7 +1335,12 @@ const TOOLS = [
         return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
           ' — image, capacité de vision présente mais non ré-injectée par cet outil.';
       }
-      if (record.class === 'inline') return utf8Decode(record.data);
+      const textual = recordTextPayload(record, recallTextMaxBytes());
+      if (textual && textual.text != null) return textual.text;
+      if (textual && textual.tooLarge) {
+        return formatResourceDescriptor({ id: record.id, mime: record.mime, name: record.name, size: record.size }) +
+          ' — ' + tooLargeTextNotice(String(args.id));
+      }
       // Binaire (PDF/Office/zip…) : routé via le hook d'inflation généralisé
       // (callDocsInflatedRemoteTool, accès modèle en lecture) — le modèle lit via les outils
       // mcp_docs list/read, comme pour un attachment de message.
@@ -3306,6 +3316,22 @@ async function extractBinaryFileTextForDescription(record, maxChars, out) {
 // doctrine qui lui dit qu'il sait examiner des images. Capacité annoncée sans
 // prise (project_model_facing_text_indicative_and_reachable).
 // Retourne '' si le rappel est possible, sinon le message de refus.
+// Plafond d'un texte rendu d'un bloc par recall_attachment / files__read quand
+// il n'est pas déjà 'inline' : le même que l'injection d'un fichier joint
+// (ATTACHMENT_TEXT_MAX_BYTES, main.js — lu au runtime seulement, d'où la garde
+// pour le runner QuickJS qui peut ne pas l'avoir).
+function recallTextMaxBytes() {
+  return typeof ATTACHMENT_TEXT_MAX_BYTES === 'number' ? ATTACHMENT_TEXT_MAX_BYTES : 50 * 1024;
+}
+
+// Refus d'un texte trop long pour être rendu d'un bloc : il DIT que c'est du
+// texte et NOMME la voie qui le lit, avec le handle — un refus qui constate sans
+// nommer sa cible coûte un tour de tâtonnement.
+function tooLargeTextNotice(ref) {
+  return 'texte trop volumineux pour être rendu d\'un bloc ; lis-le par morceaux avec ' +
+    'miaou__js__eval (input_handles {"f": "' + ref + '"}, puis text("f")).';
+}
+
 function recallableImageError(record) {
   if (!record) return 'Pièce jointe introuvable (identifiant inconnu ou non disponible en session).';
   if (!record.data) return 'Contenu indisponible en session pour ce handle.';

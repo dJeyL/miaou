@@ -561,6 +561,14 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     suivant : le même bloc fencé reste identique dans le payload (PAS de
     descripteur pour un attachment texte, contrairement à l'image) —
     comparer les deux payloads octet pour octet sur ce message.
+52b. **Texte à extension inconnue → reconnu à son contenu** : joindre un `.tcl`
+    (ou un `.drawio`, ou un fichier sans extension) dont le navigateur ne donne
+    pas de type. Même injection que le cas 52 (bloc fencé « full content inlined
+    below »), jamais « binary content ». Un tel fichier au-delà de 50 Ko :
+    descripteur « text content, too large to inline », puis
+    `recall_attachment` sur son `att-N` rend soit le texte, soit la note qui
+    renvoie vers `js__eval` avec le handle — jamais « non lisible directement ».
+    Contre-épreuve : un `.bin` réellement binaire garde « binary content ».
 53. **Tour avorté avec image jointe (stop manuel)** : joindre une image,
     envoyer, cliquer stop AVANT ou PENDANT la réponse. Envoyer un message
     supplémentaire dans la même conversation → dans Network, le message user

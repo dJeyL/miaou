@@ -3371,22 +3371,29 @@ async function ingestAttachmentFile(file) {
       return { attId, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
     }
 
-    if (kind0 === 'text') {
-      const text = await readFileAsText(file);
+    // Extension inconnue : on regarde les octets (bytesLookLikeText,
+    // resources.js). Une iRule .tcl, un .drawio, une config sans extension sont
+    // du texte que l'étiquette du navigateur (vide ou application/octet-stream)
+    // ne dit pas — les classer binaires ne laissait au modèle que js__eval.
+    const raw = kind0 === 'binary' ? await readFileAsArrayBuffer(file) : null;
+    if (kind0 === 'text' || bytesLookLikeText(raw)) {
+      const text = raw ? utf8Decode(raw).replace(/^\uFEFF/, '') : await readFileAsText(file);
       const buf = utf8Encode(text);
+      const mime = textAttachmentMime(file.type);
       if (buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES) {
-        // Rétrogradé à binary : trop volumineux pour une injection texte.
-        const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
+        // Rétrogradé à binary : trop volumineux pour une injection texte. Le
+        // drapeau `textual` fait dire au descripteur « texte », pas « binaire ».
+        const rec = await storeAttachment(attId, mime, file.name, buf, 'binary', currentConvId, now, Math.random);
         if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
-        return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
+        return { attId, name: file.name, mime, size: buf.byteLength, kind: 'binary', textual: true };
       }
-      const rec = await storeAttachment(attId, file.type || 'text/plain', file.name, buf, 'inline', currentConvId, now, Math.random);
+      const rec = await storeAttachment(attId, mime, file.name, buf, 'inline', currentConvId, now, Math.random);
       if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
-      return { attId, name: file.name, mime: file.type || 'text/plain', size: buf.byteLength, kind: 'text' };
+      return { attId, name: file.name, mime, size: buf.byteLength, kind: 'text' };
     }
 
     // binary
-    const buf = await readFileAsArrayBuffer(file);
+    const buf = raw;
     const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
     if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
     return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
@@ -3433,15 +3440,17 @@ async function ingestLibraryFile(spaceId, file) {
       if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
-    if (kind0 === 'text') {
-      const text = await readFileAsText(file);
+    // Même détection par le contenu que le composer (ingestAttachmentFile).
+    const raw = kind0 === 'binary' ? await readFileAsArrayBuffer(file) : null;
+    if (kind0 === 'text' || bytesLookLikeText(raw)) {
+      const text = raw ? utf8Decode(raw).replace(/^\uFEFF/, '') : await readFileAsText(file);
       const buf = utf8Encode(text);
       const cls = buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES ? 'binary' : 'inline';
-      const rec = await storeLibraryFile(spaceId, file.type || 'text/plain', file.name, buf, cls, undefined, undefined, now, Math.random);
+      const rec = await storeLibraryFile(spaceId, textAttachmentMime(file.type), file.name, buf, cls, undefined, undefined, now, Math.random);
       if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
-    const buf = await readFileAsArrayBuffer(file);
+    const buf = raw;
     const rec = await storeLibraryFile(spaceId, file.type || 'application/octet-stream', file.name, buf, 'binary', undefined, undefined, now, Math.random);
     if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
     return rec;

@@ -445,6 +445,105 @@ describe('utf8 round-trip', function() {
   it('null byte (U+0000)', function() { trip(String.fromCharCode(0)); });
 });
 
+// ── bytesLookLikeText / recordTextPayload / textAttachmentMime ──────────────
+// Détection du texte par le CONTENU : une iRule .tcl ou un .drawio arrivaient en
+// application/octet-stream, classés binaires sur leur seule extension, et le
+// modèle ne pouvait plus les lire qu'avec js__eval.
+
+function _u8(arr) { return new Uint8Array(arr).buffer; }
+
+describe('bytesLookLikeText', function() {
+  it('une iRule (Tcl ASCII, tabulations, CRLF) → texte', function() {
+    expect(bytesLookLikeText(utf8Encode('when HTTP_REQUEST {\r\n\tif { [HTTP::host] eq "x" } { pool p1 }\r\n}\n'))).toBe(true);
+  });
+  it('du XML drawio avec accents et emoji → texte', function() {
+    expect(bytesLookLikeText(utf8Encode('<mxfile><diagram name="Réseau 🌍"/></mxfile>'))).toBe(true);
+  });
+  it('un log avec séquences ANSI (ESC) → texte', function() {
+    expect(bytesLookLikeText(utf8Encode('\u001b[31mERROR\u001b[0m boom\n'))).toBe(true);
+  });
+  it('accepte Uint8Array comme ArrayBuffer', function() {
+    expect(bytesLookLikeText(new Uint8Array([0x61, 0x62]))).toBe(true);
+  });
+  it('octet nul → binaire', function() {
+    expect(bytesLookLikeText(_u8([0x61, 0x00, 0x62]))).toBe(false);
+  });
+  it('contrôle C0 hors blancs (0x01) → binaire', function() {
+    expect(bytesLookLikeText(_u8([0x61, 0x01]))).toBe(false);
+  });
+  it('Latin-1 accentué (é = 0xE9 isolé) → binaire, pas de lecture fausse', function() {
+    expect(bytesLookLikeText(_u8([0x63, 0x61, 0x66, 0xE9]))).toBe(false);
+  });
+  it('séquence UTF-8 tronquée en fin de buffer → binaire', function() {
+    expect(bytesLookLikeText(_u8([0x61, 0xC3]))).toBe(false);
+  });
+  it('surlongueur (C0 80) → binaire', function() {
+    expect(bytesLookLikeText(_u8([0xC0, 0x80]))).toBe(false);
+  });
+  it('surrogate encodé (ED A0 80) → binaire', function() {
+    expect(bytesLookLikeText(_u8([0xED, 0xA0, 0x80]))).toBe(false);
+  });
+  it('en-tête zip (PK\\x03\\x04) → binaire', function() {
+    expect(bytesLookLikeText(_u8([0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]))).toBe(false);
+  });
+  it('un PDF tout ASCII reste binaire (routé vers docs__read)', function() {
+    expect(bytesLookLikeText(utf8Encode('%PDF-1.4\n1 0 obj\n'))).toBe(false);
+  });
+  it('vide ou absent → false', function() {
+    expect(bytesLookLikeText(new ArrayBuffer(0))).toBe(false);
+    expect(bytesLookLikeText(null)).toBe(false);
+  });
+});
+
+describe('recordTextPayload', function() {
+  it('inline → texte entier, sans plafond', function() {
+    var r = recordTextPayload({ class: 'inline', mime: 'text/plain', data: utf8Encode('abcdef') }, 2);
+    expect(r.text).toBe('abcdef');
+  });
+  it('binary dont les octets sont du texte → texte en clair (le cas de l\'iRule)', function() {
+    var r = recordTextPayload({ class: 'binary', mime: 'application/octet-stream', data: utf8Encode('when HTTP_REQUEST {}') }, 1000);
+    expect(r.text).toBe('when HTTP_REQUEST {}');
+  });
+  it('binary texte au-delà du plafond → tooLarge, jamais le contenu', function() {
+    var r = recordTextPayload({ class: 'binary', mime: 'text/plain', data: utf8Encode('0123456789') }, 5);
+    expect(r.tooLarge).toBe(true);
+    expect(r.text).toBe(undefined);
+  });
+  it('binary réellement binaire → null', function() {
+    expect(recordTextPayload({ class: 'binary', mime: 'application/zip', data: _u8([0x50, 0x4B, 0x03, 0x04, 0]) }, 1000)).toBe(null);
+  });
+  it('image → null, même si ses octets passaient le critère (SVG)', function() {
+    expect(recordTextPayload({ class: 'binary', mime: 'image/svg+xml', data: utf8Encode('<svg/>') }, 1000)).toBe(null);
+  });
+  it('sans octets → null', function() {
+    expect(recordTextPayload({ class: 'binary', mime: 'text/plain' }, 1000)).toBe(null);
+  });
+});
+
+describe('textAttachmentMime', function() {
+  it('vide ou octet-stream → text/plain', function() {
+    expect(textAttachmentMime('')).toBe('text/plain');
+    expect(textAttachmentMime(undefined)).toBe('text/plain');
+    expect(textAttachmentMime('application/octet-stream')).toBe('text/plain');
+  });
+  it('un mime plus parlant est conservé', function() {
+    expect(textAttachmentMime('application/vnd.jgraph.mxfile')).toBe('application/vnd.jgraph.mxfile');
+    expect(textAttachmentMime('text/x-tcl')).toBe('text/x-tcl');
+  });
+});
+
+describe('formatBinaryAttachmentDescriptor — texte rétrogradé par sa taille', function() {
+  it('textual → dit « text content », jamais « binary »', function() {
+    var d = formatBinaryAttachmentDescriptor({ attId: 'att-1', name: 'big.tcl', mime: 'text/plain', size: 90000, textual: true });
+    expect(d).toContain('text content, too large to inline');
+    expect(d.indexOf('binary') >= 0).toBe(false);
+  });
+  it('sans le drapeau → descripteur binaire inchangé', function() {
+    var d = formatBinaryAttachmentDescriptor({ attId: 'att-2', name: 'a.bin', mime: 'application/octet-stream', size: 10 });
+    expect(d).toContain('binary content, not inlined');
+  });
+});
+
 // ── _isTextualMime ───────────────────────────────────────────────────────────
 
 describe('_isTextualMime', function() {

@@ -97,10 +97,20 @@ vingt-huit.
   tool result textuel subsiste (dégradation propre). L'ack pousse aussi le bloc
   image affiché à l'utilisateur via `placeToolAck` (lookup par `attId` **pas**
   par `id` — seule différence de contrat avec `resource_presented`) ; **texte**
-  (`record.class === 'inline'`) → renvoie le contenu déchiffré en clair
-  (`utf8Decode`) ; **binaire** → renvoie `formatResourceDescriptor(...)` + note
-  « contenu non lisible directement » (les futurs outils `docs__*` du lot D
-  restent la voie d'extraction pour ce cas). Erreur textuelle si `ref` inconnu du
+  → renvoie le contenu déchiffré en clair (`utf8Decode`) ; **binaire** → renvoie
+  `formatResourceDescriptor(...)` + note « contenu non lisible directement »
+  (les outils `docs__*` restent la voie d'extraction pour ce cas). « Texte » est
+  décidé par `recordTextPayload` (resources.js, pur, partagé avec `files__read`) :
+  un record `inline`, rendu entier comme avant, OU un record `binary` dont les
+  **octets** passent `bytesLookLikeText` (UTF-8 strict, aucun contrôle C0 hors
+  blancs et ESC, `%PDF` écarté) — texte rétrogradé par sa taille, fichier stocké
+  avant la détection à l'ingestion (cf. `docs/storage.md`), ressource MCP typée
+  `application/octet-stream`. Un tel texte au-delà de `recallTextMaxBytes()` (le
+  plafond d'injection d'un fichier joint) n'est pas rendu d'un bloc :
+  `tooLargeTextNotice` dit que c'est du texte et nomme `js__eval` avec le handle.
+  Motif : une iRule `.tcl` arrivée en `octet-stream` recevait « non lisible », et
+  le modèle essayait `resource__present`, `recall_attachment` puis `docs__read`
+  avant de la lire par `text()` dans `js__eval`. Erreur textuelle si `ref` inconnu du
   cache session ou absent de la conversation courante. La forme cross-turn
   **persistée** reste le descripteur (`formatAttachmentDescriptor`, resources.js,
   piège n°17) : le message user d'origine porte toujours le descripteur `att-N`,

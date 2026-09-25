@@ -1043,6 +1043,18 @@ describe('recallableImageError (X-1d) — décision pure du rappel', function() 
   });
 });
 
+describe('tooLargeTextNotice — refus d\'un texte trop long', function() {
+  it('dit que c\'est du texte et nomme la voie de lecture avec le handle', function() {
+    var n = tooLargeTextNotice('att-4');
+    expect(n).toContain('texte');
+    expect(n).toContain('miaou__js__eval');
+    expect(n).toContain('"att-4"');
+  });
+  it('le plafond suit celui de l\'injection d\'un fichier joint', function() {
+    expect(recallTextMaxBytes() > 0).toBe(true);
+  });
+});
+
 describe('recall_attachment (X-1d) — les deux familles de handle', function() {
   it('un handle de ressource est reconnu comme tel par le classifieur', function() {
     // PRÉMISSE de l'élargissement : c'est classifyHandleRef qui aiguille le

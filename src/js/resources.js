@@ -424,11 +424,14 @@ function formatTextAttachmentBlock(att, text) {
 // tour d'attache == tours suivants. Note NEUTRE (ne mentionne aucun outil) :
 // c'est DOCS_DOCTRINE (tools.js), statique et inconditionnelle depuis V-1, qui
 // porte le « comment » — un binaire non-docx et un serveur docs absent doivent
-// produire un descripteur STRICTEMENT identique, aucune branche ici.
+// produire un descripteur STRICTEMENT identique, aucune branche ici. Seule
+// exception, sur un champ FIGÉ à l'ingestion : `textual` (texte rétrogradé en
+// binary par sa taille), qui ne doit pas se lire « binaire » — le modèle
+// conclurait qu'aucun outil ne le lit en clair.
 function formatBinaryAttachmentDescriptor(att) {
   return '[attachment ' + att.attId + ': file "' + (att.name || '') + '", ' +
     (att.mime || 'application/octet-stream') + ', ' + modelSize(att.size) +
-    ' — binary content, not inlined]';
+    (att.textual ? ' — text content, too large to inline]' : ' — binary content, not inlined]');
 }
 
 // Construit le CONTENU du message user au tour d'attache (briefs A et H) : texte
@@ -612,6 +615,80 @@ function _isTextualMime(mime) {
   const base = mime.split(';')[0].trim().toLowerCase();
   if (base.indexOf('text/') === 0) return true;
   return _TEXTUAL_MIME_ALLOWLIST.indexOf(base) !== -1;
+}
+
+// Les octets sont-ils un texte ? Décision sur le CONTENU, là où le mime (fourni
+// par le navigateur, souvent vide ou application/octet-stream) et l'extension
+// (liste fermée ATTACHMENT_TEXT_EXTENSIONS) ne sont que des étiquettes : une
+// iRule .tcl ou un .drawio (XML) partaient en binaire, et le modèle n'avait
+// plus que js__eval pour les lire, après avoir essayé tous les autres outils.
+// Critère : UTF-8 STRICT (ni surlongueur, ni surrogate, ni au-delà de U+10FFFF,
+// ni séquence tronquée) et aucun caractère de contrôle C0 hors tabulation,
+// sauts de ligne, FF et ESC (couleurs ANSI d'un log). Un Latin-1 accentué échoue
+// et reste binaire : c'est le comportement d'avant, jamais une lecture fausse.
+// `%PDF` est écarté nommément : un PDF tout ASCII passerait le critère, et il
+// doit rester routé vers docs__read (sniffDocumentKind). Un zip ne passe jamais
+// (octets nuls de ses en-têtes). Buffer vide → false : rien à lire.
+function bytesLookLikeText(buf) {
+  if (!buf) return false;
+  const u8 = buf instanceof Uint8Array ? buf
+    : (buf instanceof ArrayBuffer ? new Uint8Array(buf)
+      : (buf.buffer instanceof ArrayBuffer ? new Uint8Array(buf.buffer, buf.byteOffset || 0, buf.byteLength) : null));
+  if (!u8 || !u8.length) return false;
+  if (u8.length >= 4 && u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46) return false;
+  const n = u8.length;
+  let i = 0;
+  while (i < n) {
+    const b = u8[i];
+    if (b < 0x80) {
+      if (b < 0x20 && b !== 0x09 && b !== 0x0A && b !== 0x0B && b !== 0x0C && b !== 0x0D && b !== 0x1B) return false;
+      i++;
+      continue;
+    }
+    let len, min;
+    if (b >= 0xC2 && b <= 0xDF) { len = 2; min = 0x80; }
+    else if (b >= 0xE0 && b <= 0xEF) { len = 3; min = 0x800; }
+    else if (b >= 0xF0 && b <= 0xF4) { len = 4; min = 0x10000; }
+    else return false;
+    if (i + len > n) return false;
+    let cp = b & (len === 2 ? 0x1F : len === 3 ? 0x0F : 0x07);
+    for (let k = 1; k < len; k++) {
+      const c = u8[i + k];
+      if ((c & 0xC0) !== 0x80) return false;
+      cp = (cp << 6) | (c & 0x3F);
+    }
+    if (cp < min || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return false;
+    i += len;
+  }
+  return true;
+}
+
+// Contenu textuel d'un record à rendre EN CLAIR au modèle (recall_attachment,
+// files__read). Un record 'inline' est du texte par construction et rendu
+// entier, comme avant. Un record 'binary' est sondé : texte trop volumineux pour
+// l'ingestion (ATTACHMENT_TEXT_MAX_BYTES), fichier stocké avant la détection par
+// contenu, ressource MCP typée application/octet-stream. Au-delà de `maxBytes`,
+// on ne le rend pas d'un bloc (le tool result repaierait chaque tour) : l'appelant
+// annonce un texte à lire par morceaux. Rend { text } | { tooLarge: true } | null
+// (pas un texte). Pure.
+function recordTextPayload(record, maxBytes) {
+  if (!record || !record.data) return null;
+  if (record.class === 'inline') return { text: utf8Decode(record.data) };
+  if (record.mime && String(record.mime).toLowerCase().indexOf('image/') === 0) return null;
+  if (!bytesLookLikeText(record.data)) return null;
+  const size = record.data.byteLength != null ? record.data.byteLength : 0;
+  if (maxBytes > 0 && size > maxBytes) return { tooLarge: true };
+  return { text: utf8Decode(record.data) };
+}
+
+// Mime à retenir pour un fichier reconnu TEXTE par son contenu : celui du
+// navigateur s'il en dit plus que « octets » (application/vnd.jgraph.mxfile
+// renseigne sur un .drawio), sinon text/plain — jamais application/octet-stream,
+// qui ferait lire « binaire » au descripteur comme au modèle. Pure.
+function textAttachmentMime(browserMime) {
+  const m = String(browserMime || '').trim();
+  if (!m || m.split(';')[0].trim().toLowerCase() === 'application/octet-stream') return 'text/plain';
+  return m;
 }
 
 // ── Partitionnement d'un résultat MCP (helper pur, QuickJS-testable) ─────────
