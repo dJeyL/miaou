@@ -1830,7 +1830,42 @@ function noteUserScrollIntent() {
 }
 
 function scrollFollowsUserIntent() {
-  return (Date.now() - _lastUserScrollIntent) <= USER_SCROLL_INTENT_MS;
+  return _scrollbarDragging || (Date.now() - _lastUserScrollIntent) <= USER_SCROLL_INTENT_MS;
+}
+
+// Glisser la barre de défilement est un geste qui n'émet NI molette, NI
+// toucher, NI touche : sans ce drapeau, redescendre au fond par la barre ne
+// levait jamais le plafond. Tenu du `pointerdown` sur la barre au relâchement,
+// pas sur une fenêtre de temps — un glisser dure ce qu'il dure.
+let _scrollbarDragging = false;
+
+function onMessagesPointerDown(e) {
+  const m = e.currentTarget;
+  // La barre fait partie de l'élément lui-même (jamais d'un enfant), au-delà
+  // de sa largeur cliente.
+  if (e.target !== m || e.offsetX < m.clientWidth) return;
+  _scrollbarDragging = true;
+  noteUserScrollIntent();
+  cancelScrollBottomAnim();
+  const end = () => {
+    _scrollbarDragging = false;
+    noteUserScrollIntent();   // la salve de `scroll` du dernier mouvement reste imputée au geste
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+  };
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+}
+
+// Pousser vers le bas alors qu'on est DÉJÀ au fond : le navigateur n'émet
+// aucun `scroll` (la position ne peut plus changer), donc onMessagesScroll ne
+// voit jamais ce geste. Or c'est exactement celui qu'on fait quand la levée a
+// manqué — on insiste. Il doit donc suffire à lui seul.
+const SCROLL_DOWN_KEYS = ['End', 'PageDown', 'ArrowDown', ' '];
+
+function releaseScrollCapOnPushAtBottom(e) {
+  const down = (e.type === 'wheel') ? e.deltaY > 0 : SCROLL_DOWN_KEYS.includes(e.key);
+  if (down && isAtBottom()) releaseScrollCap(currentConvId);
 }
 
 // Abandon de la descente animée sur intention explicite de l'utilisateur
@@ -1849,12 +1884,16 @@ function cancelScrollBottomAnim() {
 function onMessagesScroll() {
   if (_scrollSyncPending) return;
   _scrollSyncPending = true;
-  // Lu TOUT DE SUITE, pas dans le rAF : la fenêtre d'intention peut expirer
-  // d'ici là sur une salve longue.
+  // Lus TOUT DE SUITE, pas dans le rAF : la fenêtre d'intention peut expirer
+  // d'ici là sur une salve longue, et surtout le fil peut GRANDIR — une frame
+  // de streaming rendue entre l'événement et le rAF éloigne le fond, et la
+  // vue que l'utilisateur venait d'amener au fond n'y était plus au moment du
+  // test : la levée manquait, et insister à la molette n'émet plus de scroll.
   const intent = scrollFollowsUserIntent();
+  const atBottomNow = isAtBottom();
   requestAnimationFrame(() => {
     _scrollSyncPending = false;
-    if (intent && isAtBottom()) releaseScrollCap(currentConvId);
+    if (intent && (atBottomNow || isAtBottom())) releaseScrollCap(currentConvId);
     syncScrollBottomBtn();
   });
 }
@@ -2062,6 +2101,13 @@ function renderReasoningNow(wrap, text) {
   // Mesuré avant l'écriture (qui modifie scrollHeight).
   const stick = !panel.hasAttribute('hidden') &&
     content.scrollHeight - content.scrollTop - content.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
+  // Le FIL aussi : déplié, le bloc grandit jusqu'à sa hauteur max avant de
+  // défiler en interne, et cette croissance repousse le fond du fil. Sans ce
+  // suivi, seuls les deltas de contenu faisaient défiler le fil — pendant toute
+  // la phase de raisonnement, la vue restait sur place, levée du plafond
+  // comprise (on redescendait au fond pour rien). Lu avant l'écriture, même
+  // raison que streamInto.
+  const follow = shouldFollowStream(currentConvId);
   // Ajout en queue plutôt que réécriture quand le texte ne fait que se
   // prolonger (cas du streaming) : réécrire textContent recrée le nœud texte et
   // perd toute sélection en cours. Réécriture complète sinon.
@@ -2069,6 +2115,7 @@ function renderReasoningNow(wrap, text) {
   if (suffix === null) content.textContent = text;
   else if (suffix) content.appendChild(document.createTextNode(suffix));
   if (stick) content.scrollTop = content.scrollHeight;  // suivre si déplié ET déjà en bas
+  if (follow) scrollBottomCapped(currentConvId);
 }
 
 // Alimenté en live par les deltas accumulés, throttlé par fenêtres de ~90 ms
@@ -3343,8 +3390,68 @@ function buildCompactionMarker(m) {
   content.className = 'compaction-mark-summary body';
   content.innerHTML = renderMd(m.content || '');
   body.appendChild(content);
+  body.addEventListener('toggle', () => {
+    sum.textContent = body.open ? 'Masquer le résumé' : 'Voir le résumé';
+    if (body.open) revealCompactionSummary(content);
+  });
+  sum.addEventListener('click', (e) => {
+    if (!body.open) return;
+    e.preventDefault();
+    collapseCompactionSummary(body, content);
+  });
   wrap.appendChild(body);
   return wrap;
+}
+
+// Durée du repli du résumé — celle de la descente au fond, l'autre geste de
+// navigation animé du fil.
+const COMPACTION_SUMMARY_COLLAPSE_MS = SCROLL_BOTTOM_DURATION_MS;
+
+// Déplié, le résumé s'ouvre SOUS le libellé cliqué, donc souvent sous le
+// composer : on descend jusqu'à le montrer — au fond du fil s'il y tient, sinon
+// jusqu'à poser son début en haut de la vue. Même calcul que le plafond
+// d'autoscroll (`cappedScrollTop`), résumé pris pour ancre : la vue ne remonte
+// jamais, et un résumé déjà visible ne bouge rien.
+function revealCompactionSummary(content) {
+  const m = $('messages');
+  if (!m || !content.isConnected) return;
+  const padTop = parseFloat(getComputedStyle(m).paddingTop) || 0;
+  const top = cappedScrollTop(anchorTopInScroll(m, content), m.scrollHeight, m.clientHeight, padTop, m.scrollTop);
+  if (top <= m.scrollTop) return;
+  m.scrollTo({ top, behavior: motionReduced() ? 'auto' : 'smooth' });
+}
+
+// Repli ANIMÉ, pendant du dépli qui défile en douceur. Un repli sec retire d'un
+// coup toute la hauteur du résumé : une vue posée au fond du fil est alors
+// ramenée d'autant par le navigateur, en un saut. En faisant fondre la boîte,
+// c'est ce même recalage qui suit la hauteur frame par frame — aucun scroll à
+// piloter. `open` n'est retiré qu'à l'arrivée, ce qui déclenche le `toggle`
+// (libellé) au moment où le résumé a effectivement disparu.
+//
+// Départ = la boîte telle qu'elle est rendue (hauteur de bordure en
+// border-box, marge et paddings calculés) : aucun saut à la pose de
+// l'animation (cf. l'épinglage des hauteurs d'acks).
+function collapseCompactionSummary(body, content) {
+  if (content._collapsing) return;
+  if (motionReduced() || typeof content.animate !== 'function') { body.open = false; return; }
+  const cs = getComputedStyle(content);
+  content._collapsing = true;
+  content.style.boxSizing = 'border-box';
+  content.style.overflow = 'hidden';
+  const anim = content.animate([
+    { height: content.offsetHeight + 'px', marginTop: cs.marginTop,
+      paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom,
+      borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth, opacity: 1 },
+    { height: '0px', marginTop: '0px', paddingTop: '0px', paddingBottom: '0px',
+      borderTopWidth: '0px', borderBottomWidth: '0px', opacity: 0 },
+  ], { duration: COMPACTION_SUMMARY_COLLAPSE_MS, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+  anim.onfinish = () => {
+    body.open = false;
+    anim.cancel();
+    content.style.boxSizing = '';
+    content.style.overflow = '';
+    content._collapsing = false;
+  };
 }
 
 function buildToolAck(m) {

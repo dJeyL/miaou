@@ -4924,7 +4924,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-25 10:43 UTC */
+/* miaou — built: 2026-09-25 16:22 UTC */
 
 /* ── utils.js ── */
 
@@ -9295,7 +9295,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790333025}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790353342}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -17311,7 +17311,33 @@ function noteUserScrollIntent() {
 }
 
 function scrollFollowsUserIntent() {
-  return (Date.now() - _lastUserScrollIntent) <= USER_SCROLL_INTENT_MS;
+  return _scrollbarDragging || (Date.now() - _lastUserScrollIntent) <= USER_SCROLL_INTENT_MS;
+}
+
+let _scrollbarDragging = false;
+
+function onMessagesPointerDown(e) {
+  const m = e.currentTarget;
+
+  if (e.target !== m || e.offsetX < m.clientWidth) return;
+  _scrollbarDragging = true;
+  noteUserScrollIntent();
+  cancelScrollBottomAnim();
+  const end = () => {
+    _scrollbarDragging = false;
+    noteUserScrollIntent();
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+  };
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+}
+
+const SCROLL_DOWN_KEYS = ['End', 'PageDown', 'ArrowDown', ' '];
+
+function releaseScrollCapOnPushAtBottom(e) {
+  const down = (e.type === 'wheel') ? e.deltaY > 0 : SCROLL_DOWN_KEYS.includes(e.key);
+  if (down && isAtBottom()) releaseScrollCap(currentConvId);
 }
 
 function cancelScrollBottomAnim() {
@@ -17327,9 +17353,10 @@ function onMessagesScroll() {
   _scrollSyncPending = true;
 
   const intent = scrollFollowsUserIntent();
+  const atBottomNow = isAtBottom();
   requestAnimationFrame(() => {
     _scrollSyncPending = false;
-    if (intent && isAtBottom()) releaseScrollCap(currentConvId);
+    if (intent && (atBottomNow || isAtBottom())) releaseScrollCap(currentConvId);
     syncScrollBottomBtn();
   });
 }
@@ -17465,10 +17492,13 @@ function renderReasoningNow(wrap, text) {
   const stick = !panel.hasAttribute('hidden') &&
     content.scrollHeight - content.scrollTop - content.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
 
+  const follow = shouldFollowStream(currentConvId);
+
   const suffix = appendOnlySuffix(content.textContent, text);
   if (suffix === null) content.textContent = text;
   else if (suffix) content.appendChild(document.createTextNode(suffix));
   if (stick) content.scrollTop = content.scrollHeight;
+  if (follow) scrollBottomCapped(currentConvId);
 }
 
 function setReasoning(wrap, text) {
@@ -18394,8 +18424,51 @@ function buildCompactionMarker(m) {
   content.className = 'compaction-mark-summary body';
   content.innerHTML = renderMd(m.content || '');
   body.appendChild(content);
+  body.addEventListener('toggle', () => {
+    sum.textContent = body.open ? 'Masquer le résumé' : 'Voir le résumé';
+    if (body.open) revealCompactionSummary(content);
+  });
+  sum.addEventListener('click', (e) => {
+    if (!body.open) return;
+    e.preventDefault();
+    collapseCompactionSummary(body, content);
+  });
   wrap.appendChild(body);
   return wrap;
+}
+
+const COMPACTION_SUMMARY_COLLAPSE_MS = SCROLL_BOTTOM_DURATION_MS;
+
+function revealCompactionSummary(content) {
+  const m = $('messages');
+  if (!m || !content.isConnected) return;
+  const padTop = parseFloat(getComputedStyle(m).paddingTop) || 0;
+  const top = cappedScrollTop(anchorTopInScroll(m, content), m.scrollHeight, m.clientHeight, padTop, m.scrollTop);
+  if (top <= m.scrollTop) return;
+  m.scrollTo({ top, behavior: motionReduced() ? 'auto' : 'smooth' });
+}
+
+function collapseCompactionSummary(body, content) {
+  if (content._collapsing) return;
+  if (motionReduced() || typeof content.animate !== 'function') { body.open = false; return; }
+  const cs = getComputedStyle(content);
+  content._collapsing = true;
+  content.style.boxSizing = 'border-box';
+  content.style.overflow = 'hidden';
+  const anim = content.animate([
+    { height: content.offsetHeight + 'px', marginTop: cs.marginTop,
+      paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom,
+      borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth, opacity: 1 },
+    { height: '0px', marginTop: '0px', paddingTop: '0px', paddingBottom: '0px',
+      borderTopWidth: '0px', borderBottomWidth: '0px', opacity: 0 },
+  ], { duration: COMPACTION_SUMMARY_COLLAPSE_MS, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+  anim.onfinish = () => {
+    body.open = false;
+    anim.cancel();
+    content.style.boxSizing = '';
+    content.style.overflow = '';
+    content._collapsing = false;
+  };
 }
 
 function buildToolAck(m) {
@@ -28434,7 +28507,12 @@ async function init() {
 
   $('messages').addEventListener('scroll', onMessagesScroll, { passive: true });
 
-  const onUserScrollGesture = () => { noteUserScrollIntent(); cancelScrollBottomAnim(); };
+  const onUserScrollGesture = (e) => {
+    noteUserScrollIntent();
+    cancelScrollBottomAnim();
+    if (e.type === 'wheel' || e.type === 'keydown') releaseScrollCapOnPushAtBottom(e);
+  };
+  $('messages').addEventListener('pointerdown', onMessagesPointerDown, { passive: true });
   $('messages').addEventListener('wheel', onUserScrollGesture, { passive: true });
   $('messages').addEventListener('touchstart', onUserScrollGesture, { passive: true });
   $('messages').addEventListener('touchmove', onUserScrollGesture, { passive: true });

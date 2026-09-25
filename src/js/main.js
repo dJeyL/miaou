@@ -5974,7 +5974,12 @@ async function init() {
   // qu'il vienne d'un geste ou d'un autoscroll) : abandonner la descente animée
   // du bouton, et autoriser la levée du plafond d'autoscroll quand elle amène
   // au fond (cf. noteUserScrollIntent / cancelScrollBottomAnim, ui.js).
-  const onUserScrollGesture = () => { noteUserScrollIntent(); cancelScrollBottomAnim(); };
+  const onUserScrollGesture = (e) => {
+    noteUserScrollIntent();
+    cancelScrollBottomAnim();
+    if (e.type === 'wheel' || e.type === 'keydown') releaseScrollCapOnPushAtBottom(e);
+  };
+  $('messages').addEventListener('pointerdown', onMessagesPointerDown, { passive: true });
   $('messages').addEventListener('wheel', onUserScrollGesture, { passive: true });
   $('messages').addEventListener('touchstart', onUserScrollGesture, { passive: true });
   $('messages').addEventListener('touchmove', onUserScrollGesture, { passive: true });

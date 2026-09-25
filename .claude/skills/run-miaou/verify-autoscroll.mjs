@@ -8,7 +8,12 @@
 //     suit » sans condition le ramenait à chaque delta) ;
 //   - redescendre au fond par un geste lève le plafond : le streaming suit à
 //     nouveau le bas (ancrage doux) ;
-//   - finalizeAssistant ne force pas le scroll d'un lecteur remonté.
+//   - finalizeAssistant ne force pas le scroll d'un lecteur remonté ;
+//   - la redescente à la molette lève le plafond même si une frame de
+//     streaming éloigne le fond entre l'événement et son traitement, et un
+//     cran vers le bas au fond suffit à lui seul (2026-09-25, cas d'usage réel) ;
+//   - un raisonnement déplié qui grandit fait suivre le fil, pas seulement le
+//     contenu de la réponse (2026-09-25).
 // Ce script assertait avant le plafond « en restant en bas, la vue est au
 // fond » : le plafond l'a rendu faux par construction (la vue s'arrête sur
 // l'énoncé), d'où l'assertion de confinement qui l'a remplacé.
@@ -134,6 +139,100 @@ await page.evaluate((t) => { finalizeAssistant(window.__wrap, t); }, text);
 await page.waitForTimeout(50);
 s = await scrollState();
 check('finalizeAssistant : ne force pas le scroll si l\'utilisateur avait remonté', s.scrollTop < 5);
+
+// ── 6. Réembrayage à la molette malgré une frame de streaming concurrente ───
+// Le cas signalé en usage réel : on redescend au fond à la molette PENDANT que
+// la réponse s'écrit, et le plafond ne se lève pas. Une frame rendue entre
+// l'événement `scroll` et le rAF de onMessagesScroll éloigne le fond : testé
+// dans le rAF, « au fond » est déjà faux. Montage déterministe : un écouteur
+// `scroll` posé APRÈS onMessagesScroll (donc exécuté après sa lecture
+// synchrone, avant son rAF) fait grandir le fil au moment où la vue touche le
+// fond — c'est la frame concurrente. Grandir par un bloc hors bulle plutôt
+// que par streamInto : son throttle ne rend pas forcément dans cette fenêtre.
+const armAndPark = async (offsetFromBottom) => {
+  await page.evaluate((off) => {
+    armScrollCap(currentConvId);
+    const m = document.getElementById('messages');
+    m.scrollTop = m.scrollHeight - m.clientHeight - off;   // programmatique : aucune intention
+  }, offsetFromBottom);
+  await page.waitForTimeout(800);   // fenêtre d'intention des gestes précédents expirée
+};
+await armAndPark(120);
+check('prémisse 6a : plafond réarmé, vue près du fond sans y être',
+  await page.evaluate(() => !scrollCapReleased(currentConvId) && !isAtBottom()));
+await page.evaluate(() => {
+  const m = document.getElementById('messages');
+  const grow = () => {
+    if (!isAtBottom()) return;
+    m.removeEventListener('scroll', grow);
+    const pad = document.createElement('div');
+    pad.id = 'verify-race-pad';
+    pad.style.height = '400px';
+    document.getElementById('thread').appendChild(pad);
+    window.__raceGrown = true;
+  };
+  m.addEventListener('scroll', grow, { passive: true });
+});
+await page.mouse.wheel(0, 300);
+await page.waitForTimeout(300);
+check('prémisse 6a : la frame concurrente a bien eu lieu au fond',
+  await page.evaluate(() => window.__raceGrown === true && !isAtBottom()));
+check('6a : atteindre le fond à la molette lève le plafond malgré la frame concurrente',
+  await page.evaluate(() => scrollCapReleased(currentConvId)));
+
+// 6b. Insister : au fond, un cran de molette vers le bas n'émet aucun
+// `scroll` (la position ne peut plus changer). Il doit lever le plafond à lui
+// seul — c'est le geste qu'on fait quand la levée a manqué.
+await page.evaluate(() => { document.getElementById('verify-race-pad').remove(); });
+await armAndPark(0);
+check('prémisse 6b : plafond réarmé, vue au fond',
+  await page.evaluate(() => !scrollCapReleased(currentConvId) && isAtBottom()));
+await page.evaluate(() => {
+  window.__scrollEvents = 0;
+  document.getElementById('messages').addEventListener('scroll', () => { window.__scrollEvents++; }, { passive: true });
+});
+await page.mouse.wheel(0, 300);
+await page.waitForTimeout(300);
+check('prémisse 6b : le cran au fond n\'a émis aucun scroll',
+  await page.evaluate(() => window.__scrollEvents === 0));
+check('6b : un cran de molette vers le bas au fond lève le plafond',
+  await page.evaluate(() => scrollCapReleased(currentConvId)));
+
+// ── 7. Le raisonnement qui grandit fait suivre le fil ──────────────────────
+// Déplié, le bloc de raisonnement grandit jusqu'à sa hauteur max avant de
+// défiler en interne ; cette croissance repousse le fond du FIL. Seuls les
+// deltas de contenu faisaient défiler le fil : pendant toute la phase de
+// raisonnement, une vue au fond y restait plantée. On reste SOUS la hauteur
+// max (sinon le fil ne grandit plus et le cas disparaît), et on écrit par
+// flushReasoning, synchrone, pour ne pas dépendre du throttle de setReasoning.
+const reasoningState = () => page.evaluate(() => {
+  const c = window.__wrap2.querySelector('.reasoning-content');
+  return { atBottom: isAtBottom(), scrollHeight: document.getElementById('messages').scrollHeight,
+    innerScrolls: c.scrollHeight > c.clientHeight + 1 };
+});
+await page.evaluate(() => {
+  window.__wrap2 = startAssistantMessage('test-model', undefined);
+  flushReasoning(window.__wrap2, 'Raisonnement ligne 0');
+  toggleReasoning(window.__wrap2.querySelector('.reasoning-toggle'));
+  releaseScrollCap(currentConvId);
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+});
+await page.waitForTimeout(150);
+const r0 = await reasoningState();
+check('prémisse 7 : raisonnement déplié, vue au fond', r0.atBottom &&
+  await page.evaluate(() => !window.__wrap2.querySelector('.reasoning').hasAttribute('hidden')));
+let reasoning = 'Raisonnement ligne 0';
+for (let i = 1; i <= 12; i++) {
+  reasoning += '\nRaisonnement ligne ' + i;
+  await page.evaluate((t) => { flushReasoning(window.__wrap2, t); }, reasoning);
+  await page.waitForTimeout(40);
+}
+const r1 = await reasoningState();
+console.log('    phase 7 : fil ' + r0.scrollHeight + 'px → ' + r1.scrollHeight + 'px');
+check('prémisse 7 : le bloc a grandi sans atteindre sa hauteur max (le fil a grandi, pas de défilement interne)',
+  r1.scrollHeight - r0.scrollHeight > 100 && !r1.innerScrolls);
+check('7 : le raisonnement qui grandit fait suivre le fil', r1.atBottom);
 
 await browser.close();
 
