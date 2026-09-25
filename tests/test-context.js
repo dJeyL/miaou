@@ -906,6 +906,6 @@ describe('formatModelCapsLine (inspecteur, lot AF)', function() {
   it('rien de déclaré, avec ou sans « Sans vision » manuel', function() {
     var unk = { vision: null, tools: null, thinking: null };
     expect(formatModelCapsLine(unk, { enabled: true, source: 'unknown' })).toBe('Capacités du modèle : non déclarées par le serveur.');
-    expect(formatModelCapsLine(unk, { enabled: false, source: 'manual' })).toContain('Marqué « Sans vision »');
+    expect(formatModelCapsLine(unk, { enabled: false, source: 'manual' })).toContain('Marqué «\u00a0Sans vision\u00a0»');
   });
 });

@@ -1018,7 +1018,7 @@ async function runMdConversion(file) {
   if (!file || _convertingMd) return;
   _convertingMd = true;
   try {
-    setMdConvertStatus('Conversion de « ' + file.name +' »…', false);
+    setMdConvertStatus('Conversion de « ' + file.name +' »…', false);
     const text = await file.text();
     await convertMarkdownToHtmlFile(text, file.name);
     setMdConvertStatus('Converti : ' + mdHtmlFileName(file.name), false);

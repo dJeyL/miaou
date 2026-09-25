@@ -1927,8 +1927,8 @@ function guessMcpTransport(url) {
 function validateMcpServerName(name, existingNames) {
   const n = String(name || '').trim();
   if (!n) return 'Nom requis.';
-  if (n === 'miaou') return 'Le nom « miaou » est réservé aux outils internes.';
-  if (n.indexOf('__') >= 0) return 'Le nom ne peut pas contenir « __ » (séparateur réservé).';
+  if (n === 'miaou') return 'Le nom « miaou » est réservé aux outils internes.';
+  if (n.indexOf('__') >= 0) return 'Le nom ne peut pas contenir « __ » (séparateur réservé).';
   if (!/^[a-zA-Z0-9_-]+$/.test(n)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
   if (Array.isArray(existingNames) && existingNames.indexOf(n) >= 0) return 'Ce nom est déjà utilisé.';
   return null;

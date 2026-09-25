@@ -45,7 +45,7 @@ const WELCOME_SCREENS = [
     tipEmoji: '⚙️', tipHead: 'Dans les rouages :' },
   { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.',
     tipEmoji: '🧑‍🍳', tipHead: 'Sorti du four :' },
-  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.',
+  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.',
     tipEmoji: '🐾', tipHead: 'Ronronné en passant :' },
   { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.',
     tipEmoji: '🪡', tipHead: 'Au bout du fil :' },
@@ -3954,7 +3954,7 @@ function syncAgentBanner(conv) {
       // bandeau qui porte ce nom en clair défile hors de vue dès qu'on descend
       // dans le fil. Sans lui, l'affordance permanente serait muette sur sa
       // destination.
-      btn.title = 'Retour à « ' + label + ' »';
+      btn.title = 'Retour à « ' + label + ' »';
       btn.setAttribute('aria-label', btn.title);
       // Cible relue à CHAQUE appel, jamais figée : un agent peut être réouvert
       // après que son parent a été renommé, et syncAgentBanner est rappelée à
@@ -7083,7 +7083,7 @@ function formatModelCapsLine(caps, vision) {
   const c = caps || {};
   const known = ['vision', 'tools', 'thinking'].some(k => c[k] === true || c[k] === false);
   const manual = vision && vision.source === 'manual'
-    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
+    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
   if (!known) return 'Capacités du modèle : non déclarées par le serveur.' + manual;
   // Coche / croix pour un déclaré, mot en clair pour l'inconnu : un glyphe
   // de plus (« ? ») se lirait mal à côté des deux autres, et l'inconnu est
@@ -8402,7 +8402,7 @@ function buildMcpCard(server, isNew) {
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
-  editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
+  editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
   editSection.appendChild(cfgField('URL', urlI));
   // Le libellé « sse » reste nu dans la pilule (harmonisation des dropdowns) :
   // l'avertissement « différé » vit dans le hint du champ, pas dans l'option —
@@ -8653,7 +8653,7 @@ function buildApiCard(server, isNew, isActive) {
         (declared ? '' : ' Les images sont remplacées par un descripteur textuel.');
     } else {
       visionHint.textContent = 'Le serveur ne dit pas si ce modèle lit les images. S\'il ne les lit pas, ' +
-        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
+        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
     }
   };
   syncVisionField();
@@ -9031,7 +9031,7 @@ function buildSkillCard(skill, isNew) {
   contentT.className = 'skill-content'; contentT.rows = 10; contentT.spellcheck = false;
   contentT.placeholder = 'Corps de la skill en Markdown…';
 
-  editSection.appendChild(cfgField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
+  editSection.appendChild(cfgField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
   editSection.appendChild(cfgField('Nom', nameI, 'Libellé d\'affichage.'));
   editSection.appendChild(cfgField('Description', descI, 'Surface lexicale décrite au modèle.'));
   editSection.appendChild(cfgField('Contenu', contentT));

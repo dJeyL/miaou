@@ -2885,7 +2885,7 @@ async function ingestAttachmentFile(file) {
   const kind0 = classifyAttachmentKind(file.name, file.type);
   const cap = attachmentCapForKind(kind0);
   if (file.size > cap.bytes) {
-    showComposerAttachError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
+    showComposerAttachError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
     return null;
   }
   if (kind0 === 'image') {
@@ -2909,7 +2909,7 @@ async function ingestAttachmentFile(file) {
   // ré-injection cross-turn et le bouton de téléchargement serviraient la
   // mauvaise image. Un seul allocateur, un seul ordre.
   const attId = reserveAttIdFor(currentConvId);   // resources.js
-  if (!attId) { showComposerAttachError('Échec du traitement de « ' + file.name + ' ».'); return null; }
+  if (!attId) { showComposerAttachError('Échec du traitement de « ' + file.name + ' ».'); return null; }
   const now = Date.now();
 
   try {
@@ -2917,7 +2917,7 @@ async function ingestAttachmentFile(file) {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
       const rec = await storeAttachment(attId, mime, file.name, buf, 'binary', currentConvId, now, Math.random, { w, h });
-      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
       return { attId, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
     }
 
@@ -2934,22 +2934,22 @@ async function ingestAttachmentFile(file) {
         // Rétrogradé à binary : trop volumineux pour une injection texte. Le
         // drapeau `textual` fait dire au descripteur « texte », pas « binaire ».
         const rec = await storeAttachment(attId, mime, file.name, buf, 'binary', currentConvId, now, Math.random);
-        if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+        if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
         return { attId, name: file.name, mime, size: buf.byteLength, kind: 'binary', textual: true };
       }
       const rec = await storeAttachment(attId, mime, file.name, buf, 'inline', currentConvId, now, Math.random);
-      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
       return { attId, name: file.name, mime, size: buf.byteLength, kind: 'text' };
     }
 
     // binary
     const buf = raw;
     const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
-    if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+    if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
     return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
-    showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
+    showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
 }
@@ -2978,7 +2978,7 @@ async function ingestLibraryFile(spaceId, file) {
   const kind0 = classifyAttachmentKind(file.name, file.type);
   const cap = attachmentCapForKind(kind0);
   if (file.size > cap.bytes) {
-    showSpaceFilesError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
+    showSpaceFilesError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
     return null;
   }
   const now = Date.now();
@@ -2987,7 +2987,7 @@ async function ingestLibraryFile(spaceId, file) {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
       const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random, { w, h });
-      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
     // Même détection par le contenu que le composer (ingestAttachmentFile).
@@ -2997,16 +2997,16 @@ async function ingestLibraryFile(spaceId, file) {
       const buf = utf8Encode(text);
       const cls = buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES ? 'binary' : 'inline';
       const rec = await storeLibraryFile(spaceId, textAttachmentMime(file.type), file.name, buf, cls, undefined, undefined, now, Math.random);
-      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
     const buf = raw;
     const rec = await storeLibraryFile(spaceId, file.type || 'application/octet-stream', file.name, buf, 'binary', undefined, undefined, now, Math.random);
-    if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+    if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
     return rec;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestLibraryFile:', e && e.message);
-    showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
+    showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
 }

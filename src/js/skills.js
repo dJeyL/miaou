@@ -74,12 +74,12 @@ function validateSkillSlug(slug, existingSlugs) {
   if (!s) return 'Slug requis.';
   if (s.length > SKILL_SLUG_MAX) return 'Slug trop long (max ' + SKILL_SLUG_MAX + ' caractères).';
   if (/\s/.test(s)) return 'Le slug ne peut pas contenir d\'espace.';
-  if (s.indexOf('/') >= 0) return 'Le slug ne peut pas contenir « / ».';
+  if (s.indexOf('/') >= 0) return 'Le slug ne peut pas contenir « / ».';
   if (!/^[a-zA-Z0-9_-]+$/.test(s)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
   // AE-9 : le message dit POURQUOI, pas seulement qu'on refuse — sinon
   // l'utilisateur cherche une skill homonyme qui n'existe pas.
   if (commandSlugs().indexOf(s) >= 0) {
-    return 'Slug réservé : « /' + s + ' » est une commande de MIAOU, pas une skill.';
+    return 'Slug réservé : « /' + s + ' » est une commande de MIAOU, pas une skill.';
   }
   if (Array.isArray(existingSlugs) && existingSlugs.indexOf(s) >= 0) return 'Ce slug est déjà utilisé.';
   return null;
@@ -102,7 +102,7 @@ function matchMiaouCommand(literal) {
 // serait faux et désorientant. Source unique — resolveSend le dérive à deux
 // endroits (avec et sans skill activée), et deux formulations divergeraient.
 function commandFormRefusal(slug) {
-  return '« /' + slug + ' » est une commande : elle s\'envoie seule, sans autre texte.';
+  return '« /' + slug + ' » est une commande : elle s\'envoie seule, sans autre texte.';
 }
 
 // Refus d'une commande BIEN FORMÉE, arrivée par un chemin qui ne l'exécute pas.
@@ -115,7 +115,7 @@ function commandFormRefusal(slug) {
 //                  commande n'a pas de sens (condition 2 du § 4.7).
 // Pur, source unique.
 function commandContextRefusal(slug, context) {
-  const c = '« /' + slug + ' »';
+  const c = '« /' + slug + ' »';
   if (context === 'editing') {
     return c + ' est une commande : elle ne s\'exécute pas en modifiant un ' +
       'message passé. Envoie-la depuis le champ de saisie.';

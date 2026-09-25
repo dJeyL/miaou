@@ -4543,7 +4543,7 @@ if (window.requestAnimationFrame) {
         <div class="set-cat-body">
           <div class="set-cat-body-inner">
       <div class="field">
-        <span class="hint">Le modèle par défaut se règle par serveur, dans « Gérer les serveurs API » (catégorie Connexion).</span>
+        <span class="hint">Le modèle par défaut se règle par serveur, dans « Gérer les serveurs API » (catégorie Connexion).</span>
       </div>
       <div class="field">
         <div class="check-row">
@@ -5064,7 +5064,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-25 23:17 UTC */
+/* miaou — built: 2026-09-25 23:25 UTC */
 
 /* ── utils.js ── */
 
@@ -6016,8 +6016,8 @@ function guessMcpTransport(url) {
 function validateMcpServerName(name, existingNames) {
   const n = String(name || '').trim();
   if (!n) return 'Nom requis.';
-  if (n === 'miaou') return 'Le nom « miaou » est réservé aux outils internes.';
-  if (n.indexOf('__') >= 0) return 'Le nom ne peut pas contenir « __ » (séparateur réservé).';
+  if (n === 'miaou') return 'Le nom « miaou » est réservé aux outils internes.';
+  if (n.indexOf('__') >= 0) return 'Le nom ne peut pas contenir « __ » (séparateur réservé).';
   if (!/^[a-zA-Z0-9_-]+$/.test(n)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
   if (Array.isArray(existingNames) && existingNames.indexOf(n) >= 0) return 'Ce nom est déjà utilisé.';
   return null;
@@ -9896,7 +9896,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790378233}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790378757}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12996,11 +12996,11 @@ function validateSkillSlug(slug, existingSlugs) {
   if (!s) return 'Slug requis.';
   if (s.length > SKILL_SLUG_MAX) return 'Slug trop long (max ' + SKILL_SLUG_MAX + ' caractères).';
   if (/\s/.test(s)) return 'Le slug ne peut pas contenir d\'espace.';
-  if (s.indexOf('/') >= 0) return 'Le slug ne peut pas contenir « / ».';
+  if (s.indexOf('/') >= 0) return 'Le slug ne peut pas contenir « / ».';
   if (!/^[a-zA-Z0-9_-]+$/.test(s)) return 'Caractères autorisés : lettres, chiffres, tiret, underscore.';
 
   if (commandSlugs().indexOf(s) >= 0) {
-    return 'Slug réservé : « /' + s + ' » est une commande de MIAOU, pas une skill.';
+    return 'Slug réservé : « /' + s + ' » est une commande de MIAOU, pas une skill.';
   }
   if (Array.isArray(existingSlugs) && existingSlugs.indexOf(s) >= 0) return 'Ce slug est déjà utilisé.';
   return null;
@@ -13014,11 +13014,11 @@ function matchMiaouCommand(literal) {
 }
 
 function commandFormRefusal(slug) {
-  return '« /' + slug + ' » est une commande : elle s\'envoie seule, sans autre texte.';
+  return '« /' + slug + ' » est une commande : elle s\'envoie seule, sans autre texte.';
 }
 
 function commandContextRefusal(slug, context) {
-  const c = '« /' + slug + ' »';
+  const c = '« /' + slug + ' »';
   if (context === 'editing') {
     return c + ' est une commande : elle ne s\'exécute pas en modifiant un ' +
       'message passé. Envoie-la depuis le champ de saisie.';
@@ -17124,7 +17124,7 @@ const WELCOME_SCREENS = [
     tipEmoji: '⚙️', tipHead: 'Dans les rouages :' },
   { emoji: '🥖', title: 'À la baguette.',         sub: 'No pain, no gain.',
     tipEmoji: '🧑‍🍳', tipHead: 'Sorti du four :' },
-  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.',
+  { emoji: '🐈', title: 'Miaou.',                 sub: 'Ça veut dire « je t\'écoute », en chat.',
     tipEmoji: '🐾', tipHead: 'Ronronné en passant :' },
   { emoji: '🧵', title: 'Nouveau fil.',           sub: 'Tire dessus, on verra ce qui vient avec.',
     tipEmoji: '🪡', tipHead: 'Au bout du fil :' },
@@ -19590,7 +19590,7 @@ function syncAgentBanner(conv) {
     if (btn) {
       btn.hidden = false;
 
-      btn.title = 'Retour à « ' + label + ' »';
+      btn.title = 'Retour à « ' + label + ' »';
       btn.setAttribute('aria-label', btn.title);
 
       btn.onclick = () => selectConv(parent.id, true);
@@ -21808,7 +21808,7 @@ function formatModelCapsLine(caps, vision) {
   const c = caps || {};
   const known = ['vision', 'tools', 'thinking'].some(k => c[k] === true || c[k] === false);
   const manual = vision && vision.source === 'manual'
-    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
+    ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
   if (!known) return 'Capacités du modèle : non déclarées par le serveur.' + manual;
 
   const v = (x) => x === true ? '✓' : (x === false ? '✗' : 'inconnu');
@@ -22808,7 +22808,7 @@ function buildMcpCard(server, isNew) {
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
-  editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
+  editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
   editSection.appendChild(cfgField('URL', urlI));
 
   editSection.appendChild(cfgField('Transport', transport.root,
@@ -23027,7 +23027,7 @@ function buildApiCard(server, isNew, isActive) {
         (declared ? '' : ' Les images sont remplacées par un descripteur textuel.');
     } else {
       visionHint.textContent = 'Le serveur ne dit pas si ce modèle lit les images. S\'il ne les lit pas, ' +
-        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
+        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
     }
   };
   syncVisionField();
@@ -23338,7 +23338,7 @@ function buildSkillCard(skill, isNew) {
   contentT.className = 'skill-content'; contentT.rows = 10; contentT.spellcheck = false;
   contentT.placeholder = 'Corps de la skill en Markdown…';
 
-  editSection.appendChild(cfgField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
+  editSection.appendChild(cfgField('Slug', slugI, 'Clé d\'invocation /slug. Sans espace ni « / ».'));
   editSection.appendChild(cfgField('Nom', nameI, 'Libellé d\'affichage.'));
   editSection.appendChild(cfgField('Description', descI, 'Surface lexicale décrite au modèle.'));
   editSection.appendChild(cfgField('Contenu', contentT));
@@ -24314,11 +24314,11 @@ function docsPackAckTail(m) {
 }
 
 const ACK_KINDS = {
-  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
-  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
-  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
+  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
+  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
+  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
   conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,
-    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
+    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
     renderLabel: (m, el) => {
 
       const titleNode = m.convId
@@ -24339,9 +24339,9 @@ const ACK_KINDS = {
       } else {
         el.appendChild(document.createTextNode('Conversation consultée '));
         appendAckSep(el);
-        el.appendChild(document.createTextNode(' « '));
+        el.appendChild(document.createTextNode(' « '));
         el.appendChild(titleNode);
-        el.appendChild(document.createTextNode(' »'));
+        el.appendChild(document.createTextNode(' »'));
       }
     },
   },
@@ -24560,7 +24560,7 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_LIST,
     label: m =>
-      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
+      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
         m.count === 0 ? 'aucun résultat'
       : m.count === 1 ? '1 sujet trouvé'
       : (m.count != null ? m.count : '?') + ' sujets trouvés'),
@@ -24571,12 +24571,12 @@ const ACK_KINDS = {
         : (m.count != null ? m.count : '?') + ' sujets trouvés';
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+          detail.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
           appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + countText));
         });
       } else {
-        el.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+        el.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + countText));
       }
@@ -24781,28 +24781,28 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent lancé'),
   },
   agent_status: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'État d\'agent consulté'),
   },
   agent_result: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Résultat d\'agent relu'),
   },
   agent_abort: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent interrompu'),
   },
 };
@@ -24827,9 +24827,9 @@ function renderAgentAckLabel(m, el, verb) {
   } else {
     el.appendChild(document.createTextNode(verb + ' '));
     appendAckSep(el);
-    el.appendChild(document.createTextNode(' « '));
+    el.appendChild(document.createTextNode(' « '));
     el.appendChild(node);
-    el.appendChild(document.createTextNode(' »'));
+    el.appendChild(document.createTextNode(' »'));
   }
 }
 
@@ -26454,7 +26454,7 @@ async function runMdConversion(file) {
   if (!file || _convertingMd) return;
   _convertingMd = true;
   try {
-    setMdConvertStatus('Conversion de « ' + file.name +' »…', false);
+    setMdConvertStatus('Conversion de « ' + file.name +' »…', false);
     const text = await file.text();
     await convertMarkdownToHtmlFile(text, file.name);
     setMdConvertStatus('Converti : ' + mdHtmlFileName(file.name), false);
@@ -28289,7 +28289,7 @@ async function ingestAttachmentFile(file) {
   const kind0 = classifyAttachmentKind(file.name, file.type);
   const cap = attachmentCapForKind(kind0);
   if (file.size > cap.bytes) {
-    showComposerAttachError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
+    showComposerAttachError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
     return null;
   }
   if (kind0 === 'image') {
@@ -28303,7 +28303,7 @@ async function ingestAttachmentFile(file) {
   ensureConversation();
 
   const attId = reserveAttIdFor(currentConvId);
-  if (!attId) { showComposerAttachError('Échec du traitement de « ' + file.name + ' ».'); return null; }
+  if (!attId) { showComposerAttachError('Échec du traitement de « ' + file.name + ' ».'); return null; }
   const now = Date.now();
 
   try {
@@ -28311,7 +28311,7 @@ async function ingestAttachmentFile(file) {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
       const rec = await storeAttachment(attId, mime, file.name, buf, 'binary', currentConvId, now, Math.random, { w, h });
-      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
       return { attId, name: file.name, mime, size: buf.byteLength, kind: 'image', w, h };
     }
 
@@ -28323,21 +28323,21 @@ async function ingestAttachmentFile(file) {
       if (buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES) {
 
         const rec = await storeAttachment(attId, mime, file.name, buf, 'binary', currentConvId, now, Math.random);
-        if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+        if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
         return { attId, name: file.name, mime, size: buf.byteLength, kind: 'binary', textual: true };
       }
       const rec = await storeAttachment(attId, mime, file.name, buf, 'inline', currentConvId, now, Math.random);
-      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+      if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
       return { attId, name: file.name, mime, size: buf.byteLength, kind: 'text' };
     }
 
     const buf = raw;
     const rec = await storeAttachment(attId, file.type || 'application/octet-stream', file.name, buf, 'binary', currentConvId, now, Math.random);
-    if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
+    if (!rec) { showComposerAttachError('Échec du stockage de « ' + file.name + ' ».'); return null; }
     return { attId, name: file.name, mime: file.type || 'application/octet-stream', size: buf.byteLength, kind: 'binary' };
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestAttachmentFile:', e && e.message);
-    showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
+    showComposerAttachError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
 }
@@ -28355,7 +28355,7 @@ async function ingestLibraryFile(spaceId, file) {
   const kind0 = classifyAttachmentKind(file.name, file.type);
   const cap = attachmentCapForKind(kind0);
   if (file.size > cap.bytes) {
-    showSpaceFilesError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
+    showSpaceFilesError('« ' + file.name + ' » dépasse ' + cap.label + ' — fichier ignoré.');
     return null;
   }
   const now = Date.now();
@@ -28364,7 +28364,7 @@ async function ingestLibraryFile(spaceId, file) {
       const { blob, mime, w, h } = await downscaleImageFile(file);
       const buf = await blob.arrayBuffer();
       const rec = await storeLibraryFile(spaceId, mime, file.name, buf, 'binary', undefined, undefined, now, Math.random, { w, h });
-      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
 
@@ -28374,16 +28374,16 @@ async function ingestLibraryFile(spaceId, file) {
       const buf = utf8Encode(text);
       const cls = buf.byteLength > ATTACHMENT_TEXT_MAX_BYTES ? 'binary' : 'inline';
       const rec = await storeLibraryFile(spaceId, textAttachmentMime(file.type), file.name, buf, cls, undefined, undefined, now, Math.random);
-      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+      if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
       return rec;
     }
     const buf = raw;
     const rec = await storeLibraryFile(spaceId, file.type || 'application/octet-stream', file.name, buf, 'binary', undefined, undefined, now, Math.random);
-    if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
+    if (!rec) showSpaceFilesError('Échec du stockage de « ' + file.name + ' ».');
     return rec;
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] ingestLibraryFile:', e && e.message);
-    showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
+    showSpaceFilesError('Échec du traitement de « ' + file.name + ' ».');
     return null;
   }
 }

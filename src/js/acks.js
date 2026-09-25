@@ -133,11 +133,11 @@ function docsPackAckTail(m) {
 }
 
 const ACK_KINDS = {
-  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
-  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
-  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
+  memory_create: { destination: 'both', undo: forgetMemory,  icon: ICON_MEMORY, label: m => 'Mémorisé : « ' + (m.content || '') + ' »' },
+  memory_update: { destination: 'both', undo: (id, entry) => { if (entry && entry.prevContent != null) editMemory(id, entry.prevContent); }, icon: ICON_EDIT, label: m => 'Souvenir mis à jour : « ' + (m.content || '') + ' »' },
+  memory_delete: { destination: 'both', undo: restoreMemory, icon: ICON_TRASH,  label: m => 'Souvenir supprimé' + (m.content ? ' : « ' + m.content + ' »' : '') },
   conversation_read: { destination: 'user', undo: null, icon: ICON_EYE,
-    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
+    label: m => 'Conversation consultée : « ' + (m.title || 'sans titre') + ' »',
     renderLabel: (m, el) => {
       // Titre cliquable si convId connu (mène à la conversation) — sans changer
       // sa couleur hors survol, cf. .ack-conv-link.
@@ -159,9 +159,9 @@ const ACK_KINDS = {
       } else {
         el.appendChild(document.createTextNode('Conversation consultée '));
         appendAckSep(el);
-        el.appendChild(document.createTextNode(' « '));
+        el.appendChild(document.createTextNode(' « '));
         el.appendChild(titleNode);
-        el.appendChild(document.createTextNode(' »'));
+        el.appendChild(document.createTextNode(' »'));
       }
     },
   },
@@ -423,7 +423,7 @@ const ACK_KINDS = {
     undo: null,
     icon: ICON_LIST,
     label: m =>
-      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
+      'Aide cherchée « ' + (m.query || '') + ' » : ' + (
         m.count === 0 ? 'aucun résultat'
       : m.count === 1 ? '1 sujet trouvé'
       : (m.count != null ? m.count : '?') + ' sujets trouvés'),
@@ -434,12 +434,12 @@ const ACK_KINDS = {
         : (m.count != null ? m.count : '?') + ' sujets trouvés';
       if (m.intent) {
         renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+          detail.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
           appendAckSep(detail);
           detail.appendChild(document.createTextNode(' ' + countText));
         });
       } else {
-        el.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
+        el.appendChild(document.createTextNode('Aide cherchée « ' + (m.query || '') + ' » '));
         appendAckSep(el);
         el.appendChild(document.createTextNode(' ' + countText));
       }
@@ -703,28 +703,28 @@ const ACK_KINDS = {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Agent lancé : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent lancé'),
   },
   agent_status: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'État d\'agent consulté : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'État d\'agent consulté'),
   },
   agent_result: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Résultat d\'agent relu : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Résultat d\'agent relu'),
   },
   agent_abort: {
     destination: 'user',
     undo: null,
     icon: ICON_AGENT,
-    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
+    label: m => 'Agent interrompu : « ' + (m.title || 'sans libellé') + ' »',
     renderLabel: (m, el) => renderAgentAckLabel(m, el, 'Agent interrompu'),
   },
 };
@@ -753,9 +753,9 @@ function renderAgentAckLabel(m, el, verb) {
   } else {
     el.appendChild(document.createTextNode(verb + ' '));
     appendAckSep(el);
-    el.appendChild(document.createTextNode(' « '));
+    el.appendChild(document.createTextNode(' « '));
     el.appendChild(node);
-    el.appendChild(document.createTextNode(' »'));
+    el.appendChild(document.createTextNode(' »'));
   }
 }
 
